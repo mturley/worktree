@@ -123,7 +123,7 @@ search:
 jira:
   host: your-org.atlassian.net
   email: you@example.com
-  token_env: JIRA_TOKEN          # env var name (not the token itself)
+  token: your-jira-api-token
   projects:
     - RHOAIENG
     - RHOAI

@@ -171,7 +171,7 @@ editor: cursor
 jira:
   host: your-org.atlassian.net
   email: you@example.com
-  token_env: JIRA_TOKEN
+  token: your-jira-api-token
   projects:
     - MYPROJECT
 ```

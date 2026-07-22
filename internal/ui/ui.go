@@ -47,6 +47,28 @@ func PromptChoice(prompt string, max int) (int, error) {
 	return n, nil
 }
 
+func PromptLine(prompt string) string {
+	fmt.Printf("%s: ", prompt)
+	reader := bufio.NewReader(os.Stdin)
+	line, _ := reader.ReadString('\n')
+	return strings.TrimSpace(line)
+}
+
+func PromptLineDefault(prompt, defaultVal string) string {
+	if defaultVal != "" {
+		fmt.Printf("%s [%s]: ", prompt, defaultVal)
+	} else {
+		fmt.Printf("%s: ", prompt)
+	}
+	reader := bufio.NewReader(os.Stdin)
+	line, _ := reader.ReadString('\n')
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return defaultVal
+	}
+	return line
+}
+
 func ShortPath(path string) string {
 	home, err := os.UserHomeDir()
 	if err != nil {

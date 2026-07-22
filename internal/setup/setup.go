@@ -24,6 +24,10 @@ type Plan struct {
 	SuggestCompletion    bool
 	CompletionPath       string
 	CompletionShell      string
+	ConfigureJira        bool
+	GHMissing            bool
+	GHNotAuthenticated   bool
+	Cfg                  config.Config
 }
 
 func BuildPlan(cfg config.Config) Plan {
@@ -32,6 +36,7 @@ func BuildPlan(cfg config.Config) Plan {
 		WorktreesBase: cfg.WorktreesBase,
 		ShellRC:       rc,
 		ConfigPath:    config.ConfigPath(),
+		Cfg:           cfg,
 	}
 
 	if _, err := os.Stat(cfg.WorktreesBase); os.IsNotExist(err) {
@@ -42,6 +47,18 @@ func BuildPlan(cfg config.Config) Plan {
 	}
 	if _, err := os.Stat(config.ConfigPath()); os.IsNotExist(err) {
 		plan.CreateConfig = true
+	}
+	if len(cfg.Jira.Projects) == 0 {
+		plan.ConfigureJira = true
+	}
+
+	if _, err := exec.LookPath("gh"); err != nil {
+		plan.GHMissing = true
+	} else {
+		cmd := exec.Command("gh", "auth", "status")
+		if err := cmd.Run(); err != nil {
+			plan.GHNotAuthenticated = true
+		}
 	}
 
 	plan.CompletionShell = rc.Shell
@@ -71,8 +88,18 @@ func (p Plan) Preview() {
 	if p.UpdateCompletion {
 		fmt.Printf("  • Update shell completion: %s\n", ui.ShortPath(p.CompletionPath))
 	}
-	if !p.CreateWorktreesBase && !p.InstallShellRC && !p.CreateConfig && !p.UpdateCompletion {
+	if p.ConfigureJira {
+		fmt.Println("  • Configure Jira integration (optional)")
+	}
+	if !p.CreateWorktreesBase && !p.InstallShellRC && !p.CreateConfig && !p.UpdateCompletion && !p.ConfigureJira {
 		fmt.Println("  Nothing to do — already set up.")
+	}
+	if p.GHMissing {
+		fmt.Printf("\n  %s GitHub CLI (gh) is not installed. PR features will be unavailable.\n", ui.Yellow("!"))
+		fmt.Printf("       Install: %s\n", ui.Bold("https://cli.github.com/"))
+	} else if p.GHNotAuthenticated {
+		fmt.Printf("\n  %s GitHub CLI (gh) is not authenticated. PR features will be unavailable.\n", ui.Yellow("!"))
+		fmt.Printf("       Run: %s\n", ui.Bold("gh auth login"))
 	}
 	if p.SuggestCompletion {
 		fmt.Printf("\n  %s Shell completion is not installed.\n", ui.Dim("tip:"))
@@ -81,7 +108,7 @@ func (p Plan) Preview() {
 }
 
 func (p Plan) HasWork() bool {
-	return p.CreateWorktreesBase || p.InstallShellRC || p.CreateConfig || p.UpdateCompletion
+	return p.CreateWorktreesBase || p.InstallShellRC || p.CreateConfig || p.UpdateCompletion || p.ConfigureJira
 }
 
 func (p Plan) Execute() error {
@@ -113,6 +140,51 @@ func (p Plan) Execute() error {
 		fmt.Printf("  %s Updated %s\n", ui.Green("✓"), ui.ShortPath(p.CompletionPath))
 	}
 
+	if p.ConfigureJira {
+		if err := promptAndSaveJira(p.ConfigPath, p.Cfg); err != nil {
+			return fmt.Errorf("configuring Jira: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func promptAndSaveJira(configPath string, cfg config.Config) error {
+	fmt.Println()
+	fmt.Println(ui.Bold("Jira integration (optional — press Enter to skip):"))
+
+	host := ui.PromptLineDefault("  Jira host (e.g. your-org.atlassian.net)", cfg.Jira.Host)
+	if host == "" {
+		fmt.Printf("  %s Skipped Jira configuration\n", ui.Dim("—"))
+		return nil
+	}
+
+	email := ui.PromptLineDefault("  Jira email", cfg.Jira.Email)
+	token := ui.PromptLineDefault("  Jira API token", cfg.Jira.Token)
+	projectsStr := ui.PromptLine("  Jira project prefixes (comma-separated, e.g. MYPROJ,OTHER)")
+
+	var projects []string
+	for _, p := range strings.Split(projectsStr, ",") {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			projects = append(projects, p)
+		}
+	}
+
+	if len(projects) == 0 {
+		fmt.Printf("  %s No projects configured — Jira detection will be disabled\n", ui.Yellow("!"))
+		return nil
+	}
+
+	cfg.Jira.Host = host
+	cfg.Jira.Email = email
+	cfg.Jira.Token = token
+	cfg.Jira.Projects = projects
+
+	if err := writeConfig(configPath, cfg); err != nil {
+		return err
+	}
+	fmt.Printf("  %s Configured Jira: %s (%s)\n", ui.Green("✓"), host, strings.Join(projects, ", "))
 	return nil
 }
 
@@ -148,12 +220,22 @@ func ExecuteUninstall(rc ShellRC, configPath string) error {
 }
 
 func writeDefaultConfig(path string) error {
+	return writeConfig(path, config.DefaultConfig())
+}
+
+func writeConfig(path string, cfg config.Config) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
 
-	cfg := config.DefaultConfig()
 	home, _ := os.UserHomeDir()
+
+	type jiraYaml struct {
+		Host     string   `yaml:"host,omitempty"`
+		Email    string   `yaml:"email,omitempty"`
+		Token    string   `yaml:"token,omitempty"`
+		Projects []string `yaml:"projects,omitempty"`
+	}
 
 	type yamlConfig struct {
 		WorktreesBase string `yaml:"worktrees_base"`
@@ -162,10 +244,13 @@ func writeDefaultConfig(path string) error {
 			Depth int      `yaml:"depth"`
 			Prune []string `yaml:"prune"`
 		} `yaml:"search"`
+		Editor string   `yaml:"editor,omitempty"`
+		Jira   jiraYaml `yaml:"jira,omitempty"`
 	}
 
 	yc := yamlConfig{
 		WorktreesBase: shortenHome(cfg.WorktreesBase, home),
+		Editor:        cfg.Editor,
 	}
 	yc.Search.Roots = make([]string, len(cfg.Search.Roots))
 	for i, r := range cfg.Search.Roots {
@@ -173,6 +258,15 @@ func writeDefaultConfig(path string) error {
 	}
 	yc.Search.Depth = cfg.Search.Depth
 	yc.Search.Prune = cfg.Search.Prune
+
+	if cfg.Jira.Host != "" {
+		yc.Jira = jiraYaml{
+			Host:     cfg.Jira.Host,
+			Email:    cfg.Jira.Email,
+			Token:    cfg.Jira.Token,
+			Projects: cfg.Jira.Projects,
+		}
+	}
 
 	data, err := yaml.Marshal(yc)
 	if err != nil {

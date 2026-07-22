@@ -27,7 +27,7 @@ type SearchConfig struct {
 type JiraConfig struct {
 	Host     string   `yaml:"host"`
 	Email    string   `yaml:"email"`
-	TokenEnv string   `yaml:"token_env"`
+	Token    string   `yaml:"token"`
 	Projects []string `yaml:"projects"`
 }
 
@@ -54,9 +54,7 @@ func DefaultConfig() Config {
 			Depth: 5,
 			Prune: []string{"node_modules", ".Trash", ".cache", ".venv", "venv"},
 		},
-		Jira: JiraConfig{
-			TokenEnv: "JIRA_TOKEN",
-		},
+		Jira: JiraConfig{},
 		Cmux: CmuxConfig{
 			Layout: CmuxLayout{
 				Panes: []CmuxPane{

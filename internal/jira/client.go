@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 
 	"github.com/mturley/worktree/internal/config"
 )
@@ -30,10 +29,10 @@ func NewClient(cfg config.JiraConfig) (*Client, error) {
 	if cfg.Host == "" || cfg.Email == "" {
 		return nil, fmt.Errorf("jira host and email must be configured")
 	}
-	token := os.Getenv(cfg.TokenEnv)
-	if token == "" {
-		return nil, fmt.Errorf("jira token env var %s is not set", cfg.TokenEnv)
+	if cfg.Token == "" {
+		return nil, fmt.Errorf("jira token not configured (run worktree setup)")
 	}
+	token := cfg.Token
 	return &Client{host: cfg.Host, email: cfg.Email, token: token}, nil
 }
 
