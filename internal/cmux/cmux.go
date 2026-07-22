@@ -23,8 +23,12 @@ func IsAvailable() bool {
 	return os.Getenv("CMUX_SOCKET_PATH") != ""
 }
 
+func cmuxCmd(args ...string) *exec.Cmd {
+	return exec.Command("cmux", args...)
+}
+
 func ListWorkspaces() ([]Workspace, error) {
-	cmd := exec.Command("cmux", "workspace", "list", "--json")
+	cmd := cmuxCmd("workspace", "list", "--json")
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("listing workspaces: %w", err)
@@ -51,7 +55,7 @@ func FindByDirectory(dir string) (*Workspace, error) {
 }
 
 func SelectWorkspace(ref string) error {
-	cmd := exec.Command("cmux", "select-workspace", "--workspace", ref)
+	cmd := cmuxCmd("workspace", "select", ref)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("selecting workspace: %s", strings.TrimSpace(string(out)))
 	}
@@ -59,7 +63,7 @@ func SelectWorkspace(ref string) error {
 }
 
 func RenameWorkspace(ref, title string) error {
-	cmd := exec.Command("cmux", "rename-workspace", "--workspace", ref, "--", title)
+	cmd := cmuxCmd("workspace", "rename", ref, "--title", title)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("renaming workspace: %s", strings.TrimSpace(string(out)))
 	}
@@ -69,13 +73,13 @@ func RenameWorkspace(ref, title string) error {
 type NewWorkspaceOptions struct {
 	Name    string
 	Cwd     string
-	Layout  string // JSON layout string
+	Layout  string
 	Focus   bool
 	EnvVars map[string]string
 }
 
 func NewWorkspace(opts NewWorkspaceOptions) (string, error) {
-	args := []string{"new-workspace"}
+	args := []string{"workspace", "create", "--json"}
 
 	if opts.Name != "" {
 		args = append(args, "--name", opts.Name)
@@ -93,37 +97,33 @@ func NewWorkspace(opts NewWorkspaceOptions) (string, error) {
 		args = append(args, "--env", fmt.Sprintf("%s=%s", k, v))
 	}
 
-	cmd := exec.Command("cmux", args...)
+	cmd := cmuxCmd(args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("creating workspace: %s", strings.TrimSpace(string(out)))
 	}
 
 	var result struct {
-		Ref string `json:"ref"`
+		WorkspaceRef string `json:"workspace_ref"`
 	}
 	if err := json.Unmarshal(out, &result); err != nil {
-		return strings.TrimSpace(string(out)), nil
+		return "", fmt.Errorf("parsing workspace create response: %w", err)
 	}
-	return result.Ref, nil
+	return result.WorkspaceRef, nil
 }
 
 func OpenBrowser(url string) error {
-	cmd := exec.Command("cmux", "browser", "open", url)
+	cmd := cmuxCmd("browser", "open", url)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("opening browser: %s", strings.TrimSpace(string(out)))
 	}
 	return nil
 }
 
-type LayoutConfig struct {
-	Panes []PaneConfig
-}
-
 type PaneConfig struct {
-	Role     string // "terminal", "browser"
-	Position string // "left", "right"
-	Size     string // "50%", etc.
+	Role     string
+	Position string
+	Size     string
 }
 
 func BuildLayout(panes []PaneConfig, urls []string) string {
