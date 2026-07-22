@@ -26,6 +26,7 @@ type Plan struct {
 	CompletionPath       string
 	CompletionShell      string
 	ConfigureJira        bool
+	TestJira             bool
 	GHMissing            bool
 	GHNotAuthenticated   bool
 	Cfg                  config.Config
@@ -51,6 +52,8 @@ func BuildPlan(cfg config.Config) Plan {
 	}
 	if len(cfg.Jira.Projects) == 0 {
 		plan.ConfigureJira = true
+	} else if cfg.Jira.Token != "" {
+		plan.TestJira = true
 	}
 
 	if _, err := exec.LookPath("gh"); err != nil {
@@ -92,7 +95,10 @@ func (p Plan) Preview() {
 	if p.ConfigureJira {
 		fmt.Println("  • Configure Jira integration (optional)")
 	}
-	if !p.CreateWorktreesBase && !p.InstallShellRC && !p.CreateConfig && !p.UpdateCompletion && !p.ConfigureJira {
+	if p.TestJira {
+		fmt.Println("  • Test Jira connection")
+	}
+	if !p.CreateWorktreesBase && !p.InstallShellRC && !p.CreateConfig && !p.UpdateCompletion && !p.ConfigureJira && !p.TestJira {
 		fmt.Println("  Nothing to do — already set up.")
 	}
 	if p.GHMissing {
@@ -109,7 +115,7 @@ func (p Plan) Preview() {
 }
 
 func (p Plan) HasWork() bool {
-	return p.CreateWorktreesBase || p.InstallShellRC || p.CreateConfig || p.UpdateCompletion || p.ConfigureJira
+	return p.CreateWorktreesBase || p.InstallShellRC || p.CreateConfig || p.UpdateCompletion || p.ConfigureJira || p.TestJira
 }
 
 func (p Plan) Execute() error {
@@ -147,6 +153,50 @@ func (p Plan) Execute() error {
 		}
 	}
 
+	if p.TestJira {
+		if err := testAndRepairJira(p.ConfigPath, p.Cfg); err != nil {
+			return fmt.Errorf("testing Jira: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func testAndRepairJira(configPath string, cfg config.Config) error {
+	fmt.Print("  Testing Jira connection... ")
+	testCfg := config.JiraConfig{Host: cfg.Jira.Host, Email: cfg.Jira.Email, Token: cfg.Jira.Token}
+	if err := testJiraConnection(testCfg); err == nil {
+		fmt.Printf("%s\n", ui.Green("ok"))
+		return nil
+	} else {
+		fmt.Printf("%s\n", ui.Red("failed"))
+		fmt.Printf("    %v\n", err)
+	}
+
+	if !ui.Confirm("  Replace the Jira API token?") {
+		return nil
+	}
+
+	fmt.Printf("  Create a token at: %s\n", ui.Bold("https://id.atlassian.com/manage-profile/security/api-tokens"))
+	token := ui.PromptSecret("  New Jira API token")
+	if token == "" {
+		return nil
+	}
+
+	testCfg.Token = token
+	fmt.Print("  Testing new token... ")
+	if err := testJiraConnection(testCfg); err != nil {
+		fmt.Printf("%s\n", ui.Red("failed"))
+		fmt.Printf("    %v\n", err)
+		return nil
+	}
+	fmt.Printf("%s\n", ui.Green("ok"))
+
+	cfg.Jira.Token = token
+	if err := writeConfig(configPath, cfg); err != nil {
+		return err
+	}
+	fmt.Printf("  %s Updated %s\n", ui.Green("✓"), ui.ShortPath(configPath))
 	return nil
 }
 
