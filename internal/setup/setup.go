@@ -400,9 +400,6 @@ func completionDir(shell string) string {
 	case "fish":
 		home, _ := os.UserHomeDir()
 		return filepath.Join(home, ".config", "fish", "completions")
-	case "powershell":
-		home, _ := os.UserHomeDir()
-		return filepath.Join(home, ".config", "worktree", "completions")
 	}
 	return ""
 }
@@ -413,8 +410,6 @@ func completionFilename(shell, cmd string) string {
 		return "_" + cmd
 	case "fish":
 		return cmd + ".fish"
-	case "powershell":
-		return cmd + ".ps1"
 	default:
 		return cmd
 	}
@@ -451,7 +446,7 @@ func writeWtCompletion(shell, path string) error {
 	return os.WriteFile(path, []byte(script), 0644)
 }
 
-var allShells = []string{"zsh", "bash", "fish", "powershell"}
+var allShells = []string{"zsh", "bash", "fish"}
 
 func installAllCompletions() {
 	for _, shell := range allShells {
