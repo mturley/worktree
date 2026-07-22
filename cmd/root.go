@@ -94,13 +94,19 @@ func handlePR(owner, repo string, number int) error {
 	fmt.Printf("  %s\n", ui.Bold(pr.Title))
 	fmt.Printf("  by @%s · %s\n\n", pr.Author, pr.State)
 
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := findRepoForPR(cfg, owner, repo)
 	if err != nil {
-		return fmt.Errorf("not in a git repo: %w", err)
+		return err
 	}
 
+	remote, err := gitutil.FindRemoteForRepo(repoRoot, owner, repo)
+	if err != nil {
+		return fmt.Errorf("resolving remote: %w", err)
+	}
+	fmt.Printf("  Using remote: %s\n", ui.Dim(remote))
+
 	slug := github.Slugify(pr.Title)
-	result, err := gitutil.CreatePRWorktree(repoRoot, cfg.WorktreesBase, number, pr.HeadRef, slug)
+	result, err := gitutil.CreatePRWorktree(repoRoot, cfg.WorktreesBase, remote, number, pr.HeadRef, slug)
 	if err != nil {
 		return err
 	}
@@ -320,4 +326,22 @@ func findRepoRoot() (string, error) {
 		return "", err
 	}
 	return gitutil.RepoRoot(dir)
+}
+
+func findRepoForPR(cfg config.Config, owner, repo string) (string, error) {
+	// Try current directory first
+	if root, err := findRepoRoot(); err == nil {
+		if gitutil.MatchesRemote(root, owner, repo) {
+			return root, nil
+		}
+	}
+
+	// Search across configured roots
+	fmt.Printf("Searching for local clone of %s/%s...\n", owner, repo)
+	root, err := gitutil.FindRepoBySlug(owner, repo, cfg.Search.Roots, cfg.Search.Depth, cfg.Search.Prune)
+	if err != nil {
+		return "", fmt.Errorf("cannot find local clone of %s/%s — run this command from inside the repo, or add its parent to search.roots in config", owner, repo)
+	}
+	fmt.Printf("  Found: %s\n", ui.ShortPath(root))
+	return root, nil
 }

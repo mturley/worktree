@@ -42,7 +42,7 @@ func CreateBranchWorktree(repoRoot, worktreesBase, branchName string) (CreateRes
 	return CreateResult{Path: wtPath, Branch: branchName, Created: true}, nil
 }
 
-func CreatePRWorktree(repoRoot, worktreesBase string, prNumber int, headRef, slug string) (CreateResult, error) {
+func CreatePRWorktree(repoRoot, worktreesBase, remote string, prNumber int, headRef, slug string) (CreateResult, error) {
 	repoName := filepath.Base(repoRoot)
 	dirName := fmt.Sprintf("pr-%d-%s", prNumber, slug)
 	wtPath := filepath.Join(worktreesBase, repoName, dirName)
@@ -57,9 +57,9 @@ func CreatePRWorktree(repoRoot, worktreesBase string, prNumber int, headRef, slu
 	}
 
 	fetchRef := fmt.Sprintf("refs/pr-review/%d", prNumber)
-	err := Fetch(repoRoot, "origin", fmt.Sprintf("pull/%d/head:%s", prNumber, fetchRef))
+	err := Fetch(repoRoot, remote, fmt.Sprintf("pull/%d/head:%s", prNumber, fetchRef))
 	if err != nil {
-		return CreateResult{}, fmt.Errorf("fetching PR: %w", err)
+		return CreateResult{}, fmt.Errorf("fetching PR from %s: %w", remote, err)
 	}
 
 	branchName := fmt.Sprintf("review/pr-%d-%s", prNumber, slug)

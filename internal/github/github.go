@@ -143,19 +143,26 @@ func isGHAvailable() bool {
 }
 
 func repoSlugFromDir(dir string) string {
-	cmd := exec.Command("git", "-C", dir, "remote", "get-url", "origin")
-	out, err := cmd.Output()
+	cmd := exec.Command("git", "-C", dir, "remote")
+	remoteOut, err := cmd.Output()
 	if err != nil {
 		return ""
 	}
-	url := strings.TrimSpace(string(out))
-	url = strings.TrimSuffix(url, ".git")
-	if idx := strings.LastIndex(url, ":"); idx >= 0 && !strings.Contains(url[idx:], "/") {
-		return url[idx+1:]
-	}
-	parts := strings.Split(url, "/")
-	if len(parts) >= 2 {
-		return parts[len(parts)-2] + "/" + parts[len(parts)-1]
+	for _, remote := range strings.Fields(string(remoteOut)) {
+		urlCmd := exec.Command("git", "-C", dir, "remote", "get-url", remote)
+		out, err := urlCmd.Output()
+		if err != nil {
+			continue
+		}
+		url := strings.TrimSpace(string(out))
+		url = strings.TrimSuffix(url, ".git")
+		if idx := strings.LastIndex(url, ":"); idx >= 0 && !strings.Contains(url[idx:], "/") {
+			return url[idx+1:]
+		}
+		parts := strings.Split(url, "/")
+		if len(parts) >= 2 {
+			return parts[len(parts)-2] + "/" + parts[len(parts)-1]
+		}
 	}
 	return ""
 }
