@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/mturley/worktree/internal/config"
+	"github.com/mturley/worktree/internal/jira"
 	"github.com/mturley/worktree/internal/ui"
 	"gopkg.in/yaml.v3"
 )
@@ -160,7 +161,18 @@ func promptAndSaveJira(configPath string, cfg config.Config) error {
 	}
 
 	email := ui.PromptLineDefault("  Jira email", cfg.Jira.Email)
-	token := ui.PromptLineDefault("  Jira API token", cfg.Jira.Token)
+	fmt.Printf("  Create a token at: %s\n", ui.Bold("https://id.atlassian.com/manage-profile/security/api-tokens"))
+	var token string
+	if cfg.Jira.Token != "" {
+		newToken := ui.PromptSecret("  Jira API token (Enter to keep existing)")
+		if newToken != "" {
+			token = newToken
+		} else {
+			token = cfg.Jira.Token
+		}
+	} else {
+		token = ui.PromptSecret("  Jira API token")
+	}
 	projectsStr := ui.PromptLine("  Jira project prefixes (comma-separated, e.g. MYPROJ,OTHER)")
 
 	var projects []string
@@ -168,6 +180,20 @@ func promptAndSaveJira(configPath string, cfg config.Config) error {
 		p = strings.TrimSpace(p)
 		if p != "" {
 			projects = append(projects, p)
+		}
+	}
+
+	if token != "" {
+		fmt.Print("  Testing Jira connection... ")
+		testCfg := config.JiraConfig{Host: host, Email: email, Token: token}
+		if err := testJiraConnection(testCfg); err != nil {
+			fmt.Printf("%s\n", ui.Red("failed"))
+			fmt.Printf("    %v\n", err)
+			if !ui.Confirm("  Save anyway?") {
+				return nil
+			}
+		} else {
+			fmt.Printf("%s\n", ui.Green("ok"))
 		}
 	}
 
@@ -185,6 +211,7 @@ func promptAndSaveJira(configPath string, cfg config.Config) error {
 		return err
 	}
 	fmt.Printf("  %s Configured Jira: %s (%s)\n", ui.Green("✓"), host, strings.Join(projects, ", "))
+	fmt.Printf("  %s Updated %s\n", ui.Green("✓"), ui.ShortPath(configPath))
 	return nil
 }
 
@@ -193,10 +220,10 @@ func PreviewUninstall(rc ShellRC, configPath string) {
 	if rc.IsInstalled() {
 		fmt.Printf("  • Remove auto-source from %s\n", rc.Path)
 	}
-	if _, err := os.Stat(configPath); err == nil {
-		fmt.Printf("  • Remove config: %s\n", ui.ShortPath(configPath))
-	}
 	fmt.Println("  • Preserve worktree data (remove manually if desired)")
+	if _, err := os.Stat(configPath); err == nil {
+		fmt.Printf("  • Preserve config at %s (contains credentials)\n", ui.ShortPath(configPath))
+	}
 }
 
 func ExecuteUninstall(rc ShellRC, configPath string) error {
@@ -208,12 +235,8 @@ func ExecuteUninstall(rc ShellRC, configPath string) error {
 	}
 
 	if _, err := os.Stat(configPath); err == nil {
-		if err := os.Remove(configPath); err != nil {
-			return fmt.Errorf("removing config: %w", err)
-		}
-		configDir := filepath.Dir(configPath)
-		os.Remove(configDir) // remove dir if empty, ignore error
-		fmt.Printf("  %s Removed %s\n", ui.Green("✓"), ui.ShortPath(configPath))
+		fmt.Printf("  %s Config preserved at %s\n", ui.Dim("—"), ui.ShortPath(configPath))
+		fmt.Printf("    Remove manually: rm %s\n", ui.ShortPath(configPath))
 	}
 
 	return nil
@@ -327,4 +350,12 @@ func writeCompletion(shell, path string) error {
 		return fmt.Errorf("generating completion script: %w", err)
 	}
 	return os.WriteFile(path, bytes.TrimSpace(out), 0644)
+}
+
+func testJiraConnection(cfg config.JiraConfig) error {
+	client, err := jira.NewClient(cfg)
+	if err != nil {
+		return err
+	}
+	return client.TestConnection()
 }

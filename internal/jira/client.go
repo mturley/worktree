@@ -96,6 +96,29 @@ func (c *Client) FetchIssue(key string) (*Issue, error) {
 	}, nil
 }
 
+func (c *Client) TestConnection() error {
+	url := fmt.Sprintf("https://%s/rest/api/2/myself", c.host)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return err
+	}
+	req.SetBasicAuth(c.email, c.token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("connection failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 401 {
+		return fmt.Errorf("authentication failed (401) — check your email and token")
+	}
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("unexpected status %d", resp.StatusCode)
+	}
+	return nil
+}
+
 func IssueURL(host, key string) string {
 	return fmt.Sprintf("https://%s/browse/%s", host, key)
 }

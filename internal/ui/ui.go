@@ -6,6 +6,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"golang.org/x/term"
 )
 
 const (
@@ -67,6 +69,16 @@ func PromptLineDefault(prompt, defaultVal string) string {
 		return defaultVal
 	}
 	return line
+}
+
+func PromptSecret(prompt string) string {
+	fmt.Printf("%s: ", prompt)
+	b, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fmt.Println()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
 }
 
 func ShortPath(path string) string {
