@@ -134,10 +134,9 @@ func (p Plan) Execute() error {
 	}
 
 	if p.CreateConfig {
-		if err := writeDefaultConfig(p.ConfigPath); err != nil {
+		if err := promptAndSaveConfig(p.ConfigPath, p.Cfg); err != nil {
 			return fmt.Errorf("creating config: %w", err)
 		}
-		fmt.Printf("  %s Created %s\n", ui.Green("✓"), ui.ShortPath(p.ConfigPath))
 	}
 
 	if p.UpdateCompletion {
@@ -197,6 +196,27 @@ func testAndRepairJira(configPath string, cfg config.Config) error {
 		return err
 	}
 	fmt.Printf("  %s Updated %s\n", ui.Green("✓"), ui.ShortPath(configPath))
+	return nil
+}
+
+func promptAndSaveConfig(configPath string, cfg config.Config) error {
+	home, _ := os.UserHomeDir()
+	defaultRoot := "~"
+	if len(cfg.Search.Roots) > 0 {
+		defaultRoot = shortenHome(cfg.Search.Roots[0], home)
+	}
+
+	fmt.Println()
+	root := ui.PromptLineDefault("  Where do you clone git projects?", defaultRoot)
+	cfg.Search.Roots = []string{config.ExpandHome(root)}
+
+	wtBase := ui.PromptLineDefault("  Where should worktrees be created?", shortenHome(cfg.WorktreesBase, home))
+	cfg.WorktreesBase = config.ExpandHome(wtBase)
+
+	if err := writeConfig(configPath, cfg); err != nil {
+		return err
+	}
+	fmt.Printf("  %s Created %s\n", ui.Green("✓"), ui.ShortPath(configPath))
 	return nil
 }
 

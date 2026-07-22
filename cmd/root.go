@@ -357,16 +357,7 @@ func openCmuxWorkspace(cfg config.Config, result gitutil.CreateResult) error {
 
 	title := fmt.Sprintf("wt %s", result.Branch)
 
-	var paneConfigs []cmux.PaneConfig
-	for _, p := range cfg.Cmux.Layout.Panes {
-		paneConfigs = append(paneConfigs, cmux.PaneConfig{
-			Role:     p.Role,
-			Position: p.Position,
-			Size:     p.Size,
-		})
-	}
-
-	layout := cmux.BuildLayout(paneConfigs, urls)
+	layout := cmux.BuildLayout(urls)
 
 	opts := cmux.NewWorkspaceOptions{
 		Name:  title,

@@ -15,7 +15,6 @@ type Config struct {
 	Search        SearchConfig `yaml:"search"`
 	Jira          JiraConfig   `yaml:"jira"`
 	Editor        string       `yaml:"editor"`
-	Cmux          CmuxConfig   `yaml:"cmux"`
 }
 
 type SearchConfig struct {
@@ -31,38 +30,17 @@ type JiraConfig struct {
 	Projects []string `yaml:"projects"`
 }
 
-type CmuxConfig struct {
-	Layout CmuxLayout `yaml:"layout"`
-}
-
-type CmuxLayout struct {
-	Panes []CmuxPane `yaml:"panes"`
-}
-
-type CmuxPane struct {
-	Role     string `yaml:"role"`
-	Position string `yaml:"position"`
-	Size     string `yaml:"size"`
-}
 
 func DefaultConfig() Config {
 	home, _ := os.UserHomeDir()
 	return Config{
 		WorktreesBase: filepath.Join(home, ".worktrees"),
 		Search: SearchConfig{
-			Roots: []string{filepath.Join(home, "git")},
+			Roots: []string{home},
 			Depth: 5,
 			Prune: []string{"node_modules", ".Trash", ".cache", ".venv", "venv"},
 		},
 		Jira: JiraConfig{},
-		Cmux: CmuxConfig{
-			Layout: CmuxLayout{
-				Panes: []CmuxPane{
-					{Role: "terminal", Position: "left", Size: "50%"},
-					{Role: "browser", Position: "right", Size: "50%"},
-				},
-			},
-		},
 	}
 }
 
@@ -113,6 +91,10 @@ func applyEnvOverrides(cfg *Config) {
 			cfg.Search.Depth = d
 		}
 	}
+}
+
+func ExpandHome(path string) string {
+	return expandHome(path)
 }
 
 func expandHome(path string) string {

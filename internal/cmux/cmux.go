@@ -120,25 +120,7 @@ func OpenBrowser(url string) error {
 	return nil
 }
 
-type PaneConfig struct {
-	Role     string
-	Position string
-	Size     string
-}
-
-func BuildLayout(panes []PaneConfig, urls []string) string {
-	hasBrowser := false
-	for _, p := range panes {
-		if p.Role == "browser" && len(urls) > 0 {
-			hasBrowser = true
-			break
-		}
-	}
-
-	if !hasBrowser || len(urls) == 0 {
-		return ""
-	}
-
+func BuildLayout(urls []string) string {
 	type surface struct {
 		Type string `json:"type"`
 		URL  string `json:"url,omitempty"`
@@ -153,19 +135,31 @@ func BuildLayout(panes []PaneConfig, urls []string) string {
 		Pane      *pane       `json:"pane,omitempty"`
 	}
 
-	termSurfaces := []surface{{Type: "terminal"}}
-	browserSurfaces := make([]surface, 0, len(urls))
-	for _, u := range urls {
-		browserSurfaces = append(browserSurfaces, surface{Type: "browser", URL: u})
+	leftTerminal := layoutNode{Pane: &pane{Surfaces: []surface{{Type: "terminal"}}}}
+	rightTerminal := layoutNode{Pane: &pane{Surfaces: []surface{{Type: "terminal"}}}}
+
+	var rightSide layoutNode
+	if len(urls) > 0 {
+		browserSurfaces := make([]surface, 0, len(urls))
+		for _, u := range urls {
+			browserSurfaces = append(browserSurfaces, surface{Type: "browser", URL: u})
+		}
+		rightSide = layoutNode{
+			Direction: "vertical",
+			Split:     0.33,
+			Children: []layoutNode{
+				rightTerminal,
+				{Pane: &pane{Surfaces: browserSurfaces}},
+			},
+		}
+	} else {
+		rightSide = rightTerminal
 	}
 
 	layout := layoutNode{
 		Direction: "horizontal",
 		Split:     0.5,
-		Children: []layoutNode{
-			{Pane: &pane{Surfaces: termSurfaces}},
-			{Pane: &pane{Surfaces: browserSurfaces}},
-		},
+		Children:  []layoutNode{leftTerminal, rightSide},
 	}
 
 	data, _ := json.Marshal(layout)
