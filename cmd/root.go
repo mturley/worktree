@@ -106,13 +106,39 @@ func handlePR(owner, repo string, number int) error {
 	fmt.Printf("  Using remote: %s\n", ui.Dim(remote))
 
 	slug := github.Slugify(pr.Title)
-	result, err := gitutil.CreatePRWorktree(repoRoot, cfg.WorktreesBase, remote, number, pr.HeadRef, slug)
+	prResult, err := gitutil.CreatePRWorktree(repoRoot, cfg.WorktreesBase, remote, number, pr.HeadRef, slug)
 	if err != nil {
 		return err
 	}
 
-	if !result.Created {
-		offerPRSync(repoRoot, result, number)
+	switch prResult.Status {
+	case gitutil.PRWorktreeCreated:
+		// Fresh — nothing to confirm
+
+	case gitutil.PRWorktreeExistingDir:
+		// Worktree directory exists — offer sync if behind
+		offerPRSync(prResult)
+
+	case gitutil.PRWorktreeBranchExists:
+		// Branch exists but worktree was deleted — confirm reuse
+		synced := prResult.LocalHead == prResult.RemoteHead
+		if synced {
+			fmt.Printf("  Branch %s exists and is up to date with PR\n", ui.Cyan(prResult.Branch))
+		} else {
+			fmt.Printf("  Branch %s exists but is not up to date with PR\n", ui.Yellow(prResult.Branch))
+			fmt.Printf("    Local:  %s\n", shortSHA(prResult.LocalHead))
+			fmt.Printf("    PR:     %s\n", shortSHA(prResult.RemoteHead))
+		}
+		if !ui.Confirm("  Reuse this branch?") {
+			fmt.Println("Aborted.")
+			return nil
+		}
+		if err := gitutil.CreateWorktreeFromExistingBranch(repoRoot, prResult.Path, prResult.Branch); err != nil {
+			return err
+		}
+		if !synced {
+			offerPRSync(prResult)
+		}
 	}
 
 	prRes := &resources.Resource{
@@ -120,7 +146,7 @@ func handlePR(owner, repo string, number int) error {
 		ID:   fmt.Sprintf("%s/%s#%d", owner, repo, number),
 		URL:  pr.URL,
 	}
-	return finalizeWorktree(cfg, result, repoRoot, prRes, pr)
+	return finalizeWorktree(cfg, prResult.CreateResult, repoRoot, prRes, pr)
 }
 
 func handlePRNumber(arg string) error {
@@ -255,37 +281,33 @@ func finalizeWorktree(cfg config.Config, result gitutil.CreateResult, repoRoot s
 	return nil
 }
 
-func offerPRSync(repoRoot string, result gitutil.CreateResult, prNumber int) {
-	fetchRef := fmt.Sprintf("refs/pr-review/%d", prNumber)
-	localHead := gitutil.RevParse(result.Path, "HEAD")
-	remoteHead := gitutil.RevParse(repoRoot, fetchRef)
-
-	if localHead == "" || remoteHead == "" {
+func offerPRSync(pr gitutil.PRWorktreeResult) {
+	if pr.LocalHead == "" || pr.RemoteHead == "" {
 		return
 	}
 
-	if localHead == remoteHead {
+	if pr.LocalHead == pr.RemoteHead {
 		fmt.Printf("  %s Already up to date with PR\n", ui.Green("✓"))
 		return
 	}
 
-	short := localHead
-	if len(short) > 8 {
-		short = short[:8]
-	}
-	remoteShort := remoteHead
-	if len(remoteShort) > 8 {
-		remoteShort = remoteShort[:8]
-	}
-	fmt.Printf("  %s Local (%s) differs from PR latest (%s)\n", ui.Yellow("!"), short, remoteShort)
+	fmt.Printf("  %s Local (%s) differs from PR latest (%s)\n",
+		ui.Yellow("!"), shortSHA(pr.LocalHead), shortSHA(pr.RemoteHead))
 
 	if ui.Confirm("  Reset to the PR's latest commit?") {
-		if err := gitutil.ResetHard(result.Path, fetchRef); err != nil {
+		if err := gitutil.ResetHard(pr.Path, pr.FetchRef); err != nil {
 			fmt.Fprintf(os.Stderr, "  Warning: %v\n", err)
 		} else {
-			fmt.Printf("  %s Reset to %s\n", ui.Green("✓"), remoteShort)
+			fmt.Printf("  %s Reset to %s\n", ui.Green("✓"), shortSHA(pr.RemoteHead))
 		}
 	}
+}
+
+func shortSHA(sha string) string {
+	if len(sha) > 8 {
+		return sha[:8]
+	}
+	return sha
 }
 
 func detectAndSaveJiraIssues(cfg config.Config, result gitutil.CreateResult, pr *github.PRInfo) {

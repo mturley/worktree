@@ -42,40 +42,78 @@ func CreateBranchWorktree(repoRoot, worktreesBase, branchName string) (CreateRes
 	return CreateResult{Path: wtPath, Branch: branchName, Created: true}, nil
 }
 
-func CreatePRWorktree(repoRoot, worktreesBase, remote string, prNumber int, headRef, slug string) (CreateResult, error) {
+type PRWorktreeStatus int
+
+const (
+	PRWorktreeCreated          PRWorktreeStatus = iota // new branch + new worktree
+	PRWorktreeExistingDir                              // worktree directory already exists
+	PRWorktreeBranchExists                             // branch exists but no worktree dir
+)
+
+type PRWorktreeResult struct {
+	CreateResult
+	Status      PRWorktreeStatus
+	LocalHead   string // current HEAD of existing branch
+	RemoteHead  string // latest PR commit (refs/pr-review/N)
+	FetchRef    string // the ref name used for the PR
+}
+
+func CreatePRWorktree(repoRoot, worktreesBase, remote string, prNumber int, headRef, slug string) (PRWorktreeResult, error) {
 	repoName := filepath.Base(repoRoot)
 	dirName := fmt.Sprintf("pr-%d-%s", prNumber, slug)
 	wtPath := filepath.Join(worktreesBase, repoName, dirName)
+	branchName := fmt.Sprintf("review/pr-%d-%s", prNumber, slug)
 
 	fetchRef := fmt.Sprintf("refs/pr-review/%d", prNumber)
 	err := Fetch(repoRoot, remote, fmt.Sprintf("+pull/%d/head:%s", prNumber, fetchRef))
 	if err != nil {
-		return CreateResult{}, fmt.Errorf("fetching PR from %s: %w", remote, err)
+		return PRWorktreeResult{}, fmt.Errorf("fetching PR from %s: %w", remote, err)
 	}
+	remoteHead := RevParse(repoRoot, fetchRef)
 
 	if _, err := os.Stat(wtPath); err == nil {
 		branch := currentBranch(wtPath)
-		return CreateResult{Path: wtPath, Branch: branch, Created: false}, nil
+		localHead := RevParse(wtPath, "HEAD")
+		return PRWorktreeResult{
+			CreateResult: CreateResult{Path: wtPath, Branch: branch, Created: false},
+			Status:       PRWorktreeExistingDir,
+			LocalHead:    localHead,
+			RemoteHead:   remoteHead,
+			FetchRef:     fetchRef,
+		}, nil
 	}
 
 	if err := os.MkdirAll(filepath.Dir(wtPath), 0755); err != nil {
-		return CreateResult{}, fmt.Errorf("creating directory: %w", err)
+		return PRWorktreeResult{}, fmt.Errorf("creating directory: %w", err)
 	}
-
-	branchName := fmt.Sprintf("review/pr-%d-%s", prNumber, slug)
 
 	cmd := exec.Command("git", "-C", repoRoot, "worktree", "add", "-b", branchName, wtPath, fetchRef)
 	if _, err := cmd.CombinedOutput(); err == nil {
-		return CreateResult{Path: wtPath, Branch: branchName, Created: true}, nil
+		return PRWorktreeResult{
+			CreateResult: CreateResult{Path: wtPath, Branch: branchName, Created: true},
+			Status:       PRWorktreeCreated,
+			RemoteHead:   remoteHead,
+			FetchRef:     fetchRef,
+		}, nil
 	}
 
-	// Branch already exists — reuse it with the existing branch
-	cmd2 := exec.Command("git", "-C", repoRoot, "worktree", "add", wtPath, branchName)
-	if out, err := cmd2.CombinedOutput(); err != nil {
-		return CreateResult{}, fmt.Errorf("creating worktree with existing branch: %s", strings.TrimSpace(string(out)))
-	}
+	// Branch exists but worktree dir does not — don't create yet, let caller confirm
+	localHead := RevParse(repoRoot, branchName)
+	return PRWorktreeResult{
+		CreateResult: CreateResult{Path: wtPath, Branch: branchName, Created: false},
+		Status:       PRWorktreeBranchExists,
+		LocalHead:    localHead,
+		RemoteHead:   remoteHead,
+		FetchRef:     fetchRef,
+	}, nil
+}
 
-	return CreateResult{Path: wtPath, Branch: branchName, Created: false}, nil
+func CreateWorktreeFromExistingBranch(repoRoot, wtPath, branchName string) error {
+	cmd := exec.Command("git", "-C", repoRoot, "worktree", "add", wtPath, branchName)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("creating worktree: %s", strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 func RevParse(dir, ref string) string {
