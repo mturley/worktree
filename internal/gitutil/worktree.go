@@ -47,6 +47,12 @@ func CreatePRWorktree(repoRoot, worktreesBase, remote string, prNumber int, head
 	dirName := fmt.Sprintf("pr-%d-%s", prNumber, slug)
 	wtPath := filepath.Join(worktreesBase, repoName, dirName)
 
+	fetchRef := fmt.Sprintf("refs/pr-review/%d", prNumber)
+	err := Fetch(repoRoot, remote, fmt.Sprintf("+pull/%d/head:%s", prNumber, fetchRef))
+	if err != nil {
+		return CreateResult{}, fmt.Errorf("fetching PR from %s: %w", remote, err)
+	}
+
 	if _, err := os.Stat(wtPath); err == nil {
 		branch := currentBranch(wtPath)
 		return CreateResult{Path: wtPath, Branch: branch, Created: false}, nil
@@ -54,12 +60,6 @@ func CreatePRWorktree(repoRoot, worktreesBase, remote string, prNumber int, head
 
 	if err := os.MkdirAll(filepath.Dir(wtPath), 0755); err != nil {
 		return CreateResult{}, fmt.Errorf("creating directory: %w", err)
-	}
-
-	fetchRef := fmt.Sprintf("refs/pr-review/%d", prNumber)
-	err := Fetch(repoRoot, remote, fmt.Sprintf("pull/%d/head:%s", prNumber, fetchRef))
-	if err != nil {
-		return CreateResult{}, fmt.Errorf("fetching PR from %s: %w", remote, err)
 	}
 
 	branchName := fmt.Sprintf("review/pr-%d-%s", prNumber, slug)
