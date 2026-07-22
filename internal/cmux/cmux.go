@@ -122,8 +122,9 @@ func OpenBrowser(url string) error {
 
 func BuildLayout(urls []string) string {
 	type surface struct {
-		Type string `json:"type"`
-		URL  string `json:"url,omitempty"`
+		Type    string `json:"type"`
+		URL     string `json:"url,omitempty"`
+		Command string `json:"command,omitempty"`
 	}
 	type pane struct {
 		Surfaces []surface `json:"surfaces"`
@@ -135,7 +136,7 @@ func BuildLayout(urls []string) string {
 		Pane      *pane       `json:"pane,omitempty"`
 	}
 
-	leftTerminal := layoutNode{Pane: &pane{Surfaces: []surface{{Type: "terminal"}}}}
+	leftTerminal := layoutNode{Pane: &pane{Surfaces: []surface{{Type: "terminal", Command: "claude"}}}}
 	rightTerminal := layoutNode{Pane: &pane{Surfaces: []surface{{Type: "terminal"}}}}
 
 	var rightSide layoutNode
