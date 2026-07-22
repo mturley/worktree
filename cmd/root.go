@@ -111,6 +111,10 @@ func handlePR(owner, repo string, number int) error {
 		return err
 	}
 
+	if !result.Created {
+		offerPRSync(repoRoot, result, number)
+	}
+
 	prRes := &resources.Resource{
 		Type: "pr",
 		ID:   fmt.Sprintf("%s/%s#%d", owner, repo, number),
@@ -249,6 +253,39 @@ func finalizeWorktree(cfg config.Config, result gitutil.CreateResult, repoRoot s
 		return openCmuxWorkspace(cfg, result)
 	}
 	return nil
+}
+
+func offerPRSync(repoRoot string, result gitutil.CreateResult, prNumber int) {
+	fetchRef := fmt.Sprintf("refs/pr-review/%d", prNumber)
+	localHead := gitutil.RevParse(result.Path, "HEAD")
+	remoteHead := gitutil.RevParse(repoRoot, fetchRef)
+
+	if localHead == "" || remoteHead == "" {
+		return
+	}
+
+	if localHead == remoteHead {
+		fmt.Printf("  %s Already up to date with PR\n", ui.Green("✓"))
+		return
+	}
+
+	short := localHead
+	if len(short) > 8 {
+		short = short[:8]
+	}
+	remoteShort := remoteHead
+	if len(remoteShort) > 8 {
+		remoteShort = remoteShort[:8]
+	}
+	fmt.Printf("  %s Local (%s) differs from PR latest (%s)\n", ui.Yellow("!"), short, remoteShort)
+
+	if ui.Confirm("  Reset to the PR's latest commit?") {
+		if err := gitutil.ResetHard(result.Path, fetchRef); err != nil {
+			fmt.Fprintf(os.Stderr, "  Warning: %v\n", err)
+		} else {
+			fmt.Printf("  %s Reset to %s\n", ui.Green("✓"), remoteShort)
+		}
+	}
 }
 
 func detectAndSaveJiraIssues(cfg config.Config, result gitutil.CreateResult, pr *github.PRInfo) {

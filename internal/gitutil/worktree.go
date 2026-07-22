@@ -11,7 +11,7 @@ import (
 type CreateResult struct {
 	Path    string
 	Branch  string
-	Created bool // false if reused existing
+	Created bool
 }
 
 func CreateBranchWorktree(repoRoot, worktreesBase, branchName string) (CreateResult, error) {
@@ -63,12 +63,37 @@ func CreatePRWorktree(repoRoot, worktreesBase, remote string, prNumber int, head
 	}
 
 	branchName := fmt.Sprintf("review/pr-%d-%s", prNumber, slug)
+
 	cmd := exec.Command("git", "-C", repoRoot, "worktree", "add", "-b", branchName, wtPath, fetchRef)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return CreateResult{}, fmt.Errorf("creating worktree: %s", string(out))
+	if _, err := cmd.CombinedOutput(); err == nil {
+		return CreateResult{Path: wtPath, Branch: branchName, Created: true}, nil
 	}
 
-	return CreateResult{Path: wtPath, Branch: branchName, Created: true}, nil
+	// Branch already exists — reuse it with the existing branch
+	cmd2 := exec.Command("git", "-C", repoRoot, "worktree", "add", wtPath, branchName)
+	if out, err := cmd2.CombinedOutput(); err != nil {
+		return CreateResult{}, fmt.Errorf("creating worktree with existing branch: %s", strings.TrimSpace(string(out)))
+	}
+
+	return CreateResult{Path: wtPath, Branch: branchName, Created: false}, nil
+}
+
+func RevParse(dir, ref string) string {
+	cmd := exec.Command("git", "-C", dir, "rev-parse", ref)
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func ResetHard(dir, ref string) error {
+	cmd := exec.Command("git", "-C", dir, "reset", "--hard", ref)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git reset: %s", strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 func RemoveWorktree(repoRoot, wtPath string) error {
