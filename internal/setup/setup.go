@@ -144,6 +144,13 @@ func (p Plan) Execute() error {
 			return fmt.Errorf("updating shell completion: %w", err)
 		}
 		fmt.Printf("  %s Updated %s\n", ui.Green("✓"), ui.ShortPath(p.CompletionPath))
+		if wtPath := wtCompletionPath(p.CompletionShell); wtPath != "" {
+			if err := writeWtCompletion(p.CompletionShell, wtPath); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to write wt completion: %v\n", err)
+			} else {
+				fmt.Printf("  %s Updated %s\n", ui.Green("✓"), ui.ShortPath(wtPath))
+			}
+		}
 	}
 
 	if p.ConfigureJira {
@@ -290,6 +297,19 @@ func PreviewUninstall(rc ShellRC, configPath string) {
 	if rc.IsInstalled() {
 		fmt.Printf("  • Remove auto-source from %s\n", rc.Path)
 	}
+	if wtSymlink := wtSymlinkPath(); wtSymlink != "" {
+		fmt.Printf("  • Remove wt symlink: %s\n", wtSymlink)
+	}
+	if cp := completionPath(rc.Shell); cp != "" {
+		if _, err := os.Stat(cp); err == nil {
+			fmt.Printf("  • Remove completion: %s\n", ui.ShortPath(cp))
+		}
+	}
+	if cp := wtCompletionPath(rc.Shell); cp != "" {
+		if _, err := os.Stat(cp); err == nil {
+			fmt.Printf("  • Remove wt completion: %s\n", ui.ShortPath(cp))
+		}
+	}
 	fmt.Println("  • Preserve worktree data (remove manually if desired)")
 	if _, err := os.Stat(configPath); err == nil {
 		fmt.Printf("  • Preserve config at %s (contains credentials)\n", ui.ShortPath(configPath))
@@ -304,12 +324,42 @@ func ExecuteUninstall(rc ShellRC, configPath string) error {
 		fmt.Printf("  %s Removed auto-source from %s\n", ui.Green("✓"), rc.Path)
 	}
 
+	if wtSymlink := wtSymlinkPath(); wtSymlink != "" {
+		if err := os.Remove(wtSymlink); err == nil {
+			fmt.Printf("  %s Removed %s\n", ui.Green("✓"), wtSymlink)
+		}
+	}
+
+	for _, cp := range []string{completionPath(rc.Shell), wtCompletionPath(rc.Shell)} {
+		if cp != "" {
+			if err := os.Remove(cp); err == nil {
+				fmt.Printf("  %s Removed %s\n", ui.Green("✓"), ui.ShortPath(cp))
+			}
+		}
+	}
+
 	if _, err := os.Stat(configPath); err == nil {
 		fmt.Printf("  %s Config preserved at %s\n", ui.Dim("—"), ui.ShortPath(configPath))
 		fmt.Printf("    Remove manually: rm %s\n", ui.ShortPath(configPath))
 	}
 
 	return nil
+}
+
+func wtSymlinkPath() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	wtPath := filepath.Join(filepath.Dir(exe), "wt")
+	target, err := os.Readlink(wtPath)
+	if err != nil {
+		return ""
+	}
+	if target == "worktree" || filepath.Base(target) == "worktree" {
+		return wtPath
+	}
+	return ""
 }
 
 func writeDefaultConfig(path string) error {
@@ -405,6 +455,36 @@ func completionPath(shell string) string {
 	return ""
 }
 
+func wtCompletionPath(shell string) string {
+	switch shell {
+	case "zsh":
+		if prefix, err := exec.Command("brew", "--prefix").Output(); err == nil {
+			p := filepath.Join(strings.TrimSpace(string(prefix)), "share", "zsh", "site-functions", "_wt")
+			if dir := filepath.Dir(p); dirExists(dir) {
+				return p
+			}
+		}
+		home, _ := os.UserHomeDir()
+		p := filepath.Join(home, ".zsh", "completions", "_wt")
+		if dir := filepath.Dir(p); dirExists(dir) {
+			return p
+		}
+	case "bash":
+		for _, dir := range []string{"/etc/bash_completion.d", "/usr/local/etc/bash_completion.d"} {
+			if dirExists(dir) {
+				return filepath.Join(dir, "wt")
+			}
+		}
+	case "fish":
+		home, _ := os.UserHomeDir()
+		dir := filepath.Join(home, ".config", "fish", "completions")
+		if dirExists(dir) {
+			return filepath.Join(dir, "wt.fish")
+		}
+	}
+	return ""
+}
+
 func dirExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir()
@@ -420,6 +500,20 @@ func writeCompletion(shell, path string) error {
 		return fmt.Errorf("generating completion script: %w", err)
 	}
 	return os.WriteFile(path, bytes.TrimSpace(out), 0644)
+}
+
+func writeWtCompletion(shell, path string) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	out, err := exec.Command(exe, "completion", shell).Output()
+	if err != nil {
+		return fmt.Errorf("generating completion script: %w", err)
+	}
+	script := string(bytes.TrimSpace(out))
+	script = strings.ReplaceAll(script, "worktree", "wt")
+	return os.WriteFile(path, []byte(script), 0644)
 }
 
 func testJiraConnection(cfg config.JiraConfig) error {

@@ -19,7 +19,8 @@ install: build
 	@cp $(BIN_DIR)/$(BINARY_NAME) $(INSTALL_DIR)/.$(BINARY_NAME).tmp
 	@chmod 755 $(INSTALL_DIR)/.$(BINARY_NAME).tmp
 	@mv $(INSTALL_DIR)/.$(BINARY_NAME).tmp $(INSTALL_DIR)/$(BINARY_NAME)
-	@echo "Installed $(INSTALL_DIR)/$(BINARY_NAME)"
+	@ln -sf $(BINARY_NAME) $(INSTALL_DIR)/wt
+	@echo "Installed $(INSTALL_DIR)/$(BINARY_NAME) (also available as wt)"
 	@$(INSTALL_DIR)/$(BINARY_NAME) setup $(if $(NONINTERACTIVE),--yes,)
 
 test:

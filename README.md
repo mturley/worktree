@@ -2,7 +2,7 @@
 
 CLI for managing git worktrees with GitHub/Jira integration and optional cmux support.
 
-Create, discover, and manage git worktrees with automatic port allocation, isolated kubeconfigs, and one-command PR review workflows.
+Create, discover, and manage git worktrees with automatic port allocation, isolated kubeconfigs, and one-command PR review workflows. Also available as `wt`.
 
 ## Install
 
