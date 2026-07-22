@@ -21,9 +21,7 @@ type Plan struct {
 	ShellRC              ShellRC
 	CreateConfig         bool
 	ConfigPath           string
-	UpdateCompletion     bool
-	CompletionPath       string
-	CompletionShell      string
+	InstallCompletions   bool
 	ConfigureJira        bool
 	TestJira             bool
 	GHMissing            bool
@@ -64,11 +62,7 @@ func BuildPlan(cfg config.Config) Plan {
 		}
 	}
 
-	plan.CompletionShell = rc.Shell
-	plan.CompletionPath = completionPathCreate(rc.Shell)
-	if plan.CompletionPath != "" {
-		plan.UpdateCompletion = true
-	}
+	plan.InstallCompletions = true
 
 	return plan
 }
@@ -84,8 +78,8 @@ func (p Plan) Preview() {
 	if p.CreateConfig {
 		fmt.Printf("  • Create default config: %s\n", ui.ShortPath(p.ConfigPath))
 	}
-	if p.UpdateCompletion {
-		fmt.Printf("  • Update shell completion: %s\n", ui.ShortPath(p.CompletionPath))
+	if p.InstallCompletions {
+		fmt.Println("  • Install shell completions (worktree + wt)")
 	}
 	if p.ConfigureJira {
 		fmt.Println("  • Configure Jira integration (optional)")
@@ -93,7 +87,7 @@ func (p Plan) Preview() {
 	if p.TestJira {
 		fmt.Println("  • Test Jira connection")
 	}
-	if !p.CreateWorktreesBase && !p.InstallShellRC && !p.CreateConfig && !p.UpdateCompletion && !p.ConfigureJira && !p.TestJira {
+	if !p.CreateWorktreesBase && !p.InstallShellRC && !p.CreateConfig && !p.InstallCompletions && !p.ConfigureJira && !p.TestJira {
 		fmt.Println("  Nothing to do — already set up.")
 	}
 	if p.GHMissing {
@@ -106,7 +100,7 @@ func (p Plan) Preview() {
 }
 
 func (p Plan) HasWork() bool {
-	return p.CreateWorktreesBase || p.InstallShellRC || p.CreateConfig || p.UpdateCompletion || p.ConfigureJira || p.TestJira
+	return p.CreateWorktreesBase || p.InstallShellRC || p.CreateConfig || p.InstallCompletions || p.ConfigureJira || p.TestJira
 }
 
 func (p Plan) Execute() error {
@@ -130,18 +124,8 @@ func (p Plan) Execute() error {
 		}
 	}
 
-	if p.UpdateCompletion {
-		if err := writeCompletion(p.CompletionShell, p.CompletionPath); err != nil {
-			return fmt.Errorf("updating shell completion: %w", err)
-		}
-		fmt.Printf("  %s Updated %s\n", ui.Green("✓"), ui.ShortPath(p.CompletionPath))
-		if wtPath := wtCompletionPath(p.CompletionShell); wtPath != "" {
-			if err := writeWtCompletion(p.CompletionShell, wtPath); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to write wt completion: %v\n", err)
-			} else {
-				fmt.Printf("  %s Updated %s\n", ui.Green("✓"), ui.ShortPath(wtPath))
-			}
-		}
+	if p.InstallCompletions {
+		installAllCompletions()
 	}
 
 	if p.ConfigureJira {
@@ -291,16 +275,7 @@ func PreviewUninstall(rc ShellRC, configPath string) {
 	if wtSymlink := wtSymlinkPath(); wtSymlink != "" {
 		fmt.Printf("  • Remove wt symlink: %s\n", wtSymlink)
 	}
-	if cp := completionPath(rc.Shell); cp != "" {
-		if _, err := os.Stat(cp); err == nil {
-			fmt.Printf("  • Remove completion: %s\n", ui.ShortPath(cp))
-		}
-	}
-	if cp := wtCompletionPath(rc.Shell); cp != "" {
-		if _, err := os.Stat(cp); err == nil {
-			fmt.Printf("  • Remove wt completion: %s\n", ui.ShortPath(cp))
-		}
-	}
+	fmt.Println("  • Remove shell completions (worktree + wt)")
 	fmt.Println("  • Preserve worktree data (remove manually if desired)")
 	if _, err := os.Stat(configPath); err == nil {
 		fmt.Printf("  • Preserve config at %s (contains credentials)\n", ui.ShortPath(configPath))
@@ -321,13 +296,7 @@ func ExecuteUninstall(rc ShellRC, configPath string) error {
 		}
 	}
 
-	for _, cp := range []string{completionPath(rc.Shell), wtCompletionPath(rc.Shell)} {
-		if cp != "" {
-			if err := os.Remove(cp); err == nil {
-				fmt.Printf("  %s Removed %s\n", ui.Green("✓"), ui.ShortPath(cp))
-			}
-		}
-	}
+	removeAllCompletions()
 
 	if _, err := os.Stat(configPath); err == nil {
 		fmt.Printf("  %s Config preserved at %s\n", ui.Dim("—"), ui.ShortPath(configPath))
@@ -420,24 +389,20 @@ func completionDir(shell string) string {
 	switch shell {
 	case "zsh":
 		if prefix, err := exec.Command("brew", "--prefix").Output(); err == nil {
-			dir := filepath.Join(strings.TrimSpace(string(prefix)), "share", "zsh", "site-functions")
-			if dirExists(dir) {
-				return dir
-			}
+			return filepath.Join(strings.TrimSpace(string(prefix)), "share", "zsh", "site-functions")
 		}
-		home, _ := os.UserHomeDir()
-		return filepath.Join(home, ".zsh", "completions")
+		return "/usr/local/share/zsh/site-functions"
 	case "bash":
-		for _, dir := range []string{"/usr/local/etc/bash_completion.d", "/etc/bash_completion.d"} {
-			if dirExists(dir) {
-				return dir
-			}
+		if prefix, err := exec.Command("brew", "--prefix").Output(); err == nil {
+			return filepath.Join(strings.TrimSpace(string(prefix)), "etc", "bash_completion.d")
 		}
-		home, _ := os.UserHomeDir()
-		return filepath.Join(home, ".local", "share", "bash-completion", "completions")
+		return "/etc/bash_completion.d"
 	case "fish":
 		home, _ := os.UserHomeDir()
 		return filepath.Join(home, ".config", "fish", "completions")
+	case "powershell":
+		home, _ := os.UserHomeDir()
+		return filepath.Join(home, ".config", "worktree", "completions")
 	}
 	return ""
 }
@@ -448,34 +413,11 @@ func completionFilename(shell, cmd string) string {
 		return "_" + cmd
 	case "fish":
 		return cmd + ".fish"
+	case "powershell":
+		return cmd + ".ps1"
 	default:
 		return cmd
 	}
-}
-
-func completionPathCreate(shell string) string {
-	dir := completionDir(shell)
-	if dir == "" {
-		return ""
-	}
-	os.MkdirAll(dir, 0755)
-	return filepath.Join(dir, completionFilename(shell, "worktree"))
-}
-
-func completionPath(shell string) string {
-	dir := completionDir(shell)
-	if dir == "" {
-		return ""
-	}
-	return filepath.Join(dir, completionFilename(shell, "worktree"))
-}
-
-func wtCompletionPath(shell string) string {
-	dir := completionDir(shell)
-	if dir == "" {
-		return ""
-	}
-	return filepath.Join(dir, completionFilename(shell, "wt"))
 }
 
 func dirExists(path string) bool {
@@ -507,6 +449,45 @@ func writeWtCompletion(shell, path string) error {
 	script := string(bytes.TrimSpace(out))
 	script = strings.ReplaceAll(script, "worktree", "wt")
 	return os.WriteFile(path, []byte(script), 0644)
+}
+
+var allShells = []string{"zsh", "bash", "fish", "powershell"}
+
+func installAllCompletions() {
+	for _, shell := range allShells {
+		dir := completionDir(shell)
+		if dir == "" {
+			continue
+		}
+		os.MkdirAll(dir, 0755)
+
+		wtPath := filepath.Join(dir, completionFilename(shell, "worktree"))
+		if err := writeCompletion(shell, wtPath); err != nil {
+			continue
+		}
+		fmt.Printf("  %s %s\n", ui.Green("✓"), ui.ShortPath(wtPath))
+
+		wtAliasPath := filepath.Join(dir, completionFilename(shell, "wt"))
+		if err := writeWtCompletion(shell, wtAliasPath); err != nil {
+			continue
+		}
+		fmt.Printf("  %s %s\n", ui.Green("✓"), ui.ShortPath(wtAliasPath))
+	}
+}
+
+func removeAllCompletions() {
+	for _, shell := range allShells {
+		dir := completionDir(shell)
+		if dir == "" {
+			continue
+		}
+		for _, cmd := range []string{"worktree", "wt"} {
+			p := filepath.Join(dir, completionFilename(shell, cmd))
+			if err := os.Remove(p); err == nil {
+				fmt.Printf("  %s Removed %s\n", ui.Green("✓"), ui.ShortPath(p))
+			}
+		}
+	}
 }
 
 func testJiraConnection(cfg config.JiraConfig) error {
