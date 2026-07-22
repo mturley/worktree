@@ -111,11 +111,12 @@ func handlePR(owner, repo string, number int) error {
 		return err
 	}
 
-	return finalizeWorktree(cfg, result, repoRoot, &resources.Resource{
+	prRes := &resources.Resource{
 		Type: "pr",
 		ID:   fmt.Sprintf("%s/%s#%d", owner, repo, number),
 		URL:  pr.URL,
-	})
+	}
+	return finalizeWorktree(cfg, result, repoRoot, prRes, pr)
 }
 
 func handlePRNumber(arg string) error {
@@ -169,7 +170,7 @@ func handleJiraIssue(key, url string) error {
 		Type: "jira",
 		ID:   key,
 		URL:  url,
-	})
+	}, nil)
 }
 
 func handleBranch(branchName string) error {
@@ -189,10 +190,10 @@ func handleBranch(branchName string) error {
 		return err
 	}
 
-	return finalizeWorktree(cfg, result, repoRoot, nil)
+	return finalizeWorktree(cfg, result, repoRoot, nil, nil)
 }
 
-func finalizeWorktree(cfg config.Config, result gitutil.CreateResult, repoRoot string, prResource *resources.Resource) error {
+func finalizeWorktree(cfg config.Config, result gitutil.CreateResult, repoRoot string, primaryResource *resources.Resource, pr *github.PRInfo) error {
 	if result.Created {
 		fmt.Printf("%s Created worktree at %s\n", ui.Green("✓"), ui.ShortPath(result.Path))
 	} else {
@@ -226,10 +227,14 @@ func finalizeWorktree(cfg config.Config, result gitutil.CreateResult, repoRoot s
 		fmt.Fprintf(os.Stderr, "Warning: failed to update git excludes: %v\n", err)
 	}
 
-	if prResource != nil {
-		if err := resources.Add(result.Path, *prResource); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to save PR resource: %v\n", err)
+	if primaryResource != nil {
+		if err := resources.Add(result.Path, *primaryResource); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to save resource: %v\n", err)
 		}
+	}
+
+	if len(cfg.Jira.Projects) > 0 {
+		detectAndSaveJiraIssues(cfg, result, pr)
 	}
 
 	if result.Created {
@@ -241,12 +246,42 @@ func finalizeWorktree(cfg config.Config, result gitutil.CreateResult, repoRoot s
 	fmt.Printf("\n  cd %s\n\n", ui.ShortPath(result.Path))
 
 	if cmux.IsAvailable() {
-		return openCmuxWorkspace(cfg, result, prResource)
+		return openCmuxWorkspace(cfg, result)
 	}
 	return nil
 }
 
-func openCmuxWorkspace(cfg config.Config, result gitutil.CreateResult, primaryResource *resources.Resource) error {
+func detectAndSaveJiraIssues(cfg config.Config, result gitutil.CreateResult, pr *github.PRInfo) {
+	var prTitle, prBody string
+	if pr != nil {
+		prTitle = pr.Title
+		prBody = pr.Body
+	}
+
+	existing, _ := resources.Load(result.Path)
+	existingKeys := make(map[string]bool)
+	for _, r := range existing {
+		if r.Type == "jira" {
+			existingKeys[r.ID] = true
+		}
+	}
+
+	keys := jira.DetectKeys(result.Branch, prTitle, prBody, cfg.Jira.Projects)
+	for _, key := range keys {
+		if existingKeys[key] {
+			continue
+		}
+		url := jira.IssueURL(cfg.Jira.Host, key)
+		r := resources.Resource{Type: "jira", ID: key, URL: url}
+		if err := resources.Add(result.Path, r); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to save Jira resource %s: %v\n", key, err)
+		} else {
+			fmt.Printf("  %s Detected Jira issue %s\n", ui.Green("✓"), ui.Cyan(key))
+		}
+	}
+}
+
+func openCmuxWorkspace(cfg config.Config, result gitutil.CreateResult) error {
 	existing, err := cmux.FindByDirectory(result.Path)
 	if err == nil && existing != nil {
 		fmt.Printf("%s Switching to existing cmux workspace %s\n", ui.Cyan("→"), existing.CustomTitle)
