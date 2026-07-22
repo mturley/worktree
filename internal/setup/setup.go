@@ -22,7 +22,6 @@ type Plan struct {
 	CreateConfig         bool
 	ConfigPath           string
 	UpdateCompletion     bool
-	SuggestCompletion    bool
 	CompletionPath       string
 	CompletionShell      string
 	ConfigureJira        bool
@@ -66,13 +65,9 @@ func BuildPlan(cfg config.Config) Plan {
 	}
 
 	plan.CompletionShell = rc.Shell
-	plan.CompletionPath = completionPath(rc.Shell)
+	plan.CompletionPath = completionPathCreate(rc.Shell)
 	if plan.CompletionPath != "" {
-		if _, err := os.Stat(plan.CompletionPath); err == nil {
-			plan.UpdateCompletion = true
-		} else {
-			plan.SuggestCompletion = true
-		}
+		plan.UpdateCompletion = true
 	}
 
 	return plan
@@ -107,10 +102,6 @@ func (p Plan) Preview() {
 	} else if p.GHNotAuthenticated {
 		fmt.Printf("\n  %s GitHub CLI (gh) is not authenticated. PR features will be unavailable.\n", ui.Yellow("!"))
 		fmt.Printf("       Run: %s\n", ui.Bold("gh auth login"))
-	}
-	if p.SuggestCompletion {
-		fmt.Printf("\n  %s Shell completion is not installed.\n", ui.Dim("tip:"))
-		fmt.Printf("       Run %s for setup instructions.\n", ui.Bold("worktree completion --help"))
 	}
 }
 
@@ -425,64 +416,66 @@ func shortenHome(path, home string) string {
 	return path
 }
 
-func completionPath(shell string) string {
+func completionDir(shell string) string {
 	switch shell {
 	case "zsh":
 		if prefix, err := exec.Command("brew", "--prefix").Output(); err == nil {
-			p := filepath.Join(strings.TrimSpace(string(prefix)), "share", "zsh", "site-functions", "_worktree")
-			if dir := filepath.Dir(p); dirExists(dir) {
-				return p
+			dir := filepath.Join(strings.TrimSpace(string(prefix)), "share", "zsh", "site-functions")
+			if dirExists(dir) {
+				return dir
 			}
 		}
 		home, _ := os.UserHomeDir()
-		p := filepath.Join(home, ".zsh", "completions", "_worktree")
-		if dir := filepath.Dir(p); dirExists(dir) {
-			return p
-		}
+		return filepath.Join(home, ".zsh", "completions")
 	case "bash":
-		for _, dir := range []string{"/etc/bash_completion.d", "/usr/local/etc/bash_completion.d"} {
+		for _, dir := range []string{"/usr/local/etc/bash_completion.d", "/etc/bash_completion.d"} {
 			if dirExists(dir) {
-				return filepath.Join(dir, "worktree")
+				return dir
 			}
 		}
+		home, _ := os.UserHomeDir()
+		return filepath.Join(home, ".local", "share", "bash-completion", "completions")
 	case "fish":
 		home, _ := os.UserHomeDir()
-		dir := filepath.Join(home, ".config", "fish", "completions")
-		if dirExists(dir) {
-			return filepath.Join(dir, "worktree.fish")
-		}
+		return filepath.Join(home, ".config", "fish", "completions")
 	}
 	return ""
 }
 
-func wtCompletionPath(shell string) string {
+func completionFilename(shell, cmd string) string {
 	switch shell {
 	case "zsh":
-		if prefix, err := exec.Command("brew", "--prefix").Output(); err == nil {
-			p := filepath.Join(strings.TrimSpace(string(prefix)), "share", "zsh", "site-functions", "_wt")
-			if dir := filepath.Dir(p); dirExists(dir) {
-				return p
-			}
-		}
-		home, _ := os.UserHomeDir()
-		p := filepath.Join(home, ".zsh", "completions", "_wt")
-		if dir := filepath.Dir(p); dirExists(dir) {
-			return p
-		}
-	case "bash":
-		for _, dir := range []string{"/etc/bash_completion.d", "/usr/local/etc/bash_completion.d"} {
-			if dirExists(dir) {
-				return filepath.Join(dir, "wt")
-			}
-		}
+		return "_" + cmd
 	case "fish":
-		home, _ := os.UserHomeDir()
-		dir := filepath.Join(home, ".config", "fish", "completions")
-		if dirExists(dir) {
-			return filepath.Join(dir, "wt.fish")
-		}
+		return cmd + ".fish"
+	default:
+		return cmd
 	}
-	return ""
+}
+
+func completionPathCreate(shell string) string {
+	dir := completionDir(shell)
+	if dir == "" {
+		return ""
+	}
+	os.MkdirAll(dir, 0755)
+	return filepath.Join(dir, completionFilename(shell, "worktree"))
+}
+
+func completionPath(shell string) string {
+	dir := completionDir(shell)
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, completionFilename(shell, "worktree"))
+}
+
+func wtCompletionPath(shell string) string {
+	dir := completionDir(shell)
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, completionFilename(shell, "wt"))
 }
 
 func dirExists(path string) bool {
