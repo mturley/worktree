@@ -365,7 +365,12 @@ func openCmuxWorkspace(cfg config.Config, result gitutil.CreateResult) error {
 
 	var urls []string
 	res, _ := resources.Load(result.Path)
-	for _, r := range res {
+	for _, r := range resources.OfType(res, "pr") {
+		if r.URL != "" {
+			urls = append(urls, r.URL)
+		}
+	}
+	for _, r := range resources.OfType(res, "jira") {
 		if !r.Related && r.URL != "" {
 			urls = append(urls, r.URL)
 		}
