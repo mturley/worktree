@@ -6,6 +6,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"golang.org/x/term"
 )
@@ -79,6 +81,57 @@ func PromptSecret(prompt string) string {
 		return ""
 	}
 	return strings.TrimSpace(string(b))
+}
+
+type Spinner struct {
+	message string
+	stop    chan struct{}
+	done    sync.WaitGroup
+}
+
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+func StartSpinner(message string) *Spinner {
+	s := &Spinner{
+		message: message,
+		stop:    make(chan struct{}),
+	}
+	s.done.Add(1)
+	go func() {
+		defer s.done.Done()
+		i := 0
+		for {
+			select {
+			case <-s.stop:
+				fmt.Printf("\r\033[K")
+				return
+			default:
+				fmt.Printf("\r  %s %s", Dim(spinnerFrames[i%len(spinnerFrames)]), s.message)
+				i++
+				time.Sleep(80 * time.Millisecond)
+			}
+		}
+	}()
+	return s
+}
+
+func (s *Spinner) Stop(result string) {
+	close(s.stop)
+	s.done.Wait()
+	if result != "" {
+		fmt.Println(result)
+	}
+}
+
+func SpinWhile(message string, fn func() error) error {
+	s := StartSpinner(message)
+	err := fn()
+	if err != nil {
+		s.Stop(fmt.Sprintf("  %s %s: %v", Red("✗"), message, err))
+	} else {
+		s.Stop(fmt.Sprintf("  %s %s", Green("✓"), message))
+	}
+	return err
 }
 
 func ShortPath(path string) string {

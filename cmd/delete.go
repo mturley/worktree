@@ -65,11 +65,9 @@ func runDelete(cmd *cobra.Command, args []string) error {
 	}
 
 	if repoRoot != "" {
-		if err := gitutil.RemoveWorktree(repoRoot, wtPath); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: git worktree remove failed: %v\n", err)
-		} else {
-			fmt.Printf("%s Removed worktree\n", ui.Green("✓"))
-		}
+		ui.SpinWhile("Removing worktree", func() error {
+			return gitutil.RemoveWorktree(repoRoot, wtPath)
+		})
 	}
 
 	if err := ports.Release(cfg.WorktreesBase, wtName); err != nil {

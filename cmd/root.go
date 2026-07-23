@@ -86,10 +86,14 @@ func handlePR(owner, repo string, number int) error {
 		return err
 	}
 
-	fmt.Printf("Fetching PR #%d from %s/%s...\n", number, owner, repo)
-	pr, err := github.FetchPRByRepo(owner, repo, number)
+	var pr *github.PRInfo
+	err = ui.SpinWhile(fmt.Sprintf("Fetching PR #%d from %s/%s", number, owner, repo), func() error {
+		var fetchErr error
+		pr, fetchErr = github.FetchPRByRepo(owner, repo, number)
+		return fetchErr
+	})
 	if err != nil {
-		return fmt.Errorf("fetching PR: %w", err)
+		return err
 	}
 	fmt.Printf("  %s\n", ui.Bold(pr.Title))
 	fmt.Printf("  by @%s · %s\n\n", pr.Author, pr.State)
@@ -106,7 +110,12 @@ func handlePR(owner, repo string, number int) error {
 	fmt.Printf("  Using remote: %s\n", ui.Dim(remote))
 
 	slug := github.Slugify(pr.Title)
-	prResult, err := gitutil.CreatePRWorktree(repoRoot, cfg.WorktreesBase, remote, number, pr.HeadRef, slug)
+	var prResult gitutil.PRWorktreeResult
+	err = ui.SpinWhile("Creating worktree", func() error {
+		var createErr error
+		prResult, createErr = gitutil.CreatePRWorktree(repoRoot, cfg.WorktreesBase, remote, number, pr.HeadRef, slug)
+		return createErr
+	})
 	if err != nil {
 		return err
 	}
@@ -185,9 +194,12 @@ func handleJiraIssue(key, url string) error {
 	}
 
 	branchName := strings.ToLower(key)
-	fmt.Printf("Creating worktree for Jira issue %s...\n", ui.Cyan(key))
-
-	result, err := gitutil.CreateBranchWorktree(repoRoot, cfg.WorktreesBase, branchName)
+	var result gitutil.CreateResult
+	err = ui.SpinWhile(fmt.Sprintf("Creating worktree for %s", key), func() error {
+		var createErr error
+		result, createErr = gitutil.CreateBranchWorktree(repoRoot, cfg.WorktreesBase, branchName)
+		return createErr
+	})
 	if err != nil {
 		return err
 	}
@@ -214,8 +226,12 @@ func handleBranch(branchName string) error {
 		return fmt.Errorf("not in a git repo: %w", err)
 	}
 
-	fmt.Printf("Creating worktree for branch %s...\n", ui.Cyan(branchName))
-	result, err := gitutil.CreateBranchWorktree(repoRoot, cfg.WorktreesBase, branchName)
+	var result gitutil.CreateResult
+	err = ui.SpinWhile(fmt.Sprintf("Creating worktree for branch %s", branchName), func() error {
+		var createErr error
+		result, createErr = gitutil.CreateBranchWorktree(repoRoot, cfg.WorktreesBase, branchName)
+		return createErr
+	})
 	if err != nil {
 		return err
 	}
@@ -396,13 +412,14 @@ func offerDotfiles(repoRoot, wtPath string) {
 		return
 	}
 
-	for _, df := range dfs {
-		if err := dotfiles.Copy(df.Path, wtPath, df); err != nil {
-			fmt.Fprintf(os.Stderr, "  Warning: failed to copy %s: %v\n", df.Name, err)
-		} else {
-			fmt.Printf("  %s %s\n", ui.Green("✓"), df.Name)
+	ui.SpinWhile("Copying dotfiles", func() error {
+		for _, df := range dfs {
+			if err := dotfiles.Copy(df.Path, wtPath, df); err != nil {
+				fmt.Fprintf(os.Stderr, "\n  Warning: failed to copy %s: %v", df.Name, err)
+			}
 		}
-	}
+		return nil
+	})
 }
 
 func findRepoRoot() (string, error) {
@@ -422,11 +439,14 @@ func findRepoForPR(cfg config.Config, owner, repo string) (string, error) {
 	}
 
 	// Search across configured roots
-	fmt.Printf("Searching for local clone of %s/%s...\n", owner, repo)
-	root, err := gitutil.FindRepoBySlug(owner, repo, cfg.Search.Roots, cfg.Search.Depth, cfg.Search.Prune)
+	var root string
+	err := ui.SpinWhile(fmt.Sprintf("Searching for local clone of %s/%s", owner, repo), func() error {
+		var findErr error
+		root, findErr = gitutil.FindRepoBySlug(owner, repo, cfg.Search.Roots, cfg.Search.Depth, cfg.Search.Prune)
+		return findErr
+	})
 	if err != nil {
 		return "", fmt.Errorf("cannot find local clone of %s/%s — run this command from inside the repo, or add its parent to search.roots in config", owner, repo)
 	}
-	fmt.Printf("  Found: %s\n", ui.ShortPath(root))
 	return root, nil
 }
