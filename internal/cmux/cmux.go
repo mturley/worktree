@@ -205,7 +205,7 @@ func BuildLayout(urls []string) string {
 	}
 
 	leftTerminal := layoutNode{Pane: &pane{Surfaces: []surface{{Type: "terminal", Command: "claude"}}}}
-	rightTerminal := layoutNode{Pane: &pane{Surfaces: []surface{{Type: "terminal"}}}}
+	rightTerminal := layoutNode{Pane: &pane{Surfaces: []surface{{Type: "terminal", Command: "worktree info"}}}}
 
 	var rightSide layoutNode
 	if len(urls) > 0 {
