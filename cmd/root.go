@@ -395,6 +395,10 @@ func openCmuxWorkspace(cfg config.Config, result gitutil.CreateResult) error {
 		return nil
 	}
 	fmt.Printf("%s Created cmux workspace %s\n", ui.Green("✓"), ref)
+
+	if len(urls) > 1 {
+		cmux.FocusPRTab(ref)
+	}
 	return nil
 }
 

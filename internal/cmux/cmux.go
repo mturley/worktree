@@ -120,6 +120,74 @@ func OpenBrowser(url string) error {
 	return nil
 }
 
+type Surface struct {
+	Ref  string `json:"ref"`
+	Type string `json:"type"`
+}
+
+type Pane struct {
+	Ref      string    `json:"ref"`
+	Surfaces []Surface `json:"surfaces"`
+}
+
+func ListPaneSurfaces(workspaceRef, paneRef string) ([]Surface, error) {
+	args := []string{"list-pane-surfaces", "--json", "--workspace", workspaceRef, "--pane", paneRef}
+	cmd := cmuxCmd(args...)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("listing surfaces: %w", err)
+	}
+	var result struct {
+		Surfaces []Surface `json:"surfaces"`
+	}
+	if err := json.Unmarshal(out, &result); err != nil {
+		return nil, err
+	}
+	return result.Surfaces, nil
+}
+
+func ListPanes(workspaceRef string) ([]Pane, error) {
+	cmd := cmuxCmd("list-panes", "--json", "--workspace", workspaceRef)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("listing panes: %w", err)
+	}
+	var result struct {
+		Panes []Pane `json:"panes"`
+	}
+	if err := json.Unmarshal(out, &result); err != nil {
+		return nil, err
+	}
+	return result.Panes, nil
+}
+
+func SwitchBrowserTab(surfaceRef string, tabIndex int) error {
+	cmd := cmuxCmd("browser", surfaceRef, "tab", "switch", fmt.Sprintf("%d", tabIndex))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("switching tab: %s", strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func FocusPRTab(workspaceRef string) {
+	panes, err := ListPanes(workspaceRef)
+	if err != nil {
+		return
+	}
+	for _, pane := range panes {
+		surfaces, err := ListPaneSurfaces(workspaceRef, pane.Ref)
+		if err != nil {
+			continue
+		}
+		for _, s := range surfaces {
+			if s.Type == "browser" {
+				SwitchBrowserTab(s.Ref, 0)
+				return
+			}
+		}
+	}
+}
+
 func BuildLayout(urls []string) string {
 	type surface struct {
 		Type    string `json:"type"`
