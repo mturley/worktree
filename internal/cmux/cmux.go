@@ -215,10 +215,10 @@ func BuildLayout(urls []string) string {
 		}
 		rightSide = layoutNode{
 			Direction: "vertical",
-			Split:     0.33,
+			Split:     0.67,
 			Children: []layoutNode{
-				rightTerminal,
 				{Pane: &pane{Surfaces: browserSurfaces}},
+				rightTerminal,
 			},
 		}
 	} else {
