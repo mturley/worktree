@@ -43,7 +43,12 @@ func runInfo(cmd *cobra.Command, args []string) error {
 
 	we := readWorktreeEnv(wtPath)
 	if we.Path != "" || we.Ports != "" || we.Title != "" || we.Kube != "" {
-		fmt.Printf("  %s\n", ui.Dim("Environment variables sourced from .worktree-env:"))
+		sourced := os.Getenv("WORKTREE_PATH") == we.Path
+		if sourced {
+			fmt.Printf("  %s\n", ui.Dim("Environment variables sourced from .worktree-env:"))
+		} else {
+			fmt.Printf("  %s\n", ui.Dim("Environment variables defined in .worktree-env:"))
+		}
 		if we.Path != "" {
 			fmt.Printf("    WORKTREE_PATH  = %s\n", ui.ShortPath(we.Path))
 		}
@@ -55,6 +60,10 @@ func runInfo(cmd *cobra.Command, args []string) error {
 		}
 		if we.Kube != "" {
 			fmt.Printf("    KUBECONFIG     = %s\n", ui.ShortPath(we.Kube))
+		}
+		if !sourced {
+			fmt.Printf("\n  %s .worktree-env is not being sourced in this shell.\n", ui.Yellow("!"))
+			fmt.Printf("    Check your shell config or run %s to set up auto-sourcing.\n", ui.Bold("worktree setup"))
 		}
 	}
 
