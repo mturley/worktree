@@ -287,9 +287,11 @@ func finalizeWorktree(cfg config.Config, result gitutil.CreateResult, repoRoot s
 		offerDotfiles(repoRoot, result.Path)
 	}
 
-	fmt.Printf("\n  Ports:    %s\n", alloc.Range())
-	fmt.Printf("  Kube:     %s\n", ui.ShortPath(kubePath))
-	fmt.Printf("\n  cd %s\n\n", ui.ShortPath(result.Path))
+	fmt.Printf("\n  %s\n", ui.Dim("Environment variables written to .worktree-env:"))
+	fmt.Printf("    WORKTREE_PATH  = %s\n", ui.ShortPath(result.Path))
+	fmt.Printf("    WORKTREE_TITLE = %s\n", we.Title)
+	fmt.Printf("    WORKTREE_PORTS = %s\n", alloc.Range())
+	fmt.Printf("    KUBECONFIG     = %s\n\n", ui.ShortPath(kubePath))
 
 	if cmux.IsAvailable() {
 		return openCmuxWorkspace(cfg, result)

@@ -41,14 +41,21 @@ func runInfo(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println()
 
-	fmt.Printf("  Path:     %s\n", ui.ShortPath(wtPath))
-
 	we := readWorktreeEnv(wtPath)
-	if we.Ports != "" {
-		fmt.Printf("  Ports:    %s\n", we.Ports)
-	}
-	if we.Kube != "" {
-		fmt.Printf("  Kube:     %s\n", ui.ShortPath(we.Kube))
+	if we.Path != "" || we.Ports != "" || we.Title != "" || we.Kube != "" {
+		fmt.Printf("  %s\n", ui.Dim("Environment variables sourced from .worktree-env:"))
+		if we.Path != "" {
+			fmt.Printf("    WORKTREE_PATH  = %s\n", ui.ShortPath(we.Path))
+		}
+		if we.Title != "" {
+			fmt.Printf("    WORKTREE_TITLE = %s\n", we.Title)
+		}
+		if we.Ports != "" {
+			fmt.Printf("    WORKTREE_PORTS = %s\n", we.Ports)
+		}
+		if we.Kube != "" {
+			fmt.Printf("    KUBECONFIG     = %s\n", ui.ShortPath(we.Kube))
+		}
 	}
 
 	res, _ := resources.Load(wtPath)
