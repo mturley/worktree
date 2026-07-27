@@ -142,7 +142,7 @@ func RemoveWorktree(repoRoot, wtPath string) error {
 
 	cmd = exec.Command("git", "-C", repoRoot, "worktree", "remove", "--force", wtPath)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("%s\n\n  To resolve: delete the directory manually, then run worktree delete again.\n    rm -rf %s", strings.TrimSpace(string(out)), wtPath)
+		return fmt.Errorf("%s\n\n  To resolve: delete the directory manually, then run worktree prune.\n    rm -rf %s\n    worktree prune", strings.TrimSpace(string(out)), wtPath)
 	}
 	return nil
 }
