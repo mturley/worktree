@@ -136,11 +136,13 @@ func ResetHard(dir, ref string) error {
 
 func RemoveWorktree(repoRoot, wtPath string) error {
 	cmd := exec.Command("git", "-C", repoRoot, "worktree", "remove", wtPath)
+	if err := cmd.Run(); err == nil {
+		return nil
+	}
+
+	cmd = exec.Command("git", "-C", repoRoot, "worktree", "remove", "--force", wtPath)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		cmd2 := exec.Command("git", "-C", repoRoot, "worktree", "remove", "--force", wtPath)
-		if out2, err2 := cmd2.CombinedOutput(); err2 != nil {
-			return fmt.Errorf("removing worktree: %s\n%s", string(out), string(out2))
-		}
+		return fmt.Errorf("%s\n\n  To resolve: delete the directory manually, then run worktree delete again.\n    rm -rf %s", strings.TrimSpace(string(out)), wtPath)
 	}
 	return nil
 }
