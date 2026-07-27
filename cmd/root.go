@@ -48,9 +48,12 @@ var prURLPattern = regexp.MustCompile(`github\.com/([^/]+)/([^/]+)/pull/(\d+)`)
 
 func runRoot(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
-		runInfo(cmd, args)
+		cmd.Help()
 		fmt.Println()
-		return cmd.Help()
+		fmt.Println(ui.Dim("─────────────────────────────────────────"))
+		fmt.Println()
+		runInfo(cmd, args)
+		return nil
 	}
 
 	arg := args[0]
