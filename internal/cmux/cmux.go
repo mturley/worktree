@@ -244,22 +244,22 @@ func BuildLayout(urls []string) string {
 	leftTerminal := layoutNode{Pane: &pane{Surfaces: []surface{{Type: "terminal"}}}}
 	rightTerminal := layoutNode{Pane: &pane{Surfaces: []surface{{Type: "terminal", Command: "worktree info"}}}}
 
-	var rightSide layoutNode
+	var browserSurfaces []surface
 	if len(urls) > 0 {
-		browserSurfaces := make([]surface, 0, len(urls))
 		for _, u := range urls {
 			browserSurfaces = append(browserSurfaces, surface{Type: "browser", URL: u})
 		}
-		rightSide = layoutNode{
-			Direction: "vertical",
-			Split:     0.67,
-			Children: []layoutNode{
-				{Pane: &pane{Surfaces: browserSurfaces}},
-				rightTerminal,
-			},
-		}
 	} else {
-		rightSide = rightTerminal
+		browserSurfaces = []surface{{Type: "browser"}}
+	}
+
+	rightSide := layoutNode{
+		Direction: "vertical",
+		Split:     0.67,
+		Children: []layoutNode{
+			{Pane: &pane{Surfaces: browserSurfaces}},
+			rightTerminal,
+		},
 	}
 
 	layout := layoutNode{
