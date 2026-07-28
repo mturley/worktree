@@ -22,6 +22,7 @@ type Plan struct {
 	CreateConfig         bool
 	ConfigPath           string
 	InstallCompletions   bool
+	CompletionsExist     bool
 	ConfigureJira        bool
 	TestJira             bool
 	GHMissing            bool
@@ -63,6 +64,12 @@ func BuildPlan(cfg config.Config) Plan {
 	}
 
 	plan.InstallCompletions = true
+	dir := completionDir(rc.Shell)
+	if dir != "" {
+		if _, err := os.Stat(filepath.Join(dir, completionFilename(rc.Shell, "worktree"))); err == nil {
+			plan.CompletionsExist = true
+		}
+	}
 
 	return plan
 }
@@ -122,7 +129,11 @@ func (p Plan) Preview() {
 		fmt.Printf("  • Create config: %s\n", ui.ShortPath(p.ConfigPath))
 	}
 	if p.InstallCompletions {
-		fmt.Println("  • Install shell completions (worktree + wt)")
+		if p.CompletionsExist {
+			fmt.Println("  • Update shell completions (worktree + wt)")
+		} else {
+			fmt.Println("  • Install shell completions (worktree + wt)")
+		}
 	}
 	if p.ConfigureJira {
 		fmt.Println("  • Configure Jira integration (optional)")
