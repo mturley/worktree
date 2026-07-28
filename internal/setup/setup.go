@@ -68,7 +68,50 @@ func BuildPlan(cfg config.Config) Plan {
 }
 
 func (p Plan) Preview() {
-	fmt.Println(ui.Bold("worktree setup will:"))
+	hasExisting := false
+	if !p.CreateWorktreesBase {
+		if !hasExisting {
+			fmt.Println(ui.Dim("Already set up:"))
+			hasExisting = true
+		}
+		fmt.Printf("  %s Worktrees directory: %s\n", ui.Green("✓"), ui.ShortPath(p.WorktreesBase))
+	}
+	if !p.InstallShellRC {
+		if !hasExisting {
+			fmt.Println(ui.Dim("Already set up:"))
+			hasExisting = true
+		}
+		fmt.Printf("  %s Shell auto-source (%s)\n", ui.Green("✓"), p.ShellRC.Shell)
+	}
+	if !p.CreateConfig {
+		if !hasExisting {
+			fmt.Println(ui.Dim("Already set up:"))
+			hasExisting = true
+		}
+		fmt.Printf("  %s Config: %s\n", ui.Green("✓"), ui.ShortPath(p.ConfigPath))
+	}
+	if !p.ConfigureJira && !p.TestJira && len(p.Cfg.Jira.Projects) > 0 {
+		if !hasExisting {
+			fmt.Println(ui.Dim("Already set up:"))
+			hasExisting = true
+		}
+		fmt.Printf("  %s Jira: %s\n", ui.Green("✓"), p.Cfg.Jira.Host)
+	}
+	if !p.GHMissing && !p.GHNotAuthenticated {
+		if !hasExisting {
+			fmt.Println(ui.Dim("Already set up:"))
+			hasExisting = true
+		}
+		fmt.Printf("  %s GitHub CLI (gh)\n", ui.Green("✓"))
+	}
+	if hasExisting {
+		fmt.Println()
+	}
+
+	hasWork := p.HasWork() || p.GHMissing || p.GHNotAuthenticated
+	if hasWork {
+		fmt.Println(ui.Bold("worktree setup will:"))
+	}
 	if p.CreateWorktreesBase {
 		fmt.Printf("  • Create worktrees directory: %s\n", ui.ShortPath(p.WorktreesBase))
 	}
@@ -76,7 +119,7 @@ func (p Plan) Preview() {
 		fmt.Printf("  • %s\n", p.ShellRC.Description())
 	}
 	if p.CreateConfig {
-		fmt.Printf("  • Create default config: %s\n", ui.ShortPath(p.ConfigPath))
+		fmt.Printf("  • Create config: %s\n", ui.ShortPath(p.ConfigPath))
 	}
 	if p.InstallCompletions {
 		fmt.Println("  • Install shell completions (worktree + wt)")
@@ -87,15 +130,15 @@ func (p Plan) Preview() {
 	if p.TestJira {
 		fmt.Println("  • Test Jira connection")
 	}
-	if !p.CreateWorktreesBase && !p.InstallShellRC && !p.CreateConfig && !p.InstallCompletions && !p.ConfigureJira && !p.TestJira {
-		fmt.Println("  Nothing to do — already set up.")
-	}
 	if p.GHMissing {
 		fmt.Printf("\n  %s GitHub CLI (gh) is not installed. PR features will be unavailable.\n", ui.Yellow("!"))
 		fmt.Printf("       Install: %s\n", ui.Bold("https://cli.github.com/"))
 	} else if p.GHNotAuthenticated {
 		fmt.Printf("\n  %s GitHub CLI (gh) is not authenticated. PR features will be unavailable.\n", ui.Yellow("!"))
 		fmt.Printf("       Run: %s\n", ui.Bold("gh auth login"))
+	}
+	if !hasWork {
+		fmt.Println("Nothing to do — already set up.")
 	}
 }
 
