@@ -241,7 +241,7 @@ func BuildLayout(urls []string) string {
 		Pane      *pane       `json:"pane,omitempty"`
 	}
 
-	leftTerminal := layoutNode{Pane: &pane{Surfaces: []surface{{Type: "terminal", Command: "claude"}}}}
+	leftTerminal := layoutNode{Pane: &pane{Surfaces: []surface{{Type: "terminal"}}}}
 	rightTerminal := layoutNode{Pane: &pane{Surfaces: []surface{{Type: "terminal", Command: "worktree info"}}}}
 
 	var rightSide layoutNode
