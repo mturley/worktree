@@ -51,6 +51,21 @@ func PromptChoice(prompt string, max int) (int, error) {
 	return n, nil
 }
 
+func PromptChoiceOptional(prompt string, max int) int {
+	fmt.Printf("%s: ", prompt)
+	reader := bufio.NewReader(os.Stdin)
+	line, _ := reader.ReadString('\n')
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(line)
+	if err != nil || n < 0 || n > max {
+		return 0
+	}
+	return n
+}
+
 func PromptLine(prompt string) string {
 	fmt.Printf("%s: ", prompt)
 	reader := bufio.NewReader(os.Stdin)

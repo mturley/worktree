@@ -71,11 +71,12 @@ func RenameWorkspace(ref, title string) error {
 }
 
 type NewWorkspaceOptions struct {
-	Name    string
-	Cwd     string
-	Layout  string
-	Focus   bool
-	EnvVars map[string]string
+	Name     string
+	Cwd      string
+	Layout   string
+	Focus    bool
+	GroupRef string
+	EnvVars  map[string]string
 }
 
 func NewWorkspace(opts NewWorkspaceOptions) (string, error) {
@@ -92,6 +93,9 @@ func NewWorkspace(opts NewWorkspaceOptions) (string, error) {
 	}
 	if opts.Focus {
 		args = append(args, "--focus", "true")
+	}
+	if opts.GroupRef != "" {
+		args = append(args, "--group", opts.GroupRef)
 	}
 	for k, v := range opts.EnvVars {
 		args = append(args, "--env", fmt.Sprintf("%s=%s", k, v))
@@ -110,6 +114,39 @@ func NewWorkspace(opts NewWorkspaceOptions) (string, error) {
 		return "", fmt.Errorf("parsing workspace create response: %w", err)
 	}
 	return result.WorkspaceRef, nil
+}
+
+type WorkspaceGroup struct {
+	Ref  string `json:"ref"`
+	Name string `json:"name"`
+}
+
+func ListGroups() ([]WorkspaceGroup, error) {
+	cmd := cmuxCmd("workspace-group", "list", "--json")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("listing groups: %w", err)
+	}
+	var result struct {
+		Groups []WorkspaceGroup `json:"groups"`
+	}
+	if err := json.Unmarshal(out, &result); err != nil {
+		return nil, err
+	}
+	return result.Groups, nil
+}
+
+func SetWorkspaceColor(workspaceRef, color string) error {
+	cmd := cmuxCmd("workspace-action", "--workspace", workspaceRef, "--action", "set-color", "--color", color)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("setting color: %s", strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+var NamedColors = []string{
+	"Red", "Crimson", "Orange", "Amber", "Olive", "Green", "Teal", "Aqua",
+	"Blue", "Navy", "Indigo", "Purple", "Magenta", "Rose", "Brown", "Charcoal",
 }
 
 func OpenBrowser(url string) error {

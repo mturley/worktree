@@ -383,14 +383,20 @@ func openCmuxWorkspace(cfg config.Config, result gitutil.CreateResult) error {
 		}
 	}
 
-	title := fmt.Sprintf("wt %s", result.Branch)
+	defaultTitle := fmt.Sprintf("wt %s", result.Branch)
+	fmt.Println()
+	title := ui.PromptLineDefault("  Workspace name", defaultTitle)
+
+	groupRef := promptCmuxGroup()
+	color := promptCmuxColor()
 
 	layout := cmux.BuildLayout(urls)
 
 	opts := cmux.NewWorkspaceOptions{
-		Name:  title,
-		Cwd:   result.Path,
-		Focus: true,
+		Name:     title,
+		Cwd:      result.Path,
+		Focus:    true,
+		GroupRef: groupRef,
 	}
 	if layout != "" {
 		opts.Layout = layout
@@ -400,6 +406,10 @@ func openCmuxWorkspace(cfg config.Config, result gitutil.CreateResult) error {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to create cmux workspace: %v\n", err)
 		return nil
+	}
+
+	if color != "" {
+		cmux.SetWorkspaceColor(ref, color)
 	}
 	fmt.Printf("%s Created cmux workspace %s\n", ui.Green("✓"), ref)
 
@@ -436,6 +446,35 @@ func offerDotfiles(repoRoot, wtPath string) {
 		}
 		return nil
 	})
+}
+
+func promptCmuxGroup() string {
+	groups, err := cmux.ListGroups()
+	if err != nil || len(groups) == 0 {
+		return ""
+	}
+
+	fmt.Println("  Workspace group (Enter for none):")
+	for i, g := range groups {
+		fmt.Printf("    %s %s\n", ui.Dim(fmt.Sprintf("[%d]", i+1)), g.Name)
+	}
+	choice := ui.PromptChoiceOptional("  Group", len(groups))
+	if choice == 0 {
+		return ""
+	}
+	return groups[choice-1].Ref
+}
+
+func promptCmuxColor() string {
+	fmt.Println("  Workspace color (Enter for none):")
+	for i, c := range cmux.NamedColors {
+		fmt.Printf("    %s %s\n", ui.Dim(fmt.Sprintf("[%d]", i+1)), c)
+	}
+	choice := ui.PromptChoiceOptional("  Color", len(cmux.NamedColors))
+	if choice == 0 {
+		return ""
+	}
+	return cmux.NamedColors[choice-1]
 }
 
 func findRepoRoot() (string, error) {
