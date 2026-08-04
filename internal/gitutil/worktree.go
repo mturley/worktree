@@ -27,10 +27,7 @@ func CreateBranchWorktree(repoRoot, worktreesBase, branchName string) (CreateRes
 		return CreateResult{}, fmt.Errorf("creating directory: %w", err)
 	}
 
-	base := DefaultBranch(repoRoot)
-	Fetch(repoRoot, strings.Split(base, "/")[0])
-
-	cmd := exec.Command("git", "-C", repoRoot, "worktree", "add", "-b", branchName, "--no-track", wtPath, base)
+	cmd := exec.Command("git", "-C", repoRoot, "worktree", "add", "-b", branchName, wtPath)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		cmd2 := exec.Command("git", "-C", repoRoot, "worktree", "add", wtPath, branchName)
 		if out2, err2 := cmd2.CombinedOutput(); err2 != nil {
