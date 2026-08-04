@@ -455,10 +455,9 @@ func offerDotfiles(repoRoot, wtPath string) {
 }
 
 func offerPull(repoRoot string) {
-	ref := gitutil.DefaultBranch(repoRoot)
-	if ui.ConfirmDefault(fmt.Sprintf("Pull %s before creating worktree?", ref), true) {
-		ui.SpinWhile(fmt.Sprintf("Pulling %s", ref), func() error {
-			return gitutil.PullDefaultBranch(repoRoot)
+	if ui.ConfirmDefault("Fetch latest from remotes before creating worktree?", true) {
+		ui.SpinWhile("Fetching all remotes", func() error {
+			return gitutil.FetchAll(repoRoot)
 		})
 	}
 }
@@ -483,13 +482,13 @@ func promptCmuxGroup() string {
 func promptCmuxColor() string {
 	fmt.Println("  Workspace color (Enter for none):")
 	for i, c := range cmux.NamedColors {
-		fmt.Printf("    %s %s\n", ui.Dim(fmt.Sprintf("[%d]", i+1)), c)
+		fmt.Printf("    %s %s %s\n", ui.Dim(fmt.Sprintf("[%d]", i+1)), cmux.ColorDot(c.Hex), c.Name)
 	}
 	choice := ui.PromptChoiceOptional("  Color", len(cmux.NamedColors))
 	if choice == 0 {
 		return ""
 	}
-	return cmux.NamedColors[choice-1]
+	return cmux.NamedColors[choice-1].Name
 }
 
 func findRepoRoot() (string, error) {

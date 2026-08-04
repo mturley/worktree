@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -144,9 +145,44 @@ func SetWorkspaceColor(workspaceRef, color string) error {
 	return nil
 }
 
-var NamedColors = []string{
-	"Red", "Crimson", "Orange", "Amber", "Olive", "Green", "Teal", "Aqua",
-	"Blue", "Navy", "Indigo", "Purple", "Magenta", "Rose", "Brown", "Charcoal",
+type NamedColor struct {
+	Name string
+	Hex  string
+}
+
+var NamedColors = []NamedColor{
+	{"Red", "#E74C3C"},
+	{"Crimson", "#C0392B"},
+	{"Orange", "#E67E22"},
+	{"Amber", "#F39C12"},
+	{"Olive", "#7D8C2E"},
+	{"Green", "#27AE60"},
+	{"Teal", "#008080"},
+	{"Aqua", "#00BCD4"},
+	{"Blue", "#2980B9"},
+	{"Navy", "#2C3E6B"},
+	{"Indigo", "#4B0082"},
+	{"Purple", "#8E44AD"},
+	{"Magenta", "#C2185B"},
+	{"Rose", "#E91E63"},
+	{"Brown", "#795548"},
+	{"Charcoal", "#555555"},
+}
+
+func ColorDot(hex string) string {
+	r, g, b := hexToRGB(hex)
+	return fmt.Sprintf("\033[38;2;%d;%d;%dm●\033[0m", r, g, b)
+}
+
+func hexToRGB(hex string) (int, int, int) {
+	hex = strings.TrimPrefix(hex, "#")
+	if len(hex) != 6 {
+		return 255, 255, 255
+	}
+	r, _ := strconv.ParseInt(hex[0:2], 16, 32)
+	g, _ := strconv.ParseInt(hex[2:4], 16, 32)
+	b, _ := strconv.ParseInt(hex[4:6], 16, 32)
+	return int(r), int(g), int(b)
 }
 
 func OpenBrowser(url string) error {
