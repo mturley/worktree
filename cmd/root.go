@@ -455,9 +455,9 @@ func offerDotfiles(repoRoot, wtPath string) {
 }
 
 func offerPull(repoRoot string) {
-	if ui.ConfirmDefault("Fetch latest from remotes before creating worktree?", true) {
-		ui.SpinWhile("Fetching all remotes", func() error {
-			return gitutil.FetchAll(repoRoot)
+	if ui.ConfirmDefault("git pull before creating worktree?", true) {
+		ui.SpinWhile("Pulling", func() error {
+			return gitutil.Pull(repoRoot)
 		})
 	}
 }

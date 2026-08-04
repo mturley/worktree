@@ -49,8 +49,13 @@ func DefaultBranch(repoRoot string) string {
 	return "HEAD"
 }
 
-func FetchAll(repoRoot string) error {
-	return Fetch(repoRoot, "--all")
+func Pull(repoRoot string) error {
+	cmd := exec.Command("git", "-C", repoRoot, "pull")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 func RemoteURL(repoRoot, remote string) string {
