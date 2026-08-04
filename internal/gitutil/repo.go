@@ -49,6 +49,15 @@ func DefaultBranch(repoRoot string) string {
 	return "HEAD"
 }
 
+func PullDefaultBranch(repoRoot string) error {
+	ref := DefaultBranch(repoRoot)
+	parts := strings.SplitN(ref, "/", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("cannot determine remote/branch from %s", ref)
+	}
+	return Fetch(repoRoot, parts[0], parts[1])
+}
+
 func RemoteURL(repoRoot, remote string) string {
 	cmd := exec.Command("git", "-C", repoRoot, "remote", "get-url", remote)
 	out, err := cmd.Output()

@@ -39,6 +39,21 @@ func Confirm(prompt string) bool {
 	return line == "y" || line == "yes"
 }
 
+func ConfirmDefault(prompt string, defaultYes bool) bool {
+	if defaultYes {
+		fmt.Printf("%s [Y/n] ", prompt)
+	} else {
+		fmt.Printf("%s [y/N] ", prompt)
+	}
+	reader := bufio.NewReader(os.Stdin)
+	line, _ := reader.ReadString('\n')
+	line = strings.TrimSpace(strings.ToLower(line))
+	if line == "" {
+		return defaultYes
+	}
+	return line == "y" || line == "yes"
+}
+
 func PromptChoice(prompt string, max int) (int, error) {
 	fmt.Printf("%s: ", prompt)
 	reader := bufio.NewReader(os.Stdin)

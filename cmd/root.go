@@ -108,6 +108,8 @@ func handlePR(owner, repo string, number int) error {
 		return err
 	}
 
+	offerPull(repoRoot)
+
 	remote, err := gitutil.FindRemoteForRepo(repoRoot, owner, repo)
 	if err != nil {
 		return fmt.Errorf("resolving remote: %w", err)
@@ -198,6 +200,8 @@ func handleJiraIssue(key, url string) error {
 		return fmt.Errorf("not in a git repo: %w", err)
 	}
 
+	offerPull(repoRoot)
+
 	branchName := strings.ToLower(key)
 	var result gitutil.CreateResult
 	err = ui.SpinWhile(fmt.Sprintf("Creating worktree for %s", key), func() error {
@@ -230,6 +234,8 @@ func handleBranch(branchName string) error {
 	if err != nil {
 		return fmt.Errorf("not in a git repo: %w", err)
 	}
+
+	offerPull(repoRoot)
 
 	var result gitutil.CreateResult
 	err = ui.SpinWhile(fmt.Sprintf("Creating worktree for branch %s", branchName), func() error {
@@ -446,6 +452,15 @@ func offerDotfiles(repoRoot, wtPath string) {
 		}
 		return nil
 	})
+}
+
+func offerPull(repoRoot string) {
+	ref := gitutil.DefaultBranch(repoRoot)
+	if ui.ConfirmDefault(fmt.Sprintf("Pull %s before creating worktree?", ref), true) {
+		ui.SpinWhile(fmt.Sprintf("Pulling %s", ref), func() error {
+			return gitutil.PullDefaultBranch(repoRoot)
+		})
+	}
 }
 
 func promptCmuxGroup() string {
