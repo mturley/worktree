@@ -108,8 +108,6 @@ func handlePR(owner, repo string, number int) error {
 		return err
 	}
 
-	offerPull(repoRoot)
-
 	remote, err := gitutil.FindRemoteForRepo(repoRoot, owner, repo)
 	if err != nil {
 		return fmt.Errorf("resolving remote: %w", err)
