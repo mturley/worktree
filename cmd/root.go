@@ -1,21 +1,25 @@
 package cmd
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mturley/worktree/internal/cmux"
 	"github.com/mturley/worktree/internal/config"
+	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/dotfiles"
 	"github.com/mturley/worktree/internal/env"
 	"github.com/mturley/worktree/internal/github"
 	"github.com/mturley/worktree/internal/gitutil"
 	"github.com/mturley/worktree/internal/jira"
 	"github.com/mturley/worktree/internal/ports"
+	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/resources"
 	"github.com/mturley/worktree/internal/ui"
 	"github.com/spf13/cobra"
@@ -228,9 +232,20 @@ func finalizeWorktree(cfg config.Config, result gitutil.CreateResult, repoRoot s
 	repoName := filepath.Base(repoRoot)
 	wtName := filepath.Base(result.Path)
 
-	alloc, err := ports.Allocate(cfg.WorktreesBase, wtName)
+	conn, err := wdb.Open()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to allocate port range: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Warning: failed to open worktree db: %v\n", err)
+	}
+
+	var alloc ports.Allocation
+	if conn != nil {
+		alloc, err = ports.Allocate(conn, wtName)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to allocate port range: %v\n", err)
+		}
+		if err := registry.Register(conn, buildRegistryEntry(result, repoRoot, time.Now().UTC().Format(time.RFC3339))); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to register worktree: %v\n", err)
+		}
 	}
 
 	kubePath := env.KubeconfigPath(repoName, wtName)
@@ -238,44 +253,50 @@ func finalizeWorktree(cfg config.Config, result gitutil.CreateResult, repoRoot s
 		fmt.Fprintf(os.Stderr, "Warning: failed to seed kubeconfig: %v\n", err)
 	}
 
-	we := env.WorktreeEnv{
-		Ports: alloc.Range(),
-		Title: fmt.Sprintf("wt %s", result.Branch),
-		Path:  result.Path,
-		Kube:  kubePath,
-	}
-	if err := env.Generate(result.Path, we); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to generate .worktree-env: %v\n", err)
-	}
-
-	if err := gitutil.AddExcludes(repoRoot); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to update git excludes: %v\n", err)
-	}
-
-	if primaryResource != nil {
-		if err := resources.Add(result.Path, *primaryResource); err != nil {
+	if primaryResource != nil && conn != nil {
+		if err := resources.Add(conn, result.Path, *primaryResource); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to save resource: %v\n", err)
 		}
 	}
 
-	if len(cfg.Jira.Projects) > 0 {
-		detectAndSaveJiraIssues(cfg, result, pr)
+	if len(cfg.Jira.Projects) > 0 && conn != nil {
+		detectAndSaveJiraIssues(conn, cfg, result, pr)
 	}
 
 	if result.Created {
 		offerDotfiles(repoRoot, result.Path)
 	}
 
-	fmt.Printf("\n  %s\n", ui.Dim("Environment variables written to .worktree-env:"))
+	fmt.Printf("\n  %s\n", ui.Dim("Environment (via eval \"$(worktree env)\"):"))
 	fmt.Printf("    WORKTREE_PATH  = %s\n", ui.ShortPath(result.Path))
-	fmt.Printf("    WORKTREE_TITLE = %s\n", we.Title)
+	fmt.Printf("    WORKTREE_TITLE = wt %s\n", result.Branch)
 	fmt.Printf("    WORKTREE_PORTS = %s\n", alloc.Range())
 	fmt.Printf("    KUBECONFIG     = %s\n\n", ui.ShortPath(kubePath))
 
 	if cmux.IsAvailable() {
-		return openCmuxWorkspace(cfg, result)
+		defer func() {
+			if conn != nil {
+				conn.Close()
+			}
+		}()
+		return openCmuxWorkspace(conn, cfg, result)
+	}
+
+	if conn != nil {
+		conn.Close()
 	}
 	return nil
+}
+
+// buildRegistryEntry constructs a registry.Entry from a create result.
+func buildRegistryEntry(result gitutil.CreateResult, repoRoot, nowRFC3339 string) registry.Entry {
+	return registry.Entry{
+		Path:      result.Path,
+		Repo:      filepath.Base(repoRoot),
+		RepoRoot:  repoRoot,
+		Branch:    result.Branch,
+		CreatedAt: nowRFC3339,
+	}
 }
 
 func offerPRSync(pr gitutil.PRWorktreeResult) {
@@ -307,14 +328,14 @@ func shortSHA(sha string) string {
 	return sha
 }
 
-func detectAndSaveJiraIssues(cfg config.Config, result gitutil.CreateResult, pr *github.PRInfo) {
+func detectAndSaveJiraIssues(conn *sql.DB, cfg config.Config, result gitutil.CreateResult, pr *github.PRInfo) {
 	var prTitle, prBody string
 	if pr != nil {
 		prTitle = pr.Title
 		prBody = pr.Body
 	}
 
-	existing, _ := resources.Load(result.Path)
+	existing, _ := resources.Load(conn, result.Path)
 	existingKeys := make(map[string]bool)
 	for _, r := range existing {
 		if r.Type == "jira" {
@@ -329,7 +350,7 @@ func detectAndSaveJiraIssues(cfg config.Config, result gitutil.CreateResult, pr 
 		}
 		url := jira.IssueURL(cfg.Jira.Host, key)
 		r := resources.Resource{Type: "jira", ID: key, URL: url}
-		if err := resources.Add(result.Path, r); err != nil {
+		if err := resources.Add(conn, result.Path, r); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to save Jira resource %s: %v\n", key, err)
 		} else {
 			fmt.Printf("  %s Detected Jira issue %s\n", ui.Green("✓"), ui.Cyan(key))
@@ -337,7 +358,7 @@ func detectAndSaveJiraIssues(cfg config.Config, result gitutil.CreateResult, pr 
 	}
 }
 
-func openCmuxWorkspace(cfg config.Config, result gitutil.CreateResult) error {
+func openCmuxWorkspace(conn *sql.DB, cfg config.Config, result gitutil.CreateResult) error {
 	existing, err := cmux.FindByDirectory(result.Path)
 	if err == nil && existing != nil {
 		fmt.Printf("%s Switching to existing cmux workspace %s\n", ui.Cyan("→"), existing.CustomTitle)
@@ -345,7 +366,10 @@ func openCmuxWorkspace(cfg config.Config, result gitutil.CreateResult) error {
 	}
 
 	var urls []string
-	res, _ := resources.Load(result.Path)
+	var res []resources.Resource
+	if conn != nil {
+		res, _ = resources.Load(conn, result.Path)
+	}
 	for _, r := range resources.OfType(res, "pr") {
 		if r.URL != "" {
 			urls = append(urls, r.URL)

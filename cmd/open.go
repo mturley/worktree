@@ -7,6 +7,7 @@ import (
 	"runtime"
 
 	"github.com/mturley/worktree/internal/config"
+	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/resources"
 	"github.com/mturley/worktree/internal/ui"
 	"github.com/spf13/cobra"
@@ -73,7 +74,12 @@ func openEditor(wtPath string) error {
 }
 
 func openGitHubPR(wtPath string) error {
-	res, err := resources.Load(wtPath)
+	conn, err := wdb.Open()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	res, err := resources.Load(conn, wtPath)
 	if err != nil {
 		return err
 	}
@@ -88,7 +94,12 @@ func openGitHubPR(wtPath string) error {
 }
 
 func openJiraIssue(wtPath string) error {
-	res, err := resources.Load(wtPath)
+	conn, err := wdb.Open()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	res, err := resources.Load(conn, wtPath)
 	if err != nil {
 		return err
 	}

@@ -6,10 +6,12 @@ import (
 	"path/filepath"
 
 	"github.com/mturley/worktree/internal/config"
+	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/discovery"
 	"github.com/mturley/worktree/internal/env"
 	"github.com/mturley/worktree/internal/gitutil"
 	"github.com/mturley/worktree/internal/ports"
+	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -49,6 +51,14 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 	if len(allWTs) == 0 {
 		fmt.Println("No worktrees found.")
 		return nil
+	}
+
+	conn, err := wdb.Open()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to open worktree db: %v\n", err)
+	}
+	if conn != nil {
+		defer conn.Close()
 	}
 
 	fmt.Println(ui.Bold("Discovered worktrees:"))
@@ -91,8 +101,13 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 		}
 
 		wtName := filepath.Base(wt.Path)
-		if err := ports.Release(cfg.WorktreesBase, wtName); err == nil {
-			fmt.Printf("  %s Released port range\n", ui.Green("✓"))
+		if conn != nil {
+			if err := ports.Release(conn, wtName); err == nil {
+				fmt.Printf("  %s Released port range\n", ui.Green("✓"))
+			}
+			if err := registry.Unregister(conn, wt.Path); err != nil {
+				fmt.Fprintf(os.Stderr, "  Warning: failed to unregister worktree: %v\n", err)
+			}
 		}
 
 		repoName := filepath.Base(wt.RepoRoot)

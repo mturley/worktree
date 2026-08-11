@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/mturley/worktree/internal/config"
+	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/ports"
 	"github.com/mturley/worktree/internal/ui"
 	"github.com/spf13/cobra"
@@ -21,12 +21,13 @@ func init() {
 }
 
 func runPorts(cmd *cobra.Command, args []string) error {
-	cfg, err := config.Load()
+	conn, err := wdb.Open()
 	if err != nil {
 		return err
 	}
+	defer conn.Close()
 
-	allocs, err := ports.LoadAllocations(cfg.WorktreesBase)
+	allocs, err := ports.LoadAllocations(conn)
 	if err != nil {
 		return err
 	}
