@@ -7,7 +7,7 @@ A Go-based CLI for managing git worktrees with GitHub/Jira integration and optio
 1. **CLI-first** — Every action is a subcommand with flags. No action requires a REPL.
 2. **Standalone by default** — Works in any terminal with no dependencies beyond `git`.
 3. **cmux as an upgrade** — When running inside cmux, unlock extra features (workspace management, browser panes).
-4. **Tool-agnostic resource tracking** — `.worktree-resources` remains a simple, parseable format other tools can read/write.
+4. **Persistence via DB** — Worktree state (registry, resources, port allocations) lives in a SQLite database instead of scattered files, enabling atomic operations and cross-tool integration (Phase 1).
 5. **Self-contained binary** — Single Go binary with embedded assets. `go install` or `make install` followed by `worktree setup`.
 
 ---
@@ -18,18 +18,17 @@ A Go-based CLI for managing git worktrees with GitHub/Jira integration and optio
 
 | Feature | Notes |
 |---------|-------|
-| **Worktree discovery** | Scan search roots, group by repo, show status (prunable, orphaned, missing) |
-| **PR worktree workflow** | Accept PR number or URL, fetch metadata, find/create worktree, set up tracking |
+| **Worktree registry** | DB-backed discovery: `worktree list` reads `worktrees` table; `worktree cleanup` reconciles disk vs DB (orphans, stale) |
+| **PR worktree workflow** | Accept PR number or URL, fetch metadata, find/create worktree, register in DB |
 | **Branch worktree workflow** | Accept branch name, create from upstream/main or origin/main |
 | **Path-based open** | Accept existing worktree path directly |
-| **No-args listing** | Discover and list all worktrees with interactive selection |
-| **Cleanup** | Remove worktrees, release ports, prune stale entries |
-| **Port range system** | Unique port range per worktree for parallel dev servers |
-| `.worktree-env` | Auto-sourced env file (ports, title, path, kubeconfig) |
-| `.worktree-resources` | PR/Jira associations with primary/related roles |
+| **No-args listing** | List worktrees from DB with interactive selection |
+| **Cleanup** | Remove worktrees, release ports, prune stale DB entries, reconcile with disk |
+| **Port range system** | Unique port range per worktree (DB-backed `port_allocations` table) |
+| **Environment variables** | `worktree env` command prints `export ...` lines from DB; shell RC runs `eval "$(worktree env)"` on `cd` |
+| **Resource tracking** | PR/Jira associations in DB (`watcher_subscriptions` + `worktree_primary` flag table) |
 | **Isolated kubeconfig** | `~/.kube/config-<repo>-<worktree>` |
-| **Shell RC auto-source** | Setup installs the `chpwd` hook; cleanup removes it |
-| `.git/info/exclude` | Auto-exclude `.worktree-env`, `.worktree-resources` |
+| **Shell RC integration** | Setup installs `chpwd` hook; cleanup removes it. Hook runs `eval "$(worktree env)"` |
 | **GitHub** (via `gh` CLI) | PR metadata, branch detection, open in browser |
 | **Jira** (via REST API) | Issue detection from branch/PR, API enrichment, manual association, open in browser |
 | **cmux** | Workspace creation with configurable layout, deduplication, browser panes for PR/Jira |
@@ -68,17 +67,23 @@ worktree <branch-name>                      # create/open branch worktree
 worktree <path>                             # open existing worktree
 ```
 
-"Open" for existing worktrees means: show info and enter the worktree context (cd, set env). For new worktrees: create, seed `.worktree-env` and `.worktree-resources`, offer to copy dotfiles, show info.
+"Open" for existing worktrees means: show info and enter the worktree context (cd, set env). For new worktrees: create, register in DB, offer to copy dotfiles, show info.
 
 ### Subcommands
 
 ```
 worktree info [<path>]                      # show worktree info (default: current dir)
 worktree info --local                       # skip API calls (fast)
-worktree list                               # list all discovered worktrees
+worktree list                               # list worktrees from DB
+worktree cleanup                            # reconcile disk vs DB (remove orphans, stale entries)
 worktree delete [<path>]                    # remove worktree + cleanup
-worktree cleanup                            # interactive multi-select removal + stale cleanup
-worktree ports                              # show/manage port allocations
+worktree ports                              # show/manage port allocations (DB-backed)
+
+worktree env                                # print shell env vars (use: eval "$(worktree env)")
+worktree resources list [--json]            # list tracked resources (DB-backed)
+worktree resources add <type> <id> <url>    # add a resource
+worktree resources unwatch <id>             # soft-remove (mark inactive)
+worktree resources remove <id>              # hard-remove from DB
 
 worktree open [<path>]                      # open in editor ($EDITOR or configured)
 worktree open --github                      # open PR in browser
@@ -88,6 +93,7 @@ worktree jira [<path>]                      # show/manage Jira associations
 worktree jira add <key> [--related]         # associate a Jira issue
 worktree jira remove <key>                  # remove a Jira association
 
+worktree watcher run [pr|jira|all]          # one-shot poller for timeline events
 worktree setup                              # post-install configuration
 worktree setup --uninstall                  # reverse setup changes
 worktree update                             # self-update + re-run setup
@@ -96,7 +102,7 @@ worktree version                            # print version
 
 ### Implicit Worktree Context
 
-Most subcommands accept an optional `[<path>]` argument. When omitted, they detect the current worktree from the working directory (via `git rev-parse --show-toplevel` and checking for `.worktree-env`). This means you can `cd` into a worktree and just run `worktree info`, `worktree open --jira`, etc.
+Most subcommands accept an optional `[<path>]` argument. When omitted, they detect the current worktree from the working directory (via `git rev-parse --show-toplevel`). This means you can `cd` into a worktree and just run `worktree info`, `worktree open --jira`, etc.
 
 ---
 
@@ -107,17 +113,6 @@ Config file at `~/.config/worktree/config.yaml` (or `$XDG_CONFIG_HOME/worktree/c
 ```yaml
 # Where worktrees are created (default: ~/.worktrees)
 worktrees_base: ~/.worktrees
-
-# Where to search for existing worktrees
-search:
-  roots:
-    - ~/git
-  depth: 5
-  prune:
-    - node_modules
-    - .Trash
-    - .cache
-    - .venv
 
 # Jira integration
 jira:
@@ -146,38 +141,32 @@ cmux:
         size: 50%
 ```
 
-Environment variables still work as overrides for backward compatibility:
+Environment variables still work as overrides:
 - `WORKTREES_BASE` overrides `worktrees_base`
-- `WORKTREE_SEARCH_ROOTS` (colon-separated) overrides `search.roots`
-- `WORKTREE_SEARCH_DEPTH` overrides `search.depth`
+- `WORKTREE_DB` overrides the default DB path (`${XDG_DATA_HOME:-~/.local/share}/worktree/worktree.db`)
 
 ---
 
-## Per-Worktree Files
+## Persistence (Phase 1: DB adoption)
 
-### `.worktree-env`
+Worktree state is stored in a SQLite database at `${XDG_DATA_HOME:-~/.local/share}/worktree/worktree.db` (overridable via `WORKTREE_DB`). The database includes:
 
-Generated on worktree creation. Auto-sourced by shell RC hook when entering the directory.
+- **`worktrees` table** — Registry of all worktrees created by this tool (CRUD via `internal/registry`)
+- **`port_allocations` table** — Port ranges (atomic allocation via `internal/ports`)
+- **`worktree_primary` table** — Primary resource flag for `worktree_subscriptions` rows (e.g., the reason a worktree exists)
+- **`watcher_*` tables** — Owned by the `github.com/mturley/watcher` library; includes `watcher_subscriptions` (PR/Jira associations) and `watcher_events` (timeline events from `worktree watcher run`)
 
-```bash
-# managed by worktree - do not edit
-export WORKTREE_PORTS=4020-4029
-export WORKTREE_TITLE="wt my-branch"
-export WORKTREE_PATH=/Users/me/git/.worktrees/repo/my-branch
-export KUBECONFIG=~/.kube/config-repo-my-branch
+**Shell environment variables** are generated on-demand by `worktree env`, which queries the database and prints `export ...` lines. The shell RC hook runs `eval "$(worktree env)"` on directory change (via the `chpwd` hook installed by `worktree setup`).
+
+**Resource tracking** (PR/Jira associations) is stored in `watcher_subscriptions` with a `worktree_primary` flag. The `worktree resources --json` command emits a machine-readable contract for agent-handler integration:
+
+```json
+[
+  {"type":"pr","id":"owner/repo#123","url":"https://github.com/owner/repo/pull/123","primary":true},
+  {"type":"jira","id":"RHOAIENG-456","url":"https://redhat.atlassian.net/browse/RHOAIENG-456","primary":true},
+  {"type":"jira","id":"RHOAIENG-400","url":"https://redhat.atlassian.net/browse/RHOAIENG-400","primary":false}
+]
 ```
-
-### `.worktree-resources`
-
-Tracks associated external resources. Format is stable and tool-agnostic:
-
-```
-pr:owner/repo#123 https://github.com/owner/repo/pull/123
-jira:RHOAIENG-456 https://redhat.atlassian.net/browse/RHOAIENG-456
-~ jira:RHOAIENG-400 https://redhat.atlassian.net/browse/RHOAIENG-400
-```
-
-Unmarked lines are **primary**. Lines prefixed with `~ ` are **related** (context-watching).
 
 ---
 
@@ -191,7 +180,7 @@ Following the agent-handler pattern:
 4. **Setup** (`worktree setup`):
    - Dry-run preview of all changes, prompt for confirmation
    - Create `worktrees_base` directory if needed
-   - Add `.worktree-env` auto-source snippet to shell RC (zsh/bash/fish)
+   - Add shell RC hook (`chpwd`) that runs `eval "$(worktree env)"` on directory change (zsh/bash/fish)
    - Create default config file if none exists
    - `--yes` flag for non-interactive use
 5. **Uninstall** (`worktree setup --uninstall`):
@@ -223,16 +212,18 @@ worktree/
     version.go
   internal/
     config/                   # YAML config + env var overrides
-    discovery/                # worktree discovery across search roots
+    db/                       # SQLite DB lifecycle + migrations (Phase 1)
+    registry/                 # worktree registry (CRUD on `worktrees` table)
+    discovery/                # only `IsInsideWorktree` now; discovery moved to DB
     git/                      # git operations (worktree create/remove, branch, fetch)
     github/                   # gh CLI wrapper for PR operations
     jira/                     # Jira REST API client
-    ports/                    # port range allocation
-    resources/                # .worktree-resources file read/write
-    env/                      # .worktree-env file generation
+    ports/                    # port range allocation (DB-backed; `port_allocations` table)
+    resources/                # resource tracking (DB-backed; `watcher_subscriptions` + `worktree_primary`)
+    shellenv/                 # shell environment variable generation from DB (worktree env)
     dotfiles/                 # gitignored dotfile copying
     cmux/                     # cmux workspace integration
-    setup/                    # shell RC integration, git exclude management
+    setup/                    # shell RC integration (removed .git/info/exclude management)
     ui/                       # terminal output (colors, spinners, prompts)
   embedded/                   # go:embed files (shell snippets, templates)
   Makefile
@@ -295,7 +286,7 @@ my-branch (review/pr-1234-fix-pagination)
 
 `worktree info --local` skips the PR and Jira API calls (shows only path, repo, tracking, ports, kube, and cached resource keys without enrichment).
 
-The `.worktree-env` auto-source shows a compact one-liner:
+When entering a worktree directory, the shell runs `eval "$(worktree env)"` to set environment variables from the database:
 ```
 [wt] my-branch · ~/git/.worktrees/my-repo/review-pr-1234 · ports 4020-4029
 ```
