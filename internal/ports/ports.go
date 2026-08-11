@@ -74,6 +74,20 @@ func Allocate(conn *sql.DB, name string) (Allocation, error) {
 	return Allocation{}, fmt.Errorf("could not allocate a free port slot for %q", name)
 }
 
+// Lookup returns the existing allocation for name, or ok=false if the name
+// has no allocation. It never writes to the DB.
+func Lookup(conn *sql.DB, name string) (Allocation, bool, error) {
+	var slot int
+	err := conn.QueryRow(`SELECT slot FROM port_allocations WHERE name = ?`, name).Scan(&slot)
+	if err == sql.ErrNoRows {
+		return Allocation{}, false, nil
+	}
+	if err != nil {
+		return Allocation{}, false, err
+	}
+	return Allocation{Slot: slot, Name: name}, true, nil
+}
+
 func lowestFreeSlot(conn *sql.DB) (int, error) {
 	rows, err := conn.Query(`SELECT slot FROM port_allocations ORDER BY slot`)
 	if err != nil {

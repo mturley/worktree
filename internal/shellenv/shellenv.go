@@ -24,16 +24,20 @@ func Lines(conn *sql.DB, worktreePath string) ([]string, error) {
 	}
 
 	name := filepath.Base(wt.Path)
-	alloc, err := ports.Allocate(conn, name) // returns existing allocation if present
+	alloc, ok, err := ports.Lookup(conn, name) // read-only; never allocates
 	if err != nil {
 		return nil, err
 	}
 	kube := env.KubeconfigPath(wt.Repo, name)
 
-	return []string{
-		fmt.Sprintf("export WORKTREE_PORTS=%s", alloc.Range()),
+	lines := []string{}
+	if ok {
+		lines = append(lines, fmt.Sprintf("export WORKTREE_PORTS=%s", alloc.Range()))
+	}
+	lines = append(lines,
 		fmt.Sprintf("export WORKTREE_TITLE=%q", "wt "+wt.Branch),
 		fmt.Sprintf("export WORKTREE_PATH=%q", wt.Path),
 		fmt.Sprintf("export KUBECONFIG=%q", kube),
-	}, nil
+	)
+	return lines, nil
 }

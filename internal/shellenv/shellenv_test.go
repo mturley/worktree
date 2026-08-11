@@ -40,6 +40,37 @@ func TestLinesForRegisteredWorktree(t *testing.T) {
 	}
 }
 
+func TestLinesOmitsPortsWhenUnallocated(t *testing.T) {
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	wt := "/wt/no-port"
+	registry.Register(conn, registry.Entry{
+		Path: wt, Repo: "repo", RepoRoot: "/repo", Branch: "no-port", CreatedAt: "t",
+	})
+
+	lines, err := Lines(conn, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(lines, "\n")
+	for _, want := range []string{
+		`export WORKTREE_PATH="/wt/no-port"`,
+		"export WORKTREE_TITLE=",
+		"export KUBECONFIG=",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %q in:\n%s", want, joined)
+		}
+	}
+	if strings.Contains(joined, "WORKTREE_PORTS") {
+		t.Fatalf("expected no WORKTREE_PORTS line, got:\n%s", joined)
+	}
+}
+
 func TestLinesEmptyForUnregistered(t *testing.T) {
 	conn, _ := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	defer conn.Close()

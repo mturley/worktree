@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/shellenv"
@@ -29,8 +30,11 @@ func runEnv(cmd *cobra.Command, args []string) error {
 	if len(args) == 1 {
 		path = args[0]
 	}
-	abs, err := os.Getwd()
-	if err == nil && path == "." {
+	if len(args) == 1 {
+		if abs, err := filepath.Abs(path); err == nil {
+			path = abs
+		}
+	} else if abs, err := os.Getwd(); err == nil {
 		path = abs
 	}
 

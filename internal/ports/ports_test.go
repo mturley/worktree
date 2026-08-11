@@ -49,6 +49,27 @@ func TestReleaseFreesSlotForReuse(t *testing.T) {
 	}
 }
 
+func TestLookupExistingAndMissing(t *testing.T) {
+	conn := testDB(t)
+	a, _ := Allocate(conn, "alpha")
+
+	got, ok, err := Lookup(conn, "alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || got.Slot != a.Slot {
+		t.Fatalf("expected ok=true slot=%d, got ok=%v slot=%d", a.Slot, ok, got.Slot)
+	}
+
+	_, ok, err = Lookup(conn, "missing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatalf("expected ok=false for missing name")
+	}
+}
+
 func TestAllocationRange(t *testing.T) {
 	a := Allocation{Slot: 0}
 	if a.Range() != "4020-4029" {
