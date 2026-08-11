@@ -60,9 +60,9 @@ func loadPrimaryFlags(conn *sql.DB, sub string) (map[string]bool, error) {
 	return m, rows.Err()
 }
 
-// Add tracks r for the worktree (reviving a prior user-unwatch), and records
-// its primary/related flag. Adding a primary demotes the existing primary of
-// the same type to related.
+// Add tracks r for the worktree (reviving a prior user-unwatch) and records
+// its primary/related flag (is_primary = !Related). Multiple resources of
+// the same type may be primary.
 func Add(conn *sql.DB, worktreePath string, r Resource) error {
 	sub := wdb.Subscriber(worktreePath)
 	wr := watcher.Resource{Type: r.Type, ID: r.ID, URL: r.URL}
@@ -76,9 +76,8 @@ func Add(conn *sql.DB, worktreePath string, r Resource) error {
 		return fmt.Errorf("subscribe: %w", err)
 	}
 
-	// Demote-then-upsert must be atomic: if we crash or error between the two
-	// statements, the worktree could be left with zero primaries of this type,
-	// violating the "at most one primary per type" invariant.
+	// The subscription revive/refresh and the primary-flag upsert are wrapped in a
+	// transaction so a failure can't leave the flag row and subscription inconsistent.
 	tx, err := conn.BeginTx(context.Background(), nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
