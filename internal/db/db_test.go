@@ -36,3 +36,50 @@ func TestOpenAtIdempotent(t *testing.T) {
 	}
 	c2.Close()
 }
+
+func TestPathResolution(t *testing.T) {
+	t.Run("WORKTREE_DB override wins", func(t *testing.T) {
+		override := "/custom/path/worktree.db"
+		t.Setenv("WORKTREE_DB", override)
+		t.Setenv("XDG_DATA_HOME", "/should/be/ignored")
+
+		got, err := Path()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != override {
+			t.Fatalf("got %q, want %q", got, override)
+		}
+	})
+
+	t.Run("XDG_DATA_HOME used when WORKTREE_DB unset", func(t *testing.T) {
+		t.Setenv("WORKTREE_DB", "")
+		xdg := "/xdg/data/home"
+		t.Setenv("XDG_DATA_HOME", xdg)
+
+		got, err := Path()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := filepath.Join(xdg, "worktree", "worktree.db")
+		if got != want {
+			t.Fatalf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("falls back to HOME/.local/share when both unset", func(t *testing.T) {
+		t.Setenv("WORKTREE_DB", "")
+		t.Setenv("XDG_DATA_HOME", "")
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+
+		got, err := Path()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := filepath.Join(home, ".local", "share", "worktree", "worktree.db")
+		if got != want {
+			t.Fatalf("got %q, want %q", got, want)
+		}
+	})
+}

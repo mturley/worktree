@@ -12,21 +12,31 @@ import (
 
 // Path returns the resolved worktree DB path:
 // ${XDG_DATA_HOME:-~/.local/share}/worktree/worktree.db, overridable via WORKTREE_DB.
-func Path() string {
+// If neither WORKTREE_DB nor XDG_DATA_HOME is set, the user's home directory
+// must resolve; if it can't, an error is returned rather than silently
+// falling back to a relative path.
+func Path() (string, error) {
 	if p := os.Getenv("WORKTREE_DB"); p != "" {
-		return p
+		return p, nil
 	}
 	base := os.Getenv("XDG_DATA_HOME")
 	if base == "" {
-		home, _ := os.UserHomeDir()
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("resolving home directory: %w", err)
+		}
 		base = filepath.Join(home, ".local", "share")
 	}
-	return filepath.Join(base, "worktree", "worktree.db")
+	return filepath.Join(base, "worktree", "worktree.db"), nil
 }
 
 // Open opens (creating as needed) the worktree DB at the standard path.
 func Open() (*sql.DB, error) {
-	return OpenAt(Path())
+	path, err := Path()
+	if err != nil {
+		return nil, fmt.Errorf("resolving worktree db path: %w", err)
+	}
+	return OpenAt(path)
 }
 
 // OpenAt opens (creating as needed) the worktree DB at path, running the
