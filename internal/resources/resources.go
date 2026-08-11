@@ -85,14 +85,6 @@ func Add(conn *sql.DB, worktreePath string, r Resource) error {
 	}
 	defer tx.Rollback()
 
-	if !r.Related {
-		// Demote any existing primary of this type.
-		if _, err := tx.Exec(
-			`UPDATE worktree_primary SET is_primary = 0 WHERE subscriber = ? AND resource_type = ?`,
-			sub, r.Type); err != nil {
-			return err
-		}
-	}
 	isPrimary := 0
 	if !r.Related {
 		isPrimary = 1
@@ -152,13 +144,15 @@ func Unwatch(conn *sql.DB, worktreePath, resType, id string) error {
 	return watcherdb.UserUnsubscribe(conn, sub, watcher.Resource{Type: resType, ID: id})
 }
 
-func PrimaryOfType(resources []Resource, resType string) *Resource {
-	for i := range resources {
-		if resources[i].Type == resType && !resources[i].Related {
-			return &resources[i]
+// PrimariesOfType returns all primary (non-related) resources of the given type.
+func PrimariesOfType(resources []Resource, resType string) []Resource {
+	var out []Resource
+	for _, r := range resources {
+		if r.Type == resType && !r.Related {
+			out = append(out, r)
 		}
 	}
-	return nil
+	return out
 }
 
 func OfType(resources []Resource, resType string) []Resource {

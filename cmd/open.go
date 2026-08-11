@@ -84,13 +84,17 @@ func openGitHubPR(wtPath string) error {
 		return err
 	}
 
-	pr := resources.PrimaryOfType(res, "pr")
-	if pr == nil {
-		return fmt.Errorf("no PR associated with this worktree")
+	prs := resources.PrimariesOfType(res, "pr")
+	if len(prs) == 0 {
+		return fmt.Errorf("no primary PR associated with this worktree")
 	}
-
-	fmt.Printf("Opening %s\n", ui.Cyan(pr.URL))
-	return openURL(pr.URL)
+	for _, pr := range prs {
+		fmt.Printf("Opening %s\n", ui.Cyan(pr.URL))
+		if err := openURL(pr.URL); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func openJiraIssue(wtPath string) error {

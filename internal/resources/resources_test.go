@@ -34,23 +34,21 @@ func TestAddAndLoad(t *testing.T) {
 	}
 }
 
-func TestSecondPrimaryDemotesFirst(t *testing.T) {
+func TestMultiplePrimariesPerType(t *testing.T) {
 	conn := testDB(t)
 	wt := "/tmp/wt/a"
-	Add(conn, wt, Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
-	Add(conn, wt, Resource{Type: "pr", ID: "o/r#2", URL: "u2"}) // new primary
+	Add(conn, wt, Resource{Type: "pr", ID: "o/r#1", URL: "u1"}) // primary
+	Add(conn, wt, Resource{Type: "pr", ID: "o/r#2", URL: "u2"}) // ALSO primary (no demote)
 	res, _ := Load(conn, wt)
-	primaries := 0
-	for _, r := range res {
-		if !r.Related {
-			primaries++
-		}
+	prims := PrimariesOfType(res, "pr")
+	if len(prims) != 2 {
+		t.Fatalf("expected 2 primary PRs, got %d: %+v", len(prims), res)
 	}
-	if primaries != 1 {
-		t.Fatalf("expected exactly 1 primary pr, got %d in %+v", primaries, res)
-	}
-	if p := PrimaryOfType(res, "pr"); p == nil || p.ID != "o/r#2" {
-		t.Fatalf("expected #2 primary, got %+v", p)
+	// a related one is excluded
+	Add(conn, wt, Resource{Type: "pr", ID: "o/r#3", URL: "u3", Related: true})
+	res, _ = Load(conn, wt)
+	if got := len(PrimariesOfType(res, "pr")); got != 2 {
+		t.Fatalf("related resource must not count as primary; got %d primaries", got)
 	}
 }
 
