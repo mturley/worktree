@@ -1,145 +1,94 @@
 package resources
 
 import (
-	"os"
+	"database/sql"
 	"path/filepath"
 	"testing"
+
+	wdb "github.com/mturley/worktree/internal/db"
 )
 
-func TestParseLine(t *testing.T) {
-	tests := []struct {
-		line    string
-		want    Resource
-		wantErr bool
-	}{
-		{
-			line: "pr:owner/repo#123 https://github.com/owner/repo/pull/123",
-			want: Resource{Type: "pr", ID: "owner/repo#123", URL: "https://github.com/owner/repo/pull/123"},
-		},
-		{
-			line: "jira:RHOAIENG-456 https://redhat.atlassian.net/browse/RHOAIENG-456",
-			want: Resource{Type: "jira", ID: "RHOAIENG-456", URL: "https://redhat.atlassian.net/browse/RHOAIENG-456"},
-		},
-		{
-			line: "~ jira:RHOAIENG-400 https://redhat.atlassian.net/browse/RHOAIENG-400",
-			want: Resource{Type: "jira", ID: "RHOAIENG-400", URL: "https://redhat.atlassian.net/browse/RHOAIENG-400", Related: true},
-		},
-		{
-			line:    "invalid",
-			wantErr: true,
-		},
+func testDB(t *testing.T) *sql.DB {
+	t.Helper()
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
 	}
+	t.Cleanup(func() { conn.Close() })
+	return conn
+}
 
-	for _, tt := range tests {
-		t.Run(tt.line, func(t *testing.T) {
-			got, err := parseLine(tt.line)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if got != tt.want {
-				t.Errorf("got %+v, want %+v", got, tt.want)
-			}
-		})
+func TestAddAndLoad(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/a"
+	if err := Add(conn, wt, Resource{Type: "pr", ID: "o/r#1", URL: "http://x/1"}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Load(conn, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 1 || res[0].ID != "o/r#1" || res[0].Related {
+		t.Fatalf("got %+v", res)
 	}
 }
 
-func TestLoadSaveRoundTrip(t *testing.T) {
-	dir := t.TempDir()
-	resources := []Resource{
-		{Type: "pr", ID: "owner/repo#1", URL: "https://github.com/owner/repo/pull/1"},
-		{Type: "jira", ID: "PROJ-100", URL: "https://jira.example.com/browse/PROJ-100"},
-		{Type: "jira", ID: "PROJ-200", URL: "https://jira.example.com/browse/PROJ-200", Related: true},
-	}
-
-	if err := Save(dir, resources); err != nil {
-		t.Fatalf("Save: %v", err)
-	}
-
-	loaded, err := Load(dir)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if len(loaded) != len(resources) {
-		t.Fatalf("got %d resources, want %d", len(loaded), len(resources))
-	}
-	for i := range resources {
-		if loaded[i] != resources[i] {
-			t.Errorf("resource %d: got %+v, want %+v", i, loaded[i], resources[i])
+func TestSecondPrimaryDemotesFirst(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/a"
+	Add(conn, wt, Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
+	Add(conn, wt, Resource{Type: "pr", ID: "o/r#2", URL: "u2"}) // new primary
+	res, _ := Load(conn, wt)
+	primaries := 0
+	for _, r := range res {
+		if !r.Related {
+			primaries++
 		}
 	}
+	if primaries != 1 {
+		t.Fatalf("expected exactly 1 primary pr, got %d in %+v", primaries, res)
+	}
+	if p := PrimaryOfType(res, "pr"); p == nil || p.ID != "o/r#2" {
+		t.Fatalf("expected #2 primary, got %+v", p)
+	}
 }
 
-func TestLoadMissing(t *testing.T) {
-	dir := t.TempDir()
-	res, err := Load(filepath.Join(dir, "nonexistent"))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+func TestUnwatchThenLoadExcludes(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/a"
+	Add(conn, wt, Resource{Type: "jira", ID: "RH-1", URL: "u"})
+	if err := Unwatch(conn, wt, "jira", "RH-1"); err != nil {
+		t.Fatal(err)
 	}
+	res, _ := Load(conn, wt)
 	if len(res) != 0 {
-		t.Errorf("expected empty, got %d", len(res))
+		t.Fatalf("unwatched resource should not appear in Load: %+v", res)
 	}
 }
 
-func TestAddPrimaryDemotesExisting(t *testing.T) {
-	dir := t.TempDir()
-	Save(dir, []Resource{
-		{Type: "jira", ID: "PROJ-1", URL: "https://example.com/PROJ-1"},
-	})
-
-	Add(dir, Resource{Type: "jira", ID: "PROJ-2", URL: "https://example.com/PROJ-2"})
-
-	loaded, _ := Load(dir)
-	if len(loaded) != 2 {
-		t.Fatalf("expected 2 resources, got %d", len(loaded))
+func TestAddRevivesUserUnwatched(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/a"
+	Add(conn, wt, Resource{Type: "jira", ID: "RH-1", URL: "u"})
+	Unwatch(conn, wt, "jira", "RH-1")
+	if err := Add(conn, wt, Resource{Type: "jira", ID: "RH-1", URL: "u2"}); err != nil {
+		t.Fatal(err)
 	}
-	if !loaded[0].Related {
-		t.Error("expected old primary to be demoted to related")
-	}
-	if loaded[1].Related {
-		t.Error("expected new resource to be primary")
+	res, _ := Load(conn, wt)
+	if len(res) != 1 || res[0].URL != "u2" {
+		t.Fatalf("explicit Add must revive a user-unwatched resource: %+v", res)
 	}
 }
 
-func TestPrimaryOfType(t *testing.T) {
-	resources := []Resource{
-		{Type: "pr", ID: "owner/repo#1", URL: "https://github.com/owner/repo/pull/1"},
-		{Type: "jira", ID: "PROJ-1", URL: "https://example.com/PROJ-1", Related: true},
-		{Type: "jira", ID: "PROJ-2", URL: "https://example.com/PROJ-2"},
+func TestRemoveIsHard(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/a"
+	Add(conn, wt, Resource{Type: "pr", ID: "o/r#1", URL: "u"})
+	if err := Remove(conn, wt, "pr", "o/r#1"); err != nil {
+		t.Fatal(err)
 	}
-
-	pr := PrimaryOfType(resources, "pr")
-	if pr == nil || pr.ID != "owner/repo#1" {
-		t.Errorf("expected PR, got %v", pr)
+	res, _ := Load(conn, wt)
+	if len(res) != 0 {
+		t.Fatalf("removed resource should be gone: %+v", res)
 	}
-
-	jira := PrimaryOfType(resources, "jira")
-	if jira == nil || jira.ID != "PROJ-2" {
-		t.Errorf("expected PROJ-2, got %v", jira)
-	}
-
-	missing := PrimaryOfType(resources, "slack")
-	if missing != nil {
-		t.Errorf("expected nil, got %v", missing)
-	}
-}
-
-func TestRemove(t *testing.T) {
-	dir := t.TempDir()
-	Save(dir, []Resource{
-		{Type: "jira", ID: "PROJ-1", URL: "https://example.com/PROJ-1"},
-		{Type: "jira", ID: "PROJ-2", URL: "https://example.com/PROJ-2"},
-	})
-
-	Remove(dir, "jira", "PROJ-1")
-	loaded, _ := Load(dir)
-	if len(loaded) != 1 || loaded[0].ID != "PROJ-2" {
-		t.Errorf("expected only PROJ-2 remaining, got %+v", loaded)
-	}
-	_ = os.Remove("") // satisfy import
 }
