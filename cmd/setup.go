@@ -2,12 +2,17 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
+	wconfig "github.com/mturley/watcher/config"
 	"github.com/mturley/worktree/internal/config"
+	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/setup"
 	"github.com/mturley/worktree/internal/ui"
 	"github.com/spf13/cobra"
 )
+
+const consumerName = "worktree"
 
 var setupYes bool
 var setupUninstall bool
@@ -50,7 +55,32 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	return plan.Execute()
+	if err := plan.Execute(); err != nil {
+		return err
+	}
+
+	if err := registerWatcherConsumer(); err != nil {
+		fmt.Fprintf(os.Stderr, "Note: could not register worktree in watcher consumer registry: %v\n", err)
+	}
+
+	return nil
+}
+
+// registerWatcherConsumer records worktree's DB in the shared watcher
+// ConsumerRegistry (~/.config/watcher/auth.yaml). Best-effort: forward-looking
+// per CC-1, not required by any Phase 1 feature.
+func registerWatcherConsumer() error {
+	dbPath, err := wdb.Path()
+	if err != nil {
+		return err
+	}
+	cfgPath := wconfig.DefaultPath()
+	cfg, err := wconfig.Load(cfgPath) // returns &Config{} if the file is absent
+	if err != nil {
+		return err
+	}
+	cfg.RegisterConsumer(consumerName, dbPath)
+	return cfg.Save(cfgPath)
 }
 
 func runUninstall(cfg config.Config) error {
