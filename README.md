@@ -44,14 +44,14 @@ Run `worktree setup --uninstall` to reverse setup changes. The config file is pr
 
 ```bash
 # Create a worktree for a new branch
-worktree my-feature-branch
+worktree add my-feature-branch
 
 # Create a worktree for a PR (by number or URL)
-worktree 1234
-worktree https://github.com/org/repo/pull/1234
+worktree add 1234
+worktree add https://github.com/org/repo/pull/1234
 
 # Create a worktree for a Jira issue
-worktree https://your-org.atlassian.net/browse/PROJ-5678
+worktree add https://your-org.atlassian.net/browse/PROJ-5678
 
 # List all discovered worktrees
 worktree list
@@ -62,20 +62,23 @@ worktree info
 
 ## Usage
 
-### Smart Argument Routing
+Running `worktree` with no arguments shows help followed by info about the current directory.
 
-The root `worktree` command detects what you're passing and does the right thing:
+### Creating Worktrees — `worktree add`
 
-| Input | Action |
-|-------|--------|
-| (no args) | Show help and info for the current directory |
+`worktree add <arg>` detects what you're passing and does the right thing:
+
+| Argument | Action |
+|----------|--------|
 | `1234` | Create/open a worktree for PR #1234 (from the current repo) |
 | `https://github.com/.../pull/1234` | Create/open a worktree for the linked PR |
 | `https://...atlassian.net/browse/KEY-123` | Create a worktree with the Jira key as the branch name |
-| `my-feature` | Create a worktree for a new branch from upstream/main |
+| `my-feature` | Create a worktree for a new branch from the current HEAD |
 | `/path/to/worktree` | Show info for an existing worktree |
 
 When creating a PR worktree, the tool automatically finds the local clone matching the PR's repository by searching your configured search roots. It resolves the correct remote by URL (not by name), so fork workflows with `origin`/`upstream` work correctly.
+
+New branch worktrees branch from the current HEAD. Before creating one, the tool offers to `git pull` first.
 
 ### Commands
 
@@ -125,7 +128,7 @@ worktree version                 # Print version
 
 ## What Happens When You Create a Worktree
 
-When you run `worktree <arg>`, the tool:
+When you run `worktree add <arg>`, the tool:
 
 1. Creates the git worktree under `~/.worktrees/<repo>/<name>`
 2. Allocates a unique port range (10 ports starting at 4020, e.g. `4020-4029`)

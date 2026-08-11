@@ -22,10 +22,10 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "worktree [PR-number | PR-URL | branch-name | path]",
+	Use:   "worktree",
 	Short: "CLI for managing git worktrees",
 	Long:  "CLI for managing git worktrees with GitHub/Jira integration and optional cmux support.",
-	Args:  cobra.MaximumNArgs(1),
+	Args:  cobra.NoArgs,
 	RunE:  runRoot,
 }
 
@@ -47,42 +47,12 @@ func init() {
 var prURLPattern = regexp.MustCompile(`github\.com/([^/]+)/([^/]+)/pull/(\d+)`)
 
 func runRoot(cmd *cobra.Command, args []string) error {
-	if len(args) == 0 {
-		cmd.Help()
-		fmt.Println()
-		fmt.Println(ui.Dim("─────────────────────────────────────────"))
-		fmt.Println()
-		runInfo(cmd, args)
-		return nil
-	}
-
-	arg := args[0]
-
-	if m := prURLPattern.FindStringSubmatch(arg); m != nil {
-		owner, repo := m[1], m[2]
-		number, _ := strconv.Atoi(m[3])
-		return handlePR(owner, repo, number)
-	}
-
-	if jira.IsJiraURL(arg) {
-		return handleJiraURL(arg)
-	}
-
-	if _, err := strconv.Atoi(arg); err == nil {
-		return handlePRNumber(arg)
-	}
-
-	if info, err := os.Stat(arg); err == nil && info.IsDir() {
-		if _, err := os.Stat(filepath.Join(arg, ".git")); err == nil {
-			return runInfo(cmd, args)
-		}
-		gitFile := filepath.Join(arg, ".git")
-		if data, err := os.ReadFile(gitFile); err == nil && strings.HasPrefix(string(data), "gitdir:") {
-			return runInfo(cmd, args)
-		}
-	}
-
-	return handleBranch(arg)
+	cmd.Help()
+	fmt.Println()
+	fmt.Println(ui.Dim("─────────────────────────────────────────"))
+	fmt.Println()
+	runInfo(cmd, args)
+	return nil
 }
 
 func handlePR(owner, repo string, number int) error {
