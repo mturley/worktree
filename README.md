@@ -122,9 +122,9 @@ Jira issues are automatically detected from the PR title, PR body, and branch na
 worktree env                     # Print shell environment variables (use: eval "$(worktree env)")
 worktree resources list          # List tracked resources (database-backed)
 worktree resources list --json   # JSON format for agent-handler integration
-worktree resources add TYPE ID URL  # Add a resource
-worktree resources unwatch ID    # Soft-remove a resource (mark inactive)
-worktree resources remove ID     # Hard-remove a resource from database
+worktree resources add <type> <id> [--url <url>] [--related]  # Add a resource
+worktree resources unwatch <type> <id>  # Soft-remove a resource (mark inactive)
+worktree resources remove <type> <id>   # Hard-remove a resource from database
 ```
 
 #### Watcher (Timeline Integration)

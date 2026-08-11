@@ -81,9 +81,9 @@ worktree ports                              # show/manage port allocations (DB-b
 
 worktree env                                # print shell env vars (use: eval "$(worktree env)")
 worktree resources list [--json]            # list tracked resources (DB-backed)
-worktree resources add <type> <id> <url>    # add a resource
-worktree resources unwatch <id>             # soft-remove (mark inactive)
-worktree resources remove <id>              # hard-remove from DB
+worktree resources add <type> <id> [--url <url>] [--related]  # add a resource
+worktree resources unwatch <type> <id>      # soft-remove (mark inactive)
+worktree resources remove <type> <id>       # hard-remove from DB
 
 worktree open [<path>]                      # open in editor ($EDITOR or configured)
 worktree open --github                      # open PR in browser
@@ -153,7 +153,7 @@ Worktree state is stored in a SQLite database at `${XDG_DATA_HOME:-~/.local/shar
 
 - **`worktrees` table** — Registry of all worktrees created by this tool (CRUD via `internal/registry`)
 - **`port_allocations` table** — Port ranges (atomic allocation via `internal/ports`)
-- **`worktree_primary` table** — Primary resource flag for `worktree_subscriptions` rows (e.g., the reason a worktree exists)
+- **`worktree_primary` table** — Primary resource flag for `watcher_subscriptions` rows (e.g., the reason a worktree exists)
 - **`watcher_*` tables** — Owned by the `github.com/mturley/watcher` library; includes `watcher_subscriptions` (PR/Jira associations) and `watcher_events` (timeline events from `worktree watcher run`)
 
 **Shell environment variables** are generated on-demand by `worktree env`, which queries the database and prints `export ...` lines. The shell RC hook runs `eval "$(worktree env)"` on directory change (via the `chpwd` hook installed by `worktree setup`).
