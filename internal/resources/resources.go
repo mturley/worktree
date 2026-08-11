@@ -121,6 +121,28 @@ func Remove(conn *sql.DB, worktreePath, resType, id string) error {
 	return err
 }
 
+// RemoveAll hard-removes every tracked resource for the worktree at
+// worktreePath: it hard-unsubscribes each resource (watcher Unsubscribe) and
+// deletes all worktree_primary rows for the worktree's subscriber. Used when a
+// worktree is deleted or cleaned up so no dead subscriptions linger.
+func RemoveAll(conn *sql.DB, worktreePath string) error {
+	sub := wdb.Subscriber(worktreePath)
+	// Enumerate current active resources and hard-unsubscribe each.
+	rs, err := Load(conn, worktreePath)
+	if err != nil {
+		return err
+	}
+	for _, r := range rs {
+		if err := watcherdb.Unsubscribe(conn, sub, watcher.Resource{Type: r.Type, ID: r.ID}); err != nil {
+			return err
+		}
+	}
+	// Delete all primary-flag rows for this subscriber (covers any rows whose
+	// subscription was already tombstoned and thus not returned by Load).
+	_, err = conn.Exec(`DELETE FROM worktree_primary WHERE subscriber = ?`, sub)
+	return err
+}
+
 // Unwatch soft-unsubscribes as a user tombstone (distinct from Remove). The
 // worktree_primary row is left in place, but note that a later Add overwrites
 // is_primary from the caller-supplied Related flag — it does not restore the

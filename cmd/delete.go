@@ -10,6 +10,7 @@ import (
 	"github.com/mturley/worktree/internal/gitutil"
 	"github.com/mturley/worktree/internal/ports"
 	"github.com/mturley/worktree/internal/registry"
+	"github.com/mturley/worktree/internal/resources"
 	"github.com/mturley/worktree/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -76,6 +77,9 @@ func runDelete(cmd *cobra.Command, args []string) error {
 		}
 		if err := registry.Unregister(conn, wtPath); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to unregister worktree: %v\n", err)
+		}
+		if err := resources.RemoveAll(conn, wtPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to remove tracked resources: %v\n", err)
 		}
 	}
 

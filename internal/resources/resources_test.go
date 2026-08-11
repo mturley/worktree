@@ -99,6 +99,30 @@ func TestAddRevivesUserUnwatched(t *testing.T) {
 	}
 }
 
+func TestRemoveAllClearsSubscriptionsAndPrimary(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/a"
+	Add(conn, wt, Resource{Type: "pr", ID: "o/r#1", URL: "u1"})                 // primary
+	Add(conn, wt, Resource{Type: "jira", ID: "RH-1", URL: "u2", Related: true}) // related
+	if err := RemoveAll(conn, wt); err != nil {
+		t.Fatal(err)
+	}
+	// Load returns nothing.
+	rs, _ := Load(conn, wt)
+	if len(rs) != 0 {
+		t.Fatalf("expected no active resources after RemoveAll, got %+v", rs)
+	}
+	// No worktree_primary rows remain for this subscriber.
+	sub := wdb.Subscriber(wt)
+	var n int
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM worktree_primary WHERE subscriber = ?`, sub).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("expected 0 worktree_primary rows, got %d", n)
+	}
+}
+
 func TestRemoveIsHard(t *testing.T) {
 	conn := testDB(t)
 	wt := "/tmp/wt/a"

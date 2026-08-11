@@ -9,6 +9,7 @@ import (
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/ports"
 	"github.com/mturley/worktree/internal/registry"
+	"github.com/mturley/worktree/internal/resources"
 	"github.com/mturley/worktree/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -62,6 +63,9 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 			}
 			if err := ports.Release(conn, filepath.Base(path)); err == nil {
 				fmt.Printf("  %s Released port range\n", ui.Green("✓"))
+			}
+			if err := resources.RemoveAll(conn, path); err != nil {
+				fmt.Fprintf(os.Stderr, "  Warning: failed to remove tracked resources: %v\n", err)
 			}
 		}
 	}
