@@ -81,20 +81,32 @@ func Reconcile(conn *sql.DB, worktreesBase string) (ReconcileResult, error) {
 		}
 	}
 
-	dirents, err := os.ReadDir(worktreesBase)
+	// Worktrees live at <worktreesBase>/<repo>/<branch> (three levels total).
+	// Walk two levels under worktreesBase to find on-disk worktree candidates.
+	repoDirs, err := os.ReadDir(worktreesBase)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return res, nil
 		}
 		return res, err
 	}
-	for _, d := range dirents {
-		if !d.IsDir() {
+	for _, repo := range repoDirs {
+		if !repo.IsDir() {
 			continue
 		}
-		p := filepath.Join(worktreesBase, d.Name())
-		if !registered[p] {
-			res.Orphans = append(res.Orphans, p)
+		repoPath := filepath.Join(worktreesBase, repo.Name())
+		branchDirs, err := os.ReadDir(repoPath)
+		if err != nil {
+			continue
+		}
+		for _, branch := range branchDirs {
+			if !branch.IsDir() {
+				continue
+			}
+			p := filepath.Join(repoPath, branch.Name())
+			if !registered[p] {
+				res.Orphans = append(res.Orphans, p)
+			}
 		}
 	}
 	return res, nil

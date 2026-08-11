@@ -52,17 +52,19 @@ func TestReconcileFindsStaleAndOrphans(t *testing.T) {
 	conn := testDB(t)
 	base := t.TempDir()
 
+	// Worktrees live at <base>/<repo>/<branch> (three levels total).
 	// on-disk worktree dir NOT in DB -> orphan
-	orphan := filepath.Join(base, "orphan")
+	orphan := filepath.Join(base, "myrepo", "orphan")
 	os.MkdirAll(orphan, 0o755)
 
 	// DB row whose dir is gone -> stale
-	Register(conn, Entry{Path: filepath.Join(base, "gone"), Repo: "r", RepoRoot: "/r", Branch: "b", CreatedAt: "t"})
+	gone := filepath.Join(base, "myrepo", "gone")
+	Register(conn, Entry{Path: gone, Repo: "myrepo", RepoRoot: "/r", Branch: "gone", CreatedAt: "t"})
 
-	// DB row that exists -> neither
-	live := filepath.Join(base, "live")
+	// DB row that exists on disk -> neither
+	live := filepath.Join(base, "myrepo", "live")
 	os.MkdirAll(live, 0o755)
-	Register(conn, Entry{Path: live, Repo: "r", RepoRoot: "/r", Branch: "b", CreatedAt: "t"})
+	Register(conn, Entry{Path: live, Repo: "myrepo", RepoRoot: "/r", Branch: "live", CreatedAt: "t"})
 
 	res, err := Reconcile(conn, base)
 	if err != nil {
@@ -71,7 +73,7 @@ func TestReconcileFindsStaleAndOrphans(t *testing.T) {
 	if len(res.Orphans) != 1 || res.Orphans[0] != orphan {
 		t.Fatalf("orphans: %+v", res.Orphans)
 	}
-	if len(res.Stale) != 1 || res.Stale[0] != filepath.Join(base, "gone") {
+	if len(res.Stale) != 1 || res.Stale[0] != gone {
 		t.Fatalf("stale: %+v", res.Stale)
 	}
 }

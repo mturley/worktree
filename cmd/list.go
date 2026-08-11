@@ -2,17 +2,18 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/mturley/worktree/internal/cmux"
-	"github.com/mturley/worktree/internal/config"
-	"github.com/mturley/worktree/internal/discovery"
+	wdb "github.com/mturley/worktree/internal/db"
+	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/ui"
 	"github.com/spf13/cobra"
 )
 
 var listCmd = &cobra.Command{
 	Use:     "list",
-	Short:   "List all discovered worktrees",
+	Short:   "List all managed worktrees",
 	GroupID: "worktree",
 	RunE:    runList,
 }
@@ -22,23 +23,22 @@ func init() {
 }
 
 func runList(cmd *cobra.Command, args []string) error {
-	cfg, err := config.Load()
+	conn, err := wdb.Open()
 	if err != nil {
-		return fmt.Errorf("loading config: %w", err)
+		return fmt.Errorf("opening db: %w", err)
 	}
+	defer conn.Close()
 
-	groups, err := discovery.Discover(cfg.Search.Roots, cfg.Search.Depth, cfg.Search.Prune)
+	entries, err := registry.List(conn)
 	if err != nil {
-		return fmt.Errorf("discovering worktrees: %w", err)
+		return fmt.Errorf("listing worktrees: %w", err)
 	}
-
-	if len(groups) == 0 {
-		fmt.Println("No worktrees found.")
-		fmt.Printf("Search roots: %v\n", cfg.Search.Roots)
+	if len(entries) == 0 {
+		fmt.Println("No worktrees managed by worktree yet. Create one with `worktree add`.")
 		return nil
 	}
 
-	cmuxDirs := make(map[string]bool)
+	cmuxDirs := map[string]bool{}
 	if cmux.IsAvailable() {
 		if workspaces, err := cmux.ListWorkspaces(); err == nil {
 			for _, ws := range workspaces {
@@ -49,40 +49,28 @@ func runList(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	currentRepo := ""
 	n := 0
-	for _, group := range groups {
-		fmt.Printf("\n%s\n", ui.Bold(group.Repo))
-		for _, wt := range group.Worktrees {
-			n++
-			status := ""
-			switch wt.Status {
-			case "prunable":
-				status = " " + ui.Yellow("(prunable)")
-			case "missing":
-				status = " " + ui.Red("(missing)")
-			case "orphaned":
-				status = " " + ui.Red("(orphaned)")
-			}
-
-			cmuxMarker := ""
-			if cmuxDirs[wt.Path] {
-				cmuxMarker = " " + ui.Green("[open]")
-			}
-
-			branch := wt.Branch
-			if branch == "" {
-				branch = "(no branch)"
-			}
-
-			path := ui.ShortPath(wt.Path)
-			fmt.Printf("  %s %s %s%s%s\n",
-				ui.Dim(fmt.Sprintf("[%d]", n)),
-				ui.Cyan(branch),
-				ui.Dim(path),
-				status,
-				cmuxMarker,
-			)
+	for _, e := range entries {
+		if e.Repo != currentRepo {
+			fmt.Printf("\n%s\n", ui.Bold(e.Repo))
+			currentRepo = e.Repo
 		}
+		n++
+		missing := ""
+		if _, statErr := os.Stat(e.Path); os.IsNotExist(statErr) {
+			missing = " " + ui.Red("(missing)")
+		}
+		cmuxMarker := ""
+		if cmuxDirs[e.Path] {
+			cmuxMarker = " " + ui.Green("[open]")
+		}
+		branch := e.Branch
+		if branch == "" {
+			branch = "(no branch)"
+		}
+		fmt.Printf("  %s %s %s%s%s\n",
+			ui.Dim(fmt.Sprintf("[%d]", n)), ui.Cyan(branch), ui.Dim(ui.ShortPath(e.Path)), missing, cmuxMarker)
 	}
 	fmt.Println()
 	return nil

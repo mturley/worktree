@@ -15,19 +15,19 @@ import (
 )
 
 type Plan struct {
-	CreateWorktreesBase  bool
-	WorktreesBase        string
-	InstallShellRC       bool
-	ShellRC              ShellRC
-	CreateConfig         bool
-	ConfigPath           string
-	InstallCompletions   bool
-	CompletionsExist     bool
-	ConfigureJira        bool
-	TestJira             bool
-	GHMissing            bool
-	GHNotAuthenticated   bool
-	Cfg                  config.Config
+	CreateWorktreesBase bool
+	WorktreesBase       string
+	InstallShellRC      bool
+	ShellRC             ShellRC
+	CreateConfig        bool
+	ConfigPath          string
+	InstallCompletions  bool
+	CompletionsExist    bool
+	ConfigureJira       bool
+	TestJira            bool
+	GHMissing           bool
+	GHNotAuthenticated  bool
+	Cfg                 config.Config
 }
 
 func BuildPlan(cfg config.Config) Plan {
@@ -237,15 +237,8 @@ func testAndRepairJira(configPath string, cfg config.Config) error {
 
 func promptAndSaveConfig(configPath string, cfg config.Config) error {
 	home, _ := os.UserHomeDir()
-	defaultRoot := "~"
-	if len(cfg.Search.Roots) > 0 {
-		defaultRoot = shortenHome(cfg.Search.Roots[0], home)
-	}
 
 	fmt.Println()
-	root := ui.PromptLineDefault("  Where do you clone git projects?", defaultRoot)
-	cfg.Search.Roots = []string{config.ExpandHome(root)}
-
 	wtBase := ui.PromptLineDefault("  Where should worktrees be created?", shortenHome(cfg.WorktreesBase, home))
 	cfg.WorktreesBase = config.ExpandHome(wtBase)
 
@@ -395,26 +388,15 @@ func writeConfig(path string, cfg config.Config) error {
 	}
 
 	type yamlConfig struct {
-		WorktreesBase string `yaml:"worktrees_base"`
-		Search        struct {
-			Roots []string `yaml:"roots"`
-			Depth int      `yaml:"depth"`
-			Prune []string `yaml:"prune"`
-		} `yaml:"search"`
-		Editor string   `yaml:"editor,omitempty"`
-		Jira   jiraYaml `yaml:"jira,omitempty"`
+		WorktreesBase string   `yaml:"worktrees_base"`
+		Editor        string   `yaml:"editor,omitempty"`
+		Jira          jiraYaml `yaml:"jira,omitempty"`
 	}
 
 	yc := yamlConfig{
 		WorktreesBase: shortenHome(cfg.WorktreesBase, home),
 		Editor:        cfg.Editor,
 	}
-	yc.Search.Roots = make([]string, len(cfg.Search.Roots))
-	for i, r := range cfg.Search.Roots {
-		yc.Search.Roots[i] = shortenHome(r, home)
-	}
-	yc.Search.Depth = cfg.Search.Depth
-	yc.Search.Prune = cfg.Search.Prune
 
 	if cfg.Jira.Host != "" {
 		yc.Jira = jiraYaml{

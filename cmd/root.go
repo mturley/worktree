@@ -499,15 +499,5 @@ func findRepoForPR(cfg config.Config, owner, repo string) (string, error) {
 		}
 	}
 
-	// Search across configured roots
-	var root string
-	err := ui.SpinWhile(fmt.Sprintf("Searching for local clone of %s/%s", owner, repo), func() error {
-		var findErr error
-		root, findErr = gitutil.FindRepoBySlug(owner, repo, cfg.Search.Roots, cfg.Search.Depth, cfg.Search.Prune)
-		return findErr
-	})
-	if err != nil {
-		return "", fmt.Errorf("cannot find local clone of %s/%s — run this command from inside the repo, or add its parent to search.roots in config", owner, repo)
-	}
-	return root, nil
+	return "", fmt.Errorf("cannot find local clone of %s/%s — run this command from inside the repo", owner, repo)
 }
