@@ -27,6 +27,32 @@ A web UI (Mantine) for the `worktree` CLI with: a **worktree list + global timel
 
 `internal/resources/resources.go` today: `Resource{ Type string; ID string; URL string; Related bool }`, where `Related` (the `~ ` prefix) already encodes **primary vs related** — exactly the distinction handler needs for "which resources are primary for auto-watching." Maps cleanly onto watcher's `Resource{Type,ID,URL}` + a subscription flag. Primary = `!Related`.
 
+## Cross-cutting architecture decisions (brainstorm 2026-08-11, part 2)
+
+These span multiple phases; decided up-front to avoid retrofits. Each phase's own plan implements its slice.
+
+### CC-1. Poller ownership & DB topology — separate DBs, poll in the UI server (no scheduler)
+- **worktree gets its OWN watcher DB**, separate from handler's `~/.agent-handler/data/handler.db`. Not a shared DB (that would mean worktree reading handler's DB — awkward ownership, handler owns session/event/dismissal tables). 
+- **The library's `ConsumerRegistry` (`consumers: {name: {db}}` in `~/.config/watcher/auth.yaml`, with `RegisterConsumer`/`Consumers()`) exists but its poll fan-out is NOT built** — it's currently a stub. worktree should still **register itself** in the ConsumerRegistry at setup (cheap, forward-looking) but otherwise keep its own DB + polling.
+- **Double-polling is accepted.** The same PR watched by both handler and worktree gets polled twice — an efficiency cost, not a correctness bug, and negligible at current (single-user) scale. Unifying pollers via ConsumerRegistry fan-out (poll each unique resource once, write to every subscribing consumer DB) remains a POSSIBLE future phase but may never pay off; do NOT build it now and do NOT block the roadmap on it.
+- **No scheduler for worktree (KEY simplification):** unlike handler (which exposes inboxes to other interfaces and so needs launchd/cron background polling), **worktree has NO external consumer of its events** — the timeline is only ever viewed in the worktree UI itself. So **polling runs inside the worktree UI server process** (poll on an interval while the server is up; refresh-on-view is fine too). It is acceptable that worktree's DB is not updated when the UI server isn't running. → worktree does NOT need handler's `scheduler.go`/launchd/cron model. Drops real scope from P1/P2.
+
+### CC-2. worktree → handler CLI contract (design in P1, consumed in P5)
+The JSON CLI surface handler binds to. Lock the shape in P1 so P5 is a thin shim:
+- `worktree resources list [--worktree <path>] --json` → `[{ "type": "pr|jira|slack", "id": "...", "url": "...", "primary": true|false }]`. `primary = !Related`. Handler P5 auto-watches `primary:true` at registration.
+- `worktree resources add <type> <id> [--url <url>] [--related]` → for handler `/watch` propagation (add a resource to the worktree).
+- `worktree resources unwatch <type> <id>` → **soft**-unsubscribe as unsubscribed-by-user (maps to watcher lib `UserUnsubscribe`), for handler `/unwatch` propagation. **Distinct from a hard `remove`.**
+- Conventions: default to cwd's worktree; `--json` for machine callers; non-zero exit + stderr when not in a worktree / CLI unavailable (handler treats that as "no worktree integration," proceeds normally).
+- The two contract essentials: **primary/related is a first-class field**, and **soft `unwatch` (user tombstone) ≠ hard `remove`**.
+
+### CC-3. Slack resource identity & timeline events (shapes P4)
+- **Resource identity:** a Slack *thread* = `{channel_id, thread_ts}` (thread_ts = parent message ts, stable). Encode as `Type:"slack"`, `ID:"<channel_id>:<thread_ts>"`, `URL` = Slack permalink. Parallels pr/jira.
+- **Timeline events:** each **new reply after the cursor** → one `watcher_event` (author, text snippet, ts). **Cursor caveat:** Slack `ts` are epoch-second strings (e.g. `1699...`), NOT RFC3339 — the poller's cursor/comparison logic must handle Slack ts format, unlike the github/jira pollers which use RFC3339. The thread ROOT message → cached `resource_state` (title/summary); replies → events.
+- **Fetch reuse:** the P4 poller wraps slack-mini's `slackapi` client (folded into worktree in P3) as its fetch layer — avoid two Slack-parsing implementations. Open: whether slackapi lives in the library or worktree feeds messages to a library poll function; decide at P4.
+
+### CC-4. Consumer model (confirmed, no library change)
+worktree is simply a new **subscriber prefix** (`worktree:<canonical-worktree-path>`, parallel to handler's `handler:session:<id>`) plus a ConsumerRegistry entry (CC-1). Verified the library needs no changes to support a second consumer this way.
+
 ## Phases
 
 Each phase is independently shippable (decision #2). Detailed writing-plans authored per phase at execution time. Execute subagent-driven with reviews (as with prior phases). Suggested subscriber identity for worktree-as-consumer: `worktree:<canonical-worktree-path>` (parallel to handler's `handler:session:<id>`); confirm at Phase 1 design.
@@ -34,12 +60,12 @@ Each phase is independently shippable (decision #2). Detailed writing-plans auth
 ### Phase 1 — worktree adopts the watcher library + a DB; resources move to the DB
 - Add `modernc.org/sqlite` + depend on `github.com/mturley/watcher`; call `wdb.Migrate` on open. Decide the DB location (e.g. `~/.worktree/worktree.db` or per-user). worktree becomes a watcher *consumer* (its own subscriber namespace).
 - Reimplement `internal/resources` over `watcher_subscriptions` (preserve primary/related via a flag; primary = `!Related`). **Stop writing `.worktree-resources`.** (No compat export — decision #2.)
-- worktree gains pr/jira polling via the library pollers (`wgithub`/`wjira`) so it has its own timeline data (`watcher_events`) independent of handler.
-- Provide a JSON CLI surface handler will later consume (e.g. `worktree resources list --json`, and commands to add/remove/soft-unsubscribe) — design the contract here even though handler adopts it in Phase 5.
-- Deliverable: worktree tracks resources in the DB, polls them, has timeline data. CLI unchanged UX-wise.
+- worktree gains pr/jira polling via the library pollers (`wgithub`/`wjira`) so it has its own timeline data (`watcher_events`) independent of handler. **Polling is invoked in-process (no launchd/cron) — see CC-1.** In P1 this can be a `worktree watcher run`-style one-shot for testing; the interval polling loop lands with the UI server in P2. Register worktree in the library ConsumerRegistry (CC-1).
+- Provide the JSON CLI surface per **CC-2** (`worktree resources list --json`, `add`, soft `unwatch` vs hard `remove`) — design/build the contract here even though handler adopts it in Phase 5.
+- Deliverable: worktree tracks resources in its own watcher DB, can poll them, has timeline data, exposes the CC-2 CLI. CLI UX otherwise unchanged.
 
 ### Phase 2 — worktree Mantine UI shell (worktree list + global timeline + detail, pr/jira)
-- New `ui/` (Vite + Mantine + React 19), Go-embedded, served by a `worktree ui` (and/or server) command mirroring handler's delivery model (embed.go, SSE for live timeline).
+- New `ui/` (Vite + Mantine + React 19), Go-embedded, served by a `worktree ui` (and/or server) command mirroring handler's delivery model (embed.go, SSE for live timeline). **The UI server owns the polling loop (CC-1):** it polls the worktree's watched resources on an interval while running (and/or on view), writing events to the worktree DB. No background scheduler; DB going stale while the server is down is acceptable.
 - Views: (a) worktree LIST + GLOBAL timeline (all worktrees' events), (b) worktree DETAIL = resource list + timeline scoped to that worktree's watched resources. pr/jira only in this phase.
 - Deliverable: usable worktree web UI for pr/jira. (Mirrors handler's global/detail UX; Mantine styling.)
 
@@ -68,7 +94,7 @@ Each phase is independently shippable (decision #2). Detailed writing-plans auth
 - Deliverable: Slack fully first-class in handler.
 
 ## Open questions to resolve at each phase's own planning
-- Phase 1: worktree DB path + subscriber-identity string; how "related" maps onto a subscription flag vs a separate column; whether worktree runs its own scheduler/poller or polls on-demand from the UI/CLI.
+- Phase 1: worktree DB path (e.g. `~/.worktree/worktree.db`?) + subscriber-identity string (`worktree:<path>` per CC-4); how "related" maps onto a subscription flag vs a separate column. (Polling model already decided — CC-1: in-UI-server, no scheduler.)
 - Phase 4: the exact Slack event shape (what counts as a timeline-worthy event — every reply? thread summary?); dedup/cursor model for Slack; whether the slackapi client lives in the library or worktree passes messages in.
 - Phase 4 hybrid seam: how much the live tab and the timeline events share (avoid double-maintaining thread parsing).
 - Cross-cutting: React version alignment (handler 19 / slack-mini 18 → target 19 in the new worktree ui).
