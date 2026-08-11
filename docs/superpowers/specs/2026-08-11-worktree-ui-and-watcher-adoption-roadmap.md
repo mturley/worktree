@@ -53,6 +53,34 @@ The JSON CLI surface handler binds to. Lock the shape in P1 so P5 is a thin shim
 ### CC-4. Consumer model (confirmed, no library change)
 worktree is simply a new **subscriber prefix** (`worktree:<canonical-worktree-path>`, parallel to handler's `handler:session:<id>`) plus a ConsumerRegistry entry (CC-1). Verified the library needs no changes to support a second consumer this way.
 
+## Persistence consolidation (brainstorm 2026-08-11, part 3)
+
+Introducing the DB (Phase 1) is the moment to consolidate worktree's on-disk state. Deciding test: **who reads it, and when?** worktree-only readers → DB; readers outside worktree (shell, git) → file or a shellenv-style bridge.
+
+| Data (today) | Decision | Rationale |
+|---|---|---|
+| Port allocations (`.port-ranges`, global name→slot map) | **→ DB (worktree-owned table), in Phase 1** | Relational w/ a uniqueness constraint; the flat file has a parse→mutate→rewrite race on concurrent allocate. DB gives atomic allocate + `UNIQUE(slot)`. worktree-only reader. Allocated range still reaches the shell via the env bridge (a projection, not a reason to keep the file). |
+| Resources (`.worktree-resources`) | → DB (watcher_subscriptions), Phase 1 | Original driver. |
+| `.worktree-env` (export lines sourced by shell) | **DB is source of truth; project via a `shellenv`-style command** (see PC-1) | Shell can't query SQLite → need a bridge, not a raw DB read. |
+| `.git/info/exclude` worktree-managed block | **REMOVE entirely (Phase 1)** | Verified it manages exactly `.worktree-env` + `.worktree-resources` (`internal/gitutil/exclude.go` `managedEntries`). Both files are going away, so the exclude block has nothing left to exclude. Drop `AddExcludes`/`RemoveExcludes` and their call sites. |
+| `~/.config/worktree/config.yaml` | Stays a file | User-editable config; file is correct. BUT drop the `search:` (discovery roots/depth/prune) section — see PC-2. |
+| Discovery (scan filesystem for worktrees) | **Pivot: DB is the registry** — see PC-2 | worktree only manages worktrees IT created. |
+| dotfiles copy | No change | File-copy op, no state. |
+
+### PC-1. `.worktree-env` → shellenv command (with a fast-cold-start note)
+- Replace the sourced `.worktree-env` file with a command that prints `export …` lines computed live from the DB (à la `brew shellenv`); shellrc does `eval "$(worktree env)"` on `cd` into a worktree (migrate the existing shellrc block that currently `source`s the file). Vars: `WORKTREE_PORTS`, `WORKTREE_TITLE`, `WORKTREE_PATH`, `KUBECONFIG` (KUBECONFIG points at a seeded file that stays on disk; only the path is env data).
+- Must be **cheap and silent** outside a worktree (safe to eval anywhere), like `brew shellenv`.
+- **IMPORTANT (author): fast cold start matters** — the main `worktree` binary will bloat once the web UI is embedded, and this runs on every `cd`. Strongly consider a **separate tiny `worktree-env` binary** (no UI deps) that only reads the DB and prints exports, invoked by the shellrc eval. Possibly an over-optimization, but flagged as important; evaluate at the PC-1/Phase-1 planning (measure the full binary's cold start first).
+
+### PC-2. Discovery pivot — DB registry, not filesystem scan
+- **Today:** `discovery.Discover(cfg.Search.Roots, Depth, Prune)` scans the filesystem and adopts ANY git worktrees it finds (used by `list`, `cleanup`, `prune`). 
+- **New model (author decision):** the DB is the source of truth for worktrees this tool manages. worktree only manages worktrees IT created (recorded in the DB at creation). **Stop scanning for / showing unrelated worktrees.** `list` reads the DB. Drop the `search:` config section (roots/depth/prune) from `config.yaml`.
+- **Retain a reconcile/cleanup command:** detect (a) folders under the worktrees base that are NOT in the DB (orphans → offer to delete) and (b) DB rows whose worktree files are gone (stale → clean up). This replaces the old scan-based `cleanup`/`prune` with a DB-vs-disk reconcile.
+- Ripple: `discovery.go`'s scan (`Discover`/`findGitRepos`) is largely removed; `IsInsideWorktree` (live git check for "am I in a worktree right now") is still useful — keep it. `list`/`cleanup`/`prune` cmds are reworked around the DB.
+
+### Follow-up noted (not scoped here)
+- worktree's `config.yaml` has its own `jira: {host,email,token,projects}` block, duplicating creds destined for `~/.config/watcher/auth.yaml`. Once worktree adopts the watcher library, consider sourcing Jira (and GitHub) creds from the shared watcher auth config instead of worktree's config.yaml (keep worktree-specific bits like `projects`/`editor`/`worktrees_base` in config.yaml). A consolidation nicety; revisit during Phase 1 or later, don't expand P1 scope for it now.
+
 ## Phases
 
 Each phase is independently shippable (decision #2). Detailed writing-plans authored per phase at execution time. Execute subagent-driven with reviews (as with prior phases). Suggested subscriber identity for worktree-as-consumer: `worktree:<canonical-worktree-path>` (parallel to handler's `handler:session:<id>`); confirm at Phase 1 design.
@@ -62,7 +90,8 @@ Each phase is independently shippable (decision #2). Detailed writing-plans auth
 - Reimplement `internal/resources` over `watcher_subscriptions` (preserve primary/related via a flag; primary = `!Related`). **Stop writing `.worktree-resources`.** (No compat export — decision #2.)
 - worktree gains pr/jira polling via the library pollers (`wgithub`/`wjira`) so it has its own timeline data (`watcher_events`) independent of handler. **Polling is invoked in-process (no launchd/cron) — see CC-1.** In P1 this can be a `worktree watcher run`-style one-shot for testing; the interval polling loop lands with the UI server in P2. Register worktree in the library ConsumerRegistry (CC-1).
 - Provide the JSON CLI surface per **CC-2** (`worktree resources list --json`, `add`, soft `unwatch` vs hard `remove`) — design/build the contract here even though handler adopts it in Phase 5.
-- Deliverable: worktree tracks resources in its own watcher DB, can poll them, has timeline data, exposes the CC-2 CLI. CLI UX otherwise unchanged.
+- **Persistence consolidation folded into P1 (see the section above):** (a) move port allocations from `.port-ranges` into a worktree-owned DB table (PC table; atomic allocate + unique slot); (b) replace `.worktree-env` with the `shellenv`-style command + shellrc migration (PC-1; evaluate the separate `worktree-env` binary); (c) remove `.git/info/exclude` management entirely (nothing left to exclude); (d) pivot discovery to the DB registry — `list` reads the DB, drop filesystem scan + the `search:` config section, keep `IsInsideWorktree`, add a DB-vs-disk reconcile/cleanup command (PC-2).
+- Deliverable: worktree tracks resources AND port allocations in its own DB (source of truth); `worktree env` shellenv command replaces `.worktree-env`; no more `.git/info/exclude` munging; `list`/`cleanup` are DB-backed; exposes the CC-2 CLI. This is a larger P1 than "just adopt watcher" — the P1 plan may split into sub-tasks (watcher-resources, ports, env/shellenv, discovery/cleanup) but it's one coherent DB-adoption effort.
 
 ### Phase 2 — worktree Mantine UI shell (worktree list + global timeline + detail, pr/jira)
 - New `ui/` (Vite + Mantine + React 19), Go-embedded, served by a `worktree ui` (and/or server) command mirroring handler's delivery model (embed.go, SSE for live timeline). **The UI server owns the polling loop (CC-1):** it polls the worktree's watched resources on an interval while running (and/or on view), writing events to the worktree DB. No background scheduler; DB going stale while the server is down is acceptable.
