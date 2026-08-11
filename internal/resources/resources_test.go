@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	watcherdb "github.com/mturley/watcher/db"
 	wdb "github.com/mturley/worktree/internal/db"
 )
 
@@ -64,6 +65,24 @@ func TestUnwatchThenLoadExcludes(t *testing.T) {
 	if len(res) != 0 {
 		t.Fatalf("unwatched resource should not appear in Load: %+v", res)
 	}
+
+	// Contrast with TestRemoveIsHard: Unwatch is a *user* tombstone.
+	all, err := watcherdb.AllSubscriptions(conn, wdb.Subscriber(wt), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, s := range all {
+		if s.Resource.Type == "jira" && s.Resource.ID == "RH-1" {
+			found = true
+			if !s.UnsubscribedByUser {
+				t.Fatalf("expected UnsubscribedByUser=true after Unwatch, got %+v", s)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected subscription row to still exist (soft tombstone) after Unwatch")
+	}
 }
 
 func TestAddRevivesUserUnwatched(t *testing.T) {
@@ -90,5 +109,34 @@ func TestRemoveIsHard(t *testing.T) {
 	res, _ := Load(conn, wt)
 	if len(res) != 0 {
 		t.Fatalf("removed resource should be gone: %+v", res)
+	}
+
+	// Load alone can't distinguish a hard Remove from a soft Unwatch (both
+	// exclude the resource). Assert the primary row is actually deleted...
+	sub := wdb.Subscriber(wt)
+	var count int
+	if err := conn.QueryRow(
+		`SELECT COUNT(*) FROM worktree_primary WHERE subscriber = ? AND resource_type = ? AND resource_id = ?`,
+		sub, "pr", "o/r#1").Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("expected worktree_primary row to be deleted after Remove, found %d", count)
+	}
+
+	// ...and that the tombstone is a NON-user tombstone (distinct from Unwatch).
+	all, err := watcherdb.AllSubscriptions(conn, sub, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range all {
+		if s.Resource.Type == "pr" && s.Resource.ID == "o/r#1" {
+			if s.UnsubscribedByUser {
+				t.Fatalf("expected UnsubscribedByUser=false after hard Remove, got %+v", s)
+			}
+			if s.DeletedAt == nil {
+				t.Fatalf("expected DeletedAt to be set after hard Remove, got %+v", s)
+			}
+		}
 	}
 }

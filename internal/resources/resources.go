@@ -1,6 +1,7 @@
 package resources
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 
@@ -75,9 +76,18 @@ func Add(conn *sql.DB, worktreePath string, r Resource) error {
 		return fmt.Errorf("subscribe: %w", err)
 	}
 
+	// Demote-then-upsert must be atomic: if we crash or error between the two
+	// statements, the worktree could be left with zero primaries of this type,
+	// violating the "at most one primary per type" invariant.
+	tx, err := conn.BeginTx(context.Background(), nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
 	if !r.Related {
 		// Demote any existing primary of this type.
-		if _, err := conn.Exec(
+		if _, err := tx.Exec(
 			`UPDATE worktree_primary SET is_primary = 0 WHERE subscriber = ? AND resource_type = ?`,
 			sub, r.Type); err != nil {
 			return err
@@ -87,13 +97,15 @@ func Add(conn *sql.DB, worktreePath string, r Resource) error {
 	if !r.Related {
 		isPrimary = 1
 	}
-	_, err := conn.Exec(
+	if _, err := tx.Exec(
 		`INSERT INTO worktree_primary (subscriber, resource_type, resource_id, is_primary)
 		 VALUES (?, ?, ?, ?)
 		 ON CONFLICT (subscriber, resource_type, resource_id)
 		 DO UPDATE SET is_primary = excluded.is_primary`,
-		sub, r.Type, r.ID, isPrimary)
-	return err
+		sub, r.Type, r.ID, isPrimary); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // Remove hard-deletes the resource (no user tombstone) and its primary flag.
@@ -110,7 +122,9 @@ func Remove(conn *sql.DB, worktreePath, resType, id string) error {
 }
 
 // Unwatch soft-unsubscribes as a user tombstone (distinct from Remove). The
-// primary flag row is retained so a later Add restores the prior classification.
+// worktree_primary row is left in place, but note that a later Add overwrites
+// is_primary from the caller-supplied Related flag — it does not restore the
+// prior classification.
 func Unwatch(conn *sql.DB, worktreePath, resType, id string) error {
 	sub := wdb.Subscriber(worktreePath)
 	return watcherdb.UserUnsubscribe(conn, sub, watcher.Resource{Type: resType, ID: id})
