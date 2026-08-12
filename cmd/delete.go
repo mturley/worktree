@@ -5,10 +5,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/mturley/worktree/internal/config"
+	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/env"
 	"github.com/mturley/worktree/internal/gitutil"
 	"github.com/mturley/worktree/internal/ports"
+	"github.com/mturley/worktree/internal/registry"
+	"github.com/mturley/worktree/internal/resources"
 	"github.com/mturley/worktree/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -29,11 +31,6 @@ func init() {
 
 func runDelete(cmd *cobra.Command, args []string) error {
 	wtPath, err := resolveWorktreePath(args)
-	if err != nil {
-		return err
-	}
-
-	cfg, err := config.Load()
 	if err != nil {
 		return err
 	}
@@ -70,10 +67,20 @@ func runDelete(cmd *cobra.Command, args []string) error {
 		})
 	}
 
-	if err := ports.Release(cfg.WorktreesBase, wtName); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to release port range: %v\n", err)
-	} else {
-		fmt.Printf("%s Released port range\n", ui.Green("✓"))
+	conn, err := wdb.Open()
+	if err == nil {
+		defer conn.Close()
+		if err := ports.Release(conn, wtName); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to release port range: %v\n", err)
+		} else {
+			fmt.Printf("%s Released port range\n", ui.Green("✓"))
+		}
+		if err := registry.Unregister(conn, wtPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to unregister worktree: %v\n", err)
+		}
+		if err := resources.RemoveAll(conn, wtPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to remove tracked resources: %v\n", err)
+		}
 	}
 
 	kubePath := env.KubeconfigPath(repoName, wtName)

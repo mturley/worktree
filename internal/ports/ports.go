@@ -1,12 +1,8 @@
 package ports
 
 import (
-	"bufio"
+	"database/sql"
 	"fmt"
-	"os"
-	"path/filepath"
-	"sort"
-	"strconv"
 	"strings"
 )
 
@@ -20,91 +16,108 @@ type Allocation struct {
 	Name string
 }
 
-func (a Allocation) Start() int { return BasePort + a.Slot*RangeSize }
-func (a Allocation) End() int   { return a.Start() + RangeSize - 1 }
-func (a Allocation) Range() string {
-	return fmt.Sprintf("%d-%d", a.Start(), a.End())
-}
+func (a Allocation) Start() int    { return BasePort + a.Slot*RangeSize }
+func (a Allocation) End() int      { return a.Start() + RangeSize - 1 }
+func (a Allocation) Range() string { return fmt.Sprintf("%d-%d", a.Start(), a.End()) }
 
-func portRangesFile(worktreesBase string) string {
-	return filepath.Join(worktreesBase, ".port-ranges")
-}
-
-func LoadAllocations(worktreesBase string) ([]Allocation, error) {
-	f, err := os.Open(portRangesFile(worktreesBase))
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
+// LoadAllocations returns all allocations ordered by slot.
+func LoadAllocations(conn *sql.DB) ([]Allocation, error) {
+	rows, err := conn.Query(`SELECT slot, name FROM port_allocations ORDER BY slot`)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
-
-	var allocs []Allocation
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		parts := strings.Fields(scanner.Text())
-		if len(parts) != 2 {
-			continue
+	defer rows.Close()
+	var out []Allocation
+	for rows.Next() {
+		var a Allocation
+		if err := rows.Scan(&a.Slot, &a.Name); err != nil {
+			return nil, err
 		}
-		slot, err := strconv.Atoi(parts[0])
-		if err != nil {
-			continue
-		}
-		allocs = append(allocs, Allocation{Slot: slot, Name: parts[1]})
+		out = append(out, a)
 	}
-	return allocs, scanner.Err()
+	return out, rows.Err()
 }
 
-func Allocate(worktreesBase, name string) (Allocation, error) {
-	allocs, err := LoadAllocations(worktreesBase)
-	if err != nil {
+// Allocate returns name's existing allocation, or assigns the lowest free slot
+// and inserts it. The UNIQUE(slot) constraint makes concurrent allocations of
+// the same slot fail rather than silently collide; we retry on that.
+func Allocate(conn *sql.DB, name string) (Allocation, error) {
+	// Existing?
+	var slot int
+	err := conn.QueryRow(`SELECT slot FROM port_allocations WHERE name = ?`, name).Scan(&slot)
+	if err == nil {
+		return Allocation{Slot: slot, Name: name}, nil
+	}
+	if err != sql.ErrNoRows {
 		return Allocation{}, err
 	}
 
-	used := make(map[int]bool)
-	for _, a := range allocs {
-		used[a.Slot] = true
-		if a.Name == name {
-			return a, nil
+	for attempt := 0; attempt < 1000; attempt++ {
+		free, err := lowestFreeSlot(conn)
+		if err != nil {
+			return Allocation{}, err
 		}
+		_, err = conn.Exec(`INSERT INTO port_allocations (name, slot) VALUES (?, ?)`, name, free)
+		if err == nil {
+			return Allocation{Slot: free, Name: name}, nil
+		}
+		// UNIQUE violation (name or slot taken concurrently) -> re-read and retry.
+		if isConstraintErr(err) {
+			// Maybe the name got inserted concurrently; return that row if so.
+			if e2 := conn.QueryRow(`SELECT slot FROM port_allocations WHERE name = ?`, name).Scan(&slot); e2 == nil {
+				return Allocation{Slot: slot, Name: name}, nil
+			}
+			continue
+		}
+		return Allocation{}, err
 	}
+	return Allocation{}, fmt.Errorf("could not allocate a free port slot for %q", name)
+}
 
+// Lookup returns the existing allocation for name, or ok=false if the name
+// has no allocation. It never writes to the DB.
+func Lookup(conn *sql.DB, name string) (Allocation, bool, error) {
+	var slot int
+	err := conn.QueryRow(`SELECT slot FROM port_allocations WHERE name = ?`, name).Scan(&slot)
+	if err == sql.ErrNoRows {
+		return Allocation{}, false, nil
+	}
+	if err != nil {
+		return Allocation{}, false, err
+	}
+	return Allocation{Slot: slot, Name: name}, true, nil
+}
+
+func lowestFreeSlot(conn *sql.DB) (int, error) {
+	rows, err := conn.Query(`SELECT slot FROM port_allocations ORDER BY slot`)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	used := map[int]bool{}
+	for rows.Next() {
+		var s int
+		if err := rows.Scan(&s); err != nil {
+			return 0, err
+		}
+		used[s] = true
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
 	slot := 0
 	for used[slot] {
 		slot++
 	}
-
-	alloc := Allocation{Slot: slot, Name: name}
-	allocs = append(allocs, alloc)
-	return alloc, saveAllocations(worktreesBase, allocs)
+	return slot, nil
 }
 
-func Release(worktreesBase, name string) error {
-	allocs, err := LoadAllocations(worktreesBase)
-	if err != nil {
-		return err
-	}
-
-	var filtered []Allocation
-	for _, a := range allocs {
-		if a.Name != name {
-			filtered = append(filtered, a)
-		}
-	}
-	return saveAllocations(worktreesBase, filtered)
+func Release(conn *sql.DB, name string) error {
+	_, err := conn.Exec(`DELETE FROM port_allocations WHERE name = ?`, name)
+	return err
 }
 
-func saveAllocations(worktreesBase string, allocs []Allocation) error {
-	sort.Slice(allocs, func(i, j int) bool { return allocs[i].Slot < allocs[j].Slot })
-
-	if err := os.MkdirAll(worktreesBase, 0755); err != nil {
-		return err
-	}
-
-	var lines []string
-	for _, a := range allocs {
-		lines = append(lines, fmt.Sprintf("%d %s", a.Slot, a.Name))
-	}
-	return os.WriteFile(portRangesFile(worktreesBase), []byte(strings.Join(lines, "\n")+"\n"), 0644)
+// isConstraintErr reports whether err is a SQLite UNIQUE/PRIMARY KEY violation.
+func isConstraintErr(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "constraint failed")
 }

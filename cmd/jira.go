@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/mturley/worktree/internal/config"
+	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/jira"
 	"github.com/mturley/worktree/internal/resources"
 	"github.com/mturley/worktree/internal/ui"
@@ -52,7 +53,13 @@ func runJira(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	res, _ := resources.Load(wtPath)
+	conn, err := wdb.Open()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	res, _ := resources.Load(conn, wtPath)
 	jiraResources := resources.OfType(res, "jira")
 
 	if len(jiraResources) == 0 {
@@ -111,7 +118,14 @@ func runJiraAdd(cmd *cobra.Command, args []string) error {
 		URL:     url,
 		Related: jiraRelated,
 	}
-	if err := resources.Add(wtPath, r); err != nil {
+
+	conn, err := wdb.Open()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	if err := resources.Add(conn, wtPath, r); err != nil {
 		return err
 	}
 
@@ -130,7 +144,13 @@ func runJiraRemove(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err := resources.Remove(wtPath, "jira", key); err != nil {
+	conn, err := wdb.Open()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	if err := resources.Remove(conn, wtPath, "jira", key); err != nil {
 		return err
 	}
 	fmt.Printf("%s Removed %s\n", ui.Green("✓"), key)

@@ -13,11 +13,9 @@ const (
 )
 
 const zshSnippet = `# BEGIN worktree managed
-# Auto-source .worktree-env when entering a worktree directory
+# Load worktree environment when entering a worktree directory
 _worktree_env_hook() {
-  if [[ -f ".worktree-env" ]]; then
-    source ".worktree-env"
-  fi
+  eval "$(worktree env)"
 }
 if [[ -z "$_WORKTREE_CHPWD_REGISTERED" ]]; then
   autoload -Uz add-zsh-hook
@@ -28,18 +26,20 @@ fi
 # END worktree managed`
 
 const bashSnippet = `# BEGIN worktree managed
-# Auto-source .worktree-env when entering a worktree directory
-if [[ -f ".worktree-env" ]]; then
-  source ".worktree-env"
-fi
+# Load worktree environment on each prompt
+_worktree_env_hook() {
+  eval "$(worktree env)"
+}
+case "$PROMPT_COMMAND" in
+  *_worktree_env_hook*) ;;
+  *) PROMPT_COMMAND="_worktree_env_hook${PROMPT_COMMAND:+; $PROMPT_COMMAND}" ;;
+esac
 # END worktree managed`
 
 const fishSnippet = `# BEGIN worktree managed
-# Auto-source .worktree-env when entering a worktree directory
+# Load worktree environment when the directory changes
 function _worktree_env_hook --on-variable PWD
-  if test -f ".worktree-env"
-    source ".worktree-env"
-  end
+  eval (worktree env)
 end
 _worktree_env_hook
 # END worktree managed`
@@ -127,5 +127,5 @@ func (rc ShellRC) Uninstall() error {
 }
 
 func (rc ShellRC) Description() string {
-	return fmt.Sprintf("Add .worktree-env auto-source to %s (%s)", rc.Shell, rc.Path)
+	return fmt.Sprintf("Load worktree env via `worktree env` in %s (%s)", rc.Shell, rc.Path)
 }

@@ -1,145 +1,164 @@
 package resources
 
 import (
-	"os"
+	"database/sql"
 	"path/filepath"
 	"testing"
+
+	watcherdb "github.com/mturley/watcher/db"
+	wdb "github.com/mturley/worktree/internal/db"
 )
 
-func TestParseLine(t *testing.T) {
-	tests := []struct {
-		line    string
-		want    Resource
-		wantErr bool
-	}{
-		{
-			line: "pr:owner/repo#123 https://github.com/owner/repo/pull/123",
-			want: Resource{Type: "pr", ID: "owner/repo#123", URL: "https://github.com/owner/repo/pull/123"},
-		},
-		{
-			line: "jira:RHOAIENG-456 https://redhat.atlassian.net/browse/RHOAIENG-456",
-			want: Resource{Type: "jira", ID: "RHOAIENG-456", URL: "https://redhat.atlassian.net/browse/RHOAIENG-456"},
-		},
-		{
-			line: "~ jira:RHOAIENG-400 https://redhat.atlassian.net/browse/RHOAIENG-400",
-			want: Resource{Type: "jira", ID: "RHOAIENG-400", URL: "https://redhat.atlassian.net/browse/RHOAIENG-400", Related: true},
-		},
-		{
-			line:    "invalid",
-			wantErr: true,
-		},
+func testDB(t *testing.T) *sql.DB {
+	t.Helper()
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
 	}
+	t.Cleanup(func() { conn.Close() })
+	return conn
+}
 
-	for _, tt := range tests {
-		t.Run(tt.line, func(t *testing.T) {
-			got, err := parseLine(tt.line)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if got != tt.want {
-				t.Errorf("got %+v, want %+v", got, tt.want)
-			}
-		})
+func TestAddAndLoad(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/a"
+	if err := Add(conn, wt, Resource{Type: "pr", ID: "o/r#1", URL: "http://x/1"}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Load(conn, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 1 || res[0].ID != "o/r#1" || res[0].Related {
+		t.Fatalf("got %+v", res)
 	}
 }
 
-func TestLoadSaveRoundTrip(t *testing.T) {
-	dir := t.TempDir()
-	resources := []Resource{
-		{Type: "pr", ID: "owner/repo#1", URL: "https://github.com/owner/repo/pull/1"},
-		{Type: "jira", ID: "PROJ-100", URL: "https://jira.example.com/browse/PROJ-100"},
-		{Type: "jira", ID: "PROJ-200", URL: "https://jira.example.com/browse/PROJ-200", Related: true},
+func TestMultiplePrimariesPerType(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/a"
+	Add(conn, wt, Resource{Type: "pr", ID: "o/r#1", URL: "u1"}) // primary
+	Add(conn, wt, Resource{Type: "pr", ID: "o/r#2", URL: "u2"}) // ALSO primary (no demote)
+	res, _ := Load(conn, wt)
+	prims := PrimariesOfType(res, "pr")
+	if len(prims) != 2 {
+		t.Fatalf("expected 2 primary PRs, got %d: %+v", len(prims), res)
+	}
+	// a related one is excluded
+	Add(conn, wt, Resource{Type: "pr", ID: "o/r#3", URL: "u3", Related: true})
+	res, _ = Load(conn, wt)
+	if got := len(PrimariesOfType(res, "pr")); got != 2 {
+		t.Fatalf("related resource must not count as primary; got %d primaries", got)
+	}
+}
+
+func TestUnwatchThenLoadExcludes(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/a"
+	Add(conn, wt, Resource{Type: "jira", ID: "RH-1", URL: "u"})
+	if err := Unwatch(conn, wt, "jira", "RH-1"); err != nil {
+		t.Fatal(err)
+	}
+	res, _ := Load(conn, wt)
+	if len(res) != 0 {
+		t.Fatalf("unwatched resource should not appear in Load: %+v", res)
 	}
 
-	if err := Save(dir, resources); err != nil {
-		t.Fatalf("Save: %v", err)
-	}
-
-	loaded, err := Load(dir)
+	// Contrast with TestRemoveIsHard: Unwatch is a *user* tombstone.
+	all, err := watcherdb.AllSubscriptions(conn, wdb.Subscriber(wt), false)
 	if err != nil {
-		t.Fatalf("Load: %v", err)
+		t.Fatal(err)
 	}
-	if len(loaded) != len(resources) {
-		t.Fatalf("got %d resources, want %d", len(loaded), len(resources))
-	}
-	for i := range resources {
-		if loaded[i] != resources[i] {
-			t.Errorf("resource %d: got %+v, want %+v", i, loaded[i], resources[i])
+	found := false
+	for _, s := range all {
+		if s.Resource.Type == "jira" && s.Resource.ID == "RH-1" {
+			found = true
+			if !s.UnsubscribedByUser {
+				t.Fatalf("expected UnsubscribedByUser=true after Unwatch, got %+v", s)
+			}
 		}
 	}
+	if !found {
+		t.Fatal("expected subscription row to still exist (soft tombstone) after Unwatch")
+	}
 }
 
-func TestLoadMissing(t *testing.T) {
-	dir := t.TempDir()
-	res, err := Load(filepath.Join(dir, "nonexistent"))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+func TestAddRevivesUserUnwatched(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/a"
+	Add(conn, wt, Resource{Type: "jira", ID: "RH-1", URL: "u"})
+	Unwatch(conn, wt, "jira", "RH-1")
+	if err := Add(conn, wt, Resource{Type: "jira", ID: "RH-1", URL: "u2"}); err != nil {
+		t.Fatal(err)
 	}
+	res, _ := Load(conn, wt)
+	if len(res) != 1 || res[0].URL != "u2" {
+		t.Fatalf("explicit Add must revive a user-unwatched resource: %+v", res)
+	}
+}
+
+func TestRemoveAllClearsSubscriptionsAndPrimary(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/a"
+	Add(conn, wt, Resource{Type: "pr", ID: "o/r#1", URL: "u1"})                 // primary
+	Add(conn, wt, Resource{Type: "jira", ID: "RH-1", URL: "u2", Related: true}) // related
+	if err := RemoveAll(conn, wt); err != nil {
+		t.Fatal(err)
+	}
+	// Load returns nothing.
+	rs, _ := Load(conn, wt)
+	if len(rs) != 0 {
+		t.Fatalf("expected no active resources after RemoveAll, got %+v", rs)
+	}
+	// No worktree_primary rows remain for this subscriber.
+	sub := wdb.Subscriber(wt)
+	var n int
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM worktree_primary WHERE subscriber = ?`, sub).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("expected 0 worktree_primary rows, got %d", n)
+	}
+}
+
+func TestRemoveIsHard(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/a"
+	Add(conn, wt, Resource{Type: "pr", ID: "o/r#1", URL: "u"})
+	if err := Remove(conn, wt, "pr", "o/r#1"); err != nil {
+		t.Fatal(err)
+	}
+	res, _ := Load(conn, wt)
 	if len(res) != 0 {
-		t.Errorf("expected empty, got %d", len(res))
-	}
-}
-
-func TestAddPrimaryDemotesExisting(t *testing.T) {
-	dir := t.TempDir()
-	Save(dir, []Resource{
-		{Type: "jira", ID: "PROJ-1", URL: "https://example.com/PROJ-1"},
-	})
-
-	Add(dir, Resource{Type: "jira", ID: "PROJ-2", URL: "https://example.com/PROJ-2"})
-
-	loaded, _ := Load(dir)
-	if len(loaded) != 2 {
-		t.Fatalf("expected 2 resources, got %d", len(loaded))
-	}
-	if !loaded[0].Related {
-		t.Error("expected old primary to be demoted to related")
-	}
-	if loaded[1].Related {
-		t.Error("expected new resource to be primary")
-	}
-}
-
-func TestPrimaryOfType(t *testing.T) {
-	resources := []Resource{
-		{Type: "pr", ID: "owner/repo#1", URL: "https://github.com/owner/repo/pull/1"},
-		{Type: "jira", ID: "PROJ-1", URL: "https://example.com/PROJ-1", Related: true},
-		{Type: "jira", ID: "PROJ-2", URL: "https://example.com/PROJ-2"},
+		t.Fatalf("removed resource should be gone: %+v", res)
 	}
 
-	pr := PrimaryOfType(resources, "pr")
-	if pr == nil || pr.ID != "owner/repo#1" {
-		t.Errorf("expected PR, got %v", pr)
+	// Load alone can't distinguish a hard Remove from a soft Unwatch (both
+	// exclude the resource). Assert the primary row is actually deleted...
+	sub := wdb.Subscriber(wt)
+	var count int
+	if err := conn.QueryRow(
+		`SELECT COUNT(*) FROM worktree_primary WHERE subscriber = ? AND resource_type = ? AND resource_id = ?`,
+		sub, "pr", "o/r#1").Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("expected worktree_primary row to be deleted after Remove, found %d", count)
 	}
 
-	jira := PrimaryOfType(resources, "jira")
-	if jira == nil || jira.ID != "PROJ-2" {
-		t.Errorf("expected PROJ-2, got %v", jira)
+	// ...and that the tombstone is a NON-user tombstone (distinct from Unwatch).
+	all, err := watcherdb.AllSubscriptions(conn, sub, false)
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	missing := PrimaryOfType(resources, "slack")
-	if missing != nil {
-		t.Errorf("expected nil, got %v", missing)
+	for _, s := range all {
+		if s.Resource.Type == "pr" && s.Resource.ID == "o/r#1" {
+			if s.UnsubscribedByUser {
+				t.Fatalf("expected UnsubscribedByUser=false after hard Remove, got %+v", s)
+			}
+			if s.DeletedAt == nil {
+				t.Fatalf("expected DeletedAt to be set after hard Remove, got %+v", s)
+			}
+		}
 	}
-}
-
-func TestRemove(t *testing.T) {
-	dir := t.TempDir()
-	Save(dir, []Resource{
-		{Type: "jira", ID: "PROJ-1", URL: "https://example.com/PROJ-1"},
-		{Type: "jira", ID: "PROJ-2", URL: "https://example.com/PROJ-2"},
-	})
-
-	Remove(dir, "jira", "PROJ-1")
-	loaded, _ := Load(dir)
-	if len(loaded) != 1 || loaded[0].ID != "PROJ-2" {
-		t.Errorf("expected only PROJ-2 remaining, got %+v", loaded)
-	}
-	_ = os.Remove("") // satisfy import
 }

@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 
 	"github.com/mturley/worktree/internal/config"
-	"github.com/mturley/worktree/internal/discovery"
-	"github.com/mturley/worktree/internal/env"
-	"github.com/mturley/worktree/internal/gitutil"
+	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/ports"
+	"github.com/mturley/worktree/internal/registry"
+	"github.com/mturley/worktree/internal/resources"
 	"github.com/mturley/worktree/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -31,83 +31,75 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	groups, err := discovery.Discover(cfg.Search.Roots, cfg.Search.Depth, cfg.Search.Prune)
+	conn, err := wdb.Open()
 	if err != nil {
 		return err
 	}
+	defer conn.Close()
 
-	var allWTs []discovery.Worktree
-	for _, g := range groups {
-		for _, wt := range g.Worktrees {
-			if wt.IsBare {
+	res, err := registry.Reconcile(conn, cfg.WorktreesBase)
+	if err != nil {
+		return err
+	}
+	if len(res.Stale) == 0 && len(res.Orphans) == 0 {
+		fmt.Println("Nothing to clean up.")
+		return nil
+	}
+
+	if len(res.Stale) > 0 {
+		fmt.Println(ui.Bold("Stale registrations (registered but no longer on disk):"))
+		for i, path := range res.Stale {
+			fmt.Printf("  [%d] %s\n", i+1, ui.Dim(ui.ShortPath(path)))
+		}
+		fmt.Println("\nEnter numbers to unregister (comma-separated, e.g. 1,3,5), or 'q' to skip:")
+		selections, _ := readSelections(len(res.Stale))
+		for _, idx := range selections {
+			path := res.Stale[idx]
+			fmt.Printf("\nUnregistering %s...\n", ui.ShortPath(path))
+			if err := registry.Unregister(conn, path); err != nil {
+				fmt.Fprintf(os.Stderr, "  Warning: failed to unregister: %v\n", err)
+			} else {
+				fmt.Printf("  %s Unregistered\n", ui.Green("✓"))
+			}
+			if err := ports.Release(conn, filepath.Base(path)); err == nil {
+				fmt.Printf("  %s Released port range\n", ui.Green("✓"))
+			}
+			if err := resources.RemoveAll(conn, path); err != nil {
+				fmt.Fprintf(os.Stderr, "  Warning: failed to remove tracked resources: %v\n", err)
+			}
+		}
+	}
+
+	if len(res.Orphans) > 0 {
+		fmt.Println(ui.Bold("\nOrphaned directories (on disk under worktrees base but unmanaged):"))
+		for i, path := range res.Orphans {
+			fmt.Printf("  [%d] %s\n", i+1, ui.Dim(ui.ShortPath(path)))
+		}
+		fmt.Println("\nEnter numbers to delete from disk (comma-separated, e.g. 1,3,5), or 'q' to skip:")
+		selections, _ := readSelections(len(res.Orphans))
+		for _, idx := range selections {
+			path := res.Orphans[idx]
+			fmt.Printf("\n%s Delete %s from disk? [y/N] ", ui.Yellow("!"), ui.ShortPath(path))
+			if !confirmYes() {
+				fmt.Println("  Skipped.")
 				continue
 			}
-			allWTs = append(allWTs, wt)
-		}
-	}
-
-	if len(allWTs) == 0 {
-		fmt.Println("No worktrees found.")
-		return nil
-	}
-
-	fmt.Println(ui.Bold("Discovered worktrees:"))
-	for i, wt := range allWTs {
-		status := ""
-		switch wt.Status {
-		case "prunable":
-			status = " " + ui.Yellow("(prunable)")
-		case "missing":
-			status = " " + ui.Red("(missing)")
-		case "orphaned":
-			status = " " + ui.Red("(orphaned)")
-		}
-		fmt.Printf("  [%d] %s %s %s%s\n",
-			i+1,
-			ui.Dim(wt.Repo),
-			ui.Cyan(wt.Branch),
-			ui.Dim(ui.ShortPath(wt.Path)),
-			status,
-		)
-	}
-
-	fmt.Println("\nEnter numbers to remove (comma-separated, e.g. 1,3,5), or 'q' to quit:")
-	selections, err := readSelections(len(allWTs))
-	if err != nil || len(selections) == 0 {
-		fmt.Println("No worktrees selected.")
-		return nil
-	}
-
-	for _, idx := range selections {
-		wt := allWTs[idx]
-		fmt.Printf("\nRemoving %s (%s)...\n", ui.Cyan(wt.Branch), ui.ShortPath(wt.Path))
-
-		if wt.RepoRoot != "" {
-			if err := gitutil.RemoveWorktree(wt.RepoRoot, wt.Path); err != nil {
-				fmt.Fprintf(os.Stderr, "  Warning: %v\n", err)
+			if err := os.RemoveAll(path); err != nil {
+				fmt.Fprintf(os.Stderr, "  Warning: failed to remove: %v\n", err)
 			} else {
-				fmt.Printf("  %s Removed worktree\n", ui.Green("✓"))
+				fmt.Printf("  %s Removed directory\n", ui.Green("✓"))
 			}
-		}
-
-		wtName := filepath.Base(wt.Path)
-		if err := ports.Release(cfg.WorktreesBase, wtName); err == nil {
-			fmt.Printf("  %s Released port range\n", ui.Green("✓"))
-		}
-
-		repoName := filepath.Base(wt.RepoRoot)
-		kubePath := env.KubeconfigPath(repoName, wtName)
-		if err := os.Remove(kubePath); err == nil {
-			fmt.Printf("  %s Removed kubeconfig\n", ui.Green("✓"))
-		}
-
-		if wt.RepoRoot != "" {
-			gitutil.PruneWorktrees(wt.RepoRoot)
 		}
 	}
 
 	fmt.Printf("\n%s Cleanup complete\n", ui.Green("✓"))
 	return nil
+}
+
+func confirmYes() bool {
+	var input string
+	fmt.Scanln(&input)
+	return input == "y" || input == "Y" || input == "yes"
 }
 
 func readSelections(max int) ([]int, error) {

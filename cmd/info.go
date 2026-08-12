@@ -6,8 +6,9 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/mturley/worktree/internal/env"
+	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/resources"
+	"github.com/mturley/worktree/internal/shellenv"
 	"github.com/mturley/worktree/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -41,33 +42,30 @@ func runInfo(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println()
 
-	we := readWorktreeEnv(wtPath)
-	if we.Path != "" || we.Ports != "" || we.Title != "" || we.Kube != "" {
-		sourced := os.Getenv("WORKTREE_PATH") == we.Path
+	conn, err := wdb.Open()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	envLines, _ := shellenv.Lines(conn, wtPath)
+	if len(envLines) > 0 {
+		sourced := os.Getenv("WORKTREE_PATH") != "" && strings.Contains(strings.Join(envLines, "\n"), fmt.Sprintf("WORKTREE_PATH=%q", os.Getenv("WORKTREE_PATH")))
 		if sourced {
-			fmt.Printf("  %s\n", ui.Dim("Environment variables sourced from .worktree-env:"))
+			fmt.Printf("  %s\n", ui.Dim("Environment (sourced in this shell):"))
 		} else {
-			fmt.Printf("  %s\n", ui.Dim("Environment variables defined in .worktree-env:"))
+			fmt.Printf("  %s\n", ui.Dim("Environment (via eval \"$(worktree env)\"):"))
 		}
-		if we.Path != "" {
-			fmt.Printf("    WORKTREE_PATH  = %s\n", ui.ShortPath(we.Path))
-		}
-		if we.Title != "" {
-			fmt.Printf("    WORKTREE_TITLE = %s\n", we.Title)
-		}
-		if we.Ports != "" {
-			fmt.Printf("    WORKTREE_PORTS = %s\n", we.Ports)
-		}
-		if we.Kube != "" {
-			fmt.Printf("    KUBECONFIG     = %s\n", ui.ShortPath(we.Kube))
+		for _, l := range envLines {
+			fmt.Printf("    %s\n", strings.TrimPrefix(l, "export "))
 		}
 		if !sourced {
-			fmt.Printf("\n  %s .worktree-env is not being sourced in this shell.\n", ui.Yellow("!"))
+			fmt.Printf("\n  %s worktree env is not being sourced in this shell.\n", ui.Yellow("!"))
 			fmt.Printf("    Check your shell config or run %s to set up auto-sourcing.\n", ui.Bold("worktree setup"))
 		}
 	}
 
-	res, _ := resources.Load(wtPath)
+	res, _ := resources.Load(conn, wtPath)
 	if len(res) > 0 {
 		fmt.Println()
 		for _, r := range res {
@@ -90,47 +88,11 @@ func resolveWorktreePath(args []string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if _, err := os.Stat(env.FilePath(dir)); err == nil {
-		return dir, nil
-	}
 	toplevel := gitToplevel(dir)
 	if toplevel != "" {
 		return toplevel, nil
 	}
 	return dir, nil
-}
-
-func readWorktreeEnv(path string) env.WorktreeEnv {
-	data, err := os.ReadFile(env.FilePath(path))
-	if err != nil {
-		return env.WorktreeEnv{}
-	}
-	var we env.WorktreeEnv
-	for _, line := range strings.Split(string(data), "\n") {
-		if v, ok := parseExport(line, "WORKTREE_PORTS"); ok {
-			we.Ports = v
-		}
-		if v, ok := parseExport(line, "WORKTREE_TITLE"); ok {
-			we.Title = v
-		}
-		if v, ok := parseExport(line, "WORKTREE_PATH"); ok {
-			we.Path = v
-		}
-		if v, ok := parseExport(line, "KUBECONFIG"); ok {
-			we.Kube = v
-		}
-	}
-	return we
-}
-
-func parseExport(line, key string) (string, bool) {
-	prefix := "export " + key + "="
-	if !strings.HasPrefix(line, prefix) {
-		return "", false
-	}
-	val := strings.TrimPrefix(line, prefix)
-	val = strings.Trim(val, "\"")
-	return val, true
 }
 
 func gitBranch(dir string) string {

@@ -4,23 +4,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	WorktreesBase string       `yaml:"worktrees_base"`
-	Search        SearchConfig `yaml:"search"`
-	Jira          JiraConfig   `yaml:"jira"`
-	Editor        string       `yaml:"editor"`
-}
-
-type SearchConfig struct {
-	Roots []string `yaml:"roots"`
-	Depth int      `yaml:"depth"`
-	Prune []string `yaml:"prune"`
+	WorktreesBase string     `yaml:"worktrees_base"`
+	Jira          JiraConfig `yaml:"jira"`
+	Editor        string     `yaml:"editor"`
 }
 
 type JiraConfig struct {
@@ -30,17 +22,11 @@ type JiraConfig struct {
 	Projects []string `yaml:"projects"`
 }
 
-
 func DefaultConfig() Config {
 	home, _ := os.UserHomeDir()
 	return Config{
 		WorktreesBase: filepath.Join(home, ".worktrees"),
-		Search: SearchConfig{
-			Roots: []string{home},
-			Depth: 5,
-			Prune: []string{"node_modules", ".Trash", ".cache", ".venv", "venv"},
-		},
-		Jira: JiraConfig{},
+		Jira:          JiraConfig{},
 	}
 }
 
@@ -67,9 +53,6 @@ func Load() (Config, error) {
 	}
 
 	cfg.WorktreesBase = expandHome(cfg.WorktreesBase)
-	for i, root := range cfg.Search.Roots {
-		cfg.Search.Roots[i] = expandHome(root)
-	}
 
 	applyEnvOverrides(&cfg)
 	return cfg, nil
@@ -78,18 +61,6 @@ func Load() (Config, error) {
 func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("WORKTREES_BASE"); v != "" {
 		cfg.WorktreesBase = expandHome(v)
-	}
-	if v := os.Getenv("WORKTREE_SEARCH_ROOTS"); v != "" {
-		roots := strings.Split(v, ":")
-		for i, r := range roots {
-			roots[i] = expandHome(r)
-		}
-		cfg.Search.Roots = roots
-	}
-	if v := os.Getenv("WORKTREE_SEARCH_DEPTH"); v != "" {
-		if d, err := strconv.Atoi(v); err == nil {
-			cfg.Search.Depth = d
-		}
 	}
 }
 
