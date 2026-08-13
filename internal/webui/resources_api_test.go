@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	watcherdb "github.com/mturley/watcher/db"
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/resources"
 )
@@ -46,5 +47,106 @@ func TestWorktreeResourcesEndpoint(t *testing.T) {
 	}
 	if !prPrimary || jiraPrimary {
 		t.Fatalf("pr should be primary, jira related: %+v", got)
+	}
+}
+
+func TestWorktreeResourcesEndpointEnrichment(t *testing.T) {
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	wtPath := t.TempDir()
+	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
+	resources.Add(conn, wtPath, resources.Resource{Type: "jira", ID: "J-1", URL: "u2", Related: true})
+	// A never-polled resource, added so we can assert graceful degrade.
+	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#2", URL: "u3", Related: true})
+
+	prState := `{"title":"Fix the widget","state":"OPEN","review_decision":"CHANGES_REQUESTED","has_new_commits_since_review":true,"ci_status":"failure","author":"octocat","latest_commit_sha":"abc123"}`
+	if err := watcherdb.UpsertResourceState(conn, "pr", "o/r#1", prState, "2026-08-01T00:00:00Z", "2026-08-01T00:05:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	jiraState := `{"summary":"Investigate the flux capacitor","status":"In Progress","priority":"High","assignee":"jdoe","issue_type":"Bug","labels":["backend","urgent"],"reporter":"asmith","created_at":"2026-07-01T00:00:00Z","updated_at":"2026-08-01T00:00:00Z"}`
+	if err := watcherdb.UpsertResourceState(conn, "jira", "J-1", jiraState, "2026-08-02T00:00:00Z", "2026-08-02T00:05:00Z"); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := &Server{DB: conn}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	resp, err := http.Get(ts.URL + "/api/worktree-resources?path=" + url.QueryEscape(wtPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var got []resourceDTO
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("want 3, got %d: %+v", len(got), got)
+	}
+
+	byID := map[string]resourceDTO{}
+	for _, r := range got {
+		byID[r.ID] = r
+	}
+
+	pr, ok := byID["o/r#1"]
+	if !ok {
+		t.Fatalf("missing pr o/r#1 in %+v", got)
+	}
+	if pr.Title != "Fix the widget" || pr.State != "OPEN" || pr.ReviewDecision != "CHANGES_REQUESTED" ||
+		pr.CIStatus != "failure" || !pr.NewCommitsSinceReview || pr.Author != "octocat" || pr.UpdatedAt != "2026-08-01T00:00:00Z" {
+		t.Fatalf("pr enrichment mismatch: %+v", pr)
+	}
+
+	jira, ok := byID["J-1"]
+	if !ok {
+		t.Fatalf("missing jira J-1 in %+v", got)
+	}
+	if jira.Title != "Investigate the flux capacitor" || jira.Status != "In Progress" || jira.Priority != "High" ||
+		jira.IssueType != "Bug" || jira.Assignee != "jdoe" || jira.UpdatedAt != "2026-08-02T00:00:00Z" {
+		t.Fatalf("jira enrichment mismatch: %+v", jira)
+	}
+	if len(jira.Labels) != 2 || jira.Labels[0] != "backend" || jira.Labels[1] != "urgent" {
+		t.Fatalf("jira labels mismatch: %+v", jira.Labels)
+	}
+
+	// Never-polled resource must degrade gracefully: no enriched fields set.
+	unpolled, ok := byID["o/r#2"]
+	if !ok {
+		t.Fatalf("missing unpolled pr o/r#2 in %+v", got)
+	}
+	if unpolled.Title != "" || unpolled.State != "" || unpolled.ReviewDecision != "" || unpolled.CIStatus != "" ||
+		unpolled.NewCommitsSinceReview || unpolled.Author != "" || unpolled.UpdatedAt != "" {
+		t.Fatalf("unpolled pr should have no enriched fields, got %+v", unpolled)
+	}
+}
+
+func TestEnrichResourceDTOHandlesMalformedState(t *testing.T) {
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if err := watcherdb.UpsertResourceState(conn, "jira", "J-BAD", `not valid json`, "2026-08-01T00:00:00Z", "2026-08-01T00:05:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	dto := resourceDTO{Type: "jira", ID: "J-BAD"}
+	enrichResourceDTO(conn, &dto)
+	if dto.Title != "" || dto.Status != "" || dto.UpdatedAt != "" {
+		t.Fatalf("malformed state must not populate any fields, got %+v", dto)
+	}
+
+	// A jira resource with a null assignee must not panic and must leave
+	// Assignee empty.
+	if err := watcherdb.UpsertResourceState(conn, "jira", "J-NULL", `{"summary":"x","assignee":null,"labels":null}`, "2026-08-01T00:00:00Z", "2026-08-01T00:05:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	dto2 := resourceDTO{Type: "jira", ID: "J-NULL"}
+	enrichResourceDTO(conn, &dto2)
+	if dto2.Title != "x" || dto2.Assignee != "" || dto2.Labels != nil {
+		t.Fatalf("null assignee/labels should degrade cleanly, got %+v", dto2)
 	}
 }

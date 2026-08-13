@@ -1,21 +1,31 @@
-import { Anchor, Badge, Group, Paper, Stack, Text } from "@mantine/core"
+import { Stack, Text, Title } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
+import { ResourceCard } from "./ResourceCard"
 
 export function ResourceList({ items }: { items: ResourceDTO[] }) {
   if (items.length === 0) return <Text c="dimmed" size="sm">No resources tracked.</Text>
+
+  const focus = items.filter((r) => r.primary)
+  const related = items.filter((r) => !r.primary)
+
   return (
-    <Stack gap={4}>
-      {items.map((r) => (
-        <Paper key={`${r.type}:${r.id}`} p="xs" withBorder>
-          <Group gap="xs">
-            <Badge size="xs" variant={r.primary ? "filled" : "outline"} color={r.primary ? "blue" : "gray"}>
-              {r.primary ? "primary" : "related"}
-            </Badge>
-            <Badge size="xs" variant="light">{r.type}</Badge>
-            {r.url ? <Anchor href={r.url} target="_blank" size="sm">{r.id}</Anchor> : <Text size="sm">{r.id}</Text>}
-          </Group>
-        </Paper>
-      ))}
+    <Stack gap="md">
+      {focus.length > 0 && (
+        <Stack gap={4}>
+          <Title order={5}>Focus</Title>
+          <Stack gap={4}>
+            {focus.map((r) => <ResourceCard key={`${r.type}:${r.id}`} r={r} />)}
+          </Stack>
+        </Stack>
+      )}
+      {related.length > 0 && (
+        <Stack gap={4}>
+          <Title order={5}>Related</Title>
+          <Stack gap={4}>
+            {related.map((r) => <ResourceCard key={`${r.type}:${r.id}`} r={r} />)}
+          </Stack>
+        </Stack>
+      )}
     </Stack>
   )
 }

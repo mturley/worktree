@@ -10,4 +10,19 @@ export interface TimelineEvent {
   worktrees: string[];
 }
 export interface TimelineResponse { events: TimelineEvent[]; next_cursor: string }
-export interface ResourceDTO { type: string; id: string; url: string; primary: boolean }
+export interface ResourceDTO {
+  type: string; id: string; url: string; primary: boolean
+  // enriched from cached watcher state; absent if the resource was never polled
+  title?: string
+  state?: string
+  review_decision?: string
+  ci_status?: string
+  new_commits_since_review?: boolean
+  author?: string
+  status?: string
+  priority?: string
+  issue_type?: string
+  assignee?: string
+  labels?: string[]
+  updated_at?: string
+}

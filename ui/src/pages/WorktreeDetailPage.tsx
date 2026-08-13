@@ -18,10 +18,7 @@ export function WorktreeDetailPage() {
       </Group>
       <Grid gutter="md">
         <Grid.Col span={{ base: 12, sm: 4 }}>
-          <Stack gap="sm">
-            <Title order={5}>Resources</Title>
-            <ResourceList items={resources.data ?? []} />
-          </Stack>
+          <ResourceList items={resources.data ?? []} />
         </Grid.Col>
         <Grid.Col span={{ base: 12, sm: 8 }}>
           <Stack gap="sm">
