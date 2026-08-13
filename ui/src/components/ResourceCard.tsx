@@ -45,7 +45,7 @@ function prNumber(id: string): string {
 
 function isEnriched(r: ResourceDTO): boolean {
   return Boolean(
-    r.title || r.state || r.review_decision || r.ci_status || r.author ||
+    r.title || r.state || r.review_decision || r.ci_status || r.new_commits_since_review || r.author ||
     r.status || r.priority || r.issue_type || r.assignee || (r.labels && r.labels.length > 0) || r.updated_at
   )
 }

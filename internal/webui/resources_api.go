@@ -1,7 +1,6 @@
 package webui
 
 import (
-	"database/sql"
 	"encoding/json"
 	"net/http"
 
@@ -43,7 +42,7 @@ func (s *Server) handleWorktreeResources(w http.ResponseWriter, r *http.Request)
 	out := make([]resourceDTO, 0, len(rs))
 	for _, res := range rs {
 		dto := resourceDTO{Type: res.Type, ID: res.ID, URL: res.URL, Primary: !res.Related}
-		enrichResourceDTO(s.DB, &dto)
+		s.enrichResourceDTO(&dto)
 		out = append(out, dto)
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -53,11 +52,19 @@ func (s *Server) handleWorktreeResources(w http.ResponseWriter, r *http.Request)
 // given resource and populates the DTO's metadata fields. If the resource
 // was never polled (GetResourceState returns nil, nil) or the cached blob
 // is malformed, the DTO is left with its enriched fields empty/zero -
-// callers must not assume state is present.
-func enrichResourceDTO(db *sql.DB, dto *resourceDTO) {
-	st, err := watcherdb.GetResourceState(db, dto.Type, dto.ID)
-	if err != nil || st == nil {
-		return
+// callers must not assume state is present. A real GetResourceState error
+// (as opposed to the expected "never polled" nil) is logged, matching the
+// resources.Load error-logging pattern in worktrees.go.
+func (s *Server) enrichResourceDTO(dto *resourceDTO) {
+	st, err := watcherdb.GetResourceState(s.DB, dto.Type, dto.ID)
+	if err != nil {
+		if s.Logger != nil {
+			s.Logger.Printf("GetResourceState(%s,%s): %v", dto.Type, dto.ID, err)
+		}
+		return // degrade to empty enriched fields
+	}
+	if st == nil {
+		return // never polled — expected, no log
 	}
 	var m map[string]any
 	if json.Unmarshal([]byte(st.StateJSON), &m) != nil {

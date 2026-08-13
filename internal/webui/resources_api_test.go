@@ -1,11 +1,14 @@
 package webui
 
 import (
+	"bytes"
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	watcherdb "github.com/mturley/watcher/db"
@@ -133,8 +136,9 @@ func TestEnrichResourceDTOHandlesMalformedState(t *testing.T) {
 	if err := watcherdb.UpsertResourceState(conn, "jira", "J-BAD", `not valid json`, "2026-08-01T00:00:00Z", "2026-08-01T00:05:00Z"); err != nil {
 		t.Fatal(err)
 	}
+	srv := &Server{DB: conn}
 	dto := resourceDTO{Type: "jira", ID: "J-BAD"}
-	enrichResourceDTO(conn, &dto)
+	srv.enrichResourceDTO(&dto)
 	if dto.Title != "" || dto.Status != "" || dto.UpdatedAt != "" {
 		t.Fatalf("malformed state must not populate any fields, got %+v", dto)
 	}
@@ -145,8 +149,33 @@ func TestEnrichResourceDTOHandlesMalformedState(t *testing.T) {
 		t.Fatal(err)
 	}
 	dto2 := resourceDTO{Type: "jira", ID: "J-NULL"}
-	enrichResourceDTO(conn, &dto2)
+	srv.enrichResourceDTO(&dto2)
 	if dto2.Title != "x" || dto2.Assignee != "" || dto2.Labels != nil {
 		t.Fatalf("null assignee/labels should degrade cleanly, got %+v", dto2)
+	}
+}
+
+// TestEnrichResourceDTOLogsRealErrors verifies that a genuine
+// GetResourceState error (as opposed to the expected "never polled" nil, nil
+// case) is logged via s.Logger rather than silently swallowed - it must
+// remain distinguishable from "never polled" in the logs, even though both
+// cases leave the DTO's enriched fields empty.
+func TestEnrichResourceDTOLogsRealErrors(t *testing.T) {
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.Close() // force any subsequent query to fail with a real error
+
+	var buf bytes.Buffer
+	srv := &Server{DB: conn, Logger: log.New(&buf, "", 0)}
+	dto := resourceDTO{Type: "pr", ID: "o/r#1"}
+	srv.enrichResourceDTO(&dto)
+
+	if dto.Title != "" || dto.State != "" {
+		t.Fatalf("dto should have no enriched fields on error, got %+v", dto)
+	}
+	if !strings.Contains(buf.String(), "GetResourceState") {
+		t.Fatalf("expected GetResourceState error to be logged, got log: %q", buf.String())
 	}
 }

@@ -69,8 +69,8 @@ func TestWorktreesEndpoint(t *testing.T) {
 	if w.PrimaryByType["pr"] != 1 {
 		t.Fatalf("primary_by_type[pr] = %d, want 1: %+v", w.PrimaryByType["pr"], w)
 	}
-	if got := w.PrimaryByType["jira"]; got != 0 {
-		t.Fatalf("primary_by_type[jira] = %d, want 0 (jira is related): %+v", got, w)
+	if _, ok := w.PrimaryByType["jira"]; ok {
+		t.Fatalf("jira should be absent from primary_by_type (0-count types are omitted), not present with 0: %+v", w)
 	}
 	if w.RelatedCount != 1 {
 		t.Fatalf("related_count = %d, want 1: %+v", w.RelatedCount, w)
