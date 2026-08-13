@@ -1,0 +1,78 @@
+package webui
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"io/fs"
+	"log"
+	"net/http"
+	"sync/atomic"
+)
+
+type Server struct {
+	DB      *sql.DB
+	WebFS   fs.FS // rooted at the dist dir (index.html at top level)
+	Port    int
+	DevMode bool
+	Logger  *log.Logger
+
+	// pollInFlight guards against concurrent polls (ticker + poll-on-view
+	// racing against the same DB/resource set).
+	pollInFlight atomic.Bool
+}
+
+func (s *Server) Handler() http.Handler {
+	mux := http.NewServeMux()
+	// API routes are registered by later tasks via registerAPI(mux).
+	s.registerAPI(mux)
+	if !s.DevMode && s.WebFS != nil {
+		mux.HandleFunc("/", s.serveStatic)
+	}
+	return mux
+}
+
+// registerAPI is extended in later tasks. Kept separate so tests can add routes.
+func (s *Server) registerAPI(mux *http.ServeMux) {
+	// (endpoints added in Tasks 2-6)
+	mux.HandleFunc("GET /api/worktrees", s.handleWorktrees)
+	mux.HandleFunc("GET /api/timeline", s.handleGlobalTimeline)
+	mux.HandleFunc("GET /api/worktree-timeline", s.handleWorktreeTimeline)
+	mux.HandleFunc("POST /api/worktrees/poll", s.handlePollWorktree)
+	mux.HandleFunc("GET /api/worktree-resources", s.handleWorktreeResources)
+	mux.HandleFunc("GET /api/stream", s.handleStream)
+}
+
+func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		if info, err := fs.Stat(s.WebFS, r.URL.Path[1:]); err == nil && !info.IsDir() {
+			http.FileServer(http.FS(s.WebFS)).ServeHTTP(w, r)
+			return
+		}
+	}
+	indexData, err := fs.ReadFile(s.WebFS, "index.html")
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write(indexData)
+}
+
+func (s *Server) Start() error {
+	addr := fmt.Sprintf("127.0.0.1:%d", s.Port)
+	if s.Logger != nil {
+		s.Logger.Printf("worktree UI listening on http://%s", addr)
+	}
+	return http.ListenAndServe(addr, s.Handler())
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
+}

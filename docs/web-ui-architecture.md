@@ -1,0 +1,359 @@
+# Web UI architecture
+
+`worktree ui` starts a local web UI: a Go HTTP server with an embedded React
+frontend. This doc maps the current code (Phase 2) so future sessions can
+extend it without re-deriving the structure from scratch. If you're about to
+touch the UI, read the relevant section below before spelunking the source.
+
+## Overview
+
+- Command: `cmd/ui.go` (`worktree ui`). Flags:
+  - `--port` (default `8475`) — HTTP port.
+  - `--no-open` — don't auto-open the browser.
+  - `--api-only` — serve only the API, no embedded static assets (used by the
+    Vite dev server, which proxies `/api` to this).
+- Ports: **8475** production (Go server, serves API + embedded frontend),
+  **5175** Vite dev server (`make dev`), which proxies `/api/*` to 8475.
+- `runUI` (`cmd/ui.go`) opens the worktree DB (`wdb.Open()`), builds a
+  `webui.Server`, starts the in-process poll loop (`srv.StartPolling(2 *
+  time.Minute)`), opens the browser (unless `--no-open`/`--api-only`), then
+  calls `srv.Start()` which blocks on `http.ListenAndServe`.
+
+## Delivery / embed model
+
+- Root package `web_embed.go`: `//go:embed all:ui/dist` into `EmbeddedWeb
+  embed.FS`. `main.go` passes it to the `cmd` package via
+  `cmd.SetWebFS(EmbeddedWeb)`, which stores it in `cmd.globalWebFS`
+  (`cmd/root.go`).
+- `runUI` takes `fs.Sub(globalWebFS, "ui/dist")` and passes that sub-FS as
+  `webui.Server.WebFS` (rooted at the dist dir, i.e. `index.html` is at the
+  top level of the FS). If `--api-only`, `WebFS` is left `nil` and
+  `DevMode: true` so no static handler is registered at all.
+- `ui/dist/.gitkeep` is a committed placeholder; `ui/dist/*` (built assets) is
+  gitignored (see `.gitignore`: `ui/dist/*` + `!ui/dist/.gitkeep`). This means
+  a fresh checkout has no built UI — `hasBuiltUI()` in `cmd/ui.go` checks for
+  any file other than `.gitkeep` and errors with "web UI not built. Run 'make
+  build-web' first" if missing.
+- `make build` runs `build-web` (npm install + `npm run build` in `ui/`) then
+  `build-cli` (`go build`), in that order, so the `//go:embed` picks up fresh
+  assets. Building the Go binary alone (skipping `build-web`) embeds
+  whatever is already in `ui/dist` (possibly nothing but `.gitkeep`).
+
+## Backend structure (`internal/webui/`)
+
+- **`server.go`** — `Server struct { DB *sql.DB; WebFS fs.FS; Port int;
+  DevMode bool; Logger *log.Logger; pollInFlight atomic.Bool }`.
+  - `Handler() http.Handler` builds a `http.ServeMux`, calls
+    `registerAPI(mux)`, and (if `!DevMode && WebFS != nil`) mounts
+    `serveStatic` at `/`.
+  - `registerAPI(mux)` is the single place all routes are registered — the
+    extension point for new endpoints (see table below).
+  - `serveStatic` implements SPA fallback: for a non-`/` path, if
+    `fs.Stat(WebFS, path)` finds a **real file** (`!info.IsDir()`), it's
+    served via `http.FileServer(http.FS(WebFS))`. Otherwise (real directory,
+    e.g. `/assets/`, or a missing path, e.g. a client-side route like
+    `/worktree/foo`) it falls through and serves `index.html`. The
+    `!info.IsDir()` check matters — without it, a directory request would hit
+    Go's default directory-listing behavior instead of the SPA shell (this
+    was a real bug fixed in Task 9 of the Phase 2 build).
+  - `writeJSON(w, status, v)` / `writeError(w, status, msg)` are the shared
+    response helpers used by every handler.
+- **`worktrees.go`** — `GET /api/worktrees`.
+- **`timeline.go`** — `GET /api/timeline` (global) and `GET
+  /api/worktree-timeline` (scoped). Also owns `enrichEvent`, `resourceTitle`,
+  `worktreesWatching`, and `latestEventTSForSubscriber` (used by both
+  `worktrees.go` and `poller.go`).
+- **`resources_api.go`** — `GET /api/worktree-resources`, enriched from the
+  cached `watcher_resource_state` row via `watcherdb.GetResourceState`.
+- **`poller.go`** — `StartPolling(interval) (stop func())` (interval loop),
+  `pollAll` (polls all active `pr`/`jira` resources), `isWorktreeStale`,
+  `POST /api/worktrees/poll` (poll-on-view), and the `pollInFlight`
+  atomic-bool guard (`safePollAll`) against overlapping polls.
+- **`stream.go`** — `GET /api/stream`, an SSE endpoint.
+
+## HTTP API surface
+
+All responses are JSON (`application/json`) except `/api/stream` (SSE). Field
+names below are the literal Go struct tags — this is the frontend↔backend
+contract; `ui/src/api/types.ts` must match it field-for-field.
+
+| Method | Path | Params | Response |
+|---|---|---|---|
+| GET | `/api/worktrees` | — | `[]worktreeSummary` |
+| GET | `/api/timeline` | `archived` (`"true"`/else false), `limit` (1-500, default 100), `before` (RFC3339 ts, exclusive upper bound) | `timelineResponse` |
+| GET | `/api/worktree-timeline` | `path` (required, worktree path), `limit` | `timelineResponse` |
+| GET | `/api/worktree-resources` | `path` (required) | `[]resourceDTO` |
+| POST | `/api/worktrees/poll` | `path` (required) | `{"polled": bool}` |
+| GET | `/api/stream` | — | SSE stream (`text/event-stream`) |
+
+### `worktreeSummary` (worktrees.go)
+
+```
+path            string
+repo            string
+branch          string
+on_disk         bool             // os.Stat(path) succeeded
+resource_count  int              // len(all resources, primary+related)
+primary_count   int              // count where !res.Related
+primary_by_type map[string]int   // e.g. {"pr": 2, "jira": 3} — primary only
+related_count   int
+latest_event_ts string           // "" if no events; from latestEventTSForSubscriber
+```
+
+### `TimelineEvent` / `timelineResponse` (timeline.go)
+
+```
+timelineResponse { events []TimelineEvent, next_cursor string }
+
+TimelineEvent {
+  id             string
+  ts             string    // watcher-observed timestamp
+  external_ts    string    // source (GitHub/Jira) timestamp, may be ""
+  source         string
+  type           string    // raw watcher.EventType
+  type_label     string    // watcher.EventType(type).DisplayName()
+  title          string
+  body           string
+  author         string
+  resource_type  string    // "pr" | "jira" | ...
+  resource_id    string
+  resource_url   string
+  resource_title string    // looked up from cached resource_state, "" if unknown
+  worktrees      []string  // branch names currently watching this resource
+}
+```
+
+`next_cursor` is the `ts` of the last event in the page (empty if the page is
+empty) — a "before" cursor for pagination. **The frontend does not currently
+use it**; `HomePage`/`WorktreeDetailPage` only render the first page (see
+"Known deferred items" below).
+
+Global timeline query notes (`handleGlobalTimeline`):
+- Excludes internal event types `watch_started` and `watcher_error`.
+- Unarchived (`archived=false`, default): joins through
+  `watcher_subscriptions` (`s.deleted_at IS NULL`) so only events for
+  currently-watched resources show.
+- Archived (`archived=true`): skips that join, showing events for resources
+  no longer watched by any worktree too.
+- Dedup: an event can join to more than one row in `watcher_event_resources`.
+  `writeTimelineRows` dedupes by `e.id` in Go (first row wins, deterministic
+  given `ORDER BY e.ts DESC`) so each event appears once. **This is currently
+  safe** because watcher writes exactly one resource per event today; see
+  "Known deferred items."
+
+### `resourceDTO` (resources_api.go)
+
+```
+type    string    // "pr" | "jira"
+id      string
+url     string
+primary bool      // !res.Related — see "Focus vs primary" below
+
+// enriched from cached watcher_resource_state (omitempty; absent if never polled):
+title                     string    // PR title or Jira summary
+state                     string    // PR: open/closed/merged
+review_decision           string    // PR
+ci_status                 string    // PR
+new_commits_since_review  bool      // PR
+author                    string    // PR author
+status                    string    // Jira status
+priority                  string    // Jira
+issue_type                string    // Jira
+assignee                  string    // Jira
+labels                    []string  // Jira
+updated_at                string    // resource_updated_at, RFC3339
+```
+
+`enrichResourceDTO` reads `watcherdb.GetResourceState(db, type, id)`, parses
+`StateJSON` defensively (comma-ok type assertions on every field), and
+degrades to an unenriched DTO (all enrichment fields empty) if the resource
+was never polled (`GetResourceState` returns `nil, nil` — expected, not
+logged) or the cached JSON is malformed (also not logged). A genuine DB error
+from `GetResourceState` **is** logged via `s.Logger`.
+
+### SSE (`/api/stream`)
+
+No params. On connect, sends nothing but flushes headers. Every 5s, checks
+`MAX(ts)` on `watcher_events`; if it advanced since the last tick (or since
+connect), emits `event: events_new\ndata: {}\n\n`, then always emits `event:
+heartbeat\ndata: {}\n\n`. The frontend treats `events_new` purely as a
+cache-invalidation signal (no payload).
+
+## CRITICAL GOTCHA: subscriber canonicalization
+
+**`watcher_subscriptions` rows are keyed by `wdb.Subscriber(path)`
+(`internal/db`), NOT by `"worktree:" + path`.** `wdb.Subscriber` does
+`filepath.Abs` → `filepath.EvalSymlinks` → `filepath.Clean` on the path. On
+macOS (`/tmp` → `/private/tmp`, symlinked home directories, etc.) or with
+symlinked worktree paths, a naive `"worktree:" + rawPath` string will **not**
+match the stored subscriber — the query silently returns zero rows instead of
+erroring.
+
+**Every place that builds a subscriber string, or joins the `worktrees`
+table (raw paths) against `watcher_subscriptions` (canonical subscribers),
+must go through `wdb.Subscriber(path)`.** This bit the Phase 2 build
+repeatedly (it was flagged and fixed across Tasks 2, 3, and 4 — see
+`latestEventTSForSubscriber`, `handleWorktreeTimeline`, `worktreesWatching`,
+and `isWorktreeStale`, all of which canonicalize via `wdb.Subscriber`). If you
+add a new endpoint or query that needs to map a worktree path to its
+subscriptions, follow the same pattern — build a `map[canonicalSubscriber]branch`
+from `registry.List` (canonicalizing each path with `wdb.Subscriber`) rather
+than doing the join in raw SQL against `worktrees.path`.
+
+## Polling model (in-process only)
+
+There is no external scheduler for the UI's poller (unlike agent-handler's
+launchd/cron-scheduled one-shot watcher commands). `worktree ui` runs a
+single in-process loop for as long as the server is up:
+
+- **Interval loop**: `StartPolling(2 * time.Minute)` (called from
+  `runUI`) does an immediate poll, then one every 2 minutes, until `stop()`
+  is called (deferred in `runUI`, so it stops when the process exits).
+- **Poll-on-view-if-stale**: `POST /api/worktrees/poll?path=` (called by the
+  frontend when a worktree detail page mounts — see `useWorktreeDetail`)
+  polls only if `isWorktreeStale(path, time.Minute)` — i.e. the worktree's
+  newest event is more than 1 minute old (or it has none).
+- Both call `safePollAll()`, guarded by `pollInFlight` (an `atomic.Bool`): if
+  a poll is already running, the second caller no-ops immediately rather than
+  queuing or blocking.
+- **Accepted tradeoff**: the DB goes stale whenever the server isn't running
+  (no server = no polling). This is intentional — there's no background
+  daemon.
+- `pollAll` polls all active `pr` and `jira` resources (via
+  `watcherdb.ActiveResources`), skipping (with a log line, not an error) any
+  source whose credentials aren't configured.
+
+## Frontend structure (`ui/src/`)
+
+- **`api/client.ts` + `api/types.ts`** — the typed API contract. `types.ts`
+  interfaces (`WorktreeSummary`, `TimelineEvent`, `TimelineResponse`,
+  `ResourceDTO`) **must match the Go DTOs field-for-field** (same JSON key
+  names) — this is the single source of truth for what the frontend expects
+  back from each endpoint listed above. `client.ts` exports `api.worktrees`,
+  `api.globalTimeline`, `api.worktreeTimeline`, `api.worktreeResources`,
+  `api.pollWorktree`.
+- **Hooks** (`ui/src/hooks/`):
+  - `useWorktrees()` — `useQuery(["worktrees"], api.worktrees)`.
+  - `useGlobalTimeline(archived)` / `useWorktreeTimeline(path)`
+    (`useTimeline.ts`) — query keys `["timeline","global",archived]` /
+    `["timeline","worktree",path]`.
+  - `useWorktreeDetail(path)` — fires `api.pollWorktree(path)` on mount
+    (poll-on-view), and if the response says `polled: true`, invalidates
+    `["timeline","worktree",path]` and `["resources",path]`; also runs
+    `useQuery(["resources",path], api.worktreeResources)` and reuses
+    `useWorktreeTimeline(path)`.
+  - `useSSE()` — connects to `/api/stream`; on `events_new`, invalidates the
+    `["timeline"]` and `["worktrees"]` query key prefixes so React Query
+    refetches. Auto-reconnects (3s backoff) on error. This is a pure
+    invalidation signal — it carries no event payload itself.
+- **Pages** (`ui/src/pages/`):
+  - `HomePage.tsx` — worktree list (left) + global timeline + archived
+    toggle (right).
+  - `WorktreeDetailPage.tsx` — resolves the path from the wouter route,
+    renders `ResourceList` (Focus/Related sections) + scoped `TimelineFeed`.
+- **Components** (`ui/src/components/`): `WorktreeList`, `TimelineFeed`,
+  `EventRow`, `ArchivedToggle`, `ResourceList` (splits into Focus/Related by
+  `r.primary`), `ResourceCard` (see "Rich resource cards" below).
+- **Lib** (`ui/src/lib/`): `resourceSummary.ts` (builds the "2 PRs, 3 Jira
+  issues · 2 related resources" summary string from `primary_by_type` +
+  `related_count`), `relativeTime.ts`.
+- **Routing**: `wouter`. `App.tsx` defines `/` → `HomePage`, `/worktree/:path*`
+  → `WorktreeDetailPage`. The `:path*` wildcard param comes back from
+  `useRoute` under the **typed key `"path*"`** (not `"path"` — a real wouter
+  3.10 quirk discovered during the build), i.e. `params?.["path*"]`. Worktree
+  paths contain slashes, so the link is built with a single
+  `encodeURIComponent(path)` (see `WorktreeList.tsx`) and decoded with a
+  single `decodeURIComponent(rawPath)` on the detail page — do not
+  double-encode/decode.
+
+## Focus vs primary (UI wording note)
+
+The API and DB use the word **`primary`** (`resourceDTO.primary`,
+`worktreeSummary.primary_count`/`primary_by_type`) for "resources central to
+this worktree" as opposed to `related` (secondary/linked resources). The
+**user-facing UI wording is "Focus"**, not "primary" — `ResourceList.tsx`
+renders a "Focus" section for `items.filter(r => r.primary)`. This was a
+deliberate rename at the UI layer only. **Do not "fix" the API/DB to say
+"focus"** — the backend vocabulary (`primary`/`Related`) is intentional and
+stable; only the presentation layer says "Focus."
+
+## Rich resource cards
+
+`ResourceCard.tsx` renders resource cards enriched from the watcher's cached
+`resource_state` (`StateJSON`), via the `resourceDTO` enrichment fields
+described above:
+- **PR cards**: title, state (open/closed/merged, color-coded), review
+  decision (approved/changes requested/review required), CI status, "new
+  commits since review" badge, author, relative "updated" time.
+- **Jira cards**: summary (shown as title), status, priority, issue type,
+  labels, assignee, relative "updated" time.
+- **Degraded ("minimal") card**: if `isEnriched(r)` is false (no enrichment
+  fields present — the resource was never polled), the card falls back to a
+  bare type badge + linked id (`MinimalRow`).
+
+PR **author** and Jira **reporter** caching were added to the watcher library
+in **v0.2.5** (`buildPRStateJSON`/`buildJiraStateJSON` in `~/git/watcher`).
+Author is shown on PR cards; **reporter is cached but intentionally not
+displayed** in the UI (a deliberate product decision, not an oversight — if
+you want to show it later, it's already in the cached state JSON).
+
+## Dev workflow
+
+- `make dev` uses `mprocs` to run two live-reloading processes side by side:
+  - `air -- ui --api-only` — the Go API server, hot-rebuilt on Go file
+    changes (falls back to a manual `go build` + one-shot run + instructions
+    if `air` isn't installed/on `PATH`).
+  - `cd ui && npm run dev` — the Vite dev server on port 5175, proxying
+    `/api/*` to `http://localhost:8475` (see `ui/vite.config.ts`).
+  - On exit, `make dev` kills anything still listening on 8475 (not 5175 —
+    a known minor gap, harmless since Vite's dev server exits with mprocs).
+- `make build` is the production path: `build-web` (npm build → `ui/dist`)
+  then `build-cli` (embeds `ui/dist` into the Go binary).
+
+## Responsiveness
+
+The UI must stay usable in narrow widths (e.g. a cmux split pane, ~380px) —
+this was explicitly verified (Playwright, 380px and 1400px) during the Phase
+2 polish round. Patterns to preserve when adding UI:
+- `Grid.Col` uses responsive `span={{ base: 12, sm: N }}` so columns stack
+  vertically below the `sm` breakpoint instead of squeezing side-by-side
+  (see `HomePage.tsx`, `WorktreeDetailPage.tsx`).
+- Badge/text rows use `wrap="wrap"` (Mantine `Group`) and `overflowWrap:
+  "anywhere"` on long text (titles, resource names) so nothing forces
+  horizontal scroll (see `EventRow.tsx`, `ResourceCard.tsx`).
+- Verify no horizontal scrollbar appears at ~380px when adding new rows/cards.
+
+## Known deferred items / extension notes
+
+These are known limitations, intentionally deferred rather than fixed, from
+the Phase 2 build ledger
+(`.superpowers/sdd/2026-08-13-phase2-worktree-mantine-ui/progress.md`). Be
+aware of them if your change touches the same area:
+
+- **N+1 queries**: `worktreesWatching` + `resourceTitle` (timeline.go) call
+  `watcherdb.SubscribersOf`/`GetResourceState` + `registry.List` per event
+  row; `enrichResourceDTO` calls `GetResourceState` per resource row. Fine at
+  current volume; batch these if event/resource counts grow significantly or
+  if Phase 4 (Slack) adds a lot more resources.
+- **SSE type-assertion fragility**: `handleStream` does `w.(http.Flusher)` to
+  get a flusher. This breaks if any middleware wraps the `ResponseWriter`
+  without also implementing `Flusher`. If Phase 5 (or anything) adds HTTP
+  middleware in front of the mux, switch to `http.NewResponseController(w)`
+  instead.
+- **Resources not invalidated on SSE**: `useSSE` invalidates `["timeline"]`
+  and `["worktrees"]` on `events_new`, but not `["resources", path]` — a
+  detail page's resource cards won't auto-refresh on a new event without a
+  poll-on-view trigger (page remount) or manual refresh.
+- **Global timeline dedup by event id**: `writeTimelineRows` dedupes on
+  `e.id` because today watcher writes exactly one resource per event. If
+  Phase 4 (Slack) starts linking multiple resources to a single event, this
+  dedup (and the underlying `SELECT DISTINCT` query) will need revisiting —
+  likely a query-level `GROUP BY`/windowed subquery that picks one resource
+  per event *before* the SQL `LIMIT` is applied (today, dedup happens
+  *after* `LIMIT`, so a page could theoretically come back under-filled;
+  not observable yet because it never fires).
+- **Pagination not surfaced in the UI**: the API supports `before`/
+  `next_cursor` (see the table above), and it's tested for the global
+  timeline, but neither `HomePage` nor `WorktreeDetailPage` uses it — only
+  the first page (`limit=100` default) is ever shown. Add "load more" /
+  infinite scroll using `next_cursor` if this becomes a problem.

@@ -185,6 +185,22 @@ Your shell RC hook (installed by `worktree setup`) automatically runs `eval "$(w
 
 Unmarked entries (or `"primary":true`) are the reason this worktree exists. Entries with `"primary":false` are **related** (watching for context).
 
+## Web UI
+
+```bash
+worktree ui                # start the web UI on http://localhost:8475 and open it in a browser
+worktree ui --port 9000    # use a different port
+worktree ui --no-open      # don't auto-open a browser
+worktree ui --api-only     # serve only the JSON API (used with the Vite dev server, see `make dev`)
+```
+
+The web UI is a single embedded binary — no separate frontend install required. It shows:
+
+- **Home view:** every managed worktree (from the database registry) with resource/primary counts and missing-on-disk markers, plus a global timeline of events across all watched PR/Jira resources (newest first, attributed to the worktree(s) that watch them), with a "Show archived" toggle for events on resources no longer actively watched.
+- **Detail view:** a single worktree's resources (primary vs. related) and a timeline scoped to its subscriptions. Opening a worktree triggers a fresh poll if its data is stale (poll-on-view).
+
+While running, the server polls all active PR/Jira resources in the background every 2 minutes and pushes updates to the browser over Server-Sent Events, so the timeline stays close to live without a manual refresh. This phase is read-only — no watch/unwatch/create/delete actions from the UI yet.
+
 ## cmux Integration
 
 When running inside [cmux](https://cmux.com/), worktree creation automatically creates a cmux workspace with a split layout:
