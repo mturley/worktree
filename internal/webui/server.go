@@ -33,6 +33,7 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/worktrees", s.handleWorktrees)
 	mux.HandleFunc("GET /api/timeline", s.handleGlobalTimeline)
 	mux.HandleFunc("GET /api/worktree-timeline", s.handleWorktreeTimeline)
+	mux.HandleFunc("POST /api/worktrees/poll", s.handlePollWorktree)
 }
 
 func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
