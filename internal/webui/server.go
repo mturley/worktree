@@ -45,7 +45,7 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 
 func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
-		if _, err := fs.Stat(s.WebFS, r.URL.Path[1:]); err == nil {
+		if info, err := fs.Stat(s.WebFS, r.URL.Path[1:]); err == nil && !info.IsDir() {
 			http.FileServer(http.FS(s.WebFS)).ServeHTTP(w, r)
 			return
 		}

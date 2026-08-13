@@ -290,3 +290,19 @@ When entering a worktree directory, the shell runs `eval "$(worktree env)"` to s
 ```
 [wt] my-branch · ~/git/.worktrees/my-repo/review-pr-1234 · ports 4020-4029
 ```
+
+---
+
+## Phase 2: Web UI
+
+`worktree ui` serves a read-only Mantine + React frontend (`ui/`) from the same Go binary, backed by the Phase 1 database and watcher/resource tables.
+
+**Embed model:** `make build` runs `make build-web` (Vite build into `ui/dist`) before the Go build; `ui/dist` is embedded into the binary via `//go:embed`, so `worktree ui` is a single self-contained executable. `make dev` runs the Go API (`go run . ui --api-only`, no embedded assets served) alongside the Vite dev server (`ui/`, port 5175) for hot-reload iteration, preferring `mprocs` when available.
+
+**Live-update model:** the server runs an in-process poll loop (no external scheduler) that refreshes all actively-watched PR/Jira resources every 2 minutes. A `GET /api/stream` SSE endpoint pushes change notifications to connected browsers so the UI can refetch and stay near-live without a manual reload. Opening a worktree's detail page also triggers an immediate poll if that worktree's data is stale (poll-on-view), rather than waiting for the next tick.
+
+**Views:**
+- **Home** (`/`): the list of managed worktrees (from `registry.List`) with resource/primary counts, plus a global timeline merging events across all watched resources, newest-first, each attributed to the worktree(s) that watch it. A "Show archived" toggle includes events for resources no longer actively watched.
+- **Detail** (`/worktree/:path`): a single worktree's resources (primary vs. related, matching the `resources` package's model) and a timeline scoped to just that worktree's subscriptions.
+
+This phase is read-only: no create/delete/watch/unwatch mutations from the UI. Slack integration (a Slack tab, slack-mini fold-in, Slack timeline events) and handler↔worktree CLI integration are out of scope here and land in later phases (3–5).

@@ -5,9 +5,16 @@ INSTALL_DIR := /usr/local/bin
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -ldflags "-X github.com/mturley/worktree/cmd.Version=$(VERSION)"
 
-.PHONY: build install test clean
+.PHONY: build build-web build-cli install test clean dev
 
-build:
+build: build-web build-cli
+
+build-web:
+	@if [ ! -f ui/package.json ]; then echo "Error: ui/package.json not found." && exit 1; fi
+	@cd ui && npm install --silent && npm run build
+	@echo "Built ui/dist/"
+
+build-cli:
 	@mkdir -p $(BIN_DIR)
 	go build $(LDFLAGS) -o $(BIN_DIR)/$(BINARY_NAME) .
 
@@ -28,3 +35,11 @@ test:
 
 clean:
 	rm -rf $(BIN_DIR)
+	rm -rf ui/dist
+	@mkdir -p ui/dist
+	@touch ui/dist/.gitkeep
+	rm -rf ui/node_modules
+
+dev:
+	@command -v mprocs >/dev/null 2>&1 || { echo "install mprocs for dev mode, or run 'go run . ui --api-only' and 'cd ui && npm run dev' separately"; exit 1; }
+	@mprocs "go run . ui --api-only" "cd ui && npm run dev"
