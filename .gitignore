@@ -1,4 +1,5 @@
 bin/
+tmp/
 .vscode/
 ui/dist/*
 !ui/dist/.gitkeep

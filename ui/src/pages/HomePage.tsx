@@ -12,13 +12,13 @@ export function HomePage() {
   const tl = useGlobalTimeline(archived)
   return (
     <Grid p="md" gutter="md">
-      <Grid.Col span={4}>
+      <Grid.Col span={{ base: 12, sm: 4 }}>
         <Stack gap="sm">
           <Title order={4}>Worktrees</Title>
           <WorktreeList items={wts.data ?? []} />
         </Stack>
       </Grid.Col>
-      <Grid.Col span={8}>
+      <Grid.Col span={{ base: 12, sm: 8 }}>
         <Stack gap="sm">
           <Group justify="space-between">
             <Title order={4}>Timeline</Title>

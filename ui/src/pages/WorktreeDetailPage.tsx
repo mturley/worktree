@@ -17,13 +17,13 @@ export function WorktreeDetailPage() {
         <Title order={4}>{branch}</Title>
       </Group>
       <Grid gutter="md">
-        <Grid.Col span={4}>
+        <Grid.Col span={{ base: 12, sm: 4 }}>
           <Stack gap="sm">
             <Title order={5}>Resources</Title>
             <ResourceList items={resources.data ?? []} />
           </Stack>
         </Grid.Col>
-        <Grid.Col span={8}>
+        <Grid.Col span={{ base: 12, sm: 8 }}>
           <Stack gap="sm">
             <Title order={5}>Timeline</Title>
             <TimelineFeed events={timeline.data?.events ?? []} loading={timeline.isLoading} error={timeline.error} />
