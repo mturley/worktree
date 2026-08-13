@@ -32,7 +32,7 @@ func TestServesIndexFallbackForSPARoutes(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("SPA route: got %d", resp.StatusCode)
 	}
-	if ct := resp.Header.Get("Content-Type"); ct == "" || ct[:9] != "text/html" {
+	if ct := resp.Header.Get("Content-Type"); len(ct) < 9 || ct[:9] != "text/html" {
 		t.Fatalf("SPA route content-type: %q", ct)
 	}
 
@@ -77,7 +77,7 @@ func TestServesIndexFallbackForDirectoryPath(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("dir path: got %d", resp.StatusCode)
 	}
-	if ct := resp.Header.Get("Content-Type"); ct == "" || ct[:9] != "text/html" {
+	if ct := resp.Header.Get("Content-Type"); len(ct) < 9 || ct[:9] != "text/html" {
 		t.Fatalf("dir path content-type: %q", ct)
 	}
 	body, err := io.ReadAll(resp.Body)

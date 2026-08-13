@@ -121,5 +121,105 @@ func TestWorktreeScopedTimeline(t *testing.T) {
 	}
 }
 
+func TestGlobalTimelineDedupesMultiResourceEvent(t *testing.T) {
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	wtPath := t.TempDir()
+	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
+	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
+	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#2", URL: "u2"})
+
+	now := time.Now().UTC()
+	// One event linked to TWO watched resources -> two rows in
+	// watcher_event_resources for the same event id.
+	if _, err := conn.Exec(`INSERT INTO watcher_events (id, ts, source, type, title) VALUES (?,?,?,?,?)`,
+		"m1", now.Format(time.RFC3339), "github", "pr_comment", "multi-resource comment"); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range []struct{ rtype, rid, rurl string }{
+		{"pr", "o/r#1", "u1"},
+		{"pr", "o/r#2", "u2"},
+	} {
+		if _, err := conn.Exec(`INSERT INTO watcher_event_resources (event_id, resource_type, resource_id, resource_url) VALUES (?,?,?,?)`,
+			"m1", r.rtype, r.rid, r.rurl); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	srv := &Server{DB: conn}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/timeline?limit=50&archived=false")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var body struct {
+		Events []TimelineEvent `json:"events"`
+	}
+	json.NewDecoder(resp.Body).Decode(&body)
+
+	count := 0
+	for _, e := range body.Events {
+		if e.ID == "m1" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected event m1 to appear exactly once, got %d occurrences in %+v", count, body.Events)
+	}
+}
+
+func TestGlobalTimelineBeforeCursor(t *testing.T) {
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	wtPath := t.TempDir()
+	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
+	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
+
+	base := time.Now().UTC()
+	t1 := base.Add(-2 * time.Minute).Format(time.RFC3339)
+	t2 := base.Add(-1 * time.Minute).Format(time.RFC3339)
+	t3 := base.Format(time.RFC3339)
+	insertEvent(t, conn, "b1e1", t1, "github", "pr_comment", "first", "pr", "o/r#1", "u1")
+	insertEvent(t, conn, "b1e2", t2, "github", "pr_comment", "second", "pr", "o/r#1", "u1")
+	insertEvent(t, conn, "b1e3", t3, "github", "pr_comment", "third", "pr", "o/r#1", "u1")
+
+	srv := &Server{DB: conn}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/timeline?archived=false&limit=50&before=" + url.QueryEscape(t3))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var body struct {
+		Events []TimelineEvent `json:"events"`
+	}
+	json.NewDecoder(resp.Body).Decode(&body)
+
+	if len(body.Events) != 2 {
+		t.Fatalf("expected 2 events before t3, got %d: %+v", len(body.Events), body.Events)
+	}
+	if body.Events[0].ID != "b1e2" || body.Events[1].ID != "b1e1" {
+		t.Fatalf("expected newest-first order [b1e2, b1e1], got %+v", body.Events)
+	}
+	for _, e := range body.Events {
+		if e.ID == "b1e3" {
+			t.Fatalf("event b1e3 (the before cursor itself) should be excluded, got %+v", body.Events)
+		}
+	}
+}
+
 var _ = watcher.Resource{}
 var _ = watcherdb.EventsForSubscriberSince

@@ -127,6 +127,20 @@ func (s *Server) handleWorktreeTimeline(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) writeTimelineRows(w http.ResponseWriter, rows *sql.Rows, limit int) {
 	out := make([]TimelineEvent, 0, limit)
+	// An event can be linked to more than one resource in
+	// watcher_event_resources (the join in handleGlobalTimeline yields one
+	// row per resource). Dedupe here so each event id appears at most once
+	// in the response; the resource kept is whichever row we saw first,
+	// which is deterministic given the query's ORDER BY e.ts DESC.
+	//
+	// NOTE: because dedup happens after the SQL LIMIT is applied, a page can
+	// come back under-filled if duplicate rows for the same event consume
+	// slots that another distinct event would otherwise occupy. Today
+	// (watcher writes exactly 1 resource per event) this never happens in
+	// practice. If Phase 4 (Slack) starts linking multiple resources to a
+	// single event, revisit this with a query-level GROUP BY / windowed
+	// subquery that picks one resource per event before LIMIT is applied.
+	seen := make(map[string]bool, limit)
 	for rows.Next() {
 		var te TimelineEvent
 		if err := rows.Scan(&te.ID, &te.TS, &te.ExternalTS, &te.Source, &te.Type,
@@ -134,6 +148,10 @@ func (s *Server) writeTimelineRows(w http.ResponseWriter, rows *sql.Rows, limit 
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+		if seen[te.ID] {
+			continue
+		}
+		seen[te.ID] = true
 		te.TypeLabel = watcher.EventType(te.Type).DisplayName()
 		te.ResourceTitle = s.resourceTitle(te.ResourceType, te.ResourceID)
 		te.Worktrees = s.worktreesWatching(te.ResourceType, te.ResourceID)
