@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/registry"
@@ -30,6 +31,21 @@ func TestWorktreesEndpoint(t *testing.T) {
 	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})                // primary
 	resources.Add(conn, wtPath, resources.Resource{Type: "jira", ID: "J-1", URL: "u2", Related: true}) // related
 
+	// Seed a watcher event tied to the pr resource. This exercises the real
+	// subscriber-canonicalization path (wtPath is a t.TempDir(), which on
+	// macOS lives under a symlink), proving latest_event_ts is computed via
+	// the same canonical subscriber key that resources.Add used, not a raw
+	// "worktree:"+path concatenation.
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, err := conn.Exec(`INSERT INTO watcher_events (id, ts, source, type, title) VALUES (?,?,?,?,?)`,
+		"e1", now, "github", "pr_comment", "c"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(`INSERT INTO watcher_event_resources (event_id, resource_type, resource_id, resource_url) VALUES (?,?,?,?)`,
+		"e1", "pr", "o/r#1", "u1"); err != nil {
+		t.Fatal(err)
+	}
+
 	srv := &Server{DB: conn}
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
@@ -49,5 +65,8 @@ func TestWorktreesEndpoint(t *testing.T) {
 	w := got[0]
 	if w.Branch != "b1" || !w.OnDisk || w.ResourceCount != 2 || w.PrimaryCount != 1 {
 		t.Fatalf("summary wrong: %+v", w)
+	}
+	if w.LatestEventTS != now {
+		t.Fatalf("latest_event_ts = %q, want %q", w.LatestEventTS, now)
 	}
 }

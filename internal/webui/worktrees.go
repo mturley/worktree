@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 
+	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/resources"
 )
@@ -27,7 +28,13 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]worktreeSummary, 0, len(entries))
 	for _, e := range entries {
-		rs, _ := resources.Load(s.DB, e.Path)
+		rs, err := resources.Load(s.DB, e.Path)
+		if err != nil {
+			if s.Logger != nil {
+				s.Logger.Printf("resources.Load(%s): %v", e.Path, err)
+			}
+			// continue with rs (nil) — a degraded row is better than aborting the whole list
+		}
 		primary := 0
 		for _, res := range rs {
 			if !res.Related {
@@ -42,7 +49,7 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 			OnDisk:        statErr == nil,
 			ResourceCount: len(rs),
 			PrimaryCount:  primary,
-			LatestEventTS: latestEventTSForSubscriber(s.DB, "worktree:"+e.Path),
+			LatestEventTS: latestEventTSForSubscriber(s.DB, wdb.Subscriber(e.Path)),
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
