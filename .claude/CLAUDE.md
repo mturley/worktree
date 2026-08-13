@@ -69,10 +69,11 @@ Do NOT work around a library limitation with a local patch here — fix it in
 the library and re-pin. The library is also consumed by `agent-handler`, so
 behavior must stay correct for multiple consumers.
 
-Worked example: Phase 2 needed PR author + Jira reporter shown in the web
-UI's resource cards. Both fields were added to `buildPRStateJSON`/
-`buildJiraStateJSON` in `~/git/watcher`, released as `v0.2.5`, and re-pinned
-here (`go.mod` now pins `github.com/mturley/watcher v0.2.5`).
+Worked example: Phase 2 needed PR author in the web UI's resource cards. PR
+author (shown) and Jira reporter (cached for future use, not yet displayed)
+were both added to `buildPRStateJSON`/`buildJiraStateJSON` in `~/git/watcher`,
+released as `v0.2.5`, and re-pinned here (`go.mod` now pins
+`github.com/mturley/watcher v0.2.5`).
 
 Poller/source bugs (missing event types, dedup false-positives, GraphQL/REST
 query gaps, missing cached fields) are **library bugs** — diagnose and fix
