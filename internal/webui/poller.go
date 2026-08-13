@@ -3,6 +3,7 @@ package webui
 import (
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	wconfig "github.com/mturley/watcher/config"
@@ -29,10 +30,20 @@ func (s *Server) StartPolling(interval time.Duration) (stop func()) {
 			}
 		}
 	}()
-	return func() { close(done) }
+	var once sync.Once
+	return func() { once.Do(func() { close(done) }) }
 }
 
+// safePollAll runs pollAll, skipping if a poll is already in flight. The
+// ticker goroutine and poll-on-view (handlePollWorktree) can both call this
+// concurrently against the same DB/resource set; the atomic guard ensures at
+// most one poll runs at a time, with concurrent callers no-oping rather than
+// queuing (a poll-on-view during a long interval poll should return fast).
 func (s *Server) safePollAll() {
+	if !s.pollInFlight.CompareAndSwap(false, true) {
+		return // a poll is already running; skip this one
+	}
+	defer s.pollInFlight.Store(false)
 	if err := s.pollAll(); err != nil {
 		s.logger().Printf("poll: %v", err)
 	}

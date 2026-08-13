@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"sync/atomic"
 )
 
 type Server struct {
@@ -15,6 +16,10 @@ type Server struct {
 	Port    int
 	DevMode bool
 	Logger  *log.Logger
+
+	// pollInFlight guards against concurrent polls (ticker + poll-on-view
+	// racing against the same DB/resource set).
+	pollInFlight atomic.Bool
 }
 
 func (s *Server) Handler() http.Handler {

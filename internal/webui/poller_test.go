@@ -37,3 +37,19 @@ func TestIsWorktreeStale(t *testing.T) {
 		t.Fatal("worktree whose newest event is 5m old should be stale (threshold 1m)")
 	}
 }
+
+// TestSafePollAllSkipsWhenInFlight verifies the atomic guard: if a poll is
+// already marked in-flight, a concurrent safePollAll call must no-op rather
+// than run pollAll (which would race on the DB/resource set). We can't
+// observe pollAll directly without live creds/network, but pollAll's own
+// success path always defers pollInFlight.Store(false); if safePollAll had
+// run pollAll to completion it would clear the flag we set. Asserting the
+// flag is untouched proves the CompareAndSwap guard skipped the run.
+func TestSafePollAllSkipsWhenInFlight(t *testing.T) {
+	s := &Server{}
+	s.pollInFlight.Store(true)
+	s.safePollAll()
+	if !s.pollInFlight.Load() {
+		t.Fatal("safePollAll should have skipped (pollInFlight was already true) and left the flag untouched")
+	}
+}
