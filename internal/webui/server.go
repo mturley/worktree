@@ -30,6 +30,7 @@ func (s *Server) Handler() http.Handler {
 // registerAPI is extended in later tasks. Kept separate so tests can add routes.
 func (s *Server) registerAPI(mux *http.ServeMux) {
 	// (endpoints added in Tasks 2-6)
+	mux.HandleFunc("GET /api/worktrees", s.handleWorktrees)
 }
 
 func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
