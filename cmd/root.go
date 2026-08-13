@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"database/sql"
+	"embed"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -47,6 +48,11 @@ func init() {
 		&cobra.Group{ID: "admin", Title: "Admin:"},
 	)
 }
+
+var globalWebFS embed.FS
+
+// SetWebFS receives the embedded web UI assets from main.
+func SetWebFS(f embed.FS) { globalWebFS = f }
 
 var prURLPattern = regexp.MustCompile(`github\.com/([^/]+)/([^/]+)/pull/(\d+)`)
 
