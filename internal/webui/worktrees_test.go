@@ -66,6 +66,15 @@ func TestWorktreesEndpoint(t *testing.T) {
 	if w.Branch != "b1" || !w.OnDisk || w.ResourceCount != 2 || w.PrimaryCount != 1 {
 		t.Fatalf("summary wrong: %+v", w)
 	}
+	if w.PrimaryByType["pr"] != 1 {
+		t.Fatalf("primary_by_type[pr] = %d, want 1: %+v", w.PrimaryByType["pr"], w)
+	}
+	if got := w.PrimaryByType["jira"]; got != 0 {
+		t.Fatalf("primary_by_type[jira] = %d, want 0 (jira is related): %+v", got, w)
+	}
+	if w.RelatedCount != 1 {
+		t.Fatalf("related_count = %d, want 1: %+v", w.RelatedCount, w)
+	}
 	if w.LatestEventTS != now {
 		t.Fatalf("latest_event_ts = %q, want %q", w.LatestEventTS, now)
 	}
