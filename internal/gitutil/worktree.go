@@ -113,6 +113,27 @@ func CreateWorktreeFromExistingBranch(repoRoot, wtPath, branchName string) error
 	return nil
 }
 
+// SetPRTracking configures branchName so `git pull` fetches the PR's head ref
+// from the given remote and merges it. This lets a reviewer pull new commits
+// pushed to the PR — even from a fork whose head branch isn't a local remote —
+// by pointing branch.<name>.merge at refs/pull/<N>/head.
+func SetPRTracking(repoRoot, branchName, remote string, prNumber int) error {
+	setConfig := func(key, val string) error {
+		cmd := exec.Command("git", "-C", repoRoot, "config", key, val)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("git config %s: %s", key, strings.TrimSpace(string(out)))
+		}
+		return nil
+	}
+	if err := setConfig(fmt.Sprintf("branch.%s.remote", branchName), remote); err != nil {
+		return err
+	}
+	if err := setConfig(fmt.Sprintf("branch.%s.merge", branchName), fmt.Sprintf("refs/pull/%d/head", prNumber)); err != nil {
+		return err
+	}
+	return nil
+}
+
 func RevParse(dir, ref string) string {
 	cmd := exec.Command("git", "-C", dir, "rev-parse", ref)
 	out, err := cmd.Output()

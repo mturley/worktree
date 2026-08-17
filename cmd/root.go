@@ -135,6 +135,12 @@ func handlePR(owner, repo string, number int) error {
 		}
 	}
 
+	if err := gitutil.SetPRTracking(repoRoot, prResult.Branch, remote, number); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to set PR tracking branch: %v\n", err)
+	} else {
+		fmt.Printf("  %s Tracking PR head — git pull will fetch new PR commits\n", ui.Green("✓"))
+	}
+
 	prRes := &resources.Resource{
 		Type: "pr",
 		ID:   fmt.Sprintf("%s/%s#%d", owner, repo, number),
