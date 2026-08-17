@@ -17,7 +17,7 @@ func DetectKeys(branch, prTitle, prBody string, projects []string) []string {
 	var keys []string
 
 	for _, source := range []string{branch, prTitle, prBody} {
-		matches := pattern.FindAllString(source, -1)
+		matches := pattern.FindAllString(stripHTMLComments(source), -1)
 		for _, m := range matches {
 			m = strings.ToUpper(m)
 			if !seen[m] {
@@ -27,6 +27,17 @@ func DetectKeys(branch, prTitle, prBody string, projects []string) []string {
 		}
 	}
 	return keys
+}
+
+// htmlCommentPattern matches HTML comment blocks, including unterminated ones
+// that run to the end of the input. PR body templates (e.g. odh-dashboard) put
+// example Jira keys inside <!-- ... --> comments, which must not be detected as
+// tracked resources.
+var htmlCommentPattern = regexp.MustCompile(`(?s)<!--.*?(-->|$)`)
+
+// stripHTMLComments removes HTML comment blocks so keys inside them are ignored.
+func stripHTMLComments(s string) string {
+	return htmlCommentPattern.ReplaceAllString(s, "")
 }
 
 var jiraURLPattern = regexp.MustCompile(`(?i)atlassian\.net/browse/([A-Z]+-\d+)`)

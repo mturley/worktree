@@ -46,6 +46,26 @@ func TestDetectKeys(t *testing.T) {
 			branch:   "rhoaieng-999",
 			expected: []string{"RHOAIENG-999"},
 		},
+		{
+			name:     "ignores keys inside HTML comments",
+			prBody:   "<!-- e.g. RHOAIENG-123456 -->\nCloses RHOAIENG-777",
+			expected: []string{"RHOAIENG-777"},
+		},
+		{
+			name:     "ignores keys inside multiline HTML comments",
+			prBody:   "<!--\nExample: RHOAIENG-123456\nAnother: ODH-999\n-->\nRHOAIENG-42",
+			expected: []string{"RHOAIENG-42"},
+		},
+		{
+			name:     "unterminated HTML comment strips to end",
+			prBody:   "RHOAIENG-1\n<!-- trailing note RHOAIENG-123456",
+			expected: []string{"RHOAIENG-1"},
+		},
+		{
+			name:     "body with only a commented key yields nothing",
+			prBody:   "<!-- RHOAIENG-123456 -->",
+			expected: nil,
+		},
 	}
 
 	for _, tt := range tests {
