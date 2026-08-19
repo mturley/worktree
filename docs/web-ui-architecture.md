@@ -222,7 +222,7 @@ Three UI entry points all call these and then refetch via
 - The Overview tab's "Add resource" URL field (`ResourceList.tsx`), which
   shows a dismissible error `Alert` if `addResource` rejects (e.g.
   unrecognized URL).
-- Each `ResourceCard`'s remove control (`ResourceCard.tsx`) — a trash icon
+- Each `ResourceCard`'s remove control (`ResourceCard.tsx`) — a `×` control
   behind a `Popover` confirm step, with its own inline error feedback if
   `removeResource` fails.
 - The Slack tab's `+` button (`SlackTab.tsx`), which adds a Slack thread URL
