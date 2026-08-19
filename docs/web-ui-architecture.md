@@ -235,9 +235,16 @@ single in-process loop for as long as the server is up:
 - **Accepted tradeoff**: the DB goes stale whenever the server isn't running
   (no server = no polling). This is intentional — there's no background
   daemon.
-- `pollAll` polls all active `pr` and `jira` resources (via
-  `watcherdb.ActiveResources`), skipping (with a log line, not an error) any
-  source whose credentials aren't configured.
+- `pollAll` polls all active `pr`, `jira`, and (as of Phase 4) `slack`
+  resources (via `watcherdb.ActiveResources`), skipping (with a log line, not
+  an error) any source whose credentials aren't configured. Slack threads are
+  polled via `github.com/mturley/watcher/slack`'s `Poll(db, auth, threads,
+  logger)` — the same library entry-point shape as `wgithub.Poll`/`wjira.Poll`
+  — which writes `slack_reply` timeline events (`watcher_events`) for new
+  replies and refreshes `watcher_resource_state` for each thread. This is
+  separate from worktree's own live-tab `internal/slackpoller`, an in-memory
+  SSE poller that only runs while a Slack thread is open in the UI; `pollAll`
+  keeps Slack threads current even when no tab is open, same as PRs/Jira.
 
 ## Frontend structure (`ui/src/`)
 
@@ -306,6 +313,17 @@ described above:
 - **Degraded ("minimal") card**: if `isEnriched(r)` is false (no enrichment
   fields present — the resource was never polled), the card falls back to a
   bare type badge + linked id (`MinimalRow`).
+- **Slack cards** (`SlackCardBody`, Phase 4): channel name, author, and
+  "started"/"active" relative timestamps (`created_ts`/`updated_ts`) sourced
+  from the cached `resource_state` written by the `watcher/slack.Poll` poller
+  in `pollAll` (see "Polling model" above) — `title`, `channel_name`, and
+  `author` come from `m["title"]`/`m["channel_name"]`/`m["author"]` in that
+  cached state JSON (`enrichResourceDTO`, `internal/webui/resources_api.go`).
+  Unlike PR/Jira cards, Slack cards render even when not yet enriched — the
+  card label falls back through `custom_name || title || id`
+  (`ResourceCard.tsx`), so a never-polled thread still shows something
+  useful (its custom name or raw resource id) rather than degrading to
+  `MinimalRow`.
 
 PR **author** and Jira **reporter** caching were added to the watcher library
 in **v0.2.5** (`buildPRStateJSON`/`buildJiraStateJSON` in `~/git/watcher`).
