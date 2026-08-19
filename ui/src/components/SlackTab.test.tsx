@@ -181,4 +181,41 @@ describe("SlackTab persist", () => {
     expect(await findByText("HTTP 500")).toBeTruthy()
     expect(mockRefetch).not.toHaveBeenCalled()
   })
+
+  it("clears the custom name (saves empty string) when submitted with a blank title", async () => {
+    mockResources = [
+      {
+        type: "slack",
+        id: "C1:1700000000.000100",
+        url: "https://x",
+        primary: false,
+        custom_name: "Old title",
+      } as ResourceDTO,
+    ]
+    const user = userEvent.setup()
+    const { getByRole, findByRole, findByLabelText } = renderWithProvider(<SlackTab path="/w/foo" />)
+
+    // Open the modal; it shows "Old title" pre-filled.
+    await user.click(await findByRole("button", { name: "Edit tab details" }))
+    const nameField = await findByLabelText("Name (optional)")
+    expect((nameField as HTMLInputElement).value).toBe("Old title")
+
+    // Clear the name field (simulate user deleting the text).
+    await user.clear(nameField)
+    expect((nameField as HTMLInputElement).value).toBe("")
+
+    // Submit with blank name.
+    await user.click(getByRole("button", { name: "Save" }))
+
+    // Verify setResourceMeta was called with empty string (not a placeholder).
+    await waitFor(() =>
+      expect(api.setResourceMeta).toHaveBeenCalledWith({
+        type: "slack",
+        id: "C1:1700000000.000100",
+        name: "",
+        description: "",
+      }),
+    )
+    await waitFor(() => expect(mockRefetch).toHaveBeenCalled())
+  })
 })
