@@ -34,6 +34,30 @@ func TestAddAndLoad(t *testing.T) {
 	}
 }
 
+func TestAddRejectsEmptyIDAndType(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/a"
+
+	if err := Add(conn, wt, Resource{Type: "slack", ID: ""}); err == nil {
+		t.Fatal("expected error for empty ID, got nil")
+	}
+	if err := Add(conn, wt, Resource{Type: "slack", ID: "   "}); err == nil {
+		t.Fatal("expected error for whitespace-only ID, got nil")
+	}
+	if err := Add(conn, wt, Resource{Type: "", ID: "C1:1.2"}); err == nil {
+		t.Fatal("expected error for empty type, got nil")
+	}
+
+	// Nothing should have been written for the rejected adds.
+	res, err := Load(conn, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 0 {
+		t.Fatalf("expected no resources after rejected adds, got %+v", res)
+	}
+}
+
 func TestMultiplePrimariesPerType(t *testing.T) {
 	conn := testDB(t)
 	wt := "/tmp/wt/a"

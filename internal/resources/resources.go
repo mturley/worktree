@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/mturley/watcher"
 	watcherdb "github.com/mturley/watcher/db"
@@ -75,6 +76,17 @@ func loadPrimaryFlags(conn *sql.DB, sub string) (map[string]bool, error) {
 // its primary/related flag (is_primary = !Related). Multiple resources of
 // the same type may be primary.
 func Add(conn *sql.DB, worktreePath string, r Resource) error {
+	// Reject empty type/id before any DB write — an empty ID produces a
+	// malformed subscription that pollers can't act on (e.g. the slack poller
+	// logs "bad slack resource id" on every cycle). Guarding here covers all
+	// callers (the `worktree resources add` CLI, jira/pr add paths, handler).
+	if strings.TrimSpace(r.Type) == "" {
+		return fmt.Errorf("resource type is required")
+	}
+	if strings.TrimSpace(r.ID) == "" {
+		return fmt.Errorf("resource id is required")
+	}
+
 	sub := wdb.Subscriber(worktreePath)
 	wr := watcher.Resource{Type: r.Type, ID: r.ID, URL: r.URL}
 
