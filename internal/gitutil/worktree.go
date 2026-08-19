@@ -152,6 +152,21 @@ func ResetHard(dir, ref string) error {
 	return nil
 }
 
+// ErrNeedsForce is returned by RemoveWorktree when git refuses to remove the
+// worktree even with --force (e.g. read-only files left by a build blocking rm,
+// or a directory git no longer sees as a valid worktree). The caller can then
+// confirm with the user and call ForceRemoveWorktree.
+type ErrNeedsForce struct {
+	GitOutput string
+}
+
+func (e *ErrNeedsForce) Error() string {
+	return e.GitOutput
+}
+
+// RemoveWorktree removes the worktree at wtPath with `git worktree remove`,
+// then `--force`. If git still refuses, it returns *ErrNeedsForce rather than
+// forcibly deleting — the caller decides whether to escalate.
 func RemoveWorktree(repoRoot, wtPath string) error {
 	cmd := exec.Command("git", "-C", repoRoot, "worktree", "remove", wtPath)
 	if err := cmd.Run(); err == nil {
@@ -159,10 +174,56 @@ func RemoveWorktree(repoRoot, wtPath string) error {
 	}
 
 	cmd = exec.Command("git", "-C", repoRoot, "worktree", "remove", "--force", wtPath)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("%s\n\n  To resolve: delete the directory manually, then reconcile.\n    rm -rf %s\n    git worktree prune\n    worktree cleanup", strings.TrimSpace(string(out)), wtPath)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return nil
 	}
+	return &ErrNeedsForce{GitOutput: strings.TrimSpace(string(out))}
+}
+
+// ForceRemoveWorktree replicates the old tool's force_rm fallback: fix
+// permissions, then remove the directory, then prune git's worktree list. It
+// only removes the directory when wtPath is safely contained in worktreesBase —
+// the directory this tool owns — so a bad path can never cause an rm -rf outside
+// the managed worktrees area.
+func ForceRemoveWorktree(repoRoot, worktreesBase, wtPath string) error {
+	if !isContained(worktreesBase, wtPath) {
+		return fmt.Errorf("%s is outside the managed worktrees base (%s); refusing to force-remove", wtPath, worktreesBase)
+	}
+	exec.Command("chmod", "-R", "u+rwx", wtPath).Run()
+	if err := os.RemoveAll(wtPath); err != nil {
+		return fmt.Errorf("removing worktree directory: %w", err)
+	}
+	PruneWorktrees(repoRoot)
 	return nil
+}
+
+// isContained reports whether path is base itself or lies within it, after
+// resolving both to absolute, symlink-free paths. Used to guard forced removal.
+func isContained(base, path string) bool {
+	if base == "" {
+		return false
+	}
+	absBase, err := filepath.Abs(base)
+	if err != nil {
+		return false
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	// Resolve symlinks where possible so a symlinked base still matches.
+	if r, err := filepath.EvalSymlinks(absBase); err == nil {
+		absBase = r
+	}
+	if r, err := filepath.EvalSymlinks(absPath); err == nil {
+		absPath = r
+	}
+	rel, err := filepath.Rel(absBase, absPath)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func PruneWorktrees(repoRoot string) error {

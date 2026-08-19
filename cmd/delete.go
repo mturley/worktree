@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/mturley/worktree/internal/config"
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/env"
 	"github.com/mturley/worktree/internal/gitutil"
@@ -31,6 +33,11 @@ func init() {
 
 func runDelete(cmd *cobra.Command, args []string) error {
 	wtPath, err := resolveWorktreePath(args)
+	if err != nil {
+		return err
+	}
+
+	cfg, err := config.Load()
 	if err != nil {
 		return err
 	}
@@ -62,9 +69,30 @@ func runDelete(cmd *cobra.Command, args []string) error {
 	}
 
 	if repoRoot != "" {
-		ui.SpinWhile("Removing worktree", func() error {
+		err := ui.SpinWhile("Removing worktree", func() error {
 			return gitutil.RemoveWorktree(repoRoot, wtPath)
 		})
+		var needsForce *gitutil.ErrNeedsForce
+		if errors.As(err, &needsForce) {
+			fmt.Printf("\n%s git could not remove the worktree:\n  %s\n\n",
+				ui.Yellow("!"), needsForce.GitOutput)
+			fmt.Println("This is usually leftover build output or read-only files in the worktree.")
+			if ui.Confirm("Force-remove the directory (fix permissions and delete)?") {
+				if err := ui.SpinWhile("Force-removing worktree", func() error {
+					return gitutil.ForceRemoveWorktree(repoRoot, cfg.WorktreesBase, wtPath)
+				}); err != nil {
+					return err
+				}
+			} else {
+				fmt.Printf("\nLeaving the worktree in place. To remove it manually:\n")
+				fmt.Printf("  rm -rf %s\n", wtPath)
+				fmt.Printf("  git -C %s worktree prune\n", repoRoot)
+				fmt.Printf("  worktree cleanup\n")
+				return nil
+			}
+		} else if err != nil {
+			return err
+		}
 	}
 
 	conn, err := wdb.Open()
