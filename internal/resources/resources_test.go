@@ -121,6 +121,40 @@ func TestRemoveAllClearsSubscriptionsAndPrimary(t *testing.T) {
 	}
 }
 
+func TestSetMetaAndLoadDecorates(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt-meta-test"
+
+	if err := Add(conn, wt, Resource{Type: "slack", ID: "C1:1700000000.000100", URL: "https://x"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if err := SetMeta(conn, "slack", "C1:1700000000.000100", "Release blocker", "e2e regression"); err != nil {
+		t.Fatalf("SetMeta: %v", err)
+	}
+	rs, err := Load(conn, wt)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(rs) != 1 {
+		t.Fatalf("expected 1 resource, got %d", len(rs))
+	}
+	if rs[0].CustomName != "Release blocker" || rs[0].CustomDescription != "e2e regression" {
+		t.Fatalf("Load did not decorate custom meta: %+v", rs[0])
+	}
+}
+
+func TestLoadNoMetaLeavesEmpty(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt-meta-test2"
+	if err := Add(conn, wt, Resource{Type: "slack", ID: "C2:1700000000.000200", URL: "https://y"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	rs, _ := Load(conn, wt)
+	if rs[0].CustomName != "" || rs[0].CustomDescription != "" {
+		t.Fatalf("expected empty custom meta, got %+v", rs[0])
+	}
+}
+
 func TestRemoveIsHard(t *testing.T) {
 	conn := testDB(t)
 	wt := "/tmp/wt/a"
