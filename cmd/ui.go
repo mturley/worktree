@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"database/sql"
 	"fmt"
 	"io/fs"
 	"log"
 	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
@@ -12,6 +14,8 @@ import (
 
 	"github.com/mturley/watcher/slack"
 	wdb "github.com/mturley/worktree/internal/db"
+	"github.com/mturley/worktree/internal/discovery"
+	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/slackcreds"
 	"github.com/mturley/worktree/internal/slackpoller"
 	"github.com/mturley/worktree/internal/webui"
@@ -39,23 +43,23 @@ func init() {
 }
 
 func runUI(cmd *cobra.Command, args []string) error {
-	// If a worktree UI is already listening on the port, don't abort with an
-	// "address already in use" error — just open the running one in the browser
-	// (unless --no-open / --api-only) and exit successfully.
-	if serverAlreadyListening(uiPort) {
-		url := fmt.Sprintf("http://127.0.0.1:%d", uiPort)
-		fmt.Printf("worktree UI already running on %s — opening in browser\n", url)
-		if !uiNoOpen && !uiAPIOnly {
-			openBrowser(url)
-		}
-		return nil
-	}
-
 	conn, err := wdb.Open()
 	if err != nil {
 		return fmt.Errorf("opening worktree db: %w", err)
 	}
 	defer conn.Close()
+
+	// If a worktree UI is already listening on the port, don't abort with an
+	// "address already in use" error — just open the running one in the browser
+	// (unless --no-open / --api-only) and exit successfully.
+	if serverAlreadyListening(uiPort) {
+		openURL := fmt.Sprintf("http://127.0.0.1:%d%s", uiPort, detailPathForCwd(conn))
+		fmt.Printf("worktree UI already running on %s — opening in browser\n", openURL)
+		if !uiNoOpen && !uiAPIOnly {
+			openBrowser(openURL)
+		}
+		return nil
+	}
 
 	var webFS fs.FS
 	if !uiAPIOnly {
@@ -95,7 +99,7 @@ func runUI(cmd *cobra.Command, args []string) error {
 	defer stop()
 
 	if !uiNoOpen && !uiAPIOnly {
-		go openBrowserWhenUp(uiPort)
+		go openBrowserWhenUp(uiPort, detailPathForCwd(conn))
 	}
 	return srv.Start()
 }
@@ -126,15 +130,51 @@ func serverAlreadyListening(port int) bool {
 	return true
 }
 
-func openBrowserWhenUp(port int) {
-	url := fmt.Sprintf("http://127.0.0.1:%d", port)
+func openBrowserWhenUp(port int, path string) {
+	openURL := fmt.Sprintf("http://127.0.0.1:%d%s", port, path)
 	for i := 0; i < 50; i++ {
 		if serverAlreadyListening(port) {
-			openBrowser(url)
+			openBrowser(openURL)
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+// detailPathForCwd returns the path (relative to the UI's origin) that the
+// browser should be opened to: a worktree's detail page when the current
+// working directory is inside a worktree tracked in the registry, or "/"
+// (the home page) otherwise.
+func detailPathForCwd(conn *sql.DB) string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "/"
+	}
+	toplevel, ok := discovery.IsInsideWorktree(cwd)
+	if !ok {
+		return "/"
+	}
+	entries, err := registry.List(conn)
+	if err != nil {
+		return "/"
+	}
+	return detailPathForToplevel(toplevel, entries)
+}
+
+// detailPathForToplevel matches a git toplevel path (as returned by
+// discovery.IsInsideWorktree) against a list of registry entries, canonicalizing
+// both sides via wdb.Subscriber so that symlink differences between the git
+// toplevel and the path recorded at worktree-creation time don't cause a
+// false miss. Returns the detail page path for the matching entry, or "/" if
+// no registry entry matches.
+func detailPathForToplevel(toplevel string, entries []registry.Entry) string {
+	target := wdb.Subscriber(toplevel)
+	for _, e := range entries {
+		if wdb.Subscriber(e.Path) == target {
+			return "/worktree/" + url.PathEscape(e.Path)
+		}
+	}
+	return "/"
 }
 
 // browserOpenCommand returns the command+args to open url. Inside cmux
