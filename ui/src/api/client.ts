@@ -18,4 +18,10 @@ export const api = {
     fetchJSON<ResourceDTO[]>(`/api/worktree-resources?path=${encodeURIComponent(path)}`),
   pollWorktree: (path: string) =>
     fetchJSON<{ polled: boolean }>(`/api/worktrees/poll?path=${encodeURIComponent(path)}`, { method: "POST" }),
+  setResourceMeta: (args: { type: string; id: string; name: string; description: string }) =>
+    fetchJSON<null>("/api/resource-meta", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(args),
+    }),
 }
