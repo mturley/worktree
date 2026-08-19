@@ -94,7 +94,7 @@ Internal `buildSlackStateJSON` → `db.UpsertResourceState(conn, "slack", resour
 }
 ```
 - `resource_updated_at` = the latest reply `ts` (or root `ts` if no replies).
-- Port `ui/src/lib/fallbackTitle.ts`'s truncation (collapse whitespace, trim, 60-char cap + `…`) to a small Go helper in `watcher/slack` so cached and live-view titles match.
+- Port `ui/src/lib/fallbackTitle.ts`'s truncation (collapse whitespace, trim, 60-char cap + `…`) to a small Go helper in `watcher/slack` so cached and live-view titles match for ASCII text. (Known cosmetic nit: Go slices by rune + trims ASCII space; TS slices by UTF-16 code unit + trims all Unicode whitespace, so titles with astral emoji/CJK in the first ~60 chars can truncate a char differently. No correctness impact — dedup is ExternalTS-only and the title is display-only.)
 - **`channel_name` is cached once** (it's stable): the poller reuses the value already in `resource_state` and only calls `client.Channel` until it first succeeds — steady-state polls make a single `Replies` call.
 - **`author`** (root author) is resolved from the same batched `client.Users` call the reply-event authors use — no extra API call.
 - **`created_ts`/`updated_ts`** are raw Slack epoch-second strings; the card renders them as relative times client-side (`relativeFromNow`).
