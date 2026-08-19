@@ -44,6 +44,12 @@ func TestIsWorktreeStale(t *testing.T) {
 // (the add-resource endpoint calls this inline). We can't assert enrichment
 // without live creds; this guards the degenerate path.
 func TestPollOne_NoCredsIsNoOp(t *testing.T) {
+	// Isolate watcher config to an empty dir so pollOne finds no creds and
+	// truly no-ops — without this, on a machine that has github/jira/slack
+	// creds configured, pollOne would make a live network call (the test
+	// would then exercise the poll-error branch, not the no-op it claims).
+	t.Setenv("WATCHER_HOME", t.TempDir())
+
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
