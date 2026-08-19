@@ -86,6 +86,7 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | GET | `/api/worktree-timeline` | `path` (required, worktree path), `limit` | `timelineResponse` |
 | GET | `/api/worktree-resources` | `path` (required) | `[]resourceDTO` |
 | POST | `/api/worktrees/poll` | `path` (required) | `{"polled": bool}` |
+| POST | `/api/resource-meta` | body: `{type, id, name, description}` | — |
 | GET | `/api/stream` | — | SSE stream (`text/event-stream`) |
 
 ### `worktreeSummary` (worktrees.go)
@@ -164,7 +165,20 @@ issue_type                string    // Jira
 assignee                  string    // Jira
 labels                    []string  // Jira
 updated_at                string    // resource_updated_at, RFC3339
+
+// user-set per-resource overrides (omitempty; absent if never set):
+custom_name               string
+custom_description        string
 ```
+
+`custom_name`/`custom_description` come from the watcher library's
+`watcher_resource_meta` table (keyed `(resource_type, resource_id)`, added in
+**v0.2.8**), not from `watcher_resource_state` — they're user-authored
+overrides, not polled/cached upstream data. `POST /api/resource-meta` (body
+`{type, id, name, description}`) upserts a row via
+`watcherdb.SetResourceMeta`; `Load`-time resource decoration
+(`internal/resources`) and `enrichResourceDTO` both read it back and set these
+two fields whenever a row exists for that resource.
 
 `enrichResourceDTO` reads `watcherdb.GetResourceState(db, type, id)`, parses
 `StateJSON` defensively (comma-ok type assertions on every field), and
@@ -469,6 +483,16 @@ a resource-scoped view: only threads added to *this* worktree appear.
   modals) and shared libs under `ui/src/lib/` (`mrkdwn.tsx`, `emoji.ts`,
   `renderEmoji.tsx`) — see "Slack conventions" in `.claude/CLAUDE.md` for the
   don't-reinvent rendering rules these follow.
+- **Custom thread name/description**: an "Edit thread details" modal
+  (reachable from the tab rail and the thread header) calls
+  `api.setResourceMeta({type: "slack", id, name, description})` →
+  `POST /api/resource-meta`, then refetches resources. Both the rail entry and
+  the `ThreadView` header prefer `resource.custom_name` over the raw
+  `channel:ts` id when set. The Overview tab's Slack resource card does the
+  same (prefers `custom_name`, falling back to the raw id) — a real
+  first-message-derived fallback (instead of the raw id) is deferred to
+  Phase 4 / the poller-rethink, since Slack resources aren't enriched via
+  `watcher_resource_state` today.
 
 ## Known deferred items / extension notes
 
