@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { ActionIcon, Anchor, Badge, Button, Group, Paper, Popover, Stack, Text } from "@mantine/core"
+import { ActionIcon, Alert, Anchor, Badge, Button, Group, Paper, Popover, Stack, Text } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
 import { relativeTime, relativeFromNow } from "../lib/relativeTime"
 import { api } from "../api/client"
@@ -136,20 +136,32 @@ function SlackCardBody({ r }: { r: ResourceDTO }) {
 function RemoveControl({ r, path, onRemoved }: { r: ResourceDTO; path: string; onRemoved: () => void }) {
   const [opened, setOpened] = useState(false)
   const [removing, setRemoving] = useState(false)
+  const [removeError, setRemoveError] = useState<string | null>(null)
 
   const handleRemove = async () => {
     setRemoving(true)
     try {
       await api.removeResource({ path, type: r.type, id: r.id })
+      setRemoveError(null)
       setOpened(false)
       onRemoved()
+    } catch (err) {
+      setRemoveError(err instanceof Error ? err.message : String(err))
     } finally {
       setRemoving(false)
     }
   }
 
   return (
-    <Popover opened={opened} onChange={setOpened} withArrow position="bottom-end">
+    <Popover
+      opened={opened}
+      onChange={(v) => {
+        setOpened(v)
+        if (v) setRemoveError(null)
+      }}
+      withArrow
+      position="bottom-end"
+    >
       <Popover.Target>
         <ActionIcon
           size="sm"
@@ -164,6 +176,11 @@ function RemoveControl({ r, path, onRemoved }: { r: ResourceDTO; path: string; o
       <Popover.Dropdown>
         <Stack gap={6}>
           <Text size="sm">Remove this resource?</Text>
+          {removeError ? (
+            <Alert color="red" variant="light" p="xs">
+              <Text size="xs">{removeError}</Text>
+            </Alert>
+          ) : null}
           <Group gap={6} justify="flex-end">
             <Button size="xs" variant="default" onClick={() => setOpened(false)} disabled={removing}>
               Cancel
@@ -186,7 +203,7 @@ interface ResourceCardProps {
 
 export function ResourceCard({ r, path = "", onRemoved = () => {} }: ResourceCardProps) {
   return (
-    <Paper key={`${r.type}:${r.id}`} p="xs" withBorder>
+    <Paper p="xs" withBorder>
       <Group justify="space-between" wrap="nowrap" align="flex-start">
         <div style={{ flex: 1, minWidth: 0 }}>
           {r.type === "slack" ? (

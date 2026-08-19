@@ -97,4 +97,19 @@ describe("ResourceCard remove control", () => {
     expect(removeResource).toHaveBeenCalledWith({ path: "/some/worktree", type: "pr", id: "org/repo#1" })
     await vi.waitFor(() => expect(onRemoved).toHaveBeenCalled())
   })
+
+  it("shows an error and keeps the popover open when removeResource fails", async () => {
+    removeResource.mockRejectedValueOnce(new Error("failed to remove resource"))
+    const onRemoved = vi.fn()
+    const user = userEvent.setup()
+    wrap(<ResourceCard r={r} path="/some/worktree" onRemoved={onRemoved} />)
+
+    await user.click(screen.getByRole("button", { name: "Remove resource" }))
+    await screen.findByText("Remove this resource?")
+    await user.click(screen.getByRole("button", { name: "Remove" }))
+
+    expect(await screen.findByText("failed to remove resource")).toBeInTheDocument()
+    expect(screen.getByText("Remove this resource?")).toBeInTheDocument()
+    expect(onRemoved).not.toHaveBeenCalled()
+  })
 })
