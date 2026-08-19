@@ -1,6 +1,6 @@
 import { Anchor, Badge, Group, Paper, Stack, Text } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
-import { relativeTime } from "../lib/relativeTime"
+import { relativeTime, relativeFromNow } from "../lib/relativeTime"
 
 function prStateColor(state?: string): string {
   switch ((state || "").toUpperCase()) {
@@ -114,12 +114,20 @@ function JiraCardBody({ r }: { r: ResourceDTO }) {
 }
 
 function SlackCardBody({ r }: { r: ResourceDTO }) {
-  const label = r.custom_name || r.id
+  const label = r.custom_name || r.title || r.id
   return (
-    <Group gap="xs">
-      <Badge size="xs" variant="light" color="grape">Slack</Badge>
-      {r.url ? <Anchor href={r.url} target="_blank" size="sm">{label}</Anchor> : <Text size="sm">{label}</Text>}
-    </Group>
+    <Stack gap={2}>
+      <Group gap="xs" wrap="wrap">
+        <Badge size="xs" variant="light" color="grape">Slack</Badge>
+        {r.url ? <Anchor href={r.url} target="_blank" size="sm">{label}</Anchor> : <Text size="sm">{label}</Text>}
+      </Group>
+      <Group gap="xs" wrap="wrap">
+        {r.channel_name && <Text size="xs" c="dimmed">#{r.channel_name}</Text>}
+        {r.author && <Text size="xs" c="dimmed">by {r.author}</Text>}
+        {r.created_ts && <Text size="xs" c="dimmed">started {relativeFromNow(r.created_ts)}</Text>}
+        {r.updated_ts && <Text size="xs" c="dimmed">· active {relativeFromNow(r.updated_ts)}</Text>}
+      </Group>
+    </Stack>
   )
 }
 

@@ -18,6 +18,9 @@ type resourceDTO struct {
 	CustomDescription string `json:"custom_description,omitempty"`
 	// enriched from watcher_resource_state (empty if never polled):
 	Title                 string   `json:"title,omitempty"`                    // PR title or Jira summary
+	ChannelName           string   `json:"channel_name,omitempty"`             // slack: cached #channel name
+	CreatedTS             string   `json:"created_ts,omitempty"`               // slack: root message ts (creation)
+	UpdatedTS             string   `json:"updated_ts,omitempty"`               // slack: latest message ts
 	State                 string   `json:"state,omitempty"`                    // PR state (open/closed/merged)
 	ReviewDecision        string   `json:"review_decision,omitempty"`          // PR
 	CIStatus              string   `json:"ci_status,omitempty"`                // PR
@@ -123,6 +126,22 @@ func (s *Server) enrichResourceDTO(dto *resourceDTO) {
 			if len(labels) > 0 {
 				dto.Labels = labels
 			}
+		}
+	case "slack":
+		if v, ok := m["title"].(string); ok {
+			dto.Title = v
+		}
+		if v, ok := m["channel_name"].(string); ok {
+			dto.ChannelName = v
+		}
+		if v, ok := m["author"].(string); ok {
+			dto.Author = v
+		}
+		if v, ok := m["created_ts"].(string); ok {
+			dto.CreatedTS = v
+		}
+		if v, ok := m["updated_ts"].(string); ok {
+			dto.UpdatedTS = v
 		}
 	}
 }

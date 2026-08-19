@@ -14,6 +14,9 @@ export interface ResourceDTO {
   type: string; id: string; url: string; primary: boolean
   // enriched from cached watcher state; absent if the resource was never polled
   title?: string
+  channel_name?: string
+  created_ts?: string
+  updated_ts?: string
   state?: string
   review_decision?: string
   ci_status?: string
