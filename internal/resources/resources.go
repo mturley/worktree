@@ -11,10 +11,12 @@ import (
 )
 
 type Resource struct {
-	Type    string // "pr", "jira"
-	ID      string // "owner/repo#123" or "RHOAIENG-456"
-	URL     string
-	Related bool // true when NOT the primary resource of its type
+	Type              string // "pr", "jira", "slack"
+	ID                string // "owner/repo#123" or "RHOAIENG-456" or "<channel>:<thread_ts>"
+	URL               string
+	Related           bool   // true when NOT the primary resource of its type
+	CustomName        string // user-supplied; empty => consumer falls back to platform name
+	CustomDescription string // user-supplied; empty => no description
 }
 
 // Load returns the active tracked resources for a worktree.
@@ -31,12 +33,21 @@ func Load(conn *sql.DB, worktreePath string) ([]Resource, error) {
 	var out []Resource
 	for _, s := range subs {
 		key := s.Resource.Type + "\x00" + s.Resource.ID
-		out = append(out, Resource{
+		r := Resource{
 			Type:    s.Resource.Type,
 			ID:      s.Resource.ID,
 			URL:     s.Resource.URL,
 			Related: !primary[key], // absent flag => related (not primary)
-		})
+		}
+		meta, err := watcherdb.GetResourceMeta(conn, s.Resource.Type, s.Resource.ID)
+		if err != nil {
+			return nil, err
+		}
+		if meta != nil {
+			r.CustomName = meta.CustomName
+			r.CustomDescription = meta.CustomDescription
+		}
+		out = append(out, r)
 	}
 	return out, nil
 }
@@ -132,6 +143,13 @@ func RemoveAll(conn *sql.DB, worktreePath string) error {
 	// subscription was already tombstoned and thus not returned by Load).
 	_, err = conn.Exec(`DELETE FROM worktree_primary WHERE subscriber = ?`, sub)
 	return err
+}
+
+// SetMeta upserts the user-supplied custom name/description for a resource.
+// Custom metadata is per-resource (not per-worktree), so worktreePath is not
+// needed. Empty strings clear the respective field.
+func SetMeta(conn *sql.DB, resType, id, name, description string) error {
+	return watcherdb.SetResourceMeta(conn, watcher.Resource{Type: resType, ID: id}, name, description)
 }
 
 // Unwatch soft-unsubscribes as a user tombstone (distinct from Remove). The

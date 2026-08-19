@@ -4,6 +4,7 @@ import { useWorktreeSlackThreads, type SlackThreadRef } from "../hooks/useWorktr
 import { useThread } from "../hooks/useThread"
 import { ThreadView } from "./slack/ThreadView"
 import { defaultTabName, type Tab } from "../state/tabs"
+import { api } from "../api/client"
 
 interface SlackTabProps {
   path: string
@@ -14,8 +15,8 @@ function threadRefToTab(ref: SlackThreadRef): Tab {
     id: ref.id,
     channel: ref.channel,
     threadTs: ref.threadTs,
-    name: defaultTabName(ref.channel, ref.threadTs),
-    description: "",
+    name: ref.customName || defaultTabName(ref.channel, ref.threadTs),
+    description: ref.customDescription || "",
   }
 }
 
@@ -29,8 +30,11 @@ function isNotConfigured(error: string | undefined): boolean {
 }
 
 export function SlackTab({ path }: SlackTabProps) {
-  const threads = useWorktreeSlackThreads(path)
+  const { threads, refetch } = useWorktreeSlackThreads(path)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  // Surfaces a failed "save thread details" write so a rejected setResourceMeta
+  // isn't silently swallowed (the modal closes on submit) and mistaken for success.
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   // Default the selection to the first thread, and keep it valid if the set
   // of threads changes (e.g. a resource is added/removed out from under us).
@@ -76,6 +80,18 @@ export function SlackTab({ path }: SlackTabProps) {
         </Stack>
       </Grid.Col>
       <Grid.Col span={{ base: 12, sm: 8 }}>
+        {saveError ? (
+          <Alert
+            color="red"
+            variant="light"
+            title="Couldn't save thread details"
+            withCloseButton
+            onClose={() => setSaveError(null)}
+            mb="sm"
+          >
+            <Text size="sm">{saveError}</Text>
+          </Alert>
+        ) : null}
         {isNotConfigured(thread.error) ? (
           <Alert color="yellow" variant="light" title="Slack not configured">
             <Text size="sm">
@@ -86,7 +102,23 @@ export function SlackTab({ path }: SlackTabProps) {
           <ThreadView
             tab={tab}
             thread={thread}
-            onUpdateTab={() => {}}
+            onUpdateTab={async (id, updates) => {
+              // The modal closes itself on submit, so a rejected write would
+              // vanish silently and look like success. Catch it and surface an
+              // inline error instead.
+              try {
+                setSaveError(null)
+                await api.setResourceMeta({
+                  type: "slack",
+                  id,
+                  name: updates.name,
+                  description: updates.description,
+                })
+                await refetch()
+              } catch (e) {
+                setSaveError(e instanceof Error ? e.message : String(e))
+              }
+            }}
             onOpenThread={(url, opts) => {
               window.open(url, opts.background ? "_blank" : "_self", "noreferrer")
             }}

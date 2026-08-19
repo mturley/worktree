@@ -25,4 +25,6 @@ export interface ResourceDTO {
   assignee?: string
   labels?: string[]
   updated_at?: string
+  custom_name?: string
+  custom_description?: string
 }

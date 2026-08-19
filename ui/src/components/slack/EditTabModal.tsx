@@ -32,11 +32,12 @@ export function EditTabModal({ opened, tab, onClose, onSave }: EditTabModalProps
     if (!tab) {
       return
     }
-    // If the user leaves the title blank, keep the auto-generated placeholder
-    // (so the tab stays "untitled") rather than saving the placeholder string
-    // as if it were a custom title.
+    // If the user leaves the title blank, save an empty string to clear the
+    // custom name from the database. Display layers fall back to the auto-generated
+    // placeholder (defaultTabName) and first-message preview via their own
+    // `custom_name || ...` logic.
     const trimmed = name.trim()
-    onSave(tab.id, trimmed || defaultTabName(tab.channel, tab.threadTs), description)
+    onSave(tab.id, trimmed, description)
     onClose()
   }
 
