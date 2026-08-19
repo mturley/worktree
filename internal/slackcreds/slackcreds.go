@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	wconfig "github.com/mturley/watcher/config"
-	"github.com/mturley/worktree/internal/slackapi"
+	"github.com/mturley/watcher/slack"
 )
 
 func fromConfig(cfg *wconfig.Config) (token, cookie, domain string, err error) {
@@ -25,10 +25,10 @@ func Load() (token, cookie, domain string, err error) {
 }
 
 // Client builds a Slack API client from the stored credentials.
-func Client() (slackapi.Client, string, error) {
+func Client() (slack.Client, string, error) {
 	token, cookie, domain, err := Load()
 	if err != nil {
 		return nil, "", err
 	}
-	return slackapi.New(token, cookie), domain, nil
+	return slack.New(token, cookie), domain, nil
 }

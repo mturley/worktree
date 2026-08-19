@@ -10,6 +10,7 @@ import (
 	watcherdb "github.com/mturley/watcher/db"
 	wgithub "github.com/mturley/watcher/github"
 	wjira "github.com/mturley/watcher/jira"
+	wslack "github.com/mturley/watcher/slack"
 	wdb "github.com/mturley/worktree/internal/db"
 )
 
@@ -83,6 +84,16 @@ func (s *Server) pollAll() error {
 			}
 		} else {
 			s.logger().Printf("jira not configured; skipping %d jira resources", len(issues))
+		}
+	}
+	if threads, _ := watcherdb.ActiveResources(s.DB, "slack"); len(threads) > 0 {
+		if sc, err := cfg.Slack(); err == nil {
+			auth := wslack.SlackAuth{Token: sc.Token, Cookie: sc.Cookie, WorkspaceDomain: sc.WorkspaceDomain}
+			if err := wslack.Poll(s.DB, auth, threads, s.logger()); err != nil {
+				s.logger().Printf("slack poll: %v", err)
+			}
+		} else {
+			s.logger().Printf("slack not configured; skipping %d slack resources", len(threads))
 		}
 	}
 	return nil

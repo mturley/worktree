@@ -8,7 +8,7 @@ import (
 	"time"
 
 	wconfig "github.com/mturley/watcher/config"
-	"github.com/mturley/worktree/internal/slackapi"
+	"github.com/mturley/watcher/slack"
 	"github.com/mturley/worktree/internal/ui"
 )
 
@@ -58,12 +58,12 @@ after a week or two. When requests start failing with an auth error, just run
 // domainDeriver validates the token/cookie AND resolves the workspace's web
 // host (for building "Open in Slack" permalinks) via team.info. It is a
 // package var so tests can substitute a fake. It returns a wrapped
-// slackapi.ErrAuth if the credentials are rejected, or another error on
+// slack.ErrAuth if the credentials are rejected, or another error on
 // transport failure.
 var domainDeriver = func(token, cookie string) (domain string, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	return slackapi.New(token, cookie).TeamInfo(ctx)
+	return slack.New(token, cookie).TeamInfo(ctx)
 }
 
 // writeSlackCreds mutates cfg so that token, cookie, and domain land under
@@ -133,7 +133,7 @@ func promptAndSaveSlack() error {
 	domain, err := domainDeriver(token, cookie)
 	if err != nil {
 		fmt.Printf("%s\n", ui.Red("failed"))
-		if errors.Is(err, slackapi.ErrAuth) {
+		if errors.Is(err, slack.ErrAuth) {
 			fmt.Printf("    Slack rejected these credentials (check the token and cookie and try again): %v\n", err)
 		} else {
 			fmt.Printf("    could not verify credentials with Slack: %v\n", err)

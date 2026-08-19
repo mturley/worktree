@@ -235,9 +235,16 @@ single in-process loop for as long as the server is up:
 - **Accepted tradeoff**: the DB goes stale whenever the server isn't running
   (no server = no polling). This is intentional — there's no background
   daemon.
-- `pollAll` polls all active `pr` and `jira` resources (via
-  `watcherdb.ActiveResources`), skipping (with a log line, not an error) any
-  source whose credentials aren't configured.
+- `pollAll` polls all active `pr`, `jira`, and (as of Phase 4) `slack`
+  resources (via `watcherdb.ActiveResources`), skipping (with a log line, not
+  an error) any source whose credentials aren't configured. Slack threads are
+  polled via `github.com/mturley/watcher/slack`'s `Poll(db, auth, threads,
+  logger)` — the same library entry-point shape as `wgithub.Poll`/`wjira.Poll`
+  — which writes `slack_reply` timeline events (`watcher_events`) for new
+  replies and refreshes `watcher_resource_state` for each thread. This is
+  separate from worktree's own live-tab `internal/slackpoller`, an in-memory
+  SSE poller that only runs while a Slack thread is open in the UI; `pollAll`
+  keeps Slack threads current even when no tab is open, same as PRs/Jira.
 
 ## Frontend structure (`ui/src/`)
 
@@ -306,6 +313,17 @@ described above:
 - **Degraded ("minimal") card**: if `isEnriched(r)` is false (no enrichment
   fields present — the resource was never polled), the card falls back to a
   bare type badge + linked id (`MinimalRow`).
+- **Slack cards** (`SlackCardBody`, Phase 4): channel name, author, and
+  "started"/"active" relative timestamps (`created_ts`/`updated_ts`) sourced
+  from the cached `resource_state` written by the `watcher/slack.Poll` poller
+  in `pollAll` (see "Polling model" above) — `title`, `channel_name`, and
+  `author` come from `m["title"]`/`m["channel_name"]`/`m["author"]` in that
+  cached state JSON (`enrichResourceDTO`, `internal/webui/resources_api.go`).
+  Unlike PR/Jira cards, Slack cards render even when not yet enriched — the
+  card label falls back through `custom_name || title || id`
+  (`ResourceCard.tsx`), so a never-polled thread still shows something
+  useful (its custom name or raw resource id) rather than degrading to
+  `MinimalRow`.
 
 PR **author** and Jira **reporter** caching were added to the watcher library
 in **v0.2.5** (`buildPRStateJSON`/`buildJiraStateJSON` in `~/git/watcher`).
@@ -345,27 +363,34 @@ Phase 3 folded a previously separate app (`slack-mini`) into worktree as a
 per-worktree "Slack" tab on `WorktreeDetailPage`, alongside "Overview". This
 section maps the folded-in code; see `docs/reverse-engineering/slack-web-api.md`
 for Slack Web API internals (auth, endpoints, payload shapes, quirks) — read
-it before touching anything in `internal/slackapi` or Slack rendering.
+it before touching `github.com/mturley/watcher/slack` or Slack rendering.
 
 ### Backend packages
 
-- **`internal/slackapi`** — the Slack Web API client (`client.go`, `types.go`,
+- **`github.com/mturley/watcher/slack`** (in the watcher library, NOT this
+  repo, as of Phase 4) — the Slack Web API client (`client.go`, `types.go`,
   `normalize.go`). Owns every Slack payload quirk; returns domain structs
   (`Message`, `User`, `Thread`, `Reaction`, `File`, `Attachment`,
   `Block`/`Element`) — callers never see raw Slack JSON. `normalize.go`'s
-  `normalizeMessage` is the single per-message mapper.
-- **`internal/slackpoller`** — polls Slack threads for changes and fans out
-  `ThreadUpdate` events to subscribers (one polling loop per `(channel,
-  threadTS)` key, shared across subscribers of the same thread). This is
-  **not** the watcher library, and **not** worktree's own PR/Jira poll loop
-  (`internal/webui/poller.go`) — it's a standalone package (renamed from
-  slack-mini's `internal/watcher` package, which predates and is unrelated to
-  `github.com/mturley/watcher`) that only depends on `slackapi.Client`, kept
-  separate so it can be lifted into a real watcher-library Slack poller in
-  Phase 4 without dragging in webui internals.
+  `normalizeMessage` is the single per-message mapper. It also carries the
+  library's Slack timeline poller (`slack.Poll`). Was worktree's
+  `internal/slackapi` through Phase 3; lifted into the library in Phase 4 so
+  the poller, worktree's UI, and (later) agent-handler share one canonical
+  Slack domain. Changing it is cross-repo work (see `.claude/CLAUDE.md`
+  "Watcher library").
+- **`internal/slackpoller`** — the LIVE-TAB poller: polls Slack threads for
+  changes and fans out `ThreadUpdate` events to subscribers (one in-memory
+  polling loop per `(channel, threadTS)` key, only while a thread is open in
+  the UI, for near-real-time SSE updates). This is **not** the watcher
+  library's Slack poller (that's `watcher/slack.Poll`, run from
+  `internal/webui/poller.go`'s `pollAll` for durable timeline events) and
+  **not** worktree's PR/Jira poll loop — three distinct pollers, don't
+  conflate them (renamed from slack-mini's `internal/watcher`, unrelated to
+  `github.com/mturley/watcher`). It now consumes the library's `slack.Client`
+  / `slack.Thread` types.
 - **`internal/slackcreds`** — loads Slack token/cookie/workspace domain from
   the shared watcher config (`wconfig.Load` → `cfg.Slack()`) and builds a
-  `slackapi.Client` (`slackcreds.Client()`).
+  `github.com/mturley/watcher/slack.Client` (`slackcreds.Client()`).
 - **`internal/slackurl`** — parses a Slack thread URL
   (`https://<workspace>.slack.com/archives/<channel>/p<ts>...`) into
   `(channel, threadTS)` and builds the canonical resource ID used to store it
@@ -392,7 +417,8 @@ to refresh).
 ### `webui.Server` wiring
 
 `webui.Server` gains three Slack-related fields: `SlackClient
-slackapi.Client`, `SlackPoller *slackpoller.Poller`, `SlackDomain string`.
+slack.Client` (from `github.com/mturley/watcher/slack`), `SlackPoller
+*slackpoller.Poller`, `SlackDomain string`.
 `runUI` (`cmd/ui.go`) attempts `slackcreds.Client()` at startup; on success it
 wires all three fields and constructs the poller; on failure (no creds
 configured) it leaves them `nil`/zero and logs "Slack not configured; Slack
@@ -425,16 +451,17 @@ conventions:
 shape shared by `GET /api/thread` and the `/api/thread-events` SSE stream
 (built once by `buildThreadResponse` so both stay consistent): channel,
 channelName, threadTs, lastRead, latestReply, rootTs, unreadIndex,
-currentUserId, messages (`[]MessageView`, each embedding `slackapi.Message`),
-users (`map[string]slackapi.User`), emoji (`map[string]string`, filtered down
-to only the names actually referenced in the thread).
+currentUserId, messages (`[]MessageView`, each embedding `slack.Message`),
+users (`map[string]slack.User`), emoji (`map[string]string`, filtered down
+to only the names actually referenced in the thread). (`slack.*` types are
+from `github.com/mturley/watcher/slack`.)
 
 **Wire quirk:** `ThreadResponse`'s own top-level keys are camelCase (explicit
-JSON tags), but the embedded `slackapi.Message` and its nested structs
+JSON tags), but the embedded `slack.Message` and its nested structs
 serialize with Go's default PascalCase field names (e.g. `message.TS`,
 `reaction.UserIDs`) since they don't carry JSON tags. The TS types in
 `ui/src/api/slackApi.ts` mirror this split deliberately — don't "fix" it by
-adding JSON tags to `slackapi` structs without checking every frontend
+adding JSON tags to the library `slack` structs without checking every frontend
 consumer. Nil slices/pointers marshal to `null`; the TS side guards for that.
 
 `/api/thread-events` subscribes to `SlackPoller.Subscribe(channel, threadTS)`

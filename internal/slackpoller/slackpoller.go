@@ -7,13 +7,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mturley/worktree/internal/slackapi"
+	"github.com/mturley/watcher/slack"
 )
 
 // ThreadUpdate is emitted whenever a poll detects a change in a thread.
 type ThreadUpdate struct {
 	Channel, ThreadTS string
-	Thread            slackapi.Thread
+	Thread            slack.Thread
 }
 
 // sub is one Subscribe() caller's private channel. Multiple subs can share a
@@ -48,10 +48,10 @@ type loopState struct {
 }
 
 // Poller polls Slack threads for changes and emits ThreadUpdate events on
-// per-subscriber channels. It depends only on slackapi.Client, so it can be
+// per-subscriber channels. It depends only on slack.Client, so it can be
 // lifted into a standalone Jira/GitHub watcher library later.
 type Poller struct {
-	client   slackapi.Client
+	client   slack.Client
 	interval time.Duration
 
 	mu      sync.Mutex
@@ -65,7 +65,7 @@ func key(ch, ts string) string { return ch + "\x00" + ts }
 // reserved injection seam for future testable-clock use (e.g. stamping
 // poll times or driving backoff) and is not currently read; it is not
 // stored on Poller.
-func New(c slackapi.Client, interval time.Duration, now func() time.Time) *Poller {
+func New(c slack.Client, interval time.Duration, now func() time.Time) *Poller {
 	return &Poller{
 		client:   c,
 		interval: interval,
@@ -77,7 +77,7 @@ func New(c slackapi.Client, interval time.Duration, now func() time.Time) *Polle
 // signature computes a cheap fingerprint of a thread's messages, based on
 // each message's (ts, reaction count, edited) so Poll can cheaply detect
 // changes without deep comparison.
-func signature(t slackapi.Thread) string {
+func signature(t slack.Thread) string {
 	sig := ""
 	for _, m := range t.Messages {
 		sig += m.TS + ":" + strconv.Itoa(len(m.Reactions)) + "|"

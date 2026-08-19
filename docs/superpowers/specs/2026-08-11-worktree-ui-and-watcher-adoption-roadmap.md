@@ -117,6 +117,7 @@ Each phase is independently shippable (decision #2). Detailed writing-plans auth
 - At session registration, handler detects the worktree CLI (in a worktree) and calls it (`worktree resources list --json`) to determine the worktree's PRIMARY resources → auto-watch those for the session. Replaces the old `.worktree-resources` read (drop handler's now-dead file readers across the ~5 seams).
 - `/watch` + `/unwatch` (and handler's Subscribe/Unsubscribe): in addition to handler's DB, detect worktree + CLI availability and (a) `/watch` → tell worktree to also watch the new resource; (b) `/unwatch` → soft-unsubscribe in worktree as `unsubscribed-by-user`.
 - Deliverable: handler and worktree share resource intent via the CLI; no file dependency.
+- **EXECUTION NOTE (build/install gotcha):** Mike keeps a handler UI server running for day-to-day use during this work. Before building or installing agent-handler (or anything that replaces the running handler binary), **kill the running handler UI server first** — a live server holding the binary/DB has caused build/install failures in past sessions. Confirm with Mike before killing (he may be actively using it), then build/install, then restart it.
 
 ### Phase 6 — agent-handler: Slack threads as a watched resource type (last)
 - Handler gains `slack` as a first-class watched resource type (built on the watcher Slack support from Phase 4), so Slack thread events flow to session inboxes/timeline in handler too.
