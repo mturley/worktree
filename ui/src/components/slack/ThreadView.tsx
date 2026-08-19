@@ -340,7 +340,7 @@ export function ThreadView({ tab, thread, onUpdateTab, onOpenThread }: ThreadVie
       {status === 'error' && (
         <Alert color="red" title={authExpired ? 'Authentication expired' : 'Failed to load thread'}>
           {authExpired
-            ? 'Your Slack session has expired. Re-run slack-mini setup to authenticate again.'
+            ? 'Your Slack session has expired. Re-run worktree setup to authenticate again.'
             : error}
         </Alert>
       )}

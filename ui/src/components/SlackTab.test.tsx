@@ -89,7 +89,7 @@ describe("SlackTab", () => {
     ]
     const { getByText } = renderWithProvider(<SlackTab path="/w/foo" />)
     await waitFor(() => {
-      expect(getByText("C1:1699999999.000100")).toBeTruthy()
+      expect(getByText("C1 @ 1699999999.000100")).toBeTruthy()
     })
   })
 

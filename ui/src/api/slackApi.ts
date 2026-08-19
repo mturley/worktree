@@ -184,7 +184,7 @@ export interface ConfigResponse {
 
 export class ApiAuthError extends Error {
   constructor() {
-    super('Authentication expired. Re-run slack-mini setup.')
+    super('Authentication expired. Re-run worktree setup.')
     this.name = 'ApiAuthError'
   }
 }

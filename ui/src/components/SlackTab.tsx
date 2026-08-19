@@ -68,7 +68,7 @@ export function SlackTab({ path }: SlackTabProps) {
             <NavLink
               key={t.id}
               active={t.id === selectedId}
-              label={t.id}
+              label={threadRefToTab(t).name}
               onClick={() => setSelectedId(t.id)}
               styles={{ label: { wordBreak: "break-all" } }}
             />
