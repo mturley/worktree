@@ -29,11 +29,11 @@ interface ThreadViewProps {
 }
 
 // Cached across renders/tabs: the workspace domain never changes for a
-// running instance, so there's no need to refetch /api/config per tab.
+// running instance, so there's no need to refetch /api/slack-config per tab.
 let cachedWorkspaceDomain: string | null = null
 
 // workspaceDomain is already the full host (e.g. "myteam.slack.com" or
-// "redhat.enterprise.slack.com") as returned by team.info via /api/config —
+// "redhat.enterprise.slack.com") as returned by team.info via /api/slack-config —
 // do NOT append ".slack.com" or it produces a broken double-domain.
 export function openInSlackUrl(channel: string, threadTs: string, latestTs: string, workspaceDomain: string): string {
   const pMessageId = latestTs.replace('.', '')

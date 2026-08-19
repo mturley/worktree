@@ -180,7 +180,6 @@ export interface ThreadResponse {
 
 export interface ConfigResponse {
   workspaceDomain: string
-  port: number
 }
 
 export class ApiAuthError extends Error {
