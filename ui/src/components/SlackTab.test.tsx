@@ -40,7 +40,13 @@ vi.mock("../hooks/useWorktreeDetail", () => ({
 
 vi.mock("../api/client", async (orig) => {
   const actual = await orig<typeof import("../api/client")>()
-  return { api: { ...actual.api, setResourceMeta: vi.fn().mockResolvedValue(undefined) } }
+  return {
+    api: {
+      ...actual.api,
+      setResourceMeta: vi.fn().mockResolvedValue(undefined),
+      addResource: vi.fn().mockResolvedValue(undefined),
+    },
+  }
 })
 
 // Keep ThreadView off the network: getThread returns an empty thread, and
@@ -214,6 +220,35 @@ describe("SlackTab persist", () => {
         id: "C1:1700000000.000100",
         name: "",
         description: "",
+      }),
+    )
+    await waitFor(() => expect(mockRefetch).toHaveBeenCalled())
+  })
+})
+
+describe("SlackTab add", () => {
+  it("adds a slack thread via the + button and refetches", async () => {
+    mockResources = [
+      {
+        type: "slack",
+        id: "C1:1700000000.000100",
+        url: "https://x",
+        primary: false,
+      } as ResourceDTO,
+    ]
+    const user = userEvent.setup()
+    const { getByRole, findByRole, findByLabelText } = renderWithProvider(<SlackTab path="/w/foo" />)
+
+    await user.click(await findByRole("button", { name: "Add Slack thread" }))
+
+    const urlInput = await findByLabelText("Paste a Slack thread URL")
+    await user.type(urlInput, "https://x.slack.com/archives/C2/p1700000001000200")
+    await user.click(getByRole("button", { name: "Add" }))
+
+    await waitFor(() =>
+      expect(api.addResource).toHaveBeenCalledWith({
+        path: "/w/foo",
+        url: "https://x.slack.com/archives/C2/p1700000001000200",
       }),
     )
     await waitFor(() => expect(mockRefetch).toHaveBeenCalled())

@@ -25,7 +25,7 @@ export function WorktreeDetailPage() {
         <Tabs.Panel value="overview" pt="md">
           <Grid gutter="md">
             <Grid.Col span={{ base: 12, sm: 4 }}>
-              <ResourceList items={resources.data ?? []} />
+              <ResourceList items={resources.data ?? []} path={path} onChanged={resources.refetch} />
             </Grid.Col>
             <Grid.Col span={{ base: 12, sm: 8 }}>
               <Stack gap="sm">

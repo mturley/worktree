@@ -24,4 +24,16 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(args),
     }),
+  addResource: (args: { path: string; url: string; related?: boolean }) =>
+    fetchJSON<ResourceDTO>("/api/worktree-resources/add", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(args),
+    }),
+  removeResource: (args: { path: string; type: string; id: string }) =>
+    fetchJSON<null>("/api/worktree-resources/remove", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(args),
+    }),
 }

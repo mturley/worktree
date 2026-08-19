@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mturley/watcher"
 	wconfig "github.com/mturley/watcher/config"
 	watcherdb "github.com/mturley/watcher/db"
 	wgithub "github.com/mturley/watcher/github"
@@ -97,6 +98,53 @@ func (s *Server) pollAll() error {
 		}
 	}
 	return nil
+}
+
+// pollOne polls a single resource through the matching library poller, so a
+// freshly-added resource is enriched into resource_state before the add
+// endpoint responds. Reuses the same creds + poller entry points as pollAll.
+// Missing creds or a poll error are logged, never fatal (the background
+// pollAll will retry).
+func (s *Server) pollOne(r watcher.Resource) {
+	cfg, err := wconfig.Load(wconfig.DefaultPath())
+	if err != nil {
+		s.logger().Printf("pollOne: load config: %v", err)
+		return
+	}
+	one := []watcher.Resource{r}
+	switch r.Type {
+	case "pr":
+		if gh, err := cfg.GitHub(); err == nil {
+			if err := wgithub.Poll(s.DB, gh.Token, one, s.logger()); err != nil {
+				s.logger().Printf("pollOne github: %v", err)
+			}
+		} else {
+			s.logger().Printf("pollOne: github not configured")
+		}
+	case "jira":
+		if jc, err := cfg.Jira(); err == nil {
+			auth := wjira.JiraAuth{URL: jc.Host, Email: jc.Email, Token: jc.Token, CustomFields: jc.CustomFields}
+			if bcfg, err := wconfig.LoadConfig(wconfig.ConfigDefaultPath()); err == nil {
+				auth.BotUsernames = bcfg.JiraBotUsernames()
+			}
+			if err := wjira.Poll(s.DB, auth, one, s.logger()); err != nil {
+				s.logger().Printf("pollOne jira: %v", err)
+			}
+		} else {
+			s.logger().Printf("pollOne: jira not configured")
+		}
+	case "slack":
+		if sc, err := cfg.Slack(); err == nil {
+			auth := wslack.SlackAuth{Token: sc.Token, Cookie: sc.Cookie, WorkspaceDomain: sc.WorkspaceDomain}
+			if err := wslack.Poll(s.DB, auth, one, s.logger()); err != nil {
+				s.logger().Printf("pollOne slack: %v", err)
+			}
+		} else {
+			s.logger().Printf("pollOne: slack not configured")
+		}
+	default:
+		s.logger().Printf("pollOne: unknown resource type %q", r.Type)
+	}
 }
 
 // isWorktreeStale reports whether the worktree's newest event is older than

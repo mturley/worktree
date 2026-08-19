@@ -1,6 +1,8 @@
-import { Anchor, Badge, Group, Paper, Stack, Text } from "@mantine/core"
+import { useState } from "react"
+import { ActionIcon, Alert, Anchor, Badge, Button, Group, Paper, Popover, Stack, Text } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
 import { relativeTime, relativeFromNow } from "../lib/relativeTime"
+import { api } from "../api/client"
 
 function prStateColor(state?: string): string {
   switch ((state || "").toUpperCase()) {
@@ -131,20 +133,93 @@ function SlackCardBody({ r }: { r: ResourceDTO }) {
   )
 }
 
-export function ResourceCard({ r }: { r: ResourceDTO }) {
+function RemoveControl({ r, path, onRemoved }: { r: ResourceDTO; path: string; onRemoved: () => void }) {
+  const [opened, setOpened] = useState(false)
+  const [removing, setRemoving] = useState(false)
+  const [removeError, setRemoveError] = useState<string | null>(null)
+
+  const handleRemove = async () => {
+    setRemoving(true)
+    try {
+      await api.removeResource({ path, type: r.type, id: r.id })
+      setRemoveError(null)
+      setOpened(false)
+      onRemoved()
+    } catch (err) {
+      setRemoveError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setRemoving(false)
+    }
+  }
+
   return (
-    <Paper key={`${r.type}:${r.id}`} p="xs" withBorder>
-      {r.type === "slack" ? (
-        <SlackCardBody r={r} />
-      ) : !isEnriched(r) ? (
-        <MinimalRow r={r} />
-      ) : r.type === "pr" ? (
-        <PRCardBody r={r} />
-      ) : r.type === "jira" ? (
-        <JiraCardBody r={r} />
-      ) : (
-        <MinimalRow r={r} />
-      )}
+    <Popover
+      opened={opened}
+      onChange={(v) => {
+        setOpened(v)
+        if (v) setRemoveError(null)
+      }}
+      withArrow
+      position="bottom-end"
+    >
+      <Popover.Target>
+        <ActionIcon
+          size="sm"
+          variant="subtle"
+          color="gray"
+          aria-label="Remove resource"
+          onClick={() => setOpened((v) => !v)}
+        >
+          <Text size="sm" lh={1}>×</Text>
+        </ActionIcon>
+      </Popover.Target>
+      <Popover.Dropdown>
+        <Stack gap={6}>
+          <Text size="sm">Remove this resource?</Text>
+          {removeError ? (
+            <Alert color="red" variant="light" p="xs">
+              <Text size="xs">{removeError}</Text>
+            </Alert>
+          ) : null}
+          <Group gap={6} justify="flex-end">
+            <Button size="xs" variant="default" onClick={() => setOpened(false)} disabled={removing}>
+              Cancel
+            </Button>
+            <Button size="xs" color="red" onClick={() => void handleRemove()} loading={removing}>
+              Remove
+            </Button>
+          </Group>
+        </Stack>
+      </Popover.Dropdown>
+    </Popover>
+  )
+}
+
+interface ResourceCardProps {
+  r: ResourceDTO
+  path?: string
+  onRemoved?: () => void
+}
+
+export function ResourceCard({ r, path = "", onRemoved = () => {} }: ResourceCardProps) {
+  return (
+    <Paper p="xs" withBorder>
+      <Group justify="space-between" wrap="nowrap" align="flex-start">
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {r.type === "slack" ? (
+            <SlackCardBody r={r} />
+          ) : !isEnriched(r) ? (
+            <MinimalRow r={r} />
+          ) : r.type === "pr" ? (
+            <PRCardBody r={r} />
+          ) : r.type === "jira" ? (
+            <JiraCardBody r={r} />
+          ) : (
+            <MinimalRow r={r} />
+          )}
+        </div>
+        <RemoveControl r={r} path={path} onRemoved={onRemoved} />
+      </Group>
     </Paper>
   )
 }

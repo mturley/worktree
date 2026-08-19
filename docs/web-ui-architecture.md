@@ -65,6 +65,10 @@ touch the UI, read the relevant section below before spelunking the source.
   `worktrees.go` and `poller.go`).
 - **`resources_api.go`** — `GET /api/worktree-resources`, enriched from the
   cached `watcher_resource_state` row via `watcherdb.GetResourceState`.
+- **`resource_mutate_api.go`** — `POST /api/worktree-resources/add` and `POST
+  /api/worktree-resources/remove` (see below). Owns `inferResource`
+  (`inferresource.go`), which parses a pasted GitHub PR or Jira issue URL into
+  `(type, id)`.
 - **`poller.go`** — `StartPolling(interval) (stop func())` (interval loop),
   `pollAll` (polls all active `pr`/`jira` resources), `isWorktreeStale`,
   `POST /api/worktrees/poll` (poll-on-view), and the `pollInFlight`
@@ -87,6 +91,8 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | GET | `/api/worktree-resources` | `path` (required) | `[]resourceDTO` |
 | POST | `/api/worktrees/poll` | `path` (required) | `{"polled": bool}` |
 | POST | `/api/resource-meta` | body: `{type, id, name, description}` | — |
+| POST | `/api/worktree-resources/add` | body: `{path, url, related?}` | `resourceDTO` |
+| POST | `/api/worktree-resources/remove` | body: `{path, type, id}` | 204 No Content |
 | GET | `/api/stream` | — | SSE stream (`text/event-stream`) |
 
 ### `worktreeSummary` (worktrees.go)
@@ -187,6 +193,42 @@ was never polled (`GetResourceState` returns `nil, nil` — expected, not
 logged) or the cached JSON is malformed (also not logged). A genuine DB error
 from `GetResourceState` **is** logged via `s.Logger`.
 
+### Add/remove resource (`resource_mutate_api.go`)
+
+`POST /api/worktree-resources/add` — body `{path, url, related?}`. Infers
+`(type, id)` from `url` via `inferResource` (shared with the CLI's URL
+matching; the PR id format is load-bearing — a UI-added PR must produce the
+same id shape as `cmd/root.go`'s `worktree add <pr-url>` so cached
+`watcher_resource_state` rows line up). On success: creates the subscription
+via `resources.Add`, then best-effort inline-enriches it by calling
+`s.pollOne` synchronously (same per-type dispatch as the background poller)
+so the response DTO already has title/state/etc. instead of waiting for the
+next 2-minute poll tick, then returns the built `resourceDTO`. 400s on
+missing `path`/`url` or an unrecognized URL (`inferResource` returns
+`ok=false`); 500 if `resources.Add` fails.
+
+`POST /api/worktree-resources/remove` — body `{path, type, id}`. Hard-deletes
+the resource via `resources.Remove` (removes the `watcher_subscriptions` row
+and clears the `worktree_primary` flag if set) and returns `204 No Content`.
+400s on any missing field; 500 on a `resources.Remove` error. There is no
+soft "Unwatch" (keep history, stop polling) in this UI yet — Phase-5 soft-stop
+semantics are still unsettled, so remove is intentionally the only control
+exposed.
+
+Frontend: `api.addResource`/`api.removeResource` (`ui/src/api/client.ts`).
+Three UI entry points all call these and then refetch via
+`useWorktreeDetail`'s `resources.refetch()` (passed down as `onChanged` /
+`onRemoved`) rather than optimistically patching local state:
+- The Overview tab's "Add resource" URL field (`ResourceList.tsx`), which
+  shows a dismissible error `Alert` if `addResource` rejects (e.g.
+  unrecognized URL).
+- Each `ResourceCard`'s remove control (`ResourceCard.tsx`) — a `×` control
+  behind a `Popover` confirm step, with its own inline error feedback if
+  `removeResource` fails.
+- The Slack tab's `+` button (`SlackTab.tsx`), which adds a Slack thread URL
+  through the same `addResource` call (`inferResource` also recognizes Slack
+  thread URLs).
+
 ### SSE (`/api/stream`)
 
 No params. On connect, sends nothing but flushes headers. Every 5s, checks
@@ -254,7 +296,8 @@ single in-process loop for as long as the server is up:
   names) — this is the single source of truth for what the frontend expects
   back from each endpoint listed above. `client.ts` exports `api.worktrees`,
   `api.globalTimeline`, `api.worktreeTimeline`, `api.worktreeResources`,
-  `api.pollWorktree`.
+  `api.pollWorktree`, `api.setResourceMeta`, `api.addResource`,
+  `api.removeResource`.
 - **Hooks** (`ui/src/hooks/`):
   - `useWorktrees()` — `useQuery(["worktrees"], api.worktrees)`.
   - `useGlobalTimeline(archived)` / `useWorktreeTimeline(path)`

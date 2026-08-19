@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mturley/watcher"
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/resources"
@@ -36,6 +37,28 @@ func TestIsWorktreeStale(t *testing.T) {
 	if !s.isWorktreeStale(wtPath, time.Minute) {
 		t.Fatal("worktree whose newest event is 5m old should be stale (threshold 1m)")
 	}
+}
+
+// TestPollOne_NoCredsIsNoOp asserts pollOne is a safe no-op with no
+// configured creds: it must not panic and must not error out the caller
+// (the add-resource endpoint calls this inline). We can't assert enrichment
+// without live creds; this guards the degenerate path.
+func TestPollOne_NoCredsIsNoOp(t *testing.T) {
+	// Isolate watcher config to an empty dir so pollOne finds no creds and
+	// truly no-ops — without this, on a machine that has github/jira/slack
+	// creds configured, pollOne would make a live network call (the test
+	// would then exercise the poll-error branch, not the no-op it claims).
+	t.Setenv("WATCHER_HOME", t.TempDir())
+
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	s := &Server{DB: conn}
+	s.pollOne(watcher.Resource{Type: "pr", ID: "o/r#1", URL: "https://github.com/o/r/pull/1"})
+	// no panic, no assertion beyond reaching here
 }
 
 // TestSafePollAllSkipsWhenInFlight verifies the atomic guard: if a poll is
