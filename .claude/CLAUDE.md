@@ -31,9 +31,15 @@ make clean     # removes bin/, ui/dist contents (keeps ui/dist/.gitkeep), ui/nod
   - `shellenv` — shell environment variable generation from DB (worktree env)
   - `env` — deprecated; superseded by `shellenv`
   - `dotfiles` — gitignored dotfile copying
-  - `setup` — shell RC integration (removed `.git/info/exclude` management)
+  - `setup` — shell RC integration (removed `.git/info/exclude` management); also owns the `worktree setup` Slack step (`setup/slack.go`) that walks the user through extracting Slack session token+cookie and writes them to `~/.config/watcher/auth.yaml`
   - `ui` — terminal output
-  - `webui` — HTTP server + API for `worktree ui` (worktree list, timeline, resources, SSE stream, poll loop)
+  - `webui` — HTTP server + API for `worktree ui` (worktree list, timeline, resources, SSE stream, poll loop); also serves the Slack tab's routes (`/api/thread*`, `/api/slack-*`) from the same binary/port
+  - `slackapi` — Slack Web API client; owns all Slack payload quirks, returns domain structs, never raw Slack JSON
+  - `slackpoller` — polls Slack threads for changes and fans out updates to subscribers; folded in from slack-mini's `internal/watcher` package (renamed to avoid collision) — this is **not** `github.com/mturley/watcher` (the external library) and **not** worktree's own PR/Jira poll loop (`internal/webui/poller.go`); three distinct pollers, don't conflate them
+  - `slackcreds` — loads Slack token/cookie/workspace domain from the shared watcher `auth.yaml` and builds a `slackapi.Client`
+  - `slackurl` — parses Slack thread URLs into `(channel, threadTS)` and builds the resource ID used to store them as worktree resources
+
+Slack threads are worktree resources (`worktree add <slack-thread-url>`), shown in a per-worktree resource-scoped "Slack" tab in the web UI (alongside "Overview") — see `docs/web-ui-architecture.md` "Slack tab" section for the full map (routes, DTOs, frontend structure). Slack credentials live in the shared watcher config at `~/.config/watcher/auth.yaml` (not a worktree-specific file), acquired via the `worktree setup` Slack step.
 - `ui/` — Mantine + React frontend for `worktree ui` (Vite build; output embedded into the Go binary via `ui/dist`)
 - `docs/` — design documents and feature catalog; see `docs/web-ui-architecture.md` for the web UI (backend routes, DTOs, frontend structure, gotchas)
 
@@ -85,3 +91,44 @@ concat — see `docs/web-ui-architecture.md` for the full explanation (it bit
 the Phase 2 build repeatedly, especially on macOS/symlinked paths). Any new
 code joining worktrees to their subscriptions must canonicalize through
 `wdb.Subscriber`.
+
+## Reverse-engineering documentation — READ AND MAINTAIN
+
+`docs/reverse-engineering/slack-web-api.md` documents how Slack's (largely
+undocumented) Web API behaves — auth, endpoints, payload shapes, quirks — as
+verified by direct experimentation. BEFORE working on anything touching the
+Slack API (the `slackapi` package, the slackpoller, message rendering, auth),
+read that file first. AFTER you learn anything new about how Slack works (a new
+field, changed response shape, new endpoint, auth quirk, rate-limit behavior,
+block type), update that doc in the same change and add a regression fixture
+rather than silently working around it. Treat the doc as part of the deliverable.
+
+## Slack conventions (folded in from slack-mini)
+
+- **`slackapi` contains all Slack payload quirks.** It returns domain structs
+  (Message, User, Thread, Reaction, File, Attachment, Block/Element, BlockKit),
+  never raw Slack JSON. The rest of the codebase never touches raw Slack JSON.
+  `normalize.go`'s `normalizeMessage` is the single per-message mapper — new
+  message fields go there so thread fetches and posted replies both get them.
+- **Rendering pipeline — do NOT reinvent.** Render a message's typed `blocks`
+  via `RichText.tsx` (rich_text) — the primary path; never reparse `text`. When
+  only an mrkdwn *string* is available (block-less `text` fallback, attachment
+  text, Block Kit section/context text), use the SHARED `ui/src/lib/mrkdwn.tsx`
+  (`<Mrkdwn>`) — never write a second mrkdwn parser. Block Kit inside attachments
+  renders via `BlockKit.tsx` (delegates rich_text back to RichText). Emoji
+  resolution is shared via `lib/emoji.ts` + `lib/renderEmoji.tsx`.
+- **Never auto-mark threads read.** Only the explicit "Mark thread read" action
+  calls `subscriptions.thread.mark` — viewing a thread must not mark it read.
+- **Writes are optimistic + rolled back on failure** via `useThread.applyLocal`
+  + `refresh()` (replies, mark-unread, reaction toggles). There is no send
+  allowlist (dropped in the fold-in) — writes are unrestricted.
+- **Slack test fixtures (`internal/slackapi/testdata/`) MUST be synthetic/
+  sanitized** — real JSON structure, but NO real Slack content (names, message
+  text, links) and NO secrets. Never commit captured real payloads.
+- **Slack creds are the user's own session credentials** (xoxc- token + xoxd-
+  cookie), stored in `~/.config/watcher/auth.yaml` (0600). Treat like a password;
+  never commit. Tokens expire every 1-2 weeks → re-run `worktree setup`.
+- **ThreadResponse wire quirk:** top-level keys are camelCase, but the embedded
+  `slackapi.Message` + nested structs serialize PascalCase (Go defaults). The
+  TS types in `ui/src/api/slackApi.ts` mirror this (e.g. `message.TS`,
+  `reaction.UserIDs`); nil slices/pointers marshal to `null` → TS guards them.

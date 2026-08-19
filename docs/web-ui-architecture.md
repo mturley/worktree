@@ -70,6 +70,8 @@ touch the UI, read the relevant section below before spelunking the source.
   `POST /api/worktrees/poll` (poll-on-view), and the `pollInFlight`
   atomic-bool guard (`safePollAll`) against overlapping polls.
 - **`stream.go`** — `GET /api/stream`, an SSE endpoint.
+- **`slack.go`**, **`slack_proxy.go`**, **`slack_sse.go`** — the Slack tab's
+  routes (`/api/thread*`, `/api/slack-*`); see "Slack tab" below.
 
 ## HTTP API surface
 
@@ -322,6 +324,151 @@ this was explicitly verified (Playwright, 380px and 1400px) during the Phase
   "anywhere"` on long text (titles, resource names) so nothing forces
   horizontal scroll (see `EventRow.tsx`, `ResourceCard.tsx`).
 - Verify no horizontal scrollbar appears at ~380px when adding new rows/cards.
+
+## Slack tab (Phase 3 fold-in)
+
+Phase 3 folded a previously separate app (`slack-mini`) into worktree as a
+per-worktree "Slack" tab on `WorktreeDetailPage`, alongside "Overview". This
+section maps the folded-in code; see `docs/reverse-engineering/slack-web-api.md`
+for Slack Web API internals (auth, endpoints, payload shapes, quirks) — read
+it before touching anything in `internal/slackapi` or Slack rendering.
+
+### Backend packages
+
+- **`internal/slackapi`** — the Slack Web API client (`client.go`, `types.go`,
+  `normalize.go`). Owns every Slack payload quirk; returns domain structs
+  (`Message`, `User`, `Thread`, `Reaction`, `File`, `Attachment`,
+  `Block`/`Element`) — callers never see raw Slack JSON. `normalize.go`'s
+  `normalizeMessage` is the single per-message mapper.
+- **`internal/slackpoller`** — polls Slack threads for changes and fans out
+  `ThreadUpdate` events to subscribers (one polling loop per `(channel,
+  threadTS)` key, shared across subscribers of the same thread). This is
+  **not** the watcher library, and **not** worktree's own PR/Jira poll loop
+  (`internal/webui/poller.go`) — it's a standalone package (renamed from
+  slack-mini's `internal/watcher` package, which predates and is unrelated to
+  `github.com/mturley/watcher`) that only depends on `slackapi.Client`, kept
+  separate so it can be lifted into a real watcher-library Slack poller in
+  Phase 4 without dragging in webui internals.
+- **`internal/slackcreds`** — loads Slack token/cookie/workspace domain from
+  the shared watcher config (`wconfig.Load` → `cfg.Slack()`) and builds a
+  `slackapi.Client` (`slackcreds.Client()`).
+- **`internal/slackurl`** — parses a Slack thread URL
+  (`https://<workspace>.slack.com/archives/<channel>/p<ts>...`) into
+  `(channel, threadTS)` and builds the canonical resource ID used to store it
+  as a worktree resource (`ResourceID`).
+- **`internal/setup/slack.go`** — the `worktree setup` step that walks the
+  user through extracting their browser session token (`xoxc-...`) + cookie
+  (`xoxd-...`) from Slack's web app dev tools, and writes them (+ workspace
+  domain) to `~/.config/watcher/auth.yaml` via the watcher library's config
+  package. `setup.BuildPlan` sets `ConfigureSlack` when Slack isn't yet
+  configured or `wcfg.Slack()` errors.
+
+### Slack creds (watcher `auth.yaml`)
+
+Slack credentials are **not** a worktree-specific config file — they live
+alongside Jira/GitHub creds in the shared watcher config at
+`~/.config/watcher/auth.yaml` (`wconfig.DefaultPath()`), under a `slack:` key.
+`SlackConfig` (added in watcher **v0.2.7**, pinned in `go.mod`) has three
+fields: `token` (`xoxc-...`), `cookie` (the `d=` cookie, `xoxd-...`), and
+`workspace_domain` (optional, e.g. `myworkspace` for
+`myworkspace.slack.com`). Treat this file like a password — it's `0600`,
+never committed, and tokens expire every 1-2 weeks (re-run `worktree setup`
+to refresh).
+
+### `webui.Server` wiring
+
+`webui.Server` gains three Slack-related fields: `SlackClient
+slackapi.Client`, `SlackPoller *slackpoller.Poller`, `SlackDomain string`.
+`runUI` (`cmd/ui.go`) attempts `slackcreds.Client()` at startup; on success it
+wires all three fields and constructs the poller; on failure (no creds
+configured) it leaves them `nil`/zero and logs "Slack not configured; Slack
+tab will be unavailable" — the server still starts normally. Every
+Slack-backed handler guards on `s.SlackClient == nil` (or, for the SSE
+endpoint, `s.SlackPoller == nil` too) and calls `s.slackUnavailable(w)`, which
+writes a `503` with body `"slack not configured; run worktree setup"`. There
+is no send-allowlist (slack-mini had one; dropped in the fold-in — Slack
+writes are otherwise unrestricted).
+
+### HTTP API surface (Slack routes)
+
+All registered in `registerAPI` alongside the existing routes, same JSON
+conventions:
+
+| Method | Path | Params | Response |
+|---|---|---|---|
+| GET | `/api/thread` | `channel`, `thread_ts` | `ThreadResponse` |
+| POST | `/api/thread/mark-read` | body: `{channel, thread_ts}` | — |
+| POST | `/api/thread/mark-unread` | body: `{channel, thread_ts}` | — |
+| POST | `/api/thread/reply` | body: `{channel, thread_ts, text}` | — |
+| POST | `/api/thread/react` | body: `{channel, thread_ts, message_ts, emoji}` | — |
+| GET | `/api/slack-config` | — | `{workspaceDomain: string}` |
+| GET | `/api/thread-events` | `channel`, `thread_ts` | SSE stream of `ThreadResponse` |
+| GET | `/api/slack-avatar` | proxied avatar image params | image bytes |
+| GET | `/api/slack-emoji` | proxied emoji image params | image bytes |
+| GET | `/api/slack-file` | proxied file params | file bytes |
+
+`ThreadResponse` (`internal/webui/slack.go`) is the enriched, normalized JSON
+shape shared by `GET /api/thread` and the `/api/thread-events` SSE stream
+(built once by `buildThreadResponse` so both stay consistent): channel,
+channelName, threadTs, lastRead, latestReply, rootTs, unreadIndex,
+currentUserId, messages (`[]MessageView`, each embedding `slackapi.Message`),
+users (`map[string]slackapi.User`), emoji (`map[string]string`, filtered down
+to only the names actually referenced in the thread).
+
+**Wire quirk:** `ThreadResponse`'s own top-level keys are camelCase (explicit
+JSON tags), but the embedded `slackapi.Message` and its nested structs
+serialize with Go's default PascalCase field names (e.g. `message.TS`,
+`reaction.UserIDs`) since they don't carry JSON tags. The TS types in
+`ui/src/api/slackApi.ts` mirror this split deliberately — don't "fix" it by
+adding JSON tags to `slackapi` structs without checking every frontend
+consumer. Nil slices/pointers marshal to `null`; the TS side guards for that.
+
+`/api/thread-events` subscribes to `SlackPoller.Subscribe(channel, threadTS)`
+and re-emits `buildThreadResponse` on every detected change, as an SSE
+`event: message` with the JSON payload — separate from, and unrelated to, the
+existing `/api/stream` timeline SSE endpoint.
+
+### Slack threads as worktree resources
+
+A Slack thread is a worktree resource with `type: "slack"` (see
+`resources.Add` call sites, e.g. `cmd/add.go`), keyed by
+`slackurl.ResourceID(channel, threadTS)`. `worktree add <slack-thread-url>`
+parses the URL via `internal/slackurl`, adds it as a resource, and the
+existing resource list / `SlackCardBody` render it as a lightweight resource
+card (channel + thread pointer) alongside PR/Jira cards — no enrichment via
+`watcher_resource_state` yet (that's cached PR/Jira poll state; Slack threads
+are fetched live instead, not through the poll-and-cache path). **Phase 4**
+will add Slack *timeline* events (a real watcher-library Slack poller/source
+writing to `watcher_events`) — today, Slack activity does not appear in the
+global/worktree timeline, only in the dedicated Slack tab.
+
+### Frontend: the per-worktree Slack tab
+
+`WorktreeDetailPage` renders a Mantine `Tabs` with "Overview" (the
+pre-existing resource list + timeline layout, unchanged) and "Slack"
+(`ui/src/components/SlackTab.tsx`), scoped to that worktree's own `slack`-type
+resources — this replaces slack-mini's old global, flat sessionStorage tab
+bar (multiple threads across all workspaces in one un-scoped tab strip) with
+a resource-scoped view: only threads added to *this* worktree appear.
+
+- `useWorktreeSlackThreads(path)` derives the list of `SlackThreadRef`s from
+  this worktree's resources.
+- `SlackTab` picks a selected thread (defaulting to the first, kept valid as
+  the resource set changes), renders a `NavLink` list of threads +
+  `ThreadView` for the selected one via `useThread`.
+- Empty state (no Slack resources on this worktree): an `Alert` telling the
+  user to `worktree add <slack-thread-url>`.
+- Unconfigured state (backend returns `503`, detected via
+  `isNotConfigured(thread.error)` checking for `"503"` in the error string):
+  a distinct `Alert` telling the user Slack isn't configured — distinguished
+  from a per-thread load failure so the user isn't told to retry something
+  that requires `worktree setup` instead.
+- Ported slack-mini UI components live under `ui/src/components/slack/`
+  (`ThreadView`, `Message`, `RichText`, `BlockKit`, `Attachments`,
+  `FileAttachments`, `ReactionPill`, `ActionBar`, `Composer`, `TabBar`, plus
+  modals) and shared libs under `ui/src/lib/` (`mrkdwn.tsx`, `emoji.ts`,
+  `renderEmoji.tsx`) — see "Slack conventions" in `.claude/CLAUDE.md` for the
+  don't-reinvent rendering rules these follow.
 
 ## Known deferred items / extension notes
 

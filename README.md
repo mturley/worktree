@@ -197,9 +197,15 @@ worktree ui --api-only     # serve only the JSON API (used with the Vite dev ser
 The web UI is a single embedded binary — no separate frontend install required. It shows:
 
 - **Home view:** every managed worktree (from the database registry) with resource/primary counts and missing-on-disk markers, plus a global timeline of events across all watched PR/Jira resources (newest first, attributed to the worktree(s) that watch them), with a "Show archived" toggle for events on resources no longer actively watched.
-- **Detail view:** a single worktree's resources (primary vs. related) and a timeline scoped to its subscriptions. Opening a worktree triggers a fresh poll if its data is stale (poll-on-view).
+- **Detail view:** an "Overview" tab with a single worktree's resources (primary vs. related) and a timeline scoped to its subscriptions (opening a worktree triggers a fresh poll if its data is stale, i.e. poll-on-view), plus a **"Slack" tab** showing that worktree's linked Slack threads (view, reply, and react) if any are added.
 
 While running, the server polls all active PR/Jira resources in the background every 2 minutes and pushes updates to the browser over Server-Sent Events, so the timeline stays close to live without a manual refresh. This phase is read-only — no watch/unwatch/create/delete actions from the UI yet.
+
+### Slack
+
+`worktree add <slack-thread-url>` links a Slack thread to a worktree as a resource; it then appears in that worktree's "Slack" tab in the web UI, where you can view the thread, reply, and react. Run `worktree setup` to acquire Slack credentials — it walks you through extracting your browser session token and cookie and stores them (plus your workspace domain) in the shared watcher config at `~/.config/watcher/auth.yaml`.
+
+**Security note:** the Slack token and cookie are your own Slack session credentials (not an app token) — treat them like a password. They're stored in `~/.config/watcher/auth.yaml` (mode `0600`) and are never committed to any repo.
 
 ## cmux Integration
 
