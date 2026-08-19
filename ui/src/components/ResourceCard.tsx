@@ -114,10 +114,11 @@ function JiraCardBody({ r }: { r: ResourceDTO }) {
 }
 
 function SlackCardBody({ r }: { r: ResourceDTO }) {
+  const label = r.custom_name || r.id
   return (
     <Group gap="xs">
       <Badge size="xs" variant="light" color="grape">Slack</Badge>
-      {r.url ? <Anchor href={r.url} target="_blank" size="sm">{r.id}</Anchor> : <Text size="sm">{r.id}</Text>}
+      {r.url ? <Anchor href={r.url} target="_blank" size="sm">{label}</Anchor> : <Text size="sm">{label}</Text>}
     </Group>
   )
 }
