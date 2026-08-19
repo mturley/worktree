@@ -1,5 +1,6 @@
 import { afterEach, describe, it, expect, vi } from "vitest"
 import { render, cleanup, waitFor } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
 
@@ -72,6 +73,7 @@ vi.mock("../api/slackApi", () => ({
 }))
 
 import { SlackTab } from "./SlackTab"
+import { api } from "../api/client"
 
 afterEach(() => {
   cleanup()
@@ -122,5 +124,61 @@ describe("SlackTab custom name", () => {
     const { getAllByText, queryByText } = renderWithProvider(<SlackTab path="/w/foo" />)
     await waitFor(() => expect(getAllByText("Release blocker").length).toBeGreaterThan(0))
     expect(queryByText("C1 @ 1700000000.000100")).toBeNull()
+  })
+})
+
+describe("SlackTab persist", () => {
+  it("saves via setResourceMeta and refetches when the edit modal is submitted", async () => {
+    mockResources = [
+      {
+        type: "slack",
+        id: "C1:1700000000.000100",
+        url: "https://x",
+        primary: false,
+      } as ResourceDTO,
+    ]
+    const user = userEvent.setup()
+    const { getByRole, findByRole, findByLabelText } = renderWithProvider(<SlackTab path="/w/foo" />)
+
+    // Open the edit-thread-details modal from the header icon.
+    await user.click(await findByRole("button", { name: "Edit tab details" }))
+
+    // Type a name + description, then Save.
+    await user.type(await findByLabelText("Name (optional)"), "Release blocker")
+    await user.type(await findByLabelText("Description (optional)"), "e2e regression")
+    await user.click(getByRole("button", { name: "Save" }))
+
+    await waitFor(() =>
+      expect(api.setResourceMeta).toHaveBeenCalledWith({
+        type: "slack",
+        id: "C1:1700000000.000100",
+        name: "Release blocker",
+        description: "e2e regression",
+      }),
+    )
+    await waitFor(() => expect(mockRefetch).toHaveBeenCalled())
+  })
+
+  it("surfaces an error alert (and does not leave a false success) when the save fails", async () => {
+    mockResources = [
+      {
+        type: "slack",
+        id: "C1:1700000000.000100",
+        url: "https://x",
+        primary: false,
+      } as ResourceDTO,
+    ]
+    ;(api.setResourceMeta as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("HTTP 500"))
+    const user = userEvent.setup()
+    const { getByRole, findByRole, findByText, findByLabelText } = renderWithProvider(
+      <SlackTab path="/w/foo" />,
+    )
+
+    await user.click(await findByRole("button", { name: "Edit tab details" }))
+    await user.type(await findByLabelText("Name (optional)"), "Release blocker")
+    await user.click(getByRole("button", { name: "Save" }))
+
+    expect(await findByText("HTTP 500")).toBeTruthy()
+    expect(mockRefetch).not.toHaveBeenCalled()
   })
 })
