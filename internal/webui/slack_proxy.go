@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/mturley/worktree/internal/slackapi"
+	"github.com/mturley/watcher/slack"
 )
 
 // noFollowRedirects is a CheckRedirect policy shared by every client the
@@ -50,7 +50,7 @@ func (s *Server) handleMarkRead(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err := s.SlackClient.MarkRead(r.Context(), req.Channel, req.ThreadTS, req.TS)
-	if errors.Is(err, slackapi.ErrAuth) {
+	if errors.Is(err, slack.ErrAuth) {
 		http.Error(w, "auth", http.StatusUnauthorized)
 		return
 	}
@@ -80,7 +80,7 @@ func (s *Server) handleMarkUnread(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err := s.SlackClient.MarkUnread(r.Context(), req.Channel, req.ThreadTS, req.TS)
-	if errors.Is(err, slackapi.ErrAuth) {
+	if errors.Is(err, slack.ErrAuth) {
 		http.Error(w, "auth", http.StatusUnauthorized)
 		return
 	}
@@ -120,7 +120,7 @@ func (s *Server) handleReply(w http.ResponseWriter, r *http.Request) {
 	}
 
 	msg, err := s.SlackClient.PostReply(r.Context(), req.Channel, req.ThreadTS, text)
-	if errors.Is(err, slackapi.ErrAuth) {
+	if errors.Is(err, slack.ErrAuth) {
 		http.Error(w, "auth", http.StatusUnauthorized)
 		return
 	}
@@ -168,7 +168,7 @@ func (s *Server) handleReact(w http.ResponseWriter, r *http.Request) {
 	} else {
 		err = s.SlackClient.RemoveReaction(r.Context(), req.Channel, req.TS, req.Name)
 	}
-	if errors.Is(err, slackapi.ErrAuth) {
+	if errors.Is(err, slack.ErrAuth) {
 		http.Error(w, "auth", http.StatusUnauthorized)
 		return
 	}

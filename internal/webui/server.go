@@ -10,7 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/mturley/worktree/internal/slackapi"
+	"github.com/mturley/watcher/slack"
 	"github.com/mturley/worktree/internal/slackpoller"
 )
 
@@ -24,7 +24,7 @@ type Server struct {
 	// Slack integration. These are nil/empty when Slack is unconfigured
 	// (no credentials in the shared watcher auth.yaml); the Slack handlers
 	// guard on SlackClient == nil and return 503 rather than nil-panicking.
-	SlackClient slackapi.Client
+	SlackClient slack.Client
 	SlackPoller *slackpoller.Poller
 	SlackDomain string
 	// SlackCookie is the d= session cookie forwarded by the files.slack.com

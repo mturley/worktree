@@ -10,8 +10,8 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/mturley/watcher/slack"
 	wdb "github.com/mturley/worktree/internal/db"
-	"github.com/mturley/worktree/internal/slackapi"
 	"github.com/mturley/worktree/internal/slackcreds"
 	"github.com/mturley/worktree/internal/slackpoller"
 	"github.com/mturley/worktree/internal/webui"
@@ -62,11 +62,11 @@ func runUI(cmd *cobra.Command, args []string) error {
 	// Build the Slack client + per-thread poller best-effort. Slack being
 	// unconfigured must NOT block the UI: the Slack tab is simply unavailable
 	// (its handlers return 503) while everything else works.
-	var slackClient slackapi.Client
+	var slackClient slack.Client
 	var slackPoller *slackpoller.Poller
 	var slackDomain, slackCookie string
 	if token, cookie, domain, err := slackcreds.Load(); err == nil {
-		slackClient = slackapi.New(token, cookie)
+		slackClient = slack.New(token, cookie)
 		slackDomain = domain
 		slackCookie = cookie
 		slackPoller = slackpoller.New(slackClient, 8*time.Second, time.Now)

@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mturley/worktree/internal/slackapi"
+	"github.com/mturley/watcher/slack"
 )
 
 type fakeClient struct {
-	threads []slackapi.Thread
+	threads []slack.Thread
 	i       int
 }
 
@@ -23,29 +23,29 @@ func (f *fakeClient) WhoAmI(ctx context.Context) (string, error) { return "U_SEL
 
 func (f *fakeClient) Channel(ctx context.Context, id string) (string, error) { return "", nil }
 
-func (f *fakeClient) Replies(ctx context.Context, ch, ts string) (slackapi.Thread, error) {
+func (f *fakeClient) Replies(ctx context.Context, ch, ts string) (slack.Thread, error) {
 	t := f.threads[f.i]
 	if f.i < len(f.threads)-1 {
 		f.i++
 	}
 	return t, nil
 }
-func (f *fakeClient) Users(context.Context, []string) (map[string]slackapi.User, error) {
+func (f *fakeClient) Users(context.Context, []string) (map[string]slack.User, error) {
 	return nil, nil
 }
 func (f *fakeClient) Emoji(context.Context) (map[string]string, error)         { return nil, nil }
 func (f *fakeClient) MarkRead(context.Context, string, string, string) error   { return nil }
 func (f *fakeClient) MarkUnread(context.Context, string, string, string) error { return nil }
-func (f *fakeClient) PostReply(context.Context, string, string, string) (slackapi.Message, error) {
-	return slackapi.Message{}, nil
+func (f *fakeClient) PostReply(context.Context, string, string, string) (slack.Message, error) {
+	return slack.Message{}, nil
 }
 func (f *fakeClient) AddReaction(context.Context, string, string, string) error    { return nil }
 func (f *fakeClient) RemoveReaction(context.Context, string, string, string) error { return nil }
 
 func TestPollDetectsChange(t *testing.T) {
-	fc := &fakeClient{threads: []slackapi.Thread{
-		{Messages: []slackapi.Message{{TS: "1.1"}}},
-		{Messages: []slackapi.Message{{TS: "1.1"}, {TS: "1.2"}}},
+	fc := &fakeClient{threads: []slack.Thread{
+		{Messages: []slack.Message{{TS: "1.1"}}},
+		{Messages: []slack.Message{{TS: "1.1"}, {TS: "1.2"}}},
 	}}
 	w := New(fc, time.Second, time.Now)
 	// First poll establishes baseline -> changed=true.
@@ -96,18 +96,18 @@ func (s *slowClient) WhoAmI(ctx context.Context) (string, error) { return "U_SEL
 
 func (s *slowClient) Channel(ctx context.Context, id string) (string, error) { return "", nil }
 
-func (s *slowClient) Replies(ctx context.Context, ch, ts string) (slackapi.Thread, error) {
+func (s *slowClient) Replies(ctx context.Context, ch, ts string) (slack.Thread, error) {
 	time.Sleep(s.delay)
-	return slackapi.Thread{Messages: []slackapi.Message{{TS: "1.1"}}}, nil
+	return slack.Thread{Messages: []slack.Message{{TS: "1.1"}}}, nil
 }
-func (s *slowClient) Users(context.Context, []string) (map[string]slackapi.User, error) {
+func (s *slowClient) Users(context.Context, []string) (map[string]slack.User, error) {
 	return nil, nil
 }
 func (s *slowClient) Emoji(context.Context) (map[string]string, error)         { return nil, nil }
 func (s *slowClient) MarkRead(context.Context, string, string, string) error   { return nil }
 func (s *slowClient) MarkUnread(context.Context, string, string, string) error { return nil }
-func (s *slowClient) PostReply(context.Context, string, string, string) (slackapi.Message, error) {
-	return slackapi.Message{}, nil
+func (s *slowClient) PostReply(context.Context, string, string, string) (slack.Message, error) {
+	return slack.Message{}, nil
 }
 func (s *slowClient) AddReaction(context.Context, string, string, string) error    { return nil }
 func (s *slowClient) RemoveReaction(context.Context, string, string, string) error { return nil }
@@ -187,9 +187,9 @@ func recvUpdate(t *testing.T, ch <-chan ThreadUpdate) ThreadUpdate {
 // ThreadUpdate (a broadcast fan-out), not have it split between them the
 // way a single shared Go channel would.
 func TestFanOutToMultipleSubscribers(t *testing.T) {
-	fc := &fakeClient{threads: []slackapi.Thread{
-		{Messages: []slackapi.Message{{TS: "1.1"}}},
-		{Messages: []slackapi.Message{{TS: "1.1"}, {TS: "1.2"}}},
+	fc := &fakeClient{threads: []slack.Thread{
+		{Messages: []slack.Message{{TS: "1.1"}}},
+		{Messages: []slack.Message{{TS: "1.1"}, {TS: "1.2"}}},
 	}}
 	w := New(fc, 5*time.Millisecond, time.Now)
 	defer w.Close()
@@ -218,10 +218,10 @@ func TestFanOutToMultipleSubscribers(t *testing.T) {
 // channel, without disrupting the polling loop or the other subscriber's
 // channel: the earlier bug closed the one shared channel for everyone.
 func TestUnsubscribeOneDoesNotCloseOther(t *testing.T) {
-	fc := &fakeClient{threads: []slackapi.Thread{
-		{Messages: []slackapi.Message{{TS: "1.1"}}},
-		{Messages: []slackapi.Message{{TS: "1.1"}, {TS: "1.2"}}},
-		{Messages: []slackapi.Message{{TS: "1.1"}, {TS: "1.2"}, {TS: "1.3"}}},
+	fc := &fakeClient{threads: []slack.Thread{
+		{Messages: []slack.Message{{TS: "1.1"}}},
+		{Messages: []slack.Message{{TS: "1.1"}, {TS: "1.2"}}},
+		{Messages: []slack.Message{{TS: "1.1"}, {TS: "1.2"}, {TS: "1.3"}}},
 	}}
 	w := New(fc, 5*time.Millisecond, time.Now)
 	defer w.Close()
@@ -263,18 +263,18 @@ func (c *countingClient) WhoAmI(ctx context.Context) (string, error) { return "U
 
 func (c *countingClient) Channel(ctx context.Context, id string) (string, error) { return "", nil }
 
-func (c *countingClient) Replies(ctx context.Context, ch, ts string) (slackapi.Thread, error) {
+func (c *countingClient) Replies(ctx context.Context, ch, ts string) (slack.Thread, error) {
 	atomic.AddInt64(&c.n, 1)
-	return slackapi.Thread{Messages: []slackapi.Message{{TS: "1.1"}}}, nil
+	return slack.Thread{Messages: []slack.Message{{TS: "1.1"}}}, nil
 }
-func (c *countingClient) Users(context.Context, []string) (map[string]slackapi.User, error) {
+func (c *countingClient) Users(context.Context, []string) (map[string]slack.User, error) {
 	return nil, nil
 }
 func (c *countingClient) Emoji(context.Context) (map[string]string, error)         { return nil, nil }
 func (c *countingClient) MarkRead(context.Context, string, string, string) error   { return nil }
 func (c *countingClient) MarkUnread(context.Context, string, string, string) error { return nil }
-func (c *countingClient) PostReply(context.Context, string, string, string) (slackapi.Message, error) {
-	return slackapi.Message{}, nil
+func (c *countingClient) PostReply(context.Context, string, string, string) (slack.Message, error) {
+	return slack.Message{}, nil
 }
 func (c *countingClient) AddReaction(context.Context, string, string, string) error    { return nil }
 func (c *countingClient) RemoveReaction(context.Context, string, string, string) error { return nil }
@@ -328,22 +328,22 @@ func (c *controlledClient) WhoAmI(ctx context.Context) (string, error) { return 
 
 func (c *controlledClient) Channel(ctx context.Context, id string) (string, error) { return "", nil }
 
-func (c *controlledClient) Replies(ctx context.Context, ch, ts string) (slackapi.Thread, error) {
+func (c *controlledClient) Replies(ctx context.Context, ch, ts string) (slack.Thread, error) {
 	n := atomic.AddInt32(&c.calls, 1)
 	if n == 1 {
 		close(c.firstCallStarted)
 		<-c.unblockFirst
 	}
-	return slackapi.Thread{Messages: []slackapi.Message{{TS: strconv.Itoa(int(n))}}}, nil
+	return slack.Thread{Messages: []slack.Message{{TS: strconv.Itoa(int(n))}}}, nil
 }
-func (c *controlledClient) Users(context.Context, []string) (map[string]slackapi.User, error) {
+func (c *controlledClient) Users(context.Context, []string) (map[string]slack.User, error) {
 	return nil, nil
 }
 func (c *controlledClient) Emoji(context.Context) (map[string]string, error)         { return nil, nil }
 func (c *controlledClient) MarkRead(context.Context, string, string, string) error   { return nil }
 func (c *controlledClient) MarkUnread(context.Context, string, string, string) error { return nil }
-func (c *controlledClient) PostReply(context.Context, string, string, string) (slackapi.Message, error) {
-	return slackapi.Message{}, nil
+func (c *controlledClient) PostReply(context.Context, string, string, string) (slack.Message, error) {
+	return slack.Message{}, nil
 }
 func (c *controlledClient) AddReaction(context.Context, string, string, string) error    { return nil }
 func (c *controlledClient) RemoveReaction(context.Context, string, string, string) error { return nil }

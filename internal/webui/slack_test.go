@@ -8,13 +8,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mturley/worktree/internal/slackapi"
+	"github.com/mturley/watcher/slack"
 )
 
-// fakeSlack is a configurable in-memory slackapi.Client for tests.
+// fakeSlack is a configurable in-memory slack.Client for tests.
 type fakeSlack struct {
-	thread      slackapi.Thread
-	users       map[string]slackapi.User
+	thread      slack.Thread
+	users       map[string]slack.User
 	emoji       map[string]string
 	channelName string
 	currentUser string
@@ -22,7 +22,7 @@ type fakeSlack struct {
 
 	markedTS     string
 	markUnreadTS string
-	replyMsg     slackapi.Message
+	replyMsg     slack.Message
 	replyErr     error
 	replyCalls   int
 
@@ -38,15 +38,15 @@ func (f *fakeSlack) Channel(ctx context.Context, id string) (string, error) {
 	return f.channelName, nil
 }
 
-func (f *fakeSlack) Replies(ctx context.Context, channel, threadTS string) (slackapi.Thread, error) {
+func (f *fakeSlack) Replies(ctx context.Context, channel, threadTS string) (slack.Thread, error) {
 	if f.err != nil {
-		return slackapi.Thread{}, f.err
+		return slack.Thread{}, f.err
 	}
 	return f.thread, nil
 }
 
-func (f *fakeSlack) Users(ctx context.Context, ids []string) (map[string]slackapi.User, error) {
-	out := make(map[string]slackapi.User, len(ids))
+func (f *fakeSlack) Users(ctx context.Context, ids []string) (map[string]slack.User, error) {
+	out := make(map[string]slack.User, len(ids))
 	for _, id := range ids {
 		if u, ok := f.users[id]; ok {
 			out[id] = u
@@ -73,10 +73,10 @@ func (f *fakeSlack) MarkUnread(ctx context.Context, channel, threadTS, ts string
 	return nil
 }
 
-func (f *fakeSlack) PostReply(ctx context.Context, channel, threadTS, text string) (slackapi.Message, error) {
+func (f *fakeSlack) PostReply(ctx context.Context, channel, threadTS, text string) (slack.Message, error) {
 	f.replyCalls++
 	if f.replyErr != nil {
-		return slackapi.Message{}, f.replyErr
+		return slack.Message{}, f.replyErr
 	}
 	return f.replyMsg, nil
 }
@@ -95,19 +95,19 @@ func (f *fakeSlack) RemoveReaction(ctx context.Context, channel, ts, name string
 
 func newFakeSlack() *fakeSlack {
 	return &fakeSlack{
-		thread: slackapi.Thread{
+		thread: slack.Thread{
 			Channel:  "C1",
 			ThreadTS: "1.0",
 			LastRead: "1.0",
-			Messages: []slackapi.Message{
+			Messages: []slack.Message{
 				{TS: "1.0", UserID: "U1", Text: "hello"},
 			},
 		},
-		users: map[string]slackapi.User{
+		users: map[string]slack.User{
 			"U1": {ID: "U1", RealName: "Alice"},
 		},
 		emoji:    map[string]string{},
-		replyMsg: slackapi.Message{TS: "1700.9", Text: "hi"},
+		replyMsg: slack.Message{TS: "1700.9", Text: "hi"},
 	}
 }
 

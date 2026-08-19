@@ -6,29 +6,29 @@ import (
 	"net/http"
 	"regexp"
 
-	"github.com/mturley/worktree/internal/slackapi"
+	"github.com/mturley/watcher/slack"
 )
 
 // ThreadResponse is the enriched, normalized JSON shape returned by
 // GET /api/thread.
 type ThreadResponse struct {
-	Channel       string                   `json:"channel"`
-	ChannelName   string                   `json:"channelName"`
-	ThreadTS      string                   `json:"threadTs"`
-	LastRead      string                   `json:"lastRead"`
-	LatestReply   string                   `json:"latestReply"`
-	RootTS        string                   `json:"rootTs"`
-	UnreadIndex   int                      `json:"unreadIndex"`
-	CurrentUserID string                   `json:"currentUserId"`
-	Messages      []MessageView            `json:"messages"`
-	Users         map[string]slackapi.User `json:"users"`
-	Emoji         map[string]string        `json:"emoji"`
+	Channel       string                `json:"channel"`
+	ChannelName   string                `json:"channelName"`
+	ThreadTS      string                `json:"threadTs"`
+	LastRead      string                `json:"lastRead"`
+	LatestReply   string                `json:"latestReply"`
+	RootTS        string                `json:"rootTs"`
+	UnreadIndex   int                   `json:"unreadIndex"`
+	CurrentUserID string                `json:"currentUserId"`
+	Messages      []MessageView         `json:"messages"`
+	Users         map[string]slack.User `json:"users"`
+	Emoji         map[string]string     `json:"emoji"`
 }
 
-// MessageView wraps slackapi.Message; extended later with view-specific
+// MessageView wraps slack.Message; extended later with view-specific
 // fields.
 type MessageView struct {
-	slackapi.Message
+	slack.Message
 }
 
 // slackUnavailable writes the standard 503 response used when the Slack
@@ -52,7 +52,7 @@ func (s *Server) handleThread(w http.ResponseWriter, r *http.Request) {
 	}
 
 	th, err := s.SlackClient.Replies(r.Context(), ch, ts)
-	if errors.Is(err, slackapi.ErrAuth) {
+	if errors.Is(err, slack.ErrAuth) {
 		http.Error(w, "auth", http.StatusUnauthorized)
 		return
 	}
@@ -69,13 +69,13 @@ func (s *Server) handleThread(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// buildThreadResponse enriches a raw slackapi.Thread into the ThreadResponse
+// buildThreadResponse enriches a raw slack.Thread into the ThreadResponse
 // shape shared by GET /api/thread and the SSE /api/thread-events stream, so
 // both stay consistent: it resolves referenced user IDs and filters the
 // workspace emoji map down to only the names actually referenced by th. ch
 // and ts are the (channel, threadTS) the caller requested, echoed back on
 // the response.
-func (s *Server) buildThreadResponse(ctx context.Context, ch, ts string, th slackapi.Thread) (ThreadResponse, error) {
+func (s *Server) buildThreadResponse(ctx context.Context, ch, ts string, th slack.Thread) (ThreadResponse, error) {
 	ids := collectUserIDs(th)
 	names := collectEmojiNames(th)
 
@@ -124,7 +124,7 @@ func (s *Server) buildThreadResponse(ctx context.Context, ch, ts string, th slac
 		LastRead:      th.LastRead,
 		LatestReply:   latestReply,
 		RootTS:        rootTS,
-		UnreadIndex:   slackapi.UnreadDividerIndex(th),
+		UnreadIndex:   slack.UnreadDividerIndex(th),
 		CurrentUserID: currentUserID,
 		Users:         users,
 		Emoji:         emoji,
@@ -213,7 +213,7 @@ func (s *Server) handleSlackConfig(w http.ResponseWriter, r *http.Request) {
 
 // collectUserIDs gathers every user ID referenced by a thread: message
 // authors, "user" mention elements, and reaction user IDs.
-func collectUserIDs(t slackapi.Thread) []string {
+func collectUserIDs(t slack.Thread) []string {
 	seen := map[string]struct{}{}
 	var ids []string
 	add := func(id string) {
@@ -262,7 +262,7 @@ var mrkdwnEmojiRe = regexp.MustCompile(`:([a-zA-Z0-9_+-]+):`)
 // Kit section/context/header text). The last group matters because those
 // mrkdwn tokens are resolved client-side against the server-filtered emoji map;
 // if a name isn't collected here it renders as literal `:name:` text.
-func collectEmojiNames(t slackapi.Thread) []string {
+func collectEmojiNames(t slack.Thread) []string {
 	seen := map[string]struct{}{}
 	var names []string
 	add := func(name string) {
