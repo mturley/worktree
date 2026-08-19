@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react"
 import { Alert, Code, Grid, NavLink, Stack, Text } from "@mantine/core"
 import { useWorktreeSlackThreads, type SlackThreadRef } from "../hooks/useWorktreeSlackThreads"
+import { useWorktreeDetail } from "../hooks/useWorktreeDetail"
 import { useThread } from "../hooks/useThread"
 import { ThreadView } from "./slack/ThreadView"
 import { defaultTabName, type Tab } from "../state/tabs"
+import { api } from "../api/client"
 
 interface SlackTabProps {
   path: string
@@ -14,8 +16,8 @@ function threadRefToTab(ref: SlackThreadRef): Tab {
     id: ref.id,
     channel: ref.channel,
     threadTs: ref.threadTs,
-    name: defaultTabName(ref.channel, ref.threadTs),
-    description: "",
+    name: ref.customName || defaultTabName(ref.channel, ref.threadTs),
+    description: ref.customDescription || "",
   }
 }
 
@@ -30,6 +32,7 @@ function isNotConfigured(error: string | undefined): boolean {
 
 export function SlackTab({ path }: SlackTabProps) {
   const threads = useWorktreeSlackThreads(path)
+  const { resources } = useWorktreeDetail(path)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
   // Default the selection to the first thread, and keep it valid if the set
@@ -86,7 +89,15 @@ export function SlackTab({ path }: SlackTabProps) {
           <ThreadView
             tab={tab}
             thread={thread}
-            onUpdateTab={() => {}}
+            onUpdateTab={async (id, updates) => {
+              await api.setResourceMeta({
+                type: "slack",
+                id,
+                name: updates.name,
+                description: updates.description,
+              })
+              await resources.refetch()
+            }}
             onOpenThread={(url, opts) => {
               window.open(url, opts.background ? "_blank" : "_self", "noreferrer")
             }}

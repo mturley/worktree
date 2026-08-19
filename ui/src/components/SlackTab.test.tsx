@@ -29,12 +29,18 @@ if (typeof (globalThis as { EventSource?: unknown }).EventSource !== "function")
 
 // Control what resources the worktree exposes per test.
 let mockResources: ResourceDTO[] = []
+const mockRefetch = vi.fn()
 vi.mock("../hooks/useWorktreeDetail", () => ({
   useWorktreeDetail: () => ({
-    resources: { data: mockResources },
+    resources: { data: mockResources, refetch: mockRefetch },
     timeline: { data: undefined, isLoading: false, error: null },
   }),
 }))
+
+vi.mock("../api/client", async (orig) => {
+  const actual = await orig<typeof import("../api/client")>()
+  return { api: { ...actual.api, setResourceMeta: vi.fn().mockResolvedValue(undefined) } }
+})
 
 // Keep ThreadView off the network: getThread returns an empty thread, and
 // the rest of the slackApi surface is stubbed so nothing hits fetch. The
@@ -99,5 +105,22 @@ describe("SlackTab", () => {
     ]
     const { getByText } = renderWithProvider(<SlackTab path="/w/foo" />)
     expect(getByText(/No Slack threads\./)).toBeTruthy()
+  })
+})
+
+describe("SlackTab custom name", () => {
+  it("shows the custom name in the rail instead of channel:ts", async () => {
+    mockResources = [
+      {
+        type: "slack",
+        id: "C1:1700000000.000100",
+        url: "https://x",
+        primary: false,
+        custom_name: "Release blocker",
+      } as ResourceDTO,
+    ]
+    const { getAllByText, queryByText } = renderWithProvider(<SlackTab path="/w/foo" />)
+    await waitFor(() => expect(getAllByText("Release blocker").length).toBeGreaterThan(0))
+    expect(queryByText("C1 @ 1700000000.000100")).toBeNull()
   })
 })

@@ -5,6 +5,8 @@ export interface SlackThreadRef {
   threadTs: string
   url: string
   id: string
+  customName?: string
+  customDescription?: string
 }
 
 /**
@@ -18,6 +20,10 @@ export function useWorktreeSlackThreads(path: string): SlackThreadRef[] {
   const slack = (resources.data ?? []).filter((r) => r.type === "slack")
   return slack.map((r) => {
     const [channel, threadTs] = r.id.split(":")
-    return { channel, threadTs, url: r.url, id: r.id }
+    return {
+      channel, threadTs, url: r.url, id: r.id,
+      customName: r.custom_name,
+      customDescription: r.custom_description,
+    }
   })
 }
