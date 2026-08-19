@@ -86,16 +86,22 @@ Internal `buildSlackStateJSON` → `db.UpsertResourceState(conn, "slack", resour
 ```json
 {
   "title": "<first-message text, whitespace-collapsed, truncated to 60 chars + …>",
-  "channel_name": "<resolved #channel name, if available>",
+  "channel_name": "<resolved #channel name>",
+  "author": "<display name of the root/first-message author>",
+  "created_ts": "<raw Slack ts of the root message>",
+  "updated_ts": "<raw Slack ts of the latest message>",
   "reply_count": <number of replies>
 }
 ```
 - `resource_updated_at` = the latest reply `ts` (or root `ts` if no replies).
 - Port `ui/src/lib/fallbackTitle.ts`'s truncation (collapse whitespace, trim, 60-char cap + `…`) to a small Go helper in `watcher/slack` so cached and live-view titles match.
+- **`channel_name` is cached once** (it's stable): the poller reuses the value already in `resource_state` and only calls `client.Channel` until it first succeeds — steady-state polls make a single `Replies` call.
+- **`author`** (root author) is resolved from the same batched `client.Users` call the reply-event authors use — no extra API call.
+- **`created_ts`/`updated_ts`** are raw Slack epoch-second strings; the card renders them as relative times client-side (`relativeFromNow`).
 
 ### Worktree consumption
-- `internal/webui/resources_api.go` `enrichResourceDTO`: add `case "slack": if v, ok := m["title"].(string); ok { dto.Title = v }` (mirrors the pr/jira cases). This sets `dto.Title` from cached state.
-- `ui/src/components/ResourceCard.tsx` `SlackCardBody`: fallback becomes **`custom_name || title || id`** — user's custom name still wins; the cached title replaces the raw `channel:ts` shipped in Phase 3b; raw id remains the last resort (thread never polled yet).
+- `internal/webui/resources_api.go`: `resourceDTO` gains `ChannelName`, `CreatedTS`, `UpdatedTS` (json `*_,omitempty`); `Author` already exists (PR path, reused). `enrichResourceDTO` adds `case "slack"` reading `title`→`Title`, `channel_name`→`ChannelName`, `author`→`Author`, `created_ts`→`CreatedTS`, `updated_ts`→`UpdatedTS` from cached state.
+- `ui/src/components/ResourceCard.tsx` `SlackCardBody`: label = **`custom_name || title || id`** (custom name wins; cached title replaces the raw `channel:ts` shipped in Phase 3b; raw id is the last resort). Plus a dimmed metadata line: `#<channel_name>`, `by <author>`, and `started <created> · active <updated>` relative times (via `relativeFromNow`, the same Slack-ts helper the live tab header uses).
 
 ## Timeline rendering
 
