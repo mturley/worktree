@@ -7,7 +7,11 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"sync"
 	"sync/atomic"
+
+	"github.com/mturley/worktree/internal/slackapi"
+	"github.com/mturley/worktree/internal/slackpoller"
 )
 
 type Server struct {
@@ -17,9 +21,39 @@ type Server struct {
 	DevMode bool
 	Logger  *log.Logger
 
+	// Slack integration. These are nil/empty when Slack is unconfigured
+	// (no credentials in the shared watcher auth.yaml); the Slack handlers
+	// guard on SlackClient == nil and return 503 rather than nil-panicking.
+	SlackClient slackapi.Client
+	SlackPoller *slackpoller.Poller
+	SlackDomain string
+	// SlackCookie is the d= session cookie forwarded by the files.slack.com
+	// image proxy for authenticated file downloads.
+	SlackCookie string
+
 	// pollInFlight guards against concurrent polls (ticker + poll-on-view
 	// racing against the same DB/resource set).
 	pollInFlight atomic.Bool
+
+	// Slack enrichment caches (workspace emoji, channel names, current user).
+	emojiMu    sync.Mutex
+	emojiCache map[string]string
+
+	channelMu    sync.Mutex
+	channelCache map[string]string
+
+	currentUserMu    sync.Mutex
+	currentUserID    string
+	currentUserKnown bool
+
+	// imageProxyTransport is the RoundTripper the image proxy uses for its
+	// outbound fetch. If nil, handleImageProxy falls back to
+	// http.DefaultTransport. handleImageProxy always layers its own
+	// redirect-blocking CheckRedirect policy on top, regardless of this
+	// value, so swapping the transport (e.g. in tests, to trust an
+	// httptest server's self-signed TLS cert) can never disable that
+	// protection.
+	imageProxyTransport http.RoundTripper
 }
 
 func (s *Server) Handler() http.Handler {
@@ -41,6 +75,18 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/worktrees/poll", s.handlePollWorktree)
 	mux.HandleFunc("GET /api/worktree-resources", s.handleWorktreeResources)
 	mux.HandleFunc("GET /api/stream", s.handleStream)
+
+	// Slack thread/reply/react + image proxies (folded in from slack-mini).
+	mux.HandleFunc("GET /api/thread", s.handleThread)
+	mux.HandleFunc("POST /api/thread/mark-read", s.handleMarkRead)
+	mux.HandleFunc("POST /api/thread/mark-unread", s.handleMarkUnread)
+	mux.HandleFunc("POST /api/thread/reply", s.handleReply)
+	mux.HandleFunc("POST /api/thread/react", s.handleReact)
+	mux.HandleFunc("GET /api/slack-config", s.handleSlackConfig)
+	mux.HandleFunc("GET /api/thread-events", s.handleThreadEvents)
+	mux.HandleFunc("GET /api/slack-avatar", s.handleSlackAvatar)
+	mux.HandleFunc("GET /api/slack-emoji", s.handleSlackEmoji)
+	mux.HandleFunc("GET /api/slack-file", s.handleSlackFile)
 }
 
 func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {

@@ -5,21 +5,31 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10",
+    "@dnd-kit/utilities": "^3.2.2",
     "@mantine/core": "^7.17.0",
     "@mantine/hooks": "^7.17.0",
     "@tanstack/react-query": "^5.101.0",
+    "node-emoji": "^2.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "wouter": "^3.10.0"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.0",
+    "jsdom": "^25",
     "typescript": "^5.6.0",
-    "vite": "^6.0.0"
+    "vite": "^6.0.0",
+    "vitest": "^2.1.8"
   }
 }

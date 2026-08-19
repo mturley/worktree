@@ -11,6 +11,9 @@ import (
 	"time"
 
 	wdb "github.com/mturley/worktree/internal/db"
+	"github.com/mturley/worktree/internal/slackapi"
+	"github.com/mturley/worktree/internal/slackcreds"
+	"github.com/mturley/worktree/internal/slackpoller"
 	"github.com/mturley/worktree/internal/webui"
 	"github.com/spf13/cobra"
 )
@@ -55,7 +58,25 @@ func runUI(cmd *cobra.Command, args []string) error {
 	}
 
 	logger := log.New(os.Stderr, "[worktree-ui] ", log.LstdFlags)
-	srv := &webui.Server{DB: conn, WebFS: webFS, Port: uiPort, DevMode: uiAPIOnly, Logger: logger}
+
+	// Build the Slack client + per-thread poller best-effort. Slack being
+	// unconfigured must NOT block the UI: the Slack tab is simply unavailable
+	// (its handlers return 503) while everything else works.
+	var slackClient slackapi.Client
+	var slackPoller *slackpoller.Poller
+	var slackDomain, slackCookie string
+	if token, cookie, domain, err := slackcreds.Load(); err == nil {
+		slackClient = slackapi.New(token, cookie)
+		slackDomain = domain
+		slackCookie = cookie
+		slackPoller = slackpoller.New(slackClient, 8*time.Second, time.Now)
+		defer slackPoller.Close()
+	} else {
+		logger.Printf("Slack not configured (%v); Slack tab will be unavailable", err)
+	}
+
+	srv := &webui.Server{DB: conn, WebFS: webFS, Port: uiPort, DevMode: uiAPIOnly, Logger: logger,
+		SlackClient: slackClient, SlackPoller: slackPoller, SlackDomain: slackDomain, SlackCookie: slackCookie}
 
 	// Start the in-process poll loop (Task 4 provides StartPolling).
 	stop := srv.StartPolling(2 * time.Minute)

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	wconfig "github.com/mturley/watcher/config"
 	"github.com/mturley/worktree/internal/config"
 	"github.com/mturley/worktree/internal/jira"
 	"github.com/mturley/worktree/internal/ui"
@@ -25,6 +26,7 @@ type Plan struct {
 	CompletionsExist    bool
 	ConfigureJira       bool
 	TestJira            bool
+	ConfigureSlack      bool
 	GHMissing           bool
 	GHNotAuthenticated  bool
 	Cfg                 config.Config
@@ -52,6 +54,12 @@ func BuildPlan(cfg config.Config) Plan {
 		plan.ConfigureJira = true
 	} else if cfg.Jira.Token != "" {
 		plan.TestJira = true
+	}
+
+	if wcfg, err := wconfig.Load(wconfig.DefaultPath()); err != nil {
+		plan.ConfigureSlack = true
+	} else if _, err := wcfg.Slack(); err != nil {
+		plan.ConfigureSlack = true
 	}
 
 	if _, err := exec.LookPath("gh"); err != nil {
@@ -141,6 +149,9 @@ func (p Plan) Preview() {
 	if p.TestJira {
 		fmt.Println("  • Test Jira connection")
 	}
+	if p.ConfigureSlack {
+		fmt.Println("  • Configure Slack (token + cookie) → ~/.config/watcher/auth.yaml")
+	}
 	if p.GHMissing {
 		fmt.Printf("\n  %s GitHub CLI (gh) is not installed. PR features will be unavailable.\n", ui.Yellow("!"))
 		fmt.Printf("       Install: %s\n", ui.Bold("https://cli.github.com/"))
@@ -154,7 +165,7 @@ func (p Plan) Preview() {
 }
 
 func (p Plan) HasWork() bool {
-	return p.CreateWorktreesBase || p.InstallShellRC || p.CreateConfig || p.InstallCompletions || p.ConfigureJira || p.TestJira
+	return p.CreateWorktreesBase || p.InstallShellRC || p.CreateConfig || p.InstallCompletions || p.ConfigureJira || p.TestJira || p.ConfigureSlack
 }
 
 func (p Plan) Execute() error {
@@ -191,6 +202,12 @@ func (p Plan) Execute() error {
 	if p.TestJira {
 		if err := testAndRepairJira(p.ConfigPath, p.Cfg); err != nil {
 			return fmt.Errorf("testing Jira: %w", err)
+		}
+	}
+
+	if p.ConfigureSlack {
+		if err := promptAndSaveSlack(); err != nil {
+			fmt.Printf("  %s Slack setup failed: %v\n", ui.Yellow("!"), err)
 		}
 	}
 

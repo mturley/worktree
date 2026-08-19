@@ -1,0 +1,48 @@
+{
+  "ok": true,
+  "messages": [
+    {
+      "ts": "1700000000.000100",
+      "user": "U0EXAMPLE1",
+      "text": "posted a link",
+      "thread_ts": "1700000000.000100",
+      "last_read": "1700000000.000100",
+      "latest_reply": "1700000000.000100",
+      "attachments": [
+        {
+          "is_app_unfurl": true,
+          "color": "2684ff",
+          "blocks": [
+            {
+              "type": "section",
+              "block_id": "b1",
+              "text": { "type": "mrkdwn", "text": "*Sample Page* by <@U0EXAMPLE2> :page_facing_up:" },
+              "accessory": { "type": "image", "image_url": "https://cdn.example.test/thumb.png", "alt_text": "thumb" }
+            },
+            {
+              "type": "context",
+              "block_id": "b2",
+              "elements": [
+                { "type": "image", "image_url": "https://cdn.example.test/icon.png", "alt_text": "space" },
+                { "type": "mrkdwn", "text": "Updated 2 days ago" }
+              ]
+            },
+            {
+              "type": "rich_text",
+              "block_id": "b3",
+              "elements": [
+                { "type": "rich_text_section", "elements": [ { "type": "text", "text": "excerpt" } ] }
+              ]
+            },
+            { "type": "divider", "block_id": "b4" },
+            {
+              "type": "actions",
+              "block_id": "b5",
+              "elements": [ { "type": "button", "text": { "type": "plain_text", "text": "Open" } } ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

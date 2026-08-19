@@ -215,6 +215,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 **Files:**
 - Create (copy + rename from slack-mini `internal/watcher/`): `internal/slackpoller/slackpoller.go` (+ `*_test.go`)
 - Create (copy from slack-mini): `docs/reverse-engineering/slack-web-api.md`
+- Create (copy from slack-mini): `docs/superpowers/specs/slack-mini-history/*` (the 7 Slack design specs + their plans + a short README)
 
 **Interfaces:**
 - Consumes: `internal/slackapi` (Task 2).
@@ -228,9 +229,14 @@ Copy `~/git/slack-mini/internal/watcher/watcher.go` → `internal/slackpoller/sl
 - Update the slackapi import to `github.com/mturley/worktree/internal/slackapi`.
 - Update any test that referenced `watcher.Watcher`/`watcher.New` → `slackpoller.Poller`/`slackpoller.New`.
 
-- [ ] **Step 2: Move the reverse-engineering doc**
+- [ ] **Step 2: Move the reverse-engineering doc + the Slack design history**
 
-Copy `~/git/slack-mini/docs/reverse-engineering/slack-web-api.md` → `docs/reverse-engineering/slack-web-api.md` (verbatim — it's the authoritative reference for Slack's undocumented Web API: auth, endpoints, payload shapes, quirks, verified by experiment). Its accompanying "read and maintain" CLAUDE.md rule is added to worktree's CLAUDE.md in Task 12. Do NOT edit the doc's content in this task — just move it.
+Copy `~/git/slack-mini/docs/reverse-engineering/slack-web-api.md` → `docs/reverse-engineering/slack-web-api.md` (verbatim — it's the authoritative reference for Slack's undocumented Web API: auth, endpoints, payload shapes, quirks, verified by experiment). Its accompanying "read and maintain" CLAUDE.md rule is added to worktree's CLAUDE.md in Task 12. Do NOT edit the doc's content — just move it.
+
+ALSO copy slack-mini's per-phase Slack design history so it travels with the folded-in code (the slack-mini repo is archived in Task 12; preserve the "how each Slack feature was designed" provenance here). Copy these into a `docs/superpowers/specs/slack-mini-history/` subfolder (keep them grouped + clearly historical, so they don't clutter worktree's own live specs):
+- All `~/git/slack-mini/docs/superpowers/specs/*slack-mini*.md` (the 7 design docs: 2026-08-07 original, v2-replies, v3a-images-files, v3b-unfurls, v3d-blockkit, reaction-toggle, and any others present).
+- All `~/git/slack-mini/docs/superpowers/plans/*slack-mini*.md` (the matching implementation plans).
+Copy verbatim (they're historical records — do not edit). Add a one-line `docs/superpowers/specs/slack-mini-history/README.md`: "Historical design specs + plans for the Slack thread viewer, folded into worktree from the (now-archived) slack-mini repo in Phase 3 (2026-08). See docs/reverse-engineering/slack-web-api.md for the live Slack API reference."
 
 - [ ] **Step 3: Build + test**
 
@@ -245,14 +251,15 @@ Expected: clean.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add internal/slackpoller/ docs/reverse-engineering/
-git commit --signoff -m "feat(slackpoller): vendor slack-mini's per-thread poller + Slack reverse-engineering doc
+git add internal/slackpoller/ docs/reverse-engineering/ docs/superpowers/specs/slack-mini-history/
+git commit --signoff -m "feat(slackpoller): vendor slack-mini's per-thread poller + Slack docs/history
 
 Renamed from slack-mini's internal/watcher to slackpoller to avoid confusion
 with the github.com/mturley/watcher library and worktree's own pr/jira poll
 loop. Per-(channel,thread) poll loop with SSE fan-out; in-memory, no DB.
 Also carries over docs/reverse-engineering/slack-web-api.md (the authoritative
-Slack Web API reference).
+Slack Web API reference) and slack-mini's per-phase design specs+plans under
+docs/superpowers/specs/slack-mini-history/.
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
@@ -896,7 +903,40 @@ field, changed response shape, new endpoint, auth quirk, rate-limit behavior,
 block type), update that doc in the same change and add a regression fixture
 rather than silently working around it. Treat the doc as part of the deliverable.
 ```
-- `README.md`: add Slack to the Web UI section (Slack tab, `worktree add <slack-url>`, `worktree setup` acquires Slack creds).
+  (3) ADD a "Slack conventions" section carrying over slack-mini's durable guardrails (adapted for worktree — these are hard-won "don't reinvent" rules future Slack UI work must follow):
+```
+## Slack conventions (folded in from slack-mini)
+
+- **`slackapi` contains all Slack payload quirks.** It returns domain structs
+  (Message, User, Thread, Reaction, File, Attachment, Block/Element, BlockKit),
+  never raw Slack JSON. The rest of the codebase never touches raw Slack JSON.
+  `normalize.go`'s `normalizeMessage` is the single per-message mapper — new
+  message fields go there so thread fetches and posted replies both get them.
+- **Rendering pipeline — do NOT reinvent.** Render a message's typed `blocks`
+  via `RichText.tsx` (rich_text) — the primary path; never reparse `text`. When
+  only an mrkdwn *string* is available (block-less `text` fallback, attachment
+  text, Block Kit section/context text), use the SHARED `ui/src/lib/mrkdwn.tsx`
+  (`<Mrkdwn>`) — never write a second mrkdwn parser. Block Kit inside attachments
+  renders via `BlockKit.tsx` (delegates rich_text back to RichText). Emoji
+  resolution is shared via `lib/emoji.ts` + `lib/renderEmoji.tsx`.
+- **Never auto-mark threads read.** Only the explicit "Mark thread read" action
+  calls `subscriptions.thread.mark` — viewing a thread must not mark it read.
+- **Writes are optimistic + rolled back on failure** via `useThread.applyLocal`
+  + `refresh()` (replies, mark-unread, reaction toggles). There is no send
+  allowlist (dropped in the fold-in) — writes are unrestricted.
+- **Slack test fixtures (`internal/slackapi/testdata/`) MUST be synthetic/
+  sanitized** — real JSON structure, but NO real Slack content (names, message
+  text, links) and NO secrets. Never commit captured real payloads.
+- **Slack creds are the user's own session credentials** (xoxc- token + xoxd-
+  cookie), stored in `~/.config/watcher/auth.yaml` (0600). Treat like a password;
+  never commit. Tokens expire every 1-2 weeks → re-run `worktree setup`.
+- **ThreadResponse wire quirk:** top-level keys are camelCase, but the embedded
+  `slackapi.Message` + nested structs serialize PascalCase (Go defaults). The
+  TS types in `ui/src/api/slackApi.ts` mirror this (e.g. `message.TS`,
+  `reaction.UserIDs`); nil slices/pointers marshal to `null` → TS guards them.
+```
+  Do NOT carry over slack-mini-specifics that changed in the fold-in: the `~/.config/slack-mini/` path, port 8473, `send_allowlist`, or the sessionStorage flat-tab model (replaced by per-worktree resource-scoping).
+- `README.md`: add Slack to the Web UI section (Slack tab, `worktree add <slack-url>`, `worktree setup` acquires Slack creds). Include the security note: Slack token+cookie are your own session creds, stored in watcher auth.yaml, never committed.
 
 - [ ] **Step 4: Archive slack-mini**
 

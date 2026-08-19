@@ -1,0 +1,190 @@
+{
+  "ok": true,
+  "messages": [
+    {
+      "type": "message",
+      "ts": "1700000000.000001",
+      "user": "U000000001",
+      "text": "<@U000000009> can you review this :green_ball: when you have a moment :sweat_smile:",
+      "thread_ts": "1700000000.000001",
+      "last_read": "1700000000.000003",
+      "latest_reply": "1700000000.000005",
+      "reply_count": 3,
+      "reply_users_count": 2,
+      "reply_users": ["U000000002", "U000000003"],
+      "subscribed": true,
+      "blocks": [
+        {
+          "type": "rich_text",
+          "block_id": "blk001",
+          "elements": [
+            {
+              "type": "rich_text_section",
+              "elements": [
+                { "type": "user", "user_id": "U000000009" },
+                { "type": "text", "text": " can you review this " },
+                { "type": "emoji", "name": "green_ball" },
+                { "type": "text", "text": " when you have a moment " },
+                { "type": "emoji", "name": "sweat_smile", "unicode": "1f605" }
+              ]
+            }
+          ]
+        }
+      ],
+      "reactions": [
+        { "name": "agree+1", "users": ["U000000002", "U000000003"], "count": 2 }
+      ]
+    },
+    {
+      "type": "message",
+      "ts": "1700000000.000003",
+      "user": "U000000002",
+      "text": "sounds good to me",
+      "thread_ts": "1700000000.000001",
+      "parent_user_id": "U000000001",
+      "blocks": [
+        {
+          "type": "rich_text",
+          "block_id": "blk002",
+          "elements": [
+            {
+              "type": "rich_text_section",
+              "elements": [
+                { "type": "text", "text": "sounds good to me" }
+              ]
+            }
+          ]
+        }
+      ],
+      "files": [
+        { "id": "F0IMG", "name": "diagram.png", "title": "diagram.png", "mimetype": "image/png",
+          "filetype": "png", "pretty_type": "PNG", "size": 12345,
+          "permalink": "https://example.slack.com/files/U0/F0IMG/diagram.png",
+          "url_private": "https://files.slack.com/files-pri/T0-F0IMG/diagram.png",
+          "thumb_360": "https://files.slack.com/files-tmb/T0-F0IMG/diagram_360.png",
+          "thumb_360_w": 360, "thumb_360_h": 200, "thumb_720": "https://files.slack.com/files-tmb/T0-F0IMG/diagram_720.png",
+          "original_w": 1200, "original_h": 667 },
+        { "id": "F0DOC", "name": "notes.pdf", "title": "notes.pdf", "mimetype": "application/pdf",
+          "filetype": "pdf", "pretty_type": "PDF", "size": 67890,
+          "permalink": "https://example.slack.com/files/U0/F0DOC/notes.pdf",
+          "url_private": "https://files.slack.com/files-pri/T0-F0DOC/notes.pdf" }
+      ],
+      "attachments": [
+        { "title": "#123 Example PR title", "title_link": "https://github.com/example/repo/pull/123",
+          "text": "Example unfurl text with an &amp; entity", "service_name": "GitHub",
+          "service_icon": "https://example.com/gh.png", "footer": "example/repo",
+          "footer_icon": "https://example.com/f.png", "color": "36a64f",
+          "image_url": "https://example.com/preview.png", "image_width": 571, "image_height": 243 },
+        { "is_msg_unfurl": true, "is_reply_unfurl": true,
+          "from_url": "https://example.slack.com/archives/C0EXAMPLE2/p1700000000000009?thread_ts=1700000000.000005&cid=C0EXAMPLE2",
+          "author_name": "Test Person", "text": "Preview of the linked thread", "channel_id": "C0EXAMPLE2",
+          "footer": "Thread in Slack Conversation" }
+      ]
+    },
+    {
+      "type": "message",
+      "ts": "1700000000.000004",
+      "user": "U000000003",
+      "text": "agreed, let's do it",
+      "thread_ts": "1700000000.000001",
+      "parent_user_id": "U000000001",
+      "edited": { "user": "U000000003", "ts": "1700000000.500000" },
+      "blocks": [
+        {
+          "type": "rich_text",
+          "block_id": "blk003",
+          "elements": [
+            {
+              "type": "rich_text_section",
+              "elements": [
+                { "type": "text", "text": "agreed, let's do it" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "message",
+      "ts": "1700000000.000005",
+      "user": "U000000001",
+      "text": "great, thanks all",
+      "thread_ts": "1700000000.000001",
+      "parent_user_id": "U000000001",
+      "blocks": [
+        {
+          "type": "rich_text",
+          "block_id": "blk004",
+          "elements": [
+            {
+              "type": "rich_text_section",
+              "elements": [
+                { "type": "text", "text": "great, thanks all" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "message",
+      "ts": "1700000000.000006",
+      "user": "U000000002",
+      "text": "here's the plan:\n* ping <@U000000010> :party_parrot:\n* ship it\n> quoted status update\n```\ncode block line\n```",
+      "thread_ts": "1700000000.000001",
+      "parent_user_id": "U000000001",
+      "blocks": [
+        {
+          "type": "rich_text",
+          "block_id": "blk005",
+          "elements": [
+            {
+              "type": "rich_text_section",
+              "elements": [
+                { "type": "text", "text": "here's the plan:" }
+              ]
+            },
+            {
+              "type": "rich_text_list",
+              "style": "bullet",
+              "indent": 0,
+              "elements": [
+                {
+                  "type": "rich_text_section",
+                  "elements": [
+                    { "type": "text", "text": "ping " },
+                    { "type": "user", "user_id": "U000000010" },
+                    { "type": "text", "text": " " },
+                    { "type": "emoji", "name": "party_parrot" },
+                    { "type": "text", "text": " see " },
+                    { "type": "link", "url": "https://example.com/plan", "text": "the plan" }
+                  ]
+                },
+                {
+                  "type": "rich_text_section",
+                  "elements": [
+                    { "type": "text", "text": "ship it", "style": { "strike": true } }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "rich_text_quote",
+              "elements": [
+                { "type": "text", "text": "quoted status update" }
+              ]
+            },
+            {
+              "type": "rich_text_preformatted",
+              "elements": [
+                { "type": "text", "text": "code block line" }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "has_more": false,
+  "response_metadata": { "next_cursor": "" }
+}

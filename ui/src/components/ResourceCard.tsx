@@ -113,10 +113,21 @@ function JiraCardBody({ r }: { r: ResourceDTO }) {
   )
 }
 
+function SlackCardBody({ r }: { r: ResourceDTO }) {
+  return (
+    <Group gap="xs">
+      <Badge size="xs" variant="light" color="grape">Slack</Badge>
+      {r.url ? <Anchor href={r.url} target="_blank" size="sm">{r.id}</Anchor> : <Text size="sm">{r.id}</Text>}
+    </Group>
+  )
+}
+
 export function ResourceCard({ r }: { r: ResourceDTO }) {
   return (
     <Paper key={`${r.type}:${r.id}`} p="xs" withBorder>
-      {!isEnriched(r) ? (
+      {r.type === "slack" ? (
+        <SlackCardBody r={r} />
+      ) : !isEnriched(r) ? (
         <MinimalRow r={r} />
       ) : r.type === "pr" ? (
         <PRCardBody r={r} />

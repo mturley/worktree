@@ -1,0 +1,1 @@
+Historical design specs + plans for the Slack thread viewer, folded into worktree from the (now-archived) slack-mini repo in Phase 3 (2026-08). See docs/reverse-engineering/slack-web-api.md for the live Slack API reference.

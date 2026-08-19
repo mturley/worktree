@@ -1,0 +1,103 @@
+import { afterEach, describe, it, expect, vi } from "vitest"
+import { render, cleanup, waitFor } from "@testing-library/react"
+import { MantineProvider } from "@mantine/core"
+import type { ResourceDTO } from "../api/types"
+
+// jsdom doesn't implement window.matchMedia; MantineProvider's color-scheme
+// effect needs it, so stub a minimal version for this test file only.
+if (typeof window.matchMedia !== "function") {
+  window.matchMedia = ((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia
+}
+
+// jsdom has no EventSource; useThread opens one after the initial fetch.
+if (typeof (globalThis as { EventSource?: unknown }).EventSource !== "function") {
+  ;(globalThis as { EventSource: unknown }).EventSource = class {
+    close() {}
+    set onmessage(_: unknown) {}
+    set onerror(_: unknown) {}
+  }
+}
+
+// Control what resources the worktree exposes per test.
+let mockResources: ResourceDTO[] = []
+vi.mock("../hooks/useWorktreeDetail", () => ({
+  useWorktreeDetail: () => ({
+    resources: { data: mockResources },
+    timeline: { data: undefined, isLoading: false, error: null },
+  }),
+}))
+
+// Keep ThreadView off the network: getThread returns an empty thread, and
+// the rest of the slackApi surface is stubbed so nothing hits fetch. The
+// thread object is inlined because vi.mock factories are hoisted above any
+// module-level variables.
+vi.mock("../api/slackApi", () => ({
+  getThread: vi.fn().mockResolvedValue({
+    channel: "C1",
+    channelName: "general",
+    threadTs: "1699999999.000100",
+    lastRead: "",
+    latestReply: "",
+    rootTs: "1699999999.000100",
+    unreadIndex: -1,
+    currentUserId: "U1",
+    messages: [],
+    users: {},
+    emoji: {},
+  }),
+  eventsUrl: () => "/api/thread-events",
+  getConfig: vi.fn().mockRejectedValue(new Error("no config in test")),
+  postReply: vi.fn(),
+  markRead: vi.fn(),
+  markUnread: vi.fn(),
+  toggleReaction: vi.fn(),
+  avatarProxy: (url: string) => url,
+  emojiProxy: (url: string) => url,
+  ApiAuthError: class ApiAuthError extends Error {},
+}))
+
+import { SlackTab } from "./SlackTab"
+
+afterEach(() => {
+  cleanup()
+  vi.clearAllMocks()
+  mockResources = []
+})
+
+function renderWithProvider(ui: React.ReactElement) {
+  return render(<MantineProvider>{ui}</MantineProvider>)
+}
+
+describe("SlackTab", () => {
+  it("renders one rail entry for a worktree with one slack resource", async () => {
+    mockResources = [
+      {
+        type: "slack",
+        id: "C1:1699999999.000100",
+        url: "https://x.slack.com/archives/C1/p1699999999000100",
+        primary: true,
+      },
+    ]
+    const { getByText } = renderWithProvider(<SlackTab path="/w/foo" />)
+    await waitFor(() => {
+      expect(getByText("C1 @ 1699999999.000100")).toBeTruthy()
+    })
+  })
+
+  it("renders the empty state when there are no slack resources", () => {
+    mockResources = [
+      { type: "pr", id: "owner/repo#1", url: "https://github.com/owner/repo/pull/1", primary: true },
+    ]
+    const { getByText } = renderWithProvider(<SlackTab path="/w/foo" />)
+    expect(getByText(/No Slack threads\./)).toBeTruthy()
+  })
+})
