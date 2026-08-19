@@ -39,6 +39,18 @@ func init() {
 }
 
 func runUI(cmd *cobra.Command, args []string) error {
+	// If a worktree UI is already listening on the port, don't abort with an
+	// "address already in use" error — just open the running one in the browser
+	// (unless --no-open / --api-only) and exit successfully.
+	if serverAlreadyListening(uiPort) {
+		url := fmt.Sprintf("http://127.0.0.1:%d", uiPort)
+		fmt.Printf("worktree UI already running on %s — opening in browser\n", url)
+		if !uiNoOpen && !uiAPIOnly {
+			openBrowser(url)
+		}
+		return nil
+	}
+
 	conn, err := wdb.Open()
 	if err != nil {
 		return fmt.Errorf("opening worktree db: %w", err)
@@ -102,12 +114,22 @@ func hasBuiltUI(sub fs.FS) bool {
 	return false
 }
 
+// serverAlreadyListening reports whether something is already accepting TCP
+// connections on 127.0.0.1:port — used to detect an already-running worktree
+// UI so we open it instead of failing to bind.
+func serverAlreadyListening(port int) bool {
+	c, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 200*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	c.Close()
+	return true
+}
+
 func openBrowserWhenUp(port int) {
 	url := fmt.Sprintf("http://127.0.0.1:%d", port)
 	for i := 0; i < 50; i++ {
-		c, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 100*time.Millisecond)
-		if err == nil {
-			c.Close()
+		if serverAlreadyListening(port) {
 			openBrowser(url)
 			return
 		}
@@ -115,15 +137,28 @@ func openBrowserWhenUp(port int) {
 	}
 }
 
-func openBrowser(url string) {
-	var c *exec.Cmd
+// browserOpenCommand returns the command+args to open url. Inside cmux
+// (CMUX_WORKSPACE_ID set) it uses `cmux open` so the URL lands in a cmux
+// browser pane; otherwise the platform opener (`open` on macOS, `xdg-open`
+// on Linux). Returns nil when there's no opener for the platform.
+func browserOpenCommand(url string) []string {
+	if os.Getenv("CMUX_WORKSPACE_ID") != "" {
+		return []string{"cmux", "open", url}
+	}
 	switch runtime.GOOS {
 	case "darwin":
-		c = exec.Command("open", url)
+		return []string{"open", url}
 	case "linux":
-		c = exec.Command("xdg-open", url)
+		return []string{"xdg-open", url}
 	default:
+		return nil
+	}
+}
+
+func openBrowser(url string) {
+	argv := browserOpenCommand(url)
+	if argv == nil {
 		return
 	}
-	_ = c.Start()
+	_ = exec.Command(argv[0], argv[1:]...).Start()
 }
