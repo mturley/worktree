@@ -74,6 +74,7 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/worktree-timeline", s.handleWorktreeTimeline)
 	mux.HandleFunc("POST /api/worktrees/poll", s.handlePollWorktree)
 	mux.HandleFunc("GET /api/worktree-resources", s.handleWorktreeResources)
+	mux.HandleFunc("POST /api/resource-meta", s.handleSetResourceMeta)
 	mux.HandleFunc("GET /api/stream", s.handleStream)
 
 	// Slack thread/reply/react + image proxies (folded in from slack-mini).

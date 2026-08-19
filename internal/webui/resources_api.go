@@ -13,6 +13,9 @@ type resourceDTO struct {
 	ID      string `json:"id"`
 	URL     string `json:"url"`
 	Primary bool   `json:"primary"`
+	// user-supplied custom metadata (from resources.SetMeta):
+	CustomName        string `json:"custom_name,omitempty"`
+	CustomDescription string `json:"custom_description,omitempty"`
 	// enriched from watcher_resource_state (empty if never polled):
 	Title                 string   `json:"title,omitempty"`                    // PR title or Jira summary
 	State                 string   `json:"state,omitempty"`                    // PR state (open/closed/merged)
@@ -41,7 +44,10 @@ func (s *Server) handleWorktreeResources(w http.ResponseWriter, r *http.Request)
 	}
 	out := make([]resourceDTO, 0, len(rs))
 	for _, res := range rs {
-		dto := resourceDTO{Type: res.Type, ID: res.ID, URL: res.URL, Primary: !res.Related}
+		dto := resourceDTO{
+			Type: res.Type, ID: res.ID, URL: res.URL, Primary: !res.Related,
+			CustomName: res.CustomName, CustomDescription: res.CustomDescription,
+		}
 		s.enrichResourceDTO(&dto)
 		out = append(out, dto)
 	}
