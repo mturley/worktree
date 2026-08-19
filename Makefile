@@ -5,7 +5,7 @@ INSTALL_DIR := /usr/local/bin
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -ldflags "-X github.com/mturley/worktree/cmd.Version=$(VERSION)"
 
-.PHONY: build build-web build-cli install test clean dev
+.PHONY: build build-web build-cli install test test-web clean dev
 
 build: build-web build-cli
 
@@ -32,6 +32,10 @@ install: build
 
 test:
 	go test ./... -v
+	$(MAKE) test-web
+
+test-web:
+	@cd ui && npm test
 
 clean:
 	rm -rf $(BIN_DIR)
