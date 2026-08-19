@@ -14,6 +14,10 @@ import (
 )
 
 func TestAddResource_Jira(t *testing.T) {
+	// Isolate watcher config so the add endpoint's inline pollOne finds no
+	// creds (fails closed to a no-op) instead of hitting the live network on
+	// machines that happen to have real creds configured.
+	t.Setenv("WATCHER_HOME", t.TempDir())
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
