@@ -177,8 +177,8 @@ custom_description        string
 overrides, not polled/cached upstream data. `POST /api/resource-meta` (body
 `{type, id, name, description}`) upserts a row via
 `watcherdb.SetResourceMeta`; `Load`-time resource decoration
-(`internal/resources`) and `enrichResourceDTO` both read it back and set these
-two fields whenever a row exists for that resource.
+(`internal/resources`) reads it back, and `handleWorktreeResources` populates
+these two fields on the DTO whenever a row exists for that resource.
 
 `enrichResourceDTO` reads `watcherdb.GetResourceState(db, type, id)`, parses
 `StateJSON` defensively (comma-ok type assertions on every field), and
