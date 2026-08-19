@@ -296,7 +296,8 @@ single in-process loop for as long as the server is up:
   names) — this is the single source of truth for what the frontend expects
   back from each endpoint listed above. `client.ts` exports `api.worktrees`,
   `api.globalTimeline`, `api.worktreeTimeline`, `api.worktreeResources`,
-  `api.pollWorktree`.
+  `api.pollWorktree`, `api.setResourceMeta`, `api.addResource`,
+  `api.removeResource`.
 - **Hooks** (`ui/src/hooks/`):
   - `useWorktrees()` — `useQuery(["worktrees"], api.worktrees)`.
   - `useGlobalTimeline(archived)` / `useWorktreeTimeline(path)`
