@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { safeHref, unescapeSlackText } from './slackApi'
+import { safeHref, unescapeSlackText, imageProxy } from './slackApi'
 
 describe('unescapeSlackText', () => {
   it('unescapes &amp; &lt; &gt; only', () => {
@@ -30,5 +30,21 @@ describe('safeHref', () => {
 
   it('rejects a URL with leading whitespace before a disallowed scheme', () => {
     expect(safeHref('  javascript:alert(1)')).toBeUndefined()
+  })
+})
+
+describe('imageProxy', () => {
+  it('routes an https URL through the open-host image proxy', () => {
+    expect(imageProxy('https://cdn.example.com/favicon.ico')).toBe(
+      '/api/slack-image?url=' + encodeURIComponent('https://cdn.example.com/favicon.ico'),
+    )
+  })
+
+  it('leaves a non-https URL unchanged so the <img> onError fallback still applies', () => {
+    expect(imageProxy('http://cdn.example.com/x.png')).toBe('http://cdn.example.com/x.png')
+  })
+
+  it('leaves an empty URL unchanged', () => {
+    expect(imageProxy('')).toBe('')
   })
 })

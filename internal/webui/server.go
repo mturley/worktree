@@ -88,6 +88,8 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/slack-avatar", s.handleSlackAvatar)
 	mux.HandleFunc("GET /api/slack-emoji", s.handleSlackEmoji)
 	mux.HandleFunc("GET /api/slack-file", s.handleSlackFile)
+	// Open-host proxy for third-party unfurl images (preview/favicon/footer).
+	mux.HandleFunc("GET /api/slack-image", s.handleImage)
 }
 
 func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {

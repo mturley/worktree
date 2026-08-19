@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Anchor, Button, Group, Paper, Stack, Text } from '@mantine/core'
-import { safeHref } from '../../api/slackApi'
+import { safeHref, imageProxy } from '../../api/slackApi'
 import type { Attachment, User } from '../../api/slackApi'
 import { Mrkdwn } from '../../lib/mrkdwn'
 import { parseThreadUrl } from '../../lib/parseThreadUrl'
@@ -129,7 +129,7 @@ function WebUnfurlCard({
       <Stack gap={4}>
         {imageSrc && !previewErrored && (
           <img
-            src={imageSrc}
+            src={imageProxy(imageSrc)}
             alt=""
             width={attachment.ImageWidth > 0 ? attachment.ImageWidth : undefined}
             height={attachment.ImageHeight > 0 ? attachment.ImageHeight : undefined}
@@ -141,7 +141,7 @@ function WebUnfurlCard({
           <Group gap={4}>
             {attachment.ServiceIcon && !serviceIconErrored && (
               <img
-                src={attachment.ServiceIcon}
+                src={imageProxy(attachment.ServiceIcon)}
                 alt=""
                 width={16}
                 height={16}
@@ -181,7 +181,7 @@ function WebUnfurlCard({
           <Group gap={4}>
             {attachment.FooterIcon && !footerIconErrored && (
               <img
-                src={attachment.FooterIcon}
+                src={imageProxy(attachment.FooterIcon)}
                 alt=""
                 width={14}
                 height={14}

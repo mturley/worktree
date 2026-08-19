@@ -290,3 +290,15 @@ export function emojiProxy(url: string): string {
 export function fileProxy(url: string): string {
   return `/api/slack-file?url=${encodeURIComponent(url)}`
 }
+
+// imageProxy routes a third-party unfurl image (preview/thumbnail, service
+// favicon, footer icon — from arbitrary external hosts) through the
+// open-host, SSRF-hardened backend proxy. Serving these same-origin avoids
+// the browser's cross-origin image blocking / hotlink 403s that leave
+// console errors and broken images. Only https URLs are accepted by the
+// backend; a non-https or empty url is returned unchanged so the caller's
+// <img onError> fallback still applies.
+export function imageProxy(url: string): string {
+  if (!url || !url.startsWith('https://')) return url
+  return `/api/slack-image?url=${encodeURIComponent(url)}`
+}

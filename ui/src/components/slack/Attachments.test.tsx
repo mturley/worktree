@@ -98,12 +98,16 @@ describe('borderColor', () => {
 })
 
 describe('Attachments', () => {
-  it('web unfurl: title links to TitleLink and preview image uses the raw external src', () => {
+  it('web unfurl: title links to TitleLink and preview image routes through the image proxy', () => {
     const { container } = renderWithProvider(<Attachments attachments={[web]} users={{}} emoji={{}} onOpenThread={() => {}} />)
     const link = container.querySelector('a[href="https://github.com/example/repo/pull/123"]')
     expect(link).not.toBeNull()
     const img = container.querySelector('img')
-    expect(img?.getAttribute('src')).toBe('https://ex.com/preview.png') // direct, NOT /api/file
+    // Third-party unfurl images go through the SSRF-hardened open-host proxy
+    // (same-origin) so the browser doesn't block them cross-origin.
+    expect(img?.getAttribute('src')).toBe(
+      '/api/slack-image?url=' + encodeURIComponent('https://ex.com/preview.png'),
+    )
   })
 
   it('web unfurl: a javascript: TitleLink renders the title as plain text, not a link', () => {
@@ -130,10 +134,12 @@ describe('Attachments', () => {
     // Regression guard: image error state must be per-image, not shared
     // across the whole attachment card.
     const { container } = renderWithProvider(<Attachments attachments={[web]} users={{}} emoji={{}} onOpenThread={() => {}} />)
-    const preview = container.querySelector('img[src="https://ex.com/preview.png"]')!
+    const previewSrc = '/api/slack-image?url=' + encodeURIComponent('https://ex.com/preview.png')
+    const faviconSrc = '/api/slack-image?url=' + encodeURIComponent('https://ex.com/gh.png')
+    const preview = container.querySelector(`img[src="${previewSrc}"]`)!
     fireEvent.error(preview)
-    expect(container.querySelector('img[src="https://ex.com/preview.png"]')).toBeNull()
-    expect(container.querySelector('img[src="https://ex.com/gh.png"]')).not.toBeNull()
+    expect(container.querySelector(`img[src="${previewSrc}"]`)).toBeNull()
+    expect(container.querySelector(`img[src="${faviconSrc}"]`)).not.toBeNull()
   })
 
   it('renders nothing for an app unfurl with no title/text/service/footer/image', () => {
