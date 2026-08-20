@@ -4,7 +4,6 @@ package setup
 import (
 	"fmt"
 
-	wconfig "github.com/mturley/watcher/config"
 	"github.com/mturley/worktree/internal/ui"
 )
 
@@ -50,21 +49,6 @@ don't need to find it yourself.
 These are session credentials tied to your browser login and typically expire
 after a week or two. When requests start failing with an auth error, just run
 "worktree setup" again to store fresh values.`
-
-// writeSlackCreds mutates cfg so that token, cookie, and domain land under
-// Services.Slack, creating the block if it doesn't already exist. It is a
-// pure, unit-tested helper kept around for direct manipulation of a
-// wconfig.Config; the interactive acquisition flow itself now goes through
-// credsetup.TestAndRepair (see Prompter.PromptSlack), which validates
-// credentials, resolves the workspace domain, and saves the result itself.
-func writeSlackCreds(cfg *wconfig.Config, token, cookie, domain string) {
-	if cfg.Services.Slack == nil {
-		cfg.Services.Slack = &wconfig.SlackConfig{}
-	}
-	cfg.Services.Slack.Token = token
-	cfg.Services.Slack.Cookie = cookie
-	cfg.Services.Slack.WorkspaceDomain = domain
-}
 
 // acquireSlackCreds acquires Slack credentials (token + cookie), either
 // automatically via a headed-browser extraction (when interactive and

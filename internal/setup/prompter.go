@@ -3,6 +3,8 @@ package setup
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"strings"
 
 	"github.com/mturley/watcher/credsetup"
@@ -13,19 +15,31 @@ import (
 // package, so the shared watcher credsetup.TestAndRepair flow can drive
 // worktree's interactive `worktree setup` the same way it drives any other
 // consumer.
-type Prompter struct{}
+//
+// out is where Info writes; it defaults to os.Stdout when zero, and is
+// overridable in tests to assert Info's color routing.
+type Prompter struct {
+	out io.Writer
+}
 
-// Info prints a status line. Lines ending in "ok" are colored green, lines
-// containing "failed" are colored red; everything else (progress messages
-// like "Testing GitHub credentials...") is printed plain.
-func (Prompter) Info(msg string) {
+// Info prints a status line, coloring it by the outcome the message conveys.
+// The classification matches the exact wording credsetup.TestAndRepair emits
+// today ("<Service>: ok" on success; "...failed..." / "...invalid..." on
+// failure) — re-check it if the pinned credsetup version changes its
+// messages. Anything else (progress lines like "Testing GitHub
+// credentials...") prints plain.
+func (p Prompter) Info(msg string) {
+	w := p.out
+	if w == nil {
+		w = os.Stdout
+	}
 	switch {
-	case strings.HasSuffix(msg, "ok"):
-		fmt.Printf("  %s\n", ui.Green(msg))
-	case strings.Contains(msg, "failed"):
-		fmt.Printf("  %s\n", ui.Red(msg))
+	case strings.Contains(msg, ": ok"):
+		fmt.Fprintf(w, "  %s\n", ui.Green(msg))
+	case strings.Contains(msg, "failed"), strings.Contains(msg, "invalid"):
+		fmt.Fprintf(w, "  %s\n", ui.Red(msg))
 	default:
-		fmt.Printf("  %s\n", msg)
+		fmt.Fprintf(w, "  %s\n", msg)
 	}
 }
 
