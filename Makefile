@@ -5,7 +5,12 @@ INSTALL_DIR := /usr/local/bin
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -ldflags "-X github.com/mturley/worktree/cmd.Version=$(VERSION)"
 
-.PHONY: build build-web build-cli install test test-web clean dev
+.PHONY: build build-web build-cli install stop-running test test-web clean dev
+
+# Subcommands that run as long-lived servers. If any are running against the
+# installed binary when we go to reinstall, they'd keep executing old code, so
+# stop-running terminates them before the binary is replaced.
+SERVER_CMDS := ui watcher
 
 build: build-web build-cli
 
@@ -18,7 +23,21 @@ build-cli:
 	@mkdir -p $(BIN_DIR)
 	go build $(LDFLAGS) -o $(BIN_DIR)/$(BINARY_NAME) .
 
-install: build
+stop-running:
+	@pattern="$(INSTALL_DIR)/$(BINARY_NAME) ($$(echo '$(SERVER_CMDS)' | tr ' ' '|'))"; \
+	pids=$$(pgrep -f "$$pattern" 2>/dev/null || true); \
+	if [ -n "$$pids" ]; then \
+		echo "Stopping running $(BINARY_NAME) server(s): $$pids"; \
+		kill -TERM $$pids 2>/dev/null || true; \
+		sleep 2; \
+		pids=$$(pgrep -f "$$pattern" 2>/dev/null || true); \
+		if [ -n "$$pids" ]; then \
+			echo "Force-killing remaining $(BINARY_NAME) server(s): $$pids"; \
+			kill -KILL $$pids 2>/dev/null || true; \
+		fi; \
+	fi
+
+install: build stop-running
 	@if [ ! -f $(BIN_DIR)/$(BINARY_NAME) ]; then \
 		echo "Error: $(BIN_DIR)/$(BINARY_NAME) not found. Run 'make build' first."; \
 		exit 1; \
