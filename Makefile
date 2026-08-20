@@ -23,16 +23,30 @@ build-cli:
 	@mkdir -p $(BIN_DIR)
 	go build $(LDFLAGS) -o $(BIN_DIR)/$(BINARY_NAME) .
 
+# pgrep -f finds candidates by command line, but a candidate's argv could name a
+# different binary (a script arg, a same-named tool elsewhere on PATH). Confirm
+# each PID's actual executable (lsof txt fd) is the exact file we're replacing
+# before killing it, so we never signal an unrelated process.
 stop-running:
-	@pattern="$(INSTALL_DIR)/$(BINARY_NAME) ($$(echo '$(SERVER_CMDS)' | tr ' ' '|'))"; \
-	pids=$$(pgrep -f "$$pattern" 2>/dev/null || true); \
+	@target_dir=$$(cd "$(INSTALL_DIR)" 2>/dev/null && pwd -P) || target_dir="$(INSTALL_DIR)"; \
+	target="$$target_dir/$(BINARY_NAME)"; \
+	pattern="(^|/)$(BINARY_NAME) ($$(echo '$(SERVER_CMDS)' | tr ' ' '|'))($$| )"; \
+	confirm() { \
+		out=""; \
+		for pid in $$1; do \
+			exe=$$(lsof -a -p "$$pid" -d txt -Fn 2>/dev/null | awk '/^n/{print substr($$0,2); exit}'); \
+			if [ "$$exe" = "$$target" ]; then out="$$out $$pid"; fi; \
+		done; \
+		echo $$out; \
+	}; \
+	pids=$$(confirm "$$(pgrep -f "$$pattern" 2>/dev/null || true)"); \
 	if [ -n "$$pids" ]; then \
-		echo "Stopping running $(BINARY_NAME) server(s): $$pids"; \
+		echo "Stopping running $(BINARY_NAME) server(s) [$$target]:$$pids"; \
 		kill -TERM $$pids 2>/dev/null || true; \
 		sleep 2; \
-		pids=$$(pgrep -f "$$pattern" 2>/dev/null || true); \
+		pids=$$(confirm "$$(pgrep -f "$$pattern" 2>/dev/null || true)"); \
 		if [ -n "$$pids" ]; then \
-			echo "Force-killing remaining $(BINARY_NAME) server(s): $$pids"; \
+			echo "Force-killing remaining $(BINARY_NAME) server(s):$$pids"; \
 			kill -KILL $$pids 2>/dev/null || true; \
 		fi; \
 	fi
