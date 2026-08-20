@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mturley/worktree/internal/config"
+	wconfig "github.com/mturley/watcher/config"
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/jira"
 	"github.com/mturley/worktree/internal/resources"
@@ -48,11 +48,6 @@ func runJira(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	cfg, err := config.Load()
-	if err != nil {
-		return err
-	}
-
 	conn, err := wdb.Open()
 	if err != nil {
 		return err
@@ -68,7 +63,16 @@ func runJira(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	client, clientErr := jira.NewClient(cfg.Jira)
+	var client *jira.Client
+	var clientErr error
+	wcfg, wcfgErr := wconfig.Load(wconfig.DefaultPath())
+	if wcfgErr != nil {
+		clientErr = wcfgErr
+	} else if creds, err := wcfg.Jira(); err != nil {
+		clientErr = err
+	} else {
+		client, clientErr = jira.NewClient(creds.Host, creds.Email, creds.Token)
+	}
 
 	for _, r := range jiraResources {
 		prefix := " "
@@ -102,13 +106,15 @@ func runJiraAdd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	cfg, err := config.Load()
-	if err != nil {
-		return err
+	host := ""
+	if wcfg, err := wconfig.Load(wconfig.DefaultPath()); err == nil {
+		if creds, err := wcfg.Jira(); err == nil {
+			host = creds.Host
+		}
 	}
 
-	url := jira.IssueURL(cfg.Jira.Host, key)
-	if cfg.Jira.Host == "" {
+	url := jira.IssueURL(host, key)
+	if host == "" {
 		url = key
 	}
 

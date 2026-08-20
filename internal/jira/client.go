@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-
-	"github.com/mturley/worktree/internal/config"
 )
 
 type Issue struct {
@@ -25,15 +23,14 @@ type Client struct {
 	token string
 }
 
-func NewClient(cfg config.JiraConfig) (*Client, error) {
-	if cfg.Host == "" || cfg.Email == "" {
+func NewClient(host, email, token string) (*Client, error) {
+	if host == "" || email == "" {
 		return nil, fmt.Errorf("jira host and email must be configured")
 	}
-	if cfg.Token == "" {
+	if token == "" {
 		return nil, fmt.Errorf("jira token not configured (run worktree setup)")
 	}
-	token := cfg.Token
-	return &Client{host: cfg.Host, email: cfg.Email, token: token}, nil
+	return &Client{host: host, email: email, token: token}, nil
 }
 
 func (c *Client) FetchIssue(key string) (*Issue, error) {

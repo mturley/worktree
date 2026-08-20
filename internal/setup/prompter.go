@@ -68,3 +68,16 @@ func (Prompter) PromptSlack(_ string) (token, cookie string) {
 	}
 	return token, cookie
 }
+
+// PromptJira asks for the Jira site URL (host) and account email needed for
+// first-time (greenfield) Jira setup, when no host/email is configured yet.
+// Returning an empty host or email signals credsetup to abort/skip.
+func (Prompter) PromptJira(instructions string) (host, email string) {
+	fmt.Printf("  %s\n", instructions)
+	host = ui.PromptLine("  Jira site URL (e.g. your-org.atlassian.net)")
+	if host == "" {
+		return "", ""
+	}
+	email = ui.PromptLine("  Jira account email")
+	return host, email
+}
