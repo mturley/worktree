@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	wconfig "github.com/mturley/watcher/config"
+	"github.com/mturley/watcher/credsetup"
 	"github.com/mturley/worktree/internal/config"
 	"github.com/mturley/worktree/internal/jira"
 	"github.com/mturley/worktree/internal/ui"
@@ -26,7 +27,8 @@ type Plan struct {
 	CompletionsExist    bool
 	ConfigureJira       bool
 	TestJira            bool
-	ConfigureSlack      bool
+	TestGitHubCreds     bool
+	TestSlackCreds      bool
 	GHMissing           bool
 	GHNotAuthenticated  bool
 	Cfg                 config.Config
@@ -56,11 +58,11 @@ func BuildPlan(cfg config.Config) Plan {
 		plan.TestJira = true
 	}
 
-	if wcfg, err := wconfig.Load(wconfig.DefaultPath()); err != nil {
-		plan.ConfigureSlack = true
-	} else if _, err := wcfg.Slack(); err != nil {
-		plan.ConfigureSlack = true
-	}
+	// GitHub and Slack credentials are tested (and repaired if needed) via
+	// the shared credsetup.TestAndRepair flow every run, even when already
+	// configured — see Plan.Execute.
+	plan.TestGitHubCreds = true
+	plan.TestSlackCreds = true
 
 	if _, err := exec.LookPath("gh"); err != nil {
 		plan.GHMissing = true
@@ -149,8 +151,11 @@ func (p Plan) Preview() {
 	if p.TestJira {
 		fmt.Println("  • Test Jira connection")
 	}
-	if p.ConfigureSlack {
-		fmt.Println("  • Configure Slack (token + cookie) → ~/.config/watcher/auth.yaml")
+	if p.TestGitHubCreds {
+		fmt.Println("  • Test GitHub credentials")
+	}
+	if p.TestSlackCreds {
+		fmt.Println("  • Test Slack credentials")
 	}
 	if p.GHMissing {
 		fmt.Printf("\n  %s GitHub CLI (gh) is not installed. PR features will be unavailable.\n", ui.Yellow("!"))
@@ -165,7 +170,7 @@ func (p Plan) Preview() {
 }
 
 func (p Plan) HasWork() bool {
-	return p.CreateWorktreesBase || p.InstallShellRC || p.CreateConfig || p.InstallCompletions || p.ConfigureJira || p.TestJira || p.ConfigureSlack
+	return p.CreateWorktreesBase || p.InstallShellRC || p.CreateConfig || p.InstallCompletions || p.ConfigureJira || p.TestJira || p.TestGitHubCreds || p.TestSlackCreds
 }
 
 func (p Plan) Execute() error {
@@ -205,10 +210,52 @@ func (p Plan) Execute() error {
 		}
 	}
 
-	if p.ConfigureSlack {
-		if err := promptAndSaveSlack(); err != nil {
-			fmt.Printf("  %s Slack setup failed: %v\n", ui.Yellow("!"), err)
+	if p.TestGitHubCreds || p.TestSlackCreds {
+		if err := testAndRepairSharedCreds(p.TestGitHubCreds, p.TestSlackCreds); err != nil {
+			fmt.Printf("  %s Credential setup failed: %v\n", ui.Yellow("!"), err)
 		}
+	}
+
+	return nil
+}
+
+// testAndRepairSharedCreds runs the shared watcher credsetup.TestAndRepair
+// flow for GitHub and/or Slack, loading and (if anything changed) saving
+// the watcher config exactly once. Jira is deliberately NOT included here:
+// worktree's Jira host/email/token live in worktree's own config.yaml
+// (config.JiraConfig), not the watcher config credsetup reads from
+// (wcfg.Services.Jira) — see testAndRepairJira, which stays worktree-config
+// based until that's reconciled.
+func testAndRepairSharedCreds(testGitHub, testSlack bool) error {
+	wcfg, err := wconfig.Load(wconfig.DefaultPath())
+	if err != nil {
+		return fmt.Errorf("loading watcher config: %w", err)
+	}
+
+	var prompter Prompter
+	changed := false
+
+	if testGitHub {
+		c, err := credsetup.TestAndRepair(wcfg, credsetup.GitHub, prompter)
+		if err != nil {
+			fmt.Printf("  %s GitHub credential test failed: %v\n", ui.Yellow("!"), err)
+		}
+		changed = changed || c
+	}
+
+	if testSlack {
+		c, err := credsetup.TestAndRepair(wcfg, credsetup.Slack, prompter)
+		if err != nil {
+			fmt.Printf("  %s Slack credential test failed: %v\n", ui.Yellow("!"), err)
+		}
+		changed = changed || c
+	}
+
+	if changed {
+		if err := wcfg.Save(wconfig.DefaultPath()); err != nil {
+			return fmt.Errorf("saving watcher config: %w", err)
+		}
+		fmt.Printf("  %s Updated %s\n", ui.Green("✓"), ui.ShortPath(wconfig.DefaultPath()))
 	}
 
 	return nil
