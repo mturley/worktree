@@ -30,42 +30,45 @@ afterEach(() => {
   addResource.mockReset()
 })
 
-describe("ResourceList add-resource field", () => {
-  it("calls api.addResource with {path, url} and triggers onChanged on success", async () => {
-    addResource.mockResolvedValueOnce({ type: "pr", id: "org/repo#1", url: "https://github.com/org/repo/pull/1", primary: false })
+describe("ResourceList", () => {
+  it("opens the add-resource modal from the Add resource button", async () => {
+    const user = userEvent.setup()
+    const { getByRole, queryByLabelText, findByLabelText } = wrap(
+      <ResourceList items={[]} path="/some/worktree" onChanged={vi.fn()} />,
+    )
+
+    expect(queryByLabelText(/url/i)).not.toBeInTheDocument()
+    await user.click(getByRole("button", { name: /add resource/i }))
+    expect(await findByLabelText(/url/i)).toBeInTheDocument()
+  })
+
+  it("adds a resource through the modal and refetches on success", async () => {
+    addResource.mockResolvedValueOnce({ type: "pr", id: "org/repo#1", url: "u", primary: true })
     const onChanged = vi.fn()
     const user = userEvent.setup()
-    const { getByPlaceholderText, getByRole } = wrap(
+    const { getByRole, findByLabelText } = wrap(
       <ResourceList items={[]} path="/some/worktree" onChanged={onChanged} />,
     )
 
-    const input = getByPlaceholderText("Paste a PR, Jira, or Slack URL")
-    await user.type(input, "https://github.com/org/repo/pull/1")
+    await user.click(getByRole("button", { name: /add resource/i }))
+    await user.type(await findByLabelText(/url/i), "https://github.com/org/repo/pull/1")
     await user.click(getByRole("button", { name: "Add" }))
 
-    expect(addResource).toHaveBeenCalledWith({ path: "/some/worktree", url: "https://github.com/org/repo/pull/1" })
+    expect(addResource).toHaveBeenCalledWith({
+      path: "/some/worktree",
+      url: "https://github.com/org/repo/pull/1",
+      related: false,
+    })
     await vi.waitFor(() => expect(onChanged).toHaveBeenCalled())
-    expect((input as HTMLInputElement).value).toBe("")
   })
 
-  it("shows a dismissible error alert when addResource rejects", async () => {
-    addResource.mockRejectedValueOnce(new Error("could not parse url"))
-    const onChanged = vi.fn()
-    const user = userEvent.setup()
-    const { getByPlaceholderText, getByRole, findByText } = wrap(
-      <ResourceList items={[]} path="/some/worktree" onChanged={onChanged} />,
-    )
-
-    const input = getByPlaceholderText("Paste a PR, Jira, or Slack URL")
-    await user.type(input, "not-a-url")
-    await user.click(getByRole("button", { name: "Add" }))
-
-    expect(await findByText("could not parse url")).toBeInTheDocument()
-    expect(onChanged).not.toHaveBeenCalled()
-  })
-
-  it("disables the Add button while the field is empty", () => {
-    const { getByRole } = wrap(<ResourceList items={[]} path="/some/worktree" onChanged={vi.fn()} />)
-    expect(getByRole("button", { name: "Add" })).toBeDisabled()
+  it("renders Focus and Related sections", () => {
+    const items = [
+      { type: "pr", id: "a", url: "u", primary: true },
+      { type: "jira", id: "b", url: "u", primary: false },
+    ]
+    const { getByText } = wrap(<ResourceList items={items} path="/wt" onChanged={vi.fn()} />)
+    expect(getByText("Focus")).toBeInTheDocument()
+    expect(getByText("Related")).toBeInTheDocument()
   })
 })

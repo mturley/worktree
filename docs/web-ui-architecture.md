@@ -219,15 +219,29 @@ Frontend: `api.addResource`/`api.removeResource` (`ui/src/api/client.ts`).
 Three UI entry points all call these and then refetch via
 `useWorktreeDetail`'s `resources.refetch()` (passed down as `onChanged` /
 `onRemoved`) rather than optimistically patching local state:
-- The Overview tab's "Add resource" URL field (`ResourceList.tsx`), which
-  shows a dismissible error `Alert` if `addResource` rejects (e.g.
-  unrecognized URL).
+- The Overview tab's "Add resource" button (`ResourceList.tsx`), which opens
+  the shared **`AddResourceModal`** (see below).
 - Each `ResourceCard`'s remove control (`ResourceCard.tsx`) — a `×` control
   behind a `Popover` confirm step, with its own inline error feedback if
   `removeResource` fails.
-- The Slack tab's `+` button (`SlackTab.tsx`), which adds a Slack thread URL
-  through the same `addResource` call (`inferResource` also recognizes Slack
-  thread URLs).
+- The Slack tab's `+` button (`SlackTab.tsx`), which opens the **same**
+  `AddResourceModal` (`inferResource` also recognizes Slack thread URLs).
+
+**`AddResourceModal` (`ui/src/components/AddResourceModal.tsx`)** — the single
+add-resource dialog shared by the Overview tab and the Slack tab. It prompts
+for:
+- a URL (PR, Jira, or Slack),
+- **Focus vs Related** via a `SegmentedControl` (default Focus; `defaultRelated`
+  prop flips the default) with a dimmed helper line — this maps to the
+  `related` flag on `POST /api/worktree-resources/add` (Focus → `related:
+  false`, Related → `related: true`), i.e. the backend `primary`/`Related`
+  distinction. **This is why the "Focus/Related" choice exists in the UI at
+  add time** (previously the inline box could only add as Focus).
+- optional **Name/Description**, revealed only when the URL contains
+  `slack.com`. On submit, after `addResource` succeeds, these are persisted via
+  `api.setResourceMeta({type, id, ...})` using the returned DTO's `type`/`id`
+  (no client-side URL parsing). Shows an inline error `Alert` and stays open if
+  `addResource` rejects (e.g. unrecognized URL).
 
 ### SSE (`/api/stream`)
 
@@ -540,6 +554,22 @@ a resource-scoped view: only threads added to *this* worktree appear.
 - `SlackTab` picks a selected thread (defaulting to the first, kept valid as
   the resource set changes), renders a `NavLink` list of threads +
   `ThreadView` for the selected one via `useThread`.
+- **Enriched rail:** each rail `NavLink` uses a multi-line
+  `ThreadRailLabel` (`ui/src/components/slack/ThreadRailLabel.tsx`) showing the
+  thread name (or a first-message preview for untitled threads), an unread
+  dot, and dimmed author/channel + started/active lines. The per-thread
+  summaries come from `useTabMetas(tabs)` (which fetches `/api/thread` per
+  thread on a 30s interval and derives facts via `deriveThreadMeta`);
+  relative timestamps use `useNow(30_000)`. This metadata was re-ported from
+  the removed slack-mini `TabBar` when its global tab strip was dropped in the
+  Phase 3 fold-in — see `docs/ui-feature-roadmap.md`.
+- **Removed dead code (2026-08-20):** the old slack-mini global tab strip
+  (`slack/TabBar.tsx`, `slack/AddTabModal.tsx`), the in-app open-thread-as-tab
+  helper (`lib/openThread.ts`), and the sessionStorage-backed tab helpers in
+  `state/tabs.ts` (`loadTabs`/`saveTabs`/`addTabFromUrl`/`findTab`/`updateTab`/
+  `reorderTabs`/`readOpenParams`/`parseTabFromUrl`) were deleted — only `Tab`
+  and `defaultTabName` remain there. `@dnd-kit/*` deps are now unused (kept in
+  `package.json` for the deferred drag-to-reorder feature; see the roadmap).
 - Empty state (no Slack resources on this worktree): an `Alert` telling the
   user to `worktree add <slack-thread-url>`.
 - Unconfigured state (backend returns `503`, detected via

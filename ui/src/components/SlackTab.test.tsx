@@ -53,7 +53,11 @@ vi.mock("../api/client", async (orig) => {
 // the rest of the slackApi surface is stubbed so nothing hits fetch. The
 // thread object is inlined because vi.mock factories are hoisted above any
 // module-level variables.
-vi.mock("../api/slackApi", () => ({
+vi.mock("../api/slackApi", async (orig) => ({
+  // Preserve pure helpers (e.g. unescapeSlackText used by the mrkdwn
+  // renderer) so ThreadView can render fetched messages; only network calls
+  // are stubbed below.
+  ...(await orig<typeof import("../api/slackApi")>()),
   getThread: vi.fn().mockResolvedValue({
     channel: "C1",
     channelName: "general",
@@ -101,10 +105,10 @@ describe("SlackTab", () => {
         primary: true,
       },
     ]
-    const { getByText } = renderWithProvider(<SlackTab path="/w/foo" />)
-    await waitFor(() => {
-      expect(getByText("C1 @ 1699999999.000100")).toBeTruthy()
-    })
+    // An untitled thread with no fetched messages shows the "(no title)"
+    // placeholder in the rail (not the raw channel:ts id).
+    const { findAllByText } = renderWithProvider(<SlackTab path="/w/foo" />)
+    expect((await findAllByText("(no title)")).length).toBeGreaterThan(0)
   })
 
   it("renders the empty state when there are no slack resources", () => {
@@ -226,6 +230,42 @@ describe("SlackTab persist", () => {
   })
 })
 
+describe("SlackTab rail metadata", () => {
+  it("shows author/channel and an unread dot for a thread in the rail", async () => {
+    mockResources = [
+      {
+        type: "slack",
+        id: "C1:1700000000.000100",
+        url: "https://x",
+        primary: false,
+        custom_name: "Release blocker",
+      } as ResourceDTO,
+    ]
+    const slackApi = await import("../api/slackApi")
+    ;(slackApi.getThread as ReturnType<typeof vi.fn>).mockResolvedValue({
+      channel: "C1",
+      channelName: "eng",
+      threadTs: "1700000000.000100",
+      lastRead: "",
+      latestReply: "1700000100.000200",
+      rootTs: "1700000000.000100",
+      unreadIndex: 1,
+      currentUserId: "U1",
+      messages: [
+        { TS: "1700000000.000100", UserID: "U9", Text: "root msg" },
+        { TS: "1700000100.000200", UserID: "U8", Text: "reply" },
+      ],
+      users: { U9: { DisplayName: "Ana" } },
+      emoji: {},
+    })
+
+    const { findAllByText, findAllByLabelText } = renderWithProvider(<SlackTab path="/w/foo" />)
+
+    expect((await findAllByText(/From Ana in #eng/)).length).toBeGreaterThan(0)
+    expect((await findAllByLabelText("Unread messages")).length).toBeGreaterThan(0)
+  })
+})
+
 describe("SlackTab add", () => {
   it("adds a slack thread via the + button and refetches", async () => {
     mockResources = [
@@ -241,7 +281,7 @@ describe("SlackTab add", () => {
 
     await user.click(await findByRole("button", { name: "Add Slack thread" }))
 
-    const urlInput = await findByLabelText("Paste a Slack thread URL")
+    const urlInput = await findByLabelText("URL")
     await user.type(urlInput, "https://x.slack.com/archives/C2/p1700000001000200")
     await user.click(getByRole("button", { name: "Add" }))
 
@@ -249,6 +289,7 @@ describe("SlackTab add", () => {
       expect(api.addResource).toHaveBeenCalledWith({
         path: "/w/foo",
         url: "https://x.slack.com/archives/C2/p1700000001000200",
+        related: false,
       }),
     )
     await waitFor(() => expect(mockRefetch).toHaveBeenCalled())

@@ -1,10 +1,14 @@
 import { useEffect, useState } from "react"
-import { ActionIcon, Alert, Button, Code, Grid, Group, Modal, NavLink, Stack, Text, TextInput } from "@mantine/core"
+import { ActionIcon, Alert, Code, Grid, Group, NavLink, Stack, Text } from "@mantine/core"
 import { useWorktreeSlackThreads, type SlackThreadRef } from "../hooks/useWorktreeSlackThreads"
 import { useThread } from "../hooks/useThread"
 import { ThreadView } from "./slack/ThreadView"
 import { defaultTabName, type Tab } from "../state/tabs"
 import { api } from "../api/client"
+import { AddResourceModal } from "./AddResourceModal"
+import { useTabMetas } from "../hooks/useTabMetas"
+import { useNow } from "../hooks/useNow"
+import { ThreadRailLabel } from "./slack/ThreadRailLabel"
 
 interface SlackTabProps {
   path: string
@@ -36,9 +40,6 @@ export function SlackTab({ path }: SlackTabProps) {
   // isn't silently swallowed (the modal closes on submit) and mistaken for success.
   const [saveError, setSaveError] = useState<string | null>(null)
   const [addModalOpen, setAddModalOpen] = useState(false)
-  const [addUrl, setAddUrl] = useState("")
-  const [addError, setAddError] = useState<string | null>(null)
-  const [adding, setAdding] = useState(false)
 
   // Default the selection to the first thread, and keep it valid if the set
   // of threads changes (e.g. a resource is added/removed out from under us).
@@ -58,48 +59,20 @@ export function SlackTab({ path }: SlackTabProps) {
   // keeps hook order stable across the empty/selected states.
   const thread = useThread(tab)
 
-  const closeAddModal = () => {
-    setAddModalOpen(false)
-    setAddUrl("")
-    setAddError(null)
-  }
-
-  const handleAddSubmit = async () => {
-    if (!addUrl.trim()) return
-    setAdding(true)
-    setAddError(null)
-    try {
-      await api.addResource({ path, url: addUrl.trim() })
-      await refetch()
-      closeAddModal()
-    } catch (e) {
-      setAddError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setAdding(false)
-    }
-  }
+  // Per-thread summaries (author/channel, started/active, unread) for the
+  // rail, refreshed on an interval by useTabMetas. `now` drives the relative
+  // timestamps without ticking every second.
+  const railTabs = threads.map(threadRefToTab)
+  const metas = useTabMetas(railTabs)
+  const now = useNow(30_000)
 
   const addModal = (
-    <Modal opened={addModalOpen} onClose={closeAddModal} title="Add Slack thread">
-      <Stack gap="sm">
-        {addError ? (
-          <Alert color="red" variant="light" title="Couldn't add thread" withCloseButton onClose={() => setAddError(null)}>
-            <Text size="sm">{addError}</Text>
-          </Alert>
-        ) : null}
-        <TextInput
-          label="Paste a Slack thread URL"
-          value={addUrl}
-          onChange={(e) => setAddUrl(e.currentTarget.value)}
-          data-autofocus
-        />
-        <Group justify="flex-end">
-          <Button onClick={handleAddSubmit} loading={adding} disabled={!addUrl.trim()}>
-            Add
-          </Button>
-        </Group>
-      </Stack>
-    </Modal>
+    <AddResourceModal
+      opened={addModalOpen}
+      path={path}
+      onClose={() => setAddModalOpen(false)}
+      onAdded={() => void refetch()}
+    />
   )
 
   if (threads.length === 0) {
@@ -141,15 +114,25 @@ export function SlackTab({ path }: SlackTabProps) {
           </ActionIcon>
         </Group>
         <Stack gap={2}>
-          {threads.map((t) => (
-            <NavLink
-              key={t.id}
-              active={t.id === selectedId}
-              label={threadRefToTab(t).name}
-              onClick={() => setSelectedId(t.id)}
-              styles={{ label: { wordBreak: "break-all" } }}
-            />
-          ))}
+          {threads.map((t) => {
+            const railTab = threadRefToTab(t)
+            const hasCustomTitle = railTab.name !== defaultTabName(t.channel, t.threadTs)
+            return (
+              <NavLink
+                key={t.id}
+                active={t.id === selectedId}
+                label={
+                  <ThreadRailLabel
+                    name={railTab.name}
+                    hasCustomTitle={hasCustomTitle}
+                    meta={metas.get(t.id)}
+                    now={now}
+                  />
+                }
+                onClick={() => setSelectedId(t.id)}
+              />
+            )
+          })}
         </Stack>
       </Grid.Col>
       <Grid.Col span={{ base: 12, sm: 8 }}>
