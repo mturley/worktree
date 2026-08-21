@@ -34,10 +34,24 @@ Setup will:
 - Add a shell hook (`chpwd`) that runs `eval "$(worktree env)"` on directory change (zsh, bash, or fish)
 - Install shell completions for `worktree` and `wt` (zsh, bash, fish)
 - Check that `gh` (GitHub CLI) is installed and authenticated
-- Optionally configure Jira integration (host, email, API token, project prefixes)
-- Test the Jira connection if configured
+- Test and repair credentials for **GitHub, Slack, and Jira** — the shared watcher
+  credential flow (`credsetup`) validates each service's credentials in
+  `~/.config/watcher/auth.yaml` and, if a credential is missing or invalid, walks
+  you through configuring and re-validating a new one. Each service is optional
+  (setup asks before configuring one that isn't set up yet).
+- Optionally configure Jira project prefixes (used for issue-key detection),
+  stored in `~/.config/worktree/config.yaml`
 
-On re-runs, setup tests the existing Jira connection and offers to replace the token if it fails.
+On every run (not just the first), setup re-tests the existing GitHub, Slack, and
+Jira credentials and offers to replace any that fail — so an expired token is
+caught early. Credentials live in the shared `~/.config/watcher/auth.yaml`
+(GitHub via `gh`; Slack + Jira written here), not in worktree's own config.
+
+Slack credential setup can extract your browser session token and cookie
+**automatically** — it drives a headed Chromium via Playwright to log in and pull
+the `xoxc-` token + `xoxd-` cookie (a one-time Chromium download cached under
+`~/.cache/worktree`; requires `node`/`npx`). If Node isn't available it falls back
+to a guided manual walkthrough.
 
 Run `worktree setup --uninstall` to reverse setup changes. The config file is preserved (it contains credentials) — setup tells you how to remove it manually.
 
@@ -90,7 +104,7 @@ worktree list                    # List worktrees from the database
 worktree info [path]             # Show worktree info (env vars, resources)
 worktree info --local            # Skip API calls (fast)
 worktree delete [path]           # Remove a worktree and clean up
-worktree cleanup                 # Reconcile disk vs database (remove orphans, stale entries)
+worktree cleanup                 # Interactively reconcile disk vs database (prompts before removing)
 worktree dotfiles [path]         # Copy gitignored dotfiles from main worktree
 worktree ports                   # Show allocated port ranges (database-backed)
 ```
@@ -127,11 +141,25 @@ worktree resources unwatch <type> <id>  # Soft-remove a resource (mark inactive)
 worktree resources remove <type> <id>   # Hard-remove a resource from database
 ```
 
+Resource types are `pr`, `jira`, and `slack`. The `--json` output
+(`[{type,id,url,primary}]`, where `primary = !related`) is a stable contract:
+[agent-handler](https://github.com/mturley/agent-handler) reads it to auto-watch
+a worktree's **primary** resources when a session registers, and propagates its
+own `/watch` back via `worktree resources add`. worktree works fine without
+agent-handler; the integration is best-effort on both sides.
+
 #### Watcher (Timeline Integration)
 
 ```bash
-worktree watcher run [pr|jira|all]  # One-shot poller for timeline events
+worktree watcher run [pr|jira|all]  # One-shot poller for PR/Jira timeline events
 ```
+
+This is a one-shot poll of tracked PR and Jira resources, writing timeline
+events to the database. It exists for manual/scripted refreshes — during normal
+use the `worktree ui` server runs its own background poll loop (every ~2 min,
+plus on-view-if-stale) covering PRs, Jira issues, **and** Slack threads, so you
+rarely need to run this by hand. (Slack is polled by the UI server's loop, not
+by this standalone command.)
 
 #### Admin
 

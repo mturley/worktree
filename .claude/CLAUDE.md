@@ -60,6 +60,21 @@ implement its own polling engine, event schema, or DB layer for external
 resources — it pins a released version of the library (see `go.mod`) and
 calls into it for:
 
+> **IMPORTANT — separate DB, shared SCHEMA only.** worktree has its OWN watcher
+> database (`${XDG_DATA_HOME:-~/.local/share}/worktree/worktree.db`). agent-handler,
+> the library's other consumer, has a DIFFERENT database file
+> (`~/.agent-handler/data/handler.db`). They share only the library's *schema* and
+> code — never rows. worktree's subscriptions (subscriber `worktree:<path>`) and
+> handler's (subscriber `handler:<session>`) live in physically separate SQLite
+> files; there is no shared table, no cross-tool row, no joint query. Do not reason
+> about "the other tool's subscriptions" as if they were in this DB — they are not.
+> The only worktree↔handler interop is at the CLI level (handler shells out to the
+> `worktree` binary; see agent-handler's Phase 5). If you ever think a change here
+> could affect handler's data directly, stop — it can't; the coupling is CLI + schema,
+> not database.
+
+
+
 - the resources DB (`watcher_subscriptions`, via `internal/resources`)
 - the PR/Jira/**Slack** pollers (the in-process poll loop in
   `internal/webui/poller.go` — `worktree ui` has no external scheduler; see
