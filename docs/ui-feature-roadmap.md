@@ -36,6 +36,20 @@ come up; move items to "Done" (or delete) when shipped.
   it — only the first page shows. Add infinite scroll / a load-more control.
   (See `docs/web-ui-architecture.md` "Known deferred items".)
 
+- **Make `enrichEvent` cheaper (one join instead of ~3 queries per event).**
+  `internal/webui/timeline.go`'s `enrichEvent` runs three DB queries for every
+  event it renders: a `watcher_event_resources` lookup for the event's
+  resource, then `resourceTitle` and `worktreesWatching`. A page of N events
+  therefore costs roughly 3N queries.
+  - **To do this:** collapse the per-row lookups into a single join over
+    `watcher_events` + `watcher_event_resources` (+ cached resource state), or
+    batch-prefetch the three pieces keyed by event id and enrich in memory.
+  - The resource-filtered timeline added in the 2026-08-21 UI work already
+    routes *around* this cost (it resolves matching event ids up front and
+    enriches only the events it keeps), but the underlying per-event expense
+    is unchanged. See
+    `docs/superpowers/specs/2026-08-21-worktree-ui-resource-selection-design.md`.
+
 - **Resource cards auto-refresh on SSE.** `useSSE` invalidates `["timeline"]`
   and `["worktrees"]` on `events_new` but not `["resources", path]`, so a
   detail page's resource cards don't refresh on new events without a
