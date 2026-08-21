@@ -1079,10 +1079,27 @@ describe("WorktreeCard", () => {
     expect(screen.getByLabelText("open")).toBeInTheDocument()
   })
 
-  it("navigates to the worktree detail page when the card is clicked", async () => {
+  it("navigates to the worktree detail page when the card body is clicked", async () => {
+    const user = userEvent.setup()
+    wrap(<WorktreeCard w={summary} />)
+    // Deliberately click a NON-link part of the card: the whole card is the
+    // click target, not just the branch name.
+    await user.click(screen.getByText(/odh/))
+    expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/foo")}`)
+  })
+
+  it("navigates when the branch link is activated", async () => {
     const user = userEvent.setup()
     wrap(<WorktreeCard w={summary} />)
     await user.click(screen.getByRole("link", { name: /open worktree my-branch/i }))
+    expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/foo")}`)
+  })
+
+  it("navigates when the focused card is activated with the keyboard", async () => {
+    const user = userEvent.setup()
+    wrap(<WorktreeCard w={summary} />)
+    screen.getByRole("group", { name: /worktree my-branch/i }).focus()
+    await user.keyboard("{Enter}")
     expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/foo")}`)
   })
 
@@ -1097,6 +1114,7 @@ describe("WorktreeCard", () => {
     const user = userEvent.setup()
     wrap(<WorktreeCard w={summary} clickable={false} />)
     await user.click(screen.getByText("my-branch"))
+    await user.click(screen.getByText(/odh/))
     expect(window.location.pathname).toBe("/")
   })
 
@@ -1171,8 +1189,30 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
 
   const go = () => navigate(href)
 
+  // The whole card is the click target (spec: "clicking elsewhere on the card
+  // should navigate to the worktree detail page"), while resource links keep
+  // their own behaviour by stopping propagation. The branch name stays a real
+  // anchor so the destination is announced and middle-click/copy-link work;
+  // the card itself is a focusable group with an Enter/Space handler so the
+  // same action is reachable from the keyboard.
+  const interactive = clickable
+    ? {
+        role: "group",
+        "aria-label": `worktree ${w.branch}`,
+        tabIndex: 0,
+        onClick: go,
+        onKeyDown: (e: React.KeyboardEvent) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault()
+            go()
+          }
+        },
+        style: { cursor: "pointer" },
+      }
+    : {}
+
   return (
-    <Paper p="sm" withBorder>
+    <Paper p="sm" withBorder {...interactive}>
       <Stack gap={6}>
         <Group gap="xs" wrap="wrap">
           {clickable ? (
@@ -1181,6 +1221,8 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
               aria-label={`open worktree ${w.branch}`}
               onClick={(e) => {
                 e.preventDefault()
+                // Stop the card's own handler from also firing (double nav).
+                e.stopPropagation()
                 go()
               }}
               fw={600}
@@ -1436,7 +1478,10 @@ git commit --signoff -m "feat(ui): worktree cards on the home page with a narrow
 - Test: `ui/src/components/ResourceCard.test.tsx` (extend)
 
 **Interfaces:**
-- Consumes: `ResourceStatusIcon` (Task 7).
+- Consumes: nothing new. (`ResourceCard` keeps conveying state through its
+  existing coloured badges; `ResourceStatusIcon` is for the worktree card's
+  focus lines and is deliberately **not** added here — adding a second status
+  indicator to these cards is unrequested scope.)
 - Produces: `<ResourceCard r path onRemoved variant?="compact"|"detail" selected?=boolean onSelect?=() => void />` — used by Tasks 11 and 12.
 
 - [ ] **Step 1: Write the failing test**
@@ -1786,7 +1831,20 @@ vi.mock("../hooks/useWorktreeDetail", () => ({
     timeline: { data: { events: [], next_cursor: "" }, isLoading: false, error: null },
   }),
 }))
-vi.mock("../hooks/useWorktrees", () => ({ useWorktrees: () => ({ data: [] }) }))
+// Return a summary whose path matches the route, so the page can render its
+// WorktreeCard header (spec item 3).
+vi.mock("../hooks/useWorktrees", () => ({
+  useWorktrees: () => ({
+    data: [{
+      path: "/wt/foo", repo: "odh", branch: "foo",
+      on_disk: true, resource_count: 2, primary_count: 2, latest_event_ts: "",
+      primary_by_type: { pr: 1, jira: 1 }, related_count: 0,
+      focus_resources: [
+        { type: "pr", id: "o/r#1", url: "https://gh/pr/1", primary: true, title: "Fix the widget", state: "OPEN" },
+      ],
+    }],
+  }),
+}))
 vi.mock("../hooks/useTimeline", () => ({
   useWorktreeTimeline: () => ({ data: { events: [], next_cursor: "" }, isLoading: false, error: null }),
 }))
@@ -1799,6 +1857,17 @@ const wrap = () => render(<MantineProvider><WorktreeDetailPage /></MantineProvid
 
 beforeEach(() => window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}`))
 afterEach(cleanup)
+
+describe("WorktreeDetailPage header", () => {
+  it("renders the worktree card above the tabs, without card navigation", async () => {
+    setViewport("wide")
+    wrap()
+    // The card's focus-resource line is present...
+    expect(await screen.findByRole("link", { name: /Fix the widget/ })).toBeInTheDocument()
+    // ...but the card is not a navigation target here (clickable={false}).
+    expect(screen.queryByRole("link", { name: /open worktree foo/i })).not.toBeInTheDocument()
+  })
+})
 
 describe("WorktreeDetailPage selection", () => {
   it("selects a resource on click and records it in the URL", async () => {
