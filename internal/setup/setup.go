@@ -9,27 +9,28 @@ import (
 	"strings"
 
 	wconfig "github.com/mturley/watcher/config"
+	"github.com/mturley/watcher/credsetup"
 	"github.com/mturley/worktree/internal/config"
-	"github.com/mturley/worktree/internal/jira"
 	"github.com/mturley/worktree/internal/ui"
 	"gopkg.in/yaml.v3"
 )
 
 type Plan struct {
-	CreateWorktreesBase bool
-	WorktreesBase       string
-	InstallShellRC      bool
-	ShellRC             ShellRC
-	CreateConfig        bool
-	ConfigPath          string
-	InstallCompletions  bool
-	CompletionsExist    bool
-	ConfigureJira       bool
-	TestJira            bool
-	ConfigureSlack      bool
-	GHMissing           bool
-	GHNotAuthenticated  bool
-	Cfg                 config.Config
+	CreateWorktreesBase   bool
+	WorktreesBase         string
+	InstallShellRC        bool
+	ShellRC               ShellRC
+	CreateConfig          bool
+	ConfigPath            string
+	InstallCompletions    bool
+	CompletionsExist      bool
+	ConfigureJiraProjects bool
+	TestGitHubCreds       bool
+	TestSlackCreds        bool
+	TestJiraCreds         bool
+	GHMissing             bool
+	GHNotAuthenticated    bool
+	Cfg                   config.Config
 }
 
 func BuildPlan(cfg config.Config) Plan {
@@ -51,16 +52,15 @@ func BuildPlan(cfg config.Config) Plan {
 		plan.CreateConfig = true
 	}
 	if len(cfg.Jira.Projects) == 0 {
-		plan.ConfigureJira = true
-	} else if cfg.Jira.Token != "" {
-		plan.TestJira = true
+		plan.ConfigureJiraProjects = true
 	}
 
-	if wcfg, err := wconfig.Load(wconfig.DefaultPath()); err != nil {
-		plan.ConfigureSlack = true
-	} else if _, err := wcfg.Slack(); err != nil {
-		plan.ConfigureSlack = true
-	}
+	// GitHub, Slack, and Jira credentials are tested (and repaired if
+	// needed) via the shared credsetup.TestAndRepair flow every run, even
+	// when already configured — see Plan.Execute.
+	plan.TestGitHubCreds = true
+	plan.TestSlackCreds = true
+	plan.TestJiraCreds = true
 
 	if _, err := exec.LookPath("gh"); err != nil {
 		plan.GHMissing = true
@@ -105,12 +105,12 @@ func (p Plan) Preview() {
 		}
 		fmt.Printf("  %s Config: %s\n", ui.Green("✓"), ui.ShortPath(p.ConfigPath))
 	}
-	if !p.ConfigureJira && !p.TestJira && len(p.Cfg.Jira.Projects) > 0 {
+	if !p.ConfigureJiraProjects && len(p.Cfg.Jira.Projects) > 0 {
 		if !hasExisting {
 			fmt.Println(ui.Dim("Already set up:"))
 			hasExisting = true
 		}
-		fmt.Printf("  %s Jira: %s\n", ui.Green("✓"), p.Cfg.Jira.Host)
+		fmt.Printf("  %s Jira projects: %s\n", ui.Green("✓"), strings.Join(p.Cfg.Jira.Projects, ", "))
 	}
 	if !p.GHMissing && !p.GHNotAuthenticated {
 		if !hasExisting {
@@ -143,14 +143,17 @@ func (p Plan) Preview() {
 			fmt.Println("  • Install shell completions (worktree + wt)")
 		}
 	}
-	if p.ConfigureJira {
-		fmt.Println("  • Configure Jira integration (optional)")
+	if p.TestGitHubCreds {
+		fmt.Println("  • Test GitHub credentials")
 	}
-	if p.TestJira {
-		fmt.Println("  • Test Jira connection")
+	if p.TestSlackCreds {
+		fmt.Println("  • Test Slack credentials")
 	}
-	if p.ConfigureSlack {
-		fmt.Println("  • Configure Slack (token + cookie) → ~/.config/watcher/auth.yaml")
+	if p.TestJiraCreds {
+		fmt.Println("  • Test Jira credentials")
+	}
+	if p.ConfigureJiraProjects {
+		fmt.Println("  • Configure Jira project prefixes (optional)")
 	}
 	if p.GHMissing {
 		fmt.Printf("\n  %s GitHub CLI (gh) is not installed. PR features will be unavailable.\n", ui.Yellow("!"))
@@ -165,7 +168,7 @@ func (p Plan) Preview() {
 }
 
 func (p Plan) HasWork() bool {
-	return p.CreateWorktreesBase || p.InstallShellRC || p.CreateConfig || p.InstallCompletions || p.ConfigureJira || p.TestJira || p.ConfigureSlack
+	return p.CreateWorktreesBase || p.InstallShellRC || p.CreateConfig || p.InstallCompletions || p.ConfigureJiraProjects || p.TestGitHubCreds || p.TestSlackCreds || p.TestJiraCreds
 }
 
 func (p Plan) Execute() error {
@@ -193,62 +196,68 @@ func (p Plan) Execute() error {
 		installAllCompletions()
 	}
 
-	if p.ConfigureJira {
-		if err := promptAndSaveJira(p.ConfigPath, p.Cfg); err != nil {
-			return fmt.Errorf("configuring Jira: %w", err)
+	if p.TestGitHubCreds || p.TestSlackCreds || p.TestJiraCreds {
+		if err := testAndRepairSharedCreds(p.TestGitHubCreds, p.TestSlackCreds, p.TestJiraCreds); err != nil {
+			fmt.Printf("  %s Credential setup failed: %v\n", ui.Yellow("!"), err)
 		}
 	}
 
-	if p.TestJira {
-		if err := testAndRepairJira(p.ConfigPath, p.Cfg); err != nil {
-			return fmt.Errorf("testing Jira: %w", err)
-		}
-	}
-
-	if p.ConfigureSlack {
-		if err := promptAndSaveSlack(); err != nil {
-			fmt.Printf("  %s Slack setup failed: %v\n", ui.Yellow("!"), err)
+	if p.ConfigureJiraProjects {
+		if err := promptAndSaveJiraProjects(p.ConfigPath, p.Cfg); err != nil {
+			return fmt.Errorf("configuring Jira projects: %w", err)
 		}
 	}
 
 	return nil
 }
 
-func testAndRepairJira(configPath string, cfg config.Config) error {
-	fmt.Print("  Testing Jira connection... ")
-	testCfg := config.JiraConfig{Host: cfg.Jira.Host, Email: cfg.Jira.Email, Token: cfg.Jira.Token}
-	if err := testJiraConnection(testCfg); err == nil {
-		fmt.Printf("%s\n", ui.Green("ok"))
-		return nil
-	} else {
-		fmt.Printf("%s\n", ui.Red("failed"))
-		fmt.Printf("    %v\n", err)
+// testAndRepairSharedCreds runs the shared watcher credsetup.TestAndRepair
+// flow for GitHub, Slack, and/or Jira, loading and (if anything changed)
+// saving the watcher config exactly once. Jira credentials (host, email,
+// token) live in the watcher config (wcfg.Services.Jira) — worktree's own
+// config.yaml only keeps Jira project prefixes (config.JiraConfig.Projects),
+// which have no watcher equivalent and are handled separately by
+// promptAndSaveJiraProjects.
+func testAndRepairSharedCreds(testGitHub, testSlack, testJira bool) error {
+	wcfg, err := wconfig.Load(wconfig.DefaultPath())
+	if err != nil {
+		return fmt.Errorf("loading watcher config: %w", err)
 	}
 
-	if !ui.Confirm("  Replace the Jira API token?") {
-		return nil
+	var prompter Prompter
+	changed := false
+
+	if testGitHub {
+		c, err := credsetup.TestAndRepair(wcfg, credsetup.GitHub, prompter)
+		if err != nil {
+			fmt.Printf("  %s GitHub credential test failed: %v\n", ui.Yellow("!"), err)
+		}
+		changed = changed || c
 	}
 
-	fmt.Printf("  Create a token at: %s\n", ui.Bold("https://id.atlassian.com/manage-profile/security/api-tokens"))
-	token := ui.PromptSecret("  New Jira API token")
-	if token == "" {
-		return nil
+	if testSlack {
+		c, err := credsetup.TestAndRepair(wcfg, credsetup.Slack, prompter)
+		if err != nil {
+			fmt.Printf("  %s Slack credential test failed: %v\n", ui.Yellow("!"), err)
+		}
+		changed = changed || c
 	}
 
-	testCfg.Token = token
-	fmt.Print("  Testing new token... ")
-	if err := testJiraConnection(testCfg); err != nil {
-		fmt.Printf("%s\n", ui.Red("failed"))
-		fmt.Printf("    %v\n", err)
-		return nil
+	if testJira {
+		c, err := credsetup.TestAndRepair(wcfg, credsetup.Jira, prompter)
+		if err != nil {
+			fmt.Printf("  %s Jira credential test failed: %v\n", ui.Yellow("!"), err)
+		}
+		changed = changed || c
 	}
-	fmt.Printf("%s\n", ui.Green("ok"))
 
-	cfg.Jira.Token = token
-	if err := writeConfig(configPath, cfg); err != nil {
-		return err
+	if changed {
+		if err := wcfg.Save(wconfig.DefaultPath()); err != nil {
+			return fmt.Errorf("saving watcher config: %w", err)
+		}
+		fmt.Printf("  %s Updated %s\n", ui.Green("✓"), ui.ShortPath(wconfig.DefaultPath()))
 	}
-	fmt.Printf("  %s Updated %s\n", ui.Green("✓"), ui.ShortPath(configPath))
+
 	return nil
 }
 
@@ -266,30 +275,17 @@ func promptAndSaveConfig(configPath string, cfg config.Config) error {
 	return nil
 }
 
-func promptAndSaveJira(configPath string, cfg config.Config) error {
+// promptAndSaveJiraProjects prompts for the Jira project prefixes that
+// drive worktree's own branch/PR project detection (jira.DetectKeys) and
+// persists them to worktree's config.yaml. Jira credentials (host, email,
+// token) are handled separately via testAndRepairSharedCreds — this step
+// is worktree-local and independent of whether Jira credentials are
+// configured.
+func promptAndSaveJiraProjects(configPath string, cfg config.Config) error {
 	fmt.Println()
-	fmt.Println(ui.Bold("Jira integration (optional — press Enter to skip):"))
+	fmt.Println(ui.Bold("Jira project prefixes (optional — press Enter to skip):"))
 
-	host := ui.PromptLineDefault("  Jira host (e.g. your-org.atlassian.net)", cfg.Jira.Host)
-	if host == "" {
-		fmt.Printf("  %s Skipped Jira configuration\n", ui.Dim("—"))
-		return nil
-	}
-
-	email := ui.PromptLineDefault("  Jira email", cfg.Jira.Email)
-	fmt.Printf("  Create a token at: %s\n", ui.Bold("https://id.atlassian.com/manage-profile/security/api-tokens"))
-	var token string
-	if cfg.Jira.Token != "" {
-		newToken := ui.PromptSecret("  Jira API token (Enter to keep existing)")
-		if newToken != "" {
-			token = newToken
-		} else {
-			token = cfg.Jira.Token
-		}
-	} else {
-		token = ui.PromptSecret("  Jira API token")
-	}
-	projectsStr := ui.PromptLine("  Jira project prefixes (comma-separated, e.g. MYPROJ,OTHER)")
+	projectsStr := ui.PromptLineDefault("  Jira project prefixes (comma-separated, e.g. MYPROJ,OTHER)", strings.Join(cfg.Jira.Projects, ","))
 
 	var projects []string
 	for _, p := range strings.Split(projectsStr, ",") {
@@ -299,34 +295,16 @@ func promptAndSaveJira(configPath string, cfg config.Config) error {
 		}
 	}
 
-	if token != "" {
-		fmt.Print("  Testing Jira connection... ")
-		testCfg := config.JiraConfig{Host: host, Email: email, Token: token}
-		if err := testJiraConnection(testCfg); err != nil {
-			fmt.Printf("%s\n", ui.Red("failed"))
-			fmt.Printf("    %v\n", err)
-			if !ui.Confirm("  Save anyway?") {
-				return nil
-			}
-		} else {
-			fmt.Printf("%s\n", ui.Green("ok"))
-		}
-	}
-
 	if len(projects) == 0 {
-		fmt.Printf("  %s No projects configured — Jira detection will be disabled\n", ui.Yellow("!"))
+		fmt.Printf("  %s No projects configured — Jira issue detection will be disabled\n", ui.Dim("—"))
 		return nil
 	}
 
-	cfg.Jira.Host = host
-	cfg.Jira.Email = email
-	cfg.Jira.Token = token
 	cfg.Jira.Projects = projects
-
 	if err := writeConfig(configPath, cfg); err != nil {
 		return err
 	}
-	fmt.Printf("  %s Configured Jira: %s (%s)\n", ui.Green("✓"), host, strings.Join(projects, ", "))
+	fmt.Printf("  %s Configured Jira projects: %s\n", ui.Green("✓"), strings.Join(projects, ", "))
 	fmt.Printf("  %s Updated %s\n", ui.Green("✓"), ui.ShortPath(configPath))
 	return nil
 }
@@ -398,9 +376,6 @@ func writeConfig(path string, cfg config.Config) error {
 	home, _ := os.UserHomeDir()
 
 	type jiraYaml struct {
-		Host     string   `yaml:"host,omitempty"`
-		Email    string   `yaml:"email,omitempty"`
-		Token    string   `yaml:"token,omitempty"`
 		Projects []string `yaml:"projects,omitempty"`
 	}
 
@@ -415,11 +390,8 @@ func writeConfig(path string, cfg config.Config) error {
 		Editor:        cfg.Editor,
 	}
 
-	if cfg.Jira.Host != "" {
+	if len(cfg.Jira.Projects) > 0 {
 		yc.Jira = jiraYaml{
-			Host:     cfg.Jira.Host,
-			Email:    cfg.Jira.Email,
-			Token:    cfg.Jira.Token,
 			Projects: cfg.Jira.Projects,
 		}
 	}
@@ -536,12 +508,4 @@ func removeAllCompletions() {
 			}
 		}
 	}
-}
-
-func testJiraConnection(cfg config.JiraConfig) error {
-	client, err := jira.NewClient(cfg)
-	if err != nil {
-		return err
-	}
-	return client.TestConnection()
 }

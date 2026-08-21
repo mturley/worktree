@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	wconfig "github.com/mturley/watcher/config"
 	"github.com/mturley/worktree/internal/cmux"
 	"github.com/mturley/worktree/internal/config"
 	wdb "github.com/mturley/worktree/internal/db"
@@ -198,7 +199,7 @@ func handleJiraIssue(key, url string) error {
 	}
 
 	if url == "" {
-		url = jira.IssueURL(cfg.Jira.Host, key)
+		url = jira.IssueURL(jiraHostFromWatcherConfig(), key)
 	}
 
 	return finalizeWorktree(cfg, result, repoRoot, &resources.Resource{
@@ -340,6 +341,23 @@ func shortSHA(sha string) string {
 	return sha
 }
 
+// jiraHostFromWatcherConfig returns the Jira host configured in the shared
+// watcher auth.yaml (wcfg.Services.Jira), or "" if Jira isn't configured
+// there. worktree's own config.yaml no longer stores Jira credentials —
+// only Projects (see internal/config.JiraConfig) — so building a Jira issue
+// URL requires reading the host from the watcher config.
+func jiraHostFromWatcherConfig() string {
+	wcfg, err := wconfig.Load(wconfig.DefaultPath())
+	if err != nil {
+		return ""
+	}
+	creds, err := wcfg.Jira()
+	if err != nil {
+		return ""
+	}
+	return creds.Host
+}
+
 func detectAndSaveJiraIssues(conn *sql.DB, cfg config.Config, result gitutil.CreateResult, pr *github.PRInfo) {
 	var prTitle, prBody string
 	if pr != nil {
@@ -356,11 +374,12 @@ func detectAndSaveJiraIssues(conn *sql.DB, cfg config.Config, result gitutil.Cre
 	}
 
 	keys := jira.DetectKeys(result.Branch, prTitle, prBody, cfg.Jira.Projects)
+	host := jiraHostFromWatcherConfig()
 	for _, key := range keys {
 		if existingKeys[key] {
 			continue
 		}
-		url := jira.IssueURL(cfg.Jira.Host, key)
+		url := jira.IssueURL(host, key)
 		r := resources.Resource{Type: "jira", ID: key, URL: url}
 		if err := resources.Add(conn, result.Path, r); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to save Jira resource %s: %v\n", key, err)

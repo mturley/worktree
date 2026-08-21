@@ -15,10 +15,12 @@ type Config struct {
 	Editor        string     `yaml:"editor"`
 }
 
+// JiraConfig holds worktree-only Jira settings. Credentials (host, email,
+// API token) live in the shared watcher auth.yaml (wcfg.Services.Jira,
+// via credsetup) — see internal/setup/setup.go. Projects has no watcher
+// equivalent (it drives worktree's own branch/PR project-prefix detection
+// in jira.DetectKeys) and stays here.
 type JiraConfig struct {
-	Host     string   `yaml:"host"`
-	Email    string   `yaml:"email"`
-	Token    string   `yaml:"token"`
 	Projects []string `yaml:"projects"`
 }
 

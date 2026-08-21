@@ -2,13 +2,8 @@
 package setup
 
 import (
-	"context"
-	"errors"
 	"fmt"
-	"time"
 
-	wconfig "github.com/mturley/watcher/config"
-	"github.com/mturley/watcher/slack"
 	"github.com/mturley/worktree/internal/ui"
 )
 
@@ -55,103 +50,44 @@ These are session credentials tied to your browser login and typically expire
 after a week or two. When requests start failing with an auth error, just run
 "worktree setup" again to store fresh values.`
 
-// domainDeriver validates the token/cookie AND resolves the workspace's web
-// host (for building "Open in Slack" permalinks) via team.info. It is a
-// package var so tests can substitute a fake. It returns a wrapped
-// slack.ErrAuth if the credentials are rejected, or another error on
-// transport failure.
-var domainDeriver = func(token, cookie string) (domain string, err error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	return slack.New(token, cookie).TeamInfo(ctx)
-}
-
-// writeSlackCreds mutates cfg so that token, cookie, and domain land under
-// Services.Slack, creating the block if it doesn't already exist. It is the
-// pure, unit-tested core of the Slack credential-acquisition flow; the
-// interactive parts (extraction, prompts, validation) live in
-// promptAndSaveSlack.
-func writeSlackCreds(cfg *wconfig.Config, token, cookie, domain string) {
-	if cfg.Services.Slack == nil {
-		cfg.Services.Slack = &wconfig.SlackConfig{}
-	}
-	cfg.Services.Slack.Token = token
-	cfg.Services.Slack.Cookie = cookie
-	cfg.Services.Slack.WorkspaceDomain = domain
-}
-
-// promptAndSaveSlack acquires Slack credentials (token + cookie), either
+// acquireSlackCreds acquires Slack credentials (token + cookie), either
 // automatically via a headed-browser extraction (when interactive and
-// node/npx are available) or via manual devtools instructions + prompts,
-// then validates them and resolves the workspace domain via team.info, and
-// finally writes them into the shared watcher auth.yaml. Ported from
-// slack-mini's internal/cli/setup.go credential flow, adapted to write to
-// watcher's config instead of slack-mini's own.
-func promptAndSaveSlack() error {
+// node/npx are available) or via manual devtools instructions + prompts. It
+// performs no validation of the credentials and saves nothing — that is the
+// responsibility of the caller (credsetup.TestAndRepair, via
+// Prompter.PromptSlack, which validates and persists on success). Returning
+// ("", "", nil) means the user chose to skip Slack configuration. Ported
+// from slack-mini's internal/cli/setup.go credential-acquisition step.
+func acquireSlackCreds() (token, cookie string, err error) {
 	fmt.Println()
 	fmt.Println(ui.Bold("Slack integration (optional — press Enter to skip):"))
 
-	var token, cookie string
-	gotAutoCreds := false
-
 	if autoExtractAvailable() {
 		if ui.ConfirmDefault("  Set up automatically by opening a browser to log into Slack? First run downloads Playwright + Chromium (~150MB, cached).", true) {
-			t, c, err := autoExtractor()
-			if err != nil {
-				fmt.Printf("  Automatic setup didn't complete (%v); falling back to manual.\n", err)
+			t, c, extractErr := autoExtractor()
+			if extractErr != nil {
+				fmt.Printf("  Automatic setup didn't complete (%v); falling back to manual.\n", extractErr)
 			} else {
-				token, cookie = t, c
-				gotAutoCreds = true
+				return t, c, nil
 			}
 		}
 	} else {
 		fmt.Println("  Automatic setup needs Node.js (node + npx) installed; falling back to manual.")
 	}
 
-	if !gotAutoCreds {
-		fmt.Println()
-		fmt.Println(tokenInstructions)
-		fmt.Println()
+	fmt.Println()
+	fmt.Println(tokenInstructions)
+	fmt.Println()
 
-		token = ui.PromptLine("  Slack token (xoxc-...)")
-		if token == "" {
-			fmt.Printf("  %s Skipped Slack configuration\n", ui.Dim("—"))
-			return nil
-		}
-		cookie = ui.PromptSecret("  Slack cookie (d value, xoxd-...)")
-		if cookie == "" {
-			fmt.Printf("  %s Skipped Slack configuration\n", ui.Dim("—"))
-			return nil
-		}
+	token = ui.PromptLine("  Slack token (xoxc-...)")
+	if token == "" {
+		fmt.Printf("  %s Skipped Slack configuration\n", ui.Dim("—"))
+		return "", "", nil
 	}
-
-	// Derive the workspace domain automatically from the credentials (via
-	// team.info) rather than asking the user: the workspace-specific host is
-	// not visible in the Slack web UI (which shows app.slack.com for
-	// everyone). This call also validates the token.
-	fmt.Print("  Verifying credentials and detecting your workspace... ")
-	domain, err := domainDeriver(token, cookie)
-	if err != nil {
-		fmt.Printf("%s\n", ui.Red("failed"))
-		if errors.Is(err, slack.ErrAuth) {
-			fmt.Printf("    Slack rejected these credentials (check the token and cookie and try again): %v\n", err)
-		} else {
-			fmt.Printf("    could not verify credentials with Slack: %v\n", err)
-		}
-		return nil
+	cookie = ui.PromptSecret("  Slack cookie (d value, xoxd-...)")
+	if cookie == "" {
+		fmt.Printf("  %s Skipped Slack configuration\n", ui.Dim("—"))
+		return "", "", nil
 	}
-	fmt.Printf("%s (%s)\n", ui.Green("ok"), domain)
-
-	cfg, err := wconfig.Load(wconfig.DefaultPath())
-	if err != nil {
-		return fmt.Errorf("loading watcher config: %w", err)
-	}
-	writeSlackCreds(cfg, token, cookie, domain)
-	if err := cfg.Save(wconfig.DefaultPath()); err != nil {
-		return fmt.Errorf("saving watcher config: %w", err)
-	}
-
-	fmt.Printf("  %s Configured Slack: %s\n", ui.Green("✓"), domain)
-	fmt.Printf("  %s Updated %s\n", ui.Green("✓"), ui.ShortPath(wconfig.DefaultPath()))
-	return nil
+	return token, cookie, nil
 }
