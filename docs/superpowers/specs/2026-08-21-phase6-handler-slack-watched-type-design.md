@@ -94,17 +94,23 @@ So Phase 6 is a focused set of seam edits + one small URL-builder + tests.
   scope comment ~lines 67-70, and the `defaultIntervals` comment).
 
 ### `config/config.go`
+> **Recon correction:** handler's `config.Config` (legacy
+> `~/.agent-handler/config.yaml`) has NO Slack field — its `Services` is
+> `{GitHub, Jira}` only. Slack config lives in the shared `auth.yaml` (`wcfg`).
+> So the slack URL is sourced from `wcfg`, and `IsServiceConfigured` is left
+> unchanged (the real "configured for watching?" check,
+> `ServiceConfiguredForWatching("slack")`, already handles slack via `wcfg`).
+
 - `ResourceTypeToService`: add `case "slack": return "slack"`.
-- `IsServiceConfigured`: add
-  `case "slack": return c.Services.Slack != nil && c.Services.Slack.Token != ""`.
-  (The auth.yaml-based `config/service_configured.go` already handles slack.)
-- `DefaultResourceURL`: add `case "slack": return slackResourceURL(c, resourceID)`.
-- New helper `slackResourceURL(c *Config, resourceID string) string`:
-  - split `resourceID` on the first `:` → `channel`, `ts`; if malformed
-    (no colon / empty parts) → `""`.
-  - `domain := c.Services.Slack.WorkspaceDomain` (guard nil Slack → `""`);
-    strip any leading scheme and trailing slash so we always have a bare host.
-  - `tsDigits := strings.ReplaceAll(ts, ".", "")`.
+- `DefaultResourceURL`: add `case "slack": return slackResourceURL(resourceID)`.
+- **Do NOT change `IsServiceConfigured`** (legacy; no Slack field).
+- New helper `slackResourceURL(resourceID string) string`:
+  - split `resourceID` on the first `:` → `channel`, `ts`; malformed → `""`.
+  - load WorkspaceDomain from the shared auth.yaml:
+    `wcfg.Load(wcfg.DefaultPath()).Slack()`; on error or empty domain → `""`.
+    (`config/service_configured.go` already imports `wcfg` — no cycle.)
+  - strip any scheme + trailing slash from the domain; `tsDigits :=
+    strings.ReplaceAll(ts, ".", "")`.
   - return `"https://" + domain + "/archives/" + channel + "/p" + tsDigits`.
 
 ### Registration / auto-subscribe
@@ -114,17 +120,18 @@ So Phase 6 is a focused set of seam edits + one small URL-builder + tests.
 
 ## Testing
 
-- **`config/config_test.go`** (extend the existing `TestDefaultResourceURL` +
-  add small tests):
+- **`config/config_test.go`** (add tests; seed the shared auth.yaml by pointing
+  `WATCHER_HOME` at a temp dir and `wcfg.Config.Save`-ing a Slack section — the
+  `isolateHomes` pattern):
   - `DefaultResourceURL("slack", "C0123ABCD:1699999999.000100")` with
     `WorkspaceDomain: "myteam.slack.com"` →
     `"https://myteam.slack.com/archives/C0123ABCD/p1699999999000100"`.
-  - `WorkspaceDomain` unset → `""`.
+  - `WorkspaceDomain` unset (empty auth.yaml) → `""`.
   - `WorkspaceDomain` stored as `"https://myteam.slack.com/"` → same correct
     URL (scheme/slash tolerated).
   - malformed id (`"nocolon"`) → `""`.
-  - `ResourceTypeToService("slack") == "slack"` and
-    `IsServiceConfigured` true/false for slack.
+  - `ResourceTypeToService("slack") == "slack"`.
+  (No `IsServiceConfigured` slack test — that method is legacy and unchanged.)
 - **`cmd/watcher`**: `knownWatchers` includes `"slack"` and
   `serviceToResourceType("slack") == "slack"`. (`cmd/watcher` has no existing
   test file; add a minimal one for these pure functions. The `run.go` poll
