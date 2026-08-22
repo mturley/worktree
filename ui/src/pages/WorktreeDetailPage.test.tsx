@@ -24,7 +24,7 @@ vi.mock("../hooks/useWorktrees", () => ({
       on_disk: true, resource_count: 2, primary_count: 2, latest_event_ts: "",
       primary_by_type: { pr: 1, jira: 1 }, related_count: 0,
       focus_resources: [
-        { type: "pr", id: "o/r#1", url: "https://gh/pr/1", primary: true, title: "Fix the widget", state: "OPEN" },
+        { type: "pr", id: "o/r#1", url: "https://gh/pr/1", primary: true, title: "Card header PR", state: "OPEN" },
       ],
     }],
   }),
@@ -46,11 +46,10 @@ describe("WorktreeDetailPage header", () => {
   it("renders the worktree card above the tabs, without card navigation", async () => {
     setViewport("wide")
     wrap()
-    // The card's focus-resource line is present. (The same resource also
-    // appears as a card in the always-visible wide resource list, so there
-    // are two matching links — the fixture intentionally reuses one resource
-    // in both places.)
-    expect((await screen.findAllByRole("link", { name: /Fix the widget/ })).length).toBeGreaterThanOrEqual(1)
+    // The card's focus-resource line is present. Its title is distinct from
+    // anything in the resource list, so this can only be satisfied by the
+    // WorktreeCard header actually rendering.
+    expect(await screen.findByRole("link", { name: /Card header PR/ })).toBeInTheDocument()
     // ...but the card is not a navigation target here (clickable={false}).
     expect(screen.queryByRole("link", { name: /open worktree foo/i })).not.toBeInTheDocument()
   })
@@ -95,6 +94,17 @@ describe("WorktreeDetailPage selection", () => {
     window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?resource=pr:gone%23999`)
     setViewport("wide")
     wrap()
+    await waitFor(() => expect(window.location.search).not.toContain("resource="))
+  })
+
+  it("deselects and clears ?resource= when the selected resource is clicked again", async () => {
+    setViewport("wide")
+    const user = userEvent.setup()
+    wrap()
+    const card = screen.getByRole("button", { name: /select resource o\/r#1/i })
+    await user.click(card)
+    await waitFor(() => expect(window.location.search).toContain("resource=pr%3A"))
+    await user.click(card)
     await waitFor(() => expect(window.location.search).not.toContain("resource="))
   })
 })
