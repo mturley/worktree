@@ -16,6 +16,43 @@ come up; move items to "Done" (or delete) when shipped.
   now shows per-thread metadata (author/channel, started/active timestamps,
   unread dot, first-message-preview fallback for untitled threads) via the
   `useTabMetas` hook, re-ported from the removed slack-mini `TabBar`.
+- **Worktree cards with focus-resource lines** — `worktreeSummary` gained
+  `focus_resources` (enriched primary resources), and a shared `WorktreeCard`
+  component (used by both the home page's worktree list and the worktree
+  detail page's header) renders a status icon + title/link per focus
+  resource instead of bare counts. See `docs/web-ui-architecture.md`
+  "Responsive resource selection".
+- **Responsive tab bar (home page)** — `HomePage` now renders the worktree
+  list and global timeline side by side on wide viewports, or as a
+  "Worktrees"/"Timeline" `Tabs` pair on narrow ones, via the new
+  `useIsWide()` hook (a single shared `(min-width: 48em)` predicate — see
+  `docs/web-ui-architecture.md`).
+- **Resource selection + filtered timeline** — clicking a resource card (on
+  either the home page's worktree cards or the detail page's `ResourceList`)
+  selects it via `useSelectedResource()`, stored in the URL as
+  `?resource=<type>:<id>` (`GET /api/worktree-timeline` gained
+  `resource_type`/`resource_id` filter params to match). The selected
+  resource's `ResourceDetailPane` shows a fuller card plus an activity feed
+  filtered to just that resource.
+- **Responsive drilldown** — on narrow viewports, selecting a resource on
+  the worktree detail page swaps the resource list for a full-width
+  `ResourceDetailPane` drilldown with a back control, instead of showing
+  both panes at once; the same `useSelectedResource()` state drives both the
+  wide (side-by-side, highlighted card) and narrow (drilldown) presentations,
+  so resizing mid-selection only changes layout, not what's selected.
+
+## Phase B (planned, not yet built)
+
+- **Slack restructure inside `ResourceDetailPane`.** `ResourceDetailPane`
+  (`ui/src/components/ResourceDetailPane.tsx`) was deliberately built as a
+  swappable slot: Phase B adds a `resource.type === "slack"` branch there
+  that renders the Slack thread view (currently only reachable via the
+  separate "Slack" tab) in place of the filtered timeline, so selecting a
+  Slack resource from the Overview tab shows the thread directly. The
+  surrounding responsive shell, selection state (`useSelectedResource`), and
+  back control are already in place and should not need to change. See
+  `docs/superpowers/specs/2026-08-21-worktree-ui-resource-selection-design.md`
+  for the full design context.
 
 ## Deferred
 

@@ -87,7 +87,7 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 |---|---|---|---|
 | GET | `/api/worktrees` | — | `[]worktreeSummary` |
 | GET | `/api/timeline` | `archived` (`"true"`/else false), `limit` (1-500, default 100), `before` (RFC3339 ts, exclusive upper bound) | `timelineResponse` |
-| GET | `/api/worktree-timeline` | `path` (required, worktree path), `limit` | `timelineResponse` |
+| GET | `/api/worktree-timeline` | `path` (required, worktree path), `limit`, `resource_type` + `resource_id` (optional, filters to one resource's events; must be supplied together or the request 400s) | `timelineResponse` |
 | GET | `/api/worktree-resources` | `path` (required) | `[]resourceDTO` |
 | POST | `/api/worktrees/poll` | `path` (required) | `{"polled": bool}` |
 | POST | `/api/resource-meta` | body: `{type, id, name, description}` | — |
@@ -107,7 +107,17 @@ primary_count   int              // count where !res.Related
 primary_by_type map[string]int   // e.g. {"pr": 2, "jira": 3} — primary only
 related_count   int
 latest_event_ts string           // "" if no events; from latestEventTSForSubscriber
+focus_resources []resourceDTO   // primary resources, enriched; always [] never null
 ```
+
+`focus_resources` lets the home page (and the shared `WorktreeCard`, see
+"Frontend structure" below) show each worktree's focus resources — status
+icon, title, link — without a second round-trip per worktree. It's built the
+same way `handleWorktreeResources` builds a single worktree's resource list
+(same enrichment from cached `watcher_resource_state`), filtered to
+`!res.Related`, and attached inline on `worktreeSummary`. It is explicitly
+initialized to an empty slice rather than left nil, so it always serializes
+as `[]` — the frontend can iterate it directly with no null-guard.
 
 ### `TimelineEvent` / `timelineResponse` (timeline.go)
 
@@ -314,29 +324,73 @@ single in-process loop for as long as the server is up:
   `api.removeResource`.
 - **Hooks** (`ui/src/hooks/`):
   - `useWorktrees()` — `useQuery(["worktrees"], api.worktrees)`.
-  - `useGlobalTimeline(archived)` / `useWorktreeTimeline(path)`
+  - `useGlobalTimeline(archived)` / `useWorktreeTimeline(path, resource?)`
     (`useTimeline.ts`) — query keys `["timeline","global",archived]` /
-    `["timeline","worktree",path]`.
+    `["timeline","worktree",path,key]`, where `key` is `""` for the
+    unfiltered timeline or `"<type>:<id>"` when a `resource` (`{type, id}`)
+    is passed. Including the resource in the query key means switching the
+    selection is a normal cache-keyed fetch, and switching back to
+    unfiltered is a cache hit rather than a refetch. `resource` is passed
+    straight through to `api.worktreeTimeline` as the
+    `resource_type`/`resource_id` query params (see the HTTP API table).
   - `useWorktreeDetail(path)` — fires `api.pollWorktree(path)` on mount
     (poll-on-view), and if the response says `polled: true`, invalidates
     `["timeline","worktree",path]` and `["resources",path]`; also runs
     `useQuery(["resources",path], api.worktreeResources)` and reuses
-    `useWorktreeTimeline(path)`.
+    `useWorktreeTimeline(path)` (unfiltered — resource filtering happens
+    separately, in `ResourceDetailPane`).
   - `useSSE()` — connects to `/api/stream`; on `events_new`, invalidates the
     `["timeline"]` and `["worktrees"]` query key prefixes so React Query
     refetches. Auto-reconnects (3s backoff) on error. This is a pure
     invalidation signal — it carries no event payload itself.
+  - `useIsWide()` (`useIsWide.ts`) — **the single responsive breakpoint
+    predicate for the whole app.** Wraps Mantine's `useMediaQuery` at
+    `(min-width: 48em)` (Mantine's `sm`, matching the existing `Grid` `sm`
+    breakpoints) with `getInitialValueInEffect: false` so the first render
+    already reads `matchMedia` instead of guessing narrow-then-flipping.
+    Every layout that needs to branch on viewport width (currently
+    `HomePage` and `WorktreeDetailPage`) calls this rather than its own
+    `useMediaQuery`, so all of them flip at the same width, and tests have
+    exactly one thing to control (`testing/viewport.ts`'s `setViewport`,
+    see "Testing note" below) instead of one `matchMedia` mock per
+    component.
+  - `useSelectedResource()` (`useSelectedResource.ts`) — the selected
+    resource, stored in the URL as `?resource=<type>:<id>` rather than
+    component state. Returns `{ selected, select, clear, toggle }`, where
+    `selected: ResourceKey | null` (`ResourceKey = { type, id }`,
+    `lib/resourceKey.ts`). Keeping selection in the URL makes it
+    deep-linkable, survives a refresh, and is undoable via the browser back
+    button; it is also the single source of truth shared by the
+    wide-viewport highlighted card and the narrow-viewport drilldown (see
+    below), so resizing the window swaps *presentation* without disturbing
+    *what* is selected. `serializeResourceKey`/`parseResourceKey`
+    (`lib/resourceKey.ts`) do the encode/decode: the id is
+    percent-encoded, and parsing splits on the **first** colon only,
+    because a Slack resource id is itself `channel:threadTs` — everything
+    after the first colon belongs to the id. A malformed or stale
+    `?resource=` value degrades to "nothing selected" rather than
+    throwing.
 - **Pages** (`ui/src/pages/`):
-  - `HomePage.tsx` — worktree list (left) + global timeline + archived
-    toggle (right).
+  - `HomePage.tsx` — worktree list + global timeline + archived toggle. On
+    wide viewports these render side by side in a `Grid`; on narrow
+    viewports (per `useIsWide()`) they render as a `Tabs` ("Worktrees" /
+    "Timeline") instead, since the two panes stacked vertically would push
+    the worktree list far off-screen.
   - `WorktreeDetailPage.tsx` — resolves the path from the wouter route,
-    renders `ResourceList` (Focus/Related sections) + scoped `TimelineFeed`.
+    renders the shared `WorktreeCard` (see below) as a page header, an
+    "Overview"/"Slack" `Tabs`, and inside "Overview": `ResourceList`
+    (Focus/Related sections, selection-aware) plus either the scoped
+    `TimelineFeed` or a `ResourceDetailPane` for the selected resource — see
+    "Responsive resource selection" below for exactly how those combine.
 - **Components** (`ui/src/components/`): `WorktreeList`, `TimelineFeed`,
   `EventRow`, `ArchivedToggle`, `ResourceList` (splits into Focus/Related by
-  `r.primary`), `ResourceCard` (see "Rich resource cards" below).
+  `r.primary`, selection-aware), `ResourceCard` (see "Rich resource cards"
+  below), `WorktreeCard` and `ResourceDetailPane` (see "Responsive resource
+  selection" below).
 - **Lib** (`ui/src/lib/`): `resourceSummary.ts` (builds the "2 PRs, 3 Jira
   issues · 2 related resources" summary string from `primary_by_type` +
-  `related_count`), `relativeTime.ts`.
+  `related_count`), `relativeTime.ts`, `resourceKey.ts` (see
+  `useSelectedResource` above).
 - **Routing**: `wouter`. `App.tsx` defines `/` → `HomePage`, `/worktree/:path*`
   → `WorktreeDetailPage`. The `:path*` wildcard param comes back from
   `useRoute` under the **typed key `"path*"`** (not `"path"` — a real wouter
@@ -344,7 +398,74 @@ single in-process loop for as long as the server is up:
   paths contain slashes, so the link is built with a single
   `encodeURIComponent(path)` (see `WorktreeList.tsx`) and decoded with a
   single `decodeURIComponent(rawPath)` on the detail page — do not
-  double-encode/decode.
+  double-encode/decode. `useSelectedResource` (above) manages the separate
+  `?resource=` query param on top of this route via `wouter`'s
+  `useLocation`/`useSearch`.
+
+### Responsive resource selection
+
+Selecting a resource (a `ResourceCard` in `ResourceList`, or a
+`FocusResourceLine` in a `WorktreeCard`) and viewing it at different widths
+are two independent concerns, deliberately kept that way:
+
+- **`WorktreeCard`** (`components/WorktreeCard.tsx`) is the resource-summary
+  card for one worktree — branch name, resource-count summary, and (via the
+  `focus_resources` field on `worktreeSummary`, see above) a line per focus
+  resource with its status icon and title/link. It is **shared** by
+  `HomePage` (rendered inside `WorktreeList`, `clickable` — the whole card
+  navigates to the worktree detail page, `FocusResourceLine` links stop
+  propagation so they open the resource instead) and by
+  `WorktreeDetailPage`'s own header (rendered with `clickable={false}`,
+  since you're already on that page). One component, one rendering of a
+  worktree's identity, used in both places rather than two ad hoc renders
+  drifting apart.
+- **`useSelectedResource()`** (above) owns *what* is selected, independent
+  of viewport.
+- **`useIsWide()`** (above) owns *how wide* the viewport is, independent of
+  selection.
+- **`WorktreeDetailPage`** combines the two: wide renders `ResourceList` and
+  the detail/timeline pane side by side in a `Grid` (selecting a resource
+  swaps the right pane's content but keeps the list visible and highlights
+  the selected card); narrow renders only one pane at a time — the
+  `ResourceList` until something is selected, then a full-width
+  `ResourceDetailPane` in its place (a "drilldown"), with a back control
+  that clears the selection. Because both branches read the same
+  `useSelectedResource()` state, resizing the window mid-selection changes
+  *only* which of these two layouts is shown — the selection itself is
+  untouched. `HomePage`'s narrow Worktrees/Timeline tab split (above) is the
+  same `useIsWide()` pattern one level up, for the page as a whole rather
+  than a single resource.
+- **`ResourceDetailPane`** (`components/ResourceDetailPane.tsx`) is the
+  pane rendered for a selected resource: a fuller `ResourceCard` (`variant="detail"`)
+  above an `Activity` timeline filtered to just that resource (via
+  `useWorktreeTimeline(path, { type, id })`, above), plus an optional
+  `onBack` control shown only when the pane is a narrow-viewport drilldown.
+  It is **deliberately a swappable slot**: a later Slack phase (see
+  `docs/superpowers/specs/2026-08-21-worktree-ui-resource-selection-design.md`)
+  will add a `resource.type === "slack"` branch here that renders the Slack
+  thread view in place of the filtered timeline, while the surrounding
+  responsive shell, selection state, and back control stay exactly as they
+  are today — this component exists specifically so that branch has a
+  single, already-wired place to land.
+
+### Testing note: narrow-by-default and `setViewport`
+
+`ui/src/test-setup.ts` installs a guarded global `matchMedia` stub
+(`if (typeof window.matchMedia !== "function")`) that reports
+`matches: false` for every query, so **every test renders the narrow layout
+by default** unless it opts into wide. Wide-layout tests call
+`setViewport("wide")` from `ui/src/testing/viewport.ts` (`setViewport("narrow")`
+is also available, for explicitness) before rendering; `setViewport`
+overwrites `window.matchMedia` directly rather than going through the
+guard, so it works regardless of stub order. Because `test-setup.ts` runs
+before every test file (it's wired as Vitest's `setupFiles`) and its stub is
+guarded, the ~16 individual test files that each carried their own local
+`matchMedia` stub (written before the global one existed) still have that
+code, but it is now dead — the guard sees a real `matchMedia` already
+installed and skips re-stubbing. Those per-file stubs are byte-identical in
+behavior to the global one, so this changes nothing observable; they simply
+weren't removed. If you touch one of those files, feel free to delete its
+local stub, but leaving it is harmless.
 
 ## Focus vs primary (UI wording note)
 
