@@ -152,4 +152,12 @@ describe("ResourceCard variants and selection", () => {
     await user.click(screen.getByRole("button", { name: "Remove resource" }))
     expect(onSelect).not.toHaveBeenCalled()
   })
+
+  it("does not select when the title link is clicked", async () => {
+    const onSelect = vi.fn()
+    const user = userEvent.setup()
+    wrap(<ResourceCard r={jira} onSelect={onSelect} />)
+    await user.click(screen.getByRole("link", { name: "Investigate flux" }))
+    expect(onSelect).not.toHaveBeenCalled()
+  })
 })
