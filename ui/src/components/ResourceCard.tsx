@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { ActionIcon, Alert, Anchor, Badge, Button, Group, Paper, Popover, Stack, Text } from "@mantine/core"
+import { ActionIcon, Alert, Anchor, Badge, Button, Group, Paper, Popover, Stack, Text, UnstyledButton } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
 import { relativeTime, relativeFromNow } from "../lib/relativeTime"
 import { api } from "../api/client"
@@ -56,7 +56,7 @@ function MinimalRow({ r }: { r: ResourceDTO }) {
   return (
     <Group gap="xs">
       <Badge size="xs" variant="light">{r.type}</Badge>
-      {r.url ? <Anchor href={r.url} target="_blank" size="sm">{r.id}</Anchor> : <Text size="sm">{r.id}</Text>}
+      {r.url ? <Anchor href={r.url} target="_blank" size="sm" onClick={(e) => e.stopPropagation()}>{r.id}</Anchor> : <Text size="sm">{r.id}</Text>}
     </Group>
   )
 }
@@ -69,7 +69,7 @@ function PRCardBody({ r }: { r: ResourceDTO }) {
         <Text size="xs" c="dimmed">{prNumber(r.id)}</Text>
       </Group>
       <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
-        {r.url ? <Anchor href={r.url} target="_blank">{r.title || r.id}</Anchor> : (r.title || r.id)}
+        {r.url ? <Anchor href={r.url} target="_blank" onClick={(e) => e.stopPropagation()}>{r.title || r.id}</Anchor> : (r.title || r.id)}
       </Text>
       <Group gap={4} wrap="wrap">
         {r.state && <Badge size="xs" color={prStateColor(r.state)}>{r.state.toLowerCase()}</Badge>}
@@ -86,7 +86,7 @@ function PRCardBody({ r }: { r: ResourceDTO }) {
   )
 }
 
-function JiraCardBody({ r }: { r: ResourceDTO }) {
+function JiraCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVariant }) {
   return (
     <Stack gap={4}>
       <Group gap="xs" wrap="wrap">
@@ -94,14 +94,14 @@ function JiraCardBody({ r }: { r: ResourceDTO }) {
         <Text size="xs" c="dimmed">{r.id}</Text>
       </Group>
       <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
-        {r.url ? <Anchor href={r.url} target="_blank">{r.title || r.id}</Anchor> : (r.title || r.id)}
+        {r.url ? <Anchor href={r.url} target="_blank" onClick={(e) => e.stopPropagation()}>{r.title || r.id}</Anchor> : (r.title || r.id)}
       </Text>
       <Group gap={4} wrap="wrap">
         {r.status && <Badge size="xs" variant="light">{r.status}</Badge>}
         {r.priority && <Badge size="xs" variant="light" color="orange">{r.priority}</Badge>}
         {r.issue_type && <Badge size="xs" variant="outline">{r.issue_type}</Badge>}
       </Group>
-      {r.labels && r.labels.length > 0 && (
+      {variant === "detail" && r.labels && r.labels.length > 0 && (
         <Group gap={4} wrap="wrap">
           {r.labels.map((l) => <Badge key={l} size="xs" variant="dot">{l}</Badge>)}
         </Group>
@@ -121,7 +121,7 @@ function SlackCardBody({ r }: { r: ResourceDTO }) {
     <Stack gap={2}>
       <Group gap="xs" wrap="wrap">
         <Badge size="xs" variant="light" color="grape">Slack</Badge>
-        {r.url ? <Anchor href={r.url} target="_blank" size="sm">{label}</Anchor> : <Text size="sm">{label}</Text>}
+        {r.url ? <Anchor href={r.url} target="_blank" size="sm" onClick={(e) => e.stopPropagation()}>{label}</Anchor> : <Text size="sm">{label}</Text>}
       </Group>
       <Group gap="xs" wrap="wrap">
         {r.channel_name && <Text size="xs" c="dimmed">#{r.channel_name}</Text>}
@@ -168,7 +168,10 @@ function RemoveControl({ r, path, onRemoved }: { r: ResourceDTO; path: string; o
           variant="subtle"
           color="gray"
           aria-label="Remove resource"
-          onClick={() => setOpened((v) => !v)}
+          onClick={(e) => {
+            e.stopPropagation()
+            setOpened((v) => !v)
+          }}
         >
           <Text size="sm" lh={1}>×</Text>
         </ActionIcon>
@@ -195,29 +198,61 @@ function RemoveControl({ r, path, onRemoved }: { r: ResourceDTO; path: string; o
   )
 }
 
+export type ResourceCardVariant = "compact" | "detail"
+
 interface ResourceCardProps {
   r: ResourceDTO
   path?: string
   onRemoved?: () => void
+  /** "detail" adds the fuller summary (e.g. Jira labels) shown in the pane. */
+  variant?: ResourceCardVariant
+  selected?: boolean
+  /** When provided, the card becomes selectable. */
+  onSelect?: () => void
 }
 
-export function ResourceCard({ r, path = "", onRemoved = () => {} }: ResourceCardProps) {
+export function ResourceCard({
+  r,
+  path = "",
+  onRemoved = () => {},
+  variant = "compact",
+  selected = false,
+  onSelect,
+}: ResourceCardProps) {
+  const body = r.type === "slack" ? (
+    <SlackCardBody r={r} />
+  ) : !isEnriched(r) ? (
+    <MinimalRow r={r} />
+  ) : r.type === "pr" ? (
+    <PRCardBody r={r} />
+  ) : r.type === "jira" ? (
+    <JiraCardBody r={r} variant={variant} />
+  ) : (
+    <MinimalRow r={r} />
+  )
+
   return (
-    <Paper p="xs" withBorder>
+    <Paper
+      p="xs"
+      withBorder
+      // A selected card is tinted so the current selection is obvious next to
+      // the pane it drives.
+      bg={selected ? "var(--mantine-color-blue-light)" : undefined}
+      style={selected ? { borderColor: "var(--mantine-color-blue-filled)" } : undefined}
+    >
       <Group justify="space-between" wrap="nowrap" align="flex-start">
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {r.type === "slack" ? (
-            <SlackCardBody r={r} />
-          ) : !isEnriched(r) ? (
-            <MinimalRow r={r} />
-          ) : r.type === "pr" ? (
-            <PRCardBody r={r} />
-          ) : r.type === "jira" ? (
-            <JiraCardBody r={r} />
-          ) : (
-            <MinimalRow r={r} />
-          )}
-        </div>
+        {onSelect ? (
+          <UnstyledButton
+            onClick={onSelect}
+            aria-pressed={selected}
+            aria-label={`select resource ${r.id}`}
+            style={{ flex: 1, minWidth: 0, textAlign: "left" }}
+          >
+            {body}
+          </UnstyledButton>
+        ) : (
+          <div style={{ flex: 1, minWidth: 0 }}>{body}</div>
+        )}
         <RemoveControl r={r} path={path} onRemoved={onRemoved} />
       </Group>
     </Paper>

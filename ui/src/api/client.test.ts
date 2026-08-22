@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
 import { api } from "./client"
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
 
 describe("api.setResourceMeta", () => {
   it("POSTs the meta payload to /api/resource-meta", async () => {
@@ -44,5 +47,30 @@ describe("api.removeResource", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ path: "/w", type: "slack", id: "C1:1" }),
     }))
+  })
+})
+
+function stubFetch() {
+  const calls: string[] = []
+  vi.stubGlobal("fetch", (url: string) => {
+    calls.push(url)
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ events: [], next_cursor: "" }) } as Response)
+  })
+  return calls
+}
+
+describe("api.worktreeTimeline", () => {
+  it("omits resource params when no resource is given", async () => {
+    const calls = stubFetch()
+    await api.worktreeTimeline("/wt/foo")
+    expect(calls[0]).toContain("path=%2Fwt%2Ffoo")
+    expect(calls[0]).not.toContain("resource_type")
+  })
+
+  it("sends encoded resource_type and resource_id when a resource is given", async () => {
+    const calls = stubFetch()
+    await api.worktreeTimeline("/wt/foo", 100, { type: "pr", id: "org/repo#1" })
+    expect(calls[0]).toContain("resource_type=pr")
+    expect(calls[0]).toContain("resource_id=org%2Frepo%231")
   })
 })

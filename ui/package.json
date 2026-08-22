@@ -14,6 +14,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@mantine/core": "^7.17.0",
     "@mantine/hooks": "^7.17.0",
+    "@tabler/icons-react": "^3.46.0",
     "@tanstack/react-query": "^5.101.0",
     "node-emoji": "^2.2.0",
     "react": "^19.0.0",

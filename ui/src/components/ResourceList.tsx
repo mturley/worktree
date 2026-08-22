@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { Button, Group, Stack, Text, Title } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
+import { resourceKeyEquals, type ResourceKey } from "../lib/resourceKey"
 import { ResourceCard } from "./ResourceCard"
 import { AddResourceModal } from "./AddResourceModal"
 
@@ -8,9 +9,11 @@ interface ResourceListProps {
   items: ResourceDTO[]
   path: string
   onChanged: () => void
+  selectedKey?: ResourceKey | null
+  onSelectResource?: (key: ResourceKey) => void
 }
 
-export function ResourceList({ items, path, onChanged }: ResourceListProps) {
+export function ResourceList({ items, path, onChanged, selectedKey, onSelectResource }: ResourceListProps) {
   const [addOpen, setAddOpen] = useState(false)
 
   const focus = items.filter((r) => r.primary)
@@ -38,7 +41,14 @@ export function ResourceList({ items, path, onChanged }: ResourceListProps) {
               <Title order={5}>Focus</Title>
               <Stack gap={4}>
                 {focus.map((r) => (
-                  <ResourceCard key={`${r.type}:${r.id}`} r={r} path={path} onRemoved={onChanged} />
+                  <ResourceCard
+                    key={`${r.type}:${r.id}`}
+                    r={r}
+                    path={path}
+                    onRemoved={onChanged}
+                    selected={resourceKeyEquals(selectedKey ?? null, { type: r.type, id: r.id })}
+                    onSelect={onSelectResource ? () => onSelectResource({ type: r.type, id: r.id }) : undefined}
+                  />
                 ))}
               </Stack>
             </Stack>
@@ -48,7 +58,14 @@ export function ResourceList({ items, path, onChanged }: ResourceListProps) {
               <Title order={5}>Related</Title>
               <Stack gap={4}>
                 {related.map((r) => (
-                  <ResourceCard key={`${r.type}:${r.id}`} r={r} path={path} onRemoved={onChanged} />
+                  <ResourceCard
+                    key={`${r.type}:${r.id}`}
+                    r={r}
+                    path={path}
+                    onRemoved={onChanged}
+                    selected={resourceKeyEquals(selectedKey ?? null, { type: r.type, id: r.id })}
+                    onSelect={onSelectResource ? () => onSelectResource({ type: r.type, id: r.id }) : undefined}
+                  />
                 ))}
               </Stack>
             </Stack>

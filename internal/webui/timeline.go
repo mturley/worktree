@@ -97,14 +97,54 @@ JOIN watcher_event_resources er ON er.event_id = e.id `
 	s.writeTimelineRows(w, rows, limit)
 }
 
-// handleWorktreeTimeline: GET /api/worktree-timeline?path=<path>&limit=&before=
+// eventIDsForResource returns the set of event ids linked to one resource.
+// Resolving the set up front means handleWorktreeTimeline can skip
+// non-matching events without paying enrichEvent's three-queries-per-event
+// cost on rows it would discard.
+func (s *Server) eventIDsForResource(rtype, rid string) (map[string]struct{}, error) {
+	rows, err := s.DB.Query(
+		`SELECT event_id FROM watcher_event_resources WHERE resource_type = ? AND resource_id = ?`,
+		rtype, rid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := make(map[string]struct{})
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids[id] = struct{}{}
+	}
+	return ids, rows.Err()
+}
+
+// handleWorktreeTimeline: GET /api/worktree-timeline?path=<path>&limit=&resource_type=&resource_id=
 // A query param (not a path segment) is used because worktree paths contain
 // slashes, which the Go 1.22 mux {wildcard} would split awkwardly.
+// Note: unlike handleGlobalTimeline, there is no `before=` cursor param here
+// yet — pagination is deferred; this always returns the newest `limit` events.
 func (s *Server) handleWorktreeTimeline(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Query().Get("path")
 	if path == "" {
 		writeError(w, http.StatusBadRequest, "missing path")
 		return
+	}
+	rtype := r.URL.Query().Get("resource_type")
+	rid := r.URL.Query().Get("resource_id")
+	if (rtype == "") != (rid == "") {
+		writeError(w, http.StatusBadRequest, "resource_type and resource_id must be supplied together")
+		return
+	}
+	var only map[string]struct{}
+	if rtype != "" {
+		var err error
+		only, err = s.eventIDsForResource(rtype, rid)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 	// Use the canonical subscriber key (Abs -> EvalSymlinks -> Clean) so this
 	// matches the watcher_subscriptions rows written by resources.Add. A raw
@@ -117,9 +157,18 @@ func (s *Server) handleWorktreeTimeline(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	limit := parseLimit(r)
-	out := make([]TimelineEvent, 0, len(evs))
+	outCap := limit
+	if len(evs) < outCap {
+		outCap = len(evs)
+	}
+	out := make([]TimelineEvent, 0, outCap)
 	// reverse (EventsForSubscriberSince returns ASC)
 	for i := len(evs) - 1; i >= 0 && len(out) < limit; i-- {
+		if only != nil {
+			if _, ok := only[evs[i].ID]; !ok {
+				continue
+			}
+		}
 		out = append(out, s.enrichEvent(evs[i]))
 	}
 	writeJSON(w, http.StatusOK, timelineResponse{Events: out, NextCursor: cursorOf(out)})

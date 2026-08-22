@@ -3,6 +3,7 @@ package webui
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -223,3 +224,82 @@ func TestGlobalTimelineBeforeCursor(t *testing.T) {
 
 var _ = watcher.Resource{}
 var _ = watcherdb.EventsForSubscriberSince
+
+func TestWorktreeTimelineResourceFilter(t *testing.T) {
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	wtPath := t.TempDir()
+	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
+	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
+	resources.Add(conn, wtPath, resources.Resource{Type: "jira", ID: "J-1", URL: "u2"})
+
+	// Interleave 5 matching and 5 non-matching events so that a naive
+	// "limit first, filter second" implementation would return fewer than 5.
+	base := time.Now().UTC().Add(-time.Hour)
+	for i := 0; i < 5; i++ {
+		insertEvent(t, conn, fmt.Sprintf("pr-%d", i), base.Add(time.Duration(i*2)*time.Minute).Format(time.RFC3339),
+			"github", "pr_comment", fmt.Sprintf("pr comment %d", i), "pr", "o/r#1", "u1")
+		insertEvent(t, conn, fmt.Sprintf("jira-%d", i), base.Add(time.Duration(i*2+1)*time.Minute).Format(time.RFC3339),
+			"jira", "jira_comment", fmt.Sprintf("jira comment %d", i), "jira", "J-1", "u2")
+	}
+
+	srv := &Server{DB: conn}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	get := func(query string) (int, []TimelineEvent) {
+		resp, err := http.Get(ts.URL + "/api/worktree-timeline?path=" + url.QueryEscape(wtPath) + query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var body struct {
+			Events []TimelineEvent `json:"events"`
+		}
+		json.NewDecoder(resp.Body).Decode(&body)
+		return resp.StatusCode, body.Events
+	}
+
+	// Unfiltered: all 10 events.
+	if _, evs := get(""); len(evs) != 10 {
+		t.Fatalf("unfiltered: want 10 events, got %d", len(evs))
+	}
+
+	// Filtered: only the PR's events.
+	code, evs := get("&resource_type=pr&resource_id=" + url.QueryEscape("o/r#1"))
+	if code != http.StatusOK {
+		t.Fatalf("want 200, got %d", code)
+	}
+	if len(evs) != 5 {
+		t.Fatalf("filtered: want 5 pr events, got %d", len(evs))
+	}
+	for _, e := range evs {
+		if e.ResourceType != "pr" || e.ResourceID != "o/r#1" {
+			t.Fatalf("filter leaked a non-matching event: %+v", e)
+		}
+	}
+
+	// The filter must be applied BEFORE the limit: with limit=3 we must get
+	// 3 matching events, not "3 newest overall, then filtered down".
+	_, limited := get("&limit=3&resource_type=pr&resource_id=" + url.QueryEscape("o/r#1"))
+	if len(limited) != 3 {
+		t.Fatalf("want 3 matching events under limit=3, got %d", len(limited))
+	}
+	for _, e := range limited {
+		if e.ResourceType != "pr" {
+			t.Fatalf("limited filter leaked: %+v", e)
+		}
+	}
+
+	// A half-specified filter is a client error, not a silent unfiltered page.
+	if code, _ := get("&resource_type=pr"); code != http.StatusBadRequest {
+		t.Fatalf("resource_type without resource_id: want 400, got %d", code)
+	}
+	if code, _ := get("&resource_id=" + url.QueryEscape("o/r#1")); code != http.StatusBadRequest {
+		t.Fatalf("resource_id without resource_type: want 400, got %d", code)
+	}
+}

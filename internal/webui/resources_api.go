@@ -47,14 +47,22 @@ func (s *Server) handleWorktreeResources(w http.ResponseWriter, r *http.Request)
 	}
 	out := make([]resourceDTO, 0, len(rs))
 	for _, res := range rs {
-		dto := resourceDTO{
-			Type: res.Type, ID: res.ID, URL: res.URL, Primary: !res.Related,
-			CustomName: res.CustomName, CustomDescription: res.CustomDescription,
-		}
-		s.enrichResourceDTO(&dto)
-		out = append(out, dto)
+		out = append(out, s.newResourceDTO(res))
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// newResourceDTO builds a resourceDTO from a resources.Resource, enriching it
+// from watcher_resource_state. Shared by handleWorktreeResources (above) and
+// handleWorktrees (worktrees.go), which build DTOs from the same underlying
+// resources.Resource but for different purposes (full list vs. focus-only).
+func (s *Server) newResourceDTO(res resources.Resource) resourceDTO {
+	dto := resourceDTO{
+		Type: res.Type, ID: res.ID, URL: res.URL, Primary: !res.Related,
+		CustomName: res.CustomName, CustomDescription: res.CustomDescription,
+	}
+	s.enrichResourceDTO(&dto)
+	return dto
 }
 
 // enrichResourceDTO looks up the cached watcher_resource_state row for the
