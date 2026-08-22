@@ -90,11 +90,15 @@ describe("WorktreeDetailPage selection", () => {
     expect(screen.queryByRole("button", { name: /all resources for worktree/i })).not.toBeInTheDocument()
   })
 
-  it("clears a ?resource= that matches no loaded resource", async () => {
+  it("clears a ?resource= that matches no loaded resource, without growing history (replace, not push)", async () => {
     window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?resource=pr:gone%23999`)
     setViewport("wide")
+    const before = window.history.length
     wrap()
     await waitFor(() => expect(window.location.search).not.toContain("resource="))
+    // The correction must REPLACE the history entry, not push a new one, or
+    // the back button can never escape the stale-selection <-> clean loop.
+    expect(window.history.length).toBe(before)
   })
 
   it("deselects and clears ?resource= when the selected resource is clicked again", async () => {

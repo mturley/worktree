@@ -404,9 +404,13 @@ single in-process loop for as long as the server is up:
 
 ### Responsive resource selection
 
-Selecting a resource (a `ResourceCard` in `ResourceList`, or a
-`FocusResourceLine` in a `WorktreeCard`) and viewing it at different widths
-are two independent concerns, deliberately kept that way:
+Resource *selection* is a `WorktreeDetailPage` concern only — it happens by
+clicking a `ResourceCard` in `ResourceList`. A `FocusResourceLine` in a
+`WorktreeCard` (home page or detail-page header) is an external link straight
+to the resource (GitHub/Jira/Slack), not a selection affordance — there is no
+way to select a resource from the home page. Selecting a resource and viewing
+it at different widths are two independent concerns, deliberately kept that
+way:
 
 - **`WorktreeCard`** (`components/WorktreeCard.tsx`) is the resource-summary
   card for one worktree — branch name, resource-count summary, and (via the

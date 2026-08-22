@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Button, Group, Stack, Text, Title } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
-import type { ResourceKey } from "../lib/resourceKey"
+import { resourceKeyEquals, type ResourceKey } from "../lib/resourceKey"
 import { ResourceCard } from "./ResourceCard"
 import { AddResourceModal } from "./AddResourceModal"
 
@@ -46,7 +46,7 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
                     r={r}
                     path={path}
                     onRemoved={onChanged}
-                    selected={selectedKey?.type === r.type && selectedKey?.id === r.id}
+                    selected={resourceKeyEquals(selectedKey ?? null, { type: r.type, id: r.id })}
                     onSelect={onSelectResource ? () => onSelectResource({ type: r.type, id: r.id }) : undefined}
                   />
                 ))}
@@ -63,7 +63,7 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
                     r={r}
                     path={path}
                     onRemoved={onChanged}
-                    selected={selectedKey?.type === r.type && selectedKey?.id === r.id}
+                    selected={resourceKeyEquals(selectedKey ?? null, { type: r.type, id: r.id })}
                     onSelect={onSelectResource ? () => onSelectResource({ type: r.type, id: r.id }) : undefined}
                   />
                 ))}

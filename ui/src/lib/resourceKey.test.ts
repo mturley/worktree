@@ -18,6 +18,11 @@ describe("resourceKey", () => {
     expect(parseResourceKey("slack:C1:2.3")).toEqual({ type: "slack", id: "C1:2.3" })
   })
 
+  it("falls back to the raw remainder for malformed percent-encoding, without throwing", () => {
+    expect(() => parseResourceKey("slack:%zz")).not.toThrow()
+    expect(parseResourceKey("slack:%zz")).toEqual({ type: "slack", id: "%zz" })
+  })
+
   it("returns null for empty, missing, or malformed input", () => {
     expect(parseResourceKey(null)).toBeNull()
     expect(parseResourceKey(undefined)).toBeNull()

@@ -5,21 +5,6 @@ import { MantineProvider } from "@mantine/core"
 import type { WorktreeSummary } from "../api/types"
 import { WorktreeCard } from "./WorktreeCard"
 
-// jsdom doesn't implement window.matchMedia; MantineProvider's color-scheme
-// detection needs it. Stub it the same way the rest of the suite does.
-if (typeof window.matchMedia !== "function") {
-  window.matchMedia = ((query: string) => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addListener: () => {},
-    removeListener: () => {},
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    dispatchEvent: () => false,
-  })) as unknown as typeof window.matchMedia
-}
-
 const summary: WorktreeSummary = {
   path: "/wt/foo", repo: "odh", branch: "my-branch",
   on_disk: true, resource_count: 2, primary_count: 2, latest_event_ts: "",
@@ -62,8 +47,13 @@ describe("WorktreeCard", () => {
   it("navigates when the branch link is activated", async () => {
     const user = userEvent.setup()
     wrap(<WorktreeCard w={summary} />)
+    const before = window.history.length
     await user.click(screen.getByRole("link", { name: /open worktree my-branch/i }))
     expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/foo")}`)
+    // The branch anchor's onClick calls stopPropagation() before navigating
+    // itself, so the card's own onClick (which would also navigate) must not
+    // ALSO fire. If it did, history would grow by 2 pushes instead of 1.
+    expect(window.history.length - before).toBe(1)
   })
 
   it("navigates when the focused card is activated with the keyboard", async () => {

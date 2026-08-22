@@ -21,7 +21,7 @@ const PARAM = "resource"
 export function useSelectedResource(): {
   selected: ResourceKey | null
   select: (key: ResourceKey) => void
-  clear: () => void
+  clear: (opts?: { replace?: boolean }) => void
   toggle: (key: ResourceKey) => void
 } {
   const search = useSearch()
@@ -29,18 +29,22 @@ export function useSelectedResource(): {
   const selected = parseResourceKey(new URLSearchParams(search).get(PARAM))
 
   const setParam = useCallback(
-    (value: string | null) => {
+    (value: string | null, replace = false) => {
       const params = new URLSearchParams(search)
       if (value === null) params.delete(PARAM)
       else params.set(PARAM, value)
       const qs = params.toString()
-      navigate(qs ? `${location}?${qs}` : location)
+      navigate(qs ? `${location}?${qs}` : location, { replace })
     },
     [search, location, navigate],
   )
 
   const select = useCallback((key: ResourceKey) => setParam(serializeResourceKey(key)), [setParam])
-  const clear = useCallback(() => setParam(null), [setParam])
+  // A deliberate deselect pushes a history entry (so the back button can undo
+  // it), but an automatic correction of invalid/stale input (see
+  // WorktreeDetailPage's stale-selection effect) must replace instead, or it
+  // traps the back button in a stale <-> clean loop.
+  const clear = useCallback((opts?: { replace?: boolean }) => setParam(null, opts?.replace ?? false), [setParam])
   const toggle = useCallback(
     (key: ResourceKey) => (resourceKeyEquals(selected, key) ? clear() : select(key)),
     [selected, clear, select],

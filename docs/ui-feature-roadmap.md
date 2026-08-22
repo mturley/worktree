@@ -27,9 +27,11 @@ come up; move items to "Done" (or delete) when shipped.
   "Worktrees"/"Timeline" `Tabs` pair on narrow ones, via the new
   `useIsWide()` hook (a single shared `(min-width: 48em)` predicate — see
   `docs/web-ui-architecture.md`).
-- **Resource selection + filtered timeline** — clicking a resource card (on
-  either the home page's worktree cards or the detail page's `ResourceList`)
-  selects it via `useSelectedResource()`, stored in the URL as
+- **Resource selection + filtered timeline** — clicking a resource card in
+  the worktree detail page's `ResourceList` selects it via
+  `useSelectedResource()` (this is a detail-page-only concern; a
+  `FocusResourceLine` on a home-page worktree card is just an external link
+  to the resource, not a selection affordance), stored in the URL as
   `?resource=<type>:<id>` (`GET /api/worktree-timeline` gained
   `resource_type`/`resource_id` filter params to match). The selected
   resource's `ResourceDetailPane` shows a fuller card plus an activity feed

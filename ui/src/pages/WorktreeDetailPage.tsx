@@ -19,18 +19,22 @@ export function WorktreeDetailPage() {
   const { selected, toggle, clear } = useSelectedResource()
   const wide = useIsWide()
   const worktrees = useWorktrees()
-  const branch = path.split("/").pop() || path
 
   const items = resources.data ?? []
   const summary = (worktrees.data ?? []).find((w) => w.path === path)
+  const branch = summary?.branch ?? (path.split("/").pop() || path)
   const selectedResource = selected
     ? items.find((r) => r.type === selected.type && r.id === selected.id)
     : undefined
 
   // A ?resource= pointing at something this worktree no longer has (removed
-  // out-of-band, or a stale shared link) must not leave an empty pane.
+  // out-of-band, or a stale shared link) must not leave an empty pane. This
+  // is an automatic correction of invalid input, not a deliberate deselect,
+  // so it must REPLACE the history entry rather than push a new one — a push
+  // here would trap the back button (stale -> clean -> back -> stale -> the
+  // effect fires again and pushes clean again, forever).
   useEffect(() => {
-    if (selected && resources.data && !selectedResource) clear()
+    if (selected && resources.data && !selectedResource) clear({ replace: true })
   }, [selected, resources.data, selectedResource, clear])
 
   const list = (
@@ -55,7 +59,7 @@ export function WorktreeDetailPage() {
   // presentation without disturbing what is selected.
   const overview = !wide ? (
     selectedResource ? (
-      <ResourceDetailPane path={path} resource={selectedResource} onBack={clear} />
+      <ResourceDetailPane path={path} resource={selectedResource} onBack={clear} onRemoved={resources.refetch} />
     ) : (
       list
     )
@@ -63,7 +67,11 @@ export function WorktreeDetailPage() {
     <Grid gutter="md">
       <Grid.Col span={4}>{list}</Grid.Col>
       <Grid.Col span={8}>
-        {selectedResource ? <ResourceDetailPane path={path} resource={selectedResource} /> : unfiltered}
+        {selectedResource ? (
+          <ResourceDetailPane path={path} resource={selectedResource} onRemoved={resources.refetch} />
+        ) : (
+          unfiltered
+        )}
       </Grid.Col>
     </Grid>
   )

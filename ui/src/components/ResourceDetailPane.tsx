@@ -9,6 +9,8 @@ interface ResourceDetailPaneProps {
   resource: ResourceDTO
   /** Supplied only on narrow viewports, where this pane is a drilldown. */
   onBack?: () => void
+  /** Called after the resource is successfully removed via the detail card. */
+  onRemoved?: () => void
 }
 
 /**
@@ -21,7 +23,7 @@ interface ResourceDetailPaneProps {
  * thread in place of the filtered timeline — the surrounding responsive
  * shell, selection state, and back control stay exactly as they are.
  */
-export function ResourceDetailPane({ path, resource, onBack }: ResourceDetailPaneProps) {
+export function ResourceDetailPane({ path, resource, onBack, onRemoved }: ResourceDetailPaneProps) {
   const timeline = useWorktreeTimeline(path, { type: resource.type, id: resource.id })
 
   return (
@@ -31,7 +33,7 @@ export function ResourceDetailPane({ path, resource, onBack }: ResourceDetailPan
           ← all resources for worktree
         </Button>
       )}
-      <ResourceCard r={resource} variant="detail" />
+      <ResourceCard r={resource} path={path} onRemoved={onRemoved} variant="detail" />
       <Title order={5}>Activity</Title>
       <TimelineFeed
         events={timeline.data?.events ?? []}

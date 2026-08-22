@@ -9,6 +9,12 @@ vi.mock("../hooks/useTimeline", () => ({
   useWorktreeTimeline: (...args: unknown[]) => useWorktreeTimeline(...args),
 }))
 
+const removeResource = vi.fn()
+vi.mock("../api/client", async (orig) => {
+  const actual = await orig<typeof import("../api/client")>()
+  return { api: { ...actual.api, removeResource: (...args: unknown[]) => removeResource(...args) } }
+})
+
 import { ResourceDetailPane } from "./ResourceDetailPane"
 
 const jira: ResourceDTO = {
@@ -21,6 +27,7 @@ const wrap = (ui: React.ReactNode) => render(<MantineProvider>{ui}</MantineProvi
 afterEach(() => {
   cleanup()
   useWorktreeTimeline.mockReset()
+  removeResource.mockReset()
 })
 
 describe("ResourceDetailPane", () => {
@@ -46,5 +53,20 @@ describe("ResourceDetailPane", () => {
 
     rerender(<MantineProvider><ResourceDetailPane path="/wt/foo" resource={jira} /></MantineProvider>)
     expect(screen.queryByRole("button", { name: /all resources for worktree/i })).not.toBeInTheDocument()
+  })
+
+  it("wires the remove control to the real worktree path, not an empty one", async () => {
+    useWorktreeTimeline.mockReturnValue({ data: { events: [], next_cursor: "" }, isLoading: false, error: null })
+    removeResource.mockResolvedValue(undefined)
+    const onRemoved = vi.fn()
+    const user = userEvent.setup()
+    wrap(<ResourceDetailPane path="/wt/foo" resource={jira} onRemoved={onRemoved} />)
+
+    await user.click(screen.getByRole("button", { name: "Remove resource" }))
+    await screen.findByText("Remove this resource?")
+    await user.click(screen.getByRole("button", { name: "Remove" }))
+
+    expect(removeResource).toHaveBeenCalledWith({ path: "/wt/foo", type: "jira", id: "J-1" })
+    await vi.waitFor(() => expect(onRemoved).toHaveBeenCalled())
   })
 })

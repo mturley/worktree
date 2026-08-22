@@ -49,12 +49,7 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 			if !res.Related {
 				primary++
 				primaryByType[res.Type]++
-				dto := resourceDTO{
-					Type: res.Type, ID: res.ID, URL: res.URL, Primary: true,
-					CustomName: res.CustomName, CustomDescription: res.CustomDescription,
-				}
-				s.enrichResourceDTO(&dto)
-				focus = append(focus, dto)
+				focus = append(focus, s.newResourceDTO(res))
 			} else {
 				relatedCount++
 			}

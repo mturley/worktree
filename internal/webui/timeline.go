@@ -120,9 +120,11 @@ func (s *Server) eventIDsForResource(rtype, rid string) (map[string]struct{}, er
 	return ids, rows.Err()
 }
 
-// handleWorktreeTimeline: GET /api/worktree-timeline?path=<path>&limit=&before=&resource_type=&resource_id=
+// handleWorktreeTimeline: GET /api/worktree-timeline?path=<path>&limit=&resource_type=&resource_id=
 // A query param (not a path segment) is used because worktree paths contain
 // slashes, which the Go 1.22 mux {wildcard} would split awkwardly.
+// Note: unlike handleGlobalTimeline, there is no `before=` cursor param here
+// yet — pagination is deferred; this always returns the newest `limit` events.
 func (s *Server) handleWorktreeTimeline(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Query().Get("path")
 	if path == "" {
@@ -155,7 +157,11 @@ func (s *Server) handleWorktreeTimeline(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	limit := parseLimit(r)
-	out := make([]TimelineEvent, 0, len(evs))
+	outCap := limit
+	if len(evs) < outCap {
+		outCap = len(evs)
+	}
+	out := make([]TimelineEvent, 0, outCap)
 	// reverse (EventsForSubscriberSince returns ASC)
 	for i := len(evs) - 1; i >= 0 && len(out) < limit; i-- {
 		if only != nil {
