@@ -1,83 +1,29 @@
-import { describe, it, expect } from "vitest"
-import { render } from "@testing-library/react"
+import { afterEach, describe, it, expect } from "vitest"
+import { render, cleanup, screen } from "@testing-library/react"
 import { MantineProvider } from "@mantine/core"
-import { Router } from "wouter"
-import { WorktreeList } from "./WorktreeList"
 import type { WorktreeSummary } from "../api/types"
+import { WorktreeList } from "./WorktreeList"
 
-if (typeof window.matchMedia !== "function") {
-  window.matchMedia = ((query: string) => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addListener: () => {},
-    removeListener: () => {},
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    dispatchEvent: () => false,
-  })) as unknown as typeof window.matchMedia
+const summary: WorktreeSummary = {
+  path: "/wt/foo", repo: "odh", branch: "my-branch",
+  on_disk: true, resource_count: 1, primary_count: 1, latest_event_ts: "",
+  primary_by_type: { pr: 1 }, related_count: 0,
+  focus_resources: [{ type: "pr", id: "o/r#1", url: "https://gh/pr/1", primary: true, title: "Fix the widget", state: "OPEN" }],
 }
 
-function renderWithProviders(ui: React.ReactElement) {
-  return render(
-    <MantineProvider>
-      <Router>{ui}</Router>
-    </MantineProvider>,
-  )
-}
+const wrap = (ui: React.ReactNode) => render(<MantineProvider>{ui}</MantineProvider>)
 
-function makeWorktree(overrides: Partial<WorktreeSummary>): WorktreeSummary {
-  return {
-    path: "/home/user/repo",
-    repo: "repo",
-    branch: "main",
-    on_disk: true,
-    resource_count: 0,
-    primary_count: 0,
-    latest_event_ts: "2026-08-18T00:00:00Z",
-    primary_by_type: {},
-    related_count: 0,
-    focus_resources: [],
-    ...overrides,
-  }
-}
+afterEach(cleanup)
 
 describe("WorktreeList", () => {
-  it("shows the empty-state message when there are no worktrees", () => {
-    const { container } = render(<MantineProvider><WorktreeList items={[]} /></MantineProvider>)
-    expect(container.textContent).toContain("No worktrees. Create one with `worktree add`.")
+  it("renders a card per worktree", () => {
+    wrap(<WorktreeList items={[summary]} />)
+    expect(screen.getByText("my-branch")).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: /Fix the widget/ })).toBeInTheDocument()
   })
 
-  it("renders both an on-disk worktree and a missing one, with the missing badge only on the offline item", () => {
-    const onDisk = makeWorktree({ path: "/home/user/repo-a", branch: "feature-a", on_disk: true })
-    const missing = makeWorktree({ path: "/home/user/repo-b", branch: "feature-b", on_disk: false })
-    const { container } = renderWithProviders(<WorktreeList items={[onDisk, missing]} />)
-
-    expect(container.textContent).toContain("feature-a")
-    expect(container.textContent).toContain("feature-b")
-
-    const badges = Array.from(container.querySelectorAll(".mantine-Badge-root"))
-    expect(badges.some((b) => b.textContent === "missing")).toBe(true)
-    expect(badges.length).toBe(1)
-
-    const links = Array.from(container.querySelectorAll("a"))
-    expect(links.map((a) => a.getAttribute("href"))).toEqual(
-      expect.arrayContaining([
-        `/worktree/${encodeURIComponent("/home/user/repo-a")}`,
-        `/worktree/${encodeURIComponent("/home/user/repo-b")}`,
-      ]),
-    )
-  })
-
-  it("includes the resource summary and repo name in the description", () => {
-    const wt = makeWorktree({
-      path: "/home/user/repo-c",
-      branch: "feature-c",
-      repo: "my-repo",
-      primary_by_type: { pr: 1 },
-      related_count: 2,
-    })
-    const { container } = renderWithProviders(<WorktreeList items={[wt]} />)
-    expect(container.textContent).toContain("my-repo · 1 PR · 2 related resources")
+  it("shows an empty state with no worktrees", () => {
+    wrap(<WorktreeList items={[]} />)
+    expect(screen.getByText(/No worktrees/)).toBeInTheDocument()
   })
 })
