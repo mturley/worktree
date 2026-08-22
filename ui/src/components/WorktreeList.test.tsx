@@ -37,6 +37,7 @@ function makeWorktree(overrides: Partial<WorktreeSummary>): WorktreeSummary {
     latest_event_ts: "2026-08-18T00:00:00Z",
     primary_by_type: {},
     related_count: 0,
+    focus_resources: [],
     ...overrides,
   }
 }
