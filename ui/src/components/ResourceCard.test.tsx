@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { ResourceCard } from "./ResourceCard"
+import type { ResourceDTO } from "../api/types"
 
 const removeResource = vi.fn()
 vi.mock("../api/client", async (orig) => {
@@ -111,5 +112,44 @@ describe("ResourceCard remove control", () => {
     expect(await screen.findByText("failed to remove resource")).toBeInTheDocument()
     expect(screen.getByText("Remove this resource?")).toBeInTheDocument()
     expect(onRemoved).not.toHaveBeenCalled()
+  })
+})
+
+describe("ResourceCard variants and selection", () => {
+  const jira: ResourceDTO = {
+    type: "jira", id: "J-1", url: "https://jira/browse/J-1", primary: true,
+    title: "Investigate flux", status: "In Progress", labels: ["backend", "urgent"],
+  } as ResourceDTO
+
+  it("hides Jira labels in the compact variant", () => {
+    wrap(<ResourceCard r={jira} />)
+    expect(screen.queryByText("backend")).not.toBeInTheDocument()
+  })
+
+  it("shows Jira labels in the detail variant", () => {
+    wrap(<ResourceCard r={jira} variant="detail" />)
+    expect(screen.getByText("backend")).toBeInTheDocument()
+    expect(screen.getByText("urgent")).toBeInTheDocument()
+  })
+
+  it("calls onSelect when a selectable card is clicked", async () => {
+    const onSelect = vi.fn()
+    const user = userEvent.setup()
+    wrap(<ResourceCard r={jira} onSelect={onSelect} />)
+    await user.click(screen.getByRole("button", { name: /select resource J-1/i }))
+    expect(onSelect).toHaveBeenCalled()
+  })
+
+  it("marks a selected card as pressed for assistive tech", () => {
+    wrap(<ResourceCard r={jira} onSelect={() => {}} selected />)
+    expect(screen.getByRole("button", { name: /select resource J-1/i })).toHaveAttribute("aria-pressed", "true")
+  })
+
+  it("does not select when the remove control is used", async () => {
+    const onSelect = vi.fn()
+    const user = userEvent.setup()
+    wrap(<ResourceCard r={jira} onSelect={onSelect} />)
+    await user.click(screen.getByRole("button", { name: "Remove resource" }))
+    expect(onSelect).not.toHaveBeenCalled()
   })
 })
