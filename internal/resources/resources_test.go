@@ -220,3 +220,43 @@ func TestRemoveIsHard(t *testing.T) {
 		}
 	}
 }
+
+func TestSetMetaAtPreservesTimestampThroughLoad(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/meta"
+	if err := Add(conn, wt, Resource{Type: "slack", ID: "C1:1.2", URL: "u"}); err != nil {
+		t.Fatal(err)
+	}
+	const ts = "2030-05-06T07:08:09Z"
+	if err := SetMetaAt(conn, "slack", "C1:1.2", "Custom", "Desc", ts); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Load(conn, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 1 {
+		t.Fatalf("got %d resources", len(res))
+	}
+	if res[0].CustomName != "Custom" || res[0].CustomDescription != "Desc" || res[0].UpdatedAt != ts {
+		t.Fatalf("meta not preserved: %+v", res[0])
+	}
+}
+
+func TestSetMetaAtEmptyTimestampStampsNow(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/meta2"
+	if err := Add(conn, wt, Resource{Type: "slack", ID: "C2:2.2", URL: "u"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetMetaAt(conn, "slack", "C2:2.2", "N", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Load(conn, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res[0].UpdatedAt == "" {
+		t.Fatal("empty --updated-at should stamp a non-empty timestamp")
+	}
+}
