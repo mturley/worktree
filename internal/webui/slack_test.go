@@ -56,6 +56,9 @@ func (f *fakeSlack) Users(ctx context.Context, ids []string) (map[string]slack.U
 }
 
 func (f *fakeSlack) Emoji(ctx context.Context) (map[string]string, error) { return f.emoji, nil }
+func (f *fakeSlack) UserGroups(ctx context.Context) (map[string]slack.UserGroup, error) {
+	return nil, nil
+}
 
 func (f *fakeSlack) MarkRead(ctx context.Context, channel, threadTS, ts string) error {
 	if f.err != nil {

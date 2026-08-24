@@ -23,6 +23,12 @@ type ThreadResponse struct {
 	Messages      []MessageView         `json:"messages"`
 	Users         map[string]slack.User `json:"users"`
 	Emoji         map[string]string     `json:"emoji"`
+	// Groups is the workspace's user groups keyed by subteam id, so the
+	// frontend can render "<!subteam^S123>" as the group's name instead of a
+	// placeholder. Unlike Users this is not filtered to the ids referenced by
+	// the thread — the directory is small and fetched once, and filtering it
+	// per thread would cost a lookup pass for no meaningful payload saving.
+	Groups map[string]slack.UserGroup `json:"groups"`
 }
 
 // MessageView wraps slack.Message; extended later with view-specific
@@ -84,6 +90,17 @@ func (s *Server) buildThreadResponse(ctx context.Context, ch, ts string, th slac
 		return ThreadResponse{}, err
 	}
 
+	// A failed group lookup must not fail the whole thread render: groups are
+	// a nicety (nicer mention labels), whereas the thread is the point. Degrade
+	// to an empty directory and let mentions fall back to their ids.
+	groups, groupsErr := s.userGroups(ctx)
+	if groupsErr != nil {
+		if s.Logger != nil {
+			s.Logger.Printf("slack usergroups: %v", groupsErr)
+		}
+		groups = map[string]slack.UserGroup{}
+	}
+
 	allEmoji, err := s.emoji(ctx)
 	if err != nil {
 		return ThreadResponse{}, err
@@ -128,6 +145,7 @@ func (s *Server) buildThreadResponse(ctx context.Context, ch, ts string, th slac
 		CurrentUserID: currentUserID,
 		Users:         users,
 		Emoji:         emoji,
+		Groups:        groups,
 	}
 	for _, m := range th.Messages {
 		resp.Messages = append(resp.Messages, MessageView{m})
@@ -312,4 +330,22 @@ func collectEmojiNames(t slack.Thread) []string {
 		}
 	}
 	return names
+}
+
+// userGroups returns the workspace's user-group directory, fetching it once
+// via SlackClient.UserGroups and caching it on the Server for subsequent
+// requests — the same fetch-once shape as emoji, and for the same reason: the
+// directory changes rarely and every thread render would otherwise re-fetch it.
+func (s *Server) userGroups(ctx context.Context) (map[string]slack.UserGroup, error) {
+	s.groupsMu.Lock()
+	defer s.groupsMu.Unlock()
+	if s.groupsCache != nil {
+		return s.groupsCache, nil
+	}
+	g, err := s.SlackClient.UserGroups(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.groupsCache = g
+	return g, nil
 }

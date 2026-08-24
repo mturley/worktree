@@ -1,4 +1,4 @@
-import type { User } from "../api/slackApi"
+import type { User, UserGroup } from "../api/slackApi"
 
 /**
  * Rewrites Slack's mention tokens in a raw message string into the plain text
@@ -20,6 +20,7 @@ import type { User } from "../api/slackApi"
 export function resolveMentionsToText(
   text: string | undefined,
   users: Record<string, User> | undefined,
+  groups?: Record<string, UserGroup>,
 ): string {
   if (!text) return ""
 
@@ -39,9 +40,11 @@ export function resolveMentionsToText(
         const label = rest.slice(pipeIdx + 1)
         return label.startsWith("@") ? label : `@${label}`
       }
-      // No inline label and no group directory yet — keep the id so the
-      // mention stays identifiable rather than collapsing to "@subteam".
-      return `@${rest}`
+      // Prefer the group's handle (that is what Slack shows), then its name,
+      // then the bare id — never a generic word, so an unresolved group is
+      // still identifiable.
+      const g = groups?.[rest]
+      return `@${g?.Handle || g?.Name || rest}`
     }
     if (inner === "!here") return "@here"
     if (inner === "!channel") return "@channel"

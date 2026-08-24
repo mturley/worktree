@@ -18,12 +18,26 @@ export interface Style {
 
 export type ElementType = 'text' | 'user' | 'link' | 'emoji' | 'usergroup' | 'broadcast'
 
+export interface UserGroup {
+  ID: string
+  Name: string
+  Handle: string
+}
+
 export interface Element {
   Type: ElementType
   Text: string
   URL: string
   UserID: string
   Name: string
+  /**
+   * Subteam id for a "usergroup" element (Slack sends usergroup_id).
+   * Optional here only so test fixtures can stay terse — the Go side always
+   * serializes it, and every consumer reads it with a fallback anyway.
+   */
+  UserGroupID?: string
+  /** "here" | "channel" | "everyone" for a "broadcast" element. */
+  Range?: string
   Unicode: string
   Style: Style
 }
@@ -175,6 +189,8 @@ export interface ThreadResponse {
   currentUserId: string
   messages: Message[]
   users: Record<string, User>
+  /** Workspace user groups keyed by subteam id, for resolving <!subteam^S1>. */
+  groups?: Record<string, UserGroup>
   emoji: Record<string, string>
 }
 

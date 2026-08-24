@@ -68,51 +68,44 @@ come up; move items to "Done" (or delete) when shipped.
   - The old "removing must not also select" guard is now moot by
     construction: the two controls can no longer appear on the same card.
 
-## Phase D — PARTIALLY DONE (2026-08-24)
+## Phase D — DONE (2026-08-24)
 
-**Done (local, no library change needed):**
+- **Mention pills.** `components/slack/Mention.tsx` renders a mention as a
+  dark-blue chip with light-blue text, used by BOTH render paths
+  (`RichText.tsx` for typed blocks, `lib/mrkdwn.tsx` for the string fallback)
+  so a mention looks the same however the message arrived. Covers user, group
+  and broadcast mentions.
+- **User mentions resolve in the fallback title.** `lib/resolveMentions.ts`
+  rewrites mention tokens in a raw string, and `ThreadView` runs it *before*
+  `fallbackTitle` truncates — so an untitled thread shows names, and the
+  60-char budget is spent on resolved text rather than raw ids sliced
+  mid-token.
+- **Group mentions resolve to names** (watcher **v0.5.0**). The blocker was
+  data, not rendering: Slack keys a `usergroup` element `usergroup_id` and a
+  `broadcast` element `range`, but the library's `rawElement` mapped only
+  `name`, so both arrived empty. v0.5.0 adds `Element.UserGroupID` /
+  `Element.Range` and `Client.UserGroups(ctx)` (`usergroups.list`).
+  `Server.userGroups` caches the directory exactly as `Server.emoji` does and
+  attaches it to `ThreadResponse`; `Mention` resolves ids through a React
+  context (`SlackGroupsContext`) rather than drilling a `groups` prop through
+  every render function. Resolution order is handle → name → bare id, never a
+  generic word.
+- **Bug found and fixed en route:** every broadcast rendered as `@here`,
+  including `@channel` and `@everyone`, because the code fell back to `'here'`
+  when the (always-empty) `Name` was blank. No fixture covered `usergroup` or
+  `broadcast` elements, which is why it went unnoticed; both now have
+  regression tests.
 
-- **Slack-style mention pills.** `components/slack/Mention.tsx` renders a
-  mention as a dark-blue chip with light-blue text, and is used by BOTH
-  render paths — `RichText.tsx` (typed rich_text blocks) and `lib/mrkdwn.tsx`
-  (the mrkdwn-string fallback) — so a mention looks the same however the
-  message reached us. Covers user, group and broadcast (`@here`/`@channel`/
-  `@everyone`) mentions. Colours are scheme-independent by design (Slack
-  chips are blue either way, and the app defaults to dark); `Mention.tsx` is
-  the single place to change that.
-- **No more generic placeholders.** An unresolved group in the mrkdwn path
-  now renders as its id (`@S1`) instead of the word `@subteam`, mirroring the
-  `@U999` fallback already used for unknown users — an unresolved mention
-  should still tell you *which* mention it was.
-- **User mentions resolve in the fallback title.** New
-  `lib/resolveMentions.ts` rewrites `<@U123>` → `@ana`,
-  `<!subteam^S1|@platform>` → `@platform`, `<!here>` → `@here` in a raw
-  message string, and `ThreadView` now runs it **before** `fallbackTitle`
-  truncates — so an untitled thread's title shows names, and the 60-char
-  budget is spent on text the reader actually sees rather than on raw ids.
+**Follow-up worth doing:** `usergroups.list` is **not yet confirmed against a
+live workspace** — it is exercised only by a stubbed-HTTP unit test, and it is
+unverified whether a session (`xoxc`) token is permitted to call it. If it
+403s in practice, mentions degrade to showing subteam ids and the fix is a
+different endpoint, not a different parser. See
+`docs/reverse-engineering/slack-web-api.md`.
 
-**Remaining (cross-repo — the original ask):**
-
-Resolving a group id to its real **name** still needs library work, because
-the gap is in the data, not the rendering:
-
-- The watcher library's `Element` type exposes only `Name`, not the
-  `usergroup_id` Slack actually sends (`docs/reverse-engineering/slack-web-api.md`
-  records the field). So in the typed `RichText` path, when `Name` is empty
-  there is nothing local to fall back to — it still shows `@usergroup`.
-- There is no group directory to look names up in. `Server.emoji()` in
-  `internal/webui/slack.go` is the pattern to copy: fetch once, cache on the
-  `Server`, attach a filtered map to `ThreadResponse` next to `users`/`emoji`.
-
-Sequence: add `usergroup_id` to `Element` and a `UserGroups(ctx)` client
-method in `~/git/watcher/slack` (with tests and synthetic fixtures); cut a
-release; re-pin here; surface `groups` on `ThreadResponse`; then have
-`RichText`, `mrkdwn` and `resolveMentionsToText` consult it. Update
-`docs/reverse-engineering/slack-web-api.md` with the endpoint's real payload
-shape in the same change.
-
-**Note:** the library is also consumed by agent-handler, so cutting a release
-affects another consumer.
+**Not threaded everywhere:** `groups` reaches mentions via context from
+`ThreadView`, so mentions inside attachments/Block Kit rendered outside that
+provider still fall back to ids. Cheap to extend if it shows up in practice.
 
 ## Phase E (planned, not yet built)
 

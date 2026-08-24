@@ -45,3 +45,24 @@ describe("resolveMentionsToText", () => {
     expect(resolveMentionsToText("<@U123> hi", undefined)).toBe("@U123 hi")
   })
 })
+
+describe("resolveMentionsToText group directory", () => {
+  const groups = { S1: { ID: "S1", Name: "Platform Team", Handle: "platform" } } as never
+
+  it("prefers the group handle, which is what Slack displays", () => {
+    expect(resolveMentionsToText("<!subteam^S1>", undefined, groups)).toBe("@platform")
+  })
+
+  it("falls back to the group name when there is no handle", () => {
+    const noHandle = { S2: { ID: "S2", Name: "Design", Handle: "" } } as never
+    expect(resolveMentionsToText("<!subteam^S2>", undefined, noHandle)).toBe("@Design")
+  })
+
+  it("falls back to the bare id for an unknown group, never a generic word", () => {
+    expect(resolveMentionsToText("<!subteam^S999>", undefined, groups)).toBe("@S999")
+  })
+
+  it("still prefers an inline piped label over the directory", () => {
+    expect(resolveMentionsToText("<!subteam^S1|@override>", undefined, groups)).toBe("@override")
+  })
+})

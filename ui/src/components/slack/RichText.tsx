@@ -49,14 +49,17 @@ function renderElement(el: Element, key: number, users: Record<string, User>, em
     case 'emoji':
       return renderEmojiNode(el.Name, el.Unicode, emoji, key)
     case 'usergroup':
-      // Slack's payload carries a usergroup_id, but the watcher library's
-      // Element type only surfaces Name — so when Name is empty there is
-      // nothing local to fall back to but the generic word. Fixing this is
-      // the cross-repo half of Phase D: surface usergroup_id (and the group
-      // directory) in github.com/mturley/watcher/slack, then resolve here.
-      return <Mention key={key}>@{el.Name || 'usergroup'}</Mention>
+      // Mention resolves the id against the group directory from context and
+      // falls back to the bare id, so an unresolved group is identifiable.
+      return (
+        <Mention key={key} groupId={el.UserGroupID}>
+          @{el.UserGroupID || el.Name || 'usergroup'}
+        </Mention>
+      )
     case 'broadcast':
-      return <Mention key={key}>@{el.Name || 'here'}</Mention>
+      // Slack sends the kind in "range"; using Name here rendered @channel
+      // and @everyone both as @here, since Name is always empty for these.
+      return <Mention key={key}>@{el.Range || el.Name || 'here'}</Mention>
     default:
       return <Fragment key={key}>{el.Text}</Fragment>
   }

@@ -257,3 +257,24 @@ describe('RichText', () => {
     expect(pre?.textContent).toBe('const x = 1;')
   })
 })
+
+describe('RichText usergroup and broadcast elements', () => {
+  it('renders @channel and @everyone distinctly, not all as @here', () => {
+    // Slack sends the kind in "range"; reading Name (always empty for these)
+    // made every broadcast render as @here.
+    const chan = render(
+      <RichText blocks={[sectionBlock([{ ...textEl(''), Type: 'broadcast', Range: 'channel' }])]} users={{}} emoji={{}} />)
+    expect(chan.container.textContent).toContain('@channel')
+
+    const everyone = render(
+      <RichText blocks={[sectionBlock([{ ...textEl(''), Type: 'broadcast', Range: 'everyone' }])]} users={{}} emoji={{}} />)
+    expect(everyone.container.textContent).toContain('@everyone')
+  })
+
+  it('falls back to the subteam id for an unresolved group, not a generic word', () => {
+    const { container } = render(
+      <RichText blocks={[sectionBlock([{ ...textEl(''), Type: 'usergroup', UserGroupID: 'S42' }])]} users={{}} emoji={{}} />)
+    expect(container.textContent).toContain('@S42')
+    expect(container.textContent).not.toContain('usergroup')
+  })
+})

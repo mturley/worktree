@@ -162,9 +162,9 @@ function renderAngleToken(
       }
       return <Mention key={key}>{label}</Mention>
     }
-    // Keep the group id rather than a generic "@subteam" so the mention stays
-    // identifiable until the group directory lands.
-    return <Mention key={key}>@{rest}</Mention>
+    // Hand the bare id to Mention, which resolves it against the group
+    // directory from context and falls back to the id itself.
+    return <Mention key={key} groupId={rest}>@{rest}</Mention>
   }
   if (inner === '!here') {
     return <Mention key={key}>@here</Mention>

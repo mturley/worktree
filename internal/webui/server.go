@@ -39,6 +39,9 @@ type Server struct {
 	emojiMu    sync.Mutex
 	emojiCache map[string]string
 
+	groupsMu    sync.Mutex
+	groupsCache map[string]slack.UserGroup
+
 	channelMu    sync.Mutex
 	channelCache map[string]string
 

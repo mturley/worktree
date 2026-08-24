@@ -138,6 +138,46 @@ Two representations coexist:
    | `usergroup` | `usergroup_id` (subteam) |
    | `broadcast` | `range` (`here`/`channel`/`everyone`) |
 
+   **These two are keyed differently from every other leaf, and it bit us.**
+   `usergroup` carries `usergroup_id` and `broadcast` carries `range` —
+   neither uses `name`. The library's `rawElement` originally mapped only
+   `name` (its comment even claimed it held the usergroup id), so both fields
+   arrived empty: every group rendered as a generic placeholder, and every
+   broadcast rendered as `@here` regardless of whether it was `@channel` or
+   `@everyone`. Fixed in watcher v0.5.0, which adds `Element.UserGroupID` and
+   `Element.Range`. If you add another leaf type, check its real key rather
+   than assuming `name`.
+
+### `usergroups.list` — the user-group directory
+
+Resolving a `<!subteam^S123>` mention to a readable label needs a directory;
+the mention itself carries only the id.
+
+```
+POST /api/usergroups.list
+-> {"ok":true,"usergroups":[{"id":"S1","name":"Platform Team","handle":"platform"}, ...]}
+```
+
+- **Not yet confirmed against a live workspace.** The shape above is from
+  Slack's public documentation and is exercised only by a stubbed-HTTP unit
+  test in `watcher/slack`. In particular it is UNVERIFIED whether
+  `usergroups.list` is permitted for a session (`xoxc`) token, or whether it
+  requires a scope a user token does not carry — if it 403s in practice, the
+  UI degrades to showing subteam ids and the fix is a different endpoint, not
+  a different parser. Confirm and update this note when you next see a real
+  group mention render.
+- `handle` is what Slack renders in a message (`@platform`); `name` is the
+  human label shown in admin UI (`Platform Team`). Prefer `handle`, fall back
+  to `name`, then to the bare id — never to a generic word, or every group
+  looks alike.
+- The directory is workspace-wide and changes rarely, so fetch it once and
+  cache it rather than per thread. `watcher/slack.Client.UserGroups` returns
+  it keyed by id; `internal/webui`'s `Server.userGroups` caches it exactly as
+  `Server.emoji` caches the emoji map.
+- A failed lookup returns an error rather than an empty map, so callers can
+  tell "lookup failed" from "workspace has no groups" — the thread render
+  degrades to showing ids instead of failing.
+
 **Render from `blocks`** — it's typed and unambiguous, unlike reverse-parsing mrkdwn. Fall
 back to `text` only for message subtypes that lack `blocks` (some Slackbot/bot messages).
 

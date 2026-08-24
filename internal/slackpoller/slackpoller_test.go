@@ -34,6 +34,9 @@ func (f *fakeClient) Users(context.Context, []string) (map[string]slack.User, er
 	return nil, nil
 }
 func (f *fakeClient) Emoji(context.Context) (map[string]string, error)         { return nil, nil }
+func (f *fakeClient) UserGroups(ctx context.Context) (map[string]slack.UserGroup, error) {
+	return nil, nil
+}
 func (f *fakeClient) MarkRead(context.Context, string, string, string) error   { return nil }
 func (f *fakeClient) MarkUnread(context.Context, string, string, string) error { return nil }
 func (f *fakeClient) PostReply(context.Context, string, string, string) (slack.Message, error) {
@@ -104,6 +107,9 @@ func (s *slowClient) Users(context.Context, []string) (map[string]slack.User, er
 	return nil, nil
 }
 func (s *slowClient) Emoji(context.Context) (map[string]string, error)         { return nil, nil }
+func (s *slowClient) UserGroups(ctx context.Context) (map[string]slack.UserGroup, error) {
+	return nil, nil
+}
 func (s *slowClient) MarkRead(context.Context, string, string, string) error   { return nil }
 func (s *slowClient) MarkUnread(context.Context, string, string, string) error { return nil }
 func (s *slowClient) PostReply(context.Context, string, string, string) (slack.Message, error) {
@@ -446,4 +452,15 @@ func TestResubscribeDuringTeardownDoesNotOrphanNewLoop(t *testing.T) {
 	if after := runtime.NumGoroutine(); after > before {
 		t.Fatalf("goroutine leak: before=%d after=%d", before, after)
 	}
+}
+
+// slack.Client gained UserGroups in watcher v0.5.0 (usergroup_id / broadcast
+// range support). These fakes only exercise the polling path, so a nil map is
+// the right stub.
+func (c *countingClient) UserGroups(ctx context.Context) (map[string]slack.UserGroup, error) {
+	return nil, nil
+}
+
+func (c *controlledClient) UserGroups(ctx context.Context) (map[string]slack.UserGroup, error) {
+	return nil, nil
 }

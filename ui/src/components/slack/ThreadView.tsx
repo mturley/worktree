@@ -6,6 +6,7 @@ import { getConfig, markRead, markUnread, postReply, toggleReaction } from '../.
 import { deriveThreadMeta } from '../../lib/deriveThreadMeta'
 import { fallbackTitle } from '../../lib/fallbackTitle'
 import { resolveMentionsToText } from '../../lib/resolveMentions'
+import { SlackGroupsContext } from './Mention'
 import { applyReactionToggle } from '../../lib/reactionToggle'
 import { relativeFromNow } from '../../lib/relativeTime'
 import { computeUnreadPatch } from '../../lib/unreadPatch'
@@ -262,7 +263,7 @@ export function ThreadView({ tab, thread, onUpdateTab, onOpenThread, headerActio
   // <@U123> tokens mid-id, and the 60-char budget should be spent on the
   // resolved text the reader actually sees.
   const fallbackTitleText =
-    fallbackTitle(resolveMentionsToText(data?.messages[0]?.Text, data?.users)) || '(no title)'
+    fallbackTitle(resolveMentionsToText(data?.messages[0]?.Text, data?.users, data?.groups)) || '(no title)'
 
   const fromLine = meta?.author
     ? meta.channelName
@@ -291,6 +292,9 @@ export function ThreadView({ tab, thread, onUpdateTab, onOpenThread, headerActio
   )
 
   return (
+    // Provide the workspace group directory once for the whole thread: every
+    // mention below resolves subteam ids against it via context.
+    <SlackGroupsContext.Provider value={data?.groups ?? {}}>
     <Stack gap="sm" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/*
         The thread's own title/description/meta, carded to match the PR/Jira
@@ -434,5 +438,6 @@ export function ThreadView({ tab, thread, onUpdateTab, onOpenThread, headerActio
 
       <EditTabModal opened={editOpened} tab={tab} onClose={() => setEditOpened(false)} onSave={handleSaveDetails} />
     </Stack>
+    </SlackGroupsContext.Provider>
   )
 }
