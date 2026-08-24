@@ -201,27 +201,41 @@ Two symptoms observed together in a running UI on 2026-08-24; likely related.
 
 ## Phase F (planned) — known group id→name mappings in config
 
-Since `usergroups.list` cannot enumerate groups on an Enterprise Grid
-org-level token (see Phase D), resolve the common cases from **config**
-instead of from the API.
+`usergroups.list` returns an empty list on this Enterprise Grid org and there
+is no public single-group lookup (no `usergroups.info`), so group names cannot
+be resolved from the API here at all. Resolve the common cases from **config**
+instead.
 
-- Add a list of known subteam id → name/handle mappings to the worktree
-  config file (alongside the existing config in `internal/config`), surface it
-  wherever `ThreadResponse.groups` is built, and merge it over whatever
-  `usergroups.list` returns (which is empty on Grid, non-empty elsewhere) so
-  the API keeps working where it works.
-- Resolution order becomes: API directory → config mapping → any name Slack
-  inlined on the element → `@group` placeholder.
-- **Seeding the config:** discover real group ids from recent threads in the
-  user's known channels and record their names. Read
-  `~/.claude-personal/skills/.context/slack-mcp.md` first for the workspace
-  conventions and which channels matter, then use either the Slack MCP server
-  or the Web API to sample recent messages, collect `<!subteam^S…>` tokens,
-  and resolve each id to a human name (a piped label in some message, or by
-  asking the user for the ones that stay unknown).
-- Worth checking while sampling: how often Slack inlines a label on the
-  mention token. Where it does, rendering already works — the config only
-  needs to cover the ids that appear bare.
+- Add a list of known subteam id → name/handle mappings to the worktree config
+  (`internal/config`), surface it where `ThreadResponse.groups` is built, and
+  merge it **over** whatever `usergroups.list` returns — empty on Grid,
+  populated elsewhere — so the API path keeps working where it works.
+- Resolution order becomes: API directory → config mapping → any label Slack
+  inlined on the element → the `@group` placeholder.
+
+**Seeding the config — do NOT script the Slack API for this.** The original
+plan here was to sample recent threads via the API and harvest
+`<!subteam^S…>` tokens. That plan is withdrawn: scripted probing got the
+user's session token revoked twice in twenty minutes (see the warning in
+`docs/reverse-engineering/slack-web-api.md`). Safe alternatives, in order of
+preference:
+
+1. **Ask the user.** They have offered to supply names for ids we cannot
+   resolve, and they can read a group's name straight off a rendered message
+   in their own Slack client. This costs zero API calls and is the most
+   reliable source.
+2. **Harvest ids from data already on disk.** Cached thread payloads and
+   `watcher_events` bodies already contain `<!subteam^S…>` tokens from threads
+   the user tracks — collect the distinct ids locally, then hand that short
+   list to the user to name. No network access at all.
+3. **Browser devtools**, if we ever want the real directory: observe how the
+   Slack web app itself resolves subteam names (see the reverse-engineering
+   doc) and record the request shape before writing code against it.
+
+Worth measuring from the harvested sample: how often Slack inlines a label on
+the mention token. Where it does, rendering already works today and no config
+entry is needed — that determines how much config is actually worth
+maintaining.
 
 ## Deferred
 

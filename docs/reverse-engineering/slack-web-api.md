@@ -148,6 +148,31 @@ Two representations coexist:
    `Element.Range`. If you add another leaf type, check its real key rather
    than assuming `name`.
 
+### ⚠️ Automated probing can get the session token revoked
+
+**Learned the hard way, 2026-08-24.** A short burst of scripted API calls
+against a live workspace (a mix of `auth.test`, `usergroups.list`,
+`auth.teams.list`, `conversations.info`) caused the user's `xoxc` session
+token to be invalidated **twice within about twenty minutes** — once
+mid-sequence, with calls that had just succeeded suddenly returning
+`invalid_auth`. Session tokens are browser credentials; Slack appears to
+treat unusual method mixes from a non-browser client as automation and kills
+the session.
+
+Practical rules for anyone reverse-engineering this API:
+
+- **Prefer browser devtools over scripted probes.** Watching the real Slack
+  web app's network traffic costs zero automated calls, uses the session
+  exactly as Slack expects, and shows you the actual request the client makes
+  — which is strictly more informative than guessing parameters.
+- If you must call the API directly, keep it to a **single, targeted request**
+  and stop on the first answer. Do not iterate over parameter variants.
+- Never probe unusual admin/org methods (`auth.teams.list` and friends) —
+  they are the most likely to look like automation, and on a session token
+  they are usually rejected anyway (`not_allowed_token_type`).
+- Re-authenticating is not free for the user: it means re-extracting a token
+  and cookie by hand via `worktree setup`.
+
 ### `usergroups.list` — the user-group directory
 
 Resolving a `<!subteam^S123>` mention to a readable label needs a directory;
@@ -180,9 +205,25 @@ POST /api/usergroups.list
   that**; the UI degrades to a readable `@group` label with the subteam id in
   the title attribute.
 
-  If you pick this up: find where the Slack web client sources its subteam
-  directory (likely a bootstrap/`client.counts`-style payload) rather than
-  guessing more parameters for `usergroups.list`.
+  Additional negative results (fresh token, same outcome — so the empty list
+  is a Grid scoping limit, not a stale-token artifact):
+
+  | call | result |
+  |---|---|
+  | `usergroups.list` (fresh token, no params) | `ok`, 0 groups |
+  | `auth.teams.list` (to discover member workspace `T…` ids) | `ok:false`, `not_allowed_token_type` |
+
+  **There is no public single-group lookup** — the API has `usergroups.list`
+  but no `usergroups.info`, so there is no way to resolve one known subteam id
+  on demand either.
+
+  If you pick this up, do it **from browser devtools, not scripted probes**
+  (see the warning above). Open a channel containing a group mention in the
+  Slack web app, filter the network tab, and find the request that supplies
+  subteam names — the likely candidates are the client bootstrap payloads
+  (`client.boot` / `client.userBoot` / `client.counts`) or an internal
+  `subteams.*` method. Record the real request shape here before writing any
+  code against it.
 
 - `handle` is what Slack renders in a message (`@platform`); `name` is the
   human label shown in admin UI (`Platform Team`). Prefer `handle`, fall back
