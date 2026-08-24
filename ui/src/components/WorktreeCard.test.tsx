@@ -90,3 +90,15 @@ describe("WorktreeCard", () => {
     expect(screen.queryByRole("link", { name: /Fix the widget/ })).not.toBeInTheDocument()
   })
 })
+
+describe("WorktreeCard interactive affordance", () => {
+  it("marks a clickable card as interactive so it gets the clickable surface + hover", () => {
+    const { container } = wrap(<WorktreeCard w={summary} />)
+    expect(container.querySelector('[data-interactive="true"]')).toBeInTheDocument()
+  })
+
+  it("does not mark a non-clickable card as interactive", () => {
+    const { container } = wrap(<WorktreeCard w={summary} clickable={false} />)
+    expect(container.querySelector('[data-interactive="true"]')).not.toBeInTheDocument()
+  })
+})

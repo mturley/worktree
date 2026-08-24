@@ -1,0 +1,59 @@
+/*
+ * Affordance styling for cards that respond to clicks.
+ *
+ * Both WorktreeCard and ResourceCard render the same visual card whether or
+ * not it is interactive (a WorktreeCard is inert in the detail-page header;
+ * a ResourceCard is inert inside ResourceDetailPane). They mark themselves
+ * with data-interactive="true" when clickable, and this file is the single
+ * place that turns that flag into a visible affordance.
+ *
+ * Three distinct surfaces, so an interactive card reads as clickable before
+ * the pointer arrives and again once it hovers:
+ *
+ *            static (body)   interactive rest   interactive hover
+ *   dark     dark-7          dark-6             dark-5
+ *   light    white           gray-0             gray-1
+ *
+ * The semantic --mantine-color-default* tokens give the right answer in dark
+ * mode, but in light mode --mantine-color-default resolves to white — the
+ * same as the body — which would make the resting state invisible. Hence the
+ * explicit light-scheme override below rather than relying on the tokens.
+ *
+ * A selected ResourceCard sets its background inline, which beats this
+ * stylesheet, so the selected tint deliberately wins over both states.
+ */
+[data-interactive="true"] {
+  background-color: var(--mantine-color-default);
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+[data-interactive="true"]:hover {
+  background-color: var(--mantine-color-default-hover);
+  border-color: var(--mantine-color-default-border);
+}
+
+[data-mantine-color-scheme="light"] [data-interactive="true"] {
+  background-color: var(--mantine-color-gray-0);
+}
+
+[data-mantine-color-scheme="light"] [data-interactive="true"]:hover {
+  background-color: var(--mantine-color-gray-1);
+}
+
+/*
+ * These cards are keyboard-focusable but had no visible focus indicator.
+ * focus-visible (not focus) so a mouse click does not leave a ring behind.
+ */
+[data-interactive="true"]:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-interactive="true"] {
+    transition: none;
+  }
+}

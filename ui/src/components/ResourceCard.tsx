@@ -235,6 +235,9 @@ export function ResourceCard({
     <Paper
       p="xs"
       withBorder
+      // Selectable cards get the clickable surface + hover/focus styling from
+      // styles/cards.css; the detail pane renders this card without onSelect.
+      data-interactive={onSelect ? "true" : undefined}
       // A selected card is tinted so the current selection is obvious next to
       // the pane it drives.
       bg={selected ? "var(--mantine-color-blue-light)" : undefined}

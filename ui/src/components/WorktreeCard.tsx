@@ -56,6 +56,9 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
     ? {
         role: "group",
         "aria-label": `worktree ${w.branch}`,
+        // Flags this card for the clickable surface + hover/focus styling in
+        // styles/cards.css; absent when clickable={false} (detail-page header).
+        "data-interactive": "true",
         tabIndex: 0,
         onClick: go,
         onKeyDown: (e: React.KeyboardEvent) => {

@@ -161,3 +161,20 @@ describe("ResourceCard variants and selection", () => {
     expect(onSelect).not.toHaveBeenCalled()
   })
 })
+
+describe("ResourceCard interactive affordance", () => {
+  const jiraCard: ResourceDTO = {
+    type: "jira", id: "J-9", url: "https://jira/browse/J-9", primary: true,
+    title: "Affordance check", status: "In Progress",
+  } as ResourceDTO
+
+  it("marks a selectable card as interactive so it gets the clickable surface + hover", () => {
+    const { container } = wrap(<ResourceCard r={jiraCard} onSelect={() => {}} />)
+    expect(container.querySelector('[data-interactive="true"]')).toBeInTheDocument()
+  })
+
+  it("does not mark a non-selectable card as interactive", () => {
+    const { container } = wrap(<ResourceCard r={jiraCard} />)
+    expect(container.querySelector('[data-interactive="true"]')).not.toBeInTheDocument()
+  })
+})
