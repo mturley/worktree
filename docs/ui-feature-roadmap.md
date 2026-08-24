@@ -108,6 +108,38 @@ come up; move items to "Done" (or delete) when shipped.
   label. Confirm how common that is before investing in caching or a poll
   loop for the group list.
 
+- **Fix user mentions in the fallback title too.** The same inconsistency
+  exists for *user* pings, and it is arguably more visible: an untitled
+  thread's fallback title shows raw ids even though the identical text
+  resolves to names in the message body.
+
+  `ThreadView.tsx:260` does
+  `fallbackTitle(data?.messages[0]?.Text) || '(no title)'` — it passes the
+  **raw** message text, which still contains `<@U123>` / `<!subteam^S123>`
+  tokens. `lib/fallbackTitle.ts` is a pure string helper (collapse
+  whitespace, truncate to 60 chars) with no access to the `users` map, so
+  the ids survive verbatim while `renderAngleToken` resolves the very same
+  tokens in the body.
+
+  Two wrinkles to plan for:
+  - `fallbackTitle` returns a **string** because it is used as a title, so
+    mention resolution there means substituting names into the string rather
+    than returning nodes. The styled pill treatment below therefore does not
+    apply to the title — plain resolved names are the right output.
+  - Substitute **before** truncating. Truncating first would cut raw ids
+    mid-token and produce nonsense; the 60-char budget should be spent on
+    the resolved text the reader actually sees.
+
+- **Style mentions like Slack does.** Both user and group mentions should
+  render as a pill — dark blue background, light blue text — rather than as
+  plain inline text. Applies to both render paths (`RichText.tsx` for typed
+  blocks, `lib/mrkdwn.tsx` for the mrkdwn-string fallback), so the treatment
+  belongs in one shared component both call rather than duplicated styling.
+  Use Mantine theme tokens so it tracks light/dark; note the app defaults to
+  dark. Broadcast mentions (`@here` / `@channel` / `@everyone`) should be
+  considered at the same time — Slack styles those as pills too, and they
+  flow through the same code paths.
+
 ## Deferred
 
 - **Drag-to-reorder Slack threads in the rail.** The old slack-mini `TabBar`
