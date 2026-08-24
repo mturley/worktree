@@ -173,6 +173,55 @@ Practical rules for anyone reverse-engineering this API:
 - Re-authenticating is not free for the user: it means re-extracting a token
   and cookie by hand via `worktree setup`.
 
+### `usergroups/info` on the edge cache — THE way to resolve group names
+
+**This is what Slack's own web client uses**, discovered by watching its
+network traffic in a real browser (Playwright, 2026-08-24). It is not
+`usergroups.list`, and it is not on `slack.com/api` at all.
+
+```
+POST https://edgeapi.slack.com/cache/<TEAM_OR_ENTERPRISE_ID>/usergroups/info
+     ?_x_app_name=client
+
+body: {"token":"<xoxc-…>","ids":["S07CFUVMXBM"],"enterprise_token":"<xoxc-…>"}
+```
+
+Response (fields trimmed to the useful ones):
+
+```json
+{"ok":true,"results":[{
+  "id":"S07CFUVMXBM",
+  "handle":"openshift-ai-dashboard-zaffre-scrum",
+  "name":"OpenShift AI Dashboard Zaffre Scrum",
+  "team_id":"T027F3GAJ",
+  "is_usergroup":true, "is_subteam":true,
+  "user_count":6, "prefs":{"channels":["C069KSM8T9N"]}
+}]}
+```
+
+Why this matters, given everything above:
+
+- It is a **bulk lookup keyed by subteam id** — exactly the shape a renderer
+  needs, since a `<!subteam^S…>` mention hands you the id and you only lack
+  the name. The public API has no equivalent (`usergroups.list` enumerates and
+  returns nothing on Grid; there is no `usergroups.info`).
+- It works with the **same `xoxc` session token + `d` cookie** we already
+  hold — no extra scope, no workspace `T…` id needed in the path, because the
+  path takes the **enterprise/team id** which `auth.test` already returns as
+  `team_id`.
+- It even returns the workspace `team_id` (`T027F3GAJ`) that `auth.teams.list`
+  refused to give us — so if per-workspace `usergroups.list` is ever wanted,
+  this is where to get the id.
+- `handle` is what renders in a message (`@openshift-ai-dashboard-zaffre-scrum`);
+  `name` is the human label. Prefer `handle`, then `name`, then the bare id.
+
+Note the `enterprise_token` field is sent alongside `token`; in the observed
+request both were the same `xoxc` value. The URL path segment was the
+enterprise id (`E030G10V24F`) on this Grid org.
+
+**Do not paste real tokens into this file** — the observed request body
+contained the live session token and is redacted above.
+
 ### `usergroups.list` — the user-group directory
 
 Resolving a `<!subteam^S123>` mention to a readable label needs a directory;

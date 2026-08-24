@@ -199,43 +199,45 @@ Two symptoms observed together in a running UI on 2026-08-24; likely related.
   Unifying means picking which source wins for a Slack card, and keeping the
   edit-details affordance wherever the header ends up.
 
-## Phase F (planned) — known group id→name mappings in config
+## Phase F — SUPERSEDED (config mappings no longer needed)
 
-`usergroups.list` returns an empty list on this Enterprise Grid org and there
-is no public single-group lookup (no `usergroups.info`), so group names cannot
-be resolved from the API here at all. Resolve the common cases from **config**
-instead.
+The config-mapping workaround was designed around the belief that group names
+could not be fetched on an Enterprise Grid org. **That turned out to be wrong**
+— we just had the wrong endpoint.
 
-- Add a list of known subteam id → name/handle mappings to the worktree config
-  (`internal/config`), surface it where `ThreadResponse.groups` is built, and
-  merge it **over** whatever `usergroups.list` returns — empty on Grid,
-  populated elsewhere — so the API path keeps working where it works.
-- Resolution order becomes: API directory → config mapping → any label Slack
-  inlined on the element → the `@group` placeholder.
+Watching the real Slack web client in a browser showed it never calls
+`usergroups.list`. It calls a per-org **edge cache** endpoint:
 
-**Seeding the config — do NOT script the Slack API for this.** The original
-plan here was to sample recent threads via the API and harvest
-`<!subteam^S…>` tokens. That plan is withdrawn: scripted probing got the
-user's session token revoked twice in twenty minutes (see the warning in
-`docs/reverse-engineering/slack-web-api.md`). Safe alternatives, in order of
-preference:
+```
+POST https://edgeapi.slack.com/cache/<TEAM_OR_ENTERPRISE_ID>/usergroups/info
+body: {"token":"<xoxc-…>","ids":["S…"],"enterprise_token":"<xoxc-…>"}
+-> {"ok":true,"results":[{"id":"S…","handle":"…","name":"…","team_id":"T…"}]}
+```
 
-1. **Ask the user.** They have offered to supply names for ids we cannot
-   resolve, and they can read a group's name straight off a rendered message
-   in their own Slack client. This costs zero API calls and is the most
-   reliable source.
-2. **Harvest ids from data already on disk.** Cached thread payloads and
-   `watcher_events` bodies already contain `<!subteam^S…>` tokens from threads
-   the user tracks — collect the distinct ids locally, then hand that short
-   list to the user to name. No network access at all.
-3. **Browser devtools**, if we ever want the real directory: observe how the
-   Slack web app itself resolves subteam names (see the reverse-engineering
-   doc) and record the request shape before writing code against it.
+It is a **bulk lookup by subteam id**, works with the session token we already
+hold, and needs no workspace `T…` id — the path takes the enterprise/team id
+that `auth.test` already returns. Full shape in
+`docs/reverse-engineering/slack-web-api.md`.
 
-Worth measuring from the harvested sample: how often Slack inlines a label on
-the mention token. Where it does, rendering already works today and no config
-entry is needed — that determines how much config is actually worth
-maintaining.
+So the plan reverts to resolving names properly, and hand-maintained config
+mappings are unnecessary:
+
+- Add `UserGroupsInfo(ctx, ids []string) (map[string]UserGroup, error)` to
+  `~/git/watcher/slack` hitting the edge host. Note it is a **different base
+  URL** from the rest of the client (`edgeapi.slack.com`, not
+  `slack.com/api`), and the path needs the team/enterprise id — so the client
+  must learn that id (from `auth.test`) or take it as a parameter.
+- Keep `UserGroups(ctx)` (`usergroups.list`) as-is: harmless, and it works on
+  non-Grid workspaces where enumeration is possible.
+- In `internal/webui`, resolve only the ids actually referenced by the thread
+  (the `Users` map is already built that way) rather than fetching a whole
+  directory, and cache resolved groups on the `Server` across requests.
+- Then `Mention` resolves through the directory it already reads from context,
+  and the `@group` placeholder becomes a rare fallback rather than the norm.
+
+**Still worth keeping from the old plan:** a small config override map would
+let a user relabel a group, and costs almost nothing once the lookup works.
+Not required for correctness though — deferred unless asked.
 
 ## Deferred
 
