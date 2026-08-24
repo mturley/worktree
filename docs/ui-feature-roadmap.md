@@ -186,71 +186,41 @@ logged the bogus one by name; `#9449` went from no cached state to a real
 title. The invalid subscriptions were removed **after** the fix, deliberately
 — removing them first would have hidden the bug rather than fixing it.
 
-## Card unification (queued — Phase E prep)
+## Card unification — DONE (2026-08-24)
 
-- **Consider replacing `ThreadView`'s `headerAction` slot with a conditional
-  `ResourceCard`.** Phase C added `headerAction` so a Slack thread could
-  carry a remove control despite having no detail `ResourceCard`; Phase E
-  will need the same slot again for the Focus/Related control. Needing the
-  slot twice is the signal that the seam is in the wrong place — a single
-  card component that renders slack-specific content conditionally would let
-  every detail-side control apply to every resource type for free.
+`ResourceCard variant="detail"` is now the single header card for **every**
+resource type. `ThreadView` no longer carries its own title/description/meta
+block or a `headerAction` slot; `SlackThreadPane` renders the shared card
+above it.
 
-  The real decision it forces: `ResourceCard` renders **cached**
-  `watcher_resource_state`, while `ThreadView`'s header renders **live** data
-  derived from the fetched thread (`deriveThreadMeta`, plus the
-  first-message `fallbackTitle` for untitled threads). Those can disagree.
-  Unifying means picking which source wins for a Slack card, and keeping the
-  edit-details affordance wherever the header ends up.
+Needing that slot a second time (remove control in Phase C, Focus/Related
+next) was the signal the seam was in the wrong place. Every detail-side
+control now applies to every resource type for free.
 
-## Phase F — DONE (2026-08-24): group names resolve for real
+- **Cached wins.** The card renders cached `watcher_resource_state` rather
+  than live thread-derived meta. It already showed the same facts (channel,
+  author, started/active) and since v0.6.2 its title resolves mentions too.
+  Cost: it can lag by up to one poll cycle. Benefit: one card, one data
+  source, PR/Jira/Slack alike.
+- **Edit is preserved**, moved onto the card: `ResourceCard` takes an optional
+  `onEditDetails`, and `ThreadView`'s modal state is lifted so the card owns
+  the trigger while `ThreadView` still owns the modal.
+- **`ResourceActions`** ("Open in GitHub/Jira/Slack" + compound copy-link,
+  mirroring the ActionBar pattern) sits on the detail card. The Slack thread
+  footer deliberately keeps its own copy — it stays reachable after scrolling
+  a long thread.
+- **List cards have no links at all.** The title is plain text, so a card is a
+  single click target; mis-clicking a link when you meant to select is now
+  impossible rather than guarded. The obsolete stopPropagation guard test was
+  replaced by one pinning the stronger invariant.
+- **Home-page focus lines deep link into selection** —
+  `/worktree/<path>?resource=<type>:<id>` — instead of opening the resource
+  externally, so a mis-click lands on the worktree page with that resource
+  selected rather than in a new browser tab.
 
-Superseded the config-mapping workaround by finding the endpoint Slack's own
-web client uses (found via Playwright, confirmed by direct request outside the
-browser):
-
-```
-POST https://edgeapi.slack.com/cache/<TEAM_OR_ENTERPRISE_ID>/usergroups/info
-body: {"token":"<xoxc-…>","ids":["S…"],"enterprise_token":"<xoxc-…>"}
--> {"ok":true,"results":[{"id":"S…","handle":"…","name":"…","team_id":"T…"}]}
-```
-
-- watcher **v0.6.0** adds `Client.UserGroupsInfo(ctx, ids)`. It bypasses the
-  shared `call()` helper deliberately: different host, JSON body, and the
-  token travels in the body rather than as a bearer header. The team id for
-  the URL path comes from `auth.test` and is cached on the client, so callers
-  never have to know it.
-- `internal/webui` resolves **only the ids a thread actually mentions**
-  (`collectUserGroupIDs` gathers them from typed `usergroup` elements *and*
-  raw `<!subteam^…>` mrkdwn, deduped), serving what it can from a per-Server
-  cache and fetching only the remainder. A failed lookup still degrades to the
-  `@group` placeholder rather than failing the thread.
-- Hand-maintained config mappings are no longer needed. A config override to
-  *relabel* a group would still be cheap if ever wanted — deferred.
-
-## Cached-title mentions — DONE (2026-08-24)
-
-The Slack `ResourceCard` title showed raw `<@U…>` / `<!subteam^S…>` for text
-that resolved to names in the thread view. This was a **third render path**:
-the card title is the cached `title` in `watcher_resource_state`, written by
-the library's Slack poller, not rendered from a live thread.
-
-It was not staleness — `threadTitle` never resolved mentions at all, so even
-a fresh poll wrote raw tokens. `fallbacktitle.go` exists as a Go port of the
-TS helper *specifically* so the cached title matches the live one; when the
-live view learned to resolve mentions, the cached path silently diverged.
-
-Fixed in watcher **v0.6.2**: `ResolveMentions` is the Go counterpart of
-`ui/src/lib/resolveMentions.ts`, and the poller resolves the root text before
-caching, fetching directories only for the ids the text references and only
-those not already covered by the author lookup it does anyway.
-
-**Debugging note worth keeping:** verification was confounded twice — first by
-Go's test cache serving a stale "poll" that never ran (use `-count=1`), then
-by the long-running `worktree ui` server re-polling every two minutes with an
-older binary and overwriting the freshly-resolved titles. If cached state
-appears not to update, check for a running server on an old binary before
-suspecting the code.
+**Follow-up worth noting:** `custom_name`/`custom_description` are generic
+(not Slack-specific), so the edit affordance could be offered for PR and Jira
+cards too. Deliberately not done here to keep the change scoped.
 
 ## Deferred
 

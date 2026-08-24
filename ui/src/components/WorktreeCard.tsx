@@ -3,6 +3,7 @@ import { useLocation } from "wouter"
 import type { ResourceDTO, WorktreeSummary } from "../api/types"
 import { resourceSummary } from "../lib/resourceSummary"
 import { ResourceStatusIcon } from "./ResourceStatusIcon"
+import { serializeResourceKey } from "../lib/resourceKey"
 
 interface WorktreeCardProps {
   w: WorktreeSummary
@@ -14,27 +15,31 @@ interface WorktreeCardProps {
   clickable?: boolean
 }
 
-function FocusResourceLine({ r }: { r: ResourceDTO }) {
+function FocusResourceLine({ r, worktreePath }: { r: ResourceDTO; worktreePath: string }) {
+  const [, navigate] = useLocation()
   const label = r.custom_name || r.title || r.id
+  // Deep link into the worktree with this resource already selected, rather
+  // than opening the resource itself. Selecting is the useful default, and a
+  // mis-click no longer throws you into a new browser tab — the detail card's
+  // "Open in …" is where you go to the resource itself.
+  const href = `/worktree/${encodeURIComponent(worktreePath)}?resource=${serializeResourceKey({ type: r.type, id: r.id })}`
   return (
     <Group gap={6} wrap="nowrap" align="center">
       <ResourceStatusIcon r={r} />
-      {r.url ? (
-        <Anchor
-          href={r.url}
-          target="_blank"
-          rel="noreferrer"
-          size="sm"
-          // Stop the click reaching the card, so a resource link opens the
-          // resource instead of navigating to the worktree.
-          onClick={(e) => e.stopPropagation()}
-          style={{ overflowWrap: "anywhere" }}
-        >
-          {label}
-        </Anchor>
-      ) : (
-        <Text size="sm" style={{ overflowWrap: "anywhere" }}>{label}</Text>
-      )}
+      <Anchor
+        href={href}
+        size="sm"
+        // Stop the click reaching the card, which would navigate to the
+        // worktree WITHOUT this resource selected.
+        onClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          navigate(href)
+        }}
+        style={{ overflowWrap: "anywhere" }}
+      >
+        {label}
+      </Anchor>
     </Group>
   )
 }
@@ -102,7 +107,7 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
         {w.focus_resources.length > 0 && (
           <Stack gap={2}>
             {w.focus_resources.map((r) => (
-              <FocusResourceLine key={`${r.type}:${r.id}`} r={r} />
+              <FocusResourceLine key={`${r.type}:${r.id}`} r={r} worktreePath={w.path} />
             ))}
           </Stack>
         )}

@@ -19,11 +19,8 @@ vi.mock("../hooks/useTimeline", () => ({
 // ThreadView is heavy (mrkdwn, emoji, blocks); stand it in so this test is
 // about the PANE's routing decision, not the thread renderer's internals.
 vi.mock("./slack/ThreadView", () => ({
-  ThreadView: ({ tab, headerAction }: { tab: { channel: string; threadTs: string }; headerAction?: React.ReactNode }) => (
-    <div data-testid="thread-view">
-      {`thread ${tab.channel}/${tab.threadTs}`}
-      <div data-testid="thread-header-action">{headerAction}</div>
-    </div>
+  ThreadView: ({ tab }: { tab: { channel: string; threadTs: string } }) => (
+    <div data-testid="thread-view">{`thread ${tab.channel}/${tab.threadTs}`}</div>
   ),
 }))
 
@@ -59,12 +56,16 @@ describe("ResourceDetailPane slack branch", () => {
     expect(screen.queryByText("Activity")).not.toBeInTheDocument()
   })
 
-  it("does not render a resource summary card above a slack thread", () => {
-    // ThreadView carries its own title/description header, so a second
-    // summary card above it would be duplicated chrome.
+  it("renders the shared detail card above the slack thread", () => {
+    // Card unification: ThreadView no longer carries its own header block, so
+    // the same ResourceCard heads every resource type. Needing ThreadView's
+    // header slot twice (remove in phase C, focus/related next) was the
+    // signal the seam was in the wrong place.
     useWorktreeTimeline.mockReturnValue({ data: { events: [], next_cursor: "" }, isLoading: false, error: null })
-    wrap(<ResourceDetailPane path="/wt/foo" resource={slack} />)
-    expect(screen.queryByText("Deploy thread")).not.toBeInTheDocument()
+    wrap(<ResourceDetailPane path="/wt/foo" resource={slack} onRemoved={vi.fn()} />)
+    expect(screen.getByText("Deploy thread")).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Open in Slack" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Remove resource" })).toBeInTheDocument()
   })
 
   it("does not request a filtered timeline for a slack resource", () => {
@@ -87,13 +88,12 @@ describe("ResourceDetailPane slack branch", () => {
   })
 })
 
-describe("ResourceDetailPane slack remove control (phase C)", () => {
-  it("wires a remove control into the slack thread header", () => {
+describe("ResourceDetailPane slack remove control", () => {
+  it("puts the remove control on the shared card, not in a ThreadView slot", () => {
     // Phase B gives a slack thread no detail ResourceCard, so without this the
     // thread would be the one resource type you cannot remove from the UI.
     useWorktreeTimeline.mockReturnValue({ data: { events: [], next_cursor: "" }, isLoading: false, error: null })
     wrap(<ResourceDetailPane path="/wt/foo" resource={slack} onRemoved={vi.fn()} />)
-    const action = screen.getByTestId("thread-header-action")
-    expect(action.querySelector('[aria-label="Remove resource"]')).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Remove resource" })).toBeInTheDocument()
   })
 })

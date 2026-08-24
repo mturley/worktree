@@ -1,8 +1,9 @@
 import { useState } from "react"
-import { ActionIcon, Alert, Anchor, Badge, Button, Group, Paper, Popover, Stack, Text, UnstyledButton } from "@mantine/core"
+import { ActionIcon, Alert, Badge, Button, Group, Paper, Popover, Stack, Text, Tooltip, UnstyledButton } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
 import { relativeTime, relativeFromNow } from "../lib/relativeTime"
 import { api } from "../api/client"
+import { ResourceActions } from "./ResourceActions"
 
 function prStateColor(state?: string): string {
   switch ((state || "").toUpperCase()) {
@@ -56,7 +57,7 @@ function MinimalRow({ r }: { r: ResourceDTO }) {
   return (
     <Group gap="xs">
       <Badge size="xs" variant="light">{r.type}</Badge>
-      {r.url ? <Anchor href={r.url} target="_blank" size="sm" onClick={(e) => e.stopPropagation()}>{r.id}</Anchor> : <Text size="sm">{r.id}</Text>}
+      <Text size="sm">{r.id}</Text>
     </Group>
   )
 }
@@ -69,7 +70,7 @@ function PRCardBody({ r }: { r: ResourceDTO }) {
         <Text size="xs" c="dimmed">{prNumber(r.id)}</Text>
       </Group>
       <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
-        {r.url ? <Anchor href={r.url} target="_blank" onClick={(e) => e.stopPropagation()}>{r.title || r.id}</Anchor> : (r.title || r.id)}
+        {r.title || r.id}
       </Text>
       <Group gap={4} wrap="wrap">
         {r.state && <Badge size="xs" color={prStateColor(r.state)}>{r.state.toLowerCase()}</Badge>}
@@ -94,7 +95,7 @@ function JiraCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVar
         <Text size="xs" c="dimmed">{r.id}</Text>
       </Group>
       <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
-        {r.url ? <Anchor href={r.url} target="_blank" onClick={(e) => e.stopPropagation()}>{r.title || r.id}</Anchor> : (r.title || r.id)}
+        {r.title || r.id}
       </Text>
       <Group gap={4} wrap="wrap">
         {r.status && <Badge size="xs" variant="light">{r.status}</Badge>}
@@ -121,7 +122,7 @@ function SlackCardBody({ r }: { r: ResourceDTO }) {
     <Stack gap={2}>
       <Group gap="xs" wrap="wrap">
         <Badge size="xs" variant="light" color="grape">Slack</Badge>
-        {r.url ? <Anchor href={r.url} target="_blank" size="sm" onClick={(e) => e.stopPropagation()}>{label}</Anchor> : <Text size="sm">{label}</Text>}
+        <Text size="sm">{label}</Text>
       </Group>
       <Group gap="xs" wrap="wrap">
         {r.channel_name && <Text size="xs" c="dimmed">#{r.channel_name}</Text>}
@@ -215,6 +216,12 @@ interface ResourceCardProps {
   selected?: boolean
   /** When provided, the card becomes selectable. */
   onSelect?: () => void
+  /**
+   * When provided (detail variant only), shows an edit affordance for the
+   * resource's custom name/description. The owner supplies it because the
+   * modal lives with whoever knows how to persist the change.
+   */
+  onEditDetails?: () => void
 }
 
 export function ResourceCard({
@@ -224,6 +231,7 @@ export function ResourceCard({
   variant = "compact",
   selected = false,
   onSelect,
+  onEditDetails,
 }: ResourceCardProps) {
   const body = r.type === "slack" ? (
     <SlackCardBody r={r} />
@@ -249,6 +257,26 @@ export function ResourceCard({
       bg={selected ? "var(--mantine-color-blue-light)" : undefined}
       style={selected ? { borderColor: "var(--mantine-color-blue-filled)" } : undefined}
     >
+      {variant === "detail" && (
+        <Group gap="xs" wrap="wrap" mb={6}>
+          <ResourceActions r={r} />
+          {onEditDetails && (
+            <Tooltip label="Edit name/description">
+              <ActionIcon
+                variant="subtle"
+                size="sm"
+                aria-label="Edit resource details"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onEditDetails()
+                }}
+              >
+                ✎
+              </ActionIcon>
+            </Tooltip>
+          )}
+        </Group>
+      )}
       <Group justify="space-between" wrap="nowrap" align="flex-start">
         {onSelect ? (
           <UnstyledButton

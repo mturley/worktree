@@ -30,7 +30,10 @@ describe("WorktreeCard", () => {
   it("renders one line per focus resource with its title and link", () => {
     wrap(<WorktreeCard w={summary} />)
     const pr = screen.getByRole("link", { name: /Fix the widget/ })
-    expect(pr).toHaveAttribute("href", "https://github.com/o/r/pull/1")
+    // Focus lines deep link into the worktree with the resource selected,
+    // rather than out to GitHub/Jira/Slack.
+    expect(pr.getAttribute("href")).toContain(`/worktree/${encodeURIComponent("/wt/foo")}`)
+    expect(pr.getAttribute("href")).toContain("resource=pr:")
     expect(screen.getByRole("link", { name: /Investigate flux/ })).toBeInTheDocument()
     expect(screen.getByLabelText("open")).toBeInTheDocument()
   })
@@ -64,11 +67,17 @@ describe("WorktreeCard", () => {
     expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/foo")}`)
   })
 
-  it("does not navigate when a resource link is clicked", async () => {
+  it("opens the worktree with that resource pre-selected", async () => {
+    // A focus-resource line no longer jumps to GitHub/Jira/Slack: it deep
+    // links into the worktree page with the resource already selected, so a
+    // mis-click lands somewhere useful instead of a new browser tab.
     const user = userEvent.setup()
     wrap(<WorktreeCard w={summary} />)
     await user.click(screen.getByRole("link", { name: /Fix the widget/ }))
-    expect(window.location.pathname).toBe("/")
+    expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/foo")}`)
+    // Raw colon here (hand-built href) vs %3A when written via
+    // URLSearchParams; both decode to the same key.
+    expect(window.location.search).toContain("resource=pr:")
   })
 
   it("does not navigate when clickable is false", async () => {

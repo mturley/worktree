@@ -155,13 +155,10 @@ describe("ResourceCard variants and selection", () => {
     expect(onSelect).not.toHaveBeenCalled()
   })
 
-  it("does not select when the title link is clicked", async () => {
-    const onSelect = vi.fn()
-    const user = userEvent.setup()
-    wrap(<ResourceCard r={jira} onSelect={onSelect} />)
-    await user.click(screen.getByRole("link", { name: "Investigate flux" }))
-    expect(onSelect).not.toHaveBeenCalled()
-  })
+  // The "clicking a title link also selects the card" guard is gone: Phase C's
+  // successor removed the link from compact cards entirely, so the hazard is
+  // structurally impossible rather than guarded. See "renders no link in a
+  // compact card" below, which pins that stronger invariant.
 })
 
 describe("ResourceCard interactive affordance", () => {
@@ -202,5 +199,26 @@ describe("ResourceCard remove control placement (phase C)", () => {
   it("renders the remove control on the detail card", () => {
     wrap(<ResourceCard r={prCard} path="/wt/foo" variant="detail" />)
     expect(screen.getByRole("button", { name: "Remove resource" })).toBeInTheDocument()
+  })
+})
+
+describe("ResourceCard link removal + detail actions", () => {
+  const pr: ResourceDTO = {
+    type: "pr", id: "o/r#5", url: "https://gh/pr/5", primary: true,
+    title: "Clickable check", state: "OPEN",
+  } as ResourceDTO
+
+  it("renders no link in a compact card, so the whole card is one click target", () => {
+    // The title used to be an anchor: easy to hit by accident when you meant
+    // to select the card.
+    wrap(<ResourceCard r={pr} onSelect={() => {}} />)
+    expect(screen.queryByRole("link")).not.toBeInTheDocument()
+    expect(screen.getByText("Clickable check")).toBeInTheDocument()
+  })
+
+  it("offers Open in / copy on the detail card instead", () => {
+    wrap(<ResourceCard r={pr} variant="detail" />)
+    expect(screen.getByRole("link", { name: "Open in GitHub" })).toHaveAttribute("href", "https://gh/pr/5")
+    expect(screen.getByRole("button", { name: /copy link/i })).toBeInTheDocument()
   })
 })

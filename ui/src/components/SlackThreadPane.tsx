@@ -4,7 +4,7 @@ import type { ResourceDTO } from "../api/types"
 import { api } from "../api/client"
 import { useThread } from "../hooks/useThread"
 import { defaultTabName, type Tab } from "../state/tabs"
-import { RemoveControl } from "./ResourceCard"
+import { ResourceCard } from "./ResourceCard"
 import { ThreadView } from "./slack/ThreadView"
 
 interface SlackThreadPaneProps {
@@ -55,6 +55,9 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged }
   // Surfaces a failed "save thread details" write: the modal closes on submit,
   // so a rejected write would otherwise vanish and look like success.
   const [saveError, setSaveError] = useState<string | null>(null)
+  // The edit-details modal lives in ThreadView (it owns the modal component),
+  // but its trigger now sits on the shared card, so the open state is lifted.
+  const [editOpened, setEditOpened] = useState(false)
   const tab = slackTabFromResource(resource)
   const thread = useThread(tab)
 
@@ -81,14 +84,23 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged }
           <Text size="sm">{saveError}</Text>
         </Alert>
       ) : null}
+      {/*
+        The same detail card heads every resource type. ThreadView used to
+        carry its own header block plus a headerAction slot; needing that slot
+        a second time was the signal the seam belonged here instead.
+      */}
+      <ResourceCard
+        r={resource}
+        path={path}
+        onRemoved={onRemoved}
+        variant="detail"
+        onEditDetails={() => setEditOpened(true)}
+      />
       <ThreadView
         tab={tab}
         thread={thread}
-        // A slack thread has no detail ResourceCard to hang this off, so the
-        // remove control lives in the thread's own header card instead.
-        headerAction={
-          <RemoveControl r={resource} path={path} onRemoved={onRemoved ?? (() => {})} />
-        }
+        editOpened={editOpened}
+        onEditOpenedChange={setEditOpened}
         onUpdateTab={async (id, updates) => {
           try {
             setSaveError(null)

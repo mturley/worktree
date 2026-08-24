@@ -1,16 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { ActionIcon, Alert, Button, Divider, Group, Paper, Skeleton, Stack, Text, Tooltip } from '@mantine/core'
+import { Alert, Button, Divider, Group, Paper, Skeleton, Stack, Text } from '@mantine/core'
 import type { UseThreadResult } from '../../hooks/useThread'
 import { useNow } from '../../hooks/useNow'
 import { getConfig, markRead, markUnread, postReply, toggleReaction } from '../../api/slackApi'
 import { deriveThreadMeta } from '../../lib/deriveThreadMeta'
-import { fallbackTitle } from '../../lib/fallbackTitle'
-import { resolveMentionsToText } from '../../lib/resolveMentions'
 import { SlackGroupsContext } from './Mention'
 import { applyReactionToggle } from '../../lib/reactionToggle'
-import { relativeFromNow } from '../../lib/relativeTime'
 import { computeUnreadPatch } from '../../lib/unreadPatch'
-import { defaultTabName, type Tab } from '../../state/tabs'
+import type { Tab } from '../../state/tabs'
 import { ActionBar } from './ActionBar'
 import { Composer } from './Composer'
 import { EditTabModal } from './EditTabModal'
@@ -29,12 +26,12 @@ interface ThreadViewProps {
   onUpdateTab: (id: string, updates: { name: string; description: string }) => void
   onOpenThread: (url: string, opts: { background: boolean }) => void
   /**
-   * Optional control rendered beside the edit affordance in the header card
-   * (the resource remove control, when this thread is shown as a selected
-   * worktree resource). Kept as a slot so ThreadView stays presentational and
-   * knows nothing about resources or the API.
+   * Edit-details modal state, lifted to the caller. The shared ResourceCard
+   * above the thread owns the trigger now; ThreadView still owns the modal
+   * because it holds the tab it edits.
    */
-  headerAction?: React.ReactNode
+  editOpened?: boolean
+  onEditOpenedChange?: (opened: boolean) => void
 }
 
 // Cached across renders/tabs: the workspace domain never changes for a
@@ -49,14 +46,19 @@ export function openInSlackUrl(channel: string, threadTs: string, latestTs: stri
   return `https://${workspaceDomain}/archives/${channel}/p${pMessageId}?thread_ts=${threadTs}&cid=${channel}`
 }
 
-export function ThreadView({ tab, thread, onUpdateTab, onOpenThread, headerAction }: ThreadViewProps) {
+export function ThreadView({ tab, thread, onUpdateTab, onOpenThread, editOpened: editOpenedProp, onEditOpenedChange }: ThreadViewProps) {
   const { data, status, error, authExpired, lastUpdated, refresh, applyLocal } = thread
   const now = useNow()
   const [workspaceDomain, setWorkspaceDomain] = useState<string | null>(cachedWorkspaceDomain)
   const [marking, setMarking] = useState(false)
   const [markError, setMarkError] = useState<string | undefined>(undefined)
   const [isAtBottom, setIsAtBottom] = useState(true)
-  const [editOpened, setEditOpened] = useState(false)
+  const [editOpenedLocal, setEditOpenedLocal] = useState(false)
+  // Controlled when the caller lifts the state (the shared card owns the
+  // trigger); uncontrolled otherwise so ThreadView still works standalone.
+  const editOpened = editOpenedProp ?? editOpenedLocal
+  const setEditOpened = (v: boolean) =>
+    onEditOpenedChange ? onEditOpenedChange(v) : setEditOpenedLocal(v)
   const [pending, setPending] = useState<PendingReply[]>([])
   const scrollRef = useRef<HTMLDivElement>(null)
   const prevMessageCount = useRef(0)
@@ -258,23 +260,11 @@ export function ThreadView({ tab, thread, onUpdateTab, onOpenThread, headerActio
     )
   }
 
-  const hasCustomTitle = tab.name !== defaultTabName(tab.channel, tab.threadTs)
   // Resolve mentions BEFORE truncating: truncating first would slice raw
   // <@U123> tokens mid-id, and the 60-char budget should be spent on the
   // resolved text the reader actually sees.
-  const fallbackTitleText =
-    fallbackTitle(resolveMentionsToText(data?.messages[0]?.Text, data?.users, data?.groups)) || '(no title)'
 
-  const fromLine = meta?.author
-    ? meta.channelName
-      ? `From ${meta.author} in #${meta.channelName}`
-      : `From ${meta.author}`
-    : undefined
 
-  const startedLine =
-    meta?.startedTs && meta.activeTs
-      ? `Started ${relativeFromNow(meta.startedTs, now)} · Active ${relativeFromNow(meta.activeTs, now)}`
-      : undefined
 
   const actionBar = (
     <ActionBar
@@ -297,55 +287,10 @@ export function ThreadView({ tab, thread, onUpdateTab, onOpenThread, headerActio
     <SlackGroupsContext.Provider value={data?.groups ?? {}}>
     <Stack gap="sm" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/*
-        The thread's own title/description/meta, carded to match the PR/Jira
-        detail card. There is deliberately no separate summary card above the
-        thread — this IS that card.
+        No header here: the shared ResourceCard above this thread carries the
+        title, description, channel/author, timestamps, and the open/copy,
+        remove and edit controls for every resource type alike.
       */}
-      <Paper p="xs" withBorder>
-      <Stack gap={2}>
-        <Group gap="xs" wrap="nowrap" align="center">
-          {hasCustomTitle ? (
-            <Text fw={700} size="lg">
-              {tab.name}
-            </Text>
-          ) : (
-            <Text fw={700} size="lg" c="dimmed" fs="italic">
-              {fallbackTitleText}
-            </Text>
-          )}
-          <Tooltip label={hasCustomTitle ? 'Edit title/description' : 'Add a title/description'}>
-            <ActionIcon
-              variant="subtle"
-              size="sm"
-              onClick={() => setEditOpened(true)}
-              aria-label="Edit tab details"
-            >
-              ✎
-            </ActionIcon>
-          </Tooltip>
-          {headerAction ? <div style={{ marginLeft: 'auto' }}>{headerAction}</div> : null}
-        </Group>
-        {tab.description ? (
-          <Text size="sm" c="dimmed">
-            {tab.description}
-          </Text>
-        ) : (
-          <Text size="sm" c="dimmed" fs="italic">
-            No description
-          </Text>
-        )}
-        {fromLine && (
-          <Text size="xs" c="dimmed">
-            {fromLine}
-          </Text>
-        )}
-        {startedLine && (
-          <Text size="xs" c="dimmed">
-            {startedLine}
-          </Text>
-        )}
-      </Stack>
-      </Paper>
 
       {markError && (
         <Alert color="red" variant="light">
