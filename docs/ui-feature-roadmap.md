@@ -114,6 +114,41 @@ shape in the same change.
 **Note:** the library is also consumed by agent-handler, so cutting a release
 affects another consumer.
 
+## Phase E (planned, not yet built)
+
+- **Change a resource between Focus and Related from the detail card.** Show
+  the current state in the summary card at the top of the resource detail
+  view and let the user switch it — a `SegmentedControl` matching the one in
+  `AddResourceModal`, so the control reads the same at add time and after.
+  No confirmation step: changing the segment fires the request directly.
+
+  **This needs backend work first — there is no API for it today.** The
+  `related` flag can only be set when a resource is created:
+  - `POST /api/worktree-resources/add` accepts `related`, and
+    `resources.Add` honours it, but nothing changes it afterwards.
+  - `internal/resources` has `loadPrimaryFlags` (read) with no setter, so a
+    `SetPrimary(conn, worktreePath, resType, id, primary bool)` is needed to
+    insert/delete the `worktree_primary` row.
+  - Then a route (e.g. `POST /api/worktree-resources/primary` taking
+    `{path, type, id, primary}`) alongside the existing add/remove pair in
+    `registerAPI`.
+
+  Good news on scope: `worktree_primary` is **worktree's own table**, not one
+  of the watcher library's, so unlike Phase D this is entirely local — no
+  library change, no release, no re-pin.
+
+  Frontend notes:
+  - The control belongs on `ResourceCard variant="detail"`, next to the
+    remove control Phase C put there — the same "acts on the selected
+    resource" cluster.
+  - A Slack thread has no detail `ResourceCard` (Phase B), so as with the
+    remove control it needs the same treatment via `ThreadView`'s
+    `headerAction` slot, or that resource type silently can't be
+    re-classified.
+  - Refetch resources after the write so the Focus/Related sections in the
+    list re-sort; the card's own state should follow the refetched data
+    rather than being held locally, or the two can disagree.
+
 ## Deferred
 
 - **Drag-to-reorder Slack threads in the rail.** The old slack-mini `TabBar`
