@@ -32,7 +32,6 @@ vi.mock("../hooks/useWorktrees", () => ({
 vi.mock("../hooks/useTimeline", () => ({
   useWorktreeTimeline: () => ({ data: { events: [], next_cursor: "" }, isLoading: false, error: null }),
 }))
-vi.mock("../components/SlackTab", () => ({ SlackTab: () => <div>slack tab</div> }))
 
 import { setViewport } from "../testing/viewport"
 import { WorktreeDetailPage } from "./WorktreeDetailPage"
@@ -110,5 +109,18 @@ describe("WorktreeDetailPage selection", () => {
     await waitFor(() => expect(window.location.search).toContain("resource=pr%3A"))
     await user.click(card)
     await waitFor(() => expect(window.location.search).not.toContain("resource="))
+  })
+})
+
+describe("WorktreeDetailPage has no Overview/Slack tabs", () => {
+  it("renders the resource list as the page body, with no tab bar", async () => {
+    setViewport("wide")
+    wrap()
+    // Slack threads are now selected like any other resource, so the
+    // Overview/Slack tab split is gone entirely.
+    expect(await screen.findByRole("button", { name: /select resource o\/r#1/i })).toBeInTheDocument()
+    expect(screen.queryByRole("tab", { name: "Overview" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("tab", { name: "Slack" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument()
   })
 })

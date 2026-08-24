@@ -1,5 +1,5 @@
 import { useEffect } from "react"
-import { Anchor, Grid, Group, Stack, Tabs, Title } from "@mantine/core"
+import { Anchor, Grid, Group, Stack, Title } from "@mantine/core"
 import { Link, useRoute } from "wouter"
 import { useWorktreeDetail } from "../hooks/useWorktreeDetail"
 import { useSelectedResource } from "../hooks/useSelectedResource"
@@ -9,7 +9,6 @@ import { ResourceList } from "../components/ResourceList"
 import { ResourceDetailPane } from "../components/ResourceDetailPane"
 import { TimelineFeed } from "../components/TimelineFeed"
 import { WorktreeCard } from "../components/WorktreeCard"
-import { SlackTab } from "../components/SlackTab"
 
 export function WorktreeDetailPage() {
   const [, params] = useRoute("/worktree/:path*")
@@ -83,14 +82,12 @@ export function WorktreeDetailPage() {
         <Title order={4}>{branch}</Title>
       </Group>
       {summary && <WorktreeCard w={summary} clickable={false} />}
-      <Tabs defaultValue="overview">
-        <Tabs.List>
-          <Tabs.Tab value="overview">Overview</Tabs.Tab>
-          <Tabs.Tab value="slack">Slack</Tabs.Tab>
-        </Tabs.List>
-        <Tabs.Panel value="overview" pt="md">{overview}</Tabs.Panel>
-        <Tabs.Panel value="slack" pt="md"><SlackTab path={path} /></Tabs.Panel>
-      </Tabs>
+      {/*
+        No Overview/Slack tabs: a Slack thread is selected like any other
+        resource and renders in ResourceDetailPane, so the resource list plus
+        that pane is the whole page body.
+      */}
+      {overview}
     </Stack>
   )
 }

@@ -2,6 +2,7 @@ import { Button, Stack, Title } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
 import { useWorktreeTimeline } from "../hooks/useTimeline"
 import { ResourceCard } from "./ResourceCard"
+import { SlackThreadPane } from "./SlackThreadPane"
 import { TimelineFeed } from "./TimelineFeed"
 
 interface ResourceDetailPaneProps {
@@ -9,30 +10,31 @@ interface ResourceDetailPaneProps {
   resource: ResourceDTO
   /** Supplied only on narrow viewports, where this pane is a drilldown. */
   onBack?: () => void
-  /** Called after the resource is successfully removed via the detail card. */
   onRemoved?: () => void
+  /** Refetch the worktree's resources (used after a Slack details save). */
+  onResourceChanged?: () => void
 }
 
 /**
- * The selected-resource pane: a fuller summary of the resource above a
- * timeline filtered to just that resource.
+ * The PR/Jira body: a fuller summary of the resource above an activity feed
+ * filtered to just that resource.
  *
- * This is deliberately a swappable slot. Phase B (see
- * docs/superpowers/specs/2026-08-21-worktree-ui-resource-selection-design.md)
- * adds a `resource.type === "slack"` branch here that renders the Slack
- * thread in place of the filtered timeline — the surrounding responsive
- * shell, selection state, and back control stay exactly as they are.
+ * Split into its own component so the timeline query is only issued for the
+ * resource types that actually need it — a Slack thread must not fire a
+ * filtered-timeline fetch it will never render.
  */
-export function ResourceDetailPane({ path, resource, onBack, onRemoved }: ResourceDetailPaneProps) {
+function TimelineBody({
+  path,
+  resource,
+  onRemoved,
+}: {
+  path: string
+  resource: ResourceDTO
+  onRemoved?: () => void
+}) {
   const timeline = useWorktreeTimeline(path, { type: resource.type, id: resource.id })
-
   return (
-    <Stack gap="sm">
-      {onBack && (
-        <Button variant="subtle" size="compact-sm" onClick={onBack} style={{ alignSelf: "flex-start" }}>
-          ← all resources for worktree
-        </Button>
-      )}
+    <>
       <ResourceCard r={resource} path={path} onRemoved={onRemoved} variant="detail" />
       <Title order={5}>Activity</Title>
       <TimelineFeed
@@ -40,6 +42,35 @@ export function ResourceDetailPane({ path, resource, onBack, onRemoved }: Resour
         loading={timeline.isLoading}
         error={timeline.error}
       />
+    </>
+  )
+}
+
+/**
+ * The selected-resource pane. This is the swappable slot the design called
+ * for: the surrounding shell (back control, responsive placement, selection
+ * state) is identical for every resource type, and only the body differs —
+ * a Slack thread renders in place of the filtered activity feed.
+ */
+export function ResourceDetailPane({
+  path,
+  resource,
+  onBack,
+  onRemoved,
+  onResourceChanged,
+}: ResourceDetailPaneProps) {
+  return (
+    <Stack gap="sm">
+      {onBack && (
+        <Button variant="subtle" size="compact-sm" onClick={onBack} style={{ alignSelf: "flex-start" }}>
+          ← all resources for worktree
+        </Button>
+      )}
+      {resource.type === "slack" ? (
+        <SlackThreadPane resource={resource} onResourceChanged={onResourceChanged} />
+      ) : (
+        <TimelineBody path={path} resource={resource} onRemoved={onRemoved} />
+      )}
     </Stack>
   )
 }

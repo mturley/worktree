@@ -74,8 +74,8 @@ touch the UI, read the relevant section below before spelunking the source.
   `POST /api/worktrees/poll` (poll-on-view), and the `pollInFlight`
   atomic-bool guard (`safePollAll`) against overlapping polls.
 - **`stream.go`** — `GET /api/stream`, an SSE endpoint.
-- **`slack.go`**, **`slack_proxy.go`**, **`slack_sse.go`** — the Slack tab's
-  routes (`/api/thread*`, `/api/slack-*`); see "Slack tab" below.
+- **`slack.go`**, **`slack_proxy.go`**, **`slack_sse.go`** — the Slack thread
+  view's routes (`/api/thread*`, `/api/slack-*`); see "Slack thread view" below.
 
 ## HTTP API surface
 
@@ -234,11 +234,13 @@ Three UI entry points all call these and then refetch via
 - Each `ResourceCard`'s remove control (`ResourceCard.tsx`) — a `×` control
   behind a `Popover` confirm step, with its own inline error feedback if
   `removeResource` fails.
-- The Slack tab's `+` button (`SlackTab.tsx`), which opens the **same**
-  `AddResourceModal` (`inferResource` also recognizes Slack thread URLs).
+Slack threads are added through that same "Add resource" button —
+`inferResource` recognizes Slack thread URLs. (Phase B removed the Slack
+tab's separate `+` button along with the tab; since the resource list is now
+the whole page body rather than one tab of two, the button is always visible.)
 
 **`AddResourceModal` (`ui/src/components/AddResourceModal.tsx`)** — the single
-add-resource dialog shared by the Overview tab and the Slack tab. It prompts
+add-resource dialog used by the worktree detail page's resource list. It prompts
 for:
 - a URL (PR, Jira, or Slack),
 - **Focus vs Related** via a `SegmentedControl` (default Focus; `defaultRelated`
@@ -539,7 +541,7 @@ this was explicitly verified (Playwright, 380px and 1400px) during the Phase
   horizontal scroll (see `EventRow.tsx`, `ResourceCard.tsx`).
 - Verify no horizontal scrollbar appears at ~380px when adding new rows/cards.
 
-## Slack tab (Phase 3 fold-in)
+## Slack thread view
 
 Phase 3 folded a previously separate app (`slack-mini`) into worktree as a
 per-worktree "Slack" tab on `WorktreeDetailPage`, alongside "Overview". This
@@ -662,44 +664,60 @@ card (channel + thread pointer) alongside PR/Jira cards — no enrichment via
 `watcher_resource_state` yet (that's cached PR/Jira poll state; Slack threads
 are fetched live instead, not through the poll-and-cache path). **Phase 4**
 will add Slack *timeline* events (a real watcher-library Slack poller/source
-writing to `watcher_events`) — today, Slack activity does not appear in the
-global/worktree timeline, only in the dedicated Slack tab.
+writing to `watcher_events`). Slack threads now enrich through the same
+cached `watcher_resource_state` path as PRs/Jira, which is what lets
+`SlackCardBody` show channel, author and started/active timestamps.
 
-### Frontend: the per-worktree Slack tab
+### Frontend: the Slack thread view
 
-`WorktreeDetailPage` renders a Mantine `Tabs` with "Overview" (the
-pre-existing resource list + timeline layout, unchanged) and "Slack"
-(`ui/src/components/SlackTab.tsx`), scoped to that worktree's own `slack`-type
-resources — this replaces slack-mini's old global, flat sessionStorage tab
-bar (multiple threads across all workspaces in one un-scoped tab strip) with
-a resource-scoped view: only threads added to *this* worktree appear.
+**Phase B (2026-08-24) removed the Overview/Slack tab split and the thread
+rail entirely.** A Slack thread is now selected exactly like a PR or a Jira
+issue — it is a resource card in the worktree's resource list — and the
+selected thread renders in `ResourceDetailPane` where a PR/Jira resource
+would show its filtered activity feed. The resource list plus that pane is
+the whole detail-page body.
 
-- `useWorktreeSlackThreads(path)` derives the list of `SlackThreadRef`s from
-  this worktree's resources.
-- `SlackTab` picks a selected thread (defaulting to the first, kept valid as
-  the resource set changes), renders a `NavLink` list of threads +
-  `ThreadView` for the selected one via `useThread`.
-- **Enriched rail:** each rail `NavLink` uses a multi-line
-  `ThreadRailLabel` (`ui/src/components/slack/ThreadRailLabel.tsx`) showing the
-  thread name (or a first-message preview for untitled threads), an unread
-  dot, and dimmed author/channel + started/active lines. The per-thread
-  summaries come from `useTabMetas(tabs)` (which fetches `/api/thread` per
-  thread on a 30s interval and derives facts via `deriveThreadMeta`);
-  relative timestamps use `useNow(30_000)`. This metadata was re-ported from
-  the removed slack-mini `TabBar` when its global tab strip was dropped in the
-  Phase 3 fold-in — see `docs/ui-feature-roadmap.md`.
+- `ResourceDetailPane` branches on `resource.type === "slack"` and renders
+  `SlackThreadPane` (`ui/src/components/SlackThreadPane.tsx`) instead of the
+  `ResourceCard` + filtered `TimelineFeed` body. The PR/Jira body lives in a
+  sibling `TimelineBody` component **specifically so the timeline query is
+  never issued for a Slack thread** — hooks can't be called conditionally, so
+  the split is what keeps the fetch from firing.
+- `SlackThreadPane` maps the resource into the `Tab` shape the ported Slack UI
+  expects (`slackTabFromResource`, splitting the `<channel>:<ts>` id on its
+  first colon), calls `useThread`, and renders `ThreadView`. It owns the
+  "Slack not configured" (503) alert and surfaces a failed custom
+  name/description save inline.
+- **No resource summary card sits above a Slack thread** — `ThreadView`
+  already carries its own title/description header, so a card would be
+  duplicate chrome. (Phase C revisits this: it wraps that existing header in
+  a card to match the PR/Jira detail card, rather than adding a second one.)
+- The responsive drilldown is unchanged: on narrow viewports selecting a
+  thread replaces the list, with the same "← all resources for worktree"
+  back control.
+- **Removed in Phase B:** `components/SlackTab.tsx`,
+  `components/slack/ThreadRailLabel.tsx`, `hooks/useTabMetas.ts`, and
+  `hooks/useWorktreeSlackThreads.ts` — all orphaned when the rail went.
+  `useNow`, `deriveThreadMeta` and `fallbackTitle` were **kept**: `ThreadView`
+  still uses them.
+  - The rail's author/channel and started/active metadata was not lost — the
+    Slack `ResourceCard` already shows it from cached `watcher_resource_state`,
+    without `useTabMetas`' per-thread live fetch on a 30s interval.
+  - The rail's **unread dot** has no equivalent yet and was deliberately
+    dropped rather than kept alive by re-fetching every thread. See
+    `docs/ui-feature-roadmap.md`.
 - **Removed dead code (2026-08-20):** the old slack-mini global tab strip
   (`slack/TabBar.tsx`, `slack/AddTabModal.tsx`), the in-app open-thread-as-tab
   helper (`lib/openThread.ts`), and the sessionStorage-backed tab helpers in
-  `state/tabs.ts` (`loadTabs`/`saveTabs`/`addTabFromUrl`/`findTab`/`updateTab`/
-  `reorderTabs`/`readOpenParams`/`parseTabFromUrl`) were deleted — only `Tab`
-  and `defaultTabName` remain there. `@dnd-kit/*` deps are now unused (kept in
-  `package.json` for the deferred drag-to-reorder feature; see the roadmap).
-- Empty state (no Slack resources on this worktree): an `Alert` telling the
-  user to `worktree add <slack-thread-url>`.
+  `state/tabs.ts` — only `Tab` and `defaultTabName` remain there. `@dnd-kit/*`
+  deps are unused (kept for the deferred drag-to-reorder feature).
+
+- Empty state: there is no Slack-specific empty state any more. A worktree
+  with no Slack threads simply has no Slack cards in its resource list, and
+  the list's own "Add resource" button accepts a Slack thread URL.
 - Unconfigured state (backend returns `503`, detected via
-  `isNotConfigured(thread.error)` checking for `"503"` in the error string):
-  a distinct `Alert` telling the user Slack isn't configured — distinguished
+  `isNotConfigured(thread.error)` in `SlackThreadPane` checking for `"503"` in
+  the error string): a distinct `Alert` telling the user Slack isn't configured — distinguished
   from a per-thread load failure so the user isn't told to retry something
   that requires `worktree setup` instead.
 - Ported slack-mini UI components live under `ui/src/components/slack/`
@@ -709,11 +727,11 @@ a resource-scoped view: only threads added to *this* worktree appear.
   `renderEmoji.tsx`) — see "Slack conventions" in `.claude/CLAUDE.md` for the
   don't-reinvent rendering rules these follow.
 - **Custom thread name/description**: an "Edit thread details" modal
-  (reachable from the tab rail and the thread header) calls
+  (reachable from the thread header) calls
   `api.setResourceMeta({type: "slack", id, name, description})` →
-  `POST /api/resource-meta`, then refetches resources. Both the rail entry and
-  the `ThreadView` header prefer `resource.custom_name` over the raw
-  `channel:ts` id when set. The Overview tab's Slack resource card does the
+  `POST /api/resource-meta`, then refetches resources. The `ThreadView` header and the Slack
+  `ResourceCard` both prefer `resource.custom_name` over the raw `channel:ts`
+  id when set. The Overview tab's Slack resource card does the
   same (prefers `custom_name`, falling back to the raw id) — a real
   first-message-derived fallback (instead of the raw id) is deferred to
   Phase 4 / the poller-rethink, since Slack resources aren't enriched via

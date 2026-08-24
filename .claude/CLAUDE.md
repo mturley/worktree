@@ -33,7 +33,7 @@ make clean     # removes bin/, ui/dist contents (keeps ui/dist/.gitkeep), ui/nod
   - `dotfiles` — gitignored dotfile copying
   - `setup` — shell RC integration (removed `.git/info/exclude` management); also owns the `worktree setup` Slack step (`setup/slack.go`) that walks the user through extracting Slack session token+cookie and writes them to `~/.config/watcher/auth.yaml`
   - `ui` — terminal output
-  - `webui` — HTTP server + API for `worktree ui` (worktree list, timeline, resources, SSE stream, poll loop); also serves the Slack tab's routes (`/api/thread*`, `/api/slack-*`) from the same binary/port
+  - `webui` — HTTP server + API for `worktree ui` (worktree list, timeline, resources, SSE stream, poll loop); also serves the Slack thread view's routes (`/api/thread*`, `/api/slack-*`) from the same binary/port
   - `slackpoller` — polls Slack threads for changes and fans out updates to subscribers (live-tab SSE, in-memory, only while a thread is open in the UI); folded in from slack-mini's `internal/watcher` package (renamed to avoid collision); consumes `github.com/mturley/watcher/slack`'s `Client`/`Thread` types rather than a local `slackapi` package — there is no `internal/slackapi` anymore, it moved to the watcher library (see "Watcher library" below)
   - `slackcreds` — loads Slack token/cookie/workspace domain from the shared watcher `auth.yaml` and builds a `github.com/mturley/watcher/slack.Client`
   - `slackurl` — parses Slack thread URLs into `(channel, threadTS)` and builds the resource ID used to store them as worktree resources
@@ -48,7 +48,7 @@ in-memory SSE poller that only runs while a Slack thread is open in the UI,
 for near-real-time updates to that one thread. Slack used to only have (2);
 now it has both.
 
-Slack threads are worktree resources (`worktree add <slack-thread-url>`), shown in a per-worktree resource-scoped "Slack" tab in the web UI (alongside "Overview") — see `docs/web-ui-architecture.md` "Slack tab" section for the full map (routes, DTOs, frontend structure). Slack credentials live in the shared watcher config at `~/.config/watcher/auth.yaml` (not a worktree-specific file), acquired via the `worktree setup` Slack step.
+Slack threads are worktree resources (`worktree add <slack-thread-url>`). In the web UI they are **selected like any other resource** on the worktree detail page: selecting one renders the thread in `ResourceDetailPane` where a PR/Jira resource would show its filtered activity feed. There is no separate "Slack" tab (removed in Phase B, along with the old thread rail) — see `docs/web-ui-architecture.md` "Slack thread view" for the full map (routes, DTOs, frontend structure). Slack credentials live in the shared watcher config at `~/.config/watcher/auth.yaml` (not a worktree-specific file), acquired via the `worktree setup` Slack step.
 - `ui/` — Mantine + React frontend for `worktree ui` (Vite build; output embedded into the Go binary via `ui/dist`)
 - `docs/` — design documents and feature catalog; see `docs/web-ui-architecture.md` for the web UI (backend routes, DTOs, frontend structure, gotchas)
 

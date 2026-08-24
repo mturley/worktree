@@ -43,18 +43,35 @@ come up; move items to "Done" (or delete) when shipped.
   wide (side-by-side, highlighted card) and narrow (drilldown) presentations,
   so resizing mid-selection only changes layout, not what's selected.
 
-## Phase B (planned, not yet built)
+## Phase B — DONE (2026-08-24)
 
-- **Slack restructure inside `ResourceDetailPane`.** `ResourceDetailPane`
-  (`ui/src/components/ResourceDetailPane.tsx`) was deliberately built as a
-  swappable slot: Phase B adds a `resource.type === "slack"` branch there
-  that renders the Slack thread view (currently only reachable via the
-  separate "Slack" tab) in place of the filtered timeline, so selecting a
-  Slack resource from the Overview tab shows the thread directly. The
-  surrounding responsive shell, selection state (`useSelectedResource`), and
-  back control are already in place and should not need to change. See
-  `docs/superpowers/specs/2026-08-21-worktree-ui-resource-selection-design.md`
-  for the full design context.
+- **Slack threads folded into resource selection.** `ResourceDetailPane` now
+  branches on `resource.type === "slack"` and renders the thread
+  (`SlackThreadPane`) where a PR/Jira resource shows its filtered activity
+  feed. The Overview/Slack `Tabs` and the whole thread rail are gone: a Slack
+  thread is selected like any other resource, and the responsive drilldown
+  works on it unchanged. `SlackTab`, `ThreadRailLabel`, `useTabMetas` and
+  `useWorktreeSlackThreads` were deleted as orphans.
+
+## Phase C (planned, not yet built)
+
+- **Move the remove control into the detail card, and card the Slack thread
+  header.**
+  - Drop the `×` remove control from the selectable `ResourceCard`s in the
+    worktree's resource list — with cards now clickable-to-select, a
+    per-card `×` is both visual noise and an easy mis-click.
+  - Rely instead on a `×` in the summary card at the top of the detail side,
+    shown for whichever resource is currently selected. (The plumbing already
+    exists: `ResourceDetailPane` takes `onRemoved`, and `WorktreeDetailPage`
+    passes `resources.refetch`; the stale-selection effect then clears the
+    now-dangling selection automatically.)
+  - Wrap the Slack thread view's existing header (title, description,
+    author/channel, started/active timestamps) in a card matching the PR/Jira
+    detail card, **without losing the edit-details affordance**.
+  - Note the subtlety: Phase B deliberately renders *no* summary card above a
+    Slack thread because `ThreadView` already has its own header. Phase C is
+    about restyling that existing header as a card — **not** about adding a
+    second card above it.
 
 ## Deferred
 
@@ -88,6 +105,14 @@ come up; move items to "Done" (or delete) when shipped.
     enriches only the events it keeps), but the underlying per-event expense
     is unchanged. See
     `docs/superpowers/specs/2026-08-21-worktree-ui-resource-selection-design.md`.
+
+- **Unread indicator for Slack threads.** The removed thread rail showed an
+  unread dot per thread, driven by `useTabMetas` fetching `/api/thread` for
+  every open thread on a 30s interval. Phase B dropped it rather than keep
+  that fan-out alive for every Slack resource in a list. To restore it, the
+  cheap path is to have the watcher Slack poller record unread state in
+  `watcher_resource_state` (it already writes channel/author/timestamps
+  there), so the Slack `ResourceCard` can show it with no extra fetches.
 
 - **Resource cards auto-refresh on SSE.** `useSSE` invalidates `["timeline"]`
   and `["worktrees"]` on `events_new` but not `["resources", path]`, so a
