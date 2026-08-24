@@ -37,6 +37,9 @@ func (f *fakeClient) Emoji(context.Context) (map[string]string, error)         {
 func (f *fakeClient) UserGroups(ctx context.Context) (map[string]slack.UserGroup, error) {
 	return nil, nil
 }
+func (f *fakeClient) UserGroupsInfo(ctx context.Context, ids []string) (map[string]slack.UserGroup, error) {
+	return nil, nil
+}
 func (f *fakeClient) MarkRead(context.Context, string, string, string) error   { return nil }
 func (f *fakeClient) MarkUnread(context.Context, string, string, string) error { return nil }
 func (f *fakeClient) PostReply(context.Context, string, string, string) (slack.Message, error) {
@@ -108,6 +111,9 @@ func (s *slowClient) Users(context.Context, []string) (map[string]slack.User, er
 }
 func (s *slowClient) Emoji(context.Context) (map[string]string, error)         { return nil, nil }
 func (s *slowClient) UserGroups(ctx context.Context) (map[string]slack.UserGroup, error) {
+	return nil, nil
+}
+func (s *slowClient) UserGroupsInfo(ctx context.Context, ids []string) (map[string]slack.UserGroup, error) {
 	return nil, nil
 }
 func (s *slowClient) MarkRead(context.Context, string, string, string) error   { return nil }
@@ -460,7 +466,13 @@ func TestResubscribeDuringTeardownDoesNotOrphanNewLoop(t *testing.T) {
 func (c *countingClient) UserGroups(ctx context.Context) (map[string]slack.UserGroup, error) {
 	return nil, nil
 }
+func (c *countingClient) UserGroupsInfo(ctx context.Context, ids []string) (map[string]slack.UserGroup, error) {
+	return nil, nil
+}
 
 func (c *controlledClient) UserGroups(ctx context.Context) (map[string]slack.UserGroup, error) {
+	return nil, nil
+}
+func (c *controlledClient) UserGroupsInfo(ctx context.Context, ids []string) (map[string]slack.UserGroup, error) {
 	return nil, nil
 }

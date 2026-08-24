@@ -93,7 +93,7 @@ func (s *Server) buildThreadResponse(ctx context.Context, ch, ts string, th slac
 	// A failed group lookup must not fail the whole thread render: groups are
 	// a nicety (nicer mention labels), whereas the thread is the point. Degrade
 	// to an empty directory and let mentions fall back to their ids.
-	groups, groupsErr := s.userGroups(ctx)
+	groups, groupsErr := s.userGroupsFor(ctx, collectUserGroupIDs(th))
 	if groupsErr != nil {
 		if s.Logger != nil {
 			s.Logger.Printf("slack usergroups: %v", groupsErr)
@@ -332,20 +332,85 @@ func collectEmojiNames(t slack.Thread) []string {
 	return names
 }
 
-// userGroups returns the workspace's user-group directory, fetching it once
-// via SlackClient.UserGroups and caching it on the Server for subsequent
-// requests — the same fetch-once shape as emoji, and for the same reason: the
-// directory changes rarely and every thread render would otherwise re-fetch it.
-func (s *Server) userGroups(ctx context.Context) (map[string]slack.UserGroup, error) {
+// mrkdwnSubteamRe matches a "<!subteam^S123>" mention in raw mrkdwn text, for
+// messages that arrive without typed blocks.
+var mrkdwnSubteamRe = regexp.MustCompile(`<!subteam\^([A-Z0-9]+)`)
+
+// collectUserGroupIDs returns the subteam ids referenced anywhere in the
+// thread, from both typed usergroup elements and raw mrkdwn text.
+func collectUserGroupIDs(t slack.Thread) []string {
+	seen := map[string]struct{}{}
+	var ids []string
+	add := func(id string) {
+		if id == "" {
+			return
+		}
+		if _, ok := seen[id]; ok {
+			return
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	for _, m := range t.Messages {
+		for _, mm := range mrkdwnSubteamRe.FindAllStringSubmatch(m.Text, -1) {
+			add(mm[1])
+		}
+		for _, b := range m.Blocks {
+			for _, e := range b.Elements {
+				if e.Type == "usergroup" {
+					add(e.UserGroupID)
+				}
+			}
+			for _, item := range b.Items {
+				for _, e := range item {
+					if e.Type == "usergroup" {
+						add(e.UserGroupID)
+					}
+				}
+			}
+		}
+	}
+	return ids
+}
+
+// userGroupsFor resolves the given subteam ids to groups, serving what it can
+// from the per-Server cache and fetching only the remainder.
+//
+// It resolves specific ids rather than fetching a directory because the only
+// endpoint that works on an Enterprise Grid org is an id lookup —
+// usergroups.list comes back empty there. Resolved groups are cached across
+// requests since a group's name effectively never changes.
+func (s *Server) userGroupsFor(ctx context.Context, ids []string) (map[string]slack.UserGroup, error) {
+	out := make(map[string]slack.UserGroup, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	var missing []string
 	s.groupsMu.Lock()
-	defer s.groupsMu.Unlock()
-	if s.groupsCache != nil {
-		return s.groupsCache, nil
+	for _, id := range ids {
+		if g, ok := s.groupsCache[id]; ok {
+			out[id] = g
+		} else {
+			missing = append(missing, id)
+		}
 	}
-	g, err := s.SlackClient.UserGroups(ctx)
+	s.groupsMu.Unlock()
+
+	if len(missing) == 0 {
+		return out, nil
+	}
+	fetched, err := s.SlackClient.UserGroupsInfo(ctx, missing)
 	if err != nil {
-		return nil, err
+		return out, err // return what the cache already had
 	}
-	s.groupsCache = g
-	return g, nil
+	s.groupsMu.Lock()
+	if s.groupsCache == nil {
+		s.groupsCache = map[string]slack.UserGroup{}
+	}
+	for id, g := range fetched {
+		s.groupsCache[id] = g
+		out[id] = g
+	}
+	s.groupsMu.Unlock()
+	return out, nil
 }

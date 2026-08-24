@@ -59,6 +59,9 @@ func (f *fakeSlack) Emoji(ctx context.Context) (map[string]string, error) { retu
 func (f *fakeSlack) UserGroups(ctx context.Context) (map[string]slack.UserGroup, error) {
 	return nil, nil
 }
+func (f *fakeSlack) UserGroupsInfo(ctx context.Context, ids []string) (map[string]slack.UserGroup, error) {
+	return nil, nil
+}
 
 func (f *fakeSlack) MarkRead(ctx context.Context, channel, threadTS, ts string) error {
 	if f.err != nil {
@@ -173,5 +176,38 @@ func TestSlackThreadUnconfigured(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != 503 {
 		t.Fatalf("expected 503 when Slack unconfigured, got %d", resp.StatusCode)
+	}
+}
+
+// TestCollectUserGroupIDs pins that we gather subteam ids from BOTH render
+// paths — typed usergroup elements and raw mrkdwn — since a thread can arrive
+// either way and a missed id means a mention renders as a placeholder.
+func TestCollectUserGroupIDs(t *testing.T) {
+	th := slack.Thread{Messages: []slack.Message{
+		{Text: "ping <!subteam^S111> and <!subteam^S222|@handle>"},
+		{Blocks: []slack.Block{{Elements: []slack.Element{
+			{Type: "usergroup", UserGroupID: "S333"},
+			{Type: "usergroup", UserGroupID: "S111"}, // duplicate, must dedupe
+			{Type: "text", Text: "hi"},
+		}}}},
+	}}
+	got := collectUserGroupIDs(th)
+	want := map[string]bool{"S111": true, "S222": true, "S333": true}
+	if len(got) != 3 {
+		t.Fatalf("want 3 unique ids, got %d: %v", len(got), got)
+	}
+	for _, id := range got {
+		if !want[id] {
+			t.Errorf("unexpected id %q in %v", id, got)
+		}
+	}
+}
+
+// TestCollectUserGroupIDsEmpty ensures a thread with no group mentions asks
+// for nothing, so no lookup request is made at all.
+func TestCollectUserGroupIDsEmpty(t *testing.T) {
+	th := slack.Thread{Messages: []slack.Message{{Text: "no groups here"}}}
+	if got := collectUserGroupIDs(th); len(got) != 0 {
+		t.Fatalf("want no ids, got %v", got)
 	}
 }

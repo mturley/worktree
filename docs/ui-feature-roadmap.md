@@ -199,14 +199,11 @@ Two symptoms observed together in a running UI on 2026-08-24; likely related.
   Unifying means picking which source wins for a Slack card, and keeping the
   edit-details affordance wherever the header ends up.
 
-## Phase F — SUPERSEDED (config mappings no longer needed)
+## Phase F — DONE (2026-08-24): group names resolve for real
 
-The config-mapping workaround was designed around the belief that group names
-could not be fetched on an Enterprise Grid org. **That turned out to be wrong**
-— we just had the wrong endpoint.
-
-Watching the real Slack web client in a browser showed it never calls
-`usergroups.list`. It calls a per-org **edge cache** endpoint:
+Superseded the config-mapping workaround by finding the endpoint Slack's own
+web client uses (found via Playwright, confirmed by direct request outside the
+browser):
 
 ```
 POST https://edgeapi.slack.com/cache/<TEAM_OR_ENTERPRISE_ID>/usergroups/info
@@ -214,30 +211,18 @@ body: {"token":"<xoxc-…>","ids":["S…"],"enterprise_token":"<xoxc-…>"}
 -> {"ok":true,"results":[{"id":"S…","handle":"…","name":"…","team_id":"T…"}]}
 ```
 
-It is a **bulk lookup by subteam id**, works with the session token we already
-hold, and needs no workspace `T…` id — the path takes the enterprise/team id
-that `auth.test` already returns. Full shape in
-`docs/reverse-engineering/slack-web-api.md`.
-
-So the plan reverts to resolving names properly, and hand-maintained config
-mappings are unnecessary:
-
-- Add `UserGroupsInfo(ctx, ids []string) (map[string]UserGroup, error)` to
-  `~/git/watcher/slack` hitting the edge host. Note it is a **different base
-  URL** from the rest of the client (`edgeapi.slack.com`, not
-  `slack.com/api`), and the path needs the team/enterprise id — so the client
-  must learn that id (from `auth.test`) or take it as a parameter.
-- Keep `UserGroups(ctx)` (`usergroups.list`) as-is: harmless, and it works on
-  non-Grid workspaces where enumeration is possible.
-- In `internal/webui`, resolve only the ids actually referenced by the thread
-  (the `Users` map is already built that way) rather than fetching a whole
-  directory, and cache resolved groups on the `Server` across requests.
-- Then `Mention` resolves through the directory it already reads from context,
-  and the `@group` placeholder becomes a rare fallback rather than the norm.
-
-**Still worth keeping from the old plan:** a small config override map would
-let a user relabel a group, and costs almost nothing once the lookup works.
-Not required for correctness though — deferred unless asked.
+- watcher **v0.6.0** adds `Client.UserGroupsInfo(ctx, ids)`. It bypasses the
+  shared `call()` helper deliberately: different host, JSON body, and the
+  token travels in the body rather than as a bearer header. The team id for
+  the URL path comes from `auth.test` and is cached on the client, so callers
+  never have to know it.
+- `internal/webui` resolves **only the ids a thread actually mentions**
+  (`collectUserGroupIDs` gathers them from typed `usergroup` elements *and*
+  raw `<!subteam^…>` mrkdwn, deduped), serving what it can from a per-Server
+  cache and fetching only the remainder. A failed lookup still degrades to the
+  `@group` placeholder rather than failing the thread.
+- Hand-maintained config mappings are no longer needed. A config override to
+  *relabel* a group would still be cheap if ever wanted — deferred.
 
 ## Deferred
 
