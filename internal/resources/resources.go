@@ -18,6 +18,7 @@ type Resource struct {
 	Related           bool   // true when NOT the primary resource of its type
 	CustomName        string // user-supplied; empty => consumer falls back to platform name
 	CustomDescription string // user-supplied; empty => no description
+	UpdatedAt         string // RFC3339 UTC of the last name/description write; "" if never set
 }
 
 // Load returns the active tracked resources for a worktree.
@@ -47,6 +48,7 @@ func Load(conn *sql.DB, worktreePath string) ([]Resource, error) {
 		if meta != nil {
 			r.CustomName = meta.CustomName
 			r.CustomDescription = meta.CustomDescription
+			r.UpdatedAt = meta.UpdatedAt
 		}
 		out = append(out, r)
 	}
@@ -162,6 +164,17 @@ func RemoveAll(conn *sql.DB, worktreePath string) error {
 // needed. Empty strings clear the respective field.
 func SetMeta(conn *sql.DB, resType, id, name, description string) error {
 	return watcherdb.SetResourceMeta(conn, watcher.Resource{Type: resType, ID: id}, name, description)
+}
+
+// SetMetaAt is SetMeta with an explicit updated_at timestamp. Use it to
+// replicate a name from another database (e.g. handler pushing a newer name):
+// passing the origin timestamp lets both sides converge instead of
+// ping-ponging. An empty updatedAt falls back to SetMeta (stamps now).
+func SetMetaAt(conn *sql.DB, resType, id, name, description, updatedAt string) error {
+	if updatedAt == "" {
+		return SetMeta(conn, resType, id, name, description)
+	}
+	return watcherdb.SetResourceMetaAt(conn, watcher.Resource{Type: resType, ID: id}, name, description, updatedAt)
 }
 
 // Unwatch soft-unsubscribes as a user tombstone (distinct from Remove). The

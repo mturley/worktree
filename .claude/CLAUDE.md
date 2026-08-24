@@ -27,7 +27,7 @@ make clean     # removes bin/, ui/dist contents (keeps ui/dist/.gitkeep), ui/nod
   - `github` — GitHub PR metadata via `gh` CLI
   - `jira` — Jira REST API client
   - `ports` — port range allocation (DB-backed; `port_allocations` table)
-  - `resources` — worktree resource tracking (DB-backed; `watcher_subscriptions` + `worktree_primary` table)
+  - `resources` — worktree resource tracking (DB-backed; `watcher_subscriptions` + `worktree_primary` table). A resource's user-supplied **custom name/description** live in `watcher_resource_meta` (with an `updated_at` as of watcher v0.4.4); set them via the web UI or `worktree resources set-name <type> <id> --name … [--updated-at …]`. `resources list --json` exposes `custom_name`/`custom_description`/`updated_at`; agent-handler mirrors Slack-thread custom names into its own DB (newest-wins) via this CLI — see agent-handler's Phase 7. `SetMetaAt` preserves an explicit timestamp for that cross-DB replication; plain `SetMeta` stamps now.
   - `shellenv` — shell environment variable generation from DB (worktree env)
   - `env` — deprecated; superseded by `shellenv`
   - `dotfiles` — gitignored dotfile copying
