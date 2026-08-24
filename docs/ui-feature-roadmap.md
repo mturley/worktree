@@ -199,6 +199,30 @@ Two symptoms observed together in a running UI on 2026-08-24; likely related.
   Unifying means picking which source wins for a Slack card, and keeping the
   edit-details affordance wherever the header ends up.
 
+## Phase F (planned) — known group id→name mappings in config
+
+Since `usergroups.list` cannot enumerate groups on an Enterprise Grid
+org-level token (see Phase D), resolve the common cases from **config**
+instead of from the API.
+
+- Add a list of known subteam id → name/handle mappings to the worktree
+  config file (alongside the existing config in `internal/config`), surface it
+  wherever `ThreadResponse.groups` is built, and merge it over whatever
+  `usergroups.list` returns (which is empty on Grid, non-empty elsewhere) so
+  the API keeps working where it works.
+- Resolution order becomes: API directory → config mapping → any name Slack
+  inlined on the element → `@group` placeholder.
+- **Seeding the config:** discover real group ids from recent threads in the
+  user's known channels and record their names. Read
+  `~/.claude-personal/skills/.context/slack-mcp.md` first for the workspace
+  conventions and which channels matter, then use either the Slack MCP server
+  or the Web API to sample recent messages, collect `<!subteam^S…>` tokens,
+  and resolve each id to a human name (a piped label in some message, or by
+  asking the user for the ones that stay unknown).
+- Worth checking while sampling: how often Slack inlines a label on the
+  mention token. Where it does, rendering already works — the config only
+  needs to cover the ids that appear bare.
+
 ## Deferred
 
 - **Drag-to-reorder Slack threads in the rail.** The old slack-mini `TabBar`
