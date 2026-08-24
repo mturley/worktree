@@ -67,7 +67,12 @@ export function ResourceDetailPane({
         </Button>
       )}
       {resource.type === "slack" ? (
-        <SlackThreadPane resource={resource} onResourceChanged={onResourceChanged} />
+        <SlackThreadPane
+          resource={resource}
+          path={path}
+          onRemoved={onRemoved}
+          onResourceChanged={onResourceChanged}
+        />
       ) : (
         <TimelineBody path={path} resource={resource} onRemoved={onRemoved} />
       )}

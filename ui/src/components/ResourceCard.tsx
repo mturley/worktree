@@ -133,7 +133,13 @@ function SlackCardBody({ r }: { r: ResourceDTO }) {
   )
 }
 
-function RemoveControl({ r, path, onRemoved }: { r: ResourceDTO; path: string; onRemoved: () => void }) {
+/**
+ * Confirm-then-remove control for a resource. Exported so the Slack thread
+ * pane can put the same control in its header — a slack thread has no detail
+ * ResourceCard to hang it off, and without it a thread would be the one
+ * resource type you could not remove from the UI.
+ */
+export function RemoveControl({ r, path, onRemoved }: { r: ResourceDTO; path: string; onRemoved: () => void }) {
   const [opened, setOpened] = useState(false)
   const [removing, setRemoving] = useState(false)
   const [removeError, setRemoveError] = useState<string | null>(null)
@@ -256,7 +262,12 @@ export function ResourceCard({
         ) : (
           <div style={{ flex: 1, minWidth: 0 }}>{body}</div>
         )}
-        <RemoveControl r={r} path={path} onRemoved={onRemoved} />
+        {/*
+          Only the detail card carries the remove control. List cards are
+          clickable-to-select, so a per-card x there is visual noise and an
+          easy mis-click; removal belongs with the selected resource.
+        */}
+        {variant === "detail" && <RemoveControl r={r} path={path} onRemoved={onRemoved} />}
       </Group>
     </Paper>
   )

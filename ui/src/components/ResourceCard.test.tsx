@@ -75,7 +75,7 @@ describe("ResourceCard remove control", () => {
     removeResource.mockResolvedValueOnce(null)
     const onRemoved = vi.fn()
     const user = userEvent.setup()
-    wrap(<ResourceCard r={r} path="/some/worktree" onRemoved={onRemoved} />)
+    wrap(<ResourceCard r={r} path="/some/worktree" onRemoved={onRemoved} variant="detail" />)
 
     await user.click(screen.getByRole("button", { name: "Remove resource" }))
     expect(await screen.findByText("Remove this resource?")).toBeInTheDocument()
@@ -89,7 +89,7 @@ describe("ResourceCard remove control", () => {
     removeResource.mockResolvedValueOnce(null)
     const onRemoved = vi.fn()
     const user = userEvent.setup()
-    wrap(<ResourceCard r={r} path="/some/worktree" onRemoved={onRemoved} />)
+    wrap(<ResourceCard r={r} path="/some/worktree" onRemoved={onRemoved} variant="detail" />)
 
     await user.click(screen.getByRole("button", { name: "Remove resource" }))
     await screen.findByText("Remove this resource?")
@@ -103,7 +103,7 @@ describe("ResourceCard remove control", () => {
     removeResource.mockRejectedValueOnce(new Error("failed to remove resource"))
     const onRemoved = vi.fn()
     const user = userEvent.setup()
-    wrap(<ResourceCard r={r} path="/some/worktree" onRemoved={onRemoved} />)
+    wrap(<ResourceCard r={r} path="/some/worktree" onRemoved={onRemoved} variant="detail" />)
 
     await user.click(screen.getByRole("button", { name: "Remove resource" }))
     await screen.findByText("Remove this resource?")
@@ -145,11 +145,13 @@ describe("ResourceCard variants and selection", () => {
     expect(screen.getByRole("button", { name: /select resource J-1/i })).toHaveAttribute("aria-pressed", "true")
   })
 
-  it("does not select when the remove control is used", async () => {
+  it("puts no remove control on a selectable card, so removing cannot select", () => {
+    // Phase C moved removal to the detail side. The old risk (clicking x also
+    // selecting the card) is now structurally impossible rather than guarded:
+    // the two controls never appear on the same card.
     const onSelect = vi.fn()
-    const user = userEvent.setup()
     wrap(<ResourceCard r={jira} onSelect={onSelect} />)
-    await user.click(screen.getByRole("button", { name: "Remove resource" }))
+    expect(screen.queryByRole("button", { name: "Remove resource" })).not.toBeInTheDocument()
     expect(onSelect).not.toHaveBeenCalled()
   })
 
@@ -176,5 +178,29 @@ describe("ResourceCard interactive affordance", () => {
   it("does not mark a non-selectable card as interactive", () => {
     const { container } = wrap(<ResourceCard r={jiraCard} />)
     expect(container.querySelector('[data-interactive="true"]')).not.toBeInTheDocument()
+  })
+})
+
+describe("ResourceCard remove control placement (phase C)", () => {
+  const prCard: ResourceDTO = {
+    type: "pr", id: "o/r#7", url: "https://gh/pr/7", primary: true,
+    title: "Removable", state: "OPEN",
+  } as ResourceDTO
+
+  it("does not render a remove control on a selectable list card", () => {
+    // With cards clickable-to-select, a per-card x is noise and an easy
+    // mis-click; removal lives on the detail side instead.
+    wrap(<ResourceCard r={prCard} path="/wt/foo" onSelect={() => {}} />)
+    expect(screen.queryByRole("button", { name: "Remove resource" })).not.toBeInTheDocument()
+  })
+
+  it("does not render a remove control on a plain compact card", () => {
+    wrap(<ResourceCard r={prCard} path="/wt/foo" />)
+    expect(screen.queryByRole("button", { name: "Remove resource" })).not.toBeInTheDocument()
+  })
+
+  it("renders the remove control on the detail card", () => {
+    wrap(<ResourceCard r={prCard} path="/wt/foo" variant="detail" />)
+    expect(screen.getByRole("button", { name: "Remove resource" })).toBeInTheDocument()
   })
 })

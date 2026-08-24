@@ -19,8 +19,11 @@ vi.mock("../hooks/useTimeline", () => ({
 // ThreadView is heavy (mrkdwn, emoji, blocks); stand it in so this test is
 // about the PANE's routing decision, not the thread renderer's internals.
 vi.mock("./slack/ThreadView", () => ({
-  ThreadView: ({ tab }: { tab: { channel: string; threadTs: string } }) => (
-    <div data-testid="thread-view">{`thread ${tab.channel}/${tab.threadTs}`}</div>
+  ThreadView: ({ tab, headerAction }: { tab: { channel: string; threadTs: string }; headerAction?: React.ReactNode }) => (
+    <div data-testid="thread-view">
+      {`thread ${tab.channel}/${tab.threadTs}`}
+      <div data-testid="thread-header-action">{headerAction}</div>
+    </div>
   ),
 }))
 
@@ -81,5 +84,16 @@ describe("ResourceDetailPane slack branch", () => {
     useWorktreeTimeline.mockReturnValue({ data: { events: [], next_cursor: "" }, isLoading: false, error: null })
     wrap(<ResourceDetailPane path="/wt/foo" resource={slack} onBack={vi.fn()} />)
     expect(screen.getByRole("button", { name: /all resources for worktree/i })).toBeInTheDocument()
+  })
+})
+
+describe("ResourceDetailPane slack remove control (phase C)", () => {
+  it("wires a remove control into the slack thread header", () => {
+    // Phase B gives a slack thread no detail ResourceCard, so without this the
+    // thread would be the one resource type you cannot remove from the UI.
+    useWorktreeTimeline.mockReturnValue({ data: { events: [], next_cursor: "" }, isLoading: false, error: null })
+    wrap(<ResourceDetailPane path="/wt/foo" resource={slack} onRemoved={vi.fn()} />)
+    const action = screen.getByTestId("thread-header-action")
+    expect(action.querySelector('[aria-label="Remove resource"]')).toBeTruthy()
   })
 })

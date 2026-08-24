@@ -231,9 +231,18 @@ Three UI entry points all call these and then refetch via
 `onRemoved`) rather than optimistically patching local state:
 - The Overview tab's "Add resource" button (`ResourceList.tsx`), which opens
   the shared **`AddResourceModal`** (see below).
-- Each `ResourceCard`'s remove control (`ResourceCard.tsx`) — a `×` control
-  behind a `Popover` confirm step, with its own inline error feedback if
+- The remove control (`RemoveControl` in `ResourceCard.tsx`) — a `×` behind a
+  `Popover` confirm step, with its own inline error feedback if
   `removeResource` fails.
+
+  **Placement (Phase C):** the remove control appears only on the *detail*
+  side, never on the selectable cards in the resource list — with list cards
+  clickable-to-select, a per-card `×` was noise and an easy mis-click. So it
+  renders when `ResourceCard` has `variant="detail"`, and for a Slack thread
+  (which has no detail `ResourceCard`) `SlackThreadPane` injects the same
+  `RemoveControl` into `ThreadView`'s header card via its `headerAction` slot.
+  Without that slot a Slack thread would be the one resource type you could
+  not remove from the UI.
 Slack threads are added through that same "Add resource" button —
 `inferResource` recognizes Slack thread URLs. (Phase B removed the Slack
 tab's separate `+` button along with the tab; since the resource list is now

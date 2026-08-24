@@ -53,25 +53,20 @@ come up; move items to "Done" (or delete) when shipped.
   works on it unchanged. `SlackTab`, `ThreadRailLabel`, `useTabMetas` and
   `useWorktreeSlackThreads` were deleted as orphans.
 
-## Phase C (planned, not yet built)
+## Phase C — DONE (2026-08-24)
 
-- **Move the remove control into the detail card, and card the Slack thread
-  header.**
-  - Drop the `×` remove control from the selectable `ResourceCard`s in the
-    worktree's resource list — with cards now clickable-to-select, a
-    per-card `×` is both visual noise and an easy mis-click.
-  - Rely instead on a `×` in the summary card at the top of the detail side,
-    shown for whichever resource is currently selected. (The plumbing already
-    exists: `ResourceDetailPane` takes `onRemoved`, and `WorktreeDetailPage`
-    passes `resources.refetch`; the stale-selection effect then clears the
-    now-dangling selection automatically.)
-  - Wrap the Slack thread view's existing header (title, description,
-    author/channel, started/active timestamps) in a card matching the PR/Jira
-    detail card, **without losing the edit-details affordance**.
-  - Note the subtlety: Phase B deliberately renders *no* summary card above a
-    Slack thread because `ThreadView` already has its own header. Phase C is
-    about restyling that existing header as a card — **not** about adding a
-    second card above it.
+- **Remove control moved to the detail side, Slack thread header carded.**
+  - `RemoveControl` now renders only for `ResourceCard variant="detail"`, so
+    the selectable cards in the resource list no longer carry a `×`.
+  - `ThreadView`'s existing title/description/author/channel/timestamps block
+    is wrapped in a `Paper` matching the PR/Jira detail card — the header was
+    restyled as a card, not duplicated by adding a second one above it. The
+    edit-details affordance is unchanged.
+  - `ThreadView` gained a `headerAction` slot; `SlackThreadPane` injects the
+    shared `RemoveControl` into it, so a Slack thread stays removable despite
+    having no detail `ResourceCard` of its own.
+  - The old "removing must not also select" guard is now moot by
+    construction: the two controls can no longer appear on the same card.
 
 ## Phase D (planned, not yet built)
 

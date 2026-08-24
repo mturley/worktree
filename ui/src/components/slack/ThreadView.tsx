@@ -26,6 +26,13 @@ interface ThreadViewProps {
   thread: UseThreadResult
   onUpdateTab: (id: string, updates: { name: string; description: string }) => void
   onOpenThread: (url: string, opts: { background: boolean }) => void
+  /**
+   * Optional control rendered beside the edit affordance in the header card
+   * (the resource remove control, when this thread is shown as a selected
+   * worktree resource). Kept as a slot so ThreadView stays presentational and
+   * knows nothing about resources or the API.
+   */
+  headerAction?: React.ReactNode
 }
 
 // Cached across renders/tabs: the workspace domain never changes for a
@@ -40,7 +47,7 @@ export function openInSlackUrl(channel: string, threadTs: string, latestTs: stri
   return `https://${workspaceDomain}/archives/${channel}/p${pMessageId}?thread_ts=${threadTs}&cid=${channel}`
 }
 
-export function ThreadView({ tab, thread, onUpdateTab, onOpenThread }: ThreadViewProps) {
+export function ThreadView({ tab, thread, onUpdateTab, onOpenThread, headerAction }: ThreadViewProps) {
   const { data, status, error, authExpired, lastUpdated, refresh, applyLocal } = thread
   const now = useNow()
   const [workspaceDomain, setWorkspaceDomain] = useState<string | null>(cachedWorkspaceDomain)
@@ -280,6 +287,12 @@ export function ThreadView({ tab, thread, onUpdateTab, onOpenThread }: ThreadVie
 
   return (
     <Stack gap="sm" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      {/*
+        The thread's own title/description/meta, carded to match the PR/Jira
+        detail card. There is deliberately no separate summary card above the
+        thread — this IS that card.
+      */}
+      <Paper p="xs" withBorder>
       <Stack gap={2}>
         <Group gap="xs" wrap="nowrap" align="center">
           {hasCustomTitle ? (
@@ -301,6 +314,7 @@ export function ThreadView({ tab, thread, onUpdateTab, onOpenThread }: ThreadVie
               ✎
             </ActionIcon>
           </Tooltip>
+          {headerAction ? <div style={{ marginLeft: 'auto' }}>{headerAction}</div> : null}
         </Group>
         {tab.description ? (
           <Text size="sm" c="dimmed">
@@ -322,6 +336,7 @@ export function ThreadView({ tab, thread, onUpdateTab, onOpenThread }: ThreadVie
           </Text>
         )}
       </Stack>
+      </Paper>
 
       {markError && (
         <Alert color="red" variant="light">

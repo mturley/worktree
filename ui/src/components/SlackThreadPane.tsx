@@ -4,10 +4,15 @@ import type { ResourceDTO } from "../api/types"
 import { api } from "../api/client"
 import { useThread } from "../hooks/useThread"
 import { defaultTabName, type Tab } from "../state/tabs"
+import { RemoveControl } from "./ResourceCard"
 import { ThreadView } from "./slack/ThreadView"
 
 interface SlackThreadPaneProps {
   resource: ResourceDTO
+  /** Worktree path, needed by the remove control in the thread header. */
+  path: string
+  /** Refetch resources after the thread is removed. */
+  onRemoved?: () => void
   /** Refetch the worktree's resources after a custom name/description save. */
   onResourceChanged?: () => void
 }
@@ -46,7 +51,7 @@ function isNotConfigured(error: string | undefined): boolean {
  * deliberately no resource summary card above it — ThreadView already has its
  * own title/description header, so a card would be duplicate chrome.
  */
-export function SlackThreadPane({ resource, onResourceChanged }: SlackThreadPaneProps) {
+export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged }: SlackThreadPaneProps) {
   // Surfaces a failed "save thread details" write: the modal closes on submit,
   // so a rejected write would otherwise vanish and look like success.
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -79,6 +84,11 @@ export function SlackThreadPane({ resource, onResourceChanged }: SlackThreadPane
       <ThreadView
         tab={tab}
         thread={thread}
+        // A slack thread has no detail ResourceCard to hang this off, so the
+        // remove control lives in the thread's own header card instead.
+        headerAction={
+          <RemoveControl r={resource} path={path} onRemoved={onRemoved ?? (() => {})} />
+        }
         onUpdateTab={async (id, updates) => {
           try {
             setSaveError(null)
