@@ -157,30 +157,34 @@ is worth doing on its own merits.
     list re-sort; the card's own state should follow the refetched data
     rather than being held locally, or the two can disagree.
 
-## Fix round (queued — after Phase E)
+## Fix round — DONE (2026-08-24): PR enrichment restored
 
-Two symptoms observed together in a running UI on 2026-08-24; likely related.
+Both symptoms had one root cause, and the hypothesis in the original note was
+correct.
 
-- **PR cards render only the link — enrichment is failing.** PR cards in both
-  the resource list and the resource detail view show nothing but the PR
-  link, i.e. they are falling back to the un-enriched `MinimalRow` because
-  `watcher_resource_state` has no usable cached state for them.
-- **The poller is erroring on a repo that does not exist:**
-  `[worktree-ui] 2026/08/24 10:24:45 github poll: GraphQL errors: Could not
-  resolve to a Repository with the name 'mturley/myrepo'.`
+`FetchPRs` (`~/git/watcher/github/graphql.go`) batches every watched PR into a
+single GraphQL query using aliases. GraphQL reports **partial success** — an
+unresolvable repo comes back as a null alias while every other alias still
+carries valid data — but the code returned early on `len(result.Errors) > 0`,
+before parsing `result.Data` at all. `parseGraphQLResponse` compounded it,
+failing the whole batch on a missing alias or a null `pullRequest`.
 
-  **Hypothesis to test first:** the GitHub poller batches PRs into one
-  GraphQL query, so a single unresolvable repo fails the whole request and
-  every PR in that batch loses its enrichment — which would explain why *all*
-  PR cards degraded, not just the bogus one. If so the fix is in the library
-  (`~/git/watcher/github/`), not here: per-resource error isolation so one
-  bad subscription cannot poison the batch. Confirm the batching shape before
-  assuming it.
+So one bogus subscription (`mturley/myrepo#42`, a repo that does not exist,
+left over from handler-interop testing and subscribed by four worktrees)
+meant **no PR was ever refreshed**. Existing cards served stale cached state;
+newly added PRs got no state at all and rendered as a bare link — which is
+exactly what `#9449` looked like.
 
-  Order of work: (a) diagnose and fix the enrichment failure — a bad
-  subscription should degrade only itself; then (b) find which worktree holds
-  the `mturley/myrepo` subscription and remove it. Doing (b) first would hide
-  the bug rather than fix it.
+Fixed in watcher **v0.6.1**: errors are held aside, the response is parsed,
+and per-alias failures skip only that PR. An error is returned only when
+nothing resolved, so a total failure still surfaces. The poller now names the
+PRs that came back empty — skipping silently would have traded one invisible
+failure for another.
+
+Verified against the real database: a live poll enriched all five real PRs and
+logged the bogus one by name; `#9449` went from no cached state to a real
+title. The invalid subscriptions were removed **after** the fix, deliberately
+— removing them first would have hidden the bug rather than fixing it.
 
 ## Card unification (queued — Phase E prep)
 
