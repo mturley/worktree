@@ -9,6 +9,7 @@ import { Fragment } from 'react'
 import { safeHref, unescapeSlackText } from '../api/slackApi'
 import type { User } from '../api/slackApi'
 import { renderEmojiNode } from './renderEmoji'
+import { Mention } from '../components/slack/Mention'
 
 interface MrkdwnProps {
   text: string
@@ -149,7 +150,7 @@ function renderAngleToken(
     const id = inner.slice(1)
     const user = users[id]
     const label = user ? `@${user.DisplayName || user.RealName}` : `@${id}`
-    return <span key={key}>{label}</span>
+    return <Mention key={key}>{label}</Mention>
   }
   if (inner.startsWith('!subteam^')) {
     const rest = inner.slice('!subteam^'.length)
@@ -159,18 +160,20 @@ function renderAngleToken(
       if (!label.startsWith('@')) {
         label = `@${label}`
       }
-      return <span key={key}>{label}</span>
+      return <Mention key={key}>{label}</Mention>
     }
-    return <span key={key}>@subteam</span>
+    // Keep the group id rather than a generic "@subteam" so the mention stays
+    // identifiable until the group directory lands.
+    return <Mention key={key}>@{rest}</Mention>
   }
   if (inner === '!here') {
-    return <span key={key}>@here</span>
+    return <Mention key={key}>@here</Mention>
   }
   if (inner === '!channel') {
-    return <span key={key}>@channel</span>
+    return <Mention key={key}>@channel</Mention>
   }
   if (inner === '!everyone') {
-    return <span key={key}>@everyone</span>
+    return <Mention key={key}>@everyone</Mention>
   }
   // Link: <url> or <url|label>
   const pipeIdx = inner.indexOf('|')

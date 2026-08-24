@@ -68,77 +68,51 @@ come up; move items to "Done" (or delete) when shipped.
   - The old "removing must not also select" guard is now moot by
     construction: the two controls can no longer appear on the same card.
 
-## Phase D (planned, not yet built)
+## Phase D — PARTIALLY DONE (2026-08-24)
 
-- **Resolve Slack user-group mentions to their names.** A group mention
-  currently degrades to a generic placeholder when Slack doesn't inline a
-  label, so a message reads `@subteam` / `@usergroup` instead of naming the
-  group. User mentions already resolve properly, and this should follow the
-  same shape.
+**Done (local, no library change needed):**
 
-  Where it happens today:
-  - `ui/src/lib/mrkdwn.tsx:154-165` — `<!subteam^S123|@handle>` uses the
-    piped label when present (fine), but a bare `<!subteam^S123>` falls
-    through to the literal string `@subteam`.
-  - `ui/src/components/slack/RichText.tsx:50-51` — a typed `usergroup`
-    element renders `@{el.Name || 'usergroup'}`, so it shows `@usergroup`
-    whenever the block carries no name.
+- **Slack-style mention pills.** `components/slack/Mention.tsx` renders a
+  mention as a dark-blue chip with light-blue text, and is used by BOTH
+  render paths — `RichText.tsx` (typed rich_text blocks) and `lib/mrkdwn.tsx`
+  (the mrkdwn-string fallback) — so a mention looks the same however the
+  message reached us. Covers user, group and broadcast (`@here`/`@channel`/
+  `@everyone`) mentions. Colours are scheme-independent by design (Slack
+  chips are blue either way, and the app defaults to dark); `Mention.tsx` is
+  the single place to change that.
+- **No more generic placeholders.** An unresolved group in the mrkdwn path
+  now renders as its id (`@S1`) instead of the word `@subteam`, mirroring the
+  `@U999` fallback already used for unknown users — an unresolved mention
+  should still tell you *which* mention it was.
+- **User mentions resolve in the fallback title.** New
+  `lib/resolveMentions.ts` rewrites `<@U123>` → `@ana`,
+  `<!subteam^S1|@platform>` → `@platform`, `<!here>` → `@here` in a raw
+  message string, and `ThreadView` now runs it **before** `fallbackTitle`
+  truncates — so an untitled thread's title shows names, and the 60-char
+  budget is spent on text the reader actually sees rather than on raw ids.
 
-  The model to copy is user mentions: `renderAngleToken` takes a
-  `users: Record<string, User>` map and looks the id up
-  (`mrkdwn.tsx:147-152`), falling back to the raw id — never to a generic
-  word. Groups need the equivalent `groups: Record<string, UserGroup>` map
-  threaded to both renderers, with the raw id as the fallback so an
-  unresolved group is still identifiable.
+**Remaining (cross-repo — the original ask):**
 
-  **This is cross-repo work.** The Slack client and its domain types live in
-  `github.com/mturley/watcher/slack`, not here, so per `.claude/CLAUDE.md`
-  the sequence is: add the group lookup (Slack's `usergroups.list`) and a
-  `UserGroup` domain type in `~/git/watcher`, with tests and synthetic
-  fixtures; cut a release tag; re-pin here; then surface the map on
-  `ThreadResponse` (alongside the existing `users` and `emoji` maps) and
-  consume it in the two renderers above.
+Resolving a group id to its real **name** still needs library work, because
+the gap is in the data, not the rendering:
 
-  Also update `docs/reverse-engineering/slack-web-api.md` in the same change
-  with whatever the endpoint's real payload shape turns out to be — that doc
-  is treated as part of the deliverable, and group listing isn't covered yet.
+- The watcher library's `Element` type exposes only `Name`, not the
+  `usergroup_id` Slack actually sends (`docs/reverse-engineering/slack-web-api.md`
+  records the field). So in the typed `RichText` path, when `Name` is empty
+  there is nothing local to fall back to — it still shows `@usergroup`.
+- There is no group directory to look names up in. `Server.emoji()` in
+  `internal/webui/slack.go` is the pattern to copy: fetch once, cache on the
+  `Server`, attach a filtered map to `ThreadResponse` next to `users`/`emoji`.
 
-  Worth noting for scope: because the piped-label case already works, this
-  only changes rendering for group mentions Slack sends without an inline
-  label. Confirm how common that is before investing in caching or a poll
-  loop for the group list.
+Sequence: add `usergroup_id` to `Element` and a `UserGroups(ctx)` client
+method in `~/git/watcher/slack` (with tests and synthetic fixtures); cut a
+release; re-pin here; surface `groups` on `ThreadResponse`; then have
+`RichText`, `mrkdwn` and `resolveMentionsToText` consult it. Update
+`docs/reverse-engineering/slack-web-api.md` with the endpoint's real payload
+shape in the same change.
 
-- **Fix user mentions in the fallback title too.** The same inconsistency
-  exists for *user* pings, and it is arguably more visible: an untitled
-  thread's fallback title shows raw ids even though the identical text
-  resolves to names in the message body.
-
-  `ThreadView.tsx:260` does
-  `fallbackTitle(data?.messages[0]?.Text) || '(no title)'` — it passes the
-  **raw** message text, which still contains `<@U123>` / `<!subteam^S123>`
-  tokens. `lib/fallbackTitle.ts` is a pure string helper (collapse
-  whitespace, truncate to 60 chars) with no access to the `users` map, so
-  the ids survive verbatim while `renderAngleToken` resolves the very same
-  tokens in the body.
-
-  Two wrinkles to plan for:
-  - `fallbackTitle` returns a **string** because it is used as a title, so
-    mention resolution there means substituting names into the string rather
-    than returning nodes. The styled pill treatment below therefore does not
-    apply to the title — plain resolved names are the right output.
-  - Substitute **before** truncating. Truncating first would cut raw ids
-    mid-token and produce nonsense; the 60-char budget should be spent on
-    the resolved text the reader actually sees.
-
-- **Style mentions like Slack does.** Both user and group mentions should
-  render as a pill — dark blue background, light blue text — rather than as
-  plain inline text. Applies to both render paths (`RichText.tsx` for typed
-  blocks, `lib/mrkdwn.tsx` for the mrkdwn-string fallback), so the treatment
-  belongs in one shared component both call rather than duplicated styling.
-  Use Mantine theme tokens so it tracks light/dark; note the app defaults to
-  dark. Broadcast mentions (`@here` / `@channel` / `@everyone`) should be
-  considered at the same time — Slack styles those as pills too, and they
-  flow through the same code paths.
+**Note:** the library is also consumed by agent-handler, so cutting a release
+affects another consumer.
 
 ## Deferred
 

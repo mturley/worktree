@@ -2,6 +2,7 @@ import { Fragment } from 'react'
 import { safeHref } from '../../api/slackApi'
 import type { Block, Element, User } from '../../api/slackApi'
 import { renderEmojiNode } from '../../lib/renderEmoji'
+import { Mention } from './Mention'
 
 interface RichTextProps {
   blocks: Block[] | null | undefined
@@ -31,7 +32,7 @@ function renderElement(el: Element, key: number, users: Record<string, User>, em
     case 'user': {
       const user = users[el.UserID]
       const label = user ? `@${user.DisplayName || user.RealName}` : `@${el.UserID}`
-      return <span key={key}>{label}</span>
+      return <Mention key={key}>{label}</Mention>
     }
     case 'link': {
       const label = el.Text || el.URL
@@ -48,9 +49,14 @@ function renderElement(el: Element, key: number, users: Record<string, User>, em
     case 'emoji':
       return renderEmojiNode(el.Name, el.Unicode, emoji, key)
     case 'usergroup':
-      return <span key={key}>@{el.Name || 'usergroup'}</span>
+      // Slack's payload carries a usergroup_id, but the watcher library's
+      // Element type only surfaces Name — so when Name is empty there is
+      // nothing local to fall back to but the generic word. Fixing this is
+      // the cross-repo half of Phase D: surface usergroup_id (and the group
+      // directory) in github.com/mturley/watcher/slack, then resolve here.
+      return <Mention key={key}>@{el.Name || 'usergroup'}</Mention>
     case 'broadcast':
-      return <span key={key}>@{el.Name || 'here'}</span>
+      return <Mention key={key}>@{el.Name || 'here'}</Mention>
     default:
       return <Fragment key={key}>{el.Text}</Fragment>
   }

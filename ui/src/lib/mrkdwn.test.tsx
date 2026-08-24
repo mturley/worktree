@@ -60,9 +60,12 @@ describe('Mrkdwn', () => {
     expect(container.querySelector('span')?.textContent).toBe('@eng-team')
   })
 
-  it('renders a subteam mention without a pipe as @subteam', () => {
+  it('renders a subteam mention without a pipe using the group id, not a generic word', () => {
+    // Phase D: an unresolved group must stay identifiable. "@subteam" told
+    // you nothing and looked identical for every group; the id at least
+    // distinguishes them, and mirrors the "@U999" fallback for users.
     const { container } = renderWithProvider(<Mrkdwn text="<!subteam^S1>" users={{}} emoji={{}} />)
-    expect(container.querySelector('span')?.textContent).toBe('@subteam')
+    expect(container.querySelector('[data-slack-mention="true"]')?.textContent).toBe('@S1')
   })
 
   it('renders <!here> and <!channel> broadcasts', () => {

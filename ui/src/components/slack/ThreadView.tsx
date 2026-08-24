@@ -5,6 +5,7 @@ import { useNow } from '../../hooks/useNow'
 import { getConfig, markRead, markUnread, postReply, toggleReaction } from '../../api/slackApi'
 import { deriveThreadMeta } from '../../lib/deriveThreadMeta'
 import { fallbackTitle } from '../../lib/fallbackTitle'
+import { resolveMentionsToText } from '../../lib/resolveMentions'
 import { applyReactionToggle } from '../../lib/reactionToggle'
 import { relativeFromNow } from '../../lib/relativeTime'
 import { computeUnreadPatch } from '../../lib/unreadPatch'
@@ -257,7 +258,11 @@ export function ThreadView({ tab, thread, onUpdateTab, onOpenThread, headerActio
   }
 
   const hasCustomTitle = tab.name !== defaultTabName(tab.channel, tab.threadTs)
-  const fallbackTitleText = fallbackTitle(data?.messages[0]?.Text) || '(no title)'
+  // Resolve mentions BEFORE truncating: truncating first would slice raw
+  // <@U123> tokens mid-id, and the 60-char budget should be spent on the
+  // resolved text the reader actually sees.
+  const fallbackTitleText =
+    fallbackTitle(resolveMentionsToText(data?.messages[0]?.Text, data?.users)) || '(no title)'
 
   const fromLine = meta?.author
     ? meta.channelName
