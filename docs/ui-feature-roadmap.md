@@ -149,6 +149,48 @@ affects another consumer.
     list re-sort; the card's own state should follow the refetched data
     rather than being held locally, or the two can disagree.
 
+## Fix round (queued — after Phase E)
+
+Two symptoms observed together in a running UI on 2026-08-24; likely related.
+
+- **PR cards render only the link — enrichment is failing.** PR cards in both
+  the resource list and the resource detail view show nothing but the PR
+  link, i.e. they are falling back to the un-enriched `MinimalRow` because
+  `watcher_resource_state` has no usable cached state for them.
+- **The poller is erroring on a repo that does not exist:**
+  `[worktree-ui] 2026/08/24 10:24:45 github poll: GraphQL errors: Could not
+  resolve to a Repository with the name 'mturley/myrepo'.`
+
+  **Hypothesis to test first:** the GitHub poller batches PRs into one
+  GraphQL query, so a single unresolvable repo fails the whole request and
+  every PR in that batch loses its enrichment — which would explain why *all*
+  PR cards degraded, not just the bogus one. If so the fix is in the library
+  (`~/git/watcher/github/`), not here: per-resource error isolation so one
+  bad subscription cannot poison the batch. Confirm the batching shape before
+  assuming it.
+
+  Order of work: (a) diagnose and fix the enrichment failure — a bad
+  subscription should degrade only itself; then (b) find which worktree holds
+  the `mturley/myrepo` subscription and remove it. Doing (b) first would hide
+  the bug rather than fix it.
+
+## Card unification (queued — Phase E prep)
+
+- **Consider replacing `ThreadView`'s `headerAction` slot with a conditional
+  `ResourceCard`.** Phase C added `headerAction` so a Slack thread could
+  carry a remove control despite having no detail `ResourceCard`; Phase E
+  will need the same slot again for the Focus/Related control. Needing the
+  slot twice is the signal that the seam is in the wrong place — a single
+  card component that renders slack-specific content conditionally would let
+  every detail-side control apply to every resource type for free.
+
+  The real decision it forces: `ResourceCard` renders **cached**
+  `watcher_resource_state`, while `ThreadView`'s header renders **live** data
+  derived from the fetched thread (`deriveThreadMeta`, plus the
+  first-message `fallbackTitle` for untitled threads). Those can disagree.
+  Unifying means picking which source wins for a Slack card, and keeping the
+  edit-details affordance wherever the header ends up.
+
 ## Deferred
 
 - **Drag-to-reorder Slack threads in the rail.** The old slack-mini `TabBar`
