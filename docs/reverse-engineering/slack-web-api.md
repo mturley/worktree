@@ -158,14 +158,32 @@ POST /api/usergroups.list
 -> {"ok":true,"usergroups":[{"id":"S1","name":"Platform Team","handle":"platform"}, ...]}
 ```
 
-- **Not yet confirmed against a live workspace.** The shape above is from
-  Slack's public documentation and is exercised only by a stubbed-HTTP unit
-  test in `watcher/slack`. In particular it is UNVERIFIED whether
-  `usergroups.list` is permitted for a session (`xoxc`) token, or whether it
-  requires a scope a user token does not carry — if it 403s in practice, the
-  UI degrades to showing subteam ids and the fix is a different endpoint, not
-  a different parser. Confirm and update this note when you next see a real
-  group mention render.
+- **VERIFIED against a live workspace, and it does not work on Enterprise
+  Grid.** The endpoint is callable with a session (`xoxc`) token — it does not
+  403 — but on an org-level Grid token it returns `ok:true` with an **empty**
+  `usergroups` array, even though the workspace plainly has groups.
+
+  What the probe showed (redhat.enterprise.slack.com, 2026-08-24):
+
+  | call | result |
+  |---|---|
+  | `auth.test` | `ok`, `team_id=E030…`, `enterprise_id=E030…` — **identical**, i.e. an org-level token |
+  | `usergroups.list` (no params) | `ok`, 0 groups |
+  | `usergroups.list` + `include_disabled=true` | `ok`, 0 groups |
+  | `usergroups.list` + `team_id=E030…` | `ok:false`, `invalid_arguments` |
+
+  The `team_id` it wants is a **workspace** id (`T…`), but an org-level token's
+  `auth.test` reports the **enterprise** id (`E…`), which the endpoint rejects.
+  Resolving group names on Grid would therefore mean discovering the org's
+  member-workspace `T…` ids and calling `usergroups.list` per workspace, then
+  merging — several undocumented calls. **We deliberately stopped short of
+  that**; the UI degrades to a readable `@group` label with the subteam id in
+  the title attribute.
+
+  If you pick this up: find where the Slack web client sources its subteam
+  directory (likely a bootstrap/`client.counts`-style payload) rather than
+  guessing more parameters for `usergroups.list`.
+
 - `handle` is what Slack renders in a message (`@platform`); `name` is the
   human label shown in admin UI (`Platform Team`). Prefer `handle`, fall back
   to `name`, then to the bare id — never to a generic word, or every group

@@ -57,3 +57,17 @@
     transition: none;
   }
 }
+
+/*
+ * Slack mention pills. Kept here rather than inline so the darker background
+ * can declare a solid fallback first and then a color-mix refinement — inline
+ * styles cannot express that progressive enhancement.
+ */
+[data-slack-mention="true"] {
+  background-color: #0b2545;
+  background-color: color-mix(in srgb, var(--mantine-color-blue-9) 45%, black);
+  color: var(--mantine-color-blue-2);
+  border-radius: 3px;
+  padding: 0 3px;
+  white-space: nowrap;
+}

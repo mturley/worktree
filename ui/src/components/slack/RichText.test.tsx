@@ -271,10 +271,10 @@ describe('RichText usergroup and broadcast elements', () => {
     expect(everyone.container.textContent).toContain('@everyone')
   })
 
-  it('falls back to the subteam id for an unresolved group, not a generic word', () => {
+  it('renders an unresolved group as a readable label with the id on hover', () => {
     const { container } = render(
       <RichText blocks={[sectionBlock([{ ...textEl(''), Type: 'usergroup', UserGroupID: 'S42' }])]} users={{}} emoji={{}} />)
-    expect(container.textContent).toContain('@S42')
-    expect(container.textContent).not.toContain('usergroup')
+    expect(container.textContent).toContain('@group')
+    expect(container.querySelector('[data-slack-mention="true"]')?.getAttribute('title')).toContain('S42')
   })
 })

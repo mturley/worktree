@@ -36,17 +36,18 @@ export function Mention({ children, groupId }: { children?: ReactNode; groupId?:
   const groupLabel = useGroupLabel(groupId)
   // A resolved group wins; otherwise fall back to whatever the caller passed
   // (typically the bare id) — never a generic word.
-  const label = groupLabel ? `@${groupLabel}` : children
+  // An unresolved group shows a readable "@group" rather than a raw subteam
+  // id, with the id kept in the title attribute so it stays identifiable on
+  // hover. Slack's usergroups.list returns nothing for org-level Enterprise
+  // Grid tokens (see docs/reverse-engineering/slack-web-api.md), so this
+  // fallback is the common case on such workspaces, not a rare edge.
+  // Precedence: the group directory wins; then any label the caller already
+  // has (Slack sometimes inlines a name); then a readable placeholder.
+  const label = groupLabel ? `@${groupLabel}` : (children ?? (groupId ? "@group" : null))
   return (
     <span
       data-slack-mention="true"
-      style={{
-        backgroundColor: "var(--mantine-color-blue-9)",
-        color: "var(--mantine-color-blue-2)",
-        borderRadius: "3px",
-        padding: "0 2px",
-        whiteSpace: "nowrap",
-      }}
+      title={groupId && !groupLabel ? `Slack group ${groupId}` : undefined}
     >
       {label}
     </span>

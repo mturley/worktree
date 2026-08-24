@@ -53,7 +53,7 @@ function renderElement(el: Element, key: number, users: Record<string, User>, em
       // falls back to the bare id, so an unresolved group is identifiable.
       return (
         <Mention key={key} groupId={el.UserGroupID}>
-          @{el.UserGroupID || el.Name || 'usergroup'}
+          {el.Name ? `@${el.Name}` : undefined}
         </Mention>
       )
     case 'broadcast':

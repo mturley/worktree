@@ -96,16 +96,31 @@ come up; move items to "Done" (or delete) when shipped.
   `broadcast` elements, which is why it went unnoticed; both now have
   regression tests.
 
-**Follow-up worth doing:** `usergroups.list` is **not yet confirmed against a
-live workspace** — it is exercised only by a stubbed-HTTP unit test, and it is
-unverified whether a session (`xoxc`) token is permitted to call it. If it
-403s in practice, mentions degrade to showing subteam ids and the fix is a
-different endpoint, not a different parser. See
+**Outcome on this workspace: group names are NOT resolvable, and we stopped
+short of making them so.** Verified live: `usergroups.list` is callable with a
+session token but returns an empty list for an org-level Enterprise Grid
+token, and the `team_id` it wants is a workspace `T…` id while `auth.test`
+reports the enterprise `E…` id (which it rejects as `invalid_arguments`).
+Resolving would mean discovering member-workspace ids and merging per-workspace
+calls — judged too hacky for the payoff. The plumbing stays (it works on
+non-Grid workspaces and costs nothing); unresolved groups render as a readable
+`@group` with the subteam id in the title attribute. Full probe results are in
 `docs/reverse-engineering/slack-web-api.md`.
 
 **Not threaded everywhere:** `groups` reaches mentions via context from
 `ThreadView`, so mentions inside attachments/Block Kit rendered outside that
-provider still fall back to ids. Cheap to extend if it shows up in practice.
+provider still fall back. Cheap to extend if it shows up in practice.
+
+**Still outstanding — the cached card title (a third render path).** The Slack
+`ResourceCard` in the resource list shows raw ids for BOTH user and group
+mentions. That title does not come from `ThreadView` at all: it is the cached
+`title` in `watcher_resource_state`, written by the library's Slack poller
+(`~/git/watcher/slack/fallbacktitle.go`), which builds it from raw message
+text with no user/group directory to hand. Fixing it means resolving mentions
+at poll time in the library — the poller would need to fetch the users
+referenced by the first message — so it is cross-repo work and was not
+attempted here. User mentions ARE resolvable there (unlike groups), so this
+is worth doing on its own merits.
 
 ## Phase E (planned, not yet built)
 

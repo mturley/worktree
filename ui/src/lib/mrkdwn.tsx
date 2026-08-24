@@ -164,7 +164,7 @@ function renderAngleToken(
     }
     // Hand the bare id to Mention, which resolves it against the group
     // directory from context and falls back to the id itself.
-    return <Mention key={key} groupId={rest}>@{rest}</Mention>
+    return <Mention key={key} groupId={rest} />
   }
   if (inner === '!here') {
     return <Mention key={key}>@here</Mention>
