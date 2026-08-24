@@ -73,6 +73,46 @@ come up; move items to "Done" (or delete) when shipped.
     about restyling that existing header as a card — **not** about adding a
     second card above it.
 
+## Phase D (planned, not yet built)
+
+- **Resolve Slack user-group mentions to their names.** A group mention
+  currently degrades to a generic placeholder when Slack doesn't inline a
+  label, so a message reads `@subteam` / `@usergroup` instead of naming the
+  group. User mentions already resolve properly, and this should follow the
+  same shape.
+
+  Where it happens today:
+  - `ui/src/lib/mrkdwn.tsx:154-165` — `<!subteam^S123|@handle>` uses the
+    piped label when present (fine), but a bare `<!subteam^S123>` falls
+    through to the literal string `@subteam`.
+  - `ui/src/components/slack/RichText.tsx:50-51` — a typed `usergroup`
+    element renders `@{el.Name || 'usergroup'}`, so it shows `@usergroup`
+    whenever the block carries no name.
+
+  The model to copy is user mentions: `renderAngleToken` takes a
+  `users: Record<string, User>` map and looks the id up
+  (`mrkdwn.tsx:147-152`), falling back to the raw id — never to a generic
+  word. Groups need the equivalent `groups: Record<string, UserGroup>` map
+  threaded to both renderers, with the raw id as the fallback so an
+  unresolved group is still identifiable.
+
+  **This is cross-repo work.** The Slack client and its domain types live in
+  `github.com/mturley/watcher/slack`, not here, so per `.claude/CLAUDE.md`
+  the sequence is: add the group lookup (Slack's `usergroups.list`) and a
+  `UserGroup` domain type in `~/git/watcher`, with tests and synthetic
+  fixtures; cut a release tag; re-pin here; then surface the map on
+  `ThreadResponse` (alongside the existing `users` and `emoji` maps) and
+  consume it in the two renderers above.
+
+  Also update `docs/reverse-engineering/slack-web-api.md` in the same change
+  with whatever the endpoint's real payload shape turns out to be — that doc
+  is treated as part of the deliverable, and group listing isn't covered yet.
+
+  Worth noting for scope: because the piped-label case already works, this
+  only changes rendering for group mentions Slack sends without an inline
+  label. Confirm how common that is before investing in caching or a poll
+  loop for the group list.
+
 ## Deferred
 
 - **Drag-to-reorder Slack threads in the rail.** The old slack-mini `TabBar`
