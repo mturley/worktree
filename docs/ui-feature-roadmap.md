@@ -228,6 +228,30 @@ body: {"token":"<xoxc-…>","ids":["S…"],"enterprise_token":"<xoxc-…>"}
 - Hand-maintained config mappings are no longer needed. A config override to
   *relabel* a group would still be cheap if ever wanted — deferred.
 
+## Cached-title mentions — DONE (2026-08-24)
+
+The Slack `ResourceCard` title showed raw `<@U…>` / `<!subteam^S…>` for text
+that resolved to names in the thread view. This was a **third render path**:
+the card title is the cached `title` in `watcher_resource_state`, written by
+the library's Slack poller, not rendered from a live thread.
+
+It was not staleness — `threadTitle` never resolved mentions at all, so even
+a fresh poll wrote raw tokens. `fallbacktitle.go` exists as a Go port of the
+TS helper *specifically* so the cached title matches the live one; when the
+live view learned to resolve mentions, the cached path silently diverged.
+
+Fixed in watcher **v0.6.2**: `ResolveMentions` is the Go counterpart of
+`ui/src/lib/resolveMentions.ts`, and the poller resolves the root text before
+caching, fetching directories only for the ids the text references and only
+those not already covered by the author lookup it does anyway.
+
+**Debugging note worth keeping:** verification was confounded twice — first by
+Go's test cache serving a stale "poll" that never ran (use `-count=1`), then
+by the long-running `worktree ui` server re-polling every two minutes with an
+older binary and overwriting the freshly-resolved titles. If cached state
+appears not to update, check for a running server on an old binary before
+suspecting the code.
+
 ## Deferred
 
 - **Drag-to-reorder Slack threads in the rail.** The old slack-mini `TabBar`
