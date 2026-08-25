@@ -151,6 +151,30 @@ than silently reverting.
 need `ThreadView`'s `headerAction` slot again, since it had no detail card.
 Card unification removed that problem — Slack threads get this for free.
 
+## Jira issue-type icons (in progress)
+
+Replace the single generic Jira icon with the per-issue-type icons Jira itself
+serves (Bug, Task, Story, Epic, Spike…).
+
+**Known already:** the watcher Jira client parses `issuetype` but keeps only
+`Name` (`~/git/watcher/jira/client.go`), and the poller caches
+`"issue_type": <name>`. So there is no icon URL anywhere in our data today —
+capturing `issuetype.iconUrl` is a **library** change before any UI work.
+
+**Binding constraint (2026-08-25):** if agent-handler already implements this,
+the shared part belongs in `github.com/mturley/watcher`, consumed by BOTH
+handler and worktree — not copy-pasted into worktree. Handler should be
+migrated onto the library version in the same effort rather than left with a
+duplicate. This follows the repo's own rule that the library is the single
+home for source/poller behaviour.
+
+**Reuse, do not reinvent:** worktree already proxies Slack images through
+`internal/webui/image_proxy.go` + `slack_proxy.go`, with SSRF protection
+(refusing loopback, RFC1918, link-local incl. the cloud-metadata address) and
+an 8 MiB cap. A Jira icon proxy — if auth means the browser cannot fetch the
+URL directly — should reuse that machinery rather than write a second proxy
+with its own security thinking.
+
 ## Deferred
 
 - **Drag-to-reorder Slack threads in the rail.** The old slack-mini `TabBar`
