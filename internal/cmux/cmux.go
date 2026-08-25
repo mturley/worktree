@@ -315,8 +315,8 @@ func BuildLayout(urls []string) string {
 		Pane      *pane       `json:"pane,omitempty"`
 	}
 
-	leftTerminal := layoutNode{Pane: &pane{Surfaces: []surface{{Type: "terminal"}}}}
-	rightTerminal := layoutNode{Pane: &pane{Surfaces: []surface{{Type: "terminal", Command: "worktree info"}}}}
+	mainTerminal := layoutNode{Pane: &pane{Surfaces: []surface{{Type: "terminal"}}}}
+	infoTerminal := layoutNode{Pane: &pane{Surfaces: []surface{{Type: "terminal", Command: "worktree info"}}}}
 
 	var browserSurfaces []surface
 	if len(urls) > 0 {
@@ -327,19 +327,21 @@ func BuildLayout(urls []string) string {
 		browserSurfaces = []surface{{Type: "browser"}}
 	}
 
+	leftSide := layoutNode{Pane: &pane{Surfaces: browserSurfaces}}
+
 	rightSide := layoutNode{
 		Direction: "vertical",
 		Split:     0.67,
 		Children: []layoutNode{
-			{Pane: &pane{Surfaces: browserSurfaces}},
-			rightTerminal,
+			mainTerminal,
+			infoTerminal,
 		},
 	}
 
 	layout := layoutNode{
 		Direction: "horizontal",
 		Split:     0.5,
-		Children:  []layoutNode{leftTerminal, rightSide},
+		Children:  []layoutNode{leftSide, rightSide},
 	}
 
 	data, _ := json.Marshal(layout)
