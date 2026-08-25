@@ -206,3 +206,39 @@ func OfType(resources []Resource, resType string) []Resource {
 	}
 	return result
 }
+
+// SetPrimary marks an already-tracked resource as focus (primary) or related.
+//
+// The related flag was previously settable only at creation, so reclassifying
+// meant removing and re-adding a resource — losing its custom metadata and
+// its place in the timeline. This flips it in place.
+//
+// It errors rather than silently inserting when the worktree does not track
+// the resource: a no-op that reports success would look in the UI exactly
+// like a change that stuck.
+func SetPrimary(conn *sql.DB, worktreePath, resType, id string, primary bool) error {
+	sub := wdb.Subscriber(worktreePath)
+
+	var exists int
+	if err := conn.QueryRow(
+		`SELECT COUNT(1) FROM watcher_subscriptions
+		 WHERE subscriber = ? AND resource_type = ? AND resource_id = ? AND deleted_at IS NULL`,
+		sub, resType, id).Scan(&exists); err != nil {
+		return err
+	}
+	if exists == 0 {
+		return fmt.Errorf("resource %s/%s is not tracked by %s", resType, id, worktreePath)
+	}
+
+	isPrimary := 0
+	if primary {
+		isPrimary = 1
+	}
+	_, err := conn.Exec(
+		`INSERT INTO worktree_primary (subscriber, resource_type, resource_id, is_primary)
+		 VALUES (?, ?, ?, ?)
+		 ON CONFLICT (subscriber, resource_type, resource_id)
+		 DO UPDATE SET is_primary = excluded.is_primary`,
+		sub, resType, id, isPrimary)
+	return err
+}

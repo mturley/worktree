@@ -122,109 +122,34 @@ referenced by the first message — so it is cross-repo work and was not
 attempted here. User mentions ARE resolvable there (unlike groups), so this
 is worth doing on its own merits.
 
-## Phase E (planned, not yet built)
+## Phase E — DONE (2026-08-25): switch a resource between Focus and Related
 
-- **Change a resource between Focus and Related from the detail card.** Show
-  the current state in the summary card at the top of the resource detail
-  view and let the user switch it — a `SegmentedControl` matching the one in
-  `AddResourceModal`, so the control reads the same at add time and after.
-  No confirmation step: changing the segment fires the request directly.
+A `SegmentedControl` on the detail card, matching `AddResourceModal`'s, so the
+control reads the same at add time and after. Changing it fires the request
+directly — no confirmation for a one-click, reversible reclassification.
 
-  **This needs backend work first — there is no API for it today.** The
-  `related` flag can only be set when a resource is created:
-  - `POST /api/worktree-resources/add` accepts `related`, and
-    `resources.Add` honours it, but nothing changes it afterwards.
-  - `internal/resources` has `loadPrimaryFlags` (read) with no setter, so a
-    `SetPrimary(conn, worktreePath, resType, id, primary bool)` is needed to
-    insert/delete the `worktree_primary` row.
-  - Then a route (e.g. `POST /api/worktree-resources/primary` taking
-    `{path, type, id, primary}`) alongside the existing add/remove pair in
-    `registerAPI`.
+Backend first, because there was no API: the `related` flag could only be set
+at creation, so changing your mind meant removing and re-adding a resource and
+losing its custom metadata along the way.
 
-  Good news on scope: `worktree_primary` is **worktree's own table**, not one
-  of the watcher library's, so unlike Phase D this is entirely local — no
-  library change, no release, no re-pin.
+- `resources.SetPrimary(conn, worktreePath, resType, id, primary)` flips the
+  `worktree_primary` row in place. It **errors on an untracked resource**
+  rather than inserting one — a no-op reporting success would look in the UI
+  exactly like a change that stuck.
+- `POST /api/worktree-resources/primary` `{path, type, id, primary}` → 204,
+  registered alongside the existing add/remove pair.
+- Entirely local: `worktree_primary` is worktree's own table, so no library
+  change, release, or re-pin.
 
-  Frontend notes:
-  - The control belongs on `ResourceCard variant="detail"`, next to the
-    remove control Phase C put there — the same "acts on the selected
-    resource" cluster.
-  - A Slack thread has no detail `ResourceCard` (Phase B), so as with the
-    remove control it needs the same treatment via `ThreadView`'s
-    `headerAction` slot, or that resource type silently can't be
-    re-classified.
-  - Refetch resources after the write so the Focus/Related sections in the
-    list re-sort; the card's own state should follow the refetched data
-    rather than being held locally, or the two can disagree.
+Frontend: the control sits at the bottom-right of the detail card, **left of
+the open/copy group** — reclassifying is about this worktree, opening is about
+the resource itself. The card refetches on success so the Focus/Related
+sections in the list re-sort immediately, and surfaces a failure inline rather
+than silently reverting.
 
-## Fix round — DONE (2026-08-24): PR enrichment restored
-
-Both symptoms had one root cause, and the hypothesis in the original note was
-correct.
-
-`FetchPRs` (`~/git/watcher/github/graphql.go`) batches every watched PR into a
-single GraphQL query using aliases. GraphQL reports **partial success** — an
-unresolvable repo comes back as a null alias while every other alias still
-carries valid data — but the code returned early on `len(result.Errors) > 0`,
-before parsing `result.Data` at all. `parseGraphQLResponse` compounded it,
-failing the whole batch on a missing alias or a null `pullRequest`.
-
-So one bogus subscription (`mturley/myrepo#42`, a repo that does not exist,
-left over from handler-interop testing and subscribed by four worktrees)
-meant **no PR was ever refreshed**. Existing cards served stale cached state;
-newly added PRs got no state at all and rendered as a bare link — which is
-exactly what `#9449` looked like.
-
-Fixed in watcher **v0.6.1**: errors are held aside, the response is parsed,
-and per-alias failures skip only that PR. An error is returned only when
-nothing resolved, so a total failure still surfaces. The poller now names the
-PRs that came back empty — skipping silently would have traded one invisible
-failure for another.
-
-Verified against the real database: a live poll enriched all five real PRs and
-logged the bogus one by name; `#9449` went from no cached state to a real
-title. The invalid subscriptions were removed **after** the fix, deliberately
-— removing them first would have hidden the bug rather than fixing it.
-
-## Card unification — DONE (2026-08-24)
-
-`ResourceCard variant="detail"` is now the single header card for **every**
-resource type. `ThreadView` no longer carries its own title/description/meta
-block or a `headerAction` slot; `SlackThreadPane` renders the shared card
-above it.
-
-Needing that slot a second time (remove control in Phase C, Focus/Related
-next) was the signal the seam was in the wrong place. Every detail-side
-control now applies to every resource type for free.
-
-- **Cached wins.** The card renders cached `watcher_resource_state` rather
-  than live thread-derived meta. It already showed the same facts (channel,
-  author, started/active) and since v0.6.2 its title resolves mentions too.
-  Cost: it can lag by up to one poll cycle. Benefit: one card, one data
-  source, PR/Jira/Slack alike.
-- **Edit is preserved**, moved onto the card: `ResourceCard` takes an optional
-  `onEditDetails`, and `ThreadView`'s modal state is lifted so the card owns
-  the trigger while `ThreadView` still owns the modal.
-- **`ResourceActions`** ("Open on GitHub" / "Open on Jira" / "Open in Slack"
-  + compound copy-link, mirroring the ActionBar pattern) sits at the
-  bottom-right of the detail card, on the same visual line as its metadata,
-  so it reads as belonging to the card rather than heading it. The
-  preposition varies deliberately: a page opens *on* a site, a conversation
-  *in* an app. The Slack thread
-  footer deliberately keeps its own copy — it stays reachable after scrolling
-  a long thread.
-- **List cards have no links at all.** The title is plain text, so a card is a
-  single click target; mis-clicking a link when you meant to select is now
-  impossible rather than guarded. The obsolete stopPropagation guard test was
-  replaced by one pinning the stronger invariant.
-- **Home-page focus lines deep link into selection** —
-  `/worktree/<path>?resource=<type>:<id>` — instead of opening the resource
-  externally, so a mis-click lands on the worktree page with that resource
-  selected rather than in a new browser tab.
-
-**Follow-up worth noting:** `custom_name`/`custom_description` are generic
-(not Slack-specific), so the edit affordance could be offered for PR and Jira
-cards too. Deliberately not done here to keep the change scoped.
+**Cheaper than when it was queued:** the note then said a Slack thread would
+need `ThreadView`'s `headerAction` slot again, since it had no detail card.
+Card unification removed that problem — Slack threads get this for free.
 
 ## Deferred
 

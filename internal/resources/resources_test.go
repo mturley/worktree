@@ -260,3 +260,56 @@ func TestSetMetaAtEmptyTimestampStampsNow(t *testing.T) {
 		t.Fatal("empty --updated-at should stamp a non-empty timestamp")
 	}
 }
+
+// TestSetPrimaryFlipsBothWays pins Phase E's backend: the related flag could
+// only be set at creation, so a resource added as Related could never be
+// promoted to Focus (or demoted) without removing and re-adding it.
+func TestSetPrimaryFlipsBothWays(t *testing.T) {
+	conn := testDB(t)
+	wt := t.TempDir()
+	if err := Add(conn, wt, Resource{Type: "pr", ID: "o/r#1", URL: "u", Related: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	primaryOf := func() bool {
+		t.Helper()
+		rs, err := Load(conn, wt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range rs {
+			if r.ID == "o/r#1" {
+				return !r.Related
+			}
+		}
+		t.Fatal("resource missing")
+		return false
+	}
+
+	if primaryOf() {
+		t.Fatal("added as related, should not be primary")
+	}
+	if err := SetPrimary(conn, wt, "pr", "o/r#1", true); err != nil {
+		t.Fatalf("promote: %v", err)
+	}
+	if !primaryOf() {
+		t.Error("expected primary after promoting")
+	}
+	if err := SetPrimary(conn, wt, "pr", "o/r#1", false); err != nil {
+		t.Fatalf("demote: %v", err)
+	}
+	if primaryOf() {
+		t.Error("expected related after demoting")
+	}
+}
+
+// TestSetPrimaryUnknownResource ensures flipping a resource this worktree
+// does not track is an error rather than a silent no-op that looks like it
+// worked in the UI.
+func TestSetPrimaryUnknownResource(t *testing.T) {
+	conn := testDB(t)
+	wt := t.TempDir()
+	if err := SetPrimary(conn, wt, "pr", "nope#1", true); err == nil {
+		t.Fatal("expected an error for an untracked resource")
+	}
+}

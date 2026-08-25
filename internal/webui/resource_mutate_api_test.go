@@ -145,3 +145,53 @@ func TestRemoveResource_MissingFields(t *testing.T) {
 		t.Fatalf("got %d, want 400", resp.StatusCode)
 	}
 }
+
+// TestSetResourcePrimaryEndpoint pins Phase E's route: reclassifying a
+// resource between focus and related in place, without remove-and-re-add.
+func TestSetResourcePrimaryEndpoint(t *testing.T) {
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	wtPath := t.TempDir()
+	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u", Related: true})
+
+	srv := &Server{DB: conn}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	post := func(body string) int {
+		resp, err := http.Post(ts.URL+"/api/worktree-resources/primary", "application/json", strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	if code := post(`{"path":"` + wtPath + `","type":"pr","id":"o/r#1","primary":true}`); code != http.StatusNoContent {
+		t.Fatalf("promote: want 204, got %d", code)
+	}
+	rs, _ := resources.Load(conn, wtPath)
+	if len(rs) != 1 || rs[0].Related {
+		t.Fatalf("expected primary after promote: %+v", rs)
+	}
+
+	if code := post(`{"path":"` + wtPath + `","type":"pr","id":"o/r#1","primary":false}`); code != http.StatusNoContent {
+		t.Fatalf("demote: want 204, got %d", code)
+	}
+	rs, _ = resources.Load(conn, wtPath)
+	if len(rs) != 1 || !rs[0].Related {
+		t.Fatalf("expected related after demote: %+v", rs)
+	}
+
+	// A missing field is a client error, not a silent partial write.
+	if code := post(`{"path":"` + wtPath + `","type":"pr","primary":true}`); code != http.StatusBadRequest {
+		t.Errorf("missing id: want 400, got %d", code)
+	}
+	// An untracked resource must fail loudly rather than appear to succeed.
+	if code := post(`{"path":"` + wtPath + `","type":"pr","id":"ghost#9","primary":true}`); code == http.StatusNoContent {
+		t.Error("untracked resource should not report success")
+	}
+}

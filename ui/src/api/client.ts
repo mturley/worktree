@@ -36,6 +36,12 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(args),
     }),
+  setResourcePrimary: (args: { path: string; type: string; id: string; primary: boolean }) =>
+    fetchJSON<null>("/api/worktree-resources/primary", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(args),
+    }),
   removeResource: (args: { path: string; type: string; id: string }) =>
     fetchJSON<null>("/api/worktree-resources/remove", {
       method: "POST",

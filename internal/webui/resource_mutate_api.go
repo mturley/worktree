@@ -68,3 +68,32 @@ func (s *Server) handleRemoveResource(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// handleSetResourcePrimary reclassifies a tracked resource between focus
+// (primary) and related, in place.
+//
+// Previously the flag could only be set when a resource was added, so
+// changing your mind meant removing and re-adding it — losing its custom
+// metadata along the way. The UI fires this directly on toggle with no
+// confirmation step, so it must be cheap and idempotent.
+func (s *Server) handleSetResourcePrimary(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Path    string `json:"path"`
+		Type    string `json:"type"`
+		ID      string `json:"id"`
+		Primary bool   `json:"primary"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if body.Path == "" || body.Type == "" || body.ID == "" {
+		writeError(w, http.StatusBadRequest, "missing path, type, or id")
+		return
+	}
+	if err := resources.SetPrimary(s.DB, body.Path, body.Type, body.ID, body.Primary); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

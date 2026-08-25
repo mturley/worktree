@@ -80,6 +80,7 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/resource-meta", s.handleSetResourceMeta)
 	mux.HandleFunc("POST /api/worktree-resources/add", s.handleAddResource)
 	mux.HandleFunc("POST /api/worktree-resources/remove", s.handleRemoveResource)
+	mux.HandleFunc("POST /api/worktree-resources/primary", s.handleSetResourcePrimary)
 	mux.HandleFunc("GET /api/stream", s.handleStream)
 
 	// Slack thread/reply/react + image proxies (folded in from slack-mini).

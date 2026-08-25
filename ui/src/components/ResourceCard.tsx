@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { ActionIcon, Alert, Badge, Button, Group, Paper, Popover, Stack, Text, Tooltip, UnstyledButton } from "@mantine/core"
+import { ActionIcon, Alert, Badge, Button, Group, Paper, Popover, SegmentedControl, Stack, Text, Tooltip, UnstyledButton } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
 import { relativeTime, relativeFromNow } from "../lib/relativeTime"
 import { api } from "../api/client"
@@ -248,6 +248,25 @@ export function ResourceCard({
   onMetaChanged = () => {},
 }: ResourceCardProps) {
   const [editOpen, setEditOpen] = useState(false)
+  // Focus/Related is written straight through on change — no confirm step for
+  // a reversible, one-click reclassification. `saving` only guards against a
+  // double-fire while the request is in flight.
+  const [savingPrimary, setSavingPrimary] = useState(false)
+  const [primaryError, setPrimaryError] = useState<string | null>(null)
+
+  const handlePrimaryChange = async (value: string) => {
+    if (savingPrimary || !path) return
+    setSavingPrimary(true)
+    setPrimaryError(null)
+    try {
+      await api.setResourcePrimary({ path, type: r.type, id: r.id, primary: value === "focus" })
+      onMetaChanged()
+    } catch (e) {
+      setPrimaryError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSavingPrimary(false)
+    }
+  }
   const body = r.type === "slack" ? (
     <SlackCardBody r={r} />
   ) : !isEnriched(r) ? (
@@ -311,6 +330,11 @@ export function ResourceCard({
           </Group>
         )}
       </Group>
+      {variant === "detail" && primaryError && (
+        <Alert color="red" variant="light" mt={6} withCloseButton onClose={() => setPrimaryError(null)}>
+          <Text size="xs">{primaryError}</Text>
+        </Alert>
+      )}
       {variant === "detail" && (
         <EditResourceDetailsModal
           opened={editOpen}
@@ -323,6 +347,18 @@ export function ResourceCard({
         // Bottom-right, on the same visual line as the card's metadata, so
         // the actions read as belonging to the card rather than heading it.
         <Group justify="flex-end" gap="xs" wrap="wrap" mt={6}>
+          {/* Left of the open/copy group: reclassifying is about this
+              worktree, opening is about the resource itself. */}
+          <SegmentedControl
+            size="xs"
+            value={r.primary ? "focus" : "related"}
+            onChange={(v) => void handlePrimaryChange(v)}
+            disabled={savingPrimary}
+            data={[
+              { value: "focus", label: "Focus" },
+              { value: "related", label: "Related" },
+            ]}
+          />
           <ResourceActions r={r} />
         </Group>
       )}

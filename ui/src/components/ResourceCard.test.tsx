@@ -1,18 +1,26 @@
 import { afterEach, describe, it, expect, vi } from "vitest"
-import { render, screen } from "@testing-library/react"
+import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { ResourceCard } from "./ResourceCard"
 import type { ResourceDTO } from "../api/types"
 
 const removeResource = vi.fn()
+const setResourcePrimary = vi.fn()
 vi.mock("../api/client", async (orig) => {
   const actual = await orig<typeof import("../api/client")>()
-  return { api: { ...actual.api, removeResource: (...args: unknown[]) => removeResource(...args) } }
+  return {
+    api: {
+      ...actual.api,
+      removeResource: (...args: unknown[]) => removeResource(...args),
+      setResourcePrimary: (...args: unknown[]) => setResourcePrimary(...args),
+    },
+  }
 })
 
 afterEach(() => {
   removeResource.mockReset()
+  setResourcePrimary.mockReset()
 })
 
 if (typeof window.matchMedia !== "function") {
@@ -220,5 +228,45 @@ describe("ResourceCard link removal + detail actions", () => {
     wrap(<ResourceCard r={pr} variant="detail" />)
     expect(screen.getByRole("link", { name: "Open on GitHub" })).toHaveAttribute("href", "https://gh/pr/5")
     expect(screen.getByRole("button", { name: /copy link/i })).toBeInTheDocument()
+  })
+})
+
+describe("ResourceCard focus/related control (phase E)", () => {
+  const related: ResourceDTO = {
+    type: "pr", id: "o/r#9", url: "https://gh/pr/9", primary: false,
+    title: "Reclassify me", state: "OPEN",
+  } as ResourceDTO
+
+  it("shows the current classification", () => {
+    wrap(<ResourceCard r={related} path="/wt" variant="detail" />)
+    expect(screen.getByRole("radio", { name: "Related" })).toBeChecked()
+  })
+
+  it("writes straight through on change, with no confirm step", async () => {
+    setResourcePrimary.mockResolvedValueOnce(null)
+    const onMetaChanged = vi.fn()
+    const user = userEvent.setup()
+    wrap(<ResourceCard r={related} path="/wt" variant="detail" onMetaChanged={onMetaChanged} />)
+    await user.click(screen.getByRole("radio", { name: "Focus" }))
+    await waitFor(() =>
+      expect(setResourcePrimary).toHaveBeenCalledWith({
+        path: "/wt", type: "pr", id: "o/r#9", primary: true,
+      }),
+    )
+    // Refetch, so the Focus/Related sections in the list re-sort immediately.
+    await waitFor(() => expect(onMetaChanged).toHaveBeenCalled())
+  })
+
+  it("surfaces a failure instead of silently reverting", async () => {
+    setResourcePrimary.mockRejectedValueOnce(new Error("HTTP 500"))
+    const user = userEvent.setup()
+    wrap(<ResourceCard r={related} path="/wt" variant="detail" />)
+    await user.click(screen.getByRole("radio", { name: "Focus" }))
+    expect(await screen.findByText("HTTP 500")).toBeInTheDocument()
+  })
+
+  it("is absent from list cards, which are for selecting", () => {
+    wrap(<ResourceCard r={related} path="/wt" onSelect={() => {}} />)
+    expect(screen.queryByRole("radio", { name: "Focus" })).not.toBeInTheDocument()
   })
 })
