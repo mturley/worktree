@@ -4,6 +4,7 @@ import type { ResourceDTO } from "../api/types"
 import { relativeTime, relativeFromNow } from "../lib/relativeTime"
 import { api } from "../api/client"
 import { ResourceActions } from "./ResourceActions"
+import { ResourceTitle } from "./ResourceStatusIcon"
 import { EditResourceDetailsModal } from "./EditResourceDetailsModal"
 
 function prStateColor(state?: string): string {
@@ -72,7 +73,7 @@ function MinimalRow({ r }: { r: ResourceDTO }) {
   return (
     <Group gap="xs">
       <Badge size="xs" variant="light">{r.type}</Badge>
-      <Text size="sm">{r.id}</Text>
+      <ResourceTitle r={r} label={r.id} fw={400} />
     </Group>
   )
 }
@@ -84,9 +85,7 @@ function PRCardBody({ r }: { r: ResourceDTO }) {
         <Badge size="xs" variant="light">PR</Badge>
         <Text size="xs" c="dimmed">{prNumber(r.id)}</Text>
       </Group>
-      <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
-        {r.title || r.id}
-      </Text>
+      <ResourceTitle r={r} label={r.title || r.id} />
       <CustomDescription r={r} />
       <Group gap={4} wrap="wrap">
         {r.state && <Badge size="xs" color={prStateColor(r.state)}>{r.state.toLowerCase()}</Badge>}
@@ -110,9 +109,7 @@ function JiraCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVar
         <Badge size="xs" variant="light">Jira</Badge>
         <Text size="xs" c="dimmed">{r.id}</Text>
       </Group>
-      <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
-        {r.title || r.id}
-      </Text>
+      <ResourceTitle r={r} label={r.title || r.id} />
       <CustomDescription r={r} />
       <Group gap={4} wrap="wrap">
         {r.status && <Badge size="xs" variant="light">{r.status}</Badge>}
@@ -139,7 +136,7 @@ function SlackCardBody({ r }: { r: ResourceDTO }) {
     <Stack gap={2}>
       <Group gap="xs" wrap="wrap">
         <Badge size="xs" variant="light" color="grape">Slack</Badge>
-        <Text size="sm">{label}</Text>
+        <ResourceTitle r={r} label={label} fw={500} />
       </Group>
       <CustomDescription r={r} />
       <Group gap="xs" wrap="wrap">

@@ -25,6 +25,8 @@ function FocusResourceLine({ r, worktreePath }: { r: ResourceDTO; worktreePath: 
   const href = `/worktree/${encodeURIComponent(worktreePath)}?resource=${serializeResourceKey({ type: r.type, id: r.id })}`
   return (
     <Group gap={6} wrap="nowrap" align="center">
+      {/* Same mapping as the resource cards' titles: both read
+          resourceStatusMeta, so an icon change lands in both places. */}
       <ResourceStatusIcon r={r} />
       <Anchor
         href={href}

@@ -270,3 +270,14 @@ describe("ResourceCard focus/related control (phase E)", () => {
     expect(screen.queryByRole("radio", { name: "Focus" })).not.toBeInTheDocument()
   })
 })
+
+describe("ResourceCard status icons", () => {
+  it("shows the status icon beside the title, matching the worktree card", () => {
+    const merged = { type: "pr", id: "o/r#3", url: "u", primary: true, title: "Shipped", state: "MERGED" } as ResourceDTO
+    wrap(<ResourceCard r={merged} onSelect={() => {}} />)
+    // Same accessible label the worktree card's focus lines use, because both
+    // read the one resourceStatusMeta mapping.
+    expect(screen.getByLabelText("merged")).toBeInTheDocument()
+    expect(screen.getByText("Shipped")).toBeInTheDocument()
+  })
+})

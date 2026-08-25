@@ -1,7 +1,8 @@
 import { afterEach, describe, it, expect } from "vitest"
 import { render, cleanup, screen } from "@testing-library/react"
+import { MantineProvider } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
-import { ResourceStatusIcon, resourceStatusMeta } from "./ResourceStatusIcon"
+import { ResourceStatusIcon, ResourceTitle, resourceStatusMeta } from "./ResourceStatusIcon"
 
 const base = (over: Partial<ResourceDTO>): ResourceDTO =>
   ({ type: "pr", id: "o/r#1", url: "u", primary: true, ...over }) as ResourceDTO
@@ -31,5 +32,21 @@ describe("ResourceStatusIcon", () => {
   it("exposes the status as an accessible label", () => {
     render(<ResourceStatusIcon r={base({ state: "MERGED" })} />)
     expect(screen.getByLabelText("merged")).toBeInTheDocument()
+  })
+})
+
+describe("ResourceTitle", () => {
+  it("pairs the status icon with the title", () => {
+    render(<MantineProvider><ResourceTitle r={base({ state: "OPEN", title: "Fix the widget" })} /></MantineProvider>)
+    expect(screen.getByText("Fix the widget")).toBeInTheDocument()
+    // Same icon mapping as the worktree card's focus lines, so changing an
+    // icon in resourceStatusMeta changes both surfaces at once.
+    expect(screen.getByLabelText("open")).toBeInTheDocument()
+  })
+
+  it("accepts an explicit label, for resources whose display name differs", () => {
+    render(<MantineProvider><ResourceTitle r={base({ type: "slack" })} label="Deploy thread" /></MantineProvider>)
+    expect(screen.getByText("Deploy thread")).toBeInTheDocument()
+    expect(screen.getByLabelText("slack thread")).toBeInTheDocument()
   })
 })

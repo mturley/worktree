@@ -6,6 +6,7 @@ import {
   IconMessage,
   IconTicket,
 } from "@tabler/icons-react"
+import { Group, Text } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
 
 type IconComponent = typeof IconGitPullRequest
@@ -52,5 +53,35 @@ export function ResourceStatusIcon({ r, size = 14 }: { r: ResourceDTO; size?: nu
       role="img"
       style={{ color: `var(--mantine-color-${color}-6)`, flexShrink: 0 }}
     />
+  )
+}
+
+/**
+ * A resource's status icon paired with its title.
+ *
+ * The icon mapping lives in this file (resourceStatusMeta) and every surface
+ * that shows a resource icon reads it from here — the worktree card's focus
+ * lines and the resource cards' titles alike — so changing which icon a
+ * status uses changes it everywhere at once.
+ */
+export function ResourceTitle({
+  r,
+  label,
+  fw = 600,
+  size = "sm",
+}: {
+  r: ResourceDTO
+  /** Defaults to the resource's own title, falling back to its id. */
+  label?: string
+  fw?: number
+  size?: string
+}) {
+  return (
+    <Group gap={6} wrap="nowrap" align="center">
+      <ResourceStatusIcon r={r} />
+      <Text size={size} fw={fw} style={{ overflowWrap: "anywhere" }}>
+        {label ?? r.title ?? r.id}
+      </Text>
+    </Group>
   )
 }
