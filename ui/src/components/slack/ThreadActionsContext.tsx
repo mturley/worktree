@@ -4,11 +4,17 @@ import type { ResourceKey } from "../../lib/resourceKey"
 
 interface ThreadActions {
   /**
-   * Adds a linked thread to the current worktree as a resource. Undefined
-   * when there is no worktree context (ThreadView rendered standalone), in
-   * which case the thread-unfurl affordances hide rather than break.
+   * Opens the add-resource modal with this thread's URL pre-filled, rather
+   * than adding it outright: adding is not a single decision — Focus vs
+   * Related, and an optional custom name and description, all belong to it —
+   * and a one-click add would silently pick defaults the user then has to go
+   * and correct on the resource card.
+   *
+   * Undefined when there is no worktree context (ThreadView rendered
+   * standalone), in which case the thread-unfurl affordances hide rather
+   * than break.
    */
-  addThread?: (url: string) => Promise<void>
+  requestAddThread?: (url: string) => void
   /**
    * Returns the resource key if this worktree already tracks the thread at
    * that URL, else null. Lets the unfurl card derive its state from the

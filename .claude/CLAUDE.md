@@ -9,6 +9,8 @@ make build     # builds the ui/ frontend then the Go binary (bin/worktree, embed
 make build-web # builds only the ui/ frontend into ui/dist
 make test      # runs go test ./...
 make install   # installs to /usr/local/bin + runs setup
+               # Use NONINTERACTIVE=1 make install when running it yourself:
+               # the setup step prompts for confirmation and otherwise cancels.
 make dev       # runs the Go API + Vite dev server concurrently (needs mprocs, else prints manual instructions)
 make clean     # removes bin/, ui/dist contents (keeps ui/dist/.gitkeep), ui/node_modules
 ```

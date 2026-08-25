@@ -164,4 +164,25 @@ describe("AddResourceModal", () => {
     const { getByRole } = wrap(<AddResourceModal opened path="/wt" onClose={vi.fn()} onAdded={vi.fn()} />)
     expect(getByRole("button", { name: "Add" })).toBeDisabled()
   })
+
+  it("pre-fills the URL, and shows the Slack fields for a thread URL", async () => {
+    // The unfurl "Add thread…" button routes through here: the URL is
+    // already known, so the user should land on the choices that remain
+    // (Focus/Related, custom name and description) with the Slack-only
+    // fields already revealed — not on an empty field.
+    const url = "https://acme.slack.com/archives/C1/p1700000000000100"
+    const user = userEvent.setup()
+    const { getByLabelText, getByRole } = wrap(
+      <AddResourceModal opened path="/wt" onClose={vi.fn()} onAdded={vi.fn()} initialUrl={url} />,
+    )
+
+    expect((getByLabelText(/url/i) as HTMLInputElement).value).toBe(url)
+    expect(getByLabelText(/custom name/i)).toBeInTheDocument()
+
+    addResource.mockResolvedValueOnce({ type: "slack", id: "C1:1700000000.000100", url, primary: false })
+    await user.click(getByRole("radio", { name: /related/i }))
+    await user.click(getByRole("button", { name: "Add" }))
+
+    expect(addResource).toHaveBeenCalledWith({ path: "/wt", url, related: true })
+  })
 })

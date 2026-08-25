@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { Anchor, Grid, Group, Stack, Title } from "@mantine/core"
 import { Link, useRoute } from "wouter"
 import { useWorktreeDetail } from "../hooks/useWorktreeDetail"
@@ -10,8 +10,8 @@ import { ResourceDetailPane } from "../components/ResourceDetailPane"
 import { TimelineFeed } from "../components/TimelineFeed"
 import { WorktreeCard } from "../components/WorktreeCard"
 import { ThreadActionsContext } from "../components/slack/ThreadActionsContext"
+import { AddResourceModal } from "../components/AddResourceModal"
 import { parseThreadUrl } from "../lib/parseThreadUrl"
-import { api } from "../api/client"
 
 export function WorktreeDetailPage() {
   const [, params] = useRoute("/worktree/:path*")
@@ -44,11 +44,15 @@ export function WorktreeDetailPage() {
   // the selection state (show it). Deriving "tracked" from the list rather
   // than from what was just added keeps the unfurl button correct across
   // navigation and for threads added elsewhere.
+  // URL of a thread the user asked to add from a Slack unfurl; non-null while
+  // the pre-filled add modal is open.
+  const [pendingThreadUrl, setPendingThreadUrl] = useState<string | null>(null)
+
   const threadActions = {
-    addThread: async (url: string) => {
-      await api.addResource({ path, url })
-      await resources.refetch()
-    },
+    // Opens the add-resource modal pre-filled rather than adding outright,
+    // so Focus/Related and the optional name/description are chosen at add
+    // time instead of being defaulted and corrected afterwards.
+    requestAddThread: (url: string) => setPendingThreadUrl(url),
     trackedThread: (url: string) => {
       const parsed = parseThreadUrl(url)
       if (!parsed) return null
@@ -123,6 +127,22 @@ export function WorktreeDetailPage() {
         that pane is the whole page body.
       */}
       {overview}
+      {pendingThreadUrl !== null && (
+        // Keyed by URL so the modal remounts per thread: it seeds its fields
+        // from initialUrl at mount, and a stale instance would show the
+        // previous thread's URL.
+        <AddResourceModal
+          key={pendingThreadUrl}
+          opened
+          path={path}
+          initialUrl={pendingThreadUrl}
+          onClose={() => setPendingThreadUrl(null)}
+          onAdded={() => {
+            setPendingThreadUrl(null)
+            void resources.refetch()
+          }}
+        />
+      )}
     </Stack>
     </ThreadActionsContext.Provider>
   )

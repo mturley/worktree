@@ -97,29 +97,12 @@ function ThreadUnfurlActions({
   url: string
   onOpenThread: (url: string, opts: { background: boolean }) => void
 }) {
-  const { addThread, trackedThread, selectThread } = useThreadActions()
-  const [adding, setAdding] = useState(false)
-  const [addError, setAddError] = useState<string | null>(null)
+  const { requestAddThread, trackedThread, selectThread } = useThreadActions()
   const [copied, setCopied] = useState(false)
 
   // Derived from the resource list, not remembered locally: the button stays
   // correct across navigation, and for threads added from somewhere else.
   const tracked = trackedThread?.(url) ?? null
-
-  async function handleAdd() {
-    if (!addThread || adding) return
-    setAdding(true)
-    setAddError(null)
-    try {
-      await addThread(url)
-      // No local "added" flag — the resource refetch flips `tracked`, which
-      // turns this button into "Go to thread" on its own.
-    } catch (e) {
-      setAddError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setAdding(false)
-    }
-  }
 
   async function handleCopy() {
     try {
@@ -140,10 +123,10 @@ function ThreadUnfurlActions({
               Go to thread
             </Button>
           </Tooltip>
-        ) : addThread ? (
+        ) : requestAddThread ? (
           <Tooltip label="Add this thread to the worktree">
-            <Button size="xs" variant="light" onClick={() => void handleAdd()} loading={adding}>
-              Add thread
+            <Button size="xs" variant="light" onClick={() => requestAddThread(url)}>
+              Add thread…
             </Button>
           </Tooltip>
         ) : null}
@@ -166,11 +149,6 @@ function ThreadUnfurlActions({
           </Button>
         </Tooltip>
       </Button.Group>
-      {addError && (
-        <Text size="xs" c="red">
-          {addError}
-        </Text>
-      )}
     </Stack>
   )
 }

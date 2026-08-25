@@ -223,15 +223,18 @@ describe('thread unfurl actions', () => {
     Title: '', TitleLink: '', ServiceName: '', ServiceIcon: '', ImageURL: '', ThumbURL: '', Blocks: [],
   } as unknown as Attachment
 
-  it('adds the linked thread when the worktree does not track it', () => {
-    const addThread = vi.fn().mockResolvedValue(undefined)
+  it('requests the pre-filled add modal rather than adding outright', () => {
+    // Adding carries choices — Focus vs Related, custom name/description —
+    // so the button hands the URL to the modal instead of committing to
+    // defaults the user would then have to correct.
+    const requestAddThread = vi.fn()
     renderWithProvider(
-      <ThreadActionsContext.Provider value={{ addThread, trackedThread: () => null }}>
+      <ThreadActionsContext.Provider value={{ requestAddThread, trackedThread: () => null }}>
         <Attachments attachments={[threadAttachment]} users={{}} emoji={{}} onOpenThread={() => {}} />
       </ThreadActionsContext.Provider>,
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Add thread' }))
-    expect(addThread).toHaveBeenCalledWith(threadAttachment.FromURL)
+    fireEvent.click(screen.getByRole('button', { name: 'Add thread…' }))
+    expect(requestAddThread).toHaveBeenCalledWith(threadAttachment.FromURL)
   })
 
   it('offers "Go to thread" and selects it when already tracked', () => {
@@ -241,12 +244,12 @@ describe('thread unfurl actions', () => {
     const key = { type: 'slack', id: 'C1:1700000000.000100' }
     renderWithProvider(
       <ThreadActionsContext.Provider
-        value={{ addThread: vi.fn(), trackedThread: () => key, selectThread }}
+        value={{ requestAddThread: vi.fn(), trackedThread: () => key, selectThread }}
       >
         <Attachments attachments={[threadAttachment]} users={{}} emoji={{}} onOpenThread={() => {}} />
       </ThreadActionsContext.Provider>,
     )
-    expect(screen.queryByRole('button', { name: 'Add thread' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add thread…' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Go to thread' }))
     expect(selectThread).toHaveBeenCalledWith(key)
   })
@@ -256,7 +259,7 @@ describe('thread unfurl actions', () => {
     renderWithProvider(
       <Attachments attachments={[threadAttachment]} users={{}} emoji={{}} onOpenThread={onOpenThread} />,
     )
-    expect(screen.queryByRole('button', { name: 'Add thread' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add thread…' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Open in Slack' }))
     expect(onOpenThread).toHaveBeenCalled()
   })

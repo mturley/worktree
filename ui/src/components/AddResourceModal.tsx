@@ -19,6 +19,16 @@ interface AddResourceModalProps {
   onAdded: () => void
   /** When true, the type control starts on "Related" instead of "Focus". */
   defaultRelated?: boolean
+  /**
+   * Seeds the URL field. Used when the URL is already known — adding a
+   * thread from a Slack unfurl — so the user lands on the choices that
+   * still need making (Focus/Related, name, description) rather than on a
+   * field they would only paste back into.
+   *
+   * Read at mount: give the modal a `key` if one instance must serve
+   * several URLs.
+   */
+  initialUrl?: string
 }
 
 /** A pasted URL is a Slack thread when it points at a slack.com workspace. */
@@ -37,8 +47,15 @@ const FOCUS_HELP: Record<string, string> = {
  * primary/related distinction) and, for Slack thread URLs, optionally set a
  * custom name and description at add time.
  */
-export function AddResourceModal({ opened, path, onClose, onAdded, defaultRelated }: AddResourceModalProps) {
-  const [url, setUrl] = useState("")
+export function AddResourceModal({
+  opened,
+  path,
+  onClose,
+  onAdded,
+  defaultRelated,
+  initialUrl,
+}: AddResourceModalProps) {
+  const [url, setUrl] = useState(initialUrl ?? "")
   const [focus, setFocus] = useState(defaultRelated ? "related" : "focus")
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
@@ -48,7 +65,7 @@ export function AddResourceModal({ opened, path, onClose, onAdded, defaultRelate
   const slack = isSlackUrl(url)
 
   const reset = () => {
-    setUrl("")
+    setUrl(initialUrl ?? "")
     setFocus(defaultRelated ? "related" : "focus")
     setName("")
     setDescription("")

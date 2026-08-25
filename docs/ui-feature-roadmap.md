@@ -205,6 +205,19 @@ children are more specific than anything reasonable we could write, and would
 keep winning. Applied to all three compound controls (`ResourceActions`, the
 Slack `ActionBar`, and the thread-unfurl group in `Attachments`).
 
+## Thread unfurl "Add thread…" opens the add modal — DONE (2026-08-25)
+
+The unfurl's Add button added the thread outright, which silently defaulted
+the two things that add-time actually decides: Focus vs Related, and the
+custom name/description. Both then had to be corrected on the resource card.
+
+It now opens `AddResourceModal` pre-filled with the thread URL (new
+`initialUrl` prop, read at mount — the page keys the modal by URL so a stale
+instance cannot show the previous thread's link). The context action was
+renamed `addThread` → `requestAddThread` to match what it does; the page owns
+the modal because it is the only layer holding the worktree path. "Go to
+thread" for already-tracked threads is unchanged.
+
 ## Deferred
 
 - **Drag-to-reorder Slack threads in the rail.** The old slack-mini `TabBar`
