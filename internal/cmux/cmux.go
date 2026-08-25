@@ -252,13 +252,16 @@ func PinTab(workspaceRef, tabRef string) error {
 	return nil
 }
 
-// browserSurfaces returns the surfaces of the workspace's first browser pane,
-// in tab order, or nil when the workspace has no browser pane.
-func browserSurfaces(workspaceRef string) []Surface {
+// browserSurfacesByPane returns each pane's browser surfaces, in pane order
+// and tab order, skipping panes with no browser surface. The workspace layout
+// puts the GitHub/Jira tabs in one pane and the worktree UI tab in another, so
+// callers that care about every browser tab must walk all of them.
+func browserSurfacesByPane(workspaceRef string) [][]Surface {
 	panes, err := ListPanes(workspaceRef)
 	if err != nil {
 		return nil
 	}
+	var out [][]Surface
 	for _, pane := range panes {
 		surfaces, err := ListPaneSurfaces(workspaceRef, pane.Ref)
 		if err != nil {
@@ -271,35 +274,38 @@ func browserSurfaces(workspaceRef string) []Surface {
 			}
 		}
 		if len(browsers) > 0 {
-			return browsers
+			out = append(out, browsers)
 		}
 	}
-	return nil
+	return out
 }
 
-// PinBrowserTabs pins the first n browser tabs of a workspace, in tab order.
+// PinBrowserTabs pins every browser tab of a workspace, across all panes.
 // Best-effort: failures are silent, since a missing pin never justifies
 // failing worktree creation.
-func PinBrowserTabs(workspaceRef string, n int) {
-	surfaces := browserSurfaces(workspaceRef)
-	for i, s := range surfaces {
-		if i >= n {
-			return
+func PinBrowserTabs(workspaceRef string) {
+	for _, browsers := range browserSurfacesByPane(workspaceRef) {
+		for _, s := range browsers {
+			PinTab(workspaceRef, s.Ref)
 		}
-		PinTab(workspaceRef, s.Ref)
 	}
 }
 
-// FocusFirstBrowserTab switches the workspace's browser pane to its first tab.
+// FocusFirstBrowserTab switches the workspace's first browser pane to its
+// first tab.
 func FocusFirstBrowserTab(workspaceRef string) {
-	surfaces := browserSurfaces(workspaceRef)
-	if len(surfaces) == 0 {
+	panes := browserSurfacesByPane(workspaceRef)
+	if len(panes) == 0 {
 		return
 	}
-	SwitchBrowserTab(surfaces[0].Ref, 0)
+	SwitchBrowserTab(panes[0][0].Ref, 0)
 }
 
-func BuildLayout(urls []string) string {
+// BuildLayout lays out a new workspace: the GitHub/Jira browser tabs (urls) on
+// the left, and on the right the main shell terminal on top (with the running
+// worktree UI pinned as a tab ahead of it, when uiURL is set) over a smaller
+// `worktree info` terminal.
+func BuildLayout(uiURL string, urls []string) string {
 	type surface struct {
 		Type    string `json:"type"`
 		URL     string `json:"url,omitempty"`
@@ -315,7 +321,13 @@ func BuildLayout(urls []string) string {
 		Pane      *pane       `json:"pane,omitempty"`
 	}
 
-	mainTerminal := layoutNode{Pane: &pane{Surfaces: []surface{{Type: "terminal"}}}}
+	var topRightSurfaces []surface
+	if uiURL != "" {
+		topRightSurfaces = append(topRightSurfaces, surface{Type: "browser", URL: uiURL})
+	}
+	topRightSurfaces = append(topRightSurfaces, surface{Type: "terminal"})
+
+	mainPane := layoutNode{Pane: &pane{Surfaces: topRightSurfaces}}
 	infoTerminal := layoutNode{Pane: &pane{Surfaces: []surface{{Type: "terminal", Command: "worktree info"}}}}
 
 	var browserSurfaces []surface
@@ -333,7 +345,7 @@ func BuildLayout(urls []string) string {
 		Direction: "vertical",
 		Split:     0.67,
 		Children: []layoutNode{
-			mainTerminal,
+			mainPane,
 			infoTerminal,
 		},
 	}
