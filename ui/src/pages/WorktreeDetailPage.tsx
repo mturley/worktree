@@ -9,13 +9,16 @@ import { ResourceList } from "../components/ResourceList"
 import { ResourceDetailPane } from "../components/ResourceDetailPane"
 import { TimelineFeed } from "../components/TimelineFeed"
 import { WorktreeCard } from "../components/WorktreeCard"
+import { ThreadActionsContext } from "../components/slack/ThreadActionsContext"
+import { parseThreadUrl } from "../lib/parseThreadUrl"
+import { api } from "../api/client"
 
 export function WorktreeDetailPage() {
   const [, params] = useRoute("/worktree/:path*")
   const rawPath = params?.["path*"]
   const path = rawPath ? decodeURIComponent(rawPath) : ""
   const { resources, timeline } = useWorktreeDetail(path)
-  const { selected, toggle, clear } = useSelectedResource()
+  const { selected, select, toggle, clear } = useSelectedResource()
   const wide = useIsWide()
   const worktrees = useWorktrees()
 
@@ -35,6 +38,26 @@ export function WorktreeDetailPage() {
   useEffect(() => {
     if (selected && resources.data && !selectedResource) clear({ replace: true })
   }, [selected, resources.data, selectedResource, clear])
+
+  // Thread-unfurl actions live here because this is the only place that knows
+  // BOTH the worktree's resource list (is this thread already tracked?) and
+  // the selection state (show it). Deriving "tracked" from the list rather
+  // than from what was just added keeps the unfurl button correct across
+  // navigation and for threads added elsewhere.
+  const threadActions = {
+    addThread: async (url: string) => {
+      await api.addResource({ path, url })
+      await resources.refetch()
+    },
+    trackedThread: (url: string) => {
+      const parsed = parseThreadUrl(url)
+      if (!parsed) return null
+      const id = `${parsed.channel}:${parsed.threadTs}`
+      const hit = items.find((r) => r.type === "slack" && r.id === id)
+      return hit ? { type: hit.type, id: hit.id } : null
+    },
+    selectThread: (key: { type: string; id: string }) => select(key),
+  }
 
   const list = (
     <ResourceList
@@ -76,6 +99,7 @@ export function WorktreeDetailPage() {
   )
 
   return (
+    <ThreadActionsContext.Provider value={threadActions}>
     <Stack p="md" gap="md">
       <Group>
         <Anchor component={Link} href="/">← all worktrees</Anchor>
@@ -89,5 +113,6 @@ export function WorktreeDetailPage() {
       */}
       {overview}
     </Stack>
+    </ThreadActionsContext.Provider>
   )
 }

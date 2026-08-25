@@ -97,11 +97,14 @@ function ThreadUnfurlActions({
   url: string
   onOpenThread: (url: string, opts: { background: boolean }) => void
 }) {
-  const { addThread } = useThreadActions()
+  const { addThread, trackedThread, selectThread } = useThreadActions()
   const [adding, setAdding] = useState(false)
-  const [added, setAdded] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+
+  // Derived from the resource list, not remembered locally: the button stays
+  // correct across navigation, and for threads added from somewhere else.
+  const tracked = trackedThread?.(url) ?? null
 
   async function handleAdd() {
     if (!addThread || adding) return
@@ -109,7 +112,8 @@ function ThreadUnfurlActions({
     setAddError(null)
     try {
       await addThread(url)
-      setAdded(true)
+      // No local "added" flag — the resource refetch flips `tracked`, which
+      // turns this button into "Go to thread" on its own.
     } catch (e) {
       setAddError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -130,13 +134,19 @@ function ThreadUnfurlActions({
   return (
     <Stack gap={4}>
       <Button.Group>
-        {addThread && (
-          <Tooltip label={added ? "Added to this worktree" : "Add this thread to the worktree"}>
-            <Button size="xs" variant="light" onClick={() => void handleAdd()} loading={adding} disabled={added}>
-              {added ? "Added" : "Add thread"}
+        {tracked && selectThread ? (
+          <Tooltip label="This worktree already tracks this thread — show it">
+            <Button size="xs" variant="light" onClick={() => selectThread(tracked)}>
+              Go to thread
             </Button>
           </Tooltip>
-        )}
+        ) : addThread ? (
+          <Tooltip label="Add this thread to the worktree">
+            <Button size="xs" variant="light" onClick={() => void handleAdd()} loading={adding}>
+              Add thread
+            </Button>
+          </Tooltip>
+        ) : null}
         <Tooltip label="Open in Slack">
           <Button
             size="xs"

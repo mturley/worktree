@@ -5,8 +5,6 @@ import { useThread } from "../hooks/useThread"
 import { defaultTabName, type Tab } from "../state/tabs"
 import { ResourceCard } from "./ResourceCard"
 import { ThreadView } from "./slack/ThreadView"
-import { ThreadActionsContext } from "./slack/ThreadActionsContext"
-import { api } from "../api/client"
 
 interface SlackThreadPaneProps {
   resource: ResourceDTO
@@ -94,14 +92,6 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged }
         variant="detail"
         onMetaChanged={() => onResourceChanged?.()}
       />
-      <ThreadActionsContext.Provider
-        value={{
-          addThread: async (url: string) => {
-            await api.addResource({ path, url })
-            onResourceChanged?.()
-          },
-        }}
-      >
       <ThreadView
         tab={tab}
         thread={thread}
@@ -109,7 +99,6 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged }
           window.open(url, opts.background ? "_blank" : "_self", "noreferrer")
         }}
       />
-      </ThreadActionsContext.Provider>
     </Stack>
   )
 }

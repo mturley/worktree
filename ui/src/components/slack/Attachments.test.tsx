@@ -223,16 +223,32 @@ describe('thread unfurl actions', () => {
     Title: '', TitleLink: '', ServiceName: '', ServiceIcon: '', ImageURL: '', ThumbURL: '', Blocks: [],
   } as unknown as Attachment
 
-  it('adds the linked thread to the worktree', async () => {
+  it('adds the linked thread when the worktree does not track it', () => {
     const addThread = vi.fn().mockResolvedValue(undefined)
     renderWithProvider(
-      <ThreadActionsContext.Provider value={{ addThread }}>
+      <ThreadActionsContext.Provider value={{ addThread, trackedThread: () => null }}>
         <Attachments attachments={[threadAttachment]} users={{}} emoji={{}} onOpenThread={() => {}} />
       </ThreadActionsContext.Provider>,
     )
     fireEvent.click(screen.getByRole('button', { name: 'Add thread' }))
     expect(addThread).toHaveBeenCalledWith(threadAttachment.FromURL)
-    expect(await screen.findByRole('button', { name: 'Added' })).toBeDisabled()
+  })
+
+  it('offers "Go to thread" and selects it when already tracked', () => {
+    // Derived from the resource list, so it is right across navigation and
+    // for threads added from somewhere else — not just ones added just now.
+    const selectThread = vi.fn()
+    const key = { type: 'slack', id: 'C1:1700000000.000100' }
+    renderWithProvider(
+      <ThreadActionsContext.Provider
+        value={{ addThread: vi.fn(), trackedThread: () => key, selectThread }}
+      >
+        <Attachments attachments={[threadAttachment]} users={{}} emoji={{}} onOpenThread={() => {}} />
+      </ThreadActionsContext.Provider>,
+    )
+    expect(screen.queryByRole('button', { name: 'Add thread' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Go to thread' }))
+    expect(selectThread).toHaveBeenCalledWith(key)
   })
 
   it('still opens in Slack, and hides Add when there is no worktree context', async () => {
