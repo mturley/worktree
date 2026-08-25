@@ -49,7 +49,7 @@ afterEach(() => {
 
 describe("ResourceDetailPane slack branch", () => {
   it("renders the Slack thread instead of the activity feed for a slack resource", () => {
-    useWorktreeTimeline.mockReturnValue({ data: { events: [], next_cursor: "" }, isLoading: false, error: null })
+    useWorktreeTimeline.mockReturnValue({ events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false })
     wrap(<ResourceDetailPane path="/wt/foo" resource={slack} />)
 
     expect(screen.getByTestId("thread-view")).toHaveTextContent("thread C123/1700000000.000100")
@@ -61,7 +61,7 @@ describe("ResourceDetailPane slack branch", () => {
     // the same ResourceCard heads every resource type. Needing ThreadView's
     // header slot twice (remove in phase C, focus/related next) was the
     // signal the seam was in the wrong place.
-    useWorktreeTimeline.mockReturnValue({ data: { events: [], next_cursor: "" }, isLoading: false, error: null })
+    useWorktreeTimeline.mockReturnValue({ events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false })
     wrap(<ResourceDetailPane path="/wt/foo" resource={slack} onRemoved={vi.fn()} />)
     expect(screen.getByText("Deploy thread")).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "Open in Slack" })).toBeInTheDocument()
@@ -69,20 +69,20 @@ describe("ResourceDetailPane slack branch", () => {
   })
 
   it("does not request a filtered timeline for a slack resource", () => {
-    useWorktreeTimeline.mockReturnValue({ data: { events: [], next_cursor: "" }, isLoading: false, error: null })
+    useWorktreeTimeline.mockReturnValue({ events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false })
     wrap(<ResourceDetailPane path="/wt/foo" resource={slack} />)
     expect(useWorktreeTimeline).not.toHaveBeenCalled()
   })
 
   it("still renders the activity feed for a non-slack resource", () => {
-    useWorktreeTimeline.mockReturnValue({ data: { events: [], next_cursor: "" }, isLoading: false, error: null })
+    useWorktreeTimeline.mockReturnValue({ events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false })
     wrap(<ResourceDetailPane path="/wt/foo" resource={pr} />)
     expect(screen.getByText("Activity")).toBeInTheDocument()
     expect(screen.queryByTestId("thread-view")).not.toBeInTheDocument()
   })
 
   it("keeps the narrow-viewport back control for a slack thread", () => {
-    useWorktreeTimeline.mockReturnValue({ data: { events: [], next_cursor: "" }, isLoading: false, error: null })
+    useWorktreeTimeline.mockReturnValue({ events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false })
     wrap(<ResourceDetailPane path="/wt/foo" resource={slack} onBack={vi.fn()} />)
     expect(screen.getByRole("button", { name: /all resources for worktree/i })).toBeInTheDocument()
   })
@@ -92,7 +92,7 @@ describe("ResourceDetailPane slack remove control", () => {
   it("puts the remove control on the shared card, not in a ThreadView slot", () => {
     // Phase B gives a slack thread no detail ResourceCard, so without this the
     // thread would be the one resource type you cannot remove from the UI.
-    useWorktreeTimeline.mockReturnValue({ data: { events: [], next_cursor: "" }, isLoading: false, error: null })
+    useWorktreeTimeline.mockReturnValue({ events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false })
     wrap(<ResourceDetailPane path="/wt/foo" resource={slack} onRemoved={vi.fn()} />)
     expect(screen.getByRole("button", { name: "Remove resource" })).toBeInTheDocument()
   })

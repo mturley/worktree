@@ -226,12 +226,33 @@ cached state after an event arrived — the surface where staleness is most
 visible, since the cards show exactly what the event just changed. Now
 invalidates the `["resources"]` prefix, which matches every path's key.
 
-## Deferred
+## Timeline pagination — DONE (2026-08-25)
 
-- **Pagination / "load more" in timelines.** The timeline API already supports
-  `before`/`next_cursor`, but neither `HomePage` nor `WorktreeDetailPage` uses
-  it — only the first page shows. Add infinite scroll / a load-more control.
-  (See `docs/web-ui-architecture.md` "Known deferred items".)
+Both timelines now follow pages instead of showing only the newest 100.
+
+- **Backend asymmetry resolved.** `handleGlobalTimeline` already took a
+  `before=` cursor; `handleWorktreeTimeline` did not. It filters in memory
+  (it reads the subscriber's full history and reverses it), so the cursor is
+  applied inside that scan, alongside the resource filter — bolting it onto a
+  SQL clause would have left filtered feeds silently repeating rows. Covered
+  by a test that pages twice and asserts the cursor event is not repeated,
+  including under an active resource filter.
+- **Hooks normalise the page structure.** `useGlobalTimeline` /
+  `useWorktreeTimeline` return a flat `TimelineResult`
+  (`events`/`hasMore`/`loadMore`/`loadingMore`) rather than react-query's
+  `pages` array, so no consumer knows about page boundaries.
+- **Page size 50**, down from a fixed 100: the first screen arrives sooner
+  now that the rest is one click away.
+- **"Load more" is a button, not scroll-triggered** — these feeds sit in
+  independently scrolling side-by-side panes, where an infinite scroller in
+  one makes the other jump.
+
+**Known limitation, shared with the global handler:** events with an
+identical `ts` straddling a page boundary can be skipped, since both cursors
+are exclusive (`ts < cursor`). Not reachable while the pollers stamp distinct
+timestamps per event.
+
+## Deferred
 
 - **Make `enrichEvent` cheaper (one join instead of ~3 queries per event).**
   `internal/webui/timeline.go`'s `enrichEvent` runs three DB queries for every

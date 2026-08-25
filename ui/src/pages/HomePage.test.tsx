@@ -14,7 +14,7 @@ const summary: WorktreeSummary = {
 
 vi.mock("../hooks/useWorktrees", () => ({ useWorktrees: () => ({ data: [summary] }) }))
 vi.mock("../hooks/useTimeline", () => ({
-  useGlobalTimeline: () => ({ data: { events: [], next_cursor: "" }, isLoading: false, error: null }),
+  useGlobalTimeline: () => ({ events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false }),
 }))
 
 import { HomePage } from "./HomePage"

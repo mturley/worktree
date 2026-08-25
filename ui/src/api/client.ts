@@ -12,12 +12,13 @@ export const api = {
   globalTimeline: (archived: boolean, limit = 100, before?: string) =>
     fetchJSON<TimelineResponse>(
       `/api/timeline?archived=${archived}&limit=${limit}${before ? `&before=${encodeURIComponent(before)}` : ""}`),
-  worktreeTimeline: (path: string, limit = 100, resource?: { type: string; id: string }) => {
+  worktreeTimeline: (path: string, limit = 100, resource?: { type: string; id: string }, before?: string) => {
     const params = new URLSearchParams({ path, limit: String(limit) })
     if (resource) {
       params.set("resource_type", resource.type)
       params.set("resource_id", resource.id)
     }
+    if (before) params.set("before", before)
     return fetchJSON<TimelineResponse>(`/api/worktree-timeline?${params.toString()}`)
   },
   worktreeResources: (path: string) =>

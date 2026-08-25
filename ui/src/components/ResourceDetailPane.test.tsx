@@ -32,19 +32,19 @@ afterEach(() => {
 
 describe("ResourceDetailPane", () => {
   it("requests the timeline filtered to the selected resource", () => {
-    useWorktreeTimeline.mockReturnValue({ data: { events: [], next_cursor: "" }, isLoading: false, error: null })
+    useWorktreeTimeline.mockReturnValue({ events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false })
     wrap(<ResourceDetailPane path="/wt/foo" resource={jira} />)
     expect(useWorktreeTimeline).toHaveBeenCalledWith("/wt/foo", { type: "jira", id: "J-1" })
   })
 
   it("shows the detailed resource summary, including Jira labels", () => {
-    useWorktreeTimeline.mockReturnValue({ data: { events: [], next_cursor: "" }, isLoading: false, error: null })
+    useWorktreeTimeline.mockReturnValue({ events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false })
     wrap(<ResourceDetailPane path="/wt/foo" resource={jira} />)
     expect(screen.getByText("backend")).toBeInTheDocument()
   })
 
   it("renders a back control only when onBack is supplied", async () => {
-    useWorktreeTimeline.mockReturnValue({ data: { events: [], next_cursor: "" }, isLoading: false, error: null })
+    useWorktreeTimeline.mockReturnValue({ events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false })
     const onBack = vi.fn()
     const user = userEvent.setup()
     const { rerender } = wrap(<ResourceDetailPane path="/wt/foo" resource={jira} onBack={onBack} />)
@@ -56,7 +56,7 @@ describe("ResourceDetailPane", () => {
   })
 
   it("wires the remove control to the real worktree path, not an empty one", async () => {
-    useWorktreeTimeline.mockReturnValue({ data: { events: [], next_cursor: "" }, isLoading: false, error: null })
+    useWorktreeTimeline.mockReturnValue({ events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false })
     removeResource.mockResolvedValue(undefined)
     const onRemoved = vi.fn()
     const user = userEvent.setup()

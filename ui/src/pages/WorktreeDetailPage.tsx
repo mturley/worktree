@@ -76,7 +76,14 @@ export function WorktreeDetailPage() {
   const unfiltered = (
     <Stack gap="sm">
       <Title order={5}>Timeline</Title>
-      <TimelineFeed events={timeline.data?.events ?? []} loading={timeline.isLoading} error={timeline.error} />
+      <TimelineFeed
+        events={timeline.events}
+        loading={timeline.isLoading}
+        error={timeline.error}
+        hasMore={timeline.hasMore}
+        onLoadMore={timeline.loadMore}
+        loadingMore={timeline.loadingMore}
+      />
     </Stack>
   )
 

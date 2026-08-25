@@ -20,7 +20,15 @@ export function HomePage() {
         <Title order={4}>Timeline</Title>
         <ArchivedToggle value={archived} onChange={setArchived} />
       </Group>
-      <TimelineFeed events={tl.data?.events ?? []} loading={tl.isLoading} error={tl.error} showWorktrees />
+      <TimelineFeed
+        events={tl.events}
+        loading={tl.isLoading}
+        error={tl.error}
+        showWorktrees
+        hasMore={tl.hasMore}
+        onLoadMore={tl.loadMore}
+        loadingMore={tl.loadingMore}
+      />
     </Stack>
   )
 

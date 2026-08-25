@@ -46,9 +46,12 @@ function TimelineBody({
       />
       <Title order={5}>Activity</Title>
       <TimelineFeed
-        events={timeline.data?.events ?? []}
+        events={timeline.events}
         loading={timeline.isLoading}
         error={timeline.error}
+        hasMore={timeline.hasMore}
+        onLoadMore={timeline.loadMore}
+        loadingMore={timeline.loadingMore}
       />
     </>
   )

@@ -303,3 +303,73 @@ func TestWorktreeTimelineResourceFilter(t *testing.T) {
 		t.Fatalf("resource_id without resource_type: want 400, got %d", code)
 	}
 }
+
+func TestWorktreeTimelineBeforeCursorPaginates(t *testing.T) {
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	wtPath := t.TempDir()
+	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
+	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
+
+	base := time.Now().UTC()
+	t1 := base.Add(-3 * time.Minute).Format(time.RFC3339)
+	t2 := base.Add(-2 * time.Minute).Format(time.RFC3339)
+	t3 := base.Add(-1 * time.Minute).Format(time.RFC3339)
+	insertEvent(t, conn, "w1", t1, "github", "pr_comment", "first", "pr", "o/r#1", "u1")
+	insertEvent(t, conn, "w2", t2, "github", "pr_comment", "second", "pr", "o/r#1", "u1")
+	insertEvent(t, conn, "w3", t3, "github", "pr_comment", "third", "pr", "o/r#1", "u1")
+
+	srv := &Server{DB: conn}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	get := func(q string) (events []TimelineEvent, cursor string) {
+		resp, err := http.Get(ts.URL + "/api/worktree-timeline?path=" + url.QueryEscape(wtPath) + q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var body struct {
+			Events     []TimelineEvent `json:"events"`
+			NextCursor string          `json:"next_cursor"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		return body.Events, body.NextCursor
+	}
+
+	// First page: newest event only, and a cursor pointing at it.
+	page1, cursor := get("&limit=1")
+	if len(page1) != 1 || page1[0].ID != "w3" {
+		t.Fatalf("page 1 = %+v, want [w3]", page1)
+	}
+	if cursor == "" {
+		t.Fatal("page 1 returned no next_cursor, so there is no way to ask for page 2")
+	}
+
+	// Second page continues from the cursor and must not repeat the event
+	// the cursor names — an off-by-one here shows up as a duplicated row in
+	// the feed every time the user clicks "load more".
+	page2, _ := get("&limit=1&before=" + url.QueryEscape(cursor))
+	if len(page2) != 1 || page2[0].ID != "w2" {
+		t.Fatalf("page 2 = %+v, want [w2]", page2)
+	}
+
+	// The cursor still applies when a resource filter is active: the filter
+	// runs in the same in-memory loop, so a naive implementation can drop
+	// the cursor for filtered feeds only.
+	filtered, _ := get("&limit=10&resource_type=pr&resource_id=" + url.QueryEscape("o/r#1") + "&before=" + url.QueryEscape(t3))
+	if len(filtered) != 2 {
+		t.Fatalf("filtered+before = %+v, want 2 events (w2, w1)", filtered)
+	}
+	for _, e := range filtered {
+		if e.ID == "w3" {
+			t.Fatalf("before cursor ignored under a resource filter: %+v", filtered)
+		}
+	}
+}

@@ -12,7 +12,7 @@ const resources: ResourceDTO[] = [
 vi.mock("../hooks/useWorktreeDetail", () => ({
   useWorktreeDetail: () => ({
     resources: { data: resources, refetch: vi.fn() },
-    timeline: { data: { events: [], next_cursor: "" }, isLoading: false, error: null },
+    timeline: { events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false },
   }),
 }))
 // Return a summary whose path matches the route, so the page can render its
@@ -30,7 +30,7 @@ vi.mock("../hooks/useWorktrees", () => ({
   }),
 }))
 vi.mock("../hooks/useTimeline", () => ({
-  useWorktreeTimeline: () => ({ data: { events: [], next_cursor: "" }, isLoading: false, error: null }),
+  useWorktreeTimeline: () => ({ events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false }),
 }))
 
 import { setViewport } from "../testing/viewport"

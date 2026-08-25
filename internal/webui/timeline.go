@@ -120,11 +120,15 @@ func (s *Server) eventIDsForResource(rtype, rid string) (map[string]struct{}, er
 	return ids, rows.Err()
 }
 
-// handleWorktreeTimeline: GET /api/worktree-timeline?path=<path>&limit=&resource_type=&resource_id=
+// handleWorktreeTimeline: GET /api/worktree-timeline?path=<path>&limit=&before=&resource_type=&resource_id=
 // A query param (not a path segment) is used because worktree paths contain
 // slashes, which the Go 1.22 mux {wildcard} would split awkwardly.
-// Note: unlike handleGlobalTimeline, there is no `before=` cursor param here
-// yet — pagination is deferred; this always returns the newest `limit` events.
+//
+// `before` is an exclusive RFC3339 cursor ("" = newest), matching
+// handleGlobalTimeline. It is applied inside the reverse scan below rather
+// than as a SQL clause, because this handler filters in memory — the
+// resource filter and the cursor have to agree on which events they skip,
+// or paging a filtered feed silently repeats rows.
 func (s *Server) handleWorktreeTimeline(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Query().Get("path")
 	if path == "" {
@@ -157,6 +161,7 @@ func (s *Server) handleWorktreeTimeline(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	limit := parseLimit(r)
+	before := r.URL.Query().Get("before") // exclusive RFC3339 cursor; "" = newest
 	outCap := limit
 	if len(evs) < outCap {
 		outCap = len(evs)
@@ -164,6 +169,14 @@ func (s *Server) handleWorktreeTimeline(w http.ResponseWriter, r *http.Request) 
 	out := make([]TimelineEvent, 0, outCap)
 	// reverse (EventsForSubscriberSince returns ASC)
 	for i := len(evs) - 1; i >= 0 && len(out) < limit; i-- {
+		// Strictly less-than, so the event the cursor names is not repeated
+		// as the first row of the next page. Shared limitation with
+		// handleGlobalTimeline's SQL `e.ts < ?`: events sharing an identical
+		// ts straddle a page boundary and the later ones are skipped. Not a
+		// concern while the pollers stamp distinct ts values per event.
+		if before != "" && evs[i].TS >= before {
+			continue
+		}
 		if only != nil {
 			if _, ok := only[evs[i].ID]; !ok {
 				continue
