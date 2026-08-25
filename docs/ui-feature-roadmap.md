@@ -252,6 +252,27 @@ identical `ts` straddling a page boundary can be skipped, since both cursors
 are exclusive (`ts < cursor`). Not reachable while the pollers stamp distinct
 timestamps per event.
 
+## Slack unread indicator — DONE (2026-08-25)
+
+A blue dot beside a Slack thread's title when it has unread messages.
+
+**Cheaper than the deferred note assumed.** That note expected the poller to
+need new work to record unread state; in fact the thread the poller already
+fetches carries the user's read cursor, and the library already had
+`UnreadDividerIndex` (with tests) to interpret it. So the library change was
+one cached boolean — **watcher v0.8.0**, `has_unread` in
+`buildSlackStateJSON` — costing no extra Slack API calls. Both consumers
+re-pinned.
+
+Deliberately uses `UnreadDividerIndex` rather than a raw timestamp compare,
+so a thread with no read cursor reads as "nothing unread" instead of
+lighting up every thread the moment the field shipped.
+
+The dot lives in the shared `ResourceTitle`, so it appears wherever a
+resource title does — the worktree card's focus lines included — and there
+is one place to change how unread looks. The old rail did this with an
+`/api/thread` fetch per thread on a 30s timer; now it costs nothing extra.
+
 ## Deferred
 
 - **Make `enrichEvent` cheaper (one join instead of ~3 queries per event).**
@@ -267,11 +288,3 @@ timestamps per event.
     enriches only the events it keeps), but the underlying per-event expense
     is unchanged. See
     `docs/superpowers/specs/2026-08-21-worktree-ui-resource-selection-design.md`.
-
-- **Unread indicator for Slack threads.** The removed thread rail showed an
-  unread dot per thread, driven by `useTabMetas` fetching `/api/thread` for
-  every open thread on a 30s interval. Phase B dropped it rather than keep
-  that fan-out alive for every Slack resource in a list. To restore it, the
-  cheap path is to have the watcher Slack poller record unread state in
-  `watcher_resource_state` (it already writes channel/author/timestamps
-  there), so the Slack `ResourceCard` can show it with no extra fetches.
