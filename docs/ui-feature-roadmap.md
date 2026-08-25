@@ -218,6 +218,14 @@ renamed `addThread` → `requestAddThread` to match what it does; the page owns
 the modal because it is the only layer holding the worktree path. "Go to
 thread" for already-tracked threads is unchanged.
 
+## Resource cards refresh on SSE — FIXED (2026-08-25)
+
+`useSSE` invalidated `["timeline"]` and `["worktrees"]` but not
+`["resources", path]`, so a detail page's resource cards kept showing stale
+cached state after an event arrived — the surface where staleness is most
+visible, since the cards show exactly what the event just changed. Now
+invalidates the `["resources"]` prefix, which matches every path's key.
+
 ## Deferred
 
 - **Pagination / "load more" in timelines.** The timeline API already supports
@@ -246,8 +254,3 @@ thread" for already-tracked threads is unchanged.
   cheap path is to have the watcher Slack poller record unread state in
   `watcher_resource_state` (it already writes channel/author/timestamps
   there), so the Slack `ResourceCard` can show it with no extra fetches.
-
-- **Resource cards auto-refresh on SSE.** `useSSE` invalidates `["timeline"]`
-  and `["worktrees"]` on `events_new` but not `["resources", path]`, so a
-  detail page's resource cards don't refresh on new events without a
-  poll-on-view remount. (See `docs/web-ui-architecture.md`.)
