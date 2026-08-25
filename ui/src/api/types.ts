@@ -17,6 +17,8 @@ export interface ResourceDTO {
   // enriched from cached watcher state; absent if the resource was never polled
   title?: string
   channel_name?: string
+  /** slack: unread as of the last poll; drives the unread dot. */
+  has_unread?: boolean
   created_ts?: string
   updated_ts?: string
   state?: string

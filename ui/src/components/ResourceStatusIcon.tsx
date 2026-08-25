@@ -95,6 +95,29 @@ export function ResourceStatusIcon({ r, size = 14 }: { r: ResourceDTO; size?: nu
  * lines and the resource cards' titles alike — so changing which icon a
  * status uses changes it everywhere at once.
  */
+/**
+ * Unread marker for a Slack thread, from the poller-cached has_unread.
+ *
+ * Rendered here rather than in the Slack card so it appears wherever a
+ * resource title does — the worktree card's focus lines included — and so
+ * there is one place to change how "unread" looks.
+ */
+function UnreadDot() {
+  return (
+    <span
+      role="img"
+      aria-label="unread"
+      style={{
+        width: 7,
+        height: 7,
+        borderRadius: "50%",
+        background: "var(--mantine-color-blue-5)",
+        flexShrink: 0,
+      }}
+    />
+  )
+}
+
 export function ResourceTitle({
   r,
   label,
@@ -109,6 +132,7 @@ export function ResourceTitle({
 }) {
   return (
     <Group gap={6} wrap="nowrap" align="center">
+      {r.has_unread && <UnreadDot />}
       <ResourceStatusIcon r={r} />
       <Text size={size} fw={fw} style={{ overflowWrap: "anywhere" }}>
         {label ?? r.title ?? r.id}

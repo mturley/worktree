@@ -66,6 +66,26 @@ describe("Jira issue-type icons", () => {
   })
 })
 
+describe("unread dot", () => {
+  it("marks a Slack thread with unread messages", () => {
+    render(
+      <MantineProvider>
+        <ResourceTitle r={base({ type: "slack", title: "Deploy thread", has_unread: true })} />
+      </MantineProvider>,
+    )
+    expect(screen.getByLabelText("unread")).toBeInTheDocument()
+  })
+
+  it("shows nothing when the thread is caught up", () => {
+    render(
+      <MantineProvider>
+        <ResourceTitle r={base({ type: "slack", title: "Deploy thread" })} />
+      </MantineProvider>,
+    )
+    expect(screen.queryByLabelText("unread")).not.toBeInTheDocument()
+  })
+})
+
 describe("ResourceTitle", () => {
   it("pairs the status icon with the title", () => {
     render(<MantineProvider><ResourceTitle r={base({ state: "OPEN", title: "Fix the widget" })} /></MantineProvider>)

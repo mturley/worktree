@@ -137,7 +137,7 @@ func TestSlackEnrich(t *testing.T) {
 	wtPath := t.TempDir()
 	resources.Add(conn, wtPath, resources.Resource{Type: "slack", ID: "C123:1699000000.000100", URL: "u1"})
 
-	slackState := `{"title":"e2e regression thread","channel_name":"wg-dashboard-zaffre","author":"Christian Vogt","created_ts":"1699000000.000100","updated_ts":"1699000500.000200"}`
+	slackState := `{"title":"e2e regression thread","channel_name":"wg-dashboard-zaffre","author":"Christian Vogt","created_ts":"1699000000.000100","updated_ts":"1699000500.000200","has_unread":true}`
 	if err := watcherdb.UpsertResourceState(conn, "slack", "C123:1699000000.000100", slackState, "2026-08-01T00:00:00Z", "2026-08-01T00:05:00Z"); err != nil {
 		t.Fatal(err)
 	}
@@ -161,6 +161,9 @@ func TestSlackEnrich(t *testing.T) {
 	if slack.Title != "e2e regression thread" || slack.ChannelName != "wg-dashboard-zaffre" ||
 		slack.Author != "Christian Vogt" || slack.CreatedTS != "1699000000.000100" || slack.UpdatedTS != "1699000500.000200" {
 		t.Fatalf("slack enrichment mismatch: %+v", slack)
+	}
+	if !slack.HasUnread {
+		t.Fatalf("has_unread not surfaced from cached state: %+v", slack)
 	}
 }
 

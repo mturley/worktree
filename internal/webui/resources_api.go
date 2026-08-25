@@ -19,6 +19,7 @@ type resourceDTO struct {
 	// enriched from watcher_resource_state (empty if never polled):
 	Title                 string   `json:"title,omitempty"`                    // PR title or Jira summary
 	ChannelName           string   `json:"channel_name,omitempty"`             // slack: cached #channel name
+	HasUnread             bool     `json:"has_unread,omitempty"`               // slack: unread as of the last poll
 	CreatedTS             string   `json:"created_ts,omitempty"`               // slack: root message ts (creation)
 	UpdatedTS             string   `json:"updated_ts,omitempty"`               // slack: latest message ts
 	State                 string   `json:"state,omitempty"`                    // PR state (open/closed/merged)
@@ -142,6 +143,9 @@ func (s *Server) enrichResourceDTO(dto *resourceDTO) {
 	case "slack":
 		if v, ok := m["title"].(string); ok {
 			dto.Title = v
+		}
+		if v, ok := m["has_unread"].(bool); ok {
+			dto.HasUnread = v
 		}
 		if v, ok := m["channel_name"].(string); ok {
 			dto.ChannelName = v
