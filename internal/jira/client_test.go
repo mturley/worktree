@@ -26,3 +26,34 @@ func TestNewClientSucceedsWithCreds(t *testing.T) {
 		t.Fatal("expected non-nil client")
 	}
 }
+
+func TestIssueURL(t *testing.T) {
+	tests := []struct {
+		name string
+		host string
+		want string
+	}{
+		{"bare host", "example.atlassian.net", "https://example.atlassian.net/browse/PROJ-1"},
+		{"host with scheme", "https://example.atlassian.net", "https://example.atlassian.net/browse/PROJ-1"},
+		{"host with http scheme", "http://jira.internal", "http://jira.internal/browse/PROJ-1"},
+		{"host with trailing slash", "https://example.atlassian.net/", "https://example.atlassian.net/browse/PROJ-1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IssueURL(tt.host, "PROJ-1"); got != tt.want {
+				t.Errorf("IssueURL(%q) = %q, want %q", tt.host, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestClientBaseURLNormalizesScheme(t *testing.T) {
+	c, err := NewClient("https://example.atlassian.net/", "me@example.com", "tok")
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	if got, want := c.baseURL(), "https://example.atlassian.net"; got != want {
+		t.Errorf("baseURL() = %q, want %q", got, want)
+	}
+}

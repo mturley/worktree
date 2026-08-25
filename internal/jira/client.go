@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
 
 type Issue struct {
@@ -33,8 +34,24 @@ func NewClient(host, email, token string) (*Client, error) {
 	return &Client{host: host, email: email, token: token}, nil
 }
 
+// baseURL returns the client's host as a scheme-qualified origin. The host
+// may be configured either bare ("example.atlassian.net") or as a full URL
+// ("https://example.atlassian.net") — the shared watcher auth.yaml stores the
+// latter — so normalize before building request URLs.
+func (c *Client) baseURL() string {
+	return normalizeHost(c.host)
+}
+
+func normalizeHost(host string) string {
+	host = strings.TrimSuffix(host, "/")
+	if strings.Contains(host, "://") {
+		return host
+	}
+	return "https://" + host
+}
+
 func (c *Client) FetchIssue(key string) (*Issue, error) {
-	url := fmt.Sprintf("https://%s/rest/api/2/issue/%s?fields=summary,issuetype,status,priority,assignee", c.host, key)
+	url := fmt.Sprintf("%s/rest/api/2/issue/%s?fields=summary,issuetype,status,priority,assignee", c.baseURL(), key)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -89,12 +106,12 @@ func (c *Client) FetchIssue(key string) (*Issue, error) {
 		Status:   raw.Fields.Status.Name,
 		Priority: raw.Fields.Priority.Name,
 		Assignee: assignee,
-		URL:      fmt.Sprintf("https://%s/browse/%s", c.host, raw.Key),
+		URL:      fmt.Sprintf("%s/browse/%s", c.baseURL(), raw.Key),
 	}, nil
 }
 
 func (c *Client) TestConnection() error {
-	url := fmt.Sprintf("https://%s/rest/api/2/myself", c.host)
+	url := fmt.Sprintf("%s/rest/api/2/myself", c.baseURL())
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return err
@@ -117,5 +134,5 @@ func (c *Client) TestConnection() error {
 }
 
 func IssueURL(host, key string) string {
-	return fmt.Sprintf("https://%s/browse/%s", host, key)
+	return fmt.Sprintf("%s/browse/%s", normalizeHost(host), key)
 }
