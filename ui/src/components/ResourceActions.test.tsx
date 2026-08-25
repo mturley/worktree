@@ -53,4 +53,15 @@ describe("ResourceActions", () => {
     expect(screen.queryByRole("link")).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /copy link/i })).not.toBeInTheDocument()
   })
+
+  it("marks the group so the segment dividers apply", () => {
+    // The divider is drawn by .compound-group in cards.css. A previous
+    // attempt keyed off a data-position attribute Mantine never emits, so
+    // the segments ran together with no visible divider; assert on the hook
+    // the stylesheet actually uses.
+    const { container } = wrap(<ResourceActions r={res({})} />)
+    const group = container.querySelector(".compound-group")
+    expect(group).not.toBeNull()
+    expect(group!.children.length).toBeGreaterThan(1)
+  })
 })

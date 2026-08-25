@@ -639,6 +639,29 @@ conventions:
 | GET | `/api/slack-avatar` | proxied avatar image params | image bytes |
 | GET | `/api/slack-emoji` | proxied emoji image params | image bytes |
 | GET | `/api/slack-file` | proxied file params | file bytes |
+| GET | `/api/jira-icon` | `url` (issue-type icon on the configured Jira host) | image bytes |
+
+**Image proxies.** All four share `handleImageProxyAuth(allowedHost,
+authorize)` (`internal/webui/slack_proxy.go`): it pins the host, refuses
+non-https, uses the SSRF-guarded transport from `image_proxy.go` (loopback,
+RFC1918, link-local and the cloud-metadata address are all refused; 8 MiB
+cap) and does not follow redirects. Only the credential differs per scheme —
+`files.slack.com` gets the `d=` session cookie, `/api/jira-icon` gets Basic
+auth from the watcher Jira config. Add a new proxy by passing an `authorize`
+func, never by writing a second handler with its own security reasoning.
+
+`/api/jira-icon`'s allowed host is derived from the configured Jira host
+rather than a constant, so a cached state row carrying some other host's URL
+cannot make the server fetch it.
+
+**Correction (2026-08-25):** the received wisdom that Jira icon URLs need auth
+— which is why agent-handler dropped real icons — was tested and does NOT hold
+for `/rest/api/2/universal_avatar/...` on our instance: an unauthenticated
+fetch returns the same bytes as the proxied one. A direct `<img src=iconUrl>`
+would work there today. The proxy is kept because Jira Server/Data Center and
+the older `/secure/viewavatar` and `/images/icons/issuetypes/` URL shapes do
+require auth, and because proxying keeps the browser from calling the Jira
+host (with whatever cookies it holds) on every resource card.
 
 `ThreadResponse` (`internal/webui/slack.go`) is the enriched, normalized JSON
 shape shared by `GET /api/thread` and the `/api/thread-events` SSE stream

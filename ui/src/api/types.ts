@@ -27,6 +27,8 @@ export interface ResourceDTO {
   status?: string
   priority?: string
   issue_type?: string
+  /** URL of the icon Jira serves for this issue type; fetch via jiraIconProxy(). */
+  issue_type_icon_url?: string
   assignee?: string
   labels?: string[]
   updated_at?: string

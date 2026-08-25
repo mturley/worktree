@@ -47,7 +47,7 @@ export function ResourceActions({ r }: { r: ResourceDTO }) {
   }
 
   return (
-    <Button.Group style={{ flexShrink: 0 }}>
+    <Button.Group className="compound-group" style={{ flexShrink: 0 }}>
       <Tooltip label={label}>
         <Button
           size="xs"

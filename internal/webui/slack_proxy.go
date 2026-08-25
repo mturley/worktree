@@ -185,7 +185,12 @@ func (s *Server) handleReact(w http.ResponseWriter, r *http.Request) {
 // with 400 before any outbound request is made. When forwardCookie is true
 // (the files.slack.com proxy), the stored d= session cookie is attached so
 // authenticated file downloads succeed.
-func (s *Server) handleImageProxy(allowedHost string, forwardCookie bool) http.HandlerFunc {
+// handleImageProxy streams an image from one pinned host, applying whatever
+// credentials that host needs via `authorize`. The auth step is a parameter
+// so a second scheme (Jira's Basic auth) reuses the host pinning, SSRF-safe
+// transport and no-redirect policy rather than growing a parallel proxy with
+// its own security reasoning to get wrong.
+func (s *Server) handleImageProxyAuth(allowedHost string, authorize func(*http.Request)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		raw := r.URL.Query().Get("url")
 		if raw == "" {
@@ -211,8 +216,8 @@ func (s *Server) handleImageProxy(allowedHost string, forwardCookie bool) http.H
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
 		}
-		if forwardCookie && s.SlackCookie != "" {
-			req.AddCookie(&http.Cookie{Name: "d", Value: s.SlackCookie})
+		if authorize != nil {
+			authorize(req)
 		}
 
 		transport := s.imageProxyTransport
@@ -242,13 +247,21 @@ func (s *Server) handleImageProxy(allowedHost string, forwardCookie bool) http.H
 // cookie; files.slack.com requires the d= cookie for authenticated
 // downloads.
 func (s *Server) handleSlackAvatar(w http.ResponseWriter, r *http.Request) {
-	s.handleImageProxy("avatars.slack-edge.com", false)(w, r)
+	s.handleImageProxyAuth("avatars.slack-edge.com", nil)(w, r)
 }
 
 func (s *Server) handleSlackEmoji(w http.ResponseWriter, r *http.Request) {
-	s.handleImageProxy("emoji.slack-edge.com", false)(w, r)
+	s.handleImageProxyAuth("emoji.slack-edge.com", nil)(w, r)
 }
 
 func (s *Server) handleSlackFile(w http.ResponseWriter, r *http.Request) {
-	s.handleImageProxy("files.slack.com", true)(w, r)
+	s.handleImageProxyAuth("files.slack.com", s.slackCookieAuth)(w, r)
+}
+
+// slackCookieAuth attaches the session cookie files.slack.com requires for
+// authenticated downloads.
+func (s *Server) slackCookieAuth(req *http.Request) {
+	if s.SlackCookie != "" {
+		req.AddCookie(&http.Cookie{Name: "d", Value: s.SlackCookie})
+	}
 }

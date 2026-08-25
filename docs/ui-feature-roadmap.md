@@ -151,29 +151,59 @@ than silently reverting.
 need `ThreadView`'s `headerAction` slot again, since it had no detail card.
 Card unification removed that problem — Slack threads get this for free.
 
-## Jira issue-type icons (in progress)
+## Jira issue-type icons — DONE (2026-08-25)
 
-Replace the single generic Jira icon with the per-issue-type icons Jira itself
-serves (Bug, Task, Story, Epic, Spike…).
+Jira serves a distinct icon per issue type (Bug, Task, Story, Epic, Spike…);
+we now show it in place of the single generic ticket glyph, everywhere the
+shared `ResourceStatusIcon` renders.
 
-**Known already:** the watcher Jira client parses `issuetype` but keeps only
-`Name` (`~/git/watcher/jira/client.go`), and the poller caches
-`"issue_type": <name>`. So there is no icon URL anywhere in our data today —
-capturing `issuetype.iconUrl` is a **library** change before any UI work.
+**No handler code to share, as it turned out.** The binding constraint below
+assumed agent-handler already did this. It doesn't — it *removed* the
+capability (commits `6ef1530`, `9135ce7`, 2026-08-04) because Jira's icon URLs
+sit behind the same Basic auth as its REST API and 401 in a browser `<img>`,
+and it now uses bundled `lucide-react` icons keyed by issue-type name. So
+there was no duplicate to collapse; the shareable layer is the *data*, which
+is where the change went.
 
-**Binding constraint (2026-08-25):** if agent-handler already implements this,
-the shared part belongs in `github.com/mturley/watcher`, consumed by BOTH
-handler and worktree — not copy-pasted into worktree. Handler should be
-migrated onto the library version in the same effort rather than left with a
-duplicate. This follows the repo's own rule that the library is the single
-home for source/poller behaviour.
+- **watcher v0.7.0** — `jira.IssueData` gained `IssueTypeID` and
+  `IssueTypeIconURL`, and `buildJiraStateJSON` caches `issue_type_id` /
+  `issue_type_icon_url`. Both consumers re-pinned. Handler keeps its bundled
+  icons for now; the field is there if it ever wants the real ones.
+- **`GET /api/jira-icon?url=…`** re-attaches Basic auth server-side, which
+  also keeps the API token out of the page. It reuses the existing image
+  proxy rather than adding a second one: `handleImageProxy` was generalised
+  to `handleImageProxyAuth(allowedHost, authorize func(*http.Request))`, so
+  host pinning, the SSRF-safe transport and the no-redirect policy are shared
+  and the only per-scheme part is the credential. The allowed host is derived
+  from the configured Jira host, so a state row carrying some other host's
+  URL cannot make us fetch it.
+- **Fallback is real, not decorative.** `ResourceStatusIcon` renders the
+  proxied `<img>` only when a URL was cached, and drops to the tabler icon on
+  `onError` — unconfigured credentials, an expired token or an offline Jira
+  degrade to the old appearance instead of a broken image.
 
-**Reuse, do not reinvent:** worktree already proxies Slack images through
-`internal/webui/image_proxy.go` + `slack_proxy.go`, with SSRF protection
-(refusing loopback, RFC1918, link-local incl. the cloud-metadata address) and
-an 8 MiB cap. A Jira icon proxy — if auth means the browser cannot fetch the
-URL directly — should reuse that machinery rather than write a second proxy
-with its own security thinking.
+**Ruling:** `issue_type_id` is cached in the library but NOT surfaced on
+`resourceDTO`. The plan had it for cache-keying; the icon URL already
+contains the avatar id, so the proxy caches on the URL via `Cache-Control`
+and the id would have been an unused field.
+
+## Compound button dividers — FIXED (2026-08-25)
+
+The segments of `Button.Group` controls ("Open on GitHub | copy") ran
+together with no divider, despite an earlier fix claiming otherwise.
+
+**Root cause:** the rule keyed off `data-position="center|right"`. Mantine 7
+emits no such attribute — `ButtonGroup` sets `data-orientation` on the *group*
+and nothing on the children — so the selector matched nothing. Mantine's own
+separation works by halving the border *width* between grouped children,
+which does nothing for our `variant="light"` buttons: they have no border to
+halve.
+
+**Fix:** a `.compound-group` class on each group, drawing the divider as a
+pseudo-element. Not a border — Mantine's border-width rules for grouped
+children are more specific than anything reasonable we could write, and would
+keep winning. Applied to all three compound controls (`ResourceActions`, the
+Slack `ActionBar`, and the thread-unfurl group in `Attachments`).
 
 ## Deferred
 

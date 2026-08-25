@@ -60,7 +60,7 @@ export function ActionBar({
           Mark read
         </Button>
       </Tooltip>
-      <Button.Group style={{ flexShrink: 0 }}>
+      <Button.Group className="compound-group" style={{ flexShrink: 0 }}>
         <Tooltip label="Open in Slack">
           <Button
             size="xs"

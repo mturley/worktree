@@ -3,11 +3,21 @@ import {
   IconGitMerge,
   IconGitPullRequest,
   IconGitPullRequestClosed,
-  IconMessage,
+  IconBrandSlack,
   IconTicket,
 } from "@tabler/icons-react"
 import { Group, Text } from "@mantine/core"
+import { useState } from "react"
 import type { ResourceDTO } from "../api/types"
+
+/**
+ * Jira's icon URLs sit behind the same Basic auth as its REST API, so a
+ * browser cannot fetch them directly — they go through our server-side
+ * proxy, which re-attaches the credentials.
+ */
+export function jiraIconProxy(url: string): string {
+  return `/api/jira-icon?url=${encodeURIComponent(url)}`
+}
 
 type IconComponent = typeof IconGitPullRequest
 
@@ -24,7 +34,7 @@ interface StatusMeta {
  */
 export function resourceStatusMeta(r: ResourceDTO): StatusMeta {
   if (r.type === "slack") {
-    return { Icon: IconMessage, color: "grape", label: "slack thread" }
+    return { Icon: IconBrandSlack, color: "grape", label: "slack thread" }
   }
   if (r.type === "pr") {
     switch ((r.state || "").toUpperCase()) {
@@ -46,6 +56,27 @@ export function resourceStatusMeta(r: ResourceDTO): StatusMeta {
 
 export function ResourceStatusIcon({ r, size = 14 }: { r: ResourceDTO; size?: number }) {
   const { Icon, color, label } = resourceStatusMeta(r)
+  const [iconFailed, setIconFailed] = useState(false)
+
+  // Jira serves a distinct icon per issue type (Bug, Story, Epic, Spike…),
+  // which says more at a glance than one generic ticket glyph. If the fetch
+  // fails — unconfigured credentials, a revoked token, an offline Jira — fall
+  // through to the tabler icon below rather than leaving a broken image.
+  if (r.type === "jira" && r.issue_type_icon_url && !iconFailed) {
+    const alt = r.issue_type ? `${r.issue_type} — ${label}` : label
+    return (
+      <img
+        src={jiraIconProxy(r.issue_type_icon_url)}
+        alt={alt}
+        title={alt}
+        width={size}
+        height={size}
+        onError={() => setIconFailed(true)}
+        style={{ flexShrink: 0, display: "block" }}
+      />
+    )
+  }
+
   return (
     <Icon
       size={size}

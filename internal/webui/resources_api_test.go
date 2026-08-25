@@ -69,7 +69,7 @@ func TestWorktreeResourcesEndpointEnrichment(t *testing.T) {
 	if err := watcherdb.UpsertResourceState(conn, "pr", "o/r#1", prState, "2026-08-01T00:00:00Z", "2026-08-01T00:05:00Z"); err != nil {
 		t.Fatal(err)
 	}
-	jiraState := `{"summary":"Investigate the flux capacitor","status":"In Progress","priority":"High","assignee":"jdoe","issue_type":"Bug","labels":["backend","urgent"],"reporter":"asmith","created_at":"2026-07-01T00:00:00Z","updated_at":"2026-08-01T00:00:00Z"}`
+	jiraState := `{"summary":"Investigate the flux capacitor","status":"In Progress","priority":"High","assignee":"jdoe","issue_type":"Bug","issue_type_icon_url":"https://example.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10303","labels":["backend","urgent"],"reporter":"asmith","created_at":"2026-07-01T00:00:00Z","updated_at":"2026-08-01T00:00:00Z"}`
 	if err := watcherdb.UpsertResourceState(conn, "jira", "J-1", jiraState, "2026-08-02T00:00:00Z", "2026-08-02T00:05:00Z"); err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +109,8 @@ func TestWorktreeResourcesEndpointEnrichment(t *testing.T) {
 		t.Fatalf("missing jira J-1 in %+v", got)
 	}
 	if jira.Title != "Investigate the flux capacitor" || jira.Status != "In Progress" || jira.Priority != "High" ||
-		jira.IssueType != "Bug" || jira.Assignee != "jdoe" || jira.UpdatedAt != "2026-08-02T00:00:00Z" {
+		jira.IssueType != "Bug" || jira.Assignee != "jdoe" || jira.UpdatedAt != "2026-08-02T00:00:00Z" ||
+		jira.IssueTypeIconURL != "https://example.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10303" {
 		t.Fatalf("jira enrichment mismatch: %+v", jira)
 	}
 	if len(jira.Labels) != 2 || jira.Labels[0] != "backend" || jira.Labels[1] != "urgent" {

@@ -75,20 +75,32 @@
 /*
  * Compound (Button.Group) segments.
  *
- * Mantine collapses the borders between grouped buttons, which is right for
- * the bordered variants but leaves our `variant="light"` groups looking like
- * one wide blob — "Open on GitHub | copy" read as a single control. Mantine
- * marks grouped children data-position="left|center|right", so every segment
- * except the first gets a divider.
+ * Mantine separates grouped buttons by halving the border between them, which
+ * works only for variants that HAVE a border. Ours are `variant="light"`, so
+ * there was nothing to halve and "Open on GitHub | copy" read as one wide
+ * blob. (An earlier attempt keyed off data-position="center|right"; Mantine
+ * emits no such attribute — it sets data-orientation on the group only — so
+ * that rule never matched anything.)
+ *
+ * The divider is a pseudo-element rather than a border: Mantine's own
+ * border-width rules for grouped children are more specific than anything we
+ * can reasonably write here, and would keep overriding a border of ours.
  *
  * The colour is mixed from the button's own currentColor rather than a fixed
  * grey, so it stays legible on any variant or colour and in either scheme.
  * The solid fallback comes first for engines without color-mix.
  */
-button[data-position="center"],
-button[data-position="right"],
-a[data-position="center"],
-a[data-position="right"] {
-  border-left: 1px solid var(--mantine-color-default-border);
-  border-left: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+.compound-group > :not(:first-child) {
+  position: relative;
+}
+
+.compound-group > :not(:first-child)::before {
+  content: "";
+  position: absolute;
+  inset-block: 20%;
+  inset-inline-start: 0;
+  width: 1px;
+  background: var(--mantine-color-default-border);
+  background: color-mix(in srgb, currentColor 30%, transparent);
+  pointer-events: none;
 }

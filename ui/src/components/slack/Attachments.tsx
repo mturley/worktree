@@ -133,7 +133,7 @@ function ThreadUnfurlActions({
 
   return (
     <Stack gap={4}>
-      <Button.Group>
+      <Button.Group className="compound-group">
         {tracked && selectThread ? (
           <Tooltip label="This worktree already tracks this thread — show it">
             <Button size="xs" variant="light" onClick={() => selectThread(tracked)}>

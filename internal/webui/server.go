@@ -91,6 +91,7 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/thread/react", s.handleReact)
 	mux.HandleFunc("GET /api/slack-config", s.handleSlackConfig)
 	mux.HandleFunc("GET /api/thread-events", s.handleThreadEvents)
+	mux.HandleFunc("GET /api/jira-icon", s.handleJiraIcon)
 	mux.HandleFunc("GET /api/slack-avatar", s.handleSlackAvatar)
 	mux.HandleFunc("GET /api/slack-emoji", s.handleSlackEmoji)
 	mux.HandleFunc("GET /api/slack-file", s.handleSlackFile)

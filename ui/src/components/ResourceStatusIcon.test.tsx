@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect } from "vitest"
-import { render, cleanup, screen } from "@testing-library/react"
+import { render, cleanup, screen, fireEvent } from "@testing-library/react"
 import { MantineProvider } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
 import { ResourceStatusIcon, ResourceTitle, resourceStatusMeta } from "./ResourceStatusIcon"
@@ -32,6 +32,37 @@ describe("ResourceStatusIcon", () => {
   it("exposes the status as an accessible label", () => {
     render(<ResourceStatusIcon r={base({ state: "MERGED" })} />)
     expect(screen.getByLabelText("merged")).toBeInTheDocument()
+  })
+})
+
+describe("Jira issue-type icons", () => {
+  const bug = base({
+    type: "jira",
+    status: "In Progress",
+    issue_type: "Bug",
+    issue_type_icon_url: "https://acme.atlassian.net/rest/api/2/universal_avatar/x/10303",
+  })
+
+  it("renders the icon Jira serves, through the auth-attaching proxy", () => {
+    render(<ResourceStatusIcon r={bug} />)
+    const img = screen.getByRole("img", { name: "Bug — In Progress" })
+    expect(img.getAttribute("src")).toBe(
+      "/api/jira-icon?url=" +
+        encodeURIComponent("https://acme.atlassian.net/rest/api/2/universal_avatar/x/10303"),
+    )
+  })
+
+  it("falls back to the bundled icon when the fetch fails", () => {
+    render(<ResourceStatusIcon r={bug} />)
+    fireEvent.error(screen.getByRole("img", { name: "Bug — In Progress" }))
+    // The tabler fallback labels itself with the status, and is not an <img>.
+    const fallback = screen.getByLabelText("In Progress")
+    expect(fallback.tagName.toLowerCase()).not.toBe("img")
+  })
+
+  it("uses the bundled icon when no icon URL was cached", () => {
+    render(<ResourceStatusIcon r={base({ type: "jira", status: "Backlog" })} />)
+    expect(screen.getByLabelText("Backlog").tagName.toLowerCase()).not.toBe("img")
   })
 })
 
