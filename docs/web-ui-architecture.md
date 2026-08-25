@@ -19,6 +19,28 @@ touch the UI, read the relevant section below before spelunking the source.
   time.Minute)`), opens the browser (unless `--no-open`/`--api-only`), then
   calls `srv.Start()` which blocks on `http.ListenAndServe`.
 
+### Detecting an already-running UI
+
+`serverAlreadyListening(port)` (`cmd/ui.go`) is a 200ms TCP dial to
+`127.0.0.1:<port>`. `runUI` uses it to avoid an "address already in use"
+failure — if something answers, it just opens that URL and exits 0.
+
+The cmux workspace-creation flow reuses the same check via
+`runningUIDetailURL(conn, wtPath)`, which on a hit composes
+`http://127.0.0.1:8475` + `detailPathForToplevel(wtPath, registry.List(conn))`
+— the same registry matcher `runUI` uses for its own auto-open, so
+`wdb.Subscriber` canonicalization (symlinked paths) behaves identically in both
+places. The resulting URL becomes the first, pinned browser tab of the new
+workspace (see `buildWorkspaceURLs` in `cmd/root.go` and `cmux.PinBrowserTabs`).
+
+**The probe is hardcoded to `defaultUIPort` (8475).** `worktree ui` records its
+actual port nowhere — no pidfile, no state file — so `serverAlreadyListening`
+only ever answers "is anything on the port I was about to use". A UI started
+with `--port 9000` is therefore invisible to the workspace-creation flow, which
+falls back to its no-UI behavior. Making custom ports work means giving the UI
+somewhere to record its port; don't mistake the current check for real
+discovery.
+
 ## Delivery / embed model
 
 - Root package `web_embed.go`: `//go:embed all:ui/dist` into `EmbeddedWeb

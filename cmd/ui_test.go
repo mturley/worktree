@@ -88,3 +88,21 @@ func TestDetailPathForToplevel_EmptyEntries(t *testing.T) {
 		t.Fatalf("got %q, want /", got)
 	}
 }
+
+func TestUIDetailURL_TrackedWorktree(t *testing.T) {
+	dir := t.TempDir()
+	entries := []registry.Entry{{Path: dir, Repo: "r", RepoRoot: "/r", Branch: "b"}}
+	got := uiDetailURL(8475, dir, entries)
+	want := "http://127.0.0.1:8475/worktree/" + url.PathEscape(dir)
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestUIDetailURL_UntrackedFallsBackToHome(t *testing.T) {
+	dir := t.TempDir()
+	got := uiDetailURL(8475, dir, nil)
+	if want := "http://127.0.0.1:8475/"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}

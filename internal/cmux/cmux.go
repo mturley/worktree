@@ -242,23 +242,61 @@ func SwitchBrowserTab(surfaceRef string, tabIndex int) error {
 	return nil
 }
 
-func FocusPRTab(workspaceRef string) {
+// PinTab pins a single tab (surface) in a workspace, so it stays put and is
+// skipped by the close-others/close-right tab actions.
+func PinTab(workspaceRef, tabRef string) error {
+	cmd := cmuxCmd("tab-action", "--workspace", workspaceRef, "--tab", tabRef, "--action", "pin")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("pinning tab: %s", strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// browserSurfaces returns the surfaces of the workspace's first browser pane,
+// in tab order, or nil when the workspace has no browser pane.
+func browserSurfaces(workspaceRef string) []Surface {
 	panes, err := ListPanes(workspaceRef)
 	if err != nil {
-		return
+		return nil
 	}
 	for _, pane := range panes {
 		surfaces, err := ListPaneSurfaces(workspaceRef, pane.Ref)
 		if err != nil {
 			continue
 		}
+		var browsers []Surface
 		for _, s := range surfaces {
 			if s.Type == "browser" {
-				SwitchBrowserTab(s.Ref, 0)
-				return
+				browsers = append(browsers, s)
 			}
 		}
+		if len(browsers) > 0 {
+			return browsers
+		}
 	}
+	return nil
+}
+
+// PinBrowserTabs pins the first n browser tabs of a workspace, in tab order.
+// Best-effort: failures are silent, since a missing pin never justifies
+// failing worktree creation.
+func PinBrowserTabs(workspaceRef string, n int) {
+	surfaces := browserSurfaces(workspaceRef)
+	for i, s := range surfaces {
+		if i >= n {
+			return
+		}
+		PinTab(workspaceRef, s.Ref)
+	}
+}
+
+// FocusFirstBrowserTab switches the workspace's browser pane to its first tab.
+func FocusFirstBrowserTab(workspaceRef string) {
+	surfaces := browserSurfaces(workspaceRef)
+	if len(surfaces) == 0 {
+		return
+	}
+	SwitchBrowserTab(surfaces[0].Ref, 0)
 }
 
 func BuildLayout(urls []string) string {

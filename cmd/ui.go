@@ -22,6 +22,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// defaultUIPort is the port `worktree ui` binds by default, and the only
+// port other commands probe when looking for an already-running UI.
+const defaultUIPort = 8475
+
 var (
 	uiPort    int
 	uiNoOpen  bool
@@ -36,7 +40,7 @@ var uiCmd = &cobra.Command{
 }
 
 func init() {
-	uiCmd.Flags().IntVar(&uiPort, "port", 8475, "HTTP server port")
+	uiCmd.Flags().IntVar(&uiPort, "port", defaultUIPort, "HTTP server port")
 	uiCmd.Flags().BoolVar(&uiNoOpen, "no-open", false, "do not open the browser")
 	uiCmd.Flags().BoolVar(&uiAPIOnly, "api-only", false, "serve API only (for use with the Vite dev server)")
 	rootCmd.AddCommand(uiCmd)
@@ -128,6 +132,31 @@ func serverAlreadyListening(port int) bool {
 	}
 	c.Close()
 	return true
+}
+
+// runningUIDetailURL returns the URL of the worktree UI's detail page for
+// wtPath when a worktree UI is listening on the default port, or "" when none
+// is running (or the registry can't be read). Used by the cmux
+// workspace-creation flow to add a tab pointing at the new worktree.
+//
+// It deliberately probes only defaultUIPort: `worktree ui` records its port
+// nowhere, so a UI started with a custom --port is simply not detected and
+// callers fall back to their no-UI behavior.
+func runningUIDetailURL(conn *sql.DB, wtPath string) string {
+	if conn == nil || !serverAlreadyListening(defaultUIPort) {
+		return ""
+	}
+	entries, err := registry.List(conn)
+	if err != nil {
+		return ""
+	}
+	return uiDetailURL(defaultUIPort, wtPath, entries)
+}
+
+// uiDetailURL builds the absolute URL of the worktree UI's detail page for
+// wtPath, falling back to the UI home page when wtPath has no registry entry.
+func uiDetailURL(port int, wtPath string, entries []registry.Entry) string {
+	return fmt.Sprintf("http://127.0.0.1:%d%s", port, detailPathForToplevel(wtPath, entries))
 }
 
 func openBrowserWhenUp(port int, path string) {
