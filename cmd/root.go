@@ -396,21 +396,11 @@ func openCmuxWorkspace(conn *sql.DB, cfg config.Config, result gitutil.CreateRes
 		return cmux.SelectWorkspace(existing.Ref)
 	}
 
-	var urls []string
 	var res []resources.Resource
 	if conn != nil {
 		res, _ = resources.Load(conn, result.Path)
 	}
-	for _, r := range resources.OfType(res, "pr") {
-		if r.URL != "" {
-			urls = append(urls, r.URL)
-		}
-	}
-	for _, r := range resources.OfType(res, "jira") {
-		if !r.Related && r.URL != "" {
-			urls = append(urls, r.URL)
-		}
-	}
+	urls := buildWorkspaceURLs(runningUIDetailURL(conn, result.Path), res)
 
 	defaultTitle := fmt.Sprintf("wt %s", result.Branch)
 	fmt.Println()
@@ -442,10 +432,36 @@ func openCmuxWorkspace(conn *sql.DB, cfg config.Config, result gitutil.CreateRes
 	}
 	fmt.Printf("%s Created cmux workspace %s\n", ui.Green("✓"), ref)
 
-	if len(urls) > 1 {
-		cmux.FocusPRTab(ref)
+	// Pin the worktree UI / GitHub / Jira tabs (every URL we laid out) so they
+	// survive the close-others/close-right tab actions, then land on the first
+	// of them.
+	if len(urls) > 0 {
+		cmux.PinBrowserTabs(ref, len(urls))
+		cmux.FocusFirstBrowserTab(ref)
 	}
 	return nil
+}
+
+// buildWorkspaceURLs orders the browser tabs for a new cmux workspace: the
+// running worktree UI's detail page first (uiURL, empty when no UI is
+// running), then GitHub PRs, then the primary Jira issues. Resources with no
+// URL, and Jira issues merely related to the worktree, are skipped.
+func buildWorkspaceURLs(uiURL string, res []resources.Resource) []string {
+	var urls []string
+	if uiURL != "" {
+		urls = append(urls, uiURL)
+	}
+	for _, r := range resources.OfType(res, "pr") {
+		if r.URL != "" {
+			urls = append(urls, r.URL)
+		}
+	}
+	for _, r := range resources.OfType(res, "jira") {
+		if !r.Related && r.URL != "" {
+			urls = append(urls, r.URL)
+		}
+	}
+	return urls
 }
 
 func offerDotfiles(repoRoot, wtPath string) {

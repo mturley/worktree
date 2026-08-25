@@ -240,8 +240,19 @@ While running, the server polls all active PR/Jira resources in the background e
 When running inside [cmux](https://cmux.com/), worktree creation automatically creates a cmux workspace with a split layout:
 
 - **Left:** Terminal running Claude Code
-- **Top-right:** Browser tabs for the PR and detected Jira issues (PR tab is focused by default)
+- **Top-right:** Browser tabs — the worktree UI, then the PR, then detected Jira issues
 - **Bottom-right:** Terminal showing `worktree info`
+
+Those browser tabs are **pinned**, so cmux's close-others / close-right tab
+actions leave them alone (unpin a tab to close it). The first one is focused on
+creation.
+
+The worktree UI tab appears only when a `worktree ui` server is already running
+on its default port (8475); it opens that worktree's detail page. If no UI is
+running, the tabs are just the PR and Jira ones — and if there are none of
+those either, the workspace gets a single empty browser tab as before. A UI
+started on a custom `--port` isn't detected, since the port isn't recorded
+anywhere.
 
 On creation, the tool prompts for:
 - **Workspace name** (default: `wt <branch>`)
