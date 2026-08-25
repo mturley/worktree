@@ -71,3 +71,24 @@
   padding: 0 3px;
   white-space: nowrap;
 }
+
+/*
+ * Compound (Button.Group) segments.
+ *
+ * Mantine collapses the borders between grouped buttons, which is right for
+ * the bordered variants but leaves our `variant="light"` groups looking like
+ * one wide blob — "Open on GitHub | copy" read as a single control. Mantine
+ * marks grouped children data-position="left|center|right", so every segment
+ * except the first gets a divider.
+ *
+ * The colour is mixed from the button's own currentColor rather than a fixed
+ * grey, so it stays legible on any variant or colour and in either scheme.
+ * The solid fallback comes first for engines without color-mix.
+ */
+button[data-position="center"],
+button[data-position="right"],
+a[data-position="center"],
+a[data-position="right"] {
+  border-left: 1px solid var(--mantine-color-default-border);
+  border-left: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+}

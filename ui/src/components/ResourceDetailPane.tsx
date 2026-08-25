@@ -27,15 +27,23 @@ function TimelineBody({
   path,
   resource,
   onRemoved,
+  onResourceChanged,
 }: {
   path: string
   resource: ResourceDTO
   onRemoved?: () => void
+  onResourceChanged?: () => void
 }) {
   const timeline = useWorktreeTimeline(path, { type: resource.type, id: resource.id })
   return (
     <>
-      <ResourceCard r={resource} path={path} onRemoved={onRemoved} variant="detail" />
+      <ResourceCard
+        r={resource}
+        path={path}
+        onRemoved={onRemoved}
+        onMetaChanged={onResourceChanged}
+        variant="detail"
+      />
       <Title order={5}>Activity</Title>
       <TimelineFeed
         events={timeline.data?.events ?? []}
@@ -74,7 +82,12 @@ export function ResourceDetailPane({
           onResourceChanged={onResourceChanged}
         />
       ) : (
-        <TimelineBody path={path} resource={resource} onRemoved={onRemoved} />
+        <TimelineBody
+          path={path}
+          resource={resource}
+          onRemoved={onRemoved}
+          onResourceChanged={onResourceChanged}
+        />
       )}
     </Stack>
   )

@@ -81,7 +81,13 @@ export function WorktreeDetailPage() {
   // presentation without disturbing what is selected.
   const overview = !wide ? (
     selectedResource ? (
-      <ResourceDetailPane path={path} resource={selectedResource} onBack={clear} onRemoved={resources.refetch} />
+      <ResourceDetailPane
+        path={path}
+        resource={selectedResource}
+        onBack={clear}
+        onRemoved={resources.refetch}
+        onResourceChanged={resources.refetch}
+      />
     ) : (
       list
     )
@@ -90,7 +96,12 @@ export function WorktreeDetailPage() {
       <Grid.Col span={4}>{list}</Grid.Col>
       <Grid.Col span={8}>
         {selectedResource ? (
-          <ResourceDetailPane path={path} resource={selectedResource} onRemoved={resources.refetch} />
+          <ResourceDetailPane
+            path={path}
+            resource={selectedResource}
+            onRemoved={resources.refetch}
+            onResourceChanged={resources.refetch}
+          />
         ) : (
           unfiltered
         )}
