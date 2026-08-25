@@ -220,18 +220,6 @@ thread" for already-tracked threads is unchanged.
 
 ## Deferred
 
-- **Drag-to-reorder Slack threads in the rail.** The old slack-mini `TabBar`
-  supported drag-to-reorder (dnd-kit `SortableContext` + a `reorderTabs`
-  helper), persisting order in sessionStorage. When it was folded into the
-  resource-scoped Slack tab, reorder was dropped because worktree resources
-  have no persisted user-defined order.
-  - **To do this:** add a resource-order concept persisted in **worktree's own
-    DB** (not the watcher library's `watcher_subscriptions` etc. — resource
-    ordering is a worktree-UI concern, not a watcher concern), expose it on the
-    resource DTOs / a reorder endpoint, and re-add dnd-kit sorting to the rail.
-  - Reference the removed `TabBar.tsx` / `state/tabs.ts#reorderTabs` in git
-    history for the drag-reorder UI mechanics.
-
 - **Pagination / "load more" in timelines.** The timeline API already supports
   `before`/`next_cursor`, but neither `HomePage` nor `WorktreeDetailPage` uses
   it — only the first page shows. Add infinite scroll / a load-more control.
