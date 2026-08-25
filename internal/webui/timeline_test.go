@@ -373,3 +373,73 @@ func TestWorktreeTimelineBeforeCursorPaginates(t *testing.T) {
 		}
 	}
 }
+
+// TestEnricherIsRequestScoped pins the lifetime contract that makes the
+// enricher's memoisation safe WITHOUT any invalidation logic: it caches for
+// one request, and a fresh one sees changes made since.
+//
+// This matters because titles and subscriptions are changed by writers this
+// server cannot observe — the poller, and `worktree` CLI invocations in other
+// processes. A longer-lived cache would need invalidation hooks it cannot have.
+func TestEnricherIsRequestScoped(t *testing.T) {
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	wtPath := t.TempDir()
+	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
+	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
+	if err := watcherdb.UpsertResourceState(conn, "pr", "o/r#1",
+		`{"title":"before"}`, "2026-08-01T00:00:00Z", "2026-08-01T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := &Server{DB: conn}
+
+	// Within one enricher, repeated lookups are one consistent snapshot.
+	e1 := srv.newEventEnricher()
+	if got := e1.resourceTitle("pr", "o/r#1"); got != "before" {
+		t.Fatalf("title = %q, want %q", got, "before")
+	}
+	if err := watcherdb.UpsertResourceState(conn, "pr", "o/r#1",
+		`{"title":"after"}`, "2026-08-02T00:00:00Z", "2026-08-02T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	if got := e1.resourceTitle("pr", "o/r#1"); got != "before" {
+		t.Fatalf("mid-request title = %q; a page should render one snapshot, not a mix", got)
+	}
+
+	// The next request picks the change up with no invalidation call.
+	if got := srv.newEventEnricher().resourceTitle("pr", "o/r#1"); got != "after" {
+		t.Fatalf("next-request title = %q, want %q — the memo outlived its request", got, "after")
+	}
+}
+
+// TestEnricherSeesSubscriptionChangesNextRequest is the same contract for the
+// other memo: worktree attribution.
+func TestEnricherSeesSubscriptionChangesNextRequest(t *testing.T) {
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	wtPath := t.TempDir()
+	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
+	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
+
+	srv := &Server{DB: conn}
+	if got := srv.newEventEnricher().worktreesWatching("pr", "o/r#1"); len(got) != 1 || got[0] != "b1" {
+		t.Fatalf("watching = %v, want [b1]", got)
+	}
+
+	// Unsubscribing is visible to the next request without invalidation.
+	if err := resources.Remove(conn, wtPath, "pr", "o/r#1"); err != nil {
+		t.Fatal(err)
+	}
+	if got := srv.newEventEnricher().worktreesWatching("pr", "o/r#1"); len(got) != 0 {
+		t.Fatalf("watching after unsubscribe = %v, want []", got)
+	}
+}

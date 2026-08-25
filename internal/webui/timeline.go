@@ -99,8 +99,8 @@ JOIN watcher_event_resources er ON er.event_id = e.id `
 
 // eventIDsForResource returns the set of event ids linked to one resource.
 // Resolving the set up front means handleWorktreeTimeline can skip
-// non-matching events without paying enrichEvent's three-queries-per-event
-// cost on rows it would discard.
+// non-matching events without paying the enricher's per-event cost on rows it
+// would discard.
 func (s *Server) eventIDsForResource(rtype, rid string) (map[string]struct{}, error) {
 	rows, err := s.DB.Query(
 		`SELECT event_id FROM watcher_event_resources WHERE resource_type = ? AND resource_id = ?`,
@@ -167,6 +167,7 @@ func (s *Server) handleWorktreeTimeline(w http.ResponseWriter, r *http.Request) 
 		outCap = len(evs)
 	}
 	out := make([]TimelineEvent, 0, outCap)
+	enricher := s.newEventEnricher()
 	// reverse (EventsForSubscriberSince returns ASC)
 	for i := len(evs) - 1; i >= 0 && len(out) < limit; i-- {
 		// Strictly less-than, so the event the cursor names is not repeated
@@ -182,7 +183,7 @@ func (s *Server) handleWorktreeTimeline(w http.ResponseWriter, r *http.Request) 
 				continue
 			}
 		}
-		out = append(out, s.enrichEvent(evs[i]))
+		out = append(out, enricher.enrich(evs[i]))
 	}
 	writeJSON(w, http.StatusOK, timelineResponse{Events: out, NextCursor: cursorOf(out)})
 }
@@ -202,6 +203,7 @@ func (s *Server) writeTimelineRows(w http.ResponseWriter, rows *sql.Rows, limit 
 	// practice. If Phase 4 (Slack) starts linking multiple resources to a
 	// single event, revisit this with a query-level GROUP BY / windowed
 	// subquery that picks one resource per event before LIMIT is applied.
+	enricher := s.newEventEnricher()
 	seen := make(map[string]bool, limit)
 	for rows.Next() {
 		var te TimelineEvent
@@ -215,87 +217,146 @@ func (s *Server) writeTimelineRows(w http.ResponseWriter, rows *sql.Rows, limit 
 		}
 		seen[te.ID] = true
 		te.TypeLabel = watcher.EventType(te.Type).DisplayName()
-		te.ResourceTitle = s.resourceTitle(te.ResourceType, te.ResourceID)
-		te.Worktrees = s.worktreesWatching(te.ResourceType, te.ResourceID)
+		enricher.fillResource(&te)
 		out = append(out, te)
 	}
 	writeJSON(w, http.StatusOK, timelineResponse{Events: out, NextCursor: cursorOf(out)})
 }
 
-// enrichEvent maps a watcher.Event (+ its single resource, looked up) to a DTO.
-func (s *Server) enrichEvent(e watcher.Event) TimelineEvent {
+// eventEnricher turns raw events into TimelineEvent DTOs for ONE request.
+//
+// Its whole reason to exist is lifetime. The per-event work it replaces was
+// dominated not by queries but by rebuilding a constant: worktreesWatching
+// called registry.List and then wdb.Subscriber — which runs
+// filepath.EvalSymlinks, a filesystem syscall — for every worktree, for every
+// event. On real data that was ~96µs of the ~107µs spent per event, i.e. ~90%
+// of the cost was recomputing one map, and it grew with worktrees × events.
+//
+// IMPORTANT: build one per request (see newEventEnricher) and let it go with
+// the response. Do NOT hang it off Server. Its maps would then need
+// invalidating on every title and subscription change — including writes made
+// by a DIFFERENT PROCESS (`worktree add`, `worktree resources set-name`, and
+// agent-handler shelling out to the CLI all write this same SQLite file),
+// which this server cannot observe at all. At request scope there is nothing
+// to invalidate: the next request builds a fresh one.
+//
+// A side benefit: a page now renders from a single consistent snapshot.
+// Previously each event looked its resource up at a slightly different
+// instant, so a concurrent poll could produce one page mixing old and new
+// values.
+type eventEnricher struct {
+	s *Server
+	// canonical subscriber -> branch, for every registered worktree. Built
+	// once: it is identical for every event on the page.
+	branchBySub map[string]string
+	// memoised per resource key. A page of 50 events typically touches only
+	// ~12 distinct resources.
+	titles   map[string]string
+	watching map[string][]string
+}
+
+func (s *Server) newEventEnricher() *eventEnricher {
+	e := &eventEnricher{
+		s:           s,
+		branchBySub: map[string]string{},
+		titles:      map[string]string{},
+		watching:    map[string][]string{},
+	}
+	// A registry read failure leaves branchBySub empty, which degrades to
+	// "no worktrees attributed" — the same outcome the old per-event code
+	// produced on error, and not worth failing a whole page over.
+	if entries, err := registry.List(s.DB); err == nil {
+		for _, ent := range entries {
+			e.branchBySub[wdb.Subscriber(ent.Path)] = ent.Branch
+		}
+	}
+	return e
+}
+
+// enrich maps a watcher.Event (+ its single resource, looked up) to a DTO.
+func (e *eventEnricher) enrich(ev watcher.Event) TimelineEvent {
 	te := TimelineEvent{
-		ID: e.ID, TS: e.TS, Source: e.Source, Type: string(e.Type),
-		TypeLabel: e.Type.DisplayName(), Title: e.Title,
+		ID: ev.ID, TS: ev.TS, Source: ev.Source, Type: string(ev.Type),
+		TypeLabel: ev.Type.DisplayName(), Title: ev.Title,
 	}
-	if e.ExternalTS != nil {
-		te.ExternalTS = *e.ExternalTS
+	if ev.ExternalTS != nil {
+		te.ExternalTS = *ev.ExternalTS
 	}
-	if e.Body != nil {
-		te.Body = *e.Body
+	if ev.Body != nil {
+		te.Body = *ev.Body
 	}
-	if e.Author != nil {
-		te.Author = *e.Author
+	if ev.Author != nil {
+		te.Author = *ev.Author
 	}
 	// Resolve the event's resource(s) for scoped view.
-	s.DB.QueryRow(`SELECT resource_type, resource_id, COALESCE(resource_url,'')
-		FROM watcher_event_resources WHERE event_id = ? LIMIT 1`, e.ID).
+	e.s.DB.QueryRow(`SELECT resource_type, resource_id, COALESCE(resource_url,'')
+		FROM watcher_event_resources WHERE event_id = ? LIMIT 1`, ev.ID).
 		Scan(&te.ResourceType, &te.ResourceID, &te.ResourceURL)
-	te.ResourceTitle = s.resourceTitle(te.ResourceType, te.ResourceID)
-	te.Worktrees = s.worktreesWatching(te.ResourceType, te.ResourceID)
+	e.fillResource(&te)
 	return te
 }
 
-func (s *Server) resourceTitle(rtype, rid string) string {
+// fillResource adds the resource-derived fields to an event whose resource
+// columns are already populated (the global timeline gets them from its join).
+func (e *eventEnricher) fillResource(te *TimelineEvent) {
+	te.ResourceTitle = e.resourceTitle(te.ResourceType, te.ResourceID)
+	te.Worktrees = e.worktreesWatching(te.ResourceType, te.ResourceID)
+}
+
+func (e *eventEnricher) resourceTitle(rtype, rid string) string {
 	if rtype == "" || rid == "" {
 		return ""
 	}
-	st, err := watcherdb.GetResourceState(s.DB, rtype, rid)
-	if err != nil || st == nil {
-		return ""
+	key := rtype + ":" + rid
+	if t, ok := e.titles[key]; ok {
+		return t
 	}
-	var m map[string]any
-	if json.Unmarshal([]byte(st.StateJSON), &m) == nil {
-		if t, ok := m["title"].(string); ok {
-			return t
+	title := ""
+	if st, err := watcherdb.GetResourceState(e.s.DB, rtype, rid); err == nil && st != nil {
+		var m map[string]any
+		if json.Unmarshal([]byte(st.StateJSON), &m) == nil {
+			if t, ok := m["title"].(string); ok {
+				title = t
+			}
 		}
 	}
-	return ""
+	e.titles[key] = title
+	return title
 }
 
 // worktreesWatching returns the branch names of worktrees currently watching
 // the resource (empty slice if none / archived). It matches on the CANONICAL
 // subscriber (wdb.Subscriber of each registry path) because watcher_subscriptions
-// store canonical subscribers while the worktrees table stores raw paths.
-func (s *Server) worktreesWatching(rtype, rid string) []string {
+// store canonical subscribers while the worktrees table stores raw paths — the
+// map for that is built once per request, in newEventEnricher.
+//
+// The returned slice is shared with any later event on the same resource;
+// callers marshal it and must not mutate it.
+func (e *eventEnricher) worktreesWatching(rtype, rid string) []string {
 	out := []string{}
 	if rtype == "" || rid == "" {
 		return out
 	}
-	subs, err := watcherdb.SubscribersOf(s.DB, rtype, rid) // []Subscription
+	key := rtype + ":" + rid
+	if w, ok := e.watching[key]; ok {
+		return w
+	}
+	subs, err := watcherdb.SubscribersOf(e.s.DB, rtype, rid) // []Subscription
 	if err != nil {
 		return out
-	}
-	// Build canonical-subscriber -> branch from the registry.
-	entries, err := registry.List(s.DB)
-	if err != nil {
-		return out
-	}
-	branchBySub := make(map[string]string, len(entries))
-	for _, e := range entries {
-		branchBySub[wdb.Subscriber(e.Path)] = e.Branch
 	}
 	seen := map[string]bool{}
 	for _, sub := range subs {
 		if sub.DeletedAt != nil { // only active subscriptions attribute
 			continue
 		}
-		if b, ok := branchBySub[sub.Subscriber]; ok && !seen[b] {
+		if b, ok := e.branchBySub[sub.Subscriber]; ok && !seen[b] {
 			seen[b] = true
 			out = append(out, b)
 		}
 	}
 	sort.Strings(out)
+	e.watching[key] = out
 	return out
 }
 

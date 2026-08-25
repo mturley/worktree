@@ -273,18 +273,44 @@ resource title does — the worktree card's focus lines included — and there
 is one place to change how unread looks. The old rail did this with an
 `/api/thread` fetch per thread on a 30s timer; now it costs nothing extra.
 
+## enrichEvent cost — DONE (2026-08-25)
+
+**The deferred note misdiagnosed this.** It blamed "~3 DB queries per event".
+Those queries are nearly free. The cost was inside `worktreesWatching`, which
+per event called `registry.List` and then `wdb.Subscriber` on every worktree —
+and `Subscriber` runs `filepath.EvalSymlinks`, a filesystem syscall. With 10
+worktrees that is 10 symlink resolutions per event (500 per 50-event page) to
+rebuild a map identical every time. Measured: ~96µs of the ~107µs per event,
+so ~90% of the cost was recomputing one constant, growing with
+worktrees × events. Both timeline paths paid it — `writeTimelineRows` calls
+the same helpers, so the global feed was affected too, not only the scoped one.
+
+**Fixed by lifetime, not by SQL.** A request-scoped `eventEnricher` builds the
+map once and memoises resource lookups (a 50-event page touches only ~12
+distinct resources). Measured on the same DB:
+
+| page size | before | after |
+|---|---|---|
+| 1 event | 1.9 ms | 2.4 ms |
+| 50 events | 8.1 ms | 2.4 ms |
+| 148 events | 21.3 ms | 3.5 ms |
+
+Per-event slope ~0.132 ms → ~0.0075 ms (~17×). Small pages are flat; the win
+scales with page size, which pagination made matter.
+
+**The single-join rewrite the note proposed was deliberately NOT done.** It
+targets the ~10% that is not waste, and it would mean re-implementing in SQL
+what the library owns — JSON title extraction from `state_json` and
+`SubscribersOf`'s `deleted_at` semantics — plus `group_concat` for branch
+aggregation, hard-coding library schema layout into worktree against this
+repo's own rule. Worse maintenance for a tenth of the benefit.
+
+**Memoisation needs no invalidation because it is request-scoped**, and that
+is load-bearing: titles and subscriptions change from writers this server
+cannot observe, including other processes writing the same SQLite file. Two
+tests pin the contract (one snapshot within a request; changes visible to the
+next one).
+
 ## Deferred
 
-- **Make `enrichEvent` cheaper (one join instead of ~3 queries per event).**
-  `internal/webui/timeline.go`'s `enrichEvent` runs three DB queries for every
-  event it renders: a `watcher_event_resources` lookup for the event's
-  resource, then `resourceTitle` and `worktreesWatching`. A page of N events
-  therefore costs roughly 3N queries.
-  - **To do this:** collapse the per-row lookups into a single join over
-    `watcher_events` + `watcher_event_resources` (+ cached resource state), or
-    batch-prefetch the three pieces keyed by event id and enrich in memory.
-  - The resource-filtered timeline added in the 2026-08-21 UI work already
-    routes *around* this cost (it resolves matching event ids up front and
-    enriches only the events it keeps), but the underlying per-event expense
-    is unchanged. See
-    `docs/superpowers/specs/2026-08-21-worktree-ui-resource-selection-design.md`.
+_Nothing deferred right now._

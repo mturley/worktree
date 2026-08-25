@@ -82,9 +82,18 @@ discovery.
     response helpers used by every handler.
 - **`worktrees.go`** — `GET /api/worktrees`.
 - **`timeline.go`** — `GET /api/timeline` (global) and `GET
-  /api/worktree-timeline` (scoped). Also owns `enrichEvent`, `resourceTitle`,
-  `worktreesWatching`, and `latestEventTSForSubscriber` (used by both
-  `worktrees.go` and `poller.go`).
+  /api/worktree-timeline` (scoped). Also owns `eventEnricher` (see below) and
+  `latestEventTSForSubscriber` (used by both `worktrees.go` and `poller.go`).
+
+  **`eventEnricher` is request-scoped by design.** Both timeline handlers
+  build one (`newEventEnricher`) and drop it with the response. It holds the
+  canonical-subscriber → branch map built once from the registry, plus memos
+  of resource titles and worktree attribution. Do **not** promote it to a
+  field on `Server`: its contents change when the poller writes
+  `watcher_resource_state` and when subscriptions change — including from
+  *other processes* (`worktree add`, `worktree resources set-name`, and
+  agent-handler shelling out to the CLI all write this same SQLite file), which
+  this server cannot observe. At request scope there is nothing to invalidate.
 - **`resources_api.go`** — `GET /api/worktree-resources`, enriched from the
   cached `watcher_resource_state` row via `watcherdb.GetResourceState`.
 - **`resource_mutate_api.go`** — `POST /api/worktree-resources/add` and `POST
