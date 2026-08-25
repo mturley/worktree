@@ -400,7 +400,8 @@ func openCmuxWorkspace(conn *sql.DB, cfg config.Config, result gitutil.CreateRes
 	if conn != nil {
 		res, _ = resources.Load(conn, result.Path)
 	}
-	urls := buildWorkspaceURLs(runningUIDetailURL(conn, result.Path), res)
+	uiURL := runningUIDetailURL(conn, result.Path)
+	urls := buildWorkspaceURLs(res)
 
 	defaultTitle := fmt.Sprintf("wt %s", result.Branch)
 	fmt.Println()
@@ -409,7 +410,7 @@ func openCmuxWorkspace(conn *sql.DB, cfg config.Config, result gitutil.CreateRes
 	groupRef := promptCmuxGroup()
 	color := promptCmuxColor()
 
-	layout := cmux.BuildLayout(urls)
+	layout := cmux.BuildLayout(uiURL, urls)
 
 	opts := cmux.NewWorkspaceOptions{
 		Name:     title,
@@ -432,25 +433,23 @@ func openCmuxWorkspace(conn *sql.DB, cfg config.Config, result gitutil.CreateRes
 	}
 	fmt.Printf("%s Created cmux workspace %s\n", ui.Green("✓"), ref)
 
-	// Pin the worktree UI / GitHub / Jira tabs (every URL we laid out) so they
-	// survive the close-others/close-right tab actions, then land on the first
-	// of them.
-	if len(urls) > 0 {
-		cmux.PinBrowserTabs(ref, len(urls))
+	// Pin the worktree UI / GitHub / Jira tabs (every URL we laid out, in both
+	// panes) so they survive the close-others/close-right tab actions, then
+	// land on the first tab of the left-hand browser pane.
+	if uiURL != "" || len(urls) > 0 {
+		cmux.PinBrowserTabs(ref)
 		cmux.FocusFirstBrowserTab(ref)
 	}
 	return nil
 }
 
-// buildWorkspaceURLs orders the browser tabs for a new cmux workspace: the
-// running worktree UI's detail page first (uiURL, empty when no UI is
-// running), then GitHub PRs, then the primary Jira issues. Resources with no
-// URL, and Jira issues merely related to the worktree, are skipped.
-func buildWorkspaceURLs(uiURL string, res []resources.Resource) []string {
+// buildWorkspaceURLs orders the browser tabs of a new cmux workspace's
+// left-hand pane: GitHub PRs first, then the primary Jira issues. (The
+// running worktree UI gets its own tab in the main terminal's pane, so it is
+// not part of this list.) Resources with no URL, and Jira issues merely
+// related to the worktree, are skipped.
+func buildWorkspaceURLs(res []resources.Resource) []string {
 	var urls []string
-	if uiURL != "" {
-		urls = append(urls, uiURL)
-	}
 	for _, r := range resources.OfType(res, "pr") {
 		if r.URL != "" {
 			urls = append(urls, r.URL)

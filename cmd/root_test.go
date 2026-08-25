@@ -14,19 +14,12 @@ func TestBuildRegistryEntry(t *testing.T) {
 	}
 }
 
-func TestBuildWorkspaceURLs_UIFirstThenPRThenJira(t *testing.T) {
+func TestBuildWorkspaceURLs_PRThenJira(t *testing.T) {
 	res := []resources.Resource{
 		{Type: "jira", ID: "X-1", URL: "https://jira/X-1"},
 		{Type: "pr", ID: "o/r#1", URL: "https://gh/pr/1"},
 	}
-	got := buildWorkspaceURLs("http://127.0.0.1:8475/worktree/x", res)
-	want := []string{"http://127.0.0.1:8475/worktree/x", "https://gh/pr/1", "https://jira/X-1"}
-	assertURLs(t, got, want)
-}
-
-func TestBuildWorkspaceURLs_NoRunningUI(t *testing.T) {
-	res := []resources.Resource{{Type: "pr", ID: "o/r#1", URL: "https://gh/pr/1"}}
-	assertURLs(t, buildWorkspaceURLs("", res), []string{"https://gh/pr/1"})
+	assertURLs(t, buildWorkspaceURLs(res), []string{"https://gh/pr/1", "https://jira/X-1"})
 }
 
 func TestBuildWorkspaceURLs_SkipsRelatedJiraAndEmptyURLs(t *testing.T) {
@@ -36,11 +29,11 @@ func TestBuildWorkspaceURLs_SkipsRelatedJiraAndEmptyURLs(t *testing.T) {
 		{Type: "pr", ID: "o/r#1", URL: ""},
 		{Type: "slack", ID: "C1:1.2", URL: "https://slack/t"},
 	}
-	assertURLs(t, buildWorkspaceURLs("", res), []string{"https://jira/X-1"})
+	assertURLs(t, buildWorkspaceURLs(res), []string{"https://jira/X-1"})
 }
 
 func TestBuildWorkspaceURLs_Empty(t *testing.T) {
-	if got := buildWorkspaceURLs("", nil); len(got) != 0 {
+	if got := buildWorkspaceURLs(nil); len(got) != 0 {
 		t.Fatalf("got %v, want empty", got)
 	}
 }
