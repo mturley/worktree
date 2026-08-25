@@ -76,7 +76,7 @@ describe('ThreadView pending replies on an empty thread', () => {
   it('shows a failed pending reply with Retry/Dismiss even when data.messages is empty', async () => {
     mockPostReply.mockRejectedValue(new Error('blocked: not on allowlist'))
     const { getByRole, getByText, queryByLabelText } = renderWithProvider(
-      <ThreadView tab={baseTab()} thread={baseThread()} onUpdateTab={vi.fn()} onOpenThread={vi.fn()} />,
+      <ThreadView tab={baseTab()} thread={baseThread()} onOpenThread={vi.fn()} />,
     )
 
     const textarea = getByRole('textbox') as HTMLTextAreaElement

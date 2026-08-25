@@ -1,11 +1,12 @@
 import { useState } from "react"
 import { Alert, Code, Stack, Text } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
-import { api } from "../api/client"
 import { useThread } from "../hooks/useThread"
 import { defaultTabName, type Tab } from "../state/tabs"
 import { ResourceCard } from "./ResourceCard"
 import { ThreadView } from "./slack/ThreadView"
+import { ThreadActionsContext } from "./slack/ThreadActionsContext"
+import { api } from "../api/client"
 
 interface SlackThreadPaneProps {
   resource: ResourceDTO
@@ -55,9 +56,6 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged }
   // Surfaces a failed "save thread details" write: the modal closes on submit,
   // so a rejected write would otherwise vanish and look like success.
   const [saveError, setSaveError] = useState<string | null>(null)
-  // The edit-details modal lives in ThreadView (it owns the modal component),
-  // but its trigger now sits on the shared card, so the open state is lifted.
-  const [editOpened, setEditOpened] = useState(false)
   const tab = slackTabFromResource(resource)
   const thread = useThread(tab)
 
@@ -94,31 +92,24 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged }
         path={path}
         onRemoved={onRemoved}
         variant="detail"
-        onEditDetails={() => setEditOpened(true)}
+        onMetaChanged={() => onResourceChanged?.()}
       />
+      <ThreadActionsContext.Provider
+        value={{
+          addThread: async (url: string) => {
+            await api.addResource({ path, url })
+            onResourceChanged?.()
+          },
+        }}
+      >
       <ThreadView
         tab={tab}
         thread={thread}
-        editOpened={editOpened}
-        onEditOpenedChange={setEditOpened}
-        onUpdateTab={async (id, updates) => {
-          try {
-            setSaveError(null)
-            await api.setResourceMeta({
-              type: "slack",
-              id,
-              name: updates.name,
-              description: updates.description,
-            })
-            onResourceChanged?.()
-          } catch (e) {
-            setSaveError(e instanceof Error ? e.message : String(e))
-          }
-        }}
         onOpenThread={(url, opts) => {
           window.open(url, opts.background ? "_blank" : "_self", "noreferrer")
         }}
       />
+      </ThreadActionsContext.Provider>
     </Stack>
   )
 }

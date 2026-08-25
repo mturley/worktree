@@ -67,7 +67,7 @@ export function AddResourceModal({ opened, path, onClose, onAdded, defaultRelate
     setError(null)
     try {
       const added = await api.addResource({ path, url: trimmed, related: focus === "related" })
-      if (slack && (name.trim() || description.trim())) {
+      if (name.trim() || description.trim()) {
         await api.setResourceMeta({
           type: added.type,
           id: added.id,
@@ -116,22 +116,27 @@ export function AddResourceModal({ opened, path, onClose, onAdded, defaultRelate
             {FOCUS_HELP[focus]}
           </Text>
         </Stack>
-        {slack ? (
-          <>
-            <TextInput
-              label="Name (optional)"
-              placeholder="Thread name"
-              value={name}
-              onChange={(e) => setName(e.currentTarget.value)}
-            />
-            <Textarea
-              label="Description (optional)"
-              placeholder="What is this thread about?"
-              value={description}
-              onChange={(e) => setDescription(e.currentTarget.value)}
-            />
-          </>
-        ) : null}
+        {/*
+          Custom NAME is Slack-only: a PR or Jira issue already has a title
+          from its source, whereas a Slack thread has none — that is why
+          custom names exist at all. Custom DESCRIPTION is offered for every
+          type, since "why is this on this worktree" is worth recording
+          regardless.
+        */}
+        {slack && (
+          <TextInput
+            label="Custom Name (optional)"
+            placeholder="Thread name"
+            value={name}
+            onChange={(e) => setName(e.currentTarget.value)}
+          />
+        )}
+        <Textarea
+          label="Custom Description (optional)"
+          placeholder="Why does this belong to this worktree?"
+          value={description}
+          onChange={(e) => setDescription(e.currentTarget.value)}
+        />
         <Group justify="flex-end">
           <Button variant="default" onClick={handleClose}>
             Cancel

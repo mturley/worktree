@@ -10,7 +10,6 @@ import { computeUnreadPatch } from '../../lib/unreadPatch'
 import type { Tab } from '../../state/tabs'
 import { ActionBar } from './ActionBar'
 import { Composer } from './Composer'
-import { EditTabModal } from './EditTabModal'
 import { Message } from './Message'
 
 interface PendingReply {
@@ -23,15 +22,7 @@ interface PendingReply {
 interface ThreadViewProps {
   tab: Tab
   thread: UseThreadResult
-  onUpdateTab: (id: string, updates: { name: string; description: string }) => void
   onOpenThread: (url: string, opts: { background: boolean }) => void
-  /**
-   * Edit-details modal state, lifted to the caller. The shared ResourceCard
-   * above the thread owns the trigger now; ThreadView still owns the modal
-   * because it holds the tab it edits.
-   */
-  editOpened?: boolean
-  onEditOpenedChange?: (opened: boolean) => void
 }
 
 // Cached across renders/tabs: the workspace domain never changes for a
@@ -46,19 +37,13 @@ export function openInSlackUrl(channel: string, threadTs: string, latestTs: stri
   return `https://${workspaceDomain}/archives/${channel}/p${pMessageId}?thread_ts=${threadTs}&cid=${channel}`
 }
 
-export function ThreadView({ tab, thread, onUpdateTab, onOpenThread, editOpened: editOpenedProp, onEditOpenedChange }: ThreadViewProps) {
+export function ThreadView({ tab, thread, onOpenThread }: ThreadViewProps) {
   const { data, status, error, authExpired, lastUpdated, refresh, applyLocal } = thread
   const now = useNow()
   const [workspaceDomain, setWorkspaceDomain] = useState<string | null>(cachedWorkspaceDomain)
   const [marking, setMarking] = useState(false)
   const [markError, setMarkError] = useState<string | undefined>(undefined)
   const [isAtBottom, setIsAtBottom] = useState(true)
-  const [editOpenedLocal, setEditOpenedLocal] = useState(false)
-  // Controlled when the caller lifts the state (the shared card owns the
-  // trigger); uncontrolled otherwise so ThreadView still works standalone.
-  const editOpened = editOpenedProp ?? editOpenedLocal
-  const setEditOpened = (v: boolean) =>
-    onEditOpenedChange ? onEditOpenedChange(v) : setEditOpenedLocal(v)
   const [pending, setPending] = useState<PendingReply[]>([])
   const scrollRef = useRef<HTMLDivElement>(null)
   const prevMessageCount = useRef(0)
@@ -191,9 +176,6 @@ export function ThreadView({ tab, thread, onUpdateTab, onOpenThread, editOpened:
     navigator.clipboard.writeText(openInSlackUrl(tab.channel, tab.threadTs, latest.TS, workspaceDomain))
   }
 
-  function handleSaveDetails(id: string, name: string, description: string) {
-    onUpdateTab(id, { name, description })
-  }
 
   async function handleSend(text: string) {
     const localId = `pending-${pendingLocalId.current++}`
@@ -381,7 +363,6 @@ export function ThreadView({ tab, thread, onUpdateTab, onOpenThread, editOpened:
 
       {status === 'ready' && data && <Composer onSend={handleSend} />}
 
-      <EditTabModal opened={editOpened} tab={tab} onClose={() => setEditOpened(false)} onSave={handleSaveDetails} />
     </Stack>
     </SlackGroupsContext.Provider>
   )

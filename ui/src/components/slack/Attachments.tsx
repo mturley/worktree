@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { Anchor, Button, Group, Paper, Stack, Text } from '@mantine/core'
+import { Anchor, Button, Group, Paper, Stack, Text, Tooltip } from '@mantine/core'
 import { safeHref, imageProxy } from '../../api/slackApi'
 import type { Attachment, User } from '../../api/slackApi'
 import { Mrkdwn } from '../../lib/mrkdwn'
 import { parseThreadUrl } from '../../lib/parseThreadUrl'
 import { BlockKitBlocks, hasRenderableBlocks } from './BlockKit'
+import { useThreadActions } from './ThreadActionsContext'
 
 interface AttachmentsProps {
   attachments: Attachment[]
@@ -73,17 +74,94 @@ function ThreadUnfurlCard({
         )}
         {canOpen && (
           <Group>
-            <Button
-              size="xs"
-              variant="light"
-              onClick={(e) => onOpenThread(attachment.FromURL, { background: e.metaKey || e.ctrlKey })}
-            >
-              Open thread
-            </Button>
+            <ThreadUnfurlActions url={attachment.FromURL} onOpenThread={onOpenThread} />
           </Group>
         )}
       </Stack>
     </Paper>
+  )
+}
+
+/**
+ * Add / open / copy for a thread linked from inside another thread.
+ *
+ * "Add thread" is the useful default here: a thread worth linking is usually
+ * one worth tracking, and adding it beats opening Slack, copying the link and
+ * pasting it into the add-resource dialog. Opening in Slack stays available
+ * beside it.
+ */
+function ThreadUnfurlActions({
+  url,
+  onOpenThread,
+}: {
+  url: string
+  onOpenThread: (url: string, opts: { background: boolean }) => void
+}) {
+  const { addThread } = useThreadActions()
+  const [adding, setAdding] = useState(false)
+  const [added, setAdded] = useState(false)
+  const [addError, setAddError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  async function handleAdd() {
+    if (!addThread || adding) return
+    setAdding(true)
+    setAddError(null)
+    try {
+      await addThread(url)
+      setAdded(true)
+    } catch (e) {
+      setAddError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // Clipboard can be denied; the other two actions still work.
+    }
+  }
+
+  return (
+    <Stack gap={4}>
+      <Button.Group>
+        {addThread && (
+          <Tooltip label={added ? "Added to this worktree" : "Add this thread to the worktree"}>
+            <Button size="xs" variant="light" onClick={() => void handleAdd()} loading={adding} disabled={added}>
+              {added ? "Added" : "Add thread"}
+            </Button>
+          </Tooltip>
+        )}
+        <Tooltip label="Open in Slack">
+          <Button
+            size="xs"
+            variant="light"
+            onClick={(e) => onOpenThread(url, { background: e.metaKey || e.ctrlKey })}
+          >
+            Open in Slack
+          </Button>
+        </Tooltip>
+        <Tooltip label={copied ? "Copied!" : "Copy link"}>
+          <Button size="xs" variant="light" px="xs" aria-label="Copy link" onClick={() => void handleCopy()}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+            </svg>
+          </Button>
+        </Tooltip>
+      </Button.Group>
+      {addError && (
+        <Text size="xs" c="red">
+          {addError}
+        </Text>
+      )}
+    </Stack>
   )
 }
 

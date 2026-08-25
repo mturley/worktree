@@ -1,7 +1,8 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
-import { render, fireEvent, cleanup } from '@testing-library/react'
+import { render, fireEvent, cleanup, screen } from '@testing-library/react'
 import { MantineProvider } from '@mantine/core'
 import { Attachments, borderColor } from './Attachments'
+import { ThreadActionsContext } from './ThreadActionsContext'
 import type { Attachment } from '../../api/slackApi'
 
 // RTL's queries are scoped to document.body by default; without cleanup
@@ -195,10 +196,10 @@ describe('Attachments', () => {
     expect(container.querySelector('.mantine-Paper-root')).toBeNull()
   })
 
-  it('thread unfurl: Open thread click calls onOpenThread foreground; Cmd+click background', () => {
+  it('thread unfurl: Open in Slack click calls onOpenThread foreground; Cmd+click background', () => {
     const onOpenThread = vi.fn()
     const { getByRole } = renderWithProvider(<Attachments attachments={[thread]} users={{}} emoji={{}} onOpenThread={onOpenThread} />)
-    const btn = getByRole('button', { name: /open thread/i })
+    const btn = getByRole('button', { name: /open in slack/i })
     fireEvent.click(btn)
     expect(onOpenThread).toHaveBeenLastCalledWith(thread.FromURL, { background: false })
     fireEvent.click(btn, { metaKey: true })
@@ -210,6 +211,37 @@ describe('Attachments', () => {
       <Attachments attachments={[unparseableThread]} users={{}} emoji={{}} onOpenThread={() => {}} />,
     )
     expect(getByText('preview text')).toBeTruthy()
-    expect(queryByRole('button', { name: /open thread/i })).toBeNull()
+    expect(queryByRole('button', { name: /open in slack/i })).toBeNull()
+  })
+})
+
+describe('thread unfurl actions', () => {
+  const threadAttachment = {
+    FromURL: 'https://acme.slack.com/archives/C1/p1700000000000100',
+    IsThreadUnfurl: true,
+    Text: 'linked thread',
+    Title: '', TitleLink: '', ServiceName: '', ServiceIcon: '', ImageURL: '', ThumbURL: '', Blocks: [],
+  } as unknown as Attachment
+
+  it('adds the linked thread to the worktree', async () => {
+    const addThread = vi.fn().mockResolvedValue(undefined)
+    renderWithProvider(
+      <ThreadActionsContext.Provider value={{ addThread }}>
+        <Attachments attachments={[threadAttachment]} users={{}} emoji={{}} onOpenThread={() => {}} />
+      </ThreadActionsContext.Provider>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Add thread' }))
+    expect(addThread).toHaveBeenCalledWith(threadAttachment.FromURL)
+    expect(await screen.findByRole('button', { name: 'Added' })).toBeDisabled()
+  })
+
+  it('still opens in Slack, and hides Add when there is no worktree context', async () => {
+    const onOpenThread = vi.fn()
+    renderWithProvider(
+      <Attachments attachments={[threadAttachment]} users={{}} emoji={{}} onOpenThread={onOpenThread} />,
+    )
+    expect(screen.queryByRole('button', { name: 'Add thread' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Open in Slack' }))
+    expect(onOpenThread).toHaveBeenCalled()
   })
 })

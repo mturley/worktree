@@ -4,6 +4,7 @@ import type { ResourceDTO } from "../api/types"
 import { relativeTime, relativeFromNow } from "../lib/relativeTime"
 import { api } from "../api/client"
 import { ResourceActions } from "./ResourceActions"
+import { EditResourceDetailsModal } from "./EditResourceDetailsModal"
 
 function prStateColor(state?: string): string {
   switch ((state || "").toUpperCase()) {
@@ -53,6 +54,20 @@ function isEnriched(r: ResourceDTO): boolean {
   )
 }
 
+/**
+ * The user's own note about why this resource belongs to this worktree.
+ * Shown for every resource type — unlike custom NAME, which only Slack
+ * threads need because they have no title of their own.
+ */
+function CustomDescription({ r }: { r: ResourceDTO }) {
+  if (!r.custom_description) return null
+  return (
+    <Text size="xs" c="dimmed" fs="italic" style={{ overflowWrap: "anywhere" }}>
+      {r.custom_description}
+    </Text>
+  )
+}
+
 function MinimalRow({ r }: { r: ResourceDTO }) {
   return (
     <Group gap="xs">
@@ -72,6 +87,7 @@ function PRCardBody({ r }: { r: ResourceDTO }) {
       <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
         {r.title || r.id}
       </Text>
+      <CustomDescription r={r} />
       <Group gap={4} wrap="wrap">
         {r.state && <Badge size="xs" color={prStateColor(r.state)}>{r.state.toLowerCase()}</Badge>}
         {r.review_decision && <Badge size="xs" color={reviewColor(r.review_decision)}>{reviewLabel(r.review_decision)}</Badge>}
@@ -97,6 +113,7 @@ function JiraCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVar
       <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
         {r.title || r.id}
       </Text>
+      <CustomDescription r={r} />
       <Group gap={4} wrap="wrap">
         {r.status && <Badge size="xs" variant="light">{r.status}</Badge>}
         {r.priority && <Badge size="xs" variant="light" color="orange">{r.priority}</Badge>}
@@ -124,6 +141,7 @@ function SlackCardBody({ r }: { r: ResourceDTO }) {
         <Badge size="xs" variant="light" color="grape">Slack</Badge>
         <Text size="sm">{label}</Text>
       </Group>
+      <CustomDescription r={r} />
       <Group gap="xs" wrap="wrap">
         {r.channel_name && <Text size="xs" c="dimmed">#{r.channel_name}</Text>}
         {r.author && <Text size="xs" c="dimmed">by {r.author}</Text>}
@@ -216,12 +234,8 @@ interface ResourceCardProps {
   selected?: boolean
   /** When provided, the card becomes selectable. */
   onSelect?: () => void
-  /**
-   * When provided (detail variant only), shows an edit affordance for the
-   * resource's custom name/description. The owner supplies it because the
-   * modal lives with whoever knows how to persist the change.
-   */
-  onEditDetails?: () => void
+  /** Called after a custom name/description is saved, to refetch resources. */
+  onMetaChanged?: () => void
 }
 
 export function ResourceCard({
@@ -231,8 +245,9 @@ export function ResourceCard({
   variant = "compact",
   selected = false,
   onSelect,
-  onEditDetails,
+  onMetaChanged = () => {},
 }: ResourceCardProps) {
+  const [editOpen, setEditOpen] = useState(false)
   const body = r.type === "slack" ? (
     <SlackCardBody r={r} />
   ) : !isEnriched(r) ? (
@@ -275,27 +290,39 @@ export function ResourceCard({
           clickable-to-select, so a per-card x there is visual noise and an
           easy mis-click; removal belongs with the selected resource.
         */}
-        {variant === "detail" && <RemoveControl r={r} path={path} onRemoved={onRemoved} />}
-      </Group>
-      {variant === "detail" && (
-        // Bottom-right, on the same visual line as the card's metadata, so
-        // the actions read as belonging to the card rather than heading it.
-        <Group justify="flex-end" gap="xs" wrap="wrap" mt={6}>
-          {onEditDetails && (
-            <Tooltip label="Edit name/description">
+        {variant === "detail" && (
+          <Group gap={2} wrap="nowrap">
+            {/* Beside the title/description, where the thread header used to
+                put it — not down with the open/copy actions. */}
+            <Tooltip label="Edit custom name/description">
               <ActionIcon
                 variant="subtle"
                 size="sm"
                 aria-label="Edit resource details"
                 onClick={(e) => {
                   e.stopPropagation()
-                  onEditDetails()
+                  setEditOpen(true)
                 }}
               >
                 ✎
               </ActionIcon>
             </Tooltip>
-          )}
+            <RemoveControl r={r} path={path} onRemoved={onRemoved} />
+          </Group>
+        )}
+      </Group>
+      {variant === "detail" && (
+        <EditResourceDetailsModal
+          opened={editOpen}
+          r={r}
+          onClose={() => setEditOpen(false)}
+          onSaved={onMetaChanged}
+        />
+      )}
+      {variant === "detail" && (
+        // Bottom-right, on the same visual line as the card's metadata, so
+        // the actions read as belonging to the card rather than heading it.
+        <Group justify="flex-end" gap="xs" wrap="wrap" mt={6}>
           <ResourceActions r={r} />
         </Group>
       )}

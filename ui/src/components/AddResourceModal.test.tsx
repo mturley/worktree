@@ -91,7 +91,7 @@ describe("AddResourceModal", () => {
     expect(addResource).toHaveBeenCalledWith({ path: "/wt", url: "https://github.com/o/r/pull/2", related: true })
   })
 
-  it("hides name/description fields for a non-Slack URL", async () => {
+  it("hides only the custom NAME field for a non-Slack URL", async () => {
     const user = userEvent.setup()
     const { getByLabelText, queryByLabelText } = wrap(
       <AddResourceModal opened path="/wt" onClose={vi.fn()} onAdded={vi.fn()} />,
@@ -99,8 +99,9 @@ describe("AddResourceModal", () => {
 
     await user.type(getByLabelText(/url/i), "https://github.com/o/r/pull/1")
 
-    expect(queryByLabelText(/name/i)).not.toBeInTheDocument()
-    expect(queryByLabelText(/description/i)).not.toBeInTheDocument()
+    expect(queryByLabelText("Custom Name (optional)")).not.toBeInTheDocument()
+    // Description IS offered for a PR — only the name is Slack-only.
+    expect(queryByLabelText("Custom Description (optional)")).toBeInTheDocument()
   })
 
   it("reveals name/description for a Slack URL and sets resource meta after adding", async () => {
@@ -113,8 +114,8 @@ describe("AddResourceModal", () => {
     )
 
     await user.type(getByLabelText(/url/i), "https://acme.slack.com/archives/C123/p1700000000000100")
-    await user.type(getByLabelText(/name/i), "Deploy thread")
-    await user.type(getByLabelText(/description/i), "The prod deploy discussion")
+    await user.type(getByLabelText("Custom Name (optional)"), "Deploy thread")
+    await user.type(getByLabelText("Custom Description (optional)"), "The prod deploy discussion")
     await user.click(getByRole("button", { name: "Add" }))
 
     await vi.waitFor(() =>
