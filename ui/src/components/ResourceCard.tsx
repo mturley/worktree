@@ -257,26 +257,6 @@ export function ResourceCard({
       bg={selected ? "var(--mantine-color-blue-light)" : undefined}
       style={selected ? { borderColor: "var(--mantine-color-blue-filled)" } : undefined}
     >
-      {variant === "detail" && (
-        <Group gap="xs" wrap="wrap" mb={6}>
-          <ResourceActions r={r} />
-          {onEditDetails && (
-            <Tooltip label="Edit name/description">
-              <ActionIcon
-                variant="subtle"
-                size="sm"
-                aria-label="Edit resource details"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onEditDetails()
-                }}
-              >
-                ✎
-              </ActionIcon>
-            </Tooltip>
-          )}
-        </Group>
-      )}
       <Group justify="space-between" wrap="nowrap" align="flex-start">
         {onSelect ? (
           <UnstyledButton
@@ -297,6 +277,28 @@ export function ResourceCard({
         */}
         {variant === "detail" && <RemoveControl r={r} path={path} onRemoved={onRemoved} />}
       </Group>
+      {variant === "detail" && (
+        // Bottom-right, on the same visual line as the card's metadata, so
+        // the actions read as belonging to the card rather than heading it.
+        <Group justify="flex-end" gap="xs" wrap="wrap" mt={6}>
+          {onEditDetails && (
+            <Tooltip label="Edit name/description">
+              <ActionIcon
+                variant="subtle"
+                size="sm"
+                aria-label="Edit resource details"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onEditDetails()
+                }}
+              >
+                ✎
+              </ActionIcon>
+            </Tooltip>
+          )}
+          <ResourceActions r={r} />
+        </Group>
+      )}
     </Paper>
   )
 }

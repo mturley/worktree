@@ -4,13 +4,16 @@ import type { ResourceDTO } from "../api/types"
 
 const COPIED_FEEDBACK_MS = 1500
 
-/** Names the destination for a resource type, e.g. "Open in GitHub". */
-export function openInLabel(type: string): string {
+/**
+ * Names the destination for a resource type. The preposition varies on
+ * purpose: you open a page *on* a site, but a conversation *in* an app.
+ */
+export function openLabel(type: string): string {
   switch (type) {
     case "pr":
-      return "Open in GitHub"
+      return "Open on GitHub"
     case "jira":
-      return "Open in Jira"
+      return "Open on Jira"
     case "slack":
       return "Open in Slack"
     default:
@@ -30,7 +33,7 @@ export function ResourceActions({ r }: { r: ResourceDTO }) {
   const [copied, setCopied] = useState(false)
   if (!r.url) return null
 
-  const label = openInLabel(r.type)
+  const label = openLabel(r.type)
 
   async function handleCopy() {
     try {

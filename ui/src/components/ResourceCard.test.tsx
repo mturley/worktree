@@ -218,7 +218,7 @@ describe("ResourceCard link removal + detail actions", () => {
 
   it("offers Open in / copy on the detail card instead", () => {
     wrap(<ResourceCard r={pr} variant="detail" />)
-    expect(screen.getByRole("link", { name: "Open in GitHub" })).toHaveAttribute("href", "https://gh/pr/5")
+    expect(screen.getByRole("link", { name: "Open on GitHub" })).toHaveAttribute("href", "https://gh/pr/5")
     expect(screen.getByRole("button", { name: /copy link/i })).toBeInTheDocument()
   })
 })

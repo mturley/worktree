@@ -3,7 +3,7 @@ import { render, cleanup, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
-import { ResourceActions, openInLabel } from "./ResourceActions"
+import { ResourceActions, openLabel } from "./ResourceActions"
 
 const wrap = (ui: React.ReactNode) => render(<MantineProvider>{ui}</MantineProvider>)
 const res = (over: Partial<ResourceDTO>): ResourceDTO =>
@@ -11,22 +11,24 @@ const res = (over: Partial<ResourceDTO>): ResourceDTO =>
 
 afterEach(cleanup)
 
-describe("openInLabel", () => {
-  it("names the destination per resource type", () => {
-    expect(openInLabel("pr")).toBe("Open in GitHub")
-    expect(openInLabel("jira")).toBe("Open in Jira")
-    expect(openInLabel("slack")).toBe("Open in Slack")
+describe("openLabel", () => {
+  it("uses the preposition that reads right per destination", () => {
+    // "on" for the sites you open a page on, "in" for the app you open a
+    // conversation in.
+    expect(openLabel("pr")).toBe("Open on GitHub")
+    expect(openLabel("jira")).toBe("Open on Jira")
+    expect(openLabel("slack")).toBe("Open in Slack")
   })
 
   it("falls back to a generic label for an unknown type", () => {
-    expect(openInLabel("weird")).toBe("Open")
+    expect(openLabel("weird")).toBe("Open")
   })
 })
 
 describe("ResourceActions", () => {
   it("links to the resource url", () => {
     wrap(<ResourceActions r={res({})} />)
-    expect(screen.getByRole("link", { name: "Open in GitHub" })).toHaveAttribute("href", "https://gh/pr/1")
+    expect(screen.getByRole("link", { name: "Open on GitHub" })).toHaveAttribute("href", "https://gh/pr/1")
   })
 
   it("copies the url and shows feedback", async () => {

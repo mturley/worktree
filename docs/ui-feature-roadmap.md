@@ -205,8 +205,12 @@ control now applies to every resource type for free.
 - **Edit is preserved**, moved onto the card: `ResourceCard` takes an optional
   `onEditDetails`, and `ThreadView`'s modal state is lifted so the card owns
   the trigger while `ThreadView` still owns the modal.
-- **`ResourceActions`** ("Open in GitHub/Jira/Slack" + compound copy-link,
-  mirroring the ActionBar pattern) sits on the detail card. The Slack thread
+- **`ResourceActions`** ("Open on GitHub" / "Open on Jira" / "Open in Slack"
+  + compound copy-link, mirroring the ActionBar pattern) sits at the
+  bottom-right of the detail card, on the same visual line as its metadata,
+  so it reads as belonging to the card rather than heading it. The
+  preposition varies deliberately: a page opens *on* a site, a conversation
+  *in* an app. The Slack thread
   footer deliberately keeps its own copy — it stays reachable after scrolling
   a long thread.
 - **List cards have no links at all.** The title is plain text, so a card is a
