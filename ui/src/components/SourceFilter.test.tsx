@@ -46,10 +46,12 @@ describe("SourceFilter branding", () => {
     const slackFills = [...svgs[2].querySelectorAll("path")].map((p) => p.getAttribute("fill"))
     expect(slackFills).toContain("#36C5F0")
 
-    // tabler puts the colour on `stroke` for outline marks and `fill` for
-    // filled ones, so each is asserted where it actually lands.
-    // Jira: Atlassian blue, so it does not read as a generic ticket glyph.
-    expect(svgs[1].getAttribute("stroke")).toBe("#2684FF")
+    // Jira: Atlassian's own mark — the brand blue is baked into the artwork.
+    const jiraFills = [...svgs[1].querySelectorAll("path")].map((p) => p.getAttribute("fill"))
+    expect(jiraFills).toContain("#1868DB")
+
+    // tabler puts its `color` on `fill` for filled marks, so GitHub's is
+    // asserted where it actually lands.
 
     // GitHub's mark is monochrome by design; white is its correct rendering
     // on a dark background, not a missing colour.
