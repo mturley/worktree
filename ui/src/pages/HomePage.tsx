@@ -1,4 +1,6 @@
 import { useState } from "react"
+import { useLocation } from "wouter"
+import { serializeResourceKey } from "../lib/resourceKey"
 import { Grid, Group, Stack, Tabs, Title } from "@mantine/core"
 import { useWorktrees } from "../hooks/useWorktrees"
 import { useGlobalTimeline } from "../hooks/useTimeline"
@@ -8,10 +10,28 @@ import { TimelineFeed } from "../components/TimelineFeed"
 import { ArchivedToggle } from "../components/ArchivedToggle"
 
 export function HomePage() {
+  const [, navigate] = useLocation()
   const [archived, setArchived] = useState(false)
   const wide = useIsWide()
   const wts = useWorktrees()
   const tl = useGlobalTimeline(archived)
+
+  /**
+   * Opens a resource from the global timeline.
+   *
+   * A resource has no meaning without a worktree here — the feed spans all of
+   * them — so this routes to the FIRST worktree following it, which the event
+   * already names in worktree_paths. Chips are only rendered for events that
+   * have one, so there is always a destination.
+   */
+  const selectResourceInFirstWorktree = (key: { type: string; id: string }) => {
+    const hit = tl.events.find(
+      (e) => e.resource_type === key.type && e.resource_id === key.id && e.worktree_paths?.length,
+    )
+    const path = hit?.worktree_paths?.[0]
+    if (!path) return
+    navigate(`/worktree/${encodeURIComponent(path)}?resource=${serializeResourceKey(key)}`)
+  }
 
   const worktrees = <WorktreeList items={wts.data ?? []} />
   const timeline = (
@@ -28,6 +48,9 @@ export function HomePage() {
         hasMore={tl.hasMore}
         onLoadMore={tl.loadMore}
         loadingMore={tl.loadingMore}
+        onSelectWorktree={(path) => navigate(`/worktree/${encodeURIComponent(path)}`)}
+        onSelectResource={selectResourceInFirstWorktree}
+        canSelectResource={(e) => Boolean(e.worktree_paths?.length)}
       />
     </Stack>
   )

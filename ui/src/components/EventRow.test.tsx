@@ -114,3 +114,45 @@ describe("EventRow", () => {
     expect(container.textContent).toContain("PR #42")
   })
 })
+
+describe("global timeline affordances", () => {
+  const withWorktrees = () => makeEvent({
+    resource_type: "pr", resource_id: "o/r#42", resource_title: "PR #42",
+    worktrees: ["wt-a", "wt-b"], worktree_paths: ["/wt/a", "/wt/b"],
+  })
+
+  it("makes each worktree badge open its own worktree", () => {
+    const onSelectWorktree = vi.fn()
+    renderWithProvider(
+      <EventRow e={withWorktrees()} showWorktrees onSelectWorktree={onSelectWorktree} />,
+    )
+    fireEvent.click(screen.getByRole("button", { name: /open worktree wt-b/i }))
+    // Paired by index with `worktrees`, so the second badge is the second path.
+    expect(onSelectWorktree).toHaveBeenCalledWith("/wt/b")
+  })
+
+  it("leaves badges as plain text when the event carries no paths", () => {
+    const e = makeEvent({ worktrees: ["wt-a"], worktree_paths: undefined })
+    renderWithProvider(<EventRow e={e} showWorktrees onSelectWorktree={vi.fn()} />)
+    expect(screen.getByText("wt-a")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /open worktree/i })).not.toBeInTheDocument()
+  })
+
+  it("hides the resource chip when the event has nowhere to go, but still names it", () => {
+    renderWithProvider(
+      <EventRow e={withWorktrees()} onSelectResource={vi.fn()} canSelectResource={() => false} />,
+    )
+    expect(screen.queryByRole("button", { name: /select resource/i })).not.toBeInTheDocument()
+    expect(screen.getByText("PR #42")).toBeInTheDocument()
+  })
+
+  it("keeps the badges outside the details button, never nested inside it", () => {
+    // A button inside a button is invalid markup with an ambiguous target.
+    const { container } = renderWithProvider(
+      <EventRow e={withWorktrees()} showWorktrees onOpen={vi.fn()} onSelectWorktree={vi.fn()} />,
+    )
+    const badge = screen.getByRole("button", { name: /open worktree wt-a/i })
+    expect(badge.closest("button") === badge).toBe(true)
+    expect(container.querySelectorAll("button button")).toHaveLength(0)
+  })
+})

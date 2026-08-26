@@ -13,7 +13,9 @@ import { ROW_PAD_X } from "./timelineRail"
  * resource chip beneath it is a second, separate button — nesting one inside
  * the other would be invalid markup and would make a click ambiguous.
  */
-export function EventRow({ e, showWorktrees, onOpen, onSelectResource, resolveResource }: {
+export function EventRow({
+  e, showWorktrees, onOpen, onSelectResource, resolveResource, onSelectWorktree, canSelectResource,
+}: {
   e: TimelineEvent
   showWorktrees?: boolean
   onOpen?: (e: TimelineEvent) => void
@@ -21,6 +23,19 @@ export function EventRow({ e, showWorktrees, onOpen, onSelectResource, resolveRe
   onSelectResource?: (key: { type: string; id: string }) => void
   /** Supplies the tracked resource, so the chip's icon shows real status. */
   resolveResource?: (type: string, id: string) => ResourceDTO | undefined
+  /**
+   * Opens one of the worktrees following this event's resource. Supplied on
+   * the global timeline, where a worktree badge is the only way to reach the
+   * worktree an event belongs to.
+   */
+  onSelectWorktree?: (path: string) => void
+  /**
+   * Whether this event's resource can actually be opened. The global timeline
+   * routes via the first worktree following the resource, and an event whose
+   * resource no longer belongs to any worktree has nowhere to go — better no
+   * chip than a button that does nothing.
+   */
+  canSelectResource?: (e: TimelineEvent) => boolean
 }) {
   // Only the dot shows the type now — as its tooltip.
   const label = e.type_label || eventMeta(e.type).label
@@ -46,22 +61,48 @@ export function EventRow({ e, showWorktrees, onOpen, onSelectResource, resolveRe
                 {e.author && `${e.author} · `}{rel(e.external_ts || e.ts)}
               </Text>
             </Group>
-            {/* Without a select handler (the home page's global timeline)
-                there is no chip, so the resource is named here instead —
-                otherwise the event loses all trace of what it belongs to. */}
-            {!onSelectResource && e.resource_title && (
+            {/* When no chip is shown — no select handler, or nothing to
+                select — name the resource here instead, so the event never
+                loses all trace of what it belongs to. */}
+            {!(onSelectResource && (canSelectResource?.(e) ?? true)) && e.resource_title && (
               <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>{e.resource_title}</Text>
             )}
             {e.body && <Text size="xs" c="dimmed" lineClamp={2} style={{ overflowWrap: "anywhere" }}>{e.body}</Text>}
-            {showWorktrees && e.worktrees.length > 0 && (
-              <Group gap={4}>{e.worktrees.map((w) => <Badge key={w} size="xs" variant="outline">{w}</Badge>)}</Group>
-            )}
           </Stack>
         </Box>
 
-        {onSelectResource && (
-          <EventResourceChip e={e} onSelect={onSelectResource} resolveResource={resolveResource} />
-        )}
+        {/*
+          The chip and the worktree badges live OUTSIDE the details button.
+          They are interactive in their own right, and a button nested inside
+          a button is invalid markup with an ambiguous click target.
+        */}
+        <Group gap={6} wrap="wrap">
+          {onSelectResource && (canSelectResource?.(e) ?? true) && (
+            <EventResourceChip e={e} onSelect={onSelectResource} resolveResource={resolveResource} />
+          )}
+          {showWorktrees && e.worktrees.map((w, i) => {
+            const path = e.worktree_paths?.[i]
+            // Only a button when we know where it goes: paths arrive with the
+            // event, and an older cached response may not carry them.
+            return onSelectWorktree && path ? (
+              <Badge
+                key={w}
+                size="xs"
+                variant="outline"
+                component="button"
+                type="button"
+                aria-label={`open worktree ${w}`}
+                onClick={() => onSelectWorktree(path)}
+                data-interactive="true"
+                style={{ cursor: "pointer" }}
+              >
+                {w}
+              </Badge>
+            ) : (
+              <Badge key={w} size="xs" variant="outline">{w}</Badge>
+            )
+          })}
+        </Group>
       </Stack>
     </Box>
   )

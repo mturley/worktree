@@ -7,7 +7,7 @@ import { DOT_CENTER, RAIL_WIDTH } from "./timelineRail"
 
 export function TimelineFeed({
   events, loading, error, showWorktrees, hasMore, onLoadMore, loadingMore,
-  onSelectResource, resolveResource,
+  onSelectResource, resolveResource, onSelectWorktree, canSelectResource,
 }: {
   events: TimelineEvent[]; loading: boolean; error: unknown; showWorktrees?: boolean
   /** Omit the three below for a feed that is not paginated. */
@@ -21,6 +21,10 @@ export function TimelineFeed({
    */
   onSelectResource?: (key: { type: string; id: string }) => void
   resolveResource?: (type: string, id: string) => ResourceDTO | undefined
+  /** Opens a worktree from its badge. Supplied on the global timeline. */
+  onSelectWorktree?: (path: string) => void
+  /** Suppresses the resource chip for events with nowhere to go. */
+  canSelectResource?: (e: TimelineEvent) => boolean
 }) {
   const [detail, setDetail] = useState<TimelineEvent | null>(null)
 
@@ -60,6 +64,8 @@ export function TimelineFeed({
               onOpen={setDetail}
               onSelectResource={onSelectResource}
               resolveResource={resolveResource}
+              onSelectWorktree={onSelectWorktree}
+              canSelectResource={canSelectResource}
             />
           ))}
           {hasMore && onLoadMore && (
@@ -79,6 +85,8 @@ export function TimelineFeed({
         onClose={() => setDetail(null)}
         onSelectResource={onSelectResource}
         resolveResource={resolveResource}
+        onSelectWorktree={onSelectWorktree}
+        canSelectResource={canSelectResource}
       />
     </>
   )

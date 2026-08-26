@@ -28,6 +28,10 @@ type TimelineEvent struct {
 	ResourceURL   string   `json:"resource_url"`
 	ResourceTitle string   `json:"resource_title"`
 	Worktrees     []string `json:"worktrees"`
+	// Filesystem paths for Worktrees, same order. The UI routes by path, and
+	// branch names are not unique across repos, so it cannot map one to the
+	// other on its own.
+	WorktreePaths []string `json:"worktree_paths"`
 }
 
 type timelineResponse struct {
@@ -246,28 +250,35 @@ func (s *Server) writeTimelineRows(w http.ResponseWriter, rows *sql.Rows, limit 
 // values.
 type eventEnricher struct {
 	s *Server
-	// canonical subscriber -> branch, for every registered worktree. Built
+	// canonical subscriber -> worktree, for every registered worktree. Built
 	// once: it is identical for every event on the page.
-	branchBySub map[string]string
+	worktreeBySub map[string]watchingWorktree
 	// memoised per resource key. A page of 50 events typically touches only
 	// ~12 distinct resources.
 	titles   map[string]string
-	watching map[string][]string
+	watching map[string][]watchingWorktree
+}
+
+// watchingWorktree is one worktree that follows a resource: the branch the UI
+// shows, and the path it routes by.
+type watchingWorktree struct {
+	Branch string
+	Path   string
 }
 
 func (s *Server) newEventEnricher() *eventEnricher {
 	e := &eventEnricher{
-		s:           s,
-		branchBySub: map[string]string{},
-		titles:      map[string]string{},
-		watching:    map[string][]string{},
+		s:             s,
+		worktreeBySub: map[string]watchingWorktree{},
+		titles:        map[string]string{},
+		watching:      map[string][]watchingWorktree{},
 	}
-	// A registry read failure leaves branchBySub empty, which degrades to
+	// A registry read failure leaves worktreeBySub empty, which degrades to
 	// "no worktrees attributed" — the same outcome the old per-event code
 	// produced on error, and not worth failing a whole page over.
 	if entries, err := registry.List(s.DB); err == nil {
 		for _, ent := range entries {
-			e.branchBySub[wdb.Subscriber(ent.Path)] = ent.Branch
+			e.worktreeBySub[wdb.Subscriber(ent.Path)] = watchingWorktree{Branch: ent.Branch, Path: ent.Path}
 		}
 	}
 	return e
@@ -300,7 +311,13 @@ func (e *eventEnricher) enrich(ev watcher.Event) TimelineEvent {
 // columns are already populated (the global timeline gets them from its join).
 func (e *eventEnricher) fillResource(te *TimelineEvent) {
 	te.ResourceTitle = e.resourceTitle(te.ResourceType, te.ResourceID)
-	te.Worktrees = e.worktreesWatching(te.ResourceType, te.ResourceID)
+	wts := e.worktreesWatching(te.ResourceType, te.ResourceID)
+	te.Worktrees = make([]string, 0, len(wts))
+	te.WorktreePaths = make([]string, 0, len(wts))
+	for _, w := range wts {
+		te.Worktrees = append(te.Worktrees, w.Branch)
+		te.WorktreePaths = append(te.WorktreePaths, w.Path)
+	}
 }
 
 func (e *eventEnricher) resourceTitle(rtype, rid string) string {
@@ -332,8 +349,8 @@ func (e *eventEnricher) resourceTitle(rtype, rid string) string {
 //
 // The returned slice is shared with any later event on the same resource;
 // callers marshal it and must not mutate it.
-func (e *eventEnricher) worktreesWatching(rtype, rid string) []string {
-	out := []string{}
+func (e *eventEnricher) worktreesWatching(rtype, rid string) []watchingWorktree {
+	out := []watchingWorktree{}
 	if rtype == "" || rid == "" {
 		return out
 	}
@@ -350,12 +367,12 @@ func (e *eventEnricher) worktreesWatching(rtype, rid string) []string {
 		if sub.DeletedAt != nil { // only active subscriptions attribute
 			continue
 		}
-		if b, ok := e.branchBySub[sub.Subscriber]; ok && !seen[b] {
-			seen[b] = true
-			out = append(out, b)
+		if w, ok := e.worktreeBySub[sub.Subscriber]; ok && !seen[w.Path] {
+			seen[w.Path] = true
+			out = append(out, w)
 		}
 	}
-	sort.Strings(out)
+	sort.Slice(out, func(i, j int) bool { return out[i].Branch < out[j].Branch })
 	e.watching[key] = out
 	return out
 }

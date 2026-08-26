@@ -85,3 +85,62 @@ describe("resource chip in the modal", () => {
   })
 })
 
+describe("global timeline affordances", () => {
+  const withWorktrees = ev({
+    resource_type: "pr", resource_id: "o/r#42",
+    worktrees: ["wt-a", "wt-b"], worktree_paths: ["/wt/a", "/wt/b"],
+  })
+
+  it("puts navigation ahead of the content, not after it", async () => {
+    wrap(
+      <EventDetailsModal
+        e={withWorktrees} onClose={vi.fn()}
+        onSelectResource={vi.fn()} onSelectWorktree={vi.fn()}
+      />,
+    )
+    const chip = await screen.findByRole("button", { name: /select resource o\/r#42/i })
+    const title = screen.getByText("Fix the widget")
+    // You should not have to scroll past a long comment to find where to go.
+    expect(chip.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("opens a worktree from its badge and closes", async () => {
+    const onSelectWorktree = vi.fn()
+    const onClose = vi.fn()
+    wrap(
+      <EventDetailsModal
+        e={withWorktrees} onClose={onClose}
+        onSelectResource={vi.fn()} onSelectWorktree={onSelectWorktree}
+      />,
+    )
+    fireEvent.click(await screen.findByRole("button", { name: /open worktree wt-b/i }))
+    // Paired by index with `worktrees`, so the second badge is the second path.
+    expect(onSelectWorktree).toHaveBeenCalledWith("/wt/b")
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  it("leaves badges inert when the event carries no paths", async () => {
+    wrap(
+      <EventDetailsModal
+        e={ev({ worktrees: ["wt-a"], worktree_paths: undefined })}
+        onClose={vi.fn()} onSelectWorktree={vi.fn()}
+      />,
+    )
+    await screen.findByText("wt-a")
+    expect(screen.queryByRole("button", { name: /open worktree/i })).not.toBeInTheDocument()
+  })
+
+  it("suppresses the chip when the resource has nowhere to go", async () => {
+    wrap(
+      <EventDetailsModal
+        e={withWorktrees} onClose={vi.fn()}
+        onSelectResource={vi.fn()} canSelectResource={() => false}
+      />,
+    )
+    await screen.findByText("Fix the widget")
+    expect(screen.queryByRole("button", { name: /select resource/i })).not.toBeInTheDocument()
+    // ...but the resource is still named, so the event keeps its context.
+    expect(screen.getByText("Fix the widget PR")).toBeInTheDocument()
+  })
+})
+

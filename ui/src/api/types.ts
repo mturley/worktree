@@ -10,6 +10,11 @@ export interface TimelineEvent {
   type: string; type_label: string; title: string; body: string; author: string;
   resource_type: string; resource_id: string; resource_url: string; resource_title: string;
   worktrees: string[];
+  /**
+   * Paths for `worktrees`, same order. The UI routes by path, and branch
+   * names are not unique across repos, so it cannot derive one from the other.
+   */
+  worktree_paths?: string[];
 }
 export interface TimelineResponse { events: TimelineEvent[]; next_cursor: string }
 export interface ResourceDTO {

@@ -431,8 +431,8 @@ func TestEnricherSeesSubscriptionChangesNextRequest(t *testing.T) {
 	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
 
 	srv := &Server{DB: conn}
-	if got := srv.newEventEnricher().worktreesWatching("pr", "o/r#1"); len(got) != 1 || got[0] != "b1" {
-		t.Fatalf("watching = %v, want [b1]", got)
+	if got := srv.newEventEnricher().worktreesWatching("pr", "o/r#1"); len(got) != 1 || got[0].Branch != "b1" || got[0].Path != wtPath {
+		t.Fatalf("watching = %+v, want one entry {b1, %s}", got, wtPath)
 	}
 
 	// Unsubscribing is visible to the next request without invalidation.
@@ -441,5 +441,46 @@ func TestEnricherSeesSubscriptionChangesNextRequest(t *testing.T) {
 	}
 	if got := srv.newEventEnricher().worktreesWatching("pr", "o/r#1"); len(got) != 0 {
 		t.Fatalf("watching after unsubscribe = %v, want []", got)
+	}
+}
+
+// TestTimelineCarriesWorktreePaths pins the path alongside the branch. The UI
+// routes by path, and branch names are not unique across repos, so it cannot
+// derive one from the other.
+func TestTimelineCarriesWorktreePaths(t *testing.T) {
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	wtPath := t.TempDir()
+	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
+	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
+	insertEvent(t, conn, "e1", time.Now().UTC().Format(time.RFC3339), "github", "pr_comment", "hi", "pr", "o/r#1", "u1")
+
+	srv := &Server{DB: conn}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/timeline?archived=false&limit=10")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var body struct {
+		Events []TimelineEvent `json:"events"`
+	}
+	json.NewDecoder(resp.Body).Decode(&body)
+	if len(body.Events) != 1 {
+		t.Fatalf("want 1 event, got %d", len(body.Events))
+	}
+	got := body.Events[0]
+	if len(got.Worktrees) != 1 || got.Worktrees[0] != "b1" {
+		t.Fatalf("worktrees = %v, want [b1]", got.Worktrees)
+	}
+	// Same order, so the UI can pair them index-wise.
+	if len(got.WorktreePaths) != 1 || got.WorktreePaths[0] != wtPath {
+		t.Fatalf("worktree_paths = %v, want [%s]", got.WorktreePaths, wtPath)
 	}
 }
