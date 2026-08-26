@@ -1,23 +1,20 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/mturley/worktree/internal/config"
 	wdb "github.com/mturley/worktree/internal/db"
-	"github.com/mturley/worktree/internal/env"
 	"github.com/mturley/worktree/internal/gitutil"
-	"github.com/mturley/worktree/internal/ports"
-	"github.com/mturley/worktree/internal/registry"
-	"github.com/mturley/worktree/internal/resources"
 	"github.com/mturley/worktree/internal/ui"
+	"github.com/mturley/worktree/internal/worktreedel"
 	"github.com/spf13/cobra"
 )
 
 var deleteForce bool
+var deleteBranchFlag bool
 
 var deleteCmd = &cobra.Command{
 	Use:     "delete [path]",
@@ -28,6 +25,8 @@ var deleteCmd = &cobra.Command{
 
 func init() {
 	deleteCmd.Flags().BoolVar(&deleteForce, "force", false, "Skip confirmation")
+	deleteCmd.Flags().BoolVar(&deleteBranchFlag, "delete-branch", false,
+		"Also delete the worktree's branch")
 	rootCmd.AddCommand(deleteCmd)
 }
 
@@ -42,9 +41,6 @@ func runDelete(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	repoName := ""
-	wtName := filepath.Base(wtPath)
-
 	repoRoot := ""
 	if r, err := gitutil.RepoRoot(wtPath); err == nil {
 		repoRoot = r
@@ -52,10 +48,7 @@ func runDelete(cmd *cobra.Command, args []string) error {
 	commonDir := gitutil.CommonDir(wtPath)
 	if commonDir != "" && commonDir != ".git" {
 		mainRoot := filepath.Dir(commonDir)
-		repoName = filepath.Base(mainRoot)
 		repoRoot = mainRoot
-	} else {
-		repoName = filepath.Base(filepath.Dir(wtPath))
 	}
 
 	fmt.Printf("Worktree: %s\n", ui.ShortPath(wtPath))
@@ -68,57 +61,67 @@ func runDelete(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if repoRoot != "" {
-		err := ui.SpinWhile("Removing worktree", func() error {
-			return gitutil.RemoveWorktree(repoRoot, wtPath)
-		})
-		var needsForce *gitutil.ErrNeedsForce
-		if errors.As(err, &needsForce) {
-			fmt.Printf("\n%s git could not remove the worktree:\n  %s\n\n",
-				ui.Yellow("!"), needsForce.GitOutput)
-			fmt.Println("This is usually leftover build output or read-only files in the worktree.")
-			if ui.Confirm("Force-remove the directory (fix permissions and delete)?") {
-				if err := ui.SpinWhile("Force-removing worktree", func() error {
-					return gitutil.ForceRemoveWorktree(repoRoot, cfg.WorktreesBase, wtPath)
-				}); err != nil {
-					return err
-				}
-			} else {
-				fmt.Printf("\nLeaving the worktree in place. To remove it manually:\n")
-				fmt.Printf("  rm -rf %s\n", wtPath)
-				fmt.Printf("  git -C %s worktree prune\n", repoRoot)
-				fmt.Printf("  worktree cleanup\n")
-				return nil
-			}
-		} else if err != nil {
-			return err
+	// Branch deletion is opt-in and defaults to NO. Removing a worktree
+	// destroys no work; deleting an unmerged branch can, so it must never
+	// happen to someone holding down enter. --force skips the confirmation
+	// for the worktree, not the branch; --delete-branch is the scriptable way.
+	deleteBranch := deleteBranchFlag
+	if !deleteBranch && !deleteForce {
+		if b := gitBranch(wtPath); b != "" {
+			deleteBranch = ui.ConfirmDefault(
+				fmt.Sprintf("Delete the branch %q too?", b), false)
 		}
 	}
 
 	conn, err := wdb.Open()
-	if err == nil {
-		defer conn.Close()
-		if err := ports.Release(conn, wtName); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to release port range: %v\n", err)
-		} else {
-			fmt.Printf("%s Released port range\n", ui.Green("✓"))
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	opts := worktreedel.Options{Path: wtPath, DeleteBranch: deleteBranch}
+	for {
+		res := worktreedel.Run(conn, cfg, opts, func(s worktreedel.Step) {
+			switch s.Status {
+			case worktreedel.StatusDone:
+				fmt.Printf("%s %s\n", ui.Green("✓"), s.Label)
+			case worktreedel.StatusSkipped:
+				fmt.Printf("%s %s (%s)\n", ui.Green("✓"), s.Label, s.Detail)
+			case worktreedel.StatusFailed:
+				fmt.Fprintf(os.Stderr, "Warning: %s: %s\n", s.Label, s.Detail)
+			}
+		})
+		if res.Err != nil {
+			return res.Err
 		}
-		if err := registry.Unregister(conn, wtPath); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to unregister worktree: %v\n", err)
+		if res.NeedsForce == "" {
+			return nil
 		}
-		if err := resources.RemoveAll(conn, wtPath); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to remove tracked resources: %v\n", err)
+		step := stepByKey(res, res.NeedsForce)
+		fmt.Printf("\n%s %s:\n  %s\n\n", ui.Yellow("!"), step.Label, step.Detail)
+		if res.NeedsForce == worktreedel.StepRemoveDirectory {
+			fmt.Println("This is usually leftover build output or read-only files in the worktree.")
+			if !ui.Confirm("Force-remove the directory (fix permissions and delete)?") {
+				fmt.Printf("\nLeaving the worktree in place. To remove it manually:\n")
+				fmt.Printf("  rm -rf %s\n  git -C %s worktree prune\n  worktree cleanup\n", wtPath, repoRoot)
+				return nil
+			}
+			opts.ForceDirectory = true
+			continue
+		}
+		if !ui.Confirm("Force-delete the branch (discards unmerged commits)?") {
+			fmt.Println("Leaving the branch in place.")
+			return nil
+		}
+		opts.ForceBranch = true
+	}
+}
+
+func stepByKey(res worktreedel.Result, key worktreedel.StepKey) worktreedel.Step {
+	for _, s := range res.Steps {
+		if s.Key == key {
+			return s
 		}
 	}
-
-	kubePath := env.KubeconfigPath(repoName, wtName)
-	if err := os.Remove(kubePath); err == nil {
-		fmt.Printf("%s Removed kubeconfig %s\n", ui.Green("✓"), ui.ShortPath(kubePath))
-	}
-
-	if repoRoot != "" {
-		gitutil.PruneWorktrees(repoRoot)
-	}
-
-	return nil
+	return worktreedel.Step{}
 }
