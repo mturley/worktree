@@ -250,3 +250,28 @@ func currentBranch(dir string) string {
 	}
 	return strings.TrimSpace(string(out))
 }
+
+// DeleteBranch deletes a local branch in repoRoot.
+//
+// With force=false it uses `git branch -d`, which refuses to delete a branch
+// that is not fully merged. That refusal comes back as *ErrNeedsForce carrying
+// git's message, so callers escalate it the same way they escalate a worktree
+// directory git will not remove — one shape for both confirmations.
+//
+// Any other failure (no such branch, not a repo) is returned as a plain error:
+// forcing would not help.
+func DeleteBranch(repoRoot, branch string, force bool) error {
+	flag := "-d"
+	if force {
+		flag = "-D"
+	}
+	out, err := exec.Command("git", "-C", repoRoot, "branch", flag, branch).CombinedOutput()
+	if err == nil {
+		return nil
+	}
+	msg := strings.TrimSpace(string(out))
+	if !force && strings.Contains(msg, "not fully merged") {
+		return &ErrNeedsForce{GitOutput: msg}
+	}
+	return fmt.Errorf("git branch %s %s: %s", flag, branch, msg)
+}
