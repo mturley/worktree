@@ -25,24 +25,28 @@ function SourceIcon({ type }: { type: string }) {
 }
 
 /**
- * Toggles that narrow a timeline to events from particular resource types.
+ * Toggles that narrow a timeline to one source.
  *
- * Nothing selected means "show everything" rather than "show nothing": an
- * all-off state would leave an empty feed with no obvious way back, and it is
- * not a view anyone wants. That also makes the default free — no selection is
- * the same request as before the filter existed.
+ * Single-select: picking Jira drops GitHub. Clicking the active one turns it
+ * off again, which is how you get back to everything — so the states are
+ * "all" or "exactly one", never a subset.
  *
- * Filtering happens server-side (resource_types), not by hiding rows here.
- * These feeds are paginated, so client-side filtering would return a page of
- * 50 events and then show two of them, with "Load more" as the only way to
- * find the rest.
+ * The value stays a string[] even though at most one is ever set. The wire
+ * format (resource_types) and both timeline handlers already accept a list,
+ * and keeping the shape means widening back to multi-select later is a change
+ * to this component alone.
+ *
+ * Filtering happens server-side, not by hiding rows here. These feeds are
+ * paginated, so client-side filtering would return a page of 50 events and
+ * then show two of them, with "Load more" as the only way to find the rest.
  */
 export function SourceFilter({ value, onChange }: {
   value: string[]
   onChange: (next: string[]) => void
 }) {
-  const toggle = (type: string) =>
-    onChange(value.includes(type) ? value.filter((t) => t !== type) : [...value, type])
+  // Replace rather than add: selecting a source deselects any other, and
+  // selecting the active one clears back to "show everything".
+  const toggle = (type: string) => onChange(value.includes(type) ? [] : [type])
 
   return (
     <Group gap={4} wrap="nowrap">

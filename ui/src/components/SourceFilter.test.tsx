@@ -22,11 +22,20 @@ describe("SourceFilter", () => {
     expect(onChange).toHaveBeenCalledWith(["pr"])
   })
 
-  it("removes an already-selected source rather than re-adding it", () => {
+  it("replaces the selection rather than adding to it", () => {
+    // Single-select: picking Jira drops GitHub.
     const onChange = vi.fn()
-    wrap(<SourceFilter value={["pr", "jira"]} onChange={onChange} />)
+    wrap(<SourceFilter value={["pr"]} onChange={onChange} />)
     fireEvent.click(screen.getByRole("button", { name: /jira/i }))
-    expect(onChange).toHaveBeenCalledWith(["pr"])
+    expect(onChange).toHaveBeenCalledWith(["jira"])
+  })
+
+  it("clears back to everything when the active source is clicked again", () => {
+    // The only way back to an unfiltered feed, so it has to work.
+    const onChange = vi.fn()
+    wrap(<SourceFilter value={["jira"]} onChange={onChange} />)
+    fireEvent.click(screen.getByRole("button", { name: /jira/i }))
+    expect(onChange).toHaveBeenCalledWith([])
   })
 
   it("marks selected sources with aria-pressed", () => {
