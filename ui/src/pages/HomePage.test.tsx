@@ -48,7 +48,7 @@ describe("HomePage responsive layout", () => {
   it("renders worktrees as cards with their focus resources in both layouts", () => {
     setViewport("wide")
     wrap()
-    expect(screen.getByText("my-branch")).toBeInTheDocument()
+    expect(screen.getByText(/my-branch/)).toBeInTheDocument()
     expect(screen.getByRole("link", { name: /Fix the widget/ })).toBeInTheDocument()
   })
 })

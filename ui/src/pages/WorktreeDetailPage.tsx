@@ -8,7 +8,7 @@ import { useWorktrees } from "../hooks/useWorktrees"
 import { ResourceList } from "../components/ResourceList"
 import { ResourceDetailPane } from "../components/ResourceDetailPane"
 import { TimelineFeed } from "../components/TimelineFeed"
-import { WorktreeCard } from "../components/WorktreeCard"
+import { WorktreeDetailCard } from "../components/WorktreeDetailCard"
 import { ThreadActionsContext } from "../components/slack/ThreadActionsContext"
 import { AddResourceModal } from "../components/AddResourceModal"
 import { parseThreadUrl } from "../lib/parseThreadUrl"
@@ -127,7 +127,7 @@ export function WorktreeDetailPage() {
         <Anchor component={Link} href="/">← all worktrees</Anchor>
         <Title order={4}>{branch}</Title>
       </Group>
-      {summary && <WorktreeCard w={summary} clickable={false} />}
+      {summary && <WorktreeDetailCard w={summary} />}
       {/*
         No Overview/Slack tabs: a Slack thread is selected like any other
         resource and renders in ResourceDetailPane, so the resource list plus

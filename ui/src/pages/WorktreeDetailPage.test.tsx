@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from "vitest"
 import { render, cleanup, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ResourceDTO } from "../api/types"
 
 const resources: ResourceDTO[] = [
@@ -36,21 +37,40 @@ vi.mock("../hooks/useTimeline", () => ({
 import { setViewport } from "../testing/viewport"
 import { WorktreeDetailPage } from "./WorktreeDetailPage"
 
-const wrap = () => render(<MantineProvider><WorktreeDetailPage /></MantineProvider>)
+// The header card (WorktreeDetailCard) fetches /api/worktree-info, so the
+// page now needs a QueryClient. A fresh one per render keeps tests isolated.
+const wrap = () =>
+  render(
+    <MantineProvider>
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <WorktreeDetailPage />
+      </QueryClientProvider>
+    </MantineProvider>,
+  )
 
 beforeEach(() => window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}`))
 afterEach(cleanup)
 
 describe("WorktreeDetailPage header", () => {
-  it("renders the worktree card above the tabs, without card navigation", async () => {
+  it("renders a header card that is not a navigation target", async () => {
     setViewport("wide")
     wrap()
-    // The card's focus-resource line is present. Its title is distinct from
-    // anything in the resource list, so this can only be satisfied by the
-    // WorktreeCard header actually rendering.
-    expect(await screen.findByRole("link", { name: /Card header PR/ })).toBeInTheDocument()
-    // ...but the card is not a navigation target here (clickable={false}).
+    // The worktree's name heads the card. ("foo" also appears in the page
+    // title, so assert presence rather than uniqueness.)
+    await waitFor(() => expect(screen.getAllByText("foo").length).toBeGreaterThan(0))
+    // ...but it is not a link: you are already on this worktree's page.
     expect(screen.queryByRole("link", { name: /open worktree foo/i })).not.toBeInTheDocument()
+  })
+
+  it("omits focus-resource lines, which would duplicate the resource cards", async () => {
+    setViewport("wide")
+    wrap()
+    await waitFor(() => expect(screen.getAllByText("foo").length).toBeGreaterThan(0))
+    // "Card header PR" exists ONLY in the summary's focus_resources fixture,
+    // never in the resource list — so its absence proves the header card no
+    // longer repeats what the cards below already show.
+    expect(screen.queryByRole("link", { name: /Card header PR/ })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Card header PR/)).not.toBeInTheDocument()
   })
 })
 

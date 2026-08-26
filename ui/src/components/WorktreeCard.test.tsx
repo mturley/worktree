@@ -21,9 +21,12 @@ beforeEach(() => window.history.replaceState({}, "", "/"))
 afterEach(cleanup)
 
 describe("WorktreeCard", () => {
-  it("shows the branch and repo", () => {
+  it("shows the worktree name as the heading, with branch and repo as meta", () => {
     wrap(<WorktreeCard w={summary} />)
-    expect(screen.getByText("my-branch")).toBeInTheDocument()
+    // The heading is the worktree's own name (last path segment); the branch
+    // moved to the dimmed meta line beneath it.
+    expect(screen.getByRole("link", { name: /open worktree foo/i })).toBeInTheDocument()
+    expect(screen.getByText(/my-branch/)).toBeInTheDocument()
     expect(screen.getByText(/odh/)).toBeInTheDocument()
   })
 
@@ -47,11 +50,11 @@ describe("WorktreeCard", () => {
     expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/foo")}`)
   })
 
-  it("navigates when the branch link is activated", async () => {
+  it("navigates when the name link is activated", async () => {
     const user = userEvent.setup()
     wrap(<WorktreeCard w={summary} />)
     const before = window.history.length
-    await user.click(screen.getByRole("link", { name: /open worktree my-branch/i }))
+    await user.click(screen.getByRole("link", { name: /open worktree foo/i }))
     expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/foo")}`)
     // The branch anchor's onClick calls stopPropagation() before navigating
     // itself, so the card's own onClick (which would also navigate) must not
@@ -62,7 +65,7 @@ describe("WorktreeCard", () => {
   it("navigates when the focused card is activated with the keyboard", async () => {
     const user = userEvent.setup()
     wrap(<WorktreeCard w={summary} />)
-    screen.getByRole("group", { name: /worktree my-branch/i }).focus()
+    screen.getByRole("group", { name: /worktree foo/i }).focus()
     await user.keyboard("{Enter}")
     expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/foo")}`)
   })
@@ -83,7 +86,7 @@ describe("WorktreeCard", () => {
   it("does not navigate when clickable is false", async () => {
     const user = userEvent.setup()
     wrap(<WorktreeCard w={summary} clickable={false} />)
-    await user.click(screen.getByText("my-branch"))
+    await user.click(screen.getByText(/my-branch/))
     await user.click(screen.getByText(/odh/))
     expect(window.location.pathname).toBe("/")
   })
@@ -95,7 +98,10 @@ describe("WorktreeCard", () => {
 
   it("renders without resource lines when there are no focus resources", () => {
     wrap(<WorktreeCard w={{ ...summary, focus_resources: [], primary_by_type: {}, primary_count: 0, resource_count: 0 }} />)
-    expect(screen.getByText("my-branch")).toBeInTheDocument()
+    // The heading is the worktree's own name (last path segment); the branch
+    // moved to the dimmed meta line beneath it.
+    expect(screen.getByRole("link", { name: /open worktree foo/i })).toBeInTheDocument()
+    expect(screen.getByText(/my-branch/)).toBeInTheDocument()
     expect(screen.queryByRole("link", { name: /Fix the widget/ })).not.toBeInTheDocument()
   })
 })

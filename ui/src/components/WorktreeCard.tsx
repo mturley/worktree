@@ -1,4 +1,5 @@
 import { Anchor, Badge, Group, Paper, Stack, Text } from "@mantine/core"
+import { relativeTime as rel } from "../lib/relativeTime"
 import { useLocation } from "wouter"
 import type { ResourceDTO, WorktreeSummary } from "../api/types"
 import { resourceSummary } from "../lib/resourceSummary"
@@ -46,10 +47,17 @@ function FocusResourceLine({ r, worktreePath }: { r: ResourceDTO; worktreePath: 
   )
 }
 
+/** The worktree's own name — the last path segment, e.g. "wt-ui-fixes". */
+function worktreeName(path: string): string {
+  const parts = path.split("/").filter(Boolean)
+  return parts[parts.length - 1] || path
+}
+
 export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
   const [, navigate] = useLocation()
   const href = `/worktree/${encodeURIComponent(w.path)}`
   const summary = resourceSummary(w.primary_by_type, w.related_count)
+  const name = worktreeName(w.path)
 
   const go = () => navigate(href)
 
@@ -62,7 +70,7 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
   const interactive = clickable
     ? {
         role: "group",
-        "aria-label": `worktree ${w.branch}`,
+        "aria-label": `worktree ${name}`,
         // Flags this card for the clickable surface + hover/focus styling in
         // styles/cards.css; absent when clickable={false} (detail-page header).
         "data-interactive": "true",
@@ -83,28 +91,40 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
       <Stack gap={6}>
         <Group gap="xs" wrap="wrap">
           {clickable ? (
+            // Still an <a> — that is what makes middle-click, copy-link and
+            // "opens worktree X" announcements work — but deliberately NOT
+            // link-STYLED: it inherits the body colour and never underlines,
+            // because the whole card is the click target and a blue heading
+            // implied the text was the only way in.
             <Anchor
               href={href}
-              aria-label={`open worktree ${w.branch}`}
+              aria-label={`open worktree ${name}`}
               onClick={(e) => {
                 e.preventDefault()
                 // Stop the card's own handler from also firing (double nav).
                 e.stopPropagation()
                 go()
               }}
-              fw={600}
-              size="sm"
+              c="inherit"
+              underline="never"
+              fw={700}
+              size="md"
               style={{ overflowWrap: "anywhere" }}
             >
-              {w.branch}
+              {name}
             </Anchor>
           ) : (
-            <Text fw={600} size="sm" style={{ overflowWrap: "anywhere" }}>{w.branch}</Text>
+            <Text fw={700} size="md" style={{ overflowWrap: "anywhere" }}>{name}</Text>
           )}
           {!w.on_disk && <Badge size="xs" color="red">missing</Badge>}
         </Group>
-        <Text size="xs" c="dimmed">
-          {w.repo}{summary ? ` · ${summary}` : ""}
+        <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+          {[
+            w.repo,
+            w.branch,
+            w.latest_event_ts ? rel(w.latest_event_ts) : "",
+            summary,
+          ].filter(Boolean).join(" · ")}
         </Text>
         {w.focus_resources.length > 0 && (
           <Stack gap={2}>
