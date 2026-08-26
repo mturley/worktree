@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest"
-import { render } from "@testing-library/react"
+import { describe, it, expect, vi } from "vitest"
+import { render, screen, fireEvent } from "@testing-library/react"
 import { MantineProvider } from "@mantine/core"
 import { EventRow } from "./EventRow"
 import type { TimelineEvent } from "../api/types"
@@ -42,17 +42,19 @@ function makeEvent(overrides: Partial<TimelineEvent>): TimelineEvent {
 }
 
 describe("EventRow", () => {
-  it("renders the type label badge and title", () => {
+  it("shows the title, and keeps the type label reachable on the dot", () => {
+    // The rail replaced the text badge with a coloured dot, so the type label
+    // now lives as the dot's accessible name rather than as visible text.
     const e = makeEvent({ type_label: "PR Opened", title: "Add feature X" })
     const { container } = renderWithProvider(<EventRow e={e} />)
-    expect(container.textContent).toContain("PR Opened")
     expect(container.textContent).toContain("Add feature X")
+    expect(screen.getByLabelText("PR Opened")).toBeInTheDocument()
   })
 
   it("falls back to the raw type when type_label is empty", () => {
     const e = makeEvent({ type_label: "", type: "pr_merged" })
-    const { container } = renderWithProvider(<EventRow e={e} />)
-    expect(container.textContent).toContain("pr_merged")
+    renderWithProvider(<EventRow e={e} />)
+    expect(screen.getByLabelText("pr_merged")).toBeInTheDocument()
   })
 
   it("renders worktree badges when showWorktrees is true and worktrees are present", () => {
@@ -68,13 +70,28 @@ describe("EventRow", () => {
     expect(container.textContent).not.toContain("feature-a")
   })
 
-  it("renders the resource_title as a link to resource_url when both are set", () => {
+  it("never nests a link inside the clickable row", () => {
+    // The row is a <button> that opens the details modal, so the resource
+    // link moved into that modal: a link inside a button is invalid markup
+    // and makes a click ambiguous between navigating and opening details.
     const e = makeEvent({ resource_title: "PR #42", resource_url: "https://github.com/org/repo/pull/42" })
-    const { container } = renderWithProvider(<EventRow e={e} />)
-    const link = container.querySelector("a")
-    expect(link).not.toBeNull()
-    expect(link?.getAttribute("href")).toBe("https://github.com/org/repo/pull/42")
-    expect(link?.textContent).toBe("PR #42")
+    const { container } = renderWithProvider(<EventRow e={e} onOpen={vi.fn()} />)
+    expect(container.querySelector("a")).toBeNull()
+    expect(container.textContent).toContain("PR #42")
+  })
+
+  it("opens the details modal when the row is clicked", () => {
+    const onOpen = vi.fn()
+    const e = makeEvent({ title: "Add feature X" })
+    renderWithProvider(<EventRow e={e} onOpen={onOpen} />)
+    fireEvent.click(screen.getByRole("button"))
+    expect(onOpen).toHaveBeenCalledWith(e)
+  })
+
+  it("is not a button when no handler is supplied, so it cannot look clickable", () => {
+    const e = makeEvent({})
+    renderWithProvider(<EventRow e={e} />)
+    expect(screen.queryByRole("button")).not.toBeInTheDocument()
   })
 
   it("renders the resource_title as plain text when resource_url is empty", () => {
