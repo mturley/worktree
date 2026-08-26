@@ -1,8 +1,12 @@
-import { Badge, Code, Group, Paper, Stack, Text } from "@mantine/core"
-import { useQuery } from "@tanstack/react-query"
+import { useState } from "react"
+import { ActionIcon, Badge, Code, Group, Paper, Stack, Text, Tooltip } from "@mantine/core"
+import { IconTrash } from "@tabler/icons-react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useLocation } from "wouter"
 import { api } from "../api/client"
 import type { GitStatus, WorktreeSummary } from "../api/types"
 import { relativeTime as rel } from "../lib/relativeTime"
+import { DeleteWorktreeModal } from "./DeleteWorktreeModal"
 
 /**
  * Renders a git status as a short line: "3 modified · 1 untracked · ahead 2",
@@ -39,15 +43,31 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
     enabled: !!w.path,
   })
 
+  const [, navigate] = useLocation()
+  const qc = useQueryClient()
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const name = w.path.split("/").filter(Boolean).pop() || w.path
   const git = info.data?.git
 
   return (
     <Paper p="sm" withBorder>
       <Stack gap={8}>
-        <Group gap="xs" wrap="wrap">
-          <Text fw={700} size="md" style={{ overflowWrap: "anywhere" }}>{name}</Text>
-          {!w.on_disk && <Badge size="xs" color="red">missing</Badge>}
+        <Group gap="xs" wrap="nowrap" justify="space-between">
+          <Group gap="xs" wrap="wrap" style={{ minWidth: 0 }}>
+            <Text fw={700} size="md" style={{ overflowWrap: "anywhere" }}>{name}</Text>
+            {!w.on_disk && <Badge size="xs" color="red">missing</Badge>}
+          </Group>
+          <Tooltip label="Delete worktree">
+            <ActionIcon
+              variant="subtle"
+              color="red"
+              size="sm"
+              aria-label="Delete worktree"
+              onClick={() => setDeleteOpen(true)}
+            >
+              <IconTrash size={16} />
+            </ActionIcon>
+          </Tooltip>
         </Group>
 
         <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
@@ -81,6 +101,22 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
           </Stack>
         )}
       </Stack>
+
+      {deleteOpen && (
+        <DeleteWorktreeModal
+          opened
+          path={w.path}
+          name={name}
+          branch={git?.branch || w.branch}
+          onClose={() => setDeleteOpen(false)}
+          onDeleted={() => {
+            setDeleteOpen(false)
+            // The worktree is gone; the list is the only place left to be.
+            void qc.invalidateQueries({ queryKey: ["worktrees"] })
+            navigate("/")
+          }}
+        />
+      )}
     </Paper>
   )
 }

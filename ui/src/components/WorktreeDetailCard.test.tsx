@@ -1,5 +1,6 @@
 import { afterEach, describe, it, expect, vi } from "vitest"
 import { render, cleanup, screen, waitFor } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { WorktreeDetailCard } from "./WorktreeDetailCard"
@@ -80,5 +81,25 @@ describe("WorktreeDetailCard", () => {
     wrap(summary())
     await waitFor(() => expect(screen.getByText("foo")).toBeInTheDocument())
     expect(screen.getByText(/my-branch/)).toBeInTheDocument()
+  })
+})
+
+describe("delete control", () => {
+  it("opens the delete modal from the trash control", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    const user = userEvent.setup()
+    wrap(summary())
+    await user.click(await screen.findByRole("button", { name: /delete worktree/i }))
+    expect(await screen.findByRole("dialog")).toBeInTheDocument()
+    // The typed-name confirmation is the safeguard; it must be present.
+    expect(screen.getByLabelText(/type the worktree name/i)).toBeInTheDocument()
+  })
+
+  it("does not delete anything just by opening the modal", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    const user = userEvent.setup()
+    wrap(summary())
+    await user.click(await screen.findByRole("button", { name: /delete worktree/i }))
+    expect(screen.getByRole("button", { name: /^delete$/i })).toBeDisabled()
   })
 })
