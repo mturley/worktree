@@ -51,10 +51,13 @@ describe("EventRow", () => {
     expect(screen.getByLabelText("PR Opened")).toBeInTheDocument()
   })
 
-  it("falls back to the raw type when type_label is empty", () => {
+  it("falls back to the mapping's readable label when type_label is empty", () => {
+    // eventMeta supplies a human label ("merged"), which beats echoing the
+    // raw wire value ("pr_merged") at the user.
     const e = makeEvent({ type_label: "", type: "pr_merged" })
     renderWithProvider(<EventRow e={e} />)
-    expect(screen.getByLabelText("pr_merged")).toBeInTheDocument()
+    expect(screen.getByLabelText("merged")).toBeInTheDocument()
+    expect(screen.getByText("merged")).toBeInTheDocument()
   })
 
   it("renders worktree badges when showWorktrees is true and worktrees are present", () => {
@@ -68,6 +71,16 @@ describe("EventRow", () => {
     const e = makeEvent({ worktrees: ["feature-a"] })
     const { container } = renderWithProvider(<EventRow e={e} />)
     expect(container.textContent).not.toContain("feature-a")
+  })
+
+  it("shows the resource as a chip that selects it, when selection is possible", () => {
+    const onSelectResource = vi.fn()
+    const e = makeEvent({ resource_title: "PR #42", resource_type: "pr", resource_id: "o/r#42" })
+    renderWithProvider(<EventRow e={e} onOpen={vi.fn()} onSelectResource={onSelectResource} />)
+    fireEvent.click(screen.getByRole("button", { name: /select resource o\/r#42/i }))
+    expect(onSelectResource).toHaveBeenCalledWith({ type: "pr", id: "o/r#42" })
+    // The PR number is pulled out of the composite id for a readable ref.
+    expect(screen.getByText("#42")).toBeInTheDocument()
   })
 
   it("never nests a link inside the clickable row", () => {

@@ -83,6 +83,10 @@ export function WorktreeDetailPage() {
         hasMore={timeline.hasMore}
         onLoadMore={timeline.loadMore}
         loadingMore={timeline.loadingMore}
+        // Only meaningful here: this page has a selection to change, and the
+        // worktree's own resource list to resolve icons and titles against.
+        onSelectResource={select}
+        resolveResource={(type, id) => items.find((r) => r.type === type && r.id === id)}
       />
     </Stack>
   )

@@ -2,45 +2,36 @@ import { describe, it, expect } from "vitest"
 import { eventMeta } from "./eventMeta"
 
 describe("eventMeta", () => {
-  it("gives one hue per source", () => {
-    expect(eventMeta("pr_comment").hue).toBe("indigo")
-    expect(eventMeta("ci_failed").hue).toBe("indigo") // CI is GitHub too
-    expect(eventMeta("jira_comment").hue).toBe("blue")
-    expect(eventMeta("slack_reply").hue).toBe("grape")
-    expect(eventMeta("watcher_error").hue).toBe("gray")
+  it("gives distinct colours to distinct events, including within one source", () => {
+    // The point of per-type colours: two GitHub events that mean different
+    // things should not look alike.
+    expect(eventMeta("pr_merged").color).not.toBe(eventMeta("pr_closed").color)
+    expect(eventMeta("pr_approved").color).not.toBe(eventMeta("pr_comment").color)
+    expect(eventMeta("jira_assigned").color).not.toBe(eventMeta("jira_comment").color)
   })
 
-  it("gives one shade per kind, across sources", () => {
-    // Same kind from different sources shares a shade; only the hue differs.
-    expect(eventMeta("pr_comment").kind).toBe("comment")
-    expect(eventMeta("jira_comment").kind).toBe("comment")
-    expect(eventMeta("slack_reply").kind).toBe("comment")
-
-    expect(eventMeta("pr_merged").kind).toBe("status")
-    expect(eventMeta("jira_status_change").kind).toBe("status")
-
-    expect(eventMeta("pr_new_commits").kind).toBe("activity")
-    expect(eventMeta("jira_assigned").kind).toBe("activity")
+  it("shares a colour where the outcome is genuinely the same", () => {
+    expect(eventMeta("ci_check_failed").color).toBe(eventMeta("ci_workflows_failed").color)
+    expect(eventMeta("ci_passed").color).toBe("green")
+    expect(eventMeta("ci_check_failed").color).toBe("red")
   })
 
-  it("renders status brighter than chatter, since the UI is dark-only", () => {
-    // Mantine palettes run light->dark, so brighter means a LOWER index.
-    const shade = (t: string) => Number(eventMeta(t).color.match(/-(\d)\)$/)![1])
-    expect(shade("pr_merged")).toBeLessThan(shade("pr_new_commits"))
-    expect(shade("pr_new_commits")).toBeLessThan(shade("pr_comment"))
+  it("exposes both a Mantine colour name and a resolved CSS value", () => {
+    const m = eventMeta("pr_merged")
+    // The badge takes the name; the dot needs a raw value.
+    expect(m.color).toBe("violet")
+    expect(m.cssColor).toBe(`var(--mantine-color-violet-${m.shade})`)
   })
 
   it("classifies CI variants by substring, so new library types still land right", () => {
-    // The library has ci_passed, ci_workflows_partial_failure, ci_check_failed…
-    // and may add more without a release here.
     expect(eventMeta("ci_workflows_partial_failure").label).toBe("CI failed")
     expect(eventMeta("ci_check_passed").label).toBe("CI passed")
-    expect(eventMeta("ci_some_future_variant").hue).toBe("indigo")
+    expect(eventMeta("ci_some_future_variant").color).toBe("gray")
   })
 
   it("falls back rather than throwing on an unknown type", () => {
     const m = eventMeta("totally_made_up")
-    expect(m.color).toContain("var(--mantine-color-")
+    expect(m.cssColor).toContain("var(--mantine-color-")
     expect(m.Icon).toBeTruthy()
   })
 })

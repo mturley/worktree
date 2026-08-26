@@ -17,7 +17,10 @@ export function EventDot({ type, size = 22, label: labelOverride }: {
    */
   label?: string
 }) {
-  const { color, Icon, label: kindLabel } = eventMeta(type)
+  // cssColor, not color: `color` is a Mantine palette NAME ("grape"), which
+  // is not a valid CSS colour — and the few that happen to be valid CSS
+  // ("violet", "indigo") would silently paint the wrong shade.
+  const { cssColor, Icon, label: kindLabel } = eventMeta(type)
   const label = labelOverride || kindLabel
   return (
     <span
@@ -28,7 +31,7 @@ export function EventDot({ type, size = 22, label: labelOverride }: {
         width: size,
         height: size,
         borderRadius: "50%",
-        background: color,
+        background: cssColor,
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",

@@ -61,3 +61,27 @@ describe("TimelineFeed row -> modal wiring", () => {
     expect(dialog.textContent).toContain("the full comment text")
   })
 })
+
+describe("resource chip in the modal", () => {
+  it("selects the resource and closes, so the result is not hidden behind the modal", async () => {
+    const onSelectResource = vi.fn()
+    const onClose = vi.fn()
+    wrap(
+      <EventDetailsModal
+        e={ev({ resource_type: "pr", resource_id: "o/r#42" })}
+        onClose={onClose}
+        onSelectResource={onSelectResource}
+      />,
+    )
+    fireEvent.click(await screen.findByRole("button", { name: /select resource o\/r#42/i }))
+    expect(onSelectResource).toHaveBeenCalledWith({ type: "pr", id: "o/r#42" })
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  it("names the resource as plain text when selection is not possible", () => {
+    wrap(<EventDetailsModal e={ev()} onClose={vi.fn()} />)
+    expect(screen.queryByRole("button", { name: /select resource/i })).not.toBeInTheDocument()
+    expect(screen.getByText("Fix the widget PR")).toBeInTheDocument()
+  })
+})
+

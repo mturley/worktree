@@ -11,7 +11,7 @@ import { createTheme, type MantineColorsTuple } from "@mantine/core"
  *
  * The accent ramp is a custom indigo-leaning blue rather than a stock Mantine
  * hue, so the chrome stays distinct from the event colours, which use stock
- * hues to separate sources.
+ * hues to tell event types apart.
  */
 const accent: MantineColorsTuple = [
   "#eef2ff",
@@ -30,6 +30,14 @@ const accent: MantineColorsTuple = [
  * Surface ramp. Mantine's stock `dark` runs fairly blue; these are slightly
  * desaturated so the coloured event dots read as the only saturated thing on
  * the page.
+ *
+ * Which index does what, since these are not arbitrary:
+ *   dark[7]  the page background (Mantine paints --mantine-color-body from it)
+ *   dark[6]  card surfaces (--mantine-color-default)
+ *   dark[5]  card hover
+ *   dark[4]  borders and the timeline rail
+ * The gap between 7 and 6 is what lifts a card off the page, so darkening the
+ * background means moving 7 down without closing that gap.
  */
 const surface: MantineColorsTuple = [
   "#c9c9d4",
@@ -37,11 +45,11 @@ const surface: MantineColorsTuple = [
   "#9a9aa6",
   "#7b7b88",
   "#5f5f6b",
-  "#4a4a55",
-  "#3a3a44",
-  "#2b2b33",
-  "#1f1f26",
-  "#15151a",
+  "#3f3f49",
+  "#2f2f38",
+  "#212128",
+  "#17171c",
+  "#101014",
 ]
 
 export const theme = createTheme({

@@ -13,107 +13,93 @@ import {
 } from "@tabler/icons-react"
 
 /**
- * One mapping from an event type to its colour and icon, shared by every
- * surface that shows an event — the timeline dots today, badges or filters
- * later — so they cannot drift apart. Same role resourceStatusMeta plays for
- * resource status icons.
+ * One mapping from an event type to its colour, icon and label, shared by
+ * every surface that shows an event — the timeline dots and the row's type
+ * badge today, filters later — so they cannot drift apart. Same role
+ * resourceStatusMeta plays for resource status icons.
  *
- * Two axes, per the Phase F decision:
- *   hue   = where the event came from (github / jira / slack / watcher)
- *   shade = what kind of thing happened
- *
- * Shade runs BRIGHTER as significance rises, because the UI is dark-only: a
- * merge or a failed build should catch the eye more than another comment.
- * Mantine palettes run 0 (lightest) to 9 (darkest), so the brighter end is
- * the lower index.
+ * Colour is per EVENT TYPE, not derived from source or kind. An earlier
+ * version encoded source as hue and kind as shade; in practice that made
+ * everything from one source look alike, which is the opposite of what a
+ * mixed feed needs — you scan for "what happened", and the icon already
+ * carries the rest.
  */
-export type EventKind = "comment" | "activity" | "status"
-
-const SHADE: Record<EventKind, number> = {
-  comment: 7, // chatter — present but recessive
-  activity: 5, // someone did something to the resource
-  status: 3, // the resource changed state — the loudest
+export interface EventMeta {
+  /** Mantine colour name — usable directly as a Badge/Text `color`. */
+  color: string
+  /** Palette index. 5 reads well on the dark-only background. */
+  shade: number
+  /** Resolved CSS colour, for surfaces that need a raw value (the dot). */
+  cssColor: string
+  Icon: IconComponent
+  /** Human-readable fallback label, when the event carries no type_label. */
+  label: string
 }
 
 type IconComponent = typeof IconMessage
 
-export interface EventMeta {
-  /** Mantine colour name, from the event's source. */
-  hue: string
-  kind: EventKind
-  /** Resolved CSS colour, hue + shade. */
+interface Entry {
   color: string
   Icon: IconComponent
-  /** Human-readable, for tooltips and aria labels. */
   label: string
 }
 
-function hueFor(type: string): string {
-  if (type.startsWith("jira_")) return "blue"
-  if (type.startsWith("slack_")) return "grape"
-  if (type.startsWith("watch")) return "gray"
-  // pr_* and ci_* are both GitHub.
-  return "indigo"
+/**
+ * Per-type colours. Types that genuinely mean the same outcome share one
+ * (every CI failure is red), but distinct events get distinct colours even
+ * when they come from the same service.
+ */
+const TYPES: Record<string, Entry> = {
+  // GitHub — pull requests
+  pr_comment: { color: "blue", Icon: IconMessage, label: "comment" },
+  pr_review_comment: { color: "cyan", Icon: IconMessage, label: "review comment" },
+  pr_review_requested: { color: "yellow", Icon: IconEye, label: "review requested" },
+  pr_approved: { color: "green", Icon: IconCheck, label: "approved" },
+  pr_merged: { color: "violet", Icon: IconGitMerge, label: "merged" },
+  pr_closed: { color: "red", Icon: IconGitPullRequestClosed, label: "closed" },
+  pr_reopened: { color: "teal", Icon: IconGitCommit, label: "reopened" },
+  pr_new_commits: { color: "indigo", Icon: IconGitCommit, label: "new commits" },
+
+  // Jira
+  jira_comment: { color: "pink", Icon: IconMessage, label: "comment" },
+  jira_status_change: { color: "grape", Icon: IconCheck, label: "status changed" },
+  jira_assigned: { color: "orange", Icon: IconUserCheck, label: "assigned" },
+  jira_description_changed: { color: "gray", Icon: IconGitCommit, label: "description changed" },
+  jira_labels_changed: { color: "lime", Icon: IconTag, label: "labels changed" },
+
+  // Slack
+  slack_reply: { color: "grape", Icon: IconMessage, label: "reply" },
+
+  // Watcher's own bookkeeping
+  watch_started: { color: "gray", Icon: IconBell, label: "watch started" },
+  watcher_error: { color: "red", Icon: IconAlertTriangle, label: "watcher error" },
 }
 
-function kindAndIcon(type: string): { kind: EventKind; Icon: IconComponent; label: string } {
-  switch (type) {
-    // --- comments -------------------------------------------------------
-    case "pr_comment":
-    case "pr_review_comment":
-    case "jira_comment":
-    case "slack_reply":
-      return { kind: "comment", Icon: IconMessage, label: "comment" }
+const DEFAULT_SHADE = 5
 
-    // --- activity -------------------------------------------------------
-    case "pr_review_requested":
-      return { kind: "activity", Icon: IconEye, label: "review requested" }
-    case "pr_new_commits":
-      return { kind: "activity", Icon: IconGitCommit, label: "new commits" }
-    case "jira_assigned":
-      return { kind: "activity", Icon: IconUserCheck, label: "assigned" }
-    case "jira_labels_changed":
-      return { kind: "activity", Icon: IconTag, label: "labels changed" }
-    case "jira_description_changed":
-      return { kind: "activity", Icon: IconGitCommit, label: "description changed" }
+function entryFor(type: string): Entry {
+  const hit = TYPES[type]
+  if (hit) return hit
 
-    // --- status ---------------------------------------------------------
-    case "pr_approved":
-      return { kind: "status", Icon: IconCheck, label: "approved" }
-    case "pr_merged":
-      return { kind: "status", Icon: IconGitMerge, label: "merged" }
-    case "pr_closed":
-      return { kind: "status", Icon: IconGitPullRequestClosed, label: "closed" }
-    case "pr_reopened":
-      return { kind: "status", Icon: IconGitCommit, label: "reopened" }
-    case "jira_status_change":
-      return { kind: "status", Icon: IconCheck, label: "status changed" }
-    case "watcher_error":
-      return { kind: "status", Icon: IconAlertTriangle, label: "watcher error" }
-    case "watch_started":
-      return { kind: "activity", Icon: IconBell, label: "watch started" }
-  }
-
-  // CI covers many variants (ci_passed, ci_workflows_partial_failure, …).
-  // Matching on substrings keeps new library variants working without a
-  // release here: an unmapped ci_* still lands in the right family.
+  // CI covers many variants (ci_passed, ci_check_failed,
+  // ci_workflows_partial_failure…) and the library may add more. Matching on
+  // substrings keeps a new variant coloured correctly without a release here.
   if (type.startsWith("ci_")) {
-    if (type.includes("fail")) return { kind: "status", Icon: IconX, label: "CI failed" }
-    if (type.includes("pending")) return { kind: "activity", Icon: IconGitCommit, label: "CI pending" }
-    if (type.includes("pass")) return { kind: "status", Icon: IconCheck, label: "CI passed" }
-    return { kind: "status", Icon: IconCheck, label: "CI" }
+    if (type.includes("fail")) return { color: "red", Icon: IconX, label: "CI failed" }
+    if (type.includes("pending")) return { color: "gray", Icon: IconGitCommit, label: "CI pending" }
+    if (type.includes("pass")) return { color: "green", Icon: IconCheck, label: "CI passed" }
+    return { color: "gray", Icon: IconCheck, label: "CI" }
   }
 
-  return { kind: "activity", Icon: IconGitCommit, label: type || "event" }
+  return { color: "gray", Icon: IconGitCommit, label: type || "event" }
 }
 
 export function eventMeta(type: string): EventMeta {
-  const hue = hueFor(type)
-  const { kind, Icon, label } = kindAndIcon(type)
+  const { color, Icon, label } = entryFor(type)
   return {
-    hue,
-    kind,
-    color: `var(--mantine-color-${hue}-${SHADE[kind]})`,
+    color,
+    shade: DEFAULT_SHADE,
+    cssColor: `var(--mantine-color-${color}-${DEFAULT_SHADE})`,
     Icon,
     label,
   }
