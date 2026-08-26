@@ -215,4 +215,82 @@ func TestRunRejectsUnknownWorktree(t *testing.T) {
 	}
 }
 
+// unregisteredFixture builds a real repo with a linked worktree that is NOT
+// registered in the DB — the shape of a worktree created by hand with plain
+// `git worktree add` rather than through this tool. If detach is true, the
+// worktree's HEAD is left detached (no branch) instead of on a feature branch.
+func unregisteredFixture(t *testing.T, detach bool) (conn *sql.DB, cfg config.Config, repoRoot, wtPath string) {
+	t.Helper()
+	base := t.TempDir()
+	repoRoot = filepath.Join(base, "repo")
+	os.MkdirAll(repoRoot, 0o755)
+
+	git := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@e",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@e")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	git(repoRoot, "init", "-b", "main")
+	os.WriteFile(filepath.Join(repoRoot, "a.txt"), []byte("one\n"), 0o644)
+	git(repoRoot, "add", "a.txt")
+	git(repoRoot, "commit", "-m", "init")
+
+	worktreesBase := filepath.Join(base, "worktrees")
+	wtPath = filepath.Join(worktreesBase, "wt-1")
+	git(repoRoot, "worktree", "add", "-b", "feature", wtPath)
+	if detach {
+		git(wtPath, "checkout", "--detach", "HEAD")
+	}
+
+	conn, err := wdb.OpenAt(filepath.Join(base, "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+
+	cfg = config.Config{WorktreesBase: worktreesBase}
+	return conn, cfg, repoRoot, wtPath
+}
+
+// A worktree created by hand (no registry row) must still be fully cleaned up:
+// resolve() has to find the MAIN repo root (not the worktree's own path, which
+// `git rev-parse --show-toplevel` would return) so that prune runs against the
+// right directory, and it has to discover the checked-out branch itself so an
+// explicit DeleteBranch request is actually honored.
+func TestRunUnregisteredWorktreeFullDelete(t *testing.T) {
+	conn, cfg, repoRoot, wtPath := unregisteredFixture(t, false)
+
+	res := Run(conn, cfg, Options{Path: wtPath, DeleteBranch: true}, nil)
+	if res.Err != nil || res.NeedsForce != "" {
+		t.Fatalf("unregistered delete: err=%v needsForce=%q", res.Err, res.NeedsForce)
+	}
+	if got := byKey(res, StepDeleteBranch).Status; got != StatusDone {
+		t.Fatalf("delete_branch = %s, want done: %+v", got, byKey(res, StepDeleteBranch))
+	}
+	if got := byKey(res, StepPrune).Status; got != StatusDone {
+		t.Fatalf("prune = %s, want done — resolve() must find the MAIN repo root, not the worktree's own path", got)
+	}
+	out, _ := exec.Command("git", "-C", repoRoot, "branch", "--list", "feature").Output()
+	if len(out) != 0 {
+		t.Fatalf("branch still present after an unregistered DeleteBranch request: %q", out)
+	}
+}
+
+// A detached-HEAD worktree has no branch to delete. Reporting that as skipped
+// would look like the request succeeded when nothing happened; it must fail
+// visibly instead.
+func TestRunUnregisteredDetachedHeadDeleteBranchFails(t *testing.T) {
+	conn, cfg, _, wtPath := unregisteredFixture(t, true)
+
+	res := Run(conn, cfg, Options{Path: wtPath, DeleteBranch: true}, nil)
+	if got := byKey(res, StepDeleteBranch).Status; got != StatusFailed {
+		t.Fatalf("delete_branch = %s, want failed for a detached HEAD", got)
+	}
+}
+
 var _ = ports.Release

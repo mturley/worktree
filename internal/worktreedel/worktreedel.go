@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -150,7 +151,11 @@ func Run(conn *sql.DB, cfg config.Config, opts Options, observe func(Step)) Resu
 	// A hard (non-needs-force) failure does NOT abort — see below.
 	if opts.DeleteBranch {
 		if branch == "" {
-			set(StepDeleteBranch, StatusSkipped, "no branch recorded for this worktree")
+			// A green checkmark here would tell the user their explicit
+			// request to delete the branch was honored when nothing
+			// happened — e.g. a detached HEAD, or a worktree we could not
+			// inspect before it was removed. An honest failure beats that.
+			set(StepDeleteBranch, StatusFailed, "could not determine which branch to delete")
 		} else {
 			err := gitutil.DeleteBranch(repoRoot, branch, opts.ForceBranch)
 			var needsForce *gitutil.ErrNeedsForce
@@ -233,8 +238,21 @@ func resolve(conn *sql.DB, cfg config.Config, path string) (repoRoot, repo, bran
 	if e, gErr := registry.Get(conn, path); gErr == nil && e != nil {
 		return e.RepoRoot, e.Repo, e.Branch, nil
 	}
+	// No registry row — inspect the directory while it still exists (this
+	// runs at the top of Run, before anything is deleted).
+	//
+	// gitutil.RepoRoot runs `git rev-parse --show-toplevel`, which for a
+	// LINKED worktree returns the worktree's own path, not the main
+	// repository — using that as repoRoot would later point `git worktree
+	// prune` at the directory this run is about to delete. MainRoot (via
+	// --git-common-dir) looks past the linked worktree to the main checkout,
+	// same as cmd/delete.go already does; fall back to RepoRoot only when
+	// there is no common dir to find (e.g. path is itself a plain repo).
+	if root := gitutil.MainRoot(path); root != "" {
+		return root, filepath.Base(root), currentBranchOf(path), nil
+	}
 	if root, rErr := gitutil.RepoRoot(path); rErr == nil && root != "" {
-		return root, filepath.Base(root), "", nil
+		return root, filepath.Base(root), currentBranchOf(path), nil
 	}
 	if cfg.WorktreesBase != "" {
 		if rel, relErr := filepath.Rel(cfg.WorktreesBase, path); relErr == nil &&
@@ -243,4 +261,20 @@ func resolve(conn *sql.DB, cfg config.Config, path string) (repoRoot, repo, bran
 		}
 	}
 	return "", "", "", fmt.Errorf("%s is neither a registered worktree nor a readable git worktree", path)
+}
+
+// currentBranchOf returns the branch checked out at dir, or "" if dir has no
+// branch to report (detached HEAD, or the git command failed). Used only on
+// the unregistered-worktree fallback path, so it must run before the
+// directory is removed.
+func currentBranchOf(dir string) string {
+	out, err := exec.Command("git", "-C", dir, "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil {
+		return ""
+	}
+	branch := strings.TrimSpace(string(out))
+	if branch == "HEAD" {
+		return ""
+	}
+	return branch
 }
