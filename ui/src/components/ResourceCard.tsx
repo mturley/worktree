@@ -63,7 +63,12 @@ function isEnriched(r: ResourceDTO): boolean {
 function CustomDescription({ r }: { r: ResourceDTO }) {
   if (!r.custom_description) return null
   return (
-    <Text size="xs" c="dimmed" fs="italic" style={{ overflowWrap: "anywhere" }}>
+    // Deliberately the largest text on the card, and not dimmed. Everything
+    // else here is fetched metadata; this is the one line a person wrote
+    // about why this resource matters to this worktree, so it should win the
+    // reader's eye rather than hide under the status badges. Italic still
+    // marks it as the user's own words.
+    <Text size="md" fs="italic" style={{ overflowWrap: "anywhere" }}>
       {r.custom_description}
     </Text>
   )

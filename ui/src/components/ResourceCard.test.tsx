@@ -324,3 +324,27 @@ describe("edit custom details button", () => {
   })
 })
 
+describe("custom description prominence", () => {
+  it("renders larger than the fetched metadata around it", () => {
+    // It is the one line a person wrote about why this resource matters, so
+    // it should not be the smallest, dimmest text on the card.
+    const r = {
+      type: "pr", id: "o/r#1", url: "u", primary: true, title: "Fix the widget",
+      author: "octocat", custom_description: "blocks the release",
+    } as ResourceDTO
+    wrap(<ResourceCard r={r} path="/wt" variant="detail" />)
+    const note = screen.getByText("blocks the release")
+    const meta = screen.getByText(/by octocat/)
+    // jsdom does not resolve Mantine's CSS variables, so compare the size
+    // token each Text emits (--text-fz: var(--mantine-font-size-<token>)).
+    const SIZES = ["xs", "sm", "md", "lg", "xl"]
+    const rank = (el: HTMLElement) => {
+      const fz = el.style.getPropertyValue("--text-fz")
+      const token = fz.match(/font-size-(\w+)/)?.[1] ?? ""
+      return SIZES.indexOf(token)
+    }
+    expect(rank(note)).toBeGreaterThan(-1)
+    expect(rank(note)).toBeGreaterThan(rank(meta))
+  })
+})
+

@@ -68,30 +68,38 @@
  *
  * Mantine separates grouped buttons by halving the border between them, which
  * works only for variants that HAVE a border. Ours are `variant="light"`, so
- * there was nothing to halve and "Open on GitHub | copy" read as one wide
- * blob. (An earlier attempt keyed off data-position="center|right"; Mantine
- * emits no such attribute — it sets data-orientation on the group only — so
- * that rule never matched anything.)
+ * there is nothing to halve and "Open on GitHub | copy" reads as one wide
+ * blob.
  *
- * The divider is a pseudo-element rather than a border: Mantine's own
- * border-width rules for grouped children are more specific than anything we
- * can reasonably write here, and would keep overriding a border of ours.
+ * ::after, NOT ::before — this is the second bug in this rule, and the
+ * subtler one. Mantine's Button root already owns ::before for its loading
+ * overlay, declaring `opacity: 0; transform: translateY(-100%); filter:
+ * blur(12px)`. Our more specific selector won on the properties we set
+ * (background, width, inset), but we never overrode opacity or transform, so
+ * the divider was drawn every time — fully transparent, shifted out of the
+ * box and blurred. It looked exactly like a rule that was never matching.
+ * (The first bug: keying off data-position="center|right", an attribute
+ * Mantine has never emitted — it sets data-orientation on the GROUP alone.)
+ *
+ * A pseudo-element rather than a border because Mantine's border-width rules
+ * for grouped children are more specific than anything reasonable here and
+ * would keep overriding it.
  *
  * The colour is mixed from the button's own currentColor rather than a fixed
- * grey, so it stays legible on any variant or colour and in either scheme.
- * The solid fallback comes first for engines without color-mix.
+ * grey, so it stays legible on any variant or colour. The solid fallback
+ * comes first for engines without color-mix.
  */
 .compound-group > :not(:first-child) {
   position: relative;
 }
 
-.compound-group > :not(:first-child)::before {
+.compound-group > :not(:first-child)::after {
   content: "";
   position: absolute;
-  inset-block: 20%;
+  inset-block: 18%;
   inset-inline-start: 0;
   width: 1px;
   background: var(--mantine-color-default-border);
-  background: color-mix(in srgb, currentColor 30%, transparent);
+  background: color-mix(in srgb, currentColor 45%, transparent);
   pointer-events: none;
 }
