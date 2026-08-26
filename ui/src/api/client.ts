@@ -9,16 +9,26 @@ async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   worktrees: () => fetchJSON<WorktreeSummary[]>("/api/worktrees"),
-  globalTimeline: (archived: boolean, limit = 100, before?: string) =>
-    fetchJSON<TimelineResponse>(
-      `/api/timeline?archived=${archived}&limit=${limit}${before ? `&before=${encodeURIComponent(before)}` : ""}`),
-  worktreeTimeline: (path: string, limit = 100, resource?: { type: string; id: string }, before?: string) => {
+  globalTimeline: (archived: boolean, limit = 100, before?: string, resourceTypes?: string[]) => {
+    const params = new URLSearchParams({ archived: String(archived), limit: String(limit) })
+    if (before) params.set("before", before)
+    if (resourceTypes?.length) params.set("resource_types", resourceTypes.join(","))
+    return fetchJSON<TimelineResponse>(`/api/timeline?${params.toString()}`)
+  },
+  worktreeTimeline: (
+    path: string,
+    limit = 100,
+    resource?: { type: string; id: string },
+    before?: string,
+    resourceTypes?: string[],
+  ) => {
     const params = new URLSearchParams({ path, limit: String(limit) })
     if (resource) {
       params.set("resource_type", resource.type)
       params.set("resource_id", resource.id)
     }
     if (before) params.set("before", before)
+    if (resourceTypes?.length) params.set("resource_types", resourceTypes.join(","))
     return fetchJSON<TimelineResponse>(`/api/worktree-timeline?${params.toString()}`)
   },
   worktreeInfo: (path: string) =>

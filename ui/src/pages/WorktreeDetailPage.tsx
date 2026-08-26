@@ -9,6 +9,7 @@ import { ResourceList } from "../components/ResourceList"
 import { ResourceDetailPane } from "../components/ResourceDetailPane"
 import { TimelineFeed } from "../components/TimelineFeed"
 import { WorktreeDetailCard } from "../components/WorktreeDetailCard"
+import { SourceFilter } from "../components/SourceFilter"
 import { ThreadActionsContext } from "../components/slack/ThreadActionsContext"
 import { AddResourceModal } from "../components/AddResourceModal"
 import { parseThreadUrl } from "../lib/parseThreadUrl"
@@ -17,7 +18,11 @@ export function WorktreeDetailPage() {
   const [, params] = useRoute("/worktree/:path*")
   const rawPath = params?.["path*"]
   const path = rawPath ? decodeURIComponent(rawPath) : ""
-  const { resources, timeline } = useWorktreeDetail(path)
+  // Only applies to the unfiltered feed: selecting a resource already narrows
+  // the timeline to that one resource, so the toggles are hidden there rather
+  // than left as dead controls.
+  const [sources, setSources] = useState<string[]>([])
+  const { resources, timeline } = useWorktreeDetail(path, sources)
   const { selected, select, toggle, clear } = useSelectedResource()
   const wide = useIsWide()
   const worktrees = useWorktrees()
@@ -75,7 +80,10 @@ export function WorktreeDetailPage() {
 
   const unfiltered = (
     <Stack gap="sm">
-      <Title order={5}>Timeline</Title>
+      <Group justify="space-between" wrap="wrap" gap="xs">
+        <Title order={5}>Timeline</Title>
+        <SourceFilter value={sources} onChange={setSources} />
+      </Group>
       <TimelineFeed
         events={timeline.events}
         loading={timeline.isLoading}

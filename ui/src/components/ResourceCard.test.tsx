@@ -386,3 +386,15 @@ describe("resource title prominence", () => {
   })
 })
 
+describe("PR card labelling", () => {
+  it("names the service on the badge and keeps PR on the number", () => {
+    // The badge matches Jira's and Slack's, which name the service; the
+    // number would otherwise read as a bare "#1234".
+    const r = { type: "pr", id: "o/r#1234", url: "u", primary: true, title: "Fix the widget", state: "OPEN" } as ResourceDTO
+    wrap(<ResourceCard r={r} path="/wt" variant="detail" />)
+    expect(screen.getByText("GitHub")).toBeInTheDocument()
+    expect(screen.getByText("PR #1234")).toBeInTheDocument()
+    expect(screen.queryByText("PR", { exact: true })).not.toBeInTheDocument()
+  })
+})
+

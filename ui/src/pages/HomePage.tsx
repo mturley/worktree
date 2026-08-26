@@ -8,13 +8,15 @@ import { useIsWide } from "../hooks/useIsWide"
 import { WorktreeList } from "../components/WorktreeList"
 import { TimelineFeed } from "../components/TimelineFeed"
 import { ArchivedToggle } from "../components/ArchivedToggle"
+import { SourceFilter } from "../components/SourceFilter"
 
 export function HomePage() {
   const [, navigate] = useLocation()
   const [archived, setArchived] = useState(false)
+  const [sources, setSources] = useState<string[]>([])
   const wide = useIsWide()
   const wts = useWorktrees()
-  const tl = useGlobalTimeline(archived)
+  const tl = useGlobalTimeline(archived, sources)
 
   /**
    * Opens a resource from the global timeline.
@@ -36,8 +38,11 @@ export function HomePage() {
   const worktrees = <WorktreeList items={wts.data ?? []} />
   const timeline = (
     <Stack gap="sm">
-      <Group justify="space-between">
-        <Title order={4}>Timeline</Title>
+      <Group justify="space-between" wrap="wrap" gap="xs">
+        <Group gap="sm" wrap="wrap">
+          <Title order={4}>Timeline</Title>
+          <SourceFilter value={sources} onChange={setSources} />
+        </Group>
         <ArchivedToggle value={archived} onChange={setArchived} />
       </Group>
       <TimelineFeed

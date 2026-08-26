@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/mturley/watcher"
 	watcherdb "github.com/mturley/watcher/db"
@@ -54,11 +55,35 @@ func parseLimit(r *http.Request) int {
 	return defaultTimelineLimit
 }
 
-// handleGlobalTimeline: GET /api/timeline?archived=&limit=&before=
+// parseResourceTypes reads the repeated/comma-separated `resource_types`
+// filter ("pr", "jira", "slack"). Empty means no filter — an explicit
+// all-off state is not representable and does not need to be: the UI treats
+// "nothing selected" as "show everything".
+//
+// Unknown values are dropped rather than passed to SQL, so a typo cannot
+// produce a query that silently matches nothing.
+func parseResourceTypes(r *http.Request) []string {
+	known := map[string]bool{"pr": true, "jira": true, "slack": true}
+	seen := map[string]bool{}
+	out := []string{}
+	for _, raw := range r.URL.Query()["resource_types"] {
+		for _, v := range strings.Split(raw, ",") {
+			v = strings.TrimSpace(v)
+			if known[v] && !seen[v] {
+				seen[v] = true
+				out = append(out, v)
+			}
+		}
+	}
+	return out
+}
+
+// handleGlobalTimeline: GET /api/timeline?archived=&limit=&before=&resource_types=
 func (s *Server) handleGlobalTimeline(w http.ResponseWriter, r *http.Request) {
 	archived := r.URL.Query().Get("archived") == "true"
 	limit := parseLimit(r)
 	before := r.URL.Query().Get("before") // RFC3339 ts; "" = newest
+	types := parseResourceTypes(r)
 
 	var (
 		rows *sql.Rows
@@ -77,26 +102,30 @@ JOIN watcher_event_resources er ON er.event_id = e.id `
 	order := `ORDER BY e.ts DESC LIMIT ?`
 
 	beforeClause := ""
-	args := []any{}
 	if before != "" {
 		beforeClause = "AND e.ts < ? "
 	}
-
-	if archived {
-		q := base + filter + beforeClause + order
-		if before != "" {
-			args = append(args, before)
-		}
-		args = append(args, limit)
-		rows, err = s.DB.Query(q, args...)
-	} else {
-		q := base + watchedJoin + filter + beforeClause + order
-		if before != "" {
-			args = append(args, before)
-		}
-		args = append(args, limit)
-		rows, err = s.DB.Query(q, args...)
+	// Placeholders are generated from the count of ALREADY-VALIDATED values,
+	// never by interpolating the values themselves.
+	typeClause := ""
+	if len(types) > 0 {
+		typeClause = "AND er.resource_type IN (" + strings.TrimSuffix(strings.Repeat("?,", len(types)), ",") + ") "
 	}
+
+	args := []any{}
+	if before != "" {
+		args = append(args, before)
+	}
+	for _, t := range types {
+		args = append(args, t)
+	}
+	args = append(args, limit)
+
+	q := base + filter + beforeClause + typeClause + order
+	if !archived {
+		q = base + watchedJoin + filter + beforeClause + typeClause + order
+	}
+	rows, err = s.DB.Query(q, args...)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -170,6 +199,11 @@ func (s *Server) handleWorktreeTimeline(w http.ResponseWriter, r *http.Request) 
 	}
 	limit := parseLimit(r)
 	before := r.URL.Query().Get("before") // exclusive RFC3339 cursor; "" = newest
+	types := parseResourceTypes(r)
+	typeAllowed := map[string]bool{}
+	for _, t := range types {
+		typeAllowed[t] = true
+	}
 	outCap := limit
 	if len(evs) < outCap {
 		outCap = len(evs)
@@ -191,7 +225,13 @@ func (s *Server) handleWorktreeTimeline(w http.ResponseWriter, r *http.Request) 
 				continue
 			}
 		}
-		out = append(out, enricher.enrich(evs[i]))
+		te := enricher.enrich(evs[i])
+		// Applied after enrichment because the resource type comes from the
+		// event's resource row, which enrich resolves.
+		if len(typeAllowed) > 0 && !typeAllowed[te.ResourceType] {
+			continue
+		}
+		out = append(out, te)
 	}
 	writeJSON(w, http.StatusOK, timelineResponse{Events: out, NextCursor: cursorOf(out)})
 }

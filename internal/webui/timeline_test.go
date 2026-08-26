@@ -542,3 +542,74 @@ func TestTimelineEventCarriesEnrichedResource(t *testing.T) {
 		t.Fatalf("resource_title = %q, want %q", got.ResourceTitle, "Fix the widget")
 	}
 }
+
+// TestTimelineResourceTypeFilter covers the source toggles (GitHub/Jira/Slack)
+// on both timelines.
+func TestTimelineResourceTypeFilter(t *testing.T) {
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	wtPath := t.TempDir()
+	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
+	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
+	resources.Add(conn, wtPath, resources.Resource{Type: "jira", ID: "J-1", URL: "u2"})
+	resources.Add(conn, wtPath, resources.Resource{Type: "slack", ID: "C1:1.2", URL: "u3"})
+
+	base := time.Now().UTC()
+	insertEvent(t, conn, "p1", base.Add(-3*time.Minute).Format(time.RFC3339), "github", "pr_comment", "pr event", "pr", "o/r#1", "u1")
+	insertEvent(t, conn, "j1", base.Add(-2*time.Minute).Format(time.RFC3339), "jira", "jira_comment", "jira event", "jira", "J-1", "u2")
+	insertEvent(t, conn, "s1", base.Add(-1*time.Minute).Format(time.RFC3339), "slack", "slack_reply", "slack event", "slack", "C1:1.2", "u3")
+
+	srv := &Server{DB: conn}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	ids := func(u string) []string {
+		resp, err := http.Get(ts.URL + u)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var body struct {
+			Events []TimelineEvent `json:"events"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		out := []string{}
+		for _, e := range body.Events {
+			out = append(out, e.ID)
+		}
+		return out
+	}
+
+	wtQ := "/api/worktree-timeline?path=" + url.QueryEscape(wtPath)
+	for _, tc := range []struct {
+		name, query string
+		want        []string
+	}{
+		{"global: no filter shows all", "/api/timeline?archived=false&limit=50", []string{"s1", "j1", "p1"}},
+		{"global: one type", "/api/timeline?archived=false&limit=50&resource_types=jira", []string{"j1"}},
+		{"global: two types, comma separated", "/api/timeline?archived=false&limit=50&resource_types=pr,slack", []string{"s1", "p1"}},
+		{"global: repeated params", "/api/timeline?archived=false&limit=50&resource_types=pr&resource_types=jira", []string{"j1", "p1"}},
+		{"global: unknown value is ignored, not matched", "/api/timeline?archived=false&limit=50&resource_types=bogus", []string{"s1", "j1", "p1"}},
+		{"worktree: no filter shows all", wtQ + "&limit=50", []string{"s1", "j1", "p1"}},
+		{"worktree: one type", wtQ + "&limit=50&resource_types=slack", []string{"s1"}},
+		{"worktree: two types", wtQ + "&limit=50&resource_types=pr,jira", []string{"j1", "p1"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ids(tc.query)
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Fatalf("got %v, want %v", got, tc.want)
+				}
+			}
+		})
+	}
+}

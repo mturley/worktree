@@ -45,26 +45,36 @@ function flatten(q: ReturnType<typeof useInfiniteQuery<{ events: TimelineEvent[]
   }
 }
 
-export function useGlobalTimeline(archived: boolean): TimelineResult {
+export function useGlobalTimeline(archived: boolean, resourceTypes: string[] = []): TimelineResult {
   return flatten(
     useInfiniteQuery({
-      queryKey: ["timeline", "global", archived],
-      queryFn: ({ pageParam }) => api.globalTimeline(archived, TIMELINE_PAGE_SIZE, pageParam),
+      // The filter is part of the key, so toggling it is a normal cache-keyed
+      // fetch and toggling back is a cache hit. Sorted so the same selection
+      // in a different click order reuses one cache entry.
+      queryKey: ["timeline", "global", archived, [...resourceTypes].sort().join(",")],
+      queryFn: ({ pageParam }) => api.globalTimeline(archived, TIMELINE_PAGE_SIZE, pageParam, resourceTypes),
       initialPageParam: undefined as string | undefined,
       getNextPageParam: nextCursor,
     }),
   )
 }
 
-export function useWorktreeTimeline(path: string, resource?: { type: string; id: string }): TimelineResult {
+export function useWorktreeTimeline(
+  path: string,
+  resource?: { type: string; id: string },
+  resourceTypes: string[] = [],
+): TimelineResult {
   return flatten(
     // The resource is part of the key so switching selection is a normal
     // cache-keyed fetch and switching back to unfiltered is a cache hit. Kept
     // as separate array elements (not a collapsed `${type}:${id}` string) so
     // the key composes cleanly with query-key matching elsewhere.
     useInfiniteQuery({
-      queryKey: ["timeline", "worktree", path, resource?.type ?? "", resource?.id ?? ""],
-      queryFn: ({ pageParam }) => api.worktreeTimeline(path, TIMELINE_PAGE_SIZE, resource, pageParam),
+      queryKey: [
+        "timeline", "worktree", path, resource?.type ?? "", resource?.id ?? "",
+        [...resourceTypes].sort().join(","),
+      ],
+      queryFn: ({ pageParam }) => api.worktreeTimeline(path, TIMELINE_PAGE_SIZE, resource, pageParam, resourceTypes),
       initialPageParam: undefined as string | undefined,
       getNextPageParam: nextCursor,
       enabled: !!path,

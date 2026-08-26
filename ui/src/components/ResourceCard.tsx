@@ -100,8 +100,11 @@ function PRCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVaria
   return (
     <Stack gap={4}>
       <Group gap="xs" wrap="wrap">
-        <Badge size="xs" variant="light">PR</Badge>
-        <Text size="xs" c="dimmed">{prNumber(r.id)}</Text>
+        {/* The badge names the SERVICE, matching Jira's and Slack's, so the
+            three read as the same kind of label. "PR" is then restored to the
+            number beside it, which would otherwise be a bare "#1234". */}
+        <Badge size="xs" variant="light">GitHub</Badge>
+        <Text size="xs" c="dimmed">PR {prNumber(r.id)}</Text>
       </Group>
       <ResourceTitle r={r} label={r.title || r.id} {...titleProps(variant)} />
       <CustomDescription r={r} />
