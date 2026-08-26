@@ -37,3 +37,16 @@ export interface ResourceDTO {
   custom_name?: string
   custom_description?: string
 }
+
+export interface GitStatus {
+  branch: string
+  upstream?: string
+  ahead: number
+  behind: number
+  staged: number
+  modified: number
+  untracked: number
+}
+export interface EnvVar { key: string; value: string }
+/** GET /api/worktree-info — detail-page-only; git status costs a subprocess. */
+export interface WorktreeInfo { env: EnvVar[]; git?: GitStatus }

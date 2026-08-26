@@ -1,4 +1,4 @@
-import type { WorktreeSummary, TimelineResponse, ResourceDTO } from "./types"
+import type { WorktreeSummary, TimelineResponse, ResourceDTO, WorktreeInfo } from "./types"
 
 async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init)
@@ -21,6 +21,8 @@ export const api = {
     if (before) params.set("before", before)
     return fetchJSON<TimelineResponse>(`/api/worktree-timeline?${params.toString()}`)
   },
+  worktreeInfo: (path: string) =>
+    fetchJSON<WorktreeInfo>(`/api/worktree-info?path=${encodeURIComponent(path)}`),
   worktreeResources: (path: string) =>
     fetchJSON<ResourceDTO[]>(`/api/worktree-resources?path=${encodeURIComponent(path)}`),
   pollWorktree: (path: string) =>
