@@ -85,8 +85,8 @@ describe("ResourceCard remove control", () => {
     const user = userEvent.setup()
     wrap(<ResourceCard r={r} path="/some/worktree" onRemoved={onRemoved} variant="detail" />)
 
-    await user.click(screen.getByRole("button", { name: "Remove resource" }))
-    expect(await screen.findByText("Remove this resource?")).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Unfollow resource" }))
+    expect(await screen.findByText("Unfollow this resource?")).toBeInTheDocument()
 
     await user.click(screen.getByRole("button", { name: "Cancel" }))
     expect(removeResource).not.toHaveBeenCalled()
@@ -99,9 +99,9 @@ describe("ResourceCard remove control", () => {
     const user = userEvent.setup()
     wrap(<ResourceCard r={r} path="/some/worktree" onRemoved={onRemoved} variant="detail" />)
 
-    await user.click(screen.getByRole("button", { name: "Remove resource" }))
-    await screen.findByText("Remove this resource?")
-    await user.click(screen.getByRole("button", { name: "Remove" }))
+    await user.click(screen.getByRole("button", { name: "Unfollow resource" }))
+    await screen.findByText("Unfollow this resource?")
+    await user.click(screen.getByRole("button", { name: "Unfollow" }))
 
     expect(removeResource).toHaveBeenCalledWith({ path: "/some/worktree", type: "pr", id: "org/repo#1" })
     await vi.waitFor(() => expect(onRemoved).toHaveBeenCalled())
@@ -113,12 +113,12 @@ describe("ResourceCard remove control", () => {
     const user = userEvent.setup()
     wrap(<ResourceCard r={r} path="/some/worktree" onRemoved={onRemoved} variant="detail" />)
 
-    await user.click(screen.getByRole("button", { name: "Remove resource" }))
-    await screen.findByText("Remove this resource?")
-    await user.click(screen.getByRole("button", { name: "Remove" }))
+    await user.click(screen.getByRole("button", { name: "Unfollow resource" }))
+    await screen.findByText("Unfollow this resource?")
+    await user.click(screen.getByRole("button", { name: "Unfollow" }))
 
     expect(await screen.findByText("failed to remove resource")).toBeInTheDocument()
-    expect(screen.getByText("Remove this resource?")).toBeInTheDocument()
+    expect(screen.getByText("Unfollow this resource?")).toBeInTheDocument()
     expect(onRemoved).not.toHaveBeenCalled()
   })
 })
@@ -159,7 +159,7 @@ describe("ResourceCard variants and selection", () => {
     // the two controls never appear on the same card.
     const onSelect = vi.fn()
     wrap(<ResourceCard r={jira} onSelect={onSelect} />)
-    expect(screen.queryByRole("button", { name: "Remove resource" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Unfollow resource" })).not.toBeInTheDocument()
     expect(onSelect).not.toHaveBeenCalled()
   })
 
@@ -196,17 +196,17 @@ describe("ResourceCard remove control placement (phase C)", () => {
     // With cards clickable-to-select, a per-card x is noise and an easy
     // mis-click; removal lives on the detail side instead.
     wrap(<ResourceCard r={prCard} path="/wt/foo" onSelect={() => {}} />)
-    expect(screen.queryByRole("button", { name: "Remove resource" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Unfollow resource" })).not.toBeInTheDocument()
   })
 
   it("does not render a remove control on a plain compact card", () => {
     wrap(<ResourceCard r={prCard} path="/wt/foo" />)
-    expect(screen.queryByRole("button", { name: "Remove resource" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Unfollow resource" })).not.toBeInTheDocument()
   })
 
   it("renders the remove control on the detail card", () => {
     wrap(<ResourceCard r={prCard} path="/wt/foo" variant="detail" />)
-    expect(screen.getByRole("button", { name: "Remove resource" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Unfollow resource" })).toBeInTheDocument()
   })
 })
 
@@ -345,6 +345,44 @@ describe("custom description prominence", () => {
     }
     expect(rank(note)).toBeGreaterThan(-1)
     expect(rank(note)).toBeGreaterThan(rank(meta))
+  })
+})
+
+describe("resource title prominence", () => {
+  const SIZES = ["xs", "sm", "md", "lg", "xl"]
+  const rank = (el: HTMLElement) => {
+    const fz = el.style.getPropertyValue("--text-fz")
+    return SIZES.indexOf(fz.match(/font-size-(\w+)/)?.[1] ?? "")
+  }
+
+  it("renders the detail card's title larger and bolder than a list card's", () => {
+    const r = { type: "pr", id: "o/r#1", url: "u", primary: true, title: "Fix the widget", state: "OPEN" } as ResourceDTO
+
+    const detail = wrap(<ResourceCard r={r} path="/wt" variant="detail" />)
+    const detailTitle = screen.getByText("Fix the widget")
+    const detailRank = rank(detailTitle)
+    const detailWeight = Number(detailTitle.style.fontWeight)
+    detail.unmount()
+
+    wrap(<ResourceCard r={r} path="/wt" onSelect={() => {}} />)
+    const listTitle = screen.getByText("Fix the widget")
+
+    expect(detailRank).toBeGreaterThan(rank(listTitle))
+    expect(detailWeight).toBeGreaterThan(Number(listTitle.style.fontWeight))
+  })
+
+  it("gives a Slack thread's custom name the same prominence as a fetched title", () => {
+    // The custom name IS the title for a thread that has none of its own, so
+    // it must not render as a lesser thing.
+    const named = { type: "slack", id: "C1:1.2", url: "u", primary: true, custom_name: "Deploy coordination" } as ResourceDTO
+    const titled = { type: "slack", id: "C1:1.3", url: "u", primary: true, title: "Deploy coordination" } as ResourceDTO
+
+    const a = wrap(<ResourceCard r={named} path="/wt" variant="detail" />)
+    const customRank = rank(screen.getByText("Deploy coordination"))
+    a.unmount()
+
+    wrap(<ResourceCard r={titled} path="/wt" variant="detail" />)
+    expect(customRank).toBe(rank(screen.getByText("Deploy coordination")))
   })
 })
 

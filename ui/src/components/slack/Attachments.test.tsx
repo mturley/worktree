@@ -233,7 +233,7 @@ describe('thread unfurl actions', () => {
         <Attachments attachments={[threadAttachment]} users={{}} emoji={{}} onOpenThread={() => {}} />
       </ThreadActionsContext.Provider>,
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Add thread…' }))
+    fireEvent.click(screen.getByRole('button', { name: "Follow thread…" }))
     expect(requestAddThread).toHaveBeenCalledWith(threadAttachment.FromURL)
   })
 
@@ -249,7 +249,7 @@ describe('thread unfurl actions', () => {
         <Attachments attachments={[threadAttachment]} users={{}} emoji={{}} onOpenThread={() => {}} />
       </ThreadActionsContext.Provider>,
     )
-    expect(screen.queryByRole('button', { name: 'Add thread…' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: "Follow thread…" })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Go to thread' }))
     expect(selectThread).toHaveBeenCalledWith(key)
   })
@@ -259,7 +259,7 @@ describe('thread unfurl actions', () => {
     renderWithProvider(
       <Attachments attachments={[threadAttachment]} users={{}} emoji={{}} onOpenThread={onOpenThread} />,
     )
-    expect(screen.queryByRole('button', { name: 'Add thread…' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: "Follow thread…" })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Open in Slack' }))
     expect(onOpenThread).toHaveBeenCalled()
   })

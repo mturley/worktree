@@ -85,7 +85,7 @@ function ThreadUnfurlCard({
 /**
  * Add / open / copy for a thread linked from inside another thread.
  *
- * "Add thread" is the useful default here: a thread worth linking is usually
+ * "Follow thread" is the useful default here: a thread worth linking is usually
  * one worth tracking, and adding it beats opening Slack, copying the link and
  * pasting it into the add-resource dialog. Opening in Slack stays available
  * beside it.
@@ -124,9 +124,9 @@ function ThreadUnfurlActions({
             </Button>
           </Tooltip>
         ) : requestAddThread ? (
-          <Tooltip label="Add this thread to the worktree">
+          <Tooltip label="Follow this thread in the worktree">
             <Button size="xs" variant="light" onClick={() => requestAddThread(url)}>
-              Add thread…
+              Follow thread…
             </Button>
           </Tooltip>
         ) : null}

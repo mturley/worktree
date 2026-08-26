@@ -103,7 +103,7 @@ export function AddResourceModal({
   }
 
   return (
-    <Modal opened={opened} onClose={handleClose} title="Add resource">
+    <Modal opened={opened} onClose={handleClose} title="Follow resource">
       <Stack gap="sm">
         {error ? (
           <Alert color="red" variant="light" title="Couldn't add resource" withCloseButton onClose={() => setError(null)}>
@@ -159,7 +159,7 @@ export function AddResourceModal({
             Cancel
           </Button>
           <Button onClick={() => void handleSubmit()} loading={submitting} disabled={!url.trim()}>
-            Add
+            Follow
           </Button>
         </Group>
       </Stack>

@@ -65,7 +65,7 @@ describe("ResourceDetailPane slack branch", () => {
     wrap(<ResourceDetailPane path="/wt/foo" resource={slack} onRemoved={vi.fn()} />)
     expect(screen.getByText("Deploy thread")).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "Open in Slack" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Remove resource" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Unfollow resource" })).toBeInTheDocument()
   })
 
   it("does not request a filtered timeline for a slack resource", () => {
@@ -94,6 +94,6 @@ describe("ResourceDetailPane slack remove control", () => {
     // thread would be the one resource type you cannot remove from the UI.
     useWorktreeTimeline.mockReturnValue({ events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false })
     wrap(<ResourceDetailPane path="/wt/foo" resource={slack} onRemoved={vi.fn()} />)
-    expect(screen.getByRole("button", { name: "Remove resource" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Unfollow resource" })).toBeInTheDocument()
   })
 })

@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { ActionIcon, Alert, Badge, Button, Group, Paper, Popover, SegmentedControl, Stack, Text, UnstyledButton } from "@mantine/core"
+import { IconTrash } from "@tabler/icons-react"
 import type { ResourceDTO } from "../api/types"
 import { relativeTime, relativeFromNow } from "../lib/relativeTime"
 import { api } from "../api/client"
@@ -74,6 +75,18 @@ function CustomDescription({ r }: { r: ResourceDTO }) {
   )
 }
 
+/**
+ * How prominently a card renders its resource title.
+ *
+ * The detail card is the header of the pane you are reading, so its title is
+ * the page's subject and gets full weight. A list card is one of many
+ * competing for a click, where an oversized title would crowd out the status
+ * badges you scan the list by.
+ */
+function titleProps(variant: ResourceCardVariant): { size: string; fw: number } {
+  return variant === "detail" ? { size: "xl", fw: 700 } : { size: "sm", fw: 600 }
+}
+
 function MinimalRow({ r }: { r: ResourceDTO }) {
   return (
     <Group gap="xs">
@@ -83,14 +96,14 @@ function MinimalRow({ r }: { r: ResourceDTO }) {
   )
 }
 
-function PRCardBody({ r }: { r: ResourceDTO }) {
+function PRCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVariant }) {
   return (
     <Stack gap={4}>
       <Group gap="xs" wrap="wrap">
         <Badge size="xs" variant="light">PR</Badge>
         <Text size="xs" c="dimmed">{prNumber(r.id)}</Text>
       </Group>
-      <ResourceTitle r={r} label={r.title || r.id} />
+      <ResourceTitle r={r} label={r.title || r.id} {...titleProps(variant)} />
       <CustomDescription r={r} />
       <Group gap={4} wrap="wrap">
         {r.state && <Badge size="xs" color={prStateColor(r.state)}>{r.state.toLowerCase()}</Badge>}
@@ -114,7 +127,7 @@ function JiraCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVar
         <Badge size="xs" variant="light">Jira</Badge>
         <Text size="xs" c="dimmed">{r.id}</Text>
       </Group>
-      <ResourceTitle r={r} label={r.title || r.id} />
+      <ResourceTitle r={r} label={r.title || r.id} {...titleProps(variant)} />
       <CustomDescription r={r} />
       <Group gap={4} wrap="wrap">
         {r.status && <Badge size="xs" variant="light">{r.status}</Badge>}
@@ -135,13 +148,14 @@ function JiraCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVar
   )
 }
 
-function SlackCardBody({ r }: { r: ResourceDTO }) {
+function SlackCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVariant }) {
   const label = r.custom_name || r.title || r.id
   return (
     <Stack gap={2}>
       <Group gap="xs" wrap="wrap">
         <Badge size="xs" variant="light" color="grape">Slack</Badge>
-        <ResourceTitle r={r} label={label} fw={500} />
+        {/* Custom name or fetched title alike — same prominence either way. */}
+        <ResourceTitle r={r} label={label} {...titleProps(variant)} />
       </Group>
       <CustomDescription r={r} />
       <Group gap="xs" wrap="wrap">
@@ -212,18 +226,18 @@ export function RemoveControl({ r, path, onRemoved }: { r: ResourceDTO; path: st
           size="sm"
           variant="subtle"
           color="gray"
-          aria-label="Remove resource"
+          aria-label="Unfollow resource"
           onClick={(e) => {
             e.stopPropagation()
             setOpened((v) => !v)
           }}
         >
-          <Text size="sm" lh={1}>×</Text>
+          <IconTrash size={14} />
         </ActionIcon>
       </Popover.Target>
       <Popover.Dropdown>
         <Stack gap={6}>
-          <Text size="sm">Remove this resource?</Text>
+          <Text size="sm">Unfollow this resource?</Text>
           {removeError ? (
             <Alert color="red" variant="light" p="xs">
               <Text size="xs">{removeError}</Text>
@@ -234,7 +248,7 @@ export function RemoveControl({ r, path, onRemoved }: { r: ResourceDTO; path: st
               Cancel
             </Button>
             <Button size="xs" color="red" onClick={() => void handleRemove()} loading={removing}>
-              Remove
+              Unfollow
             </Button>
           </Group>
         </Stack>
@@ -288,11 +302,11 @@ export function ResourceCard({
     }
   }
   const body = r.type === "slack" ? (
-    <SlackCardBody r={r} />
+    <SlackCardBody r={r} variant={variant} />
   ) : !isEnriched(r) ? (
     <MinimalRow r={r} />
   ) : r.type === "pr" ? (
-    <PRCardBody r={r} />
+    <PRCardBody r={r} variant={variant} />
   ) : r.type === "jira" ? (
     <JiraCardBody r={r} variant={variant} />
   ) : (

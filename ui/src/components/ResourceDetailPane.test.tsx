@@ -62,9 +62,9 @@ describe("ResourceDetailPane", () => {
     const user = userEvent.setup()
     wrap(<ResourceDetailPane path="/wt/foo" resource={jira} onRemoved={onRemoved} />)
 
-    await user.click(screen.getByRole("button", { name: "Remove resource" }))
-    await screen.findByText("Remove this resource?")
-    await user.click(screen.getByRole("button", { name: "Remove" }))
+    await user.click(screen.getByRole("button", { name: "Unfollow resource" }))
+    await screen.findByText("Unfollow this resource?")
+    await user.click(screen.getByRole("button", { name: "Unfollow" }))
 
     expect(removeResource).toHaveBeenCalledWith({ path: "/wt/foo", type: "jira", id: "J-1" })
     await vi.waitFor(() => expect(onRemoved).toHaveBeenCalled())

@@ -38,7 +38,7 @@ describe("ResourceList", () => {
     )
 
     expect(queryByLabelText(/url/i)).not.toBeInTheDocument()
-    await user.click(getByRole("button", { name: /add resource/i }))
+    await user.click(getByRole("button", { name: /follow resource/i }))
     expect(await findByLabelText(/url/i)).toBeInTheDocument()
   })
 
@@ -50,9 +50,9 @@ describe("ResourceList", () => {
       <ResourceList items={[]} path="/some/worktree" onChanged={onChanged} />,
     )
 
-    await user.click(getByRole("button", { name: /add resource/i }))
+    await user.click(getByRole("button", { name: /follow resource/i }))
     await user.type(await findByLabelText(/url/i), "https://github.com/org/repo/pull/1")
-    await user.click(getByRole("button", { name: "Add" }))
+    await user.click(getByRole("button", { name: "Follow" }))
 
     expect(addResource).toHaveBeenCalledWith({
       path: "/some/worktree",
@@ -79,7 +79,7 @@ describe("Add resource placement", () => {
     const { getByRole, getByText } = wrap(
       <ResourceList items={items} path="/wt" onChanged={vi.fn()} />,
     )
-    const add = getByRole("button", { name: /add resource/i })
+    const add = getByRole("button", { name: /follow resource/i })
     const firstCard = getByText("Fix the widget")
     // DOCUMENT_POSITION_PRECEDING (2) means the card comes before the button.
     expect(add.compareDocumentPosition(firstCard) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()

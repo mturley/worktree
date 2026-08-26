@@ -96,7 +96,9 @@
 .compound-group > :not(:first-child)::after {
   content: "";
   position: absolute;
-  inset-block: 18%;
+  /* Full height: the divider should read as the seam between two segments,
+     which a short centred line does not. */
+  inset-block: 0;
   inset-inline-start: 0;
   width: 1px;
   background: var(--mantine-color-default-border);

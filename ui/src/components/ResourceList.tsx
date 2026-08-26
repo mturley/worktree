@@ -74,7 +74,7 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
       */}
       <Group>
         <Button size="sm" variant="light" leftSection="+" onClick={() => setAddOpen(true)}>
-          Add resource
+          Follow resource
         </Button>
       </Group>
     </Stack>

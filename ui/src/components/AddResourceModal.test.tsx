@@ -49,7 +49,7 @@ describe("AddResourceModal", () => {
     )
 
     await user.type(getByLabelText(/url/i), "https://github.com/org/repo/pull/1")
-    await user.click(getByRole("button", { name: "Add" }))
+    await user.click(getByRole("button", { name: "Follow" }))
 
     expect(addResource).toHaveBeenCalledWith({
       path: "/wt",
@@ -69,7 +69,7 @@ describe("AddResourceModal", () => {
 
     await user.type(getByLabelText(/url/i), "https://redhat.atlassian.net/browse/RHOAIENG-1")
     await user.click(getByRole("radio", { name: "Related" }))
-    await user.click(getByRole("button", { name: "Add" }))
+    await user.click(getByRole("button", { name: "Follow" }))
 
     expect(addResource).toHaveBeenCalledWith({
       path: "/wt",
@@ -86,7 +86,7 @@ describe("AddResourceModal", () => {
     )
 
     await user.type(getByLabelText(/url/i), "https://github.com/o/r/pull/2")
-    await user.click(getByRole("button", { name: "Add" }))
+    await user.click(getByRole("button", { name: "Follow" }))
 
     expect(addResource).toHaveBeenCalledWith({ path: "/wt", url: "https://github.com/o/r/pull/2", related: true })
   })
@@ -116,7 +116,7 @@ describe("AddResourceModal", () => {
     await user.type(getByLabelText(/url/i), "https://acme.slack.com/archives/C123/p1700000000000100")
     await user.type(getByLabelText("Custom Name (optional)"), "Deploy thread")
     await user.type(getByLabelText("Custom Description (optional)"), "The prod deploy discussion")
-    await user.click(getByRole("button", { name: "Add" }))
+    await user.click(getByRole("button", { name: "Follow" }))
 
     await vi.waitFor(() =>
       expect(setResourceMeta).toHaveBeenCalledWith({
@@ -137,7 +137,7 @@ describe("AddResourceModal", () => {
     )
 
     await user.type(getByLabelText(/url/i), "https://acme.slack.com/archives/C123/p1700000000000100")
-    await user.click(getByRole("button", { name: "Add" }))
+    await user.click(getByRole("button", { name: "Follow" }))
 
     await vi.waitFor(() => expect(addResource).toHaveBeenCalled())
     expect(setResourceMeta).not.toHaveBeenCalled()
@@ -153,7 +153,7 @@ describe("AddResourceModal", () => {
     )
 
     await user.type(getByLabelText(/url/i), "not-a-url")
-    await user.click(getByRole("button", { name: "Add" }))
+    await user.click(getByRole("button", { name: "Follow" }))
 
     expect(await findByText("unrecognized URL")).toBeInTheDocument()
     expect(onAdded).not.toHaveBeenCalled()
@@ -162,7 +162,7 @@ describe("AddResourceModal", () => {
 
   it("disables Add while the URL is empty", () => {
     const { getByRole } = wrap(<AddResourceModal opened path="/wt" onClose={vi.fn()} onAdded={vi.fn()} />)
-    expect(getByRole("button", { name: "Add" })).toBeDisabled()
+    expect(getByRole("button", { name: "Follow" })).toBeDisabled()
   })
 
   it("pre-fills the URL, and shows the Slack fields for a thread URL", async () => {
@@ -181,7 +181,7 @@ describe("AddResourceModal", () => {
 
     addResource.mockResolvedValueOnce({ type: "slack", id: "C1:1700000000.000100", url, primary: false })
     await user.click(getByRole("radio", { name: /related/i }))
-    await user.click(getByRole("button", { name: "Add" }))
+    await user.click(getByRole("button", { name: "Follow" }))
 
     expect(addResource).toHaveBeenCalledWith({ path: "/wt", url, related: true })
   })
