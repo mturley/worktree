@@ -26,65 +26,26 @@ the code are documented where they live:
 - Split scroll containers on the detail page, source filter toggles, and the
   follow/unfollow wording.
 
-## Phase G — delete a worktree from the web UI
+## Phase G — DONE (2026-08-26)
 
-A red trash control in the top-right of the worktree detail card, on the same
-row as the worktree name, opening a confirm modal that requires typing the
-worktree name.
+Delete a worktree from the web UI via a trash control on the worktree detail
+card's header. The interaction is a typed-name confirmation modal opening to a
+pipeline stepper showing removal progress. Shipped in Task 1-6 of the 2026-08-26
+build.
 
-**The interaction is multi-phase, and that is the whole design problem.**
-`worktree delete` (`cmd/delete.go`) is not one call: it attempts
-`gitutil.RemoveWorktree`, and when git refuses — leftover build output,
-read-only files — it surfaces `gitutil.ErrNeedsForce` carrying git's own
-output, asks whether to force, and only then calls
-`gitutil.ForceRemoveWorktree` (which fixes permissions and deletes). The web
-UI reproduces that conversation rather than flattening it into one button.
+**Decisions that constrain the code:**
 
-So the endpoint must distinguish "failed" from "needs force":
-`POST /api/worktrees/delete {path, force, delete_branch}` returning a body the
-frontend branches on — a `needs_force` outcome carrying git's stderr, versus a
-real error. Returning 500 for the force case would make the two
-indistinguishable.
-
-**The response reports PER-STEP outcomes, not one status.** The modal renders
-progress as a pipeline stepper, so the server has to say what happened to each
-stage — remove directory, release ports, unregister, drop tracked resources,
-delete kubeconfig, prune, and optionally delete branch. This also resolves
-partial failure: the CLI today prints warnings and carries on, and those
-become visibly failed stages (red ✗) in a summary that stays on screen.
-
-**Extract the cleanup, do not reimplement it.** Those post-removal steps live
-inline in `cmd/delete.go` today. The web path needs exactly the same
-sequence, so they move into a shared function both the CLI and the handler
-call. Copying them into the handler would leave two sequences to keep in step,
-and the failure mode is silent: a worktree deleted from the UI that still
-holds its port range.
-
-**UI states:**
-
-1. Confirm modal — must type the worktree name to enable the button. A
-   "delete the branch too" checkbox, **unchecked by default**.
-2. Pipeline stepper, each stage advancing as the server reports it.
-3. On `needs_force`: that stage shows a red ✗ with git's output and the
-   "leftover build output or read-only files" explanation, and the
-   Cancel/Force prompt appears *beneath* it rather than replacing the view.
-4. Stepper resumes on force.
-5. On success the modal **stays open** with the completed summary — ports
-   freed, registry, resources, kubeconfig, prune — the way the CLI's output
-   does. It closes and navigates to `/` only when OK is clicked, invalidating
-   `["worktrees"]`.
-
-**Decisions (2026-08-26):**
-
-- A worktree the server cannot see fails with an error rather than being
-  silently unregistered.
-- Deleting the worktree that is serving the UI is out of scope: `worktree ui`
-  is always run from outside a worktree.
-- Branch deletion is opt-in on both surfaces, and **the CLI gains a prompt
-  too** — defaulting to **no**, matching the unchecked checkbox. Deleting a
-  branch destroys work that the worktree removal does not, so it should never
-  happen to someone holding down enter. `gitutil` has no branch-delete helper
-  yet; one is needed.
+- `needs_force` is returned as HTTP 200 with a step-key marker, never an error
+  status — "git wants confirmation" and "the delete broke" must stay
+  distinguishable. Every request is idempotent; already-done steps report as
+  `skipped`.
+- `remove_directory` failure aborts the run and leaves the registry row intact
+  (unregistering a worktree still on disk would strand it, invisible but still
+  holding ports). Other failing steps (cleanup) do not abort.
+- Branch deletion is opt-in on both surfaces: the UI checkbox starts unchecked,
+  and the CLI prompts defaulting to no. Deleting a branch destroys work the
+  worktree removal does not, so it should never be forced without explicit
+  confirmation.
 
 ## Deferred / needs input
 

@@ -124,6 +124,7 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | POST | `/api/resource-meta` | body: `{type, id, name, description}` | — |
 | POST | `/api/worktree-resources/add` | body: `{path, url, related?}` | `resourceDTO` |
 | POST | `/api/worktree-resources/remove` | body: `{path, type, id}` | 204 No Content |
+| POST | `/api/worktrees/delete` | body: `{path, delete_branch, force_directory, force_branch}` | `{ok, needs_force, steps[]}` |
 | GET | `/api/stream` | — | SSE stream (`text/event-stream`) |
 
 ### `worktreeSummary` (worktrees.go)
@@ -294,6 +295,18 @@ for:
   `api.setResourceMeta({type, id, ...})` using the returned DTO's `type`/`id`
   (no client-side URL parsing). Shows an inline error `Alert` and stays open if
   `addResource` rejects (e.g. unrecognized URL).
+
+### Delete worktree (`worktree_delete_api.go`)
+
+`POST /api/worktrees/delete` — body `{path, delete_branch, force_directory, force_branch}`.
+
+**Deletion is multi-phase.** `internal/worktreedel` owns the sequence and both
+the CLI and this endpoint drive it, so they cannot drift. git may refuse to
+remove the directory, and may refuse to delete an unmerged branch; each refusal
+returns **200** with `needs_force` naming the step, never an error status —
+"git wants confirmation" and "the delete broke" must stay distinguishable.
+There is no server-side session: granting a force re-posts the whole request,
+so every step is idempotent and already-done work reports as `skipped`.
 
 ### SSE (`/api/stream`)
 
