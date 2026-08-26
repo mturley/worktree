@@ -61,3 +61,18 @@ export interface GitStatus {
 export interface EnvVar { key: string; value: string }
 /** GET /api/worktree-info — detail-page-only; git status costs a subprocess. */
 export interface WorktreeInfo { env: EnvVar[]; git?: GitStatus }
+
+export type DeleteStepStatus = "done" | "skipped" | "failed" | "needs_force" | "pending"
+export interface DeleteStep {
+  key: string
+  label: string
+  status: DeleteStepStatus
+  detail?: string
+}
+export interface DeleteWorktreeResponse {
+  ok: boolean
+  /** "" when nothing is waiting; otherwise the step key needing a force. */
+  needs_force: string
+  steps: DeleteStep[]
+  error?: string
+}

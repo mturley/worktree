@@ -1,4 +1,4 @@
-import type { WorktreeSummary, TimelineResponse, ResourceDTO, WorktreeInfo } from "./types"
+import type { WorktreeSummary, TimelineResponse, ResourceDTO, WorktreeInfo, DeleteWorktreeResponse } from "./types"
 
 async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init)
@@ -57,6 +57,17 @@ export const api = {
     }),
   removeResource: (args: { path: string; type: string; id: string }) =>
     fetchJSON<null>("/api/worktree-resources/remove", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(args),
+    }),
+  deleteWorktree: (args: {
+    path: string
+    delete_branch?: boolean
+    force_directory?: boolean
+    force_branch?: boolean
+  }) =>
+    fetchJSON<DeleteWorktreeResponse>("/api/worktrees/delete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(args),
