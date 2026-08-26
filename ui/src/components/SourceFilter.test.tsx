@@ -35,3 +35,25 @@ describe("SourceFilter", () => {
     expect(screen.getByRole("button", { name: /jira/i })).toHaveAttribute("aria-pressed", "false")
   })
 })
+
+describe("SourceFilter branding", () => {
+  it("gives each source its own mark, in its own colour", () => {
+    const { container } = wrap(<SourceFilter value={[]} onChange={vi.fn()} />)
+    const svgs = [...container.querySelectorAll("svg")]
+    expect(svgs).toHaveLength(3)
+
+    // Slack: its own four-colour mark, colours baked into the fills.
+    const slackFills = [...svgs[2].querySelectorAll("path")].map((p) => p.getAttribute("fill"))
+    expect(slackFills).toContain("#36C5F0")
+
+    // tabler puts the colour on `stroke` for outline marks and `fill` for
+    // filled ones, so each is asserted where it actually lands.
+    // Jira: Atlassian blue, so it does not read as a generic ticket glyph.
+    expect(svgs[1].getAttribute("stroke")).toBe("#2684FF")
+
+    // GitHub's mark is monochrome by design; white is its correct rendering
+    // on a dark background, not a missing colour.
+    expect(svgs[0].getAttribute("fill")).toBe("#ffffff")
+  })
+})
+

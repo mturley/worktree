@@ -1,5 +1,5 @@
 import { Button, Group } from "@mantine/core"
-import { IconBrandGithub, IconTicket } from "@tabler/icons-react"
+import { IconBrandGithubFilled, IconBrandJira } from "@tabler/icons-react"
 import { SlackMark } from "./icons/SlackMark"
 
 /** Resource types, in the order the toggles appear. */
@@ -9,10 +9,21 @@ const SOURCES: { type: string; label: string }[] = [
   { type: "slack", label: "Slack" },
 ]
 
+/** Atlassian's blue, so Jira reads as Jira rather than as a generic ticket. */
+const JIRA_BLUE = "#2684FF"
+
+/**
+ * Each source's own mark, in its own colour, so the three toggles are
+ * recognisable at a glance rather than three identical grey glyphs.
+ *
+ * GitHub's mark is monochrome by design — white is the correct rendering on a
+ * dark background, not an absence of colour. The filled Octocat is used
+ * rather than the outline, to sit alongside Slack's solid mark.
+ */
 function SourceIcon({ type }: { type: string }) {
-  if (type === "slack") return <SlackMark size={13} />
-  if (type === "jira") return <IconTicket size={13} />
-  return <IconBrandGithub size={13} />
+  if (type === "slack") return <SlackMark size={14} />
+  if (type === "jira") return <IconBrandJira size={14} color={JIRA_BLUE} />
+  return <IconBrandGithubFilled size={14} color="#ffffff" />
 }
 
 /**
