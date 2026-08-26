@@ -114,6 +114,10 @@ export function WorktreeDetailPage() {
           <ResourceDetailPane
             path={path}
             resource={selectedResource}
+            // Also on wide: deselecting is how you get the worktree's
+            // cross-resource timeline back, and it was previously only
+            // reachable by clicking the selected card again.
+            onBack={clear}
             onRemoved={resources.refetch}
             onResourceChanged={resources.refetch}
           />

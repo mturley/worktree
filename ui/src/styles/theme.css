@@ -1,0 +1,14 @@
+/*
+ * Page background.
+ *
+ * Set here rather than by overriding dark[7] in theme.ts, so the dark ramp
+ * stays monotonic — dark[8] and dark[9] are darker still, and dark[9] is what
+ * the event dots use for their icon colour. Pinning dark[7] to #000 would have
+ * left those later indices lighter than the page they sit on.
+ *
+ * The cards keep their own surface (dark[6]); the wider gap to a black body is
+ * what makes them read as raised.
+ */
+:root {
+  --mantine-color-body: #000000;
+}

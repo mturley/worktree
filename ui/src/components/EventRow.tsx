@@ -22,8 +22,8 @@ export function EventRow({ e, showWorktrees, onOpen, onSelectResource, resolveRe
   /** Supplies the tracked resource, so the chip's icon shows real status. */
   resolveResource?: (type: string, id: string) => ResourceDTO | undefined
 }) {
-  const meta = eventMeta(e.type)
-  const label = e.type_label || meta.label
+  // Only the dot shows the type now — as its tooltip.
+  const label = e.type_label || eventMeta(e.type).label
 
   return (
     <Box style={{ display: "flex", gap: "var(--mantine-spacing-sm)", alignItems: "flex-start", padding: ROW_PAD_X }}>
@@ -41,10 +41,6 @@ export function EventRow({ e, showWorktrees, onOpen, onSelectResource, resolveRe
         >
           <Stack gap={2}>
             <Group gap="xs" wrap="wrap" style={{ minWidth: 0 }}>
-              {/* The type label is its own element again, not only the dot's
-                  tooltip: it is the fastest way to tell what happened, and a
-                  colour alone does not say "review requested". */}
-              <Badge size="sm" variant="light" color={meta.color}>{label}</Badge>
               <Text size="sm" fw={600} style={{ overflowWrap: "anywhere", minWidth: 0 }}>{e.title}</Text>
               <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
                 {e.author && `${e.author} · `}{rel(e.external_ts || e.ts)}

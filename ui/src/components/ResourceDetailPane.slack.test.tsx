@@ -84,7 +84,7 @@ describe("ResourceDetailPane slack branch", () => {
   it("keeps the narrow-viewport back control for a slack thread", () => {
     useWorktreeTimeline.mockReturnValue({ events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false })
     wrap(<ResourceDetailPane path="/wt/foo" resource={slack} onBack={vi.fn()} />)
-    expect(screen.getByRole("button", { name: /all resources for worktree/i })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /all resources/i })).toBeInTheDocument()
   })
 })
 

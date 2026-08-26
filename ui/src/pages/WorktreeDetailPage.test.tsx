@@ -87,7 +87,7 @@ describe("WorktreeDetailPage selection", () => {
     window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?resource=pr:o%2Fr%231`)
     setViewport("narrow")
     wrap()
-    expect(await screen.findByRole("button", { name: /all resources for worktree/i })).toBeInTheDocument()
+    expect(await screen.findByRole("button", { name: /all resources/i })).toBeInTheDocument()
   })
 
   it("returns to the list when the back control is used", async () => {
@@ -95,7 +95,7 @@ describe("WorktreeDetailPage selection", () => {
     setViewport("narrow")
     const user = userEvent.setup()
     wrap()
-    await user.click(await screen.findByRole("button", { name: /all resources for worktree/i }))
+    await user.click(await screen.findByRole("button", { name: /all resources/i }))
     await waitFor(() => expect(window.location.search).not.toContain("resource="))
   })
 
@@ -103,10 +103,21 @@ describe("WorktreeDetailPage selection", () => {
     window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?resource=pr:o%2Fr%231`)
     setViewport("wide")
     wrap()
-    // The list is still there (the other resource is selectable) and there is
-    // no back control in the wide layout.
+    // The list is still there (the other resource is selectable), AND the
+    // back control is offered even when both panes are visible: deselecting
+    // is how the worktree's cross-resource timeline comes back, and clicking
+    // the selected card again was previously the only way to do it.
     expect(await screen.findByRole("button", { name: /select resource J-1/i })).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: /all resources for worktree/i })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /all resources/i })).toBeInTheDocument()
+  })
+
+  it("deselects from the wide layout, restoring the cross-resource timeline", async () => {
+    window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?resource=pr:o%2Fr%231`)
+    setViewport("wide")
+    const user = userEvent.setup()
+    wrap()
+    await user.click(await screen.findByRole("button", { name: /all resources/i }))
+    await waitFor(() => expect(window.location.search).not.toContain("resource="))
   })
 
   it("clears a ?resource= that matches no loaded resource, without growing history (replace, not push)", async () => {

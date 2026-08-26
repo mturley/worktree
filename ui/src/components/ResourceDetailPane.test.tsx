@@ -48,11 +48,11 @@ describe("ResourceDetailPane", () => {
     const onBack = vi.fn()
     const user = userEvent.setup()
     const { rerender } = wrap(<ResourceDetailPane path="/wt/foo" resource={jira} onBack={onBack} />)
-    await user.click(screen.getByRole("button", { name: /all resources for worktree/i }))
+    await user.click(screen.getByRole("button", { name: /all resources/i }))
     expect(onBack).toHaveBeenCalled()
 
     rerender(<MantineProvider><ResourceDetailPane path="/wt/foo" resource={jira} /></MantineProvider>)
-    expect(screen.queryByRole("button", { name: /all resources for worktree/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /all resources/i })).not.toBeInTheDocument()
   })
 
   it("wires the remove control to the real worktree path, not an empty one", async () => {

@@ -32,12 +32,16 @@ const accent: MantineColorsTuple = [
  * the page.
  *
  * Which index does what, since these are not arbitrary:
- *   dark[7]  the page background (Mantine paints --mantine-color-body from it)
+ *   dark[7]  the base the page background is derived from
  *   dark[6]  card surfaces (--mantine-color-default)
  *   dark[5]  card hover
  *   dark[4]  borders and the timeline rail
- * The gap between 7 and 6 is what lifts a card off the page, so darkening the
- * background means moving 7 down without closing that gap.
+ * The gap between 7 and 6 is what lifts a card off the page.
+ *
+ * The page itself is pinned to pure black in styles/theme.css rather than by
+ * setting dark[7] to #000: the ramp has to stay monotonic (8 and 9 are darker
+ * still, and dark[9] is the event dots' icon colour), so forcing black here
+ * would have left later indices lighter than the body they sit on.
  */
 const surface: MantineColorsTuple = [
   "#c9c9d4",
@@ -47,9 +51,9 @@ const surface: MantineColorsTuple = [
   "#5f5f6b",
   "#3f3f49",
   "#2f2f38",
-  "#212128",
-  "#17171c",
-  "#101014",
+  "#141419",
+  "#0b0b0e",
+  "#000000",
 ]
 
 export const theme = createTheme({

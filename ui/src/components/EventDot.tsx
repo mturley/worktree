@@ -1,19 +1,22 @@
+import { Tooltip } from "@mantine/core"
 import { eventMeta } from "../lib/eventMeta"
 
 /**
- * The timeline's dot: the event's colour with its icon inside.
+ * The timeline's dot: the event's colour with its icon inside, and its type
+ * label on hover.
  *
- * Colour and icon both come from the shared eventMeta, so the dot cannot
- * disagree with any other surface that colours events.
+ * The label is a Mantine Tooltip, not the native `title` attribute. `title`
+ * on a 22px target is unreliable — it needs a long, still hover and is easy
+ * to miss entirely — which is why the first version of this appeared not to
+ * work at all. Tooltip also matches the rest of the app's hover affordances.
  */
 export function EventDot({ type, size = 22, label: labelOverride }: {
   type: string
   size?: number
   /**
-   * Overrides the accessible name. The row passes the event's own type_label
-   * ("PR comments") which is more specific than the kind name ("comment") —
-   * and, since the rail dropped the text badge, is the only place that label
-   * still appears outside the details modal.
+   * Overrides the label. The row passes the event's own type_label ("PR
+   * comments"), which is more specific than the mapping's generic name
+   * ("comment").
    */
   label?: string
 }) {
@@ -22,26 +25,28 @@ export function EventDot({ type, size = 22, label: labelOverride }: {
   // ("violet", "indigo") would silently paint the wrong shade.
   const { cssColor, Icon, label: kindLabel } = eventMeta(type)
   const label = labelOverride || kindLabel
+
   return (
-    <span
-      role="img"
-      aria-label={label}
-      title={label}
-      style={{
-        width: size,
-        height: size,
-        borderRadius: "50%",
-        background: cssColor,
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        flexShrink: 0,
-        // Sits on top of the timeline rail, so it needs to hide the line
-        // behind it rather than let it show through the circle's edges.
-        boxShadow: "0 0 0 3px var(--mantine-color-body)",
-      }}
-    >
-      <Icon size={size * 0.6} stroke={2.5} color="var(--mantine-color-dark-9)" />
-    </span>
+    <Tooltip label={label} withArrow openDelay={150}>
+      <span
+        role="img"
+        aria-label={label}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: "50%",
+          background: cssColor,
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+          // Sits on top of the timeline rail, so it needs to hide the line
+          // behind it rather than let it show through the circle's edges.
+          boxShadow: "0 0 0 3px var(--mantine-color-body)",
+        }}
+      >
+        <Icon size={size * 0.6} stroke={2.5} color="var(--mantine-color-dark-9)" />
+      </span>
+    </Tooltip>
   )
 }

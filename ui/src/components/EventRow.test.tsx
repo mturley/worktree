@@ -52,12 +52,12 @@ describe("EventRow", () => {
   })
 
   it("falls back to the mapping's readable label when type_label is empty", () => {
-    // eventMeta supplies a human label ("merged"), which beats echoing the
-    // raw wire value ("pr_merged") at the user.
+    // The type is carried by the dot alone now (label + tooltip), so assert
+    // on its accessible name; eventMeta's human label ("merged") beats
+    // echoing the raw wire value ("pr_merged") at the user.
     const e = makeEvent({ type_label: "", type: "pr_merged" })
     renderWithProvider(<EventRow e={e} />)
     expect(screen.getByLabelText("merged")).toBeInTheDocument()
-    expect(screen.getByText("merged")).toBeInTheDocument()
   })
 
   it("renders worktree badges when showWorktrees is true and worktrees are present", () => {

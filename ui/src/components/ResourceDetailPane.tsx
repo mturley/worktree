@@ -1,4 +1,4 @@
-import { Button, Stack, Title } from "@mantine/core"
+import { Anchor, Stack, Title } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
 import { useWorktreeTimeline } from "../hooks/useTimeline"
 import { ResourceCard } from "./ResourceCard"
@@ -73,9 +73,11 @@ export function ResourceDetailPane({
   return (
     <Stack gap="sm">
       {onBack && (
-        <Button variant="subtle" size="compact-sm" onClick={onBack} style={{ alignSelf: "flex-start" }}>
-          ← all resources for worktree
-        </Button>
+        // Styled as a link to match "← all worktrees", but a <button>
+        // underneath: it deselects rather than navigating somewhere new.
+        <Anchor component="button" type="button" size="sm" onClick={onBack} style={{ alignSelf: "flex-start" }}>
+          ← all resources
+        </Anchor>
       )}
       {resource.type === "slack" ? (
         <SlackThreadPane
