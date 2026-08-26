@@ -8,52 +8,67 @@ Restarted 2026-08-25 after the 2026-08 run of UI work shipped. The previous
 contents are in git history (`git log -- docs/ui-feature-roadmap.md`); the
 parts that still constrain the code live in `docs/web-ui-architecture.md`.
 
-## Phase F (proposed) — visual and information-density tweaks
+## Phase F — DONE (2026-08-26)
 
-A batch of look-and-feel changes to the existing surfaces. Decisions taken
-2026-08-25 are recorded per item; items still marked **open** need input
-before they can be implemented.
+Visual and information-density tweaks, all shipped and merged. See
+`git log --grep "feat(ui)"` for the commits; the parts that still constrain
+the code are documented where they live:
 
-- **Darker colour scheme — dark-only, custom palette.** No theme switcher and
-  no light mode to maintain: one hand-picked palette over a Mantine dark base,
-  with a custom accent ramp. Note the consequence: `ui/src/styles/cards.css`
-  currently carries explicit light-scheme overrides for the interactive card
-  surfaces, which become dead weight once light mode is gone.
+- Dark-only theme with a custom palette, page pinned to black in
+  `ui/src/styles/theme.css` (NOT by overriding `dark[7]` — the ramp has to
+  stay monotonic; the comment there explains why).
+- Per-event-type colours and icons in `ui/src/lib/eventMeta.tsx`, the single
+  mapping every event surface reads.
+- Timeline as a rail of dots, event details modal, resource chips and
+  clickable worktree badges on both timelines.
+- `GET /api/worktree-info` (env vars + short git status) and the worktree card
+  split into list and detail presentations.
+- Split scroll containers on the detail page, source filter toggles, and the
+  follow/unfollow wording.
 
-- **Colour-coded event types — source hue, kind shade.** The source
-  (GitHub / Jira / Slack) picks the hue; the event kind (comment / review /
-  status) picks the shade. Two-dimensional, so the palette needs a deliberate
-  pass to stay legible — roughly 3 hues × 3 shades. Should live in one shared
-  mapping the way `resourceStatusMeta` does for status icons, so the timeline
-  dots and any badges cannot disagree.
+## Phase G (proposed) — delete a worktree from the web UI
 
-- **Timeline as a line with dots.** Dots carry the event-type colour above,
-  with a small icon inside — so this item depends on the colour mapping
-  landing first.
+A red trash control in the top-right of the worktree detail card, on the same
+row as the worktree name, opening a confirm modal that requires typing the
+worktree name. On success the modal closes and the page returns to the home
+list.
 
-- **Event details modal — click the row.** Clicking anywhere on an event row
-  opens a modal with the untruncated body, author, timestamps, and a link out
-  to the resource (reusing the existing `ResourceActions` open/copy group).
-  Today `EventRow` truncates and the full body is unreachable.
+**The interaction is two-phase, and that is the whole design problem.**
+`worktree delete` (`cmd/delete.go`) is not a single call: it attempts
+`gitutil.RemoveWorktree`, and when git refuses — leftover build output,
+read-only files — it surfaces `gitutil.ErrNeedsForce` carrying git's own
+output, asks whether to force, and only then calls
+`gitutil.ForceRemoveWorktree` (which fixes permissions and deletes). The web
+UI has to reproduce that conversation, not flatten it into one button.
 
-- **Worktree cards: the two uses must diverge.** `WorktreeCard` is currently
-  ONE component used in two places (`WorktreeList` on the home page, and the
-  header of `WorktreeDetailPage` with `clickable={false}`). The wanted
-  behaviour differs enough that it should become two presentations:
-  - *Home page list:* worktree **name larger and not link-styled** (it is an
-    `Anchor` today), plus **last-activity time** and the **current git
-    branch**.
-  - *Detail page header:* **no focus-resource lines at all** — they duplicate
-    the resource cards directly below. Instead show the **environment
-    variables `worktree info` prints** (`WORKTREE_PORTS`, `WORKTREE_TITLE`,
-    `WORKTREE_PATH`, `KUBECONFIG` — from `internal/shellenv`), plus
-    last-activity time, branch, and a **short git status**.
-  - **New backend data required.** `latest_event_ts` is already on
-    `worktreeSummary` but unused by the card. The env vars and the git status
-    are not exposed by any API today: env comes from `internal/shellenv`, and
-    git status needs a git call per worktree — worth deciding whether that is
-    computed on demand for the one worktree being viewed (cheap) rather than
-    for every row of the home list (N git invocations).
+So the endpoint must distinguish "failed" from "needs force", e.g.
+`POST /api/worktrees/delete {path, force}` returning a body the frontend can
+branch on — a `needs_force` outcome carrying git's stderr, versus a real
+error. Returning 500 for the force case would make the two indistinguishable.
+
+**Extract the cleanup, do not reimplement it.** After the directory goes,
+`runDelete` also releases the port range, unregisters from the registry,
+removes tracked resources, deletes the kubeconfig and prunes worktrees — all
+inline in `cmd/delete.go` today. The web path needs exactly the same steps,
+so they should move into a shared function that both the CLI and the handler
+call. Copying them into the handler would leave two sequences to keep in
+step, and the failure mode is silent: a worktree deleted from the UI that
+still holds its port range.
+
+**UI states**, mirroring the CLI:
+1. Confirm modal — must type the worktree name to enable the button.
+2. Spinner while deleting.
+3. If `needs_force`: show git's output and the "leftover build output or
+   read-only files" explanation, then Cancel or Force.
+4. Spinner again on force.
+5. On success: close, navigate to `/`, and invalidate `["worktrees"]`.
+
+**Open questions to settle before building:**
+- What happens to a worktree the server cannot see? The `ui` server may run
+  as a different user or outside the filesystem the worktree lives on.
+- Should deleting be blocked while the worktree is the one serving the UI?
+- Does the branch get deleted too, or only the worktree? The CLI leaves the
+  branch alone; the UI should not quietly differ.
 
 ## Deferred / needs input
 
