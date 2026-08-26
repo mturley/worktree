@@ -1,20 +1,7 @@
 import { Group, Text, UnstyledButton } from "@mantine/core"
 import type { ResourceDTO, TimelineEvent } from "../api/types"
 import { ResourceStatusIcon } from "./ResourceStatusIcon"
-
-/**
- * A short reference for a resource: "#42" for a PR, the key for a Jira issue.
- * Slack ids are channel:ts pairs with nothing human-readable in them, so they
- * get no reference and lean on the title instead.
- */
-export function shortResourceRef(type: string, id: string): string {
-  if (type === "pr") {
-    const hash = id.lastIndexOf("#")
-    return hash >= 0 ? id.slice(hash) : id
-  }
-  if (type === "jira") return id
-  return ""
-}
+import { shortResourceRef } from "../lib/resourceRef"
 
 /**
  * Jumps to the resource an event belongs to — which filters the timeline to

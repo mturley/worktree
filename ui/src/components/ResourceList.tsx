@@ -21,11 +21,6 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
 
   return (
     <Stack gap="md">
-      <Group>
-        <Button size="sm" onClick={() => setAddOpen(true)}>
-          Add resource
-        </Button>
-      </Group>
       <AddResourceModal
         opened={addOpen}
         path={path}
@@ -72,6 +67,16 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
           )}
         </>
       )}
+      {/*
+        Below the list, not above it: adding is the rare action and the list
+        is what you came for, so the resources start at the top of the column
+        rather than under a button.
+      */}
+      <Group>
+        <Button size="sm" variant="light" leftSection="+" onClick={() => setAddOpen(true)}>
+          Add resource
+        </Button>
+      </Group>
     </Stack>
   )
 }

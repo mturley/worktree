@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { ActionIcon, Alert, Badge, Button, Group, Paper, Popover, SegmentedControl, Stack, Text, Tooltip, UnstyledButton } from "@mantine/core"
+import { ActionIcon, Alert, Badge, Button, Group, Paper, Popover, SegmentedControl, Stack, Text, UnstyledButton } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
 import { relativeTime, relativeFromNow } from "../lib/relativeTime"
 import { api } from "../api/client"
@@ -155,6 +155,24 @@ function SlackCardBody({ r }: { r: ResourceDTO }) {
  * ResourceCard to hang it off, and without it a thread would be the one
  * resource type you could not remove from the UI.
  */
+/**
+ * Labels the edit-details button.
+ *
+ * "Add" vs "Edit" reflects whether anything custom is set, so the button says
+ * what it will do rather than assuming there is something to change.
+ *
+ * Only Slack threads have a custom NAME — a PR or Jira issue takes its title
+ * from the source and only the description is ours to set — so the label
+ * names just the fields that resource actually has.
+ */
+export function editDetailsLabel(r: ResourceDTO): string {
+  const fields = r.type === "slack" ? "custom name/description" : "custom description"
+  const has = r.type === "slack"
+    ? Boolean(r.custom_name || r.custom_description)
+    : Boolean(r.custom_description)
+  return `${has ? "Edit" : "Add"} ${fields}`
+}
+
 export function RemoveControl({ r, path, onRemoved }: { r: ResourceDTO; path: string; onRemoved: () => void }) {
   const [opened, setOpened] = useState(false)
   const [removing, setRemoving] = useState(false)
@@ -308,21 +326,6 @@ export function ResourceCard({
         */}
         {variant === "detail" && (
           <Group gap={2} wrap="nowrap">
-            {/* Beside the title/description, where the thread header used to
-                put it — not down with the open/copy actions. */}
-            <Tooltip label="Edit custom name/description">
-              <ActionIcon
-                variant="subtle"
-                size="sm"
-                aria-label="Edit resource details"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setEditOpen(true)
-                }}
-              >
-                ✎
-              </ActionIcon>
-            </Tooltip>
             <RemoveControl r={r} path={path} onRemoved={onRemoved} />
           </Group>
         )}
@@ -343,7 +346,22 @@ export function ResourceCard({
       {variant === "detail" && (
         // Bottom-right, on the same visual line as the card's metadata, so
         // the actions read as belonging to the card rather than heading it.
-        <Group justify="flex-end" gap="xs" wrap="wrap" mt={6}>
+        <Group justify="space-between" gap="xs" wrap="wrap" mt={6}>
+          {/* Bottom-left, spelled out rather than a bare pencil in the
+              corner: the icon alone did not say what it edited, and the
+              header is for the resource's own content. */}
+          <Button
+            size="xs"
+            variant="subtle"
+            leftSection="✎"
+            onClick={(e) => {
+              e.stopPropagation()
+              setEditOpen(true)
+            }}
+          >
+            {editDetailsLabel(r)}
+          </Button>
+          <Group gap="xs" wrap="wrap">
           {/* Left of the open/copy group: reclassifying is about this
               worktree, opening is about the resource itself. */}
           <SegmentedControl
@@ -357,6 +375,7 @@ export function ResourceCard({
             ]}
           />
           <ResourceActions r={r} />
+          </Group>
         </Group>
       )}
     </Paper>

@@ -30,6 +30,13 @@ describe("WorktreeCard", () => {
     expect(screen.getByText(/odh/)).toBeInTheDocument()
   })
 
+  it("shows the PR number and Jira key beside each focus resource", () => {
+    wrap(<WorktreeCard w={summary} />)
+    // Same abbreviation the timeline's event chips use.
+    expect(screen.getByText("#1")).toBeInTheDocument()
+    expect(screen.getByText("J-1")).toBeInTheDocument()
+  })
+
   it("names each focus resource as plain content, never as its own link", () => {
     wrap(<WorktreeCard w={summary} />)
     // The card is one big target; small per-resource links made it fiddly to

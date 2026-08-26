@@ -72,3 +72,17 @@ describe("ResourceList", () => {
     expect(getByText("Related")).toBeInTheDocument()
   })
 })
+
+describe("Add resource placement", () => {
+  it("sits after the resource cards, so the list starts at the top", () => {
+    const items = [{ type: "pr", id: "a", url: "u", primary: true, title: "Fix the widget" }]
+    const { getByRole, getByText } = wrap(
+      <ResourceList items={items} path="/wt" onChanged={vi.fn()} />,
+    )
+    const add = getByRole("button", { name: /add resource/i })
+    const firstCard = getByText("Fix the widget")
+    // DOCUMENT_POSITION_PRECEDING (2) means the card comes before the button.
+    expect(add.compareDocumentPosition(firstCard) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+  })
+})
+

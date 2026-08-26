@@ -4,6 +4,7 @@ import { useLocation } from "wouter"
 import type { ResourceDTO, WorktreeSummary } from "../api/types"
 import { resourceSummary } from "../lib/resourceSummary"
 import { ResourceStatusIcon } from "./ResourceStatusIcon"
+import { shortResourceRef } from "../lib/resourceRef"
 
 interface WorktreeCardProps {
   w: WorktreeSummary
@@ -25,11 +26,17 @@ interface WorktreeCardProps {
  */
 function FocusResourceLine({ r }: { r: ResourceDTO }) {
   const label = r.custom_name || r.title || r.id
+  // Same abbreviation the timeline's event chips use, so "#42" and
+  // "RHOAIENG-1" mean the same thing wherever they appear.
+  const ref = shortResourceRef(r.type, r.id)
   return (
     <Group gap={6} wrap="nowrap" align="center">
       {/* Same mapping as the resource cards' titles: both read
           resourceStatusMeta, so an icon change lands in both places. */}
       <ResourceStatusIcon r={r} />
+      {ref && (
+        <Text size="sm" fw={600} c="dimmed" style={{ whiteSpace: "nowrap" }}>{ref}</Text>
+      )}
       <Text size="sm" c="dimmed" lineClamp={1} style={{ minWidth: 0 }}>{label}</Text>
     </Group>
   )

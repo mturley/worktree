@@ -281,3 +281,46 @@ describe("ResourceCard status icons", () => {
     expect(screen.getByText("Shipped")).toBeInTheDocument()
   })
 })
+
+describe("edit custom details button", () => {
+  const pr = (o: Partial<ResourceDTO> = {}): ResourceDTO =>
+    ({ type: "pr", id: "o/r#1", url: "https://gh/pr/1", primary: true, title: "Fix the widget", ...o }) as ResourceDTO
+
+  it("says Add when nothing custom is set, Edit once it is", () => {
+    const { unmount } = wrap(<ResourceCard r={pr()} path="/wt" variant="detail" />)
+    expect(screen.getByRole("button", { name: /add custom description/i })).toBeInTheDocument()
+    unmount()
+    wrap(<ResourceCard r={pr({ custom_description: "why this matters" })} path="/wt" variant="detail" />)
+    expect(screen.getByRole("button", { name: /edit custom description/i })).toBeInTheDocument()
+  })
+
+  it("offers only a description for PR and Jira, name too for Slack", () => {
+    // A PR or Jira issue takes its title from the source; only a Slack thread
+    // has a custom name to set, so the label must not promise one.
+    const { unmount } = wrap(<ResourceCard r={pr()} path="/wt" variant="detail" />)
+    expect(screen.queryByRole("button", { name: /custom name/i })).not.toBeInTheDocument()
+    unmount()
+    const slack = { type: "slack", id: "C1:1.2", url: "u", primary: false, title: "Deploy thread" } as ResourceDTO
+    wrap(<ResourceCard r={slack} path="/wt" variant="detail" />)
+    expect(screen.getByRole("button", { name: /add custom name\/description/i })).toBeInTheDocument()
+  })
+
+  it("counts a Slack custom name as something to edit", () => {
+    const slack = { type: "slack", id: "C1:1.2", url: "u", primary: false, custom_name: "Deploys" } as ResourceDTO
+    wrap(<ResourceCard r={slack} path="/wt" variant="detail" />)
+    expect(screen.getByRole("button", { name: /edit custom name\/description/i })).toBeInTheDocument()
+  })
+
+  it("opens the edit modal", async () => {
+    const user = userEvent.setup()
+    wrap(<ResourceCard r={pr()} path="/wt" variant="detail" />)
+    await user.click(screen.getByRole("button", { name: /add custom description/i }))
+    expect(await screen.findByRole("dialog")).toBeInTheDocument()
+  })
+
+  it("is absent on list cards, which are click-to-select", () => {
+    wrap(<ResourceCard r={pr()} path="/wt" onSelect={() => {}} />)
+    expect(screen.queryByRole("button", { name: /custom description/i })).not.toBeInTheDocument()
+  })
+})
+
