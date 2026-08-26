@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, it, expect } from "vitest"
 import { render, cleanup, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
-import type { WorktreeSummary } from "../api/types"
+import type { ResourceDTO, WorktreeSummary } from "../api/types"
 import { WorktreeCard } from "./WorktreeCard"
 
 const summary: WorktreeSummary = {
