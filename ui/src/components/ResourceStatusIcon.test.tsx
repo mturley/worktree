@@ -66,6 +66,28 @@ describe("Jira issue-type icons", () => {
   })
 })
 
+describe("Slack icon", () => {
+  it("uses the full-colour mark, not a tinted monochrome glyph", () => {
+    const { container } = render(
+      <MantineProvider><ResourceStatusIcon r={base({ type: "slack" })} /></MantineProvider>,
+    )
+    const svg = container.querySelector("svg")
+    expect(svg).not.toBeNull()
+    // Slack's brand colours are baked into the fills, so the icon reads the
+    // same regardless of the surrounding text colour.
+    const fills = [...svg!.querySelectorAll("path")].map((p) => p.getAttribute("fill"))
+    expect(fills).toContain("#E01E5A")
+    expect(fills).toContain("#36C5F0")
+    expect(fills).toContain("#2EB67D")
+    expect(fills).toContain("#ECB22E")
+  })
+
+  it("still labels itself for screen readers", () => {
+    render(<MantineProvider><ResourceStatusIcon r={base({ type: "slack" })} /></MantineProvider>)
+    expect(screen.getByLabelText("slack thread")).toBeInTheDocument()
+  })
+})
+
 describe("unread dot", () => {
   it("marks a Slack thread with unread messages", () => {
     render(

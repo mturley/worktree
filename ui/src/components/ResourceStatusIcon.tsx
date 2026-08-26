@@ -3,12 +3,12 @@ import {
   IconGitMerge,
   IconGitPullRequest,
   IconGitPullRequestClosed,
-  IconBrandSlack,
   IconTicket,
 } from "@tabler/icons-react"
 import { Group, Text } from "@mantine/core"
 import { useState } from "react"
 import type { ResourceDTO } from "../api/types"
+import { SlackMark } from "./icons/SlackMark"
 
 /**
  * Jira's icon URLs sit behind the same Basic auth as its REST API, so a
@@ -19,7 +19,7 @@ export function jiraIconProxy(url: string): string {
   return `/api/jira-icon?url=${encodeURIComponent(url)}`
 }
 
-type IconComponent = typeof IconGitPullRequest
+type IconComponent = typeof IconGitPullRequest | typeof SlackMark
 
 interface StatusMeta {
   Icon: IconComponent
@@ -34,7 +34,10 @@ interface StatusMeta {
  */
 export function resourceStatusMeta(r: ResourceDTO): StatusMeta {
   if (r.type === "slack") {
-    return { Icon: IconBrandSlack, color: "grape", label: "slack thread" }
+    // The full-colour mark, not a monochrome glyph: tinted like the other
+    // status icons it was hard to read at this size. It ignores the `color`
+    // below — its fills are Slack's own — which is the point.
+    return { Icon: SlackMark, color: "grape", label: "slack thread" }
   }
   if (r.type === "pr") {
     switch ((r.state || "").toUpperCase()) {
