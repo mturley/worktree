@@ -70,3 +70,29 @@ describe("ResourceDetailPane", () => {
     await vi.waitFor(() => expect(onRemoved).toHaveBeenCalled())
   })
 })
+
+describe("more activity link", () => {
+  it("offers a way out to the full history on the source service", async () => {
+    useWorktreeTimeline.mockReturnValue({ events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false })
+    wrap(<ResourceDetailPane path="/wt/foo" resource={{ ...jira, type: "pr", id: "o/r#1", url: "https://gh/pr/1" } as ResourceDTO} />)
+    // The feed only holds what the poller captured for this worktree, so the
+    // reader needs a way to the rest.
+    const link = await screen.findByRole("link", { name: /more activity on github/i })
+    expect(link.getAttribute("href")).toBe("https://gh/pr/1")
+    expect(link.getAttribute("target")).toBe("_blank")
+  })
+
+  it("names Jira for a Jira issue", async () => {
+    useWorktreeTimeline.mockReturnValue({ events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false })
+    wrap(<ResourceDetailPane path="/wt/foo" resource={jira} />)
+    expect(await screen.findByRole("link", { name: /more activity on jira/i })).toBeInTheDocument()
+  })
+
+  it("omits it when the resource has no url", async () => {
+    useWorktreeTimeline.mockReturnValue({ events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false })
+    wrap(<ResourceDetailPane path="/wt/foo" resource={{ ...jira, type: "pr", id: "o/r#1", url: "" } as ResourceDTO} />)
+    await screen.findByText("Activity")
+    expect(screen.queryByRole("link", { name: /more activity/i })).not.toBeInTheDocument()
+  })
+})
+

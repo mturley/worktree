@@ -1,9 +1,10 @@
-import { Anchor, Stack, Title } from "@mantine/core"
+import { Anchor, Button, Center, Stack, Title } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
 import { useWorktreeTimeline } from "../hooks/useTimeline"
 import { ResourceCard } from "./ResourceCard"
 import { SlackThreadPane } from "./SlackThreadPane"
 import { TimelineFeed } from "./TimelineFeed"
+import { serviceName } from "./ResourceActions"
 
 interface ResourceDetailPaneProps {
   path: string
@@ -53,6 +54,25 @@ function TimelineBody({
         onLoadMore={timeline.loadMore}
         loadingMore={timeline.loadingMore}
       />
+      {/*
+        The feed only holds what the poller captured for this worktree, which
+        is never the resource's whole history. This is the way out to the rest
+        of it, at the point where the reader has run out of events.
+      */}
+      {resource.url && serviceName(resource.type) && (
+        <Center>
+          <Button
+            size="xs"
+            variant="subtle"
+            component="a"
+            href={resource.url}
+            target="_blank"
+            rel="noreferrer"
+          >
+            More activity on {serviceName(resource.type)}
+          </Button>
+        </Center>
+      )}
     </>
   )
 }

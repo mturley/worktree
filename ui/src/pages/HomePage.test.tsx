@@ -49,6 +49,6 @@ describe("HomePage responsive layout", () => {
     setViewport("wide")
     wrap()
     expect(screen.getByText(/my-branch/)).toBeInTheDocument()
-    expect(screen.getByRole("link", { name: /Fix the widget/ })).toBeInTheDocument()
+    expect(screen.getByText(/Fix the widget/)).toBeInTheDocument()
   })
 })

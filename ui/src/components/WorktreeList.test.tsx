@@ -19,7 +19,7 @@ describe("WorktreeList", () => {
   it("renders a card per worktree", () => {
     wrap(<WorktreeList items={[summary]} />)
     expect(screen.getByText(/my-branch/)).toBeInTheDocument()
-    expect(screen.getByRole("link", { name: /Fix the widget/ })).toBeInTheDocument()
+    expect(screen.getByText(/Fix the widget/)).toBeInTheDocument()
   })
 
   it("shows an empty state with no worktrees", () => {

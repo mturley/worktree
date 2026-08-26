@@ -30,15 +30,22 @@ describe("WorktreeCard", () => {
     expect(screen.getByText(/odh/)).toBeInTheDocument()
   })
 
-  it("renders one line per focus resource with its title and link", () => {
+  it("names each focus resource as plain content, never as its own link", () => {
     wrap(<WorktreeCard w={summary} />)
-    const pr = screen.getByRole("link", { name: /Fix the widget/ })
-    // Focus lines deep link into the worktree with the resource selected,
-    // rather than out to GitHub/Jira/Slack.
-    expect(pr.getAttribute("href")).toContain(`/worktree/${encodeURIComponent("/wt/foo")}`)
-    expect(pr.getAttribute("href")).toContain("resource=pr:")
-    expect(screen.getByRole("link", { name: /Investigate flux/ })).toBeInTheDocument()
+    // The card is one big target; small per-resource links made it fiddly to
+    // hit, and picking a resource is one easy click away on the detail page.
+    expect(screen.getByText(/Fix the widget/)).toBeInTheDocument()
+    expect(screen.getByText(/Investigate flux/)).toBeInTheDocument()
+    expect(screen.queryByRole("link", { name: /Fix the widget/ })).not.toBeInTheDocument()
     expect(screen.getByLabelText("open")).toBeInTheDocument()
+  })
+
+  it("is a single link covering the whole card", () => {
+    wrap(<WorktreeCard w={summary} />)
+    // Exactly one link: nothing nested inside it to compete for the click.
+    const links = screen.getAllByRole("link")
+    expect(links).toHaveLength(1)
+    expect(links[0].getAttribute("href")).toBe(`/worktree/${encodeURIComponent("/wt/foo")}`)
   })
 
   it("navigates to the worktree detail page when the card body is clicked", async () => {
@@ -50,37 +57,24 @@ describe("WorktreeCard", () => {
     expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/foo")}`)
   })
 
-  it("navigates when the name link is activated", async () => {
+  it("navigates exactly once when the card is clicked", async () => {
     const user = userEvent.setup()
     wrap(<WorktreeCard w={summary} />)
     const before = window.history.length
     await user.click(screen.getByRole("link", { name: /open worktree foo/i }))
     expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/foo")}`)
-    // The branch anchor's onClick calls stopPropagation() before navigating
-    // itself, so the card's own onClick (which would also navigate) must not
-    // ALSO fire. If it did, history would grow by 2 pushes instead of 1.
+    // One anchor, one handler: nothing nested can double-push history.
     expect(window.history.length - before).toBe(1)
   })
 
   it("navigates when the focused card is activated with the keyboard", async () => {
     const user = userEvent.setup()
     wrap(<WorktreeCard w={summary} />)
-    screen.getByRole("group", { name: /worktree foo/i }).focus()
+    // An <a href> is focusable and Enter-activates natively, so the card no
+    // longer needs a hand-rolled keydown handler.
+    screen.getByRole("link", { name: /open worktree foo/i }).focus()
     await user.keyboard("{Enter}")
     expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/foo")}`)
-  })
-
-  it("opens the worktree with that resource pre-selected", async () => {
-    // A focus-resource line no longer jumps to GitHub/Jira/Slack: it deep
-    // links into the worktree page with the resource already selected, so a
-    // mis-click lands somewhere useful instead of a new browser tab.
-    const user = userEvent.setup()
-    wrap(<WorktreeCard w={summary} />)
-    await user.click(screen.getByRole("link", { name: /Fix the widget/ }))
-    expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/foo")}`)
-    // Raw colon here (hand-built href) vs %3A when written via
-    // URLSearchParams; both decode to the same key.
-    expect(window.location.search).toContain("resource=pr:")
   })
 
   it("does not navigate when clickable is false", async () => {

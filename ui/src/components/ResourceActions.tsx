@@ -5,20 +5,31 @@ import type { ResourceDTO } from "../api/types"
 const COPIED_FEEDBACK_MS = 1500
 
 /**
+ * The service a resource lives on, for user-facing copy. Shared so every
+ * label naming a destination ("Open on GitHub", "More activity on GitHub")
+ * uses the same word for the same service.
+ */
+export function serviceName(type: string): string {
+  switch (type) {
+    case "pr":
+      return "GitHub"
+    case "jira":
+      return "Jira"
+    case "slack":
+      return "Slack"
+    default:
+      return ""
+  }
+}
+
+/**
  * Names the destination for a resource type. The preposition varies on
  * purpose: you open a page *on* a site, but a conversation *in* an app.
  */
 export function openLabel(type: string): string {
-  switch (type) {
-    case "pr":
-      return "Open on GitHub"
-    case "jira":
-      return "Open on Jira"
-    case "slack":
-      return "Open in Slack"
-    default:
-      return "Open"
-  }
+  const name = serviceName(type)
+  if (!name) return "Open"
+  return type === "slack" ? `Open in ${name}` : `Open on ${name}`
 }
 
 /**

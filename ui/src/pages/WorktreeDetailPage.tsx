@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Anchor, Grid, Group, Stack, Title } from "@mantine/core"
+import { Anchor, Box, Grid, Group, Stack, Title } from "@mantine/core"
 import { Link, useRoute } from "wouter"
 import { useWorktreeDetail } from "../hooks/useWorktreeDetail"
 import { useSelectedResource } from "../hooks/useSelectedResource"
@@ -107,9 +107,13 @@ export function WorktreeDetailPage() {
       list
     )
   ) : (
-    <Grid gutter="md">
-      <Grid.Col span={4}>{list}</Grid.Col>
-      <Grid.Col span={8}>
+    // Each column scrolls independently. minHeight:0 is the load-bearing bit:
+    // a flex/grid child defaults to min-height:auto, which refuses to shrink
+    // below its content, so overflow never triggers and the whole page
+    // scrolls as one instead.
+    <Grid gutter="md" style={{ flex: 1, minHeight: 0, margin: 0 }} styles={{ inner: { height: "100%" } }}>
+      <Grid.Col span={4} style={{ height: "100%", minHeight: 0, overflowY: "auto" }}>{list}</Grid.Col>
+      <Grid.Col span={8} style={{ height: "100%", minHeight: 0, overflowY: "auto" }}>
         {selectedResource ? (
           <ResourceDetailPane
             path={path}
@@ -130,18 +134,32 @@ export function WorktreeDetailPage() {
 
   return (
     <ThreadActionsContext.Provider value={threadActions}>
-    <Stack p="md" gap="md">
-      <Group>
-        <Anchor component={Link} href="/">← all worktrees</Anchor>
-        <Title order={4}>{branch}</Title>
-      </Group>
-      {summary && <WorktreeDetailCard w={summary} />}
+    {/*
+      The page owns the viewport: a fixed header, then a body that scrolls.
+      100dvh (not vh) so mobile browser chrome does not push the bottom of the
+      page out of reach.
+    */}
+    <Stack p="md" gap="md" style={{ height: "100dvh", overflow: "hidden" }}>
+      <Box style={{ flexShrink: 0 }}>
+        <Stack gap="md">
+          <Group>
+            <Anchor component={Link} href="/">← all worktrees</Anchor>
+            <Title order={4}>{branch}</Title>
+          </Group>
+          {summary && <WorktreeDetailCard w={summary} />}
+        </Stack>
+      </Box>
       {/*
         No Overview/Slack tabs: a Slack thread is selected like any other
         resource and renders in ResourceDetailPane, so the resource list plus
         that pane is the whole page body.
+
+        Wide: the Grid below manages its own per-column scrolling. Narrow:
+        everything collapses into this single scroller.
       */}
-      {overview}
+      <Box style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflowY: wide ? "hidden" : "auto" }}>
+        {overview}
+      </Box>
       {pendingThreadUrl !== null && (
         // Keyed by URL so the modal remounts per thread: it seeds its fields
         // from initialUrl at mount, and a stale instance would show the

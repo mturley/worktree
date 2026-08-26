@@ -8,7 +8,25 @@
  *
  * The cards keep their own surface (dark[6]); the wider gap to a black body is
  * what makes them read as raised.
+ *
+ * html and #root are painted too, not just body: Mantine's variable only
+ * dresses <body>, so on a short page the html element's own lighter
+ * background showed through below the content.
  */
 :root {
   --mantine-color-body: #000000;
 }
+
+html,
+body,
+#root {
+  background-color: var(--mantine-color-body);
+  min-height: 100%;
+}
+
+/*
+ * Deliberately NOT `height: 100%` + `overflow: hidden` here. Pages that scroll
+ * normally (the home page) need the document to scroll; only the worktree
+ * detail page takes over scrolling, and it sizes itself against the viewport
+ * directly (see WorktreeDetailPage).
+ */
