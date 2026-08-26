@@ -1,7 +1,7 @@
 import { Badge, Box, Group, Stack, Text } from "@mantine/core"
 import type { ResourceDTO, TimelineEvent } from "../api/types"
 import { relativeTime as rel } from "../lib/relativeTime"
-import { eventMeta } from "../lib/eventMeta"
+import { eventLabel } from "../lib/eventMeta"
 import { EventDot } from "./EventDot"
 import { EventResourceChip } from "./EventResourceChip"
 import { ROW_PAD_X } from "./timelineRail"
@@ -38,7 +38,7 @@ export function EventRow({
   canSelectResource?: (e: TimelineEvent) => boolean
 }) {
   // Only the dot shows the type now — as its tooltip.
-  const label = e.type_label || eventMeta(e.type).label
+  const label = eventLabel(e.type, e.type_label)
 
   return (
     <Box style={{ display: "flex", gap: "var(--mantine-spacing-sm)", alignItems: "flex-start", padding: ROW_PAD_X }}>

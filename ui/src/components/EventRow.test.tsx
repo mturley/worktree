@@ -57,7 +57,8 @@ describe("EventRow", () => {
     // echoing the raw wire value ("pr_merged") at the user.
     const e = makeEvent({ type_label: "", type: "pr_merged" })
     renderWithProvider(<EventRow e={e} />)
-    expect(screen.getByLabelText("merged")).toBeInTheDocument()
+    // Capitalised for display, unlike the raw mapping value.
+    expect(screen.getByLabelText("Merged")).toBeInTheDocument()
   })
 
   it("renders worktree badges when showWorktrees is true and worktrees are present", () => {

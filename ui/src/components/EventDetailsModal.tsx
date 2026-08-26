@@ -1,6 +1,6 @@
 import { Anchor, Badge, Divider, Group, Modal, Stack, Text } from "@mantine/core"
 import type { ResourceDTO, TimelineEvent } from "../api/types"
-import { eventMeta } from "../lib/eventMeta"
+import { eventLabel } from "../lib/eventMeta"
 import { relativeTime as rel } from "../lib/relativeTime"
 import { EventDot } from "./EventDot"
 import { EventResourceChip } from "./EventResourceChip"
@@ -26,13 +26,12 @@ export function EventDetailsModal({
   /** Suppresses the chip when the resource has nowhere to go. */
   canSelectResource?: (e: TimelineEvent) => boolean
 }) {
-  const meta = e ? eventMeta(e.type) : null
   return (
     <Modal opened={!!e} onClose={onClose} size="lg" title={
-      e && meta ? (
+      e ? (
         <Group gap={8} wrap="nowrap">
-          <EventDot type={e.type} label={e.type_label || e.type} />
-          <Text fw={600} size="sm">{e.type_label || e.type}</Text>
+          <EventDot type={e.type} label={e.type_label} />
+          <Text fw={600} size="sm">{eventLabel(e.type, e.type_label)}</Text>
         </Group>
       ) : null
     }>

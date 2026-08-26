@@ -94,6 +94,20 @@ function entryFor(type: string): Entry {
   return { color: "gray", Icon: IconGitCommit, label: type || "event" }
 }
 
+/**
+ * The label shown for an event: the library's own display name when it has
+ * one, else this file's readable fallback — capitalised either way.
+ *
+ * Capitalising here rather than at each call site keeps the dot's tooltip and
+ * the details modal's heading identical; they read the same events and looked
+ * inconsistent when only one of them was title-cased. Already-capitalised
+ * labels ("CI failed", "PR comments") pass through untouched.
+ */
+export function eventLabel(type: string, typeLabel?: string): string {
+  const raw = typeLabel || eventMeta(type).label
+  return raw ? raw.charAt(0).toUpperCase() + raw.slice(1) : raw
+}
+
 export function eventMeta(type: string): EventMeta {
   const { color, Icon, label } = entryFor(type)
   return {

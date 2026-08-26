@@ -1,5 +1,5 @@
 import { Tooltip } from "@mantine/core"
-import { eventMeta } from "../lib/eventMeta"
+import { eventLabel, eventMeta } from "../lib/eventMeta"
 
 /**
  * The timeline's dot: the event's colour with its icon inside, and its type
@@ -23,8 +23,8 @@ export function EventDot({ type, size = 22, label: labelOverride }: {
   // cssColor, not color: `color` is a Mantine palette NAME ("grape"), which
   // is not a valid CSS colour — and the few that happen to be valid CSS
   // ("violet", "indigo") would silently paint the wrong shade.
-  const { cssColor, Icon, label: kindLabel } = eventMeta(type)
-  const label = labelOverride || kindLabel
+  const { cssColor, Icon } = eventMeta(type)
+  const label = eventLabel(type, labelOverride)
 
   return (
     <Tooltip label={label} withArrow openDelay={150}>
