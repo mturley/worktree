@@ -1,5 +1,5 @@
 import { Badge, Group, Paper, Stack, Text } from "@mantine/core"
-import { relativeTime as rel } from "../lib/relativeTime"
+import { relativeTime as rel, relativeFromNow } from "../lib/relativeTime"
 import { useLocation } from "wouter"
 import type { ResourceDTO, WorktreeSummary } from "../api/types"
 import { resourceSummary } from "../lib/resourceSummary"
@@ -24,21 +24,64 @@ interface WorktreeCardProps {
  * "open this worktree", and picking a resource is one easy click away once
  * you are there. Now the whole card is one target and these just describe it.
  */
+/**
+ * The second line under a focus resource: the few facts worth knowing without
+ * opening the worktree. Different per type because what matters differs — a
+ * PR is about who owns it and how stale it is; an issue is about where it sits
+ * in the workflow.
+ *
+ * Returns "" when nothing is known (a resource that has never been polled),
+ * so the caller can skip the line entirely rather than render an empty one.
+ */
+function resourceMetaLine(r: ResourceDTO): string {
+  const parts: string[] = []
+  if (r.type === "jira") {
+    if (r.status) parts.push(r.status)
+    if (r.priority) parts.push(r.priority)
+  } else if (r.author) {
+    // PRs and Slack threads both lead with who owns the thing: the PR's
+    // author, or whoever started the thread.
+    parts.push(r.author)
+  }
+
+  // Two timestamp formats, deliberately not interchangeable. Slack threads
+  // carry a raw Slack ts ("1699000500.000200") in updated_ts, while PRs and
+  // Jira issues carry RFC3339 in updated_at. Passing one to the other's
+  // helper prints the raw string back.
+  if (r.type === "slack") {
+    if (r.updated_ts) parts.push(`updated ${relativeFromNow(r.updated_ts)}`)
+  } else if (r.updated_at) {
+    parts.push(`updated ${rel(r.updated_at)}`)
+  }
+
+  return parts.join(" · ")
+}
+
 function FocusResourceLine({ r }: { r: ResourceDTO }) {
   const label = r.custom_name || r.title || r.id
   // Same abbreviation the timeline's event chips use, so "#42" and
   // "RHOAIENG-1" mean the same thing wherever they appear.
   const ref = shortResourceRef(r.type, r.id)
+  const meta = resourceMetaLine(r)
   return (
-    <Group gap={6} wrap="nowrap" align="center">
-      {/* Same mapping as the resource cards' titles: both read
-          resourceStatusMeta, so an icon change lands in both places. */}
-      <ResourceStatusIcon r={r} />
-      {ref && (
-        <Text size="sm" fw={600} c="dimmed" style={{ whiteSpace: "nowrap" }}>{ref}</Text>
+    <Stack gap={0}>
+      <Group gap={6} wrap="nowrap" align="center">
+        {/* Same mapping as the resource cards' titles: both read
+            resourceStatusMeta, so an icon change lands in both places. */}
+        <ResourceStatusIcon r={r} />
+        {ref && (
+          <Text size="sm" fw={600} c="dimmed" style={{ whiteSpace: "nowrap" }}>{ref}</Text>
+        )}
+        <Text size="sm" c="dimmed" lineClamp={1} style={{ minWidth: 0 }}>{label}</Text>
+      </Group>
+      {meta && (
+        // Indented to clear the status icon, so it reads as belonging to the
+        // line above rather than as another resource.
+        <Text size="xs" c="dimmed" pl={20} lineClamp={1} style={{ minWidth: 0 }}>
+          {meta}
+        </Text>
       )}
-      <Text size="sm" c="dimmed" lineClamp={1} style={{ minWidth: 0 }}>{label}</Text>
-    </Group>
+    </Stack>
   )
 }
 
