@@ -242,7 +242,13 @@ func finalizeWorktree(cfg config.Config, result gitutil.CreateResult, repoRoot s
 		fmt.Printf("%s Reusing existing worktree at %s\n", ui.Yellow("→"), ui.ShortPath(result.Path))
 	}
 
-	repoName := filepath.Base(repoRoot)
+	// repoRoot may be a linked worktree (when `worktree add` is run from inside
+	// one); the repo's identity comes from the main clone.
+	mainRoot := gitutil.MainRoot(repoRoot)
+	if mainRoot == "" {
+		mainRoot = repoRoot
+	}
+	repoName := filepath.Base(mainRoot)
 	wtName := filepath.Base(result.Path)
 
 	conn, err := wdb.Open()
@@ -256,7 +262,7 @@ func finalizeWorktree(cfg config.Config, result gitutil.CreateResult, repoRoot s
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to allocate port range: %v\n", err)
 		}
-		if err := registry.Register(conn, buildRegistryEntry(result, repoRoot, time.Now().UTC().Format(time.RFC3339))); err != nil {
+		if err := registry.Register(conn, buildRegistryEntry(result, mainRoot, time.Now().UTC().Format(time.RFC3339))); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to register worktree: %v\n", err)
 		}
 	}
@@ -302,11 +308,13 @@ func finalizeWorktree(cfg config.Config, result gitutil.CreateResult, repoRoot s
 }
 
 // buildRegistryEntry constructs a registry.Entry from a create result.
-func buildRegistryEntry(result gitutil.CreateResult, repoRoot, nowRFC3339 string) registry.Entry {
+// mainRoot must be the repository's main worktree (see gitutil.MainRoot), not
+// whichever linked worktree the command happened to run from.
+func buildRegistryEntry(result gitutil.CreateResult, mainRoot, nowRFC3339 string) registry.Entry {
 	return registry.Entry{
 		Path:      result.Path,
-		Repo:      filepath.Base(repoRoot),
-		RepoRoot:  repoRoot,
+		Repo:      filepath.Base(mainRoot),
+		RepoRoot:  mainRoot,
 		Branch:    result.Branch,
 		CreatedAt: nowRFC3339,
 	}

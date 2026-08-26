@@ -27,6 +27,27 @@ func CommonDir(dir string) string {
 	return strings.TrimSpace(string(out))
 }
 
+// MainRoot returns the root of the repository's main worktree — the checkout
+// that owns the .git directory. RepoRoot answers "which working tree am I in",
+// so from inside a linked worktree it returns that worktree; MainRoot looks
+// past it to the original clone. Use MainRoot wherever the *repository's*
+// identity is needed (its name, where its worktrees are filed) and RepoRoot
+// where the current checkout's own state (its HEAD) is what matters.
+//
+// Returns "" if dir is not in a git repo.
+func MainRoot(dir string) string {
+	common := CommonDir(dir)
+	if common == "" {
+		return ""
+	}
+	// git reports --git-common-dir relative to dir when dir is inside the main
+	// worktree (".git", "../.git") and absolute from a linked worktree.
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(dir, common)
+	}
+	return filepath.Dir(common)
+}
+
 func listRemotes(repoRoot string) []string {
 	cmd := exec.Command("git", "-C", repoRoot, "remote")
 	out, err := cmd.Output()

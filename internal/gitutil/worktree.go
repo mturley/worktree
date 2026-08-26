@@ -15,7 +15,7 @@ type CreateResult struct {
 }
 
 func CreateBranchWorktree(repoRoot, worktreesBase, branchName string) (CreateResult, error) {
-	repoName := filepath.Base(repoRoot)
+	repoName := repoDirName(repoRoot)
 	wtPath := filepath.Join(worktreesBase, repoName, branchName)
 
 	if _, err := os.Stat(wtPath); err == nil {
@@ -39,6 +39,17 @@ func CreateBranchWorktree(repoRoot, worktreesBase, branchName string) (CreateRes
 	return CreateResult{Path: wtPath, Branch: branchName, Created: true}, nil
 }
 
+// repoDirName is the directory a repo's worktrees are filed under inside the
+// worktrees base. repoRoot may be a linked worktree (when `worktree add` is run
+// from inside one), so resolve back to the main clone first — otherwise the new
+// worktree gets nested under the name of the worktree we were standing in.
+func repoDirName(repoRoot string) string {
+	if main := MainRoot(repoRoot); main != "" {
+		return filepath.Base(main)
+	}
+	return filepath.Base(repoRoot)
+}
+
 type PRWorktreeStatus int
 
 const (
@@ -56,7 +67,7 @@ type PRWorktreeResult struct {
 }
 
 func CreatePRWorktree(repoRoot, worktreesBase, remote string, prNumber int, headRef, slug string) (PRWorktreeResult, error) {
-	repoName := filepath.Base(repoRoot)
+	repoName := repoDirName(repoRoot)
 	dirName := fmt.Sprintf("pr-%d-%s", prNumber, slug)
 	wtPath := filepath.Join(worktreesBase, repoName, dirName)
 	branchName := fmt.Sprintf("review/pr-%d-%s", prNumber, slug)
