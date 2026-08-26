@@ -1,7 +1,7 @@
 import { Button, Group } from "@mantine/core"
-import { IconBrandGithubFilled } from "@tabler/icons-react"
 import { SlackMark } from "./icons/SlackMark"
 import { JiraMark } from "./icons/JiraMark"
+import { GitHubMark } from "./icons/GitHubMark"
 
 /** Resource types, in the order the toggles appear. */
 const SOURCES: { type: string; label: string }[] = [
@@ -14,15 +14,14 @@ const SOURCES: { type: string; label: string }[] = [
  * Each source's own mark, in its own colour, so the three toggles are
  * recognisable at a glance rather than three identical grey glyphs.
  *
- * Slack's and Jira's are the real marks, inlined from their own artwork.
- * GitHub's is monochrome by design — white is the correct rendering on a dark
- * background, not an absence of colour — and the filled Octocat is used so it
- * sits alongside the other two.
+ * All three are the official marks, inlined from their own artwork. GitHub's
+ * Invertocat is monochrome by design; the white variant is the one GitHub
+ * ships for dark backgrounds, so it is the artwork rather than a tint.
  */
 function SourceIcon({ type }: { type: string }) {
   if (type === "slack") return <SlackMark size={14} />
   if (type === "jira") return <JiraMark size={14} />
-  return <IconBrandGithubFilled size={14} color="#ffffff" />
+  return <GitHubMark size={14} />
 }
 
 /**

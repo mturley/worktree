@@ -39,11 +39,14 @@ export function HomePage() {
   const timeline = (
     <Stack gap="sm">
       <Group justify="space-between" wrap="wrap" gap="xs">
+        <Title order={4}>Timeline</Title>
+        {/* Both controls narrow the same feed, so they sit together on the
+            right — matching the worktree page, where the filter is opposite
+            the heading. */}
         <Group gap="sm" wrap="wrap">
-          <Title order={4}>Timeline</Title>
           <SourceFilter value={sources} onChange={setSources} />
+          <ArchivedToggle value={archived} onChange={setArchived} />
         </Group>
-        <ArchivedToggle value={archived} onChange={setArchived} />
       </Group>
       <TimelineFeed
         events={tl.events}

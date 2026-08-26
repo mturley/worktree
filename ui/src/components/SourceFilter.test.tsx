@@ -37,7 +37,7 @@ describe("SourceFilter", () => {
 })
 
 describe("SourceFilter branding", () => {
-  it("gives each source its own mark, in its own colour", () => {
+  it("uses each source's official mark, with its colour in the artwork", () => {
     const { container } = wrap(<SourceFilter value={[]} onChange={vi.fn()} />)
     const svgs = [...container.querySelectorAll("svg")]
     expect(svgs).toHaveLength(3)
@@ -50,12 +50,11 @@ describe("SourceFilter branding", () => {
     const jiraFills = [...svgs[1].querySelectorAll("path")].map((p) => p.getAttribute("fill"))
     expect(jiraFills).toContain("#1868DB")
 
-    // tabler puts its `color` on `fill` for filled marks, so GitHub's is
-    // asserted where it actually lands.
-
-    // GitHub's mark is monochrome by design; white is its correct rendering
-    // on a dark background, not a missing colour.
-    expect(svgs[0].getAttribute("fill")).toBe("#ffffff")
+    // GitHub: the Invertocat is monochrome by design, and white is the
+    // variant GitHub ships for dark backgrounds — so the colour is part of
+    // the artwork, not applied from outside.
+    const ghFills = [...svgs[0].querySelectorAll("path")].map((p) => p.getAttribute("fill"))
+    expect(ghFills).toContain("white")
   })
 })
 
