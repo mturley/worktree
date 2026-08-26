@@ -142,6 +142,32 @@ func TestRunUnmergedBranchNeedsForce(t *testing.T) {
 	}
 }
 
+// A hard delete_branch failure (branch already gone, unlike an unmerged
+// refusal) must not abort the run: forcing wouldn't help, so there is nothing
+// for an abort to preserve, and stopping would strand the registry row and
+// port range forever since remove_directory would just skip on every retry.
+func TestRunHardBranchFailureDoesNotAbort(t *testing.T) {
+	conn, cfg, repoRoot, wtPath, _ := fixture(t)
+	registry.Register(conn, registry.Entry{
+		Path: wtPath, Repo: "repo", RepoRoot: repoRoot, Branch: "no-such-branch",
+		CreatedAt: "2026-08-26T00:00:00Z",
+	})
+
+	res := Run(conn, cfg, Options{Path: wtPath, DeleteBranch: true}, nil)
+	if got := byKey(res, StepDeleteBranch).Status; got != StatusFailed {
+		t.Fatalf("delete_branch status = %s, want failed", got)
+	}
+	if res.Err != nil || res.NeedsForce != "" {
+		t.Fatalf("hard branch failure must not set Err/NeedsForce: err=%v needsForce=%q", res.Err, res.NeedsForce)
+	}
+	if got := byKey(res, StepUnregister).Status; got != StatusDone {
+		t.Fatalf("unregister = %s, want done — cleanup must run anyway", got)
+	}
+	if e, err := registry.Get(conn, wtPath); err != nil || e != nil {
+		t.Fatalf("registry row survived a hard branch failure: %+v (err %v)", e, err)
+	}
+}
+
 // Without DeleteBranch the branch is untouched, and the step is not reported at
 // all — a stepper should not show a stage that was never going to run.
 func TestRunLeavesBranchAloneByDefault(t *testing.T) {

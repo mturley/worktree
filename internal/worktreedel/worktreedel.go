@@ -145,8 +145,9 @@ func Run(conn *sql.DB, cfg config.Config, opts Options, observe func(Step)) Resu
 
 	// 2. The branch, only when asked, and before any cleanup that would wipe
 	// the registry row this needs. Unmerged is the common case for a worktree
-	// branch, so its refusal escalates like the directory's — and, like the
-	// directory, a hard failure aborts rather than proceeding to Unregister.
+	// branch, so its refusal (needs_force) escalates like the directory's and
+	// aborts before Unregister so a retry can still resolve the branch name.
+	// A hard (non-needs-force) failure does NOT abort — see below.
 	if opts.DeleteBranch {
 		if branch == "" {
 			set(StepDeleteBranch, StatusSkipped, "no branch recorded for this worktree")
@@ -161,9 +162,11 @@ func Run(conn *sql.DB, cfg config.Config, opts Options, observe func(Step)) Resu
 				res.NeedsForce = StepDeleteBranch
 				return res
 			default:
+				// A hard failure here (e.g. branch already gone) must not
+				// abort: forcing wouldn't help, so there's nothing an abort
+				// would preserve. Continuing lets cleanup finish instead of
+				// stranding the registry row and port range forever on retry.
 				set(StepDeleteBranch, StatusFailed, err.Error())
-				res.Err = err
-				return res
 			}
 		}
 	}
@@ -235,7 +238,7 @@ func resolve(conn *sql.DB, cfg config.Config, path string) (repoRoot, repo, bran
 	}
 	if cfg.WorktreesBase != "" {
 		if rel, relErr := filepath.Rel(cfg.WorktreesBase, path); relErr == nil &&
-			rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			return "", "", "", nil
 		}
 	}
