@@ -699,6 +699,7 @@ Replace the body of `runDelete` after the existing confirmation block with a dri
 				fmt.Sprintf("Delete the branch %q too?", b), false)
 		}
 	}
+```
 
 Then drive the runner, printing each step as the observer reports it. Note
 that `ui.SpinWhile` is deliberately NOT used here: it takes a `func() error`,
