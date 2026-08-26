@@ -41,7 +41,11 @@ func (s *Server) handleDeleteWorktree(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg, err := config.Load()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeJSON(w, http.StatusOK, deleteWorktreeResponse{
+			OK:    false,
+			Steps: []worktreedel.Step{},
+			Error: err.Error(),
+		})
 		return
 	}
 

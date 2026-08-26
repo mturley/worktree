@@ -144,3 +144,35 @@ func TestDeleteWorktreeUnknownPath(t *testing.T) {
 		t.Fatalf("ok = %v, want false for a worktree that cannot be resolved", body["ok"])
 	}
 }
+
+// config.Load() failure (e.g. a malformed config.yaml) must produce the same
+// 200/ok:false shape as a hard runner failure — not a 500 — so the modal has
+// one failure shape to render instead of two. We force a real Load() error by
+// pointing XDG_CONFIG_HOME at a temp dir with invalid YAML, rather than
+// touching the developer's actual config.
+func TestDeleteWorktreeConfigLoadFailureIsTwoHundred(t *testing.T) {
+	srv, wtPath := deleteFixture(t)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	xdg := t.TempDir()
+	cfgDir := filepath.Join(xdg, "worktree")
+	os.MkdirAll(cfgDir, 0o755)
+	os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte("worktrees_base: [not: a-string"), 0o644)
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+
+	code, body := postDelete(t, ts, map[string]any{"path": wtPath})
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 — config load failure is not an error status", code)
+	}
+	if body["ok"] != false {
+		t.Fatalf("ok = %v, want false", body["ok"])
+	}
+	steps, ok := body["steps"].([]any)
+	if !ok || len(steps) != 0 {
+		t.Fatalf("steps = %+v, want empty array", body["steps"])
+	}
+	if body["error"] == nil || body["error"] == "" {
+		t.Fatalf("error = %v, want non-empty message", body["error"])
+	}
+}
