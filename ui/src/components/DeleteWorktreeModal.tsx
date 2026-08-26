@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Alert, Button, Checkbox, Group, Loader, Modal, Stack, Text, TextInput } from "@mantine/core"
 import { IconCheck, IconX } from "@tabler/icons-react"
 import { api } from "../api/client"
@@ -56,6 +56,19 @@ export function DeleteWorktreeModal({ opened, path, name, branch, onClose, onDel
   const [result, setResult] = useState<DeleteWorktreeResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // Reset to a fresh confirmation form whenever the modal is (re)opened, or
+  // when it is retargeted at a different worktree — a destructive dialog
+  // must never show a previous run's results for the current open.
+  useEffect(() => {
+    if (opened) {
+      setTyped("")
+      setDeleteBranch(false)
+      setRunning(false)
+      setResult(null)
+      setError(null)
+    }
+  }, [opened, path])
+
   const run = async (force: { force_directory?: boolean; force_branch?: boolean } = {}) => {
     setRunning(true)
     setError(null)
@@ -102,7 +115,7 @@ export function DeleteWorktreeModal({ opened, path, name, branch, onClose, onDel
         )}
 
         {error && <Alert color="red" variant="light">{error}</Alert>}
-        {result?.error && !needsForce && !result.steps.some((s) => s.status === "failed" && s.detail) && (
+        {result?.error && !needsForce && !result.steps.some((s) => s.detail === result.error) && (
           <Alert color="red" variant="light">{result.error}</Alert>
         )}
 

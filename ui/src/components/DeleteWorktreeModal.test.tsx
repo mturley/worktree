@@ -136,4 +136,49 @@ describe("DeleteWorktreeModal", () => {
     expect(await screen.findByText("Remove worktree directory")).toBeInTheDocument()
     expect(screen.getByText(/not a worktree/)).toBeInTheDocument()
   })
+
+  it("still shows a top-level error that differs from every step's detail", async () => {
+    const user = userEvent.setup()
+    deleteWorktree.mockResolvedValue({
+      ok: false, needs_force: "", error: "delete run aborted unexpectedly",
+      steps: [{ key: "remove_directory", label: "Remove worktree directory", status: "failed", detail: "fatal: could not remove" }],
+    } as DeleteWorktreeResponse)
+    wrap(modal())
+    await user.type(screen.getByLabelText(/type the worktree name/i), "foo")
+    await user.click(screen.getByRole("button", { name: /^delete$/i }))
+
+    expect(await screen.findByText(/could not remove/)).toBeInTheDocument()
+    expect(screen.getByText(/aborted unexpectedly/)).toBeInTheDocument()
+  })
+
+  it("resets to a fresh confirmation form when reopened", async () => {
+    const user = userEvent.setup()
+    deleteWorktree.mockResolvedValue(ok())
+    const { rerender } = wrap(modal({ opened: false }))
+    rerender(
+      <MantineProvider>
+        {modal()}
+      </MantineProvider>,
+    )
+    await user.type(await screen.findByLabelText(/type the worktree name/i), "foo")
+    await user.click(screen.getByRole("button", { name: /^delete$/i }))
+    await screen.findByRole("button", { name: /^ok$/i })
+
+    // Close and reopen: the previous run's results must not still be showing.
+    rerender(
+      <MantineProvider>
+        {modal({ opened: false })}
+      </MantineProvider>,
+    )
+    rerender(
+      <MantineProvider>
+        {modal()}
+      </MantineProvider>,
+    )
+
+    const nameInput = await screen.findByLabelText(/type the worktree name/i) as HTMLInputElement
+    expect(nameInput.value).toBe("")
+    expect(screen.getByRole("checkbox", { name: /delete the branch/i })).not.toBeChecked()
+    expect(screen.queryByRole("button", { name: /^ok$/i })).not.toBeInTheDocument()
+  })
 })
