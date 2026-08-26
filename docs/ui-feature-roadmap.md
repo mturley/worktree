@@ -26,49 +26,65 @@ the code are documented where they live:
 - Split scroll containers on the detail page, source filter toggles, and the
   follow/unfollow wording.
 
-## Phase G (proposed) — delete a worktree from the web UI
+## Phase G — delete a worktree from the web UI
 
 A red trash control in the top-right of the worktree detail card, on the same
 row as the worktree name, opening a confirm modal that requires typing the
-worktree name. On success the modal closes and the page returns to the home
-list.
+worktree name.
 
-**The interaction is two-phase, and that is the whole design problem.**
-`worktree delete` (`cmd/delete.go`) is not a single call: it attempts
+**The interaction is multi-phase, and that is the whole design problem.**
+`worktree delete` (`cmd/delete.go`) is not one call: it attempts
 `gitutil.RemoveWorktree`, and when git refuses — leftover build output,
 read-only files — it surfaces `gitutil.ErrNeedsForce` carrying git's own
 output, asks whether to force, and only then calls
 `gitutil.ForceRemoveWorktree` (which fixes permissions and deletes). The web
-UI has to reproduce that conversation, not flatten it into one button.
+UI reproduces that conversation rather than flattening it into one button.
 
-So the endpoint must distinguish "failed" from "needs force", e.g.
-`POST /api/worktrees/delete {path, force}` returning a body the frontend can
-branch on — a `needs_force` outcome carrying git's stderr, versus a real
-error. Returning 500 for the force case would make the two indistinguishable.
+So the endpoint must distinguish "failed" from "needs force":
+`POST /api/worktrees/delete {path, force, delete_branch}` returning a body the
+frontend branches on — a `needs_force` outcome carrying git's stderr, versus a
+real error. Returning 500 for the force case would make the two
+indistinguishable.
 
-**Extract the cleanup, do not reimplement it.** After the directory goes,
-`runDelete` also releases the port range, unregisters from the registry,
-removes tracked resources, deletes the kubeconfig and prunes worktrees — all
-inline in `cmd/delete.go` today. The web path needs exactly the same steps,
-so they should move into a shared function that both the CLI and the handler
-call. Copying them into the handler would leave two sequences to keep in
-step, and the failure mode is silent: a worktree deleted from the UI that
-still holds its port range.
+**The response reports PER-STEP outcomes, not one status.** The modal renders
+progress as a pipeline stepper, so the server has to say what happened to each
+stage — remove directory, release ports, unregister, drop tracked resources,
+delete kubeconfig, prune, and optionally delete branch. This also resolves
+partial failure: the CLI today prints warnings and carries on, and those
+become visibly failed stages (red ✗) in a summary that stays on screen.
 
-**UI states**, mirroring the CLI:
-1. Confirm modal — must type the worktree name to enable the button.
-2. Spinner while deleting.
-3. If `needs_force`: show git's output and the "leftover build output or
-   read-only files" explanation, then Cancel or Force.
-4. Spinner again on force.
-5. On success: close, navigate to `/`, and invalidate `["worktrees"]`.
+**Extract the cleanup, do not reimplement it.** Those post-removal steps live
+inline in `cmd/delete.go` today. The web path needs exactly the same
+sequence, so they move into a shared function both the CLI and the handler
+call. Copying them into the handler would leave two sequences to keep in step,
+and the failure mode is silent: a worktree deleted from the UI that still
+holds its port range.
 
-**Open questions to settle before building:**
-- What happens to a worktree the server cannot see? The `ui` server may run
-  as a different user or outside the filesystem the worktree lives on.
-- Should deleting be blocked while the worktree is the one serving the UI?
-- Does the branch get deleted too, or only the worktree? The CLI leaves the
-  branch alone; the UI should not quietly differ.
+**UI states:**
+
+1. Confirm modal — must type the worktree name to enable the button. A
+   "delete the branch too" checkbox, **unchecked by default**.
+2. Pipeline stepper, each stage advancing as the server reports it.
+3. On `needs_force`: that stage shows a red ✗ with git's output and the
+   "leftover build output or read-only files" explanation, and the
+   Cancel/Force prompt appears *beneath* it rather than replacing the view.
+4. Stepper resumes on force.
+5. On success the modal **stays open** with the completed summary — ports
+   freed, registry, resources, kubeconfig, prune — the way the CLI's output
+   does. It closes and navigates to `/` only when OK is clicked, invalidating
+   `["worktrees"]`.
+
+**Decisions (2026-08-26):**
+
+- A worktree the server cannot see fails with an error rather than being
+  silently unregistered.
+- Deleting the worktree that is serving the UI is out of scope: `worktree ui`
+  is always run from outside a worktree.
+- Branch deletion is opt-in on both surfaces, and **the CLI gains a prompt
+  too** — defaulting to **no**, matching the unchecked checkbox. Deleting a
+  branch destroys work that the worktree removal does not, so it should never
+  happen to someone holding down enter. `gitutil` has no branch-delete helper
+  yet; one is needed.
 
 ## Deferred / needs input
 
@@ -78,10 +94,10 @@ still holds its port range.
   content-capture feature (it lives in the same handler files as the switch
   logic — take the workspace pieces, leave `Capture`/`Notify`/peek-cache).
 
-  **Do NOT copy handler's approach.** Handler's discovery is *session*-centric:
+  **Do NOT copy handler's approach.** Handler's discovery is _session_-centric:
   it maps a running Claude session to its surface via `CMUX_SURFACE_ID`, a
   `cmux identify` call, and `cmux_workspace_id` columns on its own `sessions`
-  table. Worktree has the opposite problem — it holds a *path* and wants a
+  table. Worktree has the opposite problem — it holds a _path_ and wants a
   workspace — and needs none of that machinery, DB rows, or env plumbing.
 
   **The whole mechanism, verified directly on this machine:**
@@ -96,11 +112,11 @@ still holds its port range.
     the latter, and fail soft on any exec error.
 
   **Measured against our own registry (10 worktrees, 18 workspaces): 7/10
-  matched by exact path.** So "no workspace for this worktree" is a *normal*
+  matched by exact path.** So "no workspace for this worktree" is a _normal_
   state — the button should hide or disable, never error.
 
   **Ambiguity is real:** 5 workspaces share `/Users/mturley` and 2 share
-  `/Users/mturley/git/worktree`. No *worktree* path is currently doubled, but
+  `/Users/mturley/git/worktree`. No _worktree_ path is currently doubled, but
   nothing guarantees uniqueness, so matching needs a tie-break (workspace
   title, or offer the choice) rather than assuming one hit.
 
@@ -110,12 +126,13 @@ still holds its port range.
   close-the-caller UX. That matters because `worktree ui` is a long-lived
   background server, almost certainly not inside a surface. Test it before
   designing around it. Also unverified: whether `current_directory` tracks the
-  workspace's *active pane*, so a multi-pane workspace may report a directory
+  workspace's _active pane_, so a multi-pane workspace may report a directory
   that is not the worktree's terminal.
 
   **Nothing to import.** None of this is in the shared watcher library; it is
   `os/exec` calls in handler's own module. It is small enough that
   reimplementing the two commands is the right call.
+
 - **Per-resource inbox mechanism.** Surfacing unread/new activity per tracked
   resource. Needs design input before it can be scoped — see the reminder.
 - **Task manager feature.** Scope undefined; needs brainstorming before it can
