@@ -2,7 +2,6 @@ package webui
 
 import (
 	"database/sql"
-	"encoding/json"
 	"net/http"
 	"sort"
 	"strconv"
@@ -32,6 +31,11 @@ type TimelineEvent struct {
 	// branch names are not unique across repos, so it cannot map one to the
 	// other on its own.
 	WorktreePaths []string `json:"worktree_paths"`
+	// The event's resource, enriched from cached state exactly as the
+	// resource cards are. Present so the global timeline — which has no
+	// per-worktree resource list to look anything up in — can render the
+	// resource with its real status icon and custom name.
+	Resource *resourceDTO `json:"resource,omitempty"`
 }
 
 type timelineResponse struct {
@@ -255,8 +259,8 @@ type eventEnricher struct {
 	worktreeBySub map[string]watchingWorktree
 	// memoised per resource key. A page of 50 events typically touches only
 	// ~12 distinct resources.
-	titles   map[string]string
-	watching map[string][]watchingWorktree
+	resources map[string]*resourceDTO
+	watching  map[string][]watchingWorktree
 }
 
 // watchingWorktree is one worktree that follows a resource: the branch the UI
@@ -270,7 +274,7 @@ func (s *Server) newEventEnricher() *eventEnricher {
 	e := &eventEnricher{
 		s:             s,
 		worktreeBySub: map[string]watchingWorktree{},
-		titles:        map[string]string{},
+		resources:     map[string]*resourceDTO{},
 		watching:      map[string][]watchingWorktree{},
 	}
 	// A registry read failure leaves worktreeBySub empty, which degrades to
@@ -310,7 +314,12 @@ func (e *eventEnricher) enrich(ev watcher.Event) TimelineEvent {
 // fillResource adds the resource-derived fields to an event whose resource
 // columns are already populated (the global timeline gets them from its join).
 func (e *eventEnricher) fillResource(te *TimelineEvent) {
-	te.ResourceTitle = e.resourceTitle(te.ResourceType, te.ResourceID)
+	if dto := e.resource(te.ResourceType, te.ResourceID); dto != nil {
+		te.Resource = dto
+		// Kept alongside Resource: existing consumers read this directly, and
+		// it is the plain-text fallback when no chip is shown.
+		te.ResourceTitle = dto.Title
+	}
 	wts := e.worktreesWatching(te.ResourceType, te.ResourceID)
 	te.Worktrees = make([]string, 0, len(wts))
 	te.WorktreePaths = make([]string, 0, len(wts))
@@ -320,25 +329,30 @@ func (e *eventEnricher) fillResource(te *TimelineEvent) {
 	}
 }
 
-func (e *eventEnricher) resourceTitle(rtype, rid string) string {
+// resource returns the event's resource as the same enriched DTO the resource
+// cards use, memoised per request.
+//
+// It reuses enrichResourceDTO rather than parsing state_json again here: the
+// icon a chip shows depends on fields (state, status, issue-type icon) that
+// would otherwise have to be decoded in two places and kept in step.
+func (e *eventEnricher) resource(rtype, rid string) *resourceDTO {
 	if rtype == "" || rid == "" {
-		return ""
+		return nil
 	}
 	key := rtype + ":" + rid
-	if t, ok := e.titles[key]; ok {
-		return t
+	if dto, ok := e.resources[key]; ok {
+		return dto
 	}
-	title := ""
-	if st, err := watcherdb.GetResourceState(e.s.DB, rtype, rid); err == nil && st != nil {
-		var m map[string]any
-		if json.Unmarshal([]byte(st.StateJSON), &m) == nil {
-			if t, ok := m["title"].(string); ok {
-				title = t
-			}
-		}
+	dto := &resourceDTO{Type: rtype, ID: rid}
+	// Custom name/description live in a separate table from cached state, and
+	// the chip prefers a custom name over the fetched title.
+	if meta, err := watcherdb.GetResourceMeta(e.s.DB, rtype, rid); err == nil && meta != nil {
+		dto.CustomName = meta.CustomName
+		dto.CustomDescription = meta.CustomDescription
 	}
-	e.titles[key] = title
-	return title
+	e.s.enrichResourceDTO(dto)
+	e.resources[key] = dto
+	return dto
 }
 
 // worktreesWatching returns the branch names of worktrees currently watching

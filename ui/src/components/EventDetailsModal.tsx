@@ -4,6 +4,7 @@ import { eventMeta } from "../lib/eventMeta"
 import { relativeTime as rel } from "../lib/relativeTime"
 import { EventDot } from "./EventDot"
 import { EventResourceChip } from "./EventResourceChip"
+import { openLabel } from "./ResourceActions"
 
 /**
  * Full detail for one timeline event.
@@ -91,7 +92,9 @@ export function EventDetailsModal({
 
               {e.resource_url && (
                 <Anchor href={e.resource_url} target="_blank" rel="noreferrer" size="sm">
-                  Open
+                  {/* Same wording as the resource card's button — "Open" alone
+                      did not say where it went. */}
+                  {openLabel(e.resource_type)}
                 </Anchor>
               )}
             </Group>

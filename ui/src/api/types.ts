@@ -15,6 +15,12 @@ export interface TimelineEvent {
    * names are not unique across repos, so it cannot derive one from the other.
    */
   worktree_paths?: string[];
+  /**
+   * The event's resource, enriched from cached state exactly as the resource
+   * cards are. Lets the global timeline — which has no per-worktree resource
+   * list — render a real status icon and custom name.
+   */
+  resource?: ResourceDTO;
 }
 export interface TimelineResponse { events: TimelineEvent[]; next_cursor: string }
 export interface ResourceDTO {

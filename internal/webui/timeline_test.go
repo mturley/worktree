@@ -400,19 +400,19 @@ func TestEnricherIsRequestScoped(t *testing.T) {
 
 	// Within one enricher, repeated lookups are one consistent snapshot.
 	e1 := srv.newEventEnricher()
-	if got := e1.resourceTitle("pr", "o/r#1"); got != "before" {
+	if got := e1.resource("pr", "o/r#1").Title; got != "before" {
 		t.Fatalf("title = %q, want %q", got, "before")
 	}
 	if err := watcherdb.UpsertResourceState(conn, "pr", "o/r#1",
 		`{"title":"after"}`, "2026-08-02T00:00:00Z", "2026-08-02T00:00:00Z"); err != nil {
 		t.Fatal(err)
 	}
-	if got := e1.resourceTitle("pr", "o/r#1"); got != "before" {
+	if got := e1.resource("pr", "o/r#1").Title; got != "before" {
 		t.Fatalf("mid-request title = %q; a page should render one snapshot, not a mix", got)
 	}
 
 	// The next request picks the change up with no invalidation call.
-	if got := srv.newEventEnricher().resourceTitle("pr", "o/r#1"); got != "after" {
+	if got := srv.newEventEnricher().resource("pr", "o/r#1").Title; got != "after" {
 		t.Fatalf("next-request title = %q, want %q — the memo outlived its request", got, "after")
 	}
 }
@@ -482,5 +482,63 @@ func TestTimelineCarriesWorktreePaths(t *testing.T) {
 	// Same order, so the UI can pair them index-wise.
 	if len(got.WorktreePaths) != 1 || got.WorktreePaths[0] != wtPath {
 		t.Fatalf("worktree_paths = %v, want [%s]", got.WorktreePaths, wtPath)
+	}
+}
+
+// TestTimelineEventCarriesEnrichedResource pins the data the global timeline's
+// resource chips need. That page has no per-worktree resource list to look
+// anything up in, so without this the chip renders a generic icon.
+func TestTimelineEventCarriesEnrichedResource(t *testing.T) {
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	wtPath := t.TempDir()
+	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
+	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
+	if err := watcherdb.UpsertResourceState(conn, "pr", "o/r#1",
+		`{"title":"Fix the widget","state":"MERGED","ci_status":"success"}`,
+		"2026-08-01T00:00:00Z", "2026-08-01T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	if err := resources.SetMeta(conn, "pr", "o/r#1", "", "why it matters"); err != nil {
+		t.Fatal(err)
+	}
+	insertEvent(t, conn, "e1", time.Now().UTC().Format(time.RFC3339), "github", "pr_comment", "hi", "pr", "o/r#1", "u1")
+
+	srv := &Server{DB: conn}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/timeline?archived=false&limit=10")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var body struct {
+		Events []TimelineEvent `json:"events"`
+	}
+	json.NewDecoder(resp.Body).Decode(&body)
+	if len(body.Events) != 1 {
+		t.Fatalf("want 1 event, got %d", len(body.Events))
+	}
+	got := body.Events[0]
+	if got.Resource == nil {
+		t.Fatal("event carries no enriched resource")
+	}
+	// The state the status icon is drawn from.
+	if got.Resource.State != "MERGED" {
+		t.Fatalf("resource.state = %q, want MERGED", got.Resource.State)
+	}
+	// Custom metadata lives in a different table from cached state; the chip
+	// prefers a custom name, so both have to be looked up.
+	if got.Resource.CustomDescription != "why it matters" {
+		t.Fatalf("resource.custom_description = %q, want %q", got.Resource.CustomDescription, "why it matters")
+	}
+	// The flat title stays populated for the plain-text fallback path.
+	if got.ResourceTitle != "Fix the widget" {
+		t.Fatalf("resource_title = %q, want %q", got.ResourceTitle, "Fix the widget")
 	}
 }

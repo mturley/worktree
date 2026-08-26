@@ -18,7 +18,10 @@ export function EventResourceChip({ e, onSelect, resolveResource }: {
 }) {
   if (!e.resource_type || !e.resource_id) return null
 
-  const resource = resolveResource?.(e.resource_type, e.resource_id)
+  // The worktree page resolves against its own list (freshest, and already
+  // loaded); the global timeline has no such list, so the event carries the
+  // enriched resource itself.
+  const resource = resolveResource?.(e.resource_type, e.resource_id) ?? e.resource
   const ref = shortResourceRef(e.resource_type, e.resource_id)
   const title = resource?.custom_name || resource?.title || e.resource_title
   // Falls back to a bare shape when the resource is not in the worktree's

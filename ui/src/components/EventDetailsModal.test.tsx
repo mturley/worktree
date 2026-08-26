@@ -37,9 +37,11 @@ describe("EventDetailsModal", () => {
     expect(getComputedStyle(node).whiteSpace).toBe("pre-wrap")
   })
 
-  it("links out to the resource", () => {
+  it("links out to the resource, naming the destination", () => {
+    // "Open" alone did not say where it went; matches the resource card's
+    // button wording.
     wrap(<EventDetailsModal e={ev()} onClose={vi.fn()} />)
-    expect(screen.getByRole("link", { name: "Open" }).getAttribute("href")).toBe("https://gh/pr/1")
+    expect(screen.getByRole("link", { name: "Open on GitHub" }).getAttribute("href")).toBe("https://gh/pr/1")
   })
 
   it("renders nothing when no event is selected", () => {
