@@ -76,3 +76,7 @@ export interface DeleteWorktreeResponse {
   steps: DeleteStep[]
   error?: string
 }
+
+export interface CmuxGroup { ref: string; name: string }
+export interface CmuxColor { name: string; hex: string }
+export interface CmuxGroupsResponse { groups: CmuxGroup[]; colors: CmuxColor[] }

@@ -208,3 +208,34 @@ func TestCmuxSelectRequiresRef(t *testing.T) {
 		t.Fatalf("status = %d, want 400 for a missing ref", rec.Code)
 	}
 }
+
+func TestCmuxCreateRequiresPath(t *testing.T) {
+	s := &Server{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/cmux/create", strings.NewReader(`{"name":"x"}`))
+	s.handleCmuxCreate(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for a missing path", rec.Code)
+	}
+}
+
+func TestCmuxCreateUnavailableIsNotAnError(t *testing.T) {
+	t.Setenv("CMUX_SOCKET_PATH", "")
+	s := &Server{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/cmux/create",
+		strings.NewReader(`{"path":"/wt/a","name":"x"}`))
+	s.handleCmuxCreate(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (cmux failures never 5xx)", rec.Code)
+	}
+	var got cmuxActionResponse
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.OK {
+		t.Fatal("ok = true with cmux unavailable")
+	}
+}

@@ -2,10 +2,12 @@ package webui
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/mturley/worktree/internal/cmux"
 	"github.com/mturley/worktree/internal/registry"
+	"github.com/mturley/worktree/internal/resources"
 )
 
 type cmuxWorkspaceDTO struct {
@@ -144,4 +146,76 @@ func (s *Server) handleCmuxSelect(w http.ResponseWriter, r *http.Request) {
 	}
 	cmux.Activate()
 	writeJSON(w, http.StatusOK, cmuxActionResponse{OK: true, Ref: req.Ref})
+}
+
+type cmuxCreateRequest struct {
+	Path     string `json:"path"`
+	Name     string `json:"name"`
+	GroupRef string `json:"group_ref"`
+	Color    string `json:"color"`
+}
+
+// handleCmuxCreate: POST /api/cmux/create
+//
+// Builds the same layout `worktree new` does, but from the worktree's
+// resources AS THEY ARE NOW — usually better than at creation time, since
+// resources get added later. The server knows its own port, so the pinned UI
+// tab is easier here than in the CLI, where runningUIDetailURL has to probe
+// for a listener.
+func (s *Server) handleCmuxCreate(w http.ResponseWriter, r *http.Request) {
+	var req cmuxCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if req.Path == "" {
+		writeError(w, http.StatusBadRequest, "missing path")
+		return
+	}
+	if !cmux.IsAvailable() {
+		writeJSON(w, http.StatusOK, cmuxActionResponse{OK: false, Error: "cmux is not running"})
+		return
+	}
+
+	var urls []string
+	if s.DB != nil {
+		if res, err := resources.Load(s.DB, req.Path); err == nil {
+			for _, x := range resources.OfType(res, "pr") {
+				if x.URL != "" {
+					urls = append(urls, x.URL)
+				}
+			}
+			for _, x := range resources.OfType(res, "jira") {
+				if !x.Related && x.URL != "" {
+					urls = append(urls, x.URL)
+				}
+			}
+		}
+	}
+
+	uiURL := fmt.Sprintf("http://localhost:%d/worktree?path=%s", s.Port, req.Path)
+
+	opts := cmux.NewWorkspaceOptions{
+		Name:     req.Name,
+		Cwd:      req.Path,
+		Focus:    true,
+		GroupRef: req.GroupRef,
+		Layout:   cmux.BuildLayout(uiURL, urls),
+	}
+	ref, err := cmux.NewWorkspace(opts)
+	if err != nil {
+		writeJSON(w, http.StatusOK, cmuxActionResponse{OK: false, Error: err.Error()})
+		return
+	}
+
+	// Everything past creation is best-effort: a workspace that exists but
+	// missed its colour is still a usable workspace.
+	if req.Color != "" {
+		cmux.SetWorkspaceColor(ref, req.Color)
+	}
+	cmux.PinBrowserTabs(ref)
+	cmux.FocusFirstBrowserTab(ref)
+	cmux.Activate()
+
+	writeJSON(w, http.StatusOK, cmuxActionResponse{OK: true, Ref: ref})
 }

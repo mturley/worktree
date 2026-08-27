@@ -103,6 +103,7 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/cmux", s.handleCmux)
 	mux.HandleFunc("GET /api/cmux-groups", s.handleCmuxGroups)
 	mux.HandleFunc("POST /api/cmux/select", s.handleCmuxSelect)
+	mux.HandleFunc("POST /api/cmux/create", s.handleCmuxCreate)
 	mux.HandleFunc("GET /api/jira-icon", s.handleJiraIcon)
 	mux.HandleFunc("GET /api/slack-avatar", s.handleSlackAvatar)
 	mux.HandleFunc("GET /api/slack-emoji", s.handleSlackEmoji)

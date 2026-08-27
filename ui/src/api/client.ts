@@ -1,4 +1,4 @@
-import type { WorktreeSummary, TimelineResponse, ResourceDTO, WorktreeInfo, DeleteWorktreeResponse } from "./types"
+import type { WorktreeSummary, TimelineResponse, ResourceDTO, WorktreeInfo, DeleteWorktreeResponse, CmuxGroupsResponse } from "./types"
 
 async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init)
@@ -68,6 +68,13 @@ export const api = {
     force_branch?: boolean
   }) =>
     fetchJSON<DeleteWorktreeResponse>("/api/worktrees/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(args),
+    }),
+  cmuxGroups: () => fetchJSON<CmuxGroupsResponse>("/api/cmux-groups"),
+  cmuxCreate: (args: { path: string; name: string; group_ref?: string; color?: string }) =>
+    fetchJSON<{ ok: boolean; ref?: string; error?: string }>("/api/cmux/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(args),
