@@ -85,26 +85,45 @@ func TestResourcesJSONEmptyIsArray(t *testing.T) {
 
 func TestResolveResourceArgs(t *testing.T) {
 	cases := []struct {
-		name                          string
-		args                          []string
-		wantType, wantID, wantURL     string
-		wantErr                       bool
+		name     string
+		args     []string
+		wantType string
+		wantID   string
+		wantURL  string
+		wantErr  bool
+		setup    func(t *testing.T)
 	}{
 		{
-			name: "url form infers type and id",
-			args: []string{"https://github.com/o/r/pull/42"},
-			wantType: "pr", wantID: "o/r#42", wantURL: "https://github.com/o/r/pull/42",
+			name:     "url form infers type and id",
+			args:     []string{"https://github.com/o/r/pull/42"},
+			wantType: "pr",
+			wantID:   "o/r#42",
+			wantURL:  "https://github.com/o/r/pull/42",
 		},
 		{
-			name: "slack url form",
-			args: []string{"https://x.slack.com/archives/C123/p1700000000000200"},
-			wantType: "slack", wantID: "C123:1700000000.000200",
-			wantURL: "https://x.slack.com/archives/C123/p1700000000000200",
+			name:     "slack url form",
+			args:     []string{"https://x.slack.com/archives/C123/p1700000000000200"},
+			wantType: "slack",
+			wantID:   "C123:1700000000.000200",
+			wantURL:  "https://x.slack.com/archives/C123/p1700000000000200",
 		},
 		{
-			name: "explicit two-arg form still works",
-			args: []string{"jira", "ABC-1"},
-			wantType: "jira", wantID: "ABC-1",
+			name:     "explicit two-arg form still works",
+			args:     []string{"jira", "ABC-1"},
+			wantType: "jira",
+			wantID:   "ABC-1",
+		},
+		{
+			name:     "two-arg form carries the --url flag through",
+			args:     []string{"jira", "ABC-1"},
+			wantType: "jira",
+			wantID:   "ABC-1",
+			wantURL:  "https://x.atlassian.net/browse/ABC-1",
+			setup: func(t *testing.T) {
+				prev := resURL
+				resURL = "https://x.atlassian.net/browse/ABC-1"
+				t.Cleanup(func() { resURL = prev })
+			},
 		},
 		{
 			name:    "unrecognized single arg is an error, not a resource",
@@ -114,6 +133,9 @@ func TestResolveResourceArgs(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.setup != nil {
+				tc.setup(t)
+			}
 			gt, gi, gu, err := resolveResourceArgs(tc.args)
 			if tc.wantErr {
 				if err == nil {
