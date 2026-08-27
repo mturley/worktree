@@ -12,6 +12,7 @@ import (
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/github"
 	"github.com/mturley/worktree/internal/gitutil"
+	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/resources"
 )
 
@@ -92,12 +93,21 @@ func prRepo(t *testing.T, branchName string) string {
 // stubPR points the seams at fixed answers for the duration of a test.
 func stubPR(t *testing.T, res gitutil.PRWorktreeResult) {
 	t.Helper()
+	stubPRInfo(t, &github.PRInfo{
+		Number: 1, Title: "Some Title", HeadRef: "feature",
+		URL: "https://github.com/owner/repo/pull/1",
+	}, res)
+}
+
+// stubPRInfo is stubPR with the PR's own metadata under test control, for the
+// cases that care what the title and body say.
+func stubPRInfo(t *testing.T, info *github.PRInfo, res gitutil.PRWorktreeResult) {
+	t.Helper()
 	origFetch, origCreate := fetchPRInfo, createPRWorktree
 	fetchPRInfo = func(owner, repo string, number int) (*github.PRInfo, error) {
-		return &github.PRInfo{
-			Number: number, Title: "Some Title", HeadRef: "feature",
-			URL: "https://github.com/owner/repo/pull/1",
-		}, nil
+		out := *info
+		out.Number = number
+		return &out, nil
 	}
 	createPRWorktree = func(repoRoot, base, remote string, n int, headRef, slug string) (gitutil.PRWorktreeResult, error) {
 		return res, nil
@@ -322,16 +332,63 @@ func TestRunPRTrackingFailureRecordsOneStep(t *testing.T) {
 		t.Fatalf("status = %q, want done — a tracking failure does not break creation", got[0].Status)
 	}
 
-	// The observer must see it once too: a streaming consumer that upserts by
-	// key would otherwise have the warning overwritten mid-flight.
-	seen := 0
+	// The observer must see exactly ONE terminal record for the step: a
+	// streaming consumer that upserts by key would otherwise have the warning
+	// overwritten mid-flight. The pending record that precedes it is the
+	// deliberate in-progress signal, not a competing outcome, so it is
+	// excluded — what must never happen is two settled records under one key.
+	var terminal []Step
 	for _, s := range observed {
-		if s.Key == StepCreateWorktree {
-			seen++
+		if s.Key == StepCreateWorktree && s.Status != StatusPending {
+			terminal = append(terminal, s)
 		}
 	}
-	if seen != 1 {
-		t.Fatalf("observer saw create_worktree %d times, want exactly 1", seen)
+	if len(terminal) != 1 {
+		t.Fatalf("observer saw %d settled create_worktree records, want exactly 1: %#v",
+			len(terminal), terminal)
+	}
+	if !strings.Contains(terminal[0].Detail, "tracking not set") {
+		t.Fatalf("observed detail = %q, want the warning", terminal[0].Detail)
+	}
+}
+
+// TestSlowStepsAnnounceThemselvesBeforeRunning pins the in-progress signal.
+// The observer used to hear about a step only when it finished, which left
+// `worktree add` silent through the `gh` fetch and the git work — several
+// seconds of dead terminal. pull and create_worktree now report pending first
+// and their outcome after, and the pending record must not survive into the
+// final step list.
+func TestSlowStepsAnnounceThemselvesBeforeRunning(t *testing.T) {
+	repo := newRepo(t)
+	cfg := config.Config{WorktreesBase: t.TempDir()}
+
+	var observed []Step
+	res := Run(nil, cfg, Options{Input: "my-feature", RepoRoot: repo},
+		func(s Step) { observed = append(observed, s) })
+	if res.Err != nil {
+		t.Fatalf("unexpected error: %v", res.Err)
+	}
+
+	first := map[StepKey]Status{}
+	for _, s := range observed {
+		if _, ok := first[s.Key]; !ok {
+			first[s.Key] = s.Status
+		}
+	}
+	if first[StepCreateWorktree] != StatusPending {
+		t.Fatalf("first create_worktree record = %q, want pending — nothing tells the user work started",
+			first[StepCreateWorktree])
+	}
+	if got := statusOf(res, StepCreateWorktree); got != StatusDone {
+		t.Fatalf("final create_worktree = %q, want done — pending must be replaced", got)
+	}
+
+	// Same for pull when it is actually requested.
+	observed = nil
+	Run(nil, cfg, Options{Input: "other-feature", RepoRoot: repo, Pull: true},
+		func(s Step) { observed = append(observed, s) })
+	if len(observed) == 0 || observed[0].Key != StepPull || observed[0].Status != StatusPending {
+		t.Fatalf("first observed record = %#v, want a pending pull", observed[0])
 	}
 }
 
@@ -355,5 +412,122 @@ func TestRecordReplacesRatherThanDuplicates(t *testing.T) {
 	}
 	if last.Detail != "second" || last.Status != StatusFailed {
 		t.Fatalf("= %#v, want the later record to win", last)
+	}
+}
+
+// TestRunPRDeclinedResetOnExistingDirFinalizes covers the other route into the
+// decline: an existing worktree DIRECTORY that has diverged from the PR head,
+// with no branch-reuse question in front of it. The directory is already on
+// disk here, so an abort would strand exactly what it did in the reuse case —
+// unregistered, holding no port range, invisible to the tool.
+func TestRunPRDeclinedResetOnExistingDirFinalizes(t *testing.T) {
+	repo := prRepo(t, "")
+	base := t.TempDir()
+	conn, err := wdb.OpenAt(filepath.Join(base, "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+
+	wtPath := filepath.Join(base, "pr-1")
+	if err := os.MkdirAll(wtPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stubPR(t, gitutil.PRWorktreeResult{
+		CreateResult: gitutil.CreateResult{Path: wtPath, Branch: testPRBranch},
+		Status:       gitutil.PRWorktreeExistingDir,
+		LocalHead:    "aaa", RemoteHead: "bbb", FetchRef: "refs/pr-review/1",
+	})
+
+	// Without DeclineReset this same call returns a ConfirmResetToPR — assert
+	// that first, so the test cannot pass by the question never being asked.
+	asked := Run(conn, config.Config{WorktreesBase: base},
+		Options{Input: "https://github.com/owner/repo/pull/1", RepoRoot: repo}, nil)
+	if asked.Confirm == nil || asked.Confirm.Key != ConfirmResetToPR {
+		t.Fatalf("confirm = %#v, want ConfirmResetToPR", asked.Confirm)
+	}
+
+	res := Run(conn, config.Config{WorktreesBase: base}, Options{
+		Input: "https://github.com/owner/repo/pull/1", RepoRoot: repo,
+		DeclineReset: true,
+	}, nil)
+
+	if res.Err != nil {
+		t.Fatalf("unexpected error: %v", res.Err)
+	}
+	if res.Confirm != nil {
+		t.Fatalf("confirm = %#v, want nil — a declined reset must finish the run", res.Confirm)
+	}
+	if got := statusOf(res, StepRegister); got == StatusPending {
+		t.Fatalf("register = %q — finalize was never reached", got)
+	}
+	if got := statusOf(res, StepKubeconfig); got == StatusPending {
+		t.Fatalf("kubeconfig = %q — finalize was never reached", got)
+	}
+	entries, err := registry.List(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, e := range entries {
+		if e.Path == wtPath {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("worktree not registered after a declined reset — it would be stranded")
+	}
+}
+
+// TestRunPRDetectsJiraKeysFromTitleAndBody pins the title/body threading out
+// of runPR. The keys reach Jira detection only through prOutcome; drop them
+// and a PR worktree would silently stop tracking the issues its description
+// names — the CLI did this before the runner existed.
+func TestRunPRDetectsJiraKeysFromTitleAndBody(t *testing.T) {
+	repo := prRepo(t, "")
+	base := t.TempDir()
+	conn, err := wdb.OpenAt(filepath.Join(base, "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+
+	wtPath := filepath.Join(base, "pr-1")
+	if err := os.MkdirAll(wtPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stubPRInfo(t, &github.PRInfo{
+		Title: "PROJ-7 fix the thing", Body: "Follow-up to PROJ-8.\n<!-- PROJ-9 is an example -->",
+		HeadRef: "feature", URL: "https://github.com/owner/repo/pull/1",
+	}, gitutil.PRWorktreeResult{
+		CreateResult: gitutil.CreateResult{Path: wtPath, Branch: testPRBranch, Created: true},
+		Status:       gitutil.PRWorktreeCreated,
+		RemoteHead:   "bbb", FetchRef: "refs/pr-review/1",
+	})
+
+	cfg := config.Config{WorktreesBase: base}
+	cfg.Jira.Projects = []string{"PROJ"}
+
+	res := Run(conn, cfg,
+		Options{Input: "https://github.com/owner/repo/pull/1", RepoRoot: repo}, nil)
+	if res.Err != nil {
+		t.Fatalf("unexpected error: %v", res.Err)
+	}
+
+	tracked, err := resources.Load(conn, wtPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, r := range tracked {
+		if r.Type == "jira" {
+			got[r.ID] = true
+		}
+	}
+	if !got["PROJ-7"] || !got["PROJ-8"] {
+		t.Fatalf("tracked jira issues = %v, want PROJ-7 and PROJ-8 from the PR title and body", got)
+	}
+	if got["PROJ-9"] {
+		t.Fatal("PROJ-9 came from an HTML comment and must not be tracked")
 	}
 }

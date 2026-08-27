@@ -198,6 +198,13 @@ func Run(conn *sql.DB, cfg config.Config, opts Options, observe func(Step)) Resu
 
 	// Pull first, so the new worktree branches from current upstream.
 	if opts.Pull {
+		// Pending is recorded BEFORE the work, not only after: pull and
+		// create_worktree block on the network, and an observer that hears
+		// about a step only when it finishes cannot show that anything is
+		// happening. record replaces by key, so the pending entry is
+		// overwritten by the outcome and the step list stays one-per-key —
+		// the observer simply fires twice for these two steps.
+		r.record(StepPull, StatusPending, "")
 		if err := gitutil.Pull(opts.RepoRoot); err != nil {
 			// A failed pull is not fatal — the worktree is still creatable
 			// from whatever the local clone has.
@@ -217,6 +224,10 @@ func Run(conn *sql.DB, cfg config.Config, opts Options, observe func(Step)) Resu
 	var created gitutil.CreateResult
 	var primary *resources.Resource
 	var prTitle, prBody string
+
+	// Creation reaches the network on the PR path (the `gh` fetch and the
+	// `git fetch` inside CreatePRWorktree), so it announces itself first too.
+	r.record(StepCreateWorktree, StatusPending, "")
 
 	if pr != nil {
 		out, prErr := r.runPR(pr)

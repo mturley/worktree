@@ -137,19 +137,13 @@ func runCreate(input, repoRoot string) error {
 		CopyDotfiles: confirmDotfiles(repoRoot),
 	}
 
+	var printer stepPrinter
 	for {
-		res := worktreenew.Run(conn, cfg, opts, func(s worktreenew.Step) {
-			switch s.Status {
-			case worktreenew.StatusDone:
-				line := fmt.Sprintf("  %s %s", ui.Green("✓"), s.Label)
-				if s.Detail != "" {
-					line += ": " + ui.Dim(s.Detail)
-				}
-				fmt.Println(line)
-			case worktreenew.StatusFailed:
-				fmt.Fprintf(os.Stderr, "  %s %s: %s\n", ui.Yellow("!"), s.Label, s.Detail)
-			}
-		})
+		res := worktreenew.Run(conn, cfg, opts, printer.observe)
+		// A run that stops on a confirmation leaves create_worktree pending,
+		// so its spinner is still turning; the question must not be asked
+		// underneath it.
+		printer.clear()
 		if res.Err != nil {
 			return res.Err
 		}
@@ -160,29 +154,104 @@ func runCreate(input, repoRoot string) error {
 		}
 
 		c := res.Confirm
+		var agreed bool
 		switch c.Key {
 		case worktreenew.ConfirmReuseBranch:
 			fmt.Printf("  Branch %s already exists\n", ui.Yellow(c.Branch))
-			if !ui.Confirm("  Reuse this branch?") {
-				fmt.Println("Aborted.")
-				return nil
-			}
-			opts.ReuseBranch = true
+			agreed = ui.Confirm("  Reuse this branch?")
 		case worktreenew.ConfirmResetToPR:
 			fmt.Printf("  %s Local (%s) differs from PR latest (%s)\n",
 				ui.Yellow("!"), shortSHA(c.LocalHead), shortSHA(c.RemoteHead))
-			if !ui.Confirm("  Reset to the PR's latest commit?") {
-				// Declining is NOT an abort. By this point gitutil has already
-				// created the worktree directory, so returning here would strand
-				// it: on disk, unregistered, holding no port range, invisible to
-				// the tool. Set DeclineReset and loop, so the runner skips the
-				// reset and carries on to finalize — the worktree is perfectly
-				// usable at its current commit.
-				opts.DeclineReset = true
-				continue
-			}
-			opts.ResetToPR = true
+			agreed = ui.Confirm("  Reset to the PR's latest commit?")
 		}
+		if !answerConfirm(c, agreed, &opts) {
+			fmt.Println("Aborted.")
+			return nil
+		}
+	}
+}
+
+// answerConfirm records the user's answer to a pending confirmation in opts,
+// and reports whether the loop should replay the run.
+//
+// It is a function of its own so the one asymmetry between the two questions
+// is testable without a terminal: declining "reuse this branch?" aborts,
+// because nothing has been created yet, but declining "reset to the PR's
+// latest commit?" must NOT. By that point gitutil has already created the
+// worktree directory, so returning would strand it: on disk, unregistered,
+// holding no port range, invisible to the tool. DeclineReset carries the "no"
+// into the replay, the runner skips the reset, and the run finalizes a
+// worktree that is perfectly usable at its current commit.
+func answerConfirm(c *worktreenew.Confirm, agreed bool, opts *worktreenew.Options) (proceed bool) {
+	switch c.Key {
+	case worktreenew.ConfirmReuseBranch:
+		if !agreed {
+			return false
+		}
+		opts.ReuseBranch = true
+	case worktreenew.ConfirmResetToPR:
+		if !agreed {
+			opts.DeclineReset = true
+			return true
+		}
+		opts.ResetToPR = true
+	}
+	return true
+}
+
+// stepPrinter renders the runner's steps with the spinner the CLI has always
+// shown while git and the network work. The runner reports `pending` when a
+// slow step starts and its outcome when it ends, so the spinner starts and
+// stops here — the runner itself never prints, because an HTTP request drives
+// the same code.
+type stepPrinter struct {
+	active *ui.Spinner
+}
+
+func (p *stepPrinter) observe(s worktreenew.Step) {
+	switch s.Status {
+	case worktreenew.StatusPending:
+		p.clear()
+		p.active = ui.StartSpinner(s.Label)
+	case worktreenew.StatusDone:
+		line := fmt.Sprintf("  %s %s", ui.Green("✓"), s.Label)
+		if s.Detail != "" {
+			line += ": " + ui.Dim(s.Detail)
+		}
+		p.finish(line)
+	case worktreenew.StatusSkipped:
+		// Skipped steps stay visible but quiet: this is what replaces the old
+		// "→ Reusing existing worktree at …" line, which otherwise vanished
+		// and made reuse look identical to a fresh create.
+		line := "  → " + s.Label
+		if s.Detail != "" {
+			line += " (" + s.Detail + ")"
+		}
+		p.finish(ui.Dim(line))
+	case worktreenew.StatusFailed:
+		// Warnings keep going to stderr, as they did before the runner
+		// existed; the spinner line is cleared first so they land clean.
+		p.clear()
+		fmt.Fprintf(os.Stderr, "  %s %s: %s\n", ui.Yellow("!"), s.Label, s.Detail)
+	}
+}
+
+// finish stops any running spinner with line as its result, or prints line
+// outright when no spinner is turning.
+func (p *stepPrinter) finish(line string) {
+	if p.active != nil {
+		p.active.Stop(line)
+		p.active = nil
+		return
+	}
+	fmt.Println(line)
+}
+
+// clear stops any running spinner without printing a result line.
+func (p *stepPrinter) clear() {
+	if p.active != nil {
+		p.active.Stop("")
+		p.active = nil
 	}
 }
 
