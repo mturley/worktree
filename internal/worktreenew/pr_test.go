@@ -1,9 +1,11 @@
 package worktreenew
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mturley/worktree/internal/config"
@@ -254,5 +256,104 @@ func TestRunPRRejectsAMismatchedRepo(t *testing.T) {
 	}
 	if got := statusOf(res, StepCreateWorktree); got != StatusFailed {
 		t.Fatalf("create_worktree = %q, want failed", got)
+	}
+}
+
+// failTracking makes SetPRTracking fail for the duration of a test. Tracking
+// is the one non-fatal failure on the PR path, so it is the only way to reach
+// the warning-detail branch.
+func failTracking(t *testing.T) {
+	t.Helper()
+	orig := setPRTracking
+	setPRTracking = func(repoRoot, branch, remote string, n int) error {
+		return errors.New("git config: permission denied")
+	}
+	t.Cleanup(func() { setPRTracking = orig })
+}
+
+// TestRunPRTrackingFailureRecordsOneStep is the guard for a bug that was both
+// duplicated AND silent: runPR used to record create_worktree itself with the
+// tracking warning, and then Run recorded it a second time with the plain
+// path. The step list is keyed by StepKey downstream — React renders
+// `key={s.key}` and streaming consumers upsert by key — so the second record
+// overwrote the first, throwing away the only surface where a tracking failure
+// was ever visible.
+func TestRunPRTrackingFailureRecordsOneStep(t *testing.T) {
+	repo := prRepo(t, "")
+	base := t.TempDir()
+	wtPath := filepath.Join(base, "pr-1")
+	if err := os.MkdirAll(wtPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stubPR(t, gitutil.PRWorktreeResult{
+		CreateResult: gitutil.CreateResult{Path: wtPath, Branch: testPRBranch, Created: true},
+		Status:       gitutil.PRWorktreeCreated,
+		RemoteHead:   "bbb", FetchRef: "refs/pr-review/1",
+	})
+	failTracking(t)
+
+	var observed []Step
+	res := Run(nil, config.Config{WorktreesBase: base},
+		Options{Input: "https://github.com/owner/repo/pull/1", RepoRoot: repo},
+		func(s Step) { observed = append(observed, s) })
+
+	if res.Err != nil {
+		t.Fatalf("unexpected error: %v", res.Err)
+	}
+
+	var got []Step
+	for _, s := range res.Steps {
+		if s.Key == StepCreateWorktree {
+			got = append(got, s)
+		}
+	}
+	if len(got) != 1 {
+		t.Fatalf("create_worktree appears %d times, want exactly 1: %#v", len(got), got)
+	}
+	if !strings.Contains(got[0].Detail, "tracking not set") {
+		t.Fatalf("detail = %q, want it to mention the tracking failure", got[0].Detail)
+	}
+	if !strings.Contains(got[0].Detail, wtPath) {
+		t.Fatalf("detail = %q, want it to still carry the worktree path", got[0].Detail)
+	}
+	// Tracking is a convenience, not the deliverable: the worktree exists and
+	// is usable, so the step is done-with-a-warning, not failed.
+	if got[0].Status != StatusDone {
+		t.Fatalf("status = %q, want done — a tracking failure does not break creation", got[0].Status)
+	}
+
+	// The observer must see it once too: a streaming consumer that upserts by
+	// key would otherwise have the warning overwritten mid-flight.
+	seen := 0
+	for _, s := range observed {
+		if s.Key == StepCreateWorktree {
+			seen++
+		}
+	}
+	if seen != 1 {
+		t.Fatalf("observer saw create_worktree %d times, want exactly 1", seen)
+	}
+}
+
+// TestRecordReplacesRatherThanDuplicates pins the belt-and-braces guarantee
+// directly, so no future call site can reintroduce a duplicate key.
+func TestRecordReplacesRatherThanDuplicates(t *testing.T) {
+	r := &runner{}
+	r.record(StepCreateWorktree, StatusDone, "first")
+	r.record(StepCreateWorktree, StatusFailed, "second")
+
+	n := 0
+	var last Step
+	for _, s := range r.finish() {
+		if s.Key == StepCreateWorktree {
+			n++
+			last = s
+		}
+	}
+	if n != 1 {
+		t.Fatalf("create_worktree appears %d times, want exactly 1", n)
+	}
+	if last.Detail != "second" || last.Status != StatusFailed {
+		t.Fatalf("= %#v, want the later record to win", last)
 	}
 }

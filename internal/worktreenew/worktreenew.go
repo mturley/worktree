@@ -41,6 +41,7 @@ import (
 var (
 	fetchPRInfo      = github.FetchPRByRepo
 	createPRWorktree = gitutil.CreatePRWorktree
+	setPRTracking    = gitutil.SetPRTracking
 )
 
 type StepKey string
@@ -144,9 +145,27 @@ type runner struct {
 	steps   []Step
 }
 
+// record files a step's outcome. Recording a key twice REPLACES the earlier
+// entry rather than appending a second one: the step list is keyed by StepKey
+// downstream (React renders `key={s.key}`, and streaming consumers upsert by
+// key), so a duplicate means a console warning, unreliable reconciliation, and
+// — worse — the later entry silently overwriting the earlier one's detail. One
+// entry per key makes that class of bug unrepresentable instead of merely
+// absent. The observer still fires on a replace, so a streaming consumer
+// converges on the same final value the list holds.
 func (r *runner) record(key StepKey, status Status, detail string) {
 	s := Step{Key: key, Label: labels[key], Status: status, Detail: detail}
-	r.steps = append(r.steps, s)
+	replaced := false
+	for i := range r.steps {
+		if r.steps[i].Key == key {
+			r.steps[i] = s
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		r.steps = append(r.steps, s)
+	}
 	if r.observe != nil {
 		r.observe(s)
 	}
@@ -199,17 +218,23 @@ func Run(conn *sql.DB, cfg config.Config, opts Options, observe func(Step)) Resu
 	var primary *resources.Resource
 
 	if pr != nil {
-		var confirm *Confirm
-		created, primary, confirm, err = r.runPR(pr)
-		if err != nil {
-			r.record(StepCreateWorktree, StatusFailed, err.Error())
-			return Result{Steps: r.finish(), Err: err}
+		out, prErr := r.runPR(pr)
+		if prErr != nil {
+			r.record(StepCreateWorktree, StatusFailed, prErr.Error())
+			return Result{Steps: r.finish(), Err: prErr}
 		}
-		if confirm != nil {
+		if out.Confirm != nil {
 			// Stop: later steps stay pending so the stepper greys them.
-			return Result{Steps: r.finish(), Confirm: confirm}
+			return Result{Steps: r.finish(), Confirm: out.Confirm}
 		}
-		r.record(StepCreateWorktree, StatusDone, created.Path)
+		created, primary = out.Created, out.Primary
+		// One record for the step, with any non-fatal warning folded into the
+		// detail — runPR deliberately records nothing itself.
+		detail := created.Path
+		if out.Warn != "" {
+			detail = created.Path + " (" + out.Warn + ")"
+		}
+		r.record(StepCreateWorktree, StatusDone, detail)
 	} else {
 		branch, p := resolveInput(opts.Input)
 		primary = p
@@ -266,42 +291,53 @@ func parsePRInput(input, repoRoot string) (*PRInput, error) {
 	return &PRInput{Owner: parts[0], Repo: parts[1], Number: n}, nil
 }
 
+// prOutcome is what the PR path produced. A non-nil Confirm means the run must
+// stop and wait for an answer. Warn carries a non-fatal diagnostic for Run to
+// fold into its single create_worktree record — runPR never records a step
+// itself, because two records under one key would collide downstream.
+type prOutcome struct {
+	Created gitutil.CreateResult
+	Primary *resources.Resource
+	Confirm *Confirm
+	Warn    string
+}
+
 // runPR creates a worktree from a pull request, pausing for confirmation when
 // git needs an answer. Both questions replay: the caller re-invokes Run with
 // the matching Options flag set, and the sequence reaches the same point with
 // the answer already in hand.
-func (r *runner) runPR(pr *PRInput) (gitutil.CreateResult, *resources.Resource, *Confirm, error) {
+func (r *runner) runPR(pr *PRInput) (prOutcome, error) {
 	info, err := fetchPRInfo(pr.Owner, pr.Repo, pr.Number)
 	if err != nil {
-		return gitutil.CreateResult{}, nil, nil, err
+		return prOutcome{}, err
 	}
 	if !gitutil.MatchesRemote(r.opts.RepoRoot, pr.Owner, pr.Repo) {
-		return gitutil.CreateResult{}, nil, nil,
+		return prOutcome{},
 			fmt.Errorf("%s is not a clone of %s/%s", r.opts.RepoRoot, pr.Owner, pr.Repo)
 	}
 	remote, err := gitutil.FindRemoteForRepo(r.opts.RepoRoot, pr.Owner, pr.Repo)
 	if err != nil {
-		return gitutil.CreateResult{}, nil, nil, err
+		return prOutcome{}, err
 	}
 
 	res, err := createPRWorktree(
 		r.opts.RepoRoot, r.cfg.WorktreesBase, remote, pr.Number, info.HeadRef,
 		github.Slugify(info.Title))
 	if err != nil {
-		return gitutil.CreateResult{}, nil, nil, err
+		return prOutcome{}, err
 	}
 
 	switch res.Status {
 	case gitutil.PRWorktreeBranchExists:
 		if !r.opts.ReuseBranch {
-			return gitutil.CreateResult{}, nil, &Confirm{
+			return prOutcome{Confirm: &Confirm{
 				Key: ConfirmReuseBranch, Branch: res.Branch,
 				LocalHead: res.LocalHead, RemoteHead: res.RemoteHead,
-			}, nil
+			}}, nil
 		}
 		if err := gitutil.CreateWorktreeFromExistingBranch(
 			r.opts.RepoRoot, res.Path, res.Branch); err != nil {
-			return gitutil.CreateResult{}, nil, nil, err
+			return prOutcome{}, err
 		}
 		// A reused branch still needs the sync check below.
 		fallthrough
@@ -310,31 +346,38 @@ func (r *runner) runPR(pr *PRInput) (gitutil.CreateResult, *resources.Resource, 
 			switch {
 			case r.opts.ResetToPR:
 				if err := gitutil.ResetHard(res.Path, res.FetchRef); err != nil {
-					return gitutil.CreateResult{}, nil, nil, err
+					return prOutcome{}, err
 				}
 			case r.opts.DeclineReset:
 				// Asked and declined. Carry on: the worktree is perfectly
 				// usable at its current commit, and re-asking would loop.
 			default:
-				return gitutil.CreateResult{}, nil, &Confirm{
+				return prOutcome{Confirm: &Confirm{
 					Key: ConfirmResetToPR, Branch: res.Branch,
 					LocalHead: res.LocalHead, RemoteHead: res.RemoteHead,
-				}, nil
+				}}, nil
 			}
 		}
 	}
 
-	if err := gitutil.SetPRTracking(r.opts.RepoRoot, res.Branch, remote, pr.Number); err != nil {
-		// Tracking is a convenience, not the deliverable.
-		r.record(StepCreateWorktree, StatusDone, "tracking not set: "+err.Error())
+	var warn string
+	if err := setPRTracking(r.opts.RepoRoot, res.Branch, remote, pr.Number); err != nil {
+		// Tracking is a convenience (it makes `git pull` follow the PR head),
+		// not the deliverable — the worktree is fully usable without it, so
+		// the step stays `done` and the failure surfaces as a detail rather
+		// than a `failed` status that would imply the creation itself broke.
+		warn = "tracking not set: " + err.Error()
 	}
 
-	primary := &resources.Resource{
-		Type: "pr",
-		ID:   fmt.Sprintf("%s/%s#%d", pr.Owner, pr.Repo, pr.Number),
-		URL:  info.URL,
-	}
-	return res.CreateResult, primary, nil, nil
+	return prOutcome{
+		Created: res.CreateResult,
+		Primary: &resources.Resource{
+			Type: "pr",
+			ID:   fmt.Sprintf("%s/%s#%d", pr.Owner, pr.Repo, pr.Number),
+			URL:  info.URL,
+		},
+		Warn: warn,
+	}, nil
 }
 
 // resolveInput turns the polymorphic input into a branch name and, for a Jira
