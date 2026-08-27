@@ -216,6 +216,7 @@ func Run(conn *sql.DB, cfg config.Config, opts Options, observe func(Step)) Resu
 
 	var created gitutil.CreateResult
 	var primary *resources.Resource
+	var prTitle, prBody string
 
 	if pr != nil {
 		out, prErr := r.runPR(pr)
@@ -228,6 +229,7 @@ func Run(conn *sql.DB, cfg config.Config, opts Options, observe func(Step)) Resu
 			return Result{Steps: r.finish(), Confirm: out.Confirm}
 		}
 		created, primary = out.Created, out.Primary
+		prTitle, prBody = out.Title, out.Body
 		// One record for the step, with any non-fatal warning folded into the
 		// detail — runPR deliberately records nothing itself.
 		detail := created.Path
@@ -255,7 +257,7 @@ func Run(conn *sql.DB, cfg config.Config, opts Options, observe func(Step)) Resu
 		}
 	}
 
-	r.finalize(created, primary)
+	r.finalize(created, primary, prTitle, prBody)
 
 	return Result{Steps: r.finish(), Path: created.Path, Branch: created.Branch}
 }
@@ -300,6 +302,12 @@ type prOutcome struct {
 	Primary *resources.Resource
 	Confirm *Confirm
 	Warn    string
+
+	// Title and Body are the pull request's, carried through so the resources
+	// step can detect Jira keys mentioned in them. runPR already fetched the
+	// PR, so threading them here avoids a second `gh` call.
+	Title string
+	Body  string
 }
 
 // runPR creates a worktree from a pull request, pausing for confirmation when
@@ -376,7 +384,9 @@ func (r *runner) runPR(pr *PRInput) (prOutcome, error) {
 			ID:   fmt.Sprintf("%s/%s#%d", pr.Owner, pr.Repo, pr.Number),
 			URL:  info.URL,
 		},
-		Warn: warn,
+		Warn:  warn,
+		Title: info.Title,
+		Body:  info.Body,
 	}, nil
 }
 
@@ -405,7 +415,7 @@ func repoDirName(repoRoot string) string {
 // finalize runs the post-creation sequence. Every step here is best-effort:
 // a failure is recorded and the run continues, because stopping would leave
 // more mess than proceeding — the same choice worktreedel makes for cleanup.
-func (r *runner) finalize(created gitutil.CreateResult, primary *resources.Resource) {
+func (r *runner) finalize(created gitutil.CreateResult, primary *resources.Resource, prTitle, prBody string) {
 	mainRoot := gitutil.MainRoot(r.opts.RepoRoot)
 	if mainRoot == "" {
 		mainRoot = r.opts.RepoRoot
@@ -442,13 +452,7 @@ func (r *runner) finalize(created gitutil.CreateResult, primary *resources.Resou
 		r.record(StepKubeconfig, StatusDone, kubePath)
 	}
 
-	if primary == nil || r.conn == nil {
-		r.record(StepResources, StatusSkipped, "nothing to track")
-	} else if err := resources.Add(r.conn, created.Path, *primary); err != nil {
-		r.record(StepResources, StatusFailed, err.Error())
-	} else {
-		r.record(StepResources, StatusDone, primary.ID)
-	}
+	r.trackResources(created, primary, prTitle, prBody)
 
 	if !r.opts.CopyDotfiles {
 		r.record(StepDotfiles, StatusSkipped, "not requested")
@@ -469,5 +473,64 @@ func (r *runner) finalize(created gitutil.CreateResult, primary *resources.Resou
 		r.record(StepDotfiles, StatusFailed, "failed: "+strings.Join(failed, ", "))
 	} else {
 		r.record(StepDotfiles, StatusDone, fmt.Sprintf("%d copied", len(dfs)))
+	}
+}
+
+// trackResources records the primary resource and any Jira issues mentioned in
+// the branch name or the PR's title/body.
+//
+// The Jira detection used to live in cmd/root.go (detectAndSaveJiraIssues), so
+// it worked from the terminal only. Keeping it there while the web UI drove
+// this runner would have made the two surfaces disagree about which issues a
+// worktree tracks — precisely the divergence this package exists to prevent.
+// It reports through the step's detail rather than stdout: an HTTP request
+// drives this code too, and the runner must never print.
+func (r *runner) trackResources(created gitutil.CreateResult, primary *resources.Resource, prTitle, prBody string) {
+	if r.conn == nil {
+		r.record(StepResources, StatusSkipped, "no database")
+		return
+	}
+
+	var tracked, failures []string
+	if primary != nil {
+		if err := resources.Add(r.conn, created.Path, *primary); err != nil {
+			failures = append(failures, primary.ID+": "+err.Error())
+		} else {
+			tracked = append(tracked, primary.ID)
+		}
+	}
+
+	if len(r.cfg.Jira.Projects) > 0 {
+		// Load AFTER adding the primary, so an issue that is already tracked —
+		// including the one just added — is not added a second time.
+		existing, _ := resources.Load(r.conn, created.Path)
+		seen := make(map[string]bool, len(existing))
+		for _, res := range existing {
+			if res.Type == "jira" {
+				seen[res.ID] = true
+			}
+		}
+		host := jira.HostFromWatcherConfig()
+		for _, key := range jira.DetectKeys(created.Branch, prTitle, prBody, r.cfg.Jira.Projects) {
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			res := resources.Resource{Type: "jira", ID: key, URL: jira.IssueURL(host, key)}
+			if err := resources.Add(r.conn, created.Path, res); err != nil {
+				failures = append(failures, key+": "+err.Error())
+			} else {
+				tracked = append(tracked, key)
+			}
+		}
+	}
+
+	switch {
+	case len(failures) > 0:
+		r.record(StepResources, StatusFailed, strings.Join(failures, "; "))
+	case len(tracked) == 0:
+		r.record(StepResources, StatusSkipped, "nothing to track")
+	default:
+		r.record(StepResources, StatusDone, strings.Join(tracked, ", "))
 	}
 }

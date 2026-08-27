@@ -8,21 +8,18 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
-	wconfig "github.com/mturley/watcher/config"
 	"github.com/mturley/worktree/internal/cmux"
 	"github.com/mturley/worktree/internal/config"
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/dotfiles"
 	"github.com/mturley/worktree/internal/env"
-	"github.com/mturley/worktree/internal/github"
 	"github.com/mturley/worktree/internal/gitutil"
 	"github.com/mturley/worktree/internal/jira"
 	"github.com/mturley/worktree/internal/ports"
-	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/resources"
 	"github.com/mturley/worktree/internal/ui"
+	"github.com/mturley/worktree/internal/worktreenew"
 	"github.com/spf13/cobra"
 )
 
@@ -68,83 +65,11 @@ func handlePR(owner, repo string, number int) error {
 	if err != nil {
 		return err
 	}
-
-	var pr *github.PRInfo
-	err = ui.SpinWhile(fmt.Sprintf("Fetching PR #%d from %s/%s", number, owner, repo), func() error {
-		var fetchErr error
-		pr, fetchErr = github.FetchPRByRepo(owner, repo, number)
-		return fetchErr
-	})
-	if err != nil {
-		return err
-	}
-	fmt.Printf("  %s\n", ui.Bold(pr.Title))
-	fmt.Printf("  by @%s · %s\n\n", pr.Author, pr.State)
-
 	repoRoot, err := findRepoForPR(cfg, owner, repo)
 	if err != nil {
 		return err
 	}
-
-	remote, err := gitutil.FindRemoteForRepo(repoRoot, owner, repo)
-	if err != nil {
-		return fmt.Errorf("resolving remote: %w", err)
-	}
-	fmt.Printf("  Using remote: %s\n", ui.Dim(remote))
-
-	slug := github.Slugify(pr.Title)
-	var prResult gitutil.PRWorktreeResult
-	err = ui.SpinWhile("Creating worktree", func() error {
-		var createErr error
-		prResult, createErr = gitutil.CreatePRWorktree(repoRoot, cfg.WorktreesBase, remote, number, pr.HeadRef, slug)
-		return createErr
-	})
-	if err != nil {
-		return err
-	}
-
-	switch prResult.Status {
-	case gitutil.PRWorktreeCreated:
-		// Fresh — nothing to confirm
-
-	case gitutil.PRWorktreeExistingDir:
-		// Worktree directory exists — offer sync if behind
-		offerPRSync(prResult)
-
-	case gitutil.PRWorktreeBranchExists:
-		// Branch exists but worktree was deleted — confirm reuse
-		synced := prResult.LocalHead == prResult.RemoteHead
-		if synced {
-			fmt.Printf("  Branch %s exists and is up to date with PR\n", ui.Cyan(prResult.Branch))
-		} else {
-			fmt.Printf("  Branch %s exists but is not up to date with PR\n", ui.Yellow(prResult.Branch))
-			fmt.Printf("    Local:  %s\n", shortSHA(prResult.LocalHead))
-			fmt.Printf("    PR:     %s\n", shortSHA(prResult.RemoteHead))
-		}
-		if !ui.Confirm("  Reuse this branch?") {
-			fmt.Println("Aborted.")
-			return nil
-		}
-		if err := gitutil.CreateWorktreeFromExistingBranch(repoRoot, prResult.Path, prResult.Branch); err != nil {
-			return err
-		}
-		if !synced {
-			offerPRSync(prResult)
-		}
-	}
-
-	if err := gitutil.SetPRTracking(repoRoot, prResult.Branch, remote, number); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to set PR tracking branch: %v\n", err)
-	} else {
-		fmt.Printf("  %s Tracking PR head — git pull will fetch new PR commits\n", ui.Green("✓"))
-	}
-
-	prRes := &resources.Resource{
-		Type: "pr",
-		ID:   fmt.Sprintf("%s/%s#%d", owner, repo, number),
-		URL:  pr.URL,
-	}
-	return finalizeWorktree(cfg, prResult.CreateResult, repoRoot, prRes, pr)
+	return runCreate(fmt.Sprintf("https://github.com/%s/%s/pull/%d", owner, repo, number), repoRoot)
 }
 
 func handlePRNumber(arg string) error {
@@ -172,171 +97,127 @@ func handleJiraURL(url string) error {
 }
 
 func handleJiraIssue(key, url string) error {
-	cfg, err := config.Load()
-	if err != nil {
-		return err
-	}
-
 	repoRoot, err := findRepoRoot()
 	if err != nil {
 		return fmt.Errorf("not in a git repo: %w", err)
 	}
-
-	offerPull(repoRoot)
-
-	branchName := strings.ToLower(key)
-	var result gitutil.CreateResult
-	err = ui.SpinWhile(fmt.Sprintf("Creating worktree for %s", key), func() error {
-		var createErr error
-		result, createErr = gitutil.CreateBranchWorktree(repoRoot, cfg.WorktreesBase, branchName)
-		return createErr
-	})
-	if err != nil {
-		return err
-	}
-
 	if url == "" {
-		url = jira.IssueURL(jiraHostFromWatcherConfig(), key)
+		url = jira.IssueURL(jira.HostFromWatcherConfig(), key)
 	}
-
-	return finalizeWorktree(cfg, result, repoRoot, &resources.Resource{
-		Type: "jira",
-		ID:   key,
-		URL:  url,
-	}, nil)
+	return runCreate(url, repoRoot)
 }
 
 func handleBranch(branchName string) error {
-	cfg, err := config.Load()
-	if err != nil {
-		return err
-	}
-
 	repoRoot, err := findRepoRoot()
 	if err != nil {
 		return fmt.Errorf("not in a git repo: %w", err)
 	}
+	return runCreate(branchName, repoRoot)
+}
 
-	offerPull(repoRoot)
-
-	var result gitutil.CreateResult
-	err = ui.SpinWhile(fmt.Sprintf("Creating worktree for branch %s", branchName), func() error {
-		var createErr error
-		result, createErr = gitutil.CreateBranchWorktree(repoRoot, cfg.WorktreesBase, branchName)
-		return createErr
-	})
+// runCreate drives the shared creation runner, keeping the CLI's existing
+// output. Confirmations are answered by re-running with the flag set — the
+// same replay the web UI performs, so both surfaces exercise one code path.
+func runCreate(input, repoRoot string) error {
+	cfg, err := config.Load()
 	if err != nil {
 		return err
 	}
-
-	return finalizeWorktree(cfg, result, repoRoot, nil, nil)
-}
-
-func finalizeWorktree(cfg config.Config, result gitutil.CreateResult, repoRoot string, primaryResource *resources.Resource, pr *github.PRInfo) error {
-	if result.Created {
-		fmt.Printf("%s Created worktree at %s\n", ui.Green("✓"), ui.ShortPath(result.Path))
+	conn, err := wdb.Open()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to open worktree db: %v\n", err)
 	} else {
-		fmt.Printf("%s Reusing existing worktree at %s\n", ui.Yellow("→"), ui.ShortPath(result.Path))
+		defer conn.Close()
 	}
 
-	// repoRoot may be a linked worktree (when `worktree add` is run from inside
-	// one); the repo's identity comes from the main clone.
+	opts := worktreenew.Options{
+		Input:        input,
+		RepoRoot:     repoRoot,
+		Pull:         ui.ConfirmDefault("git pull before creating worktree?", true),
+		CopyDotfiles: confirmDotfiles(repoRoot),
+	}
+
+	for {
+		res := worktreenew.Run(conn, cfg, opts, func(s worktreenew.Step) {
+			switch s.Status {
+			case worktreenew.StatusDone:
+				line := fmt.Sprintf("  %s %s", ui.Green("✓"), s.Label)
+				if s.Detail != "" {
+					line += ": " + ui.Dim(s.Detail)
+				}
+				fmt.Println(line)
+			case worktreenew.StatusFailed:
+				fmt.Fprintf(os.Stderr, "  %s %s: %s\n", ui.Yellow("!"), s.Label, s.Detail)
+			}
+		})
+		if res.Err != nil {
+			return res.Err
+		}
+		if res.Confirm == nil {
+			fmt.Printf("\n%s Worktree ready at %s\n", ui.Green("✓"), ui.ShortPath(res.Path))
+			printWorktreeEnv(conn, repoRoot, res)
+			return offerCmuxAfterCreate(conn, cfg, res)
+		}
+
+		c := res.Confirm
+		switch c.Key {
+		case worktreenew.ConfirmReuseBranch:
+			fmt.Printf("  Branch %s already exists\n", ui.Yellow(c.Branch))
+			if !ui.Confirm("  Reuse this branch?") {
+				fmt.Println("Aborted.")
+				return nil
+			}
+			opts.ReuseBranch = true
+		case worktreenew.ConfirmResetToPR:
+			fmt.Printf("  %s Local (%s) differs from PR latest (%s)\n",
+				ui.Yellow("!"), shortSHA(c.LocalHead), shortSHA(c.RemoteHead))
+			if !ui.Confirm("  Reset to the PR's latest commit?") {
+				// Declining is NOT an abort. By this point gitutil has already
+				// created the worktree directory, so returning here would strand
+				// it: on disk, unregistered, holding no port range, invisible to
+				// the tool. Set DeclineReset and loop, so the runner skips the
+				// reset and carries on to finalize — the worktree is perfectly
+				// usable at its current commit.
+				opts.DeclineReset = true
+				continue
+			}
+			opts.ResetToPR = true
+		}
+	}
+}
+
+// printWorktreeEnv reproduces the environment summary the CLI has always
+// printed after creating a worktree. The runner allocates the port range, so
+// the range is read back rather than allocated again.
+func printWorktreeEnv(conn *sql.DB, repoRoot string, res worktreenew.Result) {
 	mainRoot := gitutil.MainRoot(repoRoot)
 	if mainRoot == "" {
 		mainRoot = repoRoot
 	}
-	repoName := filepath.Base(mainRoot)
-	wtName := filepath.Base(result.Path)
+	wtName := filepath.Base(res.Path)
+	kubePath := env.KubeconfigPath(filepath.Base(mainRoot), wtName)
 
-	conn, err := wdb.Open()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to open worktree db: %v\n", err)
-	}
-
-	var alloc ports.Allocation
+	portRange := "unassigned"
 	if conn != nil {
-		alloc, err = ports.Allocate(conn, wtName)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to allocate port range: %v\n", err)
+		if alloc, ok, err := ports.Lookup(conn, wtName); err == nil && ok {
+			portRange = alloc.Range()
 		}
-		if err := registry.Register(conn, buildRegistryEntry(result, mainRoot, time.Now().UTC().Format(time.RFC3339))); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to register worktree: %v\n", err)
-		}
-	}
-
-	kubePath := env.KubeconfigPath(repoName, wtName)
-	if err := env.SeedKubeconfig(kubePath); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to seed kubeconfig: %v\n", err)
-	}
-
-	if primaryResource != nil && conn != nil {
-		if err := resources.Add(conn, result.Path, *primaryResource); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to save resource: %v\n", err)
-		}
-	}
-
-	if len(cfg.Jira.Projects) > 0 && conn != nil {
-		detectAndSaveJiraIssues(conn, cfg, result, pr)
-	}
-
-	if result.Created {
-		offerDotfiles(repoRoot, result.Path)
 	}
 
 	fmt.Printf("\n  %s\n", ui.Dim("Environment (via eval \"$(worktree env)\"):"))
-	fmt.Printf("    WORKTREE_PATH  = %s\n", ui.ShortPath(result.Path))
-	fmt.Printf("    WORKTREE_TITLE = wt %s\n", result.Branch)
-	fmt.Printf("    WORKTREE_PORTS = %s\n", alloc.Range())
+	fmt.Printf("    WORKTREE_PATH  = %s\n", ui.ShortPath(res.Path))
+	fmt.Printf("    WORKTREE_TITLE = wt %s\n", res.Branch)
+	fmt.Printf("    WORKTREE_PORTS = %s\n", portRange)
 	fmt.Printf("    KUBECONFIG     = %s\n\n", ui.ShortPath(kubePath))
-
-	if cmux.IsAvailable() {
-		defer func() {
-			if conn != nil {
-				conn.Close()
-			}
-		}()
-		return openCmuxWorkspace(conn, cfg, result)
-	}
-
-	if conn != nil {
-		conn.Close()
-	}
-	return nil
 }
 
-// buildRegistryEntry constructs a registry.Entry from a create result.
-// mainRoot must be the repository's main worktree (see gitutil.MainRoot), not
-// whichever linked worktree the command happened to run from.
-func buildRegistryEntry(result gitutil.CreateResult, mainRoot, nowRFC3339 string) registry.Entry {
-	return registry.Entry{
-		Path:      result.Path,
-		Repo:      filepath.Base(mainRoot),
-		RepoRoot:  mainRoot,
-		Branch:    result.Branch,
-		CreatedAt: nowRFC3339,
+// offerCmuxAfterCreate opens a cmux workspace for the new worktree when cmux
+// is available.
+func offerCmuxAfterCreate(conn *sql.DB, cfg config.Config, res worktreenew.Result) error {
+	if !cmux.IsAvailable() {
+		return nil
 	}
-}
-
-func offerPRSync(pr gitutil.PRWorktreeResult) {
-	if pr.LocalHead == "" || pr.RemoteHead == "" {
-		return
-	}
-
-	if pr.LocalHead == pr.RemoteHead {
-		fmt.Printf("  %s Already up to date with PR\n", ui.Green("✓"))
-		return
-	}
-
-	fmt.Printf("  %s Local (%s) differs from PR latest (%s)\n",
-		ui.Yellow("!"), shortSHA(pr.LocalHead), shortSHA(pr.RemoteHead))
-
-	if ui.Confirm("  Reset to the PR's latest commit?") {
-		if err := gitutil.ResetHard(pr.Path, pr.FetchRef); err != nil {
-			fmt.Fprintf(os.Stderr, "  Warning: %v\n", err)
-		} else {
-			fmt.Printf("  %s Reset to %s\n", ui.Green("✓"), shortSHA(pr.RemoteHead))
-		}
-	}
+	return openCmuxWorkspace(conn, cfg, res.Path, res.Branch)
 }
 
 func shortSHA(sha string) string {
@@ -346,56 +227,8 @@ func shortSHA(sha string) string {
 	return sha
 }
 
-// jiraHostFromWatcherConfig returns the Jira host configured in the shared
-// watcher auth.yaml (wcfg.Services.Jira), or "" if Jira isn't configured
-// there. worktree's own config.yaml no longer stores Jira credentials —
-// only Projects (see internal/config.JiraConfig) — so building a Jira issue
-// URL requires reading the host from the watcher config.
-func jiraHostFromWatcherConfig() string {
-	wcfg, err := wconfig.Load(wconfig.DefaultPath())
-	if err != nil {
-		return ""
-	}
-	creds, err := wcfg.Jira()
-	if err != nil {
-		return ""
-	}
-	return creds.Host
-}
-
-func detectAndSaveJiraIssues(conn *sql.DB, cfg config.Config, result gitutil.CreateResult, pr *github.PRInfo) {
-	var prTitle, prBody string
-	if pr != nil {
-		prTitle = pr.Title
-		prBody = pr.Body
-	}
-
-	existing, _ := resources.Load(conn, result.Path)
-	existingKeys := make(map[string]bool)
-	for _, r := range existing {
-		if r.Type == "jira" {
-			existingKeys[r.ID] = true
-		}
-	}
-
-	keys := jira.DetectKeys(result.Branch, prTitle, prBody, cfg.Jira.Projects)
-	host := jiraHostFromWatcherConfig()
-	for _, key := range keys {
-		if existingKeys[key] {
-			continue
-		}
-		url := jira.IssueURL(host, key)
-		r := resources.Resource{Type: "jira", ID: key, URL: url}
-		if err := resources.Add(conn, result.Path, r); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to save Jira resource %s: %v\n", key, err)
-		} else {
-			fmt.Printf("  %s Detected Jira issue %s\n", ui.Green("✓"), ui.Cyan(key))
-		}
-	}
-}
-
-func openCmuxWorkspace(conn *sql.DB, cfg config.Config, result gitutil.CreateResult) error {
-	existing, err := cmux.FindByDirectory(result.Path)
+func openCmuxWorkspace(conn *sql.DB, cfg config.Config, wtPath, branch string) error {
+	existing, err := cmux.FindByDirectory(wtPath)
 	if err == nil && existing != nil {
 		fmt.Printf("%s Switching to existing cmux workspace %s\n", ui.Cyan("→"), existing.CustomTitle)
 		return cmux.SelectWorkspace(existing.Ref)
@@ -403,12 +236,12 @@ func openCmuxWorkspace(conn *sql.DB, cfg config.Config, result gitutil.CreateRes
 
 	var res []resources.Resource
 	if conn != nil {
-		res, _ = resources.Load(conn, result.Path)
+		res, _ = resources.Load(conn, wtPath)
 	}
-	uiURL := runningUIDetailURL(conn, result.Path)
+	uiURL := runningUIDetailURL(conn, wtPath)
 	urls := buildWorkspaceURLs(res)
 
-	defaultTitle := fmt.Sprintf("wt %s", result.Branch)
+	defaultTitle := fmt.Sprintf("wt %s", branch)
 	fmt.Println()
 	title := ui.PromptLineDefault("  Workspace name", defaultTitle)
 
@@ -419,7 +252,7 @@ func openCmuxWorkspace(conn *sql.DB, cfg config.Config, result gitutil.CreateRes
 
 	opts := cmux.NewWorkspaceOptions{
 		Name:     title,
-		Cwd:      result.Path,
+		Cwd:      wtPath,
 		Focus:    true,
 		GroupRef: groupRef,
 	}
@@ -468,10 +301,17 @@ func buildWorkspaceURLs(res []resources.Resource) []string {
 	return urls
 }
 
-func offerDotfiles(repoRoot, wtPath string) {
-	dfs, err := dotfiles.Discover(repoRoot)
+// confirmDotfiles lists the main worktree's gitignored dotfiles and asks
+// whether to copy them. The copying itself belongs to the runner (so the web
+// UI does it too); only the question stays here.
+func confirmDotfiles(repoRoot string) bool {
+	mainRoot := gitutil.MainRoot(repoRoot)
+	if mainRoot == "" {
+		mainRoot = repoRoot
+	}
+	dfs, err := dotfiles.Discover(mainRoot)
 	if err != nil || len(dfs) == 0 {
-		return
+		return false
 	}
 
 	fmt.Printf("\nFound %d gitignored dotfiles in main worktree:\n", len(dfs))
@@ -482,27 +322,7 @@ func offerDotfiles(repoRoot, wtPath string) {
 		}
 		fmt.Printf("  %s %s\n", ui.Dim(kind), df.Name)
 	}
-
-	if !ui.Confirm("\nCopy these dotfiles to the new worktree?") {
-		return
-	}
-
-	ui.SpinWhile("Copying dotfiles", func() error {
-		for _, df := range dfs {
-			if err := dotfiles.Copy(df.Path, wtPath, df); err != nil {
-				fmt.Fprintf(os.Stderr, "\n  Warning: failed to copy %s: %v", df.Name, err)
-			}
-		}
-		return nil
-	})
-}
-
-func offerPull(repoRoot string) {
-	if ui.ConfirmDefault("git pull before creating worktree?", true) {
-		ui.SpinWhile("Pulling", func() error {
-			return gitutil.Pull(repoRoot)
-		})
-	}
+	return ui.Confirm("\nCopy these dotfiles to the new worktree?")
 }
 
 func promptCmuxGroup() string {

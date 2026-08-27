@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	wconfig "github.com/mturley/watcher/config"
 )
 
 type Issue struct {
@@ -135,4 +137,21 @@ func (c *Client) TestConnection() error {
 
 func IssueURL(host, key string) string {
 	return fmt.Sprintf("%s/browse/%s", normalizeHost(host), key)
+}
+
+// HostFromWatcherConfig returns the Jira host configured in the shared
+// watcher auth.yaml (wcfg.Services.Jira), or "" if Jira isn't configured
+// there. worktree's own config.yaml no longer stores Jira credentials —
+// only Projects (see internal/config.JiraConfig) — so building a Jira issue
+// URL requires reading the host from the watcher config.
+func HostFromWatcherConfig() string {
+	wcfg, err := wconfig.Load(wconfig.DefaultPath())
+	if err != nil {
+		return ""
+	}
+	creds, err := wcfg.Jira()
+	if err != nil {
+		return ""
+	}
+	return creds.Host
 }

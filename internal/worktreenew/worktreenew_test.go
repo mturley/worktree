@@ -9,6 +9,7 @@ import (
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/ports"
 	"github.com/mturley/worktree/internal/registry"
+	"github.com/mturley/worktree/internal/resources"
 )
 
 // newRepo makes a temp git repo with one commit, and returns its root.
@@ -167,4 +168,61 @@ func statusOf(r Result, k StepKey) Status {
 		}
 	}
 	return ""
+}
+
+// TestRunDetectsJiraIssueFromBranchName guards the auto-detection that used to
+// live in cmd/root.go (detectAndSaveJiraIssues). It ran from the terminal only;
+// once the web UI drives this runner, leaving it there would make the two
+// surfaces disagree about which issues a worktree tracks.
+func TestRunDetectsJiraIssueFromBranchName(t *testing.T) {
+	repo := newRepo(t)
+	base := t.TempDir()
+	conn, err := wdb.OpenAt(filepath.Join(base, "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+
+	cfg := config.Config{WorktreesBase: filepath.Join(base, "worktrees")}
+	cfg.Jira.Projects = []string{"PROJ"}
+
+	res := Run(conn, cfg, Options{Input: "proj-123-fix-thing", RepoRoot: repo}, nil)
+	if res.Err != nil {
+		t.Fatalf("unexpected error: %v", res.Err)
+	}
+	if got := statusOf(res, StepResources); got != StatusDone {
+		t.Fatalf("resources = %q, want done", got)
+	}
+
+	tracked, err := resources.Load(conn, res.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keys []string
+	for _, r := range tracked {
+		if r.Type == "jira" {
+			keys = append(keys, r.ID)
+		}
+	}
+	if len(keys) != 1 || keys[0] != "PROJ-123" {
+		t.Fatalf("tracked jira issues = %v, want [PROJ-123]", keys)
+	}
+
+	// A replay must not add the issue a second time.
+	if replay := Run(conn, cfg, Options{Input: "proj-123-fix-thing", RepoRoot: repo}, nil); replay.Err != nil {
+		t.Fatalf("replay errored: %v", replay.Err)
+	}
+	after, err := resources.Load(conn, res.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, r := range after {
+		if r.Type == "jira" && r.ID == "PROJ-123" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("PROJ-123 tracked %d times after replay, want 1", n)
+	}
 }
