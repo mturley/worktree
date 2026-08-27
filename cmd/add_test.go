@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -28,6 +30,48 @@ func TestClassifyAddInputRejectsNonCreatingForms(t *testing.T) {
 				t.Fatalf("error %q does not name the right command (want %q)", err, tc.wantIn)
 			}
 		})
+	}
+}
+
+func TestClassifyAddInputRejectsExistingWorktreeDir(t *testing.T) {
+	// Same load-bearing behaviour as the Slack case: an existing worktree
+	// directory must never fall through to handleBranch and get created as a
+	// branch named after the path.
+
+	t.Run("main clone (.git directory)", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.Mkdir(filepath.Join(dir, ".git"), 0o755); err != nil {
+			t.Fatalf("failed to create .git dir: %v", err)
+		}
+		_, err := classifyAddInput(dir)
+		if err == nil {
+			t.Fatal("want a redirect error, got nil — this would create a branch named after the path")
+		}
+		if !strings.Contains(err.Error(), "worktree info") {
+			t.Fatalf("error %q does not name the right command (want %q)", err, "worktree info")
+		}
+	})
+
+	t.Run("linked worktree (.git file)", func(t *testing.T) {
+		dir := t.TempDir()
+		gitFile := filepath.Join(dir, ".git")
+		if err := os.WriteFile(gitFile, []byte("gitdir: /some/other/path/.git/worktrees/foo\n"), 0o644); err != nil {
+			t.Fatalf("failed to create .git file: %v", err)
+		}
+		_, err := classifyAddInput(dir)
+		if err == nil {
+			t.Fatal("want a redirect error, got nil — this would create a branch named after the path")
+		}
+		if !strings.Contains(err.Error(), "worktree info") {
+			t.Fatalf("error %q does not name the right command (want %q)", err, "worktree info")
+		}
+	})
+}
+
+func TestIsExistingWorktreeDirFalseForOrdinaryDir(t *testing.T) {
+	dir := t.TempDir()
+	if isExistingWorktreeDir(dir) {
+		t.Fatal("want false for a directory with no .git, so it can still be used as a branch name")
 	}
 }
 
