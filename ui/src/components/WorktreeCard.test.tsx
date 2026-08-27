@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, it, expect } from "vitest"
 import { render, cleanup, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ResourceDTO, WorktreeSummary } from "../api/types"
 import { WorktreeCard } from "./WorktreeCard"
 
@@ -15,7 +16,14 @@ const summary: WorktreeSummary = {
   ],
 }
 
-const wrap = (ui: React.ReactNode) => render(<MantineProvider>{ui}</MantineProvider>)
+const wrap = (ui: React.ReactNode) => {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <MantineProvider>
+      <QueryClientProvider client={qc}>{ui}</QueryClientProvider>
+    </MantineProvider>,
+  )
+}
 
 beforeEach(() => window.history.replaceState({}, "", "/"))
 afterEach(cleanup)

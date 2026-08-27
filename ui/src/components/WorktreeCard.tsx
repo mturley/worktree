@@ -1,8 +1,9 @@
-import { Badge, Group, Paper, Stack, Text } from "@mantine/core"
+import { Badge, Box, Group, Paper, Stack, Text } from "@mantine/core"
 import { relativeTime as rel, relativeFromNow } from "../lib/relativeTime"
 import { useLocation } from "wouter"
 import type { ResourceDTO, WorktreeSummary } from "../api/types"
 import { resourceSummary } from "../lib/resourceSummary"
+import { CmuxWorkspaceSection } from "./CmuxWorkspaceSection"
 import { ResourceStatusIcon } from "./ResourceStatusIcon"
 import { shortResourceRef } from "../lib/resourceRef"
 
@@ -117,28 +118,31 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
     : {}
 
   return (
-    <Paper p="sm" withBorder {...interactive}>
-      <Stack gap={6}>
-        <Group gap="xs" wrap="wrap">
-          <Text fw={700} size="md" style={{ overflowWrap: "anywhere" }}>{name}</Text>
-          {!w.on_disk && <Badge size="xs" color="red">missing</Badge>}
-        </Group>
-        <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-          {[
-            w.repo,
-            w.branch,
-            w.latest_event_ts ? rel(w.latest_event_ts) : "",
-            summary,
-          ].filter(Boolean).join(" · ")}
-        </Text>
-        {w.focus_resources.length > 0 && (
-          <Stack gap={2}>
-            {w.focus_resources.map((r) => (
-              <FocusResourceLine key={`${r.type}:${r.id}`} r={r} />
-            ))}
-          </Stack>
-        )}
-      </Stack>
+    <Paper p="sm" withBorder>
+      <CmuxWorkspaceSection path={w.path} branch={w.branch} />
+      <Box {...interactive}>
+        <Stack gap={6}>
+          <Group gap="xs" wrap="wrap">
+            <Text fw={700} size="md" style={{ overflowWrap: "anywhere" }}>{name}</Text>
+            {!w.on_disk && <Badge size="xs" color="red">missing</Badge>}
+          </Group>
+          <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+            {[
+              w.repo,
+              w.branch,
+              w.latest_event_ts ? rel(w.latest_event_ts) : "",
+              summary,
+            ].filter(Boolean).join(" · ")}
+          </Text>
+          {w.focus_resources.length > 0 && (
+            <Stack gap={2}>
+              {w.focus_resources.map((r) => (
+                <FocusResourceLine key={`${r.type}:${r.id}`} r={r} />
+              ))}
+            </Stack>
+          )}
+        </Stack>
+      </Box>
     </Paper>
   )
 }

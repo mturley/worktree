@@ -1,3 +1,15 @@
+export interface CmuxWorkspace {
+  ref: string
+  title: string
+  color?: string
+  selected: boolean
+}
+
+export interface CmuxResponse {
+  available: boolean
+  matches?: Record<string, CmuxWorkspace[]>
+}
+
 export interface WorktreeSummary {
   path: string; repo: string; branch: string;
   on_disk: boolean; resource_count: number; primary_count: number; latest_event_ts: string;

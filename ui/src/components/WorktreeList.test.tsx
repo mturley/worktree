@@ -1,6 +1,7 @@
 import { afterEach, describe, it, expect } from "vitest"
 import { render, cleanup, screen } from "@testing-library/react"
 import { MantineProvider } from "@mantine/core"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { WorktreeSummary } from "../api/types"
 import { WorktreeList } from "./WorktreeList"
 
@@ -11,7 +12,14 @@ const summary: WorktreeSummary = {
   focus_resources: [{ type: "pr", id: "o/r#1", url: "https://gh/pr/1", primary: true, title: "Fix the widget", state: "OPEN" }],
 }
 
-const wrap = (ui: React.ReactNode) => render(<MantineProvider>{ui}</MantineProvider>)
+const wrap = (ui: React.ReactNode) => {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <MantineProvider>
+      <QueryClientProvider client={qc}>{ui}</QueryClientProvider>
+    </MantineProvider>,
+  )
+}
 
 afterEach(cleanup)
 

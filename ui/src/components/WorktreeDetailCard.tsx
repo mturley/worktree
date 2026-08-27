@@ -6,6 +6,7 @@ import { useLocation } from "wouter"
 import { api } from "../api/client"
 import type { GitStatus, WorktreeSummary } from "../api/types"
 import { relativeTime as rel } from "../lib/relativeTime"
+import { CmuxWorkspaceSection } from "./CmuxWorkspaceSection"
 import { DeleteWorktreeModal } from "./DeleteWorktreeModal"
 
 /**
@@ -52,6 +53,7 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
   return (
     <Paper p="sm" withBorder>
       <Stack gap={8}>
+        <CmuxWorkspaceSection path={w.path} branch={git?.branch || w.branch} />
         <Group gap="xs" wrap="nowrap" justify="space-between">
           <Group gap="xs" wrap="wrap" style={{ minWidth: 0 }}>
             <Text fw={700} size="md" style={{ overflowWrap: "anywhere" }}>{name}</Text>
