@@ -5,15 +5,85 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
 
 type Workspace struct {
-	Ref              string `json:"ref"`
-	CustomTitle      string `json:"custom_title"`
-	CurrentDirectory string `json:"current_directory"`
-	Selected         bool   `json:"selected"`
+	Ref              string  `json:"ref"`
+	Title            string  `json:"title"`
+	CustomTitle      string  `json:"custom_title"`
+	CustomColor      *string `json:"custom_color"` // hex like "#AD1457", or nil
+	CurrentDirectory string  `json:"current_directory"`
+	Selected         bool    `json:"selected"`
+}
+
+// DisplayTitle is the workspace's human name. cmux leaves custom_title null on
+// workspaces it titles itself (e.g. "◐ handler-ratelimits"), so title comes
+// first and the ref is the last resort.
+func (w Workspace) DisplayTitle() string {
+	if w.Title != "" {
+		return w.Title
+	}
+	if w.CustomTitle != "" {
+		return w.CustomTitle
+	}
+	return w.Ref
+}
+
+// canonical resolves a path for comparison: Abs -> EvalSymlinks -> Clean, the
+// same normalization internal/db's Subscriber uses. A path that cannot be
+// resolved (it may not exist) still gets Abs+Clean, so comparison degrades to
+// a textual one rather than failing.
+func canonical(p string) string {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		abs = p
+	}
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = resolved
+	}
+	return filepath.Clean(abs)
+}
+
+// Match maps each requested path to the workspaces whose current_directory
+// resolves to the same location.
+//
+// Both sides are canonicalized exactly once — len(paths)+len(workspaces)
+// EvalSymlinks syscalls, not the product. internal/webui/timeline.go:279
+// records what per-pair resolution cost the Phase F timeline; do not repeat it.
+//
+// Keys are the caller's ORIGINAL path strings, not the resolved ones, so a
+// caller can look up by the same path it passed in. Paths with no workspace
+// are absent from the map rather than present with an empty slice.
+func Match(workspaces []Workspace, paths []string) map[string][]Workspace {
+	byDir := make(map[string][]Workspace, len(workspaces))
+	for _, ws := range workspaces {
+		if ws.CurrentDirectory == "" {
+			continue
+		}
+		key := canonical(ws.CurrentDirectory)
+		byDir[key] = append(byDir[key], ws)
+	}
+
+	out := make(map[string][]Workspace, len(paths))
+	for _, p := range paths {
+		if hits := byDir[canonical(p)]; len(hits) > 0 {
+			out[p] = hits
+		}
+	}
+	return out
+}
+
+// Activate raises the cmux app. Callers treat failure as non-fatal: a switch
+// that worked but did not raise the window is still a switch.
+func Activate() error {
+	cmd := exec.Command("osascript", "-e", `tell application "cmux" to activate`)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("activating cmux: %s", strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 type listResult struct {
@@ -24,7 +94,8 @@ func IsAvailable() bool {
 	return os.Getenv("CMUX_SOCKET_PATH") != ""
 }
 
-func cmuxCmd(args ...string) *exec.Cmd {
+// cmuxCmd is a var so tests can stub the cmux binary.
+var cmuxCmd = func(args ...string) *exec.Cmd {
 	return exec.Command("cmux", args...)
 }
 
@@ -42,17 +113,21 @@ func ListWorkspaces() ([]Workspace, error) {
 	return result.Workspaces, nil
 }
 
+// FindByDirectory returns the first workspace whose directory resolves to dir,
+// or nil when none does. It goes through Match so the CLI gets the same
+// symlink-resolving comparison the web UI does — a raw string compare here
+// used to miss an existing workspace whenever either path ran through a
+// symlink.
 func FindByDirectory(dir string) (*Workspace, error) {
 	workspaces, err := ListWorkspaces()
 	if err != nil {
 		return nil, err
 	}
-	for _, ws := range workspaces {
-		if ws.CurrentDirectory == dir {
-			return &ws, nil
-		}
+	hits := Match(workspaces, []string{dir})[dir]
+	if len(hits) == 0 {
+		return nil, nil
 	}
-	return nil, nil
+	return &hits[0], nil
 }
 
 func SelectWorkspace(ref string) error {
