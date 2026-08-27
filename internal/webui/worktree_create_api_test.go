@@ -55,3 +55,66 @@ func TestCreateWorktreeFailureIs200WithOKFalse(t *testing.T) {
 		t.Fatal("ok = true for a nonexistent repo root")
 	}
 }
+
+func TestCreateWorktreeRequestDecodesAllFields(t *testing.T) {
+	var req createWorktreeRequest
+	body := `{"input":"x","repo_root":"/r","decline_reset":true,"reuse_branch":true,"reset_to_pr":true,"pull":true,"copy_dotfiles":true}`
+	if err := json.NewDecoder(strings.NewReader(body)).Decode(&req); err != nil {
+		t.Fatal(err)
+	}
+	if req.Input != "x" {
+		t.Errorf("Input = %q, want %q", req.Input, "x")
+	}
+	if req.RepoRoot != "/r" {
+		t.Errorf("RepoRoot = %q, want %q", req.RepoRoot, "/r")
+	}
+	if !req.Pull {
+		t.Error("Pull = false, want true")
+	}
+	if !req.CopyDotfiles {
+		t.Error("CopyDotfiles = false, want true")
+	}
+	if !req.ReuseBranch {
+		t.Error("ReuseBranch = false, want true")
+	}
+	if !req.ResetToPR {
+		t.Error("ResetToPR = false, want true")
+	}
+	if !req.DeclineReset {
+		t.Error("DeclineReset = false, want true")
+	}
+}
+
+func TestCreateWorktreeRequestOptionsCarriesAllFields(t *testing.T) {
+	req := createWorktreeRequest{
+		Input:        "x",
+		RepoRoot:     "/r",
+		Pull:         true,
+		CopyDotfiles: true,
+		ReuseBranch:  true,
+		ResetToPR:    true,
+		DeclineReset: true,
+	}
+	opts := req.options()
+	if opts.Input != "x" {
+		t.Errorf("Input = %q, want %q", opts.Input, "x")
+	}
+	if opts.RepoRoot != "/r" {
+		t.Errorf("RepoRoot = %q, want %q", opts.RepoRoot, "/r")
+	}
+	if !opts.Pull {
+		t.Error("Pull = false, want true")
+	}
+	if !opts.CopyDotfiles {
+		t.Error("CopyDotfiles = false, want true")
+	}
+	if !opts.ReuseBranch {
+		t.Error("ReuseBranch = false, want true")
+	}
+	if !opts.ResetToPR {
+		t.Error("ResetToPR = false, want true")
+	}
+	if !opts.DeclineReset {
+		t.Error("DeclineReset = false, want true")
+	}
+}

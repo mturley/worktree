@@ -75,15 +75,7 @@ func (s *Server) handleCreateWorktree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res := worktreenew.Run(s.DB, cfg, worktreenew.Options{
-		Input:        req.Input,
-		RepoRoot:     req.RepoRoot,
-		Pull:         req.Pull,
-		CopyDotfiles: req.CopyDotfiles,
-		ReuseBranch:  req.ReuseBranch,
-		ResetToPR:    req.ResetToPR,
-		DeclineReset: req.DeclineReset,
-	}, nil)
+	res := worktreenew.Run(s.DB, cfg, req.options(), nil)
 
 	out := createWorktreeResponse{
 		OK:      res.Err == nil,
@@ -96,6 +88,18 @@ func (s *Server) handleCreateWorktree(w http.ResponseWriter, r *http.Request) {
 		out.Error = res.Err.Error()
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+func (req createWorktreeRequest) options() worktreenew.Options {
+	return worktreenew.Options{
+		Input:        req.Input,
+		RepoRoot:     req.RepoRoot,
+		Pull:         req.Pull,
+		CopyDotfiles: req.CopyDotfiles,
+		ReuseBranch:  req.ReuseBranch,
+		ResetToPR:    req.ResetToPR,
+		DeclineReset: req.DeclineReset,
+	}
 }
 
 type repoDTO struct {
