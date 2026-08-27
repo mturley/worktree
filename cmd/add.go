@@ -10,6 +10,7 @@ import (
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/jira"
 	"github.com/mturley/worktree/internal/resources"
+	"github.com/mturley/worktree/internal/resourceurl"
 	"github.com/mturley/worktree/internal/slackurl"
 	"github.com/spf13/cobra"
 )
@@ -29,7 +30,7 @@ func init() {
 func runAdd(cmd *cobra.Command, args []string) error {
 	arg := args[0]
 
-	if m := prURLPattern.FindStringSubmatch(arg); m != nil {
+	if m := resourceurl.PRURLPattern.FindStringSubmatch(arg); m != nil {
 		owner, repo := m[1], m[2]
 		number, _ := strconv.Atoi(m[3])
 		return handlePR(owner, repo, number)

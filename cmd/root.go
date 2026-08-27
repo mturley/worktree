@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -54,8 +53,6 @@ var globalWebFS embed.FS
 
 // SetWebFS receives the embedded web UI assets from main.
 func SetWebFS(f embed.FS) { globalWebFS = f }
-
-var prURLPattern = regexp.MustCompile(`github\.com/([^/]+)/([^/]+)/pull/(\d+)`)
 
 func runRoot(cmd *cobra.Command, args []string) error {
 	cmd.Help()

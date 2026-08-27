@@ -6,6 +6,7 @@ import (
 
 	"github.com/mturley/watcher"
 	"github.com/mturley/worktree/internal/resources"
+	"github.com/mturley/worktree/internal/resourceurl"
 )
 
 type addResourceRequest struct {
@@ -27,7 +28,7 @@ func (s *Server) handleAddResource(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing path or url")
 		return
 	}
-	resType, id, ok := inferResource(req.URL)
+	resType, id, ok := resourceurl.Infer(req.URL)
 	if !ok {
 		writeError(w, http.StatusBadRequest, "unrecognized resource URL")
 		return
