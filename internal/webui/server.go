@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 
 	"github.com/mturley/watcher/slack"
+	"github.com/mturley/worktree/internal/cmux"
 	"github.com/mturley/worktree/internal/slackpoller"
 )
 
@@ -57,6 +58,12 @@ type Server struct {
 	// httptest server's self-signed TLS cert) can never disable that
 	// protection.
 	imageProxyTransport http.RoundTripper
+
+	// cmuxList and cmuxListGroups are seams for tests. When nil, the handlers
+	// call the real cmux package functions. Package cmux's own exec stub is
+	// unexported, so injecting here is the only way to test the available path.
+	cmuxList       func() ([]cmux.Workspace, error)
+	cmuxListGroups func() ([]cmux.WorkspaceGroup, error)
 }
 
 func (s *Server) Handler() http.Handler {

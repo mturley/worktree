@@ -35,7 +35,11 @@ func (s *Server) handleCmux(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, cmuxResponse{Available: false})
 		return
 	}
-	workspaces, err := cmux.ListWorkspaces()
+	list := cmux.ListWorkspaces
+	if s.cmuxList != nil {
+		list = s.cmuxList
+	}
+	workspaces, err := list()
 	if err != nil {
 		writeJSON(w, http.StatusOK, cmuxResponse{Available: false})
 		return
@@ -96,7 +100,11 @@ func (s *Server) handleCmuxGroups(w http.ResponseWriter, r *http.Request) {
 		out.Colors = append(out.Colors, cmuxColorDTO{Name: c.Name, Hex: c.Hex})
 	}
 	if cmux.IsAvailable() {
-		if groups, err := cmux.ListGroups(); err == nil {
+		listGroups := cmux.ListGroups
+		if s.cmuxListGroups != nil {
+			listGroups = s.cmuxListGroups
+		}
+		if groups, err := listGroups(); err == nil {
 			for _, g := range groups {
 				out.Groups = append(out.Groups, cmuxGroupDTO{Ref: g.Ref, Name: g.Name})
 			}
