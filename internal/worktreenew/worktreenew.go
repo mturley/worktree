@@ -18,17 +18,29 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/mturley/worktree/internal/config"
 	"github.com/mturley/worktree/internal/dotfiles"
 	"github.com/mturley/worktree/internal/env"
+	"github.com/mturley/worktree/internal/github"
 	"github.com/mturley/worktree/internal/gitutil"
 	"github.com/mturley/worktree/internal/jira"
 	"github.com/mturley/worktree/internal/ports"
 	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/resources"
+	"github.com/mturley/worktree/internal/resourceurl"
+)
+
+// The two calls on the PR path that reach the network — `gh pr view` and the
+// `git fetch` inside CreatePRWorktree. They are vars so tests can exercise the
+// confirmation state machine without a network or a GitHub account;
+// production never reassigns them.
+var (
+	fetchPRInfo      = github.FetchPRByRepo
+	createPRWorktree = gitutil.CreatePRWorktree
 )
 
 type StepKey string
@@ -88,6 +100,13 @@ type Options struct {
 	// Answers carried on the replay.
 	ReuseBranch bool
 	ResetToPR   bool
+
+	// DeclineReset records that the user was asked to reset to the PR's latest
+	// commit and said no. It is distinct from ResetToPR being false, which only
+	// means "not asked yet" — without it, a decline would replay into the same
+	// question forever, and the caller's only escape would be to abandon a
+	// worktree that git has already created.
+	DeclineReset bool
 }
 
 type Result struct {
@@ -171,27 +190,151 @@ func Run(conn *sql.DB, cfg config.Config, opts Options, observe func(Step)) Resu
 		r.record(StepPull, StatusSkipped, "not requested")
 	}
 
-	branch, primary := resolveInput(opts.Input)
-
-	existed := false
-	if _, err := os.Stat(filepath.Join(cfg.WorktreesBase, repoDirName(opts.RepoRoot), branch)); err == nil {
-		existed = true
-	}
-
-	created, err := gitutil.CreateBranchWorktree(opts.RepoRoot, cfg.WorktreesBase, branch)
+	pr, err := parsePRInput(opts.Input, opts.RepoRoot)
 	if err != nil {
-		r.record(StepCreateWorktree, StatusFailed, err.Error())
 		return Result{Steps: r.finish(), Err: err}
 	}
-	if existed || !created.Created {
-		r.record(StepCreateWorktree, StatusSkipped, "already exists")
-	} else {
+
+	var created gitutil.CreateResult
+	var primary *resources.Resource
+
+	if pr != nil {
+		var confirm *Confirm
+		created, primary, confirm, err = r.runPR(pr)
+		if err != nil {
+			r.record(StepCreateWorktree, StatusFailed, err.Error())
+			return Result{Steps: r.finish(), Err: err}
+		}
+		if confirm != nil {
+			// Stop: later steps stay pending so the stepper greys them.
+			return Result{Steps: r.finish(), Confirm: confirm}
+		}
 		r.record(StepCreateWorktree, StatusDone, created.Path)
+	} else {
+		branch, p := resolveInput(opts.Input)
+		primary = p
+		existed := false
+		if _, statErr := os.Stat(filepath.Join(
+			cfg.WorktreesBase, repoDirName(opts.RepoRoot), branch)); statErr == nil {
+			existed = true
+		}
+		created, err = gitutil.CreateBranchWorktree(opts.RepoRoot, cfg.WorktreesBase, branch)
+		if err != nil {
+			r.record(StepCreateWorktree, StatusFailed, err.Error())
+			return Result{Steps: r.finish(), Err: err}
+		}
+		if existed || !created.Created {
+			r.record(StepCreateWorktree, StatusSkipped, "already exists")
+		} else {
+			r.record(StepCreateWorktree, StatusDone, created.Path)
+		}
 	}
 
 	r.finalize(created, primary)
 
 	return Result{Steps: r.finish(), Path: created.Path, Branch: created.Branch}
+}
+
+// PRInput identifies a pull request to build a worktree from.
+type PRInput struct {
+	Owner  string
+	Repo   string
+	Number int
+}
+
+// parsePRInput recognizes a PR URL or a bare PR number. For a bare number the
+// repo comes from repoRoot's remotes — the web UI passes an explicitly chosen
+// repo, where the CLI used to depend on the current directory. A non-PR input
+// (branch name, Jira key) yields (nil, nil).
+func parsePRInput(input, repoRoot string) (*PRInput, error) {
+	if m := resourceurl.PRURLPattern.FindStringSubmatch(input); m != nil {
+		n, _ := strconv.Atoi(m[3])
+		return &PRInput{Owner: m[1], Repo: m[2], Number: n}, nil
+	}
+	n, err := strconv.Atoi(input)
+	if err != nil {
+		return nil, nil
+	}
+	if repoRoot == "" {
+		return nil, fmt.Errorf("a repo is required to resolve PR #%d", n)
+	}
+	slug := gitutil.RepoSlug(repoRoot)
+	parts := strings.SplitN(slug, "/", 2)
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("cannot determine repo owner/name from remotes of %s", repoRoot)
+	}
+	return &PRInput{Owner: parts[0], Repo: parts[1], Number: n}, nil
+}
+
+// runPR creates a worktree from a pull request, pausing for confirmation when
+// git needs an answer. Both questions replay: the caller re-invokes Run with
+// the matching Options flag set, and the sequence reaches the same point with
+// the answer already in hand.
+func (r *runner) runPR(pr *PRInput) (gitutil.CreateResult, *resources.Resource, *Confirm, error) {
+	info, err := fetchPRInfo(pr.Owner, pr.Repo, pr.Number)
+	if err != nil {
+		return gitutil.CreateResult{}, nil, nil, err
+	}
+	if !gitutil.MatchesRemote(r.opts.RepoRoot, pr.Owner, pr.Repo) {
+		return gitutil.CreateResult{}, nil, nil,
+			fmt.Errorf("%s is not a clone of %s/%s", r.opts.RepoRoot, pr.Owner, pr.Repo)
+	}
+	remote, err := gitutil.FindRemoteForRepo(r.opts.RepoRoot, pr.Owner, pr.Repo)
+	if err != nil {
+		return gitutil.CreateResult{}, nil, nil, err
+	}
+
+	res, err := createPRWorktree(
+		r.opts.RepoRoot, r.cfg.WorktreesBase, remote, pr.Number, info.HeadRef,
+		github.Slugify(info.Title))
+	if err != nil {
+		return gitutil.CreateResult{}, nil, nil, err
+	}
+
+	switch res.Status {
+	case gitutil.PRWorktreeBranchExists:
+		if !r.opts.ReuseBranch {
+			return gitutil.CreateResult{}, nil, &Confirm{
+				Key: ConfirmReuseBranch, Branch: res.Branch,
+				LocalHead: res.LocalHead, RemoteHead: res.RemoteHead,
+			}, nil
+		}
+		if err := gitutil.CreateWorktreeFromExistingBranch(
+			r.opts.RepoRoot, res.Path, res.Branch); err != nil {
+			return gitutil.CreateResult{}, nil, nil, err
+		}
+		// A reused branch still needs the sync check below.
+		fallthrough
+	case gitutil.PRWorktreeExistingDir:
+		if res.LocalHead != "" && res.RemoteHead != "" && res.LocalHead != res.RemoteHead {
+			switch {
+			case r.opts.ResetToPR:
+				if err := gitutil.ResetHard(res.Path, res.FetchRef); err != nil {
+					return gitutil.CreateResult{}, nil, nil, err
+				}
+			case r.opts.DeclineReset:
+				// Asked and declined. Carry on: the worktree is perfectly
+				// usable at its current commit, and re-asking would loop.
+			default:
+				return gitutil.CreateResult{}, nil, &Confirm{
+					Key: ConfirmResetToPR, Branch: res.Branch,
+					LocalHead: res.LocalHead, RemoteHead: res.RemoteHead,
+				}, nil
+			}
+		}
+	}
+
+	if err := gitutil.SetPRTracking(r.opts.RepoRoot, res.Branch, remote, pr.Number); err != nil {
+		// Tracking is a convenience, not the deliverable.
+		r.record(StepCreateWorktree, StatusDone, "tracking not set: "+err.Error())
+	}
+
+	primary := &resources.Resource{
+		Type: "pr",
+		ID:   fmt.Sprintf("%s/%s#%d", pr.Owner, pr.Repo, pr.Number),
+		URL:  info.URL,
+	}
+	return res.CreateResult, primary, nil, nil
 }
 
 // resolveInput turns the polymorphic input into a branch name and, for a Jira
