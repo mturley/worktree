@@ -108,6 +108,30 @@ func TestParseJiraURL(t *testing.T) {
 	}
 }
 
+func TestParseKey(t *testing.T) {
+	tests := []struct {
+		in      string
+		wantKey string
+		wantOK  bool
+	}{
+		{"RHOAIENG-123", "RHOAIENG-123", true},
+		{"my-branch", "", false},
+		{"abc-1", "ABC-1", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			key, ok := ParseKey(tt.in)
+			if ok != tt.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
+			}
+			if key != tt.wantKey {
+				t.Errorf("key = %s, want %s", key, tt.wantKey)
+			}
+		})
+	}
+}
+
 func TestIsJiraURL(t *testing.T) {
 	if !IsJiraURL("https://redhat.atlassian.net/browse/RHOAIENG-123") {
 		t.Error("expected true for Jira URL")

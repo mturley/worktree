@@ -54,6 +54,16 @@ func IsJiraURL(s string) bool {
 	return jiraURLPattern.MatchString(s)
 }
 
+var keyPattern = regexp.MustCompile(`^([A-Z][A-Z0-9]+)-(\d+)$`)
+
+// ParseKey reports whether s is a bare Jira issue key like "RHOAIENG-123".
+func ParseKey(s string) (string, bool) {
+	if keyPattern.MatchString(strings.ToUpper(s)) {
+		return strings.ToUpper(s), true
+	}
+	return "", false
+}
+
 func DetectFromResources(res []resources.Resource) []string {
 	var keys []string
 	for _, r := range res {
