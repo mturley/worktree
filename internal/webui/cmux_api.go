@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 
 	"github.com/mturley/worktree/internal/cmux"
 	"github.com/mturley/worktree/internal/registry"
@@ -148,6 +149,14 @@ func (s *Server) handleCmuxSelect(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, cmuxActionResponse{OK: true, Ref: req.Ref})
 }
 
+// worktreeDetailURL builds the worktree detail page URL for a given path.
+// The route is a path SEGMENT (/worktree/:path*), not a query parameter —
+// see ui/src/App.tsx and cmd/ui.go's equivalent construction. Uses 127.0.0.1
+// to match what Server.Start() actually binds.
+func worktreeDetailURL(port int, path string) string {
+	return fmt.Sprintf("http://127.0.0.1:%d/worktree/%s", port, url.PathEscape(path))
+}
+
 type cmuxCreateRequest struct {
 	Path     string `json:"path"`
 	Name     string `json:"name"`
@@ -193,7 +202,7 @@ func (s *Server) handleCmuxCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	uiURL := fmt.Sprintf("http://localhost:%d/worktree?path=%s", s.Port, req.Path)
+	uiURL := worktreeDetailURL(s.Port, req.Path)
 
 	opts := cmux.NewWorkspaceOptions{
 		Name:     req.Name,

@@ -239,3 +239,14 @@ func TestCmuxCreateUnavailableIsNotAnError(t *testing.T) {
 		t.Fatal("ok = true with cmux unavailable")
 	}
 }
+
+func TestWorktreeDetailURLUsesPathSegmentAndEscapesSpecialChars(t *testing.T) {
+	got := worktreeDetailURL(8475, "/tmp/my worktree")
+	want := "http://127.0.0.1:8475/worktree/%2Ftmp%2Fmy%20worktree"
+	if got != want {
+		t.Fatalf("worktreeDetailURL = %q, want %q", got, want)
+	}
+	if strings.Contains(got, "?path=") {
+		t.Fatalf("worktreeDetailURL = %q, must not use ?path= query form", got)
+	}
+}
