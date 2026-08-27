@@ -92,7 +92,12 @@ func TestDeleteBranchForcedDeletesUnmerged(t *testing.T) {
 
 func TestDeleteBranchMissingIsAnError(t *testing.T) {
 	dir := branchRepo(t)
-	if err := DeleteBranch(dir, "nope", false); err == nil {
+	err := DeleteBranch(dir, "nope", false)
+	if err == nil {
 		t.Fatal("deleting a non-existent branch should error")
+	}
+	var needsForce *ErrNeedsForce
+	if errors.As(err, &needsForce) {
+		t.Fatalf("a missing branch must not be wrapped as ErrNeedsForce (forcing would not help): %v", err)
 	}
 }

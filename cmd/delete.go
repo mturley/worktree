@@ -110,8 +110,9 @@ func runDelete(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		if !ui.Confirm("Force-delete the branch (discards unmerged commits)?") {
-			fmt.Println("Leaving the branch in place.")
-			return nil
+			fmt.Println("Leaving the branch in place; finishing the rest of the cleanup.")
+			opts.DeleteBranch = false
+			continue
 		}
 		opts.ForceBranch = true
 	}

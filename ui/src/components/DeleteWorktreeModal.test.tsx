@@ -107,6 +107,59 @@ describe("DeleteWorktreeModal", () => {
     expect(deleteWorktree.mock.calls[1][0]).toMatchObject({ force_directory: true })
   })
 
+  it("re-posts with delete_branch:false on Cancel when the branch needs force, instead of closing", async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    deleteWorktree
+      .mockResolvedValueOnce({
+        ok: false,
+        needs_force: "delete_branch",
+        steps: [
+          { key: "remove_directory", label: "Remove worktree directory", status: "done" },
+          { key: "delete_branch", label: "Delete branch", status: "needs_force", detail: "not fully merged" },
+        ],
+      } as DeleteWorktreeResponse)
+      .mockResolvedValueOnce(ok())
+    wrap(modal({ onClose }))
+    await user.type(screen.getByLabelText(/type the worktree name/i), "foo")
+    const checkbox = screen.getByRole("checkbox", { name: /delete the branch/i })
+    await user.click(checkbox)
+    await user.click(screen.getByRole("button", { name: /^delete$/i }))
+
+    await screen.findByText(/not fully merged/)
+    await user.click(screen.getByRole("button", { name: /^cancel$/i }))
+
+    // Declining must finish cleanup, not just close: remove_directory has
+    // already run by the time the branch escalates, so closing here would
+    // strand the port range, registry row, resources and kubeconfig.
+    await waitFor(() => expect(deleteWorktree).toHaveBeenCalledTimes(2))
+    expect(deleteWorktree.mock.calls[1][0]).toMatchObject({ path: "/wt/foo", delete_branch: false })
+    expect(deleteWorktree.mock.calls[1][0]).not.toHaveProperty("force_branch")
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it("still closes on Cancel when the DIRECTORY needs force, since nothing has been deleted yet", async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    deleteWorktree.mockResolvedValueOnce({
+      ok: false,
+      needs_force: "remove_directory",
+      steps: [{
+        key: "remove_directory", label: "Remove worktree directory",
+        status: "needs_force", detail: "fatal: could not remove",
+      }],
+    } as DeleteWorktreeResponse)
+    wrap(modal({ onClose }))
+    await user.type(screen.getByLabelText(/type the worktree name/i), "foo")
+    await user.click(screen.getByRole("button", { name: /^delete$/i }))
+
+    await screen.findByText(/could not remove/)
+    await user.click(screen.getByRole("button", { name: /^cancel$/i }))
+
+    expect(onClose).toHaveBeenCalled()
+    expect(deleteWorktree).toHaveBeenCalledTimes(1)
+  })
+
   it("stays open on success and only navigates when OK is clicked", async () => {
     const user = userEvent.setup()
     const onDeleted = vi.fn()

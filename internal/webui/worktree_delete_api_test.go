@@ -88,6 +88,41 @@ func TestDeleteWorktreeReportsEveryStep(t *testing.T) {
 	}
 }
 
+// ok must be false when any cleanup step fails, even though remove_directory
+// itself succeeded — a failed step is not a completed delete, and the modal
+// must not treat it as one (navigating home as though everything finished).
+func TestDeleteWorktreeOKIsFalseWhenAStepFails(t *testing.T) {
+	srv, wtPath := deleteFixture(t)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	// Close the DB out from under the handler: remove_directory is a plain
+	// filesystem op and still succeeds, but every DB-backed cleanup step
+	// (release_ports, unregister, remove_resources) now fails.
+	if err := srv.DB.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	code, body := postDelete(t, ts, map[string]any{"path": wtPath})
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", code)
+	}
+	if body["ok"] != false {
+		t.Fatalf("ok = %v, want false when a cleanup step failed: %+v", body["ok"], body)
+	}
+	steps, _ := body["steps"].([]any)
+	sawFailed := false
+	for _, s := range steps {
+		step, _ := s.(map[string]any)
+		if step["status"] == "failed" {
+			sawFailed = true
+		}
+	}
+	if !sawFailed {
+		t.Fatalf("expected at least one failed step, got %+v", steps)
+	}
+}
+
 // The distinction the whole flow rests on: "git wants confirmation" must not
 // look like "the delete broke".
 func TestDeleteWorktreeNeedsForceIsTwoHundred(t *testing.T) {

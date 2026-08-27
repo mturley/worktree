@@ -236,7 +236,20 @@ func Run(conn *sql.DB, cfg config.Config, opts Options, observe func(Step)) Resu
 // record anywhere is rejected as unknown.
 func resolve(conn *sql.DB, cfg config.Config, path string) (repoRoot, repo, branch string, err error) {
 	if e, gErr := registry.Get(conn, path); gErr == nil && e != nil {
-		return e.RepoRoot, e.Repo, e.Branch, nil
+		// The registry's Branch is a snapshot from creation time and never
+		// updated — a `git checkout -b` inside the worktree since then leaves
+		// it stale. Prefer the LIVE branch while the directory still exists;
+		// this only falls back to the registry row once the directory is
+		// gone (the force-retry case, where there is nothing left to read).
+		// A detached HEAD legitimately reports "" while the directory is
+		// still there — that must NOT fall back to the stale registry
+		// branch, or a checked-out-elsewhere branch could get deleted for a
+		// worktree that has no branch at all.
+		b := e.Branch
+		if _, statErr := os.Stat(path); statErr == nil {
+			b = currentBranchOf(path)
+		}
+		return e.RepoRoot, e.Repo, b, nil
 	}
 	// No registry row — inspect the directory while it still exists (this
 	// runs at the top of Run, before anything is deleted).

@@ -69,11 +69,18 @@ export function DeleteWorktreeModal({ opened, path, name, branch, onClose, onDel
     }
   }, [opened, path])
 
-  const run = async (force: { force_directory?: boolean; force_branch?: boolean } = {}) => {
+  const run = async (
+    force: { force_directory?: boolean; force_branch?: boolean } = {},
+    deleteBranchOverride?: boolean,
+  ) => {
     setRunning(true)
     setError(null)
     try {
-      setResult(await api.deleteWorktree({ path, delete_branch: deleteBranch, ...force }))
+      setResult(await api.deleteWorktree({
+        path,
+        delete_branch: deleteBranchOverride ?? deleteBranch,
+        ...force,
+      }))
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -83,6 +90,20 @@ export function DeleteWorktreeModal({ opened, path, name, branch, onClose, onDel
 
   const needsForce = result?.needs_force ?? ""
   const finished = Boolean(result && !needsForce && result.ok)
+
+  // Declining the directory force is safe to just close: nothing has been
+  // deleted yet. Declining the branch force is NOT — remove_directory has
+  // already run, so closing here would strand the port range, registry row,
+  // resources and kubeconfig. Re-run with delete_branch:false instead; the
+  // run is idempotent, so remove_directory reports skipped and the rest of
+  // cleanup completes.
+  const cancelEscalation = () => {
+    if (needsForce === "delete_branch") {
+      void run({}, false)
+      return
+    }
+    onClose()
+  }
 
   return (
     <Modal opened={opened} onClose={onClose} title={`Delete worktree ${name}`} size="lg">
@@ -143,7 +164,7 @@ export function DeleteWorktreeModal({ opened, path, name, branch, onClose, onDel
           )}
           {needsForce && (
             <>
-              <Button variant="default" onClick={onClose} disabled={running}>Cancel</Button>
+              <Button variant="default" onClick={cancelEscalation} disabled={running}>Cancel</Button>
               <Button
                 color="red"
                 loading={running}

@@ -56,8 +56,16 @@ func (s *Server) handleDeleteWorktree(w http.ResponseWriter, r *http.Request) {
 		ForceBranch:    req.ForceBranch,
 	}, nil)
 
+	anyFailed := false
+	for _, s := range res.Steps {
+		if s.Status == worktreedel.StatusFailed {
+			anyFailed = true
+			break
+		}
+	}
+
 	out := deleteWorktreeResponse{
-		OK:         res.Err == nil && res.NeedsForce == "",
+		OK:         res.Err == nil && res.NeedsForce == "" && !anyFailed,
 		NeedsForce: res.NeedsForce,
 		Steps:      res.Steps,
 	}
