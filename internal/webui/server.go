@@ -106,6 +106,9 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/cmux/create", s.handleCmuxCreate)
 	mux.HandleFunc("GET /api/jira-icon", s.handleJiraIcon)
 	mux.HandleFunc("GET /api/slack-avatar", s.handleSlackAvatar)
+	mux.HandleFunc("POST /api/worktrees/create", s.handleCreateWorktree)
+	mux.HandleFunc("GET /api/repos", s.handleRepos)
+	mux.HandleFunc("GET /api/repo-dotfiles", s.handleRepoDotfiles)
 	mux.HandleFunc("GET /api/slack-emoji", s.handleSlackEmoji)
 	mux.HandleFunc("GET /api/slack-file", s.handleSlackFile)
 	// Open-host proxy for third-party unfurl images (preview/favicon/footer).
