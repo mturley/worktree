@@ -82,3 +82,52 @@ func TestResourcesJSONEmptyIsArray(t *testing.T) {
 		t.Fatalf("empty must serialize to [], got %s", b)
 	}
 }
+
+func TestResolveResourceArgs(t *testing.T) {
+	cases := []struct {
+		name                          string
+		args                          []string
+		wantType, wantID, wantURL     string
+		wantErr                       bool
+	}{
+		{
+			name: "url form infers type and id",
+			args: []string{"https://github.com/o/r/pull/42"},
+			wantType: "pr", wantID: "o/r#42", wantURL: "https://github.com/o/r/pull/42",
+		},
+		{
+			name: "slack url form",
+			args: []string{"https://x.slack.com/archives/C123/p1700000000000200"},
+			wantType: "slack", wantID: "C123:1700000000.000200",
+			wantURL: "https://x.slack.com/archives/C123/p1700000000000200",
+		},
+		{
+			name: "explicit two-arg form still works",
+			args: []string{"jira", "ABC-1"},
+			wantType: "jira", wantID: "ABC-1",
+		},
+		{
+			name:    "unrecognized single arg is an error, not a resource",
+			args:    []string{"just-some-text"},
+			wantErr: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gt, gi, gu, err := resolveResourceArgs(tc.args)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("want an error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if gt != tc.wantType || gi != tc.wantID || gu != tc.wantURL {
+				t.Fatalf("= (%q,%q,%q), want (%q,%q,%q)",
+					gt, gi, gu, tc.wantType, tc.wantID, tc.wantURL)
+			}
+		})
+	}
+}

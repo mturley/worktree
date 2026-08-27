@@ -6,6 +6,7 @@ import (
 	"os"
 
 	wdb "github.com/mturley/worktree/internal/db"
+	"github.com/mturley/worktree/internal/resourceurl"
 	"github.com/mturley/worktree/internal/resources"
 	"github.com/spf13/cobra"
 )
@@ -55,9 +56,9 @@ var resourcesListCmd = &cobra.Command{
 }
 
 var resourcesAddCmd = &cobra.Command{
-	Use:   "add <type> <id>",
-	Short: "Track a resource",
-	Args:  cobra.ExactArgs(2),
+	Use:   "add <url> | <type> <id>",
+	Short: "Track a resource, by URL or by explicit type and id",
+	Args:  cobra.RangeArgs(1, 2),
 	RunE:  runResourcesAdd,
 }
 
@@ -142,7 +143,28 @@ func runResourcesList(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// resolveResourceArgs accepts either one URL to infer from, or an explicit
+// type and id. The URL form exists because a resource id like
+// "C069KSM8T9N:1787257539.775119" is not something anyone derives by hand —
+// which is exactly why `worktree add` used to accept Slack URLs.
+func resolveResourceArgs(args []string) (resType, id, url string, err error) {
+	if len(args) == 2 {
+		return args[0], args[1], resURL, nil
+	}
+	t, i, ok := resourceurl.Infer(args[0])
+	if !ok {
+		return "", "", "", fmt.Errorf(
+			"unrecognized resource URL: %s\n  Pass an explicit type and id instead: worktree resources add <type> <id>",
+			args[0])
+	}
+	return t, i, args[0], nil
+}
+
 func runResourcesAdd(cmd *cobra.Command, args []string) error {
+	resType, id, url, err := resolveResourceArgs(args)
+	if err != nil {
+		return err
+	}
 	wt, err := resourceWorktreePath()
 	if err != nil {
 		return err
@@ -153,7 +175,7 @@ func runResourcesAdd(cmd *cobra.Command, args []string) error {
 	}
 	defer conn.Close()
 	return resources.Add(conn, wt, resources.Resource{
-		Type: args[0], ID: args[1], URL: resURL, Related: resRelated,
+		Type: resType, ID: id, URL: url, Related: resRelated,
 	})
 }
 
