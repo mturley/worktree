@@ -42,7 +42,8 @@ func TestCreateWorktreeRejectsSlackURL(t *testing.T) {
 func TestCreateWorktreeRejectsExistingWorktreeDir(t *testing.T) {
 	// Pairs with TestCreateWorktreeRejectsSlackURL: a pasted path to an
 	// existing worktree must never fall through and get created as a branch
-	// named after the path, mirroring cmd/add.go's isExistingWorktreeDir check.
+	// named after the path. Both surfaces share addcheck.ExistingWorktreeDir,
+	// so the CLI and the web UI cannot drift on what counts as a worktree.
 	dir := t.TempDir()
 	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o755); err != nil {
 		t.Fatal(err)
