@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -34,6 +36,32 @@ func TestCreateWorktreeRejectsSlackURL(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "resource") {
 		t.Fatalf("error should explain it is a resource, got %s", rec.Body.String())
+	}
+}
+
+func TestCreateWorktreeRejectsExistingWorktreeDir(t *testing.T) {
+	// Pairs with TestCreateWorktreeRejectsSlackURL: a pasted path to an
+	// existing worktree must never fall through and get created as a branch
+	// named after the path, mirroring cmd/add.go's isExistingWorktreeDir check.
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &Server{}
+	body, err := json.Marshal(map[string]string{"input": dir, "repo_root": "/r"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/worktrees/create", strings.NewReader(string(body)))
+	s.handleCreateWorktree(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for an existing worktree path", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "worktree list") {
+		t.Fatalf("error should point at the worktree list, got %s", rec.Body.String())
 	}
 }
 

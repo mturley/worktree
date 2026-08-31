@@ -387,7 +387,10 @@ func TestSlowStepsAnnounceThemselvesBeforeRunning(t *testing.T) {
 	observed = nil
 	Run(nil, cfg, Options{Input: "other-feature", RepoRoot: repo, Pull: true},
 		func(s Step) { observed = append(observed, s) })
-	if len(observed) == 0 || observed[0].Key != StepPull || observed[0].Status != StatusPending {
+	if len(observed) == 0 {
+		t.Fatalf("no steps observed, want a pending pull first")
+	}
+	if observed[0].Key != StepPull || observed[0].Status != StatusPending {
 		t.Fatalf("first observed record = %#v, want a pending pull", observed[0])
 	}
 }

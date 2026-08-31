@@ -64,7 +64,9 @@ Three pieces, sequenced:
   `internal/worktreedel`.
 - **H2a** — narrow `worktree add` to inputs that actually create a worktree,
   redirecting Slack URLs to `worktree resources add` and paths to
-  `worktree info`.
+  `worktree info`. Side effect: a bare numeric argument is now always treated
+  as a PR number, so a purely numeric branch name can no longer be created
+  through `worktree add` (documented in the command's `--help`).
 
 The spec also records three claims from the 2026-08-25 research note that
 direct measurement disproved — `internal/cmux` already existing, `custom_color`

@@ -2,11 +2,9 @@ package cmd
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strconv"
-	"strings"
 
+	"github.com/mturley/worktree/internal/addcheck"
 	"github.com/mturley/worktree/internal/jira"
 	"github.com/mturley/worktree/internal/resourceurl"
 	"github.com/mturley/worktree/internal/slackurl"
@@ -14,8 +12,12 @@ import (
 )
 
 var addCmd = &cobra.Command{
-	Use:     "add <branch-name | PR-number | PR-URL | Jira-URL>",
-	Short:   "Create a worktree",
+	Use:   "add <branch-name | PR-number | PR-URL | Jira-URL>",
+	Short: "Create a worktree",
+	Long: `Create a worktree from a branch name, PR number/URL, or Jira issue URL.
+
+Note: a bare numeric argument (e.g. "1234") is always treated as a PR number,
+never as a branch name — a purely numeric branch cannot be created this way.`,
 	GroupID: "worktree",
 	Args:    cobra.ExactArgs(1),
 	RunE:    runAdd,
@@ -55,26 +57,11 @@ func classifyAddInput(arg string) (addKind, error) {
 	if _, err := strconv.Atoi(arg); err == nil {
 		return addPRNumber, nil
 	}
-	if isExistingWorktreeDir(arg) {
+	if addcheck.ExistingWorktreeDir(arg) {
 		return 0, fmt.Errorf(
 			"that path is an existing worktree.\n  Try: worktree info %s", arg)
 	}
 	return addBranch, nil
-}
-
-// isExistingWorktreeDir reports whether arg is a directory holding a .git file
-// or directory — the check runAdd used to route to `worktree info`.
-func isExistingWorktreeDir(arg string) bool {
-	info, err := os.Stat(arg)
-	if err != nil || !info.IsDir() {
-		return false
-	}
-	gitPath := filepath.Join(arg, ".git")
-	if _, err := os.Stat(gitPath); err == nil {
-		return true
-	}
-	data, err := os.ReadFile(gitPath)
-	return err == nil && strings.HasPrefix(string(data), "gitdir:")
 }
 
 func runAdd(cmd *cobra.Command, args []string) error {

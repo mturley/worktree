@@ -299,7 +299,7 @@ func shortSHA(sha string) string {
 func openCmuxWorkspace(conn *sql.DB, cfg config.Config, wtPath, branch string) error {
 	existing, err := cmux.FindByDirectory(wtPath)
 	if err == nil && existing != nil {
-		fmt.Printf("%s Switching to existing cmux workspace %s\n", ui.Cyan("→"), existing.CustomTitle)
+		fmt.Printf("%s Switching to existing cmux workspace %s\n", ui.Cyan("→"), existing.DisplayTitle())
 		return cmux.SelectWorkspace(existing.Ref)
 	}
 

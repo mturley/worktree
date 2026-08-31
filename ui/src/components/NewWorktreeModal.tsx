@@ -1,5 +1,5 @@
 import {
-  Alert, Button, Checkbox, Divider, Group, Modal, Select, Stack, Text, TextInput, Timeline,
+  Alert, Button, Checkbox, Divider, Group, Modal, Select, Stack, Text, TextInput, Timeline, Tooltip,
 } from "@mantine/core"
 import { IconCheck, IconX, IconMinus, IconPoint } from "@tabler/icons-react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -34,6 +34,7 @@ export function NewWorktreeModal({ opened, onClose }: { opened: boolean; onClose
   const [copyDotfiles, setCopyDotfiles] = useState(false)
   const [wsName, setWsName] = useState("")
   const [wsGroup, setWsGroup] = useState<string | null>(null)
+  const [wsColor, setWsColor] = useState<string | null>(null)
   const [steps, setSteps] = useState<CreateStep[]>([])
   const [confirm, setConfirm] = useState<CreateConfirm | null>(null)
   const [error, setError] = useState("")
@@ -57,7 +58,7 @@ export function NewWorktreeModal({ opened, onClose }: { opened: boolean; onClose
     if (!opened) return
     setInput(""); setPull(true); setCopyDotfiles(false)
     setSteps([]); setConfirm(null); setError(""); setDonePath("")
-    setWsName(""); setWsGroup(null)
+    setWsName(""); setWsGroup(null); setWsColor(null)
   }, [opened])
 
   useEffect(() => {
@@ -82,7 +83,7 @@ export function NewWorktreeModal({ opened, onClose }: { opened: boolean; onClose
       if (cmux.data?.available && wsName.trim()) {
         // A workspace failure never invalidates the worktree that was created.
         await api.cmuxCreate({
-          path: res.path, name: wsName.trim(), group_ref: wsGroup ?? undefined,
+          path: res.path, name: wsName.trim(), group_ref: wsGroup ?? undefined, color: wsColor ?? undefined,
         }).catch(() => {})
       }
       setDonePath(res.path)
@@ -145,6 +146,30 @@ export function NewWorktreeModal({ opened, onClose }: { opened: boolean; onClose
               disabled={create.isPending || !!donePath}
               data={(cmuxMeta.data?.groups ?? []).map((g) => ({ value: g.ref, label: g.name }))}
             />
+            <Stack gap={4}>
+              <Group gap={6} wrap="wrap">
+                {(cmuxMeta.data?.colors ?? []).map((c) => (
+                  <Tooltip key={c.name} label={c.name}>
+                    <button
+                      type="button"
+                      aria-label={c.name}
+                      onClick={() => setWsColor(wsColor === c.name ? null : c.name)}
+                      disabled={create.isPending || !!donePath}
+                      style={{
+                        width: 20,
+                        height: 20,
+                        borderRadius: "50%",
+                        background: c.hex,
+                        cursor: "pointer",
+                        border: wsColor === c.name
+                          ? "2px solid var(--mantine-color-text)"
+                          : "2px solid transparent",
+                      }}
+                    />
+                  </Tooltip>
+                ))}
+              </Group>
+            </Stack>
           </>
         )}
 

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sort"
 
+	"github.com/mturley/worktree/internal/addcheck"
 	"github.com/mturley/worktree/internal/config"
 	"github.com/mturley/worktree/internal/dotfiles"
 	"github.com/mturley/worktree/internal/registry"
@@ -64,6 +65,11 @@ func (s *Server) handleCreateWorktree(w http.ResponseWriter, r *http.Request) {
 	if _, _, ok := slackurl.Parse(req.Input); ok {
 		writeError(w, http.StatusBadRequest,
 			"Slack threads are tracked as a resource, not a worktree — add it from the worktree's resource list")
+		return
+	}
+	if addcheck.ExistingWorktreeDir(req.Input) {
+		writeError(w, http.StatusBadRequest,
+			"that path is already a worktree — open it from the worktree list instead")
 		return
 	}
 

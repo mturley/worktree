@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mturley/worktree/internal/addcheck"
 )
 
 func TestClassifyAddInputRejectsNonCreatingForms(t *testing.T) {
@@ -70,7 +72,7 @@ func TestClassifyAddInputRejectsExistingWorktreeDir(t *testing.T) {
 
 func TestIsExistingWorktreeDirFalseForOrdinaryDir(t *testing.T) {
 	dir := t.TempDir()
-	if isExistingWorktreeDir(dir) {
+	if addcheck.ExistingWorktreeDir(dir) {
 		t.Fatal("want false for a directory with no .git, so it can still be used as a branch name")
 	}
 }
