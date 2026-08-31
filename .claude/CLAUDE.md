@@ -43,6 +43,9 @@ make clean     # removes bin/, ui/dist contents (keeps ui/dist/.gitkeep), ui/nod
     and `Match` (path→workspace, canonicalizing `Abs → EvalSymlinks → Clean`
     once per side, keyed by the caller's original path — unmatched paths are
     absent, not empty). `cmuxCmd` is a package var so tests can stub exec.
+    `FindByDirectory` is now implemented over `Match`, which fixed a latent
+    bug: the old raw-string comparison missed any path reached through a
+    symlink.
   - `resourceurl` — the single URL→(type, id) detector, shared by `cmd`,
     `webui`, and `worktreenew`. Replaces webui's `inferResource`, which
     hand-copied `cmd/root.go`'s PR pattern with a "kept in sync" comment.

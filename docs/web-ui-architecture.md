@@ -132,6 +132,33 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | POST | `/api/worktrees/create` | drives `internal/worktreenew` | `{ok, confirm?, steps[]}` — a pending question is HTTP 200 + `confirm`, never an error status |
 | GET | `/api/repos` | — | registry repos, newest worktree first |
 | GET | `/api/repo-dotfiles` | `repo` (required) | gitignored dotfiles that repo would copy into a new worktree |
+
+### `internal/worktreenew` step semantics
+
+`POST /api/worktrees/create` and the `worktree add` CLI both drive
+`internal/worktreenew`'s runner, whose step-tracking conventions matter to any
+new consumer:
+
+- **`Options.DeclineReset` is distinct from `ResetToPR == false`.** The former
+  means "the user was asked whether to reset to the PR and said no"; the
+  latter means "not asked yet." Collapsing the two makes the runner re-raise
+  the same confirmation forever, and a client that gives up on that loop
+  strands a worktree git has already created — on disk, unregistered, holding
+  no port range, invisible to the rest of the tool. This field has to be
+  threaded through every layer that can answer a confirmation (the CLI
+  driver, the HTTP request struct, the modal); it was missed at each of those
+  layers once during development.
+- **A step's `pending` status is overloaded.** It means both "in progress
+  right now" (a slow step is recorded `pending` when it *starts*, so the CLI
+  can show a spinner) and "never reached" (`finish()` pads every unreached
+  step as `pending` at the end of a run). The first `pending` step in the
+  list during a mid-flow run is the in-flight one; every `pending` step after
+  it is genuinely unreached. Any new consumer of the step list must
+  disambiguate these two meanings itself — there is no separate flag.
+- **`record` replaces an existing step with the same key rather than
+  appending**, so the step list is one-entry-per-key by construction. This is
+  why a consumer can treat it like a map keyed by step, and why a duplicate
+  key from a re-invoked call site can never produce a second entry.
 | GET | `/api/stream` | — | SSE stream (`text/event-stream`) |
 
 ### `worktreeSummary` (worktrees.go)
