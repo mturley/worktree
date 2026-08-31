@@ -1,7 +1,8 @@
 import { useState } from "react"
 import { useLocation } from "wouter"
 import { serializeResourceKey } from "../lib/resourceKey"
-import { Grid, Group, Stack, Tabs, Title } from "@mantine/core"
+import { Button, Grid, Group, Stack, Tabs, Title } from "@mantine/core"
+import { IconPlus } from "@tabler/icons-react"
 import { useWorktrees } from "../hooks/useWorktrees"
 import { useGlobalTimeline } from "../hooks/useTimeline"
 import { useIsWide } from "../hooks/useIsWide"
@@ -9,14 +10,22 @@ import { WorktreeList } from "../components/WorktreeList"
 import { TimelineFeed } from "../components/TimelineFeed"
 import { ArchivedToggle } from "../components/ArchivedToggle"
 import { SourceFilter } from "../components/SourceFilter"
+import { NewWorktreeModal } from "../components/NewWorktreeModal"
 
 export function HomePage() {
   const [, navigate] = useLocation()
   const [archived, setArchived] = useState(false)
   const [sources, setSources] = useState<string[]>([])
+  const [newOpen, setNewOpen] = useState(false)
   const wide = useIsWide()
   const wts = useWorktrees()
   const tl = useGlobalTimeline(archived, sources)
+
+  const newWorktreeButton = (
+    <Button size="xs" leftSection={<IconPlus size={14} />} onClick={() => setNewOpen(true)}>
+      New worktree
+    </Button>
+  )
 
   /**
    * Opens a resource from the global timeline.
@@ -68,6 +77,8 @@ export function HomePage() {
   if (!wide) {
     return (
       <Stack p="md" gap="sm">
+        <Group justify="flex-end">{newWorktreeButton}</Group>
+        <NewWorktreeModal opened={newOpen} onClose={() => setNewOpen(false)} />
         <Tabs defaultValue="worktrees">
           <Tabs.List>
             <Tabs.Tab value="worktrees">Worktrees</Tabs.Tab>
@@ -84,11 +95,15 @@ export function HomePage() {
     <Grid p="md" gutter="md">
       <Grid.Col span={4}>
         <Stack gap="sm">
-          <Title order={4}>Worktrees</Title>
+          <Group justify="space-between">
+            <Title order={4}>Worktrees</Title>
+            {newWorktreeButton}
+          </Group>
           {worktrees}
         </Stack>
       </Grid.Col>
       <Grid.Col span={8}>{timeline}</Grid.Col>
+      <NewWorktreeModal opened={newOpen} onClose={() => setNewOpen(false)} />
     </Grid>
   )
 }

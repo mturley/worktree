@@ -92,3 +92,28 @@ export interface DeleteWorktreeResponse {
 export interface CmuxGroup { ref: string; name: string }
 export interface CmuxColor { name: string; hex: string }
 export interface CmuxGroupsResponse { groups: CmuxGroup[]; colors: CmuxColor[] }
+
+export interface Repo { name: string; repo_root: string }
+
+export interface CreateConfirm {
+  key: "reuse_branch" | "reset_to_pr"
+  branch: string
+  local_head?: string
+  remote_head?: string
+}
+
+export interface CreateStep {
+  key: string
+  label: string
+  status: "done" | "skipped" | "failed" | "pending"
+  detail?: string
+}
+
+export interface CreateWorktreeResponse {
+  ok: boolean
+  confirm: CreateConfirm | null
+  steps: CreateStep[]
+  path?: string
+  branch?: string
+  error?: string
+}
