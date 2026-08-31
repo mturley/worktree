@@ -190,3 +190,25 @@ describe("WorktreeDetailPage wide layout", () => {
     expect(await screen.findByText(/timeline/i)).toBeInTheDocument()
   })
 })
+
+describe("WorktreeDetailPage narrow layout", () => {
+  it("shows the timeline under the resources when nothing is selected", async () => {
+    // Narrow used to drop the cross-resource timeline entirely, which made it
+    // a lesser view rather than a narrower one. With nothing selected both
+    // widths now render the same thing: resources, then the timeline.
+    setViewport("narrow")
+    wrap()
+    expect(await screen.findByRole("button", { name: /select resource o\/r#1/i })).toBeInTheDocument()
+    expect(await screen.findByText(/timeline/i)).toBeInTheDocument()
+  })
+
+  it("still drills down to the resource when one is selected", async () => {
+    // The one layout that replaces the list outright — there is no room for a
+    // navigator beside the resource at this width.
+    window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?resource=pr:o%2Fr%231`)
+    setViewport("narrow")
+    wrap()
+    expect(await screen.findByRole("button", { name: /all resources/i })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /select resource o\/r#1/i })).toBeNull()
+  })
+})

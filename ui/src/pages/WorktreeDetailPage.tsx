@@ -99,28 +99,28 @@ export function WorktreeDetailPage() {
     </Stack>
   )
 
-  // Wide with nothing selected: full-width resources, timeline stacked below.
-  const stacked = wide && !selectedResource
+  // Nothing selected: full-width resources with the timeline stacked below —
+  // the same shape at every width, so narrow is no longer a lesser view that
+  // silently drops the timeline.
+  const stacked = !selectedResource
   // Per-column scrolling only makes sense when the columns sit side by side.
   const colScroll = stacked
     ? undefined
     : { height: "100%", minHeight: 0, overflowY: "auto" as const }
 
-  // Narrow + a selection drills down to the resource, replacing the list.
-  // Wide shows both. Both read the same selection state, so resizing swaps
+  // Narrow + a selection is the one layout that drills down, replacing the
+  // list outright — there is no room to keep a navigator beside the resource.
+  // Every other combination is the Grid below, which differs only in its
+  // spans. Both branches read the same selection state, so resizing swaps
   // presentation without disturbing what is selected.
-  const overview = !wide ? (
-    selectedResource ? (
-      <ResourceDetailPane
-        path={path}
-        resource={selectedResource}
-        onBack={clear}
-        onRemoved={resources.refetch}
-        onResourceChanged={resources.refetch}
-      />
-    ) : (
-      list
-    )
+  const overview = selectedResource && !wide ? (
+    <ResourceDetailPane
+      path={path}
+      resource={selectedResource}
+      onBack={clear}
+      onRemoved={resources.refetch}
+      onResourceChanged={resources.refetch}
+    />
   ) : (
     // One Grid in both states, deliberately. Swapping the wide layout between
     // a Grid and a stacked Box would put `list` at a different position in the
@@ -137,7 +137,11 @@ export function WorktreeDetailPage() {
     // content, so overflow never triggers and the whole page scrolls instead.
     <Grid
       gutter="md"
-      style={{ flex: 1, minHeight: 0, margin: 0, overflowY: stacked ? "auto" : undefined }}
+      // No overflow here on purpose. Mantine's Grid inner carries negative
+      // margins to offset the columns' padding, so making the Grid a scroll
+      // container exposes those as HORIZONTAL overflow — a stray sideways
+      // scrollbar. When stacked, the page-level Box below scrolls instead.
+      style={{ flex: 1, minHeight: 0, margin: 0 }}
       styles={{ inner: stacked ? {} : { height: "100%" } }}
     >
       <Grid.Col span={stacked ? 12 : 4} style={colScroll}>{list}</Grid.Col>
@@ -185,7 +189,13 @@ export function WorktreeDetailPage() {
         Wide: the Grid below manages its own per-column scrolling. Narrow:
         everything collapses into this single scroller.
       */}
-      <Box style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflowY: wide ? "hidden" : "auto" }}>
+      {/*
+        Who scrolls depends on the layout. Split columns scroll themselves, so
+        this stays hidden. Stacked (and narrow) is one continuous column, so
+        the scrolling belongs here — and here it is safe, because this Box has
+        no negative margins to leak sideways.
+      */}
+      <Box style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflowY: wide && !stacked ? "hidden" : "auto" }}>
         {overview}
       </Box>
       {pendingThreadUrl !== null && (
