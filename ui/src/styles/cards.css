@@ -43,6 +43,22 @@
   outline-offset: 2px;
 }
 
+/*
+ * WorktreeCard splits the two roles the flag above normally combines. Its cmux
+ * workspace strip sits above the card's link and must not be nested inside an
+ * <a> (interactive content inside an anchor is invalid, and a nested button
+ * would suppress the anchor's own click handler — the browser would then
+ * follow the href and reload the page). So the card marks the Paper
+ * data-interactive for the background and hover, which belong to the whole
+ * card as one surface, and marks the inner anchor data-card-link for the
+ * focus ring, which belongs to the thing that actually takes focus.
+ */
+[data-card-link="true"]:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 2px;
+  border-radius: var(--mantine-radius-sm);
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-interactive="true"] {
     transition: none;

@@ -99,6 +99,13 @@ export function WorktreeDetailPage() {
     </Stack>
   )
 
+  // Wide with nothing selected: full-width resources, timeline stacked below.
+  const stacked = wide && !selectedResource
+  // Per-column scrolling only makes sense when the columns sit side by side.
+  const colScroll = stacked
+    ? undefined
+    : { height: "100%", minHeight: 0, overflowY: "auto" as const }
+
   // Narrow + a selection drills down to the resource, replacing the list.
   // Wide shows both. Both read the same selection state, so resizing swaps
   // presentation without disturbing what is selected.
@@ -115,13 +122,26 @@ export function WorktreeDetailPage() {
       list
     )
   ) : (
-    // Each column scrolls independently. minHeight:0 is the load-bearing bit:
-    // a flex/grid child defaults to min-height:auto, which refuses to shrink
-    // below its content, so overflow never triggers and the whole page
-    // scrolls as one instead.
-    <Grid gutter="md" style={{ flex: 1, minHeight: 0, margin: 0 }} styles={{ inner: { height: "100%" } }}>
-      <Grid.Col span={4} style={{ height: "100%", minHeight: 0, overflowY: "auto" }}>{list}</Grid.Col>
-      <Grid.Col span={8} style={{ height: "100%", minHeight: 0, overflowY: "auto" }}>
+    // One Grid in both states, deliberately. Swapping the wide layout between
+    // a Grid and a stacked Box would put `list` at a different position in the
+    // React tree, remounting it on every selection change — losing its scroll
+    // position and flickering. Changing only the SPANS keeps it mounted.
+    //
+    // With nothing selected the columns go full width, so the resources fill
+    // the page and the cross-resource timeline wraps beneath them. The page
+    // then scrolls as one, which is why the per-column scrollers are dropped
+    // in that state: two stacked independent scrollers read as a bug.
+    //
+    // minHeight:0 is the load-bearing bit for the split state: a flex/grid
+    // child defaults to min-height:auto, which refuses to shrink below its
+    // content, so overflow never triggers and the whole page scrolls instead.
+    <Grid
+      gutter="md"
+      style={{ flex: 1, minHeight: 0, margin: 0, overflowY: stacked ? "auto" : undefined }}
+      styles={{ inner: stacked ? {} : { height: "100%" } }}
+    >
+      <Grid.Col span={stacked ? 12 : 4} style={colScroll}>{list}</Grid.Col>
+      <Grid.Col span={stacked ? 12 : 8} style={colScroll}>
         {selectedResource ? (
           <ResourceDetailPane
             path={path}

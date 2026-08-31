@@ -4,6 +4,7 @@ import { IconTrash } from "@tabler/icons-react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useLocation } from "wouter"
 import { api } from "../api/client"
+import { useCmuxMatches } from "../api/cmux"
 import type { GitStatus, WorktreeSummary } from "../api/types"
 import { relativeTime as rel } from "../lib/relativeTime"
 import { CmuxWorkspaceSection } from "./CmuxWorkspaceSection"
@@ -50,13 +51,28 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
   const name = w.path.split("/").filter(Boolean).pop() || w.path
   const git = info.data?.git
 
+  // Inside cmux the workspace name is the header (see CmuxWorkspaceSection),
+  // so the worktree title steps down to a subtitle — same demotion the list
+  // card makes, reading the same shared query.
+  const hasWorkspace = useCmuxMatches(w.path).length > 0
+
   return (
     <Paper p="sm" withBorder>
       <Stack gap={8}>
         <CmuxWorkspaceSection path={w.path} branch={git?.branch || w.branch} />
         <Group gap="xs" wrap="nowrap" justify="space-between">
           <Group gap="xs" wrap="wrap" style={{ minWidth: 0 }}>
-            <Text fw={700} size="md" style={{ overflowWrap: "anywhere" }}>{name}</Text>
+            {/* Marks the worktree's own name, so it stays identifiable once
+                the cmux workspace takes over as the card's headline. */}
+            <Badge size="xs" color="blue" variant="light" style={{ flex: "none" }}>WORKTREE</Badge>
+            <Text
+              fw={hasWorkspace ? 600 : 700}
+              size={hasWorkspace ? "sm" : "md"}
+              c={hasWorkspace ? "dimmed" : undefined}
+              style={{ overflowWrap: "anywhere" }}
+            >
+              {name}
+            </Text>
             {!w.on_disk && <Badge size="xs" color="red">missing</Badge>}
           </Group>
           <Tooltip label="Delete worktree">

@@ -18,6 +18,11 @@ type worktreeSummary struct {
 	PrimaryCount  int            `json:"primary_count"`
 	PrimaryByType map[string]int `json:"primary_by_type"`
 	RelatedCount  int            `json:"related_count"`
+	// RelatedByType breaks RelatedCount down the same way PrimaryByType does,
+	// so the UI can name what is related ("2 Slack threads") rather than only
+	// counting it. Kept alongside RelatedCount rather than replacing it: the
+	// total is still what callers checking "are there any?" want.
+	RelatedByType map[string]int `json:"related_by_type"`
 	LatestEventTS string         `json:"latest_event_ts"`
 	// FocusResources are the primary (non-related) resources, enriched from
 	// watcher_resource_state, so the worktree list can show what each
@@ -43,6 +48,7 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 		primary := 0
 		primaryByType := make(map[string]int)
 		relatedCount := 0
+		relatedByType := make(map[string]int)
 		// Sized for the common case; make(...) (not nil) so it marshals as [].
 		focus := make([]resourceDTO, 0, len(rs))
 		for _, res := range rs {
@@ -52,6 +58,7 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 				focus = append(focus, s.newResourceDTO(res))
 			} else {
 				relatedCount++
+				relatedByType[res.Type]++
 			}
 		}
 		_, statErr := os.Stat(e.Path)
@@ -64,6 +71,7 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 			PrimaryCount:   primary,
 			PrimaryByType:  primaryByType,
 			RelatedCount:   relatedCount,
+			RelatedByType:  relatedByType,
 			LatestEventTS:  latestEventTSForSubscriber(s.DB, wdb.Subscriber(e.Path)),
 			FocusResources: focus,
 		})

@@ -14,6 +14,8 @@ export interface WorktreeSummary {
   path: string; repo: string; branch: string;
   on_disk: boolean; resource_count: number; primary_count: number; latest_event_ts: string;
   primary_by_type: Record<string, number>; related_count: number;
+  /** Related resources by type; absent on an older cached response. */
+  related_by_type?: Record<string, number>;
   /** Primary ("focus") resources, enriched. Always an array — never null. */
   focus_resources: ResourceDTO[];
 }

@@ -1,8 +1,9 @@
 import { Badge, Box, Group, Paper, Stack, Text } from "@mantine/core"
 import { relativeTime as rel, relativeFromNow } from "../lib/relativeTime"
 import { useLocation } from "wouter"
+import { useCmuxMatches } from "../api/cmux"
 import type { ResourceDTO, WorktreeSummary } from "../api/types"
-import { resourceSummary } from "../lib/resourceSummary"
+import { relatedSummary } from "../lib/resourceSummary"
 import { CmuxWorkspaceSection } from "./CmuxWorkspaceSection"
 import { ResourceStatusIcon } from "./ResourceStatusIcon"
 import { shortResourceRef } from "../lib/resourceRef"
@@ -95,18 +96,22 @@ function worktreeName(path: string): string {
 export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
   const [, navigate] = useLocation()
   const href = `/worktree/${encodeURIComponent(w.path)}`
-  const summary = resourceSummary(w.primary_by_type, w.related_count)
   const name = worktreeName(w.path)
+  const related = relatedSummary(w.related_by_type)
 
-  // The whole card is a single anchor. An <a> rather than a <button> because
-  // it navigates: middle-click, copy-link and Enter all work for free, and
-  // there is nothing interactive nested inside it any more to conflict with.
-  const interactive = clickable
+  // Inside cmux, a matched workspace name is the card's headline, so the
+  // worktree title steps down to a subtitle. Same shared query the section
+  // itself reads — no extra request.
+  const hasWorkspace = useCmuxMatches(w.path).length > 0
+
+  // The anchor is the inner Box, not the Paper, because the cmux section
+  // sits above it and must not be nested interactive content inside an <a>.
+  const link = clickable
     ? {
         component: "a" as const,
         href,
         "aria-label": `open worktree ${name}`,
-        "data-interactive": "true",
+        "data-card-link": "true",
         onClick: (e: React.MouseEvent) => {
           // Let modified clicks (new tab, download) behave natively.
           if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return
@@ -117,22 +122,40 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
       }
     : {}
 
+  // The lighter background and hover belong to the WHOLE card, including the
+  // cmux strip — the card is one surface, and lighting only its lower half
+  // reads as a rendering bug. So the affordance flag lives on the Paper while
+  // the anchor lives inside it; cards.css carries the matching focus rule for
+  // the nested link.
+  const affordance = clickable ? { "data-interactive": "true" } : {}
+
   return (
-    <Paper p="sm" withBorder>
+    <Paper p="sm" withBorder {...affordance}>
       <CmuxWorkspaceSection path={w.path} branch={w.branch} />
-      <Box {...interactive}>
+      <Box {...link}>
         <Stack gap={6}>
           <Group gap="xs" wrap="wrap">
-            <Text fw={700} size="md" style={{ overflowWrap: "anywhere" }}>{name}</Text>
+            {/* Marks the worktree's own name, so it stays identifiable once
+                the cmux workspace takes over as the card's headline. */}
+            <Badge size="xs" color="blue" variant="light" style={{ flex: "none" }}>WORKTREE</Badge>
+            <Text
+              fw={hasWorkspace ? 600 : 700}
+              size={hasWorkspace ? "sm" : "md"}
+              c={hasWorkspace ? "dimmed" : undefined}
+              style={{ overflowWrap: "anywhere" }}
+            >
+              {name}
+            </Text>
             {!w.on_disk && <Badge size="xs" color="red">missing</Badge>}
           </Group>
+          {/*
+            Identity only: which repo, which branch. The counts that used to
+            sit here ("1 PR, 1 issue") restated the resource list immediately
+            below, and the worktree-level timestamp restated the per-resource
+            "updated" on each row.
+          */}
           <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-            {[
-              w.repo,
-              w.branch,
-              w.latest_event_ts ? rel(w.latest_event_ts) : "",
-              summary,
-            ].filter(Boolean).join(" · ")}
+            {[w.repo, w.branch].filter(Boolean).join(" · ")}
           </Text>
           {w.focus_resources.length > 0 && (
             <Stack gap={2}>
@@ -140,6 +163,17 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
                 <FocusResourceLine key={`${r.type}:${r.id}`} r={r} />
               ))}
             </Stack>
+          )}
+          {related && (
+            // Related resources are not listed individually — they are the
+            // ones you did not mark as the point of this worktree — so this
+            // line is the only place their shape shows. Named by type, since
+            // "2 related Slack threads" tells you where to look and a bare
+            // total does not. Indented to sit under the resource text, so it
+            // reads as the tail of that list rather than a new fact.
+            <Text size="xs" c="dimmed" pl={20}>
+              {`+ ${related}`}
+            </Text>
           )}
         </Stack>
       </Box>

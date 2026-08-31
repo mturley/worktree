@@ -135,7 +135,9 @@ describe("global timeline affordances", () => {
   it("leaves badges as plain text when the event carries no paths", () => {
     const e = makeEvent({ worktrees: ["wt-a"], worktree_paths: undefined })
     renderWithProvider(<EventRow e={e} showWorktrees onSelectWorktree={vi.fn()} />)
-    expect(screen.getByText("wt-a")).toBeInTheDocument()
+    // The badge is prefixed so a worktree name is identifiable as one at a
+    // glance on the global timeline, where badges sit beside resource chips.
+    expect(screen.getByText("Worktree: wt-a")).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /open worktree/i })).not.toBeInTheDocument()
   })
 

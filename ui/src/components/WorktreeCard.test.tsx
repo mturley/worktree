@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, describe, it, expect } from "vitest"
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest"
 import { render, cleanup, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ResourceDTO, WorktreeSummary } from "../api/types"
 import { WorktreeCard } from "./WorktreeCard"
+import { api } from "../api/client"
 
 const summary: WorktreeSummary = {
   path: "/wt/foo", repo: "odh", branch: "my-branch",
@@ -163,3 +164,122 @@ describe("focus resource meta lines", () => {
   })
 })
 
+
+describe("WorktreeCard card surface", () => {
+  it("puts the hover affordance on the whole card, not just the inner content", () => {
+    // Regression guard. When the cmux section was added it had to move out of
+    // the card's anchor, and the affordance flag went with it — so the lighter
+    // background and hover lit only the lower half of the card, with the cmux
+    // strip left on the plain body colour. The card is one surface: the flag
+    // belongs to the outermost element, and the anchor keeps only the focus
+    // ring (data-card-link).
+    const { container } = wrap(<WorktreeCard w={summary} />)
+
+    const card = container.querySelector('[data-interactive="true"]')
+    expect(card).not.toBeNull()
+
+    const link = screen.getByRole("link", { name: /open worktree foo/i })
+    // The flagged element must CONTAIN the link, never be it.
+    expect(card).not.toBe(link)
+    expect(card!.contains(link)).toBe(true)
+
+    // And the cmux section, which sits outside the anchor, must still be
+    // inside the flagged element — otherwise it misses the hover again.
+    expect(card!.querySelector("[data-cmux-section]")).toBe(
+      container.querySelector("[data-cmux-section]"),
+    )
+  })
+
+  it("keeps a focus ring hook on the anchor itself", () => {
+    // The ring belongs to the thing that takes focus, which is the link, not
+    // the card. cards.css matches on this attribute.
+    wrap(<WorktreeCard w={summary} />)
+    expect(screen.getByRole("link", { name: /open worktree foo/i }))
+      .toHaveAttribute("data-card-link", "true")
+  })
+
+  it("carries no affordance flag when not clickable", () => {
+    const { container } = wrap(<WorktreeCard w={summary} clickable={false} />)
+    expect(container.querySelector('[data-interactive="true"]')).toBeNull()
+    expect(container.querySelector('[data-card-link="true"]')).toBeNull()
+  })
+})
+
+describe("WorktreeCard title demotion inside cmux", () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it("keeps the worktree name as the heading when there is no cmux workspace", async () => {
+    vi.spyOn(api, "cmux").mockResolvedValue({ available: true, matches: {} })
+    wrap(<WorktreeCard w={summary} />)
+    const title = await screen.findByText("foo")
+    expect(getComputedStyle(title).fontWeight).toBe("700")
+  })
+
+  it("steps the worktree name down when a workspace is the headline", async () => {
+    // The workspace name becomes the card's heading, so two bold headings
+    // would compete. The worktree name becomes the subtitle instead.
+    vi.spyOn(api, "cmux").mockResolvedValue({
+      available: true,
+      matches: { "/wt/foo": [{ ref: "workspace:1", title: "my workspace", selected: false }] },
+    })
+    wrap(<WorktreeCard w={summary} />)
+    await screen.findByText("my workspace")
+    const title = screen.getByText("foo")
+    expect(getComputedStyle(title).fontWeight).toBe("600")
+  })
+})
+
+describe("WorktreeCard meta line", () => {
+  it("shows repo and branch only — no counts, no worktree timestamp", () => {
+    // The counts restated the resource list directly below, and the
+    // worktree-level timestamp restated the per-resource "updated" on each
+    // row. Identity is the only thing this line still carries.
+    wrap(<WorktreeCard w={{ ...summary, latest_event_ts: "2026-08-31T10:00:00Z" }} />)
+
+    expect(screen.getByText(/^odh · my-branch$/)).toBeInTheDocument()
+    // No "1 PR, 1 issue" style roll-up anywhere on the card.
+    expect(screen.queryByText(/\d+ PR/)).toBeNull()
+    // And no worktree-level relative time. The per-resource rows keep theirs,
+    // so match the standalone form rather than any "ago" on the card.
+    expect(screen.queryByText(/^\d+\w* ago$/)).toBeNull()
+  })
+})
+
+describe("WorktreeCard related resources", () => {
+  it("names related resources by type, not just a total", () => {
+    // Related resources are deliberately not listed individually, so this
+    // line is the only place their shape shows. "2 related Slack threads"
+    // tells you where to look; "2 related resources" does not.
+    wrap(<WorktreeCard w={{ ...summary, related_count: 3, related_by_type: { slack: 2, jira: 1 } }} />)
+    // Ordered by the shared TYPE_ORDER (pr, jira, slack) so this line reads
+    // in the same sequence as the primary counts elsewhere, regardless of
+    // the order the map happens to arrive in.
+    expect(screen.getByText("+ 1 related Jira issue, 2 related Slack threads")).toBeInTheDocument()
+  })
+
+  it("uses the singular for exactly one of a type", () => {
+    wrap(<WorktreeCard w={{ ...summary, related_count: 1, related_by_type: { slack: 1 } }} />)
+    expect(screen.getByText("+ 1 related Slack thread")).toBeInTheDocument()
+  })
+
+  it("says nothing when there are none", () => {
+    wrap(<WorktreeCard w={{ ...summary, related_count: 0, related_by_type: {} }} />)
+    expect(screen.queryByText(/related/)).toBeNull()
+  })
+
+  it("says nothing when an older cached response omits the breakdown", () => {
+    // related_by_type is absent on a response cached before the field existed.
+    // Better to show no line than to render "+ undefined".
+    wrap(<WorktreeCard w={{ ...summary, related_count: 2, related_by_type: undefined }} />)
+    expect(screen.queryByText(/related/)).toBeNull()
+  })
+})
+
+describe("WorktreeCard WT badge", () => {
+  it("labels the worktree name with a WORKTREE badge", () => {
+    // The badge keeps the worktree's own name identifiable once the cmux
+    // workspace name takes over as the card's headline.
+    wrap(<WorktreeCard w={summary} />)
+    expect(screen.getByText("WORKTREE")).toBeInTheDocument()
+  })
+})

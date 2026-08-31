@@ -92,8 +92,12 @@ export function HomePage() {
   }
 
   return (
+    // Even split. The worktree cards carry more per row than they used to —
+    // a cmux workspace header, two meta lines, focus resources — so the
+    // narrower column was wrapping content that the timeline had width to
+    // spare for.
     <Grid p="md" gutter="md">
-      <Grid.Col span={4}>
+      <Grid.Col span={6}>
         <Stack gap="sm">
           <Group justify="space-between">
             <Title order={4}>Worktrees</Title>
@@ -102,7 +106,7 @@ export function HomePage() {
           {worktrees}
         </Stack>
       </Grid.Col>
-      <Grid.Col span={8}>{timeline}</Grid.Col>
+      <Grid.Col span={6}>{timeline}</Grid.Col>
       <NewWorktreeModal opened={newOpen} onClose={() => setNewOpen(false)} />
     </Grid>
   )

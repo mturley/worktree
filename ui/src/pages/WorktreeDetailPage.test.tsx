@@ -155,3 +155,38 @@ describe("WorktreeDetailPage has no Overview/Slack tabs", () => {
     expect(screen.queryByRole("tablist")).not.toBeInTheDocument()
   })
 })
+
+describe("WorktreeDetailPage wide layout", () => {
+  it("keeps the resource list mounted across a selection toggle", async () => {
+    // The layout changes shape with the selection: nothing selected gives the
+    // resources the full width with the timeline stacked below, a selection
+    // splits into list + detail. Both states are ONE Grid with different
+    // spans, precisely so the list keeps its position in the React tree — a
+    // container swap would remount it, dropping its scroll position and
+    // flickering on every click.
+    setViewport("wide")
+    const user = userEvent.setup()
+    wrap()
+
+    const card = await screen.findByRole("button", { name: /select resource o\/r#1/i })
+    expect(card.isConnected).toBe(true)
+
+    await user.click(card)
+    await waitFor(() => expect(window.location.search).toContain("resource=pr%3A"))
+    // Same DOM node, still in the document: not a re-created list.
+    expect(card.isConnected).toBe(true)
+
+    await user.click(card)
+    await waitFor(() => expect(window.location.search).not.toContain("resource="))
+    expect(card.isConnected).toBe(true)
+  })
+
+  it("shows the resources and the cross-resource timeline together when nothing is selected", async () => {
+    setViewport("wide")
+    wrap()
+    // The timeline is no longer beside the list, but it must still be on the
+    // page — stacked beneath the full-width resources.
+    expect(await screen.findByRole("button", { name: /select resource o\/r#1/i })).toBeInTheDocument()
+    expect(await screen.findByText(/timeline/i)).toBeInTheDocument()
+  })
+})

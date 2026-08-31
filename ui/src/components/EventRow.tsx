@@ -96,10 +96,10 @@ export function EventRow({
                 data-interactive="true"
                 style={{ cursor: "pointer" }}
               >
-                {w}
+                Worktree: {w}
               </Badge>
             ) : (
-              <Badge key={w} size="xs" variant="outline">{w}</Badge>
+              <Badge key={w} size="xs" variant="outline">Worktree: {w}</Badge>
             )
           })}
         </Group>
