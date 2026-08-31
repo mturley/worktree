@@ -125,6 +125,13 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | POST | `/api/worktree-resources/add` | body: `{path, url, related?}` | `resourceDTO` |
 | POST | `/api/worktree-resources/remove` | body: `{path, type, id}` | 204 No Content |
 | POST | `/api/worktrees/delete` | body: `{path, delete_branch, force_directory, force_branch}` | `{ok, needs_force, steps[]}` |
+| GET | `/api/cmux` | — | `{available, matches: {path: [{ref,title,color,selected}]}}`, matched server-side (symlink-resolving). Polled ~15s by one shared TanStack query. |
+| GET | `/api/cmux-groups` | — | workspace groups + `cmux.NamedColors`; fetched only when a create/select modal opens |
+| POST | `/api/cmux/select` | body: `{path, ref}` (see handler) | selects a workspace, then always `osascript` activate |
+| POST | `/api/cmux/create` | body: `{path, ...}` (see handler) | creates a workspace via `cmux.BuildLayout` from the worktree's current resources |
+| POST | `/api/worktrees/create` | drives `internal/worktreenew` | `{ok, confirm?, steps[]}` — a pending question is HTTP 200 + `confirm`, never an error status |
+| GET | `/api/repos` | — | registry repos, newest worktree first |
+| GET | `/api/repo-dotfiles` | `repo` (required) | gitignored dotfiles that repo would copy into a new worktree |
 | GET | `/api/stream` | — | SSE stream (`text/event-stream`) |
 
 ### `worktreeSummary` (worktrees.go)
@@ -812,6 +819,29 @@ the whole detail-page body.
   first-message-derived fallback (instead of the raw id) is deferred to
   Phase 4 / the poller-rethink, since Slack resources aren't enriched via
   `watcher_resource_state` today.
+
+## cmux integration
+
+`internal/cmux` wraps the `cmux` CLI to show and switch/create workspaces from
+the web UI (worktree cards get a workspace section above the title). A few
+things constrain any change here:
+
+- **Path matching happens in Go, not TypeScript**, because it has to resolve
+  symlinks: `cmux.Match(workspaces, paths)` canonicalizes both sides exactly
+  once via `Abs → EvalSymlinks → Clean`, then keys the result map by the
+  caller's **original**, uncanonicalized path — a path with no match is
+  simply absent from the map, never present with an empty slice. Frontend
+  code must treat a missing key and an empty match list as the same thing.
+- **No cmux failure ever produces a 5xx.** `GET /api/cmux` degrades to
+  `{available: false}` on any error (cmux not installed, not running inside a
+  cmux surface, CLI error) and the workspace card section renders nothing —
+  there is no error state for "cmux isn't available," only an absence.
+- `GET /api/cmux` is polled ~15s by a single shared TanStack query (not one
+  per card) since it returns the full path→workspaces map in one call.
+  `GET /api/cmux-groups` is comparatively expensive and is only fetched when
+  a select/create modal actually opens.
+- `POST /api/cmux/select` always follows a successful select with an
+  `osascript` activate — there is no "select without switching focus" mode.
 
 ## Known deferred items / extension notes
 

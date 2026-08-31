@@ -39,6 +39,24 @@ make clean     # removes bin/, ui/dist contents (keeps ui/dist/.gitkeep), ui/nod
   - `slackpoller` — polls Slack threads for changes and fans out updates to subscribers (live-tab SSE, in-memory, only while a thread is open in the UI); folded in from slack-mini's `internal/watcher` package (renamed to avoid collision); consumes `github.com/mturley/watcher/slack`'s `Client`/`Thread` types rather than a local `slackapi` package — there is no `internal/slackapi` anymore, it moved to the watcher library (see "Watcher library" below)
   - `slackcreds` — loads Slack token/cookie/workspace domain from the shared watcher `auth.yaml` and builds a `github.com/mturley/watcher/slack.Client`
   - `slackurl` — parses Slack thread URLs into `(channel, threadTS)` and builds the resource ID used to store them as worktree resources
+  - `cmux` — cmux CLI wrapper: workspace list/create/select, layout building,
+    and `Match` (path→workspace, canonicalizing `Abs → EvalSymlinks → Clean`
+    once per side, keyed by the caller's original path — unmatched paths are
+    absent, not empty). `cmuxCmd` is a package var so tests can stub exec.
+  - `resourceurl` — the single URL→(type, id) detector, shared by `cmd`,
+    `webui`, and `worktreenew`. Replaces webui's `inferResource`, which
+    hand-copied `cmd/root.go`'s PR pattern with a "kept in sync" comment.
+    `internal/github` deliberately keeps its own copy of that regex rather
+    than depending on this package, to stay a dependency-free leaf.
+  - `worktreenew` — the shared worktree creation runner (CLI + web), mirroring
+    `worktreedel`. Every run is idempotent and replayable; confirmations are
+    answered by replaying the whole request with a flag set, not a
+    server-side session.
+
+`worktree add` now only creates worktrees: a Slack URL argument redirects to
+`worktree resources add <url>`, and an existing path redirects to
+`worktree info <path>`, each with a pointed error rather than a silent
+fall-through (which would otherwise create a branch named after the URL).
 
 There are two distinct pollers in play, don't conflate them: (1) the watcher
 library's github/jira/**slack** pollers (`watcher/github`, `watcher/jira`,
