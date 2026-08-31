@@ -132,6 +132,7 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | POST | `/api/worktrees/create` | drives `internal/worktreenew` | `{ok, confirm?, steps[]}` — a pending question is HTTP 200 + `confirm`, never an error status |
 | GET | `/api/repos` | — | registry repos, newest worktree first |
 | GET | `/api/repo-dotfiles` | `repo` (required) | gitignored dotfiles that repo would copy into a new worktree |
+| GET | `/api/stream` | — | SSE stream (`text/event-stream`) |
 
 ### `internal/worktreenew` step semantics
 
@@ -159,7 +160,6 @@ new consumer:
   appending**, so the step list is one-entry-per-key by construction. This is
   why a consumer can treat it like a map keyed by step, and why a duplicate
   key from a re-invoked call site can never produce a second entry.
-| GET | `/api/stream` | — | SSE stream (`text/event-stream`) |
 
 ### `worktreeSummary` (worktrees.go)
 
