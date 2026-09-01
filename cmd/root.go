@@ -25,8 +25,8 @@ import (
 
 var rootCmd = &cobra.Command{
 	Use:   "worktree",
-	Short: "CLI for managing git worktrees",
-	Long:  "CLI for managing git worktrees with GitHub/Jira integration and optional cmux support.",
+	Short: "CLI and web UI for managing git worktrees",
+	Long:  "CLI and web UI for managing git worktrees with GitHub/Jira/Slack integration and optional cmux support.\n\nRun `worktree ui` for the web UI.",
 	Args:  cobra.NoArgs,
 	RunE:  runRoot,
 }

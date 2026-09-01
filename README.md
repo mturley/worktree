@@ -1,8 +1,8 @@
 # <img src="ui/public/favicon.svg" width="36" height="36" align="top" /> worktree
 
-CLI for managing git worktrees with GitHub/Jira integration and optional cmux support. Also available as `wt`.
+CLI and web UI for managing git worktrees with GitHub/Jira/Slack integration and optional cmux support. Also available as `wt`.
 
-Create, discover, and manage git worktrees with automatic port allocation, isolated kubeconfigs, and one-command PR review workflows.
+Create, discover, and manage git worktrees with automatic port allocation, isolated kubeconfigs, and one-command PR review workflows — from the terminal, or from a web UI that keeps every worktree and the activity on its PRs, Jira issues, and Slack threads on one page.
 
 ## Install
 
@@ -89,7 +89,12 @@ Running `worktree` with no arguments shows help followed by info about the curre
 | `https://github.com/.../pull/1234` | Create/open a worktree for the linked PR |
 | `https://...atlassian.net/browse/KEY-123` | Create a worktree with the Jira key as the branch name |
 | `my-feature` | Create a worktree for a new branch from the current HEAD |
-| `/path/to/worktree` | Show info for an existing worktree |
+
+`worktree add` only ever creates a worktree. Two inputs it used to accept are
+now redirected to the commands that own them, rather than silently doing
+something else: a **Slack thread URL** goes to `worktree resources add <url>`,
+and an **existing worktree path** goes to `worktree info <path>`. A bare number
+is always read as a PR, so a numeric branch name has to be created another way.
 
 When creating a PR worktree, the tool automatically finds the local clone matching the PR's repository. It resolves the correct remote by URL (not by name), so fork workflows with `origin`/`upstream` work correctly.
 
@@ -136,7 +141,8 @@ Jira issues are automatically detected from the PR title, PR body, and branch na
 worktree env                     # Print shell environment variables (use: eval "$(worktree env)")
 worktree resources list          # List tracked resources (database-backed)
 worktree resources list --json   # JSON format for agent-handler integration
-worktree resources add <type> <id> [--url <url>] [--related]  # Add a resource
+worktree resources add <url>     # Add a resource, inferring its type and id
+worktree resources add <type> <id> [--url <url>] [--related]  # ...or state them explicitly
 worktree resources unwatch <type> <id>  # Soft-remove a resource (mark inactive)
 worktree resources remove <type> <id>   # Hard-remove a resource from database
 ```
@@ -222,16 +228,37 @@ worktree ui --no-open      # don't auto-open a browser
 worktree ui --api-only     # serve only the JSON API (used with the Vite dev server, see `make dev`)
 ```
 
-The web UI is a single embedded binary — no separate frontend install required. It shows:
+The web UI is a single embedded binary — no separate frontend install required. It is the same data the CLI works with, laid out so you can see every worktree and everything happening on it at once.
 
-- **Home view:** every managed worktree (from the database registry) with resource/primary counts and missing-on-disk markers, plus a global timeline of events across all watched PR/Jira resources (newest first, attributed to the worktree(s) that watch them), with a "Show archived" toggle for events on resources no longer actively watched.
-- **Detail view:** an "Overview" tab with a single worktree's resources (primary vs. related) and a timeline scoped to its subscriptions (opening a worktree triggers a fresh poll if its data is stale, i.e. poll-on-view), plus a **"Slack" tab** showing that worktree's linked Slack threads (view, reply, and react) if any are added.
+### Home
 
-While running, the server polls all active PR/Jira resources in the background every 2 minutes and pushes updates to the browser over Server-Sent Events, so the timeline stays close to live without a manual refresh. This phase is read-only — no watch/unwatch/create/delete actions from the UI yet.
+Every managed worktree as a card: its repo and branch, the resources that are the point of it (each with a status icon, a `#1234` / `PROJ-56` reference, and who owns it), a count of any related resources being watched for context, and a marker when the directory has gone missing from disk.
+
+Beside it, a **global timeline** of events across every watched PR, Jira issue, and Slack thread — newest first, each attributed to the worktree(s) watching it, colour-coded by event type, filterable to one source, with a "Show archived" toggle for resources no longer actively watched. Clicking an event opens its details; clicking a resource or worktree badge jumps straight there.
+
+**New worktree** creates one without leaving the page, taking the same inputs `worktree add` does — a branch name, a PR number or URL, or a Jira issue URL — and reporting each step as it runs.
+
+### Worktree detail
+
+The worktree's environment (`WORKTREE_PORTS`, `KUBECONFIG`) and a short git status, its resources, and a timeline scoped to just this worktree. Opening it triggers a fresh poll if the data is stale.
+
+With nothing selected, the resources take the full width with the timeline beneath. Selecting one narrows the view to that resource: a PR or Jira issue shows its own filtered activity, and a **Slack thread renders inline** — read it, reply, react, mark it read. Slack threads are selected like any other resource; there is no separate tab.
+
+### What you can do from it
+
+Beyond reading: create and delete worktrees, follow and unfollow resources, mark them primary or related, give them custom names and descriptions, act on Slack threads, and — inside cmux — jump to a worktree's terminals or create a workspace for it.
+
+Deleting a worktree asks you to type its name, then shows each cleanup step as it runs (directory, ports, registry, kubeconfig, prune) and escalates to a forced removal only if git refuses. Deleting the branch too is a separate, unchecked opt-in.
+
+### Staying current
+
+While running, the server polls every active PR, Jira, and Slack resource in the background (roughly every 2 minutes, plus on-view-if-stale) and pushes updates to the browser over Server-Sent Events, so the timeline stays close to live without a manual refresh.
 
 ### Slack
 
-`worktree add <slack-thread-url>` links a Slack thread to a worktree as a resource; it then appears in that worktree's "Slack" tab in the web UI, where you can view the thread, reply, and react. Run `worktree setup` to acquire Slack credentials — it walks you through extracting your browser session token and cookie and stores them (plus your workspace domain) in the shared watcher config at `~/.config/watcher/auth.yaml`.
+`worktree add <slack-thread-url>` links a Slack thread to a worktree as a resource; it then appears in that worktree's resource list, and selecting it renders the thread inline. Run `worktree setup` to acquire Slack credentials — it walks you through extracting your browser session token and cookie and stores them (plus your workspace domain) in the shared watcher config at `~/.config/watcher/auth.yaml`.
+
+Threads are never marked read just because you looked at one — only the explicit "Mark thread read" action does that.
 
 **Security note:** the Slack token and cookie are your own Slack session credentials (not an app token) — treat them like a password. They're stored in `~/.config/watcher/auth.yaml` (mode `0600`) and are never committed to any repo.
 
@@ -239,9 +266,9 @@ While running, the server polls all active PR/Jira resources in the background e
 
 When running inside [cmux](https://cmux.com/), worktree creation automatically creates a cmux workspace with a split layout:
 
-- **Left:** Terminal running Claude Code
-- **Top-right:** Browser tabs — the worktree UI, then the PR, then detected Jira issues
-- **Bottom-right:** Terminal showing `worktree info`
+- **Left:** Browser tabs — the PR, then detected Jira issues
+- **Top-right:** A shell terminal, with the worktree's UI page pinned as a tab ahead of it
+- **Bottom-right:** A smaller terminal showing `worktree info`
 
 Those browser tabs are **pinned**, so cmux's close-others / close-right tab
 actions leave them alone (unpin a tab to close it). The first one is focused on
@@ -262,6 +289,13 @@ On creation, the tool prompts for:
 If a cmux workspace already exists for the worktree's directory, the tool switches to it instead of creating a duplicate.
 
 `worktree list` marks worktrees that have open cmux workspaces with `[open]`.
+
+The web UI works in the other direction as well: when the server is running
+inside cmux, each worktree card is headed by its cmux workspace — name and
+colour — with a button to switch straight to those terminals, or to create a
+workspace for a worktree that has none. Cards look exactly as they do outside
+cmux when it isn't running. Matching is by directory and resolves symlinks, so
+a worktree reached through a symlinked path still finds its workspace.
 
 ## Configuration
 
