@@ -9,21 +9,34 @@ import { createTheme, type MantineColorsTuple } from "@mantine/core"
  * surfaces in styles/cards.css, the event colours in lib/eventMeta.tsx —
  * assume a dark background and pick contrast accordingly.
  *
- * The accent ramp is a custom indigo-leaning blue rather than a stock Mantine
- * hue, so the chrome stays distinct from the event colours, which use stock
- * hues to tell event types apart.
+ * The accent ramp is a deep aubergine purple, matching the favicon
+ * (ui/public/favicon.svg) so the tab and the chrome read as one thing.
+ *
+ * It is a custom ramp rather than stock Mantine `violet` or `grape` on
+ * purpose, and the reason is the same as when it was blue: the event colours
+ * (lib/eventMeta.tsx) use stock hues at shade 5 to tell event types apart,
+ * and two of them — violet for pr_merged, grape for jira_status_change and
+ * slack_reply — sit in this hue family. Staying deep and desaturated keeps
+ * the chrome off them; in OKLab the filled chrome is 0.22 from violet[5],
+ * where the old blue ramp was only 0.16 from indigo[5].
+ *
+ * Watch the index, not the swatch: Mantine's default primaryShade is
+ * { light: 6, dark: 8 } and the app forces dark, so the colour actually
+ * painted on filled buttons and the selected-card outline is accent[8], NOT
+ * accent[6]. Anchoring this ramp on the favicon's own #5b21b6 at index 6 was
+ * rejected for that reason — it drove index 8 to a near-black #3f0388.
  */
 const accent: MantineColorsTuple = [
-  "#eef2ff",
-  "#dbe2ff",
-  "#b3c1ff",
-  "#889dff",
-  "#647fff",
-  "#4d6dff",
-  "#3f63ff",
-  "#3053e4",
-  "#2749cc",
-  "#173db4",
+  "#f3f0fe",
+  "#e0daf6",
+  "#bfb1ed",
+  "#9e84e4",
+  "#855ddb",
+  "#7641d3",
+  "#6d2ccc",
+  "#5c1ab3",
+  "#50119d",
+  "#420087",
 ]
 
 /**
