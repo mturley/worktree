@@ -1,4 +1,4 @@
-# worktree
+# <img src="ui/public/favicon.svg" width="36" height="36" align="top" /> worktree
 
 CLI for managing git worktrees with GitHub/Jira integration and optional cmux support. Also available as `wt`.
 
