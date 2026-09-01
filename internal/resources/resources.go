@@ -3,13 +3,25 @@ package resources
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/mturley/watcher"
 	watcherdb "github.com/mturley/watcher/db"
 	wdb "github.com/mturley/worktree/internal/db"
+	"github.com/mturley/worktree/internal/discovery"
 )
+
+// isWorktree reports whether a path is a linked git worktree. It is a package
+// var so tests can drive both answers without building real worktrees, and so
+// every Add caller — CLI, web UI, agent-handler shell-outs — shares one rule.
+var isWorktree = discovery.IsInsideWorktree
+
+// ErrNotAWorktree is returned by Add for a path that is not a linked git
+// worktree. Callers that answer a user — the web API — report it as bad input
+// rather than a server fault.
+var ErrNotAWorktree = errors.New("not a git worktree")
 
 type Resource struct {
 	Type              string // "pr", "jira", "slack"
@@ -87,6 +99,17 @@ func Add(conn *sql.DB, worktreePath string, r Resource) error {
 	}
 	if strings.TrimSpace(r.ID) == "" {
 		return fmt.Errorf("resource id is required")
+	}
+
+	// Resources belong to a worktree. Tracking one against a repo's main
+	// worktree (or a path that is no longer a worktree at all) produces a
+	// subscription nothing ever cleans up: `worktree delete` and the cleanup
+	// paths only ever run against registered worktrees, so those rows outlive
+	// whatever created them and keep getting polled forever.
+	if _, ok := isWorktree(worktreePath); !ok {
+		return fmt.Errorf(
+			"%s is %w; resources can only be tracked in a worktree",
+			worktreePath, ErrNotAWorktree)
 	}
 
 	sub := wdb.Subscriber(worktreePath)

@@ -16,6 +16,7 @@ import (
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/resources"
+	"github.com/mturley/worktree/internal/testgit"
 )
 
 // insertEvent is a test helper writing directly to the watcher tables.
@@ -38,7 +39,7 @@ func TestGlobalTimelineArchivedToggle(t *testing.T) {
 	}
 	defer conn.Close()
 
-	wtPath := t.TempDir()
+	wtPath := testgit.Worktree(t)
 	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
 	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
 
@@ -98,7 +99,7 @@ func TestWorktreeScopedTimeline(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	wtPath := t.TempDir()
+	wtPath := testgit.Worktree(t)
 	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
 	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
 	now := time.Now().UTC()
@@ -129,7 +130,7 @@ func TestGlobalTimelineDedupesMultiResourceEvent(t *testing.T) {
 	}
 	defer conn.Close()
 
-	wtPath := t.TempDir()
+	wtPath := testgit.Worktree(t)
 	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
 	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
 	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#2", URL: "u2"})
@@ -183,7 +184,7 @@ func TestGlobalTimelineBeforeCursor(t *testing.T) {
 	}
 	defer conn.Close()
 
-	wtPath := t.TempDir()
+	wtPath := testgit.Worktree(t)
 	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
 	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
 
@@ -232,7 +233,7 @@ func TestWorktreeTimelineResourceFilter(t *testing.T) {
 	}
 	defer conn.Close()
 
-	wtPath := t.TempDir()
+	wtPath := testgit.Worktree(t)
 	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
 	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
 	resources.Add(conn, wtPath, resources.Resource{Type: "jira", ID: "J-1", URL: "u2"})
@@ -311,7 +312,7 @@ func TestWorktreeTimelineBeforeCursorPaginates(t *testing.T) {
 	}
 	defer conn.Close()
 
-	wtPath := t.TempDir()
+	wtPath := testgit.Worktree(t)
 	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
 	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
 
@@ -388,7 +389,7 @@ func TestEnricherIsRequestScoped(t *testing.T) {
 	}
 	defer conn.Close()
 
-	wtPath := t.TempDir()
+	wtPath := testgit.Worktree(t)
 	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
 	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
 	if err := watcherdb.UpsertResourceState(conn, "pr", "o/r#1",
@@ -426,7 +427,7 @@ func TestEnricherSeesSubscriptionChangesNextRequest(t *testing.T) {
 	}
 	defer conn.Close()
 
-	wtPath := t.TempDir()
+	wtPath := testgit.Worktree(t)
 	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
 	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
 
@@ -454,7 +455,7 @@ func TestTimelineCarriesWorktreePaths(t *testing.T) {
 	}
 	defer conn.Close()
 
-	wtPath := t.TempDir()
+	wtPath := testgit.Worktree(t)
 	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
 	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
 	insertEvent(t, conn, "e1", time.Now().UTC().Format(time.RFC3339), "github", "pr_comment", "hi", "pr", "o/r#1", "u1")
@@ -495,7 +496,7 @@ func TestTimelineEventCarriesEnrichedResource(t *testing.T) {
 	}
 	defer conn.Close()
 
-	wtPath := t.TempDir()
+	wtPath := testgit.Worktree(t)
 	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
 	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
 	if err := watcherdb.UpsertResourceState(conn, "pr", "o/r#1",
@@ -552,7 +553,7 @@ func TestTimelineResourceTypeFilter(t *testing.T) {
 	}
 	defer conn.Close()
 
-	wtPath := t.TempDir()
+	wtPath := testgit.Worktree(t)
 	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
 	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
 	resources.Add(conn, wtPath, resources.Resource{Type: "jira", ID: "J-1", URL: "u2"})

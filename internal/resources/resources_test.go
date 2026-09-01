@@ -2,12 +2,22 @@ package resources
 
 import (
 	"database/sql"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	watcherdb "github.com/mturley/watcher/db"
 	wdb "github.com/mturley/worktree/internal/db"
 )
+
+// The fake worktree paths throughout these tests are not real git worktrees,
+// so the predicate defaults to permissive here; the tests that care about the
+// guard stub it themselves.
+func TestMain(m *testing.M) {
+	isWorktree = func(p string) (string, bool) { return p, true }
+	os.Exit(m.Run())
+}
 
 func testDB(t *testing.T) *sql.DB {
 	t.Helper()
@@ -311,5 +321,55 @@ func TestSetPrimaryUnknownResource(t *testing.T) {
 	wt := t.TempDir()
 	if err := SetPrimary(conn, wt, "pr", "nope#1", true); err == nil {
 		t.Fatal("expected an error for an untracked resource")
+	}
+}
+
+// stubIsWorktree replaces the worktree predicate for one test. The package
+// default is permissive under TestMain so the fake paths the rest of these
+// tests use keep working; tests that care set their own.
+func stubIsWorktree(t *testing.T, fn func(string) (string, bool)) {
+	t.Helper()
+	prev := isWorktree
+	isWorktree = fn
+	t.Cleanup(func() { isWorktree = prev })
+}
+
+func TestAddRejectsNonWorktreePath(t *testing.T) {
+	conn := testDB(t)
+	stubIsWorktree(t, func(string) (string, bool) { return "", false })
+
+	wt := "/Users/me/git/some-repo"
+	err := Add(conn, wt, Resource{Type: "pr", ID: "o/r#1", URL: "u"})
+	if err == nil {
+		t.Fatal("expected Add to reject a path that is not a git worktree")
+	}
+	if !strings.Contains(err.Error(), "not a git worktree") {
+		t.Fatalf("error should say why it was rejected, got: %v", err)
+	}
+
+	// Nothing written: no subscription and no primary-flag row.
+	sub := wdb.Subscriber(wt)
+	var subs, prims int
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM watcher_subscriptions WHERE subscriber = ?`, sub).Scan(&subs); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM worktree_primary WHERE subscriber = ?`, sub).Scan(&prims); err != nil {
+		t.Fatal(err)
+	}
+	if subs != 0 || prims != 0 {
+		t.Fatalf("rejected Add wrote rows: %d subscriptions, %d primary", subs, prims)
+	}
+}
+
+func TestRemoveStillWorksOnNonWorktreePath(t *testing.T) {
+	conn := testDB(t)
+	wt := "/Users/me/git/some-repo"
+	if err := Add(conn, wt, Resource{Type: "pr", ID: "o/r#1", URL: "u"}); err != nil {
+		t.Fatal(err)
+	}
+	// The path stops being a worktree (deleted, or never was one).
+	stubIsWorktree(t, func(string) (string, bool) { return "", false })
+	if err := Remove(conn, wt, "pr", "o/r#1"); err != nil {
+		t.Fatalf("Remove must keep working so stale rows can be cleaned up: %v", err)
 	}
 }

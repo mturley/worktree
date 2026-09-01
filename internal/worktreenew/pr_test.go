@@ -14,6 +14,7 @@ import (
 	"github.com/mturley/worktree/internal/gitutil"
 	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/resources"
+	"github.com/mturley/worktree/internal/testgit"
 )
 
 func TestParsePRInputFromURL(t *testing.T) {
@@ -219,10 +220,8 @@ func TestRunPRTracksThePRAsPrimaryResource(t *testing.T) {
 	}
 	t.Cleanup(func() { conn.Close() })
 
-	wtPath := filepath.Join(base, "pr-1")
-	if err := os.MkdirAll(wtPath, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	// A real linked worktree: resources.Add refuses any other kind of path.
+	wtPath := testgit.Worktree(t)
 	stubPR(t, gitutil.PRWorktreeResult{
 		CreateResult: gitutil.CreateResult{Path: wtPath, Branch: testPRBranch, Created: true},
 		Status:       gitutil.PRWorktreeCreated,
@@ -495,10 +494,8 @@ func TestRunPRDetectsJiraKeysFromTitleAndBody(t *testing.T) {
 	}
 	t.Cleanup(func() { conn.Close() })
 
-	wtPath := filepath.Join(base, "pr-1")
-	if err := os.MkdirAll(wtPath, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	// A real linked worktree: resources.Add refuses any other kind of path.
+	wtPath := testgit.Worktree(t)
 	stubPRInfo(t, &github.PRInfo{
 		Title: "PROJ-7 fix the thing", Body: "Follow-up to PROJ-8.\n<!-- PROJ-9 is an example -->",
 		HeadRef: "feature", URL: "https://github.com/owner/repo/pull/1",

@@ -11,6 +11,7 @@ import (
 
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/resources"
+	"github.com/mturley/worktree/internal/testgit"
 )
 
 func TestAddResource_Jira(t *testing.T) {
@@ -23,7 +24,7 @@ func TestAddResource_Jira(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	wtPath := t.TempDir()
+	wtPath := testgit.Worktree(t)
 
 	srv := &Server{DB: conn}
 	ts := httptest.NewServer(srv.Handler())
@@ -55,7 +56,7 @@ func TestAddResource_UnrecognizedURL(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	wtPath := t.TempDir()
+	wtPath := testgit.Worktree(t)
 
 	srv := &Server{DB: conn}
 	ts := httptest.NewServer(srv.Handler())
@@ -97,7 +98,7 @@ func TestRemoveResource(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	wtPath := t.TempDir()
+	wtPath := testgit.Worktree(t)
 	if err := resources.Add(conn, wtPath, resources.Resource{Type: "slack", ID: "C1:1700000000.000100", URL: "https://x"}); err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +155,7 @@ func TestSetResourcePrimaryEndpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	wtPath := t.TempDir()
+	wtPath := testgit.Worktree(t)
 	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u", Related: true})
 
 	srv := &Server{DB: conn}
@@ -193,5 +194,36 @@ func TestSetResourcePrimaryEndpoint(t *testing.T) {
 	// An untracked resource must fail loudly rather than appear to succeed.
 	if code := post(`{"path":"` + wtPath + `","type":"pr","id":"ghost#9","primary":true}`); code == http.StatusNoContent {
 		t.Error("untracked resource should not report success")
+	}
+}
+
+// A path that is not a worktree is bad input, not a server fault — the UI
+// needs a 400 with the reason to show, not a generic 500.
+func TestAddResource_NonWorktreePathIsBadRequest(t *testing.T) {
+	t.Setenv("WATCHER_HOME", t.TempDir())
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	srv := &Server{DB: conn}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	plain := t.TempDir() // exists, but is not a git worktree
+	body := `{"path":"` + plain + `","url":"https://redhat.atlassian.net/browse/RHOAIENG-123"}`
+	resp, err := http.Post(ts.URL+"/api/worktree-resources/add", "application/json", bytes.NewReader([]byte(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("got %d, want 400", resp.StatusCode)
+	}
+	buf := new(bytes.Buffer)
+	buf.ReadFrom(resp.Body)
+	if !strings.Contains(buf.String(), "not a git worktree") {
+		t.Fatalf("response should explain why: %s", buf.String())
 	}
 }

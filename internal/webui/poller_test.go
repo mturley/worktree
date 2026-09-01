@@ -9,6 +9,7 @@ import (
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/resources"
+	"github.com/mturley/worktree/internal/testgit"
 )
 
 func TestIsWorktreeStale(t *testing.T) {
@@ -17,7 +18,7 @@ func TestIsWorktreeStale(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	wtPath := t.TempDir()
+	wtPath := testgit.Worktree(t)
 	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
 	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
 

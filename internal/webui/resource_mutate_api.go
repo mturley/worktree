@@ -2,6 +2,7 @@ package webui
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/mturley/watcher"
@@ -34,7 +35,11 @@ func (s *Server) handleAddResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := resources.Add(s.DB, req.Path, resources.Resource{Type: resType, ID: id, URL: req.URL, Related: req.Related}); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		status := http.StatusInternalServerError
+		if errors.Is(err, resources.ErrNotAWorktree) {
+			status = http.StatusBadRequest
+		}
+		writeError(w, status, err.Error())
 		return
 	}
 	// Inline-enrich (best effort): populate resource_state before responding.

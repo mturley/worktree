@@ -12,6 +12,7 @@ import (
 
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/resources"
+	"github.com/mturley/worktree/internal/testgit"
 )
 
 func TestSetResourceMetaThenLoad(t *testing.T) {
@@ -20,7 +21,7 @@ func TestSetResourceMetaThenLoad(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	wtPath := t.TempDir()
+	wtPath := testgit.Worktree(t)
 	if err := resources.Add(conn, wtPath, resources.Resource{Type: "slack", ID: "C1:1700000000.000100", URL: "https://x"}); err != nil {
 		t.Fatal(err)
 	}

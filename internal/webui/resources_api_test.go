@@ -14,6 +14,7 @@ import (
 	watcherdb "github.com/mturley/watcher/db"
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/resources"
+	"github.com/mturley/worktree/internal/testgit"
 )
 
 func TestWorktreeResourcesEndpoint(t *testing.T) {
@@ -22,7 +23,7 @@ func TestWorktreeResourcesEndpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	wtPath := t.TempDir()
+	wtPath := testgit.Worktree(t)
 	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})                // primary
 	resources.Add(conn, wtPath, resources.Resource{Type: "jira", ID: "J-1", URL: "u2", Related: true}) // related
 
@@ -59,7 +60,7 @@ func TestWorktreeResourcesEndpointEnrichment(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	wtPath := t.TempDir()
+	wtPath := testgit.Worktree(t)
 	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
 	resources.Add(conn, wtPath, resources.Resource{Type: "jira", ID: "J-1", URL: "u2", Related: true})
 	// A never-polled resource, added so we can assert graceful degrade.
@@ -134,7 +135,7 @@ func TestSlackEnrich(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	wtPath := t.TempDir()
+	wtPath := testgit.Worktree(t)
 	resources.Add(conn, wtPath, resources.Resource{Type: "slack", ID: "C123:1699000000.000100", URL: "u1"})
 
 	slackState := `{"title":"e2e regression thread","channel_name":"wg-dashboard-zaffre","author":"Christian Vogt","created_ts":"1699000000.000100","updated_ts":"1699000500.000200","has_unread":true}`

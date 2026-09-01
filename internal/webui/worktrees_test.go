@@ -15,6 +15,7 @@ import (
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/resources"
+	"github.com/mturley/worktree/internal/testgit"
 )
 
 func seededDB(t *testing.T) *sql.DB {
@@ -29,7 +30,7 @@ func seededDB(t *testing.T) *sql.DB {
 
 func TestWorktreesEndpoint(t *testing.T) {
 	conn := seededDB(t)
-	wtPath := t.TempDir() // exists on disk
+	wtPath := testgit.Worktree(t)
 	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
 	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})                // primary
 	resources.Add(conn, wtPath, resources.Resource{Type: "jira", ID: "J-1", URL: "u2", Related: true}) // related
@@ -85,7 +86,7 @@ func TestWorktreesEndpoint(t *testing.T) {
 
 func TestWorktreesEndpointFocusResources(t *testing.T) {
 	conn := seededDB(t)
-	wtPath := t.TempDir()
+	wtPath := testgit.Worktree(t)
 	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
 	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
 	resources.Add(conn, wtPath, resources.Resource{Type: "jira", ID: "J-1", URL: "u2", Related: true})
