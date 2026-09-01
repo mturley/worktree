@@ -1,8 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
   <!--
-    worktree's "wt" monogram, on the accent tile (#3f63ff = accent[6] in
-    src/theme.ts). Vite copies public/ verbatim into dist, which the Go binary
-    embeds via //go:embed all:ui/dist, so this ships with no asset pipeline.
+    worktree's "wt" monogram, on an aubergine tile (#5b21b6). Vite copies
+    public/ verbatim into dist, which the Go binary embeds via
+    //go:embed all:ui/dist, so this ships with no asset pipeline.
+
+    The tile colour is deliberately its own, not accent[6] from src/theme.ts:
+    the UI chrome stays blue, and the favicon is the one place a distinct hue
+    is useful, since it identifies the tab against every other blue-chromed
+    dev tool. Changing the theme accent should not drag this with it.
 
     The glyphs are SF Pro Bold (system-ui on macOS) outlined to a path rather
     than a live <text> element: system-ui resolves to a different face per
@@ -16,6 +21,6 @@
     and the visible ink do not share a centre, and centring by advance leaves
     the monogram visibly right of centre on the tile.
   -->
-  <rect width="64" height="64" rx="14" fill="#3f63ff"/>
+  <rect width="64" height="64" rx="14" fill="#5b21b6"/>
   <path fill="#ffffff" d="M15.42 47L9.56 25.02L15.61 25.02L18.93 41.32L19.05 41.32L22.95 25.02L28.69 25.02L32.61 41.32L32.73 41.32L36.07 25.02L41.98 25.02L36.15 47L29.78 47L25.8 31.46L25.67 31.46L21.72 47Z M51.55 47.45Q47.9 47.45 46.14 45.91Q44.38 44.38 44.38 40.85L44.38 29.53L41.32 29.53L41.32 25.02L44.38 25.02L44.38 19.64L50.42 19.64L50.42 25.02L54.44 25.02L54.44 29.53L50.42 29.53L50.42 40.19Q50.42 41.73 51.11 42.33Q51.8 42.94 53.15 42.94Q53.56 42.94 53.87 42.91Q54.18 42.88 54.44 42.84L54.44 47.23Q53.95 47.31 53.22 47.38Q52.5 47.45 51.55 47.45Z"/>
 </svg>
