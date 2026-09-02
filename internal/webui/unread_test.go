@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	wdb "github.com/mturley/worktree/internal/db"
@@ -172,5 +173,75 @@ func TestTimelineNeverMarksSlackEventsUnread(t *testing.T) {
 		if e.Unread {
 			t.Fatal("a slack event must never carry unread; the thread owns that state")
 		}
+	}
+}
+
+func postResourceRead(t *testing.T, base, body string) *http.Response {
+	t.Helper()
+	resp, err := http.Post(base+"/api/resource-read", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
+}
+
+func TestResourceReadMarksThroughTheClientsTimestamp(t *testing.T) {
+	conn := unreadTestDB(t)
+	wt := testgit.Worktree(t)
+	if err := resources.Add(conn, wt, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u"}); err != nil {
+		t.Fatal(err)
+	}
+	insertUnreadEvent(t, conn, "e1", "2099-01-01T00:00:00Z", "github", "pr", "o/r#1")
+	insertUnreadEvent(t, conn, "e2", "2099-01-02T00:00:00Z", "github", "pr", "o/r#1")
+
+	srv := &Server{DB: conn}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	// The client saw only e1. e2 arrived after render and must survive.
+	resp := postResourceRead(t, ts.URL,
+		`{"type":"pr","id":"o/r#1","through_ts":"2099-01-01T00:00:00Z"}`)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", resp.StatusCode)
+	}
+	counts, err := unread.Counts(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := counts[unread.Key("pr", "o/r#1")]; n != 1 {
+		t.Fatalf("unread = %d, want 1 — an event newer than through_ts must survive the mark", n)
+	}
+}
+
+func TestResourceReadRejectsSlack(t *testing.T) {
+	conn := unreadTestDB(t)
+	srv := &Server{DB: conn}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	resp := postResourceRead(t, ts.URL, `{"type":"slack","id":"C1:1.2","through_ts":"1.0"}`)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", resp.StatusCode)
+	}
+}
+
+func TestResourceReadRequiresTypeIDAndThroughTS(t *testing.T) {
+	conn := unreadTestDB(t)
+	srv := &Server{DB: conn}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	for _, body := range []string{
+		`{"id":"o/r#1","through_ts":"2099-01-01T00:00:00Z"}`,
+		`{"type":"pr","through_ts":"2099-01-01T00:00:00Z"}`,
+		`{"type":"pr","id":"o/r#1"}`,
+	} {
+		resp := postResourceRead(t, ts.URL, body)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("body %s: status = %d, want 400", body, resp.StatusCode)
+		}
+		resp.Body.Close()
 	}
 }

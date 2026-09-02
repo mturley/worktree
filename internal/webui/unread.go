@@ -1,6 +1,10 @@
 package webui
 
 import (
+	"encoding/json"
+	"errors"
+	"net/http"
+
 	"github.com/mturley/worktree/internal/unread"
 )
 
@@ -62,4 +66,42 @@ func (ix *unreadIndex) IsUnread(resType, id, ts string) bool {
 		return false
 	}
 	return ts > cursor
+}
+
+// handleResourceRead: POST /api/resource-read, body
+// {"type":..., "id":..., "through_ts":...} -> 204.
+//
+// through_ts is the newest event the CLIENT rendered. The server deliberately
+// does NOT substitute its own MAX(ts): events that arrived between render and
+// click must stay unread rather than being swallowed by a button that promised
+// to clear a specific number.
+func (s *Server) handleResourceRead(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Type      string `json:"type"`
+		ID        string `json:"id"`
+		ThroughTS string `json:"through_ts"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if req.Type == "" || req.ID == "" {
+		writeError(w, http.StatusBadRequest, "type and id are required")
+		return
+	}
+	if req.ThroughTS == "" {
+		writeError(w, http.StatusBadRequest, "through_ts is required")
+		return
+	}
+	if err := unread.MarkRead(s.DB, req.Type, req.ID, req.ThroughTS); err != nil {
+		if errors.Is(err, unread.ErrSlackNotSupported) {
+			// Bad input, not a server fault: Slack owns this thread's read
+			// state and the thread view is where it is cleared.
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
