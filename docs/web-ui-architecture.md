@@ -342,6 +342,17 @@ returns **200** with `needs_force` naming the step, never an error status —
 There is no server-side session: granting a force re-posts the whole request,
 so every step is idempotent and already-done work reports as `skipped`.
 
+Two further rules the sequence depends on:
+
+- **`remove_directory` failure aborts the run and leaves the registry row
+  intact.** Unregistering a worktree still on disk would strand it — invisible
+  to the tool but still holding its port range. Other failing steps (cleanup)
+  do not abort.
+- **Branch deletion is opt-in on both surfaces**: the UI checkbox starts
+  unchecked and the CLI prompt defaults to no. Removing a worktree destroys
+  nothing a branch does not still hold, so the branch is never deleted without
+  an explicit yes.
+
 ### SSE (`/api/stream`)
 
 No params. On connect, sends nothing but flushes headers. Every 5s, checks
