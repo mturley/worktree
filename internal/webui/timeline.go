@@ -37,6 +37,9 @@ type TimelineEvent struct {
 	// per-worktree resource list to look anything up in — can render the
 	// resource with its real status icon and custom name.
 	Resource *resourceDTO `json:"resource,omitempty"`
+	// Unread is true when this event is newer than its resource's read
+	// cursor. Always false for Slack — see unreadIndex.IsUnread.
+	Unread bool `json:"unread,omitempty"`
 }
 
 type timelineResponse struct {
@@ -301,6 +304,7 @@ type eventEnricher struct {
 	// ~12 distinct resources.
 	resources map[string]*resourceDTO
 	watching  map[string][]watchingWorktree
+	unread    *unreadIndex
 }
 
 // watchingWorktree is one worktree that follows a resource: the branch the UI
@@ -316,6 +320,7 @@ func (s *Server) newEventEnricher() *eventEnricher {
 		worktreeBySub: map[string]watchingWorktree{},
 		resources:     map[string]*resourceDTO{},
 		watching:      map[string][]watchingWorktree{},
+		unread:        s.newUnreadIndex(),
 	}
 	// A registry read failure leaves worktreeBySub empty, which degrades to
 	// "no worktrees attributed" — the same outcome the old per-event code
@@ -360,6 +365,7 @@ func (e *eventEnricher) fillResource(te *TimelineEvent) {
 		// it is the plain-text fallback when no chip is shown.
 		te.ResourceTitle = dto.Title
 	}
+	te.Unread = e.unread.IsUnread(te.ResourceType, te.ResourceID, te.TS)
 	wts := e.worktreesWatching(te.ResourceType, te.ResourceID)
 	te.Worktrees = make([]string, 0, len(wts))
 	te.WorktreePaths = make([]string, 0, len(wts))
@@ -391,6 +397,7 @@ func (e *eventEnricher) resource(rtype, rid string) *resourceDTO {
 		dto.CustomDescription = meta.CustomDescription
 	}
 	e.s.enrichResourceDTO(dto)
+	dto.UnreadCount = e.unread.Count(rtype, rid)
 	e.resources[key] = dto
 	return dto
 }

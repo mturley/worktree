@@ -37,6 +37,9 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := make([]worktreeSummary, 0, len(entries))
+	// One index for the whole response: the alternative is a count query per
+	// resource per worktree.
+	ix := s.newUnreadIndex()
 	for _, e := range entries {
 		rs, err := resources.Load(s.DB, e.Path)
 		if err != nil {
@@ -55,7 +58,9 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 			if !res.Related {
 				primary++
 				primaryByType[res.Type]++
-				focus = append(focus, s.newResourceDTO(res))
+				dto := s.newResourceDTO(res)
+				dto.UnreadCount = ix.Count(dto.Type, dto.ID)
+				focus = append(focus, dto)
 			} else {
 				relatedCount++
 				relatedByType[res.Type]++
