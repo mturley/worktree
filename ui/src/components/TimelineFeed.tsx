@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { Fragment, useState } from "react"
 import { Alert, Box, Button, Center, Loader, Stack, Text } from "@mantine/core"
 import type { ResourceDTO, TimelineEvent } from "../api/types"
 import { EventRow } from "./EventRow"
@@ -28,7 +28,7 @@ export function TimelineFeed({
   /** Suppresses the resource chip for events with nowhere to go. */
   canSelectResource?: (e: TimelineEvent) => boolean
   /**
-   * Draws the unread divider above the oldest unread event.
+   * Draws the unread divider below the oldest unread event.
    *
    * Only meaningful on a SINGLE-RESOURCE feed: there, events share one cursor
    * and every unread one is contiguous at the top, so a single line splits the
@@ -45,7 +45,7 @@ export function TimelineFeed({
   if (events.length === 0) return <Text c="dimmed" size="sm">No events yet.</Text>
 
   // The oldest unread event, i.e. the last one in this newest-first list. The
-  // divider goes immediately before it. -1 when nothing is unread.
+  // divider goes immediately after it. -1 when nothing is unread.
   const dividerIndex = showUnreadDivider
     ? events.reduce((acc, e, i) => (e.unread ? i : acc), -1)
     : -1
@@ -75,7 +75,7 @@ export function TimelineFeed({
         />
         <Stack gap={2} style={{ position: "relative" }}>
           {events.map((e, i) => (
-            <div key={e.id}>
+            <Fragment key={e.id}>
               <EventRow
                 e={e}
                 showWorktrees={showWorktrees}
@@ -91,7 +91,7 @@ export function TimelineFeed({
                 falls immediately AFTER that row, not before it.
               */}
               {i === dividerIndex && <UnreadDivider />}
-            </div>
+            </Fragment>
           ))}
           {hasMore && onLoadMore && (
             // A button rather than scroll-triggered loading: these feeds sit

@@ -45,7 +45,7 @@ describe("TimelineFeed pagination", () => {
 })
 
 describe("TimelineFeed unread divider", () => {
-  it("draws the divider above the oldest unread event", () => {
+  it("draws the divider below the oldest unread event", () => {
     wrap(
       <TimelineFeed
         events={[

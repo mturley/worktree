@@ -148,5 +148,21 @@ describe("mark-read button", () => {
     wrap(<ResourceDetailPane path="/wt/foo" resource={jira} />)
     expect(screen.queryByRole("button", { name: /Mark .* as read/ })).not.toBeInTheDocument()
   })
+
+  it("never calls markResourceRead on a plain render with no interaction", () => {
+    // The worst outcome for this feature is an implicit mark-read (e.g. a
+    // future useEffect creeping back in). Rendering alone must never call it.
+    withEvents()
+    wrap(<ResourceDetailPane path="/wt/foo" resource={{ ...jira, unread_count: 3 } as ResourceDTO} />)
+    expect(markResourceRead).not.toHaveBeenCalled()
+  })
+
+  it("disables the mark-read button when the timeline has no events to source through_ts from", () => {
+    useWorktreeTimeline.mockReturnValue({
+      events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false,
+    })
+    wrap(<ResourceDetailPane path="/wt/foo" resource={{ ...jira, unread_count: 3 } as ResourceDTO} />)
+    expect(screen.getByRole("button", { name: "Mark 3 events as read" })).toBeDisabled()
+  })
 })
 

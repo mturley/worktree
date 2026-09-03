@@ -47,8 +47,13 @@ function TimelineBody({
   const newestTS = timeline.events[0]?.ts
 
   const markRead = useMutation({
-    mutationFn: () =>
-      api.markResourceRead({ type: resource.type, id: resource.id, through_ts: newestTS! }),
+    mutationFn: () => {
+      // Guarded here, not just via the button's `disabled` prop eleven lines
+      // away — this must stay safe even if a future caller triggers the
+      // mutation some other way.
+      if (!newestTS) return Promise.resolve(null)
+      return api.markResourceRead({ type: resource.type, id: resource.id, through_ts: newestTS })
+    },
     onSuccess: () => {
       // Three surfaces show this resource's unread state: the home cards'
       // focus lines, this worktree's resource list, and every timeline's dots
