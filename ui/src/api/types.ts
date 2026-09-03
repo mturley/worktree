@@ -35,6 +35,11 @@ export interface TimelineEvent {
    * list — render a real status icon and custom name.
    */
   resource?: ResourceDTO;
+  /**
+   * Newer than this event's resource read cursor. Always false for Slack —
+   * the thread owns that state, and it shows on the resource chip instead.
+   */
+  unread?: boolean;
 }
 export interface TimelineResponse { events: TimelineEvent[]; next_cursor: string }
 export interface ResourceDTO {
@@ -44,6 +49,8 @@ export interface ResourceDTO {
   channel_name?: string
   /** slack: unread as of the last poll; drives the unread dot. */
   has_unread?: boolean
+  /** non-slack: events newer than the read cursor. Absent means zero. */
+  unread_count?: number
   created_ts?: string
   updated_ts?: string
   state?: string
