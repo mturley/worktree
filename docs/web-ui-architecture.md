@@ -122,6 +122,7 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | GET | `/api/worktree-resources` | `path` (required) | `[]resourceDTO` |
 | POST | `/api/worktrees/poll` | `path` (required) | `{"polled": bool}` |
 | POST | `/api/resource-meta` | body: `{type, id, name, description}` | — |
+| POST | `/api/resource-read` | body: `{type, id, through_ts}` | 204 No Content |
 | POST | `/api/worktree-resources/add` | body: `{path, url, related?}` | `resourceDTO` |
 | POST | `/api/worktree-resources/remove` | body: `{path, type, id}` | 204 No Content |
 | POST | `/api/worktrees/delete` | body: `{path, delete_branch, force_directory, force_branch}` | `{ok, needs_force, steps[]}` |
@@ -205,6 +206,7 @@ TimelineEvent {
   resource_url   string
   resource_title string    // looked up from cached resource_state, "" if unknown
   worktrees      []string  // branch names currently watching this resource
+  unread         bool      // omitempty; ts newer than the resource's read cursor (always false for Slack)
 }
 ```
 
@@ -251,6 +253,9 @@ updated_at                string    // resource_updated_at, RFC3339
 // user-set per-resource overrides (omitempty; absent if never set):
 custom_name               string
 custom_description        string
+
+// unread state (omitempty; absent when nothing is unread, never present for Slack):
+unread_count              int       // events newer than the resource's read cursor
 ```
 
 `custom_name`/`custom_description` come from the watcher library's
@@ -341,6 +346,52 @@ returns **200** with `needs_force` naming the step, never an error status —
 "git wants confirmation" and "the delete broke" must stay distinguishable.
 There is no server-side session: granting a force re-posts the whole request,
 so every step is idempotent and already-done work reports as `skipped`.
+
+Two further rules the sequence depends on:
+
+- **`remove_directory` failure aborts the run and leaves the registry row
+  intact.** Unregistering a worktree still on disk would strand it — invisible
+  to the tool but still holding its port range. Other failing steps (cleanup)
+  do not abort.
+- **Branch deletion is opt-in on both surfaces**: the UI checkbox starts
+  unchecked and the CLI prompt defaults to no. Removing a worktree destroys
+  nothing a branch does not still hold, so the branch is never deleted without
+  an explicit yes.
+
+### Unread (`internal/unread`, `internal/webui/unread.go`)
+
+One read cursor per RESOURCE in `resource_read_cursor` (a worktree-owned
+table), compared against `watcher_events.ts`. Unread is `ts > last_read_ts`,
+strictly greater.
+
+**Not the same model as agent-handler's.** Handler tracks unread per
+*subscriber*, so each session has its own read state. This is per *resource*
+and shared: marking a PR read in one worktree clears its dot in every worktree
+tracking it.
+
+**Slack threads have no cursor row.** Slack owns a read cursor for the current
+user, worktree reads it via the poller-cached `has_unread`, and two systems
+must not both claim authority over one thread. Every seeding path skips
+`slack`; the endpoint and the CLI command reject it. `TimelineEvent.unread` is
+therefore always false for Slack events — the thread's unread state reaches the
+timeline through its resource chip instead.
+
+**Seeding.** A resource with no cursor row reads as zero unread, so rows must
+actually get written or a resource would never earn its first dot:
+`resources.Add` seeds new subscriptions, and `internal/db`'s migration
+backfills existing ones at their newest event. Both are INSERT OR IGNORE, so a
+second worktree subscribing to a resource someone already reads inherits that
+cursor rather than resetting it.
+
+**`unreadIndex` is request-scoped**, for the same reason `eventEnricher` is:
+cursors move from other processes (`worktree resources mark-read`,
+agent-handler's shell-outs) writing this same SQLite file, which this server
+cannot observe. Build one per request; never hang it off `Server`.
+
+**`through_ts` is client-supplied.** The endpoint never substitutes a
+server-side `MAX(ts)` — events arriving between render and click must stay
+unread rather than being swallowed by a button that promised to clear a
+specific number. The cursor only moves forward, so a stale replay is a no-op.
 
 ### SSE (`/api/stream`)
 

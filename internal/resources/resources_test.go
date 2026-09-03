@@ -9,6 +9,7 @@ import (
 
 	watcherdb "github.com/mturley/watcher/db"
 	wdb "github.com/mturley/worktree/internal/db"
+	"github.com/mturley/worktree/internal/unread"
 )
 
 // The fake worktree paths throughout these tests are not real git worktrees,
@@ -371,5 +372,61 @@ func TestRemoveStillWorksOnNonWorktreePath(t *testing.T) {
 	stubIsWorktree(t, func(string) (string, bool) { return "", false })
 	if err := Remove(conn, wt, "pr", "o/r#1"); err != nil {
 		t.Fatalf("Remove must keep working so stale rows can be cleaned up: %v", err)
+	}
+}
+
+func TestAddSeedsAReadCursorSoNewResourcesStartSilent(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/seed-cursor"
+
+	// An event already exists for this resource before anyone tracks it.
+	if _, err := conn.Exec(
+		`INSERT INTO watcher_events (id, ts, source, type, title) VALUES ('e1', '2026-01-01T00:00:00Z', 'github', 'pr_comment', 'x')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(
+		`INSERT INTO watcher_event_resources (event_id, resource_type, resource_id) VALUES ('e1', 'pr', 'o/r#1')`); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Add(conn, wt, Resource{Type: "pr", ID: "o/r#1", URL: "u"}); err != nil {
+		t.Fatal(err)
+	}
+	// Assert the cursor was CREATED, not merely that the count is zero: with
+	// no cursor row at all the count is also zero, so a count-only assertion
+	// would pass against an unimplemented Add.
+	cursors, err := unread.Cursors(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := cursors[unread.Key("pr", "o/r#1")]
+	if !ok {
+		t.Fatal("Add must seed a read cursor for the resource")
+	}
+	if got < "2026-01-01T00:00:00Z" {
+		t.Fatalf("cursor = %q, want it at or after the existing event so the backlog reads as seen", got)
+	}
+	counts, err := unread.Counts(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := counts[unread.Key("pr", "o/r#1")]; n != 0 {
+		t.Fatalf("unread = %d, want 0 — tracking a resource must not announce its backlog", n)
+	}
+}
+
+func TestAddDoesNotSeedACursorForSlack(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/seed-cursor-slack"
+
+	if err := Add(conn, wt, Resource{Type: "slack", ID: "C1:1.2", URL: "u"}); err != nil {
+		t.Fatal(err)
+	}
+	cursors, err := unread.Cursors(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := cursors[unread.Key("slack", "C1:1.2")]; ok {
+		t.Fatal("a slack thread must never get a cursor row")
 	}
 }

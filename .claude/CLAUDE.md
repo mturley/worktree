@@ -30,6 +30,11 @@ make clean     # removes bin/, ui/dist contents (keeps ui/dist/.gitkeep), ui/nod
   - `jira` — Jira REST API client
   - `ports` — port range allocation (DB-backed; `port_allocations` table)
   - `resources` — worktree resource tracking (DB-backed; `watcher_subscriptions` + `worktree_primary` table). A resource's user-supplied **custom name/description** live in `watcher_resource_meta` (with an `updated_at` as of watcher v0.4.4); set them via the web UI or `worktree resources set-name <type> <id> --name … [--updated-at …]`. `resources list --json` exposes `custom_name`/`custom_description`/`updated_at`; agent-handler mirrors Slack-thread custom names into its own DB (newest-wins) via this CLI — see agent-handler's Phase 7. `SetMetaAt` preserves an explicit timestamp for that cross-DB replication; plain `SetMeta` stamps now. `Add` refuses any path that is not a **linked git worktree** (`discovery.IsInsideWorktree`, injected as the `isWorktree` package var so tests can drive both answers) — a resource tracked against a repo's main worktree is a subscription nothing ever cleans up, since `worktree delete`/`cleanup` only run against registered worktrees; it returns `ErrNotAWorktree`, which the web API maps to 400. Removal paths stay unguarded so stale rows are always cleanable. There is deliberately **no** prune command: rows for deleted worktrees are soft-deleted tombstones that the global timeline's `archived=true` view still relies on, so sweeping them would destroy history to no benefit.
+  - `unread` — per-resource read cursor (`resource_read_cursor`). One cursor
+    per RESOURCE, not per subscriber — deliberately unlike agent-handler's
+    model, and shared across every worktree tracking the resource. Slack
+    threads are excluded: they keep their own read state from the Slack API.
+    See `docs/web-ui-architecture.md` "Unread".
   - `shellenv` — shell environment variable generation from DB (worktree env)
   - `env` — deprecated; superseded by `shellenv`
   - `dotfiles` — gitignored dotfile copying

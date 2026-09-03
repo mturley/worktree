@@ -11,6 +11,7 @@ import (
 	watcherdb "github.com/mturley/watcher/db"
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/discovery"
+	"github.com/mturley/worktree/internal/unread"
 )
 
 // isWorktree reports whether a path is a linked git worktree. It is a package
@@ -144,7 +145,31 @@ func Add(conn *sql.DB, worktreePath string, r Resource) error {
 		sub, r.Type, r.ID, isPrimary); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	// A newly tracked resource starts fully read: its history predates the
+	// decision to follow it, so counting it as unread would announce a
+	// backlog rather than news. INSERT OR IGNORE inside EnsureCursor means a
+	// second worktree subscribing to a resource someone already reads
+	// inherits that cursor instead of resetting it.
+	//
+	// Deliberately after the commit and NOT part of the transaction: failing
+	// to seed a cursor must not undo a successful subscription.
+	//
+	// The seed is therefore BEST-EFFORT, and its error is dropped rather than
+	// returned: by this point the resource is tracked, so surfacing a failure
+	// here would report "adding the resource failed" for a resource that was
+	// in fact added, and the caller has no way to tell the two apart. The
+	// migration backfill in internal/db re-seeds anything missed here on the
+	// next open. Until then the resource has no cursor row, which Counts
+	// reads as nothing unread, so the only cost of dropping the error is that
+	// events arriving before that next open are seeded as already seen. This
+	// package has no logger — a returned error is its only channel — so there
+	// is nowhere else to report it.
+	_ = unread.EnsureCursor(conn, r.Type, r.ID)
+	return nil
 }
 
 // Remove hard-deletes the resource (no user tombstone) and its primary flag.

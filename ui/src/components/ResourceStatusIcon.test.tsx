@@ -106,6 +106,15 @@ describe("unread dot", () => {
     )
     expect(screen.queryByLabelText("unread")).not.toBeInTheDocument()
   })
+
+  it("marks a PR with unread events", () => {
+    render(
+      <MantineProvider>
+        <ResourceTitle r={base({ type: "pr", title: "Fix the thing", unread_count: 3 })} />
+      </MantineProvider>,
+    )
+    expect(screen.getByLabelText("unread")).toBeInTheDocument()
+  })
 })
 
 describe("ResourceTitle", () => {

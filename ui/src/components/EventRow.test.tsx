@@ -158,4 +158,14 @@ describe("global timeline affordances", () => {
     expect(badge.closest("button") === badge).toBe(true)
     expect(container.querySelectorAll("button button")).toHaveLength(0)
   })
+
+  it("marks an unread event", () => {
+    renderWithProvider(<EventRow e={makeEvent({ unread: true })} />)
+    expect(screen.getByLabelText("unread event")).toBeInTheDocument()
+  })
+
+  it("does not mark a read event", () => {
+    renderWithProvider(<EventRow e={makeEvent({ unread: false })} />)
+    expect(screen.queryByLabelText("unread event")).not.toBeInTheDocument()
+  })
 })

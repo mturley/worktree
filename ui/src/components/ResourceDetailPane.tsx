@@ -1,6 +1,8 @@
-import { Anchor, Button, Center, Stack, Title } from "@mantine/core"
+import { Anchor, Button, Center, Group, Stack, Title } from "@mantine/core"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import type { ResourceDTO } from "../api/types"
 import { useWorktreeTimeline } from "../hooks/useTimeline"
+import { api } from "../api/client"
 import { ResourceCard } from "./ResourceCard"
 import { SlackThreadPane } from "./SlackThreadPane"
 import { TimelineFeed } from "./TimelineFeed"
@@ -36,6 +38,32 @@ function TimelineBody({
   onResourceChanged?: () => void
 }) {
   const timeline = useWorktreeTimeline(path, { type: resource.type, id: resource.id })
+  const qc = useQueryClient()
+  const unreadCount = resource.unread_count ?? 0
+  // The newest event the user can actually see. Sent as through_ts so events
+  // arriving between render and click stay unread rather than being swallowed
+  // by a button that promised to clear a specific number. The feed is
+  // newest-first, so this is the first entry.
+  const newestTS = timeline.events[0]?.ts
+
+  const markRead = useMutation({
+    mutationFn: () => {
+      // Guarded here, not just via the button's `disabled` prop eleven lines
+      // away — this must stay safe even if a future caller triggers the
+      // mutation some other way.
+      if (!newestTS) return Promise.resolve(null)
+      return api.markResourceRead({ type: resource.type, id: resource.id, through_ts: newestTS })
+    },
+    onSuccess: () => {
+      // Three surfaces show this resource's unread state: the home cards'
+      // focus lines, this worktree's resource list, and every timeline's dots
+      // and divider.
+      void qc.invalidateQueries({ queryKey: ["worktrees"] })
+      void qc.invalidateQueries({ queryKey: ["resources", path] })
+      void qc.invalidateQueries({ queryKey: ["timeline"] })
+    },
+  })
+
   return (
     <>
       <ResourceCard
@@ -45,7 +73,20 @@ function TimelineBody({
         onMetaChanged={onResourceChanged}
         variant="detail"
       />
-      <Title order={5}>Activity</Title>
+      <Group justify="space-between" align="center">
+        <Title order={5}>Activity</Title>
+        {unreadCount > 0 && (
+          <Button
+            size="compact-xs"
+            variant="subtle"
+            loading={markRead.isPending}
+            disabled={!newestTS}
+            onClick={() => markRead.mutate()}
+          >
+            {`Mark ${unreadCount} ${unreadCount === 1 ? "event" : "events"} as read`}
+          </Button>
+        )}
+      </Group>
       <TimelineFeed
         events={timeline.events}
         loading={timeline.isLoading}
@@ -53,6 +94,7 @@ function TimelineBody({
         hasMore={timeline.hasMore}
         onLoadMore={timeline.loadMore}
         loadingMore={timeline.loadingMore}
+        showUnreadDivider
       />
       {/*
         The feed only holds what the poller captured for this worktree, which

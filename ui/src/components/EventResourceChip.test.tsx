@@ -41,4 +41,20 @@ describe("EventResourceChip enrichment", () => {
     wrap(<EventResourceChip e={e} onSelect={vi.fn()} />)
     expect(screen.getByText("The blocker")).toBeInTheDocument()
   })
+
+  it("shows an unread dot when the event's resource has unread activity", () => {
+    const e = ev({
+      resource: { type: "pr", id: "o/r#42", url: "u", primary: true, state: "OPEN", unread_count: 1 } as ResourceDTO,
+    })
+    wrap(<EventResourceChip e={e} onSelect={vi.fn()} />)
+    expect(screen.getByLabelText("unread")).toBeInTheDocument()
+  })
+
+  it("shows no unread dot for a read resource", () => {
+    const e = ev({
+      resource: { type: "pr", id: "o/r#42", url: "u", primary: true, state: "OPEN" } as ResourceDTO,
+    })
+    wrap(<EventResourceChip e={e} onSelect={vi.fn()} />)
+    expect(screen.queryByLabelText("unread")).not.toBeInTheDocument()
+  })
 })

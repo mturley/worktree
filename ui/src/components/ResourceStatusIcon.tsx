@@ -9,6 +9,8 @@ import { Group, Text } from "@mantine/core"
 import { useState } from "react"
 import type { ResourceDTO } from "../api/types"
 import { SlackMark } from "./icons/SlackMark"
+import { hasUnread } from "../lib/unread"
+import { UnreadMarkerDot } from "./UnreadMarkerDot"
 
 /**
  * Jira's icon URLs sit behind the same Basic auth as its REST API, so a
@@ -99,26 +101,20 @@ export function ResourceStatusIcon({ r, size = 14 }: { r: ResourceDTO; size?: nu
  * status uses changes it everywhere at once.
  */
 /**
- * Unread marker for a Slack thread, from the poller-cached has_unread.
+ * Unread marker for a resource.
  *
- * Rendered here rather than in the Slack card so it appears wherever a
- * resource title does — the worktree card's focus lines included — and so
- * there is one place to change how "unread" looks.
+ * Renders nothing unless the resource has unread activity, so callers can
+ * place it unconditionally. It decides via hasUnread, which is the single
+ * place that knows Slack answers from its own read state and everything else
+ * from the per-resource cursor.
+ *
+ * Exported because the dot has to appear wherever a resource is NAMED, not
+ * just where ResourceTitle is used: the worktree card's focus lines and the
+ * timeline's resource chips both render a bare icon.
  */
-function UnreadDot() {
-  return (
-    <span
-      role="img"
-      aria-label="unread"
-      style={{
-        width: 7,
-        height: 7,
-        borderRadius: "50%",
-        background: "var(--mantine-color-blue-5)",
-        flexShrink: 0,
-      }}
-    />
-  )
+export function UnreadDot({ r }: { r: ResourceDTO }) {
+  if (!hasUnread(r)) return null
+  return <UnreadMarkerDot label="unread" />
 }
 
 export function ResourceTitle({
@@ -135,7 +131,7 @@ export function ResourceTitle({
 }) {
   return (
     <Group gap={6} wrap="nowrap" align="center">
-      {r.has_unread && <UnreadDot />}
+      <UnreadDot r={r} />
       <ResourceStatusIcon r={r} />
       <Text size={size} fw={fw} style={{ overflowWrap: "anywhere" }}>
         {label ?? r.title ?? r.id}

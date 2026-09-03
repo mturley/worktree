@@ -1,6 +1,6 @@
 import { Group, Text, UnstyledButton } from "@mantine/core"
 import type { ResourceDTO, TimelineEvent } from "../api/types"
-import { ResourceStatusIcon } from "./ResourceStatusIcon"
+import { ResourceStatusIcon, UnreadDot } from "./ResourceStatusIcon"
 import { shortResourceRef } from "../lib/resourceRef"
 
 /**
@@ -43,6 +43,7 @@ export function EventResourceChip({ e, onSelect, resolveResource }: {
       }}
     >
       <Group gap={6} wrap="nowrap" style={{ minWidth: 0 }}>
+        <UnreadDot r={forIcon} />
         <ResourceStatusIcon r={forIcon} />
         {ref && <Text size="xs" fw={600} style={{ whiteSpace: "nowrap" }}>{ref}</Text>}
         {title && <Text size="xs" c="dimmed" lineClamp={1} style={{ minWidth: 0 }}>{title}</Text>}

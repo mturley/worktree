@@ -4,6 +4,7 @@ import { relativeTime as rel } from "../lib/relativeTime"
 import { eventLabel } from "../lib/eventMeta"
 import { EventDot } from "./EventDot"
 import { EventResourceChip } from "./EventResourceChip"
+import { UnreadMarkerDot } from "./UnreadMarkerDot"
 import { ROW_PAD_X } from "./timelineRail"
 
 /**
@@ -56,6 +57,15 @@ export function EventRow({
         >
           <Stack gap={2}>
             <Group gap="xs" wrap="wrap" style={{ minWidth: 0 }}>
+              {e.unread && (
+                // A mark on the ROW, not on the rail dot: the rail dot already
+                // encodes event type, and loading a second, unrelated signal
+                // onto it makes both harder to read. Unified timelines
+                // interleave resources, so unread events are not contiguous
+                // and a divider cannot be drawn here — each one is marked
+                // individually instead.
+                <UnreadMarkerDot label="unread event" />
+              )}
               <Text size="sm" fw={600} style={{ overflowWrap: "anywhere", minWidth: 0 }}>{e.title}</Text>
               <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
                 {e.author && `${e.author} · `}{rel(e.external_ts || e.ts)}

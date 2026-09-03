@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Button, Divider, Group, Paper, Skeleton, Stack, Text } from '@mantine/core'
+import { Alert, Button, Group, Paper, Skeleton, Stack, Text } from '@mantine/core'
 import type { UseThreadResult } from '../../hooks/useThread'
 import { useNow } from '../../hooks/useNow'
 import { getConfig, markRead, markUnread, postReply, toggleReaction } from '../../api/slackApi'
@@ -11,6 +11,7 @@ import type { Tab } from '../../state/tabs'
 import { ActionBar } from './ActionBar'
 import { Composer } from './Composer'
 import { Message } from './Message'
+import { UnreadDivider } from '../UnreadDivider'
 
 interface PendingReply {
   localId: string
@@ -313,9 +314,7 @@ export function ThreadView({ tab, thread, onOpenThread }: ThreadViewProps) {
           >
             {data.messages.map((message, index) => (
               <div key={message.TS}>
-                {hasUnread && index === data.unreadIndex && (
-                  <Divider label="New" labelPosition="center" color="blue" my="sm" />
-                )}
+                {hasUnread && index === data.unreadIndex && <UnreadDivider />}
                 <Message
                   message={message}
                   users={data.users}

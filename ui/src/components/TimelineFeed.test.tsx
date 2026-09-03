@@ -4,11 +4,11 @@ import { MantineProvider } from "@mantine/core"
 import { TimelineFeed } from "./TimelineFeed"
 import type { TimelineEvent } from "../api/types"
 
-const ev = (id: string): TimelineEvent =>
+const ev = (id: string, o: Partial<TimelineEvent> = {}): TimelineEvent =>
   ({ id, ts: "2026-08-25T00:00:00Z", type: "pr_comment", type_label: "PR comments",
      title: `event ${id}`, body: "", author: "", source: "github", external_ts: "",
      resource_type: "pr", resource_id: "o/r#1", resource_url: "u", resource_title: "",
-     worktrees: [] }) as TimelineEvent
+     worktrees: [], ...o }) as TimelineEvent
 
 const wrap = (ui: React.ReactNode) => render(<MantineProvider>{ui}</MantineProvider>)
 
@@ -41,5 +41,40 @@ describe("TimelineFeed pagination", () => {
       <TimelineFeed events={[ev("a")]} loading={false} error={null} hasMore onLoadMore={vi.fn()} loadingMore />,
     )
     expect(screen.getByText("event a")).toBeInTheDocument()
+  })
+})
+
+describe("TimelineFeed unread divider", () => {
+  it("draws the divider below the oldest unread event", () => {
+    wrap(
+      <TimelineFeed
+        events={[
+          ev("e3", { title: "newest", unread: true }),
+          ev("e2", { title: "middle", unread: true }),
+          ev("e1", { title: "oldest", unread: false }),
+        ]}
+        loading={false}
+        error={null}
+        showUnreadDivider
+      />,
+    )
+    const divider = screen.getByText("New")
+    const middle = screen.getByText("middle")
+    const oldest = screen.getByText("oldest")
+    // The feed is newest-first, so the divider sits after the last unread
+    // event and before the first read one.
+    expect(middle.compareDocumentPosition(divider) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(divider.compareDocumentPosition(oldest) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("draws no divider when nothing is unread", () => {
+    wrap(<TimelineFeed events={[ev("e1", { unread: false })]} loading={false} error={null} showUnreadDivider />)
+    expect(screen.queryByText("New")).not.toBeInTheDocument()
+  })
+
+  it("draws no divider on a feed that did not ask for one", () => {
+    // A unified feed interleaves resources, so a single line would be a lie.
+    wrap(<TimelineFeed events={[ev("e1", { unread: true })]} loading={false} error={null} />)
+    expect(screen.queryByText("New")).not.toBeInTheDocument()
   })
 })

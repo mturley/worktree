@@ -34,6 +34,7 @@ type resourceDTO struct {
 	Assignee              string   `json:"assignee,omitempty"`                 // Jira
 	Labels                []string `json:"labels,omitempty"`                   // Jira
 	UpdatedAt             string   `json:"updated_at,omitempty"`               // resource_updated_at (RFC3339)
+	UnreadCount           int      `json:"unread_count,omitempty"`             // non-slack: events newer than the read cursor
 }
 
 func (s *Server) handleWorktreeResources(w http.ResponseWriter, r *http.Request) {
@@ -47,9 +48,12 @@ func (s *Server) handleWorktreeResources(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	ix := s.newUnreadIndex()
 	out := make([]resourceDTO, 0, len(rs))
 	for _, res := range rs {
-		out = append(out, s.newResourceDTO(res))
+		dto := s.newResourceDTO(res)
+		dto.UnreadCount = ix.Count(dto.Type, dto.ID)
+		out = append(out, dto)
 	}
 	writeJSON(w, http.StatusOK, out)
 }

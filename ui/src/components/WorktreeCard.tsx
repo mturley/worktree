@@ -5,7 +5,7 @@ import { useCmuxMatches } from "../api/cmux"
 import type { ResourceDTO, WorktreeSummary } from "../api/types"
 import { relatedSummary } from "../lib/resourceSummary"
 import { CmuxWorkspaceSection } from "./CmuxWorkspaceSection"
-import { ResourceStatusIcon } from "./ResourceStatusIcon"
+import { ResourceStatusIcon, UnreadDot } from "./ResourceStatusIcon"
 import { shortResourceRef } from "../lib/resourceRef"
 
 interface WorktreeCardProps {
@@ -68,6 +68,7 @@ function FocusResourceLine({ r }: { r: ResourceDTO }) {
   return (
     <Stack gap={0}>
       <Group gap={6} wrap="nowrap" align="center">
+        <UnreadDot r={r} />
         {/* Same mapping as the resource cards' titles: both read
             resourceStatusMeta, so an icon change lands in both places. */}
         <ResourceStatusIcon r={r} />

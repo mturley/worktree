@@ -97,6 +97,12 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(args),
     }),
+  markResourceRead: (args: { type: string; id: string; through_ts: string }) =>
+    fetchJSON<null>("/api/resource-read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(args),
+    }),
   cmuxSelect: (ref: string) =>
     fetchJSON<{ ok: boolean; error?: string }>("/api/cmux/select", {
       method: "POST",

@@ -85,6 +85,7 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/worktrees/poll", s.handlePollWorktree)
 	mux.HandleFunc("GET /api/worktree-resources", s.handleWorktreeResources)
 	mux.HandleFunc("POST /api/resource-meta", s.handleSetResourceMeta)
+	mux.HandleFunc("POST /api/resource-read", s.handleResourceRead)
 	mux.HandleFunc("POST /api/worktree-resources/add", s.handleAddResource)
 	mux.HandleFunc("POST /api/worktrees/delete", s.handleDeleteWorktree)
 	mux.HandleFunc("POST /api/worktree-resources/remove", s.handleRemoveResource)
