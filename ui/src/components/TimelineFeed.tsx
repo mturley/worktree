@@ -4,10 +4,12 @@ import type { ResourceDTO, TimelineEvent } from "../api/types"
 import { EventRow } from "./EventRow"
 import { EventDetailsModal } from "./EventDetailsModal"
 import { DOT_CENTER, RAIL_WIDTH } from "./timelineRail"
+import { UnreadDivider } from "./UnreadDivider"
 
 export function TimelineFeed({
   events, loading, error, showWorktrees, hasMore, onLoadMore, loadingMore,
   onSelectResource, resolveResource, onSelectWorktree, canSelectResource,
+  showUnreadDivider,
 }: {
   events: TimelineEvent[]; loading: boolean; error: unknown; showWorktrees?: boolean
   /** Omit the three below for a feed that is not paginated. */
@@ -25,12 +27,28 @@ export function TimelineFeed({
   onSelectWorktree?: (path: string) => void
   /** Suppresses the resource chip for events with nowhere to go. */
   canSelectResource?: (e: TimelineEvent) => boolean
+  /**
+   * Draws the unread divider above the oldest unread event.
+   *
+   * Only meaningful on a SINGLE-RESOURCE feed: there, events share one cursor
+   * and every unread one is contiguous at the top, so a single line splits the
+   * list honestly. In a unified feed, events from different resources
+   * interleave and unread ones are not contiguous — those mark each event
+   * individually instead (see EventRow).
+   */
+  showUnreadDivider?: boolean
 }) {
   const [detail, setDetail] = useState<TimelineEvent | null>(null)
 
   if (loading) return <Loader />
   if (error) return <Alert color="red">{String((error as Error).message || error)}</Alert>
   if (events.length === 0) return <Text c="dimmed" size="sm">No events yet.</Text>
+
+  // The oldest unread event, i.e. the last one in this newest-first list. The
+  // divider goes immediately before it. -1 when nothing is unread.
+  const dividerIndex = showUnreadDivider
+    ? events.reduce((acc, e, i) => (e.unread ? i : acc), -1)
+    : -1
 
   return (
     <>
@@ -56,17 +74,24 @@ export function TimelineFeed({
           }}
         />
         <Stack gap={2} style={{ position: "relative" }}>
-          {events.map((e) => (
-            <EventRow
-              key={e.id}
-              e={e}
-              showWorktrees={showWorktrees}
-              onOpen={setDetail}
-              onSelectResource={onSelectResource}
-              resolveResource={resolveResource}
-              onSelectWorktree={onSelectWorktree}
-              canSelectResource={canSelectResource}
-            />
+          {events.map((e, i) => (
+            <div key={e.id}>
+              <EventRow
+                e={e}
+                showWorktrees={showWorktrees}
+                onOpen={setDetail}
+                onSelectResource={onSelectResource}
+                resolveResource={resolveResource}
+                onSelectWorktree={onSelectWorktree}
+                canSelectResource={canSelectResource}
+              />
+              {/*
+                dividerIndex is the last (oldest) unread event's index — the
+                feed is newest-first, so the boundary between unread and read
+                falls immediately AFTER that row, not before it.
+              */}
+              {i === dividerIndex && <UnreadDivider />}
+            </div>
           ))}
           {hasMore && onLoadMore && (
             // A button rather than scroll-triggered loading: these feeds sit

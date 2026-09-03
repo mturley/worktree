@@ -1,6 +1,7 @@
 import { afterEach, describe, it, expect, vi } from "vitest"
 import { render, cleanup, screen } from "@testing-library/react"
 import { MantineProvider } from "@mantine/core"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ResourceDTO } from "../api/types"
 
 if (typeof (globalThis as { EventSource?: unknown }).EventSource !== "function") {
@@ -40,7 +41,14 @@ const pr: ResourceDTO = {
   type: "pr", id: "o/r#1", url: "https://gh/pr/1", primary: true, title: "Fix the widget", state: "OPEN",
 } as ResourceDTO
 
-const wrap = (ui: React.ReactNode) => render(<MantineProvider>{ui}</MantineProvider>)
+const wrap = (ui: React.ReactNode) => {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <MantineProvider>
+      <QueryClientProvider client={qc}>{ui}</QueryClientProvider>
+    </MantineProvider>,
+  )
+}
 
 afterEach(() => {
   cleanup()
