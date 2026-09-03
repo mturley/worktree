@@ -1,10 +1,16 @@
 package cmd
 
 import (
+	"bytes"
+	"database/sql"
 	"encoding/json"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/resources"
+	"github.com/mturley/worktree/internal/unread"
 )
 
 func TestResourcesJSONContract(t *testing.T) {
@@ -12,7 +18,7 @@ func TestResourcesJSONContract(t *testing.T) {
 		{Type: "pr", ID: "o/r#1", URL: "http://x/1", Related: false},
 		{Type: "jira", ID: "RH-2", URL: "http://x/2", Related: true},
 	}
-	b, err := resourcesJSON(rs)
+	b, err := resourcesJSON(rs, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +48,7 @@ func TestResourcesJSONIncludesMetaFields(t *testing.T) {
 		{Type: "slack", ID: "C1:1.2", URL: "http://x", CustomName: "Release blocker",
 			CustomDescription: "e2e regression", UpdatedAt: "2030-01-02T03:04:05Z"},
 	}
-	b, err := resourcesJSON(rs)
+	b, err := resourcesJSON(rs, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +64,7 @@ func TestResourcesJSONIncludesMetaFields(t *testing.T) {
 }
 
 func TestResourcesJSONOmitsEmptyMeta(t *testing.T) {
-	b, err := resourcesJSON([]resources.Resource{{Type: "pr", ID: "o/r#1", URL: "u"}})
+	b, err := resourcesJSON([]resources.Resource{{Type: "pr", ID: "o/r#1", URL: "u"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +80,7 @@ func TestResourcesJSONOmitsEmptyMeta(t *testing.T) {
 }
 
 func TestResourcesJSONEmptyIsArray(t *testing.T) {
-	b, err := resourcesJSON(nil)
+	b, err := resourcesJSON(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,5 +157,140 @@ func TestResolveResourceArgs(t *testing.T) {
 					gt, gi, gu, tc.wantType, tc.wantID, tc.wantURL)
 			}
 		})
+	}
+}
+
+func TestResourcesJSONCarriesUnreadCount(t *testing.T) {
+	rs := []resources.Resource{
+		{Type: "pr", ID: "o/r#1", URL: "http://x/1"},
+		{Type: "jira", ID: "RH-2", URL: "http://x/2"},
+	}
+	counts := map[string]int{unread.Key("pr", "o/r#1"): 3}
+	b, err := resourcesJSON(rs, counts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []map[string]any
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got[0]["unread_count"] != float64(3) {
+		t.Fatalf("unread_count = %v, want 3", got[0]["unread_count"])
+	}
+	// omitempty: a fully read resource's object must stay byte-identical to
+	// what this command emitted before the field existed, because
+	// agent-handler parses it.
+	if _, present := got[1]["unread_count"]; present {
+		t.Fatalf("a read resource must omit unread_count entirely: %+v", got[1])
+	}
+}
+
+func TestWriteResourceLinesAppendsUnreadOnlyWhenNonZero(t *testing.T) {
+	rs := []resources.Resource{
+		{Type: "pr", ID: "o/r#1", URL: "http://x/1"},
+		{Type: "jira", ID: "RH-2", URL: "http://x/2", Related: true},
+	}
+	var buf bytes.Buffer
+	writeResourceLines(&buf, rs, map[string]int{unread.Key("pr", "o/r#1"): 2})
+	out := buf.String()
+
+	if !strings.Contains(out, "  pr:o/r#1 http://x/1 (2 unread)\n") {
+		t.Fatalf("unread resource line wrong: %q", out)
+	}
+	// The read resource keeps the exact pre-existing shape.
+	if !strings.Contains(out, "~ jira:RH-2 http://x/2\n") {
+		t.Fatalf("read resource line must be unchanged: %q", out)
+	}
+}
+
+func TestMarkResourceReadDefaultsToTheNewestEvent(t *testing.T) {
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	seedEvent(t, conn, "e1", "2099-01-01T00:00:00Z", "pr", "o/r#1")
+	seedEvent(t, conn, "e2", "2099-01-02T00:00:00Z", "pr", "o/r#1")
+
+	var buf bytes.Buffer
+	if err := markResourceRead(conn, &buf, "pr", "o/r#1", ""); err != nil {
+		t.Fatal(err)
+	}
+	counts, err := unread.Counts(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := counts[unread.Key("pr", "o/r#1")]; n != 0 {
+		t.Fatalf("unread = %d, want 0 — a bare mark-read clears through the newest event", n)
+	}
+}
+
+func TestMarkResourceReadHonoursAnExplicitThrough(t *testing.T) {
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	seedEvent(t, conn, "e1", "2099-01-01T00:00:00Z", "pr", "o/r#1")
+	seedEvent(t, conn, "e2", "2099-01-02T00:00:00Z", "pr", "o/r#1")
+
+	var buf bytes.Buffer
+	if err := markResourceRead(conn, &buf, "pr", "o/r#1", "2099-01-01T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	counts, err := unread.Counts(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := counts[unread.Key("pr", "o/r#1")]; n != 1 {
+		t.Fatalf("unread = %d, want 1", n)
+	}
+}
+
+func TestMarkResourceReadRejectsSlackWithAPointerToTheThreadView(t *testing.T) {
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	var buf bytes.Buffer
+	err = markResourceRead(conn, &buf, "slack", "C1:1.2", "")
+	if err == nil {
+		t.Fatal("mark-read must reject a slack resource")
+	}
+	if !strings.Contains(err.Error(), "thread view") {
+		t.Fatalf("error %q must point the user at the thread view", err)
+	}
+}
+
+func TestMarkResourceReadSaysSoWhenThereAreNoEvents(t *testing.T) {
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	var buf bytes.Buffer
+	if err := markResourceRead(conn, &buf, "pr", "o/r#9", ""); err != nil {
+		t.Fatalf("a resource with no events is not an error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "no events") {
+		t.Fatalf("output %q must say there was nothing to mark", buf.String())
+	}
+}
+
+// seedEvent inserts one event linked to one resource.
+func seedEvent(t *testing.T, conn *sql.DB, id, ts, resType, resID string) {
+	t.Helper()
+	if _, err := conn.Exec(
+		`INSERT INTO watcher_events (id, ts, source, type, title) VALUES (?, ?, 'github', 'pr_comment', 'x')`,
+		id, ts); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(
+		`INSERT INTO watcher_event_resources (event_id, resource_type, resource_id) VALUES (?, ?, ?)`,
+		id, resType, resID); err != nil {
+		t.Fatal(err)
 	}
 }
