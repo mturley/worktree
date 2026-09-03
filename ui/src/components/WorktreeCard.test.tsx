@@ -283,3 +283,25 @@ describe("WorktreeCard WT badge", () => {
     expect(screen.getByText("WORKTREE")).toBeInTheDocument()
   })
 })
+
+describe("WorktreeCard unread dot", () => {
+  it("shows an unread dot on a focus resource with unread events", () => {
+    wrap(<WorktreeCard w={{
+      ...summary,
+      focus_resources: [
+        { type: "pr", id: "o/r#1", url: "u", primary: true, title: "Fix the widget", state: "OPEN", unread_count: 2 } as ResourceDTO,
+      ],
+    }} />)
+    expect(screen.getByLabelText("unread")).toBeInTheDocument()
+  })
+
+  it("shows no unread dot when every focus resource is read", () => {
+    wrap(<WorktreeCard w={{
+      ...summary,
+      focus_resources: [
+        { type: "pr", id: "o/r#1", url: "u", primary: true, title: "Fix the widget", state: "OPEN" } as ResourceDTO,
+      ],
+    }} />)
+    expect(screen.queryByLabelText("unread")).not.toBeInTheDocument()
+  })
+})

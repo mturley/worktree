@@ -56,6 +56,25 @@ export function EventRow({
         >
           <Stack gap={2}>
             <Group gap="xs" wrap="wrap" style={{ minWidth: 0 }}>
+              {e.unread && (
+                // A mark on the ROW, not on the rail dot: the rail dot already
+                // encodes event type, and loading a second, unrelated signal
+                // onto it makes both harder to read. Unified timelines
+                // interleave resources, so unread events are not contiguous
+                // and a divider cannot be drawn here — each one is marked
+                // individually instead.
+                <span
+                  role="img"
+                  aria-label="unread event"
+                  style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: "50%",
+                    background: "var(--mantine-color-blue-5)",
+                    flexShrink: 0,
+                  }}
+                />
+              )}
               <Text size="sm" fw={600} style={{ overflowWrap: "anywhere", minWidth: 0 }}>{e.title}</Text>
               <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
                 {e.author && `${e.author} · `}{rel(e.external_ts || e.ts)}
