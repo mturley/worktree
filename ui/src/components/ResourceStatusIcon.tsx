@@ -10,6 +10,7 @@ import { useState } from "react"
 import type { ResourceDTO } from "../api/types"
 import { SlackMark } from "./icons/SlackMark"
 import { hasUnread } from "../lib/unread"
+import { UnreadMarkerDot } from "./UnreadMarkerDot"
 
 /**
  * Jira's icon URLs sit behind the same Basic auth as its REST API, so a
@@ -113,19 +114,7 @@ export function ResourceStatusIcon({ r, size = 14 }: { r: ResourceDTO; size?: nu
  */
 export function UnreadDot({ r }: { r: ResourceDTO }) {
   if (!hasUnread(r)) return null
-  return (
-    <span
-      role="img"
-      aria-label="unread"
-      style={{
-        width: 7,
-        height: 7,
-        borderRadius: "50%",
-        background: "var(--mantine-color-blue-5)",
-        flexShrink: 0,
-      }}
-    />
-  )
+  return <UnreadMarkerDot label="unread" />
 }
 
 export function ResourceTitle({

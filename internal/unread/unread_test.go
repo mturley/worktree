@@ -22,9 +22,16 @@ func openDB(t *testing.T) *sql.DB {
 // addEvent inserts one event linked to one resource, at the given ts.
 func addEvent(t *testing.T, conn *sql.DB, id, ts, resType, resID string) {
 	t.Helper()
+	addTypedEvent(t, conn, id, ts, "pr_comment", resType, resID)
+}
+
+// addTypedEvent is addEvent with the event type spelled out, for the
+// bookkeeping types the timelines never render.
+func addTypedEvent(t *testing.T, conn *sql.DB, id, ts, evType, resType, resID string) {
+	t.Helper()
 	if _, err := conn.Exec(
-		`INSERT INTO watcher_events (id, ts, source, type, title) VALUES (?, ?, 'github', 'pr_comment', 'x')`,
-		id, ts); err != nil {
+		`INSERT INTO watcher_events (id, ts, source, type, title) VALUES (?, ?, 'github', ?, 'x')`,
+		id, ts, evType); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := conn.Exec(
@@ -163,5 +170,40 @@ func TestMarkReadCreatesACursorForAnUnseededResource(t *testing.T) {
 	}
 	if got := cursors[unread.Key("jira", "J-1")]; got != "2026-01-01T00:00:00Z" {
 		t.Fatalf("cursor = %q, want the marked ts", got)
+	}
+}
+
+// The most common path on a freshly added resource: resources.Add seeds the
+// cursor at commit time, and the poller's first pass then emits exactly one
+// watch_started, strictly newer than that cursor. Neither timeline renders it
+// (internal/webui/timeline.go filters it out, as does the watcher library's
+// EventsForSubscriberSince), so counting it would show an unread dot above a
+// feed reading "No events yet" — and the mark-read button, disabled on an
+// empty feed, could never clear it.
+func TestCountsIgnoresBookkeepingEvents(t *testing.T) {
+	conn := openDB(t)
+	if err := unread.EnsureCursor(conn, "pr", "o/r#1"); err != nil {
+		t.Fatal(err)
+	}
+	addTypedEvent(t, conn, "e1", "2099-01-01T00:00:00Z", "watch_started", "pr", "o/r#1")
+	addTypedEvent(t, conn, "e2", "2099-01-02T00:00:00Z", "watcher_error", "pr", "o/r#1")
+
+	counts, err := unread.Counts(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := counts[unread.Key("pr", "o/r#1")]; n != 0 {
+		t.Fatalf("unread = %d, want 0 — bookkeeping events are never rendered, so they must never be counted", n)
+	}
+
+	// A real event alongside them still counts, so the filter is not just
+	// suppressing everything.
+	addEvent(t, conn, "e3", "2099-01-03T00:00:00Z", "pr", "o/r#1")
+	counts, err = unread.Counts(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := counts[unread.Key("pr", "o/r#1")]; n != 1 {
+		t.Fatalf("unread = %d, want 1 — only the rendered event counts", n)
 	}
 }

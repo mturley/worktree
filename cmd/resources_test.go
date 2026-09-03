@@ -216,12 +216,72 @@ func TestMarkResourceReadDefaultsToTheNewestEvent(t *testing.T) {
 	if err := markResourceRead(conn, &buf, "pr", "o/r#1", ""); err != nil {
 		t.Fatal(err)
 	}
+	// Assert the cursor was CREATED and landed on the newest event, not just
+	// that the count is zero: a resource with no cursor row at all also
+	// counts zero (Counts inner-joins the cursor table), so a count-only
+	// assertion would pass against a markResourceRead that wrote nothing.
+	cursors, err := unread.Cursors(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := cursors[unread.Key("pr", "o/r#1")]
+	if !ok {
+		t.Fatal("a bare mark-read must create the resource's cursor")
+	}
+	if got != "2099-01-02T00:00:00Z" {
+		t.Fatalf("cursor = %q, want the newest event's ts", got)
+	}
 	counts, err := unread.Counts(conn)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if n := counts[unread.Key("pr", "o/r#1")]; n != 0 {
 		t.Fatalf("unread = %d, want 0 — a bare mark-read clears through the newest event", n)
+	}
+}
+
+// A bookkeeping event is newer than every rendered one: the CLI default must
+// still land on the newest RENDERED event, matching what unread.Counts counts
+// and what the timelines show. Marking read through the bookkeeping event's ts
+// would silently swallow anything that arrives between them.
+func TestMarkResourceReadDefaultSkipsBookkeepingEvents(t *testing.T) {
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	seedEvent(t, conn, "e1", "2099-01-01T00:00:00Z", "pr", "o/r#1")
+	seedTypedEvent(t, conn, "e2", "2099-01-05T00:00:00Z", "watcher_error", "pr", "o/r#1")
+
+	var buf bytes.Buffer
+	if err := markResourceRead(conn, &buf, "pr", "o/r#1", ""); err != nil {
+		t.Fatal(err)
+	}
+	cursors, err := unread.Cursors(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cursors[unread.Key("pr", "o/r#1")]; got != "2099-01-01T00:00:00Z" {
+		t.Fatalf("cursor = %q, want the newest rendered event, not the watcher_error's ts", got)
+	}
+}
+
+// A resource whose ONLY event is bookkeeping has nothing the user could have
+// seen: the CLI reports that rather than marking read through an invisible ts.
+func TestMarkResourceReadWithOnlyBookkeepingEventsReportsNoEvents(t *testing.T) {
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	seedTypedEvent(t, conn, "e1", "2099-01-01T00:00:00Z", "watch_started", "pr", "o/r#1")
+
+	var buf bytes.Buffer
+	if err := markResourceRead(conn, &buf, "pr", "o/r#1", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := buf.String(); !strings.Contains(got, "no events for pr:o/r#1") {
+		t.Fatalf("output = %q, want the no-events message", got)
 	}
 }
 
@@ -283,9 +343,16 @@ func TestMarkResourceReadSaysSoWhenThereAreNoEvents(t *testing.T) {
 // seedEvent inserts one event linked to one resource.
 func seedEvent(t *testing.T, conn *sql.DB, id, ts, resType, resID string) {
 	t.Helper()
+	seedTypedEvent(t, conn, id, ts, "pr_comment", resType, resID)
+}
+
+// seedTypedEvent is seedEvent with the event type spelled out, for the
+// bookkeeping types the timelines (and unread.Counts) filter out.
+func seedTypedEvent(t *testing.T, conn *sql.DB, id, ts, evType, resType, resID string) {
+	t.Helper()
 	if _, err := conn.Exec(
-		`INSERT INTO watcher_events (id, ts, source, type, title) VALUES (?, ?, 'github', 'pr_comment', 'x')`,
-		id, ts); err != nil {
+		`INSERT INTO watcher_events (id, ts, source, type, title) VALUES (?, ?, 'github', ?, 'x')`,
+		id, ts, evType); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := conn.Exec(

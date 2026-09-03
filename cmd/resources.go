@@ -258,11 +258,18 @@ func markResourceRead(conn *sql.DB, out io.Writer, resType, id, through string) 
 			"%w; clear it from the thread view in `worktree ui`", unread.ErrSlackNotSupported)
 	}
 	if through == "" {
+		// The bookkeeping types excluded here are exactly the ones the
+		// timelines never render (internal/webui/timeline.go, and the watcher
+		// library's EventsForSubscriberSince) and that unread.Counts
+		// therefore never counts. Marking read "through" a watch_started or
+		// watcher_error the UI never showed would make the CLI and the UI
+		// disagree about what the count means.
 		if err := conn.QueryRow(`
 			SELECT COALESCE(MAX(e.ts), '')
 			  FROM watcher_events e
 			  JOIN watcher_event_resources er ON er.event_id = e.id
-			 WHERE er.resource_type = ? AND er.resource_id = ?`,
+			 WHERE er.resource_type = ? AND er.resource_id = ?
+			   AND e.type NOT IN ('watch_started','watcher_error')`,
 			resType, id).Scan(&through); err != nil {
 			return err
 		}

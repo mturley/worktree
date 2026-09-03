@@ -4,6 +4,7 @@ import { relativeTime as rel } from "../lib/relativeTime"
 import { eventLabel } from "../lib/eventMeta"
 import { EventDot } from "./EventDot"
 import { EventResourceChip } from "./EventResourceChip"
+import { UnreadMarkerDot } from "./UnreadMarkerDot"
 import { ROW_PAD_X } from "./timelineRail"
 
 /**
@@ -63,17 +64,7 @@ export function EventRow({
                 // interleave resources, so unread events are not contiguous
                 // and a divider cannot be drawn here — each one is marked
                 // individually instead.
-                <span
-                  role="img"
-                  aria-label="unread event"
-                  style={{
-                    width: 7,
-                    height: 7,
-                    borderRadius: "50%",
-                    background: "var(--mantine-color-blue-5)",
-                    flexShrink: 0,
-                  }}
-                />
+                <UnreadMarkerDot label="unread event" />
               )}
               <Text size="sm" fw={600} style={{ overflowWrap: "anywhere", minWidth: 0 }}>{e.title}</Text>
               <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>

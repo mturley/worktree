@@ -62,6 +62,15 @@ func EnsureCursor(conn *sql.DB, resType, id string) error {
 // unread), and fully read resources (count zero yields no row). Resources
 // absent from the map therefore have zero unread, which is what every caller
 // wants from a missing key anyway.
+//
+// The excluded event types MUST match what the timelines render — see the
+// filter in internal/webui/timeline.go (`e.type NOT IN
+// ('watch_started','watcher_error')`), which the watcher library's
+// EventsForSubscriberSince applies too. The count and the feed are a single
+// promise to the user: a badge saying "1 unread" above a feed that shows
+// nothing is unclearable, because mark-read sends the newest ts the client
+// RENDERED and a bookkeeping event is never rendered. These two lists are
+// coupled; change one and you must change the other.
 func Counts(conn *sql.DB) (map[string]int, error) {
 	rows, err := conn.Query(`
 		SELECT er.resource_type, er.resource_id, COUNT(*)
@@ -71,6 +80,7 @@ func Counts(conn *sql.DB) (map[string]int, error) {
 		    ON c.resource_type = er.resource_type
 		   AND c.resource_id   = er.resource_id
 		 WHERE e.ts > c.last_read_ts
+		   AND e.type NOT IN ('watch_started','watcher_error')
 		 GROUP BY er.resource_type, er.resource_id`)
 	if err != nil {
 		return nil, err
