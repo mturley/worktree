@@ -6,7 +6,8 @@ import { relativeTime, relativeFromNow } from "../lib/relativeTime"
 import { api } from "../api/client"
 import { ResourceActions } from "./ResourceActions"
 import { ResourceTitle } from "./ResourceStatusIcon"
-import { hasUnread, UNREAD_ACCENT_BORDER } from "../lib/unread"
+import { cardEdgeStyle, hasUnread } from "../lib/unread"
+import { UnreadBadge } from "./UnreadBadge"
 import { EditResourceDetailsModal } from "./EditResourceDetailsModal"
 
 function prStateColor(state?: string): string {
@@ -84,15 +85,28 @@ function CustomDescription({ r }: { r: ResourceDTO }) {
  * competing for a click, where an oversized title would crowd out the status
  * badges you scan the list by.
  */
+/**
+ * Whether a card of this variant shows unread styling at all.
+ *
+ * The detail card heads the very timeline that lists its unread events, and
+ * that feed boxes each one. Repeating the state as a border, a dot and a badge
+ * three inches above it says nothing the reader cannot already see, and buries
+ * the "Mark N as read" button in decoration. The LIST card still shows it —
+ * there, the events are somewhere else.
+ */
+function showsUnread(variant: ResourceCardVariant): boolean {
+  return variant !== "detail"
+}
+
 function titleProps(variant: ResourceCardVariant): { size: string; fw: number } {
   return variant === "detail" ? { size: "xl", fw: 700 } : { size: "sm", fw: 600 }
 }
 
-function MinimalRow({ r }: { r: ResourceDTO }) {
+function MinimalRow({ r, variant }: { r: ResourceDTO; variant: ResourceCardVariant }) {
   return (
     <Group gap="xs">
       <Badge size="xs" variant="light">{r.type}</Badge>
-      <ResourceTitle r={r} label={r.id} fw={400} />
+      <ResourceTitle r={r} label={r.id} fw={400} showUnread={showsUnread(variant)} />
     </Group>
   )
 }
@@ -107,7 +121,7 @@ function PRCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVaria
         <Badge size="xs" variant="light">GitHub</Badge>
         <Text size="xs" c="dimmed">PR {prNumber(r.id)}</Text>
       </Group>
-      <ResourceTitle r={r} label={r.title || r.id} {...titleProps(variant)} />
+      <ResourceTitle r={r} label={r.title || r.id} showUnread={showsUnread(variant)} {...titleProps(variant)} />
       <CustomDescription r={r} />
       <Group gap={4} wrap="wrap">
         {r.state && <Badge size="xs" color={prStateColor(r.state)}>{r.state.toLowerCase()}</Badge>}
@@ -131,7 +145,7 @@ function JiraCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVar
         <Badge size="xs" variant="light">Jira</Badge>
         <Text size="xs" c="dimmed">{r.id}</Text>
       </Group>
-      <ResourceTitle r={r} label={r.title || r.id} {...titleProps(variant)} />
+      <ResourceTitle r={r} label={r.title || r.id} showUnread={showsUnread(variant)} {...titleProps(variant)} />
       <CustomDescription r={r} />
       <Group gap={4} wrap="wrap">
         {r.status && <Badge size="xs" variant="light">{r.status}</Badge>}
@@ -159,7 +173,7 @@ function SlackCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVa
       <Group gap="xs" wrap="wrap">
         <Badge size="xs" variant="light" color="grape">Slack</Badge>
         {/* Custom name or fetched title alike — same prominence either way. */}
-        <ResourceTitle r={r} label={label} {...titleProps(variant)} />
+        <ResourceTitle r={r} label={label} showUnread={showsUnread(variant)} {...titleProps(variant)} />
       </Group>
       <CustomDescription r={r} />
       <Group gap="xs" wrap="wrap">
@@ -308,13 +322,25 @@ export function ResourceCard({
   const body = r.type === "slack" ? (
     <SlackCardBody r={r} variant={variant} />
   ) : !isEnriched(r) ? (
-    <MinimalRow r={r} />
+    <MinimalRow r={r} variant={variant} />
   ) : r.type === "pr" ? (
     <PRCardBody r={r} variant={variant} />
   ) : r.type === "jira" ? (
     <JiraCardBody r={r} variant={variant} />
   ) : (
-    <MinimalRow r={r} />
+    <MinimalRow r={r} variant={variant} />
+  )
+
+  // The badge lives INSIDE the click target, not beside it. As a sibling of
+  // the button it carved a fixed-width strip out of the card that no click
+  // could reach — harmless at full width, but a quarter of the card once
+  // selecting something narrows the list column, which is exactly when you
+  // most want to click another card.
+  const bodyWithBadge = (
+    <Group justify="space-between" wrap="nowrap" align="flex-start" gap="xs">
+      <div style={{ flex: 1, minWidth: 0 }}>{body}</div>
+      <UnreadBadge unread={showsUnread(variant) && hasUnread(r)} count={r.unread_count} />
+    </Group>
   )
 
   return (
@@ -326,14 +352,12 @@ export function ResourceCard({
       data-interactive={onSelect ? "true" : undefined}
       // A selected card is tinted so the current selection is obvious next to
       // the pane it drives.
-      bg={selected ? "var(--mantine-color-blue-light)" : undefined}
-      // Two independent edge treatments, deliberately composed rather than
-      // chosen between: selection tints the whole border, unread claims only
-      // the left edge, and a card can be both at once.
-      style={{
-        ...(selected ? { borderColor: "var(--mantine-color-blue-filled)" } : {}),
-        ...(hasUnread(r) ? { borderLeft: UNREAD_ACCENT_BORDER } : {}),
-      }}
+      // Violet, not blue: blue is spoken for by unread, and a selected read
+      // card sitting beside an unread one has to be tellable apart at a glance.
+      bg={selected ? "var(--mantine-color-violet-light)" : undefined}
+      // One total function over both states rather than two conditional
+      // spreads — see cardEdgeStyle for the two bugs the spreads caused.
+      style={cardEdgeStyle(showsUnread(variant) && hasUnread(r), selected)}
     >
       <Group justify="space-between" wrap="nowrap" align="flex-start">
         {onSelect ? (
@@ -343,10 +367,10 @@ export function ResourceCard({
             aria-label={`select resource ${r.id}`}
             style={{ flex: 1, minWidth: 0, textAlign: "left" }}
           >
-            {body}
+            {bodyWithBadge}
           </UnstyledButton>
         ) : (
-          <div style={{ flex: 1, minWidth: 0 }}>{body}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>{bodyWithBadge}</div>
         )}
         {/*
           Only the detail card carries the remove control. List cards are

@@ -7,7 +7,8 @@ import { relatedSummary } from "../lib/resourceSummary"
 import { CmuxWorkspaceSection } from "./CmuxWorkspaceSection"
 import { ResourceStatusIcon, UnreadDot } from "./ResourceStatusIcon"
 import { shortResourceRef } from "../lib/resourceRef"
-import { hasUnread, UNREAD_ACCENT_BORDER, UNREAD_COLOR } from "../lib/unread"
+import { cardEdgeStyle } from "../lib/unread"
+import { UnreadBadge } from "./UnreadBadge"
 
 interface WorktreeCardProps {
   w: WorktreeSummary
@@ -76,16 +77,7 @@ function FocusResourceLine({ r }: { r: ResourceDTO }) {
         {ref && (
           <Text size="sm" fw={600} c="dimmed" style={{ whiteSpace: "nowrap" }}>{ref}</Text>
         )}
-        <Text
-          size="sm"
-          // Dimmed by default, so unread lifts the line out of the card's
-          // grey body rather than tinting an already-prominent title.
-          c={hasUnread(r) ? UNREAD_COLOR : "dimmed"}
-          lineClamp={1}
-          style={{ minWidth: 0 }}
-        >
-          {label}
-        </Text>
+        <Text size="sm" c="dimmed" lineClamp={1} style={{ minWidth: 0 }}>{label}</Text>
       </Group>
       {meta && (
         // Indented to clear the status icon, so it reads as belonging to the
@@ -148,7 +140,7 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
       // Whole-card cue, from the backend's aggregate rather than the focus
       // lines: related resources are counted but never listed, so reading
       // focus_resources here would leave their unreads invisible.
-      style={w.has_unread ? { borderLeft: UNREAD_ACCENT_BORDER } : undefined}
+      style={cardEdgeStyle(!!w.has_unread)}
     >
       <CmuxWorkspaceSection path={w.path} branch={w.branch} />
       <Box {...link}>
@@ -166,6 +158,10 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
               {name}
             </Text>
             {!w.on_disk && <Badge size="xs" color="red">missing</Badge>}
+            {/* Pushed to the right of the title row rather than the card's
+                corner: the cmux strip owns the top edge, and a badge floating
+                over it reads as belonging to the workspace, not the worktree. */}
+            <UnreadBadge unread={!!w.has_unread} count={w.unread_count} ml="auto" />
           </Group>
           {/*
             Identity only: which repo, which branch. The counts that used to

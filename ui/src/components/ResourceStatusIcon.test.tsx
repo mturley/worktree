@@ -132,30 +132,3 @@ describe("ResourceTitle", () => {
     expect(screen.getByLabelText("slack thread")).toBeInTheDocument()
   })
 })
-
-describe("unread titles", () => {
-  const UNREAD = "var(--mantine-color-blue-4)"
-
-  it("colors the title of a resource with unread events", () => {
-    // The dot alone is easy to miss in a dense list; the title carries the
-    // same signal at a size that is not.
-    render(<MantineProvider><ResourceTitle r={base({ unread_count: 3 })} /></MantineProvider>)
-    expect(screen.getByText("o/r#1")).toHaveStyle({ color: UNREAD })
-  })
-
-  it("colors a Slack thread's title from Slack's own read state", () => {
-    render(
-      <MantineProvider>
-        <ResourceTitle r={base({ type: "slack", id: "C1:1.2", title: "Deploy thread", has_unread: true })} />
-      </MantineProvider>,
-    )
-    expect(screen.getByText("Deploy thread")).toHaveStyle({ color: UNREAD })
-  })
-
-  it("leaves a read resource's title alone", () => {
-    // Not merely "a different colour": read titles must keep whatever colour
-    // their surface gives them, so the unread case stays the exception.
-    render(<MantineProvider><ResourceTitle r={base({ unread_count: 0 })} /></MantineProvider>)
-    expect(screen.getByText("o/r#1")).not.toHaveStyle({ color: UNREAD })
-  })
-})

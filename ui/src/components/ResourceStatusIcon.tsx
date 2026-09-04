@@ -9,7 +9,7 @@ import { Group, Text } from "@mantine/core"
 import { useState } from "react"
 import type { ResourceDTO } from "../api/types"
 import { SlackMark } from "./icons/SlackMark"
-import { hasUnread, UNREAD_COLOR } from "../lib/unread"
+import { hasUnread } from "../lib/unread"
 import { UnreadMarkerDot } from "./UnreadMarkerDot"
 
 /**
@@ -122,25 +122,25 @@ export function ResourceTitle({
   label,
   fw = 600,
   size = "sm",
+  showUnread = true,
 }: {
   r: ResourceDTO
   /** Defaults to the resource's own title, falling back to its id. */
   label?: string
   fw?: number
   size?: string
+  /**
+   * Whether to mark the title unread. False on the detail card, which heads
+   * the very feed that shows the unread events — a dot there points at
+   * something already on screen.
+   */
+  showUnread?: boolean
 }) {
   return (
     <Group gap={6} wrap="nowrap" align="center">
-      <UnreadDot r={r} />
+      {showUnread && <UnreadDot r={r} />}
       <ResourceStatusIcon r={r} />
-      {/* Colour carries the same message as the dot beside it. The dot is
-          easy to miss in a dense list; a blue title is not. */}
-      <Text
-        size={size}
-        fw={fw}
-        c={hasUnread(r) ? UNREAD_COLOR : undefined}
-        style={{ overflowWrap: "anywhere" }}
-      >
+      <Text size={size} fw={fw} style={{ overflowWrap: "anywhere" }}>
         {label ?? r.title ?? r.id}
       </Text>
     </Group>
