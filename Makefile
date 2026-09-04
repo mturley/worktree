@@ -5,7 +5,7 @@ INSTALL_DIR := /usr/local/bin
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -ldflags "-X github.com/mturley/worktree/cmd.Version=$(VERSION)"
 
-.PHONY: build build-web build-cli install stop-running test test-web clean dev
+.PHONY: build build-web build-cli install stop-running test test-web clean clean-web dev
 
 # Subcommands that run as long-lived servers. If any are running against the
 # installed binary when we go to reinstall, they'd keep executing old code, so
@@ -14,7 +14,22 @@ SERVER_CMDS := ui watcher
 
 build: build-web build-cli
 
-build-web:
+# ui/dist is emptied before every build, NOT because the build needs a clean
+# slate but because nothing else ever removes what it leaves behind. Vite is
+# configured emptyOutDir: false to protect ui/dist/.gitkeep, and it writes
+# content-hashed filenames, so each build adds a new set and keeps every older
+# one. //go:embed all:ui/dist then bakes all of them into the binary — that is
+# how an installed worktree reached 34MB carrying 30 builds' worth of assets
+# when the current build accounted for 4 of them.
+#
+# Deliberately not `clean`: that also removes ui/node_modules, which would put
+# a full npm install in front of every build for no benefit.
+clean-web:
+	@rm -rf ui/dist
+	@mkdir -p ui/dist
+	@touch ui/dist/.gitkeep
+
+build-web: clean-web
 	@if [ ! -f ui/package.json ]; then echo "Error: ui/package.json not found." && exit 1; fi
 	@cd ui && npm install --silent && npm run build
 	@echo "Built ui/dist/"
@@ -70,11 +85,8 @@ test:
 test-web:
 	@cd ui && npm test
 
-clean:
+clean: clean-web
 	rm -rf $(BIN_DIR)
-	rm -rf ui/dist
-	@mkdir -p ui/dist
-	@touch ui/dist/.gitkeep
 	rm -rf ui/node_modules
 
 dev:
