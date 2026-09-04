@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/mturley/worktree/internal/unread"
 )
@@ -24,10 +25,17 @@ import (
 type unreadIndex struct {
 	counts  map[string]int
 	cursors map[string]string
+	// Slack's own cursors, from cached poller state — a separate map because
+	// they are compared against a different column (see unread.SlackCursors).
+	slack map[string]string
 }
 
 func (s *Server) newUnreadIndex() *unreadIndex {
-	ix := &unreadIndex{counts: map[string]int{}, cursors: map[string]string{}}
+	ix := &unreadIndex{
+		counts:  map[string]int{},
+		cursors: map[string]string{},
+		slack:   map[string]string{},
+	}
 	if c, err := unread.Counts(s.DB); err == nil {
 		ix.counts = c
 	} else if s.Logger != nil {
@@ -37,6 +45,11 @@ func (s *Server) newUnreadIndex() *unreadIndex {
 		ix.cursors = c
 	} else if s.Logger != nil {
 		s.Logger.Printf("unread.Cursors: %v", err)
+	}
+	if c, err := unread.SlackCursors(s.DB); err == nil {
+		ix.slack = c
+	} else if s.Logger != nil {
+		s.Logger.Printf("unread.SlackCursors: %v", err)
 	}
 	return ix
 }
@@ -52,20 +65,61 @@ func (ix *unreadIndex) Count(resType, id string) int {
 
 // IsUnread reports whether one event is newer than its resource's cursor.
 //
-// Always false for a Slack resource: Slack's read state is a message ts held
-// in the thread, and the cached state carries only the derived has_unread
-// boolean — there is no per-message cursor here to compare against. A Slack
-// thread's unread state reaches the timeline through its resource chip
-// instead.
-func (ix *unreadIndex) IsUnread(resType, id, ts string) bool {
-	if ix == nil || resType == "slack" {
+// Two cursors, two clocks. A Slack thread's cursor is a Slack message ts and
+// is compared against externalTS, the raw ts the reply carried; every other
+// resource is compared against ts, the row's own recording time. Passing one
+// clock's timestamp to the other's cursor silently marks everything read or
+// everything unread, so the two paths never share a comparison.
+//
+// A resource with no cursor on either path is read: a missing cursor is
+// absence of evidence, and a dot that cannot be explained is worse than no
+// dot at all.
+func (ix *unreadIndex) IsUnread(resType, id, ts, externalTS string) bool {
+	if ix == nil {
 		return false
+	}
+	if resType == "slack" {
+		cursor, ok := ix.slack[unread.Key(resType, id)]
+		if !ok || externalTS == "" {
+			return false
+		}
+		return slackTSGreater(externalTS, cursor)
 	}
 	cursor, ok := ix.cursors[unread.Key(resType, id)]
 	if !ok {
 		return false
 	}
 	return ts > cursor
+}
+
+// slackTSGreater compares two Slack timestamps ("1788464505.422459").
+//
+// Not a string compare: Slack ts values are seconds.microseconds, and the
+// second part grows a digit as time passes ("9999999999.x" sorts above
+// "10000000000.x" lexically). Numeric parsing costs nothing here and removes
+// a bug that would surface once, years from now, and be impossible to explain.
+func slackTSGreater(a, b string) bool {
+	af, aerr := strconv.ParseFloat(a, 64)
+	bf, berr := strconv.ParseFloat(b, 64)
+	if aerr != nil || berr != nil {
+		return false
+	}
+	return af > bf
+}
+
+// resourceHasUnread answers, for one enriched resource, the question the
+// frontend's hasUnread() answers: two sources, one verdict. A Slack thread's
+// read state is Slack's own, cached on the DTO as HasUnread; everything else
+// is counted against worktree's per-resource cursor.
+//
+// Kept beside IsUnread rather than in internal/unread because it needs a
+// resourceDTO — the enrichment step is what turns cached Slack state into the
+// HasUnread bool this reads.
+func resourceHasUnread(dto resourceDTO) bool {
+	if dto.Type == "slack" {
+		return dto.HasUnread
+	}
+	return dto.UnreadCount > 0
 }
 
 // handleResourceRead: POST /api/resource-read, body

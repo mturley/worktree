@@ -2,6 +2,7 @@ import { Group, Text, UnstyledButton } from "@mantine/core"
 import type { ResourceDTO, TimelineEvent } from "../api/types"
 import { ResourceStatusIcon, UnreadDot } from "./ResourceStatusIcon"
 import { shortResourceRef } from "../lib/resourceRef"
+import { hasUnread, UNREAD_COLOR } from "../lib/unread"
 
 /**
  * Jumps to the resource an event belongs to — which filters the timeline to
@@ -46,7 +47,18 @@ export function EventResourceChip({ e, onSelect, resolveResource }: {
         <UnreadDot r={forIcon} />
         <ResourceStatusIcon r={forIcon} />
         {ref && <Text size="xs" fw={600} style={{ whiteSpace: "nowrap" }}>{ref}</Text>}
-        {title && <Text size="xs" c="dimmed" lineClamp={1} style={{ minWidth: 0 }}>{title}</Text>}
+        {title && (
+          <Text
+            size="xs"
+            // Dimmed is the resting state here, so unread is a jump from
+            // grey to blue rather than a shade of the same colour.
+            c={hasUnread(forIcon) ? UNREAD_COLOR : "dimmed"}
+            lineClamp={1}
+            style={{ minWidth: 0 }}
+          >
+            {title}
+          </Text>
+        )}
       </Group>
     </UnstyledButton>
   )

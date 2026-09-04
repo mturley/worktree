@@ -33,8 +33,11 @@ make clean     # removes bin/, ui/dist contents (keeps ui/dist/.gitkeep), ui/nod
   - `unread` — per-resource read cursor (`resource_read_cursor`). One cursor
     per RESOURCE, not per subscriber — deliberately unlike agent-handler's
     model, and shared across every worktree tracking the resource. Slack
-    threads are excluded: they keep their own read state from the Slack API.
-    See `docs/web-ui-architecture.md` "Unread".
+    threads get no cursor row — worktree never WRITES their read state — but
+    it MIRRORS Slack's: the poller caches `last_read` in
+    `watcher_resource_state`, and `SlackCursors` compares it against
+    `watcher_events.external_ts` (a Slack clock, unlike every other cursor
+    here, which uses `ts`). See `docs/web-ui-architecture.md` "Unread".
   - `shellenv` — shell environment variable generation from DB (worktree env)
   - `env` — deprecated; superseded by `shellenv`
   - `dotfiles` — gitignored dotfile copying

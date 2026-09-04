@@ -305,3 +305,28 @@ describe("WorktreeCard unread dot", () => {
     expect(screen.queryByLabelText("unread")).not.toBeInTheDocument()
   })
 })
+
+describe("unread accent", () => {
+  const ACCENT = "3px solid var(--mantine-color-blue-5)"
+  // The Paper wraps the link; the accent lives on it so it spans the cmux
+  // strip too, which sits above the link.
+  const card = () => screen.getByRole("link", { name: /open worktree foo/i }).closest(".mantine-Paper-root")
+
+  it("marks a worktree whose resources have unread activity", () => {
+    wrap(<WorktreeCard w={{ ...summary, has_unread: true }} />)
+    expect(card()).toHaveStyle({ borderLeft: ACCENT })
+  })
+
+  it("leaves a fully read worktree unmarked", () => {
+    wrap(<WorktreeCard w={{ ...summary, has_unread: false }} />)
+    expect(card()).not.toHaveStyle({ borderLeft: ACCENT })
+  })
+
+  it("reads the server's aggregate, not the focus resources", () => {
+    // Related resources are counted but never listed, so the flag has to come
+    // from the server. A card with unread related resources and fully read
+    // focus ones must still be marked.
+    wrap(<WorktreeCard w={{ ...summary, has_unread: true, focus_resources: [] }} />)
+    expect(card()).toHaveStyle({ borderLeft: ACCENT })
+  })
+})

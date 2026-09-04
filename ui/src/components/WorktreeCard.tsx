@@ -7,6 +7,7 @@ import { relatedSummary } from "../lib/resourceSummary"
 import { CmuxWorkspaceSection } from "./CmuxWorkspaceSection"
 import { ResourceStatusIcon, UnreadDot } from "./ResourceStatusIcon"
 import { shortResourceRef } from "../lib/resourceRef"
+import { hasUnread, UNREAD_ACCENT_BORDER, UNREAD_COLOR } from "../lib/unread"
 
 interface WorktreeCardProps {
   w: WorktreeSummary
@@ -75,7 +76,16 @@ function FocusResourceLine({ r }: { r: ResourceDTO }) {
         {ref && (
           <Text size="sm" fw={600} c="dimmed" style={{ whiteSpace: "nowrap" }}>{ref}</Text>
         )}
-        <Text size="sm" c="dimmed" lineClamp={1} style={{ minWidth: 0 }}>{label}</Text>
+        <Text
+          size="sm"
+          // Dimmed by default, so unread lifts the line out of the card's
+          // grey body rather than tinting an already-prominent title.
+          c={hasUnread(r) ? UNREAD_COLOR : "dimmed"}
+          lineClamp={1}
+          style={{ minWidth: 0 }}
+        >
+          {label}
+        </Text>
       </Group>
       {meta && (
         // Indented to clear the status icon, so it reads as belonging to the
@@ -131,7 +141,15 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
   const affordance = clickable ? { "data-interactive": "true" } : {}
 
   return (
-    <Paper p="sm" withBorder {...affordance}>
+    <Paper
+      p="sm"
+      withBorder
+      {...affordance}
+      // Whole-card cue, from the backend's aggregate rather than the focus
+      // lines: related resources are counted but never listed, so reading
+      // focus_resources here would leave their unreads invisible.
+      style={w.has_unread ? { borderLeft: UNREAD_ACCENT_BORDER } : undefined}
+    >
       <CmuxWorkspaceSection path={w.path} branch={w.branch} />
       <Box {...link}>
         <Stack gap={6}>

@@ -245,3 +245,194 @@ func TestResourceReadRequiresTypeIDAndThroughTS(t *testing.T) {
 		resp.Body.Close()
 	}
 }
+
+// insertSlackState writes the poller-cached state a Slack thread would have
+// after a poll, carrying the read cursor the unread comparison needs.
+func insertSlackState(t *testing.T, conn *sql.DB, resID, lastRead string) {
+	t.Helper()
+	state := `{"title":"t","has_unread":true,"last_read":"` + lastRead + `"}`
+	if _, err := conn.Exec(
+		`INSERT INTO watcher_resource_state
+			(resource_type, resource_id, state_json, resource_updated_at, watcher_updated_at)
+		 VALUES ('slack', ?, ?, '', '2099-01-01T00:00:00Z')`,
+		resID, state); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func insertSlackEvent(t *testing.T, conn *sql.DB, id, ts, externalTS, resID string) {
+	t.Helper()
+	if _, err := conn.Exec(
+		`INSERT INTO watcher_events (id, ts, external_ts, source, type, title)
+		 VALUES (?, ?, ?, 'slack', 'slack_reply', 'x')`,
+		id, ts, externalTS); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(
+		`INSERT INTO watcher_event_resources (event_id, resource_type, resource_id)
+		 VALUES (?, 'slack', ?)`, id, resID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestIsUnreadUsesSlacksOwnCursor is the whole point of caching last_read: a
+// Slack reply newer than Slack's read cursor is unread, and one older is not.
+// Before the cursor was cached this was hard-false for every Slack event.
+func TestIsUnreadUsesSlacksOwnCursor(t *testing.T) {
+	conn := unreadTestDB(t)
+	const thread = "C1:1000.000100"
+	insertSlackState(t, conn, thread, "2000.000000")
+
+	srv := &Server{DB: conn}
+	ix := srv.newUnreadIndex()
+
+	// The event row's own ts is deliberately the SAME on both, so a passing
+	// test can only be reading external_ts — the Slack clock.
+	const rowTS = "2099-01-01T00:00:00Z"
+	if !ix.IsUnread("slack", thread, rowTS, "3000.000000") {
+		t.Fatal("reply newer than Slack's cursor should be unread")
+	}
+	if ix.IsUnread("slack", thread, rowTS, "1500.000000") {
+		t.Fatal("reply older than Slack's cursor should be read")
+	}
+	if ix.IsUnread("slack", thread, rowTS, "") {
+		t.Fatal("event with no external ts has nothing to compare; should be read")
+	}
+	if ix.IsUnread("slack", "C1:9999.000000", rowTS, "3000.000000") {
+		t.Fatal("thread with no cached cursor should be read, not unread")
+	}
+}
+
+// TestSlackTSGreaterIsNumeric guards the digit-growth case a string compare
+// gets wrong: "9999999999.x" is lexically above "10000000000.x" but earlier
+// in time.
+func TestSlackTSGreaterIsNumeric(t *testing.T) {
+	if !slackTSGreater("10000000000.000000", "9999999999.999999") {
+		t.Fatal("a later ts with more digits must compare greater")
+	}
+	if slackTSGreater("1788464505.422459", "1788464505.422459") {
+		t.Fatal("an equal ts is not greater — the cursor's own message is read")
+	}
+	if slackTSGreater("not-a-ts", "1788464505.422459") {
+		t.Fatal("unparseable ts must not read as unread")
+	}
+}
+
+// TestSlackTimelineEventsCarryUnread walks the whole path the UI sees: cached
+// poller state -> SlackCursors -> the timeline DTO's unread flag.
+func TestSlackTimelineEventsCarryUnread(t *testing.T) {
+	conn := unreadTestDB(t)
+	wt := testgit.Worktree(t)
+	const thread = "C1:1000.000100"
+	if err := resources.Add(conn, wt, resources.Resource{Type: "slack", ID: thread, URL: "u"}); err != nil {
+		t.Fatal(err)
+	}
+	insertSlackState(t, conn, thread, "2000.000000")
+	insertSlackEvent(t, conn, "s1", "2099-01-02T00:00:00Z", "3000.000000", thread)
+	insertSlackEvent(t, conn, "s2", "2099-01-03T00:00:00Z", "1500.000000", thread)
+
+	srv := &Server{DB: conn}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	resp, err := http.Get(ts.URL + "/api/worktree-timeline?path=" + url.QueryEscape(wt))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out timelineResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, e := range out.Events {
+		seen[e.ID] = e.Unread
+	}
+	if len(seen) != 2 {
+		t.Fatalf("want both slack events in the feed, got %d: %+v", len(seen), seen)
+	}
+	if !seen["s1"] {
+		t.Fatal("reply after Slack's cursor should be marked unread in the timeline")
+	}
+	if seen["s2"] {
+		t.Fatal("reply before Slack's cursor should not be marked unread")
+	}
+}
+
+// TestWorktreeSummaryHasUnreadIncludesRelated is the reason the aggregate is
+// computed server-side at all: related resources are counted in the response
+// but never listed, so a client folding over focus_resources cannot see their
+// unreads. The card accent would silently miss them.
+func TestWorktreeSummaryHasUnreadIncludesRelated(t *testing.T) {
+	conn := unreadTestDB(t)
+	wt := testgit.Worktree(t)
+	if err := registerWorktreeForTest(t, conn, wt); err != nil {
+		t.Fatal(err)
+	}
+	if err := resources.Add(conn, wt, resources.Resource{
+		Type: "pr", ID: "o/r#1", URL: "u", Related: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	insertUnreadEvent(t, conn, "e1", "2099-01-01T00:00:00Z", "github", "pr", "o/r#1")
+
+	srv := &Server{DB: conn}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	resp, err := http.Get(ts.URL + "/api/worktrees")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out []worktreeSummary
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range out {
+		if w.Path != wt {
+			continue
+		}
+		if len(w.FocusResources) != 0 {
+			t.Fatalf("resource should be related, not focus: %+v", w.FocusResources)
+		}
+		if !w.HasUnread {
+			t.Fatal("unread on a RELATED resource must still light the worktree")
+		}
+		return
+	}
+	t.Fatalf("worktree %s absent from the summary", wt)
+}
+
+// TestWorktreeSummaryHasUnreadFalseWhenRead guards the other direction: the
+// accent is a claim, and a card wearing it with nothing new inside teaches
+// the user to ignore it.
+func TestWorktreeSummaryHasUnreadFalseWhenRead(t *testing.T) {
+	conn := unreadTestDB(t)
+	wt := testgit.Worktree(t)
+	if err := registerWorktreeForTest(t, conn, wt); err != nil {
+		t.Fatal(err)
+	}
+	if err := resources.Add(conn, wt, resources.Resource{Type: "pr", ID: "o/r#2", URL: "u"}); err != nil {
+		t.Fatal(err)
+	}
+	// resources.Add seeds the cursor at the newest event, so a resource whose
+	// events all predate it reads as fully read.
+	insertUnreadEvent(t, conn, "e1", "2000-01-01T00:00:00Z", "github", "pr", "o/r#2")
+
+	srv := &Server{DB: conn}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	resp, err := http.Get(ts.URL + "/api/worktrees")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out []worktreeSummary
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range out {
+		if w.Path == wt && w.HasUnread {
+			t.Fatal("a fully read worktree must not claim unread")
+		}
+	}
+}

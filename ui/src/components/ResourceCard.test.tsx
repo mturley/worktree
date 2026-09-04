@@ -398,3 +398,35 @@ describe("PR card labelling", () => {
   })
 })
 
+
+describe("unread accent on the resource card", () => {
+  const ACCENT = "3px solid var(--mantine-color-blue-5)"
+  const base = { type: "pr", id: "o/r#1", url: "u", primary: true, title: "Fix the widget", state: "OPEN" } as ResourceDTO
+  const card = (c: HTMLElement) => c.querySelector(".mantine-Paper-root")
+
+  it("marks a resource with unread events", () => {
+    const { container } = wrap(<ResourceCard r={{ ...base, unread_count: 4 }} />)
+    expect(card(container)).toHaveStyle({ borderLeft: ACCENT })
+  })
+
+  it("marks a Slack thread from Slack's own read state", () => {
+    const slack = { type: "slack", id: "C1:1.2", url: "u", primary: true, title: "Deploy thread", has_unread: true } as ResourceDTO
+    const { container } = wrap(<ResourceCard r={slack} />)
+    expect(card(container)).toHaveStyle({ borderLeft: ACCENT })
+  })
+
+  it("leaves a read resource unmarked", () => {
+    const { container } = wrap(<ResourceCard r={{ ...base, unread_count: 0 }} />)
+    expect(card(container)).not.toHaveStyle({ borderLeft: ACCENT })
+  })
+
+  it("keeps the selection border and the unread accent at once", () => {
+    // Two independent edge treatments; a selected unread card must not have
+    // to give one up for the other.
+    const { container } = wrap(<ResourceCard r={{ ...base, unread_count: 1 }} selected onSelect={vi.fn()} />)
+    expect(card(container)).toHaveStyle({
+      borderLeft: ACCENT,
+      borderColor: "var(--mantine-color-blue-filled)",
+    })
+  })
+})

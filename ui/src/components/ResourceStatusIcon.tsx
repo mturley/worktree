@@ -9,7 +9,7 @@ import { Group, Text } from "@mantine/core"
 import { useState } from "react"
 import type { ResourceDTO } from "../api/types"
 import { SlackMark } from "./icons/SlackMark"
-import { hasUnread } from "../lib/unread"
+import { hasUnread, UNREAD_COLOR } from "../lib/unread"
 import { UnreadMarkerDot } from "./UnreadMarkerDot"
 
 /**
@@ -133,7 +133,14 @@ export function ResourceTitle({
     <Group gap={6} wrap="nowrap" align="center">
       <UnreadDot r={r} />
       <ResourceStatusIcon r={r} />
-      <Text size={size} fw={fw} style={{ overflowWrap: "anywhere" }}>
+      {/* Colour carries the same message as the dot beside it. The dot is
+          easy to miss in a dense list; a blue title is not. */}
+      <Text
+        size={size}
+        fw={fw}
+        c={hasUnread(r) ? UNREAD_COLOR : undefined}
+        style={{ overflowWrap: "anywhere" }}
+      >
         {label ?? r.title ?? r.id}
       </Text>
     </Group>

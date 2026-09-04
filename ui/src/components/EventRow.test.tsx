@@ -169,3 +169,17 @@ describe("global timeline affordances", () => {
     expect(screen.queryByLabelText("unread event")).not.toBeInTheDocument()
   })
 })
+
+describe("unread event titles", () => {
+  const UNREAD = "var(--mantine-color-blue-4)"
+
+  it("colors the title of an unread event", () => {
+    renderWithProvider(<EventRow e={makeEvent({ unread: true, title: "New review" })} />)
+    expect(screen.getByText("New review")).toHaveStyle({ color: UNREAD })
+  })
+
+  it("leaves a read event's title alone", () => {
+    renderWithProvider(<EventRow e={makeEvent({ unread: false, title: "Old review" })} />)
+    expect(screen.getByText("Old review")).not.toHaveStyle({ color: UNREAD })
+  })
+})

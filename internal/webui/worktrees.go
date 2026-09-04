@@ -28,6 +28,11 @@ type worktreeSummary struct {
 	// watcher_resource_state, so the worktree list can show what each
 	// worktree is actually about instead of bare counts.
 	FocusResources []resourceDTO `json:"focus_resources"`
+	// HasUnread is true when ANY resource on this worktree has unread
+	// activity, RELATED ones included. Deliberately not derivable from
+	// FocusResources: related resources are counted but never listed, so a
+	// client folding over that list alone would miss their unreads.
+	HasUnread bool `json:"has_unread"`
 }
 
 func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
@@ -54,6 +59,7 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 		relatedByType := make(map[string]int)
 		// Sized for the common case; make(...) (not nil) so it marshals as [].
 		focus := make([]resourceDTO, 0, len(rs))
+		hasUnread := false
 		for _, res := range rs {
 			if !res.Related {
 				primary++
@@ -61,9 +67,19 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 				dto := s.newResourceDTO(res)
 				dto.UnreadCount = ix.Count(dto.Type, dto.ID)
 				focus = append(focus, dto)
+				hasUnread = hasUnread || resourceHasUnread(dto)
 			} else {
 				relatedCount++
 				relatedByType[res.Type]++
+				// Related resources get no DTO of their own in the response,
+				// so one is built here purely to ask the unread question —
+				// and only until the answer is yes, since newResourceDTO
+				// costs a cached-state lookup per call.
+				if !hasUnread {
+					dto := s.newResourceDTO(res)
+					dto.UnreadCount = ix.Count(dto.Type, dto.ID)
+					hasUnread = resourceHasUnread(dto)
+				}
 			}
 		}
 		_, statErr := os.Stat(e.Path)
@@ -79,6 +95,7 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 			RelatedByType:  relatedByType,
 			LatestEventTS:  latestEventTSForSubscriber(s.DB, wdb.Subscriber(e.Path)),
 			FocusResources: focus,
+			HasUnread:      hasUnread,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
