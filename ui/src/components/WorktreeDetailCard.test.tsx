@@ -43,17 +43,44 @@ const info = (o: Partial<WorktreeInfo> = {}): WorktreeInfo => ({
 })
 
 describe("WorktreeDetailCard", () => {
-  it("shows the environment worktree info prints", async () => {
+  it("keeps the environment collapsed until asked", async () => {
+    // These are long absolute paths that wrap to several lines each and push
+    // the resource list and timeline below the fold. Note the assertion is
+    // toBeVisible, NOT toBeInTheDocument: Mantine's Collapse keeps its
+    // children mounted, so presence in the DOM proves nothing here.
     worktreeInfo.mockResolvedValue(info())
     wrap(summary())
-    expect(await screen.findByText("4090-4099")).toBeInTheDocument()
-    expect(screen.getByText("/home/u/.kube/config-foo")).toBeInTheDocument()
+    const toggle = await screen.findByRole("button", { name: /show environment variables/i })
+    expect(toggle).toHaveAttribute("aria-expanded", "false")
+    expect(screen.getByText("4090-4099")).not.toBeVisible()
+  })
+
+  it("names how many variables there are, so the toggle is worth clicking", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    wrap(summary())
+    expect(await screen.findByText("Environment (2)")).toBeInTheDocument()
+  })
+
+  it("reveals the environment worktree info prints when expanded", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    wrap(summary())
+    await userEvent.click(await screen.findByRole("button", { name: /show environment variables/i }))
+    expect(screen.getByText("4090-4099")).toBeVisible()
+    expect(screen.getByText("/home/u/.kube/config-foo")).toBeVisible()
+  })
+
+  it("collapses again on a second click", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    wrap(summary())
+    await userEvent.click(await screen.findByRole("button", { name: /show environment/i }))
+    await userEvent.click(screen.getByRole("button", { name: /hide environment/i }))
+    expect(screen.getByText("4090-4099")).not.toBeVisible()
   })
 
   it("never lists focus resources, which the resource cards below already show", async () => {
     worktreeInfo.mockResolvedValue(info())
     wrap(summary())
-    await screen.findByText("4090-4099")
+    await screen.findByText("Environment (2)")
     expect(screen.queryByText("Focus PR title")).not.toBeInTheDocument()
   })
 

@@ -7,6 +7,12 @@ import "./styles/theme.css"
 import "./styles/cards.css"
 import { theme } from "./theme"
 import { App } from "./App"
+import { captureHomeWorktree } from "./lib/homeWorktree"
+
+// Before the first render, so the marker is read and stripped from the URL
+// while it is still the URL the server opened — the router replaces it as
+// soon as the app mounts.
+captureHomeWorktree()
 
 const qc = new QueryClient()
 ReactDOM.createRoot(document.getElementById("root")!).render(
