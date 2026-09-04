@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"strings"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -47,7 +48,7 @@ func TestDetailPathForToplevel_TrackedWorktree(t *testing.T) {
 	dir := t.TempDir()
 	entries := []registry.Entry{{Path: dir, Repo: "r", RepoRoot: "/r", Branch: "b"}}
 	got := detailPathForToplevel(dir, entries)
-	want := "/worktree/" + url.PathEscape(dir)
+	want := "/worktree/" + url.PathEscape(dir) + "?home=1"
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
@@ -68,7 +69,7 @@ func TestDetailPathForToplevel_SymlinkCanonicalizes(t *testing.T) {
 	// git toplevel discovery.IsInsideWorktree returns is the resolved real path.
 	entries := []registry.Entry{{Path: link, Repo: "r", RepoRoot: "/r", Branch: "b"}}
 	got := detailPathForToplevel(real, entries)
-	want := "/worktree/" + url.PathEscape(link)
+	want := "/worktree/" + url.PathEscape(link) + "?home=1"
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
@@ -93,7 +94,7 @@ func TestUIDetailURL_TrackedWorktree(t *testing.T) {
 	dir := t.TempDir()
 	entries := []registry.Entry{{Path: dir, Repo: "r", RepoRoot: "/r", Branch: "b"}}
 	got := uiDetailURL(8475, dir, entries)
-	want := "http://127.0.0.1:8475/worktree/" + url.PathEscape(dir)
+	want := "http://127.0.0.1:8475/worktree/" + url.PathEscape(dir) + "?home=1"
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
@@ -104,5 +105,19 @@ func TestUIDetailURL_UntrackedFallsBackToHome(t *testing.T) {
 	got := uiDetailURL(8475, dir, nil)
 	if want := "http://127.0.0.1:8475/"; got != want {
 		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+// TestDetailPathForToplevelUnmatchedHasNoHomeMarker pins the asymmetry: the
+// home marker means "this tab was opened FOR that worktree", and the fallback
+// path is the UI's own home page, which was opened for nothing. Marking it
+// would leave a tab offering to send you back to the page you are on.
+func TestDetailPathForToplevelUnmatchedHasNoHomeMarker(t *testing.T) {
+	got := detailPathForToplevel("/nowhere/in/the/registry", nil)
+	if got != "/" {
+		t.Fatalf("detailPathForToplevel = %q, want %q", got, "/")
+	}
+	if strings.Contains(got, HomeMarkerParam) {
+		t.Fatalf("the home page must not carry the home marker: %q", got)
 	}
 }

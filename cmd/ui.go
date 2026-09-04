@@ -221,11 +221,23 @@ func detailPathForToplevel(toplevel string, entries []registry.Entry) string {
 	target := wdb.Subscriber(toplevel)
 	for _, e := range entries {
 		if wdb.Subscriber(e.Path) == target {
-			return "/worktree/" + url.PathEscape(e.Path)
+			return "/worktree/" + url.PathEscape(e.Path) + "?" + HomeMarkerParam + "=1"
 		}
 	}
 	return "/"
 }
+
+// HomeMarkerParam tells the web UI that this tab was opened FOR the worktree
+// named in the path, so it can offer a way back after you navigate away.
+//
+// A bare flag, not a repeat of the path: the path is already in the URL, and
+// two copies of it are two things that can disagree. The UI strips the
+// parameter once it has read it, so a copied link cannot re-home someone
+// else's tab.
+//
+// Only ever appended to a worktree detail path. The home page is not opened
+// "for" anything, and marking it would leave a tab pointing back at itself.
+const HomeMarkerParam = "home"
 
 // browserOpenCommand returns the command+args to open url. Inside cmux
 // (CMUX_WORKSPACE_ID set) it uses `cmux open` so the URL lands in a cmux
