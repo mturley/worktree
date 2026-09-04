@@ -55,11 +55,12 @@ never starts a listener and so has nothing to warn about. The
 `0.0.0.0` listener accepts loopback connections too.
 
 The external launcher `cmux-tool-servers` (in `work-scripts`) takes a matching
-`--bind` and passes it straight through, **without** `--yes`: mprocs gives each
-pane a pty (verified against mprocs 0.9.2), so `worktree ui` prompts in the pane
-and a human answers every bind. The prompt therefore reappears after each
-supervisor restart, which is the intended trade — a launcher must not be able to
-silently opt out of the guard.
+`--bind` and forwards it. It does **not** add `--yes` on its own: mprocs gives
+each pane a pty (verified against mprocs 0.9.2), so `worktree ui` prompts in the
+pane and a human answers. The prompt therefore reappears after each supervisor
+restart, and `cmux-tool-servers --yes` forwards `--yes` to skip it — but only
+when the caller asks. The distinction is the point: a launcher must not be able
+to opt out of the guard silently, while the user may opt out explicitly.
 
 ### Detecting an already-running UI
 
