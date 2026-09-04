@@ -307,6 +307,145 @@ back to `text` only for message subtypes that lack `blocks` (some Slackbot/bot m
 }
 ```
 
+## Composer autocomplete — the edge-cache `*/search` endpoints
+
+**Discovered by watching Slack's own web client (Playwright, 2026-09-04)**,
+typing `@`, `:` and `#` into a DM composer and reading the network log. All
+three live on the **same edge cache** as `usergroups/info` above — same host,
+same `/cache/<TEAM_OR_ENTERPRISE_ID>/…?_x_app_name=client` path shape, same
+`{"token":…,"enterprise_token":…}` JSON body, same `{"ok":true,"results":[…]}`
+envelope. None of them is on `slack.com/api`, and none has a public-API
+equivalent that works on Enterprise Grid.
+
+Typing one `@turl` fired exactly **one** `users/search` and **one**
+`usergroups/search` (plus unrelated search-ranking telemetry:
+`search.autocomplete.offlineFeatures` / `.model` / `.intentModel`, which are
+Slack's own ranking models and are not needed to get results). The client
+debounces per keystroke burst, not per character.
+
+### `users/search` — user autocomplete
+
+```
+POST https://edgeapi.slack.com/cache/<TEAM_OR_ENTERPRISE_ID>/users/search
+     ?_x_app_name=client
+
+body: {
+  "token":"<xoxc-…>", "enterprise_token":"<xoxc-…>",
+  "query":"turl",
+  "count":25,
+  "fuzz":1,
+  "include_profile_only_users":true,
+  "enable_workspace_ranking":true,
+  "top_users":[],
+  "current_channel":"DMFAS8V0X",
+  "default_workspace":"T027F3GAJ"
+}
+```
+
+Response: `{"ok":true,"results":[ <full user objects> ]}` — 25 results for the
+observed query. Each result is the **same shape `users.info` returns**
+(`id`, `name`, `real_name`, `deleted`, `is_bot`, `profile{display_name,
+real_name, image_*, title, status_*, avatar_hash}`, `enterprise_user`, …), so
+it can be normalized with the existing per-user mapping rather than a new one.
+
+- The match is **fuzzy and substring-based across the org**: `turl` returned
+  `mturley`, `mturansk`, `aturate`, `fturati`, `tturek`, … — i.e. it matches
+  inside `name`, not just prefixes, and it is not limited to the current
+  channel's members.
+- `query` is the text **after** the `@`, with no `@`.
+- `current_channel` and `default_workspace` are ranking hints, not filters.
+  `top_users` is the client's recent-contact list (empty in the observed
+  request); `enable_workspace_ranking`/`fuzz` control ranking/fuzziness.
+- `include_profile_only_users:true` includes Grid profile-only users.
+- **`@here` / `@channel` / `@everyone` do not come from this endpoint.** The
+  client injects them locally; they render as `<!here>` / `<!channel>` /
+  `<!everyone>` (already handled by `ResolveMentions`).
+
+### `usergroups/search` — user-group autocomplete
+
+Fired alongside `users/search` on the same `@` keystroke, so a mention menu is
+the union of both result sets.
+
+```
+POST https://edgeapi.slack.com/cache/<TEAM_OR_ENTERPRISE_ID>/usergroups/search
+     ?_x_app_name=client
+
+body: {"token":"<xoxc-…>","enterprise_token":"<xoxc-…>",
+       "query":"turl","count":25,"org_wide":true}
+```
+
+Response results are the **same objects `usergroups/info` returns** (`id`,
+`handle`, `name`, `description`, `team_id`, `user_count`, `date_delete`, …).
+
+- Matching is on `name` **and** `description`, not just `handle` — the query
+  `turl` returned "Openshift AI Dashboard **Turquoise** Scrum".
+- **Deleted groups are included**: results carried `date_delete` values far in
+  the past with a non-zero timestamp. Filter on `date_delete == 0` before
+  showing a group, or you will offer mentions of dead groups.
+- This is the search counterpart of `usergroups/info`, and it works on Grid —
+  where `usergroups.list` returns an empty array (see above).
+
+### `emojis/search` — `:shortcode:` autocomplete
+
+```
+POST https://edgeapi.slack.com/cache/<TEAM_OR_ENTERPRISE_ID>/emojis/search
+     ?_x_app_name=client
+
+body: {"token":"<xoxc-…>","enterprise_token":"<xoxc-…>","query":"smil","count":25}
+```
+
+Response: `{"ok":true,"results":[{"name":"smile-cry",
+"value":"https://emoji.slack-edge.com/T…/smile-cry/296850bdfa81ba43.jpg",
+"updated":1733264562}, …]}` — `name`/`value` pairs matching `emoji.list`'s
+map entries, plus an `updated` timestamp.
+
+- ⚠️ **Custom emoji only.** The query `smil` returned 25 custom emoji and
+  **not** the standard `smile` / `smiley`. The client merges this with its own
+  bundled Unicode emoji dataset; anything reproducing the picker must supply
+  the Unicode half itself.
+- `value` may still be an `alias:` indirection, as with `emoji.list`.
+
+### `channels/search` — `#channel` autocomplete
+
+```
+POST https://edgeapi.slack.com/cache/<TEAM_OR_ENTERPRISE_ID>/channels/search
+     ?_x_app_name=client
+
+body: {
+  "token":"<xoxc-…>", "enterprise_token":"<xoxc-…>",
+  "query":"odh-das", "count":25, "fuzz":1,
+  "filter":"xws",
+  "include_record_channels":true,
+  "check_membership":true,
+  "top_channels":["C069KSM8T9N", … ],
+  "default_workspace":"T027F3GAJ"
+}
+```
+
+Response results are full conversation objects (`id`, `name`,
+`name_normalized`, `is_private`, `is_archived`, `is_channel`, `is_im`,
+`is_ext_shared`, `purpose`, `topic`, `properties`, …).
+
+- Matching is fuzzy on the channel name, and **private channels the user
+  belongs to are included** (`is_private:true` appeared in the results).
+- `top_channels` is the client's own recency list, sent purely as a ranking
+  hint; it is safe to omit or send empty.
+- `filter":"xws"` and `include_record_channels` were sent by the client; their
+  exact semantics are unverified.
+- A channel mention renders as `<#C123|name>`.
+
+### Practical notes for reimplementing autocomplete
+
+- All four calls need only the **`xoxc` token + `d` cookie we already hold**,
+  and the enterprise/team id from `auth.test` (`teamIDOnce`) in the path —
+  identical to `usergroups/info`, so they belong behind one shared edge-call
+  helper rather than four copies.
+- The token is sent **in the JSON body**, not a header. Never paste a real one
+  into this file, a fixture, or a log; every body above is redacted.
+- Remember the automation warning further up: these were captured by watching
+  the real client, not by probing. Reimplementations should call them at human
+  typing rates (debounced), not in loops.
+
 ## Reactions
 
 `reactions: [{ "name": "agree+1", "users": ["U…","U…"], "count": 2 }]`. `name` may be a

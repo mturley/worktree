@@ -7,3 +7,6 @@ ui/node_modules
 ui/*.tsbuildinfo
 ui/vite.config.js
 ui/vite.config.d.ts
+
+# playwright-cli scratch (snapshots, console logs)
+.playwright-cli/
