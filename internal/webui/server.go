@@ -3,10 +3,11 @@ package webui
 import (
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
+	"strconv"
 	"sync"
 	"sync/atomic"
 
@@ -16,9 +17,12 @@ import (
 )
 
 type Server struct {
-	DB      *sql.DB
-	WebFS   fs.FS // rooted at the dist dir (index.html at top level)
-	Port    int
+	DB    *sql.DB
+	WebFS fs.FS // rooted at the dist dir (index.html at top level)
+	Port  int
+	// Bind is the host/IP the listener binds to. Empty means loopback only
+	// (127.0.0.1) — the safe default, since the UI has no authentication.
+	Bind    string
 	DevMode bool
 	Logger  *log.Logger
 
@@ -132,8 +136,18 @@ func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
 	w.Write(indexData)
 }
 
+// listenAddr is the "host:port" the server binds, defaulting to loopback
+// when Bind is unset. IPv6 hosts come back bracketed, per net.JoinHostPort.
+func (s *Server) listenAddr() string {
+	host := s.Bind
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, strconv.Itoa(s.Port))
+}
+
 func (s *Server) Start() error {
-	addr := fmt.Sprintf("127.0.0.1:%d", s.Port)
+	addr := s.listenAddr()
 	if s.Logger != nil {
 		s.Logger.Printf("worktree UI listening on http://%s", addr)
 	}

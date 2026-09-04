@@ -12,12 +12,54 @@ touch the UI, read the relevant section below before spelunking the source.
   - `--no-open` — don't auto-open the browser.
   - `--api-only` — serve only the API, no embedded static assets (used by the
     Vite dev server, which proxies `/api` to this).
+  - `--bind` (default `127.0.0.1`) — host/IP the listener binds. See
+    "Binding beyond loopback" below.
+  - `--yes` — skip the confirmation prompt a non-loopback `--bind` triggers.
 - Ports: **8475** production (Go server, serves API + embedded frontend),
   **5175** Vite dev server (`make dev`), which proxies `/api/*` to 8475.
 - `runUI` (`cmd/ui.go`) opens the worktree DB (`wdb.Open()`), builds a
   `webui.Server`, starts the in-process poll loop (`srv.StartPolling(2 *
   time.Minute)`), opens the browser (unless `--no-open`/`--api-only`), then
   calls `srv.Start()` which blocks on `http.ListenAndServe`.
+
+### Binding beyond loopback
+
+`webui.Server.Bind` feeds `listenAddr()` (`internal/webui/server.go`), which
+joins it with `Port` via `net.JoinHostPort` (so IPv6 hosts come back
+bracketed) and defaults to `127.0.0.1` when empty. `worktree ui --bind 0.0.0.0`
+makes the UI reachable from other devices on the LAN — the frontend uses
+relative `/api/...` URLs, so it works unchanged under any hostname.
+
+**This is guarded, and the guard is the point.** The UI has no authentication
+and is not read-only: anyone who can reach the port can create and delete
+worktrees, run cmux commands, and read Slack threads through the proxy
+endpoints, which use the server's own session credentials for any caller. So
+`confirmBind` (`cmd/bind.go`) prints a warning for any non-loopback bind and
+requires an interactive `y`, or an explicit `--yes`. When stdin is not a
+terminal and `--yes` was not passed, it refuses rather than binding silently.
+
+Two things worth not re-deriving:
+
+- `bindIsLoopback` treats anything it cannot *prove* is loopback — the empty
+  string (which means "all interfaces" to `net.Listen`), and every hostname
+  other than `localhost` — as remotely reachable, so the warning errs toward
+  being shown.
+- Terminal detection uses `golang.org/x/term.IsTerminal`, **not** an
+  `os.ModeCharDevice` check. `/dev/null` is a character device, so the mode
+  check would call `worktree ui --bind 0.0.0.0 </dev/null` interactive, prompt
+  into the void, and then report "declined" instead of pointing at `--yes`.
+
+`confirmBind` runs *after* the already-running check below, since that path
+never starts a listener and so has nothing to warn about. The
+`serverAlreadyListening` probe still dials `127.0.0.1` and is unaffected: a
+`0.0.0.0` listener accepts loopback connections too.
+
+The external launcher `cmux-tool-servers` (in `work-scripts`) takes a matching
+`--bind` and passes it straight through, **without** `--yes`: mprocs gives each
+pane a pty (verified against mprocs 0.9.2), so `worktree ui` prompts in the pane
+and a human answers every bind. The prompt therefore reappears after each
+supervisor restart, which is the intended trade — a launcher must not be able to
+silently opt out of the guard.
 
 ### Detecting an already-running UI
 

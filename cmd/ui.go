@@ -20,6 +20,7 @@ import (
 	"github.com/mturley/worktree/internal/slackpoller"
 	"github.com/mturley/worktree/internal/webui"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 // defaultUIPort is the port `worktree ui` binds by default, and the only
@@ -30,6 +31,8 @@ var (
 	uiPort    int
 	uiNoOpen  bool
 	uiAPIOnly bool
+	uiBind    string
+	uiYes     bool
 )
 
 var uiCmd = &cobra.Command{
@@ -43,6 +46,8 @@ func init() {
 	uiCmd.Flags().IntVar(&uiPort, "port", defaultUIPort, "HTTP server port")
 	uiCmd.Flags().BoolVar(&uiNoOpen, "no-open", false, "do not open the browser")
 	uiCmd.Flags().BoolVar(&uiAPIOnly, "api-only", false, "serve API only (for use with the Vite dev server)")
+	uiCmd.Flags().StringVar(&uiBind, "bind", "127.0.0.1", "host/IP to bind (e.g. 0.0.0.0 to reach the UI from other devices on your LAN)")
+	uiCmd.Flags().BoolVar(&uiYes, "yes", false, "skip the confirmation prompt for a non-loopback --bind")
 	rootCmd.AddCommand(uiCmd)
 }
 
@@ -63,6 +68,13 @@ func runUI(cmd *cobra.Command, args []string) error {
 			openBrowser(openURL)
 		}
 		return nil
+	}
+
+	// Gate a remotely-reachable bind. This sits after the already-listening
+	// check on purpose: that path never starts a listener, so there is
+	// nothing to warn about.
+	if err := confirmBind(uiBind, uiYes, stdinIsTerminal(), os.Stdin, os.Stderr); err != nil {
+		return err
 	}
 
 	var webFS fs.FS
@@ -95,7 +107,7 @@ func runUI(cmd *cobra.Command, args []string) error {
 		logger.Printf("Slack not configured (%v); Slack tab will be unavailable", err)
 	}
 
-	srv := &webui.Server{DB: conn, WebFS: webFS, Port: uiPort, DevMode: uiAPIOnly, Logger: logger,
+	srv := &webui.Server{DB: conn, WebFS: webFS, Port: uiPort, Bind: uiBind, DevMode: uiAPIOnly, Logger: logger,
 		SlackClient: slackClient, SlackPoller: slackPoller, SlackDomain: slackDomain, SlackCookie: slackCookie}
 
 	// Start the in-process poll loop (Task 4 provides StartPolling).
@@ -107,6 +119,15 @@ func runUI(cmd *cobra.Command, args []string) error {
 	}
 	return srv.Start()
 }
+
+// stdinIsTerminal reports whether there is a human on the other end of stdin
+// who could answer a prompt.
+func stdinIsTerminal() bool { return isTerminalFile(os.Stdin) }
+
+// isTerminalFile reports whether f is a terminal. Note that an os.ModeCharDevice
+// check is NOT sufficient here: /dev/null is a character device too, so
+// `worktree ui --bind 0.0.0.0 </dev/null` would be mistaken for interactive.
+func isTerminalFile(f *os.File) bool { return term.IsTerminal(int(f.Fd())) }
 
 // hasBuiltUI reports whether the embedded dist has real content (not just .gitkeep).
 func hasBuiltUI(sub fs.FS) bool {
