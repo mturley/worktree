@@ -1,6 +1,6 @@
 import { useState } from "react"
-import { ActionIcon, Badge, Code, Group, Paper, Stack, Text, Tooltip } from "@mantine/core"
-import { IconTrash } from "@tabler/icons-react"
+import { ActionIcon, Badge, Code, Collapse, Group, Paper, Stack, Text, Tooltip, UnstyledButton } from "@mantine/core"
+import { IconChevronRight, IconTrash } from "@tabler/icons-react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useLocation } from "wouter"
 import { api } from "../api/client"
@@ -48,6 +48,7 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
   const [, navigate] = useLocation()
   const qc = useQueryClient()
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [envOpen, setEnvOpen] = useState(false)
   const name = w.path.split("/").filter(Boolean).pop() || w.path
   const git = info.data?.git
 
@@ -110,12 +111,42 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
         */}
         {info.data && info.data.env.length > 0 && (
           <Stack gap={2}>
-            {info.data.env.map((kv) => (
-              <Text key={kv.key} size="xs" style={{ overflowWrap: "anywhere" }}>
-                <Text span c="dimmed">{kv.key}=</Text>
-                <Code>{kv.value}</Code>
-              </Text>
-            ))}
+            {/*
+              Collapsed by default. These are long absolute paths that wrap to
+              several lines each, and they push the resource list and timeline —
+              the reasons you opened the page — below the fold. You need them
+              when opening a terminal, which is a deliberate act, so a
+              deliberate click is the right price.
+            */}
+            <UnstyledButton
+              onClick={() => setEnvOpen((o) => !o)}
+              aria-expanded={envOpen}
+              aria-label={`${envOpen ? "Hide" : "Show"} environment variables`}
+              style={{ width: "fit-content" }}
+            >
+              <Group gap={4} wrap="nowrap">
+                <IconChevronRight
+                  size={12}
+                  style={{
+                    transform: envOpen ? "rotate(90deg)" : undefined,
+                    transition: "transform 150ms ease",
+                  }}
+                />
+                <Text size="xs" c="dimmed">
+                  {`Environment (${info.data.env.length})`}
+                </Text>
+              </Group>
+            </UnstyledButton>
+            <Collapse in={envOpen}>
+              <Stack gap={2}>
+                {info.data.env.map((kv) => (
+                  <Text key={kv.key} size="xs" style={{ overflowWrap: "anywhere" }}>
+                    <Text span c="dimmed">{kv.key}=</Text>
+                    <Code>{kv.value}</Code>
+                  </Text>
+                ))}
+              </Stack>
+            </Collapse>
           </Stack>
         )}
       </Stack>
