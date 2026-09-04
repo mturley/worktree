@@ -6,6 +6,7 @@ import { relativeTime, relativeFromNow } from "../lib/relativeTime"
 import { api } from "../api/client"
 import { ResourceActions } from "./ResourceActions"
 import { ResourceTitle } from "./ResourceStatusIcon"
+import { hasUnread, UNREAD_ACCENT_BORDER } from "../lib/unread"
 import { EditResourceDetailsModal } from "./EditResourceDetailsModal"
 
 function prStateColor(state?: string): string {
@@ -326,7 +327,13 @@ export function ResourceCard({
       // A selected card is tinted so the current selection is obvious next to
       // the pane it drives.
       bg={selected ? "var(--mantine-color-blue-light)" : undefined}
-      style={selected ? { borderColor: "var(--mantine-color-blue-filled)" } : undefined}
+      // Two independent edge treatments, deliberately composed rather than
+      // chosen between: selection tints the whole border, unread claims only
+      // the left edge, and a card can be both at once.
+      style={{
+        ...(selected ? { borderColor: "var(--mantine-color-blue-filled)" } : {}),
+        ...(hasUnread(r) ? { borderLeft: UNREAD_ACCENT_BORDER } : {}),
+      }}
     >
       <Group justify="space-between" wrap="nowrap" align="flex-start">
         {onSelect ? (

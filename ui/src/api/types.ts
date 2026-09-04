@@ -18,6 +18,12 @@ export interface WorktreeSummary {
   related_by_type?: Record<string, number>;
   /** Primary ("focus") resources, enriched. Always an array — never null. */
   focus_resources: ResourceDTO[];
+  /**
+   * Whether ANY resource on this worktree has unread activity — related ones
+   * included, which is why it cannot be derived from `focus_resources`.
+   * Absent on an older cached response.
+   */
+  has_unread?: boolean;
 }
 export interface TimelineEvent {
   id: string; ts: string; external_ts: string; source: string;

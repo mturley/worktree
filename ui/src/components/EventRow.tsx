@@ -5,6 +5,7 @@ import { eventLabel } from "../lib/eventMeta"
 import { EventDot } from "./EventDot"
 import { EventResourceChip } from "./EventResourceChip"
 import { UnreadMarkerDot } from "./UnreadMarkerDot"
+import { UNREAD_COLOR } from "../lib/unread"
 import { ROW_PAD_X } from "./timelineRail"
 
 /**
@@ -66,7 +67,14 @@ export function EventRow({
                 // individually instead.
                 <UnreadMarkerDot label="unread event" />
               )}
-              <Text size="sm" fw={600} style={{ overflowWrap: "anywhere", minWidth: 0 }}>{e.title}</Text>
+              <Text
+                size="sm"
+                fw={600}
+                c={e.unread ? UNREAD_COLOR : undefined}
+                style={{ overflowWrap: "anywhere", minWidth: 0 }}
+              >
+                {e.title}
+              </Text>
               <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
                 {e.author && `${e.author} · `}{rel(e.external_ts || e.ts)}
               </Text>
