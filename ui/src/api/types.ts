@@ -24,6 +24,12 @@ export interface WorktreeSummary {
    * Absent on an older cached response.
    */
   has_unread?: boolean;
+  /**
+   * Unread EVENTS across the worktree's resources. Can be 0 while
+   * `has_unread` is true: a Slack thread is unread without a countable
+   * tally behind it.
+   */
+  unread_count?: number;
 }
 export interface TimelineEvent {
   id: string; ts: string; external_ts: string; source: string;

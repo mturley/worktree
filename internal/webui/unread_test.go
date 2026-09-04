@@ -436,3 +436,96 @@ func TestWorktreeSummaryHasUnreadFalseWhenRead(t *testing.T) {
 		}
 	}
 }
+
+// TestWorktreeSummaryUnreadCountSumsAllResources pins the badge's number.
+// Unlike HasUnread, the count cannot stop at the first unread resource — a
+// short-circuit there would undercount the badge on every worktree with more
+// than one busy resource.
+func TestWorktreeSummaryUnreadCountSumsAllResources(t *testing.T) {
+	conn := unreadTestDB(t)
+	wt := testgit.Worktree(t)
+	if err := registerWorktreeForTest(t, conn, wt); err != nil {
+		t.Fatal(err)
+	}
+	// One focus resource and one RELATED resource, both unread: the related
+	// one is never listed in the response, so only the total can reveal it.
+	if err := resources.Add(conn, wt, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := resources.Add(conn, wt, resources.Resource{
+		Type: "jira", ID: "J-1", URL: "u", Related: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	insertUnreadEvent(t, conn, "e1", "2099-01-01T00:00:00Z", "github", "pr", "o/r#1")
+	insertUnreadEvent(t, conn, "e2", "2099-01-02T00:00:00Z", "github", "pr", "o/r#1")
+	insertUnreadEvent(t, conn, "e3", "2099-01-03T00:00:00Z", "jira", "jira", "J-1")
+
+	srv := &Server{DB: conn}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	resp, err := http.Get(ts.URL + "/api/worktrees")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out []worktreeSummary
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range out {
+		if w.Path != wt {
+			continue
+		}
+		if w.UnreadCount != 3 {
+			t.Fatalf("unread_count = %d, want 3 (2 focus + 1 related)", w.UnreadCount)
+		}
+		if !w.HasUnread {
+			t.Fatal("a worktree with unread events must also report has_unread")
+		}
+		return
+	}
+	t.Fatalf("worktree %s absent from the summary", wt)
+}
+
+// TestWorktreeSummaryUnreadCountZeroForSlackOnly is the case the badge's copy
+// exists for: a Slack thread is unread without a countable tally behind it,
+// so the flag says yes while the number says nothing.
+func TestWorktreeSummaryUnreadCountZeroForSlackOnly(t *testing.T) {
+	conn := unreadTestDB(t)
+	wt := testgit.Worktree(t)
+	if err := registerWorktreeForTest(t, conn, wt); err != nil {
+		t.Fatal(err)
+	}
+	const thread = "C1:1000.000100"
+	if err := resources.Add(conn, wt, resources.Resource{Type: "slack", ID: thread, URL: "u"}); err != nil {
+		t.Fatal(err)
+	}
+	insertSlackState(t, conn, thread, "2000.000000") // has_unread: true
+
+	srv := &Server{DB: conn}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	resp, err := http.Get(ts.URL + "/api/worktrees")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out []worktreeSummary
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range out {
+		if w.Path != wt {
+			continue
+		}
+		if !w.HasUnread {
+			t.Fatal("an unread Slack thread must set has_unread")
+		}
+		if w.UnreadCount != 0 {
+			t.Fatalf("unread_count = %d, want 0 — Slack has no countable tally", w.UnreadCount)
+		}
+		return
+	}
+	t.Fatalf("worktree %s absent from the summary", wt)
+}

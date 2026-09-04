@@ -33,6 +33,11 @@ type worktreeSummary struct {
 	// FocusResources: related resources are counted but never listed, so a
 	// client folding over that list alone would miss their unreads.
 	HasUnread bool `json:"has_unread"`
+	// UnreadCount totals the unread EVENTS across those same resources. It
+	// can be 0 while HasUnread is true: a Slack thread's unread state is a
+	// cursor mirrored from Slack, not a tally of the messages behind it, so
+	// it can only answer yes/no. Consumers must read the two together.
+	UnreadCount int `json:"unread_count"`
 }
 
 func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
@@ -60,6 +65,7 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 		// Sized for the common case; make(...) (not nil) so it marshals as [].
 		focus := make([]resourceDTO, 0, len(rs))
 		hasUnread := false
+		unreadCount := 0
 		for _, res := range rs {
 			if !res.Related {
 				primary++
@@ -68,18 +74,18 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 				dto.UnreadCount = ix.Count(dto.Type, dto.ID)
 				focus = append(focus, dto)
 				hasUnread = hasUnread || resourceHasUnread(dto)
+				unreadCount += dto.UnreadCount
 			} else {
 				relatedCount++
 				relatedByType[res.Type]++
 				// Related resources get no DTO of their own in the response,
-				// so one is built here purely to ask the unread question —
-				// and only until the answer is yes, since newResourceDTO
-				// costs a cached-state lookup per call.
-				if !hasUnread {
-					dto := s.newResourceDTO(res)
-					dto.UnreadCount = ix.Count(dto.Type, dto.ID)
-					hasUnread = resourceHasUnread(dto)
-				}
+				// so one is built here purely to answer the unread questions.
+				// Unlike HasUnread, the COUNT cannot short-circuit — every
+				// related resource has to be asked, or the badge undercounts.
+				dto := s.newResourceDTO(res)
+				dto.UnreadCount = ix.Count(dto.Type, dto.ID)
+				hasUnread = hasUnread || resourceHasUnread(dto)
+				unreadCount += dto.UnreadCount
 			}
 		}
 		_, statErr := os.Stat(e.Path)
@@ -96,6 +102,7 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 			LatestEventTS:  latestEventTSForSubscriber(s.DB, wdb.Subscriber(e.Path)),
 			FocusResources: focus,
 			HasUnread:      hasUnread,
+			UnreadCount:    unreadCount,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
