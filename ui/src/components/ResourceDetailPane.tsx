@@ -77,8 +77,18 @@ function TimelineBody({
         <Title order={5}>Activity</Title>
         {unreadCount > 0 && (
           <Button
-            size="compact-xs"
-            variant="subtle"
+            size="compact-sm"
+            // Filled blue, not the theme's primary: primaryColor is "accent"
+            // (purple), and this button clears the very blue the boxes and
+            // bars beside it are drawn in. Same treatment as UnreadBadge, so
+            // every unread affordance reads as one colour.
+            variant="filled"
+            color="blue"
+            // `vars`, not `styles`: Mantine sets --button-hover itself from the
+            // color prop, and a styles.root value loses to it. Lighter rather
+            // than Mantine's darker default — on a dark background, darkening
+            // reads as the button dimming rather than responding.
+            vars={() => ({ root: { "--button-hover": "var(--mantine-color-blue-4)" } })}
             loading={markRead.isPending}
             disabled={!newestTS}
             onClick={() => markRead.mutate()}
