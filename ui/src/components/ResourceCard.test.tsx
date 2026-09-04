@@ -400,13 +400,85 @@ describe("PR card labelling", () => {
 
 
 describe("unread accent on the resource card", () => {
-  const ACCENT = "3px solid var(--mantine-color-blue-5)"
+  const ACCENT = "5px solid var(--mantine-color-blue-5)"
   const base = { type: "pr", id: "o/r#1", url: "u", primary: true, title: "Fix the widget", state: "OPEN" } as ResourceDTO
   const card = (c: HTMLElement) => c.querySelector(".mantine-Paper-root")
 
+  const BOX = "2px solid var(--mantine-color-blue-5)"
+
+  it("badges the resource with its unread count on a list card", () => {
+    // The badge rides both variants; the remove control is what is
+    // detail-only, and it shares the corner with it there.
+    wrap(<ResourceCard r={{ ...base, unread_count: 2 }} />)
+    expect(screen.getByText("2 unreads")).toBeInTheDocument()
+  })
+
+  it("badges an unread Slack thread without a number", () => {
+    const slack = { type: "slack", id: "C1:1.2", url: "u", primary: true, title: "Deploy thread", has_unread: true } as ResourceDTO
+    wrap(<ResourceCard r={slack} />)
+    expect(screen.getByText("unread")).toBeInTheDocument()
+  })
+
+  it("shows no badge on a read resource", () => {
+    wrap(<ResourceCard r={{ ...base, unread_count: 0 }} />)
+    expect(screen.queryByText(/unread/)).toBeNull()
+  })
+
   it("marks a resource with unread events", () => {
     const { container } = wrap(<ResourceCard r={{ ...base, unread_count: 4 }} />)
-    expect(card(container)).toHaveStyle({ borderLeft: ACCENT })
+    // All four sides, never `border` + `borderLeft`: the shorthand loses to
+    // the side longhand and the box silently vanishes.
+    expect(card(container)).toHaveStyle({
+      borderTop: BOX, borderRight: BOX, borderBottom: BOX, borderLeft: ACCENT,
+    })
+  })
+
+  it("keeps blue edges when unread and NOT selected in the list", () => {
+    // The list card is the configuration that matters: selectable, unselected,
+    // unread. Selection moved to violet, and this pins that the move did not
+    // quietly take the blue with it.
+    const { container } = wrap(
+      <ResourceCard r={{ ...base, unread_count: 3 }} selected={false} onSelect={vi.fn()} />,
+    )
+    expect(card(container)).toHaveStyle({
+      borderTop: BOX, borderRight: BOX, borderBottom: BOX, borderLeft: ACCENT,
+    })
+    // And no violet anywhere — an unselected card must not borrow selection's
+    // colours just because it is highlighted.
+    const el = card(container) as HTMLElement
+    expect(el.style.background).toBe("")
+    expect(el.style.borderColor).not.toContain("violet")
+  })
+
+  it("gives a read resource a real border rather than the absence of one", () => {
+    // Expressing "read" by REMOVING border properties is what let the browser
+    // fall back to grey (and once to white) — see cardEdgeStyle.
+    const { container } = wrap(<ResourceCard r={{ ...base, unread_count: 0 }} />)
+    const el = card(container) as HTMLElement
+    expect(el.style.borderTop).toContain("default-border")
+    expect(el.style.borderLeft).toBe(el.style.borderTop)
+  })
+
+  it("keeps selection violet so it never reads as unread", () => {
+    // Blue is spoken for by unread; a selected READ card beside an unread one
+    // has to be tellable apart at a glance.
+    const { container } = wrap(<ResourceCard r={{ ...base, unread_count: 0 }} selected onSelect={vi.fn()} />)
+    const el = card(container) as HTMLElement
+    expect(el).toHaveStyle({ background: "var(--mantine-color-violet-light)" })
+    // On the sides, never as a borderColor longhand beside them.
+    expect(el.style.borderTop).toContain("violet-filled")
+    expect(el.style.borderColor).toBe("")
+  })
+
+  it("shows unread edges and the selection tint at once", () => {
+    // Unread wins the border outright; selection still shows as its own tint,
+    // which unread never touches.
+    const { container } = wrap(<ResourceCard r={{ ...base, unread_count: 1 }} selected onSelect={vi.fn()} />)
+    expect(card(container)).toHaveStyle({
+      background: "var(--mantine-color-violet-light)",
+      borderTop: BOX,
+      borderLeft: ACCENT,
+    })
   })
 
   it("marks a Slack thread from Slack's own read state", () => {
@@ -420,13 +492,64 @@ describe("unread accent on the resource card", () => {
     expect(card(container)).not.toHaveStyle({ borderLeft: ACCENT })
   })
 
-  it("keeps the selection border and the unread accent at once", () => {
-    // Two independent edge treatments; a selected unread card must not have
-    // to give one up for the other.
-    const { container } = wrap(<ResourceCard r={{ ...base, unread_count: 1 }} selected onSelect={vi.fn()} />)
-    expect(card(container)).toHaveStyle({
-      borderLeft: ACCENT,
-      borderColor: "var(--mantine-color-blue-filled)",
-    })
+})
+
+describe("the unread badge must not carve a hole in the card", () => {
+  const base = { type: "pr", id: "o/r#1", url: "u", primary: true, title: "Fix the widget", state: "OPEN" } as ResourceDTO
+
+  it("renders the badge INSIDE the select button", () => {
+    // As a sibling of the button the badge was unclickable dead space. At full
+    // width that cost ~8% of the card; once selecting a resource narrowed the
+    // list column it was 26%, and the card stopped responding to clicks aimed
+    // at its right-hand side.
+    wrap(<ResourceCard r={{ ...base, unread_count: 2 }} onSelect={vi.fn()} />)
+    const btn = screen.getByRole("button", { name: /select resource/i })
+    expect(btn).toContainElement(screen.getByText("2 unreads"))
+  })
+
+  it("still fires onSelect when the badge itself is clicked", async () => {
+    const onSelect = vi.fn()
+    wrap(<ResourceCard r={{ ...base, unread_count: 2 }} selected onSelect={onSelect} />)
+    await userEvent.click(screen.getByText("2 unreads"))
+    expect(onSelect).toHaveBeenCalledTimes(1)
+  })
+
+  it("keeps the remove control OUT of the click target", () => {
+    // The one thing that must stay a sibling: a button inside a button is
+    // invalid markup with an ambiguous click target.
+    wrap(<ResourceCard r={{ ...base, unread_count: 2 }} onSelect={vi.fn()} variant="detail" path="/wt" />)
+    const select = screen.getByRole("button", { name: /select resource/i })
+    const remove = screen.getByRole("button", { name: "Unfollow resource" })
+    expect(select).not.toContainElement(remove)
+  })
+})
+
+describe("the detail card carries no unread styling", () => {
+  const base = { type: "pr", id: "o/r#1", url: "u", primary: true, title: "Fix the widget", state: "OPEN" } as ResourceDTO
+  const paper = (c: HTMLElement) => c.querySelector(".mantine-Paper-root") as HTMLElement
+
+  it("shows no border, dot or badge on the detail card", () => {
+    // It heads the very feed that boxes each unread event; repeating the
+    // state above that feed says nothing new and buries the mark-read button.
+    const { container } = wrap(<ResourceCard r={{ ...base, unread_count: 3 }} variant="detail" path="/wt" />)
+    expect(paper(container).style.borderTop).toContain("default-border")
+    expect(screen.queryByText(/unreads?$/)).toBeNull()
+    expect(screen.queryByLabelText("unread")).toBeNull()
+  })
+
+  it("still shows all three on the list card", () => {
+    // The contrast is the point: in the list, the events are somewhere else.
+    const { container } = wrap(<ResourceCard r={{ ...base, unread_count: 3 }} onSelect={vi.fn()} />)
+    expect(paper(container).style.borderTop).toContain("blue-5")
+    expect(screen.getByText("3 unreads")).toBeInTheDocument()
+    expect(screen.getByLabelText("unread")).toBeInTheDocument()
+  })
+
+  it("suppresses the dot on an unenriched detail card too", () => {
+    // MinimalRow renders when nothing has been polled yet; it takes the same
+    // decision rather than defaulting to "show".
+    wrap(<ResourceCard r={{ type: "pr", id: "o/r#9", url: "u", primary: true, unread_count: 2 } as ResourceDTO}
+                       variant="detail" path="/wt" />)
+    expect(screen.queryByLabelText("unread")).toBeNull()
   })
 })

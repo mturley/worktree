@@ -307,14 +307,36 @@ describe("WorktreeCard unread dot", () => {
 })
 
 describe("unread accent", () => {
-  const ACCENT = "3px solid var(--mantine-color-blue-5)"
+  const ACCENT = "5px solid var(--mantine-color-blue-5)"
   // The Paper wraps the link; the accent lives on it so it spans the cmux
   // strip too, which sits above the link.
   const card = () => screen.getByRole("link", { name: /open worktree foo/i }).closest(".mantine-Paper-root")
 
+  const BOX = "2px solid var(--mantine-color-blue-5)"
+
+  it("badges the worktree with its unread total", () => {
+    wrap(<WorktreeCard w={{ ...summary, has_unread: true, unread_count: 4 }} />)
+    expect(screen.getByText("4 unreads")).toBeInTheDocument()
+  })
+
+  it("badges an uncountable unread without claiming a number", () => {
+    // A Slack thread is unread with no tally behind it.
+    wrap(<WorktreeCard w={{ ...summary, has_unread: true, unread_count: 0 }} />)
+    expect(screen.getByText("unread")).toBeInTheDocument()
+  })
+
+  it("shows no badge on a read worktree", () => {
+    wrap(<WorktreeCard w={{ ...summary, has_unread: false, unread_count: 0 }} />)
+    expect(screen.queryByText(/unread/)).toBeNull()
+  })
+
   it("marks a worktree whose resources have unread activity", () => {
     wrap(<WorktreeCard w={{ ...summary, has_unread: true }} />)
-    expect(card()).toHaveStyle({ borderLeft: ACCENT })
+    // All four sides, never `border` + `borderLeft`: the shorthand loses to
+    // the side longhand and the box silently vanishes.
+    expect(card()).toHaveStyle({
+      borderTop: BOX, borderRight: BOX, borderBottom: BOX, borderLeft: ACCENT,
+    })
   })
 
   it("leaves a fully read worktree unmarked", () => {

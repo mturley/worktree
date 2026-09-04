@@ -3,6 +3,8 @@ import { render, screen, fireEvent } from "@testing-library/react"
 import { MantineProvider } from "@mantine/core"
 import { EventRow } from "./EventRow"
 import type { TimelineEvent } from "../api/types"
+import { UNREAD_BORDER_WIDTH } from "../lib/unread"
+import { DOT_CENTER, DOT_SIZE, ROW_PAD_X } from "./timelineRail"
 
 if (typeof window.matchMedia !== "function") {
   window.matchMedia = ((query: string) => ({
@@ -170,16 +172,56 @@ describe("global timeline affordances", () => {
   })
 })
 
-describe("unread event titles", () => {
-  const UNREAD = "var(--mantine-color-blue-4)"
+describe("unread event highlight", () => {
+  const UNREAD_BORDER = "2px solid var(--mantine-color-blue-5)"
+  const READ_BORDER = "2px solid transparent"
+  const BG = "color-mix(in srgb, var(--mantine-color-blue-filled) 10%, transparent)"
+  const row = (c: HTMLElement) => c.querySelector("[data-event-row]") as HTMLElement
 
-  it("colors the title of an unread event", () => {
-    renderWithProvider(<EventRow e={makeEvent({ unread: true, title: "New review" })} />)
-    expect(screen.getByText("New review")).toHaveStyle({ color: UNREAD })
+  it("boxes an unread event", () => {
+    const { container } = renderWithProvider(<EventRow e={makeEvent({ unread: true, title: "New review" })} />)
+    expect(row(container)).toHaveStyle({ border: UNREAD_BORDER, background: BG })
   })
 
-  it("leaves a read event's title alone", () => {
-    renderWithProvider(<EventRow e={makeEvent({ unread: false, title: "Old review" })} />)
-    expect(screen.getByText("Old review")).not.toHaveStyle({ color: UNREAD })
+  it("leaves a read event unboxed", () => {
+    const { container } = renderWithProvider(<EventRow e={makeEvent({ unread: false, title: "Old review" })} />)
+    expect(container.querySelector("[data-unread]")).toBeNull()
+  })
+
+  it("reserves the border on every row so unread gains colour, not width", () => {
+    // A border that appears only when unread would shift the row's text and
+    // make the feed look ragged.
+    const { container } = renderWithProvider(<EventRow e={makeEvent({ unread: false })} />)
+    expect(row(container)).toHaveStyle({ border: READ_BORDER })
+  })
+
+  it("clears the box completely when the event is marked read", () => {
+    // Regression: the border was once a shorthand plus a conditional
+    // borderColor. Clearing the colour dropped the shorthand from the CSSOM,
+    // leaving width and style behind with border-color falling back to
+    // currentColor — a white box that survived until the page was reloaded.
+    const { container, rerender } = renderWithProvider(<EventRow e={makeEvent({ unread: true })} />)
+    expect(row(container)).toHaveStyle({ border: UNREAD_BORDER })
+
+    rerender(<MantineProvider><EventRow e={makeEvent({ unread: false })} /></MantineProvider>)
+    const after = row(container)
+    expect(after).toHaveStyle({ border: READ_BORDER })
+    expect(after.style.borderColor).toBe("transparent")
+    expect(after.style.background).toBe("")
+  })
+})
+
+describe("rail alignment", () => {
+  it("reserves exactly the border width the rail offsets the line by", () => {
+    // The rail line and the dots are drawn by different components. If a row's
+    // actual border stops matching UNREAD_BORDER_WIDTH, every dot shifts and
+    // the line runs down their edge — which is what happened when the unread
+    // box was first added. Parsed from the DOM, not from the constant, so
+    // changing the border string without the width fails here.
+    const { container } = renderWithProvider(<EventRow e={makeEvent({ unread: false })} />)
+    const row = container.querySelector("[data-event-row]") as HTMLElement
+    const width = parseInt(row.style.border, 10)
+    expect(width).toBe(UNREAD_BORDER_WIDTH)
+    expect(DOT_CENTER).toBe(UNREAD_BORDER_WIDTH + ROW_PAD_X + DOT_SIZE / 2)
   })
 })

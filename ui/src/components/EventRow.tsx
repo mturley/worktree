@@ -5,7 +5,7 @@ import { eventLabel } from "../lib/eventMeta"
 import { EventDot } from "./EventDot"
 import { EventResourceChip } from "./EventResourceChip"
 import { UnreadMarkerDot } from "./UnreadMarkerDot"
-import { UNREAD_COLOR } from "../lib/unread"
+import { READ_BOX_BORDER, UNREAD_BG, UNREAD_BOX_BORDER } from "../lib/unread"
 import { ROW_PAD_X } from "./timelineRail"
 
 /**
@@ -43,7 +43,22 @@ export function EventRow({
   const label = eventLabel(e.type, e.type_label)
 
   return (
-    <Box style={{ display: "flex", gap: "var(--mantine-spacing-sm)", alignItems: "flex-start", padding: ROW_PAD_X }}>
+    <Box
+      data-event-row="true"
+      data-unread={e.unread ? "true" : undefined}
+      style={{
+        display: "flex",
+        gap: "var(--mantine-spacing-sm)",
+        alignItems: "flex-start",
+        padding: ROW_PAD_X,
+        // ONE border property in both states, never a shorthand plus a
+        // conditional borderColor — see UNREAD_BOX_BORDER for the white box
+        // that mistake left behind on mark-read.
+        border: e.unread ? UNREAD_BOX_BORDER : READ_BOX_BORDER,
+        borderRadius: "var(--mantine-radius-sm)",
+        ...(e.unread ? { background: UNREAD_BG } : {}),
+      }}
+    >
       <EventDot type={e.type} label={label} />
       <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
         <Box
@@ -67,14 +82,7 @@ export function EventRow({
                 // individually instead.
                 <UnreadMarkerDot label="unread event" />
               )}
-              <Text
-                size="sm"
-                fw={600}
-                c={e.unread ? UNREAD_COLOR : undefined}
-                style={{ overflowWrap: "anywhere", minWidth: 0 }}
-              >
-                {e.title}
-              </Text>
+              <Text size="sm" fw={600} style={{ overflowWrap: "anywhere", minWidth: 0 }}>{e.title}</Text>
               <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
                 {e.author && `${e.author} · `}{rel(e.external_ts || e.ts)}
               </Text>
