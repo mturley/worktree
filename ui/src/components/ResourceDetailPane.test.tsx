@@ -128,6 +128,18 @@ describe("mark-read button", () => {
       isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false,
     })
 
+  it("draws the button in unread blue, not the theme's purple accent", () => {
+    // primaryColor is "accent" (purple). This button clears the very blue the
+    // event boxes beside it are drawn in, so it wears the same colour — and
+    // hovers LIGHTER, since Mantine's darker default reads as dimming on a
+    // dark background.
+    withEvents()
+    wrap(<ResourceDetailPane path="/wt/foo" resource={{ ...jira, unread_count: 2 } as ResourceDTO} />)
+    const btn = screen.getByRole("button", { name: "Mark 2 events as read" })
+    expect(btn).toHaveAttribute("data-variant", "filled")
+    expect(btn.style.getPropertyValue("--button-hover")).toBe("var(--mantine-color-blue-4)")
+  })
+
   it("offers to mark the resource's unread events read", () => {
     withEvents()
     wrap(<ResourceDetailPane path="/wt/foo" resource={{ ...jira, unread_count: 3 } as ResourceDTO} />)
