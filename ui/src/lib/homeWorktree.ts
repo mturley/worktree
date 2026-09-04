@@ -2,81 +2,112 @@
  * The worktree this browser TAB was opened for.
  *
  * `worktree ui` run from inside a worktree, and the UI pane of a cmux
- * workspace, both open a detail URL carrying `?home=1` (see cmd's
+ * workspace, both open a detail URL carrying `?home=<path>` (see cmd's
  * detailPathForToplevel and webui's worktreeDetailURL). That marks the tab as
  * belonging to that worktree, so the UI can offer a way back once you wander
- * off to the home page or to some other worktree.
+ * off to the listing or to some other worktree.
  *
- * sessionStorage, deliberately:
- *   - per TAB, so every cmux pane and every window you open yourself has its
- *     own answer, and one `worktree ui` cannot re-home the others;
- *   - survives reloads and client-side navigation, which a React state would
- *     not;
- *   - dies with the tab, which is exactly the lifetime of "the worktree this
- *     pane is about".
+ * THE URL IS THE CARRIER, and the parameter is deliberately never stripped.
+ * The first version stored the worktree in sessionStorage and cleaned the URL,
+ * which reads better but does not survive a cmux pane sleeping and being
+ * restored: the pane comes back with a URL and a brand new JS context, so
+ * anything held only in storage is gone. The URL is the one thing that
+ * crosses that gap.
  *
- * Every access is guarded: sessionStorage throws outright in some contexts
- * (private windows with site data blocked, embedded previews), and a banner is
- * never worth taking the page down for.
+ * It carries the PATH, not a bare flag. A flag works only while the path is
+ * still in the pathname; the moment you navigate to "/" there is nothing left
+ * for it to point at.
+ *
+ * The consequence, accepted deliberately: a URL copied out of the address bar
+ * carries the home with it and will home whoever pastes it. For a localhost
+ * tool that is a fair price for surviving restore.
+ *
+ * sessionStorage stays on as a SECOND copy, not the source of truth. It heals
+ * the case where a navigation arrives without the parameter in a tab that
+ * already knows its home — the param is put back rather than the home lost.
  */
 const KEY = "worktree.homePath"
 
-/** The marker the server appends. Must match cmd's HomeMarkerParam. */
-export const HOME_MARKER = "home"
+/** The query parameter carrying the home worktree's path. */
+export const HOME_PARAM = "home"
 
-function read(): string | null {
+function readStored(): string | null {
   try {
     return window.sessionStorage.getItem(KEY)
   } catch {
+    // sessionStorage throws outright in some contexts (private windows with
+    // site data blocked). A missing banner is never worth a blank page.
     return null
   }
 }
 
-function write(path: string): void {
+function store(path: string): void {
   try {
     window.sessionStorage.setItem(KEY, path)
   } catch {
-    // No home for this tab, so no banner. Strictly a lost convenience.
+    // The URL still carries it; this copy is only a convenience.
   }
 }
 
 /**
- * Reads `?home=1` off the current URL and, on a worktree detail route, records
- * that worktree as this tab's home — then strips the parameter.
+ * Resolves this tab's home from the current URL, falling back to the stored
+ * copy, and makes sure the URL ends up carrying it either way.
  *
- * Stripping matters for two reasons. A URL copied out of the address bar must
- * not re-home whoever pastes it, and the marker must not survive into the
- * history entry, or going Back to this page would silently re-assert a home
- * the user may have replaced since.
- *
- * Call once, before the app renders. Returns the home path in effect.
+ * Call once before the app renders, and let the router keep it from there.
  */
-export function captureHomeWorktree(loc: Location = window.location): string | null {
-  const url = new URL(loc.href)
-  if (url.searchParams.get(HOME_MARKER) !== "1") return read()
+export function captureHomeWorktree(): string | null {
+  const url = new URL(window.location.href)
+  const fromURL = url.searchParams.get(HOME_PARAM)
 
-  const match = /^\/worktree\/(.+)$/.exec(url.pathname)
-  if (match) {
+  if (fromURL) {
+    store(fromURL)
+    return fromURL
+  }
+
+  // No parameter, but this tab has been homed before: re-attach it rather
+  // than lose the home, so the next navigation carries it onward.
+  const stored = readStored()
+  if (stored) {
+    url.searchParams.set(HOME_PARAM, stored)
     try {
-      write(decodeURIComponent(match[1]))
+      window.history.replaceState(
+        window.history.state,
+        "",
+        url.pathname + url.search + url.hash,
+      )
     } catch {
-      // A malformed escape in the path: no home rather than a wrong one.
+      // Non-fatal: the banner still renders from the stored copy.
     }
   }
-
-  url.searchParams.delete(HOME_MARKER)
-  const clean = url.pathname + (url.search || "") + url.hash
-  try {
-    window.history.replaceState(window.history.state, "", clean)
-  } catch {
-    // Non-fatal: the marker stays in the bar but the home is already stored.
-  }
-  return read()
+  return stored
 }
 
 /** This tab's home worktree path, or null if it was not opened for one. */
 export function getHomeWorktree(): string | null {
-  return read()
+  try {
+    const fromURL = new URL(window.location.href).searchParams.get(HOME_PARAM)
+    if (fromURL) return fromURL
+  } catch {
+    // Fall through to the stored copy.
+  }
+  return readStored()
+}
+
+/**
+ * Adds the home parameter to a destination the app is navigating to.
+ *
+ * Applied by the router's location hook rather than at each navigate() call,
+ * so no call site can forget and no future page has to remember. wouter routes
+ * on pathname alone, so the extra parameter is invisible to matching.
+ */
+export function withHomeParam(to: string): string {
+  const home = getHomeWorktree()
+  if (!home) return to
+  // A relative URL needs a base to parse; the origin is discarded below.
+  const url = new URL(to, window.location.origin)
+  if (url.searchParams.get(HOME_PARAM) === home) return to
+  url.searchParams.set(HOME_PARAM, home)
+  return url.pathname + url.search + url.hash
 }
 
 /** The name shown in the banner: the worktree's own directory name. */

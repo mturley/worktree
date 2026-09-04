@@ -221,19 +221,21 @@ func detailPathForToplevel(toplevel string, entries []registry.Entry) string {
 	target := wdb.Subscriber(toplevel)
 	for _, e := range entries {
 		if wdb.Subscriber(e.Path) == target {
-			return "/worktree/" + url.PathEscape(e.Path) + "?" + HomeMarkerParam + "=1"
+			return "/worktree/" + url.PathEscape(e.Path) +
+				"?" + HomeMarkerParam + "=" + url.QueryEscape(e.Path)
 		}
 	}
 	return "/"
 }
 
-// HomeMarkerParam tells the web UI that this tab was opened FOR the worktree
-// named in the path, so it can offer a way back after you navigate away.
+// HomeMarkerParam tells the web UI that this tab was opened FOR a particular
+// worktree, so it can offer a way back after you navigate away.
 //
-// A bare flag, not a repeat of the path: the path is already in the URL, and
-// two copies of it are two things that can disagree. The UI strips the
-// parameter once it has read it, so a copied link cannot re-home someone
-// else's tab.
+// It carries the PATH, and the UI keeps it on every URL it navigates to
+// rather than reading it once and cleaning up. A bare flag would do only
+// while the path is still in the pathname, and storing it browser-side does
+// not survive a cmux pane sleeping and being restored — the pane comes back
+// with a URL and nothing else. See ui/src/lib/homeWorktree.ts.
 //
 // Only ever appended to a worktree detail path. The home page is not opened
 // "for" anything, and marking it would leave a tab pointing back at itself.

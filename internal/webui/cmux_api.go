@@ -154,11 +154,13 @@ func (s *Server) handleCmuxSelect(w http.ResponseWriter, r *http.Request) {
 // see ui/src/App.tsx and cmd/ui.go's equivalent construction. Uses 127.0.0.1
 // to match what Server.Start() actually binds.
 func worktreeDetailURL(port int, path string) string {
-	// ?home=1 marks the tab as belonging to this worktree, so the UI can offer
-	// a way back once you navigate elsewhere in it. The CLI's equivalent lives
-	// in cmd's detailPathForToplevel; both are "open the UI for THIS worktree",
-	// and a workspace pane is the case where wandering off is most likely.
-	return fmt.Sprintf("http://127.0.0.1:%d/worktree/%s?home=1", port, url.PathEscape(path))
+	// ?home=<path> marks the tab as belonging to this worktree, so the UI can
+	// offer a way back once you navigate elsewhere in it. The CLI's equivalent
+	// lives in cmd's detailPathForToplevel; both are "open the UI for THIS
+	// worktree", and a workspace pane is the case where wandering off is most
+	// likely — and the case where a sleeping pane loses everything but its URL.
+	return fmt.Sprintf("http://127.0.0.1:%d/worktree/%s?home=%s",
+		port, url.PathEscape(path), url.QueryEscape(path))
 }
 
 type cmuxCreateRequest struct {

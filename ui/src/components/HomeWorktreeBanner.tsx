@@ -35,14 +35,14 @@ export function HomeWorktreeBanner() {
       variant="light"
       mt="sm"
       mb="sm"
-      // One step up the heading scale from the page's own worktree title
-      // (order={4} on the detail page), so the way back reads as louder than
-      // where you currently are — which is the point of it.
-      styles={{ label: { fontSize: "var(--mantine-h3-font-size)" } }}
+      // Still above the page's own worktree title (18px, order={4} on the
+      // detail page), so the way back reads as louder than where you are —
+      // but only just. It is a signpost, not a headline.
+      styles={{ label: { fontSize: "var(--mantine-font-size-xl)" } }}
       leftSection={<IconArrowLeft size={22} />}
       onClick={() => navigate(homeWorktreeHref(home))}
     >
-      {`Back to current worktree ${worktreeName(home)}`}
+      {`Back to current worktree: ${worktreeName(home)}`}
     </Button>
   )
 }

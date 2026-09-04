@@ -242,7 +242,7 @@ func TestCmuxCreateUnavailableIsNotAnError(t *testing.T) {
 
 func TestWorktreeDetailURLUsesPathSegmentAndEscapesSpecialChars(t *testing.T) {
 	got := worktreeDetailURL(8475, "/tmp/my worktree")
-	want := "http://127.0.0.1:8475/worktree/%2Ftmp%2Fmy%20worktree?home=1"
+	want := "http://127.0.0.1:8475/worktree/%2Ftmp%2Fmy%20worktree?home=%2Ftmp%2Fmy+worktree"
 	if got != want {
 		t.Fatalf("worktreeDetailURL = %q, want %q", got, want)
 	}
@@ -256,7 +256,9 @@ func TestWorktreeDetailURLUsesPathSegmentAndEscapesSpecialChars(t *testing.T) {
 // worktree, and the marker is how the tab knows which.
 func TestWorktreeDetailURLCarriesHomeMarker(t *testing.T) {
 	got := worktreeDetailURL(8475, "/wt/foo")
-	if !strings.HasSuffix(got, "?home=1") {
-		t.Fatalf("worktreeDetailURL = %q, want it to end with ?home=1", got)
+	// The PATH, not a flag: once the UI navigates to the listing there is no
+	// pathname left for a flag to refer to.
+	if !strings.HasSuffix(got, "?home=%2Fwt%2Ffoo") {
+		t.Fatalf("worktreeDetailURL = %q, want the home path in the query", got)
 	}
 }

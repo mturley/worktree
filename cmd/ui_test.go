@@ -48,7 +48,7 @@ func TestDetailPathForToplevel_TrackedWorktree(t *testing.T) {
 	dir := t.TempDir()
 	entries := []registry.Entry{{Path: dir, Repo: "r", RepoRoot: "/r", Branch: "b"}}
 	got := detailPathForToplevel(dir, entries)
-	want := "/worktree/" + url.PathEscape(dir) + "?home=1"
+	want := "/worktree/" + url.PathEscape(dir) + "?home=" + url.QueryEscape(dir)
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
@@ -69,7 +69,7 @@ func TestDetailPathForToplevel_SymlinkCanonicalizes(t *testing.T) {
 	// git toplevel discovery.IsInsideWorktree returns is the resolved real path.
 	entries := []registry.Entry{{Path: link, Repo: "r", RepoRoot: "/r", Branch: "b"}}
 	got := detailPathForToplevel(real, entries)
-	want := "/worktree/" + url.PathEscape(link) + "?home=1"
+	want := "/worktree/" + url.PathEscape(link) + "?home=" + url.QueryEscape(link)
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
@@ -94,7 +94,7 @@ func TestUIDetailURL_TrackedWorktree(t *testing.T) {
 	dir := t.TempDir()
 	entries := []registry.Entry{{Path: dir, Repo: "r", RepoRoot: "/r", Branch: "b"}}
 	got := uiDetailURL(8475, dir, entries)
-	want := "http://127.0.0.1:8475/worktree/" + url.PathEscape(dir) + "?home=1"
+	want := "http://127.0.0.1:8475/worktree/" + url.PathEscape(dir) + "?home=" + url.QueryEscape(dir)
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
