@@ -38,7 +38,8 @@ type TimelineEvent struct {
 	// resource with its real status icon and custom name.
 	Resource *resourceDTO `json:"resource,omitempty"`
 	// Unread is true when this event is newer than its resource's read
-	// cursor. Always false for Slack — see unreadIndex.IsUnread.
+	// cursor — Slack's own cursor for a thread, worktree's for everything
+	// else. See unreadIndex.IsUnread.
 	Unread bool `json:"unread,omitempty"`
 }
 
@@ -365,7 +366,7 @@ func (e *eventEnricher) fillResource(te *TimelineEvent) {
 		// it is the plain-text fallback when no chip is shown.
 		te.ResourceTitle = dto.Title
 	}
-	te.Unread = e.unread.IsUnread(te.ResourceType, te.ResourceID, te.TS)
+	te.Unread = e.unread.IsUnread(te.ResourceType, te.ResourceID, te.TS, te.ExternalTS)
 	wts := e.worktreesWatching(te.ResourceType, te.ResourceID)
 	te.Worktrees = make([]string, 0, len(wts))
 	te.WorktreePaths = make([]string, 0, len(wts))

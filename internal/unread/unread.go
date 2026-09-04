@@ -144,3 +144,46 @@ func MarkRead(conn *sql.DB, resType, id, throughTS string) error {
 		resType, id, throughTS, now)
 	return err
 }
+
+// SlackCursors returns the read cursor per Slack thread, keyed by Key.
+//
+// Two things make it unlike Cursors, and both matter to callers:
+//
+// It is sourced from the poller-cached watcher_resource_state, not from
+// resource_read_cursor. Slack owns this cursor — worktree only mirrors what
+// the last poll saw — which is why marking a Slack thread read here is still
+// ErrSlackNotSupported. The read side gained a source; the write side did not.
+//
+// It is a SLACK message ts, so it must be compared against
+// watcher_events.external_ts and never against ts. That is the exact opposite
+// of the rule in this package's doc comment, and deliberately so: the two
+// timestamps live in different clocks, and Slack's cursor only means anything
+// against Slack's own. The ordering hazard that rule exists to prevent — read
+// and unread interleaving under a divider — does not arise here, because a
+// Slack thread's own feed is the rendered thread view (which draws its divider
+// from the live API) and the interleaved timelines mark events individually
+// rather than dividing them.
+//
+// Threads with no cursor are absent from the map, so a caller's missing key
+// means "nothing unread" — matching how has_unread resolves the same case.
+func SlackCursors(conn *sql.DB) (map[string]string, error) {
+	rows, err := conn.Query(`
+		SELECT resource_id, json_extract(state_json, '$.last_read')
+		  FROM watcher_resource_state
+		 WHERE resource_type = 'slack'
+		   AND json_extract(state_json, '$.last_read') IS NOT NULL
+		   AND json_extract(state_json, '$.last_read') <> ''`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var rid, ts string
+		if err := rows.Scan(&rid, &ts); err != nil {
+			return nil, err
+		}
+		out[Key("slack", rid)] = ts
+	}
+	return out, rows.Err()
+}

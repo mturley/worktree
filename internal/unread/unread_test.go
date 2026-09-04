@@ -207,3 +207,42 @@ func TestCountsIgnoresBookkeepingEvents(t *testing.T) {
 		t.Fatalf("unread = %d, want 1 — only the rendered event counts", n)
 	}
 }
+
+// TestSlackCursorsReadsCachedPollerState pins where a Slack cursor comes
+// from: watcher_resource_state, written by the poller, NOT the
+// resource_read_cursor table this package otherwise owns.
+func TestSlackCursorsReadsCachedPollerState(t *testing.T) {
+	conn := openDB(t)
+	insert := func(resType, id, state string) {
+		t.Helper()
+		if _, err := conn.Exec(
+			`INSERT INTO watcher_resource_state
+				(resource_type, resource_id, state_json, resource_updated_at, watcher_updated_at)
+			 VALUES (?, ?, ?, '', '2026-01-01T00:00:00Z')`,
+			resType, id, state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insert("slack", "C1:1.1", `{"last_read":"2000.000000"}`)
+	// No cursor at all, and a state row predating the field: both mean "we
+	// have nothing to compare against", and both must stay OUT of the map so
+	// a missing key can mean exactly one thing.
+	insert("slack", "C1:2.2", `{"last_read":""}`)
+	insert("slack", "C1:3.3", `{"title":"polled before last_read shipped"}`)
+	// A PR's cursor lives in resource_read_cursor; this must not sweep it up.
+	insert("pr", "o/r#1", `{"last_read":"9999.000000"}`)
+
+	got, err := unread.SlackCursors(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{unread.Key("slack", "C1:1.1"): "2000.000000"}
+	if len(got) != len(want) {
+		t.Fatalf("SlackCursors = %v, want %v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Fatalf("SlackCursors[%q] = %q, want %q", k, got[k], v)
+		}
+	}
+}

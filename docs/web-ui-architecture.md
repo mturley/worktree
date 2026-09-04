@@ -369,12 +369,30 @@ strictly greater.
 and shared: marking a PR read in one worktree clears its dot in every worktree
 tracking it.
 
-**Slack threads have no cursor row.** Slack owns a read cursor for the current
-user, worktree reads it via the poller-cached `has_unread`, and two systems
-must not both claim authority over one thread. Every seeding path skips
-`slack`; the endpoint and the CLI command reject it. `TimelineEvent.unread` is
-therefore always false for Slack events — the thread's unread state reaches the
-timeline through its resource chip instead.
+**Slack threads have no cursor row — they read Slack's.** Slack owns a read
+cursor for the current user and two systems must not both claim authority over
+one thread, so every seeding path skips `slack` and the endpoint and CLI
+command reject writes to it. The READ side, though, mirrors Slack's cursor:
+the poller caches `last_read` beside `has_unread` in `watcher_resource_state`
+(watcher `v0.8.1`), and `unread.SlackCursors` loads it into `unreadIndex`
+alongside the worktree-owned ones.
+
+**Two cursors, two clocks.** A Slack cursor is a Slack message ts and is
+compared against `watcher_events.external_ts`; every other cursor is compared
+against `ts`. That inverts this package's usual rule (`ts`, never
+`external_ts`) on purpose — the timestamps live in different clocks and
+Slack's cursor only means anything against Slack's own. The hazard that rule
+prevents, read and unread interleaving under a divider, does not arise for
+Slack: a thread's own feed is the rendered thread view, which draws its
+divider from the live API, and the interleaved timelines mark events
+individually. `slackTSGreater` parses both sides as floats rather than
+comparing strings, because Slack ts values grow a digit
+(`9999999999.x` sorts above `10000000000.x` lexically).
+
+**The dot vs. the divider.** `has_unread` answers "does this thread have
+anything new?" and drives the resource dot; `last_read` answers "which
+messages are new?" and drives `TimelineEvent.unread` on individual replies.
+Writes still go to Slack, via the thread view's "Mark thread read".
 
 **Seeding.** A resource with no cursor row reads as zero unread, so rows must
 actually get written or a resource would never earn its first dot:
@@ -387,6 +405,12 @@ cursor rather than resetting it.
 cursors move from other processes (`worktree resources mark-read`,
 agent-handler's shell-outs) writing this same SQLite file, which this server
 cannot observe. Build one per request; never hang it off `Server`.
+
+**`worktreeSummary.has_unread`** aggregates the question across ALL of a
+worktree's resources, related ones included, and drives the card's left-border
+accent. Deliberately server-side: related resources are counted in the
+response but never listed, so a client folding over `focus_resources` alone
+would miss their unreads.
 
 **`through_ts` is client-supplied.** The endpoint never substitutes a
 server-side `MAX(ts)` — events arriving between render and click must stay
