@@ -4,6 +4,7 @@ import {
   getHomeWorktree,
   homeWorktreeHref,
   shouldShowHomeBanner,
+  withHomeParam,
   worktreeName,
 } from "./homeWorktree"
 
@@ -21,56 +22,87 @@ function at(path: string) {
 }
 
 describe("captureHomeWorktree", () => {
-  it("records the worktree a marked detail URL was opened for", () => {
-    at(`/worktree/${encodeURIComponent(WT)}?home=1`)
+  it("records the worktree a marked URL was opened for", () => {
+    at(`/worktree/${encodeURIComponent(WT)}?home=${encodeURIComponent(WT)}`)
     expect(captureHomeWorktree()).toBe(WT)
     expect(getHomeWorktree()).toBe(WT)
   })
 
-  it("strips the marker so a copied link cannot re-home another tab", () => {
-    at(`/worktree/${encodeURIComponent(WT)}?home=1`)
+  it("LEAVES the parameter in the URL", () => {
+    // The whole point of the redesign: a cmux pane that sleeps and restores
+    // comes back with a URL and nothing else, so the URL has to keep it.
+    at(`/worktree/${encodeURIComponent(WT)}?home=${encodeURIComponent(WT)}`)
     captureHomeWorktree()
-    expect(window.location.search).toBe("")
-    // And the path itself survives intact — stripping one param must not
-    // rewrite the route.
-    expect(decodeURIComponent(window.location.pathname)).toBe(`/worktree/${WT}`)
+    expect(new URLSearchParams(window.location.search).get("home")).toBe(WT)
   })
 
-  it("keeps other query parameters", () => {
-    at(`/worktree/${encodeURIComponent(WT)}?home=1&resource=pr%3Ao%2Fr%231`)
-    captureHomeWorktree()
-    expect(window.location.search).toBe("?resource=pr%3Ao%2Fr%231")
-  })
-
-  it("ignores an unmarked URL, leaving any existing home alone", () => {
-    at(`/worktree/${encodeURIComponent(WT)}?home=1`)
+  it("re-attaches the parameter when a tab that knows its home loses it", () => {
+    at(`/?home=${encodeURIComponent(WT)}`)
     captureHomeWorktree()
     at("/")
     expect(captureHomeWorktree()).toBe(WT)
+    expect(new URLSearchParams(window.location.search).get("home")).toBe(WT)
   })
 
-  it("does not home a tab opened at the listing page", () => {
-    // The server never marks "/" — it was opened for nothing.
-    at("/?home=1")
+  it("keeps other query parameters when re-attaching", () => {
+    at(`/?home=${encodeURIComponent(WT)}`)
+    captureHomeWorktree()
+    at("/worktree/x?resource=pr%3Ao%2Fr%231")
+    captureHomeWorktree()
+    const q = new URLSearchParams(window.location.search)
+    expect(q.get("resource")).toBe("pr:o/r#1")
+    expect(q.get("home")).toBe(WT)
+  })
+
+  it("leaves an unhomed tab alone", () => {
+    at("/")
     expect(captureHomeWorktree()).toBeNull()
+    expect(window.location.search).toBe("")
   })
 
-  it("re-homes the tab when a later marked URL arrives", () => {
-    at(`/worktree/${encodeURIComponent(WT)}?home=1`)
+  it("re-homes the tab when a later URL names a different worktree", () => {
+    at(`/?home=${encodeURIComponent(WT)}`)
     captureHomeWorktree()
     const other = "/Users/me/.worktrees/repo/other"
-    at(`/worktree/${encodeURIComponent(other)}?home=1`)
+    at(`/worktree/x?home=${encodeURIComponent(other)}`)
     expect(captureHomeWorktree()).toBe(other)
   })
 
-  it("survives sessionStorage throwing", () => {
-    // Private windows with site data blocked throw on ACCESS, not just on
-    // write. A missing banner is fine; a blank page is not.
+  it("survives sessionStorage throwing, because the URL still carries it", () => {
     vi.spyOn(window.sessionStorage, "setItem").mockImplementation(() => {
       throw new Error("blocked")
     })
-    at(`/worktree/${encodeURIComponent(WT)}?home=1`)
-    expect(() => captureHomeWorktree()).not.toThrow()
+    at(`/worktree/x?home=${encodeURIComponent(WT)}`)
+    expect(captureHomeWorktree()).toBe(WT)
+    expect(getHomeWorktree()).toBe(WT)
+  })
+})
+
+describe("withHomeParam", () => {
+  it("adds the home to a destination", () => {
+    at(`/?home=${encodeURIComponent(WT)}`)
+    captureHomeWorktree()
+    expect(withHomeParam("/")).toBe(`/?home=${encodeURIComponent(WT)}`)
+  })
+
+  it("preserves a destination's own query", () => {
+    at(`/?home=${encodeURIComponent(WT)}`)
+    captureHomeWorktree()
+    const got = new URLSearchParams(withHomeParam("/worktree/x?resource=pr%3A1").split("?")[1])
+    expect(got.get("resource")).toBe("pr:1")
+    expect(got.get("home")).toBe(WT)
+  })
+
+  it("does not duplicate a home that is already right", () => {
+    at(`/?home=${encodeURIComponent(WT)}`)
+    captureHomeWorktree()
+    const to = `/x?home=${encodeURIComponent(WT)}`
+    expect(withHomeParam(to)).toBe(to)
+  })
+
+  it("is a no-op in a tab with no home", () => {
+    at("/")
+    expect(withHomeParam("/worktree/x")).toBe("/worktree/x")
   })
 })
 
