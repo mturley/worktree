@@ -1,18 +1,4 @@
 import "@testing-library/jest-dom"
-import { vi } from "vitest"
-
-// @testing-library/dom's waitFor() only advances fake timers automatically
-// when it detects Jest's fake-timer clock (it checks for a global `jest` and
-// a `.clock` property Jest's modern timers attach to `setTimeout`). Vitest's
-// `vi.useFakeTimers()` attaches the same `.clock` property but exposes no
-// `jest` global, so without this alias `waitFor` falls back to real
-// `setTimeout`-based polling against a `setTimeout` that fake timers have
-// mocked — it never fires, and the test hangs until the outer test timeout.
-// Aliasing `jest` to `vi` here (harmless: `vi` implements the timer surface
-// `waitFor` checks) makes `waitFor` detect and drive the fake clock itself.
-if (typeof (globalThis as { jest?: unknown }).jest === "undefined") {
-  ;(globalThis as { jest?: unknown }).jest = vi
-}
 
 // jsdom does not implement ResizeObserver, which Mantine components such as
 // SegmentedControl (via FloatingIndicator) rely on. Provide a no-op stub so

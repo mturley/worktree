@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
-import { useAutocomplete } from './useAutocomplete'
+import { useAutocomplete, fetchAutocompleteResult } from './useAutocomplete'
 import * as api from '../../../api/slackApi'
 
 const ctx = {
@@ -8,10 +8,22 @@ const ctx = {
   groups: {},
 }
 
-beforeEach(() => vi.useFakeTimers())
+beforeEach(() => {
+  vi.useFakeTimers()
+  // @testing-library/dom's waitFor() only auto-advances fake timers when it
+  // detects Jest's fake-timer clock (a global `jest` plus a `.clock`
+  // property Jest's modern timers attach to `setTimeout`). Vitest's
+  // `vi.useFakeTimers()` attaches the same `.clock` property but exposes no
+  // `jest` global, so without this alias `waitFor` polls via a `setTimeout`
+  // that fake timers have mocked — it never fires, and the test hangs.
+  // Scoped to this file (not test-setup.ts) so it can't silently change
+  // waitFor/findBy* behaviour for other tests that add fake timers later.
+  vi.stubGlobal('jest', vi)
+})
 afterEach(() => {
   vi.useRealTimers()
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 describe('useAutocomplete', () => {
@@ -72,5 +84,64 @@ describe('useAutocomplete', () => {
     })
     expect(spy).toHaveBeenCalledTimes(2)
     expect(result.current.items.map((i) => i.id)).not.toContain('STALE')
+  })
+
+  it('unmounting while a request is in flight does not throw and does not change items afterward', async () => {
+    let resolveRequest: (v: api.AutocompleteItem[]) => void = () => {}
+    vi.spyOn(api, 'autocomplete').mockImplementation(
+      () => new Promise((r) => (resolveRequest = r)),
+    )
+    const { unmount } = renderHook(() =>
+      useAutocomplete({ trigger: '@', query: 'ada', start: 0 }, 'C1', ctx),
+    )
+    // Fire the debounce timer so the fetch is in flight, then unmount before
+    // it resolves — this is the sequence seq.current alone cannot catch.
+    await act(async () => {
+      vi.advanceTimersByTime(200)
+    })
+    expect(() => unmount()).not.toThrow()
+    // The in-flight request now resolves, after unmount. This must not
+    // throw either — the assertion that actually proves the guard fired is
+    // the direct unit test on fetchAutocompleteResult below, since React 19
+    // silently no-ops a post-unmount setState with no observable signal
+    // (no warning, no error) for a black-box test to catch.
+    await act(async () => {
+      resolveRequest([{ kind: 'user', id: 'LATE', label: 'late', token: '<@LATE>' }])
+    })
+  })
+})
+
+describe('fetchAutocompleteResult', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('does not call onResult when isStale() reports true before the request resolves', async () => {
+    let resolveRequest: (v: api.AutocompleteItem[]) => void = () => {}
+    vi.spyOn(api, 'autocomplete').mockImplementation(
+      () => new Promise((r) => (resolveRequest = r)),
+    )
+    const onResult = vi.fn()
+    let stale = false
+    const promise = fetchAutocompleteResult(
+      '@',
+      'ada',
+      'C1',
+      new AbortController().signal,
+      () => stale,
+      onResult,
+    )
+    // Simulates unmount happening while the request is still in flight — the
+    // exact sequence the effect's cleanup flag is meant to guard against.
+    stale = true
+    resolveRequest([{ kind: 'user', id: 'LATE', label: 'late', token: '<@LATE>' }])
+    await promise
+    expect(onResult).not.toHaveBeenCalled()
+  })
+
+  it('calls onResult when isStale() stays false', async () => {
+    const items: api.AutocompleteItem[] = [{ kind: 'user', id: 'U1', label: 'ada', token: '<@U1>' }]
+    vi.spyOn(api, 'autocomplete').mockResolvedValue(items)
+    const onResult = vi.fn()
+    await fetchAutocompleteResult('@', 'ada', 'C1', new AbortController().signal, () => false, onResult)
+    expect(onResult).toHaveBeenCalledWith(items)
   })
 })

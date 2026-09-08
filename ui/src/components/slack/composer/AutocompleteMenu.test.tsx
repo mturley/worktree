@@ -60,6 +60,20 @@ describe('AutocompleteMenu', () => {
     expect(onSelect).toHaveBeenCalledWith(items[1])
   })
 
+  it('prevents the mousedown default so the editor keeps its caret focus', () => {
+    // This is the entire reason mousedown is used over click: without
+    // preventDefault, clicking a row would blur the editor before the
+    // insertion runs. Dispatch a real event and inspect it directly, so the
+    // test fails if the handler stops calling preventDefault — asserting
+    // only that onSelect fired (as the previous test does) would not catch
+    // that regression, since removing preventDefault leaves onSelect intact.
+    const { getByText } = renderMenu()
+    const row = getByText('@here')
+    const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+    row.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+  })
+
   it('shows a hint instead of emptying when workspace search is unavailable', () => {
     const { getByText } = renderMenu({ degraded: true })
     expect(getByText(/workspace search unavailable/i)).toBeInTheDocument()
