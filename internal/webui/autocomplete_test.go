@@ -102,6 +102,50 @@ func TestAutocompleteChannels(t *testing.T) {
 	}
 }
 
+// TestAutocompleteMentionCacheKeyDoesNotCollideAcrossFieldBoundaries pins the
+// fix for a cache-key collision: q="a|b", channel="c" and q="a",
+// channel="b|c" both joined to "@|a|b|c" under a plain "|" separator, so the
+// second request would wrongly get served the first request's (differently
+// scoped) cached results. It must not.
+func TestAutocompleteMentionCacheKeyDoesNotCollideAcrossFieldBoundaries(t *testing.T) {
+	fs := &fakeSlack{
+		searchUsers: []slack.User{{ID: "U1", Name: "u1", DisplayName: "u1"}},
+	}
+	s := &Server{SlackClient: fs}
+
+	rec1 := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec1, httptest.NewRequest("GET", "/api/slack-autocomplete?trigger=%40&q=a%7Cb&channel=c", nil))
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("first request: got %d", rec1.Code)
+	}
+
+	// Change what the fake returns so the second request's response would
+	// differ from the first's if it actually hit Slack instead of a
+	// colliding cache entry.
+	fs.searchUsers = []slack.User{{ID: "U2", Name: "u2", DisplayName: "u2"}}
+
+	rec2 := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec2, httptest.NewRequest("GET", "/api/slack-autocomplete?trigger=%40&q=a&channel=b%7Cc", nil))
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("second request: got %d", rec2.Code)
+	}
+
+	var got2 struct{ Results []AutocompleteItem }
+	json.NewDecoder(rec2.Body).Decode(&got2)
+	found := false
+	for _, it := range got2.Results {
+		if it.Kind == "user" && it.ID == "U2" {
+			found = true
+		}
+		if it.Kind == "user" && it.ID == "U1" {
+			t.Errorf("second request served the first request's cached user U1 — cache key collision: %+v", got2.Results)
+		}
+	}
+	if !found {
+		t.Errorf("second request did not hit Slack for its own distinct key: %+v", got2.Results)
+	}
+}
+
 func TestAutocompleteSurfacesSlackErrors(t *testing.T) {
 	fs := &fakeSlack{searchErr: errors.New("boom")}
 	s := &Server{SlackClient: fs}

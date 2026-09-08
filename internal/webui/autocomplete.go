@@ -76,6 +76,16 @@ func specialItems(query string) []AutocompleteItem {
 	return out
 }
 
+// autocompleteCacheKey joins the given fields into an unambiguous cache key.
+// A plain "|" join can collide — q="a|b", channel="c" and q="a",
+// channel="b|c" would both join to "a|b|c" — so fields are separated by
+// "\x00" instead: a NUL byte cannot appear in a typed query or a Slack id
+// (it cannot survive a URL query parameter), so no combination of field
+// values can produce the same joined key as a different combination.
+func autocompleteCacheKey(fields ...string) string {
+	return strings.Join(fields, "\x00")
+}
+
 // autocompleteCacheOrInit lazily creates the Server's autocomplete cache.
 // Server is constructed as a bare struct literal by every caller (cmd/ui.go
 // and every test), so there is no constructor hook to initialise acCache
@@ -138,7 +148,7 @@ func (s *Server) mentionCandidates(ctx context.Context, q, channel string) ([]Au
 		return append(out, specialItems(q)...), nil
 	}
 
-	remote, err := s.autocompleteCacheOrInit().Do("@|"+q+"|"+channel, func() ([]AutocompleteItem, error) {
+	remote, err := s.autocompleteCacheOrInit().Do(autocompleteCacheKey("@", q, channel), func() ([]AutocompleteItem, error) {
 		var (
 			wg        sync.WaitGroup
 			users     []slack.User
@@ -203,7 +213,7 @@ func (s *Server) channelCandidates(ctx context.Context, q string) ([]Autocomplet
 	if q == "" {
 		return []AutocompleteItem{}, nil
 	}
-	return s.autocompleteCacheOrInit().Do("#|"+q, func() ([]AutocompleteItem, error) {
+	return s.autocompleteCacheOrInit().Do(autocompleteCacheKey("#", q), func() ([]AutocompleteItem, error) {
 		chans, err := s.SlackClient.SearchChannels(ctx, q, 25)
 		if err != nil {
 			return nil, err
