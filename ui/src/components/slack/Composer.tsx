@@ -7,6 +7,7 @@ import { HistoryPlugin } from '@lexical/react/LexicalHistoryPlugin'
 import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary'
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext'
 import {
+  $getNodeByKey,
   $getRoot,
   $getSelection,
   $isRangeSelection,
@@ -20,6 +21,7 @@ import {
   KEY_TAB_COMMAND,
   PASTE_COMMAND,
   type LexicalEditor,
+  type NodeKey,
   type RangeSelection,
 } from 'lexical'
 import type { AutocompleteItem, User, UserGroup } from '../../api/slackApi'
@@ -83,6 +85,26 @@ function getTextBeforeCaret(selection: RangeSelection): string {
   return text
 }
 
+/** The single source of truth for "is the autocomplete popup visibly open",
+ *  read by BOTH the render (whether to show the popup) and the Enter-key
+ *  guard (whether to swallow Enter instead of sending). They must never
+ *  disagree — a visible popup that Enter can fall through is how Enter posts
+ *  a half-typed mention: see Task 15 fix-round-1 finding 1. */
+function isMenuVisible(hasMatch: boolean, itemCount: number, degraded: boolean): boolean {
+  return hasMatch && (itemCount > 0 || degraded)
+}
+
+/** Identifies one dismissed trigger *occurrence* — the text node it lives in
+ *  plus its offset within the block — so a caret move away and back doesn't
+ *  reopen it (finding 3), but replacing that text (a new node, or the same
+ *  node at a different offset) is treated as a new occurrence and does
+ *  reopen (finding 2). A bare `start` offset can't tell those apart. */
+interface SuppressedOccurrence {
+  nodeKey: NodeKey
+  start: number
+  trigger: TriggerMatch['trigger']
+}
+
 export function Composer({ onSend, disabled, channel, users, groups, onEditorReady }: ComposerProps) {
   const initialConfig = useMemo(
     () => ({
@@ -127,11 +149,6 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
   const [highlightedKey, setHighlightedKey] = useState<string | null>(null)
   const [isEmpty, setIsEmpty] = useState(true)
 
-  // The trigger position we most recently dismissed with Escape. Compared by
-  // `start` (not identity) so the SAME trigger occurrence stays suppressed as
-  // the user keeps typing its query, but a fresh trigger elsewhere reopens.
-  const suppressedStartRef = useRef<number | null>(null)
-
   const ctx: LocalContext = useMemo(() => ({ users, groups }), [users, groups])
   const { items, degraded } = useAutocomplete(match, channel, ctx)
 
@@ -141,12 +158,28 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
   matchRef.current = match
   const itemsRef = useRef(items)
   itemsRef.current = items
+  const degradedRef = useRef(degraded)
+  degradedRef.current = degraded
   const highlightedKeyRef = useRef(highlightedKey)
   highlightedKeyRef.current = highlightedKey
   const disabledRef = useRef(disabled)
   disabledRef.current = disabled
   const onSendRef = useRef(onSend)
   onSendRef.current = onSend
+
+  // The occurrence most recently dismissed with Escape (see
+  // SuppressedOccurrence above), and the text node the CURRENT open match
+  // lives in (needed to record that occurrence if Escape is pressed).
+  const suppressedRef = useRef<SuppressedOccurrence | null>(null)
+  const matchNodeKeyRef = useRef<NodeKey | null>(null)
+
+  // Callbacks whose real implementation lives inside the command-registration
+  // effect below (see finding 5: they only read refs there, so `[editor]` is
+  // an honest dependency list with nothing to disable-lint away). Render-side
+  // callers (the Send button, the menu's onSelect) go through these stable
+  // indirection points instead of calling into the effect's scope directly.
+  const insertMentionRef = useRef<(item: AutocompleteItem) => void>(() => {})
+  const handleSendRef = useRef<() => void>(() => {})
 
   // Keep the highlight valid as candidates arrive/merge; default to the first
   // item without clobbering an existing highlight that is still present.
@@ -162,76 +195,102 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
     onEditorReady?.(editor)
   }, [editor, onEditorReady])
 
-  function insertMention(item: AutocompleteItem, current: TriggerMatch) {
-    editor.update(() => {
-      const selection = $getSelection()
-      if (!$isRangeSelection(selection) || !selection.isCollapsed()) {
-        return
-      }
-      const anchorNode = selection.anchor.getNode()
-      const offset = selection.anchor.offset
-      const toDelete = 1 + current.query.length
-      const start = offset - toDelete
-      // Delete the trigger character plus the typed query by splicing the
-      // text node directly, rather than `selection.deleteCharacter()` (which
-      // depends on the browser's Selection.modify() and is a no-op under
-      // jsdom, making it untestable). Splicing is deterministic either way.
-      if ($isTextNode(anchorNode) && start >= 0) {
-        anchorNode.spliceText(start, toDelete, '', true)
-      }
-      const afterDelete = $getSelection()
-      if ($isRangeSelection(afterDelete)) {
-        afterDelete.insertNodes([$createMentionNode(item), $createTextNode(' ')])
-      }
-    })
-    suppressedStartRef.current = null
-    setMatch(null)
-  }
-
-  function selectHighlighted(): boolean {
-    const currentItems = itemsRef.current
-    const currentMatch = matchRef.current
-    if (!currentMatch || currentItems.length === 0) {
-      return false
-    }
-    const key = highlightedKeyRef.current
-    const item = currentItems.find((i) => itemKey(i) === key) ?? currentItems[0]
-    insertMention(item, currentMatch)
-    return true
-  }
-
-  function moveHighlight(delta: number) {
-    const currentItems = itemsRef.current
-    if (currentItems.length === 0) {
-      return
-    }
-    const key = highlightedKeyRef.current
-    const index = currentItems.findIndex((i) => itemKey(i) === key)
-    const nextIndex = index === -1 ? 0 : (index + delta + currentItems.length) % currentItems.length
-    setHighlightedKey(itemKey(currentItems[nextIndex]))
-  }
-
-  function handleSend() {
-    const text = editor.getEditorState().read(() => $getRoot().getTextContent())
-    const trimmed = text.trim()
-    if (trimmed.length === 0 || disabledRef.current) {
-      return
-    }
-    onSendRef.current(trimmed)
-    editor.update(() => {
-      $getRoot().clear()
-    })
-  }
+  // The old plain Textarea used `disabled` to genuinely block typing.
+  // Lexical's ContentEditable doesn't honor a DOM `disabled` attribute (it's
+  // inert on a div) — `setEditable` is the real mechanism.
+  useEffect(() => {
+    editor.setEditable(!disabled)
+  }, [editor, disabled])
 
   // Trigger detection + the keyboard/paste command wiring. Registered once
   // per editor instance; all state read through refs so the handlers always
-  // see the latest values without needing to re-register every render.
+  // see the latest values without needing to re-register every render. Every
+  // function below is declared INSIDE this effect and touches only refs,
+  // stable setState setters, and `editor` itself — so `[editor]` is a
+  // complete, honest dependency list and no eslint-disable is needed.
   useEffect(() => {
+    function insertMention(item: AutocompleteItem) {
+      editor.update(() => {
+        const selection = $getSelection()
+        if (!$isRangeSelection(selection) || !selection.isCollapsed()) {
+          return
+        }
+        // Recompute the trigger from the LIVE model rather than trusting a
+        // captured TriggerMatch (finding 4): if the caret has moved or the
+        // text has changed since the match was computed, trust reality. A
+        // precondition failure below becomes a silent no-op the user can
+        // retry, never a message that keeps the raw "@query" AND gets a
+        // pill appended after it.
+        const live = detectTrigger(getTextBeforeCaret(selection))
+        if (!live) {
+          return
+        }
+        const anchorNode = selection.anchor.getNode()
+        const offset = selection.anchor.offset
+        const toDelete = 1 + live.query.length
+        const start = offset - toDelete
+        if (!$isTextNode(anchorNode) || start < 0) {
+          return
+        }
+        // Delete the trigger character plus the typed query by splicing the
+        // text node directly, rather than `selection.deleteCharacter()`
+        // (which depends on the browser's Selection.modify() and is a no-op
+        // under jsdom, making it untestable). Splicing is deterministic
+        // either way.
+        anchorNode.spliceText(start, toDelete, '', true)
+        const afterDelete = $getSelection()
+        if (!$isRangeSelection(afterDelete)) {
+          return
+        }
+        afterDelete.insertNodes([$createMentionNode(item), $createTextNode(' ')])
+      })
+      suppressedRef.current = null
+      matchNodeKeyRef.current = null
+      setMatch(null)
+    }
+    insertMentionRef.current = insertMention
+
+    function selectHighlighted(): boolean {
+      const currentItems = itemsRef.current
+      if (!matchRef.current || currentItems.length === 0) {
+        return false
+      }
+      const key = highlightedKeyRef.current
+      const item = currentItems.find((i) => itemKey(i) === key) ?? currentItems[0]
+      insertMention(item)
+      return true
+    }
+
+    function moveHighlight(delta: number) {
+      const currentItems = itemsRef.current
+      if (currentItems.length === 0) {
+        return
+      }
+      const key = highlightedKeyRef.current
+      const index = currentItems.findIndex((i) => itemKey(i) === key)
+      const nextIndex = index === -1 ? 0 : (index + delta + currentItems.length) % currentItems.length
+      setHighlightedKey(itemKey(currentItems[nextIndex]))
+    }
+
+    function handleSend() {
+      const text = editor.getEditorState().read(() => $getRoot().getTextContent())
+      const trimmed = text.trim()
+      if (trimmed.length === 0 || disabledRef.current) {
+        return
+      }
+      onSendRef.current(trimmed)
+      editor.update(() => {
+        $getRoot().clear()
+      })
+    }
+    handleSendRef.current = handleSend
+
     const removeUpdateListener = editor.registerUpdateListener(({ editorState }) => {
       editorState.read(() => {
         const selection = $getSelection()
         if (!$isRangeSelection(selection) || !selection.isCollapsed()) {
           setMatch(null)
+          matchNodeKeyRef.current = null
           setIsEmpty($getRoot().getTextContent().trim().length === 0)
           return
         }
@@ -239,15 +298,39 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
         const textBeforeCaret = getTextBeforeCaret(selection)
         const detected = detectTrigger(textBeforeCaret)
         if (!detected) {
-          suppressedStartRef.current = null
+          // Caret sits somewhere with no trigger under it. This must NOT
+          // clear an Escape suppression (finding 3) — dismissing the menu
+          // and moving the caret away (then back, with no edit) must not
+          // reopen it. Only a genuinely different occurrence does that,
+          // handled below.
           setMatch(null)
+          matchNodeKeyRef.current = null
           return
         }
-        if (suppressedStartRef.current === detected.start) {
+        const anchorNode = selection.anchor.getNode()
+        const nodeKey = anchorNode.getKey()
+        let suppressed = suppressedRef.current
+        // Defensive: if the suppressed occurrence's node no longer exists
+        // (e.g. it was deleted and retyped), it can't still be "the same
+        // occurrence" no matter what offset lines up.
+        if (suppressed && $getNodeByKey(suppressed.nodeKey) === null) {
+          suppressed = null
+          suppressedRef.current = null
+        }
+        const isSuppressed =
+          suppressed !== null &&
+          suppressed.nodeKey === nodeKey &&
+          suppressed.start === detected.start &&
+          suppressed.trigger === detected.trigger
+        if (isSuppressed) {
           setMatch(null)
+          matchNodeKeyRef.current = null
           return
         }
-        suppressedStartRef.current = null
+        // A genuinely new/different occurrence (finding 2: e.g. the old
+        // text was replaced wholesale) — clear any stale suppression.
+        suppressedRef.current = null
+        matchNodeKeyRef.current = nodeKey
         setMatch(detected)
       })
     })
@@ -255,9 +338,14 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
     const removeEnter = editor.registerCommand(
       KEY_ENTER_COMMAND,
       (event) => {
-        if (matchRef.current && itemsRef.current.length > 0) {
+        // Enter and "the popup is visibly open" must agree (finding 1): a
+        // degraded, zero-item popup is still a popup on screen, and Enter
+        // must never fall through it to send.
+        if (isMenuVisible(matchRef.current !== null, itemsRef.current.length, degradedRef.current)) {
           event?.preventDefault()
-          selectHighlighted()
+          if (itemsRef.current.length > 0) {
+            selectHighlighted()
+          }
           return true
         }
         if (event?.shiftKey) {
@@ -312,10 +400,15 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
     const removeEscape = editor.registerCommand(
       KEY_ESCAPE_COMMAND,
       () => {
-        if (!matchRef.current) {
+        if (!matchRef.current || !matchNodeKeyRef.current) {
           return false
         }
-        suppressedStartRef.current = matchRef.current.start
+        suppressedRef.current = {
+          nodeKey: matchNodeKeyRef.current,
+          start: matchRef.current.start,
+          trigger: matchRef.current.trigger,
+        }
+        matchNodeKeyRef.current = null
         setMatch(null)
         return true
       },
@@ -357,7 +450,6 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
       removeEscape()
       removePaste()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- all state is read via refs
   }, [editor])
 
   function handleToolbarClick(action: ToolbarAction) {
@@ -373,6 +465,7 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
   }
 
   const sendDisabled = isEmpty || !!disabled
+  const menuVisible = isMenuVisible(match !== null, items.length, degraded)
 
   return (
     <>
@@ -424,18 +517,18 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
             ErrorBoundary={LexicalErrorBoundary}
           />
           <HistoryPlugin />
-          {match && (
+          {menuVisible && (
             <Box pos="absolute" bottom="100%" left={0} mb={4} style={{ zIndex: 10 }}>
               <AutocompleteMenu
                 items={items}
                 highlightedId={highlightedKey}
                 degraded={degraded}
-                onSelect={(item) => insertMention(item, match)}
+                onSelect={(item) => insertMentionRef.current(item)}
               />
             </Box>
           )}
         </Box>
-        <Button onClick={handleSend} disabled={sendDisabled}>
+        <Button onClick={() => handleSendRef.current()} disabled={sendDisabled}>
           Send
         </Button>
       </Group>

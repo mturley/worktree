@@ -5,6 +5,7 @@ import {
   $getRoot,
   $getSelection,
   $isRangeSelection,
+  $isTextNode,
   $createTextNode,
   type ElementNode,
   type LexicalEditor,
@@ -120,6 +121,25 @@ function selectAll(editor: LexicalEditor) {
   )
 }
 
+/** Moves the caret within the editor's existing first text node WITHOUT
+ *  editing any text — for driving "click elsewhere, then click back" style
+ *  scenarios (the caret-move-then-return case in finding 3), where reusing
+ *  `setEditorText` would create a fresh text node and defeat the point. */
+function moveCaretTo(editor: LexicalEditor, offset: number) {
+  editor.update(
+    () => {
+      const root = $getRoot()
+      const paragraph = root.getFirstChild() as ElementNode | null
+      const textNode = paragraph?.getFirstChild()
+      if (!textNode || !$isTextNode(textNode)) {
+        return
+      }
+      textNode.select(offset, offset)
+    },
+    { discrete: true },
+  )
+}
+
 describe('Composer', () => {
   it('sends on Enter and clears; Shift+Enter inserts a newline', async () => {
     const onSend = vi.fn()
@@ -131,6 +151,13 @@ describe('Composer', () => {
 
     fireEvent.keyDown(editorEl, { key: 'Enter', shiftKey: true })
     expect(onSend).not.toHaveBeenCalled() // shift+enter = newline
+    // Assert the newline actually landed in the model (serialization is
+    // $getRoot().getTextContent(), so a real line break must show up in it),
+    // not just that onSend wasn't called for some unrelated reason.
+    await waitFor(() => {
+      const text = getEditor().getEditorState().read(() => $getRoot().getTextContent())
+      expect(text).toBe('hello\n')
+    })
 
     fireEvent.keyDown(editorEl, { key: 'Enter' })
     expect(onSend).toHaveBeenCalledWith('hello')
@@ -236,18 +263,84 @@ describe('Composer', () => {
     expect(onSend).not.toHaveBeenCalled()
   })
 
-  it('Escape closes the menu and lets Enter send again', async () => {
+  it('Escape closes the menu and Enter sends the literal text once it is dismissed', async () => {
     const onSend = vi.fn()
-    vi.spyOn(api, 'autocomplete').mockResolvedValue([])
+    vi.spyOn(api, 'autocomplete').mockResolvedValue([{ kind: 'user', id: 'U1', label: 'ada', token: '<@U1>' }])
     const { getEditor, onEditorReady } = grabEditor()
-    const { getByRole } = renderWithProvider(
+    const { getByRole, findByText } = renderWithProvider(
       <Composer onSend={onSend} channel="C1" users={{}} groups={{}} onEditorReady={onEditorReady} />,
     )
     const editorEl = getByRole('textbox')
     await waitFor(() => getEditor())
-    setEditorText(getEditor(), 'plain text')
+    setEditorText(getEditor(), 'hello @ada')
+    await findByText('ada') // menu is open
     fireEvent.keyDown(editorEl, { key: 'Escape' })
     fireEvent.keyDown(editorEl, { key: 'Enter' })
-    expect(onSend).toHaveBeenCalledWith('plain text')
+    expect(onSend).toHaveBeenCalledWith('hello @ada')
+  })
+
+  // Fix-round-1 regression coverage (task-15-report.md fix round 1).
+
+  it('Enter does not send while a degraded, zero-item popup is visibly open (finding 1)', async () => {
+    const onSend = vi.fn()
+    vi.spyOn(api, 'autocomplete').mockResolvedValue([])
+    const { getEditor, onEditorReady } = grabEditor()
+    const { getByRole, findByText } = renderWithProvider(
+      <Composer onSend={onSend} channel="C1" users={{}} groups={{}} onEditorReady={onEditorReady} />,
+    )
+    const editorEl = getByRole('textbox')
+    await waitFor(() => getEditor())
+    setEditorText(getEditor(), 'hi @zo')
+    // No local candidates (users={}) and the mocked server also returns [],
+    // so the popup renders only the "workspace search unavailable" hint —
+    // visibly open, with items.length === 0.
+    await findByText(/workspace search unavailable/i)
+    fireEvent.keyDown(editorEl, { key: 'Enter' })
+    expect(onSend).not.toHaveBeenCalled()
+  })
+
+  it('reopens the menu for a brand-new mention typed at the same position after Escape (finding 2)', async () => {
+    const onSend = vi.fn()
+    const autocomplete = vi.spyOn(api, 'autocomplete')
+    autocomplete.mockResolvedValueOnce([{ kind: 'user', id: 'U1', label: 'ada', token: '<@U1>' }])
+    const { getEditor, onEditorReady } = grabEditor()
+    const { getByRole, findByText } = renderWithProvider(
+      <Composer onSend={onSend} channel="C1" users={{}} groups={{}} onEditorReady={onEditorReady} />,
+    )
+    const editorEl = getByRole('textbox')
+    await waitFor(() => getEditor())
+
+    setEditorText(getEditor(), '@ada')
+    await findByText('ada') // menu open at the first "@" occurrence
+    fireEvent.keyDown(editorEl, { key: 'Escape' })
+
+    // Select-all + retype: a brand-new occurrence at the same block offset,
+    // not a continuation of the dismissed one.
+    autocomplete.mockResolvedValueOnce([{ kind: 'user', id: 'U2', label: 'bo', token: '<@U2>' }])
+    setEditorText(getEditor(), '@bo')
+    await findByText('bo') // must reopen, not stay suppressed
+  })
+
+  it('stays closed across a caret move away and back with no edit, but sends the literal text (finding 3)', async () => {
+    const onSend = vi.fn()
+    vi.spyOn(api, 'autocomplete').mockResolvedValue([{ kind: 'user', id: 'U1', label: 'ada', token: '<@U1>' }])
+    const { getEditor, onEditorReady } = grabEditor()
+    const { getByRole, findByText, queryByText } = renderWithProvider(
+      <Composer onSend={onSend} channel="C1" users={{}} groups={{}} onEditorReady={onEditorReady} />,
+    )
+    const editorEl = getByRole('textbox')
+    await waitFor(() => getEditor())
+
+    setEditorText(getEditor(), 'hello @ad')
+    await findByText('ada') // menu open
+    fireEvent.keyDown(editorEl, { key: 'Escape' })
+    expect(queryByText('ada')).toBeNull()
+
+    moveCaretTo(getEditor(), 0) // click at line start — no trigger under the caret
+    moveCaretTo(getEditor(), 'hello @ad'.length) // click back after the "d"
+    expect(queryByText('ada')).toBeNull() // must NOT have reopened
+
+    fireEvent.keyDown(editorEl, { key: 'Enter' })
+    expect(onSend).toHaveBeenCalledWith('hello @ad')
   })
 })
