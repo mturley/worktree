@@ -29,7 +29,7 @@ const items: AutocompleteItem[] = [
 function renderMenu(props: Partial<React.ComponentProps<typeof AutocompleteMenu>> = {}) {
   return render(
     <MantineProvider>
-      <AutocompleteMenu items={items} highlightedId="user:U1" onSelect={() => {}} degraded={false} {...props} />
+      <AutocompleteMenu items={items} highlightedId="user:U1" onSelect={() => {}} {...props} />
     </MantineProvider>,
   )
 }
@@ -74,17 +74,15 @@ describe('AutocompleteMenu', () => {
     expect(event.defaultPrevented).toBe(true)
   })
 
-  it('shows a hint instead of emptying when workspace search is unavailable', () => {
-    const { getByText } = renderMenu({ degraded: true })
-    expect(getByText(/workspace search unavailable/i)).toBeInTheDocument()
-  })
-
-  it('renders nothing when there are no items and nothing to say', () => {
+  it('renders nothing when there are no items', () => {
     // Not toBeEmptyDOMElement(container): MantineProvider itself injects a
     // <style> tag into the render container in this Mantine version, so the
     // container is never literally empty regardless of what this component
     // renders. Assert on the component's own output — no listbox — instead.
-    const { queryByRole } = renderMenu({ items: [], degraded: false })
+    // (The component's only caller, Composer.tsx, never actually renders it
+    // with an empty list — see fix-round-3's `menuVisible` — but this guard
+    // is retained as cheap defensive insurance for the component itself.)
+    const { queryByRole } = renderMenu({ items: [] })
     expect(queryByRole('listbox')).not.toBeInTheDocument()
   })
 })

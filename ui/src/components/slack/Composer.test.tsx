@@ -6,6 +6,7 @@ import {
   $getSelection,
   $isRangeSelection,
   $isTextNode,
+  $createLineBreakNode,
   $createTextNode,
   type ElementNode,
   type LexicalEditor,
@@ -166,6 +167,53 @@ function insertTextAt(editor: LexicalEditor, offset: number, text: string) {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/** Replaces `deleteCount` characters starting at `offset` in the editor's
+ *  first text node with `newText`, splicing in place (preserving the node's
+ *  key) — for turning one trigger occurrence into a DIFFERENT trigger
+ *  character at the exact same node position, without creating a new node. */
+function replaceRangeInNode(editor: LexicalEditor, offset: number, deleteCount: number, newText: string) {
+  editor.update(
+    () => {
+      const root = $getRoot()
+      const paragraph = root.getFirstChild() as ElementNode | null
+      const textNode = paragraph?.getFirstChild()
+      if (!textNode || !$isTextNode(textNode)) {
+        return
+      }
+      textNode.spliceText(offset, deleteCount, newText, true)
+    },
+    { discrete: true },
+  )
+}
+
+/** Appends `text` as a BRAND-NEW, separate text-node sibling, after a
+ *  LineBreakNode — as opposed to `appendEditorText`, which splices into the
+ *  existing last text node. A LineBreakNode is the separator (rather than
+ *  just appending two adjacent TextNodes) because Lexical's reconciler
+ *  merges directly-adjacent TextNodes of identical format into one during
+ *  commit (confirmed empirically: two appended TextNodes rendered, and were
+ *  detected, as a single merged run) — a LineBreakNode between them is not a
+ *  TextNode, so it blocks that merge and keeps them genuinely distinct nodes.
+ *  Used to build a second, unmergeable node (distinct key) after an existing
+ *  one, without touching the existing node at all — for testing that the
+ *  suppression key's node-identity component actually matters (fix-round-3's
+ *  requested test-gap coverage). Leaves the caret at the end of the new node. */
+function appendNewTextNode(editor: LexicalEditor, text: string) {
+  editor.update(
+    () => {
+      const root = $getRoot()
+      const paragraph = root.getFirstChild() as ElementNode | null
+      if (!paragraph) {
+        return
+      }
+      const node = $createTextNode(text)
+      paragraph.append($createLineBreakNode(), node)
+      node.selectEnd()
+    },
+    { discrete: true },
+  )
 }
 
 describe('Composer', () => {
@@ -414,5 +462,125 @@ describe('Composer', () => {
 
     fireEvent.keyDown(editorEl, { key: 'Enter' })
     expect(onSend).toHaveBeenCalledWith('x hello @ad')
+  })
+
+  // Fix-round-3 regression coverage: round 2's query-prefix suppression key
+  // over-generalized. Escaping a bare "@" (query "") made every later query
+  // in the same node "start with ''" and stay suppressed forever (new
+  // finding 1); escaping "@ad" also wrongly suppressed unrelated later
+  // "@ada"/"@adam" mentions, not just literal duplicates (new finding 2).
+
+  it('escaping a bare "@" does not disable mentions for the rest of the text node (round-3 new finding 1)', async () => {
+    const onSend = vi.fn()
+    const autocomplete = vi.spyOn(api, 'autocomplete')
+    // Local candidates (@here/@channel/@everyone) already make a bare "@"
+    // open a menu with items, with no server round trip required — mock []
+    // for the remote side and let a later "ada" query resolve for real.
+    autocomplete.mockImplementation(async (_trigger, query) =>
+      query === 'ada' ? [{ kind: 'user', id: 'U1', label: 'ada', token: '<@U1>' }] : [],
+    )
+    const { getEditor, onEditorReady } = grabEditor()
+    const { getByRole, findByText } = renderWithProvider(
+      <Composer onSend={onSend} channel="C1" users={{}} groups={{}} onEditorReady={onEditorReady} />,
+    )
+    await waitFor(() => getEditor())
+
+    setEditorText(getEditor(), 'hi @')
+    await findByText('@here') // local candidates open the menu for a bare "@"
+    fireEvent.keyDown(getByRole('textbox'), { key: 'Escape' })
+
+    // Insert new content right after the escaped "@", including a brand-new
+    // "@ada" mention — same repro as the coordinator's observed bug.
+    insertTextAt(getEditor(), 'hi @'.length, 'there, @ada')
+    await findByText('ada') // must open for the new mention, not stay suppressed
+  })
+
+  it('escaping "@ad" does not suppress a later unrelated "@ada" mention (round-3 new finding 2)', async () => {
+    const onSend = vi.fn()
+    const autocomplete = vi.spyOn(api, 'autocomplete')
+    autocomplete.mockImplementation(async (_trigger, query) => {
+      if (query === 'ad') return [{ kind: 'user', id: 'U1', label: 'ad-user', token: '<@U1>' }]
+      if (query === 'ada') return [{ kind: 'user', id: 'U2', label: 'ada-user', token: '<@U2>' }]
+      return []
+    })
+    const { getEditor, onEditorReady } = grabEditor()
+    const { getByRole, findByText } = renderWithProvider(
+      <Composer onSend={onSend} channel="C1" users={{}} groups={{}} onEditorReady={onEditorReady} />,
+    )
+    await waitFor(() => getEditor())
+
+    setEditorText(getEditor(), 'hello @ad')
+    await findByText('ad-user') // menu open for the first mention
+    fireEvent.keyDown(getByRole('textbox'), { key: 'Escape' })
+
+    // A second, textually-related but genuinely different mention further
+    // along the SAME node — "@ada" is not a literal duplicate of "@ad".
+    appendEditorText(getEditor(), ' cc @ada')
+    await findByText('ada-user') // must open, not stay suppressed as if it were "@ad" continued
+  })
+
+  it('a mention typed in a different, later text node opens even with an IDENTICAL before-trigger prefix to an escaped mention in an earlier node (test-gap: node-identity component)', async () => {
+    // Deliberately gives node B the exact same before-trigger text ("hello ")
+    // and trigger character ('@') as node A's escaped occurrence, so nodeKey
+    // is the ONLY component of the suppression key that can distinguish
+    // them. A version of `isSameSuppressedOccurrence` with the node-key
+    // comparison forced to `true` would wrongly suppress this — confirmed by
+    // mutation testing (see the fix-round-3 report): this exact test is what
+    // fails when that comparison is removed.
+    const onSend = vi.fn()
+    const autocomplete = vi.spyOn(api, 'autocomplete')
+    autocomplete.mockImplementation(async (_trigger, query) => {
+      if (query === 'ad') return [{ kind: 'user', id: 'U1', label: 'ad-user', token: '<@U1>' }]
+      if (query === 'bo') return [{ kind: 'user', id: 'U2', label: 'bo-user', token: '<@U2>' }]
+      return []
+    })
+    const { getEditor, onEditorReady } = grabEditor()
+    const { getByRole, findByText } = renderWithProvider(
+      <Composer onSend={onSend} channel="C1" users={{}} groups={{}} onEditorReady={onEditorReady} />,
+    )
+    await waitFor(() => getEditor())
+
+    // Node A: "hello @ad" — open its menu and Escape it, recording a
+    // suppression keyed to node A's key, trigger '@', before-text "hello ".
+    setEditorText(getEditor(), 'hello @ad')
+    await findByText('ad-user') // confirms the menu opened for node A
+    fireEvent.keyDown(getByRole('textbox'), { key: 'Escape' })
+
+    // Node B: a BRAND-NEW, separate text node with the SAME before-trigger
+    // text and trigger character, but different content overall and a
+    // different query — node A is untouched, not deleted, not edited.
+    appendNewTextNode(getEditor(), 'hello @bo')
+    await findByText('bo-user') // node B's mention must open regardless of node A's escaped state
+  })
+
+  it('a DIFFERENT trigger character at the same node position and before-text opens (test-gap: trigger component)', async () => {
+    // Isolates the `trigger` comparison the same way the test above isolates
+    // `nodeKey`: same node (spliced in place, key preserved), same
+    // before-trigger text ("hello "), but '@' escaped and ':' detected next
+    // — only the trigger character differs. A version of
+    // `isSameSuppressedOccurrence` with the trigger comparison forced to
+    // `true` would wrongly suppress this.
+    const onSend = vi.fn()
+    const autocomplete = vi.spyOn(api, 'autocomplete')
+    autocomplete.mockImplementation(async (trigger, query) => {
+      if (trigger === '@' && query === 'ad') return [{ kind: 'user', id: 'U1', label: 'ad-user', token: '<@U1>' }]
+      if (trigger === ':' && query === 'sm') return [{ kind: 'emoji', id: 'smile', label: ':smile:', token: ':smile:' }]
+      return []
+    })
+    const { getEditor, onEditorReady } = grabEditor()
+    const { getByRole, findByText } = renderWithProvider(
+      <Composer onSend={onSend} channel="C1" users={{}} groups={{}} onEditorReady={onEditorReady} />,
+    )
+    await waitFor(() => getEditor())
+
+    // "hello @ad" — open its menu and Escape it (trigger '@', before-text "hello ").
+    setEditorText(getEditor(), 'hello @ad')
+    await findByText('ad-user')
+    fireEvent.keyDown(getByRole('textbox'), { key: 'Escape' })
+
+    // Replace "@ad" (offsets 6-9) with ":sm" IN PLACE — same node, same
+    // before-text "hello ", but a ':' trigger instead of '@'.
+    replaceRangeInNode(getEditor(), 'hello '.length, '@ad'.length, ':sm')
+    await findByText(':smile:') // must open — the trigger character differs
   })
 })

@@ -53,6 +53,11 @@ interface ToolbarAction {
 // without prompting for a URL we just wrap the selection as `<selection>`
 // (treated as the URL). The user can edit in a `|label` by hand if needed.
 // (A richer link dialog is a later-phase enhancement.)
+// The single source of this string (previously duplicated verbatim in
+// AutocompleteMenu.tsx, which no longer renders any hint of its own — see
+// the comment on AutocompleteMenu.tsx and the ruling in fix-round-2/3).
+const DEGRADED_HINT_TEXT = 'Workspace search unavailable — showing people from this thread'
+
 const TOOLBAR_ACTIONS: ToolbarAction[] = [
   { label: 'Bold', icon: 'B', wrap: (s) => `*${s}*` },
   { label: 'Italic', icon: 'I', wrap: (s) => `_${s}_` },
@@ -99,42 +104,81 @@ function isMenuVisible(hasMatch: boolean, itemCount: number): boolean {
 }
 
 /** Identifies one dismissed trigger *occurrence*: the text node it lives in,
- *  its trigger character, and the query typed at the moment of dismissal.
+ *  its trigger character, and the node's own text BEFORE the trigger
+ *  character (NOT the query typed after it).
  *
- * Deliberately NOT keyed by any numeric offset (fix-round-2 open finding 1):
- * `detectTrigger`'s `start` is an offset from the start of the BLOCK, so
- * editing text anywhere before the trigger (even in the same text node)
- * shifts it, even though the trigger occurrence itself hasn't moved. Instead,
- * two detections in the SAME node with the SAME trigger character are treated
- * as the same occurrence if one query is a prefix of the other — covering
- * "caret moved away and back with no edit" (query unchanged), "the user kept
- * typing/backspacing within it" (query grew or shrank), and edits elsewhere
- * in the block (query unaffected either way). A occurrence in a DIFFERENT
- * node (e.g. after a select-all-and-retype) is never treated as the same,
- * regardless of query, so a genuinely new mention always reopens the menu.
+ * This is fix-round-3's key, replacing two prior attempts that were each
+ * either all-position or all-content and so each missed real cases:
  *
- * Trade-off, accepted deliberately: two textually-identical trigger
- * occurrences in the very same node (e.g. "@ad code @ad" — both spans read
- * "@ad") are not disambiguated by position. Escaping the first would also
- * suppress the second if the caret lands on it. No finding requires
- * distinguishing that case, and doing so would need a per-character marker
- * this editor doesn't otherwise maintain. */
+ * - Round 1 keyed on a `start` offset from the start of the BLOCK.
+ *   `detectTrigger`'s `start` shifts whenever text earlier in the block
+ *   changes, even within the same node — round 2's open finding 1: editing
+ *   a typo before an escaped "@ad" wrongly looked like a new occurrence.
+ * - Round 2 fixed that by keying on the QUERY (text AFTER the trigger)
+ *   instead, comparing by prefix. That over-generalized: `localCandidates`
+ *   always has @here/@channel/@everyone matches for an empty query, so even
+ *   a bare "@" opens a menu Escape can dismiss, recording query `""` — and
+ *   EVERY later query in that node starts with `""`, so escaping a bare "@"
+ *   silently disabled mentions for the rest of the node (round 3 new finding
+ *   1). More generally, escaping "@ad" also wrongly suppressed any later,
+ *   unrelated "@a"/"@ada"/"@adam" in the same node (new finding 2), which is
+ *   a much wider hit than the "two textually-identical occurrences" case
+ *   round 2's comment documented as an accepted trade-off.
+ *
+ * The fix: key on the text BEFORE the trigger instead of the query after it,
+ * and compare by SUFFIX (`currentBeforeText.endsWith(recordedBeforeText)`)
+ * rather than prefix. A trigger's before-text only changes when something
+ * BETWEEN the node's start and the trigger itself is edited — typing INTO
+ * the query after it, or appending a whole new "before, @word" further along
+ * the same node, leaves the escaped trigger's own before-text untouched as a
+ * SUFFIX of whatever comes before the new/edited trigger:
+ *   - "hello @ad" dismissed (before-text "hello "); edited to
+ *     "x hello @ad" → before-text is now "x hello ", which ENDS WITH
+ *     "hello " → same occurrence, correctly stays suppressed.
+ *   - "hi @" dismissed (before-text "hi "); later "hi @there, @ada" → the
+ *     new "@ada" occurrence's before-text is "hi @there, ", which does NOT
+ *     end with "hi " → correctly NOT suppressed, menu reopens (new finding 1
+ *     fixed).
+ *   - "hello @ad" dismissed (before-text "hello "), then " cc @ada" appended
+ *     → the new occurrence's before-text is "hello @ad cc ", which does NOT
+ *     end with "hello " → correctly NOT suppressed (new finding 2 fixed).
+ *
+ * Trade-off, still accepted (now narrower than round 2's comment claimed):
+ * two trigger occurrences in the same node whose BEFORE-TEXT is identical —
+ * i.e. the trigger sits at the exact same position relative to node start,
+ * which in practice means "the trigger is at the very start of the node" —
+ * are not disambiguated. No finding requires distinguishing that case, and
+ * doing so would need a per-character marker this editor doesn't otherwise
+ * maintain. */
 interface SuppressedOccurrence {
   nodeKey: NodeKey
   trigger: TriggerMatch['trigger']
-  query: string
+  beforeText: string
 }
 
 function isSameSuppressedOccurrence(
   suppressed: SuppressedOccurrence,
   nodeKey: NodeKey,
-  detected: TriggerMatch,
+  trigger: TriggerMatch['trigger'],
+  beforeText: string,
 ): boolean {
-  return (
-    suppressed.nodeKey === nodeKey &&
-    suppressed.trigger === detected.trigger &&
-    (detected.query.startsWith(suppressed.query) || suppressed.query.startsWith(detected.query))
-  )
+  return suppressed.nodeKey === nodeKey && suppressed.trigger === trigger && beforeText.endsWith(suppressed.beforeText)
+}
+
+/** The node's own text preceding a detected trigger's `@`/`:`/`#` character —
+ *  the "before-text" identity component above. `selection.anchor.offset` is
+ *  already relative to the anchor node itself (not the block), so this needs
+ *  no sibling-walking: the trigger sits `query.length + 1` characters before
+ *  the caret WITHIN the node, and everything before that is the before-text.
+ *  Returns `null` if that position doesn't fall inside the node (shouldn't
+ *  happen for a genuine detection, but this is called from a hot path and
+ *  must never throw). */
+function getNodeBeforeTriggerText(anchorNode: { getTextContent(): string }, anchorOffset: number, query: string): string | null {
+  const nodeRelativeStart = anchorOffset - query.length - 1
+  if (nodeRelativeStart < 0) {
+    return null
+  }
+  return anchorNode.getTextContent().slice(0, nodeRelativeStart)
 }
 
 export function Composer({ onSend, disabled, channel, users, groups, onEditorReady }: ComposerProps) {
@@ -204,10 +248,14 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
   })
 
   // The occurrence most recently dismissed with Escape (see
-  // SuppressedOccurrence above), and the text node the CURRENT open match
-  // lives in (needed to record that occurrence if Escape is pressed).
+  // SuppressedOccurrence above), and the text node + before-trigger text the
+  // CURRENT open match lives in/has (needed to record that occurrence if
+  // Escape is pressed — Escape's command handler has no selection/node
+  // access of its own, so these are computed once, in the update listener
+  // that detects the match, and read back here).
   const suppressedRef = useRef<SuppressedOccurrence | null>(null)
   const matchNodeKeyRef = useRef<NodeKey | null>(null)
+  const matchBeforeTextRef = useRef<string | null>(null)
 
   // Callbacks whose real implementation lives inside the command-registration
   // effect below (see finding 5: they only read refs there, so `[editor]` is
@@ -288,6 +336,7 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
       })
       suppressedRef.current = null
       matchNodeKeyRef.current = null
+      matchBeforeTextRef.current = null
       setMatch(null)
     }
     insertMentionRef.current = insertMention
@@ -333,6 +382,7 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
         if (!$isRangeSelection(selection) || !selection.isCollapsed()) {
           setMatch(null)
           matchNodeKeyRef.current = null
+          matchBeforeTextRef.current = null
           setIsEmpty($getRoot().getTextContent().trim().length === 0)
           return
         }
@@ -347,10 +397,12 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
           // handled below.
           setMatch(null)
           matchNodeKeyRef.current = null
+          matchBeforeTextRef.current = null
           return
         }
         const anchorNode = selection.anchor.getNode()
         const nodeKey = anchorNode.getKey()
+        const beforeText = getNodeBeforeTriggerText(anchorNode, selection.anchor.offset, detected.query)
         let suppressed = suppressedRef.current
         // Defensive: if the suppressed occurrence's node no longer exists
         // (e.g. it was deleted and retyped), it can't still be "the same
@@ -359,14 +411,20 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
           suppressed = null
           suppressedRef.current = null
         }
-        if (suppressed !== null && isSameSuppressedOccurrence(suppressed, nodeKey, detected)) {
+        if (
+          suppressed !== null &&
+          beforeText !== null &&
+          isSameSuppressedOccurrence(suppressed, nodeKey, detected.trigger, beforeText)
+        ) {
           setMatch(null)
           matchNodeKeyRef.current = null
+          matchBeforeTextRef.current = null
           return
         }
         // A genuinely new/different occurrence — clear any stale suppression.
         suppressedRef.current = null
         matchNodeKeyRef.current = nodeKey
+        matchBeforeTextRef.current = beforeText
         setMatch(detected)
       })
     })
@@ -439,15 +497,20 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
         // autocomplete debounce (match set, items still empty, nothing on
         // screen yet), Escape must not swallow the key and record a
         // suppression for a popup the user never actually saw.
-        if (!isMenuVisible(matchRef.current !== null, itemsRef.current.length) || !matchNodeKeyRef.current) {
+        if (
+          !isMenuVisible(matchRef.current !== null, itemsRef.current.length) ||
+          !matchNodeKeyRef.current ||
+          matchBeforeTextRef.current === null
+        ) {
           return false
         }
         suppressedRef.current = {
           nodeKey: matchNodeKeyRef.current,
           trigger: matchRef.current!.trigger,
-          query: matchRef.current!.query,
+          beforeText: matchBeforeTextRef.current,
         }
         matchNodeKeyRef.current = null
+        matchBeforeTextRef.current = null
         setMatch(null)
         return true
       },
@@ -506,9 +569,11 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
   const sendDisabled = isEmpty || !!disabled
   const menuVisible = isMenuVisible(match !== null, items.length)
   // Shown OUTSIDE the popup (ruling: "do not render the popup at all when
-  // items.length === 0") so a degraded, candidate-less lookup never blocks
-  // Enter from sending — it's informational only.
-  const showDegradedHint = match !== null && items.length === 0 && degraded
+  // items.length === 0"), unconditionally on `degraded` alone (not gated on
+  // items.length too) — so it appears whether or not local candidates also
+  // happen to be showing, and never blocks Enter from sending; it's purely
+  // informational. AutocompleteMenu no longer renders any hint of its own.
+  const showDegradedHint = match !== null && degraded
 
   return (
     <>
@@ -565,7 +630,6 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
               <AutocompleteMenu
                 items={items}
                 highlightedId={highlightedKey}
-                degraded={degraded}
                 onSelect={(item) => insertMentionRef.current(item)}
               />
             </Box>
@@ -577,7 +641,7 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
       </Group>
       {showDegradedHint && (
         <Text size="xs" c="dimmed">
-          Workspace search unavailable — showing people from this thread
+          {DEGRADED_HINT_TEXT}
         </Text>
       )}
     </>

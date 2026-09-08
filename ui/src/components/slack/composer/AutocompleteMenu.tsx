@@ -7,16 +7,22 @@ export interface AutocompleteMenuProps {
    *  so a merge of late-arriving remote results cannot move the selection. */
   highlightedId: string | null
   onSelect: (item: AutocompleteItem) => void
-  /** True when the workspace search failed and only local results are shown. */
-  degraded: boolean
 }
 
 export function itemKey(item: AutocompleteItem): string {
   return `${item.kind}:${item.id}`
 }
 
-export function AutocompleteMenu({ items, highlightedId, onSelect, degraded }: AutocompleteMenuProps) {
-  if (items.length === 0 && !degraded) {
+// Composer.tsx is this component's only caller, and it never renders
+// AutocompleteMenu unless items.length > 0 (fix-round-2 ruling: a popup with
+// nothing to select isn't rendered at all; the degraded hint moved to an
+// inline note owned entirely by Composer, shown whenever the lookup is
+// degraded, regardless of whether local candidates also exist). This
+// component therefore no longer needs a `degraded` prop or a hint of its
+// own — both would be dead code, since Composer's ruling always shows its
+// own hint through the same code path.
+export function AutocompleteMenu({ items, highlightedId, onSelect }: AutocompleteMenuProps) {
+  if (items.length === 0) {
     return null
   }
   return (
@@ -52,11 +58,6 @@ export function AutocompleteMenu({ items, highlightedId, onSelect, degraded }: A
             </Group>
           )
         })}
-        {degraded ? (
-          <Text size="xs" c="dimmed" p={4}>
-            Workspace search unavailable — showing people from this thread
-          </Text>
-        ) : null}
       </Stack>
     </Paper>
   )
