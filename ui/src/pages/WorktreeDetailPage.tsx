@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react"
-import { Anchor, Box, Grid, Group, Stack, Title } from "@mantine/core"
+import { useEffect, useRef, useState } from "react"
+import { Anchor, Box, Button, Collapse, Grid, Group, Stack, Title } from "@mantine/core"
 import { Link, useRoute } from "wouter"
 import { useWorktreeDetail } from "../hooks/useWorktreeDetail"
 import { useSelectedResource } from "../hooks/useSelectedResource"
@@ -52,6 +52,32 @@ export function WorktreeDetailPage() {
   // URL of a thread the user asked to add from a Slack unfurl; non-null while
   // the pre-filled add modal is open.
   const [pendingThreadUrl, setPendingThreadUrl] = useState<string | null>(null)
+  // Open by default: the card is the page's identity, and a first visit that
+  // hides it would look broken. Per page visit, not persisted — see the
+  // toggle's comment.
+  const [detailsOpen, setDetailsOpen] = useState(true)
+
+  // The sticky resource list has to start below the header, and the header's
+  // height is not a constant: the branch name wraps, the cmux workspace strip
+  // comes and goes, and the Hide/Show details toggle swings it by the whole
+  // summary card. A hardcoded offset would leave the list overlapping the
+  // header or floating below it, so measure the real thing.
+  const headerRef = useRef<HTMLDivElement>(null)
+  const [headerHeight, setHeaderHeight] = useState(0)
+  useEffect(() => {
+    const el = headerRef.current
+    if (!el || typeof ResizeObserver === "undefined") return
+    const ro = new ResizeObserver(() => {
+      // getBoundingClientRect, NOT entry.contentRect: contentRect excludes
+      // padding, and this header carries a padding-top equal to the shell's
+      // gutter so its sticky box covers it. Using contentRect left the offset
+      // exactly that padding too small, and the list overlapped the bottom of
+      // the header by 16px.
+      setHeaderHeight(Math.round(el.getBoundingClientRect().height))
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   const threadActions = {
     // Opens the add-resource modal pre-filled rather than adding outright,
@@ -103,10 +129,21 @@ export function WorktreeDetailPage() {
   // the same shape at every width, so narrow is no longer a lesser view that
   // silently drops the timeline.
   const stacked = !selectedResource
-  // Per-column scrolling only makes sense when the columns sit side by side.
-  const colScroll = stacked
+  // Side by side, the resource list stays put while the page scrolls past it.
+  //
+  // alignSelf is load-bearing: a Grid column stretches to the row's height by
+  // default, and an element as tall as its scroll container can never stick.
+  // maxHeight + overflowY are the fallback for a list longer than the screen —
+  // it scrolls itself only when it has to, rather than always.
+  const listSticky = stacked
     ? undefined
-    : { height: "100%", minHeight: 0, overflowY: "auto" as const }
+    : {
+        position: "sticky" as const,
+        top: headerHeight,
+        alignSelf: "flex-start" as const,
+        maxHeight: `calc(100dvh - ${headerHeight}px)`,
+        overflowY: "auto" as const,
+      }
 
   // Narrow + a selection is the one layout that drills down, replacing the
   // list outright — there is no room to keep a navigator beside the resource.
@@ -128,24 +165,19 @@ export function WorktreeDetailPage() {
     // position and flickering. Changing only the SPANS keeps it mounted.
     //
     // With nothing selected the columns go full width, so the resources fill
-    // the page and the cross-resource timeline wraps beneath them. The page
-    // then scrolls as one, which is why the per-column scrollers are dropped
-    // in that state: two stacked independent scrollers read as a bug.
-    //
-    // minHeight:0 is the load-bearing bit for the split state: a flex/grid
-    // child defaults to min-height:auto, which refuses to shrink below its
-    // content, so overflow never triggers and the whole page scrolls instead.
+    // the page and the cross-resource timeline wraps beneath them — nothing to
+    // stick beside, so the list is not sticky in that state either.
     <Grid
       gutter="md"
       // No overflow here on purpose. Mantine's Grid inner carries negative
       // margins to offset the columns' padding, so making the Grid a scroll
       // container exposes those as HORIZONTAL overflow — a stray sideways
       // scrollbar. When stacked, the page-level Box below scrolls instead.
-      style={{ flex: 1, minHeight: 0, margin: 0 }}
-      styles={{ inner: stacked ? {} : { height: "100%" } }}
+      style={{ margin: 0 }}
     >
-      <Grid.Col span={stacked ? 12 : 4} style={colScroll}>{list}</Grid.Col>
-      <Grid.Col span={stacked ? 12 : 8} style={colScroll}>
+      <Grid.Col span={stacked ? 12 : 4} style={listSticky}>{list}</Grid.Col>
+      {/* No scroller: this column's content is what the PAGE scrolls. */}
+      <Grid.Col span={stacked ? 12 : 8}>
         {selectedResource ? (
           <ResourceDetailPane
             path={path}
@@ -167,18 +199,64 @@ export function WorktreeDetailPage() {
   return (
     <ThreadActionsContext.Provider value={threadActions}>
     {/*
-      The page owns the viewport: a fixed header, then a body that scrolls.
-      100dvh (not vh) so mobile browser chrome does not push the bottom of the
-      page out of reach.
+      The DOCUMENT scrolls, not an element inside the page.
+
+      This page used to own the viewport (100dvh + overflow:hidden) with inner
+      scrollers. That works on desktop but breaks mobile browsers: they hide
+      the address bar only when the page itself scrolls, and a page whose
+      scrolling all happens in nested elements never triggers it. So the shell
+      imposes no height, the header and the resource list are sticky instead,
+      and the right-hand column simply flows.
+
+      Nothing above this may set an overflow value either — sticky positioning
+      dies silently under ANY scrolling ancestor. If the header stops sticking,
+      look for a new overflow before looking here.
     */}
-    <Stack p="md" gap="md" style={{ height: "100dvh", overflow: "hidden" }}>
-      <Box style={{ flexShrink: 0 }}>
+    <Stack p="md" gap="md">
+      <Box
+        ref={headerRef}
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 2,
+          // The shell's own padding sits above this box, so without covering
+          // it the body would be visible sliding through that gap. Pulling up
+          // by the padding and re-adding it as padding makes the sticky box
+          // include it.
+          marginTop: "calc(-1 * var(--mantine-spacing-md))",
+          paddingTop: "var(--mantine-spacing-md)",
+          background: "var(--mantine-color-body)",
+        }}
+      >
         <Stack gap="md">
-          <Group>
-            <Anchor component={Link} href="/">← all worktrees</Anchor>
-            <Title order={4}>{branch}</Title>
+          <Group justify="space-between" wrap="nowrap" align="center">
+            <Group wrap="nowrap" style={{ minWidth: 0 }}>
+              <Anchor component={Link} href="/">← all worktrees</Anchor>
+              <Title order={4} style={{ overflowWrap: "anywhere" }}>{branch}</Title>
+            </Group>
+            {/*
+              The header is fixed and the body scrolls beneath it, so the
+              summary card costs the resource list and timeline the same space
+              on every scroll position. Hiding it is the cheapest way to get
+              that space back on a short screen.
+            */}
+            {summary && (
+              <Button
+                size="compact-sm"
+                variant="subtle"
+                onClick={() => setDetailsOpen((o) => !o)}
+                aria-expanded={detailsOpen}
+                style={{ flex: "none" }}
+              >
+                {detailsOpen ? "Hide details" : "Show details"}
+              </Button>
+            )}
           </Group>
-          {summary && <WorktreeDetailCard w={summary} />}
+          {summary && (
+            <Collapse in={detailsOpen}>
+              <WorktreeDetailCard w={summary} />
+            </Collapse>
+          )}
         </Stack>
       </Box>
       {/*
@@ -190,12 +268,11 @@ export function WorktreeDetailPage() {
         everything collapses into this single scroller.
       */}
       {/*
-        Who scrolls depends on the layout. Split columns scroll themselves, so
-        this stays hidden. Stacked (and narrow) is one continuous column, so
-        the scrolling belongs here — and here it is safe, because this Box has
-        no negative margins to leak sideways.
+        Deliberately no overflow and no height here. This used to be the page's
+        scroller; now the document is, and any overflow value on this box would
+        silently stop the header and list above from sticking.
       */}
-      <Box style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflowY: wide && !stacked ? "hidden" : "auto" }}>
+      <Box style={{ display: "flex", flexDirection: "column" }}>
         {overview}
       </Box>
       {pendingThreadUrl !== null && (
