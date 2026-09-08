@@ -3,6 +3,7 @@ package webui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -77,13 +78,21 @@ func specialItems(query string) []AutocompleteItem {
 }
 
 // autocompleteCacheKey joins the given fields into an unambiguous cache key.
-// A plain "|" join can collide — q="a|b", channel="c" and q="a",
-// channel="b|c" would both join to "a|b|c" — so fields are separated by
-// "\x00" instead: a NUL byte cannot appear in a typed query or a Slack id
-// (it cannot survive a URL query parameter), so no combination of field
-// values can produce the same joined key as a different combination.
+// A plain separator join (e.g. "|" or "\x00") can collide no matter which
+// byte is chosen — q and channel are read verbatim from a URL query string,
+// and net/url happily decodes a percent-escaped occurrence of any byte,
+// including NUL, into the field value. So this length-prefixes each field
+// instead of relying on some byte being "impossible": every field is written
+// as "<len>:<field>", and since the reader of the resulting key never has to
+// guess where one field ends and the next begins, no combination of field
+// values (of any byte content whatsoever) can produce the same key as a
+// different combination.
 func autocompleteCacheKey(fields ...string) string {
-	return strings.Join(fields, "\x00")
+	var b strings.Builder
+	for _, f := range fields {
+		fmt.Fprintf(&b, "%d:%s", len(f), f)
+	}
+	return b.String()
 }
 
 // autocompleteCacheOrInit lazily creates the Server's autocomplete cache.
