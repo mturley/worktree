@@ -247,6 +247,12 @@ server call fails, the menu keeps its local results and shows a quiet
 
 ## Risks
 
+**RESOLVED 2026-09-08 — a plain-`text` mention does notify.** Verified by
+posting one message to the self-DM: Slack stored it with typed `user` and
+`broadcast` block elements (not literal text), and it produced a real mention
+notification. `PostReply` keeps sending `text`; the `blocks` fallback below is
+not needed.
+
 **A plain-`text` mention may not notify.** `PostReply` sends `text`; Slack's
 own client sends `blocks`. If `<@U123>` in `text` renders as a pill but pings
 nobody, the entire feature fails silently — the worst possible failure mode,
