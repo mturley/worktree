@@ -173,6 +173,7 @@ export function safeHref(url: string): string | undefined {
 
 export interface User {
   ID: string
+  Name: string
   RealName: string
   DisplayName: string
   Avatar72: string

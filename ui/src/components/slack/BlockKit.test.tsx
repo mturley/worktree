@@ -18,7 +18,7 @@ function renderWithProvider(ui: React.ReactElement) {
   return render(<MantineProvider>{ui}</MantineProvider>)
 }
 
-const users: Record<string, User> = { U1: { ID: 'U1', RealName: 'Jane Doe', DisplayName: 'jane', Avatar72: '' } }
+const users: Record<string, User> = { U1: { ID: 'U1', Name: 'jane.doe', RealName: 'Jane Doe', DisplayName: 'jane', Avatar72: '' } }
 
 function block(overrides: Partial<BlockKit>): BlockKit {
   return { Type: 'unsupported', Text: null, Elements: null, Accessory: null, ImageURL: '', AltText: '', RichText: null, ...overrides }
