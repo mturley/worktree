@@ -50,6 +50,14 @@ type Server struct {
 	channelMu    sync.Mutex
 	channelCache map[string]string
 
+	// acCache fronts every Slack-backed autocomplete lookup; see
+	// autocomplete_cache.go for why it is mandatory. Server is constructed as
+	// a bare struct literal by callers (cmd/ui.go and every test), so this is
+	// lazily initialised via autocompleteCacheOrInit rather than a
+	// constructor.
+	acCacheOnce sync.Once
+	acCache     *autocompleteCache
+
 	currentUserMu    sync.Mutex
 	currentUserID    string
 	currentUserKnown bool
@@ -103,6 +111,7 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/thread/reply", s.handleReply)
 	mux.HandleFunc("POST /api/thread/react", s.handleReact)
 	mux.HandleFunc("GET /api/slack-config", s.handleSlackConfig)
+	mux.HandleFunc("GET /api/slack-autocomplete", s.handleSlackAutocomplete)
 	mux.HandleFunc("GET /api/thread-events", s.handleThreadEvents)
 	mux.HandleFunc("GET /api/worktree-info", s.handleWorktreeInfo)
 	mux.HandleFunc("GET /api/cmux", s.handleCmux)

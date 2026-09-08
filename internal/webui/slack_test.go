@@ -128,6 +128,18 @@ func (f *fakeSlack) SearchChannels(ctx context.Context, query string, limit int)
 	return f.searchChannels, f.searchErr
 }
 
+// queries returns a snapshot of searchQueries under lock. Tests must use
+// this instead of reading the field directly — SearchUsers/SearchUserGroups
+// can be invoked concurrently by the autocomplete handler, and a direct read
+// races under -race.
+func (f *fakeSlack) queries() []string {
+	f.searchMu.Lock()
+	defer f.searchMu.Unlock()
+	out := make([]string, len(f.searchQueries))
+	copy(out, f.searchQueries)
+	return out
+}
+
 func newFakeSlack() *fakeSlack {
 	return &fakeSlack{
 		thread: slack.Thread{
