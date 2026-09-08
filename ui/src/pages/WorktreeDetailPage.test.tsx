@@ -72,6 +72,33 @@ describe("WorktreeDetailPage header", () => {
     expect(screen.queryByRole("link", { name: /Card header PR/ })).not.toBeInTheDocument()
     expect(screen.queryByText(/Card header PR/)).not.toBeInTheDocument()
   })
+
+  it("shows the summary card by default", async () => {
+    // A first visit that hid it would look broken — the card IS the page's
+    // identity. Note toBeVisible, not toBeInTheDocument: Mantine's Collapse
+    // keeps its children mounted, so presence proves nothing about state.
+    setViewport("wide")
+    wrap()
+    await waitFor(() => expect(screen.getByRole("button", { name: "Hide details" })).toBeInTheDocument())
+    expect(screen.getByText("WORKTREE")).toBeVisible()
+  })
+
+  it("hides the summary card on demand, freeing the space for the resources", async () => {
+    setViewport("wide")
+    wrap()
+    await userEvent.click(await screen.findByRole("button", { name: "Hide details" }))
+    expect(screen.getByText("WORKTREE")).not.toBeVisible()
+    // The toggle names the state it will move to, so it reads as an action.
+    expect(screen.getByRole("button", { name: "Show details" })).toBeInTheDocument()
+  })
+
+  it("brings it back on a second click", async () => {
+    setViewport("wide")
+    wrap()
+    await userEvent.click(await screen.findByRole("button", { name: "Hide details" }))
+    await userEvent.click(screen.getByRole("button", { name: "Show details" }))
+    expect(screen.getByText("WORKTREE")).toBeVisible()
+  })
 })
 
 describe("WorktreeDetailPage selection", () => {
@@ -210,5 +237,59 @@ describe("WorktreeDetailPage narrow layout", () => {
     wrap()
     expect(await screen.findByRole("button", { name: /all resources/i })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /select resource o\/r#1/i })).toBeNull()
+  })
+})
+
+describe("WorktreeDetailPage scroll model", () => {
+  // The mobile payoff depends on the DOCUMENT scrolling: browsers hide the
+  // address bar only when the page itself scrolls, never when the scrolling
+  // happens in a nested element. And sticky positioning dies silently under
+  // ANY scrolling ancestor — no error, the header just stops sticking.
+  //
+  // jsdom cannot lay anything out, but it faithfully reports inline styles,
+  // so the invariant is testable even though the appearance is not.
+  const scrolls = (el: HTMLElement) =>
+    ["overflow", "overflowY", "overflowX"].some((prop) => {
+      const v = el.style[prop as "overflow"]
+      return v !== "" && v !== "visible"
+    })
+
+  it("puts no scroll container between the page body and the document", async () => {
+    // Anchored at the Grid, not the header: the header's SIBLINGS are what
+    // trap the scroll, and an ancestor walk from the header would miss them.
+    // Everything the page scrolls lives under this Grid, so its ancestor chain
+    // is the one that must stay clean all the way up.
+    setViewport("wide")
+    wrap()
+    await waitFor(() => expect(screen.getByRole("button", { name: "Hide details" })).toBeInTheDocument())
+
+    const grid = document.querySelector<HTMLElement>(".mantine-Grid-root")
+    expect(grid, "expected the layout Grid").toBeTruthy()
+
+    const offenders: string[] = []
+    for (let el = grid!.parentElement; el; el = el.parentElement) {
+      if (scrolls(el)) offenders.push(el.style.cssText)
+    }
+    expect(offenders).toEqual([])
+  })
+
+  it("still renders a sticky header", async () => {
+    setViewport("wide")
+    wrap()
+    await waitFor(() => expect(screen.getByRole("button", { name: "Hide details" })).toBeInTheDocument())
+    const header = [...document.querySelectorAll<HTMLElement>("div")]
+      .find((el) => el.style.position === "sticky")
+    expect(header, "expected a sticky header").toBeTruthy()
+  })
+
+  it("does not pin the page to the viewport height", async () => {
+    // `height: 100dvh` on the shell is what made the page own its scrolling.
+    setViewport("wide")
+    wrap()
+    await waitFor(() => expect(screen.getByRole("button", { name: "Hide details" })).toBeInTheDocument())
+    const heights = [...document.querySelectorAll<HTMLElement>("div")]
+      .map((el) => el.style.height)
+      .filter((h) => h.includes("dvh") || h.includes("vh"))
+    expect(heights).toEqual([])
   })
 })
