@@ -83,30 +83,55 @@ func TestCacheDoesNotCacheErrors(t *testing.T) {
 
 func TestCacheReleasesWaitersAndRecoversAfterPanic(t *testing.T) {
 	c := newAutocompleteCache(time.Minute)
+	registered := make(chan struct{})
+	proceed := make(chan struct{})
 	panicking := func() ([]AutocompleteItem, error) {
+		close(registered) // let the waiter join before we panic
+		<-proceed
 		panic("boom")
 	}
 
-	// Goroutine A triggers the panicking call; goroutine B waits on the same
-	// key. Both must be released rather than deadlocking on call.done.
-	done := make(chan struct{}, 2)
-	for i := 0; i < 2; i++ {
-		go func() {
-			defer func() {
-				recover() // Do re-panics; the waiter goroutine also panics via the shared call
-				done <- struct{}{}
-			}()
-			c.Do("k", panicking)
+	// The leader triggers the panicking call and re-panics (it owns the
+	// panicking stack). The waiter takes the in-flight branch for the same
+	// key and must be released with a non-nil error rather than deadlocking
+	// or silently seeing (nil, nil) as if the lookup found zero matches.
+	leaderDone := make(chan struct{})
+	go func() {
+		defer func() {
+			recover() // the leader owns the panic; swallow it here so the test doesn't fail
+			close(leaderDone)
 		}()
+		c.Do("k", panicking)
+	}()
+
+	select {
+	case <-registered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("leader never registered the in-flight call")
 	}
 
+	waiterDone := make(chan struct{})
+	var waiterErr error
+	go func() {
+		_, waiterErr = c.Do("k", panicking)
+		close(waiterDone)
+	}()
+	time.Sleep(20 * time.Millisecond) // let the waiter reach the in-flight branch
+	close(proceed)
+
 	timeout := time.After(2 * time.Second)
-	for i := 0; i < 2; i++ {
-		select {
-		case <-done:
-		case <-timeout:
-			t.Fatal("Do did not release waiters after fn panicked — cache is wedged")
-		}
+	select {
+	case <-leaderDone:
+	case <-timeout:
+		t.Fatal("leader did not return after fn panicked — cache is wedged")
+	}
+	select {
+	case <-waiterDone:
+	case <-timeout:
+		t.Fatal("waiter did not return after fn panicked — cache is wedged")
+	}
+	if waiterErr == nil {
+		t.Fatal("waiter got (items, nil) after a panicking lookup — a failed lookup must not look like an empty success")
 	}
 
 	// The key must not be permanently wedged: a later call for the same key

@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"fmt"
 	"sync"
 	"time"
 )
@@ -80,6 +81,17 @@ func (c *autocompleteCache) Do(key string, fn func() ([]AutocompleteItem, error)
 				c.entries[key] = autocompleteEntry{items: call.items, expires: c.now().Add(c.ttl)}
 			}
 			c.mu.Unlock()
+			// Waiters read call.err/call.items after done closes, but they run
+			// on a different goroutine and cannot re-panic — panic(p) below
+			// only unwinds the leader's own stack. Give waiters an explicit
+			// error instead of leaving call.err at its zero value: (nil, nil)
+			// would read as "the lookup succeeded with zero results," which
+			// the composer treats as "no matches" rather than "the lookup is
+			// unavailable" — exactly the distinction the degraded-mode hint
+			// depends on.
+			if p != nil {
+				call.err = fmt.Errorf("autocomplete lookup panicked: %v", p)
+			}
 			close(call.done)
 			if p != nil {
 				panic(p)
