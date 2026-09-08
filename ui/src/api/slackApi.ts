@@ -318,3 +318,46 @@ export function imageProxy(url: string): string {
   if (!url || !url.startsWith('https://')) return url
   return `/api/slack-image?url=${encodeURIComponent(url)}`
 }
+
+export type AutocompleteKind = 'user' | 'group' | 'special' | 'channel' | 'emoji'
+
+/**
+ * One candidate for the composer's autocomplete menu.
+ *
+ * `token` is the exact mrkdwn to insert — the server builds it so mention
+ * encoding lives in one place. Never reconstruct it from `id` at a call site.
+ */
+export interface AutocompleteItem {
+  kind: AutocompleteKind
+  id: string
+  label: string
+  detail?: string
+  avatar?: string
+  imageUrl?: string
+  token: string
+}
+
+/**
+ * Queries the server for autocomplete candidates. Returns [] on failure
+ * rather than throwing: the menu degrades to locally-known candidates, and an
+ * exception here would tear down the composer mid-keystroke.
+ */
+export async function autocomplete(
+  trigger: '@' | ':' | '#',
+  q: string,
+  channel: string,
+  signal?: AbortSignal,
+): Promise<AutocompleteItem[]> {
+  const params = new URLSearchParams({ trigger, q, channel })
+  try {
+    const res = await fetch(`/api/slack-autocomplete?${params.toString()}`, { signal })
+    if (!res.ok) {
+      return []
+    }
+    const body = (await res.json()) as { results?: AutocompleteItem[] }
+    return body.results ?? []
+  } catch {
+    // Includes AbortError, which is a normal part of debounced typing.
+    return []
+  }
+}
