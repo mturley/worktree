@@ -140,6 +140,34 @@ function moveCaretTo(editor: LexicalEditor, offset: number) {
   )
 }
 
+/** Inserts `text` at `offset` within the editor's existing first text node,
+ *  splicing into it (preserving its node key) rather than replacing it —
+ *  for the "the user fixed a typo earlier in the line" scenario (fix-round-2
+ *  open finding 1), where `setEditorText` would create a fresh node and
+ *  defeat the point of the repro. */
+function insertTextAt(editor: LexicalEditor, offset: number, text: string) {
+  editor.update(
+    () => {
+      const root = $getRoot()
+      const paragraph = root.getFirstChild() as ElementNode | null
+      const textNode = paragraph?.getFirstChild()
+      if (!textNode || !$isTextNode(textNode)) {
+        return
+      }
+      textNode.select(offset, offset)
+      const selection = $getSelection()
+      if ($isRangeSelection(selection)) {
+        selection.insertText(text)
+      }
+    },
+    { discrete: true },
+  )
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 describe('Composer', () => {
   it('sends on Enter and clears; Shift+Enter inserts a newline', async () => {
     const onSend = vi.fn()
@@ -279,24 +307,29 @@ describe('Composer', () => {
     expect(onSend).toHaveBeenCalledWith('hello @ada')
   })
 
-  // Fix-round-1 regression coverage (task-15-report.md fix round 1).
+  // Fix-round-1 regression coverage (task-15-report.md fix round 1), revised
+  // in fix round 2 per the ruling: a degraded, candidate-less lookup no
+  // longer renders a popup at all (previously it did, and Enter swallowed
+  // the key to avoid falling through it — which meant a message ending in
+  // an unmatched mention could not be sent without first pressing Escape).
 
-  it('Enter does not send while a degraded, zero-item popup is visibly open (finding 1)', async () => {
+  it('Enter sends normally when the lookup is degraded and there is nothing to select (finding 1 / round-2 ruling)', async () => {
     const onSend = vi.fn()
     vi.spyOn(api, 'autocomplete').mockResolvedValue([])
     const { getEditor, onEditorReady } = grabEditor()
-    const { getByRole, findByText } = renderWithProvider(
+    const { getByRole, findByText, queryByRole } = renderWithProvider(
       <Composer onSend={onSend} channel="C1" users={{}} groups={{}} onEditorReady={onEditorReady} />,
     )
     const editorEl = getByRole('textbox')
     await waitFor(() => getEditor())
     setEditorText(getEditor(), 'hi @zo')
     // No local candidates (users={}) and the mocked server also returns [],
-    // so the popup renders only the "workspace search unavailable" hint —
-    // visibly open, with items.length === 0.
+    // so there is nothing to select — the degraded hint appears as inline
+    // text, but no popup (no listbox) is rendered for it.
     await findByText(/workspace search unavailable/i)
+    expect(queryByRole('listbox')).not.toBeInTheDocument()
     fireEvent.keyDown(editorEl, { key: 'Enter' })
-    expect(onSend).not.toHaveBeenCalled()
+    expect(onSend).toHaveBeenCalledWith('hi @zo')
   })
 
   it('reopens the menu for a brand-new mention typed at the same position after Escape (finding 2)', async () => {
@@ -332,15 +365,54 @@ describe('Composer', () => {
     await waitFor(() => getEditor())
 
     setEditorText(getEditor(), 'hello @ad')
-    await findByText('ada') // menu open
+    await findByText('ada') // menu open, backed by the debounced fetch resolving
     fireEvent.keyDown(editorEl, { key: 'Escape' })
     expect(queryByText('ada')).toBeNull()
 
     moveCaretTo(getEditor(), 0) // click at line start — no trigger under the caret
     moveCaretTo(getEditor(), 'hello @ad'.length) // click back after the "d"
+    // Asserting a NEGATIVE (the menu did not reopen) can't be expressed as
+    // "wait until this becomes true" — there is no event to wait for when
+    // the code is behaving correctly. Instead settle past the 150ms
+    // autocomplete debounce with margin before asserting: 400ms is enough
+    // that, if the code were wrong and had kicked off a fresh (unsuppressed)
+    // lookup, its resolution would have landed by the time we check (see the
+    // fix-round-2 report for the pre-fix-vs-post-fix timing this was
+    // verified against).
+    await sleep(400)
     expect(queryByText('ada')).toBeNull() // must NOT have reopened
 
     fireEvent.keyDown(editorEl, { key: 'Enter' })
     expect(onSend).toHaveBeenCalledWith('hello @ad')
+  })
+
+  it('stays closed across an edit BEFORE the trigger in the same text node, then sends the literal text (fix-round-2 open finding 1)', async () => {
+    // detectTrigger's `start` is an offset from the start of the BLOCK, not
+    // from the trigger's own text node — so an edit earlier in the line
+    // (even within the same node) shifts it, even though the trigger
+    // occurrence itself hasn't moved. This reproduces exactly that: fix a
+    // typo before "@ad", then return to the mention, rather than a bare
+    // caret move with no edit at all (which the test above already covers).
+    const onSend = vi.fn()
+    vi.spyOn(api, 'autocomplete').mockResolvedValue([{ kind: 'user', id: 'U1', label: 'ada', token: '<@U1>' }])
+    const { getEditor, onEditorReady } = grabEditor()
+    const { getByRole, findByText, queryByText } = renderWithProvider(
+      <Composer onSend={onSend} channel="C1" users={{}} groups={{}} onEditorReady={onEditorReady} />,
+    )
+    const editorEl = getByRole('textbox')
+    await waitFor(() => getEditor())
+
+    setEditorText(getEditor(), 'hello @ad')
+    await findByText('ada') // menu open, backed by the debounced fetch resolving
+    fireEvent.keyDown(editorEl, { key: 'Escape' })
+    expect(queryByText('ada')).toBeNull()
+
+    insertTextAt(getEditor(), 0, 'x ') // edit BEFORE the trigger, same text node
+    moveCaretTo(getEditor(), 'x hello @ad'.length) // click back after the "d"
+    await sleep(400) // see the settle-not-poll comment in the test above
+    expect(queryByText('ada')).toBeNull() // must NOT have reopened
+
+    fireEvent.keyDown(editorEl, { key: 'Enter' })
+    expect(onSend).toHaveBeenCalledWith('x hello @ad')
   })
 })

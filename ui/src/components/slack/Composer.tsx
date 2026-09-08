@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
-import { ActionIcon, Box, Button, Group, Stack, Tooltip } from '@mantine/core'
+import { ActionIcon, Box, Button, Group, Stack, Text, Tooltip } from '@mantine/core'
 import { LexicalComposer } from '@lexical/react/LexicalComposer'
 import { PlainTextPlugin } from '@lexical/react/LexicalPlainTextPlugin'
 import { ContentEditable } from '@lexical/react/LexicalContentEditable'
@@ -86,23 +86,55 @@ function getTextBeforeCaret(selection: RangeSelection): string {
 }
 
 /** The single source of truth for "is the autocomplete popup visibly open",
- *  read by BOTH the render (whether to show the popup) and the Enter-key
- *  guard (whether to swallow Enter instead of sending). They must never
- *  disagree — a visible popup that Enter can fall through is how Enter posts
- *  a half-typed mention: see Task 15 fix-round-1 finding 1. */
-function isMenuVisible(hasMatch: boolean, itemCount: number, degraded: boolean): boolean {
-  return hasMatch && (itemCount > 0 || degraded)
+ *  read by the render (whether to show the popup), the Enter-key guard
+ *  (whether to swallow Enter instead of sending) and the Escape-key guard.
+ *  They must never disagree — a visible popup that Enter can fall through is
+ *  how Enter posts a half-typed mention (fix-round-1 finding 1). `degraded`
+ *  deliberately plays no part: a popup with zero items to select is not
+ *  something Enter or Escape should treat as "open" (fix-round-2 ruling) —
+ *  the degraded hint is shown separately, outside the popup, and never
+ *  blocks sending. */
+function isMenuVisible(hasMatch: boolean, itemCount: number): boolean {
+  return hasMatch && itemCount > 0
 }
 
-/** Identifies one dismissed trigger *occurrence* — the text node it lives in
- *  plus its offset within the block — so a caret move away and back doesn't
- *  reopen it (finding 3), but replacing that text (a new node, or the same
- *  node at a different offset) is treated as a new occurrence and does
- *  reopen (finding 2). A bare `start` offset can't tell those apart. */
+/** Identifies one dismissed trigger *occurrence*: the text node it lives in,
+ *  its trigger character, and the query typed at the moment of dismissal.
+ *
+ * Deliberately NOT keyed by any numeric offset (fix-round-2 open finding 1):
+ * `detectTrigger`'s `start` is an offset from the start of the BLOCK, so
+ * editing text anywhere before the trigger (even in the same text node)
+ * shifts it, even though the trigger occurrence itself hasn't moved. Instead,
+ * two detections in the SAME node with the SAME trigger character are treated
+ * as the same occurrence if one query is a prefix of the other — covering
+ * "caret moved away and back with no edit" (query unchanged), "the user kept
+ * typing/backspacing within it" (query grew or shrank), and edits elsewhere
+ * in the block (query unaffected either way). A occurrence in a DIFFERENT
+ * node (e.g. after a select-all-and-retype) is never treated as the same,
+ * regardless of query, so a genuinely new mention always reopens the menu.
+ *
+ * Trade-off, accepted deliberately: two textually-identical trigger
+ * occurrences in the very same node (e.g. "@ad code @ad" — both spans read
+ * "@ad") are not disambiguated by position. Escaping the first would also
+ * suppress the second if the caret lands on it. No finding requires
+ * distinguishing that case, and doing so would need a per-character marker
+ * this editor doesn't otherwise maintain. */
 interface SuppressedOccurrence {
   nodeKey: NodeKey
-  start: number
   trigger: TriggerMatch['trigger']
+  query: string
+}
+
+function isSameSuppressedOccurrence(
+  suppressed: SuppressedOccurrence,
+  nodeKey: NodeKey,
+  detected: TriggerMatch,
+): boolean {
+  return (
+    suppressed.nodeKey === nodeKey &&
+    suppressed.trigger === detected.trigger &&
+    (detected.query.startsWith(suppressed.query) || suppressed.query.startsWith(detected.query))
+  )
 }
 
 export function Composer({ onSend, disabled, channel, users, groups, onEditorReady }: ComposerProps) {
@@ -154,18 +186,22 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
 
   // Refs mirroring the latest render's state/props, read inside Lexical
   // command handlers registered once on mount (see the editor effect below).
+  // Written from an EFFECT (not the render body — fix-round-2 open finding
+  // 3/finding 8): a render that gets abandoned or re-run (React concurrent
+  // features) must not leave the command handlers reading state from a
+  // render that was never committed.
   const matchRef = useRef(match)
-  matchRef.current = match
   const itemsRef = useRef(items)
-  itemsRef.current = items
-  const degradedRef = useRef(degraded)
-  degradedRef.current = degraded
   const highlightedKeyRef = useRef(highlightedKey)
-  highlightedKeyRef.current = highlightedKey
   const disabledRef = useRef(disabled)
-  disabledRef.current = disabled
   const onSendRef = useRef(onSend)
-  onSendRef.current = onSend
+  useEffect(() => {
+    matchRef.current = match
+    itemsRef.current = items
+    highlightedKeyRef.current = highlightedKey
+    disabledRef.current = disabled
+    onSendRef.current = onSend
+  })
 
   // The occurrence most recently dismissed with Escape (see
   // SuppressedOccurrence above), and the text node the CURRENT open match
@@ -238,11 +274,17 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
         // under jsdom, making it untestable). Splicing is deterministic
         // either way.
         anchorNode.spliceText(start, toDelete, '', true)
-        const afterDelete = $getSelection()
-        if (!$isRangeSelection(afterDelete)) {
-          return
-        }
-        afterDelete.insertNodes([$createMentionNode(item), $createTextNode(' ')])
+        // Atomicity (fix-round-2, "make it an invariant rather than a silent
+        // partial"): rather than re-fetching $getSelection() and bailing if
+        // it somehow isn't a RangeSelection (which would leave the trigger
+        // text deleted with no pill inserted), select the known-good
+        // position ourselves. `anchorNode` still exists (we just spliced it)
+        // and `start` is within its new bounds by construction
+        // (0 <= start <= newLength since start = offset - toDelete and
+        // newLength = oldLength - toDelete), so `.select()` cannot fail —
+        // there is no failure branch left to have deleted without inserting.
+        const insertionPoint = anchorNode.select(start, start)
+        insertionPoint.insertNodes([$createMentionNode(item), $createTextNode(' ')])
       })
       suppressedRef.current = null
       matchNodeKeyRef.current = null
@@ -312,23 +354,17 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
         let suppressed = suppressedRef.current
         // Defensive: if the suppressed occurrence's node no longer exists
         // (e.g. it was deleted and retyped), it can't still be "the same
-        // occurrence" no matter what offset lines up.
+        // occurrence" no matter what lines up.
         if (suppressed && $getNodeByKey(suppressed.nodeKey) === null) {
           suppressed = null
           suppressedRef.current = null
         }
-        const isSuppressed =
-          suppressed !== null &&
-          suppressed.nodeKey === nodeKey &&
-          suppressed.start === detected.start &&
-          suppressed.trigger === detected.trigger
-        if (isSuppressed) {
+        if (suppressed !== null && isSameSuppressedOccurrence(suppressed, nodeKey, detected)) {
           setMatch(null)
           matchNodeKeyRef.current = null
           return
         }
-        // A genuinely new/different occurrence (finding 2: e.g. the old
-        // text was replaced wholesale) — clear any stale suppression.
+        // A genuinely new/different occurrence — clear any stale suppression.
         suppressedRef.current = null
         matchNodeKeyRef.current = nodeKey
         setMatch(detected)
@@ -338,14 +374,13 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
     const removeEnter = editor.registerCommand(
       KEY_ENTER_COMMAND,
       (event) => {
-        // Enter and "the popup is visibly open" must agree (finding 1): a
-        // degraded, zero-item popup is still a popup on screen, and Enter
-        // must never fall through it to send.
-        if (isMenuVisible(matchRef.current !== null, itemsRef.current.length, degradedRef.current)) {
+        // Enter and "the popup is visibly open" must agree (finding 1): only
+        // swallow Enter (and select) when there is an actual popup with
+        // items on screen. A degraded/empty state has nothing to select and
+        // is not a popup Enter needs to fall through — it just sends.
+        if (isMenuVisible(matchRef.current !== null, itemsRef.current.length)) {
           event?.preventDefault()
-          if (itemsRef.current.length > 0) {
-            selectHighlighted()
-          }
+          selectHighlighted()
           return true
         }
         if (event?.shiftKey) {
@@ -361,7 +396,7 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
     const removeArrowDown = editor.registerCommand(
       KEY_ARROW_DOWN_COMMAND,
       (event) => {
-        if (!matchRef.current || itemsRef.current.length === 0) {
+        if (!isMenuVisible(matchRef.current !== null, itemsRef.current.length)) {
           return false
         }
         event?.preventDefault()
@@ -374,7 +409,7 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
     const removeArrowUp = editor.registerCommand(
       KEY_ARROW_UP_COMMAND,
       (event) => {
-        if (!matchRef.current || itemsRef.current.length === 0) {
+        if (!isMenuVisible(matchRef.current !== null, itemsRef.current.length)) {
           return false
         }
         event?.preventDefault()
@@ -387,7 +422,7 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
     const removeTab = editor.registerCommand(
       KEY_TAB_COMMAND,
       (event) => {
-        if (!matchRef.current || itemsRef.current.length === 0) {
+        if (!isMenuVisible(matchRef.current !== null, itemsRef.current.length)) {
           return false
         }
         event?.preventDefault()
@@ -400,13 +435,17 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
     const removeEscape = editor.registerCommand(
       KEY_ESCAPE_COMMAND,
       () => {
-        if (!matchRef.current || !matchNodeKeyRef.current) {
+        // On the unified predicate (fix-round-2 "also"): during the 150ms
+        // autocomplete debounce (match set, items still empty, nothing on
+        // screen yet), Escape must not swallow the key and record a
+        // suppression for a popup the user never actually saw.
+        if (!isMenuVisible(matchRef.current !== null, itemsRef.current.length) || !matchNodeKeyRef.current) {
           return false
         }
         suppressedRef.current = {
           nodeKey: matchNodeKeyRef.current,
-          start: matchRef.current.start,
-          trigger: matchRef.current.trigger,
+          trigger: matchRef.current!.trigger,
+          query: matchRef.current!.query,
         }
         matchNodeKeyRef.current = null
         setMatch(null)
@@ -465,7 +504,11 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
   }
 
   const sendDisabled = isEmpty || !!disabled
-  const menuVisible = isMenuVisible(match !== null, items.length, degraded)
+  const menuVisible = isMenuVisible(match !== null, items.length)
+  // Shown OUTSIDE the popup (ruling: "do not render the popup at all when
+  // items.length === 0") so a degraded, candidate-less lookup never blocks
+  // Enter from sending — it's informational only.
+  const showDegradedHint = match !== null && items.length === 0 && degraded
 
   return (
     <>
@@ -532,6 +575,11 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
           Send
         </Button>
       </Group>
+      {showDegradedHint && (
+        <Text size="xs" c="dimmed">
+          Workspace search unavailable — showing people from this thread
+        </Text>
+      )}
     </>
   )
 }
