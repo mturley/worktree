@@ -60,15 +60,33 @@ func (c *autocompleteCache) Do(key string, fn func() ([]AutocompleteItem, error)
 	c.calls[key] = call
 	c.mu.Unlock()
 
-	call.items, call.err = fn()
+	// fn runs unlocked and outside any recover in the caller's own stack, so a
+	// panic in fn (a Slack client choking on unexpected nil JSON is realistic)
+	// must not leave this key permanently wedged: every goroutine already
+	// waiting on call.done, and every later caller for the same key, would
+	// block forever otherwise. The deferred cleanup always deletes the
+	// in-flight entry and closes done; we re-panic afterward rather than
+	// swallowing it into an error, because a panic is a bug and hiding it
+	// behind a returned error would make it silently disappear from the menu.
+	func() {
+		defer func() {
+			p := recover()
+			c.mu.Lock()
+			delete(c.calls, key)
+			// A panicking fn never reaches the assignment below, so call.err
+			// is still its zero value (nil) here — don't let that read as
+			// "succeeded with nil items" and get cached.
+			if p == nil && call.err == nil {
+				c.entries[key] = autocompleteEntry{items: call.items, expires: c.now().Add(c.ttl)}
+			}
+			c.mu.Unlock()
+			close(call.done)
+			if p != nil {
+				panic(p)
+			}
+		}()
+		call.items, call.err = fn()
+	}()
 
-	c.mu.Lock()
-	delete(c.calls, key)
-	if call.err == nil {
-		c.entries[key] = autocompleteEntry{items: call.items, expires: c.now().Add(c.ttl)}
-	}
-	c.mu.Unlock()
-
-	close(call.done)
 	return call.items, call.err
 }

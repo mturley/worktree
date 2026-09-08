@@ -81,6 +81,58 @@ func TestCacheDoesNotCacheErrors(t *testing.T) {
 	}
 }
 
+func TestCacheReleasesWaitersAndRecoversAfterPanic(t *testing.T) {
+	c := newAutocompleteCache(time.Minute)
+	panicking := func() ([]AutocompleteItem, error) {
+		panic("boom")
+	}
+
+	// Goroutine A triggers the panicking call; goroutine B waits on the same
+	// key. Both must be released rather than deadlocking on call.done.
+	done := make(chan struct{}, 2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			defer func() {
+				recover() // Do re-panics; the waiter goroutine also panics via the shared call
+				done <- struct{}{}
+			}()
+			c.Do("k", panicking)
+		}()
+	}
+
+	timeout := time.After(2 * time.Second)
+	for i := 0; i < 2; i++ {
+		select {
+		case <-done:
+		case <-timeout:
+			t.Fatal("Do did not release waiters after fn panicked — cache is wedged")
+		}
+	}
+
+	// The key must not be permanently wedged: a later call for the same key
+	// makes progress instead of hanging on a stale in-flight entry.
+	var calls int32
+	fn := func() ([]AutocompleteItem, error) {
+		atomic.AddInt32(&calls, 1)
+		return []AutocompleteItem{{Kind: "user", ID: "U1"}}, nil
+	}
+	resultCh := make(chan struct{})
+	go func() {
+		if _, err := c.Do("k", fn); err != nil {
+			t.Errorf("Do after panic: %v", err)
+		}
+		close(resultCh)
+	}()
+	select {
+	case <-resultCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Do hung on the same key after a prior panic")
+	}
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Fatalf("fn called %d times after recovery, want 1", got)
+	}
+}
+
 var errTest = errorString("boom")
 
 type errorString string
