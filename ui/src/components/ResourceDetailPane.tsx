@@ -1,10 +1,15 @@
-import { Anchor, Button, Center, Group, Stack, Title } from "@mantine/core"
+import { Anchor, Button, Center, Group, Stack, Title, Text } from "@mantine/core"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import type { ResourceDTO } from "../api/types"
 import { useWorktreeTimeline } from "../hooks/useTimeline"
 import { api } from "../api/client"
 import { ResourceCard } from "./ResourceCard"
 import { SlackThreadPane } from "./SlackThreadPane"
+import { RefreshWatchersButton } from "./RefreshWatchersButton"
+import { WatcherErrorMark } from "./WatcherErrorMark"
+import { useWatcherStatus } from "../hooks/useWatchers"
+import { useNow } from "../hooks/useNow"
+import { relativeTime } from "../lib/relativeTime"
 import { TimelineFeed } from "./TimelineFeed"
 import { serviceName } from "./ResourceActions"
 
@@ -40,6 +45,10 @@ function TimelineBody({
   const timeline = useWorktreeTimeline(path, { type: resource.type, id: resource.id })
   const qc = useQueryClient()
   const unreadCount = resource.unread_count ?? 0
+  // This feed is one resource, so "updated" means the watcher for ITS type.
+  const watcher = useWatcherStatus(resource.type)
+  // Keeps "3m ago" moving without a per-second re-render of the whole pane.
+  useNow(60_000)
   // The newest event the user can actually see. Sent as through_ts so events
   // arriving between render and click stay unread rather than being swallowed
   // by a button that promised to clear a specific number. The feed is
@@ -73,9 +82,11 @@ function TimelineBody({
         onMetaChanged={onResourceChanged}
         variant="detail"
       />
-      <Group justify="space-between" align="center">
-        <Title order={5}>Activity</Title>
-        {unreadCount > 0 && (
+      <Group justify="space-between" align="center" wrap="nowrap">
+        <Group gap={6} wrap="nowrap" align="center">
+          <Title order={5}>Activity</Title>
+          <RefreshWatchersButton />
+          {unreadCount > 0 && (
           <Button
             size="compact-sm"
             // Filled blue, not the theme's primary: primaryColor is "accent"
@@ -95,7 +106,21 @@ function TimelineBody({
           >
             {`Mark ${unreadCount} ${unreadCount === 1 ? "event" : "events"} as read`}
           </Button>
-        )}
+          )}
+        </Group>
+        {/*
+          Where the source filter sits on the unified timelines. There is
+          nothing to filter here — the feed is already one resource — so the
+          slot carries that resource's own watcher freshness instead.
+        */}
+        <Group gap={0} wrap="nowrap" align="center" style={{ flex: "none" }}>
+          {watcher?.last_success && (
+            <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
+              {`Updated ${relativeTime(watcher.last_success)}`}
+            </Text>
+          )}
+          <WatcherErrorMark status={watcher} />
+        </Group>
       </Group>
       <TimelineFeed
         events={timeline.events}

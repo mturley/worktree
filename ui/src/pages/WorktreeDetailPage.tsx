@@ -109,7 +109,7 @@ export function WorktreeDetailPage() {
     <Stack gap="sm">
       <Group justify="space-between" wrap="wrap" gap="xs">
         <Group gap={6} wrap="nowrap" align="center">
-          <Title order={5}>Timeline</Title>
+          <Title order={5}>Activity</Title>
           <RefreshWatchersButton />
         </Group>
         <SourceFilter value={sources} onChange={setSources} />
