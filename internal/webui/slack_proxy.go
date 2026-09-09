@@ -1,15 +1,56 @@
 package webui
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/mturley/watcher/slack"
 )
+
+// Mark-read-after-reply retry tuning. Slack's read-state index lags
+// chat.postMessage: immediately after PostReply returns, subscriptions.thread.mark
+// can come back "message_not_found" for the message we just posted because it
+// isn't indexed yet, even though the identical call succeeds moments later.
+// This runs synchronously before we respond to the HTTP request, so it is
+// latency the user feels on every send — keep it bounded and fast:
+// markReadMaxAttempts (4) with markReadRetryDelay (60ms) between attempts
+// caps the worst case at 3*60ms = 180ms, well under a second, while giving
+// the index a few short beats to catch up.
+const (
+	markReadMaxAttempts = 4
+	markReadRetryDelay  = 60 * time.Millisecond
+)
+
+// markReadWithRetry retries MarkRead a bounded number of times, since the
+// failure right after posting is a known timing race rather than a broken
+// call (see the comment on markReadMaxAttempts). It does not retry
+// slack.ErrAuth — an expired token will not fix itself between attempts, so
+// retrying it only adds latency to a request that is already doomed. Every
+// other error is retried: the library returns "message_not_found" as a
+// plain formatted string with no sentinel, so string-matching it would be
+// fragile, and retrying any non-auth error is the honest alternative.
+func (s *Server) markReadWithRetry(ctx context.Context, channel, threadTS, ts string) error {
+	var err error
+	for attempt := 1; attempt <= markReadMaxAttempts; attempt++ {
+		err = s.SlackClient.MarkRead(ctx, channel, threadTS, ts)
+		if err == nil {
+			return nil
+		}
+		if errors.Is(err, slack.ErrAuth) {
+			return err
+		}
+		if attempt < markReadMaxAttempts {
+			time.Sleep(markReadRetryDelay)
+		}
+	}
+	return err
+}
 
 // noFollowRedirects is a CheckRedirect policy shared by every client the
 // image proxy uses for its outbound fetch. The allowlist check in
@@ -129,8 +170,8 @@ func (s *Server) handleReply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.SlackClient.MarkRead(r.Context(), req.Channel, req.ThreadTS, msg.TS); err != nil && s.Logger != nil {
-		s.Logger.Printf("reply: mark-read after send failed: %v", err)
+	if err := s.markReadWithRetry(r.Context(), req.Channel, req.ThreadTS, msg.TS); err != nil && s.Logger != nil {
+		s.Logger.Printf("reply: mark-read after send failed (exhausted %d attempts): %v", markReadMaxAttempts, err)
 	}
 
 	writeJSON(w, http.StatusOK, MessageView{msg})
