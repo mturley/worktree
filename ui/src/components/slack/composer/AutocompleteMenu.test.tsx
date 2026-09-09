@@ -104,6 +104,54 @@ describe('AutocompleteMenu', () => {
     expect(getByText('\u{1F604}')).toBeInTheDocument()
   })
 
+  it('bounds the row list height and scrolls internally instead of growing', () => {
+    // Assert the style, not a class name — Mantine's class hashes aren't
+    // stable API to test against.
+    const { getAllByRole } = renderMenu()
+    const list = getAllByRole('option')[0].parentElement as HTMLElement
+    expect(list.style.overflowY).toBe('auto')
+    expect(list.style.maxHeight).not.toBe('')
+  })
+
+  it('scrolls the newly highlighted row into view as the highlight moves', () => {
+    // jsdom does not implement scrollIntoView; stub it here only (not in a
+    // project-wide test-setup file) so cycling doesn't throw and so the call
+    // can be observed.
+    const scrollIntoView = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoView
+    const { rerender } = render(
+      <MantineProvider>
+        <AutocompleteMenu items={items} highlightedId="user:U1" onSelect={() => {}} />
+      </MantineProvider>,
+    )
+    scrollIntoView.mockClear()
+    rerender(
+      <MantineProvider>
+        <AutocompleteMenu items={items} highlightedId="special:here" onSelect={() => {}} />
+      </MantineProvider>,
+    )
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
+  })
+
+  it('does not throw when scrollIntoView is unimplemented', () => {
+    const original = Element.prototype.scrollIntoView
+    // @ts-expect-error simulating an environment without scrollIntoView
+    delete Element.prototype.scrollIntoView
+    expect(() => {
+      const { rerender } = render(
+        <MantineProvider>
+          <AutocompleteMenu items={items} highlightedId="user:U1" onSelect={() => {}} />
+        </MantineProvider>,
+      )
+      rerender(
+        <MantineProvider>
+          <AutocompleteMenu items={items} highlightedId="special:here" onSelect={() => {}} />
+        </MantineProvider>,
+      )
+    }).not.toThrow()
+    Element.prototype.scrollIntoView = original
+  })
+
   it('renders nothing when there are no items', () => {
     // Not toBeEmptyDOMElement(container): MantineProvider itself injects a
     // <style> tag into the render container in this Mantine version, so the

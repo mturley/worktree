@@ -1,6 +1,9 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
+import { render, cleanup } from '@testing-library/react'
 import { createEditor, $getRoot, $createParagraphNode, $createTextNode } from 'lexical'
 import { MentionNode, $createMentionNode, $isMentionNode } from './MentionNode'
+
+afterEach(cleanup)
 
 describe('MentionNode', () => {
   it('serializes as its token via getTextContent, so the root text IS the mrkdwn', () => {
@@ -36,5 +39,34 @@ describe('MentionNode', () => {
       },
       { discrete: true },
     )
+  })
+
+  function decorateInEditor(item: Parameters<typeof $createMentionNode>[0]) {
+    const editor = createEditor({ nodes: [MentionNode], onError: (e) => { throw e } })
+    let element: ReturnType<MentionNode['decorate']> | undefined
+    editor.update(
+      () => {
+        element = $createMentionNode(item).decorate()
+      },
+      { discrete: true },
+    )
+    return element!
+  }
+
+  it('renders a user chip with the "@" prefix, since the label is bare', () => {
+    const { getByText } = render(decorateInEditor({ kind: 'user', id: 'U1', label: 'Mike Turley', token: '<@U1>' }))
+    expect(getByText('@Mike Turley')).toBeInTheDocument()
+  })
+
+  it('renders a group chip unchanged (label already carries its own "@")', () => {
+    const { getByText } = render(
+      decorateInEditor({ kind: 'group', id: 'S1', label: '@zaffre-scrum', token: '<!subteam^S1>' }),
+    )
+    expect(getByText('@zaffre-scrum')).toBeInTheDocument()
+  })
+
+  it('renders an emoji chip unchanged (no "@" sigil at all)', () => {
+    const { getByText } = render(decorateInEditor({ kind: 'emoji', id: 'smile', label: ':smile:', token: ':smile:' }))
+    expect(getByText(':smile:')).toBeInTheDocument()
   })
 })

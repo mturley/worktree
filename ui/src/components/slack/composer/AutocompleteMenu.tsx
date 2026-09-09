@@ -1,6 +1,14 @@
+import { useEffect, useRef } from 'react'
 import { Avatar, Group, Paper, Stack, Text } from '@mantine/core'
 import { avatarProxy, type AutocompleteItem } from '../../../api/slackApi'
 import { renderEmojiNode } from '../../../lib/renderEmoji'
+
+// Each row is p={4} (4px top+bottom) around a 20px-tall line (the 20px
+// avatar and `size="sm"` text both come out to ~20px), and Stack uses
+// gap={0}, so one row is ~28px. 280px therefore shows ~10 rows before it
+// scrolls, matching the "roughly 8-10 rows" target from the server's cap of
+// 25 candidates.
+const LIST_MAX_HEIGHT = 280
 
 export interface AutocompleteMenuProps {
   items: AutocompleteItem[]
@@ -23,18 +31,40 @@ export function itemKey(item: AutocompleteItem): string {
 // own — both would be dead code, since Composer's ruling always shows its
 // own hint through the same code path.
 export function AutocompleteMenu({ items, highlightedId, onSelect }: AutocompleteMenuProps) {
+  const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+
+  // Keep the highlighted row in view as arrow-key/Tab cycling moves it past
+  // the edge of the now-scrollable list. 'nearest' is deliberate: it only
+  // scrolls when the row is actually out of view, so a highlight that stays
+  // on-screen produces no scroll jitter.
+  useEffect(() => {
+    if (!highlightedId) {
+      return
+    }
+    const row = rowRefs.current.get(highlightedId)
+    // jsdom (and some older browsers) don't implement scrollIntoView at all.
+    row?.scrollIntoView?.({ block: 'nearest' })
+  }, [highlightedId])
+
   if (items.length === 0) {
     return null
   }
   return (
     <Paper withBorder shadow="md" p={4} role="listbox" aria-label="Autocomplete candidates">
-      <Stack gap={0}>
+      <Stack gap={0} style={{ maxHeight: LIST_MAX_HEIGHT, overflowY: 'auto' }}>
         {items.map((item) => {
           const key = itemKey(item)
           const selected = key === highlightedId
           return (
             <Group
               key={key}
+              ref={(el) => {
+                if (el) {
+                  rowRefs.current.set(key, el)
+                } else {
+                  rowRefs.current.delete(key)
+                }
+              }}
               role="option"
               aria-selected={selected}
               gap="xs"

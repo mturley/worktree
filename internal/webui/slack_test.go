@@ -1,8 +1,11 @@
 package webui
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -29,6 +32,17 @@ type fakeSlack struct {
 	replyMsg     slack.Message
 	replyErr     error
 	replyCalls   int
+
+	// markRead failure injection: the first markReadFailN calls to MarkRead
+	// return markReadErr (default a generic non-auth error) before it starts
+	// succeeding. markReadCalls/markReadMu record call count under lock,
+	// following the same pattern as searchQueries/searchMu below — the
+	// handler exercises MarkRead from a request path that runs concurrently
+	// with other tests in this suite.
+	markReadFailN int
+	markReadErr   error
+	markReadCalls int
+	markReadMu    sync.Mutex
 
 	reactAddTS, reactRemoveTS, reactName string
 	reactCalls                           int
@@ -86,11 +100,29 @@ func (f *fakeSlack) UserGroupsInfo(ctx context.Context, ids []string) (map[strin
 }
 
 func (f *fakeSlack) MarkRead(ctx context.Context, channel, threadTS, ts string) error {
+	f.markReadMu.Lock()
+	f.markReadCalls++
+	calls := f.markReadCalls
+	f.markReadMu.Unlock()
+
 	if f.err != nil {
 		return f.err
 	}
+	if calls <= f.markReadFailN {
+		if f.markReadErr != nil {
+			return f.markReadErr
+		}
+		return errors.New("slack error: message_not_found")
+	}
 	f.markedTS = ts
 	return nil
+}
+
+// markReadCallCount returns a snapshot of markReadCalls under lock.
+func (f *fakeSlack) markReadCallCount() int {
+	f.markReadMu.Lock()
+	defer f.markReadMu.Unlock()
+	return f.markReadCalls
 }
 
 func (f *fakeSlack) MarkUnread(ctx context.Context, channel, threadTS, ts string) error {
@@ -222,6 +254,123 @@ func TestSlackReplyNoAllowlist(t *testing.T) {
 	}
 	if fake.replyCalls != 1 {
 		t.Fatalf("PostReply not called (calls=%d)", fake.replyCalls)
+	}
+}
+
+// TestSlackReplyMarkReadRetrySucceeds pins the fix for the mark-read race:
+// Slack's read-state index lags chat.postMessage, so the first MarkRead
+// right after PostReply can fail even though the message posted fine. The
+// handler must retry and, on eventual success, must not log a failure.
+func TestSlackReplyMarkReadRetrySucceeds(t *testing.T) {
+	fake := newFakeSlack()
+	fake.markReadFailN = 1 // fail once, then succeed
+	var logBuf bytes.Buffer
+	srv := &Server{SlackClient: fake, SlackDomain: "acme.slack.com", Logger: log.New(&logBuf, "", 0)}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	body := strings.NewReader(`{"channel":"C1","thread_ts":"1.0","text":"hi"}`)
+	resp, err := http.Post(ts.URL+"/api/thread/reply", "application/json", body)
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	if got := fake.markReadCallCount(); got != 2 {
+		t.Fatalf("expected MarkRead retried once (2 calls), got %d", got)
+	}
+	if logBuf.Len() != 0 {
+		t.Fatalf("expected no failure logged after eventual success, got: %q", logBuf.String())
+	}
+}
+
+// TestSlackReplyMarkReadRetryExhausted pins that when MarkRead never
+// succeeds, the handler gives up after markReadMaxAttempts, still returns
+// 200 (mark-read is best-effort and must never fail the send), and logs the
+// failure exactly once.
+func TestSlackReplyMarkReadRetryExhausted(t *testing.T) {
+	fake := newFakeSlack()
+	fake.markReadFailN = 1000 // always fail
+	var logBuf bytes.Buffer
+	srv := &Server{SlackClient: fake, SlackDomain: "acme.slack.com", Logger: log.New(&logBuf, "", 0)}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	body := strings.NewReader(`{"channel":"C1","thread_ts":"1.0","text":"hi"}`)
+	resp, err := http.Post(ts.URL+"/api/thread/reply", "application/json", body)
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("mark-read failure must not fail the send, got %d", resp.StatusCode)
+	}
+	if got := fake.markReadCallCount(); got != markReadMaxAttempts {
+		t.Fatalf("expected exactly %d MarkRead attempts, got %d", markReadMaxAttempts, got)
+	}
+	if !strings.Contains(logBuf.String(), "mark-read after send failed") {
+		t.Fatalf("expected a failure to be logged, got: %q", logBuf.String())
+	}
+	if n := strings.Count(logBuf.String(), "mark-read after send failed"); n != 1 {
+		t.Fatalf("expected failure logged exactly once, got %d times: %q", n, logBuf.String())
+	}
+}
+
+// TestSlackReplyMarkReadAuthErrorNotRetried pins that slack.ErrAuth is not
+// retried — an expired token will not fix itself between attempts, so
+// retrying it only adds latency to a request that is already doomed.
+func TestSlackReplyMarkReadAuthErrorNotRetried(t *testing.T) {
+	fake := newFakeSlack()
+	fake.markReadFailN = 1000
+	fake.markReadErr = slack.ErrAuth
+	var logBuf bytes.Buffer
+	srv := &Server{SlackClient: fake, SlackDomain: "acme.slack.com", Logger: log.New(&logBuf, "", 0)}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	body := strings.NewReader(`{"channel":"C1","thread_ts":"1.0","text":"hi"}`)
+	resp, err := http.Post(ts.URL+"/api/thread/reply", "application/json", body)
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("mark-read failure must not fail the send, got %d", resp.StatusCode)
+	}
+	if got := fake.markReadCallCount(); got != 1 {
+		t.Fatalf("expected slack.ErrAuth to NOT be retried (1 call), got %d", got)
+	}
+}
+
+// TestSlackReplyMarkReadHappyPath pins that the existing happy-path
+// behaviour is unchanged: a single successful MarkRead call after a
+// successful reply.
+func TestSlackReplyMarkReadHappyPath(t *testing.T) {
+	fake := newFakeSlack()
+	var logBuf bytes.Buffer
+	srv := &Server{SlackClient: fake, SlackDomain: "acme.slack.com", Logger: log.New(&logBuf, "", 0)}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	body := strings.NewReader(`{"channel":"C1","thread_ts":"1.0","text":"hi"}`)
+	resp, err := http.Post(ts.URL+"/api/thread/reply", "application/json", body)
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	if got := fake.markReadCallCount(); got != 1 {
+		t.Fatalf("expected exactly one MarkRead call, got %d", got)
+	}
+	if fake.markedTS != fake.replyMsg.TS {
+		t.Fatalf("expected mark-read up through the posted message TS %q, got %q", fake.replyMsg.TS, fake.markedTS)
+	}
+	if logBuf.Len() != 0 {
+		t.Fatalf("expected no failure logged on happy path, got: %q", logBuf.String())
 	}
 }
 

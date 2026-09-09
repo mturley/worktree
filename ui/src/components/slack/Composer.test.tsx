@@ -339,6 +339,43 @@ describe('Composer', () => {
     expect(onSend).not.toHaveBeenCalled()
   })
 
+  it('Tab accepts the highlighted candidate while the menu is open, like Enter', async () => {
+    const onSend = vi.fn()
+    vi.spyOn(api, 'autocomplete').mockResolvedValue([{ kind: 'user', id: 'U1', label: 'ada', token: '<@U1>' }])
+    const { getEditor, onEditorReady } = grabEditor()
+    const { getByRole, findByText, queryByText } = renderWithProvider(
+      <Composer onSend={onSend} channel="C1" users={{}} groups={{}} onEditorReady={onEditorReady} />,
+    )
+    const editorEl = getByRole('textbox')
+    await waitFor(() => getEditor())
+    setEditorText(getEditor(), '@ada')
+    await findByText('ada') // menu is open
+    fireEvent.keyDown(editorEl, { key: 'Tab' })
+    expect(onSend).not.toHaveBeenCalled()
+    await waitFor(() => {
+      const text = getEditor().getEditorState().read(() => $getRoot().getTextContent())
+      expect(text).toBe('<@U1> ')
+    })
+    // The menu closes once the pill is inserted.
+    expect(queryByText('ada')).not.toBeInTheDocument()
+  })
+
+  it('Tab with the menu closed does not insert anything', async () => {
+    const onSend = vi.fn()
+    vi.spyOn(api, 'autocomplete').mockResolvedValue([])
+    const { getEditor, onEditorReady } = grabEditor()
+    const { getByRole } = renderWithProvider(
+      <Composer onSend={onSend} channel="C1" users={{}} groups={{}} onEditorReady={onEditorReady} />,
+    )
+    const editorEl = getByRole('textbox')
+    await waitFor(() => getEditor())
+    setEditorText(getEditor(), 'no trigger here')
+    fireEvent.keyDown(editorEl, { key: 'Tab' })
+    const text = getEditor().getEditorState().read(() => $getRoot().getTextContent())
+    expect(text).toBe('no trigger here')
+    expect(onSend).not.toHaveBeenCalled()
+  })
+
   it('Escape closes the menu and Enter sends the literal text once it is dismissed', async () => {
     const onSend = vi.fn()
     vi.spyOn(api, 'autocomplete').mockResolvedValue([{ kind: 'user', id: 'U1', label: 'ada', token: '<@U1>' }])
@@ -676,18 +713,16 @@ describe('Composer', () => {
     expect(onSend).toHaveBeenCalledWith('hello @ada')
   })
 
-  it('records the accepted limitation: a trigger typed directly BEFORE an escaped one inherits its suppression (round-5)', async () => {
-    // This test pins a KNOWN LIMITATION, deliberately accepted — it asserts
-    // behaviour that is arguably wrong, so that changing it is a deliberate
-    // act rather than an accident. Diffing two identical characters cannot
-    // tell which '@' is which, so inserting "@bo" immediately in front of an
-    // escaped "@ad" re-anchors the suppression onto the NEWLY TYPED '@': the
-    // menu does not open for "@bo", and the roles of the two occurrences are
-    // effectively swapped. `reanchorOffset('hi @ad', 'hi @bo@ad', 3) === 3`
-    // is the same fact at the unit level (pinned in suppression.test.ts).
-    // See the KNOWN LIMITATION comment on reanchorOffset for why a diff
-    // cannot resolve this and what a marker-based fix would cost. If this
-    // test starts failing, that fix has landed — update it, don't silence it.
+  it('opens the menu for a trigger typed directly BEFORE an escaped one (round-6)', async () => {
+    // Round 5 pinned the opposite of this as an accepted limitation: the
+    // prefix branch of the diff won every ambiguous re-anchor, so inserting
+    // "@bo" immediately in front of an escaped "@ad" moved the suppression
+    // onto the NEWLY TYPED '@' and the menu stayed shut for "@bo" while the
+    // old "@ad" went live. Round 6 breaks the tie with the anchored
+    // occurrence's own text ("@ad" is still found at offset 6, not at 3), so
+    // the escaped occurrence moves right and "@bo" opens normally.
+    // `reanchorOffset('hi @ad', 'hi @bo@ad', 3) === 6` is the same fact at
+    // the unit level (pinned in suppression.test.ts).
     const onSend = vi.fn()
     const autocomplete = vi.spyOn(api, 'autocomplete')
     autocomplete.mockImplementation(async (_trigger, query) => {
@@ -696,7 +731,7 @@ describe('Composer', () => {
       return []
     })
     const { getEditor, onEditorReady } = grabEditor()
-    const { getByRole, findByText, queryByText } = renderWithProvider(
+    const { getByRole, findByText } = renderWithProvider(
       <Composer onSend={onSend} channel="C1" users={{}} groups={{}} onEditorReady={onEditorReady} />,
     )
     const editorEl = getByRole('textbox')
@@ -709,6 +744,6 @@ describe('Composer', () => {
     // Type "@bo" at offset 3 — directly in front of the escaped "@ad".
     insertTextAt(getEditor(), 3, '@bo') // -> "hi @bo@ad", caret after "@bo"
     await sleep(400) // see the settle-not-poll comment above
-    expect(queryByText('bo-user')).toBeNull() // the accepted limitation
+    expect(await findByText('bo-user')).toBeInTheDocument() // opens for the newly typed trigger
   })
 })

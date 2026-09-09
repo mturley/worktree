@@ -405,6 +405,29 @@ map entries, plus an `updated` timestamp.
   the Unicode half itself.
 - `value` may still be an `alias:` indirection, as with `emoji.list`.
 
+#### Supplying the Unicode half — traps found in practice
+
+Reproducing Slack's `:` picker means merging this endpoint's custom emoji with
+a Unicode dataset of your own. `worktree` uses `node-emoji` for that half
+(`ui/src/lib/emoji.ts`). Three things cost real time, verified 2026-09-09:
+
+- **`node-emoji`'s `search()` compiles its argument as a REGULAR EXPRESSION**
+  (`name.match(keyword)` internally). A Slack shortcode query legitimately
+  contains `)`, `+`, `(`, `[` and `\`, so passing the raw query through throws
+  `SyntaxError` — typing `:)` or `:+1`, two of the most common things anyone
+  types in a composer, crashed the composer's render until the query was
+  escaped. Escaping also restores true substring matching: unescaped, `:sm.le`
+  matched `smile` and `:.` matched everything.
+- **The Unicode name for 👍 is `+1`, not `thumbsup`**, in both Slack and
+  `node-emoji`, so a substring search for `thumb` returns nothing. If the
+  picker should find it by that word, an alias/keyword pass is needed on top
+  of name matching — plain name search will not do it.
+- **`alias:` values can reach a renderer.** `emoji.list` dereferences only ONE
+  hop of `alias:<name>`, so when the alias target is itself a standard
+  (non-custom) emoji the value stays the literal string `alias:thumbsup`.
+  Rendering that as an image URL yields `<img src="alias:thumbsup">`. Skip or
+  resolve such entries before display.
+
 ### `channels/search` — `#channel` autocomplete
 
 ```
@@ -613,6 +636,16 @@ had to *intercept and suppress* Slack's own auto-mark calls — see
 **Marking unread:** the same endpoint with `read=0` (same `channel`/`thread_ts`/`ts`) marks
 the thread **unread from `ts`** for the current user — it sets `last_read` to just before
 `ts`. Verified 2026-08-11 against the self-channel test thread.
+
+**Race with `chat.postMessage`:** calling this immediately after `chat.postMessage`
+returns, with `ts` set to the just-posted message's own `ts`, can come back
+`{"ok": false, "error": "message_not_found"}` — Slack's read-state index lags behind
+`chat.postMessage`, so the new message isn't indexed yet at that instant. The identical
+call with the identical `ts` succeeds moments later (verified against the self-channel
+test thread by retrying the same call after a short delay). worktree's reply handler
+(`internal/webui/slack_proxy.go`, `handleReply`/`markReadWithRetry`) works around this by
+retrying the mark-read a few times with a short delay before giving up — see the comment
+on `markReadMaxAttempts` there for the exact bound.
 
 ## `chat.postMessage` — post a threaded reply
 
