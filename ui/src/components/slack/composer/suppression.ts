@@ -66,6 +66,29 @@ export interface SuppressedOccurrence {
  * happened as late in the string as possible. Any consistent choice is
  * acceptable — the characters involved are identical by definition, so the
  * anchored character is unaffected either way.
+ *
+ * KNOWN LIMITATION, accepted deliberately (round 5). That last sentence is
+ * true of the CHARACTER but not of its IDENTITY, and there is exactly one
+ * user-visible consequence: typing a trigger character immediately BEFORE an
+ * escaped one resolves the anchor onto the newly typed character.
+ *
+ *     reanchorOffset('@ad', '@@ad', 0) === 0   // 0 is now the NEW '@'
+ *
+ * So: `hi @ad`, Escape, put the caret at offset 3, type `@bo` -- the text
+ * becomes `hi @bo@ad` and the menu does NOT open for the `@bo` just typed;
+ * the roles are swapped and it is the old `@ad` that would reopen. Pinned by
+ * table rows in suppression.test.ts and by a component test in
+ * Composer.test.tsx, so it is a recorded decision rather than a surprise.
+ *
+ * It is irreducible by diffing: two identical characters carry no information
+ * about which is which, and flipping the tiebreak to prefer the common SUFFIX
+ * merely mirrors the problem onto a trigger typed immediately AFTER an
+ * escaped one. A real fix means not diffing at all -- anchoring the
+ * suppression to a Lexical marker (a PointType maintained through the
+ * editor's own transform pipeline, or a zero-width marker node), which costs
+ * a node type, its serialization, and its interaction with undo/redo and
+ * mention insertion. Not worth it for "typed a second @ directly in front of
+ * a dismissed one"; revisit if it ever shows up in real use.
  */
 export function reanchorOffset(oldText: string, newText: string, offset: number): number | null {
   if (offset < 0 || offset >= oldText.length) {
@@ -120,6 +143,17 @@ export function reanchorSuppression(
  * Whether a freshly detected trigger IS the dismissed occurrence, and so must
  * stay closed. All three components must match exactly; `suppressed` is
  * expected to have been re-anchored against the current text first.
+ *
+ * The `trigger` comparison is a cheap ASSERTION, not a live discriminator:
+ * `nodeText[triggerOffset] === trigger` is an invariant of this module —
+ * `reanchorSuppression` rebases `nodeText` on every update and re-anchoring
+ * is totally character-preserving, so the character under the anchor is
+ * always the recorded trigger. Its unit test therefore asserts a tautology,
+ * and no component-level test can kill it (an in-place `@` -> `:` edit
+ * deletes the anchored character, so the suppression is dropped by
+ * re-anchoring one step earlier). It is kept because it is free and would
+ * catch a future change to `detectTrigger` or to the diff that broke the
+ * invariant — but it must not be counted as coverage.
  */
 export function isSuppressedOccurrence(
   suppressed: SuppressedOccurrence,

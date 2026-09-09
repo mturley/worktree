@@ -94,6 +94,29 @@ describe('reanchorOffset', () => {
     { name: 'prefix/suffix would overlap ("ab" -> "aab"), offset in the prefix', oldText: 'ab', newText: 'aab', offset: 0, expected: 0 },
     { name: 'collapse to a single repeated character ("aa" -> "a")', oldText: 'aa', newText: 'a', offset: 0, expected: 0 },
     { name: 'collapse to a single repeated character, later offset', oldText: 'aa', newText: 'a', offset: 1, expected: null },
+
+    // --- KNOWN LIMITATION: a trigger typed immediately BEFORE an escaped one
+    // Pinned, not aspirational. Diffing two identical characters cannot say
+    // which is which, so the anchor lands on the NEWLY TYPED '@' and the
+    // escaped occurrence effectively moves right. Accepted in round 5; see
+    // the long comment on reanchorOffset for why it is irreducible by
+    // diffing and what a real fix would cost. If these rows ever change, the
+    // component test "records the accepted limitation..." changes with them.
+    { name: 'LIMITATION: trigger typed directly before the escaped one', oldText: '@ad', newText: '@@ad', offset: 0, expected: 0 },
+    {
+      name: 'LIMITATION: the same, mid-line (the component-test scenario)',
+      oldText: 'hi @ad',
+      newText: 'hi @bo@ad',
+      offset: 3,
+      expected: 3,
+    },
+    // The mirror: a trigger typed immediately AFTER the escaped one is NOT
+    // ambiguous the same way, because the common prefix reaches the escaped
+    // character first — it stays anchored, which is the correct answer.
+    { name: 'mirror: trigger typed directly after the escaped one', oldText: 'x @ad', newText: 'x @@ad', offset: 2, expected: 2 },
+    // And deleting one of two adjacent triggers drops the suppression rather
+    // than guessing, since the anchor falls inside the replaced range.
+    { name: 'mirror: one of two adjacent triggers deleted', oldText: '@@ad', newText: '@ad', offset: 1, expected: null },
   ]
 
   for (const c of cases) {
@@ -102,19 +125,43 @@ describe('reanchorOffset', () => {
     })
   }
 
-  it('never slides the anchor onto a different character', () => {
-    // The property the caller relies on: a non-null result points at the same
-    // character it did before the edit, so a suppression can never end up
-    // anchored to something that is no longer its trigger.
-    for (const c of cases) {
-      const result = reanchorOffset(c.oldText, c.newText, c.offset)
-      if (result === null) {
-        continue
-      }
-      // The case name rides along in the compared value so a failure names
-      // the offending row rather than just "expected 'a' to be '@'".
-      expect(`${c.name}: ${c.newText[result]}`).toBe(`${c.name}: ${c.oldText[c.offset]}`)
+  it('never slides the anchor onto a different character (exhaustive)', () => {
+    // Brute-force rather than a walk over the table's own rows: every
+    // old/new pair over a small alphabet, at every in-range offset. This is
+    // the property the identity depends on — a non-null result must point at
+    // the same character, and must be a valid index into newText — so it is
+    // worth proving over the whole space instead of over the cases someone
+    // thought to write down. (~50k cases, a few tens of ms.)
+    const alphabet = ['a', 'b', '@']
+    const strings: string[] = ['']
+    let frontier: string[] = ['']
+    for (let length = 0; length < 4; length += 1) {
+      frontier = frontier.flatMap((prefix) => alphabet.map((ch) => prefix + ch))
+      strings.push(...frontier)
     }
+
+    const violations: string[] = []
+    let checked = 0
+    for (const oldText of strings) {
+      for (const newText of strings) {
+        for (let offset = 0; offset < oldText.length; offset += 1) {
+          checked += 1
+          const result = reanchorOffset(oldText, newText, offset)
+          if (result === null) {
+            continue
+          }
+          if (result < 0 || result >= newText.length) {
+            violations.push(`"${oldText}"@${offset} -> "${newText}"@${result}: out of range`)
+          } else if (newText[result] !== oldText[offset]) {
+            violations.push(
+              `"${oldText}"@${offset} ("${oldText[offset]}") -> "${newText}"@${result} ("${newText[result]}")`,
+            )
+          }
+        }
+      }
+    }
+    expect(violations).toEqual([])
+    expect(checked).toBeGreaterThan(10000)
   })
 })
 
@@ -169,6 +216,12 @@ describe('isSuppressedOccurrence', () => {
   })
 
   it('does not match a different trigger character', () => {
+    // Honest label: `nodeText[triggerOffset] === trigger` is an invariant of
+    // this module (re-anchoring rebases nodeText every update and is totally
+    // character-preserving), so a caller can never legitimately reach this
+    // with a mismatched trigger. This asserts a tautology and exists to keep
+    // the assertion honest if that invariant is ever broken — it is not
+    // coverage of a reachable behaviour. See isSuppressedOccurrence's doc.
     expect(isSuppressedOccurrence(base, 'k1', ':', 6)).toBe(false)
   })
 

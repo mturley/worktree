@@ -111,11 +111,18 @@ function isMenuVisible(hasMatch: boolean, itemCount: number): boolean {
 /** The node-relative offset of a detected trigger's `@`/`:`/`#` character.
  *  `selection.anchor.offset` is already relative to the anchor node itself
  *  (not the block), so this needs no sibling-walking: the trigger sits
- *  `query.length + 1` characters before the caret WITHIN the node. Returns
- *  `null` when that lands outside the node — which happens when the trigger
- *  actually lives in an earlier sibling node, in which case this detection
- *  simply cannot be identified for suppression purposes (and so is never
- *  suppressed). Called from a hot path; must never throw. */
+ *  `query.length + 1` characters before the caret WITHIN the node.
+ *
+ *  Returns `null` when that lands outside the node. The invariant that makes
+ *  a negative result the RIGHT detector for "the trigger lives in an earlier
+ *  sibling node" is a property of `detectTrigger`, not of this arithmetic:
+ *  its query is matched right up to the caret, so `query.length` counts every
+ *  character between the trigger and the caret. If the trigger is in an
+ *  earlier node then all `anchorOffset` characters of this node are part of
+ *  that span, so `query.length >= anchorOffset` and the result is negative.
+ *  Such a detection simply cannot be identified for suppression purposes, and
+ *  so is never suppressed (it opens). Called from a hot path; must never
+ *  throw. */
 function getNodeTriggerOffset(anchorOffset: number, query: string): number | null {
   const offset = anchorOffset - query.length - 1
   return offset < 0 ? null : offset
@@ -321,16 +328,24 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
 
     /** Keeps the dismissed occurrence's recorded offset pointing at the same
      *  trigger character as the user edits around it, by diffing its node's
-     *  text against the text seen last time. Runs on EVERY update, before any
-     *  early return, so successive edits are re-anchored one at a time
-     *  (accurate) rather than as one accumulated diff (guesswork). Clears the
-     *  suppression when the occurrence is edited away.
+     *  text against the text seen last time. Clears the suppression when the
+     *  occurrence is edited away.
      *
-     *  The node-missing branch is NOT redundant belt-and-braces here (it was
-     *  under the pre-round-4 key, where a vanished node could never match the
-     *  node-key comparison anyway): re-anchoring needs the node's current
-     *  text, so a deleted node has to be handled explicitly rather than
-     *  falling through to a stale record. */
+     *  ORDERING INVARIANT: this MUST be called on EVERY update, before any
+     *  early return below. That is what keeps each diff a single contiguous
+     *  edit — the assumption `reanchorOffset` is built on. Deferring it (to
+     *  the branch that actually needs it, say) would leave several edits to
+     *  be reconstructed from one accumulated before/after pair, which a
+     *  prefix/suffix diff can only guess at. Today's tests still pass if it
+     *  moves, because they never make two edits between updates; the
+     *  invariant is the reason, not the tests.
+     *
+     *  The node-lookup GUARD is load-bearing: re-anchoring needs the node's
+     *  current text, so a deleted node would be a null dereference. The
+     *  `suppressedRef.current = null` INSIDE it is belt-and-braces — Lexical
+     *  never reuses node keys, so a record for a vanished node could never
+     *  match `isSuppressedOccurrence` anyway; it just avoids carrying a dead
+     *  record around. */
     function reanchorSuppressed() {
       const suppressed = suppressedRef.current
       if (suppressed === null) {

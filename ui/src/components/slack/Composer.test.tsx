@@ -553,16 +553,15 @@ describe('Composer', () => {
     await findByText('bo-user') // node B's mention must open regardless of node A's escaped state
   })
 
-  it('a DIFFERENT trigger character at the same node position and before-text opens (test-gap: trigger component)', async () => {
-    // Same node (spliced in place, key preserved), same leading text
-    // ("hello "), but '@' escaped and ':' detected next — only the trigger
-    // character differs. Under round 4's offset identity this is caught one
-    // step earlier than the trigger comparison: overwriting "@ad" deletes the
-    // anchored character, so `reanchorOffset` returns null and the
-    // suppression is dropped outright (mutating the trigger comparison does
-    // NOT make this test fail — the `isSuppressedOccurrence` unit table is
-    // what covers that component; see the fix-round-4 report for why no
-    // component-level test can).
+  it('replacing an escaped "@ad" with ":sm" in place reopens the menu (via re-anchoring to null, NOT the trigger comparison)', async () => {
+    // NOT coverage of the suppression identity — it is a passenger, kept
+    // only because the user-visible behaviour (swap a mention for an emoji
+    // in place and the menu comes back) is worth pinning. It survives EVERY
+    // single-component mutation, including the trigger comparison it was
+    // originally written to isolate: overwriting "@ad" deletes the anchored
+    // character, so `reanchorOffset` returns null and the suppression is
+    // dropped before any comparison happens. Round 5 verified it only dies
+    // under a combined two-mutation break. Do not count it as coverage.
     const onSend = vi.fn()
     const autocomplete = vi.spyOn(api, 'autocomplete')
     autocomplete.mockImplementation(async (trigger, query) => {
@@ -672,5 +671,41 @@ describe('Composer', () => {
 
     fireEvent.keyDown(editorEl, { key: 'Enter' })
     expect(onSend).toHaveBeenCalledWith('hello @ada')
+  })
+
+  it('records the accepted limitation: a trigger typed directly BEFORE an escaped one inherits its suppression (round-5)', async () => {
+    // This test pins a KNOWN LIMITATION, deliberately accepted — it asserts
+    // behaviour that is arguably wrong, so that changing it is a deliberate
+    // act rather than an accident. Diffing two identical characters cannot
+    // tell which '@' is which, so inserting "@bo" immediately in front of an
+    // escaped "@ad" re-anchors the suppression onto the NEWLY TYPED '@': the
+    // menu does not open for "@bo", and the roles of the two occurrences are
+    // effectively swapped. `reanchorOffset('hi @ad', 'hi @bo@ad', 3) === 3`
+    // is the same fact at the unit level (pinned in suppression.test.ts).
+    // See the KNOWN LIMITATION comment on reanchorOffset for why a diff
+    // cannot resolve this and what a marker-based fix would cost. If this
+    // test starts failing, that fix has landed — update it, don't silence it.
+    const onSend = vi.fn()
+    const autocomplete = vi.spyOn(api, 'autocomplete')
+    autocomplete.mockImplementation(async (_trigger, query) => {
+      if (query === 'ad') return [{ kind: 'user', id: 'U1', label: 'ad-user', token: '<@U1>' }]
+      if (query === 'bo') return [{ kind: 'user', id: 'U2', label: 'bo-user', token: '<@U2>' }]
+      return []
+    })
+    const { getEditor, onEditorReady } = grabEditor()
+    const { getByRole, findByText, queryByText } = renderWithProvider(
+      <Composer onSend={onSend} channel="C1" users={{}} groups={{}} onEditorReady={onEditorReady} />,
+    )
+    const editorEl = getByRole('textbox')
+    await waitFor(() => getEditor())
+
+    setEditorText(getEditor(), 'hi @ad')
+    await findByText('ad-user')
+    fireEvent.keyDown(editorEl, { key: 'Escape' })
+
+    // Type "@bo" at offset 3 — directly in front of the escaped "@ad".
+    insertTextAt(getEditor(), 3, '@bo') // -> "hi @bo@ad", caret after "@bo"
+    await sleep(400) // see the settle-not-poll comment above
+    expect(queryByText('bo-user')).toBeNull() // the accepted limitation
   })
 })
