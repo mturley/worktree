@@ -17,6 +17,9 @@ type fakeSlack struct {
 	thread      slack.Thread
 	users       map[string]slack.User
 	emoji       map[string]string
+	emojiErr    error
+	emojiCalls  int
+	emojiMu     sync.Mutex
 	channelName string
 	currentUser string
 	err         error
@@ -63,7 +66,18 @@ func (f *fakeSlack) Users(ctx context.Context, ids []string) (map[string]slack.U
 	return out, nil
 }
 
-func (f *fakeSlack) Emoji(ctx context.Context) (map[string]string, error) { return f.emoji, nil }
+func (f *fakeSlack) Emoji(ctx context.Context) (map[string]string, error) {
+	f.emojiMu.Lock()
+	f.emojiCalls++
+	f.emojiMu.Unlock()
+	return f.emoji, f.emojiErr
+}
+
+func (f *fakeSlack) emojiCallCount() int {
+	f.emojiMu.Lock()
+	defer f.emojiMu.Unlock()
+	return f.emojiCalls
+}
 func (f *fakeSlack) UserGroups(ctx context.Context) (map[string]slack.UserGroup, error) {
 	return nil, nil
 }
@@ -108,6 +122,12 @@ func (f *fakeSlack) RemoveReaction(ctx context.Context, channel, ts, name string
 }
 
 func (f *fakeSlack) SearchUsers(ctx context.Context, query, currentChannel string, limit int) ([]slack.User, error) {
+	// Honours ctx, as the real client does — this is what lets a test observe
+	// whether the lookup ran on a context detached from one requester's
+	// cancellation.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	f.searchMu.Lock()
 	f.searchQueries = append(f.searchQueries, "users:"+query)
 	f.searchMu.Unlock()

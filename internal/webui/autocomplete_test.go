@@ -1,10 +1,12 @@
 package webui
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/mturley/watcher/slack"
@@ -169,5 +171,108 @@ func TestAutocompleteSurfacesSlackErrors(t *testing.T) {
 	s.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/slack-autocomplete?trigger=%40&q=ada", nil))
 	if rec.Code != http.StatusBadGateway {
 		t.Fatalf("got %d, want 502 — the UI degrades to local results on error", rec.Code)
+	}
+}
+
+// TestAutocompleteEmojiSkipsUnresolvedAliases pins the fix for an "alias:"
+// value reaching the browser as an image URL. emoji.list resolves only ONE
+// hop of alias indirection (see the watcher library's Emoji()), so a value
+// can still be the literal string "alias:<name>" when the alias target is a
+// STANDARD emoji rather than a custom one — and "<img src=\"alias:thumbsup\">"
+// renders as a broken image.
+func TestAutocompleteEmojiSkipsUnresolvedAliases(t *testing.T) {
+	fs := &fakeSlack{emoji: map[string]string{
+		"tada":     "https://e/tada.png",
+		"tada-alt": "alias:tada-somewhere-standard",
+	}}
+	s := &Server{SlackClient: fs}
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/slack-autocomplete?trigger=%3A&q=tada", nil))
+	var got struct{ Results []AutocompleteItem }
+	json.NewDecoder(rec.Body).Decode(&got)
+	for _, it := range got.Results {
+		if strings.HasPrefix(it.ImageURL, "alias:") {
+			t.Fatalf("unresolved alias leaked to the client: %+v", it)
+		}
+		if it.ID == "tada-alt" {
+			t.Fatalf("alias-only entry should not be offered as a custom emoji: %+v", it)
+		}
+	}
+	if len(got.Results) != 1 || got.Results[0].ID != "tada" {
+		t.Fatalf("got %+v, want just tada", got.Results)
+	}
+}
+
+// TestAutocompleteEmojiFailureIsNotRetriedPerKeystroke pins the fix for the
+// one Slack-backed autocomplete path deliberately left outside the TTL cache.
+// emoji() cached only on SUCCESS, so a failing emoji.list meant every
+// debounced ":" keystroke issued a fresh Slack call — the sustained-burst
+// pattern docs/reverse-engineering/slack-web-api.md blames for two session
+// token revocations.
+func TestAutocompleteEmojiFailureIsNotRetriedPerKeystroke(t *testing.T) {
+	fs := &fakeSlack{emojiErr: errors.New("boom")}
+	s := &Server{SlackClient: fs}
+	for _, q := range []string{"t", "ta", "tad", "tada", "tadas", "tadase"} {
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/slack-autocomplete?trigger=%3A&q="+q, nil))
+		if rec.Code != http.StatusBadGateway {
+			t.Fatalf("q=%q: got %d, want 502", q, rec.Code)
+		}
+	}
+	if n := fs.emojiCallCount(); n != 1 {
+		t.Fatalf("emoji.list called %d times across 6 keystrokes, want 1", n)
+	}
+}
+
+// TestAutocompleteLookupSurvivesRequesterCancellation pins the fix for the
+// single-flight fn closing over the LEADER's request context: the debounce
+// aborts requests constantly, so a waiter would inherit the leader's
+// cancellation and get context.Canceled -> 502 -> an empty menu for a
+// perfectly live request.
+func TestAutocompleteLookupSurvivesRequesterCancellation(t *testing.T) {
+	fs := &fakeSlack{searchUsers: []slack.User{{ID: "U1", Name: "ada", DisplayName: "ada"}}}
+	s := &Server{SlackClient: fs}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest("GET", "/api/slack-autocomplete?trigger=%40&q=ada&channel=C1", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+// TestAutocompleteErrorsAreJSON: the handler answered 400 with JSON and
+// 401/502 with plain text, in the same handler. A client cannot parse both.
+func TestAutocompleteErrorsAreJSON(t *testing.T) {
+	cases := []struct {
+		name, url string
+		server    *Server
+		want      int
+	}{
+		{"bad trigger", "/api/slack-autocomplete?trigger=%21&q=x", &Server{SlackClient: &fakeSlack{}}, http.StatusBadRequest},
+		{"auth", "/api/slack-autocomplete?trigger=%40&q=x", &Server{SlackClient: &fakeSlack{searchErr: slack.ErrAuth}}, http.StatusUnauthorized},
+		{"upstream", "/api/slack-autocomplete?trigger=%40&q=x", &Server{SlackClient: &fakeSlack{searchErr: errors.New("boom")}}, http.StatusBadGateway},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			tc.server.Handler().ServeHTTP(rec, httptest.NewRequest("GET", tc.url, nil))
+			if rec.Code != tc.want {
+				t.Fatalf("got %d, want %d", rec.Code, tc.want)
+			}
+			if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+				t.Fatalf("Content-Type %q, want application/json", ct)
+			}
+			var body struct {
+				Error string `json:"error"`
+			}
+			if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+				t.Fatalf("body is not JSON: %v", err)
+			}
+			if body.Error == "" {
+				t.Fatalf("no error message in %+v", body)
+			}
+		})
 	}
 }

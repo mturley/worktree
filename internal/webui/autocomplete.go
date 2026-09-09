@@ -110,6 +110,23 @@ func (s *Server) autocompleteCacheOrInit() *autocompleteCache {
 	return s.acCache
 }
 
+// autocompleteCallTimeout bounds a detached lookup. Without a deadline, a
+// context with no cancellation at all would let a hung Slack call pin a
+// single-flight key (and its waiters) indefinitely.
+const autocompleteCallTimeout = 20 * time.Second
+
+// detachedLookupContext returns a context that keeps ctx's values but NOT its
+// cancellation, bounded by autocompleteCallTimeout.
+//
+// This is what keeps single-flight honest: the leader's `fn` runs on behalf of
+// every waiter, so inheriting the LEADER's request cancellation means one
+// requester navigating away — or, far more commonly, the composer's debounce
+// aborting a superseded keystroke — fails the lookup for everyone waiting on
+// it (context.Canceled -> 502 -> an empty menu for a perfectly live request).
+func detachedLookupContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), autocompleteCallTimeout)
+}
+
 // handleSlackAutocomplete implements GET /api/slack-autocomplete, the single
 // endpoint behind all three composer triggers.
 //
@@ -140,11 +157,20 @@ func (s *Server) handleSlackAutocomplete(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if errors.Is(err, slack.ErrAuth) {
-		http.Error(w, "auth", http.StatusUnauthorized)
+		// writeError (JSON), not http.Error (text): the 400 above is JSON, and
+		// one handler must not answer with two different error encodings.
+		writeError(w, http.StatusUnauthorized, "slack authentication failed")
 		return
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		// SECURITY (adjudicated, final review): echoing the upstream error is
+		// safe — every error path in watcher v0.9.0's Slack client was traced,
+		// and the session token cannot reach an error string. Errors carry
+		// only a Slack error code, a *url.Error naming a token-free endpoint
+		// (the token travels in the request BODY, not the URL), or a
+		// json type error. Re-verify if the client's error construction
+		// changes.
+		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, struct {
@@ -164,6 +190,8 @@ func (s *Server) mentionCandidates(ctx context.Context, q, channel string) ([]Au
 	}
 
 	remote, err := s.autocompleteCacheOrInit().Do(autocompleteCacheKey("@", q, channel), func() ([]AutocompleteItem, error) {
+		ctx, cancel := detachedLookupContext(ctx)
+		defer cancel()
 		var (
 			wg        sync.WaitGroup
 			users     []slack.User
@@ -229,6 +257,8 @@ func (s *Server) channelCandidates(ctx context.Context, q string) ([]Autocomplet
 		return []AutocompleteItem{}, nil
 	}
 	return s.autocompleteCacheOrInit().Do(autocompleteCacheKey("#", q), func() ([]AutocompleteItem, error) {
+		ctx, cancel := detachedLookupContext(ctx)
+		defer cancel()
 		chans, err := s.SlackClient.SearchChannels(ctx, q, 25)
 		if err != nil {
 			return nil, err
@@ -252,42 +282,65 @@ func (s *Server) channelCandidates(ctx context.Context, q string) ([]Autocomplet
 }
 
 // emojiCandidates answers from the custom-emoji map the server already caches
-// (slack.go's emoji()), making NO Slack call. The Unicode half is matched
-// client-side from node-emoji and merged into the same menu.
+// (slack.go's emoji()), making NO emojis/search call. The Unicode half is
+// matched client-side from node-emoji (ui/src/lib/emoji.ts's
+// standardEmojiNames, via localCandidates) and merged into the same menu.
+//
+// It goes through the same TTL cache + single-flight as the other two
+// triggers. emoji() has its own cache, but only that cache's MISS path is
+// cheap to repeat: routing through here also collapses the per-keystroke
+// filtering work and, more importantly, keeps every Slack-backed autocomplete
+// path under one guard instead of leaving this one outside it.
 func (s *Server) emojiCandidates(ctx context.Context, q string) ([]AutocompleteItem, error) {
 	if q == "" {
 		return []AutocompleteItem{}, nil
 	}
-	all, err := s.emoji(ctx)
-	if err != nil {
-		return nil, err
-	}
-	names := make([]string, 0, 25)
-	for name := range all {
-		if strings.Contains(name, strings.ToLower(q)) {
-			names = append(names, name)
+	return s.autocompleteCacheOrInit().Do(autocompleteCacheKey(":", q), func() ([]AutocompleteItem, error) {
+		ctx, cancel := detachedLookupContext(ctx)
+		defer cancel()
+		all, err := s.emoji(ctx)
+		if err != nil {
+			return nil, err
 		}
-	}
-	// Map iteration is random; sort so the same query always yields the same
-	// menu, with shorter (closer) matches first.
-	sort.Slice(names, func(i, j int) bool {
-		if len(names[i]) != len(names[j]) {
-			return len(names[i]) < len(names[j])
+		names := make([]string, 0, 25)
+		for name, url := range all {
+			// emoji.list resolves only ONE hop of "alias:<name>"
+			// indirection (see the watcher library's Emoji()), so a value
+			// can still be the literal string "alias:thumbsup" when the
+			// alias target is a STANDARD emoji rather than a custom one.
+			// That is not a URL, and shipping it produced
+			// <img src="alias:thumbsup"> in the menu. Skip such entries:
+			// the client's Unicode half already offers the standard emoji
+			// they alias.
+			if strings.HasPrefix(url, "alias:") {
+				continue
+			}
+			if strings.Contains(name, strings.ToLower(q)) {
+				names = append(names, name)
+			}
 		}
-		return names[i] < names[j]
-	})
-	if len(names) > 25 {
-		names = names[:25]
-	}
-	items := make([]AutocompleteItem, 0, len(names))
-	for _, name := range names {
-		items = append(items, AutocompleteItem{
-			Kind:     "emoji",
-			ID:       name,
-			Label:    ":" + name + ":",
-			ImageURL: all[name],
-			Token:    emojiToken(name),
+		// Map iteration is random; sort so the same query always yields the
+		// same menu, with shorter (closer) matches first. ui/src/lib/emoji.ts
+		// ranks the Unicode half the same way.
+		sort.Slice(names, func(i, j int) bool {
+			if len(names[i]) != len(names[j]) {
+				return len(names[i]) < len(names[j])
+			}
+			return names[i] < names[j]
 		})
-	}
-	return items, nil
+		if len(names) > 25 {
+			names = names[:25]
+		}
+		items := make([]AutocompleteItem, 0, len(names))
+		for _, name := range names {
+			items = append(items, AutocompleteItem{
+				Kind:     "emoji",
+				ID:       name,
+				Label:    ":" + name + ":",
+				ImageURL: all[name],
+				Token:    emojiToken(name),
+			})
+		}
+		return items, nil
+	})
 }
