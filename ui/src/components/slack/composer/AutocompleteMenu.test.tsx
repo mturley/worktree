@@ -74,6 +74,36 @@ describe('AutocompleteMenu', () => {
     expect(event.defaultPrevented).toBe(true)
   })
 
+  it('routes avatars and custom-emoji images through the app proxies', () => {
+    // Direct slack-edge.com hotlinks are blocked/403 from the browser — every
+    // other call site (Message.tsx, renderEmoji.tsx, ReactionPill.tsx) proxies
+    // them, and the menu must too or its images are simply broken.
+    const { container } = renderMenu({
+      items: [
+        { kind: 'user', id: 'U1', label: 'ada', avatar: 'https://avatars.slack-edge.com/a.png', token: '<@U1>' },
+        {
+          kind: 'emoji',
+          id: 'smile-cry',
+          label: ':smile-cry:',
+          imageUrl: 'https://emoji.slack-edge.com/y.png',
+          token: ':smile-cry:',
+        },
+      ],
+      highlightedId: 'user:U1',
+    })
+    const srcs = Array.from(container.querySelectorAll('img')).map((i) => i.getAttribute('src'))
+    expect(srcs).toContain(`/api/slack-avatar?url=${encodeURIComponent('https://avatars.slack-edge.com/a.png')}`)
+    expect(srcs).toContain(`/api/slack-emoji?url=${encodeURIComponent('https://emoji.slack-edge.com/y.png')}`)
+  })
+
+  it('renders a standard Unicode emoji as the character itself', () => {
+    const { getByText } = renderMenu({
+      items: [{ kind: 'emoji', id: 'smile', label: ':smile:', token: ':smile:' }],
+      highlightedId: 'emoji:smile',
+    })
+    expect(getByText('\u{1F604}')).toBeInTheDocument()
+  })
+
   it('renders nothing when there are no items', () => {
     // Not toBeEmptyDOMElement(container): MantineProvider itself injects a
     // <style> tag into the render container in this Mantine version, so the

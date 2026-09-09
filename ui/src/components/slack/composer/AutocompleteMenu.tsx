@@ -1,5 +1,6 @@
 import { Avatar, Group, Paper, Stack, Text } from '@mantine/core'
-import type { AutocompleteItem } from '../../../api/slackApi'
+import { avatarProxy, type AutocompleteItem } from '../../../api/slackApi'
+import { renderEmojiNode } from '../../../lib/renderEmoji'
 
 export interface AutocompleteMenuProps {
   items: AutocompleteItem[]
@@ -47,8 +48,18 @@ export function AutocompleteMenu({ items, highlightedId, onSelect }: Autocomplet
                 onSelect(item)
               }}
             >
-              {item.avatar ? <Avatar src={item.avatar} size={20} radius="xl" /> : null}
-              {item.imageUrl ? <img src={item.imageUrl} alt="" width={20} height={20} /> : null}
+              {/* Both images go through the app's proxies, as every other
+                  Slack image call site does (Message.tsx, renderEmoji.tsx,
+                  ReactionPill.tsx): a direct slack-edge.com hotlink is
+                  blocked/403 from the browser. renderEmojiNode applies
+                  emojiProxy itself, and additionally renders a STANDARD
+                  emoji — one with no custom image — as its character, which
+                  is how the client-side Unicode half of the ":" menu shows
+                  up at all. */}
+              {item.avatar ? <Avatar src={avatarProxy(item.avatar)} size={20} radius="xl" /> : null}
+              {item.kind === 'emoji'
+                ? renderEmojiNode(item.id, undefined, item.imageUrl ? { [item.id]: item.imageUrl } : {}, 'emoji')
+                : null}
               <Text size="sm">{item.label}</Text>
               {item.detail ? (
                 <Text size="xs" c="dimmed">
