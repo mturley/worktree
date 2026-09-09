@@ -158,9 +158,10 @@ describe('reanchorOffset', () => {
     // of the suppression: the menu must stay shut while the query grows).
     { name: 'typing into the dismissed occurrence', oldText: 'hi @ad', newText: 'hi @ada', offset: 3, expected: 3 },
     {
-      // Backspacing inside the dismissed query: the hint ("@ad") is no longer
-      // found at either candidate, so the tiebreak abstains and the ordinary
-      // prefix-branch answer stands. It must not spuriously drop to null.
+      // Backspacing inside the dismissed query: the uncapped common suffix
+      // is just "d" (length 1), so suffixCandidate is null and the tiebreak
+      // never runs at all — this falls straight through to the ordinary
+      // prefix-branch answer. It must not spuriously drop to null.
       name: 'backspacing inside the dismissed query keeps the anchor',
       oldText: 'hi @ad',
       newText: 'hi @d',

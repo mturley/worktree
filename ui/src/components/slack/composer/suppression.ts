@@ -86,20 +86,35 @@ export interface SuppressedOccurrence {
  * degenerate hint means "no preference" rather than "matches everything" —
  * which is exactly how `startsWith('')` / `endsWith('')` failed before. (The
  * hint is in fact never empty, since `offset < oldText.length`, but the
- * design does not depend on that.) If the hint matches both candidates or
- * neither, the pre-round-6 answer stands unchanged.
+ * design does not depend on that.) The code below computes `suffixFits`
+ * symmetrically with `prefixFits`, but it is not actually a live
+ * discriminator: whenever `suffixCandidate` is non-null, admissibility
+ * already guarantees `newText.slice(suffixCandidate) === hint`, so
+ * `suffixFits` is always true and `if (prefixFits !== suffixFits)` reduces to
+ * `if (!prefixFits)`. A brute-force check over the reachable diffs bears this
+ * out — 552 rows where both fit, 561 where only the prefix side fails to
+ * fit, and zero rows where only the prefix fits, none where neither fits, and
+ * none where `suffixFits` is false. So the "if the hint matches both
+ * candidates" case is a real, tested branch (the pre-round-6 answer stands),
+ * but "matches neither" is unreachable by construction, not a case under
+ * test — the symmetric form is kept anyway because it documents intent.
  *
  * The mirror case does NOT regress: a trigger typed immediately AFTER an
  * escaped one, `"hi @ad"` → `"hi @ad@bo"`, is not ambiguous at all — the
  * common prefix spans the whole of `oldText`, the common suffix is empty, so
- * only one candidate exists and the tiebreak never runs. Flipping the
- * tiebreak to prefer the suffix branch unconditionally is what would mirror
- * the bug; keying it on the occurrence's own text does not.
+ * only one candidate exists and the tiebreak never runs. It is therefore
+ * outside the tiebreak's domain entirely, so an unconditional-suffix mutant
+ * doesn't touch it — what such a mutant actually breaks is the abstain path
+ * just below: the "both candidates fit" rows ("aaa"→"aaaa" @1/@2, the
+ * residual row, "aa"→"aaa" @0) would stop abstaining and start picking the
+ * suffix candidate regardless of fit, changing their answers.
  *
- * RESIDUAL LIMITATION, smaller and precisely stated. When the newly typed
- * trigger's text is a prefix of the escaped occurrence's own text, the hint
- * matches at both candidates and cannot discriminate — the old prefix-wins
- * answer stands:
+ * RESIDUAL LIMITATION, smaller and precisely stated. When the hint text
+ * matches at BOTH candidates, the tiebreak cannot discriminate between them
+ * and the old prefix-wins answer stands. This condition can be reached by
+ * either an insertion or a deletion; the most common way to hit it is typing
+ * a new trigger whose text happens to be a prefix of the escaped
+ * occurrence's own text:
  *
  *     reanchorOffset('hi @ad', 'hi @ad@ad', 3) === 3   // typed "@ad" in front
  *
