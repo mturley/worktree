@@ -140,6 +140,10 @@ export function WorktreeDetailPage() {
     : {
         position: "sticky" as const,
         top: headerHeight,
+        // Above the flowing column beside it, for the same reason the header
+        // needs a real value: card internals carry small z-indexes of their
+        // own and would otherwise paint over this list as it scrolls past.
+        zIndex: 1,
         alignSelf: "flex-start" as const,
         maxHeight: `calc(100dvh - ${headerHeight}px)`,
         overflowY: "auto" as const,
@@ -218,7 +222,14 @@ export function WorktreeDetailPage() {
         style={{
           position: "sticky",
           top: 0,
-          zIndex: 2,
+          // Mantine's z-index scale for app chrome (100), NOT a small number.
+          // SegmentedControl's inner control/innerLabel are `position:relative;
+          // z-index:2` and its ROOT is z-index:auto, so it creates no stacking
+          // context and those 2s land in the same context as this header. A
+          // header at 2 ties with them, DOM order decides, and the card below
+          // paints over it. Still under modal (200) and popover (300), which
+          // must stay above the header.
+          zIndex: "var(--mantine-z-index-app)",
           // The shell's own padding sits above this box, so without covering
           // it the body would be visible sliding through that gap. Pulling up
           // by the padding and re-adding it as padding makes the sticky box
