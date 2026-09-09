@@ -893,11 +893,21 @@ query param:
   own client behaviour) and appends the specials after them. A user-search
   failure is fatal to the request; a group-search failure is logged and
   swallowed so the user list still comes back.
-- **`:`** — makes **no Slack call at all**. It filters the custom-emoji map
+- **`:`** — makes **no `emojis/search` call**. It filters the custom-emoji map
   the server already caches (`slack.go`'s `emoji()`), sorted by match length
-  then name so results are deterministic. The Unicode half of the emoji menu
-  is matched client-side from node-emoji and merged in by the frontend — the
-  server only ever knows about custom emoji.
+  then name so results are deterministic. Values that are still an
+  `alias:<name>` indirection are skipped: `emoji.list` derefs only one level,
+  so an alias whose target is a *standard* emoji stays literal, and it is not
+  a URL (see the `emoji.list` section of the RE doc). The Unicode half of the
+  emoji menu is matched client-side from node-emoji
+  (`ui/src/lib/emoji.ts`'s `standardEmojiNames`, ranked the same way) and
+  merged in by `localCandidates` — the server only ever knows about custom
+  emoji, so without that half `:smi` finds nothing in a workspace with no
+  custom `smile`. This path goes through the same TTL cache + single-flight
+  as the other two triggers, and `emoji()` negatively caches a failed
+  `emoji.list` for 60s: it is called on every debounced `:` keystroke, and
+  caching only successes meant a failing `emoji.list` produced a fresh Slack
+  call per keystroke.
 - **`#`** — `SearchChannels`, empty `q` short-circuits to `[]`.
 
 Every result is an `AutocompleteItem` (`{kind, id, label, detail?, avatar?,
@@ -916,6 +926,29 @@ mirrors the same builders for exactly that purpose; its test table mirrors the
 Go table case for case, and each side carries a comment pointing at the other.
 Anything the server returns already carries its own `token` and is used
 as-is — `tokens.ts` is never consulted for remote results.
+
+**Errors are JSON, and `degraded` means the lookup FAILED.** All three error
+statuses (400 bad trigger, 401 auth, 502 upstream) go out through
+`writeError` as `{"error": …}`. On the client, `slackApi.autocomplete()`
+returns `null` for a failure and `[]` for a successful empty result (an abort
+— the normal end of a superseded keystroke — also resolves `[]`), and
+`useAutocomplete` raises the "workspace search unavailable" hint only on
+`null`. Conflating the two made a query that simply matched nobody look like
+a broken Slack session.
+
+**A stored server answer is tagged with the query it answers.** `remote` state
+carries its `(trigger, query)` and is ineligible for display until those match
+the live ones. Clearing it on every keystroke would work too but blanks the
+remote half of a menu the user may be arrowing through; leaving it untagged
+was a real bug — the previous query's results stayed in the menu, highlighted,
+through the debounce plus a Slack round trip, so Enter posted a mention of the
+wrong person.
+
+**Lookups run on a detached context.** The single-flight leader's `fn` gets
+`context.WithoutCancel` plus a timeout (`detachedLookupContext`), because it
+runs on behalf of every waiter: inheriting the leader's request cancellation
+meant the composer's own debounce aborting one keystroke failed the lookup for
+everybody waiting on it.
 
 **Hybrid lookup and one-time reorder.** `useAutocomplete` (`composer/useAutocomplete.ts`)
 computes local candidates synchronously from thread state

@@ -588,6 +588,14 @@ No params. Returns `emoji`: a `name → URL` map (URLs on `emoji.slack-edge.com`
 workspace had ~22,700 entries. Some values are **aliases**: `"alias:other-name"` — deref one
 level to the target name's URL. Fetch once and cache for the process; it's large.
 
+**A dereferenced value can still be `alias:…`.** The target of an alias need not itself be a
+custom emoji — `"+1": "alias:thumbsup"` points at a *standard* emoji, which has no entry in the
+map at all. The watcher library derefs exactly one level, so consumers must treat a value that
+still starts with `alias:` as "not a URL" rather than assuming a deref always yields one.
+`internal/webui/autocomplete.go` skips such entries entirely (the client's node-emoji half
+already offers the standard emoji they alias); shipping one produced `<img src="alias:thumbsup">`
+in the composer's `:` menu.
+
 ## `subscriptions.thread.mark` — mark a thread read
 
 ```
