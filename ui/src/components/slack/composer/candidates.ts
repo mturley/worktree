@@ -1,4 +1,5 @@
 import type { AutocompleteItem, User, UserGroup } from '../../../api/slackApi'
+import { standardEmojiNames } from '../../../lib/emoji'
 import { tokenFor } from './tokens'
 
 export interface LocalContext {
@@ -24,18 +25,36 @@ function matches(query: string, ...fields: Array<string | undefined>): boolean {
  * the menu paints on the first keystroke rather than after a round trip.
  * The server's results are merged in when they arrive (see mergeCandidates).
  *
- * Only "@" has local answers: emoji and channels are not part of the thread
- * payload.
+ * "@" is answered from the thread payload; ":" is answered from node-emoji,
+ * which supplies the STANDARD (Unicode) half of the emoji menu — the server
+ * can only offer the workspace's CUSTOM emoji, so without this ":smi" finds
+ * nothing unless someone uploaded a custom "smile". "#" has no local answer:
+ * channels are not part of the thread payload.
  */
 export function localCandidates(
   trigger: '@' | ':' | '#',
   query: string,
   ctx: LocalContext,
 ): AutocompleteItem[] {
-  if (trigger !== '@') {
+  if (trigger === '#') {
     return []
   }
   const out: AutocompleteItem[] = []
+
+  if (trigger === ':') {
+    for (const name of standardEmojiNames(query)) {
+      out.push({
+        kind: 'emoji',
+        id: name,
+        label: `:${name}:`,
+        // Deliberately no imageUrl: a standard emoji is a character, not an
+        // image. AutocompleteMenu resolves it by name through the shared
+        // lib/emoji machinery, exactly as the message renderer does.
+        token: tokenFor({ kind: 'emoji', id: name }),
+      })
+    }
+    return out
+  }
 
   for (const u of Object.values(ctx.users)) {
     if (query && !matches(query, u.DisplayName, u.RealName, u.Name)) {

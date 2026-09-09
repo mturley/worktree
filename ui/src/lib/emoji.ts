@@ -1,6 +1,22 @@
 // Shared emoji-resolution logic used by both RichText (inline `emoji`
 // elements) and Message (reaction pills), so the two render consistently.
-import { get as lookupStandardEmoji } from 'node-emoji'
+import { get as lookupStandardEmoji, search as searchStandardEmoji } from 'node-emoji'
+
+/** Standard (Unicode) emoji names matching `query` as a substring, shortest
+ * (closest) first then alphabetically — the same ordering the server applies
+ * to the CUSTOM half in internal/webui/autocomplete.go, so the two halves of
+ * the composer's `:` menu are ranked consistently.
+ *
+ * This is the ONLY place node-emoji is searched: the composer's emoji
+ * candidates go through here so emoji knowledge stays in one module. */
+export function standardEmojiNames(query: string, limit = 25): string[] {
+  if (!query) {
+    return []
+  }
+  const names = searchStandardEmoji(query.toLowerCase()).map((e) => e.name)
+  names.sort((a, b) => (a.length !== b.length ? a.length - b.length : a.localeCompare(b)))
+  return names.slice(0, limit)
+}
 
 /**
  * Converts a Slack `unicode` field — a hyphen-separated sequence of hex
