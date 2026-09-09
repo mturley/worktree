@@ -30,6 +30,11 @@ import { useAutocomplete } from './composer/useAutocomplete'
 import type { LocalContext } from './composer/candidates'
 import { MentionNode, $createMentionNode } from './composer/MentionNode'
 import { AutocompleteMenu, itemKey } from './composer/AutocompleteMenu'
+import {
+  isSuppressedOccurrence,
+  reanchorSuppression,
+  type SuppressedOccurrence,
+} from './composer/suppression'
 
 export interface ComposerProps {
   onSend: (text: string) => void
@@ -103,82 +108,17 @@ function isMenuVisible(hasMatch: boolean, itemCount: number): boolean {
   return hasMatch && itemCount > 0
 }
 
-/** Identifies one dismissed trigger *occurrence*: the text node it lives in,
- *  its trigger character, and the node's own text BEFORE the trigger
- *  character (NOT the query typed after it).
- *
- * This is fix-round-3's key, replacing two prior attempts that were each
- * either all-position or all-content and so each missed real cases:
- *
- * - Round 1 keyed on a `start` offset from the start of the BLOCK.
- *   `detectTrigger`'s `start` shifts whenever text earlier in the block
- *   changes, even within the same node — round 2's open finding 1: editing
- *   a typo before an escaped "@ad" wrongly looked like a new occurrence.
- * - Round 2 fixed that by keying on the QUERY (text AFTER the trigger)
- *   instead, comparing by prefix. That over-generalized: `localCandidates`
- *   always has @here/@channel/@everyone matches for an empty query, so even
- *   a bare "@" opens a menu Escape can dismiss, recording query `""` — and
- *   EVERY later query in that node starts with `""`, so escaping a bare "@"
- *   silently disabled mentions for the rest of the node (round 3 new finding
- *   1). More generally, escaping "@ad" also wrongly suppressed any later,
- *   unrelated "@a"/"@ada"/"@adam" in the same node (new finding 2), which is
- *   a much wider hit than the "two textually-identical occurrences" case
- *   round 2's comment documented as an accepted trade-off.
- *
- * The fix: key on the text BEFORE the trigger instead of the query after it,
- * and compare by SUFFIX (`currentBeforeText.endsWith(recordedBeforeText)`)
- * rather than prefix. A trigger's before-text only changes when something
- * BETWEEN the node's start and the trigger itself is edited — typing INTO
- * the query after it, or appending a whole new "before, @word" further along
- * the same node, leaves the escaped trigger's own before-text untouched as a
- * SUFFIX of whatever comes before the new/edited trigger:
- *   - "hello @ad" dismissed (before-text "hello "); edited to
- *     "x hello @ad" → before-text is now "x hello ", which ENDS WITH
- *     "hello " → same occurrence, correctly stays suppressed.
- *   - "hi @" dismissed (before-text "hi "); later "hi @there, @ada" → the
- *     new "@ada" occurrence's before-text is "hi @there, ", which does NOT
- *     end with "hi " → correctly NOT suppressed, menu reopens (new finding 1
- *     fixed).
- *   - "hello @ad" dismissed (before-text "hello "), then " cc @ada" appended
- *     → the new occurrence's before-text is "hello @ad cc ", which does NOT
- *     end with "hello " → correctly NOT suppressed (new finding 2 fixed).
- *
- * Trade-off, still accepted (now narrower than round 2's comment claimed):
- * two trigger occurrences in the same node whose BEFORE-TEXT is identical —
- * i.e. the trigger sits at the exact same position relative to node start,
- * which in practice means "the trigger is at the very start of the node" —
- * are not disambiguated. No finding requires distinguishing that case, and
- * doing so would need a per-character marker this editor doesn't otherwise
- * maintain. */
-interface SuppressedOccurrence {
-  nodeKey: NodeKey
-  trigger: TriggerMatch['trigger']
-  beforeText: string
-}
-
-function isSameSuppressedOccurrence(
-  suppressed: SuppressedOccurrence,
-  nodeKey: NodeKey,
-  trigger: TriggerMatch['trigger'],
-  beforeText: string,
-): boolean {
-  return suppressed.nodeKey === nodeKey && suppressed.trigger === trigger && beforeText.endsWith(suppressed.beforeText)
-}
-
-/** The node's own text preceding a detected trigger's `@`/`:`/`#` character —
- *  the "before-text" identity component above. `selection.anchor.offset` is
- *  already relative to the anchor node itself (not the block), so this needs
- *  no sibling-walking: the trigger sits `query.length + 1` characters before
- *  the caret WITHIN the node, and everything before that is the before-text.
- *  Returns `null` if that position doesn't fall inside the node (shouldn't
- *  happen for a genuine detection, but this is called from a hot path and
- *  must never throw). */
-function getNodeBeforeTriggerText(anchorNode: { getTextContent(): string }, anchorOffset: number, query: string): string | null {
-  const nodeRelativeStart = anchorOffset - query.length - 1
-  if (nodeRelativeStart < 0) {
-    return null
-  }
-  return anchorNode.getTextContent().slice(0, nodeRelativeStart)
+/** The node-relative offset of a detected trigger's `@`/`:`/`#` character.
+ *  `selection.anchor.offset` is already relative to the anchor node itself
+ *  (not the block), so this needs no sibling-walking: the trigger sits
+ *  `query.length + 1` characters before the caret WITHIN the node. Returns
+ *  `null` when that lands outside the node — which happens when the trigger
+ *  actually lives in an earlier sibling node, in which case this detection
+ *  simply cannot be identified for suppression purposes (and so is never
+ *  suppressed). Called from a hot path; must never throw. */
+function getNodeTriggerOffset(anchorOffset: number, query: string): number | null {
+  const offset = anchorOffset - query.length - 1
+  return offset < 0 ? null : offset
 }
 
 export function Composer({ onSend, disabled, channel, users, groups, onEditorReady }: ComposerProps) {
@@ -248,14 +188,16 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
   })
 
   // The occurrence most recently dismissed with Escape (see
-  // SuppressedOccurrence above), and the text node + before-trigger text the
-  // CURRENT open match lives in/has (needed to record that occurrence if
-  // Escape is pressed — Escape's command handler has no selection/node
-  // access of its own, so these are computed once, in the update listener
-  // that detects the match, and read back here).
+  // `SuppressedOccurrence` in ./composer/suppression), plus the text node,
+  // that node's text and the trigger's offset within it for the CURRENTLY
+  // open match — needed to record the occurrence if Escape is pressed, since
+  // Escape's command handler has no selection/node access of its own. They
+  // are computed once, in the update listener that detects the match, and
+  // read back there.
   const suppressedRef = useRef<SuppressedOccurrence | null>(null)
   const matchNodeKeyRef = useRef<NodeKey | null>(null)
-  const matchBeforeTextRef = useRef<string | null>(null)
+  const matchNodeTextRef = useRef<string | null>(null)
+  const matchTriggerOffsetRef = useRef<number | null>(null)
 
   // Callbacks whose real implementation lives inside the command-registration
   // effect below (see finding 5: they only read refs there, so `[editor]` is
@@ -336,7 +278,8 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
       })
       suppressedRef.current = null
       matchNodeKeyRef.current = null
-      matchBeforeTextRef.current = null
+      matchNodeTextRef.current = null
+      matchTriggerOffsetRef.current = null
       setMatch(null)
     }
     insertMentionRef.current = insertMention
@@ -376,13 +319,40 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
     }
     handleSendRef.current = handleSend
 
+    /** Keeps the dismissed occurrence's recorded offset pointing at the same
+     *  trigger character as the user edits around it, by diffing its node's
+     *  text against the text seen last time. Runs on EVERY update, before any
+     *  early return, so successive edits are re-anchored one at a time
+     *  (accurate) rather than as one accumulated diff (guesswork). Clears the
+     *  suppression when the occurrence is edited away.
+     *
+     *  The node-missing branch is NOT redundant belt-and-braces here (it was
+     *  under the pre-round-4 key, where a vanished node could never match the
+     *  node-key comparison anyway): re-anchoring needs the node's current
+     *  text, so a deleted node has to be handled explicitly rather than
+     *  falling through to a stale record. */
+    function reanchorSuppressed() {
+      const suppressed = suppressedRef.current
+      if (suppressed === null) {
+        return
+      }
+      const node = $getNodeByKey(suppressed.nodeKey)
+      if (node === null || !$isTextNode(node)) {
+        suppressedRef.current = null
+        return
+      }
+      suppressedRef.current = reanchorSuppression(suppressed, node.getTextContent())
+    }
+
     const removeUpdateListener = editor.registerUpdateListener(({ editorState }) => {
       editorState.read(() => {
+        reanchorSuppressed()
         const selection = $getSelection()
         if (!$isRangeSelection(selection) || !selection.isCollapsed()) {
           setMatch(null)
           matchNodeKeyRef.current = null
-          matchBeforeTextRef.current = null
+          matchNodeTextRef.current = null
+          matchTriggerOffsetRef.current = null
           setIsEmpty($getRoot().getTextContent().trim().length === 0)
           return
         }
@@ -397,34 +367,33 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
           // handled below.
           setMatch(null)
           matchNodeKeyRef.current = null
-          matchBeforeTextRef.current = null
+          matchNodeTextRef.current = null
+          matchTriggerOffsetRef.current = null
           return
         }
         const anchorNode = selection.anchor.getNode()
         const nodeKey = anchorNode.getKey()
-        const beforeText = getNodeBeforeTriggerText(anchorNode, selection.anchor.offset, detected.query)
-        let suppressed = suppressedRef.current
-        // Defensive: if the suppressed occurrence's node no longer exists
-        // (e.g. it was deleted and retyped), it can't still be "the same
-        // occurrence" no matter what lines up.
-        if (suppressed && $getNodeByKey(suppressed.nodeKey) === null) {
-          suppressed = null
-          suppressedRef.current = null
-        }
+        const triggerOffset = getNodeTriggerOffset(selection.anchor.offset, detected.query)
+        const suppressed = suppressedRef.current
         if (
           suppressed !== null &&
-          beforeText !== null &&
-          isSameSuppressedOccurrence(suppressed, nodeKey, detected.trigger, beforeText)
+          triggerOffset !== null &&
+          isSuppressedOccurrence(suppressed, nodeKey, detected.trigger, triggerOffset)
         ) {
           setMatch(null)
           matchNodeKeyRef.current = null
-          matchBeforeTextRef.current = null
+          matchNodeTextRef.current = null
+          matchTriggerOffsetRef.current = null
           return
         }
-        // A genuinely new/different occurrence — clear any stale suppression.
-        suppressedRef.current = null
+        // A genuinely different occurrence. The suppression is deliberately
+        // NOT cleared here — it stays anchored to its own occurrence, which
+        // the user can still come back to (finding 3). It only ends when the
+        // occurrence itself is edited away (re-anchoring returns null) or a
+        // mention is inserted.
         matchNodeKeyRef.current = nodeKey
-        matchBeforeTextRef.current = beforeText
+        matchNodeTextRef.current = anchorNode.getTextContent()
+        matchTriggerOffsetRef.current = triggerOffset
         setMatch(detected)
       })
     })
@@ -500,17 +469,20 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
         if (
           !isMenuVisible(matchRef.current !== null, itemsRef.current.length) ||
           !matchNodeKeyRef.current ||
-          matchBeforeTextRef.current === null
+          matchNodeTextRef.current === null ||
+          matchTriggerOffsetRef.current === null
         ) {
           return false
         }
         suppressedRef.current = {
           nodeKey: matchNodeKeyRef.current,
           trigger: matchRef.current!.trigger,
-          beforeText: matchBeforeTextRef.current,
+          nodeText: matchNodeTextRef.current,
+          triggerOffset: matchTriggerOffsetRef.current,
         }
         matchNodeKeyRef.current = null
-        matchBeforeTextRef.current = null
+        matchNodeTextRef.current = null
+        matchTriggerOffsetRef.current = null
         setMatch(null)
         return true
       },

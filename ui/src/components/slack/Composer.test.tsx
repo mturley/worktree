@@ -520,13 +520,13 @@ describe('Composer', () => {
   })
 
   it('a mention typed in a different, later text node opens even with an IDENTICAL before-trigger prefix to an escaped mention in an earlier node (test-gap: node-identity component)', async () => {
-    // Deliberately gives node B the exact same before-trigger text ("hello ")
-    // and trigger character ('@') as node A's escaped occurrence, so nodeKey
-    // is the ONLY component of the suppression key that can distinguish
-    // them. A version of `isSameSuppressedOccurrence` with the node-key
-    // comparison forced to `true` would wrongly suppress this — confirmed by
-    // mutation testing (see the fix-round-3 report): this exact test is what
-    // fails when that comparison is removed.
+    // Deliberately gives node B the exact same leading text ("hello ") and
+    // trigger character ('@') as node A's escaped occurrence, AND the same
+    // node-relative trigger offset (6), so the node key is the ONLY
+    // component of the suppression identity that can distinguish them.
+    // Confirmed by mutation testing (see the fix-round-4 report): forcing the
+    // node-key comparison in `isSuppressedOccurrence` to `true` makes this
+    // exact test fail.
     const onSend = vi.fn()
     const autocomplete = vi.spyOn(api, 'autocomplete')
     autocomplete.mockImplementation(async (_trigger, query) => {
@@ -554,12 +554,15 @@ describe('Composer', () => {
   })
 
   it('a DIFFERENT trigger character at the same node position and before-text opens (test-gap: trigger component)', async () => {
-    // Isolates the `trigger` comparison the same way the test above isolates
-    // `nodeKey`: same node (spliced in place, key preserved), same
-    // before-trigger text ("hello "), but '@' escaped and ':' detected next
-    // — only the trigger character differs. A version of
-    // `isSameSuppressedOccurrence` with the trigger comparison forced to
-    // `true` would wrongly suppress this.
+    // Same node (spliced in place, key preserved), same leading text
+    // ("hello "), but '@' escaped and ':' detected next — only the trigger
+    // character differs. Under round 4's offset identity this is caught one
+    // step earlier than the trigger comparison: overwriting "@ad" deletes the
+    // anchored character, so `reanchorOffset` returns null and the
+    // suppression is dropped outright (mutating the trigger comparison does
+    // NOT make this test fail — the `isSuppressedOccurrence` unit table is
+    // what covers that component; see the fix-round-4 report for why no
+    // component-level test can).
     const onSend = vi.fn()
     const autocomplete = vi.spyOn(api, 'autocomplete')
     autocomplete.mockImplementation(async (trigger, query) => {
@@ -582,5 +585,92 @@ describe('Composer', () => {
     // before-text "hello ", but a ':' trigger instead of '@'.
     replaceRangeInNode(getEditor(), 'hello '.length, '@ad'.length, ':sm')
     await findByText(':smile:') // must open — the trigger character differs
+  })
+
+  // Fix-round-4 regression coverage. Rounds 2 and 3 both keyed the
+  // suppression on a text HEURISTIC (a query prefix, then a before-trigger
+  // suffix), and both had a degenerate value ('') that compared true against
+  // everything, killing mentions for the rest of the text node after a single
+  // Escape. Round 4 keys on the trigger's node-relative OFFSET, re-anchored
+  // across edits by the pure `reanchorOffset` (unit-tested exhaustively in
+  // composer/suppression.test.ts); these three cover the user-visible
+  // behaviour that each earlier scheme got wrong.
+
+  it('escaping a bare "@" at node offset 0 does not suppress a later mention typed after it (round-4)', async () => {
+    const onSend = vi.fn()
+    const autocomplete = vi.spyOn(api, 'autocomplete')
+    autocomplete.mockImplementation(async (_trigger, query) =>
+      query === 'ada' ? [{ kind: 'user', id: 'U1', label: 'ada-user', token: '<@U1>' }] : [],
+    )
+    const { getEditor, onEditorReady } = grabEditor()
+    const { getByRole, findByText } = renderWithProvider(
+      <Composer onSend={onSend} channel="C1" users={{}} groups={{}} onEditorReady={onEditorReady} />,
+    )
+    await waitFor(() => getEditor())
+
+    // A trigger at node offset 0 — the exact shape that made round 3's
+    // before-text key record '' and match everything afterwards.
+    setEditorText(getEditor(), '@')
+    await findByText('@here') // local candidates open the menu for a bare "@"
+    fireEvent.keyDown(getByRole('textbox'), { key: 'Escape' })
+
+    // Keep typing straight past it, ending in a genuinely new mention.
+    appendEditorText(getEditor(), '-team standup at 3, @ada')
+    await findByText('ada-user') // must open for the new mention
+  })
+
+  it('escaping "@ad" after a short recurring lead-in does not suppress a later "@bo" (round-4)', async () => {
+    // "cc " is exactly the kind of short, repeating lead-in that made round
+    // 3's `endsWith(beforeText)` comparison over-match: the second mention's
+    // before-text ("cc @adam and cc ") ends with the recorded "cc ".
+    const onSend = vi.fn()
+    const autocomplete = vi.spyOn(api, 'autocomplete')
+    autocomplete.mockImplementation(async (_trigger, query) => {
+      if (query === 'ad') return [{ kind: 'user', id: 'U1', label: 'ad-user', token: '<@U1>' }]
+      if (query === 'bo') return [{ kind: 'user', id: 'U2', label: 'bo-user', token: '<@U2>' }]
+      return []
+    })
+    const { getEditor, onEditorReady } = grabEditor()
+    const { getByRole, findByText } = renderWithProvider(
+      <Composer onSend={onSend} channel="C1" users={{}} groups={{}} onEditorReady={onEditorReady} />,
+    )
+    await waitFor(() => getEditor())
+
+    setEditorText(getEditor(), 'cc @ad')
+    await findByText('ad-user')
+    fireEvent.keyDown(getByRole('textbox'), { key: 'Escape' })
+
+    appendEditorText(getEditor(), 'am and cc @bo')
+    await findByText('bo-user') // must open — a different occurrence entirely
+  })
+
+  it('stays closed while the user keeps typing INTO the same escaped occurrence (round-4)', async () => {
+    // The other side of the coin: extending "@ad" to "@ada" is the SAME
+    // occurrence, so the dismissed menu must stay dismissed and Enter must
+    // send the literal text rather than inserting a pill.
+    const onSend = vi.fn()
+    const autocomplete = vi.spyOn(api, 'autocomplete')
+    autocomplete.mockImplementation(async (_trigger, query) => {
+      if (query === 'ad') return [{ kind: 'user', id: 'U1', label: 'ad-user', token: '<@U1>' }]
+      if (query === 'ada') return [{ kind: 'user', id: 'U2', label: 'ada-user', token: '<@U2>' }]
+      return []
+    })
+    const { getEditor, onEditorReady } = grabEditor()
+    const { getByRole, findByText, queryByText } = renderWithProvider(
+      <Composer onSend={onSend} channel="C1" users={{}} groups={{}} onEditorReady={onEditorReady} />,
+    )
+    const editorEl = getByRole('textbox')
+    await waitFor(() => getEditor())
+
+    setEditorText(getEditor(), 'hello @ad')
+    await findByText('ad-user')
+    fireEvent.keyDown(editorEl, { key: 'Escape' })
+
+    appendEditorText(getEditor(), 'a') // "hello @ada" — same occurrence, longer query
+    await sleep(400) // see the settle-not-poll comment above
+    expect(queryByText('ada-user')).toBeNull() // must NOT have reopened
+
+    fireEvent.keyDown(editorEl, { key: 'Enter' })
+    expect(onSend).toHaveBeenCalledWith('hello @ada')
   })
 })
