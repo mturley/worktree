@@ -82,7 +82,18 @@ describe('reanchorOffset', () => {
     // a future change to the diff can't silently move an anchor.
     { name: 'repeated substring "aaa" -> "aaaa", offset before the edit', oldText: 'aaa', newText: 'aaaa', offset: 1, expected: 1 },
     { name: 'repeated substring "aaa" -> "aaaa", offset at the end', oldText: 'aaa', newText: 'aaaa', offset: 2, expected: 2 },
-    { name: 'text entirely one repeated character, deletion, early offset', oldText: '@@@', newText: '@@', offset: 1, expected: 1 },
+    {
+      // Resolved by the round-6 tiebreak, not by the prefix branch: the
+      // anchored occurrence's text at offset 1 was "@@", which survives at 0
+      // and not at 1, so the reading "the character BEFORE the anchor was
+      // deleted" wins. Either answer points at a '@'; this one keeps the
+      // occurrence's own text intact.
+      name: 'text entirely one repeated character, deletion, early offset',
+      oldText: '@@@',
+      newText: '@@',
+      offset: 1,
+      expected: 0,
+    },
     {
       name: 'text entirely one repeated character, deletion, offset in the replaced range',
       oldText: '@@@',
@@ -91,32 +102,96 @@ describe('reanchorOffset', () => {
       expected: null,
     },
     { name: 'prefix/suffix would overlap ("ab" -> "aab"), offset in the suffix', oldText: 'ab', newText: 'aab', offset: 1, expected: 2 },
-    { name: 'prefix/suffix would overlap ("ab" -> "aab"), offset in the prefix', oldText: 'ab', newText: 'aab', offset: 0, expected: 0 },
+    {
+      // Structurally identical to '@ad' -> '@@ad' @0 below (a duplicated
+      // leading character), and answered the same way: the anchored text
+      // "ab" is found at 1, not at 0, so the anchor moves with it.
+      name: 'prefix/suffix would overlap ("ab" -> "aab"), offset in the prefix',
+      oldText: 'ab',
+      newText: 'aab',
+      offset: 0,
+      expected: 1,
+    },
     { name: 'collapse to a single repeated character ("aa" -> "a")', oldText: 'aa', newText: 'a', offset: 0, expected: 0 },
     { name: 'collapse to a single repeated character, later offset', oldText: 'aa', newText: 'a', offset: 1, expected: null },
 
-    // --- KNOWN LIMITATION: a trigger typed immediately BEFORE an escaped one
-    // Pinned, not aspirational. Diffing two identical characters cannot say
-    // which is which, so the anchor lands on the NEWLY TYPED '@' and the
-    // escaped occurrence effectively moves right. Accepted in round 5; see
-    // the long comment on reanchorOffset for why it is irreducible by
-    // diffing and what a real fix would cost. If these rows ever change, the
-    // component test "records the accepted limitation..." changes with them.
-    { name: 'LIMITATION: trigger typed directly before the escaped one', oldText: '@ad', newText: '@@ad', offset: 0, expected: 0 },
+    // --- a trigger typed immediately BEFORE an escaped one (round-6 fix) --
+    // Until round 6 these returned the anchor unmoved, because the prefix
+    // branch won every ambiguous diff and two identical '@'s carry no
+    // information about which is which. The tiebreak supplies the missing
+    // information from the anchored occurrence's OWN TEXT: "@ad" is still
+    // found at the shifted candidate and not at the unmoved one, so the
+    // escaped occurrence moves right and the newly typed trigger is live.
+    { name: 'trigger typed directly before the escaped one', oldText: '@ad', newText: '@@ad', offset: 0, expected: 1 },
     {
-      name: 'LIMITATION: the same, mid-line (the component-test scenario)',
+      name: 'the same, mid-line (the component-test scenario)',
       oldText: 'hi @ad',
       newText: 'hi @bo@ad',
       offset: 3,
+      expected: 6,
+    },
+    {
+      // The single-character form of the same edit: 'x @ad' -> 'x @@ad' is
+      // '@ad' -> '@@ad' with a two-character lead-in, so it must answer the
+      // same way. (Before round 6 this row was labelled a "mirror" and
+      // pinned 2 — it was in fact the bug itself, wearing a lead-in.)
+      name: 'trigger typed directly before the escaped one, single character',
+      oldText: 'x @ad',
+      newText: 'x @@ad',
+      offset: 2,
       expected: 3,
     },
-    // The mirror: a trigger typed immediately AFTER the escaped one is NOT
-    // ambiguous the same way, because the common prefix reaches the escaped
-    // character first — it stays anchored, which is the correct answer.
-    { name: 'mirror: trigger typed directly after the escaped one', oldText: 'x @ad', newText: 'x @@ad', offset: 2, expected: 2 },
-    // And deleting one of two adjacent triggers drops the suppression rather
-    // than guessing, since the anchor falls inside the replaced range.
-    { name: 'mirror: one of two adjacent triggers deleted', oldText: '@@ad', newText: '@ad', offset: 1, expected: null },
+    // The true mirror — a trigger typed immediately AFTER the escaped one —
+    // must NOT move, and is the case a naive "prefer the suffix" tiebreak
+    // would break. It is not ambiguous at all: the common prefix spans the
+    // whole of oldText and the common suffix is empty, so only one candidate
+    // is admissible and the tiebreak never runs.
+    { name: 'mirror: trigger typed directly after the escaped one', oldText: 'hi @ad', newText: 'hi @ad@bo', offset: 3, expected: 3 },
+    {
+      name: 'mirror: a bare trigger typed at the end, after the escaped one',
+      oldText: 'x @ad',
+      newText: 'x @ad@',
+      offset: 2,
+      expected: 2,
+    },
+    // Typing INTO the dismissed occurrence keeps it anchored (the whole point
+    // of the suppression: the menu must stay shut while the query grows).
+    { name: 'typing into the dismissed occurrence', oldText: 'hi @ad', newText: 'hi @ada', offset: 3, expected: 3 },
+    {
+      // Backspacing inside the dismissed query: the hint ("@ad") is no longer
+      // found at either candidate, so the tiebreak abstains and the ordinary
+      // prefix-branch answer stands. It must not spuriously drop to null.
+      name: 'backspacing inside the dismissed query keeps the anchor',
+      oldText: 'hi @ad',
+      newText: 'hi @d',
+      offset: 3,
+      expected: 3,
+    },
+    {
+      // Both candidates admissible AND the hint matches both, so there is
+      // nothing to choose on: the pre-tiebreak answer stands unchanged. This
+      // is the residual limitation, pinned — the user retyped the very query
+      // they dismissed, immediately in front of it, and the newly typed
+      // occurrence stays suppressed. See reanchorOffset's doc comment.
+      name: 'RESIDUAL: retyping the dismissed query directly in front of it',
+      oldText: 'hi @ad',
+      newText: 'hi @ad@ad',
+      offset: 3,
+      expected: 3,
+    },
+    {
+      // The hint decides nothing on its own: where both candidates fit it,
+      // behaviour is exactly what it was before the tiebreak existed.
+      name: 'ambiguous but indistinguishable ("aa" -> "aaa") keeps the old answer',
+      oldText: 'aa',
+      newText: 'aaa',
+      offset: 0,
+      expected: 0,
+    },
+    // Deleting one of two adjacent triggers drops the suppression rather than
+    // guessing, since the anchor falls inside the replaced range — the
+    // tiebreak cannot resurrect it, because only one candidate is admissible.
+    { name: 'one of two adjacent triggers deleted', oldText: '@@ad', newText: '@ad', offset: 1, expected: null },
   ]
 
   for (const c of cases) {

@@ -58,37 +58,63 @@ export interface SuppressedOccurrence {
  * branch, `offset` lies inside the common suffix, so `newText[offset + delta]
  * === oldText[offset]`. Re-anchoring can therefore never silently slide the
  * anchor onto a different character — it either tracks the trigger or gives
- * up.
+ * up. The tiebreak below preserves this: it only ever picks between the two
+ * branches' own answers, both of which already satisfy it.
  *
- * Where a diff is genuinely ambiguous (repeated characters: `"aaa"` → `"aaaa"`
- * could be an insertion at any of four positions) this resolves it by
- * preferring the longest common prefix, i.e. it treats the change as having
- * happened as late in the string as possible. Any consistent choice is
- * acceptable — the characters involved are identical by definition, so the
- * anchored character is unaffected either way.
+ * AMBIGUOUS DIFFS AND THE TIEBREAK (round 6). Where a diff is genuinely
+ * ambiguous the two branches disagree, and BOTH answers are consistent with
+ * some single contiguous edit: `"@ad"` → `"@@ad"` could be an insertion at 0
+ * (anchor stays at 0) or at 1 (anchor moves to 1), and the two `'@'`s carry
+ * no information about which is which. Until round 6 the prefix branch simply
+ * won, which produced a user-visible wrong answer: escape `hi @ad`, put the
+ * caret at offset 3, type `@bo`, and the suppression re-anchored onto the
+ * NEWLY TYPED `'@'` — the menu stayed shut for `@bo` while the old `@ad`
+ * went live again.
  *
- * KNOWN LIMITATION, accepted deliberately (round 5). That last sentence is
- * true of the CHARACTER but not of its IDENTITY, and there is exactly one
- * user-visible consequence: typing a trigger character immediately BEFORE an
- * escaped one resolves the anchor onto the newly typed character.
+ * The disambiguating information is already here: the anchored occurrence's
+ * own text as of the previous update is `oldText.slice(offset)`. When both
+ * candidates are admissible, prefer the one where that text is still found —
+ * i.e. the reading under which the anchored occurrence survived intact and
+ * the edit happened somewhere else. `"@ad"` matches at 1, not at 0, so the
+ * anchor moves to 1 and `@bo` opens its menu.
  *
- *     reanchorOffset('@ad', '@@ad', 0) === 0   // 0 is now the NEW '@'
+ * This is a TIEBREAK, never an identity test, and that distinction is what
+ * makes it safe where three earlier text-heuristic designs were not (see the
+ * list on `SuppressedOccurrence`). It can only choose BETWEEN offsets the
+ * diff already deems admissible, so it can never resurrect a deleted anchor
+ * or invent a position; and because it decides nothing on its own, a
+ * degenerate hint means "no preference" rather than "matches everything" —
+ * which is exactly how `startsWith('')` / `endsWith('')` failed before. (The
+ * hint is in fact never empty, since `offset < oldText.length`, but the
+ * design does not depend on that.) If the hint matches both candidates or
+ * neither, the pre-round-6 answer stands unchanged.
  *
- * So: `hi @ad`, Escape, put the caret at offset 3, type `@bo` -- the text
- * becomes `hi @bo@ad` and the menu does NOT open for the `@bo` just typed;
- * the roles are swapped and it is the old `@ad` that would reopen. Pinned by
- * table rows in suppression.test.ts and by a component test in
- * Composer.test.tsx, so it is a recorded decision rather than a surprise.
+ * The mirror case does NOT regress: a trigger typed immediately AFTER an
+ * escaped one, `"hi @ad"` → `"hi @ad@bo"`, is not ambiguous at all — the
+ * common prefix spans the whole of `oldText`, the common suffix is empty, so
+ * only one candidate exists and the tiebreak never runs. Flipping the
+ * tiebreak to prefer the suffix branch unconditionally is what would mirror
+ * the bug; keying it on the occurrence's own text does not.
  *
- * It is irreducible by diffing: two identical characters carry no information
- * about which is which, and flipping the tiebreak to prefer the common SUFFIX
- * merely mirrors the problem onto a trigger typed immediately AFTER an
- * escaped one. A real fix means not diffing at all -- anchoring the
- * suppression to a Lexical marker (a PointType maintained through the
- * editor's own transform pipeline, or a zero-width marker node), which costs
- * a node type, its serialization, and its interaction with undo/redo and
- * mention insertion. Not worth it for "typed a second @ directly in front of
- * a dismissed one"; revisit if it ever shows up in real use.
+ * RESIDUAL LIMITATION, smaller and precisely stated. When the newly typed
+ * trigger's text is a prefix of the escaped occurrence's own text, the hint
+ * matches at both candidates and cannot discriminate — the old prefix-wins
+ * answer stands:
+ *
+ *     reanchorOffset('hi @ad', 'hi @ad@ad', 3) === 3   // typed "@ad" in front
+ *
+ * If the user typed that second `@ad` in FRONT of the dismissed one, the
+ * anchor should have moved to 6 and does not, so the newly typed occurrence
+ * stays suppressed. This is irreducible by diffing — the two occurrences are
+ * character-for-character identical over the compared span, so nothing in the
+ * text distinguishes them — and unlike round 5's version it now requires the
+ * user to retype the same query they just dismissed. A real fix means not
+ * diffing at all: anchoring the suppression to a Lexical marker (a PointType
+ * maintained through the editor's own transform pipeline, or a zero-width
+ * marker node), which costs a node type, its serialization, and its
+ * interaction with undo/redo and mention insertion. Still not worth it;
+ * revisit if it ever shows up in real use. Pinned by table rows in
+ * suppression.test.ts.
  */
 export function reanchorOffset(oldText: string, newText: string, offset: number): number | null {
   if (offset < 0 || offset >= oldText.length) {
@@ -112,14 +138,46 @@ export function reanchorOffset(oldText: string, newText: string, offset: number)
     suffix += 1
   }
 
+  const delta = newText.length - oldText.length
+
+  // The pre-tiebreak answer. Every path below either returns this or one of
+  // the two candidates it is already choosing between.
+  let answer: number | null = null
   if (offset < prefix) {
-    return offset
+    answer = offset
+  } else if (offset >= oldText.length - suffix) {
+    answer = offset + delta
   }
-  const replacedEnd = oldText.length - suffix
-  if (offset >= replacedEnd) {
-    return offset + (newText.length - oldText.length)
+
+  // Admissibility for the tiebreak is computed against the UNCAPPED common
+  // suffix, because the interesting ambiguity is exactly the case where the
+  // common prefix and common suffix overlap: "@ad" -> "@@ad" has prefix 1 and
+  // an uncapped suffix of 3, and it is that overlap that makes both readings
+  // valid. The cap above exists to keep the primary branches from
+  // double-counting a shared character, so it must not be reused here.
+  const maxSuffixFull = Math.min(oldText.length, newText.length)
+  let suffixFull = 0
+  while (
+    suffixFull < maxSuffixFull &&
+    oldText[oldText.length - 1 - suffixFull] === newText[newText.length - 1 - suffixFull]
+  ) {
+    suffixFull += 1
   }
-  return null
+
+  const prefixCandidate = offset < prefix ? offset : null
+  const suffixCandidate = offset >= oldText.length - suffixFull ? offset + delta : null
+  if (prefixCandidate !== null && suffixCandidate !== null && prefixCandidate !== suffixCandidate) {
+    // The anchored occurrence's own text at the previous update. Used ONLY to
+    // pick between these two, never to decide admissibility.
+    const hint = oldText.slice(offset)
+    const prefixFits = newText.startsWith(hint, prefixCandidate)
+    const suffixFits = newText.startsWith(hint, suffixCandidate)
+    if (prefixFits !== suffixFits) {
+      return prefixFits ? prefixCandidate : suffixCandidate
+    }
+  }
+
+  return answer
 }
 
 /**
