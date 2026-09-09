@@ -45,3 +45,15 @@ export function usePollWatchers() {
     },
   })
 }
+
+/**
+ * The watcher responsible for one resource type ("pr", "jira", "slack").
+ *
+ * Keyed by TYPE rather than poller name because that is what callers have —
+ * a resource knows it is a "pr", not that the poller watching it is called
+ * "github". The server sends both so this mapping lives in exactly one place.
+ */
+export function useWatcherStatus(type: string) {
+  const { data } = useWatchers()
+  return data?.watchers.find((w) => w.type === type)
+}

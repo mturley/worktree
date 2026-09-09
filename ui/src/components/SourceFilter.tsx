@@ -1,5 +1,5 @@
-import { Button, Group, Text, Tooltip } from "@mantine/core"
-import { IconAlertTriangleFilled } from "@tabler/icons-react"
+import { Button, Group, Text } from "@mantine/core"
+import { WatcherErrorMark } from "./WatcherErrorMark"
 import { useWatchers } from "../hooks/useWatchers"
 import { useNow } from "../hooks/useNow"
 import { relativeTime } from "../lib/relativeTime"
@@ -65,22 +65,14 @@ function WatcherStatusLabel({ status, now }: { status?: WatcherStatus; now: Date
   return (
     <>
       {ago && (
-        <Text span size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
-          {` (${ago})`}
+        // A margin, not a leading space in the string: this sits in the
+        // Button's flex label, and whitespace at the start of a flex item is
+        // collapsed away, so the space silently never rendered.
+        <Text span size="xs" c="dimmed" style={{ whiteSpace: "nowrap", marginLeft: 4 }}>
+          {`(${ago})`}
         </Text>
       )}
-      {status.has_error && (
-        <Tooltip
-          label={status.error_message || "This watcher's last run failed"}
-          multiline
-          w={280}
-          withArrow
-        >
-          <Text span c="red" style={{ display: "inline-flex", marginLeft: 4 }} aria-label={`${status.name} watcher failing`}>
-            <IconAlertTriangleFilled size={12} />
-          </Text>
-        </Tooltip>
-      )}
+      <WatcherErrorMark status={status} />
     </>
   )
 }

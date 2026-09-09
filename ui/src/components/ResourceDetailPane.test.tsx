@@ -1,4 +1,4 @@
-import { afterEach, describe, it, expect, vi } from "vitest"
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest"
 import { render, cleanup, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
@@ -12,12 +12,16 @@ vi.mock("../hooks/useTimeline", () => ({
 
 const removeResource = vi.fn()
 const markResourceRead = vi.fn()
+const watchers = vi.fn()
+const pollWatchers = vi.fn()
 vi.mock("../api/client", async (orig) => {
   const actual = await orig<typeof import("../api/client")>()
   return { api: {
     ...actual.api,
     removeResource: (...args: unknown[]) => removeResource(...args),
     markResourceRead: (...args: unknown[]) => markResourceRead(...args),
+    watchers: () => watchers(),
+    pollWatchers: () => pollWatchers(),
   } }
 })
 
@@ -37,11 +41,23 @@ const wrap = (ui: React.ReactNode) => {
   )
 }
 
+beforeEach(() => {
+  watchers.mockResolvedValue({ watchers: [], polling: false })
+  pollWatchers.mockResolvedValue(null)
+  // A default so tests that care only about the header do not each have to
+  // stand up a timeline; tests about the feed override it.
+  useWorktreeTimeline.mockReturnValue({
+    events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false,
+  })
+})
+
 afterEach(() => {
   cleanup()
   useWorktreeTimeline.mockReset()
   removeResource.mockReset()
   markResourceRead.mockReset()
+  watchers.mockReset()
+  pollWatchers.mockReset()
 })
 
 describe("ResourceDetailPane", () => {
@@ -178,3 +194,41 @@ describe("mark-read button", () => {
   })
 })
 
+describe("the Activity header's watcher freshness", () => {
+  const minutesAgo = (n: number) => new Date(Date.now() - n * 60_000).toISOString()
+
+  it("shows when THIS resource's watcher last succeeded", async () => {
+    // The feed is one resource, so "updated" means the watcher for its type —
+    // jira here, not whichever watcher ran most recently.
+    watchers.mockResolvedValue({
+      polling: false,
+      watchers: [
+        { name: "github", type: "pr", last_success: minutesAgo(1) },
+        { name: "jira", type: "jira", last_success: minutesAgo(7) },
+      ],
+    })
+    wrap(<ResourceDetailPane path="/wt/foo" resource={jira} />)
+    expect(await screen.findByText("Updated 7m ago")).toBeInTheDocument()
+  })
+
+  it("offers a refresh button beside the heading", async () => {
+    wrap(<ResourceDetailPane path="/wt/foo" resource={jira} />)
+    expect(await screen.findByRole("button", { name: "Refresh watchers" })).toBeInTheDocument()
+  })
+
+  it("says nothing when the watcher has never succeeded", async () => {
+    watchers.mockResolvedValue({ polling: false, watchers: [{ name: "jira", type: "jira" }] })
+    wrap(<ResourceDetailPane path="/wt/foo" resource={jira} />)
+    await screen.findByRole("button", { name: "Refresh watchers" })
+    expect(screen.queryByText(/^Updated /)).toBeNull()
+  })
+
+  it("marks a failing watcher", async () => {
+    watchers.mockResolvedValue({
+      polling: false,
+      watchers: [{ name: "jira", type: "jira", last_success: minutesAgo(9), has_error: true, error_message: "401" }],
+    })
+    wrap(<ResourceDetailPane path="/wt/foo" resource={jira} />)
+    expect(await screen.findByLabelText("jira watcher failing")).toBeInTheDocument()
+  })
+})
