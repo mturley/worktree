@@ -74,8 +74,12 @@ export class MentionNode extends DecoratorNode<JSX.Element> {
 
   decorate(): JSX.Element {
     // Reuses the same pill the rendered thread uses, so a pending mention in
-    // the composer looks like the mention it is about to become.
-    return <Mention>{this.__label}</Mention>
+    // the composer looks like the mention it is about to become. Every other
+    // kind's label already carries its sigil (groups/specials are "@handle",
+    // channels are "#name", emoji are ":name:") — only "user" labels are bare
+    // names, so only they need an "@" prefixed here.
+    const label = this.__mentionKind === 'user' ? `@${this.__label}` : this.__label
+    return <Mention>{label}</Mention>
   }
 }
 

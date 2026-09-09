@@ -339,6 +339,43 @@ describe('Composer', () => {
     expect(onSend).not.toHaveBeenCalled()
   })
 
+  it('Tab accepts the highlighted candidate while the menu is open, like Enter', async () => {
+    const onSend = vi.fn()
+    vi.spyOn(api, 'autocomplete').mockResolvedValue([{ kind: 'user', id: 'U1', label: 'ada', token: '<@U1>' }])
+    const { getEditor, onEditorReady } = grabEditor()
+    const { getByRole, findByText, queryByText } = renderWithProvider(
+      <Composer onSend={onSend} channel="C1" users={{}} groups={{}} onEditorReady={onEditorReady} />,
+    )
+    const editorEl = getByRole('textbox')
+    await waitFor(() => getEditor())
+    setEditorText(getEditor(), '@ada')
+    await findByText('ada') // menu is open
+    fireEvent.keyDown(editorEl, { key: 'Tab' })
+    expect(onSend).not.toHaveBeenCalled()
+    await waitFor(() => {
+      const text = getEditor().getEditorState().read(() => $getRoot().getTextContent())
+      expect(text).toBe('<@U1> ')
+    })
+    // The menu closes once the pill is inserted.
+    expect(queryByText('ada')).not.toBeInTheDocument()
+  })
+
+  it('Tab with the menu closed does not insert anything', async () => {
+    const onSend = vi.fn()
+    vi.spyOn(api, 'autocomplete').mockResolvedValue([])
+    const { getEditor, onEditorReady } = grabEditor()
+    const { getByRole } = renderWithProvider(
+      <Composer onSend={onSend} channel="C1" users={{}} groups={{}} onEditorReady={onEditorReady} />,
+    )
+    const editorEl = getByRole('textbox')
+    await waitFor(() => getEditor())
+    setEditorText(getEditor(), 'no trigger here')
+    fireEvent.keyDown(editorEl, { key: 'Tab' })
+    const text = getEditor().getEditorState().read(() => $getRoot().getTextContent())
+    expect(text).toBe('no trigger here')
+    expect(onSend).not.toHaveBeenCalled()
+  })
+
   it('Escape closes the menu and Enter sends the literal text once it is dismissed', async () => {
     const onSend = vi.fn()
     vi.spyOn(api, 'autocomplete').mockResolvedValue([{ kind: 'user', id: 'U1', label: 'ada', token: '<@U1>' }])

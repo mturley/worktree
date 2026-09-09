@@ -494,11 +494,15 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
     const removeTab = editor.registerCommand(
       KEY_TAB_COMMAND,
       (event) => {
+        // Tab (and Shift+Tab, treated the same) accepts the highlighted
+        // suggestion, mirroring Enter — arrow keys already own cycling, so
+        // Tab moving the highlight was redundant. With the menu closed, Tab
+        // must fall through to the browser's normal focus handling.
         if (!isMenuVisible(matchRef.current !== null, itemsRef.current.length)) {
           return false
         }
         event?.preventDefault()
-        moveHighlight(1)
+        selectHighlighted()
         return true
       },
       COMMAND_PRIORITY_HIGH,
