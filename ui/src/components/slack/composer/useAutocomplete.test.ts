@@ -140,6 +140,33 @@ describe('useAutocomplete', () => {
   })
 })
 
+describe('useAutocomplete degraded reporting', () => {
+  it('does not claim the workspace search is unavailable for a query with no matches', async () => {
+    // "@zzzq" with Slack perfectly healthy: an empty 200. Reporting that as
+    // degraded sends the user off to re-run `worktree setup` for nothing.
+    vi.spyOn(api, 'autocomplete').mockResolvedValue([])
+    const { result } = renderHook(() =>
+      useAutocomplete({ trigger: '@', query: 'zzzq', start: 0 }, 'C1', ctx),
+    )
+    await act(async () => {
+      vi.advanceTimersByTime(200)
+    })
+    await waitFor(() => expect(api.autocomplete).toHaveBeenCalled())
+    expect(result.current.degraded).toBe(false)
+  })
+
+  it('reports degraded when the lookup actually failed', async () => {
+    vi.spyOn(api, 'autocomplete').mockResolvedValue(null)
+    const { result } = renderHook(() =>
+      useAutocomplete({ trigger: '@', query: 'zzzq', start: 0 }, 'C1', ctx),
+    )
+    await act(async () => {
+      vi.advanceTimersByTime(200)
+    })
+    await waitFor(() => expect(result.current.degraded).toBe(true))
+  })
+})
+
 describe('fetchAutocompleteResult', () => {
   afterEach(() => vi.restoreAllMocks())
 

@@ -339,26 +339,45 @@ export interface AutocompleteItem {
 }
 
 /**
- * Queries the server for autocomplete candidates. Returns [] on failure
- * rather than throwing: the menu degrades to locally-known candidates, and an
- * exception here would tear down the composer mid-keystroke.
+ * Queries the server for autocomplete candidates.
+ *
+ * Never throws — an exception here would tear down the composer
+ * mid-keystroke. The return value distinguishes the two outcomes that a
+ * blanket `[]` used to conflate, because the composer's "workspace search
+ * unavailable" hint hangs on the difference:
+ *
+ * - `[]`  — the lookup SUCCEEDED and matched nothing (typing "@zzzq" with
+ *           Slack perfectly healthy), or the request was aborted, which is
+ *           the normal end of a superseded keystroke and not a failure. An
+ *           aborted result is discarded by the caller's staleness guard
+ *           before anything can read it.
+ * - `null`— the lookup FAILED (network error, 401, 502). Only this may be
+ *           reported to the user as degraded.
+ *
+ * `channel` is a ranking hint and genuinely optional; when absent the
+ * parameter is omitted rather than sent as an empty string.
  */
 export async function autocomplete(
   trigger: '@' | ':' | '#',
   q: string,
-  channel: string,
+  channel?: string,
   signal?: AbortSignal,
-): Promise<AutocompleteItem[]> {
-  const params = new URLSearchParams({ trigger, q, channel })
+): Promise<AutocompleteItem[] | null> {
+  const params = new URLSearchParams({ trigger, q })
+  if (channel) {
+    params.set('channel', channel)
+  }
   try {
     const res = await fetch(`/api/slack-autocomplete?${params.toString()}`, { signal })
     if (!res.ok) {
-      return []
+      return null
     }
     const body = (await res.json()) as { results?: AutocompleteItem[] }
     return body.results ?? []
-  } catch {
-    // Includes AbortError, which is a normal part of debounced typing.
-    return []
+  } catch (err) {
+    if ((err as { name?: string } | null)?.name === 'AbortError') {
+      return []
+    }
+    return null
   }
 }

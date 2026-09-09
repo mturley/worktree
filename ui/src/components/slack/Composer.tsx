@@ -147,7 +147,7 @@ export function Composer({ onSend, disabled, channel, users, groups, onEditorRea
         <ComposerInner
           onSend={onSend}
           disabled={disabled}
-          channel={channel ?? ''}
+          channel={channel}
           users={users ?? {}}
           groups={groups ?? {}}
           onEditorReady={onEditorReady}
@@ -160,7 +160,10 @@ export function Composer({ onSend, disabled, channel, users, groups, onEditorRea
 interface ComposerInnerProps {
   onSend: (text: string) => void
   disabled?: boolean
-  channel: string
+  /** Optional all the way down: the channel is a RANKING HINT for the
+   *  workspace search, and "" is not a channel. An empty-string fallback here
+   *  would mask the not-ready state and send a meaningless parameter. */
+  channel?: string
   users: Record<string, User>
   groups: Record<string, UserGroup>
   onEditorReady?: (editor: LexicalEditor) => void

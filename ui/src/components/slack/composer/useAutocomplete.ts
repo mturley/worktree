@@ -18,10 +18,10 @@ const DEBOUNCE_MS = 150
 export async function fetchAutocompleteResult(
   trigger: '@' | ':' | '#',
   query: string,
-  channel: string,
+  channel: string | undefined,
   signal: AbortSignal,
   isStale: () => boolean,
-  onResult: (results: AutocompleteItem[]) => void,
+  onResult: (results: AutocompleteItem[] | null) => void,
 ): Promise<void> {
   const results = await autocomplete(trigger, query, channel, signal)
   if (isStale()) {
@@ -41,7 +41,9 @@ export async function fetchAutocompleteResult(
 interface RemoteAnswer {
   trigger: '@' | ':' | '#'
   query: string
-  items: AutocompleteItem[]
+  /** null means the lookup FAILED — distinct from [] ("no matches"), which is
+   *  a perfectly healthy answer and must not be reported as degraded. */
+  items: AutocompleteItem[] | null
 }
 
 /**
@@ -53,7 +55,7 @@ interface RemoteAnswer {
  */
 export function useAutocomplete(
   match: TriggerMatch | null,
-  channel: string,
+  channel: string | undefined,
   ctx: LocalContext,
 ): { items: AutocompleteItem[]; degraded: boolean } {
   const [remote, setRemote] = useState<RemoteAnswer | null>(null)
@@ -105,9 +107,10 @@ export function useAutocomplete(
   const fresh = trigger && remote && remote.trigger === trigger && remote.query === query ? remote : null
 
   const items = useMemo(() => mergeCandidates(local, fresh?.items ?? []), [local, fresh])
-  // autocomplete() returns [] both for "no matches" and for a failed
-  // request; treating a non-empty local list with an empty remote one
-  // as degraded is the honest reading, and only affects a hint line.
-  const degraded = fresh !== null && fresh.items.length === 0 && query.length > 0
+  // Degraded means the LOOKUP FAILED, nothing else. An empty successful
+  // result is just "nobody by that name" — telling the user the workspace
+  // search is unavailable there sends them off to re-run `worktree setup`
+  // over a query that worked perfectly.
+  const degraded = fresh !== null && fresh.items === null
   return { items, degraded }
 }
