@@ -29,6 +29,12 @@ type AutocompleteItem struct {
 	Token    string `json:"token"`
 }
 
+// These builders are mirrored in ui/src/components/slack/composer/tokens.ts,
+// which reconstructs the same tokens for locally-derived candidates (thread
+// participants, loaded groups, the @here/@channel/@everyone specials) that
+// never round-trip through this endpoint. The two files' test tables mirror
+// each other case for case — if you change a token format here, update
+// tokens.ts and tokens.test.ts in the same change.
 func userToken(id string) string      { return "<@" + id + ">" }
 func groupToken(id string) string     { return "<!subteam^" + id + ">" }
 func specialToken(name string) string { return "<!" + name + ">" }

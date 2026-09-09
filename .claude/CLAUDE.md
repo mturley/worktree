@@ -44,7 +44,7 @@ make clean     # removes bin/, ui/dist contents (keeps ui/dist/.gitkeep), ui/nod
   - `setup` — shell RC integration (removed `.git/info/exclude` management); also owns the `worktree setup` Slack step (`setup/slack.go`) that walks the user through extracting Slack session token+cookie and writes them to `~/.config/watcher/auth.yaml`
   - `testgit` — test-only helper building a real repo + linked worktree, for tests whose paths must satisfy the `resources.Add` worktree guard
   - `ui` — terminal output
-  - `webui` — HTTP server + API for `worktree ui` (worktree list, timeline, resources, SSE stream, poll loop); also serves the Slack thread view's routes (`/api/thread*`, `/api/slack-*`) from the same binary/port
+  - `webui` — HTTP server + API for `worktree ui` (worktree list, timeline, resources, SSE stream, poll loop); also serves the Slack thread view's routes (`/api/thread*`, `/api/slack-*`) from the same binary/port, including the composer autocomplete endpoint (`GET /api/slack-autocomplete`)
   - `slackpoller` — polls Slack threads for changes and fans out updates to subscribers (live-tab SSE, in-memory, only while a thread is open in the UI); folded in from slack-mini's `internal/watcher` package (renamed to avoid collision); consumes `github.com/mturley/watcher/slack`'s `Client`/`Thread` types rather than a local `slackapi` package — there is no `internal/slackapi` anymore, it moved to the watcher library (see "Watcher library" below)
   - `slackcreds` — loads Slack token/cookie/workspace domain from the shared watcher `auth.yaml` and builds a `github.com/mturley/watcher/slack.Client`
   - `slackurl` — parses Slack thread URLs into `(channel, threadTS)` and builds the resource ID used to store them as worktree resources

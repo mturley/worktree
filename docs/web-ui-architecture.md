@@ -832,6 +832,7 @@ conventions:
 | POST | `/api/thread/react` | body: `{channel, thread_ts, message_ts, emoji}` | — |
 | GET | `/api/slack-config` | — | `{workspaceDomain: string}` |
 | GET | `/api/thread-events` | `channel`, `thread_ts` | SSE stream of `ThreadResponse` |
+| GET | `/api/slack-autocomplete` | `trigger` (`@`/`:`/`#`), `q`, `channel` | `{results: AutocompleteItem[]}` |
 | GET | `/api/slack-avatar` | proxied avatar image params | image bytes |
 | GET | `/api/slack-emoji` | proxied emoji image params | image bytes |
 | GET | `/api/slack-file` | proxied file params | file bytes |
@@ -880,6 +881,71 @@ consumer. Nil slices/pointers marshal to `null`; the TS side guards for that.
 and re-emits `buildThreadResponse` on every detected change, as an SSE
 `event: message` with the JSON payload — separate from, and unrelated to, the
 existing `/api/stream` timeline SSE endpoint.
+
+### Composer autocomplete (`GET /api/slack-autocomplete`, `internal/webui/autocomplete.go`)
+
+One endpoint behind all three composer triggers, dispatched on the `trigger`
+query param:
+
+- **`@`** — with an empty `q`, returns only the three specials
+  (`@here`/`@channel`/`@everyone`) with no Slack call. With a non-empty `q`, it
+  fires `SearchUsers` and `SearchUserGroups` concurrently (mirroring Slack's
+  own client behaviour) and appends the specials after them. A user-search
+  failure is fatal to the request; a group-search failure is logged and
+  swallowed so the user list still comes back.
+- **`:`** — makes **no Slack call at all**. It filters the custom-emoji map
+  the server already caches (`slack.go`'s `emoji()`), sorted by match length
+  then name so results are deterministic. The Unicode half of the emoji menu
+  is matched client-side from node-emoji and merged in by the frontend — the
+  server only ever knows about custom emoji.
+- **`#`** — `SearchChannels`, empty `q` short-circuits to `[]`.
+
+Every result is an `AutocompleteItem` (`{kind, id, label, detail?, avatar?,
+imageUrl?, token}`, `kind` one of `user`/`group`/`special`/`channel`/`emoji`).
+`token` is the load-bearing field: it is the exact, ready-to-insert mrkdwn
+(`<@U…>`, `<!subteam^S…>`, `<!here>`, `<#C…|name>`, `:name:`) built by one set
+of Go functions (`userToken`/`groupToken`/`specialToken`/`channelToken`/`emojiToken`)
+with table tests, so mention encoding lives in exactly one place and the pill
+the user sees cannot disagree with what gets posted.
+
+**One deliberate exception:** candidates that never round-trip through the
+server — thread participants and groups the thread view already has loaded,
+plus the @here/@channel/@everyone specials — are built locally so the menu can
+paint before any network round trip. `ui/src/components/slack/composer/tokens.ts`
+mirrors the same builders for exactly that purpose; its test table mirrors the
+Go table case for case, and each side carries a comment pointing at the other.
+Anything the server returns already carries its own `token` and is used
+as-is — `tokens.ts` is never consulted for remote results.
+
+**Hybrid lookup and one-time reorder.** `useAutocomplete` (`composer/useAutocomplete.ts`)
+computes local candidates synchronously from thread state
+(`composer/candidates.ts`'s `localCandidates`) so the menu paints on the first
+keystroke, then debounces (150ms) a server request and merges the response in
+with `mergeCandidates`: dedup on `(kind, id)`, local entries win. Consequence
+by design — the menu can reorder **once**, when remote results land, and never
+again after that; the highlighted item is tracked by `(kind, id)` (see
+`itemKey` in `AutocompleteMenu.tsx`) rather than by list index, specifically so
+a merge landing mid-keystroke cannot move the selection out from under the
+user's arrow keys.
+
+**The TTL + single-flight cache is a requirement, not an optimisation.**
+`autocompleteCache` (`internal/webui/autocomplete_cache.go`) sits in front of
+every Slack-backed lookup with a 60s TTL: concurrent callers for the same key
+block on one in-flight call rather than each firing their own request.
+`docs/reverse-engineering/slack-web-api.md` records that bursts of
+autocomplete-shaped calls got the user's own session token revoked twice in
+twenty minutes — this cache (plus the frontend debounce) is what keeps
+repeated prefixes and two panes on the same thread from multiplying Slack
+traffic. Errors are deliberately not cached, so a transient failure doesn't
+blank the menu for a minute.
+
+The cache key (`autocompleteCacheKey`) is **length-prefixed**
+(`"<len>:<field>"` per field, concatenated), not delimiter-joined. A plain
+separator (`"|"`, `"\x00"`) can still collide: `q` and `channel` come straight
+off a URL query string, and `net/url` will happily decode a percent-escaped
+occurrence of any byte — including the delimiter itself — into the field
+value. Length-prefixing makes the key unambiguous regardless of what bytes the
+fields contain.
 
 ### Slack threads as worktree resources
 
@@ -964,6 +1030,32 @@ the whole detail-page body.
   first-message-derived fallback (instead of the raw id) is deferred to
   Phase 4 / the poller-rethink, since Slack resources aren't enriched via
   `watcher_resource_state` today.
+
+### Composer architecture (`ui/src/components/slack/Composer.tsx` + `composer/`)
+
+The reply composer is a Lexical editor, not a plain `<textarea>`, so it can
+render mentions as pills while still producing literal mrkdwn:
+
+- It uses Lexical's `PlainTextPlugin`, not `RichTextPlugin` — formatting
+  (`*bold*`, `_italic_`, `` `code` ``) is inserted as literal mrkdwn characters
+  by the toolbar, never as rich formatting marks.
+- Mentions are atomic `MentionNode` pills. The load-bearing trick is that
+  `MentionNode.getTextContent()` returns the mrkdwn **token** (`<@U…>`, etc.),
+  not the display label — which is what makes serializing the whole message
+  exactly `$getRoot().getTextContent()`, with no separate serializer to drift
+  out of sync with what the pills display.
+- Escape-dismissal of the autocomplete menu needs to identify one specific
+  trigger *occurrence* so it stays dismissed while the user keeps typing, but
+  reopens for a genuinely different trigger. That identity lives in
+  `composer/suppression.ts` as a pure re-anchoring function
+  (`reanchorOffset`/`reanchorSuppression`) — it's the fourth design tried, the
+  first three each had a degenerate input (an empty query, or a trigger at
+  offset 0) that matched everything. It has one documented, accepted
+  limitation: typing a new trigger character immediately before an already-
+  dismissed one resolves the anchor onto the wrong occurrence (identical
+  characters carry no positional information a diff can use to tell them
+  apart). See the file's own comments and `suppression.test.ts` for the exact
+  case.
 
 ## cmux integration
 
