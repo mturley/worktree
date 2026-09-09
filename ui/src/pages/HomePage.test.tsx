@@ -32,11 +32,11 @@ beforeEach(() => window.history.replaceState({}, "", "/"))
 afterEach(cleanup)
 
 describe("HomePage responsive layout", () => {
-  it("shows a Worktrees/Timeline tab bar when narrow", () => {
+  it("shows a Worktrees/Activity tab bar when narrow", () => {
     setViewport("narrow")
     wrap()
     expect(screen.getByRole("tab", { name: "Worktrees" })).toBeInTheDocument()
-    expect(screen.getByRole("tab", { name: "Timeline" })).toBeInTheDocument()
+    expect(screen.getByRole("tab", { name: "Activity" })).toBeInTheDocument()
   })
 
   it("shows no tab bar when wide", () => {

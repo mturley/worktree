@@ -50,7 +50,7 @@ export function HomePage() {
     <Stack gap="sm">
       <Group justify="space-between" wrap="wrap" gap="xs">
         <Group gap={6} wrap="nowrap" align="center">
-          <Title order={4}>Timeline</Title>
+          <Title order={4}>Activity</Title>
           <RefreshWatchersButton />
         </Group>
         {/* Both controls narrow the same feed, so they sit together on the
@@ -86,7 +86,7 @@ export function HomePage() {
         <Tabs defaultValue="worktrees">
           <Tabs.List>
             <Tabs.Tab value="worktrees">Worktrees</Tabs.Tab>
-            <Tabs.Tab value="timeline">Timeline</Tabs.Tab>
+            <Tabs.Tab value="timeline">Activity</Tabs.Tab>
           </Tabs.List>
           <Tabs.Panel value="worktrees" pt="md">{worktrees}</Tabs.Panel>
           <Tabs.Panel value="timeline" pt="md">{timeline}</Tabs.Panel>

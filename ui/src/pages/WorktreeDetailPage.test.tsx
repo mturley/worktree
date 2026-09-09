@@ -208,25 +208,25 @@ describe("WorktreeDetailPage wide layout", () => {
     expect(card.isConnected).toBe(true)
   })
 
-  it("shows the resources and the cross-resource timeline together when nothing is selected", async () => {
+  it("shows the resources and the cross-resource activity feed together when nothing is selected", async () => {
     setViewport("wide")
     wrap()
     // The timeline is no longer beside the list, but it must still be on the
     // page — stacked beneath the full-width resources.
     expect(await screen.findByRole("button", { name: /select resource o\/r#1/i })).toBeInTheDocument()
-    expect(await screen.findByText(/timeline/i)).toBeInTheDocument()
+    expect(await screen.findByText(/activity/i)).toBeInTheDocument()
   })
 })
 
 describe("WorktreeDetailPage narrow layout", () => {
-  it("shows the timeline under the resources when nothing is selected", async () => {
+  it("shows the activity feed under the resources when nothing is selected", async () => {
     // Narrow used to drop the cross-resource timeline entirely, which made it
     // a lesser view rather than a narrower one. With nothing selected both
     // widths now render the same thing: resources, then the timeline.
     setViewport("narrow")
     wrap()
     expect(await screen.findByRole("button", { name: /select resource o\/r#1/i })).toBeInTheDocument()
-    expect(await screen.findByText(/timeline/i)).toBeInTheDocument()
+    expect(await screen.findByText(/activity/i)).toBeInTheDocument()
   })
 
   it("still drills down to the resource when one is selected", async () => {
