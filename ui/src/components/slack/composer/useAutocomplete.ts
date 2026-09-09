@@ -30,6 +30,20 @@ export async function fetchAutocompleteResult(
   onResult(results)
 }
 
+/** The server's answer, tagged with the query it answers.
+ *
+ * Tagging is what makes stale results impossible to render (final-review C1).
+ * Clearing `remote` on every query change would also work, but it blanks the
+ * remote half of the menu on every keystroke — visible flicker on a list the
+ * user is actively arrowing through. Tagging keeps the previous answer in
+ * state (so no re-fetch churn) while making it INELIGIBLE for display until
+ * its query matches the live one again. */
+interface RemoteAnswer {
+  trigger: '@' | ':' | '#'
+  query: string
+  items: AutocompleteItem[]
+}
+
 /**
  * The hybrid lookup: local candidates paint immediately, the server's fill in.
  *
@@ -42,8 +56,7 @@ export function useAutocomplete(
   channel: string,
   ctx: LocalContext,
 ): { items: AutocompleteItem[]; degraded: boolean } {
-  const [remote, setRemote] = useState<AutocompleteItem[]>([])
-  const [degraded, setDegraded] = useState(false)
+  const [remote, setRemote] = useState<RemoteAnswer | null>(null)
   // Monotonic request id: only the newest response may be applied.
   const seq = useRef(0)
 
@@ -57,8 +70,7 @@ export function useAutocomplete(
 
   useEffect(() => {
     if (!trigger) {
-      setRemote([])
-      setDegraded(false)
+      setRemote(null)
       return
     }
     const id = ++seq.current
@@ -66,8 +78,8 @@ export function useAutocomplete(
     // seq.current alone does not catch unmount: if the debounce timer has
     // already fired and the fetch is in flight when the component unmounts,
     // seq.current is untouched by unmount, autocomplete() swallows the
-    // resulting AbortError and resolves [], and the seq check passes. This
-    // flag is what actually trips on unmount and guards both setState calls
+    // resulting AbortError and resolves, and the seq check passes. This
+    // flag is what actually trips on unmount and guards the setState call
     // (via fetchAutocompleteResult's isStale check).
     let cancelled = false
     const timer = setTimeout(() => {
@@ -77,13 +89,7 @@ export function useAutocomplete(
         channel,
         controller.signal,
         () => cancelled || seq.current !== id,
-        (results) => {
-          setRemote(results)
-          // autocomplete() returns [] both for "no matches" and for a failed
-          // request; treating a non-empty local list with an empty remote one
-          // as degraded is the honest reading, and only affects a hint line.
-          setDegraded(results.length === 0 && query.length > 0)
-        },
+        (results) => setRemote({ trigger, query, items: results }),
       )
     }, DEBOUNCE_MS)
 
@@ -94,6 +100,14 @@ export function useAutocomplete(
     }
   }, [trigger, query, channel])
 
-  const items = useMemo(() => mergeCandidates(local, remote), [local, remote])
+  // An answer is only usable while it still answers the LIVE query. Anything
+  // else is a candidate for a query the user has already typed past.
+  const fresh = trigger && remote && remote.trigger === trigger && remote.query === query ? remote : null
+
+  const items = useMemo(() => mergeCandidates(local, fresh?.items ?? []), [local, fresh])
+  // autocomplete() returns [] both for "no matches" and for a failed
+  // request; treating a non-empty local list with an empty remote one
+  // as degraded is the honest reading, and only affects a hint line.
+  const degraded = fresh !== null && fresh.items.length === 0 && query.length > 0
   return { items, degraded }
 }

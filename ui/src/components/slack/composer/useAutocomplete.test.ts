@@ -86,6 +86,35 @@ describe('useAutocomplete', () => {
     expect(result.current.items.map((i) => i.id)).not.toContain('STALE')
   })
 
+  it("does not keep a previous query's results while a newer query is still in flight", async () => {
+    // C1: the menu must never list — let alone highlight — a candidate that
+    // only matched an earlier query. Enter on such a row posts a mention of
+    // the wrong person. Unlike the stale-response test above, the NEWER
+    // request here never resolves: this is plain typing rhythm, not a race.
+    const spy = vi
+      .spyOn(api, 'autocomplete')
+      .mockResolvedValueOnce([{ kind: 'user', id: 'DAN', label: 'Dan Smith', token: '<@DAN>' }])
+      .mockImplementationOnce(() => new Promise(() => {})) // never resolves
+
+    const { result, rerender } = renderHook(
+      ({ q }) => useAutocomplete({ trigger: '@', query: q, start: 0 }, 'C1', ctx),
+      { initialProps: { q: 'dan' } },
+    )
+    await act(async () => {
+      vi.advanceTimersByTime(200)
+    })
+    await waitFor(() => expect(result.current.items.map((i) => i.id)).toContain('DAN'))
+
+    // Keep typing. The debounce fires, the second request goes out and stays
+    // in flight; Dan Smith must be gone from the menu the whole time.
+    rerender({ q: 'daniel.roberts' })
+    await act(async () => {
+      vi.advanceTimersByTime(200)
+    })
+    expect(spy).toHaveBeenCalledTimes(2)
+    expect(result.current.items.map((i) => i.id)).not.toContain('DAN')
+  })
+
   it('unmounting while a request is in flight does not throw and does not change items afterward', async () => {
     let resolveRequest: (v: api.AutocompleteItem[]) => void = () => {}
     vi.spyOn(api, 'autocomplete').mockImplementation(
