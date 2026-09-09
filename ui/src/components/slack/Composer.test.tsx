@@ -34,6 +34,16 @@ if (typeof window.matchMedia !== 'function') {
   })) as unknown as typeof window.matchMedia
 }
 
+/** These `findByText` waits are SETUP, not the assertion: every one of them is
+ *  waiting out the composer's 150ms autocomplete debounce plus a mocked fetch
+ *  plus a React commit before the test does the thing it is actually about.
+ *  Testing Library's 1000ms default is uncomfortably close to that chain under
+ *  a loaded parallel run, and a timeout there fails the test for a reason that
+ *  has nothing to do with the behaviour under test. A generous timeout costs
+ *  nothing (a passing test still resolves as soon as the menu appears) and
+ *  means any future failure here is unambiguously about the behaviour. */
+const MENU_WAIT = { timeout: 10_000 }
+
 function renderWithProvider(ui: React.ReactElement) {
   return render(<MantineProvider>{ui}</MantineProvider>)
 }
@@ -314,7 +324,7 @@ describe('Composer', () => {
     const editorEl = getByRole('textbox')
     await waitFor(() => getEditor())
     setEditorText(getEditor(), 'hi @ada')
-    fireEvent.mouseDown(await findByText('ada'))
+    fireEvent.mouseDown(await findByText('ada', undefined, MENU_WAIT))
     await waitFor(() => {
       const text = getEditor().getEditorState().read(() => $getRoot().getTextContent())
       expect(text).toBe('hi <@U1> ')
@@ -334,8 +344,50 @@ describe('Composer', () => {
     const editorEl = getByRole('textbox')
     await waitFor(() => getEditor())
     setEditorText(getEditor(), '@ada')
-    await findByText('ada') // menu is open
+    await findByText('ada', undefined, MENU_WAIT) // menu is open
     fireEvent.keyDown(editorEl, { key: 'Enter' })
+    expect(onSend).not.toHaveBeenCalled()
+  })
+
+  // Regression: the command handlers read `matchRef`/`itemsRef`, which are
+  // mirrored from state in an effect. If that mirror were a PASSIVE effect,
+  // there is a window between "the menu's DOM has landed" and "the refs the
+  // Enter handler reads are current" — React schedules passive effects on a
+  // macrotask, while anything observing the DOM (a MutationObserver, which is
+  // what Testing Library's `findBy*` uses, or the browser dispatching the
+  // user's next keystroke) runs first. A keypress landing in that window read
+  // `itemsRef.current.length === 0`, decided the menu was closed, and SENT.
+  //
+  // This drives that window deterministically: Enter is dispatched from a
+  // MutationObserver callback, i.e. the earliest possible moment after the
+  // menu is in the DOM. It fails against a passive mirror and passes against
+  // a layout one.
+  it('Enter picks a candidate the instant the menu lands in the DOM', async () => {
+    const onSend = vi.fn()
+    vi.spyOn(api, 'autocomplete').mockResolvedValue([{ kind: 'user', id: 'U1', label: 'ada', token: '<@U1>' }])
+    const { getEditor, onEditorReady } = grabEditor()
+    const { getByRole, queryByText } = renderWithProvider(
+      <Composer onSend={onSend} channel="C1" users={{}} groups={{}} onEditorReady={onEditorReady} />,
+    )
+    const editorEl = getByRole('textbox')
+    await waitFor(() => getEditor())
+
+    let pressed = false
+    const observer = new MutationObserver(() => {
+      if (pressed || !queryByText('ada')) {
+        return
+      }
+      pressed = true
+      observer.disconnect()
+      fireEvent.keyDown(editorEl, { key: 'Enter' })
+    })
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true })
+    try {
+      setEditorText(getEditor(), '@ada')
+      await waitFor(() => expect(pressed).toBe(true), MENU_WAIT)
+    } finally {
+      observer.disconnect()
+    }
     expect(onSend).not.toHaveBeenCalled()
   })
 
@@ -349,7 +401,7 @@ describe('Composer', () => {
     const editorEl = getByRole('textbox')
     await waitFor(() => getEditor())
     setEditorText(getEditor(), '@ada')
-    await findByText('ada') // menu is open
+    await findByText('ada', undefined, MENU_WAIT) // menu is open
     fireEvent.keyDown(editorEl, { key: 'Tab' })
     expect(onSend).not.toHaveBeenCalled()
     await waitFor(() => {
@@ -386,7 +438,7 @@ describe('Composer', () => {
     const editorEl = getByRole('textbox')
     await waitFor(() => getEditor())
     setEditorText(getEditor(), 'hello @ada')
-    await findByText('ada') // menu is open
+    await findByText('ada', undefined, MENU_WAIT) // menu is open
     fireEvent.keyDown(editorEl, { key: 'Escape' })
     fireEvent.keyDown(editorEl, { key: 'Enter' })
     expect(onSend).toHaveBeenCalledWith('hello @ada')
@@ -414,7 +466,7 @@ describe('Composer', () => {
     // No local candidates (users={}) and the server lookup failed, so there
     // is nothing to select — the degraded hint appears as inline text, but
     // no popup (no listbox) is rendered for it.
-    await findByText(/workspace search unavailable/i)
+    await findByText(/workspace search unavailable/i, undefined, MENU_WAIT)
     expect(queryByRole('listbox')).not.toBeInTheDocument()
     fireEvent.keyDown(editorEl, { key: 'Enter' })
     expect(onSend).toHaveBeenCalledWith('hi @zo')
@@ -432,14 +484,14 @@ describe('Composer', () => {
     await waitFor(() => getEditor())
 
     setEditorText(getEditor(), '@ada')
-    await findByText('ada') // menu open at the first "@" occurrence
+    await findByText('ada', undefined, MENU_WAIT) // menu open at the first "@" occurrence
     fireEvent.keyDown(editorEl, { key: 'Escape' })
 
     // Select-all + retype: a brand-new occurrence at the same block offset,
     // not a continuation of the dismissed one.
     autocomplete.mockResolvedValueOnce([{ kind: 'user', id: 'U2', label: 'bo', token: '<@U2>' }])
     setEditorText(getEditor(), '@bo')
-    await findByText('bo') // must reopen, not stay suppressed
+    await findByText('bo', undefined, MENU_WAIT) // must reopen, not stay suppressed
   })
 
   it('stays closed across a caret move away and back with no edit, but sends the literal text (finding 3)', async () => {
@@ -453,7 +505,7 @@ describe('Composer', () => {
     await waitFor(() => getEditor())
 
     setEditorText(getEditor(), 'hello @ad')
-    await findByText('ada') // menu open, backed by the debounced fetch resolving
+    await findByText('ada', undefined, MENU_WAIT) // menu open, backed by the debounced fetch resolving
     fireEvent.keyDown(editorEl, { key: 'Escape' })
     expect(queryByText('ada')).toBeNull()
 
@@ -491,7 +543,7 @@ describe('Composer', () => {
     await waitFor(() => getEditor())
 
     setEditorText(getEditor(), 'hello @ad')
-    await findByText('ada') // menu open, backed by the debounced fetch resolving
+    await findByText('ada', undefined, MENU_WAIT) // menu open, backed by the debounced fetch resolving
     fireEvent.keyDown(editorEl, { key: 'Escape' })
     expect(queryByText('ada')).toBeNull()
 
@@ -526,13 +578,13 @@ describe('Composer', () => {
     await waitFor(() => getEditor())
 
     setEditorText(getEditor(), 'hi @')
-    await findByText('@here') // local candidates open the menu for a bare "@"
+    await findByText('@here', undefined, MENU_WAIT) // local candidates open the menu for a bare "@"
     fireEvent.keyDown(getByRole('textbox'), { key: 'Escape' })
 
     // Insert new content right after the escaped "@", including a brand-new
     // "@ada" mention — same repro as the coordinator's observed bug.
     insertTextAt(getEditor(), 'hi @'.length, 'there, @ada')
-    await findByText('ada') // must open for the new mention, not stay suppressed
+    await findByText('ada', undefined, MENU_WAIT) // must open for the new mention, not stay suppressed
   })
 
   it('escaping "@ad" does not suppress a later unrelated "@ada" mention (round-3 new finding 2)', async () => {
@@ -550,13 +602,13 @@ describe('Composer', () => {
     await waitFor(() => getEditor())
 
     setEditorText(getEditor(), 'hello @ad')
-    await findByText('ad-user') // menu open for the first mention
+    await findByText('ad-user', undefined, MENU_WAIT) // menu open for the first mention
     fireEvent.keyDown(getByRole('textbox'), { key: 'Escape' })
 
     // A second, textually-related but genuinely different mention further
     // along the SAME node — "@ada" is not a literal duplicate of "@ad".
     appendEditorText(getEditor(), ' cc @ada')
-    await findByText('ada-user') // must open, not stay suppressed as if it were "@ad" continued
+    await findByText('ada-user', undefined, MENU_WAIT) // must open, not stay suppressed as if it were "@ad" continued
   })
 
   it('a mention typed in a different, later text node opens even with an IDENTICAL before-trigger prefix to an escaped mention in an earlier node (test-gap: node-identity component)', async () => {
@@ -583,14 +635,14 @@ describe('Composer', () => {
     // Node A: "hello @ad" — open its menu and Escape it, recording a
     // suppression keyed to node A's key, trigger '@', before-text "hello ".
     setEditorText(getEditor(), 'hello @ad')
-    await findByText('ad-user') // confirms the menu opened for node A
+    await findByText('ad-user', undefined, MENU_WAIT) // confirms the menu opened for node A
     fireEvent.keyDown(getByRole('textbox'), { key: 'Escape' })
 
     // Node B: a BRAND-NEW, separate text node with the SAME before-trigger
     // text and trigger character, but different content overall and a
     // different query — node A is untouched, not deleted, not edited.
     appendNewTextNode(getEditor(), 'hello @bo')
-    await findByText('bo-user') // node B's mention must open regardless of node A's escaped state
+    await findByText('bo-user', undefined, MENU_WAIT) // node B's mention must open regardless of node A's escaped state
   })
 
   it('replacing an escaped "@ad" with ":sm" in place reopens the menu (via re-anchoring to null, NOT the trigger comparison)', async () => {
@@ -617,13 +669,13 @@ describe('Composer', () => {
 
     // "hello @ad" — open its menu and Escape it (trigger '@', before-text "hello ").
     setEditorText(getEditor(), 'hello @ad')
-    await findByText('ad-user')
+    await findByText('ad-user', undefined, MENU_WAIT)
     fireEvent.keyDown(getByRole('textbox'), { key: 'Escape' })
 
     // Replace "@ad" (offsets 6-9) with ":sm" IN PLACE — same node, same
     // before-text "hello ", but a ':' trigger instead of '@'.
     replaceRangeInNode(getEditor(), 'hello '.length, '@ad'.length, ':sm')
-    await findByText(':smile:') // must open — the trigger character differs
+    await findByText(':smile:', undefined, MENU_WAIT) // must open — the trigger character differs
   })
 
   // Fix-round-4 regression coverage. Rounds 2 and 3 both keyed the
@@ -650,12 +702,12 @@ describe('Composer', () => {
     // A trigger at node offset 0 — the exact shape that made round 3's
     // before-text key record '' and match everything afterwards.
     setEditorText(getEditor(), '@')
-    await findByText('@here') // local candidates open the menu for a bare "@"
+    await findByText('@here', undefined, MENU_WAIT) // local candidates open the menu for a bare "@"
     fireEvent.keyDown(getByRole('textbox'), { key: 'Escape' })
 
     // Keep typing straight past it, ending in a genuinely new mention.
     appendEditorText(getEditor(), '-team standup at 3, @ada')
-    await findByText('ada-user') // must open for the new mention
+    await findByText('ada-user', undefined, MENU_WAIT) // must open for the new mention
   })
 
   it('escaping "@ad" after a short recurring lead-in does not suppress a later "@bo" (round-4)', async () => {
@@ -676,11 +728,11 @@ describe('Composer', () => {
     await waitFor(() => getEditor())
 
     setEditorText(getEditor(), 'cc @ad')
-    await findByText('ad-user')
+    await findByText('ad-user', undefined, MENU_WAIT)
     fireEvent.keyDown(getByRole('textbox'), { key: 'Escape' })
 
     appendEditorText(getEditor(), 'am and cc @bo')
-    await findByText('bo-user') // must open — a different occurrence entirely
+    await findByText('bo-user', undefined, MENU_WAIT) // must open — a different occurrence entirely
   })
 
   it('stays closed while the user keeps typing INTO the same escaped occurrence (round-4)', async () => {
@@ -702,7 +754,7 @@ describe('Composer', () => {
     await waitFor(() => getEditor())
 
     setEditorText(getEditor(), 'hello @ad')
-    await findByText('ad-user')
+    await findByText('ad-user', undefined, MENU_WAIT)
     fireEvent.keyDown(editorEl, { key: 'Escape' })
 
     appendEditorText(getEditor(), 'a') // "hello @ada" — same occurrence, longer query
@@ -738,12 +790,12 @@ describe('Composer', () => {
     await waitFor(() => getEditor())
 
     setEditorText(getEditor(), 'hi @ad')
-    await findByText('ad-user')
+    await findByText('ad-user', undefined, MENU_WAIT)
     fireEvent.keyDown(editorEl, { key: 'Escape' })
 
     // Type "@bo" at offset 3 — directly in front of the escaped "@ad".
     insertTextAt(getEditor(), 3, '@bo') // -> "hi @bo@ad", caret after "@bo"
     await sleep(400) // see the settle-not-poll comment above
-    expect(await findByText('bo-user')).toBeInTheDocument() // opens for the newly typed trigger
+    expect(await findByText('bo-user', undefined, MENU_WAIT)).toBeInTheDocument() // opens for the newly typed trigger
   })
 })

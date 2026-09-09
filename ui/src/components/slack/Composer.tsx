@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { ActionIcon, Box, Button, Group, Stack, Text, Tooltip } from '@mantine/core'
 import { LexicalComposer } from '@lexical/react/LexicalComposer'
 import { PlainTextPlugin } from '@lexical/react/LexicalPlainTextPlugin'
@@ -200,16 +200,31 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
 
   // Refs mirroring the latest render's state/props, read inside Lexical
   // command handlers registered once on mount (see the editor effect below).
-  // Written from an EFFECT (not the render body — fix-round-2 open finding
+  //
+  // Written from an EFFECT, not the render body (fix-round-2 open finding
   // 3/finding 8): a render that gets abandoned or re-run (React concurrent
   // features) must not leave the command handlers reading state from a
-  // render that was never committed.
+  // render that was never committed. That rationale is unchanged.
+  //
+  // But it MUST be a LAYOUT effect, not a passive one. The menu renders from
+  // `items`/`match` STATE, so the moment React commits, the menu is in the
+  // DOM — while a PASSIVE effect is merely SCHEDULED, on a macrotask that
+  // runs after the commit and after paint. Anything that observes the DOM
+  // gets in first: the browser dispatching the user's next keystroke, or (in
+  // tests) a MutationObserver, which is what Testing Library's `findBy*`
+  // resolves on. A key pressed in that window read `itemsRef.current.length
+  // === 0`, `isMenuVisible` said the menu was closed, and Enter SENT the
+  // half-typed "@query" instead of selecting a candidate — the exact hazard
+  // finding 1 exists to prevent, reintroduced through the back door. Layout
+  // effects flush SYNCHRONOUSLY at commit, before paint and before control
+  // returns to the event loop, so "the menu is on screen" and "the handlers
+  // think the menu is open" cannot disagree for even one tick.
   const matchRef = useRef(match)
   const itemsRef = useRef(items)
   const highlightedKeyRef = useRef(highlightedKey)
   const disabledRef = useRef(disabled)
   const onSendRef = useRef(onSend)
-  useEffect(() => {
+  useLayoutEffect(() => {
     matchRef.current = match
     itemsRef.current = items
     highlightedKeyRef.current = highlightedKey
@@ -239,7 +254,14 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
 
   // Keep the highlight valid as candidates arrive/merge; default to the first
   // item without clobbering an existing highlight that is still present.
-  useEffect(() => {
+  // Also a LAYOUT effect, and for the same reason as the mirror above: it
+  // feeds `highlightedKey`, which the mirror copies into a ref the Enter/Tab
+  // handlers read. Running it after paint would put the first painted frame
+  // of a freshly-opened menu on screen with nothing highlighted. Declared
+  // AFTER the mirror so that within one commit the mirror sees this render's
+  // value first, this effect's state update re-renders synchronously before
+  // paint, and the mirror then picks up the defaulted key.
+  useLayoutEffect(() => {
     if (items.length === 0) {
       setHighlightedKey(null)
       return
