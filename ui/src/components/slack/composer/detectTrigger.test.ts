@@ -31,6 +31,24 @@ describe('detectTrigger', () => {
     expect(detectTrigger('line one\n@ad')).toEqual({ trigger: '@', query: 'ad', start: 9 })
   })
 
+  it('opens immediately after a mention pill, whose text ends in ">"', () => {
+    // A MentionNode's text content IS its mrkdwn token, so the text before
+    // the caret ends in ">" (users/groups/specials/channels). Requiring
+    // whitespace there forced the user to type a space first; Slack's own
+    // composer opens straight away.
+    expect(detectTrigger('<@U1>@ad')).toEqual({ trigger: '@', query: 'ad', start: 5 })
+    expect(detectTrigger('<#C1|odh>@')).toEqual({ trigger: '@', query: '', start: 9 })
+  })
+
+  it('opens immediately after an emoji pill, whose text ends in ":"', () => {
+    expect(detectTrigger(':smile:@ad')).toEqual({ trigger: '@', query: 'ad', start: 7 })
+  })
+
+  it('still leaves email addresses alone, which is what the boundary is for', () => {
+    expect(detectTrigger('mail ada@example.com')).toBeNull()
+    expect(detectTrigger('ada@ex')).toBeNull()
+  })
+
   it('returns null for text with no trigger', () => {
     expect(detectTrigger('just typing')).toBeNull()
   })

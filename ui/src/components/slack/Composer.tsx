@@ -10,6 +10,7 @@ import {
   $getNodeByKey,
   $getRoot,
   $getSelection,
+  $isElementNode,
   $isRangeSelection,
   $isTextNode,
   $createTextNode,
@@ -82,6 +83,25 @@ function getTextBeforeCaret(selection: RangeSelection): string {
     // Empty editor, or a selection collapsed directly onto root — no text
     // precedes the caret.
     return ''
+  }
+  if (!$isTextNode(anchorNode)) {
+    // `anchor.offset` is only a CHARACTER offset when the anchor is a text
+    // node; for an element anchor it is a CHILD INDEX, and slicing text by it
+    // below would silently return the wrong prefix. Lexical parks the caret
+    // on an element in ordinary situations — an empty paragraph, or a caret
+    // sitting beside a decorator pill — so this is a real state, not a
+    // defensive impossibility.
+    if (!$isElementNode(anchorNode) || anchorNode.getKey() !== anchorNode.getTopLevelElementOrThrow().getKey()) {
+      // A nested element anchor would need the enclosing block walked as
+      // well; PlainTextPlugin produces no such nesting, and reporting "no
+      // text" merely means no menu opens.
+      return ''
+    }
+    return anchorNode
+      .getChildren()
+      .slice(0, anchor.offset)
+      .map((child) => child.getTextContent())
+      .join('')
   }
   const topLevel = anchorNode.getTopLevelElementOrThrow()
   let text = ''
@@ -391,7 +411,14 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
         }
         const anchorNode = selection.anchor.getNode()
         const nodeKey = anchorNode.getKey()
-        const triggerOffset = getNodeTriggerOffset(selection.anchor.offset, detected.query)
+        // Only meaningful for a TEXT anchor: on an element anchor
+        // `anchor.offset` is a child index, so the arithmetic inside
+        // getNodeTriggerOffset would be nonsense. null is the correct answer
+        // — such a detection simply cannot be identified for suppression
+        // purposes, and so is never suppressed (it opens).
+        const triggerOffset = $isTextNode(anchorNode)
+          ? getNodeTriggerOffset(selection.anchor.offset, detected.query)
+          : null
         const suppressed = suppressedRef.current
         if (
           suppressed !== null &&
@@ -591,6 +618,10 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
                 aria-label="Reply…"
                 disabled={disabled}
                 style={{
+                  // Without pre-wrap a pasted "\n" — which the paste handler
+                  // stores verbatim inside one TextNode — collapses to a
+                  // space on screen: the user sees one line and posts two.
+                  whiteSpace: 'pre-wrap',
                   minHeight: '2.25rem',
                   maxHeight: '16rem',
                   overflowY: 'auto',

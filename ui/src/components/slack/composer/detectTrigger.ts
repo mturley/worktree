@@ -7,10 +7,16 @@ export interface TriggerMatch {
   start: number
 }
 
-// A trigger only counts at the start of the text or after whitespace — this
-// is what keeps "ada@example.com" from opening a mention menu. The query runs
-// to the caret and may not contain whitespace or another trigger character.
-const TRIGGER_RE = /(?:^|\s)([@:#])([^\s@:#]*)$/
+// A trigger counts at the start of the text, after whitespace, or directly
+// after a ">" or ":" — this is what keeps "ada@example.com" from opening a
+// mention menu while still opening one typed straight after a PILL, whose
+// text content is its mrkdwn token and so ends in ">" (users, groups,
+// specials, channels) or ":" (emoji). Slack's own composer opens there too;
+// requiring a space first was a papercut, and neither character can occur
+// inside a handle or an ordinary word, so the email case is untouched.
+// The query runs to the caret and may not contain whitespace or another
+// trigger character.
+const TRIGGER_RE = /(?:^|[\s>:])([@:#])([^\s@:#]*)$/
 
 /**
  * Decides whether an autocomplete menu should be open, given the text between
