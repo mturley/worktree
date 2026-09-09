@@ -363,7 +363,10 @@ describe('Composer', () => {
 
   it('Enter sends normally when the lookup is degraded and there is nothing to select (finding 1 / round-2 ruling)', async () => {
     const onSend = vi.fn()
-    vi.spyOn(api, 'autocomplete').mockResolvedValue([])
+    // null, not []: null is a FAILED lookup, which is the only thing that
+    // degrades. [] would be a healthy "nobody by that name" and must not
+    // raise the hint at all (see slackApi.autocomplete's contract).
+    vi.spyOn(api, 'autocomplete').mockResolvedValue(null)
     const { getEditor, onEditorReady } = grabEditor()
     const { getByRole, findByText, queryByRole } = renderWithProvider(
       <Composer onSend={onSend} channel="C1" users={{}} groups={{}} onEditorReady={onEditorReady} />,
@@ -371,9 +374,9 @@ describe('Composer', () => {
     const editorEl = getByRole('textbox')
     await waitFor(() => getEditor())
     setEditorText(getEditor(), 'hi @zo')
-    // No local candidates (users={}) and the mocked server also returns [],
-    // so there is nothing to select — the degraded hint appears as inline
-    // text, but no popup (no listbox) is rendered for it.
+    // No local candidates (users={}) and the server lookup failed, so there
+    // is nothing to select — the degraded hint appears as inline text, but
+    // no popup (no listbox) is rendered for it.
     await findByText(/workspace search unavailable/i)
     expect(queryByRole('listbox')).not.toBeInTheDocument()
     fireEvent.keyDown(editorEl, { key: 'Enter' })
