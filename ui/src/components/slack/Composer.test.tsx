@@ -34,14 +34,19 @@ if (typeof window.matchMedia !== 'function') {
   })) as unknown as typeof window.matchMedia
 }
 
-/** These `findByText` waits are SETUP, not the assertion: every one of them is
- *  waiting out the composer's 150ms autocomplete debounce plus a mocked fetch
- *  plus a React commit before the test does the thing it is actually about.
- *  Testing Library's 1000ms default is uncomfortably close to that chain under
- *  a loaded parallel run, and a timeout there fails the test for a reason that
- *  has nothing to do with the behaviour under test. A generous timeout costs
- *  nothing (a passing test still resolves as soon as the menu appears) and
- *  means any future failure here is unambiguously about the behaviour. */
+/** A generous timeout for `findByText` waits that are SETUP for a later
+ *  assertion — waiting out the composer's 150ms autocomplete debounce plus a
+ *  mocked fetch plus a React commit before the test does the thing it is
+ *  actually about. Testing Library's 1000ms default is uncomfortably close to
+ *  that chain under a loaded parallel run, and a timeout there would fail the
+ *  test for a reason unrelated to the behaviour under test. It costs nothing:
+ *  a passing test still resolves the moment the menu appears.
+ *
+ *  Deliberately NOT used where the wait IS the assertion — the terminal
+ *  `await findByText(...)` of the Escape-suppression tests, whose whole
+ *  subject is "the menu must reopen". Those keep the 1000ms default so that a
+ *  regression which stops the menu reopening fails in one second rather than
+ *  hanging for ten, eight times over, in the middle of a bisect. */
 const MENU_WAIT = { timeout: 10_000 }
 
 function renderWithProvider(ui: React.ReactElement) {
@@ -389,6 +394,12 @@ describe('Composer', () => {
       observer.disconnect()
     }
     expect(onSend).not.toHaveBeenCalled()
+    // Not merely "Enter was swallowed": the candidate must actually be
+    // inserted, which is the behaviour the swallow exists to enable.
+    await waitFor(() => {
+      const text = getEditor().getEditorState().read(() => $getRoot().getTextContent())
+      expect(text).toBe('<@U1> ')
+    })
   })
 
   it('Tab accepts the highlighted candidate while the menu is open, like Enter', async () => {
@@ -491,7 +502,7 @@ describe('Composer', () => {
     // not a continuation of the dismissed one.
     autocomplete.mockResolvedValueOnce([{ kind: 'user', id: 'U2', label: 'bo', token: '<@U2>' }])
     setEditorText(getEditor(), '@bo')
-    await findByText('bo', undefined, MENU_WAIT) // must reopen, not stay suppressed
+    await findByText('bo') // must reopen, not stay suppressed
   })
 
   it('stays closed across a caret move away and back with no edit, but sends the literal text (finding 3)', async () => {
@@ -584,7 +595,7 @@ describe('Composer', () => {
     // Insert new content right after the escaped "@", including a brand-new
     // "@ada" mention — same repro as the coordinator's observed bug.
     insertTextAt(getEditor(), 'hi @'.length, 'there, @ada')
-    await findByText('ada', undefined, MENU_WAIT) // must open for the new mention, not stay suppressed
+    await findByText('ada') // must open for the new mention, not stay suppressed
   })
 
   it('escaping "@ad" does not suppress a later unrelated "@ada" mention (round-3 new finding 2)', async () => {
@@ -608,7 +619,7 @@ describe('Composer', () => {
     // A second, textually-related but genuinely different mention further
     // along the SAME node — "@ada" is not a literal duplicate of "@ad".
     appendEditorText(getEditor(), ' cc @ada')
-    await findByText('ada-user', undefined, MENU_WAIT) // must open, not stay suppressed as if it were "@ad" continued
+    await findByText('ada-user') // must open, not stay suppressed as if it were "@ad" continued
   })
 
   it('a mention typed in a different, later text node opens even with an IDENTICAL before-trigger prefix to an escaped mention in an earlier node (test-gap: node-identity component)', async () => {
@@ -642,7 +653,7 @@ describe('Composer', () => {
     // text and trigger character, but different content overall and a
     // different query — node A is untouched, not deleted, not edited.
     appendNewTextNode(getEditor(), 'hello @bo')
-    await findByText('bo-user', undefined, MENU_WAIT) // node B's mention must open regardless of node A's escaped state
+    await findByText('bo-user') // node B's mention must open regardless of node A's escaped state
   })
 
   it('replacing an escaped "@ad" with ":sm" in place reopens the menu (via re-anchoring to null, NOT the trigger comparison)', async () => {
@@ -675,7 +686,7 @@ describe('Composer', () => {
     // Replace "@ad" (offsets 6-9) with ":sm" IN PLACE — same node, same
     // before-text "hello ", but a ':' trigger instead of '@'.
     replaceRangeInNode(getEditor(), 'hello '.length, '@ad'.length, ':sm')
-    await findByText(':smile:', undefined, MENU_WAIT) // must open — the trigger character differs
+    await findByText(':smile:') // must open — the trigger character differs
   })
 
   // Fix-round-4 regression coverage. Rounds 2 and 3 both keyed the
@@ -707,7 +718,7 @@ describe('Composer', () => {
 
     // Keep typing straight past it, ending in a genuinely new mention.
     appendEditorText(getEditor(), '-team standup at 3, @ada')
-    await findByText('ada-user', undefined, MENU_WAIT) // must open for the new mention
+    await findByText('ada-user') // must open for the new mention
   })
 
   it('escaping "@ad" after a short recurring lead-in does not suppress a later "@bo" (round-4)', async () => {
@@ -732,7 +743,7 @@ describe('Composer', () => {
     fireEvent.keyDown(getByRole('textbox'), { key: 'Escape' })
 
     appendEditorText(getEditor(), 'am and cc @bo')
-    await findByText('bo-user', undefined, MENU_WAIT) // must open — a different occurrence entirely
+    await findByText('bo-user') // must open — a different occurrence entirely
   })
 
   it('stays closed while the user keeps typing INTO the same escaped occurrence (round-4)', async () => {
@@ -796,6 +807,6 @@ describe('Composer', () => {
     // Type "@bo" at offset 3 — directly in front of the escaped "@ad".
     insertTextAt(getEditor(), 3, '@bo') // -> "hi @bo@ad", caret after "@bo"
     await sleep(400) // see the settle-not-poll comment above
-    expect(await findByText('bo-user', undefined, MENU_WAIT)).toBeInTheDocument() // opens for the newly typed trigger
+    expect(await findByText('bo-user')).toBeInTheDocument() // opens for the newly typed trigger
   })
 })
