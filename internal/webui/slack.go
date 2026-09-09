@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"time"
 
 	"github.com/mturley/watcher/slack"
 )
@@ -153,21 +154,65 @@ func (s *Server) buildThreadResponse(ctx context.Context, ch, ts string, th slac
 	return resp, nil
 }
 
+// emojiFailureTTL is how long a failed emoji.list is remembered before another
+// call is attempted.
+//
+// Negative caching is a REQUIREMENT here, not an optimisation: the composer's
+// ":" autocomplete calls emoji() on every debounced keystroke, so a map cached
+// only on SUCCESS meant a failing emoji.list produced ~6-7 Slack calls per
+// second of sustained typing. That is precisely the burst pattern
+// docs/reverse-engineering/slack-web-api.md blames for two session-token
+// revocations.
+const emojiFailureTTL = 60 * time.Second
+
 // emoji returns the workspace emoji map, fetching it once via
 // SlackClient.Emoji and caching the result on the Server for subsequent
-// requests.
+// requests. A failure is remembered for emojiFailureTTL.
+//
+// The state mutex is deliberately NOT held across the network call — a cache
+// hit must never queue behind an in-flight (or hung) emoji.list. A separate
+// fetch mutex serialises the fetchers themselves, so concurrent misses still
+// make a single Slack call.
 func (s *Server) emoji(ctx context.Context) (map[string]string, error) {
+	if cached, err, ok := s.cachedEmoji(); ok {
+		return cached, err
+	}
+
+	s.emojiFetchMu.Lock()
+	defer s.emojiFetchMu.Unlock()
+	// Re-check: another fetcher may have filled (or negatively filled) the
+	// cache while we waited for this lock.
+	if cached, err, ok := s.cachedEmoji(); ok {
+		return cached, err
+	}
+
+	e, err := s.SlackClient.Emoji(ctx)
+
 	s.emojiMu.Lock()
 	defer s.emojiMu.Unlock()
-	if s.emojiCache != nil {
-		return s.emojiCache, nil
-	}
-	e, err := s.SlackClient.Emoji(ctx)
 	if err != nil {
+		s.emojiErr = err
+		s.emojiFailUntil = time.Now().Add(emojiFailureTTL)
 		return nil, err
 	}
 	s.emojiCache = e
+	s.emojiErr = nil
+	s.emojiFailUntil = time.Time{}
 	return e, nil
+}
+
+// cachedEmoji reports the cached map, or the remembered failure while it is
+// still fresh. ok is false when neither applies and a fetch is needed.
+func (s *Server) cachedEmoji() (map[string]string, error, bool) {
+	s.emojiMu.Lock()
+	defer s.emojiMu.Unlock()
+	if s.emojiCache != nil {
+		return s.emojiCache, nil, true
+	}
+	if s.emojiErr != nil && time.Now().Before(s.emojiFailUntil) {
+		return nil, s.emojiErr, true
+	}
+	return nil, nil, false
 }
 
 // channelName returns the display name for channel id, fetching it once via

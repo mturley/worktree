@@ -1,5 +1,10 @@
-import { describe, it, expect } from 'vitest'
-import { safeHref, unescapeSlackText, imageProxy } from './slackApi'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { safeHref, unescapeSlackText, imageProxy, autocomplete } from './slackApi'
+
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
 
 describe('unescapeSlackText', () => {
   it('unescapes &amp; &lt; &gt; only', () => {
@@ -46,5 +51,61 @@ describe('imageProxy', () => {
 
   it('leaves an empty URL unchanged', () => {
     expect(imageProxy('')).toBe('')
+  })
+})
+
+describe('autocomplete', () => {
+  it('sends the trigger, query and channel, and returns results', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        results: [{ kind: 'user', id: 'U1', label: 'ada', detail: 'aroberts', token: '<@U1>' }],
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const items = await autocomplete('@', 'ad', 'C1')
+
+    const url = fetchMock.mock.calls[0][0] as string
+    expect(url).toContain('/api/slack-autocomplete')
+    expect(url).toContain('trigger=%40')
+    expect(url).toContain('q=ad')
+    expect(url).toContain('channel=C1')
+    expect(items).toEqual([
+      { kind: 'user', id: 'U1', label: 'ada', detail: 'aroberts', token: '<@U1>' },
+    ])
+  })
+
+  it('returns null rather than throwing when the server errors, so the menu keeps local results', async () => {
+    // null, not []: "the lookup failed" and "the workspace has nobody by that
+    // name" are different facts, and the composer's degraded hint tells the
+    // user to go fix their Slack session on the strength of the first one.
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 502, text: async () => 'boom' }))
+    await expect(autocomplete('@', 'ad', 'C1')).resolves.toBeNull()
+  })
+
+  it('returns null when the request throws outright', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('network down')))
+    await expect(autocomplete('@', 'ad', 'C1')).resolves.toBeNull()
+  })
+
+  it('returns [] for a successful lookup with no matches', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ results: [] }) }))
+    await expect(autocomplete('@', 'zzzq', 'C1')).resolves.toEqual([])
+  })
+
+  it('reports an abort as [] — a superseded keystroke is not a failed lookup', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const err = new DOMException('aborted', 'AbortError')
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(err))
+    await expect(autocomplete('@', 'ad', 'C1', controller.signal)).resolves.toEqual([])
+  })
+
+  it('omits the channel parameter entirely when there is no channel', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ results: [] }) })
+    vi.stubGlobal('fetch', fetchMock)
+    await autocomplete('@', 'ad', undefined)
+    expect(fetchMock.mock.calls[0][0] as string).not.toContain('channel=')
   })
 })

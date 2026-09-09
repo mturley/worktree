@@ -1,9 +1,31 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
-import { render, cleanup, fireEvent, waitFor } from '@testing-library/react'
+import { render, cleanup, fireEvent, waitFor, act } from '@testing-library/react'
 import { MantineProvider } from '@mantine/core'
+import { $createTextNode, $getRoot, type ElementNode, type LexicalEditor } from 'lexical'
 import { openInSlackUrl, ThreadView } from './ThreadView'
 import type { UseThreadResult } from '../../hooks/useThread'
 import type { Tab } from '../../state/tabs'
+
+/** jsdom's contenteditable support is too thin for simulated typing to reach
+ *  Lexical, so this drives the composer directly through its own API via
+ *  ThreadView's test-only `onComposerEditorReady` escape hatch. */
+function setEditorText(editor: LexicalEditor, text: string) {
+  editor.update(
+    () => {
+      const root = $getRoot()
+      const paragraph = root.getFirstChild() as ElementNode | null
+      if (!paragraph) {
+        return
+      }
+      for (const child of paragraph.getChildren()) {
+        child.remove()
+      }
+      paragraph.append($createTextNode(text))
+      paragraph.selectEnd()
+    },
+    { discrete: true },
+  )
+}
 
 // jsdom doesn't implement window.matchMedia; MantineProvider's color-scheme
 // effect needs it, so stub a minimal version for this test file only.
@@ -75,13 +97,24 @@ function baseThread(): UseThreadResult {
 describe('ThreadView pending replies on an empty thread', () => {
   it('shows a failed pending reply with Retry/Dismiss even when data.messages is empty', async () => {
     mockPostReply.mockRejectedValue(new Error('blocked: not on allowlist'))
+    let editor: LexicalEditor | undefined
     const { getByRole, getByText, queryByLabelText } = renderWithProvider(
-      <ThreadView tab={baseTab()} thread={baseThread()} onOpenThread={vi.fn()} />,
+      <ThreadView
+        tab={baseTab()}
+        thread={baseThread()}
+        onOpenThread={vi.fn()}
+        onComposerEditorReady={(e) => {
+          editor = e
+        }}
+      />,
     )
 
-    const textarea = getByRole('textbox') as HTMLTextAreaElement
-    fireEvent.change(textarea, { target: { value: 'hello there' } })
-    fireEvent.keyDown(textarea, { key: 'Enter' })
+    const editorEl = getByRole('textbox')
+    await waitFor(() => expect(editor).toBeDefined())
+    act(() => {
+      setEditorText(editor as LexicalEditor, 'hello there')
+    })
+    fireEvent.keyDown(editorEl, { key: 'Enter' })
 
     await waitFor(() => {
       expect(getByText('blocked: not on allowlist')).toBeTruthy()

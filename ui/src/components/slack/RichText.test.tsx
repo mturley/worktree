@@ -4,7 +4,7 @@ import { RichText } from './RichText'
 import type { Block, Element, User } from '../../api/slackApi'
 
 const users: Record<string, User> = {
-  U123: { ID: 'U123', RealName: 'Jane Doe', DisplayName: 'jane', Avatar72: '' },
+  U123: { ID: 'U123', Name: 'jane.doe', RealName: 'Jane Doe', DisplayName: 'jane', Avatar72: '' },
 }
 
 const emoji: Record<string, string> = {

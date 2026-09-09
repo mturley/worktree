@@ -48,6 +48,16 @@ func (f *fakeClient) PostReply(context.Context, string, string, string) (slack.M
 func (f *fakeClient) AddReaction(context.Context, string, string, string) error    { return nil }
 func (f *fakeClient) RemoveReaction(context.Context, string, string, string) error { return nil }
 
+func (f *fakeClient) SearchUsers(ctx context.Context, query, currentChannel string, limit int) ([]slack.User, error) {
+	return nil, nil
+}
+func (f *fakeClient) SearchUserGroups(ctx context.Context, query string, limit int) ([]slack.UserGroup, error) {
+	return nil, nil
+}
+func (f *fakeClient) SearchChannels(ctx context.Context, query string, limit int) ([]slack.Channel, error) {
+	return nil, nil
+}
+
 func TestPollDetectsChange(t *testing.T) {
 	fc := &fakeClient{threads: []slack.Thread{
 		{Messages: []slack.Message{{TS: "1.1"}}},
@@ -123,6 +133,16 @@ func (s *slowClient) PostReply(context.Context, string, string, string) (slack.M
 }
 func (s *slowClient) AddReaction(context.Context, string, string, string) error    { return nil }
 func (s *slowClient) RemoveReaction(context.Context, string, string, string) error { return nil }
+
+func (s *slowClient) SearchUsers(ctx context.Context, query, currentChannel string, limit int) ([]slack.User, error) {
+	return nil, nil
+}
+func (s *slowClient) SearchUserGroups(ctx context.Context, query string, limit int) ([]slack.UserGroup, error) {
+	return nil, nil
+}
+func (s *slowClient) SearchChannels(ctx context.Context, query string, limit int) ([]slack.Channel, error) {
+	return nil, nil
+}
 
 // TestUnsubscribeDuringInFlightPollDoesNotPanic reproduces the critical
 // concurrency bug: Subscribe starts a loop whose first poll blocks for
@@ -291,6 +311,16 @@ func (c *countingClient) PostReply(context.Context, string, string, string) (sla
 func (c *countingClient) AddReaction(context.Context, string, string, string) error    { return nil }
 func (c *countingClient) RemoveReaction(context.Context, string, string, string) error { return nil }
 
+func (c *countingClient) SearchUsers(ctx context.Context, query, currentChannel string, limit int) ([]slack.User, error) {
+	return nil, nil
+}
+func (c *countingClient) SearchUserGroups(ctx context.Context, query string, limit int) ([]slack.UserGroup, error) {
+	return nil, nil
+}
+func (c *countingClient) SearchChannels(ctx context.Context, query string, limit int) ([]slack.Channel, error) {
+	return nil, nil
+}
+
 // TestLoopStopsAfterLastUnsubscribe verifies that a shared polling loop
 // keeps running while any subscriber remains, and stops polling only once
 // the LAST subscriber for its key has unsubscribed.
@@ -359,6 +389,16 @@ func (c *controlledClient) PostReply(context.Context, string, string, string) (s
 }
 func (c *controlledClient) AddReaction(context.Context, string, string, string) error    { return nil }
 func (c *controlledClient) RemoveReaction(context.Context, string, string, string) error { return nil }
+
+func (c *controlledClient) SearchUsers(ctx context.Context, query, currentChannel string, limit int) ([]slack.User, error) {
+	return nil, nil
+}
+func (c *controlledClient) SearchUserGroups(ctx context.Context, query string, limit int) ([]slack.UserGroup, error) {
+	return nil, nil
+}
+func (c *controlledClient) SearchChannels(ctx context.Context, query string, limit int) ([]slack.Channel, error) {
+	return nil, nil
+}
 
 // drainBuffered discards any values already buffered on ch without
 // blocking, so a subsequent read is guaranteed to observe a fresh delivery

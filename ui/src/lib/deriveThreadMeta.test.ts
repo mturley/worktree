@@ -36,7 +36,7 @@ function baseResponse(overrides: Partial<ThreadResponse>): ThreadResponse {
 describe('deriveThreadMeta', () => {
   it('resolves author DisplayName from the users map for the root message', () => {
     const users: Record<string, User> = {
-      U1: { ID: 'U1', RealName: 'Jane Doe', DisplayName: 'jane', Avatar72: '' },
+      U1: { ID: 'U1', Name: 'jane.doe', RealName: 'Jane Doe', DisplayName: 'jane', Avatar72: '' },
     }
     const meta = deriveThreadMeta(baseResponse({ users }))
     expect(meta.author).toBe('jane')
@@ -44,7 +44,7 @@ describe('deriveThreadMeta', () => {
 
   it('falls back to RealName when DisplayName is empty', () => {
     const users: Record<string, User> = {
-      U1: { ID: 'U1', RealName: 'Jane Doe', DisplayName: '', Avatar72: '' },
+      U1: { ID: 'U1', Name: 'jane.doe', RealName: 'Jane Doe', DisplayName: '', Avatar72: '' },
     }
     const meta = deriveThreadMeta(baseResponse({ users }))
     expect(meta.author).toBe('Jane Doe')

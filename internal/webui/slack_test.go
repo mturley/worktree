@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/mturley/watcher/slack"
@@ -16,6 +17,9 @@ type fakeSlack struct {
 	thread      slack.Thread
 	users       map[string]slack.User
 	emoji       map[string]string
+	emojiErr    error
+	emojiCalls  int
+	emojiMu     sync.Mutex
 	channelName string
 	currentUser string
 	err         error
@@ -28,6 +32,13 @@ type fakeSlack struct {
 
 	reactAddTS, reactRemoveTS, reactName string
 	reactCalls                           int
+
+	searchUsers      []slack.User
+	searchUserGroups []slack.UserGroup
+	searchChannels   []slack.Channel
+	searchErr        error
+	searchMu         sync.Mutex
+	searchQueries    []string // records each query, for asserting call counts
 }
 
 func (f *fakeSlack) AuthTest(ctx context.Context) error { return f.err }
@@ -55,7 +66,18 @@ func (f *fakeSlack) Users(ctx context.Context, ids []string) (map[string]slack.U
 	return out, nil
 }
 
-func (f *fakeSlack) Emoji(ctx context.Context) (map[string]string, error) { return f.emoji, nil }
+func (f *fakeSlack) Emoji(ctx context.Context) (map[string]string, error) {
+	f.emojiMu.Lock()
+	f.emojiCalls++
+	f.emojiMu.Unlock()
+	return f.emoji, f.emojiErr
+}
+
+func (f *fakeSlack) emojiCallCount() int {
+	f.emojiMu.Lock()
+	defer f.emojiMu.Unlock()
+	return f.emojiCalls
+}
 func (f *fakeSlack) UserGroups(ctx context.Context) (map[string]slack.UserGroup, error) {
 	return nil, nil
 }
@@ -97,6 +119,45 @@ func (f *fakeSlack) RemoveReaction(ctx context.Context, channel, ts, name string
 	f.reactCalls++
 	f.reactRemoveTS, f.reactName = ts, name
 	return f.err
+}
+
+func (f *fakeSlack) SearchUsers(ctx context.Context, query, currentChannel string, limit int) ([]slack.User, error) {
+	// Honours ctx, as the real client does — this is what lets a test observe
+	// whether the lookup ran on a context detached from one requester's
+	// cancellation.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	f.searchMu.Lock()
+	f.searchQueries = append(f.searchQueries, "users:"+query)
+	f.searchMu.Unlock()
+	return f.searchUsers, f.searchErr
+}
+
+func (f *fakeSlack) SearchUserGroups(ctx context.Context, query string, limit int) ([]slack.UserGroup, error) {
+	f.searchMu.Lock()
+	f.searchQueries = append(f.searchQueries, "groups:"+query)
+	f.searchMu.Unlock()
+	return f.searchUserGroups, f.searchErr
+}
+
+func (f *fakeSlack) SearchChannels(ctx context.Context, query string, limit int) ([]slack.Channel, error) {
+	f.searchMu.Lock()
+	f.searchQueries = append(f.searchQueries, "channels:"+query)
+	f.searchMu.Unlock()
+	return f.searchChannels, f.searchErr
+}
+
+// queries returns a snapshot of searchQueries under lock. Tests must use
+// this instead of reading the field directly — SearchUsers/SearchUserGroups
+// can be invoked concurrently by the autocomplete handler, and a direct read
+// races under -race.
+func (f *fakeSlack) queries() []string {
+	f.searchMu.Lock()
+	defer f.searchMu.Unlock()
+	out := make([]string, len(f.searchQueries))
+	copy(out, f.searchQueries)
+	return out
 }
 
 func newFakeSlack() *fakeSlack {

@@ -9,7 +9,7 @@ import { applyReactionToggle } from '../../lib/reactionToggle'
 import { computeUnreadPatch } from '../../lib/unreadPatch'
 import type { Tab } from '../../state/tabs'
 import { ActionBar } from './ActionBar'
-import { Composer } from './Composer'
+import { Composer, type ComposerProps } from './Composer'
 import { Message } from './Message'
 import { UnreadDivider } from '../UnreadDivider'
 
@@ -24,6 +24,11 @@ interface ThreadViewProps {
   tab: Tab
   thread: UseThreadResult
   onOpenThread: (url: string, opts: { background: boolean }) => void
+  /** Test-only escape hatch, forwarded to the Composer: jsdom's contenteditable
+   *  support is too thin for simulated typing to reach Lexical, so tests
+   *  drive the editor directly via its own API once they have this
+   *  reference. Unused in production. */
+  onComposerEditorReady?: ComposerProps['onEditorReady']
 }
 
 // Cached across renders/tabs: the workspace domain never changes for a
@@ -38,7 +43,7 @@ export function openInSlackUrl(channel: string, threadTs: string, latestTs: stri
   return `https://${workspaceDomain}/archives/${channel}/p${pMessageId}?thread_ts=${threadTs}&cid=${channel}`
 }
 
-export function ThreadView({ tab, thread, onOpenThread }: ThreadViewProps) {
+export function ThreadView({ tab, thread, onOpenThread, onComposerEditorReady }: ThreadViewProps) {
   const { data, status, error, authExpired, lastUpdated, refresh, applyLocal } = thread
   const now = useNow()
   const [workspaceDomain, setWorkspaceDomain] = useState<string | null>(cachedWorkspaceDomain)
@@ -360,7 +365,15 @@ export function ThreadView({ tab, thread, onOpenThread }: ThreadViewProps) {
         </div>
       )}
 
-      {status === 'ready' && data && <Composer onSend={handleSend} />}
+      {status === 'ready' && data && (
+        <Composer
+          onSend={handleSend}
+          channel={data.channel}
+          users={data.users}
+          groups={data.groups ?? {}}
+          onEditorReady={onComposerEditorReady}
+        />
+      )}
 
     </Stack>
     </SlackGroupsContext.Provider>

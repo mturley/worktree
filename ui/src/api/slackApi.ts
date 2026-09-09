@@ -173,6 +173,7 @@ export function safeHref(url: string): string | undefined {
 
 export interface User {
   ID: string
+  Name: string
   RealName: string
   DisplayName: string
   Avatar72: string
@@ -317,4 +318,66 @@ export function fileProxy(url: string): string {
 export function imageProxy(url: string): string {
   if (!url || !url.startsWith('https://')) return url
   return `/api/slack-image?url=${encodeURIComponent(url)}`
+}
+
+export type AutocompleteKind = 'user' | 'group' | 'special' | 'channel' | 'emoji'
+
+/**
+ * One candidate for the composer's autocomplete menu.
+ *
+ * `token` is the exact mrkdwn to insert — the server builds it so mention
+ * encoding lives in one place. Never reconstruct it from `id` at a call site.
+ */
+export interface AutocompleteItem {
+  kind: AutocompleteKind
+  id: string
+  label: string
+  detail?: string
+  avatar?: string
+  imageUrl?: string
+  token: string
+}
+
+/**
+ * Queries the server for autocomplete candidates.
+ *
+ * Never throws — an exception here would tear down the composer
+ * mid-keystroke. The return value distinguishes the two outcomes that a
+ * blanket `[]` used to conflate, because the composer's "workspace search
+ * unavailable" hint hangs on the difference:
+ *
+ * - `[]`  — the lookup SUCCEEDED and matched nothing (typing "@zzzq" with
+ *           Slack perfectly healthy), or the request was aborted, which is
+ *           the normal end of a superseded keystroke and not a failure. An
+ *           aborted result is discarded by the caller's staleness guard
+ *           before anything can read it.
+ * - `null`— the lookup FAILED (network error, 401, 502). Only this may be
+ *           reported to the user as degraded.
+ *
+ * `channel` is a ranking hint and genuinely optional; when absent the
+ * parameter is omitted rather than sent as an empty string.
+ */
+export async function autocomplete(
+  trigger: '@' | ':' | '#',
+  q: string,
+  channel?: string,
+  signal?: AbortSignal,
+): Promise<AutocompleteItem[] | null> {
+  const params = new URLSearchParams({ trigger, q })
+  if (channel) {
+    params.set('channel', channel)
+  }
+  try {
+    const res = await fetch(`/api/slack-autocomplete?${params.toString()}`, { signal })
+    if (!res.ok) {
+      return null
+    }
+    const body = (await res.json()) as { results?: AutocompleteItem[] }
+    return body.results ?? []
+  } catch (err) {
+    if ((err as { name?: string } | null)?.name === 'AbortError') {
+      return []
+    }
+    return null
+  }
 }

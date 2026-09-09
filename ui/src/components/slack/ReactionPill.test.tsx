@@ -26,8 +26,8 @@ function renderWithProvider(ui: React.ReactElement) {
 }
 
 const users: Record<string, User> = {
-  U1: { ID: 'U1', RealName: 'Jane Doe', DisplayName: 'jane', Avatar72: '' },
-  U2: { ID: 'U2', RealName: 'Bob Roberts', DisplayName: '', Avatar72: '' },
+  U1: { ID: 'U1', Name: 'jane.doe', RealName: 'Jane Doe', DisplayName: 'jane', Avatar72: '' },
+  U2: { ID: 'U2', Name: 'bob.roberts', RealName: 'Bob Roberts', DisplayName: '', Avatar72: '' },
 }
 
 describe('reactorNames', () => {

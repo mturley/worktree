@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/mturley/watcher/slack"
 	"github.com/mturley/worktree/internal/cmux"
@@ -41,14 +42,29 @@ type Server struct {
 	pollInFlight atomic.Bool
 
 	// Slack enrichment caches (workspace emoji, channel names, current user).
-	emojiMu    sync.Mutex
-	emojiCache map[string]string
+	// emojiMu guards the cached map and the negative-cache fields ONLY; it is
+	// never held across the emoji.list network call. emojiFetchMu is held
+	// across that call instead, so concurrent misses make one Slack request
+	// while cache HITS never block behind a request in flight.
+	emojiMu        sync.Mutex
+	emojiFetchMu   sync.Mutex
+	emojiCache     map[string]string
+	emojiErr       error
+	emojiFailUntil time.Time
 
 	groupsMu    sync.Mutex
 	groupsCache map[string]slack.UserGroup
 
 	channelMu    sync.Mutex
 	channelCache map[string]string
+
+	// acCache fronts every Slack-backed autocomplete lookup; see
+	// autocomplete_cache.go for why it is mandatory. Server is constructed as
+	// a bare struct literal by callers (cmd/ui.go and every test), so this is
+	// lazily initialised via autocompleteCacheOrInit rather than a
+	// constructor.
+	acCacheOnce sync.Once
+	acCache     *autocompleteCache
 
 	currentUserMu    sync.Mutex
 	currentUserID    string
@@ -103,6 +119,7 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/thread/reply", s.handleReply)
 	mux.HandleFunc("POST /api/thread/react", s.handleReact)
 	mux.HandleFunc("GET /api/slack-config", s.handleSlackConfig)
+	mux.HandleFunc("GET /api/slack-autocomplete", s.handleSlackAutocomplete)
 	mux.HandleFunc("GET /api/thread-events", s.handleThreadEvents)
 	mux.HandleFunc("GET /api/worktree-info", s.handleWorktreeInfo)
 	mux.HandleFunc("GET /api/cmux", s.handleCmux)

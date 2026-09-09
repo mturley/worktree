@@ -29,7 +29,7 @@ function renderWithProvider(ui: React.ReactElement) {
 }
 
 const users: Record<string, User> = {
-  U1: { ID: 'U1', RealName: 'Jane Doe', DisplayName: 'jane', Avatar72: '' },
+  U1: { ID: 'U1', Name: 'jane.doe', RealName: 'Jane Doe', DisplayName: 'jane', Avatar72: '' },
 }
 
 describe('Mrkdwn', () => {
