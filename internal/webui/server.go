@@ -103,6 +103,8 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/timeline", s.handleGlobalTimeline)
 	mux.HandleFunc("GET /api/worktree-timeline", s.handleWorktreeTimeline)
 	mux.HandleFunc("POST /api/worktrees/poll", s.handlePollWorktree)
+	mux.HandleFunc("GET /api/watchers", s.handleWatchers)
+	mux.HandleFunc("POST /api/watchers/poll", s.handleWatchersPoll)
 	mux.HandleFunc("GET /api/worktree-resources", s.handleWorktreeResources)
 	mux.HandleFunc("POST /api/resource-meta", s.handleSetResourceMeta)
 	mux.HandleFunc("POST /api/resource-read", s.handleResourceRead)

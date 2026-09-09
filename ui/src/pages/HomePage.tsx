@@ -10,6 +10,7 @@ import { WorktreeList } from "../components/WorktreeList"
 import { TimelineFeed } from "../components/TimelineFeed"
 import { ArchivedToggle } from "../components/ArchivedToggle"
 import { SourceFilter } from "../components/SourceFilter"
+import { RefreshWatchersButton } from "../components/RefreshWatchersButton"
 import { NewWorktreeModal } from "../components/NewWorktreeModal"
 
 export function HomePage() {
@@ -48,7 +49,10 @@ export function HomePage() {
   const timeline = (
     <Stack gap="sm">
       <Group justify="space-between" wrap="wrap" gap="xs">
-        <Title order={4}>Timeline</Title>
+        <Group gap={6} wrap="nowrap" align="center">
+          <Title order={4}>Timeline</Title>
+          <RefreshWatchersButton />
+        </Group>
         {/* Both controls narrow the same feed, so they sit together on the
             right — matching the worktree page, where the filter is opposite
             the heading. */}

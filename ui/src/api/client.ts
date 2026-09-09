@@ -1,4 +1,4 @@
-import type { WorktreeSummary, TimelineResponse, ResourceDTO, WorktreeInfo, DeleteWorktreeResponse, CmuxGroupsResponse, CmuxResponse, Repo, CreateWorktreeResponse } from "./types"
+import type { CmuxGroupsResponse, CmuxResponse, CreateWorktreeResponse, DeleteWorktreeResponse, Repo, ResourceDTO, TimelineResponse, WatchersResponse, WorktreeInfo, WorktreeSummary } from "./types"
 
 async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init)
@@ -103,6 +103,9 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(args),
     }),
+  watchers: () => fetchJSON<WatchersResponse>("/api/watchers"),
+  pollWatchers: () =>
+    fetchJSON<null>("/api/watchers/poll", { method: "POST" }),
   cmuxSelect: (ref: string) =>
     fetchJSON<{ ok: boolean; error?: string }>("/api/cmux/select", {
       method: "POST",

@@ -10,6 +10,7 @@ import { ResourceDetailPane } from "../components/ResourceDetailPane"
 import { TimelineFeed } from "../components/TimelineFeed"
 import { WorktreeDetailCard } from "../components/WorktreeDetailCard"
 import { SourceFilter } from "../components/SourceFilter"
+import { RefreshWatchersButton } from "../components/RefreshWatchersButton"
 import { ThreadActionsContext } from "../components/slack/ThreadActionsContext"
 import { AddResourceModal } from "../components/AddResourceModal"
 import { parseThreadUrl } from "../lib/parseThreadUrl"
@@ -107,7 +108,10 @@ export function WorktreeDetailPage() {
   const unfiltered = (
     <Stack gap="sm">
       <Group justify="space-between" wrap="wrap" gap="xs">
-        <Title order={5}>Timeline</Title>
+        <Group gap={6} wrap="nowrap" align="center">
+          <Title order={5}>Timeline</Title>
+          <RefreshWatchersButton />
+        </Group>
         <SourceFilter value={sources} onChange={setSources} />
       </Group>
       <TimelineFeed
