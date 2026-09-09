@@ -2,10 +2,28 @@
 // elements) and Message (reaction pills), so the two render consistently.
 import { get as lookupStandardEmoji, search as searchStandardEmoji } from 'node-emoji'
 
-/** Standard (Unicode) emoji names matching `query` as a substring, shortest
- * (closest) first then alphabetically — the same ordering the server applies
- * to the CUSTOM half in internal/webui/autocomplete.go, so the two halves of
- * the composer's `:` menu are ranked consistently.
+/** Escapes every regex metacharacter so a string is matched literally.
+ *
+ * REQUIRED here, not defensive: node-emoji@2's `search()` implements matching
+ * as `name.match(keyword)`, which COMPILES THE QUERY AS A REGULAR EXPRESSION.
+ * `detectTrigger`'s query class (`[^\s@:#]*`) admits `(`, `)`, `+`, `*`, `?`,
+ * `[` and `\`, and `localCandidates` runs inside a `useMemo` during RENDER —
+ * so `:)` or `:+1`, two of the most-typed strings in a Slack composer, threw
+ * a SyntaxError out of ComposerInner's render. LexicalErrorBoundary wraps only
+ * the ContentEditable subtree and does not catch that, so the composer
+ * unmounted and the user's in-progress draft was lost.
+ *
+ * Escaping also restores the substring semantics this function's contract
+ * claims: unescaped, `.` meant "any character", so `:sm.le` matched `smile`
+ * and `:.` matched everything up to the cap. */
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/** Standard (Unicode) emoji names containing `query` as a LITERAL substring,
+ * shortest (closest) first then alphabetically — the same ordering the server
+ * applies to the CUSTOM half in internal/webui/autocomplete.go, so the two
+ * halves of the composer's `:` menu are ranked consistently.
  *
  * This is the ONLY place node-emoji is searched: the composer's emoji
  * candidates go through here so emoji knowledge stays in one module. */
@@ -13,7 +31,7 @@ export function standardEmojiNames(query: string, limit = 25): string[] {
   if (!query) {
     return []
   }
-  const names = searchStandardEmoji(query.toLowerCase()).map((e) => e.name)
+  const names = searchStandardEmoji(escapeRegex(query.toLowerCase())).map((e) => e.name)
   names.sort((a, b) => (a.length !== b.length ? a.length - b.length : a.localeCompare(b)))
   return names.slice(0, limit)
 }
