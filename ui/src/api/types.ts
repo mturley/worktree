@@ -138,3 +138,29 @@ export interface CreateWorktreeResponse {
   branch?: string
   error?: string
 }
+
+export interface WatcherStatus {
+  /** Poller name: "github" | "jira" | "slack". */
+  name: string;
+  /** The resource type the source filter uses — "pr" for the GitHub poller. */
+  type: string;
+  /**
+   * Last run that completed without error, RFC3339. Absent when the poller
+   * has never succeeded, which the UI shows as no annotation rather than
+   * "never" — on a fresh install nothing is wrong yet.
+   */
+  last_success?: string;
+  /** The poller is currently failing: its last error is newer than its last success. */
+  has_error?: boolean;
+  error_message?: string;
+}
+
+export interface WatchersResponse {
+  watchers: WatcherStatus[];
+  /**
+   * A poll is running right now. Server-wide rather than per watcher: the
+   * three pollers run sequentially under one guard, so there is no moment
+   * when one is fetching and the others are independently answerable.
+   */
+  polling: boolean;
+}

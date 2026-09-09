@@ -1,4 +1,9 @@
-import { Button, Group } from "@mantine/core"
+import { Button, Group, Text, Tooltip } from "@mantine/core"
+import { IconAlertTriangleFilled } from "@tabler/icons-react"
+import { useWatchers } from "../hooks/useWatchers"
+import { useNow } from "../hooks/useNow"
+import { relativeTime } from "../lib/relativeTime"
+import type { WatcherStatus } from "../api/types"
 import { SlackMark } from "./icons/SlackMark"
 import { JiraMark } from "./icons/JiraMark"
 import { GitHubMark } from "./icons/GitHubMark"
@@ -40,6 +45,46 @@ function SourceIcon({ type }: { type: string }) {
  * paginated, so client-side filtering would return a page of 50 events and
  * then show two of them, with "Load more" as the only way to find the rest.
  */
+/**
+ * A source's freshness, shown inside its toggle.
+ *
+ * The time is the last SUCCESSFUL run, never the last attempt: a fresh
+ * timestamp beside a failure icon would read as "just worked", which is the
+ * opposite of the truth. A source that has never succeeded shows nothing at
+ * all rather than "never" — on a fresh install nothing is wrong yet.
+ */
+function WatcherStatusLabel({ status, now }: { status?: WatcherStatus; now: Date }) {
+  if (!status) return null
+  // `now` is unused in the arithmetic — relativeTime reads the clock itself —
+  // but taking it as a prop is what re-renders this every tick, so "3m ago"
+  // does not sit frozen at whatever it said when the page loaded.
+  void now
+  const ago = status.last_success ? relativeTime(status.last_success) : null
+  if (!ago && !status.has_error) return null
+
+  return (
+    <>
+      {ago && (
+        <Text span size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
+          {` (${ago})`}
+        </Text>
+      )}
+      {status.has_error && (
+        <Tooltip
+          label={status.error_message || "This watcher's last run failed"}
+          multiline
+          w={280}
+          withArrow
+        >
+          <Text span c="red" style={{ display: "inline-flex", marginLeft: 4 }} aria-label={`${status.name} watcher failing`}>
+            <IconAlertTriangleFilled size={12} />
+          </Text>
+        </Tooltip>
+      )}
+    </>
+  )
+}
+
 export function SourceFilter({ value, onChange }: {
   value: string[]
   onChange: (next: string[]) => void
@@ -47,6 +92,11 @@ export function SourceFilter({ value, onChange }: {
   // Replace rather than add: selecting a source deselects any other, and
   // selecting the active one clears back to "show everything".
   const toggle = (type: string) => onChange(value.includes(type) ? [] : [type])
+  const { data } = useWatchers()
+  // A minute is enough for "Nm ago"; a per-second tick would re-render three
+  // buttons every second to change nothing.
+  const now = useNow(60_000)
+  const statusFor = (type: string) => data?.watchers.find((w) => w.type === type)
 
   return (
     <Group gap={4} wrap="nowrap">
@@ -63,6 +113,7 @@ export function SourceFilter({ value, onChange }: {
             onClick={() => toggle(type)}
           >
             {label}
+            <WatcherStatusLabel status={statusFor(type)} now={now} />
           </Button>
         )
       })}

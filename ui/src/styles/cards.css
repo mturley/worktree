@@ -121,3 +121,23 @@
   background: color-mix(in srgb, currentColor 45%, transparent);
   pointer-events: none;
 }
+
+/*
+ * The refresh icon's spin, for RefreshWatchersButton.
+ *
+ * A stylesheet rather than an inline style because keyframes cannot be
+ * expressed inline at all — only the animation shorthand referencing them can.
+ * Honoured for people who ask for less motion: the button is still disabled
+ * and its tooltip still says "Refreshing…", so the state stays legible without
+ * anything moving.
+ */
+@keyframes wt-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [aria-label="Refresh watchers"] svg {
+    animation: none !important;
+  }
+}
