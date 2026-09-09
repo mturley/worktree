@@ -91,10 +91,9 @@ export interface SuppressedOccurrence {
  * discriminator: whenever `suffixCandidate` is non-null, admissibility
  * already guarantees `newText.slice(suffixCandidate) === hint`, so
  * `suffixFits` is always true and `if (prefixFits !== suffixFits)` reduces to
- * `if (!prefixFits)`. A brute-force check over the reachable diffs bears this
- * out — 552 rows where both fit, 561 where only the prefix side fails to
- * fit, and zero rows where only the prefix fits, none where neither fits, and
- * none where `suffixFits` is false. So the "if the hint matches both
+ * `if (!prefixFits)`. This is proven exhaustively, not just asserted, by
+ * `suppression.test.ts`'s "suffixFits is implied by admissibility, never a
+ * live discriminator (exhaustive)" test. So the "if the hint matches both
  * candidates" case is a real, tested branch (the pre-round-6 answer stands),
  * but "matches neither" is unreachable by construction, not a case under
  * test — the symmetric form is kept anyway because it documents intent.

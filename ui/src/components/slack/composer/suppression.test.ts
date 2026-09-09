@@ -239,6 +239,57 @@ describe('reanchorOffset', () => {
     expect(violations).toEqual([])
     expect(checked).toBeGreaterThan(10000)
   })
+
+  it('suffixFits is implied by admissibility, never a live discriminator (exhaustive)', () => {
+    // Reproduces the claim in reanchorOffset's doc comment: whenever the
+    // suffix candidate is admissible, the hint necessarily matches there, so
+    // `suffixFits` can never be false and the "only-prefix-fits"/"neither-
+    // fits" tiebreak branches are unreachable by construction. Computed
+    // independently here (not by reading reanchorOffset's internals) using
+    // the same uncapped-common-suffix definition the function's own comment
+    // gives for admissibility, over the same generated space as the
+    // "never slides the anchor" property test above.
+    const alphabet = ['a', 'b', '@']
+    const strings: string[] = ['']
+    let frontier: string[] = ['']
+    for (let length = 0; length < 4; length += 1) {
+      frontier = frontier.flatMap((prefix) => alphabet.map((ch) => prefix + ch))
+      strings.push(...frontier)
+    }
+
+    const violations: string[] = []
+    let exercised = 0
+    for (const oldText of strings) {
+      for (const newText of strings) {
+        for (let offset = 0; offset < oldText.length; offset += 1) {
+          const maxSuffixFull = Math.min(oldText.length, newText.length)
+          let suffixFull = 0
+          while (
+            suffixFull < maxSuffixFull &&
+            oldText[oldText.length - 1 - suffixFull] === newText[newText.length - 1 - suffixFull]
+          ) {
+            suffixFull += 1
+          }
+          const delta = newText.length - oldText.length
+          const suffixCandidate = offset >= oldText.length - suffixFull ? offset + delta : null
+          if (suffixCandidate === null) {
+            continue
+          }
+          exercised += 1
+          const hint = oldText.slice(offset)
+          if (newText.slice(suffixCandidate) !== hint) {
+            violations.push(
+              `"${oldText}"@${offset} -> "${newText}"@${suffixCandidate}: hint "${hint}" !== "${newText.slice(suffixCandidate)}"`,
+            )
+          }
+        }
+      }
+    }
+    expect(violations).toEqual([])
+    // A meaningful lower bound so this can't pass by vacuously never hitting
+    // an admissible suffix candidate.
+    expect(exercised).toBeGreaterThan(1000)
+  })
 })
 
 const base: SuppressedOccurrence = {
