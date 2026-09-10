@@ -232,3 +232,22 @@ describe("the Activity header's watcher freshness", () => {
     expect(await screen.findByLabelText("jira watcher failing")).toBeInTheDocument()
   })
 })
+
+describe("the selected resource's feed", () => {
+  it("does not repeat the resource on every event", async () => {
+    // The card above the feed already names it; every row here belongs to it.
+    useWorktreeTimeline.mockReturnValue({
+      events: [{
+        id: "e1", ts: "2099-01-02T00:00:00Z", unread: false, type: "jira_comment",
+        type_label: "Comments", title: "a comment", body: "", author: "", source: "jira",
+        external_ts: "", resource_type: "jira", resource_id: "J-1", resource_url: "u",
+        resource_title: "Investigate flux", worktrees: [],
+      } as TimelineEvent],
+      isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false,
+    })
+    wrap(<ResourceDetailPane path="/wt/foo" resource={jira} />)
+    await screen.findByText("a comment")
+    // The title appears once — on the resource card, not again on the row.
+    expect(screen.getAllByText("Investigate flux")).toHaveLength(1)
+  })
+})

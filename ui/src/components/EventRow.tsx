@@ -18,10 +18,15 @@ import { ROW_PAD_X } from "./timelineRail"
  * interactive too.
  */
 export function EventRow({
-  e, showWorktrees, onOpen, onSelectResource, resolveResource, canSelectResource,
+  e, showWorktrees, showResource = true, onOpen, onSelectResource, resolveResource, canSelectResource,
 }: {
   e: TimelineEvent
   showWorktrees?: boolean
+  /**
+   * Names the resource this event belongs to. False on a feed already
+   * filtered to ONE resource, where every row would repeat the same line.
+   */
+  showResource?: boolean
   /** Opens the details modal — where the row has no resource to go to. */
   onOpen?: (e: TimelineEvent) => void
   /** Selects the event's resource. Omit where selection has no meaning. */
@@ -112,15 +117,17 @@ export function EventRow({
           </Group>
           {/*
             Above the body, not below it: this names what you are looking at,
-            and a two-line quote of a comment is no place to learn it.
+            and a two-line quote of a comment is no place to learn it. Absent
+            entirely on a single-resource feed, where it is the same line on
+            every row.
           */}
-          {e.resource_type && e.resource_id ? (
+          {showResource && (e.resource_type && e.resource_id ? (
             <EventResourceChip e={e} resolveResource={resolveResource} />
           ) : (
             e.resource_title && (
               <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>{e.resource_title}</Text>
             )
-          )}
+          ))}
           {showBody && <Text size="xs" c="dimmed" lineClamp={2} style={{ overflowWrap: "anywhere" }}>{e.body}</Text>}
         </Stack>
 

@@ -129,6 +129,9 @@ function TimelineBody({
         hasMore={timeline.hasMore}
         onLoadMore={timeline.loadMore}
         loadingMore={timeline.loadingMore}
+        // Every event here belongs to the resource named in the card above,
+        // so naming it again on each row says nothing.
+        showResource={false}
         showUnreadDivider
       />
       {/*

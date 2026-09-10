@@ -412,3 +412,27 @@ describe("the order of an event's lines", () => {
     expect(screen.getByLabelText("unread event")).toBeInTheDocument()
   })
 })
+
+describe("a single-resource feed", () => {
+  const e = () => makeEvent({ resource_type: "pr", resource_id: "o/r#42", resource_title: "PR #42", body: "some text" })
+
+  it("omits the resource line, which would be identical on every row", () => {
+    const { container } = renderWithProvider(<EventRow e={e()} showResource={false} />)
+    expect(container.textContent).not.toContain("PR #42")
+    expect(container.textContent).not.toContain("#42")
+    // The event itself is untouched.
+    expect(container.textContent).toContain("some text")
+  })
+
+  it("omits the plain-text fallback too, not just the chip", () => {
+    const { container } = renderWithProvider(
+      <EventRow e={makeEvent({ resource_type: "", resource_id: "", resource_title: "PR #42" })} showResource={false} />,
+    )
+    expect(container.textContent).not.toContain("PR #42")
+  })
+
+  it("still names the resource by default, for the unified feeds", () => {
+    const { container } = renderWithProvider(<EventRow e={e()} />)
+    expect(container.textContent).toContain("PR #42")
+  })
+})

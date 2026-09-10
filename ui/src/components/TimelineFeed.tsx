@@ -7,11 +7,16 @@ import { DOT_CENTER, RAIL_WIDTH } from "./timelineRail"
 import { UnreadDivider } from "./UnreadDivider"
 
 export function TimelineFeed({
-  events, loading, error, showWorktrees, hasMore, onLoadMore, loadingMore,
+  events, loading, error, showWorktrees, showResource, hasMore, onLoadMore, loadingMore,
   onSelectResource, resolveResource, canSelectResource,
   showUnreadDivider,
 }: {
   events: TimelineEvent[]; loading: boolean; error: unknown; showWorktrees?: boolean
+  /**
+   * Names each event's resource. Pass false on a feed already filtered to
+   * one resource — the line would be identical on every row.
+   */
+  showResource?: boolean
   /** Omit the three below for a feed that is not paginated. */
   hasMore?: boolean
   onLoadMore?: () => void
@@ -80,6 +85,7 @@ export function TimelineFeed({
               <EventRow
                 e={e}
                 showWorktrees={showWorktrees}
+                showResource={showResource}
                 onOpen={setDetail}
                 onSelectResource={onSelectResource}
                 resolveResource={resolveResource}
