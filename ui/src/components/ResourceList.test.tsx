@@ -86,3 +86,12 @@ describe("Add resource placement", () => {
   })
 })
 
+
+describe("Add resource emphasis", () => {
+  it("is drawn filled, as the primary action of the column", () => {
+    // It is the only thing on this column you can DO; a light variant read
+    // as secondary beside the resource cards above it.
+    const { getByRole } = wrap(<ResourceList items={[]} path="/wt" onChanged={vi.fn()} />)
+    expect(getByRole("button", { name: /follow resource/i })).toHaveAttribute("data-variant", "filled")
+  })
+})

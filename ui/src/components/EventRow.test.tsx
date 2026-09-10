@@ -377,3 +377,38 @@ describe("the resource label is unboxed", () => {
     expect(boxed).toHaveLength(0)
   })
 })
+
+describe("the order of an event's lines", () => {
+  const withBody = () => makeEvent({
+    resource_type: "pr", resource_id: "o/r#42", resource_title: "PR #42",
+    type: "pr_comment", body: "the truncated comment text",
+  })
+
+  it("names the resource above the truncated body, not below it", () => {
+    // The resource says what you are looking at, and a two-line quote of a
+    // comment is no place to learn it.
+    renderWithProvider(<EventRow e={withBody()} />)
+    const resource = screen.getByText("PR #42")
+    const body = screen.getByText("the truncated comment text")
+    expect(resource.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("keeps the resource above the body when the row has no chip to draw", () => {
+    renderWithProvider(
+      <EventRow e={makeEvent({ resource_type: "", resource_id: "", resource_title: "PR #42", body: "the truncated comment text" })} />,
+    )
+    const resource = screen.getByText("PR #42")
+    const body = screen.getByText("the truncated comment text")
+    expect(resource.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("carries no unread dot beside the resource", () => {
+    // The unread events themselves are the signal; see EventResourceChip.
+    renderWithProvider(
+      <EventRow e={makeEvent({ unread: true, resource_type: "pr", resource_id: "o/r#42" })} />,
+    )
+    expect(screen.queryByLabelText("unread")).toBeNull()
+    // ...but the event's own unread mark stays.
+    expect(screen.getByLabelText("unread event")).toBeInTheDocument()
+  })
+})
