@@ -110,25 +110,26 @@ export function EventRow({
               {e.author && `${e.author} · `}{rel(e.external_ts || e.ts)}
             </Text>
           </Group>
+          {/*
+            Above the body, not below it: this names what you are looking at,
+            and a two-line quote of a comment is no place to learn it.
+          */}
+          {e.resource_type && e.resource_id ? (
+            <EventResourceChip e={e} resolveResource={resolveResource} />
+          ) : (
+            e.resource_title && (
+              <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>{e.resource_title}</Text>
+            )
+          )}
           {showBody && <Text size="xs" c="dimmed" lineClamp={2} style={{ overflowWrap: "anywhere" }}>{e.body}</Text>}
         </Stack>
 
         {/*
-          Read-only context: what this event belongs to, and which worktrees
-          follow it. Naming them is all these need to do now that the row
-          itself is the way to reach them.
-
-          Two lines, not one wrapping row: on the global timeline a resource
-          title can be long enough that a badge trailing it lands anywhere,
-          and the worktree is the thing you scan this feed by.
+          The worktrees following this event, on a line of their own: on the
+          global timeline a resource title can be long enough that a badge
+          trailing it lands anywhere, and the worktree is what you scan the
+          feed by.
         */}
-        {e.resource_type && e.resource_id ? (
-          <EventResourceChip e={e} resolveResource={resolveResource} />
-        ) : (
-          e.resource_title && (
-            <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>{e.resource_title}</Text>
-          )
-        )}
         {showWorktrees && e.worktrees.length > 0 && (
           <Group gap={6} wrap="wrap">
             {e.worktrees.map((w) => (
@@ -142,9 +143,15 @@ export function EventRow({
     </Box>
   )
 
-  // The tooltip names the destination, which differs per row — and there is
-  // nothing to explain on a row that does not respond to clicks. No open
-  // delay: the whole row is the target, so the pointer is already over it
-  // whenever you are reading the row at all.
-  return activate ? <Tooltip label={tip}>{row}</Tooltip> : row
+  /*
+   * The tooltip names the destination, which differs per row — and there is
+   * nothing to explain on a row that does not respond to clicks.
+   *
+   * No open delay: the whole row is the target, so the pointer is already
+   * over it whenever you are reading the row at all. To the left, because
+   * a row spans the feed's full width — centred above or below, the tooltip
+   * lands on top of the neighbouring row's text, which is the text you were
+   * reading when you moved the pointer here.
+   */
+  return activate ? <Tooltip label={tip} position="left">{row}</Tooltip> : row
 }

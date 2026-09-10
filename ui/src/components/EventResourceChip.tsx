@@ -1,6 +1,6 @@
 import { Group, Text } from "@mantine/core"
 import type { ResourceDTO, TimelineEvent } from "../api/types"
-import { ResourceStatusIcon, UnreadDot } from "./ResourceStatusIcon"
+import { ResourceStatusIcon } from "./ResourceStatusIcon"
 import { shortResourceRef } from "../lib/resourceRef"
 
 /**
@@ -9,6 +9,11 @@ import { shortResourceRef } from "../lib/resourceRef"
  * Read-only: the row that contains it is itself the button that goes there,
  * and a button inside a button is invalid markup. Shared by the timeline row
  * and the details modal so the two cannot drift.
+ *
+ * Carries no unread dot. The resource's unread state is a property of its
+ * EVENTS, and this feed is showing them — each unread one is already boxed
+ * in blue and marked. A second, coarser signal beside them said nothing the
+ * rows did not, and said it on read events too.
  */
 export function EventResourceChip({ e, resolveResource }: {
   e: TimelineEvent
@@ -37,7 +42,6 @@ export function EventResourceChip({ e, resolveResource }: {
       // around it only competes with that.
       style={{ alignSelf: "flex-start", maxWidth: "100%", minWidth: 0 }}
     >
-      <UnreadDot r={forIcon} />
       <ResourceStatusIcon r={forIcon} />
       {ref && <Text size="xs" fw={600} style={{ whiteSpace: "nowrap" }}>{ref}</Text>}
       {title && <Text size="xs" c="dimmed" lineClamp={1} style={{ minWidth: 0 }}>{title}</Text>}

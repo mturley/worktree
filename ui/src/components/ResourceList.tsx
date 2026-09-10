@@ -73,7 +73,10 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
         rather than under a button.
       */}
       <Group>
-        <Button size="sm" variant="light" leftSection="+" onClick={() => setAddOpen(true)}>
+        {/* Filled, i.e. the theme's primary: it is the only thing on this
+            column you can DO, and light left it reading as a secondary
+            action beside the resource cards it sits under. */}
+        <Button size="sm" variant="filled" leftSection="+" onClick={() => setAddOpen(true)}>
           Follow resource
         </Button>
       </Group>

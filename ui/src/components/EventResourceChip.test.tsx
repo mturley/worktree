@@ -42,17 +42,12 @@ describe("EventResourceChip enrichment", () => {
     expect(screen.getByText("The blocker")).toBeInTheDocument()
   })
 
-  it("shows an unread dot when the event's resource has unread activity", () => {
+  it("shows no unread dot, even when the resource has unread activity", () => {
+    // The feed around it is showing that resource's events, and every unread
+    // one is already boxed in blue and marked. A dot here repeated that more
+    // coarsely — and sat beside read events saying it.
     const e = ev({
       resource: { type: "pr", id: "o/r#42", url: "u", primary: true, state: "OPEN", unread_count: 1 } as ResourceDTO,
-    })
-    wrap(<EventResourceChip e={e} />)
-    expect(screen.getByLabelText("unread")).toBeInTheDocument()
-  })
-
-  it("shows no unread dot for a read resource", () => {
-    const e = ev({
-      resource: { type: "pr", id: "o/r#42", url: "u", primary: true, state: "OPEN" } as ResourceDTO,
     })
     wrap(<EventResourceChip e={e} />)
     expect(screen.queryByLabelText("unread")).not.toBeInTheDocument()
