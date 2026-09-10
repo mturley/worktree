@@ -1,4 +1,4 @@
-import { createTheme, type MantineColorsTuple } from "@mantine/core"
+import { createTheme, Tooltip, type MantineColorsTuple } from "@mantine/core"
 
 /**
  * Dark-only theme.
@@ -73,4 +73,24 @@ export const theme = createTheme({
   fontSizes: { md: "0.9375rem" },
   primaryColor: "accent",
   colors: { accent, dark: surface },
+  components: {
+    /*
+     * Mantine INVERTS tooltips against the colour scheme: dark-on-light in a
+     * light scheme, light-on-dark in a dark one. That is the right instinct
+     * for an app that has both, but this one is dark-only (see above), so the
+     * inversion left every tooltip a pale box on a black page — the single
+     * brightest thing on screen, for the least important text on it.
+     *
+     * dark[5] is the card-hover surface, so a tooltip reads as one more panel
+     * lifted off the page rather than a light-mode escapee.
+     */
+    Tooltip: Tooltip.extend({
+      vars: () => ({
+        tooltip: {
+          "--tooltip-bg": "var(--mantine-color-dark-5)",
+          "--tooltip-color": "var(--mantine-color-gray-0)",
+        },
+      }),
+    }),
+  },
 })

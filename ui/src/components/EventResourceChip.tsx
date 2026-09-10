@@ -32,14 +32,10 @@ export function EventResourceChip({ e, resolveResource }: {
     <Group
       gap={6}
       wrap="nowrap"
-      style={{
-        alignSelf: "flex-start",
-        maxWidth: "100%",
-        minWidth: 0,
-        padding: "2px 8px",
-        borderRadius: "var(--mantine-radius-sm)",
-        border: "1px solid var(--mantine-color-default-border)",
-      }}
+      // No border or padding: it used to be a button and needed to look
+      // like one. Now it is a label inside the row's own button, and a box
+      // around it only competes with that.
+      style={{ alignSelf: "flex-start", maxWidth: "100%", minWidth: 0 }}
     >
       <UnreadDot r={forIcon} />
       <ResourceStatusIcon r={forIcon} />

@@ -340,3 +340,40 @@ describe("the row's tooltip names its destination", () => {
     expect(await screen.findByText("View event details")).toBeInTheDocument()
   })
 })
+
+describe("the context lines below the event", () => {
+  it("puts the worktree badges on a line of their own, below the resource", () => {
+    // A resource title can be long enough that a badge trailing it lands
+    // anywhere, and the worktree is what you scan the global feed by.
+    const { container } = renderWithProvider(
+      <EventRow
+        e={makeEvent({ resource_type: "pr", resource_id: "o/r#42", resource_title: "PR #42", worktrees: ["wt-a"] })}
+        showWorktrees
+      />,
+    )
+    const badge = screen.getByText("Worktree: wt-a")
+    const chip = screen.getByText("PR #42")
+    // Different parents means different flex lines, not two items wrapping.
+    expect(badge.closest("[data-event-row] > * > *")).not.toBe(chip.closest("[data-event-row] > * > *"))
+    expect(container.querySelectorAll("button")).toHaveLength(0)
+  })
+
+  it("draws no worktree line at all when there are no worktrees", () => {
+    renderWithProvider(<EventRow e={makeEvent({ worktrees: [] })} showWorktrees />)
+    expect(screen.queryByText(/^Worktree:/)).toBeNull()
+  })
+})
+
+describe("the resource label is unboxed", () => {
+  it("carries no border, now that it is not a button", () => {
+    const { container } = renderWithProvider(
+      <EventRow e={makeEvent({ resource_type: "pr", resource_id: "o/r#42", resource_title: "PR #42" })} />,
+    )
+    expect(container.textContent).toContain("PR #42")
+    // The row's own box is the only border in the entry; nothing inside it
+    // draws a second one competing with it.
+    const boxed = [...container.querySelectorAll<HTMLElement>("[data-event-row] *")]
+      .filter((el) => el.style.border || el.style.borderWidth)
+    expect(boxed).toHaveLength(0)
+  })
+})
