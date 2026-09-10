@@ -69,7 +69,6 @@ export function HomePage() {
         hasMore={tl.hasMore}
         onLoadMore={tl.loadMore}
         loadingMore={tl.loadingMore}
-        onSelectWorktree={(path) => navigate(`/worktree/${encodeURIComponent(path)}`)}
         onSelectResource={selectResourceInFirstWorktree}
         canSelectResource={(e) => Boolean(e.worktree_paths?.length)}
       />

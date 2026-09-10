@@ -1,4 +1,4 @@
-import { afterEach, describe, it, expect, vi } from "vitest"
+import { afterEach, describe, it, expect } from "vitest"
 import { render, cleanup, screen } from "@testing-library/react"
 import { MantineProvider } from "@mantine/core"
 import { EventResourceChip } from "./EventResourceChip"
@@ -21,7 +21,7 @@ describe("EventResourceChip enrichment", () => {
     const e = ev({
       resource: { type: "pr", id: "o/r#42", url: "u", primary: true, state: "MERGED", title: "Fix the widget" } as ResourceDTO,
     })
-    wrap(<EventResourceChip e={e} onSelect={vi.fn()} />)
+    wrap(<EventResourceChip e={e} />)
     expect(screen.getByLabelText("merged")).toBeInTheDocument()
   })
 
@@ -30,7 +30,7 @@ describe("EventResourceChip enrichment", () => {
       resource: { type: "pr", id: "o/r#42", url: "u", primary: true, state: "OPEN" } as ResourceDTO,
     })
     const fresh = { type: "pr", id: "o/r#42", url: "u", primary: true, state: "MERGED" } as ResourceDTO
-    wrap(<EventResourceChip e={e} onSelect={vi.fn()} resolveResource={() => fresh} />)
+    wrap(<EventResourceChip e={e} resolveResource={() => fresh} />)
     expect(screen.getByLabelText("merged")).toBeInTheDocument()
   })
 
@@ -38,7 +38,7 @@ describe("EventResourceChip enrichment", () => {
     const e = ev({
       resource: { type: "pr", id: "o/r#42", url: "u", primary: true, title: "Fix the widget", custom_name: "The blocker" } as ResourceDTO,
     })
-    wrap(<EventResourceChip e={e} onSelect={vi.fn()} />)
+    wrap(<EventResourceChip e={e} />)
     expect(screen.getByText("The blocker")).toBeInTheDocument()
   })
 
@@ -46,7 +46,7 @@ describe("EventResourceChip enrichment", () => {
     const e = ev({
       resource: { type: "pr", id: "o/r#42", url: "u", primary: true, state: "OPEN", unread_count: 1 } as ResourceDTO,
     })
-    wrap(<EventResourceChip e={e} onSelect={vi.fn()} />)
+    wrap(<EventResourceChip e={e} />)
     expect(screen.getByLabelText("unread")).toBeInTheDocument()
   })
 
@@ -54,7 +54,21 @@ describe("EventResourceChip enrichment", () => {
     const e = ev({
       resource: { type: "pr", id: "o/r#42", url: "u", primary: true, state: "OPEN" } as ResourceDTO,
     })
-    wrap(<EventResourceChip e={e} onSelect={vi.fn()} />)
+    wrap(<EventResourceChip e={e} />)
     expect(screen.queryByLabelText("unread")).not.toBeInTheDocument()
+  })
+})
+
+describe("EventResourceChip is read-only", () => {
+  it("renders no button — the row around it is the click target", () => {
+    // A button nested inside the row's button would be invalid markup and an
+    // ambiguous click target, which is why the chip stopped navigating.
+    const { container } = wrap(<EventResourceChip e={ev()} />)
+    expect(container.querySelector("button")).toBeNull()
+  })
+
+  it("still names the resource it belongs to", () => {
+    wrap(<EventResourceChip e={ev()} />)
+    expect(screen.getByText("Fix the widget")).toBeInTheDocument()
   })
 })

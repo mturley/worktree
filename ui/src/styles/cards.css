@@ -141,3 +141,33 @@
     animation: none !important;
   }
 }
+
+/*
+ * Clickable timeline rows.
+ *
+ * Deliberately NOT data-interactive: those cards paint a resting background
+ * (--mantine-color-default) and swap it on hover, while an event row is
+ * transparent at rest and may carry the unread blue. Swapping the background
+ * would erase that, so hover LAYERS over whatever the row already has — the
+ * flood-fill inset shadow tints read and unread rows by the same amount.
+ */
+[data-event-row="true"][data-clickable="true"] {
+  cursor: pointer;
+  transition: box-shadow 120ms ease;
+}
+
+[data-event-row="true"][data-clickable="true"]:hover {
+  box-shadow: inset 0 0 0 999px rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--mantine-color-white) 6%, transparent);
+}
+
+[data-event-row="true"][data-clickable="true"]:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-event-row="true"][data-clickable="true"] {
+    transition: none;
+  }
+}
