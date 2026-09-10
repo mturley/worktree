@@ -117,26 +117,34 @@ export function EventRow({
           Read-only context: what this event belongs to, and which worktrees
           follow it. Naming them is all these need to do now that the row
           itself is the way to reach them.
+
+          Two lines, not one wrapping row: on the global timeline a resource
+          title can be long enough that a badge trailing it lands anywhere,
+          and the worktree is the thing you scan this feed by.
         */}
-        <Group gap={6} wrap="wrap">
-          {e.resource_type && e.resource_id ? (
-            <EventResourceChip e={e} resolveResource={resolveResource} />
-          ) : (
-            e.resource_title && (
-              <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>{e.resource_title}</Text>
-            )
-          )}
-          {showWorktrees && e.worktrees.map((w) => (
-            // Light blue, matching the WORKTREE badge on the worktree cards,
-            // so the same thing looks the same wherever it is named.
-            <Badge key={w} size="xs" color="blue" variant="light">Worktree: {w}</Badge>
-          ))}
-        </Group>
+        {e.resource_type && e.resource_id ? (
+          <EventResourceChip e={e} resolveResource={resolveResource} />
+        ) : (
+          e.resource_title && (
+            <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>{e.resource_title}</Text>
+          )
+        )}
+        {showWorktrees && e.worktrees.length > 0 && (
+          <Group gap={6} wrap="wrap">
+            {e.worktrees.map((w) => (
+              // Light blue, matching the WORKTREE badge on the worktree
+              // cards, so the same thing looks the same wherever it is named.
+              <Badge key={w} size="xs" color="blue" variant="light">Worktree: {w}</Badge>
+            ))}
+          </Group>
+        )}
       </Stack>
     </Box>
   )
 
   // The tooltip names the destination, which differs per row — and there is
-  // nothing to explain on a row that does not respond to clicks.
-  return activate ? <Tooltip label={tip} openDelay={400}>{row}</Tooltip> : row
+  // nothing to explain on a row that does not respond to clicks. No open
+  // delay: the whole row is the target, so the pointer is already over it
+  // whenever you are reading the row at all.
+  return activate ? <Tooltip label={tip}>{row}</Tooltip> : row
 }
