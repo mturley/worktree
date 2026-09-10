@@ -155,10 +155,12 @@ export function EventRow({
    * nothing to explain on a row that does not respond to clicks.
    *
    * No open delay: the whole row is the target, so the pointer is already
-   * over it whenever you are reading the row at all. To the left, because
-   * a row spans the feed's full width — centred above or below, the tooltip
-   * lands on top of the neighbouring row's text, which is the text you were
-   * reading when you moved the pointer here.
+   * over it whenever you are reading the row at all.
+   *
+   * Above and left-aligned, not beside: a row is as wide as the feed, and on
+   * the pages where the feed is full width there is no margin to the left of
+   * it for a tooltip to occupy — it ran off the page. Above costs it the row
+   * above's text, which is the lesser of the two.
    */
-  return activate ? <Tooltip label={tip} position="left">{row}</Tooltip> : row
+  return activate ? <Tooltip label={tip} position="top-start">{row}</Tooltip> : row
 }
