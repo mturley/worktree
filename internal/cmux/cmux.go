@@ -377,9 +377,10 @@ func FocusFirstBrowserTab(workspaceRef string) {
 }
 
 // BuildLayout lays out a new workspace: the GitHub/Jira browser tabs (urls) on
-// the left, and on the right the main shell terminal on top (with the running
-// worktree UI pinned as a tab ahead of it, when uiURL is set) over a smaller
-// `worktree info` terminal.
+// the left — or, when there are none, a plain terminal instead of an empty
+// browser — and on the right the pinned worktree UI browser on top (falling
+// back to a shell terminal when uiURL is empty) over a smaller `worktree info`
+// terminal.
 func BuildLayout(uiURL string, urls []string) string {
 	type surface struct {
 		Type    string `json:"type"`
@@ -399,22 +400,22 @@ func BuildLayout(uiURL string, urls []string) string {
 	var topRightSurfaces []surface
 	if uiURL != "" {
 		topRightSurfaces = append(topRightSurfaces, surface{Type: "browser", URL: uiURL})
+	} else {
+		topRightSurfaces = append(topRightSurfaces, surface{Type: "terminal"})
 	}
-	topRightSurfaces = append(topRightSurfaces, surface{Type: "terminal"})
 
 	mainPane := layoutNode{Pane: &pane{Surfaces: topRightSurfaces}}
 	infoTerminal := layoutNode{Pane: &pane{Surfaces: []surface{{Type: "terminal", Command: "worktree info"}}}}
 
-	var browserSurfaces []surface
-	if len(urls) > 0 {
-		for _, u := range urls {
-			browserSurfaces = append(browserSurfaces, surface{Type: "browser", URL: u})
-		}
-	} else {
-		browserSurfaces = []surface{{Type: "browser"}}
+	var leftSurfaces []surface
+	for _, u := range urls {
+		leftSurfaces = append(leftSurfaces, surface{Type: "browser", URL: u})
+	}
+	if len(leftSurfaces) == 0 {
+		leftSurfaces = []surface{{Type: "terminal"}}
 	}
 
-	leftSide := layoutNode{Pane: &pane{Surfaces: browserSurfaces}}
+	leftSide := layoutNode{Pane: &pane{Surfaces: leftSurfaces}}
 
 	rightSide := layoutNode{
 		Direction: "vertical",
