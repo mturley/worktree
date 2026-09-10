@@ -13,18 +13,10 @@ import { openLabel } from "./ResourceActions"
  * scannable, which left long comments unreadable in the UI — the text was
  * fetched and then thrown away. Here it is shown in full.
  */
-export function EventDetailsModal({
-  e, onClose, onSelectResource, resolveResource, onSelectWorktree, canSelectResource,
-}: {
+export function EventDetailsModal({ e, onClose, resolveResource }: {
   e: TimelineEvent | null
   onClose: () => void
-  /** Selects the event's resource. Omit where selection has no meaning. */
-  onSelectResource?: (key: { type: string; id: string }) => void
   resolveResource?: (type: string, id: string) => ResourceDTO | undefined
-  /** Opens one of the worktrees following this resource. */
-  onSelectWorktree?: (path: string) => void
-  /** Suppresses the chip when the resource has nowhere to go. */
-  canSelectResource?: (e: TimelineEvent) => boolean
 }) {
   return (
     <Modal opened={!!e} onClose={onClose} size="lg" title={
@@ -39,55 +31,18 @@ export function EventDetailsModal({
         <Stack gap="sm">
           {/*
             Context first: which resource this event is about, and which
-            worktrees follow it. Both are navigation, so they sit ahead of the
-            content rather than trailing it — you decide where to go before
-            reading, and do not have to scroll past a long comment to find
-            them.
+            worktrees follow it. Both are read-only labels — the row that
+            opened this modal is itself the way to the resource — but they
+            still sit ahead of the content, so you do not have to scroll past
+            a long comment to find out what you are reading about.
           */}
           {(e.resource_type || e.worktrees.length > 0 || e.resource_url) && (
             <Group gap="xs" wrap="wrap">
-              {onSelectResource && (canSelectResource?.(e) ?? true) ? (
-                <EventResourceChip
-                  e={e}
-                  resolveResource={resolveResource}
-                  // Close on select: the selection changes what is behind the
-                  // modal, so staying open would hide the result.
-                  onSelect={(key) => {
-                    onSelectResource(key)
-                    onClose()
-                  }}
-                />
-              ) : (
-                (e.resource_title || e.resource_id) && (
-                  <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-                    {e.resource_title || e.resource_id}
-                  </Text>
-                )
-              )}
+              <EventResourceChip e={e} resolveResource={resolveResource} />
 
-              {e.worktrees.map((w, i) => {
-                const path = e.worktree_paths?.[i]
-                return onSelectWorktree && path ? (
-                  <Badge
-                    key={w}
-                    size="sm"
-                    variant="outline"
-                    component="button"
-                    type="button"
-                    aria-label={`open worktree ${w}`}
-                    onClick={() => {
-                      onSelectWorktree(path)
-                      onClose()
-                    }}
-                    data-interactive="true"
-                    style={{ cursor: "pointer" }}
-                  >
-                    {w}
-                  </Badge>
-                ) : (
-                  <Badge key={w} size="sm" variant="outline">{w}</Badge>
-                )
-              })}
+              {e.worktrees.map((w) => (
+                <Badge key={w} size="sm" color="blue" variant="light">{w}</Badge>
+              ))}
 
               {e.resource_url && (
                 <Anchor href={e.resource_url} target="_blank" rel="noreferrer" size="sm">

@@ -8,7 +8,7 @@ import { UnreadDivider } from "./UnreadDivider"
 
 export function TimelineFeed({
   events, loading, error, showWorktrees, hasMore, onLoadMore, loadingMore,
-  onSelectResource, resolveResource, onSelectWorktree, canSelectResource,
+  onSelectResource, resolveResource, canSelectResource,
   showUnreadDivider,
 }: {
   events: TimelineEvent[]; loading: boolean; error: unknown; showWorktrees?: boolean
@@ -23,9 +23,10 @@ export function TimelineFeed({
    */
   onSelectResource?: (key: { type: string; id: string }) => void
   resolveResource?: (type: string, id: string) => ResourceDTO | undefined
-  /** Opens a worktree from its badge. Supplied on the global timeline. */
-  onSelectWorktree?: (path: string) => void
-  /** Suppresses the resource chip for events with nowhere to go. */
+  /**
+   * Whether an event's resource can be opened. Rows that fail it fall back to
+   * opening the event's details.
+   */
   canSelectResource?: (e: TimelineEvent) => boolean
   /**
    * Draws the unread divider below the oldest unread event.
@@ -82,7 +83,6 @@ export function TimelineFeed({
                 onOpen={setDetail}
                 onSelectResource={onSelectResource}
                 resolveResource={resolveResource}
-                onSelectWorktree={onSelectWorktree}
                 canSelectResource={canSelectResource}
               />
               {/*
@@ -105,14 +105,7 @@ export function TimelineFeed({
           )}
         </Stack>
       </Box>
-      <EventDetailsModal
-        e={detail}
-        onClose={() => setDetail(null)}
-        onSelectResource={onSelectResource}
-        resolveResource={resolveResource}
-        onSelectWorktree={onSelectWorktree}
-        canSelectResource={canSelectResource}
-      />
+      <EventDetailsModal e={detail} onClose={() => setDetail(null)} resolveResource={resolveResource} />
     </>
   )
 }

@@ -64,85 +64,39 @@ describe("TimelineFeed row -> modal wiring", () => {
   })
 })
 
-describe("resource chip in the modal", () => {
-  it("selects the resource and closes, so the result is not hidden behind the modal", async () => {
-    const onSelectResource = vi.fn()
-    const onClose = vi.fn()
-    wrap(
-      <EventDetailsModal
-        e={ev({ resource_type: "pr", resource_id: "o/r#42" })}
-        onClose={onClose}
-        onSelectResource={onSelectResource}
-      />,
-    )
-    fireEvent.click(await screen.findByRole("button", { name: /select resource o\/r#42/i }))
-    expect(onSelectResource).toHaveBeenCalledWith({ type: "pr", id: "o/r#42" })
-    expect(onClose).toHaveBeenCalled()
-  })
-
-  it("names the resource as plain text when selection is not possible", () => {
-    wrap(<EventDetailsModal e={ev()} onClose={vi.fn()} />)
+describe("the modal's context row is read-only", () => {
+  // The row that opened the modal is itself the way to the resource, so
+  // repeating that navigation here only offered a second, redundant path —
+  // one that had to close the modal behind itself to be useful.
+  it("names the resource without offering a button", async () => {
+    wrap(<EventDetailsModal e={ev({ resource_type: "pr", resource_id: "o/r#42" })} onClose={vi.fn()} />)
+    await screen.findByText("Fix the widget PR")
     expect(screen.queryByRole("button", { name: /select resource/i })).not.toBeInTheDocument()
-    expect(screen.getByText("Fix the widget PR")).toBeInTheDocument()
-  })
-})
-
-describe("global timeline affordances", () => {
-  const withWorktrees = ev({
-    resource_type: "pr", resource_id: "o/r#42",
-    worktrees: ["wt-a", "wt-b"], worktree_paths: ["/wt/a", "/wt/b"],
   })
 
-  it("puts navigation ahead of the content, not after it", async () => {
+  it("names the worktrees without offering buttons", async () => {
     wrap(
       <EventDetailsModal
-        e={withWorktrees} onClose={vi.fn()}
-        onSelectResource={vi.fn()} onSelectWorktree={vi.fn()}
-      />,
-    )
-    const chip = await screen.findByRole("button", { name: /select resource o\/r#42/i })
-    const title = screen.getByText("Fix the widget")
-    // You should not have to scroll past a long comment to find where to go.
-    expect(chip.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-  })
-
-  it("opens a worktree from its badge and closes", async () => {
-    const onSelectWorktree = vi.fn()
-    const onClose = vi.fn()
-    wrap(
-      <EventDetailsModal
-        e={withWorktrees} onClose={onClose}
-        onSelectResource={vi.fn()} onSelectWorktree={onSelectWorktree}
-      />,
-    )
-    fireEvent.click(await screen.findByRole("button", { name: /open worktree wt-b/i }))
-    // Paired by index with `worktrees`, so the second badge is the second path.
-    expect(onSelectWorktree).toHaveBeenCalledWith("/wt/b")
-    expect(onClose).toHaveBeenCalled()
-  })
-
-  it("leaves badges inert when the event carries no paths", async () => {
-    wrap(
-      <EventDetailsModal
-        e={ev({ worktrees: ["wt-a"], worktree_paths: undefined })}
-        onClose={vi.fn()} onSelectWorktree={vi.fn()}
+        e={ev({ worktrees: ["wt-a", "wt-b"], worktree_paths: ["/wt/a", "/wt/b"] })}
+        onClose={vi.fn()}
       />,
     )
     await screen.findByText("wt-a")
+    expect(screen.getByText("wt-b")).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /open worktree/i })).not.toBeInTheDocument()
   })
 
-  it("suppresses the chip when the resource has nowhere to go", async () => {
+  it("puts that context ahead of the content, not after it", async () => {
     wrap(
       <EventDetailsModal
-        e={withWorktrees} onClose={vi.fn()}
-        onSelectResource={vi.fn()} canSelectResource={() => false}
+        e={ev({ resource_type: "pr", resource_id: "o/r#42", worktrees: ["wt-a"] })}
+        onClose={vi.fn()}
       />,
     )
-    await screen.findByText("Fix the widget")
-    expect(screen.queryByRole("button", { name: /select resource/i })).not.toBeInTheDocument()
-    // ...but the resource is still named, so the event keeps its context.
-    expect(screen.getByText("Fix the widget PR")).toBeInTheDocument()
+    const chip = await screen.findByText("Fix the widget PR")
+    const title = screen.getByText("Fix the widget")
+    // You should not have to scroll past a long comment to find out what you
+    // are reading about.
+    expect(chip.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })
-
