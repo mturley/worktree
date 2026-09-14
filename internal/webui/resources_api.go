@@ -35,6 +35,13 @@ type resourceDTO struct {
 	Labels                []string `json:"labels,omitempty"`                   // Jira
 	UpdatedAt             string   `json:"updated_at,omitempty"`               // resource_updated_at (RFC3339)
 	UnreadCount           int      `json:"unread_count,omitempty"`             // non-slack: events newer than the read cursor
+	// link: resolved page metadata (see internal/linkmeta)
+	Description  string `json:"description,omitempty"`
+	Image        string `json:"image,omitempty"`
+	SiteName     string `json:"site_name,omitempty"`
+	Favicon      string `json:"favicon,omitempty"`
+	Embeddable   bool   `json:"embeddable,omitempty"`
+	ResolveError string `json:"resolve_error,omitempty"`
 }
 
 func (s *Server) handleWorktreeResources(w http.ResponseWriter, r *http.Request) {
@@ -162,6 +169,28 @@ func (s *Server) enrichResourceDTO(dto *resourceDTO) {
 		}
 		if v, ok := m["updated_ts"].(string); ok {
 			dto.UpdatedTS = v
+		}
+	case "link":
+		if v, ok := m["title"].(string); ok {
+			dto.Title = v
+		}
+		if v, ok := m["description"].(string); ok {
+			dto.Description = v
+		}
+		if v, ok := m["image"].(string); ok {
+			dto.Image = v
+		}
+		if v, ok := m["site_name"].(string); ok {
+			dto.SiteName = v
+		}
+		if v, ok := m["favicon"].(string); ok {
+			dto.Favicon = v
+		}
+		if v, ok := m["embeddable"].(bool); ok {
+			dto.Embeddable = v
+		}
+		if v, ok := m["resolve_error"].(string); ok {
+			dto.ResolveError = v
 		}
 	}
 }
