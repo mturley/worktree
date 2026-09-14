@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import {
   Alert,
   Button,
@@ -11,6 +11,8 @@ import {
   TextInput,
 } from "@mantine/core"
 import { api } from "../api/client"
+import { supportsCustomName } from "../lib/customName"
+import { shortResourceRef } from "../lib/resourceRef"
 
 interface AddResourceModalProps {
   opened: boolean
@@ -31,21 +33,28 @@ interface AddResourceModalProps {
   initialUrl?: string
 }
 
-/** A pasted URL is a Slack thread when it points at a slack.com workspace. */
-function isSlackUrl(url: string): boolean {
-  return url.toLowerCase().includes("slack.com")
-}
-
 const FOCUS_HELP: Record<string, string> = {
   focus: "Central to this worktree.",
   related: "Linked or secondary resource.",
 }
 
+const DETECTED_LABEL: Record<string, string> = {
+  pr: "GitHub PR", jira: "Jira issue", slack: "Slack thread", link: "Link",
+}
+
+function detectedSummary(d: { type: string; id: string } | null): string {
+  if (!d || !d.type) return ""
+  const name = DETECTED_LABEL[d.type] ?? d.type
+  const ref = shortResourceRef(d.type, d.id)
+  return ref ? `${name} — ${ref}` : name
+}
+
 /**
- * Modal for adding a resource (PR, Jira, or Slack thread) to a worktree. Lets
- * the user choose Focus vs Related up front (mapping to the backend's
- * primary/related distinction) and, for Slack thread URLs, optionally set a
- * custom name and description at add time.
+ * Modal for adding a resource (PR, Jira issue, Slack thread, or any other
+ * link) to a worktree. Lets the user choose Focus vs Related up front
+ * (mapping to the backend's primary/related distinction) and, for types with
+ * no title of their own, optionally set a custom name and description at add
+ * time.
  */
 export function AddResourceModal({
   opened,
@@ -62,7 +71,32 @@ export function AddResourceModal({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const slack = isSlackUrl(url)
+  /*
+   * What kind of resource the pasted URL is, answered by the server.
+   *
+   * Deliberately not a frontend regex: recognising a link means recognising
+   * what is NOT a PR or Jira URL, and copying those patterns here is the exact
+   * duplication internal/resourceurl exists to prevent (webui once hand-copied
+   * cmd/root.go's PR regex under a comment promising to keep them in sync).
+   * One detector, asked over HTTP.
+   */
+  const [detected, setDetected] = useState<{ type: string; id: string } | null>(null)
+  useEffect(() => {
+    const trimmed = url.trim()
+    if (!trimmed) {
+      setDetected(null)
+      return
+    }
+    let cancelled = false
+    const t = setTimeout(() => {
+      api.resourceType(trimmed)
+        .then((d) => { if (!cancelled) setDetected(d) })
+        .catch(() => { if (!cancelled) setDetected(null) })
+    }, 300)
+    return () => { cancelled = true; clearTimeout(t) }
+  }, [url])
+
+  const customName = supportsCustomName(detected?.type ?? "")
 
   const reset = () => {
     setUrl(initialUrl ?? "")
@@ -112,7 +146,7 @@ export function AddResourceModal({
         ) : null}
         <TextInput
           label="URL"
-          placeholder="Paste a PR, Jira, or Slack URL"
+          placeholder="Paste any URL"
           value={url}
           onChange={(e) => {
             setUrl(e.currentTarget.value)
@@ -120,6 +154,11 @@ export function AddResourceModal({
           }}
           data-autofocus
         />
+        {detected?.type && (
+          <Text size="xs" c="dimmed">
+            {detectedSummary(detected)}
+          </Text>
+        )}
         <Stack gap={2}>
           <SegmentedControl
             value={focus}
@@ -134,13 +173,12 @@ export function AddResourceModal({
           </Text>
         </Stack>
         {/*
-          Custom NAME is Slack-only: a PR or Jira issue already has a title
-          from its source, whereas a Slack thread has none — that is why
-          custom names exist at all. Custom DESCRIPTION is offered for every
-          type, since "why is this on this worktree" is worth recording
-          regardless.
+          Custom NAME is only offered for types with no title of their own
+          (Slack thread, link) — a PR or Jira issue already has one from its
+          source. Custom DESCRIPTION is offered for every type, since "why is
+          this on this worktree" is worth recording regardless.
         */}
-        {slack && (
+        {customName && (
           <TextInput
             label="Custom Name (optional)"
             placeholder="Thread name"
