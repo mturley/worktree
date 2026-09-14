@@ -56,9 +56,24 @@ describe("LinkPane", () => {
     // Scoped to the panel: the detail card above it legitimately renders its
     // own "Open in new tab" action too, so an unscoped getByRole would match
     // two elements with the same accessible name — ambiguous by design, not
-    // by accident. The Alert's root carries role="alert" (Mantine v7).
-    const panel = screen.getByRole("alert")
+    // by accident. The Alert's root carries role="alert" (Mantine v7). Named
+    // by its title so it stays unambiguous if ResourceCard's own error Alert
+    // (remove/primary failures) ever renders alongside it.
+    const panel = screen.getByRole("alert", { name: "Can't embed page" })
     expect(within(panel).getByRole("link", { name: "Open in new tab" })).toBeInTheDocument()
+  })
+
+  it("never frames our own origin, even when embeddable is true", () => {
+    // The origin guard in canEmbed is unit-tested directly in
+    // linkEmbed.test.ts, but that alone would not catch a regression where
+    // LinkPane passed a hardcoded/wrong origin into canEmbed. This proves
+    // LinkPane consults the REAL environment origin (window.location.origin,
+    // as jsdom sets it) rather than something else.
+    const { container } = wrap(
+      <LinkPane resource={link({ url: `${window.location.origin}/worktree/x`, embeddable: true })} path="/wt" />,
+    )
+    expect(container.querySelector("iframe")).toBeNull()
+    expect(screen.getByRole("alert", { name: "Can't embed page" })).toBeInTheDocument()
   })
 
   it("renders no iframe at all for a page that refuses framing", () => {

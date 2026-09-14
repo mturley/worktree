@@ -15,10 +15,10 @@
  *    cannot be undone by a change to how resolution failures are recorded.
  */
 export function canEmbed(url: string, embeddable: boolean | undefined, currentOrigin: string): boolean {
-  if (!embeddable) return false
   try {
-    return new URL(url).origin !== new URL(currentOrigin).origin
+    if (new URL(url).origin === new URL(currentOrigin).origin) return false
   } catch {
     return false
   }
+  return !!embeddable
 }
