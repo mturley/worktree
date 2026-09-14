@@ -61,6 +61,25 @@ func TestDialContextRejectsPrivateResolution(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected loopback to be refused")
 	}
+	if !strings.Contains(err.Error(), "blocked address") {
+		t.Errorf("expected error to mention 'blocked address', got %v", err)
+	}
+}
+
+func TestDialContextRejectsHostnameThatResolvesToPrivate(t *testing.T) {
+	d := DialContext(&net.Dialer{})
+	// "localhost" goes through the hostname lookup branch and resolves to
+	// loopback addresses. The ANY-resolved-IP rejection loop must catch it.
+	_, err := d(context.Background(), "tcp", "localhost:80")
+	if err == nil {
+		t.Fatal("expected localhost to be refused")
+	}
+	if !strings.Contains(err.Error(), "blocked address") {
+		t.Errorf("expected error to mention 'blocked address', got %v", err)
+	}
+	if !strings.Contains(err.Error(), "localhost") {
+		t.Errorf("expected error to mention host name 'localhost', got %v", err)
+	}
 }
 
 // TestTransportDisablesProxy guards against the blocklist being silently
