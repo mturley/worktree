@@ -78,3 +78,14 @@ func TestGETIsUnaffected(t *testing.T) {
 		t.Fatalf("status %d", rec.Code)
 	}
 }
+
+func TestSetsXFrameOptions(t *testing.T) {
+	// Every response sets X-Frame-Options: DENY to prevent a followed page
+	// from redirecting into our own origin and escaping the iframe sandbox.
+	srv := &Server{}
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/resource-type?url=x", nil))
+	if got := rec.Header().Get("X-Frame-Options"); got != "DENY" {
+		t.Fatalf("X-Frame-Options = %q, want DENY", got)
+	}
+}

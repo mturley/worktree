@@ -24,6 +24,9 @@ import (
 // GET and HEAD are untouched: they carry no body and must not mutate.
 func guardMutations(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Set X-Frame-Options on ALL responses to prevent a followed page from
+		// redirecting into our own origin and escaping the iframe sandbox.
+		w.Header().Set("X-Frame-Options", "DENY")
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
 			h.ServeHTTP(w, r)
 			return
