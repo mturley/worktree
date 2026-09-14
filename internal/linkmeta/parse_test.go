@@ -92,6 +92,7 @@ func TestEmbeddable(t *testing.T) {
 		{"csp frame-ancestors self", http.Header{"Content-Security-Policy": {"frame-ancestors 'self'"}}, false},
 		{"csp frame-ancestors wildcard", http.Header{"Content-Security-Policy": {"frame-ancestors *"}}, true},
 		{"csp without frame-ancestors", http.Header{"Content-Security-Policy": {"default-src 'self'"}}, true},
+		{"two csp headers second forbids", http.Header{"Content-Security-Policy": {"default-src 'self'", "frame-ancestors 'none'"}}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

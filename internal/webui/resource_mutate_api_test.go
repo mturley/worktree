@@ -2,6 +2,7 @@ package webui
 
 import (
 	"bytes"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	wdb "github.com/mturley/worktree/internal/db"
+	"github.com/mturley/worktree/internal/linkmeta"
 	"github.com/mturley/worktree/internal/resources"
 	"github.com/mturley/worktree/internal/testgit"
 )
@@ -77,6 +79,12 @@ func TestAddResource_UnrecognizedURL(t *testing.T) {
 func TestAddResource_FallsBackToLink(t *testing.T) {
 	// A URL that isn't a pr/jira/slack URL is followed as a link, per
 	// InferAny's fallback.
+	linkTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		io.WriteString(w, `<html><head><title>Test page</title></head></html>`)
+	}))
+	defer linkTarget.Close()
+
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -84,11 +92,11 @@ func TestAddResource_FallsBackToLink(t *testing.T) {
 	defer conn.Close()
 	wtPath := testgit.Worktree(t)
 
-	srv := &Server{DB: conn}
+	srv := &Server{DB: conn, LinkResolver: &linkmeta.Resolver{Transport: linkTarget.Client().Transport}}
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
-	body := `{"path":"` + wtPath + `","url":"https://example.com/nope"}`
+	body := `{"path":"` + wtPath + `","url":"` + linkTarget.URL + `/nope"}`
 	resp, err := http.Post(ts.URL+"/api/worktree-resources/add", "application/json", bytes.NewReader([]byte(body)))
 	if err != nil {
 		t.Fatal(err)

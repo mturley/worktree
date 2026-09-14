@@ -143,6 +143,8 @@ func Embeddable(h http.Header) bool {
 	case "deny", "sameorigin":
 		return false
 	}
+	// Browsers intersect all CSP headers: if ANY of them forbids framing, the
+	// page is not embeddable. We must check every header, not just the first.
 	for _, csp := range h.Values("Content-Security-Policy") {
 		for _, directive := range strings.Split(csp, ";") {
 			fields := strings.Fields(strings.TrimSpace(directive))
@@ -151,12 +153,16 @@ func Embeddable(h http.Header) bool {
 			}
 			// A bare wildcard permits any embedder. Anything else — 'none',
 			// 'self', or a host list we are certainly not on — does not.
+			hasWildcard := false
 			for _, src := range fields[1:] {
 				if src == "*" {
-					return true
+					hasWildcard = true
+					break
 				}
 			}
-			return false
+			if !hasWildcard {
+				return false
+			}
 		}
 	}
 	return true

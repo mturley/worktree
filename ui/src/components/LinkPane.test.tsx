@@ -94,4 +94,9 @@ describe("LinkPane", () => {
     await userEvent.click(screen.getByRole("button", { name: "Refresh page details" }))
     expect(resolveResource).toHaveBeenCalledWith({ type: "link", id: "https://ex.com/a" })
   })
+
+  it("shows an error alert when resolve_error is set", () => {
+    wrap(<LinkPane resource={link({ resolve_error: "timeout" })} path="/wt" />)
+    expect(screen.getByText("Couldn't load page details")).toBeInTheDocument()
+  })
 })

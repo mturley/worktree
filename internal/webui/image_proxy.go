@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/mturley/worktree/internal/safehttp"
 )
@@ -14,6 +15,14 @@ import (
 // limits how much an internal response could ever be relayed even if the SSRF
 // IP filter were somehow bypassed.
 const maxProxiedImageBytes = 8 << 20 // 8 MiB
+
+// imageProxyTransport builds the SSRF-safe transport once and reuses it for
+// every image proxy request. safehttp.Transport() clones http.DefaultTransport
+// on every call; building a fresh *http.Transport per request means no
+// connection reuse.
+var imageProxyTransport = sync.OnceValue(func() *http.Transport {
+	return safehttp.Transport()
+})
 
 // handleImage is an OPEN-HOST image proxy for third-party unfurl images
 // (preview/thumbnail, service favicon, footer icon) that come from arbitrary
@@ -51,8 +60,7 @@ func (s *Server) handleImage(w http.ResponseWriter, r *http.Request) {
 
 	transport := s.imageProxyTransport
 	if transport == nil {
-		base := safehttp.Transport()
-		transport = base
+		transport = imageProxyTransport()
 	}
 	client := &http.Client{Transport: transport, CheckRedirect: noFollowRedirects}
 	resp, err := client.Do(req)

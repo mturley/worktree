@@ -35,6 +35,11 @@ export function LinkPane({ resource, path, onRemoved, onResourceChanged }: {
     <>
       <ResourceCard r={resource} path={path} onRemoved={onRemoved}
         onMetaChanged={onResourceChanged} variant="detail" />
+      {resource.resolve_error && (
+        <Alert color="red" variant="light">
+          Couldn't load page details
+        </Alert>
+      )}
       <Group gap={6} justify="flex-end">
         {/* A link is never polled, so this button is the ONLY way its
             metadata becomes current again. */}
