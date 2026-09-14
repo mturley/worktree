@@ -6,6 +6,6 @@ export default defineConfig({
   build: { emptyOutDir: false }, // preserve ui/dist/.gitkeep
   server: {
     port: 5175,
-    proxy: { "/api": { target: "http://localhost:8475", changeOrigin: true, ws: false } },
+    proxy: { "/api": { target: "http://localhost:8475", changeOrigin: false, ws: false } },
   },
 })
