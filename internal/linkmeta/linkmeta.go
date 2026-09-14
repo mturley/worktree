@@ -8,10 +8,21 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mturley/worktree/internal/safehttp"
 )
+
+// safeTransport builds the SSRF-safe transport once and reuses it for every
+// Resolve call whose Resolver leaves Transport nil (i.e. production use).
+// safehttp.Transport() clones http.DefaultTransport on every call; building
+// a fresh *http.Transport per request means no connection reuse and an idle
+// connection pool that never gets a chance to be used, on a path (Task 6's
+// HTTP handler) that runs per request.
+var safeTransport = sync.OnceValue(func() *http.Transport {
+	return safehttp.Transport()
+})
 
 const (
 	// maxBodyBytes caps the HTML we read. The <head> is all that matters and
@@ -32,10 +43,27 @@ type Resolver struct {
 	Transport http.RoundTripper
 }
 
+// validateHopURL enforces the scheme/host rule that every hop of a fetch must
+// satisfy — the initial request (hop 0) and every redirect target (hops
+// 1..maxRedirects) alike. The dialer sees only IPs and ports, never schemes,
+// so this check has nowhere else to live; applying it identically to hop 0
+// closes the gap where only stdlib's own (untrusted-for-our-purposes)
+// "unsupported protocol scheme" error would otherwise catch a non-http(s)
+// initial URL.
+func validateHopURL(u *url.URL) error {
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("refusing redirect to scheme %q", u.Scheme)
+	}
+	if u.Hostname() == "" {
+		return fmt.Errorf("refusing redirect with no host")
+	}
+	return nil
+}
+
 func (rs *Resolver) client() *http.Client {
 	tr := rs.Transport
 	if tr == nil {
-		tr = safehttp.Transport()
+		tr = safeTransport()
 	}
 	return &http.Client{
 		Transport: tr,
@@ -44,15 +72,7 @@ func (rs *Resolver) client() *http.Client {
 			if len(via) >= maxRedirects {
 				return fmt.Errorf("too many redirects (>%d)", maxRedirects)
 			}
-			// The dialer sees IPs and ports, never schemes, so the scheme
-			// check has nowhere else to live. Each hop is re-validated.
-			if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
-				return fmt.Errorf("refusing redirect to scheme %q", req.URL.Scheme)
-			}
-			if req.URL.Hostname() == "" {
-				return fmt.Errorf("refusing redirect with no host")
-			}
-			return nil
+			return validateHopURL(req.URL)
 		},
 	}
 }
@@ -73,6 +93,10 @@ func (rs *Resolver) Resolve(ctx context.Context, rawURL string) Meta {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
+		return fail(err)
+	}
+	// Hop 0 gets the same scheme/host validation as every redirect hop.
+	if err := validateHopURL(req.URL); err != nil {
 		return fail(err)
 	}
 	req.Header.Set("User-Agent", "worktree-link-preview/1.0")

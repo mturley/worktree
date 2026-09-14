@@ -74,5 +74,13 @@ func DialContext(base *net.Dialer) func(ctx context.Context, network, addr strin
 func Transport() *http.Transport {
 	t := http.DefaultTransport.(*http.Transport).Clone()
 	t.DialContext = DialContext(&net.Dialer{})
+	// http.DefaultTransport carries Proxy: http.ProxyFromEnvironment. With
+	// that left in place, an HTTP(S)_PROXY environment variable would send
+	// every dial to the proxy's own address — which passes our blocklist
+	// check — and let the PROXY resolve and connect to the attacker-chosen
+	// host on our behalf, entirely outside the blocklist. This is the only
+	// SSRF containment in this product, so a proxy env var would silently
+	// void it. Disable proxying altogether.
+	t.Proxy = nil
 	return t
 }

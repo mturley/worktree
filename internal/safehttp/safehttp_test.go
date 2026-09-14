@@ -62,3 +62,15 @@ func TestDialContextRejectsPrivateResolution(t *testing.T) {
 		t.Fatal("expected loopback to be refused")
 	}
 }
+
+// TestTransportDisablesProxy guards against the blocklist being silently
+// bypassed by an HTTP(S)_PROXY environment variable: with Proxy left as
+// http.ProxyFromEnvironment, the dialer would validate the PROXY's address
+// (which passes) while the proxy itself resolves and connects to the
+// attacker-chosen host, never touching our blocklist.
+func TestTransportDisablesProxy(t *testing.T) {
+	tr := Transport()
+	if tr.Proxy != nil {
+		t.Fatal("Transport().Proxy must be nil: a configured proxy would resolve the target outside the SSRF blocklist")
+	}
+}

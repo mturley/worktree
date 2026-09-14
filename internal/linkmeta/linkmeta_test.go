@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -77,15 +78,45 @@ func TestResolveNonHTMLUsesLastPathSegment(t *testing.T) {
 }
 
 func TestResolveTruncatesAnOversizedBody(t *testing.T) {
+	// The <title> is first on the wire, so ParseHead would find "Kept" with
+	// or without the io.LimitReader — deleting maxBodyBytes entirely would
+	// not fail a test that merely writes a big body and checks the title.
+	// Instead, prove the CAP is what ends the read: write the head, flush it
+	// to the client, then block forever. With the cap in place, the reader
+	// hits EOF (from the limit) promptly; without it, the read would only
+	// ever end via the unrelated 10s fetchTimeout.
+	block := make(chan struct{})
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		io.WriteString(w, `<html><head><title>Kept</title>`)
-		io.WriteString(w, strings.Repeat("<p>padding</p>", 200000))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		io.WriteString(w, strings.Repeat("<p>padding</p>", (maxBodyBytes/len("<p>padding</p>"))+10))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		<-block // hang so the read only ends via the LimitReader's cap
 	}))
-	defer ts.Close()
+
+	start := time.Now()
 	m := testResolver(ts).Resolve(context.Background(), ts.URL)
+	elapsed := time.Since(start)
+
+	// Unblock the handler goroutine and let httptest.Server tear the
+	// connection down BEFORE calling ts.Close(), which otherwise blocks
+	// waiting for that still-active connection to finish — a deadlock if the
+	// channel were closed via `defer` (LIFO order would run ts.Close() first).
+	close(block)
+	ts.Close()
+
 	if m.Title != "Kept" {
 		t.Fatalf("title = %q; a capped read must still yield what was complete", m.Title)
+	}
+	// The cap must end the read almost immediately. If it took anywhere near
+	// fetchTimeout, the LimitReader wasn't what stopped it.
+	if elapsed > 3*time.Second {
+		t.Fatalf("took %s; the body cap should end the read almost instantly, not via fetchTimeout", elapsed)
 	}
 }
 
@@ -103,9 +134,15 @@ func TestResolveFailureIsNotAnError(t *testing.T) {
 
 func TestResolveRefusesLoopbackTarget(t *testing.T) {
 	// The REAL transport: no override, so the safe dialer applies.
+	//
+	// Assert on the safe dialer's OWN error text ("blocked address"), not
+	// just "some error": nothing listens on 127.0.0.1:9, so with the safe
+	// dialer removed entirely the dial still fails (ECONNREFUSED) and
+	// ResolveError is still non-empty — a bare non-empty check would pass
+	// either way.
 	m := (&Resolver{}).Resolve(context.Background(), "http://127.0.0.1:9/x")
-	if m.ResolveError == "" {
-		t.Fatal("loopback must be refused")
+	if !strings.Contains(m.ResolveError, "blocked address") {
+		t.Fatalf("ResolveError = %q, want it to contain %q", m.ResolveError, "blocked address")
 	}
 }
 
@@ -192,14 +229,19 @@ func TestResolveCapsRedirectChain(t *testing.T) {
 }
 
 func TestResolveSendsNoCredentials(t *testing.T) {
+	var mu sync.Mutex
 	var gotCookie, gotAuth string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		gotCookie, gotAuth = r.Header.Get("Cookie"), r.Header.Get("Authorization")
+		mu.Unlock()
 		w.Header().Set("Set-Cookie", "session=abc; Path=/")
 		http.Redirect(w, r, "/second", http.StatusFound)
 	}))
-	defer ts.Close()
 	testResolver(ts).Resolve(context.Background(), ts.URL)
+	ts.Close() // ensures the handler goroutine(s) are done before we read below
+	mu.Lock()
+	defer mu.Unlock()
 	if gotCookie != "" || gotAuth != "" {
 		t.Fatalf("credentials leaked: cookie=%q auth=%q", gotCookie, gotAuth)
 	}
