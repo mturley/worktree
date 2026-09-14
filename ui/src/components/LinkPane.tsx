@@ -1,4 +1,4 @@
-import { Alert, Box, Button, Group, Text } from "@mantine/core"
+import { Alert, Box, Button, Group, Stack, Text } from "@mantine/core"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import type { ResourceDTO } from "../api/types"
 import { api } from "../api/client"
@@ -55,14 +55,16 @@ export function LinkPane({ resource, path, onRemoved, onResourceChanged }: {
           />
         </Box>
       ) : (
-        // No separate "Open in new tab" control here: the card above (variant
-        // "detail") already renders one via ResourceActions — a second would
-        // be a duplicate with the same accessible name.
         <Alert color="gray" variant="light" title="Can't embed page">
-          <Text size="sm">
-            {shortResourceRef("link", resource.id) || "This site"} does not allow its pages to be
-            displayed inside another site. Use "Open in new tab" above to view it directly.
-          </Text>
+          <Stack gap="sm" align="flex-start">
+            <Text size="sm">
+              {shortResourceRef("link", resource.id) || "This site"} does not allow its pages to be
+              displayed inside another site.
+            </Text>
+            <Button component="a" href={resource.url} target="_blank" rel="noreferrer" size="xs">
+              Open in new tab
+            </Button>
+          </Stack>
         </Alert>
       )}
     </>

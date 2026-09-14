@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest"
-import { render, cleanup, screen } from "@testing-library/react"
+import { render, cleanup, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -53,7 +53,12 @@ describe("LinkPane", () => {
   it("explains a page that refuses framing instead of showing a blank box", () => {
     wrap(<LinkPane resource={link({ embeddable: false })} path="/wt" />)
     expect(screen.getByText("Can't embed page")).toBeInTheDocument()
-    expect(screen.getByRole("link", { name: "Open in new tab" })).toBeInTheDocument()
+    // Scoped to the panel: the detail card above it legitimately renders its
+    // own "Open in new tab" action too, so an unscoped getByRole would match
+    // two elements with the same accessible name — ambiguous by design, not
+    // by accident. The Alert's root carries role="alert" (Mantine v7).
+    const panel = screen.getByRole("alert")
+    expect(within(panel).getByRole("link", { name: "Open in new tab" })).toBeInTheDocument()
   })
 
   it("renders no iframe at all for a page that refuses framing", () => {
