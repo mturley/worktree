@@ -112,6 +112,14 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
     }),
+  resolveResource: (args: { type: string; id: string }) =>
+    fetchJSON<ResourceDTO>("/api/resource-resolve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(args),
+    }),
+  resourceType: (url: string) =>
+    fetchJSON<{ type: string; id: string }>(`/api/resource-type?url=${encodeURIComponent(url)}`),
   cmuxSelect: (ref: string) =>
     fetchJSON<{ ok: boolean; error?: string }>("/api/cmux/select", {
       method: "POST",

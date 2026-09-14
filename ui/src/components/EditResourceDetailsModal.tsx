@@ -21,7 +21,10 @@ interface EditResourceDetailsModalProps {
  * regardless of type.
  */
 export function EditResourceDetailsModal({ opened, r, onClose, onSaved }: EditResourceDetailsModalProps) {
-  const supportsCustomName = r.type === "slack"
+  // A PR or Jira issue has a title from its source; a Slack thread has none,
+  // and a link's fetched title is often a site's boilerplate — both are worth
+  // renaming.
+  const supportsCustomName = r.type === "slack" || r.type === "link"
   const [name, setName] = useState(r.custom_name ?? "")
   const [description, setDescription] = useState(r.custom_description ?? "")
   const [saving, setSaving] = useState(false)

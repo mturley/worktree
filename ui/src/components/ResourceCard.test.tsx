@@ -553,3 +553,34 @@ describe("the detail card carries no unread styling", () => {
     expect(screen.queryByLabelText("unread")).toBeNull()
   })
 })
+
+describe("link resource cards", () => {
+  it("names a link by its domain and title", () => {
+    wrap(<ResourceCard r={{ type: "link", id: "https://ex.com/a", url: "https://ex.com/a",
+      primary: true, title: "A page", site_name: "ex.com" } as ResourceDTO} path="/wt" variant="compact" />)
+    expect(screen.getByText("A page")).toBeInTheDocument()
+    expect(screen.getByText("ex.com")).toBeInTheDocument()
+  })
+
+  it("shows a link's favicon through the image proxy, never directly", () => {
+    // Direct <img src> to an arbitrary site would make every card a request to
+    // that site from our page; the proxy also refuses internal addresses.
+    wrap(<ResourceCard r={{ type: "link", id: "https://ex.com/a", url: "https://ex.com/a",
+      primary: true, favicon: "https://ex.com/favicon.ico" } as ResourceDTO} path="/wt" variant="compact" />)
+    const img = document.querySelector("img") as HTMLImageElement
+    expect(img.getAttribute("src")).toBe("/api/link-image?url=" + encodeURIComponent("https://ex.com/favicon.ico"))
+  })
+
+  it("falls back to a glyph when a link has no favicon", () => {
+    wrap(<ResourceCard r={{ type: "link", id: "https://ex.com/a", url: "https://ex.com/a",
+      primary: true } as ResourceDTO} path="/wt" variant="compact" />)
+    expect(screen.getByLabelText("link")).toBeInTheDocument()
+    expect(document.querySelector("img")).toBeNull()
+  })
+
+  it("offers 'Open in new tab' for a link", () => {
+    wrap(<ResourceCard r={{ type: "link", id: "https://ex.com/a", url: "https://ex.com/a",
+      primary: true } as ResourceDTO} path="/wt" variant="detail" />)
+    expect(screen.getByRole("link", { name: "Open in new tab" })).toBeInTheDocument()
+  })
+})

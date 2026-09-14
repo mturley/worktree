@@ -9,6 +9,7 @@ import { ResourceTitle } from "./ResourceStatusIcon"
 import { cardEdgeStyle, hasUnread } from "../lib/unread"
 import { UnreadBadge } from "./UnreadBadge"
 import { EditResourceDetailsModal } from "./EditResourceDetailsModal"
+import { shortResourceRef } from "../lib/resourceRef"
 
 function prStateColor(state?: string): string {
   switch ((state || "").toUpperCase()) {
@@ -186,6 +187,24 @@ function SlackCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVa
   )
 }
 
+function LinkCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVariant }) {
+  const label = r.custom_name || r.title || r.id
+  return (
+    <Stack gap={2}>
+      <Group gap="xs" wrap="wrap">
+        <Badge size="xs" variant="light" color="teal">Link</Badge>
+        {/* The domain sits where a PR puts its number and Jira its key. */}
+        <Text size="xs" c="dimmed">{shortResourceRef("link", r.id)}</Text>
+      </Group>
+      <ResourceTitle r={r} label={label} showUnread={false} {...titleProps(variant)} />
+      <CustomDescription r={r} />
+      {variant === "detail" && r.description && (
+        <Text size="xs" c="dimmed" lineClamp={3}>{r.description}</Text>
+      )}
+    </Stack>
+  )
+}
+
 /**
  * Confirm-then-remove control for a resource. Exported so the Slack thread
  * pane can put the same control in its header — a slack thread has no detail
@@ -327,6 +346,8 @@ export function ResourceCard({
     <PRCardBody r={r} variant={variant} />
   ) : r.type === "jira" ? (
     <JiraCardBody r={r} variant={variant} />
+  ) : r.type === "link" ? (
+    <LinkCardBody r={r} variant={variant} />
   ) : (
     <MinimalRow r={r} variant={variant} />
   )
