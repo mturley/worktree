@@ -1,13 +1,12 @@
 package webui
 
 import (
-	"context"
-	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/mturley/worktree/internal/safehttp"
 )
 
 // maxProxiedImageBytes caps how much an open-host image proxy will stream
@@ -15,65 +14,6 @@ import (
 // limits how much an internal response could ever be relayed even if the SSRF
 // IP filter were somehow bypassed.
 const maxProxiedImageBytes = 8 << 20 // 8 MiB
-
-// isDisallowedIP reports whether ip is one an open-host proxy must refuse to
-// connect to: loopback, private (RFC1918 / ULA), link-local (incl. the
-// 169.254.169.254 cloud-metadata endpoint), unspecified, and CGNAT
-// (100.64.0.0/10). These are the ranges an SSRF attacker would target to
-// reach internal services or a cloud metadata service.
-func isDisallowedIP(ip net.IP) bool {
-	if ip == nil {
-		return true
-	}
-	if ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() ||
-		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() {
-		return true
-	}
-	// CGNAT 100.64.0.0/10 — not covered by IsPrivate(), but effectively
-	// internal for our purposes.
-	if v4 := ip.To4(); v4 != nil && v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127 {
-		return true
-	}
-	return false
-}
-
-// safeDialContext returns a DialContext that resolves the target host, rejects
-// it if ANY resolved IP is disallowed, and dials one of the validated IPs
-// directly (pinning it). Pinning the already-validated IP for the actual
-// connection closes the DNS-rebinding TOCTOU window: net/http never re-resolves
-// the name, so a hostname cannot pass the check and then resolve to an internal
-// address at connect time.
-func safeDialContext(base *net.Dialer) func(ctx context.Context, network, addr string) (net.Conn, error) {
-	return func(ctx context.Context, network, addr string) (net.Conn, error) {
-		host, port, err := net.SplitHostPort(addr)
-		if err != nil {
-			return nil, err
-		}
-		// If the host is already a literal IP, validate it directly.
-		if ip := net.ParseIP(host); ip != nil {
-			if isDisallowedIP(ip) {
-				return nil, fmt.Errorf("blocked address %s", ip)
-			}
-			return base.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
-		}
-		ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
-		if err != nil {
-			return nil, err
-		}
-		if len(ips) == 0 {
-			return nil, fmt.Errorf("no addresses for %s", host)
-		}
-		// Reject if ANY resolved IP is disallowed — refuse rather than
-		// cherry-pick a public one, since a dual-homed name is suspicious.
-		for _, ip := range ips {
-			if isDisallowedIP(ip) {
-				return nil, fmt.Errorf("blocked address %s for host %s", ip, host)
-			}
-		}
-		// Dial the first (validated) IP, pinned.
-		return base.DialContext(ctx, network, net.JoinHostPort(ips[0].String(), port))
-	}
-}
 
 // handleImage is an OPEN-HOST image proxy for third-party unfurl images
 // (preview/thumbnail, service favicon, footer icon) that come from arbitrary
@@ -111,10 +51,7 @@ func (s *Server) handleImage(w http.ResponseWriter, r *http.Request) {
 
 	transport := s.imageProxyTransport
 	if transport == nil {
-		// Clone the default transport and swap in the SSRF-safe dialer. We do
-		// NOT mutate http.DefaultTransport in place (it is process-global).
-		base := http.DefaultTransport.(*http.Transport).Clone()
-		base.DialContext = safeDialContext(&net.Dialer{})
+		base := safehttp.Transport()
 		transport = base
 	}
 	client := &http.Client{Transport: transport, CheckRedirect: noFollowRedirects}
