@@ -51,6 +51,32 @@ func TestAddResource_Jira(t *testing.T) {
 }
 
 func TestAddResource_UnrecognizedURL(t *testing.T) {
+	// Not a URL InferAny can classify as pr/jira/slack, and not an http(s)
+	// URL either, so it falls through the link fallback too.
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	wtPath := testgit.Worktree(t)
+
+	srv := &Server{DB: conn}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	body := `{"path":"` + wtPath + `","url":"not-a-url"}`
+	resp, err := http.Post(ts.URL+"/api/worktree-resources/add", "application/json", bytes.NewReader([]byte(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("got %d, want 400", resp.StatusCode)
+	}
+}
+
+func TestAddResource_FallsBackToLink(t *testing.T) {
+	// A URL that isn't a pr/jira/slack URL is followed as a link, per
+	// InferAny's fallback.
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -67,8 +93,8 @@ func TestAddResource_UnrecognizedURL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("got %d, want 400", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("got %d, want 200", resp.StatusCode)
 	}
 }
 

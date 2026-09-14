@@ -29,12 +29,18 @@ func (s *Server) handleAddResource(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing path or url")
 		return
 	}
-	resType, id, ok := resourceurl.Infer(req.URL)
+	resType, id, ok := resourceurl.InferAny(req.URL)
 	if !ok {
 		writeError(w, http.StatusBadRequest, "unrecognized resource URL")
 		return
 	}
-	if err := resources.Add(s.DB, req.Path, resources.Resource{Type: resType, ID: id, URL: req.URL, Related: req.Related}); err != nil {
+	// The stored URL is the normalized ID for a link, so the row and its
+	// cache key cannot disagree.
+	storedURL := req.URL
+	if resType == "link" {
+		storedURL = id
+	}
+	if err := resources.Add(s.DB, req.Path, resources.Resource{Type: resType, ID: id, URL: storedURL, Related: req.Related}); err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, resources.ErrNotAWorktree) {
 			status = http.StatusBadRequest
@@ -42,11 +48,17 @@ func (s *Server) handleAddResource(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, err.Error())
 		return
 	}
-	// Inline-enrich (best effort): populate resource_state before responding.
-	s.pollOne(watcher.Resource{Type: resType, ID: id, URL: req.URL})
+	if resType == "link" {
+		// Links are never polled; resolving inline is the only way the card
+		// is populated when it appears.
+		s.resolveAndStoreLink(r.Context(), id)
+	} else {
+		// Inline-enrich (best effort): populate resource_state before responding.
+		s.pollOne(watcher.Resource{Type: resType, ID: id, URL: storedURL})
+	}
 
 	// Build the DTO for the newly-added resource (mirrors handleWorktreeResources).
-	dto := resourceDTO{Type: resType, ID: id, URL: req.URL, Primary: !req.Related}
+	dto := resourceDTO{Type: resType, ID: id, URL: storedURL, Primary: !req.Related}
 	s.enrichResourceDTO(&dto)
 	writeJSON(w, http.StatusOK, dto)
 }
