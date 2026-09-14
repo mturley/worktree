@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mturley/worktree/internal/safehttp"
 )
@@ -136,9 +137,18 @@ func TestResolveRefusesRedirectToBlockedAddress(t *testing.T) {
 		}))
 		// Transport is overridden to reach the test server, but the redirect
 		// hop dials through the real safe dialer too and must still be refused.
+		//
+		// Assert on the safe dialer's OWN error text ("blocked address"), not
+		// just "some error": a fully permissive transport (no safe dialer)
+		// also produces a non-empty ResolveError here in this sandboxed test
+		// environment, because 10.0.0.1 / 169.254.169.254 are simply
+		// unreachable and the call times out (~20s, "context deadline
+		// exceeded") — that would satisfy a bare non-empty check without the
+		// per-hop block ever running. The real guard fails fast (~0s) with
+		// "blocked address ...".
 		m := (&Resolver{Transport: loopbackPlusSafeTransport()}).Resolve(context.Background(), ts.URL)
-		if m.ResolveError == "" {
-			t.Fatalf("redirect to %s must be refused", target)
+		if !strings.Contains(m.ResolveError, "blocked address") {
+			t.Fatalf("ResolveError = %q, want it to contain %q", m.ResolveError, "blocked address")
 		}
 		ts.Close()
 	}
@@ -150,8 +160,12 @@ func TestResolveRefusesRedirectToForeignScheme(t *testing.T) {
 		w.WriteHeader(http.StatusFound)
 	}))
 	defer ts.Close()
-	if (&Resolver{Transport: ts.Client().Transport}).Resolve(context.Background(), ts.URL).ResolveError == "" {
-		t.Fatal("a non-http(s) redirect must be refused")
+	// Assert on OUR guard's own error text, not just "some error" — stdlib's
+	// net/http also refuses to dispatch a "file" scheme on its own, which
+	// would satisfy a bare non-empty check even with our guard removed.
+	m := (&Resolver{Transport: ts.Client().Transport}).Resolve(context.Background(), ts.URL)
+	if !strings.Contains(m.ResolveError, "refusing redirect to scheme") {
+		t.Fatalf("ResolveError = %q, want it to contain %q", m.ResolveError, "refusing redirect to scheme")
 	}
 }
 
@@ -161,8 +175,19 @@ func TestResolveCapsRedirectChain(t *testing.T) {
 		http.Redirect(w, r, ts.URL+"/next", http.StatusFound)
 	}))
 	defer ts.Close()
-	if (&Resolver{Transport: ts.Client().Transport}).Resolve(context.Background(), ts.URL).ResolveError == "" {
-		t.Fatal("an endless redirect chain must be refused")
+	start := time.Now()
+	m := (&Resolver{Transport: ts.Client().Transport}).Resolve(context.Background(), ts.URL)
+	elapsed := time.Since(start)
+	// Assert on OUR maxRedirects error text, not just "some error" — an
+	// unbounded redirect loop would otherwise still fail (eventually) via the
+	// unrelated 10s fetchTimeout, which proves nothing about the cap.
+	if !strings.Contains(m.ResolveError, "too many redirects") {
+		t.Fatalf("ResolveError = %q, want it to contain %q", m.ResolveError, "too many redirects")
+	}
+	// The cap must trip almost immediately. If it took anywhere near
+	// fetchTimeout, the guard wasn't what stopped it.
+	if elapsed > 3*time.Second {
+		t.Fatalf("took %s to fail; the redirect cap should trip almost instantly, not via fetchTimeout", elapsed)
 	}
 }
 
