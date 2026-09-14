@@ -5,6 +5,7 @@ import { useWorktreeTimeline } from "../hooks/useTimeline"
 import { api } from "../api/client"
 import { ResourceCard } from "./ResourceCard"
 import { SlackThreadPane } from "./SlackThreadPane"
+import { LinkPane } from "./LinkPane"
 import { RefreshWatchersButton } from "./RefreshWatchersButton"
 import { WatcherErrorMark } from "./WatcherErrorMark"
 import { useWatcherStatus } from "../hooks/useWatchers"
@@ -181,6 +182,13 @@ export function ResourceDetailPane({
       )}
       {resource.type === "slack" ? (
         <SlackThreadPane
+          resource={resource}
+          path={path}
+          onRemoved={onRemoved}
+          onResourceChanged={onResourceChanged}
+        />
+      ) : resource.type === "link" ? (
+        <LinkPane
           resource={resource}
           path={path}
           onRemoved={onRemoved}
