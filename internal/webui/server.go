@@ -97,7 +97,7 @@ func (s *Server) Handler() http.Handler {
 	if !s.DevMode && s.WebFS != nil {
 		mux.HandleFunc("/", s.serveStatic)
 	}
-	return mux
+	return guardMutations(mux)
 }
 
 // registerAPI is extended in later tasks. Kept separate so tests can add routes.

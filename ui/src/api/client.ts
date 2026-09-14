@@ -36,7 +36,10 @@ export const api = {
   worktreeResources: (path: string) =>
     fetchJSON<ResourceDTO[]>(`/api/worktree-resources?path=${encodeURIComponent(path)}`),
   pollWorktree: (path: string) =>
-    fetchJSON<{ polled: boolean }>(`/api/worktrees/poll?path=${encodeURIComponent(path)}`, { method: "POST" }),
+    fetchJSON<{ polled: boolean }>(`/api/worktrees/poll?path=${encodeURIComponent(path)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    }),
   setResourceMeta: (args: { type: string; id: string; name: string; description: string }) =>
     fetchJSON<null>("/api/resource-meta", {
       method: "POST",
@@ -105,7 +108,10 @@ export const api = {
     }),
   watchers: () => fetchJSON<WatchersResponse>("/api/watchers"),
   pollWatchers: () =>
-    fetchJSON<null>("/api/watchers/poll", { method: "POST" }),
+    fetchJSON<null>("/api/watchers/poll", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    }),
   cmuxSelect: (ref: string) =>
     fetchJSON<{ ok: boolean; error?: string }>("/api/cmux/select", {
       method: "POST",

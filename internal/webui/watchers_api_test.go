@@ -155,7 +155,7 @@ func TestWatchersPollReturnsImmediately(t *testing.T) {
 	_, ts := watchersTestServer(t)
 	done := make(chan int, 1)
 	go func() {
-		resp, err := http.Post(ts.URL+"/api/watchers/poll", "", nil)
+		resp, err := http.Post(ts.URL+"/api/watchers/poll", "application/json", nil)
 		if err != nil {
 			done <- 0
 			return
