@@ -12,5 +12,14 @@ export function shortResourceRef(type: string, id: string): string {
     return hash >= 0 ? id.slice(hash) : id
   }
   if (type === "jira") return id
+  if (type === "link") {
+    // A link's id IS its URL, so the readable part is the host. www. carries
+    // no information and costs four characters in a narrow column.
+    try {
+      return new URL(id).hostname.replace(/^www\./, "")
+    } catch {
+      return ""
+    }
+  }
   return ""
 }

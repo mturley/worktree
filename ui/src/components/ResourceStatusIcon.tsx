@@ -4,6 +4,7 @@ import {
   IconGitPullRequest,
   IconGitPullRequestClosed,
   IconTicket,
+  IconWorld,
 } from "@tabler/icons-react"
 import { Group, Text } from "@mantine/core"
 import { useState } from "react"
@@ -19,6 +20,15 @@ import { UnreadMarkerDot } from "./UnreadMarkerDot"
  */
 export function jiraIconProxy(url: string): string {
   return `/api/jira-icon?url=${encodeURIComponent(url)}`
+}
+
+/**
+ * A link's favicon is a third-party URL from an arbitrary site, so it goes
+ * through the open-host image proxy rather than being loaded directly — the
+ * browser then talks only to us, and the proxy refuses internal addresses.
+ */
+export function linkImageProxy(url: string): string {
+  return `/api/link-image?url=${encodeURIComponent(url)}`
 }
 
 type IconComponent = typeof IconGitPullRequest | typeof SlackMark
@@ -62,6 +72,26 @@ export function resourceStatusMeta(r: ResourceDTO): StatusMeta {
 export function ResourceStatusIcon({ r, size = 14 }: { r: ResourceDTO; size?: number }) {
   const { Icon, color, label } = resourceStatusMeta(r)
   const [iconFailed, setIconFailed] = useState(false)
+  const [faviconFailed, setFaviconFailed] = useState(false)
+
+  if (r.type === "link") {
+    // No status to show — a link is never polled, so it has no state. The
+    // favicon identifies it instead. A site with no reachable favicon falls
+    // back to a neutral glyph rather than a broken image.
+    if (r.favicon && !faviconFailed) {
+      return (
+        <img
+          src={linkImageProxy(r.favicon)}
+          alt=""
+          width={16}
+          height={16}
+          onError={() => setFaviconFailed(true)}
+          style={{ borderRadius: 2, flexShrink: 0 }}
+        />
+      )
+    }
+    return <IconWorld size={16} aria-label="link" style={{ flexShrink: 0 }} />
+  }
 
   // Jira serves a distinct icon per issue type (Bug, Story, Epic, Spike…),
   // which says more at a glance than one generic ticket glyph. If the fetch

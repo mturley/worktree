@@ -166,6 +166,8 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | POST | `/api/worktrees/poll` | `path` (required) | `{"polled": bool}` |
 | POST | `/api/resource-meta` | body: `{type, id, name, description}` | — |
 | POST | `/api/resource-read` | body: `{type, id, through_ts}` | 204 No Content |
+| POST | `/api/resource-resolve` | body: `{url}` | resolved link metadata |
+| GET | `/api/resource-type` | `url` (required) | `{type, id}` or error if unrecognized |
 | POST | `/api/worktree-resources/add` | body: `{path, url, related?}` | `resourceDTO` |
 | POST | `/api/worktree-resources/remove` | body: `{path, type, id}` | 204 No Content |
 | POST | `/api/worktrees/delete` | body: `{path, delete_branch, force_directory, force_branch}` | `{ok, needs_force, steps[]}` |
@@ -177,6 +179,7 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | GET | `/api/repos` | — | registry repos, newest worktree first |
 | GET | `/api/repo-dotfiles` | `repo` (required) | gitignored dotfiles that repo would copy into a new worktree |
 | GET | `/api/stream` | — | SSE stream (`text/event-stream`) |
+| GET | `/api/link-image` | `url` (required), `type` (required: `favicon` or `preview`) | image bytes or 404 |
 
 ### `internal/worktreenew` step semantics
 
@@ -719,6 +722,39 @@ in **v0.2.5** (`buildPRStateJSON`/`buildJiraStateJSON` in `~/git/watcher`).
 Author is shown on PR cards; **reporter is cached but intentionally not
 displayed** in the UI (a deliberate product decision, not an oversight — if
 you want to show it later, it's already in the cached state JSON).
+
+## Link resources
+
+A link resource tracks an arbitrary web page: worktree resolves its metadata
+(title, description, favicon, preview image) once at add time and renders it in
+an iframe. Unlike PR/Jira resources, links are **never polled and produce no
+events**, so they never appear in any Activity feed and have no unread state.
+
+**Link ID:** A link's ID is its **normalized URL** — scheme and host are
+lowercased, the default port for the scheme is dropped, and the fragment is
+stripped, but path and query are preserved exactly. This normalization ensures
+that `https://github.com/example/repo` and `HTTPS://GITHUB.COM/example/repo`
+resolve to the same ID.
+
+**Metadata storage:** Link metadata lives in `watcher_resource_state` (the
+same table as PR/Jira cached state), but worktree writes it directly rather
+than through a poller. This is the only place worktree writes a `watcher_*`
+row for a type the watcher library does not know about; the table is a generic
+`(type, id) -> json` cache with no schema coupling to a specific source.
+
+**No polling:** `pollAll` in `internal/webui/poller.go` dispatches per type by
+name (PR, Jira, Slack); a type it never names is never polled. This is the
+entire mechanism — there is no link-specific code in the poller that you could
+accidentally activate. Adding a `"link"` case to that switch would break this
+invariant and must never happen.
+
+**Iframe sandboxing:** The frontend embeds links in an `<iframe>` with
+`sandbox="allow-scripts allow-same-origin"`. The `allow-same-origin` flag
+normally permits a sandbox escape when the frame can reach its embedder via
+same-origin navigation. The `ui/src/lib/linkEmbed.ts` same-origin guard
+**is what makes this safe**: it refuses to embed a URL that resolves to a
+host reachable from worktree's own origin, so the frame is never actually
+same-origin with the embedder and the escape route is blocked.
 
 ## Dev workflow
 

@@ -9,6 +9,8 @@ import { ResourceTitle } from "./ResourceStatusIcon"
 import { cardEdgeStyle, hasUnread } from "../lib/unread"
 import { UnreadBadge } from "./UnreadBadge"
 import { EditResourceDetailsModal } from "./EditResourceDetailsModal"
+import { shortResourceRef } from "../lib/resourceRef"
+import { supportsCustomName } from "../lib/customName"
 
 function prStateColor(state?: string): string {
   switch ((state || "").toUpperCase()) {
@@ -186,6 +188,24 @@ function SlackCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVa
   )
 }
 
+function LinkCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVariant }) {
+  const label = r.custom_name || r.title || r.id
+  return (
+    <Stack gap={2}>
+      <Group gap="xs" wrap="wrap">
+        <Badge size="xs" variant="light" color="teal">Link</Badge>
+        {/* The domain sits where a PR puts its number and Jira its key. */}
+        <Text size="xs" c="dimmed">{shortResourceRef("link", r.id)}</Text>
+      </Group>
+      <ResourceTitle r={r} label={label} showUnread={false} {...titleProps(variant)} />
+      <CustomDescription r={r} />
+      {variant === "detail" && r.description && (
+        <Text size="xs" c="dimmed" lineClamp={3}>{r.description}</Text>
+      )}
+    </Stack>
+  )
+}
+
 /**
  * Confirm-then-remove control for a resource. Exported so the Slack thread
  * pane can put the same control in its header — a slack thread has no detail
@@ -198,13 +218,14 @@ function SlackCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVa
  * "Add" vs "Edit" reflects whether anything custom is set, so the button says
  * what it will do rather than assuming there is something to change.
  *
- * Only Slack threads have a custom NAME — a PR or Jira issue takes its title
- * from the source and only the description is ours to set — so the label
- * names just the fields that resource actually has.
+ * Only some types have a custom NAME (see supportsCustomName) — a PR or Jira
+ * issue takes its title from the source and only the description is ours to
+ * set — so the label names just the fields that resource actually has.
  */
 export function editDetailsLabel(r: ResourceDTO): string {
-  const fields = r.type === "slack" ? "custom name/description" : "custom description"
-  const has = r.type === "slack"
+  const canCustomName = supportsCustomName(r.type)
+  const fields = canCustomName ? "custom name/description" : "custom description"
+  const has = canCustomName
     ? Boolean(r.custom_name || r.custom_description)
     : Boolean(r.custom_description)
   return `${has ? "Edit" : "Add"} ${fields}`
@@ -327,6 +348,8 @@ export function ResourceCard({
     <PRCardBody r={r} variant={variant} />
   ) : r.type === "jira" ? (
     <JiraCardBody r={r} variant={variant} />
+  ) : r.type === "link" ? (
+    <LinkCardBody r={r} variant={variant} />
   ) : (
     <MinimalRow r={r} variant={variant} />
   )

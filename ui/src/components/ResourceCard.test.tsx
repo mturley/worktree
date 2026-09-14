@@ -2,7 +2,7 @@ import { afterEach, describe, it, expect, vi } from "vitest"
 import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
-import { ResourceCard } from "./ResourceCard"
+import { ResourceCard, editDetailsLabel } from "./ResourceCard"
 import type { ResourceDTO } from "../api/types"
 
 const removeResource = vi.fn()
@@ -551,5 +551,48 @@ describe("the detail card carries no unread styling", () => {
     wrap(<ResourceCard r={{ type: "pr", id: "o/r#9", url: "u", primary: true, unread_count: 2 } as ResourceDTO}
                        variant="detail" path="/wt" />)
     expect(screen.queryByLabelText("unread")).toBeNull()
+  })
+})
+
+describe("link resource cards", () => {
+  it("names a link by its domain and title", () => {
+    wrap(<ResourceCard r={{ type: "link", id: "https://ex.com/a", url: "https://ex.com/a",
+      primary: true, title: "A page", site_name: "ex.com" } as ResourceDTO} path="/wt" variant="compact" />)
+    expect(screen.getByText("A page")).toBeInTheDocument()
+    expect(screen.getByText("ex.com")).toBeInTheDocument()
+  })
+
+  it("shows a link's favicon through the image proxy, never directly", () => {
+    // Direct <img src> to an arbitrary site would make every card a request to
+    // that site from our page; the proxy also refuses internal addresses.
+    wrap(<ResourceCard r={{ type: "link", id: "https://ex.com/a", url: "https://ex.com/a",
+      primary: true, favicon: "https://ex.com/favicon.ico" } as ResourceDTO} path="/wt" variant="compact" />)
+    const img = document.querySelector("img") as HTMLImageElement
+    expect(img.getAttribute("src")).toBe("/api/link-image?url=" + encodeURIComponent("https://ex.com/favicon.ico"))
+  })
+
+  it("falls back to a glyph when a link has no favicon", () => {
+    wrap(<ResourceCard r={{ type: "link", id: "https://ex.com/a", url: "https://ex.com/a",
+      primary: true } as ResourceDTO} path="/wt" variant="compact" />)
+    expect(screen.getByLabelText("link")).toBeInTheDocument()
+    expect(document.querySelector("img")).toBeNull()
+  })
+
+  it("offers 'Open in new tab' for a link", () => {
+    wrap(<ResourceCard r={{ type: "link", id: "https://ex.com/a", url: "https://ex.com/a",
+      primary: true } as ResourceDTO} path="/wt" variant="detail" />)
+    expect(screen.getByRole("link", { name: "Open in new tab" })).toBeInTheDocument()
+  })
+})
+
+describe("editDetailsLabel", () => {
+  it("offers a custom name for a link", () => {
+    expect(editDetailsLabel({ type: "link", id: "https://ex.com/a", url: "https://ex.com/a", primary: true } as ResourceDTO))
+      .toBe("Add custom name/description")
+  })
+
+  it("stays description-only for a PR", () => {
+    expect(editDetailsLabel({ type: "pr", id: "o/r#1", url: "u", primary: true } as ResourceDTO))
+      .toBe("Add custom description")
   })
 })

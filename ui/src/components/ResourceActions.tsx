@@ -27,6 +27,9 @@ export function serviceName(type: string): string {
  * purpose: you open a page *on* a site, but a conversation *in* an app.
  */
 export function openLabel(type: string): string {
+  // A link goes to an arbitrary page, so there is no service to name — and
+  // "Open" alone did not say that it leaves the app.
+  if (type === "link") return "Open in new tab"
   const name = serviceName(type)
   if (!name) return "Open"
   return type === "slack" ? `Open in ${name}` : `Open on ${name}`

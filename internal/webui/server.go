@@ -14,6 +14,7 @@ import (
 
 	"github.com/mturley/watcher/slack"
 	"github.com/mturley/worktree/internal/cmux"
+	"github.com/mturley/worktree/internal/linkmeta"
 	"github.com/mturley/worktree/internal/slackpoller"
 )
 
@@ -84,6 +85,9 @@ type Server struct {
 	// unexported, so injecting here is the only way to test the available path.
 	cmuxList       func() ([]cmux.Workspace, error)
 	cmuxListGroups func() ([]cmux.WorkspaceGroup, error)
+
+	// LinkResolver is a seam for tests; nil means a default resolver.
+	LinkResolver *linkmeta.Resolver
 }
 
 func (s *Server) Handler() http.Handler {
@@ -93,7 +97,7 @@ func (s *Server) Handler() http.Handler {
 	if !s.DevMode && s.WebFS != nil {
 		mux.HandleFunc("/", s.serveStatic)
 	}
-	return mux
+	return guardMutations(mux)
 }
 
 // registerAPI is extended in later tasks. Kept separate so tests can add routes.
@@ -137,6 +141,14 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/slack-file", s.handleSlackFile)
 	// Open-host proxy for third-party unfurl images (preview/favicon/footer).
 	mux.HandleFunc("GET /api/slack-image", s.handleImage)
+
+	mux.HandleFunc("POST /api/resource-resolve", s.handleResourceResolve)
+	mux.HandleFunc("GET /api/resource-type", s.handleResourceType)
+	// The same open-host image proxy handler as /api/slack-image, under a
+	// name that is honest about who is calling it. A link's favicon and
+	// preview image are third-party URLs from arbitrary sites, which is
+	// exactly what handleImage was built for.
+	mux.HandleFunc("GET /api/link-image", s.handleImage)
 }
 
 func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {

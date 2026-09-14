@@ -80,6 +80,14 @@ export interface ResourceDTO {
   updated_at?: string
   custom_name?: string
   custom_description?: string
+  /** link: resolved page metadata. */
+  description?: string
+  image?: string
+  site_name?: string
+  favicon?: string
+  /** link: whether the page's headers permit rendering it in an iframe. */
+  embeddable?: boolean
+  resolve_error?: string
 }
 
 export interface GitStatus {
