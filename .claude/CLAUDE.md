@@ -28,6 +28,9 @@ make clean     # removes bin/, ui/dist contents (keeps ui/dist/.gitkeep), ui/nod
   - `gitutil` — git operations
   - `github` — GitHub PR metadata via `gh` CLI
   - `jira` — Jira REST API client
+  - `linkmeta` — resolves a followed page's title, description, favicon,
+    preview image and whether it permits being framed. Used only at add time
+    and on explicit refresh: link resources are NEVER polled.
   - `ports` — port range allocation (DB-backed; `port_allocations` table)
   - `resources` — worktree resource tracking (DB-backed; `watcher_subscriptions` + `worktree_primary` table). A resource's user-supplied **custom name/description** live in `watcher_resource_meta` (with an `updated_at` as of watcher v0.4.4); set them via the web UI or `worktree resources set-name <type> <id> --name … [--updated-at …]`. `resources list --json` exposes `custom_name`/`custom_description`/`updated_at`; agent-handler mirrors Slack-thread custom names into its own DB (newest-wins) via this CLI — see agent-handler's Phase 7. `SetMetaAt` preserves an explicit timestamp for that cross-DB replication; plain `SetMeta` stamps now. `Add` refuses any path that is not a **linked git worktree** (`discovery.IsInsideWorktree`, injected as the `isWorktree` package var so tests can drive both answers) — a resource tracked against a repo's main worktree is a subscription nothing ever cleans up, since `worktree delete`/`cleanup` only run against registered worktrees; it returns `ErrNotAWorktree`, which the web API maps to 400. Removal paths stay unguarded so stale rows are always cleanable. There is deliberately **no** prune command: rows for deleted worktrees are soft-deleted tombstones that the global timeline's `archived=true` view still relies on, so sweeping them would destroy history to no benefit.
   - `unread` — per-resource read cursor (`resource_read_cursor`). One cursor
@@ -60,6 +63,13 @@ make clean     # removes bin/, ui/dist contents (keeps ui/dist/.gitkeep), ui/nod
     hand-copied `cmd/root.go`'s PR pattern with a "kept in sync" comment.
     `internal/github` deliberately keeps its own copy of that regex rather
     than depending on this package, to stay a dependency-free leaf.
+  - `safehttp` — the SSRF-safe dialer and address predicate, shared by the
+    image proxy and link resolution. Resolves a host, refuses it if ANY
+    resolved IP is disallowed, and dials the validated IP directly (pinning
+    it, which closes the DNS-rebinding window). This is the ONLY containment
+    for outbound fetches — there is no network segmentation behind it. Never
+    copy it, never weaken it, and never replace the per-hop dialer check with
+    a pre-flight lookup of the requested host.
   - `worktreenew` — the shared worktree creation runner (CLI + web), mirroring
     `worktreedel`. Every run is idempotent and replayable; confirmations are
     answered by replaying the whole request with a flag set, not a
