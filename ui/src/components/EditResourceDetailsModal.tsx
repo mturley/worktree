@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { Alert, Button, Group, Modal, Stack, Text, Textarea, TextInput } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
 import { api } from "../api/client"
+import { supportsCustomName } from "../lib/customName"
 
 interface EditResourceDetailsModalProps {
   opened: boolean
@@ -14,17 +15,15 @@ interface EditResourceDetailsModalProps {
 /**
  * Edits a resource's custom name/description, for any resource type.
  *
- * Custom NAME is offered only for Slack threads: a PR or a Jira issue already
- * has a real title from its source, whereas a Slack thread has none — that is
- * the whole reason custom names exist. Custom DESCRIPTION is offered for
- * everything, since "why is this resource on this worktree" is worth recording
- * regardless of type.
+ * Custom NAME is offered only for types `supportsCustomName` (../lib/customName)
+ * allows — a PR or a Jira issue already has a real title from its source,
+ * whereas a Slack thread has none and a link's fetched title is often a
+ * site's boilerplate. Custom DESCRIPTION is offered for everything, since
+ * "why is this resource on this worktree" is worth recording regardless of
+ * type.
  */
 export function EditResourceDetailsModal({ opened, r, onClose, onSaved }: EditResourceDetailsModalProps) {
-  // A PR or Jira issue has a title from its source; a Slack thread has none,
-  // and a link's fetched title is often a site's boilerplate — both are worth
-  // renaming.
-  const supportsCustomName = r.type === "slack" || r.type === "link"
+  const canCustomName = supportsCustomName(r.type)
   const [name, setName] = useState(r.custom_name ?? "")
   const [description, setDescription] = useState(r.custom_description ?? "")
   const [saving, setSaving] = useState(false)
@@ -70,7 +69,7 @@ export function EditResourceDetailsModal({ opened, r, onClose, onSaved }: EditRe
         id: r.id,
         // Preserve any existing name for types that cannot edit it, rather
         // than blanking it as a side effect of saving a description.
-        name: supportsCustomName ? name.trim() : (r.custom_name ?? ""),
+        name: canCustomName ? name.trim() : (r.custom_name ?? ""),
         description: description.trim(),
       })
       onSaved()
@@ -90,7 +89,7 @@ export function EditResourceDetailsModal({ opened, r, onClose, onSaved }: EditRe
             <Text size="sm">{error}</Text>
           </Alert>
         ) : null}
-        {supportsCustomName && (
+        {canCustomName && (
           <TextInput
             label="Custom Name (optional)"
             placeholder="Thread name"
@@ -104,7 +103,7 @@ export function EditResourceDetailsModal({ opened, r, onClose, onSaved }: EditRe
           placeholder="Why does this belong to this worktree?"
           value={description}
           onChange={(e) => setDescription(e.currentTarget.value)}
-          data-autofocus={supportsCustomName ? undefined : true}
+          data-autofocus={canCustomName ? undefined : true}
         />
         <Group justify="space-between">
           {hasAnyCustomMeta ? (

@@ -2,7 +2,7 @@ import { afterEach, describe, it, expect, vi } from "vitest"
 import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
-import { ResourceCard } from "./ResourceCard"
+import { ResourceCard, editDetailsLabel } from "./ResourceCard"
 import type { ResourceDTO } from "../api/types"
 
 const removeResource = vi.fn()
@@ -582,5 +582,17 @@ describe("link resource cards", () => {
     wrap(<ResourceCard r={{ type: "link", id: "https://ex.com/a", url: "https://ex.com/a",
       primary: true } as ResourceDTO} path="/wt" variant="detail" />)
     expect(screen.getByRole("link", { name: "Open in new tab" })).toBeInTheDocument()
+  })
+})
+
+describe("editDetailsLabel", () => {
+  it("offers a custom name for a link", () => {
+    expect(editDetailsLabel({ type: "link", id: "https://ex.com/a", url: "https://ex.com/a", primary: true } as ResourceDTO))
+      .toBe("Add custom name/description")
+  })
+
+  it("stays description-only for a PR", () => {
+    expect(editDetailsLabel({ type: "pr", id: "o/r#1", url: "u", primary: true } as ResourceDTO))
+      .toBe("Add custom description")
   })
 })

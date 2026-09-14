@@ -10,6 +10,7 @@ import { cardEdgeStyle, hasUnread } from "../lib/unread"
 import { UnreadBadge } from "./UnreadBadge"
 import { EditResourceDetailsModal } from "./EditResourceDetailsModal"
 import { shortResourceRef } from "../lib/resourceRef"
+import { supportsCustomName } from "../lib/customName"
 
 function prStateColor(state?: string): string {
   switch ((state || "").toUpperCase()) {
@@ -217,13 +218,14 @@ function LinkCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVar
  * "Add" vs "Edit" reflects whether anything custom is set, so the button says
  * what it will do rather than assuming there is something to change.
  *
- * Only Slack threads have a custom NAME — a PR or Jira issue takes its title
- * from the source and only the description is ours to set — so the label
- * names just the fields that resource actually has.
+ * Only some types have a custom NAME (see supportsCustomName) — a PR or Jira
+ * issue takes its title from the source and only the description is ours to
+ * set — so the label names just the fields that resource actually has.
  */
 export function editDetailsLabel(r: ResourceDTO): string {
-  const fields = r.type === "slack" ? "custom name/description" : "custom description"
-  const has = r.type === "slack"
+  const canCustomName = supportsCustomName(r.type)
+  const fields = canCustomName ? "custom name/description" : "custom description"
+  const has = canCustomName
     ? Boolean(r.custom_name || r.custom_description)
     : Boolean(r.custom_description)
   return `${has ? "Edit" : "Add"} ${fields}`
