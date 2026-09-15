@@ -124,12 +124,12 @@ func configureRemoteAccess(cfg *config.Config, d uiAccessDeps) (bool, error) {
 	switch {
 	case err != nil:
 		d.io.Printf("  %s Could not read the certificate: %v\n", ui.Yellow("!"), err)
-		if d.io.ConfirmDefault("  Re-issue it?", true) {
+		if d.io.ConfirmDefault("  Re-issue it?", false) {
 			return true, reissue(cfg, cfg.UI.AllowedHosts, d)
 		}
 	case cert.NotAfter.Sub(d.now()) < renewWindow:
 		d.io.Printf("  %s Certificate expires %s\n", ui.Yellow("!"), cert.NotAfter.Format("2006-01-02"))
-		if d.io.ConfirmDefault("  Renew it now?", true) {
+		if d.io.ConfirmDefault("  Renew it now?", false) {
 			return true, reissue(cfg, cfg.UI.AllowedHosts, d)
 		}
 	default:

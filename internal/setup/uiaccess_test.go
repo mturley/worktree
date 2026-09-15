@@ -21,11 +21,13 @@ type scriptedIO struct {
 	confirms []bool
 	lines    []string
 	prompts  []string
+	defaults []bool
 	out      strings.Builder
 }
 
-func (s *scriptedIO) ConfirmDefault(prompt string, _ bool) bool {
+func (s *scriptedIO) ConfirmDefault(prompt string, defaultYes bool) bool {
 	s.prompts = append(s.prompts, prompt)
+	s.defaults = append(s.defaults, defaultYes)
 	if len(s.confirms) == 0 {
 		s.t.Fatalf("unscripted confirm: %q", prompt)
 	}
@@ -256,6 +258,51 @@ func TestConfiguredEmptyAnswerKeepsExistingAddresses(t *testing.T) {
 	if err != nil || changed || strings.Join(cfg.UI.AllowedHosts, ",") != "mturley-mac.local" {
 		t.Fatalf("configureRemoteAccess = %v, %v; hosts %v", changed, err, cfg.UI.AllowedHosts)
 	}
+}
+
+// TestRenewalAndReissuePromptsDefaultToNo guards against a non-interactive
+// run (e.g. NONINTERACTIVE=1 make install, which has no terminal) silently
+// replacing the CA: ConfirmDefault returns its default on EOF, so both
+// prompts must default to false.
+func TestRenewalAndReissuePromptsDefaultToNo(t *testing.T) {
+	t.Run("renew near expiry", func(t *testing.T) {
+		io := &scriptedIO{t: t, confirms: []bool{true}}
+		d := testDeps(t, io, "mturley-mac.local")
+		cfg := configured(t, d)
+		later := setupNow.Add(uitls.LeafValidity - 10*24*time.Hour)
+		d.now = func() time.Time { return later }
+		if _, err := configureRemoteAccess(&cfg, d); err != nil {
+			t.Fatal(err)
+		}
+		io.done()
+		idx := slices.Index(io.prompts, "  Renew it now?")
+		if idx == -1 {
+			t.Fatal("renewal prompt was not shown")
+		}
+		if io.defaults[idx] {
+			t.Fatal("renewal prompt defaulted to yes; an EOF answer would re-issue the CA unattended")
+		}
+	})
+
+	t.Run("re-issue on unreadable certificate", func(t *testing.T) {
+		io := &scriptedIO{t: t, confirms: []bool{true}}
+		d := testDeps(t, io, "mturley-mac.local")
+		cfg := configured(t, d)
+		if err := os.WriteFile(d.paths.Cert, []byte("not a certificate"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := configureRemoteAccess(&cfg, d); err != nil {
+			t.Fatal(err)
+		}
+		io.done()
+		idx := slices.Index(io.prompts, "  Re-issue it?")
+		if idx == -1 {
+			t.Fatal("re-issue prompt was not shown")
+		}
+		if io.defaults[idx] {
+			t.Fatal("re-issue prompt defaulted to yes; an EOF answer would re-issue the CA unattended")
+		}
+	})
 }
 
 func TestConfiguredOffersRenewalNearExpiry(t *testing.T) {
