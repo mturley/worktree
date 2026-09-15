@@ -107,7 +107,7 @@ func runUI(cmd *cobra.Command, args []string) error {
 		logger.Printf("Slack not configured (%v); Slack tab will be unavailable", err)
 	}
 
-	srv := &webui.Server{DB: conn, WebFS: webFS, Port: uiPort, Bind: uiBind, DevMode: uiAPIOnly, Logger: logger,
+	srv := &webui.Server{DB: conn, WebFS: webFS, Port: uiPort, DevMode: uiAPIOnly, Logger: logger,
 		SlackClient: slackClient, SlackPoller: slackPoller, SlackDomain: slackDomain, SlackCookie: slackCookie}
 
 	// Start the in-process poll loop (Task 4 provides StartPolling).
