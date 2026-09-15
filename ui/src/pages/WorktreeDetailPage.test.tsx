@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ResourceDTO } from "../api/types"
+import { api } from "../api/client"
 
 const resources: ResourceDTO[] = [
   { type: "pr", id: "o/r#1", url: "https://gh/pr/1", primary: true, title: "Fix the widget", state: "OPEN" } as ResourceDTO,
@@ -21,7 +22,7 @@ vi.mock("../hooks/useWorktreeDetail", () => ({
 vi.mock("../hooks/useWorktrees", () => ({
   useWorktrees: () => ({
     data: [{
-      path: "/wt/foo", repo: "odh", branch: "foo",
+      path: "/wt/foo", repo: "odh", branch: "feature/foo-branch",
       on_disk: true, resource_count: 2, primary_count: 2, latest_event_ts: "",
       primary_by_type: { pr: 1, jira: 1 }, related_count: 0,
       focus_resources: [
@@ -62,6 +63,26 @@ describe("WorktreeDetailPage header", () => {
     expect(screen.queryByRole("link", { name: /open worktree foo/i })).not.toBeInTheDocument()
   })
 
+  it("titles the page with the worktree name, not the branch", async () => {
+    setViewport("wide")
+    wrap()
+    expect(await screen.findByRole("heading", { name: "foo", level: 4 })).toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "feature/foo-branch", level: 4 })).not.toBeInTheDocument()
+  })
+
+  it("shows the cmux workspace and its switch control in the header", async () => {
+    vi.spyOn(api, "cmux").mockResolvedValue({
+      available: true,
+      matches: { "/wt/foo": [{ ref: "workspace:1", title: "My workspace", color: "#AD1457", selected: false }] },
+    })
+    setViewport("wide")
+    wrap()
+    expect(await screen.findByRole("heading", { name: "My workspace", level: 4 })).toBeInTheDocument()
+    const header = screen.getByRole("heading", { name: "foo", level: 4 }).closest("[data-detail-header]")
+    expect(header).toContainElement(screen.getByRole("button", { name: /switch cmux/i }))
+    vi.restoreAllMocks()
+  })
+
   it("omits focus-resource lines, which would duplicate the resource cards", async () => {
     setViewport("wide")
     wrap()
@@ -80,14 +101,14 @@ describe("WorktreeDetailPage header", () => {
     setViewport("wide")
     wrap()
     await waitFor(() => expect(screen.getByRole("button", { name: "Hide details" })).toBeInTheDocument())
-    expect(screen.getByText("WORKTREE")).toBeVisible()
+    expect(screen.getByLabelText("Delete worktree")).toBeVisible()
   })
 
   it("hides the summary card on demand, freeing the space for the resources", async () => {
     setViewport("wide")
     wrap()
     await userEvent.click(await screen.findByRole("button", { name: "Hide details" }))
-    expect(screen.getByText("WORKTREE")).not.toBeVisible()
+    expect(screen.getByLabelText("Delete worktree")).not.toBeVisible()
     // The toggle names the state it will move to, so it reads as an action.
     expect(screen.getByRole("button", { name: "Show details" })).toBeInTheDocument()
   })
@@ -97,7 +118,7 @@ describe("WorktreeDetailPage header", () => {
     wrap()
     await userEvent.click(await screen.findByRole("button", { name: "Hide details" }))
     await userEvent.click(screen.getByRole("button", { name: "Show details" }))
-    expect(screen.getByText("WORKTREE")).toBeVisible()
+    expect(screen.getByLabelText("Delete worktree")).toBeVisible()
   })
 })
 

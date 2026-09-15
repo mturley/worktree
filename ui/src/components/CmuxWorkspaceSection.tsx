@@ -20,9 +20,9 @@ const NO_COLOR = "var(--mantine-color-dark-4)"
  * read "Switch cmux". Sized to fit the longer of the two, so the column edge
  * stays straight.
  */
-const ACTION_MIN_WIDTH = 128
+export const ACTION_MIN_WIDTH = 128
 
-function ColorBar({ color }: { color?: string }) {
+export function ColorBar({ color }: { color?: string }) {
   return (
     <div
       aria-hidden
@@ -39,8 +39,9 @@ function ColorBar({ color }: { color?: string }) {
 }
 
 /**
- * The cmux workspace section, rendered above the worktree title on both the
- * home list card and the detail card.
+ * The cmux workspace section, rendered above the worktree title on the home
+ * list card. (The detail page splits it across its header instead — see
+ * CmuxWorkspaceHeader.)
  *
  * Renders NOTHING when the server is not running inside cmux — the card must
  * look exactly as it did before this feature existed. "cmux is up but no

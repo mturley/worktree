@@ -1,13 +1,11 @@
 import { useState } from "react"
-import { ActionIcon, Badge, Code, Collapse, Group, Paper, Stack, Text, Tooltip, UnstyledButton } from "@mantine/core"
+import { ActionIcon, Code, Collapse, Group, Paper, Stack, Text, Tooltip, UnstyledButton } from "@mantine/core"
 import { IconChevronRight, IconTrash } from "@tabler/icons-react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useLocation } from "wouter"
 import { api } from "../api/client"
-import { useCmuxMatches } from "../api/cmux"
 import type { GitStatus, WorktreeSummary } from "../api/types"
 import { relativeTime as rel } from "../lib/relativeTime"
-import { CmuxWorkspaceSection } from "./CmuxWorkspaceSection"
 import { DeleteWorktreeModal } from "./DeleteWorktreeModal"
 
 /**
@@ -30,7 +28,7 @@ function gitSummary(g: GitStatus): string {
 }
 
 /**
- * The header card on the worktree detail page.
+ * The details card under the worktree detail page's header.
  *
  * Deliberately NOT the same component as the home page's WorktreeCard. That
  * card lists the worktree's focus resources, which here would duplicate the
@@ -52,30 +50,19 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
   const name = w.path.split("/").filter(Boolean).pop() || w.path
   const git = info.data?.git
 
-  // Inside cmux the workspace name is the header (see CmuxWorkspaceSection),
-  // so the worktree title steps down to a subtitle — same demotion the list
-  // card makes, reading the same shared query.
-  const hasWorkspace = useCmuxMatches(w.path).length > 0
-
   return (
     <Paper p="sm" withBorder>
       <Stack gap={8}>
-        <CmuxWorkspaceSection path={w.path} branch={git?.branch || w.branch} />
+        {/* The worktree and cmux workspace names live in the page header;
+            this card is just git state and environment. */}
         <Group gap="xs" wrap="nowrap" justify="space-between">
-          <Group gap="xs" wrap="wrap" style={{ minWidth: 0 }}>
-            {/* Marks the worktree's own name, so it stays identifiable once
-                the cmux workspace takes over as the card's headline. */}
-            <Badge size="xs" color="blue" variant="light" style={{ flex: "none" }}>WORKTREE</Badge>
-            <Text
-              fw={hasWorkspace ? 600 : 700}
-              size={hasWorkspace ? "sm" : "md"}
-              c={hasWorkspace ? "dimmed" : undefined}
-              style={{ overflowWrap: "anywhere" }}
-            >
-              {name}
-            </Text>
-            {!w.on_disk && <Badge size="xs" color="red">missing</Badge>}
-          </Group>
+          <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+            {[
+              w.repo,
+              git?.branch || w.branch,
+              w.latest_event_ts ? rel(w.latest_event_ts) : "",
+            ].filter(Boolean).join(" · ")}
+          </Text>
           <Tooltip label="Delete worktree">
             <ActionIcon
               variant="subtle"
@@ -88,14 +75,6 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
             </ActionIcon>
           </Tooltip>
         </Group>
-
-        <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-          {[
-            w.repo,
-            git?.branch || w.branch,
-            w.latest_event_ts ? rel(w.latest_event_ts) : "",
-          ].filter(Boolean).join(" · ")}
-        </Text>
 
         {git && (
           <Text size="xs" c={git.staged || git.modified || git.untracked ? "yellow" : "dimmed"}>

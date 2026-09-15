@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Anchor, Box, Button, Collapse, Grid, Group, Stack, Title } from "@mantine/core"
+import { Anchor, Badge, Box, Button, Collapse, Grid, Group, Stack, Title } from "@mantine/core"
 import { Link, useRoute } from "wouter"
 import { useWorktreeDetail } from "../hooks/useWorktreeDetail"
 import { useSelectedResource } from "../hooks/useSelectedResource"
@@ -9,11 +9,13 @@ import { ResourceList } from "../components/ResourceList"
 import { ResourceDetailPane } from "../components/ResourceDetailPane"
 import { TimelineFeed } from "../components/TimelineFeed"
 import { WorktreeDetailCard } from "../components/WorktreeDetailCard"
+import { CmuxWorkspaceActions, CmuxWorkspaceTitles } from "../components/CmuxWorkspaceHeader"
 import { SourceFilter } from "../components/SourceFilter"
 import { RefreshWatchersButton } from "../components/RefreshWatchersButton"
 import { ThreadActionsContext } from "../components/slack/ThreadActionsContext"
 import { AddResourceModal } from "../components/AddResourceModal"
 import { parseThreadUrl } from "../lib/parseThreadUrl"
+import { worktreeName } from "../lib/homeWorktree"
 
 export function WorktreeDetailPage() {
   const [, params] = useRoute("/worktree/:path*")
@@ -30,7 +32,7 @@ export function WorktreeDetailPage() {
 
   const items = resources.data ?? []
   const summary = (worktrees.data ?? []).find((w) => w.path === path)
-  const branch = summary?.branch ?? (path.split("/").pop() || path)
+  const name = worktreeName(path)
   const selectedResource = selected
     ? items.find((r) => r.type === selected.type && r.id === selected.id)
     : undefined
@@ -59,9 +61,8 @@ export function WorktreeDetailPage() {
   const [detailsOpen, setDetailsOpen] = useState(true)
 
   // The sticky resource list has to start below the header, and the header's
-  // height is not a constant: the branch name wraps, the cmux workspace strip
-  // comes and goes, and the Hide/Show details toggle swings it by the whole
-  // summary card. A hardcoded offset would leave the list overlapping the
+  // height is not a constant: the worktree and cmux workspace names wrap, and
+  // the Hide/Show details toggle swings it by the whole summary card. A hardcoded offset would leave the list overlapping the
   // header or floating below it, so measure the real thing.
   const headerRef = useRef<HTMLDivElement>(null)
   const [headerHeight, setHeaderHeight] = useState(0)
@@ -244,11 +245,15 @@ export function WorktreeDetailPage() {
         }}
       >
         <Stack gap="md">
-          <Group justify="space-between" wrap="nowrap" align="center">
-            <Group wrap="nowrap" style={{ minWidth: 0 }}>
+          <Group justify="space-between" wrap="nowrap" align="center" data-detail-header>
+            <Group wrap="wrap" style={{ minWidth: 0 }}>
               <Anchor component={Link} href="/">← all worktrees</Anchor>
-              <Title order={4} style={{ overflowWrap: "anywhere" }}>{branch}</Title>
+              <Title order={4} style={{ overflowWrap: "anywhere" }}>{name}</Title>
+              {summary && !summary.on_disk && <Badge size="xs" color="red">missing</Badge>}
+              <CmuxWorkspaceTitles path={path} />
             </Group>
+            <Group gap="xs" wrap="nowrap" style={{ flex: "none" }}>
+              {summary && <CmuxWorkspaceActions path={path} branch={summary.branch} />}
             {/*
               The header is fixed and the body scrolls beneath it, so the
               summary card costs the resource list and timeline the same space
@@ -266,6 +271,7 @@ export function WorktreeDetailPage() {
                 {detailsOpen ? "Hide details" : "Show details"}
               </Button>
             )}
+            </Group>
           </Group>
           {summary && (
             <Collapse in={detailsOpen}>

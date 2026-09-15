@@ -102,12 +102,19 @@ describe("WorktreeDetailCard", () => {
     expect(await screen.findByText(/clean · ahead 2 · behind 1/)).toBeInTheDocument()
   })
 
-  it("still renders the header when the info request fails", async () => {
+  it("still renders the repo and branch when the info request fails", async () => {
     // A worktree missing from disk, or git unavailable, must not blank the card.
     worktreeInfo.mockRejectedValue(new Error("boom"))
     wrap(summary())
-    await waitFor(() => expect(screen.getByText("foo")).toBeInTheDocument())
-    expect(screen.getByText(/my-branch/)).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText(/odh · my-branch/)).toBeInTheDocument())
+  })
+
+  it("leaves the worktree name to the page header", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    wrap(summary())
+    await screen.findByText("Environment (2)")
+    expect(screen.queryByText("foo")).not.toBeInTheDocument()
+    expect(screen.queryByText("WORKTREE")).not.toBeInTheDocument()
   })
 })
 
