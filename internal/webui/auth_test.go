@@ -215,11 +215,28 @@ func TestLoginIsRefusedCrossSite(t *testing.T) {
 func TestHostGuardRunsBeforeTheSessionCheck(t *testing.T) {
 	srv, _, _ := securedServer(t)
 	h := srv.Handler()
-	c := login(t, h)
-	req := apiRequest("GET", "/api/session", "", c)
+	req := apiRequest("GET", "/api/session", "")
 	req.Host = "rebound.evil.example"
-	if rec := serve(h, req); rec.Code != http.StatusBadRequest {
-		t.Fatalf("valid session, unlisted Host: status %d, want 400", rec.Code)
+	rec := serve(h, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("no session, unlisted Host: status %d, want 400", rec.Code)
+	}
+	if rec.Header().Get(loginRequiredHeader) != "" {
+		t.Fatalf("unlisted Host response carries %s; the Host guard must reject before the session check runs", loginRequiredHeader)
+	}
+}
+
+func TestForgeryGuardRunsBeforeTheSessionCheck(t *testing.T) {
+	srv, _, _ := securedServer(t)
+	h := srv.Handler()
+	req := apiRequest("POST", "/api/logout", "")
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	rec := serve(h, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("no session, cross-site: status %d, want 403", rec.Code)
+	}
+	if rec.Header().Get(loginRequiredHeader) != "" {
+		t.Fatalf("cross-site response carries %s; the forgery guard must reject before the session check runs", loginRequiredHeader)
 	}
 }
 
