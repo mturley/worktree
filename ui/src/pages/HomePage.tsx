@@ -12,6 +12,7 @@ import { ArchivedToggle } from "../components/ArchivedToggle"
 import { SourceFilter } from "../components/SourceFilter"
 import { RefreshWatchersButton } from "../components/RefreshWatchersButton"
 import { NewWorktreeModal } from "../components/NewWorktreeModal"
+import { DevicesButton } from "../components/DevicesButton"
 
 export function HomePage() {
   const [, navigate] = useLocation()
@@ -80,7 +81,10 @@ export function HomePage() {
   if (!wide) {
     return (
       <Stack p="md" gap="sm">
-        <Group justify="flex-end">{newWorktreeButton}</Group>
+        <Group justify="flex-end" gap="xs">
+          {newWorktreeButton}
+          <DevicesButton />
+        </Group>
         <NewWorktreeModal opened={newOpen} onClose={() => setNewOpen(false)} />
         <Tabs defaultValue="worktrees">
           <Tabs.List>
@@ -104,7 +108,10 @@ export function HomePage() {
         <Stack gap="sm">
           <Group justify="space-between">
             <Title order={4}>Worktrees</Title>
-            {newWorktreeButton}
+            <Group gap="xs">
+              {newWorktreeButton}
+              <DevicesButton />
+            </Group>
           </Group>
           {worktrees}
         </Stack>
