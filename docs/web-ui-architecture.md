@@ -21,7 +21,9 @@ touch the UI, read the relevant section below before spelunking the source.
 - `runUI` (`cmd/ui.go`) opens the worktree DB (`wdb.Open()`), builds a
   `webui.Server`, starts the in-process poll loop (`srv.StartPolling(2 *
   time.Minute)`), opens the browser (unless `--no-open`/`--api-only`), then
-  calls `srv.Start()` which blocks on `http.ListenAndServe`.
+  calls `srv.Start()`, which opens the loopback HTTP listener and, when
+  remote access is configured, the HTTPS listener, then calls `srv.Serve`,
+  which blocks until either listener stops.
 
 ### Authentication and remote access
 
