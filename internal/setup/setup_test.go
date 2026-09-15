@@ -69,3 +69,61 @@ func TestWriteConfigOnlyWritesJiraProjects(t *testing.T) {
 		t.Fatalf("written config must contain configured Jira projects, got:\n%s", written)
 	}
 }
+
+func TestWriteConfigPreservesUISection(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := config.ConfigPath()
+
+	cfg := config.DefaultConfig()
+	cfg.UI.Password = "s3cret"
+	cfg.UI.AllowedHosts = []string{"mturley-mac.local", "192.168.86.21"}
+	cfg.UI.HTTPSPort = 9443
+	cfg.UI.TLS = config.UITLSConfig{
+		CertFile: filepath.Join(dir, "ui-cert.pem"),
+		KeyFile:  filepath.Join(dir, "ui-key.pem"),
+	}
+	if err := writeConfig(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	got, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.UI.Password != "s3cret" || got.UI.HTTPSPort != 9443 ||
+		strings.Join(got.UI.AllowedHosts, ",") != "mturley-mac.local,192.168.86.21" ||
+		got.UI.TLS != cfg.UI.TLS {
+		t.Fatalf("round-tripped UI = %+v, want %+v", got.UI, cfg.UI)
+	}
+}
+
+func TestWriteConfigOmitsEmptyUISection(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := writeConfig(path, config.DefaultConfig()); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(path)
+	if strings.Contains(string(data), "ui:") {
+		t.Fatalf("default config should not write a ui section, got:\n%s", data)
+	}
+}
+
+func TestWriteConfigIsOwnerOnly(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	// An existing, looser file: os.WriteFile alone would keep its mode.
+	if err := os.WriteFile(path, []byte("worktrees_base: /x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.DefaultConfig()
+	cfg.UI.Password = "s3cret"
+	if err := writeConfig(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Fatalf("config mode = %v, want 0600", perm)
+	}
+}

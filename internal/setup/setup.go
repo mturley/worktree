@@ -379,10 +379,23 @@ func writeConfig(path string, cfg config.Config) error {
 		Projects []string `yaml:"projects,omitempty"`
 	}
 
+	type uiTLSYaml struct {
+		CertFile string `yaml:"cert_file,omitempty"`
+		KeyFile  string `yaml:"key_file,omitempty"`
+	}
+
+	type uiYaml struct {
+		Password     string     `yaml:"password,omitempty"`
+		HTTPSPort    int        `yaml:"https_port,omitempty"`
+		AllowedHosts []string   `yaml:"allowed_hosts,omitempty"`
+		TLS          *uiTLSYaml `yaml:"tls,omitempty"`
+	}
+
 	type yamlConfig struct {
 		WorktreesBase string   `yaml:"worktrees_base"`
 		Editor        string   `yaml:"editor,omitempty"`
 		Jira          jiraYaml `yaml:"jira,omitempty"`
+		UI            *uiYaml  `yaml:"ui,omitempty"`
 	}
 
 	yc := yamlConfig{
@@ -396,11 +409,32 @@ func writeConfig(path string, cfg config.Config) error {
 		}
 	}
 
+	// Every ui field must be carried here: a field left out is silently
+	// dropped from the file the next time setup writes it.
+	u := uiYaml{Password: cfg.UI.Password, AllowedHosts: cfg.UI.AllowedHosts}
+	if cfg.UI.HTTPSPort != 0 && cfg.UI.HTTPSPort != config.DefaultHTTPSPort {
+		u.HTTPSPort = cfg.UI.HTTPSPort
+	}
+	if cfg.UI.TLS.CertFile != "" || cfg.UI.TLS.KeyFile != "" {
+		u.TLS = &uiTLSYaml{
+			CertFile: shortenHome(cfg.UI.TLS.CertFile, home),
+			KeyFile:  shortenHome(cfg.UI.TLS.KeyFile, home),
+		}
+	}
+	if u.Password != "" || u.HTTPSPort != 0 || len(u.AllowedHosts) > 0 || u.TLS != nil {
+		yc.UI = &u
+	}
+
 	data, err := yaml.Marshal(yc)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	// Owner-only: the file holds the web UI password. WriteFile keeps an
+	// existing file's mode, so tighten it explicitly as well.
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o600)
 }
 
 func shortenHome(path, home string) string {
