@@ -21,12 +21,14 @@ import (
 type Server struct {
 	DB    *sql.DB
 	WebFS fs.FS // rooted at the dist dir (index.html at top level)
-	Port  int
-	// Bind is the host/IP the listener binds to. Empty means loopback only
-	// (127.0.0.1) — the safe default, since the UI has no authentication.
-	Bind    string
+	Port    int
 	DevMode bool
 	Logger  *log.Logger
+
+	// Security is required to serve (Start and Serve refuse a nil one). A
+	// Handler built without it skips the Host and session guards, which is
+	// what in-process tests rely on.
+	Security *Security
 
 	// Slack integration. These are nil/empty when Slack is unconfigured
 	// (no credentials in the shared watcher auth.yaml); the Slack handlers
@@ -92,63 +94,94 @@ type Server struct {
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	// API routes are registered by later tasks via registerAPI(mux).
-	s.registerAPI(mux)
+	for _, rt := range s.routes() {
+		mux.HandleFunc(rt.pattern, rt.handler)
+	}
 	if !s.DevMode && s.WebFS != nil {
 		mux.HandleFunc("/", s.serveStatic)
 	}
-	return guardMutations(mux)
+	return s.wrap(mux)
 }
 
-// registerAPI is extended in later tasks. Kept separate so tests can add routes.
-func (s *Server) registerAPI(mux *http.ServeMux) {
-	// (endpoints added in Tasks 2-6)
-	mux.HandleFunc("GET /api/worktrees", s.handleWorktrees)
-	mux.HandleFunc("GET /api/timeline", s.handleGlobalTimeline)
-	mux.HandleFunc("GET /api/worktree-timeline", s.handleWorktreeTimeline)
-	mux.HandleFunc("POST /api/worktrees/poll", s.handlePollWorktree)
-	mux.HandleFunc("GET /api/watchers", s.handleWatchers)
-	mux.HandleFunc("POST /api/watchers/poll", s.handleWatchersPoll)
-	mux.HandleFunc("GET /api/worktree-resources", s.handleWorktreeResources)
-	mux.HandleFunc("POST /api/resource-meta", s.handleSetResourceMeta)
-	mux.HandleFunc("POST /api/resource-read", s.handleResourceRead)
-	mux.HandleFunc("POST /api/worktree-resources/add", s.handleAddResource)
-	mux.HandleFunc("POST /api/worktrees/delete", s.handleDeleteWorktree)
-	mux.HandleFunc("POST /api/worktree-resources/remove", s.handleRemoveResource)
-	mux.HandleFunc("POST /api/worktree-resources/primary", s.handleSetResourcePrimary)
-	mux.HandleFunc("GET /api/stream", s.handleStream)
+// wrap applies the request guards. Outermost first: the Host allowlist, so
+// nothing routes a rebound request; then the request-forgery guard; then the
+// session check.
+func (s *Server) wrap(h http.Handler) http.Handler {
+	if s.Security != nil {
+		h = s.requireSession(h)
+	}
+	h = guardMutations(h)
+	if s.Security != nil {
+		h = hostGuard(s.Security.AllowedHosts, s.Logger, h)
+	}
+	return h
+}
 
-	// Slack thread/reply/react + image proxies (folded in from slack-mini).
-	mux.HandleFunc("GET /api/thread", s.handleThread)
-	mux.HandleFunc("POST /api/thread/mark-read", s.handleMarkRead)
-	mux.HandleFunc("POST /api/thread/mark-unread", s.handleMarkUnread)
-	mux.HandleFunc("POST /api/thread/reply", s.handleReply)
-	mux.HandleFunc("POST /api/thread/react", s.handleReact)
-	mux.HandleFunc("GET /api/slack-config", s.handleSlackConfig)
-	mux.HandleFunc("GET /api/slack-autocomplete", s.handleSlackAutocomplete)
-	mux.HandleFunc("GET /api/thread-events", s.handleThreadEvents)
-	mux.HandleFunc("GET /api/worktree-info", s.handleWorktreeInfo)
-	mux.HandleFunc("GET /api/cmux", s.handleCmux)
-	mux.HandleFunc("GET /api/cmux-groups", s.handleCmuxGroups)
-	mux.HandleFunc("POST /api/cmux/select", s.handleCmuxSelect)
-	mux.HandleFunc("POST /api/cmux/create", s.handleCmuxCreate)
-	mux.HandleFunc("GET /api/jira-icon", s.handleJiraIcon)
-	mux.HandleFunc("GET /api/slack-avatar", s.handleSlackAvatar)
-	mux.HandleFunc("POST /api/worktrees/create", s.handleCreateWorktree)
-	mux.HandleFunc("GET /api/repos", s.handleRepos)
-	mux.HandleFunc("GET /api/repo-dotfiles", s.handleRepoDotfiles)
-	mux.HandleFunc("GET /api/slack-emoji", s.handleSlackEmoji)
-	mux.HandleFunc("GET /api/slack-file", s.handleSlackFile)
-	// Open-host proxy for third-party unfurl images (preview/favicon/footer).
-	mux.HandleFunc("GET /api/slack-image", s.handleImage)
+type route struct {
+	pattern string
+	handler http.HandlerFunc
+}
 
-	mux.HandleFunc("POST /api/resource-resolve", s.handleResourceResolve)
-	mux.HandleFunc("GET /api/resource-type", s.handleResourceType)
-	// The same open-host image proxy handler as /api/slack-image, under a
-	// name that is honest about who is calling it. A link's favicon and
-	// preview image are third-party URLs from arbitrary sites, which is
-	// exactly what handleImage was built for.
-	mux.HandleFunc("GET /api/link-image", s.handleImage)
+// routes is the API route table. Every entry declares its method, and tests
+// iterate it, so a route added here is covered by the auth tests
+// automatically.
+func (s *Server) routes() []route {
+	return []route{
+		{"GET /api/worktrees", s.handleWorktrees},
+		{"GET /api/timeline", s.handleGlobalTimeline},
+		{"GET /api/worktree-timeline", s.handleWorktreeTimeline},
+		{"POST /api/worktrees/poll", s.handlePollWorktree},
+		{"GET /api/watchers", s.handleWatchers},
+		{"POST /api/watchers/poll", s.handleWatchersPoll},
+		{"GET /api/worktree-resources", s.handleWorktreeResources},
+		{"POST /api/resource-meta", s.handleSetResourceMeta},
+		{"POST /api/resource-read", s.handleResourceRead},
+		{"POST /api/worktree-resources/add", s.handleAddResource},
+		{"POST /api/worktrees/delete", s.handleDeleteWorktree},
+		{"POST /api/worktree-resources/remove", s.handleRemoveResource},
+		{"POST /api/worktree-resources/primary", s.handleSetResourcePrimary},
+		{"GET /api/stream", s.handleStream},
+
+		// Slack thread/reply/react + image proxies (folded in from slack-mini).
+		{"GET /api/thread", s.handleThread},
+		{"POST /api/thread/mark-read", s.handleMarkRead},
+		{"POST /api/thread/mark-unread", s.handleMarkUnread},
+		{"POST /api/thread/reply", s.handleReply},
+		{"POST /api/thread/react", s.handleReact},
+		{"GET /api/slack-config", s.handleSlackConfig},
+		{"GET /api/slack-autocomplete", s.handleSlackAutocomplete},
+		{"GET /api/thread-events", s.handleThreadEvents},
+		{"GET /api/worktree-info", s.handleWorktreeInfo},
+		{"GET /api/cmux", s.handleCmux},
+		{"GET /api/cmux-groups", s.handleCmuxGroups},
+		{"POST /api/cmux/select", s.handleCmuxSelect},
+		{"POST /api/cmux/create", s.handleCmuxCreate},
+		{"GET /api/jira-icon", s.handleJiraIcon},
+		{"GET /api/slack-avatar", s.handleSlackAvatar},
+		{"POST /api/worktrees/create", s.handleCreateWorktree},
+		{"GET /api/repos", s.handleRepos},
+		{"GET /api/repo-dotfiles", s.handleRepoDotfiles},
+		{"GET /api/slack-emoji", s.handleSlackEmoji},
+		{"GET /api/slack-file", s.handleSlackFile},
+		// Open-host proxy for third-party unfurl images (preview/favicon/footer).
+		{"GET /api/slack-image", s.handleImage},
+
+		{"POST /api/resource-resolve", s.handleResourceResolve},
+		{"GET /api/resource-type", s.handleResourceType},
+		// The same open-host image proxy handler as /api/slack-image, under a
+		// name that is honest about who is calling it. A link's favicon and
+		// preview image are third-party URLs from arbitrary sites, which is
+		// exactly what handleImage was built for.
+		{"GET /api/link-image", s.handleImage},
+
+		// Authentication. POST /api/login is the one /api/ route
+		// requireSession lets through without a session.
+		{"POST /api/login", s.handleLogin},
+		{"POST /api/logout", s.handleLogout},
+		{"GET /api/session", s.handleSession},
+		{"GET /api/sessions", s.handleSessions},
+		{"POST /api/sessions/revoke", s.handleRevokeSession},
+	}
 }
 
 func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
@@ -167,22 +200,71 @@ func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
 	w.Write(indexData)
 }
 
-// listenAddr is the "host:port" the server binds, defaulting to loopback
-// when Bind is unset. IPv6 hosts come back bracketed, per net.JoinHostPort.
+// listenAddr is the plain-HTTP listener's address. It is always loopback:
+// other devices use the HTTPS listener.
 func (s *Server) listenAddr() string {
-	host := s.Bind
-	if host == "" {
-		host = "127.0.0.1"
-	}
-	return net.JoinHostPort(host, strconv.Itoa(s.Port))
+	return net.JoinHostPort("127.0.0.1", strconv.Itoa(s.Port))
 }
 
+// Start opens the loopback HTTP listener and, when remote access is
+// configured, the HTTPS listener on every interface, then serves both.
 func (s *Server) Start() error {
-	addr := s.listenAddr()
-	if s.Logger != nil {
-		s.Logger.Printf("worktree UI listening on http://%s", addr)
+	if err := s.Security.validate(); err != nil {
+		return err
 	}
-	return http.ListenAndServe(addr, s.Handler())
+	httpLn, err := net.Listen("tcp", s.listenAddr())
+	if err != nil {
+		return err
+	}
+	var httpsLn net.Listener
+	if s.Security.Remote() {
+		// Every interface, loopback included: the .local name resolves to
+		// 127.0.0.1 on this machine, so the phone's URL works here too.
+		httpsLn, err = net.Listen("tcp", net.JoinHostPort("", strconv.Itoa(s.Security.HTTPSPort)))
+		if err != nil {
+			httpLn.Close()
+			return err
+		}
+	}
+	return s.Serve(httpLn, httpsLn)
+}
+
+// Serve serves on listeners that are already open; httpsLn may be nil. It
+// returns when either server stops, and closes both.
+func (s *Server) Serve(httpLn, httpsLn net.Listener) error {
+	if err := s.Security.validate(); err != nil {
+		return err
+	}
+	h := s.Handler()
+	errc := make(chan error, 2)
+
+	local := &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second}
+	if s.Logger != nil {
+		s.Logger.Printf("worktree UI listening on http://%s", httpLn.Addr())
+	}
+	go func() { errc <- local.Serve(httpLn) }()
+
+	var remote *http.Server
+	if httpsLn != nil {
+		remote = &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second}
+		if s.Logger != nil {
+			s.Logger.Printf("worktree UI listening for other devices on https://%s", httpsLn.Addr())
+		}
+		go func() { errc <- remote.ServeTLS(httpsLn, s.Security.CertFile, s.Security.KeyFile) }()
+	}
+
+	err := <-errc
+	local.Close()
+	if remote != nil {
+		remote.Close()
+	}
+	// ServeTLS returns before tracking httpsLn when the certificate fails to
+	// load, so remote.Close() above has nothing to close in that case. Close
+	// the listener directly too; closing an already-closed one is harmless.
+	if httpsLn != nil {
+		httpsLn.Close()
+	}
+	return err
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

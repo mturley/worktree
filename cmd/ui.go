@@ -13,14 +13,16 @@ import (
 	"time"
 
 	"github.com/mturley/watcher/slack"
+	"github.com/mturley/worktree/internal/config"
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/discovery"
+	"github.com/mturley/worktree/internal/netdetect"
 	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/slackcreds"
 	"github.com/mturley/worktree/internal/slackpoller"
+	"github.com/mturley/worktree/internal/uisession"
 	"github.com/mturley/worktree/internal/webui"
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 )
 
 // defaultUIPort is the port `worktree ui` binds by default, and the only
@@ -28,11 +30,13 @@ import (
 const defaultUIPort = 8475
 
 var (
-	uiPort    int
-	uiNoOpen  bool
-	uiAPIOnly bool
-	uiBind    string
-	uiYes     bool
+	uiPort          int
+	uiNoOpen        bool
+	uiAPIOnly       bool
+	uiLocalOnly     bool
+	uiRevokeAll     bool
+	uiRemovedBind   string
+	uiRemovedAssume bool
 )
 
 var uiCmd = &cobra.Command{
@@ -43,20 +47,43 @@ var uiCmd = &cobra.Command{
 }
 
 func init() {
-	uiCmd.Flags().IntVar(&uiPort, "port", defaultUIPort, "HTTP server port")
+	uiCmd.Flags().IntVar(&uiPort, "port", defaultUIPort, "HTTP server port (always bound to 127.0.0.1)")
 	uiCmd.Flags().BoolVar(&uiNoOpen, "no-open", false, "do not open the browser")
-	uiCmd.Flags().BoolVar(&uiAPIOnly, "api-only", false, "serve API only (for use with the Vite dev server)")
-	uiCmd.Flags().StringVar(&uiBind, "bind", "127.0.0.1", "host/IP to bind (e.g. 0.0.0.0 to reach the UI from other devices on your LAN)")
-	uiCmd.Flags().BoolVar(&uiYes, "yes", false, "skip the confirmation prompt for a non-loopback --bind")
+	uiCmd.Flags().BoolVar(&uiAPIOnly, "api-only", false, "serve API only (for use with the Vite dev server); implies --local-only")
+	uiCmd.Flags().BoolVar(&uiLocalOnly, "local-only", false, "do not start the HTTPS listener for other devices")
+	uiCmd.Flags().BoolVar(&uiRevokeAll, "revoke-all-sessions", false, "log out every device, then exit")
+	// Removed. Registered only so checkRemovedFlags can explain.
+	uiCmd.Flags().StringVar(&uiRemovedBind, "bind", "", "removed; see worktree setup")
+	uiCmd.Flags().BoolVar(&uiRemovedAssume, "yes", false, "removed; see worktree setup")
+	_ = uiCmd.Flags().MarkHidden("bind")
+	_ = uiCmd.Flags().MarkHidden("yes")
 	rootCmd.AddCommand(uiCmd)
 }
 
 func runUI(cmd *cobra.Command, args []string) error {
+	if err := checkRemovedFlags(cmd); err != nil {
+		return err
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+
 	conn, err := wdb.Open()
 	if err != nil {
 		return fmt.Errorf("opening worktree db: %w", err)
 	}
 	defer conn.Close()
+	sessions := &uisession.Store{DB: conn}
+
+	if uiRevokeAll {
+		n, err := sessions.RevokeAll()
+		if err != nil {
+			return fmt.Errorf("revoking sessions: %w", err)
+		}
+		fmt.Printf("Logged out %d session(s). Every device must log in again.\n", n)
+		return nil
+	}
 
 	// If a worktree UI is already listening on the port, don't abort with an
 	// "address already in use" error — just open the running one in the browser
@@ -70,12 +97,11 @@ func runUI(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Gate a remotely-reachable bind. This sits after the already-listening
-	// check on purpose: that path never starts a listener, so there is
-	// nothing to warn about.
-	if err := confirmBind(uiBind, uiYes, stdinIsTerminal(), os.Stdin, os.Stderr); err != nil {
+	sec, err := buildSecurity(cfg.UI, sessions, uiLocalOnly || uiAPIOnly)
+	if err != nil {
 		return err
 	}
+	warnConfigPermissions(config.ConfigPath(), os.Stderr)
 
 	var webFS fs.FS
 	if !uiAPIOnly {
@@ -90,6 +116,20 @@ func runUI(cmd *cobra.Command, args []string) error {
 	}
 
 	logger := log.New(os.Stderr, "[worktree-ui] ", log.LstdFlags)
+
+	if _, err := sessions.DeleteExpired(); err != nil {
+		logger.Printf("deleting expired sessions: %v", err)
+	}
+	if sec.Remote() {
+		if msg, err := certCoverageWarning(sec.CertFile, netdetect.Candidates()); err != nil {
+			logger.Printf("warning: reading the HTTPS certificate: %v", err)
+		} else if msg != "" {
+			logger.Printf("warning: %s", msg)
+		}
+		if u := cfg.UI.RemoteURL(); u != "" {
+			logger.Printf("open on other devices: %s", u)
+		}
+	}
 
 	// Build the Slack client + per-thread poller best-effort. Slack being
 	// unconfigured must NOT block the UI: the Slack tab is simply unavailable
@@ -107,8 +147,9 @@ func runUI(cmd *cobra.Command, args []string) error {
 		logger.Printf("Slack not configured (%v); Slack tab will be unavailable", err)
 	}
 
-	srv := &webui.Server{DB: conn, WebFS: webFS, Port: uiPort, Bind: uiBind, DevMode: uiAPIOnly, Logger: logger,
-		SlackClient: slackClient, SlackPoller: slackPoller, SlackDomain: slackDomain, SlackCookie: slackCookie}
+	srv := &webui.Server{DB: conn, WebFS: webFS, Port: uiPort, DevMode: uiAPIOnly, Logger: logger,
+		SlackClient: slackClient, SlackPoller: slackPoller, SlackDomain: slackDomain, SlackCookie: slackCookie,
+		Security: sec}
 
 	// Start the in-process poll loop (Task 4 provides StartPolling).
 	stop := srv.StartPolling(2 * time.Minute)
@@ -119,15 +160,6 @@ func runUI(cmd *cobra.Command, args []string) error {
 	}
 	return srv.Start()
 }
-
-// stdinIsTerminal reports whether there is a human on the other end of stdin
-// who could answer a prompt.
-func stdinIsTerminal() bool { return isTerminalFile(os.Stdin) }
-
-// isTerminalFile reports whether f is a terminal. Note that an os.ModeCharDevice
-// check is NOT sufficient here: /dev/null is a character device too, so
-// `worktree ui --bind 0.0.0.0 </dev/null` would be mistaken for interactive.
-func isTerminalFile(f *os.File) bool { return term.IsTerminal(int(f.Fd())) }
 
 // hasBuiltUI reports whether the embedded dist has real content (not just .gitkeep).
 func hasBuiltUI(sub fs.FS) bool {

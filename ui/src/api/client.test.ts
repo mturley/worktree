@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { api } from "./client"
+import { api, HttpError, LOGIN_REQUIRED_EVENT, reportIfLoginRequired } from "./client"
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -72,5 +72,74 @@ describe("api.worktreeTimeline", () => {
     await api.worktreeTimeline("/wt/foo", 100, { type: "pr", id: "org/repo#1" })
     expect(calls[0]).toContain("resource_type=pr")
     expect(calls[0]).toContain("resource_id=org%2Frepo%231")
+  })
+})
+
+function response(status: number, body: unknown, headers: Record<string, string> = {}) {
+  return { ok: status < 400, status, headers: new Headers(headers), json: async () => body } as unknown as Response
+}
+
+describe("login-required handling", () => {
+  it("dispatches the login-required event for a marked 401 and throws HttpError", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      response(401, { error: "login required" }, { "X-Worktree-Login-Required": "1" }),
+    ))
+    const listener = vi.fn()
+    window.addEventListener(LOGIN_REQUIRED_EVENT, listener)
+    try {
+      const err = await api.worktrees().catch((e) => e)
+      expect(err).toBeInstanceOf(HttpError)
+      expect((err as HttpError).status).toBe(401)
+      expect(listener).toHaveBeenCalledTimes(1)
+    } finally {
+      window.removeEventListener(LOGIN_REQUIRED_EVENT, listener)
+    }
+  })
+
+  it("does not treat an unmarked 401 as a login prompt", () => {
+    const listener = vi.fn()
+    window.addEventListener(LOGIN_REQUIRED_EVENT, listener)
+    try {
+      expect(reportIfLoginRequired(response(401, {}))).toBe(false)
+      expect(listener).not.toHaveBeenCalled()
+    } finally {
+      window.removeEventListener(LOGIN_REQUIRED_EVENT, listener)
+    }
+  })
+
+  it("never dispatches from the session or login calls, which would loop", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      response(401, { error: "login required" }, { "X-Worktree-Login-Required": "1" }),
+    ))
+    const listener = vi.fn()
+    window.addEventListener(LOGIN_REQUIRED_EVENT, listener)
+    try {
+      await expect(api.session()).rejects.toBeInstanceOf(HttpError)
+      await expect(api.login("x")).rejects.toBeInstanceOf(HttpError)
+      expect(listener).not.toHaveBeenCalled()
+    } finally {
+      window.removeEventListener(LOGIN_REQUIRED_EVENT, listener)
+    }
+  })
+
+  it("POSTs the password to /api/login", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response(200, { handle: "h" }))
+    vi.stubGlobal("fetch", fetchMock)
+    await api.login("pw")
+    expect(fetchMock).toHaveBeenCalledWith("/api/login", expect.objectContaining({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: "pw" }),
+    }))
+  })
+
+  it("POSTs the handle to /api/sessions/revoke", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response(200, { ok: true }))
+    vi.stubGlobal("fetch", fetchMock)
+    await api.revokeSession("abc")
+    expect(fetchMock).toHaveBeenCalledWith("/api/sessions/revoke", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ handle: "abc" }),
+    }))
   })
 })

@@ -2,9 +2,11 @@ package safehttp
 
 import (
 	"context"
+	"errors"
 	"net"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestIsDisallowedIP(t *testing.T) {
@@ -28,6 +30,26 @@ func TestIsDisallowedIP(t *testing.T) {
 		{"140.82.112.3", false},    // public (github-ish)
 		{"2606:4700::1111", false}, // public v6
 		{"100.128.0.1", false},     // just above CGNAT — public
+		// IPv4-mapped: the stdlib predicates already see the IPv4 address.
+		{"::ffff:127.0.0.1", true},
+		{"::ffff:10.0.0.1", true},
+		{"::ffff:100.64.0.1", true},
+		{"::ffff:8.8.8.8", false},
+		// NAT64 well-known prefix: the low 32 bits are the IPv4 address.
+		{"64:ff9b::7f00:1", true},   // 127.0.0.1
+		{"64:ff9b::a00:1", true},    // 10.0.0.1
+		{"64:ff9b::6440:1", true},   // 100.64.0.1 (CGNAT)
+		{"64:ff9b::808:808", false}, // 8.8.8.8
+		// NAT64 local-use prefix: refused outright.
+		{"64:ff9b:1::1", true},
+		// 6to4: bits 16-47 are the IPv4 address.
+		{"2002:0a00:0001::", true},  // 10.0.0.1
+		{"2002:7f00:0001::", true},  // 127.0.0.1
+		{"2002:0808:0808::", false}, // 8.8.8.8
+		// IPv4-compatible (deprecated, still parsed).
+		{"::127.0.0.1", true},
+		{"::10.0.0.1", true},
+		{"::8.8.8.8", false},
 	}
 	for _, c := range cases {
 		ip := net.ParseIP(c.ip)
@@ -91,5 +113,38 @@ func TestTransportDisablesProxy(t *testing.T) {
 	tr := Transport()
 	if tr.Proxy != nil {
 		t.Fatal("Transport().Proxy must be nil: a configured proxy would resolve the target outside the SSRF blocklist")
+	}
+}
+
+func TestAlternativeIPv4LiteralsAreNotParsedAsIPs(t *testing.T) {
+	// These never take DialContext's literal-IP branch. They are resolved
+	// as hostnames, and what they resolve to is validated like any other
+	// name. On macOS, 0177.0.0.1 resolves to 177.0.0.1 (a public address,
+	// not 127.0.0.1), so it is pinned here and not dialed.
+	for _, s := range []string{"0177.0.0.1", "2130706433", "0x7f.0.0.1"} {
+		if ip := net.ParseIP(s); ip != nil {
+			t.Errorf("net.ParseIP(%q) = %v, want nil", s, ip)
+		}
+	}
+}
+
+func TestDialContextRefusesLoopbackSpelledAsDecimalOrHex(t *testing.T) {
+	d := DialContext(&net.Dialer{Timeout: 2 * time.Second})
+	for _, host := range []string{"2130706433", "0x7f.0.0.1"} {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		conn, err := d(ctx, "tcp", net.JoinHostPort(host, "80"))
+		cancel()
+		if err == nil {
+			conn.Close()
+			t.Fatalf("dial %s: connected, want refusal", host)
+		}
+		// Two acceptable outcomes. Either the resolver reads the literal as
+		// 127.0.0.1 (macOS does) and the blocklist refuses it, or the
+		// resolver treats it as an unknown name. A connection-refused error
+		// is NOT acceptable: that would mean we dialed loopback.
+		var dnsErr *net.DNSError
+		if !strings.Contains(err.Error(), "blocked address") && !errors.As(err, &dnsErr) {
+			t.Fatalf("dial %s: %v, want a blocked-address or DNS error", host, err)
+		}
 	}
 }

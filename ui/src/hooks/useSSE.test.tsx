@@ -48,4 +48,20 @@ describe("useSSE", () => {
     // event arrives.
     expect(keys).toContain(JSON.stringify(["resources"]))
   })
+
+  it("invalidates the session query on a stream error", () => {
+    vi.stubGlobal("EventSource", FakeEventSource)
+    const qc = new QueryClient()
+    const invalidate = vi.spyOn(qc, "invalidateQueries")
+
+    renderHook(() => useSSE(), {
+      wrapper: ({ children }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>,
+    })
+    // A stream error can mean the session was revoked on another device;
+    // re-checking it lets the login screen show instead of a stale tab.
+    FakeEventSource.last!.onerror?.()
+
+    const keys = invalidate.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey))
+    expect(keys).toContain(JSON.stringify(["session"]))
+  })
 })

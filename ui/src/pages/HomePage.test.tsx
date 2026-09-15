@@ -52,3 +52,14 @@ describe("HomePage responsive layout", () => {
     expect(screen.getByText(/Fix the widget/)).toBeInTheDocument()
   })
 })
+
+describe("HomePage devices", () => {
+  it("offers the Devices panel from the header at both widths", () => {
+    for (const width of ["narrow", "wide"] as const) {
+      setViewport(width)
+      wrap()
+      expect(screen.getByRole("button", { name: "Devices" })).toBeInTheDocument()
+      cleanup()
+    }
+  })
+})

@@ -222,13 +222,23 @@ Unmarked entries (or `"primary":true`) are the reason this worktree exists. Entr
 ## Web UI
 
 ```bash
-worktree ui                # start the web UI on http://localhost:8475 and open it in a browser
-worktree ui --port 9000    # use a different port
-worktree ui --no-open      # don't auto-open a browser
-worktree ui --api-only     # serve only the JSON API (used with the Vite dev server, see `make dev`)
+worktree ui                     # start the web UI on http://127.0.0.1:8475 and open it in a browser
+worktree ui --port 9000         # use a different port
+worktree ui --no-open           # don't auto-open a browser
+worktree ui --api-only          # serve only the JSON API (used with the Vite dev server, see `make dev`)
+worktree ui --local-only        # skip the HTTPS listener for other devices
+worktree ui --revoke-all-sessions  # log out every device, then exit
 ```
 
 The web UI is a single embedded binary — no separate frontend install required. It is the same data the CLI works with, laid out so you can see every worktree and everything happening on it at once.
+
+### Authentication
+
+`worktree ui` requires `ui.password` in `~/.config/worktree/config.yaml` on every listener, including loopback. Run `worktree setup` to generate one — it's printed once, so save it. If you're upgrading from a version without this, run `worktree setup` (or set `ui.password` yourself) before `worktree ui` will start. The home page header has a **Devices** panel for logging out individual browsers.
+
+### Remote access
+
+By default the UI only serves plain HTTP on `127.0.0.1:8475`. `worktree setup` can also enable HTTPS access from other devices, such as your phone: it offers the Mac's `.local` name and LAN IP, issues a certificate from a single-use CA (install `ui-ca.pem` on the phone), and the UI then also listens on `https://<name>:8476` (`ui.https_port`).
 
 ### Home
 

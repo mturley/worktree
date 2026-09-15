@@ -9,6 +9,8 @@
 // top-level keys but PascalCase nested object keys — verified by reading
 // internal/server/server.go and internal/slackapi/types.go.
 
+import { reportIfLoginRequired } from './client'
+
 export interface Style {
   Bold: boolean
   Italic: boolean
@@ -206,10 +208,23 @@ export class ApiAuthError extends Error {
   }
 }
 
-async function handleJSON<T>(res: Response): Promise<T> {
-  if (res.status === 401) {
-    throw new ApiAuthError()
+export class LoginRequiredError extends Error {
+  constructor() {
+    super('Log in to worktree to continue.')
+    this.name = 'LoginRequiredError'
   }
+}
+
+// A 401 is either worktree asking for a login (the app shows the login
+// screen) or Slack rejecting its stored credentials (the thread view says so).
+function throwIfUnauthorized(res: Response): void {
+  if (res.status !== 401) return
+  if (reportIfLoginRequired(res)) throw new LoginRequiredError()
+  throw new ApiAuthError()
+}
+
+async function handleJSON<T>(res: Response): Promise<T> {
+  throwIfUnauthorized(res)
   if (!res.ok) {
     throw new Error(`Request failed: ${res.status} ${res.statusText}`)
   }
@@ -228,9 +243,7 @@ export async function markRead(channel: string, threadTs: string, ts: string): P
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ channel, thread_ts: threadTs, ts }),
   })
-  if (res.status === 401) {
-    throw new ApiAuthError()
-  }
+  throwIfUnauthorized(res)
   if (!res.ok) {
     throw new Error(`Request failed: ${res.status} ${res.statusText}`)
   }
@@ -242,9 +255,7 @@ export async function markUnread(channel: string, threadTs: string, ts: string):
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ channel, thread_ts: threadTs, ts }),
   })
-  if (res.status === 401) {
-    throw new ApiAuthError()
-  }
+  throwIfUnauthorized(res)
   if (!res.ok) {
     throw new Error(`mark-unread failed: ${res.status}`)
   }
@@ -256,9 +267,7 @@ export async function postReply(channel: string, threadTs: string, text: string)
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ channel, thread_ts: threadTs, text }),
   })
-  if (res.status === 401) {
-    throw new ApiAuthError()
-  }
+  throwIfUnauthorized(res)
   if (!res.ok) {
     const body = await res.text().catch(() => '')
     throw new Error(body || `reply failed: ${res.status}`)
@@ -278,9 +287,7 @@ export async function toggleReaction(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ channel, thread_ts: threadTs, ts, name, add }),
   })
-  if (res.status === 401) {
-    throw new ApiAuthError()
-  }
+  throwIfUnauthorized(res)
   if (!res.ok) {
     throw new Error(`react failed: ${res.status}`)
   }
@@ -369,6 +376,7 @@ export async function autocomplete(
   }
   try {
     const res = await fetch(`/api/slack-autocomplete?${params.toString()}`, { signal })
+    reportIfLoginRequired(res)
     if (!res.ok) {
       return null
     }

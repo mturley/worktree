@@ -172,3 +172,13 @@ export interface WatchersResponse {
    */
   polling: boolean;
 }
+
+/** A web UI login session, as GET /api/session(s) returns it. */
+export interface SessionInfo {
+  /** Hash of the session token: safe to show, and what revoking takes. */
+  handle: string
+  label: string
+  created_at: string
+  last_seen_at: string
+  current: boolean
+}

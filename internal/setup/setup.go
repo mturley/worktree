@@ -28,6 +28,7 @@ type Plan struct {
 	TestGitHubCreds       bool
 	TestSlackCreds        bool
 	TestJiraCreds         bool
+	ConfigureUI           bool
 	GHMissing             bool
 	GHNotAuthenticated    bool
 	Cfg                   config.Config
@@ -61,6 +62,7 @@ func BuildPlan(cfg config.Config) Plan {
 	plan.TestGitHubCreds = true
 	plan.TestSlackCreds = true
 	plan.TestJiraCreds = true
+	plan.ConfigureUI = true
 
 	if _, err := exec.LookPath("gh"); err != nil {
 		plan.GHMissing = true
@@ -155,6 +157,9 @@ func (p Plan) Preview() {
 	if p.ConfigureJiraProjects {
 		fmt.Println("  • Configure Jira project prefixes (optional)")
 	}
+	if p.ConfigureUI {
+		fmt.Println("  • Configure the web UI password and HTTPS access from other devices")
+	}
 	if p.GHMissing {
 		fmt.Printf("\n  %s GitHub CLI (gh) is not installed. PR features will be unavailable.\n", ui.Yellow("!"))
 		fmt.Printf("       Install: %s\n", ui.Bold("https://cli.github.com/"))
@@ -168,7 +173,7 @@ func (p Plan) Preview() {
 }
 
 func (p Plan) HasWork() bool {
-	return p.CreateWorktreesBase || p.InstallShellRC || p.CreateConfig || p.InstallCompletions || p.ConfigureJiraProjects || p.TestGitHubCreds || p.TestSlackCreds || p.TestJiraCreds
+	return p.CreateWorktreesBase || p.InstallShellRC || p.CreateConfig || p.InstallCompletions || p.ConfigureJiraProjects || p.TestGitHubCreds || p.TestSlackCreds || p.TestJiraCreds || p.ConfigureUI
 }
 
 func (p Plan) Execute() error {
@@ -205,6 +210,12 @@ func (p Plan) Execute() error {
 	if p.ConfigureJiraProjects {
 		if err := promptAndSaveJiraProjects(p.ConfigPath, p.Cfg); err != nil {
 			return fmt.Errorf("configuring Jira projects: %w", err)
+		}
+	}
+
+	if p.ConfigureUI {
+		if err := configureUI(p.ConfigPath, defaultUIAccessDeps(p.ConfigPath)); err != nil {
+			return fmt.Errorf("configuring the web UI: %w", err)
 		}
 	}
 
@@ -318,6 +329,7 @@ func PreviewUninstall(rc ShellRC, configPath string) {
 		fmt.Printf("  • Remove wt symlink: %s\n", wtSymlink)
 	}
 	fmt.Println("  • Remove shell completions (worktree + wt)")
+	fmt.Println("  • Remove the web UI's HTTPS certificate files and remote access settings (the password is kept)")
 	fmt.Println("  • Preserve worktree data (remove manually if desired)")
 	if _, err := os.Stat(configPath); err == nil {
 		fmt.Printf("  • Preserve config at %s (contains credentials)\n", ui.ShortPath(configPath))
@@ -339,6 +351,10 @@ func ExecuteUninstall(rc ShellRC, configPath string) error {
 	}
 
 	removeAllCompletions()
+
+	if err := removeRemoteAccess(configPath, defaultUIAccessDeps(configPath)); err != nil {
+		fmt.Printf("  %s Removing web UI remote access: %v\n", ui.Yellow("!"), err)
+	}
 
 	if _, err := os.Stat(configPath); err == nil {
 		fmt.Printf("  %s Config preserved at %s\n", ui.Dim("—"), ui.ShortPath(configPath))
@@ -379,10 +395,23 @@ func writeConfig(path string, cfg config.Config) error {
 		Projects []string `yaml:"projects,omitempty"`
 	}
 
+	type uiTLSYaml struct {
+		CertFile string `yaml:"cert_file,omitempty"`
+		KeyFile  string `yaml:"key_file,omitempty"`
+	}
+
+	type uiYaml struct {
+		Password     string     `yaml:"password,omitempty"`
+		HTTPSPort    int        `yaml:"https_port,omitempty"`
+		AllowedHosts []string   `yaml:"allowed_hosts,omitempty"`
+		TLS          *uiTLSYaml `yaml:"tls,omitempty"`
+	}
+
 	type yamlConfig struct {
 		WorktreesBase string   `yaml:"worktrees_base"`
 		Editor        string   `yaml:"editor,omitempty"`
 		Jira          jiraYaml `yaml:"jira,omitempty"`
+		UI            *uiYaml  `yaml:"ui,omitempty"`
 	}
 
 	yc := yamlConfig{
@@ -396,11 +425,32 @@ func writeConfig(path string, cfg config.Config) error {
 		}
 	}
 
+	// Every ui field must be carried here: a field left out is silently
+	// dropped from the file the next time setup writes it.
+	u := uiYaml{Password: cfg.UI.Password, AllowedHosts: cfg.UI.AllowedHosts}
+	if cfg.UI.HTTPSPort != 0 && cfg.UI.HTTPSPort != config.DefaultHTTPSPort {
+		u.HTTPSPort = cfg.UI.HTTPSPort
+	}
+	if cfg.UI.TLS.CertFile != "" || cfg.UI.TLS.KeyFile != "" {
+		u.TLS = &uiTLSYaml{
+			CertFile: shortenHome(cfg.UI.TLS.CertFile, home),
+			KeyFile:  shortenHome(cfg.UI.TLS.KeyFile, home),
+		}
+	}
+	if u.Password != "" || u.HTTPSPort != 0 || len(u.AllowedHosts) > 0 || u.TLS != nil {
+		yc.UI = &u
+	}
+
 	data, err := yaml.Marshal(yc)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	// Owner-only: the file holds the web UI password. WriteFile keeps an
+	// existing file's mode, so tighten it explicitly as well.
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o600)
 }
 
 func shortenHome(path, home string) string {

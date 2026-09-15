@@ -17,6 +17,11 @@ make clean     # removes bin/, ui/dist contents (keeps ui/dist/.gitkeep), ui/nod
 
 `worktree ui` starts the web UI: a Mantine + React frontend (`ui/`) served by the Go binary with the built assets embedded. Default port 8475 in production; the Vite dev server (via `make dev`) runs on 5175 and proxies to the Go API server (`--api-only`).
 
+`worktree ui` requires `ui.password` in the config (`worktree setup`
+generates one) on every listener, including loopback. It serves plain HTTP
+on `127.0.0.1:8475` and, once setup has configured remote access, HTTPS on
+every interface at `ui.https_port` (8476). There is no `--bind`.
+
 ## Project Structure
 
 - `cmd/` — cobra commands (one file per subcommand)
@@ -31,6 +36,10 @@ make clean     # removes bin/, ui/dist contents (keeps ui/dist/.gitkeep), ui/nod
   - `linkmeta` — resolves a followed page's title, description, favicon,
     preview image and whether it permits being framed. Used only at add time
     and on explicit refresh: link resources are NEVER polled.
+  - `netdetect` — detects this machine's `.local` name (`scutil --get
+    LocalHostName`, macOS only) and the LAN IP of the outbound interface.
+    Used by setup to offer remote access addresses, and by `worktree ui` to
+    warn when the certificate no longer covers them.
   - `ports` — port range allocation (DB-backed; `port_allocations` table)
   - `resources` — worktree resource tracking (DB-backed; `watcher_subscriptions` + `worktree_primary` table). A resource's user-supplied **custom name/description** live in `watcher_resource_meta` (with an `updated_at` as of watcher v0.4.4); set them via the web UI or `worktree resources set-name <type> <id> --name … [--updated-at …]`. `resources list --json` exposes `custom_name`/`custom_description`/`updated_at`; agent-handler mirrors Slack-thread custom names into its own DB (newest-wins) via this CLI — see agent-handler's Phase 7. `SetMetaAt` preserves an explicit timestamp for that cross-DB replication; plain `SetMeta` stamps now. `Add` refuses any path that is not a **linked git worktree** (`discovery.IsInsideWorktree`, injected as the `isWorktree` package var so tests can drive both answers) — a resource tracked against a repo's main worktree is a subscription nothing ever cleans up, since `worktree delete`/`cleanup` only run against registered worktrees; it returns `ErrNotAWorktree`, which the web API maps to 400. Removal paths stay unguarded so stale rows are always cleanable. There is deliberately **no** prune command: rows for deleted worktrees are soft-deleted tombstones that the global timeline's `archived=true` view still relies on, so sweeping them would destroy history to no benefit.
   - `unread` — per-resource read cursor (`resource_read_cursor`). One cursor
@@ -47,7 +56,16 @@ make clean     # removes bin/, ui/dist contents (keeps ui/dist/.gitkeep), ui/nod
   - `setup` — shell RC integration (removed `.git/info/exclude` management); also owns the `worktree setup` Slack step (`setup/slack.go`) that walks the user through extracting Slack session token+cookie and writes them to `~/.config/watcher/auth.yaml`
   - `testgit` — test-only helper building a real repo + linked worktree, for tests whose paths must satisfy the `resources.Add` worktree guard
   - `ui` — terminal output
-  - `webui` — HTTP server + API for `worktree ui` (worktree list, timeline, resources, SSE stream, poll loop); also serves the Slack thread view's routes (`/api/thread*`, `/api/slack-*`) from the same binary/port, including the composer autocomplete endpoint (`GET /api/slack-autocomplete`)
+  - `uisession` — web UI login sessions in the worktree DB (`ui_sessions`).
+    The cookie holds a random token; the table holds only its SHA-256, the
+    session's **handle**, which is also how the UI names a session to revoke
+    it. 30-day lifetime; `last_seen_at` rewritten at most every 5 minutes.
+  - `uitls` — issues the web UI's HTTPS certificate. Creates a CA and signs
+    exactly one leaf in the same call; the CA private key is never
+    serialised, so the CA installed on a phone can sign nothing else.
+    Changing addresses or renewing therefore means reinstalling the CA on
+    the phone.
+  - `webui` — HTTP server + API for `worktree ui` (worktree list, timeline, resources, SSE stream, poll loop); also serves the Slack thread view's routes (`/api/thread*`, `/api/slack-*`) from the same binary/port, including the composer autocomplete endpoint (`GET /api/slack-autocomplete`). Every `/api/` request except `POST /api/login` requires a session (`auth.go`), behind a Host allowlist (`hostguard.go`) and the request-forgery guard (`middleware.go`); see `docs/web-ui-architecture.md` "Authentication and remote access".
   - `slackpoller` — polls Slack threads for changes and fans out updates to subscribers (live-tab SSE, in-memory, only while a thread is open in the UI); folded in from slack-mini's `internal/watcher` package (renamed to avoid collision); consumes `github.com/mturley/watcher/slack`'s `Client`/`Thread` types rather than a local `slackapi` package — there is no `internal/slackapi` anymore, it moved to the watcher library (see "Watcher library" below)
   - `slackcreds` — loads Slack token/cookie/workspace domain from the shared watcher `auth.yaml` and builds a `github.com/mturley/watcher/slack.Client`
   - `slackurl` — parses Slack thread URLs into `(channel, threadTS)` and builds the resource ID used to store them as worktree resources
