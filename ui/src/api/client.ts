@@ -1,13 +1,52 @@
-import type { CmuxGroupsResponse, CmuxResponse, CreateWorktreeResponse, DeleteWorktreeResponse, Repo, ResourceDTO, TimelineResponse, WatchersResponse, WorktreeInfo, WorktreeSummary } from "./types"
+import type { CmuxGroupsResponse, CmuxResponse, CreateWorktreeResponse, DeleteWorktreeResponse, Repo, ResourceDTO, SessionInfo, TimelineResponse, WatchersResponse, WorktreeInfo, WorktreeSummary } from "./types"
 
-async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
+export class HttpError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message)
+    this.name = "HttpError"
+  }
+}
+
+/** Fired when a request is refused because the user must log in. */
+export const LOGIN_REQUIRED_EVENT = "worktree:login-required"
+
+/**
+ * Reports a login-required response to the app, and returns whether it was
+ * one. Only a 401 carrying X-Worktree-Login-Required counts: some Slack
+ * endpoints return 401 for Slack's own credentials, which is not a reason to
+ * show the login screen.
+ */
+export function reportIfLoginRequired(res: Response): boolean {
+  if (res.status !== 401 || res.headers?.get("X-Worktree-Login-Required") !== "1") return false
+  window.dispatchEvent(new Event(LOGIN_REQUIRED_EVENT))
+  return true
+}
+
+async function fetchJSON<T>(url: string, init?: RequestInit, opts: { reportLoginRequired?: boolean } = {}): Promise<T> {
   const res = await fetch(url, init)
+  if (opts.reportLoginRequired !== false) reportIfLoginRequired(res)
   const data = await res.json().catch(() => null)
-  if (!res.ok) throw new Error((data && data.error) || `HTTP ${res.status}`)
+  if (!res.ok) throw new HttpError((data && data.error) || `HTTP ${res.status}`, res.status)
   return data as T
 }
 
 export const api = {
+  // session and login must not report login-required: the session query
+  // refetches on that event, so reporting from here would loop.
+  session: () => fetchJSON<SessionInfo>("/api/session", undefined, { reportLoginRequired: false }),
+  login: (password: string) =>
+    fetchJSON<SessionInfo>("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password }),
+    }, { reportLoginRequired: false }),
+  sessions: () => fetchJSON<SessionInfo[]>("/api/sessions"),
+  revokeSession: (handle: string) =>
+    fetchJSON<{ ok: boolean }>("/api/sessions/revoke", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ handle }),
+    }),
   worktrees: () => fetchJSON<WorktreeSummary[]>("/api/worktrees"),
   globalTimeline: (archived: boolean, limit = 100, before?: string, resourceTypes?: string[]) => {
     const params = new URLSearchParams({ archived: String(archived), limit: String(limit) })
