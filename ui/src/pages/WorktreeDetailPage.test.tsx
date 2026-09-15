@@ -78,7 +78,11 @@ describe("WorktreeDetailPage header", () => {
     setViewport("wide")
     wrap()
     expect(await screen.findByRole("heading", { name: "My workspace", level: 4 })).toBeInTheDocument()
-    const header = screen.getByRole("heading", { name: "foo", level: 4 }).closest("[data-detail-header]")
+    // The workspace heads the header and the worktree name steps down.
+    const workspace = screen.getByRole("heading", { name: "My workspace", level: 4 })
+    const worktree = screen.getByRole("heading", { name: "foo", level: 6 })
+    expect(workspace.compareDocumentPosition(worktree) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const header = worktree.closest("[data-detail-header]")
     expect(header).toContainElement(screen.getByRole("button", { name: /switch cmux/i }))
     vi.restoreAllMocks()
   })

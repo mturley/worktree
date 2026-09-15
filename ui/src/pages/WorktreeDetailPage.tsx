@@ -5,6 +5,7 @@ import { useWorktreeDetail } from "../hooks/useWorktreeDetail"
 import { useSelectedResource } from "../hooks/useSelectedResource"
 import { useIsWide } from "../hooks/useIsWide"
 import { useWorktrees } from "../hooks/useWorktrees"
+import { useCmuxMatches } from "../api/cmux"
 import { ResourceList } from "../components/ResourceList"
 import { ResourceDetailPane } from "../components/ResourceDetailPane"
 import { TimelineFeed } from "../components/TimelineFeed"
@@ -33,6 +34,7 @@ export function WorktreeDetailPage() {
   const items = resources.data ?? []
   const summary = (worktrees.data ?? []).find((w) => w.path === path)
   const name = worktreeName(path)
+  const hasWorkspace = useCmuxMatches(path).length > 0
   const selectedResource = selected
     ? items.find((r) => r.type === selected.type && r.id === selected.id)
     : undefined
@@ -246,11 +248,24 @@ export function WorktreeDetailPage() {
       >
         <Stack gap="md">
           <Group justify="space-between" wrap="nowrap" align="center" data-detail-header>
-            <Group wrap="wrap" style={{ minWidth: 0 }}>
-              <Anchor component={Link} href="/">← all worktrees</Anchor>
-              <Title order={4} style={{ overflowWrap: "anywhere" }}>{name}</Title>
-              {summary && !summary.on_disk && <Badge size="xs" color="red">missing</Badge>}
-              <CmuxWorkspaceTitles path={path} />
+            <Group wrap="nowrap" style={{ minWidth: 0 }}>
+              <Anchor component={Link} href="/" style={{ flex: "none" }}>← all worktrees</Anchor>
+              {/* Inside cmux the workspace is the headline and the worktree
+                  name steps down beneath it, as on the home page's cards;
+                  outside cmux the name is the full-size title. */}
+              <Stack gap={2} style={{ minWidth: 0 }}>
+                <CmuxWorkspaceTitles path={path} />
+                <Group gap="xs" wrap="wrap" style={{ minWidth: 0 }}>
+                  <Title
+                    order={hasWorkspace ? 6 : 4}
+                    c={hasWorkspace ? "dimmed" : undefined}
+                    style={{ overflowWrap: "anywhere" }}
+                  >
+                    {name}
+                  </Title>
+                  {summary && !summary.on_disk && <Badge size="xs" color="red">missing</Badge>}
+                </Group>
+              </Stack>
             </Group>
             <Group gap="xs" wrap="nowrap" style={{ flex: "none" }}>
               {summary && <CmuxWorkspaceActions path={path} branch={summary.branch} />}

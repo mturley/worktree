@@ -10,7 +10,7 @@ import { CreateWorkspaceModal } from "./CreateWorkspaceModal"
 
 /**
  * The detail page's header splits what CmuxWorkspaceSection renders as one
- * strip: the workspace name sits beside the worktree name on the left, and
+ * strip: the workspace name heads the worktree name on the left, and
  * its action sits with the page's other controls on the right. Both halves
  * read the same shared cmux query, and like the section they render nothing
  * outside cmux, so the header looks as it did before cmux support.
@@ -29,8 +29,8 @@ export function CmuxWorkspaceTitles({ path }: { path: string }) {
       {matches.map((ws) => (
         <Group key={ws.ref} gap={8} wrap="nowrap" style={{ minWidth: 0 }}>
           <ColorBar color={ws.color} />
-          {/* Same size as the worktree name: the workspace is how you think
-              about the work, so it is not a subtitle here. */}
+          {/* The headline: the workspace is how you think about the work, so
+              the worktree name steps down beneath it. */}
           <Title order={4} style={{ minWidth: 0, overflowWrap: "anywhere" }}>{ws.title}</Title>
         </Group>
       ))}
