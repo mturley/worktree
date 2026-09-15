@@ -258,6 +258,12 @@ func (s *Server) Serve(httpLn, httpsLn net.Listener) error {
 	if remote != nil {
 		remote.Close()
 	}
+	// ServeTLS returns before tracking httpsLn when the certificate fails to
+	// load, so remote.Close() above has nothing to close in that case. Close
+	// the listener directly too; closing an already-closed one is harmless.
+	if httpsLn != nil {
+		httpsLn.Close()
+	}
 	return err
 }
 

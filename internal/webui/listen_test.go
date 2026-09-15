@@ -144,6 +144,11 @@ func TestServeFailsOnAMissingCertificate(t *testing.T) {
 	srv.Security.CertFile = filepath.Join(t.TempDir(), "missing-cert.pem")
 	srv.Security.KeyFile = filepath.Join(t.TempDir(), "missing-key.pem")
 	httpLn, httpsLn := listenLoopback(t), listenLoopback(t)
+	httpsAddr := httpsLn.Addr().String()
+	t.Cleanup(func() {
+		httpLn.Close()
+		httpsLn.Close()
+	})
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(httpLn, httpsLn) }()
 	select {
@@ -152,8 +157,12 @@ func TestServeFailsOnAMissingCertificate(t *testing.T) {
 			t.Fatal("Serve returned nil with a missing certificate")
 		}
 	case <-time.After(5 * time.Second):
-		httpLn.Close()
-		httpsLn.Close()
 		t.Fatal("Serve kept running with a missing certificate")
+	}
+	// ServeTLS returns before tracking the listener when the key pair fails
+	// to load, so Serve must close httpsLn itself; otherwise it leaks open.
+	if conn, err := net.DialTimeout("tcp", httpsAddr, time.Second); err == nil {
+		conn.Close()
+		t.Fatal("httpsLn is still accepting connections after Serve returned")
 	}
 }

@@ -31,6 +31,10 @@ func TestHostAllowed(t *testing.T) {
 		{"127.0.0.1.evil.example", false},
 		{"192.168.86.22", false},
 		{"", false},
+		{"[::1", false},               // unbalanced bracket must not be stripped into a bare "::1"
+		{"::1]", false},               // ditto, trailing bracket only
+		{"mturley-mac.local]", false}, // an allowed name with a stray bracket must still fail
+		{"[mturley-mac.local", false},
 	}
 	for _, tc := range cases {
 		if got := hostAllowed(tc.host, extra); got != tc.want {

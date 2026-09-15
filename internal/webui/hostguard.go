@@ -19,7 +19,9 @@ func hostAllowed(hostHeader string, extra []string) bool {
 	if h, _, err := net.SplitHostPort(hostHeader); err == nil {
 		name = h
 	}
-	name = strings.TrimSuffix(strings.TrimPrefix(name, "["), "]")
+	if strings.HasPrefix(name, "[") && strings.HasSuffix(name, "]") {
+		name = name[1 : len(name)-1]
+	}
 	name = strings.TrimSuffix(name, ".")
 	if name == "" {
 		return false
