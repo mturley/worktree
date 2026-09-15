@@ -17,7 +17,16 @@ export function useSSE() {
         // stay stale until a remount forces a refetch.
         qc.invalidateQueries({ queryKey: ["resources"] })
       })
-      es.onerror = () => { es?.close(); es = null; timer = setTimeout(connect, 3000) }
+      es.onerror = () => {
+        es?.close()
+        es = null
+        // A stream error can mean the session was revoked on another
+        // device. Re-check it: if it's gone, useSession flips to
+        // unauthenticated and the login screen shows instead of a tab that
+        // looks alive but can't reach anything.
+        qc.invalidateQueries({ queryKey: ["session"] })
+        timer = setTimeout(connect, 3000)
+      }
     }
     connect()
     return () => { es?.close(); if (timer) clearTimeout(timer) }
