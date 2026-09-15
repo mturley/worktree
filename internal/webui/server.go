@@ -104,8 +104,12 @@ func (s *Server) Handler() http.Handler {
 }
 
 // wrap applies the request guards. Outermost first: the Host allowlist, so
-// nothing routes a rebound request; then the request-forgery guard.
+// nothing routes a rebound request; then the request-forgery guard; then the
+// session check.
 func (s *Server) wrap(h http.Handler) http.Handler {
+	if s.Security != nil {
+		h = s.requireSession(h)
+	}
 	h = guardMutations(h)
 	if s.Security != nil {
 		h = hostGuard(s.Security.AllowedHosts, s.Logger, h)
@@ -169,6 +173,14 @@ func (s *Server) routes() []route {
 		// preview image are third-party URLs from arbitrary sites, which is
 		// exactly what handleImage was built for.
 		{"GET /api/link-image", s.handleImage},
+
+		// Authentication. POST /api/login is the one /api/ route
+		// requireSession lets through without a session.
+		{"POST /api/login", s.handleLogin},
+		{"POST /api/logout", s.handleLogout},
+		{"GET /api/session", s.handleSession},
+		{"GET /api/sessions", s.handleSessions},
+		{"POST /api/sessions/revoke", s.handleRevokeSession},
 	}
 }
 
