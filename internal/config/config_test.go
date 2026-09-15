@@ -121,6 +121,21 @@ func TestRemoteEnabledRequiresBothFiles(t *testing.T) {
 	}
 }
 
+func TestUIConfigRemoteURL(t *testing.T) {
+	for _, tc := range []struct {
+		hosts []string
+		want  string
+	}{
+		{nil, ""},
+		{[]string{"mturley-mac.local", "192.168.86.21"}, "https://mturley-mac.local:8476"},
+		{[]string{"fd00::5"}, "https://[fd00::5]:8476"},
+	} {
+		if got := (UIConfig{HTTPSPort: 8476, AllowedHosts: tc.hosts}).RemoteURL(); got != tc.want {
+			t.Errorf("RemoteURL(%v) = %q, want %q", tc.hosts, got, tc.want)
+		}
+	}
+}
+
 func TestPermissionsTooOpen(t *testing.T) {
 	dir := t.TempDir()
 	for _, tc := range []struct {

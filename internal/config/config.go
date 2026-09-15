@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -53,6 +55,15 @@ type UITLSConfig struct {
 // as an error.
 func (u UIConfig) RemoteEnabled() bool {
 	return u.TLS.CertFile != "" && u.TLS.KeyFile != ""
+}
+
+// RemoteURL is the address to open on another device, or "" if none is
+// configured.
+func (u UIConfig) RemoteURL() string {
+	if len(u.AllowedHosts) == 0 {
+		return ""
+	}
+	return "https://" + net.JoinHostPort(u.AllowedHosts[0], strconv.Itoa(u.HTTPSPort))
 }
 
 func DefaultConfig() Config {
