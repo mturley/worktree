@@ -44,6 +44,17 @@ func migrate(conn *sql.DB) error {
 			updated_at    TEXT NOT NULL,
 			PRIMARY KEY (resource_type, resource_id)
 		)`,
+		// Web UI login sessions. token_hash is the SHA-256 of the cookie
+		// value, never the value itself, so reading this table never yields
+		// a usable login. Timestamps use a fixed-width UTC layout, so string
+		// comparison in SQL orders them correctly.
+		`CREATE TABLE IF NOT EXISTS ui_sessions (
+			token_hash   TEXT PRIMARY KEY,
+			label        TEXT NOT NULL,
+			created_at   TEXT NOT NULL,
+			last_seen_at TEXT NOT NULL,
+			expires_at   TEXT NOT NULL
+		)`,
 	}
 	for _, s := range stmts {
 		if _, err := conn.Exec(s); err != nil {
