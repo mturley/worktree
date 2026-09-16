@@ -28,6 +28,9 @@ type scriptedIO struct {
 func (s *scriptedIO) ConfirmDefault(prompt string, defaultYes bool) bool {
 	s.prompts = append(s.prompts, prompt)
 	s.defaults = append(s.defaults, defaultYes)
+	// The real terminal prints the question where it is asked, so record it
+	// in the transcript too: tests assert what was said BEFORE a question.
+	fmt.Fprintf(&s.out, "%s\n", prompt)
 	if len(s.confirms) == 0 {
 		s.t.Fatalf("unscripted confirm: %q", prompt)
 	}
@@ -38,6 +41,7 @@ func (s *scriptedIO) ConfirmDefault(prompt string, defaultYes bool) bool {
 
 func (s *scriptedIO) PromptLine(prompt string) string {
 	s.prompts = append(s.prompts, prompt)
+	fmt.Fprintf(&s.out, "%s\n", prompt)
 	if len(s.lines) == 0 {
 		s.t.Fatalf("unscripted prompt: %q", prompt)
 	}
@@ -110,6 +114,63 @@ func TestRemoteAccessIsOffByDefault(t *testing.T) {
 	}
 	if _, err := os.Stat(d.paths.CA); err == nil {
 		t.Fatal("a certificate was written after declining")
+	}
+}
+
+// TestRemoteAccessExplainsBeforeAsking pins the explanations that precede the
+// two questions, so a reader can answer them without knowing the design.
+func TestRemoteAccessExplainsBeforeAsking(t *testing.T) {
+	io := &scriptedIO{t: t, confirms: []bool{true, true}}
+	d := testDeps(t, io, "mturley-mac.local", "192.168.86.21")
+	cfg := config.DefaultConfig()
+	if _, err := configureRemoteAccess(&cfg, d); err != nil {
+		t.Fatal(err)
+	}
+	io.done()
+
+	out := io.out.String()
+	enableIdx := strings.Index(out, "Enable HTTPS access")
+	if enableIdx == -1 {
+		t.Fatalf("no enable prompt in:\n%s", out)
+	}
+	// What enabling does, stated before the question that enables it.
+	for _, want := range []string{
+		"discard", "ui-ca.pem", "port 8476", "127.0.0.1:8475", "install",
+	} {
+		if !strings.Contains(out[:enableIdx], want) {
+			t.Errorf("the enable prompt is not preceded by %q:\n%s", want, out[:enableIdx])
+		}
+	}
+
+	addrIdx := strings.Index(out, "Use these addresses?")
+	if addrIdx == -1 {
+		t.Fatalf("no address prompt in:\n%s", out)
+	}
+	// What the addresses are for, stated before the question that picks them.
+	for _, want := range []string{"https://mturley-mac.local:8476", ".local"} {
+		if !strings.Contains(out[enableIdx:addrIdx], want) {
+			t.Errorf("the address prompt is not preceded by %q:\n%s", want, out[enableIdx:addrIdx])
+		}
+	}
+}
+
+// TestRemoteAccessExplanationUsesTheConfiguredPort guards against hardcoding
+// 8476 in the explanations.
+func TestRemoteAccessExplanationUsesTheConfiguredPort(t *testing.T) {
+	io := &scriptedIO{t: t, confirms: []bool{true, true}}
+	d := testDeps(t, io, "mturley-mac.local")
+	cfg := config.DefaultConfig()
+	cfg.UI.HTTPSPort = 9443
+	if _, err := configureRemoteAccess(&cfg, d); err != nil {
+		t.Fatal(err)
+	}
+	io.done()
+	out := io.out.String()
+	if !strings.Contains(out, "port 9443") || !strings.Contains(out, "https://mturley-mac.local:9443") {
+		t.Fatalf("output does not use the configured port:\n%s", out)
+	}
+	if strings.Contains(out, "8476") {
+		t.Fatalf("output mentions the default port anyway:\n%s", out)
 	}
 }
 

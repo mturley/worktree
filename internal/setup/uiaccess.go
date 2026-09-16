@@ -107,11 +107,17 @@ func ensurePassword(cfg *config.Config, d uiAccessDeps) (bool, error) {
 // configureRemoteAccess sets up, renews or changes the HTTPS listener's
 // certificate and addresses. It reports whether it changed cfg.
 func configureRemoteAccess(cfg *config.Config, d uiAccessDeps) (bool, error) {
+	httpsPort := cfg.UI.HTTPSPort
+	if httpsPort == 0 {
+		httpsPort = config.DefaultHTTPSPort
+	}
+
 	if !cfg.UI.RemoteEnabled() {
+		explainRemoteAccess(d, httpsPort)
 		if !d.io.ConfirmDefault("  Enable HTTPS access to the web UI from other devices (e.g. your phone)?", false) {
 			return false, nil
 		}
-		hosts := chooseRemoteHosts(d)
+		hosts := chooseRemoteHosts(d, httpsPort)
 		if hosts == nil {
 			d.io.Printf("  %s Skipped remote access\n", ui.Dim("—"))
 			return false, nil
@@ -139,7 +145,7 @@ func configureRemoteAccess(cfg *config.Config, d uiAccessDeps) (bool, error) {
 	if !d.io.ConfirmDefault("  Change remote access addresses?", false) {
 		return false, nil
 	}
-	hosts := chooseRemoteHosts(d)
+	hosts := chooseRemoteHosts(d, httpsPort)
 	if hosts == nil {
 		d.io.Printf("  %s Kept the existing addresses\n", ui.Dim("—"))
 		return false, nil
@@ -147,14 +153,36 @@ func configureRemoteAccess(cfg *config.Config, d uiAccessDeps) (bool, error) {
 	return true, reissue(cfg, hosts, d)
 }
 
+// explainRemoteAccess says what enabling remote access will do, before the
+// question that does it.
+func explainRemoteAccess(d uiAccessDeps, httpsPort int) {
+	d.io.Printf(`
+  Remote access lets other devices on your network (your phone, say) open the
+  web UI over HTTPS. Enabling it will:
+    • create a certificate authority, use it once to sign this machine's
+      certificate, then discard the authority's key
+    • write ui-ca.pem, ui-cert.pem and ui-key.pem next to your config
+    • serve HTTPS on port %d, alongside the existing HTTP on 127.0.0.1:%d
+  Each device needs ui-ca.pem installed once. A login is still required
+  everywhere, and renewing (about once a year) means installing it again.
+`, httpsPort, config.DefaultHTTPPort)
+}
+
 // chooseRemoteHosts offers the detected addresses, then falls back to asking
 // for an IP. nil means the user skipped.
-func chooseRemoteHosts(d uiAccessDeps) []string {
+func chooseRemoteHosts(d uiAccessDeps, httpsPort int) []string {
 	if candidates := d.detect(); len(candidates) > 0 {
 		d.io.Printf("\n  Detected:\n")
 		for _, c := range candidates {
 			d.io.Printf("    %s\n", c)
 		}
+		example := config.UIConfig{HTTPSPort: httpsPort, AllowedHosts: candidates}.RemoteURL()
+		d.io.Printf(`
+  The certificate covers only these addresses, so they are what other devices
+  type in the URL, e.g. %s. The .local name keeps working if your
+  router hands out a different IP later; the IP is a fallback for devices that
+  cannot resolve .local names.
+`, example)
 		if d.io.ConfirmDefault("  Use these addresses?", true) {
 			return candidates
 		}

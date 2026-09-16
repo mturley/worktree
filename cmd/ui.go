@@ -27,7 +27,7 @@ import (
 
 // defaultUIPort is the port `worktree ui` binds by default, and the only
 // port other commands probe when looking for an already-running UI.
-const defaultUIPort = 8475
+const defaultUIPort = config.DefaultHTTPPort
 
 var (
 	uiPort          int

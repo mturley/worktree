@@ -29,6 +29,10 @@ type JiraConfig struct {
 	Projects []string `yaml:"projects"`
 }
 
+// DefaultHTTPPort is the port the web UI's loopback HTTP listener binds
+// unless `worktree ui --port` says otherwise.
+const DefaultHTTPPort = 8475
+
 // DefaultHTTPSPort is the port the web UI's HTTPS listener binds when
 // ui.https_port is unset. The plain-HTTP listener keeps its own --port.
 const DefaultHTTPSPort = 8476
