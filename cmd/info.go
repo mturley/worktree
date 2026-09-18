@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	wdb "github.com/mturley/worktree/internal/db"
@@ -80,9 +81,19 @@ func runInfo(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// resolveWorktreePath returns the absolute path of the worktree named by args,
+// or of the one containing the working directory when args is empty.
+//
+// An explicit empty argument is an error rather than "no argument": passed on
+// to git as `-C ""` it silently means the working directory, which is how
+// `worktree delete ""` once went after the branch of whatever repo it was run
+// from.
 func resolveWorktreePath(args []string) (string, error) {
 	if len(args) > 0 {
-		return args[0], nil
+		if strings.TrimSpace(args[0]) == "" {
+			return "", fmt.Errorf("worktree path is empty")
+		}
+		return filepath.Abs(args[0])
 	}
 	dir, err := os.Getwd()
 	if err != nil {

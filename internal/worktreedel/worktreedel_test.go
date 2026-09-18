@@ -427,3 +427,59 @@ func TestRunUnregisteredDetachedHeadDeleteBranchFails(t *testing.T) {
 		t.Fatalf("delete_branch = %s, want failed for a detached HEAD", got)
 	}
 }
+
+// An empty path once reached git as `-C ""`, which means the working
+// directory: the run then resolved the caller's own repo and offered its
+// checked-out branch for deletion. It must be refused before anything runs.
+func TestRunRejectsEmptyOrRelativePath(t *testing.T) {
+	conn, cfg, _, _, _ := fixture(t)
+	for _, p := range []string{"", "wt-1", "./wt-1"} {
+		var seen []Step
+		res := Run(conn, cfg, Options{Path: p, DeleteBranch: true}, func(s Step) { seen = append(seen, s) })
+		if res.Err == nil {
+			t.Fatalf("Run(%q) succeeded, want an error", p)
+		}
+		if len(seen) != 0 {
+			t.Fatalf("Run(%q) reported steps %+v before refusing", p, seen)
+		}
+		if b := Branch(conn, cfg, p); b != "" {
+			t.Fatalf("Branch(%q) = %q, want \"\"", p, b)
+		}
+	}
+}
+
+// After a half-finished delete the directory is gone, so asking git for the
+// branch fails. The prompt must still offer the real branch, from the
+// registry, never a placeholder.
+func TestBranchAfterDirectoryRemoved(t *testing.T) {
+	conn, cfg, _, wtPath, _ := fixture(t)
+	if b := Branch(conn, cfg, wtPath); b != "feature" {
+		t.Fatalf("Branch before removal = %q, want feature", b)
+	}
+	if err := os.RemoveAll(wtPath); err != nil {
+		t.Fatal(err)
+	}
+	if b := Branch(conn, cfg, wtPath); b != "feature" {
+		t.Fatalf("Branch after removal = %q, want feature from the registry", b)
+	}
+}
+
+// Nothing left to identify the branch by: no directory, no registry row.
+func TestBranchUnknownIsEmpty(t *testing.T) {
+	conn, cfg, _, wtPath, _ := fixture(t)
+	os.RemoveAll(wtPath)
+	registry.Unregister(conn, wtPath)
+	if b := Branch(conn, cfg, wtPath); b != "" {
+		t.Fatalf("Branch = %q, want \"\" when nothing records it", b)
+	}
+}
+
+func TestBranchDetachedHeadIsEmpty(t *testing.T) {
+	conn, cfg, _, wtPath, _ := fixture(t)
+	if out, err := exec.Command("git", "-C", wtPath, "checkout", "--detach").CombinedOutput(); err != nil {
+		t.Fatalf("detach: %v: %s", err, out)
+	}
+	if b := Branch(conn, cfg, wtPath); b != "" {
+		t.Fatalf("Branch = %q, want \"\" for a detached HEAD", b)
+	}
+}

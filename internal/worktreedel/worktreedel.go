@@ -91,6 +91,14 @@ var labels = map[StepKey]string{
 // and reports it as skipped rather than failing.
 func Run(conn *sql.DB, cfg config.Config, opts Options, observe func(Step)) Result {
 	res := Result{}
+	// An empty or relative path is never a worktree this tool made, and it
+	// is worse than unknown: `git -C ""` runs in the process's working
+	// directory, so resolve would pick up whatever repo the caller happens to
+	// be standing in and offer its checked-out branch for deletion.
+	if opts.Path == "" || !filepath.IsAbs(opts.Path) {
+		res.Err = fmt.Errorf("worktree path must be absolute, got %q", opts.Path)
+		return res
+	}
 	keys := []StepKey{StepRemoveDirectory}
 	if opts.DeleteBranch {
 		// Deleting the branch must happen before Unregister: the branch name
@@ -247,6 +255,22 @@ func Run(conn *sql.DB, cfg config.Config, opts Options, observe func(Step)) Resu
 	}
 
 	return res
+}
+
+// Branch reports the branch Run would delete for the worktree at path, or ""
+// when there is none to offer (detached HEAD, or nothing left to identify it
+// by). Callers asking "delete the branch too?" must use this rather than
+// inspecting the directory themselves: after a half-finished run the directory
+// is gone, and only the registry still knows the branch.
+func Branch(conn *sql.DB, cfg config.Config, path string) string {
+	if path == "" || !filepath.IsAbs(path) {
+		return ""
+	}
+	_, _, branch, err := resolve(conn, cfg, path)
+	if err != nil {
+		return ""
+	}
+	return branch
 }
 
 // resolve finds the repo root, repo name and branch for a worktree.

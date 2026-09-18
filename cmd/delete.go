@@ -50,8 +50,24 @@ func runDelete(cmd *cobra.Command, args []string) error {
 		repoRoot = mainRoot
 	}
 
+	conn, err := wdb.Open()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	// The branch comes from the runner, not from inspecting the directory:
+	// after a half-finished delete the directory is gone and only the
+	// registry still knows the branch. Asking the directory then yielded
+	// gitBranch's "(unknown)" placeholder, which was offered for deletion as
+	// though it were a real branch name.
+	branch := worktreedel.Branch(conn, cfg, wtPath)
+	shownBranch := branch
+	if shownBranch == "" {
+		shownBranch = ui.Dim("none (detached HEAD or not recorded)")
+	}
 	fmt.Printf("Worktree: %s\n", ui.ShortPath(wtPath))
-	fmt.Printf("Branch:   %s\n", gitBranch(wtPath))
+	fmt.Printf("Branch:   %s\n", shownBranch)
 
 	if !deleteForce {
 		if !ui.Confirm("Remove this worktree?") {
@@ -65,18 +81,10 @@ func runDelete(cmd *cobra.Command, args []string) error {
 	// happen to someone holding down enter. --force skips the confirmation
 	// for the worktree, not the branch; --delete-branch is the scriptable way.
 	deleteBranch := deleteBranchFlag
-	if !deleteBranch && !deleteForce {
-		if b := gitBranch(wtPath); b != "" {
-			deleteBranch = ui.ConfirmDefault(
-				fmt.Sprintf("Delete the branch %q too?", b), false)
-		}
+	if !deleteBranch && !deleteForce && branch != "" {
+		deleteBranch = ui.ConfirmDefault(
+			fmt.Sprintf("Delete the branch %q too?", branch), false)
 	}
-
-	conn, err := wdb.Open()
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
 
 	opts := worktreedel.Options{Path: wtPath, DeleteBranch: deleteBranch}
 	var printer stepPrinter
