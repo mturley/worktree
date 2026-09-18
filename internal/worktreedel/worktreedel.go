@@ -77,7 +77,14 @@ var labels = map[StepKey]string{
 }
 
 // Run executes the deletion sequence, reporting each step to observe (which may
-// be nil) as it completes.
+// be nil) as it starts and again as it completes.
+//
+// A step is announced as `pending`, with a detail naming what it is about to
+// act on, BEFORE its work begins: removing a large worktree directory or
+// pruning can take a while, and an observer that only hears about a step once
+// it finishes cannot show that anything is happening. The announcement is
+// passed to observe only — res.Steps keeps its pending entries detail-free, so
+// a step the run never reached looks the same whether or not it was announced.
 //
 // Every run starts from the top: there is no session. Granting a force
 // re-invokes Run with that force set, so each step tolerates work already done
@@ -110,6 +117,12 @@ func Run(conn *sql.DB, cfg config.Config, opts Options, observe func(Step)) Resu
 		}
 	}
 
+	start := func(key StepKey, detail string) {
+		if observe != nil {
+			observe(Step{Key: key, Label: labels[key], Status: StatusPending, Detail: detail})
+		}
+	}
+
 	repoRoot, repo, branch, err := resolve(conn, cfg, opts.Path)
 	if err != nil {
 		res.Err = err
@@ -123,6 +136,7 @@ func Run(conn *sql.DB, cfg config.Config, opts Options, observe func(Step)) Resu
 	case os.IsNotExist(statErr):
 		set(StepRemoveDirectory, StatusSkipped, "already removed")
 	default:
+		start(StepRemoveDirectory, opts.Path)
 		var rmErr error
 		if opts.ForceDirectory {
 			rmErr = gitutil.ForceRemoveWorktree(repoRoot, cfg.WorktreesBase, opts.Path)
@@ -157,6 +171,7 @@ func Run(conn *sql.DB, cfg config.Config, opts Options, observe func(Step)) Resu
 			// inspect before it was removed. An honest failure beats that.
 			set(StepDeleteBranch, StatusFailed, "could not determine which branch to delete")
 		} else {
+			start(StepDeleteBranch, branch)
 			err := gitutil.DeleteBranch(repoRoot, branch, opts.ForceBranch)
 			var needsForce *gitutil.ErrNeedsForce
 			switch {
@@ -179,18 +194,28 @@ func Run(conn *sql.DB, cfg config.Config, opts Options, observe func(Step)) Resu
 	// 3-6. Cleanup. These do NOT abort on failure: the CLI has always warned
 	// and carried on, and stopping would leave more mess than continuing. The
 	// difference is the failure is now visible instead of scrolling past.
+
+	// The range is looked up only to say which one is being released; a
+	// failed lookup changes nothing about the release itself.
+	portRange := ""
+	if a, ok, err := ports.Lookup(conn, name); err == nil && ok {
+		portRange = a.Range()
+	}
+	start(StepReleasePorts, portRange)
 	if err := ports.Release(conn, name); err != nil {
 		set(StepReleasePorts, StatusFailed, err.Error())
 	} else {
-		set(StepReleasePorts, StatusDone, "")
+		set(StepReleasePorts, StatusDone, portRange)
 	}
 
+	start(StepUnregister, opts.Path)
 	if err := registry.Unregister(conn, opts.Path); err != nil {
 		set(StepUnregister, StatusFailed, err.Error())
 	} else {
 		set(StepUnregister, StatusDone, "")
 	}
 
+	start(StepRemoveResources, opts.Path)
 	if err := resources.RemoveAll(conn, opts.Path); err != nil {
 		set(StepRemoveResources, StatusFailed, err.Error())
 	} else {
@@ -198,6 +223,7 @@ func Run(conn *sql.DB, cfg config.Config, opts Options, observe func(Step)) Resu
 	}
 
 	kubePath := env.KubeconfigPath(repo, name)
+	start(StepRemoveKubeconfig, kubePath)
 	switch err := os.Remove(kubePath); {
 	case err == nil:
 		set(StepRemoveKubeconfig, StatusDone, kubePath)
@@ -211,10 +237,13 @@ func Run(conn *sql.DB, cfg config.Config, opts Options, observe func(Step)) Resu
 		// The worktree was already fully removed and unregistered by a prior
 		// run; there is no repo root left to prune from.
 		set(StepPrune, StatusSkipped, "no repo information available")
-	} else if err := gitutil.PruneWorktrees(repoRoot); err != nil {
-		set(StepPrune, StatusFailed, err.Error())
 	} else {
-		set(StepPrune, StatusDone, "")
+		start(StepPrune, repoRoot)
+		if err := gitutil.PruneWorktrees(repoRoot); err != nil {
+			set(StepPrune, StatusFailed, err.Error())
+		} else {
+			set(StepPrune, StatusDone, "")
+		}
 	}
 
 	return res

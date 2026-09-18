@@ -77,8 +77,8 @@ func TestRunCleanDelete(t *testing.T) {
 		t.Fatalf("fixture did not allocate a port range: ok=%v err=%v", ok, err)
 	}
 
-	var seen []StepKey
-	res := Run(conn, cfg, Options{Path: wtPath}, func(s Step) { seen = append(seen, s.Key) })
+	var seen []Step
+	res := Run(conn, cfg, Options{Path: wtPath}, func(s Step) { seen = append(seen, s) })
 
 	if res.Err != nil || res.NeedsForce != "" {
 		t.Fatalf("clean delete: err=%v needsForce=%q", res.Err, res.NeedsForce)
@@ -100,9 +100,26 @@ func TestRunCleanDelete(t *testing.T) {
 	if got := byKey(res, StepPrune).Status; got != StatusDone && got != StatusSkipped {
 		t.Fatalf("step %s = %s, want done or skipped", StepPrune, got)
 	}
-	// The observer is how the CLI keeps its per-step spinners.
-	if len(seen) != len(res.Steps) {
-		t.Fatalf("observer saw %d steps, result has %d", len(seen), len(res.Steps))
+	// The observer is how the CLI keeps its per-step spinners: every step
+	// that runs is announced as pending, with a detail saying what it acts
+	// on, immediately before its outcome.
+	if len(seen) != 2*len(res.Steps) {
+		t.Fatalf("observer saw %d events, want a start and an outcome for each of %d steps", len(seen), len(res.Steps))
+	}
+	for i, want := range res.Steps {
+		start, outcome := seen[2*i], seen[2*i+1]
+		if start.Key != want.Key || start.Status != StatusPending || start.Detail == "" {
+			t.Fatalf("event %d = %+v, want a pending announcement of %s with a detail", 2*i, start, want.Key)
+		}
+		if outcome != want {
+			t.Fatalf("event %d = %+v, want outcome %+v", 2*i+1, outcome, want)
+		}
+	}
+	// Announcements must not leak into the result the web UI renders.
+	for _, s := range res.Steps {
+		if s.Status == StatusPending {
+			t.Fatalf("step %s left pending after a clean run", s.Key)
+		}
 	}
 	if e, err := registry.Get(conn, wtPath); err != nil || e != nil {
 		t.Fatalf("registry row survived: %+v (err %v)", e, err)

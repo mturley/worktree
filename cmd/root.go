@@ -19,6 +19,7 @@ import (
 	"github.com/mturley/worktree/internal/ports"
 	"github.com/mturley/worktree/internal/resources"
 	"github.com/mturley/worktree/internal/ui"
+	"github.com/mturley/worktree/internal/worktreedel"
 	"github.com/mturley/worktree/internal/worktreenew"
 	"github.com/spf13/cobra"
 )
@@ -199,40 +200,60 @@ func answerConfirm(c *worktreenew.Confirm, agreed bool, opts *worktreenew.Option
 	return true
 }
 
-// stepPrinter renders the runner's steps with the spinner the CLI has always
-// shown while git and the network work. The runner reports `pending` when a
-// slow step starts and its outcome when it ends, so the spinner starts and
-// stops here — the runner itself never prints, because an HTTP request drives
-// the same code.
+// stepPrinter renders a runner's steps with the spinner the CLI has always
+// shown while git and the network work. The runners (worktreenew, worktreedel)
+// report `pending` when a step starts and its outcome when it ends, so the
+// spinner starts and stops here — the runners themselves never print, because
+// an HTTP request drives the same code.
 type stepPrinter struct {
 	active *ui.Spinner
 }
 
 func (p *stepPrinter) observe(s worktreenew.Step) {
-	switch s.Status {
-	case worktreenew.StatusPending:
+	p.show(string(s.Status), s.Label, s.Detail)
+}
+
+// observeDelete renders a worktreedel step. Its details are mostly absolute
+// paths, which read better home-relative.
+func (p *stepPrinter) observeDelete(s worktreedel.Step) {
+	p.show(string(s.Status), s.Label, ui.ShortPath(s.Detail))
+}
+
+// show takes the status as a plain string because both runners' Status types
+// share the same values; one switch keeps create and delete looking alike.
+func (p *stepPrinter) show(status, label, detail string) {
+	switch status {
+	case "pending":
 		p.clear()
-		p.active = ui.StartSpinner(s.Label)
-	case worktreenew.StatusDone:
-		line := fmt.Sprintf("  %s %s", ui.Green("✓"), s.Label)
-		if s.Detail != "" {
-			line += ": " + ui.Dim(s.Detail)
+		msg := label
+		if detail != "" {
+			msg += ": " + ui.Dim(detail)
+		}
+		p.active = ui.StartSpinner(msg)
+	case "done":
+		line := fmt.Sprintf("  %s %s", ui.Green("✓"), label)
+		if detail != "" {
+			line += ": " + ui.Dim(detail)
 		}
 		p.finish(line)
-	case worktreenew.StatusSkipped:
+	case "skipped":
 		// Skipped steps stay visible but quiet: this is what replaces the old
 		// "→ Reusing existing worktree at …" line, which otherwise vanished
 		// and made reuse look identical to a fresh create.
-		line := "  → " + s.Label
-		if s.Detail != "" {
-			line += " (" + s.Detail + ")"
+		line := "  → " + label
+		if detail != "" {
+			line += " (" + detail + ")"
 		}
 		p.finish(ui.Dim(line))
-	case worktreenew.StatusFailed:
+	case "failed":
 		// Warnings keep going to stderr, as they did before the runner
 		// existed; the spinner line is cleared first so they land clean.
 		p.clear()
-		fmt.Fprintf(os.Stderr, "  %s %s: %s\n", ui.Yellow("!"), s.Label, s.Detail)
+		fmt.Fprintf(os.Stderr, "  %s %s: %s\n", ui.Yellow("!"), label, detail)
+	default:
+		// needs_force (delete only): the caller explains it and asks, so the
+		// spinner just has to be gone before that.
+		p.clear()
 	}
 }
 

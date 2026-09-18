@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/mturley/worktree/internal/config"
@@ -80,17 +79,12 @@ func runDelete(cmd *cobra.Command, args []string) error {
 	defer conn.Close()
 
 	opts := worktreedel.Options{Path: wtPath, DeleteBranch: deleteBranch}
+	var printer stepPrinter
 	for {
-		res := worktreedel.Run(conn, cfg, opts, func(s worktreedel.Step) {
-			switch s.Status {
-			case worktreedel.StatusDone:
-				fmt.Printf("%s %s\n", ui.Green("✓"), s.Label)
-			case worktreedel.StatusSkipped:
-				fmt.Printf("%s %s (%s)\n", ui.Green("✓"), s.Label, s.Detail)
-			case worktreedel.StatusFailed:
-				fmt.Fprintf(os.Stderr, "Warning: %s: %s\n", s.Label, s.Detail)
-			}
-		})
+		res := worktreedel.Run(conn, cfg, opts, printer.observeDelete)
+		// Every outcome clears its own spinner, but a run that errors before
+		// reporting one must not leave a spinner turning under the error.
+		printer.clear()
 		if res.Err != nil {
 			return res.Err
 		}
