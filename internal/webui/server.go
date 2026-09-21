@@ -87,6 +87,8 @@ type Server struct {
 	// unexported, so injecting here is the only way to test the available path.
 	cmuxList       func() ([]cmux.Workspace, error)
 	cmuxListGroups func() ([]cmux.WorkspaceGroup, error)
+	// cmuxSetDescription is the same kind of seam for the notes sync.
+	cmuxSetDescription func(workspaceRef, description string) error
 
 	// LinkResolver is a seam for tests; nil means a default resolver.
 	LinkResolver *linkmeta.Resolver
@@ -152,6 +154,8 @@ func (s *Server) routes() []route {
 		{"GET /api/slack-autocomplete", s.handleSlackAutocomplete},
 		{"GET /api/thread-events", s.handleThreadEvents},
 		{"GET /api/worktree-info", s.handleWorktreeInfo},
+		{"GET /api/worktree-notes", s.handleGetWorktreeNotes},
+		{"POST /api/worktree-notes", s.handleSetWorktreeNotes},
 		{"GET /api/cmux", s.handleCmux},
 		{"GET /api/cmux-groups", s.handleCmuxGroups},
 		{"POST /api/cmux/select", s.handleCmuxSelect},

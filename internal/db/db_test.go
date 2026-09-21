@@ -14,7 +14,7 @@ func TestOpenAtCreatesTables(t *testing.T) {
 	}
 	defer conn.Close()
 
-	for _, tbl := range []string{"watcher_subscriptions", "worktree_primary", "port_allocations", "worktrees", "resource_read_cursor"} {
+	for _, tbl := range []string{"watcher_subscriptions", "worktree_primary", "port_allocations", "worktrees", "resource_read_cursor", "worktree_notes"} {
 		var name string
 		err := conn.QueryRow(
 			`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, tbl).Scan(&name)

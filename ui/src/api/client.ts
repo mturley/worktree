@@ -1,4 +1,4 @@
-import type { CmuxGroupsResponse, CmuxResponse, CreateWorktreeResponse, DeleteWorktreeResponse, Repo, ResourceDTO, SessionInfo, TimelineResponse, WatchersResponse, WorktreeInfo, WorktreeSummary } from "./types"
+import type { CmuxGroupsResponse, CmuxResponse, CreateWorktreeResponse, DeleteWorktreeResponse, Repo, ResourceDTO, SaveWorktreeNotesResponse, SessionInfo, TimelineResponse, WatchersResponse, WorktreeInfo, WorktreeNotes, WorktreeSummary } from "./types"
 
 export class HttpError extends Error {
   constructor(message: string, readonly status: number) {
@@ -122,6 +122,16 @@ export const api = {
       body: JSON.stringify(args),
     }),
   cmux: () => fetchJSON<CmuxResponse>("/api/cmux"),
+  worktreeNotes: (path: string) =>
+    fetchJSON<WorktreeNotes>(`/api/worktree-notes?path=${encodeURIComponent(path)}`),
+  // keepalive lets a save started while the page unloads still complete.
+  saveWorktreeNotes: (args: { path: string; notes: string; sync_cmux: boolean }, opts: { keepalive?: boolean } = {}) =>
+    fetchJSON<SaveWorktreeNotesResponse>("/api/worktree-notes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(args),
+      keepalive: opts.keepalive,
+    }),
   repos: () => fetchJSON<Repo[]>("/api/repos"),
   repoDotfiles: (repoRoot: string) =>
     fetchJSON<string[]>(`/api/repo-dotfiles?repo_root=${encodeURIComponent(repoRoot)}`),

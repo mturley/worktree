@@ -103,6 +103,14 @@ export interface EnvVar { key: string; value: string }
 /** GET /api/worktree-info — detail-page-only; git status costs a subprocess. */
 export interface WorktreeInfo { env: EnvVar[]; git?: GitStatus }
 
+export interface WorktreeNotes { notes: string; sync_cmux: boolean; updated_at?: string }
+/** How a notes save's mirror to the cmux workspace description went. */
+export type CmuxSyncOutcome = "off" | "ok" | "skipped" | "failed"
+export interface SaveWorktreeNotesResponse extends WorktreeNotes {
+  cmux_sync: CmuxSyncOutcome
+  cmux_error?: string
+}
+
 export type DeleteStepStatus = "done" | "skipped" | "failed" | "needs_force" | "pending"
 export interface DeleteStep {
   key: string

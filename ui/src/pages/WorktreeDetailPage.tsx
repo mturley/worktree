@@ -290,7 +290,9 @@ export function WorktreeDetailPage() {
           </Group>
           {summary && (
             <Collapse in={detailsOpen}>
-              <WorktreeDetailCard w={summary} />
+              {/* Keyed by path: the card holds an unsaved notes draft, which must
+                  never carry over to another worktree. */}
+              <WorktreeDetailCard key={summary.path} w={summary} />
             </Collapse>
           )}
         </Stack>
