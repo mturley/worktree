@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { ActionIcon, Box, Button, Checkbox, Code, Collapse, Group, Paper, Stack, Text, Textarea, Tooltip, UnstyledButton } from "@mantine/core"
-import { IconChevronRight, IconTrash } from "@tabler/icons-react"
+import { IconCheck, IconChevronRight, IconCopy, IconTrash } from "@tabler/icons-react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useLocation } from "wouter"
 import { api } from "../api/client"
@@ -145,29 +145,32 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
             )}
           </SectionToggle>
         </Group>
-
-        {/*
-          The same environment `worktree info` prints. Shown here because it is
-          what you need when you open a terminal in this worktree, and it was
-          previously only reachable from the CLI.
-        */}
-        {hasEnv && (
-          <Collapse in={section === "env"}>
-            <Stack gap={2}>
-              {info.data!.env.map((kv) => (
-                <Text key={kv.key} size="xs" style={{ overflowWrap: "anywhere" }}>
-                  <Text span c="dimmed">{kv.key}=</Text>
-                  <Code>{kv.value}</Code>
-                </Text>
-              ))}
-            </Stack>
-          </Collapse>
-        )}
-
-        <Collapse in={section === "notes"}>
-          <NotesPanel notes={notes} workspaceCount={workspaces.length} />
-        </Collapse>
       </Stack>
+
+      {/*
+        The sections sit OUTSIDE the Stack, and carry their own top padding:
+        a collapsed Collapse is 0px tall but would still take a Stack gap,
+        leaving empty space under the toggles.
+      */}
+
+      {/*
+        The same environment `worktree info` prints. Shown here because it is
+        what you need when you open a terminal in this worktree, and it was
+        previously only reachable from the CLI.
+      */}
+      {hasEnv && (
+        <Collapse in={section === "env"}>
+          <Stack gap={2} pt={6}>
+            {info.data!.env.map((kv) => <EnvVarRow key={kv.key} name={kv.key} value={kv.value} />)}
+          </Stack>
+        </Collapse>
+      )}
+
+      <Collapse in={section === "notes"}>
+        <Box pt={6}>
+          <NotesPanel notes={notes} workspaceCount={workspaces.length} />
+        </Box>
+      </Collapse>
 
       {deleteOpen && (
         <DeleteWorktreeModal
@@ -185,6 +188,44 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
         />
       )}
     </Paper>
+  )
+}
+
+const COPIED_FEEDBACK_MS = 1500
+
+/** One environment variable, with a button that copies its value. */
+function EnvVarRow({ name, value }: { name: string; value: string }) {
+  const [copied, setCopied] = useState(false)
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopied(true)
+      setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS)
+    } catch {
+      // Clipboard access can be denied; the value is still selectable.
+    }
+  }
+
+  return (
+    <Group gap={4} wrap="nowrap" align="flex-start">
+      <Text size="xs" style={{ overflowWrap: "anywhere" }}>
+        <Text span c="dimmed">{name}=</Text>
+        <Code>{value}</Code>
+      </Text>
+      <Tooltip label={copied ? "Copied" : "Copy value"}>
+        <ActionIcon
+          variant="subtle"
+          color={copied ? "teal" : "gray"}
+          size="xs"
+          aria-label={`Copy ${name}`}
+          onClick={copy}
+          style={{ flexShrink: 0 }}
+        >
+          {copied ? <IconCheck size={12} /> : <IconCopy size={12} />}
+        </ActionIcon>
+      </Tooltip>
+    </Group>
   )
 }
 
