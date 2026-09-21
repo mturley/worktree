@@ -181,6 +181,8 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | POST | `/api/worktree-resources/add` | body: `{path, url, related?}` | `resourceDTO` |
 | POST | `/api/worktree-resources/remove` | body: `{path, type, id}` | 204 No Content |
 | POST | `/api/worktrees/delete` | body: `{path, delete_branch, force_directory, force_branch}` | `{ok, needs_force, steps[]}` |
+| GET | `/api/worktree-notes` | `path` (required) | `{notes, sync_cmux, updated_at?}`; empty notes when never saved |
+| POST | `/api/worktree-notes` | body: `{path, notes, sync_cmux}` | the stored notes plus `cmux_sync` (`off`/`ok`/`skipped`/`failed`) and `cmux_error?`. 404 for an unregistered path, 413 over 64 KB |
 | GET | `/api/cmux` | — | `{available, matches: {path: [{ref,title,color,selected}]}}`, matched server-side (symlink-resolving). Polled ~15s by one shared TanStack query. |
 | GET | `/api/cmux-groups` | — | workspace groups + `cmux.NamedColors`; fetched only when a create/select modal opens |
 | POST | `/api/cmux/select` | body: `{path, ref}` (see handler) | selects a workspace, then always `osascript` activate |
@@ -413,6 +415,32 @@ Two further rules the sequence depends on:
   unchecked and the CLI prompt defaults to no. Removing a worktree destroys
   nothing a branch does not still hold, so the branch is never deleted without
   an explicit yes.
+
+### Worktree notes (`internal/notes`, `worktree_notes_api.go`)
+
+Free-text notes per worktree, edited in the detail card's Notes section and
+stored in the worktree-owned `worktree_notes` table (keyed by registry path).
+
+- **Notes outlive the registration.** `registry.Unregister` does not touch
+  `worktree_notes`, so a worktree recreated at the same path gets its notes
+  back.
+- **Own endpoint, not a field on `/api/worktree-info`**, so a git status
+  refetch never overwrites notes being typed and a save costs no git
+  subprocess.
+- **Autosave** lives in `ui/src/hooks/useWorktreeNotes.ts`: the server copy is
+  adopted once on load, then the local draft is the truth. Saves are debounced
+  (`NOTES_SAVE_DEBOUNCE_MS`), at most one is in flight, and edits made during
+  a save go out in a follow-up save. Pending edits are also sent when the
+  section collapses and on unmount/`beforeunload` (a `keepalive` fetch). The
+  card is keyed by path in `WorktreeDetailPage` so a draft never leaks to
+  another worktree.
+- **cmux description sync** (opt-in, per worktree, stored as `sync_cmux`): on
+  every save with sync on, the server lists cmux workspaces, matches the path
+  with `cmux.Match`, and — only when exactly ONE matches — sets that
+  workspace's description by its UUID `id` (refs are index-based and shift).
+  Empty notes clear the description. The notes are committed BEFORE cmux is
+  touched, so a cmux failure is reported in `cmux_sync`, never as a failed
+  save. The sync is one-way; unchecking it leaves the description as it is.
 
 ### Unread (`internal/unread`, `internal/webui/unread.go`)
 

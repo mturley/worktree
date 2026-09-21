@@ -1,4 +1,4 @@
-import { afterEach, describe, it, expect, vi } from "vitest"
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest"
 import { render, cleanup, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
@@ -7,9 +7,29 @@ import { WorktreeDetailCard } from "./WorktreeDetailCard"
 import type { WorktreeInfo, WorktreeSummary } from "../api/types"
 
 const worktreeInfo = vi.fn()
+const worktreeNotes = vi.fn()
+const saveWorktreeNotes = vi.fn()
+const cmux = vi.fn()
 vi.mock("../api/client", async (orig) => {
   const actual = await orig<typeof import("../api/client")>()
-  return { api: { ...actual.api, worktreeInfo: (...a: unknown[]) => worktreeInfo(...a) } }
+  return {
+    api: {
+      ...actual.api,
+      worktreeInfo: (...a: unknown[]) => worktreeInfo(...a),
+      worktreeNotes: (...a: unknown[]) => worktreeNotes(...a),
+      saveWorktreeNotes: (...a: unknown[]) => saveWorktreeNotes(...a),
+      cmux: (...a: unknown[]) => cmux(...a),
+    },
+  }
+})
+
+beforeEach(() => {
+  worktreeNotes.mockResolvedValue({ notes: "", sync_cmux: false })
+  saveWorktreeNotes.mockImplementation(async (args: { notes: string; sync_cmux: boolean }) => ({
+    notes: args.notes, sync_cmux: args.sync_cmux, updated_at: "2026-09-21T00:00:00Z",
+    cmux_sync: args.sync_cmux ? "ok" : "off",
+  }))
+  cmux.mockResolvedValue({ available: true, matches: {} })
 })
 
 const summary = (o: Partial<WorktreeSummary> = {}): WorktreeSummary => ({
@@ -31,7 +51,10 @@ const wrap = (w: WorktreeSummary) =>
     </MantineProvider>,
   )
 
-afterEach(() => { cleanup(); worktreeInfo.mockReset() })
+afterEach(() => {
+  cleanup()
+  for (const m of [worktreeInfo, worktreeNotes, saveWorktreeNotes, cmux]) m.mockReset()
+})
 
 const info = (o: Partial<WorktreeInfo> = {}): WorktreeInfo => ({
   env: [
@@ -135,5 +158,171 @@ describe("delete control", () => {
     wrap(summary())
     await user.click(await screen.findByRole("button", { name: /delete worktree/i }))
     expect(screen.getByRole("button", { name: /^delete$/i })).toBeDisabled()
+  })
+})
+
+describe("layout", () => {
+  it("puts the git status on the same line as the branch", async () => {
+    worktreeInfo.mockResolvedValue(info({
+      git: { branch: "my-branch", ahead: 0, behind: 0, staged: 0, modified: 3, untracked: 0 },
+    }))
+    wrap(summary())
+    const status = await screen.findByText(/3 modified/)
+    expect(status.closest("p")).toHaveTextContent(/odh · my-branch · 3 modified/)
+  })
+
+  it("lets only one of Environment and Notes be open at a time", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    const user = userEvent.setup()
+    wrap(summary())
+    await user.click(await screen.findByRole("button", { name: /show environment/i }))
+    expect(screen.getByText("4090-4099")).toBeVisible()
+    await user.click(screen.getByRole("button", { name: /show notes/i }))
+    expect(screen.getByRole("textbox", { name: /worktree notes/i })).toBeVisible()
+    expect(screen.getByText("4090-4099")).not.toBeVisible()
+    expect(screen.getByRole("button", { name: /show environment/i })).toHaveAttribute("aria-expanded", "false")
+  })
+})
+
+const notesBox = () => screen.getByRole("textbox", { name: /worktree notes/i })
+
+describe("notes", () => {
+
+  it("starts collapsed, with no dot, when there are no notes", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    wrap(summary())
+    const toggle = await screen.findByRole("button", { name: /show notes/i })
+    await waitFor(() => expect(worktreeNotes).toHaveBeenCalled())
+    expect(toggle).toHaveAttribute("aria-expanded", "false")
+    expect(screen.queryByTestId("notes-dot")).not.toBeInTheDocument()
+  })
+
+  it("starts expanded when there are notes", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    worktreeNotes.mockResolvedValue({ notes: "waiting on review", sync_cmux: false })
+    wrap(summary())
+    await waitFor(() => expect(notesBox()).toBeVisible())
+    expect(notesBox()).toHaveValue("waiting on review")
+  })
+
+  it("shows a dot on the collapsed toggle when there are notes", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    worktreeNotes.mockResolvedValue({ notes: "waiting on review", sync_cmux: false })
+    const user = userEvent.setup()
+    wrap(summary())
+    await user.click(await screen.findByRole("button", { name: /hide notes/i }))
+    expect(screen.getByTestId("notes-dot")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /show notes \(has notes\)/i })).toBeInTheDocument()
+  })
+
+  it("auto-saves after typing pauses, walking unsaved → saving → saved", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    let resolve!: () => void
+    saveWorktreeNotes.mockImplementation((args: { notes: string; sync_cmux: boolean }) =>
+      new Promise((r) => { resolve = () => r({ ...args, cmux_sync: "off" }) }))
+    const user = userEvent.setup()
+    wrap(summary())
+    await user.click(await screen.findByRole("button", { name: /show notes/i }))
+    await waitFor(() => expect(notesBox()).toBeEnabled())
+    await user.type(notesBox(), "hi")
+    expect(screen.getByText("Unsaved changes")).toBeInTheDocument()
+    // One save for the whole burst, not one per keystroke.
+    await screen.findByText("Saving…", {}, { timeout: 2000 })
+    expect(saveWorktreeNotes).toHaveBeenCalledTimes(1)
+    expect(saveWorktreeNotes.mock.calls[0][0]).toEqual({ path: "/wt/foo", notes: "hi", sync_cmux: false })
+    resolve()
+    expect(await screen.findByText("Saved")).toBeInTheDocument()
+  })
+
+  it("offers Retry when a save fails, and drops it once a retry succeeds", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    saveWorktreeNotes.mockRejectedValueOnce(new Error("disk full"))
+    const user = userEvent.setup()
+    wrap(summary())
+    await user.click(await screen.findByRole("button", { name: /show notes/i }))
+    await waitFor(() => expect(notesBox()).toBeEnabled())
+    await user.type(notesBox(), "x")
+    expect(await screen.findByText(/save failed: disk full/i, {}, { timeout: 2000 })).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Retry" }))
+    expect(await screen.findByText("Saved")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument()
+    expect(saveWorktreeNotes).toHaveBeenCalledTimes(2)
+  })
+
+  it("saves pending edits immediately when the notes are collapsed", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    const user = userEvent.setup()
+    wrap(summary())
+    await user.click(await screen.findByRole("button", { name: /show notes/i }))
+    await waitFor(() => expect(notesBox()).toBeEnabled())
+    await user.type(notesBox(), "x")
+    await user.click(screen.getByRole("button", { name: /hide notes/i }))
+    expect(saveWorktreeNotes).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("cmux description sync", () => {
+  const oneWorkspace = { available: true, matches: { "/wt/foo": [{ ref: "workspace:1", title: "foo", selected: false }] } }
+  const syncBox = () => screen.queryByRole("checkbox", { name: /sync to cmux workspace description/i })
+
+  it("is offered, unchecked, when exactly one workspace matches", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    cmux.mockResolvedValue(oneWorkspace)
+    const user = userEvent.setup()
+    wrap(summary())
+    await user.click(await screen.findByRole("button", { name: /show notes/i }))
+    await waitFor(() => expect(syncBox()).toBeInTheDocument())
+    expect(syncBox()).not.toBeChecked()
+  })
+
+  it("is not offered with zero or two workspaces", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    cmux.mockResolvedValue({
+      available: true,
+      matches: { "/wt/foo": [
+        { ref: "workspace:1", title: "a", selected: false },
+        { ref: "workspace:2", title: "b", selected: false },
+      ] },
+    })
+    const user = userEvent.setup()
+    wrap(summary())
+    await user.click(await screen.findByRole("button", { name: /show notes/i }))
+    await waitFor(() => expect(cmux).toHaveBeenCalled())
+    await waitFor(() => expect(notesBox()).toBeEnabled())
+    expect(syncBox()).not.toBeInTheDocument()
+  })
+
+  it("pushes the current notes as soon as it is checked", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    worktreeNotes.mockResolvedValue({ notes: "existing", sync_cmux: false })
+    cmux.mockResolvedValue(oneWorkspace)
+    const user = userEvent.setup()
+    wrap(summary())
+    await waitFor(() => expect(syncBox()).toBeEnabled())
+    await user.click(syncBox()!)
+    await waitFor(() => expect(saveWorktreeNotes).toHaveBeenCalledWith({ path: "/wt/foo", notes: "existing", sync_cmux: true }))
+    expect(await screen.findByText("Saved · synced to cmux")).toBeInTheDocument()
+  })
+
+  it("offers Retry when the cmux sync fails, though the notes saved", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    worktreeNotes.mockResolvedValue({ notes: "existing", sync_cmux: true })
+    cmux.mockResolvedValue(oneWorkspace)
+    saveWorktreeNotes.mockResolvedValueOnce({ notes: "existing!", sync_cmux: true, cmux_sync: "failed", cmux_error: "no" })
+    const user = userEvent.setup()
+    wrap(summary())
+    await waitFor(() => expect(notesBox()).toBeEnabled())
+    await user.type(notesBox(), "!")
+    expect(await screen.findByText("Saved · cmux sync failed", {}, { timeout: 2000 })).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Retry" }))
+    expect(await screen.findByText("Saved · synced to cmux")).toBeInTheDocument()
+  })
+
+  it("stays visible, with a reason, if sync is on but the workspace is gone", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    worktreeNotes.mockResolvedValue({ notes: "existing", sync_cmux: true })
+    wrap(summary())
+    await waitFor(() => expect(syncBox()).toBeChecked())
+    expect(screen.getByText(/not syncing: this worktree has no cmux workspace/i)).toBeInTheDocument()
   })
 })

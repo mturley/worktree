@@ -11,6 +11,7 @@ import (
 )
 
 type Workspace struct {
+	ID               string  `json:"id"` // UUID; stable, unlike the index-based Ref
 	Ref              string  `json:"ref"`
 	Title            string  `json:"title"`
 	CustomTitle      string  `json:"custom_title"`
@@ -216,6 +217,22 @@ func SetWorkspaceColor(workspaceRef, color string) error {
 	cmd := cmuxCmd("workspace-action", "--workspace", workspaceRef, "--action", "set-color", "--color", color)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("setting color: %s", strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// SetWorkspaceDescription sets a workspace's description, or clears it when
+// description is empty — cmux's set-description does not accept an empty
+// value, and an empty description is what empty notes should mirror to.
+func SetWorkspaceDescription(workspaceRef, description string) error {
+	args := []string{"workspace-action", "--workspace", workspaceRef}
+	if description == "" {
+		args = append(args, "--action", "clear-description")
+	} else {
+		args = append(args, "--action", "set-description", "--description", description)
+	}
+	if out, err := cmuxCmd(args...).CombinedOutput(); err != nil {
+		return fmt.Errorf("setting description: %s", strings.TrimSpace(string(out)))
 	}
 	return nil
 }

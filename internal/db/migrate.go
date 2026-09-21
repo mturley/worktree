@@ -55,6 +55,16 @@ func migrate(conn *sql.DB) error {
 			last_seen_at TEXT NOT NULL,
 			expires_at   TEXT NOT NULL
 		)`,
+		// Free-text notes per worktree, written from the web UI's detail
+		// card. Deliberately NOT removed by registry.Unregister: a worktree
+		// recreated at the same path gets its notes back. sync_cmux is the
+		// per-worktree "mirror to the cmux workspace description" setting.
+		`CREATE TABLE IF NOT EXISTS worktree_notes (
+			path       TEXT PRIMARY KEY,
+			notes      TEXT NOT NULL,
+			sync_cmux  INTEGER NOT NULL DEFAULT 0,
+			updated_at TEXT NOT NULL
+		)`,
 	}
 	for _, s := range stmts {
 		if _, err := conn.Exec(s); err != nil {
