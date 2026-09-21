@@ -31,7 +31,40 @@ func Yellow(s string) string { return ColorYellow + s + ColorReset }
 func Blue(s string) string   { return ColorBlue + s + ColorReset }
 func Cyan(s string) string   { return ColorCyan + s + ColorReset }
 
+// nonInteractive makes every prompt answer itself with its default instead of
+// reading stdin. `worktree setup --yes` runs from `make install`, often with
+// nobody at the terminal: a prompt that reads stdin there hangs the install
+// indefinitely, and one fed stray input takes it as the answer.
+var nonInteractive bool
+
+// SetNonInteractive switches every prompt in this package to answer with its
+// default (no for plain yes/no questions, empty for free text) and say so.
+func SetNonInteractive(v bool) { nonInteractive = v }
+
+// autoAnswer prints the question and the answer it took on the user's behalf,
+// so a log of a non-interactive run still shows what was decided.
+func autoAnswer(question, answer string) {
+	if answer == "" {
+		answer = "(skipped)"
+	}
+	fmt.Printf("%s %s %s\n", question, answer, Dim("(non-interactive)"))
+}
+
+// StdinIsTerminal reports whether someone can answer prompts.
+func StdinIsTerminal() bool { return term.IsTerminal(int(os.Stdin.Fd())) }
+
+func yesNo(b bool) string {
+	if b {
+		return "y"
+	}
+	return "n"
+}
+
 func Confirm(prompt string) bool {
+	if nonInteractive {
+		autoAnswer(prompt+" [y/N]", "n")
+		return false
+	}
 	fmt.Printf("%s [y/N] ", prompt)
 	reader := bufio.NewReader(os.Stdin)
 	line, _ := reader.ReadString('\n')
@@ -40,6 +73,14 @@ func Confirm(prompt string) bool {
 }
 
 func ConfirmDefault(prompt string, defaultYes bool) bool {
+	if nonInteractive {
+		hint := " [y/N]"
+		if defaultYes {
+			hint = " [Y/n]"
+		}
+		autoAnswer(prompt+hint, yesNo(defaultYes))
+		return defaultYes
+	}
 	if defaultYes {
 		fmt.Printf("%s [Y/n] ", prompt)
 	} else {
@@ -55,6 +96,10 @@ func ConfirmDefault(prompt string, defaultYes bool) bool {
 }
 
 func PromptChoice(prompt string, max int) (int, error) {
+	if nonInteractive {
+		autoAnswer(prompt+":", "")
+		return 0, fmt.Errorf("%s: no default to choose in non-interactive mode", prompt)
+	}
 	fmt.Printf("%s: ", prompt)
 	reader := bufio.NewReader(os.Stdin)
 	line, _ := reader.ReadString('\n')
@@ -67,6 +112,10 @@ func PromptChoice(prompt string, max int) (int, error) {
 }
 
 func PromptChoiceOptional(prompt string, max int) int {
+	if nonInteractive {
+		autoAnswer(prompt+":", "")
+		return 0
+	}
 	fmt.Printf("%s: ", prompt)
 	reader := bufio.NewReader(os.Stdin)
 	line, _ := reader.ReadString('\n')
@@ -82,6 +131,10 @@ func PromptChoiceOptional(prompt string, max int) int {
 }
 
 func PromptLine(prompt string) string {
+	if nonInteractive {
+		autoAnswer(prompt+":", "")
+		return ""
+	}
 	fmt.Printf("%s: ", prompt)
 	reader := bufio.NewReader(os.Stdin)
 	line, _ := reader.ReadString('\n')
@@ -89,6 +142,10 @@ func PromptLine(prompt string) string {
 }
 
 func PromptLineDefault(prompt, defaultVal string) string {
+	if nonInteractive {
+		autoAnswer(prompt+":", defaultVal)
+		return defaultVal
+	}
 	if defaultVal != "" {
 		fmt.Printf("%s [%s]: ", prompt, defaultVal)
 	} else {
@@ -104,6 +161,10 @@ func PromptLineDefault(prompt, defaultVal string) string {
 }
 
 func PromptSecret(prompt string) string {
+	if nonInteractive {
+		autoAnswer(prompt+":", "")
+		return ""
+	}
 	fmt.Printf("%s: ", prompt)
 	b, err := term.ReadPassword(int(os.Stdin.Fd()))
 	fmt.Println()

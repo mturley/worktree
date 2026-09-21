@@ -25,12 +25,19 @@ var setupCmd = &cobra.Command{
 }
 
 func init() {
-	setupCmd.Flags().BoolVarP(&setupYes, "yes", "y", false, "Skip confirmation prompts")
+	setupCmd.Flags().BoolVarP(&setupYes, "yes", "y", false,
+		"Run without asking: skip confirmations and answer every other question with its default")
 	setupCmd.Flags().BoolVar(&setupUninstall, "uninstall", false, "Remove worktree configuration")
 	rootCmd.AddCommand(setupCmd)
 }
 
 func runSetup(cmd *cobra.Command, args []string) error {
+	// --yes is how `make install` runs setup, often with nobody at the
+	// terminal. Skipping the "Proceed?" confirmations is not enough: later
+	// steps (config, Jira prefixes, credentials, web UI) ask questions of
+	// their own, and each one used to block the install waiting on stdin.
+	ui.SetNonInteractive(setupYes)
+
 	cfg, err := config.Load()
 	if err != nil {
 		return err

@@ -302,9 +302,19 @@ func printWorktreeEnv(conn *sql.DB, repoRoot string, res worktreenew.Result) {
 }
 
 // offerCmuxAfterCreate opens a cmux workspace for the new worktree when cmux
-// is available.
+// is available and the user wants one.
+//
+// It asks first, defaulting to yes. Without the question the first thing the
+// user was asked was the workspace's name, so there was no way to decline:
+// an "n" meant for "no thanks" became a workspace called "n". Nobody at the
+// terminal means nobody to answer the name, group and color questions either,
+// so a non-interactive run skips the step rather than guess.
 func offerCmuxAfterCreate(conn *sql.DB, cfg config.Config, res worktreenew.Result) error {
-	if !cmux.IsAvailable() {
+	if !cmux.IsAvailable() || !ui.StdinIsTerminal() {
+		return nil
+	}
+	fmt.Println()
+	if !ui.ConfirmDefault("  Open a cmux workspace for it?", true) {
 		return nil
 	}
 	return openCmuxWorkspace(conn, cfg, res.Path, res.Branch)
@@ -332,7 +342,6 @@ func openCmuxWorkspace(conn *sql.DB, cfg config.Config, wtPath, branch string) e
 	urls := buildWorkspaceURLs(res)
 
 	defaultTitle := fmt.Sprintf("wt %s", branch)
-	fmt.Println()
 	title := ui.PromptLineDefault("  Workspace name", defaultTitle)
 
 	groupRef := promptCmuxGroup()
