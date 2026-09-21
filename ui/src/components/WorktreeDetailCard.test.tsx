@@ -92,6 +92,16 @@ describe("WorktreeDetailCard", () => {
     expect(screen.getByText("/home/u/.kube/config-foo")).toBeVisible()
   })
 
+  it("copies a variable's value, without its name", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    const user = userEvent.setup()
+    const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue()
+    wrap(summary())
+    await user.click(await screen.findByRole("button", { name: /show environment/i }))
+    await user.click(screen.getByRole("button", { name: "Copy KUBECONFIG" }))
+    expect(writeText).toHaveBeenCalledWith("/home/u/.kube/config-foo")
+  })
+
   it("collapses again on a second click", async () => {
     worktreeInfo.mockResolvedValue(info())
     wrap(summary())
