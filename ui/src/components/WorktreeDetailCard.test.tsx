@@ -181,6 +181,14 @@ describe("layout", () => {
     expect(status.closest("p")).toHaveTextContent(/odh · my-branch · 3 modified/)
   })
 
+  it("puts the Notes toggle before the Environment toggle", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    wrap(summary())
+    const env = await screen.findByRole("button", { name: /show environment/i })
+    const notes = screen.getByRole("button", { name: /show notes/i })
+    expect(notes.compareDocumentPosition(env) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it("lets only one of Environment and Notes be open at a time", async () => {
     worktreeInfo.mockResolvedValue(info())
     const user = userEvent.setup()

@@ -127,15 +127,6 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
           is the right price.
         */}
         <Group gap="md">
-          {hasEnv && (
-            <SectionToggle
-              open={section === "env"}
-              onClick={() => toggle("env")}
-              label={`${section === "env" ? "Hide" : "Show"} environment variables`}
-            >
-              {`Environment (${info.data!.env.length})`}
-            </SectionToggle>
-          )}
           <SectionToggle
             open={section === "notes"}
             onClick={() => toggle("notes")}
@@ -155,6 +146,15 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
               />
             )}
           </SectionToggle>
+          {hasEnv && (
+            <SectionToggle
+              open={section === "env"}
+              onClick={() => toggle("env")}
+              label={`${section === "env" ? "Hide" : "Show"} environment variables`}
+            >
+              {`Environment (${info.data!.env.length})`}
+            </SectionToggle>
+          )}
         </Group>
       </Stack>
 
