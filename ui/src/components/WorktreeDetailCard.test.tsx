@@ -331,7 +331,38 @@ describe("notes", () => {
     const link = screen.getByRole("link", { name: "PR" })
     expect(link).toHaveAttribute("href", "https://example.com/pr")
     expect(link).toHaveAttribute("target", "_blank")
-    expect(screen.getByRole("checkbox", { name: "" })).toBeDisabled()
+    expect(screen.queryByRole("textbox", { name: /worktree notes/i })).not.toBeInTheDocument()
+  })
+
+  it("checks a task from the read-only view, saving just that change at once", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    const notes = "todo:\n\n- [ ] rebase\n  - [x] nested done\n> 1. [ ] quoted"
+    worktreeNotes.mockResolvedValue({ notes, sync_cmux: false })
+    const user = userEvent.setup()
+    wrap(summary())
+    await screen.findByText("rebase")
+    const [top, nested, quoted] = screen.getAllByRole("checkbox")
+    expect(top).not.toBeChecked()
+    expect(nested).toBeChecked()
+
+    await user.click(top)
+    // Immediately, not after the typing debounce.
+    expect(saveWorktreeNotes).toHaveBeenCalledTimes(1)
+    expect(saveWorktreeNotes).toHaveBeenLastCalledWith({
+      path: "/wt/foo", notes: notes.replace("- [ ] rebase", "- [x] rebase"), sync_cmux: false,
+    })
+    await waitFor(() => expect(screen.getAllByRole("checkbox")[0]).toBeChecked())
+    expect(await screen.findByText("Saved")).toBeInTheDocument()
+
+    await user.click(nested)
+    await waitFor(() => expect(saveWorktreeNotes).toHaveBeenLastCalledWith({
+      path: "/wt/foo",
+      notes: notes.replace("- [ ] rebase", "- [x] rebase").replace("- [x] nested", "- [ ] nested"),
+      sync_cmux: false,
+    }))
+    await user.click(quoted)
+    await waitFor(() => expect(saveWorktreeNotes.mock.lastCall?.[0].notes).toContain("> 1. [x] quoted"))
+    // Still read-only throughout.
     expect(screen.queryByRole("textbox", { name: /worktree notes/i })).not.toBeInTheDocument()
   })
 

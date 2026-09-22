@@ -7,6 +7,7 @@ import { api } from "../api/client"
 import { useCmuxMatches } from "../api/cmux"
 import type { GitStatus, WorktreeSummary } from "../api/types"
 import { useWorktreeNotes } from "../hooks/useWorktreeNotes"
+import { toggleTaskAt } from "../lib/taskList"
 import { relativeTime as rel } from "../lib/relativeTime"
 import { DeleteWorktreeModal } from "./DeleteWorktreeModal"
 import { NotesMarkdown } from "./NotesMarkdown"
@@ -269,7 +270,8 @@ function SectionToggle({ open, onClick, label, children }: {
 
 /**
  * The notes, read-only (rendered as Markdown) until "Edit notes" swaps in the
- * textarea. Editing auto-saves as before; "Done editing" (or Esc) sends any
+ * textarea. Task checkboxes stay clickable in the read-only view — a targeted
+ * edit to that one marker, saved immediately, like a GitHub description. Editing auto-saves as before; "Done editing" (or Esc) sends any
  * pending edit and returns to the read-only view.
  *
  * The cmux sync checkbox is shown only while editing, so it cannot be toggled
@@ -346,7 +348,10 @@ function NotesPanel({ notes, workspaceCount, editing, onEdit, onDone }: {
           }}
         />
       ) : notes.notes.trim() ? (
-        <NotesMarkdown text={notes.notes} />
+        <NotesMarkdown
+          text={notes.notes}
+          onToggleTask={(offset) => notes.editNotes((text) => toggleTaskAt(text, offset))}
+        />
       ) : (
         <Text size="xs" c="dimmed" fs="italic">No notes yet</Text>
       )}

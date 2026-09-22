@@ -119,6 +119,20 @@ export function useWorktreeNotes(path: string) {
     void save()
   }, [save])
 
+  /**
+   * Applies a targeted edit to the CURRENT notes (not a render's possibly
+   * older copy) and saves straight away — a click, not typing. `edit`
+   * returns null to leave the notes alone.
+   */
+  const editNotes = useCallback((edit: (notes: string) => string | null) => {
+    if (!latest.current) return
+    const next = edit(latest.current.notes)
+    if (next === null || next === latest.current.notes) return
+    latest.current = { ...latest.current, notes: next }
+    setDraft(latest.current)
+    void save()
+  }, [save])
+
   /** Sends pending edits now instead of waiting out the debounce. */
   const flush = useCallback(() => {
     if (!same(latest.current, saved.current)) void save()
@@ -156,6 +170,7 @@ export function useWorktreeNotes(path: string) {
     cmux,
     setNotes,
     setSyncCmux,
+    editNotes,
     flush,
     retry: () => void save(true),
   }
