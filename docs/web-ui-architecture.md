@@ -426,6 +426,12 @@ stored in the worktree-owned `worktree_notes` table (keyed by registry path).
   add rehype-raw) until "Edit notes" swaps in the textarea; "Done editing",
   Esc, or collapsing the section flushes pending edits and returns to the
   rendered view. The cmux sync checkbox shows only while editing.
+- **Task checkboxes are clickable in the read-only view**, like a GitHub
+  description. Each rendered task item knows its source offset (react-markdown
+  `node.position`, passed to the checkbox via context); `lib/taskList.ts`
+  `toggleTaskAt` flips exactly that `[ ]`/`[x]` marker, or returns null —
+  leaving the text alone — if no marker is there. The edit saves at once
+  through `useWorktreeNotes.editNotes`, which applies it to the latest draft.
 - **Notes outlive the registration.** `registry.Unregister` does not touch
   `worktree_notes`, so a worktree recreated at the same path gets its notes
   back.
