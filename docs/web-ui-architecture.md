@@ -421,6 +421,11 @@ Two further rules the sequence depends on:
 Free-text notes per worktree, edited in the detail card's Notes section and
 stored in the worktree-owned `worktree_notes` table (keyed by registry path).
 
+- **Read-only by default.** Notes render as GitHub-flavoured Markdown
+  (`NotesMarkdown.tsx`: react-markdown + remark-gfm, raw HTML ignored — never
+  add rehype-raw) until "Edit notes" swaps in the textarea; "Done editing",
+  Esc, or collapsing the section flushes pending edits and returns to the
+  rendered view. The cmux sync checkbox shows only while editing.
 - **Notes outlive the registration.** `registry.Unregister` does not touch
   `worktree_notes`, so a worktree recreated at the same path gets its notes
   back.

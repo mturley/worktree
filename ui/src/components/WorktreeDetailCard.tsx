@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { ActionIcon, Box, Button, Checkbox, Code, Collapse, Group, Paper, Stack, Text, Textarea, Tooltip, UnstyledButton } from "@mantine/core"
-import { IconCheck, IconChevronRight, IconCopy, IconTrash } from "@tabler/icons-react"
+import { IconCheck, IconChevronRight, IconCopy, IconPencil, IconTrash } from "@tabler/icons-react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useLocation } from "wouter"
 import { api } from "../api/client"
@@ -9,6 +9,7 @@ import type { GitStatus, WorktreeSummary } from "../api/types"
 import { useWorktreeNotes } from "../hooks/useWorktreeNotes"
 import { relativeTime as rel } from "../lib/relativeTime"
 import { DeleteWorktreeModal } from "./DeleteWorktreeModal"
+import { NotesMarkdown } from "./NotesMarkdown"
 
 /**
  * Renders a git status as a short line: "3 modified · 1 untracked · ahead 2",
@@ -69,9 +70,18 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
     if (hasNotes) setSection("notes")
   }, [notes.loaded, hasNotes])
 
+  // Notes are read-only until "Edit notes", so a stray click or keystroke
+  // cannot change them. Collapsing ends editing: you always come back to the
+  // read-only view.
+  const [editing, setEditing] = useState(false)
+  const doneEditing = () => {
+    notes.flush()
+    setEditing(false)
+  }
+
   const toggle = (s: "env" | "notes") => {
     // Collapsing the notes (by either toggle) sends pending edits now.
-    if (section === "notes") notes.flush()
+    if (section === "notes") doneEditing()
     setSection((cur) => (cur === s ? null : s))
   }
 
@@ -168,7 +178,13 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
 
       <Collapse in={section === "notes"}>
         <Box pt={6}>
-          <NotesPanel notes={notes} workspaceCount={workspaces.length} />
+          <NotesPanel
+            notes={notes}
+            workspaceCount={workspaces.length}
+            editing={editing}
+            onEdit={() => setEditing(true)}
+            onDone={doneEditing}
+          />
         </Box>
       </Collapse>
 
@@ -252,53 +268,88 @@ function SectionToggle({ open, onClick, label, children }: {
 }
 
 /**
- * The notes textarea with its save status, and the opt-in mirror to the cmux
- * workspace description.
+ * The notes, read-only (rendered as Markdown) until "Edit notes" swaps in the
+ * textarea. Editing auto-saves as before; "Done editing" (or Esc) sends any
+ * pending edit and returns to the read-only view.
  *
- * The sync checkbox is offered only when exactly one cmux workspace matches:
- * with none there is nothing to write to, and with two there is no right
- * answer. If sync was turned on and the count has since changed, it stays
- * visible (so it can be turned off) with a note saying why nothing syncs.
+ * The cmux sync checkbox is shown only while editing, so it cannot be toggled
+ * by accident either. It is offered only when exactly one cmux workspace
+ * matches: with none there is nothing to write to, and with two there is no
+ * right answer. If sync was turned on and the count has since changed, it
+ * stays visible (so it can be turned off) with a note saying why nothing
+ * syncs.
  */
-function NotesPanel({ notes, workspaceCount }: {
+function NotesPanel({ notes, workspaceCount, editing, onEdit, onDone }: {
   notes: ReturnType<typeof useWorktreeNotes>
   workspaceCount: number
+  editing: boolean
+  onEdit: () => void
+  onDone: () => void
 }) {
   if (notes.loadError) {
     return <Text size="xs" c="red">Could not load notes: {notes.loadError.message}</Text>
   }
-  const showSync = workspaceCount === 1 || notes.syncCmux
+  const showSync = editing && (workspaceCount === 1 || notes.syncCmux)
   return (
     <Stack gap={4}>
       <Group gap="xs" justify="space-between" wrap="wrap" mih={22}>
         <NotesStatus notes={notes} />
-        {showSync && (
-          <Checkbox
-            size="xs"
-            label="Sync to cmux workspace description"
-            checked={notes.syncCmux}
-            disabled={!notes.loaded}
-            onChange={(e) => notes.setSyncCmux(e.currentTarget.checked)}
-          />
-        )}
+        <Group gap="sm">
+          {showSync && (
+            <Checkbox
+              size="xs"
+              label="Sync to cmux workspace description"
+              checked={notes.syncCmux}
+              disabled={!notes.loaded}
+              onChange={(e) => notes.setSyncCmux(e.currentTarget.checked)}
+            />
+          )}
+          {editing ? (
+            <Button size="compact-xs" variant="light" leftSection={<IconCheck size={12} />} onClick={onDone}>
+              Done editing
+            </Button>
+          ) : (
+            <Button
+              size="compact-xs"
+              variant="subtle"
+              leftSection={<IconPencil size={12} />}
+              disabled={!notes.loaded}
+              onClick={onEdit}
+            >
+              Edit notes
+            </Button>
+          )}
+        </Group>
       </Group>
-      {notes.syncCmux && workspaceCount !== 1 && (
+      {showSync && notes.syncCmux && workspaceCount !== 1 && (
         <Text size="xs" c="yellow">
           {workspaceCount === 0
             ? "Not syncing: this worktree has no cmux workspace."
             : `Not syncing: this worktree has ${workspaceCount} cmux workspaces.`}
         </Text>
       )}
-      <Textarea
-        aria-label="Worktree notes"
-        placeholder="What's going on in this worktree?"
-        size="xs"
-        autosize
-        minRows={3}
-        value={notes.notes}
-        disabled={!notes.loaded}
-        onChange={(e) => notes.setNotes(e.currentTarget.value)}
-      />
+      {editing ? (
+        <Textarea
+          aria-label="Worktree notes"
+          placeholder="What's going on in this worktree? (Markdown)"
+          size="xs"
+          autosize
+          minRows={3}
+          autoFocus
+          value={notes.notes}
+          onChange={(e) => notes.setNotes(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.preventDefault()
+              onDone()
+            }
+          }}
+        />
+      ) : notes.notes.trim() ? (
+        <NotesMarkdown text={notes.notes} />
+      ) : (
+        <Text size="xs" c="dimmed" fs="italic">No notes yet</Text>
+      )}
     </Stack>
   )
 }

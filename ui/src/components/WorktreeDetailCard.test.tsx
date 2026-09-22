@@ -188,13 +188,24 @@ describe("layout", () => {
     await user.click(await screen.findByRole("button", { name: /show environment/i }))
     expect(screen.getByText("4090-4099")).toBeVisible()
     await user.click(screen.getByRole("button", { name: /show notes/i }))
-    expect(screen.getByRole("textbox", { name: /worktree notes/i })).toBeVisible()
+    expect(await screen.findByText("No notes yet")).toBeVisible()
     expect(screen.getByText("4090-4099")).not.toBeVisible()
     expect(screen.getByRole("button", { name: /show environment/i })).toHaveAttribute("aria-expanded", "false")
   })
 })
 
 const notesBox = () => screen.getByRole("textbox", { name: /worktree notes/i })
+
+/** Opens the Notes section if needed, then clicks "Edit notes". */
+async function startEditing(user: ReturnType<typeof userEvent.setup>) {
+  // hidden: the section may still be collapsed, which hides its contents.
+  const edit = await screen.findByRole("button", { name: /edit notes/i, hidden: true })
+  await waitFor(() => expect(edit).toBeEnabled())
+  const toggle = screen.getByRole("button", { name: /(show|hide) notes/i })
+  if (toggle.getAttribute("aria-expanded") === "false") await user.click(toggle)
+  await user.click(edit)
+  return notesBox()
+}
 
 describe("notes", () => {
 
@@ -211,8 +222,7 @@ describe("notes", () => {
     worktreeInfo.mockResolvedValue(info())
     worktreeNotes.mockResolvedValue({ notes: "waiting on review", sync_cmux: false })
     wrap(summary())
-    await waitFor(() => expect(notesBox()).toBeVisible())
-    expect(notesBox()).toHaveValue("waiting on review")
+    expect(await screen.findByText("waiting on review")).toBeVisible()
   })
 
   it("shows a dot on the collapsed toggle when there are notes", async () => {
@@ -232,8 +242,7 @@ describe("notes", () => {
       new Promise((r) => { resolve = () => r({ ...args, cmux_sync: "off" }) }))
     const user = userEvent.setup()
     wrap(summary())
-    await user.click(await screen.findByRole("button", { name: /show notes/i }))
-    await waitFor(() => expect(notesBox()).toBeEnabled())
+    await startEditing(user)
     await user.type(notesBox(), "hi")
     expect(screen.getByText("Unsaved changes")).toBeInTheDocument()
     // One save for the whole burst, not one per keystroke.
@@ -249,8 +258,7 @@ describe("notes", () => {
     saveWorktreeNotes.mockRejectedValueOnce(new Error("disk full"))
     const user = userEvent.setup()
     wrap(summary())
-    await user.click(await screen.findByRole("button", { name: /show notes/i }))
-    await waitFor(() => expect(notesBox()).toBeEnabled())
+    await startEditing(user)
     await user.type(notesBox(), "x")
     expect(await screen.findByText(/save failed: disk full/i, {}, { timeout: 2000 })).toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "Retry" }))
@@ -274,7 +282,7 @@ describe("notes", () => {
     )
     const user = userEvent.setup()
     const view = render(tree())
-    await waitFor(() => expect(notesBox()).toHaveValue("old"))
+    expect(await startEditing(user)).toHaveValue("old")
     await user.type(notesBox(), " new")
     expect(await screen.findByText("Saved", {}, { timeout: 2000 })).toBeInTheDocument()
     view.unmount()
@@ -283,7 +291,7 @@ describe("notes", () => {
     // first must already be the saved text, not the stale first load.
     worktreeNotes.mockImplementation(() => new Promise(() => {}))
     render(tree())
-    await waitFor(() => expect(notesBox()).toHaveValue("old new"))
+    expect(await screen.findByText("old new")).toBeInTheDocument()
   })
 
   it("ignores a refetch older than the last save, but adopts a newer one", async () => {
@@ -301,7 +309,7 @@ describe("notes", () => {
         </QueryClientProvider>
       </MantineProvider>,
     )
-    await waitFor(() => expect(notesBox()).toHaveValue("old"))
+    expect(await startEditing(user)).toHaveValue("old")
     await user.type(notesBox(), " new")
     expect(await screen.findByText("Saved", {}, { timeout: 2000 })).toBeInTheDocument()
 
@@ -315,12 +323,73 @@ describe("notes", () => {
     await waitFor(() => expect(notesBox()).toHaveValue("from phone"))
   })
 
-  it("saves pending edits immediately when the notes are collapsed", async () => {
+  it("is read-only until Edit notes, rendering Markdown", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    worktreeNotes.mockResolvedValue({ notes: "**blocked** on [PR](https://example.com/pr)\n\n- [ ] rebase", sync_cmux: false })
+    wrap(summary())
+    expect(await screen.findByText("blocked")).toContainHTML("<strong>blocked</strong>")
+    const link = screen.getByRole("link", { name: "PR" })
+    expect(link).toHaveAttribute("href", "https://example.com/pr")
+    expect(link).toHaveAttribute("target", "_blank")
+    expect(screen.getByRole("checkbox", { name: "" })).toBeDisabled()
+    expect(screen.queryByRole("textbox", { name: /worktree notes/i })).not.toBeInTheDocument()
+  })
+
+  it("never renders raw HTML typed into the notes", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    worktreeNotes.mockResolvedValue({ notes: "<img src=x onerror=alert(1)> hi", sync_cmux: false })
+    const { container } = wrap(summary())
+    await screen.findByText(/hi/)
+    expect(container.querySelector("img")).toBeNull()
+  })
+
+  it("says so when there are no notes", async () => {
     worktreeInfo.mockResolvedValue(info())
     const user = userEvent.setup()
     wrap(summary())
     await user.click(await screen.findByRole("button", { name: /show notes/i }))
-    await waitFor(() => expect(notesBox()).toBeEnabled())
+    expect(await screen.findByText("No notes yet")).toBeVisible()
+  })
+
+  it("Done editing saves pending edits and returns to the rendered view", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    const user = userEvent.setup()
+    wrap(summary())
+    const box = await startEditing(user)
+    expect(box).toHaveFocus()
+    await user.type(box, "*done*")
+    await user.click(screen.getByRole("button", { name: /done editing/i }))
+    // Sent now, not after the debounce.
+    expect(saveWorktreeNotes).toHaveBeenCalledWith({ path: "/wt/foo", notes: "*done*", sync_cmux: false })
+    expect(screen.queryByRole("textbox", { name: /worktree notes/i })).not.toBeInTheDocument()
+    expect(screen.getByText("done").tagName).toBe("EM")
+  })
+
+  it("Esc also ends editing", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    const user = userEvent.setup()
+    wrap(summary())
+    await startEditing(user)
+    await user.keyboard("{Escape}")
+    expect(screen.queryByRole("textbox", { name: /worktree notes/i })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /edit notes/i })).toBeInTheDocument()
+  })
+
+  it("comes back read-only after collapsing mid-edit", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    const user = userEvent.setup()
+    wrap(summary())
+    await startEditing(user)
+    await user.click(screen.getByRole("button", { name: /hide notes/i }))
+    await user.click(screen.getByRole("button", { name: /show notes/i }))
+    expect(screen.queryByRole("textbox", { name: /worktree notes/i })).not.toBeInTheDocument()
+  })
+
+  it("saves pending edits immediately when the notes are collapsed", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    const user = userEvent.setup()
+    wrap(summary())
+    await startEditing(user)
     await user.type(notesBox(), "x")
     await user.click(screen.getByRole("button", { name: /hide notes/i }))
     expect(saveWorktreeNotes).toHaveBeenCalledTimes(1)
@@ -336,9 +405,19 @@ describe("cmux description sync", () => {
     cmux.mockResolvedValue(oneWorkspace)
     const user = userEvent.setup()
     wrap(summary())
-    await user.click(await screen.findByRole("button", { name: /show notes/i }))
+    await startEditing(user)
     await waitFor(() => expect(syncBox()).toBeInTheDocument())
     expect(syncBox()).not.toBeChecked()
+  })
+
+  it("is hidden until editing", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    worktreeNotes.mockResolvedValue({ notes: "existing", sync_cmux: false })
+    cmux.mockResolvedValue(oneWorkspace)
+    wrap(summary())
+    await screen.findByText("existing")
+    await waitFor(() => expect(cmux).toHaveBeenCalled())
+    expect(syncBox()).not.toBeInTheDocument()
   })
 
   it("is not offered with zero or two workspaces", async () => {
@@ -352,9 +431,8 @@ describe("cmux description sync", () => {
     })
     const user = userEvent.setup()
     wrap(summary())
-    await user.click(await screen.findByRole("button", { name: /show notes/i }))
     await waitFor(() => expect(cmux).toHaveBeenCalled())
-    await waitFor(() => expect(notesBox()).toBeEnabled())
+    await startEditing(user)
     expect(syncBox()).not.toBeInTheDocument()
   })
 
@@ -364,6 +442,7 @@ describe("cmux description sync", () => {
     cmux.mockResolvedValue(oneWorkspace)
     const user = userEvent.setup()
     wrap(summary())
+    await startEditing(user)
     await waitFor(() => expect(syncBox()).toBeEnabled())
     await user.click(syncBox()!)
     await waitFor(() => expect(saveWorktreeNotes).toHaveBeenCalledWith({ path: "/wt/foo", notes: "existing", sync_cmux: true }))
@@ -377,7 +456,7 @@ describe("cmux description sync", () => {
     saveWorktreeNotes.mockResolvedValueOnce({ notes: "existing!", sync_cmux: true, cmux_sync: "failed", cmux_error: "no" })
     const user = userEvent.setup()
     wrap(summary())
-    await waitFor(() => expect(notesBox()).toBeEnabled())
+    await startEditing(user)
     await user.type(notesBox(), "!")
     expect(await screen.findByText("Saved · cmux sync failed", {}, { timeout: 2000 })).toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "Retry" }))
@@ -387,7 +466,9 @@ describe("cmux description sync", () => {
   it("stays visible, with a reason, if sync is on but the workspace is gone", async () => {
     worktreeInfo.mockResolvedValue(info())
     worktreeNotes.mockResolvedValue({ notes: "existing", sync_cmux: true })
+    const user = userEvent.setup()
     wrap(summary())
+    await startEditing(user)
     await waitFor(() => expect(syncBox()).toBeChecked())
     expect(screen.getByText(/not syncing: this worktree has no cmux workspace/i)).toBeInTheDocument()
   })
