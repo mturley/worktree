@@ -2,6 +2,7 @@ import { Route, Router, Switch } from "wouter"
 import { Alert, Button, Center, Stack } from "@mantine/core"
 import { useSSE } from "./hooks/useSSE"
 import { useSession } from "./hooks/useSession"
+import { useUnreadFavicon } from "./hooks/useUnreadFavicon"
 import { HomeWorktreeBanner } from "./components/HomeWorktreeBanner"
 import { useHomeLocation } from "./lib/useHomeLocation"
 import { HomePage } from "./pages/HomePage"
@@ -32,6 +33,9 @@ export function App() {
 // pane lands on its page once logged in.
 function AuthenticatedApp() {
   useSSE()
+  // Beside useSSE rather than in a page: the tab says the same thing wherever
+  // you are in the app, and the stream is what keeps both of them current.
+  useUnreadFavicon()
   return (
     // The custom hook keeps this tab's home worktree in the URL across every
     // navigation — the only carrier that survives a cmux pane restore.
