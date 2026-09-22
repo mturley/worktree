@@ -259,6 +259,62 @@ describe("notes", () => {
     expect(saveWorktreeNotes).toHaveBeenCalledTimes(2)
   })
 
+  it("shows the saved notes, not the first-loaded ones, after navigating away and back", async () => {
+    // One QueryClient for the whole app, as in production: the card unmounts
+    // and remounts, but the query cache survives.
+    worktreeInfo.mockResolvedValue(info())
+    worktreeNotes.mockResolvedValue({ notes: "old", sync_cmux: false })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const tree = () => (
+      <MantineProvider>
+        <QueryClientProvider client={client}>
+          <WorktreeDetailCard w={summary()} />
+        </QueryClientProvider>
+      </MantineProvider>
+    )
+    const user = userEvent.setup()
+    const view = render(tree())
+    await waitFor(() => expect(notesBox()).toHaveValue("old"))
+    await user.type(notesBox(), " new")
+    expect(await screen.findByText("Saved", {}, { timeout: 2000 })).toBeInTheDocument()
+    view.unmount()
+
+    // The server now has the new notes, but may answer slowly: what shows
+    // first must already be the saved text, not the stale first load.
+    worktreeNotes.mockImplementation(() => new Promise(() => {}))
+    render(tree())
+    await waitFor(() => expect(notesBox()).toHaveValue("old new"))
+  })
+
+  it("ignores a refetch older than the last save, but adopts a newer one", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    worktreeNotes.mockResolvedValue({ notes: "old", sync_cmux: false, updated_at: "2026-09-21T00:00:00Z" })
+    saveWorktreeNotes.mockImplementation(async (args: { notes: string; sync_cmux: boolean }) => ({
+      ...args, updated_at: "2026-09-22T00:00:00Z", cmux_sync: "off",
+    }))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const user = userEvent.setup()
+    render(
+      <MantineProvider>
+        <QueryClientProvider client={client}>
+          <WorktreeDetailCard w={summary()} />
+        </QueryClientProvider>
+      </MantineProvider>,
+    )
+    await waitFor(() => expect(notesBox()).toHaveValue("old"))
+    await user.type(notesBox(), " new")
+    expect(await screen.findByText("Saved", {}, { timeout: 2000 })).toBeInTheDocument()
+
+    // A refetch that started before the save and answers after it.
+    await client.refetchQueries({ queryKey: ["worktree-notes", "/wt/foo"] })
+    expect(notesBox()).toHaveValue("old new")
+
+    // An edit made on another device since.
+    worktreeNotes.mockResolvedValue({ notes: "from phone", sync_cmux: false, updated_at: "2026-09-23T00:00:00Z" })
+    await client.refetchQueries({ queryKey: ["worktree-notes", "/wt/foo"] })
+    await waitFor(() => expect(notesBox()).toHaveValue("from phone"))
+  })
+
   it("saves pending edits immediately when the notes are collapsed", async () => {
     worktreeInfo.mockResolvedValue(info())
     const user = userEvent.setup()

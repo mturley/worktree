@@ -427,8 +427,12 @@ stored in the worktree-owned `worktree_notes` table (keyed by registry path).
 - **Own endpoint, not a field on `/api/worktree-info`**, so a git status
   refetch never overwrites notes being typed and a save costs no git
   subprocess.
-- **Autosave** lives in `ui/src/hooks/useWorktreeNotes.ts`: the server copy is
-  adopted once on load, then the local draft is the truth. Saves are debounced
+- **Autosave** lives in `ui/src/hooks/useWorktreeNotes.ts`: the local draft
+  is the truth while it has unsaved edits; server data is adopted on load and
+  afterwards only while the draft is clean and the server's `updated_at` is
+  newer than the last save (so a slow refetch cannot roll a save back). Every
+  save writes its result into the TanStack cache — the card remounts on each
+  visit, and would otherwise start from the first load's cached copy. Saves are debounced
   (`NOTES_SAVE_DEBOUNCE_MS`), at most one is in flight, and edits made during
   a save go out in a follow-up save. Pending edits are also sent when the
   section collapses and on unmount/`beforeunload` (a `keepalive` fetch). The
