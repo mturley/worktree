@@ -511,6 +511,25 @@ accent. Deliberately server-side: related resources are counted in the
 response but never listed, so a client folding over `focus_resources` alone
 would miss their unreads.
 
+**The tab itself is an unread surface** (`ui/src/hooks/useUnreadFavicon.ts`).
+Mounted once beside `useSSE` in `App.tsx`, it folds the worktree list through
+`lib/unreadBadge.ts` and, while anything is unread, blinks the favicon between
+`/favicon.svg?v=2` and `/favicon-unread.svg` (the same tile with a blue dot)
+and badges the title — `(3) worktree`, or `• worktree` when the unread has no
+countable tally behind it, which is how a Slack thread arrives. It has no
+polling of its own: the `["worktrees"]` query the pages already use is
+invalidated by the stream, so the tab starts on the event and stops on the
+mark-read.
+
+The blink ticks from a Worker (`lib/blinkTicker.ts` + `blinkWorker.ts`), not
+`setInterval`. Chrome throttles a chained page timer to roughly once a minute
+once a tab has been hidden for five minutes — precisely the tab this feature
+exists for. Worker timers are exempt. The `setInterval` fallback is for
+anywhere a module Worker cannot be constructed, jsdom included, which is what
+the tests exercise. The blink deliberately does NOT check
+`document.hidden`: it is meant to be caught peripherally, on the focused tab
+as well.
+
 **`through_ts` is client-supplied.** The endpoint never substitutes a
 server-side `MAX(ts)` — events arriving between render and click must stay
 unread rather than being swallowed by a button that promised to clear a
