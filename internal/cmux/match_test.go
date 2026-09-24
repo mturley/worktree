@@ -91,3 +91,33 @@ func TestIsAvailableFollowsSocketEnv(t *testing.T) {
 		t.Fatal("IsAvailable() = false with a socket path set")
 	}
 }
+
+// InPane must not be fooled by a cmux environment inherited through a
+// terminal multiplexer: a tmux server first started inside a cmux pane hands
+// CMUX_SOCKET_PATH to every pane it ever opens, including ones that have
+// nothing to do with cmux.
+func TestInPaneIgnoresInheritedEnvUnderMultiplexers(t *testing.T) {
+	tests := []struct {
+		name   string
+		socket string
+		tmux   string
+		sty    string
+		want   bool
+	}{
+		{name: "cmux pane", socket: "/tmp/cmux.sock", want: true},
+		{name: "no cmux at all", want: false},
+		{name: "tmux inside cmux", socket: "/tmp/cmux.sock", tmux: "/tmp/tmux-501/default,1,0"},
+		{name: "screen inside cmux", socket: "/tmp/cmux.sock", sty: "1234.pts-0.host"},
+		{name: "tmux with no cmux", tmux: "/tmp/tmux-501/default,1,0"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("CMUX_SOCKET_PATH", tt.socket)
+			t.Setenv("TMUX", tt.tmux)
+			t.Setenv("STY", tt.sty)
+			if got := InPane(); got != tt.want {
+				t.Fatalf("InPane() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
