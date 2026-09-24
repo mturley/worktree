@@ -74,15 +74,24 @@ describe("ResourceList", () => {
 })
 
 describe("Add resource placement", () => {
-  it("sits after the resource cards, so the list starts at the top", () => {
+  it("heads the list, as a toolbar for the cards it acts on", () => {
     const items = [{ type: "pr", id: "a", url: "u", primary: true, title: "Fix the widget" }]
     const { getByRole, getByText } = wrap(
       <ResourceList items={items} path="/wt" onChanged={vi.fn()} />,
     )
     const add = getByRole("button", { name: /follow resource/i })
     const firstCard = getByText("Fix the widget")
-    // DOCUMENT_POSITION_PRECEDING (2) means the card comes before the button.
-    expect(add.compareDocumentPosition(firstCard) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+    // DOCUMENT_POSITION_FOLLOWING (4) means the card comes after the button.
+    expect(add.compareDocumentPosition(firstCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("puts the Focus heading below the toolbar too", () => {
+    const items = [{ type: "pr", id: "a", url: "u", primary: true, title: "Fix the widget" }]
+    const { getByRole, getByText } = wrap(
+      <ResourceList items={items} path="/wt" onChanged={vi.fn()} />,
+    )
+    const add = getByRole("button", { name: /follow resource/i })
+    expect(add.compareDocumentPosition(getByText("Focus")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })
 
@@ -90,7 +99,7 @@ describe("Add resource placement", () => {
 describe("Add resource emphasis", () => {
   it("is drawn filled, as the primary action of the column", () => {
     // It is the only thing on this column you can DO; a light variant read
-    // as secondary beside the resource cards above it.
+    // as secondary beside the resource cards it heads.
     const { getByRole } = wrap(<ResourceList items={[]} path="/wt" onChanged={vi.fn()} />)
     expect(getByRole("button", { name: /follow resource/i })).toHaveAttribute("data-variant", "filled")
   })

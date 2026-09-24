@@ -199,24 +199,16 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
           <Text size="xs">Could not save the new order: {error}</Text>
         </Alert>
       )}
-      {items.length === 0 ? (
-        <Text c="dimmed" size="sm">No resources tracked.</Text>
-      ) : reordering ? (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          {groups}
-        </DndContext>
-      ) : (
-        groups
-      )}
       {/*
-        Below the list, not above it: adding is the rare action and the list
-        is what you came for, so the resources start at the top of the column
-        rather than under a button.
+        Above the list: the two controls act ON the list below them, and
+        Reorder in particular changes how every card underneath behaves, so
+        it reads as a toolbar for what follows rather than as a footnote
+        after it.
       */}
       <Group>
         {/* Filled, i.e. the theme's primary: it is the only thing on this
             column you can DO, and light left it reading as a secondary
-            action beside the resource cards it sits under. */}
+            action beside the resource cards it heads. */}
         <Button size="sm" variant="filled" leftSection="+" onClick={() => setAddOpen(true)}>
           Follow resource
         </Button>
@@ -231,6 +223,15 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
           )
         )}
       </Group>
+      {items.length === 0 ? (
+        <Text c="dimmed" size="sm">No resources tracked.</Text>
+      ) : reordering ? (
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          {groups}
+        </DndContext>
+      ) : (
+        groups
+      )}
     </Stack>
   )
 }
