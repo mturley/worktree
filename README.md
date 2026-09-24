@@ -188,6 +188,7 @@ When you run `worktree add <arg>`, the tool:
 5. Detects Jira issues from branch name and PR metadata
 6. Stores PR and Jira associations in the database
 7. Offers to copy gitignored dotfiles from the main worktree
+8. From a cmux pane, offers to open a cmux workspace for it (see [cmux Integration](#cmux-integration)); otherwise prints the `cd` command to enter it
 
 When an existing review branch is found (e.g. the worktree was previously deleted), the tool shows whether it is up to date with the PR and asks for confirmation before reusing it.
 
@@ -252,6 +253,8 @@ Beside it, a **global timeline** of events across every watched PR, Jira issue, 
 
 The worktree's environment (`WORKTREE_PORTS`, `KUBECONFIG`) and a short git status, its resources, and a timeline scoped to just this worktree. Opening it triggers a fresh poll if the data is stale.
 
+**Notes** are free text for whatever the worktree is about — what you were in the middle of, what to pick up next. They autosave, and survive unregistering the worktree. A per-worktree toggle also syncs them to the cmux workspace's description, so the note shows up in cmux's workspace list.
+
 With nothing selected, the resources take the full width with the timeline beneath. Selecting one narrows the view to that resource: a PR or Jira issue shows its own filtered activity, and a **Slack thread renders inline** — read it, reply, react, mark it read. Slack threads are selected like any other resource; there is no separate tab.
 
 ### What you can do from it
@@ -264,6 +267,8 @@ Deleting a worktree asks you to type its name, then shows each cleanup step as i
 
 While running, the server polls every active PR, Jira, and Slack resource in the background (roughly every 2 minutes, plus on-view-if-stale) and pushes updates to the browser over Server-Sent Events, so the timeline stays close to live without a manual refresh.
 
+The browser tab is an unread surface too: while anything is unread, the title carries a count and the favicon blinks a blue dot, so a backgrounded tab still tells you something arrived.
+
 ### Slack
 
 `worktree add <slack-thread-url>` links a Slack thread to a worktree as a resource; it then appears in that worktree's resource list, and selecting it renders the thread inline. Run `worktree setup` to acquire Slack credentials — it walks you through extracting your browser session token and cookie and stores them (plus your workspace domain) in the shared watcher config at `~/.config/watcher/auth.yaml`.
@@ -274,7 +279,7 @@ Threads are never marked read just because you looked at one — only the explic
 
 ## cmux Integration
 
-When running inside [cmux](https://cmux.com/), worktree creation automatically creates a cmux workspace with a split layout:
+When you create a worktree **from a cmux pane**, `worktree add` offers to open a cmux workspace for it (default yes), with a split layout:
 
 - **Left:** Browser tabs — the PR, then detected Jira issues
 - **Top-right:** A shell terminal, with the worktree's UI page pinned as a tab ahead of it
@@ -297,6 +302,23 @@ On creation, the tool prompts for:
 - **Workspace color** (from cmux's named colors, or none)
 
 If a cmux workspace already exists for the worktree's directory, the tool switches to it instead of creating a duplicate.
+
+The offer is made only from a cmux pane, not merely from a shell that inherited
+cmux's environment. A tmux server first started under cmux passes
+`CMUX_SOCKET_PATH` to every pane it opens afterwards, so `worktree add` inside
+plain tmux used to offer a workspace for a pane cmux does not own.
+
+Whenever no workspace is opened — outside cmux, in tmux, after declining, or if
+cmux fails — `worktree add` prints the command to enter the new worktree
+instead:
+
+```
+  To enter it:
+    cd ~/.worktrees/myrepo/my-branch
+```
+
+A binary cannot change its parent shell's directory, so the line is there to run
+or copy.
 
 `worktree list` marks worktrees that have open cmux workspaces with `[open]`.
 

@@ -79,6 +79,18 @@ every interface at `ui.https_port` (8476). There is no `--bind`.
     `FindByDirectory` is now implemented over `Match`, which fixed a latent
     bug: the old raw-string comparison missed any path reached through a
     symlink.
+    **Two availability checks, and they are not interchangeable.**
+    `IsAvailable` is "CMUX_SOCKET_PATH is set" — cmux is reachable from
+    here. `InPane` additionally requires that this terminal IS a cmux pane
+    (it declines when `$TMUX` or `$STY` is set), because a tmux server first
+    started under cmux hands that variable to every pane it opens
+    afterwards, long after any connection to cmux is gone. Gate anything
+    that acts on the user's *current pane* — such as `worktree add`'s offer
+    to open a workspace — on `InPane`. Keep `IsAvailable` for things that
+    drive cmux from wherever they run: `worktree ui`, `worktree list` and
+    the web UI. When no workspace is opened, `cmd/root.go`'s `cdHint` prints
+    the `cd` line instead, since nothing has moved the user into the new
+    worktree and a binary cannot cd its parent shell.
   - `resourceurl` — the single URL→(type, id) detector, shared by `cmd`,
     `webui`, and `worktreenew`. Replaces webui's `inferResource`, which
     hand-copied `cmd/root.go`'s PR pattern with a "kept in sync" comment.
