@@ -400,8 +400,12 @@ forgiving about a client whose view is behind: a tracked resource named in
 neither list keeps its group and is appended to that group's end, and a key
 that is not tracked at all is ignored rather than failing the whole reorder.
 
-**Frontend.** Reordering is a *mode*, entered from the `Reorder` button beside
-`Follow resource` in `ResourceList`. Entering it reveals a grip handle per card
+**Frontend.** Reordering is a *mode*, entered from the `IconMenuOrder` button
+(tooltip and aria-label "Reorder resources") in the toolbar above the list,
+beside `Follow resource`. Icon in, word out: entering is a glanceable tool
+next to the one button that carries a label, while the `Done` that leaves the
+mode stays spelled out, because that is the control you must be able to find
+without hovering anything. Entering it reveals a grip handle per card
 (`SortableResourceCard`) and swaps the selectable `ResourceCard` for the
 sortable one, so a plain click on a card still means "open this" the rest of
 the time — a handle rather than an activation threshold, because on a

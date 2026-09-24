@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Alert, Button, Group, Stack, Text, Title } from "@mantine/core"
+import { ActionIcon, Alert, Button, Group, Stack, Text, Title, Tooltip } from "@mantine/core"
 import {
   DndContext,
   KeyboardSensor,
@@ -15,6 +15,7 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
+import { IconMenuOrder } from "@tabler/icons-react"
 import type { ResourceDTO } from "../api/types"
 import { api } from "../api/client"
 import { parseResourceKey, resourceKeyEquals, serializeResourceKey, type ResourceKey } from "../lib/resourceKey"
@@ -214,12 +215,27 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
         </Button>
         {/* Reordering is a mode rather than an always-live gesture: it keeps
             the grip handles out of the way when you are only reading, and
-            leaves a plain click on a card meaning "open this". */}
+            leaves a plain click on a card meaning "open this".
+
+            Icon in, word out, on purpose. Entering is a tool you glance at
+            beside the one button that carries a label; leaving is the thing
+            you must be able to find without hovering anything, and "Done"
+            cannot be misread the way a bare glyph can. */}
         {shown.length > 1 && (
           reordering ? (
             <Button size="sm" variant="light" onClick={stopReordering}>Done</Button>
           ) : (
-            <Button size="sm" variant="subtle" onClick={() => setReordering(true)}>Reorder</Button>
+            <Tooltip label="Reorder resources">
+              <ActionIcon
+                size="lg"
+                variant="subtle"
+                color="gray"
+                aria-label="Reorder resources"
+                onClick={() => setReordering(true)}
+              >
+                <IconMenuOrder size={18} />
+              </ActionIcon>
+            </Tooltip>
           )
         )}
       </Group>

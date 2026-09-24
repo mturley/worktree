@@ -118,13 +118,21 @@ describe("ResourceList reorder mode", () => {
     expect(queryAllByLabelText(/drag to reorder/i)).toHaveLength(0)
   })
 
+  it("labels the reorder control for screen readers even though it shows only an icon", () => {
+    const { getByRole } = wrap(<ResourceList items={items} path="/w" onChanged={vi.fn()} />)
+    const button = getByRole("button", { name: /reorder resources/i })
+    // The word itself must not be the label: it is an icon button now, and a
+    // visible "Reorder" would mean the text was never actually replaced.
+    expect(button.textContent).toBe("")
+  })
+
   it("reveals a drag handle per card while reordering", async () => {
     const user = userEvent.setup()
     const { getByRole, findAllByLabelText } = wrap(
       <ResourceList items={items} path="/w" onChanged={vi.fn()} />,
     )
 
-    await user.click(getByRole("button", { name: /^reorder$/i }))
+    await user.click(getByRole("button", { name: /reorder resources/i }))
 
     expect(await findAllByLabelText(/drag to reorder/i)).toHaveLength(2)
     expect(getByRole("button", { name: /^done$/i })).toBeInTheDocument()
@@ -145,7 +153,7 @@ describe("ResourceList reorder mode", () => {
     await user.click(getByText("o/r#1"))
     expect(onSelectResource).toHaveBeenCalledTimes(1)
 
-    await user.click(getByRole("button", { name: /^reorder$/i }))
+    await user.click(getByRole("button", { name: /reorder resources/i }))
     await user.click(getByText("o/r#1"))
     expect(onSelectResource).toHaveBeenCalledTimes(1)
   })
