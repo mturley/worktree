@@ -3,6 +3,7 @@ import {
   captureHomeWorktree,
   getHomeWorktree,
   homeWorktreeHref,
+  shouldShowAllWorktreesBanner,
   shouldShowHomeBanner,
   withHomeParam,
   worktreeName,
@@ -135,5 +136,42 @@ describe("naming and links", () => {
   it("round-trips a path through the route it builds", () => {
     const href = homeWorktreeHref(WT)
     expect(shouldShowHomeBanner(WT, href)).toBe(false)
+  })
+})
+
+describe("shouldShowAllWorktreesBanner", () => {
+  const cmuxWith = (selected: boolean) => ({
+    available: true,
+    matches: { "/wt/a": [{ selected }] },
+  })
+
+  it("shows when cmux is running but no worktree's workspace is current", () => {
+    // The overview workspace: the UI server lives under cmux, yet the
+    // selected workspace belongs to no worktree.
+    expect(shouldShowAllWorktreesBanner(null, "/worktree/%2Fwt%2Fa", cmuxWith(false))).toBe(true)
+  })
+
+  it("hides when a worktree's workspace IS current", () => {
+    expect(shouldShowAllWorktreesBanner(null, "/worktree/%2Fwt%2Fa", cmuxWith(true))).toBe(false)
+  })
+
+  it("hides in a plain browser tab, where cmux is not in play at all", () => {
+    expect(shouldShowAllWorktreesBanner(null, "/worktree/x", { available: false })).toBe(false)
+  })
+
+  it("hides while the cmux query is still loading, so nothing flashes", () => {
+    expect(shouldShowAllWorktreesBanner(null, "/worktree/x", undefined)).toBe(false)
+  })
+
+  it("hides on the listing, which is where it points", () => {
+    expect(shouldShowAllWorktreesBanner(null, "/", cmuxWith(false))).toBe(false)
+  })
+
+  it("yields to the home banner in a homed tab", () => {
+    expect(shouldShowAllWorktreesBanner(WT, "/worktree/x", cmuxWith(false))).toBe(false)
+  })
+
+  it("treats cmux with no matching workspaces at all as nothing current", () => {
+    expect(shouldShowAllWorktreesBanner(null, "/worktree/x", { available: true })).toBe(true)
   })
 })

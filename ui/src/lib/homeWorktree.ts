@@ -138,3 +138,44 @@ export function shouldShowHomeBanner(home: string | null, pathname: string): boo
 export function homeWorktreeHref(home: string): string {
   return `/worktree/${encodeURIComponent(home)}`
 }
+
+/**
+ * The shape this file needs from GET /api/cmux. Structural on purpose: the
+ * predicate cares about one boolean per workspace, and depending on the full
+ * CmuxResponse DTO would drag the api layer into a lib module for nothing.
+ * `undefined` means the query has not answered yet.
+ */
+export interface CmuxSelection {
+  available: boolean
+  matches?: Record<string, { selected: boolean }[]>
+}
+
+/**
+ * Whether the way back to the LISTING belongs on the current route.
+ *
+ * The case this covers: `worktree ui` running under cmux, viewed from a
+ * workspace that belongs to no worktree — an overview pane. There is no
+ * `?home=`, because nothing homed the tab, yet "where I came from" still has
+ * an answer: everywhere, i.e. the listing.
+ *
+ * `available` is the server's own CMUX_SOCKET_PATH, so it answers "is this UI
+ * running under cmux" and not "is the viewer". A phone browser reading the
+ * same server is therefore judged by cmux's selection too — accepted: the
+ * banner is a link to a page one click away, and the alternative is a
+ * per-viewer notion of "current" that nothing here has.
+ *
+ * `matches` holds only REGISTERED WORKTREE paths (see webui's handleCmux), so
+ * "nothing selected" is precisely "the current workspace is not a worktree's".
+ */
+export function shouldShowAllWorktreesBanner(
+  home: string | null,
+  pathname: string,
+  cmux: CmuxSelection | undefined,
+): boolean {
+  // A homed tab has a better answer, and the two banners never stack.
+  if (home) return false
+  if (!cmux?.available) return false
+  if (pathname === "/") return false
+  const selected = Object.values(cmux.matches ?? {}).some((wss) => wss.some((ws) => ws.selected))
+  return !selected
+}
