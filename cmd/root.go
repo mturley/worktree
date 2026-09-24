@@ -151,7 +151,16 @@ func runCreate(input, repoRoot string) error {
 		if res.Confirm == nil {
 			fmt.Printf("\n%s Worktree ready at %s\n", ui.Green("✓"), ui.ShortPath(res.Path))
 			printWorktreeEnv(conn, repoRoot, res)
-			return offerCmuxAfterCreate(conn, cfg, res)
+			opened, err := offerCmuxAfterCreate(conn, cfg, res)
+			if err != nil {
+				return err
+			}
+			// Nothing moved the user anywhere, so tell them how to get there
+			// themselves: a binary cannot cd its parent shell.
+			if !opened {
+				fmt.Print(cdHint(res.Path))
+			}
+			return nil
 		}
 
 		c := res.Confirm
@@ -301,23 +310,36 @@ func printWorktreeEnv(conn *sql.DB, repoRoot string, res worktreenew.Result) {
 	fmt.Printf("    KUBECONFIG     = %s\n\n", ui.ShortPath(kubePath))
 }
 
-// offerCmuxAfterCreate opens a cmux workspace for the new worktree when cmux
-// is available and the user wants one.
+// offerCmuxAfterCreate opens a cmux workspace for the new worktree when the
+// user is in a cmux pane and wants one. It reports whether a workspace was
+// opened, which is also the answer to "has the user been taken to the new
+// worktree?" — the caller prints a cd hint when they have not.
 //
 // It asks first, defaulting to yes. Without the question the first thing the
 // user was asked was the workspace's name, so there was no way to decline:
 // an "n" meant for "no thanks" became a workspace called "n". Nobody at the
 // terminal means nobody to answer the name, group and color questions either,
 // so a non-interactive run skips the step rather than guess.
-func offerCmuxAfterCreate(conn *sql.DB, cfg config.Config, res worktreenew.Result) error {
-	if !cmux.IsAvailable() || !ui.StdinIsTerminal() {
-		return nil
+//
+// The gate is InPane, not IsAvailable: offering to move the user's pane only
+// makes sense when the pane is cmux's to move.
+func offerCmuxAfterCreate(conn *sql.DB, cfg config.Config, res worktreenew.Result) (bool, error) {
+	if !cmux.InPane() || !ui.StdinIsTerminal() {
+		return false, nil
 	}
 	fmt.Println()
 	if !ui.ConfirmDefault("  Open a cmux workspace for it?", true) {
-		return nil
+		return false, nil
 	}
 	return openCmuxWorkspace(conn, cfg, res.Path, res.Branch)
+}
+
+// cdHint renders the command that moves the user into the new worktree.
+//
+// ShortPath keeps it readable without making it unusable: the "~" it
+// substitutes is expanded by every shell that would run the line.
+func cdHint(path string) string {
+	return fmt.Sprintf("\n  To enter it:\n    %s\n", ui.Bold("cd "+ui.ShortPath(path)))
 }
 
 func shortSHA(sha string) string {
@@ -327,11 +349,16 @@ func shortSHA(sha string) string {
 	return sha
 }
 
-func openCmuxWorkspace(conn *sql.DB, cfg config.Config, wtPath, branch string) error {
+// openCmuxWorkspace switches to or creates the worktree's cmux workspace,
+// reporting whether the user ended up in one.
+func openCmuxWorkspace(conn *sql.DB, cfg config.Config, wtPath, branch string) (bool, error) {
 	existing, err := cmux.FindByDirectory(wtPath)
 	if err == nil && existing != nil {
 		fmt.Printf("%s Switching to existing cmux workspace %s\n", ui.Cyan("→"), existing.DisplayTitle())
-		return cmux.SelectWorkspace(existing.Ref)
+		if err := cmux.SelectWorkspace(existing.Ref); err != nil {
+			return false, err
+		}
+		return true, nil
 	}
 
 	var res []resources.Resource
@@ -362,7 +389,7 @@ func openCmuxWorkspace(conn *sql.DB, cfg config.Config, wtPath, branch string) e
 	ref, err := cmux.NewWorkspace(opts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to create cmux workspace: %v\n", err)
-		return nil
+		return false, nil
 	}
 
 	if color != "" {
@@ -377,7 +404,7 @@ func openCmuxWorkspace(conn *sql.DB, cfg config.Config, wtPath, branch string) e
 		cmux.PinBrowserTabs(ref)
 		cmux.FocusFirstBrowserTab(ref)
 	}
-	return nil
+	return true, nil
 }
 
 // buildWorkspaceURLs orders the browser tabs of a new cmux workspace's

@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mturley/worktree/internal/resources"
@@ -93,5 +96,23 @@ func TestAnswerConfirmAcceptedReuseSetsTheFlag(t *testing.T) {
 	}
 	if !opts.ReuseBranch {
 		t.Fatal("ReuseBranch not set")
+	}
+}
+
+func TestCdHintUsesShortPath(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home directory")
+	}
+	got := cdHint(filepath.Join(home, ".worktrees", "my-branch"))
+	if !strings.Contains(got, "cd ~/.worktrees/my-branch") {
+		t.Fatalf("cdHint() = %q, want it to contain cd ~/.worktrees/my-branch", got)
+	}
+}
+
+func TestCdHintKeepsPathsOutsideHomeAbsolute(t *testing.T) {
+	got := cdHint("/srv/worktrees/my-branch")
+	if !strings.Contains(got, "cd /srv/worktrees/my-branch") {
+		t.Fatalf("cdHint() = %q, want it to contain cd /srv/worktrees/my-branch", got)
 	}
 }

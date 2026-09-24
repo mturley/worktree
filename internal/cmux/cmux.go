@@ -91,8 +91,28 @@ type listResult struct {
 	Workspaces []Workspace `json:"workspaces"`
 }
 
+// IsAvailable reports whether cmux can be talked to at all. It is the right
+// question for commands that drive cmux from wherever they happen to run —
+// the web UI, `worktree list` — and deliberately says nothing about where the
+// caller's own terminal lives.
 func IsAvailable() bool {
 	return os.Getenv("CMUX_SOCKET_PATH") != ""
+}
+
+// InPane reports whether this process's terminal is itself a cmux pane. It is
+// the right question for anything that offers to act on the user's current
+// pane, such as creating a workspace for a worktree just created there.
+//
+// A multiplexer running inside a cmux pane makes that a different question
+// from IsAvailable: a tmux server first started under cmux hands
+// CMUX_SOCKET_PATH to every pane it opens from then on, so the variable long
+// outlives any connection to cmux. Those panes are tmux's, not cmux's, and an
+// inherited variable is not evidence of the current pane.
+func InPane() bool {
+	if os.Getenv("TMUX") != "" || os.Getenv("STY") != "" {
+		return false
+	}
+	return IsAvailable()
 }
 
 // cmuxCmd is a var so tests can stub the cmux binary.
