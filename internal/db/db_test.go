@@ -234,3 +234,76 @@ func TestMigrateBackfillDoesNotSwallowEventsBetweenOpens(t *testing.T) {
 		t.Fatalf("cursor = %q, want it left at the first open's ts so e2 stays unread", got)
 	}
 }
+
+// hasColumn reports whether tbl has a column named col.
+func hasColumn(t *testing.T, conn *sql.DB, tbl, col string) bool {
+	t.Helper()
+	rows, err := conn.Query(`SELECT name FROM pragma_table_info(?)`, tbl)
+	if err != nil {
+		t.Fatalf("pragma_table_info(%s): %v", tbl, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			t.Fatal(err)
+		}
+		if name == col {
+			return true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return false
+}
+
+func TestOpenAtAddsSortOrderToExistingPrimaryTable(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "worktree.db")
+
+	// Stand up a pre-sort_order database by hand, with a row in it, so the
+	// migration is exercised as an upgrade rather than a fresh create.
+	raw, err := sql.Open("sqlite", p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(`CREATE TABLE worktree_primary (
+		subscriber    TEXT NOT NULL,
+		resource_type TEXT NOT NULL,
+		resource_id   TEXT NOT NULL,
+		is_primary    INTEGER NOT NULL DEFAULT 0,
+		PRIMARY KEY (subscriber, resource_type, resource_id)
+	)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(
+		`INSERT INTO worktree_primary VALUES ('worktree:/a', 'pr', 'o/r#1', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	raw.Close()
+
+	conn, err := OpenAt(p)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer conn.Close()
+
+	if !hasColumn(t, conn, "worktree_primary", "sort_order") {
+		t.Fatal("expected worktree_primary.sort_order after migrating an older database")
+	}
+
+	// The upgrade must not disturb the classification already stored.
+	var isPrimary int
+	var sortOrder sql.NullInt64
+	if err := conn.QueryRow(
+		`SELECT is_primary, sort_order FROM worktree_primary WHERE resource_id = 'o/r#1'`,
+	).Scan(&isPrimary, &sortOrder); err != nil {
+		t.Fatal(err)
+	}
+	if isPrimary != 1 {
+		t.Fatalf("is_primary = %d, want 1", isPrimary)
+	}
+	if sortOrder.Valid {
+		t.Fatalf("sort_order = %v, want NULL for a row that predates ordering", sortOrder)
+	}
+}

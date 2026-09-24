@@ -309,6 +309,12 @@ interface ResourceCardProps {
   onSelect?: () => void
   /** Called after a custom name/description is saved, to refetch resources. */
   onMetaChanged?: () => void
+  /**
+   * Rendered at the card's leading edge while the list is in reorder mode.
+   * The card stays unaware of the drag library: the handle arrives already
+   * wired, so ResourceCard only has to make room for it.
+   */
+  dragHandle?: React.ReactNode
 }
 
 export function ResourceCard({
@@ -319,6 +325,7 @@ export function ResourceCard({
   selected = false,
   onSelect,
   onMetaChanged = () => {},
+  dragHandle,
 }: ResourceCardProps) {
   const [editOpen, setEditOpen] = useState(false)
   // Focus/Related is written straight through on change — no confirm step for
@@ -383,6 +390,7 @@ export function ResourceCard({
       style={cardEdgeStyle(showsUnread(variant) && hasUnread(r), selected)}
     >
       <Group justify="space-between" wrap="nowrap" align="flex-start">
+        {dragHandle}
         {onSelect ? (
           <UnstyledButton
             onClick={onSelect}

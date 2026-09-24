@@ -97,6 +97,21 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(args),
     }),
+  /**
+   * Persists the user's card order. Both groups are sent in full so the call
+   * describes the order rather than a move: replaying it is harmless, and two
+   * devices dragging at once settle on last-writer-wins.
+   */
+  setResourceOrder: (args: {
+    path: string
+    focus: { type: string; id: string }[]
+    related: { type: string; id: string }[]
+  }) =>
+    fetchJSON<null>("/api/worktree-resources/order", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(args),
+    }),
   removeResource: (args: { path: string; type: string; id: string }) =>
     fetchJSON<null>("/api/worktree-resources/remove", {
       method: "POST",

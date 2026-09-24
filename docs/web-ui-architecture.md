@@ -180,6 +180,8 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | GET | `/api/resource-type` | `url` (required) | `{type, id}` or error if unrecognized |
 | POST | `/api/worktree-resources/add` | body: `{path, url, related?}` | `resourceDTO` |
 | POST | `/api/worktree-resources/remove` | body: `{path, type, id}` | 204 No Content |
+| POST | `/api/worktree-resources/primary` | body: `{path, type, id, primary}` | 204 No Content |
+| POST | `/api/worktree-resources/order` | body: `{path, focus: [{type,id}], related: [{type,id}]}` | 204 No Content |
 | POST | `/api/worktrees/delete` | body: `{path, delete_branch, force_directory, force_branch}` | `{ok, needs_force, steps[]}` |
 | GET | `/api/worktree-notes` | `path` (required) | `{notes, sync_cmux, updated_at?}`; empty notes when never saved |
 | POST | `/api/worktree-notes` | body: `{path, notes, sync_cmux}` | the stored notes plus `cmux_sync` (`off`/`ok`/`skipped`/`failed`) and `cmux_error?`. 404 for an unregistered path, 413 over 64 KB |
@@ -353,6 +355,67 @@ and clears the `worktree_primary` flag if set) and returns `204 No Content`.
 soft "Unwatch" (keep history, stop polling) in this UI yet — Phase-5 soft-stop
 semantics are still unsettled, so remove is intentionally the only control
 exposed.
+
+## Resource card ordering
+
+The worktree detail page's resource cards are user-orderable within the Focus
+and Related groups, and the order is stored server-side so it follows the user
+between devices and shows up in the CLI listings too.
+
+**Storage.** One nullable `sort_order` column on `worktree_primary`, the table
+that already holds this worktree's opinion about a resource. Group and rank
+change together, in one row, in one transaction — which is the whole point,
+since a rank only means anything relative to the other members of its group.
+
+**NULL means "never placed by hand"**, and `resources.Load` sorts unranked
+rows *after* ranked ones (tie-broken by subscription `created_at`, as before).
+Three things fall out of that, all deliberate:
+
+- an upgraded database looks exactly as it did until the user drags something,
+  so the migration needs no backfill;
+- a newly followed resource lands at the bottom of its group with no rank
+  written at all;
+- `Load` also puts Focus before Related, because per-group ranks only read
+  correctly if the groups stay apart. This changed the CLI's flat listing
+  order (`worktree info`, `worktree resources list`) to match the web UI's.
+
+**Two ways to change groups, on purpose different:**
+
+| Path | Lands | Owner |
+|---|---|---|
+| Focus/Related toggle (web, CLI, agent-handler) | bottom of the new group | `resources.SetPrimary` → `setGroupAndPlace` |
+| Cross-group drag (web reorder mode) | exactly where it was dropped | `resources.SetOrder` |
+
+A drag states a position; a toggle does not. `resources.Add` re-adding a
+tracked resource with the other flag counts as a toggle, since `Add`
+overwrites `is_primary`. Re-setting the group a resource is already in is a
+no-op for order — the UI fires the toggle with no confirmation step, so a
+repeat must not shuffle anything.
+
+**The endpoint is declarative:** `POST /api/worktree-resources/order` states
+the full membership of both groups rather than a single move. It is therefore
+idempotent and replayable, and two devices dragging at once resolve to
+last-writer-wins instead of to an ambiguous relative move. `SetOrder` is
+forgiving about a client whose view is behind: a tracked resource named in
+neither list keeps its group and is appended to that group's end, and a key
+that is not tracked at all is ignored rather than failing the whole reorder.
+
+**Frontend.** Reordering is a *mode*, entered from the `Reorder` button beside
+`Follow resource` in `ResourceList`. Entering it reveals a grip handle per card
+(`SortableResourceCard`) and swaps the selectable `ResourceCard` for the
+sortable one, so a plain click on a card still means "open this" the rest of
+the time — a handle rather than an activation threshold, because on a
+touchscreen no threshold separates a tap from a drag without ruining one of
+them. Groups are `useDroppable` containers as well as lists, so a card can be
+dragged into an empty group. `ui/src/lib/resourceOrder.ts`'s `applyDrag` holds
+all the list arithmetic as a pure function, keeping the dnd-kit wiring thin.
+
+Each drop persists immediately (the call is idempotent, so there is no unsaved
+state for a closed tab to lose, and `Done` is purely a UI mode exit). The
+optimistic list wins over the `items` prop for as long as it is set, which is
+what stops a background refetch from yanking the list mid-drag; it is cleared
+by the next `items` change *after* the user leaves reorder mode. A failed save
+reverts it and shows an inline alert.
 
 Frontend: `api.addResource`/`api.removeResource` (`ui/src/api/client.ts`).
 Three UI entry points all call these and then refetch via

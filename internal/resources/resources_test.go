@@ -430,3 +430,253 @@ func TestAddDoesNotSeedACursorForSlack(t *testing.T) {
 		t.Fatal("a slack thread must never get a cursor row")
 	}
 }
+
+// ids renders the loaded resources as "type:id" strings, in order, for
+// readable ordering assertions.
+func ids(rs []Resource) []string {
+	out := make([]string, 0, len(rs))
+	for _, r := range rs {
+		out = append(out, r.Type+":"+r.ID)
+	}
+	return out
+}
+
+func setRank(t *testing.T, conn *sql.DB, wt, resType, id string, rank int) {
+	t.Helper()
+	if _, err := conn.Exec(
+		`UPDATE worktree_primary SET sort_order = ?
+		  WHERE subscriber = ? AND resource_type = ? AND resource_id = ?`,
+		rank, wdb.Subscriber(wt), resType, id); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLoadOrdersRankedBeforeUnrankedWithinAGroup(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/order"
+	for _, id := range []string{"o/r#1", "o/r#2", "o/r#3"} {
+		if err := Add(conn, wt, Resource{Type: "pr", ID: id, URL: "u"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// #3 first, #1 second, #2 left unranked so it falls to the back.
+	setRank(t, conn, wt, "pr", "o/r#3", 1)
+	setRank(t, conn, wt, "pr", "o/r#1", 2)
+
+	res, err := Load(conn, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(ids(res), ",")
+	want := "pr:o/r#3,pr:o/r#1,pr:o/r#2"
+	if got != want {
+		t.Fatalf("order = %s, want %s", got, want)
+	}
+}
+
+func TestLoadWithoutAnyRanksKeepsSubscriptionOrder(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/unranked"
+	for _, id := range []string{"o/r#1", "o/r#2", "o/r#3"} {
+		if err := Add(conn, wt, Resource{Type: "pr", ID: id, URL: "u"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	res, err := Load(conn, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(ids(res), ",")
+	want := "pr:o/r#1,pr:o/r#2,pr:o/r#3"
+	if got != want {
+		t.Fatalf("order = %s, want %s (ordering must not disturb an untouched list)", got, want)
+	}
+}
+
+func TestLoadPutsFocusBeforeRelated(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/groups"
+	if err := Add(conn, wt, Resource{Type: "pr", ID: "o/r#1", URL: "u", Related: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Add(conn, wt, Resource{Type: "pr", ID: "o/r#2", URL: "u"}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Load(conn, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Ranks are per-group, so the groups have to be kept apart for the
+	// numbers to mean anything: focus first, related after.
+	got := strings.Join(ids(res), ",")
+	want := "pr:o/r#2,pr:o/r#1"
+	if got != want {
+		t.Fatalf("order = %s, want %s", got, want)
+	}
+}
+
+// addAll follows each id in order, in the given group.
+func addAll(t *testing.T, conn *sql.DB, wt string, related bool, ids ...string) {
+	t.Helper()
+	for _, id := range ids {
+		if err := Add(conn, wt, Resource{Type: "pr", ID: id, URL: "u", Related: related}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestSetPrimaryMovesFlippedResourceToBottomOfNewGroup(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/flip"
+	addAll(t, conn, wt, false, "o/r#1", "o/r#2", "o/r#3") // focus
+	addAll(t, conn, wt, true, "o/r#8", "o/r#9")           // related
+
+	// #2 is in the middle of focus; demoting it must land it under #9,
+	// not keep its old middle position in the related list.
+	if err := SetPrimary(conn, wt, "pr", "o/r#2", false); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := Load(conn, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(ids(res), ",")
+	want := "pr:o/r#1,pr:o/r#3,pr:o/r#8,pr:o/r#9,pr:o/r#2"
+	if got != want {
+		t.Fatalf("order = %s, want %s", got, want)
+	}
+}
+
+func TestSetPrimaryToSameGroupLeavesOrderAlone(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/noop"
+	addAll(t, conn, wt, false, "o/r#1", "o/r#2", "o/r#3")
+
+	// The UI fires this on every toggle with no confirmation, so setting the
+	// group a resource is already in must not shuffle it to the bottom.
+	if err := SetPrimary(conn, wt, "pr", "o/r#2", true); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := Load(conn, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(ids(res), ",")
+	want := "pr:o/r#1,pr:o/r#2,pr:o/r#3"
+	if got != want {
+		t.Fatalf("order = %s, want %s", got, want)
+	}
+}
+
+func TestAddReclassifyingATrackedResourceMovesItToBottom(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/readd"
+	addAll(t, conn, wt, false, "o/r#1", "o/r#2")
+	addAll(t, conn, wt, true, "o/r#8", "o/r#9")
+
+	// Add overwrites is_primary from the caller's flag, so a re-add is a
+	// flip too and must not strand #1 mid-list in a group it just joined.
+	if err := Add(conn, wt, Resource{Type: "pr", ID: "o/r#1", URL: "u", Related: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := Load(conn, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(ids(res), ",")
+	want := "pr:o/r#2,pr:o/r#8,pr:o/r#9,pr:o/r#1"
+	if got != want {
+		t.Fatalf("order = %s, want %s", got, want)
+	}
+}
+
+func keys(ids ...string) []Key {
+	out := make([]Key, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, Key{Type: "pr", ID: id})
+	}
+	return out
+}
+
+func TestSetOrderReordersWithinAGroup(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/setorder"
+	addAll(t, conn, wt, false, "o/r#1", "o/r#2", "o/r#3")
+
+	if err := SetOrder(conn, wt, keys("o/r#3", "o/r#1", "o/r#2"), nil); err != nil {
+		t.Fatal(err)
+	}
+
+	res, _ := Load(conn, wt)
+	if got, want := strings.Join(ids(res), ","), "pr:o/r#3,pr:o/r#1,pr:o/r#2"; got != want {
+		t.Fatalf("order = %s, want %s", got, want)
+	}
+}
+
+func TestSetOrderCrossGroupDragHonoursTheDropPosition(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/crossgroup"
+	addAll(t, conn, wt, false, "o/r#1", "o/r#2")
+	addAll(t, conn, wt, true, "o/r#8", "o/r#9")
+
+	// #9 dragged out of related and dropped BETWEEN the two focus cards.
+	// Unlike the toggle, a drag says exactly where the card should land.
+	if err := SetOrder(conn, wt,
+		keys("o/r#1", "o/r#9", "o/r#2"), keys("o/r#8")); err != nil {
+		t.Fatal(err)
+	}
+
+	res, _ := Load(conn, wt)
+	if got, want := strings.Join(ids(res), ","), "pr:o/r#1,pr:o/r#9,pr:o/r#2,pr:o/r#8"; got != want {
+		t.Fatalf("order = %s, want %s", got, want)
+	}
+	for _, r := range res {
+		if r.ID == "o/r#9" && r.Related {
+			t.Fatal("o/r#9 should have been reclassified as focus by the drag")
+		}
+	}
+}
+
+func TestSetOrderAppendsResourcesTheClientDidNotKnowAbout(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/stale"
+	addAll(t, conn, wt, false, "o/r#1", "o/r#2")
+	addAll(t, conn, wt, true, "o/r#8")
+
+	// A phone that loaded the page before #2 was followed reorders focus
+	// without mentioning it. #2 must keep its group and land at its end,
+	// not vanish and not be reclassified.
+	if err := SetOrder(conn, wt, keys("o/r#1"), keys("o/r#8")); err != nil {
+		t.Fatal(err)
+	}
+
+	res, _ := Load(conn, wt)
+	if got, want := strings.Join(ids(res), ","), "pr:o/r#1,pr:o/r#2,pr:o/r#8"; got != want {
+		t.Fatalf("order = %s, want %s", got, want)
+	}
+	for _, r := range res {
+		if r.ID == "o/r#2" && r.Related {
+			t.Fatal("o/r#2 must keep its group when the client omits it")
+		}
+	}
+}
+
+func TestSetOrderIgnoresKeysThatAreNotTracked(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/untracked"
+	addAll(t, conn, wt, false, "o/r#1", "o/r#2")
+
+	// A stale client may name a resource that has since been removed.
+	// Dropping it beats failing the whole reorder over it.
+	if err := SetOrder(conn, wt, keys("o/r#2", "o/r#404", "o/r#1"), nil); err != nil {
+		t.Fatal(err)
+	}
+
+	res, _ := Load(conn, wt)
+	if got, want := strings.Join(ids(res), ","), "pr:o/r#2,pr:o/r#1"; got != want {
+		t.Fatalf("order = %s, want %s", got, want)
+	}
+}

@@ -19,8 +19,8 @@ import (
 )
 
 type Server struct {
-	DB    *sql.DB
-	WebFS fs.FS // rooted at the dist dir (index.html at top level)
+	DB      *sql.DB
+	WebFS   fs.FS // rooted at the dist dir (index.html at top level)
 	Port    int
 	DevMode bool
 	Logger  *log.Logger
@@ -142,6 +142,7 @@ func (s *Server) routes() []route {
 		{"POST /api/worktrees/delete", s.handleDeleteWorktree},
 		{"POST /api/worktree-resources/remove", s.handleRemoveResource},
 		{"POST /api/worktree-resources/primary", s.handleSetResourcePrimary},
+		{"POST /api/worktree-resources/order", s.handleSetResourceOrder},
 		{"GET /api/stream", s.handleStream},
 
 		// Slack thread/reply/react + image proxies (folded in from slack-mini).

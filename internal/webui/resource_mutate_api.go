@@ -115,3 +115,33 @@ func (s *Server) handleSetResourcePrimary(w http.ResponseWriter, r *http.Request
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// handleSetResourceOrder persists the user's drag-and-drop order for a
+// worktree's resource cards.
+//
+// The request states the full membership of both groups rather than a single
+// move, so it is idempotent and safe to replay: a laptop and a phone dragging
+// at the same time resolve to last-writer-wins instead of to an ambiguous
+// relative move. Resources the client has not heard of are preserved by
+// resources.SetOrder rather than rejected, so a stale page still reorders what
+// it can see.
+func (s *Server) handleSetResourceOrder(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Path    string          `json:"path"`
+		Focus   []resources.Key `json:"focus"`
+		Related []resources.Key `json:"related"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if body.Path == "" {
+		writeError(w, http.StatusBadRequest, "missing path")
+		return
+	}
+	if err := resources.SetOrder(s.DB, body.Path, body.Focus, body.Related); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

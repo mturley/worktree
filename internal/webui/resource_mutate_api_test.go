@@ -261,3 +261,69 @@ func TestAddResource_NonWorktreePathIsBadRequest(t *testing.T) {
 		t.Fatalf("response should explain why: %s", buf.String())
 	}
 }
+
+// TestSetResourceOrderEndpoint pins the declarative reorder: both groups are
+// stated in full, so one call expresses a within-group drag and a drag across
+// the focus/related boundary alike.
+func TestSetResourceOrderEndpoint(t *testing.T) {
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	wtPath := testgit.Worktree(t)
+	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u"})
+	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#2", URL: "u"})
+	resources.Add(conn, wtPath, resources.Resource{Type: "jira", ID: "RH-9", URL: "u", Related: true})
+
+	srv := &Server{DB: conn}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	body := `{"path":"` + wtPath + `",
+		"focus":[{"type":"jira","id":"RH-9"},{"type":"pr","id":"o/r#2"},{"type":"pr","id":"o/r#1"}],
+		"related":[]}`
+	resp, err := http.Post(ts.URL+"/api/worktree-resources/order", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusNoContent {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("order: got %d, want 204 (%s)", resp.StatusCode, b)
+	}
+
+	res, err := resources.Load(conn, wtPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, r := range res {
+		got = append(got, r.Type+":"+r.ID)
+	}
+	if want := "jira:RH-9,pr:o/r#2,pr:o/r#1"; strings.Join(got, ",") != want {
+		t.Fatalf("order = %s, want %s", strings.Join(got, ","), want)
+	}
+	if res[0].Related {
+		t.Fatal("RH-9 was dragged into focus and should no longer be related")
+	}
+}
+
+func TestSetResourceOrderEndpoint_MissingPath(t *testing.T) {
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	srv := &Server{DB: conn}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	resp, err := http.Post(ts.URL+"/api/worktree-resources/order", "application/json", strings.NewReader(`{"focus":[]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("got %d, want 400", resp.StatusCode)
+	}
+}

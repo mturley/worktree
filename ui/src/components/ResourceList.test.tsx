@@ -95,3 +95,49 @@ describe("Add resource emphasis", () => {
     expect(getByRole("button", { name: /follow resource/i })).toHaveAttribute("data-variant", "filled")
   })
 })
+
+describe("ResourceList reorder mode", () => {
+  const items = [
+    { type: "pr", id: "o/r#1", url: "u", primary: true },
+    { type: "jira", id: "RH-9", url: "u", primary: false },
+  ]
+
+  it("shows no drag handles until reorder mode is entered", () => {
+    const { queryAllByLabelText } = wrap(
+      <ResourceList items={items} path="/w" onChanged={vi.fn()} />,
+    )
+    expect(queryAllByLabelText(/drag to reorder/i)).toHaveLength(0)
+  })
+
+  it("reveals a drag handle per card while reordering", async () => {
+    const user = userEvent.setup()
+    const { getByRole, findAllByLabelText } = wrap(
+      <ResourceList items={items} path="/w" onChanged={vi.fn()} />,
+    )
+
+    await user.click(getByRole("button", { name: /^reorder$/i }))
+
+    expect(await findAllByLabelText(/drag to reorder/i)).toHaveLength(2)
+    expect(getByRole("button", { name: /^done$/i })).toBeInTheDocument()
+  })
+
+  it("suppresses card selection while reordering, so a drag can't navigate away", async () => {
+    const onSelectResource = vi.fn()
+    const user = userEvent.setup()
+    const { getByRole, getByText } = wrap(
+      <ResourceList
+        items={items}
+        path="/w"
+        onChanged={vi.fn()}
+        onSelectResource={onSelectResource}
+      />,
+    )
+
+    await user.click(getByText("o/r#1"))
+    expect(onSelectResource).toHaveBeenCalledTimes(1)
+
+    await user.click(getByRole("button", { name: /^reorder$/i }))
+    await user.click(getByText("o/r#1"))
+    expect(onSelectResource).toHaveBeenCalledTimes(1)
+  })
+})
