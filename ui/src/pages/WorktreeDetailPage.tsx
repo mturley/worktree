@@ -7,6 +7,7 @@ import { useIsWide } from "../hooks/useIsWide"
 import { useWorktrees } from "../hooks/useWorktrees"
 import { useCmuxMatches } from "../api/cmux"
 import { ResourceList } from "../components/ResourceList"
+import { stickyListStyle } from "../lib/stickyList"
 import { ResourceDetailPane } from "../components/ResourceDetailPane"
 import { TimelineFeed } from "../components/TimelineFeed"
 import { WorktreeDetailCard } from "../components/WorktreeDetailCard"
@@ -137,24 +138,8 @@ export function WorktreeDetailPage() {
   // silently drops the timeline.
   const stacked = !selectedResource
   // Side by side, the resource list stays put while the page scrolls past it.
-  //
-  // alignSelf is load-bearing: a Grid column stretches to the row's height by
-  // default, and an element as tall as its scroll container can never stick.
-  // maxHeight + overflowY are the fallback for a list longer than the screen —
-  // it scrolls itself only when it has to, rather than always.
-  const listSticky = stacked
-    ? undefined
-    : {
-        position: "sticky" as const,
-        top: headerHeight,
-        // Above the flowing column beside it, for the same reason the header
-        // needs a real value: card internals carry small z-indexes of their
-        // own and would otherwise paint over this list as it scrolls past.
-        zIndex: 1,
-        alignSelf: "flex-start" as const,
-        maxHeight: `calc(100dvh - ${headerHeight}px)`,
-        overflowY: "auto" as const,
-      }
+  // See stickyListStyle for why the offset is not simply headerHeight.
+  const listSticky = stacked ? undefined : stickyListStyle(headerHeight)
 
   // Narrow + a selection is the one layout that drills down, replacing the
   // list outright — there is no room to keep a navigator beside the resource.
