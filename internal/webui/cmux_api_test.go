@@ -262,3 +262,55 @@ func TestWorktreeDetailURLCarriesHomeMarker(t *testing.T) {
 		t.Fatalf("worktreeDetailURL = %q, want the home path in the query", got)
 	}
 }
+
+func TestCmuxIndexIsListPositionNotRefNumber(t *testing.T) {
+	t.Setenv("CMUX_SOCKET_PATH", "/tmp/x")
+
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	pathA := t.TempDir()
+	pathB := t.TempDir()
+	for _, p := range []string{pathA, pathB} {
+		if err := registry.Register(conn, registry.Entry{Path: p, Repo: "r", RepoRoot: p, Branch: "b", CreatedAt: "now"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	s := &Server{
+		DB: conn,
+		cmuxList: func() ([]cmux.Workspace, error) {
+			// Sidebar order, with ref numbers deliberately out of order the
+			// way real cmux produces them after workspaces are moved.
+			return []cmux.Workspace{
+				{Ref: "workspace:9", Title: "unrelated", CurrentDirectory: t.TempDir()},
+				{Ref: "workspace:19", Title: "b-first", CurrentDirectory: pathB},
+				{Ref: "workspace:17", Title: "a", CurrentDirectory: pathA},
+				{Ref: "workspace:2", Title: "b-second", CurrentDirectory: pathB},
+			}, nil
+		},
+	}
+
+	rec := httptest.NewRecorder()
+	s.handleCmux(rec, httptest.NewRequest(http.MethodGet, "/api/cmux", nil))
+	var got cmuxResponse
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+
+	idx := map[string]int{}
+	for _, hits := range got.Matches {
+		for _, h := range hits {
+			idx[h.Ref] = h.Index
+		}
+	}
+	want := map[string]int{"workspace:19": 1, "workspace:17": 2, "workspace:2": 3}
+	for ref, w := range want {
+		if idx[ref] != w {
+			t.Errorf("index[%s] = %d, want %d", ref, idx[ref], w)
+		}
+	}
+}

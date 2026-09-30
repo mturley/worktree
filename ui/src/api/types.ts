@@ -3,6 +3,11 @@ export interface CmuxWorkspace {
   title: string
   color?: string
   selected: boolean
+  /**
+   * Position in cmux's workspace list (its sidebar order). Absent on an older
+   * cached response; consumers treat that as "no position".
+   */
+  index?: number
 }
 
 export interface CmuxResponse {
