@@ -1,15 +1,19 @@
 import { useEffect, useState } from "react"
 import { useCmux } from "../api/cmux"
 import { resolveSortMode, type SortDir, type SortMode } from "../lib/worktreeSort"
-import { SORT_PREF_KEYS, readCreatedDir, readSortMode, writeCreatedDir, writeSortMode } from "../lib/worktreeSortPref"
+import {
+  SORT_PREF_KEYS, readCreatedDir, readNameDir, readSortMode, writeCreatedDir, writeNameDir, writeSortMode,
+} from "../lib/worktreeSortPref"
 
 export interface WorktreeSort {
   /** The mode to apply, or null while it depends on a cmux answer not yet in. */
   mode: SortMode | null
   createdDir: SortDir
+  nameDir: SortDir
   cmuxAvailable: boolean
   setMode: (mode: SortMode) => void
   setCreatedDir: (dir: SortDir) => void
+  setNameDir: (dir: SortDir) => void
 }
 
 /**
@@ -21,7 +25,10 @@ export interface WorktreeSort {
 export function useWorktreeSort(): WorktreeSort {
   const cmux = useCmux()
   const [saved, setSaved] = useState<SortMode | null>(readSortMode)
-  const [createdDir, setDir] = useState<SortDir>(readCreatedDir)
+  // Each directional mode keeps its own direction, so switching between
+  // them never silently flips the other.
+  const [createdDir, setCreated] = useState<SortDir>(readCreatedDir)
+  const [nameDir, setName] = useState<SortDir>(readNameDir)
   const cmuxAvailable = cmux.data?.available === true
 
   // A change in another tab arrives only as a storage event — the browser
@@ -32,7 +39,8 @@ export function useWorktreeSort(): WorktreeSort {
     const onStorage = (e: StorageEvent) => {
       if (e.key !== null && !SORT_PREF_KEYS.includes(e.key)) return
       setSaved(readSortMode())
-      setDir(readCreatedDir())
+      setCreated(readCreatedDir())
+      setName(readNameDir())
     }
     window.addEventListener("storage", onStorage)
     return () => window.removeEventListener("storage", onStorage)
@@ -41,6 +49,7 @@ export function useWorktreeSort(): WorktreeSort {
   return {
     mode: resolveSortMode(saved, cmux.isPending, cmuxAvailable),
     createdDir,
+    nameDir,
     cmuxAvailable,
     setMode: (mode) => {
       writeSortMode(mode)
@@ -48,7 +57,11 @@ export function useWorktreeSort(): WorktreeSort {
     },
     setCreatedDir: (dir) => {
       writeCreatedDir(dir)
-      setDir(dir)
+      setCreated(dir)
+    },
+    setNameDir: (dir) => {
+      writeNameDir(dir)
+      setName(dir)
     },
   }
 }

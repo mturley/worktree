@@ -1,6 +1,12 @@
-import { ActionIcon, Group, NativeSelect, Tooltip } from "@mantine/core"
+import { ActionIcon, Group, NativeSelect, Text, Tooltip } from "@mantine/core"
 import { IconSortAscending, IconSortDescending } from "@tabler/icons-react"
-import { SORT_MODES, isSortMode, type SortDir, type SortMode } from "../lib/worktreeSort"
+import { SORT_MODES, hasDirection, isSortMode, type SortDir, type SortMode } from "../lib/worktreeSort"
+
+/** How each direction reads for the modes that have one. */
+const DIR_LABELS: Record<"created" | "name", Record<SortDir, string>> = {
+  created: { asc: "Oldest first", desc: "Newest first" },
+  name: { asc: "A → Z", desc: "Z → A" },
+}
 
 const LABELS: Record<SortMode, string> = {
   cmux: "cmux order",
@@ -13,10 +19,11 @@ const LABELS: Record<SortMode, string> = {
 export interface WorktreeSortControlProps {
   /** null while the default is undecided; nothing renders until then. */
   mode: SortMode | null
-  createdDir: SortDir
+  /** The current mode's direction; ignored for modes without one. */
+  direction: SortDir
   cmuxAvailable: boolean
   onModeChange: (mode: SortMode) => void
-  onCreatedDirChange: (dir: SortDir) => void
+  onDirectionChange: (dir: SortDir) => void
 }
 
 /**
@@ -24,15 +31,15 @@ export interface WorktreeSortControlProps {
  * the platform picker on a phone, where this UI is also used.
  */
 export function WorktreeSortControl({
-  mode, createdDir, cmuxAvailable, onModeChange, onCreatedDirChange,
+  mode, direction, cmuxAvailable, onModeChange, onDirectionChange,
 }: WorktreeSortControlProps) {
   // Undecided lasts one cmux round-trip. Rendering nothing beats a select
   // whose value is a lie, and keeps it a controlled input from first render.
   if (mode === null) return null
   const modes = SORT_MODES.filter((m) => m !== "cmux" || cmuxAvailable)
-  const dirLabel = createdDir === "asc" ? "Oldest first" : "Newest first"
   return (
-    <Group gap={4} wrap="nowrap">
+    <Group gap={6} wrap="nowrap">
+      <Text size="xs" c="dimmed">Sort by:</Text>
       <NativeSelect
         size="xs"
         aria-label="Sort worktrees"
@@ -43,15 +50,15 @@ export function WorktreeSortControl({
           if (isSortMode(v)) onModeChange(v)
         }}
       />
-      {mode === "created" && (
-        <Tooltip label={dirLabel}>
+      {hasDirection(mode) && (
+        <Tooltip label={DIR_LABELS[mode][direction]}>
           <ActionIcon
             variant="subtle"
             size="sm"
             aria-label="Toggle sort direction"
-            onClick={() => onCreatedDirChange(createdDir === "asc" ? "desc" : "asc")}
+            onClick={() => onDirectionChange(direction === "asc" ? "desc" : "asc")}
           >
-            {createdDir === "asc" ? <IconSortAscending size={16} /> : <IconSortDescending size={16} />}
+            {direction === "asc" ? <IconSortAscending size={16} /> : <IconSortDescending size={16} />}
           </ActionIcon>
         </Tooltip>
       )}

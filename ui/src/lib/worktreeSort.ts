@@ -7,6 +7,11 @@ export type SortDir = "asc" | "desc"
 /** Every mode, in the order the picker lists them. */
 export const SORT_MODES: readonly SortMode[] = ["cmux", "activity", "created", "name", "unread"]
 
+/** The modes that offer an ascending/descending toggle. */
+export function hasDirection(mode: SortMode): mode is "created" | "name" {
+  return mode === "created" || mode === "name"
+}
+
 export function isSortMode(v: unknown): v is SortMode {
   return typeof v === "string" && (SORT_MODES as readonly string[]).includes(v)
 }
@@ -15,6 +20,8 @@ export interface SortOptions {
   mode: SortMode
   /** Only consulted in "created" mode. */
   createdDir: SortDir
+  /** Only consulted in "name" mode. */
+  nameDir: SortDir
   /** Path -> the worktree's earliest cmux workspace position; see cmuxPositions. */
   cmuxPositions: Record<string, number>
 }
@@ -78,7 +85,7 @@ function missingLast(a: number | undefined, b: number | undefined, dir: SortDir)
 const byActivity: Compare = (a, b) =>
   missingLast(parseTime(a.latest_event_ts), parseTime(b.latest_event_ts), "desc")
 
-function comparatorFor({ mode, createdDir, cmuxPositions: pos }: SortOptions): Compare {
+function comparatorFor({ mode, createdDir, nameDir, cmuxPositions: pos }: SortOptions): Compare {
   switch (mode) {
     case "cmux":
       return (a, b) => missingLast(pos[a.path], pos[b.path], "asc")
@@ -87,7 +94,8 @@ function comparatorFor({ mode, createdDir, cmuxPositions: pos }: SortOptions): C
     case "created":
       return (a, b) => missingLast(parseTime(a.created_at), parseTime(b.created_at), createdDir)
     case "name":
-      return () => 0
+      // Ascending is the tie-break itself; descending reverses all of it.
+      return nameDir === "desc" ? (a, b) => byName(b, a) : () => 0
     case "unread":
       return (a, b) =>
         Number(Boolean(b.has_unread)) - Number(Boolean(a.has_unread)) ||

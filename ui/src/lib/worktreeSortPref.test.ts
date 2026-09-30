@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { readCreatedDir, readSortMode, writeCreatedDir, writeSortMode } from "./worktreeSortPref"
+import { readCreatedDir, readNameDir, readSortMode, writeCreatedDir, writeNameDir, writeSortMode } from "./worktreeSortPref"
 
 beforeEach(() => window.localStorage.clear())
 afterEach(() => vi.restoreAllMocks())
@@ -8,13 +8,16 @@ describe("worktreeSortPref", () => {
   it("round-trips the mode and direction", () => {
     writeSortMode("unread")
     writeCreatedDir("desc")
+    writeNameDir("desc")
     expect(readSortMode()).toBe("unread")
     expect(readCreatedDir()).toBe("desc")
+    expect(readNameDir()).toBe("desc")
   })
 
   it("defaults when nothing is saved", () => {
     expect(readSortMode()).toBeNull()
     expect(readCreatedDir()).toBe("asc")
+    expect(readNameDir()).toBe("asc")
   })
 
   it("ignores garbage left by another build", () => {

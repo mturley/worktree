@@ -759,8 +759,10 @@ The home page's worktree list is sorted client-side. The server returns
 `/api/worktrees` in registry order (`ORDER BY repo, path`) and nothing about
 the sort choice reaches it.
 
-- **Modes** (`lib/worktreeSort.ts`): cmux order, Latest activity, Created
-  (with an ascending/descending toggle), Name, Unread first. Every mode breaks
+- **Modes** (`lib/worktreeSort.ts`): cmux order, Latest activity, Created,
+  Name, Unread first. Created and Name each have their own
+  ascending/descending toggle (`hasDirection`), remembered separately so
+  switching between them never flips the other. Every mode breaks
   ties by Name, and missing or unparseable values (`latest_event_ts: ""`, a
   legacy non-RFC3339 `created_at`) sort last in either direction.
 - **cmux order** uses `index` on each `/api/cmux` workspace: its position in
@@ -771,7 +773,8 @@ the sort choice reaches it.
 - **Created** uses `created_at` on the worktree summary, the registry value
   verbatim.
 - **Persistence** (`lib/worktreeSortPref.ts`): `localStorage`, per browser,
-  keys `worktree.home.sort.mode` and `worktree.home.sort.createdDir`.
+  keys `worktree.home.sort.mode`, `worktree.home.sort.createdDir` and
+  `worktree.home.sort.nameDir`.
   `useWorktreeSort` listens for `storage` events, so a change in one tab
   re-sorts the browser's other open tabs immediately.
 - **Default** (`resolveSortMode`): cmux order when cmux is reachable,

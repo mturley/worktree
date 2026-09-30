@@ -9,10 +9,11 @@ import { isSortMode, type SortDir, type SortMode } from "./worktreeSort"
  * can sort differently.
  */
 const MODE_KEY = "worktree.home.sort.mode"
-const DIR_KEY = "worktree.home.sort.createdDir"
+const CREATED_DIR_KEY = "worktree.home.sort.createdDir"
+const NAME_DIR_KEY = "worktree.home.sort.nameDir"
 
 /** Every key this module owns, for telling our storage events from others. */
-export const SORT_PREF_KEYS: readonly string[] = [MODE_KEY, DIR_KEY]
+export const SORT_PREF_KEYS: readonly string[] = [MODE_KEY, CREATED_DIR_KEY, NAME_DIR_KEY]
 
 /** The saved mode, or null when none is saved or the value is unrecognised. */
 export function readSortMode(): SortMode | null {
@@ -33,18 +34,24 @@ export function writeSortMode(mode: SortMode): void {
   }
 }
 
-export function readCreatedDir(): SortDir {
+/** Directions default to ascending, including for unrecognised values. */
+function readDir(key: string): SortDir {
   try {
-    return window.localStorage.getItem(DIR_KEY) === "desc" ? "desc" : "asc"
+    return window.localStorage.getItem(key) === "desc" ? "desc" : "asc"
   } catch {
     return "asc"
   }
 }
 
-export function writeCreatedDir(dir: SortDir): void {
+function writeDir(key: string, dir: SortDir): void {
   try {
-    window.localStorage.setItem(DIR_KEY, dir)
+    window.localStorage.setItem(key, dir)
   } catch {
     // As writeSortMode.
   }
 }
+
+export const readCreatedDir = (): SortDir => readDir(CREATED_DIR_KEY)
+export const writeCreatedDir = (dir: SortDir): void => writeDir(CREATED_DIR_KEY, dir)
+export const readNameDir = (): SortDir => readDir(NAME_DIR_KEY)
+export const writeNameDir = (dir: SortDir): void => writeDir(NAME_DIR_KEY, dir)

@@ -35,16 +35,18 @@ export function HomePage() {
   const sortedWorktrees = useMemo(() => {
     const items = wts.data ?? []
     if (sort.mode === null) return items
-    return sortWorktrees(items, { mode: sort.mode, createdDir: sort.createdDir, cmuxPositions: positions })
-  }, [wts.data, sort.mode, sort.createdDir, positions])
+    return sortWorktrees(items, {
+      mode: sort.mode, createdDir: sort.createdDir, nameDir: sort.nameDir, cmuxPositions: positions,
+    })
+  }, [wts.data, sort.mode, sort.createdDir, sort.nameDir, positions])
 
   const sortControl = (
     <WorktreeSortControl
       mode={sort.mode}
-      createdDir={sort.createdDir}
+      direction={sort.mode === "name" ? sort.nameDir : sort.createdDir}
       cmuxAvailable={sort.cmuxAvailable}
       onModeChange={sort.setMode}
-      onCreatedDirChange={sort.setCreatedDir}
+      onDirectionChange={sort.mode === "name" ? sort.setNameDir : sort.setCreatedDir}
     />
   )
 
@@ -137,7 +139,7 @@ export function HomePage() {
       <Grid.Col span={6}>
         <Stack gap="sm">
           <Group justify="space-between">
-            <Group gap="sm" wrap="nowrap">
+            <Group gap="xl" wrap="nowrap">
               <Title order={4}>Worktrees</Title>
               {sortControl}
             </Group>

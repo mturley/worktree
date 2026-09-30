@@ -12,7 +12,7 @@ function wt(branch: string, over: Partial<WorktreeSummary> = {}): WorktreeSummar
 }
 
 const opts = (over: Partial<SortOptions> = {}): SortOptions => ({
-  mode: "name", createdDir: "asc", cmuxPositions: {}, ...over,
+  mode: "name", createdDir: "asc", nameDir: "asc", cmuxPositions: {}, ...over,
 })
 
 const branches = (items: WorktreeSummary[]) => items.map((w) => w.branch)
@@ -33,6 +33,13 @@ describe("sortWorktrees", () => {
     ]
     expect(sortWorktrees(items, opts()).map((w) => `${w.repo}/${w.branch}${w.path}`)).toEqual([
       "alpha/a/wt/a", "alpha/b/wt/1", "alpha/b/wt/2", "zeta/b/wt/b",
+    ])
+  })
+
+  it("name descending reverses repo, branch and path alike", () => {
+    const items = [wt("b", { repo: "alpha" }), wt("a", { repo: "zeta" }), wt("a", { repo: "alpha" })]
+    expect(sortWorktrees(items, opts({ nameDir: "desc" })).map((w) => `${w.repo}/${w.branch}`)).toEqual([
+      "zeta/a", "alpha/b", "alpha/a",
     ])
   })
 

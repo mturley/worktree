@@ -128,4 +128,16 @@ describe("HomePage worktree sorting", () => {
     await waitFor(() => expect(select).toHaveValue("cmux"))
     expect(order()).toEqual(["zeta-branch", "alpha-branch"])
   })
+
+  it("reverses name order with the direction toggle", async () => {
+    setViewport("wide")
+    window.localStorage.setItem("worktree.home.sort.mode", "name")
+    mocks.worktrees = [older, newer]
+    wrap()
+    await screen.findByRole("combobox", { name: "Sort worktrees" })
+    expect(order()).toEqual(["alpha-branch", "zeta-branch"])
+    await userEvent.click(screen.getByRole("button", { name: "Toggle sort direction" }))
+    expect(order()).toEqual(["zeta-branch", "alpha-branch"])
+    expect(window.localStorage.getItem("worktree.home.sort.nameDir")).toBe("desc")
+  })
 })
