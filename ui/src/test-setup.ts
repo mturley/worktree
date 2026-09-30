@@ -27,3 +27,12 @@ if (typeof window.matchMedia !== "function") {
     dispatchEvent: () => false,
   })) as unknown as typeof window.matchMedia
 }
+
+// Node 25 ships its own experimental `localStorage` global, and without
+// --localstorage-file it is a bare object with no Storage methods. It shadows
+// jsdom's, so `localStorage.getItem` is undefined under test. Put jsdom's
+// real Storage back — a real one, so Storage.prototype spies still apply.
+const jsdomStorage = (globalThis as { jsdom?: { window: Window } }).jsdom?.window.localStorage
+if (typeof globalThis.localStorage?.getItem !== "function" && jsdomStorage) {
+  Object.defineProperty(globalThis, "localStorage", { value: jsdomStorage, configurable: true })
+}
