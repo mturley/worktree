@@ -3,6 +3,11 @@ export interface CmuxWorkspace {
   title: string
   color?: string
   selected: boolean
+  /**
+   * Position in cmux's workspace list (its sidebar order). Absent on an older
+   * cached response; consumers treat that as "no position".
+   */
+  index?: number
 }
 
 export interface CmuxResponse {
@@ -30,6 +35,12 @@ export interface WorktreeSummary {
    * tally behind it.
    */
   unread_count?: number;
+  /**
+   * The registry's creation time, verbatim — RFC3339 for anything made by
+   * `worktree add`, but not guaranteed, so parse defensively. Absent on an
+   * older cached response.
+   */
+  created_at?: string;
 }
 export interface TimelineEvent {
   id: string; ts: string; external_ts: string; source: string;

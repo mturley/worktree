@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { useLocation } from "wouter"
 import { serializeResourceKey } from "../lib/resourceKey"
 import { Button, Grid, Group, Stack, Tabs, Title } from "@mantine/core"
@@ -13,6 +13,10 @@ import { SourceFilter } from "../components/SourceFilter"
 import { RefreshWatchersButton } from "../components/RefreshWatchersButton"
 import { NewWorktreeModal } from "../components/NewWorktreeModal"
 import { DevicesButton } from "../components/DevicesButton"
+import { useCmux } from "../api/cmux"
+import { useWorktreeSort } from "../hooks/useWorktreeSort"
+import { WorktreeSortControl } from "../components/WorktreeSortControl"
+import { cmuxPositions, sortWorktrees } from "../lib/worktreeSort"
 
 export function HomePage() {
   const [, navigate] = useLocation()
@@ -22,6 +26,29 @@ export function HomePage() {
   const wide = useIsWide()
   const wts = useWorktrees()
   const tl = useGlobalTimeline(archived, sources)
+  const sort = useWorktreeSort()
+  // Same shared query the cards use, so this costs no extra request.
+  const cmux = useCmux()
+  const positions = useMemo(() => cmuxPositions(cmux.data?.matches), [cmux.data])
+  // Undecided (null) leaves the server's order in place rather than showing
+  // one order and jumping to another when the cmux answer lands.
+  const sortedWorktrees = useMemo(() => {
+    const items = wts.data ?? []
+    if (sort.mode === null) return items
+    return sortWorktrees(items, {
+      mode: sort.mode, createdDir: sort.createdDir, nameDir: sort.nameDir, cmuxPositions: positions,
+    })
+  }, [wts.data, sort.mode, sort.createdDir, sort.nameDir, positions])
+
+  const sortControl = (
+    <WorktreeSortControl
+      mode={sort.mode}
+      direction={sort.mode === "name" ? sort.nameDir : sort.createdDir}
+      cmuxAvailable={sort.cmuxAvailable}
+      onModeChange={sort.setMode}
+      onDirectionChange={sort.mode === "name" ? sort.setNameDir : sort.setCreatedDir}
+    />
+  )
 
   const newWorktreeButton = (
     <Button size="xs" leftSection={<IconPlus size={14} />} onClick={() => setNewOpen(true)}>
@@ -46,7 +73,7 @@ export function HomePage() {
     navigate(`/worktree/${encodeURIComponent(path)}?resource=${serializeResourceKey(key)}`)
   }
 
-  const worktrees = <WorktreeList items={wts.data ?? []} />
+  const worktrees = <WorktreeList items={sortedWorktrees} />
   const timeline = (
     <Stack gap="sm">
       <Group justify="space-between" wrap="wrap" gap="xs">
@@ -91,7 +118,12 @@ export function HomePage() {
             <Tabs.Tab value="worktrees">Worktrees</Tabs.Tab>
             <Tabs.Tab value="timeline">Activity</Tabs.Tab>
           </Tabs.List>
-          <Tabs.Panel value="worktrees" pt="md">{worktrees}</Tabs.Panel>
+          <Tabs.Panel value="worktrees" pt="md">
+            <Stack gap="xs">
+              <Group justify="flex-end">{sortControl}</Group>
+              {worktrees}
+            </Stack>
+          </Tabs.Panel>
           <Tabs.Panel value="timeline" pt="md">{timeline}</Tabs.Panel>
         </Tabs>
       </Stack>
@@ -107,7 +139,10 @@ export function HomePage() {
       <Grid.Col span={6}>
         <Stack gap="sm">
           <Group justify="space-between">
-            <Title order={4}>Worktrees</Title>
+            <Group gap="xl" wrap="nowrap">
+              <Title order={4}>Worktrees</Title>
+              {sortControl}
+            </Group>
             <Group gap="xs">
               {newWorktreeButton}
               <DevicesButton />

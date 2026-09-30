@@ -16,6 +16,11 @@ type cmuxWorkspaceDTO struct {
 	Title    string `json:"title"`
 	Color    string `json:"color,omitempty"` // hex, empty when unset
 	Selected bool   `json:"selected"`
+	// Index is the workspace's position in cmux's own listing, which is the
+	// order its sidebar shows. Matches is keyed by path, so without this the
+	// UI could not recover that order to sort worktrees by it. Not derived
+	// from Ref: ref numbers do not follow the sidebar once workspaces move.
+	Index int `json:"index"`
 }
 
 type cmuxResponse struct {
@@ -47,6 +52,12 @@ func (s *Server) handleCmux(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, cmuxResponse{Available: false})
 		return
 	}
+	// Refs are unique within one listing, which is all this map has to
+	// survive: it is rebuilt on every request.
+	position := make(map[string]int, len(workspaces))
+	for i, ws := range workspaces {
+		position[ws.Ref] = i
+	}
 
 	var paths []string
 	if s.DB != nil {
@@ -65,6 +76,7 @@ func (s *Server) handleCmux(w http.ResponseWriter, r *http.Request) {
 				Ref:      ws.Ref,
 				Title:    ws.DisplayTitle(),
 				Selected: ws.Selected,
+				Index:    position[ws.Ref],
 			}
 			if ws.CustomColor != nil {
 				dto.Color = *ws.CustomColor

@@ -24,6 +24,11 @@ type worktreeSummary struct {
 	// total is still what callers checking "are there any?" want.
 	RelatedByType map[string]int `json:"related_by_type"`
 	LatestEventTS string         `json:"latest_event_ts"`
+	// CreatedAt is the registry's stored creation time, passed through
+	// verbatim so the UI can sort by it. Not parsed here: worktrees seeded by
+	// the Phase 1 cutover may carry older formats, and the UI already treats
+	// an unparseable value as missing.
+	CreatedAt string `json:"created_at"`
 	// FocusResources are the primary (non-related) resources, enriched from
 	// watcher_resource_state, so the worktree list can show what each
 	// worktree is actually about instead of bare counts.
@@ -100,6 +105,7 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 			RelatedCount:   relatedCount,
 			RelatedByType:  relatedByType,
 			LatestEventTS:  latestEventTSForSubscriber(s.DB, wdb.Subscriber(e.Path)),
+			CreatedAt:      e.CreatedAt,
 			FocusResources: focus,
 			HasUnread:      hasUnread,
 			UnreadCount:    unreadCount,
