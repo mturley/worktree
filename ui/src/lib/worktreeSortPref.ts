@@ -11,6 +11,9 @@ import { isSortMode, type SortDir, type SortMode } from "./worktreeSort"
 const MODE_KEY = "worktree.home.sort.mode"
 const DIR_KEY = "worktree.home.sort.createdDir"
 
+/** Every key this module owns, for telling our storage events from others. */
+export const SORT_PREF_KEYS: readonly string[] = [MODE_KEY, DIR_KEY]
+
 /** The saved mode, or null when none is saved or the value is unrecognised. */
 export function readSortMode(): SortMode | null {
   try {

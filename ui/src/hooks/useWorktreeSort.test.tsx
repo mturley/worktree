@@ -54,4 +54,19 @@ describe("useWorktreeSort", () => {
     expect(window.localStorage.getItem("worktree.home.sort.mode")).toBe("created")
     expect(window.localStorage.getItem("worktree.home.sort.createdDir")).toBe("desc")
   })
+
+  it("follows a change made in another tab", async () => {
+    vi.spyOn(api, "cmux").mockResolvedValue({ available: false })
+    const { result } = renderHook(() => useWorktreeSort(), { wrapper })
+    await waitFor(() => expect(result.current.mode).toBe("activity"))
+    // Another tab writes storage; this tab only hears about it via the event.
+    window.localStorage.setItem("worktree.home.sort.mode", "unread")
+    window.localStorage.setItem("worktree.home.sort.createdDir", "desc")
+    act(() => {
+      window.dispatchEvent(new StorageEvent("storage", { key: "worktree.home.sort.mode", newValue: "unread" }))
+      window.dispatchEvent(new StorageEvent("storage", { key: "worktree.home.sort.createdDir", newValue: "desc" }))
+    })
+    expect(result.current.mode).toBe("unread")
+    expect(result.current.createdDir).toBe("desc")
+  })
 })
