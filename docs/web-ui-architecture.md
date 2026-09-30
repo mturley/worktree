@@ -731,14 +731,16 @@ single in-process loop for as long as the server is up:
     (Focus/Related sections, selection-aware) plus either the scoped
     `TimelineFeed` or a `ResourceDetailPane` for the selected resource — see
     "Responsive resource selection" below for exactly how those combine.
-- **Components** (`ui/src/components/`): `WorktreeList`, `TimelineFeed`,
+- **Components** (`ui/src/components/`): `WorktreeList`,
+  `WorktreeSortControl` (see "Worktree list sorting" below), `TimelineFeed`,
   `EventRow`, `ArchivedToggle`, `ResourceList` (splits into Focus/Related by
   `r.primary`, selection-aware), `ResourceCard` (see "Rich resource cards"
   below), `WorktreeCard` and `ResourceDetailPane` (see "Responsive resource
   selection" below).
 - **Lib** (`ui/src/lib/`): `resourceSummary.ts` (builds the "2 PRs, 3 Jira
   issues · 2 related resources" summary string from `primary_by_type` +
-  `related_count`), `relativeTime.ts`, `resourceKey.ts` (see
+  `related_count`), `worktreeSort.ts` + `worktreeSortPref.ts` (see "Worktree
+  list sorting" below), `relativeTime.ts`, `resourceKey.ts` (see
   `useSelectedResource` above).
 - **Routing**: `wouter`. `App.tsx` defines `/` → `HomePage`, `/worktree/:path*`
   → `WorktreeDetailPage`. The `:path*` wildcard param comes back from
@@ -750,6 +752,37 @@ single in-process loop for as long as the server is up:
   double-encode/decode. `useSelectedResource` (above) manages the separate
   `?resource=` query param on top of this route via `wouter`'s
   `useLocation`/`useSearch`.
+
+### Worktree list sorting
+
+The home page's worktree list is sorted client-side. The server returns
+`/api/worktrees` in registry order (`ORDER BY repo, path`) and nothing about
+the sort choice reaches it.
+
+- **Modes** (`lib/worktreeSort.ts`): cmux order, Latest activity, Created
+  (with an ascending/descending toggle), Name, Unread first. Every mode breaks
+  ties by Name, and missing or unparseable values (`latest_event_ts: ""`, a
+  legacy non-RFC3339 `created_at`) sort last in either direction.
+- **cmux order** uses `index` on each `/api/cmux` workspace: its position in
+  `cmux workspace list`, which is the sidebar order. It is deliberately not the
+  ref number, since refs stop following the sidebar once workspaces are moved.
+  A worktree with several workspaces takes its earliest. The query refetches
+  every 15s, so the list follows drags in cmux.
+- **Created** uses `created_at` on the worktree summary, the registry value
+  verbatim.
+- **Persistence** (`lib/worktreeSortPref.ts`): `localStorage`, per browser,
+  keys `worktree.home.sort.mode` and `worktree.home.sort.createdDir`.
+  `useWorktreeSort` listens for `storage` events, so a change in one tab
+  re-sorts the browser's other open tabs immediately.
+- **Default** (`resolveSortMode`): cmux order when cmux is reachable,
+  otherwise Latest activity. A saved "cmux" shows Latest activity while cmux
+  is unreachable, without overwriting what was saved. While the cmux query is
+  still pending and the answer matters, the mode is `null`: the list stays in
+  server order and the picker is not rendered, which avoids a visible re-sort
+  on load.
+- **Tests under Node 25**: Node's own experimental `localStorage` global
+  shadows jsdom's with a method-less object; `ui/src/test-setup.ts` puts
+  jsdom's real Storage back.
 
 ### Responsive resource selection
 
