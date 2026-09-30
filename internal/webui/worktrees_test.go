@@ -82,6 +82,9 @@ func TestWorktreesEndpoint(t *testing.T) {
 	if w.LatestEventTS != now {
 		t.Fatalf("latest_event_ts = %q, want %q", w.LatestEventTS, now)
 	}
+	if w.CreatedAt != "2026-08-13T00:00:00Z" {
+		t.Fatalf("created_at = %q, want the registry's stored value", w.CreatedAt)
+	}
 }
 
 func TestWorktreesEndpointFocusResources(t *testing.T) {
