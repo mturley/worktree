@@ -1,5 +1,3 @@
-import { ActionIcon } from "@mantine/core"
-import { IconGripVertical } from "@tabler/icons-react"
 import { useSortable } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import type { ResourceDTO } from "../api/types"
@@ -7,29 +5,37 @@ import { serializeResourceKey } from "../lib/resourceKey"
 import { ResourceCard } from "./ResourceCard"
 
 /**
- * A ResourceCard that can be dragged within the list.
+ * A ResourceCard that can be dragged by its whole surface.
  *
- * Dragging is driven by an explicit handle rather than the card surface. The
- * card is also a click target that opens the resource, and the two gestures
- * are not reliably separable on a touchscreen — a threshold long enough to
- * protect the tap makes the drag feel broken, and one short enough to make
- * the drag feel good eats taps. A handle sidesteps the tradeoff.
+ * The card is also a click target that selects the resource, so the two
+ * gestures share one element. They are told apart by the sensors in
+ * ResourceList (a few pixels of travel with a mouse, a long press on touch)
+ * and by ResourceList swallowing the click a drop leaves behind.
+ *
+ * dnd-kit's `attributes` are deliberately not spread here: they would make the
+ * wrapper a focusable role="button" around the card's own select button —
+ * nested interactive roles, and a second tab stop per card.
  */
 export function SortableResourceCard({
   r,
   path,
   onRemoved,
+  selected,
+  onSelect,
 }: {
   r: ResourceDTO
   path: string
   onRemoved: () => void
+  selected: boolean
+  onSelect?: () => void
 }) {
   const id = serializeResourceKey({ type: r.type, id: r.id })
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+  const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
 
   return (
     <div
       ref={setNodeRef}
+      {...listeners}
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
@@ -38,25 +44,10 @@ export function SortableResourceCard({
         zIndex: isDragging ? 1 : undefined,
         position: "relative",
         opacity: isDragging ? 0.6 : 1,
+        cursor: isDragging ? "grabbing" : undefined,
       }}
     >
-      <ResourceCard
-        r={r}
-        path={path}
-        onRemoved={onRemoved}
-        dragHandle={
-          <ActionIcon
-            variant="subtle"
-            color="gray"
-            aria-label={`drag to reorder ${r.id}`}
-            style={{ cursor: "grab", touchAction: "none" }}
-            {...attributes}
-            {...listeners}
-          >
-            <IconGripVertical size={16} />
-          </ActionIcon>
-        }
-      />
+      <ResourceCard r={r} path={path} onRemoved={onRemoved} selected={selected} onSelect={onSelect} />
     </div>
   )
 }

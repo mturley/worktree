@@ -1,26 +1,20 @@
-import { useEffect, useState } from "react"
-import { ActionIcon, Alert, Button, Group, Stack, Text, Title, Tooltip } from "@mantine/core"
+import { useEffect, useRef, useState } from "react"
+import { Alert, Button, Group, Stack, Text, Title } from "@mantine/core"
 import {
   DndContext,
-  KeyboardSensor,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   closestCenter,
   useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core"
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable"
-import { IconMenuOrder } from "@tabler/icons-react"
+import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable"
 import type { ResourceDTO } from "../api/types"
 import { api } from "../api/client"
 import { parseResourceKey, resourceKeyEquals, serializeResourceKey, type ResourceKey } from "../lib/resourceKey"
 import { applyDrag, type DropTarget, type GroupId } from "../lib/resourceOrder"
-import { ResourceCard } from "./ResourceCard"
 import { SortableResourceCard } from "./SortableResourceCard"
 import { AddResourceModal } from "./AddResourceModal"
 
@@ -42,25 +36,26 @@ function toDropTarget(id: string): DropTarget | null {
   return parseResourceKey(id)
 }
 
-/** A group's heading plus its cards, and — while reordering — its drop area. */
+/** A group's heading plus its cards, and — mid-drag — its drop area. */
 function ResourceGroup({
   group,
   title,
   items,
   children,
-  reordering,
+  dragging,
 }: {
   group: GroupId
   title: string
   items: ResourceDTO[]
   children: React.ReactNode
-  reordering: boolean
+  dragging: boolean
 }) {
   // The group itself is a drop target, not just the cards in it: an empty
   // group has no card to aim at, and it must still be possible to drag the
-  // last related resource back into focus.
-  const { setNodeRef, isOver } = useDroppable({ id: group, disabled: !reordering })
-  if (items.length === 0 && !reordering) return null
+  // last related resource back into focus. An empty group only appears while
+  // something is being dragged, so it is not a permanent empty box.
+  const { setNodeRef, isOver } = useDroppable({ id: group })
+  if (items.length === 0 && !dragging) return null
   return (
     <Stack gap={4}>
       <Title order={5}>{title}</Title>
@@ -68,12 +63,12 @@ function ResourceGroup({
         gap={4}
         ref={setNodeRef}
         style={{
-          minHeight: reordering ? 36 : undefined,
+          minHeight: dragging ? 36 : undefined,
           borderRadius: 6,
           outline: isOver ? "2px dashed var(--mantine-color-violet-5)" : undefined,
         }}
       >
-        {items.length === 0 && reordering && (
+        {items.length === 0 && dragging && (
           <Text c="dimmed" size="xs" p={6}>Drop a resource here.</Text>
         )}
         {children}
@@ -84,30 +79,30 @@ function ResourceGroup({
 
 export function ResourceList({ items, path, onChanged, selectedKey, onSelectResource }: ResourceListProps) {
   const [addOpen, setAddOpen] = useState(false)
-  const [reordering, setReordering] = useState(false)
+  const [dragging, setDragging] = useState(false)
   // The optimistically reordered list. While it is set it wins over `items`,
   // which is what keeps a background refetch from yanking the list out from
-  // under a drag that has not been confirmed yet.
+  // under a drag, or from snapping it back before a save has landed.
   const [pending, setPending] = useState<ResourceDTO[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const saving = useRef(0)
 
-  // Fresh server data supersedes the optimistic list — but only once the user
-  // is done reordering. Clearing it mid-session is the yank this exists to
-  // prevent.
-  // `reordering` is deliberately not a dependency: leaving reorder mode must
-  // NOT clear the optimistic list, or the pre-drag order flashes back for the
-  // frame between "Done" and the refetch landing.
+  // Fresh server data supersedes the optimistic list, except while a drag or
+  // a save is in flight — clearing it then is exactly the yank it prevents.
+  // Only `items` is a dependency: the save resolving calls onChanged, and it
+  // is the refetch that follows, not the resolution itself, that may clear.
   useEffect(() => {
-    if (!reordering) setPending(null)
+    if (!dragging && saving.current === 0) setPending(null)
   }, [items])
 
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      // A few pixels of travel before a drag starts, so pressing the handle
-      // and releasing still behaves like a press.
-      activationConstraint: { distance: 4 },
-    }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+    // A few pixels of travel before a mouse drag starts, so a click on a card
+    // still selects it.
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    // A long press on touch. A distance threshold would make every swipe that
+    // starts on a card a drag, and the cards fill the column on a phone — the
+    // page could no longer be scrolled.
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
   )
 
   const shown = pending ?? items
@@ -122,6 +117,7 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
       // Both groups are stated in full, so the call says what the order IS
       // rather than how it changed — replayable, and safe when another
       // device is dragging at the same time.
+      saving.current++
       await api.setResourceOrder({
         path,
         focus: next.filter((r) => r.primary).map((r) => ({ type: r.type, id: r.id })),
@@ -130,11 +126,24 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
     } catch (e) {
       setPending(previous)
       setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      saving.current--
+      // Either way the server's order is now the one to show: the refetch
+      // replaces the optimistic list once it lands.
       onChanged()
     }
   }
 
+  // No click suppression here: the dragged card follows the pointer, so the
+  // release lands on it and the browser fires a click there — but dnd-kit's
+  // pointer sensors already swallow that click (a capture-phase listener on
+  // document, armed once a drag activates). A press too short to activate a
+  // drag never arms it, so a plain click still selects.
+  const startDrag = () => setDragging(true)
+  const finishDrag = () => setDragging(false)
+
   const handleDragEnd = (event: DragEndEvent) => {
+    finishDrag()
     const over = event.over ? toDropTarget(String(event.over.id)) : null
     const active = parseResourceKey(String(event.active.id))
     if (!over || !active) return
@@ -143,32 +152,21 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
     void persist(next)
   }
 
-  const stopReordering = () => {
-    setReordering(false)
-    // The optimistic list stays on screen until the refetch lands, so the
-    // order does not visibly snap back to the pre-drag one for a frame.
-    onChanged()
-  }
-
   const cards = (group: ResourceDTO[]) =>
-    group.map((r) =>
-      reordering ? (
-        <SortableResourceCard key={`${r.type}:${r.id}`} r={r} path={path} onRemoved={onChanged} />
-      ) : (
-        <ResourceCard
-          key={`${r.type}:${r.id}`}
-          r={r}
-          path={path}
-          onRemoved={onChanged}
-          selected={resourceKeyEquals(selectedKey ?? null, { type: r.type, id: r.id })}
-          onSelect={onSelectResource ? () => onSelectResource({ type: r.type, id: r.id }) : undefined}
-        />
-      ),
-    )
+    group.map((r) => (
+      <SortableResourceCard
+        key={`${r.type}:${r.id}`}
+        r={r}
+        path={path}
+        onRemoved={onChanged}
+        selected={resourceKeyEquals(selectedKey ?? null, { type: r.type, id: r.id })}
+        onSelect={onSelectResource ? () => onSelectResource({ type: r.type, id: r.id }) : undefined}
+      />
+    ))
 
   const groups = (
     <>
-      <ResourceGroup group="focus" title="Focus" items={focus} reordering={reordering}>
+      <ResourceGroup group="focus" title="Focus" items={focus} dragging={dragging}>
         <SortableContext
           items={focus.map((r) => serializeResourceKey({ type: r.type, id: r.id }))}
           strategy={verticalListSortingStrategy}
@@ -176,7 +174,7 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
           {cards(focus)}
         </SortableContext>
       </ResourceGroup>
-      <ResourceGroup group="related" title="Related" items={related} reordering={reordering}>
+      <ResourceGroup group="related" title="Related" items={related} dragging={dragging}>
         <SortableContext
           items={related.map((r) => serializeResourceKey({ type: r.type, id: r.id }))}
           strategy={verticalListSortingStrategy}
@@ -201,10 +199,8 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
         </Alert>
       )}
       {/*
-        Above the list: the two controls act ON the list below them, and
-        Reorder in particular changes how every card underneath behaves, so
-        it reads as a toolbar for what follows rather than as a footnote
-        after it.
+        Above the list: Follow resource and the drag hint are about the list
+        below them, so they read as its toolbar rather than as a footnote.
       */}
       <Group>
         {/* Filled, i.e. the theme's primary: it is the only thing on this
@@ -213,40 +209,25 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
         <Button size="sm" variant="filled" leftSection="+" onClick={() => setAddOpen(true)}>
           Follow resource
         </Button>
-        {/* Reordering is a mode rather than an always-live gesture: it keeps
-            the grip handles out of the way when you are only reading, and
-            leaves a plain click on a card meaning "open this".
-
-            Icon in, word out, on purpose. Entering is a tool you glance at
-            beside the one button that carries a label; leaving is the thing
-            you must be able to find without hovering anything, and "Done"
-            cannot be misread the way a bare glyph can. */}
+        {/* The only sign that the cards can be dragged: with no handle and
+            no mode, nothing else on a card says so. Hidden when there is
+            nothing to reorder. */}
         {shown.length > 1 && (
-          reordering ? (
-            <Button size="sm" variant="light" onClick={stopReordering}>Done</Button>
-          ) : (
-            <Tooltip label="Reorder resources">
-              <ActionIcon
-                size="lg"
-                variant="subtle"
-                color="gray"
-                aria-label="Reorder resources"
-                onClick={() => setReordering(true)}
-              >
-                <IconMenuOrder size={18} />
-              </ActionIcon>
-            </Tooltip>
-          )
+          <Text size="xs" c="dimmed">Drag to reorder</Text>
         )}
       </Group>
       {items.length === 0 ? (
         <Text c="dimmed" size="sm">No resources tracked.</Text>
-      ) : reordering ? (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      ) : (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={startDrag}
+          onDragEnd={handleDragEnd}
+          onDragCancel={finishDrag}
+        >
           {groups}
         </DndContext>
-      ) : (
-        groups
       )}
     </Stack>
   )

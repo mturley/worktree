@@ -384,7 +384,7 @@ Three things fall out of that, all deliberate:
 | Path | Lands | Owner |
 |---|---|---|
 | Focus/Related toggle (web, CLI, agent-handler) | bottom of the new group | `resources.SetPrimary` → `setGroupAndPlace` |
-| Cross-group drag (web reorder mode) | exactly where it was dropped | `resources.SetOrder` |
+| Cross-group drag (web UI) | exactly where it was dropped | `resources.SetOrder` |
 
 A drag states a position; a toggle does not. `resources.Add` re-adding a
 tracked resource with the other flag counts as a toggle, since `Add`
@@ -400,26 +400,39 @@ forgiving about a client whose view is behind: a tracked resource named in
 neither list keeps its group and is appended to that group's end, and a key
 that is not tracked at all is ignored rather than failing the whole reorder.
 
-**Frontend.** Reordering is a *mode*, entered from the `IconMenuOrder` button
-(tooltip and aria-label "Reorder resources") in the toolbar above the list,
-beside `Follow resource`. Icon in, word out: entering is a glanceable tool
-next to the one button that carries a label, while the `Done` that leaves the
-mode stays spelled out, because that is the control you must be able to find
-without hovering anything. Entering it reveals a grip handle per card
-(`SortableResourceCard`) and swaps the selectable `ResourceCard` for the
-sortable one, so a plain click on a card still means "open this" the rest of
-the time — a handle rather than an activation threshold, because on a
-touchscreen no threshold separates a tap from a drag without ruining one of
-them. Groups are `useDroppable` containers as well as lists, so a card can be
-dragged into an empty group. `ui/src/lib/resourceOrder.ts`'s `applyDrag` holds
+**Frontend.** Cards are draggable at all times, by their whole surface — no
+mode, no handle. A dimmed "Drag to reorder" hint beside `Follow resource` is
+the only sign of it, shown when there is more than one resource. Every card is
+a `SortableResourceCard`, which wraps the ordinary selectable `ResourceCard`,
+so click and drag share one element and are told apart by the sensors:
+
+- **Mouse:** `MouseSensor` with 5px of travel before a drag starts, so a click
+  still selects.
+- **Touch:** `TouchSensor` with a 250ms long press. A distance threshold would
+  turn every swipe that starts on a card into a drag, and the cards fill the
+  column on a phone — the page could not be scrolled.
+- **The click after a drop:** the dragged card follows the pointer, so the
+  release lands on it and the browser clicks it. dnd-kit's pointer sensors
+  already swallow that click (a capture-phase listener on `document`, armed
+  only once a drag activates and removed 50ms after it ends), so there is no
+  suppression of our own. The test for it runs on fake timers for that reason:
+  on real ones the listener outlives the test and eats the next test's click.
+- **No keyboard reordering.** dnd-kit's `attributes` are not spread, since they
+  would make the wrapper a focusable `role="button"` around the card's own
+  select button. That trades away the keyboard path the old grip handle had.
+
+Groups are `useDroppable` containers as well as lists, so a card can be
+dragged into an empty group; an empty group only renders, as a drop zone,
+while a drag is in progress. `ui/src/lib/resourceOrder.ts`'s `applyDrag` holds
 all the list arithmetic as a pure function, keeping the dnd-kit wiring thin.
 
 Each drop persists immediately (the call is idempotent, so there is no unsaved
-state for a closed tab to lose, and `Done` is purely a UI mode exit). The
-optimistic list wins over the `items` prop for as long as it is set, which is
-what stops a background refetch from yanking the list mid-drag; it is cleared
-by the next `items` change *after* the user leaves reorder mode. A failed save
-reverts it and shows an inline alert.
+state for a closed tab to lose). The optimistic list wins over the `items` prop
+for as long as it is set, which stops a background refetch from yanking the
+list mid-drag or snapping it back before the save lands. It is cleared by the
+first `items` change with no drag or save in flight — in practice, the refetch
+each save triggers once it settles. A failed save reverts it and shows an
+inline alert.
 
 Frontend: `api.addResource`/`api.removeResource` (`ui/src/api/client.ts`).
 Three UI entry points all call these and then refetch via

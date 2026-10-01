@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from "vitest"
-import { render, cleanup } from "@testing-library/react"
+import { act, render, cleanup, fireEvent } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { ResourceList } from "./ResourceList"
@@ -105,56 +105,88 @@ describe("Add resource emphasis", () => {
   })
 })
 
-describe("ResourceList reorder mode", () => {
+describe("ResourceList drag to reorder", () => {
   const items = [
     { type: "pr", id: "o/r#1", url: "u", primary: true },
+    { type: "pr", id: "o/r#2", url: "u", primary: true },
     { type: "jira", id: "RH-9", url: "u", primary: false },
   ]
 
-  it("shows no drag handles until reorder mode is entered", () => {
-    const { queryAllByLabelText } = wrap(
-      <ResourceList items={items} path="/w" onChanged={vi.fn()} />,
+  it("has no reorder mode to enter: cards are draggable all the time", () => {
+    const { queryByRole } = wrap(<ResourceList items={items} path="/w" onChanged={vi.fn()} />)
+    expect(queryByRole("button", { name: /reorder resources/i })).not.toBeInTheDocument()
+    expect(queryByRole("button", { name: /^done$/i })).not.toBeInTheDocument()
+  })
+
+  it("says the cards can be dragged, where the toggle used to be", () => {
+    const { getByText } = wrap(<ResourceList items={items} path="/w" onChanged={vi.fn()} />)
+    expect(getByText("Drag to reorder")).toBeInTheDocument()
+  })
+
+  it("leaves the hint out when there is nothing to reorder", () => {
+    const { queryByText } = wrap(
+      <ResourceList items={items.slice(0, 1)} path="/w" onChanged={vi.fn()} />,
     )
+    expect(queryByText("Drag to reorder")).not.toBeInTheDocument()
+  })
+
+  it("drags by the whole card, so there are no grip handles", () => {
+    const { queryAllByLabelText } = wrap(<ResourceList items={items} path="/w" onChanged={vi.fn()} />)
     expect(queryAllByLabelText(/drag to reorder/i)).toHaveLength(0)
   })
 
-  it("labels the reorder control for screen readers even though it shows only an icon", () => {
-    const { getByRole } = wrap(<ResourceList items={items} path="/w" onChanged={vi.fn()} />)
-    const button = getByRole("button", { name: /reorder resources/i })
-    // The word itself must not be the label: it is an icon button now, and a
-    // visible "Reorder" would mean the text was never actually replaced.
-    expect(button.textContent).toBe("")
-  })
-
-  it("reveals a drag handle per card while reordering", async () => {
-    const user = userEvent.setup()
-    const { getByRole, findAllByLabelText } = wrap(
-      <ResourceList items={items} path="/w" onChanged={vi.fn()} />,
-    )
-
-    await user.click(getByRole("button", { name: /reorder resources/i }))
-
-    expect(await findAllByLabelText(/drag to reorder/i)).toHaveLength(2)
-    expect(getByRole("button", { name: /^done$/i })).toBeInTheDocument()
-  })
-
-  it("suppresses card selection while reordering, so a drag can't navigate away", async () => {
+  it("still selects a card on a plain click", async () => {
     const onSelectResource = vi.fn()
     const user = userEvent.setup()
-    const { getByRole, getByText } = wrap(
-      <ResourceList
-        items={items}
-        path="/w"
-        onChanged={vi.fn()}
-        onSelectResource={onSelectResource}
-      />,
+    const { getByText } = wrap(
+      <ResourceList items={items} path="/w" onChanged={vi.fn()} onSelectResource={onSelectResource} />,
     )
-
     await user.click(getByText("o/r#1"))
-    expect(onSelectResource).toHaveBeenCalledTimes(1)
+    expect(onSelectResource).toHaveBeenCalledWith({ type: "pr", id: "o/r#1" })
+  })
 
-    await user.click(getByRole("button", { name: /reorder resources/i }))
-    await user.click(getByText("o/r#1"))
+  it("does not select the card a drag was released on", () => {
+    // The dragged card follows the pointer, so the mouseup lands on it and
+    // the browser fires a click there. Without swallowing that click, every
+    // drop would also open the resource you just moved.
+    //
+    // Fake timers because dnd-kit removes its click-swallowing listener 50ms
+    // after a drag ends. Left on real timers, that listener outlives this test
+    // and eats the next test's click.
+    vi.useFakeTimers()
+    try {
+      const onSelectResource = vi.fn()
+      const { getByText } = wrap(
+        <ResourceList items={items} path="/w" onChanged={vi.fn()} onSelectResource={onSelectResource} />,
+      )
+      const card = getByText("o/r#1")
+      act(() => {
+        fireEvent.mouseDown(card, { button: 0, clientX: 10, clientY: 10 })
+        fireEvent.mouseMove(document, { button: 0, clientX: 10, clientY: 60 })
+        fireEvent.mouseUp(document, { button: 0, clientX: 10, clientY: 60 })
+      })
+      fireEvent.click(card)
+      expect(onSelectResource).not.toHaveBeenCalled()
+    } finally {
+      act(() => {
+        vi.runAllTimers()
+      })
+      vi.useRealTimers()
+    }
+  })
+
+  it("does not swallow the click after a press too short to be a drag", () => {
+    const onSelectResource = vi.fn()
+    const { getByText } = wrap(
+      <ResourceList items={items} path="/w" onChanged={vi.fn()} onSelectResource={onSelectResource} />,
+    )
+    const card = getByText("o/r#1")
+    act(() => {
+      fireEvent.mouseDown(card, { button: 0, clientX: 10, clientY: 10 })
+      fireEvent.mouseMove(document, { button: 0, clientX: 11, clientY: 11 })
+      fireEvent.mouseUp(document, { button: 0, clientX: 11, clientY: 11 })
+    })
+    fireEvent.click(card)
     expect(onSelectResource).toHaveBeenCalledTimes(1)
   })
 })
