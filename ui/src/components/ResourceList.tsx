@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { Alert, Button, Group, Stack, Text, Title } from "@mantine/core"
 import {
   DndContext,
+  KeyboardSensor,
   MouseSensor,
   TouchSensor,
   closestCenter,
@@ -10,7 +11,7 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core"
-import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable"
+import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from "@dnd-kit/sortable"
 import type { ResourceDTO } from "../api/types"
 import { api } from "../api/client"
 import { parseResourceKey, resourceKeyEquals, serializeResourceKey, type ResourceKey } from "../lib/resourceKey"
@@ -96,13 +97,15 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
   }, [items])
 
   const sensors = useSensors(
-    // A few pixels of travel before a mouse drag starts, so a click on a card
-    // still selects it.
-    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
-    // A long press on touch. A distance threshold would make every swipe that
-    // starts on a card a drag, and the cards fill the column on a phone — the
-    // page could no longer be scrolled.
-    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+    // Only the grip handle starts a drag, so these thresholds guard nothing
+    // but the handle itself: a few pixels of travel, so pressing it and
+    // letting go is not read as a drag. No long press on touch — the handle
+    // is the only thing that drags, so a swipe anywhere else still scrolls.
+    useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { distance: 4 } }),
+    // The handle is a focusable button: Space or Enter picks the card up,
+    // the arrow keys move it, and Space or Enter again drops it.
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
   const shown = pending ?? items
@@ -135,10 +138,10 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
   }
 
   // No click suppression here: the dragged card follows the pointer, so the
-  // release lands on it and the browser fires a click there — but dnd-kit's
-  // pointer sensors already swallow that click (a capture-phase listener on
-  // document, armed once a drag activates). A press too short to activate a
-  // drag never arms it, so a plain click still selects.
+  // release can land on it and the browser fires a click there — but
+  // dnd-kit's pointer sensors already swallow that click (a capture-phase
+  // listener on document, armed once a drag activates). A press too short to
+  // activate a drag never arms it.
   const startDrag = () => setDragging(true)
   const finishDrag = () => setDragging(false)
 
@@ -199,8 +202,8 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
         </Alert>
       )}
       {/*
-        Above the list: Follow resource and the drag hint are about the list
-        below them, so they read as its toolbar rather than as a footnote.
+        Above the list: Follow resource is about the list below it, so it
+        reads as its toolbar rather than as a footnote.
       */}
       <Group>
         {/* Filled, i.e. the theme's primary: it is the only thing on this
@@ -209,12 +212,6 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
         <Button size="sm" variant="filled" leftSection="+" onClick={() => setAddOpen(true)}>
           Follow resource
         </Button>
-        {/* The only sign that the cards can be dragged: with no handle and
-            no mode, nothing else on a card says so. Hidden when there is
-            nothing to reorder. */}
-        {shown.length > 1 && (
-          <Text size="xs" c="dimmed">Drag to reorder</Text>
-        )}
       </Group>
       {items.length === 0 ? (
         <Text c="dimmed" size="sm">No resources tracked.</Text>

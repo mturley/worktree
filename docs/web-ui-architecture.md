@@ -400,26 +400,28 @@ forgiving about a client whose view is behind: a tracked resource named in
 neither list keeps its group and is appended to that group's end, and a key
 that is not tracked at all is ignored rather than failing the whole reorder.
 
-**Frontend.** Cards are draggable at all times, by their whole surface — no
-mode, no handle. A dimmed "Drag to reorder" hint beside `Follow resource` is
-the only sign of it, shown when there is more than one resource. Every card is
-a `SortableResourceCard`, which wraps the ordinary selectable `ResourceCard`,
-so click and drag share one element and are told apart by the sensors:
+**Frontend.** Every card carries a grip handle at all times — no mode, no
+hint text. Each is a `SortableResourceCard`, which wraps the ordinary
+selectable `ResourceCard` and passes the handle in through its `dragHandle`
+prop. Only the handle starts a drag (it is the sortable's activator node), so
+the rest of the card behaves exactly as it always has:
 
-- **Mouse:** `MouseSensor` with 5px of travel before a drag starts, so a click
-  still selects.
-- **Touch:** `TouchSensor` with a 250ms long press. A distance threshold would
-  turn every swipe that starts on a card into a drag, and the cards fill the
-  column on a phone — the page could not be scrolled.
+- **Click** anywhere but the handle selects. A drag needs 4px of travel on the
+  handle, so pressing it and letting go is not a drag either.
+- **Touch** needs no long press: a swipe that starts anywhere but the handle
+  still scrolls the page. `touch-action: none` sits on the handle alone, which
+  is what lets a touch drag start there without the browser claiming the
+  gesture as a scroll.
+- **Keyboard** reordering works, because the handle is a real button *beside*
+  the card's select button rather than a wrapper around it, so dnd-kit's
+  `attributes` can go on it: Space/Enter picks the card up, arrows move it,
+  Space/Enter drops it.
 - **The click after a drop:** the dragged card follows the pointer, so the
-  release lands on it and the browser clicks it. dnd-kit's pointer sensors
+  release can land on it and the browser clicks it. dnd-kit's pointer sensors
   already swallow that click (a capture-phase listener on `document`, armed
   only once a drag activates and removed 50ms after it ends), so there is no
   suppression of our own. The test for it runs on fake timers for that reason:
   on real ones the listener outlives the test and eats the next test's click.
-- **No keyboard reordering.** dnd-kit's `attributes` are not spread, since they
-  would make the wrapper a focusable `role="button"` around the card's own
-  select button. That trades away the keyboard path the old grip handle had.
 
 Groups are `useDroppable` containers as well as lists, so a card can be
 dragged into an empty group; an empty group only renders, as a drop zone,

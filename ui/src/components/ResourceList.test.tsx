@@ -105,7 +105,7 @@ describe("Add resource emphasis", () => {
   })
 })
 
-describe("ResourceList drag to reorder", () => {
+describe("ResourceList drag handles", () => {
   const items = [
     { type: "pr", id: "o/r#1", url: "u", primary: true },
     { type: "pr", id: "o/r#2", url: "u", primary: true },
@@ -118,21 +118,31 @@ describe("ResourceList drag to reorder", () => {
     expect(queryByRole("button", { name: /^done$/i })).not.toBeInTheDocument()
   })
 
-  it("says the cards can be dragged, where the toggle used to be", () => {
-    const { getByText } = wrap(<ResourceList items={items} path="/w" onChanged={vi.fn()} />)
-    expect(getByText("Drag to reorder")).toBeInTheDocument()
+  it("puts a drag handle on every card, all the time", () => {
+    const { getAllByRole } = wrap(<ResourceList items={items} path="/w" onChanged={vi.fn()} />)
+    expect(getAllByRole("button", { name: /drag to reorder/i })).toHaveLength(3)
   })
 
-  it("leaves the hint out when there is nothing to reorder", () => {
-    const { queryByText } = wrap(
-      <ResourceList items={items.slice(0, 1)} path="/w" onChanged={vi.fn()} />,
-    )
+  it("needs no hint text: the handles say it", () => {
+    const { queryByText } = wrap(<ResourceList items={items} path="/w" onChanged={vi.fn()} />)
     expect(queryByText("Drag to reorder")).not.toBeInTheDocument()
   })
 
-  it("drags by the whole card, so there are no grip handles", () => {
-    const { queryAllByLabelText } = wrap(<ResourceList items={items} path="/w" onChanged={vi.fn()} />)
-    expect(queryAllByLabelText(/drag to reorder/i)).toHaveLength(0)
+  it("does not start a drag from the card body, so a swipe there stays a click", () => {
+    // Only the handle drags. Pressing the card itself and moving is not a
+    // drag at all, so the release still selects.
+    const onSelectResource = vi.fn()
+    const { getByText } = wrap(
+      <ResourceList items={items} path="/w" onChanged={vi.fn()} onSelectResource={onSelectResource} />,
+    )
+    const card = getByText("o/r#1")
+    act(() => {
+      fireEvent.mouseDown(card, { button: 0, clientX: 10, clientY: 10 })
+      fireEvent.mouseMove(document, { button: 0, clientX: 10, clientY: 60 })
+      fireEvent.mouseUp(document, { button: 0, clientX: 10, clientY: 60 })
+    })
+    fireEvent.click(card)
+    expect(onSelectResource).toHaveBeenCalledTimes(1)
   })
 
   it("still selects a card on a plain click", async () => {
@@ -156,12 +166,13 @@ describe("ResourceList drag to reorder", () => {
     vi.useFakeTimers()
     try {
       const onSelectResource = vi.fn()
-      const { getByText } = wrap(
+      const { getByText, getByRole } = wrap(
         <ResourceList items={items} path="/w" onChanged={vi.fn()} onSelectResource={onSelectResource} />,
       )
       const card = getByText("o/r#1")
+      const handle = getByRole("button", { name: "drag to reorder o/r#1" })
       act(() => {
-        fireEvent.mouseDown(card, { button: 0, clientX: 10, clientY: 10 })
+        fireEvent.mouseDown(handle, { button: 0, clientX: 10, clientY: 10 })
         fireEvent.mouseMove(document, { button: 0, clientX: 10, clientY: 60 })
         fireEvent.mouseUp(document, { button: 0, clientX: 10, clientY: 60 })
       })
@@ -177,12 +188,13 @@ describe("ResourceList drag to reorder", () => {
 
   it("does not swallow the click after a press too short to be a drag", () => {
     const onSelectResource = vi.fn()
-    const { getByText } = wrap(
+    const { getByText, getByRole } = wrap(
       <ResourceList items={items} path="/w" onChanged={vi.fn()} onSelectResource={onSelectResource} />,
     )
     const card = getByText("o/r#1")
+    const handle = getByRole("button", { name: "drag to reorder o/r#1" })
     act(() => {
-      fireEvent.mouseDown(card, { button: 0, clientX: 10, clientY: 10 })
+      fireEvent.mouseDown(handle, { button: 0, clientX: 10, clientY: 10 })
       fireEvent.mouseMove(document, { button: 0, clientX: 11, clientY: 11 })
       fireEvent.mouseUp(document, { button: 0, clientX: 11, clientY: 11 })
     })
