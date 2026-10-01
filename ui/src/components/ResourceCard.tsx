@@ -310,9 +310,9 @@ interface ResourceCardProps {
   /** Called after a custom name/description is saved, to refetch resources. */
   onMetaChanged?: () => void
   /**
-   * Rendered at the card's leading edge while the list is in reorder mode.
-   * The card stays unaware of the drag library: the handle arrives already
-   * wired, so ResourceCard only has to make room for it.
+   * Rendered at the card's leading edge, beside — never inside — the select
+   * button. The card stays unaware of the drag library: the handle arrives
+   * already wired, so ResourceCard only has to make room for it.
    */
   dragHandle?: React.ReactNode
 }
