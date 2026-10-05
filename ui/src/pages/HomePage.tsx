@@ -9,6 +9,7 @@ import { useIsWide } from "../hooks/useIsWide"
 import { WorktreeList } from "../components/WorktreeList"
 import { TimelineFeed } from "../components/TimelineFeed"
 import { ArchivedToggle } from "../components/ArchivedToggle"
+import { UnreadOnlyToggle } from "../components/UnreadOnlyToggle"
 import { SourceFilter } from "../components/SourceFilter"
 import { RefreshWatchersButton } from "../components/RefreshWatchersButton"
 import { NewWorktreeModal } from "../components/NewWorktreeModal"
@@ -22,10 +23,11 @@ export function HomePage() {
   const [, navigate] = useLocation()
   const [archived, setArchived] = useState(false)
   const [sources, setSources] = useState<string[]>([])
+  const [unreadOnly, setUnreadOnly] = useState(false)
   const [newOpen, setNewOpen] = useState(false)
   const wide = useIsWide()
   const wts = useWorktrees()
-  const tl = useGlobalTimeline(archived, sources)
+  const tl = useGlobalTimeline(archived, sources, unreadOnly)
   const sort = useWorktreeSort()
   // Same shared query the cards use, so this costs no extra request.
   const cmux = useCmux()
@@ -86,6 +88,7 @@ export function HomePage() {
             the heading. */}
         <Group gap="sm" wrap="wrap">
           <SourceFilter value={sources} onChange={setSources} />
+          <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} />
           <ArchivedToggle value={archived} onChange={setArchived} />
         </Group>
       </Group>
@@ -94,6 +97,7 @@ export function HomePage() {
         loading={tl.isLoading}
         error={tl.error}
         showWorktrees
+        emptyText={unreadOnly ? "No unread events." : undefined}
         hasMore={tl.hasMore}
         onLoadMore={tl.loadMore}
         loadingMore={tl.loadingMore}

@@ -72,8 +72,35 @@ func EnsureCursor(conn *sql.DB, resType, id string) error {
 // RENDERED and a bookkeeping event is never rendered. These two lists are
 // coupled; change one and you must change the other.
 func Counts(conn *sql.DB) (map[string]int, error) {
+	sums, err := Summaries(conn)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]int, len(sums))
+	for k, v := range sums {
+		out[k] = v.Count
+	}
+	return out, nil
+}
+
+// Summary is one resource's unread events: how many, and the ts of the
+// newest one.
+//
+// NewestTS is what a "mark all read" sends as through_ts. It comes from the
+// SAME query as Count, so a client clearing Count events clears exactly those
+// and no more — an event that lands after this snapshot is newer than
+// NewestTS and stays unread. See MarkRead for why the server never
+// substitutes its own MAX(ts) at write time.
+type Summary struct {
+	Count    int
+	NewestTS string
+}
+
+// Summaries is Counts with each resource's newest unread ts alongside. Same
+// rules as Counts, including the event types it excludes.
+func Summaries(conn *sql.DB) (map[string]Summary, error) {
 	rows, err := conn.Query(`
-		SELECT er.resource_type, er.resource_id, COUNT(*)
+		SELECT er.resource_type, er.resource_id, COUNT(*), MAX(e.ts)
 		  FROM watcher_event_resources er
 		  JOIN watcher_events e ON e.id = er.event_id
 		  JOIN resource_read_cursor c
@@ -86,14 +113,14 @@ func Counts(conn *sql.DB) (map[string]int, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	out := map[string]int{}
+	out := map[string]Summary{}
 	for rows.Next() {
 		var rt, rid string
-		var n int
-		if err := rows.Scan(&rt, &rid, &n); err != nil {
+		var sum Summary
+		if err := rows.Scan(&rt, &rid, &sum.Count, &sum.NewestTS); err != nil {
 			return nil, err
 		}
-		out[Key(rt, rid)] = n
+		out[Key(rt, rid)] = sum
 	}
 	return out, rows.Err()
 }

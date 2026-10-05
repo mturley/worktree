@@ -48,10 +48,11 @@ export const api = {
       body: JSON.stringify({ handle }),
     }),
   worktrees: () => fetchJSON<WorktreeSummary[]>("/api/worktrees"),
-  globalTimeline: (archived: boolean, limit = 100, before?: string, resourceTypes?: string[]) => {
+  globalTimeline: (archived: boolean, limit = 100, before?: string, resourceTypes?: string[], unreadOnly = false) => {
     const params = new URLSearchParams({ archived: String(archived), limit: String(limit) })
     if (before) params.set("before", before)
     if (resourceTypes?.length) params.set("resource_types", resourceTypes.join(","))
+    if (unreadOnly) params.set("unread_only", "true")
     return fetchJSON<TimelineResponse>(`/api/timeline?${params.toString()}`)
   },
   worktreeTimeline: (
@@ -60,6 +61,7 @@ export const api = {
     resource?: { type: string; id: string },
     before?: string,
     resourceTypes?: string[],
+    unreadOnly = false,
   ) => {
     const params = new URLSearchParams({ path, limit: String(limit) })
     if (resource) {
@@ -68,6 +70,7 @@ export const api = {
     }
     if (before) params.set("before", before)
     if (resourceTypes?.length) params.set("resource_types", resourceTypes.join(","))
+    if (unreadOnly) params.set("unread_only", "true")
     return fetchJSON<TimelineResponse>(`/api/worktree-timeline?${params.toString()}`)
   },
   worktreeInfo: (path: string) =>

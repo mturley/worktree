@@ -59,6 +59,20 @@ function stubFetch() {
   return calls
 }
 
+describe("unread_only", () => {
+  it("is sent on both timelines only when asked for", async () => {
+    const calls = stubFetch()
+    await api.globalTimeline(false, 50, undefined, [], true)
+    await api.globalTimeline(false, 50)
+    await api.worktreeTimeline("/wt/foo", 50, undefined, undefined, [], true)
+    await api.worktreeTimeline("/wt/foo", 50)
+    expect(calls[0]).toContain("unread_only=true")
+    expect(calls[1]).not.toContain("unread_only")
+    expect(calls[2]).toContain("unread_only=true")
+    expect(calls[3]).not.toContain("unread_only")
+  })
+})
+
 describe("api.worktreeTimeline", () => {
   it("omits resource params when no resource is given", async () => {
     const calls = stubFetch()

@@ -82,9 +82,38 @@ func parseResourceTypes(r *http.Request) []string {
 	return out
 }
 
-// handleGlobalTimeline: GET /api/timeline?archived=&limit=&before=&resource_types=
+// unreadOnlyClause narrows the global timeline to unread events in SQL.
+//
+// It is a SECOND implementation of unreadIndex.IsUnread, and must agree with
+// it event for event (TestGlobalTimelineUnreadOnlyMatchesIsUnread pins the
+// two together). It has to live in SQL because this handler pages with LIMIT:
+// filtering the rows afterwards would return short or empty pages while
+// unread events still sat further back.
+//
+// The two clocks are kept apart exactly as IsUnread keeps them:
+//   - non-Slack: e.ts against worktree's own cursor row; no row means read.
+//   - Slack: e.external_ts against the poller-cached last_read, compared
+//     NUMERICALLY like slackTSGreater (Slack ts values grow digits, so a
+//     string compare would go wrong). The GLOBs stand in for ParseFloat's
+//     failure case: an unparseable ts on either side reads as read, where
+//     CAST would quietly turn it into 0.
+const unreadOnlyClause = `AND (
+    (er.resource_type <> 'slack' AND EXISTS (
+        SELECT 1 FROM resource_read_cursor c
+         WHERE c.resource_type = er.resource_type AND c.resource_id = er.resource_id
+           AND e.ts > c.last_read_ts))
+ OR (er.resource_type = 'slack' AND EXISTS (
+        SELECT 1 FROM watcher_resource_state rs
+         WHERE rs.resource_type = 'slack' AND rs.resource_id = er.resource_id
+           AND e.external_ts GLOB '[0-9]*'
+           AND json_extract(rs.state_json, '$.last_read') GLOB '[0-9]*'
+           AND CAST(e.external_ts AS REAL) > CAST(json_extract(rs.state_json, '$.last_read') AS REAL)))
+) `
+
+// handleGlobalTimeline: GET /api/timeline?archived=&limit=&before=&resource_types=&unread_only=
 func (s *Server) handleGlobalTimeline(w http.ResponseWriter, r *http.Request) {
 	archived := r.URL.Query().Get("archived") == "true"
+	unreadOnly := r.URL.Query().Get("unread_only") == "true"
 	limit := parseLimit(r)
 	before := r.URL.Query().Get("before") // RFC3339 ts; "" = newest
 	types := parseResourceTypes(r)
@@ -116,6 +145,11 @@ JOIN watcher_event_resources er ON er.event_id = e.id `
 		typeClause = "AND er.resource_type IN (" + strings.TrimSuffix(strings.Repeat("?,", len(types)), ",") + ") "
 	}
 
+	unreadClause := ""
+	if unreadOnly {
+		unreadClause = unreadOnlyClause
+	}
+
 	args := []any{}
 	if before != "" {
 		args = append(args, before)
@@ -125,9 +159,9 @@ JOIN watcher_event_resources er ON er.event_id = e.id `
 	}
 	args = append(args, limit)
 
-	q := base + filter + beforeClause + typeClause + order
+	q := base + filter + beforeClause + typeClause + unreadClause + order
 	if !archived {
-		q = base + watchedJoin + filter + beforeClause + typeClause + order
+		q = base + watchedJoin + filter + beforeClause + typeClause + unreadClause + order
 	}
 	rows, err = s.DB.Query(q, args...)
 	if err != nil {
@@ -161,7 +195,7 @@ func (s *Server) eventIDsForResource(rtype, rid string) (map[string]struct{}, er
 	return ids, rows.Err()
 }
 
-// handleWorktreeTimeline: GET /api/worktree-timeline?path=<path>&limit=&before=&resource_type=&resource_id=
+// handleWorktreeTimeline: GET /api/worktree-timeline?path=<path>&limit=&before=&resource_type=&resource_id=&resource_types=&unread_only=
 // A query param (not a path segment) is used because worktree paths contain
 // slashes, which the Go 1.22 mux {wildcard} would split awkwardly.
 //
@@ -204,6 +238,7 @@ func (s *Server) handleWorktreeTimeline(w http.ResponseWriter, r *http.Request) 
 	limit := parseLimit(r)
 	before := r.URL.Query().Get("before") // exclusive RFC3339 cursor; "" = newest
 	types := parseResourceTypes(r)
+	unreadOnly := r.URL.Query().Get("unread_only") == "true"
 	typeAllowed := map[string]bool{}
 	for _, t := range types {
 		typeAllowed[t] = true
@@ -233,6 +268,12 @@ func (s *Server) handleWorktreeTimeline(w http.ResponseWriter, r *http.Request) 
 		// Applied after enrichment because the resource type comes from the
 		// event's resource row, which enrich resolves.
 		if len(typeAllowed) > 0 && !typeAllowed[te.ResourceType] {
+			continue
+		}
+		// Applied before the limit check counts the row, so an unread-only
+		// page is a full page of unread events. te.Unread is IsUnread's own
+		// verdict, so this filter cannot disagree with the feed's markers.
+		if unreadOnly && !te.Unread {
 			continue
 		}
 		out = append(out, te)

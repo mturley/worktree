@@ -14,6 +14,8 @@ import { WorktreeDetailCard } from "../components/WorktreeDetailCard"
 import { CmuxWorkspaceActions, CmuxWorkspaceTitles } from "../components/CmuxWorkspaceHeader"
 import { SourceFilter } from "../components/SourceFilter"
 import { RefreshWatchersButton } from "../components/RefreshWatchersButton"
+import { MarkAllReadButton } from "../components/MarkAllReadButton"
+import { UnreadOnlyToggle } from "../components/UnreadOnlyToggle"
 import { ThreadActionsContext } from "../components/slack/ThreadActionsContext"
 import { AddResourceModal } from "../components/AddResourceModal"
 import { parseThreadUrl } from "../lib/parseThreadUrl"
@@ -27,7 +29,11 @@ export function WorktreeDetailPage() {
   // narrows the timeline to that one resource, so the toggles are hidden there
   // rather than left as dead controls.
   const [sources, setSources] = useState<string[]>([])
-  const { resources, timeline } = useWorktreeDetail(path, sources)
+  // Same scope as the source toggles, and for the same reason: a selected
+  // resource's feed is one cursor, its unread events already together at
+  // the top under the divider.
+  const [unreadOnly, setUnreadOnly] = useState(false)
+  const { resources, timeline } = useWorktreeDetail(path, sources, unreadOnly)
   const { selected, select, toggle, clear } = useSelectedResource()
   const wide = useIsWide()
   const worktrees = useWorktrees()
@@ -117,8 +123,12 @@ export function WorktreeDetailPage() {
         <Group gap={6} wrap="nowrap" align="center">
           <Title order={5}>Activity</Title>
           <RefreshWatchersButton />
+          <MarkAllReadButton resources={items} />
         </Group>
-        <SourceFilter value={sources} onChange={setSources} />
+        <Group gap="sm" wrap="wrap">
+          <SourceFilter value={sources} onChange={setSources} />
+          <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} />
+        </Group>
       </Group>
       <TimelineFeed
         events={timeline.events}
@@ -127,6 +137,7 @@ export function WorktreeDetailPage() {
         hasMore={timeline.hasMore}
         onLoadMore={timeline.loadMore}
         loadingMore={timeline.loadingMore}
+        emptyText={unreadOnly ? "No unread events." : undefined}
         // Only meaningful here: this page has a selection to change, and the
         // worktree's own resource list to resolve icons and titles against.
         onSelectResource={select}

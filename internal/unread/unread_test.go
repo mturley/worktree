@@ -246,3 +246,32 @@ func TestSlackCursorsReadsCachedPollerState(t *testing.T) {
 		}
 	}
 }
+
+func TestSummariesReportNewestUnreadTS(t *testing.T) {
+	conn := openDB(t)
+	addEvent(t, conn, "e1", "2026-01-01T00:00:00Z", "pr", "o/r#1")
+	addEvent(t, conn, "e2", "2026-01-02T00:00:00Z", "pr", "o/r#1")
+	addEvent(t, conn, "e3", "2026-01-03T00:00:00Z", "pr", "o/r#1")
+	// A bookkeeping event newer than everything else must not become the
+	// through_ts: mark-all-read promises to clear only what the feeds show.
+	addTypedEvent(t, conn, "e4", "2026-01-04T00:00:00Z", "watcher_error", "pr", "o/r#1")
+	if err := unread.MarkRead(conn, "pr", "o/r#1", "2026-01-01T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	sums, err := unread.Summaries(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := sums[unread.Key("pr", "o/r#1")]
+	if got.Count != 2 || got.NewestTS != "2026-01-03T00:00:00Z" {
+		t.Fatalf("summary = %+v, want {Count:2 NewestTS:2026-01-03T00:00:00Z}", got)
+	}
+	// Counts stays the count-only view of the same query.
+	counts, err := unread.Counts(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts[unread.Key("pr", "o/r#1")] != 2 {
+		t.Fatalf("Counts disagrees with Summaries: %v", counts)
+	}
+}

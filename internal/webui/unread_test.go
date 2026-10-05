@@ -69,6 +69,11 @@ func TestWorktreeResourcesCarriesUnreadCount(t *testing.T) {
 	if got[0].UnreadCount != 2 {
 		t.Fatalf("unread_count = %d, want 2", got[0].UnreadCount)
 	}
+	// Mark-all-read sends this as through_ts, so it must be the newest of
+	// exactly the events unread_count counted.
+	if got[0].UnreadThroughTS != "2099-01-02T00:00:00Z" {
+		t.Fatalf("unread_through_ts = %q, want the newest unread event's ts", got[0].UnreadThroughTS)
+	}
 }
 
 func registerWorktreeForTest(t *testing.T, conn *sql.DB, path string) error {

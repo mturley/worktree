@@ -23,7 +23,7 @@ import (
 // That is the same direction every other enrichment failure here degrades:
 // a missing dot is a smaller lie than a wrong one.
 type unreadIndex struct {
-	counts  map[string]int
+	counts  map[string]unread.Summary
 	cursors map[string]string
 	// Slack's own cursors, from cached poller state — a separate map because
 	// they are compared against a different column (see unread.SlackCursors).
@@ -32,14 +32,14 @@ type unreadIndex struct {
 
 func (s *Server) newUnreadIndex() *unreadIndex {
 	ix := &unreadIndex{
-		counts:  map[string]int{},
+		counts:  map[string]unread.Summary{},
 		cursors: map[string]string{},
 		slack:   map[string]string{},
 	}
-	if c, err := unread.Counts(s.DB); err == nil {
+	if c, err := unread.Summaries(s.DB); err == nil {
 		ix.counts = c
 	} else if s.Logger != nil {
-		s.Logger.Printf("unread.Counts: %v", err)
+		s.Logger.Printf("unread.Summaries: %v", err)
 	}
 	if c, err := unread.Cursors(s.DB); err == nil {
 		ix.cursors = c
@@ -60,7 +60,16 @@ func (ix *unreadIndex) Count(resType, id string) int {
 	if ix == nil {
 		return 0
 	}
-	return ix.counts[unread.Key(resType, id)]
+	return ix.counts[unread.Key(resType, id)].Count
+}
+
+// ThroughTS returns the ts of a resource's newest unread event, "" when it
+// has none — the through_ts that clears exactly Count's events.
+func (ix *unreadIndex) ThroughTS(resType, id string) string {
+	if ix == nil {
+		return ""
+	}
+	return ix.counts[unread.Key(resType, id)].NewestTS
 }
 
 // IsUnread reports whether one event is newer than its resource's cursor.

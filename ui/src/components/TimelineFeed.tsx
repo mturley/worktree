@@ -9,7 +9,7 @@ import { UnreadDivider } from "./UnreadDivider"
 export function TimelineFeed({
   events, loading, error, showWorktrees, showResource, hasMore, onLoadMore, loadingMore,
   onSelectResource, resolveResource, canSelectResource,
-  showUnreadDivider,
+  showUnreadDivider, emptyText = "No events yet.",
 }: {
   events: TimelineEvent[]; loading: boolean; error: unknown; showWorktrees?: boolean
   /**
@@ -43,12 +43,14 @@ export function TimelineFeed({
    * individually instead (see EventRow).
    */
   showUnreadDivider?: boolean
+  /** What an empty feed says, e.g. "No unread events." under that filter. */
+  emptyText?: string
 }) {
   const [detail, setDetail] = useState<TimelineEvent | null>(null)
 
   if (loading) return <Loader />
   if (error) return <Alert color="red">{String((error as Error).message || error)}</Alert>
-  if (events.length === 0) return <Text c="dimmed" size="sm">No events yet.</Text>
+  if (events.length === 0) return <Text c="dimmed" size="sm">{emptyText}</Text>
 
   // The oldest unread event, i.e. the last one in this newest-first list. The
   // divider goes immediately after it. -1 when nothing is unread.

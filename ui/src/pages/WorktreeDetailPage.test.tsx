@@ -11,8 +11,9 @@ const resources: ResourceDTO[] = [
   { type: "jira", id: "J-1", url: "https://jira/J-1", primary: true, title: "Investigate flux", status: "In Progress" } as ResourceDTO,
 ]
 
+const detailArgs = vi.hoisted(() => [] as unknown[][])
 vi.mock("../hooks/useWorktreeDetail", () => ({
-  useWorktreeDetail: () => ({
+  useWorktreeDetail: (...args: unknown[]) => (detailArgs.push(args), {
     resources: { data: resources, refetch: vi.fn() },
     timeline: { events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false },
   }),
@@ -385,5 +386,28 @@ describe("WorktreeDetailPage scroll model", () => {
       .map((el) => el.style.height)
       .filter((h) => h.includes("dvh") || h.includes("vh"))
     expect(heights).toEqual([])
+  })
+})
+
+describe("WorktreeDetailPage unread-only toggle", () => {
+  it("narrows the worktree's activity feed to unread events", async () => {
+    setViewport("wide")
+    const user = userEvent.setup()
+    wrap()
+    const toggle = await screen.findByRole("switch", { name: "Show unread only" })
+    expect(toggle).not.toBeChecked()
+    expect(detailArgs.at(-1)?.[2]).toBe(false)
+    await user.click(toggle)
+    expect(detailArgs.at(-1)?.[2]).toBe(true)
+  })
+
+  it("is not offered beside a selected resource's feed", async () => {
+    // A single resource's unread events always sit together at the top of
+    // its feed, under the unread divider, so the filter would add nothing.
+    window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?resource=pr:o%2Fr%231`)
+    setViewport("wide")
+    wrap()
+    await screen.findByRole("button", { name: /all resources/i })
+    expect(screen.queryByRole("switch", { name: "Show unread only" })).not.toBeInTheDocument()
   })
 })

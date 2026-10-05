@@ -13,10 +13,13 @@ const summary: WorktreeSummary = {
   focus_resources: [{ type: "pr", id: "o/r#1", url: "https://gh/pr/1", primary: true, title: "Fix the widget", state: "OPEN" }],
 }
 
-const mocks = vi.hoisted(() => ({ worktrees: [] as WorktreeSummary[] }))
+const mocks = vi.hoisted(() => ({ worktrees: [] as WorktreeSummary[], timelineArgs: [] as unknown[][] }))
 vi.mock("../hooks/useWorktrees", () => ({ useWorktrees: () => ({ data: mocks.worktrees }) }))
 vi.mock("../hooks/useTimeline", () => ({
-  useGlobalTimeline: () => ({ events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false }),
+  useGlobalTimeline: (...args: unknown[]) => {
+    mocks.timelineArgs.push(args)
+    return { events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false }
+  },
 }))
 
 import { HomePage } from "./HomePage"
@@ -35,6 +38,7 @@ beforeEach(() => {
   window.history.replaceState({}, "", "/")
   window.localStorage.clear()
   mocks.worktrees = [summary]
+  mocks.timelineArgs = []
   vi.spyOn(api, "cmux").mockResolvedValue({ available: false })
 })
 afterEach(() => vi.restoreAllMocks())
@@ -139,5 +143,18 @@ describe("HomePage worktree sorting", () => {
     await userEvent.click(screen.getByRole("button", { name: "Toggle sort direction" }))
     expect(order()).toEqual(["zeta-branch", "alpha-branch"])
     expect(window.localStorage.getItem("worktree.home.sort.nameDir")).toBe("desc")
+  })
+})
+
+describe("HomePage unread-only toggle", () => {
+  it("is off by default and narrows the feed to unread events when switched on", async () => {
+    setViewport("wide")
+    const user = userEvent.setup()
+    wrap()
+    const toggle = screen.getByRole("switch", { name: "Show unread only" })
+    expect(toggle).not.toBeChecked()
+    expect(mocks.timelineArgs.at(-1)?.[2]).toBe(false)
+    await user.click(toggle)
+    expect(mocks.timelineArgs.at(-1)?.[2]).toBe(true)
   })
 })

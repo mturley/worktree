@@ -78,3 +78,15 @@ describe("TimelineFeed unread divider", () => {
     expect(screen.queryByText("New")).not.toBeInTheDocument()
   })
 })
+
+describe("TimelineFeed empty state", () => {
+  it("says there are no events by default", () => {
+    wrap(<TimelineFeed events={[]} loading={false} error={null} />)
+    expect(screen.getByText("No events yet.")).toBeInTheDocument()
+  })
+
+  it("takes the caller's wording, e.g. for an unread-only feed", () => {
+    wrap(<TimelineFeed events={[]} loading={false} error={null} emptyText="No unread events." />)
+    expect(screen.getByText("No unread events.")).toBeInTheDocument()
+  })
+})

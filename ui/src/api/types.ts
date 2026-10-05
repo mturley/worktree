@@ -74,6 +74,11 @@ export interface ResourceDTO {
   has_unread?: boolean
   /** non-slack: events newer than the read cursor. Absent means zero. */
   unread_count?: number
+  /**
+   * non-slack: ts of the newest of those unread events, from the same server
+   * snapshot. Sent as through_ts by "mark all read" — see MarkAllReadButton.
+   */
+  unread_through_ts?: string
   created_ts?: string
   updated_ts?: string
   state?: string

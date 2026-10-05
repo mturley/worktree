@@ -45,14 +45,19 @@ function flatten(q: ReturnType<typeof useInfiniteQuery<{ events: TimelineEvent[]
   }
 }
 
-export function useGlobalTimeline(archived: boolean, resourceTypes: string[] = []): TimelineResult {
+/**
+ * `unreadOnly` filters on the SERVER, like the source filter: the feed is
+ * paginated, so dropping read events from a fetched page would leave it short
+ * or empty while unread ones sat further back.
+ */
+export function useGlobalTimeline(archived: boolean, resourceTypes: string[] = [], unreadOnly = false): TimelineResult {
   return flatten(
     useInfiniteQuery({
       // The filter is part of the key, so toggling it is a normal cache-keyed
       // fetch and toggling back is a cache hit. Sorted so the same selection
       // in a different click order reuses one cache entry.
-      queryKey: ["timeline", "global", archived, [...resourceTypes].sort().join(",")],
-      queryFn: ({ pageParam }) => api.globalTimeline(archived, TIMELINE_PAGE_SIZE, pageParam, resourceTypes),
+      queryKey: ["timeline", "global", archived, [...resourceTypes].sort().join(","), unreadOnly],
+      queryFn: ({ pageParam }) => api.globalTimeline(archived, TIMELINE_PAGE_SIZE, pageParam, resourceTypes, unreadOnly),
       initialPageParam: undefined as string | undefined,
       getNextPageParam: nextCursor,
     }),
@@ -63,6 +68,7 @@ export function useWorktreeTimeline(
   path: string,
   resource?: { type: string; id: string },
   resourceTypes: string[] = [],
+  unreadOnly = false,
 ): TimelineResult {
   return flatten(
     // The resource is part of the key so switching selection is a normal
@@ -72,9 +78,10 @@ export function useWorktreeTimeline(
     useInfiniteQuery({
       queryKey: [
         "timeline", "worktree", path, resource?.type ?? "", resource?.id ?? "",
-        [...resourceTypes].sort().join(","),
+        [...resourceTypes].sort().join(","), unreadOnly,
       ],
-      queryFn: ({ pageParam }) => api.worktreeTimeline(path, TIMELINE_PAGE_SIZE, resource, pageParam, resourceTypes),
+      queryFn: ({ pageParam }) =>
+        api.worktreeTimeline(path, TIMELINE_PAGE_SIZE, resource, pageParam, resourceTypes, unreadOnly),
       initialPageParam: undefined as string | undefined,
       getNextPageParam: nextCursor,
       enabled: !!path,

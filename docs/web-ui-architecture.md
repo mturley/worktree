@@ -170,8 +170,8 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | Method | Path | Params | Response |
 |---|---|---|---|
 | GET | `/api/worktrees` | — | `[]worktreeSummary` |
-| GET | `/api/timeline` | `archived` (`"true"`/else false), `limit` (1-500, default 100), `before` (RFC3339 ts, exclusive upper bound) | `timelineResponse` |
-| GET | `/api/worktree-timeline` | `path` (required, worktree path), `limit`, `resource_type` + `resource_id` (optional, filters to one resource's events; must be supplied together or the request 400s) | `timelineResponse` |
+| GET | `/api/timeline` | `archived` (`"true"`/else false), `limit` (1-500, default 100), `before` (RFC3339 ts, exclusive upper bound), `resource_types`, `unread_only` (`"true"`: unread events only) | `timelineResponse` |
+| GET | `/api/worktree-timeline` | `path` (required, worktree path), `limit`, `before`, `resource_type` + `resource_id` (optional, filters to one resource's events; must be supplied together or the request 400s), `resource_types`, `unread_only` | `timelineResponse` |
 | GET | `/api/worktree-resources` | `path` (required) | `[]resourceDTO` |
 | POST | `/api/worktrees/poll` | `path` (required) | `{"polled": bool}` |
 | POST | `/api/resource-meta` | body: `{type, id, name, description}` | — |
@@ -316,6 +316,7 @@ custom_description        string
 
 // unread state (omitempty; absent when nothing is unread, never present for Slack):
 unread_count              int       // events newer than the resource's read cursor
+unread_through_ts         string    // ts of the newest of those events (same snapshot)
 ```
 
 `custom_name`/`custom_description` come from the watcher library's
@@ -651,6 +652,26 @@ as well.
 server-side `MAX(ts)` — events arriving between render and click must stay
 unread rather than being swallowed by a button that promised to clear a
 specific number. The cursor only moves forward, so a stale replay is a no-op.
+
+**Mark all read** (`ui/src/components/MarkAllReadButton.tsx`, on the worktree
+page's unified Activity header) keeps that promise across resources. It
+confirms "Mark N events read across M resources?" — M counting only resources
+with unreads — then posts one `/api/resource-read` per resource, each with
+that resource's `unread_through_ts`. That field comes from
+`unread.Summaries`, the same query as `unread_count`, so the through_ts is the
+newest of exactly the events counted, never "now". Slack threads are out of
+scope (the endpoint rejects them); the modal says so when one is unread.
+
+**Show unread only** (`UnreadOnlyToggle`) narrows the two unified feeds — the
+home page's and the worktree page's — to unread events; the single-resource
+feed has no toggle, because one cursor keeps its unread events together at the
+top under the divider. It filters SERVER-side via `unread_only`, since the
+feeds page with a limit. The worktree timeline filters in memory on
+`te.Unread`, IsUnread's own verdict. The global timeline pages in SQL, so
+`unreadOnlyClause` re-implements IsUnread as a predicate — both clocks,
+Slack compared numerically — and
+`TestGlobalTimelineUnreadOnlyMatchesIsUnread` pins the two together. Change
+either and you must change the other.
 
 ### SSE (`/api/stream`)
 
