@@ -172,11 +172,14 @@ export function WorktreeDetailPage() {
       </Tabs>
     )
   } else {
-    // One Grid in both states, with the same spans, deliberately. Swapping
-    // the layout or resizing the list column on selection would remount or
-    // reflow the list on every click — losing its scroll position and
-    // flickering. Only the right-hand column's content changes: the
-    // worktree's activity feed, or the selected resource.
+    const split = selectedResource ? [4, 8] : [6, 6]
+    // One Grid in both states, deliberately. Swapping the wide layout
+    // between containers would put `list` at a different position in the
+    // React tree, remounting it on every selection change — losing its
+    // scroll position and flickering. Changing only the SPANS keeps it
+    // mounted: an even split while the list sits beside the worktree's
+    // activity feed, its peer, and 4/8 once a selected resource's detail —
+    // which carries more — takes the right-hand column.
     overview = (
       <Grid
         gutter="md"
@@ -186,9 +189,9 @@ export function WorktreeDetailPage() {
         // scrollbar.
         style={{ margin: 0 }}
       >
-        <Grid.Col span={4} style={listSticky}>{list}</Grid.Col>
+        <Grid.Col span={split[0]} style={listSticky}>{list}</Grid.Col>
         {/* No scroller: this column's content is what the PAGE scrolls. */}
-        <Grid.Col span={8}>{detail || unfiltered}</Grid.Col>
+        <Grid.Col span={split[1]}>{detail || unfiltered}</Grid.Col>
       </Grid>
     )
   }

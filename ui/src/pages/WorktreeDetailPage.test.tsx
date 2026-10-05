@@ -208,6 +208,21 @@ describe("WorktreeDetailPage has no Overview/Slack tabs", () => {
   })
 })
 
+// Mantine writes a Grid.Col's span into a generated <style> rule keyed by a
+// per-instance class, not into the element's inline style, so jsdom only
+// sees it there. Returns that rule's --col-flex-basis.
+function colBasis(col: HTMLElement): string | undefined {
+  const cls = [...col.classList].find((c) => c.startsWith("__m__-"))
+  if (!cls) return undefined
+  for (const style of document.querySelectorAll("style")) {
+    const text = style.textContent ?? ""
+    if (!text.includes(`.${cls}`)) continue
+    const m = text.match(/--col-flex-basis:\s*([^;]+);/)
+    if (m) return m[1].trim()
+  }
+  return undefined
+}
+
 describe("WorktreeDetailPage wide layout", () => {
   it("keeps the resource list mounted across a selection toggle", async () => {
     // The right-hand column changes with the selection: nothing selected
@@ -251,6 +266,21 @@ describe("WorktreeDetailPage wide layout", () => {
     expect(listCol!.style.position).toBe("sticky")
     // Same filter toggles as the home page's feed.
     expect(screen.getByRole("button", { name: /jira/i })).toBeInTheDocument()
+  })
+
+  it("splits evenly with nothing selected, and narrows the list for a selection", async () => {
+    // The feed and the list are peers, so they share the width; a selected
+    // resource's detail carries more, so it takes two thirds.
+    setViewport("wide")
+    const user = userEvent.setup()
+    wrap()
+    const card = await screen.findByRole("button", { name: /select resource o\/r#1/i })
+    const listCol = card.closest<HTMLElement>(".mantine-Grid-col")!
+    expect(colBasis(listCol)).toBe("50%")
+
+    await user.click(card)
+    await waitFor(() => expect(window.location.search).toContain("resource=pr%3A"))
+    expect(colBasis(listCol)).toMatch(/^33\.33/)
   })
 
   it("shows no Resources/Activity tab bar", async () => {

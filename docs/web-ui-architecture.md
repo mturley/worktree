@@ -863,11 +863,12 @@ way:
 - **`useIsWide()`** (above) owns *how wide* the viewport is, independent of
   selection.
 - **`WorktreeDetailPage`** combines the two: wide renders `ResourceList`
-  (sticky) and a right-hand pane side by side in a 4/8 `Grid`. With nothing
-  selected the right pane is the worktree's unified Activity feed, with the
-  same GitHub/Jira/Slack `SourceFilter` toggles as the home page's feed;
-  selecting a resource swaps it for `ResourceDetailPane` but keeps the list
-  visible, at the same width, and highlights the selected card. Narrow with
+  (sticky) and a right-hand pane side by side in a `Grid`. With nothing
+  selected the split is 6/6 and the right pane is the worktree's unified
+  Activity feed, with the same GitHub/Jira/Slack `SourceFilter` toggles as
+  the home page's feed; selecting a resource narrows the split to 4/8 and
+  swaps the feed for `ResourceDetailPane`, keeping the list visible (only
+  the spans change, so it stays mounted) and highlighting the selected card. Narrow with
   nothing selected shows a Resources/Activity tab bar (like the home page's
   Worktrees/Activity tabs); selecting a resource replaces it with a
   full-width `ResourceDetailPane` (a "drilldown"), with a back control that
