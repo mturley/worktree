@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Anchor, Badge, Box, Button, Collapse, Grid, Group, Stack, Title } from "@mantine/core"
+import { Anchor, Badge, Box, Button, Collapse, Grid, Group, Stack, Tabs, Title } from "@mantine/core"
 import { Link, useRoute } from "wouter"
 import { useWorktreeDetail } from "../hooks/useWorktreeDetail"
 import { useSelectedResource } from "../hooks/useSelectedResource"
@@ -23,9 +23,9 @@ export function WorktreeDetailPage() {
   const [, params] = useRoute("/worktree/:path*")
   const rawPath = params?.["path*"]
   const path = rawPath ? decodeURIComponent(rawPath) : ""
-  // Only applies to the unfiltered feed: selecting a resource already narrows
-  // the timeline to that one resource, so the toggles are hidden there rather
-  // than left as dead controls.
+  // Only applies to the worktree's unified feed: selecting a resource already
+  // narrows the timeline to that one resource, so the toggles are hidden there
+  // rather than left as dead controls.
   const [sources, setSources] = useState<string[]>([])
   const { resources, timeline } = useWorktreeDetail(path, sources)
   const { selected, select, toggle, clear } = useSelectedResource()
@@ -62,6 +62,8 @@ export function WorktreeDetailPage() {
   // hides it would look broken. Per page visit, not persisted — see the
   // toggle's comment.
   const [detailsOpen, setDetailsOpen] = useState(true)
+  // Narrow only: which of Resources / Activity is showing.
+  const [narrowTab, setNarrowTab] = useState("resources")
 
   // The sticky resource list has to start below the header, and the header's
   // height is not a constant: the worktree and cmux workspace names wrap, and
@@ -133,64 +135,63 @@ export function WorktreeDetailPage() {
     </Stack>
   )
 
-  // Nothing selected: full-width resources with the timeline stacked below —
-  // the same shape at every width, so narrow is no longer a lesser view that
-  // silently drops the timeline.
-  const stacked = !selectedResource
-  // Side by side, the resource list stays put while the page scrolls past it.
-  // See stickyListStyle for why the offset is not simply headerHeight.
-  const listSticky = stacked ? undefined : stickyListStyle(headerHeight)
+  // Side by side, the resource list stays put while the page scrolls past it
+  // — beside the activity feed and beside a selected resource alike. See
+  // stickyListStyle for why the offset is not simply headerHeight.
+  const listSticky = stickyListStyle(headerHeight)
 
-  // Narrow + a selection is the one layout that drills down, replacing the
-  // list outright — there is no room to keep a navigator beside the resource.
-  // Every other combination is the Grid below, which differs only in its
-  // spans. Both branches read the same selection state, so resizing swaps
-  // presentation without disturbing what is selected.
-  const overview = selectedResource && !wide ? (
+  const detail = selectedResource && (
     <ResourceDetailPane
       path={path}
       resource={selectedResource}
+      // Also on wide: deselecting is how you get the worktree's activity feed
+      // back, and it was previously only reachable by clicking the selected
+      // card again.
       onBack={clear}
       onRemoved={resources.refetch}
       onResourceChanged={resources.refetch}
     />
-  ) : (
-    // One Grid in both states, deliberately. Swapping the wide layout between
-    // a Grid and a stacked Box would put `list` at a different position in the
-    // React tree, remounting it on every selection change — losing its scroll
-    // position and flickering. Changing only the SPANS keeps it mounted.
-    //
-    // With nothing selected the columns go full width, so the resources fill
-    // the page and the cross-resource timeline wraps beneath them — nothing to
-    // stick beside, so the list is not sticky in that state either.
-    <Grid
-      gutter="md"
-      // No overflow here on purpose. Mantine's Grid inner carries negative
-      // margins to offset the columns' padding, so making the Grid a scroll
-      // container exposes those as HORIZONTAL overflow — a stray sideways
-      // scrollbar. When stacked, the page-level Box below scrolls instead.
-      style={{ margin: 0 }}
-    >
-      <Grid.Col span={stacked ? 12 : 4} style={listSticky}>{list}</Grid.Col>
-      {/* No scroller: this column's content is what the PAGE scrolls. */}
-      <Grid.Col span={stacked ? 12 : 8}>
-        {selectedResource ? (
-          <ResourceDetailPane
-            path={path}
-            resource={selectedResource}
-            // Also on wide: deselecting is how you get the worktree's
-            // cross-resource timeline back, and it was previously only
-            // reachable by clicking the selected card again.
-            onBack={clear}
-            onRemoved={resources.refetch}
-            onResourceChanged={resources.refetch}
-          />
-        ) : (
-          unfiltered
-        )}
-      </Grid.Col>
-    </Grid>
   )
+
+  let overview
+  if (!wide) {
+    // Narrow + a selection drills down, replacing everything — there is no
+    // room to keep a navigator beside the resource. With nothing selected the
+    // list and the feed would otherwise stack, pushing the feed far below the
+    // resources, so they are tabs instead, as on the home page. The tab is
+    // page state rather than the Tabs' own, so backing out of a drill-down
+    // lands on the tab you left.
+    overview = detail || (
+      <Tabs value={narrowTab} onChange={(v) => setNarrowTab(v ?? "resources")}>
+        <Tabs.List>
+          <Tabs.Tab value="resources">Resources</Tabs.Tab>
+          <Tabs.Tab value="activity">Activity</Tabs.Tab>
+        </Tabs.List>
+        <Tabs.Panel value="resources" pt="md">{list}</Tabs.Panel>
+        <Tabs.Panel value="activity" pt="md">{unfiltered}</Tabs.Panel>
+      </Tabs>
+    )
+  } else {
+    // One Grid in both states, with the same spans, deliberately. Swapping
+    // the layout or resizing the list column on selection would remount or
+    // reflow the list on every click — losing its scroll position and
+    // flickering. Only the right-hand column's content changes: the
+    // worktree's activity feed, or the selected resource.
+    overview = (
+      <Grid
+        gutter="md"
+        // No overflow here on purpose. Mantine's Grid inner carries negative
+        // margins to offset the columns' padding, so making the Grid a scroll
+        // container exposes those as HORIZONTAL overflow — a stray sideways
+        // scrollbar.
+        style={{ margin: 0 }}
+      >
+        <Grid.Col span={4} style={listSticky}>{list}</Grid.Col>
+        {/* No scroller: this column's content is what the PAGE scrolls. */}
+        <Grid.Col span={8}>{detail || unfiltered}</Grid.Col>
+      </Grid>
+    )
+  }
 
   return (
     <ThreadActionsContext.Provider value={threadActions}>
@@ -284,11 +285,8 @@ export function WorktreeDetailPage() {
       </Box>
       {/*
         No Overview/Slack tabs: a Slack thread is selected like any other
-        resource and renders in ResourceDetailPane, so the resource list plus
-        that pane is the whole page body.
-
-        Wide: the Grid below manages its own per-column scrolling. Narrow:
-        everything collapses into this single scroller.
+        resource and renders in ResourceDetailPane. The narrow-only
+        Resources/Activity tabs are a different thing — see `overview`.
       */}
       {/*
         Deliberately no overflow and no height here. This used to be the page's

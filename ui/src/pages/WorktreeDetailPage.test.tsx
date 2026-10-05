@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest"
-import { render, cleanup, screen, waitFor } from "@testing-library/react"
+import { act, render, cleanup, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -210,9 +210,9 @@ describe("WorktreeDetailPage has no Overview/Slack tabs", () => {
 
 describe("WorktreeDetailPage wide layout", () => {
   it("keeps the resource list mounted across a selection toggle", async () => {
-    // The layout changes shape with the selection: nothing selected gives the
-    // resources the full width with the timeline stacked below, a selection
-    // splits into list + detail. Both states are ONE Grid with different
+    // The right-hand column changes with the selection: nothing selected
+    // shows the worktree's activity feed, a selection shows that resource's
+    // detail. Both states are ONE Grid with different
     // spans, precisely so the list keeps its position in the React tree — a
     // container swap would remount it, dropping its scroll position and
     // flickering on every click.
@@ -233,25 +233,64 @@ describe("WorktreeDetailPage wide layout", () => {
     expect(card.isConnected).toBe(true)
   })
 
-  it("shows the resources and the cross-resource activity feed together when nothing is selected", async () => {
+  it("puts the activity feed beside the resources when nothing is selected", async () => {
+    // Wide has room for both, so the worktree's unified feed sits in the
+    // right-hand column — where a selected resource's detail would go —
+    // rather than being stacked out of sight beneath the resource list.
     setViewport("wide")
     wrap()
-    // The timeline is no longer beside the list, but it must still be on the
-    // page — stacked beneath the full-width resources.
-    expect(await screen.findByRole("button", { name: /select resource o\/r#1/i })).toBeInTheDocument()
-    expect(await screen.findByText(/activity/i)).toBeInTheDocument()
+    const card = await screen.findByRole("button", { name: /select resource o\/r#1/i })
+    const heading = screen.getByRole("heading", { name: "Activity" })
+    const listCol = card.closest<HTMLElement>(".mantine-Grid-col")
+    const feedCol = heading.closest<HTMLElement>(".mantine-Grid-col")
+    expect(listCol).toBeTruthy()
+    expect(feedCol).toBeTruthy()
+    expect(listCol).not.toBe(feedCol)
+    // The list is sticky beside the feed just as it is beside a selection;
+    // only a column with something next to it is sticky.
+    expect(listCol!.style.position).toBe("sticky")
+    // Same filter toggles as the home page's feed.
+    expect(screen.getByRole("button", { name: /jira/i })).toBeInTheDocument()
+  })
+
+  it("shows no Resources/Activity tab bar", async () => {
+    setViewport("wide")
+    wrap()
+    await screen.findByRole("button", { name: /select resource o\/r#1/i })
+    expect(screen.queryByRole("tab", { name: "Resources" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("tab", { name: "Activity" })).not.toBeInTheDocument()
   })
 })
 
 describe("WorktreeDetailPage narrow layout", () => {
-  it("shows the activity feed under the resources when nothing is selected", async () => {
-    // Narrow used to drop the cross-resource timeline entirely, which made it
-    // a lesser view rather than a narrower one. With nothing selected both
-    // widths now render the same thing: resources, then the timeline.
+  it("offers the resources and the activity feed as tabs when nothing is selected", async () => {
+    // Stacked, the feed would sit far below the resource list; tabs keep
+    // both one tap away, as on the home page.
     setViewport("narrow")
+    const user = userEvent.setup()
     wrap()
-    expect(await screen.findByRole("button", { name: /select resource o\/r#1/i })).toBeInTheDocument()
-    expect(await screen.findByText(/activity/i)).toBeInTheDocument()
+    const resourcesTab = await screen.findByRole("tab", { name: "Resources" })
+    expect(resourcesTab).toHaveAttribute("aria-selected", "true")
+    expect(screen.getByRole("button", { name: /select resource o\/r#1/i })).toBeVisible()
+
+    await user.click(screen.getByRole("tab", { name: "Activity" }))
+    expect(screen.getByRole("heading", { name: "Activity" })).toBeVisible()
+    expect(screen.getByRole("button", { name: /jira/i })).toBeInTheDocument()
+  })
+
+  it("returns to the tab you left when backing out of a drill-down", async () => {
+    setViewport("narrow")
+    const user = userEvent.setup()
+    wrap()
+    await user.click(await screen.findByRole("tab", { name: "Activity" }))
+
+    // Select a resource (as a feed row's resource chip would) to drill down.
+    act(() => {
+      window.history.pushState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?resource=pr:o%2Fr%231`)
+    })
+    await user.click(await screen.findByRole("button", { name: /all resources/i }))
+
+    expect(await screen.findByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true")
   })
 
   it("still drills down to the resource when one is selected", async () => {

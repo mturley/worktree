@@ -862,13 +862,17 @@ way:
   of viewport.
 - **`useIsWide()`** (above) owns *how wide* the viewport is, independent of
   selection.
-- **`WorktreeDetailPage`** combines the two: wide renders `ResourceList` and
-  the detail/timeline pane side by side in a `Grid` (selecting a resource
-  swaps the right pane's content but keeps the list visible and highlights
-  the selected card); narrow renders only one pane at a time — the
-  `ResourceList` until something is selected, then a full-width
-  `ResourceDetailPane` in its place (a "drilldown"), with a back control
-  that clears the selection. Because both branches read the same
+- **`WorktreeDetailPage`** combines the two: wide renders `ResourceList`
+  (sticky) and a right-hand pane side by side in a 4/8 `Grid`. With nothing
+  selected the right pane is the worktree's unified Activity feed, with the
+  same GitHub/Jira/Slack `SourceFilter` toggles as the home page's feed;
+  selecting a resource swaps it for `ResourceDetailPane` but keeps the list
+  visible, at the same width, and highlights the selected card. Narrow with
+  nothing selected shows a Resources/Activity tab bar (like the home page's
+  Worktrees/Activity tabs); selecting a resource replaces it with a
+  full-width `ResourceDetailPane` (a "drilldown"), with a back control that
+  clears the selection. The active tab is page state, so backing out of a
+  drilldown returns to the tab you left. Because both branches read the same
   `useSelectedResource()` state, resizing the window mid-selection changes
   *only* which of these two layouts is shown — the selection itself is
   untouched. `HomePage`'s narrow Worktrees/Timeline tab split (above) is the
