@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mturley/watcher"
 	"github.com/mturley/watcher/slack"
 	"github.com/mturley/worktree/internal/cmux"
 	"github.com/mturley/worktree/internal/linkmeta"
@@ -81,6 +82,10 @@ type Server struct {
 	// httptest server's self-signed TLS cert) can never disable that
 	// protection.
 	imageProxyTransport http.RoundTripper
+
+	// pollSlackResource is a test seam for refreshSlackThread. When nil it
+	// polls through pollOne, which needs real Slack credentials.
+	pollSlackResource func(watcher.Resource)
 
 	// cmuxList and cmuxListGroups are seams for tests. When nil, the handlers
 	// call the real cmux package functions. Package cmux's own exec stub is

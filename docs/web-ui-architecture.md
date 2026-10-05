@@ -606,6 +606,16 @@ individually. `slackTSGreater` parses both sides as floats rather than
 comparing strings, because Slack ts values grow a digit
 (`9999999999.x` sorts above `10000000000.x` lexically).
 
+**Read-state writes refresh the cache before answering.** Every unread
+surface except the thread view reads the poller-cached `has_unread` and
+`last_read`, so a mark that only wrote to Slack left cards, dots, badges and
+mark-all-read's Slack count stale until the next background poll reached the
+thread. `/api/thread/mark-read`, `/api/thread/mark-unread` and
+`/api/thread/reply` therefore call `refreshSlackThread` after Slack accepts
+the write: if a worktree tracks the thread, it is re-polled synchronously via
+`pollOne`, and the client invalidates `worktrees`/`resources`/`timeline` when
+the response lands. Untracked threads have no cache and are skipped.
+
 **The dot vs. the divider.** `has_unread` answers "does this thread have
 anything new?" and drives the resource dot; `last_read` answers "which
 messages are new?" and drives `TimelineEvent.unread` on individual replies.
@@ -659,8 +669,12 @@ confirms "Mark N events read across M resources?" — M counting only resources
 with unreads — then posts one `/api/resource-read` per resource, each with
 that resource's `unread_through_ts`. That field comes from
 `unread.Summaries`, the same query as `unread_count`, so the through_ts is the
-newest of exactly the events counted, never "now". Slack threads are out of
-scope (the endpoint rejects them); the modal says so when one is unread.
+newest of exactly the events counted, never "now". Unread Slack threads are
+offered behind an "Also mark N Slack threads as read" checkbox, unchecked by
+default — it writes to Slack itself — via `/api/thread/mark-read`, each
+through its cached `updated_ts` (the latest message as of the poll that
+flagged it). With only Slack threads unread, they are the whole question and
+there is no checkbox.
 
 **Show unread only** (`UnreadOnlyToggle`) narrows the two unified feeds — the
 home page's and the worktree page's — to unread events; the single-resource

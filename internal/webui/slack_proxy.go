@@ -2,6 +2,7 @@ package webui
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
@@ -10,7 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mturley/watcher"
 	"github.com/mturley/watcher/slack"
+	"github.com/mturley/worktree/internal/slackurl"
 )
 
 // Mark-read-after-reply retry tuning. Slack's read-state index lags
@@ -50,6 +53,46 @@ func (s *Server) markReadWithRetry(ctx context.Context, channel, threadTS, ts st
 		}
 	}
 	return err
+}
+
+// refreshSlackThread re-polls a thread a worktree tracks, so its cached
+// has_unread/last_read (watcher_resource_state) reflect a read-state change
+// made here before the response goes out.
+//
+// Those cached fields drive every unread surface except the thread view
+// itself — resource cards, timeline dots, the worktree badge, the favicon,
+// mark-all-read's Slack count. Writing only to Slack left them stale until
+// the background poll next reached the thread, minutes later.
+//
+// Synchronous on purpose: the client invalidates its queries when the
+// response lands, and must find the new state when it refetches. Untracked
+// threads (an unfurl opened in the thread view) have no cache to refresh.
+// Best-effort like pollOne: a failure is logged and the next background
+// poll catches up.
+func (s *Server) refreshSlackThread(channel, threadTS string) {
+	if s.DB == nil {
+		return
+	}
+	id := slackurl.ResourceID(channel, threadTS)
+	var resURL string
+	err := s.DB.QueryRow(`
+		SELECT COALESCE(resource_url, '') FROM watcher_subscriptions
+		 WHERE resource_type = 'slack' AND resource_id = ? AND deleted_at IS NULL
+		 LIMIT 1`, id).Scan(&resURL)
+	if err != nil {
+		// sql.ErrNoRows is the untracked case; anything else is a DB fault
+		// worth a log line but never a failed request — Slack already
+		// accepted the write.
+		if !errors.Is(err, sql.ErrNoRows) {
+			s.logger().Printf("refreshSlackThread %s: %v", id, err)
+		}
+		return
+	}
+	poll := s.pollSlackResource
+	if poll == nil {
+		poll = s.pollOne
+	}
+	poll(watcher.Resource{Type: "slack", ID: id, URL: resURL})
 }
 
 // noFollowRedirects is a CheckRedirect policy shared by every client the
@@ -100,6 +143,7 @@ func (s *Server) handleMarkRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.refreshSlackThread(req.Channel, req.ThreadTS)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -130,6 +174,7 @@ func (s *Server) handleMarkUnread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.refreshSlackThread(req.Channel, req.ThreadTS)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -173,6 +218,9 @@ func (s *Server) handleReply(w http.ResponseWriter, r *http.Request) {
 	if err := s.markReadWithRetry(r.Context(), req.Channel, req.ThreadTS, msg.TS); err != nil && s.Logger != nil {
 		s.Logger.Printf("reply: mark-read after send failed (exhausted %d attempts): %v", markReadMaxAttempts, err)
 	}
+	// The reply and its mark-read both changed what the cache says about
+	// this thread, so refresh it whether or not the mark-read landed.
+	s.refreshSlackThread(req.Channel, req.ThreadTS)
 
 	writeJSON(w, http.StatusOK, MessageView{msg})
 }

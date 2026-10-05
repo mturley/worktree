@@ -1,25 +1,32 @@
 import { useState } from "react"
-import { Alert, Button, Group, Modal, Stack, Text } from "@mantine/core"
+import { Alert, Button, Checkbox, Group, Modal, Stack, Text } from "@mantine/core"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import type { ResourceDTO } from "../api/types"
 import { api } from "../api/client"
+import { markRead as markThreadRead } from "../api/slackApi"
+import { slackTabFromResource } from "./SlackThreadPane"
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 
 /**
  * Clears every unread GitHub/Jira event across a worktree's resources, after
- * a confirmation naming how many events and resources that is.
+ * a confirmation naming how many events and resources that is — and, only if
+ * the user ticks the box, its unread Slack threads too.
  *
- * Slack threads are deliberately out of scope: Slack owns their read state,
- * the server refuses to write it (unread.ErrSlackNotSupported), and they are
- * cleared from their thread view. The modal says so when one is unread, so the
- * Slack dot surviving the click is not a surprise.
+ * Slack is opt-in, and unchecked by default, because it is a different kind
+ * of write: Slack owns those threads' read state, so marking one read here
+ * marks it read in Slack itself, everywhere the user reads Slack. With only
+ * Slack threads unread there is nothing else to do, so the threads are the
+ * question and there is no box.
  *
- * Each resource is marked through its OWN unread_through_ts — the newest of
- * the events its unread_count counted, from the same server snapshot — never
- * "now". Events that land after that snapshot stay unread, exactly as the
- * per-resource button keeps events that arrive after render. A resource
- * without one (an older server) is skipped rather than guessed at.
+ * Everything is marked through what the user was SHOWN, never "now". Each
+ * GitHub/Jira resource goes through its own unread_through_ts — the newest of
+ * the events its unread_count counted, from the same server snapshot — and
+ * each Slack thread through its cached updated_ts, the latest message as of
+ * the poll that flagged it unread. Anything newer stays unread, exactly as
+ * the per-resource button keeps events that arrive after render. A resource
+ * missing its timestamp (an older server, a thread never fully polled) is
+ * skipped rather than guessed at.
  *
  * The counts are read live from `resources`, so a poll landing while the
  * modal is open updates the numbers and what gets sent together.
@@ -32,14 +39,25 @@ export function MarkAllReadButton({ resources }: { resources: ResourceDTO[] }) {
     (r) => r.type !== "slack" && (r.unread_count ?? 0) > 0 && !!r.unread_through_ts,
   )
   const events = targets.reduce((n, r) => n + (r.unread_count ?? 0), 0)
-  const slackUnread = resources.some((r) => r.type === "slack" && r.has_unread)
+  const threads = resources
+    .filter((r) => r.type === "slack" && r.has_unread && !!r.updated_ts)
+    .map((r) => ({ ...slackTabFromResource(r), latest: r.updated_ts! }))
+    .filter((t) => !!t.threadTs)
+  const slackOnly = targets.length === 0 && threads.length > 0
+  const [includeSlack, setIncludeSlack] = useState(false)
+  const markSlack = slackOnly || includeSlack
 
   const markAll = useMutation({
     // Parallel and independent: each call only moves one cursor forward, so a
     // partial failure leaves nothing inconsistent and a retry is safe.
     mutationFn: () =>
-      Promise.all(targets.map((r) =>
-        api.markResourceRead({ type: r.type, id: r.id, through_ts: r.unread_through_ts! }))),
+      Promise.all([
+        ...targets.map((r) =>
+          api.markResourceRead({ type: r.type, id: r.id, through_ts: r.unread_through_ts! })),
+        // The server re-polls each thread after Slack accepts the mark, so
+        // the invalidation below finds its cached state already fresh.
+        ...(markSlack ? threads.map((t) => markThreadRead(t.channel, t.threadTs, t.latest)) : []),
+      ]),
     onSuccess: () => setOpened(false),
     // Settled, not success: a partial failure still moved some cursors, and
     // the surfaces showing them must catch up either way. Same three as the
@@ -51,16 +69,21 @@ export function MarkAllReadButton({ resources }: { resources: ResourceDTO[] }) {
     },
   })
 
-  if (targets.length === 0 && !opened) return null
+  if (targets.length === 0 && threads.length === 0 && !opened) return null
 
   const close = () => {
     setOpened(false)
+    setIncludeSlack(false)
     markAll.reset()
   }
 
+  const question = slackOnly
+    ? `Mark ${plural(threads.length, "Slack thread", "Slack threads")} read?`
+    : `Mark ${plural(events, "event", "events")} read across ${plural(targets.length, "resource", "resources")}?`
+
   return (
     <>
-      {targets.length > 0 && (
+      {(targets.length > 0 || threads.length > 0) && (
         <Button
           size="compact-sm"
           // Same blue treatment as ResourceDetailPane's mark-read button — see
@@ -75,13 +98,13 @@ export function MarkAllReadButton({ resources }: { resources: ResourceDTO[] }) {
       )}
       <Modal opened={opened} onClose={close} title="Mark all read" centered>
         <Stack gap="sm">
-          <Text>
-            {`Mark ${plural(events, "event", "events")} read across ${plural(targets.length, "resource", "resources")}?`}
-          </Text>
-          {slackUnread && (
-            <Text size="sm" c="dimmed">
-              Slack threads are not affected. Mark them read from their thread view.
-            </Text>
+          <Text>{question}</Text>
+          {!slackOnly && threads.length > 0 && (
+            <Checkbox
+              checked={includeSlack}
+              onChange={(e) => setIncludeSlack(e.currentTarget.checked)}
+              label={`Also mark ${plural(threads.length, "Slack thread", "Slack threads")} as read`}
+            />
           )}
           {markAll.isError && (
             <Alert color="red">{String((markAll.error as Error)?.message || markAll.error)}</Alert>
@@ -91,7 +114,7 @@ export function MarkAllReadButton({ resources }: { resources: ResourceDTO[] }) {
             <Button
               color="blue"
               loading={markAll.isPending}
-              disabled={targets.length === 0}
+              disabled={targets.length === 0 && threads.length === 0}
               onClick={() => markAll.mutate()}
             >
               Mark read

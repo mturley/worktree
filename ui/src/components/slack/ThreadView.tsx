@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, Group, Paper, Skeleton, Stack, Text } from '@mantine/core'
+import { useQueryClient } from '@tanstack/react-query'
 import type { UseThreadResult } from '../../hooks/useThread'
 import { useNow } from '../../hooks/useNow'
 import { getConfig, markRead, markUnread, postReply, toggleReaction } from '../../api/slackApi'
@@ -113,6 +114,17 @@ export function ThreadView({ tab, thread, onOpenThread, onComposerEditorReady }:
     setIsAtBottom(true)
   }
 
+  const qc = useQueryClient()
+  // Every unread surface outside this view — resource cards, timeline dots,
+  // the worktree badge and favicon — reads the poller's cached thread state.
+  // The server re-polls the thread before answering a read-state write, so
+  // once one lands those only need to refetch to show it.
+  function refreshUnreadSurfaces() {
+    void qc.invalidateQueries({ queryKey: ['worktrees'] })
+    void qc.invalidateQueries({ queryKey: ['resources'] })
+    void qc.invalidateQueries({ queryKey: ['timeline'] })
+  }
+
   const meta = data ? deriveThreadMeta(data) : undefined
   const hasUnread = !!meta && meta.hasUnread
 
@@ -129,6 +141,7 @@ export function ThreadView({ tab, thread, onOpenThread, onComposerEditorReady }:
     setMarkError(undefined)
     try {
       await markRead(tab.channel, tab.threadTs, latest.TS)
+      refreshUnreadSurfaces()
     } catch (err) {
       setMarkError(err instanceof Error ? err.message : String(err))
       refresh()
@@ -147,6 +160,7 @@ export function ThreadView({ tab, thread, onOpenThread, onComposerEditorReady }:
     setMarkError(undefined)
     try {
       await markUnread(tab.channel, tab.threadTs, ts)
+      refreshUnreadSurfaces()
     } catch (err) {
       setMarkError(err instanceof Error ? err.message : String(err))
       refresh()
@@ -189,6 +203,8 @@ export function ThreadView({ tab, thread, onOpenThread, onComposerEditorReady }:
     try {
       const msg = await postReply(tab.channel, tab.threadTs, text)
       setPending((prev) => prev.filter((p) => p.localId !== localId))
+      // The server marks the thread read on send and re-polls it.
+      refreshUnreadSurfaces()
       // Append the new message immediately for a snappy feel; dedupe by TS
       // since the next SSE push will include it in the full message list.
       // The backend also marks the thread read on send.

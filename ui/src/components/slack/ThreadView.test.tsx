@@ -1,6 +1,7 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
 import { render, cleanup, fireEvent, waitFor, act } from '@testing-library/react'
 import { MantineProvider } from '@mantine/core'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { $createTextNode, $getRoot, type ElementNode, type LexicalEditor } from 'lexical'
 import { openInSlackUrl, ThreadView } from './ThreadView'
 import type { UseThreadResult } from '../../hooks/useThread'
@@ -42,7 +43,8 @@ if (typeof window.matchMedia !== 'function') {
   })) as unknown as typeof window.matchMedia
 }
 
-vi.mock('../../api/slackApi', () => ({
+vi.mock('../../api/slackApi', async (orig) => ({
+  ...(await orig<typeof import('../../api/slackApi')>()),
   postReply: vi.fn(),
   markRead: vi.fn(),
   markUnread: vi.fn(),
@@ -51,9 +53,11 @@ vi.mock('../../api/slackApi', () => ({
   emojiProxy: (url: string) => url,
 }))
 
-import { postReply } from '../../api/slackApi'
+import { markRead, markUnread, postReply } from '../../api/slackApi'
 
 const mockPostReply = vi.mocked(postReply)
+const mockMarkRead = vi.mocked(markRead)
+const mockMarkUnread = vi.mocked(markUnread)
 
 // RTL's queries default to document.body scope; without cleanup, renders
 // from earlier tests in this file would bleed into later ones.
@@ -62,8 +66,14 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-function renderWithProvider(ui: React.ReactElement) {
-  return render(<MantineProvider>{ui}</MantineProvider>)
+// The view refreshes the app's unread surfaces through react-query after a
+// read-state change, so it needs a client; tests that care pass their own.
+function renderWithProvider(ui: React.ReactElement, qc = new QueryClient()) {
+  return render(
+    <MantineProvider>
+      <QueryClientProvider client={qc}>{ui}</QueryClientProvider>
+    </MantineProvider>,
+  )
 }
 
 function baseTab(): Tab {
@@ -149,5 +159,56 @@ describe('openInSlackUrl', () => {
       'https://redhat.enterprise.slack.com/archives/C456/p1700000000000004?thread_ts=1700000000.000003&cid=C456',
     )
     expect(url).not.toContain('.slack.com.slack.com')
+  })
+})
+
+describe('ThreadView refreshes unread surfaces after a read-state change', () => {
+  const msg = (ts: string) =>
+    ({ TS: ts, UserID: 'U2', Text: `m ${ts}`, Blocks: null, Reactions: null, Edited: false, Files: null, Attachments: null })
+
+  function unreadThread(): UseThreadResult {
+    const t = baseThread()
+    t.data = { ...t.data!, messages: [msg('1700000000.000001'), msg('1700000001.000001')], unreadIndex: 1 }
+    return t
+  }
+
+  // The server re-polls the thread before answering, so by the time the
+  // write resolves the cached has_unread/last_read are fresh — the resource
+  // cards, timeline dots and worktree badge only need to refetch.
+  const surfaces = [['worktrees'], ['resources'], ['timeline']]
+
+  it('invalidates worktrees, resources and timelines once mark-read lands', async () => {
+    mockMarkRead.mockResolvedValue(undefined)
+    const qc = new QueryClient()
+    const spy = vi.spyOn(qc, 'invalidateQueries')
+    const { getByRole } = renderWithProvider(
+      <ThreadView tab={baseTab()} thread={unreadThread()} onOpenThread={vi.fn()} />, qc)
+    fireEvent.click(getByRole('button', { name: 'Mark read' }))
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(surfaces.length))
+    for (const key of surfaces) expect(spy).toHaveBeenCalledWith({ queryKey: key })
+  })
+
+  it('invalidates them once mark-unread lands', async () => {
+    mockMarkUnread.mockResolvedValue(undefined)
+    const qc = new QueryClient()
+    const spy = vi.spyOn(qc, 'invalidateQueries')
+    const t = baseThread()
+    t.data = { ...t.data!, messages: [msg('1700000000.000001'), msg('1700000001.000001')] }
+    const { getAllByLabelText } = renderWithProvider(
+      <ThreadView tab={baseTab()} thread={t} onOpenThread={vi.fn()} />, qc)
+    fireEvent.click(getAllByLabelText('Mark unread from here')[0])
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(surfaces.length))
+    for (const key of surfaces) expect(spy).toHaveBeenCalledWith({ queryKey: key })
+  })
+
+  it('does not invalidate when the write fails', async () => {
+    mockMarkRead.mockRejectedValue(new Error('nope'))
+    const qc = new QueryClient()
+    const spy = vi.spyOn(qc, 'invalidateQueries')
+    const { getByRole, findByText } = renderWithProvider(
+      <ThreadView tab={baseTab()} thread={unreadThread()} onOpenThread={vi.fn()} />, qc)
+    fireEvent.click(getByRole('button', { name: 'Mark read' }))
+    await findByText('nope')
+    expect(spy).not.toHaveBeenCalled()
   })
 })
