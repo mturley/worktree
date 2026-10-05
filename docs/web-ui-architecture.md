@@ -423,6 +423,41 @@ the rest of the card behaves exactly as it always has:
   suppression of our own. The test for it runs on fake timers for that reason:
   on real ones the listener outlives the test and eats the next test's click.
 
+**Dragging between groups** follows dnd-kit's multiple-containers pattern.
+Each group is its own `SortableContext`, and a sortable only opens a slot for
+cards that belong to its context — so the moment a dragged card is over the
+other group, `onDragOver` moves it into that group's list
+(`crossGroupPreview`), and the target group animates a slot open just as the
+source group does. The drop then only has a within-group move left to make.
+Three supporting pieces, each there for a reason:
+
+- `crossGroupPreview` places the card before or after the hovered card by
+  comparing their vertical centres, which is the only way to reach the
+  bottom of a group (`applyDrag`'s `placement`). Within a group, arrayMove
+  semantics still apply, matching what the sortable strategy previews.
+- `resourceCollisions` aims at cards, never at a non-empty group container:
+  a container spans its cards, so its centre sits among them and can win
+  `closestCenter`, leaving no card to land next to. An empty group under the
+  pointer wins outright, since it has no card to aim at.
+- For one frame after each cross-group move, collision reports the dragged
+  card itself ("stay put"). The move shifts the layout under the pointer,
+  and without the hold the collision can resolve straight back to the group
+  the card just left, bouncing it.
+
+The drag's starting list is kept, so Escape restores any trip into the other
+group, and a drop back where the card started saves nothing.
+
+**Auto-scroll is off** (`autoScroll={false}`). Left on, a short drag scrolled
+the page to its bottom and then ran away with the sticky list column: the
+dragged card's `transform` pushes it past the column's bottom, which inflates
+the column's scrollable area, so auto-scroll kept chasing it (measured:
+`scrollTop` 858 in a column whose real maximum was 137) before snapping back
+on drop. Programmatically scrolling a sticky overflow container under a
+transformed element is also what desynced WebKit's hit-testing from its
+painting — every button's clickable area drawn ~20px from where it was hit,
+until something forced a repaint. The lists fit on screen; the wheel still
+scrolls during a drag if one ever doesn't.
+
 Groups are `useDroppable` containers as well as lists, so a card can be
 dragged into an empty group; an empty group only renders, as a drop zone,
 while a drag is in progress. `ui/src/lib/resourceOrder.ts`'s `applyDrag` holds

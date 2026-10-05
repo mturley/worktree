@@ -1,21 +1,23 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { Alert, Button, Group, Stack, Text, Title } from "@mantine/core"
 import {
   DndContext,
   KeyboardSensor,
   MouseSensor,
   TouchSensor,
-  closestCenter,
   useDroppable,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
+  type DragOverEvent,
 } from "@dnd-kit/core"
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from "@dnd-kit/sortable"
 import type { ResourceDTO } from "../api/types"
 import { api } from "../api/client"
 import { parseResourceKey, resourceKeyEquals, serializeResourceKey, type ResourceKey } from "../lib/resourceKey"
-import { applyDrag, type DropTarget, type GroupId } from "../lib/resourceOrder"
+import { applyDrag, crossGroupPreview, type DropTarget, type GroupId } from "../lib/resourceOrder"
+import { resourceCollisions } from "../lib/resourceCollision"
 import { SortableResourceCard } from "./SortableResourceCard"
 import { AddResourceModal } from "./AddResourceModal"
 
@@ -25,6 +27,14 @@ interface ResourceListProps {
   onChanged: () => void
   selectedKey?: ResourceKey | null
   onSelectResource?: (key: ResourceKey) => void
+}
+
+/** Whether two lists hold the same cards, in the same groups and order. */
+function sameOrder(a: ResourceDTO[], b: ResourceDTO[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((r, i) => r.type === b[i].type && r.id === b[i].id && r.primary === b[i].primary)
+  )
 }
 
 /**
@@ -87,6 +97,15 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
   const [pending, setPending] = useState<ResourceDTO[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const saving = useRef(0)
+  // What was on screen when the drag began: the order to compare the drop
+  // against, and what to restore if the drag is cancelled or the save fails.
+  const dragStart = useRef<{ list: ResourceDTO[]; pending: ResourceDTO[] | null } | null>(null)
+  // The list as of the latest drag event. Drag events can arrive faster than
+  // React re-renders, so each one must see the previous one's move rather
+  // than the last render's `shown`.
+  const live = useRef<ResourceDTO[]>(items)
+  // Set for one frame after a card moves into the other group; see collisions.
+  const justMoved = useRef(false)
 
   // Fresh server data supersedes the optimistic list, except while a drag or
   // a save is in flight — clearing it then is exactly the yank it prevents.
@@ -112,8 +131,29 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
   const focus = shown.filter((r) => r.primary)
   const related = shown.filter((r) => !r.primary)
 
-  const persist = async (next: ResourceDTO[]) => {
-    const previous = shown
+  useLayoutEffect(() => {
+    live.current = shown
+  })
+  // Moving a card into the other group shifts the layout under the pointer,
+  // and for a frame the collision can resolve back to the group it just
+  // left — bouncing the card between groups. Hold still until the move has
+  // painted.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      justMoved.current = false
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [pending])
+
+  const baseCollisions = resourceCollisions((group) =>
+    live.current.every((r) => r.primary !== (group === "focus")),
+  )
+  const collisions: CollisionDetection = (args) =>
+    // Aiming at the dragged card itself reads as "stay put", which is exactly
+    // what the hold needs.
+    justMoved.current ? [{ id: args.active.id }] : baseCollisions(args)
+
+  const persist = async (next: ResourceDTO[], previous: ResourceDTO[]) => {
     setPending(next)
     setError(null)
     try {
@@ -142,17 +182,54 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
   // dnd-kit's pointer sensors already swallow that click (a capture-phase
   // listener on document, armed once a drag activates). A press too short to
   // activate a drag never arms it.
-  const startDrag = () => setDragging(true)
-  const finishDrag = () => setDragging(false)
+  const startDrag = () => {
+    dragStart.current = { list: shown, pending }
+    live.current = shown
+    setDragging(true)
+  }
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    finishDrag()
-    const over = event.over ? toDropTarget(String(event.over.id)) : null
-    const active = parseResourceKey(String(event.active.id))
-    if (!over || !active) return
-    const next = applyDrag(shown, active, over)
-    if (next === shown) return
-    void persist(next)
+  const handleDragOver = ({ active, over }: DragOverEvent) => {
+    const activeKey = parseResourceKey(String(active.id))
+    const target = over ? toDropTarget(String(over.id)) : null
+    const dragged = active.rect.current.translated
+    if (!activeKey || !target || !over || !dragged) return
+    const next = crossGroupPreview(
+      live.current,
+      activeKey,
+      target,
+      dragged.top + dragged.height / 2,
+      over.rect.top + over.rect.height / 2,
+    )
+    if (!next) return
+    justMoved.current = true
+    live.current = next
+    setPending(next)
+  }
+
+  const handleDragEnd = ({ active, over }: DragEndEvent) => {
+    setDragging(false)
+    const start = dragStart.current
+    dragStart.current = null
+    if (!start) return
+    // By now a card that crossed groups is already in its new group, so all
+    // that is left is a move within it.
+    const activeKey = parseResourceKey(String(active.id))
+    const target = over ? toDropTarget(String(over.id)) : null
+    const next = activeKey && target ? applyDrag(live.current, activeKey, target) : live.current
+    if (sameOrder(next, start.list)) {
+      // Back where it started, perhaps via the other group: nothing to save.
+      setPending(start.pending)
+      return
+    }
+    void persist(next, start.list)
+  }
+
+  const handleDragCancel = () => {
+    setDragging(false)
+    const start = dragStart.current
+    dragStart.current = null
+    // Undo any trip into the other group the cancelled drag made.
+    if (start) setPending(start.pending)
   }
 
   const cards = (group: ResourceDTO[]) =>
@@ -218,10 +295,21 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
       ) : (
         <DndContext
           sensors={sensors}
-          collisionDetection={closestCenter}
+          collisionDetection={collisions}
+          // No auto-scroll. Left on, it scrolled the page to its bottom mid-
+          // drag and then ran away with the sticky list column: the dragged
+          // card's transform pushes past the column's bottom, inflating its
+          // scrollable area, so the column kept chasing it (scrollTop 858 in a
+          // column whose real maximum was 137) before snapping back on drop.
+          // Scrolling a sticky overflow container under a transformed element
+          // is also what knocked WebKit's hit-testing ~20px out of step with
+          // what it painted, until something forced a repaint. The lists are
+          // short enough to fit; the wheel still scrolls during a drag.
+          autoScroll={false}
           onDragStart={startDrag}
+          onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
-          onDragCancel={finishDrag}
+          onDragCancel={handleDragCancel}
         >
           {groups}
         </DndContext>
