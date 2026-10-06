@@ -812,8 +812,8 @@ the caller's tab first). Links are refused: they are never polled.
 permission on the enabling click, and while on it says so when THIS browser
 blocks or hasn't allowed notifications (with an Allow button) — a toggle set
 from another device does nothing here until allowed. The worktree page header
-has "Notify on all" beside "Unreads only"; the detail card has "Notify on new
-events", disabled with an explanation while "Notify on all" is on.
+has "Notify on all" beside "Show unreads only"; the detail card has "Notify on new
+events" ("Notify on new messages" for a Slack thread), disabled with an explanation while "Notify on all" is on.
 `NotifyBell` marks list cards: filled = explicit, outlined/dimmed with a stack
 badge = inherited from "Notify on all". The home page shows one inherited bell
 on the worktree card when "Notify on all" is on, else an explicit bell at the

@@ -728,6 +728,11 @@ describe("notification switch on the detail card", () => {
     expect(input.checked).toBe(true)
     expect(input.disabled).toBe(true)
   })
+  it("says messages, not events, for a Slack thread", () => {
+    wrapQ(<ResourceCard r={{ ...pr, type: "slack", id: "C1:1.2" }} path="/w" variant="detail" notify={{ all: false, mode: "cmux" }} />)
+    expect(screen.getByLabelText("Notify on new messages")).toBeTruthy()
+    expect(screen.queryByLabelText("Notify on new events")).toBeNull()
+  })
   it("is never shown for a link", () => {
     wrapQ(<ResourceCard r={{ ...pr, type: "link", id: "https://x" }} path="/w" variant="detail" notify={{ all: false, mode: "cmux" }} />)
     expect(screen.queryByLabelText("Notify on new events")).toBeNull()
