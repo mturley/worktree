@@ -71,9 +71,9 @@ describe("MarkAllReadButton", () => {
     wrap(everything())
     await open(user)
     for (const name of [
-      "Mark 3 GitHub events as read across 2 PRs",
-      "Mark 4 Jira events as read across 2 issues",
-      "Mark 12 Slack messages as read across 2 threads",
+      "Mark 3 GitHub events in 2 PRs as read",
+      "Mark 4 Jira events in 2 issues as read",
+      "Mark 12 Slack messages in 2 threads as read",
     ]) {
       expect(screen.getByRole("checkbox", { name })).toBeChecked()
     }
@@ -84,7 +84,7 @@ describe("MarkAllReadButton", () => {
     wrap([pr("o/r#1", 0), jira("J-1", 3, "2099-01-05T00:00:00Z"), slack("C1:1.2", 0)])
     await open(user)
     expect(screen.getAllByRole("checkbox")).toHaveLength(1)
-    expect(screen.getByRole("checkbox", { name: "Mark 3 Jira events as read across 1 issue" })).toBeInTheDocument()
+    expect(screen.getByRole("checkbox", { name: "Mark 3 Jira events in 1 issue as read" })).toBeInTheDocument()
   })
 
   it("uses singular forms", async () => {
@@ -92,9 +92,9 @@ describe("MarkAllReadButton", () => {
     wrap([pr("o/r#1", 1, "2099-01-02T00:00:00Z"), jira("J-1", 1, "2099-01-05T00:00:00Z"), slack("C1:1.2", 1)])
     await open(user)
     for (const name of [
-      "Mark 1 GitHub event as read across 1 PR",
-      "Mark 1 Jira event as read across 1 issue",
-      "Mark 1 Slack message as read across 1 thread",
+      "Mark 1 GitHub event in 1 PR as read",
+      "Mark 1 Jira event in 1 issue as read",
+      "Mark 1 Slack message in 1 thread as read",
     ]) {
       expect(screen.getByRole("checkbox", { name })).toBeInTheDocument()
     }
@@ -166,7 +166,7 @@ describe("MarkAllReadButton", () => {
     wrap([jira("J-1", 2, "2099-01-05T00:00:00Z"), jira("J-2", 9), unpolled])
     await open(user)
     expect(screen.getAllByRole("checkbox")).toHaveLength(1)
-    expect(screen.getByRole("checkbox", { name: "Mark 2 Jira events as read across 1 issue" })).toBeInTheDocument()
+    expect(screen.getByRole("checkbox", { name: "Mark 2 Jira events in 1 issue as read" })).toBeInTheDocument()
   })
 
   it("keeps the modal open and shows the error when a write fails", async () => {
