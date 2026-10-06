@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/notifyprefs"
@@ -17,32 +18,52 @@ import (
 // drops, plus CI's "pending" churn, which says nothing worth interrupting for.
 var notifySkipTypes = []string{"watch_started", "watcher_error", "ci_pending", "ci_workflows_pending"}
 
-// notifyCursor is how far the notifier has read. watcher_events.ts has
-// one-second resolution, so a ts alone would miss an event written later in
-// the same second it last read; seen holds the IDs already handled AT ts.
+// notifyLookback is how far behind the cursor each pass re-reads. The
+// watcher stamps ts from the wall clock BEFORE its write commits, and a write
+// can wait on the SQLite lock while a later-stamped one commits first; such a
+// late row lands behind the cursor and would be missed by a strict
+// "ts >= cursor" read.
+const notifyLookback = 30 * time.Second
+
+// notifyCursor is how far the notifier has read: the newest ts seen, plus
+// every (id, ts) row read within the lookback window, so re-reading the
+// window never notifies twice. Keyed by ts as well as id because the
+// watcher reuses a CI bundle's ID and restamps its ts when it changes.
 type notifyCursor struct {
 	ts   string
 	seen map[string]bool
 }
 
-// initNotifyCursor starts at the newest event, so a restart never replays a
-// backlog as a burst of notifications.
+func seenKey(id, ts string) string { return id + "\x00" + ts }
+
+// lookbackFrom is the oldest ts a pass re-reads for a cursor at ts.
+func lookbackFrom(ts string) string {
+	t, err := time.Parse(time.RFC3339, ts)
+	if err != nil {
+		return ts // "" (empty DB) reads everything
+	}
+	return t.Add(-notifyLookback).UTC().Format(time.RFC3339)
+}
+
+// initNotifyCursor starts at the newest event, with the lookback window
+// already marked seen, so a restart never replays a backlog as a burst of
+// notifications.
 func initNotifyCursor(conn *sql.DB) (notifyCursor, error) {
 	c := notifyCursor{seen: map[string]bool{}}
 	if err := conn.QueryRow(`SELECT COALESCE(MAX(ts),'') FROM watcher_events`).Scan(&c.ts); err != nil {
 		return c, err
 	}
-	rows, err := conn.Query(`SELECT id FROM watcher_events WHERE ts = ?`, c.ts)
+	rows, err := conn.Query(`SELECT id, ts FROM watcher_events WHERE ts >= ?`, lookbackFrom(c.ts))
 	if err != nil {
 		return c, err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var id, ts string
+		if err := rows.Scan(&id, &ts); err != nil {
 			return c, err
 		}
-		c.seen[id] = true
+		c.seen[seenKey(id, ts)] = true
 	}
 	return c, rows.Err()
 }
@@ -50,15 +71,15 @@ func initNotifyCursor(conn *sql.DB) (notifyCursor, error) {
 // newEvent is one (event, resource) pair past the cursor.
 type newEvent struct{ id, ts, title, resType, resID string }
 
-// readNewEvents returns the notify-worthy events past c, oldest first, and
-// the advanced cursor. The cursor advances whatever the caller then does with
-// the events: delivery is fire-and-forget, never retried.
+// readNewEvents returns the notify-worthy events not yet seen, oldest first,
+// and the advanced cursor. The cursor advances whatever the caller then does
+// with the events: delivery is fire-and-forget, never retried.
 func readNewEvents(conn *sql.DB, c notifyCursor) ([]newEvent, notifyCursor, error) {
 	q := `SELECT e.id, e.ts, e.title, er.resource_type, er.resource_id
 	      FROM watcher_events e JOIN watcher_event_resources er ON er.event_id = e.id
 	      WHERE e.ts >= ? AND e.type NOT IN (?` + strings.Repeat(",?", len(notifySkipTypes)-1) + `)
 	      ORDER BY e.ts, e.id`
-	args := []any{c.ts}
+	args := []any{lookbackFrom(c.ts)}
 	for _, t := range notifySkipTypes {
 		args = append(args, t)
 	}
@@ -67,10 +88,9 @@ func readNewEvents(conn *sql.DB, c notifyCursor) ([]newEvent, notifyCursor, erro
 		return nil, c, err
 	}
 	defer rows.Close()
+	// Every row this pass reads is in next.seen, and the next pass's window
+	// starts no earlier than this one's, so nothing older needs carrying.
 	next := notifyCursor{ts: c.ts, seen: map[string]bool{}}
-	for id := range c.seen {
-		next.seen[id] = true
-	}
 	var out []newEvent
 	for rows.Next() {
 		var e newEvent
@@ -78,12 +98,13 @@ func readNewEvents(conn *sql.DB, c notifyCursor) ([]newEvent, notifyCursor, erro
 			return nil, c, err
 		}
 		if e.ts > next.ts {
-			next.ts, next.seen = e.ts, map[string]bool{}
+			next.ts = e.ts
 		}
-		if e.ts == c.ts && c.seen[e.id] {
+		k := seenKey(e.id, e.ts)
+		next.seen[k] = true
+		if c.seen[k] {
 			continue
 		}
-		next.seen[e.id] = true
 		out = append(out, e)
 	}
 	return out, next, rows.Err()

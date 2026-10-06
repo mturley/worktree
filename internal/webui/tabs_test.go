@@ -121,3 +121,21 @@ func withJSON(r *http.Request) *http.Request {
 	r.Header.Set("Content-Type", "application/json")
 	return r
 }
+
+func TestDeliverWaitsForABusyStreamInsteadOfDropping(t *testing.T) {
+	r := newTabRegistry()
+	r.ackTimeout = 2 * time.Second
+	send, _ := r.register("a", "s1", "/", true)
+	const n = 8 // more than the send buffer holds
+	results := make(chan bool, n)
+	for i := 0; i < n; i++ {
+		go func() { results <- r.deliverToSession(batchFor(t.TempDir()), "s1", "") }()
+	}
+	time.Sleep(50 * time.Millisecond) // the stream is busy writing
+	answer(r, "a", "s1", send, true)
+	for i := 0; i < n; i++ {
+		if !<-results {
+			t.Fatalf("delivery %d was dropped while the stream was briefly busy", i)
+		}
+	}
+}

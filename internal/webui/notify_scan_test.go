@@ -154,3 +154,38 @@ func TestNotifyResourceLabel(t *testing.T) {
 		}
 	}
 }
+
+func TestCursorCatchesEventCommittedLateIntoAnEarlierSecond(t *testing.T) {
+	conn := unreadTestDB(t)
+	c, _ := initNotifyCursor(conn)
+	insertTypedEvent(t, conn, "b", "2026-01-01T00:00:06Z", "pr_comment", "x", "pr", "o/r#1")
+	evs, c, _ := readNewEvents(conn, c)
+	if got := newEventIDs(evs); len(got) != 1 || got[0] != "b" {
+		t.Fatalf("first pass = %v", got)
+	}
+	// A writer that stamped ts before waiting on the SQLite lock commits
+	// after the cursor has already moved past its second.
+	insertTypedEvent(t, conn, "a", "2026-01-01T00:00:05Z", "pr_comment", "x", "pr", "o/r#1")
+	evs, c, _ = readNewEvents(conn, c)
+	if got := newEventIDs(evs); len(got) != 1 || got[0] != "a" {
+		t.Fatalf("second pass = %v, want the late event a", got)
+	}
+	if evs, _, _ = readNewEvents(conn, c); len(evs) != 0 {
+		t.Fatalf("third pass re-read %v", newEventIDs(evs))
+	}
+}
+
+func TestCursorRereadsAReusedIDWithANewTS(t *testing.T) {
+	conn := unreadTestDB(t)
+	c, _ := initNotifyCursor(conn)
+	insertTypedEvent(t, conn, "ci1", "2026-01-01T00:00:05Z", "ci_failed", "x", "pr", "o/r#1")
+	_, c, _ = readNewEvents(conn, c)
+	// The watcher reuses a CI bundle's ID and restamps its ts on update.
+	if _, err := conn.Exec(`UPDATE watcher_events SET ts = '2026-01-01T00:00:08Z', type = 'ci_passed' WHERE id = 'ci1'`); err != nil {
+		t.Fatal(err)
+	}
+	evs, _, _ := readNewEvents(conn, c)
+	if got := newEventIDs(evs); len(got) != 1 || got[0] != "ci1" {
+		t.Fatalf("got %v, want the updated bundle again", got)
+	}
+}

@@ -206,9 +206,13 @@ func (r *tabRegistry) deliverToSession(b notifyBatch, session, prefer string) bo
 		r.mu.Lock()
 		r.acks[msg.ID] = ch
 		r.mu.Unlock()
+		// Several batches can land in one pass, each in its own goroutine,
+		// and the stream writes them one at a time; wait for room rather
+		// than treating a briefly busy stream as a decline. A stream that
+		// stays full for a whole ack timeout is as good as frozen.
 		select {
 		case e.send <- msg:
-		default: // stream backed up: treat as a decline
+		case <-time.After(r.ackTimeout):
 			r.mu.Lock()
 			delete(r.acks, msg.ID)
 			r.mu.Unlock()

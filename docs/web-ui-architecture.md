@@ -761,11 +761,16 @@ shows `notify || notify_all`).
 
 **Notifier — `notifier.go`, `notify_scan.go`.** `StartNotifier` (started by
 `worktree ui`, 5s) keeps its own cursor over `watcher_events`; it does not
-hook the pollers, which write straight to the DB. The cursor is `(ts, seen
-IDs at ts)`: `ts` has one-second resolution, so a bare `ts > cursor` would
-miss an event written later in the second it last read. It starts at
-`MAX(ts)`, so a restart never replays a backlog, and it advances whatever
-delivery does — nothing is retried. `watch_started`, `watcher_error`,
+hook the pollers, which write straight to the DB. The cursor is the newest
+`ts` plus the `(id, ts)` rows already read, and every pass re-reads a 30s
+lookback window behind it: `ts` has one-second resolution, and the watcher
+stamps it from the wall clock before its write commits, so a write that waited
+on the SQLite lock can land behind a cursor that already moved on. Keyed by
+`(id, ts)` because the watcher reuses a CI bundle's ID and restamps its `ts`.
+It starts at `MAX(ts)` with the window pre-marked seen, so a restart never
+replays a backlog, and it advances whatever delivery does — nothing is
+retried. A busy tab stream is waited on (up to the ack timeout) rather than
+treated as a decline, since one pass can produce several batches at once. `watch_started`, `watcher_error`,
 `ci_pending` and `ci_workflows_pending` never notify. Matching goes through
 `resources.Load`, so only resources the worktree actively tracks count. One
 batch per (worktree, resource): title = the resource's key + custom name or
