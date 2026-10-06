@@ -34,7 +34,7 @@ type resourceDTO struct {
 	Assignee              string   `json:"assignee,omitempty"`                 // Jira
 	Labels                []string `json:"labels,omitempty"`                   // Jira
 	UpdatedAt             string   `json:"updated_at,omitempty"`               // resource_updated_at (RFC3339)
-	UnreadCount           int      `json:"unread_count,omitempty"`             // non-slack: events newer than the read cursor
+	UnreadCount           int      `json:"unread_count,omitempty"`             // events newer than the read cursor; see unreadIndex.fill
 	// non-slack: ts of the newest of the UnreadCount events, from the same
 	// snapshot. Mark-all-read sends it as through_ts — see unread.Summary.
 	UnreadThroughTS string `json:"unread_through_ts,omitempty"`
@@ -62,8 +62,7 @@ func (s *Server) handleWorktreeResources(w http.ResponseWriter, r *http.Request)
 	out := make([]resourceDTO, 0, len(rs))
 	for _, res := range rs {
 		dto := s.newResourceDTO(res)
-		dto.UnreadCount = ix.Count(dto.Type, dto.ID)
-		dto.UnreadThroughTS = ix.ThroughTS(dto.Type, dto.ID)
+		ix.fill(&dto)
 		out = append(out, dto)
 	}
 	writeJSON(w, http.StatusOK, out)

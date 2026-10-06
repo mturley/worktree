@@ -493,10 +493,11 @@ func TestWorktreeSummaryUnreadCountSumsAllResources(t *testing.T) {
 	t.Fatalf("worktree %s absent from the summary", wt)
 }
 
-// TestWorktreeSummaryUnreadCountZeroForSlackOnly is the case the badge's copy
-// exists for: a Slack thread is unread without a countable tally behind it,
-// so the flag says yes while the number says nothing.
-func TestWorktreeSummaryUnreadCountZeroForSlackOnly(t *testing.T) {
+// TestWorktreeSummaryCountsASlackOnlyUnread: a Slack-only unread used to
+// leave the count at 0 with has_unread set, because Slack threads had no
+// tally. They do now, and an unread thread counts at least 1 even with no
+// recorded replies behind its cursor — so the badge always has a number.
+func TestWorktreeSummaryCountsASlackOnlyUnread(t *testing.T) {
 	conn := unreadTestDB(t)
 	wt := testgit.Worktree(t)
 	if err := registerWorktreeForTest(t, conn, wt); err != nil {
@@ -527,10 +528,99 @@ func TestWorktreeSummaryUnreadCountZeroForSlackOnly(t *testing.T) {
 		if !w.HasUnread {
 			t.Fatal("an unread Slack thread must set has_unread")
 		}
-		if w.UnreadCount != 0 {
-			t.Fatalf("unread_count = %d, want 0 — Slack has no countable tally", w.UnreadCount)
+		if w.UnreadCount != 1 {
+			t.Fatalf("unread_count = %d, want 1 — an unread thread with no recorded replies still counts", w.UnreadCount)
 		}
 		return
 	}
 	t.Fatalf("worktree %s absent from the summary", wt)
+}
+
+func insertSlackStateUnread(t *testing.T, conn *sql.DB, resID, lastRead string, hasUnread bool) {
+	t.Helper()
+	hu := "false"
+	if hasUnread {
+		hu = "true"
+	}
+	state := `{"title":"t","has_unread":` + hu + `,"last_read":"` + lastRead + `"}`
+	if _, err := conn.Exec(
+		`INSERT INTO watcher_resource_state
+			(resource_type, resource_id, state_json, resource_updated_at, watcher_updated_at)
+		 VALUES ('slack', ?, ?, '', '2099-01-01T00:00:00Z')`,
+		resID, state); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func getResources(t *testing.T, base, path string) map[string]resourceDTO {
+	t.Helper()
+	resp, err := http.Get(base + "/api/worktree-resources?path=" + url.QueryEscape(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var got []resourceDTO
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]resourceDTO{}
+	for _, r := range got {
+		out[r.ID] = r
+	}
+	return out
+}
+
+// Slack threads carry unread_count like every other resource: the replies
+// newer than Slack's cursor, as the timelines mark them.
+//
+// It is tied to has_unread so the count and the dot can never disagree:
+// a thread Slack calls read counts 0 whatever events say, and a thread Slack
+// calls unread counts at least 1 even when none of its unread messages were
+// recorded as events (an unread root, say) — a dot with no number would read
+// as a bug.
+func TestSlackThreadsCarryUnreadCountTiedToHasUnread(t *testing.T) {
+	conn := unreadTestDB(t)
+	wt := testgit.Worktree(t)
+	if err := registerWorktreeForTest(t, conn, wt); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"C1:1.0", "C2:1.0", "C3:1.0"} {
+		if err := resources.Add(conn, wt, resources.Resource{Type: "slack", ID: id, URL: "u"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// C1: unread, two recorded replies after the cursor.
+	insertSlackStateUnread(t, conn, "C1:1.0", "2000.000000", true)
+	insertSlackEvent(t, conn, "a", "2099-01-02T00:00:00Z", "3000.000000", "C1:1.0")
+	insertSlackEvent(t, conn, "b", "2099-01-03T00:00:00Z", "4000.000000", "C1:1.0")
+	// C2: unread, but nothing recorded after the cursor.
+	insertSlackStateUnread(t, conn, "C2:1.0", "2000.000000", true)
+	insertSlackEvent(t, conn, "c", "2099-01-02T00:00:00Z", "1500.000000", "C2:1.0")
+	// C3: Slack says read, though an event sits after a stale cursor.
+	insertSlackStateUnread(t, conn, "C3:1.0", "2000.000000", false)
+	insertSlackEvent(t, conn, "d", "2099-01-02T00:00:00Z", "3000.000000", "C3:1.0")
+
+	ts := httptest.NewServer((&Server{DB: conn}).Handler())
+	defer ts.Close()
+
+	got := getResources(t, ts.URL, wt)
+	for id, want := range map[string]int{"C1:1.0": 2, "C2:1.0": 1, "C3:1.0": 0} {
+		if n := got[id].UnreadCount; n != want {
+			t.Errorf("%s unread_count = %d, want %d", id, n, want)
+		}
+	}
+
+	// The worktree total sums them like any other resource's.
+	resp, err := http.Get(ts.URL + "/api/worktrees")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var wts []worktreeSummary
+	if err := json.NewDecoder(resp.Body).Decode(&wts); err != nil {
+		t.Fatal(err)
+	}
+	if len(wts) != 1 || wts[0].UnreadCount != 3 || !wts[0].HasUnread {
+		t.Fatalf("worktree = %+v, want unread_count 3 with has_unread", wts)
+	}
 }

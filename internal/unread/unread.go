@@ -214,3 +214,54 @@ func SlackCursors(conn *sql.DB) (map[string]string, error) {
 	}
 	return out, rows.Err()
 }
+
+// SlackNewerSQL is the SQL form of "this Slack event is newer than Slack's
+// read cursor", over an event aliased `e` and its thread's cached state row
+// aliased `rs`. It mirrors the webui's slackTSGreater: Slack ts values are
+// compared NUMERICALLY (they grow digits, so a string compare goes wrong),
+// and the GLOBs stand in for ParseFloat's failure case — an unparseable or
+// missing ts on either side reads as read, where CAST would quietly turn it
+// into 0.
+//
+// Shared by SlackCounts and the global timeline's unread-only filter, so the
+// count on a thread and the events that filter shows cannot drift apart.
+const SlackNewerSQL = `e.external_ts GLOB '[0-9]*'
+	AND json_extract(rs.state_json, '$.last_read') GLOB '[0-9]*'
+	AND CAST(e.external_ts AS REAL) > CAST(json_extract(rs.state_json, '$.last_read') AS REAL)`
+
+// SlackCounts returns the unread event count per Slack thread, keyed by Key:
+// its events newer than Slack's cached last_read (see SlackCursors), with
+// the same bookkeeping types left out as Counts. Threads with none, or with
+// no cached cursor, are absent.
+//
+// This is a count of the REPLIES THE POLLER RECORDED, which is what the
+// timelines can mark unread — not Slack's own tally. A thread Slack calls
+// unread can therefore count zero here (its unread message was never
+// recorded as an event, e.g. the root). Callers that pair this with
+// has_unread must decide what that case shows; see unreadIndex.fill.
+func SlackCounts(conn *sql.DB) (map[string]int, error) {
+	rows, err := conn.Query(`
+		SELECT er.resource_id, COUNT(*)
+		  FROM watcher_event_resources er
+		  JOIN watcher_events e ON e.id = er.event_id
+		  JOIN watcher_resource_state rs
+		    ON rs.resource_type = 'slack' AND rs.resource_id = er.resource_id
+		 WHERE er.resource_type = 'slack'
+		   AND e.type NOT IN ('watch_started','watcher_error')
+		   AND ` + SlackNewerSQL + `
+		 GROUP BY er.resource_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var rid string
+		var n int
+		if err := rows.Scan(&rid, &n); err != nil {
+			return nil, err
+		}
+		out[Key("slack", rid)] = n
+	}
+	return out, rows.Err()
+}

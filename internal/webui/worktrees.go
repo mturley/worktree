@@ -38,10 +38,9 @@ type worktreeSummary struct {
 	// FocusResources: related resources are counted but never listed, so a
 	// client folding over that list alone would miss their unreads.
 	HasUnread bool `json:"has_unread"`
-	// UnreadCount totals the unread EVENTS across those same resources. It
-	// can be 0 while HasUnread is true: a Slack thread's unread state is a
-	// cursor mirrored from Slack, not a tally of the messages behind it, so
-	// it can only answer yes/no. Consumers must read the two together.
+	// UnreadCount totals unread_count across those same resources — Slack
+	// threads included, each counting at least 1 while unread (see
+	// unreadIndex.fill), so it is non-zero whenever HasUnread is.
 	UnreadCount int `json:"unread_count"`
 }
 
@@ -76,7 +75,7 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 				primary++
 				primaryByType[res.Type]++
 				dto := s.newResourceDTO(res)
-				dto.UnreadCount = ix.Count(dto.Type, dto.ID)
+				ix.fill(&dto)
 				focus = append(focus, dto)
 				hasUnread = hasUnread || resourceHasUnread(dto)
 				unreadCount += dto.UnreadCount
@@ -88,7 +87,7 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 				// Unlike HasUnread, the COUNT cannot short-circuit — every
 				// related resource has to be asked, or the badge undercounts.
 				dto := s.newResourceDTO(res)
-				dto.UnreadCount = ix.Count(dto.Type, dto.ID)
+				ix.fill(&dto)
 				hasUnread = hasUnread || resourceHasUnread(dto)
 				unreadCount += dto.UnreadCount
 			}
