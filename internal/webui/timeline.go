@@ -11,6 +11,7 @@ import (
 	watcherdb "github.com/mturley/watcher/db"
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/registry"
+	"github.com/mturley/worktree/internal/unread"
 )
 
 type TimelineEvent struct {
@@ -92,11 +93,9 @@ func parseResourceTypes(r *http.Request) []string {
 //
 // The two clocks are kept apart exactly as IsUnread keeps them:
 //   - non-Slack: e.ts against worktree's own cursor row; no row means read.
-//   - Slack: e.external_ts against the poller-cached last_read, compared
-//     NUMERICALLY like slackTSGreater (Slack ts values grow digits, so a
-//     string compare would go wrong). The GLOBs stand in for ParseFloat's
-//     failure case: an unparseable ts on either side reads as read, where
-//     CAST would quietly turn it into 0.
+//   - Slack: e.external_ts against the poller-cached last_read, via
+//     unread.SlackNewerSQL — shared with unread.SlackCounts, so a thread's
+//     count and this filter cannot disagree.
 const unreadOnlyClause = `AND (
     (er.resource_type <> 'slack' AND EXISTS (
         SELECT 1 FROM resource_read_cursor c
@@ -105,9 +104,7 @@ const unreadOnlyClause = `AND (
  OR (er.resource_type = 'slack' AND EXISTS (
         SELECT 1 FROM watcher_resource_state rs
          WHERE rs.resource_type = 'slack' AND rs.resource_id = er.resource_id
-           AND e.external_ts GLOB '[0-9]*'
-           AND json_extract(rs.state_json, '$.last_read') GLOB '[0-9]*'
-           AND CAST(e.external_ts AS REAL) > CAST(json_extract(rs.state_json, '$.last_read') AS REAL)))
+           AND ` + unread.SlackNewerSQL + `))
 ) `
 
 // handleGlobalTimeline: GET /api/timeline?archived=&limit=&before=&resource_types=&unread_only=
@@ -439,7 +436,7 @@ func (e *eventEnricher) resource(rtype, rid string) *resourceDTO {
 		dto.CustomDescription = meta.CustomDescription
 	}
 	e.s.enrichResourceDTO(dto)
-	dto.UnreadCount = e.unread.Count(rtype, rid)
+	e.unread.fill(dto)
 	e.resources[key] = dto
 	return dto
 }

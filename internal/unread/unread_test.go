@@ -275,3 +275,54 @@ func TestSummariesReportNewestUnreadTS(t *testing.T) {
 		t.Fatalf("Counts disagrees with Summaries: %v", counts)
 	}
 }
+
+// addSlackEvent inserts one Slack reply event carrying its Slack ts.
+func addSlackEvent(t *testing.T, conn *sql.DB, id, ts, externalTS, evType, threadID string) {
+	t.Helper()
+	if _, err := conn.Exec(
+		`INSERT INTO watcher_events (id, ts, external_ts, source, type, title) VALUES (?, ?, ?, 'slack', ?, 'x')`,
+		id, ts, externalTS, evType); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(
+		`INSERT INTO watcher_event_resources (event_id, resource_type, resource_id) VALUES (?, 'slack', ?)`,
+		id, threadID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// SlackCounts counts the same events the timelines mark unread for a thread:
+// external_ts newer than Slack's cached last_read, compared as numbers, with
+// the bookkeeping types left out. Threads with nothing unread, or no cursor,
+// are absent.
+func TestSlackCountsCountRepliesNewerThanSlacksCursor(t *testing.T) {
+	conn := openDB(t)
+	state := func(id, lastRead string) {
+		t.Helper()
+		if _, err := conn.Exec(
+			`INSERT INTO watcher_resource_state
+				(resource_type, resource_id, state_json, resource_updated_at, watcher_updated_at)
+			 VALUES ('slack', ?, ?, '', '2026-01-01T00:00:00Z')`,
+			id, `{"last_read":"`+lastRead+`"}`); err != nil {
+			t.Fatal(err)
+		}
+	}
+	state("C1:1.1", "2000.000000")
+	addSlackEvent(t, conn, "a", "2026-01-01T00:00:00Z", "1500.000000", "slack_reply", "C1:1.1") // read
+	addSlackEvent(t, conn, "b", "2026-01-02T00:00:00Z", "2000.000000", "slack_reply", "C1:1.1") // AT the cursor: read
+	addSlackEvent(t, conn, "c", "2026-01-03T00:00:00Z", "3000.000000", "slack_reply", "C1:1.1") // unread
+	addSlackEvent(t, conn, "d", "2026-01-04T00:00:00Z", "10000.000000", "slack_reply", "C1:1.1") // unread; more digits
+	addSlackEvent(t, conn, "e", "2026-01-05T00:00:00Z", "", "slack_reply", "C1:1.1")             // no Slack ts: read
+	addSlackEvent(t, conn, "f", "2026-01-06T00:00:00Z", "9000.000000", "watcher_error", "C1:1.1") // bookkeeping
+
+	// A thread with replies but no cached cursor has nothing to compare.
+	addSlackEvent(t, conn, "g", "2026-01-07T00:00:00Z", "3000.000000", "slack_reply", "C2:2.2")
+
+	got, err := unread.SlackCounts(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[unread.Key("slack", "C1:1.1")] != 2 {
+		t.Fatalf("SlackCounts = %v, want only C1:1.1 with 2", got)
+	}
+}

@@ -3,10 +3,12 @@ import { Badge } from "@mantine/core"
 /**
  * The "N unreads" badge a card wears when something inside it is new.
  *
- * `count` and `unread` are separate on purpose. Slack threads have unread
- * state but no COUNT — worktree mirrors Slack's cursor, not a tally of
- * messages behind it — so a thread can be unread with nothing to number. The
- * badge says "unread" in that case rather than the lie "0 unreads".
+ * `count` and `unread` are separate on purpose: the yes/no and the number
+ * come from different fields, and an older cached response can carry one
+ * without the other. With no count the badge says "unread" rather than the
+ * lie "0 unreads". (Slack threads used to be that case permanently; they now
+ * carry a count of at least 1 while unread — see the server's
+ * unreadIndex.fill.)
  *
  * Filled rather than light, unlike the WORKTREE badge beside it on the
  * worktree card: this one is a notification, and a second pale-blue pill

@@ -3,7 +3,10 @@ import type { WorktreeSummary } from "../api/types"
 export interface UnreadBadge {
   /** Whether ANY worktree has activity the user has not seen. */
   unread: boolean
-  /** Unread events across every worktree. Can be 0 while `unread` is true. */
+  /**
+   * Unread events across every worktree. Normally non-zero while `unread` is
+   * true; 0 only for an older cached response that predates Slack counts.
+   */
   count: number
 }
 
@@ -41,9 +44,9 @@ export const BASE_TITLE = "worktree"
  * The document title for a badge state.
  *
  * The count leads when there is one, because it survives the window switcher
- * and the history menu, where the favicon is too small to read. A Slack thread
- * is unread without a countable tally behind it, so that case gets a dot —
- * "(0) worktree" would read as nothing to look at.
+ * and the history menu, where the favicon is too small to read. Unread with no
+ * count (an older cached response) gets a dot instead — "(0) worktree" would
+ * read as nothing to look at.
  */
 export function badgeTitle({ unread, count }: UnreadBadge): string {
   if (!unread) return BASE_TITLE

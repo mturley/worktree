@@ -23,8 +23,11 @@ import (
 // That is the same direction every other enrichment failure here degrades:
 // a missing dot is a smaller lie than a wrong one.
 type unreadIndex struct {
-	counts  map[string]unread.Summary
-	cursors map[string]string
+	counts map[string]unread.Summary
+	// Per-thread counts of replies newer than Slack's cursor; see fill for
+	// how they are reconciled with has_unread.
+	slackCounts map[string]int
+	cursors     map[string]string
 	// Slack's own cursors, from cached poller state — a separate map because
 	// they are compared against a different column (see unread.SlackCursors).
 	slack map[string]string
@@ -32,9 +35,10 @@ type unreadIndex struct {
 
 func (s *Server) newUnreadIndex() *unreadIndex {
 	ix := &unreadIndex{
-		counts:  map[string]unread.Summary{},
-		cursors: map[string]string{},
-		slack:   map[string]string{},
+		counts:      map[string]unread.Summary{},
+		slackCounts: map[string]int{},
+		cursors:     map[string]string{},
+		slack:       map[string]string{},
 	}
 	if c, err := unread.Summaries(s.DB); err == nil {
 		ix.counts = c
@@ -46,6 +50,11 @@ func (s *Server) newUnreadIndex() *unreadIndex {
 	} else if s.Logger != nil {
 		s.Logger.Printf("unread.Cursors: %v", err)
 	}
+	if c, err := unread.SlackCounts(s.DB); err == nil {
+		ix.slackCounts = c
+	} else if s.Logger != nil {
+		s.Logger.Printf("unread.SlackCounts: %v", err)
+	}
 	if c, err := unread.SlackCursors(s.DB); err == nil {
 		ix.slack = c
 	} else if s.Logger != nil {
@@ -54,22 +63,37 @@ func (s *Server) newUnreadIndex() *unreadIndex {
 	return ix
 }
 
-// Count returns the unread event count for a resource, 0 when it has no
-// cursor (Slack threads, and anything never seeded).
-func (ix *unreadIndex) Count(resType, id string) int {
+// fill sets a resource DTO's unread_count (and, for cursor-owning types,
+// unread_through_ts). Every endpoint that returns a resource goes through
+// here, so a resource counts the same on its card, in its worktree's total,
+// on a timeline chip and in mark-all-read.
+//
+// A Slack thread's count is the replies newer than Slack's cursor, as the
+// timelines mark them — but reconciled with has_unread, which is Slack's own
+// verdict and drives the thread's dot. Slack says read: 0, whatever stale
+// events say. Slack says unread: at least 1, because an unread message the
+// poller never recorded as an event (an unread root, say) is still unread,
+// and a dot with no number beside it would read as a bug. So the count and
+// the dot cannot disagree. The DTO must already be enriched (HasUnread set)
+// when this is called.
+//
+// Slack threads get no through_ts: Slack owns their cursor, and they are
+// marked read through their cached latest message (updated_ts) instead.
+func (ix *unreadIndex) fill(dto *resourceDTO) {
 	if ix == nil {
-		return 0
+		return
 	}
-	return ix.counts[unread.Key(resType, id)].Count
-}
-
-// ThroughTS returns the ts of a resource's newest unread event, "" when it
-// has none — the through_ts that clears exactly Count's events.
-func (ix *unreadIndex) ThroughTS(resType, id string) string {
-	if ix == nil {
-		return ""
+	key := unread.Key(dto.Type, dto.ID)
+	if dto.Type == "slack" {
+		dto.UnreadCount = 0
+		if dto.HasUnread {
+			dto.UnreadCount = max(ix.slackCounts[key], 1)
+		}
+		return
 	}
-	return ix.counts[unread.Key(resType, id)].NewestTS
+	sum := ix.counts[key]
+	dto.UnreadCount = sum.Count
+	dto.UnreadThroughTS = sum.NewestTS
 }
 
 // IsUnread reports whether one event is newer than its resource's cursor.

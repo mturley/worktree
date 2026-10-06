@@ -314,9 +314,9 @@ updated_at                string    // resource_updated_at, RFC3339
 custom_name               string
 custom_description        string
 
-// unread state (omitempty; absent when nothing is unread, never present for Slack):
+// unread state (omitempty; absent when nothing is unread):
 unread_count              int       // events newer than the resource's read cursor
-unread_through_ts         string    // ts of the newest of those events (same snapshot)
+unread_through_ts         string    // ts of the newest of those events (same snapshot); never for Slack
 ```
 
 `custom_name`/`custom_description` come from the watcher library's
@@ -642,6 +642,17 @@ anything new?" and drives the resource dot; `last_read` answers "which
 messages are new?" and drives `TimelineEvent.unread` on individual replies.
 Writes still go to Slack, via the thread view's "Mark thread read".
 
+**Slack threads carry `unread_count` too.** `unread.SlackCounts` counts a
+thread's events newer than Slack's `last_read` — the same events the
+timelines mark unread, via the shared `unread.SlackNewerSQL` predicate (also
+used by the global timeline's unread-only filter). `unreadIndex.fill` then
+ties the count to `has_unread`, Slack's own verdict: 0 when Slack says read,
+whatever stale events say, and at least 1 when Slack says unread, since an
+unread message the poller never recorded as an event (an unread root, say)
+still counts. So a thread's number and its dot always agree, and Slack
+threads count in the card badges, the worktree totals and the tab title like
+everything else. `fill` is the one place any endpoint sets `unread_count`.
+
 **Seeding.** A resource with no cursor row reads as zero unread, so rows must
 actually get written or a resource would never earn its first dot:
 `resources.Add` seeds new subscriptions, and `internal/db`'s migration
@@ -665,7 +676,8 @@ Mounted once beside `useSSE` in `App.tsx`, it folds the worktree list through
 `lib/unreadBadge.ts` and, while anything is unread, blinks the favicon between
 `/favicon.svg?v=2` and `/favicon-unread.svg` (the same tile with a blue dot)
 and badges the title — `(3) worktree`, or `• worktree` when the unread has no
-countable tally behind it, which is how a Slack thread arrives. It has no
+countable tally behind it (only an older cached response now — Slack threads
+count at least 1 while unread). It has no
 polling of its own: the `["worktrees"]` query the pages already use is
 invalidated by the stream, so the tab starts on the event and stops on the
 mark-read.
@@ -685,17 +697,15 @@ unread rather than being swallowed by a button that promised to clear a
 specific number. The cursor only moves forward, so a stale replay is a no-op.
 
 **Mark all read** (`ui/src/components/MarkAllReadButton.tsx`, on the worktree
-page's unified Activity header) keeps that promise across resources. It
-confirms "Mark N events read across M resources?" — M counting only resources
-with unreads — then posts one `/api/resource-read` per resource, each with
-that resource's `unread_through_ts`. That field comes from
-`unread.Summaries`, the same query as `unread_count`, so the through_ts is the
-newest of exactly the events counted, never "now". Unread Slack threads are
-offered behind an "Also mark N Slack threads as read" checkbox, unchecked by
-default — it writes to Slack itself — via `/api/thread/mark-read`, each
-through its cached `updated_ts` (the latest message as of the poll that
-flagged it). With only Slack threads unread, they are the whole question and
-there is no checkbox.
+page's unified Activity header) keeps that promise across resources. Its
+modal lists one checkbox per resource type with unreads, all checked by
+default — "Mark 3 GitHub events as read across 2 PRs", "… Jira events … issues",
+"… Slack messages … threads" — and marks only the checked types. GitHub/Jira
+resources each post `/api/resource-read` with their `unread_through_ts`,
+which comes from `unread.Summaries`, the same query as `unread_count`, so it
+is the newest of exactly the events counted, never "now". Slack threads post
+`/api/thread/mark-read` — a write to Slack itself — through their cached
+`updated_ts`, the latest message as of the poll that flagged them.
 
 **Show unread only** (`UnreadOnlyToggle`) narrows the two unified feeds — the
 home page's and the worktree page's — to unread events; the single-resource

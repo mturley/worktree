@@ -30,9 +30,9 @@ export interface WorktreeSummary {
    */
   has_unread?: boolean;
   /**
-   * Unread EVENTS across the worktree's resources. Can be 0 while
-   * `has_unread` is true: a Slack thread is unread without a countable
-   * tally behind it.
+   * Sum of `unread_count` across the worktree's resources, Slack threads
+   * included. Non-zero whenever `has_unread` is (an unread thread counts at
+   * least 1); absent on an older cached response.
    */
   unread_count?: number;
   /**
@@ -72,7 +72,11 @@ export interface ResourceDTO {
   channel_name?: string
   /** slack: unread as of the last poll; drives the unread dot. */
   has_unread?: boolean
-  /** non-slack: events newer than the read cursor. Absent means zero. */
+  /**
+   * Events newer than the read cursor. Absent means zero. For a Slack thread,
+   * the replies newer than Slack's cursor — at least 1 while `has_unread`, and
+   * 0 whenever it is false, so the count and the dot always agree.
+   */
   unread_count?: number
   /**
    * non-slack: ts of the newest of those unread events, from the same server
