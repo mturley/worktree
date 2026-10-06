@@ -100,6 +100,14 @@ type Server struct {
 	tabsOnce sync.Once
 	tabs     *tabRegistry
 
+	// Notification delivery; see notifier.go. notifyOnce picks the mode.
+	notifyOnce     sync.Once
+	notifyModeName string
+	transport      notifyTransport
+	// Seams: cmux availability and `cmux notify`, for tests.
+	cmuxAvailable func() bool
+	cmuxNotify    func(cmux.NotifyOptions) error
+
 	// LinkResolver is a seam for tests; nil means a default resolver.
 	LinkResolver *linkmeta.Resolver
 }

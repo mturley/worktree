@@ -155,6 +155,11 @@ func runUI(cmd *cobra.Command, args []string) error {
 	stop := srv.StartPolling(2 * time.Minute)
 	defer stop()
 
+	// Notifications for resources the user toggled on; cmux or browser mode
+	// is chosen inside (see internal/webui/notifier.go).
+	stopNotify := srv.StartNotifier(5 * time.Second)
+	defer stopNotify()
+
 	if !uiNoOpen && !uiAPIOnly {
 		go openBrowserWhenUp(uiPort, detailPathForCwd(conn))
 	}

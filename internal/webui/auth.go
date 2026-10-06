@@ -90,6 +90,9 @@ type sessionDTO struct {
 	CreatedAt  string `json:"created_at"`
 	LastSeenAt string `json:"last_seen_at"`
 	Current    bool   `json:"current"`
+	// NotifyMode is the server's notification delivery path ("cmux" or
+	// "browser"); set only on GET /api/session.
+	NotifyMode string `json:"notify_mode,omitempty"`
 }
 
 func tosessionDTO(sess uisession.Session, current bool) sessionDTO {
@@ -165,7 +168,11 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "authentication is not configured")
 		return
 	}
-	writeJSON(w, http.StatusOK, tosessionDTO(sess, true))
+	dto := tosessionDTO(sess, true)
+	// The server's notification delivery path, so the UI knows whether to
+	// ask this browser for notification permission at all.
+	dto.NotifyMode = s.notifyMode()
+	writeJSON(w, http.StatusOK, dto)
 }
 
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
