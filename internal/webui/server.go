@@ -189,6 +189,8 @@ func (s *Server) routes() []route {
 		{"POST /api/cmux/rename", s.handleCmuxRename},
 		{"POST /api/cmux/color", s.handleCmuxColor},
 		{"POST /api/cmux/focus-tab", s.handleCmuxFocusTab},
+		{"POST /api/cmux/close-tab", s.handleCmuxCloseTab},
+		{"POST /api/cmux/move-tab", s.handleCmuxMoveTab},
 		{"GET /api/jira-icon", s.handleJiraIcon},
 		{"GET /api/slack-avatar", s.handleSlackAvatar},
 		{"POST /api/worktrees/create", s.handleCreateWorktree},

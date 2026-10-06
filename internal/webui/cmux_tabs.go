@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/mturley/worktree/internal/cmux"
 )
@@ -259,4 +260,157 @@ func (s *Server) handleCmuxFocusTab(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = ops.activate()
 	respondCmuxAction(w, nil)
+}
+
+const staleTabMessage = "That tab changed since the list loaded. Check it and try again."
+
+// normalizeTitle drops status symbols at either end before titles are
+// compared. cmux agent terminals animate a glyph at the start ("◐ x" →
+// "◑ x") on their own, and pi puts an emoji status at the end
+// ("pi - x:🚧"); neither means a different tab. Brackets, parentheses and
+// ellipses are punctuation, not symbols, so "(5) worktree" and
+// "[KEY-1] page" are compared whole.
+func normalizeTitle(t string) string {
+	return strings.TrimFunc(t, func(r rune) bool {
+		return unicode.IsSymbol(r) || unicode.IsSpace(r) || unicode.In(r, unicode.Mn, unicode.Cf)
+	})
+}
+
+// guardTab reports the pane holding the named tab, if the tab still matches
+// what the user saw: same ref, same type, same (normalised) title.
+func guardTab(tree *cmux.WorkspaceTree, want cmuxTabRef) (string, bool) {
+	tab, pane, ok := tree.FindTab(want.Surface)
+	if !ok || tab.Type != want.Type || normalizeTitle(tab.Title) != normalizeTitle(want.Title) {
+		return "", false
+	}
+	return pane, true
+}
+
+func writeStaleTab(w http.ResponseWriter) {
+	writeJSON(w, http.StatusOK, cmuxActionResponse{OK: false, Stale: true, Error: staleTabMessage})
+}
+
+type cmuxCloseTabRequest struct {
+	ID string `json:"id"`
+	cmuxTabRef
+}
+
+// handleCmuxCloseTab: POST /api/cmux/close-tab.
+//
+// The ref came from a poll up to 5s old and closing is destructive, so the
+// tree is re-read and the tab must still be the one the user saw. A gap of
+// milliseconds remains between the check and the close; cmux has no
+// compare-and-close to remove it.
+func (s *Server) handleCmuxCloseTab(w http.ResponseWriter, r *http.Request) {
+	var req cmuxCloseTabRequest
+	if !decodeCmuxRequest(w, r, &req) {
+		return
+	}
+	if req.ID == "" {
+		writeError(w, http.StatusBadRequest, "missing id")
+		return
+	}
+	if !surfaceRefRe.MatchString(req.Surface) {
+		writeError(w, http.StatusBadRequest, "invalid surface")
+		return
+	}
+	if cmuxUnavailable(w) {
+		return
+	}
+	ops := s.tabOps()
+	tree, err := ops.tree(req.ID)
+	if err != nil {
+		respondCmuxAction(w, err)
+		return
+	}
+	if _, ok := guardTab(tree, req.cmuxTabRef); !ok {
+		writeStaleTab(w)
+		return
+	}
+	respondCmuxAction(w, ops.closeTab(req.ID, req.Surface))
+}
+
+type cmuxAnchor struct {
+	cmuxTabRef
+	Position string `json:"position"` // "before" | "after"
+}
+
+type cmuxMoveTabRequest struct {
+	ID string `json:"id"`
+	cmuxTabRef
+	Pane   string      `json:"pane"`
+	Anchor *cmuxAnchor `json:"anchor"`
+}
+
+// handleCmuxMoveTab: POST /api/cmux/move-tab.
+//
+// A drop names an anchor tab rather than an index: an index from a stale
+// poll points at whatever has since moved into that slot, while an anchor is
+// checked. Both the dragged tab and the anchor are guarded like close. No
+// anchor means the end of the target pane. Same pane → reorder-surface (cmux
+// refuses an anchor in another pane there); other pane → move-surface.
+func (s *Server) handleCmuxMoveTab(w http.ResponseWriter, r *http.Request) {
+	var req cmuxMoveTabRequest
+	if !decodeCmuxRequest(w, r, &req) {
+		return
+	}
+	switch {
+	case req.ID == "":
+		writeError(w, http.StatusBadRequest, "missing id")
+		return
+	case !surfaceRefRe.MatchString(req.Surface):
+		writeError(w, http.StatusBadRequest, "invalid surface")
+		return
+	case !paneRefRe.MatchString(req.Pane):
+		writeError(w, http.StatusBadRequest, "invalid pane")
+		return
+	}
+	if a := req.Anchor; a != nil {
+		switch {
+		case !surfaceRefRe.MatchString(a.Surface):
+			writeError(w, http.StatusBadRequest, "invalid anchor surface")
+			return
+		case a.Surface == req.Surface:
+			writeError(w, http.StatusBadRequest, "a tab cannot be its own anchor")
+			return
+		case a.Position != "before" && a.Position != "after":
+			writeError(w, http.StatusBadRequest, "anchor position must be before or after")
+			return
+		}
+	}
+	if cmuxUnavailable(w) {
+		return
+	}
+	ops := s.tabOps()
+	tree, err := ops.tree(req.ID)
+	if err != nil {
+		respondCmuxAction(w, err)
+		return
+	}
+	from, ok := guardTab(tree, req.cmuxTabRef)
+	if !ok {
+		writeStaleTab(w)
+		return
+	}
+	var pos cmux.TabPosition
+	if a := req.Anchor; a != nil {
+		anchorPane, ok := guardTab(tree, a.cmuxTabRef)
+		if !ok || anchorPane != req.Pane {
+			writeStaleTab(w)
+			return
+		}
+		if a.Position == "before" {
+			pos.Before = a.Surface
+		} else {
+			pos.After = a.Surface
+		}
+	} else if !tree.HasPane(req.Pane) {
+		writeStaleTab(w)
+		return
+	}
+	if req.Pane == from {
+		respondCmuxAction(w, ops.reorderTab(req.ID, req.Surface, pos))
+	} else {
+		respondCmuxAction(w, ops.moveTab(req.ID, req.Surface, req.Pane, pos))
+	}
 }

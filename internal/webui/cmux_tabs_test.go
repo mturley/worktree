@@ -288,3 +288,156 @@ func TestCmuxWritesWhenUnavailable(t *testing.T) {
 		t.Fatalf("code=%d got=%+v calls=%q, want 200 ok:false and no calls", code, got, f.calls)
 	}
 }
+
+func TestNormalizeTitle(t *testing.T) {
+	cases := map[string]string{
+		"◐ agent":            "agent",
+		"◑ agent":            "agent",
+		"🚧 wip":              "wip",
+		"⚠️ build":           "build", // symbol + variation selector
+		"(5) worktree":       "(5) worktree",
+		"[RHAISTRAT-1] page": "[RHAISTRAT-1] page",
+		"…/path":             "…/path",
+		"◐":                  "",
+		"plain":              "plain",
+		"pi - x:🚧":           "pi - x:",
+		"pi - x:✅":           "pi - x:",
+		"title (5)":          "title (5)",
+	}
+	for in, want := range cases {
+		if got := normalizeTitle(in); got != want {
+			t.Errorf("normalizeTitle(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestCmuxCloseTabGuard(t *testing.T) {
+	cases := []struct {
+		name      string
+		surface   string
+		typ       string
+		title     string
+		wantClose bool
+	}{
+		{"exact match", "surface:2", "browser", "(5) inbox", true},
+		{"agent glyph changed", "surface:1", "terminal", "◑ agent", true},
+		{"ref gone", "surface:9", "browser", "(5) inbox", false},
+		{"type changed", "surface:1", "browser", "◐ agent", false},
+		{"retitled", "surface:3", "markdown", "other.md", false},
+		{"count changed", "surface:2", "browser", "(6) inbox", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s, f := newTabServer(t)
+			code, got := postCmux(t, s.handleCmuxCloseTab, map[string]string{"id": "W", "surface": c.surface, "type": c.typ, "title": c.title})
+			if code != http.StatusOK {
+				t.Fatalf("status = %d", code)
+			}
+			if c.wantClose {
+				if !got.OK || !f.called("close W "+c.surface) {
+					t.Fatalf("got=%+v calls=%q, want closed", got, f.calls)
+				}
+				return
+			}
+			if got.OK || !got.Stale || got.Error != staleTabMessage {
+				t.Fatalf("got=%+v, want stale", got)
+			}
+			if f.called("close") {
+				t.Fatalf("closed a tab that failed the guard: %q", f.calls)
+			}
+		})
+	}
+}
+
+func TestCmuxCloseTabTreeFailureIsNotStale(t *testing.T) {
+	s, f := newTabServer(t)
+	code, got := postCmux(t, s.handleCmuxCloseTab, map[string]string{"id": "GONE", "surface": "surface:1", "type": "terminal", "title": "x"})
+	if code != http.StatusOK || got.OK || got.Stale || got.Error == "" || f.called("close") {
+		t.Fatalf("code=%d got=%+v calls=%q", code, got, f.calls)
+	}
+}
+
+type anchorBody struct {
+	Surface  string `json:"surface"`
+	Type     string `json:"type"`
+	Title    string `json:"title"`
+	Position string `json:"position"`
+}
+
+type moveBody struct {
+	ID      string      `json:"id"`
+	Surface string      `json:"surface"`
+	Type    string      `json:"type"`
+	Title   string      `json:"title"`
+	Pane    string      `json:"pane"`
+	Anchor  *anchorBody `json:"anchor,omitempty"`
+}
+
+// dragged is surface:2 ("(5) inbox", pane:1) unless a case overrides it.
+func moveOf(pane string, anchor *anchorBody) moveBody {
+	return moveBody{ID: "W", Surface: "surface:2", Type: "browser", Title: "(5) inbox", Pane: pane, Anchor: anchor}
+}
+
+func TestCmuxMoveTab(t *testing.T) {
+	agent := func(pos string) *anchorBody {
+		return &anchorBody{Surface: "surface:1", Type: "terminal", Title: "◑ agent", Position: pos}
+	}
+	notes := func(pos string) *anchorBody {
+		return &anchorBody{Surface: "surface:3", Type: "markdown", Title: "notes.md", Position: pos}
+	}
+	cases := []struct {
+		name string
+		body moveBody
+		want string // "" means stale
+	}{
+		{"same pane before", moveOf("pane:1", agent("before")), "reorder W surface:2 before surface:1"},
+		{"same pane to end", moveOf("pane:1", nil), "reorder W surface:2 end"},
+		{"other pane after", moveOf("pane:2", notes("after")), "move W surface:2 pane:2 after surface:3"},
+		{"other pane to end", moveOf("pane:2", nil), "move W surface:2 pane:2 end"},
+		{"into an empty pane", moveOf("pane:4", nil), "move W surface:2 pane:4 end"},
+		{"dragged tab changed", moveBody{ID: "W", Surface: "surface:2", Type: "browser", Title: "(6) inbox", Pane: "pane:2"}, ""},
+		{"anchor changed", moveOf("pane:2", &anchorBody{Surface: "surface:3", Type: "markdown", Title: "renamed.md", Position: "before"}), ""},
+		{"anchor not in the named pane", moveOf("pane:2", agent("before")), ""},
+		{"unknown pane", moveOf("pane:9", nil), ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s, f := newTabServer(t)
+			code, got := postCmux(t, s.handleCmuxMoveTab, c.body)
+			if code != http.StatusOK {
+				t.Fatalf("status = %d", code)
+			}
+			if c.want == "" {
+				if got.OK || !got.Stale || f.called("reorder") || f.called("move") {
+					t.Fatalf("got=%+v calls=%q, want stale and nothing moved", got, f.calls)
+				}
+				return
+			}
+			if !got.OK || !f.called(c.want) {
+				t.Fatalf("got=%+v calls=%q, want %q", got, f.calls, c.want)
+			}
+		})
+	}
+}
+
+func TestCmuxMoveTabValidation(t *testing.T) {
+	cases := map[string]moveBody{
+		"bad pane":           moveOf("pane", nil),
+		"bad surface":        {ID: "W", Surface: "surface:x", Pane: "pane:1"},
+		"missing id":         {Surface: "surface:2", Pane: "pane:1"},
+		"own anchor":         moveOf("pane:1", &anchorBody{Surface: "surface:2", Type: "browser", Title: "(5) inbox", Position: "before"}),
+		"bad position":       moveOf("pane:1", &anchorBody{Surface: "surface:1", Type: "terminal", Title: "◐ agent", Position: "inside"}),
+		"bad anchor surface": moveOf("pane:1", &anchorBody{Surface: "1", Position: "before"}),
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			s, f := newTabServer(t)
+			if code, _ := postCmux(t, s.handleCmuxMoveTab, body); code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400", code)
+			}
+			if len(f.calls) != 0 {
+				t.Fatalf("called cmux on invalid input: %q", f.calls)
+			}
+		})
+	}
+}
