@@ -1,5 +1,5 @@
 import { ActionIcon, Button, Group, Popover, SegmentedControl, Stack, Text } from "@mantine/core"
-import { IconGripVertical } from "@tabler/icons-react"
+import { IconArrowBarToDown, IconArrowBarToUp, IconGripVertical } from "@tabler/icons-react"
 import { useSortable } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import type { ResourceDTO } from "../api/types"
@@ -106,12 +106,21 @@ export function SortableResourceCard({
               <Stack gap={6}>
                 <Text size="xs" c="dimmed">Drag to reorder</Text>
                 <Group gap={4} wrap="nowrap">
-                  <Button size="compact-xs" variant="light" disabled={!canMoveToTop} onClick={() => onMoveToEdge("top")}>
+                  {/* Arrows against a bar, not plain arrows: "to the top", not
+                      "up one". */}
+                  <Button
+                    size="compact-xs"
+                    variant="light"
+                    leftSection={<IconArrowBarToUp size={14} />}
+                    disabled={!canMoveToTop}
+                    onClick={() => onMoveToEdge("top")}
+                  >
                     Move to top
                   </Button>
                   <Button
                     size="compact-xs"
                     variant="light"
+                    leftSection={<IconArrowBarToDown size={14} />}
                     disabled={!canMoveToBottom}
                     onClick={() => onMoveToEdge("bottom")}
                   >
