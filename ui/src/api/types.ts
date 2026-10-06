@@ -41,6 +41,8 @@ export interface WorktreeSummary {
    * older cached response.
    */
   created_at?: string;
+  /** The worktree-wide "Notify on all" toggle. Absent on an older cached response. */
+  notify_all?: boolean;
 }
 export interface TimelineEvent {
   id: string; ts: string; external_ts: string; source: string;
@@ -67,6 +69,8 @@ export interface TimelineEvent {
 export interface TimelineResponse { events: TimelineEvent[]; next_cursor: string }
 export interface ResourceDTO {
   type: string; id: string; url: string; primary: boolean
+  /** This resource's own notification toggle; the effective state is `notify || worktree.notify_all`. */
+  notify?: boolean
   // enriched from cached watcher state; absent if the resource was never polled
   title?: string
   channel_name?: string
@@ -202,6 +206,22 @@ export interface WatchersResponse {
 }
 
 /** A web UI login session, as GET /api/session(s) returns it. */
+/** How the server delivers notifications: `cmux notify`, or browser tabs. */
+export type NotifyMode = "cmux" | "browser"
+
+/** The `notification` stream message: shown by exactly one tab per session. */
+export interface NotificationMsg {
+  id: string
+  title: string
+  subtitle: string
+  body: string
+  worktree_path: string
+  /** Empty for a worktree-wide test notification. */
+  resource_type: string
+  resource_id: string
+  tag: string
+}
+
 export interface SessionInfo {
   /** Hash of the session token: safe to show, and what revoking takes. */
   handle: string
@@ -209,4 +229,6 @@ export interface SessionInfo {
   created_at: string
   last_seen_at: string
   current: boolean
+  /** The server's notification delivery path; only on GET /api/session. */
+  notify_mode?: NotifyMode
 }

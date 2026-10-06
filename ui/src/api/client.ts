@@ -1,4 +1,4 @@
-import type { CmuxGroupsResponse, CmuxResponse, CreateWorktreeResponse, DeleteWorktreeResponse, Repo, ResourceDTO, SaveWorktreeNotesResponse, SessionInfo, TimelineResponse, WatchersResponse, WorktreeInfo, WorktreeNotes, WorktreeSummary } from "./types"
+import type { CmuxGroupsResponse, CmuxResponse, CreateWorktreeResponse, DeleteWorktreeResponse, NotifyMode, Repo, ResourceDTO, SaveWorktreeNotesResponse, SessionInfo, TimelineResponse, WatchersResponse, WorktreeInfo, WorktreeNotes, WorktreeSummary } from "./types"
 
 export class HttpError extends Error {
   constructor(message: string, readonly status: number) {
@@ -48,6 +48,29 @@ export const api = {
       body: JSON.stringify({ handle }),
     }),
   worktrees: () => fetchJSON<WorktreeSummary[]>("/api/worktrees"),
+  /**
+   * One notification toggle: worktree-wide without type/id, else one
+   * resource. Turning one on makes the server send a test notification,
+   * starting with this tab when `tab` is given.
+   */
+  setNotify: (args: { path: string; type?: string; id?: string; on: boolean; tab?: string }) =>
+    fetchJSON<{ ok: boolean; mode: NotifyMode }>("/api/notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(args),
+    }),
+  tabPresence: (args: { tab: string; route: string; visible: boolean }) =>
+    fetchJSON<null>("/api/tabs/presence", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(args),
+    }),
+  tabAck: (args: { tab: string; notification_id: string; shown: boolean }) =>
+    fetchJSON<null>("/api/tabs/ack", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(args),
+    }),
   globalTimeline: (archived: boolean, limit = 100, before?: string, resourceTypes?: string[], unreadOnly = false) => {
     const params = new URLSearchParams({ archived: String(archived), limit: String(limit) })
     if (before) params.set("before", before)

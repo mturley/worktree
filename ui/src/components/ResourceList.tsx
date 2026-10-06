@@ -30,7 +30,7 @@ interface ResourceListProps {
   onSelectResource?: (key: ResourceKey) => void
   /**
    * Every resource the worktree follows, when `items` is a filtered subset
-   * (Show unread only). Reorders are saved against this, so the cards the
+   * (Unreads only). Reorders are saved against this, so the cards the
    * filter hides keep their places — see mergeVisibleOrder.
    */
   allItems?: ResourceDTO[]
