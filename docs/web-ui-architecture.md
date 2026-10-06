@@ -769,7 +769,12 @@ on the SQLite lock can land behind a cursor that already moved on. Keyed by
 `(id, ts)` because the watcher reuses a CI bundle's ID and restamps its `ts`.
 It starts at `MAX(ts)` with the window pre-marked seen, so a restart never
 replays a backlog, and it advances whatever delivery does — nothing is
-retried. A busy tab stream is waited on (up to the ack timeout) rather than
+retried. A cursor that failed to initialise is never read with (it would
+start from the beginning of time); each pass retries the initialisation
+instead. As a backstop against any flood, a pass that would fire more than
+`notifyMaxPerPass` (5) notifications sends one "New activity — N resources
+have new events" summary instead, targeting the worktree if they share one
+and nothing (home page / untargeted cmux) if not. A busy tab stream is waited on (up to the ack timeout) rather than
 treated as a decline, since one pass can produce several batches at once. `watch_started`, `watcher_error`,
 `ci_pending` and `ci_workflows_pending` never notify. Matching goes through
 `resources.Load`, so only resources the worktree actively tracks count. One

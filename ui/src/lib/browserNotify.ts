@@ -5,6 +5,8 @@ import { withHomeParam } from "./homeWorktree"
 
 /** Where clicking a notification goes: the worktree, with the resource selected. */
 export function notificationHref(msg: NotificationMsg): string {
+  // A burst summary spanning several worktrees has no one worktree to open.
+  if (!msg.worktree_path) return "/"
   const base = `/worktree/${encodeURIComponent(msg.worktree_path)}`
   if (!msg.resource_type) return base
   return `${base}?resource=${serializeResourceKey({ type: msg.resource_type, id: msg.resource_id })}`

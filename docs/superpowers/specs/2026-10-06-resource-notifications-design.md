@@ -119,6 +119,12 @@ A goroutine started by `worktree ui` next to the poll loop. It runs every
    - the resource URL;
    - the newest event `ts`.
 5. **Deliver.** It hands each batch to the active delivery path.
+6. **Never flood.** If the cursor failed to initialise, passes retry the
+   initialisation and read nothing until it succeeds. If one pass would
+   fire more than 5 notifications, it fires a single summary instead:
+   title "New activity", body "N resources have new events", targeting
+   the worktree when every batch shares one, otherwise none (cmux
+   untargeted; the browser click goes to the home page).
 
 Text of a notification:
 

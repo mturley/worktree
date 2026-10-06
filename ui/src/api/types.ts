@@ -215,8 +215,9 @@ export interface NotificationMsg {
   title: string
   subtitle: string
   body: string
+  /** Empty for a burst summary spanning several worktrees. */
   worktree_path: string
-  /** Empty for a worktree-wide test notification. */
+  /** Empty for a worktree-wide test notification or a summary. */
   resource_type: string
   resource_id: string
   tag: string

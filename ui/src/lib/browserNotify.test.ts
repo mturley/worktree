@@ -26,6 +26,9 @@ describe("notificationHref", () => {
   it("targets the worktree page with the resource selected", () => {
     expect(notificationHref(msg)).toBe("/worktree/%2Fw%2Fwt-a?resource=pr:o%2Fr%233")
   })
+  it("targets the home page for a summary spanning worktrees", () => {
+    expect(notificationHref({ ...msg, worktree_path: "", resource_type: "", resource_id: "" })).toBe("/")
+  })
   it("targets the bare worktree page for a worktree-wide notification", () => {
     expect(notificationHref({ ...msg, resource_type: "", resource_id: "" })).toBe("/worktree/%2Fw%2Fwt-a")
   })

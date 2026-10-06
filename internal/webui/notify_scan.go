@@ -32,6 +32,10 @@ const notifyLookback = 30 * time.Second
 type notifyCursor struct {
 	ts   string
 	seen map[string]bool
+	// ready is false until initNotifyCursor has succeeded. A zero cursor
+	// would read from the beginning of time, so notifyPass never reads with
+	// one.
+	ready bool
 }
 
 func seenKey(id, ts string) string { return id + "\x00" + ts }
@@ -65,7 +69,11 @@ func initNotifyCursor(conn *sql.DB) (notifyCursor, error) {
 		}
 		c.seen[seenKey(id, ts)] = true
 	}
-	return c, rows.Err()
+	if err := rows.Err(); err != nil {
+		return c, err
+	}
+	c.ready = true
+	return c, nil
 }
 
 // newEvent is one (event, resource) pair past the cursor.
@@ -90,7 +98,7 @@ func readNewEvents(conn *sql.DB, c notifyCursor) ([]newEvent, notifyCursor, erro
 	defer rows.Close()
 	// Every row this pass reads is in next.seen, and the next pass's window
 	// starts no earlier than this one's, so nothing older needs carrying.
-	next := notifyCursor{ts: c.ts, seen: map[string]bool{}}
+	next := notifyCursor{ts: c.ts, seen: map[string]bool{}, ready: c.ready}
 	var out []newEvent
 	for rows.Next() {
 		var e newEvent
