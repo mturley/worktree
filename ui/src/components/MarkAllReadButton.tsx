@@ -54,7 +54,7 @@ function toTarget(r: ResourceDTO): Target | null {
 
 /**
  * Clears unread activity across a worktree's resources, one checkbox per
- * resource type that has any — "Mark 3 GitHub events as read across 2 PRs" —
+ * resource type that has any — "Mark 3 GitHub events in 2 PRs as read" —
  * all checked by default. Only the checked types are marked.
  *
  * Unchecked types are remembered as EXCLUSIONS, not checked ones as
@@ -132,7 +132,7 @@ export function MarkAllReadButton({ resources }: { resources: ResourceDTO[] }) {
               checked={!unchecked.has(kind.type)}
               onChange={(e) => toggle(kind.type, e.currentTarget.checked)}
               label={`Mark ${plural(count, `${kind.source} ${kind.item[0]}`, `${kind.source} ${kind.item[1]}`)}`
-                + ` as read across ${plural(targets.length, kind.container[0], kind.container[1])}`}
+                + ` in ${plural(targets.length, kind.container[0], kind.container[1])} as read`}
             />
           ))}
           {markAll.isError && (

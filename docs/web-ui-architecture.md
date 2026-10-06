@@ -699,8 +699,8 @@ specific number. The cursor only moves forward, so a stale replay is a no-op.
 **Mark all read** (`ui/src/components/MarkAllReadButton.tsx`, on the worktree
 page's unified Activity header) keeps that promise across resources. Its
 modal lists one checkbox per resource type with unreads, all checked by
-default — "Mark 3 GitHub events as read across 2 PRs", "… Jira events … issues",
-"… Slack messages … threads" — and marks only the checked types. GitHub/Jira
+default — "Mark 3 GitHub events in 2 PRs as read", "… Jira events in … issues",
+"… Slack messages in … threads" — and marks only the checked types. GitHub/Jira
 resources each post `/api/resource-read` with their `unread_through_ts`,
 which comes from `unread.Summaries`, the same query as `unread_count`, so it
 is the newest of exactly the events counted, never "now". Slack threads post
