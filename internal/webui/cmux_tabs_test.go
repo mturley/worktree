@@ -177,3 +177,114 @@ func TestCmuxTreeReturnsMatchedWorkspacesWithTheirTrees(t *testing.T) {
 		t.Fatal("read the tree of a workspace for another path")
 	}
 }
+
+func TestCmuxRename(t *testing.T) {
+	cases := []struct {
+		name  string
+		title string
+		want  string
+	}{
+		{"renames", "  New name ", "rename W New name"},
+		{"empty clears", "", "clear-name W"},
+		// Whitespace is not a title: it means "give the name back to cmux".
+		{"whitespace clears", "   ", "clear-name W"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s, f := newTabServer(t)
+			code, got := postCmux(t, s.handleCmuxRename, map[string]string{"id": "W", "title": c.title})
+			if code != http.StatusOK || !got.OK {
+				t.Fatalf("code=%d got=%+v", code, got)
+			}
+			if len(f.calls) != 1 || f.calls[0] != c.want {
+				t.Fatalf("calls = %q, want [%q]", f.calls, c.want)
+			}
+		})
+	}
+}
+
+func TestCmuxRenameMissingID(t *testing.T) {
+	s, _ := newTabServer(t)
+	if code, _ := postCmux(t, s.handleCmuxRename, map[string]string{"title": "x"}); code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", code)
+	}
+}
+
+func TestCmuxColor(t *testing.T) {
+	cases := []struct {
+		color string
+		code  int
+		want  string
+	}{
+		{"#AD1457", http.StatusOK, "set-color W #AD1457"},
+		{"teal", http.StatusOK, "set-color W teal"},
+		{"", http.StatusOK, "clear-color W"},
+		{"#12345", http.StatusBadRequest, ""},
+		{"red; rm -rf", http.StatusBadRequest, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.color, func(t *testing.T) {
+			s, f := newTabServer(t)
+			code, _ := postCmux(t, s.handleCmuxColor, map[string]string{"id": "W", "color": c.color})
+			if code != c.code {
+				t.Fatalf("status = %d, want %d", code, c.code)
+			}
+			if c.want == "" && len(f.calls) != 0 {
+				t.Fatalf("called cmux on a rejected colour: %q", f.calls)
+			}
+			if c.want != "" && (len(f.calls) != 1 || f.calls[0] != c.want) {
+				t.Fatalf("calls = %q, want [%q]", f.calls, c.want)
+			}
+		})
+	}
+}
+
+func TestCmuxFocusTabSelectsFocusesActivates(t *testing.T) {
+	s, f := newTabServer(t)
+	code, got := postCmux(t, s.handleCmuxFocusTab, map[string]string{"id": "W", "surface": "surface:2"})
+	if code != http.StatusOK || !got.OK {
+		t.Fatalf("code=%d got=%+v", code, got)
+	}
+	want := []string{"select W", "focus W surface:2", "activate"}
+	if strings.Join(f.calls, "|") != strings.Join(want, "|") {
+		t.Fatalf("calls = %q, want %q", f.calls, want)
+	}
+}
+
+func TestCmuxFocusTabActivateFailureIsNotAFailure(t *testing.T) {
+	s, f := newTabServer(t)
+	f.failOn = "activate"
+	if _, got := postCmux(t, s.handleCmuxFocusTab, map[string]string{"id": "W", "surface": "surface:2"}); !got.OK {
+		t.Fatalf("got %+v, want ok despite activate failing", got)
+	}
+}
+
+func TestCmuxFocusTabReportsCmuxFailure(t *testing.T) {
+	s, f := newTabServer(t)
+	f.failOn = "focus"
+	code, got := postCmux(t, s.handleCmuxFocusTab, map[string]string{"id": "W", "surface": "surface:2"})
+	if code != http.StatusOK || got.OK || got.Error == "" {
+		t.Fatalf("code=%d got=%+v, want 200 ok:false with error", code, got)
+	}
+}
+
+func TestCmuxFocusTabValidatesSurface(t *testing.T) {
+	s, f := newTabServer(t)
+	for _, bad := range []string{"", "surface:", "surface:1 --workspace X", "pane:1", "--help"} {
+		if code, _ := postCmux(t, s.handleCmuxFocusTab, map[string]string{"id": "W", "surface": bad}); code != http.StatusBadRequest {
+			t.Errorf("surface %q: status = %d, want 400", bad, code)
+		}
+	}
+	if len(f.calls) != 0 {
+		t.Fatalf("called cmux on invalid input: %q", f.calls)
+	}
+}
+
+func TestCmuxWritesWhenUnavailable(t *testing.T) {
+	s, f := newTabServer(t)
+	t.Setenv("CMUX_SOCKET_PATH", "")
+	code, got := postCmux(t, s.handleCmuxRename, map[string]string{"id": "W", "title": "x"})
+	if code != http.StatusOK || got.OK || len(f.calls) != 0 {
+		t.Fatalf("code=%d got=%+v calls=%q, want 200 ok:false and no calls", code, got, f.calls)
+	}
+}
