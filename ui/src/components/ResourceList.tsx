@@ -16,7 +16,7 @@ import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrate
 import type { ResourceDTO } from "../api/types"
 import { api } from "../api/client"
 import { parseResourceKey, resourceKeyEquals, serializeResourceKey, type ResourceKey } from "../lib/resourceKey"
-import { applyDrag, crossGroupPreview, moveToEdge, type DropTarget, type GroupId } from "../lib/resourceOrder"
+import { applyDrag, crossGroupPreview, mergeVisibleOrder, moveToEdge, type DropTarget, type GroupId } from "../lib/resourceOrder"
 import { resourceCollisions } from "../lib/resourceCollision"
 import { useHoverMenu } from "../lib/useHoverMenu"
 import { SortableResourceCard } from "./SortableResourceCard"
@@ -28,6 +28,16 @@ interface ResourceListProps {
   onChanged: () => void
   selectedKey?: ResourceKey | null
   onSelectResource?: (key: ResourceKey) => void
+  /**
+   * Every resource the worktree follows, when `items` is a filtered subset
+   * (Show unread only). Reorders are saved against this, so the cards the
+   * filter hides keep their places — see mergeVisibleOrder.
+   */
+  allItems?: ResourceDTO[]
+  /** Shown instead of the cards when `items` is empty. */
+  emptyText?: string
+  /** Extra controls beside Follow resource. */
+  toolbar?: React.ReactNode
 }
 
 /** Whether two lists hold the same cards, in the same groups and order. */
@@ -89,7 +99,9 @@ function ResourceGroup({
   )
 }
 
-export function ResourceList({ items, path, onChanged, selectedKey, onSelectResource }: ResourceListProps) {
+export function ResourceList({
+  items, path, onChanged, selectedKey, onSelectResource, allItems, emptyText = "No resources tracked.", toolbar,
+}: ResourceListProps) {
   const [addOpen, setAddOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
   // The optimistically reordered list. While it is set it wins over `items`,
@@ -179,21 +191,30 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
     }
   }
 
-  const persist = (next: ResourceDTO[], previous: ResourceDTO[]) =>
+  // `order` is what gets saved: the full list, when `next` is only the cards
+  // a filter left showing.
+  const persist = (
+    next: ResourceDTO[],
+    previous: ResourceDTO[],
+    order = allItems ? mergeVisibleOrder(allItems, next) : next,
+  ) =>
     save(next, previous, () =>
       // Both groups are stated in full, so the call says what the order IS
       // rather than how it changed — replayable, and safe when another
       // device is dragging at the same time.
       api.setResourceOrder({
         path,
-        focus: next.filter((r) => r.primary).map((r) => ({ type: r.type, id: r.id })),
-        related: next.filter((r) => !r.primary).map((r) => ({ type: r.type, id: r.id })),
+        focus: order.filter((r) => r.primary).map((r) => ({ type: r.type, id: r.id })),
+        related: order.filter((r) => !r.primary).map((r) => ({ type: r.type, id: r.id })),
       }),
     )
 
   const moveCard = (r: ResourceDTO, edge: "top" | "bottom") => {
-    const next = moveToEdge(shown, { type: r.type, id: r.id }, edge)
-    if (next !== shown) void persist(next, shown)
+    const key = { type: r.type, id: r.id }
+    const next = moveToEdge(shown, key, edge)
+    // Against the full list when filtered: "top" means the top of the group,
+    // not just above the cards that happen to be showing.
+    if (next !== shown) void persist(next, shown, allItems ? moveToEdge(allItems, key, edge) : next)
   }
 
   const setGroup = (r: ResourceDTO, primary: boolean) => {
@@ -323,9 +344,10 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
         <Button size="sm" variant="filled" leftSection="+" onClick={() => setAddOpen(true)}>
           Follow resource
         </Button>
+        {toolbar}
       </Group>
       {items.length === 0 ? (
-        <Text c="dimmed" size="sm">No resources tracked.</Text>
+        <Text c="dimmed" size="sm">{emptyText}</Text>
       ) : (
         <DndContext
           sensors={sensors}

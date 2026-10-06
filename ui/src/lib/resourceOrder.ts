@@ -138,3 +138,33 @@ export function moveToEdge(items: ResourceDTO[], key: ResourceKey, edge: "top" |
   next.splice(to, 0, moved)
   return next
 }
+
+/**
+ * Folds a reorder of a FILTERED list back into the full one.
+ *
+ * With "Show unread only" on, the list shows only some cards, and a drag or
+ * move rearranges just those. Saving that alone would not do: the server
+ * appends every card the order leaves out to the end of its group
+ * (resources.SetOrder), so each hidden card would drop to the bottom. Instead
+ * the hidden cards keep their places, and the slots the visible cards held in
+ * each group are refilled in their new order. A card that crossed into a
+ * group with no visible slot left lands at its end, which is where a drag
+ * into it put it among the visible ones.
+ *
+ * Group membership comes from `nextVisible` for the cards it holds, so a
+ * cross-group drag carries its reclassification through.
+ */
+export function mergeVisibleOrder(full: ResourceDTO[], nextVisible: ResourceDTO[]): ResourceDTO[] {
+  const key = (r: ResourceDTO) => `${r.type}:${r.id}`
+  const visible = new Set(nextVisible.map(key))
+  const group = (primary: boolean) => {
+    const queue = nextVisible.filter((r) => r.primary === primary)
+    const out: ResourceDTO[] = []
+    for (const r of full.filter((r) => r.primary === primary)) {
+      if (!visible.has(key(r))) out.push(r)
+      else if (queue.length) out.push(queue.shift()!)
+    }
+    return out.concat(queue)
+  }
+  return [...group(true), ...group(false)]
+}

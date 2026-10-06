@@ -318,6 +318,33 @@ describe("ResourceList handle hover menu", () => {
     })
   })
 
+  it("saves the full order when a filter hides some cards", async () => {
+    // Saving only the shown cards would send the hidden one to the bottom:
+    // the server appends whatever an order leaves out.
+    setResourceOrder.mockResolvedValue(null)
+    const hidden = { ...items[0], id: "o/r#3" }
+    const all = [items[0], hidden, ...items.slice(1)]
+    const user = userEvent.setup()
+    const { getByRole, findByRole, queryByText } = wrap(
+      <ResourceList items={items} allItems={all} path="/w" onChanged={vi.fn()} />,
+    )
+    expect(queryByText(/o\/r#3/)).not.toBeInTheDocument()
+    await user.hover(handle(getByRole, "o/r#2"))
+    await user.click(await findByRole("button", { name: "Move to top" }))
+    expect(setResourceOrder).toHaveBeenCalledWith({
+      path: "/w",
+      focus: [{ type: "pr", id: "o/r#2" }, { type: "pr", id: "o/r#1" }, { type: "pr", id: "o/r#3" }],
+      related: [{ type: "jira", id: "RH-9" }],
+    })
+  })
+
+  it("shows the given empty text when nothing is left to show", () => {
+    const { getByText } = wrap(
+      <ResourceList items={[]} allItems={items} emptyText="No resources with unread events" path="/w" onChanged={vi.fn()} />,
+    )
+    expect(getByText("No resources with unread events")).toBeInTheDocument()
+  })
+
   it("reclassifies from the menu's Focus/Related toggle", async () => {
     setResourcePrimary.mockResolvedValue(null)
     const user = userEvent.setup()

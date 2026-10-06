@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { applyDrag, crossGroupPreview, moveToEdge } from "./resourceOrder"
+import { applyDrag, crossGroupPreview, mergeVisibleOrder, moveToEdge } from "./resourceOrder"
 import type { ResourceDTO } from "../api/types"
 
 function r(id: string, primary: boolean): ResourceDTO {
@@ -123,5 +123,28 @@ describe("moveToEdge", () => {
 
   it("returns the same list for a key it does not know", () => {
     expect(moveToEdge(items, { type: "pr", id: "404" }, "top")).toBe(items)
+  })
+})
+
+describe("mergeVisibleOrder", () => {
+  const ids = (list: ResourceDTO[]) => list.map((x) => `${x.id}${x.primary ? "F" : "R"}`).join(",")
+
+  it("keeps hidden cards in place and refills the visible slots in their new order", () => {
+    // a, c visible; b hidden between them. Swapping a and c leaves b put.
+    const full = [r("a", true), r("b", true), r("c", true), r("d", false)]
+    const next = mergeVisibleOrder(full, [r("c", true), r("a", true), r("d", false)])
+    expect(ids(next)).toBe("cF,bF,aF,dR")
+  })
+
+  it("carries a cross-group drag, landing at the end of a group with no slot left", () => {
+    const full = [r("a", true), r("b", true), r("x", false), r("y", false)]
+    // b hidden, y hidden; a dragged into related below x.
+    const next = mergeVisibleOrder(full, [r("x", false), r("a", false)])
+    expect(ids(next)).toBe("bF,xR,yR,aR")
+  })
+
+  it("is the identity when nothing is hidden", () => {
+    const full = [r("a", true), r("b", false)]
+    expect(ids(mergeVisibleOrder(full, full))).toBe("aF,bR")
   })
 })

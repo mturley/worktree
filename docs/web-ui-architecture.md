@@ -707,10 +707,20 @@ is the newest of exactly the events counted, never "now". Slack threads post
 `/api/thread/mark-read` — a write to Slack itself — through their cached
 `updated_ts`, the latest message as of the poll that flagged them.
 
-**Show unread only** (`UnreadOnlyToggle`) narrows the two unified feeds — the
-home page's and the worktree page's — to unread events; the single-resource
-feed has no toggle, because one cursor keeps its unread events together at the
-top under the divider. It filters SERVER-side via `unread_only`, since the
+**Show unread only** (`UnreadOnlyToggle`) is one UI-wide choice
+(`useUnreadOnly`): persisted in localStorage under `worktree.unreadOnly`, shared
+by every toggle in the tab via `useSyncExternalStore`, and carried to other
+tabs by the `storage` event. The home page's toggle sits beside the worktree
+sort control; the worktree page's beside Follow resource. When on it hides
+worktrees without `has_unread` and resources without `hasUnread` (empty states
+"No worktrees with unread events" / "No resources with unread events"), and
+narrows the two unified feeds to unread events. A selected resource that the
+filter hides — typically one just marked read — is deselected by the
+stale-selection effect, with `replace`. The single-resource feed is never
+narrowed: one cursor keeps its unread events together at the top under the
+divider. Reordering a filtered resource list saves the FULL order
+(`mergeVisibleOrder`), because the server appends any card an order omits to
+the end of its group, which would sink every hidden card. The feeds filter SERVER-side via `unread_only`, since the
 feeds page with a limit. The worktree timeline filters in memory on
 `te.Unread`, IsUnread's own verdict. The global timeline pages in SQL, so
 `unreadOnlyClause` re-implements IsUnread as a predicate — both clocks,

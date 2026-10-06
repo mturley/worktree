@@ -6,10 +6,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ResourceDTO } from "../api/types"
 import { api } from "../api/client"
 
-const resources: ResourceDTO[] = [
+const baseResources: ResourceDTO[] = [
   { type: "pr", id: "o/r#1", url: "https://gh/pr/1", primary: true, title: "Fix the widget", state: "OPEN" } as ResourceDTO,
   { type: "jira", id: "J-1", url: "https://jira/J-1", primary: true, title: "Investigate flux", status: "In Progress" } as ResourceDTO,
 ]
+// Reassigned by tests that need unread state; reset before each.
+let resources = baseResources
 
 const detailArgs = vi.hoisted(() => [] as unknown[][])
 vi.mock("../hooks/useWorktreeDetail", () => ({
@@ -50,7 +52,11 @@ const wrap = () =>
     </MantineProvider>,
   )
 
-beforeEach(() => window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}`))
+beforeEach(() => {
+  window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}`)
+  window.localStorage.clear()
+  resources = baseResources
+})
 afterEach(cleanup)
 
 describe("WorktreeDetailPage header", () => {
@@ -390,7 +396,7 @@ describe("WorktreeDetailPage scroll model", () => {
 })
 
 describe("WorktreeDetailPage unread-only toggle", () => {
-  it("narrows the worktree's activity feed to unread events", async () => {
+  it("narrows the worktree's activity feed to unread events, and remembers it", async () => {
     setViewport("wide")
     const user = userEvent.setup()
     wrap()
@@ -399,15 +405,41 @@ describe("WorktreeDetailPage unread-only toggle", () => {
     expect(detailArgs.at(-1)?.[2]).toBe(false)
     await user.click(toggle)
     expect(detailArgs.at(-1)?.[2]).toBe(true)
+    expect(window.localStorage.getItem("worktree.unreadOnly")).toBe("true")
   })
 
-  it("is not offered beside a selected resource's feed", async () => {
-    // A single resource's unread events always sit together at the top of
-    // its feed, under the unread divider, so the filter would add nothing.
+  it("sits beside Follow resource, so it stays offered beside a selected resource", async () => {
     window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?resource=pr:o%2Fr%231`)
+    resources = [{ ...baseResources[0], unread_count: 1 }, baseResources[1]]
     setViewport("wide")
     wrap()
     await screen.findByRole("button", { name: /all resources/i })
-    expect(screen.queryByRole("switch", { name: "Show unread only" })).not.toBeInTheDocument()
+    const toggle = screen.getByRole("switch", { name: "Show unread only" })
+    const follow = screen.getByRole("button", { name: /Follow resource/ })
+    expect(follow.parentElement).toContainElement(toggle)
+  })
+
+  it("hides resources without unread events", async () => {
+    window.localStorage.setItem("worktree.unreadOnly", "true")
+    resources = [{ ...baseResources[0], unread_count: 2 }, baseResources[1]]
+    setViewport("wide")
+    wrap()
+    expect(await screen.findByText(/Fix the widget/)).toBeInTheDocument()
+    expect(screen.queryByText(/Investigate flux/)).not.toBeInTheDocument()
+  })
+
+  it("says so when no resource has unread events", async () => {
+    window.localStorage.setItem("worktree.unreadOnly", "true")
+    setViewport("wide")
+    wrap()
+    expect(await screen.findByText("No resources with unread events")).toBeInTheDocument()
+  })
+
+  it("deselects a selected resource once it has nothing unread", async () => {
+    window.localStorage.setItem("worktree.unreadOnly", "true")
+    window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?resource=pr:o%2Fr%231`)
+    setViewport("wide")
+    wrap()
+    await waitFor(() => expect(window.location.search).toBe(""))
   })
 })

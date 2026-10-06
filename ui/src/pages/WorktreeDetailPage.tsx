@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Anchor, Badge, Box, Button, Collapse, Grid, Group, Stack, Tabs, Title } from "@mantine/core"
 import { Link, useRoute } from "wouter"
 import { useWorktreeDetail } from "../hooks/useWorktreeDetail"
@@ -16,6 +16,8 @@ import { SourceFilter } from "../components/SourceFilter"
 import { RefreshWatchersButton } from "../components/RefreshWatchersButton"
 import { MarkAllReadButton } from "../components/MarkAllReadButton"
 import { UnreadOnlyToggle } from "../components/UnreadOnlyToggle"
+import { useUnreadOnly } from "../hooks/useUnreadOnly"
+import { hasUnread } from "../lib/unread"
 import { ThreadActionsContext } from "../components/slack/ThreadActionsContext"
 import { AddResourceModal } from "../components/AddResourceModal"
 import { parseThreadUrl } from "../lib/parseThreadUrl"
@@ -29,21 +31,28 @@ export function WorktreeDetailPage() {
   // narrows the timeline to that one resource, so the toggles are hidden there
   // rather than left as dead controls.
   const [sources, setSources] = useState<string[]>([])
-  // Same scope as the source toggles, and for the same reason: a selected
-  // resource's feed is one cursor, its unread events already together at
-  // the top under the divider.
-  const [unreadOnly, setUnreadOnly] = useState(false)
+  // Shared with the home page and every other tab. Narrows the resource list
+  // and the worktree's unified feed; a selected resource's own feed is left
+  // whole, its unread events already together at the top under the divider.
+  const [unreadOnly, setUnreadOnly] = useUnreadOnly()
   const { resources, timeline } = useWorktreeDetail(path, sources, unreadOnly)
   const { selected, select, toggle, clear } = useSelectedResource()
   const wide = useIsWide()
   const worktrees = useWorktrees()
 
-  const items = resources.data ?? []
+  const items = useMemo(() => resources.data ?? [], [resources.data])
+  // Memoized, not just derived: ResourceList drops its optimistic order
+  // whenever this array changes identity, so a fresh one per render would
+  // undo every drag before the save landed.
+  const shownItems = useMemo(() => (unreadOnly ? items.filter(hasUnread) : items), [items, unreadOnly])
   const summary = (worktrees.data ?? []).find((w) => w.path === path)
   const name = worktreeName(path)
   const hasWorkspace = useCmuxMatches(path).length > 0
+  // Against the SHOWN list: with unread only on, a resource that is marked
+  // read leaves the list, and the effect below then deselects it rather than
+  // leaving its detail open beside a list that no longer has it.
   const selectedResource = selected
-    ? items.find((r) => r.type === selected.type && r.id === selected.id)
+    ? shownItems.find((r) => r.type === selected.type && r.id === selected.id)
     : undefined
 
   // A ?resource= pointing at something this worktree no longer has (removed
@@ -52,6 +61,10 @@ export function WorktreeDetailPage() {
   // so it must REPLACE the history entry rather than push a new one — a push
   // here would trap the back button (stale -> clean -> back -> stale -> the
   // effect fires again and pushes clean again, forever).
+  //
+  // The same goes for a resource "Show unread only" hides, including one the
+  // user just marked read: there is no back to return to it while the filter
+  // stands, so a push would only add a dead entry.
   useEffect(() => {
     if (selected && resources.data && !selectedResource) clear({ replace: true })
   }, [selected, resources.data, selectedResource, clear])
@@ -109,7 +122,10 @@ export function WorktreeDetailPage() {
 
   const list = (
     <ResourceList
-      items={items}
+      items={shownItems}
+      allItems={unreadOnly ? items : undefined}
+      emptyText={unreadOnly && items.length > 0 ? "No resources with unread events" : undefined}
+      toolbar={<UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} />}
       path={path}
       onChanged={resources.refetch}
       selectedKey={selected}
@@ -125,10 +141,7 @@ export function WorktreeDetailPage() {
           <RefreshWatchersButton />
           <MarkAllReadButton resources={items} />
         </Group>
-        <Group gap="sm" wrap="wrap">
-          <SourceFilter value={sources} onChange={setSources} />
-          <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} />
-        </Group>
+        <SourceFilter value={sources} onChange={setSources} />
       </Group>
       <TimelineFeed
         events={timeline.events}

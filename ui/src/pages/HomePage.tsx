@@ -10,6 +10,7 @@ import { WorktreeList } from "../components/WorktreeList"
 import { TimelineFeed } from "../components/TimelineFeed"
 import { ArchivedToggle } from "../components/ArchivedToggle"
 import { UnreadOnlyToggle } from "../components/UnreadOnlyToggle"
+import { useUnreadOnly } from "../hooks/useUnreadOnly"
 import { SourceFilter } from "../components/SourceFilter"
 import { RefreshWatchersButton } from "../components/RefreshWatchersButton"
 import { NewWorktreeModal } from "../components/NewWorktreeModal"
@@ -23,7 +24,9 @@ export function HomePage() {
   const [, navigate] = useLocation()
   const [archived, setArchived] = useState(false)
   const [sources, setSources] = useState<string[]>([])
-  const [unreadOnly, setUnreadOnly] = useState(false)
+  // Shared with every worktree page and every other tab; narrows both the
+  // worktree list and the activity feed.
+  const [unreadOnly, setUnreadOnly] = useUnreadOnly()
   const [newOpen, setNewOpen] = useState(false)
   const wide = useIsWide()
   const wts = useWorktrees()
@@ -42,6 +45,11 @@ export function HomePage() {
     })
   }, [wts.data, sort.mode, sort.createdDir, sort.nameDir, positions])
 
+  const shownWorktrees = useMemo(
+    () => (unreadOnly ? sortedWorktrees.filter((w) => w.has_unread) : sortedWorktrees),
+    [sortedWorktrees, unreadOnly],
+  )
+
   const sortControl = (
     <WorktreeSortControl
       mode={sort.mode}
@@ -51,6 +59,7 @@ export function HomePage() {
       onDirectionChange={sort.mode === "name" ? sort.setNameDir : sort.setCreatedDir}
     />
   )
+  const unreadToggle = <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} />
 
   const newWorktreeButton = (
     <Button size="xs" leftSection={<IconPlus size={14} />} onClick={() => setNewOpen(true)}>
@@ -75,7 +84,14 @@ export function HomePage() {
     navigate(`/worktree/${encodeURIComponent(path)}?resource=${serializeResourceKey(key)}`)
   }
 
-  const worktrees = <WorktreeList items={sortedWorktrees} />
+  const worktrees = (
+    <WorktreeList
+      items={shownWorktrees}
+      // Only once there are worktrees to hide: with none at all, the usual
+      // "create one" hint is the more useful thing to say.
+      emptyText={unreadOnly && sortedWorktrees.length > 0 ? "No worktrees with unread events" : undefined}
+    />
+  )
   const timeline = (
     <Stack gap="sm">
       <Group justify="space-between" wrap="wrap" gap="xs">
@@ -88,7 +104,6 @@ export function HomePage() {
             the heading. */}
         <Group gap="sm" wrap="wrap">
           <SourceFilter value={sources} onChange={setSources} />
-          <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} />
           <ArchivedToggle value={archived} onChange={setArchived} />
         </Group>
       </Group>
@@ -124,7 +139,10 @@ export function HomePage() {
           </Tabs.List>
           <Tabs.Panel value="worktrees" pt="md">
             <Stack gap="xs">
-              <Group justify="flex-end">{sortControl}</Group>
+              <Group justify="flex-end" gap="md">
+                {unreadToggle}
+                {sortControl}
+              </Group>
               {worktrees}
             </Stack>
           </Tabs.Panel>
@@ -146,6 +164,7 @@ export function HomePage() {
             <Group gap="xl" wrap="nowrap">
               <Title order={4}>Worktrees</Title>
               {sortControl}
+              {unreadToggle}
             </Group>
             <Group gap="xs">
               {newWorktreeButton}

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest"
-import { render, cleanup, screen, waitFor } from "@testing-library/react"
+import { act, render, cleanup, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -156,5 +156,46 @@ describe("HomePage unread-only toggle", () => {
     expect(mocks.timelineArgs.at(-1)?.[2]).toBe(false)
     await user.click(toggle)
     expect(mocks.timelineArgs.at(-1)?.[2]).toBe(true)
+    expect(window.localStorage.getItem("worktree.unreadOnly")).toBe("true")
+  })
+
+  it("sits beside the sort control in both layouts", async () => {
+    for (const width of ["narrow", "wide"] as const) {
+      setViewport(width)
+      wrap()
+      const sort = await screen.findByRole("combobox", { name: "Sort worktrees" })
+      const toggle = screen.getByRole("switch", { name: "Show unread only" })
+      expect(toggle.closest(".mantine-Group-root")).toContainElement(sort)
+      cleanup()
+    }
+  })
+
+  it("hides worktrees without unread events", () => {
+    window.localStorage.setItem("worktree.unreadOnly", "true")
+    mocks.worktrees = [
+      summary,
+      { ...summary, path: "/wt/bar", branch: "bar-branch", has_unread: true, unread_count: 1 },
+    ]
+    setViewport("wide")
+    wrap()
+    expect(screen.getByText(/bar-branch/)).toBeInTheDocument()
+    expect(screen.queryByText(/my-branch/)).not.toBeInTheDocument()
+  })
+
+  it("says so when no worktree has unread events", () => {
+    window.localStorage.setItem("worktree.unreadOnly", "true")
+    setViewport("wide")
+    wrap()
+    expect(screen.getByText("No worktrees with unread events")).toBeInTheDocument()
+  })
+
+  it("follows a change made in another tab", async () => {
+    setViewport("wide")
+    wrap()
+    act(() => {
+      window.localStorage.setItem("worktree.unreadOnly", "true")
+      window.dispatchEvent(new StorageEvent("storage", { key: "worktree.unreadOnly", newValue: "true" }))
+    })
+    expect(screen.getByRole("switch", { name: "Show unread only" })).toBeChecked()
   })
 })
