@@ -1,0 +1,51 @@
+{
+  "active": { "pane_ref": "pane:2", "surface_ref": "surface:3", "workspace_ref": "workspace:9" },
+  "windows": [
+    {
+      "ref": "window:1",
+      "workspaces": [
+        {
+          "id": "OTHER-UUID",
+          "layout": { "pane": { "ref": "pane:7" } },
+          "panes": [ { "ref": "pane:7", "focused": false, "surfaces": [] } ]
+        },
+        {
+          "id": "AAAA-UUID",
+          "title": "Example workspace",
+          "layout": {
+            "direction": "horizontal",
+            "split": 0.4,
+            "children": [
+              { "pane": { "ref": "pane:1" } },
+              {
+                "direction": "vertical",
+                "split": 0.75,
+                "children": [ { "pane": { "ref": "pane:2" } }, { "pane": { "ref": "pane:3" } } ]
+              }
+            ]
+          },
+          "panes": [
+            {
+              "ref": "pane:1",
+              "focused": false,
+              "surfaces": [
+                { "ref": "surface:1", "type": "terminal", "title": "◐ example-agent", "url": null, "selected_in_pane": true, "tty": "ttys001" },
+                { "ref": "surface:2", "type": "terminal", "title": "make dev", "url": null, "selected_in_pane": false }
+              ]
+            },
+            {
+              "ref": "pane:2",
+              "focused": true,
+              "surfaces": [
+                { "ref": "surface:3", "type": "browser", "title": "Example page", "url": "https://example.com/page", "selected_in_pane": true },
+                { "ref": "surface:4", "type": "browser", "title": "Unloaded tab", "url": null, "selected_in_pane": false },
+                { "ref": "surface:5", "type": "markdown", "title": "notes.md", "url": null, "selected_in_pane": false }
+              ]
+            },
+            { "ref": "pane:3", "focused": false, "surfaces": [] }
+          ]
+        }
+      ]
+    }
+  ]
+}
