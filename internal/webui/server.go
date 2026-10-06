@@ -95,6 +95,11 @@ type Server struct {
 	// cmuxSetDescription is the same kind of seam for the notes sync.
 	cmuxSetDescription func(workspaceRef, description string) error
 
+	// tabs is the browser notification registry; see tabs.go. Lazily built
+	// by tabRegistry(), since Server is a bare struct literal everywhere.
+	tabsOnce sync.Once
+	tabs     *tabRegistry
+
 	// LinkResolver is a seam for tests; nil means a default resolver.
 	LinkResolver *linkmeta.Resolver
 }
@@ -149,6 +154,8 @@ func (s *Server) routes() []route {
 		{"POST /api/worktree-resources/primary", s.handleSetResourcePrimary},
 		{"POST /api/worktree-resources/order", s.handleSetResourceOrder},
 		{"GET /api/stream", s.handleStream},
+		{"POST /api/tabs/presence", s.handleTabPresence},
+		{"POST /api/tabs/ack", s.handleTabAck},
 
 		// Slack thread/reply/react + image proxies (folded in from slack-mini).
 		{"GET /api/thread", s.handleThread},
