@@ -61,6 +61,12 @@ function resourceMetaLine(r: ResourceDTO): string {
   return parts.join(" · ")
 }
 
+// The type line's brand icon and the gap after it. The lines beneath it are
+// indented by both, to start where the type badge does.
+const TYPE_LINE_ICON_SIZE = 14
+const TYPE_LINE_ICON_GAP = 6
+const TYPE_LINE_INDENT = TYPE_LINE_ICON_SIZE + TYPE_LINE_ICON_GAP
+
 function FocusResourceLine({ r }: { r: ResourceDTO }) {
   const label = r.custom_name || r.title || r.id
   const meta = resourceMetaLine(r)
@@ -70,12 +76,16 @@ function FocusResourceLine({ r }: { r: ResourceDTO }) {
           icon, type badge, then this resource's icon and key — so a resource
           is introduced the same way on both pages. */}
       <ResourceTypeLine r={r} />
-      <Group gap={6} wrap="nowrap" align="center">
-        <UnreadDot r={r} />
+      {/* The unread dot sits in the gutter under the brand icon, so the title
+          lines up with the type badge whether or not the dot is shown. */}
+      <Group gap={TYPE_LINE_ICON_GAP} wrap="nowrap" align="center">
+        <Box w={TYPE_LINE_ICON_SIZE} style={{ display: "flex", justifyContent: "center", flexShrink: 0 }}>
+          <UnreadDot r={r} />
+        </Box>
         <Text size="sm" c="dimmed" lineClamp={1} style={{ minWidth: 0 }}>{label}</Text>
       </Group>
       {meta && (
-        <Text size="xs" c="dimmed" lineClamp={1} style={{ minWidth: 0 }}>
+        <Text size="xs" c="dimmed" pl={TYPE_LINE_INDENT} lineClamp={1} style={{ minWidth: 0 }}>
           {meta}
         </Text>
       )}
@@ -177,8 +187,9 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
             // ones you did not mark as the point of this worktree — so this
             // line is the only place their shape shows. Named by type, since
             // "2 related Slack threads" tells you where to look and a bare
-            // total does not.
-            <Text size="xs" c="dimmed">
+            // total does not. Indented like the resource lines above, so it
+            // reads as the tail of that list rather than a new fact.
+            <Text size="xs" c="dimmed" pl={TYPE_LINE_INDENT}>
               {`+ ${related}`}
             </Text>
           )}
