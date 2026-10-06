@@ -302,10 +302,13 @@ describe('ThreadView initial scroll position', () => {
   it('positions once per thread, not on every live update', () => {
     const qc = new QueryClient()
     const t = readThread()
+    t.data = { ...t.data!, unreadIndex: 1 }
     const { rerender } = render(wrap(baseTab(), t, qc))
     const updated = { ...t, data: { ...t.data!, messages: [...t.data!.messages, msg('1700000002.000001')] } }
     rerender(wrap(baseTab(), updated, qc))
-    expect(scrolled).toHaveLength(1)
+    // Following new messages to the end is a separate behaviour (see below);
+    // the jump to the unread divider must not happen again.
+    expect(scrolled.filter((s) => (s.opts as ScrollIntoViewOptions).block === 'start')).toHaveLength(1)
   })
 
   it('positions again when a different thread is selected', () => {
@@ -314,5 +317,119 @@ describe('ThreadView initial scroll position', () => {
     const { rerender } = render(wrap(baseTab(), t, qc))
     rerender(wrap({ ...baseTab(), id: 't2', threadTs: '1700000099.000001' }, t, qc))
     expect(scrolled).toHaveLength(2)
+  })
+})
+
+describe('ThreadView following the end of the thread', () => {
+  const msg = (ts: string) =>
+    ({ TS: ts, UserID: 'U2', Text: `m ${ts}`, Blocks: null, Reactions: null, Edited: false, Files: null, Attachments: null })
+
+  // The page scrolls, not the list, so "at the end" is whether the end of the
+  // message list is on screen: an IntersectionObserver, which jsdom lacks.
+  let observed: { cb: IntersectionObserverCallback; el: Element }[] = []
+  let scrolled: { el: Element; opts: ScrollIntoViewOptions | boolean | undefined }[] = []
+  const originalScroll = Element.prototype.scrollIntoView
+  const originalIO = window.IntersectionObserver
+  beforeEach(() => {
+    observed = []
+    scrolled = []
+    Element.prototype.scrollIntoView = function (this: Element, opts?: ScrollIntoViewOptions | boolean) {
+      scrolled.push({ el: this, opts })
+    }
+    window.IntersectionObserver = class {
+      cb: IntersectionObserverCallback
+      constructor(cb: IntersectionObserverCallback) {
+        this.cb = cb
+      }
+      observe(el: Element) {
+        observed.push({ cb: this.cb, el })
+      }
+      disconnect() {}
+      unobserve() {}
+      takeRecords() {
+        return []
+      }
+    } as unknown as typeof IntersectionObserver
+  })
+  afterEach(() => {
+    Element.prototype.scrollIntoView = originalScroll
+    window.IntersectionObserver = originalIO
+  })
+
+  function setListEndVisible(visible: boolean) {
+    act(() => {
+      for (const o of observed) {
+        o.cb([{ isIntersecting: visible, target: o.el } as IntersectionObserverEntry], {} as IntersectionObserver)
+      }
+    })
+  }
+
+  function wrap(thread: UseThreadResult, qc: QueryClient) {
+    return (
+      <MantineProvider>
+        <QueryClientProvider client={qc}>
+          <ThreadView tab={baseTab()} thread={thread} onOpenThread={vi.fn()} />
+        </QueryClientProvider>
+      </MantineProvider>
+    )
+  }
+
+  function thread(count: number, unreadIndex = -1): UseThreadResult {
+    const t = baseThread()
+    t.data = {
+      ...t.data!,
+      messages: Array.from({ length: count }, (_, i) => msg(`170000000${i}.000001`)),
+      unreadIndex,
+    }
+    return t
+  }
+
+  it('offers a jump to the end only when the end is off screen', () => {
+    const { queryByRole } = render(wrap(thread(2), new QueryClient()))
+    setListEndVisible(true)
+    expect(queryByRole('button', { name: 'More messages ↓' })).toBeNull()
+    setListEndVisible(false)
+    expect(queryByRole('button', { name: 'More messages ↓' })).not.toBeNull()
+  })
+
+  it('calls it "New messages" when there are unreads', () => {
+    const { getByRole } = render(wrap(thread(2, 1), new QueryClient()))
+    setListEndVisible(false)
+    expect(getByRole('button', { name: 'New messages ↓' })).toBeTruthy()
+  })
+
+  it('jumps to the end of the thread when clicked', () => {
+    const { getByRole } = render(wrap(thread(2), new QueryClient()))
+    setListEndVisible(false)
+    scrolled = []
+    fireEvent.click(getByRole('button', { name: 'More messages ↓' }))
+    expect(scrolled).toHaveLength(1)
+    expect(scrolled[0].opts).toEqual({ block: 'end' })
+    expect(scrolled[0].el.nextElementSibling).toBeNull()
+  })
+
+  it('follows new messages when the reader is at the end', () => {
+    const qc = new QueryClient()
+    const { rerender } = render(wrap(thread(2), qc))
+    setListEndVisible(true)
+    scrolled = []
+    rerender(wrap(thread(3), qc))
+    expect(scrolled).toHaveLength(1)
+    expect(scrolled[0].opts).toEqual({ block: 'end' })
+  })
+
+  it('leaves a reader who has scrolled up where they are', () => {
+    const qc = new QueryClient()
+    const { rerender } = render(wrap(thread(2), qc))
+    setListEndVisible(false)
+    scrolled = []
+    rerender(wrap(thread(3), qc))
+    expect(scrolled).toHaveLength(0)
+  })
+
+  it('does not let following override the initial unread position', () => {
+    render(wrap(thread(3, 1), new QueryClient()))
+    expect(scrolled).toHaveLength(1)
+    expect(scrolled[0].opts).toEqual({ block: 'start' })
   })
 })

@@ -56,32 +56,18 @@ export function ThreadView({ tab, thread, onOpenThread, topInset = 0, onComposer
   const [markError, setMarkError] = useState<string | undefined>(undefined)
   const [isAtBottom, setIsAtBottom] = useState(true)
   const [pending, setPending] = useState<PendingReply[]>([])
-  const scrollRef = useRef<HTMLDivElement>(null)
   const unreadDividerRef = useRef<HTMLDivElement>(null)
+  const listEndRef = useRef<HTMLDivElement>(null)
   const threadEndRef = useRef<HTMLDivElement>(null)
+  // isAtBottom as of the last observer report, readable from the follow
+  // effect without re-running it whenever the reader scrolls.
+  const isAtBottomRef = useRef(true)
   const prevMessageCount = useRef(0)
   // Which thread the message list has been initially positioned for. Reset
   // whenever the list unmounts (loading, refresh, empty), so it is positioned
   // again the next time messages render.
   const positionedFor = useRef<string | null>(null)
   const pendingLocalId = useRef(0)
-
-  // Tolerance (px) for treating the scroll container as "at the bottom" —
-  // avoids flicker from sub-pixel layout rounding.
-  const AT_BOTTOM_THRESHOLD_PX = 8
-
-  function checkIsAtBottom(container: HTMLDivElement): boolean {
-    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
-    return distanceFromBottom <= AT_BOTTOM_THRESHOLD_PX
-  }
-
-  function handleScroll() {
-    const container = scrollRef.current
-    if (!container) {
-      return
-    }
-    setIsAtBottom(checkIsAtBottom(container))
-  }
 
   useEffect(() => {
     if (cachedWorkspaceDomain) {
@@ -134,31 +120,42 @@ export function ThreadView({ tab, thread, onOpenThread, topInset = 0, onComposer
     }
   }, [threadKey, hasMessages, topInset])
 
-  // Track whether the user is scrolled away from the bottom so live
-  // updates can show a subtle "new/more messages" affordance instead of
-  // silently appending below the fold. When a new message arrives while the
-  // user was already at the bottom, auto-scroll to keep following the
-  // conversation instead of leaving them stranded above new content.
+  // Track whether the reader is at the end of the thread so live updates can
+  // show a "new/more messages" affordance instead of silently appending below
+  // the fold. The page scrolls, not the list (see above), so "at the end" is
+  // whether the end of the message list is on screen — which an
+  // IntersectionObserver reports without a scroll listener on the window.
+  // The small bottom margin absorbs sub-pixel rounding at the very end.
   useEffect(() => {
-    const messages = data?.messages ?? []
-    const container = scrollRef.current
-    if (messages.length > prevMessageCount.current && container && checkIsAtBottom(container)) {
-      container.scrollTop = container.scrollHeight
+    const listEnd = listEndRef.current
+    if (!hasMessages || !listEnd || typeof IntersectionObserver === 'undefined') {
+      return
     }
-    prevMessageCount.current = messages.length
-    // Recompute at-bottom state after content changes (e.g. a short thread
-    // that just became scrollable, or new messages changing scrollHeight).
-    if (container) {
-      setIsAtBottom(checkIsAtBottom(container))
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        isAtBottomRef.current = entry.isIntersecting
+        setIsAtBottom(entry.isIntersecting)
+      },
+      { rootMargin: '0px 0px 8px 0px' },
+    )
+    observer.observe(listEnd)
+    return () => observer.disconnect()
+  }, [threadKey, hasMessages])
+
+  // When a new message arrives while the reader was at the end, keep
+  // following the conversation instead of leaving them stranded above it.
+  // Not on a thread's first render (prevMessageCount 0): the initial
+  // position above owns that, and would otherwise lose the unread divider.
+  useEffect(() => {
+    const count = data?.messages.length ?? 0
+    if (prevMessageCount.current > 0 && count > prevMessageCount.current && isAtBottomRef.current) {
+      threadEndRef.current?.scrollIntoView?.({ block: 'end' })
     }
+    prevMessageCount.current = count
   }, [data?.messages])
 
   function scrollToBottom() {
-    const container = scrollRef.current
-    if (container) {
-      container.scrollTop = container.scrollHeight
-    }
-    setIsAtBottom(true)
+    threadEndRef.current?.scrollIntoView?.({ block: 'end' })
   }
 
   const qc = useQueryClient()
@@ -373,13 +370,8 @@ export function ThreadView({ tab, thread, onOpenThread, topInset = 0, onComposer
       )}
 
       {status === 'ready' && data && data.messages.length > 0 && (
-        <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex' }}>
-          <Stack
-            ref={scrollRef}
-            onScroll={handleScroll}
-            gap="md"
-            style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 4, paddingBottom: 64 }}
-          >
+        <div>
+          <Stack gap="md" style={{ paddingRight: 4 }}>
             {data.messages.map((message, index) => (
               <div key={message.TS}>
                 {hasUnread && index === data.unreadIndex && (
@@ -401,36 +393,52 @@ export function ThreadView({ tab, thread, onOpenThread, topInset = 0, onComposer
               </div>
             ))}
             {pending.map(renderPendingRow)}
+            <div ref={listEndRef} />
           </Stack>
-          {!isAtBottom && (
-            <Button
-              size="xs"
-              variant={hasUnread ? 'filled' : 'default'}
-              onClick={scrollToBottom}
-              style={{ position: 'absolute', bottom: 56, left: '50%', transform: 'translateX(-50%)' }}
-            >
-              {hasUnread ? 'New messages ↓' : 'More messages ↓'}
-            </Button>
-          )}
-          <Paper
-            shadow="md"
-            p="xs"
-            radius="md"
-            withBorder
+          {/*
+            The action bar and the jump button float at the bottom of the
+            WINDOW while the thread runs past it, and settle under the last
+            message at the end: sticky, since the page is what scrolls. Its
+            parent is this wrapper, so it never floats outside the thread.
+          */}
+          <div
             style={{
-              position: 'absolute',
+              position: 'sticky',
               bottom: 8,
-              left: '50%',
-              transform: 'translateX(-50%)',
-              backgroundColor: 'rgba(37, 38, 43, 0.9)',
-              backdropFilter: 'blur(6px)',
-              width: 'max-content',
-              maxWidth: 'calc(100% - 16px)',
-              overflowX: 'auto',
+              zIndex: 2,
+              marginTop: 'var(--mantine-spacing-md)',
+              display: 'flex',
+              justifyContent: 'center',
             }}
           >
-            {actionBar}
-          </Paper>
+            {!isAtBottom && (
+              <Button
+                size="xs"
+                variant={hasUnread ? 'filled' : 'default'}
+                onClick={scrollToBottom}
+                // Above the bar, out of flow: showing and hiding it must not
+                // change the page's height under the reader.
+                style={{ position: 'absolute', bottom: '100%', marginBottom: 8 }}
+              >
+                {hasUnread ? 'New messages ↓' : 'More messages ↓'}
+              </Button>
+            )}
+            <Paper
+              shadow="md"
+              p="xs"
+              radius="md"
+              withBorder
+              style={{
+                backgroundColor: 'rgba(37, 38, 43, 0.9)',
+                backdropFilter: 'blur(6px)',
+                width: 'max-content',
+                maxWidth: 'calc(100% - 16px)',
+                overflowX: 'auto',
+              }}
+            >
+              {actionBar}
+            </Paper>
+          </div>
         </div>
       )}
 
