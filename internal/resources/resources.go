@@ -12,6 +12,7 @@ import (
 	watcherdb "github.com/mturley/watcher/db"
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/discovery"
+	"github.com/mturley/worktree/internal/notifyprefs"
 	"github.com/mturley/worktree/internal/unread"
 )
 
@@ -202,10 +203,12 @@ func Remove(conn *sql.DB, worktreePath, resType, id string) error {
 	if err := watcherdb.Unsubscribe(conn, sub, wr); err != nil {
 		return err
 	}
-	_, err := conn.Exec(
+	if _, err := conn.Exec(
 		`DELETE FROM worktree_primary WHERE subscriber = ? AND resource_type = ? AND resource_id = ?`,
-		sub, resType, id)
-	return err
+		sub, resType, id); err != nil {
+		return err
+	}
+	return notifyprefs.RemoveResource(conn, worktreePath, resType, id)
 }
 
 // RemoveAll hard-removes every tracked resource for the worktree at
@@ -226,8 +229,11 @@ func RemoveAll(conn *sql.DB, worktreePath string) error {
 	}
 	// Delete all primary-flag rows for this subscriber (covers any rows whose
 	// subscription was already tombstoned and thus not returned by Load).
-	_, err = conn.Exec(`DELETE FROM worktree_primary WHERE subscriber = ?`, sub)
-	return err
+	if _, err := conn.Exec(`DELETE FROM worktree_primary WHERE subscriber = ?`, sub); err != nil {
+		return err
+	}
+	// The toggles go with the subscriptions: nothing could match them now.
+	return notifyprefs.RemoveAll(conn, worktreePath)
 }
 
 // SetMeta upserts the user-supplied custom name/description for a resource.

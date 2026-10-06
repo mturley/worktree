@@ -1,7 +1,8 @@
 import { afterEach, describe, it, expect, vi } from "vitest"
-import { render, screen, waitFor } from "@testing-library/react"
+import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { ResourceCard, editDetailsLabel } from "./ResourceCard"
 import type { ResourceDTO } from "../api/types"
 
@@ -705,5 +706,49 @@ describe("editDetailsLabel", () => {
   it("stays description-only for a PR", () => {
     expect(editDetailsLabel({ type: "pr", id: "o/r#1", url: "u", primary: true } as ResourceDTO))
       .toBe("Add custom description")
+  })
+})
+
+const wrapQ = (ui: React.ReactNode) =>
+  render(
+    <MantineProvider>
+      <QueryClientProvider client={new QueryClient()}>{ui}</QueryClientProvider>
+    </MantineProvider>,
+  )
+
+describe("notification switch on the detail card", () => {
+  const pr = { type: "pr", id: "o/r#1", url: "u", primary: true, title: "T" }
+  it("is absent without a notify context", () => {
+    wrap(<ResourceCard r={pr} path="/w" variant="detail" />)
+    expect(screen.queryByLabelText("Notify on new events")).toBeNull()
+  })
+  it("is shown, and disabled while the worktree notifies on all", () => {
+    wrapQ(<ResourceCard r={pr} path="/w" variant="detail" notify={{ all: true, mode: "cmux" }} />)
+    const input = screen.getByLabelText("Notify on new events") as HTMLInputElement
+    expect(input.checked).toBe(true)
+    expect(input.disabled).toBe(true)
+  })
+  it("is never shown for a link", () => {
+    wrapQ(<ResourceCard r={{ ...pr, type: "link", id: "https://x" }} path="/w" variant="detail" notify={{ all: false, mode: "cmux" }} />)
+    expect(screen.queryByLabelText("Notify on new events")).toBeNull()
+  })
+})
+
+describe("bell on list cards", () => {
+  const pr = { type: "pr", id: "o/r#1", url: "u", primary: true, title: "T" }
+  it("explicit when the resource notifies", () => {
+    wrap(<ResourceCard r={{ ...pr, notify: true }} notify={{ all: false, mode: "cmux" }} />)
+    expect(screen.getByRole("img", { name: "Notifications on" })).toBeTruthy()
+  })
+  it("implicit wins when the worktree notifies on all", () => {
+    wrap(<ResourceCard r={{ ...pr, notify: true }} notify={{ all: true, mode: "cmux" }} />)
+    expect(screen.getByRole("img", { name: "Notifications on for the whole worktree" })).toBeTruthy()
+  })
+  it("none when off, and never on a link", () => {
+    wrap(<ResourceCard r={pr} notify={{ all: false, mode: "cmux" }} />)
+    expect(screen.queryByRole("img", { name: /Notifications on/ })).toBeNull()
+    cleanup()
+    wrap(<ResourceCard r={{ ...pr, type: "link", id: "https://x" }} notify={{ all: true, mode: "cmux" }} />)
+    expect(screen.queryByRole("img", { name: /Notifications on/ })).toBeNull()
   })
 })

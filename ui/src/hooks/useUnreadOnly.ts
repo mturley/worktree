@@ -38,7 +38,7 @@ function setUnreadOnly(value: boolean): void {
 }
 
 /**
- * The UI-wide "Show unread only" choice: shared by every toggle on every page,
+ * The UI-wide "Unreads only" choice: shared by every toggle on every page,
  * remembered per browser, and kept in step across open tabs.
  */
 export function useUnreadOnly(): [boolean, (value: boolean) => void] {

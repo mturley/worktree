@@ -1,7 +1,8 @@
 import { useState } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { ActionIcon, Alert, Badge, Button, Group, Paper, Popover, SegmentedControl, Stack, Text, UnstyledButton } from "@mantine/core"
 import { IconTrash } from "@tabler/icons-react"
-import type { ResourceDTO } from "../api/types"
+import type { NotifyMode, ResourceDTO } from "../api/types"
 import { relativeTime, relativeFromNow } from "../lib/relativeTime"
 import { api } from "../api/client"
 import { ResourceActions } from "./ResourceActions"
@@ -11,6 +12,9 @@ import { cardEdgeStyle, hasUnread } from "../lib/unread"
 import { UnreadBadge } from "./UnreadBadge"
 import { EditResourceDetailsModal } from "./EditResourceDetailsModal"
 import { supportsCustomName } from "../lib/customName"
+import { TAB_ID } from "../lib/tabId"
+import { NotifySwitch } from "./NotifySwitch"
+import { NotifyBell } from "./NotifyBell"
 
 function prStateColor(state?: string): string {
   switch ((state || "").toUpperCase()) {
@@ -274,6 +278,35 @@ export function RemoveControl({ r, path, onRemoved }: { r: ResourceDTO; path: st
 
 export type ResourceCardVariant = "compact" | "detail"
 
+/**
+ * What a card needs to know about notifications beyond the resource itself:
+ * whether its worktree notifies on everything, and how the server delivers.
+ * Absent means the caller doesn't show notification UI at all.
+ */
+export interface ResourceNotifyContext {
+  all: boolean
+  mode: NotifyMode | undefined
+}
+
+function ResourceNotifySwitch({ r, path, notify }: { r: ResourceDTO; path: string; notify: ResourceNotifyContext }) {
+  const qc = useQueryClient()
+  return (
+    <NotifySwitch
+      label="Notify on new events"
+      checked={notify.all || Boolean(r.notify)}
+      mode={notify.mode}
+      disabledReason={notify.all ? "Notifications are enabled for all resources in the worktree" : undefined}
+      onToggle={async (on) => {
+        await api.setNotify({ path, type: r.type, id: r.id, on, tab: TAB_ID })
+        await Promise.all([
+          qc.invalidateQueries({ queryKey: ["resources"] }),
+          qc.invalidateQueries({ queryKey: ["worktrees"] }),
+        ])
+      }}
+    />
+  )
+}
+
 interface ResourceCardProps {
   r: ResourceDTO
   path?: string
@@ -291,6 +324,8 @@ interface ResourceCardProps {
    * already wired, so ResourceCard only has to make room for it.
    */
   dragHandle?: React.ReactNode
+  /** Notification state; when absent, no notification switch or bell renders. */
+  notify?: ResourceNotifyContext
 }
 
 export function ResourceCard({
@@ -302,6 +337,7 @@ export function ResourceCard({
   onSelect,
   onMetaChanged = () => {},
   dragHandle,
+  notify,
 }: ResourceCardProps) {
   const [editOpen, setEditOpen] = useState(false)
   // Focus/Related is written straight through on change — no confirm step for
@@ -340,6 +376,13 @@ export function ResourceCard({
     <MinimalRow r={r} variant={variant} />
   )
 
+  // Links are never polled, so they never notify, whatever the toggles say.
+  const bell =
+    !notify || r.type === "link" ? null
+    : notify.all ? <NotifyBell kind="implicit" />
+    : r.notify ? <NotifyBell kind="explicit" />
+    : null
+
   // The badge lives INSIDE the click target, not beside it. As a sibling of
   // the button it carved a fixed-width strip out of the card that no click
   // could reach — harmless at full width, but a quarter of the card once
@@ -348,7 +391,11 @@ export function ResourceCard({
   const bodyWithBadge = (
     <Group justify="space-between" wrap="nowrap" align="flex-start" gap="xs">
       <div style={{ flex: 1, minWidth: 0 }}>{body}</div>
-      <UnreadBadge unread={showsUnread(variant) && hasUnread(r)} count={r.unread_count} />
+      <Group gap={6} wrap="nowrap" style={{ flex: "none" }}>
+        {/* The detail card carries the switch instead of a bell. */}
+        {variant !== "detail" && bell}
+        <UnreadBadge unread={showsUnread(variant) && hasUnread(r)} count={r.unread_count} />
+      </Group>
     </Group>
   )
 
@@ -388,7 +435,9 @@ export function ResourceCard({
           easy mis-click; removal belongs with the selected resource.
         */}
         {variant === "detail" && (
-          <Group gap={2} wrap="nowrap">
+          <Group gap="sm" wrap="nowrap" align="flex-start">
+            {/* Links are never polled, so there is nothing to notify about. */}
+            {notify && path && r.type !== "link" && <ResourceNotifySwitch r={r} path={path} notify={notify} />}
             <RemoveControl r={r} path={path} onRemoved={onRemoved} />
           </Group>
         )}

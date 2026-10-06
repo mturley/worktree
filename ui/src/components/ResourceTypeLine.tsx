@@ -94,7 +94,7 @@ function resourceKey(r: ResourceDTO): string {
  * Shared by the worktree page's resource cards and the home page's worktree
  * cards so a resource is introduced the same way on both.
  */
-export function ResourceTypeLine({ r }: { r: ResourceDTO }) {
+export function ResourceTypeLine({ r, trailing }: { r: ResourceDTO; trailing?: React.ReactNode }) {
   const t = RESOURCE_TYPES[r.type]
   return (
     <Group gap={6} wrap="wrap" align="center" data-resource-type-line>
@@ -104,6 +104,7 @@ export function ResourceTypeLine({ r }: { r: ResourceDTO }) {
       <Badge size="xs" variant="light" color={t?.color} mr={6}>{t?.label ?? r.type}</Badge>
       {resourceIcon(r)}
       <Text size="xs" c="dimmed">{resourceKey(r)}</Text>
+      {trailing}
     </Group>
   )
 }

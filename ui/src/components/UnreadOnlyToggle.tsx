@@ -8,6 +8,6 @@ import { Switch } from "@mantine/core"
  */
 export function UnreadOnlyToggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
   return (
-    <Switch checked={value} onChange={(e) => onChange(e.currentTarget.checked)} label="Show unread only" size="sm" />
+    <Switch checked={value} onChange={(e) => onChange(e.currentTarget.checked)} label="Unreads only" size="sm" />
   )
 }

@@ -2,6 +2,7 @@ import { Route, Router, Switch } from "wouter"
 import { Alert, Button, Center, Stack } from "@mantine/core"
 import { useSSE } from "./hooks/useSSE"
 import { useSession } from "./hooks/useSession"
+import { useTabPresence } from "./hooks/useTabPresence"
 import { useUnreadFavicon } from "./hooks/useUnreadFavicon"
 import { HomeWorktreeBanner } from "./components/HomeWorktreeBanner"
 import { useHomeLocation } from "./lib/useHomeLocation"
@@ -33,6 +34,9 @@ export function App() {
 // pane lands on its page once logged in.
 function AuthenticatedApp() {
   useSSE()
+  // Tells the server where this tab is, so a browser notification comes out
+  // of the tab that best matches it (see internal/webui/tabs.go).
+  useTabPresence()
   // Beside useSSE rather than in a page: the tab says the same thing wherever
   // you are in the app, and the stream is what keeps both of them current.
   useUnreadFavicon()

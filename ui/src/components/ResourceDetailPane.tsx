@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import type { ResourceDTO } from "../api/types"
 import { useWorktreeTimeline } from "../hooks/useTimeline"
 import { api } from "../api/client"
-import { ResourceCard } from "./ResourceCard"
+import { ResourceCard, type ResourceNotifyContext } from "./ResourceCard"
 import { SlackThreadPane } from "./SlackThreadPane"
 import { LinkPane } from "./LinkPane"
 import { RefreshWatchersButton } from "./RefreshWatchersButton"
@@ -25,6 +25,8 @@ interface ResourceDetailPaneProps {
   /** Height (px) of the page's sticky header, so a Slack thread's initial
    *  scroll can keep its unread divider below it. */
   topInset?: number
+  /** Notification state for the card's switch; see ResourceNotifyContext. */
+  notify?: ResourceNotifyContext
 }
 
 /**
@@ -40,11 +42,13 @@ function TimelineBody({
   resource,
   onRemoved,
   onResourceChanged,
+  notify,
 }: {
   path: string
   resource: ResourceDTO
   onRemoved?: () => void
   onResourceChanged?: () => void
+  notify?: ResourceNotifyContext
 }) {
   const timeline = useWorktreeTimeline(path, { type: resource.type, id: resource.id })
   const qc = useQueryClient()
@@ -85,6 +89,7 @@ function TimelineBody({
         onRemoved={onRemoved}
         onMetaChanged={onResourceChanged}
         variant="detail"
+        notify={notify}
       />
       <Group justify="space-between" align="center" wrap="nowrap">
         <Group gap={6} wrap="nowrap" align="center">
@@ -174,6 +179,7 @@ export function ResourceDetailPane({
   onRemoved,
   onResourceChanged,
   topInset,
+  notify,
 }: ResourceDetailPaneProps) {
   return (
     <Stack gap="sm">
@@ -191,6 +197,7 @@ export function ResourceDetailPane({
           onRemoved={onRemoved}
           onResourceChanged={onResourceChanged}
           topInset={topInset}
+          notify={notify}
         />
       ) : resource.type === "link" ? (
         <LinkPane
@@ -205,6 +212,7 @@ export function ResourceDetailPane({
           resource={resource}
           onRemoved={onRemoved}
           onResourceChanged={onResourceChanged}
+          notify={notify}
         />
       )}
     </Stack>

@@ -5,7 +5,7 @@ import { CSS } from "@dnd-kit/utilities"
 import type { ResourceDTO } from "../api/types"
 import type { HoverMenu } from "../lib/useHoverMenu"
 import { serializeResourceKey } from "../lib/resourceKey"
-import { ResourceCard } from "./ResourceCard"
+import { ResourceCard, type ResourceNotifyContext } from "./ResourceCard"
 
 /**
  * A ResourceCard that can be dragged by its grip handle.
@@ -35,6 +35,7 @@ export function SortableResourceCard({
   onMoveToEdge,
   onSetPrimary,
   menu,
+  notify,
 }: {
   r: ResourceDTO
   path: string
@@ -46,6 +47,7 @@ export function SortableResourceCard({
   onMoveToEdge: (edge: "top" | "bottom") => void
   onSetPrimary: (primary: boolean) => void
   menu: HoverMenu
+  notify?: ResourceNotifyContext
 }) {
   const id = serializeResourceKey({ type: r.type, id: r.id })
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
@@ -70,6 +72,7 @@ export function SortableResourceCard({
         onRemoved={onRemoved}
         selected={selected}
         onSelect={onSelect}
+        notify={notify}
         dragHandle={
           <Popover
             opened={menu.opened}

@@ -2,6 +2,12 @@ import { afterEach, describe, it, expect, vi } from "vitest"
 import { renderHook, cleanup } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { useSSE } from "./useSSE"
+import { api } from "../api/client"
+
+vi.mock("../api/client", async (orig) => ({
+  ...(await orig<typeof import("../api/client")>()),
+  api: { tabAck: vi.fn(() => Promise.resolve(null)) },
+}))
 
 /**
  * Minimal EventSource stand-in: records listeners so a test can fire
@@ -18,8 +24,8 @@ class FakeEventSource {
   addEventListener(type: string, fn: (e: unknown) => void) {
     ;(this.listeners[type] ??= []).push(fn)
   }
-  emit(type: string) {
-    for (const fn of this.listeners[type] ?? []) fn({})
+  emit(type: string, data?: string) {
+    for (const fn of this.listeners[type] ?? []) fn({ data })
   }
   close() {
     this.closed = true
@@ -63,5 +69,27 @@ describe("useSSE", () => {
 
     const keys = invalidate.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey))
     expect(keys).toContain(JSON.stringify(["session"]))
+  })
+  it("names this tab on the stream URL", () => {
+    vi.stubGlobal("EventSource", FakeEventSource)
+    const qc = new QueryClient()
+    renderHook(() => useSSE(), {
+      wrapper: ({ children }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>,
+    })
+    const url = new URL(FakeEventSource.last!.url, "http://x")
+    expect(url.pathname).toBe("/api/stream")
+    expect(url.searchParams.get("tab")).toBeTruthy()
+    expect(url.searchParams.get("route")).toBe(window.location.pathname)
+  })
+
+  it("acks shown:false for a notification it cannot show", () => {
+    vi.stubGlobal("EventSource", FakeEventSource)
+    vi.stubGlobal("Notification", undefined)
+    const qc = new QueryClient()
+    renderHook(() => useSSE(), {
+      wrapper: ({ children }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>,
+    })
+    FakeEventSource.last!.emit("notification", JSON.stringify({ id: "n9", title: "t", subtitle: "", body: "", worktree_path: "/w", resource_type: "", resource_id: "", tag: "x" }))
+    expect(api.tabAck).toHaveBeenCalledWith(expect.objectContaining({ notification_id: "n9", shown: false }))
   })
 })

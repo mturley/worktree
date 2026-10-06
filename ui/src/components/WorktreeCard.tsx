@@ -9,6 +9,7 @@ import { UnreadDot } from "./ResourceStatusIcon"
 import { ResourceTypeLine } from "./ResourceTypeLine"
 import { cardEdgeStyle } from "../lib/unread"
 import { UnreadBadge } from "./UnreadBadge"
+import { NotifyBell } from "./NotifyBell"
 
 interface WorktreeCardProps {
   w: WorktreeSummary
@@ -67,7 +68,7 @@ const TYPE_LINE_ICON_SIZE = 14
 const TYPE_LINE_ICON_GAP = 6
 const TYPE_LINE_INDENT = TYPE_LINE_ICON_SIZE + TYPE_LINE_ICON_GAP
 
-function FocusResourceLine({ r }: { r: ResourceDTO }) {
+function FocusResourceLine({ r, notifyAll }: { r: ResourceDTO; notifyAll: boolean }) {
   const label = r.custom_name || r.title || r.id
   const meta = resourceMetaLine(r)
   return (
@@ -75,7 +76,11 @@ function FocusResourceLine({ r }: { r: ResourceDTO }) {
       {/* The same first line as the worktree page's resource cards — brand
           icon, type badge, then this resource's icon and key — so a resource
           is introduced the same way on both pages. */}
-      <ResourceTypeLine r={r} />
+      <ResourceTypeLine
+        r={r}
+        // With "Notify on all" on, the worktree's own bell says it once.
+        trailing={!notifyAll && r.notify && r.type !== "link" ? <NotifyBell kind="explicit" /> : undefined}
+      />
       {/* The unread dot sits in the gutter under the brand icon, so the title
           lines up with the type badge whether or not the dot is shown. */}
       <Group gap={TYPE_LINE_ICON_GAP} wrap="nowrap" align="center">
@@ -164,7 +169,12 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
             {/* Pushed to the right of the title row rather than the card's
                 corner: the cmux strip owns the top edge, and a badge floating
                 over it reads as belonging to the workspace, not the worktree. */}
-            <UnreadBadge unread={!!w.has_unread} count={w.unread_count} ml="auto" />
+            {w.notify_all && (
+              <Box ml="auto" style={{ display: "inline-flex" }}>
+                <NotifyBell kind="implicit" tooltip="Notifications are on for all resources in this worktree" />
+              </Box>
+            )}
+            <UnreadBadge unread={!!w.has_unread} count={w.unread_count} ml={w.notify_all ? undefined : "auto"} />
           </Group>
           {/*
             Identity only: which repo, which branch. The counts that used to
@@ -178,7 +188,7 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
           {w.focus_resources.length > 0 && (
             <Stack gap="sm">
               {w.focus_resources.map((r) => (
-                <FocusResourceLine key={`${r.type}:${r.id}`} r={r} />
+                <FocusResourceLine key={`${r.type}:${r.id}`} r={r} notifyAll={Boolean(w.notify_all)} />
               ))}
             </Stack>
           )}
