@@ -107,10 +107,15 @@ export function SortableResourceCard({
                 <Text size="xs" c="dimmed">Drag to reorder</Text>
                 <Group gap={4} wrap="nowrap">
                   {/* Arrows against a bar, not plain arrows: "to the top", not
-                      "up one". */}
+                      "up one".
+
+                      Subtle, like the app's other compact buttons, not light:
+                      light hovers from a 15% to a 20% tint, which measured
+                      invisible on this dark-only theme. Subtle hovers from
+                      transparent to a tint. */}
                   <Button
                     size="compact-xs"
-                    variant="light"
+                    variant="subtle"
                     leftSection={<IconArrowBarToUp size={14} />}
                     disabled={!canMoveToTop}
                     onClick={() => onMoveToEdge("top")}
@@ -119,7 +124,7 @@ export function SortableResourceCard({
                   </Button>
                   <Button
                     size="compact-xs"
-                    variant="light"
+                    variant="subtle"
                     leftSection={<IconArrowBarToDown size={14} />}
                     disabled={!canMoveToBottom}
                     onClick={() => onMoveToEdge("bottom")}
