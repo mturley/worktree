@@ -18,9 +18,18 @@ if (typeof window.matchMedia !== "function") {
 }
 
 const addResource = vi.fn()
+const setResourceOrder = vi.fn()
+const setResourcePrimary = vi.fn()
 vi.mock("../api/client", async (orig) => {
   const actual = await orig<typeof import("../api/client")>()
-  return { api: { ...actual.api, addResource: (...args: unknown[]) => addResource(...args) } }
+  return {
+    api: {
+      ...actual.api,
+      addResource: (...args: unknown[]) => addResource(...args),
+      setResourceOrder: (...args: unknown[]) => setResourceOrder(...args),
+      setResourcePrimary: (...args: unknown[]) => setResourcePrimary(...args),
+    },
+  }
 })
 
 const wrap = (ui: React.ReactNode) => render(<MantineProvider>{ui}</MantineProvider>)
@@ -28,6 +37,8 @@ const wrap = (ui: React.ReactNode) => render(<MantineProvider>{ui}</MantineProvi
 afterEach(() => {
   cleanup()
   addResource.mockReset()
+  setResourceOrder.mockReset()
+  setResourcePrimary.mockReset()
 })
 
 describe("ResourceList", () => {
@@ -123,7 +134,7 @@ describe("ResourceList drag handles", () => {
     expect(getAllByRole("button", { name: /drag to reorder/i })).toHaveLength(3)
   })
 
-  it("needs no hint text: the handles say it", () => {
+  it("shows no standing hint text: it lives in the handle's hover menu", () => {
     const { queryByText } = wrap(<ResourceList items={items} path="/w" onChanged={vi.fn()} />)
     expect(queryByText("Drag to reorder")).not.toBeInTheDocument()
   })
@@ -200,5 +211,119 @@ describe("ResourceList drag handles", () => {
     })
     fireEvent.click(card)
     expect(onSelectResource).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("ResourceList handle hover menu", () => {
+  const items = [
+    { type: "pr", id: "o/r#1", url: "u", primary: true },
+    { type: "pr", id: "o/r#2", url: "u", primary: true },
+    { type: "jira", id: "RH-9", url: "u", primary: false },
+  ]
+  const handle = (getByRole: (role: string, o: object) => HTMLElement, id: string) =>
+    getByRole("button", { name: `drag to reorder ${id}` })
+
+  it("opens on hovering a handle, with the hint and the actions", async () => {
+    const user = userEvent.setup()
+    const { getByRole, findByText, findByRole } = wrap(
+      <ResourceList items={items} path="/w" onChanged={vi.fn()} />,
+    )
+    await user.hover(handle(getByRole, "o/r#2"))
+    expect(await findByText("Drag to reorder")).toBeInTheDocument()
+    expect(await findByRole("button", { name: "Move to top" })).toBeInTheDocument()
+    expect(await findByRole("button", { name: "Move to bottom" })).toBeInTheDocument()
+    expect(await findByRole("radio", { name: "Related" })).toBeInTheDocument()
+  })
+
+  it("stays open while the pointer crosses the gap from the handle into it", async () => {
+    // The whole point of putting buttons in it: they have to be reachable.
+    // Between the handle and the menu is a gap that belongs to neither, and a
+    // slow, deliberate move (a trackpad, say) can sit in it for a while —
+    // measured in a real browser, the old 150ms close delay lost the menu.
+    const user = userEvent.setup()
+    const { getByRole, findByRole } = wrap(<ResourceList items={items} path="/w" onChanged={vi.fn()} />)
+    await user.hover(handle(getByRole, "o/r#2"))
+    const button = await findByRole("button", { name: "Move to top" })
+    await user.hover(getByRole("heading", { name: "Focus" })) // in the gap: neither handle nor menu
+    await new Promise((r) => setTimeout(r, 250))
+    await user.hover(button)
+    await new Promise((r) => setTimeout(r, 400)) // well past the close delay
+    expect(button).toBeInTheDocument()
+  })
+
+  it("shows one menu at a time when moving from one handle to the next", async () => {
+    // Adjacent cards' menus overlap, so a lingering one could catch a click
+    // meant for its neighbour's. Measured in a browser: before grouping, both
+    // stayed open together.
+    const user = userEvent.setup()
+    const { getByRole, findAllByText } = wrap(<ResourceList items={items} path="/w" onChanged={vi.fn()} />)
+    await user.hover(handle(getByRole, "o/r#1"))
+    expect(await findAllByText("Drag to reorder")).toHaveLength(1)
+    await user.hover(handle(getByRole, "o/r#2"))
+    await new Promise((r) => setTimeout(r, 350)) // past the open delay, inside the close delay
+    expect(await findAllByText("Drag to reorder")).toHaveLength(1)
+  })
+
+  it("closes as soon as the card is picked up", async () => {
+    // A menu hanging off a card that is sliding around would chase it.
+    const user = userEvent.setup()
+    const { getByRole, findByText, queryByText } = wrap(
+      <ResourceList items={items} path="/w" onChanged={vi.fn()} />,
+    )
+    const h = handle(getByRole, "o/r#1")
+    await user.hover(h)
+    await findByText("Drag to reorder")
+    vi.useFakeTimers() // dnd-kit's post-drag click listener: see the drop test
+    try {
+      act(() => {
+        fireEvent.mouseDown(h, { button: 0, clientX: 10, clientY: 10 })
+        fireEvent.mouseMove(document, { button: 0, clientX: 10, clientY: 60 })
+      })
+      // Let the menu's exit transition finish — not the close delay, which
+      // a drag skips.
+      act(() => {
+        vi.advanceTimersByTime(300)
+      })
+      expect(queryByText("Drag to reorder")).not.toBeInTheDocument()
+    } finally {
+      // Released here so a failed assertion cannot leave a drag in progress
+      // for the next test to trip over.
+      act(() => {
+        fireEvent.mouseUp(document, { button: 0, clientX: 10, clientY: 60 })
+        vi.runAllTimers()
+      })
+      vi.useRealTimers()
+    }
+  })
+
+  it("disables the move that would do nothing", async () => {
+    const user = userEvent.setup()
+    const { getByRole, findByRole } = wrap(<ResourceList items={items} path="/w" onChanged={vi.fn()} />)
+    await user.hover(handle(getByRole, "o/r#1"))
+    expect(await findByRole("button", { name: "Move to top" })).toBeDisabled()
+    expect(await findByRole("button", { name: "Move to bottom" })).toBeEnabled()
+  })
+
+  it("moves a card to the top of its group and saves the order", async () => {
+    setResourceOrder.mockResolvedValue(null)
+    const onChanged = vi.fn()
+    const user = userEvent.setup()
+    const { getByRole, findByRole } = wrap(<ResourceList items={items} path="/w" onChanged={onChanged} />)
+    await user.hover(handle(getByRole, "o/r#2"))
+    await user.click(await findByRole("button", { name: "Move to top" }))
+    expect(setResourceOrder).toHaveBeenCalledWith({
+      path: "/w",
+      focus: [{ type: "pr", id: "o/r#2" }, { type: "pr", id: "o/r#1" }],
+      related: [{ type: "jira", id: "RH-9" }],
+    })
+  })
+
+  it("reclassifies from the menu's Focus/Related toggle", async () => {
+    setResourcePrimary.mockResolvedValue(null)
+    const user = userEvent.setup()
+    const { getByRole, findByRole } = wrap(<ResourceList items={items} path="/w" onChanged={vi.fn()} />)
+    await user.hover(handle(getByRole, "o/r#1"))
+    await user.click(await findByRole("radio", { name: "Related" }))
+    expect(setResourcePrimary).toHaveBeenCalledWith({ path: "/w", type: "pr", id: "o/r#1", primary: false })
   })
 })

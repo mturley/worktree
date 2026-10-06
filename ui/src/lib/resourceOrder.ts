@@ -117,3 +117,24 @@ export function crossGroupPreview(
   const placement = !isGroup(over) && activeCenterY > overCenterY ? "after" : "before"
   return applyDrag(items, active, over, placement)
 }
+
+/**
+ * Moves a card to the top or bottom of its OWN group — the hover menu's
+ * "Move to top" / "Move to bottom". It never reclassifies: crossing between
+ * Focus and Related stays the job of a drag or the Focus/Related toggle.
+ *
+ * Returns the very same array when there is nothing to do (already at that
+ * edge, or an unknown key), so callers can skip saving by identity.
+ */
+export function moveToEdge(items: ResourceDTO[], key: ResourceKey, edge: "top" | "bottom"): ResourceDTO[] {
+  const from = indexOfKey(items, key)
+  if (from < 0) return items
+  const { primary } = items[from]
+  const group = items.map((r, i) => (r.primary === primary ? i : -1)).filter((i) => i >= 0)
+  const to = edge === "top" ? group[0] : group[group.length - 1]
+  if (to === from) return items
+  const next = items.slice()
+  const [moved] = next.splice(from, 1)
+  next.splice(to, 0, moved)
+  return next
+}

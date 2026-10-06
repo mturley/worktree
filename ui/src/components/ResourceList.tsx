@@ -16,8 +16,9 @@ import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrate
 import type { ResourceDTO } from "../api/types"
 import { api } from "../api/client"
 import { parseResourceKey, resourceKeyEquals, serializeResourceKey, type ResourceKey } from "../lib/resourceKey"
-import { applyDrag, crossGroupPreview, type DropTarget, type GroupId } from "../lib/resourceOrder"
+import { applyDrag, crossGroupPreview, moveToEdge, type DropTarget, type GroupId } from "../lib/resourceOrder"
 import { resourceCollisions } from "../lib/resourceCollision"
+import { useHoverMenu } from "../lib/useHoverMenu"
 import { SortableResourceCard } from "./SortableResourceCard"
 import { AddResourceModal } from "./AddResourceModal"
 
@@ -115,6 +116,13 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
     if (!dragging && saving.current === 0) setPending(null)
   }, [items])
 
+  // The handles' hover menus, one open at a time for the whole list.
+  // closeDelay is the grace period for crossing from handle into menu —
+  // measured in a browser, Mantine's 150ms default lost the menu on a slow,
+  // deliberate trackpad move. Closed for the length of any drag: a menu
+  // hanging off a card that is sliding around would chase it.
+  const menuFor = useHoverMenu({ openDelay: 300, closeDelay: 400, disabled: dragging })
+
   const sensors = useSensors(
     // Only the grip handle starts a drag, so these thresholds guard nothing
     // but the handle itself: a few pixels of travel, so pressing it and
@@ -153,19 +161,13 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
     // what the hold needs.
     justMoved.current ? [{ id: args.active.id }] : baseCollisions(args)
 
-  const persist = async (next: ResourceDTO[], previous: ResourceDTO[]) => {
+  // Shows `next` at once, then writes it; on failure, puts `previous` back.
+  const save = async (next: ResourceDTO[], previous: ResourceDTO[], write: () => Promise<unknown>) => {
     setPending(next)
     setError(null)
     try {
-      // Both groups are stated in full, so the call says what the order IS
-      // rather than how it changed — replayable, and safe when another
-      // device is dragging at the same time.
       saving.current++
-      await api.setResourceOrder({
-        path,
-        focus: next.filter((r) => r.primary).map((r) => ({ type: r.type, id: r.id })),
-        related: next.filter((r) => !r.primary).map((r) => ({ type: r.type, id: r.id })),
-      })
+      await write()
     } catch (e) {
       setPending(previous)
       setError(e instanceof Error ? e.message : String(e))
@@ -175,6 +177,33 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
       // replaces the optimistic list once it lands.
       onChanged()
     }
+  }
+
+  const persist = (next: ResourceDTO[], previous: ResourceDTO[]) =>
+    save(next, previous, () =>
+      // Both groups are stated in full, so the call says what the order IS
+      // rather than how it changed — replayable, and safe when another
+      // device is dragging at the same time.
+      api.setResourceOrder({
+        path,
+        focus: next.filter((r) => r.primary).map((r) => ({ type: r.type, id: r.id })),
+        related: next.filter((r) => !r.primary).map((r) => ({ type: r.type, id: r.id })),
+      }),
+    )
+
+  const moveCard = (r: ResourceDTO, edge: "top" | "bottom") => {
+    const next = moveToEdge(shown, { type: r.type, id: r.id }, edge)
+    if (next !== shown) void persist(next, shown)
+  }
+
+  const setGroup = (r: ResourceDTO, primary: boolean) => {
+    if (r.primary === primary) return
+    // The server sends a reclassified card to the bottom of its new group
+    // (resources.SetPrimary), which is exactly what dropping it on that
+    // group's container does locally — so show that while the write lands,
+    // rather than letting the switch snap back until the refetch.
+    const next = applyDrag(shown, { type: r.type, id: r.id }, primary ? "focus" : "related")
+    void save(next, shown, () => api.setResourcePrimary({ path, type: r.type, id: r.id, primary }))
   }
 
   // No click suppression here: the dragged card follows the pointer, so the
@@ -233,7 +262,7 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
   }
 
   const cards = (group: ResourceDTO[]) =>
-    group.map((r) => (
+    group.map((r, i) => (
       <SortableResourceCard
         key={`${r.type}:${r.id}`}
         r={r}
@@ -241,6 +270,11 @@ export function ResourceList({ items, path, onChanged, selectedKey, onSelectReso
         onRemoved={onChanged}
         selected={resourceKeyEquals(selectedKey ?? null, { type: r.type, id: r.id })}
         onSelect={onSelectResource ? () => onSelectResource({ type: r.type, id: r.id }) : undefined}
+        canMoveToTop={i > 0}
+        canMoveToBottom={i < group.length - 1}
+        onMoveToEdge={(edge) => moveCard(r, edge)}
+        onSetPrimary={(primary) => setGroup(r, primary)}
+        menu={menuFor(serializeResourceKey({ type: r.type, id: r.id }))}
       />
     ))
 

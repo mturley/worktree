@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { applyDrag, crossGroupPreview } from "./resourceOrder"
+import { applyDrag, crossGroupPreview, moveToEdge } from "./resourceOrder"
 import type { ResourceDTO } from "../api/types"
 
 function r(id: string, primary: boolean): ResourceDTO {
@@ -100,5 +100,28 @@ describe("crossGroupPreview", () => {
 
   it("does nothing for a key it does not know", () => {
     expect(crossGroupPreview(items, { type: "pr", id: "404" }, { type: "pr", id: "9" }, 0, 0)).toBeNull()
+  })
+})
+
+describe("moveToEdge", () => {
+  it("moves a card to the top of its own group", () => {
+    expect(shape(moveToEdge(items, { type: "pr", id: "3" }, "top"))).toBe("3,1,2,8~,9~")
+  })
+
+  it("moves a card to the bottom of its own group", () => {
+    expect(shape(moveToEdge(items, { type: "pr", id: "1" }, "bottom"))).toBe("2,3,1,8~,9~")
+  })
+
+  it("keeps a related card in related: the top of its group, not of the list", () => {
+    expect(shape(moveToEdge(items, { type: "pr", id: "9" }, "top"))).toBe("1,2,3,9~,8~")
+  })
+
+  it("returns the same list when the card is already there, so nothing is saved", () => {
+    expect(moveToEdge(items, { type: "pr", id: "1" }, "top")).toBe(items)
+    expect(moveToEdge(items, { type: "pr", id: "9" }, "bottom")).toBe(items)
+  })
+
+  it("returns the same list for a key it does not know", () => {
+    expect(moveToEdge(items, { type: "pr", id: "404" }, "top")).toBe(items)
   })
 })

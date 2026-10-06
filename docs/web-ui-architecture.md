@@ -424,6 +424,27 @@ the rest of the card behaves exactly as it always has:
   suppression of our own. The test for it runs on fake timers for that reason:
   on real ones the listener outlives the test and eats the next test's click.
 
+**The handle's hover menu.** Hovering a grip opens a small menu: the "Drag to
+reorder" hint, Move to top / Move to bottom (`moveToEdge` — within the card's
+own group, never reclassifying), and the same Focus/Related switch as the
+detail card. A reclassification there is shown at once as the bottom of the
+new group, matching what `resources.SetPrimary` will do server-side. It is a
+controlled `Popover`, not a `Tooltip` (never interactive) and not a
+`HoverCard`, because of what it has to guarantee — all of it measured in a
+real browser, where jsdom's geometry-free hover had passed every version:
+
+- **Reachable.** The pointer crosses a gap between handle and menu that
+  belongs to neither, and the menu closes if it lingers there past the close
+  delay. Mantine's defaults (12px gap, 150ms) lost the menu on a slow,
+  deliberate move; the gap is now 4px plus the arrow, and the grace 400ms.
+- **One at a time.** Adjacent cards' menus overlap, and moving to the next
+  handle left both open — a lingering menu over its neighbour's could catch
+  a click meant for it. `HoverCard.Group` would fix this, but Mantine 7 does
+  not export it, so `useHoverMenu` keeps a single open id for the whole list:
+  a 300ms delay to open, instant switching while one is already open.
+- **Out of the way of a drag.** Picking a card up closes any open menu at
+  once, and none opens until the drag ends.
+
 **Dragging between groups** follows dnd-kit's multiple-containers pattern.
 Each group is its own `SortableContext`, and a sortable only opens a slot for
 cards that belong to its context — so the moment a dragged card is over the
