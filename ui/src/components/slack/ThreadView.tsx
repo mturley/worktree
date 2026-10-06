@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Alert, Button, Group, Paper, Skeleton, Stack, Text } from '@mantine/core'
 import { useQueryClient } from '@tanstack/react-query'
 import type { UseThreadResult } from '../../hooks/useThread'
@@ -25,6 +25,10 @@ interface ThreadViewProps {
   tab: Tab
   thread: UseThreadResult
   onOpenThread: (url: string, opts: { background: boolean }) => void
+  /** Height (px) of whatever sticks over the top of the page — the worktree
+   *  page's header, including its details card when shown. The initial
+   *  scroll keeps the unread divider below it. */
+  topInset?: number
   /** Test-only escape hatch, forwarded to the Composer: jsdom's contenteditable
    *  support is too thin for simulated typing to reach Lexical, so tests
    *  drive the editor directly via its own API once they have this
@@ -44,7 +48,7 @@ export function openInSlackUrl(channel: string, threadTs: string, latestTs: stri
   return `https://${workspaceDomain}/archives/${channel}/p${pMessageId}?thread_ts=${threadTs}&cid=${channel}`
 }
 
-export function ThreadView({ tab, thread, onOpenThread, onComposerEditorReady }: ThreadViewProps) {
+export function ThreadView({ tab, thread, onOpenThread, topInset = 0, onComposerEditorReady }: ThreadViewProps) {
   const { data, status, error, authExpired, lastUpdated, refresh, applyLocal } = thread
   const now = useNow()
   const [workspaceDomain, setWorkspaceDomain] = useState<string | null>(cachedWorkspaceDomain)
@@ -53,7 +57,13 @@ export function ThreadView({ tab, thread, onOpenThread, onComposerEditorReady }:
   const [isAtBottom, setIsAtBottom] = useState(true)
   const [pending, setPending] = useState<PendingReply[]>([])
   const scrollRef = useRef<HTMLDivElement>(null)
+  const unreadDividerRef = useRef<HTMLDivElement>(null)
+  const threadEndRef = useRef<HTMLDivElement>(null)
   const prevMessageCount = useRef(0)
+  // Which thread the message list has been initially positioned for. Reset
+  // whenever the list unmounts (loading, refresh, empty), so it is positioned
+  // again the next time messages render.
+  const positionedFor = useRef<string | null>(null)
   const pendingLocalId = useRef(0)
 
   // Tolerance (px) for treating the scroll container as "at the bottom" —
@@ -86,6 +96,43 @@ export function ThreadView({ tab, thread, onOpenThread, onComposerEditorReady }:
         // Open-in-Slack simply stays disabled if config can't be fetched.
       })
   }, [])
+
+  // Initial position: once a thread's messages first render, open at the
+  // unread divider if there is one, else at the end of the thread. Live
+  // updates after that must not move the user, so this runs once per thread.
+  // A layout effect, so the page never paints at the wrong spot first.
+  //
+  // This scrolls the PAGE, not the message list: the worktree page lets the
+  // document scroll, so the list grows to fit and has nothing to scroll.
+  // scrollIntoView moves whichever ancestors actually scroll.
+  //
+  // The divider lands a quarter of the way down the space BELOW the sticky
+  // page header (topInset): high enough to show plenty of what's new, low
+  // enough to keep a little read context above it. scrollIntoView can only
+  // align to an edge or the centre, but it honours scroll-margin, so a top
+  // margin of the header plus that quarter stops the divider exactly there.
+  // Set at scroll time, as it depends on the window's current height.
+  const threadKey = `${tab.channel}:${tab.threadTs}`
+  const hasMessages = status === 'ready' && !!data && data.messages.length > 0
+  useLayoutEffect(() => {
+    if (!hasMessages) {
+      positionedFor.current = null
+      return
+    }
+    if (positionedFor.current === threadKey) {
+      return
+    }
+    positionedFor.current = threadKey
+    // jsdom (and some older browsers) don't implement scrollIntoView at all.
+    const unreadDivider = unreadDividerRef.current
+    if (unreadDivider) {
+      const visible = window.innerHeight - topInset
+      unreadDivider.style.scrollMarginTop = `${topInset + visible / 4}px`
+      unreadDivider.scrollIntoView?.({ block: 'start' })
+    } else {
+      threadEndRef.current?.scrollIntoView?.({ block: 'end' })
+    }
+  }, [threadKey, hasMessages, topInset])
 
   // Track whether the user is scrolled away from the bottom so live
   // updates can show a subtle "new/more messages" affordance instead of
@@ -335,7 +382,13 @@ export function ThreadView({ tab, thread, onOpenThread, onComposerEditorReady }:
           >
             {data.messages.map((message, index) => (
               <div key={message.TS}>
-                {hasUnread && index === data.unreadIndex && <UnreadDivider />}
+                {hasUnread && index === data.unreadIndex && (
+                  // The scroll target is the divider alone, not its row, so
+                  // that it is the divider that lands on the target line.
+                  <div ref={unreadDividerRef}>
+                    <UnreadDivider />
+                  </div>
+                )}
                 <Message
                   message={message}
                   users={data.users}
@@ -390,7 +443,7 @@ export function ThreadView({ tab, thread, onOpenThread, onComposerEditorReady }:
           onEditorReady={onComposerEditorReady}
         />
       )}
-
+      <div ref={threadEndRef} />
     </Stack>
     </SlackGroupsContext.Provider>
   )

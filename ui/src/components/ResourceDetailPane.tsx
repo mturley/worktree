@@ -22,6 +22,9 @@ interface ResourceDetailPaneProps {
   onRemoved?: () => void
   /** Refetch the worktree's resources (used after a Slack details save). */
   onResourceChanged?: () => void
+  /** Height (px) of the page's sticky header, so a Slack thread's initial
+   *  scroll can keep its unread divider below it. */
+  topInset?: number
 }
 
 /**
@@ -170,6 +173,7 @@ export function ResourceDetailPane({
   onBack,
   onRemoved,
   onResourceChanged,
+  topInset,
 }: ResourceDetailPaneProps) {
   return (
     <Stack gap="sm">
@@ -186,6 +190,7 @@ export function ResourceDetailPane({
           path={path}
           onRemoved={onRemoved}
           onResourceChanged={onResourceChanged}
+          topInset={topInset}
         />
       ) : resource.type === "link" ? (
         <LinkPane

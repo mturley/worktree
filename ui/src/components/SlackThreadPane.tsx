@@ -14,6 +14,8 @@ interface SlackThreadPaneProps {
   onRemoved?: () => void
   /** Refetch the worktree's resources after a custom name/description save. */
   onResourceChanged?: () => void
+  /** Height (px) of the page's sticky header; see ThreadView's topInset. */
+  topInset?: number
 }
 
 /**
@@ -50,7 +52,7 @@ function isNotConfigured(error: string | undefined): boolean {
  * deliberately no resource summary card above it — ThreadView already has its
  * own title/description header, so a card would be duplicate chrome.
  */
-export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged }: SlackThreadPaneProps) {
+export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, topInset }: SlackThreadPaneProps) {
   // Surfaces a failed "save thread details" write: the modal closes on submit,
   // so a rejected write would otherwise vanish and look like success.
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -95,6 +97,7 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged }
       <ThreadView
         tab={tab}
         thread={thread}
+        topInset={topInset}
         onOpenThread={(url, opts) => {
           window.open(url, opts.background ? "_blank" : "_self", "noreferrer")
         }}

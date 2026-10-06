@@ -161,6 +161,7 @@ export function WorktreeDetailPage() {
       onBack={clear}
       onRemoved={resources.refetch}
       onResourceChanged={resources.refetch}
+      topInset={headerHeight}
     />
   )
 
