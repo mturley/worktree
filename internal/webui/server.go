@@ -94,6 +94,9 @@ type Server struct {
 	cmuxListGroups func() ([]cmux.WorkspaceGroup, error)
 	// cmuxSetDescription is the same kind of seam for the notes sync.
 	cmuxSetDescription func(workspaceRef, description string) error
+	// cmuxTabs is the seam for the cmux tab's routes (cmux_tabs.go); nil
+	// means the real cmux package.
+	cmuxTabs *cmuxTabOps
 
 	// tabs is the browser notification registry; see tabs.go. Lazily built
 	// by tabRegistry(), since Server is a bare struct literal everywhere.
@@ -182,6 +185,7 @@ func (s *Server) routes() []route {
 		{"GET /api/cmux-groups", s.handleCmuxGroups},
 		{"POST /api/cmux/select", s.handleCmuxSelect},
 		{"POST /api/cmux/create", s.handleCmuxCreate},
+		{"GET /api/cmux/tree", s.handleCmuxTree},
 		{"GET /api/jira-icon", s.handleJiraIcon},
 		{"GET /api/slack-avatar", s.handleSlackAvatar},
 		{"POST /api/worktrees/create", s.handleCreateWorktree},

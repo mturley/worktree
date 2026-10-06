@@ -1,0 +1,179 @@
+package webui
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/mturley/worktree/internal/cmux"
+)
+
+// fakeTabOps records every cmux call as "name arg arg…" and serves trees from
+// a map (a missing id is an error, like a workspace closed out of band).
+type fakeTabOps struct {
+	trees  map[string]*cmux.WorkspaceTree
+	failOn string
+	calls  []string
+}
+
+func posString(p cmux.TabPosition) string {
+	switch {
+	case p.Before != "":
+		return "before " + p.Before
+	case p.After != "":
+		return "after " + p.After
+	}
+	return "end"
+}
+
+func (f *fakeTabOps) ops() *cmuxTabOps {
+	rec := func(name string, args ...string) error {
+		f.calls = append(f.calls, strings.TrimSpace(name+" "+strings.Join(args, " ")))
+		if f.failOn == name {
+			return errors.New(name + " failed")
+		}
+		return nil
+	}
+	return &cmuxTabOps{
+		tree: func(id string) (*cmux.WorkspaceTree, error) {
+			f.calls = append(f.calls, "tree "+id)
+			if t, ok := f.trees[id]; ok {
+				return t, nil
+			}
+			return nil, errors.New("workspace not found")
+		},
+		selectWorkspace: func(id string) error { return rec("select", id) },
+		focusTab:        func(id, s string) error { return rec("focus", id, s) },
+		activate:        func() error { return rec("activate") },
+		closeTab:        func(id, s string) error { return rec("close", id, s) },
+		reorderTab:      func(id, s string, p cmux.TabPosition) error { return rec("reorder", id, s, posString(p)) },
+		moveTab:         func(id, s, pane string, p cmux.TabPosition) error { return rec("move", id, s, pane, posString(p)) },
+		rename:          func(id, title string) error { return rec("rename", id, title) },
+		clearName:       func(id string) error { return rec("clear-name", id) },
+		setColor:        func(id, c string) error { return rec("set-color", id, c) },
+		clearColor:      func(id string) error { return rec("clear-color", id) },
+	}
+}
+
+func (f *fakeTabOps) called(prefix string) bool {
+	for _, c := range f.calls {
+		if strings.HasPrefix(c, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func sampleTree() *cmux.WorkspaceTree {
+	return &cmux.WorkspaceTree{
+		Layout: cmux.LayoutNode{Direction: "horizontal", Split: 0.5, Children: []cmux.LayoutNode{{Pane: "pane:1"}, {Pane: "pane:2"}}},
+		Panes: []cmux.TreePane{
+			{Ref: "pane:1", Focused: true, Tabs: []cmux.TreeTab{
+				{Ref: "surface:1", Type: "terminal", Title: "◐ agent", Selected: true},
+				{Ref: "surface:2", Type: "browser", Title: "(5) inbox", URL: "https://example.com/inbox"},
+			}},
+			{Ref: "pane:2", Tabs: []cmux.TreeTab{
+				{Ref: "surface:3", Type: "markdown", Title: "notes.md", Selected: true},
+			}},
+			{Ref: "pane:4", Tabs: []cmux.TreeTab{}},
+		},
+	}
+}
+
+func newTabServer(t *testing.T) (*Server, *fakeTabOps) {
+	t.Helper()
+	t.Setenv("CMUX_SOCKET_PATH", "/tmp/x")
+	f := &fakeTabOps{trees: map[string]*cmux.WorkspaceTree{"W": sampleTree()}}
+	return &Server{cmuxTabs: f.ops()}, f
+}
+
+// postCmux calls a handler with a JSON body and decodes a 200 reply.
+func postCmux(t *testing.T, h http.HandlerFunc, body any) (int, cmuxActionResponse) {
+	t.Helper()
+	b, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	h(rec, httptest.NewRequest(http.MethodPost, "/api/cmux/x", bytes.NewReader(b)))
+	var got cmuxActionResponse
+	if rec.Code == http.StatusOK {
+		if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return rec.Code, got
+}
+
+func getTree(t *testing.T, s *Server, path string) (int, cmuxTreeResponse) {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	s.handleCmuxTree(rec, httptest.NewRequest(http.MethodGet, "/api/cmux/tree?path="+path, nil))
+	var got cmuxTreeResponse
+	if rec.Code == http.StatusOK {
+		if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return rec.Code, got
+}
+
+func TestCmuxTreeRequiresPath(t *testing.T) {
+	s, _ := newTabServer(t)
+	if code, _ := getTree(t, s, ""); code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", code)
+	}
+}
+
+func TestCmuxTreeUnavailable(t *testing.T) {
+	t.Setenv("CMUX_SOCKET_PATH", "")
+	code, got := getTree(t, &Server{}, "/wt/a")
+	if code != http.StatusOK || got.Available || got.Workspaces == nil {
+		t.Fatalf("code=%d got=%+v, want 200 available:false workspaces:[]", code, got)
+	}
+}
+
+func TestCmuxTreeListFailureDegrades(t *testing.T) {
+	s, _ := newTabServer(t)
+	s.cmuxList = func() ([]cmux.Workspace, error) { return nil, errors.New("boom") }
+	code, got := getTree(t, s, "/wt/a")
+	if code != http.StatusOK || got.Available {
+		t.Fatalf("code=%d got=%+v, want 200 available:false", code, got)
+	}
+}
+
+func TestCmuxTreeReturnsMatchedWorkspacesWithTheirTrees(t *testing.T) {
+	s, f := newTabServer(t)
+	dir := t.TempDir()
+	other := t.TempDir()
+	color := "#AD1457"
+	s.cmuxList = func() ([]cmux.Workspace, error) {
+		return []cmux.Workspace{
+			{ID: "W", Ref: "workspace:1", Title: "Alpha", CustomColor: &color, CurrentDirectory: dir, Selected: true},
+			// Closed out of band between list and tree: reported, not fatal.
+			{ID: "GONE", Ref: "workspace:2", Title: "Beta", CurrentDirectory: dir},
+			{ID: "ELSEWHERE", Ref: "workspace:3", Title: "Gamma", CurrentDirectory: other},
+		}, nil
+	}
+	code, got := getTree(t, s, dir)
+	if code != http.StatusOK || !got.Available {
+		t.Fatalf("code=%d available=%v", code, got.Available)
+	}
+	if len(got.Workspaces) != 2 {
+		t.Fatalf("got %d workspaces, want 2 (the third is another path): %+v", len(got.Workspaces), got.Workspaces)
+	}
+	a, b := got.Workspaces[0], got.Workspaces[1]
+	if a.ID != "W" || a.Title != "Alpha" || a.Color != "#AD1457" || !a.Selected || a.Layout == nil || len(a.Panes) != 3 || a.Error != "" {
+		t.Fatalf("first workspace = %+v", a)
+	}
+	if b.ID != "GONE" || b.Error == "" || b.Layout != nil || b.Panes != nil {
+		t.Fatalf("second workspace = %+v, want an error and no layout", b)
+	}
+	if f.called("tree ELSEWHERE") {
+		t.Fatal("read the tree of a workspace for another path")
+	}
+}
