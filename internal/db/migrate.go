@@ -66,6 +66,18 @@ func migrate(conn *sql.DB) error {
 			sync_cmux  INTEGER NOT NULL DEFAULT 0,
 			updated_at TEXT NOT NULL
 		)`,
+		// Notification toggles (internal/notifyprefs). A row means "on"; a
+		// row with an empty resource_type/resource_id is the worktree-wide
+		// toggle. Unlike worktree_notes these are removed with the
+		// worktree's resources (resources.Remove/RemoveAll): they are
+		// settings about subscriptions, and outlive nothing.
+		`CREATE TABLE IF NOT EXISTS worktree_notify (
+			subscriber    TEXT NOT NULL,
+			resource_type TEXT NOT NULL,
+			resource_id   TEXT NOT NULL,
+			created_at    TEXT NOT NULL,
+			PRIMARY KEY (subscriber, resource_type, resource_id)
+		)`,
 	}
 	for _, s := range stmts {
 		if _, err := conn.Exec(s); err != nil {

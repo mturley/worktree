@@ -9,6 +9,7 @@ import (
 
 	watcherdb "github.com/mturley/watcher/db"
 	wdb "github.com/mturley/worktree/internal/db"
+	"github.com/mturley/worktree/internal/notifyprefs"
 	"github.com/mturley/worktree/internal/unread"
 )
 
@@ -678,5 +679,36 @@ func TestSetOrderIgnoresKeysThatAreNotTracked(t *testing.T) {
 	res, _ := Load(conn, wt)
 	if got, want := strings.Join(ids(res), ","), "pr:o/r#2,pr:o/r#1"; got != want {
 		t.Fatalf("order = %s, want %s", got, want)
+	}
+}
+
+func TestRemoveDropsNotifyPrefs(t *testing.T) {
+	conn := testDB(t)
+	wt := t.TempDir()
+	for _, id := range []string{"o/r#1", "o/r#2"} {
+		if err := Add(conn, wt, Resource{Type: "pr", ID: id, URL: "u"}); err != nil {
+			t.Fatal(err)
+		}
+		notifyprefs.SetResource(conn, wt, "pr", id, true)
+	}
+	notifyprefs.SetAll(conn, wt, true)
+
+	if err := Remove(conn, wt, "pr", "o/r#1"); err != nil {
+		t.Fatal(err)
+	}
+	p, _ := notifyprefs.Get(conn, wt)
+	if p.Resources[notifyprefs.Key{Type: "pr", ID: "o/r#1"}] {
+		t.Fatal("Remove left the removed resource's toggle")
+	}
+	if !p.All || !p.Resources[notifyprefs.Key{Type: "pr", ID: "o/r#2"}] {
+		t.Fatal("Remove touched other toggles")
+	}
+
+	if err := RemoveAll(conn, wt); err != nil {
+		t.Fatal(err)
+	}
+	p, _ = notifyprefs.Get(conn, wt)
+	if p.All || len(p.Resources) != 0 {
+		t.Fatalf("RemoveAll left toggles: %+v", p)
 	}
 }
