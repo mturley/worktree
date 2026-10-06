@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from "react"
-import { ActionIcon, Box, Button, Checkbox, Code, Collapse, Group, Paper, Stack, Text, Textarea, Tooltip, UnstyledButton } from "@mantine/core"
-import { IconCheck, IconChevronRight, IconCopy, IconPencil, IconTrash } from "@tabler/icons-react"
+import { useState } from "react"
+import { ActionIcon, Button, Checkbox, Code, Group, Paper, Stack, Tabs, Text, Textarea, Tooltip } from "@mantine/core"
+import { IconCheck, IconCopy, IconPencil, IconTrash } from "@tabler/icons-react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useLocation } from "wouter"
 import { api } from "../api/client"
@@ -41,8 +41,7 @@ function gitSummary(g: GitStatus): string {
  * what branch am I on, is the tree dirty, when did anything last happen, and
  * what was I in the middle of (notes).
  *
- * Kept slim while collapsed: one meta line, then one row of section toggles
- * that behave like tabs — at most one section open at a time.
+ * One meta line, then tabs: Notes (the default) and Environment.
  */
 export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
   const info = useQuery({
@@ -56,129 +55,74 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
   const [, navigate] = useLocation()
   const qc = useQueryClient()
   const [deleteOpen, setDeleteOpen] = useState(false)
-  const [section, setSection] = useState<"env" | "notes" | null>(null)
+  const [tab, setTab] = useState<"notes" | "env">("notes")
   const name = w.path.split("/").filter(Boolean).pop() || w.path
   const git = info.data?.git
   const hasEnv = !!info.data && info.data.env.length > 0
-  const hasNotes = notes.notes.trim() !== ""
 
-  // Notes that exist are what you came back for, so they start open — but
-  // only decided once, on load. Emptying them later must not snap them shut.
-  const autoOpened = useRef(false)
-  useEffect(() => {
-    if (autoOpened.current || !notes.loaded) return
-    autoOpened.current = true
-    if (hasNotes) setSection("notes")
-  }, [notes.loaded, hasNotes])
+  // The Environment tab only exists when there is an environment; if it goes
+  // away while selected, fall back to Notes rather than showing no panel.
+  const activeTab = tab === "env" && !hasEnv ? "notes" : tab
 
   // Notes are read-only until "Edit notes", so a stray click or keystroke
-  // cannot change them. Collapsing ends editing: you always come back to the
-  // read-only view.
+  // cannot change them. Leaving the Notes tab ends editing: you always come
+  // back to the read-only view.
   const [editing, setEditing] = useState(false)
   const doneEditing = () => {
     notes.flush()
     setEditing(false)
   }
 
-  const toggle = (s: "env" | "notes") => {
-    // Collapsing the notes (by either toggle) sends pending edits now.
-    if (section === "notes") doneEditing()
-    setSection((cur) => (cur === s ? null : s))
+  const selectTab = (next: string | null) => {
+    if (next !== "notes" && next !== "env") return
+    // Leaving the notes sends pending edits now.
+    if (activeTab === "notes" && next !== "notes") doneEditing()
+    setTab(next)
   }
 
   return (
     <Paper p="sm" withBorder>
-      <Stack gap={6}>
-        {/* The worktree and cmux workspace names live in the page header;
-            this card is git state, environment and notes. */}
-        <Group gap="xs" wrap="nowrap" justify="space-between">
-          <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-            {[w.repo, git?.branch || w.branch].filter(Boolean).join(" · ")}
-            {git && (
-              <>
-                {" · "}
-                <Text span inherit c={git.staged || git.modified || git.untracked ? "yellow" : "dimmed"}>
-                  {gitSummary(git)}
-                  {git.upstream ? ` · ${git.upstream}` : ""}
-                </Text>
-              </>
-            )}
-            {w.latest_event_ts ? ` · ${rel(w.latest_event_ts)}` : ""}
-          </Text>
-          <Tooltip label="Delete worktree">
-            <ActionIcon
-              variant="subtle"
-              color="red"
-              size="sm"
-              aria-label="Delete worktree"
-              onClick={() => setDeleteOpen(true)}
-            >
-              <IconTrash size={16} />
-            </ActionIcon>
-          </Tooltip>
-        </Group>
-
-        {/*
-          Both sections are collapsed by default (except notes that already
-          have content). The environment is long absolute paths that wrap to
-          several lines each and push the resource list and timeline — the
-          reasons you opened the page — below the fold. You need them when
-          opening a terminal, which is a deliberate act, so a deliberate click
-          is the right price.
-        */}
-        <Group gap="md">
-          <SectionToggle
-            open={section === "notes"}
-            onClick={() => toggle("notes")}
-            label={`${section === "notes" ? "Hide" : "Show"} notes${hasNotes ? " (has notes)" : ""}`}
-          >
-            Notes
-            {hasNotes && section !== "notes" && (
-              <Box
-                component="span"
-                data-testid="notes-dot"
-                w={6}
-                h={6}
-                ml={4}
-                display="inline-block"
-                bg="blue.5"
-                style={{ borderRadius: "50%", verticalAlign: "middle" }}
-              />
-            )}
-          </SectionToggle>
-          {hasEnv && (
-            <SectionToggle
-              open={section === "env"}
-              onClick={() => toggle("env")}
-              label={`${section === "env" ? "Hide" : "Show"} environment variables`}
-            >
-              {`Environment (${info.data!.env.length})`}
-            </SectionToggle>
+      {/* The worktree and cmux workspace names live in the page header;
+          this card is git state, environment and notes. */}
+      <Group gap="xs" wrap="nowrap" justify="space-between">
+        <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+          {[w.repo, git?.branch || w.branch].filter(Boolean).join(" · ")}
+          {git && (
+            <>
+              {" · "}
+              <Text span inherit c={git.staged || git.modified || git.untracked ? "yellow" : "dimmed"}>
+                {gitSummary(git)}
+                {git.upstream ? ` · ${git.upstream}` : ""}
+              </Text>
+            </>
           )}
-        </Group>
-      </Stack>
+          {w.latest_event_ts ? ` · ${rel(w.latest_event_ts)}` : ""}
+        </Text>
+        <Tooltip label="Delete worktree">
+          <ActionIcon
+            variant="subtle"
+            color="red"
+            size="sm"
+            aria-label="Delete worktree"
+            onClick={() => setDeleteOpen(true)}
+          >
+            <IconTrash size={16} />
+          </ActionIcon>
+        </Tooltip>
+      </Group>
 
-      {/*
-        The sections sit OUTSIDE the Stack, and carry their own top padding:
-        a collapsed Collapse is 0px tall but would still take a Stack gap,
-        leaving empty space under the toggles.
-      */}
+      <Tabs value={activeTab} onChange={selectTab} mt={6}>
+        {/* Sized to its tabs, so the underline stops after the last tab. */}
+        <Tabs.List w="fit-content">
+          <Tabs.Tab value="notes" fz="xs" py={6}>Notes</Tabs.Tab>
+          {hasEnv && (
+            <Tabs.Tab value="env" fz="xs" py={6}>
+              {`Environment (${info.data!.env.length})`}
+            </Tabs.Tab>
+          )}
+        </Tabs.List>
 
-      {/*
-        The same environment `worktree info` prints. Shown here because it is
-        what you need when you open a terminal in this worktree, and it was
-        previously only reachable from the CLI.
-      */}
-      {hasEnv && (
-        <Collapse in={section === "env"}>
-          <Stack gap={2} pt={6}>
-            {info.data!.env.map((kv) => <EnvVarRow key={kv.key} name={kv.key} value={kv.value} />)}
-          </Stack>
-        </Collapse>
-      )}
-
-      <Collapse in={section === "notes"}>
-        <Box pt={6}>
+        <Tabs.Panel value="notes" pt={6}>
           <NotesPanel
             notes={notes}
             workspaceCount={workspaces.length}
@@ -186,8 +130,21 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
             onEdit={() => setEditing(true)}
             onDone={doneEditing}
           />
-        </Box>
-      </Collapse>
+        </Tabs.Panel>
+
+        {/*
+          The same environment `worktree info` prints. Shown here because it is
+          what you need when you open a terminal in this worktree, and it was
+          previously only reachable from the CLI.
+        */}
+        {hasEnv && (
+          <Tabs.Panel value="env" pt={6}>
+            <Stack gap={2}>
+              {info.data!.env.map((kv) => <EnvVarRow key={kv.key} name={kv.key} value={kv.value} />)}
+            </Stack>
+          </Tabs.Panel>
+        )}
+      </Tabs>
 
       {deleteOpen && (
         <DeleteWorktreeModal
@@ -243,28 +200,6 @@ function EnvVarRow({ name, value }: { name: string; value: string }) {
         </ActionIcon>
       </Tooltip>
     </Group>
-  )
-}
-
-function SectionToggle({ open, onClick, label, children }: {
-  open: boolean
-  onClick: () => void
-  label: string
-  children: ReactNode
-}) {
-  return (
-    <UnstyledButton onClick={onClick} aria-expanded={open} aria-label={label}>
-      <Group gap={4} wrap="nowrap">
-        <IconChevronRight
-          size={12}
-          style={{
-            transform: open ? "rotate(90deg)" : undefined,
-            transition: "transform 150ms ease",
-          }}
-        />
-        <Text size="xs" c="dimmed">{children}</Text>
-      </Group>
-    </UnstyledButton>
   )
 }
 

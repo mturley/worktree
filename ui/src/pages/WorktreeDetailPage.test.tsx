@@ -203,7 +203,7 @@ describe("WorktreeDetailPage selection", () => {
 })
 
 describe("WorktreeDetailPage has no Overview/Slack tabs", () => {
-  it("renders the resource list as the page body, with no tab bar", async () => {
+  it("renders the resource list as the page body, with no page-level tabs", async () => {
     setViewport("wide")
     wrap()
     // Slack threads are now selected like any other resource, so the
@@ -211,7 +211,6 @@ describe("WorktreeDetailPage has no Overview/Slack tabs", () => {
     expect(await screen.findByRole("button", { name: /select resource o\/r#1/i })).toBeInTheDocument()
     expect(screen.queryByRole("tab", { name: "Overview" })).not.toBeInTheDocument()
     expect(screen.queryByRole("tab", { name: "Slack" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("tablist")).not.toBeInTheDocument()
   })
 })
 

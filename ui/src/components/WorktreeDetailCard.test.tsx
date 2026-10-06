@@ -66,16 +66,23 @@ const info = (o: Partial<WorktreeInfo> = {}): WorktreeInfo => ({
 })
 
 describe("WorktreeDetailCard", () => {
-  it("keeps the environment collapsed until asked", async () => {
-    // These are long absolute paths that wrap to several lines each and push
-    // the resource list and timeline below the fold. Note the assertion is
-    // toBeVisible, NOT toBeInTheDocument: Mantine's Collapse keeps its
-    // children mounted, so presence in the DOM proves nothing here.
+  it("starts on the Notes tab, with the environment hidden", async () => {
+    // Note the assertion is toBeVisible, NOT toBeInTheDocument: Mantine's
+    // Tabs keep inactive panels mounted, so presence in the DOM proves nothing.
     worktreeInfo.mockResolvedValue(info())
     wrap(summary())
-    const toggle = await screen.findByRole("button", { name: /show environment variables/i })
-    expect(toggle).toHaveAttribute("aria-expanded", "false")
+    const env = await screen.findByRole("tab", { name: /environment/i })
+    expect(env).toHaveAttribute("aria-selected", "false")
+    expect(screen.getByRole("tab", { name: /notes/i })).toHaveAttribute("aria-selected", "true")
     expect(screen.getByText("4090-4099")).not.toBeVisible()
+  })
+
+  it("has no Environment tab when there is no environment", async () => {
+    worktreeInfo.mockResolvedValue(info({ env: [] }))
+    wrap(summary())
+    await waitFor(() => expect(worktreeInfo).toHaveBeenCalled())
+    await screen.findByRole("tab", { name: /notes/i })
+    expect(screen.queryByRole("tab", { name: /environment/i })).not.toBeInTheDocument()
   })
 
   it("names how many variables there are, so the toggle is worth clicking", async () => {
@@ -84,10 +91,10 @@ describe("WorktreeDetailCard", () => {
     expect(await screen.findByText("Environment (2)")).toBeInTheDocument()
   })
 
-  it("reveals the environment worktree info prints when expanded", async () => {
+  it("reveals the environment worktree info prints on the Environment tab", async () => {
     worktreeInfo.mockResolvedValue(info())
     wrap(summary())
-    await userEvent.click(await screen.findByRole("button", { name: /show environment variables/i }))
+    await userEvent.click(await screen.findByRole("tab", { name: /environment/i }))
     expect(screen.getByText("4090-4099")).toBeVisible()
     expect(screen.getByText("/home/u/.kube/config-foo")).toBeVisible()
   })
@@ -97,16 +104,16 @@ describe("WorktreeDetailCard", () => {
     const user = userEvent.setup()
     const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue()
     wrap(summary())
-    await user.click(await screen.findByRole("button", { name: /show environment/i }))
+    await user.click(await screen.findByRole("tab", { name: /environment/i }))
     await user.click(screen.getByRole("button", { name: "Copy KUBECONFIG" }))
     expect(writeText).toHaveBeenCalledWith("/home/u/.kube/config-foo")
   })
 
-  it("collapses again on a second click", async () => {
+  it("hides the environment again on returning to Notes", async () => {
     worktreeInfo.mockResolvedValue(info())
     wrap(summary())
-    await userEvent.click(await screen.findByRole("button", { name: /show environment/i }))
-    await userEvent.click(screen.getByRole("button", { name: /hide environment/i }))
+    await userEvent.click(await screen.findByRole("tab", { name: /environment/i }))
+    await userEvent.click(screen.getByRole("tab", { name: /notes/i }))
     expect(screen.getByText("4090-4099")).not.toBeVisible()
   })
 
@@ -181,66 +188,44 @@ describe("layout", () => {
     expect(status.closest("p")).toHaveTextContent(/odh · my-branch · 3 modified/)
   })
 
-  it("puts the Notes toggle before the Environment toggle", async () => {
+  it("puts the Notes tab before the Environment tab", async () => {
     worktreeInfo.mockResolvedValue(info())
     wrap(summary())
-    const env = await screen.findByRole("button", { name: /show environment/i })
-    const notes = screen.getByRole("button", { name: /show notes/i })
+    const env = await screen.findByRole("tab", { name: /environment/i })
+    const notes = screen.getByRole("tab", { name: /notes/i })
     expect(notes.compareDocumentPosition(env) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it("lets only one of Environment and Notes be open at a time", async () => {
+  it("shows only one of Environment and Notes at a time", async () => {
     worktreeInfo.mockResolvedValue(info())
     const user = userEvent.setup()
     wrap(summary())
-    await user.click(await screen.findByRole("button", { name: /show environment/i }))
+    await user.click(await screen.findByRole("tab", { name: /environment/i }))
     expect(screen.getByText("4090-4099")).toBeVisible()
-    await user.click(screen.getByRole("button", { name: /show notes/i }))
+    expect(screen.getByText("No notes yet")).not.toBeVisible()
+    await user.click(screen.getByRole("tab", { name: /notes/i }))
     expect(await screen.findByText("No notes yet")).toBeVisible()
     expect(screen.getByText("4090-4099")).not.toBeVisible()
-    expect(screen.getByRole("button", { name: /show environment/i })).toHaveAttribute("aria-expanded", "false")
   })
 })
 
 const notesBox = () => screen.getByRole("textbox", { name: /worktree notes/i })
 
-/** Opens the Notes section if needed, then clicks "Edit notes". */
+/** Clicks "Edit notes" (Notes is the default tab). */
 async function startEditing(user: ReturnType<typeof userEvent.setup>) {
-  // hidden: the section may still be collapsed, which hides its contents.
-  const edit = await screen.findByRole("button", { name: /edit notes/i, hidden: true })
+  const edit = await screen.findByRole("button", { name: /edit notes/i })
   await waitFor(() => expect(edit).toBeEnabled())
-  const toggle = screen.getByRole("button", { name: /(show|hide) notes/i })
-  if (toggle.getAttribute("aria-expanded") === "false") await user.click(toggle)
   await user.click(edit)
   return notesBox()
 }
 
 describe("notes", () => {
 
-  it("starts collapsed, with no dot, when there are no notes", async () => {
-    worktreeInfo.mockResolvedValue(info())
-    wrap(summary())
-    const toggle = await screen.findByRole("button", { name: /show notes/i })
-    await waitFor(() => expect(worktreeNotes).toHaveBeenCalled())
-    expect(toggle).toHaveAttribute("aria-expanded", "false")
-    expect(screen.queryByTestId("notes-dot")).not.toBeInTheDocument()
-  })
-
-  it("starts expanded when there are notes", async () => {
+  it("shows the notes when there are notes", async () => {
     worktreeInfo.mockResolvedValue(info())
     worktreeNotes.mockResolvedValue({ notes: "waiting on review", sync_cmux: false })
     wrap(summary())
     expect(await screen.findByText("waiting on review")).toBeVisible()
-  })
-
-  it("shows a dot on the collapsed toggle when there are notes", async () => {
-    worktreeInfo.mockResolvedValue(info())
-    worktreeNotes.mockResolvedValue({ notes: "waiting on review", sync_cmux: false })
-    const user = userEvent.setup()
-    wrap(summary())
-    await user.click(await screen.findByRole("button", { name: /hide notes/i }))
-    expect(screen.getByTestId("notes-dot")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: /show notes \(has notes\)/i })).toBeInTheDocument()
   })
 
   it("auto-saves after typing pauses, walking unsaved → saving → saved", async () => {
@@ -384,9 +369,7 @@ describe("notes", () => {
 
   it("says so when there are no notes", async () => {
     worktreeInfo.mockResolvedValue(info())
-    const user = userEvent.setup()
     wrap(summary())
-    await user.click(await screen.findByRole("button", { name: /show notes/i }))
     expect(await screen.findByText("No notes yet")).toBeVisible()
   })
 
@@ -414,23 +397,23 @@ describe("notes", () => {
     expect(screen.getByRole("button", { name: /edit notes/i })).toBeInTheDocument()
   })
 
-  it("comes back read-only after collapsing mid-edit", async () => {
+  it("comes back read-only after switching tabs mid-edit", async () => {
     worktreeInfo.mockResolvedValue(info())
     const user = userEvent.setup()
     wrap(summary())
     await startEditing(user)
-    await user.click(screen.getByRole("button", { name: /hide notes/i }))
-    await user.click(screen.getByRole("button", { name: /show notes/i }))
+    await user.click(screen.getByRole("tab", { name: /environment/i }))
+    await user.click(screen.getByRole("tab", { name: /notes/i }))
     expect(screen.queryByRole("textbox", { name: /worktree notes/i })).not.toBeInTheDocument()
   })
 
-  it("saves pending edits immediately when the notes are collapsed", async () => {
+  it("saves pending edits immediately when leaving the Notes tab", async () => {
     worktreeInfo.mockResolvedValue(info())
     const user = userEvent.setup()
     wrap(summary())
     await startEditing(user)
     await user.type(notesBox(), "x")
-    await user.click(screen.getByRole("button", { name: /hide notes/i }))
+    await user.click(screen.getByRole("tab", { name: /environment/i }))
     expect(saveWorktreeNotes).toHaveBeenCalledTimes(1)
   })
 })
