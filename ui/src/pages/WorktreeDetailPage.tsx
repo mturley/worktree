@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Anchor, Badge, Box, Button, Collapse, Grid, Group, Stack, Tabs, Title } from "@mantine/core"
 import { Link, useRoute } from "wouter"
+import { useQueryClient } from "@tanstack/react-query"
+import { api } from "../api/client"
+import { NotifySwitch } from "../components/NotifySwitch"
+import { useNotifyMode } from "../hooks/useNotifyMode"
+import { TAB_ID } from "../lib/tabId"
 import { useWorktreeDetail } from "../hooks/useWorktreeDetail"
 import { useSelectedResource } from "../hooks/useSelectedResource"
 import { useIsWide } from "../hooks/useIsWide"
@@ -46,6 +51,12 @@ export function WorktreeDetailPage() {
   // undo every drag before the save landed.
   const shownItems = useMemo(() => (unreadOnly ? items.filter(hasUnread) : items), [items, unreadOnly])
   const summary = (worktrees.data ?? []).find((w) => w.path === path)
+  const notifyMode = useNotifyMode()
+  const qc = useQueryClient()
+  const notify = useMemo(
+    () => ({ all: Boolean(summary?.notify_all), mode: notifyMode }),
+    [summary?.notify_all, notifyMode],
+  )
   const name = worktreeName(path)
   const hasWorkspace = useCmuxMatches(path).length > 0
   // Against the SHOWN list: with unread only on, a resource that is marked
@@ -125,7 +136,24 @@ export function WorktreeDetailPage() {
       items={shownItems}
       allItems={unreadOnly ? items : undefined}
       emptyText={unreadOnly && items.length > 0 ? "No resources with unread events" : undefined}
-      toolbar={<UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} />}
+      toolbar={
+        <Group gap="lg" align="flex-start">
+          <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} />
+          <NotifySwitch
+            label="Notify on all"
+            tooltip="Notify on new events for all resources in this worktree"
+            checked={notify.all}
+            mode={notify.mode}
+            onToggle={async (on) => {
+              await api.setNotify({ path, on, tab: TAB_ID })
+              await Promise.all([
+                qc.invalidateQueries({ queryKey: ["worktrees"] }),
+                qc.invalidateQueries({ queryKey: ["resources"] }),
+              ])
+            }}
+          />
+        </Group>
+      }
       path={path}
       onChanged={resources.refetch}
       selectedKey={selected}
@@ -175,6 +203,7 @@ export function WorktreeDetailPage() {
       onRemoved={resources.refetch}
       onResourceChanged={resources.refetch}
       topInset={headerHeight}
+      notify={notify}
     />
   )
 

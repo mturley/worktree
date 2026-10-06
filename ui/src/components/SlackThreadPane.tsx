@@ -3,7 +3,7 @@ import { Alert, Code, Stack, Text } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
 import { useThread } from "../hooks/useThread"
 import { defaultTabName, type Tab } from "../state/tabs"
-import { ResourceCard } from "./ResourceCard"
+import { ResourceCard, type ResourceNotifyContext } from "./ResourceCard"
 import { ThreadView } from "./slack/ThreadView"
 
 interface SlackThreadPaneProps {
@@ -16,6 +16,8 @@ interface SlackThreadPaneProps {
   onResourceChanged?: () => void
   /** Height (px) of the page's sticky header; see ThreadView's topInset. */
   topInset?: number
+  /** Notification state for the card's switch; see ResourceNotifyContext. */
+  notify?: ResourceNotifyContext
 }
 
 /**
@@ -52,7 +54,7 @@ function isNotConfigured(error: string | undefined): boolean {
  * deliberately no resource summary card above it — ThreadView already has its
  * own title/description header, so a card would be duplicate chrome.
  */
-export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, topInset }: SlackThreadPaneProps) {
+export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, topInset, notify }: SlackThreadPaneProps) {
   // Surfaces a failed "save thread details" write: the modal closes on submit,
   // so a rejected write would otherwise vanish and look like success.
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -93,6 +95,7 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, 
         onRemoved={onRemoved}
         variant="detail"
         onMetaChanged={() => onResourceChanged?.()}
+        notify={notify}
       />
       <ThreadView
         tab={tab}
