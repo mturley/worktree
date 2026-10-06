@@ -20,9 +20,9 @@ type LayoutNode struct {
 
 // TreeTab is one tab (cmux calls it a surface) in a pane.
 type TreeTab struct {
-	Ref      string `json:"ref"`   // surface:N
+	Ref      string `json:"ref"` // surface:N
 	Title    string `json:"title"`
-	Type     string `json:"type"`  // "terminal" | "browser" | "markdown" | others, passed through
+	Type     string `json:"type"`          // "terminal" | "browser" | "markdown" | others, passed through
 	URL      string `json:"url,omitempty"` // empty when cmux reports null (terminals, unloaded browser tabs)
 	Selected bool   `json:"selected"`      // selected within its pane
 }
