@@ -1,7 +1,7 @@
 # Resource notifications — design
 
 Date: 2026-10-06
-Status: approved in brainstorming, awaiting spec review
+Status: approved; implemented (see plan 2026-10-06-resource-notifications.md)
 
 ## Goal
 
@@ -85,8 +85,9 @@ CREATE TABLE worktree_notify (
   on)`; `RemoveResource(conn, path, type, id)`; `RemoveAll(conn, path)`.
 - Cleanup:
   - `resources.Remove` also drops that resource's row;
-  - `resources.RemoveAll` and `registry.Unregister` drop every row for the
-    worktree.
+  - `resources.RemoveAll` drops every row for the worktree. (Every
+    `registry.Unregister` caller also calls `RemoveAll`, so Unregister
+    needs no hook of its own.)
 
   These rows are settings, not history. Unlike subscription tombstones,
   nothing needs them after the worktree is gone.
@@ -156,15 +157,16 @@ from wherever it runs (see the `internal/cmux` notes in CLAUDE.md).
 **Tab registry.** An in-memory registry in `internal/webui`.
 
 - Each tab makes a random tab ID when it mounts, and opens
-  `/api/stream?tab=<id>`.
+  `/api/stream?tab=<id>&route=<path>&visible=1|0`. The initial presence
+  rides on the stream URL because a presence POST racing the stream's
+  registration would be refused as an unknown tab.
 - Opening the stream registers `{tabID, sessionHandle, route, visible,
   lastActive, sendCh}`. The entry is removed when the stream closes.
 - The stream only goes from server to tab. The tab reports its state with
-  `POST /api/tabs/<id>` `{route, visible}` whenever:
+  `POST /api/tabs/presence` `{tab, route, visible}` whenever:
   - the route changes;
   - `visibilitychange` fires;
-  - `focus` fires;
-  - the stream opens.
+  - `focus` fires.
 
   A `focus` or a change to visible also updates `lastActive`.
 - `route` is the app path (`/` or `/worktree/<path>`). The server derives
@@ -190,7 +192,7 @@ first candidate only. The payload holds:
 - the worktree path, the resource type and ID;
 - the `tag`.
 
-The tab replies with `POST /api/tabs/<id>/ack` `{notification_id, shown:
+The tab replies with `POST /api/tabs/ack` `{tab, notification_id, shown:
 bool}`:
 
 - `shown: true` once `new Notification(...)` has run;
@@ -217,7 +219,7 @@ notification with the second instead of showing both.
 
 ## Test notification
 
-When `PUT /api/notify` turns a toggle on, the server delivers a synthetic
+When `POST /api/notify` turns a toggle on, the server delivers a synthetic
 batch through the active path:
 
 - **Title:** "Notifications on".
@@ -235,10 +237,10 @@ forgery guard.
 
 | Route | Purpose |
 |---|---|
-| `PUT /api/notify` | Body `{path, all?: bool}` or `{path, type, id, on: bool}`, plus an optional `tab` for targeting the test. Sends a test notification when a toggle turns on. |
-| `POST /api/tabs/<id>` | `{route, visible}` presence update. |
-| `POST /api/tabs/<id>/ack` | `{notification_id, shown}`. |
-| `GET /api/stream?tab=<id>` | Existing stream, now registering the tab. A stream without `tab` still works but is never chosen as a target. |
+| `POST /api/notify` | Body `{path, type?, id?, on: bool, tab?}`; no type/id means the worktree-wide toggle. `tab` targets the test. Sends a test notification when a toggle turns on. Links are refused (400). |
+| `POST /api/tabs/presence` | `{tab, route, visible}` presence update. |
+| `POST /api/tabs/ack` | `{tab, notification_id, shown}`. |
+| `GET /api/stream?tab=<id>&route=…&visible=…` | Existing stream, now registering the tab. A stream without `tab` still works but is never chosen as a target. |
 
 Additions to existing data:
 
@@ -255,10 +257,12 @@ Additions to existing data:
   "Unreads only", with the tooltip "Notify on new events for all resources
   in this worktree".
 - **`ResourceDetailPane` header:** a "Notify on new events" switch.
+  Link resources get no switch and no bell anywhere: links are never
+  polled, so they never have events.
   - While `notify_all` is on, it shows checked and disabled, with the
     tooltip "Notifications are enabled for all resources in the worktree".
 - **Browser mode permission UX.** Turning a switch on is a click, so
-  `Notification.requestPermission()` is called right before the `PUT`.
+  `Notification.requestPermission()` is called right before the `POST`.
   - **Permission denied:** the setting still saves, and an inline warning
     under the switch reads "This browser is blocking notifications. Allow
     them in the site settings to receive them here."
@@ -284,7 +288,7 @@ Additions to existing data:
   acking, and still invalidates on `events_new`. A new `useTabPresence`
   hook, also mounted in `AuthenticatedApp`, owns the tab ID and the
   presence posts.
-- **After `PUT /api/notify`:** the `worktrees`, `resources` and `session`
+- **After `POST /api/notify`:** the `worktrees`, `resources` and `session`
   queries are invalidated.
 
 Icons come from Tabler (`@tabler/icons-react`, already a dependency):
@@ -325,7 +329,7 @@ Go:
   - a tab ID used from another session is rejected.
 - **cmux transport, with `cmuxCmd` stubbed:** the arguments, with and
   without a matched workspace; errors are logged, not retried.
-- **`PUT /api/notify`:** writes the rows; the test notification goes
+- **`POST /api/notify`:** writes the rows; the test notification goes
   through the transport; DTOs expose `notify_all`, `notify` and
   `notify_mode`.
 

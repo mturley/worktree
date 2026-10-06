@@ -192,7 +192,10 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | POST | `/api/worktrees/create` | drives `internal/worktreenew` | `{ok, confirm?, steps[]}` — a pending question is HTTP 200 + `confirm`, never an error status |
 | GET | `/api/repos` | — | registry repos, newest worktree first |
 | GET | `/api/repo-dotfiles` | `repo` (required) | gitignored dotfiles that repo would copy into a new worktree |
-| GET | `/api/stream` | — | SSE stream (`text/event-stream`) |
+| GET | `/api/stream` | `tab`, `route`, `visible` (all optional; see "Notifications") | SSE stream (`text/event-stream`) |
+| POST | `/api/notify` | body: `{path, type?, id?, on, tab?}` (no type/id = the worktree-wide toggle) | `{ok, mode}`; turning ON sends a test notification. 400 for a link or a half-given resource, 404 for an unregistered worktree or untracked resource |
+| POST | `/api/tabs/presence` | body: `{tab, route, visible}` | 204; 404 for an unknown tab or another session's |
+| POST | `/api/tabs/ack` | body: `{tab, notification_id, shown}` | 204; 404 for an unknown tab, another session's, or a notification nobody awaits |
 | GET | `/api/link-image` | `url` (required), `type` (required: `favicon` or `preview`) | image bytes or 404 |
 
 ### `internal/worktreenew` step semantics
@@ -735,6 +738,78 @@ No params. On connect, sends nothing but flushes headers. Every 5s, checks
 connect), emits `event: events_new\ndata: {}\n\n`, then always emits `event:
 heartbeat\ndata: {}\n\n`. The frontend treats `events_new` purely as a
 cache-invalidation signal (no payload).
+
+A stream opened with `?tab=<id>&route=<path>&visible=1|0` also registers that
+tab for browser notifications, and may carry `event: notification` messages
+addressed to it; see "Notifications" below.
+
+## Notifications
+
+Per-worktree "Notify on all" and per-resource "Notify on new events" toggles.
+New events for a notifying resource become a desktop notification: through
+`cmux notify` when the server can reach cmux, otherwise from exactly one
+browser tab per login session.
+
+**Storage — `internal/notifyprefs`, table `worktree_notify`.** A row means
+on; the row with an empty `resource_type`/`resource_id` is the worktree-wide
+toggle. Keyed by `wdb.Subscriber(path)`. The two kinds are independent, so
+turning "Notify on all" off restores the per-resource choices underneath.
+`resources.Remove`/`RemoveAll` delete the matching rows (every
+`registry.Unregister` caller also calls `RemoveAll`). DTOs expose them as
+`worktreeSummary.notify_all` and `resourceDTO.notify` (explicit only; the UI
+shows `notify || notify_all`).
+
+**Notifier — `notifier.go`, `notify_scan.go`.** `StartNotifier` (started by
+`worktree ui`, 5s) keeps its own cursor over `watcher_events`; it does not
+hook the pollers, which write straight to the DB. The cursor is `(ts, seen
+IDs at ts)`: `ts` has one-second resolution, so a bare `ts > cursor` would
+miss an event written later in the second it last read. It starts at
+`MAX(ts)`, so a restart never replays a backlog, and it advances whatever
+delivery does — nothing is retried. `watch_started`, `watcher_error`,
+`ci_pending` and `ci_workflows_pending` never notify. Matching goes through
+`resources.Load`, so only resources the worktree actively tracks count. One
+batch per (worktree, resource): title = the resource's key + custom name or
+title, subtitle = worktree name, body = newest event's title + "(+N more)".
+
+**Delivery mode** is chosen once per process: `cmux.IsAvailable()` (not
+`InPane` — the server drives cmux from wherever it runs) → `cmux notify
+--workspace <id>` for the worktree's matched workspace, so clicking the banner
+switches to it; with no match it posts untargeted (the UI server's own
+workspace). Failures are logged and dropped. Otherwise browser mode. The mode
+is `notify_mode` on `GET /api/session`.
+
+**Browser mode — `tabs.go`.** Each tab makes a random ID per page load
+(`lib/tabId.ts`) and opens the stream with `tab`, `route` and `visible`, so
+registration happens in the same request (a presence POST racing it would
+404). `POST /api/tabs/presence` updates route/visibility on navigation,
+`visibilitychange` and `focus`. Per batch and per session, candidates are
+ordered: that worktree's detail page, then the home page, then any tab;
+visible before hidden, then most recently active. The first gets the
+`notification` message and must ack: `shown:false` (no permission / no API)
+moves on at once, silence moves on after 5s — a frozen background tab keeps
+its stream open but never runs the handler. Each offer has its own
+notification ID, so a late ack can't be mistaken for the current one, and the
+`tag` (`worktree:<path>|<type>:<id>`) makes the browser replace rather than
+stack a duplicate. A reconnect re-registers the same tab ID; the old stream's
+deferred cleanup only removes its own registration. Tab IDs are bound to the
+session that registered them.
+
+**Test notification.** `POST /api/notify` turning a toggle on delivers
+"Notifications on" through the active path (browser: the caller's session,
+the caller's tab first). Links are refused: they are never polled.
+
+**UI.** `NotifySwitch` is the shared switch; in browser mode it asks for
+permission on the enabling click, and while on it says so when THIS browser
+blocks or hasn't allowed notifications (with an Allow button) — a toggle set
+from another device does nothing here until allowed. The worktree page header
+has "Notify on all" beside "Unreads only"; the detail card has "Notify on new
+events", disabled with an explanation while "Notify on all" is on.
+`NotifyBell` marks list cards: filled = explicit, outlined/dimmed with a stack
+badge = inherited from "Notify on all". The home page shows one inherited bell
+on the worktree card when "Notify on all" is on, else an explicit bell at the
+end of each notifying focus resource's first line. `useSSE` shows a received
+notification and acks; clicking it focuses the tab and navigates to the
+worktree with the resource selected (`lib/browserNotify.ts`).
 
 ## CRITICAL GOTCHA: subscriber canonicalization
 
