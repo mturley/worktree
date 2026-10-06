@@ -38,6 +38,79 @@ if (typeof window.matchMedia !== "function") {
 
 const wrap = (ui: React.ReactNode) => render(<MantineProvider>{ui}</MantineProvider>)
 
+/** The card's first line: brand icon, type badge, then the resource's key. */
+const typeLine = () => document.querySelector("[data-resource-type-line]") as HTMLElement
+
+describe("resource type line", () => {
+  // Every type is enriched enough to get its full card body.
+  const cases: [string, string, ResourceDTO][] = [
+    ["GitHub", "violet", { type: "pr", id: "o/r#1", url: "u", primary: true, title: "t" } as ResourceDTO],
+    ["Jira", "blue", { type: "jira", id: "X-1", url: "u", primary: true, title: "t" } as ResourceDTO],
+    ["Slack", "grape", { type: "slack", id: "C1:1.1", url: "u", primary: true, title: "t" } as ResourceDTO],
+    ["Link", "teal", { type: "link", id: "https://ex.com", url: "https://ex.com", primary: true, title: "t" } as ResourceDTO],
+  ]
+
+  it.each(cases)("leads a %s card with its brand icon and a %s badge", (label, color, r) => {
+    wrap(<ResourceCard r={r} />)
+    const line = typeLine()
+    expect(line.firstElementChild?.tagName.toLowerCase()).toBe("svg")
+    const badge = screen.getByText(label).closest(".mantine-Badge-root") as HTMLElement
+    expect(line.contains(badge)).toBe(true)
+    expect(badge.getAttribute("style")).toContain(`--mantine-color-${color}-`)
+  })
+
+  it("moves the status icon up beside the key, leaving the title line bare", () => {
+    wrap(<ResourceCard r={{ type: "pr", id: "o/r#1", url: "u", primary: true, title: "Fix it", state: "OPEN" } as ResourceDTO} />)
+    const status = screen.getByLabelText("open")
+    expect(typeLine().contains(status)).toBe(true)
+    // After the badge, before the key.
+    const badge = screen.getByText("GitHub").closest(".mantine-Badge-root") as HTMLElement
+    const key = screen.getByText("PR #1")
+    expect(badge.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(status.compareDocumentPosition(key) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByText("Fix it").parentElement?.querySelector("svg")).toBeNull()
+  })
+
+  it("puts a Jira issue's type icon on the type line", () => {
+    wrap(<ResourceCard r={{ type: "jira", id: "X-1", url: "u", primary: true, title: "t", status: "New",
+      issue_type: "Bug", issue_type_icon_url: "https://jira/bug.png" } as ResourceDTO} />)
+    expect(typeLine().contains(document.querySelector("img"))).toBe(true)
+  })
+
+  it("names a Jira issue's type before its key", () => {
+    wrap(<ResourceCard r={{ type: "jira", id: "X-1", url: "u", primary: true, title: "t", issue_type: "Epic" } as ResourceDTO} />)
+    expect(typeLine().contains(screen.getByText("Epic X-1"))).toBe(true)
+  })
+
+  it("names the issue type once, not again as a badge", () => {
+    wrap(<ResourceCard r={{ type: "jira", id: "X-1", url: "u", primary: true, title: "t", issue_type: "Epic" } as ResourceDTO} />)
+    expect(screen.queryByText("Epic")).toBeNull()
+  })
+
+  it("shows the bare key when the issue type is unknown", () => {
+    wrap(<ResourceCard r={{ type: "jira", id: "X-1", url: "u", primary: true, title: "t" } as ResourceDTO} />)
+    expect(typeLine().contains(screen.getByText("X-1"))).toBe(true)
+  })
+
+  it("shows a spinner, not a placeholder glyph, until the resource is fetched", () => {
+    wrap(<ResourceCard r={{ type: "pr", id: "o/r#9", url: "u", primary: true } as ResourceDTO} />)
+    expect(typeLine().contains(screen.getByLabelText("loading"))).toBe(true)
+    expect(screen.queryByLabelText("unknown state")).toBeNull()
+  })
+
+  it("never spins for a link, which is resolved once and never polled", () => {
+    wrap(<ResourceCard r={{ type: "link", id: "https://ex.com/a", url: "https://ex.com/a", primary: true } as ResourceDTO} />)
+    expect(screen.queryByLabelText("loading")).toBeNull()
+    expect(screen.getByText("ex.com")).toBeInTheDocument()
+  })
+
+  it("does the same before a resource has been polled", () => {
+    wrap(<ResourceCard r={{ type: "jira", id: "X-1", url: "u", primary: true } as ResourceDTO} />)
+    expect(typeLine().firstElementChild?.tagName.toLowerCase()).toBe("svg")
+    expect(screen.getByText("Jira").closest(".mantine-Badge-root")?.getAttribute("style")).toContain("--mantine-color-blue-")
+  })
+})
+
 describe("ResourceCard slack", () => {
   it("shows custom_name when set", () => {
     wrap(<ResourceCard r={{ type: "slack", id: "C1:170.100", url: "https://x", primary: false, custom_name: "Release blocker" } as any} />)
@@ -55,9 +128,38 @@ describe("ResourceCard slack", () => {
     expect(screen.getByText("C1:170.100")).toBeInTheDocument()
   })
 
-  it("shows #channel_name when set", () => {
+  it("names the channel on the type line, where PRs and Jira put their keys", () => {
     wrap(<ResourceCard r={{ type: "slack", id: "C1:170.100", url: "https://x", primary: false, channel_name: "wg-dashboard-zaffre" } as any} />)
-    expect(screen.getByText("#wg-dashboard-zaffre")).toBeInTheDocument()
+    const ref = screen.getByText("Thread in #wg-dashboard-zaffre")
+    expect(typeLine().contains(ref)).toBe(true)
+    // Said once: the bottom line no longer repeats it.
+    expect(screen.queryByText("#wg-dashboard-zaffre")).toBeNull()
+  })
+
+  it("says just 'Thread' before the channel name is known", () => {
+    wrap(<ResourceCard r={{ type: "slack", id: "C1:170.100", url: "https://x", primary: false } as any} />)
+    expect(typeLine().textContent).toBe("SlackThread")
+  })
+
+  it("puts the thread's title on its own line, like a PR's or issue's", () => {
+    wrap(<ResourceCard r={{ type: "slack", id: "C1:170.100", url: "https://x", primary: false, title: "e2e regression thread" } as any} />)
+    expect(typeLine().contains(screen.getByText("e2e regression thread"))).toBe(false)
+  })
+
+  it("puts a speech bubble before the channel, where other types show their status icon", () => {
+    wrap(<ResourceCard r={{ type: "slack", id: "C1:170.100", url: "https://x", primary: false, channel_name: "ops" } as any} />)
+    const bubble = typeLine().querySelector("svg.tabler-icon-message") as SVGElement
+    expect(bubble).not.toBeNull()
+    const badge = screen.getByText("Slack").closest(".mantine-Badge-root") as HTMLElement
+    expect(badge.compareDocumentPosition(bubble) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(bubble.compareDocumentPosition(screen.getByText("Thread in #ops")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("shows the Slack mark once, on the type line, not again on the title", () => {
+    const { container } = wrap(<ResourceCard r={{ type: "slack", id: "C1:170.100", url: "https://x", primary: false, title: "t" } as any} />)
+    const marks = container.querySelectorAll('svg[viewBox="0 0 122.8 122.8"]')
+    expect(marks).toHaveLength(1)
+    expect(typeLine().contains(marks[0])).toBe(true)
   })
 
   it("shows by <author> when set", () => {
@@ -571,11 +673,20 @@ describe("link resource cards", () => {
     expect(img.getAttribute("src")).toBe("/api/link-image?url=" + encodeURIComponent("https://ex.com/favicon.ico"))
   })
 
-  it("falls back to a glyph when a link has no favicon", () => {
+  it("shows the globe as a link's brand icon, on the type line", () => {
     wrap(<ResourceCard r={{ type: "link", id: "https://ex.com/a", url: "https://ex.com/a",
-      primary: true } as ResourceDTO} path="/wt" variant="compact" />)
-    expect(screen.getByLabelText("link")).toBeInTheDocument()
+      primary: true, title: "A page" } as ResourceDTO} path="/wt" variant="compact" />)
+    expect(typeLine().firstElementChild?.tagName.toLowerCase()).toBe("svg")
+    // Not repeated on the title: without a favicon the title has no icon.
+    expect(document.querySelectorAll("svg.tabler-icon-world")).toHaveLength(1)
     expect(document.querySelector("img")).toBeNull()
+  })
+
+  it("puts a link's favicon on the type line, beside its domain", () => {
+    wrap(<ResourceCard r={{ type: "link", id: "https://ex.com/a", url: "https://ex.com/a",
+      primary: true, title: "A page", favicon: "https://ex.com/favicon.ico" } as ResourceDTO} path="/wt" variant="compact" />)
+    const img = document.querySelector("img") as HTMLImageElement
+    expect(typeLine().contains(img)).toBe(true)
   })
 
   it("offers 'Open in new tab' for a link", () => {

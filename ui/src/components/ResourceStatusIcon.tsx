@@ -69,28 +69,37 @@ export function resourceStatusMeta(r: ResourceDTO): StatusMeta {
   return { Icon: IconCircleDashed, color: "gray", label: "unknown state" }
 }
 
+/**
+ * A link's favicon, or `fallback` when it has none or it fails to load.
+ *
+ * Separate from ResourceStatusIcon so the resource cards can show the
+ * favicon alone: they already lead with the globe as the link's brand icon,
+ * and a second globe on the title would only repeat it.
+ */
+export function LinkFavicon({ r, fallback = null }: { r: ResourceDTO; fallback?: React.ReactNode }) {
+  const [failed, setFailed] = useState(false)
+  if (!r.favicon || failed) return <>{fallback}</>
+  return (
+    <img
+      src={linkImageProxy(r.favicon)}
+      alt=""
+      width={16}
+      height={16}
+      onError={() => setFailed(true)}
+      style={{ borderRadius: 2, flexShrink: 0 }}
+    />
+  )
+}
+
 export function ResourceStatusIcon({ r, size = 14 }: { r: ResourceDTO; size?: number }) {
   const { Icon, color, label } = resourceStatusMeta(r)
   const [iconFailed, setIconFailed] = useState(false)
-  const [faviconFailed, setFaviconFailed] = useState(false)
 
   if (r.type === "link") {
     // No status to show — a link is never polled, so it has no state. The
     // favicon identifies it instead. A site with no reachable favicon falls
     // back to a neutral glyph rather than a broken image.
-    if (r.favicon && !faviconFailed) {
-      return (
-        <img
-          src={linkImageProxy(r.favicon)}
-          alt=""
-          width={16}
-          height={16}
-          onError={() => setFaviconFailed(true)}
-          style={{ borderRadius: 2, flexShrink: 0 }}
-        />
-      )
-    }
-    return <IconWorld size={16} aria-label="link" style={{ flexShrink: 0 }} />
+    return <LinkFavicon r={r} fallback={<IconWorld size={16} aria-label="link" style={{ flexShrink: 0 }} />} />
   }
 
   // Jira serves a distinct icon per issue type (Bug, Story, Epic, Spike…),
@@ -153,6 +162,7 @@ export function ResourceTitle({
   fw = 600,
   size = "sm",
   showUnread = true,
+  icon,
 }: {
   r: ResourceDTO
   /** Defaults to the resource's own title, falling back to its id. */
@@ -165,11 +175,17 @@ export function ResourceTitle({
    * something already on screen.
    */
   showUnread?: boolean
+  /**
+   * Replaces the status icon; null for none. For cards whose first line
+   * already carries the type's brand icon, where a status icon that is just
+   * that same mark again (Slack, a link's globe) would repeat it.
+   */
+  icon?: React.ReactNode
 }) {
   return (
     <Group gap={6} wrap="nowrap" align="center">
       {showUnread && <UnreadDot r={r} />}
-      <ResourceStatusIcon r={r} />
+      {icon === undefined ? <ResourceStatusIcon r={r} /> : icon}
       <Text size={size} fw={fw} style={{ overflowWrap: "anywhere" }}>
         {label ?? r.title ?? r.id}
       </Text>

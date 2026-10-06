@@ -6,10 +6,10 @@ import { relativeTime, relativeFromNow } from "../lib/relativeTime"
 import { api } from "../api/client"
 import { ResourceActions } from "./ResourceActions"
 import { ResourceTitle } from "./ResourceStatusIcon"
+import { ResourceTypeLine, awaitsFetch } from "./ResourceTypeLine"
 import { cardEdgeStyle, hasUnread } from "../lib/unread"
 import { UnreadBadge } from "./UnreadBadge"
 import { EditResourceDetailsModal } from "./EditResourceDetailsModal"
-import { shortResourceRef } from "../lib/resourceRef"
 import { supportsCustomName } from "../lib/customName"
 
 function prStateColor(state?: string): string {
@@ -46,18 +46,6 @@ function ciColor(status?: string): string {
     case "pending": return "yellow"
     default: return "gray"
   }
-}
-
-function prNumber(id: string): string {
-  const m = id.match(/#(\d+)$/)
-  return m ? `#${m[1]}` : id
-}
-
-function isEnriched(r: ResourceDTO): boolean {
-  return Boolean(
-    r.title || r.state || r.review_decision || r.ci_status || r.new_commits_since_review || r.author ||
-    r.status || r.priority || r.issue_type || r.assignee || (r.labels && r.labels.length > 0) || r.updated_at
-  )
 }
 
 /**
@@ -104,26 +92,25 @@ function titleProps(variant: ResourceCardVariant): { size: string; fw: number } 
   return variant === "detail" ? { size: "xl", fw: 700 } : { size: "sm", fw: 600 }
 }
 
+/**
+ * The card for a resource the poller has not fetched yet: just its id. Its
+ * type line shows a spinner where the status icon will go — the placeholder
+ * glyph that replaced read as a state of its own rather than "not loaded yet".
+ */
 function MinimalRow({ r, variant }: { r: ResourceDTO; variant: ResourceCardVariant }) {
   return (
-    <Group gap="xs">
-      <Badge size="xs" variant="light">{r.type}</Badge>
-      <ResourceTitle r={r} label={r.id} fw={400} showUnread={showsUnread(variant)} />
-    </Group>
+    <Stack gap={4}>
+      <ResourceTypeLine r={r} />
+      <ResourceTitle r={r} label={r.id} fw={400} showUnread={showsUnread(variant)} icon={null} />
+    </Stack>
   )
 }
 
 function PRCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVariant }) {
   return (
     <Stack gap={4}>
-      <Group gap="xs" wrap="wrap">
-        {/* The badge names the SERVICE, matching Jira's and Slack's, so the
-            three read as the same kind of label. "PR" is then restored to the
-            number beside it, which would otherwise be a bare "#1234". */}
-        <Badge size="xs" variant="light">GitHub</Badge>
-        <Text size="xs" c="dimmed">PR {prNumber(r.id)}</Text>
-      </Group>
-      <ResourceTitle r={r} label={r.title || r.id} showUnread={showsUnread(variant)} {...titleProps(variant)} />
+      <ResourceTypeLine r={r} />
+      <ResourceTitle r={r} label={r.title || r.id} showUnread={showsUnread(variant)} icon={null} {...titleProps(variant)} />
       <CustomDescription r={r} />
       <Group gap={4} wrap="wrap">
         {r.state && <Badge size="xs" color={prStateColor(r.state)}>{r.state.toLowerCase()}</Badge>}
@@ -143,16 +130,12 @@ function PRCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVaria
 function JiraCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVariant }) {
   return (
     <Stack gap={4}>
-      <Group gap="xs" wrap="wrap">
-        <Badge size="xs" variant="light">Jira</Badge>
-        <Text size="xs" c="dimmed">{r.id}</Text>
-      </Group>
-      <ResourceTitle r={r} label={r.title || r.id} showUnread={showsUnread(variant)} {...titleProps(variant)} />
+      <ResourceTypeLine r={r} />
+      <ResourceTitle r={r} label={r.title || r.id} showUnread={showsUnread(variant)} icon={null} {...titleProps(variant)} />
       <CustomDescription r={r} />
       <Group gap={4} wrap="wrap">
         {r.status && <Badge size="xs" variant="light">{r.status}</Badge>}
         {r.priority && <Badge size="xs" variant="light" color="orange">{r.priority}</Badge>}
-        {r.issue_type && <Badge size="xs" variant="outline">{r.issue_type}</Badge>}
       </Group>
       {variant === "detail" && r.labels && r.labels.length > 0 && (
         <Group gap={4} wrap="wrap">
@@ -171,15 +154,12 @@ function JiraCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVar
 function SlackCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVariant }) {
   const label = r.custom_name || r.title || r.id
   return (
-    <Stack gap={2}>
-      <Group gap="xs" wrap="wrap">
-        <Badge size="xs" variant="light" color="grape">Slack</Badge>
-        {/* Custom name or fetched title alike — same prominence either way. */}
-        <ResourceTitle r={r} label={label} showUnread={showsUnread(variant)} {...titleProps(variant)} />
-      </Group>
+    <Stack gap={4}>
+      <ResourceTypeLine r={r} />
+      {/* Custom name or fetched title alike — same prominence either way. */}
+      <ResourceTitle r={r} label={label} showUnread={showsUnread(variant)} icon={null} {...titleProps(variant)} />
       <CustomDescription r={r} />
       <Group gap="xs" wrap="wrap">
-        {r.channel_name && <Text size="xs" c="dimmed">#{r.channel_name}</Text>}
         {r.author && <Text size="xs" c="dimmed">by {r.author}</Text>}
         {r.created_ts && <Text size="xs" c="dimmed">started {relativeFromNow(r.created_ts)}</Text>}
         {r.updated_ts && <Text size="xs" c="dimmed">· active {relativeFromNow(r.updated_ts)}</Text>}
@@ -192,12 +172,8 @@ function LinkCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVar
   const label = r.custom_name || r.title || r.id
   return (
     <Stack gap={2}>
-      <Group gap="xs" wrap="wrap">
-        <Badge size="xs" variant="light" color="teal">Link</Badge>
-        {/* The domain sits where a PR puts its number and Jira its key. */}
-        <Text size="xs" c="dimmed">{shortResourceRef("link", r.id)}</Text>
-      </Group>
-      <ResourceTitle r={r} label={label} showUnread={false} {...titleProps(variant)} />
+      <ResourceTypeLine r={r} />
+      <ResourceTitle r={r} label={label} showUnread={false} icon={null} {...titleProps(variant)} />
       <CustomDescription r={r} />
       {variant === "detail" && r.description && (
         <Text size="xs" c="dimmed" lineClamp={3}>{r.description}</Text>
@@ -347,16 +323,19 @@ export function ResourceCard({
       setSavingPrimary(false)
     }
   }
+  // Slack and links never take the not-yet-fetched path: a thread's card is
+  // useful from its id alone, and a link is resolved once when added and
+  // never polled, so a spinner on it would never stop.
   const body = r.type === "slack" ? (
     <SlackCardBody r={r} variant={variant} />
-  ) : !isEnriched(r) ? (
+  ) : r.type === "link" ? (
+    <LinkCardBody r={r} variant={variant} />
+  ) : awaitsFetch(r) ? (
     <MinimalRow r={r} variant={variant} />
   ) : r.type === "pr" ? (
     <PRCardBody r={r} variant={variant} />
   ) : r.type === "jira" ? (
     <JiraCardBody r={r} variant={variant} />
-  ) : r.type === "link" ? (
-    <LinkCardBody r={r} variant={variant} />
   ) : (
     <MinimalRow r={r} variant={variant} />
   )

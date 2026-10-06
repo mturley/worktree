@@ -5,8 +5,8 @@ import { useCmuxMatches } from "../api/cmux"
 import type { ResourceDTO, WorktreeSummary } from "../api/types"
 import { relatedSummary } from "../lib/resourceSummary"
 import { CmuxWorkspaceSection } from "./CmuxWorkspaceSection"
-import { ResourceStatusIcon, UnreadDot } from "./ResourceStatusIcon"
-import { shortResourceRef } from "../lib/resourceRef"
+import { UnreadDot } from "./ResourceStatusIcon"
+import { ResourceTypeLine } from "./ResourceTypeLine"
 import { cardEdgeStyle } from "../lib/unread"
 import { UnreadBadge } from "./UnreadBadge"
 
@@ -63,26 +63,19 @@ function resourceMetaLine(r: ResourceDTO): string {
 
 function FocusResourceLine({ r }: { r: ResourceDTO }) {
   const label = r.custom_name || r.title || r.id
-  // Same abbreviation the timeline's event chips use, so "#42" and
-  // "RHOAIENG-1" mean the same thing wherever they appear.
-  const ref = shortResourceRef(r.type, r.id)
   const meta = resourceMetaLine(r)
   return (
-    <Stack gap={0}>
+    <Stack gap={2}>
+      {/* The same first line as the worktree page's resource cards — brand
+          icon, type badge, then this resource's icon and key — so a resource
+          is introduced the same way on both pages. */}
+      <ResourceTypeLine r={r} />
       <Group gap={6} wrap="nowrap" align="center">
         <UnreadDot r={r} />
-        {/* Same mapping as the resource cards' titles: both read
-            resourceStatusMeta, so an icon change lands in both places. */}
-        <ResourceStatusIcon r={r} />
-        {ref && (
-          <Text size="sm" fw={600} c="dimmed" style={{ whiteSpace: "nowrap" }}>{ref}</Text>
-        )}
         <Text size="sm" c="dimmed" lineClamp={1} style={{ minWidth: 0 }}>{label}</Text>
       </Group>
       {meta && (
-        // Indented to clear the status icon, so it reads as belonging to the
-        // line above rather than as another resource.
-        <Text size="xs" c="dimmed" pl={20} lineClamp={1} style={{ minWidth: 0 }}>
+        <Text size="xs" c="dimmed" lineClamp={1} style={{ minWidth: 0 }}>
           {meta}
         </Text>
       )}
@@ -173,7 +166,7 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
             {[w.repo, w.branch].filter(Boolean).join(" · ")}
           </Text>
           {w.focus_resources.length > 0 && (
-            <Stack gap={2}>
+            <Stack gap="sm">
               {w.focus_resources.map((r) => (
                 <FocusResourceLine key={`${r.type}:${r.id}`} r={r} />
               ))}
@@ -184,9 +177,8 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
             // ones you did not mark as the point of this worktree — so this
             // line is the only place their shape shows. Named by type, since
             // "2 related Slack threads" tells you where to look and a bare
-            // total does not. Indented to sit under the resource text, so it
-            // reads as the tail of that list rather than a new fact.
-            <Text size="xs" c="dimmed" pl={20}>
+            // total does not.
+            <Text size="xs" c="dimmed">
               {`+ ${related}`}
             </Text>
           )}

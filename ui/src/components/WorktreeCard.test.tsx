@@ -39,11 +39,34 @@ describe("WorktreeCard", () => {
     expect(screen.getByText(/odh/)).toBeInTheDocument()
   })
 
-  it("shows the PR number and Jira key beside each focus resource", () => {
+  it("shows the PR number and Jira key on each focus resource's first line", () => {
     wrap(<WorktreeCard w={summary} />)
-    // Same abbreviation the timeline's event chips use.
-    expect(screen.getByText("#1")).toBeInTheDocument()
+    expect(screen.getByText("PR #1")).toBeInTheDocument()
     expect(screen.getByText("J-1")).toBeInTheDocument()
+  })
+
+  it("introduces each focus resource like its resource card: type line, title, then meta", () => {
+    wrap(<WorktreeCard w={{ ...summary, focus_resources: [
+      { type: "jira", id: "J-1", url: "u", primary: true, title: "Investigate flux", status: "In Progress", issue_type: "Bug" } as ResourceDTO,
+    ] }} />)
+    const typeLine = document.querySelector("[data-resource-type-line]") as HTMLElement
+    // Brand icon and colour-coded badge, then the key — the same first line
+    // the worktree page's resource cards use.
+    expect(typeLine.firstElementChild?.tagName.toLowerCase()).toBe("svg")
+    expect(typeLine.textContent).toContain("Jira")
+    expect(typeLine.textContent).toContain("Bug J-1")
+    const title = screen.getByText("Investigate flux")
+    const meta = screen.getByText(/In Progress/)
+    expect(typeLine.contains(title)).toBe(false)
+    expect(typeLine.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(title.compareDocumentPosition(meta) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("names a Slack thread's channel on its first line", () => {
+    wrap(<WorktreeCard w={{ ...summary, focus_resources: [
+      { type: "slack", id: "C1:1.1", url: "u", primary: true, title: "Deploy thread", channel_name: "ops" } as ResourceDTO,
+    ] }} />)
+    expect(screen.getByText("Thread in #ops")).toBeInTheDocument()
   })
 
   it("names each focus resource as plain content, never as its own link", () => {
