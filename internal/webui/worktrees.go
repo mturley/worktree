@@ -5,6 +5,7 @@ import (
 	"os"
 
 	wdb "github.com/mturley/worktree/internal/db"
+	"github.com/mturley/worktree/internal/notifyprefs"
 	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/resources"
 )
@@ -42,6 +43,8 @@ type worktreeSummary struct {
 	// threads included, each counting at least 1 while unread (see
 	// unreadIndex.fill), so it is non-zero whenever HasUnread is.
 	UnreadCount int `json:"unread_count"`
+	// NotifyAll is the worktree-wide "Notify on all" toggle.
+	NotifyAll bool `json:"notify_all"`
 }
 
 func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
@@ -54,6 +57,11 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 	// One index for the whole response: the alternative is a count query per
 	// resource per worktree.
 	ix := s.newUnreadIndex()
+	// One query for every worktree's toggles, like the unread index above.
+	allPrefs, err := notifyprefs.ListAll(s.DB)
+	if err != nil && s.Logger != nil {
+		s.Logger.Printf("notifyprefs.ListAll: %v", err)
+	}
 	for _, e := range entries {
 		rs, err := resources.Load(s.DB, e.Path)
 		if err != nil {
@@ -70,12 +78,14 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 		focus := make([]resourceDTO, 0, len(rs))
 		hasUnread := false
 		unreadCount := 0
+		prefs := allPrefs[wdb.Subscriber(e.Path)]
 		for _, res := range rs {
 			if !res.Related {
 				primary++
 				primaryByType[res.Type]++
 				dto := s.newResourceDTO(res)
 				ix.fill(&dto)
+				dto.Notify = prefs.Resources[notifyprefs.Key{Type: dto.Type, ID: dto.ID}]
 				focus = append(focus, dto)
 				hasUnread = hasUnread || resourceHasUnread(dto)
 				unreadCount += dto.UnreadCount
@@ -108,6 +118,7 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 			FocusResources: focus,
 			HasUnread:      hasUnread,
 			UnreadCount:    unreadCount,
+			NotifyAll:      prefs.All,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)

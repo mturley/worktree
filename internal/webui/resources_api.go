@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	watcherdb "github.com/mturley/watcher/db"
+	"github.com/mturley/worktree/internal/notifyprefs"
 	"github.com/mturley/worktree/internal/resources"
 )
 
@@ -38,6 +39,10 @@ type resourceDTO struct {
 	// non-slack: ts of the newest of the UnreadCount events, from the same
 	// snapshot. Mark-all-read sends it as through_ts — see unread.Summary.
 	UnreadThroughTS string `json:"unread_through_ts,omitempty"`
+	// Notify is this resource's explicit notification toggle in the
+	// requesting worktree. The worktree-wide toggle is NotifyAll on the
+	// worktree; the UI shows the effective state as their OR.
+	Notify bool `json:"notify,omitempty"`
 	// link: resolved page metadata (see internal/linkmeta)
 	Description  string `json:"description,omitempty"`
 	Image        string `json:"image,omitempty"`
@@ -59,10 +64,16 @@ func (s *Server) handleWorktreeResources(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	ix := s.newUnreadIndex()
+	prefs, err := notifyprefs.Get(s.DB, path)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	out := make([]resourceDTO, 0, len(rs))
 	for _, res := range rs {
 		dto := s.newResourceDTO(res)
 		ix.fill(&dto)
+		dto.Notify = prefs.Resources[notifyprefs.Key{Type: dto.Type, ID: dto.ID}]
 		out = append(out, dto)
 	}
 	writeJSON(w, http.StatusOK, out)

@@ -177,6 +177,7 @@ func (s *Server) routes() []route {
 		{"GET /api/worktree-info", s.handleWorktreeInfo},
 		{"GET /api/worktree-notes", s.handleGetWorktreeNotes},
 		{"POST /api/worktree-notes", s.handleSetWorktreeNotes},
+		{"POST /api/notify", s.handleSetNotify},
 		{"GET /api/cmux", s.handleCmux},
 		{"GET /api/cmux-groups", s.handleCmuxGroups},
 		{"POST /api/cmux/select", s.handleCmuxSelect},
