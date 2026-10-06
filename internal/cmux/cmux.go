@@ -159,6 +159,31 @@ func SelectWorkspace(ref string) error {
 	return nil
 }
 
+// NotifyOptions is one `cmux notify` call. Workspace is a workspace ID or
+// ref; empty sends it to the caller's own workspace (for `worktree ui`, the
+// pane it runs in). Clicking the macOS banner selects that workspace.
+type NotifyOptions struct {
+	Title, Subtitle, Body, Workspace string
+}
+
+// Notify posts a cmux notification, omitting empty fields.
+func Notify(o NotifyOptions) error {
+	args := []string{"notify", "--title", o.Title}
+	if o.Subtitle != "" {
+		args = append(args, "--subtitle", o.Subtitle)
+	}
+	if o.Body != "" {
+		args = append(args, "--body", o.Body)
+	}
+	if o.Workspace != "" {
+		args = append(args, "--workspace", o.Workspace)
+	}
+	if out, err := cmuxCmd(args...).CombinedOutput(); err != nil {
+		return fmt.Errorf("cmux notify: %s", strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 func RenameWorkspace(ref, title string) error {
 	cmd := cmuxCmd("workspace", "rename", ref, "--title", title)
 	if out, err := cmd.CombinedOutput(); err != nil {
