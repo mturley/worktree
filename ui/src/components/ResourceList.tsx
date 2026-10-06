@@ -20,6 +20,7 @@ import { applyDrag, crossGroupPreview, mergeVisibleOrder, moveToEdge, type DropT
 import { resourceCollisions } from "../lib/resourceCollision"
 import { useHoverMenu } from "../lib/useHoverMenu"
 import { SortableResourceCard } from "./SortableResourceCard"
+import type { ResourceNotifyContext } from "./ResourceCard"
 import { AddResourceModal } from "./AddResourceModal"
 
 interface ResourceListProps {
@@ -38,6 +39,8 @@ interface ResourceListProps {
   emptyText?: string
   /** Extra controls beside Follow resource. */
   toolbar?: React.ReactNode
+  /** Notification state for the cards' bells; see ResourceNotifyContext. */
+  notify?: ResourceNotifyContext
 }
 
 /** Whether two lists hold the same cards, in the same groups and order. */
@@ -100,7 +103,7 @@ function ResourceGroup({
 }
 
 export function ResourceList({
-  items, path, onChanged, selectedKey, onSelectResource, allItems, emptyText = "No resources tracked.", toolbar,
+  items, path, onChanged, selectedKey, onSelectResource, allItems, emptyText = "No resources tracked.", toolbar, notify,
 }: ResourceListProps) {
   const [addOpen, setAddOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
@@ -296,6 +299,7 @@ export function ResourceList({
         onMoveToEdge={(edge) => moveCard(r, edge)}
         onSetPrimary={(primary) => setGroup(r, primary)}
         menu={menuFor(serializeResourceKey({ type: r.type, id: r.id }))}
+        notify={notify}
       />
     ))
 

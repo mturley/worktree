@@ -14,6 +14,7 @@ import { EditResourceDetailsModal } from "./EditResourceDetailsModal"
 import { supportsCustomName } from "../lib/customName"
 import { TAB_ID } from "../lib/tabId"
 import { NotifySwitch } from "./NotifySwitch"
+import { NotifyBell } from "./NotifyBell"
 
 function prStateColor(state?: string): string {
   switch ((state || "").toUpperCase()) {
@@ -375,6 +376,13 @@ export function ResourceCard({
     <MinimalRow r={r} variant={variant} />
   )
 
+  // Links are never polled, so they never notify, whatever the toggles say.
+  const bell =
+    !notify || r.type === "link" ? null
+    : notify.all ? <NotifyBell kind="implicit" />
+    : r.notify ? <NotifyBell kind="explicit" />
+    : null
+
   // The badge lives INSIDE the click target, not beside it. As a sibling of
   // the button it carved a fixed-width strip out of the card that no click
   // could reach — harmless at full width, but a quarter of the card once
@@ -383,7 +391,11 @@ export function ResourceCard({
   const bodyWithBadge = (
     <Group justify="space-between" wrap="nowrap" align="flex-start" gap="xs">
       <div style={{ flex: 1, minWidth: 0 }}>{body}</div>
-      <UnreadBadge unread={showsUnread(variant) && hasUnread(r)} count={r.unread_count} />
+      <Group gap={6} wrap="nowrap" style={{ flex: "none" }}>
+        {/* The detail card carries the switch instead of a bell. */}
+        {variant !== "detail" && bell}
+        <UnreadBadge unread={showsUnread(variant) && hasUnread(r)} count={r.unread_count} />
+      </Group>
     </Group>
   )
 

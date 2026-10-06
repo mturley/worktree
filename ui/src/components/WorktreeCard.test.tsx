@@ -375,3 +375,17 @@ describe("unread accent", () => {
     expect(card()).toHaveStyle({ borderLeft: ACCENT })
   })
 })
+
+describe("notification bells", () => {
+  const [pr, jira] = summary.focus_resources
+  it("one worktree bell when notify_all, and no resource bells", () => {
+    wrap(<WorktreeCard w={{ ...summary, notify_all: true, focus_resources: [{ ...pr, notify: true }, jira] }} />)
+    expect(screen.getAllByRole("img", { name: /Notifications on/ })).toHaveLength(1)
+    expect(screen.getByRole("img", { name: "Notifications on for the whole worktree" })).toBeInTheDocument()
+  })
+  it("a bell per notifying resource otherwise", () => {
+    wrap(<WorktreeCard w={{ ...summary, notify_all: false, focus_resources: [{ ...pr, notify: true }, jira] }} />)
+    expect(screen.getAllByRole("img", { name: /Notifications on/ })).toHaveLength(1)
+    expect(screen.getByRole("img", { name: "Notifications on" })).toBeInTheDocument()
+  })
+})

@@ -158,6 +158,7 @@ export function WorktreeDetailPage() {
       onChanged={resources.refetch}
       selectedKey={selected}
       onSelectResource={toggle}
+      notify={notify}
     />
   )
 
