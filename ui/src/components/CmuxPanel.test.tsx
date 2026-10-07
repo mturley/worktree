@@ -180,6 +180,31 @@ describe("CmuxPanel", () => {
     }
   })
 
+  it("switches to this cmux workspace", async () => {
+    vi.spyOn(api, "cmuxTree").mockResolvedValue(tree())
+    const select = vi.spyOn(api, "cmuxSelect").mockResolvedValue(ok)
+    const user = userEvent.setup()
+    wrap()
+    await user.click(await screen.findByRole("button", { name: "Switch cmux" }))
+    expect(select).toHaveBeenCalledWith("W")
+  })
+
+  it("shows Current, disabled, for the already-selected workspace", async () => {
+    vi.spyOn(api, "cmuxTree").mockResolvedValue(tree({ selected: true }))
+    wrap()
+    const button = await screen.findByRole("button", { name: "Current" })
+    expect(button).toBeDisabled()
+  })
+
+  it("shows the error line when switching fails", async () => {
+    vi.spyOn(api, "cmuxTree").mockResolvedValue(tree())
+    vi.spyOn(api, "cmuxSelect").mockResolvedValue({ ok: false, error: "boom" })
+    const user = userEvent.setup()
+    wrap()
+    await user.click(await screen.findByRole("button", { name: "Switch cmux" }))
+    expect(await screen.findByText("boom")).toBeInTheDocument()
+  })
+
   it("clears an earlier error after a successful action", async () => {
     vi.spyOn(api, "cmuxTree").mockResolvedValue(tree())
     vi.spyOn(api, "cmuxFocusTab").mockResolvedValueOnce({ ok: false, error: "boom" }).mockResolvedValue(ok)
