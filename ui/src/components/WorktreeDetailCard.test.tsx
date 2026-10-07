@@ -26,6 +26,7 @@ vi.mock("../api/client", async (orig) => {
 })
 
 beforeEach(() => {
+  window.sessionStorage.clear()
   worktreeNotes.mockResolvedValue({ notes: "", sync_cmux: false })
   saveWorktreeNotes.mockImplementation(async (args: { notes: string; sync_cmux: boolean }) => ({
     notes: args.notes, sync_cmux: args.sync_cmux, updated_at: "2026-09-21T00:00:00Z",
@@ -525,6 +526,28 @@ describe("cmux tab", () => {
     expect(await screen.findByText(/no cmux workspace/i)).toBeInTheDocument()
     await user.click(screen.getByRole("tab", { name: /notes/i }))
     expect(screen.queryByText(/no cmux workspace/i)).not.toBeInTheDocument()
+  })
+
+  it("keeps the chosen tab for the next worktree's card", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    const user = userEvent.setup()
+    wrap(summary())
+    await user.click(await screen.findByRole("tab", { name: /environment/i }))
+    cleanup()
+    // The page keys the card by path, so switching worktrees remounts it.
+    wrap(summary({ path: "/wt/bar" }))
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: /environment/i })).toHaveAttribute("aria-selected", "true"),
+    )
+  })
+
+  it("shows Notes where the remembered tab doesn't exist, without forgetting it", async () => {
+    window.sessionStorage.setItem("worktree.detailTab", "env")
+    worktreeInfo.mockResolvedValue(info({ env: [] }))
+    wrap(summary())
+    await waitFor(() => expect(worktreeInfo).toHaveBeenCalled())
+    expect(await screen.findByRole("tab", { name: /notes/i })).toHaveAttribute("aria-selected", "true")
+    expect(window.sessionStorage.getItem("worktree.detailTab")).toBe("env")
   })
 
   it("falls back to Notes if cmux goes away while its tab is selected", async () => {

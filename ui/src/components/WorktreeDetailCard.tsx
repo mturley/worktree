@@ -32,6 +32,34 @@ function gitSummary(g: GitStatus): string {
   return parts.join(" · ")
 }
 
+type DetailTab = "notes" | "env" | "cmux"
+
+/**
+ * The card's selected tab, remembered per browser tab so switching worktrees
+ * keeps it. sessionStorage, like "Follow cmux focus": a choice for this tab,
+ * not for every tab in the browser. Storage throws in some contexts (private
+ * windows); the card then just starts on Notes.
+ */
+const DETAIL_TAB_KEY = "worktree.detailTab"
+
+function readDetailTab(): DetailTab {
+  try {
+    const v = window.sessionStorage.getItem(DETAIL_TAB_KEY)
+    if (v === "env" || v === "cmux") return v
+  } catch {
+    // fall through
+  }
+  return "notes"
+}
+
+function writeDetailTab(tab: DetailTab): void {
+  try {
+    window.sessionStorage.setItem(DETAIL_TAB_KEY, tab)
+  } catch {
+    // not remembered; the selection still applies to this card
+  }
+}
+
 /**
  * The details card under the worktree detail page's header.
  *
@@ -42,7 +70,8 @@ function gitSummary(g: GitStatus): string {
  * what branch am I on, is the tree dirty, when did anything last happen, and
  * what was I in the middle of (notes).
  *
- * One meta line, then tabs: Notes (the default), Environment and, inside cmux, cmux.
+ * One meta line, then tabs: Notes, Environment and, inside cmux, cmux. Opens
+ * on the tab last chosen in this browser tab (Notes the first time).
  */
 export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
   const info = useQuery({
@@ -56,8 +85,9 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
   const [, navigate] = useLocation()
   const qc = useQueryClient()
   const [deleteOpen, setDeleteOpen] = useState(false)
-  const [tab, setTab] = useState<"notes" | "env" | "cmux">("notes")
-  const hasCmux = useCmux().data?.available === true
+  const [tab, setTab] = useState<DetailTab>(readDetailTab)
+  const cmuxQuery = useCmux()
+  const hasCmux = cmuxQuery.data?.available === true
   const name = w.path.split("/").filter(Boolean).pop() || w.path
   const git = info.data?.git
   const hasEnv = !!info.data && info.data.env.length > 0
@@ -72,9 +102,15 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
   // so the moment that tab's data reappears (a transient cmux blip, a 5s
   // poll) the card would jump straight back to it instead of staying on
   // Notes.
+  //
+  // Only once the data has actually said the tab is gone, though: before it
+  // loads, a remembered tab (see readDetailTab) is waiting to be shown, not
+  // missing. And never written back to sessionStorage — this worktree having
+  // no environment says nothing about the next one.
+  const absenceKnown = (tab === "env" && info.data !== undefined) || (tab === "cmux" && cmuxQuery.data !== undefined)
   useEffect(() => {
-    if (activeTab !== tab) setTab(activeTab)
-  }, [activeTab, tab])
+    if (activeTab !== tab && absenceKnown) setTab(activeTab)
+  }, [activeTab, tab, absenceKnown])
 
   // Notes are read-only until "Edit notes", so a stray click or keystroke
   // cannot change them. Leaving the Notes tab ends editing: you always come
@@ -90,6 +126,7 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
     // Leaving the notes sends pending edits now.
     if (activeTab === "notes" && next !== "notes") doneEditing()
     setTab(next)
+    writeDetailTab(next)
   }
 
   return (
