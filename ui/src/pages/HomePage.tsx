@@ -15,6 +15,7 @@ import { SourceFilter } from "../components/SourceFilter"
 import { RefreshWatchersButton } from "../components/RefreshWatchersButton"
 import { NewWorktreeModal } from "../components/NewWorktreeModal"
 import { DevicesButton } from "../components/DevicesButton"
+import { FollowCmuxToggle } from "../components/FollowCmuxToggle"
 import { useCmux } from "../api/cmux"
 import { useWorktreeSort } from "../hooks/useWorktreeSort"
 import { WorktreeSortControl } from "../components/WorktreeSortControl"
@@ -130,6 +131,7 @@ export function HomePage() {
         <Group justify="flex-end" gap="xs">
           {newWorktreeButton}
           <DevicesButton />
+          <FollowCmuxToggle />
         </Group>
         <NewWorktreeModal opened={newOpen} onClose={() => setNewOpen(false)} />
         <Tabs defaultValue="worktrees">
@@ -169,6 +171,7 @@ export function HomePage() {
             <Group gap="xs">
               {newWorktreeButton}
               <DevicesButton />
+              <FollowCmuxToggle />
             </Group>
           </Group>
           {worktrees}

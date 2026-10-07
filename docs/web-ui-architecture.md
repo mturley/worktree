@@ -763,6 +763,10 @@ A stream opened with `?tab=<id>&route=<path>&visible=1|0` also registers that
 tab for browser notifications, and may carry `event: notification` messages
 addressed to it; see "Notifications" below.
 
+Every stream also carries `event: cmux_focus` (`{"workspace_id","path"}`)
+whenever cmux focuses a different workspace; see "Follow cmux focus" under
+"cmux integration".
+
 ## Notifications
 
 Per-worktree "Notify on all" and per-resource "Notify on new events" toggles.
@@ -968,7 +972,9 @@ single in-process loop for as long as the server is up:
   `EventRow`, `ArchivedToggle`, `ResourceList` (splits into Focus/Related by
   `r.primary`, selection-aware), `ResourceCard` (see "Rich resource cards"
   below), `WorktreeCard` and `ResourceDetailPane` (see "Responsive resource
-  selection" below).
+  selection" below). Every on/off switch (`UnreadOnlyToggle`,
+  `ArchivedToggle`, `NotifySwitch`, `FollowCmuxToggle`) renders `Toggle`, the
+  one place their size is set — use it rather than Mantine's `Switch`.
 - **Lib** (`ui/src/lib/`): `resourceSummary.ts` (builds the "2 PRs, 3 Jira
   issues · 2 related resources" summary string from `primary_by_type` +
   `related_count`), `worktreeSort.ts` + `worktreeSortPref.ts` (see "Worktree
@@ -1593,6 +1599,40 @@ in front of its title, and loses it once nothing is unread. The prefix exists
   back a title the other had just replaced.
 - A title the user writes that starts with `📬 ` can't be told apart from
   one the sync added.
+
+### Follow cmux focus (`cmux_focus.go`, `cmux/focus.go`, `CmuxFollower`)
+
+A per-tab toggle (home toolbar after Devices; worktree header before the
+Switch cmux button) that makes the tab open whichever worktree cmux switches
+to. Rendered only when `/api/cmux` says `available`, i.e. the server runs
+inside cmux.
+
+- **Source:** `StartCmuxFocusWatch` runs `cmux events --name
+  workspace.selected --name window.focused --reconnect` for the server's
+  life, restarting it after 5s if it exits. `cmux.ParseFocusEvent` takes the
+  workspace ID from the payload (falling back to the top-level field) and
+  drops deselections. `window.focused` covers switching between cmux windows.
+- **Dedupe + resolve:** the hub publishes only when the focused workspace ID
+  changes — `window.focused` fires every time cmux comes forward. The path is
+  the first registered worktree (registry order) open in that workspace, via
+  `cmux.Match`, or `""`.
+- **Fan-out:** every `/api/stream` subscribes; sends never block, so a stalled
+  stream just misses a change. `useSSE` hands `cmux_focus` to
+  `lib/cmuxFocusBus.ts` (and invalidates `["cmux"]` so "Current" updates).
+- **Client:** the toggle's value is sessionStorage
+  (`worktree.followCmuxFocus`, `hooks/useFollowCmux.ts`) — following is one
+  tab's role, so tabs don't all jump together. `CmuxFollower`, mounted once
+  inside the Router, navigates only when following, the path is non-empty and
+  differs from the page's worktree.
+- **Unsaved changes:** components holding typed-but-unsent input register
+  through `useUnsavedChanges(isDirty)` (`lib/unsavedChanges.ts`): the Slack
+  composer and the add-resource, new-worktree, create-workspace,
+  edit-resource-details and delete-worktree modals. Worktree notes don't —
+  they save on unmount. The cmux tab's inline rename doesn't either: it
+  cancels on blur, so the prompt taking focus would discard it whichever
+  button was chosen. With anything registered, a non-dismissable prompt asks
+  "Discard and follow" or "Stay and stop following"; it uses `zIndex=1000`
+  so it sits above a page modal whose overlay would otherwise eat the clicks.
 
 ### The details card's cmux tab (`cmux_tabs.go`, `CmuxPanel`, `PaneDiagram`)
 

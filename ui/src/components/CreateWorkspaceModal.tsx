@@ -1,6 +1,7 @@
 import { Button, Group, Modal, Select, Stack, TextInput, Tooltip } from "@mantine/core"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useEffect, useState } from "react"
+import { useUnsavedChanges } from "../lib/unsavedChanges"
 import { api } from "../api/client"
 
 interface Props {
@@ -22,6 +23,8 @@ export function CreateWorkspaceModal({ opened, onClose, path, branch }: Props) {
   const [name, setName] = useState("")
   const [groupRef, setGroupRef] = useState<string | null>(null)
   const [color, setColor] = useState<string | null>(null)
+  // The name is pre-filled, so only a change from it counts.
+  useUnsavedChanges(opened && (name !== `wt ${branch}` || groupRef !== null || color !== null))
 
   const meta = useQuery({
     queryKey: ["cmux-groups"],

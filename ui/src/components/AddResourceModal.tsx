@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { useUnsavedChanges } from "../lib/unsavedChanges"
 import {
   Alert,
   Button,
@@ -68,6 +69,7 @@ export function AddResourceModal({
   const [focus, setFocus] = useState(defaultRelated ? "related" : "focus")
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
+  useUnsavedChanges(opened && (url.trim() !== "" || name.trim() !== "" || description.trim() !== ""))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 

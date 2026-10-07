@@ -25,6 +25,7 @@ import {
   type NodeKey,
   type RangeSelection,
 } from 'lexical'
+import { useUnsavedChanges } from "../../lib/unsavedChanges"
 import type { AutocompleteItem, User, UserGroup } from '../../api/slackApi'
 import { detectTrigger, type TriggerMatch } from './composer/detectTrigger'
 import { useAutocomplete } from './composer/useAutocomplete'
@@ -194,6 +195,8 @@ function ComposerInner({ onSend, disabled, channel, users, groups, onEditorReady
   const [match, setMatch] = useState<TriggerMatch | null>(null)
   const [highlightedKey, setHighlightedKey] = useState<string | null>(null)
   const [isEmpty, setIsEmpty] = useState(true)
+  // A typed, unsent message: following cmux focus asks before dropping it.
+  useUnsavedChanges(!isEmpty)
 
   const ctx: LocalContext = useMemo(() => ({ users, groups }), [users, groups])
   const { items, degraded } = useAutocomplete(match, channel, ctx)

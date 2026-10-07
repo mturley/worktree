@@ -1,8 +1,9 @@
 import { useEffect } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { api } from "../api/client"
-import type { NotificationMsg } from "../api/types"
+import type { CmuxFocusMsg, NotificationMsg } from "../api/types"
 import { TAB_ID } from "../lib/tabId"
+import { emitCmuxFocus } from "../lib/cmuxFocusBus"
 import { openNotificationTarget, showBrowserNotification } from "../lib/browserNotify"
 
 /**
@@ -46,6 +47,19 @@ export function useSSE() {
         }
         const shown = showBrowserNotification(msg, () => openNotificationTarget(msg))
         void api.tabAck({ tab: TAB_ID, notification_id: msg.id, shown }).catch(() => {})
+      })
+      // Every tab hears these; CmuxFollower acts on them only in a tab
+      // following cmux focus.
+      es.addEventListener("cmux_focus", (e) => {
+        let msg: CmuxFocusMsg
+        try {
+          msg = JSON.parse((e as MessageEvent).data)
+        } catch {
+          return
+        }
+        // The Switch cmux button reads "Current" from this listing.
+        qc.invalidateQueries({ queryKey: ["cmux"] })
+        emitCmuxFocus(msg)
       })
       es.onerror = () => {
         es?.close()

@@ -1,4 +1,4 @@
-import { Switch } from "@mantine/core"
+import { Toggle } from "./Toggle"
 
 /**
  * Narrows the page to what has unread activity: worktrees on the home page,
@@ -8,6 +8,6 @@ import { Switch } from "@mantine/core"
  */
 export function UnreadOnlyToggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
   return (
-    <Switch checked={value} onChange={(e) => onChange(e.currentTarget.checked)} label="Show unreads only" size="sm" />
+    <Toggle checked={value} onChange={(e) => onChange(e.currentTarget.checked)} label="Show unreads only" />
   )
 }

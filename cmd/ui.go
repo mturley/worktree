@@ -165,6 +165,11 @@ func runUI(cmd *cobra.Command, args []string) error {
 	stopUnreadSync := srv.StartCmuxUnreadSync(5 * time.Second)
 	defer stopUnreadSync()
 
+	// Tells "Follow cmux focus" tabs which worktree cmux switched to
+	// (internal/webui/cmux_focus.go).
+	stopFocusWatch := srv.StartCmuxFocusWatch()
+	defer stopFocusWatch()
+
 	// The user's own account IDs, so their events never notify or count as
 	// unread (internal/selfid).
 	stopSelf := srv.StartSelfIdentity(10 * time.Minute)
