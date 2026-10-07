@@ -160,6 +160,11 @@ func runUI(cmd *cobra.Command, args []string) error {
 	stopNotify := srv.StartNotifier(5 * time.Second)
 	defer stopNotify()
 
+	// The user's own account IDs, so their events never notify or count as
+	// unread (internal/selfid).
+	stopSelf := srv.StartSelfIdentity(10 * time.Minute)
+	defer stopSelf()
+
 	if !uiNoOpen && !uiAPIOnly {
 		go openBrowserWhenUp(uiPort, detailPathForCwd(conn))
 	}
