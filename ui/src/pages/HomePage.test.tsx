@@ -159,16 +159,15 @@ describe("HomePage unread-only toggle", () => {
     expect(window.localStorage.getItem("worktree.unreadOnly")).toBe("true")
   })
 
-  it("sits just before Follow cmux focus in both layouts", async () => {
-    vi.spyOn(api, "cmux").mockResolvedValue({ available: true, matches: {} })
+  it("sits just before Show archived in both layouts", async () => {
     for (const width of ["narrow", "wide"] as const) {
       setViewport(width)
       wrap()
-      const follow = await screen.findByRole("switch", { name: "Follow cmux focus" })
-      const toggle = screen.getByRole("switch", { name: "Show unreads only" })
-      const group = toggle.closest(".mantine-Group-root")
-      expect(group).toContainElement(follow)
-      expect(toggle.compareDocumentPosition(follow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      // hidden: on narrow it lives in the Activity tab, which isn't selected.
+      const archived = await screen.findByRole("switch", { name: "Show archived", hidden: true })
+      const toggle = screen.getByRole("switch", { name: "Show unreads only", hidden: true })
+      expect(toggle.closest(".mantine-Group-root")).toContainElement(archived)
+      expect(toggle.compareDocumentPosition(archived) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
       cleanup()
     }
   })

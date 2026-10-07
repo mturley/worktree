@@ -61,36 +61,26 @@ export function HomePage() {
       onDirectionChange={sort.mode === "name" ? sort.setNameDir : sort.setCreatedDir}
     />
   )
-  // Page-wide controls: they apply to both panes (and every tab), so they sit
-  // above them rather than in either one. The toggles stay together, so
-  // wrapping moves them as a pair.
-  const header = (
-    <Group justify="space-between" gap="xs">
-      {/* The logo stands in for the old "Worktrees" title, and keeps its
-          name as the heading's accessible text. */}
-      <Title order={4}><Logo alt="Worktrees" /></Title>
-      <Group gap="md" justify="flex-end">
-        <Group gap="md" wrap="nowrap">
-          <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} />
-          <FollowCmuxToggle />
-        </Group>
-        <DevicesButton />
-      </Group>
-    </Group>
-  )
-
   const newWorktreeButton = (
     <Button size="xs" leftSection={<IconPlus size={14} />} onClick={() => setNewOpen(true)}>
       New worktree
     </Button>
   )
 
-  // Belongs to the worktree list, so it stays with it: above the list on wide,
-  // inside the Worktrees tab on narrow.
+  // Above the worktree list on wide, inside the Worktrees tab on narrow.
   const listToolbar = (
     <Group justify="space-between" gap="xs">
-      {sortControl}
-      {newWorktreeButton}
+      <Group gap="lg">
+        {/* The logo stands in for the old "Worktrees" title, and keeps its
+            name as the heading's accessible text. */}
+        <Title order={4}><Logo alt="Worktrees" /></Title>
+        {sortControl}
+        <FollowCmuxToggle />
+      </Group>
+      <Group gap="xs" wrap="nowrap">
+        {newWorktreeButton}
+        <DevicesButton />
+      </Group>
     </Group>
   )
 
@@ -126,13 +116,16 @@ export function HomePage() {
           <Title order={4}>Activity</Title>
           <RefreshWatchersButton />
         </Group>
-        {/* Both controls narrow the same feed, so they sit together on the
-            right — matching the worktree page, where the filter is opposite
-            the heading. */}
-        <Group gap="sm" wrap="wrap">
-          <SourceFilter value={sources} onChange={setSources} />
+        {/* "Show unreads only" narrows the worktree list too, but sits here
+            beside its sibling toggle; the source filter gets a line of its
+            own below. */}
+        <Group gap="md" wrap="nowrap">
+          <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} />
           <ArchivedToggle value={archived} onChange={setArchived} />
         </Group>
+      </Group>
+      <Group>
+        <SourceFilter value={sources} onChange={setSources} />
       </Group>
       <TimelineFeed
         events={tl.events}
@@ -154,7 +147,6 @@ export function HomePage() {
   if (!wide) {
     return (
       <Stack p="md" gap="sm">
-        {header}
         <NewWorktreeModal opened={newOpen} onClose={() => setNewOpen(false)} />
         <Tabs defaultValue="worktrees">
           <Tabs.List>
@@ -178,18 +170,15 @@ export function HomePage() {
     // a cmux workspace header, two meta lines, focus resources — so the
     // narrower column was wrapping content that the timeline had width to
     // spare for.
-    <Stack p="md" gap="sm">
-      {header}
-      <Grid gutter="md">
-        <Grid.Col span={6}>
-          <Stack gap="sm">
-            {listToolbar}
-            {worktrees}
-          </Stack>
-        </Grid.Col>
-        <Grid.Col span={6}>{timeline}</Grid.Col>
-      </Grid>
+    <Grid p="md" gutter="md">
+      <Grid.Col span={6}>
+        <Stack gap="sm">
+          {listToolbar}
+          {worktrees}
+        </Stack>
+      </Grid.Col>
+      <Grid.Col span={6}>{timeline}</Grid.Col>
       <NewWorktreeModal opened={newOpen} onClose={() => setNewOpen(false)} />
-    </Stack>
+    </Grid>
   )
 }
