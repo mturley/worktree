@@ -294,16 +294,16 @@ func TestIsUnreadUsesSlacksOwnCursor(t *testing.T) {
 	// The event row's own ts is deliberately the SAME on both, so a passing
 	// test can only be reading external_ts — the Slack clock.
 	const rowTS = "2099-01-01T00:00:00Z"
-	if !ix.IsUnread("slack", thread, rowTS, "3000.000000") {
+	if !ix.IsUnread("slack", thread, rowTS, "3000.000000", "slack", "") {
 		t.Fatal("reply newer than Slack's cursor should be unread")
 	}
-	if ix.IsUnread("slack", thread, rowTS, "1500.000000") {
+	if ix.IsUnread("slack", thread, rowTS, "1500.000000", "slack", "") {
 		t.Fatal("reply older than Slack's cursor should be read")
 	}
-	if ix.IsUnread("slack", thread, rowTS, "") {
+	if ix.IsUnread("slack", thread, rowTS, "", "slack", "") {
 		t.Fatal("event with no external ts has nothing to compare; should be read")
 	}
-	if ix.IsUnread("slack", "C1:9999.000000", rowTS, "3000.000000") {
+	if ix.IsUnread("slack", "C1:9999.000000", rowTS, "3000.000000", "slack", "") {
 		t.Fatal("thread with no cached cursor should be read, not unread")
 	}
 }
@@ -622,5 +622,19 @@ func TestSlackThreadsCarryUnreadCountTiedToHasUnread(t *testing.T) {
 	}
 	if len(wts) != 1 || wts[0].UnreadCount != 3 || !wts[0].HasUnread {
 		t.Fatalf("worktree = %+v, want unread_count 3 with has_unread", wts)
+	}
+}
+
+func TestIsUnreadIgnoresMyOwnEvents(t *testing.T) {
+	ix := &unreadIndex{cursors: map[string]string{unread.Key("pr", "o/r#1"): "2026-01-01T00:00:00Z"},
+		mine: map[string]string{"github": "101"}}
+	if ix.IsUnread("pr", "o/r#1", "2026-01-01T00:00:05Z", "", "github", "101") {
+		t.Fatal("the user's own event must not be unread")
+	}
+	if !ix.IsUnread("pr", "o/r#1", "2026-01-01T00:00:05Z", "", "github", "202") {
+		t.Fatal("another person's newer event must be unread")
+	}
+	if !ix.IsUnread("pr", "o/r#1", "2026-01-01T00:00:05Z", "", "jira", "101") {
+		t.Fatal("the same id under another source is someone else")
 	}
 }

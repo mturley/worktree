@@ -11,6 +11,7 @@ import (
 	watcherdb "github.com/mturley/watcher/db"
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/registry"
+	"github.com/mturley/worktree/internal/selfid"
 	"github.com/mturley/worktree/internal/unread"
 )
 
@@ -42,6 +43,9 @@ type TimelineEvent struct {
 	// cursor — Slack's own cursor for a thread, worktree's for everything
 	// else. See unreadIndex.IsUnread.
 	Unread bool `json:"unread,omitempty"`
+	// authorID is the event's watcher author_id, used only to leave the
+	// user's own events out of unread (internal/selfid). Not sent.
+	authorID string `json:"-"`
 }
 
 type timelineResponse struct {
@@ -105,7 +109,7 @@ const unreadOnlyClause = `AND (
         SELECT 1 FROM watcher_resource_state rs
          WHERE rs.resource_type = 'slack' AND rs.resource_id = er.resource_id
            AND ` + unread.SlackNewerSQL + `))
-) `
+) AND ` + selfid.NotMineSQL + ` `
 
 // handleGlobalTimeline: GET /api/timeline?archived=&limit=&before=&resource_types=&unread_only=
 func (s *Server) handleGlobalTimeline(w http.ResponseWriter, r *http.Request) {
@@ -121,7 +125,7 @@ func (s *Server) handleGlobalTimeline(w http.ResponseWriter, r *http.Request) {
 	)
 	base := `
 SELECT DISTINCT e.id, e.ts, COALESCE(e.external_ts,''), e.source, e.type,
-       COALESCE(e.title,''), COALESCE(e.body,''), COALESCE(e.author,''),
+       COALESCE(e.title,''), COALESCE(e.body,''), COALESCE(e.author,''), COALESCE(e.author_id,''),
        er.resource_type, er.resource_id, COALESCE(er.resource_url,'')
 FROM watcher_events e
 JOIN watcher_event_resources er ON er.event_id = e.id `
@@ -298,7 +302,7 @@ func (s *Server) writeTimelineRows(w http.ResponseWriter, rows *sql.Rows, limit 
 	for rows.Next() {
 		var te TimelineEvent
 		if err := rows.Scan(&te.ID, &te.TS, &te.ExternalTS, &te.Source, &te.Type,
-			&te.Title, &te.Body, &te.Author, &te.ResourceType, &te.ResourceID, &te.ResourceURL); err != nil {
+			&te.Title, &te.Body, &te.Author, &te.authorID, &te.ResourceType, &te.ResourceID, &te.ResourceURL); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -387,6 +391,9 @@ func (e *eventEnricher) enrich(ev watcher.Event) TimelineEvent {
 	if ev.Author != nil {
 		te.Author = *ev.Author
 	}
+	if ev.AuthorID != nil {
+		te.authorID = *ev.AuthorID
+	}
 	// Resolve the event's resource(s) for scoped view.
 	e.s.DB.QueryRow(`SELECT resource_type, resource_id, COALESCE(resource_url,'')
 		FROM watcher_event_resources WHERE event_id = ? LIMIT 1`, ev.ID).
@@ -404,7 +411,7 @@ func (e *eventEnricher) fillResource(te *TimelineEvent) {
 		// it is the plain-text fallback when no chip is shown.
 		te.ResourceTitle = dto.Title
 	}
-	te.Unread = e.unread.IsUnread(te.ResourceType, te.ResourceID, te.TS, te.ExternalTS)
+	te.Unread = e.unread.IsUnread(te.ResourceType, te.ResourceID, te.TS, te.ExternalTS, te.Source, te.authorID)
 	wts := e.worktreesWatching(te.ResourceType, te.ResourceID)
 	te.Worktrees = make([]string, 0, len(wts))
 	te.WorktreePaths = make([]string, 0, len(wts))

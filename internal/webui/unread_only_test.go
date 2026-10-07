@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/mturley/worktree/internal/resources"
+	"github.com/mturley/worktree/internal/selfid"
 	"github.com/mturley/worktree/internal/testgit"
 	"github.com/mturley/worktree/internal/unread"
 )
@@ -194,4 +195,56 @@ func TestUnreadOnlyCombinesWithResourceTypes(t *testing.T) {
 	if want := []string{"s1"}; !sameIDs(got, want) {
 		t.Fatalf("unread_only + slack = %v, want %v", got, want)
 	}
+}
+
+// The user's own events (internal/selfid) are never unread, in either
+// implementation: the unread_only SQL and IsUnread must still agree.
+func TestTimelinesNeverFlagMyOwnEventsUnread(t *testing.T) {
+	conn, wt := unreadOnlyFixture(t)
+	if err := selfid.Set(conn, "github", "101"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(`UPDATE watcher_events SET author_id = '101' WHERE id = 'p3'`); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer((&Server{DB: conn}).Handler())
+	defer ts.Close()
+
+	want := []string{"s1", "p2"}
+	all := getTimeline(t, ts.URL, "/api/timeline?limit=100")
+	only := getTimeline(t, ts.URL, "/api/timeline?limit=100&unread_only=true")
+	if got := unreadIDs(all.Events); !sameIDs(got, want) {
+		t.Fatalf("global unread flags = %v, want %v", got, want)
+	}
+	if got := eventIDs(only.Events); !sameIDs(got, want) {
+		t.Fatalf("global unread_only = %v, want %v", got, want)
+	}
+
+	base := "/api/worktree-timeline?limit=100&path=" + url.QueryEscape(wt)
+	wAll := getTimeline(t, ts.URL, base)
+	wOnly := getTimeline(t, ts.URL, base+"&unread_only=true")
+	if got := unreadIDs(wAll.Events); !sameIDs(got, want) {
+		t.Fatalf("worktree unread flags = %v, want %v", got, want)
+	}
+	if got := eventIDs(wOnly.Events); !sameIDs(got, want) {
+		t.Fatalf("worktree unread_only = %v, want %v", got, want)
+	}
+
+	// "Mark N as read" covers only the other person's newest event.
+	resp, err := http.Get(ts.URL + "/api/worktree-resources?path=" + url.QueryEscape(wt))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var rs []resourceDTO
+	json.NewDecoder(resp.Body).Decode(&rs)
+	for _, r := range rs {
+		if r.Type == "pr" {
+			if r.UnreadCount != 1 || r.UnreadThroughTS != "2099-01-03T00:00:00Z" {
+				t.Fatalf("pr unread = %d through %q, want 1 through p2", r.UnreadCount, r.UnreadThroughTS)
+			}
+			return
+		}
+	}
+	t.Fatal("pr resource missing")
 }
