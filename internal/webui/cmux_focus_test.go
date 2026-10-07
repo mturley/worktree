@@ -2,6 +2,8 @@ package webui
 
 import (
 	"context"
+	"encoding/json"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -99,5 +101,46 @@ func TestCmuxFocusWatchFeedsHub(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("no message from the watch")
+	}
+}
+
+func TestCmuxFocusedReportsSelectedWorkspace(t *testing.T) {
+	conn := unreadTestDB(t)
+	wt := testgit.Worktree(t)
+	if err := registerWorktreeForTest(t, conn, wt); err != nil {
+		t.Fatal(err)
+	}
+	listing := []cmux.Workspace{
+		{ID: "W1", CurrentDirectory: t.TempDir()},
+		{ID: "W2", CurrentDirectory: wt, Selected: true},
+	}
+	s := &Server{DB: conn,
+		cmuxAvailable: func() bool { return true },
+		cmuxList:      func() ([]cmux.Workspace, error) { return listing, nil }}
+
+	get := func() cmuxFocusMsg {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		s.handleCmuxFocused(rec, httptest.NewRequest("GET", "/api/cmux/focused", nil))
+		var m cmuxFocusMsg
+		if err := json.Unmarshal(rec.Body.Bytes(), &m); err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+
+	if m := get(); m.WorkspaceID != "W2" || m.Path != wt {
+		t.Errorf("got %+v, want W2 at %q", m, wt)
+	}
+
+	// Selected workspace on no registered worktree: the ID, no path.
+	listing = []cmux.Workspace{{ID: "W1", CurrentDirectory: t.TempDir(), Selected: true}}
+	if m := get(); m.WorkspaceID != "W1" || m.Path != "" {
+		t.Errorf("got %+v, want W1 with no path", m)
+	}
+
+	s.cmuxAvailable = func() bool { return false }
+	if m := get(); m != (cmuxFocusMsg{}) {
+		t.Errorf("outside cmux: got %+v, want empty", m)
 	}
 }

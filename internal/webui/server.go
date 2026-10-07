@@ -194,6 +194,7 @@ func (s *Server) routes() []route {
 		{"POST /api/notify", s.handleSetNotify},
 		{"GET /api/cmux", s.handleCmux},
 		{"GET /api/cmux-groups", s.handleCmuxGroups},
+		{"GET /api/cmux/focused", s.handleCmuxFocused},
 		{"POST /api/cmux/select", s.handleCmuxSelect},
 		{"POST /api/cmux/create", s.handleCmuxCreate},
 		{"GET /api/cmux/tree", s.handleCmuxTree},

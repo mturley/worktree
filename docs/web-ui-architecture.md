@@ -1627,6 +1627,10 @@ inside cmux.
   route (back link, browser back, a notification, a link to another
   worktree) turns following off; the follower tells its own navigations
   apart by recording the path it is about to open.
+- **Turning it on:** the toggle fetches `GET /api/cmux/focused` (the
+  workspace `cmux workspace list` reports as selected, resolved the same way)
+  and hands it to `CmuxFollower` as an ordinary focus change, so the tab goes
+  where cmux already is under the same rules.
 - **Unsaved changes:** components holding typed-but-unsent input register
   through `useUnsavedChanges(isDirty)` (`lib/unsavedChanges.ts`): the Slack
   composer and the add-resource, new-worktree, create-workspace,

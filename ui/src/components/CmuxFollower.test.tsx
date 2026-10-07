@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest"
-import { act, render, cleanup, screen } from "@testing-library/react"
+import { act, render, cleanup, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MantineProvider } from "@mantine/core"
@@ -130,8 +130,30 @@ describe("FollowCmuxToggle", () => {
     expect(screen.queryByRole("switch", { name: /follow cmux focus/i })).toBeNull()
   })
 
+  it("opens cmux's current worktree when turned on", async () => {
+    vi.spyOn(api, "cmux").mockResolvedValue({ available: true, matches: {} })
+    const focused = vi.spyOn(api, "cmuxFocused").mockResolvedValue({ workspace_id: "W", path: B })
+    wrap(<><CmuxFollower /><FollowCmuxToggle /></>)
+    await userEvent.click(await screen.findByRole("switch", { name: /follow cmux focus/i }))
+    expect(focused).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(window.location.pathname).toBe(pageOf(B)))
+    // Its own navigation: following stays on.
+    expect(window.sessionStorage.getItem(FOLLOW_CMUX_KEY)).toBe("true")
+  })
+
+  it("does not ask cmux when turned off", async () => {
+    act(() => setFollowCmux(true))
+    vi.spyOn(api, "cmux").mockResolvedValue({ available: true, matches: {} })
+    const focused = vi.spyOn(api, "cmuxFocused").mockResolvedValue({ workspace_id: "W", path: B })
+    wrap(<><CmuxFollower /><FollowCmuxToggle /></>)
+    await userEvent.click(await screen.findByRole("switch", { name: /follow cmux focus/i }))
+    expect(focused).not.toHaveBeenCalled()
+    expect(window.location.pathname).toBe(pageOf(A))
+  })
+
   it("persists to sessionStorage when turned on", async () => {
     vi.spyOn(api, "cmux").mockResolvedValue({ available: true, matches: {} })
+    vi.spyOn(api, "cmuxFocused").mockResolvedValue({ workspace_id: "", path: "" })
     wrap(<FollowCmuxToggle />)
     await userEvent.click(await screen.findByRole("switch", { name: /follow cmux focus/i }))
     expect(window.sessionStorage.getItem(FOLLOW_CMUX_KEY)).toBe("true")

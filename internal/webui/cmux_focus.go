@@ -2,6 +2,7 @@ package webui
 
 import (
 	"context"
+	"net/http"
 	"sync"
 	"time"
 
@@ -112,12 +113,49 @@ func (s *Server) onCmuxFocus(workspaceID string) {
 	hub.publish(cmuxFocusMsg{WorkspaceID: workspaceID, Path: s.worktreeForWorkspace(workspaceID)})
 }
 
+// handleCmuxFocused: GET /api/cmux/focused
+//
+// The workspace cmux has selected right now, as a cmux_focus message. Turning
+// "Follow cmux focus" on asks for it, so the tab goes where cmux already is
+// instead of waiting for the next switch. Every failure is an empty message,
+// which the tab treats as "nowhere to go".
+func (s *Server) handleCmuxFocused(w http.ResponseWriter, r *http.Request) {
+	available := cmux.IsAvailable
+	if s.cmuxAvailable != nil {
+		available = s.cmuxAvailable
+	}
+	if !available() {
+		writeJSON(w, http.StatusOK, cmuxFocusMsg{})
+		return
+	}
+	workspaces, err := s.listCmuxWorkspaces()
+	if err != nil {
+		writeJSON(w, http.StatusOK, cmuxFocusMsg{})
+		return
+	}
+	for _, ws := range workspaces {
+		if ws.Selected {
+			writeJSON(w, http.StatusOK, cmuxFocusMsg{WorkspaceID: ws.ID, Path: s.worktreeIn(workspaces, ws.ID)})
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, cmuxFocusMsg{})
+}
+
 // worktreeForWorkspace is the first registered worktree, in registry order,
 // open in the workspace, or "" when there is none or it cannot be told.
 // Matched through cmux.Match so symlinked paths agree with /api/cmux.
 func (s *Server) worktreeForWorkspace(workspaceID string) string {
 	workspaces, err := s.listCmuxWorkspaces()
-	if err != nil || s.DB == nil {
+	if err != nil {
+		return ""
+	}
+	return s.worktreeIn(workspaces, workspaceID)
+}
+
+// worktreeIn is worktreeForWorkspace against a listing already in hand.
+func (s *Server) worktreeIn(workspaces []cmux.Workspace, workspaceID string) string {
+	if s.DB == nil {
 		return ""
 	}
 	var ws []cmux.Workspace
