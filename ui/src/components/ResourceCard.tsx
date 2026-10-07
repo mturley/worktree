@@ -96,24 +96,31 @@ function titleProps(variant: ResourceCardVariant): { size: string; fw: number } 
   return variant === "detail" ? { size: "xl", fw: 700 } : { size: "sm", fw: 600 }
 }
 
+interface CardBodyProps {
+  r: ResourceDTO
+  variant: ResourceCardVariant
+  /** The bell and unread badge, pinned to the right of the type line. */
+  aside?: React.ReactNode
+}
+
 /**
  * The card for a resource the poller has not fetched yet: just its id. Its
  * type line shows a spinner where the status icon will go — the placeholder
  * glyph that replaced read as a state of its own rather than "not loaded yet".
  */
-function MinimalRow({ r, variant }: { r: ResourceDTO; variant: ResourceCardVariant }) {
+function MinimalRow({ r, variant, aside }: CardBodyProps) {
   return (
     <Stack gap={4}>
-      <ResourceTypeLine r={r} />
+      <ResourceTypeLine r={r} aside={aside} />
       <ResourceTitle r={r} label={r.id} fw={400} showUnread={showsUnread(variant)} icon={null} />
     </Stack>
   )
 }
 
-function PRCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVariant }) {
+function PRCardBody({ r, variant, aside }: CardBodyProps) {
   return (
     <Stack gap={4}>
-      <ResourceTypeLine r={r} />
+      <ResourceTypeLine r={r} aside={aside} />
       <ResourceTitle r={r} label={r.title || r.id} showUnread={showsUnread(variant)} icon={null} {...titleProps(variant)} />
       <CustomDescription r={r} />
       <Group gap={4} wrap="wrap">
@@ -131,10 +138,10 @@ function PRCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVaria
   )
 }
 
-function JiraCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVariant }) {
+function JiraCardBody({ r, variant, aside }: CardBodyProps) {
   return (
     <Stack gap={4}>
-      <ResourceTypeLine r={r} />
+      <ResourceTypeLine r={r} aside={aside} />
       <ResourceTitle r={r} label={r.title || r.id} showUnread={showsUnread(variant)} icon={null} {...titleProps(variant)} />
       <CustomDescription r={r} />
       <Group gap={4} wrap="wrap">
@@ -155,11 +162,11 @@ function JiraCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVar
   )
 }
 
-function SlackCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVariant }) {
+function SlackCardBody({ r, variant, aside }: CardBodyProps) {
   const label = r.custom_name || r.title || r.id
   return (
     <Stack gap={4}>
-      <ResourceTypeLine r={r} />
+      <ResourceTypeLine r={r} aside={aside} />
       {/* Custom name or fetched title alike — same prominence either way. */}
       <ResourceTitle r={r} label={label} showUnread={showsUnread(variant)} icon={null} {...titleProps(variant)} />
       <CustomDescription r={r} />
@@ -172,11 +179,11 @@ function SlackCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVa
   )
 }
 
-function LinkCardBody({ r, variant }: { r: ResourceDTO; variant: ResourceCardVariant }) {
+function LinkCardBody({ r, variant, aside }: CardBodyProps) {
   const label = r.custom_name || r.title || r.id
   return (
     <Stack gap={2}>
-      <ResourceTypeLine r={r} />
+      <ResourceTypeLine r={r} aside={aside} />
       <ResourceTitle r={r} label={label} showUnread={false} icon={null} {...titleProps(variant)} />
       <CustomDescription r={r} />
       {variant === "detail" && r.description && (
@@ -360,23 +367,6 @@ export function ResourceCard({
       setSavingPrimary(false)
     }
   }
-  // Slack and links never take the not-yet-fetched path: a thread's card is
-  // useful from its id alone, and a link is resolved once when added and
-  // never polled, so a spinner on it would never stop.
-  const body = r.type === "slack" ? (
-    <SlackCardBody r={r} variant={variant} />
-  ) : r.type === "link" ? (
-    <LinkCardBody r={r} variant={variant} />
-  ) : awaitsFetch(r) ? (
-    <MinimalRow r={r} variant={variant} />
-  ) : r.type === "pr" ? (
-    <PRCardBody r={r} variant={variant} />
-  ) : r.type === "jira" ? (
-    <JiraCardBody r={r} variant={variant} />
-  ) : (
-    <MinimalRow r={r} variant={variant} />
-  )
-
   // Links are never polled, so they never notify, whatever the toggles say.
   const bell =
     !notify || r.type === "link" ? null
@@ -389,15 +379,35 @@ export function ResourceCard({
   // could reach — harmless at full width, but a quarter of the card once
   // selecting something narrows the list column, which is exactly when you
   // most want to click another card.
-  const bodyWithBadge = (
-    <Group justify="space-between" wrap="nowrap" align="flex-start" gap="xs">
-      <div style={{ flex: 1, minWidth: 0 }}>{body}</div>
-      <Group gap={6} wrap="nowrap" style={{ flex: "none" }}>
-        {/* The detail card carries the switch instead of a bell. */}
-        {variant !== "detail" && bell}
-        <UnreadBadge unread={showsUnread(variant) && hasUnread(r)} count={r.unread_count} />
-      </Group>
-    </Group>
+  //
+  // And it sits in the type line's row rather than a column of its own: a
+  // column ran the card's full height, squeezing the title and status badges
+  // into whatever width was left beside it on a narrow card.
+  const unread = showsUnread(variant) && hasUnread(r)
+  // The detail card carries the switch instead of a bell.
+  const shownBell = variant !== "detail" ? bell : null
+  const aside = shownBell || unread ? (
+    <>
+      {shownBell}
+      <UnreadBadge unread={unread} count={r.unread_count} />
+    </>
+  ) : undefined
+
+  // Slack and links never take the not-yet-fetched path: a thread's card is
+  // useful from its id alone, and a link is resolved once when added and
+  // never polled, so a spinner on it would never stop.
+  const body = r.type === "slack" ? (
+    <SlackCardBody r={r} variant={variant} aside={aside} />
+  ) : r.type === "link" ? (
+    <LinkCardBody r={r} variant={variant} aside={aside} />
+  ) : awaitsFetch(r) ? (
+    <MinimalRow r={r} variant={variant} aside={aside} />
+  ) : r.type === "pr" ? (
+    <PRCardBody r={r} variant={variant} aside={aside} />
+  ) : r.type === "jira" ? (
+    <JiraCardBody r={r} variant={variant} aside={aside} />
+  ) : (
+    <MinimalRow r={r} variant={variant} aside={aside} />
   )
 
   return (
@@ -425,10 +435,10 @@ export function ResourceCard({
             aria-label={`select resource ${r.id}`}
             style={{ flex: 1, minWidth: 0, textAlign: "left" }}
           >
-            {bodyWithBadge}
+            {body}
           </UnstyledButton>
         ) : (
-          <div style={{ flex: 1, minWidth: 0 }}>{bodyWithBadge}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>{body}</div>
         )}
         {/*
           Only the detail card carries the remove control. List cards are
