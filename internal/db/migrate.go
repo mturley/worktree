@@ -78,6 +78,14 @@ func migrate(conn *sql.DB) error {
 			created_at    TEXT NOT NULL,
 			PRIMARY KEY (subscriber, resource_type, resource_id)
 		)`,
+		// The user's own account ID per source (internal/selfid), so queries
+		// can leave out events the user caused. Written by worktree ui at
+		// startup; read by every unread and notification query.
+		`CREATE TABLE IF NOT EXISTS self_identity (
+			source     TEXT PRIMARY KEY,
+			author_id  TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)`,
 	}
 	for _, s := range stmts {
 		if _, err := conn.Exec(s); err != nil {

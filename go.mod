@@ -3,7 +3,7 @@ module github.com/mturley/worktree
 go 1.26.4
 
 require (
-	github.com/mturley/watcher v0.9.0
+	github.com/mturley/watcher v0.10.0
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/net v0.59.0
 	golang.org/x/term v0.46.0
