@@ -5,6 +5,8 @@ import { useQueryClient } from "@tanstack/react-query"
 import { api } from "../api/client"
 import { NotifySwitch } from "../components/NotifySwitch"
 import { FollowCmuxToggle } from "../components/FollowCmuxToggle"
+import { Logo } from "../components/Logo"
+import { IconChevronLeft } from "@tabler/icons-react"
 import { useNotifyMode } from "../hooks/useNotifyMode"
 import { TAB_ID } from "../lib/tabId"
 import { useWorktreeDetail } from "../hooks/useWorktreeDetail"
@@ -294,7 +296,17 @@ export function WorktreeDetailPage() {
         <Stack gap="md">
           <Group justify="space-between" wrap="nowrap" align="center" data-detail-header>
             <Group wrap="nowrap" style={{ minWidth: 0 }}>
-              <Anchor component={Link} href="/" style={{ flex: "none" }}>← all worktrees</Anchor>
+              {/* The chevron and logo are one link back to the list. */}
+              <Anchor
+                component={Link}
+                href="/"
+                aria-label="All worktrees"
+                c="dimmed"
+                style={{ flex: "none", display: "flex", alignItems: "center", gap: 2 }}
+              >
+                <IconChevronLeft size={16} />
+                <Logo />
+              </Anchor>
               {/* Inside cmux the workspace is the headline and the worktree
                   name steps down beneath it, as on the home page's cards;
                   outside cmux the name is the full-size title. */}

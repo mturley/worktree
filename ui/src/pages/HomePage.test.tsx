@@ -159,13 +159,16 @@ describe("HomePage unread-only toggle", () => {
     expect(window.localStorage.getItem("worktree.unreadOnly")).toBe("true")
   })
 
-  it("sits beside the sort control in both layouts", async () => {
+  it("sits just before Follow cmux focus in both layouts", async () => {
+    vi.spyOn(api, "cmux").mockResolvedValue({ available: true, matches: {} })
     for (const width of ["narrow", "wide"] as const) {
       setViewport(width)
       wrap()
-      const sort = await screen.findByRole("combobox", { name: "Sort worktrees" })
+      const follow = await screen.findByRole("switch", { name: "Follow cmux focus" })
       const toggle = screen.getByRole("switch", { name: "Show unreads only" })
-      expect(toggle.closest(".mantine-Group-root")).toContainElement(sort)
+      const group = toggle.closest(".mantine-Group-root")
+      expect(group).toContainElement(follow)
+      expect(toggle.compareDocumentPosition(follow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
       cleanup()
     }
   })

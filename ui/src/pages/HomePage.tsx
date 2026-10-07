@@ -16,6 +16,7 @@ import { RefreshWatchersButton } from "../components/RefreshWatchersButton"
 import { NewWorktreeModal } from "../components/NewWorktreeModal"
 import { DevicesButton } from "../components/DevicesButton"
 import { FollowCmuxToggle } from "../components/FollowCmuxToggle"
+import { Logo } from "../components/Logo"
 import { useCmux } from "../api/cmux"
 import { useWorktreeSort } from "../hooks/useWorktreeSort"
 import { WorktreeSortControl } from "../components/WorktreeSortControl"
@@ -60,7 +61,14 @@ export function HomePage() {
       onDirectionChange={sort.mode === "name" ? sort.setNameDir : sort.setCreatedDir}
     />
   )
-  const unreadToggle = <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} />
+  // The page's two toggles stay together, so wrapping moves them as a pair
+  // instead of stranding one beside the buttons.
+  const toggles = (
+    <Group gap="md" wrap="nowrap">
+      <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} />
+      <FollowCmuxToggle />
+    </Group>
+  )
 
   const newWorktreeButton = (
     <Button size="xs" leftSection={<IconPlus size={14} />} onClick={() => setNewOpen(true)}>
@@ -131,7 +139,7 @@ export function HomePage() {
         <Group justify="flex-end" gap="xs">
           {newWorktreeButton}
           <DevicesButton />
-          <FollowCmuxToggle />
+          {toggles}
         </Group>
         <NewWorktreeModal opened={newOpen} onClose={() => setNewOpen(false)} />
         <Tabs defaultValue="worktrees">
@@ -142,7 +150,6 @@ export function HomePage() {
           <Tabs.Panel value="worktrees" pt="md">
             <Stack gap="xs">
               <Group justify="flex-end" gap="md">
-                {unreadToggle}
                 {sortControl}
               </Group>
               {worktrees}
@@ -162,16 +169,19 @@ export function HomePage() {
     <Grid p="md" gutter="md">
       <Grid.Col span={6}>
         <Stack gap="sm">
-          <Group justify="space-between">
+          <Group justify="space-between" gap="xs">
             <Group gap="xl" wrap="nowrap">
-              <Title order={4}>Worktrees</Title>
+              {/* The logo stands in for the old "Worktrees" title, and keeps
+                  its name as the heading's accessible text. */}
+              <Title order={4}><Logo alt="Worktrees" /></Title>
               {sortControl}
-              {unreadToggle}
             </Group>
-            <Group gap="xs">
-              {newWorktreeButton}
-              <DevicesButton />
-              <FollowCmuxToggle />
+            <Group gap="md" justify="flex-end">
+              <Group gap="xs" wrap="nowrap">
+                {newWorktreeButton}
+                <DevicesButton />
+              </Group>
+              {toggles}
             </Group>
           </Group>
           {worktrees}
