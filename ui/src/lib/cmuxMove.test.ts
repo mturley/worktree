@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { CmuxLayout, CmuxPane, CmuxTreeWorkspace } from "../api/types"
-import { applyMove, dropTarget, removePane } from "./cmuxMove"
+import { applyClose, applyMove, dropTarget, removePane } from "./cmuxMove"
 
 const tab = (n: number, type = "browser", selected = false) => ({ ref: `surface:${n}`, title: `t${n}`, type, selected })
 
@@ -74,19 +74,20 @@ describe("dropTarget", () => {
 })
 
 describe("applyMove", () => {
-  it("reorders within a pane and selects the moved tab", () => {
+  it("reorders within a pane, keeping the moved tab selected if it was", () => {
     const ws = applyMove(workspace(), dropTarget(workspace().panes!, "surface:1", "surface:3")!)
     expect(refs(ws.panes![0])).toEqual(["surface:2", "surface:3", "surface:1"])
     expect(ws.panes![0].tabs.filter((t) => t.selected).map((t) => t.ref)).toEqual(["surface:1"])
   })
 
-  it("moves into another pane before an anchor, focusing that pane", () => {
+  it("moves into another pane before an anchor: not selected, target keeps its selection, focus unchanged", () => {
     const ws = applyMove(workspace(), dropTarget(workspace().panes!, "surface:2", "surface:4")!)
     expect(refs(ws.panes![0])).toEqual(["surface:1", "surface:3"])
     expect(refs(ws.panes![1])).toEqual(["surface:2", "surface:4"])
-    expect(ws.panes![1].focused).toBe(true)
-    expect(ws.panes![0].focused).toBe(false)
-    expect(ws.panes![1].tabs.find((t) => t.selected)?.ref).toBe("surface:2")
+    expect(ws.panes![1].focused).toBe(false)
+    expect(ws.panes![0].focused).toBe(true)
+    expect(ws.panes![1].tabs.find((t) => t.ref === "surface:2")?.selected).toBe(false)
+    expect(ws.panes![1].tabs.find((t) => t.selected)?.ref).toBe("surface:4")
   })
 
   it("moves to the end of a pane", () => {
@@ -108,6 +109,31 @@ describe("applyMove", () => {
   it("leaves the workspace alone for an unknown tab", () => {
     const before = workspace()
     expect(applyMove(before, { surface: "surface:99", type: "x", title: "x", pane: "pane:1" })).toBe(before)
+  })
+})
+
+describe("applyClose", () => {
+  it("removes an unselected tab, leaving selection alone", () => {
+    const ws = applyClose(workspace(), "surface:2")
+    expect(refs(ws.panes![0])).toEqual(["surface:1", "surface:3"])
+    expect(ws.panes![0].tabs.filter((t) => t.selected).map((t) => t.ref)).toEqual(["surface:1"])
+  })
+
+  it("closing the selected tab selects a neighbour (same index, else previous)", () => {
+    const ws = applyClose(workspace(), "surface:1")
+    expect(refs(ws.panes![0])).toEqual(["surface:2", "surface:3"])
+    expect(ws.panes![0].tabs.filter((t) => t.selected).map((t) => t.ref)).toEqual(["surface:2"])
+  })
+
+  it("closing the last tab in a pane removes it and collapses the split", () => {
+    const ws = applyClose(workspace(), "surface:4")
+    expect(ws.panes!.map((p) => p.ref)).toEqual(["pane:1"])
+    expect(ws.layout).toEqual({ pane: "pane:1" })
+  })
+
+  it("leaves the workspace alone for an unknown surface", () => {
+    const before = workspace()
+    expect(applyClose(before, "surface:99")).toBe(before)
   })
 })
 

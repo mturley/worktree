@@ -17,7 +17,7 @@ const HEX = /^#[0-9a-fA-F]{6}$/
  * expanded "Show N more tabs" groups both end when you leave the tab.
  */
 export function CmuxPanel({ path, branch }: { path: string; branch: string }) {
-  const { move, moving } = useCmuxMove(path)
+  const { move, close, moving } = useCmuxMove(path)
   // A poll mid-drag would refresh the diagram's data (and cmux focusing the
   // target pane on every move blurs/refocuses the UI's own webview) out from
   // under dnd-kit, so it pauses for the drag's duration too, not just the
@@ -46,16 +46,17 @@ export function CmuxPanel({ path, branch }: { path: string; branch: string }) {
   return (
     <Stack gap="md">
       {tree.data.workspaces.map((ws) => (
-        <WorkspaceBlock key={ws.id} path={path} ws={ws} onMove={move} onDragActiveChange={setDragging} />
+        <WorkspaceBlock key={ws.id} path={path} ws={ws} onMove={move} onClose={close} onDragActiveChange={setDragging} />
       ))}
     </Stack>
   )
 }
 
-function WorkspaceBlock({ path, ws, onMove, onDragActiveChange }: {
+function WorkspaceBlock({ path, ws, onMove, onClose, onDragActiveChange }: {
   path: string
   ws: CmuxTreeWorkspace
   onMove: ReturnType<typeof useCmuxMove>["move"]
+  onClose: ReturnType<typeof useCmuxMove>["close"]
   onDragActiveChange: (active: boolean) => void
 }) {
   const run = useCmuxAction(path)
@@ -77,7 +78,7 @@ function WorkspaceBlock({ path, ws, onMove, onDragActiveChange }: {
           layout={ws.layout}
           panes={ws.panes}
           onSelect={(tab) => act(() => api.cmuxFocusTab(ws.id, tab.ref))}
-          onClose={(tab) => act(() => api.cmuxCloseTab(ws.id, { surface: tab.ref, type: tab.type, title: tab.title }))}
+          onClose={async (tab) => setError(await onClose(ws, { surface: tab.ref, type: tab.type, title: tab.title }))}
           onMove={async (m) => setError(await onMove(ws, m))}
           onDragActiveChange={onDragActiveChange}
         />

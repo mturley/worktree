@@ -1,8 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useCallback, useRef, useState } from "react"
 import { api } from "./client"
-import type { CmuxActionResult, CmuxMove, CmuxTreeResponse, CmuxTreeWorkspace } from "./types"
-import { applyMove } from "../lib/cmuxMove"
+import type { CmuxActionResult, CmuxMove, CmuxTabRef, CmuxTreeResponse, CmuxTreeWorkspace } from "./types"
+import { applyClose, applyMove } from "../lib/cmuxMove"
 
 export const cmuxTreeKey = (path: string) => ["cmux-tree", path] as const
 
@@ -53,53 +53,83 @@ export function useCmuxAction(path: string) {
 }
 
 /**
- * How long a successful move waits before refetching. cmux was seen to answer
- * a `tree` issued right after a move with the OLD layout, so refetching at
- * once would snap the tab back to where it came from for one poll.
+ * How long a successful close or move waits before refetching. cmux was seen
+ * to answer a `tree` issued right after a move with the OLD layout, so
+ * refetching at once would snap the tab back to where it came from for one
+ * poll; a close takes the same path for consistency (and the server's own
+ * focus/selection restore after either one needs the same kind of settling —
+ * see internal/webui/cmux_tabs.go).
  */
-export const MOVE_SETTLE_MS = 1000
+export const CMUX_SETTLE_MS = 1000
 
 /**
- * Drag-and-drop moves, optimistic: the tree cache shows the move at once (via
- * applyMove), the request goes out, and then cmux's truth is re-read — after
- * MOVE_SETTLE_MS on success, immediately on failure or a stale guard (which
- * is the rollback). `moving` pauses the 5s poll meanwhile.
+ * Shared optimistic-write plumbing for close and move: writes `apply`'s
+ * result into the tree cache before `request` goes out, then re-reads cmux's
+ * truth — after CMUX_SETTLE_MS on success, immediately on failure or a stale
+ * guard (which is the rollback). One in-flight counter covers BOTH kinds of
+ * write, so the 5s poll pauses while either is outstanding and "only the
+ * last operation still in flight refetches" holds across a close and a move
+ * overlapping, not just two of the same kind.
  */
-export function useCmuxMove(path: string) {
+function useCmuxOptimisticWrite(path: string) {
   const qc = useQueryClient()
   const [inFlight, setInFlight] = useState(0)
-  // Mirrors `inFlight` so a finishing move can tell, synchronously, whether
+  // Mirrors `inFlight` so a finishing write can tell, synchronously, whether
   // it was the last one — state updates aren't visible to the same closure
-  // until the next render, and a second drag started during the first's
+  // until the next render, and a second write started during the first's
   // settle window must not have its own refetch skipped or have the first
-  // move's (delayed) refetch snap it back.
+  // write's (delayed) refetch snap it back.
   const inFlightRef = useRef(0)
-  const move = useCallback(
-    async (ws: CmuxTreeWorkspace, m: CmuxMove): Promise<string | null> => {
+  const run = useCallback(
+    async (
+      ws: CmuxTreeWorkspace,
+      apply: (ws: CmuxTreeWorkspace) => CmuxTreeWorkspace,
+      request: () => Promise<CmuxActionResult>,
+      failMessage: string,
+    ): Promise<string | null> => {
       const key = cmuxTreeKey(path)
       inFlightRef.current += 1
       setInFlight((n) => n + 1)
       await qc.cancelQueries({ queryKey: key })
       qc.setQueryData<CmuxTreeResponse>(key, (old) =>
-        old && { ...old, workspaces: old.workspaces.map((w) => (w.id === ws.id ? applyMove(w, m) : w)) },
+        old && { ...old, workspaces: old.workspaces.map((w) => (w.id === ws.id ? apply(w) : w)) },
       )
       let message: string | null = null
       try {
-        const r = await api.cmuxMoveTab(ws.id, m)
-        if (!r.ok) message = r.error || "cmux did not move the tab"
+        const r = await request()
+        if (!r.ok) message = r.error || failMessage
       } catch (e) {
         message = e instanceof Error ? e.message : String(e)
       }
-      if (message === null) await new Promise((resolve) => setTimeout(resolve, MOVE_SETTLE_MS))
+      if (message === null) await new Promise((resolve) => setTimeout(resolve, CMUX_SETTLE_MS))
       inFlightRef.current -= 1
       setInFlight((n) => n - 1)
-      // Only the last move still in flight refetches: an earlier move's
+      // Only the last write still in flight refetches: an earlier one's
       // refetch (delayed by its own settle wait) would otherwise land after a
-      // later move's optimistic update and snap it back.
+      // later write's optimistic update and snap it back.
       if (inFlightRef.current === 0) await qc.invalidateQueries({ queryKey: key })
       return message
     },
     [qc, path],
   )
-  return { move, moving: inFlight > 0 }
+  return { run, busy: inFlight > 0 }
+}
+
+/**
+ * Drag-and-drop moves and tab closes, both optimistic and sharing one
+ * in-flight counter (see useCmuxOptimisticWrite): `moving` pauses the 5s
+ * poll while either is outstanding.
+ */
+export function useCmuxMove(path: string) {
+  const { run, busy } = useCmuxOptimisticWrite(path)
+  const move = useCallback(
+    (ws: CmuxTreeWorkspace, m: CmuxMove) => run(ws, (w) => applyMove(w, m), () => api.cmuxMoveTab(ws.id, m), "cmux did not move the tab"),
+    [run],
+  )
+  const close = useCallback(
+    (ws: CmuxTreeWorkspace, tab: CmuxTabRef) =>
+      run(ws, (w) => applyClose(w, tab.surface), () => api.cmuxCloseTab(ws.id, tab), "cmux did not close the tab"),
+    [run],
+  )
+  return { move, close, moving: busy }
 }

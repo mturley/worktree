@@ -114,6 +114,17 @@ describe("CmuxPanel", () => {
     await waitFor(() => expect(getTree.mock.calls.length).toBeGreaterThanOrEqual(2))
   })
 
+  it("closes a tab optimistically: it disappears before the request resolves", async () => {
+    vi.spyOn(api, "cmuxTree").mockResolvedValue(tree())
+    let resolveClose: (r: { ok: boolean }) => void = () => {}
+    vi.spyOn(api, "cmuxCloseTab").mockReturnValue(new Promise((resolve) => { resolveClose = resolve }))
+    const user = userEvent.setup()
+    wrap()
+    await user.click(await screen.findByRole("button", { name: "Close Tab 2" }))
+    await waitFor(() => expect(screen.queryByText("Tab 2")).not.toBeInTheDocument())
+    resolveClose({ ok: true })
+  })
+
   it("keeps showing cached panes after a background refetch fails", async () => {
     const getTree = vi.spyOn(api, "cmuxTree").mockResolvedValue(tree())
     const user = userEvent.setup()
