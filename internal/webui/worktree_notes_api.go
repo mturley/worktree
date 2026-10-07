@@ -115,11 +115,7 @@ func (s *Server) syncNotesToCmux(path, text string) (string, string) {
 	if !cmux.IsAvailable() {
 		return cmuxSyncSkipped, "cmux is not available"
 	}
-	list := cmux.ListWorkspaces
-	if s.cmuxList != nil {
-		list = s.cmuxList
-	}
-	workspaces, err := list()
+	workspaces, err := s.listCmuxWorkspaces()
 	if err != nil {
 		return cmuxSyncFailed, err.Error()
 	}

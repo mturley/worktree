@@ -54,10 +54,7 @@ type cmuxTransport struct{ s *Server }
 
 func (t *cmuxTransport) Deliver(b notifyBatch, _ deliverOpts) {
 	s := t.s
-	list := cmux.ListWorkspaces
-	if s.cmuxList != nil {
-		list = s.cmuxList
-	}
+	list := s.listCmuxWorkspaces
 	notify := cmux.Notify
 	if s.cmuxNotify != nil {
 		notify = s.cmuxNotify

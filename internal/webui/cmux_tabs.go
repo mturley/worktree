@@ -89,11 +89,7 @@ func (s *Server) handleCmuxTree(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, unavailable)
 		return
 	}
-	list := cmux.ListWorkspaces
-	if s.cmuxList != nil {
-		list = s.cmuxList
-	}
-	workspaces, err := list()
+	workspaces, err := s.listCmuxWorkspaces()
 	if err != nil {
 		writeJSON(w, http.StatusOK, unavailable)
 		return
@@ -245,8 +241,27 @@ func (s *Server) handleCmuxRename(w http.ResponseWriter, r *http.Request) {
 	if title := strings.TrimSpace(req.Title); title == "" {
 		respondCmuxAction(w, ops.clearName(req.ID))
 	} else {
-		respondCmuxAction(w, ops.rename(req.ID, title))
+		s.cmuxTitleMu.Lock()
+		defer s.cmuxTitleMu.Unlock()
+		respondCmuxAction(w, ops.rename(req.ID, cmux.WithUnreadPrefix(title, s.workspaceHasUnreadPrefix(req.ID))))
 	}
+}
+
+// workspaceHasUnreadPrefix reports whether the workspace's title currently
+// carries the unread mailbox, which the UI never shows (see cmux_unread.go),
+// so a rename typed there can keep it. A failed lookup says no: the title
+// lands bare and the unread sync puts the mailbox back on its next pass.
+func (s *Server) workspaceHasUnreadPrefix(id string) bool {
+	workspaces, err := s.listCmuxWorkspaces()
+	if err != nil {
+		return false
+	}
+	for _, ws := range workspaces {
+		if strings.EqualFold(ws.ID, id) {
+			return ws.HasUnreadPrefix()
+		}
+	}
+	return false
 }
 
 type cmuxColorRequest struct {
