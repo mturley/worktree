@@ -189,6 +189,12 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | GET | `/api/cmux-groups` | — | workspace groups + `cmux.NamedColors`; fetched only when a create/select modal opens |
 | POST | `/api/cmux/select` | body: `{path, ref}` (see handler) | selects a workspace, then always `osascript` activate |
 | POST | `/api/cmux/create` | body: `{path, ...}` (see handler) | creates a workspace via `cmux.BuildLayout` from the worktree's current resources |
+| GET | `/api/cmux/tree` | `path` (required) | `{available, workspaces: [{id, ref, title, color?, selected, layout?, panes?, error?}]}` for the workspaces matching `path` (same matching as `/api/cmux`); one `cmux tree` per workspace; a per-workspace failure sets `error` instead of failing the request. Polled 5s, only while the details card's cmux tab is open. |
+| POST | `/api/cmux/rename` | body: `{id, title}` | trimmed-empty title → `clear-name`; replies `{ok, error?}` |
+| POST | `/api/cmux/color` | body: `{id, color}` | empty → `clear-color`; else a `cmux.NamedColors` name or `#RRGGBB` (400 otherwise) |
+| POST | `/api/cmux/focus-tab` | body: `{id, surface}` | select workspace → `focus-panel` → activate; unguarded |
+| POST | `/api/cmux/close-tab` | body: `{id, surface, type, title}` | guarded: re-reads the tree, `{ok:false, stale:true}` unless the tab still matches |
+| POST | `/api/cmux/move-tab` | body: `{id, surface, type, title, pane, anchor?: {surface, type, title, position}}` | guarded (tab and anchor); same pane → `reorder-surface`, other pane → `move-surface` |
 | POST | `/api/worktrees/create` | drives `internal/worktreenew` | `{ok, confirm?, steps[]}` — a pending question is HTTP 200 + `confirm`, never an error status |
 | GET | `/api/repos` | — | registry repos, newest worktree first |
 | GET | `/api/repo-dotfiles` | `repo` (required) | gitignored dotfiles that repo would copy into a new worktree |
@@ -1539,6 +1545,34 @@ things constrain any change here:
   a select/create modal actually opens.
 - `POST /api/cmux/select` always follows a successful select with an
   `osascript` activate — there is no "select without switching focus" mode.
+
+### The details card's cmux tab (`cmux_tabs.go`, `CmuxPanel`, `PaneDiagram`)
+
+- **Data:** `cmux tree --json --workspace <uuid>` parsed by `cmux.Tree` into a
+  layout tree (pane leaves, two-child splits with a ratio) plus panes and
+  their tabs. Tab types are open-ended (`terminal`, `browser`, `markdown`, …)
+  and browser tabs can have no URL.
+- **Addressing:** workspaces by UUID (`workspace:N` is the less stable
+  handle); tabs by `surface:N` — `tree` gives tabs no UUID. Inputs are
+  regex-checked before any exec.
+- **Stale guard (close, move):** refs come from a poll up to 5s old, so the
+  request carries the tab's type and title as the user saw them and the
+  server re-reads the tree first; titles are compared after stripping a
+  status glyph at either end (`◐`/`◑` at the start, pi's emoji at the end),
+  since agents animate them.
+  A mismatch is `{ok:false, stale:true}` and nothing happens; the UI
+  refetches and the user retries. A millisecond race remains (no
+  compare-and-close in cmux).
+- **cmux behaviour to remember:** `close-surface` echoes a ref that is not
+  the one it closed — never parse `OK …` output. Reorder/move select the
+  moved tab and focus its pane even with `--focus false`. Moving a pane's
+  last tab out closes the pane. Reads can lag writes: a `tree` straight after
+  a move once returned the old layout, which is why the UI's optimistic move
+  waits `MOVE_SETTLE_MS` (1s) before refetching.
+- **No pinned-tab state:** cmux 0.64 exposes pinning per workspace only.
+- **UI:** the card's `Tabs` run with `keepMounted={false}` and Notes /
+  Environment opt back in, so only `CmuxPanel` unmounts when hidden — ending
+  its poll and resetting its "Show N more tabs" expansion.
 
 ## Known deferred items / extension notes
 
