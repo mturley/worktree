@@ -1,5 +1,6 @@
 import { useState } from "react"
-import { Button, Group, Stack, Switch, Text, Tooltip } from "@mantine/core"
+import { Button, Group, Stack, Text, Tooltip } from "@mantine/core"
+import { Toggle } from "./Toggle"
 import type { NotifyMode } from "../api/types"
 
 function permission(): NotificationPermission | "unsupported" {
@@ -52,8 +53,7 @@ export function NotifySwitch({
   }
 
   const sw = (
-    <Switch
-      size="sm"
+    <Toggle
       label={label}
       checked={checked}
       disabled={saving || Boolean(disabledReason)}
