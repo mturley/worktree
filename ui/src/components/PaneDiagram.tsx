@@ -1,8 +1,25 @@
 import { ActionIcon, Box, Button, Group, Popover, Stack, Text, Tooltip, UnstyledButton } from "@mantine/core"
 import { IconFile, IconMarkdown, IconTerminal2, IconWorld, IconX } from "@tabler/icons-react"
 import { useState, type CSSProperties, type ReactNode } from "react"
+import {
+  DndContext,
+  DragOverlay,
+  MouseSensor,
+  TouchSensor,
+  pointerWithin,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type CollisionDetection,
+  type DragEndEvent,
+  type DragOverEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core"
+import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable"
+import { CSS } from "@dnd-kit/utilities"
 import type { CmuxLayout, CmuxMove, CmuxPane, CmuxTab } from "../api/types"
 import { windowTabs } from "../lib/windowTabs"
+import { dropTarget } from "../lib/cmuxMove"
 
 /** Tabs listed per pane before the rest collapse into "Show N more tabs". */
 export const VISIBLE_TABS = 10
@@ -26,6 +43,22 @@ interface Props extends Handlers {
   onMove: (move: CmuxMove) => void
 }
 
+// Only what is under the pointer counts, tabs before panes. Nothing under it
+// (the pointer left the diagram) means the drop goes nowhere, rather than to
+// whichever tab happens to be closest.
+const underPointer: CollisionDetection = (args) => {
+  const hits = pointerWithin(args)
+  const tabs = hits.filter((h) => String(h.id).startsWith("surface:"))
+  return tabs.length > 0 ? tabs : hits
+}
+
+/** Which row/pane the drag is over, for the cross-pane drop hints. */
+interface DragState {
+  activeRef: string | null
+  activePane: string | null
+  overId: string | null
+}
+
 /**
  * A cmux workspace's panes drawn in their real arrangement: side-by-side
  * splits share the width by cmux's ratio; heights follow the content, so a
@@ -35,9 +68,18 @@ interface Props extends Handlers {
  *
  * Expansion lives here, so it resets whenever the diagram remounts — which
  * the card arranges by unmounting the cmux tab when it is not selected.
+ *
+ * Rows are draggable (dnd-kit): within a pane dragging reorders via
+ * SortableContext's preview; across panes there is no slot preview, so the
+ * hovered row/pane gets a drop hint instead (see PaneBox/TabRow).
  */
-export function PaneDiagram({ layout, panes, onSelect, onClose }: Props) {
+export function PaneDiagram({ layout, panes, onSelect, onClose, onMove }: Props) {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
+  const [drag, setDrag] = useState<DragState>({ activeRef: null, activePane: null, overId: null })
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+  )
   const setGroup = (key: string, open: boolean) =>
     setExpanded((cur) => {
       const next = new Set(cur)
@@ -46,10 +88,50 @@ export function PaneDiagram({ layout, panes, onSelect, onClose }: Props) {
       return next
     })
   const byRef = new Map(panes.map((p) => [p.ref, p]))
+  const paneOf = (ref: string) => panes.find((p) => p.tabs.some((t) => t.ref === ref))?.ref ?? null
+  const activeTab = drag.activeRef ? panes.flatMap((p) => p.tabs).find((t) => t.ref === drag.activeRef) : undefined
+  const reset = () => setDrag({ activeRef: null, activePane: null, overId: null })
+
+  const onDragStart = ({ active }: DragStartEvent) =>
+    setDrag({ activeRef: String(active.id), activePane: paneOf(String(active.id)), overId: null })
+  const onDragOver = ({ over }: DragOverEvent) => setDrag((d) => ({ ...d, overId: over ? String(over.id) : null }))
+  const onDragEnd = ({ active, over }: DragEndEvent) => {
+    reset()
+    if (!over) return
+    const move = dropTarget(panes, String(active.id), String(over.id))
+    if (move) onMove(move)
+  }
+
   return (
-    <Box style={{ display: "flex", border: BORDER, borderRadius: "var(--mantine-radius-sm)", overflow: "hidden" }}>
-      <LayoutView node={layout} grow={1} byRef={byRef} expanded={expanded} setGroup={setGroup} onSelect={onSelect} onClose={onClose} />
-    </Box>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={underPointer}
+      autoScroll={false}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDragEnd={onDragEnd}
+      onDragCancel={reset}
+    >
+      <Box style={{ display: "flex", border: BORDER, borderRadius: "var(--mantine-radius-sm)", overflow: "hidden" }}>
+        <LayoutView
+          node={layout}
+          grow={1}
+          byRef={byRef}
+          expanded={expanded}
+          setGroup={setGroup}
+          drag={drag}
+          onSelect={onSelect}
+          onClose={onClose}
+        />
+      </Box>
+      <DragOverlay dropAnimation={null}>
+        {activeTab && (
+          <Text size="xs" fw={600} px={6} py={2} bg="var(--mantine-color-body)" style={{ border: BORDER, borderRadius: 4, whiteSpace: "nowrap" }}>
+            {activeTab.title}
+          </Text>
+        )}
+      </DragOverlay>
+    </DndContext>
   )
 }
 
@@ -57,6 +139,7 @@ interface ViewProps extends Handlers {
   byRef: Map<string, CmuxPane>
   expanded: ReadonlySet<string>
   setGroup: (key: string, open: boolean) => void
+  drag: DragState
 }
 
 function LayoutView({ node, grow, edge, ...rest }: ViewProps & { node: CmuxLayout; grow: number; edge?: "left" | "top" }) {
@@ -82,9 +165,24 @@ function LayoutView({ node, grow, edge, ...rest }: ViewProps & { node: CmuxLayou
   )
 }
 
-function PaneBox({ pane, style, expanded, setGroup, onSelect, onClose }: ViewProps & { pane: CmuxPane; style: CSSProperties }) {
+function PaneBox({ pane, style, expanded, setGroup, drag, onSelect, onClose }: ViewProps & { pane: CmuxPane; style: CSSProperties }) {
+  const { setNodeRef } = useDroppable({ id: pane.ref })
   const { before, shown, after } = windowTabs(pane.tabs, VISIBLE_TABS)
-  const rows = (list: CmuxTab[]) => list.map((tab) => <TabRow key={tab.ref} tab={tab} onSelect={onSelect} onClose={onClose} />)
+  const open = (side: "before" | "after") => expanded.has(`${pane.ref}:${side}`)
+  // Exactly the rows rendered, in order: collapsed groups are not targets.
+  const items = [...(open("before") ? before : []), ...shown, ...(open("after") ? after : [])].map((t) => t.ref)
+  const fromElsewhere = drag.activePane !== null && drag.activePane !== pane.ref
+  const rows = (list: CmuxTab[]) =>
+    list.map((tab) => (
+      <TabRow
+        key={tab.ref}
+        tab={tab}
+        // Across panes there is no slot preview; mark where it will land.
+        dropBefore={fromElsewhere && drag.overId === tab.ref}
+        onSelect={onSelect}
+        onClose={onClose}
+      />
+    ))
   // A collapsed group is one link standing exactly where its tabs would be,
   // so cmux's order survives; "Show fewer" takes the link's place when open.
   const group = (list: CmuxTab[], side: "before" | "after"): ReactNode => {
@@ -96,22 +194,32 @@ function PaneBox({ pane, style, expanded, setGroup, onSelect, onClose }: ViewPro
     const fewer = <MoreLink onClick={() => setGroup(key, false)}>Show fewer</MoreLink>
     return side === "before" ? <>{fewer}{rows(list)}</> : <>{rows(list)}{fewer}</>
   }
+  const paneHovered = drag.activeRef !== null && drag.overId === pane.ref
   return (
     <Stack
+      ref={setNodeRef}
       gap={1}
       p={4}
       data-pane={pane.ref}
+      data-droppable="true"
       style={{
         ...style,
         flexDirection: "column",
-        // The focused pane is the one cmux sends keystrokes to.
-        boxShadow: pane.focused ? "inset 0 0 0 1px var(--mantine-color-blue-filled)" : undefined,
+        // The focused pane is the one cmux sends keystrokes to; a hovered
+        // pane during a cross-pane drag gets a thicker highlight instead.
+        boxShadow: paneHovered
+          ? "inset 0 0 0 2px var(--mantine-color-blue-filled)"
+          : pane.focused
+            ? "inset 0 0 0 1px var(--mantine-color-blue-filled)"
+            : undefined,
       }}
     >
-      {pane.tabs.length === 0 && <Text size="xs" c="dimmed" fs="italic" px={4}>No tabs</Text>}
-      {group(before, "before")}
-      {rows(shown)}
-      {group(after, "after")}
+      <SortableContext items={items} strategy={verticalListSortingStrategy}>
+        {pane.tabs.length === 0 && <Text size="xs" c="dimmed" fs="italic" px={4}>No tabs</Text>}
+        {group(before, "before")}
+        {rows(shown)}
+        {group(after, "after")}
+      </SortableContext>
     </Stack>
   )
 }
@@ -124,14 +232,35 @@ function MoreLink({ onClick, children }: { onClick: () => void; children: string
   )
 }
 
-function TabRow({ tab, onSelect, onClose }: Handlers & { tab: CmuxTab }) {
+function TabRow({ tab, dropBefore, onSelect, onClose }: Handlers & { tab: CmuxTab; dropBefore: boolean }) {
   const [confirming, setConfirming] = useState(false)
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: tab.ref })
   const Icon = TAB_ICONS[tab.type] ?? IconFile
   // A terminal may be running something (a dev server, an agent); everything
   // else closes like clicking ✕ in cmux.
   const close = () => (tab.type === "terminal" ? setConfirming(true) : onClose(tab))
   return (
-    <Group gap={2} wrap="nowrap" className="cmux-tab-row" style={{ borderRadius: 4, minWidth: 0 }}>
+    <Group
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      // The row is not itself a button; its switch button is. Drop dnd-kit's
+      // tabIndex/role so keyboard focus lands only on real controls.
+      tabIndex={undefined}
+      role={undefined}
+      gap={2}
+      wrap="nowrap"
+      className="cmux-tab-row"
+      style={{
+        borderRadius: 4,
+        minWidth: 0,
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.4 : 1,
+        borderTop: dropBefore ? "2px solid var(--mantine-color-blue-filled)" : "2px solid transparent",
+        touchAction: "manipulation",
+      }}
+    >
       <Tooltip
         // Not the native title attribute: cmux's embedded browser does not
         // show those.

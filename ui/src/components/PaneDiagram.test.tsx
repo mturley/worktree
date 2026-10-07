@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { render, screen } from "@testing-library/react"
+import { act, fireEvent, render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { PaneDiagram } from "./PaneDiagram"
@@ -99,5 +99,28 @@ describe("PaneDiagram", () => {
     wrap([{ ref: "pane:1", focused: true, tabs: [t(1), t(2, "browser", true)] }, { ref: "pane:2", focused: false, tabs: [] }])
     expect(screen.getByText("Tab 2")).toHaveAttribute("data-selected", "true")
     expect(screen.getByText("Tab 1")).not.toHaveAttribute("data-selected")
+  })
+
+  it("makes every visible row draggable and every pane a drop target", () => {
+    const { container } = wrap([
+      { ref: "pane:1", focused: true, tabs: [t(1), t(2)] },
+      { ref: "pane:2", focused: false, tabs: [] },
+    ])
+    // dnd-kit's sortable attributes on each row.
+    expect(container.querySelectorAll('[aria-roledescription="sortable"]')).toHaveLength(2)
+    expect(container.querySelector('[data-pane="pane:2"]')).toHaveAttribute("data-droppable", "true")
+  })
+
+  it("still switches tabs on a press too short to be a drag", () => {
+    const { onSelect, onMove } = wrap([{ ref: "pane:1", focused: true, tabs: [t(1), t(2)] }, { ref: "pane:2", focused: false, tabs: [] }])
+    const row = screen.getByRole("button", { name: "Switch to Tab 1" })
+    act(() => {
+      fireEvent.mouseDown(row, { button: 0, clientX: 10, clientY: 10 })
+      fireEvent.mouseMove(document, { button: 0, clientX: 11, clientY: 11 })
+      fireEvent.mouseUp(document, { button: 0, clientX: 11, clientY: 11 })
+    })
+    fireEvent.click(row)
+    expect(onSelect).toHaveBeenCalledTimes(1)
+    expect(onMove).not.toHaveBeenCalled()
   })
 })
