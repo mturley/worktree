@@ -189,6 +189,12 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | GET | `/api/cmux-groups` | — | workspace groups + `cmux.NamedColors`; fetched only when a create/select modal opens |
 | POST | `/api/cmux/select` | body: `{path, ref}` (see handler) | selects a workspace, then always `osascript` activate |
 | POST | `/api/cmux/create` | body: `{path, ...}` (see handler) | creates a workspace via `cmux.BuildLayout` from the worktree's current resources |
+| GET | `/api/cmux/tree` | `path` (required) | `{available, workspaces: [{id, ref, title, color?, selected, layout?, panes?, error?}]}` for the workspaces matching `path` (same matching as `/api/cmux`); one `cmux tree` per workspace; a per-workspace failure sets `error` instead of failing the request. Each tab in `panes[].tabs[]` carries `unread` (omitted when false). Polled 5s, only while the details card's cmux tab is open. |
+| POST | `/api/cmux/rename` | body: `{id, title}` | trimmed-empty title → `clear-name`; replies `{ok, error?}` |
+| POST | `/api/cmux/color` | body: `{id, color}` | empty → `clear-color`; else a `cmux.NamedColors` name or `#RRGGBB` (400 otherwise) |
+| POST | `/api/cmux/focus-tab` | body: `{id, surface}` | select workspace → `focus-panel` → activate; unguarded |
+| POST | `/api/cmux/close-tab` | body: `{id, surface, type, title}` | guarded: re-reads the tree, `{ok:false, stale:true}` unless the tab still matches |
+| POST | `/api/cmux/move-tab` | body: `{id, surface, type, title, pane, anchor?: {surface, type, title, position}}` | guarded (tab and anchor); same pane → `reorder-surface`, other pane → `move-surface` |
 | POST | `/api/worktrees/create` | drives `internal/worktreenew` | `{ok, confirm?, steps[]}` — a pending question is HTTP 200 + `confirm`, never an error status |
 | GET | `/api/repos` | — | registry repos, newest worktree first |
 | GET | `/api/repo-dotfiles` | `repo` (required) | gitignored dotfiles that repo would copy into a new worktree |
@@ -1554,6 +1560,67 @@ things constrain any change here:
   a select/create modal actually opens.
 - `POST /api/cmux/select` always follows a successful select with an
   `osascript` activate — there is no "select without switching focus" mode.
+
+### The details card's cmux tab (`cmux_tabs.go`, `CmuxPanel`, `PaneDiagram`)
+
+- **Data:** `cmux tree --json --workspace <uuid>` parsed by `cmux.Tree` into a
+  layout tree (pane leaves, two-child splits with a ratio) plus panes and
+  their tabs. Tab types are open-ended (`terminal`, `browser`, `markdown`, …)
+  and browser tabs can have no URL.
+- **Addressing:** workspaces by UUID (`workspace:N` is the less stable
+  handle); tabs by `surface:N` — `tree` gives tabs no UUID. Inputs are
+  regex-checked before any exec: surface/pane refs against `surface:\d+` /
+  `pane:\d+`, and the workspace `id` itself against a UUID pattern, in every
+  POST handler (rename, color, focus-tab, close-tab, move-tab) before it can
+  reach `--workspace <id>` or `workspace select <id>`.
+- **Stale guard (close, move):** refs come from a poll up to 5s old, so the
+  request carries the tab's type and title as the user saw them and the
+  server re-reads the tree first; titles are compared after stripping a
+  status glyph at either end (`◐`/`◑` at the start, pi's emoji at the end),
+  since agents animate them.
+  A mismatch is `{ok:false, stale:true}` and nothing happens; the UI
+  refetches and the user retries. A millisecond race remains (no
+  compare-and-close in cmux).
+- **cmux behaviour to remember:** `close-surface` echoes a ref that is not
+  the one it closed — never parse `OK …` output. Reorder/move select the
+  moved tab and focus its pane even with `--focus false`, and closing the
+  selected tab picks a neighbour — cmux moves the user's selection/focus on
+  its own for both. Moving a pane's last tab out closes the pane. Reads can
+  lag writes: a `tree` straight after a move once returned the old layout.
+  `focus-panel` selects a tab but ALSO switches the user's active workspace
+  ~250ms later — it is never used to restore focus, only `focus-tab` (an
+  explicit user click) calls it.
+- **Focus/selection restore (close, move):** since cmux jumps the selection
+  and pane focus on its own, `handleCmuxCloseTab`/`handleCmuxMoveTab` put the
+  user's prior state back afterwards: before acting, they record the touched
+  panes' selected tabs (close: the closed tab's pane; move: source and
+  target) plus the originally focused pane; after acting, they poll `tree`
+  (`restorePollInterval`, default 150ms, up to `restorePollTimeout`, default
+  1s) until it reflects the change, then restore each pane's recorded
+  selection — by ref, or by type + normalised title if the ref changed and
+  the match is unique — via an **in-place `reorder-surface`** (selects a tab
+  and focuses its pane without switching the active workspace, unlike
+  `focus-panel`). The originally focused pane is restored LAST, so it ends up
+  the one actually focused. If the tree never reflects the change, or a
+  restore reorder fails, the request still answers `{ok:true}` — the
+  close/move itself already succeeded.
+- **No pinned-tab state:** cmux 0.64 exposes pinning per workspace only.
+- **Unread dot:** `tabs[].unread` comes from one `cmux rpc notification.list`
+  call per `handleCmuxTree` poll (best-effort — a failure there just leaves
+  every tab's `unread` false, never a 5xx), matched to tabs by
+  `(workspace_id, surface_ref)`; focusing a tab in cmux is what marks its
+  notifications read.
+- **UI:** the card's `Tabs` run with `keepMounted={false}` and Notes /
+  Environment opt back in, so only `CmuxPanel` unmounts when hidden — ending
+  its poll and resetting its "Show N more tabs" expansion. Close is
+  optimistic, the same way move is: `useCmuxMove`'s `close`/`move` share one
+  in-flight counter (so the 5s poll pauses for either) and one settle delay,
+  `CMUX_SETTLE_MS` (1s) — the cache is updated at once via `applyClose`
+  (remove the tab; a neighbour stands in for its pane's selection; an emptied
+  pane is dropped and its split collapsed) or `applyMove` (the moved tab
+  lands unselected, since the server's restore — not cmux's own jump — is
+  what the optimistic update is modelling), then cmux's truth is re-read
+  after the settle delay on success, or at once on failure/staleness.
 
 ## Known deferred items / extension notes
 

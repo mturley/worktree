@@ -233,3 +233,52 @@ export interface SessionInfo {
   /** The server's notification delivery path; only on GET /api/session. */
   notify_mode?: NotifyMode
 }
+
+/** A node of a cmux workspace's split layout: a pane leaf, or a two-way split. */
+export interface CmuxLayout {
+  pane?: string
+  direction?: "horizontal" | "vertical"
+  /** The first child's share, 0..1. */
+  split?: number
+  children?: [CmuxLayout, CmuxLayout]
+}
+
+export interface CmuxTab {
+  ref: string
+  title: string
+  /** "terminal" | "browser" | "markdown" | anything newer cmux adds. */
+  type: string
+  /** Absent for terminals and for browser tabs that have not loaded. */
+  url?: string
+  selected: boolean
+  /** Has an unread cmux notification (from `notification.list`). */
+  unread?: boolean
+}
+
+export interface CmuxPane { ref: string; focused: boolean; tabs: CmuxTab[] }
+
+export interface CmuxTreeWorkspace {
+  /** cmux's UUID: what every write addresses. */
+  id: string
+  ref: string
+  title: string
+  color?: string
+  selected: boolean
+  layout?: CmuxLayout
+  panes?: CmuxPane[]
+  /** Set, with no layout/panes, when this workspace's tree could not be read. */
+  error?: string
+}
+
+export interface CmuxTreeResponse { available: boolean; workspaces: CmuxTreeWorkspace[] }
+
+export interface CmuxActionResult { ok: boolean; error?: string; stale?: boolean }
+
+/** A tab as the user saw it, so the server can check it is still that tab. */
+export interface CmuxTabRef { surface: string; type: string; title: string }
+
+export interface CmuxMove extends CmuxTabRef {
+  pane: string
+  /** Absent: the end of `pane`. */
+  anchor?: CmuxTabRef & { position: "before" | "after" }
+}

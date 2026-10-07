@@ -1,0 +1,10 @@
+/* PaneDiagram tab rows: the close button appears on hover or keyboard focus,
+   so a pane of titles stays readable; touch screens have no hover, so they
+   always show it. */
+.cmux-tab-row .cmux-tab-close { visibility: hidden; }
+.cmux-tab-row:hover .cmux-tab-close,
+.cmux-tab-row:focus-within .cmux-tab-close { visibility: visible; }
+@media (hover: none) {
+  .cmux-tab-row .cmux-tab-close { visibility: visible; }
+}
+.cmux-tab-row:hover { background: var(--mantine-color-default-hover); }

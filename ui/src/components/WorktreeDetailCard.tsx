@@ -1,14 +1,15 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { ActionIcon, Button, Checkbox, Code, Group, Paper, Stack, Tabs, Text, Textarea, Tooltip } from "@mantine/core"
 import { IconCheck, IconCopy, IconPencil, IconTrash } from "@tabler/icons-react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useLocation } from "wouter"
 import { api } from "../api/client"
-import { useCmuxMatches } from "../api/cmux"
+import { useCmux, useCmuxMatches } from "../api/cmux"
 import type { GitStatus, WorktreeSummary } from "../api/types"
 import { useWorktreeNotes } from "../hooks/useWorktreeNotes"
 import { toggleTaskAt } from "../lib/taskList"
 import { relativeTime as rel } from "../lib/relativeTime"
+import { CmuxPanel } from "./CmuxPanel"
 import { DeleteWorktreeModal } from "./DeleteWorktreeModal"
 import { NotesMarkdown } from "./NotesMarkdown"
 
@@ -41,7 +42,7 @@ function gitSummary(g: GitStatus): string {
  * what branch am I on, is the tree dirty, when did anything last happen, and
  * what was I in the middle of (notes).
  *
- * One meta line, then tabs: Notes (the default) and Environment.
+ * One meta line, then tabs: Notes (the default), Environment and, inside cmux, cmux.
  */
 export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
   const info = useQuery({
@@ -55,14 +56,25 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
   const [, navigate] = useLocation()
   const qc = useQueryClient()
   const [deleteOpen, setDeleteOpen] = useState(false)
-  const [tab, setTab] = useState<"notes" | "env">("notes")
+  const [tab, setTab] = useState<"notes" | "env" | "cmux">("notes")
+  const hasCmux = useCmux().data?.available === true
   const name = w.path.split("/").filter(Boolean).pop() || w.path
   const git = info.data?.git
   const hasEnv = !!info.data && info.data.env.length > 0
 
-  // The Environment tab only exists when there is an environment; if it goes
-  // away while selected, fall back to Notes rather than showing no panel.
-  const activeTab = tab === "env" && !hasEnv ? "notes" : tab
+  // Environment and cmux tabs only exist when there is something to show; if
+  // the selected one goes away, fall back to Notes rather than showing no
+  // panel.
+  const activeTab = (tab === "env" && !hasEnv) || (tab === "cmux" && !hasCmux) ? "notes" : tab
+
+  // The fallback above is a per-render display computation, not a stored
+  // selection: without this, `tab` itself would still say "cmux" (or "env"),
+  // so the moment that tab's data reappears (a transient cmux blip, a 5s
+  // poll) the card would jump straight back to it instead of staying on
+  // Notes.
+  useEffect(() => {
+    if (activeTab !== tab) setTab(activeTab)
+  }, [activeTab, tab])
 
   // Notes are read-only until "Edit notes", so a stray click or keystroke
   // cannot change them. Leaving the Notes tab ends editing: you always come
@@ -74,7 +86,7 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
   }
 
   const selectTab = (next: string | null) => {
-    if (next !== "notes" && next !== "env") return
+    if (next !== "notes" && next !== "env" && next !== "cmux") return
     // Leaving the notes sends pending edits now.
     if (activeTab === "notes" && next !== "notes") doneEditing()
     setTab(next)
@@ -111,7 +123,7 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
         </Tooltip>
       </Group>
 
-      <Tabs value={activeTab} onChange={selectTab} mt={6}>
+      <Tabs value={activeTab} onChange={selectTab} mt={6} keepMounted={false}>
         {/* Sized to its tabs, so the underline stops after the last tab. */}
         <Tabs.List w="fit-content">
           <Tabs.Tab value="notes" fz="xs" py={6}>Notes</Tabs.Tab>
@@ -120,9 +132,12 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
               {`Environment (${info.data!.env.length})`}
             </Tabs.Tab>
           )}
+          {hasCmux && (
+            <Tabs.Tab value="cmux" fz="xs" py={6}>cmux</Tabs.Tab>
+          )}
         </Tabs.List>
 
-        <Tabs.Panel value="notes" pt={6}>
+        <Tabs.Panel value="notes" pt={6} keepMounted>
           <NotesPanel
             notes={notes}
             workspaceCount={workspaces.length}
@@ -138,10 +153,20 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
           previously only reachable from the CLI.
         */}
         {hasEnv && (
-          <Tabs.Panel value="env" pt={6}>
+          <Tabs.Panel value="env" pt={6} keepMounted>
             <Stack gap={2}>
               {info.data!.env.map((kv) => <EnvVarRow key={kv.key} name={kv.key} value={kv.value} />)}
             </Stack>
+          </Tabs.Panel>
+        )}
+
+        {/*
+          Unmounted when not selected (keepMounted is off for this panel
+          only): that stops its 5s poll and resets its expanded tab groups.
+        */}
+        {hasCmux && (
+          <Tabs.Panel value="cmux" pt={6}>
+            <CmuxPanel path={w.path} branch={git?.branch || w.branch} />
           </Tabs.Panel>
         )}
       </Tabs>

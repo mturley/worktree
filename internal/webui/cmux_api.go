@@ -136,6 +136,10 @@ type cmuxActionResponse struct {
 	OK    bool   `json:"ok"`
 	Ref   string `json:"ref,omitempty"`
 	Error string `json:"error,omitempty"`
+	// Stale means the tab the request named no longer matches what cmux has
+	// (see the close/move guards in cmux_tabs.go); the UI refetches and the
+	// user retries.
+	Stale bool `json:"stale,omitempty"`
 }
 
 // handleCmuxSelect: POST /api/cmux/select
