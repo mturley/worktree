@@ -16,6 +16,8 @@ import (
 	"database/sql"
 	"errors"
 	"time"
+
+	"github.com/mturley/worktree/internal/selfid"
 )
 
 // ErrSlackNotSupported is returned for any write against a Slack thread.
@@ -97,7 +99,9 @@ type Summary struct {
 }
 
 // Summaries is Counts with each resource's newest unread ts alongside. Same
-// rules as Counts, including the event types it excludes.
+// rules as Counts, including the event types it excludes. The user's own
+// events (internal/selfid) never count, so NewestTS is the newest event
+// someone else caused.
 func Summaries(conn *sql.DB) (map[string]Summary, error) {
 	rows, err := conn.Query(`
 		SELECT er.resource_type, er.resource_id, COUNT(*), MAX(e.ts)
@@ -108,6 +112,7 @@ func Summaries(conn *sql.DB) (map[string]Summary, error) {
 		   AND c.resource_id   = er.resource_id
 		 WHERE e.ts > c.last_read_ts
 		   AND e.type NOT IN ('watch_started','watcher_error')
+		   AND ` + selfid.NotMineSQL + `
 		 GROUP BY er.resource_type, er.resource_id`)
 	if err != nil {
 		return nil, err
@@ -249,6 +254,7 @@ func SlackCounts(conn *sql.DB) (map[string]int, error) {
 		 WHERE er.resource_type = 'slack'
 		   AND e.type NOT IN ('watch_started','watcher_error')
 		   AND ` + SlackNewerSQL + `
+		   AND ` + selfid.NotMineSQL + `
 		 GROUP BY er.resource_id`)
 	if err != nil {
 		return nil, err

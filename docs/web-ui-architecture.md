@@ -605,6 +605,20 @@ One read cursor per RESOURCE in `resource_read_cursor` (a worktree-owned
 table), compared against `watcher_events.ts`. Unread is `ts > last_read_ts`,
 strictly greater.
 
+**The user's own events are never unread.** `internal/selfid` stores the
+user's account ID per source in `self_identity` (GitHub `databaseId`, Jira
+`accountId`, Slack user ID), resolved by `worktree ui` at startup and retried
+every 10 minutes for any source that failed. Every unread query appends
+`selfid.NotMineSQL`, which drops events whose `(source, author_id)` matches.
+That covers `Summaries`/`Counts`, `SlackCounts` and the timeline's
+unread-only clause. `unreadIndex.IsUnread` applies the same rule in Go with
+`selfid.IsMine`. This is a query-time filter, and the cursor never moves on
+its own: an event someone else wrote before the user's reply stays unread
+until marked read, and `unread_through_ts` covers only others' events.
+Events without an `author_id` (recorded before watcher v0.10.0, or
+authorless, such as CI) always count. Requires watcher ≥ v0.10.0, which
+added `watcher_events.author_id`.
+
 **Not the same model as agent-handler's.** Handler tracks unread per
 *subscriber*, so each session has its own read state. This is per *resource*
 and shared: marking a PR read in one worktree clears its dot in every worktree
@@ -776,7 +790,8 @@ instead. As a backstop against any flood, a pass that would fire more than
 have new events" summary instead, targeting the worktree if they share one
 and nothing (home page / untargeted cmux) if not. A busy tab stream is waited on (up to the ack timeout) rather than
 treated as a decline, since one pass can produce several batches at once. `watch_started`, `watcher_error`,
-`ci_pending` and `ci_workflows_pending` never notify. Matching goes through
+`ci_pending` and `ci_workflows_pending` never notify, and neither do the
+user's own events (`selfid.NotMineSQL`; see "Unread"). Matching goes through
 `resources.Load`, so only resources the worktree actively tracks count. One
 batch per (worktree, resource): title = the resource's key + custom name or
 title, subtitle = worktree name, body = newest event's title + "(+N more)".

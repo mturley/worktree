@@ -12,6 +12,7 @@ import (
 	"github.com/mturley/worktree/internal/notifyprefs"
 	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/resources"
+	"github.com/mturley/worktree/internal/selfid"
 )
 
 // notifySkipTypes never notify: the two the unread/timeline filter already
@@ -79,6 +80,8 @@ func initNotifyCursor(conn *sql.DB) (notifyCursor, error) {
 // newEvent is one (event, resource) pair past the cursor.
 type newEvent struct{ id, ts, title, resType, resID string }
 
+// The user's own events (internal/selfid) are never read, so a mixed
+// batch's count and newest title cover only other people's events.
 // readNewEvents returns the notify-worthy events not yet seen, oldest first,
 // and the advanced cursor. The cursor advances whatever the caller then does
 // with the events: delivery is fire-and-forget, never retried.
@@ -86,6 +89,7 @@ func readNewEvents(conn *sql.DB, c notifyCursor) ([]newEvent, notifyCursor, erro
 	q := `SELECT e.id, e.ts, e.title, er.resource_type, er.resource_id
 	      FROM watcher_events e JOIN watcher_event_resources er ON er.event_id = e.id
 	      WHERE e.ts >= ? AND e.type NOT IN (?` + strings.Repeat(",?", len(notifySkipTypes)-1) + `)
+	        AND ` + selfid.NotMineSQL + `
 	      ORDER BY e.ts, e.id`
 	args := []any{lookbackFrom(c.ts)}
 	for _, t := range notifySkipTypes {

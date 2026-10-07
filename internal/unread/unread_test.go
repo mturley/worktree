@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	wdb "github.com/mturley/worktree/internal/db"
+	"github.com/mturley/worktree/internal/selfid"
 	"github.com/mturley/worktree/internal/unread"
 )
 
@@ -324,5 +325,50 @@ func TestSlackCountsCountRepliesNewerThanSlacksCursor(t *testing.T) {
 	}
 	if len(got) != 1 || got[unread.Key("slack", "C1:1.1")] != 2 {
 		t.Fatalf("SlackCounts = %v, want only C1:1.1 with 2", got)
+	}
+}
+
+func TestSummariesAndSlackCountsExcludeMyOwnEvents(t *testing.T) {
+	conn := openDB(t)
+	selfid.Set(conn, "github", "101")
+	selfid.Set(conn, "slack", "U1")
+
+	if err := unread.EnsureCursor(conn, "pr", "o/r#1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := unread.MarkRead(conn, "pr", "o/r#1", "2099-01-01T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	addEvent(t, conn, "theirs", "2099-01-02T00:00:00Z", "pr", "o/r#1")
+	addEvent(t, conn, "mine", "2099-01-03T00:00:00Z", "pr", "o/r#1")
+	// Same ID as the user's GitHub ID, but from another source: not the user.
+	addEvent(t, conn, "jira-101", "2099-01-04T00:00:00Z", "pr", "o/r#1")
+	conn.Exec(`UPDATE watcher_events SET author_id = '202' WHERE id = 'theirs'`)
+	conn.Exec(`UPDATE watcher_events SET author_id = '101' WHERE id = 'mine'`)
+	conn.Exec(`UPDATE watcher_events SET author_id = '101', source = 'jira' WHERE id = 'jira-101'`)
+
+	sums, err := unread.Summaries(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := sums[unread.Key("pr", "o/r#1")]; s.Count != 2 || s.NewestTS != "2099-01-04T00:00:00Z" {
+		t.Fatalf("summary = %+v, want 2 unread (theirs, jira-101), newest jira-101", s)
+	}
+
+	if _, err := conn.Exec(`INSERT INTO watcher_resource_state (resource_type, resource_id, state_json, resource_updated_at, watcher_updated_at)
+		VALUES ('slack', 'C1:1.0', '{"last_read":"2000.000000"}', 'x', 'x')`); err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range []struct{ id, ext, author string }{{"s-mine", "3000.000000", "U1"}, {"s-theirs", "3001.000000", "U2"}} {
+		conn.Exec(`INSERT INTO watcher_events (id, ts, external_ts, source, type, title, author_id)
+			VALUES (?, '2099-01-05T00:00:00Z', ?, 'slack', 'slack_reply', 'x', ?)`, ev.id, ev.ext, ev.author)
+		conn.Exec(`INSERT INTO watcher_event_resources (event_id, resource_type, resource_id) VALUES (?, 'slack', 'C1:1.0')`, ev.id)
+	}
+	counts, err := unread.SlackCounts(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := counts[unread.Key("slack", "C1:1.0")]; n != 1 {
+		t.Fatalf("slack count = %d, want 1 (the user's own reply left out)", n)
 	}
 }

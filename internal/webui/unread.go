@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/mturley/worktree/internal/selfid"
 	"github.com/mturley/worktree/internal/unread"
 )
 
@@ -31,6 +32,9 @@ type unreadIndex struct {
 	// Slack's own cursors, from cached poller state — a separate map because
 	// they are compared against a different column (see unread.SlackCursors).
 	slack map[string]string
+	// mine is the user's own ID per source (internal/selfid); their events
+	// are never unread.
+	mine map[string]string
 }
 
 func (s *Server) newUnreadIndex() *unreadIndex {
@@ -39,6 +43,12 @@ func (s *Server) newUnreadIndex() *unreadIndex {
 		slackCounts: map[string]int{},
 		cursors:     map[string]string{},
 		slack:       map[string]string{},
+		mine:        map[string]string{},
+	}
+	if m, err := selfid.Load(s.DB); err == nil {
+		ix.mine = m
+	} else if s.Logger != nil {
+		s.Logger.Printf("selfid.Load: %v", err)
 	}
 	if c, err := unread.Summaries(s.DB); err == nil {
 		ix.counts = c
@@ -107,8 +117,13 @@ func (ix *unreadIndex) fill(dto *resourceDTO) {
 // A resource with no cursor on either path is read: a missing cursor is
 // absence of evidence, and a dot that cannot be explained is worse than no
 // dot at all.
-func (ix *unreadIndex) IsUnread(resType, id, ts, externalTS string) bool {
+func (ix *unreadIndex) IsUnread(resType, id, ts, externalTS, source, authorID string) bool {
 	if ix == nil {
+		return false
+	}
+	// The user's own events are never unread: selfid.NotMineSQL's Go twin,
+	// so the unread-only SQL and this flag agree.
+	if selfid.IsMine(ix.mine, source, authorID) {
 		return false
 	}
 	if resType == "slack" {
