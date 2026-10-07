@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os/exec"
 	"strings"
 )
 
@@ -99,6 +100,12 @@ type rawSurface struct {
 func Tree(workspaceID string) (*WorkspaceTree, error) {
 	out, err := cmuxCmd("tree", "--json", "--workspace", workspaceID).Output()
 	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			if stderr := strings.TrimSpace(string(exitErr.Stderr)); stderr != "" {
+				return nil, fmt.Errorf("reading workspace tree: %s", stderr)
+			}
+		}
 		return nil, fmt.Errorf("reading workspace tree: %w", err)
 	}
 	return parseTree(out, workspaceID)

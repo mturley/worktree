@@ -12,6 +12,13 @@ import (
 	"github.com/mturley/worktree/internal/cmux"
 )
 
+// cmux workspace ids are UUIDs; these two stand in for "the workspace" and
+// "a workspace closed out of band" across the tests below.
+const (
+	wsID   = "AAAAAAAA-0000-4000-8000-000000000001"
+	goneID = "AAAAAAAA-0000-4000-8000-000000000002"
+)
+
 // fakeTabOps records every cmux call as "name arg arg…" and serves trees from
 // a map (a missing id is an error, like a workspace closed out of band).
 type fakeTabOps struct {
@@ -87,7 +94,7 @@ func sampleTree() *cmux.WorkspaceTree {
 func newTabServer(t *testing.T) (*Server, *fakeTabOps) {
 	t.Helper()
 	t.Setenv("CMUX_SOCKET_PATH", "/tmp/x")
-	f := &fakeTabOps{trees: map[string]*cmux.WorkspaceTree{"W": sampleTree()}}
+	f := &fakeTabOps{trees: map[string]*cmux.WorkspaceTree{wsID: sampleTree()}}
 	return &Server{cmuxTabs: f.ops()}, f
 }
 
@@ -153,9 +160,9 @@ func TestCmuxTreeReturnsMatchedWorkspacesWithTheirTrees(t *testing.T) {
 	color := "#AD1457"
 	s.cmuxList = func() ([]cmux.Workspace, error) {
 		return []cmux.Workspace{
-			{ID: "W", Ref: "workspace:1", Title: "Alpha", CustomColor: &color, CurrentDirectory: dir, Selected: true},
+			{ID: wsID, Ref: "workspace:1", Title: "Alpha", CustomColor: &color, CurrentDirectory: dir, Selected: true},
 			// Closed out of band between list and tree: reported, not fatal.
-			{ID: "GONE", Ref: "workspace:2", Title: "Beta", CurrentDirectory: dir},
+			{ID: goneID, Ref: "workspace:2", Title: "Beta", CurrentDirectory: dir},
 			{ID: "ELSEWHERE", Ref: "workspace:3", Title: "Gamma", CurrentDirectory: other},
 		}, nil
 	}
@@ -167,10 +174,10 @@ func TestCmuxTreeReturnsMatchedWorkspacesWithTheirTrees(t *testing.T) {
 		t.Fatalf("got %d workspaces, want 2 (the third is another path): %+v", len(got.Workspaces), got.Workspaces)
 	}
 	a, b := got.Workspaces[0], got.Workspaces[1]
-	if a.ID != "W" || a.Title != "Alpha" || a.Color != "#AD1457" || !a.Selected || a.Layout == nil || len(a.Panes) != 3 || a.Error != "" {
+	if a.ID != wsID || a.Title != "Alpha" || a.Color != "#AD1457" || !a.Selected || a.Layout == nil || len(a.Panes) != 3 || a.Error != "" {
 		t.Fatalf("first workspace = %+v", a)
 	}
-	if b.ID != "GONE" || b.Error == "" || b.Layout != nil || b.Panes != nil {
+	if b.ID != goneID || b.Error == "" || b.Layout != nil || b.Panes != nil {
 		t.Fatalf("second workspace = %+v, want an error and no layout", b)
 	}
 	if f.called("tree ELSEWHERE") {
@@ -184,15 +191,15 @@ func TestCmuxRename(t *testing.T) {
 		title string
 		want  string
 	}{
-		{"renames", "  New name ", "rename W New name"},
-		{"empty clears", "", "clear-name W"},
+		{"renames", "  New name ", "rename " + wsID + " New name"},
+		{"empty clears", "", "clear-name " + wsID + ""},
 		// Whitespace is not a title: it means "give the name back to cmux".
-		{"whitespace clears", "   ", "clear-name W"},
+		{"whitespace clears", "   ", "clear-name " + wsID + ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			s, f := newTabServer(t)
-			code, got := postCmux(t, s.handleCmuxRename, map[string]string{"id": "W", "title": c.title})
+			code, got := postCmux(t, s.handleCmuxRename, map[string]string{"id": wsID, "title": c.title})
 			if code != http.StatusOK || !got.OK {
 				t.Fatalf("code=%d got=%+v", code, got)
 			}
@@ -210,22 +217,43 @@ func TestCmuxRenameMissingID(t *testing.T) {
 	}
 }
 
+func TestCmuxRenameRejectsNonUUIDID(t *testing.T) {
+	s, f := newTabServer(t)
+	code, _ := postCmux(t, s.handleCmuxRename, map[string]string{"id": "W", "title": "x"})
+	if code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", code)
+	}
+	if len(f.calls) != 0 {
+		t.Fatalf("called cmux on a non-UUID id: %q", f.calls)
+	}
+}
+
 func TestCmuxColor(t *testing.T) {
 	cases := []struct {
 		color string
 		code  int
 		want  string
 	}{
-		{"#AD1457", http.StatusOK, "set-color W #AD1457"},
-		{"teal", http.StatusOK, "set-color W teal"},
-		{"", http.StatusOK, "clear-color W"},
+		{"#AD1457", http.StatusOK, "set-color " + wsID + " #AD1457"},
+		{"teal", http.StatusOK, "set-color " + wsID + " teal"},
+		{"", http.StatusOK, "clear-color " + wsID + ""},
 		{"#12345", http.StatusBadRequest, ""},
 		{"red; rm -rf", http.StatusBadRequest, ""},
 	}
+	t.Run("rejects a non-UUID id", func(t *testing.T) {
+		s, f := newTabServer(t)
+		code, _ := postCmux(t, s.handleCmuxColor, map[string]string{"id": "--action", "color": "teal"})
+		if code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400", code)
+		}
+		if len(f.calls) != 0 {
+			t.Fatalf("called cmux on a non-UUID id: %q", f.calls)
+		}
+	})
 	for _, c := range cases {
 		t.Run(c.color, func(t *testing.T) {
 			s, f := newTabServer(t)
-			code, _ := postCmux(t, s.handleCmuxColor, map[string]string{"id": "W", "color": c.color})
+			code, _ := postCmux(t, s.handleCmuxColor, map[string]string{"id": wsID, "color": c.color})
 			if code != c.code {
 				t.Fatalf("status = %d, want %d", code, c.code)
 			}
@@ -241,11 +269,11 @@ func TestCmuxColor(t *testing.T) {
 
 func TestCmuxFocusTabSelectsFocusesActivates(t *testing.T) {
 	s, f := newTabServer(t)
-	code, got := postCmux(t, s.handleCmuxFocusTab, map[string]string{"id": "W", "surface": "surface:2"})
+	code, got := postCmux(t, s.handleCmuxFocusTab, map[string]string{"id": wsID, "surface": "surface:2"})
 	if code != http.StatusOK || !got.OK {
 		t.Fatalf("code=%d got=%+v", code, got)
 	}
-	want := []string{"select W", "focus W surface:2", "activate"}
+	want := []string{"select " + wsID + "", "focus " + wsID + " surface:2", "activate"}
 	if strings.Join(f.calls, "|") != strings.Join(want, "|") {
 		t.Fatalf("calls = %q, want %q", f.calls, want)
 	}
@@ -254,7 +282,7 @@ func TestCmuxFocusTabSelectsFocusesActivates(t *testing.T) {
 func TestCmuxFocusTabActivateFailureIsNotAFailure(t *testing.T) {
 	s, f := newTabServer(t)
 	f.failOn = "activate"
-	if _, got := postCmux(t, s.handleCmuxFocusTab, map[string]string{"id": "W", "surface": "surface:2"}); !got.OK {
+	if _, got := postCmux(t, s.handleCmuxFocusTab, map[string]string{"id": wsID, "surface": "surface:2"}); !got.OK {
 		t.Fatalf("got %+v, want ok despite activate failing", got)
 	}
 }
@@ -262,7 +290,7 @@ func TestCmuxFocusTabActivateFailureIsNotAFailure(t *testing.T) {
 func TestCmuxFocusTabReportsCmuxFailure(t *testing.T) {
 	s, f := newTabServer(t)
 	f.failOn = "focus"
-	code, got := postCmux(t, s.handleCmuxFocusTab, map[string]string{"id": "W", "surface": "surface:2"})
+	code, got := postCmux(t, s.handleCmuxFocusTab, map[string]string{"id": wsID, "surface": "surface:2"})
 	if code != http.StatusOK || got.OK || got.Error == "" {
 		t.Fatalf("code=%d got=%+v, want 200 ok:false with error", code, got)
 	}
@@ -271,7 +299,7 @@ func TestCmuxFocusTabReportsCmuxFailure(t *testing.T) {
 func TestCmuxFocusTabValidatesSurface(t *testing.T) {
 	s, f := newTabServer(t)
 	for _, bad := range []string{"", "surface:", "surface:1 --workspace X", "pane:1", "--help"} {
-		if code, _ := postCmux(t, s.handleCmuxFocusTab, map[string]string{"id": "W", "surface": bad}); code != http.StatusBadRequest {
+		if code, _ := postCmux(t, s.handleCmuxFocusTab, map[string]string{"id": wsID, "surface": bad}); code != http.StatusBadRequest {
 			t.Errorf("surface %q: status = %d, want 400", bad, code)
 		}
 	}
@@ -280,10 +308,21 @@ func TestCmuxFocusTabValidatesSurface(t *testing.T) {
 	}
 }
 
+func TestCmuxFocusTabRejectsNonUUIDID(t *testing.T) {
+	s, f := newTabServer(t)
+	code, _ := postCmux(t, s.handleCmuxFocusTab, map[string]string{"id": "--action", "surface": "surface:2"})
+	if code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", code)
+	}
+	if len(f.calls) != 0 {
+		t.Fatalf("called cmux on a non-UUID id: %q", f.calls)
+	}
+}
+
 func TestCmuxWritesWhenUnavailable(t *testing.T) {
 	s, f := newTabServer(t)
 	t.Setenv("CMUX_SOCKET_PATH", "")
-	code, got := postCmux(t, s.handleCmuxRename, map[string]string{"id": "W", "title": "x"})
+	code, got := postCmux(t, s.handleCmuxRename, map[string]string{"id": wsID, "title": "x"})
 	if code != http.StatusOK || got.OK || len(f.calls) != 0 {
 		t.Fatalf("code=%d got=%+v calls=%q, want 200 ok:false and no calls", code, got, f.calls)
 	}
@@ -329,12 +368,12 @@ func TestCmuxCloseTabGuard(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			s, f := newTabServer(t)
-			code, got := postCmux(t, s.handleCmuxCloseTab, map[string]string{"id": "W", "surface": c.surface, "type": c.typ, "title": c.title})
+			code, got := postCmux(t, s.handleCmuxCloseTab, map[string]string{"id": wsID, "surface": c.surface, "type": c.typ, "title": c.title})
 			if code != http.StatusOK {
 				t.Fatalf("status = %d", code)
 			}
 			if c.wantClose {
-				if !got.OK || !f.called("close W "+c.surface) {
+				if !got.OK || !f.called("close "+wsID+" "+c.surface) {
 					t.Fatalf("got=%+v calls=%q, want closed", got, f.calls)
 				}
 				return
@@ -349,9 +388,20 @@ func TestCmuxCloseTabGuard(t *testing.T) {
 	}
 }
 
+func TestCmuxCloseTabRejectsNonUUIDID(t *testing.T) {
+	s, f := newTabServer(t)
+	code, _ := postCmux(t, s.handleCmuxCloseTab, map[string]string{"id": "W", "surface": "surface:2", "type": "browser", "title": "(5) inbox"})
+	if code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", code)
+	}
+	if len(f.calls) != 0 {
+		t.Fatalf("called cmux on a non-UUID id: %q", f.calls)
+	}
+}
+
 func TestCmuxCloseTabTreeFailureIsNotStale(t *testing.T) {
 	s, f := newTabServer(t)
-	code, got := postCmux(t, s.handleCmuxCloseTab, map[string]string{"id": "GONE", "surface": "surface:1", "type": "terminal", "title": "x"})
+	code, got := postCmux(t, s.handleCmuxCloseTab, map[string]string{"id": goneID, "surface": "surface:1", "type": "terminal", "title": "x"})
 	if code != http.StatusOK || got.OK || got.Stale || got.Error == "" || f.called("close") {
 		t.Fatalf("code=%d got=%+v calls=%q", code, got, f.calls)
 	}
@@ -375,7 +425,7 @@ type moveBody struct {
 
 // dragged is surface:2 ("(5) inbox", pane:1) unless a case overrides it.
 func moveOf(pane string, anchor *anchorBody) moveBody {
-	return moveBody{ID: "W", Surface: "surface:2", Type: "browser", Title: "(5) inbox", Pane: pane, Anchor: anchor}
+	return moveBody{ID: wsID, Surface: "surface:2", Type: "browser", Title: "(5) inbox", Pane: pane, Anchor: anchor}
 }
 
 func TestCmuxMoveTab(t *testing.T) {
@@ -390,12 +440,12 @@ func TestCmuxMoveTab(t *testing.T) {
 		body moveBody
 		want string // "" means stale
 	}{
-		{"same pane before", moveOf("pane:1", agent("before")), "reorder W surface:2 before surface:1"},
-		{"same pane to end", moveOf("pane:1", nil), "reorder W surface:2 end"},
-		{"other pane after", moveOf("pane:2", notes("after")), "move W surface:2 pane:2 after surface:3"},
-		{"other pane to end", moveOf("pane:2", nil), "move W surface:2 pane:2 end"},
-		{"into an empty pane", moveOf("pane:4", nil), "move W surface:2 pane:4 end"},
-		{"dragged tab changed", moveBody{ID: "W", Surface: "surface:2", Type: "browser", Title: "(6) inbox", Pane: "pane:2"}, ""},
+		{"same pane before", moveOf("pane:1", agent("before")), "reorder " + wsID + " surface:2 before surface:1"},
+		{"same pane to end", moveOf("pane:1", nil), "reorder " + wsID + " surface:2 end"},
+		{"other pane after", moveOf("pane:2", notes("after")), "move " + wsID + " surface:2 pane:2 after surface:3"},
+		{"other pane to end", moveOf("pane:2", nil), "move " + wsID + " surface:2 pane:2 end"},
+		{"into an empty pane", moveOf("pane:4", nil), "move " + wsID + " surface:2 pane:4 end"},
+		{"dragged tab changed", moveBody{ID: wsID, Surface: "surface:2", Type: "browser", Title: "(6) inbox", Pane: "pane:2"}, ""},
 		{"anchor changed", moveOf("pane:2", &anchorBody{Surface: "surface:3", Type: "markdown", Title: "renamed.md", Position: "before"}), ""},
 		{"anchor not in the named pane", moveOf("pane:2", agent("before")), ""},
 		{"unknown pane", moveOf("pane:9", nil), ""},
@@ -423,8 +473,9 @@ func TestCmuxMoveTab(t *testing.T) {
 func TestCmuxMoveTabValidation(t *testing.T) {
 	cases := map[string]moveBody{
 		"bad pane":           moveOf("pane", nil),
-		"bad surface":        {ID: "W", Surface: "surface:x", Pane: "pane:1"},
+		"bad surface":        {ID: wsID, Surface: "surface:x", Pane: "pane:1"},
 		"missing id":         {Surface: "surface:2", Pane: "pane:1"},
+		"non-UUID id":        {ID: "W", Surface: "surface:2", Pane: "pane:1"},
 		"own anchor":         moveOf("pane:1", &anchorBody{Surface: "surface:2", Type: "browser", Title: "(5) inbox", Position: "before"}),
 		"bad position":       moveOf("pane:1", &anchorBody{Surface: "surface:1", Type: "terminal", Title: "◐ agent", Position: "inside"}),
 		"bad anchor surface": moveOf("pane:1", &anchorBody{Surface: "1", Position: "before"}),

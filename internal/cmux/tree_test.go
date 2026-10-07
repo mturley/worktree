@@ -2,6 +2,7 @@ package cmux
 
 import (
 	"os"
+	"os/exec"
 	"reflect"
 	"strings"
 	"testing"
@@ -111,6 +112,16 @@ func TestTreeRunsCmuxTreeForTheWorkspace(t *testing.T) {
 	want := []string{"tree", "--json", "--workspace", "AAAA-UUID"}
 	if !reflect.DeepEqual(*got, want) {
 		t.Fatalf("args = %q, want %q", *got, want)
+	}
+}
+
+func TestTreeErrorIncludesStderr(t *testing.T) {
+	orig := cmuxCmd
+	t.Cleanup(func() { cmuxCmd = orig })
+	cmuxCmd = func(args ...string) *exec.Cmd { return exec.Command("sh", "-c", "echo boom >&2; exit 1") }
+	_, err := Tree("AAAA-UUID")
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("err = %v, want it to carry cmux's stderr", err)
 	}
 }
 

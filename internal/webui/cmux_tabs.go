@@ -118,7 +118,20 @@ var (
 	surfaceRefRe = regexp.MustCompile(`^surface:\d+$`)
 	paneRefRe    = regexp.MustCompile(`^pane:\d+$`)
 	hexColorRe   = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
+	uuidRe       = regexp.MustCompile(`^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$`)
 )
+
+// validWorkspaceID checks a request's workspace id the same way surface/pane
+// refs are checked: an empty id is "missing id" (400, handled by the caller
+// before this), but any non-empty, non-UUID string must never reach `--workspace
+// <id>` or `workspace select <id>` — cmux workspace ids are UUIDs.
+func validWorkspaceID(w http.ResponseWriter, id string) bool {
+	if !uuidRe.MatchString(id) {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return false
+	}
+	return true
+}
 
 // cmuxTabRef names a tab the way the user saw it: its ref plus the type and
 // title it had in the list they acted on.
@@ -170,6 +183,9 @@ func (s *Server) handleCmuxRename(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing id")
 		return
 	}
+	if !validWorkspaceID(w, req.ID) {
+		return
+	}
 	if cmuxUnavailable(w) {
 		return
 	}
@@ -209,6 +225,9 @@ func (s *Server) handleCmuxColor(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing id")
 		return
 	}
+	if !validWorkspaceID(w, req.ID) {
+		return
+	}
 	if req.Color != "" && !validCmuxColor(req.Color) {
 		writeError(w, http.StatusBadRequest, "color must be a cmux colour name or #RRGGBB")
 		return
@@ -240,6 +259,9 @@ func (s *Server) handleCmuxFocusTab(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ID == "" {
 		writeError(w, http.StatusBadRequest, "missing id")
+		return
+	}
+	if !validWorkspaceID(w, req.ID) {
 		return
 	}
 	if !surfaceRefRe.MatchString(req.Surface) {
@@ -310,6 +332,9 @@ func (s *Server) handleCmuxCloseTab(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing id")
 		return
 	}
+	if !validWorkspaceID(w, req.ID) {
+		return
+	}
 	if !surfaceRefRe.MatchString(req.Surface) {
 		writeError(w, http.StatusBadRequest, "invalid surface")
 		return
@@ -357,6 +382,9 @@ func (s *Server) handleCmuxMoveTab(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case req.ID == "":
 		writeError(w, http.StatusBadRequest, "missing id")
+		return
+	case !uuidRe.MatchString(req.ID):
+		writeError(w, http.StatusBadRequest, "invalid id")
 		return
 	case !surfaceRefRe.MatchString(req.Surface):
 		writeError(w, http.StatusBadRequest, "invalid surface")

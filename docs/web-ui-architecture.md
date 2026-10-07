@@ -1554,7 +1554,10 @@ things constrain any change here:
   and browser tabs can have no URL.
 - **Addressing:** workspaces by UUID (`workspace:N` is the less stable
   handle); tabs by `surface:N` — `tree` gives tabs no UUID. Inputs are
-  regex-checked before any exec.
+  regex-checked before any exec: surface/pane refs against `surface:\d+` /
+  `pane:\d+`, and the workspace `id` itself against a UUID pattern, in every
+  POST handler (rename, color, focus-tab, close-tab, move-tab) before it can
+  reach `--workspace <id>` or `workspace select <id>`.
 - **Stale guard (close, move):** refs come from a poll up to 5s old, so the
   request carries the tab's type and title as the user saw them and the
   server re-reads the tree first; titles are compared after stripping a
