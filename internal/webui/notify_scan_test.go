@@ -8,6 +8,7 @@ import (
 	"github.com/mturley/worktree/internal/notifyprefs"
 	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/resources"
+	"github.com/mturley/worktree/internal/selfid"
 	"github.com/mturley/worktree/internal/testgit"
 )
 
@@ -187,5 +188,24 @@ func TestCursorRereadsAReusedIDWithANewTS(t *testing.T) {
 	evs, _, _ := readNewEvents(conn, c)
 	if got := newEventIDs(evs); len(got) != 1 || got[0] != "ci1" {
 		t.Fatalf("got %v, want the updated bundle again", got)
+	}
+}
+
+func TestReadNewEventsSkipsMyOwnEvents(t *testing.T) {
+	conn := unreadTestDB(t)
+	selfid.Set(conn, "github", "101")
+	c, _ := initNotifyCursor(conn)
+	insertTypedEvent(t, conn, "mine", "2026-01-01T00:00:01Z", "pr_comment", "x", "pr", "o/r#1")
+	insertTypedEvent(t, conn, "theirs", "2026-01-01T00:00:02Z", "pr_comment", "x", "pr", "o/r#1")
+	insertTypedEvent(t, conn, "ghost", "2026-01-01T00:00:03Z", "pr_comment", "x", "pr", "o/r#1")
+	conn.Exec(`UPDATE watcher_events SET author_id = '101' WHERE id = 'mine'`)
+	conn.Exec(`UPDATE watcher_events SET author_id = '202' WHERE id = 'theirs'`)
+	// "ghost" has no author_id, like an actor without a databaseId.
+	evs, _, err := readNewEvents(conn, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := newEventIDs(evs); len(got) != 2 || got[0] != "theirs" || got[1] != "ghost" {
+		t.Fatalf("got %v, want [theirs ghost]", got)
 	}
 }
