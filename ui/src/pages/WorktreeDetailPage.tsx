@@ -301,8 +301,8 @@ export function WorktreeDetailPage() {
                 component={Link}
                 href="/"
                 aria-label="All worktrees"
-                c="dimmed"
-                style={{ flex: "none", display: "flex", alignItems: "center", gap: 2 }}
+                underline="never"
+                className="back-home"
               >
                 <IconChevronLeft size={16} />
                 <Logo />

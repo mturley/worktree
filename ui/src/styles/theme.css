@@ -30,3 +30,42 @@ body,
  * detail page takes over scrolling, and it sizes itself against the viewport
  * directly (see WorktreeDetailPage).
  */
+
+/*
+ * The worktree page's back link: a chevron plus the logo. With no text to
+ * underline, hover needs a style of its own — a soft tile behind both, the
+ * chevron brightening and nudging toward where it goes. The negative margin
+ * cancels the padding, so the link sits where it would without it.
+ */
+.back-home {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px 4px 2px;
+  margin: -4px -6px -4px -2px;
+  border-radius: var(--mantine-radius-md);
+  color: var(--mantine-color-dimmed);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.back-home svg {
+  transition: transform 120ms ease;
+}
+
+.back-home img {
+  transition: transform 120ms ease;
+}
+
+.back-home:hover {
+  background-color: var(--mantine-color-default-hover);
+  color: var(--mantine-color-text);
+}
+
+.back-home:hover svg {
+  transform: translateX(-2px);
+}
+
+.back-home:hover img {
+  transform: scale(1.05);
+}
