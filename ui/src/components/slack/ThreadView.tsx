@@ -232,12 +232,21 @@ export function ThreadView({ tab, thread, onOpenThread, topInset = 0, onComposer
     window.open(openInSlackUrl(tab.channel, tab.threadTs, latest.TS, workspaceDomain), '_blank', 'noreferrer')
   }
 
+  // Copies a link to the thread's first message, matching the copy button on
+  // the resource card above the thread (unlike "Open in Slack", which jumps
+  // to the latest reply).
   function handleCopyLink() {
-    if (!data || data.messages.length === 0 || !workspaceDomain) {
+    handleCopyMessageLink(tab.threadTs)
+  }
+
+  function handleCopyMessageLink(ts: string) {
+    if (!workspaceDomain) {
       return
     }
-    const latest = data.messages[data.messages.length - 1]
-    navigator.clipboard.writeText(openInSlackUrl(tab.channel, tab.threadTs, latest.TS, workspaceDomain))
+    navigator.clipboard.writeText(openInSlackUrl(tab.channel, tab.threadTs, ts, workspaceDomain)).catch(() => {
+      // Clipboard access can be denied; failing silently beats an error
+      // state on a convenience.
+    })
   }
 
 
@@ -387,6 +396,7 @@ export function ThreadView({ tab, thread, onOpenThread, topInset = 0, onComposer
                   emoji={data.emoji}
                   currentUserId={data.currentUserId}
                   onMarkUnread={handleMarkUnread}
+                  onCopyLink={workspaceDomain ? handleCopyMessageLink : undefined}
                   onToggleReaction={handleToggleReaction}
                   onOpenThread={onOpenThread}
                 />

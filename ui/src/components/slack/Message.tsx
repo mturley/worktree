@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ActionIcon, Avatar, Group, Stack, Text, Tooltip } from '@mantine/core'
+import { IconLink } from '@tabler/icons-react'
 import { avatarProxy } from '../../api/slackApi'
 import type { Message as MessageData, User } from '../../api/slackApi'
 import { Mrkdwn } from '../../lib/mrkdwn'
@@ -17,6 +18,8 @@ interface MessageProps {
   currentUserId?: string
   /** Called with the message's ts when the "mark unread from here" hover action is clicked. */
   onMarkUnread?: (ts: string) => void
+  /** Called with the message's ts when the "copy link to this message" hover action is clicked. */
+  onCopyLink?: (ts: string) => void
   /** Called when a reaction pill is clicked to toggle the current user's reaction. */
   onToggleReaction?: (ts: string, name: string, add: boolean) => void
   /**
@@ -26,18 +29,28 @@ interface MessageProps {
   onOpenThread?: (url: string, opts: { background: boolean }) => void
 }
 
+const COPIED_FEEDBACK_MS = 1500
+
 export function Message({
   message,
   users,
   emoji,
   currentUserId,
   onMarkUnread,
+  onCopyLink,
   onToggleReaction,
   onOpenThread,
 }: MessageProps) {
   const user = users[message.UserID]
   const displayName = user?.DisplayName || user?.RealName || message.UserID
   const [hovered, setHovered] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  function handleCopyLink() {
+    onCopyLink?.(message.TS)
+    setCopied(true)
+    setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS)
+  }
 
   return (
     <Group
@@ -74,6 +87,20 @@ export function Message({
                 style={{ opacity: hovered ? 1 : 0, transition: 'opacity 100ms ease' }}
               >
                 ●
+              </ActionIcon>
+            </Tooltip>
+          )}
+          {onCopyLink && (
+            <Tooltip label={copied ? 'Copied!' : 'Copy link to this message'}>
+              <ActionIcon
+                variant="subtle"
+                color="gray"
+                size="xs"
+                aria-label="Copy link to this message"
+                onClick={handleCopyLink}
+                style={{ opacity: hovered ? 1 : 0, transition: 'opacity 100ms ease' }}
+              >
+                <IconLink size={12} />
               </ActionIcon>
             </Tooltip>
           )}

@@ -174,4 +174,21 @@ describe('Message', () => {
     fireEvent.click(getByLabelText('Mark unread from here'))
     expect(onMarkUnread).toHaveBeenCalledWith('111.222')
   })
+
+  it('calls onCopyLink with the message ts when the copy-link hover action is clicked', () => {
+    const onCopyLink = vi.fn()
+    const message = baseMessage({ TS: '111.222' })
+    const { getByLabelText } = renderWithProvider(
+      <Message message={message} users={users} emoji={{}} onCopyLink={onCopyLink} />,
+    )
+    fireEvent.click(getByLabelText('Copy link to this message'))
+    expect(onCopyLink).toHaveBeenCalledWith('111.222')
+  })
+
+  it('omits the copy-link hover action when no onCopyLink is given', () => {
+    const { queryByLabelText } = renderWithProvider(
+      <Message message={baseMessage({})} users={users} emoji={{}} />,
+    )
+    expect(queryByLabelText('Copy link to this message')).toBeNull()
+  })
 })
