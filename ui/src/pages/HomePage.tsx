@@ -61,12 +61,21 @@ export function HomePage() {
       onDirectionChange={sort.mode === "name" ? sort.setNameDir : sort.setCreatedDir}
     />
   )
-  // The page's two toggles stay together, so wrapping moves them as a pair
-  // instead of stranding one beside the buttons.
-  const toggles = (
-    <Group gap="md" wrap="nowrap">
-      <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} />
-      <FollowCmuxToggle />
+  // Page-wide controls: they apply to both panes (and every tab), so they sit
+  // above them rather than in either one. The toggles stay together, so
+  // wrapping moves them as a pair.
+  const header = (
+    <Group justify="space-between" gap="xs">
+      {/* The logo stands in for the old "Worktrees" title, and keeps its
+          name as the heading's accessible text. */}
+      <Title order={4}><Logo alt="Worktrees" /></Title>
+      <Group gap="md" justify="flex-end">
+        <Group gap="md" wrap="nowrap">
+          <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} />
+          <FollowCmuxToggle />
+        </Group>
+        <DevicesButton />
+      </Group>
     </Group>
   )
 
@@ -74,6 +83,15 @@ export function HomePage() {
     <Button size="xs" leftSection={<IconPlus size={14} />} onClick={() => setNewOpen(true)}>
       New worktree
     </Button>
+  )
+
+  // Belongs to the worktree list, so it stays with it: above the list on wide,
+  // inside the Worktrees tab on narrow.
+  const listToolbar = (
+    <Group justify="space-between" gap="xs">
+      {sortControl}
+      {newWorktreeButton}
+    </Group>
   )
 
   /**
@@ -136,11 +154,7 @@ export function HomePage() {
   if (!wide) {
     return (
       <Stack p="md" gap="sm">
-        <Group justify="flex-end" gap="xs">
-          {newWorktreeButton}
-          <DevicesButton />
-          {toggles}
-        </Group>
+        {header}
         <NewWorktreeModal opened={newOpen} onClose={() => setNewOpen(false)} />
         <Tabs defaultValue="worktrees">
           <Tabs.List>
@@ -149,9 +163,7 @@ export function HomePage() {
           </Tabs.List>
           <Tabs.Panel value="worktrees" pt="md">
             <Stack gap="xs">
-              <Group justify="flex-end" gap="md">
-                {sortControl}
-              </Group>
+              {listToolbar}
               {worktrees}
             </Stack>
           </Tabs.Panel>
@@ -166,29 +178,18 @@ export function HomePage() {
     // a cmux workspace header, two meta lines, focus resources — so the
     // narrower column was wrapping content that the timeline had width to
     // spare for.
-    <Grid p="md" gutter="md">
-      <Grid.Col span={6}>
-        <Stack gap="sm">
-          <Group justify="space-between" gap="xs">
-            <Group gap="xl" wrap="nowrap">
-              {/* The logo stands in for the old "Worktrees" title, and keeps
-                  its name as the heading's accessible text. */}
-              <Title order={4}><Logo alt="Worktrees" /></Title>
-              {sortControl}
-            </Group>
-            <Group gap="md" justify="flex-end">
-              <Group gap="xs" wrap="nowrap">
-                {newWorktreeButton}
-                <DevicesButton />
-              </Group>
-              {toggles}
-            </Group>
-          </Group>
-          {worktrees}
-        </Stack>
-      </Grid.Col>
-      <Grid.Col span={6}>{timeline}</Grid.Col>
+    <Stack p="md" gap="sm">
+      {header}
+      <Grid gutter="md">
+        <Grid.Col span={6}>
+          <Stack gap="sm">
+            {listToolbar}
+            {worktrees}
+          </Stack>
+        </Grid.Col>
+        <Grid.Col span={6}>{timeline}</Grid.Col>
+      </Grid>
       <NewWorktreeModal opened={newOpen} onClose={() => setNewOpen(false)} />
-    </Grid>
+    </Stack>
   )
 }

@@ -5,7 +5,7 @@
  * Decorative by default (empty alt). Pass `alt` where the logo stands in for
  * text, as it does for the home page's heading.
  */
-export function Logo({ size = 28, alt = "" }: { size?: number; alt?: string }) {
+export function Logo({ size = 36, alt = "" }: { size?: number; alt?: string }) {
   return (
     <img
       src="/favicon.svg?v=2"

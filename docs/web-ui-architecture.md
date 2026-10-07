@@ -1602,9 +1602,9 @@ in front of its title, and loses it once nothing is unread. The prefix exists
 
 ### Follow cmux focus (`cmux_focus.go`, `cmux/focus.go`, `CmuxFollower`)
 
-A per-tab toggle (home toolbar after Devices; worktree header before the
-Switch cmux button) that makes the tab open whichever worktree cmux switches
-to. Rendered only when `/api/cmux` says `available`, i.e. the server runs
+A per-tab toggle (home page header, between "Show unreads only" and
+Devices; worktree header before the Switch cmux button) that makes the tab
+open whichever worktree cmux switches to. Rendered only when `/api/cmux` says `available`, i.e. the server runs
 inside cmux.
 
 - **Source:** `StartCmuxFocusWatch` runs `cmux events --name
