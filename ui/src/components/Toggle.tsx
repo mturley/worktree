@@ -1,5 +1,5 @@
 import { forwardRef } from "react"
-import { Switch, type SwitchProps } from "@mantine/core"
+import { Switch, rem, type SwitchProps } from "@mantine/core"
 
 /**
  * Every on/off switch in the UI ("Show unreads only", "Show archived",
@@ -7,8 +7,14 @@ import { Switch, type SwitchProps } from "@mantine/core"
  * than Mantine's default: these sit in toolbars beside compact buttons, where
  * a full-size switch and label outweigh the controls around them.
  *
+ * The label sits closer than Mantine's spacing-sm gap, which reads as loose
+ * beside an xs switch. Set through the variable rather than the label's
+ * padding so a description under the label stays aligned with it.
+ *
  * forwardRef so a Tooltip can wrap it directly.
  */
-export const Toggle = forwardRef<HTMLInputElement, Omit<SwitchProps, "size">>(function Toggle(props, ref) {
-  return <Switch ref={ref} size="xs" {...props} />
+const tight = { root: { "--label-offset-start": rem(6) } }
+
+export const Toggle = forwardRef<HTMLInputElement, Omit<SwitchProps, "size" | "styles">>(function Toggle(props, ref) {
+  return <Switch ref={ref} size="xs" styles={tight} {...props} />
 })
