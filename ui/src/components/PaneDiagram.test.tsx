@@ -5,7 +5,13 @@ import { MantineProvider } from "@mantine/core"
 import { PaneDiagram } from "./PaneDiagram"
 import type { CmuxLayout, CmuxPane } from "../api/types"
 
-const t = (n: number, type = "browser", selected = false) => ({ ref: `surface:${n}`, title: `Tab ${n}`, type, selected })
+const t = (n: number, type = "browser", selected = false, unread = false) => ({
+  ref: `surface:${n}`,
+  title: `Tab ${n}`,
+  type,
+  selected,
+  unread,
+})
 const layout: CmuxLayout = { direction: "horizontal", split: 0.4, children: [{ pane: "pane:1" }, { pane: "pane:2" }] }
 
 function wrap(panes: CmuxPane[], handlers: Partial<{ onSelect: () => void; onClose: () => void; onMove: () => void; onDragActiveChange: () => void }> = {}) {
@@ -180,5 +186,35 @@ describe("PaneDiagram", () => {
     fireEvent.click(row)
     expect(onSelect).toHaveBeenCalledTimes(1)
     expect(onMove).not.toHaveBeenCalled()
+  })
+
+  it("shows a dot on an unread tab and not on a read one", () => {
+    wrap([
+      { ref: "pane:1", focused: true, tabs: [t(1, "browser", false, true), t(2)] },
+      { ref: "pane:2", focused: false, tabs: [] },
+    ])
+    const unreadRow = screen.getByRole("button", { name: /Switch to Tab 1/ }).closest(".cmux-tab-row")
+    const readRow = screen.getByRole("button", { name: "Switch to Tab 2" }).closest(".cmux-tab-row")
+    expect(unreadRow?.querySelector('[data-testid="cmux-unread-dot"]')).not.toBeNull()
+    expect(readRow?.querySelector('[data-testid="cmux-unread-dot"]')).toBeNull()
+  })
+
+  it("mentions unread in the switch button's aria-label", () => {
+    wrap([{ ref: "pane:1", focused: true, tabs: [t(1, "browser", false, true)] }, { ref: "pane:2", focused: false, tabs: [] }])
+    expect(screen.getByRole("button", { name: "Switch to Tab 1 (unread)" })).toBeInTheDocument()
+  })
+
+  it("shows a dot on a collapsed group's link when it holds an unread tab", () => {
+    const tabs = Array.from({ length: 12 }, (_, i) => t(i + 1, "browser", false, i === 10))
+    wrap([{ ref: "pane:1", focused: true, tabs }, { ref: "pane:2", focused: false, tabs: [] }])
+    const link = screen.getByRole("button", { name: "Show 2 more tabs" })
+    expect(link.querySelector('[data-testid="cmux-unread-dot"]')).not.toBeNull()
+  })
+
+  it("shows no dot on a collapsed group's link when none of its tabs are unread", () => {
+    const tabs = Array.from({ length: 12 }, (_, i) => t(i + 1))
+    wrap([{ ref: "pane:1", focused: true, tabs }, { ref: "pane:2", focused: false, tabs: [] }])
+    const link = screen.getByRole("button", { name: "Show 2 more tabs" })
+    expect(link.querySelector('[data-testid="cmux-unread-dot"]')).toBeNull()
   })
 })

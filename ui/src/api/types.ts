@@ -251,6 +251,8 @@ export interface CmuxTab {
   /** Absent for terminals and for browser tabs that have not loaded. */
   url?: string
   selected: boolean
+  /** Has an unread cmux notification (from `notification.list`). */
+  unread?: boolean
 }
 
 export interface CmuxPane { ref: string; focused: boolean; tabs: CmuxTab[] }

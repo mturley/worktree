@@ -208,11 +208,12 @@ function PaneBox({ pane, style, expanded, setGroup, drag, onSelect, onClose }: V
     const key = `${pane.ref}:${side}`
     const label = `Show ${list.length} more tab${list.length === 1 ? "" : "s"}`
     if (!expanded.has(key)) {
+      const unread = list.some((tab) => tab.unread)
       // The "before" (top) link is its own drop target: dropping on it means
       // "ahead of every tab still showing", not "at the end of the pane".
       return side === "before"
-        ? <TopMoreLink paneRef={pane.ref} hovered={drag.overId === `${pane.ref}:top`} onClick={() => setGroup(key, true)}>{label}</TopMoreLink>
-        : <MoreLink onClick={() => setGroup(key, true)}>{label}</MoreLink>
+        ? <TopMoreLink paneRef={pane.ref} hovered={drag.overId === `${pane.ref}:top`} unread={unread} onClick={() => setGroup(key, true)}>{label}</TopMoreLink>
+        : <MoreLink unread={unread} onClick={() => setGroup(key, true)}>{label}</MoreLink>
     }
     const fewer = <MoreLink onClick={() => setGroup(key, false)}>Show fewer</MoreLink>
     return side === "before" ? <>{fewer}{rows(list)}</> : <>{rows(list)}{fewer}</>
@@ -247,16 +248,34 @@ function PaneBox({ pane, style, expanded, setGroup, drag, onSelect, onClose }: V
   )
 }
 
-function MoreLink({ onClick, children }: { onClick: () => void; children: string }) {
+/** Small round marker shown on an unread tab's row or its collapsed group's link. */
+function UnreadDot() {
+  return <Box data-testid="cmux-unread-dot" bg="blue.5" style={{ flex: "none", width: 6, height: 6, borderRadius: "50%" }} />
+}
+
+function MoreLink({ onClick, unread, children }: { onClick: () => void; unread?: boolean; children: string }) {
   return (
-    <UnstyledButton onClick={onClick} px={4} pl={22}>
+    <UnstyledButton onClick={onClick} px={4} pl={22} style={{ display: "flex", alignItems: "center", gap: 4 }}>
       <Text size="xs" c="blue">{children}</Text>
+      {unread && <UnreadDot />}
     </UnstyledButton>
   )
 }
 
 /** The collapsed top group's link, also droppable as `${paneRef}:top`. */
-function TopMoreLink({ paneRef, hovered, onClick, children }: { paneRef: string; hovered: boolean; onClick: () => void; children: string }) {
+function TopMoreLink({
+  paneRef,
+  hovered,
+  unread,
+  onClick,
+  children,
+}: {
+  paneRef: string
+  hovered: boolean
+  unread?: boolean
+  onClick: () => void
+  children: string
+}) {
   const { setNodeRef } = useDroppable({ id: `${paneRef}:top` })
   return (
     <UnstyledButton
@@ -265,9 +284,15 @@ function TopMoreLink({ paneRef, hovered, onClick, children }: { paneRef: string;
       px={4}
       pl={22}
       data-droppable="true"
-      style={{ borderTop: hovered ? "2px solid var(--mantine-color-blue-filled)" : "2px solid transparent" }}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 4,
+        borderTop: hovered ? "2px solid var(--mantine-color-blue-filled)" : "2px solid transparent",
+      }}
     >
       <Text size="xs" c="blue">{children}</Text>
+      {unread && <UnreadDot />}
     </UnstyledButton>
   )
 }
@@ -319,7 +344,7 @@ function TabRow({ tab, dropBefore, onSelect, onClose }: Handlers & { tab: CmuxTa
         maw={360}
       >
         <UnstyledButton
-          aria-label={`Switch to ${tab.title}`}
+          aria-label={`Switch to ${tab.title}${tab.unread ? " (unread)" : ""}`}
           onClick={() => onSelect(tab)}
           style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 4, padding: "1px 4px" }}
         >
@@ -327,6 +352,7 @@ function TabRow({ tab, dropBefore, onSelect, onClose }: Handlers & { tab: CmuxTa
           <Text size="xs" truncate fw={tab.selected ? 700 : 400} data-selected={tab.selected || undefined}>
             {tab.title}
           </Text>
+          {tab.unread && <UnreadDot />}
         </UnstyledButton>
       </Tooltip>
       <Popover opened={confirming} onChange={setConfirming} position="bottom-end" withArrow shadow="md">

@@ -189,7 +189,7 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | GET | `/api/cmux-groups` | — | workspace groups + `cmux.NamedColors`; fetched only when a create/select modal opens |
 | POST | `/api/cmux/select` | body: `{path, ref}` (see handler) | selects a workspace, then always `osascript` activate |
 | POST | `/api/cmux/create` | body: `{path, ...}` (see handler) | creates a workspace via `cmux.BuildLayout` from the worktree's current resources |
-| GET | `/api/cmux/tree` | `path` (required) | `{available, workspaces: [{id, ref, title, color?, selected, layout?, panes?, error?}]}` for the workspaces matching `path` (same matching as `/api/cmux`); one `cmux tree` per workspace; a per-workspace failure sets `error` instead of failing the request. Polled 5s, only while the details card's cmux tab is open. |
+| GET | `/api/cmux/tree` | `path` (required) | `{available, workspaces: [{id, ref, title, color?, selected, layout?, panes?, error?}]}` for the workspaces matching `path` (same matching as `/api/cmux`); one `cmux tree` per workspace; a per-workspace failure sets `error` instead of failing the request. Each tab in `panes[].tabs[]` carries `unread` (omitted when false). Polled 5s, only while the details card's cmux tab is open. |
 | POST | `/api/cmux/rename` | body: `{id, title}` | trimmed-empty title → `clear-name`; replies `{ok, error?}` |
 | POST | `/api/cmux/color` | body: `{id, color}` | empty → `clear-color`; else a `cmux.NamedColors` name or `#RRGGBB` (400 otherwise) |
 | POST | `/api/cmux/focus-tab` | body: `{id, surface}` | select workspace → `focus-panel` → activate; unguarded |
@@ -1590,6 +1590,11 @@ things constrain any change here:
   restore reorder fails, the request still answers `{ok:true}` — the
   close/move itself already succeeded.
 - **No pinned-tab state:** cmux 0.64 exposes pinning per workspace only.
+- **Unread dot:** `tabs[].unread` comes from one `cmux rpc notification.list`
+  call per `handleCmuxTree` poll (best-effort — a failure there just leaves
+  every tab's `unread` false, never a 5xx), matched to tabs by
+  `(workspace_id, surface_ref)`; focusing a tab in cmux is what marks its
+  notifications read.
 - **UI:** the card's `Tabs` run with `keepMounted={false}` and Notes /
   Environment opt back in, so only `CmuxPanel` unmounts when hidden — ending
   its poll and resetting its "Show N more tabs" expansion. Close is
