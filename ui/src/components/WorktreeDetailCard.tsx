@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { ActionIcon, Button, Checkbox, Code, Group, Paper, Stack, Tabs, Text, Textarea, Tooltip } from "@mantine/core"
 import { IconCheck, IconCopy, IconPencil, IconTrash } from "@tabler/icons-react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
@@ -66,6 +66,15 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
   // the selected one goes away, fall back to Notes rather than showing no
   // panel.
   const activeTab = (tab === "env" && !hasEnv) || (tab === "cmux" && !hasCmux) ? "notes" : tab
+
+  // The fallback above is a per-render display computation, not a stored
+  // selection: without this, `tab` itself would still say "cmux" (or "env"),
+  // so the moment that tab's data reappears (a transient cmux blip, a 5s
+  // poll) the card would jump straight back to it instead of staying on
+  // Notes.
+  useEffect(() => {
+    if (activeTab !== tab) setTab(activeTab)
+  }, [activeTab, tab])
 
   // Notes are read-only until "Edit notes", so a stray click or keystroke
   // cannot change them. Leaving the Notes tab ends editing: you always come

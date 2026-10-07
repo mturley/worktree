@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { useCallback, useState } from "react"
+import { useCallback, useRef, useState } from "react"
 import { api } from "./client"
 import type { CmuxActionResult, CmuxMove, CmuxTreeResponse, CmuxTreeWorkspace } from "./types"
 import { applyMove } from "../lib/cmuxMove"
@@ -17,6 +17,11 @@ export function useCmuxTree(path: string, paused: boolean) {
     queryFn: () => api.cmuxTree(path),
     refetchInterval: paused ? false : 5_000,
     refetchIntervalInBackground: false,
+    // A focus/reconnect refetch during the settle window would race the
+    // move's own refetch and could snap the tab back before cmux has caught
+    // up, same as the interval poll — pause those too.
+    refetchOnWindowFocus: !paused,
+    refetchOnReconnect: !paused,
   })
 }
 
@@ -63,9 +68,16 @@ export const MOVE_SETTLE_MS = 1000
 export function useCmuxMove(path: string) {
   const qc = useQueryClient()
   const [inFlight, setInFlight] = useState(0)
+  // Mirrors `inFlight` so a finishing move can tell, synchronously, whether
+  // it was the last one — state updates aren't visible to the same closure
+  // until the next render, and a second drag started during the first's
+  // settle window must not have its own refetch skipped or have the first
+  // move's (delayed) refetch snap it back.
+  const inFlightRef = useRef(0)
   const move = useCallback(
     async (ws: CmuxTreeWorkspace, m: CmuxMove): Promise<string | null> => {
       const key = cmuxTreeKey(path)
+      inFlightRef.current += 1
       setInFlight((n) => n + 1)
       await qc.cancelQueries({ queryKey: key })
       qc.setQueryData<CmuxTreeResponse>(key, (old) =>
@@ -79,8 +91,12 @@ export function useCmuxMove(path: string) {
         message = e instanceof Error ? e.message : String(e)
       }
       if (message === null) await new Promise((resolve) => setTimeout(resolve, MOVE_SETTLE_MS))
+      inFlightRef.current -= 1
       setInFlight((n) => n - 1)
-      await qc.invalidateQueries({ queryKey: key })
+      // Only the last move still in flight refetches: an earlier move's
+      // refetch (delayed by its own settle wait) would otherwise land after a
+      // later move's optimistic update and snap it back.
+      if (inFlightRef.current === 0) await qc.invalidateQueries({ queryKey: key })
       return message
     },
     [qc, path],

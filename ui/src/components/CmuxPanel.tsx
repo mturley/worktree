@@ -18,11 +18,20 @@ const HEX = /^#[0-9a-fA-F]{6}$/
  */
 export function CmuxPanel({ path, branch }: { path: string; branch: string }) {
   const { move, moving } = useCmuxMove(path)
-  const tree = useCmuxTree(path, moving)
+  // A poll mid-drag would refresh the diagram's data (and cmux focusing the
+  // target pane on every move blurs/refocuses the UI's own webview) out from
+  // under dnd-kit, so it pauses for the drag's duration too, not just the
+  // settle wait after it.
+  const [dragging, setDragging] = useState(false)
+  const tree = useCmuxTree(path, moving || dragging)
   const [createOpen, setCreateOpen] = useState(false)
 
   if (tree.isPending) return <Text size="xs" c="dimmed">Loading cmux workspace…</Text>
-  if (tree.isError) return <Text size="xs" c="red">Could not load the cmux workspace: {tree.error.message}</Text>
+  // In React Query v5, isError stays true after a failed BACKGROUND refetch
+  // even though the earlier successful data is still cached (isError and
+  // data are independent flags) — keep showing that cached panel rather than
+  // replacing it with a full-panel error over a transient poll failure.
+  if (tree.isError && !tree.data) return <Text size="xs" c="red">Could not load the cmux workspace: {tree.error.message}</Text>
   if (!tree.data.available) return <Text size="xs" c="dimmed">cmux is not reachable.</Text>
 
   if (tree.data.workspaces.length === 0) {
@@ -37,16 +46,17 @@ export function CmuxPanel({ path, branch }: { path: string; branch: string }) {
   return (
     <Stack gap="md">
       {tree.data.workspaces.map((ws) => (
-        <WorkspaceBlock key={ws.id} path={path} ws={ws} onMove={move} />
+        <WorkspaceBlock key={ws.id} path={path} ws={ws} onMove={move} onDragActiveChange={setDragging} />
       ))}
     </Stack>
   )
 }
 
-function WorkspaceBlock({ path, ws, onMove }: {
+function WorkspaceBlock({ path, ws, onMove, onDragActiveChange }: {
   path: string
   ws: CmuxTreeWorkspace
   onMove: ReturnType<typeof useCmuxMove>["move"]
+  onDragActiveChange: (active: boolean) => void
 }) {
   const run = useCmuxAction(path)
   // One line under the header; cleared by the next action that succeeds.
@@ -69,6 +79,7 @@ function WorkspaceBlock({ path, ws, onMove }: {
           onSelect={(tab) => act(() => api.cmuxFocusTab(ws.id, tab.ref))}
           onClose={(tab) => act(() => api.cmuxCloseTab(ws.id, { surface: tab.ref, type: tab.type, title: tab.title }))}
           onMove={async (m) => setError(await onMove(ws, m))}
+          onDragActiveChange={onDragActiveChange}
         />
       ) : null}
     </Stack>

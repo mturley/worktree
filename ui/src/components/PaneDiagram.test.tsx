@@ -8,8 +8,8 @@ import type { CmuxLayout, CmuxPane } from "../api/types"
 const t = (n: number, type = "browser", selected = false) => ({ ref: `surface:${n}`, title: `Tab ${n}`, type, selected })
 const layout: CmuxLayout = { direction: "horizontal", split: 0.4, children: [{ pane: "pane:1" }, { pane: "pane:2" }] }
 
-function wrap(panes: CmuxPane[], handlers: Partial<{ onSelect: () => void; onClose: () => void; onMove: () => void }> = {}) {
-  const props = { onSelect: vi.fn(), onClose: vi.fn(), onMove: vi.fn(), ...handlers }
+function wrap(panes: CmuxPane[], handlers: Partial<{ onSelect: () => void; onClose: () => void; onMove: () => void; onDragActiveChange: () => void }> = {}) {
+  const props = { onSelect: vi.fn(), onClose: vi.fn(), onMove: vi.fn(), onDragActiveChange: vi.fn(), ...handlers }
   const view = render(
     <MantineProvider>
       <PaneDiagram layout={layout} panes={panes} {...props} />
@@ -109,6 +109,64 @@ describe("PaneDiagram", () => {
     // dnd-kit's sortable attributes on each row.
     expect(container.querySelectorAll('[aria-roledescription="sortable"]')).toHaveLength(2)
     expect(container.querySelector('[data-pane="pane:2"]')).toHaveAttribute("data-droppable", "true")
+  })
+
+  it("reports drag start/end via onDragActiveChange", () => {
+    // Fake timers because dnd-kit removes its post-drag click-swallowing
+    // listener 50ms after the drag ends. Left on real timers, that listener
+    // outlives this test and can interfere with whichever test runs next
+    // (its Popover/click handling), regardless of this test's own position.
+    vi.useFakeTimers()
+    try {
+      const { onDragActiveChange } = wrap([{ ref: "pane:1", focused: true, tabs: [t(1), t(2)] }, { ref: "pane:2", focused: false, tabs: [] }])
+      const row = screen.getByRole("button", { name: "Switch to Tab 1" })
+      act(() => {
+        fireEvent.mouseDown(row, { button: 0, clientX: 10, clientY: 10 })
+        // Past the 4px activation distance: a real drag, unlike the short-press test above.
+        fireEvent.mouseMove(document, { button: 0, clientX: 10, clientY: 30 })
+      })
+      expect(onDragActiveChange).toHaveBeenLastCalledWith(true)
+      act(() => {
+        fireEvent.mouseUp(document, { button: 0, clientX: 10, clientY: 30 })
+      })
+      expect(onDragActiveChange).toHaveBeenLastCalledWith(false)
+    } finally {
+      // Flush dnd-kit's listener-removal timer (and DragOverlay's drop
+      // animation) here, inside the test that caused them, instead of
+      // leaking them into whatever test runs next.
+      act(() => {
+        vi.runAllTimers()
+      })
+      vi.useRealTimers()
+    }
+  })
+
+  it("asks before closing a browser tab that is the UI's own hosting page", async () => {
+    const user = userEvent.setup()
+    const own = { ...t(1, "browser"), url: `${window.location.origin}/worktree/x` }
+    const { onClose } = wrap([
+      { ref: "pane:1", focused: true, tabs: [own] },
+      { ref: "pane:2", focused: false, tabs: [] },
+    ])
+    await user.click(screen.getByRole("button", { name: "Close Tab 1" }))
+    expect(onClose).not.toHaveBeenCalled()
+    expect(await screen.findByText(/close this page's tab "Tab 1"\?/i, {}, { timeout: 3000 })).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Close" }))
+    expect(onClose).toHaveBeenCalledWith(expect.objectContaining({ ref: "surface:1" }))
+  })
+
+  it("makes the collapsed top group's link its own drop target", async () => {
+    const user = userEvent.setup()
+    const tabs = Array.from({ length: 12 }, (_, i) => t(i + 1, "browser", i === 11))
+    const { container } = wrap([{ ref: "pane:1", focused: true, tabs }, { ref: "pane:2", focused: false, tabs: [] }])
+    // Selected tab (12) is last, so the window shows the end and the first 2
+    // tabs collapse into the top "before" group.
+    const topLink = await screen.findByRole("button", { name: "Show 2 more tabs" })
+    expect(topLink).toHaveAttribute("data-droppable", "true")
+    // Expanding it (an ordinary click) still works — the droppable id doesn't
+    // interfere with the existing expand/collapse behaviour.
+    await user.click(topLink)
+    expect(container.querySelector('[data-pane="pane:1"]')).toHaveTextContent("Tab 1")
   })
 
   it("still switches tabs on a press too short to be a drag", () => {

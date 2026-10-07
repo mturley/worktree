@@ -49,6 +49,28 @@ describe("dropTarget", () => {
     expect(dropTarget(panes, "surface:99", "surface:1")).toBeNull()
     expect(dropTarget(panes, "surface:1", "pane:9")).toBeNull()
   })
+
+  describe("dropping on a pane's collapsed top group", () => {
+    it("lands before the pane's first visible tab", () => {
+      // pane:2's first visible tab is surface:4 (its only tab here).
+      expect(dropTarget(panes, "surface:2", "pane:2:top", "surface:4")).toEqual({
+        surface: "surface:2", type: "browser", title: "t2", pane: "pane:2",
+        anchor: { surface: "surface:4", type: "browser", title: "t4", position: "before" },
+      })
+    })
+
+    it("same-pane no-op: the dragged tab is already the first visible one", () => {
+      expect(dropTarget(panes, "surface:1", "pane:1:top", "surface:1")).toBeNull()
+    })
+
+    it("without a resolved first-visible ref, does nothing", () => {
+      expect(dropTarget(panes, "surface:2", "pane:2:top")).toBeNull()
+    })
+
+    it("an unknown pane is ignored", () => {
+      expect(dropTarget(panes, "surface:2", "pane:9:top", "surface:4")).toBeNull()
+    })
+  })
 })
 
 describe("applyMove", () => {

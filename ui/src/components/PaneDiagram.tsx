@@ -26,6 +26,12 @@ export const VISIBLE_TABS = 10
 
 const BORDER = "1px solid var(--mantine-color-default-border)"
 
+/** The target pane's first VISIBLE tab (past the collapsed top group). */
+function firstVisibleTab(panes: CmuxPane[], paneRef: string): string | undefined {
+  const pane = panes.find((p) => p.ref === paneRef)
+  return pane ? windowTabs(pane.tabs, VISIBLE_TABS).shown[0]?.ref : undefined
+}
+
 const TAB_ICONS: Record<string, typeof IconFile> = {
   terminal: IconTerminal2,
   browser: IconWorld,
@@ -41,15 +47,20 @@ interface Props extends Handlers {
   layout: CmuxLayout
   panes: CmuxPane[]
   onMove: (move: CmuxMove) => void
+  /** Fired true on drag start, false on drag end/cancel — lets the caller pause its poll for the duration. */
+  onDragActiveChange?: (active: boolean) => void
 }
 
-// Only what is under the pointer counts, tabs before panes. Nothing under it
-// (the pointer left the diagram) means the drop goes nowhere, rather than to
-// whichever tab happens to be closest.
+// Only what is under the pointer counts: tabs first, then a pane's collapsed
+// "Show N more tabs" top link, then whatever else (a pane's empty space).
+// Nothing under it (the pointer left the diagram) means the drop goes
+// nowhere, rather than to whichever tab happens to be closest.
 const underPointer: CollisionDetection = (args) => {
   const hits = pointerWithin(args)
   const tabs = hits.filter((h) => String(h.id).startsWith("surface:"))
-  return tabs.length > 0 ? tabs : hits
+  if (tabs.length > 0) return tabs
+  const tops = hits.filter((h) => String(h.id).endsWith(":top"))
+  return tops.length > 0 ? tops : hits
 }
 
 /** Which row/pane the drag is over, for the cross-pane drop hints. */
@@ -73,7 +84,7 @@ interface DragState {
  * SortableContext's preview; across panes there is no slot preview, so the
  * hovered row/pane gets a drop hint instead (see PaneBox/TabRow).
  */
-export function PaneDiagram({ layout, panes, onSelect, onClose, onMove }: Props) {
+export function PaneDiagram({ layout, panes, onSelect, onClose, onMove, onDragActiveChange }: Props) {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
   const [drag, setDrag] = useState<DragState>({ activeRef: null, activePane: null, overId: null })
   const sensors = useSensors(
@@ -90,15 +101,22 @@ export function PaneDiagram({ layout, panes, onSelect, onClose, onMove }: Props)
   const byRef = new Map(panes.map((p) => [p.ref, p]))
   const paneOf = (ref: string) => panes.find((p) => p.tabs.some((t) => t.ref === ref))?.ref ?? null
   const activeTab = drag.activeRef ? panes.flatMap((p) => p.tabs).find((t) => t.ref === drag.activeRef) : undefined
-  const reset = () => setDrag({ activeRef: null, activePane: null, overId: null })
+  const reset = () => {
+    setDrag({ activeRef: null, activePane: null, overId: null })
+    onDragActiveChange?.(false)
+  }
 
-  const onDragStart = ({ active }: DragStartEvent) =>
+  const onDragStart = ({ active }: DragStartEvent) => {
     setDrag({ activeRef: String(active.id), activePane: paneOf(String(active.id)), overId: null })
+    onDragActiveChange?.(true)
+  }
   const onDragOver = ({ over }: DragOverEvent) => setDrag((d) => ({ ...d, overId: over ? String(over.id) : null }))
   const onDragEnd = ({ active, over }: DragEndEvent) => {
     reset()
     if (!over) return
-    const move = dropTarget(panes, String(active.id), String(over.id))
+    const overId = String(over.id)
+    const firstVisible = overId.endsWith(":top") ? firstVisibleTab(panes, overId.slice(0, -":top".length)) : undefined
+    const move = dropTarget(panes, String(active.id), overId, firstVisible)
     if (move) onMove(move)
   }
 
@@ -188,8 +206,13 @@ function PaneBox({ pane, style, expanded, setGroup, drag, onSelect, onClose }: V
   const group = (list: CmuxTab[], side: "before" | "after"): ReactNode => {
     if (list.length === 0) return null
     const key = `${pane.ref}:${side}`
+    const label = `Show ${list.length} more tab${list.length === 1 ? "" : "s"}`
     if (!expanded.has(key)) {
-      return <MoreLink onClick={() => setGroup(key, true)}>{`Show ${list.length} more tab${list.length === 1 ? "" : "s"}`}</MoreLink>
+      // The "before" (top) link is its own drop target: dropping on it means
+      // "ahead of every tab still showing", not "at the end of the pane".
+      return side === "before"
+        ? <TopMoreLink paneRef={pane.ref} hovered={drag.overId === `${pane.ref}:top`} onClick={() => setGroup(key, true)}>{label}</TopMoreLink>
+        : <MoreLink onClick={() => setGroup(key, true)}>{label}</MoreLink>
     }
     const fewer = <MoreLink onClick={() => setGroup(key, false)}>Show fewer</MoreLink>
     return side === "before" ? <>{fewer}{rows(list)}</> : <>{rows(list)}{fewer}</>
@@ -232,13 +255,34 @@ function MoreLink({ onClick, children }: { onClick: () => void; children: string
   )
 }
 
+/** The collapsed top group's link, also droppable as `${paneRef}:top`. */
+function TopMoreLink({ paneRef, hovered, onClick, children }: { paneRef: string; hovered: boolean; onClick: () => void; children: string }) {
+  const { setNodeRef } = useDroppable({ id: `${paneRef}:top` })
+  return (
+    <UnstyledButton
+      ref={setNodeRef}
+      onClick={onClick}
+      px={4}
+      pl={22}
+      data-droppable="true"
+      style={{ borderTop: hovered ? "2px solid var(--mantine-color-blue-filled)" : "2px solid transparent" }}
+    >
+      <Text size="xs" c="blue">{children}</Text>
+    </UnstyledButton>
+  )
+}
+
 function TabRow({ tab, dropBefore, onSelect, onClose }: Handlers & { tab: CmuxTab; dropBefore: boolean }) {
+  // A terminal may be running something (a dev server, an agent); a browser
+  // tab open on this very page is the page the user is on — cmux has no way
+  // to tell them apart from any other tab, so closing either asks first.
+  // Everything else closes like clicking ✕ in cmux.
+  const isOwnPage = tab.type === "browser" && !!tab.url && tab.url.startsWith(window.location.origin)
+  const confirmKind = tab.type === "terminal" ? "terminal" : isOwnPage ? "page" : null
   const [confirming, setConfirming] = useState(false)
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: tab.ref })
   const Icon = TAB_ICONS[tab.type] ?? IconFile
-  // A terminal may be running something (a dev server, an agent); everything
-  // else closes like clicking ✕ in cmux.
-  const close = () => (tab.type === "terminal" ? setConfirming(true) : onClose(tab))
+  const close = () => (confirmKind ? setConfirming(true) : onClose(tab))
   return (
     <Group
       ref={setNodeRef}
@@ -292,7 +336,9 @@ function TabRow({ tab, dropBefore, onSelect, onClose }: Handlers & { tab: CmuxTa
           </ActionIcon>
         </Popover.Target>
         <Popover.Dropdown>
-          <Text size="xs">Close terminal "{tab.title}"?</Text>
+          <Text size="xs">
+            {confirmKind === "page" ? `Close this page's tab "${tab.title}"?` : `Close terminal "${tab.title}"?`}
+          </Text>
           <Group gap="xs" justify="flex-end" mt={6}>
             <Button size="compact-xs" variant="subtle" onClick={() => setConfirming(false)}>Cancel</Button>
             <Button size="compact-xs" color="red" onClick={() => { setConfirming(false); onClose(tab) }}>Close</Button>

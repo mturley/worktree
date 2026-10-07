@@ -12,17 +12,30 @@ const asRef = (t: CmuxTab) => ({ surface: t.ref, type: t.type, title: t.title })
 
 /**
  * Turns a dnd-kit drop (the dragged tab's ref, and the id it was dropped on:
- * a tab ref or a pane ref) into the server's move request, following
- * dnd-kit sortable's own semantics so the result matches what the user saw:
- * within a pane, dragging down lands after the tab dropped on and dragging up
- * lands before it (arrayMove); in another pane it takes that tab's slot
- * (before it); on a pane's empty space it goes to the end. Null when the drop
- * changes nothing.
+ * a tab ref, a pane ref, or a pane's collapsed-top-group id `${pane.ref}:top`)
+ * into the server's move request, following dnd-kit sortable's own semantics
+ * so the result matches what the user saw: within a pane, dragging down
+ * lands after the tab dropped on and dragging up lands before it (arrayMove);
+ * in another pane it takes that tab's slot (before it); on a pane's empty
+ * space it goes to the end. Null when the drop changes nothing.
+ *
+ * `firstVisibleRef` is the target pane's first VISIBLE tab (over the "Show N
+ * more tabs" link, cmux's order still starts above it) — the caller resolves
+ * it (PaneDiagram, via windowTabs) because this function only sees the raw
+ * tab list, not which ones the collapsed groups are hiding.
  */
-export function dropTarget(panes: CmuxPane[], activeRef: string, overId: string): CmuxMove | null {
+export function dropTarget(panes: CmuxPane[], activeRef: string, overId: string, firstVisibleRef?: string): CmuxMove | null {
   const from = findTab(panes, activeRef)
   if (!from) return null
   const dragged = asRef(from.tab)
+  if (overId.endsWith(":top")) {
+    if (!firstVisibleRef || firstVisibleRef === activeRef) return null
+    const paneRef = overId.slice(0, -":top".length)
+    const pane = panes.find((p) => p.ref === paneRef)
+    const anchor = findTab(panes, firstVisibleRef)
+    if (!pane || !anchor) return null
+    return { ...dragged, pane: pane.ref, anchor: { ...asRef(anchor.tab), position: "before" } }
+  }
   if (overId.startsWith("pane:")) {
     const pane = panes.find((p) => p.ref === overId)
     if (!pane) return null

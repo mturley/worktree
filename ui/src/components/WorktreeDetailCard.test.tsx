@@ -544,5 +544,12 @@ describe("cmux tab", () => {
     await waitFor(() => expect(screen.queryByRole("tab", { name: "cmux" })).not.toBeInTheDocument())
     expect(screen.getByRole("tab", { name: /notes/i })).toHaveAttribute("aria-selected", "true")
     expect(await screen.findByText("No notes yet")).toBeVisible()
+
+    // cmux comes back: the card must not jump back to the cmux tab just
+    // because it exists again — the user is on Notes now.
+    cmux.mockResolvedValue({ available: true, matches: {} })
+    await client.invalidateQueries({ queryKey: ["cmux"] })
+    await screen.findByRole("tab", { name: "cmux" })
+    expect(screen.getByRole("tab", { name: /notes/i })).toHaveAttribute("aria-selected", "true")
   })
 })
