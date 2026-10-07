@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"io/fs"
@@ -101,6 +102,12 @@ type Server struct {
 	// first — the unread sync (cmux_unread.go) and handleCmuxRename — so
 	// neither writes back a title the other just replaced.
 	cmuxTitleMu sync.Mutex
+
+	// focus fans cmux focus changes out to the event streams; see
+	// cmux_focus.go. cmuxWatchFocus is its seam; nil means cmux.WatchFocus.
+	focusOnce      sync.Once
+	focus          *cmuxFocusHub
+	cmuxWatchFocus func(ctx context.Context, onFocus func(workspaceID string)) error
 
 	// tabs is the browser notification registry; see tabs.go. Lazily built
 	// by tabRegistry(), since Server is a bare struct literal everywhere.

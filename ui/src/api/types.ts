@@ -209,6 +209,15 @@ export interface WatchersResponse {
 /** How the server delivers notifications: `cmux notify`, or browser tabs. */
 export type NotifyMode = "cmux" | "browser"
 
+/**
+ * The `cmux_focus` stream message: cmux focused another workspace. `path` is
+ * the first registered worktree open in it, or "" when there is none.
+ */
+export interface CmuxFocusMsg {
+  workspace_id: string
+  path: string
+}
+
 /** The `notification` stream message: shown by exactly one tab per session. */
 export interface NotificationMsg {
   id: string

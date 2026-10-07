@@ -4,6 +4,7 @@ import {
 import { IconCheck, IconX, IconMinus, IconPoint } from "@tabler/icons-react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useEffect, useState } from "react"
+import { useUnsavedChanges } from "../lib/unsavedChanges"
 import { useLocation } from "wouter"
 import { api } from "../api/client"
 import { useCmux } from "../api/cmux"
@@ -39,6 +40,7 @@ export function NewWorktreeModal({ opened, onClose }: { opened: boolean; onClose
   const [confirm, setConfirm] = useState<CreateConfirm | null>(null)
   const [error, setError] = useState("")
   const [donePath, setDonePath] = useState("")
+  useUnsavedChanges(opened && (input.trim() !== "" || wsName.trim() !== ""))
 
   const repos = useQuery({ queryKey: ["repos"], queryFn: () => api.repos(), enabled: opened })
   const dotfiles = useQuery({

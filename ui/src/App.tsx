@@ -4,6 +4,7 @@ import { useSSE } from "./hooks/useSSE"
 import { useSession } from "./hooks/useSession"
 import { useTabPresence } from "./hooks/useTabPresence"
 import { useUnreadFavicon } from "./hooks/useUnreadFavicon"
+import { CmuxFollower } from "./components/CmuxFollower"
 import { HomeWorktreeBanner } from "./components/HomeWorktreeBanner"
 import { useHomeLocation } from "./lib/useHomeLocation"
 import { HomePage } from "./pages/HomePage"
@@ -51,6 +52,8 @@ function AuthenticatedApp() {
         current location to decide.
       */}
       <HomeWorktreeBanner />
+      {/* Every page, for the same reason; it navigates, so it needs the Router. */}
+      <CmuxFollower />
       <Switch>
         <Route path="/" component={HomePage} />
         <Route path="/worktree/:path*" component={WorktreeDetailPage} />

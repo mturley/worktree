@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { useUnsavedChanges } from "../lib/unsavedChanges"
 import { Alert, Button, Group, Modal, Stack, Text, Textarea, TextInput } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
 import { api } from "../api/client"
@@ -28,6 +29,7 @@ export function EditResourceDetailsModal({ opened, r, onClose, onSaved }: EditRe
   const [description, setDescription] = useState(r.custom_description ?? "")
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  useUnsavedChanges(opened && (name !== (r.custom_name ?? "") || description !== (r.custom_description ?? "")))
 
   // Re-seed when the modal opens, so it reflects the current values rather
   // than whatever was typed and abandoned last time.

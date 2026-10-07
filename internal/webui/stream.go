@@ -29,6 +29,11 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		notifications = send
 	}
 
+	// Every tab hears where cmux focus went; the tab decides whether to
+	// follow it (ui/src/components/CmuxFollower.tsx).
+	focus, unsubscribe := s.focusHub().subscribe()
+	defer unsubscribe()
+
 	var last string
 	s.DB.QueryRow(`SELECT COALESCE(MAX(ts),'') FROM watcher_events`).Scan(&last)
 
@@ -41,6 +46,10 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		case msg := <-notifications:
 			b, _ := json.Marshal(msg)
 			fmt.Fprintf(w, "event: notification\ndata: %s\n\n", b)
+			flusher.Flush()
+		case msg := <-focus:
+			b, _ := json.Marshal(msg)
+			fmt.Fprintf(w, "event: cmux_focus\ndata: %s\n\n", b)
 			flusher.Flush()
 		case <-ticker.C:
 			var cur string

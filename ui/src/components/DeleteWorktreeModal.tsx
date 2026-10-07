@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { useUnsavedChanges } from "../lib/unsavedChanges"
 import { Alert, Button, Checkbox, Group, Loader, Modal, Stack, Text, TextInput } from "@mantine/core"
 import { IconCheck, IconX } from "@tabler/icons-react"
 import { api } from "../api/client"
@@ -55,6 +56,8 @@ export function DeleteWorktreeModal({ opened, path, name, branch, onClose, onDel
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState<DeleteWorktreeResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // A deletion in flight counts too: leaving would hide how it ended.
+  useUnsavedChanges(opened && (typed !== "" || running))
 
   // Reset to a fresh confirmation form whenever the modal is (re)opened, or
   // when it is retargeted at a different worktree — a destructive dialog

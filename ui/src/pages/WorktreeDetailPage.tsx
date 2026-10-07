@@ -4,6 +4,7 @@ import { Link, useRoute } from "wouter"
 import { useQueryClient } from "@tanstack/react-query"
 import { api } from "../api/client"
 import { NotifySwitch } from "../components/NotifySwitch"
+import { FollowCmuxToggle } from "../components/FollowCmuxToggle"
 import { useNotifyMode } from "../hooks/useNotifyMode"
 import { TAB_ID } from "../lib/tabId"
 import { useWorktreeDetail } from "../hooks/useWorktreeDetail"
@@ -312,6 +313,7 @@ export function WorktreeDetailPage() {
               </Stack>
             </Group>
             <Group gap="xs" wrap="nowrap" style={{ flex: "none" }}>
+              <FollowCmuxToggle />
               {summary && <CmuxWorkspaceActions path={path} branch={summary.branch} />}
             {/*
               The header is fixed and the body scrolls beneath it, so the
