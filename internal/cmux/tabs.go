@@ -2,6 +2,7 @@ package cmux
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -37,10 +38,12 @@ func ClearWorkspaceColor(workspaceID string) error {
 }
 
 // TabPosition says where a reordered or moved tab lands: before or after an
-// anchor tab, or — both empty — at the end of the target pane.
+// anchor tab, at a specific index, or — all empty — at the end of the target
+// pane. Precedence is Before, then After, then Index, then end.
 type TabPosition struct {
 	Before string // surface ref
 	After  string // surface ref
+	Index  *int   // used when Before/After are empty
 }
 
 func (p TabPosition) args() []string {
@@ -49,6 +52,8 @@ func (p TabPosition) args() []string {
 		return []string{"--before", p.Before}
 	case p.After != "":
 		return []string{"--after", p.After}
+	case p.Index != nil:
+		return []string{"--index", strconv.Itoa(*p.Index)}
 	default:
 		// cmux clamps an index past the end to the last position.
 		return []string{"--index", "9999"}

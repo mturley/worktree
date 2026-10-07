@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/mturley/worktree/internal/cmux"
@@ -312,6 +313,174 @@ func writeStaleTab(w http.ResponseWriter) {
 	writeJSON(w, http.StatusOK, cmuxActionResponse{OK: false, Stale: true, Error: staleTabMessage})
 }
 
+// restorePollInterval and restorePollTimeout bound how long a restore waits
+// for cmux's tree to catch up with a close or move before giving up (reads
+// lag writes by a few hundred ms). Package vars so tests can set the
+// interval to 0.
+var (
+	restorePollInterval = 150 * time.Millisecond
+	restorePollTimeout  = time.Second
+)
+
+// paneSnapshot is one pane's previously selected tab, recorded before a
+// close/move acts, so it can be restored afterwards.
+type paneSnapshot struct {
+	pane string
+	tab  cmuxTabRef
+	has  bool
+}
+
+// recordPane snapshots a pane's currently selected tab, if it has one.
+func recordPane(tree *cmux.WorkspaceTree, pane string) paneSnapshot {
+	for _, p := range tree.Panes {
+		if p.Ref != pane {
+			continue
+		}
+		for _, t := range p.Tabs {
+			if t.Selected {
+				return paneSnapshot{pane: pane, tab: cmuxTabRef{Surface: t.Ref, Type: t.Type, Title: t.Title}, has: true}
+			}
+		}
+	}
+	return paneSnapshot{pane: pane}
+}
+
+// recordPanes snapshots several panes, skipping empty refs and duplicates.
+func recordPanes(tree *cmux.WorkspaceTree, panes ...string) []paneSnapshot {
+	var out []paneSnapshot
+	seen := map[string]bool{}
+	for _, p := range panes {
+		if p == "" || seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, recordPane(tree, p))
+	}
+	return out
+}
+
+func focusedPaneRef(tree *cmux.WorkspaceTree) string {
+	for _, p := range tree.Panes {
+		if p.Focused {
+			return p.Ref
+		}
+	}
+	return ""
+}
+
+func tabIndex(tree *cmux.WorkspaceTree, pane, ref string) int {
+	for _, p := range tree.Panes {
+		if p.Ref != pane {
+			continue
+		}
+		for i, t := range p.Tabs {
+			if t.Ref == ref {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+// resolveTab finds a recorded tab in the fresh tree, within the pane it was
+// recorded in: by ref first, then — the ref having gone missing — by type
+// and normalised title, only when exactly one tab in that pane matches.
+func resolveTab(fresh *cmux.WorkspaceTree, pane string, want cmuxTabRef) (cmux.TreeTab, bool) {
+	for _, p := range fresh.Panes {
+		if p.Ref != pane {
+			continue
+		}
+		for _, t := range p.Tabs {
+			if t.Ref == want.Surface {
+				return t, true
+			}
+		}
+		var match cmux.TreeTab
+		count := 0
+		for _, t := range p.Tabs {
+			if t.Type == want.Type && normalizeTitle(t.Title) == normalizeTitle(want.Title) {
+				match = t
+				count++
+			}
+		}
+		if count == 1 {
+			return match, true
+		}
+		return cmux.TreeTab{}, false
+	}
+	return cmux.TreeTab{}, false
+}
+
+// restoreAfterChange puts the user's prior selection and pane focus back
+// after a close or move, which cmux otherwise jumps elsewhere: it waits for
+// the tree to reflect the operation (`visible`), restores each recorded
+// pane's previously selected tab (skipping the tab that was itself closed or
+// moved), and — last — restores the originally focused pane's focus via an
+// in-place reorder (never focus-panel, which also switches the active
+// workspace; see cmux-tab-followup brief). Restore failures are swallowed:
+// the close/move already succeeded, and the caller always replies ok.
+func (s *Server) restoreAfterChange(ops cmuxTabOps, wsID, skipSurface string, snapshots []paneSnapshot, origFocused string, visible func(*cmux.WorkspaceTree) bool) {
+	deadline := time.Now().Add(restorePollTimeout)
+	var fresh *cmux.WorkspaceTree
+	for {
+		t, err := ops.tree(wsID)
+		if err == nil && visible(t) {
+			fresh = t
+			break
+		}
+		if time.Now().After(deadline) {
+			return
+		}
+		time.Sleep(restorePollInterval)
+	}
+
+	needsFocus := origFocused != "" && focusedPaneRef(fresh) != origFocused
+	var focusTab cmux.TreeTab
+	haveFocusTab := false
+
+	for _, snap := range snapshots {
+		if !snap.has || snap.tab.Surface == skipSurface {
+			continue
+		}
+		tab, ok := resolveTab(fresh, snap.pane, snap.tab)
+		if !ok {
+			continue
+		}
+		if snap.pane == origFocused && needsFocus {
+			focusTab, haveFocusTab = tab, true
+			continue // restored, if needed, as part of the final focus reorder below
+		}
+		if tab.Selected {
+			continue // nothing to restore
+		}
+		if idx := tabIndex(fresh, snap.pane, tab.Ref); idx >= 0 {
+			_ = ops.reorderTab(wsID, tab.Ref, cmux.TabPosition{Index: &idx})
+		}
+	}
+
+	if !needsFocus {
+		return
+	}
+	if !haveFocusTab {
+		for _, p := range fresh.Panes {
+			if p.Ref != origFocused {
+				continue
+			}
+			for _, t := range p.Tabs {
+				if t.Selected {
+					focusTab, haveFocusTab = t, true
+				}
+			}
+		}
+	}
+	if !haveFocusTab {
+		return
+	}
+	if idx := tabIndex(fresh, origFocused, focusTab.Ref); idx >= 0 {
+		_ = ops.reorderTab(wsID, focusTab.Ref, cmux.TabPosition{Index: &idx})
+	}
+}
+
 type cmuxCloseTabRequest struct {
 	ID string `json:"id"`
 	cmuxTabRef
@@ -323,6 +492,10 @@ type cmuxCloseTabRequest struct {
 // tree is re-read and the tab must still be the one the user saw. A gap of
 // milliseconds remains between the check and the close; cmux has no
 // compare-and-close to remove it.
+//
+// A close moves cmux's own selection/focus (a neighbour gets selected in the
+// closed tab's pane) which the user did not ask for, so the prior state is
+// recorded before closing and restored after — see restoreAfterChange.
 func (s *Server) handleCmuxCloseTab(w http.ResponseWriter, r *http.Request) {
 	var req cmuxCloseTabRequest
 	if !decodeCmuxRequest(w, r, &req) {
@@ -348,11 +521,22 @@ func (s *Server) handleCmuxCloseTab(w http.ResponseWriter, r *http.Request) {
 		respondCmuxAction(w, err)
 		return
 	}
-	if _, ok := guardTab(tree, req.cmuxTabRef); !ok {
+	pane, ok := guardTab(tree, req.cmuxTabRef)
+	if !ok {
 		writeStaleTab(w)
 		return
 	}
-	respondCmuxAction(w, ops.closeTab(req.ID, req.Surface))
+	origFocused := focusedPaneRef(tree)
+	snapshots := recordPanes(tree, pane, origFocused)
+	if err := ops.closeTab(req.ID, req.Surface); err != nil {
+		respondCmuxAction(w, err)
+		return
+	}
+	s.restoreAfterChange(ops, req.ID, req.Surface, snapshots, origFocused, func(t *cmux.WorkspaceTree) bool {
+		_, _, found := t.FindTab(req.Surface)
+		return !found
+	})
+	respondCmuxAction(w, nil)
 }
 
 type cmuxAnchor struct {
@@ -436,9 +620,30 @@ func (s *Server) handleCmuxMoveTab(w http.ResponseWriter, r *http.Request) {
 		writeStaleTab(w)
 		return
 	}
-	if req.Pane == from {
-		respondCmuxAction(w, ops.reorderTab(req.ID, req.Surface, pos))
+	origFocused := focusedPaneRef(tree)
+	snapshots := recordPanes(tree, from, req.Pane, origFocused)
+	samePane := req.Pane == from
+	var opErr error
+	if samePane {
+		opErr = ops.reorderTab(req.ID, req.Surface, pos)
 	} else {
-		respondCmuxAction(w, ops.moveTab(req.ID, req.Surface, req.Pane, pos))
+		opErr = ops.moveTab(req.ID, req.Surface, req.Pane, pos)
 	}
+	if opErr != nil {
+		respondCmuxAction(w, opErr)
+		return
+	}
+	target := req.Pane
+	visible := func(t *cmux.WorkspaceTree) bool {
+		if samePane {
+			// The tab never leaves its pane, so there is nothing to wait
+			// for that a single read can't already show; accept it as-is
+			// (kept simple deliberately — see cmux-tab-followup brief).
+			return true
+		}
+		_, pane, found := t.FindTab(req.Surface)
+		return found && pane == target
+	}
+	s.restoreAfterChange(ops, req.ID, req.Surface, snapshots, origFocused, visible)
+	respondCmuxAction(w, nil)
 }

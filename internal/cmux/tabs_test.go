@@ -26,6 +26,8 @@ func TestTabCommandArgs(t *testing.T) {
 		// cmux clamps an index past the end to last, so a large one means "end".
 		{"reorder to end", func() error { return ReorderTab("W", "surface:3", TabPosition{}) },
 			[]string{"reorder-surface", "--surface", "surface:3", "--workspace", "W", "--index", "9999"}},
+		{"reorder to index", func() error { idx := 2; return ReorderTab("W", "surface:3", TabPosition{Index: &idx}) },
+			[]string{"reorder-surface", "--surface", "surface:3", "--workspace", "W", "--index", "2"}},
 		{"move before", func() error { return MoveTab("W", "surface:3", "pane:2", TabPosition{Before: "surface:7"}) },
 			[]string{"move-surface", "--surface", "surface:3", "--workspace", "W", "--pane", "pane:2", "--before", "surface:7"}},
 		{"move to end", func() error { return MoveTab("W", "surface:3", "pane:2", TabPosition{}) },

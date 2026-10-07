@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mturley/worktree/internal/cmux"
 )
@@ -21,10 +23,15 @@ const (
 
 // fakeTabOps records every cmux call as "name arg arg…" and serves trees from
 // a map (a missing id is an error, like a workspace closed out of band).
+// treeSeq, when set for an id, serves a SEQUENCE of trees across successive
+// `tree` calls for that id (the last one repeats once exhausted) — used to
+// simulate a stale read lagging a close/move before cmux catches up.
 type fakeTabOps struct {
-	trees  map[string]*cmux.WorkspaceTree
-	failOn string
-	calls  []string
+	trees   map[string]*cmux.WorkspaceTree
+	treeSeq map[string][]*cmux.WorkspaceTree
+	treePos map[string]int
+	failOn  string
+	calls   []string
 }
 
 func posString(p cmux.TabPosition) string {
@@ -33,6 +40,8 @@ func posString(p cmux.TabPosition) string {
 		return "before " + p.Before
 	case p.After != "":
 		return "after " + p.After
+	case p.Index != nil:
+		return fmt.Sprintf("index %d", *p.Index)
 	}
 	return "end"
 }
@@ -48,6 +57,17 @@ func (f *fakeTabOps) ops() *cmuxTabOps {
 	return &cmuxTabOps{
 		tree: func(id string) (*cmux.WorkspaceTree, error) {
 			f.calls = append(f.calls, "tree "+id)
+			if seq, ok := f.treeSeq[id]; ok {
+				if f.treePos == nil {
+					f.treePos = map[string]int{}
+				}
+				pos := f.treePos[id]
+				if pos >= len(seq) {
+					pos = len(seq) - 1
+				}
+				f.treePos[id] = pos + 1
+				return seq[pos], nil
+			}
 			if t, ok := f.trees[id]; ok {
 				return t, nil
 			}
@@ -94,6 +114,15 @@ func sampleTree() *cmux.WorkspaceTree {
 func newTabServer(t *testing.T) (*Server, *fakeTabOps) {
 	t.Helper()
 	t.Setenv("CMUX_SOCKET_PATH", "/tmp/x")
+	// Restore polling is immediate in tests; only the number of tree reads
+	// matters, not the real-time delay between them.
+	oldInterval, oldTimeout := restorePollInterval, restorePollTimeout
+	restorePollInterval = 0
+	restorePollTimeout = 20 * time.Millisecond
+	t.Cleanup(func() {
+		restorePollInterval = oldInterval
+		restorePollTimeout = oldTimeout
+	})
 	f := &fakeTabOps{trees: map[string]*cmux.WorkspaceTree{wsID: sampleTree()}}
 	return &Server{cmuxTabs: f.ops()}, f
 }
@@ -468,6 +497,230 @@ func TestCmuxMoveTab(t *testing.T) {
 			}
 		})
 	}
+}
+
+// callIndex returns the position of the first call matching prefix, or -1.
+func callIndex(f *fakeTabOps, prefix string) int {
+	for i, c := range f.calls {
+		if strings.HasPrefix(c, prefix) {
+			return i
+		}
+	}
+	return -1
+}
+
+// treeAfterClose is sampleTree with surface removed from its pane, and
+// optionally a different pane focused / a different tab selected in that
+// pane — i.e. what a fresh `tree` read shows once cmux has processed a close.
+func treeAfterClose(surface string, selectIn string) *cmux.WorkspaceTree {
+	t := sampleTree()
+	for pi, p := range t.Panes {
+		var tabs []cmux.TreeTab
+		for _, tab := range p.Tabs {
+			if tab.Ref == surface {
+				continue
+			}
+			tabs = append(tabs, tab)
+		}
+		t.Panes[pi].Tabs = tabs
+	}
+	if selectIn != "" {
+		for pi, p := range t.Panes {
+			for ti := range p.Tabs {
+				t.Panes[pi].Tabs[ti].Selected = t.Panes[pi].Tabs[ti].Ref == selectIn
+			}
+		}
+	}
+	return t
+}
+
+func TestCmuxCloseTabRestoresFocusAndSelection(t *testing.T) {
+	t.Run("closing an unselected tab issues no restore calls", func(t *testing.T) {
+		s, f := newTabServer(t)
+		after := treeAfterClose("surface:2", "surface:1") // surface:1 was already selected
+		f.treeSeq = map[string][]*cmux.WorkspaceTree{wsID: {sampleTree(), after}}
+		code, got := postCmux(t, s.handleCmuxCloseTab, map[string]string{"id": wsID, "surface": "surface:2", "type": "browser", "title": "(5) inbox"})
+		if code != http.StatusOK || !got.OK {
+			t.Fatalf("code=%d got=%+v", code, got)
+		}
+		if f.called("reorder") || f.called("focus") {
+			t.Fatalf("unexpected restore calls: %q", f.calls)
+		}
+	})
+
+	t.Run("closing the selected tab restores nothing in that pane, focus unchanged", func(t *testing.T) {
+		s, f := newTabServer(t)
+		after := treeAfterClose("surface:1", "surface:2") // cmux picked a neighbour
+		f.treeSeq = map[string][]*cmux.WorkspaceTree{wsID: {sampleTree(), after}}
+		code, got := postCmux(t, s.handleCmuxCloseTab, map[string]string{"id": wsID, "surface": "surface:1", "type": "terminal", "title": "◐ agent"})
+		if code != http.StatusOK || !got.OK {
+			t.Fatalf("code=%d got=%+v", code, got)
+		}
+		if f.called("reorder") || f.called("focus") {
+			t.Fatalf("unexpected restore calls: %q", f.calls)
+		}
+	})
+
+	t.Run("change never visible: no restore, still ok", func(t *testing.T) {
+		s, f := newTabServer(t)
+		// Every read after the guard still shows the tab present.
+		f.treeSeq = map[string][]*cmux.WorkspaceTree{wsID: {sampleTree(), sampleTree()}}
+		code, got := postCmux(t, s.handleCmuxCloseTab, map[string]string{"id": wsID, "surface": "surface:2", "type": "browser", "title": "(5) inbox"})
+		if code != http.StatusOK || !got.OK {
+			t.Fatalf("code=%d got=%+v, want ok even though the close never became visible", code, got)
+		}
+		if f.called("reorder") || f.called("focus") {
+			t.Fatalf("unexpected restore calls: %q", f.calls)
+		}
+	})
+
+	t.Run("a failing restore reorder still answers ok", func(t *testing.T) {
+		s, f := newTabServer(t)
+		// Close the tab that wasn't selected, but also move focus away so a
+		// restore reorder is attempted (and made to fail).
+		after := treeAfterClose("surface:2", "surface:1")
+		after.Panes[0].Focused = false
+		for i := range after.Panes {
+			if after.Panes[i].Ref == "pane:2" {
+				after.Panes[i].Focused = true
+			}
+		}
+		f.treeSeq = map[string][]*cmux.WorkspaceTree{wsID: {sampleTree(), after}}
+		f.failOn = "reorder"
+		code, got := postCmux(t, s.handleCmuxCloseTab, map[string]string{"id": wsID, "surface": "surface:2", "type": "browser", "title": "(5) inbox"})
+		if code != http.StatusOK || !got.OK {
+			t.Fatalf("code=%d got=%+v, want ok despite the restore reorder failing", code, got)
+		}
+		if !f.called("reorder") {
+			t.Fatalf("expected a (failing) restore reorder: %q", f.calls)
+		}
+	})
+}
+
+// treeAfterMove builds the tree cmux shows right after moving surface:2 from
+// pane:1 to the end of pane:2: selected there, that pane focused, pane:1's
+// selection untouched (surface:2 was not selected before the move).
+func treeAfterMove() *cmux.WorkspaceTree {
+	t := sampleTree()
+	for pi, p := range t.Panes {
+		if p.Ref == "pane:1" {
+			t.Panes[pi].Tabs = []cmux.TreeTab{{Ref: "surface:1", Type: "terminal", Title: "◐ agent", Selected: true}}
+			t.Panes[pi].Focused = false
+		}
+		if p.Ref == "pane:2" {
+			t.Panes[pi].Focused = true
+			t.Panes[pi].Tabs = []cmux.TreeTab{
+				{Ref: "surface:3", Type: "markdown", Title: "notes.md", Selected: false},
+				{Ref: "surface:2", Type: "browser", Title: "(5) inbox", Selected: true},
+			}
+		}
+	}
+	return t
+}
+
+func TestCmuxMoveTabRestoresFocusAndSelection(t *testing.T) {
+	body := map[string]any{"id": wsID, "surface": "surface:2", "type": "browser", "title": "(5) inbox", "pane": "pane:2"}
+
+	t.Run("restores the target pane's prior selection and the original focus, in that order", func(t *testing.T) {
+		s, f := newTabServer(t)
+		after := treeAfterMove()
+		f.treeSeq = map[string][]*cmux.WorkspaceTree{wsID: {sampleTree(), after}}
+		code, got := postCmux(t, s.handleCmuxMoveTab, body)
+		if code != http.StatusOK || !got.OK {
+			t.Fatalf("code=%d got=%+v", code, got)
+		}
+		iTarget := callIndex(f, "reorder "+wsID+" surface:3 index 0")
+		iFocus := callIndex(f, "reorder "+wsID+" surface:1 index 0")
+		if iTarget < 0 || iFocus < 0 {
+			t.Fatalf("calls = %q, want restores of surface:3 then surface:1", f.calls)
+		}
+		if iTarget > iFocus {
+			t.Fatalf("calls = %q, want the target pane restored before the originally focused pane", f.calls)
+		}
+	})
+
+	t.Run("a lagging first read is retried until the move is visible", func(t *testing.T) {
+		s, f := newTabServer(t)
+		stale := sampleTree() // still shows the old layout, as if the write hasn't landed yet
+		after := treeAfterMove()
+		f.treeSeq = map[string][]*cmux.WorkspaceTree{wsID: {sampleTree(), stale, after}}
+		code, got := postCmux(t, s.handleCmuxMoveTab, body)
+		if code != http.StatusOK || !got.OK {
+			t.Fatalf("code=%d got=%+v", code, got)
+		}
+		if !f.called("reorder " + wsID + " surface:1 index 0") {
+			t.Fatalf("calls = %q, want focus restored from the later read", f.calls)
+		}
+	})
+
+	t.Run("a same-pane reorder restores the previously selected tab", func(t *testing.T) {
+		s, f := newTabServer(t)
+		after := sampleTree()
+		for pi, p := range after.Panes {
+			if p.Ref == "pane:1" {
+				after.Panes[pi].Tabs = []cmux.TreeTab{
+					{Ref: "surface:2", Type: "browser", Title: "(5) inbox", Selected: true},
+					{Ref: "surface:1", Type: "terminal", Title: "◐ agent", Selected: false},
+				}
+			}
+		}
+		f.treeSeq = map[string][]*cmux.WorkspaceTree{wsID: {sampleTree(), after}}
+		code, got := postCmux(t, s.handleCmuxMoveTab, map[string]any{"id": wsID, "surface": "surface:2", "type": "browser", "title": "(5) inbox", "pane": "pane:1"})
+		if code != http.StatusOK || !got.OK {
+			t.Fatalf("code=%d got=%+v", code, got)
+		}
+		if !f.called("reorder " + wsID + " surface:1 index 1") {
+			t.Fatalf("calls = %q, want surface:1 restored as selected", f.calls)
+		}
+	})
+
+	t.Run("ref missing but unique title match restores by name", func(t *testing.T) {
+		s, f := newTabServer(t)
+		after := treeAfterMove()
+		for pi, p := range after.Panes {
+			if p.Ref == "pane:1" {
+				// surface:1's ref changed, but it is still the only terminal
+				// titled "agent" (glyph aside) in that pane.
+				after.Panes[pi].Tabs = []cmux.TreeTab{{Ref: "surface:9", Type: "terminal", Title: "◑ agent", Selected: true}}
+			}
+		}
+		f.treeSeq = map[string][]*cmux.WorkspaceTree{wsID: {sampleTree(), after}}
+		code, got := postCmux(t, s.handleCmuxMoveTab, body)
+		if code != http.StatusOK || !got.OK {
+			t.Fatalf("code=%d got=%+v", code, got)
+		}
+		if !f.called("reorder " + wsID + " surface:9 index 0") {
+			t.Fatalf("calls = %q, want the renamed-ref tab restored by name", f.calls)
+		}
+	})
+
+	t.Run("ambiguous title match in a non-focused pane is skipped (focus restore still happens)", func(t *testing.T) {
+		s, f := newTabServer(t)
+		after := treeAfterMove()
+		for pi, p := range after.Panes {
+			if p.Ref == "pane:2" {
+				// surface:3's ref changed, and there are now two equally
+				// titled candidates: pane:2's prior selection can't be
+				// resolved.
+				after.Panes[pi].Tabs = []cmux.TreeTab{
+					{Ref: "surface:30", Type: "markdown", Title: "notes.md", Selected: false},
+					{Ref: "surface:31", Type: "markdown", Title: "notes.md", Selected: false},
+					{Ref: "surface:2", Type: "browser", Title: "(5) inbox", Selected: true},
+				}
+			}
+		}
+		f.treeSeq = map[string][]*cmux.WorkspaceTree{wsID: {sampleTree(), after}}
+		code, got := postCmux(t, s.handleCmuxMoveTab, body)
+		if code != http.StatusOK || !got.OK {
+			t.Fatalf("code=%d got=%+v", code, got)
+		}
+		if f.called("reorder "+wsID+" surface:30") || f.called("reorder "+wsID+" surface:31") {
+			t.Fatalf("calls = %q, want the ambiguous match skipped", f.calls)
+		}
+		if !f.called("reorder " + wsID + " surface:1 index 0") {
+			t.Fatalf("calls = %q, want focus still restored to the originally focused pane", f.calls)
+		}
+	})
 }
 
 func TestCmuxMoveTabValidation(t *testing.T) {
