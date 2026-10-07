@@ -67,21 +67,24 @@ export function removePane(node: CmuxLayout, ref: string): CmuxLayout | null {
  * back — NOT cmux's own transient jump, which selects the moved tab and
  * focuses its new pane regardless of `--focus`. So: the moved tab lands in
  * its new slot unselected, the target pane keeps whichever tab was already
- * selected there, and neither pane's `focused` flag changes. The one
- * exception is a same-pane reorder, where "the target pane's selection" IS
- * the moved tab's own prior selected state, since source and target are the
- * same pane — nothing elsewhere in it changes selection, so the moved tab
- * simply carries its `selected` flag over. If the moved tab was its SOURCE
- * pane's selected tab (and it left that pane), a neighbour stands in until
- * the refetch says what cmux actually picked. A pane the move emptied is
- * removed with its split collapsed (cmux closes it).
+ * selected there, and neither pane's `focused` flag changes — UNLESS the
+ * target pane had no selected tab of its own (it was empty, or otherwise had
+ * nothing selected), in which case there's nothing for the server to restore
+ * there and cmux's own selection of the moved tab stands, so it lands
+ * selected. The one exception to the general "lands unselected" rule is a
+ * same-pane reorder, where "the target pane's selection" IS the moved tab's
+ * own prior selected state, since source and target are the same pane —
+ * nothing elsewhere in it changes selection, so the moved tab simply carries
+ * its `selected` flag over. If the moved tab was its SOURCE pane's selected
+ * tab (and it left that pane), a neighbour stands in until the refetch says
+ * what cmux actually picked. A pane the move emptied is removed with its
+ * split collapsed (cmux closes it).
  */
 export function applyMove(ws: CmuxTreeWorkspace, move: CmuxMove): CmuxTreeWorkspace {
   if (!ws.panes || !ws.layout) return ws
   const from = findTab(ws.panes, move.surface)
   if (!from) return ws
   const samePane = move.pane === from.pane.ref
-  const moved: CmuxTab = { ...from.tab, selected: samePane && from.tab.selected }
 
   let panes = ws.panes.map((p) => {
     const tabs = p.tabs.filter((t) => t.ref !== move.surface)
@@ -93,6 +96,8 @@ export function applyMove(ws: CmuxTreeWorkspace, move: CmuxMove): CmuxTreeWorksp
   })
   panes = panes.map((p) => {
     if (p.ref !== move.pane) return p
+    const hadSelection = p.tabs.some((t) => t.selected)
+    const moved: CmuxTab = { ...from.tab, selected: samePane ? from.tab.selected : !hadSelection }
     const tabs = p.tabs.slice()
     let at = tabs.length
     if (move.anchor) {

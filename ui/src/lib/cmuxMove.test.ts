@@ -110,6 +110,19 @@ describe("applyMove", () => {
     const before = workspace()
     expect(applyMove(before, { surface: "surface:99", type: "x", title: "x", pane: "pane:1" })).toBe(before)
   })
+
+  it("selects the moved tab when the target pane has no selection of its own (e.g. empty)", () => {
+    const ws: CmuxTreeWorkspace = {
+      id: "W", ref: "workspace:1", title: "ws", selected: false,
+      layout: { direction: "horizontal", split: 0.5, children: [{ pane: "pane:1" }, { pane: "pane:2" }] },
+      panes: [
+        { ref: "pane:1", focused: true, tabs: [tab(1, "terminal", true), tab(2)] },
+        { ref: "pane:2", focused: false, tabs: [] },
+      ],
+    }
+    const moved = applyMove(ws, { surface: "surface:2", type: "browser", title: "t2", pane: "pane:2" })
+    expect(moved.panes![1].tabs).toEqual([{ ref: "surface:2", title: "t2", type: "browser", selected: true }])
+  })
 })
 
 describe("applyClose", () => {

@@ -5,6 +5,7 @@ import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { CmuxPanel } from "./CmuxPanel"
 import { api } from "../api/client"
+import { CMUX_SETTLE_MS } from "../api/cmuxTree"
 import type { CmuxTreeResponse } from "../api/types"
 
 const tree = (over: Partial<CmuxTreeResponse["workspaces"][number]> = {}): CmuxTreeResponse => ({
@@ -122,7 +123,17 @@ describe("CmuxPanel", () => {
     wrap()
     await user.click(await screen.findByRole("button", { name: "Close Tab 2" }))
     await waitFor(() => expect(screen.queryByText("Tab 2")).not.toBeInTheDocument())
-    resolveClose({ ok: true })
+
+    // The hook waits out CMUX_SETTLE_MS before refetching on success; use
+    // fake timers to flush that wait instead of leaving a real 1s timer
+    // running past the end of the test.
+    vi.useFakeTimers()
+    try {
+      resolveClose({ ok: true })
+      await act(async () => { await vi.advanceTimersByTimeAsync(CMUX_SETTLE_MS) })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("keeps showing cached panes after a background refetch fails", async () => {
