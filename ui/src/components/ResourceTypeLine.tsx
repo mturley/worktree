@@ -61,7 +61,7 @@ function resourceIcon(r: ResourceDTO): React.ReactNode {
     )
   }
   if (r.type === "link") return <LinkFavicon r={r} />
-  if (awaitsFetch(r)) return <Loader size={12} aria-label="loading" role="status" />
+  if (awaitsFetch(r)) return <Loader size={12} color="dark.0" aria-label="loading" role="status" />
   return <ResourceStatusIcon r={r} />
 }
 
