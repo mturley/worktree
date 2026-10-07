@@ -10,6 +10,7 @@ const worktreeInfo = vi.fn()
 const worktreeNotes = vi.fn()
 const saveWorktreeNotes = vi.fn()
 const cmux = vi.fn()
+const cmuxTree = vi.fn()
 vi.mock("../api/client", async (orig) => {
   const actual = await orig<typeof import("../api/client")>()
   return {
@@ -19,6 +20,7 @@ vi.mock("../api/client", async (orig) => {
       worktreeNotes: (...a: unknown[]) => worktreeNotes(...a),
       saveWorktreeNotes: (...a: unknown[]) => saveWorktreeNotes(...a),
       cmux: (...a: unknown[]) => cmux(...a),
+      cmuxTree: (...a: unknown[]) => cmuxTree(...a),
     },
   }
 })
@@ -30,6 +32,7 @@ beforeEach(() => {
     cmux_sync: args.sync_cmux ? "ok" : "off",
   }))
   cmux.mockResolvedValue({ available: true, matches: {} })
+  cmuxTree.mockResolvedValue({ available: true, workspaces: [] })
 })
 
 const summary = (o: Partial<WorktreeSummary> = {}): WorktreeSummary => ({
@@ -53,7 +56,7 @@ const wrap = (w: WorktreeSummary) =>
 
 afterEach(() => {
   cleanup()
-  for (const m of [worktreeInfo, worktreeNotes, saveWorktreeNotes, cmux]) m.mockReset()
+  for (const m of [worktreeInfo, worktreeNotes, saveWorktreeNotes, cmux, cmuxTree]) m.mockReset()
 })
 
 const info = (o: Partial<WorktreeInfo> = {}): WorktreeInfo => ({
@@ -493,5 +496,53 @@ describe("cmux description sync", () => {
     await startEditing(user)
     await waitFor(() => expect(syncBox()).toBeChecked())
     expect(screen.getByText(/not syncing: this worktree has no cmux workspace/i)).toBeInTheDocument()
+  })
+})
+
+describe("cmux tab", () => {
+  it("comes after Environment when cmux is available", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    wrap(summary())
+    const cmuxTab = await screen.findByRole("tab", { name: "cmux" })
+    const env = screen.getByRole("tab", { name: /environment/i })
+    expect(env.compareDocumentPosition(cmuxTab) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("is absent outside cmux", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    cmux.mockResolvedValue({ available: false })
+    wrap(summary())
+    await screen.findByRole("tab", { name: /environment/i })
+    await waitFor(() => expect(cmux).toHaveBeenCalled())
+    expect(screen.queryByRole("tab", { name: "cmux" })).not.toBeInTheDocument()
+  })
+
+  it("mounts the panel only while selected", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    const user = userEvent.setup()
+    wrap(summary())
+    await user.click(await screen.findByRole("tab", { name: "cmux" }))
+    expect(await screen.findByText(/no cmux workspace/i)).toBeInTheDocument()
+    await user.click(screen.getByRole("tab", { name: /notes/i }))
+    expect(screen.queryByText(/no cmux workspace/i)).not.toBeInTheDocument()
+  })
+
+  it("falls back to Notes if cmux goes away while its tab is selected", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const user = userEvent.setup()
+    render(
+      <MantineProvider>
+        <QueryClientProvider client={client}>
+          <WorktreeDetailCard w={summary()} />
+        </QueryClientProvider>
+      </MantineProvider>,
+    )
+    await user.click(await screen.findByRole("tab", { name: "cmux" }))
+    cmux.mockResolvedValue({ available: false })
+    await client.invalidateQueries({ queryKey: ["cmux"] })
+    await waitFor(() => expect(screen.queryByRole("tab", { name: "cmux" })).not.toBeInTheDocument())
+    expect(screen.getByRole("tab", { name: /notes/i })).toHaveAttribute("aria-selected", "true")
+    expect(await screen.findByText("No notes yet")).toBeVisible()
   })
 })
