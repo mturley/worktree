@@ -22,13 +22,14 @@ type Workspace struct {
 
 // DisplayTitle is the workspace's human name. cmux leaves custom_title null on
 // workspaces it titles itself (e.g. "◐ handler-ratelimits"), so title comes
-// first and the ref is the last resort.
+// first and the ref is the last resort. The unread mailbox (UnreadPrefix) is
+// stripped: it is shown in cmux only, never in anything built from this.
 func (w Workspace) DisplayTitle() string {
 	if w.Title != "" {
-		return w.Title
+		return StripUnreadPrefix(w.Title)
 	}
 	if w.CustomTitle != "" {
-		return w.CustomTitle
+		return StripUnreadPrefix(w.CustomTitle)
 	}
 	return w.Ref
 }

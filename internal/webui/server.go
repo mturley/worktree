@@ -97,6 +97,10 @@ type Server struct {
 	// cmuxTabs is the seam for the cmux tab's routes (cmux_tabs.go); nil
 	// means the real cmux package.
 	cmuxTabs *cmuxTabOps
+	// cmuxTitleMu serializes workspace title writes that read the title
+	// first — the unread sync (cmux_unread.go) and handleCmuxRename — so
+	// neither writes back a title the other just replaced.
+	cmuxTitleMu sync.Mutex
 
 	// tabs is the browser notification registry; see tabs.go. Lazily built
 	// by tabRegistry(), since Server is a bare struct literal everywhere.

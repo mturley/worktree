@@ -11,6 +11,15 @@ import (
 	"github.com/mturley/worktree/internal/resources"
 )
 
+// listCmuxWorkspaces lists cmux workspaces through the cmuxList test seam
+// when one is set.
+func (s *Server) listCmuxWorkspaces() ([]cmux.Workspace, error) {
+	if s.cmuxList != nil {
+		return s.cmuxList()
+	}
+	return cmux.ListWorkspaces()
+}
+
 type cmuxWorkspaceDTO struct {
 	Ref      string `json:"ref"`
 	Title    string `json:"title"`
@@ -43,11 +52,7 @@ func (s *Server) handleCmux(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, cmuxResponse{Available: false})
 		return
 	}
-	list := cmux.ListWorkspaces
-	if s.cmuxList != nil {
-		list = s.cmuxList
-	}
-	workspaces, err := list()
+	workspaces, err := s.listCmuxWorkspaces()
 	if err != nil {
 		writeJSON(w, http.StatusOK, cmuxResponse{Available: false})
 		return

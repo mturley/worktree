@@ -1560,6 +1560,39 @@ things constrain any change here:
   a select/create modal actually opens.
 - `POST /api/cmux/select` always follows a successful select with an
   `osascript` activate — there is no "select without switching focus" mode.
+- Every server-side workspace lookup goes through `Server.listCmuxWorkspaces`,
+  which honors the `cmuxList` test seam.
+
+### Unread mailbox on workspace titles (`cmux_unread.go`, `cmux/unread_prefix.go`)
+
+A cmux workspace whose worktree has unreads gets `📬 ` (`cmux.UnreadPrefix`)
+in front of its title, and loses it once nothing is unread. The prefix exists
+**only in cmux**:
+
+- **Reconciled, not edge-triggered.** `StartCmuxUnreadSync` (every 5s, started
+  in `cmd/ui.go`) compares the wanted state with the titles cmux reports. It
+  has to work this way because unread state also changes in other processes
+  (`worktree resources mark-read`, agent-handler) that this process never
+  hears about. The trade-off: if you delete the 📬 by hand in cmux while
+  unreads remain, it comes back on the next pass.
+- **"Unread" is exactly `has_unread` from `/api/worktrees`**: any focus or
+  related resource, regardless of notification toggles. It uses the same
+  `ix.fill` and `resourceHasUnread`.
+- **Only the prefix is touched.** A rename happens only when the prefix state
+  is wrong, and it rewrites `custom_title` with just the prefix added or
+  removed. **Auto-titled workspaces (no `custom_title`) are skipped**:
+  prefixing one would set a custom title and freeze cmux's own name.
+  Workspaces not open on a registered worktree are never touched.
+- **The UI never sees it.** `Workspace.DisplayTitle()` strips the prefix, and
+  every title DTO is built from it. `handleCmuxRename` looks up the
+  workspace's current title and puts the mailbox back in front of what the
+  user typed. Clearing the name still runs `clear-name`, which makes the
+  workspace auto-titled, so it loses the mailbox.
+- `Server.cmuxTitleMu` serializes the sync pass and the rename handler. Both
+  read a title and then write one, and without the lock either could write
+  back a title the other had just replaced.
+- A title the user writes that starts with `📬 ` can't be told apart from
+  one the sync added.
 
 ### The details card's cmux tab (`cmux_tabs.go`, `CmuxPanel`, `PaneDiagram`)
 

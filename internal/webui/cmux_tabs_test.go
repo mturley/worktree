@@ -38,6 +38,11 @@ type fakeTabOps struct {
 	notifications    []cmux.Notification
 	notificationsErr error
 	notificationsN   int // number of times notifications() was called
+
+	// workspaces and listErr back the Server's cmuxList seam, which the
+	// rename handler reads to keep an unread mailbox prefix.
+	workspaces []cmux.Workspace
+	listErr    error
 }
 
 func posString(p cmux.TabPosition) string {
@@ -139,7 +144,8 @@ func newTabServer(t *testing.T) (*Server, *fakeTabOps) {
 		restorePollTimeout = oldTimeout
 	})
 	f := &fakeTabOps{trees: map[string]*cmux.WorkspaceTree{wsID: sampleTree()}}
-	return &Server{cmuxTabs: f.ops()}, f
+	list := func() ([]cmux.Workspace, error) { return f.workspaces, f.listErr }
+	return &Server{cmuxTabs: f.ops(), cmuxList: list}, f
 }
 
 // postCmux calls a handler with a JSON body and decodes a 200 reply.
@@ -243,6 +249,45 @@ func TestCmuxRename(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			s, f := newTabServer(t)
+			code, got := postCmux(t, s.handleCmuxRename, map[string]string{"id": wsID, "title": c.title})
+			if code != http.StatusOK || !got.OK {
+				t.Fatalf("code=%d got=%+v", code, got)
+			}
+			if len(f.calls) != 1 || f.calls[0] != c.want {
+				t.Fatalf("calls = %q, want [%q]", f.calls, c.want)
+			}
+		})
+	}
+}
+
+// The UI never shows the unread mailbox, so a rename typed there must keep
+// it on a workspace that has one, and must not add it to one that does not.
+func TestCmuxRenameKeepsUnreadPrefix(t *testing.T) {
+	cases := []struct {
+		name    string
+		current string
+		listErr error
+		title   string
+		want    string
+	}{
+		{"keeps mailbox", "📬 Old", nil, "New", "rename " + wsID + " 📬 New"},
+		{"no mailbox to keep", "Old", nil, "New", "rename " + wsID + " New"},
+		// The typed title never carries the prefix in from the UI, but if it
+		// did it must not double up.
+		{"no double prefix", "📬 Old", nil, "📬 New", "rename " + wsID + " 📬 New"},
+		// Clearing hands the title back to cmux; an auto title gets no mailbox.
+		{"clear drops mailbox", "📬 Old", nil, "", "clear-name " + wsID},
+		// A failed lookup renames bare; the unread sync re-adds the prefix.
+		{"list fails", "📬 Old", errors.New("boom"), "New", "rename " + wsID + " New"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s, f := newTabServer(t)
+			f.workspaces = []cmux.Workspace{
+				{ID: goneID, CustomTitle: "📬 Someone else"},
+				{ID: strings.ToLower(wsID), Title: c.current, CustomTitle: c.current},
+			}
+			f.listErr = c.listErr
 			code, got := postCmux(t, s.handleCmuxRename, map[string]string{"id": wsID, "title": c.title})
 			if code != http.StatusOK || !got.OK {
 				t.Fatalf("code=%d got=%+v", code, got)

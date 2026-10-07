@@ -160,6 +160,11 @@ func runUI(cmd *cobra.Command, args []string) error {
 	stopNotify := srv.StartNotifier(5 * time.Second)
 	defer stopNotify()
 
+	// The 📬 prefix on cmux workspace titles whose worktree has unreads
+	// (internal/webui/cmux_unread.go).
+	stopUnreadSync := srv.StartCmuxUnreadSync(5 * time.Second)
+	defer stopUnreadSync()
+
 	// The user's own account IDs, so their events never notify or count as
 	// unread (internal/selfid).
 	stopSelf := srv.StartSelfIdentity(10 * time.Minute)
