@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { ActionIcon, Avatar, Group, Stack, Text, Tooltip } from '@mantine/core'
-import { IconLink } from '@tabler/icons-react'
 import { avatarProxy } from '../../api/slackApi'
 import type { Message as MessageData, User } from '../../api/slackApi'
 import { Mrkdwn } from '../../lib/mrkdwn'
@@ -9,6 +8,7 @@ import { Attachments } from './Attachments'
 import { FileAttachments } from './FileAttachments'
 import { ReactionPill } from './ReactionPill'
 import { RichText } from './RichText'
+import { CopyLinkIcon } from '../CopyLinkIcon'
 
 interface MessageProps {
   message: MessageData
@@ -100,7 +100,7 @@ export function Message({
                 onClick={handleCopyLink}
                 style={{ opacity: hovered ? 1 : 0, transition: 'opacity 100ms ease' }}
               >
-                <IconLink size={12} />
+                <CopyLinkIcon />
               </ActionIcon>
             </Tooltip>
           )}
