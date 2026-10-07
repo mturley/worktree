@@ -437,6 +437,11 @@ func (s *Server) restoreAfterChange(ops cmuxTabOps, wsID, skipSurface string, sn
 	needsFocus := origFocused != "" && focusedPaneRef(fresh) != origFocused
 	var focusTab cmux.TreeTab
 	haveFocusTab := false
+	// An in-place reorder in ANY pane other than the originally focused one
+	// always re-focuses that pane (same cmux quirk the restore itself relies
+	// on) — so even a restore that starts out not needing to touch focus can
+	// end up stealing it, and must still finish with the final reorder below.
+	stoleFocus := false
 
 	for _, snap := range snapshots {
 		if !snap.has || snap.tab.Surface == skipSurface {
@@ -455,10 +460,14 @@ func (s *Server) restoreAfterChange(ops cmuxTabOps, wsID, skipSurface string, sn
 		}
 		if idx := tabIndex(fresh, snap.pane, tab.Ref); idx >= 0 {
 			_ = ops.reorderTab(wsID, tab.Ref, cmux.TabPosition{Index: &idx})
+			if snap.pane != origFocused {
+				stoleFocus = true
+			}
 		}
 	}
 
-	if !needsFocus {
+	needsFocus = needsFocus || stoleFocus
+	if !needsFocus || origFocused == "" {
 		return
 	}
 	if !haveFocusTab {
@@ -623,6 +632,10 @@ func (s *Server) handleCmuxMoveTab(w http.ResponseWriter, r *http.Request) {
 	origFocused := focusedPaneRef(tree)
 	snapshots := recordPanes(tree, from, req.Pane, origFocused)
 	samePane := req.Pane == from
+	beforeIndex := -1
+	if samePane {
+		beforeIndex = tabIndex(tree, from, req.Surface)
+	}
 	var opErr error
 	if samePane {
 		opErr = ops.reorderTab(req.ID, req.Surface, pos)
@@ -634,15 +647,31 @@ func (s *Server) handleCmuxMoveTab(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	target := req.Pane
+	// The immediate post-op read is almost always still the old layout (a
+	// `tree` straight after a move/reorder was seen to lag), so "the tab is
+	// in the target pane" alone is nearly always true on a stale read too —
+	// it's where the tab STARTED for a same-pane reorder, and cmux hasn't
+	// necessarily caught up on a cross-pane one either. The signal cmux
+	// reliably produces once the op has actually landed is that it also
+	// selects the moved tab and focuses its pane (regardless of --focus);
+	// wait for that. A same-pane reorder additionally counts as visible if
+	// the tab's index actually changed, in case cmux ever reorders without
+	// changing selection/focus (e.g. a true no-op reorder).
 	visible := func(t *cmux.WorkspaceTree) bool {
-		if samePane {
-			// The tab never leaves its pane, so there is nothing to wait
-			// for that a single read can't already show; accept it as-is
-			// (kept simple deliberately — see cmux-tab-followup brief).
+		tab, pane, found := t.FindTab(req.Surface)
+		if !found || pane != target {
+			return false
+		}
+		focused := false
+		for _, p := range t.Panes {
+			if p.Ref == pane && p.Focused {
+				focused = true
+			}
+		}
+		if tab.Selected && focused {
 			return true
 		}
-		_, pane, found := t.FindTab(req.Surface)
-		return found && pane == target
+		return samePane && tabIndex(t, pane, req.Surface) != beforeIndex
 	}
 	s.restoreAfterChange(ops, req.ID, req.Surface, snapshots, origFocused, visible)
 	respondCmuxAction(w, nil)
