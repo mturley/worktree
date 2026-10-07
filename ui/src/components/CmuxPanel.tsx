@@ -79,7 +79,7 @@ function WorkspaceBlock({ path, ws, onMove, onClose, onDragActiveChange }: {
     <Stack gap={6}>
       <Group gap={8} wrap="nowrap">
         <ColorPicker color={ws.color} onPick={(c) => act(() => api.cmuxColor(ws.id, c))} />
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ flex: "0 1 auto", minWidth: 0 }}>
           <EditableTitle title={ws.title} onSave={(t) => act(() => api.cmuxRename(ws.id, t))} />
         </div>
         <Button
