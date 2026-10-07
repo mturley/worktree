@@ -26,6 +26,7 @@ type cmuxTabOps struct {
 	clearName       func(id string) error
 	setColor        func(id, color string) error
 	clearColor      func(id string) error
+	notifications   func() ([]cmux.Notification, error)
 }
 
 func realCmuxTabOps() cmuxTabOps {
@@ -41,6 +42,7 @@ func realCmuxTabOps() cmuxTabOps {
 		clearName:       cmux.ClearWorkspaceName,
 		setColor:        cmux.SetWorkspaceColor,
 		clearColor:      cmux.ClearWorkspaceColor,
+		notifications:   cmux.ListNotifications,
 	}
 }
 
@@ -97,8 +99,14 @@ func (s *Server) handleCmuxTree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ops := s.tabOps()
+	matched := cmux.Match(workspaces, []string{path})[path]
 	out := cmuxTreeResponse{Available: true, Workspaces: []cmuxTreeWorkspaceDTO{}}
-	for _, ws := range cmux.Match(workspaces, []string{path})[path] {
+	if len(matched) == 0 {
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	unread := unreadSurfaces(ops)
+	for _, ws := range matched {
 		dto := cmuxTreeWorkspaceDTO{ID: ws.ID, Ref: ws.Ref, Title: ws.DisplayTitle(), Selected: ws.Selected}
 		if ws.CustomColor != nil {
 			dto.Color = *ws.CustomColor
@@ -108,11 +116,54 @@ func (s *Server) handleCmuxTree(w http.ResponseWriter, r *http.Request) {
 		} else {
 			layout := tree.Layout
 			dto.Layout = &layout
-			dto.Panes = tree.Panes
+			dto.Panes = markUnreadTabs(tree.Panes, ws.ID, unread)
 		}
 		out.Workspaces = append(out.Workspaces, dto)
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// unreadSurfaces builds the set of (lower(workspace_id), surface_ref) pairs
+// with at least one unread notification. A read error leaves the set empty
+// — dots are best-effort, so a failure here must never fail the tree
+// response or mark anything unread.
+func unreadSurfaces(ops cmuxTabOps) map[[2]string]bool {
+	set := map[[2]string]bool{}
+	if ops.notifications == nil {
+		return set
+	}
+	notifications, err := ops.notifications()
+	if err != nil {
+		return set
+	}
+	for _, n := range notifications {
+		if !n.IsRead {
+			set[[2]string{strings.ToLower(n.WorkspaceID), n.SurfaceRef}] = true
+		}
+	}
+	return set
+}
+
+// markUnreadTabs copies panes/tabs (never mutating the tree in place, which
+// callers besides this one may still hold a reference to) and sets Unread
+// on each tab whose (workspace, surface ref) is in the unread set.
+func markUnreadTabs(panes []cmux.TreePane, workspaceID string, unread map[[2]string]bool) []cmux.TreePane {
+	if len(unread) == 0 {
+		return panes
+	}
+	wsKey := strings.ToLower(workspaceID)
+	out := make([]cmux.TreePane, len(panes))
+	for i, p := range panes {
+		tabs := make([]cmux.TreeTab, len(p.Tabs))
+		copy(tabs, p.Tabs)
+		for j, t := range tabs {
+			if unread[[2]string{wsKey, t.Ref}] {
+				tabs[j].Unread = true
+			}
+		}
+		out[i] = cmux.TreePane{Ref: p.Ref, Focused: p.Focused, Tabs: tabs}
+	}
+	return out
 }
 
 var (

@@ -32,6 +32,12 @@ type fakeTabOps struct {
 	treePos map[string]int
 	failOn  string
 	calls   []string
+
+	// notifications and notificationsErr back the notifications seam; nil
+	// notificationsErr with a nil notifications func means "no notifications".
+	notifications    []cmux.Notification
+	notificationsErr error
+	notificationsN   int // number of times notifications() was called
 }
 
 func posString(p cmux.TabPosition) string {
@@ -83,6 +89,13 @@ func (f *fakeTabOps) ops() *cmuxTabOps {
 		clearName:       func(id string) error { return rec("clear-name", id) },
 		setColor:        func(id, c string) error { return rec("set-color", id, c) },
 		clearColor:      func(id string) error { return rec("clear-color", id) },
+		notifications: func() ([]cmux.Notification, error) {
+			f.notificationsN++
+			if f.notificationsErr != nil {
+				return nil, f.notificationsErr
+			}
+			return f.notifications, nil
+		},
 	}
 }
 
@@ -813,5 +826,119 @@ func TestCmuxMoveTabValidation(t *testing.T) {
 				t.Fatalf("called cmux on invalid input: %q", f.calls)
 			}
 		})
+	}
+}
+
+// setCmuxListSingle points s.cmuxList at a single matched workspace (wsID)
+// at dir, like the real list would for a worktree with one open workspace.
+func setCmuxListSingle(s *Server, dir string) {
+	s.cmuxList = func() ([]cmux.Workspace, error) {
+		return []cmux.Workspace{{ID: wsID, Ref: "workspace:1", Title: "Alpha", CurrentDirectory: dir}}, nil
+	}
+}
+
+func findTreeTab(t *testing.T, got cmuxTreeResponse, surface string) cmux.TreeTab {
+	t.Helper()
+	for _, ws := range got.Workspaces {
+		for _, p := range ws.Panes {
+			for _, tab := range p.Tabs {
+				if tab.Ref == surface {
+					return tab
+				}
+			}
+		}
+	}
+	t.Fatalf("tab %s not found in %+v", surface, got)
+	return cmux.TreeTab{}
+}
+
+func TestCmuxTreeMarksUnreadTab(t *testing.T) {
+	s, f := newTabServer(t)
+	dir := t.TempDir()
+	setCmuxListSingle(s, dir)
+	f.notifications = []cmux.Notification{
+		{ID: "1", WorkspaceID: wsID, SurfaceRef: "surface:1", IsRead: false},
+	}
+	code, got := getTree(t, s, dir)
+	if code != http.StatusOK {
+		t.Fatalf("status = %d", code)
+	}
+	if !findTreeTab(t, got, "surface:1").Unread {
+		t.Fatal("want surface:1 marked unread")
+	}
+	if f.notificationsN != 1 {
+		t.Fatalf("notifications called %d times, want 1", f.notificationsN)
+	}
+}
+
+func TestCmuxTreeReadOnlyNotificationNotMarked(t *testing.T) {
+	s, f := newTabServer(t)
+	dir := t.TempDir()
+	setCmuxListSingle(s, dir)
+	f.notifications = []cmux.Notification{
+		{ID: "1", WorkspaceID: wsID, SurfaceRef: "surface:1", IsRead: true},
+	}
+	_, got := getTree(t, s, dir)
+	if findTreeTab(t, got, "surface:1").Unread {
+		t.Fatal("a read-only notification must not mark the tab unread")
+	}
+}
+
+func TestCmuxTreeSameSurfaceOtherWorkspaceNotMarked(t *testing.T) {
+	s, f := newTabServer(t)
+	dir := t.TempDir()
+	setCmuxListSingle(s, dir)
+	f.notifications = []cmux.Notification{
+		{ID: "1", WorkspaceID: goneID, SurfaceRef: "surface:1", IsRead: false},
+	}
+	_, got := getTree(t, s, dir)
+	if findTreeTab(t, got, "surface:1").Unread {
+		t.Fatal("a notification for a different workspace must not mark the tab unread")
+	}
+}
+
+func TestCmuxTreeUnreadMatchesWorkspaceIDCaseInsensitively(t *testing.T) {
+	s, f := newTabServer(t)
+	dir := t.TempDir()
+	setCmuxListSingle(s, dir)
+	f.notifications = []cmux.Notification{
+		{ID: "1", WorkspaceID: strings.ToLower(wsID), SurfaceRef: "surface:1", IsRead: false},
+	}
+	_, got := getTree(t, s, dir)
+	if !findTreeTab(t, got, "surface:1").Unread {
+		t.Fatal("want workspace id matched case-insensitively")
+	}
+}
+
+func TestCmuxTreeNotificationsErrorDegradesGracefully(t *testing.T) {
+	s, f := newTabServer(t)
+	dir := t.TempDir()
+	setCmuxListSingle(s, dir)
+	f.notificationsErr = errors.New("boom")
+	code, got := getTree(t, s, dir)
+	if code != http.StatusOK || !got.Available {
+		t.Fatalf("code=%d available=%v, want 200 available", code, got.Available)
+	}
+	if findTreeTab(t, got, "surface:1").Unread {
+		t.Fatal("a notifications error must not mark anything unread")
+	}
+	if len(got.Workspaces) != 1 || got.Workspaces[0].Panes == nil {
+		t.Fatalf("tree must still be intact despite the notifications error: %+v", got)
+	}
+}
+
+func TestCmuxTreeNoMatchedWorkspaceSkipsNotifications(t *testing.T) {
+	s, f := newTabServer(t)
+	other := t.TempDir()
+	dir := t.TempDir()
+	s.cmuxList = func() ([]cmux.Workspace, error) {
+		return []cmux.Workspace{{ID: wsID, Ref: "workspace:1", Title: "Alpha", CurrentDirectory: other}}, nil
+	}
+	code, got := getTree(t, s, dir)
+	if code != http.StatusOK || len(got.Workspaces) != 0 {
+		t.Fatalf("code=%d got=%+v, want 200 with no workspaces", code, got)
+	}
+	if f.notificationsN != 0 {
+		t.Fatal("notifications must not be called when no workspace matched")
 	}
 }

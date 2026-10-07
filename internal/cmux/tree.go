@@ -26,6 +26,7 @@ type TreeTab struct {
 	Type     string `json:"type"`          // "terminal" | "browser" | "markdown" | others, passed through
 	URL      string `json:"url,omitempty"` // empty when cmux reports null (terminals, unloaded browser tabs)
 	Selected bool   `json:"selected"`      // selected within its pane
+	Unread   bool   `json:"unread,omitempty"`
 }
 
 type TreePane struct {
