@@ -94,10 +94,24 @@ function resourceKey(r: ResourceDTO): string {
  * Shared by the worktree page's resource cards and the home page's worktree
  * cards so a resource is introduced the same way on both.
  */
-export function ResourceTypeLine({ r, trailing }: { r: ResourceDTO; trailing?: React.ReactNode }) {
+export function ResourceTypeLine({
+  r,
+  trailing,
+  aside,
+}: {
+  r: ResourceDTO
+  /** Flows inline right after the key, wrapping with it. */
+  trailing?: React.ReactNode
+  /**
+   * Pinned to the line's right edge. It shares this row only, so on a narrow
+   * card the line's own content wraps beside it while everything below the
+   * line (title, badges) keeps the card's full width.
+   */
+  aside?: React.ReactNode
+}) {
   const t = RESOURCE_TYPES[r.type]
-  return (
-    <Group gap={6} wrap="wrap" align="center" data-resource-type-line>
+  const line = (
+    <Group gap={6} wrap="wrap" align="center" data-resource-type-line style={aside ? { flex: 1, minWidth: 0 } : undefined}>
       {t?.icon}
       {/* The extra margin separates the TYPE (icon + badge) from what
           follows, which is about this resource in particular. */}
@@ -105,6 +119,13 @@ export function ResourceTypeLine({ r, trailing }: { r: ResourceDTO; trailing?: R
       {resourceIcon(r)}
       <Text size="xs" c="dimmed">{resourceKey(r)}</Text>
       {trailing}
+    </Group>
+  )
+  if (!aside) return line
+  return (
+    <Group justify="space-between" wrap="nowrap" align="flex-start" gap="xs">
+      {line}
+      <Group gap={6} wrap="nowrap" style={{ flex: "none" }}>{aside}</Group>
     </Group>
   )
 }
