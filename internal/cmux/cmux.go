@@ -178,10 +178,31 @@ func Notify(o NotifyOptions) error {
 	if o.Workspace != "" {
 		args = append(args, "--workspace", o.Workspace)
 	}
-	if out, err := cmuxCmd(args...).CombinedOutput(); err != nil {
+	cmd := cmuxCmd(args...)
+	if o.Workspace != "" {
+		// The cmux CLI targets the caller's surface from CMUX_SURFACE_ID, and
+		// a surface resolves globally, overriding --workspace. worktree ui runs
+		// in a cmux pane and inherits that pane's surface, so without this
+		// every notification landed on (and clicked through to) the ui's own
+		// workspace. Verified against cmux: with the variable unset,
+		// --workspace is honoured.
+		cmd.Env = withoutEnv(os.Environ(), "CMUX_SURFACE_ID")
+	}
+	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("cmux notify: %s", strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+// withoutEnv returns env minus every KEY=… entry for key.
+func withoutEnv(env []string, key string) []string {
+	out := make([]string, 0, len(env))
+	for _, kv := range env {
+		if !strings.HasPrefix(kv, key+"=") {
+			out = append(out, kv)
+		}
+	}
+	return out
 }
 
 func RenameWorkspace(ref, title string) error {
