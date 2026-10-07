@@ -1623,7 +1623,10 @@ inside cmux.
   (`worktree.followCmuxFocus`, `hooks/useFollowCmux.ts`) — following is one
   tab's role, so tabs don't all jump together. `CmuxFollower`, mounted once
   inside the Router, navigates only when following, the path is non-empty and
-  differs from the page's worktree.
+  differs from the page's worktree. Leaving a worktree page by any other
+  route (back link, browser back, a notification, a link to another
+  worktree) turns following off; the follower tells its own navigations
+  apart by recording the path it is about to open.
 - **Unsaved changes:** components holding typed-but-unsent input register
   through `useUnsavedChanges(isDirty)` (`lib/unsavedChanges.ts`): the Slack
   composer and the add-resource, new-worktree, create-workspace,

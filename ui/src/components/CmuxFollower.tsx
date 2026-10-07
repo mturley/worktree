@@ -24,6 +24,11 @@ export function worktreeAt(location: string): string | null {
  *
  * Unsaved edits are never dropped silently: the tab asks first, and staying
  * turns following off — otherwise the very next switch would ask again.
+ *
+ * Leaving a worktree page any other way (the back link, browser back, a
+ * notification, a link to another worktree) also turns following off: the
+ * user has chosen where to be, and the next cmux switch should not overrule
+ * it.
  */
 export function CmuxFollower() {
   const [follow, setFollow] = useFollowCmux()
@@ -35,6 +40,15 @@ export function CmuxFollower() {
   // focus subscription from being torn down and rebuilt on every one.
   const navigateRef = useRef(navigate)
   navigateRef.current = navigate
+  // The worktree this component is navigating to, so the location change it
+  // causes is not mistaken for the user leaving the page.
+  const expectedRef = useRef<string | null>(null)
+  const prevLocation = useRef(location)
+
+  const go = (path: string) => {
+    expectedRef.current = path
+    navigateRef.current(`${PREFIX}${encodeURIComponent(path)}`)
+  }
 
   useEffect(() => {
     if (!follow) {
@@ -53,9 +67,20 @@ export function CmuxFollower() {
         setPending(msg.path)
         return
       }
-      navigateRef.current(`${PREFIX}${encodeURIComponent(msg.path)}`)
+      go(msg.path)
     })
   }, [follow])
+
+  useEffect(() => {
+    const from = worktreeAt(prevLocation.current)
+    const changed = prevLocation.current !== location
+    prevLocation.current = location
+    if (!changed) return
+    const to = worktreeAt(location)
+    const expected = expectedRef.current
+    expectedRef.current = null
+    if (follow && from !== null && (expected === null || to !== expected)) setFollow(false)
+  }, [location, follow, setFollow])
 
   // Navigating some other way while the prompt is up answers it.
   useEffect(() => {
@@ -97,7 +122,7 @@ export function CmuxFollower() {
             onClick={() => {
               const to = pending
               setPending(null)
-              if (to) navigate(`${PREFIX}${encodeURIComponent(to)}`)
+              if (to) go(to)
             }}
           >
             Discard and follow

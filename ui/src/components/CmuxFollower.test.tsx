@@ -9,6 +9,7 @@ import { emitCmuxFocus } from "../lib/cmuxFocusBus"
 import { setFollowCmux, FOLLOW_CMUX_KEY } from "../hooks/useFollowCmux"
 import { useUnsavedChanges } from "../lib/unsavedChanges"
 import { api } from "../api/client"
+import { navigate } from "wouter/use-browser-location"
 
 const A = "/wt/repo/a"
 const B = "/wt/repo/b"
@@ -59,6 +60,37 @@ describe("CmuxFollower", () => {
     wrap(<CmuxFollower />)
     focus(B)
     expect(window.location.pathname).toBe(pageOf(B))
+  })
+
+  it("keeps following across its own navigation", () => {
+    act(() => setFollowCmux(true))
+    wrap(<CmuxFollower />)
+    focus(B)
+    focus(A)
+    expect(window.location.pathname).toBe(pageOf(A))
+    expect(window.sessionStorage.getItem(FOLLOW_CMUX_KEY)).toBe("true")
+  })
+
+  it("turns off when the user leaves a worktree page for the list", () => {
+    act(() => setFollowCmux(true))
+    wrap(<CmuxFollower />)
+    act(() => navigate("/"))
+    expect(window.sessionStorage.getItem(FOLLOW_CMUX_KEY)).toBe("false")
+  })
+
+  it("turns off when the user opens another worktree themselves", () => {
+    act(() => setFollowCmux(true))
+    wrap(<CmuxFollower />)
+    act(() => navigate(pageOf(B)))
+    expect(window.sessionStorage.getItem(FOLLOW_CMUX_KEY)).toBe("false")
+  })
+
+  it("stays on when the user goes from the list to a worktree", () => {
+    window.history.replaceState({}, "", "/")
+    act(() => setFollowCmux(true))
+    wrap(<CmuxFollower />)
+    act(() => navigate(pageOf(B)))
+    expect(window.sessionStorage.getItem(FOLLOW_CMUX_KEY)).toBe("true")
   })
 
   it("stays put for a workspace with no worktree", () => {
