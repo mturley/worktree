@@ -267,6 +267,38 @@ export function WorktreeDetailPage() {
     )
   }
 
+  // Wide, the toolbar sits beside the titles and must not shrink. Narrow, it
+  // gets a row of its own: kept beside the titles, it left them a sliver of
+  // width that wrapped them a few letters per line.
+  const toolbar = (
+    <Group
+      gap="xs"
+      wrap={wide ? "nowrap" : "wrap"}
+      style={wide ? { flex: "none" } : undefined}
+      data-detail-toolbar
+    >
+      <FollowCmuxToggle />
+      {summary && <CmuxWorkspaceActions path={path} branch={summary.branch} />}
+      {/*
+        The header is fixed and the body scrolls beneath it, so the
+        summary card costs the resource list and timeline the same space
+        on every scroll position. Hiding it is the cheapest way to get
+        that space back on a short screen.
+      */}
+      {summary && (
+        <Button
+          size="compact-sm"
+          variant="subtle"
+          onClick={() => setDetailsOpen((o) => !o)}
+          aria-expanded={detailsOpen}
+          style={{ flex: "none" }}
+        >
+          {detailsOpen ? "Hide details" : "Show details"}
+        </Button>
+      )}
+    </Group>
+  )
+
   return (
     <ThreadActionsContext.Provider value={threadActions}>
     {/*
@@ -337,28 +369,9 @@ export function WorktreeDetailPage() {
                 </Group>
               </Stack>
             </Group>
-            <Group gap="xs" wrap="nowrap" style={{ flex: "none" }}>
-              <FollowCmuxToggle />
-              {summary && <CmuxWorkspaceActions path={path} branch={summary.branch} />}
-            {/*
-              The header is fixed and the body scrolls beneath it, so the
-              summary card costs the resource list and timeline the same space
-              on every scroll position. Hiding it is the cheapest way to get
-              that space back on a short screen.
-            */}
-            {summary && (
-              <Button
-                size="compact-sm"
-                variant="subtle"
-                onClick={() => setDetailsOpen((o) => !o)}
-                aria-expanded={detailsOpen}
-                style={{ flex: "none" }}
-              >
-                {detailsOpen ? "Hide details" : "Show details"}
-              </Button>
-            )}
-            </Group>
+            {wide && toolbar}
           </Group>
+          {!wide && toolbar}
           {summary && (
             <Collapse in={detailsOpen}>
               {/* Keyed by path: the card holds an unsaved notes draft, which must

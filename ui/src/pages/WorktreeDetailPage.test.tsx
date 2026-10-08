@@ -94,6 +94,15 @@ describe("WorktreeDetailPage header", () => {
     vi.restoreAllMocks()
   })
 
+  it("moves the header toolbar to its own row when narrow", async () => {
+    setViewport("narrow")
+    wrap()
+    const hide = await screen.findByRole("button", { name: "Hide details" })
+    // Beside the titles it squeezed them to a few letters per line.
+    expect(hide.closest("[data-detail-toolbar]")).toBeInTheDocument()
+    expect(hide.closest("[data-detail-header]")).toBeNull()
+  })
+
   it("omits focus-resource lines, which would duplicate the resource cards", async () => {
     setViewport("wide")
     wrap()
