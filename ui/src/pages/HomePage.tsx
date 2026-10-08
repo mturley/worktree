@@ -21,6 +21,7 @@ import { useCmux } from "../api/cmux"
 import { useWorktreeSort } from "../hooks/useWorktreeSort"
 import { WorktreeSortControl } from "../components/WorktreeSortControl"
 import { cmuxPositions, sortWorktrees } from "../lib/worktreeSort"
+import { filterWorktreeBySources } from "../lib/sourceFilter"
 
 export function HomePage() {
   const [, navigate] = useLocation()
@@ -47,9 +48,14 @@ export function HomePage() {
     })
   }, [wts.data, sort.mode, sort.createdDir, sort.nameDir, positions])
 
+  // The Activity source toggles narrow the cards too: each card keeps only
+  // resources of that source, and a card with none of them drops out.
   const shownWorktrees = useMemo(
-    () => (unreadOnly ? sortedWorktrees.filter((w) => w.has_unread) : sortedWorktrees),
-    [sortedWorktrees, unreadOnly],
+    () =>
+      (unreadOnly ? sortedWorktrees.filter((w) => w.has_unread) : sortedWorktrees)
+        .map((w) => filterWorktreeBySources(w, sources))
+        .filter((w): w is NonNullable<typeof w> => w !== null),
+    [sortedWorktrees, unreadOnly, sources],
   )
 
   const sortControl = (
@@ -106,7 +112,15 @@ export function HomePage() {
       items={shownWorktrees}
       // Only once there are worktrees to hide: with none at all, the usual
       // "create one" hint is the more useful thing to say.
-      emptyText={unreadOnly && sortedWorktrees.length > 0 ? "No worktrees with unread events" : undefined}
+      emptyText={
+        sortedWorktrees.length === 0
+          ? undefined
+          : sources.length > 0
+            ? `No worktrees${unreadOnly ? " with unread events" : ""} following that source`
+            : unreadOnly
+              ? "No worktrees with unread events"
+              : undefined
+      }
     />
   )
   const timeline = (
@@ -117,8 +131,8 @@ export function HomePage() {
           <RefreshWatchersButton />
         </Group>
         {/* "Show unreads only" narrows the worktree list too, but sits here
-            beside its sibling toggle; the source filter gets a line of its
-            own below. */}
+            beside its sibling toggle; the source filter (which also narrows
+            the worktree cards) gets a line of its own below. */}
         <Group gap="md" wrap="nowrap">
           <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} />
           <ArchivedToggle value={archived} onChange={setArchived} />

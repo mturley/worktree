@@ -26,6 +26,7 @@ import { MarkAllReadButton } from "../components/MarkAllReadButton"
 import { UnreadOnlyToggle } from "../components/UnreadOnlyToggle"
 import { useUnreadOnly } from "../hooks/useUnreadOnly"
 import { hasUnread } from "../lib/unread"
+import { matchesSources } from "../lib/sourceFilter"
 import { ThreadActionsContext } from "../components/slack/ThreadActionsContext"
 import { AddResourceModal } from "../components/AddResourceModal"
 import { parseThreadUrl } from "../lib/parseThreadUrl"
@@ -35,9 +36,9 @@ export function WorktreeDetailPage() {
   const [, params] = useRoute("/worktree/:path*")
   const rawPath = params?.["path*"]
   const path = rawPath ? decodeURIComponent(rawPath) : ""
-  // Only applies to the worktree's unified feed: selecting a resource already
-  // narrows the timeline to that one resource, so the toggles are hidden there
-  // rather than left as dead controls.
+  // Narrows the worktree's unified feed and the resource list. Selecting a
+  // resource already narrows the timeline to that one resource, so the
+  // toggles are hidden there rather than left as dead controls.
   const [sources, setSources] = useState<string[]>([])
   // Shared with the home page and every other tab. Narrows the resource list
   // and the worktree's unified feed; a selected resource's own feed is left
@@ -52,7 +53,11 @@ export function WorktreeDetailPage() {
   // Memoized, not just derived: ResourceList drops its optimistic order
   // whenever this array changes identity, so a fresh one per render would
   // undo every drag before the save landed.
-  const shownItems = useMemo(() => (unreadOnly ? items.filter(hasUnread) : items), [items, unreadOnly])
+  const shownItems = useMemo(
+    () => items.filter((r) => (!unreadOnly || hasUnread(r)) && matchesSources(r.type, sources)),
+    [items, unreadOnly, sources],
+  )
+  const filtered = unreadOnly || sources.length > 0
   const summary = (worktrees.data ?? []).find((w) => w.path === path)
   const notifyMode = useNotifyMode()
   const qc = useQueryClient()
@@ -137,8 +142,16 @@ export function WorktreeDetailPage() {
   const list = (
     <ResourceList
       items={shownItems}
-      allItems={unreadOnly ? items : undefined}
-      emptyText={unreadOnly && items.length > 0 ? "No resources with unread events" : undefined}
+      allItems={filtered ? items : undefined}
+      emptyText={
+        items.length === 0
+          ? undefined
+          : sources.length > 0
+            ? `No${unreadOnly ? " unread" : ""} resources from that source`
+            : unreadOnly
+              ? "No resources with unread events"
+              : undefined
+      }
       toolbar={
         <Group gap="lg" align="flex-start">
           <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} />
