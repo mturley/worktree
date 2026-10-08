@@ -450,21 +450,20 @@ func PinBrowserTabs(workspaceRef string) {
 	}
 }
 
-// FocusFirstBrowserTab switches the workspace's first browser pane to its
-// first tab.
+// FocusFirstBrowserTab switches every browser pane of the workspace to its
+// first tab, so the GitHub/Jira pane opens on its first PR rather than on
+// whichever tab cmux created last.
 func FocusFirstBrowserTab(workspaceRef string) {
-	panes := browserSurfacesByPane(workspaceRef)
-	if len(panes) == 0 {
-		return
+	for _, browsers := range browserSurfacesByPane(workspaceRef) {
+		SwitchBrowserTab(browsers[0].Ref, 0)
 	}
-	SwitchBrowserTab(panes[0][0].Ref, 0)
 }
 
-// BuildLayout lays out a new workspace: the GitHub/Jira browser tabs (urls) on
-// the left — or, when there are none, a plain terminal instead of an empty
-// browser — and on the right the pinned worktree UI browser on top (falling
-// back to a shell terminal when uiURL is empty) over a smaller `worktree info`
-// terminal.
+// BuildLayout lays out a new workspace: the pinned worktree UI browser across
+// the whole left side (falling back to a shell terminal when uiURL is empty),
+// and on the right the GitHub/Jira browser tabs (urls) on top — or, when there
+// are none, a plain terminal instead of an empty browser — over a smaller
+// `worktree info` terminal.
 func BuildLayout(uiURL string, urls []string) string {
 	type surface struct {
 		Type    string `json:"type"`
@@ -481,31 +480,31 @@ func BuildLayout(uiURL string, urls []string) string {
 		Pane      *pane       `json:"pane,omitempty"`
 	}
 
-	var topRightSurfaces []surface
-	if uiURL != "" {
-		topRightSurfaces = append(topRightSurfaces, surface{Type: "browser", URL: uiURL})
-	} else {
-		topRightSurfaces = append(topRightSurfaces, surface{Type: "terminal"})
-	}
-
-	mainPane := layoutNode{Pane: &pane{Surfaces: topRightSurfaces}}
-	infoTerminal := layoutNode{Pane: &pane{Surfaces: []surface{{Type: "terminal", Command: "worktree info"}}}}
-
 	var leftSurfaces []surface
-	for _, u := range urls {
-		leftSurfaces = append(leftSurfaces, surface{Type: "browser", URL: u})
-	}
-	if len(leftSurfaces) == 0 {
-		leftSurfaces = []surface{{Type: "terminal"}}
+	if uiURL != "" {
+		leftSurfaces = append(leftSurfaces, surface{Type: "browser", URL: uiURL})
+	} else {
+		leftSurfaces = append(leftSurfaces, surface{Type: "terminal"})
 	}
 
 	leftSide := layoutNode{Pane: &pane{Surfaces: leftSurfaces}}
+	infoTerminal := layoutNode{Pane: &pane{Surfaces: []surface{{Type: "terminal", Command: "worktree info"}}}}
+
+	var topRightSurfaces []surface
+	for _, u := range urls {
+		topRightSurfaces = append(topRightSurfaces, surface{Type: "browser", URL: u})
+	}
+	if len(topRightSurfaces) == 0 {
+		topRightSurfaces = []surface{{Type: "terminal"}}
+	}
+
+	resourcePane := layoutNode{Pane: &pane{Surfaces: topRightSurfaces}}
 
 	rightSide := layoutNode{
 		Direction: "vertical",
 		Split:     0.67,
 		Children: []layoutNode{
-			mainPane,
+			resourcePane,
 			infoTerminal,
 		},
 	}

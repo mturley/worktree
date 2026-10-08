@@ -26,48 +26,33 @@ func parseLayout(t *testing.T, s string) testLayout {
 	return l
 }
 
-func TestBuildLayoutWithoutURLsUsesATerminalOnTheLeft(t *testing.T) {
+func TestBuildLayoutLeftHoldsOnlyThePinnedUIBrowser(t *testing.T) {
 	l := parseLayout(t, BuildLayout("http://localhost:8475", nil))
 
 	left := l.Children[0]
 	if got := len(left.Pane.Surfaces); got != 1 {
 		t.Fatalf("left pane surfaces = %d, want 1", got)
 	}
-	if got := left.Pane.Surfaces[0].Type; got != "terminal" {
-		t.Errorf("left pane surface type = %q, want terminal", got)
+	s := left.Pane.Surfaces[0]
+	if s.Type != "browser" || s.URL != "http://localhost:8475" {
+		t.Errorf("left surface = %q %q, want browser http://localhost:8475", s.Type, s.URL)
 	}
 }
 
-func TestBuildLayoutWithURLsOpensThemAsBrowserTabsOnTheLeft(t *testing.T) {
-	l := parseLayout(t, BuildLayout("http://localhost:8475", []string{"https://example.test/pr/1", "https://example.test/issue/2"}))
+func TestBuildLayoutLeftFallsBackToATerminalWithoutAUIURL(t *testing.T) {
+	l := parseLayout(t, BuildLayout("", nil))
 
 	left := l.Children[0]
-	if got := len(left.Pane.Surfaces); got != 2 {
-		t.Fatalf("left pane surfaces = %d, want 2", got)
+	if got := len(left.Pane.Surfaces); got != 1 {
+		t.Fatalf("left pane surfaces = %d, want 1", got)
 	}
-	for i, want := range []string{"https://example.test/pr/1", "https://example.test/issue/2"} {
-		s := left.Pane.Surfaces[i]
-		if s.Type != "browser" || s.URL != want {
-			t.Errorf("left surface %d = %q %q, want browser %q", i, s.Type, s.URL, want)
-		}
+	if got := left.Pane.Surfaces[0].Type; got != "terminal" {
+		t.Errorf("left surface type = %q, want terminal", got)
 	}
 }
 
-func TestBuildLayoutTopRightHoldsOnlyThePinnedUIBrowser(t *testing.T) {
+func TestBuildLayoutWithoutURLsUsesATerminalTopRight(t *testing.T) {
 	l := parseLayout(t, BuildLayout("http://localhost:8475", nil))
-
-	topRight := l.Children[1].Children[0]
-	if got := len(topRight.Pane.Surfaces); got != 1 {
-		t.Fatalf("top-right pane surfaces = %d, want 1", got)
-	}
-	s := topRight.Pane.Surfaces[0]
-	if s.Type != "browser" || s.URL != "http://localhost:8475" {
-		t.Errorf("top-right surface = %q %q, want browser http://localhost:8475", s.Type, s.URL)
-	}
-}
-
-func TestBuildLayoutTopRightFallsBackToATerminalWithoutAUIURL(t *testing.T) {
-	l := parseLayout(t, BuildLayout("", nil))
 
 	topRight := l.Children[1].Children[0]
 	if got := len(topRight.Pane.Surfaces); got != 1 {
@@ -75,6 +60,21 @@ func TestBuildLayoutTopRightFallsBackToATerminalWithoutAUIURL(t *testing.T) {
 	}
 	if got := topRight.Pane.Surfaces[0].Type; got != "terminal" {
 		t.Errorf("top-right surface type = %q, want terminal", got)
+	}
+}
+
+func TestBuildLayoutWithURLsOpensThemAsBrowserTabsTopRight(t *testing.T) {
+	l := parseLayout(t, BuildLayout("http://localhost:8475", []string{"https://example.test/pr/1", "https://example.test/issue/2"}))
+
+	topRight := l.Children[1].Children[0]
+	if got := len(topRight.Pane.Surfaces); got != 2 {
+		t.Fatalf("top-right pane surfaces = %d, want 2", got)
+	}
+	for i, want := range []string{"https://example.test/pr/1", "https://example.test/issue/2"} {
+		s := topRight.Pane.Surfaces[i]
+		if s.Type != "browser" || s.URL != want {
+			t.Errorf("top-right surface %d = %q %q, want browser %q", i, s.Type, s.URL, want)
+		}
 	}
 }
 

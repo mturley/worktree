@@ -399,7 +399,7 @@ func openCmuxWorkspace(conn *sql.DB, cfg config.Config, wtPath, branch string) (
 
 	// Pin the worktree UI / GitHub / Jira tabs (every URL we laid out, in both
 	// panes) so they survive the close-others/close-right tab actions, then
-	// land on the first tab of the left-hand browser pane.
+	// land each browser pane on its first tab.
 	if uiURL != "" || len(urls) > 0 {
 		cmux.PinBrowserTabs(ref)
 		cmux.FocusFirstBrowserTab(ref)
@@ -408,9 +408,9 @@ func openCmuxWorkspace(conn *sql.DB, cfg config.Config, wtPath, branch string) (
 }
 
 // buildWorkspaceURLs orders the browser tabs of a new cmux workspace's
-// left-hand pane: GitHub PRs first, then the primary Jira issues. (The
-// running worktree UI gets its own tab in the main terminal's pane, so it is
-// not part of this list.) Resources with no URL, and Jira issues merely
+// top-right pane: GitHub PRs first, then the primary Jira issues. (The
+// running worktree UI gets the left-hand pane to itself, so it is not part of
+// this list.) Resources with no URL, and Jira issues merely
 // related to the worktree, are skipped.
 func buildWorkspaceURLs(res []resources.Resource) []string {
 	var urls []string
