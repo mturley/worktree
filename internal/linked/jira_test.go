@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/mturley/watcher"
 	wjira "github.com/mturley/watcher/jira"
 )
 
@@ -23,8 +24,11 @@ func storyFixture() *fakeJira {
 					{Label: "clones", Issue: sum("PROJ-4", "Story", 0)},
 					{Label: "blocks", Issue: sum("PROJ-5", "Task", 0)},
 				},
-				DescriptionURLs: []string{"https://example.atlassian.net/browse/PROJ-9", "https://example.atlassian.net/browse/PROJ-1"},
-				GitPRURLs:       []string{},
+				DescriptionLinks: []watcher.LinkRef{
+					{URL: "https://example.atlassian.net/browse/PROJ-9", Label: "the parent story", Before: "Follow-up to", After: "which shipped"},
+					{URL: "https://example.atlassian.net/browse/PROJ-1", Label: "PROJ-1"},
+				},
+				GitPRLinks: []watcher.LinkRef{},
 			},
 		},
 		issues: map[string]wjira.IssueSummary{"PROJ-9": sum("PROJ-9", "Story", 0)},
@@ -58,6 +62,9 @@ func TestBuildJiraSections(t *testing.T) {
 	d := section(t, ss, "description")
 	if d == nil || len(d.Items) != 1 || d.Items[0].ID != "PROJ-9" || !d.Items[0].Resolved {
 		t.Errorf("description = %+v (self link must be dropped)", d)
+	}
+	if want := (LinkContext{Before: "Follow-up to", Label: "the parent story", After: "which shipped"}); d.Items[0].Context == nil || *d.Items[0].Context != want {
+		t.Errorf("context must survive resolution, got %+v", d.Items[0].Context)
 	}
 	l := section(t, ss, "links")
 	if l == nil || len(l.Groups) != 2 || l.Groups[0].Label != "blocks" || len(l.Groups[0].Items) != 2 || l.Groups[1].Label != "clones" {

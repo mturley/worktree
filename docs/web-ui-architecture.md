@@ -1202,6 +1202,21 @@ Section kinds: `git_pr`, `description`, `hierarchy`, `links`, `referenced_by`,
 `/search/jql` returns no total, so there is no overflow count). The favicon
 field is `favicon`.
 
+**Link context.** A row found in a PR body, a Jira description / Git Pull
+Request field or a Slack thread carries `context: {before, label, after}`: the
+link's displayed label and the text around it in the same block (paragraph,
+list item, rich_text section). The watcher library supplies it as
+`watcher.LinkRef` (`jira.ExtractADFLinks`, `slack.ExtractLinks`; PR markdown is
+parsed locally by `ExtractMarkdownLinks`). `ClassifyLinks` attaches the context
+of the FIRST occurrence of each (type, id). Plain links always get it (unless
+the link is a bare URL alone in its block); PR / Jira / Slack rows only when
+the label differs from the URL and from the item's own key (`PROJ-1`, `#7`,
+`repo#7`, `owner/repo#7`), since the row already says that. `before`/`after`
+are truncated server-side to about 60 runes at a word boundary, with `…`
+marking the cut. The UI shows it as an italic dimmed line under the row, the
+label being a link to the item. Hierarchy and "Linked work items" rows have no
+context. `resolve` must preserve `Item.Context` when it replaces a Jira item.
+
 **On-demand, never polled.** Linked resources are fetched when a resource is
 selected and cached server-side for 2 minutes (`linkedTTL`); `refresh=1`
 bypasses the read but stores the fresh value. They are deliberately not part of

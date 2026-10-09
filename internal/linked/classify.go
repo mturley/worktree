@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/mturley/watcher"
 	"github.com/mturley/worktree/internal/resourceurl"
 )
 
@@ -18,35 +19,33 @@ var (
 )
 
 // ExtractMarkdownURLs returns the URLs in a GitHub-flavoured markdown body,
-// in order, deduplicated. Images (markdown or <img>) and HTML comments —
-// PR templates are full of commented-out guidance — are ignored. Trailing
-// sentence punctuation is trimmed.
+// in order, deduplicated (see ExtractMarkdownLinks for what is ignored).
 func ExtractMarkdownURLs(body string) []string {
-	body = htmlCommentPattern.ReplaceAllString(body, "")
-	body = mdImagePattern.ReplaceAllString(body, "")
-	body = htmlImgPattern.ReplaceAllString(body, "")
-	var out []string
-	seen := map[string]bool{}
-	for _, u := range mdURLPattern.FindAllString(body, -1) {
-		u = strings.TrimRight(u, ".,;:!?")
-		if u != "" && !seen[u] {
-			seen[u] = true
-			out = append(out, u)
-		}
-	}
-	return out
+	return watcher.DedupeLinkURLs(ExtractMarkdownLinks(body))
 }
 
-// Classify turns URLs into Items: PR / Jira / Slack thread via the shared
-// resourceurl detector, anything else http(s) as a link. Items are
-// deduplicated by (type, id) — so ".../pull/2" and ".../pull/2/files" are one
-// row — and the resource itself (self) is dropped. Non-link items start
-// unresolved; links are "resolved" from the start because a URL + domain is
-// already a complete row (titles are an optional extra).
+// Classify is ClassifyLinks for bare URLs, which carry no context.
 func Classify(urls []string, self Key) []Item {
+	refs := make([]watcher.LinkRef, len(urls))
+	for i, u := range urls {
+		refs[i] = watcher.LinkRef{URL: u, Label: u}
+	}
+	return ClassifyLinks(refs, self)
+}
+
+// ClassifyLinks turns link occurrences into Items: PR / Jira / Slack thread
+// via the shared resourceurl detector, anything else http(s) as a link.
+// Items are deduplicated by (type, id) — so ".../pull/2" and
+// ".../pull/2/files" are one row — and the resource itself (self) is
+// dropped. The FIRST occurrence of each decides its Context (see
+// contextFor). Non-link items start unresolved; links are "resolved" from
+// the start because a URL + domain is already a complete row (titles are an
+// optional extra).
+func ClassifyLinks(refs []watcher.LinkRef, self Key) []Item {
 	var out []Item
 	seen := map[Key]bool{self: true}
-	for _, raw := range urls {
+	for _, ref := range refs {
+		raw := ref.URL
 		t, id, ok := resourceurl.InferAny(raw)
 		if !ok {
 			continue
@@ -61,16 +60,36 @@ func Classify(urls []string, self Key) []Item {
 		case "pr":
 			// Canonical URL, so ".../pull/2/files" opens the PR itself.
 			it.URL = canonicalPRURL(id, raw)
+			it.Context = contextFor(ref, false, prKeyForms(id)...)
+		case "jira":
+			it.Context = contextFor(ref, false, id)
+		case "slack":
+			it.Context = contextFor(ref, false)
 		case "link":
 			it.URL = id
 			it.Resolved = true
 			if u, err := url.Parse(id); err == nil {
 				it.Domain = u.Hostname()
 			}
+			it.Context = contextFor(ref, true)
 		}
 		out = append(out, it)
 	}
 	return out
+}
+
+// prKeyForms are the ways a PR "owner/repo#N" is commonly written as a
+// label: "#N", "repo#N" and "owner/repo#N".
+func prKeyForms(id string) []string {
+	hash := strings.LastIndex(id, "#")
+	if hash < 0 {
+		return []string{id}
+	}
+	forms := []string{id, id[hash:]}
+	if slash := strings.Index(id, "/"); slash >= 0 && slash < hash {
+		forms = append(forms, id[slash+1:])
+	}
+	return forms
 }
 
 // canonicalPRURL rebuilds https://github.com/o/r/pull/N from "o/r#N".

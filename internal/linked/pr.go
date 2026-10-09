@@ -23,7 +23,7 @@ func (b *Builder) buildPR(ctx context.Context, id string, resolveLinks bool) ([]
 	if !ok {
 		return nil, fmt.Errorf("pull request %s not found", id)
 	}
-	desc := Classify(ExtractMarkdownURLs(pr.Body), Key{"pr", id})
+	desc := ClassifyLinks(ExtractMarkdownLinks(pr.Body), Key{"pr", id})
 	b.resolve(ctx, desc, resolveLinks)
 	sections := []Section{{Kind: "description", Title: "Linked in description", Items: desc}}
 

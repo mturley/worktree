@@ -1,4 +1,4 @@
-import { Badge, Group, Text } from "@mantine/core"
+import { Anchor, Badge, Box, Group, Text } from "@mantine/core"
 import { IconMessage, IconWorld } from "@tabler/icons-react"
 import type { LinkedItem, ResourceDTO } from "../../api/types"
 import { Mrkdwn } from "../../lib/mrkdwn"
@@ -63,7 +63,8 @@ export function LinkedResourceRow({ item, path, hideFollow, marker }: {
 }) {
   const status = statusText(item)
   return (
-    <Group justify="space-between" gap="xs" wrap="wrap" py={4}>
+    <Box py={4}>
+    <Group justify="space-between" gap="xs" wrap="wrap">
       <Group gap={6} wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
         {icon(item)}
         <Text size="sm" c="dimmed" style={{ whiteSpace: "nowrap", flexShrink: 0 }}>{keyText(item)}</Text>
@@ -77,5 +78,21 @@ export function LinkedResourceRow({ item, path, hideFollow, marker }: {
       </Group>
       <LinkedResourceActions item={item} path={path} hideFollow={hideFollow} />
     </Group>
+    {item.context && <ContextLine item={item} context={item.context} />}
+    </Box>
+  )
+}
+
+/**
+ * The text the link was written in, with the link's own label as a link, so
+ * a bare "PROJ-9" row also says why it is there. Indented past the icon.
+ */
+function ContextLine({ item, context }: { item: LinkedItem; context: NonNullable<LinkedItem["context"]> }) {
+  return (
+    <Text size="xs" c="dimmed" fs="italic" pl={22} data-testid="link-context">
+      {context.before && <>{context.before} </>}
+      <Anchor href={item.url} target="_blank" rel="noreferrer" inherit>{context.label}</Anchor>
+      {context.after && <> {context.after}</>}
+    </Text>
   )
 }

@@ -106,7 +106,9 @@ func (b *Builder) resolveJira(ctx context.Context, items []Item, idx []int) {
 				// The configured host's URL, not the one written in the text:
 				// it may be an alias host (see jira.SetAliasHosts) that only
 				// redirects, and cmux tab matching expects the canonical form.
+				ctx := items[i].Context
 				items[i] = jiraItem(s, b.Src.Jira.IssueURL(s.Key))
+				items[i].Context = ctx
 			}
 		}
 	}

@@ -34,8 +34,8 @@ func (b *Builder) buildJira(ctx context.Context, key string, resolveLinks bool) 
 	self := Key{"jira", g.Issue.Key}
 	var sections []Section
 
-	gitPR := Classify(g.GitPRURLs, self)
-	desc := Classify(g.DescriptionURLs, self)
+	gitPR := ClassifyLinks(g.GitPRLinks, self)
+	desc := ClassifyLinks(g.DescriptionLinks, self)
 	// One resolve pass over both, so linked keys are batched together.
 	all := append(append([]Item{}, gitPR...), desc...)
 	b.resolve(ctx, all, resolveLinks)

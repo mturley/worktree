@@ -274,6 +274,14 @@ placeholder until it arrives.
 **Plumbing.** `ResourceDetailPane` gains `onSelectResource`, passed from
 `WorktreeDetailPage`'s `select`, and forwards it to the Linked tab.
 
+**Link context.** Rows from a description, Git PR field or thread show an
+indented, dimmed italic line under the row: the text before the link, the
+link's label (as a link to the item), and the text after, each side truncated
+server-side to about 60 runes at a word boundary. Omitted for resource rows
+whose label just restates the URL or key, and for hierarchy/link-group rows.
+Data comes from watcher v0.12.0 `LinkRef` (see docs/web-ui-architecture.md
+"Linked resources").
+
 ## Testing
 
 - **watcher:** table tests for `ExtractADFURLs`, `FetchLinkGraph` (parent

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/mturley/watcher"
 	"github.com/mturley/watcher/slack"
 )
 
@@ -20,11 +21,11 @@ func (b *Builder) buildSlack(ctx context.Context, id string, resolveLinks bool) 
 	if err != nil {
 		return nil, err
 	}
-	var urls []string
+	var refs []watcher.LinkRef
 	for _, m := range th.Messages {
-		urls = append(urls, slack.ExtractURLs(m)...)
+		refs = append(refs, slack.ExtractLinks(m)...)
 	}
-	items := Classify(urls, Key{"slack", id})
+	items := ClassifyLinks(refs, Key{"slack", id})
 	b.resolve(ctx, items, resolveLinks)
 	return []Section{{Kind: "thread", Title: "Linked in thread", Items: items}}, nil
 }

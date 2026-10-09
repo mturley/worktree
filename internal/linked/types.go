@@ -38,6 +38,9 @@ type Item struct {
 	Excerpt          string `json:"excerpt,omitempty"`
 	Domain           string `json:"domain,omitempty"`
 	Favicon          string `json:"favicon,omitempty"`
+	// Context is the link's label and surrounding text where it was written;
+	// nil when there is nothing worth showing.
+	Context *LinkContext `json:"context,omitempty"`
 }
 
 // More marks a node whose children were capped; URL is the JQL search on

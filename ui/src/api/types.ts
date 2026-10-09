@@ -323,6 +323,8 @@ export interface LinkedItem {
   excerpt?: string
   domain?: string
   favicon?: string
+  /** The link's label and surrounding text where it was written (already truncated). */
+  context?: { before: string; label: string; after: string }
 }
 
 export interface LinkedTreeNode extends LinkedItem {
