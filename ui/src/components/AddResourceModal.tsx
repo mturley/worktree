@@ -177,7 +177,7 @@ export function AddResourceModal({
         ) : null}
         <Stack gap={4}>
           <Text size="sm">Supported resource URLs:</Text>
-          <List size="sm" spacing={4} center>
+          <List size="sm" spacing={4} center withPadding>
             {SUPPORTED_URLS.map(({ label, icon }) => (
               <List.Item key={label} icon={icon}>
                 {label}
