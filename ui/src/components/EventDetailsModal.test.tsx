@@ -67,6 +67,15 @@ describe("EventDetailsModal", () => {
     expect(screen.getByRole("button", { name: "Copy link" })).toBeInTheDocument()
   })
 
+  it("still links out when the event's embedded resource carries no url", async () => {
+    // The server enriches an event's resource from cached state, which has no
+    // URL; only the event row does. Feeds with no resolver — a selected
+    // resource's own feed, the home page — get just that embedded copy.
+    const resource = { type: "pr", id: "o/r#1", url: "", primary: false, title: "Fix the widget PR", state: "OPEN" } as ResourceDTO
+    wrap(<EventDetailsModal e={ev({ resource })} onClose={vi.fn()} />)
+    expect((await screen.findByRole("link", { name: "Open on GitHub" })).getAttribute("href")).toBe("https://gh/pr/1")
+  })
+
   it("introduces the resource with its brand badge and typed key", async () => {
     const resource = { type: "jira", id: "J-1", url: "https://jira/J-1", primary: true, issue_type: "Bug", title: "Flux" } as ResourceDTO
     wrap(

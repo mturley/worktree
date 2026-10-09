@@ -87,6 +87,11 @@ export function EventDetailsModal({ e, onClose, resolveResource, path }: {
 /**
  * The resource to hand ResourceActions: the tracked one where known, else a
  * bare shape built from the event, which carries everything the buttons use.
+ *
+ * The URL always falls back to the event's own: the copy the server embeds
+ * in an event is built from cached state, which has none, and ResourceActions
+ * renders nothing without one. That copy is all a feed with no resolver gets
+ * — a selected resource's own feed, the home page.
  */
 function eventResource(
   e: TimelineEvent,
@@ -95,5 +100,6 @@ function eventResource(
   const known = e.resource_type && e.resource_id
     ? resolveResource?.(e.resource_type, e.resource_id) ?? e.resource
     : undefined
-  return known ?? ({ type: e.resource_type, id: e.resource_id, url: e.resource_url, primary: false } as ResourceDTO)
+  if (!known) return { type: e.resource_type, id: e.resource_id, url: e.resource_url, primary: false } as ResourceDTO
+  return known.url ? known : { ...known, url: e.resource_url }
 }
