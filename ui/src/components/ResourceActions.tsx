@@ -50,8 +50,9 @@ export function openLabel(type: string): string {
  * by accident when you meant to select.
  *
  * Given the worktree `path`, a PR or Jira issue already open in a browser tab
- * of one of that worktree's cmux workspaces gets "(existing tab)": the main
- * button switches cmux to that tab, and a dropdown keeps the new-tab link.
+ * of one of that worktree's cmux workspaces gets "Switch to open <service>
+ * tab" instead, which switches cmux to that tab; a dropdown keeps the new-tab
+ * link.
  */
 export function ResourceActions({ r, path }: { r: ResourceDTO; path?: string }) {
   const [copied, setCopied] = useState(false)
@@ -76,22 +77,20 @@ export function ResourceActions({ r, path }: { r: ResourceDTO; path?: string }) 
       {existing && path ? (
         <ExistingTabButtons r={r} path={path} label={label} existing={existing} />
       ) : (
-        <Tooltip label={label}>
-          <Button
-            size="xs"
-            variant="light"
-            component="a"
-            href={r.url}
-            target="_blank"
-            rel="noreferrer"
-            // The detail card is not itself a click target, but keep this from
-            // bubbling in case the card is ever made selectable.
-            onClick={(e) => e.stopPropagation()}
-            styles={{ root: { flexShrink: 0 }, label: { whiteSpace: "nowrap" } }}
-          >
-            {label}
-          </Button>
-        </Tooltip>
+        <Button
+          size="xs"
+          variant="light"
+          component="a"
+          href={r.url}
+          target="_blank"
+          rel="noreferrer"
+          // The detail card is not itself a click target, but keep this from
+          // bubbling in case the card is ever made selectable.
+          onClick={(e) => e.stopPropagation()}
+          styles={{ root: { flexShrink: 0 }, label: { whiteSpace: "nowrap" } }}
+        >
+          {label}
+        </Button>
       )}
       <Tooltip label={copied ? "Copied!" : "Copy link"}>
         <Button
@@ -152,7 +151,7 @@ function ExistingTabButtons({ r, path, label, existing }: {
           }}
           styles={{ root: { flexShrink: 0 }, label: { whiteSpace: "nowrap" } }}
         >
-          {label} (existing tab)
+          Switch to open {serviceName(r.type)} tab
         </Button>
       </Tooltip>
       <Menu position="bottom-end" withinPortal>

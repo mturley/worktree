@@ -110,7 +110,7 @@ describe("ResourceActions in cmux", () => {
     const user = userEvent.setup()
     wrap(<ResourceActions r={jira} path="/wt" />)
 
-    await user.click(await screen.findByRole("button", { name: "Open on Jira (existing tab)" }))
+    await user.click(await screen.findByRole("button", { name: "Switch to open Jira tab" }))
     expect(focus).toHaveBeenCalledWith("W1", "surface:7")
     expect(open).not.toHaveBeenCalled()
 
@@ -128,7 +128,7 @@ describe("ResourceActions in cmux", () => {
     const user = userEvent.setup()
     wrap(<ResourceActions r={pr} path="/wt" />)
 
-    await user.click(await screen.findByRole("button", { name: "Open on GitHub (existing tab)" }))
+    await user.click(await screen.findByRole("button", { name: "Switch to open GitHub tab" }))
     await waitFor(() => expect(open).toHaveBeenCalledWith(PR_URL, "_blank", "noreferrer"))
   })
 })
