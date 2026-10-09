@@ -626,13 +626,48 @@ describe("the unread badge must not carve a hole in the card", () => {
     expect(onSelect).toHaveBeenCalledTimes(1)
   })
 
-  it("keeps the remove control OUT of the click target", () => {
-    // The one thing that must stay a sibling: a button inside a button is
-    // invalid markup with an ambiguous click target.
+  it("never nests the remove control inside a select button", () => {
+    // The detail card's header row holds the remove control, and a button
+    // inside a button is invalid markup with an ambiguous click target — so
+    // the detail card is never a select target, even if handed onSelect.
     wrap(<ResourceCard r={{ ...base, unread_count: 2 }} onSelect={vi.fn()} variant="detail" path="/wt" />)
-    const select = screen.getByRole("button", { name: /select resource/i })
+    expect(screen.queryByRole("button", { name: /select resource/i })).toBeNull()
     const remove = screen.getByRole("button", { name: "Unfollow resource" })
-    expect(select).not.toContainElement(remove)
+    expect(remove.parentElement?.closest("button")).toBeNull()
+  })
+
+  it("puts the detail card's controls in the type line's row", () => {
+    // Not a column beside the whole card: that squeezed the title into
+    // whatever width the controls left over.
+    wrap(<ResourceCard r={base} variant="detail" path="/wt" notify={{ all: false, mode: undefined }} />)
+    const typeLine = document.querySelector("[data-resource-type-line]") as HTMLElement
+    const row = typeLine.parentElement as HTMLElement
+    expect(row).toContainElement(screen.getByRole("button", { name: "Unfollow resource" }))
+    expect(row).toContainElement(screen.getByLabelText("Notify on new events"))
+    expect(row).not.toContainElement(screen.getByText("Fix the widget"))
+  })
+})
+
+describe("status badge placement", () => {
+  const pr = { type: "pr", id: "o/r#1", url: "u", primary: true, title: "Fix the widget", state: "OPEN", ci_status: "success" } as ResourceDTO
+  const jira = { type: "jira", id: "RHOAIENG-1", url: "u", primary: true, title: "Do a thing", status: "In Progress", priority: "Major" } as ResourceDTO
+  const typeLine = () => document.querySelector("[data-resource-type-line]") as HTMLElement
+
+  it("flows a list card's PR badges into the type line after the key", () => {
+    wrap(<ResourceCard r={pr} onSelect={vi.fn()} />)
+    expect(typeLine()).toContainElement(screen.getByText("open"))
+    expect(typeLine()).toContainElement(screen.getByText("ci: success"))
+  })
+
+  it("flows a list card's Jira badges into the type line after the key", () => {
+    wrap(<ResourceCard r={jira} onSelect={vi.fn()} />)
+    expect(typeLine()).toContainElement(screen.getByText("In Progress"))
+    expect(typeLine()).toContainElement(screen.getByText("Major"))
+  })
+
+  it("keeps the detail card's badges on their own line", () => {
+    wrap(<ResourceCard r={pr} variant="detail" path="/wt" />)
+    expect(typeLine()).not.toContainElement(screen.getByText("open"))
   })
 })
 

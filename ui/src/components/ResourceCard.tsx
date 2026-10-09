@@ -117,18 +117,31 @@ function MinimalRow({ r, variant, aside }: CardBodyProps) {
   )
 }
 
+/**
+ * Where a card puts its status badges. A list card flows them into the type
+ * line after the key, saving a row per card in a list scanned by status; the
+ * detail card has the width to give them a line of their own under the title.
+ */
+function badgesInTypeLine(variant: ResourceCardVariant): boolean {
+  return variant !== "detail"
+}
+
 function PRCardBody({ r, variant, aside }: CardBodyProps) {
+  const badges = (
+    <>
+      {r.state && <Badge size="xs" color={prStateColor(r.state)}>{r.state.toLowerCase()}</Badge>}
+      {r.review_decision && <Badge size="xs" color={reviewColor(r.review_decision)}>{reviewLabel(r.review_decision)}</Badge>}
+      {r.ci_status && <Badge size="xs" color={ciColor(r.ci_status)}>ci: {r.ci_status}</Badge>}
+      {r.new_commits_since_review && <Badge size="xs" color="blue" variant="outline">new commits</Badge>}
+    </>
+  )
+  const inline = badgesInTypeLine(variant)
   return (
     <Stack gap={4}>
-      <ResourceTypeLine r={r} aside={aside} />
+      <ResourceTypeLine r={r} aside={aside} trailing={inline ? badges : undefined} />
       <ResourceTitle r={r} label={r.title || r.id} showUnread={showsUnread(variant)} icon={null} {...titleProps(variant)} />
       <CustomDescription r={r} />
-      <Group gap={4} wrap="wrap">
-        {r.state && <Badge size="xs" color={prStateColor(r.state)}>{r.state.toLowerCase()}</Badge>}
-        {r.review_decision && <Badge size="xs" color={reviewColor(r.review_decision)}>{reviewLabel(r.review_decision)}</Badge>}
-        {r.ci_status && <Badge size="xs" color={ciColor(r.ci_status)}>ci: {r.ci_status}</Badge>}
-        {r.new_commits_since_review && <Badge size="xs" color="blue" variant="outline">new commits</Badge>}
-      </Group>
+      {!inline && <Group gap={4} wrap="wrap">{badges}</Group>}
       <Text size="xs" c="dimmed">
         {r.author && `by ${r.author}`}
         {r.author && r.updated_at && " · "}
@@ -139,15 +152,19 @@ function PRCardBody({ r, variant, aside }: CardBodyProps) {
 }
 
 function JiraCardBody({ r, variant, aside }: CardBodyProps) {
+  const badges = (
+    <>
+      {r.status && <Badge size="xs" variant="light">{r.status}</Badge>}
+      {r.priority && <Badge size="xs" variant="light" color="orange">{r.priority}</Badge>}
+    </>
+  )
+  const inline = badgesInTypeLine(variant)
   return (
     <Stack gap={4}>
-      <ResourceTypeLine r={r} aside={aside} />
+      <ResourceTypeLine r={r} aside={aside} trailing={inline ? badges : undefined} />
       <ResourceTitle r={r} label={r.title || r.id} showUnread={showsUnread(variant)} icon={null} {...titleProps(variant)} />
       <CustomDescription r={r} />
-      <Group gap={4} wrap="wrap">
-        {r.status && <Badge size="xs" variant="light">{r.status}</Badge>}
-        {r.priority && <Badge size="xs" variant="light" color="orange">{r.priority}</Badge>}
-      </Group>
+      {!inline && <Group gap={4} wrap="wrap">{badges}</Group>}
       {variant === "detail" && r.labels && r.labels.length > 0 && (
         <Group gap={4} wrap="wrap">
           {r.labels.map((l) => <Badge key={l} size="xs" variant="dot">{l}</Badge>)}
@@ -384,11 +401,20 @@ export function ResourceCard({
   // column ran the card's full height, squeezing the title and status badges
   // into whatever width was left beside it on a narrow card.
   const unread = showsUnread(variant) && hasUnread(r)
-  // The detail card carries the switch instead of a bell.
-  const shownBell = variant !== "detail" ? bell : null
-  const aside = shownBell || unread ? (
+  // The detail card carries the switch and the remove control instead of a
+  // bell, in the same type-line row so the title below keeps the card's full
+  // width. Only the detail card has the remove control: list cards are
+  // clickable-to-select, so a per-card trash there is visual noise and an
+  // easy mis-click; removal belongs with the selected resource.
+  const aside = variant === "detail" ? (
+    <Group gap="sm" wrap="nowrap" align="center">
+      {/* Links are never polled, so there is nothing to notify about. */}
+      {notify && path && r.type !== "link" && <ResourceNotifySwitch r={r} path={path} notify={notify} />}
+      <RemoveControl r={r} path={path} onRemoved={onRemoved} />
+    </Group>
+  ) : bell || unread ? (
     <>
-      {shownBell}
+      {bell}
       <UnreadBadge unread={unread} count={r.unread_count} />
     </>
   ) : undefined
@@ -416,7 +442,7 @@ export function ResourceCard({
       withBorder
       // Selectable cards get the clickable surface + hover/focus styling from
       // styles/cards.css; the detail pane renders this card without onSelect.
-      data-interactive={onSelect ? "true" : undefined}
+      data-interactive={onSelect && variant !== "detail" ? "true" : undefined}
       // A selected card is tinted so the current selection is obvious next to
       // the pane it drives.
       // Violet, not blue: blue is spoken for by unread, and a selected read
@@ -428,7 +454,9 @@ export function ResourceCard({
     >
       <Group justify="space-between" wrap="nowrap" align="flex-start">
         {dragHandle}
-        {onSelect ? (
+        {/* The detail card heads its pane and is never a select target; its
+            header row holds buttons, which must not nest inside one. */}
+        {onSelect && variant !== "detail" ? (
           <UnstyledButton
             onClick={onSelect}
             aria-pressed={selected}
@@ -439,18 +467,6 @@ export function ResourceCard({
           </UnstyledButton>
         ) : (
           <div style={{ flex: 1, minWidth: 0 }}>{body}</div>
-        )}
-        {/*
-          Only the detail card carries the remove control. List cards are
-          clickable-to-select, so a per-card x there is visual noise and an
-          easy mis-click; removal belongs with the selected resource.
-        */}
-        {variant === "detail" && (
-          <Group gap="sm" wrap="nowrap" align="flex-start">
-            {/* Links are never polled, so there is nothing to notify about. */}
-            {notify && path && r.type !== "link" && <ResourceNotifySwitch r={r} path={path} notify={notify} />}
-            <RemoveControl r={r} path={path} onRemoved={onRemoved} />
-          </Group>
         )}
       </Group>
       {variant === "detail" && primaryError && (
