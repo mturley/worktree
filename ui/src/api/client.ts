@@ -119,7 +119,7 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(args),
     }),
-  addResource: (args: { path: string; url: string; related?: boolean }) =>
+  addResource: (args: { path: string; url: string; related?: boolean; position?: "top" | "bottom" }) =>
     fetchJSON<ResourceDTO>("/api/worktree-resources/add", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

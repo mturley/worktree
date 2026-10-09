@@ -327,3 +327,45 @@ func TestSetResourceOrderEndpoint_MissingPath(t *testing.T) {
 		t.Fatalf("got %d, want 400", resp.StatusCode)
 	}
 }
+
+func TestAddResource_PositionTopPutsItFirstInItsGroup(t *testing.T) {
+	t.Setenv("WATCHER_HOME", t.TempDir())
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	wtPath := testgit.Worktree(t)
+
+	srv := &Server{DB: conn}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	add := func(key, position string) {
+		t.Helper()
+		body := `{"path":"` + wtPath + `","url":"https://redhat.atlassian.net/browse/` + key + `","position":"` + position + `"}`
+		resp, err := http.Post(ts.URL+"/api/worktree-resources/add", "application/json", bytes.NewReader([]byte(body)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("add %s: got %d, want 200", key, resp.StatusCode)
+		}
+	}
+	add("RHOAIENG-1", "")
+	add("RHOAIENG-2", "bottom")
+	add("RHOAIENG-3", "top")
+	add("RHOAIENG-4", "bottom")
+
+	res, err := resources.Load(conn, wtPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, r := range res {
+		got = append(got, r.ID)
+	}
+	if want := "RHOAIENG-3,RHOAIENG-1,RHOAIENG-2,RHOAIENG-4"; strings.Join(got, ",") != want {
+		t.Fatalf("order = %s, want %s", strings.Join(got, ","), want)
+	}
+}

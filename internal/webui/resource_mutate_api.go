@@ -14,6 +14,10 @@ type addResourceRequest struct {
 	Path    string `json:"path"`
 	URL     string `json:"url"`
 	Related bool   `json:"related"`
+	// Position is where the resource lands in its group: "top" or "bottom".
+	// Anything else, including absent, means bottom — what every add did
+	// before the choice existed.
+	Position string `json:"position"`
 }
 
 // handleAddResource infers the resource type+id from the given URL, creates
@@ -47,6 +51,12 @@ func (s *Server) handleAddResource(w http.ResponseWriter, r *http.Request) {
 		}
 		writeError(w, status, err.Error())
 		return
+	}
+	if req.Position == "top" {
+		if err := resources.MoveToTop(s.DB, req.Path, resType, id); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 	if resType == "link" {
 		// Links are never polled; resolving inline is the only way the card

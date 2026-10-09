@@ -712,3 +712,59 @@ func TestRemoveDropsNotifyPrefs(t *testing.T) {
 		t.Fatalf("RemoveAll left toggles: %+v", p)
 	}
 }
+
+func TestMoveToTopPutsAResourceFirstInItsGroup(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/top"
+	addAll(t, conn, wt, false, "o/r#1", "o/r#2")
+	addAll(t, conn, wt, true, "o/r#8", "o/r#9")
+
+	// The newest of each group goes first in its own group only: related
+	// stays after focus however it is placed.
+	addAll(t, conn, wt, false, "o/r#3")
+	if err := MoveToTop(conn, wt, "pr", "o/r#3"); err != nil {
+		t.Fatal(err)
+	}
+	addAll(t, conn, wt, true, "o/r#7")
+	if err := MoveToTop(conn, wt, "pr", "o/r#7"); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := Load(conn, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(ids(res), ",")
+	want := "pr:o/r#3,pr:o/r#1,pr:o/r#2,pr:o/r#7,pr:o/r#8,pr:o/r#9"
+	if got != want {
+		t.Fatalf("order = %s, want %s", got, want)
+	}
+}
+
+func TestMoveToTopKeepsHandPlacedOrderOfTheRest(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/top-ranked"
+	addAll(t, conn, wt, false, "o/r#1", "o/r#2", "o/r#3")
+	if err := SetOrder(conn, wt, keys("o/r#3", "o/r#1", "o/r#2"), nil); err != nil {
+		t.Fatal(err)
+	}
+
+	addAll(t, conn, wt, false, "o/r#4")
+	if err := MoveToTop(conn, wt, "pr", "o/r#4"); err != nil {
+		t.Fatal(err)
+	}
+
+	res, _ := Load(conn, wt)
+	if got, want := strings.Join(ids(res), ","), "pr:o/r#4,pr:o/r#3,pr:o/r#1,pr:o/r#2"; got != want {
+		t.Fatalf("order = %s, want %s", got, want)
+	}
+}
+
+func TestMoveToTopUnknownResource(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/top-unknown"
+	addAll(t, conn, wt, false, "o/r#1")
+	if err := MoveToTop(conn, wt, "pr", "o/r#404"); err == nil {
+		t.Fatal("expected an error for a resource the worktree does not track")
+	}
+}

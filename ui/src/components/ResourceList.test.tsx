@@ -69,6 +69,7 @@ describe("ResourceList", () => {
       path: "/some/worktree",
       url: "https://github.com/org/repo/pull/1",
       related: false,
+      position: "top",
     })
     await vi.waitFor(() => expect(onChanged).toHaveBeenCalled())
   })

@@ -381,6 +381,48 @@ func setGroupAndPlace(conn *sql.DB, worktreePath, resType, id string, primary bo
 	return tx.Commit()
 }
 
+// MoveToTop places a tracked resource first in whichever group it is in,
+// leaving the rest of that group in the order it already had.
+//
+// Following a resource puts it at the bottom of its group without writing a
+// rank (an unranked resource sorts last), so this is how a caller asks for the
+// top instead. The whole group is renumbered: ranking only the moved resource
+// would put it ahead of the unranked members but still behind any the user
+// has already placed by hand.
+func MoveToTop(conn *sql.DB, worktreePath, resType, id string) error {
+	current, err := Load(conn, worktreePath)
+	if err != nil {
+		return err
+	}
+	var moved *Resource
+	for i := range current {
+		if current[i].Type == resType && current[i].ID == id {
+			moved = &current[i]
+			break
+		}
+	}
+	if moved == nil {
+		return fmt.Errorf("resource %s/%s is not tracked by %s", resType, id, worktreePath)
+	}
+
+	group := []Resource{*moved}
+	for _, r := range current {
+		if r.Related == moved.Related && !(r.Type == resType && r.ID == id) {
+			group = append(group, r)
+		}
+	}
+
+	tx, err := conn.BeginTx(context.Background(), nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+	if err := writeRanks(tx, wdb.Subscriber(worktreePath), !moved.Related, group); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // writeRanks numbers group densely from 1, upserting rather than updating
 // because a resource that has only ever been related may have no
 // worktree_primary row at all — absence of a row is itself a classification.

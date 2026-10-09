@@ -62,6 +62,7 @@ describe("AddResourceModal", () => {
       path: "/wt",
       url: "https://github.com/org/repo/pull/1",
       related: false,
+      position: "top",
     })
     await vi.waitFor(() => expect(onAdded).toHaveBeenCalled())
     expect(onClose).toHaveBeenCalled()
@@ -82,6 +83,27 @@ describe("AddResourceModal", () => {
       path: "/wt",
       url: "https://redhat.atlassian.net/browse/RHOAIENG-1",
       related: true,
+      position: "top",
+    })
+  })
+
+  it("adds to the bottom of its section when Add to bottom is selected", async () => {
+    addResource.mockResolvedValueOnce({ type: "pr", id: "o/r#3", url: "u", primary: true })
+    const user = userEvent.setup()
+    const { getByLabelText, getByRole } = wrap(
+      <AddResourceModal opened path="/wt" onClose={vi.fn()} onAdded={vi.fn()} />,
+    )
+
+    expect(getByRole("radio", { name: "Add to top" })).toBeChecked()
+    await user.type(getByLabelText(/url/i), "https://github.com/o/r/pull/3")
+    await user.click(getByRole("radio", { name: "Add to bottom" }))
+    await user.click(getByRole("button", { name: "Follow" }))
+
+    expect(addResource).toHaveBeenCalledWith({
+      path: "/wt",
+      url: "https://github.com/o/r/pull/3",
+      related: false,
+      position: "bottom",
     })
   })
 
@@ -95,7 +117,7 @@ describe("AddResourceModal", () => {
     await user.type(getByLabelText(/url/i), "https://github.com/o/r/pull/2")
     await user.click(getByRole("button", { name: "Follow" }))
 
-    expect(addResource).toHaveBeenCalledWith({ path: "/wt", url: "https://github.com/o/r/pull/2", related: true })
+    expect(addResource).toHaveBeenCalledWith({ path: "/wt", url: "https://github.com/o/r/pull/2", related: true, position: "top" })
   })
 
   it("hides only the custom NAME field for a non-Slack URL", async () => {
@@ -196,7 +218,7 @@ describe("AddResourceModal", () => {
     await user.click(getByRole("radio", { name: /related/i }))
     await user.click(getByRole("button", { name: "Follow" }))
 
-    expect(addResource).toHaveBeenCalledWith({ path: "/wt", url, related: true })
+    expect(addResource).toHaveBeenCalledWith({ path: "/wt", url, related: true, position: "top" })
   })
 
   it("offers a custom name for a link, as it does for a Slack thread", async () => {
@@ -221,8 +243,12 @@ describe("AddResourceModal", () => {
     expect(await screen.findByText("Link — ex.com")).toBeInTheDocument()
   })
 
-  it("no longer says which three services are allowed", () => {
+  it("still accepts any URL, while listing the supported resource types", () => {
     wrap(<AddResourceModal opened path="/wt" onClose={vi.fn()} onAdded={vi.fn()} />)
     expect(screen.getByPlaceholderText("Paste any URL")).toBeInTheDocument()
+    expect(screen.getByText("Supported resource URLs:")).toBeInTheDocument()
+    for (const label of ["GitHub PRs", "Jira issues", "Slack threads"]) {
+      expect(screen.getByText(label)).toBeInTheDocument()
+    }
   })
 })
