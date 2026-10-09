@@ -1,4 +1,4 @@
-import type { CmuxTab, CmuxTreeResponse, CmuxTreeWorkspace } from "../api/types"
+import type { CmuxBrowserTab, CmuxBrowserTabsResponse } from "../api/types"
 
 const PR_PATH = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/|$)/
 const JIRA_PATH = /^\/browse\/([a-z][a-z0-9_]*-\d+)\/?$/i
@@ -29,27 +29,23 @@ export function tabMatchKey(type: string, url: string): string | null {
   return null
 }
 
-export interface ResourceTab {
-  workspace: CmuxTreeWorkspace
-  tab: CmuxTab
-}
-
 /**
- * The cmux tab already showing a resource of `type` whose tabMatchKey is
- * `key`, preferring the workspace the user is on. Terminals and unloaded
- * browser tabs have no URL, so they never match.
+ * The cmux browser tab already showing a resource of `type` whose
+ * tabMatchKey is `key`. Ranked: a tab in one of the worktree's own workspaces
+ * (`worktreeRefs`), then one in a workspace the user is on, then any.
  */
-export function findResourceTab(tree: CmuxTreeResponse | undefined, type: string, key: string): ResourceTab | null {
-  if (!tree?.available) return null
-  const ordered = [...tree.workspaces].sort((a, b) => Number(b.selected) - Number(a.selected))
-  for (const workspace of ordered) {
-    for (const pane of workspace.panes ?? []) {
-      for (const tab of pane.tabs) {
-        if (tab.url && tabMatchKey(type, tab.url) === key) {
-          return { workspace, tab }
-        }
-      }
-    }
-  }
-  return null
+export function findResourceTab(
+  res: CmuxBrowserTabsResponse | undefined,
+  type: string,
+  key: string,
+  worktreeRefs: string[],
+): CmuxBrowserTab | null {
+  if (!res?.available) return null
+  const matches = res.tabs.filter((t) => tabMatchKey(type, t.url) === key)
+  return (
+    matches.find((t) => worktreeRefs.includes(t.workspaceRef)) ??
+    matches.find((t) => t.workspaceSelected) ??
+    matches[0] ??
+    null
+  )
 }

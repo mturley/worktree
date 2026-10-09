@@ -16,7 +16,8 @@ vi.mock("../api/client", async (orig) => {
       removeResource: (...args: unknown[]) => removeResource(...args),
       setResourcePrimary: (...args: unknown[]) => setResourcePrimary(...args),
       // The detail card's open button asks cmux for an existing tab.
-      cmuxTree: () => Promise.resolve({ available: false, workspaces: [] }),
+      cmux: () => Promise.resolve({ available: false }),
+      cmuxBrowserTabs: () => Promise.resolve({ available: false, tabs: [] }),
     },
   }
 })

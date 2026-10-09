@@ -3,9 +3,8 @@ import { Button, Menu, Tooltip } from "@mantine/core"
 import { IconChevronDown } from "@tabler/icons-react"
 import { useQueryClient } from "@tanstack/react-query"
 import { api } from "../api/client"
-import { cmuxTreeKey, useResourceCmuxTab } from "../api/cmuxTree"
-import type { ResourceDTO } from "../api/types"
-import type { ResourceTab } from "../lib/resourceTab"
+import { cmuxBrowserTabsKey, useResourceCmuxTab } from "../api/cmux"
+import type { CmuxBrowserTab, ResourceDTO } from "../api/types"
 import { CopyLinkIcon } from "./CopyLinkIcon"
 
 const COPIED_FEEDBACK_MS = 1500
@@ -49,10 +48,10 @@ export function openLabel(type: string): string {
  * single click target for selection, and an inner link there is easy to hit
  * by accident when you meant to select.
  *
- * Given the worktree `path`, a PR or Jira issue already open in a browser tab
- * of one of that worktree's cmux workspaces gets "Switch to open <service>
- * tab" instead, which switches cmux to that tab; a dropdown keeps the new-tab
- * link.
+ * A PR or Jira issue already open in a cmux browser tab — in any workspace,
+ * preferring the one(s) matching the worktree `path` — gets "Switch to open
+ * <service> tab" instead, which switches cmux to that tab; a dropdown keeps
+ * the new-tab link.
  */
 export function ResourceActions({ r, path }: { r: ResourceDTO; path?: string }) {
   const [copied, setCopied] = useState(false)
@@ -74,8 +73,8 @@ export function ResourceActions({ r, path }: { r: ResourceDTO; path?: string }) 
 
   return (
     <Button.Group className="compound-group" style={{ flexShrink: 0 }}>
-      {existing && path ? (
-        <ExistingTabButtons r={r} path={path} label={label} existing={existing} />
+      {existing ? (
+        <ExistingTabButtons r={r} label={label} existing={existing} />
       ) : (
         <Button
           size="xs"
@@ -117,31 +116,37 @@ export function ResourceActions({ r, path }: { r: ResourceDTO; path?: string }) 
  * Button.Group — Menu.Target renders no wrapper and the dropdown is portalled
  * — so the compound-group dividers still apply.
  */
-function ExistingTabButtons({ r, path, label, existing }: {
+function ExistingTabButtons({ r, label, existing }: {
   r: ResourceDTO
-  path: string
   label: string
-  existing: ResourceTab
+  existing: CmuxBrowserTab
 }) {
   const qc = useQueryClient()
 
   async function handleSwitch() {
     let ok = false
     try {
-      ok = (await api.cmuxFocusTab(existing.workspace.id, existing.tab.ref)).ok
+      ok = (await api.cmuxFocusTab(existing.workspaceId, existing.surface)).ok
     } catch {
       // Treated like a refusal below.
     }
     if (ok) return
     // The tab was most likely closed since the last poll. Still get the user
-    // to the resource, and re-read the tree so the label stops claiming a tab.
+    // to the resource, and re-read the tabs so the label stops claiming one.
     window.open(r.url, "_blank", "noreferrer")
-    void qc.invalidateQueries({ queryKey: cmuxTreeKey(path) })
+    void qc.invalidateQueries({ queryKey: cmuxBrowserTabsKey })
   }
 
   return (
     <>
-      <Tooltip label={`Switch to the cmux tab already showing this (${existing.workspace.title})`}>
+      <Tooltip
+        label={
+          <>
+            <div>Switch to the cmux tab already showing this</div>
+            <div>(in workspace: {existing.workspaceTitle})</div>
+          </>
+        }
+      >
         <Button
           size="xs"
           variant="light"

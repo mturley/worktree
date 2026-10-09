@@ -43,6 +43,10 @@ type fakeTabOps struct {
 	// rename handler reads to keep an unread mailbox prefix.
 	workspaces []cmux.Workspace
 	listErr    error
+
+	// browserTabs and browserTabsErr back the browserTabs seam.
+	browserTabs    []cmux.BrowserTab
+	browserTabsErr error
 }
 
 func posString(p cmux.TabPosition) string {
@@ -94,6 +98,7 @@ func (f *fakeTabOps) ops() *cmuxTabOps {
 		clearName:       func(id string) error { return rec("clear-name", id) },
 		setColor:        func(id, c string) error { return rec("set-color", id, c) },
 		clearColor:      func(id string) error { return rec("clear-color", id) },
+		browserTabs:     func() ([]cmux.BrowserTab, error) { return f.browserTabs, f.browserTabsErr },
 		notifications: func() ([]cmux.Notification, error) {
 			f.notificationsN++
 			if f.notificationsErr != nil {

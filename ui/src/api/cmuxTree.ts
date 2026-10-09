@@ -3,7 +3,6 @@ import { useCallback, useRef, useState } from "react"
 import { api } from "./client"
 import type { CmuxActionResult, CmuxMove, CmuxTabRef, CmuxTreeResponse, CmuxTreeWorkspace } from "./types"
 import { applyClose, applyMove } from "../lib/cmuxMove"
-import { findResourceTab, tabMatchKey, type ResourceTab } from "../lib/resourceTab"
 
 export const cmuxTreeKey = (path: string) => ["cmux-tree", path] as const
 
@@ -24,39 +23,6 @@ export function useCmuxTree(path: string, paused: boolean) {
     refetchOnWindowFocus: !paused,
     refetchOnReconnect: !paused,
   })
-}
-
-/**
- * Optimistic writes still settling, per worktree path. Module-level rather
- * than per hook because useCmuxMove's `paused` only stops ITS observer's
- * poll; any other observer of the same tree (useResourceCmuxTab) would
- * otherwise refetch mid-settle and snap a moved tab back.
- */
-const settling = new Map<string, number>()
-
-function isSettling(path: string) {
-  return (settling.get(path) ?? 0) > 0
-}
-
-/**
- * The cmux tab in this worktree's workspaces already showing a PR or Jira
- * issue, or null — also null for other resource types, without a path, or
- * when cmux is unavailable. Shares useCmuxTree's query, so while the cmux
- * card tab is also mounted the two cost one fetch.
- */
-export function useResourceCmuxTab(path: string | undefined, type: string, url: string): ResourceTab | null {
-  const key = tabMatchKey(type, url)
-  const enabled = !!path && key !== null
-  const q = useQuery({
-    queryKey: cmuxTreeKey(path ?? ""),
-    queryFn: () => api.cmuxTree(path!),
-    enabled,
-    refetchInterval: () => (path && isSettling(path) ? false : 5_000),
-    refetchIntervalInBackground: false,
-    refetchOnWindowFocus: () => !(path && isSettling(path)),
-    refetchOnReconnect: () => !(path && isSettling(path)),
-  })
-  return enabled ? findResourceTab(q.data, type, key) : null
 }
 
 /**
@@ -123,7 +89,6 @@ function useCmuxOptimisticWrite(path: string) {
     ): Promise<string | null> => {
       const key = cmuxTreeKey(path)
       inFlightRef.current += 1
-      settling.set(path, (settling.get(path) ?? 0) + 1)
       setInFlight((n) => n + 1)
       await qc.cancelQueries({ queryKey: key })
       qc.setQueryData<CmuxTreeResponse>(key, (old) =>
@@ -138,7 +103,6 @@ function useCmuxOptimisticWrite(path: string) {
       }
       if (message === null) await new Promise((resolve) => setTimeout(resolve, CMUX_SETTLE_MS))
       inFlightRef.current -= 1
-      settling.set(path, (settling.get(path) ?? 1) - 1)
       setInFlight((n) => n - 1)
       // Only the last write still in flight refetches: an earlier one's
       // refetch (delayed by its own settle wait) would otherwise land after a

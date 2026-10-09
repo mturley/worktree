@@ -27,6 +27,7 @@ type cmuxTabOps struct {
 	setColor        func(id, color string) error
 	clearColor      func(id string) error
 	notifications   func() ([]cmux.Notification, error)
+	browserTabs     func() ([]cmux.BrowserTab, error)
 }
 
 func realCmuxTabOps() cmuxTabOps {
@@ -43,6 +44,7 @@ func realCmuxTabOps() cmuxTabOps {
 		setColor:        cmux.SetWorkspaceColor,
 		clearColor:      cmux.ClearWorkspaceColor,
 		notifications:   cmux.ListNotifications,
+		browserTabs:     cmux.BrowserTabs,
 	}
 }
 

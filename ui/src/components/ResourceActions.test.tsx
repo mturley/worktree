@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { api } from "../api/client"
-import type { CmuxTreeResponse, ResourceDTO } from "../api/types"
+import type { CmuxBrowserTab, CmuxResponse, ResourceDTO } from "../api/types"
 import { ResourceActions, openLabel } from "./ResourceActions"
 
 const wrap = (ui: React.ReactNode) =>
@@ -80,38 +80,48 @@ describe("ResourceActions in cmux", () => {
   const PR_URL = "https://github.com/org/repo/pull/5"
   const pr = res({ url: PR_URL })
   const jira = res({ type: "jira", id: "PROJ-1", url: "https://acme.atlassian.net/browse/PROJ-1" })
-  const treeWith = (url: string): CmuxTreeResponse => ({
-    available: true,
-    workspaces: [{
-      id: "W1", ref: "workspace:1", title: "wt", selected: true,
-      panes: [{ ref: "pane:1", focused: true, tabs: [{ ref: "surface:7", title: "PR", type: "browser", url, selected: false }] }],
-    }],
+  const tab = (ws: string, url: string): CmuxBrowserTab => ({
+    workspaceId: `${ws}-UUID`, workspaceRef: `workspace:${ws}`, workspaceTitle: ws, workspaceSelected: false, surface: `surface:${ws}`, url,
   })
+  const cmuxWith = (...tabs: CmuxBrowserTab[]) => {
+    vi.spyOn(api, "cmux").mockResolvedValue({ available: true, workspaces: [], matches: { "/wt": [{ ref: "workspace:own", title: "own", selected: false }] } } as unknown as CmuxResponse)
+    return vi.spyOn(api, "cmuxBrowserTabs").mockResolvedValue({ available: true, tabs })
+  }
 
   it("keeps the plain link when no tab shows the resource", async () => {
-    const tree = vi.spyOn(api, "cmuxTree").mockResolvedValue(treeWith("https://github.com/org/repo/pull/6"))
+    const tabs = cmuxWith(tab("x", "https://github.com/org/repo/pull/6"))
     wrap(<ResourceActions r={pr} path="/wt" />)
-    await waitFor(() => expect(tree).toHaveBeenCalledWith("/wt"))
+    await waitFor(() => expect(tabs).toHaveBeenCalled())
     expect(screen.getByRole("link", { name: "Open on GitHub" })).toHaveAttribute("href", PR_URL)
     expect(screen.queryByRole("button", { name: /more open options/i })).not.toBeInTheDocument()
   })
 
-  it("does not ask cmux without a path or for other resource types", () => {
-    const tree = vi.spyOn(api, "cmuxTree")
-    wrap(<ResourceActions r={pr} />)
+  it("does not ask cmux for tabs for other resource types", () => {
+    const tabs = cmuxWith()
     wrap(<ResourceActions r={res({ type: "slack", url: "https://x.slack.com/archives/C/p1" })} path="/wt" />)
-    expect(tree).not.toHaveBeenCalled()
+    expect(tabs).not.toHaveBeenCalled()
   })
 
-  it("switches to the existing tab, with a new-tab option in the menu", async () => {
-    vi.spyOn(api, "cmuxTree").mockResolvedValue(treeWith("https://acme.atlassian.net/browse/PROJ-1?x=1"))
+  it("finds a tab in another workspace even without a worktree path", async () => {
+    cmuxWith(tab("elsewhere", PR_URL))
+    wrap(<ResourceActions r={pr} />)
+    expect(await screen.findByRole("button", { name: "Switch to open GitHub tab" })).toBeInTheDocument()
+  })
+
+  it("switches to the worktree's own tab, with a new-tab option in the menu", async () => {
+    cmuxWith(tab("elsewhere", "https://acme.atlassian.net/browse/PROJ-1"), tab("own", "https://acme.atlassian.net/browse/PROJ-1?x=1"))
     const focus = vi.spyOn(api, "cmuxFocusTab").mockResolvedValue({ ok: true })
     const open = vi.spyOn(window, "open").mockReturnValue(null)
     const user = userEvent.setup()
     wrap(<ResourceActions r={jira} path="/wt" />)
 
-    await user.click(await screen.findByRole("button", { name: "Switch to open Jira tab" }))
-    expect(focus).toHaveBeenCalledWith("W1", "surface:7")
+    // The worktree's own workspace wins once /api/cmux has answered; the
+    // tooltip names the workspace the button will switch to.
+    const button = await screen.findByRole("button", { name: "Switch to open Jira tab" })
+    await user.hover(button)
+    await waitFor(() => expect(screen.getByText("(in workspace: own)")).toBeInTheDocument())
+    await user.click(button)
+    expect(focus).toHaveBeenCalledWith("own-UUID", "surface:own")
     expect(open).not.toHaveBeenCalled()
 
     await user.click(screen.getByRole("button", { name: /more open options/i }))
@@ -122,7 +132,7 @@ describe("ResourceActions in cmux", () => {
   })
 
   it("opens a new tab when cmux cannot focus the old one", async () => {
-    vi.spyOn(api, "cmuxTree").mockResolvedValue(treeWith(PR_URL + "/files"))
+    cmuxWith(tab("own", PR_URL + "/files"))
     vi.spyOn(api, "cmuxFocusTab").mockResolvedValue({ ok: false, error: "gone" })
     const open = vi.spyOn(window, "open").mockReturnValue(null)
     const user = userEvent.setup()

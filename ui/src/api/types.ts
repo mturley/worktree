@@ -281,6 +281,19 @@ export interface CmuxTreeWorkspace {
 
 export interface CmuxTreeResponse { available: boolean; workspaces: CmuxTreeWorkspace[] }
 
+/** A loaded browser tab in any cmux workspace (GET /api/cmux/browser-tabs). */
+export interface CmuxBrowserTab {
+  workspaceId: string
+  workspaceRef: string
+  workspaceTitle: string
+  /** Selected within its window. */
+  workspaceSelected: boolean
+  surface: string
+  url: string
+}
+
+export interface CmuxBrowserTabsResponse { available: boolean; tabs: CmuxBrowserTab[] }
+
 export interface CmuxActionResult { ok: boolean; error?: string; stale?: boolean }
 
 /** A tab as the user saw it, so the server can check it is still that tab. */

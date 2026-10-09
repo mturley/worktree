@@ -1,16 +1,12 @@
 import { describe, expect, it } from "vitest"
-import type { CmuxTab, CmuxTreeResponse, CmuxTreeWorkspace } from "../api/types"
+import type { CmuxBrowserTab, CmuxBrowserTabsResponse } from "../api/types"
 import { findResourceTab, tabMatchKey } from "./resourceTab"
 
-const tab = (ref: string, url?: string, over: Partial<CmuxTab> = {}): CmuxTab => ({
-  ref, title: ref, type: url ? "browser" : "terminal", url, selected: false, ...over,
+const tab = (ws: string, surface: string, url: string, over: Partial<CmuxBrowserTab> = {}): CmuxBrowserTab => ({
+  workspaceId: `${ws}-UUID`, workspaceRef: `workspace:${ws}`, workspaceTitle: ws, workspaceSelected: false, surface, url, ...over,
 })
 
-function ws(id: string, tabs: CmuxTab[], over: Partial<CmuxTreeWorkspace> = {}): CmuxTreeWorkspace {
-  return { id, ref: `workspace:${id}`, title: id, selected: false, panes: [{ ref: "pane:1", focused: true, tabs }], ...over }
-}
-
-const tree = (...workspaces: CmuxTreeWorkspace[]): CmuxTreeResponse => ({ available: true, workspaces })
+const tabs = (...t: CmuxBrowserTab[]): CmuxBrowserTabsResponse => ({ available: true, tabs: t })
 
 describe("tabMatchKey", () => {
   it("reduces a PR url and its subpages to the same key", () => {
@@ -39,20 +35,23 @@ describe("findResourceTab", () => {
   const PR = "https://github.com/org/repo/pull/5"
   const key = tabMatchKey("pr", PR)!
 
-  it("finds a browser tab on the resource, ignoring terminals", () => {
-    const t = tree(ws("A", [tab("surface:1"), tab("surface:2", "https://github.com/org/repo/pull/5/files")]))
-    expect(findResourceTab(t, "pr", key)).toMatchObject({ workspace: { id: "A" }, tab: { ref: "surface:2" } })
+  it("finds a tab on the resource in any workspace", () => {
+    const res = tabs(tab("B", "surface:1", "https://github.com/org/repo/pull/6"), tab("C", "surface:2", PR + "/files"))
+    expect(findResourceTab(res, "pr", key, ["workspace:A"])).toMatchObject({ workspaceRef: "workspace:C", surface: "surface:2" })
   })
 
-  it("prefers a match in the selected workspace", () => {
-    const t = tree(ws("A", [tab("surface:1", PR)]), ws("B", [tab("surface:9", PR)], { selected: true }))
-    expect(findResourceTab(t, "pr", key)).toMatchObject({ workspace: { id: "B" }, tab: { ref: "surface:9" } })
+  it("prefers the worktree's own workspace, then the selected one", () => {
+    const anywhere = tab("B", "surface:1", PR)
+    const selected = tab("C", "surface:2", PR, { workspaceSelected: true })
+    const own = tab("A", "surface:3", PR)
+    expect(findResourceTab(tabs(anywhere, selected, own), "pr", key, ["workspace:A"])).toBe(own)
+    expect(findResourceTab(tabs(anywhere, selected), "pr", key, ["workspace:A"])).toBe(selected)
+    expect(findResourceTab(tabs(anywhere), "pr", key, [])).toBe(anywhere)
   })
 
-  it("is null when nothing matches, cmux is unavailable, or a tree failed to load", () => {
-    expect(findResourceTab(tree(ws("A", [tab("surface:1", "https://github.com/org/repo/pull/6")])), "pr", key)).toBeNull()
-    expect(findResourceTab({ available: false, workspaces: [] }, "pr", key)).toBeNull()
-    expect(findResourceTab(undefined, "pr", key)).toBeNull()
-    expect(findResourceTab(tree({ id: "A", ref: "workspace:1", title: "A", selected: false, error: "boom" }), "pr", key)).toBeNull()
+  it("is null when nothing matches or cmux is unavailable", () => {
+    expect(findResourceTab(tabs(tab("A", "surface:1", "https://github.com/org/repo/pull/6")), "pr", key, [])).toBeNull()
+    expect(findResourceTab({ available: false, tabs: [] }, "pr", key, [])).toBeNull()
+    expect(findResourceTab(undefined, "pr", key, [])).toBeNull()
   })
 })

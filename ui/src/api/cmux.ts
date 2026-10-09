@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { api } from "./client"
-import type { CmuxWorkspace } from "./types"
+import type { CmuxBrowserTab, CmuxWorkspace } from "./types"
+import { findResourceTab, tabMatchKey } from "../lib/resourceTab"
 
 /**
  * One shared query for every card on the page.
@@ -30,4 +31,27 @@ export function useCmuxMatches(path: string): CmuxWorkspace[] {
   const cmux = useCmux()
   if (!cmux.data?.available) return []
   return cmux.data.matches?.[path] ?? []
+}
+
+export const cmuxBrowserTabsKey = ["cmux-browser-tabs"] as const
+
+/**
+ * The cmux browser tab already showing a PR or Jira issue, in any workspace,
+ * preferring the worktree's own (see findResourceTab) — or null for other
+ * resource types, or when cmux is unavailable. One page-wide query, so every
+ * card mounted at once shares a single `cmux tree --all` per poll.
+ */
+export function useResourceCmuxTab(path: string | undefined, type: string, url: string): CmuxBrowserTab | null {
+  const key = tabMatchKey(type, url)
+  const tabs = useQuery({
+    queryKey: cmuxBrowserTabsKey,
+    queryFn: () => api.cmuxBrowserTabs(),
+    enabled: key !== null,
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
+  })
+  const cmux = useCmux()
+  if (key === null) return null
+  const own = path && cmux.data?.available ? (cmux.data.matches?.[path] ?? []) : []
+  return findResourceTab(tabs.data, type, key, own.map((w) => w.ref))
 }

@@ -1,4 +1,4 @@
-import type { CmuxActionResult, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, DeleteWorktreeResponse, NotifyMode, Repo, ResourceDTO, SaveWorktreeNotesResponse, SessionInfo, TimelineResponse, WatchersResponse, WorktreeInfo, WorktreeNotes, WorktreeSummary } from "./types"
+import type { CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, DeleteWorktreeResponse, NotifyMode, Repo, ResourceDTO, SaveWorktreeNotesResponse, SessionInfo, TimelineResponse, WatchersResponse, WorktreeInfo, WorktreeNotes, WorktreeSummary } from "./types"
 
 export class HttpError extends Error {
   constructor(message: string, readonly status: number) {
@@ -225,6 +225,7 @@ export const api = {
       body: JSON.stringify({ ref }),
     }),
   cmuxFocused: () => fetchJSON<CmuxFocusMsg>("/api/cmux/focused"),
+  cmuxBrowserTabs: () => fetchJSON<CmuxBrowserTabsResponse>("/api/cmux/browser-tabs"),
   cmuxTree: (path: string) => fetchJSON<CmuxTreeResponse>(`/api/cmux/tree?path=${encodeURIComponent(path)}`),
   cmuxRename: (id: string, title: string) => cmuxPost("/api/cmux/rename", { id, title }),
   cmuxColor: (id: string, color: string) => cmuxPost("/api/cmux/color", { id, color }),

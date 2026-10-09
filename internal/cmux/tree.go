@@ -67,9 +67,12 @@ func (t *WorkspaceTree) HasPane(ref string) bool {
 type rawTree struct {
 	Windows []struct {
 		Workspaces []struct {
-			ID     string    `json:"id"`
-			Layout rawLayout `json:"layout"`
-			Panes  []rawPane `json:"panes"`
+			ID       string    `json:"id"`
+			Ref      string    `json:"ref"`
+			Title    string    `json:"title"`
+			Selected bool      `json:"selected"` // within its window
+			Layout   rawLayout `json:"layout"`
+			Panes    []rawPane `json:"panes"`
 		} `json:"workspaces"`
 	} `json:"windows"`
 }
@@ -99,7 +102,17 @@ type rawSurface struct {
 
 // Tree reads one workspace's panes, tabs and split layout.
 func Tree(workspaceID string) (*WorkspaceTree, error) {
-	out, err := cmuxCmd("tree", "--json", "--workspace", workspaceID).Output()
+	out, err := treeOutput("--workspace", workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	return parseTree(out, workspaceID)
+}
+
+// treeOutput runs `cmux tree --json` with extra args, folding cmux's stderr
+// into the error.
+func treeOutput(args ...string) ([]byte, error) {
+	out, err := cmuxCmd(append([]string{"tree", "--json"}, args...)...).Output()
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
@@ -109,7 +122,7 @@ func Tree(workspaceID string) (*WorkspaceTree, error) {
 		}
 		return nil, fmt.Errorf("reading workspace tree: %w", err)
 	}
-	return parseTree(out, workspaceID)
+	return out, nil
 }
 
 // parseTree is strict about the layout — a node that is neither a pane nor a
