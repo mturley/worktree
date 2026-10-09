@@ -120,13 +120,15 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, 
           if (v === "linked") setLinkedOpened(true)
         }}
       >
-        <Group justify="space-between" align="center" wrap="nowrap">
-          <Tabs.List>
-            <Tabs.Tab value="thread">Thread</Tabs.Tab>
-            <Tabs.Tab value="linked">{linkedTabLabel(linked.data)}</Tabs.Tab>
-          </Tabs.List>
-          {paneTab === "linked" && <LinkedTabControls query={linked} />}
-        </Group>
+        <Tabs.List>
+          <Tabs.Tab value="thread">Thread</Tabs.Tab>
+          <Tabs.Tab value="linked">{linkedTabLabel(linked.data)}</Tabs.Tab>
+          {paneTab === "linked" && (
+            <Group gap={4} wrap="nowrap" align="center" ml="auto" style={{ flex: "none" }}>
+              <LinkedTabControls query={linked} />
+            </Group>
+          )}
+        </Tabs.List>
         <Tabs.Panel value="thread" pt="sm">
           <ThreadView
             tab={tab}

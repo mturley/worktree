@@ -107,92 +107,88 @@ function TimelineBody({
           if (v === "linked") setLinkedOpened(true)
         }}
       >
-        <Group justify="space-between" align="center" wrap="nowrap">
-          <Group gap={6} wrap="nowrap" align="center">
-            <Tabs.List>
-              <Tabs.Tab value="activity">Activity</Tabs.Tab>
-              <Tabs.Tab value="linked">{linkedTabLabel(linked.data)}</Tabs.Tab>
-            </Tabs.List>
-            {tab === "activity" && (
+        <Tabs.List>
+          <Tabs.Tab value="activity">Activity</Tabs.Tab>
+          <Tabs.Tab value="linked">{linkedTabLabel(linked.data)}</Tabs.Tab>
+          {/*
+            The active tab's freshness and refresh, at the far end of the tab
+            bar. For Activity this is where the source filter sits on the
+            unified timelines; there is nothing to filter here — the feed is
+            already one resource — so it carries the watcher's freshness.
+          */}
+          <Group gap={4} wrap="nowrap" align="center" ml="auto" style={{ flex: "none" }}>
+            {tab === "activity" ? (
               <>
+                {watcher?.last_success && (
+                  <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
+                    {`Updated ${relativeTime(watcher.last_success)}`}
+                  </Text>
+                )}
+                <WatcherErrorMark status={watcher} />
                 <RefreshWatchersButton />
-          {unreadCount > 0 && (
-          <Button
-            size="compact-sm"
-            // Filled blue, not the theme's primary: primaryColor is "accent"
-            // (purple), and this button clears the very blue the boxes and
-            // bars beside it are drawn in. Same treatment as UnreadBadge, so
-            // every unread affordance reads as one colour.
-            variant="filled"
-            color="blue"
-            // `vars`, not `styles`: Mantine sets --button-hover itself from the
-            // color prop, and a styles.root value loses to it. Lighter rather
-            // than Mantine's darker default — on a dark background, darkening
-            // reads as the button dimming rather than responding.
-            vars={() => ({ root: { "--button-hover": "var(--mantine-color-blue-4)" } })}
-            loading={markRead.isPending}
-            disabled={!newestTS}
-            onClick={() => markRead.mutate()}
-          >
-            {`Mark ${unreadCount} ${unreadCount === 1 ? "event" : "events"} as read`}
-          </Button>
-          )}
               </>
+            ) : (
+              <LinkedTabControls query={linked} />
             )}
           </Group>
-          {tab === "activity" ? (
-            <>
-        {/*
-          Where the source filter sits on the unified timelines. There is
-          nothing to filter here — the feed is already one resource — so the
-          slot carries that resource's own watcher freshness instead.
-        */}
-        <Group gap={0} wrap="nowrap" align="center" style={{ flex: "none" }}>
-          {watcher?.last_success && (
-            <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
-              {`Updated ${relativeTime(watcher.last_success)}`}
-            </Text>
-          )}
-          <WatcherErrorMark status={watcher} />
-        </Group>
-            </>
-          ) : (
-            <LinkedTabControls query={linked} />
-          )}
-        </Group>
+        </Tabs.List>
         <Tabs.Panel value="activity" pt="sm">
-      <TimelineFeed
-        events={timeline.events}
-        loading={timeline.isLoading}
-        error={timeline.error}
-        hasMore={timeline.hasMore}
-        onLoadMore={timeline.loadMore}
-        loadingMore={timeline.loadingMore}
-        // Every event here belongs to the resource named in the card above,
-        // so naming it again on each row says nothing.
-        showResource={false}
-        showUnreadDivider
-        path={path}
-      />
-      {/*
-        The feed only holds what the poller captured for this worktree, which
-        is never the resource's whole history. This is the way out to the rest
-        of it, at the point where the reader has run out of events.
-      */}
-      {resource.url && serviceName(resource.type) && (
-        <Center>
-          <Button
-            size="xs"
-            variant="subtle"
-            component="a"
-            href={resource.url}
-            target="_blank"
-            rel="noreferrer"
-          >
-            More activity on {serviceName(resource.type)}
-          </Button>
-        </Center>
-      )}
+          <Stack gap="sm">
+            {unreadCount > 0 && (
+              <Button
+                size="compact-sm"
+                // Filled blue, not the theme's primary: primaryColor is "accent"
+                // (purple), and this button clears the very blue the boxes and
+                // bars beside it are drawn in. Same treatment as UnreadBadge, so
+                // every unread affordance reads as one colour.
+                variant="filled"
+                color="blue"
+                // `vars`, not `styles`: Mantine sets --button-hover itself from the
+                // color prop, and a styles.root value loses to it. Lighter rather
+                // than Mantine's darker default — on a dark background, darkening
+                // reads as the button dimming rather than responding.
+                vars={() => ({ root: { "--button-hover": "var(--mantine-color-blue-4)" } })}
+                loading={markRead.isPending}
+                disabled={!newestTS}
+                onClick={() => markRead.mutate()}
+                style={{ alignSelf: "flex-start" }}
+              >
+                {`Mark ${unreadCount} ${unreadCount === 1 ? "event" : "events"} as read`}
+              </Button>
+            )}
+            <TimelineFeed
+              events={timeline.events}
+              loading={timeline.isLoading}
+              error={timeline.error}
+              hasMore={timeline.hasMore}
+              onLoadMore={timeline.loadMore}
+              loadingMore={timeline.loadingMore}
+              // Every event here belongs to the resource named in the card above,
+              // so naming it again on each row says nothing.
+              showResource={false}
+              showUnreadDivider
+              path={path}
+            />
+            {/*
+              The feed only holds what the poller captured for this worktree, which
+              is never the resource's whole history. This is the way out to the rest
+              of it, at the point where the reader has run out of events.
+            */}
+            {resource.url && serviceName(resource.type) && (
+              <Center>
+                <Button
+                  size="xs"
+                  variant="subtle"
+                  component="a"
+                  href={resource.url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  More activity on {serviceName(resource.type)}
+                </Button>
+              </Center>
+            )}
+          </Stack>
         </Tabs.Panel>
         <Tabs.Panel value="linked" pt="sm">
           <LinkedResourcesPanel query={linked} path={path} />

@@ -60,19 +60,36 @@ export function LinkedResourcesPanel({ query, path }: { query: LinkedQuery; path
   return <Stack gap="md">{visible.map((s) => <SectionView key={s.kind} s={s} path={path} />)}</Stack>
 }
 
-/** Sits where the Activity tab's "Updated …" goes. */
+/**
+ * The Linked tab's freshness and refresh, for the far end of the tab bar:
+ * when the view was fetched, and a refresh that bypasses the server's cache.
+ * Ordered and styled like the Activity tab's ("Updated …" then
+ * RefreshWatchersButton) so the two read as one control.
+ */
 export function LinkedTabControls({ query }: { query: LinkedQuery }) {
+  const busy = query.refreshing
   return (
-    <Group gap={4} wrap="nowrap" style={{ flex: "none" }}>
-      {query.refreshError && (
-        <Text size="xs" c="red" role="alert" style={{ whiteSpace: "nowrap" }}>{`Refresh failed: ${query.refreshError.message}`}</Text>
-      )}
+    <Group gap={6} wrap="nowrap" align="center">
       {query.data?.fetched_at && (
         <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>{`Fetched ${relativeTime(query.data.fetched_at)}`}</Text>
       )}
-      <Tooltip label="Refresh linked resources">
-        <ActionIcon variant="subtle" size="sm" aria-label="Refresh linked resources" loading={query.refreshing} onClick={() => void query.refresh()}>
-          <IconRefresh size={14} />
+      {query.refreshError && (
+        <Text size="xs" c="red" role="alert" style={{ whiteSpace: "nowrap" }}>{`Refresh failed: ${query.refreshError.message}`}</Text>
+      )}
+      <Tooltip label={busy ? "Refreshing…" : "Refresh linked resources"}>
+        <ActionIcon
+          variant="subtle"
+          color="gray"
+          size="sm"
+          aria-label="Refresh linked resources"
+          aria-busy={busy}
+          disabled={busy}
+          onClick={() => void query.refresh()}
+        >
+          <IconRefresh
+            size={16}
+            style={{ animation: busy ? "wt-spin 900ms linear infinite" : undefined }}
+          />
         </ActionIcon>
       </Tooltip>
     </Group>

@@ -106,6 +106,14 @@ describe("LinkedResourcesPanel", () => {
     expect(screen.getByLabelText("link")).toBeInTheDocument()
   })
 
+  it("tab-bar controls show the fetched time and refresh bypasses the cache", async () => {
+    const refresh = vi.fn().mockResolvedValue(undefined)
+    wrap(<LinkedTabControls query={q({ refresh, data: { fetched_at: new Date().toISOString(), count: 0, sections: [] } })} />)
+    expect(screen.getByText(/^Fetched /)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole("button", { name: "Refresh linked resources" }))
+    expect(refresh).toHaveBeenCalled()
+  })
+
   it("shows a refresh error beside the refresh control", () => {
     wrap(<LinkedTabControls query={q({ refreshError: new Error("Jira 500") })} />)
     expect(screen.getByRole("alert")).toHaveTextContent("Refresh failed: Jira 500")
