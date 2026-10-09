@@ -1,13 +1,9 @@
-import { useState } from "react"
 import { Button, Menu, Tooltip } from "@mantine/core"
 import { IconChevronDown } from "@tabler/icons-react"
-import { useQueryClient } from "@tanstack/react-query"
-import { api } from "../api/client"
-import { cmuxBrowserTabsKey, useResourceCmuxTab } from "../api/cmux"
+import { useResourceCmuxTab } from "../api/cmux"
 import type { CmuxBrowserTab, ResourceDTO } from "../api/types"
 import { CopyLinkIcon } from "./CopyLinkIcon"
-
-const COPIED_FEEDBACK_MS = 1500
+import { useCopyLink, useSwitchToTab } from "./resourceActionHooks"
 
 /**
  * The service a resource lives on, for user-facing copy. Shared so every
@@ -54,27 +50,16 @@ export function openLabel(type: string): string {
  * the new-tab link.
  */
 export function ResourceActions({ r, path }: { r: ResourceDTO; path?: string }) {
-  const [copied, setCopied] = useState(false)
+  const { copied, copy } = useCopyLink(r.url)
   const existing = useResourceCmuxTab(path, r.type, r.url)
   if (!r.url) return null
 
   const label = openLabel(r.type)
 
-  async function handleCopy() {
-    try {
-      await navigator.clipboard.writeText(r.url)
-      setCopied(true)
-      setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS)
-    } catch {
-      // Clipboard access can be denied; the open button still works, so
-      // failing silently is better than an error state on a convenience.
-    }
-  }
-
   return (
     <Button.Group className="compound-group" style={{ flexShrink: 0 }}>
       {existing ? (
-        <ExistingTabButtons r={r} label={label} existing={existing} />
+        <ExistingTabButtons url={r.url} label={label} switchLabel={`Switch to open ${serviceName(r.type)} tab`} existing={existing} />
       ) : (
         <Button
           size="xs"
@@ -99,7 +84,7 @@ export function ResourceActions({ r, path }: { r: ResourceDTO; path?: string }) 
           aria-label="Copy link"
           onClick={(e) => {
             e.stopPropagation()
-            void handleCopy()
+            void copy()
           }}
           styles={{ root: { flexShrink: 0 } }}
         >
@@ -116,26 +101,13 @@ export function ResourceActions({ r, path }: { r: ResourceDTO; path?: string }) 
  * Button.Group — Menu.Target renders no wrapper and the dropdown is portalled
  * — so the compound-group dividers still apply.
  */
-function ExistingTabButtons({ r, label, existing }: {
-  r: ResourceDTO
+export function ExistingTabButtons({ url, label, switchLabel, existing }: {
+  url: string
   label: string
+  switchLabel: string
   existing: CmuxBrowserTab
 }) {
-  const qc = useQueryClient()
-
-  async function handleSwitch() {
-    let ok = false
-    try {
-      ok = (await api.cmuxFocusTab(existing.workspaceId, existing.surface)).ok
-    } catch {
-      // Treated like a refusal below.
-    }
-    if (ok) return
-    // The tab was most likely closed since the last poll. Still get the user
-    // to the resource, and re-read the tabs so the label stops claiming one.
-    window.open(r.url, "_blank", "noreferrer")
-    void qc.invalidateQueries({ queryKey: cmuxBrowserTabsKey })
-  }
+  const handleSwitch = useSwitchToTab(url, existing)
 
   return (
     <>
@@ -156,7 +128,7 @@ function ExistingTabButtons({ r, label, existing }: {
           }}
           styles={{ root: { flexShrink: 0 }, label: { whiteSpace: "nowrap" } }}
         >
-          Switch to open {serviceName(r.type)} tab
+          {switchLabel}
         </Button>
       </Tooltip>
       <Menu position="bottom-end" withinPortal>
@@ -173,7 +145,7 @@ function ExistingTabButtons({ r, label, existing }: {
           </Button>
         </Menu.Target>
         <Menu.Dropdown>
-          <Menu.Item component="a" href={r.url} target="_blank" rel="noreferrer">
+          <Menu.Item component="a" href={url} target="_blank" rel="noreferrer">
             {label} (new tab)
           </Menu.Item>
         </Menu.Dropdown>

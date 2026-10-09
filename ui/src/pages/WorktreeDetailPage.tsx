@@ -31,6 +31,7 @@ import { useUnreadOnly } from "../hooks/useUnreadOnly"
 import { hasUnread } from "../lib/unread"
 import { matchesSources } from "../lib/sourceFilter"
 import { ThreadActionsContext } from "../components/slack/ThreadActionsContext"
+import { LinkedActionsContext } from "../components/linked/LinkedActionsContext"
 import { AddResourceModal } from "../components/AddResourceModal"
 import { parseThreadUrl } from "../lib/parseThreadUrl"
 import { worktreeName } from "../lib/homeWorktree"
@@ -126,6 +127,9 @@ export function WorktreeDetailPage() {
   // URL of a thread the user asked to add from a Slack unfurl; non-null while
   // the pre-filled add modal is open.
   const [pendingThreadUrl, setPendingThreadUrl] = useState<string | null>(null)
+  // URL the user asked to follow from the Linked Resources tab; non-null
+  // while the pre-filled add modal is open.
+  const [pendingFollowUrl, setPendingFollowUrl] = useState<string | null>(null)
   // Open by default: the card is the page's identity, and a first visit that
   // hides it would look broken. Per page visit, not persisted — see the
   // toggle's comment.
@@ -167,6 +171,15 @@ export function WorktreeDetailPage() {
       return hit ? { type: hit.type, id: hit.id } : null
     },
     selectThread: (key: { type: string; id: string }) => select(key),
+  }
+
+  const linkedActions = {
+    requestFollow: (url: string) => setPendingFollowUrl(url),
+    trackedResource: (type: string, id: string) => {
+      const hit = items.find((r) => r.type === type && r.id === id)
+      return hit ? { type: hit.type, id: hit.id } : null
+    },
+    selectResource: (key: { type: string; id: string }) => select(key),
   }
 
   const list = (
@@ -343,6 +356,7 @@ export function WorktreeDetailPage() {
 
   return (
     <ThreadActionsContext.Provider value={threadActions}>
+    <LinkedActionsContext.Provider value={linkedActions}>
     {/*
       The DOCUMENT scrolls, not an element inside the page.
 
@@ -473,8 +487,24 @@ export function WorktreeDetailPage() {
           }}
         />
       )}
+      {pendingFollowUrl !== null && (
+        // Keyed by URL: the modal reads initialUrl at mount.
+        <AddResourceModal
+          key={pendingFollowUrl}
+          opened
+          path={path}
+          initialUrl={pendingFollowUrl}
+          defaultRelated
+          onClose={() => setPendingFollowUrl(null)}
+          onAdded={() => {
+            setPendingFollowUrl(null)
+            void resources.refetch()
+          }}
+        />
+      )}
       <EventDetailsModal e={openedEvent} onClose={() => setOpenedEvent(null)} resolveResource={resolveResource} path={path} />
     </Stack>
+    </LinkedActionsContext.Provider>
     </ThreadActionsContext.Provider>
   )
 }
