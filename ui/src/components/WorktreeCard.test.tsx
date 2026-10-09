@@ -45,7 +45,7 @@ describe("WorktreeCard", () => {
     expect(screen.getByText("J-1")).toBeInTheDocument()
   })
 
-  it("introduces each focus resource like its resource card: type line, title, then meta", () => {
+  it("introduces each focus resource like its resource card: type line, then title", () => {
     wrap(<WorktreeCard w={{ ...summary, focus_resources: [
       { type: "jira", id: "J-1", url: "u", primary: true, title: "Investigate flux", status: "In Progress", issue_type: "Bug" } as ResourceDTO,
     ] }} />)
@@ -56,10 +56,8 @@ describe("WorktreeCard", () => {
     expect(typeLine.textContent).toContain("Jira")
     expect(typeLine.textContent).toContain("Bug J-1")
     const title = screen.getByText("Investigate flux")
-    const meta = screen.getByText(/In Progress/)
     expect(typeLine.contains(title)).toBe(false)
     expect(typeLine.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(title.compareDocumentPosition(meta) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it("names a Slack thread's channel on its first line", () => {
@@ -151,43 +149,6 @@ describe("WorktreeCard interactive affordance", () => {
   })
 })
 
-describe("focus resource meta lines", () => {
-  const card = (r: Partial<ResourceDTO>) =>
-    wrap(<WorktreeCard w={{ ...summary, focus_resources: [{ type: "pr", id: "o/r#1", url: "u", primary: true, ...r } as ResourceDTO] }} />)
-
-  it("shows author and updated time under a PR", () => {
-    card({ type: "pr", id: "o/r#1", title: "Fix the widget", author: "octocat", updated_at: "2026-08-25T00:00:00Z" })
-    expect(screen.getByText(/octocat/)).toBeInTheDocument()
-    expect(screen.getByText(/updated/)).toBeInTheDocument()
-  })
-
-  it("shows status and priority under a Jira issue", () => {
-    card({ type: "jira", id: "J-1", title: "Investigate flux", status: "In Progress", priority: "High", updated_at: "2026-08-25T00:00:00Z" })
-    const meta = screen.getByText(/In Progress/)
-    expect(meta.textContent).toContain("High")
-    expect(meta.textContent).toContain("updated")
-  })
-
-  it("shows the root author under a Slack thread", () => {
-    card({ type: "slack", id: "C1:1699000000.000100", title: "Deploy thread", author: "ana", updated_ts: "1699000500.000200" })
-    expect(screen.getByText(/ana/)).toBeInTheDocument()
-  })
-
-  it("reads a Slack thread's time from updated_ts, not updated_at", () => {
-    // Slack carries a raw Slack ts; PRs and Jira carry RFC3339. Feeding one
-    // to the other's formatter prints the raw string straight back.
-    card({ type: "slack", id: "C1:1699000000.000100", title: "Deploy thread", author: "ana", updated_ts: "1699000500.000200" })
-    expect(screen.queryByText(/1699000500/)).not.toBeInTheDocument()
-    expect(screen.getByText(/ana ·/)).toBeInTheDocument()
-  })
-
-  it("omits the line entirely for a resource that has never been polled", () => {
-    card({ type: "pr", id: "o/r#9" })
-    expect(screen.queryByText(/updated/)).not.toBeInTheDocument()
-  })
-})
-
-
 describe("WorktreeCard card surface", () => {
   it("puts the hover affordance on the whole card, not just the inner content", () => {
     // Regression guard. When the cmux section was added it had to move out of
@@ -255,15 +216,14 @@ describe("WorktreeCard title demotion inside cmux", () => {
 describe("WorktreeCard meta line", () => {
   it("shows repo and branch only — no counts, no worktree timestamp", () => {
     // The counts restated the resource list directly below, and the
-    // worktree-level timestamp restated the per-resource "updated" on each
-    // row. Identity is the only thing this line still carries.
+    // worktree-level timestamp is not worth a line. Identity is the only
+    // thing this line still carries.
     wrap(<WorktreeCard w={{ ...summary, latest_event_ts: "2026-08-31T10:00:00Z" }} />)
 
     expect(screen.getByText(/^odh · my-branch$/)).toBeInTheDocument()
     // No "1 PR, 1 issue" style roll-up anywhere on the card.
     expect(screen.queryByText(/\d+ PR/)).toBeNull()
-    // And no worktree-level relative time. The per-resource rows keep theirs,
-    // so match the standalone form rather than any "ago" on the card.
+    // And no worktree-level relative time.
     expect(screen.queryByText(/^\d+\w* ago$/)).toBeNull()
   })
 })

@@ -1,5 +1,4 @@
 import { Badge, Box, Group, Paper, Stack, Text } from "@mantine/core"
-import { relativeTime as rel, relativeFromNow } from "../lib/relativeTime"
 import { useLocation } from "wouter"
 import { useCmuxMatches } from "../api/cmux"
 import type { ResourceDTO, WorktreeSummary } from "../api/types"
@@ -29,39 +28,6 @@ interface WorktreeCardProps {
  * "open this worktree", and picking a resource is one easy click away once
  * you are there. Now the whole card is one target and these just describe it.
  */
-/**
- * The second line under a focus resource: the few facts worth knowing without
- * opening the worktree. Different per type because what matters differs — a
- * PR is about who owns it and how stale it is; an issue is about where it sits
- * in the workflow.
- *
- * Returns "" when nothing is known (a resource that has never been polled),
- * so the caller can skip the line entirely rather than render an empty one.
- */
-function resourceMetaLine(r: ResourceDTO): string {
-  const parts: string[] = []
-  if (r.type === "jira") {
-    if (r.status) parts.push(r.status)
-    if (r.priority) parts.push(r.priority)
-  } else if (r.author) {
-    // PRs and Slack threads both lead with who owns the thing: the PR's
-    // author, or whoever started the thread.
-    parts.push(r.author)
-  }
-
-  // Two timestamp formats, deliberately not interchangeable. Slack threads
-  // carry a raw Slack ts ("1699000500.000200") in updated_ts, while PRs and
-  // Jira issues carry RFC3339 in updated_at. Passing one to the other's
-  // helper prints the raw string back.
-  if (r.type === "slack") {
-    if (r.updated_ts) parts.push(`updated ${relativeFromNow(r.updated_ts)}`)
-  } else if (r.updated_at) {
-    parts.push(`updated ${rel(r.updated_at)}`)
-  }
-
-  return parts.join(" · ")
-}
-
 // The type line's brand icon and the gap after it. The lines beneath it are
 // indented by both, to start where the type badge does.
 const TYPE_LINE_ICON_SIZE = 14
@@ -70,7 +36,6 @@ const TYPE_LINE_INDENT = TYPE_LINE_ICON_SIZE + TYPE_LINE_ICON_GAP
 
 function FocusResourceLine({ r, notifyAll }: { r: ResourceDTO; notifyAll: boolean }) {
   const label = r.custom_name || r.title || r.id
-  const meta = resourceMetaLine(r)
   return (
     <Stack gap={2}>
       {/* The same first line as the worktree page's resource cards — brand
@@ -89,11 +54,6 @@ function FocusResourceLine({ r, notifyAll }: { r: ResourceDTO; notifyAll: boolea
         </Box>
         <Text size="sm" c="dimmed" lineClamp={1} style={{ minWidth: 0 }}>{label}</Text>
       </Group>
-      {meta && (
-        <Text size="xs" c="dimmed" pl={TYPE_LINE_INDENT} lineClamp={1} style={{ minWidth: 0 }}>
-          {meta}
-        </Text>
-      )}
     </Stack>
   )
 }
@@ -179,8 +139,8 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
           {/*
             Identity only: which repo, which branch. The counts that used to
             sit here ("1 PR, 1 issue") restated the resource list immediately
-            below, and the worktree-level timestamp restated the per-resource
-            "updated" on each row.
+            below, and a worktree-level timestamp is not worth a line on a card
+            that no longer shows per-resource ones either.
           */}
           <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
             {[w.repo, w.branch].filter(Boolean).join(" · ")}
