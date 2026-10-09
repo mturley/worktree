@@ -12,6 +12,7 @@ import {
   Textarea,
   TextInput,
 } from "@mantine/core"
+import { IconWorld } from "@tabler/icons-react"
 import { api } from "../api/client"
 import { SlackMark } from "./icons/SlackMark"
 import { GitHubMark } from "./icons/GitHubMark"
@@ -51,13 +52,17 @@ const POSITION_HELP: Record<string, string> = {
 /**
  * The URLs that become first-class resources, bulleted with the same brand
  * marks, in the same order, as the activity list's source toggles. Anything
- * else is still followed, as a link — which is what the URL field's
- * placeholder says.
+ * else is still followed, as a link — bulleted last, with the globe the
+ * resource cards use for a link, and saying it gets no activity.
  */
 const SUPPORTED_URLS: { label: string; icon: ReactNode }[] = [
   { label: "GitHub PRs", icon: <GitHubMark size={14} /> },
   { label: "Jira issues", icon: <JiraMark size={14} /> },
   { label: "Slack threads", icon: <SlackMark size={14} /> },
+  {
+    label: "Any other link (bookmarks it with no activity tracking)",
+    icon: <IconWorld size={14} aria-hidden style={{ flexShrink: 0 }} />,
+  },
 ]
 
 const DETECTED_LABEL: Record<string, string> = {

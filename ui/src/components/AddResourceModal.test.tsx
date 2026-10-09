@@ -247,7 +247,12 @@ describe("AddResourceModal", () => {
     wrap(<AddResourceModal opened path="/wt" onClose={vi.fn()} onAdded={vi.fn()} />)
     expect(screen.getByPlaceholderText("Paste any URL")).toBeInTheDocument()
     expect(screen.getByText("Supported resource URLs:")).toBeInTheDocument()
-    for (const label of ["GitHub PRs", "Jira issues", "Slack threads"]) {
+    for (const label of [
+      "GitHub PRs",
+      "Jira issues",
+      "Slack threads",
+      "Any other link (bookmarks it with no activity tracking)",
+    ]) {
       expect(screen.getByText(label)).toBeInTheDocument()
     }
   })
