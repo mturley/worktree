@@ -36,7 +36,7 @@ type DetailTab = "notes" | "env" | "cmux"
 
 /**
  * The card's selected tab, remembered per browser tab so switching worktrees
- * keeps it. sessionStorage, like "Follow cmux focus": a choice for this tab,
+ * keeps it. sessionStorage, like "Follow cmux": a choice for this tab,
  * not for every tab in the browser. Storage throws in some contexts (private
  * windows); the card then just starts on Notes.
  */

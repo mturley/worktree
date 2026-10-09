@@ -151,7 +151,7 @@ describe("HomePage unread-only toggle", () => {
     setViewport("wide")
     const user = userEvent.setup()
     wrap()
-    const toggle = screen.getByRole("switch", { name: "Show unreads only" })
+    const toggle = screen.getByRole("switch", { name: "Unreads only" })
     expect(toggle).not.toBeChecked()
     expect(mocks.timelineArgs.at(-1)?.[2]).toBe(false)
     await user.click(toggle)
@@ -159,15 +159,17 @@ describe("HomePage unread-only toggle", () => {
     expect(window.localStorage.getItem("worktree.unreadOnly")).toBe("true")
   })
 
-  it("sits just before Show archived in both layouts", async () => {
+  it("sits with the worktree list's controls, not the activity feed's, in both layouts", async () => {
     for (const width of ["narrow", "wide"] as const) {
       setViewport(width)
       wrap()
-      // hidden: on narrow it lives in the Activity tab, which isn't selected.
+      // hidden: on narrow each lives in its own tab, and only one is selected.
       const archived = await screen.findByRole("switch", { name: "Show archived", hidden: true })
-      const toggle = screen.getByRole("switch", { name: "Show unreads only", hidden: true })
-      expect(toggle.closest(".mantine-Group-root")).toContainElement(archived)
-      expect(toggle.compareDocumentPosition(archived) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      const heading = screen.getByRole("heading", { name: "Worktrees", hidden: true })
+      const toggle = screen.getByRole("switch", { name: "Unreads only", hidden: true })
+      expect(toggle.closest(".mantine-Group-root")).toContainElement(heading)
+      expect(toggle.closest(".mantine-Group-root")).not.toContainElement(archived)
+      expect(heading.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
       cleanup()
     }
   })
@@ -198,6 +200,6 @@ describe("HomePage unread-only toggle", () => {
       window.localStorage.setItem("worktree.unreadOnly", "true")
       window.dispatchEvent(new StorageEvent("storage", { key: "worktree.unreadOnly", newValue: "true" }))
     })
-    expect(screen.getByRole("switch", { name: "Show unreads only" })).toBeChecked()
+    expect(screen.getByRole("switch", { name: "Unreads only" })).toBeChecked()
   })
 })

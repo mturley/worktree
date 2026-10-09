@@ -82,6 +82,9 @@ export function HomePage() {
         <Title order={4}><Logo alt="Worktrees" /></Title>
         {sortControl}
         <FollowCmuxToggle />
+        {/* With the worktree list, which it narrows first; it narrows the
+            activity feed too. */}
+        <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} />
       </Group>
       <Group gap="xs" wrap="nowrap">
         {newWorktreeButton}
@@ -130,13 +133,9 @@ export function HomePage() {
           <Title order={4}>Activity</Title>
           <RefreshWatchersButton />
         </Group>
-        {/* "Show unreads only" narrows the worktree list too, but sits here
-            beside its sibling toggle; the source filter (which also narrows
-            the worktree cards) gets a line of its own below. */}
-        <Group gap="md" wrap="nowrap">
-          <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} />
-          <ArchivedToggle value={archived} onChange={setArchived} />
-        </Group>
+        {/* The source filter (which also narrows the worktree cards) gets a
+            line of its own below. */}
+        <ArchivedToggle value={archived} onChange={setArchived} />
       </Group>
       <Group>
         <SourceFilter value={sources} onChange={setSources} />

@@ -142,7 +142,7 @@ export function moveToEdge(items: ResourceDTO[], key: ResourceKey, edge: "top" |
 /**
  * Folds a reorder of a FILTERED list back into the full one.
  *
- * With "Show unreads only" on, the list shows only some cards, and a drag or
+ * With "Unreads only" on, the list shows only some cards, and a drag or
  * move rearranges just those. Saving that alone would not do: the server
  * appends every card the order leaves out to the end of its group
  * (resources.SetOrder), so each hidden card would drop to the bottom. Instead

@@ -25,7 +25,8 @@ export function FollowCmuxToggle() {
         // rules apply: no-op when already there, ask over unsaved edits.
         if (on) void api.cmuxFocused().then(emitCmuxFocus, () => {})
       }}
-      label="Follow cmux focus"
+      label="Follow cmux"
+      tooltip="Automatically switch to the associated worktree details page when switching workspaces in cmux"
       style={{ flex: "none" }}
     />
   )

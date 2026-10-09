@@ -8,6 +8,11 @@ import { Toggle } from "./Toggle"
  */
 export function UnreadOnlyToggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
   return (
-    <Toggle checked={value} onChange={(e) => onChange(e.currentTarget.checked)} label="Show unreads only" />
+    <Toggle
+      checked={value}
+      onChange={(e) => onChange(e.currentTarget.checked)}
+      label="Unreads only"
+      tooltip="Show only worktrees, resources and events with unread activity"
+    />
   )
 }

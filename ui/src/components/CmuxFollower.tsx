@@ -19,7 +19,7 @@ export function worktreeAt(location: string): string | null {
 }
 
 /**
- * Moves a tab with "Follow cmux focus" on to the worktree cmux just switched
+ * Moves a tab with "Follow cmux" on to the worktree cmux just switched
  * to. Rendered once, inside the Router, on every page.
  *
  * Unsaved edits are never dropped silently: the tab asks first, and staying

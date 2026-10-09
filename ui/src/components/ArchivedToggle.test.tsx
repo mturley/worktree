@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { render, waitFor } from "@testing-library/react"
+import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { ArchivedToggle } from "./ArchivedToggle"
@@ -39,19 +39,16 @@ describe("ArchivedToggle", () => {
   })
 
   it("wraps the switch in a tooltip with the archived-events explanation", async () => {
-    const { container } = renderWithProvider(<ArchivedToggle value={true} onChange={() => {}} />)
+    renderWithProvider(<ArchivedToggle value={true} onChange={() => {}} />)
     // Mantine's Tooltip only mounts its floating content once the wrapped
-    // element is hovered, so trigger that before asserting on the text.
-    // Mantine's Switch forwards the (non-root) `ref` prop to the underlying
-    // <input>, so that's the actual DOM node Tooltip attaches its hover
-    // listeners to (not the wrapping .mantine-Switch-root div).
-    const input = container.querySelector('input[type="checkbox"]') as HTMLElement
-    expect(input).not.toBeNull()
-    await userEvent.hover(input)
+    // element is hovered. Hover the visible label, as a user does: a Tooltip
+    // that listened on Switch's hidden <input> passed a test hovering the
+    // input but never opened in a browser.
+    await userEvent.hover(screen.getByText("Show archived"))
 
     await waitFor(() => {
       expect(document.body.textContent).toContain(
-        "Show past events for resources no longer being watched by a worktree",
+        "Include activity from resources that are no longer being followed by a worktree",
       )
     })
   })

@@ -1,5 +1,5 @@
 /**
- * The "Show unreads only" choice, remembered per browser.
+ * The "Unreads only" choice, remembered per browser.
  *
  * One value for the whole UI: the home page and every worktree page read and
  * write the same key, so narrowing to unread on one carries to the others.

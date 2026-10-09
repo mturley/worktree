@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react"
 
 /**
- * "Follow cmux focus", per browser tab.
+ * "Follow cmux", per browser tab.
  *
  * sessionStorage, not localStorage: following is a role one tab plays (the
  * one beside the terminal), and every tab following at once would have them

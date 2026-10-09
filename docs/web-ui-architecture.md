@@ -764,7 +764,7 @@ tab for browser notifications, and may carry `event: notification` messages
 addressed to it; see "Notifications" below.
 
 Every stream also carries `event: cmux_focus` (`{"workspace_id","path"}`)
-whenever cmux focuses a different workspace; see "Follow cmux focus" under
+whenever cmux focuses a different workspace; see "Follow cmux" under
 "cmux integration".
 
 ## Notifications
@@ -837,7 +837,7 @@ the caller's tab first). Links are refused: they are never polled.
 permission on the enabling click, and while on it says so when THIS browser
 blocks or hasn't allowed notifications (with an Allow button) — a toggle set
 from another device does nothing here until allowed. The worktree page header
-has "Notify on all" beside "Show unreads only"; the detail card has "Notify on new
+has "Notify on all" beside "Unreads only"; the detail card has "Notify on new
 events" ("Notify on new messages" for a Slack thread), disabled with an explanation while "Notify on all" is on.
 `NotifyBell` marks list cards: filled = explicit, outlined/dimmed with a stack
 badge = inherited from "Notify on all". The home page shows one inherited bell
@@ -1602,7 +1602,7 @@ in front of its title, and loses it once nothing is unread. The prefix exists
 - A title the user writes that starts with `📬 ` can't be told apart from
   one the sync added.
 
-### Follow cmux focus (`cmux_focus.go`, `cmux/focus.go`, `CmuxFollower`)
+### Follow cmux (`cmux_focus.go`, `cmux/focus.go`, `CmuxFollower`)
 
 A per-tab toggle (home page worktree toolbar, after Sort by; worktree
 header before the Switch cmux button) that makes the tab

@@ -81,7 +81,7 @@ export function WorktreeDetailPage() {
   // here would trap the back button (stale -> clean -> back -> stale -> the
   // effect fires again and pushes clean again, forever).
   //
-  // The same goes for a resource "Show unreads only" hides, including one the
+  // The same goes for a resource "Unreads only" hides, including one the
   // user just marked read: there is no back to return to it while the filter
   // stands, so a push would only add a dead entry.
   useEffect(() => {
