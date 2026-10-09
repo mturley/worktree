@@ -67,6 +67,11 @@ UI select resource ──► GET /api/linked-resources?type=&id=
                     └─ links:  internal/linkmeta (only when resolve_links=1)
 ```
 
+### Deviations decided during planning
+
+- Jira's `/search/jql` returns no total, so capped nodes carry `more: { url }` only and render "More on Jira…" (no count).
+- The item favicon field is `favicon` (matching `ResourceDTO`), not `favicon_url`.
+
 ### Watcher library changes (`~/git/watcher`, work on `main`, release a new minor tag)
 
 **`jira` package**
