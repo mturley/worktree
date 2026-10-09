@@ -304,3 +304,48 @@ export interface CmuxMove extends CmuxTabRef {
   /** Absent: the end of `pane`. */
   anchor?: CmuxTabRef & { position: "before" | "after" }
 }
+
+/** One row in the Linked Resources tab. Field names mirror ResourceDTO. */
+export interface LinkedItem {
+  type: "pr" | "jira" | "slack" | "link"
+  id: string
+  url: string
+  /** false → the details couldn't be fetched; render key/URL only. */
+  resolved: boolean
+  title?: string
+  state?: string
+  is_draft?: boolean
+  status?: string
+  status_category?: string
+  issue_type?: string
+  issue_type_icon_url?: string
+  channel_name?: string
+  excerpt?: string
+  domain?: string
+  favicon?: string
+}
+
+export interface LinkedTreeNode extends LinkedItem {
+  current?: boolean
+  /** The server's initial expansion: ancestors and the current branch. */
+  expanded: boolean
+  /** null = unknown; the UI offers a lazy expand. */
+  has_children: boolean | null
+  children?: LinkedTreeNode[]
+  more?: { url: string }
+}
+
+export interface LinkedSection {
+  kind: "git_pr" | "description" | "hierarchy" | "links" | "referenced_by" | "thread"
+  title: string
+  error?: string
+  items?: LinkedItem[]
+  groups?: { label: string; items: LinkedItem[] }[]
+  tree?: LinkedTreeNode[]
+}
+
+export interface LinkedResourcesDTO {
+  fetched_at: string
+  count: number
+  sections: LinkedSection[]
+}

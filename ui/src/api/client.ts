@@ -1,4 +1,4 @@
-import type { CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, DeleteWorktreeResponse, NotifyMode, Repo, ResourceDTO, SaveWorktreeNotesResponse, SessionInfo, TimelineResponse, WatchersResponse, WorktreeInfo, WorktreeNotes, WorktreeSummary } from "./types"
+import type { CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, Repo, ResourceDTO, SaveWorktreeNotesResponse, SessionInfo, TimelineResponse, WatchersResponse, WorktreeInfo, WorktreeNotes, WorktreeSummary } from "./types"
 
 export class HttpError extends Error {
   constructor(message: string, readonly status: number) {
@@ -39,6 +39,16 @@ function cmuxPost(url: string, body: unknown) {
 }
 
 export const api = {
+  linkedResources: (type: string, id: string, opts: { resolveLinks?: boolean; refresh?: boolean } = {}) => {
+    const params = new URLSearchParams({ type, id })
+    if (opts.resolveLinks) params.set("resolve_links", "1")
+    if (opts.refresh) params.set("refresh", "1")
+    return fetchJSON<LinkedResourcesDTO>(`/api/linked-resources?${params}`)
+  },
+  linkedChildren: (key: string) =>
+    fetchJSON<{ items: LinkedTreeNode[]; more: { url: string } | null }>(
+      `/api/linked-resources/children?key=${encodeURIComponent(key)}`,
+    ),
   // session and login must not report login-required: the session query
   // refetches on that event, so reporting from here would loop.
   session: () => fetchJSON<SessionInfo>("/api/session", undefined, { reportLoginRequired: false }),
