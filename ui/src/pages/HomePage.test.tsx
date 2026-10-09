@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { setViewport } from "../testing/viewport"
-import type { WorktreeSummary } from "../api/types"
+import type { TimelineEvent, WorktreeSummary } from "../api/types"
 
 const summary: WorktreeSummary = {
   path: "/wt/foo", repo: "odh", branch: "my-branch",
@@ -13,12 +13,14 @@ const summary: WorktreeSummary = {
   focus_resources: [{ type: "pr", id: "o/r#1", url: "https://gh/pr/1", primary: true, title: "Fix the widget", state: "OPEN" }],
 }
 
-const mocks = vi.hoisted(() => ({ worktrees: [] as WorktreeSummary[], timelineArgs: [] as unknown[][] }))
+const mocks = vi.hoisted(() => ({
+  worktrees: [] as WorktreeSummary[], timelineArgs: [] as unknown[][], events: [] as TimelineEvent[],
+}))
 vi.mock("../hooks/useWorktrees", () => ({ useWorktrees: () => ({ data: mocks.worktrees }) }))
 vi.mock("../hooks/useTimeline", () => ({
   useGlobalTimeline: (...args: unknown[]) => {
     mocks.timelineArgs.push(args)
-    return { events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false }
+    return { events: mocks.events, isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false }
   },
 }))
 
@@ -39,6 +41,7 @@ beforeEach(() => {
   window.localStorage.clear()
   mocks.worktrees = [summary]
   mocks.timelineArgs = []
+  mocks.events = []
   vi.spyOn(api, "cmux").mockResolvedValue({ available: false })
 })
 afterEach(() => vi.restoreAllMocks())
@@ -201,5 +204,24 @@ describe("HomePage unread-only toggle", () => {
       window.dispatchEvent(new StorageEvent("storage", { key: "worktree.unreadOnly", newValue: "true" }))
     })
     expect(screen.getByRole("switch", { name: "Unreads only" })).toBeChecked()
+  })
+})
+
+describe("HomePage activity entry click", () => {
+  const event: TimelineEvent = {
+    id: "evt-7", ts: "2026-10-01T00:00:00Z", external_ts: "", source: "github",
+    type: "pr_comment", type_label: "", title: "Looks good to me", body: "", author: "someone",
+    resource_type: "pr", resource_id: "o/r#1", resource_url: "https://gh/pr/1", resource_title: "Fix the widget",
+    worktrees: ["my-branch"], worktree_paths: ["/wt/foo"],
+  }
+
+  it("goes to the resource in its worktree, carrying the event to open its details", async () => {
+    setViewport("wide")
+    mocks.events = [event]
+    wrap()
+    await userEvent.click(screen.getByText("Looks good to me"))
+    expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/foo")}`)
+    expect(new URLSearchParams(window.location.search).get("resource")).toBe("pr:o/r#1")
+    expect(window.history.state).toEqual({ openEvent: event })
   })
 })

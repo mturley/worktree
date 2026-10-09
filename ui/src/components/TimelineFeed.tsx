@@ -26,7 +26,7 @@ export function TimelineFeed({
    * the home page's global timeline spans worktrees, so there is no single
    * worktree whose selection could change.
    */
-  onSelectResource?: (key: { type: string; id: string }) => void
+  onSelectResource?: (key: { type: string; id: string }, e: TimelineEvent) => void
   resolveResource?: (type: string, id: string) => ResourceDTO | undefined
   /**
    * Whether an event's resource can be opened. Rows that fail it fall back to

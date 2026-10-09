@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react"
 import { useLocation } from "wouter"
 import { serializeResourceKey } from "../lib/resourceKey"
+import { openEventState } from "../lib/openEvent"
+import type { TimelineEvent } from "../api/types"
 import { Button, Grid, Group, Stack, Tabs, Title } from "@mantine/core"
 import { IconPlus } from "@tabler/icons-react"
 import { useWorktrees } from "../hooks/useWorktrees"
@@ -94,20 +96,24 @@ export function HomePage() {
   )
 
   /**
-   * Opens a resource from the global timeline.
+   * Opens an event's resource from the global timeline, then its details.
    *
    * A resource has no meaning without a worktree here — the feed spans all of
    * them — so this routes to the FIRST worktree following it, which the event
-   * already names in worktree_paths. Chips are only rendered for events that
-   * have one, so there is always a destination.
+   * names in worktree_paths. Rows are only clickable this way for events that
+   * have one (canSelectResource), so there is always a destination.
+   *
+   * The event rides along in history state, and the worktree page opens its
+   * details modal over the selected resource: clicking an entry is asking
+   * about THAT entry, and landing on the resource alone left you to find it
+   * again in the resource's feed.
    */
-  const selectResourceInFirstWorktree = (key: { type: string; id: string }) => {
-    const hit = tl.events.find(
-      (e) => e.resource_type === key.type && e.resource_id === key.id && e.worktree_paths?.length,
-    )
-    const path = hit?.worktree_paths?.[0]
+  const selectResourceInFirstWorktree = (key: { type: string; id: string }, e: TimelineEvent) => {
+    const path = e.worktree_paths?.[0]
     if (!path) return
-    navigate(`/worktree/${encodeURIComponent(path)}?resource=${serializeResourceKey(key)}`)
+    navigate(`/worktree/${encodeURIComponent(path)}?resource=${serializeResourceKey(key)}`, {
+      state: openEventState(e),
+    })
   }
 
   const worktrees = (

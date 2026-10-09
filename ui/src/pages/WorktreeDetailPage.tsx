@@ -18,6 +18,9 @@ import { ResourceList } from "../components/ResourceList"
 import { stickyListStyle } from "../lib/stickyList"
 import { ResourceDetailPane } from "../components/ResourceDetailPane"
 import { TimelineFeed } from "../components/TimelineFeed"
+import { EventDetailsModal } from "../components/EventDetailsModal"
+import { clearOpenEvent, readOpenEvent } from "../lib/openEvent"
+import type { TimelineEvent } from "../api/types"
 import { WorktreeDetailCard } from "../components/WorktreeDetailCard"
 import { CmuxWorkspaceActions, CmuxWorkspaceTitles } from "../components/CmuxWorkspaceHeader"
 import { SourceFilter } from "../components/SourceFilter"
@@ -87,6 +90,16 @@ export function WorktreeDetailPage() {
   useEffect(() => {
     if (selected && resources.data && !selectedResource) clear({ replace: true })
   }, [selected, resources.data, selectedResource, clear])
+
+  // An event the home page's activity feed was clicked on to get here: its
+  // details open over the resource it navigated to. Read once, at mount — the
+  // home page is the only way in with one — and then dropped from the history
+  // entry so a reload or a back/forward onto this page does not reopen it.
+  // Cleared in an effect rather than in the initializer, which StrictMode runs
+  // twice: clearing there would leave the second run with nothing to read.
+  const [openedEvent, setOpenedEvent] = useState<TimelineEvent | null>(readOpenEvent)
+  useEffect(() => clearOpenEvent(), [])
+  const resolveResource = (type: string, id: string) => items.find((r) => r.type === type && r.id === id)
 
   // Thread-unfurl actions live here because this is the only place that knows
   // BOTH the worktree's resource list (is this thread already tracked?) and
@@ -199,7 +212,7 @@ export function WorktreeDetailPage() {
         // Only meaningful here: this page has a selection to change, and the
         // worktree's own resource list to resolve icons and titles against.
         onSelectResource={select}
-        resolveResource={(type, id) => items.find((r) => r.type === type && r.id === id)}
+        resolveResource={resolveResource}
       />
     </Stack>
   )
@@ -437,6 +450,7 @@ export function WorktreeDetailPage() {
           }}
         />
       )}
+      <EventDetailsModal e={openedEvent} onClose={() => setOpenedEvent(null)} resolveResource={resolveResource} />
     </Stack>
     </ThreadActionsContext.Provider>
   )

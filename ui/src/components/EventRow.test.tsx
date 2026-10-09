@@ -241,7 +241,10 @@ describe("where a click on the row goes", () => {
     const onOpen = vi.fn()
     renderWithProvider(<EventRow e={e()} onOpen={onOpen} onSelectResource={onSelectResource} />)
     fireEvent.click(screen.getByRole("button"))
-    expect(onSelectResource).toHaveBeenCalledWith({ type: "pr", id: "o/r#42" })
+    expect(onSelectResource).toHaveBeenCalledWith(
+      { type: "pr", id: "o/r#42" },
+      expect.objectContaining({ id: "evt-1" }),
+    )
     expect(onOpen).not.toHaveBeenCalled()
   })
 

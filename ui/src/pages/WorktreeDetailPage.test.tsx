@@ -479,3 +479,44 @@ describe("WorktreeDetailPage unread-only toggle", () => {
     await waitFor(() => expect(window.location.search).toBe(""))
   })
 })
+
+describe("WorktreeDetailPage event opened from the home page", () => {
+  const event = {
+    id: "evt-7", ts: "2026-10-01T00:00:00Z", external_ts: "", source: "github",
+    type: "pr_comment", type_label: "", title: "Looks good to me", body: "The whole comment body", author: "someone",
+    resource_type: "pr", resource_id: "o/r#1", resource_url: "https://gh/pr/1", resource_title: "Fix the widget",
+    worktrees: ["foo"], worktree_paths: ["/wt/foo"],
+  }
+  const url = `/worktree/${encodeURIComponent("/wt/foo")}?resource=pr:o%2Fr%231`
+
+  it("opens the event's details over the selected resource", async () => {
+    window.history.replaceState({ openEvent: event }, "", url)
+    wrap()
+    const dialog = await screen.findByRole("dialog")
+    expect(dialog).toHaveTextContent("The whole comment body")
+    expect(new URLSearchParams(window.location.search).get("resource")).toBe("pr:o/r#1")
+  })
+
+  it("drops the event from history so a reload does not reopen it", async () => {
+    window.history.replaceState({ openEvent: event, other: 1 }, "", url)
+    wrap()
+    await screen.findByRole("dialog")
+    expect(window.history.state).toEqual({ other: 1 })
+    expect(window.location.pathname + window.location.search).toBe(url)
+  })
+
+  it("closes on demand", async () => {
+    window.history.replaceState({ openEvent: event }, "", url)
+    wrap()
+    await screen.findByRole("dialog")
+    await userEvent.keyboard("{Escape}")
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
+  })
+
+  it("opens nothing without one, or with malformed state", async () => {
+    window.history.replaceState({ openEvent: { id: 7 } }, "", url)
+    wrap()
+    await screen.findAllByText("Fix the widget")
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+  })
+})

@@ -29,8 +29,12 @@ export function EventRow({
   showResource?: boolean
   /** Opens the details modal — where the row has no resource to go to. */
   onOpen?: (e: TimelineEvent) => void
-  /** Selects the event's resource. Omit where selection has no meaning. */
-  onSelectResource?: (key: { type: string; id: string }) => void
+  /**
+   * Selects the event's resource. Omit where selection has no meaning. The
+   * event itself comes along for callers that want more than the resource —
+   * the home page opens its details once it lands on the worktree.
+   */
+  onSelectResource?: (key: { type: string; id: string }, e: TimelineEvent) => void
   /** Supplies the tracked resource, so the chip's icon shows real status. */
   resolveResource?: (type: string, id: string) => ResourceDTO | undefined
   /**
@@ -56,7 +60,7 @@ export function EventRow({
     ? { type: e.resource_type, id: e.resource_id }
     : null
   const activate = resourceKey
-    ? () => onSelectResource?.(resourceKey)
+    ? () => onSelectResource?.(resourceKey, e)
     : onOpen
       ? () => onOpen(e)
       : undefined
