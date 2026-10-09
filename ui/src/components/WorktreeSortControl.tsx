@@ -1,4 +1,4 @@
-import { ActionIcon, Group, NativeSelect, Text, Tooltip } from "@mantine/core"
+import { ActionIcon, Group, NativeSelect, Tooltip } from "@mantine/core"
 import { IconSortAscending, IconSortDescending } from "@tabler/icons-react"
 import { SORT_MODES, hasDirection, isSortMode, type SortDir, type SortMode } from "../lib/worktreeSort"
 
@@ -28,7 +28,8 @@ export interface WorktreeSortControlProps {
 
 /**
  * The home page's worktree sort picker. A native select on purpose: it gets
- * the platform picker on a phone, where this UI is also used.
+ * the platform picker on a phone, where this UI is also used. No visible
+ * label: the option names say what they do, and aria-label covers readers.
  */
 export function WorktreeSortControl({
   mode, direction, cmuxAvailable, onModeChange, onDirectionChange,
@@ -39,7 +40,6 @@ export function WorktreeSortControl({
   const modes = SORT_MODES.filter((m) => m !== "cmux" || cmuxAvailable)
   return (
     <Group gap={6} wrap="nowrap">
-      <Text size="xs" c="dimmed">Sort by:</Text>
       <NativeSelect
         size="xs"
         aria-label="Sort worktrees"

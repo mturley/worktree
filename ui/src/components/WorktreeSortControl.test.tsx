@@ -23,9 +23,10 @@ describe("WorktreeSortControl", () => {
     expect(optionLabels()).toEqual(["cmux order", "Latest activity", "Created", "Name", "Unread first"])
   })
 
-  it("labels the picker visibly", () => {
+  it("labels the picker for assistive tech, with no visible label", () => {
     renderControl()
-    expect(screen.getByText("Sort by:")).toBeInTheDocument()
+    expect(screen.getByRole("combobox", { name: "Sort worktrees" })).toBeInTheDocument()
+    expect(screen.queryByText(/sort by/i)).not.toBeInTheDocument()
   })
 
   it("omits cmux order when cmux is unavailable", () => {
