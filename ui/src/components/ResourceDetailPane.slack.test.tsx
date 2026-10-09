@@ -2,7 +2,9 @@ import { afterEach, describe, it, expect, vi } from "vitest"
 import { render, cleanup, screen } from "@testing-library/react"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import userEvent from "@testing-library/user-event"
 import type { ResourceDTO } from "../api/types"
+import { api } from "../api/client"
 
 if (typeof (globalThis as { EventSource?: unknown }).EventSource !== "function") {
   ;(globalThis as { EventSource: unknown }).EventSource = class {
@@ -52,10 +54,21 @@ const wrap = (ui: React.ReactNode) => {
 
 afterEach(() => {
   cleanup()
+  vi.restoreAllMocks()
   useWorktreeTimeline.mockReset()
 })
 
 describe("ResourceDetailPane slack branch", () => {
+  it("has Thread and Linked Resources tabs and keeps the thread mounted", async () => {
+    vi.spyOn(api, "linkedResources").mockResolvedValue({ fetched_at: "", count: 0, sections: [] })
+    useWorktreeTimeline.mockReturnValue({ events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false })
+    wrap(<ResourceDetailPane path="/wt/foo" resource={slack} />)
+    expect(await screen.findByRole("tab", { name: "Thread" })).toHaveAttribute("aria-selected", "true")
+    const thread = screen.getByTestId("thread-view")
+    await userEvent.click(screen.getByRole("tab", { name: /Linked Resources/ }))
+    expect(thread).toBeInTheDocument() // still mounted (hidden), so drafts survive
+  })
+
   it("renders the Slack thread instead of the activity feed for a slack resource", () => {
     useWorktreeTimeline.mockReturnValue({ events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false })
     wrap(<ResourceDetailPane path="/wt/foo" resource={slack} />)

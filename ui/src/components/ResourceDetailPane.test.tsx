@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ResourceDTO, TimelineEvent } from "../api/types"
+import { api as realApi } from "../api/client"
 
 const useWorktreeTimeline = vi.fn()
 vi.mock("../hooks/useTimeline", () => ({
@@ -61,6 +62,24 @@ afterEach(() => {
 })
 
 describe("ResourceDetailPane", () => {
+  it("shows Activity by default, switches to Linked Resources, and resets on resource change", async () => {
+    vi.spyOn(realApi, "linkedResources").mockResolvedValue({ fetched_at: "2026-10-09T12:00:00Z", count: 3, sections: [] })
+    const mk = (r: ResourceDTO) => (
+      <MantineProvider>
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <ResourceDetailPane path="/wt/foo" resource={r} />
+        </QueryClientProvider>
+      </MantineProvider>
+    )
+    const { rerender } = render(mk({ ...jira, id: "J-1" }))
+    expect(await screen.findByRole("tab", { name: "Linked Resources (3)" })).toBeInTheDocument()
+    expect(screen.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true")
+    await userEvent.click(screen.getByRole("tab", { name: "Linked Resources (3)" }))
+    expect(screen.queryByRole("button", { name: /Mark .* as read/ })).not.toBeInTheDocument()
+    rerender(mk({ ...jira, id: "J-2" }))
+    expect(screen.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true")
+  })
+
   it("requests the timeline filtered to the selected resource", () => {
     useWorktreeTimeline.mockReturnValue({ events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false })
     wrap(<ResourceDetailPane path="/wt/foo" resource={jira} />)

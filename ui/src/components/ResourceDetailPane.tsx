@@ -1,4 +1,5 @@
-import { Anchor, Button, Center, Group, Stack, Title, Text } from "@mantine/core"
+import { useState } from "react"
+import { Anchor, Button, Center, Group, Stack, Tabs, Text } from "@mantine/core"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import type { ResourceDTO } from "../api/types"
 import { useWorktreeTimeline } from "../hooks/useTimeline"
@@ -13,6 +14,8 @@ import { useNow } from "../hooks/useNow"
 import { relativeTime } from "../lib/relativeTime"
 import { TimelineFeed } from "./TimelineFeed"
 import { serviceName } from "./ResourceActions"
+import { useLinkedResources } from "../hooks/useLinkedResources"
+import { LinkedResourcesPanel, LinkedTabControls, linkedTabLabel } from "./linked/LinkedResourcesPanel"
 
 interface ResourceDetailPaneProps {
   path: string
@@ -53,6 +56,9 @@ function TimelineBody({
   notify?: ResourceNotifyContext
 }) {
   const timeline = useWorktreeTimeline(path, { type: resource.type, id: resource.id })
+  const [tab, setTab] = useState<string>("activity")
+  const [linkedOpened, setLinkedOpened] = useState(false)
+  const linked = useLinkedResources(resource.type, resource.id, linkedOpened)
   const qc = useQueryClient()
   const unreadCount = resource.unread_count ?? 0
   // This feed is one resource, so "updated" means the watcher for ITS type.
@@ -93,10 +99,23 @@ function TimelineBody({
         variant="detail"
         notify={notify}
       />
-      <Group justify="space-between" align="center" wrap="nowrap">
-        <Group gap={6} wrap="nowrap" align="center">
-          <Title order={5}>Activity</Title>
-          <RefreshWatchersButton />
+      <Tabs
+        value={tab}
+        onChange={(v) => {
+          if (!v) return
+          setTab(v)
+          if (v === "linked") setLinkedOpened(true)
+        }}
+      >
+        <Group justify="space-between" align="center" wrap="nowrap">
+          <Group gap={6} wrap="nowrap" align="center">
+            <Tabs.List>
+              <Tabs.Tab value="activity">Activity</Tabs.Tab>
+              <Tabs.Tab value="linked">{linkedTabLabel(linked.data)}</Tabs.Tab>
+            </Tabs.List>
+            {tab === "activity" && (
+              <>
+                <RefreshWatchersButton />
           {unreadCount > 0 && (
           <Button
             size="compact-sm"
@@ -118,7 +137,11 @@ function TimelineBody({
             {`Mark ${unreadCount} ${unreadCount === 1 ? "event" : "events"} as read`}
           </Button>
           )}
-        </Group>
+              </>
+            )}
+          </Group>
+          {tab === "activity" ? (
+            <>
         {/*
           Where the source filter sits on the unified timelines. There is
           nothing to filter here — the feed is already one resource — so the
@@ -132,7 +155,12 @@ function TimelineBody({
           )}
           <WatcherErrorMark status={watcher} />
         </Group>
-      </Group>
+            </>
+          ) : (
+            <LinkedTabControls query={linked} />
+          )}
+        </Group>
+        <Tabs.Panel value="activity" pt="sm">
       <TimelineFeed
         events={timeline.events}
         loading={timeline.isLoading}
@@ -165,6 +193,11 @@ function TimelineBody({
           </Button>
         </Center>
       )}
+        </Tabs.Panel>
+        <Tabs.Panel value="linked" pt="sm">
+          <LinkedResourcesPanel query={linked} path={path} />
+        </Tabs.Panel>
+      </Tabs>
     </>
   )
 }
@@ -196,6 +229,7 @@ export function ResourceDetailPane({
       )}
       {resource.type === "slack" ? (
         <SlackThreadPane
+          key={`${resource.type}:${resource.id}`}
           resource={resource}
           path={path}
           onRemoved={onRemoved}
@@ -213,6 +247,7 @@ export function ResourceDetailPane({
         />
       ) : (
         <TimelineBody
+          key={`${resource.type}:${resource.id}`}
           path={path}
           resource={resource}
           onRemoved={onRemoved}

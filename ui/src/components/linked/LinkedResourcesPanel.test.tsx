@@ -1,0 +1,87 @@
+import { afterEach, describe, it, expect, vi } from "vitest"
+import { render, cleanup, screen } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
+import { MantineProvider } from "@mantine/core"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { api } from "../../api/client"
+import type { LinkedResourcesDTO } from "../../api/types"
+import { LinkedResourcesPanel, linkedTabLabel } from "./LinkedResourcesPanel"
+
+type Q = Parameters<typeof LinkedResourcesPanel>[0]["query"]
+const q = (over: Partial<Q>): Q => ({ data: undefined, isLoading: false, error: null, refresh: vi.fn(), refreshing: false, refetch: vi.fn(), ...over })
+const wrap = (ui: React.ReactNode) =>
+  render(
+    <MantineProvider>
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{ui}</QueryClientProvider>
+    </MantineProvider>,
+  )
+
+afterEach(() => { cleanup(); vi.restoreAllMocks() })
+
+const dto: LinkedResourcesDTO = {
+  fetched_at: "2026-10-09T12:00:00Z",
+  count: 4,
+  sections: [
+    { kind: "description", title: "Linked in description", items: [
+      { type: "pr", id: "example/repo#2", url: "https://github.com/example/repo/pull/2", resolved: true, title: "Fix thing", state: "OPEN" },
+      { type: "jira", id: "GONE-1", url: "https://example.atlassian.net/browse/GONE-1", resolved: false },
+    ] },
+    { kind: "links", title: "Linked work items", groups: [
+      { label: "is blocked by", items: [{ type: "jira", id: "PROJ-3", url: "u3", resolved: true, title: "Blocker", status: "New", issue_type: "Bug" }] },
+    ] },
+    { kind: "hierarchy", title: "Hierarchy", tree: [
+      { type: "jira", id: "PROJ-10", url: "u10", resolved: true, title: "Epic", issue_type: "Epic", expanded: true, has_children: true, children: [
+        { type: "jira", id: "PROJ-1", url: "u1", resolved: true, title: "Me", issue_type: "Story", current: true, expanded: true, has_children: false },
+        { type: "jira", id: "PROJ-7", url: "u7", resolved: true, title: "Sibling", issue_type: "Story", expanded: false, has_children: null },
+      ] },
+    ] },
+    { kind: "git_pr", title: "Git Pull Request", items: [] },
+    { kind: "thread", title: "Linked in thread", error: "boom" },
+  ],
+}
+
+describe("LinkedResourcesPanel", () => {
+  it("renders sections, groups, unresolved items and section errors; hides empty sections", () => {
+    vi.spyOn(api, "cmuxBrowserTabs").mockResolvedValue({ available: false } as never)
+    wrap(<LinkedResourcesPanel query={q({ data: dto })} />)
+    expect(screen.getByText("Linked in description")).toBeInTheDocument()
+    expect(screen.getByText("Fix thing")).toBeInTheDocument()
+    expect(screen.getByText("example/repo#2")).toBeInTheDocument()
+    expect(screen.getByText("couldn't load details")).toBeInTheDocument()
+    expect(screen.getByText("is blocked by")).toBeInTheDocument()
+    expect(screen.getByText("Bug PROJ-3")).toBeInTheDocument()
+    expect(screen.queryByText("Git Pull Request")).not.toBeInTheDocument()
+    expect(screen.getByText("boom")).toBeInTheDocument()
+    expect(screen.getByText("this issue")).toBeInTheDocument()
+  })
+
+  it("lazily loads a collapsed node's children", async () => {
+    vi.spyOn(api, "cmuxBrowserTabs").mockResolvedValue({ available: false } as never)
+    const kids = vi.spyOn(api, "linkedChildren").mockResolvedValue({
+      items: [{ type: "jira", id: "PROJ-70", url: "u70", resolved: true, title: "Grandkid", expanded: false, has_children: null }],
+      more: { url: "https://example.atlassian.net/issues/?jql=x" },
+    })
+    wrap(<LinkedResourcesPanel query={q({ data: dto })} />)
+    expect(screen.queryByText("Grandkid")).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole("button", { name: "Expand PROJ-7" }))
+    expect(await screen.findByText("Grandkid")).toBeInTheDocument()
+    expect(kids).toHaveBeenCalledWith("PROJ-7")
+    expect(screen.getByRole("link", { name: "More on Jira…" })).toBeInTheDocument()
+  })
+
+  it("empty, loading and error states", async () => {
+    wrap(<LinkedResourcesPanel query={q({ data: { fetched_at: "", count: 0, sections: [{ kind: "description", title: "Linked in description", items: [] }] } })} />)
+    expect(screen.getByText("No linked resources found")).toBeInTheDocument()
+    cleanup()
+    const refetch = vi.fn()
+    wrap(<LinkedResourcesPanel query={q({ error: new Error("Jira 500"), refetch })} />)
+    expect(screen.getByText(/Jira 500/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole("button", { name: "Retry" }))
+    expect(refetch).toHaveBeenCalled()
+  })
+
+  it("tab label carries the count only once loaded", () => {
+    expect(linkedTabLabel(undefined)).toBe("Linked Resources")
+    expect(linkedTabLabel({ count: 7 })).toBe("Linked Resources (7)")
+  })
+})

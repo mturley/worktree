@@ -1,10 +1,12 @@
-import { useState } from "react"
-import { Alert, Code, Stack, Text } from "@mantine/core"
+import { useEffect, useState } from "react"
+import { Alert, Code, Group, Stack, Tabs, Text } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
 import { useThread } from "../hooks/useThread"
 import { defaultTabName, type Tab } from "../state/tabs"
 import { ResourceCard, type ResourceNotifyContext } from "./ResourceCard"
 import { ThreadView } from "./slack/ThreadView"
+import { useLinkedResources } from "../hooks/useLinkedResources"
+import { LinkedResourcesPanel, LinkedTabControls, linkedTabLabel } from "./linked/LinkedResourcesPanel"
 
 interface SlackThreadPaneProps {
   resource: ResourceDTO
@@ -62,6 +64,14 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, 
   const [saveError, setSaveError] = useState<string | null>(null)
   const tab = slackTabFromResource(resource)
   const thread = useThread(tab)
+  const [paneTab, setPaneTab] = useState<string>("thread")
+  const [linkedOpened, setLinkedOpened] = useState(false)
+  // A focus request (e.g. from an activity entry's details) targets a
+  // message in the thread, so bring the Thread tab forward to show it.
+  useEffect(() => {
+    if (focus) setPaneTab("thread")
+  }, [focus?.key])
+  const linked = useLinkedResources(resource.type, resource.id, linkedOpened)
 
   if (isNotConfigured(thread.error)) {
     return (
@@ -99,15 +109,39 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, 
         onMetaChanged={() => onResourceChanged?.()}
         notify={notify}
       />
-      <ThreadView
-        tab={tab}
-        thread={thread}
-        topInset={topInset}
-        focus={focus}
-        onOpenThread={(url, opts) => {
-          window.open(url, opts.background ? "_blank" : "_self", "noreferrer")
+      <Tabs
+        value={paneTab}
+        // keepMounted: the hidden Thread panel keeps its composer draft,
+        // scroll position and unread-divider placement across tab switches.
+        keepMounted
+        onChange={(v) => {
+          if (!v) return
+          setPaneTab(v)
+          if (v === "linked") setLinkedOpened(true)
         }}
-      />
+      >
+        <Group justify="space-between" align="center" wrap="nowrap">
+          <Tabs.List>
+            <Tabs.Tab value="thread">Thread</Tabs.Tab>
+            <Tabs.Tab value="linked">{linkedTabLabel(linked.data)}</Tabs.Tab>
+          </Tabs.List>
+          {paneTab === "linked" && <LinkedTabControls query={linked} />}
+        </Group>
+        <Tabs.Panel value="thread" pt="sm">
+          <ThreadView
+            tab={tab}
+            thread={thread}
+            topInset={topInset}
+            focus={focus}
+            onOpenThread={(url, opts) => {
+              window.open(url, opts.background ? "_blank" : "_self", "noreferrer")
+            }}
+          />
+        </Tabs.Panel>
+        <Tabs.Panel value="linked" pt="sm">
+          <LinkedResourcesPanel query={linked} path={path} />
+        </Tabs.Panel>
+      </Tabs>
     </Stack>
   )
 }
