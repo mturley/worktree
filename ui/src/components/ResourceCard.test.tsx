@@ -15,6 +15,8 @@ vi.mock("../api/client", async (orig) => {
       ...actual.api,
       removeResource: (...args: unknown[]) => removeResource(...args),
       setResourcePrimary: (...args: unknown[]) => setResourcePrimary(...args),
+      // The detail card's open button asks cmux for an existing tab.
+      cmuxTree: () => Promise.resolve({ available: false, workspaces: [] }),
     },
   }
 })
@@ -37,7 +39,13 @@ if (typeof window.matchMedia !== "function") {
   })) as unknown as typeof window.matchMedia
 }
 
-const wrap = (ui: React.ReactNode) => render(<MantineProvider>{ui}</MantineProvider>)
+// The detail card's open button reads the cmux tree through react-query.
+const wrap = (ui: React.ReactNode) =>
+  render(
+    <MantineProvider>
+      <QueryClientProvider client={new QueryClient()}>{ui}</QueryClientProvider>
+    </MantineProvider>,
+  )
 
 /** The card's first line: brand icon, type badge, then the resource's key. */
 const typeLine = () => document.querySelector("[data-resource-type-line]") as HTMLElement

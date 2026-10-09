@@ -497,7 +497,7 @@ export function ResourceCard({
               { value: "related", label: "Related" },
             ]}
           />
-          <ResourceActions r={r} />
+          <ResourceActions r={r} path={path || undefined} />
           </Group>
         </Group>
       )}

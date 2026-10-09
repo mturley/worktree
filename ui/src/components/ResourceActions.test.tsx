@@ -1,15 +1,25 @@
 import { afterEach, describe, it, expect, vi } from "vitest"
-import { render, cleanup, screen } from "@testing-library/react"
+import { render, cleanup, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
-import type { ResourceDTO } from "../api/types"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { api } from "../api/client"
+import type { CmuxTreeResponse, ResourceDTO } from "../api/types"
 import { ResourceActions, openLabel } from "./ResourceActions"
 
-const wrap = (ui: React.ReactNode) => render(<MantineProvider>{ui}</MantineProvider>)
+const wrap = (ui: React.ReactNode) =>
+  render(
+    <MantineProvider>
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{ui}</QueryClientProvider>
+    </MantineProvider>,
+  )
 const res = (over: Partial<ResourceDTO>): ResourceDTO =>
   ({ type: "pr", id: "o/r#1", url: "https://gh/pr/1", primary: true, ...over }) as ResourceDTO
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+})
 
 describe("openLabel", () => {
   it("uses the preposition that reads right per destination", () => {
@@ -63,5 +73,62 @@ describe("ResourceActions", () => {
     const group = container.querySelector(".compound-group")
     expect(group).not.toBeNull()
     expect(group!.children.length).toBeGreaterThan(1)
+  })
+})
+
+describe("ResourceActions in cmux", () => {
+  const PR_URL = "https://github.com/org/repo/pull/5"
+  const pr = res({ url: PR_URL })
+  const jira = res({ type: "jira", id: "PROJ-1", url: "https://acme.atlassian.net/browse/PROJ-1" })
+  const treeWith = (url: string): CmuxTreeResponse => ({
+    available: true,
+    workspaces: [{
+      id: "W1", ref: "workspace:1", title: "wt", selected: true,
+      panes: [{ ref: "pane:1", focused: true, tabs: [{ ref: "surface:7", title: "PR", type: "browser", url, selected: false }] }],
+    }],
+  })
+
+  it("keeps the plain link when no tab shows the resource", async () => {
+    const tree = vi.spyOn(api, "cmuxTree").mockResolvedValue(treeWith("https://github.com/org/repo/pull/6"))
+    wrap(<ResourceActions r={pr} path="/wt" />)
+    await waitFor(() => expect(tree).toHaveBeenCalledWith("/wt"))
+    expect(screen.getByRole("link", { name: "Open on GitHub" })).toHaveAttribute("href", PR_URL)
+    expect(screen.queryByRole("button", { name: /more open options/i })).not.toBeInTheDocument()
+  })
+
+  it("does not ask cmux without a path or for other resource types", () => {
+    const tree = vi.spyOn(api, "cmuxTree")
+    wrap(<ResourceActions r={pr} />)
+    wrap(<ResourceActions r={res({ type: "slack", url: "https://x.slack.com/archives/C/p1" })} path="/wt" />)
+    expect(tree).not.toHaveBeenCalled()
+  })
+
+  it("switches to the existing tab, with a new-tab option in the menu", async () => {
+    vi.spyOn(api, "cmuxTree").mockResolvedValue(treeWith("https://acme.atlassian.net/browse/PROJ-1?x=1"))
+    const focus = vi.spyOn(api, "cmuxFocusTab").mockResolvedValue({ ok: true })
+    const open = vi.spyOn(window, "open").mockReturnValue(null)
+    const user = userEvent.setup()
+    wrap(<ResourceActions r={jira} path="/wt" />)
+
+    await user.click(await screen.findByRole("button", { name: "Open on Jira (existing tab)" }))
+    expect(focus).toHaveBeenCalledWith("W1", "surface:7")
+    expect(open).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole("button", { name: /more open options/i }))
+    expect(await screen.findByRole("menuitem", { name: "Open on Jira (new tab)" })).toHaveAttribute(
+      "href",
+      "https://acme.atlassian.net/browse/PROJ-1",
+    )
+  })
+
+  it("opens a new tab when cmux cannot focus the old one", async () => {
+    vi.spyOn(api, "cmuxTree").mockResolvedValue(treeWith(PR_URL + "/files"))
+    vi.spyOn(api, "cmuxFocusTab").mockResolvedValue({ ok: false, error: "gone" })
+    const open = vi.spyOn(window, "open").mockReturnValue(null)
+    const user = userEvent.setup()
+    wrap(<ResourceActions r={pr} path="/wt" />)
+
+    await user.click(await screen.findByRole("button", { name: "Open on GitHub (existing tab)" }))
+    await waitFor(() => expect(open).toHaveBeenCalledWith(PR_URL, "_blank", "noreferrer"))
   })
 })
