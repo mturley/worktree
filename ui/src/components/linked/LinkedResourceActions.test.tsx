@@ -32,7 +32,7 @@ describe("LinkedResourceActions", () => {
     expect(requestFollow).toHaveBeenCalledWith("https://example.atlassian.net/browse/PROJ-9")
   })
 
-  it("an already-followed resource offers View in worktree instead", async () => {
+  it("an already-followed resource offers View activity instead", async () => {
     vi.spyOn(api, "cmuxBrowserTabs").mockResolvedValue({ available: false, tabs: [] })
     const selectResource = vi.fn()
     wrap(<LinkedResourceActions item={item()} />, {
@@ -41,7 +41,7 @@ describe("LinkedResourceActions", () => {
       selectResource,
     })
     expect(screen.queryByRole("button", { name: "Follow" })).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole("button", { name: "View in worktree" }))
+    await userEvent.click(screen.getByRole("button", { name: "View activity" }))
     expect(selectResource).toHaveBeenCalledWith({ type: "jira", id: "PROJ-9" })
   })
 
@@ -54,7 +54,7 @@ describe("LinkedResourceActions", () => {
     expect(screen.getByRole("link", { name: "Open in Slack" })).toBeInTheDocument()
   })
 
-  it("an issue open in a cmux tab offers Switch to tab", async () => {
+  it("an issue open in a cmux tab offers Open (switch)", async () => {
     vi.spyOn(api, "cmux").mockResolvedValue({ available: true, workspaces: [], matches: {} } as unknown as CmuxResponse)
     vi.spyOn(api, "cmuxBrowserTabs").mockResolvedValue({
       available: true,
@@ -63,11 +63,11 @@ describe("LinkedResourceActions", () => {
     })
     const focus = vi.spyOn(api, "cmuxFocusTab").mockResolvedValue({ ok: true })
     wrap(<LinkedResourceActions item={item()} />)
-    await userEvent.click(await screen.findByRole("button", { name: "Switch to tab" }))
+    await userEvent.click(await screen.findByRole("button", { name: "Open (switch)" }))
     expect(focus).toHaveBeenCalledWith("w1", "s1")
   })
 
-  it("hideFollow hides both Follow and View in worktree", () => {
+  it("hideFollow hides both Follow and View activity", () => {
     vi.spyOn(api, "cmuxBrowserTabs").mockResolvedValue({ available: false, tabs: [] })
     wrap(<LinkedResourceActions item={item()} hideFollow />, { requestFollow: vi.fn(), trackedResource: () => null })
     expect(screen.queryByRole("button", { name: "Follow" })).not.toBeInTheDocument()

@@ -42,7 +42,7 @@ func (b *Builder) buildJira(ctx context.Context, key string, resolveLinks bool) 
 	gitPR, desc = all[:len(gitPR)], all[len(gitPR):]
 
 	if len(gitPR) > 0 {
-		sections = append(sections, Section{Kind: "git_pr", Title: "Git Pull Request", Items: gitPR})
+		sections = append(sections, Section{Kind: "git_pr", Title: "Pull request", Items: gitPR})
 	}
 	sections = append(sections, Section{Kind: "description", Title: "Linked in description", Items: desc})
 	sections = append(sections, b.hierarchy(ctx, g))

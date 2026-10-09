@@ -35,7 +35,7 @@ const dto: LinkedResourcesDTO = {
         { type: "jira", id: "PROJ-7", url: "u7", resolved: true, title: "Sibling", issue_type: "Story", expanded: false, has_children: null },
       ] },
     ] },
-    { kind: "git_pr", title: "Git Pull Request", items: [] },
+    { kind: "git_pr", title: "Pull request", items: [] },
     { kind: "thread", title: "Linked in thread", error: "boom" },
   ],
 }
@@ -50,7 +50,7 @@ describe("LinkedResourcesPanel", () => {
     expect(screen.getByText("couldn't load details")).toBeInTheDocument()
     expect(screen.getByText("is blocked by")).toBeInTheDocument()
     expect(screen.getByText("Bug PROJ-3")).toBeInTheDocument()
-    expect(screen.queryByText("Git Pull Request")).not.toBeInTheDocument()
+    expect(screen.queryByText("Pull request")).not.toBeInTheDocument()
     expect(screen.getByText("boom")).toBeInTheDocument()
     expect(screen.getByText("this issue")).toBeInTheDocument()
   })

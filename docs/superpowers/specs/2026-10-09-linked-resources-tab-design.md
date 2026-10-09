@@ -142,7 +142,7 @@ so it is unit-testable without network. Responsibilities:
   `resolve_links=1`).
 - Build sections:
   - **Jira**
-    1. `git_pr` "Git Pull Request" — `GitPRURLs`; omitted if empty or field unconfigured.
+    1. `git_pr` "Pull request" (the Jira field is "Git Pull Request") — `GitPRURLs`; omitted if empty or field unconfigured.
     2. `description` "Linked in description" — `DescriptionURLs`.
     3. `hierarchy` "Hierarchy" — tree: ancestors (root first) → the current
        issue's parent's children (siblings, via `parent = <parent>`, max 50) →
@@ -261,10 +261,10 @@ placeholder until it arrives.
 - `LinkedResourceActions` — button group:
   - **Follow** → `AddResourceModal` with `initialUrl` and `defaultRelated`.
     If the (type, id) is already among this worktree's resources (from the
-    existing `["resources", path]` query), the button is **View in worktree**,
+    existing `["resources", path]` query), the button is **View activity**,
     which calls `onSelectResource({type, id})`.
   - **Open** → new-tab link. If `useResourceCmuxTab` finds an existing cmux
-    tab (PR/Jira only), **Switch to tab** + chevron menu "Open (new tab)",
+    tab (PR/Jira only), **Open (switch)** + chevron menu "Open (new tab)",
     sharing the switch logic with `ResourceActions` (extract the existing
     `ExistingTabButtons` switch handler into a shared hook rather than
     copying). Slack rows: "Open in Slack".
@@ -288,7 +288,7 @@ placeholder until it arrives.
   bad params → 400.
 - **UI (vitest):** tab switching and default; count label; Activity-only
   controls hidden on Linked tab; Slack Thread panel stays mounted; Follow ↔
-  View in worktree; Open ↔ Switch to tab; copy; tree lazy expansion; section
+  View activity; Open ↔ Open (switch); copy; tree lazy expansion; section
   error and empty states.
 - **Manual end-to-end** against RHOAIENG-96640 (Git PR field, epic → feature
   chain), RHOAIENG-62835 (Task with sub-tasks), RHOAIENG-96533 (Related
