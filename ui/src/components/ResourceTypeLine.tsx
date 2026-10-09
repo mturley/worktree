@@ -49,7 +49,7 @@ export function awaitsFetch(r: ResourceDTO): boolean {
  * the same glyph the activity feed uses for its replies. A link without a
  * favicon has none, as its fallback globe already leads the line.
  */
-function resourceIcon(r: ResourceDTO): React.ReactNode {
+function resourceIcon(r: ResourceDTO, pending: boolean): React.ReactNode {
   if (r.type === "slack") {
     return (
       <IconMessage
@@ -61,7 +61,7 @@ function resourceIcon(r: ResourceDTO): React.ReactNode {
     )
   }
   if (r.type === "link") return <LinkFavicon r={r} />
-  if (awaitsFetch(r)) return <Loader size={12} color="dark.0" aria-label="loading" role="status" />
+  if (pending) return <Loader size={12} color="dark.0" aria-label="loading" role="status" />
   return <ResourceStatusIcon r={r} />
 }
 
@@ -91,15 +91,24 @@ function resourceKey(r: ResourceDTO): string {
  * and badge, then this resource's own icon and key. The brand icon is
  * decorative; the badge beside it names the type.
  *
- * Shared by the worktree page's resource cards and the home page's worktree
- * cards so a resource is introduced the same way on both.
+ * Shared by the worktree page's resource cards, the home page's worktree
+ * cards and the activity feed's events so a resource is introduced the same
+ * way on all of them.
  */
 export function ResourceTypeLine({
   r,
   trailing,
   aside,
+  pending = awaitsFetch(r),
 }: {
   r: ResourceDTO
+  /**
+   * Whether to show the loading spinner in place of the status icon.
+   * Defaults to awaitsFetch. The activity feed overrides it for a resource
+   * it rebuilt from an event alone: that one is not tracked, so no fetch is
+   * coming and a spinner would never stop.
+   */
+  pending?: boolean
   /** Flows inline right after the key, wrapping with it. */
   trailing?: React.ReactNode
   /**
@@ -116,7 +125,7 @@ export function ResourceTypeLine({
       {/* The extra margin separates the TYPE (icon + badge) from what
           follows, which is about this resource in particular. */}
       <Badge size="xs" variant="light" color={t?.color} mr={6}>{t?.label ?? r.type}</Badge>
-      {resourceIcon(r)}
+      {resourceIcon(r, pending)}
       <Text size="xs" c="dimmed">{resourceKey(r)}</Text>
       {trailing}
     </Group>

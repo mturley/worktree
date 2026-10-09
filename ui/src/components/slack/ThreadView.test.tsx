@@ -320,6 +320,84 @@ describe('ThreadView initial scroll position', () => {
   })
 })
 
+describe('ThreadView message focus', () => {
+  const msg = (ts: string) =>
+    ({ TS: ts, UserID: 'U2', Text: `m ${ts}`, Blocks: null, Reactions: null, Edited: false, Files: null, Attachments: null })
+
+  let scrolled: { el: Element; opts: ScrollIntoViewOptions | boolean | undefined }[] = []
+  let flashed: Element[] = []
+  const originalScroll = Element.prototype.scrollIntoView
+  const originalAnimate = Element.prototype.animate
+  beforeEach(() => {
+    scrolled = []
+    flashed = []
+    Element.prototype.scrollIntoView = function (this: Element, opts?: ScrollIntoViewOptions | boolean) {
+      scrolled.push({ el: this, opts })
+    }
+    Element.prototype.animate = function (this: Element) {
+      flashed.push(this)
+      return {} as Animation
+    }
+  })
+  afterEach(() => {
+    Element.prototype.scrollIntoView = originalScroll
+    Element.prototype.animate = originalAnimate
+  })
+
+  function thread(): UseThreadResult {
+    const t = baseThread()
+    t.data = {
+      ...t.data!,
+      messages: [msg('1700000000.000001'), msg('1700000001.000001'), msg('1700000002.000001')],
+      unreadIndex: 2,
+    }
+    return t
+  }
+
+  function view(focus: { ts: string; key: number } | undefined, t = thread(), topInset = 0) {
+    return (
+      <MantineProvider>
+        <QueryClientProvider client={new QueryClient()}>
+          <ThreadView tab={baseTab()} thread={t} onOpenThread={vi.fn()} focus={focus} topInset={topInset} />
+        </QueryClientProvider>
+      </MantineProvider>
+    )
+  }
+
+  it('centres and flashes the focused message, overriding the initial position', () => {
+    render(view({ ts: '1700000001.000001', key: 1 }))
+    const last = scrolled[scrolled.length - 1]
+    expect(last.opts).toEqual({ block: 'center' })
+    expect((last.el as HTMLElement).dataset.messageTs).toBe('1700000001.000001')
+    expect(flashed).toEqual([last.el])
+  })
+
+  it('centres it in the space below a sticky header', () => {
+    render(view({ ts: '1700000001.000001', key: 1 }, thread(), 240))
+    expect((scrolled[scrolled.length - 1].el as HTMLElement).style.scrollMarginTop).toBe('240px')
+  })
+
+  it('flashes only the message, not the unread divider above it', () => {
+    render(view({ ts: '1700000002.000001', key: 1 }))
+    expect(flashed[0].textContent).not.toContain('New')
+  })
+
+  it('applies once per key, and again for a new key', () => {
+    const { rerender } = render(view({ ts: '1700000001.000001', key: 1 }))
+    rerender(view({ ts: '1700000001.000001', key: 1 }))
+    expect(flashed).toHaveLength(1)
+    rerender(view({ ts: '1700000001.000001', key: 2 }))
+    expect(flashed).toHaveLength(2)
+  })
+
+  it('leaves the initial position alone for a message not in the thread', () => {
+    render(view({ ts: '1699999999.000001', key: 1 }))
+    expect(scrolled).toHaveLength(1)
+    expect(scrolled[0].opts).toEqual({ block: 'start' })
+    expect(flashed).toHaveLength(0)
+  })
+})
+
 describe('ThreadView following the end of the thread', () => {
   const msg = (ts: string) =>
     ({ TS: ts, UserID: 'U2', Text: `m ${ts}`, Blocks: null, Reactions: null, Edited: false, Files: null, Attachments: null })

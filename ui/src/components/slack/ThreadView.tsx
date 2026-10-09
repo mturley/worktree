@@ -34,7 +34,32 @@ interface ThreadViewProps {
    *  drive the editor directly via its own API once they have this
    *  reference. Unused in production. */
   onComposerEditorReady?: ComposerProps['onEditorReady']
+  /** A message to bring into view and flash, as Slack does when you follow
+   *  a link to one: its ts, and a key that changes on every request so
+   *  asking for the same message again flashes it again. Applied once per
+   *  key, after the initial position, which it overrides. */
+  focus?: { ts: string; key: number }
 }
+
+// A focused message's highlight: Slack's own yellow, pulsed twice to
+// draw the eye, held while you find your place, then faded away so the
+// message is not left marked.
+const FLASH_COLOR = 'rgba(242, 199, 68, 0.4)'
+const FLASH_PULSES_MS = 900
+const FLASH_HOLD_MS = 1000
+const FLASH_FADE_MS = 1000
+const FLASH_MS = FLASH_PULSES_MS + FLASH_HOLD_MS + FLASH_FADE_MS
+// The pulses alternate off and on, ending on, in three even steps.
+const PULSE_STEPS = ['transparent', FLASH_COLOR, 'transparent', FLASH_COLOR]
+const FLASH_KEYFRAMES: Keyframe[] = [
+  ...PULSE_STEPS.map((backgroundColor, i) => ({
+    backgroundColor,
+    easing: 'ease-in-out',
+    offset: (i * FLASH_PULSES_MS) / (PULSE_STEPS.length - 1) / FLASH_MS,
+  })),
+  { backgroundColor: FLASH_COLOR, offset: (FLASH_PULSES_MS + FLASH_HOLD_MS) / FLASH_MS, easing: 'ease-out' },
+  { backgroundColor: 'transparent', offset: 1 },
+]
 
 // Cached across renders/tabs: the workspace domain never changes for a
 // running instance, so there's no need to refetch /api/slack-config per tab.
@@ -48,7 +73,7 @@ export function openInSlackUrl(channel: string, threadTs: string, latestTs: stri
   return `https://${workspaceDomain}/archives/${channel}/p${pMessageId}?thread_ts=${threadTs}&cid=${channel}`
 }
 
-export function ThreadView({ tab, thread, onOpenThread, topInset = 0, onComposerEditorReady }: ThreadViewProps) {
+export function ThreadView({ tab, thread, onOpenThread, topInset = 0, onComposerEditorReady, focus }: ThreadViewProps) {
   const { data, status, error, authExpired, lastUpdated, refresh, applyLocal } = thread
   const now = useNow()
   const [workspaceDomain, setWorkspaceDomain] = useState<string | null>(cachedWorkspaceDomain)
@@ -119,6 +144,32 @@ export function ThreadView({ tab, thread, onOpenThread, topInset = 0, onComposer
       threadEndRef.current?.scrollIntoView?.({ block: 'end' })
     }
   }, [threadKey, hasMessages, topInset])
+
+  // A requested message: centre it in the space below the sticky header and
+  // flash it. Declared after the initial position so that, when both run in
+  // the same commit, this one has the last word. Once per focus key, so live
+  // updates never drag the reader back to it.
+  const focusedFor = useRef<number | null>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    if (!hasMessages || !focus || focusedFor.current === focus.key) {
+      return
+    }
+    focusedFor.current = focus.key
+    const target = Array.from(listRef.current?.querySelectorAll<HTMLElement>('[data-message-ts]') ?? [])
+      .find((el) => el.dataset.messageTs === focus.ts)
+    // Gone from the thread (deleted, or not loaded): the initial position
+    // stands.
+    if (!target) {
+      return
+    }
+    // The margin extends the box being centred up under the header, which
+    // centres the message itself in the visible space below it.
+    target.style.scrollMarginTop = `${topInset}px`
+    target.scrollIntoView?.({ block: 'center' })
+    // jsdom has no Web Animations API.
+    target.animate?.(FLASH_KEYFRAMES, { duration: FLASH_MS })
+  }, [hasMessages, focus, topInset])
 
   // Track whether the reader is at the end of the thread so live updates can
   // show a "new/more messages" affordance instead of silently appending below
@@ -379,7 +430,7 @@ export function ThreadView({ tab, thread, onOpenThread, topInset = 0, onComposer
       )}
 
       {status === 'ready' && data && data.messages.length > 0 && (
-        <div>
+        <div ref={listRef}>
           <Stack gap="md" style={{ paddingRight: 4 }}>
             {data.messages.map((message, index) => (
               <div key={message.TS}>
@@ -390,16 +441,20 @@ export function ThreadView({ tab, thread, onOpenThread, topInset = 0, onComposer
                     <UnreadDivider />
                   </div>
                 )}
-                <Message
-                  message={message}
-                  users={data.users}
-                  emoji={data.emoji}
-                  currentUserId={data.currentUserId}
-                  onMarkUnread={handleMarkUnread}
-                  onCopyLink={workspaceDomain ? handleCopyMessageLink : undefined}
-                  onToggleReaction={handleToggleReaction}
-                  onOpenThread={onOpenThread}
-                />
+                {/* The focus target: the message alone, so a flash does not
+                    light up the unread divider above it. */}
+                <div data-message-ts={message.TS} style={{ borderRadius: 'var(--mantine-radius-sm)' }}>
+                  <Message
+                    message={message}
+                    users={data.users}
+                    emoji={data.emoji}
+                    currentUserId={data.currentUserId}
+                    onMarkUnread={handleMarkUnread}
+                    onCopyLink={workspaceDomain ? handleCopyMessageLink : undefined}
+                    onToggleReaction={handleToggleReaction}
+                    onOpenThread={onOpenThread}
+                  />
+                </div>
               </div>
             ))}
             {pending.map(renderPendingRow)}

@@ -1,10 +1,11 @@
-import { Group, Text } from "@mantine/core"
+import { Text } from "@mantine/core"
 import type { ResourceDTO, TimelineEvent } from "../api/types"
-import { ResourceStatusIcon } from "./ResourceStatusIcon"
-import { shortResourceRef } from "../lib/resourceRef"
+import { ResourceTypeLine } from "./ResourceTypeLine"
 
 /**
- * Names the resource an event belongs to, with its live status.
+ * Names the resource an event belongs to, with its live status: the same
+ * type line (brand icon, badge, status icon, typed key) that introduces a
+ * resource on its card, then its title.
  *
  * Read-only: the row that contains it is itself the button that goes there,
  * and a button inside a button is invalid markup. Shared by the timeline row
@@ -26,25 +27,20 @@ export function EventResourceChip({ e, resolveResource }: {
   // loaded); the global timeline has no such list, so the event carries the
   // enriched resource itself.
   const resource = resolveResource?.(e.resource_type, e.resource_id) ?? e.resource
-  const ref = shortResourceRef(e.resource_type, e.resource_id)
   const title = resource?.custom_name || resource?.title || e.resource_title
   // Falls back to a bare shape when the resource is not in the worktree's
-  // list: the event still names it.
-  const forIcon = resource
+  // list: the event still names it. Nothing will ever fetch that shape, so it
+  // must not wait on a fetch with a spinner.
+  const forLine = resource
     ?? ({ type: e.resource_type, id: e.resource_id, url: e.resource_url, primary: false } as ResourceDTO)
 
   return (
-    <Group
-      gap={6}
-      wrap="nowrap"
-      // No border or padding: it used to be a button and needed to look
-      // like one. Now it is a label inside the row's own button, and a box
-      // around it only competes with that.
-      style={{ alignSelf: "flex-start", maxWidth: "100%", minWidth: 0 }}
-    >
-      <ResourceStatusIcon r={forIcon} />
-      {ref && <Text size="xs" fw={600} style={{ whiteSpace: "nowrap" }}>{ref}</Text>}
-      {title && <Text size="xs" c="dimmed" lineClamp={1} style={{ minWidth: 0 }}>{title}</Text>}
-    </Group>
+    <ResourceTypeLine
+      r={forLine}
+      pending={resource ? undefined : false}
+      trailing={title && (
+        <Text size="xs" c="dimmed" lineClamp={1} style={{ minWidth: 0, overflowWrap: "anywhere" }}>{title}</Text>
+      )}
+    />
   )
 }

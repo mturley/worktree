@@ -18,6 +18,8 @@ interface SlackThreadPaneProps {
   topInset?: number
   /** Notification state for the card's switch; see ResourceNotifyContext. */
   notify?: ResourceNotifyContext
+  /** A message to bring into view; see ThreadView. */
+  focus?: { ts: string; key: number }
 }
 
 /**
@@ -54,7 +56,7 @@ function isNotConfigured(error: string | undefined): boolean {
  * deliberately no resource summary card above it — ThreadView already has its
  * own title/description header, so a card would be duplicate chrome.
  */
-export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, topInset, notify }: SlackThreadPaneProps) {
+export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, topInset, notify, focus }: SlackThreadPaneProps) {
   // Surfaces a failed "save thread details" write: the modal closes on submit,
   // so a rejected write would otherwise vanish and look like success.
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -101,6 +103,7 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, 
         tab={tab}
         thread={thread}
         topInset={topInset}
+        focus={focus}
         onOpenThread={(url, opts) => {
           window.open(url, opts.background ? "_blank" : "_self", "noreferrer")
         }}

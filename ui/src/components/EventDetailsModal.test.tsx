@@ -1,9 +1,11 @@
 import { afterEach, describe, it, expect, vi } from "vitest"
 import { render, cleanup, screen, fireEvent } from "@testing-library/react"
 import { MantineProvider } from "@mantine/core"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { api } from "../api/client"
 import { EventDetailsModal } from "./EventDetailsModal"
 import { TimelineFeed } from "./TimelineFeed"
-import type { TimelineEvent } from "../api/types"
+import type { CmuxResponse, ResourceDTO, TimelineEvent } from "../api/types"
 
 if (typeof window.matchMedia !== "function") {
   window.matchMedia = ((query: string) => ({
@@ -22,9 +24,19 @@ const ev = (o: Partial<TimelineEvent> = {}): TimelineEvent => ({
   worktrees: [], ...o,
 })
 
-const wrap = (ui: React.ReactNode) => render(<MantineProvider>{ui}</MantineProvider>)
+// The open button looks for a cmux tab already showing the resource, so the
+// modal needs a QueryClient.
+const wrap = (ui: React.ReactNode) =>
+  render(
+    <MantineProvider>
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{ui}</QueryClientProvider>
+    </MantineProvider>,
+  )
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+})
 
 describe("EventDetailsModal", () => {
   it("shows the body in full, and preserves its line breaks", () => {
@@ -42,6 +54,29 @@ describe("EventDetailsModal", () => {
     // button wording.
     wrap(<EventDetailsModal e={ev()} onClose={vi.fn()} />)
     expect(screen.getByRole("link", { name: "Open on GitHub" }).getAttribute("href")).toBe("https://gh/pr/1")
+  })
+
+  it("uses the resource card's controls, including switching to an open cmux tab", async () => {
+    vi.spyOn(api, "cmux").mockResolvedValue({ available: true, workspaces: [], matches: {} } as unknown as CmuxResponse)
+    vi.spyOn(api, "cmuxBrowserTabs").mockResolvedValue({
+      available: true,
+      tabs: [{ workspaceId: "w-UUID", workspaceRef: "workspace:w", workspaceTitle: "w", workspaceSelected: false, surface: "surface:w", url: "https://github.com/o/r/pull/1" }],
+    })
+    wrap(<EventDetailsModal e={ev({ resource_url: "https://github.com/o/r/pull/1" })} onClose={vi.fn()} />)
+    expect(await screen.findByRole("button", { name: "Switch to open GitHub tab" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Copy link" })).toBeInTheDocument()
+  })
+
+  it("introduces the resource with its brand badge and typed key", async () => {
+    const resource = { type: "jira", id: "J-1", url: "https://jira/J-1", primary: true, issue_type: "Bug", title: "Flux" } as ResourceDTO
+    wrap(
+      <EventDetailsModal
+        e={ev({ resource_type: "jira", resource_id: "J-1", resource_url: "https://jira/J-1", resource })}
+        onClose={vi.fn()}
+      />,
+    )
+    expect(await screen.findByText("Jira")).toBeInTheDocument()
+    expect(screen.getByText("Bug J-1")).toBeInTheDocument()
   })
 
   it("renders nothing when no event is selected", () => {
@@ -81,8 +116,8 @@ describe("the modal's context row is read-only", () => {
         onClose={vi.fn()}
       />,
     )
-    await screen.findByText("wt-a")
-    expect(screen.getByText("wt-b")).toBeInTheDocument()
+    await screen.findByText("Worktree: wt-a")
+    expect(screen.getByText("Worktree: wt-b")).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /open worktree/i })).not.toBeInTheDocument()
   })
 

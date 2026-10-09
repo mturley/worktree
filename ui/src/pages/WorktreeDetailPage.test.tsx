@@ -12,12 +12,13 @@ const baseResources: ResourceDTO[] = [
 ]
 // Reassigned by tests that need unread state; reset before each.
 let resources = baseResources
+let events: unknown[] = []
 
 const detailArgs = vi.hoisted(() => [] as unknown[][])
 vi.mock("../hooks/useWorktreeDetail", () => ({
   useWorktreeDetail: (...args: unknown[]) => (detailArgs.push(args), {
     resources: { data: resources, refetch: vi.fn() },
-    timeline: { events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false },
+    timeline: { events, isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false },
   }),
 }))
 // Return a summary whose path matches the route, so the page can render its
@@ -38,6 +39,17 @@ vi.mock("../hooks/useTimeline", () => ({
   useWorktreeTimeline: () => ({ events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false }),
 }))
 
+// Stood in so the Slack event tests can see what the thread was asked to
+// focus, without the thread renderer's internals.
+vi.mock("../components/slack/ThreadView", () => ({
+  ThreadView: ({ focus }: { focus?: { ts: string } }) => (
+    <div data-testid="thread-view">{`focus ${focus?.ts ?? "none"}`}</div>
+  ),
+}))
+vi.mock("../hooks/useThread", () => ({
+  useThread: () => ({ data: undefined, status: "ready", error: undefined, refresh: vi.fn(), applyLocal: vi.fn() }),
+}))
+
 import { setViewport } from "../testing/viewport"
 import { WorktreeDetailPage } from "./WorktreeDetailPage"
 
@@ -56,6 +68,7 @@ beforeEach(() => {
   window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}`)
   window.localStorage.clear()
   resources = baseResources
+  events = []
 })
 afterEach(cleanup)
 
@@ -517,6 +530,61 @@ describe("WorktreeDetailPage event opened from the home page", () => {
     window.history.replaceState({ openEvent: { id: 7 } }, "", url)
     wrap()
     await screen.findAllByText("Fix the widget")
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+  })
+
+  it("brings a Slack message into view in its thread instead of opening details", async () => {
+    resources = [
+      ...baseResources,
+      { type: "slack", id: "C1:1791500000.000100", url: "https://x.slack.com/archives/C1/p1791500000000100", primary: true } as ResourceDTO,
+    ]
+    const slackEvent = {
+      ...event, source: "slack", type: "slack_reply", external_ts: "1791561570.240519",
+      resource_type: "slack", resource_id: "C1:1791500000.000100", resource_url: resources[2].url,
+    }
+    window.history.replaceState(
+      { openEvent: slackEvent },
+      "",
+      `/worktree/${encodeURIComponent("/wt/foo")}?resource=slack:C1%3A1791500000.000100`,
+    )
+    wrap()
+    expect(await screen.findByTestId("thread-view")).toHaveTextContent("focus 1791561570.240519")
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+  })
+})
+
+describe("WorktreeDetailPage event clicked in its own activity feed", () => {
+  const prEvent = {
+    id: "evt-8", ts: "2026-10-01T00:00:00Z", external_ts: "", source: "github",
+    type: "pr_comment", type_label: "", title: "Looks good to me", body: "The whole comment body", author: "someone",
+    resource_type: "pr", resource_id: "o/r#1", resource_url: "https://gh/pr/1", resource_title: "Fix the widget",
+    worktrees: ["foo"], worktree_paths: ["/wt/foo"],
+  }
+  const slackResource = { type: "slack", id: "C1:1791500000.000100", url: "https://x.slack.com/archives/C1/p1791500000000100", primary: true } as ResourceDTO
+  const slackEvent = {
+    ...prEvent, id: "evt-9", source: "slack", type: "slack_reply", external_ts: "1791561570.240519",
+    resource_type: "slack", resource_id: slackResource.id, resource_url: slackResource.url,
+  }
+
+  it("selects the resource and opens the event's details over it", async () => {
+    setViewport("wide")
+    events = [prEvent]
+    const user = userEvent.setup()
+    wrap()
+    await user.click(await screen.findByText("Looks good to me"))
+    const dialog = await screen.findByRole("dialog")
+    expect(dialog).toHaveTextContent("The whole comment body")
+    expect(decodeURIComponent(new URLSearchParams(window.location.search).get("resource") ?? "")).toBe("pr:o/r#1")
+  })
+
+  it("selects a Slack thread and brings the message into view, with no details", async () => {
+    setViewport("wide")
+    resources = [...baseResources, slackResource]
+    events = [slackEvent]
+    const user = userEvent.setup()
+    wrap()
+    await user.click(await screen.findByText("Looks good to me"))
+    expect(await screen.findByTestId("thread-view")).toHaveTextContent("focus 1791561570.240519")
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
   })
 })

@@ -27,6 +27,8 @@ interface ResourceDetailPaneProps {
   topInset?: number
   /** Notification state for the card's switch; see ResourceNotifyContext. */
   notify?: ResourceNotifyContext
+  /** Slack only: a message to bring into view; see ThreadView. */
+  focus?: { ts: string; key: number }
 }
 
 /**
@@ -142,6 +144,7 @@ function TimelineBody({
         // so naming it again on each row says nothing.
         showResource={false}
         showUnreadDivider
+        path={path}
       />
       {/*
         The feed only holds what the poller captured for this worktree, which
@@ -180,6 +183,7 @@ export function ResourceDetailPane({
   onResourceChanged,
   topInset,
   notify,
+  focus,
 }: ResourceDetailPaneProps) {
   return (
     <Stack gap="sm">
@@ -198,6 +202,7 @@ export function ResourceDetailPane({
           onResourceChanged={onResourceChanged}
           topInset={topInset}
           notify={notify}
+          focus={focus}
         />
       ) : resource.type === "link" ? (
         <LinkPane

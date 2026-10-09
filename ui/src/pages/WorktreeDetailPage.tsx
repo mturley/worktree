@@ -19,7 +19,7 @@ import { stickyListStyle } from "../lib/stickyList"
 import { ResourceDetailPane } from "../components/ResourceDetailPane"
 import { TimelineFeed } from "../components/TimelineFeed"
 import { EventDetailsModal } from "../components/EventDetailsModal"
-import { clearOpenEvent, readOpenEvent } from "../lib/openEvent"
+import { clearOpenEvent, messageFocus, readOpenEvent, type MessageFocus } from "../lib/openEvent"
 import type { TimelineEvent } from "../api/types"
 import { WorktreeDetailCard } from "../components/WorktreeDetailCard"
 import { CmuxWorkspaceActions, CmuxWorkspaceTitles } from "../components/CmuxWorkspaceHeader"
@@ -97,8 +97,25 @@ export function WorktreeDetailPage() {
   // entry so a reload or a back/forward onto this page does not reopen it.
   // Cleared in an effect rather than in the initializer, which StrictMode runs
   // twice: clearing there would leave the second run with nothing to read.
-  const [openedEvent, setOpenedEvent] = useState<TimelineEvent | null>(readOpenEvent)
+  //
+  // A Slack message is the exception: it is brought into view in its thread
+  // instead, which shows it in full and in context — see messageFocus.
+  const [arrival] = useState<TimelineEvent | null>(readOpenEvent)
+  const [openedEvent, setOpenedEvent] = useState<TimelineEvent | null>(
+    () => (arrival && !messageFocus(arrival) ? arrival : null),
+  )
+  const [focus, setFocus] = useState<MessageFocus | null>(() => (arrival ? messageFocus(arrival) : null))
   useEffect(() => clearOpenEvent(), [])
+  // The activity feed does what arriving from the home page does: selects
+  // the event's resource, then opens the event's details over it — or, for a
+  // Slack message, brings it into view in its thread. Selecting alone left
+  // you to find the entry you clicked again in the resource's own feed.
+  const selectFromEvent = (key: { type: string; id: string }, e: TimelineEvent) => {
+    select(key)
+    const f = messageFocus(e)
+    if (f) setFocus(f)
+    else setOpenedEvent(e)
+  }
   const resolveResource = (type: string, id: string) => items.find((r) => r.type === type && r.id === id)
 
   // Thread-unfurl actions live here because this is the only place that knows
@@ -211,8 +228,9 @@ export function WorktreeDetailPage() {
         emptyText={unreadOnly ? "No unread events." : undefined}
         // Only meaningful here: this page has a selection to change, and the
         // worktree's own resource list to resolve icons and titles against.
-        onSelectResource={select}
+        onSelectResource={selectFromEvent}
         resolveResource={resolveResource}
+        path={path}
       />
     </Stack>
   )
@@ -234,6 +252,11 @@ export function WorktreeDetailPage() {
       onResourceChanged={resources.refetch}
       topInset={headerHeight}
       notify={notify}
+      focus={
+        focus && focus.type === selectedResource.type && focus.id === selectedResource.id
+          ? { ts: focus.ts, key: focus.key }
+          : undefined
+      }
     />
   )
 
@@ -450,7 +473,7 @@ export function WorktreeDetailPage() {
           }}
         />
       )}
-      <EventDetailsModal e={openedEvent} onClose={() => setOpenedEvent(null)} resolveResource={resolveResource} />
+      <EventDetailsModal e={openedEvent} onClose={() => setOpenedEvent(null)} resolveResource={resolveResource} path={path} />
     </Stack>
     </ThreadActionsContext.Provider>
   )

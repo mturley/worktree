@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { EventRow } from "./EventRow"
-import type { TimelineEvent } from "../api/types"
+import type { ResourceDTO, TimelineEvent } from "../api/types"
 import { UNREAD_BORDER_WIDTH } from "../lib/unread"
 import { DOT_CENTER, DOT_SIZE, ROW_PAD_X } from "./timelineRail"
 
@@ -80,13 +80,13 @@ describe("EventRow", () => {
   it("names the resource as read-only text, never as a second button", () => {
     // The row itself is the button now, so a chip button inside it would be
     // invalid markup with an ambiguous click target.
-    const e = makeEvent({ resource_title: "PR #42", resource_type: "pr", resource_id: "o/r#42" })
+    const e = makeEvent({ resource_title: "Fix the widget", resource_type: "pr", resource_id: "o/r#42" })
     const { container } = renderWithProvider(
       <EventRow e={e} onOpen={vi.fn()} onSelectResource={vi.fn()} />,
     )
     expect(container.querySelectorAll("button")).toHaveLength(1)
-    // The PR number is pulled out of the composite id for a readable ref.
-    expect(screen.getByText("#42")).toBeInTheDocument()
+    // The PR number is pulled out of the composite id, and typed, for a readable ref.
+    expect(screen.getByText("PR #42")).toBeInTheDocument()
   })
 
   it("never nests a link inside the clickable row", () => {
@@ -123,7 +123,7 @@ describe("EventRow", () => {
 
 describe("global timeline affordances", () => {
   const withWorktrees = () => makeEvent({
-    resource_type: "pr", resource_id: "o/r#42", resource_title: "PR #42",
+    resource_type: "pr", resource_id: "o/r#42", resource_title: "Fix the widget",
     worktrees: ["wt-a", "wt-b"], worktree_paths: ["/wt/a", "/wt/b"],
   })
 
@@ -153,7 +153,7 @@ describe("global timeline affordances", () => {
     renderWithProvider(
       <EventRow e={withWorktrees()} onOpen={vi.fn()} onSelectResource={vi.fn()} canSelectResource={() => false} />,
     )
-    expect(screen.getByText("PR #42")).toBeInTheDocument()
+    expect(screen.getByText("Fix the widget")).toBeInTheDocument()
   })
 
   it("nests no button inside the row's button", () => {
@@ -350,12 +350,12 @@ describe("the context lines below the event", () => {
     // anywhere, and the worktree is what you scan the global feed by.
     const { container } = renderWithProvider(
       <EventRow
-        e={makeEvent({ resource_type: "pr", resource_id: "o/r#42", resource_title: "PR #42", worktrees: ["wt-a"] })}
+        e={makeEvent({ resource_type: "pr", resource_id: "o/r#42", resource_title: "Fix the widget", worktrees: ["wt-a"] })}
         showWorktrees
       />,
     )
     const badge = screen.getByText("Worktree: wt-a")
-    const chip = screen.getByText("PR #42")
+    const chip = screen.getByText("Fix the widget")
     // Different parents means different flex lines, not two items wrapping.
     expect(badge.closest("[data-event-row] > * > *")).not.toBe(chip.closest("[data-event-row] > * > *"))
     expect(container.querySelectorAll("button")).toHaveLength(0)
@@ -383,7 +383,7 @@ describe("the resource label is unboxed", () => {
 
 describe("the order of an event's lines", () => {
   const withBody = () => makeEvent({
-    resource_type: "pr", resource_id: "o/r#42", resource_title: "PR #42",
+    resource_type: "pr", resource_id: "o/r#42", resource_title: "Fix the widget",
     type: "pr_comment", body: "the truncated comment text",
   })
 
@@ -391,7 +391,7 @@ describe("the order of an event's lines", () => {
     // The resource says what you are looking at, and a two-line quote of a
     // comment is no place to learn it.
     renderWithProvider(<EventRow e={withBody()} />)
-    const resource = screen.getByText("PR #42")
+    const resource = screen.getByText("Fix the widget")
     const body = screen.getByText("the truncated comment text")
     expect(resource.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
@@ -437,5 +437,21 @@ describe("a single-resource feed", () => {
   it("still names the resource by default, for the unified feeds", () => {
     const { container } = renderWithProvider(<EventRow e={e()} />)
     expect(container.textContent).toContain("PR #42")
+  })
+})
+
+describe("the resource line matches the resource cards", () => {
+  it("leads with the type's brand badge and a typed key", () => {
+    const resource = { type: "jira", id: "J-1", url: "u", primary: true, issue_type: "Story", title: "Flux" } as ResourceDTO
+    renderWithProvider(<EventRow e={makeEvent({ resource_type: "jira", resource_id: "J-1", resource })} />)
+    expect(screen.getByText("Jira")).toBeInTheDocument()
+    expect(screen.getByText("Story J-1")).toBeInTheDocument()
+    expect(screen.getByText("Flux")).toBeInTheDocument()
+  })
+
+  it("shows no spinner for a resource no worktree tracks", () => {
+    // Rebuilt from the event alone, so nothing will ever fetch it.
+    renderWithProvider(<EventRow e={makeEvent({ resource_type: "pr", resource_id: "o/r#42" })} />)
+    expect(screen.queryByRole("status", { name: "loading" })).not.toBeInTheDocument()
   })
 })

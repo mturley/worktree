@@ -32,6 +32,29 @@ export function readOpenEvent(): TimelineEvent | null {
 }
 
 /**
+ * A request to bring one Slack message into view in its thread.
+ *
+ * A Slack event IS a message, and the thread view shows it in full and in
+ * context — so following one goes to the message rather than to a details
+ * modal over the thread. `key` changes on every request, so following the
+ * same event twice flashes it twice.
+ */
+export interface MessageFocus { type: string; id: string; ts: string; key: number }
+
+let focusSeq = 0
+
+/**
+ * The message focus an event asks for, or null for anything that is not a
+ * Slack message. A Slack event's external_ts is the message's own Slack ts;
+ * one without it (a watcher error, say) has no message to go to.
+ */
+export function messageFocus(e: TimelineEvent): MessageFocus | null {
+  if (e.resource_type !== "slack" || !e.resource_id || !e.external_ts) return null
+  focusSeq += 1
+  return { type: e.resource_type, id: e.resource_id, ts: e.external_ts, key: focusSeq }
+}
+
+/**
  * Drops the event from the current history entry, leaving the URL alone, so a
  * reload or a later back/forward onto this entry does not reopen it.
  */

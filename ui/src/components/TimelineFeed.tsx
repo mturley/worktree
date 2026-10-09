@@ -9,7 +9,7 @@ import { UnreadDivider } from "./UnreadDivider"
 export function TimelineFeed({
   events, loading, error, showWorktrees, showResource, hasMore, onLoadMore, loadingMore,
   onSelectResource, resolveResource, canSelectResource,
-  showUnreadDivider, emptyText = "No events yet.",
+  showUnreadDivider, emptyText = "No events yet.", path,
 }: {
   events: TimelineEvent[]; loading: boolean; error: unknown; showWorktrees?: boolean
   /**
@@ -45,6 +45,8 @@ export function TimelineFeed({
   showUnreadDivider?: boolean
   /** What an empty feed says, e.g. "No unread events." under that filter. */
   emptyText?: string
+  /** The worktree this feed is shown in; see EventDetailsModal. */
+  path?: string
 }) {
   const [detail, setDetail] = useState<TimelineEvent | null>(null)
 
@@ -113,7 +115,7 @@ export function TimelineFeed({
           )}
         </Stack>
       </Box>
-      <EventDetailsModal e={detail} onClose={() => setDetail(null)} resolveResource={resolveResource} />
+      <EventDetailsModal e={detail} onClose={() => setDetail(null)} resolveResource={resolveResource} path={path} />
     </>
   )
 }
