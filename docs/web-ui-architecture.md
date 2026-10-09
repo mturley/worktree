@@ -1177,6 +1177,65 @@ same-origin navigation. The `ui/src/lib/linkEmbed.ts` same-origin guard
 host reachable from worktree's own origin, so the frame is never actually
 same-origin with the embedder and the escape route is blocked.
 
+## Linked resources
+
+The detail pane's **Linked Resources** tab lists what a PR, Jira issue or Slack
+thread links to, grouped into sections. Assembly is in `internal/linked`
+(pure; all access via `Sources` interfaces); the real adapters, cache and
+routes are in `internal/webui/linked_api.go`. Tests inject fakes through the
+`Server.LinkedSources` seam.
+
+**Routes** (both `GET`, behind the normal session auth):
+
+- `/api/linked-resources?type=pr|jira|slack&id=…[&resolve_links=1][&refresh=1]`
+  returns a `linked.Result` (`fetched_at`, `count`, `sections[]`). Other types
+  are 400; a source with no credentials is 503 (`ErrNotConfigured`); upstream
+  failures are 502.
+- `/api/linked-resources/children?key=ISSUE-1` returns `{items, more}`: the
+  next level of the Jira hierarchy, used for lazy expansion of collapsed nodes.
+
+**DTO:** Go in `internal/linked/types.go` (`Item`, `TreeNode`, `Group`,
+`Section`, `Result`); TS mirror in `ui/src/api/types.ts`. `Item` field names
+match `ResourceDTO` so the existing status icon and key rendering apply.
+Section kinds: `git_pr`, `description`, `hierarchy`, `links`, `referenced_by`,
+`thread`. A capped tree node carries `more: {url}` only (a JQL search on Jira;
+`/search/jql` returns no total, so there is no overflow count). The favicon
+field is `favicon`.
+
+**On-demand, never polled.** Linked resources are fetched when a resource is
+selected and cached server-side for 2 minutes (`linkedTTL`); `refresh=1`
+bypasses the read but stores the fresh value. They are deliberately not part of
+`pollAll`. The `ttlCache` does per-key single-flight, recovers a panicking
+computation into an error (waiters are released, the key never wedges), never
+caches errors, and does not cache results from cancelled requests (the
+handlers return `ctx.Err()` so a cancelled build is dropped). Link metadata is
+memoised separately per URL for 30 minutes (`cachedLinkResolver`).
+
+**`resolve_links` gating.** Selection fetches with `resolve_links` off: that
+yields the tab's count with no outbound page fetches (plain-URL rows are
+unresolved). Opening the tab refetches with `resolve_links=1`, which resolves
+titles/favicons through `linkmeta` (SSRF-safe via `safehttp`). The frontend
+(`useLinkedResources`) carries data across that flip for the same resource only.
+
+**Jira hierarchy** is built from `parent` plus `parent = KEY` searches via the
+watcher `jira` client (`FetchLinkGraph`, `SearchSummaries`), not Epic Link /
+Parent Link. The current issue's ancestors are expanded; siblings and other
+branches are collapsed and expanded lazily via the children route.
+
+**"Referenced by Jira"** for a PR reads only worktree's cached
+`watcher_resource_state` (`jiraStateIndex`, matching `git_pull_request_urls` by
+PR resource id). No Jira search is made. It needs `git_pull_request` in
+`config.yaml`'s `jira.custom_fields` (`internal/jira.ConfiguredCustomFields`),
+and only covers Jira issues already followed and polled.
+
+**Frontend:** `ResourceDetailPane` adds the tab for pr/jira/slack (Slack's
+`SlackThreadPane` keeps Thread as default and keeps its composer draft across
+tab switches); components in `ui/src/components/linked/`. Row actions (Follow,
+View in worktree / Switch to tab, Copy link) use `LinkedActionsContext`,
+supplied by `WorktreeDetailPage` (`requestFollow` opens the add modal with
+Related preselected, `trackedResource`, `selectResource`). Switching resources
+resets the tab to Activity/Thread.
+
 ## Dev workflow
 
 - `make dev` uses `mprocs` to run two live-reloading processes side by side:

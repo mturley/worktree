@@ -33,6 +33,11 @@ every interface at `ui.https_port` (8476). There is no `--bind`.
   - `gitutil` — git operations
   - `github` — GitHub PR metadata via `gh` CLI
   - `jira` — Jira REST API client
+  - `linked` — assembles the detail pane's "Linked Resources" tab (PR
+    description links, Jira Git PR field / description / hierarchy / issue
+    links, Slack thread links) from watcher-library sources behind
+    interfaces. Pure; the webui adapters and 2-minute cache live in
+    `internal/webui/linked_api.go`. Fetched on demand, never polled.
   - `linkmeta` — resolves a followed page's title, description, favicon,
     preview image and whether it permits being framed. Used only at add time
     and on explicit refresh: link resources are NEVER polled.
