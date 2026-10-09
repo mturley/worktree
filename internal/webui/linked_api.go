@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,9 +30,10 @@ const (
 // ttlCache is a small TTL map with per-key single-flight: concurrent misses
 // for the same key share one computation.
 type ttlCache struct {
-	mu       sync.Mutex
-	entries  map[string]ttlEntry
-	inflight map[string]*ttlCall
+	mu        sync.Mutex
+	lastSweep time.Time
+	entries   map[string]ttlEntry
+	inflight  map[string]*ttlCall
 }
 
 type ttlEntry struct {
@@ -78,7 +80,9 @@ func (c *ttlCache) get(key string, ttl time.Duration, bypass bool, fn func() (in
 			delete(c.inflight, key)
 		}
 		if call.err == nil {
-			c.entries[key] = ttlEntry{val: call.val, expires: time.Now().Add(ttl)}
+			now := time.Now()
+			c.sweepLocked(now)
+			c.entries[key] = ttlEntry{val: call.val, expires: now.Add(ttl)}
 		}
 		c.mu.Unlock()
 		call.wg.Done()
@@ -86,6 +90,23 @@ func (c *ttlCache) get(key string, ttl time.Duration, bypass bool, fn func() (in
 	}()
 	call.val, call.err = fn()
 	return call.val, call.err
+}
+
+// sweepInterval bounds how often inserts scan for expired entries.
+const sweepInterval = time.Minute
+
+// sweepLocked drops expired entries, at most once per sweepInterval. The
+// caller holds c.mu.
+func (c *ttlCache) sweepLocked(now time.Time) {
+	if now.Sub(c.lastSweep) < sweepInterval {
+		return
+	}
+	c.lastSweep = now
+	for k, e := range c.entries {
+		if !now.Before(e.expires) {
+			delete(c.entries, k)
+		}
+	}
 }
 
 func (s *Server) linkedCacheOrInit() *ttlCache {
@@ -186,7 +207,7 @@ func (j jiraStateIndex) IssuesReferencingPR(ctx context.Context, prID string) ([
 		}
 		for _, u := range st.URLs {
 			// Compare by resource id, so ".../pull/1/files" matches PR 1.
-			if t, id, ok := resourceurl.Infer(u); ok && t == "pr" && id == prID {
+			if t, id, ok := resourceurl.Infer(u); ok && t == "pr" && samePRID(id, prID) {
 				out = append(out, linked.Item{
 					Type: "jira", ID: key, URL: j.issueURL(key), Resolved: true,
 					Title: st.Summary, Status: st.Status, IssueType: st.IssueType, IssueTypeIconURL: st.IssueTypeIconURL,
@@ -196,6 +217,14 @@ func (j jiraStateIndex) IssuesReferencingPR(ctx context.Context, prID string) ([
 		}
 	}
 	return out, rows.Err()
+}
+
+// samePRID compares "owner/repo#N" ids with owner/repo case-insensitively
+// (GitHub names are) and the number exactly.
+func samePRID(a, b string) bool {
+	ra, na, oka := strings.Cut(a, "#")
+	rb, nb, okb := strings.Cut(b, "#")
+	return oka && okb && na == nb && strings.EqualFold(ra, rb)
 }
 
 // linkedSources builds Sources from the watcher config. Unconfigured
@@ -242,6 +271,23 @@ func linkedErrorStatus(err error) int {
 	}
 }
 
+// validLinkedID reports whether id is well-formed for the resource type, so
+// a malformed id is a 400 rather than a 502 from the upstream service.
+func validLinkedID(resType, id string) bool {
+	switch resType {
+	case "pr":
+		_, err := wgithub.ParsePRResourceID(id)
+		return err == nil
+	case "jira":
+		_, ok := wtjira.ParseKey(id)
+		return ok
+	case "slack":
+		ch, ts, ok := strings.Cut(id, ":")
+		return ok && ch != "" && ts != ""
+	}
+	return false
+}
+
 func (s *Server) handleLinkedResources(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	resType, id := q.Get("type"), q.Get("id")
@@ -251,6 +297,10 @@ func (s *Server) handleLinkedResources(w http.ResponseWriter, r *http.Request) {
 	}
 	if resType != "pr" && resType != "jira" && resType != "slack" {
 		writeError(w, http.StatusBadRequest, linked.ErrUnsupportedType.Error())
+		return
+	}
+	if !validLinkedID(resType, id) {
+		writeError(w, http.StatusBadRequest, "invalid id for type "+resType)
 		return
 	}
 	resolveLinks := q.Get("resolve_links") == "1"

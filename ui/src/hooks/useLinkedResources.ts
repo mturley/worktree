@@ -17,6 +17,7 @@ const STALE_MS = 2 * 60_000
 export function useLinkedResources(type: string, id: string, resolveLinks: boolean) {
   const qc = useQueryClient()
   const [refreshing, setRefreshing] = useState(false)
+  const [refreshError, setRefreshError] = useState<Error | null>(null)
   const key = ["linked", type, id, resolveLinks] as const
   const q = useQuery({
     queryKey: key,
@@ -30,9 +31,14 @@ export function useLinkedResources(type: string, id: string, resolveLinks: boole
   })
   async function refresh() {
     setRefreshing(true)
+    setRefreshError(null)
     try {
       const fresh = await api.linkedResources(type, id, { resolveLinks, refresh: true })
       qc.setQueryData(key, fresh)
+      // Lazily loaded tree children are stale too; refetch them on next use.
+      void qc.invalidateQueries({ queryKey: ["linked-children"] })
+    } catch (e) {
+      setRefreshError(e instanceof Error ? e : new Error(String(e)))
     } finally {
       setRefreshing(false)
     }
@@ -43,6 +49,7 @@ export function useLinkedResources(type: string, id: string, resolveLinks: boole
     error: q.error as Error | null,
     refresh,
     refreshing,
+    refreshError,
     refetch: () => void q.refetch(),
   }
 }

@@ -78,6 +78,11 @@ func TestLinkedResourcesErrors(t *testing.T) {
 		"/api/linked-resources?type=pr":                     400,
 		"/api/linked-resources?type=link&id=https://x.com":  400,
 		"/api/linked-resources?type=pr&id=example/repo%231": 503,
+		"/api/linked-resources?type=pr&id=garbage":          400,
+		"/api/linked-resources?type=jira&id=not-a-key":      400,
+		"/api/linked-resources?type=slack&id=C0TEST":        400,
+		"/api/linked-resources?type=slack&id=:123":          400,
+		"/api/linked-resources?type=slack&id=C0TEST:123.4":  503,
 		"/api/linked-resources/children?key=not%20a%20key":  400,
 		"/api/linked-resources/children?key=PROJ-1":         503,
 	}
@@ -111,13 +116,23 @@ func TestJiraStateIndexFindsReferencingIssues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Owner/repo case differs between the stored URL and the PR id.
+	_, err = db.Exec(`INSERT INTO watcher_resource_state (resource_type, resource_id, state_json, resource_updated_at, watcher_updated_at) VALUES
+		('jira','PROJ-4','{"summary":"Four","git_pull_request_urls":["https://github.com/Example/Repo/pull/1"]}','x','x'),
+		('jira','PROJ-5','{"summary":"Five","git_pull_request_urls":["https://github.com/example/repo/pull/11"]}','x','x')`)
+	if err != nil {
+		t.Fatal(err)
+	}
 	idx := jiraStateIndex{db: db, issueURL: func(k string) string { return "https://example.atlassian.net/browse/" + k }}
 	got, err := idx.IssuesReferencingPR(context.Background(), "example/repo#1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 || got[0].ID != "PROJ-1" || got[0].Title != "One" || got[0].Status != "Review" || !got[0].Resolved {
+	if len(got) != 2 || got[0].ID != "PROJ-1" || got[0].Title != "One" || got[0].Status != "Review" || !got[0].Resolved {
 		t.Errorf("got %+v", got)
+	}
+	if got[1].ID != "PROJ-4" {
+		t.Errorf("owner/repo must match case-insensitively (and #11 must not match #1): %+v", got)
 	}
 }
 
@@ -161,5 +176,31 @@ func TestCachedLinkResolverDoesNotCacheCancelled(t *testing.T) {
 	r.Resolve(context.Background(), "https://x.com")
 	if cm.calls != 2 {
 		t.Errorf("cancelled result must not be cached, live one must; calls=%d", cm.calls)
+	}
+}
+
+func TestTTLCacheSweepsExpiredOnInsert(t *testing.T) {
+	c := newTTLCache()
+	for _, k := range []string{"a", "b"} {
+		if _, err := c.get(k, time.Millisecond, false, func() (interface{}, error) { return 1, nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	time.Sleep(5 * time.Millisecond)
+	// Within sweepInterval of the last sweep, nothing is scanned.
+	if _, err := c.get("c", time.Hour, false, func() (interface{}, error) { return 1, nil }); err != nil {
+		t.Fatal(err)
+	}
+	if len(c.entries) != 3 {
+		t.Fatalf("sweep ran too early: %d entries", len(c.entries))
+	}
+	c.mu.Lock()
+	c.lastSweep = time.Now().Add(-2 * sweepInterval)
+	c.mu.Unlock()
+	if _, err := c.get("d", time.Hour, false, func() (interface{}, error) { return 1, nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := c.entries["a"]; ok || len(c.entries) != 2 {
+		t.Fatalf("expired entries must be swept; have %d", len(c.entries))
 	}
 }

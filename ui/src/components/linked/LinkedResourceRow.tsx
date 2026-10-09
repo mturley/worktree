@@ -1,6 +1,7 @@
 import { Badge, Group, Text } from "@mantine/core"
-import { IconMessage } from "@tabler/icons-react"
+import { IconMessage, IconWorld } from "@tabler/icons-react"
 import type { LinkedItem, ResourceDTO } from "../../api/types"
+import { Mrkdwn } from "../../lib/mrkdwn"
 import { LinkFavicon, ResourceStatusIcon } from "../ResourceStatusIcon"
 import { LinkedResourceActions } from "./LinkedResourceActions"
 
@@ -22,8 +23,17 @@ function keyText(item: LinkedItem): string {
   }
 }
 
+// Excerpts are inline mrkdwn; no user/emoji directories are available here,
+// so mentions and custom emoji fall back to their raw tokens.
+const NO_USERS = {}
+const NO_EMOJI = {}
+
+function titleNode(item: LinkedItem): React.ReactNode {
+  if (item.type === "slack") return <Mrkdwn text={item.excerpt ?? ""} users={NO_USERS} emoji={NO_EMOJI} />
+  return titleText(item)
+}
+
 function titleText(item: LinkedItem): string {
-  if (item.type === "slack") return item.excerpt ?? ""
   return item.title || (item.type === "link" ? item.url : "")
 }
 
@@ -37,7 +47,7 @@ function icon(item: LinkedItem) {
   if (item.type === "slack") {
     return <IconMessage size={14} aria-hidden style={{ color: "var(--mantine-color-grape-6)", flexShrink: 0 }} />
   }
-  if (item.type === "link") return <LinkFavicon r={asResource(item)} />
+  if (item.type === "link") return <LinkFavicon r={asResource(item)} fallback={<IconWorld size={16} aria-label="link" style={{ flexShrink: 0 }} />} />
   return <ResourceStatusIcon r={asResource(item)} />
 }
 
@@ -58,7 +68,7 @@ export function LinkedResourceRow({ item, path, hideFollow, marker }: {
         {icon(item)}
         <Text size="sm" c="dimmed" style={{ whiteSpace: "nowrap", flexShrink: 0 }}>{keyText(item)}</Text>
         {item.resolved ? (
-          <Text size="sm" truncate="end" style={{ minWidth: 0 }}>{titleText(item)}</Text>
+          <Text size="sm" truncate="end" style={{ minWidth: 0 }}>{titleNode(item)}</Text>
         ) : (
           <Text size="sm" c="dimmed" fs="italic">couldn't load details</Text>
         )}

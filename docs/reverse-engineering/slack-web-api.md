@@ -123,7 +123,9 @@ Two representations coexist:
    - `<!here>` / `<!channel>` — broadcasts
    - `<https://url|label>` — link with display label
    - `:emoji_name:` — emoji
-   - `&amp;` `&lt;` `&gt;` — HTML-escaped entities
+   - `&amp;` `&lt;` `&gt;` — HTML-escaped entities. Note: this applies to URLs inside
+     `<url|label>` too, so watcher's `ExtractURLs` unescapes them; otherwise a link
+     with `&` yields the correct rich_text URL plus a broken `&amp;` duplicate.
 2. **`blocks`** — structured, typed representation. For normal messages this is a single
    block of `type: "rich_text"` whose `elements` are `rich_text_section` (and, in richer
    messages, `rich_text_list`, `rich_text_quote`, `rich_text_preformatted`). Each section's

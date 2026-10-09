@@ -71,9 +71,10 @@ describe("ResourceDetailPane", () => {
         </QueryClientProvider>
       </MantineProvider>
     )
-    const { rerender } = render(mk({ ...jira, id: "J-1" }))
+    const { rerender } = render(mk({ ...jira, id: "J-1", unread_count: 2 }))
     expect(await screen.findByRole("tab", { name: "Linked Resources (3)" })).toBeInTheDocument()
     expect(screen.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true")
+    expect(screen.getByRole("button", { name: "Mark 2 events as read" })).toBeInTheDocument()
     await userEvent.click(screen.getByRole("tab", { name: "Linked Resources (3)" }))
     expect(screen.queryByRole("button", { name: /Mark .* as read/ })).not.toBeInTheDocument()
     rerender(mk({ ...jira, id: "J-2" }))

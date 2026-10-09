@@ -35,4 +35,17 @@ describe("useLinkedResources", () => {
     expect(spy).toHaveBeenLastCalledWith("jira", "PROJ-1", { resolveLinks: true, refresh: true })
     await waitFor(() => expect(result.current.data?.count).toBe(5))
   })
+
+  it("exposes a failed refresh instead of rejecting, and invalidates child queries", async () => {
+    const spy = vi.spyOn(api, "linkedResources").mockResolvedValueOnce(dto(1)).mockRejectedValueOnce(new Error("boom"))
+    const { result } = renderHook(() => useLinkedResources("jira", "PROJ-1", true), { wrapper })
+    await waitFor(() => expect(result.current.data?.count).toBe(1))
+    await act(() => result.current.refresh())
+    expect(spy).toHaveBeenCalledTimes(2)
+    expect(result.current.refreshError?.message).toBe("boom")
+    expect(result.current.data?.count).toBe(1)
+    spy.mockResolvedValueOnce(dto(2))
+    await act(() => result.current.refresh())
+    expect(result.current.refreshError).toBeNull()
+  })
 })

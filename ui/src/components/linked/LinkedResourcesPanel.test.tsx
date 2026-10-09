@@ -5,10 +5,10 @@ import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { api } from "../../api/client"
 import type { LinkedResourcesDTO } from "../../api/types"
-import { LinkedResourcesPanel, linkedTabLabel } from "./LinkedResourcesPanel"
+import { LinkedResourcesPanel, LinkedTabControls, linkedTabLabel } from "./LinkedResourcesPanel"
 
 type Q = Parameters<typeof LinkedResourcesPanel>[0]["query"]
-const q = (over: Partial<Q>): Q => ({ data: undefined, isLoading: false, error: null, refresh: vi.fn(), refreshing: false, refetch: vi.fn(), ...over })
+const q = (over: Partial<Q>): Q => ({ data: undefined, isLoading: false, error: null, refresh: vi.fn(), refreshing: false, refreshError: null, refetch: vi.fn(), ...over })
 const wrap = (ui: React.ReactNode) =>
   render(
     <MantineProvider>
@@ -78,6 +78,37 @@ describe("LinkedResourcesPanel", () => {
     expect(screen.getByText(/Jira 500/)).toBeInTheDocument()
     await userEvent.click(screen.getByRole("button", { name: "Retry" }))
     expect(refetch).toHaveBeenCalled()
+  })
+
+  it("treats a hierarchy of only the current issue as empty", () => {
+    const lone: LinkedResourcesDTO = { fetched_at: "", count: 0, sections: [
+      { kind: "hierarchy", title: "Hierarchy", tree: [
+        { type: "jira", id: "PROJ-1", url: "u1", resolved: true, title: "Me", current: true, expanded: true, has_children: false },
+      ] },
+    ] }
+    wrap(<LinkedResourcesPanel query={q({ data: lone })} />)
+    expect(screen.getByText("No linked resources found")).toBeInTheDocument()
+    expect(screen.queryByText("this issue")).not.toBeInTheDocument()
+  })
+
+  it("renders a Slack excerpt's mrkdwn and a globe for favicon-less links", () => {
+    vi.spyOn(api, "cmuxBrowserTabs").mockResolvedValue({ available: false } as never)
+    const d: LinkedResourcesDTO = { fetched_at: "", count: 2, sections: [
+      { kind: "thread", title: "Linked in thread", items: [
+        { type: "slack", id: "C0TEST:1.2", url: "https://example.slack.com/archives/C0TEST/p12", resolved: true, excerpt: "see <https://example.com/x|the doc> &amp; more" },
+        { type: "link", id: "https://example.com/y", url: "https://example.com/y", resolved: true, domain: "example.com" },
+      ] },
+    ] }
+    wrap(<LinkedResourcesPanel query={q({ data: d })} />)
+    expect(screen.getByRole("link", { name: "the doc" })).toHaveAttribute("href", "https://example.com/x")
+    expect(screen.getByText(/& more/)).toBeInTheDocument()
+    expect(screen.queryByText(/&amp;/)).not.toBeInTheDocument()
+    expect(screen.getByLabelText("link")).toBeInTheDocument()
+  })
+
+  it("shows a refresh error beside the refresh control", () => {
+    wrap(<LinkedTabControls query={q({ refreshError: new Error("Jira 500") })} />)
+    expect(screen.getByRole("alert")).toHaveTextContent("Refresh failed: Jira 500")
   })
 
   it("tab label carries the count only once loaded", () => {

@@ -159,3 +159,19 @@ func TestBuildJiraGraphErrorIsFatal(t *testing.T) {
 		t.Fatalf("want ErrNotConfigured, got %v", err)
 	}
 }
+
+func TestLinkGroupsSkipsSelfLink(t *testing.T) {
+	fj := &fakeJira{graphs: map[string]*wjira.LinkGraph{"PROJ-1": {
+		Issue: sum("PROJ-1", "Task", 0),
+		Links: []wjira.IssueLink{
+			{Label: "relates to", Issue: sum("PROJ-1", "Task", 0)},
+			{Label: "relates to", Issue: sum("PROJ-3", "Bug", 0)},
+		},
+	}}, children: map[string][]wjira.IssueSummary{}}
+	b := &Builder{Src: Sources{Jira: fj}}
+	ss, _ := b.buildJira(context.Background(), "PROJ-1", false)
+	l := section(t, ss, "links")
+	if len(l.Groups) != 1 || len(l.Groups[0].Items) != 1 || l.Groups[0].Items[0].ID != "PROJ-3" {
+		t.Errorf("links = %+v", l)
+	}
+}

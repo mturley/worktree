@@ -54,6 +54,9 @@ func (b *Builder) linkGroups(g *wjira.LinkGraph) Section {
 	s := Section{Kind: "links", Title: "Linked work items"}
 	pos := map[string]int{}
 	for _, l := range g.Links {
+		if l.Issue.Key == g.Issue.Key {
+			continue
+		}
 		i, ok := pos[l.Label]
 		if !ok {
 			i = len(s.Groups)

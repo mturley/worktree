@@ -1213,7 +1213,8 @@ memoised separately per URL for 30 minutes (`cachedLinkResolver`).
 
 **`resolve_links` gating.** Selection fetches with `resolve_links` off: that
 yields the tab's count with no outbound page fetches (plain-URL rows are
-unresolved). Opening the tab refetches with `resolve_links=1`, which resolves
+`resolved: true` from the start; only their title/favicon arrive with
+`resolve_links=1`). Opening the tab refetches with `resolve_links=1`, which resolves
 titles/favicons through `linkmeta` (SSRF-safe via `safehttp`). The frontend
 (`useLinkedResources`) carries data across that flip for the same resource only.
 
@@ -1230,8 +1231,8 @@ and only covers Jira issues already followed and polled.
 
 **Frontend:** `ResourceDetailPane` adds the tab for pr/jira/slack (Slack's
 `SlackThreadPane` keeps Thread as default and keeps its composer draft across
-tab switches); components in `ui/src/components/linked/`. Row actions (Follow,
-View in worktree / Switch to tab, Copy link) use `LinkedActionsContext`,
+tab switches); components in `ui/src/components/linked/`. Row actions (Follow / View in
+worktree, Open / Switch to tab, Copy link) use `LinkedActionsContext`,
 supplied by `WorktreeDetailPage` (`requestFollow` opens the add modal with
 Related preselected, `trackedResource`, `selectResource`). Switching resources
 resets the tab to Activity/Thread.

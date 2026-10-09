@@ -12,8 +12,13 @@ export function linkedTabLabel(data?: { count: number }): string {
   return data ? `Linked Resources (${data.count})` : "Linked Resources"
 }
 
+/** A hierarchy that is only the current issue (no parent, no children) says nothing. */
+function isLoneCurrent(tree?: LinkedSection["tree"]): boolean {
+  return tree?.length === 1 && !!tree[0].current && !tree[0].children?.length
+}
+
 function isEmpty(s: LinkedSection): boolean {
-  return !s.error && !s.items?.length && !s.groups?.length && !s.tree?.length
+  return !s.error && !s.items?.length && !s.groups?.length && (!s.tree?.length || isLoneCurrent(s.tree))
 }
 
 function SectionView({ s, path }: { s: LinkedSection; path?: string }) {
@@ -59,6 +64,9 @@ export function LinkedResourcesPanel({ query, path }: { query: LinkedQuery; path
 export function LinkedTabControls({ query }: { query: LinkedQuery }) {
   return (
     <Group gap={4} wrap="nowrap" style={{ flex: "none" }}>
+      {query.refreshError && (
+        <Text size="xs" c="red" role="alert" style={{ whiteSpace: "nowrap" }}>{`Refresh failed: ${query.refreshError.message}`}</Text>
+      )}
       {query.data?.fetched_at && (
         <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>{`Fetched ${relativeTime(query.data.fetched_at)}`}</Text>
       )}
