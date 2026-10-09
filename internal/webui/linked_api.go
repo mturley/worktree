@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"sync"
@@ -50,7 +51,7 @@ func newTTLCache() *ttlCache {
 
 // get returns the cached value for key, or computes it with fn. bypass
 // skips the read but still stores the fresh value. Errors are not cached.
-func (c *ttlCache) get(key string, ttl time.Duration, bypass bool, fn func() (interface{}, error)) (interface{}, error) {
+func (c *ttlCache) get(key string, ttl time.Duration, bypass bool, fn func() (interface{}, error)) (val interface{}, err error) {
 	c.mu.Lock()
 	if e, ok := c.entries[key]; ok && !bypass && time.Now().Before(e.expires) {
 		c.mu.Unlock()
@@ -66,15 +67,24 @@ func (c *ttlCache) get(key string, ttl time.Duration, bypass bool, fn func() (in
 	c.inflight[key] = call
 	c.mu.Unlock()
 
+	// The deferred cleanup runs even if fn panics, so waiters are released
+	// (with an error) and the key is never wedged.
+	defer func() {
+		if rec := recover(); rec != nil {
+			call.val, call.err = nil, fmt.Errorf("linked: computation panicked: %v", rec)
+		}
+		c.mu.Lock()
+		if c.inflight[key] == call {
+			delete(c.inflight, key)
+		}
+		if call.err == nil {
+			c.entries[key] = ttlEntry{val: call.val, expires: time.Now().Add(ttl)}
+		}
+		c.mu.Unlock()
+		call.wg.Done()
+		val, err = call.val, call.err
+	}()
 	call.val, call.err = fn()
-	call.wg.Done()
-
-	c.mu.Lock()
-	delete(c.inflight, key)
-	if call.err == nil {
-		c.entries[key] = ttlEntry{val: call.val, expires: time.Now().Add(ttl)}
-	}
-	c.mu.Unlock()
 	return call.val, call.err
 }
 
@@ -124,14 +134,20 @@ func (a slackAdapter) ChannelName(ctx context.Context, id string) (string, error
 }
 
 // cachedLinkResolver memoises linkmeta per URL for linkMetaTTL.
+type metaResolver interface {
+	Resolve(ctx context.Context, u string) linkmeta.Meta
+}
+
 type cachedLinkResolver struct {
-	r     *linkmeta.Resolver
+	r     metaResolver
 	cache *ttlCache
 }
 
 func (c cachedLinkResolver) Resolve(ctx context.Context, u string) linkmeta.Meta {
 	v, _ := c.cache.get("meta|"+u, linkMetaTTL, false, func() (interface{}, error) {
-		return c.r.Resolve(ctx, u), nil
+		m := c.r.Resolve(ctx, u)
+		// A cancelled fetch may be degraded; return it but don't cache it.
+		return m, ctx.Err()
 	})
 	m, _ := v.(linkmeta.Meta)
 	return m
@@ -241,7 +257,11 @@ func (s *Server) handleLinkedResources(w http.ResponseWriter, r *http.Request) {
 	key := "linked|" + resType + "|" + id + "|" + q.Get("resolve_links")
 	v, err := s.linkedCacheOrInit().get(key, linkedTTL, q.Get("refresh") == "1", func() (interface{}, error) {
 		b := &linked.Builder{Src: s.linkedSources()}
-		return b.Build(r.Context(), resType, id, resolveLinks)
+		res, err := b.Build(r.Context(), resType, id, resolveLinks)
+		if err == nil && r.Context().Err() != nil {
+			return nil, r.Context().Err()
+		}
+		return res, err
 	})
 	if err != nil {
 		writeError(w, linkedErrorStatus(err), err.Error())
@@ -263,6 +283,9 @@ func (s *Server) handleLinkedChildren(w http.ResponseWriter, r *http.Request) {
 	v, err := s.linkedCacheOrInit().get("children|"+key, linkedTTL, false, func() (interface{}, error) {
 		b := &linked.Builder{Src: s.linkedSources()}
 		items, more, err := b.Children(r.Context(), key)
+		if err == nil {
+			err = r.Context().Err()
+		}
 		if err != nil {
 			return nil, err
 		}

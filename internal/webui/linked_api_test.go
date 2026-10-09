@@ -6,10 +6,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	wgithub "github.com/mturley/watcher/github"
 	wjira "github.com/mturley/watcher/jira"
 	"github.com/mturley/worktree/internal/linked"
+	"github.com/mturley/worktree/internal/linkmeta"
 )
 
 type stubPR struct{ calls int }
@@ -116,5 +118,48 @@ func TestJiraStateIndexFindsReferencingIssues(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].ID != "PROJ-1" || got[0].Title != "One" || got[0].Status != "Review" || !got[0].Resolved {
 		t.Errorf("got %+v", got)
+	}
+}
+
+func TestTTLCachePanicDoesNotWedgeKey(t *testing.T) {
+	c := newTTLCache()
+	_, err := c.get("k", time.Minute, false, func() (interface{}, error) { panic("boom") })
+	if err == nil {
+		t.Fatal("panic should surface as error")
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := c.get("k", time.Minute, false, func() (interface{}, error) { return 1, nil })
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("second get blocked: inflight entry wedged")
+	}
+}
+
+type countingMeta struct{ calls int }
+
+func (c *countingMeta) Resolve(context.Context, string) linkmeta.Meta {
+	c.calls++
+	return linkmeta.Meta{Title: "t"}
+}
+
+func TestCachedLinkResolverDoesNotCacheCancelled(t *testing.T) {
+	cm := &countingMeta{}
+	r := cachedLinkResolver{r: cm, cache: newTTLCache()}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if m := r.Resolve(ctx, "https://x.com"); m.Title != "t" {
+		t.Errorf("caller should still get the meta: %+v", m)
+	}
+	r.Resolve(context.Background(), "https://x.com")
+	r.Resolve(context.Background(), "https://x.com")
+	if cm.calls != 2 {
+		t.Errorf("cancelled result must not be cached, live one must; calls=%d", cm.calls)
 	}
 }
