@@ -1,8 +1,10 @@
 package jira
 
 import (
+	"net/url"
 	"regexp"
 	"strings"
+	"sync/atomic"
 
 	"github.com/mturley/worktree/internal/resources"
 )
@@ -42,8 +44,45 @@ func stripHTMLComments(s string) string {
 
 var jiraURLPattern = regexp.MustCompile(`(?i)atlassian\.net/browse/([A-Z]+-\d+)`)
 
-func ParseJiraURL(url string) (key string, ok bool) {
-	m := jiraURLPattern.FindStringSubmatch(url)
+// aliasBrowsePath is an issue page's path on an alias host.
+var aliasBrowsePath = regexp.MustCompile(`(?i)^/browse/([A-Z][A-Z0-9]*-\d+)/?$`)
+
+// aliasHosts holds the lowercased extra hosts whose /browse/KEY pages are Jira
+// issues — typically an instance's old address that now redirects to its
+// atlassian.net one (e.g. a Jira Server host kept alive after a migration to
+// Cloud), so links written before the move are still recognised.
+var aliasHosts atomic.Pointer[map[string]bool]
+
+// SetAliasHosts sets the extra Jira hosts (config `jira.alias_hosts`). Called
+// once at startup; nil clears them. Matching is on the URL's host exactly,
+// not a substring, so an alias can't be spoofed from another URL's query.
+func SetAliasHosts(hosts []string) {
+	m := map[string]bool{}
+	for _, h := range hosts {
+		if h = strings.ToLower(strings.TrimSpace(h)); h != "" {
+			m[h] = true
+		}
+	}
+	aliasHosts.Store(&m)
+}
+
+func ParseJiraURL(raw string) (key string, ok bool) {
+	if m := jiraURLPattern.FindStringSubmatch(raw); m != nil {
+		return strings.ToUpper(m[1]), true
+	}
+	return parseAliasURL(raw)
+}
+
+func parseAliasURL(raw string) (string, bool) {
+	hosts := aliasHosts.Load()
+	if hosts == nil || len(*hosts) == 0 {
+		return "", false
+	}
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || !(*hosts)[strings.ToLower(u.Hostname())] {
+		return "", false
+	}
+	m := aliasBrowsePath.FindStringSubmatch(u.Path)
 	if m == nil {
 		return "", false
 	}
@@ -51,7 +90,8 @@ func ParseJiraURL(url string) (key string, ok bool) {
 }
 
 func IsJiraURL(s string) bool {
-	return jiraURLPattern.MatchString(s)
+	_, ok := ParseJiraURL(s)
+	return ok
 }
 
 var keyPattern = regexp.MustCompile(`^([A-Z][A-Z0-9]+)-(\d+)$`)

@@ -30,6 +30,15 @@ var rootCmd = &cobra.Command{
 	Long:  "CLI and web UI for managing git worktrees with GitHub/Jira/Slack integration and optional cmux support.\n\nRun `worktree ui` for the web UI.",
 	Args:  cobra.NoArgs,
 	RunE:  runRoot,
+	// URL classification is a pure function used all over (resourceurl,
+	// add, the web UI), so the config it depends on is installed once here
+	// rather than read on every call. A missing or unreadable config just
+	// means no aliases.
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		if cfg, err := config.Load(); err == nil {
+			jira.SetAliasHosts(cfg.Jira.AliasHosts)
+		}
+	},
 }
 
 func Execute() {

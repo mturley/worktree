@@ -103,11 +103,10 @@ func (b *Builder) resolveJira(ctx context.Context, items []Item, idx []int) {
 		}
 		for _, i := range idx {
 			if s, ok := byKey[items[i].ID]; ok {
-				url := items[i].URL
-				if url == "" {
-					url = b.Src.Jira.IssueURL(s.Key)
-				}
-				items[i] = jiraItem(s, url)
+				// The configured host's URL, not the one written in the text:
+				// it may be an alias host (see jira.SetAliasHosts) that only
+				// redirects, and cmux tab matching expects the canonical form.
+				items[i] = jiraItem(s, b.Src.Jira.IssueURL(s.Key))
 			}
 		}
 	}

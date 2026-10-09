@@ -27,6 +27,10 @@ type Config struct {
 // in jira.DetectKeys) and stays here.
 type JiraConfig struct {
 	Projects []string `yaml:"projects"`
+	// AliasHosts are extra hosts whose /browse/KEY pages are Jira issues —
+	// e.g. an instance's pre-migration address (issues.example.com) that now
+	// redirects to its atlassian.net site — so old links are still recognised.
+	AliasHosts []string `yaml:"alias_hosts,omitempty"`
 }
 
 // DefaultHTTPPort is the port the web UI's loopback HTTP listener binds

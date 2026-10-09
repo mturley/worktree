@@ -140,3 +140,38 @@ func TestIsJiraURL(t *testing.T) {
 		t.Error("expected false for GitHub URL")
 	}
 }
+
+func TestParseJiraURLAliasHosts(t *testing.T) {
+	SetAliasHosts([]string{"Issues.Example.com"})
+	t.Cleanup(func() { SetAliasHosts(nil) })
+
+	cases := []struct {
+		url  string
+		key  string
+		want bool
+	}{
+		{"https://issues.example.com/browse/PROJ-12", "PROJ-12", true},
+		{"https://issues.example.com:443/browse/proj-12?focusedId=1", "PROJ-12", true},
+		{"https://example.atlassian.net/browse/PROJ-3", "PROJ-3", true},
+		// Not an alias host, and not an issue path on one.
+		{"https://other.example.com/browse/PROJ-12", "", false},
+		{"https://issues.example.com/projects/PROJ", "", false},
+		{"https://evil.com/?u=https://issues.example.com/browse/PROJ-1", "", false},
+	}
+	for _, c := range cases {
+		key, ok := ParseJiraURL(c.url)
+		if ok != c.want || key != c.key {
+			t.Errorf("ParseJiraURL(%q) = %q, %v; want %q, %v", c.url, key, ok, c.key, c.want)
+		}
+		if IsJiraURL(c.url) != c.want {
+			t.Errorf("IsJiraURL(%q) != %v", c.url, c.want)
+		}
+	}
+}
+
+func TestParseJiraURLNoAliasesByDefault(t *testing.T) {
+	SetAliasHosts(nil)
+	if _, ok := ParseJiraURL("https://issues.example.com/browse/PROJ-12"); ok {
+		t.Fatal("an unconfigured host must not be treated as Jira")
+	}
+}

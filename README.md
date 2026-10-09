@@ -348,6 +348,10 @@ jira:
   projects:
     - MYPROJECT
     - OTHERPROJECT
+  # Extra hosts whose /browse/KEY links are Jira issues, e.g. an old
+  # Jira Server address that now redirects to your atlassian.net site
+  alias_hosts:
+    - issues.your-org.com
 ```
 
 ### Environment Variable Overrides

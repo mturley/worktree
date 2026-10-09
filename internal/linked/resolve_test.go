@@ -93,3 +93,15 @@ func TestResolveNilSourcesLeaveItemsUnresolved(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveJiraUsesCanonicalURL(t *testing.T) {
+	b := &Builder{Src: Sources{Jira: &fakeJira{issues: map[string]wjira.IssueSummary{
+		"PROJ-9": {Key: "PROJ-9", Summary: "Nine"},
+	}}}}
+	// Written with an alias host that only redirects to the real instance.
+	items := []Item{{Type: "jira", ID: "PROJ-9", URL: "https://issues.example.com/browse/PROJ-9"}}
+	b.resolve(context.Background(), items, false)
+	if items[0].URL != "https://example.atlassian.net/browse/PROJ-9" {
+		t.Errorf("url = %q, want the configured host's", items[0].URL)
+	}
+}
