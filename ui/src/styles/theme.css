@@ -69,3 +69,24 @@ body,
 .back-home:hover img {
   transform: scale(1.05);
 }
+
+/*
+ * The worktree page's titles, while a resource is selected: clicking them
+ * deselects it. Same soft tile as .back-home, so the two read as siblings.
+ */
+.detail-titles {
+  cursor: pointer;
+  padding: 4px 6px;
+  margin: -4px -6px;
+  border-radius: var(--mantine-radius-md);
+  transition: background-color 120ms ease;
+}
+
+.detail-titles:hover {
+  background-color: var(--mantine-color-default-hover);
+}
+
+.detail-titles:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 2px;
+}

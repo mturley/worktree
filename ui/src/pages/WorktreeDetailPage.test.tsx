@@ -188,6 +188,34 @@ describe("WorktreeDetailPage selection", () => {
     await waitFor(() => expect(window.location.search).not.toContain("resource="))
   })
 
+  it("deselects when the worktree title is clicked", async () => {
+    window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?resource=pr:o%2Fr%231`)
+    setViewport("wide")
+    const user = userEvent.setup()
+    wrap()
+    await user.click(await screen.findByRole("button", { name: "foo" }))
+    await waitFor(() => expect(window.location.search).not.toContain("resource="))
+  })
+
+  it("turns unreads only off when the worktree title is clicked", async () => {
+    setViewport("wide")
+    const user = userEvent.setup()
+    wrap()
+    const unread = await screen.findByRole("switch", { name: /unread/i })
+    await user.click(unread)
+    expect(unread).toBeChecked()
+    await user.click(await screen.findByRole("button", { name: "foo" }))
+    await waitFor(() => expect(unread).not.toBeChecked())
+    expect(screen.queryByRole("button", { name: "foo" })).not.toBeInTheDocument()
+  })
+
+  it("does not make the worktree title clickable with nothing selected", async () => {
+    setViewport("wide")
+    wrap()
+    expect(await screen.findByRole("heading", { name: "foo" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "foo" })).not.toBeInTheDocument()
+  })
+
   it("clears a ?resource= that matches no loaded resource, without growing history (replace, not push)", async () => {
     window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?resource=pr:gone%23999`)
     setViewport("wide")

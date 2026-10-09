@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { Anchor, Badge, Box, Button, Collapse, Grid, Group, Stack, Tabs, Title } from "@mantine/core"
 import { Link, useRoute } from "wouter"
 import { useQueryClient } from "@tanstack/react-query"
@@ -267,6 +267,12 @@ export function WorktreeDetailPage() {
     )
   }
 
+  const narrowed = Boolean(selectedResource) || unreadOnly
+  const showOverview = () => {
+    if (selectedResource) clear()
+    if (unreadOnly) setUnreadOnly(false)
+  }
+
   // Wide, the toolbar sits beside the titles and must not shrink. Narrow, it
   // gets a row of its own: kept beside the titles, it left them a sliver of
   // width that wrapped them a few letters per line.
@@ -355,7 +361,28 @@ export function WorktreeDetailPage() {
               {/* Inside cmux the workspace is the headline and the worktree
                   name steps down beneath it, as on the home page's cards;
                   outside cmux the name is the full-size title. */}
-              <Stack gap={2} style={{ minWidth: 0 }}>
+              {/* With a resource selected or unreads only on, the titles are
+                  a way back to the worktree's whole overview: they deselect,
+                  as "← all resources" does, and turn unreads only off. A div
+                  with role=button rather than a <button>, which may not hold
+                  the headings. With neither on there is nowhere to go, so it
+                  is plain text. */}
+              <Stack
+                gap={2}
+                style={{ minWidth: 0 }}
+                {...(narrowed && {
+                  role: "button",
+                  tabIndex: 0,
+                  title: "Show all resources",
+                  className: "detail-titles",
+                  onClick: showOverview,
+                  onKeyDown: (e: KeyboardEvent) => {
+                    if (e.key !== "Enter" && e.key !== " ") return
+                    e.preventDefault()
+                    showOverview()
+                  },
+                })}
+              >
                 <CmuxWorkspaceTitles path={path} />
                 <Group gap="xs" wrap="wrap" style={{ minWidth: 0 }}>
                   <Title
