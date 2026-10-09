@@ -13,6 +13,7 @@ import (
 	wjira "github.com/mturley/watcher/jira"
 	wslack "github.com/mturley/watcher/slack"
 	wdb "github.com/mturley/worktree/internal/db"
+	wtjira "github.com/mturley/worktree/internal/jira"
 )
 
 // StartPolling starts an in-process poll loop: an immediate poll, then one
@@ -76,7 +77,7 @@ func (s *Server) pollAll() error {
 	}
 	if issues, _ := watcherdb.ActiveResources(s.DB, "jira"); len(issues) > 0 {
 		if jc, err := cfg.Jira(); err == nil {
-			auth := wjira.JiraAuth{URL: jc.Host, Email: jc.Email, Token: jc.Token, CustomFields: jc.CustomFields}
+			auth := wjira.JiraAuth{URL: jc.Host, Email: jc.Email, Token: jc.Token, CustomFields: wtjira.ConfiguredCustomFields(jc.CustomFields)}
 			if bcfg, err := wconfig.LoadConfig(wconfig.ConfigDefaultPath()); err == nil {
 				auth.BotUsernames = bcfg.JiraBotUsernames()
 			}
@@ -123,7 +124,7 @@ func (s *Server) pollOne(r watcher.Resource) {
 		}
 	case "jira":
 		if jc, err := cfg.Jira(); err == nil {
-			auth := wjira.JiraAuth{URL: jc.Host, Email: jc.Email, Token: jc.Token, CustomFields: jc.CustomFields}
+			auth := wjira.JiraAuth{URL: jc.Host, Email: jc.Email, Token: jc.Token, CustomFields: wtjira.ConfiguredCustomFields(jc.CustomFields)}
 			if bcfg, err := wconfig.LoadConfig(wconfig.ConfigDefaultPath()); err == nil {
 				auth.BotUsernames = bcfg.JiraBotUsernames()
 			}

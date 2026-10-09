@@ -155,3 +155,30 @@ func HostFromWatcherConfig() string {
 	}
 	return creds.Host
 }
+
+// EffectiveCustomFields merges the custom-field maps from the watcher's two
+// config files. auth.yaml's (jira_custom_fields) wins on conflict;
+// config.yaml's jira.custom_fields fills the rest. worktree used to pass
+// only the auth.yaml map, which is usually empty, so fields like
+// git_pull_request configured in config.yaml were never fetched.
+func EffectiveCustomFields(authFields, configFields map[string]string) map[string]string {
+	out := map[string]string{}
+	for k, v := range configFields {
+		out[k] = v
+	}
+	for k, v := range authFields {
+		out[k] = v
+	}
+	return out
+}
+
+// ConfiguredCustomFields is EffectiveCustomFields with config.yaml loaded
+// from its default path. A missing or unreadable config.yaml contributes
+// nothing.
+func ConfiguredCustomFields(authFields map[string]string) map[string]string {
+	var cfgFields map[string]string
+	if bcfg, err := wconfig.LoadConfig(wconfig.ConfigDefaultPath()); err == nil {
+		cfgFields = bcfg.JiraCustomFields()
+	}
+	return EffectiveCustomFields(authFields, cfgFields)
+}

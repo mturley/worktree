@@ -9,6 +9,7 @@ import (
 	wgithub "github.com/mturley/watcher/github"
 	wjira "github.com/mturley/watcher/jira"
 	wdb "github.com/mturley/worktree/internal/db"
+	wtjira "github.com/mturley/worktree/internal/jira"
 
 	wconfig "github.com/mturley/watcher/config"
 
@@ -89,7 +90,7 @@ func runWatcherRun(cmd *cobra.Command, args []string) error {
 					URL:          jc.Host,
 					Email:        jc.Email,
 					Token:        jc.Token,
-					CustomFields: jc.CustomFields,
+					CustomFields: wtjira.ConfiguredCustomFields(jc.CustomFields),
 					BotUsernames: nil,
 				}
 				if err := wjira.Poll(conn, auth, issues, logger); err != nil {

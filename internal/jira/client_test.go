@@ -57,3 +57,19 @@ func TestClientBaseURLNormalizesScheme(t *testing.T) {
 		t.Errorf("baseURL() = %q, want %q", got, want)
 	}
 }
+
+func TestEffectiveCustomFields(t *testing.T) {
+	got := EffectiveCustomFields(
+		map[string]string{"epic_key": "customfield_1"},
+		map[string]string{"epic_key": "customfield_X", "git_pull_request": "customfield_2"},
+	)
+	if got["epic_key"] != "customfield_1" {
+		t.Errorf("auth.yaml must win on conflict: %v", got)
+	}
+	if got["git_pull_request"] != "customfield_2" {
+		t.Errorf("config.yaml fields must be merged in: %v", got)
+	}
+	if EffectiveCustomFields(nil, nil) == nil {
+		t.Error("must return a non-nil map")
+	}
+}
