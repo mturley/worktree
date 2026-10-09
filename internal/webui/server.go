@@ -16,6 +16,7 @@ import (
 	"github.com/mturley/watcher"
 	"github.com/mturley/watcher/slack"
 	"github.com/mturley/worktree/internal/cmux"
+	"github.com/mturley/worktree/internal/linked"
 	"github.com/mturley/worktree/internal/linkmeta"
 	"github.com/mturley/worktree/internal/slackpoller"
 )
@@ -124,6 +125,14 @@ type Server struct {
 
 	// LinkResolver is a seam for tests; nil means a default resolver.
 	LinkResolver *linkmeta.Resolver
+
+	// LinkedSources is a seam for tests; nil means real sources built from
+	// the watcher config on each request (see linked_api.go).
+	LinkedSources func() linked.Sources
+
+	// linkedCache fronts /api/linked-resources; lazily built.
+	linkedOnce  sync.Once
+	linkedCache *ttlCache
 }
 
 func (s *Server) Handler() http.Handler {
@@ -162,6 +171,8 @@ type route struct {
 func (s *Server) routes() []route {
 	return []route{
 		{"GET /api/worktrees", s.handleWorktrees},
+		{"GET /api/linked-resources", s.handleLinkedResources},
+		{"GET /api/linked-resources/children", s.handleLinkedChildren},
 		{"GET /api/timeline", s.handleGlobalTimeline},
 		{"GET /api/worktree-timeline", s.handleWorktreeTimeline},
 		{"POST /api/worktrees/poll", s.handlePollWorktree},

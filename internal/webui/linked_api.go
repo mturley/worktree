@@ -1,0 +1,276 @@
+package webui
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/url"
+	"sync"
+	"time"
+
+	wconfig "github.com/mturley/watcher/config"
+	wgithub "github.com/mturley/watcher/github"
+	wjira "github.com/mturley/watcher/jira"
+	"github.com/mturley/watcher/slack"
+	wtjira "github.com/mturley/worktree/internal/jira"
+	"github.com/mturley/worktree/internal/linked"
+	"github.com/mturley/worktree/internal/linkmeta"
+	"github.com/mturley/worktree/internal/resourceurl"
+)
+
+const (
+	linkedTTL   = 2 * time.Minute
+	linkMetaTTL = 30 * time.Minute
+)
+
+// ttlCache is a small TTL map with per-key single-flight: concurrent misses
+// for the same key share one computation.
+type ttlCache struct {
+	mu       sync.Mutex
+	entries  map[string]ttlEntry
+	inflight map[string]*ttlCall
+}
+
+type ttlEntry struct {
+	val     interface{}
+	expires time.Time
+}
+
+type ttlCall struct {
+	wg  sync.WaitGroup
+	val interface{}
+	err error
+}
+
+func newTTLCache() *ttlCache {
+	return &ttlCache{entries: map[string]ttlEntry{}, inflight: map[string]*ttlCall{}}
+}
+
+// get returns the cached value for key, or computes it with fn. bypass
+// skips the read but still stores the fresh value. Errors are not cached.
+func (c *ttlCache) get(key string, ttl time.Duration, bypass bool, fn func() (interface{}, error)) (interface{}, error) {
+	c.mu.Lock()
+	if e, ok := c.entries[key]; ok && !bypass && time.Now().Before(e.expires) {
+		c.mu.Unlock()
+		return e.val, nil
+	}
+	if call, ok := c.inflight[key]; ok && !bypass {
+		c.mu.Unlock()
+		call.wg.Wait()
+		return call.val, call.err
+	}
+	call := &ttlCall{}
+	call.wg.Add(1)
+	c.inflight[key] = call
+	c.mu.Unlock()
+
+	call.val, call.err = fn()
+	call.wg.Done()
+
+	c.mu.Lock()
+	delete(c.inflight, key)
+	if call.err == nil {
+		c.entries[key] = ttlEntry{val: call.val, expires: time.Now().Add(ttl)}
+	}
+	c.mu.Unlock()
+	return call.val, call.err
+}
+
+func (s *Server) linkedCacheOrInit() *ttlCache {
+	s.linkedOnce.Do(func() { s.linkedCache = newTTLCache() })
+	return s.linkedCache
+}
+
+// --- adapters from real clients to linked.Sources ---
+
+type jiraAdapter struct {
+	c       *wjira.Client
+	host    string
+	gitPRID string
+}
+
+func (a jiraAdapter) LinkGraph(_ context.Context, key string) (*wjira.LinkGraph, error) {
+	return a.c.FetchLinkGraph(key, a.gitPRID)
+}
+func (a jiraAdapter) Search(_ context.Context, jql string, max int) ([]wjira.IssueSummary, bool, error) {
+	return a.c.SearchSummaries(jql, max)
+}
+func (a jiraAdapter) IssueURL(key string) string { return wtjira.IssueURL(a.host, key) }
+func (a jiraAdapter) SearchURL(jql string) string {
+	return jiraBase(a.host) + "/issues/?jql=" + url.QueryEscape(jql)
+}
+
+// jiraBase is the configured Jira host as an origin.
+func jiraBase(host string) string {
+	u := wtjira.IssueURL(host, "X")
+	return u[:len(u)-len("/browse/X")]
+}
+
+type prAdapter struct{ token string }
+
+func (a prAdapter) Summaries(_ context.Context, refs []wgithub.PRRef) (map[wgithub.PRRef]wgithub.PRSummary, error) {
+	return wgithub.FetchPRSummaries(a.token, refs)
+}
+
+type slackAdapter struct{ s *Server }
+
+func (a slackAdapter) Thread(ctx context.Context, ch, ts string) (slack.Thread, error) {
+	return a.s.SlackClient.Replies(ctx, ch, ts)
+}
+func (a slackAdapter) ChannelName(ctx context.Context, id string) (string, error) {
+	return a.s.channelName(ctx, id)
+}
+
+// cachedLinkResolver memoises linkmeta per URL for linkMetaTTL.
+type cachedLinkResolver struct {
+	r     *linkmeta.Resolver
+	cache *ttlCache
+}
+
+func (c cachedLinkResolver) Resolve(ctx context.Context, u string) linkmeta.Meta {
+	v, _ := c.cache.get("meta|"+u, linkMetaTTL, false, func() (interface{}, error) {
+		return c.r.Resolve(ctx, u), nil
+	})
+	m, _ := v.(linkmeta.Meta)
+	return m
+}
+
+// jiraStateIndex answers "which Jira issues name this PR in their Git Pull
+// Request field?" from worktree's own cached state — deliberately no Jira
+// search, which would be expensive.
+type jiraStateIndex struct {
+	db       *sql.DB
+	issueURL func(string) string
+}
+
+func (j jiraStateIndex) IssuesReferencingPR(ctx context.Context, prID string) ([]linked.Item, error) {
+	rows, err := j.db.QueryContext(ctx, `SELECT resource_id, state_json FROM watcher_resource_state
+		WHERE resource_type = 'jira' AND state_json LIKE '%git_pull_request_urls%' ORDER BY resource_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []linked.Item
+	for rows.Next() {
+		var key, raw string
+		if err := rows.Scan(&key, &raw); err != nil {
+			return nil, err
+		}
+		var st struct {
+			Summary          string   `json:"summary"`
+			Status           string   `json:"status"`
+			IssueType        string   `json:"issue_type"`
+			IssueTypeIconURL string   `json:"issue_type_icon_url"`
+			URLs             []string `json:"git_pull_request_urls"`
+		}
+		if json.Unmarshal([]byte(raw), &st) != nil {
+			continue
+		}
+		for _, u := range st.URLs {
+			// Compare by resource id, so ".../pull/1/files" matches PR 1.
+			if t, id, ok := resourceurl.Infer(u); ok && t == "pr" && id == prID {
+				out = append(out, linked.Item{
+					Type: "jira", ID: key, URL: j.issueURL(key), Resolved: true,
+					Title: st.Summary, Status: st.Status, IssueType: st.IssueType, IssueTypeIconURL: st.IssueTypeIconURL,
+				})
+				break
+			}
+		}
+	}
+	return out, rows.Err()
+}
+
+// linkedSources builds Sources from the watcher config. Unconfigured
+// services are left nil, which the builder treats as "not configured".
+func (s *Server) linkedSources() linked.Sources {
+	if s.LinkedSources != nil {
+		return s.LinkedSources()
+	}
+	var src linked.Sources
+	src.Links = cachedLinkResolver{r: s.linkResolver(), cache: s.linkedCacheOrInit()}
+	if s.SlackClient != nil {
+		src.Slack = slackAdapter{s}
+	}
+	cfg, err := wconfig.Load(wconfig.DefaultPath())
+	if err != nil {
+		return src
+	}
+	if gh, err := cfg.GitHub(); err == nil {
+		src.PR = prAdapter{token: gh.Token}
+	}
+	if jc, err := cfg.Jira(); err == nil {
+		fields := wtjira.ConfiguredCustomFields(jc.CustomFields)
+		ja := jiraAdapter{
+			c:       &wjira.Client{BaseURL: jc.Host, Email: jc.Email, Token: jc.Token},
+			host:    jc.Host,
+			gitPRID: fields["git_pull_request"],
+		}
+		src.Jira = ja
+		if s.DB != nil {
+			src.JiraState = jiraStateIndex{db: s.DB, issueURL: ja.IssueURL}
+		}
+	}
+	return src
+}
+
+func linkedErrorStatus(err error) int {
+	switch {
+	case errors.Is(err, linked.ErrNotConfigured):
+		return http.StatusServiceUnavailable
+	case errors.Is(err, linked.ErrUnsupportedType):
+		return http.StatusBadRequest
+	default:
+		return http.StatusBadGateway
+	}
+}
+
+func (s *Server) handleLinkedResources(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	resType, id := q.Get("type"), q.Get("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "missing id")
+		return
+	}
+	if resType != "pr" && resType != "jira" && resType != "slack" {
+		writeError(w, http.StatusBadRequest, linked.ErrUnsupportedType.Error())
+		return
+	}
+	resolveLinks := q.Get("resolve_links") == "1"
+	key := "linked|" + resType + "|" + id + "|" + q.Get("resolve_links")
+	v, err := s.linkedCacheOrInit().get(key, linkedTTL, q.Get("refresh") == "1", func() (interface{}, error) {
+		b := &linked.Builder{Src: s.linkedSources()}
+		return b.Build(r.Context(), resType, id, resolveLinks)
+	})
+	if err != nil {
+		writeError(w, linkedErrorStatus(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+func (s *Server) handleLinkedChildren(w http.ResponseWriter, r *http.Request) {
+	key, ok := wtjira.ParseKey(r.URL.Query().Get("key"))
+	if !ok {
+		writeError(w, http.StatusBadRequest, "invalid issue key")
+		return
+	}
+	type resp struct {
+		Items []*linked.TreeNode `json:"items"`
+		More  *linked.More       `json:"more"`
+	}
+	v, err := s.linkedCacheOrInit().get("children|"+key, linkedTTL, false, func() (interface{}, error) {
+		b := &linked.Builder{Src: s.linkedSources()}
+		items, more, err := b.Children(r.Context(), key)
+		if err != nil {
+			return nil, err
+		}
+		return resp{Items: items, More: more}, nil
+	})
+	if err != nil {
+		writeError(w, linkedErrorStatus(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
