@@ -15,7 +15,6 @@ import { supportsCustomName } from "../lib/customName"
 import { TAB_ID } from "../lib/tabId"
 import { NotifySwitch } from "./NotifySwitch"
 import { NotifyBell } from "./NotifyBell"
-import { JiraPriorityIcon } from "./JiraPriorityIcon"
 
 function prStateColor(state?: string): string {
   switch ((state || "").toUpperCase()) {
@@ -153,12 +152,8 @@ function PRCardBody({ r, variant, aside }: CardBodyProps) {
 }
 
 function JiraCardBody({ r, variant, aside }: CardBodyProps) {
-  const badges = (
-    <>
-      {r.status && <Badge size="xs" variant="light">{r.status}</Badge>}
-      <JiraPriorityIcon r={r} />
-    </>
-  )
+  // The priority is not among these: it follows the key on the type line.
+  const badges = r.status && <Badge size="xs" variant="light">{r.status}</Badge>
   const inline = badgesInTypeLine(variant)
   return (
     <Stack gap={4}>

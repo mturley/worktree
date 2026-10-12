@@ -1134,8 +1134,11 @@ described above:
   commits since review" badge, author, relative "updated" time.
 - **Jira cards**: summary (shown as title), status, priority, issue type,
   labels, assignee, relative "updated" time. Priority is Jira's own icon
-  (`JiraPriorityIcon`, name in a tooltip), falling back to a text badge when
-  no `priority_icon_url` is cached yet or the icon fails to load.
+  (`JiraPriorityIcon`, name in a tooltip), placed by the shared
+  `ResourceTypeLine` right after the issue key — so the home page's worktree
+  cards and the activity feed's resource chips show it too. It falls back to
+  a text badge when no `priority_icon_url` is cached yet or the icon fails to
+  load.
 - **Degraded ("minimal") card**: if `isEnriched(r)` is false (no enrichment
   fields present — the resource was never polled), the card falls back to a
   bare type badge + linked id (`MinimalRow`).

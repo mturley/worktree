@@ -665,6 +665,20 @@ describe("status badge placement", () => {
     expect(typeLine()).toContainElement(screen.getByText("Major"))
   })
 
+  it("puts a Jira issue's priority icon after its key, before the status badge", () => {
+    wrap(<ResourceCard r={{ ...jira, priority_icon_url: "https://jira/major.svg" }} onSelect={vi.fn()} />)
+    const icon = screen.getByRole("img", { name: "Priority: Major" })
+    expect(typeLine()).toContainElement(icon)
+    expect(screen.getByText("RHOAIENG-1").compareDocumentPosition(icon) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(icon.compareDocumentPosition(screen.getByText("In Progress")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("keeps a detail card's priority icon on the type line", () => {
+    wrap(<ResourceCard r={{ ...jira, priority_icon_url: "https://jira/major.svg" }} variant="detail" path="/wt" />)
+    expect(typeLine()).toContainElement(screen.getByRole("img", { name: "Priority: Major" }))
+    expect(typeLine()).not.toContainElement(screen.getByText("In Progress"))
+  })
+
   it("keeps the detail card's badges on their own line", () => {
     wrap(<ResourceCard r={pr} variant="detail" path="/wt" />)
     expect(typeLine()).not.toContainElement(screen.getByText("open"))

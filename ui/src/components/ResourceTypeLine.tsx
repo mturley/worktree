@@ -6,6 +6,7 @@ import { LinkFavicon, ResourceStatusIcon } from "./ResourceStatusIcon"
 import { SlackMark } from "./icons/SlackMark"
 import { JiraMark } from "./icons/JiraMark"
 import { GitHubMark } from "./icons/GitHubMark"
+import { JiraPriorityIcon } from "./JiraPriorityIcon"
 
 /**
  * Each resource type's name, brand icon and badge colour.
@@ -88,8 +89,9 @@ function resourceKey(r: ResourceDTO): string {
 
 /**
  * A resource's first line, everywhere one is listed: the type's brand icon
- * and badge, then this resource's own icon and key. The brand icon is
- * decorative; the badge beside it names the type.
+ * and badge, then this resource's own icon and key, then a Jira issue's
+ * priority icon. The brand icon is decorative; the badge beside it names the
+ * type.
  *
  * Shared by the worktree page's resource cards, the home page's worktree
  * cards and the activity feed's events so a resource is introduced the same
@@ -127,6 +129,7 @@ export function ResourceTypeLine({
       <Badge size="xs" variant="light" color={t?.color} mr={6}>{t?.label ?? r.type}</Badge>
       {resourceIcon(r, pending)}
       <Text size="xs" c="dimmed">{resourceKey(r)}</Text>
+      {r.type === "jira" && <JiraPriorityIcon r={r} />}
       {trailing}
     </Group>
   )

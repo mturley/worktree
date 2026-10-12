@@ -60,6 +60,17 @@ describe("WorktreeCard", () => {
     expect(typeLine.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it("shows a Jira issue's priority icon right after its key", () => {
+    wrap(<WorktreeCard w={{ ...summary, focus_resources: [
+      { type: "jira", id: "J-1", url: "u", primary: true, title: "Investigate flux", issue_type: "Bug",
+        priority: "Major", priority_icon_url: "https://jira/major.svg" } as ResourceDTO,
+    ] }} />)
+    const typeLine = document.querySelector("[data-resource-type-line]") as HTMLElement
+    const icon = screen.getByRole("img", { name: "Priority: Major" })
+    expect(typeLine).toContainElement(icon)
+    expect(screen.getByText("Bug J-1").compareDocumentPosition(icon) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it("names a Slack thread's channel on its first line", () => {
     wrap(<WorktreeCard w={{ ...summary, focus_resources: [
       { type: "slack", id: "C1:1.1", url: "u", primary: true, title: "Deploy thread", channel_name: "ops" } as ResourceDTO,
