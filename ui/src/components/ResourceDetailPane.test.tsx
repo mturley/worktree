@@ -92,6 +92,42 @@ describe("ResourceDetailPane", () => {
     await waitFor(() => expect(screen.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true"))
   })
 
+  it("dots the Activity tab while it has unreads you can't see", async () => {
+    vi.spyOn(realApi, "linkedResources").mockResolvedValue({ fetched_at: "2026-10-09T12:00:00Z", count: 0, sections: [] })
+    wrap(<ResourceDetailPane path="/wt/foo" resource={{ ...jira, unread_count: 2 }} />)
+    expect(screen.queryByLabelText("unread activity")).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole("tab", { name: /Linked Resources/ }))
+    expect(screen.getByLabelText("unread activity")).toBeInTheDocument()
+  })
+
+  it("does not dot the Activity tab when nothing is unread", async () => {
+    vi.spyOn(realApi, "linkedResources").mockResolvedValue({ fetched_at: "2026-10-09T12:00:00Z", count: 0, sections: [] })
+    wrap(<ResourceDetailPane path="/wt/foo" resource={jira} />)
+    await userEvent.click(screen.getByRole("tab", { name: /Linked Resources/ }))
+    expect(screen.queryByLabelText("unread activity")).not.toBeInTheDocument()
+  })
+
+  it("resets the hierarchy's expand/collapse state on returning to the Linked tab", async () => {
+    vi.spyOn(realApi, "linkedResources").mockResolvedValue({
+      fetched_at: "2026-10-09T12:00:00Z",
+      count: 2,
+      sections: [{ kind: "hierarchy", title: "Hierarchy", tree: [
+        { type: "jira", id: "J-1", url: "u1", resolved: true, title: "Me", current: true, expanded: false, has_children: true, children: [
+          { type: "jira", id: "J-2", url: "u2", resolved: true, title: "Child story", expanded: false, has_children: false },
+        ] },
+      ] }],
+    })
+    vi.spyOn(realApi, "cmuxBrowserTabs").mockResolvedValue({ available: false, tabs: [] })
+    wrap(<ResourceDetailPane path="/wt/foo" resource={jira} />)
+    await userEvent.click(screen.getByRole("tab", { name: /Linked Resources/ }))
+    await userEvent.click(await screen.findByRole("button", { name: "Expand J-1" }))
+    expect(screen.getByText("Child story")).toBeInTheDocument()
+    await userEvent.click(screen.getByRole("tab", { name: "Activity" }))
+    await userEvent.click(screen.getByRole("tab", { name: /Linked Resources/ }))
+    expect(await screen.findByRole("button", { name: "Expand J-1" })).toBeInTheDocument()
+    expect(screen.queryByText("Child story")).not.toBeInTheDocument()
+  })
+
   it("opens on the Linked tab when the URL says so", async () => {
     window.history.replaceState({}, "", "/worktree/wt?resource=jira:J-1&tab=linked")
     const spy = vi.spyOn(realApi, "linkedResources").mockResolvedValue({ fetched_at: "2026-10-09T12:00:00Z", count: 0, sections: [] })

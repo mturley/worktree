@@ -120,9 +120,10 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, 
       />
       <Tabs
         value={paneTab}
-        // keepMounted: the hidden Thread panel keeps its composer draft,
-        // scroll position and unread-divider placement across tab switches.
-        keepMounted
+        // Only the Thread panel stays mounted while hidden (its keepMounted
+        // keeps the composer draft, scroll position and unread-divider
+        // placement); the Linked panel remounts each time it is shown.
+        keepMounted={false}
         onChange={(v) => {
           if (v) setPaneTab(v)
         }}
@@ -136,7 +137,7 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, 
             </Group>
           )}
         </Tabs.List>
-        <Tabs.Panel value="thread" pt="sm">
+        <Tabs.Panel value="thread" pt="sm" keepMounted>
           <ThreadView
             tab={tab}
             thread={thread}

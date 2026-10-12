@@ -16,6 +16,7 @@ import { TimelineFeed } from "./TimelineFeed"
 import { serviceName } from "./ResourceActions"
 import { useLinkedResources } from "../hooks/useLinkedResources"
 import { useResourceTab } from "../hooks/useSelectedResource"
+import { UnreadMarkerDot } from "./UnreadMarkerDot"
 import { LinkedResourcesPanel, LinkedTabControls, linkedTabLabel } from "./linked/LinkedResourcesPanel"
 
 /** The PR/Jira pane's tabs, default first (see useResourceTab). */
@@ -113,9 +114,22 @@ function TimelineBody({
         onChange={(v) => {
           if (v) setTab(v)
         }}
+        // Only the Activity panel stays mounted while hidden (see its
+        // keepMounted). The Linked panel remounts each time it is shown, so
+        // the hierarchy's expand/collapse state starts fresh; the data comes
+        // back from the query cache, so that costs no refetch.
+        keepMounted={false}
       >
         <Tabs.List>
-          <Tabs.Tab value="activity">Activity</Tabs.Tab>
+          <Tabs.Tab
+            value="activity"
+            rightSection={
+              // Unread activity you can't see from the Linked tab.
+              unreadCount > 0 && tab !== "activity" ? <UnreadMarkerDot label="unread activity" /> : undefined
+            }
+          >
+            Activity
+          </Tabs.Tab>
           <Tabs.Tab value="linked">{linkedTabLabel(linked.data)}</Tabs.Tab>
           {/*
             The active tab's freshness and refresh, at the far end of the tab
@@ -139,7 +153,7 @@ function TimelineBody({
             )}
           </Group>
         </Tabs.List>
-        <Tabs.Panel value="activity" pt="sm">
+        <Tabs.Panel value="activity" pt="sm" keepMounted>
           <Stack gap="sm">
             {unreadCount > 0 && (
               <Button
