@@ -227,8 +227,9 @@ failure → HTTP 5xx → the tab shows an error + Retry and the label drops the 
 (`ResourceDetailPane.tsx`) and are added between the card and `ThreadView` in
 `SlackThreadPane.tsx`. Labels: `Activity` / `Thread` and
 `Linked Resources (N)` (no count while loading or on error). Default is always
-Activity/Thread; tab state is local and resets when the selected resource
-changes (component keyed on resource). The right end of the tab bar carries
+Activity/Thread. The active tab lives in the URL (`?tab=linked`; see
+`useResourceTab`): tab switches are browser-history steps, and selecting a
+resource drops it, so back returns to the tab you left. The right end of the tab bar carries
 the active tab's freshness and refresh: "Updated 3m ago" + the refresh-watchers
 button on Activity, "Fetched 1m ago" + the same style of refresh icon button
 (`refresh=1`) on Linked Resources. "Mark N read" sits at the top of the

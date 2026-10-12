@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Anchor, Button, Center, Group, Stack, Tabs, Text } from "@mantine/core"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import type { ResourceDTO } from "../api/types"
@@ -15,7 +15,11 @@ import { relativeTime } from "../lib/relativeTime"
 import { TimelineFeed } from "./TimelineFeed"
 import { serviceName } from "./ResourceActions"
 import { useLinkedResources } from "../hooks/useLinkedResources"
+import { useResourceTab } from "../hooks/useSelectedResource"
 import { LinkedResourcesPanel, LinkedTabControls, linkedTabLabel } from "./linked/LinkedResourcesPanel"
+
+/** The PR/Jira pane's tabs, default first (see useResourceTab). */
+const DETAIL_TABS = ["activity", "linked"] as const
 
 interface ResourceDetailPaneProps {
   path: string
@@ -56,8 +60,13 @@ function TimelineBody({
   notify?: ResourceNotifyContext
 }) {
   const timeline = useWorktreeTimeline(path, { type: resource.type, id: resource.id })
-  const [tab, setTab] = useState<string>("activity")
-  const [linkedOpened, setLinkedOpened] = useState(false)
+  const [tab, setTab] = useResourceTab(DETAIL_TABS)
+  // Link titles are only fetched once the Linked tab has been shown — by a
+  // click, or by arriving on it through the URL (back/forward, a refresh).
+  const [linkedOpened, setLinkedOpened] = useState(tab === "linked")
+  useEffect(() => {
+    if (tab === "linked") setLinkedOpened(true)
+  }, [tab])
   const linked = useLinkedResources(resource.type, resource.id, linkedOpened)
   const qc = useQueryClient()
   const unreadCount = resource.unread_count ?? 0
@@ -102,9 +111,7 @@ function TimelineBody({
       <Tabs
         value={tab}
         onChange={(v) => {
-          if (!v) return
-          setTab(v)
-          if (v === "linked") setLinkedOpened(true)
+          if (v) setTab(v)
         }}
       >
         <Tabs.List>

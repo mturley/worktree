@@ -1,4 +1,4 @@
-import { afterEach, describe, it, expect, vi } from "vitest"
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest"
 import { render, cleanup, screen } from "@testing-library/react"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -51,6 +51,9 @@ const wrap = (ui: React.ReactNode) => {
     </MantineProvider>,
   )
 }
+
+// The active tab lives in the URL (?tab=); start every test on the default.
+beforeEach(() => window.history.replaceState({}, "", "/worktree/wt"))
 
 afterEach(() => {
   cleanup()

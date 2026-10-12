@@ -956,6 +956,16 @@ single in-process loop for as long as the server is up:
     after the first colon belongs to the id. A malformed or stale
     `?resource=` value degrades to "nothing selected" rather than
     throwing.
+  - `useResourceTab(tabs)` (same file) — the selected resource's active
+    tab, as `?tab=<name>` (absent = the default, `tabs[0]`; an unknown value
+    reads as the default). Both detail panes use it (`["activity",
+    "linked"]` and `["thread", "linked"]`). Tab switches push history
+    entries, so back/forward step through them as well as through
+    selections; `select` and `clear` drop `?tab=`, so a newly selected
+    resource opens on its default tab while back returns to the tab you
+    left. Automatic switches (a Slack message focus bringing the Thread tab
+    forward) pass `{ replace: true }` so they don't add a step. Tests that
+    switch tabs must reset the URL in `beforeEach`.
 - **Pages** (`ui/src/pages/`):
   - `HomePage.tsx` — worktree list + global timeline + archived toggle. On
     wide viewports these render side by side in a `Grid`; on narrow

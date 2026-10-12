@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, it, expect } from "vitest"
-import { render, cleanup, screen } from "@testing-library/react"
+import { render, cleanup, screen, act, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { useSelectedResource } from "./useSelectedResource"
+import { useResourceTab, useSelectedResource } from "./useSelectedResource"
 
 function Probe() {
   const { selected, select, clear, toggle } = useSelectedResource()
@@ -89,10 +89,82 @@ describe("useSelectedResource", () => {
   })
 
   it("preserves other query params", async () => {
-    window.history.replaceState({}, "", "/worktree/wt?tab=overview")
+    window.history.replaceState({}, "", "/worktree/wt?unread=1")
     const user = userEvent.setup()
     render(<Probe />)
     await user.click(screen.getByRole("button", { name: "select pr" }))
-    expect(window.location.search).toContain("tab=overview")
+    expect(window.location.search).toContain("unread=1")
+  })
+})
+
+const TABS = ["activity", "linked"] as const
+
+function TabProbe() {
+  const { selected, select } = useSelectedResource()
+  const [tab, setTab] = useResourceTab(TABS)
+  return (
+    <div>
+      <span data-testid="selected">{selected ? `${selected.type}|${selected.id}` : "none"}</span>
+      <span data-testid="tab">{tab}</span>
+      <button onClick={() => select({ type: "jira", id: "A-1" })}>select a</button>
+      <button onClick={() => select({ type: "jira", id: "B-2" })}>select b</button>
+      <button onClick={() => setTab("linked")}>linked</button>
+      <button onClick={() => setTab("activity")}>activity</button>
+      <button onClick={() => setTab("linked", { replace: true })}>linked replace</button>
+    </div>
+  )
+}
+
+async function back() {
+  await act(async () => {
+    window.history.back()
+    await new Promise((r) => setTimeout(r, 0))
+  })
+}
+
+describe("useResourceTab", () => {
+  it("defaults to the first tab, and never writes it to the URL", async () => {
+    window.history.replaceState({}, "", "/worktree/wt?resource=jira:A-1")
+    const user = userEvent.setup()
+    render(<TabProbe />)
+    expect(screen.getByTestId("tab")).toHaveTextContent("activity")
+    await user.click(screen.getByRole("button", { name: "linked" }))
+    expect(window.location.search).toContain("tab=linked")
+    await user.click(screen.getByRole("button", { name: "activity" }))
+    expect(window.location.search).not.toContain("tab=")
+  })
+
+  it("reads an unknown tab as the default", () => {
+    window.history.replaceState({}, "", "/worktree/wt?resource=jira:A-1&tab=nope")
+    render(<TabProbe />)
+    expect(screen.getByTestId("tab")).toHaveTextContent("activity")
+  })
+
+  it("tab switches are history steps; a replace switch is not", async () => {
+    window.history.replaceState({}, "", "/worktree/wt?resource=jira:A-1")
+    const user = userEvent.setup()
+    render(<TabProbe />)
+    const before = window.history.length
+    await user.click(screen.getByRole("button", { name: "linked" }))
+    expect(window.history.length).toBe(before + 1)
+    await back()
+    await waitFor(() => expect(screen.getByTestId("tab")).toHaveTextContent("activity"))
+    await user.click(screen.getByRole("button", { name: "linked replace" }))
+    expect(screen.getByTestId("tab")).toHaveTextContent("linked")
+    expect(window.history.length).toBe(before + 1)
+  })
+
+  it("a new selection starts on its default tab, and back returns to the tab you left", async () => {
+    window.history.replaceState({}, "", "/worktree/wt?resource=jira:A-1")
+    const user = userEvent.setup()
+    render(<TabProbe />)
+    await user.click(screen.getByRole("button", { name: "linked" }))
+    await user.click(screen.getByRole("button", { name: "select b" }))
+    expect(screen.getByTestId("selected")).toHaveTextContent("jira|B-2")
+    expect(screen.getByTestId("tab")).toHaveTextContent("activity")
+    expect(window.location.search).not.toContain("tab=")
+    await back()
+    await waitFor(() => expect(screen.getByTestId("selected")).toHaveTextContent("jira|A-1"))
+    expect(screen.getByTestId("tab")).toHaveTextContent("linked")
   })
 })

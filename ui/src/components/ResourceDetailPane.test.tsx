@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest"
-import { render, cleanup, screen } from "@testing-library/react"
+import { render, cleanup, screen, act, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -43,6 +43,9 @@ const wrap = (ui: React.ReactNode) => {
 }
 
 beforeEach(() => {
+  // The active tab lives in the URL (?tab=), so a test that switches tabs
+  // would otherwise start the next one on that tab.
+  window.history.replaceState({}, "", "/worktree/wt")
   watchers.mockResolvedValue({ watchers: [], polling: false })
   pollWatchers.mockResolvedValue(null)
   // A default so tests that care only about the header do not each have to
@@ -62,7 +65,7 @@ afterEach(() => {
 })
 
 describe("ResourceDetailPane", () => {
-  it("shows Activity by default, switches to Linked Resources, and resets on resource change", async () => {
+  it("shows Activity by default, and keeps the chosen tab in the URL", async () => {
     vi.spyOn(realApi, "linkedResources").mockResolvedValue({ fetched_at: "2026-10-09T12:00:00Z", count: 3, sections: [] })
     const mk = (r: ResourceDTO) => (
       <MantineProvider>
@@ -77,8 +80,25 @@ describe("ResourceDetailPane", () => {
     expect(screen.getByRole("button", { name: "Mark 2 events as read" })).toBeInTheDocument()
     await userEvent.click(screen.getByRole("tab", { name: "Linked Resources (3)" }))
     expect(screen.queryByRole("button", { name: /Mark .* as read/ })).not.toBeInTheDocument()
-    rerender(mk({ ...jira, id: "J-2" }))
-    expect(screen.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true")
+    expect(window.location.search).toContain("tab=linked")
+    // Back (or anything else that drops ?tab=) returns to Activity; selecting
+    // another resource drops it too — see useSelectedResource's tests.
+    await act(async () => {
+      window.history.back()
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    await waitFor(() => expect(window.location.search).not.toContain("tab="))
+    rerender(mk({ ...jira, id: "J-1", unread_count: 2 }))
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true"))
+  })
+
+  it("opens on the Linked tab when the URL says so", async () => {
+    window.history.replaceState({}, "", "/worktree/wt?resource=jira:J-1&tab=linked")
+    const spy = vi.spyOn(realApi, "linkedResources").mockResolvedValue({ fetched_at: "2026-10-09T12:00:00Z", count: 0, sections: [] })
+    wrap(<ResourceDetailPane path="/wt/foo" resource={jira} />)
+    expect(await screen.findByRole("tab", { name: /Linked Resources/ })).toHaveAttribute("aria-selected", "true")
+    // Arriving on the tab counts as opening it: link titles are fetched.
+    await waitFor(() => expect(spy).toHaveBeenCalledWith("jira", "J-1", { resolveLinks: true }))
   })
 
   it("requests the timeline filtered to the selected resource", () => {

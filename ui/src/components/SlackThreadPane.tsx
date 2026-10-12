@@ -6,6 +6,7 @@ import { defaultTabName, type Tab } from "../state/tabs"
 import { ResourceCard, type ResourceNotifyContext } from "./ResourceCard"
 import { ThreadView } from "./slack/ThreadView"
 import { useLinkedResources } from "../hooks/useLinkedResources"
+import { useResourceTab } from "../hooks/useSelectedResource"
 import { LinkedResourcesPanel, LinkedTabControls, linkedTabLabel } from "./linked/LinkedResourcesPanel"
 
 interface SlackThreadPaneProps {
@@ -52,6 +53,9 @@ function isNotConfigured(error: string | undefined): boolean {
   return !!error && error.includes("503")
 }
 
+/** The Slack pane's tabs, default first (see useResourceTab). */
+const THREAD_TABS = ["thread", "linked"] as const
+
 /**
  * The selected-resource pane's Slack branch: renders the thread itself where
  * a PR/Jira resource would show its filtered activity feed. There is
@@ -64,12 +68,17 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, 
   const [saveError, setSaveError] = useState<string | null>(null)
   const tab = slackTabFromResource(resource)
   const thread = useThread(tab)
-  const [paneTab, setPaneTab] = useState<string>("thread")
-  const [linkedOpened, setLinkedOpened] = useState(false)
-  // A focus request (e.g. from an activity entry's details) targets a
-  // message in the thread, so bring the Thread tab forward to show it.
+  const [paneTab, setPaneTab] = useResourceTab(THREAD_TABS)
+  // See ResourceDetailPane: link titles wait until the Linked tab is shown.
+  const [linkedOpened, setLinkedOpened] = useState(paneTab === "linked")
   useEffect(() => {
-    if (focus) setPaneTab("thread")
+    if (paneTab === "linked") setLinkedOpened(true)
+  }, [paneTab])
+  // A focus request (e.g. from an activity entry's details) targets a
+  // message in the thread, so bring the Thread tab forward to show it. Not a
+  // history step: the user didn't choose the tab, the navigation did.
+  useEffect(() => {
+    if (focus) setPaneTab("thread", { replace: true })
   }, [focus?.key])
   const linked = useLinkedResources(resource.type, resource.id, linkedOpened)
 
@@ -115,9 +124,7 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, 
         // scroll position and unread-divider placement across tab switches.
         keepMounted
         onChange={(v) => {
-          if (!v) return
-          setPaneTab(v)
-          if (v === "linked") setLinkedOpened(true)
+          if (v) setPaneTab(v)
         }}
       >
         <Tabs.List>
