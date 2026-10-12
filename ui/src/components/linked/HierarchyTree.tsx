@@ -43,16 +43,24 @@ function TreeNodeView({ node, depth, path }: { node: LinkedTreeNode; depth: numb
   // folds them up again.
   const [showAllChildren, setShowAllChildren] = useState(false)
   const lazy = !node.children && node.has_children !== false
+  // Children the server didn't send are fetched as soon as the node is shown,
+  // not when it's expanded: whether a node HAS children decides whether it
+  // gets a chevron, and a chevron that vanishes once you click it (because
+  // the answer was "none") is worse than one that appears a moment late.
+  // Nodes folded behind "Show more children of …" aren't rendered, so they
+  // fetch nothing until unfolded.
   const kids = useQuery({
     queryKey: ["linked-children", node.id],
     queryFn: () => api.linkedChildren(node.id),
-    enabled: expanded && lazy,
+    enabled: lazy,
     staleTime: 2 * 60_000,
   })
   const children = node.children ?? kids.data?.items
   const more = node.more ?? kids.data?.more ?? undefined
-  const canExpand = node.has_children !== false && (node.children ? node.children.length > 0 : true)
-  const loadedEmpty = lazy && kids.isSuccess && (kids.data?.items.length ?? 0) === 0
+  const canExpand = node.children
+    ? node.children.length > 0
+    // An error still offers the chevron, so expanding shows what went wrong.
+    : lazy && ((kids.data?.items.length ?? 0) > 0 || kids.isError)
 
   return (
     <>
@@ -65,7 +73,7 @@ function TreeNodeView({ node, depth, path }: { node: LinkedTreeNode; depth: numb
         } : undefined}
       >
         <Box style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          {canExpand && !loadedEmpty ? (
+          {canExpand ? (
             <ActionIcon
               variant="subtle" size="sm" color="gray"
               aria-label={`${expanded ? "Collapse" : "Expand"} ${node.id}`}

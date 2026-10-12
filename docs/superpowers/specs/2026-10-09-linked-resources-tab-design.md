@@ -265,7 +265,9 @@ placeholder until it arrives.
   endpoint. It opens on just the path: each ancestor shows only the child
   leading to the current issue, with its other children folded behind a
   "Show more children of KEY…" row (the current issue's own children are
-  all shown). The current issue has a left accent bar + tint + "this issue"
+  all shown). A shown node whose children the server didn't send fetches
+  them right away (not on expand), and gets a chevron only once that finds
+  any — so a chevron never appears just to vanish when clicked. The current issue has a left accent bar + tint + "this issue"
   marker and no Follow button.
 - `LinkedResourceActions` — button group:
   - **Follow** → `AddResourceModal` with `initialUrl` and `defaultRelated`.

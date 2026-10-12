@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from "vitest"
-import { render, cleanup, screen } from "@testing-library/react"
+import { render, cleanup, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -73,11 +73,24 @@ describe("LinkedResourcesPanel", () => {
     })
     wrap(<LinkedResourcesPanel query={q({ data: dto })} />)
     expect(screen.queryByText("Grandkid")).not.toBeInTheDocument()
+    // Folded away, PROJ-7 isn't shown, so nothing is fetched for it yet.
+    expect(kids).not.toHaveBeenCalledWith("PROJ-7")
     await userEvent.click(screen.getByRole("button", { name: "Show more children of PROJ-10…" }))
-    await userEvent.click(screen.getByRole("button", { name: "Expand PROJ-7" }))
+    // Shown → its children are fetched up front, before any expand.
+    await waitFor(() => expect(kids).toHaveBeenCalledWith("PROJ-7"))
+    await userEvent.click(await screen.findByRole("button", { name: "Expand PROJ-7" }))
     expect(await screen.findByText("Grandkid")).toBeInTheDocument()
-    expect(kids).toHaveBeenCalledWith("PROJ-7")
     expect(screen.getByRole("link", { name: "More on Jira…" })).toBeInTheDocument()
+  })
+
+  it("gives no chevron to a node whose children turn out to be none", async () => {
+    vi.spyOn(api, "cmuxBrowserTabs").mockResolvedValue({ available: false } as never)
+    const kids = vi.spyOn(api, "linkedChildren").mockResolvedValue({ items: [], more: null })
+    wrap(<LinkedResourcesPanel query={q({ data: dto })} />)
+    await userEvent.click(screen.getByRole("button", { name: "Show more children of PROJ-10…" }))
+    await waitFor(() => expect(kids).toHaveBeenCalledWith("PROJ-7"))
+    expect(screen.getByText("Sibling")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Expand PROJ-7" })).not.toBeInTheDocument()
   })
 
   it("empty, loading and error states", async () => {
