@@ -87,12 +87,20 @@ export function LinkedResourceRow({ item, path, hideFollow, marker }: {
  * The text the link was written in, with the link's own label as a link, so
  * a bare "PROJ-9" row also says why it is there. Indented past the icon.
  */
+// The server collapses whitespace around the link, so whether a space
+// separated it from its neighbours is lost. Punctuation that hugs a word in
+// prose ("the spec, thanks", "(see docs)") is put back against the link
+// rather than spaced off from it.
+const HUGS_PREVIOUS = /^[.,;:!?)\]}'"’”]/
+const HUGS_NEXT = /[([{'"‘“]$/
+
 function ContextLine({ item, context }: { item: LinkedItem; context: NonNullable<LinkedItem["context"]> }) {
+  const { before, label, after } = context
   return (
     <Text size="xs" c="dimmed" fs="italic" pl={22} data-testid="link-context">
-      {context.before && <>{context.before} </>}
-      <Anchor href={item.url} target="_blank" rel="noreferrer" inherit>{context.label}</Anchor>
-      {context.after && <> {context.after}</>}
+      {before && <>{before}{HUGS_NEXT.test(before) ? "" : " "}</>}
+      <Anchor href={item.url} target="_blank" rel="noreferrer" inherit>{label}</Anchor>
+      {after && <>{HUGS_PREVIOUS.test(after) ? "" : " "}{after}</>}
     </Text>
   )
 }

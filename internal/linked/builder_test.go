@@ -96,3 +96,23 @@ func TestCountExcludesCurrentAndDedupes(t *testing.T) {
 		t.Errorf("count = %d", r.Count)
 	}
 }
+
+func TestBuildSlackIgnoresUnfurlTitlesAsContext(t *testing.T) {
+	b := &Builder{Src: Sources{Slack: &fakeSlack{threads: map[string]slack.Thread{
+		"C0TEST:1700000000.000100": {Messages: []slack.Message{{
+			Text: "<https://github.com/example/repo/pull/3>",
+			Attachments: []slack.Attachment{{
+				FromURL: "https://github.com/example/repo/pull/3",
+				Title:   "Fix the thing · Pull Request #3",
+			}},
+		}}},
+	}}}}
+	r, err := b.Build(context.Background(), "slack", "C0TEST:1700000000.000100", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := section(t, r.Sections, "thread").Items
+	if len(items) != 1 || items[0].Context != nil {
+		t.Fatalf("an unfurl title must not become context: %+v", items)
+	}
+}

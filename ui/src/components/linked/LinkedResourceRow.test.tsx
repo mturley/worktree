@@ -38,6 +38,11 @@ describe("LinkedResourceRow context", () => {
     expect(screen.getByTestId("link-context").textContent).toBe("spec")
   })
 
+  it("keeps punctuation against the link instead of spacing it off", () => {
+    wrap(<LinkedResourceRow item={item({ context: { before: "details in (", label: "the spec", after: "), thanks" } })} />)
+    expect(screen.getByTestId("link-context").textContent).toBe("details in (the spec), thanks")
+  })
+
   it("renders nothing extra without context", () => {
     wrap(<LinkedResourceRow item={item()} />)
     expect(screen.queryByTestId("link-context")).toBeNull()

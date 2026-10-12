@@ -64,8 +64,9 @@ func TestClassifyLinksContextRules(t *testing.T) {
 		{URL: "https://docs.example.com/b", Label: "https://docs.example.com/b", After: "is the spec"},
 		{URL: "https://docs.example.com/c", Label: "spec", Before: "first"},
 		{URL: "https://docs.example.com/c", Label: "other", Before: "second"},
-		// the first occurrence decides even when a later one has more
-		{URL: "https://docs.example.com/a", Label: "named", Before: "later"},
+		// a bare first occurrence doesn't hide a later labelled one
+		{URL: "https://example.atlassian.net/browse/PROJ-4", Label: "https://example.atlassian.net/browse/PROJ-4"},
+		{URL: "https://example.atlassian.net/browse/PROJ-4", Label: "the follow-up", Before: "tracked in"},
 	}
 	items := ClassifyLinks(refs, Key{"pr", "o/r#1"})
 	ctx := map[string]*LinkContext{}
@@ -82,6 +83,7 @@ func TestClassifyLinksContextRules(t *testing.T) {
 		"example/repo#10":            {Before: "see", Label: "the fix"},
 		"https://docs.example.com/b": {Label: "https://docs.example.com/b", After: "is the spec"},
 		"https://docs.example.com/c": {Before: "first", Label: "spec"},
+		"PROJ-4":                     {Before: "tracked in", Label: "the follow-up"},
 	}
 	for id, w := range want {
 		if ctx[id] == nil || *ctx[id] != w {

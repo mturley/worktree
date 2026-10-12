@@ -43,7 +43,7 @@ func Classify(urls []string, self Key) []Item {
 // optional extra).
 func ClassifyLinks(refs []watcher.LinkRef, self Key) []Item {
 	var out []Item
-	seen := map[Key]bool{self: true}
+	at := map[Key]int{self: -1}
 	for _, ref := range refs {
 		raw := ref.URL
 		t, id, ok := resourceurl.InferAny(raw)
@@ -51,31 +51,45 @@ func ClassifyLinks(refs []watcher.LinkRef, self Key) []Item {
 			continue
 		}
 		k := Key{t, id}
-		if seen[k] {
+		ctx := refContext(t, id, ref)
+		if i, seen := at[k]; seen {
+			// The first occurrence that has something to show wins: a bare
+			// URL or smart card often comes before the prose that names it.
+			if i >= 0 && out[i].Context == nil {
+				out[i].Context = ctx
+			}
 			continue
 		}
-		seen[k] = true
-		it := Item{Type: t, ID: id, URL: raw}
+		at[k] = len(out)
+		it := Item{Type: t, ID: id, URL: raw, Context: ctx}
 		switch t {
 		case "pr":
 			// Canonical URL, so ".../pull/2/files" opens the PR itself.
 			it.URL = canonicalPRURL(id, raw)
-			it.Context = contextFor(ref, false, prKeyForms(id)...)
-		case "jira":
-			it.Context = contextFor(ref, false, id)
-		case "slack":
-			it.Context = contextFor(ref, false)
 		case "link":
 			it.URL = id
 			it.Resolved = true
 			if u, err := url.Parse(id); err == nil {
 				it.Domain = u.Hostname()
 			}
-			it.Context = contextFor(ref, true)
 		}
 		out = append(out, it)
 	}
 	return out
+}
+
+// refContext is the context to show for one occurrence of an item, or nil.
+func refContext(t, id string, ref watcher.LinkRef) *LinkContext {
+	switch t {
+	case "pr":
+		return contextFor(ref, false, prKeyForms(id)...)
+	case "jira":
+		return contextFor(ref, false, id)
+	case "slack":
+		return contextFor(ref, false)
+	default:
+		return contextFor(ref, true)
+	}
 }
 
 // prKeyForms are the ways a PR "owner/repo#N" is commonly written as a
