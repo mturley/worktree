@@ -8,6 +8,8 @@ import { ThreadView } from "./slack/ThreadView"
 import { useLinkedResources } from "../hooks/useLinkedResources"
 import { useResourceTab } from "../hooks/useSelectedResource"
 import { LinkedResourcesPanel, LinkedTabControls, linkedTabLabel } from "./linked/LinkedResourcesPanel"
+import { UnreadMarkerDot } from "./UnreadMarkerDot"
+import { hasUnread } from "../lib/unread"
 
 interface SlackThreadPaneProps {
   resource: ResourceDTO
@@ -129,7 +131,16 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, 
         }}
       >
         <Tabs.List>
-          <Tabs.Tab value="thread">Thread</Tabs.Tab>
+          <Tabs.Tab
+            value="thread"
+            rightSection={
+              // Unread replies you can't see from the Linked tab (Slack's own
+              // read state, as on the thread's card).
+              hasUnread(resource) && paneTab !== "thread" ? <UnreadMarkerDot label="unread replies" /> : undefined
+            }
+          >
+            Thread
+          </Tabs.Tab>
           <Tabs.Tab value="linked">{linkedTabLabel(linked.data)}</Tabs.Tab>
           {paneTab === "linked" && (
             <Group gap={4} wrap="nowrap" align="center" ml="auto" style={{ flex: "none" }}>

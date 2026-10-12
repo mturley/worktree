@@ -62,6 +62,21 @@ afterEach(() => {
 })
 
 describe("ResourceDetailPane slack branch", () => {
+  it("dots the Thread tab while the thread has unread replies you can't see", async () => {
+    vi.spyOn(api, "linkedResources").mockResolvedValue({ fetched_at: "", count: 0, sections: [] })
+    wrap(<ResourceDetailPane path="/wt/foo" resource={{ ...slack, has_unread: true }} />)
+    expect(screen.queryByLabelText("unread replies")).not.toBeInTheDocument()
+    await userEvent.click(await screen.findByRole("tab", { name: /Linked Resources/ }))
+    expect(screen.getByLabelText("unread replies")).toBeInTheDocument()
+  })
+
+  it("does not dot the Thread tab when the thread is read", async () => {
+    vi.spyOn(api, "linkedResources").mockResolvedValue({ fetched_at: "", count: 0, sections: [] })
+    wrap(<ResourceDetailPane path="/wt/foo" resource={{ ...slack, has_unread: false }} />)
+    await userEvent.click(await screen.findByRole("tab", { name: /Linked Resources/ }))
+    expect(screen.queryByLabelText("unread replies")).not.toBeInTheDocument()
+  })
+
   it("has Thread and Linked Resources tabs and keeps the thread mounted", async () => {
     vi.spyOn(api, "linkedResources").mockResolvedValue({ fetched_at: "", count: 0, sections: [] })
     useWorktreeTimeline.mockReturnValue({ events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false })

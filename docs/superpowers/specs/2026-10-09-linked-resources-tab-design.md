@@ -238,8 +238,9 @@ Only the Activity and Thread panels stay mounted while hidden (`keepMounted`
 on those panels, off on the `Tabs`), so the composer draft, scroll position,
 and unread-divider positioning survive tab switches, while the Linked panel
 remounts each time — the hierarchy's expand/collapse state starts fresh, with
-its data served from the query cache. The Activity tab shows the unread blue
-dot while it has unread events and isn't the active tab.
+its data served from the query cache. The Activity tab (unread events) and
+the Thread tab (Slack's unread state) show the unread blue dot while they
+aren't the active tab.
 
 **Data hook.** `useLinkedResources(type, id, {resolveLinks})` (TanStack
 Query, key `["linked", type, id, resolveLinks]`). Fired with
