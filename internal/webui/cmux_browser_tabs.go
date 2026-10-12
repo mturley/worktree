@@ -11,8 +11,13 @@ type cmuxBrowserTabDTO struct {
 	WorkspaceRef      string `json:"workspaceRef"`
 	WorkspaceTitle    string `json:"workspaceTitle"`
 	WorkspaceSelected bool   `json:"workspaceSelected"`
-	Surface           string `json:"surface"`
-	URL               string `json:"url"`
+	// Pane and Layout draw the workspace's splits with this tab's pane
+	// marked, in the switch button's tooltip. Layout is absent when cmux's
+	// could not be read.
+	Pane    string           `json:"pane"`
+	Layout  *cmux.LayoutNode `json:"layout,omitempty"`
+	Surface string           `json:"surface"`
+	URL     string           `json:"url"`
 }
 
 type cmuxBrowserTabsResponse struct {
@@ -45,6 +50,8 @@ func (s *Server) handleCmuxBrowserTabs(w http.ResponseWriter, r *http.Request) {
 			WorkspaceRef:      t.WorkspaceRef,
 			WorkspaceTitle:    t.WorkspaceTitle,
 			WorkspaceSelected: t.WorkspaceSelected,
+			Pane:              t.Pane,
+			Layout:            t.Layout,
 			Surface:           t.Ref,
 			URL:               t.URL,
 		})

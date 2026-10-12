@@ -44,13 +44,14 @@ func TestCmuxBrowserTabsReadFailureDegrades(t *testing.T) {
 
 func TestCmuxBrowserTabsListsEveryWorkspace(t *testing.T) {
 	s, f := newTabServer(t)
+	layout := &cmux.LayoutNode{Direction: "vertical", Split: 0.5, Children: []cmux.LayoutNode{{Pane: "pane:1"}, {Pane: "pane:2"}}}
 	f.browserTabs = []cmux.BrowserTab{
-		{WorkspaceID: "A", WorkspaceRef: "workspace:1", WorkspaceTitle: "Alpha", WorkspaceSelected: true, Ref: "surface:2", URL: "https://x/a"},
+		{WorkspaceID: "A", WorkspaceRef: "workspace:1", WorkspaceTitle: "Alpha", WorkspaceSelected: true, Pane: "pane:2", Layout: layout, Ref: "surface:2", URL: "https://x/a"},
 		{WorkspaceID: "B", WorkspaceRef: "workspace:2", WorkspaceTitle: "Beta", Ref: "surface:7", URL: "https://x/b"},
 	}
 	got := getBrowserTabs(t, s)
 	want := cmuxBrowserTabsResponse{Available: true, Tabs: []cmuxBrowserTabDTO{
-		{WorkspaceID: "A", WorkspaceRef: "workspace:1", WorkspaceTitle: "Alpha", WorkspaceSelected: true, Surface: "surface:2", URL: "https://x/a"},
+		{WorkspaceID: "A", WorkspaceRef: "workspace:1", WorkspaceTitle: "Alpha", WorkspaceSelected: true, Pane: "pane:2", Layout: layout, Surface: "surface:2", URL: "https://x/a"},
 		{WorkspaceID: "B", WorkspaceRef: "workspace:2", WorkspaceTitle: "Beta", Surface: "surface:7", URL: "https://x/b"},
 	}}
 	if !reflect.DeepEqual(got, want) {

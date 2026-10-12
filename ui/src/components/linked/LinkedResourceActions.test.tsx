@@ -58,7 +58,7 @@ describe("LinkedResourceActions", () => {
     vi.spyOn(api, "cmux").mockResolvedValue({ available: true, workspaces: [], matches: {} } as unknown as CmuxResponse)
     vi.spyOn(api, "cmuxBrowserTabs").mockResolvedValue({
       available: true,
-      tabs: [{ workspaceId: "w1", workspaceRef: "workspace:1", workspaceTitle: "ws", workspaceSelected: false, surface: "s1",
+      tabs: [{ workspaceId: "w1", workspaceRef: "workspace:1", workspaceTitle: "ws", workspaceSelected: false, pane: "pane:1", surface: "s1",
         url: "https://example.atlassian.net/browse/PROJ-9" }],
     })
     const focus = vi.spyOn(api, "cmuxFocusTab").mockResolvedValue({ ok: true })

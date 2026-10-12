@@ -4,6 +4,7 @@ import { useResourceCmuxTab } from "../api/cmux"
 import type { CmuxBrowserTab, ResourceDTO } from "../api/types"
 import { CopyLinkIcon } from "./CopyLinkIcon"
 import { useCopyLink, useSwitchToTab } from "./resourceActionHooks"
+import { PaneMiniMap } from "./PaneMiniMap"
 
 /**
  * The service a resource lives on, for user-facing copy. Shared so every
@@ -47,7 +48,8 @@ export function openLabel(type: string): string {
  * A PR or Jira issue already open in a cmux browser tab — in any workspace,
  * preferring the one(s) matching the worktree `path` — gets "Switch to open
  * <service> tab" instead, which switches cmux to that tab; a dropdown keeps
- * the new-tab link.
+ * the new-tab link. Its tooltip sketches the target workspace's splits with
+ * the tab's pane highlighted.
  */
 export function ResourceActions({ r, path }: { r: ResourceDTO; path?: string }) {
   const { copied, copy } = useCopyLink(r.url)
@@ -116,6 +118,11 @@ export function ExistingTabButtons({ url, label, switchLabel, existing }: {
           <>
             <div>Switch to the cmux tab already showing this</div>
             <div>(in workspace: {existing.workspaceTitle})</div>
+            {existing.layout && (
+              <div style={{ marginTop: 6 }}>
+                <PaneMiniMap layout={existing.layout} highlight={existing.pane} />
+              </div>
+            )}
           </>
         }
       >

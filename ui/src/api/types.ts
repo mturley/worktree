@@ -288,6 +288,10 @@ export interface CmuxBrowserTab {
   workspaceTitle: string
   /** Selected within its window. */
   workspaceSelected: boolean
+  /** The pane holding the tab, marked in `layout`'s diagram. */
+  pane: string
+  /** The workspace's splits; absent when cmux's layout could not be read. */
+  layout?: CmuxLayout
   surface: string
   url: string
 }

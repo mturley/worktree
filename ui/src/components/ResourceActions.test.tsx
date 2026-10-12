@@ -81,7 +81,7 @@ describe("ResourceActions in cmux", () => {
   const pr = res({ url: PR_URL })
   const jira = res({ type: "jira", id: "PROJ-1", url: "https://acme.atlassian.net/browse/PROJ-1" })
   const tab = (ws: string, url: string): CmuxBrowserTab => ({
-    workspaceId: `${ws}-UUID`, workspaceRef: `workspace:${ws}`, workspaceTitle: ws, workspaceSelected: false, surface: `surface:${ws}`, url,
+    workspaceId: `${ws}-UUID`, workspaceRef: `workspace:${ws}`, workspaceTitle: ws, workspaceSelected: false, pane: "pane:1", surface: `surface:${ws}`, url,
   })
   const cmuxWith = (...tabs: CmuxBrowserTab[]) => {
     vi.spyOn(api, "cmux").mockResolvedValue({ available: true, workspaces: [], matches: { "/wt": [{ ref: "workspace:own", title: "own", selected: false }] } } as unknown as CmuxResponse)
@@ -129,6 +129,30 @@ describe("ResourceActions in cmux", () => {
       "href",
       "https://acme.atlassian.net/browse/PROJ-1",
     )
+  })
+
+  it("sketches the target workspace's panes in the tooltip, marking the tab's", async () => {
+    cmuxWith({
+      ...tab("own", PR_URL),
+      pane: "pane:2",
+      layout: { direction: "horizontal", split: 0.5, children: [{ pane: "pane:1" }, { pane: "pane:2" }] },
+    })
+    const user = userEvent.setup()
+    wrap(<ResourceActions r={pr} path="/wt" />)
+
+    await user.hover(await screen.findByRole("button", { name: "Switch to open GitHub tab" }))
+    const map = await screen.findByRole("img", { name: "Workspace pane layout" })
+    expect(map.querySelector("[data-highlighted]")).toHaveAttribute("data-pane", "pane:2")
+  })
+
+  it("leaves the sketch out when the layout is unknown", async () => {
+    cmuxWith(tab("own", PR_URL))
+    const user = userEvent.setup()
+    wrap(<ResourceActions r={pr} path="/wt" />)
+
+    await user.hover(await screen.findByRole("button", { name: "Switch to open GitHub tab" }))
+    await waitFor(() => expect(screen.getByText("(in workspace: own)")).toBeInTheDocument())
+    expect(screen.queryByRole("img", { name: "Workspace pane layout" })).not.toBeInTheDocument()
   })
 
   it("opens a new tab when cmux cannot focus the old one", async () => {

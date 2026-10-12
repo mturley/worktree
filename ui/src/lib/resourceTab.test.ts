@@ -3,7 +3,7 @@ import type { CmuxBrowserTab, CmuxBrowserTabsResponse } from "../api/types"
 import { findResourceTab, tabMatchKey } from "./resourceTab"
 
 const tab = (ws: string, surface: string, url: string, over: Partial<CmuxBrowserTab> = {}): CmuxBrowserTab => ({
-  workspaceId: `${ws}-UUID`, workspaceRef: `workspace:${ws}`, workspaceTitle: ws, workspaceSelected: false, surface, url, ...over,
+  workspaceId: `${ws}-UUID`, workspaceRef: `workspace:${ws}`, workspaceTitle: ws, workspaceSelected: false, pane: "pane:1", surface, url, ...over,
 })
 
 const tabs = (...t: CmuxBrowserTab[]): CmuxBrowserTabsResponse => ({ available: true, tabs: t })

@@ -9,10 +9,12 @@ import (
 
 // Two windows, so a tab is found whichever window its workspace is in. Only
 // browser tabs with a URL come back: terminals and unloaded browser tabs
-// (url null) have nothing to match against.
+// (url null) have nothing to match against. Each tab carries its workspace's
+// layout and the pane holding it, for the switch button's pane diagram.
 const browserTabsJSON = `{"windows": [
   {"workspaces": [
-    {"id": "AAAA-UUID", "ref": "workspace:1", "title": "Alpha", "selected": true, "panes": [
+    {"id": "AAAA-UUID", "ref": "workspace:1", "title": "Alpha", "selected": true,
+     "layout": {"pane": {"ref": "pane:1"}}, "panes": [
       {"ref": "pane:1", "surfaces": [
         {"ref": "surface:1", "type": "terminal", "url": null},
         {"ref": "surface:2", "type": "browser", "url": "https://example.com/a"},
@@ -21,7 +23,9 @@ const browserTabsJSON = `{"windows": [
     ]}
   ]},
   {"workspaces": [
-    {"id": "BBBB-UUID", "ref": "workspace:2", "title": "Beta", "selected": false, "panes": [
+    {"id": "BBBB-UUID", "ref": "workspace:2", "title": "Beta", "selected": false,
+     "layout": {"direction": "horizontal", "split": 0.6, "children": [
+       {"pane": {"ref": "pane:2"}}, {"pane": {"ref": "pane:3"}}]}, "panes": [
       {"ref": "pane:2", "surfaces": [
         {"ref": "surface:7", "type": "browser", "url": "https://example.com/b"}
       ]},
@@ -35,12 +39,30 @@ func TestParseBrowserTabs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	beta := &LayoutNode{Direction: "horizontal", Split: 0.6, Children: []LayoutNode{{Pane: "pane:2"}, {Pane: "pane:3"}}}
 	want := []BrowserTab{
-		{WorkspaceID: "AAAA-UUID", WorkspaceRef: "workspace:1", WorkspaceTitle: "Alpha", WorkspaceSelected: true, Ref: "surface:2", URL: "https://example.com/a"},
-		{WorkspaceID: "BBBB-UUID", WorkspaceRef: "workspace:2", WorkspaceTitle: "Beta", Ref: "surface:7", URL: "https://example.com/b"},
+		{WorkspaceID: "AAAA-UUID", WorkspaceRef: "workspace:1", WorkspaceTitle: "Alpha", WorkspaceSelected: true, Pane: "pane:1", Layout: &LayoutNode{Pane: "pane:1"}, Ref: "surface:2", URL: "https://example.com/a"},
+		{WorkspaceID: "BBBB-UUID", WorkspaceRef: "workspace:2", WorkspaceTitle: "Beta", Pane: "pane:2", Layout: beta, Ref: "surface:7", URL: "https://example.com/b"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %+v\nwant %+v", got, want)
+	}
+}
+
+// A layout that does not check out costs only the diagram, never the tab:
+// switching to it works without one.
+func TestParseBrowserTabsKeepsTabWhenLayoutIsBad(t *testing.T) {
+	got, err := parseBrowserTabs([]byte(`{"windows": [{"workspaces": [
+	  {"id": "A", "ref": "workspace:1", "title": "Alpha",
+	   "layout": {"pane": {"ref": "pane:9"}}, "panes": [
+	    {"ref": "pane:1", "surfaces": [{"ref": "surface:2", "type": "browser", "url": "https://example.com/a"}]}
+	  ]}
+	]}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Layout != nil || got[0].Pane != "pane:1" {
+		t.Fatalf("got %+v, want the tab with its pane and no layout", got)
 	}
 }
 

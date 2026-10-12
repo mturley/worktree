@@ -60,7 +60,7 @@ describe("EventDetailsModal", () => {
     vi.spyOn(api, "cmux").mockResolvedValue({ available: true, workspaces: [], matches: {} } as unknown as CmuxResponse)
     vi.spyOn(api, "cmuxBrowserTabs").mockResolvedValue({
       available: true,
-      tabs: [{ workspaceId: "w-UUID", workspaceRef: "workspace:w", workspaceTitle: "w", workspaceSelected: false, surface: "surface:w", url: "https://github.com/o/r/pull/1" }],
+      tabs: [{ workspaceId: "w-UUID", workspaceRef: "workspace:w", workspaceTitle: "w", workspaceSelected: false, pane: "pane:1", surface: "surface:w", url: "https://github.com/o/r/pull/1" }],
     })
     wrap(<EventDetailsModal e={ev({ resource_url: "https://github.com/o/r/pull/1" })} onClose={vi.fn()} />)
     expect(await screen.findByRole("button", { name: "Switch to open GitHub tab" })).toBeInTheDocument()
