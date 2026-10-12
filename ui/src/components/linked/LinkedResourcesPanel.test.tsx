@@ -55,6 +55,16 @@ describe("LinkedResourcesPanel", () => {
     expect(screen.getByText("this issue")).toBeInTheDocument()
   })
 
+  it("opens on the path to the current issue, folding the other children of each ancestor", async () => {
+    vi.spyOn(api, "cmuxBrowserTabs").mockResolvedValue({ available: false } as never)
+    wrap(<LinkedResourcesPanel query={q({ data: dto })} />)
+    expect(screen.getByText("Me")).toBeInTheDocument()
+    expect(screen.queryByText("Sibling")).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole("button", { name: "Show more children of PROJ-10…" }))
+    expect(screen.getByText("Sibling")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /Show more children/ })).not.toBeInTheDocument()
+  })
+
   it("lazily loads a collapsed node's children", async () => {
     vi.spyOn(api, "cmuxBrowserTabs").mockResolvedValue({ available: false } as never)
     const kids = vi.spyOn(api, "linkedChildren").mockResolvedValue({
@@ -63,6 +73,7 @@ describe("LinkedResourcesPanel", () => {
     })
     wrap(<LinkedResourcesPanel query={q({ data: dto })} />)
     expect(screen.queryByText("Grandkid")).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole("button", { name: "Show more children of PROJ-10…" }))
     await userEvent.click(screen.getByRole("button", { name: "Expand PROJ-7" }))
     expect(await screen.findByText("Grandkid")).toBeInTheDocument()
     expect(kids).toHaveBeenCalledWith("PROJ-7")

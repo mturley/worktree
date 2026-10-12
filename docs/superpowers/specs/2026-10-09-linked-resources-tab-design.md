@@ -234,8 +234,12 @@ the active tab's freshness and refresh: "Updated 3m ago" + the refresh-watchers
 button on Activity, "Fetched 1m ago" + the same style of refresh icon button
 (`refresh=1`) on Linked Resources. "Mark N read" sits at the top of the
 Activity panel.
-The Slack Thread panel uses `keepMounted` so the composer draft, scroll
-position, and unread-divider positioning survive tab switches.
+Only the Activity and Thread panels stay mounted while hidden (`keepMounted`
+on those panels, off on the `Tabs`), so the composer draft, scroll position,
+and unread-divider positioning survive tab switches, while the Linked panel
+remounts each time — the hierarchy's expand/collapse state starts fresh, with
+its data served from the query cache. The Activity tab shows the unread blue
+dot while it has unread events and isn't the active tab.
 
 **Data hook.** `useLinkedResources(type, id, {resolveLinks})` (TanStack
 Query, key `["linked", type, id, resolveLinks]`). Fired with
@@ -257,7 +261,10 @@ placeholder until it arrives.
   Unresolved items show key/URL + dimmed "couldn't load details".
 - `HierarchyTree` — indented (~20px/level) list with chevrons; ancestors and
   the current branch expanded; collapsed nodes lazily load via the children
-  endpoint. The current issue has a left accent bar + tint + "this issue"
+  endpoint. It opens on just the path: each ancestor shows only the child
+  leading to the current issue, with its other children folded behind a
+  "Show more children of KEY…" row (the current issue's own children are
+  all shown). The current issue has a left accent bar + tint + "this issue"
   marker and no Follow button.
 - `LinkedResourceActions` — button group:
   - **Follow** → `AddResourceModal` with `initialUrl` and `defaultRelated`.

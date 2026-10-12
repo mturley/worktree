@@ -16,8 +16,32 @@ function MoreRow({ url, depth }: { url: string; depth: number }) {
   )
 }
 
+/** Whether this node is the current issue or one of its ancestors. */
+function leadsToCurrent(node: LinkedTreeNode): boolean {
+  return !!node.current || (node.children ?? []).some(leadsToCurrent)
+}
+
+/**
+ * Stands in for an ancestor's other children (the current issue's siblings,
+ * or an ancestor's): the tree opens on the path to the current issue and its
+ * descendants, and the rest of each level is one click away.
+ */
+function ShowMoreChildrenRow({ parentKey, depth, onShow }: { parentKey: string; depth: number; onShow: () => void }) {
+  return (
+    <Box pl={depth * INDENT_PX + 26} py={4}>
+      <Anchor component="button" type="button" size="sm" onClick={onShow}>
+        Show more children of {parentKey}…
+      </Anchor>
+    </Box>
+  )
+}
+
 function TreeNodeView({ node, depth, path }: { node: LinkedTreeNode; depth: number; path?: string }) {
   const [expanded, setExpanded] = useState(node.expanded)
+  // An ancestor of the current issue starts out showing only the child on the
+  // way down to it. Remounting the panel (leaving the tab and coming back)
+  // folds them up again.
+  const [showAllChildren, setShowAllChildren] = useState(false)
   const lazy = !node.children && node.has_children !== false
   const kids = useQuery({
     queryKey: ["linked-children", node.id],
@@ -66,8 +90,20 @@ function TreeNodeView({ node, depth, path }: { node: LinkedTreeNode; depth: numb
       {expanded && kids.error && (
         <Text size="xs" c="red" pl={(depth + 1) * INDENT_PX + 26}>Couldn't load child issues</Text>
       )}
-      {expanded && children?.map((c) => <TreeNodeView key={c.id} node={c} depth={depth + 1} path={path} />)}
-      {expanded && more && <MoreRow url={more.url} depth={depth + 1} />}
+      {expanded && (() => {
+        const folding = !node.current && !showAllChildren && leadsToCurrent(node)
+        const shown = folding ? (children ?? []).filter(leadsToCurrent) : (children ?? [])
+        const hidden = (children?.length ?? 0) - shown.length + (more ? 1 : 0)
+        return (
+          <>
+            {shown.map((c) => <TreeNodeView key={c.id} node={c} depth={depth + 1} path={path} />)}
+            {folding && hidden > 0 && (
+              <ShowMoreChildrenRow parentKey={node.id} depth={depth + 1} onShow={() => setShowAllChildren(true)} />
+            )}
+            {!folding && more && <MoreRow url={more.url} depth={depth + 1} />}
+          </>
+        )
+      })()}
     </>
   )
 }
