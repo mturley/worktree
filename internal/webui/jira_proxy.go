@@ -7,7 +7,8 @@ import (
 	wconfig "github.com/mturley/watcher/config"
 )
 
-// handleJiraIcon proxies an issue-type icon from the configured Jira host.
+// handleJiraIcon proxies an issue-type or priority icon from the configured
+// Jira host.
 //
 // Note: /rest/api/2/universal_avatar/... turned out to be readable WITHOUT
 // auth on the instance this was built against — verified directly, byte
@@ -45,8 +46,9 @@ func (s *Server) handleJiraIcon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Issue-type icons are immutable for the life of an issue type, and a
-	// resource list can request the same handful of them repeatedly.
+	// Issue-type and priority icons are immutable for the life of the type or
+	// priority, and a resource list can request the same handful of them
+	// repeatedly.
 	w.Header().Set("Cache-Control", "public, max-age=86400")
 
 	s.handleImageProxyAuth(base.Host, func(req *http.Request) {

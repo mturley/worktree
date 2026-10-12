@@ -315,6 +315,7 @@ new_commits_since_review  bool      // PR
 author                    string    // PR author
 status                    string    // Jira status
 priority                  string    // Jira
+priority_icon_url         string    // Jira; via /api/jira-icon
 issue_type                string    // Jira
 assignee                  string    // Jira
 labels                    []string  // Jira
@@ -1132,7 +1133,9 @@ described above:
   decision (approved/changes requested/review required), CI status, "new
   commits since review" badge, author, relative "updated" time.
 - **Jira cards**: summary (shown as title), status, priority, issue type,
-  labels, assignee, relative "updated" time.
+  labels, assignee, relative "updated" time. Priority is Jira's own icon
+  (`JiraPriorityIcon`, name in a tooltip), falling back to a text badge when
+  no `priority_icon_url` is cached yet or the icon fails to load.
 - **Degraded ("minimal") card**: if `isEnriched(r)` is false (no enrichment
   fields present — the resource was never polled), the card falls back to a
   bare type badge + linked id (`MinimalRow`).
@@ -1378,7 +1381,7 @@ conventions:
 | GET | `/api/slack-avatar` | proxied avatar image params | image bytes |
 | GET | `/api/slack-emoji` | proxied emoji image params | image bytes |
 | GET | `/api/slack-file` | proxied file params | file bytes |
-| GET | `/api/jira-icon` | `url` (issue-type icon on the configured Jira host) | image bytes |
+| GET | `/api/jira-icon` | `url` (issue-type or priority icon on the configured Jira host) | image bytes |
 
 **Image proxies.** All four share `handleImageProxyAuth(allowedHost,
 authorize)` (`internal/webui/slack_proxy.go`): it pins the host, refuses

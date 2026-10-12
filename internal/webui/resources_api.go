@@ -30,6 +30,7 @@ type resourceDTO struct {
 	Author                string   `json:"author,omitempty"`                   // PR author
 	Status                string   `json:"status,omitempty"`                   // Jira status
 	Priority              string   `json:"priority,omitempty"`                 // Jira
+	PriorityIconURL       string   `json:"priority_icon_url,omitempty"`        // Jira
 	IssueType             string   `json:"issue_type,omitempty"`               // Jira
 	IssueTypeIconURL      string   `json:"issue_type_icon_url,omitempty"`      // Jira
 	Assignee              string   `json:"assignee,omitempty"`                 // Jira
@@ -144,6 +145,9 @@ func (s *Server) enrichResourceDTO(dto *resourceDTO) {
 		}
 		if v, ok := m["priority"].(string); ok {
 			dto.Priority = v
+		}
+		if v, ok := m["priority_icon_url"].(string); ok {
+			dto.PriorityIconURL = v
 		}
 		if v, ok := m["issue_type"].(string); ok {
 			dto.IssueType = v

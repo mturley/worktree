@@ -15,6 +15,7 @@ import { supportsCustomName } from "../lib/customName"
 import { TAB_ID } from "../lib/tabId"
 import { NotifySwitch } from "./NotifySwitch"
 import { NotifyBell } from "./NotifyBell"
+import { JiraPriorityIcon } from "./JiraPriorityIcon"
 
 function prStateColor(state?: string): string {
   switch ((state || "").toUpperCase()) {
@@ -155,7 +156,7 @@ function JiraCardBody({ r, variant, aside }: CardBodyProps) {
   const badges = (
     <>
       {r.status && <Badge size="xs" variant="light">{r.status}</Badge>}
-      {r.priority && <Badge size="xs" variant="light" color="orange">{r.priority}</Badge>}
+      <JiraPriorityIcon r={r} />
     </>
   )
   const inline = badgesInTypeLine(variant)
