@@ -1797,6 +1797,52 @@ inside cmux.
   what the optimistic update is modelling), then cmux's truth is re-read
   after the settle delay on success, or at once on failure/staleness.
 
+#### Tab peek (`GET /api/cmux/peek`, `cmux/peek.go`, `CmuxPeekCard`)
+
+Hovering a tab row opens a card that peeks at the tab without focusing it.
+It replaced the row's title/URL tooltip, whose content is now the card's
+header.
+
+- **UI:** each `TabRow`'s switch button is the target of a `Popover` driven
+  by `useHoverMenu`, instantiated once per `PaneDiagram`: 400ms open delay,
+  300ms close delay, at most one card open, and `disabled` while a tab is
+  being dragged (which closes any open card). Desktop only — when
+  `(hover: none)` matches, no `menuFor` is passed down and no card exists.
+  The dropdown is unmounted while closed, so mounting `CmuxPeekCard` is what
+  starts `useCmuxPeek`'s fetch.
+- **Cadence:** terminals refetch every 5s while the card is open; browser
+  and markdown peeks fetch once per open with `staleTime`/`gcTime` 0, so a
+  reopened card always shows the tab as it is now and a closed one drops its
+  image.
+- **Route:** the tab's type comes from a fresh `cmux tree`, never the client,
+  which also proves the surface is in that workspace (else 404). It is a
+  data GET, unlike the cmux tab's POST actions: 400 on a bad id/surface, 503
+  when cmux is not running, 502 on a cmux failure — not 200 `ok:false`.
+- **Per type:**
+  - terminal — `read-screen --workspace W --surface S --scrollback --lines 200`
+  - browser — `browser --surface S screenshot --out <file>` (~1.3s, ~200KB
+    PNG), returned as a `data:image/png;base64,…` URL
+  - markdown — `read-selection --json` → `file_path`; the server reads the
+    file only if it is absolute, `.md`/`.markdown`, a regular file, and at
+    most 512 KiB (the UI is reachable remotely)
+  - anything else, or a markdown tab whose path is missing or refused —
+    `{unsupported: true}`
+- **Screenshot files never outlive their request.** They go to
+  `$TMPDIR/worktree-cmux-peek/<surface-N>.png` (dir 0700); any file already
+  at that path is removed first and the new one removed once read, or once
+  cmux fails. A per-surface mutex serializes screenshots of one tab, since
+  they share the path. `worktree ui` removes the directory at startup to
+  catch anything a crash left behind.
+- **cmux behaviour to remember (0.65.0):** all three commands work on tabs
+  that are not selected and in workspaces that are not focused, and none
+  moves focus. `read-screen` refuses non-terminal surfaces ("Surface is not
+  a terminal"). `read-selection` returns `file_path` for a markdown surface
+  even with no selection — undocumented (the CLI contract mentions it only
+  for selections), which is why its absence degrades to `unsupported` rather
+  than an error. Nothing else (`tree`, `list-pane-surfaces`,
+  `surface-health`) exposes a markdown tab's path: its `url` is null and its
+  title is the bare filename.
+
 ## Known deferred items / extension notes
 
 These are known limitations, intentionally deferred rather than fixed, from

@@ -1,7 +1,7 @@
 # cmux tab peek — design
 
 Date: 2026-10-13
-Status: approved in brainstorming, pending spec review
+Status: implemented
 
 ## Problem
 

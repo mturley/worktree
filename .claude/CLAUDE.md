@@ -109,6 +109,9 @@ every interface at `ui.https_port` (8476). There is no `--bind`.
     the web UI. When no workspace is opened, `cmd/root.go`'s `cdHint` prints
     the `cd` line instead, since nothing has moved the user into the new
     worktree and a binary cannot cd its parent shell.
+    `peek.go` reads a tab for the cmux tab's hover peek (`ReadScreen`,
+    `Screenshot`, `MarkdownPath`); screenshots are temp files that never
+    outlive their request — see `docs/web-ui-architecture.md` "Tab peek".
   - `resourceurl` — the single URL→(type, id) detector, shared by `cmd`,
     `webui`, and `worktreenew`. Replaces webui's `inferResource`, which
     hand-copied `cmd/root.go`'s PR pattern with a "kept in sync" comment.
