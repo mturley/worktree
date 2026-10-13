@@ -4,13 +4,15 @@ import { IconChevronDown, IconChevronRight, IconDots } from "@tabler/icons-react
 import { useQuery } from "@tanstack/react-query"
 import { api } from "../../api/client"
 import type { LinkedTreeNode } from "../../api/types"
-import { LinkedResourceRow, ROW_PY } from "./LinkedResourceRow"
+import { ICON_GAP, LinkedResourceRow, ROW_PY, TOGGLE_GAP, TOGGLE_W } from "./LinkedResourceRow"
 
+// Also the divider inset in cards.css (.linked-item::before), so the lines
+// between items start at the tree's first level.
 const INDENT_PX = 20
 
 function MoreRow({ url, depth }: { url: string; depth: number }) {
   return (
-    <Box pl={depth * INDENT_PX + 26} py={4}>
+    <Box pl={depth * INDENT_PX + TOGGLE_W + TOGGLE_GAP} py={4} className="linked-item">
       <Anchor href={url} target="_blank" rel="noreferrer" size="sm">More on Jira…</Anchor>
     </Box>
   )
@@ -30,7 +32,7 @@ function ShowMoreChildrenRow({ parentKey, depth, onShow }: { parentKey: string; 
   return (
     // Laid out like a row (icon where the issue-type icon goes) so it reads as
     // a stand-in for the siblings it hides.
-    <Box pl={depth * INDENT_PX + 26} py={ROW_PY} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+    <Box pl={depth * INDENT_PX + TOGGLE_W + TOGGLE_GAP} py={ROW_PY} className="linked-item" style={{ display: "flex", alignItems: "center", gap: ICON_GAP }}>
       <IconDots size={16} aria-hidden style={{ color: "var(--mantine-color-dimmed)", flexShrink: 0 }} />
       <Anchor component="button" type="button" size="sm" onClick={onShow}>
         Show more children of {parentKey}…
@@ -65,43 +67,45 @@ function TreeNodeView({ node, depth, path }: { node: LinkedTreeNode; depth: numb
     // An error still offers the chevron, so expanding shows what went wrong.
     : lazy && ((kids.data?.items.length ?? 0) > 0 || kids.isError)
 
+  const highlightInset = node.current && depth > 0 ? INDENT_PX : 0
+
   return (
     <>
       <Box
-        pl={depth * INDENT_PX}
+        // The current issue's highlight starts at the tree's first level,
+        // like the dividers, rather than at the panel edge. The box itself is
+        // moved in, so its divider is moved back out to match the others.
+        ml={highlightInset}
+        pl={depth * INDENT_PX - highlightInset}
+        className={highlightInset ? "linked-item linked-item-inset" : "linked-item"}
         style={node.current ? {
           borderLeft: "3px solid var(--mantine-primary-color-filled)",
           background: "var(--mantine-primary-color-light)",
           borderRadius: 4,
         } : undefined}
       >
-        {/* Top-aligned: the row is two lines, and the chevron belongs with the
-            first (the key), centred on its 30px button row. */}
-        <Box style={{ display: "flex", alignItems: "flex-start", gap: 4 }}>
-          {canExpand ? (
+        <LinkedResourceRow
+          item={node}
+          path={path}
+          hideFollow={node.current}
+          marker={node.current ? <Badge size="sm" variant="filled">this issue</Badge> : undefined}
+          // On the key line, before the icon.
+          toggle={canExpand ? (
             <ActionIcon
-              variant="subtle" size="sm" color="gray" mt={ROW_PY + 4}
+              variant="subtle" size="sm" color="gray"
               aria-label={`${expanded ? "Collapse" : "Expand"} ${node.id}`}
               onClick={() => setExpanded((e) => !e)}
             >
               {expanded ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
             </ActionIcon>
           ) : (
-            <Box w={22} />
+            <Box w={TOGGLE_W} />
           )}
-          <Box style={{ flex: 1, minWidth: 0 }}>
-            <LinkedResourceRow
-              item={node}
-              path={path}
-              hideFollow={node.current}
-              marker={node.current ? <Badge size="sm" variant="filled">this issue</Badge> : undefined}
-            />
-          </Box>
-        </Box>
+        />
       </Box>
-      {expanded && kids.isLoading && <Box pl={(depth + 1) * INDENT_PX + 26}><Loader size="xs" /></Box>}
+      {expanded && kids.isLoading && <Box pl={(depth + 1) * INDENT_PX + TOGGLE_W + TOGGLE_GAP}><Loader size="xs" /></Box>}
       {expanded && kids.error && (
-        <Text size="xs" c="red" pl={(depth + 1) * INDENT_PX + 26}>Couldn't load child issues</Text>
+        <Text size="xs" c="red" pl={(depth + 1) * INDENT_PX + TOGGLE_W + TOGGLE_GAP}>Couldn't load child issues</Text>
       )}
       {expanded && (() => {
         const folding = !node.current && !showAllChildren && leadsToCurrent(node)

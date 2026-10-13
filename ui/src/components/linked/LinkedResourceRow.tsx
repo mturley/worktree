@@ -52,43 +52,54 @@ function icon(item: LinkedItem) {
 }
 
 /**
- * One linked resource, on two lines: [icon] [key] [status] [marker] with the
- * actions on the right, then the title indented under the key. The first
- * line wraps so the actions drop below on narrow viewports rather than
- * crushing it.
+ * One linked resource, on two lines: [toggle] [icon] [key] [status] [marker]
+ * with the actions on the right, then the title, indented to line up with
+ * the key. The first line wraps so the actions drop below on narrow
+ * viewports rather than crushing it. The link context, if any, runs
+ * underneath. `toggle` is the tree's chevron (or a spacer of its width).
  */
-export function LinkedResourceRow({ item, path, hideFollow, marker }: {
+export function LinkedResourceRow({ item, path, hideFollow, marker, toggle }: {
   item: LinkedItem
   path?: string
   hideFollow?: boolean
   marker?: React.ReactNode
+  toggle?: React.ReactNode
 }) {
   const status = statusText(item)
+  const indent = (toggle ? TOGGLE_W + TOGGLE_GAP : 0) + ICON_SLOT + ICON_GAP
   return (
-    <Box py={ROW_PY}>
+    <Box py={ROW_PY} className="linked-item">
       <Group justify="space-between" gap="xs" wrap="wrap">
-        <Group gap={6} wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
-          {icon(item)}
-          <Text size="sm" c="dimmed" truncate="end" style={{ minWidth: 0 }}>{keyText(item)}</Text>
-          {status && <Badge size="sm" variant="light" color="gray" style={{ flexShrink: 0 }}>{status}</Badge>}
-          {marker}
-        </Group>
+        <Box style={{ display: "flex", alignItems: "center", flex: 1, minWidth: 0 }}>
+          {toggle && <Box mr={TOGGLE_GAP} style={{ flexShrink: 0 }}>{toggle}</Box>}
+          {/* A fixed-width slot, so every row's text starts at the same x
+              whatever the icon's own size. */}
+          <Box w={ICON_SLOT} mr={ICON_GAP} style={{ display: "flex", justifyContent: "center", flexShrink: 0 }}>{icon(item)}</Box>
+          <Group gap={6} wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
+            <Text size="sm" c="dimmed" truncate="end" style={{ minWidth: 0 }}>{keyText(item)}</Text>
+            {status && <Badge size="sm" variant="light" color="gray" style={{ flexShrink: 0 }}>{status}</Badge>}
+            {marker}
+          </Group>
+        </Box>
         <LinkedResourceActions item={item} path={path} hideFollow={hideFollow} />
       </Group>
       {item.resolved ? (
-        <Text size="sm" truncate="end" pl={INDENT} mt={4}>{titleNode(item)}</Text>
+        <Text size="sm" truncate="end" pl={indent}>{titleNode(item)}</Text>
       ) : (
-        <Text size="sm" c="dimmed" fs="italic" pl={INDENT} mt={4}>couldn't load details</Text>
+        <Text size="sm" c="dimmed" fs="italic" pl={indent}>couldn't load details</Text>
       )}
-      {item.context && <ContextLine item={item} context={item.context} />}
+      {item.context && <ContextLine item={item} context={item.context} indent={indent} />}
     </Box>
   )
 }
 
-// Lines the title and context up with the key, past the icon.
-const INDENT = 20
+/** The tree's chevron (an ActionIcon size="sm") and its gap to the icon. */
+export const TOGGLE_W = 22
+export const TOGGLE_GAP = 4
+const ICON_SLOT = 16
+export const ICON_GAP = 10
 
-/** Vertical padding of a row; the tree lines its chevron and fold rows up with it. */
+/** Vertical padding of a row; the tree's fold rows use it too. */
 export const ROW_PY = 6
 
 /**
@@ -102,10 +113,10 @@ export const ROW_PY = 6
 const HUGS_PREVIOUS = /^[.,;:!?)\]}'"’”]/
 const HUGS_NEXT = /[([{'"‘“]$/
 
-function ContextLine({ item, context }: { item: LinkedItem; context: NonNullable<LinkedItem["context"]> }) {
+function ContextLine({ item, context, indent }: { item: LinkedItem; context: NonNullable<LinkedItem["context"]>; indent: number }) {
   const { before, label, after } = context
   return (
-    <Text size="xs" c="dimmed" fs="italic" pl={INDENT} data-testid="link-context">
+    <Text size="xs" c="dimmed" fs="italic" pl={indent} data-testid="link-context">
       {before && <>{before}{HUGS_NEXT.test(before) ? "" : " "}</>}
       <Anchor href={item.url} target="_blank" rel="noreferrer" inherit>{label}</Anchor>
       {after && <>{HUGS_PREVIOUS.test(after) ? "" : " "}{after}</>}

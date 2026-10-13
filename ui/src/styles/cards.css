@@ -171,3 +171,44 @@
     transition: none;
   }
 }
+
+/*
+ * Linked Resources row buttons: a little shorter than Mantine's xs (30px),
+ * so the two-line rows stay compact. Mantine sets --button-height-xs on each
+ * button root, so it's overridden there (by a more specific selector) rather
+ * than inherited from the group.
+ */
+.linked-actions .mantine-Button-root {
+  --button-height-xs: calc(1.625rem * var(--mantine-scale));
+}
+
+/*
+ * A faint line between neighbouring Linked Resources items, so each
+ * resource's two lines read as one unit. Adjacent siblings only: the first
+ * item in a list gets none, and the hierarchy tree renders its nodes flat,
+ * so its rows (and fold rows) divide the same way. A pseudo-element rather
+ * than a border so it can start in from the edge — at the tree's first level
+ * (INDENT_PX in HierarchyTree.tsx) — and so read as shorter, and lesser,
+ * than the lines between accordion sections.
+ */
+.linked-item + .linked-item {
+  position: relative;
+}
+
+.linked-item + .linked-item::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 20px;
+  right: 0;
+  height: 1px;
+  background: var(--mantine-color-default-border);
+  background: color-mix(in srgb, var(--mantine-color-default-border) 35%, transparent);
+  pointer-events: none;
+}
+
+/* The divider above an item already moved in by that much (the tree's
+   current issue), so it still starts at the same x as the others. */
+.linked-item + .linked-item-inset::before {
+  left: 0;
+}

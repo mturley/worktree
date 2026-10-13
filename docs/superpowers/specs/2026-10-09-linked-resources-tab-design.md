@@ -256,8 +256,10 @@ placeholder until it arrives.
   (title as the toggle) + rows / groups / tree. "Linked work items" rows are
   indented under their relationship label. "Linked in description" is
   the last section for both PRs and Jira issues.
-- `LinkedResourceRow` — two lines: `[icon] [key] [status] [marker]
-  [actions]`, wrapping on narrow, then the title indented under the key. Builds a `ResourceDTO`-shaped
+- `LinkedResourceRow` — two lines: `[chevron] [icon] [key] [status]
+  [marker] [actions]` (wrapping on narrow; the tree passes its chevron in as
+  `toggle`), then the title, indented to line up with the key. A faint
+  divider separates neighbouring items. Builds a `ResourceDTO`-shaped
   object so `ResourceStatusIcon` and the key formatting from
   `ResourceTypeLine` are reused (PR: state icon + `owner/repo#123`; Jira:
   proxied issue-type icon + `Story KEY` + status; Slack: message icon +
