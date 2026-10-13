@@ -334,23 +334,6 @@ export function WorktreeDetailPage() {
     >
       <FollowCmuxToggle />
       {summary && <CmuxWorkspaceActions path={path} branch={summary.branch} />}
-      {/*
-        The header is fixed and the body scrolls beneath it, so the
-        summary card costs the resource list and timeline the same space
-        on every scroll position. Hiding it is the cheapest way to get
-        that space back on a short screen.
-      */}
-      {summary && (
-        <Button
-          size="compact-sm"
-          variant="subtle"
-          onClick={() => setDetailsOpen((o) => !o)}
-          aria-expanded={detailsOpen}
-          style={{ flex: "none" }}
-        >
-          {detailsOpen ? "Hide details" : "Show details"}
-        </Button>
-      )}
     </Group>
   )
 
@@ -445,6 +428,24 @@ export function WorktreeDetailPage() {
                   {summary && !summary.on_disk && <Badge size="xs" color="red">missing</Badge>}
                 </Group>
               </Stack>
+              {/*
+                The header is fixed and the body scrolls beneath it, so the
+                summary card costs the resource list and timeline the same space
+                on every scroll position. Hiding it (from the card's own "Hide
+                details") is the cheapest way to get that space back on a short
+                screen; this brings it back.
+              */}
+              {summary && !detailsOpen && (
+                <Button
+                  size="compact-sm"
+                  variant="subtle"
+                  onClick={() => setDetailsOpen(true)}
+                  aria-expanded={false}
+                  style={{ flex: "none" }}
+                >
+                  Show details
+                </Button>
+              )}
             </Group>
             {wide && toolbar}
           </Group>
@@ -453,7 +454,7 @@ export function WorktreeDetailPage() {
             <Collapse in={detailsOpen}>
               {/* Keyed by path: the card holds an unsaved notes draft, which must
                   never carry over to another worktree. */}
-              <WorktreeDetailCard key={summary.path} w={summary} />
+              <WorktreeDetailCard key={summary.path} w={summary} onHide={() => setDetailsOpen(false)} />
             </Collapse>
           )}
         </Stack>

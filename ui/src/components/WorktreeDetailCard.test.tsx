@@ -46,14 +46,17 @@ const summary = (o: Partial<WorktreeSummary> = {}): WorktreeSummary => ({
   ...o,
 }) as WorktreeSummary
 
-const wrap = (w: WorktreeSummary) =>
+const wrap = (w: WorktreeSummary, props: { onHide?: () => void } = {}) =>
   render(
     <MantineProvider>
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <WorktreeDetailCard w={w} />
+        <WorktreeDetailCard w={w} {...props} />
       </QueryClientProvider>
     </MantineProvider>,
   )
+
+/** The value beside a git row label, e.g. rowValue("Branch"). */
+const rowValue = (label: string) => screen.getByText(label).nextElementSibling?.textContent
 
 afterEach(() => {
   cleanup()
@@ -78,21 +81,17 @@ describe("WorktreeDetailCard", () => {
     const env = await screen.findByRole("tab", { name: /environment/i })
     expect(env).toHaveAttribute("aria-selected", "false")
     expect(screen.getByRole("tab", { name: /notes/i })).toHaveAttribute("aria-selected", "true")
-    expect(screen.getByText("4090-4099")).not.toBeVisible()
+    expect(await screen.findByText("4090-4099")).not.toBeVisible()
   })
 
-  it("has no Environment tab when there is no environment", async () => {
+  it("keeps the Git / Environment tab when there is no environment, saying so", async () => {
+    // The git half always has something to show.
     worktreeInfo.mockResolvedValue(info({ env: [] }))
+    const user = userEvent.setup()
     wrap(summary())
     await waitFor(() => expect(worktreeInfo).toHaveBeenCalled())
-    await screen.findByRole("tab", { name: /notes/i })
-    expect(screen.queryByRole("tab", { name: /environment/i })).not.toBeInTheDocument()
-  })
-
-  it("names how many variables there are, so the toggle is worth clicking", async () => {
-    worktreeInfo.mockResolvedValue(info())
-    wrap(summary())
-    expect(await screen.findByText("Environment (2)")).toBeInTheDocument()
+    await user.click(await screen.findByRole("tab", { name: "Git / Environment" }))
+    expect(await screen.findByText("None")).toBeVisible()
   })
 
   it("reveals the environment worktree info prints on the Environment tab", async () => {
@@ -124,7 +123,7 @@ describe("WorktreeDetailCard", () => {
   it("never lists focus resources, which the resource cards below already show", async () => {
     worktreeInfo.mockResolvedValue(info())
     wrap(summary())
-    await screen.findByText("Environment (2)")
+    await screen.findByText("4090-4099")
     expect(screen.queryByText("Focus PR title")).not.toBeInTheDocument()
   })
 
@@ -150,13 +149,15 @@ describe("WorktreeDetailCard", () => {
     // A worktree missing from disk, or git unavailable, must not blank the card.
     worktreeInfo.mockRejectedValue(new Error("boom"))
     wrap(summary())
-    await waitFor(() => expect(screen.getByText(/odh · my-branch/)).toBeInTheDocument())
+    await userEvent.click(await screen.findByRole("tab", { name: "Git / Environment" }))
+    expect(rowValue("Repo")).toBe("odh")
+    expect(rowValue("Branch")).toBe("my-branch")
   })
 
   it("leaves the worktree name to the page header", async () => {
     worktreeInfo.mockResolvedValue(info())
     wrap(summary())
-    await screen.findByText("Environment (2)")
+    await screen.findByText("4090-4099")
     expect(screen.queryByText("foo")).not.toBeInTheDocument()
     expect(screen.queryByText("WORKTREE")).not.toBeInTheDocument()
   })
@@ -183,13 +184,28 @@ describe("delete control", () => {
 })
 
 describe("layout", () => {
-  it("puts the git status on the same line as the branch", async () => {
+  it("breaks the git state into labelled rows", async () => {
     worktreeInfo.mockResolvedValue(info({
-      git: { branch: "my-branch", ahead: 0, behind: 0, staged: 0, modified: 3, untracked: 0 },
+      git: { branch: "my-branch", upstream: "origin/my-branch", ahead: 0, behind: 0, staged: 0, modified: 3, untracked: 0 },
     }))
     wrap(summary())
-    const status = await screen.findByText(/3 modified/)
-    expect(status.closest("p")).toHaveTextContent(/odh · my-branch · 3 modified/)
+    await screen.findByText(/3 modified/)
+    expect(rowValue("Repo")).toBe("odh")
+    expect(rowValue("Branch")).toBe("my-branch")
+    expect(rowValue("Status")).toBe("3 modified")
+    expect(rowValue("Upstream")).toBe("origin/my-branch")
+  })
+
+  it("puts Hide details, the tabs and the delete control in one row", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    wrap(summary(), { onHide: () => {} })
+    const hide = await screen.findByRole("button", { name: "Hide details" })
+    const tabs = screen.getByRole("tablist")
+    const row = tabs.parentElement!
+    expect(row).toContainElement(hide)
+    // After the tabs, not before them.
+    expect(tabs.compareDocumentPosition(hide) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(row).toContainElement(screen.getByRole("button", { name: "Delete worktree" }))
   })
 
   it("puts the Notes tab before the Environment tab", async () => {
@@ -542,12 +558,15 @@ describe("cmux tab", () => {
   })
 
   it("shows Notes where the remembered tab doesn't exist, without forgetting it", async () => {
-    window.sessionStorage.setItem("worktree.detailTab", "env")
-    worktreeInfo.mockResolvedValue(info({ env: [] }))
+    window.sessionStorage.setItem("worktree.detailTab", "cmux")
+    worktreeInfo.mockResolvedValue(info())
+    cmux.mockResolvedValue({ available: false })
     wrap(summary())
-    await waitFor(() => expect(worktreeInfo).toHaveBeenCalled())
-    expect(await screen.findByRole("tab", { name: /notes/i })).toHaveAttribute("aria-selected", "true")
-    expect(window.sessionStorage.getItem("worktree.detailTab")).toBe("env")
+    await waitFor(() => expect(cmux).toHaveBeenCalled())
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: /notes/i })).toHaveAttribute("aria-selected", "true"),
+    )
+    expect(window.sessionStorage.getItem("worktree.detailTab")).toBe("cmux")
   })
 
   it("falls back to Notes if cmux goes away while its tab is selected", async () => {

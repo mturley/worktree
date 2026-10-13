@@ -110,10 +110,11 @@ describe("WorktreeDetailPage header", () => {
   it("moves the header toolbar to its own row when narrow", async () => {
     setViewport("narrow")
     wrap()
-    const hide = await screen.findByRole("button", { name: "Hide details" })
+    await screen.findByRole("button", { name: "Hide details" })
+    const toolbar = document.querySelector("[data-detail-toolbar]")
+    expect(toolbar).toBeInTheDocument()
     // Beside the titles it squeezed them to a few letters per line.
-    expect(hide.closest("[data-detail-toolbar]")).toBeInTheDocument()
-    expect(hide.closest("[data-detail-header]")).toBeNull()
+    expect(toolbar!.closest("[data-detail-header]")).toBeNull()
   })
 
   it("omits focus-resource lines, which would duplicate the resource cards", async () => {
@@ -143,7 +144,10 @@ describe("WorktreeDetailPage header", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Hide details" }))
     expect(screen.getByLabelText("Delete worktree")).not.toBeVisible()
     // The toggle names the state it will move to, so it reads as an action.
-    expect(screen.getByRole("button", { name: "Show details" })).toBeInTheDocument()
+    const show = screen.getByRole("button", { name: "Show details" })
+    // It sits beside the titles, not out in the toolbar.
+    expect(show.closest("[data-detail-header]")).toBeInTheDocument()
+    expect(show.closest("[data-detail-toolbar]")).toBeNull()
   })
 
   it("brings it back on a second click", async () => {
