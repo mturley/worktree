@@ -178,6 +178,7 @@ func (s *Server) routes() []route {
 		{"POST /api/worktrees/poll", s.handlePollWorktree},
 		{"GET /api/watchers", s.handleWatchers},
 		{"POST /api/watchers/poll", s.handleWatchersPoll},
+		{"GET /api/watchers/resources", s.handleWatchedResources},
 		{"GET /api/worktree-resources", s.handleWorktreeResources},
 		{"POST /api/resource-meta", s.handleSetResourceMeta},
 		{"POST /api/resource-read", s.handleResourceRead},
