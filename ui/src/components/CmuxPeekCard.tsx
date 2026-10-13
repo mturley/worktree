@@ -26,7 +26,14 @@ export function CmuxPeekCard({ workspaceId, tab }: { workspaceId: string; tab: C
         // The server omits an empty screen's text (omitempty): still a terminal.
         <TerminalPeek text={data.text ?? ""} />
       ) : data.image ? (
-        <Image src={data.image} alt={tab.title} radius="sm" />
+        // cmux captures at full page size (~1280×863); scaled down to fit
+        // 480×300, aspect kept, so a peek is a glance, not a second window.
+        <Image
+          src={data.image}
+          alt={tab.title}
+          radius="sm"
+          style={{ maxWidth: 480, maxHeight: 300, width: "auto", objectFit: "contain" }}
+        />
       ) : data.markdown !== undefined && !data.unsupported ? (
         <Box className="cmux-peek-markdown">
           <NotesMarkdown text={data.markdown} />

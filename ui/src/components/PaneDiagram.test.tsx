@@ -249,6 +249,14 @@ describe("PaneDiagram tab peek", () => {
     expect(spy).toHaveBeenCalledWith("W", "surface:1")
   })
 
+  it("opens the card below the row", async () => {
+    vi.spyOn(api, "cmuxPeek").mockResolvedValue({ type: "terminal", text: "hello from tab 1" })
+    wrap(panes())
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "Switch to Tab 1" }))
+    const text = await screen.findByText("hello from tab 1")
+    expect(text.closest("[data-position]")).toHaveAttribute("data-position", "bottom-start")
+  })
+
   it("closes the card when a drag starts", async () => {
     vi.spyOn(api, "cmuxPeek").mockResolvedValue({ type: "terminal", text: "hello from tab 1" })
     wrap(panes())

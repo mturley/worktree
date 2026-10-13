@@ -1889,7 +1889,9 @@ header.
   being dragged (which closes any open card). Desktop only — when
   `(hover: none)` matches, no `menuFor` is passed down and no card exists.
   The dropdown is unmounted while closed, so mounting `CmuxPeekCard` is what
-  starts `useCmuxPeek`'s fetch.
+  starts `useCmuxPeek`'s fetch. The card opens below the row
+  (`bottom-start`, flipped above when there is no room), so it never covers
+  the row's close button; screenshots are shown scaled to fit 480×300.
 - **Cadence:** terminals refetch every 5s while the card is open; browser
   and markdown peeks fetch once per open with `staleTime`/`gcTime` 0, so a
   reopened card always shows the tab as it is now and a closed one drops its
