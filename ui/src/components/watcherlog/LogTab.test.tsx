@@ -102,4 +102,36 @@ describe("LogTab", () => {
     wrap(<LogTab scope={{}} />)
     expect(await screen.findByText("No watcher activity recorded yet.")).toBeTruthy()
   })
+
+  it("shows an error when the initial fetch rejects", async () => {
+    watcherLog.mockRejectedValue(new Error("boom"))
+    wrap(<LogTab scope={{}} />)
+    expect(await screen.findByText(/Couldn't load the watcher log: boom/)).toBeTruthy()
+  })
+
+  it("keeps rows when a poll rejects", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    watcherLog.mockResolvedValueOnce({ entries: [row(1)], has_more: false })
+    watcherLog.mockRejectedValue(new Error("down"))
+    wrap(<LogTab scope={{}} />)
+    await screen.findByText("row 1")
+    await act(async () => { vi.advanceTimersByTime(3000) })
+    expect(await screen.findByText(/down/)).toBeTruthy()
+    expect(screen.getByText("row 1")).toBeTruthy()
+  })
+
+  it("drops a stale load-older response after a filter change", async () => {
+    let resolveOlder: (v: unknown) => void = () => {}
+    watcherLog.mockResolvedValueOnce({ entries: [row(5), row(4)], has_more: true })
+    watcherLog.mockImplementationOnce(() => new Promise((res) => { resolveOlder = res }))
+    watcherLog.mockResolvedValue({ entries: [row(9)], has_more: false })
+    const user = userEvent.setup()
+    wrap(<LogTab scope={{}} />)
+    await user.click(await screen.findByRole("button", { name: "Load older" }))
+    await user.click(screen.getByRole("switch", { name: "Errors & warnings only" }))
+    await screen.findByText("row 9")
+    await act(async () => { resolveOlder({ entries: [row(3)], has_more: true }) })
+    expect(screen.queryByText("row 3")).toBeNull()
+    expect(screen.queryByRole("button", { name: "Load older" })).toBeNull()
+  })
 })

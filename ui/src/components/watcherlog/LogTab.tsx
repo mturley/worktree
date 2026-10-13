@@ -18,6 +18,10 @@ function clock(ts: string): string {
   return Number.isNaN(d.getTime()) ? ts : d.toLocaleTimeString([], { hour12: false })
 }
 
+function errMsg(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
 export function LogTab({ scope }: { scope: WatcherLogScope }) {
   const [source, setSource] = useState("all")
   const [warnOnly, setWarnOnly] = useState(false)
@@ -28,6 +32,8 @@ export function LogTab({ scope }: { scope: WatcherLogScope }) {
   const [newCount, setNewCount] = useState(0)
   const viewport = useRef<HTMLDivElement>(null)
   const newest = useRef(0)
+  const generation = useRef(0)
+  const [error, setError] = useState<string | null>(null)
 
   const query = useCallback(
     (extra: { after_id?: number; before_id?: number }) =>
@@ -42,6 +48,8 @@ export function LogTab({ scope }: { scope: WatcherLogScope }) {
 
   useEffect(() => {
     let cancelled = false
+    generation.current += 1
+    setError(null)
     setEntries([])
     setLoaded(false)
     setNewCount(0)
@@ -52,14 +60,23 @@ export function LogTab({ scope }: { scope: WatcherLogScope }) {
       setHasMore(r.has_more)
       setLoaded(true)
       newest.current = r.entries[0]?.id ?? 0
+      setError(null)
+    }).catch((err: unknown) => {
+      if (cancelled) return
+      setLoaded(true)
+      setError(errMsg(err))
     })
     const t = setInterval(() => {
       void query({ after_id: newest.current || undefined }).then((r) => {
-        if (cancelled || r.entries.length === 0) return
+        if (cancelled) return
+        setError(null)
+        if (r.entries.length === 0) return
         const fresh = r.entries.filter((e) => e.id > newest.current).length
         newest.current = Math.max(newest.current, r.entries[0].id)
         setEntries((cur) => mergeNewer(cur, r.entries))
         if ((viewport.current?.scrollTop ?? 0) > 0) setNewCount((n) => n + fresh)
+      }).catch((err: unknown) => {
+        if (!cancelled) setError(errMsg(err))
       })
     }, POLL_MS)
     return () => {
@@ -71,9 +88,13 @@ export function LogTab({ scope }: { scope: WatcherLogScope }) {
   const loadOlder = () => {
     const last = entries[entries.length - 1]
     if (!last) return
+    const gen = generation.current
     void query({ before_id: last.id }).then((r) => {
+      if (gen !== generation.current) return
       setEntries((cur) => appendOlder(cur, r.entries))
       setHasMore(r.has_more)
+    }).catch((err: unknown) => {
+      if (gen === generation.current) setError(errMsg(err))
     })
   }
 
@@ -101,6 +122,11 @@ export function LogTab({ scope }: { scope: WatcherLogScope }) {
         />
         <Switch size="xs" label="Errors & warnings only" checked={warnOnly} onChange={(e) => setWarnOnly(e.currentTarget.checked)} />
       </Group>
+      {error && (
+        <Text size="sm" c="red">
+          Couldn't load the watcher log: {error}
+        </Text>
+      )}
       {newCount > 0 && (
         <Button
           size="compact-xs"
@@ -128,7 +154,7 @@ export function LogTab({ scope }: { scope: WatcherLogScope }) {
                 <Text size="xs" c="dimmed" ff="monospace" title={e.ts} style={{ flex: "none" }}>
                   {clock(e.ts)}
                 </Text>
-                <Box w={8} h={8} style={{ borderRadius: 4, background: LEVEL_COLOR[e.level], flex: "none" }} aria-label={e.level} />
+                <Box w={8} h={8} style={{ borderRadius: 4, background: LEVEL_COLOR[e.level], flex: "none" }} aria-label={e.level} role="img" />
                 <Text size="xs" c="dimmed" w={48} style={{ flex: "none" }}>
                   {SOURCE_LABEL[e.source] ?? e.source}
                 </Text>
@@ -139,7 +165,7 @@ export function LogTab({ scope }: { scope: WatcherLogScope }) {
             )
             return (
               <Box key={e.id}>
-                {expandable ? <UnstyledButton onClick={() => toggle(e.id)} w="100%">{line}</UnstyledButton> : line}
+                {expandable ? <UnstyledButton onClick={() => toggle(e.id)} w="100%" aria-expanded={expanded.has(e.id)}>{line}</UnstyledButton> : line}
                 {expanded.has(e.id) && (
                   <Stack gap={4} pl={96} py={4}>
                     {e.error_body && <Code block>{e.error_body}</Code>}
