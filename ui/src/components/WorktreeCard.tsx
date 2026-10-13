@@ -156,7 +156,8 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
             </Box>
           )}
           {w.focus_resources.length > 0 && (
-            <Stack gap="sm">
+            // Set apart from the identity/notes lines above it.
+            <Stack gap="sm" mt="xs">
               {w.focus_resources.map((r) => (
                 <FocusResourceLine key={`${r.type}:${r.id}`} r={r} notifyAll={Boolean(w.notify_all)} />
               ))}
