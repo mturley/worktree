@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"sync"
@@ -11,6 +12,7 @@ import (
 	watcherdb "github.com/mturley/watcher/db"
 	wgithub "github.com/mturley/watcher/github"
 	wjira "github.com/mturley/watcher/jira"
+	"github.com/mturley/watcher/polllog"
 	wslack "github.com/mturley/watcher/slack"
 	wdb "github.com/mturley/worktree/internal/db"
 	wtjira "github.com/mturley/worktree/internal/jira"
@@ -59,6 +61,14 @@ func (s *Server) logger() *log.Logger {
 	return log.Default()
 }
 
+// logPollWarn records a poll-level warning in the watcher log so it shows in
+// the web UI's watcher log modal, not only on stderr.
+func (s *Server) logPollWarn(source, msg string) {
+	if err := polllog.Write(s.DB, source, "warn", msg); err != nil {
+		s.logger().Printf("watcher log write: %v", err)
+	}
+}
+
 // pollAll polls every active pr + jira resource once. Missing creds -> skip
 // that source (logged), not an error.
 func (s *Server) pollAll() error {
@@ -73,6 +83,7 @@ func (s *Server) pollAll() error {
 			}
 		} else {
 			s.logger().Printf("github not configured; skipping %d pr resources", len(prs))
+			s.logPollWarn("github", fmt.Sprintf("github not configured; skipping %d pr resources", len(prs)))
 		}
 	}
 	if issues, _ := watcherdb.ActiveResources(s.DB, "jira"); len(issues) > 0 {
@@ -86,6 +97,7 @@ func (s *Server) pollAll() error {
 			}
 		} else {
 			s.logger().Printf("jira not configured; skipping %d jira resources", len(issues))
+			s.logPollWarn("jira", fmt.Sprintf("jira not configured; skipping %d jira resources", len(issues)))
 		}
 	}
 	if threads, _ := watcherdb.ActiveResources(s.DB, "slack"); len(threads) > 0 {
@@ -96,6 +108,7 @@ func (s *Server) pollAll() error {
 			}
 		} else {
 			s.logger().Printf("slack not configured; skipping %d slack resources", len(threads))
+			s.logPollWarn("slack", fmt.Sprintf("slack not configured; skipping %d slack resources", len(threads)))
 		}
 	}
 	return nil

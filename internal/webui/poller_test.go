@@ -1,11 +1,15 @@
 package webui
 
 import (
+	"io"
+	"log"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/mturley/watcher"
+	watcherdb "github.com/mturley/watcher/db"
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/resources"
@@ -75,5 +79,28 @@ func TestSafePollAllSkipsWhenInFlight(t *testing.T) {
 	s.safePollAll()
 	if !s.pollInFlight.Load() {
 		t.Fatal("safePollAll should have skipped (pollInFlight was already true) and left the flag untouched")
+	}
+}
+
+func TestPollAll_UnconfiguredSourceWritesWarnRow(t *testing.T) {
+	t.Setenv("WATCHER_HOME", t.TempDir()) // no auth.yaml → nothing configured
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if err := watcherdb.Subscribe(conn, "worktree:/x", watcher.Resource{Type: "pr", ID: "o/r#1"}, watcherdb.SubscribeOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	srv := &Server{DB: conn, Logger: log.New(io.Discard, "", 0)}
+	if err := srv.pollAll(); err != nil {
+		t.Fatal(err)
+	}
+	rows, _, err := watcherdb.QueryPollLog(conn, watcherdb.PollLogQuery{MinLevel: "warn"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].Source != "github" || rows[0].Kind != "poll" || !strings.Contains(rows[0].Message, "not configured") {
+		t.Fatalf("rows = %+v", rows)
 	}
 }
