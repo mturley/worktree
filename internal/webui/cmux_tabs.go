@@ -789,7 +789,7 @@ func (s *Server) handleCmuxPeek(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid surface")
 		return
 	}
-	if !cmux.IsAvailable() {
+	if !s.cmuxEnabled() {
 		writeError(w, http.StatusServiceUnavailable, "cmux is not running")
 		return
 	}

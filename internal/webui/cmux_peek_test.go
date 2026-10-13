@@ -122,6 +122,17 @@ func TestCmuxPeekUnavailable(t *testing.T) {
 	}
 }
 
+func TestCmuxPeekDisabledInSettings(t *testing.T) {
+	s, f := newTabServer(t)
+	s.SetCmuxFeaturesDisabled(true)
+	if code, _ := getPeek(t, s, wsID, "surface:1"); code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", code)
+	}
+	if len(f.calls) != 0 {
+		t.Fatalf("calls = %q, want none", f.calls)
+	}
+}
+
 func TestCmuxPeekCmuxFailureIs502(t *testing.T) {
 	s, f := newTabServer(t)
 	f.peekErr = errors.New("taking screenshot: boom")
