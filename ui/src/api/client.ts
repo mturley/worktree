@@ -1,4 +1,5 @@
-import type { CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, Repo, ResourceDTO, SaveWorktreeNotesResponse, SessionInfo, TimelineResponse, WatchersResponse, WorktreeInfo, WorktreeNotes, WorktreeSummary } from "./types"
+import type { CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, SaveWorktreeNotesResponse, SessionInfo, TimelineResponse, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherLogScope, WorktreeInfo, WorktreeNotes, WorktreeSummary } from "./types"
+import { scopeParams } from "../lib/watcherLog"
 
 export class HttpError extends Error {
   constructor(message: string, readonly status: number) {
@@ -220,6 +221,17 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
     }),
+  watchedResources: (scope: WatcherLogScope) =>
+    fetchJSON<{ resources: WatchedResourceStatus[] }>(`/api/watchers/resources?${scopeParams(scope)}`),
+  watcherLog: (scope: WatcherLogScope, q: WatcherLogQuery) => {
+    const p = scopeParams(scope)
+    if (q.source) p.set("source", q.source)
+    if (q.level && q.level !== "info") p.set("level", q.level)
+    if (q.after_id) p.set("after_id", String(q.after_id))
+    if (q.before_id) p.set("before_id", String(q.before_id))
+    if (q.limit) p.set("limit", String(q.limit))
+    return fetchJSON<PollLogResponse>(`/api/watchers/log?${p}`)
+  },
   resolveResource: (args: { type: string; id: string }) =>
     fetchJSON<ResourceDTO>("/api/resource-resolve", {
       method: "POST",

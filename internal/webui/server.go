@@ -47,6 +47,11 @@ type Server struct {
 	// racing against the same DB/resource set).
 	pollInFlight atomic.Bool
 
+	// unconfigured tracks sources last seen without credentials, so the
+	// "not configured" watcher-log warning is written once per transition.
+	unconfiguredMu sync.Mutex
+	unconfigured   map[string]bool
+
 	// Slack enrichment caches (workspace emoji, channel names, current user).
 	// emojiMu guards the cached map and the negative-cache fields ONLY; it is
 	// never held across the emoji.list network call. emojiFetchMu is held
@@ -178,6 +183,8 @@ func (s *Server) routes() []route {
 		{"POST /api/worktrees/poll", s.handlePollWorktree},
 		{"GET /api/watchers", s.handleWatchers},
 		{"POST /api/watchers/poll", s.handleWatchersPoll},
+		{"GET /api/watchers/resources", s.handleWatchedResources},
+		{"GET /api/watchers/log", s.handleWatcherLog},
 		{"GET /api/worktree-resources", s.handleWorktreeResources},
 		{"POST /api/resource-meta", s.handleSetResourceMeta},
 		{"POST /api/resource-read", s.handleResourceRead},

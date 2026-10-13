@@ -899,6 +899,56 @@ single in-process loop for as long as the server is up:
   SSE poller that only runs while a Slack thread is open in the UI; `pollAll`
   keeps Slack threads current even when no tab is open, same as PRs/Jira.
 
+## Watcher log
+
+A read-only diagnostic modal (`WatcherLogButton` -> `WatcherLogModal`) showing
+what the watcher library's pollers have been doing: a **Log** tab (poll
+lifecycle rows and HTTP request rows) and a **Resource Status** tab (per-resource
+last attempt / success / error). Backend: `internal/webui/watcher_log_api.go`.
+
+Data comes from tables written by watcher library **>= v0.13.0**
+(`watcher_poll_log`, `watcher_poll_log_resources`,
+`watcher_resource_poll_status`). The library's pollers write them and prune
+them at the end of every `Poll` (7 days / 50,000 rows); worktree only reads.
+`poller.go` additionally writes "not configured" warn rows when a source's
+credentials are missing.
+
+### Routes
+
+- `GET /api/watchers/resources` -> `{resources: watchedResourceDTO[]}`.
+  Params: `worktree` (path), `resource=<type>:<id>`. A malformed `resource`
+  is a 400. Each DTO: `type`, `id`, `url`, `name`, `worktrees`, `status`
+  (`ok` | `error` | `never`), `last_attempt`, `last_success`, `last_error`,
+  `error_message`, `detail`, `resource_updated_at`. Errored resources sort first.
+- `GET /api/watchers/log` -> `{entries: pollLogEntryDTO[], has_more}`.
+  Params: `worktree`, `resource`, `source` (repeatable: `github|jira|slack`),
+  `level` (`info|warn|error`), `after_id`, `before_id`, `limit` (1..500,
+  default 200). Entry DTO: `id`, `ts`, `source`, `level`, `kind`, `message`,
+  `method`, `endpoint`, `http_status`, `duration_ms`, `bytes`, `error_body`,
+  `resources` (`{type,id,name}[]` tags).
+
+### Scoping rule
+
+`resource` wins over `worktree`. A `worktree` is canonicalized through
+`wdb.Subscriber` (see "subscriber canonicalization"). A scoped log view
+includes the resource-tagged rows **plus untagged poll-lifecycle rows of the
+scope's sources** (e.g. `github poll started/finished` for a PR), so the
+context around a request stays visible. With no scope the view is "All
+resources". With `after_id` the page is the **oldest** rows after the cursor
+and `has_more` means more *newer* rows exist; otherwise the page is newest
+first and `has_more` means older rows exist.
+
+### Only while the modal is open
+
+The modal is mounted only while open. The Log tab polls every **3 s** using
+`after_id` (new rows surface as an "N new" pill when scrolled away from the
+top); the Resource Status tab refetches every **10 s**. Nothing is fetched on
+page load, and `/api/stream`, `/api/watchers` and existing page queries are
+unchanged. Fetch failures render inline error states. Frontend:
+`ui/src/components/WatcherLogButton.tsx`,
+`ui/src/components/watcherlog/{WatcherLogModal,LogTab,ResourceStatusTab}.tsx`,
+`ui/src/lib/watcherLog.ts`.
+
 ## Frontend structure (`ui/src/`)
 
 - **`api/client.ts` + `api/types.ts`** — the typed API contract. `types.ts`

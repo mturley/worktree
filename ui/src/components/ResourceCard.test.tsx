@@ -653,10 +653,24 @@ describe("status badge placement", () => {
   const jira = { type: "jira", id: "RHOAIENG-1", url: "u", primary: true, title: "Do a thing", status: "In Progress", priority: "Major" } as ResourceDTO
   const typeLine = () => document.querySelector("[data-resource-type-line]") as HTMLElement
 
-  it("flows a list card's PR badges into the type line after the key", () => {
+  it("flows a list card's PR state into the type line after the key", () => {
     wrap(<ResourceCard r={pr} onSelect={vi.fn()} />)
     expect(typeLine()).toContainElement(screen.getByText("open"))
-    expect(typeLine()).toContainElement(screen.getByText("ci: success"))
+  })
+
+  it("leaves review, CI and new-commit badges off a list card", () => {
+    // The list stays scannable by state; the rest waits for the detail card.
+    wrap(<ResourceCard r={{ ...pr, review_decision: "APPROVED", new_commits_since_review: true }} onSelect={vi.fn()} />)
+    expect(screen.queryByText("ci: success")).toBeNull()
+    expect(screen.queryByText("approved")).toBeNull()
+    expect(screen.queryByText("new commits")).toBeNull()
+  })
+
+  it("keeps review, CI and new-commit badges on the detail card", () => {
+    wrap(<ResourceCard r={{ ...pr, review_decision: "APPROVED", new_commits_since_review: true }} variant="detail" path="/wt" />)
+    expect(screen.getByText("ci: success")).toBeInTheDocument()
+    expect(screen.getByText("approved")).toBeInTheDocument()
+    expect(screen.getByText("new commits")).toBeInTheDocument()
   })
 
   it("flows a list card's Jira badges into the type line after the key", () => {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 import { ActionIcon, Button, Checkbox, Code, Group, Paper, Stack, Tabs, Text, Textarea, Tooltip } from "@mantine/core"
 import { IconCheck, IconCopy, IconPencil, IconTrash } from "@tabler/icons-react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
@@ -70,10 +70,11 @@ function writeDetailTab(tab: DetailTab): void {
  * what branch am I on, is the tree dirty, when did anything last happen, and
  * what was I in the middle of (notes).
  *
- * One meta line, then tabs: Notes, Environment and, inside cmux, cmux. Opens
- * on the tab last chosen in this browser tab (Notes the first time).
+ * A single row of tabs — Notes, Git / Environment and, inside cmux, cmux —
+ * followed by "Hide details" and, in the far corner, the delete control. Opens on the tab last chosen
+ * in this browser tab (Notes the first time).
  */
-export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
+export function WorktreeDetailCard({ w, onHide }: { w: WorktreeSummary; onHide?: () => void }) {
   const info = useQuery({
     queryKey: ["worktree-info", w.path],
     queryFn: () => api.worktreeInfo(w.path),
@@ -92,22 +93,20 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
   const git = info.data?.git
   const hasEnv = !!info.data && info.data.env.length > 0
 
-  // Environment and cmux tabs only exist when there is something to show; if
-  // the selected one goes away, fall back to Notes rather than showing no
-  // panel.
-  const activeTab = (tab === "env" && !hasEnv) || (tab === "cmux" && !hasCmux) ? "notes" : tab
+  // The cmux tab only exists inside cmux; if it is selected and goes away,
+  // fall back to Notes rather than showing no panel.
+  const activeTab = tab === "cmux" && !hasCmux ? "notes" : tab
 
   // The fallback above is a per-render display computation, not a stored
-  // selection: without this, `tab` itself would still say "cmux" (or "env"),
-  // so the moment that tab's data reappears (a transient cmux blip, a 5s
-  // poll) the card would jump straight back to it instead of staying on
-  // Notes.
+  // selection: without this, `tab` itself would still say "cmux", so the
+  // moment cmux reappears (a transient blip, a 5s poll) the card would jump
+  // straight back to it instead of staying on Notes.
   //
   // Only once the data has actually said the tab is gone, though: before it
   // loads, a remembered tab (see readDetailTab) is waiting to be shown, not
-  // missing. And never written back to sessionStorage — this worktree having
-  // no environment says nothing about the next one.
-  const absenceKnown = (tab === "env" && info.data !== undefined) || (tab === "cmux" && cmuxQuery.data !== undefined)
+  // missing. And never written back to sessionStorage — this tab being
+  // gone for now says nothing about the next card.
+  const absenceKnown = tab === "cmux" && cmuxQuery.data !== undefined
   useEffect(() => {
     if (activeTab !== tab && absenceKnown) setTab(activeTab)
   }, [activeTab, tab, absenceKnown])
@@ -131,48 +130,36 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
 
   return (
     <Paper p="sm" withBorder>
-      {/* The worktree and cmux workspace names live in the page header;
-          this card is git state, environment and notes. */}
-      <Group gap="xs" wrap="nowrap" justify="space-between">
-        <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-          {[w.repo, git?.branch || w.branch].filter(Boolean).join(" · ")}
-          {git && (
-            <>
-              {" · "}
-              <Text span inherit c={git.staged || git.modified || git.untracked ? "yellow" : "dimmed"}>
-                {gitSummary(git)}
-                {git.upstream ? ` · ${git.upstream}` : ""}
-              </Text>
-            </>
+      <Tabs value={activeTab} onChange={selectTab} keepMounted={false}>
+        {/* One row: the tabs, then hide, then delete in the far corner. The
+            worktree and cmux workspace names live in the page header. */}
+        <Group gap="xs" wrap="nowrap">
+          {/* Sized to its tabs, so the underline stops after the last tab. */}
+          <Tabs.List w="fit-content">
+            <Tabs.Tab value="notes" fz="xs" py={6}>Notes</Tabs.Tab>
+            <Tabs.Tab value="env" fz="xs" py={6}>Git / Environment</Tabs.Tab>
+            {hasCmux && (
+              <Tabs.Tab value="cmux" fz="xs" py={6}>cmux</Tabs.Tab>
+            )}
+          </Tabs.List>
+          {onHide && (
+            <Button size="compact-xs" variant="subtle" onClick={onHide} aria-expanded style={{ flex: "none" }}>
+              Hide details
+            </Button>
           )}
-          {w.latest_event_ts ? ` · ${rel(w.latest_event_ts)}` : ""}
-        </Text>
-        <Tooltip label="Delete worktree">
-          <ActionIcon
-            variant="subtle"
-            color="red"
-            size="sm"
-            aria-label="Delete worktree"
-            onClick={() => setDeleteOpen(true)}
-          >
-            <IconTrash size={16} />
-          </ActionIcon>
-        </Tooltip>
-      </Group>
-
-      <Tabs value={activeTab} onChange={selectTab} mt={6} keepMounted={false}>
-        {/* Sized to its tabs, so the underline stops after the last tab. */}
-        <Tabs.List w="fit-content">
-          <Tabs.Tab value="notes" fz="xs" py={6}>Notes</Tabs.Tab>
-          {hasEnv && (
-            <Tabs.Tab value="env" fz="xs" py={6}>
-              {`Environment (${info.data!.env.length})`}
-            </Tabs.Tab>
-          )}
-          {hasCmux && (
-            <Tabs.Tab value="cmux" fz="xs" py={6}>cmux</Tabs.Tab>
-          )}
-        </Tabs.List>
+          <Tooltip label="Delete worktree">
+            <ActionIcon
+              variant="subtle"
+              color="red"
+              size="sm"
+              aria-label="Delete worktree"
+              onClick={() => setDeleteOpen(true)}
+              ml="auto"
+            >
+              <IconTrash size={16} />
+            </ActionIcon>
+          </Tooltip>
+        </Group>
 
         <Tabs.Panel value="notes" pt={6} keepMounted>
           <NotesPanel
@@ -185,17 +172,36 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
         </Tabs.Panel>
 
         {/*
-          The same environment `worktree info` prints. Shown here because it is
-          what you need when you open a terminal in this worktree, and it was
-          previously only reachable from the CLI.
+          Git state, then the same environment `worktree info` prints: what
+          you need when you open a terminal in this worktree, previously only
+          reachable from the CLI. Repo and branch come from the summary, so
+          they show even when the info request fails.
         */}
-        {hasEnv && (
-          <Tabs.Panel value="env" pt={6} keepMounted>
+        <Tabs.Panel value="env" pt={6} keepMounted>
+          <Stack gap="xs">
             <Stack gap={2}>
-              {info.data!.env.map((kv) => <EnvVarRow key={kv.key} name={kv.key} value={kv.value} />)}
+              {w.repo && <InfoRow label="Repo">{w.repo}</InfoRow>}
+              {(git?.branch || w.branch) && <InfoRow label="Branch">{git?.branch || w.branch}</InfoRow>}
+              {git && (
+                <InfoRow label="Status">
+                  <Text span inherit c={git.staged || git.modified || git.untracked ? "yellow" : undefined}>
+                    {gitSummary(git)}
+                  </Text>
+                </InfoRow>
+              )}
+              {git?.upstream && <InfoRow label="Upstream">{git.upstream}</InfoRow>}
+              {w.latest_event_ts && <InfoRow label="Updated">{rel(w.latest_event_ts)}</InfoRow>}
             </Stack>
-          </Tabs.Panel>
-        )}
+            <Stack gap={2}>
+              <SectionLabel>Environment</SectionLabel>
+              {hasEnv ? (
+                info.data!.env.map((kv) => <EnvVarRow key={kv.key} name={kv.key} value={kv.value} />)
+              ) : (
+                <Text size="xs" c="dimmed" fs="italic">None</Text>
+              )}
+            </Stack>
+          </Stack>
+        </Tabs.Panel>
 
         {/*
           Unmounted when not selected (keepMounted is off for this panel
@@ -224,6 +230,20 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
         />
       )}
     </Paper>
+  )
+}
+
+function SectionLabel({ children }: { children: ReactNode }) {
+  return <Text size="xs" fw={600} tt="uppercase" c="dimmed">{children}</Text>
+}
+
+/** One labelled line of git state: "Branch   my-branch". */
+function InfoRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Group gap="xs" wrap="nowrap" align="flex-start">
+      <Text size="xs" c="dimmed" w={70} style={{ flex: "none" }}>{label}</Text>
+      <Text size="xs" style={{ overflowWrap: "anywhere", minWidth: 0 }}>{children}</Text>
+    </Group>
   )
 }
 
@@ -292,17 +312,7 @@ function NotesPanel({ notes, workspaceCount, editing, onEdit, onDone }: {
   return (
     <Stack gap={4}>
       <Group gap="xs" justify="space-between" wrap="wrap" mih={22}>
-        <NotesStatus notes={notes} />
-        <Group gap="sm">
-          {showSync && (
-            <Checkbox
-              size="xs"
-              label="Sync to cmux workspace description"
-              checked={notes.syncCmux}
-              disabled={!notes.loaded}
-              onChange={(e) => notes.setSyncCmux(e.currentTarget.checked)}
-            />
-          )}
+        <Group gap="xs" wrap="nowrap">
           {editing ? (
             <Button size="compact-xs" variant="light" leftSection={<IconCheck size={12} />} onClick={onDone}>
               Done editing
@@ -318,7 +328,17 @@ function NotesPanel({ notes, workspaceCount, editing, onEdit, onDone }: {
               Edit notes
             </Button>
           )}
+          <NotesStatus notes={notes} />
         </Group>
+        {showSync && (
+          <Checkbox
+            size="xs"
+            label="Sync to cmux workspace description"
+            checked={notes.syncCmux}
+            disabled={!notes.loaded}
+            onChange={(e) => notes.setSyncCmux(e.currentTarget.checked)}
+          />
+        )}
       </Group>
       {showSync && notes.syncCmux && workspaceCount !== 1 && (
         <Text size="xs" c="yellow">

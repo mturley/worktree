@@ -119,15 +119,17 @@ function badgesInTypeLine(variant: ResourceCardVariant): boolean {
 }
 
 function PRCardBody({ r, variant, aside }: CardBodyProps) {
+  const inline = badgesInTypeLine(variant)
+  // A list card shows only the PR's state, to stay scannable; review, CI and
+  // new-commit badges wait for the detail card, once the PR is selected.
   const badges = (
     <>
       {r.state && <Badge size="xs" variant="light" color={prStateColor(r.state)}>{r.state.toLowerCase()}</Badge>}
-      {r.review_decision && <Badge size="xs" variant="light" color={reviewColor(r.review_decision)}>{reviewLabel(r.review_decision)}</Badge>}
-      {r.ci_status && <Badge size="xs" variant="light" color={ciColor(r.ci_status)}>ci: {r.ci_status}</Badge>}
-      {r.new_commits_since_review && <Badge size="xs" variant="light" color="blue">new commits</Badge>}
+      {!inline && r.review_decision && <Badge size="xs" variant="light" color={reviewColor(r.review_decision)}>{reviewLabel(r.review_decision)}</Badge>}
+      {!inline && r.ci_status && <Badge size="xs" variant="light" color={ciColor(r.ci_status)}>ci: {r.ci_status}</Badge>}
+      {!inline && r.new_commits_since_review && <Badge size="xs" variant="light" color="blue">new commits</Badge>}
     </>
   )
-  const inline = badgesInTypeLine(variant)
   return (
     <Stack gap={4}>
       <ResourceTypeLine r={r} aside={aside} trailing={inline ? badges : undefined} />
