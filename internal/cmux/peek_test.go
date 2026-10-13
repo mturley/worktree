@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -84,31 +83,36 @@ func TestMarkdownPathAbsent(t *testing.T) {
 // writeOut sets $out to the stub's last argument — `--out <path>`'s path.
 const writeOut = `for a; do out=$a; done; `
 
-func TestScreenshotRemovesStaleFileBeforeAndNewFileAfter(t *testing.T) {
+// assertEmptyDir fails unless dir holds no files (a missing dir counts as empty).
+func assertEmptyDir(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("files left in %s: %v", dir, entries)
+	}
+}
+
+func TestScreenshotLeavesNoFile(t *testing.T) {
 	dir := usePeekDir(t)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	stale := filepath.Join(dir, "surface-7.png")
-	if err := os.WriteFile(stale, []byte("OLD"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	// Fails if the stale file is still there when cmux runs.
-	got := stubCmuxScript(t, writeOut+`test ! -e "$out" && printf NEW > "$out"`)
+	got := stubCmuxScript(t, writeOut+`printf NEW > "$out"`)
 	png, err := Screenshot("surface:7")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"browser", "--surface", "surface:7", "screenshot", "--out", stale}
-	if !reflect.DeepEqual(*got, want) {
-		t.Fatalf("args = %q, want %q", *got, want)
+	args := *got
+	if len(args) != 6 || !reflect.DeepEqual(args[:5], []string{"browser", "--surface", "surface:7", "screenshot", "--out"}) {
+		t.Fatalf("args = %q", args)
+	}
+	if out := args[5]; filepath.Dir(out) != dir || filepath.Ext(out) != ".png" {
+		t.Fatalf("--out %q, want a .png in %s", out, dir)
 	}
 	if string(png) != "NEW" {
 		t.Fatalf("bytes = %q", png)
 	}
-	if _, err := os.Stat(stale); !os.IsNotExist(err) {
-		t.Fatalf("screenshot file still on disk after read (stat err = %v)", err)
-	}
+	assertEmptyDir(t, dir)
 	if info, err := os.Stat(dir); err != nil || info.Mode().Perm() != 0o700 {
 		t.Fatalf("peek dir stat = %v err = %v, want mode 0700", info, err)
 	}
@@ -120,48 +124,42 @@ func TestScreenshotRemovesFileOnFailure(t *testing.T) {
 	if _, err := Screenshot("surface:7"); err == nil {
 		t.Fatal("want error when cmux fails")
 	}
-	if _, err := os.Stat(filepath.Join(dir, "surface-7.png")); !os.IsNotExist(err) {
-		t.Fatalf("partial screenshot left on disk (stat err = %v)", err)
-	}
+	assertEmptyDir(t, dir)
 }
 
-func TestScreenshotSerializesSameSurface(t *testing.T) {
-	usePeekDir(t)
-	var running, maxRunning int32
-	orig := cmuxCmd
-	t.Cleanup(func() { cmuxCmd = orig })
-	// The sleep runs inside cmuxCmd, i.e. while Screenshot holds its lock,
-	// so overlapping callers would push maxRunning above 1 without it.
-	cmuxCmd = func(args ...string) *exec.Cmd {
-		n := atomic.AddInt32(&running, 1)
-		for {
-			m := atomic.LoadInt32(&maxRunning)
-			if n <= m || atomic.CompareAndSwapInt32(&maxRunning, m, n) {
-				break
-			}
-		}
-		time.Sleep(20 * time.Millisecond)
-		atomic.AddInt32(&running, -1)
-		return exec.Command("sh", append([]string{"-c", writeOut + `printf X > "$out"`, "sh"}, args...)...)
-	}
+// Overlapping screenshots of one tab — two hovers, or two `worktree ui`
+// processes sharing the directory — each get their own file, so neither can
+// delete or read the other's.
+func TestConcurrentScreenshotsUseSeparateFiles(t *testing.T) {
+	dir := usePeekDir(t)
+	// Each screenshot's content is its own path; the sleep makes them overlap.
+	stubCmuxScript(t, writeOut+`printf '%s' "$out" > "$out"; sleep 0.1`)
+	const n = 3
+	paths := make(chan string, n)
 	var wg sync.WaitGroup
-	for i := 0; i < 3; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if _, err := Screenshot("surface:9"); err != nil {
+	for range n {
+		wg.Go(func() {
+			png, err := Screenshot("surface:9")
+			if err != nil {
 				t.Error(err)
+				return
 			}
-		}()
+			paths <- string(png)
+		})
 	}
 	wg.Wait()
-	if maxRunning != 1 {
-		t.Fatalf("max concurrent screenshots of one surface = %d, want 1", maxRunning)
+	close(paths)
+	seen := map[string]bool{}
+	for p := range paths {
+		seen[p] = true
 	}
+	if len(seen) != n {
+		t.Fatalf("got %d distinct screenshot files for %d screenshots: %v", len(seen), n, seen)
+	}
+	assertEmptyDir(t, dir)
 }
 
-// A wedged cmux (e.g. a hung webview) must fail the peek, not block it — a
-// stuck screenshot would otherwise hold its surface's lock forever.
+// A wedged cmux (e.g. a hung webview) must fail the peek, not block it.
 func TestPeekCommandsTimeOut(t *testing.T) {
 	usePeekDir(t)
 	orig := peekTimeout
@@ -184,16 +182,34 @@ func TestPeekCommandsTimeOut(t *testing.T) {
 	}
 }
 
-func TestClearPeekScreenshots(t *testing.T) {
+// The startup sweep removes leftovers a crash abandoned, but never a fresh
+// file another running `worktree ui` may be mid-screenshot on.
+func TestClearPeekScreenshotsKeepsFreshFiles(t *testing.T) {
 	dir := usePeekDir(t)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "surface-1.png"), []byte("x"), 0o600); err != nil {
+	stale := filepath.Join(dir, "stale.png")
+	fresh := filepath.Join(dir, "fresh.png")
+	for _, p := range []string{stale, fresh} {
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old := time.Now().Add(-2 * peekStaleAfter)
+	if err := os.Chtimes(stale, old, old); err != nil {
 		t.Fatal(err)
 	}
 	ClearPeekScreenshots()
-	if _, err := os.Stat(dir); !os.IsNotExist(err) {
-		t.Fatalf("peek dir still exists (stat err = %v)", err)
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("stale screenshot survived the sweep (stat err = %v)", err)
 	}
+	if _, err := os.Stat(fresh); err != nil {
+		t.Fatalf("fresh screenshot removed by the sweep: %v", err)
+	}
+}
+
+func TestClearPeekScreenshotsWithoutDir(t *testing.T) {
+	usePeekDir(t)
+	ClearPeekScreenshots() // must not panic or create anything
 }

@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -17,8 +16,8 @@ import (
 // and in workspaces that are not focused, and none of them moves focus.
 
 // peekTimeout bounds every peek command: a wedged cmux (say, a hung webview
-// asked for a screenshot) must fail the hover, not block it — and a stuck
-// screenshot would hold its surface's lock for every later hover too.
+// asked for a screenshot) must fail the hover, not leave a request and a
+// cmux process hanging for every hover on that tab.
 // A var so tests can shorten it.
 var peekTimeout = 10 * time.Second
 
@@ -81,25 +80,27 @@ func MarkdownPath(workspaceID, surfaceRef string) (string, error) {
 // and Screenshot reading it back. A var so tests can point it elsewhere.
 var peekDir = func() string { return filepath.Join(os.TempDir(), "worktree-cmux-peek") }
 
-// screenshotLocks serializes screenshots of one surface, which share a file
-// path; different surfaces proceed in parallel.
-var screenshotLocks sync.Map // surface ref → *sync.Mutex
+// peekStaleAfter is how old a screenshot file must be before the startup
+// sweep treats it as abandoned: comfortably past peekTimeout, so a file
+// another running `worktree ui` is mid-screenshot on is never swept.
+const peekStaleAfter = time.Minute
 
-// Screenshot returns a PNG of a browser tab as it currently renders. No file
-// outlives the call: any leftover at the surface's path is removed first,
-// and the new one is removed once read (or once cmux fails).
+// Screenshot returns a PNG of a browser tab as it currently renders. Every
+// call gets its own uniquely named file, so overlapping screenshots — two
+// hovers, or two `worktree ui` processes sharing the directory — never
+// touch each other's, and no per-surface state is kept. No file outlives
+// the call: it is removed once read, or once cmux fails.
 func Screenshot(surfaceRef string) ([]byte, error) {
-	lock, _ := screenshotLocks.LoadOrStore(surfaceRef, &sync.Mutex{})
-	mu := lock.(*sync.Mutex)
-	mu.Lock()
-	defer mu.Unlock()
-
 	dir := peekDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("creating peek dir: %w", err)
 	}
-	path := filepath.Join(dir, strings.ReplaceAll(surfaceRef, ":", "-")+".png")
-	_ = os.Remove(path)
+	f, err := os.CreateTemp(dir, strings.ReplaceAll(surfaceRef, ":", "-")+"-*.png")
+	if err != nil {
+		return nil, fmt.Errorf("creating screenshot file: %w", err)
+	}
+	path := f.Name()
+	f.Close()
 	defer os.Remove(path)
 	if _, err := cmuxOutput("taking screenshot", "browser", "--surface", surfaceRef, "screenshot", "--out", path); err != nil {
 		return nil, err
@@ -107,8 +108,20 @@ func Screenshot(surfaceRef string) ([]byte, error) {
 	return os.ReadFile(path)
 }
 
-// ClearPeekScreenshots removes the screenshot dir, catching anything a crash
-// left between a screenshot and its cleanup. Run at `worktree ui` startup.
+// ClearPeekScreenshots removes screenshot files a crash left between a
+// screenshot and its cleanup. Only stale ones (older than peekStaleAfter):
+// the directory is shared, and a fresh file may belong to another running
+// `worktree ui`. Run at `worktree ui` startup.
 func ClearPeekScreenshots() {
-	_ = os.RemoveAll(peekDir())
+	dir := peekDir()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	cutoff := time.Now().Add(-peekStaleAfter)
+	for _, e := range entries {
+		if info, err := e.Info(); err == nil && info.ModTime().Before(cutoff) {
+			_ = os.Remove(filepath.Join(dir, e.Name()))
+		}
+	}
 }

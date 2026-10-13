@@ -8,7 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/mturley/worktree/internal/cmux"
 )
@@ -166,5 +168,50 @@ func TestReadPeekMarkdownGuards(t *testing.T) {
 		if _, got := readPeekMarkdown(c.path); got != c.want {
 			t.Errorf("readPeekMarkdown(%q) ok = %v, want %v", c.path, got, c.want)
 		}
+	}
+}
+
+// The extension check applies to the file actually read, not the link's
+// name: notes.md → a key file must not hand back the key.
+func TestReadPeekMarkdownResolvesSymlinks(t *testing.T) {
+	dir := t.TempDir()
+	secret := filepath.Join(dir, "id_ed25519")
+	real := filepath.Join(dir, "real.md")
+	for p, body := range map[string]string{secret: "PRIVATE KEY", real: "# Real"} {
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	toSecret := filepath.Join(dir, "notes.md")
+	toReal := filepath.Join(dir, "alias.md")
+	if err := os.Symlink(secret, toSecret); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, toReal); err != nil {
+		t.Fatal(err)
+	}
+	if md, ok := readPeekMarkdown(toSecret); ok {
+		t.Fatalf("read %q through a .md symlink to a non-markdown file", md)
+	}
+	if md, ok := readPeekMarkdown(toReal); !ok || md != "# Real" {
+		t.Fatalf("symlink to a real .md: md=%q ok=%v, want its contents", md, ok)
+	}
+}
+
+// A FIFO named .md must be refused, never opened for a blocking read.
+func TestReadPeekMarkdownRefusesFIFO(t *testing.T) {
+	fifo := filepath.Join(t.TempDir(), "pipe.md")
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+		t.Skipf("mkfifo: %v", err)
+	}
+	done := make(chan bool, 1)
+	go func() { _, ok := readPeekMarkdown(fifo); done <- ok }()
+	select {
+	case ok := <-done:
+		if ok {
+			t.Fatal("read a FIFO as markdown")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("readPeekMarkdown blocked on a FIFO")
 	}
 }

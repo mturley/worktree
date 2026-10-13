@@ -101,6 +101,11 @@ New functions on the `cmuxTabOps` seam, with real implementations in
     (case-insensitive);
   - `os.Stat` says it is a regular file of at most 512 KiB.
 
+  (Revised after the final review: the checks apply to the file actually
+  read. Symlinks are resolved first and the extension checked on the
+  target; the file is opened once, non-blocking, checked through its own
+  descriptor, and read through a 512 KiB + 1 limit.)
+
   These guards matter because the UI is reachable remotely (phone over HTTPS):
   the path comes from cmux, not the request, but the server should still only
   ever hand back Markdown files of sane size.
@@ -112,18 +117,22 @@ New functions on the `cmuxTabOps` seam, with real implementations in
 No screenshot outlives the request that took it.
 
 - Screenshots go to a dedicated directory,
-  `filepath.Join(os.TempDir(), "worktree-cmux-peek")`, created 0700, at a
-  fixed per-surface path: `<dir>/<surface ref with ":" replaced by "-">.png`.
-- Before taking a screenshot, any file already at that path is removed.
-  After reading it, the file is removed. So the steady state is an empty
-  directory, and even a request that dies between the two leaves at most one
-  file per tab, replaced on that tab's next peek.
-- `worktree ui` removes the directory's contents at startup, catching anything
-  a crash left behind.
-- A per-surface mutex (a `sync.Map` of `*sync.Mutex` keyed by surface ref)
-  serializes screenshots of the same tab, so two overlapping hovers (two
-  browsers on the UI) cannot race on one file. Different tabs proceed in
-  parallel.
+  `filepath.Join(os.TempDir(), "worktree-cmux-peek")`, created 0700, each at
+  its own uniquely named file (`os.CreateTemp`, `surface-N-*.png`).
+- The file is removed once read, or once cmux fails. So the steady state is
+  an empty directory.
+- Unique names mean overlapping screenshots — two hovers on one tab, or two
+  `worktree ui` processes (e.g. `make dev` beside the installed one) sharing
+  the directory — never touch each other's file, and no per-surface state
+  (locks) is kept.
+- `worktree ui` sweeps the directory at startup, removing only files older
+  than a minute (`peekStaleAfter`, well past the 10s command timeout): it
+  catches what a crash left behind without deleting a screenshot another
+  running process is mid-way through.
+
+(Revised after the final review. The first version used a fixed per-surface
+path guarded by a per-surface mutex and cleared the whole directory at
+startup, which let two processes collide and never pruned its lock map.)
 
 ## Frontend
 

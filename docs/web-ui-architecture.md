@@ -1828,15 +1828,21 @@ header.
     PNG), returned as a `data:image/png;base64,…` URL
   - markdown — `read-selection --json` → `file_path`; the server reads the
     file only if it is absolute, `.md`/`.markdown`, a regular file, and at
-    most 512 KiB (the UI is reachable remotely)
+    most 512 KiB (the UI is reachable remotely). The checks apply to the
+    file actually read: symlinks are resolved first (`notes.md` → a key
+    file is refused), and the file is opened once, non-blocking (a FIFO
+    cannot hang the request), checked through its own descriptor, and read
+    through a limit, so a file swapped or growing mid-read is still refused
   - anything else, or a markdown tab whose path is missing or refused —
     `{unsupported: true}`
-- **Screenshot files never outlive their request.** They go to
-  `$TMPDIR/worktree-cmux-peek/<surface-N>.png` (dir 0700); any file already
-  at that path is removed first and the new one removed once read, or once
-  cmux fails. A per-surface mutex serializes screenshots of one tab, since
-  they share the path. `worktree ui` removes the directory at startup to
-  catch anything a crash left behind.
+- **Screenshot files never outlive their request.** Each goes to its own
+  uniquely named file, `$TMPDIR/worktree-cmux-peek/surface-N-*.png` (dir
+  0700), removed once read or once cmux fails. Unique names mean overlapping
+  screenshots — two hovers, or two `worktree ui` processes sharing the
+  directory — never collide, and no per-surface state is kept. At startup
+  `worktree ui` removes only files older than a minute (`peekStaleAfter`),
+  catching crash leftovers without deleting another running process's
+  in-flight screenshot.
 - **cmux behaviour to remember (0.65.0):** all three commands work on tabs
   that are not selected and in workspaces that are not focused, and none
   moves focus. `read-screen` refuses non-terminal surfaces ("Surface is not

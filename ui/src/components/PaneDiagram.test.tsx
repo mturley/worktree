@@ -230,6 +230,10 @@ describe("PaneDiagram tab peek", () => {
     vi.useRealTimers()
   })
 
+  // Advance fake time inside its own act, so React renders what the timers
+  // set before the next step (a card's fetch starts only once it mounts).
+  const tick = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms) })
+
   const panes = (): CmuxPane[] => [
     { ref: "pane:1", focused: true, tabs: [t(1, "terminal", true), t(2)] },
     { ref: "pane:2", focused: false, tabs: [] },
@@ -271,6 +275,49 @@ describe("PaneDiagram tab peek", () => {
         vi.runAllTimers()
       })
     }
+  })
+
+  it("stops refreshing a terminal once its card closes", async () => {
+    vi.useFakeTimers()
+    const spy = vi.spyOn(api, "cmuxPeek").mockResolvedValue({ type: "terminal", text: "hello from tab 1" })
+    wrap(panes())
+    const row = screen.getByRole("button", { name: "Switch to Tab 1" })
+    fireEvent.mouseEnter(row)
+    // The 400ms open delay; then the card mounts and fetches.
+    await tick(500)
+    await tick(500)
+    expect(screen.getByText("hello from tab 1")).toBeInTheDocument()
+    // While open, the terminal refreshes every 5s.
+    await tick(5000)
+    expect(spy).toHaveBeenCalledTimes(2)
+    fireEvent.mouseLeave(row)
+    await tick(500)
+    await tick(500)
+    expect(screen.queryByText("hello from tab 1")).not.toBeInTheDocument()
+    const calls = spy.mock.calls.length
+    await tick(15000)
+    expect(spy).toHaveBeenCalledTimes(calls)
+  })
+
+  it("switches straight to another row's card while one is open", async () => {
+    vi.useFakeTimers()
+    vi.spyOn(api, "cmuxPeek").mockImplementation(async (_id, surface) => ({ type: "terminal", text: `screen of ${surface}` }))
+    wrap([
+      { ref: "pane:1", focused: true, tabs: [t(1, "terminal", true), t(2, "terminal")] },
+      { ref: "pane:2", focused: false, tabs: [] },
+    ])
+    const first = screen.getByRole("button", { name: "Switch to Tab 1" })
+    fireEvent.mouseEnter(first)
+    await tick(500)
+    await tick(500)
+    expect(screen.getByText("screen of surface:1")).toBeInTheDocument()
+    fireEvent.mouseLeave(first)
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "Switch to Tab 2" }))
+    // 200ms in all, under the 400ms open delay: an open card hands over at
+    // once rather than waiting to open afresh.
+    await tick(100)
+    await tick(100)
+    expect(screen.getByText("screen of surface:2")).toBeInTheDocument()
   })
 
   it("shows no card on a device that cannot hover", async () => {

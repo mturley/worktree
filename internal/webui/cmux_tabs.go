@@ -3,11 +3,13 @@ package webui
 import (
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 	"unicode"
 
@@ -833,20 +835,35 @@ func (s *Server) handleCmuxPeek(w http.ResponseWriter, r *http.Request) {
 // readPeekMarkdown reads a markdown tab's file, but only a Markdown file of
 // sane size: the path comes from cmux rather than the request, but the UI is
 // reachable remotely, so the server never hands back anything else.
+//
+// The checks apply to the file actually read: symlinks are resolved first
+// (notes.md → a key file is refused), the file is opened once and checked
+// through its own descriptor (nothing can be swapped in between), opened
+// non-blocking (a FIFO cannot hang the request), and read through a limit
+// (a file growing mid-read is still never read past the cap).
 func readPeekMarkdown(path string) (string, bool) {
 	if !filepath.IsAbs(path) {
 		return "", false
 	}
-	switch strings.ToLower(filepath.Ext(path)) {
+	real, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", false
+	}
+	switch strings.ToLower(filepath.Ext(real)) {
 	case ".md", ".markdown":
 	default:
 		return "", false
 	}
-	info, err := os.Stat(path)
+	f, err := os.OpenFile(real, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return "", false
+	}
+	defer f.Close()
+	info, err := f.Stat()
 	if err != nil || !info.Mode().IsRegular() || info.Size() > peekMarkdownMaxBytes {
 		return "", false
 	}
-	data, err := os.ReadFile(path)
+	data, err := io.ReadAll(io.LimitReader(f, peekMarkdownMaxBytes+1))
 	if err != nil || len(data) > peekMarkdownMaxBytes {
 		return "", false
 	}
