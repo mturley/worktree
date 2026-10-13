@@ -28,11 +28,11 @@ function StatusIcon({ r }: { r: WatchedResourceStatus }) {
   ].filter(Boolean) as string[]
   const icon =
     r.status === "error" ? (
-      <Text span c="red" aria-label="error" style={{ display: "inline-flex" }}><IconAlertTriangleFilled size={14} /></Text>
+      <Text span c="red" role="img" tabIndex={0} aria-label="error" style={{ display: "inline-flex" }}><IconAlertTriangleFilled size={14} /></Text>
     ) : r.status === "ok" ? (
-      <Text span c="green" aria-label="ok" style={{ display: "inline-flex" }}><IconCircleCheckFilled size={14} /></Text>
+      <Text span c="green" role="img" tabIndex={0} aria-label="ok" style={{ display: "inline-flex" }}><IconCircleCheckFilled size={14} /></Text>
     ) : (
-      <Text span c="dimmed" aria-label="never polled" style={{ display: "inline-flex" }}><IconMinus size={14} /></Text>
+      <Text span c="dimmed" role="img" tabIndex={0} aria-label="never polled" style={{ display: "inline-flex" }}><IconMinus size={14} /></Text>
     )
   return (
     <Tooltip multiline w={320} withArrow label={<Stack gap={2}>{lines.map((l) => <Text key={l} size="xs">{l}</Text>)}</Stack>}>

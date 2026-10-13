@@ -47,6 +47,11 @@ type Server struct {
 	// racing against the same DB/resource set).
 	pollInFlight atomic.Bool
 
+	// unconfigured tracks sources last seen without credentials, so the
+	// "not configured" watcher-log warning is written once per transition.
+	unconfiguredMu sync.Mutex
+	unconfigured   map[string]bool
+
 	// Slack enrichment caches (workspace emoji, channel names, current user).
 	// emojiMu guards the cached map and the negative-cache fields ONLY; it is
 	// never held across the emoji.list network call. emojiFetchMu is held

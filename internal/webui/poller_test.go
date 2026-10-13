@@ -104,3 +104,36 @@ func TestPollAll_UnconfiguredSourceWritesWarnRow(t *testing.T) {
 		t.Fatalf("rows = %+v", rows)
 	}
 }
+
+func TestPollAll_UnconfiguredWarnsOncePerTransition(t *testing.T) {
+	t.Setenv("WATCHER_HOME", t.TempDir())
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if err := watcherdb.Subscribe(conn, "worktree:/x", watcher.Resource{Type: "pr", ID: "o/r#1"}, watcherdb.SubscribeOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	srv := &Server{DB: conn, Logger: log.New(io.Discard, "", 0)}
+	for i := 0; i < 2; i++ {
+		if err := srv.pollAll(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, _, err := watcherdb.QueryPollLog(conn, watcherdb.PollLogQuery{MinLevel: "warn"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("want exactly 1 warn row after two cycles, got %d: %+v", len(rows), rows)
+	}
+	srv.markConfigured("github") // credentials came back, then regressed
+	if err := srv.pollAll(); err != nil {
+		t.Fatal(err)
+	}
+	rows, _, _ = watcherdb.QueryPollLog(conn, watcherdb.PollLogQuery{MinLevel: "warn"})
+	if len(rows) != 2 {
+		t.Fatalf("want a second warn after regression, got %d", len(rows))
+	}
+}

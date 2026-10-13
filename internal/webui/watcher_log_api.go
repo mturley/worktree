@@ -33,6 +33,7 @@ func (s *Server) allWatched() ([]watchedResource, error) {
 	rows, err := s.DB.Query(`SELECT subscriber, resource_type, resource_id, COALESCE(resource_url,'')
 		FROM watcher_subscriptions
 		WHERE subscriber LIKE 'worktree:%' AND deleted_at IS NULL
+		  AND resource_type IN ('pr','jira','slack') -- link resources are never polled
 		  AND (expires_at IS NULL OR expires_at > ?)
 		ORDER BY resource_type, resource_id, subscriber`, now)
 	if err != nil {
@@ -86,23 +87,24 @@ func firstNonEmpty(ss ...string) string {
 }
 
 // resolveWatcherScope applies ?resource=<type>:<id> (wins) or ?worktree=<path>.
-func (s *Server) resolveWatcherScope(r *http.Request) ([]watchedResource, bool, error) {
-	all, err := s.allWatched()
+// It returns the scoped list, the full watched list, and whether a scope applied.
+func (s *Server) resolveWatcherScope(r *http.Request) (scope, all []watchedResource, scoped bool, err error) {
+	all, err = s.allWatched()
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	q := r.URL.Query()
 	if res := q.Get("resource"); res != "" {
 		typ, id, ok := strings.Cut(res, ":")
 		if !ok || typ == "" || id == "" {
-			return nil, false, errBadScope
+			return nil, nil, false, errBadScope
 		}
 		for _, wr := range all {
 			if wr.Type == typ && wr.ID == id {
-				return []watchedResource{wr}, true, nil
+				return []watchedResource{wr}, all, true, nil
 			}
 		}
-		return []watchedResource{{Resource: watcher.Resource{Type: typ, ID: id}, Name: id}}, true, nil
+		return []watchedResource{{Resource: watcher.Resource{Type: typ, ID: id}, Name: id}}, all, true, nil
 	}
 	if wt := q.Get("worktree"); wt != "" {
 		want, _ := wdb.WorktreePathFromSubscriber(wdb.Subscriber(wt))
@@ -115,9 +117,9 @@ func (s *Server) resolveWatcherScope(r *http.Request) ([]watchedResource, bool, 
 				}
 			}
 		}
-		return out, true, nil
+		return out, all, true, nil
 	}
-	return all, false, nil
+	return all, all, false, nil
 }
 
 type watchedResourceDTO struct {
@@ -138,7 +140,7 @@ type watchedResourceDTO struct {
 // handleWatchedResources: GET /api/watchers/resources — per-resource last
 // poll status for the requested scope, failing resources first.
 func (s *Server) handleWatchedResources(w http.ResponseWriter, r *http.Request) {
-	scope, _, err := s.resolveWatcherScope(r)
+	scope, _, _, err := s.resolveWatcherScope(r)
 	if errors.Is(err, errBadScope) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -257,7 +259,7 @@ func (s *Server) handleWatcherLog(w http.ResponseWriter, r *http.Request) {
 		pq.Limit = n
 	}
 
-	scope, scoped, err := s.resolveWatcherScope(r)
+	scope, all, scoped, err := s.resolveWatcherScope(r)
 	if errors.Is(err, errBadScope) {
 		bad(err.Error())
 		return
@@ -277,10 +279,8 @@ func (s *Server) handleWatcherLog(w http.ResponseWriter, r *http.Request) {
 		}
 		// Tags on scoped rows can name resources outside the scope (a GitHub
 		// batch row lists every PR); resolve those names too.
-		if all, err := s.allWatched(); err == nil {
-			for _, wr := range all {
-				names[watcherdb.ResourceKey{Type: wr.Type, ID: wr.ID}] = wr.Name
-			}
+		for _, wr := range all {
+			names[watcherdb.ResourceKey{Type: wr.Type, ID: wr.ID}] = wr.Name
 		}
 	}
 

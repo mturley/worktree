@@ -208,3 +208,22 @@ func TestWatcherLog_BadParams(t *testing.T) {
 		getLog(t, f.url, q, http.StatusBadRequest)
 	}
 }
+
+func TestWatchedResources_ExcludesLinkResources(t *testing.T) {
+	srv, ts := watchersTestServer(t)
+	wt := t.TempDir()
+	pr := watcher.Resource{Type: "pr", ID: "o/r#1"}
+	link := watcher.Resource{Type: "link", ID: "https://example.com/x", URL: "https://example.com/x"}
+	for _, r := range []watcher.Resource{pr, link} {
+		if err := watcherdb.Subscribe(srv.DB, wdb.Subscriber(wt), r, watcherdb.SubscribeOpts{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := getWatched(t, ts.URL, url.Values{})
+	if len(got) != 1 || got[0].Type != "pr" {
+		t.Fatalf("got %+v, want only the pr", got)
+	}
+	if got := getWatched(t, ts.URL, url.Values{"worktree": {wt}}); len(got) != 1 || got[0].Type != "pr" {
+		t.Fatalf("worktree scope got %+v, want only the pr", got)
+	}
+}
