@@ -47,6 +47,12 @@ type fakeTabOps struct {
 	// browserTabs and browserTabsErr back the browserTabs seam.
 	browserTabs    []cmux.BrowserTab
 	browserTabsErr error
+
+	// screen, png and mdPath back the peek seams; peekErr fails all three.
+	screen  string
+	png     []byte
+	mdPath  string
+	peekErr error
 }
 
 func posString(p cmux.TabPosition) string {
@@ -99,6 +105,18 @@ func (f *fakeTabOps) ops() *cmuxTabOps {
 		setColor:        func(id, c string) error { return rec("set-color", id, c) },
 		clearColor:      func(id string) error { return rec("clear-color", id) },
 		browserTabs:     func() ([]cmux.BrowserTab, error) { return f.browserTabs, f.browserTabsErr },
+		readScreen: func(id, s string, lines int) (string, error) {
+			f.calls = append(f.calls, fmt.Sprintf("read-screen %s %s %d", id, s, lines))
+			return f.screen, f.peekErr
+		},
+		screenshot: func(s string) ([]byte, error) {
+			f.calls = append(f.calls, "screenshot "+s)
+			return f.png, f.peekErr
+		},
+		markdownPath: func(id, s string) (string, error) {
+			f.calls = append(f.calls, "markdown-path "+id+" "+s)
+			return f.mdPath, f.peekErr
+		},
 		notifications: func() ([]cmux.Notification, error) {
 			f.notificationsN++
 			if f.notificationsErr != nil {

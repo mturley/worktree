@@ -222,6 +222,7 @@ func (s *Server) routes() []route {
 		{"POST /api/cmux/create", s.handleCmuxCreate},
 		{"GET /api/cmux/tree", s.handleCmuxTree},
 		{"GET /api/cmux/browser-tabs", s.handleCmuxBrowserTabs},
+		{"GET /api/cmux/peek", s.handleCmuxPeek},
 		{"POST /api/cmux/rename", s.handleCmuxRename},
 		{"POST /api/cmux/color", s.handleCmuxColor},
 		{"POST /api/cmux/focus-tab", s.handleCmuxFocusTab},

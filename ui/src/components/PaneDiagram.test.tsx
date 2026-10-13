@@ -1,7 +1,9 @@
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { act, fireEvent, render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { api } from "../api/client"
 import { PaneDiagram } from "./PaneDiagram"
 import type { CmuxLayout, CmuxPane } from "../api/types"
 
@@ -16,9 +18,12 @@ const layout: CmuxLayout = { direction: "horizontal", split: 0.4, children: [{ p
 
 function wrap(panes: CmuxPane[], handlers: Partial<{ onSelect: () => void; onClose: () => void; onMove: () => void; onDragActiveChange: () => void }> = {}) {
   const props = { onSelect: vi.fn(), onClose: vi.fn(), onMove: vi.fn(), onDragActiveChange: vi.fn(), ...handlers }
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const view = render(
     <MantineProvider>
-      <PaneDiagram layout={layout} panes={panes} {...props} />
+      <QueryClientProvider client={qc}>
+        <PaneDiagram workspaceId="W" layout={layout} panes={panes} {...props} />
+      </QueryClientProvider>
     </MantineProvider>,
   )
   return { ...view, ...props }
@@ -216,5 +221,120 @@ describe("PaneDiagram", () => {
     wrap([{ ref: "pane:1", focused: true, tabs }, { ref: "pane:2", focused: false, tabs: [] }])
     const link = screen.getByRole("button", { name: "Show 2 more tabs" })
     expect(link.querySelector('[data-testid="cmux-unread-dot"]')).toBeNull()
+  })
+})
+
+describe("PaneDiagram tab peek", () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+  })
+
+  // Advance fake time inside its own act, so React renders what the timers
+  // set before the next step (a card's fetch starts only once it mounts).
+  const tick = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms) })
+
+  const panes = (): CmuxPane[] => [
+    { ref: "pane:1", focused: true, tabs: [t(1, "terminal", true), t(2)] },
+    { ref: "pane:2", focused: false, tabs: [] },
+  ]
+
+  it("does not fetch until a card opens, then fetches that tab only", async () => {
+    const spy = vi.spyOn(api, "cmuxPeek").mockResolvedValue({ type: "terminal", text: "hello from tab 1" })
+    wrap(panes())
+    expect(spy).not.toHaveBeenCalled()
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "Switch to Tab 1" }))
+    expect(await screen.findByText("hello from tab 1")).toBeInTheDocument()
+    expect(spy).toHaveBeenCalledTimes(1)
+    expect(spy).toHaveBeenCalledWith("W", "surface:1")
+  })
+
+  it("closes the card when a drag starts", async () => {
+    vi.spyOn(api, "cmuxPeek").mockResolvedValue({ type: "terminal", text: "hello from tab 1" })
+    wrap(panes())
+    const row = screen.getByRole("button", { name: "Switch to Tab 1" })
+    fireEvent.mouseEnter(row)
+    expect(await screen.findByText("hello from tab 1")).toBeInTheDocument()
+    vi.useFakeTimers()
+    try {
+      act(() => {
+        fireEvent.mouseDown(row, { button: 0, clientX: 10, clientY: 10 })
+        fireEvent.mouseMove(document, { button: 0, clientX: 10, clientY: 30 })
+      })
+      // Past Popover's close transition, which keeps the dropdown mounted
+      // until it finishes. Mid-drag, so dnd-kit's own timers are not at play.
+      act(() => {
+        vi.advanceTimersByTime(500)
+      })
+      expect(screen.queryByText("hello from tab 1")).not.toBeInTheDocument()
+      act(() => {
+        fireEvent.mouseUp(document, { button: 0, clientX: 10, clientY: 30 })
+      })
+    } finally {
+      act(() => {
+        vi.runAllTimers()
+      })
+    }
+  })
+
+  it("stops refreshing a terminal once its card closes", async () => {
+    vi.useFakeTimers()
+    const spy = vi.spyOn(api, "cmuxPeek").mockResolvedValue({ type: "terminal", text: "hello from tab 1" })
+    wrap(panes())
+    const row = screen.getByRole("button", { name: "Switch to Tab 1" })
+    fireEvent.mouseEnter(row)
+    // The 400ms open delay; then the card mounts and fetches.
+    await tick(500)
+    await tick(500)
+    expect(screen.getByText("hello from tab 1")).toBeInTheDocument()
+    // While open, the terminal refreshes every 5s.
+    await tick(5000)
+    expect(spy).toHaveBeenCalledTimes(2)
+    fireEvent.mouseLeave(row)
+    await tick(500)
+    await tick(500)
+    expect(screen.queryByText("hello from tab 1")).not.toBeInTheDocument()
+    const calls = spy.mock.calls.length
+    await tick(15000)
+    expect(spy).toHaveBeenCalledTimes(calls)
+  })
+
+  it("switches straight to another row's card while one is open", async () => {
+    vi.useFakeTimers()
+    vi.spyOn(api, "cmuxPeek").mockImplementation(async (_id, surface) => ({ type: "terminal", text: `screen of ${surface}` }))
+    wrap([
+      { ref: "pane:1", focused: true, tabs: [t(1, "terminal", true), t(2, "terminal")] },
+      { ref: "pane:2", focused: false, tabs: [] },
+    ])
+    const first = screen.getByRole("button", { name: "Switch to Tab 1" })
+    fireEvent.mouseEnter(first)
+    await tick(500)
+    await tick(500)
+    expect(screen.getByText("screen of surface:1")).toBeInTheDocument()
+    fireEvent.mouseLeave(first)
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "Switch to Tab 2" }))
+    // 200ms in all, under the 400ms open delay: an open card hands over at
+    // once rather than waiting to open afresh.
+    await tick(100)
+    await tick(100)
+    expect(screen.getByText("screen of surface:2")).toBeInTheDocument()
+  })
+
+  it("shows no card on a device that cannot hover", async () => {
+    const orig = window.matchMedia
+    window.matchMedia = ((query: string) => ({
+      ...orig(query),
+      matches: query === "(hover: none)",
+    })) as typeof window.matchMedia
+    try {
+      const spy = vi.spyOn(api, "cmuxPeek").mockResolvedValue({ type: "terminal", text: "hello from tab 1" })
+      wrap(panes())
+      fireEvent.mouseEnter(screen.getByRole("button", { name: "Switch to Tab 1" }))
+      await new Promise((r) => setTimeout(r, 600))
+      expect(screen.queryByText("hello from tab 1")).not.toBeInTheDocument()
+      expect(spy).not.toHaveBeenCalled()
+    } finally {
+      window.matchMedia = orig
+    }
   })
 })

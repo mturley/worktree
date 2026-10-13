@@ -1,10 +1,15 @@
 package webui
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 	"unicode"
 
@@ -28,6 +33,9 @@ type cmuxTabOps struct {
 	clearColor      func(id string) error
 	notifications   func() ([]cmux.Notification, error)
 	browserTabs     func() ([]cmux.BrowserTab, error)
+	readScreen      func(id, surface string, lines int) (string, error)
+	screenshot      func(surface string) ([]byte, error)
+	markdownPath    func(id, surface string) (string, error)
 }
 
 func realCmuxTabOps() cmuxTabOps {
@@ -45,6 +53,9 @@ func realCmuxTabOps() cmuxTabOps {
 		clearColor:      cmux.ClearWorkspaceColor,
 		notifications:   cmux.ListNotifications,
 		browserTabs:     cmux.BrowserTabs,
+		readScreen:      cmux.ReadScreen,
+		screenshot:      cmux.Screenshot,
+		markdownPath:    cmux.MarkdownPath,
 	}
 }
 
@@ -743,4 +754,118 @@ func (s *Server) handleCmuxMoveTab(w http.ResponseWriter, r *http.Request) {
 	}
 	s.restoreAfterChange(ops, req.ID, req.Surface, snapshots, origFocused, visible)
 	respondCmuxAction(w, nil)
+}
+
+const (
+	peekTerminalLines    = 200
+	peekMarkdownMaxBytes = 512 << 10
+)
+
+type cmuxPeekResponse struct {
+	Type        string `json:"type"`                  // the tab's type, from cmux
+	Text        string `json:"text,omitempty"`        // terminal
+	Image       string `json:"image,omitempty"`       // browser: data:image/png;base64,…
+	Markdown    string `json:"markdown,omitempty"`    // markdown
+	Path        string `json:"path,omitempty"`        // markdown: the file shown
+	Unsupported bool   `json:"unsupported,omitempty"` // nothing to peek at
+}
+
+// handleCmuxPeek: GET /api/cmux/peek?id=<workspace>&surface=<surface ref>
+//
+// The cmux tab's hover card. The tab's type comes from a fresh `cmux tree`,
+// never the client, which also proves the surface belongs to that
+// workspace. Unlike the POST actions above, this is a data GET: failures are
+// real HTTP errors, not 200 ok:false.
+func (s *Server) handleCmuxPeek(w http.ResponseWriter, r *http.Request) {
+	id, surface := r.URL.Query().Get("id"), r.URL.Query().Get("surface")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "missing id")
+		return
+	}
+	if !validWorkspaceID(w, id) {
+		return
+	}
+	if !surfaceRefRe.MatchString(surface) {
+		writeError(w, http.StatusBadRequest, "invalid surface")
+		return
+	}
+	if !cmux.IsAvailable() {
+		writeError(w, http.StatusServiceUnavailable, "cmux is not running")
+		return
+	}
+	ops := s.tabOps()
+	tree, err := ops.tree(id)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	tab, _, ok := tree.FindTab(surface)
+	if !ok {
+		writeError(w, http.StatusNotFound, "no such tab")
+		return
+	}
+	resp := cmuxPeekResponse{Type: tab.Type}
+	switch tab.Type {
+	case "terminal":
+		resp.Text, err = ops.readScreen(id, surface, peekTerminalLines)
+	case "browser":
+		var png []byte
+		if png, err = ops.screenshot(surface); err == nil {
+			resp.Image = "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)
+		}
+	case "markdown":
+		var path string
+		if path, err = ops.markdownPath(id, surface); err == nil {
+			if md, ok := readPeekMarkdown(path); ok {
+				resp.Markdown, resp.Path = md, path
+			} else {
+				resp.Unsupported = true
+			}
+		}
+	default:
+		resp.Unsupported = true
+	}
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// readPeekMarkdown reads a markdown tab's file, but only a Markdown file of
+// sane size: the path comes from cmux rather than the request, but the UI is
+// reachable remotely, so the server never hands back anything else.
+//
+// The checks apply to the file actually read: symlinks are resolved first
+// (notes.md → a key file is refused), the file is opened once and checked
+// through its own descriptor (nothing can be swapped in between), opened
+// non-blocking (a FIFO cannot hang the request), and read through a limit
+// (a file growing mid-read is still never read past the cap).
+func readPeekMarkdown(path string) (string, bool) {
+	if !filepath.IsAbs(path) {
+		return "", false
+	}
+	real, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", false
+	}
+	switch strings.ToLower(filepath.Ext(real)) {
+	case ".md", ".markdown":
+	default:
+		return "", false
+	}
+	f, err := os.OpenFile(real, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return "", false
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Size() > peekMarkdownMaxBytes {
+		return "", false
+	}
+	data, err := io.ReadAll(io.LimitReader(f, peekMarkdownMaxBytes+1))
+	if err != nil || len(data) > peekMarkdownMaxBytes {
+		return "", false
+	}
+	return string(data), true
 }

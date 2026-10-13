@@ -98,6 +98,7 @@ function WorkspaceBlock({ path, ws, onMove, onClose, onDragActiveChange }: {
         <Text size="xs" c="red">Could not read panes: {ws.error}</Text>
       ) : ws.layout && ws.panes ? (
         <PaneDiagram
+          workspaceId={ws.id}
           layout={ws.layout}
           panes={ws.panes}
           onSelect={(tab) => act(() => api.cmuxFocusTab(ws.id, tab.ref))}
