@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"sync"
@@ -11,6 +12,7 @@ import (
 	watcherdb "github.com/mturley/watcher/db"
 	wgithub "github.com/mturley/watcher/github"
 	wjira "github.com/mturley/watcher/jira"
+	"github.com/mturley/watcher/polllog"
 	wslack "github.com/mturley/watcher/slack"
 	wdb "github.com/mturley/worktree/internal/db"
 	wtjira "github.com/mturley/worktree/internal/jira"
@@ -59,6 +61,38 @@ func (s *Server) logger() *log.Logger {
 	return log.Default()
 }
 
+// logPollWarn records a poll-level warning in the watcher log so it shows in
+// the web UI's watcher log modal, not only on stderr.
+func (s *Server) logPollWarn(source, msg string) {
+	if err := polllog.Write(s.DB, source, "warn", msg); err != nil {
+		s.logger().Printf("watcher log write: %v", err)
+	}
+}
+
+// warnUnconfiguredOnce writes the watcher-log warn row only on the first cycle
+// a source is seen unconfigured (or after it was configured again), so a
+// permanently unconfigured source does not add a row every poll cycle.
+func (s *Server) warnUnconfiguredOnce(source, msg string) {
+	s.unconfiguredMu.Lock()
+	seen := s.unconfigured[source]
+	if s.unconfigured == nil {
+		s.unconfigured = map[string]bool{}
+	}
+	s.unconfigured[source] = true
+	s.unconfiguredMu.Unlock()
+	if !seen {
+		s.logPollWarn(source, msg)
+	}
+}
+
+// markConfigured resets a source's unconfigured state so a later regression
+// warns again.
+func (s *Server) markConfigured(source string) {
+	s.unconfiguredMu.Lock()
+	delete(s.unconfigured, source)
+	s.unconfiguredMu.Unlock()
+}
+
 // pollAll polls every active pr + jira resource once. Missing creds -> skip
 // that source (logged), not an error.
 func (s *Server) pollAll() error {
@@ -68,15 +102,18 @@ func (s *Server) pollAll() error {
 	}
 	if prs, _ := watcherdb.ActiveResources(s.DB, "pr"); len(prs) > 0 {
 		if gh, err := cfg.GitHub(); err == nil {
+			s.markConfigured("github")
 			if err := wgithub.Poll(s.DB, gh.Token, prs, s.logger()); err != nil {
 				s.logger().Printf("github poll: %v", err)
 			}
 		} else {
 			s.logger().Printf("github not configured; skipping %d pr resources", len(prs))
+			s.warnUnconfiguredOnce("github", fmt.Sprintf("github not configured; skipping %d pr resources", len(prs)))
 		}
 	}
 	if issues, _ := watcherdb.ActiveResources(s.DB, "jira"); len(issues) > 0 {
 		if jc, err := cfg.Jira(); err == nil {
+			s.markConfigured("jira")
 			auth := wjira.JiraAuth{URL: jc.Host, Email: jc.Email, Token: jc.Token, CustomFields: wtjira.ConfiguredCustomFields(jc.CustomFields)}
 			if bcfg, err := wconfig.LoadConfig(wconfig.ConfigDefaultPath()); err == nil {
 				auth.BotUsernames = bcfg.JiraBotUsernames()
@@ -86,18 +123,24 @@ func (s *Server) pollAll() error {
 			}
 		} else {
 			s.logger().Printf("jira not configured; skipping %d jira resources", len(issues))
+			s.warnUnconfiguredOnce("jira", fmt.Sprintf("jira not configured; skipping %d jira resources", len(issues)))
 		}
 	}
 	if threads, _ := watcherdb.ActiveResources(s.DB, "slack"); len(threads) > 0 {
 		if sc, err := cfg.Slack(); err == nil {
+			s.markConfigured("slack")
 			auth := wslack.SlackAuth{Token: sc.Token, Cookie: sc.Cookie, WorkspaceDomain: sc.WorkspaceDomain}
 			if err := wslack.Poll(s.DB, auth, threads, s.logger()); err != nil {
 				s.logger().Printf("slack poll: %v", err)
 			}
 		} else {
 			s.logger().Printf("slack not configured; skipping %d slack resources", len(threads))
+			s.warnUnconfiguredOnce("slack", fmt.Sprintf("slack not configured; skipping %d slack resources", len(threads)))
 		}
 	}
+	// Library Poll prunes only when it runs; with no source configured nothing
+	// else would ever trim the warn rows written above.
+	polllog.Prune(s.DB, s.logger())
 	return nil
 }
 

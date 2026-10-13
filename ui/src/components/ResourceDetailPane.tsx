@@ -8,6 +8,7 @@ import { ResourceCard, type ResourceNotifyContext } from "./ResourceCard"
 import { SlackThreadPane } from "./SlackThreadPane"
 import { LinkPane } from "./LinkPane"
 import { RefreshWatchersButton } from "./RefreshWatchersButton"
+import { WatcherLogButton } from "./WatcherLogButton"
 import { WatcherErrorMark } from "./WatcherErrorMark"
 import { useWatcherStatus } from "../hooks/useWatchers"
 import { useNow } from "../hooks/useNow"
@@ -147,6 +148,7 @@ function TimelineBody({
                 )}
                 <WatcherErrorMark status={watcher} />
                 <RefreshWatchersButton />
+                <WatcherLogButton scope={{ worktree: path, resource: { type: resource.type, id: resource.id, name: resource.custom_name || resource.title || resource.id } }} />
               </>
             ) : (
               <LinkedTabControls query={linked} />

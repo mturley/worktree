@@ -207,6 +207,64 @@ export interface WatchersResponse {
   polling: boolean;
 }
 
+/** The scope a watcher log / resource status request covers. */
+export interface WatcherLogScope {
+  worktree?: string;
+  resource?: { type: string; id: string; name: string };
+}
+
+export interface ResourcePollDetail {
+  ok: boolean;
+  duration_ms?: number;
+  http_status?: number;
+  events_emitted: number;
+  note?: string;
+}
+
+export interface WatchedResourceStatus {
+  type: string;
+  id: string;
+  url?: string;
+  name: string;
+  worktrees: string[];
+  status: "ok" | "error" | "never";
+  last_attempt?: string;
+  last_success?: string;
+  last_error?: string;
+  error_message?: string;
+  detail?: ResourcePollDetail;
+  resource_updated_at?: string;
+}
+
+export interface PollLogEntry {
+  id: number;
+  ts: string;
+  source: "github" | "jira" | "slack";
+  level: "info" | "warn" | "error";
+  kind: "poll" | "http" | "resource";
+  message: string;
+  method?: string;
+  endpoint?: string;
+  http_status?: number;
+  duration_ms?: number;
+  bytes?: number;
+  error_body?: string;
+  resources: { type: string; id: string; name: string }[];
+}
+
+export interface PollLogResponse {
+  entries: PollLogEntry[];
+  has_more: boolean;
+}
+
+export interface WatcherLogQuery {
+  source?: string;
+  level?: "info" | "warn";
+  after_id?: number;
+  before_id?: number;
+  limit?: number;
+}
+
 /** A web UI login session, as GET /api/session(s) returns it. */
 /** How the server delivers notifications: `cmux notify`, or browser tabs. */
 export type NotifyMode = "cmux" | "browser"

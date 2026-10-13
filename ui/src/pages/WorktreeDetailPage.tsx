@@ -25,6 +25,7 @@ import { WorktreeDetailCard } from "../components/WorktreeDetailCard"
 import { CmuxWorkspaceActions, CmuxWorkspaceTitles } from "../components/CmuxWorkspaceHeader"
 import { SourceFilter } from "../components/SourceFilter"
 import { RefreshWatchersButton } from "../components/RefreshWatchersButton"
+import { WatcherLogButton } from "../components/WatcherLogButton"
 import { MarkAllReadButton } from "../components/MarkAllReadButton"
 import { UnreadOnlyToggle } from "../components/UnreadOnlyToggle"
 import { useUnreadOnly } from "../hooks/useUnreadOnly"
@@ -227,6 +228,7 @@ export function WorktreeDetailPage() {
         <Group gap={6} wrap="nowrap" align="center">
           <Title order={5}>Activity</Title>
           <RefreshWatchersButton />
+          <WatcherLogButton scope={{ worktree: path }} />
           <MarkAllReadButton resources={items} />
         </Group>
         <SourceFilter value={sources} onChange={setSources} />

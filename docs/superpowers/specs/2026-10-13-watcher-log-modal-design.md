@@ -165,7 +165,9 @@ call's (shared by every PR in it).
 Each poller's HTTP client is wrapped with `polllog.Transport`, and each request
 is built with a context carrying its resources. Call sites:
 `github/graphql.go` (batch query, per-PR follow-up queries),
-`github/summaries.go`, `jira/client.go`, `slack/client.go` (both `Do` sites).
+`jira/client.go`, `slack/client.go` (both `Do` sites).
+`github/summaries.go` (`FetchPRSummaries`) is the linked-resources fetch, not
+polling, and is not instrumented.
 `validate.go` calls (credential checks) are **not** instrumented — they run from
 `worktree setup`, not polling.
 

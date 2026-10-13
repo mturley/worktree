@@ -15,6 +15,7 @@ import { UnreadOnlyToggle } from "../components/UnreadOnlyToggle"
 import { useUnreadOnly } from "../hooks/useUnreadOnly"
 import { SourceFilter } from "../components/SourceFilter"
 import { RefreshWatchersButton } from "../components/RefreshWatchersButton"
+import { WatcherLogButton } from "../components/WatcherLogButton"
 import { NewWorktreeModal } from "../components/NewWorktreeModal"
 import { DevicesButton } from "../components/DevicesButton"
 import { FollowCmuxToggle } from "../components/FollowCmuxToggle"
@@ -138,6 +139,7 @@ export function HomePage() {
         <Group gap={6} wrap="nowrap" align="center">
           <Title order={4}>Activity</Title>
           <RefreshWatchersButton />
+          <WatcherLogButton scope={{}} />
         </Group>
         {/* The source filter (which also narrows the worktree cards) gets a
             line of its own below. */}
