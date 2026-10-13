@@ -24,6 +24,8 @@ import type { TimelineEvent } from "../api/types"
 import { WorktreeDetailCard } from "../components/WorktreeDetailCard"
 import { CmuxWorkspaceActions, CmuxWorkspaceTitles } from "../components/CmuxWorkspaceHeader"
 import { SourceFilter } from "../components/SourceFilter"
+import { EventTypeFilter } from "../components/EventTypeFilter"
+import { useActivityFilter } from "../hooks/useActivityFilter"
 import { RefreshWatchersButton } from "../components/RefreshWatchersButton"
 import { WatcherLogButton } from "../components/WatcherLogButton"
 import { MarkAllReadButton } from "../components/MarkAllReadButton"
@@ -44,12 +46,12 @@ export function WorktreeDetailPage() {
   // Narrows the worktree's unified feed and the resource list. Selecting a
   // resource already narrows the timeline to that one resource, so the
   // toggles are hidden there rather than left as dead controls.
-  const [sources, setSources] = useState<string[]>([])
+  const { sources, setSources, categories, setCategories, eventTypes } = useActivityFilter()
   // Shared with the home page and every other tab. Narrows the resource list
   // and the worktree's unified feed; a selected resource's own feed is left
   // whole, its unread events already together at the top under the divider.
   const [unreadOnly, setUnreadOnly] = useUnreadOnly()
-  const { resources, timeline } = useWorktreeDetail(path, sources, unreadOnly)
+  const { resources, timeline } = useWorktreeDetail(path, sources, unreadOnly, eventTypes)
   const { selected, select, toggle, clear } = useSelectedResource()
   const wide = useIsWide()
   const worktrees = useWorktrees()
@@ -233,6 +235,7 @@ export function WorktreeDetailPage() {
         </Group>
         <SourceFilter value={sources} onChange={setSources} />
       </Group>
+      <EventTypeFilter sources={sources} value={categories} onChange={setCategories} />
       <TimelineFeed
         events={timeline.events}
         loading={timeline.isLoading}

@@ -14,6 +14,8 @@ import { ArchivedToggle } from "../components/ArchivedToggle"
 import { UnreadOnlyToggle } from "../components/UnreadOnlyToggle"
 import { useUnreadOnly } from "../hooks/useUnreadOnly"
 import { SourceFilter } from "../components/SourceFilter"
+import { EventTypeFilter } from "../components/EventTypeFilter"
+import { useActivityFilter } from "../hooks/useActivityFilter"
 import { RefreshWatchersButton } from "../components/RefreshWatchersButton"
 import { WatcherLogButton } from "../components/WatcherLogButton"
 import { NewWorktreeModal } from "../components/NewWorktreeModal"
@@ -29,14 +31,14 @@ import { filterWorktreeBySources } from "../lib/sourceFilter"
 export function HomePage() {
   const [, navigate] = useLocation()
   const [archived, setArchived] = useState(false)
-  const [sources, setSources] = useState<string[]>([])
+  const { sources, setSources, categories, setCategories, eventTypes } = useActivityFilter()
   // Shared with every worktree page and every other tab; narrows both the
   // worktree list and the activity feed.
   const [unreadOnly, setUnreadOnly] = useUnreadOnly()
   const [newOpen, setNewOpen] = useState(false)
   const wide = useIsWide()
   const wts = useWorktrees()
-  const tl = useGlobalTimeline(archived, sources, unreadOnly)
+  const tl = useGlobalTimeline(archived, sources, unreadOnly, eventTypes)
   const sort = useWorktreeSort()
   // Same shared query the cards use, so this costs no extra request.
   const cmux = useCmux()
@@ -149,6 +151,9 @@ export function HomePage() {
       <Group>
         <SourceFilter value={sources} onChange={setSources} />
       </Group>
+      {/* Narrows only the feed, not the worktree cards: a card follows
+          resources, and every resource has every kind of event. */}
+      <EventTypeFilter sources={sources} value={categories} onChange={setCategories} />
       <TimelineFeed
         events={tl.events}
         loading={tl.isLoading}

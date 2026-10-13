@@ -73,6 +73,20 @@ describe("unread_only", () => {
   })
 })
 
+describe("event_types", () => {
+  it("is sent on both timelines only when given", async () => {
+    const calls = stubFetch()
+    await api.globalTimeline(false, 50, undefined, ["pr"], false, ["pr_comment", "ci_*"])
+    await api.globalTimeline(false, 50, undefined, ["pr"])
+    await api.worktreeTimeline("/wt/foo", 50, undefined, undefined, ["pr"], false, ["pr_comment"])
+    await api.worktreeTimeline("/wt/foo", 50)
+    expect(calls[0]).toContain("event_types=pr_comment%2Cci_*")
+    expect(calls[1]).not.toContain("event_types")
+    expect(calls[2]).toContain("event_types=pr_comment")
+    expect(calls[3]).not.toContain("event_types")
+  })
+})
+
 describe("api.worktreeTimeline", () => {
   it("omits resource params when no resource is given", async () => {
     const calls = stubFetch()

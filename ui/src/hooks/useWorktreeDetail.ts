@@ -3,7 +3,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { api } from "../api/client"
 import { useWorktreeTimeline } from "./useTimeline"
 
-export function useWorktreeDetail(path: string, resourceTypes: string[] = [], unreadOnly = false) {
+export function useWorktreeDetail(
+  path: string,
+  resourceTypes: string[] = [],
+  unreadOnly = false,
+  eventTypes: string[] = [],
+) {
   const qc = useQueryClient()
   useEffect(() => {
     if (!path) return
@@ -17,6 +22,6 @@ export function useWorktreeDetail(path: string, resourceTypes: string[] = [], un
   }, [path, qc])
 
   const resources = useQuery({ queryKey: ["resources", path], queryFn: () => api.worktreeResources(path), enabled: !!path })
-  const timeline = useWorktreeTimeline(path, undefined, resourceTypes, unreadOnly)
+  const timeline = useWorktreeTimeline(path, undefined, resourceTypes, unreadOnly, eventTypes)
   return { resources, timeline }
 }

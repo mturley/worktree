@@ -3,6 +3,8 @@ package webui
 import (
 	"database/sql"
 	"net/http"
+	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -87,6 +89,87 @@ func parseResourceTypes(r *http.Request) []string {
 	return out
 }
 
+// eventTypeFilter is the `event_types` filter: the Activity feed's per-source
+// subfilters ("Comments", "CI", …). Each value is either an exact event type
+// ("pr_comment") or a prefix ending in `*` ("ci_*"). The prefix form exists
+// for CI, whose variants the library keeps adding (ci_check_failed,
+// ci_workflows_partial_failure, …): enumerating them in the UI would silently
+// drop any new one from the "CI" subfilter until the UI caught up.
+//
+// Empty means no filter, as with resource_types.
+type eventTypeFilter struct {
+	exact    []string
+	prefixes []string
+}
+
+// eventTypeValue is what a value must look like to be accepted. Event types
+// are lower_snake; anything else is dropped rather than passed on, for the
+// same reason parseResourceTypes drops unknown sources — a typo should widen
+// the feed, not quietly empty it.
+var eventTypeValue = regexp.MustCompile(`^[a-z][a-z0-9_]*\*?$`)
+
+func parseEventTypes(r *http.Request) eventTypeFilter {
+	var f eventTypeFilter
+	seen := map[string]bool{}
+	for _, raw := range r.URL.Query()["event_types"] {
+		for _, v := range strings.Split(raw, ",") {
+			v = strings.TrimSpace(v)
+			if !eventTypeValue.MatchString(v) || seen[v] {
+				continue
+			}
+			seen[v] = true
+			if p, ok := strings.CutSuffix(v, "*"); ok {
+				f.prefixes = append(f.prefixes, p)
+			} else {
+				f.exact = append(f.exact, v)
+			}
+		}
+	}
+	return f
+}
+
+func (f eventTypeFilter) empty() bool { return len(f.exact) == 0 && len(f.prefixes) == 0 }
+
+// matches is the Go twin of sql, for the worktree timeline's in-memory scan.
+func (f eventTypeFilter) matches(t string) bool {
+	if f.empty() {
+		return true
+	}
+	if slices.Contains(f.exact, t) {
+		return true
+	}
+	for _, p := range f.prefixes {
+		if strings.HasPrefix(t, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// sql returns an `AND (...)` clause over e.type and its args, or "" when the
+// filter is empty. Prefixes go through LIKE with `_` and `%` escaped — `_` is
+// a LIKE wildcard and every event type is full of them, so an unescaped
+// "ci_" would also match "cix…".
+func (f eventTypeFilter) sql() (string, []any) {
+	if f.empty() {
+		return "", nil
+	}
+	parts := []string{}
+	args := []any{}
+	if len(f.exact) > 0 {
+		parts = append(parts, "e.type IN ("+strings.TrimSuffix(strings.Repeat("?,", len(f.exact)), ",")+")")
+		for _, t := range f.exact {
+			args = append(args, t)
+		}
+	}
+	esc := strings.NewReplacer(`\`, `\\`, `_`, `\_`, `%`, `\%`)
+	for _, p := range f.prefixes {
+		parts = append(parts, `e.type LIKE ? ESCAPE '\'`)
+		args = append(args, esc.Replace(p)+"%")
+	}
+	return "AND (" + strings.Join(parts, " OR ") + ") ", args
+}
+
 // unreadOnlyClause narrows the global timeline to unread events in SQL.
 //
 // It is a SECOND implementation of unreadIndex.IsUnread, and must agree with
@@ -111,13 +194,14 @@ const unreadOnlyClause = `AND (
            AND ` + unread.SlackNewerSQL + `))
 ) AND ` + selfid.NotMineSQL + ` `
 
-// handleGlobalTimeline: GET /api/timeline?archived=&limit=&before=&resource_types=&unread_only=
+// handleGlobalTimeline: GET /api/timeline?archived=&limit=&before=&resource_types=&event_types=&unread_only=
 func (s *Server) handleGlobalTimeline(w http.ResponseWriter, r *http.Request) {
 	archived := r.URL.Query().Get("archived") == "true"
 	unreadOnly := r.URL.Query().Get("unread_only") == "true"
 	limit := parseLimit(r)
 	before := r.URL.Query().Get("before") // RFC3339 ts; "" = newest
 	types := parseResourceTypes(r)
+	eventTypeClause, eventTypeArgs := parseEventTypes(r).sql()
 
 	var (
 		rows *sql.Rows
@@ -158,11 +242,12 @@ JOIN watcher_event_resources er ON er.event_id = e.id `
 	for _, t := range types {
 		args = append(args, t)
 	}
+	args = append(args, eventTypeArgs...)
 	args = append(args, limit)
 
-	q := base + filter + beforeClause + typeClause + unreadClause + order
+	q := base + filter + beforeClause + typeClause + eventTypeClause + unreadClause + order
 	if !archived {
-		q = base + watchedJoin + filter + beforeClause + typeClause + unreadClause + order
+		q = base + watchedJoin + filter + beforeClause + typeClause + eventTypeClause + unreadClause + order
 	}
 	rows, err = s.DB.Query(q, args...)
 	if err != nil {
@@ -196,7 +281,7 @@ func (s *Server) eventIDsForResource(rtype, rid string) (map[string]struct{}, er
 	return ids, rows.Err()
 }
 
-// handleWorktreeTimeline: GET /api/worktree-timeline?path=<path>&limit=&before=&resource_type=&resource_id=&resource_types=&unread_only=
+// handleWorktreeTimeline: GET /api/worktree-timeline?path=<path>&limit=&before=&resource_type=&resource_id=&resource_types=&event_types=&unread_only=
 // A query param (not a path segment) is used because worktree paths contain
 // slashes, which the Go 1.22 mux {wildcard} would split awkwardly.
 //
@@ -239,6 +324,7 @@ func (s *Server) handleWorktreeTimeline(w http.ResponseWriter, r *http.Request) 
 	limit := parseLimit(r)
 	before := r.URL.Query().Get("before") // exclusive RFC3339 cursor; "" = newest
 	types := parseResourceTypes(r)
+	eventTypes := parseEventTypes(r)
 	unreadOnly := r.URL.Query().Get("unread_only") == "true"
 	typeAllowed := map[string]bool{}
 	for _, t := range types {
@@ -264,6 +350,11 @@ func (s *Server) handleWorktreeTimeline(w http.ResponseWriter, r *http.Request) 
 			if _, ok := only[evs[i].ID]; !ok {
 				continue
 			}
+		}
+		// Before enrichment: the type is on the raw event, so a filtered-out
+		// row costs nothing.
+		if !eventTypes.matches(string(evs[i].Type)) {
+			continue
 		}
 		te := enricher.enrich(evs[i])
 		// Applied after enrichment because the resource type comes from the

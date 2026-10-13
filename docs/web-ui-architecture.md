@@ -170,8 +170,8 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | Method | Path | Params | Response |
 |---|---|---|---|
 | GET | `/api/worktrees` | — | `[]worktreeSummary` |
-| GET | `/api/timeline` | `archived` (`"true"`/else false), `limit` (1-500, default 100), `before` (RFC3339 ts, exclusive upper bound), `resource_types`, `unread_only` (`"true"`: unread events only) | `timelineResponse` |
-| GET | `/api/worktree-timeline` | `path` (required, worktree path), `limit`, `before`, `resource_type` + `resource_id` (optional, filters to one resource's events; must be supplied together or the request 400s), `resource_types`, `unread_only` | `timelineResponse` |
+| GET | `/api/timeline` | `archived` (`"true"`/else false), `limit` (1-500, default 100), `before` (RFC3339 ts, exclusive upper bound), `resource_types`, `event_types` (exact event types, or a prefix ending in `*` such as `ci_*`; the Activity subfilters, see `ui/src/lib/eventTypeFilter.ts`), `unread_only` (`"true"`: unread events only) | `timelineResponse` |
+| GET | `/api/worktree-timeline` | `path` (required, worktree path), `limit`, `before`, `resource_type` + `resource_id` (optional, filters to one resource's events; must be supplied together or the request 400s), `resource_types`, `event_types`, `unread_only` | `timelineResponse` |
 | GET | `/api/worktree-resources` | `path` (required) | `[]resourceDTO` |
 | POST | `/api/worktrees/poll` | `path` (required) | `{"polled": bool}` |
 | POST | `/api/resource-meta` | body: `{type, id, name, description}` | — |

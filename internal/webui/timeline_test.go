@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -612,5 +613,56 @@ func TestTimelineResourceTypeFilter(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestTimelineEventTypeFilter covers the per-source subfilters ("Comments",
+// "CI", …) on both timelines, including the `ci_*` prefix form.
+func TestTimelineEventTypeFilter(t *testing.T) {
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	wtPath := testgit.Worktree(t)
+	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
+	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
+	resources.Add(conn, wtPath, resources.Resource{Type: "jira", ID: "J-1", URL: "u2"})
+
+	base := time.Now().UTC()
+	at := func(m int) string { return base.Add(time.Duration(-m) * time.Minute).Format(time.RFC3339) }
+	insertEvent(t, conn, "c1", at(6), "github", "pr_comment", "comment", "pr", "o/r#1", "u1")
+	insertEvent(t, conn, "rc1", at(5), "github", "pr_review_comment", "review comment", "pr", "o/r#1", "u1")
+	insertEvent(t, conn, "ci1", at(4), "github", "ci_check_failed", "ci", "pr", "o/r#1", "u1")
+	insertEvent(t, conn, "ci2", at(3), "github", "ci_workflows_passed", "ci", "pr", "o/r#1", "u1")
+	// Would match an unescaped LIKE 'ci_%' (the `_` matching "x").
+	insertEvent(t, conn, "cx1", at(2), "github", "cix_other", "not ci", "pr", "o/r#1", "u1")
+	insertEvent(t, conn, "j1", at(1), "jira", "jira_comment", "jira comment", "jira", "J-1", "u2")
+
+	srv := &Server{DB: conn}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	wtQ := "/api/worktree-timeline?path=" + url.QueryEscape(wtPath) + "&limit=50"
+	gQ := "/api/timeline?archived=false&limit=50"
+	for _, tc := range []struct {
+		name, query string
+		want        []string
+	}{
+		{"exact types", "&event_types=pr_comment,pr_review_comment", []string{"rc1", "c1"}},
+		{"prefix escapes underscore", "&event_types=ci_*", []string{"ci2", "ci1"}},
+		{"exact and prefix together", "&event_types=pr_comment&event_types=ci_*", []string{"ci2", "ci1", "c1"}},
+		{"combined with resource_types", "&resource_types=jira&event_types=pr_comment,jira_comment", []string{"j1"}},
+		{"malformed value is ignored", "&event_types=bad%20value", []string{"j1", "cx1", "ci2", "ci1", "rc1", "c1"}},
+	} {
+		for _, scope := range []struct{ name, base string }{{"global", gQ}, {"worktree", wtQ}} {
+			t.Run(scope.name+": "+tc.name, func(t *testing.T) {
+				got := eventIDs(getTimeline(t, ts.URL, scope.base+tc.query).Events)
+				if !slices.Equal(got, tc.want) {
+					t.Fatalf("got %v, want %v", got, tc.want)
+				}
+			})
+		}
 	}
 }

@@ -97,10 +97,18 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(args),
     }),
-  globalTimeline: (archived: boolean, limit = 100, before?: string, resourceTypes?: string[], unreadOnly = false) => {
+  globalTimeline: (
+    archived: boolean,
+    limit = 100,
+    before?: string,
+    resourceTypes?: string[],
+    unreadOnly = false,
+    eventTypes?: string[],
+  ) => {
     const params = new URLSearchParams({ archived: String(archived), limit: String(limit) })
     if (before) params.set("before", before)
     if (resourceTypes?.length) params.set("resource_types", resourceTypes.join(","))
+    if (eventTypes?.length) params.set("event_types", eventTypes.join(","))
     if (unreadOnly) params.set("unread_only", "true")
     return fetchJSON<TimelineResponse>(`/api/timeline?${params.toString()}`)
   },
@@ -111,6 +119,7 @@ export const api = {
     before?: string,
     resourceTypes?: string[],
     unreadOnly = false,
+    eventTypes?: string[],
   ) => {
     const params = new URLSearchParams({ path, limit: String(limit) })
     if (resource) {
@@ -119,6 +128,7 @@ export const api = {
     }
     if (before) params.set("before", before)
     if (resourceTypes?.length) params.set("resource_types", resourceTypes.join(","))
+    if (eventTypes?.length) params.set("event_types", eventTypes.join(","))
     if (unreadOnly) params.set("unread_only", "true")
     return fetchJSON<TimelineResponse>(`/api/worktree-timeline?${params.toString()}`)
   },
