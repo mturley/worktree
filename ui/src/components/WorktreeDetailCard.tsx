@@ -316,7 +316,7 @@ function NotesPanel({ notes, workspaceCount, hasCmux, editing, onEdit, onDone }:
   return (
     <Stack gap={4}>
       <Group gap="xs" justify="space-between" wrap="wrap" mih={22}>
-        <Group gap="xs" wrap="nowrap">
+        <Group gap="xs" wrap="wrap">
           {editing ? (
             <Button size="compact-xs" variant="light" leftSection={<IconCheck size={12} />} onClick={onDone}>
               Done editing
@@ -333,6 +333,13 @@ function NotesPanel({ notes, workspaceCount, hasCmux, editing, onEdit, onDone }:
             </Button>
           )}
           <NotesStatus notes={notes} />
+          <Checkbox
+            size="xs"
+            label="Show notes for this worktree on home page"
+            checked={notes.showOnHome}
+            disabled={!notes.loaded}
+            onChange={(e) => notes.setShowOnHome(e.currentTarget.checked)}
+          />
         </Group>
         {showSync && (
           <Checkbox

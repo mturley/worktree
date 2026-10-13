@@ -28,8 +28,8 @@ vi.mock("../api/client", async (orig) => {
 beforeEach(() => {
   window.sessionStorage.clear()
   worktreeNotes.mockResolvedValue({ notes: "", sync_cmux: false })
-  saveWorktreeNotes.mockImplementation(async (args: { notes: string; sync_cmux: boolean }) => ({
-    notes: args.notes, sync_cmux: args.sync_cmux, updated_at: "2026-09-21T00:00:00Z",
+  saveWorktreeNotes.mockImplementation(async (args: { notes: string; sync_cmux: boolean; show_on_home: boolean }) => ({
+    notes: args.notes, sync_cmux: args.sync_cmux, show_on_home: args.show_on_home, updated_at: "2026-09-21T00:00:00Z",
     cmux_sync: args.sync_cmux ? "ok" : "off",
   }))
   cmux.mockResolvedValue({ available: true, matches: {} })
@@ -54,6 +54,9 @@ const wrap = (w: WorktreeSummary, props: { onHide?: () => void } = {}) =>
       </QueryClientProvider>
     </MantineProvider>,
   )
+
+/** The rendered notes' task-list checkboxes, not the card's own settings. */
+const taskBoxes = () => Array.from(document.querySelectorAll<HTMLInputElement>(".worktree-notes input[type=checkbox]"))
 
 /** The value beside a git row label, e.g. rowValue("Branch"). */
 const rowValue = (label: string) => screen.getByText(label).nextElementSibling?.textContent
@@ -261,7 +264,7 @@ describe("notes", () => {
     // One save for the whole burst, not one per keystroke.
     await screen.findByText("Saving…", {}, { timeout: 2000 })
     expect(saveWorktreeNotes).toHaveBeenCalledTimes(1)
-    expect(saveWorktreeNotes.mock.calls[0][0]).toEqual({ path: "/wt/foo", notes: "hi", sync_cmux: false })
+    expect(saveWorktreeNotes.mock.calls[0][0]).toEqual({ path: "/wt/foo", notes: "hi", sync_cmux: false, show_on_home: true })
     resolve()
     expect(await screen.findByText("Saved")).toBeInTheDocument()
   })
@@ -347,6 +350,28 @@ describe("notes", () => {
     expect(screen.queryByRole("textbox", { name: /worktree notes/i })).not.toBeInTheDocument()
   })
 
+  it("shows the home page checkbox checked by default, saving at once when cleared", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    worktreeNotes.mockResolvedValue({ notes: "existing", sync_cmux: false })
+    const user = userEvent.setup()
+    wrap(summary())
+    const box = await screen.findByRole("checkbox", { name: "Show notes for this worktree on home page" })
+    await waitFor(() => expect(box).toBeEnabled())
+    expect(box).toBeChecked()
+    await user.click(box)
+    await waitFor(() => expect(saveWorktreeNotes).toHaveBeenCalledWith({ path: "/wt/foo", notes: "existing", sync_cmux: false, show_on_home: false }))
+    expect(box).not.toBeChecked()
+  })
+
+  it("reflects a stored show_on_home of false", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    worktreeNotes.mockResolvedValue({ notes: "existing", sync_cmux: false, show_on_home: false })
+    wrap(summary())
+    const box = await screen.findByRole("checkbox", { name: "Show notes for this worktree on home page" })
+    await waitFor(() => expect(box).toBeEnabled())
+    expect(box).not.toBeChecked()
+  })
+
   it("checks a task from the read-only view, saving just that change at once", async () => {
     worktreeInfo.mockResolvedValue(info())
     const notes = "todo:\n\n- [ ] rebase\n  - [x] nested done\n> 1. [ ] quoted"
@@ -354,7 +379,7 @@ describe("notes", () => {
     const user = userEvent.setup()
     wrap(summary())
     await screen.findByText("rebase")
-    const [top, nested, quoted] = screen.getAllByRole("checkbox")
+    const [top, nested, quoted] = taskBoxes()
     expect(top).not.toBeChecked()
     expect(nested).toBeChecked()
 
@@ -362,16 +387,16 @@ describe("notes", () => {
     // Immediately, not after the typing debounce.
     expect(saveWorktreeNotes).toHaveBeenCalledTimes(1)
     expect(saveWorktreeNotes).toHaveBeenLastCalledWith({
-      path: "/wt/foo", notes: notes.replace("- [ ] rebase", "- [x] rebase"), sync_cmux: false,
+      path: "/wt/foo", notes: notes.replace("- [ ] rebase", "- [x] rebase"), sync_cmux: false, show_on_home: true,
     })
-    await waitFor(() => expect(screen.getAllByRole("checkbox")[0]).toBeChecked())
+    await waitFor(() => expect(taskBoxes()[0]).toBeChecked())
     expect(await screen.findByText("Saved")).toBeInTheDocument()
 
     await user.click(nested)
     await waitFor(() => expect(saveWorktreeNotes).toHaveBeenLastCalledWith({
       path: "/wt/foo",
       notes: notes.replace("- [ ] rebase", "- [x] rebase").replace("- [x] nested", "- [ ] nested"),
-      sync_cmux: false,
+      sync_cmux: false, show_on_home: true,
     }))
     await user.click(quoted)
     await waitFor(() => expect(saveWorktreeNotes.mock.lastCall?.[0].notes).toContain("> 1. [x] quoted"))
@@ -402,7 +427,7 @@ describe("notes", () => {
     await user.type(box, "*done*")
     await user.click(screen.getByRole("button", { name: /done editing/i }))
     // Sent now, not after the debounce.
-    expect(saveWorktreeNotes).toHaveBeenCalledWith({ path: "/wt/foo", notes: "*done*", sync_cmux: false })
+    expect(saveWorktreeNotes).toHaveBeenCalledWith({ path: "/wt/foo", notes: "*done*", sync_cmux: false, show_on_home: true })
     expect(screen.queryByRole("textbox", { name: /worktree notes/i })).not.toBeInTheDocument()
     expect(screen.getByText("done").tagName).toBe("EM")
   })
@@ -487,7 +512,7 @@ describe("cmux description sync", () => {
     await startEditing(user)
     await waitFor(() => expect(syncBox()).toBeEnabled())
     await user.click(syncBox()!)
-    await waitFor(() => expect(saveWorktreeNotes).toHaveBeenCalledWith({ path: "/wt/foo", notes: "existing", sync_cmux: true }))
+    await waitFor(() => expect(saveWorktreeNotes).toHaveBeenCalledWith({ path: "/wt/foo", notes: "existing", sync_cmux: true, show_on_home: true }))
     expect(await screen.findByText("Saved · synced to cmux")).toBeInTheDocument()
   })
 

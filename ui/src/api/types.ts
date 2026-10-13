@@ -43,6 +43,8 @@ export interface WorktreeSummary {
   created_at?: string;
   /** The worktree-wide "Notify on all" toggle. Absent on an older cached response. */
   notify_all?: boolean;
+  /** The worktree's notes (Markdown), present only when non-blank and shown on the home page. */
+  notes?: string;
 }
 export interface TimelineEvent {
   id: string; ts: string; external_ts: string; source: string;
@@ -129,7 +131,11 @@ export interface EnvVar { key: string; value: string }
 /** GET /api/worktree-info — detail-page-only; git status costs a subprocess. */
 export interface WorktreeInfo { env: EnvVar[]; git?: GitStatus }
 
-export interface WorktreeNotes { notes: string; sync_cmux: boolean; updated_at?: string }
+export interface WorktreeNotes {
+  notes: string; sync_cmux: boolean; updated_at?: string
+  /** Show these notes on the home page's worktree card. Absent from an older server: treat as on. */
+  show_on_home?: boolean
+}
 /** How a notes save's mirror to the cmux workspace description went. */
 export type CmuxSyncOutcome = "off" | "ok" | "skipped" | "failed"
 export interface SaveWorktreeNotesResponse extends WorktreeNotes {

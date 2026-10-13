@@ -9,6 +9,7 @@ import { ResourceTypeLine } from "./ResourceTypeLine"
 import { cardEdgeStyle } from "../lib/unread"
 import { UnreadBadge } from "./UnreadBadge"
 import { NotifyBell } from "./NotifyBell"
+import { NotesMarkdown } from "./NotesMarkdown"
 
 interface WorktreeCardProps {
   w: WorktreeSummary
@@ -145,6 +146,15 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
           <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
             {[w.repo, w.branch].filter(Boolean).join(" · ")}
           </Text>
+          {w.notes && (
+            // Present only when the worktree opted in on its Notes tab. Read
+            // only here: links render as text and task checkboxes are inert,
+            // since the whole card is one link to the worktree.
+            <Box>
+              <Text size="xs" fw={600} c="dimmed">Notes:</Text>
+              <NotesMarkdown text={w.notes} plainLinks />
+            </Box>
+          )}
           {w.focus_resources.length > 0 && (
             <Stack gap="sm">
               {w.focus_resources.map((r) => (

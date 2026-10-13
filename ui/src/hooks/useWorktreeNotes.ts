@@ -8,10 +8,10 @@ export const NOTES_SAVE_DEBOUNCE_MS = 800
 
 export type NotesSaveStatus = "idle" | "unsaved" | "saving" | "saved" | "error"
 
-interface Snapshot { notes: string; sync: boolean }
+interface Snapshot { notes: string; sync: boolean; home: boolean }
 
 const same = (a: Snapshot | null, b: Snapshot | null) =>
-  !!a && !!b && a.notes === b.notes && a.sync === b.sync
+  !!a && !!b && a.notes === b.notes && a.sync === b.sync && a.home === b.home
 
 /**
  * A worktree's notes, auto-saved as they are typed.
@@ -57,7 +57,7 @@ export function useWorktreeNotes(path: string) {
       const clean = same(latest.current, saved.current) && !inFlight.current
       if (!clean || !data.updated_at || data.updated_at <= savedAt.current) return
     }
-    const s = { notes: data.notes, sync: data.sync_cmux }
+    const s = { notes: data.notes, sync: data.sync_cmux, home: data.show_on_home ?? true }
     latest.current = s
     saved.current = s
     savedAt.current = data.updated_at ?? ""
@@ -80,12 +80,14 @@ export function useWorktreeNotes(path: string) {
     again.current = false
     setStatus("saving")
     try {
-      const res = await api.saveWorktreeNotes({ path, notes: snap.notes, sync_cmux: snap.sync })
+      const res = await api.saveWorktreeNotes({ path, notes: snap.notes, sync_cmux: snap.sync, show_on_home: snap.home })
       saved.current = snap
       savedAt.current = res.updated_at ?? savedAt.current
       qc.setQueryData<WorktreeNotes>(["worktree-notes", path], {
-        notes: res.notes, sync_cmux: res.sync_cmux, updated_at: res.updated_at,
+        notes: res.notes, sync_cmux: res.sync_cmux, show_on_home: res.show_on_home, updated_at: res.updated_at,
       })
+      // The home page's worktree cards show the notes.
+      void qc.invalidateQueries({ queryKey: ["worktrees"] })
       inFlight.current = false
       setError(undefined)
       setCmux({ outcome: res.cmux_sync, error: res.cmux_error })
@@ -119,6 +121,14 @@ export function useWorktreeNotes(path: string) {
     void save()
   }, [save])
 
+  // Also a click: save straight away.
+  const setShowOnHome = useCallback((home: boolean) => {
+    if (!latest.current) return
+    latest.current = { ...latest.current, home }
+    setDraft(latest.current)
+    void save()
+  }, [save])
+
   /**
    * Applies a targeted edit to the CURRENT notes (not a render's possibly
    * older copy) and saves straight away — a click, not typing. `edit`
@@ -148,9 +158,11 @@ export function useWorktreeNotes(path: string) {
       // The response may arrive after this card is gone, so the cache is
       // updated up front: the next visit must start from these edits.
       qc.setQueryData<WorktreeNotes>(["worktree-notes", path], (old) => ({
-        ...old, notes: snap.notes, sync_cmux: snap.sync,
+        ...old, notes: snap.notes, sync_cmux: snap.sync, show_on_home: snap.home,
       }))
-      api.saveWorktreeNotes({ path, notes: snap.notes, sync_cmux: snap.sync }, { keepalive: true }).catch(() => {})
+      api.saveWorktreeNotes({ path, notes: snap.notes, sync_cmux: snap.sync, show_on_home: snap.home }, { keepalive: true })
+        .then(() => qc.invalidateQueries({ queryKey: ["worktrees"] }))
+        .catch(() => {})
     }
     window.addEventListener("beforeunload", sendPending)
     return () => {
@@ -164,12 +176,14 @@ export function useWorktreeNotes(path: string) {
     loadError: query.error,
     notes: draft?.notes ?? "",
     syncCmux: draft?.sync ?? false,
+    showOnHome: draft?.home ?? true,
     updatedAt: query.data?.updated_at,
     status,
     error,
     cmux,
     setNotes,
     setSyncCmux,
+    setShowOnHome,
     editNotes,
     flush,
     retry: () => void save(true),

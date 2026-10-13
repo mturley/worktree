@@ -606,6 +606,16 @@ stored in the worktree-owned `worktree_notes` table (keyed by registry path).
   Empty notes clear the description. The notes are committed BEFORE cmux is
   touched, so a cmux failure is reported in `cmux_sync`, never as a failed
   save. The sync is one-way; unchecking it leaves the description as it is.
+- **Show on home page** (per worktree, stored as `show_on_home`, defaults ON
+  — including for notes saved before the column existed): a checkbox beside
+  the save status, visible in both modes, saved at once like the cmux one.
+  `/api/worktrees` carries `notes` (one `notes.HomeNotes` query for the whole
+  list) only when the setting is on and the notes are non-blank, and the home
+  page's `WorktreeCard` renders them above its resources. There the card is
+  one big link, so `NotesMarkdown` runs with `plainLinks` (no nested `<a>`)
+  and task checkboxes stay inert. `show_on_home` is optional in the save
+  request — absent keeps the stored value, so an older client's save cannot
+  switch it off. Every save invalidates `["worktrees"]`.
 
 ### Unread (`internal/unread`, `internal/webui/unread.go`)
 

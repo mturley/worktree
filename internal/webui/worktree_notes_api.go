@@ -15,9 +15,14 @@ import (
 const maxNotesBytes = 64 << 10
 
 type worktreeNotesDTO struct {
-	Notes     string `json:"notes"`
-	SyncCmux  bool   `json:"sync_cmux"`
-	UpdatedAt string `json:"updated_at,omitempty"`
+	Notes      string `json:"notes"`
+	SyncCmux   bool   `json:"sync_cmux"`
+	ShowOnHome bool   `json:"show_on_home"`
+	UpdatedAt  string `json:"updated_at,omitempty"`
+}
+
+func newWorktreeNotesDTO(n notes.Notes) worktreeNotesDTO {
+	return worktreeNotesDTO{Notes: n.Text, SyncCmux: n.SyncCmux, ShowOnHome: n.ShowOnHome, UpdatedAt: n.UpdatedAt}
 }
 
 // Outcomes of mirroring notes to the cmux workspace description.
@@ -32,6 +37,9 @@ type setWorktreeNotesRequest struct {
 	Path     string `json:"path"`
 	Notes    string `json:"notes"`
 	SyncCmux bool   `json:"sync_cmux"`
+	// ShowOnHome is optional: absent keeps the stored setting, so a client
+	// that predates it (say, an old tab's keepalive save) cannot turn it off.
+	ShowOnHome *bool `json:"show_on_home,omitempty"`
 }
 
 type setWorktreeNotesResponse struct {
@@ -56,12 +64,12 @@ func (s *Server) handleGetWorktreeNotes(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, worktreeNotesDTO{Notes: n.Text, SyncCmux: n.SyncCmux, UpdatedAt: n.UpdatedAt})
+	writeJSON(w, http.StatusOK, newWorktreeNotesDTO(n))
 }
 
 // handleSetWorktreeNotes: POST /api/worktree-notes
 //
-// Saves notes and the sync setting together, then — if sync is on — mirrors
+// Saves notes and their settings together, then — if sync is on — mirrors
 // the notes to the worktree's cmux workspace description. The notes are
 // committed FIRST: a cmux failure is reported in cmux_sync, never as a failed
 // save, because the notes themselves are safe.
@@ -94,13 +102,25 @@ func (s *Server) handleSetWorktreeNotes(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	n, err := notes.Set(s.DB, req.Path, req.Notes, req.SyncCmux)
+	var showOnHome bool
+	if req.ShowOnHome != nil {
+		showOnHome = *req.ShowOnHome
+	} else {
+		prev, err := notes.Get(s.DB, req.Path)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		showOnHome = prev.ShowOnHome
+	}
+
+	n, err := notes.Set(s.DB, req.Path, req.Notes, req.SyncCmux, showOnHome)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	resp := setWorktreeNotesResponse{
-		worktreeNotesDTO: worktreeNotesDTO{Notes: n.Text, SyncCmux: n.SyncCmux, UpdatedAt: n.UpdatedAt},
+		worktreeNotesDTO: newWorktreeNotesDTO(n),
 		CmuxSync:         cmuxSyncOff,
 	}
 	if n.SyncCmux {

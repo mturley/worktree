@@ -19,11 +19,16 @@ const TaskOffset = createContext<number | undefined>(undefined)
  * descriptions: a click reports the item's offset in `text`, and the caller
  * flips that one marker (see lib/taskList.ts). Without it they are inert.
  *
+ * With `plainLinks`, links render as plain text: for a caller that is itself
+ * a link (the home page's worktree card), where a nested <a> is invalid and
+ * would steal the card's click.
+ *
  * Styled by styles/notes.css.
  */
-export function NotesMarkdown({ text, onToggleTask }: {
+export function NotesMarkdown({ text, onToggleTask, plainLinks = false }: {
   text: string
   onToggleTask?: (offset: number) => void
+  plainLinks?: boolean
 }) {
   // Held in a ref so `components` keeps one identity: a new component
   // function per render would remount the whole rendered list.
@@ -34,7 +39,9 @@ export function NotesMarkdown({ text, onToggleTask }: {
   const components = useMemo<Components>(() => ({
     // Links leave the app: the notes are the user's own text, but the UI
     // must not be navigated away from by a click on one.
-    a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
+    a: ({ node: _node, ...props }) => plainLinks
+      ? <span>{props.children}</span>
+      : <a {...props} target="_blank" rel="noreferrer" />,
     li: ({ node, children, ...props }) => {
       const cls = node?.properties?.className
       const isTask = Array.isArray(cls) && cls.includes("task-list-item")
@@ -60,7 +67,7 @@ export function NotesMarkdown({ text, onToggleTask }: {
         />
       )
     },
-  }), [clickable])
+  }), [clickable, plainLinks])
 
   return (
     <Box className="worktree-notes" fz="xs">

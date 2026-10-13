@@ -5,6 +5,7 @@ import (
 	"os"
 
 	wdb "github.com/mturley/worktree/internal/db"
+	"github.com/mturley/worktree/internal/notes"
 	"github.com/mturley/worktree/internal/notifyprefs"
 	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/resources"
@@ -45,6 +46,9 @@ type worktreeSummary struct {
 	UnreadCount int `json:"unread_count"`
 	// NotifyAll is the worktree-wide "Notify on all" toggle.
 	NotifyAll bool `json:"notify_all"`
+	// Notes are the worktree's notes, present only when they are non-blank
+	// and its "Show notes on home page" setting is on.
+	Notes string `json:"notes,omitempty"`
 }
 
 func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
@@ -61,6 +65,12 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 	allPrefs, err := notifyprefs.ListAll(s.DB)
 	if err != nil && s.Logger != nil {
 		s.Logger.Printf("notifyprefs.ListAll: %v", err)
+	}
+	// Likewise one query for every worktree's home-page notes. A failure
+	// only costs the notes, never the list.
+	homeNotes, err := notes.HomeNotes(s.DB)
+	if err != nil && s.Logger != nil {
+		s.Logger.Printf("notes.HomeNotes: %v", err)
 	}
 	for _, e := range entries {
 		rs, err := resources.Load(s.DB, e.Path)
@@ -119,6 +129,7 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 			HasUnread:      hasUnread,
 			UnreadCount:    unreadCount,
 			NotifyAll:      prefs.All,
+			Notes:          homeNotes[e.Path],
 		})
 	}
 	writeJSON(w, http.StatusOK, out)

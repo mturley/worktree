@@ -59,12 +59,14 @@ func migrate(conn *sql.DB) error {
 		// Free-text notes per worktree, written from the web UI's detail
 		// card. Deliberately NOT removed by registry.Unregister: a worktree
 		// recreated at the same path gets its notes back. sync_cmux is the
-		// per-worktree "mirror to the cmux workspace description" setting.
+		// per-worktree "mirror to the cmux workspace description" setting;
+		// show_on_home is "show these notes on the home page's worktree card".
 		`CREATE TABLE IF NOT EXISTS worktree_notes (
-			path       TEXT PRIMARY KEY,
-			notes      TEXT NOT NULL,
-			sync_cmux  INTEGER NOT NULL DEFAULT 0,
-			updated_at TEXT NOT NULL
+			path         TEXT PRIMARY KEY,
+			notes        TEXT NOT NULL,
+			sync_cmux    INTEGER NOT NULL DEFAULT 0,
+			show_on_home INTEGER NOT NULL DEFAULT 1,
+			updated_at   TEXT NOT NULL
 		)`,
 		// Notification toggles (internal/notifyprefs). A row means "on"; a
 		// row with an empty resource_type/resource_id is the worktree-wide
@@ -99,6 +101,11 @@ func migrate(conn *sql.DB) error {
 	// hand", which reads sort after explicitly ranked rows, so an upgraded
 	// database looks exactly as it did until the user drags something.
 	if err := addColumnIfMissing(conn, "worktree_primary", "sort_order", "INTEGER"); err != nil {
+		return err
+	}
+	// Likewise worktree_notes predates show_on_home. It defaults ON, so
+	// existing notes start showing on the home page.
+	if err := addColumnIfMissing(conn, "worktree_notes", "show_on_home", "INTEGER NOT NULL DEFAULT 1"); err != nil {
 		return err
 	}
 

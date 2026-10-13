@@ -202,7 +202,7 @@ export const api = {
   worktreeNotes: (path: string) =>
     fetchJSON<WorktreeNotes>(`/api/worktree-notes?path=${encodeURIComponent(path)}`),
   // keepalive lets a save started while the page unloads still complete.
-  saveWorktreeNotes: (args: { path: string; notes: string; sync_cmux: boolean }, opts: { keepalive?: boolean } = {}) =>
+  saveWorktreeNotes: (args: { path: string; notes: string; sync_cmux: boolean; show_on_home: boolean }, opts: { keepalive?: boolean } = {}) =>
     fetchJSON<SaveWorktreeNotesResponse>("/api/worktree-notes", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

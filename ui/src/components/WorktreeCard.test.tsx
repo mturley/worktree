@@ -30,6 +30,22 @@ beforeEach(() => window.history.replaceState({}, "", "/"))
 afterEach(cleanup)
 
 describe("WorktreeCard", () => {
+  it("shows the notes as Markdown above the resources, links as plain text", () => {
+    wrap(<WorktreeCard w={{ ...summary, notes: "**blocked** on [PR](https://example.com/pr)\n\n- [ ] rebase" }} />)
+    const label = screen.getByText("Notes:")
+    expect(screen.getByText("blocked")).toContainHTML("<strong>blocked</strong>")
+    // The card is itself a link, so the notes' links must not nest inside it.
+    expect(screen.getByText("PR").closest("a")?.getAttribute("data-card-link")).toBe("true")
+    expect(screen.getByRole("checkbox")).toBeDisabled()
+    const firstResource = screen.getByText("PR #1")
+    expect(label.compareDocumentPosition(firstResource) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("shows no notes section without notes", () => {
+    wrap(<WorktreeCard w={summary} />)
+    expect(screen.queryByText("Notes:")).not.toBeInTheDocument()
+  })
+
   it("shows the worktree name as the heading, with branch and repo as meta", () => {
     wrap(<WorktreeCard w={summary} />)
     // The heading is the worktree's own name (last path segment); the branch

@@ -159,3 +159,40 @@ func TestWorktreeNotesSavedEvenWhenCmuxFails(t *testing.T) {
 		t.Fatalf("stored notes = %q", n.Text)
 	}
 }
+
+func TestWorktreeNotesShowOnHome(t *testing.T) {
+	s, wtPath, _ := notesServer(t, nil, nil)
+	homeNotes := func() string {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		s.handleWorktrees(rec, httptest.NewRequest(http.MethodGet, "/api/worktrees", nil))
+		var list []worktreeSummary
+		if err := json.NewDecoder(rec.Body).Decode(&list); err != nil || len(list) != 1 {
+			t.Fatalf("GET /api/worktrees = %d %v %v", rec.Code, list, err)
+		}
+		return list[0].Notes
+	}
+
+	// Defaults on: saved notes show on the home page.
+	if _, got := postNotes(t, s, map[string]any{"path": wtPath, "notes": "- [ ] ship it"}); !got.ShowOnHome {
+		t.Fatalf("show_on_home should default on, got %+v", got)
+	}
+	if n := homeNotes(); n != "- [ ] ship it" {
+		t.Fatalf("home notes = %q", n)
+	}
+
+	// Turned off: hidden, and a later save that omits the field keeps it off.
+	postNotes(t, s, map[string]any{"path": wtPath, "notes": "- [ ] ship it", "show_on_home": false})
+	if _, got := postNotes(t, s, map[string]any{"path": wtPath, "notes": "edited"}); got.ShowOnHome {
+		t.Fatalf("omitted show_on_home must keep the stored setting, got %+v", got)
+	}
+	if n := homeNotes(); n != "" {
+		t.Fatalf("hidden notes leaked to home: %q", n)
+	}
+
+	// Back on, but blank notes still show nothing.
+	postNotes(t, s, map[string]any{"path": wtPath, "notes": "  ", "show_on_home": true})
+	if n := homeNotes(); n != "" {
+		t.Fatalf("blank notes shown on home: %q", n)
+	}
+}
