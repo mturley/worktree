@@ -9,10 +9,12 @@ import { useLinkedActions } from "./LinkedActionsContext"
 const btn = { root: { flexShrink: 0 }, label: { whiteSpace: "nowrap" as const } }
 
 /**
- * Follow / Open / Copy link for one linked resource. Follow becomes "View
- * activity" (selects it in this worktree) when this worktree already follows
- * it; Open becomes "Open (switch)" when cmux already has it open (PRs and
- * Jira only — the only types cmux tab matching knows).
+ * Follow / Open / Copy link for one linked resource. Follow becomes
+ * "Following" (selects it in this worktree) when this worktree already
+ * follows it; Open becomes "Open (switch)" when cmux already has it open
+ * (PRs and Jira only — the only types cmux tab matching knows). Those two are tinted,
+ * the rest secondary, so activating something that already exists is the
+ * primary action.
  */
 export function LinkedResourceActions({ item, path, hideFollow }: { item: LinkedItem; path?: string; hideFollow?: boolean }) {
   const actions = useLinkedActions()
@@ -25,23 +27,23 @@ export function LinkedResourceActions({ item, path, hideFollow }: { item: Linked
     <Button.Group className="compound-group" style={{ flexShrink: 0 }}>
       {!hideFollow && tracked && actions.selectResource && (
         <Button size="xs" variant="light" styles={btn} onClick={() => actions.selectResource!(tracked)}>
-          View activity
+          Following
         </Button>
       )}
       {!hideFollow && !tracked && actions.requestFollow && (
-        <Button size="xs" variant="light" styles={btn} onClick={() => actions.requestFollow!(item.url)}>
+        <Button size="xs" variant="subtle" styles={btn} onClick={() => actions.requestFollow!(item.url)}>
           Follow
         </Button>
       )}
       {existing ? (
         <ExistingTabButtons url={item.url} label={openLabel} switchLabel="Open (switch)" existing={existing} />
       ) : (
-        <Button size="xs" variant="light" component="a" href={item.url} target="_blank" rel="noreferrer" styles={btn}>
+        <Button size="xs" variant="subtle" component="a" href={item.url} target="_blank" rel="noreferrer" styles={btn}>
           {openLabel}
         </Button>
       )}
       <Tooltip label={copied ? "Copied!" : "Copy link"}>
-        <Button size="xs" variant="light" px="xs" aria-label="Copy link" onClick={() => void copy()} styles={{ root: { flexShrink: 0 } }}>
+        <Button size="xs" variant="subtle" px="xs" aria-label="Copy link" onClick={() => void copy()} styles={{ root: { flexShrink: 0 } }}>
           <CopyLinkIcon />
         </Button>
       </Tooltip>

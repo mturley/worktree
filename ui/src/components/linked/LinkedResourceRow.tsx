@@ -52,8 +52,10 @@ function icon(item: LinkedItem) {
 }
 
 /**
- * One linked resource: [icon] [key] title [status] [actions]. Wraps so the
- * actions drop below the text on narrow viewports rather than crushing it.
+ * One linked resource, on two lines: [icon] [key] [status] [marker] with the
+ * actions on the right, then the title indented under the key. The first
+ * line wraps so the actions drop below on narrow viewports rather than
+ * crushing it.
  */
 export function LinkedResourceRow({ item, path, hideFollow, marker }: {
   item: LinkedItem
@@ -63,25 +65,31 @@ export function LinkedResourceRow({ item, path, hideFollow, marker }: {
 }) {
   const status = statusText(item)
   return (
-    <Box py={4}>
-    <Group justify="space-between" gap="xs" wrap="wrap">
-      <Group gap={6} wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
-        {icon(item)}
-        <Text size="sm" c="dimmed" style={{ whiteSpace: "nowrap", flexShrink: 0 }}>{keyText(item)}</Text>
-        {item.resolved ? (
-          <Text size="sm" truncate="end" style={{ minWidth: 0 }}>{titleNode(item)}</Text>
-        ) : (
-          <Text size="sm" c="dimmed" fs="italic">couldn't load details</Text>
-        )}
-        {status && <Badge size="sm" variant="light" color="gray" style={{ flexShrink: 0 }}>{status}</Badge>}
-        {marker}
+    <Box py={ROW_PY}>
+      <Group justify="space-between" gap="xs" wrap="wrap">
+        <Group gap={6} wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
+          {icon(item)}
+          <Text size="sm" c="dimmed" truncate="end" style={{ minWidth: 0 }}>{keyText(item)}</Text>
+          {status && <Badge size="sm" variant="light" color="gray" style={{ flexShrink: 0 }}>{status}</Badge>}
+          {marker}
+        </Group>
+        <LinkedResourceActions item={item} path={path} hideFollow={hideFollow} />
       </Group>
-      <LinkedResourceActions item={item} path={path} hideFollow={hideFollow} />
-    </Group>
-    {item.context && <ContextLine item={item} context={item.context} />}
+      {item.resolved ? (
+        <Text size="sm" truncate="end" pl={INDENT} mt={4}>{titleNode(item)}</Text>
+      ) : (
+        <Text size="sm" c="dimmed" fs="italic" pl={INDENT} mt={4}>couldn't load details</Text>
+      )}
+      {item.context && <ContextLine item={item} context={item.context} />}
     </Box>
   )
 }
+
+// Lines the title and context up with the key, past the icon.
+const INDENT = 20
+
+/** Vertical padding of a row; the tree lines its chevron and fold rows up with it. */
+export const ROW_PY = 6
 
 /**
  * The text the link was written in, with the link's own label as a link, so
@@ -97,7 +105,7 @@ const HUGS_NEXT = /[([{'"‘“]$/
 function ContextLine({ item, context }: { item: LinkedItem; context: NonNullable<LinkedItem["context"]> }) {
   const { before, label, after } = context
   return (
-    <Text size="xs" c="dimmed" fs="italic" pl={22} data-testid="link-context">
+    <Text size="xs" c="dimmed" fs="italic" pl={INDENT} data-testid="link-context">
       {before && <>{before}{HUGS_NEXT.test(before) ? "" : " "}</>}
       <Anchor href={item.url} target="_blank" rel="noreferrer" inherit>{label}</Anchor>
       {after && <>{HUGS_PREVIOUS.test(after) ? "" : " "}{after}</>}

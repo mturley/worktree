@@ -36,7 +36,10 @@ function SectionView({ s, path }: { s: LinkedSection; path?: string }) {
           {s.groups?.map((g) => (
             <Stack key={g.label} gap={0} pl="xs">
               <Text size="xs" c="dimmed" fw={600}>{g.label}</Text>
-              {g.items.map((it) => <LinkedResourceRow key={`${it.type}:${it.id}`} item={it} path={path} />)}
+              {/* Indented under the relationship so each group reads as its own subsection. */}
+              <Stack gap={2} pl="md" data-testid="link-group-items">
+                {g.items.map((it) => <LinkedResourceRow key={`${it.type}:${it.id}`} item={it} path={path} />)}
+              </Stack>
             </Stack>
           ))}
           {s.tree && <HierarchyTree roots={s.tree} path={path} />}

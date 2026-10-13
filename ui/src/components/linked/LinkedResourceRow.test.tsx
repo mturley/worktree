@@ -48,3 +48,13 @@ describe("LinkedResourceRow context", () => {
     expect(screen.queryByTestId("link-context")).toBeNull()
   })
 })
+
+describe("LinkedResourceRow layout", () => {
+  it("puts the title on its own line, below the key, status and actions", () => {
+    wrap(<LinkedResourceRow item={item({ status: "In Progress" })} />)
+    const keyLine = screen.getByText("PROJ-9").closest(".mantine-Group-root")!
+    expect(keyLine).toHaveTextContent("In Progress")
+    expect(keyLine).not.toHaveTextContent("Story")
+    expect(keyLine.compareDocumentPosition(screen.getByText("Story")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+})

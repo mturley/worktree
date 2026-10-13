@@ -253,10 +253,11 @@ placeholder until it arrives.
 - `LinkedResourcesPanel` — sections, empty state ("No linked resources
   found"), per-section error alerts, whole-request error + Retry.
 - Sections are items of one multi-open `Accordion`, all expanded to start
-  (title as the toggle) + rows / groups / tree. "Linked in description" is
+  (title as the toggle) + rows / groups / tree. "Linked work items" rows are
+  indented under their relationship label. "Linked in description" is
   the last section for both PRs and Jira issues.
-- `LinkedResourceRow` — one line, wrapping on narrow:
-  `[icon] [key] Title… [status] [actions]`. Builds a `ResourceDTO`-shaped
+- `LinkedResourceRow` — two lines: `[icon] [key] [status] [marker]
+  [actions]`, wrapping on narrow, then the title indented under the key. Builds a `ResourceDTO`-shaped
   object so `ResourceStatusIcon` and the key formatting from
   `ResourceTypeLine` are reused (PR: state icon + `owner/repo#123`; Jira:
   proxied issue-type icon + `Story KEY` + status; Slack: message icon +
@@ -266,15 +267,17 @@ placeholder until it arrives.
   the current branch expanded; collapsed nodes lazily load via the children
   endpoint. It opens on just the path: each ancestor shows only the child
   leading to the current issue, with its other children folded behind a
-  "Show more children of KEY…" row (the current issue's own children are
+  "Show more children of KEY…" row with a dots icon in the issue-type icon's
+  place (the current issue's own children are
   all shown), placed above the child on the path. A shown node whose children the server didn't send fetches
   them right away (not on expand), and gets a chevron only once that finds
   any — so a chevron never appears just to vanish when clicked. The current issue has a left accent bar + tint + "this issue"
   marker and no Follow button.
-- `LinkedResourceActions` — button group:
+- `LinkedResourceActions` — button group. Following and the "(switch)"
+  open button are `light`; Follow, the plain open and copy are `subtle`:
   - **Follow** → `AddResourceModal` with `initialUrl` and `defaultRelated`.
     If the (type, id) is already among this worktree's resources (from the
-    existing `["resources", path]` query), the button is **View activity**,
+    existing `["resources", path]` query), the button is **Following**,
     which calls `onSelectResource({type, id})`.
   - **Open** → new-tab link. If `useResourceCmuxTab` finds an existing cmux
     tab (PR/Jira only), **Open (switch)** + chevron menu "Open (new tab)",
@@ -309,7 +312,7 @@ Data comes from watcher v0.12.0 `LinkRef` (see docs/web-ui-architecture.md
   bad params → 400.
 - **UI (vitest):** tab switching and default; count label; Activity-only
   controls hidden on Linked tab; Slack Thread panel stays mounted; Follow ↔
-  View activity; Open ↔ Open (switch); copy; tree lazy expansion; section
+  Following; Open ↔ Open (switch); copy; tree lazy expansion; section
   error and empty states.
 - **Manual end-to-end** against RHOAIENG-96640 (Git PR field, epic → feature
   chain), RHOAIENG-62835 (Task with sub-tasks), RHOAIENG-96533 (Related

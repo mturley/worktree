@@ -32,7 +32,15 @@ describe("LinkedResourceActions", () => {
     expect(requestFollow).toHaveBeenCalledWith("https://example.atlassian.net/browse/PROJ-9")
   })
 
-  it("an already-followed resource offers View activity instead", async () => {
+  it("nothing followed or open: every button is subtle", () => {
+    vi.spyOn(api, "cmuxBrowserTabs").mockResolvedValue({ available: false, tabs: [] })
+    wrap(<LinkedResourceActions item={item()} />, { requestFollow: vi.fn(), trackedResource: () => null })
+    expect(screen.getByRole("button", { name: "Follow" })).toHaveAttribute("data-variant", "subtle")
+    expect(screen.getByRole("link", { name: "Open" })).toHaveAttribute("data-variant", "subtle")
+    expect(screen.getByRole("button", { name: /copy link/i })).toHaveAttribute("data-variant", "subtle")
+  })
+
+  it("an already-followed resource offers Following instead", async () => {
     vi.spyOn(api, "cmuxBrowserTabs").mockResolvedValue({ available: false, tabs: [] })
     const selectResource = vi.fn()
     wrap(<LinkedResourceActions item={item()} />, {
@@ -41,7 +49,8 @@ describe("LinkedResourceActions", () => {
       selectResource,
     })
     expect(screen.queryByRole("button", { name: "Follow" })).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole("button", { name: "View activity" }))
+    expect(screen.getByRole("button", { name: "Following" })).toHaveAttribute("data-variant", "light")
+    await userEvent.click(screen.getByRole("button", { name: "Following" }))
     expect(selectResource).toHaveBeenCalledWith({ type: "jira", id: "PROJ-9" })
   })
 
@@ -63,11 +72,14 @@ describe("LinkedResourceActions", () => {
     })
     const focus = vi.spyOn(api, "cmuxFocusTab").mockResolvedValue({ ok: true })
     wrap(<LinkedResourceActions item={item()} />)
-    await userEvent.click(await screen.findByRole("button", { name: "Open (switch)" }))
+    const sw = await screen.findByRole("button", { name: "Open (switch)" })
+    expect(sw).toHaveAttribute("data-variant", "light")
+    expect(screen.getByRole("button", { name: "More open options" })).toHaveAttribute("data-variant", "light")
+    await userEvent.click(sw)
     expect(focus).toHaveBeenCalledWith("w1", "s1")
   })
 
-  it("hideFollow hides both Follow and View activity", () => {
+  it("hideFollow hides both Follow and Following", () => {
     vi.spyOn(api, "cmuxBrowserTabs").mockResolvedValue({ available: false, tabs: [] })
     wrap(<LinkedResourceActions item={item()} hideFollow />, { requestFollow: vi.fn(), trackedResource: () => null })
     expect(screen.queryByRole("button", { name: "Follow" })).not.toBeInTheDocument()

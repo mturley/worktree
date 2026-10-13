@@ -1262,8 +1262,8 @@ and only covers Jira issues already followed and polled.
 
 **Frontend:** `ResourceDetailPane` adds the tab for pr/jira/slack (Slack's
 `SlackThreadPane` keeps Thread as default and keeps its composer draft across
-tab switches); components in `ui/src/components/linked/`. Row actions (Follow / View in
-worktree, Open / Open (switch), Copy link) use `LinkedActionsContext`,
+tab switches); components in `ui/src/components/linked/`. Row actions (Follow /
+Following, Open / Open (switch), Copy link) use `LinkedActionsContext`,
 supplied by `WorktreeDetailPage` (`requestFollow` opens the add modal with
 Related preselected, `trackedResource`, `selectResource`). Switching resources
 resets the tab to Activity/Thread.

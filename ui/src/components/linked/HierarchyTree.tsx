@@ -1,10 +1,10 @@
 import { useState } from "react"
 import { ActionIcon, Anchor, Badge, Box, Loader, Text } from "@mantine/core"
-import { IconChevronDown, IconChevronRight } from "@tabler/icons-react"
+import { IconChevronDown, IconChevronRight, IconDots } from "@tabler/icons-react"
 import { useQuery } from "@tanstack/react-query"
 import { api } from "../../api/client"
 import type { LinkedTreeNode } from "../../api/types"
-import { LinkedResourceRow } from "./LinkedResourceRow"
+import { LinkedResourceRow, ROW_PY } from "./LinkedResourceRow"
 
 const INDENT_PX = 20
 
@@ -28,7 +28,10 @@ function leadsToCurrent(node: LinkedTreeNode): boolean {
  */
 function ShowMoreChildrenRow({ parentKey, depth, onShow }: { parentKey: string; depth: number; onShow: () => void }) {
   return (
-    <Box pl={depth * INDENT_PX + 26} py={4}>
+    // Laid out like a row (icon where the issue-type icon goes) so it reads as
+    // a stand-in for the siblings it hides.
+    <Box pl={depth * INDENT_PX + 26} py={ROW_PY} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <IconDots size={16} aria-hidden style={{ color: "var(--mantine-color-dimmed)", flexShrink: 0 }} />
       <Anchor component="button" type="button" size="sm" onClick={onShow}>
         Show more children of {parentKey}…
       </Anchor>
@@ -72,10 +75,12 @@ function TreeNodeView({ node, depth, path }: { node: LinkedTreeNode; depth: numb
           borderRadius: 4,
         } : undefined}
       >
-        <Box style={{ display: "flex", alignItems: "center", gap: 4 }}>
+        {/* Top-aligned: the row is two lines, and the chevron belongs with the
+            first (the key), centred on its 30px button row. */}
+        <Box style={{ display: "flex", alignItems: "flex-start", gap: 4 }}>
           {canExpand ? (
             <ActionIcon
-              variant="subtle" size="sm" color="gray"
+              variant="subtle" size="sm" color="gray" mt={ROW_PY + 4}
               aria-label={`${expanded ? "Collapse" : "Expand"} ${node.id}`}
               onClick={() => setExpanded((e) => !e)}
             >
