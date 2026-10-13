@@ -1,4 +1,5 @@
-import { ActionIcon, Box, Button, Group, Popover, Stack, Text, Tooltip, UnstyledButton } from "@mantine/core"
+import { ActionIcon, Box, Button, Group, Popover, Stack, Text, UnstyledButton } from "@mantine/core"
+import { useMediaQuery } from "@mantine/hooks"
 import { IconFile, IconMarkdown, IconTerminal2, IconWorld, IconX } from "@tabler/icons-react"
 import { useState, type CSSProperties, type ReactNode } from "react"
 import {
@@ -20,6 +21,8 @@ import { CSS } from "@dnd-kit/utilities"
 import type { CmuxLayout, CmuxMove, CmuxPane, CmuxTab } from "../api/types"
 import { windowTabs } from "../lib/windowTabs"
 import { dropTarget } from "../lib/cmuxMove"
+import { useHoverMenu, type HoverMenu } from "../lib/useHoverMenu"
+import { CmuxPeekCard } from "./CmuxPeekCard"
 
 /** Tabs listed per pane before the rest collapse into "Show N more tabs". */
 export const VISIBLE_TABS = 10
@@ -44,6 +47,8 @@ interface Handlers {
 }
 
 interface Props extends Handlers {
+  /** The cmux workspace these panes belong to — what the hover peek asks for. */
+  workspaceId: string
   layout: CmuxLayout
   panes: CmuxPane[]
   onMove: (move: CmuxMove) => void
@@ -84,9 +89,15 @@ interface DragState {
  * SortableContext's preview; across panes there is no slot preview, so the
  * hovered row/pane gets a drop hint instead (see PaneBox/TabRow).
  */
-export function PaneDiagram({ layout, panes, onSelect, onClose, onMove, onDragActiveChange }: Props) {
+export function PaneDiagram({ workspaceId, layout, panes, onSelect, onClose, onMove, onDragActiveChange }: Props) {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
   const [drag, setDrag] = useState<DragState>({ activeRef: null, activePane: null, overId: null })
+  // One peek card open at a time across the whole diagram, closed while a
+  // tab is being dragged so it never floats over the drop targets.
+  const hoverMenuFor = useHoverMenu({ openDelay: 400, closeDelay: 300, disabled: drag.activeRef !== null })
+  // Desktop only: a touch device has no hover, and a long-press is a drag.
+  const canHover = !useMediaQuery("(hover: none)")
+  const menuFor = canHover ? hoverMenuFor : null
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
@@ -138,6 +149,8 @@ export function PaneDiagram({ layout, panes, onSelect, onClose, onMove, onDragAc
           expanded={expanded}
           setGroup={setGroup}
           drag={drag}
+          workspaceId={workspaceId}
+          menuFor={menuFor}
           onSelect={onSelect}
           onClose={onClose}
         />
@@ -158,6 +171,9 @@ interface ViewProps extends Handlers {
   expanded: ReadonlySet<string>
   setGroup: (key: string, open: boolean) => void
   drag: DragState
+  workspaceId: string
+  /** null on devices that cannot hover: no peek card at all. */
+  menuFor: ((ref: string) => HoverMenu) | null
 }
 
 function LayoutView({ node, grow, edge, ...rest }: ViewProps & { node: CmuxLayout; grow: number; edge?: "left" | "top" }) {
@@ -183,7 +199,7 @@ function LayoutView({ node, grow, edge, ...rest }: ViewProps & { node: CmuxLayou
   )
 }
 
-function PaneBox({ pane, style, expanded, setGroup, drag, onSelect, onClose }: ViewProps & { pane: CmuxPane; style: CSSProperties }) {
+function PaneBox({ pane, style, expanded, setGroup, drag, workspaceId, menuFor, onSelect, onClose }: ViewProps & { pane: CmuxPane; style: CSSProperties }) {
   const { setNodeRef } = useDroppable({ id: pane.ref })
   const { before, shown, after } = windowTabs(pane.tabs, VISIBLE_TABS)
   const open = (side: "before" | "after") => expanded.has(`${pane.ref}:${side}`)
@@ -197,6 +213,8 @@ function PaneBox({ pane, style, expanded, setGroup, drag, onSelect, onClose }: V
         tab={tab}
         // Across panes there is no slot preview; mark where it will land.
         dropBefore={fromElsewhere && drag.overId === tab.ref}
+        workspaceId={workspaceId}
+        menu={menuFor ? menuFor(tab.ref) : null}
         onSelect={onSelect}
         onClose={onClose}
       />
@@ -297,7 +315,12 @@ function TopMoreLink({
   )
 }
 
-function TabRow({ tab, dropBefore, onSelect, onClose }: Handlers & { tab: CmuxTab; dropBefore: boolean }) {
+function TabRow({ tab, dropBefore, onSelect, onClose, workspaceId, menu }: Handlers & {
+  tab: CmuxTab
+  dropBefore: boolean
+  workspaceId: string
+  menu: HoverMenu | null
+}) {
   // A terminal may be running something (a dev server, an agent); a browser
   // tab open on this very page is the page the user is on — cmux has no way
   // to tell them apart from any other tab, so closing either asks first.
@@ -330,31 +353,44 @@ function TabRow({ tab, dropBefore, onSelect, onClose }: Handlers & { tab: CmuxTa
         touchAction: "manipulation",
       }}
     >
-      <Tooltip
-        // Not the native title attribute: cmux's embedded browser does not
-        // show those.
-        label={
-          <>
-            <Text size="xs" fw={600}>{tab.title}</Text>
-            {tab.url && <Text size="xs" style={{ wordBreak: "break-all" }}>{tab.url}</Text>}
-          </>
-        }
-        openDelay={400}
-        multiline
-        maw={360}
+      {/* A peek card, not the native title attribute: cmux's embedded
+          browser does not show those. Its header carries the title and URL
+          the row truncates. */}
+      <Popover
+        opened={menu?.opened ?? false}
+        onClose={menu?.close}
+        position="right-start"
+        shadow="md"
+        width={720}
+        // Small, so the pointer crosses little no-man's-land on its way into
+        // the card; useHoverMenu's close delay is the grace period for it.
+        offset={4}
+        disabled={!menu}
       >
-        <UnstyledButton
-          aria-label={`Switch to ${tab.title}${tab.unread ? " (unread)" : ""}`}
-          onClick={() => onSelect(tab)}
-          style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 4, padding: "1px 4px" }}
+        <Popover.Target>
+          <UnstyledButton
+            aria-label={`Switch to ${tab.title}${tab.unread ? " (unread)" : ""}`}
+            onClick={() => onSelect(tab)}
+            onMouseEnter={menu?.onTargetEnter}
+            onMouseLeave={menu?.onLeave}
+            style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 4, padding: "1px 4px" }}
+          >
+            <Icon size={12} style={{ flex: "none" }} color={tab.selected ? "var(--mantine-color-blue-filled)" : "var(--mantine-color-dimmed)"} />
+            <Text size="xs" truncate fw={tab.selected ? 700 : 400} data-selected={tab.selected || undefined}>
+              {tab.title}
+            </Text>
+            {tab.unread && <UnreadDot />}
+          </UnstyledButton>
+        </Popover.Target>
+        <Popover.Dropdown
+          p="xs"
+          style={{ maxWidth: "90vw" }}
+          onMouseEnter={menu?.onDropdownEnter}
+          onMouseLeave={menu?.onLeave}
         >
-          <Icon size={12} style={{ flex: "none" }} color={tab.selected ? "var(--mantine-color-blue-filled)" : "var(--mantine-color-dimmed)"} />
-          <Text size="xs" truncate fw={tab.selected ? 700 : 400} data-selected={tab.selected || undefined}>
-            {tab.title}
-          </Text>
-          {tab.unread && <UnreadDot />}
-        </UnstyledButton>
-      </Tooltip>
+          <CmuxPeekCard workspaceId={workspaceId} tab={tab} />
+        </Popover.Dropdown>
+      </Popover>
       <Popover opened={confirming} onChange={setConfirming} position="bottom-end" withArrow shadow="md">
         <Popover.Target>
           <ActionIcon variant="subtle" color="gray" size="xs" className="cmux-tab-close" aria-label={`Close ${tab.title}`} onClick={close}>
