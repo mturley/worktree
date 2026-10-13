@@ -1,35 +1,51 @@
 package cmux
 
 import (
+	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // The cmux tab's hover peek (internal/webui handleCmuxPeek). Verified
 // against cmux 0.65.0: all three commands work on tabs that are not selected
 // and in workspaces that are not focused, and none of them moves focus.
 
-// cmuxOutput runs one cmux command and returns its stdout, folding stderr
-// into the error.
+// peekTimeout bounds every peek command: a wedged cmux (say, a hung webview
+// asked for a screenshot) must fail the hover, not block it — and a stuck
+// screenshot would hold its surface's lock for every later hover too.
+// A var so tests can shorten it.
+var peekTimeout = 10 * time.Second
+
+// cmuxOutput runs one peek command and returns its stdout, folding stderr
+// into the error, and kills it after peekTimeout.
 func cmuxOutput(what string, args ...string) ([]byte, error) {
-	out, err := cmuxCmd(args...).Output()
+	cmd := cmuxCmd(args...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	// After the kill, stop waiting on output pipes a child process may
+	// still hold open.
+	cmd.WaitDelay = time.Second
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("%s: %w", what, err)
+	}
+	timer := time.AfterFunc(peekTimeout, func() { _ = cmd.Process.Kill() })
+	err := cmd.Wait()
+	if !timer.Stop() {
+		return nil, fmt.Errorf("%s: timed out after %s", what, peekTimeout)
+	}
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			if stderr := strings.TrimSpace(string(exitErr.Stderr)); stderr != "" {
-				return nil, fmt.Errorf("%s: %s", what, stderr)
-			}
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			return nil, fmt.Errorf("%s: %s", what, msg)
 		}
 		return nil, fmt.Errorf("%s: %w", what, err)
 	}
-	return out, nil
+	return stdout.Bytes(), nil
 }
 
 // ReadScreen returns a terminal tab's last `lines` lines, scrollback
@@ -85,7 +101,7 @@ func Screenshot(surfaceRef string) ([]byte, error) {
 	path := filepath.Join(dir, strings.ReplaceAll(surfaceRef, ":", "-")+".png")
 	_ = os.Remove(path)
 	defer os.Remove(path)
-	if err := runCmux("taking screenshot", "browser", "--surface", surfaceRef, "screenshot", "--out", path); err != nil {
+	if _, err := cmuxOutput("taking screenshot", "browser", "--surface", surfaceRef, "screenshot", "--out", path); err != nil {
 		return nil, err
 	}
 	return os.ReadFile(path)

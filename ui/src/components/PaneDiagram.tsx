@@ -362,9 +362,12 @@ function TabRow({ tab, dropBefore, onSelect, onClose, workspaceId, menu }: Handl
         position="right-start"
         shadow="md"
         width={720}
-        // Small, so the pointer crosses little no-man's-land on its way into
-        // the card; useHoverMenu's close delay is the grace period for it.
-        offset={4}
+        // Clears the row's close button (an 18px ActionIcon 2px to the
+        // right of this target) so an open card never covers it. Moving
+        // onto ✕ leaves the target, so the card closes after
+        // useHoverMenu's close delay — which is also the grace period for
+        // crossing this gap into the card.
+        offset={24}
         disabled={!menu}
       >
         <Popover.Target>

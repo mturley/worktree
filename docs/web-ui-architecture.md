@@ -1818,6 +1818,10 @@ header.
   which also proves the surface is in that workspace (else 404). It is a
   data GET, unlike the cmux tab's POST actions: 400 on a bad id/surface, 503
   when cmux is not running, 502 on a cmux failure — not 200 `ok:false`.
+  Every peek command is killed after 10s (`peekTimeout`) and reported as a
+  502, so a wedged cmux (a hung webview asked for a screenshot) fails the
+  hover instead of hanging it — and cannot hold its surface's screenshot
+  lock for every later hover.
 - **Per type:**
   - terminal — `read-screen --workspace W --surface S --scrollback --lines 200`
   - browser — `browser --surface S screenshot --out <file>` (~1.3s, ~200KB

@@ -160,6 +160,30 @@ func TestScreenshotSerializesSameSurface(t *testing.T) {
 	}
 }
 
+// A wedged cmux (e.g. a hung webview) must fail the peek, not block it — a
+// stuck screenshot would otherwise hold its surface's lock forever.
+func TestPeekCommandsTimeOut(t *testing.T) {
+	usePeekDir(t)
+	orig := peekTimeout
+	peekTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { peekTimeout = orig })
+	stubCmuxScript(t, `exec sleep 5`)
+	for name, run := range map[string]func() error{
+		"read-screen":    func() error { _, err := ReadScreen("W", "surface:1", 200); return err },
+		"read-selection": func() error { _, err := MarkdownPath("W", "surface:1"); return err },
+		"screenshot":     func() error { _, err := Screenshot("surface:1"); return err },
+	} {
+		start := time.Now()
+		err := run()
+		if err == nil || !strings.Contains(err.Error(), "timed out") {
+			t.Errorf("%s: err = %v, want a timeout", name, err)
+		}
+		if elapsed := time.Since(start); elapsed > 2*time.Second {
+			t.Errorf("%s: took %v, want it cut off near the timeout", name, elapsed)
+		}
+	}
+}
+
 func TestClearPeekScreenshots(t *testing.T) {
 	dir := usePeekDir(t)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
