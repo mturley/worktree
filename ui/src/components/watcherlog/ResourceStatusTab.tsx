@@ -56,7 +56,10 @@ export function ResourceStatusTab({ scope }: { scope: WatcherLogScope }) {
     return <Text size="sm" c="dimmed" ta="center" py="lg">No resources are being watched.</Text>
   }
   return (
-    <Table.ScrollContainer minWidth={480} mah="60vh">
+    // maxHeight, not the mah style prop: mah caps the ScrollArea root, which
+    // clips (overflow: hidden) while its viewport grows to the full table, so
+    // nothing scrolls. maxHeight caps the inner element and the viewport scrolls.
+    <Table.ScrollContainer minWidth={480} maxHeight="60vh">
       <Table striped highlightOnHover verticalSpacing={4} fz="xs">
         <Table.Thead>
           <Table.Tr>
