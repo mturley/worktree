@@ -69,7 +69,7 @@ describe("ResourceStatusTab", () => {
     expect(screen.getByLabelText("error")).toBeTruthy()
     expect(screen.getByLabelText("ok")).toBeTruthy()
     expect(screen.getByLabelText("never polled")).toBeTruthy()
-    expect(screen.getByText("Never")).toBeTruthy()
+    expect(screen.getAllByText("Never")).toHaveLength(2) // slack error row + jira never row
     expect(screen.getByRole("link", { name: "Fix it" }).getAttribute("href")).toBe("https://github.com/o/r/pull/1")
   })
 
