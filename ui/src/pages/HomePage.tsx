@@ -86,10 +86,10 @@ export function HomePage() {
             name as the heading's accessible text. */}
         <Title order={4}><Logo alt="Worktrees" /></Title>
         {sortControl}
-        <FollowCmuxToggle />
         {/* With the worktree list, which it narrows first; it narrows the
             activity feed too. */}
         <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} />
+        <FollowCmuxToggle />
       </Group>
       {newWorktreeButton}
     </Group>
