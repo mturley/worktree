@@ -1884,14 +1884,17 @@ It replaced the row's title/URL tooltip, whose content is now the card's
 header.
 
 - **UI:** each `TabRow`'s switch button is the target of a `Popover` driven
-  by `useHoverMenu`, instantiated once per `PaneDiagram`: 400ms open delay,
+  by `useHoverMenu`, instantiated once per `PaneDiagram`: no open delay,
   300ms close delay, at most one card open, and `disabled` while a tab is
-  being dragged (which closes any open card). Desktop only — when
+  being dragged (which closes any open card). The card is a preview, not
+  something to interact with: moving the pointer into it hides it, which —
+  since it sits over the rows beneath its own — lets a downward sweep of
+  the list peek at each tab in turn. Desktop only — when
   `(hover: none)` matches, no `menuFor` is passed down and no card exists.
   The dropdown is unmounted while closed, so mounting `CmuxPeekCard` is what
   starts `useCmuxPeek`'s fetch. The card opens below the row
   (`bottom-start`, flipped above when there is no room), so it never covers
-  the row's close button; screenshots are shown scaled to fit 480×300.
+  the row's close button.
 - **Cadence:** terminals refetch every 5s while the card is open; browser
   and markdown peeks fetch once per open with `staleTime`/`gcTime` 0, so a
   reopened card always shows the tab as it is now and a closed one drops its

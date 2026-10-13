@@ -257,6 +257,34 @@ describe("PaneDiagram tab peek", () => {
     expect(text.closest("[data-position]")).toHaveAttribute("data-position", "bottom-start")
   })
 
+  it("opens the card at once, with no hover delay", async () => {
+    vi.useFakeTimers()
+    vi.spyOn(api, "cmuxPeek").mockResolvedValue({ type: "terminal", text: "hello from tab 1" })
+    wrap(panes())
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "Switch to Tab 1" }))
+    // Only the popover's enter transition: 200ms in all, well inside the
+    // 400ms open delay this replaced.
+    await tick(100)
+    await tick(100)
+    expect(screen.getByText("hello from tab 1")).toBeInTheDocument()
+  })
+
+  // The card sits below its row, over the rows beneath. Moving into it hides
+  // it, so sweeping the pointer down the list peeks at each tab in turn.
+  it("hides the card when the pointer moves into it", async () => {
+    vi.useFakeTimers()
+    vi.spyOn(api, "cmuxPeek").mockResolvedValue({ type: "terminal", text: "hello from tab 1" })
+    wrap(panes())
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "Switch to Tab 1" }))
+    await tick(500)
+    await tick(500)
+    const card = screen.getByText("hello from tab 1").closest("[data-position]")!
+    fireEvent.mouseEnter(card)
+    await tick(500)
+    await tick(500)
+    expect(screen.queryByText("hello from tab 1")).not.toBeInTheDocument()
+  })
+
   it("closes the card when a drag starts", async () => {
     vi.spyOn(api, "cmuxPeek").mockResolvedValue({ type: "terminal", text: "hello from tab 1" })
     wrap(panes())

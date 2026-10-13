@@ -93,8 +93,9 @@ export function PaneDiagram({ workspaceId, layout, panes, onSelect, onClose, onM
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
   const [drag, setDrag] = useState<DragState>({ activeRef: null, activePane: null, overId: null })
   // One peek card open at a time across the whole diagram, closed while a
-  // tab is being dragged so it never floats over the drop targets.
-  const hoverMenuFor = useHoverMenu({ openDelay: 400, closeDelay: 300, disabled: drag.activeRef !== null })
+  // tab is being dragged so it never floats over the drop targets. No open
+  // delay: sweeping the pointer down the list is how you peek at each tab.
+  const hoverMenuFor = useHoverMenu({ openDelay: 0, closeDelay: 300, disabled: drag.activeRef !== null })
   // Desktop only: a touch device has no hover, and a long-press is a drag.
   const canHover = !useMediaQuery("(hover: none)")
   const menuFor = canHover ? hoverMenuFor : null
@@ -364,8 +365,7 @@ function TabRow({ tab, dropBefore, onSelect, onClose, workspaceId, menu }: Handl
         position="bottom-start"
         shadow="md"
         width={720}
-        // Small, so the pointer crosses little no-man's-land on its way into
-        // the card; useHoverMenu's close delay is the grace period for it.
+        // Small: the card sits just under its row, over the rows beneath.
         offset={4}
         disabled={!menu}
       >
@@ -387,8 +387,10 @@ function TabRow({ tab, dropBefore, onSelect, onClose, workspaceId, menu }: Handl
         <Popover.Dropdown
           p="xs"
           style={{ maxWidth: "90vw" }}
-          onMouseEnter={menu?.onDropdownEnter}
-          onMouseLeave={menu?.onLeave}
+          // The card covers the rows beneath its own. Moving into it hides it,
+          // uncovering the next row, so sweeping down the list peeks at each
+          // tab in turn — the card is a preview, not something to interact with.
+          onMouseEnter={menu?.close}
         >
           <CmuxPeekCard workspaceId={workspaceId} tab={tab} />
         </Popover.Dropdown>

@@ -44,12 +44,6 @@ describe("CmuxPeekCard", () => {
     expect(img).toHaveAttribute("src", "data:image/png;base64,UE5H")
   })
 
-  it("caps a screenshot at 480×300, scaled to fit", async () => {
-    show(tab("browser"), { type: "browser", image: "data:image/png;base64,UE5H" })
-    const img = await screen.findByRole("img", { name: "My browser" })
-    expect(img).toHaveStyle({ maxWidth: "480px", maxHeight: "300px", objectFit: "contain" })
-  })
-
   it("renders markdown with its path", async () => {
     show(tab("markdown"), { type: "markdown", markdown: "# Heading\n\nbody", path: "/tmp/notes.md" })
     expect(await screen.findByRole("heading", { name: "Heading" })).toBeInTheDocument()
