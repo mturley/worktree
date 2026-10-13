@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/mturley/watcher/slack"
+	"github.com/mturley/worktree/internal/cmux"
 	"github.com/mturley/worktree/internal/config"
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/discovery"
@@ -150,6 +151,10 @@ func runUI(cmd *cobra.Command, args []string) error {
 	srv := &webui.Server{DB: conn, WebFS: webFS, Port: uiPort, DevMode: uiAPIOnly, Logger: logger,
 		SlackClient: slackClient, SlackPoller: slackPoller, SlackDomain: slackDomain, SlackCookie: slackCookie,
 		Security: sec}
+
+	// Browser peek screenshots live only for one request; this catches any
+	// a crash left behind (internal/cmux/peek.go).
+	cmux.ClearPeekScreenshots()
 
 	// Start the in-process poll loop (Task 4 provides StartPolling).
 	stop := srv.StartPolling(2 * time.Minute)
