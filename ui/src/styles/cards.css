@@ -173,16 +173,6 @@
 }
 
 /*
- * Linked Resources row buttons: a little shorter than Mantine's xs (30px),
- * so the two-line rows stay compact. Mantine sets --button-height-xs on each
- * button root, so it's overridden there (by a more specific selector) rather
- * than inherited from the group.
- */
-.linked-actions .mantine-Button-root {
-  --button-height-xs: calc(1.625rem * var(--mantine-scale));
-}
-
-/*
  * A faint line between neighbouring Linked Resources items, so each
  * resource's two lines read as one unit. Adjacent siblings only: the first
  * item in a list gets none, and the hierarchy tree renders its nodes flat,

@@ -52,11 +52,11 @@ function icon(item: LinkedItem) {
 }
 
 /**
- * One linked resource, on two lines: [toggle] [icon] [key] [status] [marker]
- * with the actions on the right, then the title, indented to line up with
- * the key. The first line wraps so the actions drop below on narrow
- * viewports rather than crushing it. The link context, if any, runs
- * underneath. `toggle` is the tree's chevron (or a spacer of its width).
+ * One linked resource: [toggle] [icon] [key] [status] [marker], then the
+ * title (lined up with the key) and any link context, with the actions
+ * beside the whole entry, vertically centred, so the title truncates before
+ * them. On a narrow viewport the actions wrap below rather than crushing the
+ * text. `toggle` is the tree's chevron (or a spacer of its width).
  */
 export function LinkedResourceRow({ item, path, hideFollow, marker, toggle }: {
   item: LinkedItem
@@ -68,9 +68,9 @@ export function LinkedResourceRow({ item, path, hideFollow, marker, toggle }: {
   const status = statusText(item)
   const indent = (toggle ? TOGGLE_W + TOGGLE_GAP : 0) + ICON_SLOT + ICON_GAP
   return (
-    <Box py={ROW_PY} className="linked-item">
-      <Group justify="space-between" gap="xs" wrap="wrap">
-        <Box style={{ display: "flex", alignItems: "center", flex: 1, minWidth: 0 }}>
+    <Group py={ROW_PY} className="linked-item" justify="space-between" gap="xs" wrap="wrap" align="center">
+      <Box style={{ flex: "1 1 240px", minWidth: 0 }}>
+        <Box style={{ display: "flex", alignItems: "center", minWidth: 0 }}>
           {toggle && <Box mr={TOGGLE_GAP} style={{ flexShrink: 0 }}>{toggle}</Box>}
           {/* A fixed-width slot, so every row's text starts at the same x
               whatever the icon's own size. */}
@@ -81,15 +81,15 @@ export function LinkedResourceRow({ item, path, hideFollow, marker, toggle }: {
             {marker}
           </Group>
         </Box>
-        <LinkedResourceActions item={item} path={path} hideFollow={hideFollow} />
-      </Group>
-      {item.resolved ? (
-        <Text size="sm" truncate="end" pl={indent}>{titleNode(item)}</Text>
-      ) : (
-        <Text size="sm" c="dimmed" fs="italic" pl={indent}>couldn't load details</Text>
-      )}
-      {item.context && <ContextLine item={item} context={item.context} indent={indent} />}
-    </Box>
+        {item.resolved ? (
+          <Text size="sm" truncate="end" pl={indent}>{titleNode(item)}</Text>
+        ) : (
+          <Text size="sm" c="dimmed" fs="italic" pl={indent}>couldn't load details</Text>
+        )}
+        {item.context && <ContextLine item={item} context={item.context} indent={indent} />}
+      </Box>
+      <LinkedResourceActions item={item} path={path} hideFollow={hideFollow} />
+    </Group>
   )
 }
 

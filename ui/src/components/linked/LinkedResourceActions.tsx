@@ -24,7 +24,7 @@ export function LinkedResourceActions({ item, path, hideFollow }: { item: Linked
   const openLabel = item.type === "slack" ? "Open in Slack" : "Open"
 
   return (
-    <Button.Group className="compound-group linked-actions" style={{ flexShrink: 0 }}>
+    <Button.Group className="compound-group" style={{ flexShrink: 0 }}>
       {!hideFollow && tracked && actions.selectResource && (
         <Button size="xs" variant="light" styles={btn} onClick={() => actions.selectResource!(tracked)}>
           Following
