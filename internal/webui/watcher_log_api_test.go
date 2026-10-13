@@ -2,6 +2,7 @@ package webui
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -103,5 +104,107 @@ func TestWatchedResources_BadResourceParam(t *testing.T) {
 	resp, _ := http.Get(f.url + "/api/watchers/resources?resource=nocolon")
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status %d, want 400", resp.StatusCode)
+	}
+}
+
+type logResp struct {
+	Entries []pollLogEntryDTO `json:"entries"`
+	HasMore bool              `json:"has_more"`
+}
+
+func getLog(t *testing.T, base string, q url.Values, wantStatus int) logResp {
+	t.Helper()
+	resp, err := http.Get(base + "/api/watchers/log?" + q.Encode())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != wantStatus {
+		t.Fatalf("status %d, want %d", resp.StatusCode, wantStatus)
+	}
+	var out logResp
+	if wantStatus == 200 {
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return out
+}
+
+func seedLog(t *testing.T, f watcherLogFixture) (ghStart, prRow, slackRow, jiraStart int64) {
+	t.Helper()
+	ins := func(e watcherdb.PollLogEntry) int64 {
+		id, err := watcherdb.InsertPollLog(f.srv.DB, e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	ghStart = ins(watcherdb.PollLogEntry{Source: "github", Level: "info", Kind: "poll", Message: "github poll started"})
+	prRow = ins(watcherdb.PollLogEntry{Source: "github", Level: "error", Kind: "http", Message: "POST → 504",
+		HTTPStatus: 504, ErrorBody: "Unicorn! · GitHub", Resources: []watcher.Resource{f.prA}})
+	slackRow = ins(watcherdb.PollLogEntry{Source: "slack", Level: "error", Kind: "resource", Message: "thread_not_found",
+		Resources: []watcher.Resource{f.slackB}})
+	jiraStart = ins(watcherdb.PollLogEntry{Source: "jira", Level: "info", Kind: "poll", Message: "jira poll started"})
+	return
+}
+
+func entryIDs(r logResp) []int64 {
+	var out []int64
+	for _, e := range r.Entries {
+		out = append(out, e.ID)
+	}
+	return out
+}
+
+func TestWatcherLog_UnscopedNewestFirstWithNames(t *testing.T) {
+	f := newWatcherLogFixture(t)
+	gh, pr, sl, ji := seedLog(t, f)
+	got := getLog(t, f.url, nil, 200)
+	if want := []int64{ji, sl, pr, gh}; fmt.Sprint(entryIDs(got)) != fmt.Sprint(want) {
+		t.Fatalf("ids %v want %v", entryIDs(got), want)
+	}
+	if got.Entries[2].Resources[0].Name != "My PR" || got.Entries[2].ErrorBody != "Unicorn! · GitHub" {
+		t.Fatalf("pr row: %+v", got.Entries[2])
+	}
+}
+
+func TestWatcherLog_ResourceScopeIncludesOwnSourcePollRowsOnly(t *testing.T) {
+	f := newWatcherLogFixture(t)
+	gh, pr, _, _ := seedLog(t, f)
+	got := getLog(t, f.url, url.Values{"resource": {"pr:" + f.prA.ID}}, 200)
+	if want := []int64{pr, gh}; fmt.Sprint(entryIDs(got)) != fmt.Sprint(want) {
+		t.Fatalf("ids %v want %v", entryIDs(got), want)
+	}
+}
+
+func TestWatcherLog_FiltersAndCursors(t *testing.T) {
+	f := newWatcherLogFixture(t)
+	gh, pr, sl, ji := seedLog(t, f)
+	got := getLog(t, f.url, url.Values{"level": {"warn"}}, 200)
+	if want := []int64{sl, pr}; fmt.Sprint(entryIDs(got)) != fmt.Sprint(want) {
+		t.Fatalf("warn ids %v", entryIDs(got))
+	}
+	got = getLog(t, f.url, url.Values{"source": {"github", "jira"}}, 200)
+	if want := []int64{ji, pr, gh}; fmt.Sprint(entryIDs(got)) != fmt.Sprint(want) {
+		t.Fatalf("source ids %v", entryIDs(got))
+	}
+	got = getLog(t, f.url, url.Values{"after_id": {fmt.Sprint(pr)}}, 200)
+	if want := []int64{ji, sl}; fmt.Sprint(entryIDs(got)) != fmt.Sprint(want) {
+		t.Fatalf("after ids %v", entryIDs(got))
+	}
+	got = getLog(t, f.url, url.Values{"limit": {"1"}}, 200)
+	if len(got.Entries) != 1 || !got.HasMore {
+		t.Fatalf("limit 1: %+v", got)
+	}
+}
+
+func TestWatcherLog_BadParams(t *testing.T) {
+	f := newWatcherLogFixture(t)
+	for _, q := range []url.Values{
+		{"level": {"loud"}}, {"source": {"bitbucket"}}, {"after_id": {"x"}},
+		{"limit": {"0"}}, {"limit": {"501"}}, {"resource": {"nocolon"}},
+	} {
+		getLog(t, f.url, q, http.StatusBadRequest)
 	}
 }

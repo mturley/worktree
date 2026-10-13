@@ -2,8 +2,10 @@ package webui
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -179,4 +181,125 @@ func (s *Server) handleWatchedResources(w http.ResponseWriter, r *http.Request) 
 		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"resources": out})
+}
+
+type taggedResourceDTO struct {
+	Type string `json:"type"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type pollLogEntryDTO struct {
+	ID         int64               `json:"id"`
+	TS         string              `json:"ts"`
+	Source     string              `json:"source"`
+	Level      string              `json:"level"`
+	Kind       string              `json:"kind"`
+	Message    string              `json:"message"`
+	Method     string              `json:"method,omitempty"`
+	Endpoint   string              `json:"endpoint,omitempty"`
+	HTTPStatus int                 `json:"http_status,omitempty"`
+	DurationMS int                 `json:"duration_ms,omitempty"`
+	Bytes      int64               `json:"bytes,omitempty"`
+	ErrorBody  string              `json:"error_body,omitempty"`
+	Resources  []taggedResourceDTO `json:"resources"`
+}
+
+var validSources = map[string]bool{"github": true, "jira": true, "slack": true}
+
+func parseID(q string) (int64, error) {
+	if q == "" {
+		return 0, nil
+	}
+	n, err := strconv.ParseInt(q, 10, 64)
+	if err != nil || n < 0 {
+		return 0, fmt.Errorf("invalid id %q", q)
+	}
+	return n, nil
+}
+
+// handleWatcherLog: GET /api/watchers/log — watcher log entries, newest first.
+func (s *Server) handleWatcherLog(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	bad := func(msg string) { writeError(w, http.StatusBadRequest, msg) }
+
+	pq := watcherdb.PollLogQuery{Limit: 200}
+	switch lv := q.Get("level"); lv {
+	case "", "info":
+	case "warn", "error":
+		pq.MinLevel = lv
+	default:
+		bad("level must be info, warn, or error")
+		return
+	}
+	for _, src := range q["source"] {
+		if !validSources[src] {
+			bad("unknown source " + src)
+			return
+		}
+		pq.Sources = append(pq.Sources, src)
+	}
+	var err error
+	if pq.AfterID, err = parseID(q.Get("after_id")); err != nil {
+		bad(err.Error())
+		return
+	}
+	if pq.BeforeID, err = parseID(q.Get("before_id")); err != nil {
+		bad(err.Error())
+		return
+	}
+	if l := q.Get("limit"); l != "" {
+		n, err := strconv.Atoi(l)
+		if err != nil || n < 1 || n > 500 {
+			bad("limit must be 1..500")
+			return
+		}
+		pq.Limit = n
+	}
+
+	scope, scoped, err := s.resolveWatcherScope(r)
+	if errors.Is(err, errBadScope) {
+		bad(err.Error())
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	names := map[watcherdb.ResourceKey]string{}
+	for _, wr := range scope {
+		names[watcherdb.ResourceKey{Type: wr.Type, ID: wr.ID}] = wr.Name
+	}
+	if scoped {
+		pq.ResourceScoped = true
+		for _, wr := range scope {
+			pq.Resources = append(pq.Resources, wr.Resource)
+		}
+		// Tags on scoped rows can name resources outside the scope (a GitHub
+		// batch row lists every PR); resolve those names too.
+		if all, err := s.allWatched(); err == nil {
+			for _, wr := range all {
+				names[watcherdb.ResourceKey{Type: wr.Type, ID: wr.ID}] = wr.Name
+			}
+		}
+	}
+
+	entries, more, err := watcherdb.QueryPollLog(s.DB, pq)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	out := make([]pollLogEntryDTO, 0, len(entries))
+	for _, e := range entries {
+		dto := pollLogEntryDTO{ID: e.ID, TS: e.TS, Source: e.Source, Level: e.Level, Kind: e.Kind,
+			Message: e.Message, Method: e.Method, Endpoint: e.Endpoint, HTTPStatus: e.HTTPStatus,
+			DurationMS: e.DurationMS, Bytes: e.Bytes, ErrorBody: e.ErrorBody,
+			Resources: make([]taggedResourceDTO, 0, len(e.Resources))}
+		for _, tr := range e.Resources {
+			name := names[watcherdb.ResourceKey{Type: tr.Type, ID: tr.ID}]
+			dto.Resources = append(dto.Resources, taggedResourceDTO{Type: tr.Type, ID: tr.ID, Name: firstNonEmpty(name, tr.ID)})
+		}
+		out = append(out, dto)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"entries": out, "has_more": more})
 }
