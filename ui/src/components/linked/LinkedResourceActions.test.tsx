@@ -36,7 +36,7 @@ describe("LinkedResourceActions", () => {
     vi.spyOn(api, "cmuxBrowserTabs").mockResolvedValue({ available: false, tabs: [] })
     wrap(<LinkedResourceActions item={item()} />, { requestFollow: vi.fn(), trackedResource: () => null })
     expect(screen.getByRole("button", { name: "Follow" })).toHaveAttribute("data-variant", "subtle")
-    expect(screen.getByRole("link", { name: "Open" })).toHaveAttribute("data-variant", "subtle")
+    expect(screen.getByRole("link", { name: "Jira" })).toHaveAttribute("data-variant", "subtle")
     expect(screen.getByRole("button", { name: /copy link/i })).toHaveAttribute("data-variant", "subtle")
   })
 
@@ -54,16 +54,22 @@ describe("LinkedResourceActions", () => {
     expect(selectResource).toHaveBeenCalledWith({ type: "jira", id: "PROJ-9" })
   })
 
-  it("Open is a new-tab link; Slack says Open in Slack", () => {
+  it("the open button is a new-tab link named for its platform; a plain link says Open", () => {
     vi.spyOn(api, "cmuxBrowserTabs").mockResolvedValue({ available: false, tabs: [] })
     wrap(<LinkedResourceActions item={item()} />)
-    expect(screen.getByRole("link", { name: "Open" })).toHaveAttribute("target", "_blank")
+    expect(screen.getByRole("link", { name: "Jira" })).toHaveAttribute("target", "_blank")
+    cleanup()
+    wrap(<LinkedResourceActions item={item({ type: "pr", id: "o/r#1", url: "https://github.com/o/r/pull/1" })} />)
+    expect(screen.getByRole("link", { name: "GitHub" })).toBeInTheDocument()
+    cleanup()
+    wrap(<LinkedResourceActions item={item({ type: "link", id: "https://example.com/doc", url: "https://example.com/doc" })} />)
+    expect(screen.getByRole("link", { name: "Open" })).toBeInTheDocument()
     cleanup()
     wrap(<LinkedResourceActions item={item({ type: "slack", id: "C0TEST:1.2", url: "https://x.slack.com/archives/C0TEST/p12" })} />)
-    expect(screen.getByRole("link", { name: "Open in Slack" })).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Slack" })).toBeInTheDocument()
   })
 
-  it("an issue open in a cmux tab offers Open (switch)", async () => {
+  it("an issue open in a cmux tab offers Jira (switch)", async () => {
     vi.spyOn(api, "cmux").mockResolvedValue({ available: true, workspaces: [], matches: {} } as unknown as CmuxResponse)
     vi.spyOn(api, "cmuxBrowserTabs").mockResolvedValue({
       available: true,
@@ -72,7 +78,7 @@ describe("LinkedResourceActions", () => {
     })
     const focus = vi.spyOn(api, "cmuxFocusTab").mockResolvedValue({ ok: true })
     wrap(<LinkedResourceActions item={item()} />)
-    const sw = await screen.findByRole("button", { name: "Open (switch)" })
+    const sw = await screen.findByRole("button", { name: "Jira (switch)" })
     expect(sw).toHaveAttribute("data-variant", "light")
     expect(screen.getByRole("button", { name: "More open options" })).toHaveAttribute("data-variant", "light")
     await userEvent.click(sw)
@@ -93,5 +99,24 @@ describe("LinkedResourceActions", () => {
     wrap(<LinkedResourceActions item={item()} />)
     await user.click(screen.getByRole("button", { name: /copy link/i }))
     expect(writeText).toHaveBeenCalledWith("https://example.atlassian.net/browse/PROJ-9")
+  })
+
+  it("explains each button in a tooltip", async () => {
+    vi.spyOn(api, "cmuxBrowserTabs").mockResolvedValue({ available: false, tabs: [] })
+    const user = userEvent.setup()
+    wrap(<LinkedResourceActions item={item()} />, { requestFollow: vi.fn(), trackedResource: () => null })
+    await user.hover(screen.getByRole("button", { name: "Follow" }))
+    expect(await screen.findByText("Follow in this worktree")).toBeInTheDocument()
+    await user.hover(screen.getByRole("link", { name: "Jira" }))
+    expect(await screen.findByText("Open on Jira")).toBeInTheDocument()
+    cleanup()
+    wrap(<LinkedResourceActions item={item({ type: "pr", id: "o/r#1", url: "https://github.com/o/r/pull/1" })} />, {
+      trackedResource: () => ({ type: "pr", id: "o/r#1" }),
+      selectResource: vi.fn(),
+    })
+    await user.hover(screen.getByRole("button", { name: "Details" }))
+    expect(await screen.findByText("View in this worktree")).toBeInTheDocument()
+    await user.hover(screen.getByRole("link", { name: "GitHub" }))
+    expect(await screen.findByText("Open on GitHub")).toBeInTheDocument()
   })
 })

@@ -12,6 +12,7 @@ import type { ResourceDTO } from "../api/types"
 import { SlackMark } from "./icons/SlackMark"
 import { hasUnread } from "../lib/unread"
 import { UnreadMarkerDot } from "./UnreadMarkerDot"
+import { jiraStatusColor } from "../lib/statusColors"
 
 /**
  * Jira's icon URLs sit behind the same Basic auth as its REST API, so a
@@ -62,9 +63,8 @@ export function resourceStatusMeta(r: ResourceDTO): StatusMeta {
   if (r.type === "jira") {
     const status = r.status || ""
     if (!status) return { Icon: IconCircleDashed, color: "gray", label: "unknown state" }
-    if (/done|closed|resolved/i.test(status)) return { Icon: IconTicket, color: "green", label: status }
-    if (/progress|review/i.test(status)) return { Icon: IconTicket, color: "blue", label: status }
-    return { Icon: IconTicket, color: "gray", label: status }
+    // The same colour as the status badge beside it.
+    return { Icon: IconTicket, color: jiraStatusColor(status), label: status }
   }
   return { Icon: IconCircleDashed, color: "gray", label: "unknown state" }
 }

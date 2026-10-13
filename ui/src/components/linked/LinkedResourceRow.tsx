@@ -2,6 +2,7 @@ import { Anchor, Badge, Box, Group, Text } from "@mantine/core"
 import { IconMessage, IconWorld } from "@tabler/icons-react"
 import type { LinkedItem, ResourceDTO } from "../../api/types"
 import { Mrkdwn } from "../../lib/mrkdwn"
+import { jiraStatusColor, prStateColor } from "../../lib/statusColors"
 import { LinkFavicon, ResourceStatusIcon } from "../ResourceStatusIcon"
 import { LinkedResourceActions } from "./LinkedResourceActions"
 
@@ -43,6 +44,10 @@ function statusText(item: LinkedItem): string | undefined {
   return undefined
 }
 
+function statusColor(item: LinkedItem): string {
+  return item.type === "pr" ? prStateColor(item.state, item.is_draft) : jiraStatusColor(item.status)
+}
+
 function icon(item: LinkedItem) {
   if (item.type === "slack") {
     return <IconMessage size={14} aria-hidden style={{ color: "var(--mantine-color-grape-6)", flexShrink: 0 }} />
@@ -77,7 +82,7 @@ export function LinkedResourceRow({ item, path, hideFollow, marker, toggle }: {
           <Box w={ICON_SLOT} mr={ICON_GAP} style={{ display: "flex", justifyContent: "center", flexShrink: 0 }}>{icon(item)}</Box>
           <Group gap={6} wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
             <Text size="sm" c="dimmed" truncate="end" style={{ minWidth: 0 }}>{keyText(item)}</Text>
-            {status && <Badge size="sm" variant="light" color="gray" style={{ flexShrink: 0 }}>{status}</Badge>}
+            {status && <Badge size="sm" variant="light" color={statusColor(item)} style={{ flexShrink: 0 }}>{status}</Badge>}
             {marker}
           </Group>
         </Box>

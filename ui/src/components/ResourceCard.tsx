@@ -10,20 +10,12 @@ import { ResourceTitle } from "./ResourceStatusIcon"
 import { ResourceTypeLine, awaitsFetch } from "./ResourceTypeLine"
 import { cardEdgeStyle, hasUnread } from "../lib/unread"
 import { UnreadBadge } from "./UnreadBadge"
+import { jiraStatusColor, prStateColor } from "../lib/statusColors"
 import { EditResourceDetailsModal } from "./EditResourceDetailsModal"
 import { supportsCustomName } from "../lib/customName"
 import { TAB_ID } from "../lib/tabId"
 import { NotifySwitch } from "./NotifySwitch"
 import { NotifyBell } from "./NotifyBell"
-
-function prStateColor(state?: string): string {
-  switch ((state || "").toUpperCase()) {
-    case "OPEN": return "green"
-    case "MERGED": return "violet"
-    case "CLOSED": return "red"
-    default: return "gray"
-  }
-}
 
 function reviewColor(decision?: string): string {
   switch ((decision || "").toUpperCase()) {
@@ -129,10 +121,10 @@ function badgesInTypeLine(variant: ResourceCardVariant): boolean {
 function PRCardBody({ r, variant, aside }: CardBodyProps) {
   const badges = (
     <>
-      {r.state && <Badge size="xs" color={prStateColor(r.state)}>{r.state.toLowerCase()}</Badge>}
-      {r.review_decision && <Badge size="xs" color={reviewColor(r.review_decision)}>{reviewLabel(r.review_decision)}</Badge>}
-      {r.ci_status && <Badge size="xs" color={ciColor(r.ci_status)}>ci: {r.ci_status}</Badge>}
-      {r.new_commits_since_review && <Badge size="xs" color="blue" variant="outline">new commits</Badge>}
+      {r.state && <Badge size="xs" variant="light" color={prStateColor(r.state)}>{r.state.toLowerCase()}</Badge>}
+      {r.review_decision && <Badge size="xs" variant="light" color={reviewColor(r.review_decision)}>{reviewLabel(r.review_decision)}</Badge>}
+      {r.ci_status && <Badge size="xs" variant="light" color={ciColor(r.ci_status)}>ci: {r.ci_status}</Badge>}
+      {r.new_commits_since_review && <Badge size="xs" variant="light" color="blue">new commits</Badge>}
     </>
   )
   const inline = badgesInTypeLine(variant)
@@ -153,7 +145,7 @@ function PRCardBody({ r, variant, aside }: CardBodyProps) {
 
 function JiraCardBody({ r, variant, aside }: CardBodyProps) {
   // The priority is not among these: it follows the key on the type line.
-  const badges = r.status && <Badge size="xs" variant="light">{r.status}</Badge>
+  const badges = r.status && <Badge size="xs" variant="light" color={jiraStatusColor(r.status)}>{r.status}</Badge>
   const inline = badgesInTypeLine(variant)
   return (
     <Stack gap={4}>

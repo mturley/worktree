@@ -1263,7 +1263,8 @@ and only covers Jira issues already followed and polled.
 **Frontend:** `ResourceDetailPane` adds the tab for pr/jira/slack (Slack's
 `SlackThreadPane` keeps Thread as default and keeps its composer draft across
 tab switches); components in `ui/src/components/linked/`. Row actions (Follow /
-Details, Open / Open (switch), Copy link) use `LinkedActionsContext`,
+Details, GitHub / Jira / Slack or Open for a link, plus " (switch)" when
+cmux already has it open, Copy link) use `LinkedActionsContext`,
 supplied by `WorktreeDetailPage` (`requestFollow` opens the add modal with
 Related preselected, `trackedResource`, `selectResource`). Switching resources
 resets the tab to Activity/Thread.

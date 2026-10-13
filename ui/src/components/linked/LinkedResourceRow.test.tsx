@@ -58,3 +58,13 @@ describe("LinkedResourceRow layout", () => {
     expect(keyLine.compareDocumentPosition(screen.getByText("Story")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })
+
+describe("LinkedResourceRow status badge", () => {
+  it("colours a Jira status and a PR state as the cards do", () => {
+    wrap(<LinkedResourceRow item={item({ status: "Review" })} />)
+    expect(screen.getByText("Review").closest(".mantine-Badge-root")!.getAttribute("style")).toContain("violet")
+    cleanup()
+    wrap(<LinkedResourceRow item={item({ type: "pr", id: "o/r#1", url: "https://github.com/o/r/pull/1", state: "MERGED", status: undefined })} />)
+    expect(screen.getByText("merged").closest(".mantine-Badge-root")!.getAttribute("style")).toContain("violet")
+  })
+})
