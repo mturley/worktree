@@ -235,7 +235,14 @@ export function WorktreeDetailPage() {
         </Group>
         <SourceFilter value={sources} onChange={setSources} />
       </Group>
-      <EventTypeFilter sources={sources} value={categories} onChange={setCategories} />
+      {/* Right-aligned under the source toggles when they sit at the right
+          of the header; narrow, the header wraps them to the left. */}
+      <EventTypeFilter
+        sources={sources}
+        value={categories}
+        onChange={setCategories}
+        justify={wide ? "flex-end" : "flex-start"}
+      />
       <TimelineFeed
         events={timeline.events}
         loading={timeline.isLoading}
