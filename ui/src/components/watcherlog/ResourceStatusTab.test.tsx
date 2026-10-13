@@ -98,4 +98,38 @@ describe("ResourceStatusTab", () => {
     expect(await screen.findByText(/Couldn't load resource status: boom/)).toBeTruthy()
     expect(screen.queryByText("No resources are being watched.")).toBeNull()
   })
+
+  it("header click cycles a column's sort asc, desc, off; one column at a time", async () => {
+    watchedResources.mockResolvedValue({
+      resources: [
+        res({ type: "slack", id: "s", name: "Thread", status: "error" }),
+        res({ type: "pr", id: "p", name: "Fix it", status: "ok" }),
+        res({ type: "jira", id: "j", name: "ABC-1", status: "never" }),
+      ],
+    })
+    const user = userEvent.setup()
+    wrap(<ResourceStatusTab scope={{}} />)
+    await screen.findByText("Thread")
+    const order = () => screen.getAllByRole("row").slice(1).map((r) => r.querySelector("td:nth-child(2)")?.textContent)
+    const header = (name: string) => screen.getByRole("columnheader", { name: new RegExp(name) })
+
+    expect(order()).toEqual(["Thread", "Fix it", "ABC-1"])
+    await user.click(screen.getByRole("button", { name: /Source/ }))
+    expect(header("Source").getAttribute("aria-sort")).toBe("ascending")
+    expect(order()).toEqual(["Fix it", "ABC-1", "Thread"])
+    await user.click(screen.getByRole("button", { name: /Source/ }))
+    expect(header("Source").getAttribute("aria-sort")).toBe("descending")
+    expect(order()).toEqual(["Thread", "ABC-1", "Fix it"])
+    await user.click(screen.getByRole("button", { name: /Source/ }))
+    expect(header("Source").getAttribute("aria-sort")).toBe("none")
+    expect(order()).toEqual(["Thread", "Fix it", "ABC-1"])
+
+    await user.click(screen.getByRole("button", { name: /Source/ }))
+    await user.click(screen.getByRole("button", { name: /Status/ }))
+    expect(header("Source").getAttribute("aria-sort")).toBe("none")
+    expect(header("Status").getAttribute("aria-sort")).toBe("ascending")
+    expect(order()).toEqual(["Thread", "Fix it", "ABC-1"])
+    await user.click(screen.getByRole("button", { name: /Status/ }))
+    expect(order()).toEqual(["ABC-1", "Fix it", "Thread"])
+  })
 })

@@ -1,4 +1,4 @@
-import type { PollLogEntry, WatcherLogScope } from "../api/types"
+import type { PollLogEntry, WatchedResourceStatus, WatcherLogScope } from "../api/types"
 
 /** Query params for a watcher log scope. A resource scope wins over a worktree. */
 export function scopeParams(scope: WatcherLogScope): URLSearchParams {
@@ -46,4 +46,41 @@ export function httpSummary(e: PollLogEntry): string | null {
   if (e.duration_ms) parts.push(formatDuration(e.duration_ms))
   if (e.bytes) parts.push(formatBytes(e.bytes))
   return parts.join(" · ")
+}
+
+/** Display label for a watched resource's type. */
+export const SOURCE_LABEL: Record<string, string> = { pr: "GitHub", jira: "Jira", slack: "Slack" }
+
+export type ResourceSortColumn = "source" | "updated" | "status"
+export type ResourceSort = { column: ResourceSortColumn; dir: "asc" | "desc" } | null
+
+/** A header click: off → asc → desc → off on the same column; another column starts at asc. */
+export function nextSort(current: ResourceSort, column: ResourceSortColumn): ResourceSort {
+  if (current?.column !== column) return { column, dir: "asc" }
+  return current.dir === "asc" ? { column, dir: "desc" } : null
+}
+
+// Ascending status runs most-urgent first, the same severity order the server uses.
+const STATUS_RANK: Record<WatchedResourceStatus["status"], number> = { error: 0, ok: 1, never: 2 }
+
+function compareBy(column: ResourceSortColumn, a: WatchedResourceStatus, b: WatchedResourceStatus): number {
+  switch (column) {
+    case "source":
+      return (SOURCE_LABEL[a.type] ?? a.type).localeCompare(SOURCE_LABEL[b.type] ?? b.type)
+    case "updated":
+      // "Never" sorts as older than any timestamp; RFC3339 UTC strings compare lexically.
+      return (a.last_success ?? "").localeCompare(b.last_success ?? "")
+    case "status":
+      return STATUS_RANK[a.status] - STATUS_RANK[b.status]
+  }
+}
+
+/**
+ * Sorts a copy of the rows by one column, ties by name. A null sort keeps the
+ * server's order (failing resources first, then by name).
+ */
+export function sortResources(rows: WatchedResourceStatus[], sort: ResourceSort): WatchedResourceStatus[] {
+  if (!sort) return rows
+  const sign = sort.dir === "asc" ? 1 : -1
+  return [...rows].sort((a, b) => sign * (compareBy(sort.column, a, b) || a.name.localeCompare(b.name)))
 }

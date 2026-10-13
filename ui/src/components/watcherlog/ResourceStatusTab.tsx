@@ -1,11 +1,32 @@
-import { Anchor, Stack, Table, Text, Tooltip } from "@mantine/core"
-import { IconAlertTriangleFilled, IconCircleCheckFilled, IconMinus } from "@tabler/icons-react"
+import { useState } from "react"
+import { Anchor, Group, Stack, Table, Text, Tooltip, UnstyledButton } from "@mantine/core"
+import { IconAlertTriangleFilled, IconChevronDown, IconChevronUp, IconCircleCheckFilled, IconMinus, IconSelector } from "@tabler/icons-react"
 import { useQuery } from "@tanstack/react-query"
 import { api } from "../../api/client"
 import type { WatchedResourceStatus, WatcherLogScope } from "../../api/types"
 import { relativeTime } from "../../lib/relativeTime"
+import { nextSort, SOURCE_LABEL, sortResources, type ResourceSort, type ResourceSortColumn } from "../../lib/watcherLog"
 
-const SOURCE_LABEL: Record<string, string> = { pr: "GitHub", jira: "Jira", slack: "Slack" }
+/** A sortable column header: click cycles ascending, descending, unsorted. */
+function SortableTh({ label, column, sort, onSort }: {
+  label: string
+  column: ResourceSortColumn
+  sort: ResourceSort
+  onSort: (column: ResourceSortColumn) => void
+}) {
+  const dir = sort?.column === column ? sort.dir : null
+  const Icon = dir === "asc" ? IconChevronUp : dir === "desc" ? IconChevronDown : IconSelector
+  return (
+    <Table.Th aria-sort={dir === "asc" ? "ascending" : dir === "desc" ? "descending" : "none"}>
+      <UnstyledButton onClick={() => onSort(column)} fz="inherit" fw="inherit">
+        <Group gap={4} wrap="nowrap">
+          {label}
+          <Icon size={12} aria-hidden style={{ opacity: dir ? 1 : 0.5 }} />
+        </Group>
+      </UnstyledButton>
+    </Table.Th>
+  )
+}
 
 function fmtTime(ts?: string): string {
   if (!ts) return "—"
@@ -47,7 +68,9 @@ export function ResourceStatusTab({ scope }: { scope: WatcherLogScope }) {
     queryFn: () => api.watchedResources(scope),
     refetchInterval: 10_000,
   })
-  const rows = data?.resources ?? []
+  const [sort, setSort] = useState<ResourceSort>(null)
+  const rows = sortResources(data?.resources ?? [], sort)
+  const onSort = (column: ResourceSortColumn) => setSort((s) => nextSort(s, column))
   if (error && !data) {
     const msg = error instanceof Error ? error.message : String(error)
     return <Text size="sm" c="red" py="lg">Couldn't load resource status: {msg}</Text>
@@ -63,10 +86,10 @@ export function ResourceStatusTab({ scope }: { scope: WatcherLogScope }) {
       <Table striped highlightOnHover verticalSpacing={4} fz="xs">
         <Table.Thead>
           <Table.Tr>
-            <Table.Th>Source</Table.Th>
+            <SortableTh label="Source" column="source" sort={sort} onSort={onSort} />
             <Table.Th>Resource</Table.Th>
-            <Table.Th>Updated</Table.Th>
-            <Table.Th>Status</Table.Th>
+            <SortableTh label="Updated" column="updated" sort={sort} onSort={onSort} />
+            <SortableTh label="Status" column="status" sort={sort} onSort={onSort} />
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
