@@ -1,4 +1,5 @@
-import { ActionIcon, Alert, Button, Center, Group, Loader, Stack, Text, Title, Tooltip } from "@mantine/core"
+import { useState } from "react"
+import { Accordion, ActionIcon, Alert, Button, Center, Group, Loader, Stack, Text, Title, Tooltip } from "@mantine/core"
 import { IconRefresh } from "@tabler/icons-react"
 import type { LinkedSection } from "../../api/types"
 import type { useLinkedResources } from "../../hooks/useLinkedResources"
@@ -21,20 +22,47 @@ function isEmpty(s: LinkedSection): boolean {
   return !s.error && !s.items?.length && !s.groups?.length && (!s.tree?.length || isLoneCurrent(s.tree))
 }
 
+/** One section as an accordion item: its title is the toggle. */
 function SectionView({ s, path }: { s: LinkedSection; path?: string }) {
   return (
-    <Stack gap={2}>
-      <Title order={6}>{s.title}</Title>
-      {s.error && <Alert color="red" variant="light" p="xs"><Text size="sm">{s.error}</Text></Alert>}
-      {s.items?.map((it) => <LinkedResourceRow key={`${it.type}:${it.id}`} item={it} path={path} />)}
-      {s.groups?.map((g) => (
-        <Stack key={g.label} gap={0} pl="xs">
-          <Text size="xs" c="dimmed" fw={600}>{g.label}</Text>
-          {g.items.map((it) => <LinkedResourceRow key={`${it.type}:${it.id}`} item={it} path={path} />)}
+    <Accordion.Item value={s.kind}>
+      <Accordion.Control>
+        <Title order={6}>{s.title}</Title>
+      </Accordion.Control>
+      <Accordion.Panel>
+        <Stack gap={2}>
+          {s.error && <Alert color="red" variant="light" p="xs"><Text size="sm">{s.error}</Text></Alert>}
+          {s.items?.map((it) => <LinkedResourceRow key={`${it.type}:${it.id}`} item={it} path={path} />)}
+          {s.groups?.map((g) => (
+            <Stack key={g.label} gap={0} pl="xs">
+              <Text size="xs" c="dimmed" fw={600}>{g.label}</Text>
+              {g.items.map((it) => <LinkedResourceRow key={`${it.type}:${it.id}`} item={it} path={path} />)}
+            </Stack>
+          ))}
+          {s.tree && <HierarchyTree roots={s.tree} path={path} />}
         </Stack>
-      ))}
-      {s.tree && <HierarchyTree roots={s.tree} path={path} />}
-    </Stack>
+      </Accordion.Panel>
+    </Accordion.Item>
+  )
+}
+
+/**
+ * The sections, each collapsible and all open to start. What's tracked is
+ * which ones were collapsed, not which are open, so a section that first
+ * appears on a refresh opens like the rest. The panel remounts each time the
+ * tab is shown, which reopens everything.
+ */
+function Sections({ sections, path }: { sections: LinkedSection[]; path?: string }) {
+  const [collapsed, setCollapsed] = useState<string[]>([])
+  return (
+    <Accordion
+      multiple
+      chevronPosition="left"
+      value={sections.map((s) => s.kind).filter((k) => !collapsed.includes(k))}
+      onChange={(open) => setCollapsed(sections.map((s) => s.kind).filter((k) => !open.includes(k)))}
+    >
+      {sections.map((s) => <SectionView key={s.kind} s={s} path={path} />)}
+    </Accordion>
   )
 }
 
@@ -57,7 +85,7 @@ export function LinkedResourcesPanel({ query, path }: { query: LinkedQuery; path
   if (visible.length === 0) {
     return <Text size="sm" c="dimmed" ta="center" py="md">No linked resources found</Text>
   }
-  return <Stack gap="md">{visible.map((s) => <SectionView key={s.kind} s={s} path={path} />)}</Stack>
+  return <Sections sections={visible} path={path} />
 }
 
 /**

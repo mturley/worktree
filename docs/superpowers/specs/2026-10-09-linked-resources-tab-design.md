@@ -16,8 +16,8 @@ followable from inside worktree, without leaving for GitHub/Jira/Slack.
 
 | Resource type | Tabs | Linked Resources sections |
 |---|---|---|
-| GitHub PR | Activity \| Linked Resources | Linked in description; Referenced by Jira |
-| Jira issue | Activity \| Linked Resources | Git Pull Request; Linked in description; Hierarchy; Linked work items |
+| GitHub PR | Activity \| Linked Resources | Referenced by Jira; Linked in description |
+| Jira issue | Activity \| Linked Resources | Pull request; Hierarchy; Linked work items; Linked in description |
 | Slack thread | Thread \| Linked Resources | Linked in thread |
 | Link | (no tabs — unchanged) | — |
 
@@ -252,7 +252,9 @@ placeholder until it arrives.
 
 - `LinkedResourcesPanel` — sections, empty state ("No linked resources
   found"), per-section error alerts, whole-request error + Retry.
-- `LinkedSection` — `Title order={6}` heading + rows / groups / tree.
+- Sections are items of one multi-open `Accordion`, all expanded to start
+  (title as the toggle) + rows / groups / tree. "Linked in description" is
+  the last section for both PRs and Jira issues.
 - `LinkedResourceRow` — one line, wrapping on narrow:
   `[icon] [key] Title… [status] [actions]`. Builds a `ResourceDTO`-shaped
   object so `ResourceStatusIcon` and the key formatting from
@@ -265,7 +267,7 @@ placeholder until it arrives.
   endpoint. It opens on just the path: each ancestor shows only the child
   leading to the current issue, with its other children folded behind a
   "Show more children of KEY…" row (the current issue's own children are
-  all shown). A shown node whose children the server didn't send fetches
+  all shown), placed above the child on the path. A shown node whose children the server didn't send fetches
   them right away (not on expand), and gets a chevron only once that finds
   any — so a chevron never appears just to vanish when clicked. The current issue has a left accent bar + tint + "this issue"
   marker and no Follow button.

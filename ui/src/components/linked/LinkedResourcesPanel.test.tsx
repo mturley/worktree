@@ -93,6 +93,25 @@ describe("LinkedResourcesPanel", () => {
     expect(screen.queryByRole("button", { name: "Expand PROJ-7" })).not.toBeInTheDocument()
   })
 
+  it("makes each section a collapsible accordion item, open to start", async () => {
+    vi.spyOn(api, "cmuxBrowserTabs").mockResolvedValue({ available: false } as never)
+    wrap(<LinkedResourcesPanel query={q({ data: dto })} />)
+    const toggle = screen.getByRole("button", { name: "Linked in description" })
+    expect(toggle).toHaveAttribute("aria-expanded", "true")
+    expect(screen.getByRole("button", { name: "Hierarchy" })).toHaveAttribute("aria-expanded", "true")
+    await userEvent.click(toggle)
+    expect(toggle).toHaveAttribute("aria-expanded", "false")
+    expect(screen.getByRole("button", { name: "Hierarchy" })).toHaveAttribute("aria-expanded", "true")
+  })
+
+  it("puts an ancestor's fold row above the child on the path", () => {
+    vi.spyOn(api, "cmuxBrowserTabs").mockResolvedValue({ available: false } as never)
+    wrap(<LinkedResourcesPanel query={q({ data: dto })} />)
+    const fold = screen.getByRole("button", { name: "Show more children of PROJ-10…" })
+    const me = screen.getByText("Me")
+    expect(fold.compareDocumentPosition(me) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it("empty, loading and error states", async () => {
     wrap(<LinkedResourcesPanel query={q({ data: { fetched_at: "", count: 0, sections: [{ kind: "description", title: "Linked in description", items: [] }] } })} />)
     expect(screen.getByText("No linked resources found")).toBeInTheDocument()

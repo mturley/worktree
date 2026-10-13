@@ -44,9 +44,11 @@ func (b *Builder) buildJira(ctx context.Context, key string, resolveLinks bool) 
 	if len(gitPR) > 0 {
 		sections = append(sections, Section{Kind: "git_pr", Title: "Pull request", Items: gitPR})
 	}
-	sections = append(sections, Section{Kind: "description", Title: "Linked in description", Items: desc})
 	sections = append(sections, b.hierarchy(ctx, g))
 	sections = append(sections, b.linkGroups(g))
+	// Last: the issue's own structure and relationships come first; links
+	// picked out of free text are the loosest connection.
+	sections = append(sections, Section{Kind: "description", Title: "Linked in description", Items: desc})
 	return sections, nil
 }
 

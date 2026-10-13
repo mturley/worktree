@@ -104,10 +104,12 @@ function TreeNodeView({ node, depth, path }: { node: LinkedTreeNode; depth: numb
         const hidden = (children?.length ?? 0) - shown.length + (more ? 1 : 0)
         return (
           <>
-            {shown.map((c) => <TreeNodeView key={c.id} node={c} depth={depth + 1} path={path} />)}
+            {/* Above the child on the path, so the path reads as one unbroken
+                run down to the current issue. */}
             {folding && hidden > 0 && (
               <ShowMoreChildrenRow parentKey={node.id} depth={depth + 1} onShow={() => setShowAllChildren(true)} />
             )}
+            {shown.map((c) => <TreeNodeView key={c.id} node={c} depth={depth + 1} path={path} />)}
             {!folding && more && <MoreRow url={more.url} depth={depth + 1} />}
           </>
         )

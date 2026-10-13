@@ -116,3 +116,24 @@ func TestBuildSlackIgnoresUnfurlTitlesAsContext(t *testing.T) {
 		t.Fatalf("an unfurl title must not become context: %+v", items)
 	}
 }
+
+func TestDescriptionSectionComesLast(t *testing.T) {
+	ref := wgithub.PRRef{Owner: "example", Repo: "repo", Number: 1}
+	prB := &Builder{Src: Sources{
+		PR:        &fakePR{prs: map[wgithub.PRRef]wgithub.PRSummary{ref: {Body: "see https://docs.example.com/a"}}},
+		JiraState: &fakeState{byPR: map[string][]Item{"example/repo#1": {{Type: "jira", ID: "PROJ-7", Resolved: true}}}},
+	}}
+	jiraB := &Builder{Src: Sources{Jira: storyFixture()}}
+	for name, run := range map[string]func() (*Result, error){
+		"pr":   func() (*Result, error) { return prB.Build(context.Background(), "pr", "example/repo#1", false) },
+		"jira": func() (*Result, error) { return jiraB.Build(context.Background(), "jira", "PROJ-1", false) },
+	} {
+		r, err := run()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if last := r.Sections[len(r.Sections)-1].Kind; last != "description" {
+			t.Errorf("%s: last section = %s, want description", name, last)
+		}
+	}
+}

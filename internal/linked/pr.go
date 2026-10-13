@@ -25,8 +25,7 @@ func (b *Builder) buildPR(ctx context.Context, id string, resolveLinks bool) ([]
 	}
 	desc := ClassifyLinks(ExtractMarkdownLinks(pr.Body), Key{"pr", id})
 	b.resolve(ctx, desc, resolveLinks)
-	sections := []Section{{Kind: "description", Title: "Linked in description", Items: desc}}
-
+	var sections []Section
 	if b.Src.JiraState != nil {
 		refs, err := b.Src.JiraState.IssuesReferencingPR(ctx, id)
 		switch {
@@ -36,5 +35,7 @@ func (b *Builder) buildPR(ctx context.Context, id string, resolveLinks bool) ([]
 			sections = append(sections, Section{Kind: "referenced_by", Title: "Referenced by Jira", Items: refs})
 		}
 	}
+	// Last, as for Jira issues: links picked out of free text.
+	sections = append(sections, Section{Kind: "description", Title: "Linked in description", Items: desc})
 	return sections, nil
 }
