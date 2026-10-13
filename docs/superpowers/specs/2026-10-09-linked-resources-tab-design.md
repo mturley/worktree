@@ -277,11 +277,11 @@ placeholder until it arrives.
   them right away (not on expand), and gets a chevron only once that finds
   any — so a chevron never appears just to vanish when clicked. The current issue has a left accent bar + tint + "this issue"
   marker and no Follow button.
-- `LinkedResourceActions` — button group. Following and the "(switch)"
+- `LinkedResourceActions` — button group. Details and the "(switch)"
   open button are `light`; Follow, the plain open and copy are `subtle`:
   - **Follow** → `AddResourceModal` with `initialUrl` and `defaultRelated`.
     If the (type, id) is already among this worktree's resources (from the
-    existing `["resources", path]` query), the button is **Following**,
+    existing `["resources", path]` query), the button is **Details**,
     which calls `onSelectResource({type, id})`.
   - **Open** → new-tab link. If `useResourceCmuxTab` finds an existing cmux
     tab (PR/Jira only), **Open (switch)** + chevron menu "Open (new tab)",
@@ -316,7 +316,7 @@ Data comes from watcher v0.12.0 `LinkRef` (see docs/web-ui-architecture.md
   bad params → 400.
 - **UI (vitest):** tab switching and default; count label; Activity-only
   controls hidden on Linked tab; Slack Thread panel stays mounted; Follow ↔
-  Following; Open ↔ Open (switch); copy; tree lazy expansion; section
+  Details; Open ↔ Open (switch); copy; tree lazy expansion; section
   error and empty states.
 - **Manual end-to-end** against RHOAIENG-96640 (Git PR field, epic → feature
   chain), RHOAIENG-62835 (Task with sub-tasks), RHOAIENG-96533 (Related

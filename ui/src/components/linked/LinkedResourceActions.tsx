@@ -10,7 +10,7 @@ const btn = { root: { flexShrink: 0 }, label: { whiteSpace: "nowrap" as const } 
 
 /**
  * Follow / Open / Copy link for one linked resource. Follow becomes
- * "Following" (selects it in this worktree) when this worktree already
+ * "Details" (selects it in this worktree) when this worktree already
  * follows it; Open becomes "Open (switch)" when cmux already has it open
  * (PRs and Jira only — the only types cmux tab matching knows). Those two are tinted,
  * the rest secondary, so activating something that already exists is the
@@ -27,7 +27,7 @@ export function LinkedResourceActions({ item, path, hideFollow }: { item: Linked
     <Button.Group className="compound-group" style={{ flexShrink: 0 }}>
       {!hideFollow && tracked && actions.selectResource && (
         <Button size="xs" variant="light" styles={btn} onClick={() => actions.selectResource!(tracked)}>
-          Following
+          Details
         </Button>
       )}
       {!hideFollow && !tracked && actions.requestFollow && (

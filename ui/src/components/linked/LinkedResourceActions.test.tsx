@@ -40,7 +40,7 @@ describe("LinkedResourceActions", () => {
     expect(screen.getByRole("button", { name: /copy link/i })).toHaveAttribute("data-variant", "subtle")
   })
 
-  it("an already-followed resource offers Following instead", async () => {
+  it("an already-followed resource offers Details instead", async () => {
     vi.spyOn(api, "cmuxBrowserTabs").mockResolvedValue({ available: false, tabs: [] })
     const selectResource = vi.fn()
     wrap(<LinkedResourceActions item={item()} />, {
@@ -49,8 +49,8 @@ describe("LinkedResourceActions", () => {
       selectResource,
     })
     expect(screen.queryByRole("button", { name: "Follow" })).not.toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Following" })).toHaveAttribute("data-variant", "light")
-    await userEvent.click(screen.getByRole("button", { name: "Following" }))
+    expect(screen.getByRole("button", { name: "Details" })).toHaveAttribute("data-variant", "light")
+    await userEvent.click(screen.getByRole("button", { name: "Details" }))
     expect(selectResource).toHaveBeenCalledWith({ type: "jira", id: "PROJ-9" })
   })
 
@@ -79,7 +79,7 @@ describe("LinkedResourceActions", () => {
     expect(focus).toHaveBeenCalledWith("w1", "s1")
   })
 
-  it("hideFollow hides both Follow and Following", () => {
+  it("hideFollow hides both Follow and Details", () => {
     vi.spyOn(api, "cmuxBrowserTabs").mockResolvedValue({ available: false, tabs: [] })
     wrap(<LinkedResourceActions item={item()} hideFollow />, { requestFollow: vi.fn(), trackedResource: () => null })
     expect(screen.queryByRole("button", { name: "Follow" })).not.toBeInTheDocument()
