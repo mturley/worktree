@@ -1,12 +1,167 @@
-import { useEffect } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { Box, Button, Code, Group, ScrollArea, SegmentedControl, Stack, Switch, Text, UnstyledButton } from "@mantine/core"
 import { api } from "../../api/client"
-import type { WatcherLogScope } from "../../api/types"
+import type { PollLogEntry, WatcherLogScope } from "../../api/types"
+import { appendOlder, httpSummary, mergeNewer } from "../../lib/watcherLog"
+
+const POLL_MS = 3000
+const PAGE = 200
+const LEVEL_COLOR: Record<PollLogEntry["level"], string> = {
+  info: "var(--mantine-color-gray-6)",
+  warn: "var(--mantine-color-yellow-6)",
+  error: "var(--mantine-color-red-6)",
+}
+const SOURCE_LABEL: Record<string, string> = { github: "GitHub", jira: "Jira", slack: "Slack" }
+
+function clock(ts: string): string {
+  const d = new Date(ts)
+  return Number.isNaN(d.getTime()) ? ts : d.toLocaleTimeString([], { hour12: false })
+}
 
 export function LogTab({ scope }: { scope: WatcherLogScope }) {
+  const [source, setSource] = useState("all")
+  const [warnOnly, setWarnOnly] = useState(false)
+  const [entries, setEntries] = useState<PollLogEntry[]>([])
+  const [hasMore, setHasMore] = useState(false)
+  const [loaded, setLoaded] = useState(false)
+  const [expanded, setExpanded] = useState<Set<number>>(new Set())
+  const [newCount, setNewCount] = useState(0)
+  const viewport = useRef<HTMLDivElement>(null)
+  const newest = useRef(0)
+
+  const query = useCallback(
+    (extra: { after_id?: number; before_id?: number }) =>
+      api.watcherLog(scope, {
+        source: source === "all" ? undefined : source,
+        level: warnOnly ? "warn" : undefined,
+        limit: PAGE,
+        ...extra,
+      }),
+    [scope, source, warnOnly],
+  )
+
   useEffect(() => {
-    void api.watcherLog(scope, { limit: 200 })
-    const t = setInterval(() => void api.watcherLog(scope, { limit: 200 }), 3000)
-    return () => clearInterval(t)
-  }, [scope])
-  return null
+    let cancelled = false
+    setEntries([])
+    setLoaded(false)
+    setNewCount(0)
+    newest.current = 0
+    void query({}).then((r) => {
+      if (cancelled) return
+      setEntries(r.entries)
+      setHasMore(r.has_more)
+      setLoaded(true)
+      newest.current = r.entries[0]?.id ?? 0
+    })
+    const t = setInterval(() => {
+      void query({ after_id: newest.current || undefined }).then((r) => {
+        if (cancelled || r.entries.length === 0) return
+        const fresh = r.entries.filter((e) => e.id > newest.current).length
+        newest.current = Math.max(newest.current, r.entries[0].id)
+        setEntries((cur) => mergeNewer(cur, r.entries))
+        if ((viewport.current?.scrollTop ?? 0) > 0) setNewCount((n) => n + fresh)
+      })
+    }, POLL_MS)
+    return () => {
+      cancelled = true
+      clearInterval(t)
+    }
+  }, [query])
+
+  const loadOlder = () => {
+    const last = entries[entries.length - 1]
+    if (!last) return
+    void query({ before_id: last.id }).then((r) => {
+      setEntries((cur) => appendOlder(cur, r.entries))
+      setHasMore(r.has_more)
+    })
+  }
+
+  const toggle = (id: number) =>
+    setExpanded((s) => {
+      const n = new Set(s)
+      if (n.has(id)) n.delete(id)
+      else n.add(id)
+      return n
+    })
+
+  return (
+    <Stack gap="xs">
+      <Group justify="space-between">
+        <SegmentedControl
+          size="xs"
+          value={source}
+          onChange={setSource}
+          data={[
+            { value: "all", label: "All" },
+            { value: "github", label: "GitHub" },
+            { value: "jira", label: "Jira" },
+            { value: "slack", label: "Slack" },
+          ]}
+        />
+        <Switch size="xs" label="Errors & warnings only" checked={warnOnly} onChange={(e) => setWarnOnly(e.currentTarget.checked)} />
+      </Group>
+      {newCount > 0 && (
+        <Button
+          size="compact-xs"
+          variant="light"
+          style={{ alignSelf: "center" }}
+          onClick={() => {
+            viewport.current?.scrollTo({ top: 0 })
+            setNewCount(0)
+          }}
+        >
+          {newCount} new
+        </Button>
+      )}
+      <ScrollArea h="60vh" viewportRef={viewport} onScrollPositionChange={({ y }) => y === 0 && setNewCount(0)}>
+        {loaded && entries.length === 0 && (
+          <Text size="sm" c="dimmed" ta="center" py="lg">
+            No watcher activity recorded yet.
+          </Text>
+        )}
+        <Stack gap={2}>
+          {entries.map((e) => {
+            const expandable = !!e.error_body || e.resources.length > 0
+            const line = (
+              <Group gap="xs" wrap="nowrap" align="baseline">
+                <Text size="xs" c="dimmed" ff="monospace" title={e.ts} style={{ flex: "none" }}>
+                  {clock(e.ts)}
+                </Text>
+                <Box w={8} h={8} style={{ borderRadius: 4, background: LEVEL_COLOR[e.level], flex: "none" }} aria-label={e.level} />
+                <Text size="xs" c="dimmed" w={48} style={{ flex: "none" }}>
+                  {SOURCE_LABEL[e.source] ?? e.source}
+                </Text>
+                <Text size="xs" ff={e.kind === "http" ? "monospace" : undefined} style={{ wordBreak: "break-word" }}>
+                  {httpSummary(e) ?? e.message}
+                </Text>
+              </Group>
+            )
+            return (
+              <Box key={e.id}>
+                {expandable ? <UnstyledButton onClick={() => toggle(e.id)} w="100%">{line}</UnstyledButton> : line}
+                {expanded.has(e.id) && (
+                  <Stack gap={4} pl={96} py={4}>
+                    {e.error_body && <Code block>{e.error_body}</Code>}
+                    {e.resources.length > 0 && (
+                      <Text size="xs" c="dimmed">
+                        {e.resources.map((r) => r.name).join(", ")}
+                      </Text>
+                    )}
+                  </Stack>
+                )}
+              </Box>
+            )
+          })}
+        </Stack>
+        {hasMore && (
+          <Group justify="center" py="xs">
+            <Button size="compact-xs" variant="subtle" onClick={loadOlder}>
+              Load older
+            </Button>
+          </Group>
+        )}
+      </ScrollArea>
+    </Stack>
+  )
 }

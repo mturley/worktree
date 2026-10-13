@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { act, cleanup, render, screen } from "@testing-library/react"
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -80,7 +80,12 @@ describe("WatcherLogButton", () => {
     wrap(<WatcherLogButton scope={{}} />)
     await user.click(screen.getByRole("button", { name: "Watcher log" }))
     await screen.findByText("All resources")
+    await act(async () => {
+      vi.advanceTimersByTime(3000)
+    })
+    expect(watcherLog.mock.calls.length).toBeGreaterThanOrEqual(2)
     await user.keyboard("{Escape}")
+    await waitFor(() => expect(screen.queryByText("All resources")).toBeNull())
     const calls = watcherLog.mock.calls.length
     await act(async () => {
       vi.advanceTimersByTime(30_000)
