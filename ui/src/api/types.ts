@@ -266,6 +266,22 @@ export interface CmuxTab {
   unread?: boolean
 }
 
+/** GET /api/cmux/peek: one tab's content for the cmux tab's hover card. */
+export interface CmuxPeek {
+  /** The tab's type as cmux reports it — read server-side, not echoed from the request. */
+  type: string
+  /** terminal: the last 200 lines, scrollback included, as plain text. */
+  text?: string
+  /** browser: a data:image/png URL of the page as it renders now. */
+  image?: string
+  /** markdown: the file's source. */
+  markdown?: string
+  /** markdown: the file shown. */
+  path?: string
+  /** Nothing to peek at (another tab type, or a markdown file cmux would not name or the server would not read). */
+  unsupported?: boolean
+}
+
 export interface CmuxPane { ref: string; focused: boolean; tabs: CmuxTab[] }
 
 export interface CmuxTreeWorkspace {

@@ -1,4 +1,4 @@
-import type { CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, Repo, ResourceDTO, SaveWorktreeNotesResponse, SessionInfo, TimelineResponse, WatchersResponse, WorktreeInfo, WorktreeNotes, WorktreeSummary } from "./types"
+import type { CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, Repo, ResourceDTO, SaveWorktreeNotesResponse, SessionInfo, TimelineResponse, WatchersResponse, WorktreeInfo, WorktreeNotes, WorktreeSummary } from "./types"
 
 export class HttpError extends Error {
   constructor(message: string, readonly status: number) {
@@ -237,6 +237,8 @@ export const api = {
   cmuxFocused: () => fetchJSON<CmuxFocusMsg>("/api/cmux/focused"),
   cmuxBrowserTabs: () => fetchJSON<CmuxBrowserTabsResponse>("/api/cmux/browser-tabs"),
   cmuxTree: (path: string) => fetchJSON<CmuxTreeResponse>(`/api/cmux/tree?path=${encodeURIComponent(path)}`),
+  cmuxPeek: (id: string, surface: string) =>
+    fetchJSON<CmuxPeek>(`/api/cmux/peek?id=${encodeURIComponent(id)}&surface=${encodeURIComponent(surface)}`),
   cmuxRename: (id: string, title: string) => cmuxPost("/api/cmux/rename", { id, title }),
   cmuxColor: (id: string, color: string) => cmuxPost("/api/cmux/color", { id, color }),
   cmuxFocusTab: (id: string, surface: string) => cmuxPost("/api/cmux/focus-tab", { id, surface }),
