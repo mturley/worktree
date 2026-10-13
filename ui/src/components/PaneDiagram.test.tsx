@@ -285,6 +285,41 @@ describe("PaneDiagram tab peek", () => {
     expect(screen.queryByText("hello from tab 1")).not.toBeInTheDocument()
   })
 
+  it("re-shows a browser tab's screenshot from cache, retaking it only once it is over 60s old", async () => {
+    vi.useFakeTimers()
+    const spy = vi.spyOn(api, "cmuxPeek").mockResolvedValue({ type: "browser", image: "data:image/png;base64,UE5H" })
+    wrap([{ ref: "pane:1", focused: true, tabs: [t(1, "browser", true), t(2)] }, { ref: "pane:2", focused: false, tabs: [] }])
+    const row = screen.getByRole("button", { name: "Switch to Tab 1" })
+    const hover = async () => {
+      fireEvent.mouseEnter(row)
+      await tick(100)
+      await tick(100)
+    }
+    const leave = async () => {
+      fireEvent.mouseLeave(row)
+      await tick(500)
+      await tick(500)
+    }
+    await hover()
+    expect(screen.getByRole("img", { name: "Tab 1" })).toBeInTheDocument()
+    expect(spy).toHaveBeenCalledTimes(1)
+    await leave()
+
+    // Re-hover within 60s: shown at once from cache, no new screenshot.
+    await hover()
+    expect(screen.getByRole("img", { name: "Tab 1" })).toBeInTheDocument()
+    expect(spy).toHaveBeenCalledTimes(1)
+    await leave()
+
+    // Past 60s: the cached image still shows at once, and a new one is taken.
+    await tick(60_000)
+    fireEvent.mouseEnter(row)
+    await tick(100)
+    await tick(100)
+    expect(screen.getByRole("img", { name: "Tab 1" })).toBeInTheDocument()
+    expect(spy).toHaveBeenCalledTimes(2)
+  })
+
   it("closes the card when a drag starts", async () => {
     vi.spyOn(api, "cmuxPeek").mockResolvedValue({ type: "terminal", text: "hello from tab 1" })
     wrap(panes())

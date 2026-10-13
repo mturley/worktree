@@ -13,13 +13,13 @@ function wrapper() {
 }
 
 describe("peekQueryOptions", () => {
-  it("refreshes terminals every 5s", () => {
-    expect(peekQueryOptions("terminal").refetchInterval).toBe(5000)
+  it("refreshes terminals every 5s and keeps nothing once closed", () => {
+    expect(peekQueryOptions("terminal")).toEqual({ refetchInterval: 5000, staleTime: 0, gcTime: 0, retry: false })
   })
 
-  it("fetches browser and markdown once per open and keeps nothing", () => {
+  it("caches browser and markdown peeks: fresh for 60s, kept 10 minutes", () => {
     for (const type of ["browser", "markdown"]) {
-      expect(peekQueryOptions(type)).toEqual({ refetchInterval: false, staleTime: 0, gcTime: 0, retry: false })
+      expect(peekQueryOptions(type)).toEqual({ refetchInterval: false, staleTime: 60_000, gcTime: 600_000, retry: false })
     }
   })
 })

@@ -4,17 +4,19 @@ import type { CmuxTab } from "./types"
 
 /**
  * How a tab's peek is fetched. Terminals change under you, so they refresh
- * every 5s while the card is open. A browser peek is a ~1s, ~200KB
- * screenshot and a markdown peek a file read: one fetch per open, nothing
- * kept once the card closes, so reopening always shows the tab as it is now.
+ * every 5s while the card is open and keep nothing once it closes.
+ *
+ * A browser peek is a ~1s, ~200KB screenshot (and a markdown peek a file
+ * read), so those are cached: re-hovering a tab shows its last peek at once,
+ * and only retakes it — in the background, the cached one staying on screen
+ * meanwhile — once it is more than 60s old. An unused peek is dropped after
+ * 10 minutes so screenshots do not pile up in memory.
  */
 export function peekQueryOptions(type: string) {
-  return {
-    refetchInterval: type === "terminal" ? 5000 : (false as const),
-    staleTime: 0,
-    gcTime: 0,
-    retry: false as const,
+  if (type === "terminal") {
+    return { refetchInterval: 5000, staleTime: 0, gcTime: 0, retry: false as const }
   }
+  return { refetchInterval: false as const, staleTime: 60_000, gcTime: 600_000, retry: false as const }
 }
 
 /** A tab's peek. Mounted only while its hover card is open — mounting IS enabling. */

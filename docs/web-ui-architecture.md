@@ -1895,10 +1895,12 @@ header.
   starts `useCmuxPeek`'s fetch. The card opens below the row
   (`bottom-start`, flipped above when there is no room), so it never covers
   the row's close button.
-- **Cadence:** terminals refetch every 5s while the card is open; browser
-  and markdown peeks fetch once per open with `staleTime`/`gcTime` 0, so a
-  reopened card always shows the tab as it is now and a closed one drops its
-  image.
+- **Cadence:** terminals refetch every 5s while the card is open and keep
+  nothing once it closes. Browser and markdown peeks are cached
+  (`staleTime` 60s, `gcTime` 10 min): re-hovering shows the last peek at
+  once, and it is retaken in the background — the cached one staying on
+  screen — only once it is over 60s old. A failed background retake (say,
+  the tab was closed) replaces the cached peek with the error.
 - **Route:** the tab's type comes from a fresh `cmux tree`, never the client,
   which also proves the surface is in that workspace (else 404). It is a
   data GET, unlike the cmux tab's POST actions: 400 on a bad id/surface, 503
