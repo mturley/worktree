@@ -8,7 +8,7 @@ export function SettingsButton() {
   return (
     <>
       <Tooltip label="Settings">
-        <ActionIcon variant="default" aria-label="Settings" onClick={() => setOpened(true)}>
+        <ActionIcon variant="subtle" color="gray" size="sm" aria-label="Settings" onClick={() => setOpened(true)}>
           <IconSettings size={16} />
         </ActionIcon>
       </Tooltip>
