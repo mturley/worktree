@@ -150,6 +150,9 @@ func runUI(cmd *cobra.Command, args []string) error {
 	srv := &webui.Server{DB: conn, WebFS: webFS, Port: uiPort, DevMode: uiAPIOnly, Logger: logger,
 		SlackClient: slackClient, SlackPoller: slackPoller, SlackDomain: slackDomain, SlackCookie: slackCookie,
 		Security: sec}
+	// The Settings modal's "Enable cmux features" toggle; it writes the
+	// config itself, so this is only the starting state.
+	srv.SetCmuxFeaturesDisabled(cfg.UI.CmuxFeaturesDisabled)
 
 	// Start the in-process poll loop (Task 4 provides StartPolling).
 	stop := srv.StartPolling(2 * time.Minute)

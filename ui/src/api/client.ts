@@ -1,4 +1,4 @@
-import type { CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, SaveWorktreeNotesResponse, SessionInfo, TimelineResponse, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherLogScope, WorktreeInfo, WorktreeNotes, WorktreeSummary } from "./types"
+import type { CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherLogScope, WorktreeInfo, WorktreeNotes, WorktreeSummary } from "./types"
 import { scopeParams } from "../lib/watcherLog"
 
 export class HttpError extends Error {
@@ -65,6 +65,13 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ handle }),
+    }),
+  settings: () => fetchJSON<Settings>("/api/settings"),
+  updateSettings: (patch: { cmux_features_enabled: boolean }) =>
+    fetchJSON<Settings>("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
     }),
   worktrees: () => fetchJSON<WorktreeSummary[]>("/api/worktrees"),
   /**

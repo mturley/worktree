@@ -76,11 +76,10 @@ func (h *cmuxFocusHub) publish(msg cmuxFocusMsg) {
 // where the UI hides the toggle that would use it.
 func (s *Server) StartCmuxFocusWatch() (stop func()) {
 	ctx, cancel := context.WithCancel(context.Background())
-	available := cmux.IsAvailable
-	if s.cmuxAvailable != nil {
-		available = s.cmuxAvailable
-	}
-	if !available() {
+	// Reachability, not cmuxEnabled: the watch runs for the life of the
+	// server, and onCmuxFocus drops events while the toggle is off, so
+	// turning it back on needs no restart.
+	if !s.cmuxReachable() {
 		return cancel
 	}
 	watch := cmux.WatchFocus
@@ -106,6 +105,9 @@ func (s *Server) StartCmuxFocusWatch() (stop func()) {
 
 // onCmuxFocus publishes a focus change with the worktree it lands on.
 func (s *Server) onCmuxFocus(workspaceID string) {
+	if !s.cmuxEnabled() {
+		return
+	}
 	hub := s.focusHub()
 	if !hub.changed(workspaceID) {
 		return
@@ -120,11 +122,7 @@ func (s *Server) onCmuxFocus(workspaceID string) {
 // instead of waiting for the next switch. Every failure is an empty message,
 // which the tab treats as "nowhere to go".
 func (s *Server) handleCmuxFocused(w http.ResponseWriter, r *http.Request) {
-	available := cmux.IsAvailable
-	if s.cmuxAvailable != nil {
-		available = s.cmuxAvailable
-	}
-	if !available() {
+	if !s.cmuxEnabled() {
 		writeJSON(w, http.StatusOK, cmuxFocusMsg{})
 		return
 	}

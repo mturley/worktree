@@ -59,7 +59,6 @@ func TestNotifyPassAdvancesEvenWhenDeliveryFails(t *testing.T) {
 	notifyprefs.SetAll(conn, a, true)
 	ft := &fakeTransport{}
 	s := &Server{DB: conn, transport: ft}
-	s.notifyOnce.Do(func() {}) // pin the fake transport
 	c, _ := initNotifyCursor(conn)
 	insertTypedEvent(t, conn, "e1", "2099-01-01T00:00:00Z", "pr_comment", "hello", "pr", "o/r#7")
 	s.notifyPass(&c)
@@ -89,7 +88,6 @@ func TestNotifyPassNeverReplaysHistoryWithoutACursor(t *testing.T) {
 	insertTypedEvent(t, conn, "old", "2026-01-01T00:00:00Z", "pr_comment", "old", "pr", "o/r#7")
 	ft := &fakeTransport{}
 	s := &Server{DB: conn, transport: ft}
-	s.notifyOnce.Do(func() {})
 
 	// A cursor that never initialised (e.g. the boot query failed) must not
 	// read from the beginning of time.
@@ -118,7 +116,6 @@ func TestNotifyPassCollapsesABurstIntoOneSummary(t *testing.T) {
 	notifyprefs.SetAll(conn, a, true)
 	ft := &fakeTransport{}
 	s := &Server{DB: conn, transport: ft}
-	s.notifyOnce.Do(func() {})
 	c, _ := initNotifyCursor(conn)
 	for i := 0; i < n; i++ {
 		insertTypedEvent(t, conn, fmt.Sprintf("e%d", i), "2099-01-01T00:00:00Z", "pr_comment", "x", "pr", fmt.Sprintf("o/r#%d", 100+i))

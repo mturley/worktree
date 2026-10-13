@@ -45,13 +45,37 @@ func (s *Server) StartCmuxUnreadSync(interval time.Duration) (stop func()) {
 // freeze cmux's own name for as long as the mailbox stayed. Workspaces not
 // open on a registered worktree are never touched.
 func (s *Server) cmuxUnreadPass() {
-	if !cmux.IsAvailable() {
+	if !s.cmuxEnabled() {
 		return
 	}
+	ix := s.newUnreadIndex()
+	s.syncUnreadPrefixes(func(path string) (bool, bool) {
+		return s.worktreeHasUnread(ix, path)
+	}, true)
+}
+
+// cmuxUnreadStrip takes cmux.UnreadPrefix off every registered worktree's
+// workspace. Turning cmux features off in Settings calls it, so the mailboxes
+// the sync put there do not linger once nothing keeps them up to date.
+func (s *Server) cmuxUnreadStrip() {
+	if !s.cmuxReachable() {
+		return
+	}
+	s.syncUnreadPrefixes(func(string) (bool, bool) { return false, true }, false)
+}
+
+// syncUnreadPrefixes renames each workspace on a registered worktree whose
+// prefix disagrees with want(path). want's ok=false leaves that worktree
+// alone. gated re-checks cmuxEnabled under the title lock, so a pass that was
+// waiting on it cannot re-add prefixes a strip just removed.
+func (s *Server) syncUnreadPrefixes(want func(path string) (has, ok bool), gated bool) {
 	// Held from list to rename so a rename typed in the UI cannot land in
 	// between and be overwritten with the title read here.
 	s.cmuxTitleMu.Lock()
 	defer s.cmuxTitleMu.Unlock()
+	if gated && !s.cmuxEnabled() {
+		return
+	}
 
 	workspaces, err := s.listCmuxWorkspaces()
 	if err != nil {
@@ -71,18 +95,17 @@ func (s *Server) cmuxUnreadPass() {
 		return
 	}
 
-	ix := s.newUnreadIndex()
 	rename := s.tabOps().rename
 	for path, hits := range matches {
-		want, ok := s.worktreeHasUnread(ix, path)
+		has, ok := want(path)
 		if !ok {
 			continue // unknown is not "read": leave the mailbox as it is
 		}
 		for _, ws := range hits {
-			if ws.CustomTitle == "" || ws.HasUnreadPrefix() == want {
+			if ws.CustomTitle == "" || ws.HasUnreadPrefix() == has {
 				continue
 			}
-			if err := rename(ws.ID, cmux.WithUnreadPrefix(ws.CustomTitle, want)); err != nil {
+			if err := rename(ws.ID, cmux.WithUnreadPrefix(ws.CustomTitle, has)); err != nil {
 				s.logger().Printf("cmux unread sync: %v", err)
 			}
 		}

@@ -165,6 +165,7 @@ export function WorktreeDetailCard({ w, onHide }: { w: WorktreeSummary; onHide?:
           <NotesPanel
             notes={notes}
             workspaceCount={workspaces.length}
+            hasCmux={hasCmux}
             editing={editing}
             onEdit={() => setEditing(true)}
             onDone={doneEditing}
@@ -296,11 +297,14 @@ function EnvVarRow({ name, value }: { name: string; value: string }) {
  * matches: with none there is nothing to write to, and with two there is no
  * right answer. If sync was turned on and the count has since changed, it
  * stays visible (so it can be turned off) with a note saying why nothing
- * syncs.
+ * syncs. Outside cmux, or with cmux features off in Settings, it is hidden
+ * entirely: the server skips the sync then, and "no cmux workspace" would be
+ * the wrong reason.
  */
-function NotesPanel({ notes, workspaceCount, editing, onEdit, onDone }: {
+function NotesPanel({ notes, workspaceCount, hasCmux, editing, onEdit, onDone }: {
   notes: ReturnType<typeof useWorktreeNotes>
   workspaceCount: number
+  hasCmux: boolean
   editing: boolean
   onEdit: () => void
   onDone: () => void
@@ -308,7 +312,7 @@ function NotesPanel({ notes, workspaceCount, editing, onEdit, onDone }: {
   if (notes.loadError) {
     return <Text size="xs" c="red">Could not load notes: {notes.loadError.message}</Text>
   }
-  const showSync = editing && (workspaceCount === 1 || notes.syncCmux)
+  const showSync = editing && hasCmux && (workspaceCount === 1 || notes.syncCmux)
   return (
     <Stack gap={4}>
       <Group gap="xs" justify="space-between" wrap="wrap" mih={22}>

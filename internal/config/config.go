@@ -51,6 +51,10 @@ type UIConfig struct {
 	// beyond the loopback names that are always allowed.
 	AllowedHosts []string    `yaml:"allowed_hosts"`
 	TLS          UITLSConfig `yaml:"tls"`
+	// CmuxFeaturesDisabled turns off everything the web UI does with cmux,
+	// even when the server can reach it. Set from the UI's Settings modal via
+	// SetCmuxFeaturesDisabled; absent means enabled.
+	CmuxFeaturesDisabled bool `yaml:"cmux_features_disabled,omitempty"`
 }
 
 type UITLSConfig struct {

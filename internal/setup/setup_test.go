@@ -97,6 +97,22 @@ func TestWriteConfigPreservesUISection(t *testing.T) {
 	}
 }
 
+func TestWriteConfigPreservesCmuxFeaturesDisabled(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	cfg := config.DefaultConfig()
+	cfg.UI.CmuxFeaturesDisabled = true
+	if err := writeConfig(config.ConfigPath(), cfg); err != nil {
+		t.Fatal(err)
+	}
+	got, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.UI.CmuxFeaturesDisabled {
+		t.Fatal("setup dropped ui.cmux_features_disabled")
+	}
+}
+
 func TestWriteConfigOmitsEmptyUISection(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := writeConfig(path, config.DefaultConfig()); err != nil {

@@ -17,7 +17,7 @@ import { SourceFilter } from "../components/SourceFilter"
 import { RefreshWatchersButton } from "../components/RefreshWatchersButton"
 import { WatcherLogButton } from "../components/WatcherLogButton"
 import { NewWorktreeModal } from "../components/NewWorktreeModal"
-import { DevicesButton } from "../components/DevicesButton"
+import { SettingsButton } from "../components/SettingsButton"
 import { FollowCmuxToggle } from "../components/FollowCmuxToggle"
 import { Logo } from "../components/Logo"
 import { useCmux } from "../api/cmux"
@@ -89,10 +89,7 @@ export function HomePage() {
             activity feed too. */}
         <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} />
       </Group>
-      <Group gap="xs" wrap="nowrap">
-        {newWorktreeButton}
-        <DevicesButton />
-      </Group>
+      {newWorktreeButton}
     </Group>
   )
 
@@ -135,7 +132,7 @@ export function HomePage() {
   )
   const timeline = (
     <Stack gap="sm">
-      <Group justify="space-between" wrap="wrap" gap="xs">
+      <Group justify="space-between" wrap="wrap" gap="xs" data-testid="activity-header">
         <Group gap={6} wrap="nowrap" align="center">
           <Title order={4}>Activity</Title>
           <RefreshWatchersButton />
@@ -143,7 +140,11 @@ export function HomePage() {
         </Group>
         {/* The source filter (which also narrows the worktree cards) gets a
             line of its own below. */}
-        <ArchivedToggle value={archived} onChange={setArchived} />
+        <Group gap="sm" wrap="nowrap">
+          <ArchivedToggle value={archived} onChange={setArchived} />
+          {/* Top-right of the page when wide; the tab bar has it when narrow. */}
+          {wide && <SettingsButton />}
+        </Group>
       </Group>
       <Group>
         <SourceFilter value={sources} onChange={setSources} />
@@ -173,6 +174,10 @@ export function HomePage() {
           <Tabs.List>
             <Tabs.Tab value="worktrees">Worktrees</Tabs.Tab>
             <Tabs.Tab value="timeline">Activity</Tabs.Tab>
+            {/* Top-right of the page, whichever tab is showing. */}
+            <Group ml="auto" align="center" pb={4}>
+              <SettingsButton />
+            </Group>
           </Tabs.List>
           <Tabs.Panel value="worktrees" pt="md">
             <Stack gap="xs">

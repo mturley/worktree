@@ -69,14 +69,30 @@ describe("HomePage responsive layout", () => {
   })
 })
 
-describe("HomePage devices", () => {
-  it("offers the Devices panel from the header at both widths", () => {
-    for (const width of ["narrow", "wide"] as const) {
-      setViewport(width)
-      wrap()
-      expect(screen.getByRole("button", { name: "Devices" })).toBeInTheDocument()
-      cleanup()
-    }
+describe("HomePage settings", () => {
+  it("puts the Settings cog in the Activity header when wide", () => {
+    setViewport("wide")
+    wrap()
+    const cog = screen.getByRole("button", { name: "Settings" })
+    // Beside "Show archived", in the Activity column's header.
+    expect(cog.closest("[data-testid='activity-header']")).not.toBeNull()
+    expect(screen.queryByRole("button", { name: "Devices" })).not.toBeInTheDocument()
+  })
+
+  it("puts the Settings cog in the tab bar when narrow", () => {
+    setViewport("narrow")
+    wrap()
+    const cog = screen.getByRole("button", { name: "Settings" })
+    expect(cog.closest("[role='tablist']")).not.toBeNull()
+    expect(screen.getAllByRole("button", { name: "Settings" })).toHaveLength(1)
+  })
+
+  it("opens the Settings modal", async () => {
+    setViewport("wide")
+    vi.spyOn(api, "settings").mockResolvedValue({ in_cmux: false, cmux_features_enabled: true })
+    wrap()
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }))
+    expect(await screen.findByRole("tab", { name: "Devices" })).toBeInTheDocument()
   })
 })
 

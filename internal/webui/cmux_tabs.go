@@ -87,7 +87,7 @@ func (s *Server) handleCmuxTree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	unavailable := cmuxTreeResponse{Workspaces: []cmuxTreeWorkspaceDTO{}}
-	if !cmux.IsAvailable() {
+	if !s.cmuxEnabled() {
 		writeJSON(w, http.StatusOK, unavailable)
 		return
 	}
@@ -199,10 +199,10 @@ func decodeCmuxRequest(w http.ResponseWriter, r *http.Request, v any) bool {
 	return true
 }
 
-// cmuxUnavailable answers for a write when cmux cannot be reached, and says
-// whether it did.
-func cmuxUnavailable(w http.ResponseWriter) bool {
-	if cmux.IsAvailable() {
+// cmuxUnavailable answers for a write when cmux cannot be reached (or its
+// features are turned off in Settings), and says whether it did.
+func (s *Server) cmuxUnavailable(w http.ResponseWriter) bool {
+	if s.cmuxEnabled() {
 		return false
 	}
 	writeJSON(w, http.StatusOK, cmuxActionResponse{OK: false, Error: "cmux is not running"})
@@ -236,7 +236,7 @@ func (s *Server) handleCmuxRename(w http.ResponseWriter, r *http.Request) {
 	if !validWorkspaceID(w, req.ID) {
 		return
 	}
-	if cmuxUnavailable(w) {
+	if s.cmuxUnavailable(w) {
 		return
 	}
 	ops := s.tabOps()
@@ -301,7 +301,7 @@ func (s *Server) handleCmuxColor(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "color must be a cmux colour name or #RRGGBB")
 		return
 	}
-	if cmuxUnavailable(w) {
+	if s.cmuxUnavailable(w) {
 		return
 	}
 	ops := s.tabOps()
@@ -337,7 +337,7 @@ func (s *Server) handleCmuxFocusTab(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid surface")
 		return
 	}
-	if cmuxUnavailable(w) {
+	if s.cmuxUnavailable(w) {
 		return
 	}
 	ops := s.tabOps()
@@ -589,7 +589,7 @@ func (s *Server) handleCmuxCloseTab(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid surface")
 		return
 	}
-	if cmuxUnavailable(w) {
+	if s.cmuxUnavailable(w) {
 		return
 	}
 	ops := s.tabOps()
@@ -667,7 +667,7 @@ func (s *Server) handleCmuxMoveTab(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if cmuxUnavailable(w) {
+	if s.cmuxUnavailable(w) {
 		return
 	}
 	ops := s.tabOps()

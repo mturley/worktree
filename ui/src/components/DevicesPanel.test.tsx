@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { SessionInfo } from "../api/types"
-import { DevicesModal } from "./DevicesModal"
+import { DevicesPanel } from "./DevicesPanel"
 
 const laptop: SessionInfo = { handle: "h-laptop", label: "Mac — Chrome", created_at: "2026-09-01T10:00:00Z", last_seen_at: "2026-09-15T10:00:00Z", current: true }
 const phone: SessionInfo = { handle: "h-phone", label: "Android — Chrome", created_at: "2026-09-02T10:00:00Z", last_seen_at: "2026-09-14T10:00:00Z", current: false }
@@ -16,7 +16,7 @@ function reply(body: unknown, status = 200) {
 function renderModal(qc = new QueryClient()) {
   render(
     <QueryClientProvider client={qc}>
-      <MantineProvider><DevicesModal opened onClose={() => {}} /></MantineProvider>
+      <MantineProvider><DevicesPanel active /></MantineProvider>
     </QueryClientProvider>,
   )
   return qc
@@ -27,7 +27,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe("DevicesModal", () => {
+describe("DevicesPanel", () => {
   it("lists every session and marks only the current one", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => reply([laptop, phone])))
     renderModal()

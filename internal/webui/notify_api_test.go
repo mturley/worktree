@@ -26,7 +26,6 @@ func notifyAPIServer(t *testing.T) (*Server, string, *fakeTransport) {
 	resources.Add(conn, wt, resources.Resource{Type: "link", ID: "https://example.com", URL: "https://example.com"})
 	ft := &fakeTransport{}
 	s := &Server{DB: conn, transport: ft}
-	s.notifyOnce.Do(func() {})
 	return s, wt, ft
 }
 

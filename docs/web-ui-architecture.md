@@ -54,8 +54,8 @@ what in-process tests rely on.
 Secure when the login arrived over TLS (`r.TLS != nil`), decided per
 request because one server has both listeners. Routes: `POST /api/login`,
 `POST /api/logout`, `GET /api/session`, `GET /api/sessions`,
-`POST /api/sessions/revoke {handle}`. The UI's Devices panel (home page
-header) lists and revokes sessions.
+`POST /api/sessions/revoke {handle}`. The Devices tab of the home page's
+Settings modal (`DevicesPanel`) lists and revokes sessions.
 
 **Setup** (`internal/setup/uiaccess.go`). Generates `ui.password` if unset
 and prints it once. Offers remote access: detects the `.local` name and LAN
@@ -773,8 +773,11 @@ whenever cmux focuses a different workspace; see "Follow cmux" under
 
 Per-worktree "Notify on all" and per-resource "Notify on new events" toggles.
 New events for a notifying resource become a desktop notification: through
-`cmux notify` when the server can reach cmux, otherwise from exactly one
-browser tab per login session.
+`cmux notify` while cmux features are enabled (`cmuxEnabled`, see "cmux
+integration"), otherwise from exactly one browser tab per login session. The
+mode is decided per delivery, not once per process, so the Settings toggle
+switches it immediately; tabs learn it from `GET /api/session`'s
+`notify_mode`, which the toggle invalidates.
 
 **Storage — `internal/notifyprefs`, table `worktree_notify`.** A row means
 on; the row with an empty `resource_type`/`resource_id` is the worktree-wide
@@ -1713,6 +1716,33 @@ things constrain any change here:
   `osascript` activate — there is no "select without switching focus" mode.
 - Every server-side workspace lookup goes through `Server.listCmuxWorkspaces`,
   which honors the `cmuxList` test seam.
+
+### Settings toggle: one server-side gate (`settings.go`)
+
+The home page's Settings modal (cog in the Activity header when wide, at the
+right of the Worktrees/Activity tab bar when narrow) has an "Enable cmux
+features" switch, persisted as `ui.cmux_features_disabled` in the config
+file (absent = enabled). `PUT /api/settings` writes it with
+`config.SetCmuxFeaturesDisabled`, which edits the YAML node tree so the rest
+of the file and its comments survive, then flips the live gate. It is
+refused (409) when the server cannot reach cmux, and the UI greys the switch
+out with a tooltip then (`GET /api/settings` → `in_cmux`).
+
+**Every cmux feature is gated in Go, not TypeScript.** `Server.cmuxEnabled()`
+is reachable (`cmuxReachable`: the `cmuxAvailable` seam or
+`cmux.IsAvailable`) AND not disabled. Every cmux endpoint, the notes sync,
+notification mode, the unread title sync and focus fan-out check it, so with
+the toggle off the server behaves exactly as if cmux were not running and
+the UI's existing `available` checks hide every cmux control with no
+frontend gating of their own. New cmux features must check `cmuxEnabled()`,
+never `cmux.IsAvailable()` directly. Exceptions, which use `cmuxReachable`:
+the focus watch keeps its stream open (onCmuxFocus drops events instead, so
+re-enabling needs no restart), and turning the toggle off runs
+`cmuxUnreadStrip` to take existing `📬` prefixes off. The gate closes before
+the strip, and the unread pass re-checks it under `cmuxTitleMu`, so a pass
+already waiting cannot put a prefix back. After a change the modal
+invalidates every query whose key starts with `cmux` plus `["session"]`;
+other open tabs catch up on their next refetch.
 
 ### Unread mailbox on workspace titles (`cmux_unread.go`, `cmux/unread_prefix.go`)
 

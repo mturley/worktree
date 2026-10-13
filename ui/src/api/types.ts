@@ -303,6 +303,13 @@ export interface SessionInfo {
   notify_mode?: NotifyMode
 }
 
+/** GET/PUT /api/settings: the Settings modal's server-side settings. */
+export interface Settings {
+  /** Whether the server can reach cmux at all; the cmux toggle needs it. */
+  in_cmux: boolean
+  cmux_features_enabled: boolean
+}
+
 /** A node of a cmux workspace's split layout: a pane leaf, or a two-way split. */
 export interface CmuxLayout {
   pane?: string

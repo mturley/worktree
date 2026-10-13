@@ -514,6 +514,18 @@ describe("cmux description sync", () => {
     await waitFor(() => expect(syncBox()).toBeChecked())
     expect(screen.getByText(/not syncing: this worktree has no cmux workspace/i)).toBeInTheDocument()
   })
+
+  it("is hidden when cmux is unavailable or turned off, even with sync on", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    worktreeNotes.mockResolvedValue({ notes: "existing", sync_cmux: true })
+    cmux.mockResolvedValue({ available: false })
+    const user = userEvent.setup()
+    wrap(summary())
+    await startEditing(user)
+    await waitFor(() => expect(cmux).toHaveBeenCalled())
+    expect(screen.queryByLabelText(/sync to cmux/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/not syncing/i)).not.toBeInTheDocument()
+  })
 })
 
 describe("cmux tab", () => {

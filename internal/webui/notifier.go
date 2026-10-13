@@ -18,31 +18,26 @@ const (
 // pass sends a single summary instead.
 const notifyMaxPerPass = 5
 
-// notifyMode picks the delivery path once per process: cmux when the server
-// can reach it (IsAvailable, not InPane: the server drives cmux from wherever
-// it runs), else browser tabs. The two never both fire.
+// notifyMode is the delivery path: cmux while cmux features are enabled
+// (see cmuxEnabled), else browser tabs. The two never both fire. It is
+// decided on every delivery, so the Settings toggle takes effect at once.
 func (s *Server) notifyMode() string {
-	s.notifyOnce.Do(func() {
-		avail := cmux.IsAvailable
-		if s.cmuxAvailable != nil {
-			avail = s.cmuxAvailable
-		}
-		if avail() {
-			s.notifyModeName, s.transport = notifyModeCmux, &cmuxTransport{s: s}
-		} else {
-			s.notifyModeName, s.transport = notifyModeBrowser, s.tabRegistry()
-		}
-	})
-	if s.notifyModeName == "" { // transport pinned by a test
-		return notifyModeBrowser
+	if s.transport == nil && s.cmuxEnabled() {
+		return notifyModeCmux
 	}
-	return s.notifyModeName
+	return notifyModeBrowser // or a transport pinned by a test
 }
 
 // deliver sends b through the active transport.
 func (s *Server) deliver(b notifyBatch, o deliverOpts) {
-	s.notifyMode()
-	s.transport.Deliver(b, o)
+	switch {
+	case s.transport != nil:
+		s.transport.Deliver(b, o)
+	case s.notifyMode() == notifyModeCmux:
+		(&cmuxTransport{s: s}).Deliver(b, o)
+	default:
+		s.tabRegistry().Deliver(b, o)
+	}
 }
 
 // cmuxTransport posts `cmux notify` targeted at the worktree's workspace, so

@@ -112,7 +112,7 @@ func (s *Server) handleSetWorktreeNotes(w http.ResponseWriter, r *http.Request) 
 // syncNotesToCmux mirrors text to the description of path's one cmux
 // workspace, returning the outcome and, when not ok, why.
 func (s *Server) syncNotesToCmux(path, text string) (string, string) {
-	if !cmux.IsAvailable() {
+	if !s.cmuxEnabled() {
 		return cmuxSyncSkipped, "cmux is not available"
 	}
 	workspaces, err := s.listCmuxWorkspaces()

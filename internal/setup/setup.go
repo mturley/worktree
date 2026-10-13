@@ -405,6 +405,8 @@ func writeConfig(path string, cfg config.Config) error {
 		HTTPSPort    int        `yaml:"https_port,omitempty"`
 		AllowedHosts []string   `yaml:"allowed_hosts,omitempty"`
 		TLS          *uiTLSYaml `yaml:"tls,omitempty"`
+		// Set from the web UI's Settings modal (config.SetCmuxFeaturesDisabled).
+		CmuxFeaturesDisabled bool `yaml:"cmux_features_disabled,omitempty"`
 	}
 
 	type yamlConfig struct {
@@ -427,7 +429,8 @@ func writeConfig(path string, cfg config.Config) error {
 
 	// Every ui field must be carried here: a field left out is silently
 	// dropped from the file the next time setup writes it.
-	u := uiYaml{Password: cfg.UI.Password, AllowedHosts: cfg.UI.AllowedHosts}
+	u := uiYaml{Password: cfg.UI.Password, AllowedHosts: cfg.UI.AllowedHosts,
+		CmuxFeaturesDisabled: cfg.UI.CmuxFeaturesDisabled}
 	if cfg.UI.HTTPSPort != 0 && cfg.UI.HTTPSPort != config.DefaultHTTPSPort {
 		u.HTTPSPort = cfg.UI.HTTPSPort
 	}
@@ -437,7 +440,7 @@ func writeConfig(path string, cfg config.Config) error {
 			KeyFile:  shortenHome(cfg.UI.TLS.KeyFile, home),
 		}
 	}
-	if u.Password != "" || u.HTTPSPort != 0 || len(u.AllowedHosts) > 0 || u.TLS != nil {
+	if u.Password != "" || u.HTTPSPort != 0 || len(u.AllowedHosts) > 0 || u.TLS != nil || u.CmuxFeaturesDisabled {
 		yc.UI = &u
 	}
 

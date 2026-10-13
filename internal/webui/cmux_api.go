@@ -48,7 +48,7 @@ type cmuxResponse struct {
 // cmux is not running at all. A 5xx here would break a page over a missing
 // terminal multiplexer.
 func (s *Server) handleCmux(w http.ResponseWriter, r *http.Request) {
-	if !cmux.IsAvailable() {
+	if !s.cmuxEnabled() {
 		writeJSON(w, http.StatusOK, cmuxResponse{Available: false})
 		return
 	}
@@ -119,7 +119,7 @@ func (s *Server) handleCmuxGroups(w http.ResponseWriter, r *http.Request) {
 	for _, c := range cmux.NamedColors {
 		out.Colors = append(out.Colors, cmuxColorDTO{Name: c.Name, Hex: c.Hex})
 	}
-	if cmux.IsAvailable() {
+	if s.cmuxEnabled() {
 		listGroups := cmux.ListGroups
 		if s.cmuxListGroups != nil {
 			listGroups = s.cmuxListGroups
@@ -208,7 +208,7 @@ func (s *Server) handleCmuxCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing path")
 		return
 	}
-	if !cmux.IsAvailable() {
+	if !s.cmuxEnabled() {
 		writeJSON(w, http.StatusOK, cmuxActionResponse{OK: false, Error: "cmux is not running"})
 		return
 	}

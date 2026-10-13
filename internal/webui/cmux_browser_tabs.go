@@ -34,7 +34,7 @@ type cmuxBrowserTabsResponse struct {
 // just offers to open a new tab.
 func (s *Server) handleCmuxBrowserTabs(w http.ResponseWriter, r *http.Request) {
 	out := cmuxBrowserTabsResponse{Tabs: []cmuxBrowserTabDTO{}}
-	if !cmux.IsAvailable() {
+	if !s.cmuxEnabled() {
 		writeJSON(w, http.StatusOK, out)
 		return
 	}
