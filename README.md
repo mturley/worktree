@@ -15,6 +15,8 @@ make build
 make install    # installs worktree + wt symlink to /usr/local/bin, runs setup
 ```
 
+To update, `git pull` and run `make install` again. The web UI shows a banner when `main` has commits newer than your installed build.
+
 ### Via `go install`
 
 ```bash
