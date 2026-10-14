@@ -201,6 +201,8 @@ func (s *Server) routes() []route {
 		{"GET /api/settings", s.handleSettings},
 		{"GET /api/update-status", s.handleUpdateStatus},
 		{"PUT /api/settings/worktree", s.handleSettingsWorktree},
+		{"PUT /api/settings/watcher-auth", s.handleSettingsWatcherAuth},
+		{"PUT /api/settings/watcher-config", s.handleSettingsWatcherConfig},
 		{"GET /api/linked-resources", s.handleLinkedResources},
 		{"GET /api/linked-resources/children", s.handleLinkedChildren},
 		{"GET /api/timeline", s.handleGlobalTimeline},
