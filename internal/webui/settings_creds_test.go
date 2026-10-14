@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	wgithub "github.com/mturley/watcher/github"
+	wjira "github.com/mturley/watcher/jira"
 	wslack "github.com/mturley/watcher/slack"
 	"github.com/mturley/worktree/internal/uisession"
 )
@@ -62,11 +63,99 @@ func TestCredTestKinds(t *testing.T) {
 	}
 }
 
-func TestCredTestJiraUsesFormHostEmail(t *testing.T) {
+func TestCredTestJiraEmailOverrideSameHost(t *testing.T) {
 	s, log := credServer(t, nil, nil, nil)
-	doReq(s, "POST", "/api/settings/credentials/jira/test", `{"host":"https://form.atlassian.net","email":"f@f"}`)
-	if got := log.jira[0]; got[0] != "https://form.atlassian.net" || got[1] != "f@f" || got[2] != "JIRA_SECRET2" {
+	doReq(s, "POST", "/api/settings/credentials/jira/test", `{"host":"HTTPS://X.atlassian.net/","email":"f@f"}`)
+	if len(log.jira) != 1 {
+		t.Fatalf("validator calls = %v", log.jira)
+	}
+	if got := log.jira[0]; got[1] != "f@f" || got[2] != "JIRA_SECRET2" {
 		t.Fatalf("got %v", got)
+	}
+}
+
+func TestCredTestJiraDifferentHostIsUnsaved(t *testing.T) {
+	s, _ := credServer(t, nil, nil, nil)
+	s.credCheck.jira = func(h, e, tok string) error {
+		t.Fatal("must not send the stored token to an unsaved host")
+		return nil
+	}
+	rec := doReq(s, "POST", "/api/settings/credentials/jira/test", `{"host":"https://evil.example","email":"f@f"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d", rec.Code)
+	}
+	if r := decodeCredResult(t, rec.Body.String()); r.OK || r.Kind != "unsaved" {
+		t.Fatalf("result %+v", r)
+	}
+}
+
+func readAuth(t *testing.T, s *Server) string {
+	t.Helper()
+	data, err := os.ReadFile(s.WatcherAuthPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+func TestReplaceJiraRefusedWritesNothing(t *testing.T) {
+	s, _ := credServer(t, nil, wjira.ErrAuth, nil)
+	rec := doReq(s, "PUT", "/api/settings/credentials/jira", `{"token":"J_NEW","host":"https://n.atlassian.net","email":"n@n"}`)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status %d", rec.Code)
+	}
+	if got := readAuth(t, s); got != authYAML {
+		t.Fatalf("auth.yaml changed:\n%s", got)
+	}
+}
+
+func TestReplaceSlackRefusedWritesNothing(t *testing.T) {
+	s, _ := credServer(t, nil, nil, errors.New("network down"))
+	rec := doReq(s, "PUT", "/api/settings/credentials/slack", `{"token":"xoxc-NEW"}`)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status %d", rec.Code)
+	}
+	if got := readAuth(t, s); got != authYAML {
+		t.Fatalf("auth.yaml changed:\n%s", got)
+	}
+}
+
+func TestReplaceSlackOneHalfStoredOtherMissing(t *testing.T) {
+	s, log := credServer(t, nil, nil, nil)
+	if err := os.WriteFile(s.WatcherAuthPath, []byte("services:\n    slack:\n        token: xoxc-ONLY\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rec := doReq(s, "PUT", "/api/settings/credentials/slack", `{"token":"xoxc-NEW"}`)
+	if rec.Code != http.StatusUnprocessableEntity || decodeCredResult(t, rec.Body.String()).Kind != "missing" {
+		t.Fatalf("status %d %s", rec.Code, rec.Body)
+	}
+	if len(log.slack) != 0 {
+		t.Fatalf("validator called: %v", log.slack)
+	}
+}
+
+func TestReplaceSlackDomainFallsBack(t *testing.T) {
+	s, _ := credServer(t, nil, nil, nil)
+	s.credCheck.slackDomain = func(tok, ck string) string { return "" }
+	rec := doReq(s, "PUT", "/api/settings/credentials/slack", `{"cookie":"xoxd-NEW"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d %s", rec.Code, rec.Body)
+	}
+	if got := readAuth(t, s); !strings.Contains(got, "workspace_domain: x.slack.com") {
+		t.Fatalf("auth.yaml:\n%s", got)
+	}
+}
+
+func TestReplaceSuccessNeverEchoesSecrets(t *testing.T) {
+	s, _ := credServer(t, nil, nil, nil)
+	for _, c := range []struct{ svc, body, secret string }{
+		{"jira", `{"token":"J_NEW_SECRET","host":"https://n.atlassian.net","email":"n@n"}`, "J_NEW_SECRET"},
+		{"slack", `{"token":"xoxc-NEW_SECRET","cookie":"xoxd-NEW_SECRET"}`, "NEW_SECRET"},
+	} {
+		rec := doReq(s, "PUT", "/api/settings/credentials/"+c.svc, c.body)
+		if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), c.secret) {
+			t.Fatalf("%s: status %d body %s", c.svc, rec.Code, rec.Body)
+		}
 	}
 }
 
@@ -145,9 +234,17 @@ func TestReplaceSlackAuthError(t *testing.T) {
 
 func TestReplaceRejectsEmpty(t *testing.T) {
 	s, _ := credServer(t, nil, nil, nil)
-	for _, c := range []struct{ svc, body string }{{"github", `{"token":""}`}, {"slack", `{}`}, {"jira", `{"token":"t","host":"","email":""}`}, {"nope", `{"token":"t"}`}} {
-		if rec := doReq(s, "PUT", "/api/settings/credentials/"+c.svc, c.body); rec.Code != http.StatusBadRequest && rec.Code != http.StatusNotFound {
-			t.Fatalf("%s: status %d", c.svc, rec.Code)
+	for _, c := range []struct {
+		svc, body string
+		want      int
+	}{
+		{"github", `{"token":""}`, http.StatusBadRequest},
+		{"slack", `{}`, http.StatusBadRequest},
+		{"jira", `{"token":"t","host":"","email":""}`, http.StatusBadRequest},
+		{"nope", `{"token":"t"}`, http.StatusNotFound},
+	} {
+		if rec := doReq(s, "PUT", "/api/settings/credentials/"+c.svc, c.body); rec.Code != c.want {
+			t.Fatalf("%s: status %d, want %d", c.svc, rec.Code, c.want)
 		}
 	}
 }
@@ -167,6 +264,9 @@ func TestPasswordReplaceAppliesLive(t *testing.T) {
 	}
 	if rec := doPassword(s, `{"password":"  "}`); rec.Code != http.StatusBadRequest {
 		t.Fatalf("blank: status %d", rec.Code)
+	}
+	if rec := doPassword(s, `{"password":" spaced pw "}`); rec.Code != http.StatusNoContent || s.Security.password() != " spaced pw " {
+		t.Fatalf("verbatim: status %d, password %q", rec.Code, s.Security.password())
 	}
 }
 

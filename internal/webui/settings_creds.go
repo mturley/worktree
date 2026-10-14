@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	wconfig "github.com/mturley/watcher/config"
 	wgithub "github.com/mturley/watcher/github"
@@ -36,7 +37,9 @@ func (s *Server) validators() credValidators {
 		jira:   wjira.Validate,
 		slack:  func(t, c string) error { return wslack.Validate(t, c) },
 		slackDomain: func(t, c string) string {
-			d, err := wslack.New(t, c).TeamInfo(context.Background())
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			d, err := wslack.New(t, c).TeamInfo(ctx)
 			if err != nil {
 				return ""
 			}
@@ -47,7 +50,7 @@ func (s *Server) validators() credValidators {
 
 type credResult struct {
 	OK     bool   `json:"ok"`
-	Kind   string `json:"kind"` // ok | auth | network | missing
+	Kind   string `json:"kind"` // ok | auth | network | missing | unsaved
 	Detail string `json:"detail"`
 }
 
@@ -112,8 +115,12 @@ func (s *Server) handleCredTest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		host, email := j.Host, j.Email
-		if req.Host != "" {
-			host = req.Host
+		// A host override is honoured only when it is the stored host: the
+		// stored token must never be sent to a host the user hasn't saved.
+		if req.Host != "" && !strings.EqualFold(req.Host, strings.TrimRight(strings.TrimSpace(j.Host), "/")) {
+			writeJSON(w, http.StatusOK, credResult{Kind: "unsaved",
+				Detail: "Save the Jira host first, or Replace the token to test it with the new host."})
+			return
 		}
 		if req.Email != "" {
 			email = req.Email
@@ -222,8 +229,8 @@ func (s *Server) handlePasswordReplace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	pw := strings.TrimSpace(req.Password)
-	if pw == "" {
+	pw := req.Password // stored verbatim: login compares the raw input
+	if strings.TrimSpace(pw) == "" {
 		writeError(w, http.StatusBadRequest, "password can't be empty")
 		return
 	}
