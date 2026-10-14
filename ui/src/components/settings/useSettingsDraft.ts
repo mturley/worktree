@@ -43,6 +43,9 @@ export function useSettingsDraft(server: Settings | undefined) {
   const baseRef = useRef(base)
   const draftsRef = useRef(drafts)
   const savingRef = useRef(false)
+  // Files whose draft fails client-side validation: save() skips them.
+  const invalidRef = useRef<Partial<Record<SettingsFile, string>>>({})
+  const [invalid, setInvalidState] = useState<Partial<Record<SettingsFile, string>>>({})
   const setBase = useCallback((v: Drafts | null) => { baseRef.current = v; setBaseState(v) }, [])
   const setDrafts = useCallback((v: Drafts | null) => { draftsRef.current = v; setDraftsState(v) }, [])
 
@@ -78,7 +81,18 @@ export function useSettingsDraft(server: Settings | undefined) {
     if (d) setDrafts({ ...d, [file]: fn(d[file]) })
   }, [setDrafts])
 
+  /** Mark a file's draft invalid (message) or valid again (null). */
+  const setInvalid = useCallback((file: SettingsFile, message: string | null) => {
+    const next = { ...invalidRef.current }
+    if (message) next[file] = message
+    else delete next[file]
+    invalidRef.current = next
+    setInvalidState(next)
+  }, [])
+
   const discard = useCallback(() => {
+    invalidRef.current = {}
+    setInvalidState({})
     setDrafts(baseRef.current)
     setErrors({})
   }, [setDrafts])
@@ -110,6 +124,11 @@ export function useSettingsDraft(server: Settings | undefined) {
         const sent = draftsRef.current?.[f]
         const b = baseRef.current
         if (!sent || !b || canonical(b[f]) === canonical(sent)) continue
+        const bad = invalidRef.current[f]
+        if (bad) {
+          errs[f] = bad
+          continue
+        }
         try {
           latest = await (savers[f] as (d: unknown) => Promise<Settings>)(sent)
           saved.push(f)
@@ -130,5 +149,5 @@ export function useSettingsDraft(server: Settings | undefined) {
     return { saved, errors: errs, settings: latest }
   }, [setBase, setDrafts])
 
-  return { drafts, dirty, anyDirty: FILES.some((f) => dirty[f]), restartCount, update, discard, save, saving, errors, rebase }
+  return { drafts, dirty, anyDirty: FILES.some((f) => dirty[f]), restartCount, update, discard, save, saving, errors, rebase, setInvalid, invalid }
 }

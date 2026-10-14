@@ -244,4 +244,61 @@ describe("SettingsModal", () => {
     await userEvent.click(screen.getByRole("button", { name: "Replace" }))
     await waitFor(() => expect(replace).toHaveBeenCalledWith("slack", { cookie: "xoxd-new" }))
   })
+
+  it("a stale in-flight refetch cannot revert a saved field", async () => {
+    const spy = vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
+    const saved = baseSettings()
+    saved.worktree.editor = "zed"
+    vi.spyOn(api, "saveWorktreeSettings").mockResolvedValue(saved)
+    const qc = renderModal()
+    const editor = await screen.findByLabelText("Editor")
+    await userEvent.type(editor, "zed")
+    let release: (s: ReturnType<typeof baseSettings>) => void = () => {}
+    spy.mockReturnValue(new Promise((r) => { release = r }))
+    void qc.refetchQueries({ queryKey: ["settings"] })
+    await userEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() => expect(screen.queryByText(/Unsaved changes/)).not.toBeInTheDocument())
+    release(baseSettings()) // the old values land after the save
+    await new Promise((r) => setTimeout(r, 20))
+    expect(screen.getByLabelText("Editor")).toHaveValue("zed")
+  })
+
+  it("Watcher Auth: warns when the Jira host changes while a token is stored", async () => {
+    vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
+    vi.spyOn(api, "testCredential").mockResolvedValue({ ok: true, kind: "ok", detail: "" })
+    renderModal()
+    await userEvent.click(screen.getByRole("tab", { name: /Watcher Auth/ }))
+    const host = await screen.findByLabelText("Host")
+    expect(screen.queryByText(/Changing the host needs the API token/)).not.toBeInTheDocument()
+    await userEvent.type(host, "2")
+    expect(screen.getByText("Changing the host needs the API token: paste it below and press Replace (Save alone will be refused).")).toBeInTheDocument()
+  })
+
+  it("Watcher Config: a duplicate custom field name shows an error and blocks the save", async () => {
+    vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
+    const save = vi.spyOn(api, "saveWatcherConfigSettings").mockResolvedValue(baseSettings())
+    renderModal()
+    await userEvent.click(screen.getByRole("tab", { name: /Watcher Config/ }))
+    const second = await screen.findByLabelText("Field 2 name")
+    await userEvent.clear(second)
+    await userEvent.type(second, "a")
+    expect(screen.getByText(/Duplicate name "a"/)).toBeInTheDocument()
+    await userEvent.type(screen.getByLabelText("Field 2 ID"), "x")
+    await userEvent.click(screen.getByRole("button", { name: "Save" }))
+    expect(save).not.toHaveBeenCalled()
+    expect(await screen.findByText(/Couldn't save watcher config.yaml/)).toBeInTheDocument()
+  })
+
+  it("General: clearing the HTTPS port maps to the default 8476", async () => {
+    const start = baseSettings()
+    start.worktree.ui.https_port = 9000
+    vi.spyOn(api, "settings").mockResolvedValue(start)
+    const save = vi.spyOn(api, "saveWorktreeSettings").mockResolvedValue(start)
+    renderModal()
+    const port = await screen.findByLabelText("HTTPS port")
+    await userEvent.clear(port)
+    await userEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() => expect(save).toHaveBeenCalledOnce())
+    expect(save.mock.calls[0][0].ui.https_port).toBe(8476)
+  })
 })

@@ -54,6 +54,8 @@ export function SettingsModal({ opened, onClose }: { opened: boolean; onClose: (
 
   const refetchAfterSecret = async () => {
     try {
+      // An in-flight GET must not land after this one and revert the form.
+      await qc.cancelQueries({ queryKey: settingsKey })
       const fresh = await qc.fetchQuery({ queryKey: settingsKey, queryFn: api.settings })
       draft.rebase(fresh)
     } catch {
@@ -75,6 +77,9 @@ export function SettingsModal({ opened, onClose }: { opened: boolean; onClose: (
     const wasCmux = draft.drafts && settings.data
       ? draft.drafts.worktree.cmux_features_enabled !== settings.data.worktree.cmux_features_enabled
       : false
+    // A GET already in flight could land after setQueryData and rebase clean
+    // files back to the old values.
+    await qc.cancelQueries({ queryKey: settingsKey })
     const out = await draft.save()
     if (out.saved.includes("watcher_config")) setResetToken((n) => n + 1)
     if (out.settings) qc.setQueryData(settingsKey, out.settings)
@@ -133,6 +138,7 @@ export function SettingsModal({ opened, onClose }: { opened: boolean; onClose: (
               draft={draft.drafts.watcher_config}
               update={(fn) => draft.update("watcher_config", fn)}
               error={draft.errors.watcher_config}
+              setInvalid={(m) => draft.setInvalid("watcher_config", m)}
             />
           ))}
         </Tabs.Panel>

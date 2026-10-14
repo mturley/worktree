@@ -55,6 +55,7 @@ export function WatcherAuthPanel({ settings, draft, update, error, active, onSec
       return r
     }
 
+  const hostChangeNeedsToken = sec.jira_token && draft.jira.host.trim() !== settings.watcher_auth.jira.host.trim()
   return (
     <Stack gap="lg">
       <PersistedTo path={settings.paths.watcher_auth} />
@@ -75,6 +76,7 @@ export function WatcherAuthPanel({ settings, draft, update, error, active, onSec
         <TextInput
           label="Host"
           description={<KeyPath path="services.jira.host" />}
+          error={hostChangeNeedsToken ? "Changing the host needs the API token: paste it below and press Replace (Save alone will be refused)." : undefined}
           placeholder="https://yourorg.atlassian.net"
           value={draft.jira.host}
           onChange={(e) => { const v = e.currentTarget.value; update((d) => ({ ...d, jira: { ...d.jira, host: v } })) }}

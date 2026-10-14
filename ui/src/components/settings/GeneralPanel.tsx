@@ -5,6 +5,7 @@ import { Toggle } from "../Toggle"
 import { KeyPath, PersistedTo, SettingsSection } from "./parts"
 import { SecretField } from "./SecretField"
 
+const DEFAULT_HTTPS_PORT = 8476
 export const RESTART_BADGE = "Applies after restarting worktree ui"
 
 interface Props {
@@ -101,7 +102,7 @@ export function GeneralPanel({ settings, draft, update, error, onSecretSaved, on
           max={65535}
           w={160}
           value={draft.ui.https_port}
-          onChange={(v) => update((d) => ({ ...d, ui: { ...d.ui, https_port: typeof v === "number" ? v : Number(v) || 0 } }))}
+          onChange={(v) => update((d) => ({ ...d, ui: { ...d.ui, https_port: typeof v === "number" ? v : Number(v) || DEFAULT_HTTPS_PORT } }))}
         />
         <TagsInput
           label="Allowed hosts"
