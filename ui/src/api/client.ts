@@ -1,4 +1,4 @@
-import type { CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, UpdateStatus, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherLogScope, WorktreeInfo, WorktreeNotes, WorktreeSummary } from "./types"
+import type { CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, CredResult, CredService, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, UpdateStatus, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherAuthSettings, WatcherConfigSettings, WatcherLogScope, WorktreeInfo, WorktreeNotes, WorktreeSettings, WorktreeSummary } from "./types"
 import { scopeParams } from "../lib/watcherLog"
 
 export class HttpError extends Error {
@@ -39,6 +39,14 @@ function cmuxPost(url: string, body: unknown) {
   })
 }
 
+function putJSON<T>(url: string, body: unknown) {
+  return fetchJSON<T>(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+}
+
 export const api = {
   linkedResources: (type: string, id: string, opts: { resolveLinks?: boolean; refresh?: boolean } = {}) => {
     const params = new URLSearchParams({ type, id })
@@ -68,12 +76,43 @@ export const api = {
     }),
   settings: () => fetchJSON<Settings>("/api/settings"),
   updateStatus: () => fetchJSON<UpdateStatus>("/api/update-status"),
-  updateSettings: (patch: { cmux_features_enabled: boolean }) =>
-    fetchJSON<Settings>("/api/settings", {
+  saveWorktreeSettings: (s: WorktreeSettings) => putJSON<Settings>("/api/settings/worktree", s),
+  saveWatcherAuthSettings: (s: WatcherAuthSettings) => putJSON<Settings>("/api/settings/watcher-auth", s),
+  saveWatcherConfigSettings: (s: WatcherConfigSettings) => putJSON<Settings>("/api/settings/watcher-config", s),
+  testCredential: (svc: CredService, override: { host?: string; email?: string } = {}) =>
+    fetchJSON<CredResult>(`/api/settings/credentials/${svc}/test`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(override),
+    }),
+  /**
+   * Validate-then-write. A refused credential comes back as a 422 whose body
+   * is a CredResult; it is returned (ok: false), not thrown, so the field can
+   * say why.
+   */
+  replaceCredential: async (svc: CredService, body: { token?: string; cookie?: string; host?: string; email?: string }) => {
+    const res = await fetch(`/api/settings/credentials/${svc}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
-    }),
+      body: JSON.stringify(body),
+    })
+    reportIfLoginRequired(res)
+    const data = await res.json().catch(() => null)
+    if (res.ok || res.status === 422) return data as CredResult
+    throw new HttpError((data && data.error) || `HTTP ${res.status}`, res.status)
+  },
+  replacePassword: async (password: string) => {
+    const res = await fetch("/api/settings/password", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password }),
+    })
+    reportIfLoginRequired(res)
+    if (!res.ok) {
+      const data = await res.json().catch(() => null)
+      throw new HttpError((data && data.error) || `HTTP ${res.status}`, res.status)
+    }
+  },
   worktrees: () => fetchJSON<WorktreeSummary[]>("/api/worktrees"),
   /**
    * One notification toggle: worktree-wide without type/id, else one

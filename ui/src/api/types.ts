@@ -317,11 +317,69 @@ export interface UpdateStatus {
   details_url: string
 }
 
-/** GET/PUT /api/settings: the Settings modal's server-side settings. */
-export interface Settings {
-  /** Whether the server can reach cmux at all; the cmux toggle needs it. */
-  in_cmux: boolean
+/** The editable keys of worktree's config.yaml, as stored (not resolved). */
+export interface WorktreeSettings {
+  /** Kept as written, e.g. "~/.worktrees"; never the expanded or env-resolved value. */
+  worktrees_base: string
+  editor: string
   cmux_features_enabled: boolean
+  jira: {
+    projects: string[]
+    alias_hosts: string[]
+  }
+  ui: {
+    https_port: number
+    allowed_hosts: string[]
+    tls: { cert_file: string; key_file: string }
+  }
+}
+
+/** The non-secret keys of watcher's auth.yaml. */
+export interface WatcherAuthSettings {
+  jira: { host: string; email: string }
+  slack: { workspace_domain: string }
+}
+
+/** The editable keys of watcher's config.yaml. */
+export interface WatcherConfigSettings {
+  jira: {
+    bot_usernames: string[]
+    custom_fields: Record<string, string>
+  }
+}
+
+/** GET /api/settings (and the response of every settings PUT). */
+export interface Settings {
+  environment: {
+    /** Whether the server can reach cmux at all; the cmux toggle needs it. */
+    in_cmux: boolean
+    /** $WORKTREES_BASE is set and overrides worktrees_base. */
+    worktrees_base_env: boolean
+    /** Names the HTTPS certificate covers; null when none is configured. */
+    cert_names: string[] | null
+  }
+  /** Home-relative paths of the three files these settings are persisted to. */
+  paths: { worktree: string; watcher_auth: string; watcher_config: string }
+  /** Whether each secret is set. The values themselves are never sent. */
+  secrets: {
+    ui_password: boolean
+    github_token: boolean
+    jira_token: boolean
+    slack_token: boolean
+    slack_cookie: boolean
+  }
+  worktree: WorktreeSettings
+  watcher_auth: WatcherAuthSettings
+  watcher_config: WatcherConfigSettings
+}
+
+export type CredService = "github" | "jira" | "slack"
+
+/** Outcome of testing or replacing a credential. "unsaved": the Jira test was refused because the form's host differs from the saved one. */
+export interface CredResult {
+  ok: boolean
+  kind: "ok" | "auth" | "network" | "missing" | "unsaved"
+  detail: string
 }
 
 /** A node of a cmux workspace's split layout: a pane leaf, or a two-way split. */
