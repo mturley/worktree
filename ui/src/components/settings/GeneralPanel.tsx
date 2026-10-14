@@ -1,7 +1,9 @@
 import { Alert, Anchor, Code, NumberInput, Stack, TagsInput, Text, TextInput } from "@mantine/core"
 import type { Settings, WorktreeSettings } from "../../api/types"
+import { api } from "../../api/client"
 import { Toggle } from "../Toggle"
 import { KeyPath, PersistedTo, SettingsSection } from "./parts"
+import { SecretField } from "./SecretField"
 
 export const RESTART_BADGE = "Applies after restarting worktree ui"
 
@@ -17,7 +19,7 @@ interface Props {
 }
 
 /** Every key of worktree's config.yaml. */
-export function GeneralPanel({ settings, draft, update, error, onShowWatcherAuth }: Props) {
+export function GeneralPanel({ settings, draft, update, error, onSecretSaved, onShowWatcherAuth }: Props) {
   const env = settings.environment
   const certNames = env.cert_names
   const uncovered = certNames
@@ -82,9 +84,13 @@ export function GeneralPanel({ settings, draft, update, error, onShowWatcherAuth
       </SettingsSection>
 
       <SettingsSection title="Login">
-        {/* Task 10 replaces this with a SecretField. */}
-        <Text size="sm">UI password</Text>
-        <Text size="xs" c="dimmed">{settings.secrets.ui_password ? "•••• set" : "Not set"}</Text>
+        <SecretField
+          label="UI password"
+          description={<>Required to log in from any device. Takes effect immediately; existing logins stay signed in. <KeyPath path="ui.password" /></>}
+          isSet={settings.secrets.ui_password}
+          placeholder="Type a new password"
+          onReplace={async (pw) => { await api.replacePassword(pw); onSecretSaved() }}
+        />
       </SettingsSection>
 
       <SettingsSection title="Remote access" badge={RESTART_BADGE}>

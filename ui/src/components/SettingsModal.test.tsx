@@ -28,7 +28,8 @@ describe("SettingsModal", () => {
     for (const name of ["General", "Watcher Auth", "Watcher Config", "Devices"]) {
       expect(screen.getByRole("tab", { name: new RegExp(name) })).toBeInTheDocument()
     }
-    expect(await screen.findByText(/These settings are persisted to/)).toHaveTextContent("~/.config/worktree/config.yaml")
+    // Every config tab is mounted, each with its own line; General is first.
+    expect((await screen.findAllByText(/These settings are persisted to/))[0]).toHaveTextContent("~/.config/worktree/config.yaml")
   })
 
   it("does not save the cmux toggle until Save, then refreshes cmux queries", async () => {
@@ -147,5 +148,41 @@ describe("SettingsModal", () => {
     await userEvent.click(screen.getByRole("button", { name: "Save" }))
     expect(await screen.findByText("disk full")).toBeInTheDocument()
     expect(screen.getByLabelText("Editor")).toHaveValue("zed")
+  })
+
+  it("Watcher Auth: tests configured services on open and never renders secrets", async () => {
+    vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
+    const test = vi.spyOn(api, "testCredential").mockResolvedValue({ ok: true, kind: "ok", detail: "" })
+    renderModal()
+    await userEvent.click(screen.getByRole("tab", { name: /Watcher Auth/ }))
+    await waitFor(() => expect(test).toHaveBeenCalledTimes(3))
+    expect(test).toHaveBeenCalledWith("jira", { host: "https://x.atlassian.net", email: "me@x" })
+    expect(screen.getByText(/To automatically capture/)).toHaveTextContent("run worktree setup slack.")
+    expect(screen.queryByText(/agent-handler/i)).not.toBeInTheDocument()
+  })
+
+  it("Watcher Auth: a Jira replace sends the form's host and email", async () => {
+    vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
+    vi.spyOn(api, "testCredential").mockResolvedValue({ ok: true, kind: "ok", detail: "" })
+    const replace = vi.spyOn(api, "replaceCredential").mockResolvedValue({ ok: true, kind: "ok", detail: "" })
+    renderModal()
+    await userEvent.click(screen.getByRole("tab", { name: /Watcher Auth/ }))
+    const email = await screen.findByLabelText("Email")
+    await userEvent.clear(email)
+    await userEvent.type(email, "new@x")
+    await userEvent.type(screen.getByLabelText("API token"), "tok")
+    await userEvent.click(screen.getByRole("button", { name: "Replace" }))
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("jira", { token: "tok", host: "https://x.atlassian.net", email: "new@x" }))
+  })
+
+  it("Watcher Config: edits custom fields and saves the map", async () => {
+    vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
+    const save = vi.spyOn(api, "saveWatcherConfigSettings").mockResolvedValue(baseSettings())
+    renderModal()
+    await userEvent.click(screen.getByRole("tab", { name: /Watcher Config/ }))
+    await userEvent.click(await screen.findByRole("button", { name: "Remove field 1" }))
+    await userEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() => expect(save).toHaveBeenCalledOnce())
+    expect(save.mock.calls[0][0].jira.custom_fields).toEqual({ b: "customfield_2" })
   })
 })

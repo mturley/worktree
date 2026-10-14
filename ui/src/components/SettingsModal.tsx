@@ -4,6 +4,8 @@ import { useQuery, useQueryClient, type Query } from "@tanstack/react-query"
 import { api } from "../api/client"
 import { DevicesPanel } from "./DevicesPanel"
 import { GeneralPanel } from "./settings/GeneralPanel"
+import { WatcherAuthPanel } from "./settings/WatcherAuthPanel"
+import { WatcherConfigPanel } from "./settings/WatcherConfigPanel"
 import { useSettingsDraft, type SettingsFile } from "./settings/useSettingsDraft"
 
 const settingsKey = ["settings"] as const
@@ -33,6 +35,8 @@ export function SettingsModal({ opened, onClose }: { opened: boolean; onClose: (
   const qc = useQueryClient()
   const [tab, setTab] = useState<string | null>("general")
   const [confirmClose, setConfirmClose] = useState(false)
+  // Bumped on Discard and after a save, to remount panels holding local rows.
+  const [resetToken, setResetToken] = useState(0)
   const settings = useQuery({ queryKey: settingsKey, queryFn: api.settings, enabled: opened })
   const draft = useSettingsDraft(settings.data)
 
@@ -53,6 +57,11 @@ export function SettingsModal({ opened, onClose }: { opened: boolean; onClose: (
     draft.rebase(fresh)
   }
 
+  const discard = () => {
+    draft.discard()
+    setResetToken((n) => n + 1)
+  }
+
   const requestClose = () => {
     if (draft.anyDirty) setConfirmClose(true)
     else onClose()
@@ -63,6 +72,7 @@ export function SettingsModal({ opened, onClose }: { opened: boolean; onClose: (
       ? draft.drafts.worktree.cmux_features_enabled !== settings.data.worktree.cmux_features_enabled
       : false
     const out = await draft.save()
+    if (out.saved.includes("watcher_config")) setResetToken((n) => n + 1)
     if (out.settings) qc.setQueryData(settingsKey, out.settings)
     if (wasCmux && out.saved.includes("worktree")) void qc.invalidateQueries({ predicate: affectedByCmux })
   }
@@ -99,9 +109,29 @@ export function SettingsModal({ opened, onClose }: { opened: boolean; onClose: (
             />
           ))}
         </Tabs.Panel>
-        {/* Task 10 adds the watcher-auth and watcher-config panels here. */}
-        <Tabs.Panel value="watcher-auth" pt="md">{body}</Tabs.Panel>
-        <Tabs.Panel value="watcher-config" pt="md">{body}</Tabs.Panel>
+        <Tabs.Panel value="watcher-auth" pt="md">
+          {body ?? (settings.data && draft.drafts && (
+            <WatcherAuthPanel
+              settings={settings.data}
+              draft={draft.drafts.watcher_auth}
+              update={(fn) => draft.update("watcher_auth", fn)}
+              error={draft.errors.watcher_auth}
+              active={opened && tab === "watcher-auth"}
+              onSecretSaved={refetchAfterSecret}
+            />
+          ))}
+        </Tabs.Panel>
+        <Tabs.Panel value="watcher-config" pt="md">
+          {body ?? (settings.data && draft.drafts && (
+            <WatcherConfigPanel
+              key={resetToken}
+              settings={settings.data}
+              draft={draft.drafts.watcher_config}
+              update={(fn) => draft.update("watcher_config", fn)}
+              error={draft.errors.watcher_config}
+            />
+          ))}
+        </Tabs.Panel>
         <Tabs.Panel value="devices" pt="md">
           <DevicesPanel active={opened && tab === "devices"} />
         </Tabs.Panel>
@@ -111,7 +141,7 @@ export function SettingsModal({ opened, onClose }: { opened: boolean; onClose: (
         <Alert role="alert" color="yellow" mt="md" title="Discard unsaved changes?">
           <Group gap="xs" mt="xs">
             <Button size="xs" variant="default" onClick={() => setConfirmClose(false)}>Keep editing</Button>
-            <Button size="xs" color="red" onClick={() => { draft.discard(); setConfirmClose(false); onClose() }}>Discard and close</Button>
+            <Button size="xs" color="red" onClick={() => { discard(); setConfirmClose(false); onClose() }}>Discard and close</Button>
           </Group>
         </Alert>
       )}
@@ -125,7 +155,7 @@ export function SettingsModal({ opened, onClose }: { opened: boolean; onClose: (
                 : "No unsaved changes"}
             </Text>
             <Group gap="xs">
-              <Button size="xs" variant="subtle" disabled={!draft.anyDirty || draft.saving} onClick={draft.discard}>Discard</Button>
+              <Button size="xs" variant="subtle" disabled={!draft.anyDirty || draft.saving} onClick={discard}>Discard</Button>
               <Button size="xs" disabled={!draft.anyDirty} loading={draft.saving} onClick={save}>Save</Button>
             </Group>
           </Group>
