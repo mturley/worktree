@@ -108,8 +108,8 @@ every interface at `ui.https_port` (8476). There is no `--bind`.
     drive cmux from wherever they run: `worktree ui`, `worktree list` and
     the web UI — but inside `internal/webui`, call `s.cmuxEnabled()`
     instead, which also honours the Settings modal's "Enable cmux features"
-    toggle (`ui.cmux_features_disabled`; see `docs/web-ui-architecture.md`
-    "Settings toggle"). When no workspace is opened, `cmd/root.go`'s `cdHint` prints
+    toggle (`ui.cmux_features_disabled`; see "Config files ↔ Settings modal"
+    below and `docs/web-ui-architecture.md` "Settings modal"). When no workspace is opened, `cmd/root.go`'s `cdHint` prints
     the `cd` line instead, since nothing has moved the user into the new
     worktree and a binary cannot cd its parent shell.
     `peek.go` reads a tab for the cmux tab's hover peek (`ReadScreen`,
@@ -150,6 +150,34 @@ now it has both.
 Slack threads are worktree resources (`worktree add <slack-thread-url>`). In the web UI they are **selected like any other resource** on the worktree detail page: selecting one renders the thread in `ResourceDetailPane` where a PR/Jira resource would show its filtered activity feed. There is no separate "Slack" tab (removed in Phase B, along with the old thread rail) — see `docs/web-ui-architecture.md` "Slack thread view" for the full map (routes, DTOs, frontend structure). Slack credentials live in the shared watcher config at `~/.config/watcher/auth.yaml` (not a worktree-specific file), acquired via the `worktree setup` Slack step.
 - `ui/` — Mantine + React frontend for `worktree ui` (Vite build; output embedded into the Go binary via `ui/dist`)
 - `docs/` — design documents and feature catalog; see `docs/web-ui-architecture.md` for the web UI (backend routes, DTOs, frontend structure, gotchas)
+
+## Config files ↔ Settings modal — keep them in sync
+
+The web UI's Settings modal edits every user-facing key of three files:
+worktree's `config.yaml` (`internal/config.Config`, General tab), and the
+watcher library's `auth.yaml` (`wconfig.Config`, Watcher Auth tab) and
+`config.yaml` (`wconfig.ConfigFile`, Watcher Config tab).
+
+**Any change to a key in any of these — added, renamed, removed, or a
+watcher re-pin that changes them — must update the modal in the same
+change:**
+
+1. `internal/config/editable.go` (`Editable`, `ReadEditable`, `WriteEditable`)
+   for worktree keys; `internal/webui/settings_watcher.go` for watcher keys.
+2. The DTO and PUT handler (`internal/webui/settings.go` /
+   `settings_watcher.go`; secrets go through `settings_creds.go` and are
+   never returned).
+3. `settingsKeyPaths` in `internal/webui/settings_keys.go` — or
+   `settingsKeyExclusions` with a reason, if the key must never be shown.
+4. `ui/src/api/types.ts`, and the tab's panel in `ui/src/components/settings/`.
+5. Tests on both sides.
+
+`settings_keys_test.go` fails until steps 1-3 are done; it cannot check the
+frontend, so step 4 is on you. The test's three roots (worktree
+`config.Config`, `wconfig.Config`, `wconfig.ConfigFile`) are hard-coded: a
+**new config file or root struct** must also be added to the test's roots,
+and to the modal, or it will be silently unchecked. See
+`docs/web-ui-architecture.md` "Settings modal".
 
 ## Watcher library
 

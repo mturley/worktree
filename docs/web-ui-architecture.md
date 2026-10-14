@@ -55,7 +55,8 @@ Secure when the login arrived over TLS (`r.TLS != nil`), decided per
 request because one server has both listeners. Routes: `POST /api/login`,
 `POST /api/logout`, `GET /api/session`, `GET /api/sessions`,
 `POST /api/sessions/revoke {handle}`. The Devices tab of the home page's
-Settings modal (`DevicesPanel`) lists and revokes sessions.
+Settings modal's Devices tab (`DevicesPanel`) lists and revokes sessions
+(the modal's other tabs edit config; see "Settings modal").
 
 **Setup** (`internal/setup/uiaccess.go`). Generates `ui.password` if unset
 and prints it once. Offers remote access: detects the `.local` name and LAN
@@ -1782,16 +1783,87 @@ things constrain any change here:
 - Every server-side workspace lookup goes through `Server.listCmuxWorkspaces`,
   which honors the `cmuxList` test seam.
 
-### Settings toggle: one server-side gate (`settings.go`)
+### Settings modal (`settings*.go`, `ui/src/components/settings/`)
 
 The home page's Settings modal (cog in the Activity header when wide, at the
-right of the Worktrees/Activity tab bar when narrow) has an "Enable cmux
-features" switch, persisted as `ui.cmux_features_disabled` in the config
-file (absent = enabled). `PUT /api/settings` writes it with
-`config.SetCmuxFeaturesDisabled`, which edits the YAML node tree so the rest
-of the file and its comments survive, then flips the live gate. It is
-refused (409) when the server cannot reach cmux, and the UI greys the switch
-out with a tooltip then (`GET /api/settings` → `in_cmux`).
+right of the Worktrees/Activity tab bar when narrow) has four tabs: General
+(worktree's `config.yaml`), Watcher Auth (watcher `auth.yaml`), Watcher
+Config (watcher `config.yaml`) and Devices (login sessions). Each config tab
+opens with "These settings are persisted to `<path>`" (paths come from
+`GET /api/settings`).
+
+**Routes** (`server.go`):
+
+| Route | Does |
+|---|---|
+| `GET /api/settings` | Everything: environment (`in_cmux`, `worktrees_base_env`, `cert_names`), paths, `secrets` (`*_set` booleans only), and the worktree / watcher_auth / watcher_config sections read from disk. |
+| `PUT /api/settings/worktree` | The whole worktree section (`settings.go`). |
+| `PUT /api/settings/watcher-auth` | Non-secret auth.yaml fields: Jira host and email, Slack workspace domain. |
+| `PUT /api/settings/watcher-config` | Watcher config.yaml: Jira bot usernames and custom fields. |
+| `PUT /api/settings/credentials/{service}` | Replace a credential (`github`, `jira`, `slack`): validate, then write. |
+| `POST /api/settings/credentials/{service}/test` | Test the stored credential (result chip). |
+| `PUT /api/settings/password` | Replace `ui.password`. |
+
+**Save model.** The frontend keeps one draft per file (`useSettingsDraft`)
+and the modal has a single Save / Discard. Save issues one PUT per dirty
+file, sequentially; a failed file does not stop the rest. Files that saved
+stay saved and only the failed file stays dirty, with its error. The cmux toggle is part of the
+worktree draft, so nothing (not even the live gate) changes until Save.
+Closing with unsaved edits asks first; Discard resets every draft to the
+server values.
+
+**Secrets are write-only.** No response contains a token, cookie or the
+password, only `*_set` booleans. A Replace validates against the real
+service first (`credValidators`: `wgithub.Validate`, `wjira.Validate`,
+`wslack.Validate`) and writes only on success; auth rejections and network
+failures are both refused (422, "Nothing was saved"). Jira replace stores
+host, email and token together. A Slack half-replace (only token or only
+cookie) validates against the stored other half and keeps it; if the other
+half isn't stored the replace is refused. The Slack workspace domain is
+re-derived best-effort. Validation runs while `settingsMu` is held, bounded
+by the clients' timeouts. The Test endpoint never sends the stored Jira
+token to a host other than the saved one: a differing form host returns
+kind `unsaved` ("Save host first"); an email override is allowed. Password
+replace stores the value verbatim (only blank is rejected), then swaps the
+live password (`Security.SetPassword`); existing sessions stay valid.
+
+**Writing.** Worktree `config.yaml` goes through the YAML node tree
+(`internal/config/yamledit.go`, `editable.go`): comments, key order and
+unknown keys survive, `~` and `$WORKTREES_BASE` are not expanded into the
+file, a save with no change does not rewrite it, and writes are atomic
+(temp file + rename, mode 0600) and parse the file once. Watcher
+`auth.yaml` and `config.yaml` are written through the library's typed
+`Save` / `SaveConfig`, which **drops YAML comments and unknown keys**
+(unlike worktree's file). The config.yaml handler starts from the loaded
+struct and replaces only the Jira block. auth.yaml's `consumers` and
+`jira_custom_fields` are never shown. Missing files read as empty
+sections, and a PUT creates them.
+
+**Live vs restart.** Live on save: the cmux gate, Jira alias hosts
+(`jira.SetAliasHosts`) and the UI password. Read per request or per poll,
+so effective without a restart: `jira.projects`, `worktrees_base`, the
+editor and the watcher keys. `ui.https_port`, `ui.allowed_hosts` and
+`ui.tls.*` need a restart; the Remote access section carries the badge
+"Applies after restarting worktree ui". The server persists the file first
+and moves live state only afterwards, so a failed write never leaves the
+server disagreeing with the file.
+
+**The guard test** (`settings_keys_test.go`). `settingsKeyPaths`
+(`settings_keys.go`) lists every YAML key path the modal handles. The test
+derives the key paths of three hard-coded root structs (worktree
+`config.Config`, `wconfig.Config`, `wconfig.ConfigFile`) the way yaml.v3
+does (untagged fields lowercased, `,inline` flattened, `Unmarshaler` and
+`time.Time` treated as leaves) and fails on any key that is in neither
+`settingsKeyPaths` nor `settingsKeyExclusions`, or that is listed but gone.
+It cannot see the frontend, and a new config file or root struct must be
+added to its roots by hand. Exclusions: auth.yaml `consumers` (owned by
+`worktree setup`; a DB path is not a user setting) and `jira_custom_fields`
+(legacy; custom fields belong in watcher config.yaml).
+
+**The cmux toggle** ("Enable cmux features", `ui.cmux_features_disabled`,
+absent = enabled) is part of the worktree save. It is refused (409) when the
+server cannot reach cmux, and the UI greys the switch out with a tooltip
+then (`GET /api/settings` -> `in_cmux`).
 
 **Every cmux feature is gated in Go, not TypeScript.** `Server.cmuxEnabled()`
 is reachable (`cmuxReachable`: the `cmuxAvailable` seam or
