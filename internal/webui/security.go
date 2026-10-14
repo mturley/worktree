@@ -2,6 +2,7 @@ package webui
 
 import (
 	"errors"
+	"sync"
 
 	"github.com/mturley/worktree/internal/uisession"
 )
@@ -9,8 +10,11 @@ import (
 // Security is the web UI's authentication and remote-access configuration.
 // Start and Serve refuse to open a listener without it.
 type Security struct {
-	// Password is what POST /api/login checks. Required.
+	// Password is what POST /api/login checks. Required. Set it before
+	// serving; afterwards read it with password() and change it with
+	// SetPassword, which the Settings modal's password replace uses.
 	Password string
+	pwMu     sync.RWMutex
 	// Sessions stores logins. Required.
 	Sessions *uisession.Store
 	// AllowedHosts are accepted in the Host header, beyond the loopback
@@ -29,8 +33,22 @@ func (sec *Security) Remote() bool {
 }
 
 func (sec *Security) validate() error {
-	if sec == nil || sec.Password == "" || sec.Sessions == nil {
+	if sec == nil || sec.password() == "" || sec.Sessions == nil {
 		return errors.New("webui: refusing to serve without authentication configured")
 	}
 	return nil
+}
+
+func (sec *Security) password() string {
+	sec.pwMu.RLock()
+	defer sec.pwMu.RUnlock()
+	return sec.Password
+}
+
+// SetPassword changes the login password for the running server. Existing
+// sessions stay valid.
+func (sec *Security) SetPassword(pw string) {
+	sec.pwMu.Lock()
+	defer sec.pwMu.Unlock()
+	sec.Password = pw
 }

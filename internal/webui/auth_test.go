@@ -105,6 +105,7 @@ func TestEveryAPIRouteRequiresASession(t *testing.T) {
 		if !ok {
 			t.Fatalf("route %q declares no method", rt.pattern)
 		}
+		path = strings.ReplaceAll(path, "{service}", "github")
 		if strings.Contains(path, "{") {
 			t.Fatalf("route %q has a wildcard; teach this test to fill it in", rt.pattern)
 		}

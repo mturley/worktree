@@ -131,7 +131,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if !passwordMatches(req.Password, s.Security.Password) {
+	if !passwordMatches(req.Password, s.Security.password()) {
 		time.Sleep(loginFailDelay)
 		writeError(w, http.StatusUnauthorized, "incorrect password")
 		return
