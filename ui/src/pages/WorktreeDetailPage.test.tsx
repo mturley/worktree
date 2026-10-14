@@ -135,14 +135,17 @@ describe("WorktreeDetailPage header", () => {
     setViewport("wide")
     wrap()
     await waitFor(() => expect(screen.getByRole("button", { name: "Hide details" })).toBeInTheDocument())
-    expect(screen.getByLabelText("Delete worktree")).toBeVisible()
+    expect(screen.getByRole("tab", { name: "Notes" })).toBeVisible()
   })
 
   it("hides the summary card on demand, freeing the space for the resources", async () => {
     setViewport("wide")
     wrap()
-    await userEvent.click(await screen.findByRole("button", { name: "Hide details" }))
-    expect(screen.getByLabelText("Delete worktree")).not.toBeVisible()
+    const hide = await screen.findByRole("button", { name: "Hide details" })
+    // The same header toggle, in the spot Show details takes when hidden.
+    expect(hide.closest("[data-detail-header]")).toBeInTheDocument()
+    await userEvent.click(hide)
+    expect(screen.getByRole("tab", { name: "Notes", hidden: true })).not.toBeVisible()
     // The toggle names the state it will move to, so it reads as an action.
     const show = screen.getByRole("button", { name: "Show details" })
     // It sits beside the titles, not out in the toolbar.
@@ -155,7 +158,29 @@ describe("WorktreeDetailPage header", () => {
     wrap()
     await userEvent.click(await screen.findByRole("button", { name: "Hide details" }))
     await userEvent.click(screen.getByRole("button", { name: "Show details" }))
-    expect(screen.getByLabelText("Delete worktree")).toBeVisible()
+    expect(screen.getByRole("tab", { name: "Notes" })).toBeVisible()
+  })
+
+  it("moves the details toggle onto the toolbar row when narrow, left of the actions", async () => {
+    setViewport("narrow")
+    wrap()
+    const hide = await screen.findByRole("button", { name: "Hide details" })
+    const toolbar = hide.closest("[data-detail-toolbar]")
+    expect(toolbar).toBeInTheDocument()
+    const del = screen.getByRole("button", { name: "Delete worktree" })
+    expect(toolbar).toContainElement(del)
+    expect(hide.compareDocumentPosition(del) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("puts the delete control in the header toolbar, after the cmux actions", async () => {
+    setViewport("wide")
+    wrap()
+    await screen.findByRole("button", { name: "Hide details" })
+    const del = screen.getByRole("button", { name: "Delete worktree" })
+    expect(del.closest("[data-detail-toolbar]")).toBeInTheDocument()
+    // Still there with the details hidden: it is not part of the card.
+    await userEvent.click(screen.getByRole("button", { name: "Hide details" }))
+    expect(del).toBeVisible()
   })
 })
 

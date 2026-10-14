@@ -22,6 +22,7 @@ import { EventDetailsModal } from "../components/EventDetailsModal"
 import { clearOpenEvent, messageFocus, readOpenEvent, type MessageFocus } from "../lib/openEvent"
 import type { TimelineEvent } from "../api/types"
 import { WorktreeDetailCard } from "../components/WorktreeDetailCard"
+import { DeleteWorktreeButton } from "../components/DeleteWorktreeButton"
 import { CmuxWorkspaceActions, CmuxWorkspaceTitles } from "../components/CmuxWorkspaceHeader"
 import { SourceFilter } from "../components/SourceFilter"
 import { EventTypeFilter } from "../components/EventTypeFilter"
@@ -334,18 +335,45 @@ export function WorktreeDetailPage() {
     if (unreadOnly) setUnreadOnly(false)
   }
 
-  // Wide, the toolbar sits beside the titles and must not shrink. Narrow, it
-  // gets a row of its own: kept beside the titles, it left them a sliver of
-  // width that wrapped them a few letters per line.
-  const toolbar = (
-    <Group
-      gap="xs"
-      wrap={wide ? "nowrap" : "wrap"}
-      style={wide ? { flex: "none" } : undefined}
-      data-detail-toolbar
+  // The header is fixed and the body scrolls beneath it, so the summary card
+  // costs the resource list and timeline the same space on every scroll
+  // position. Hiding it is the cheapest way to get that space back on a short
+  // screen. One toggle, named for the state it moves to.
+  const detailsToggle = summary && (
+    <Button
+      size="compact-sm"
+      variant="subtle"
+      onClick={() => setDetailsOpen((o) => !o)}
+      aria-expanded={detailsOpen}
+      style={{ flex: "none" }}
     >
+      {detailsOpen ? "Hide details" : "Show details"}
+    </Button>
+  )
+
+  const actions = (
+    <>
       <FollowCmuxToggle />
       {summary && <CmuxWorkspaceActions path={path} branch={summary.branch} />}
+      {summary && <DeleteWorktreeButton w={summary} />}
+    </>
+  )
+
+  // Wide, the toolbar sits beside the titles and must not shrink, and the
+  // details toggle stays by the name. Narrow, the toolbar gets a row of its
+  // own (kept beside the titles, it left them a sliver of width that wrapped
+  // them a few letters per line) and takes the toggle with it, split the same
+  // way as the row above: the toggle left, the actions right.
+  const toolbar = wide ? (
+    <Group gap="xs" wrap="nowrap" style={{ flex: "none" }} data-detail-toolbar>
+      {actions}
+    </Group>
+  ) : (
+    <Group gap="xs" wrap="wrap" justify="space-between" data-detail-toolbar>
+      {detailsToggle}
+      <Group gap="xs" wrap="wrap" ml="auto">
+        {actions}
+      </Group>
     </Group>
   )
 
@@ -440,24 +468,7 @@ export function WorktreeDetailPage() {
                   {summary && !summary.on_disk && <Badge size="xs" color="red">missing</Badge>}
                 </Group>
               </Stack>
-              {/*
-                The header is fixed and the body scrolls beneath it, so the
-                summary card costs the resource list and timeline the same space
-                on every scroll position. Hiding it (from the card's own "Hide
-                details") is the cheapest way to get that space back on a short
-                screen; this brings it back.
-              */}
-              {summary && !detailsOpen && (
-                <Button
-                  size="compact-sm"
-                  variant="subtle"
-                  onClick={() => setDetailsOpen(true)}
-                  aria-expanded={false}
-                  style={{ flex: "none" }}
-                >
-                  Show details
-                </Button>
-              )}
+              {wide && detailsToggle}
             </Group>
             {wide && toolbar}
           </Group>
@@ -466,7 +477,7 @@ export function WorktreeDetailPage() {
             <Collapse in={detailsOpen}>
               {/* Keyed by path: the card holds an unsaved notes draft, which must
                   never carry over to another worktree. */}
-              <WorktreeDetailCard key={summary.path} w={summary} onHide={() => setDetailsOpen(false)} />
+              <WorktreeDetailCard key={summary.path} w={summary} />
             </Collapse>
           )}
         </Stack>

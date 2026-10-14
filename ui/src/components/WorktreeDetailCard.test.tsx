@@ -46,11 +46,11 @@ const summary = (o: Partial<WorktreeSummary> = {}): WorktreeSummary => ({
   ...o,
 }) as WorktreeSummary
 
-const wrap = (w: WorktreeSummary, props: { onHide?: () => void } = {}) =>
+const wrap = (w: WorktreeSummary) =>
   render(
     <MantineProvider>
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <WorktreeDetailCard w={w} {...props} />
+        <WorktreeDetailCard w={w} />
       </QueryClientProvider>
     </MantineProvider>,
   )
@@ -166,26 +166,6 @@ describe("WorktreeDetailCard", () => {
   })
 })
 
-describe("delete control", () => {
-  it("opens the delete modal from the trash control", async () => {
-    worktreeInfo.mockResolvedValue(info())
-    const user = userEvent.setup()
-    wrap(summary())
-    await user.click(await screen.findByRole("button", { name: /delete worktree/i }))
-    expect(await screen.findByRole("dialog")).toBeInTheDocument()
-    // The typed-name confirmation is the safeguard; it must be present.
-    expect(screen.getByLabelText(/type the worktree name/i)).toBeInTheDocument()
-  })
-
-  it("does not delete anything just by opening the modal", async () => {
-    worktreeInfo.mockResolvedValue(info())
-    const user = userEvent.setup()
-    wrap(summary())
-    await user.click(await screen.findByRole("button", { name: /delete worktree/i }))
-    expect(screen.getByRole("button", { name: /^delete$/i })).toBeDisabled()
-  })
-})
-
 describe("layout", () => {
   it("breaks the git state into labelled rows", async () => {
     worktreeInfo.mockResolvedValue(info({
@@ -199,16 +179,12 @@ describe("layout", () => {
     expect(rowValue("Upstream")).toBe("origin/my-branch")
   })
 
-  it("puts Hide details, the tabs and the delete control in one row", async () => {
+  it("leaves the details toggle and delete control to the page header", async () => {
     worktreeInfo.mockResolvedValue(info())
-    wrap(summary(), { onHide: () => {} })
-    const hide = await screen.findByRole("button", { name: "Hide details" })
-    const tabs = screen.getByRole("tablist")
-    const row = tabs.parentElement!
-    expect(row).toContainElement(hide)
-    // After the tabs, not before them.
-    expect(tabs.compareDocumentPosition(hide) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(row).toContainElement(screen.getByRole("button", { name: "Delete worktree" }))
+    wrap(summary())
+    await screen.findByRole("tablist")
+    expect(screen.queryByRole("button", { name: "Hide details" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Delete worktree" })).not.toBeInTheDocument()
   })
 
   it("puts the Notes tab before the Environment tab", async () => {

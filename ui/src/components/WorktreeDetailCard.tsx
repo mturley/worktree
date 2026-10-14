@@ -1,8 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react"
 import { ActionIcon, Button, Checkbox, Code, Group, Paper, Stack, Tabs, Text, Textarea, Tooltip } from "@mantine/core"
-import { IconCheck, IconCopy, IconPencil, IconTrash } from "@tabler/icons-react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { useLocation } from "wouter"
+import { IconCheck, IconCopy, IconPencil } from "@tabler/icons-react"
+import { useQuery } from "@tanstack/react-query"
 import { api } from "../api/client"
 import { useCmux, useCmuxMatches } from "../api/cmux"
 import type { GitStatus, WorktreeSummary } from "../api/types"
@@ -10,7 +9,6 @@ import { useWorktreeNotes } from "../hooks/useWorktreeNotes"
 import { toggleTaskAt } from "../lib/taskList"
 import { relativeTime as rel } from "../lib/relativeTime"
 import { CmuxPanel } from "./CmuxPanel"
-import { DeleteWorktreeModal } from "./DeleteWorktreeModal"
 import { NotesMarkdown } from "./NotesMarkdown"
 
 /**
@@ -70,11 +68,11 @@ function writeDetailTab(tab: DetailTab): void {
  * what branch am I on, is the tree dirty, when did anything last happen, and
  * what was I in the middle of (notes).
  *
- * A single row of tabs — Notes, Git / Environment and, inside cmux, cmux —
- * followed by "Hide details" and, in the far corner, the delete control. Opens on the tab last chosen
+ * A single row of tabs — Notes, Git / Environment and, inside cmux, cmux.
+ * Opens on the tab last chosen
  * in this browser tab (Notes the first time).
  */
-export function WorktreeDetailCard({ w, onHide }: { w: WorktreeSummary; onHide?: () => void }) {
+export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
   const info = useQuery({
     queryKey: ["worktree-info", w.path],
     queryFn: () => api.worktreeInfo(w.path),
@@ -83,13 +81,9 @@ export function WorktreeDetailCard({ w, onHide }: { w: WorktreeSummary; onHide?:
   const notes = useWorktreeNotes(w.path)
   const workspaces = useCmuxMatches(w.path)
 
-  const [, navigate] = useLocation()
-  const qc = useQueryClient()
-  const [deleteOpen, setDeleteOpen] = useState(false)
   const [tab, setTab] = useState<DetailTab>(readDetailTab)
   const cmuxQuery = useCmux()
   const hasCmux = cmuxQuery.data?.available === true
-  const name = w.path.split("/").filter(Boolean).pop() || w.path
   const git = info.data?.git
   const hasEnv = !!info.data && info.data.env.length > 0
 
@@ -131,35 +125,16 @@ export function WorktreeDetailCard({ w, onHide }: { w: WorktreeSummary; onHide?:
   return (
     <Paper p="sm" withBorder>
       <Tabs value={activeTab} onChange={selectTab} keepMounted={false}>
-        {/* One row: the tabs, then hide, then delete in the far corner. The
-            worktree and cmux workspace names live in the page header. */}
-        <Group gap="xs" wrap="nowrap">
-          {/* Sized to its tabs, so the underline stops after the last tab. */}
-          <Tabs.List w="fit-content">
-            <Tabs.Tab value="notes" fz="xs" py={6}>Notes</Tabs.Tab>
-            <Tabs.Tab value="env" fz="xs" py={6}>Git / Environment</Tabs.Tab>
-            {hasCmux && (
-              <Tabs.Tab value="cmux" fz="xs" py={6}>cmux</Tabs.Tab>
-            )}
-          </Tabs.List>
-          {onHide && (
-            <Button size="compact-xs" variant="subtle" onClick={onHide} aria-expanded style={{ flex: "none" }}>
-              Hide details
-            </Button>
+        {/* The worktree and cmux workspace names, the Hide details toggle and
+            the delete control all live in the page header. Sized to its tabs,
+            so the underline stops after the last tab. */}
+        <Tabs.List w="fit-content">
+          <Tabs.Tab value="notes" fz="xs" py={6}>Notes</Tabs.Tab>
+          <Tabs.Tab value="env" fz="xs" py={6}>Git / Environment</Tabs.Tab>
+          {hasCmux && (
+            <Tabs.Tab value="cmux" fz="xs" py={6}>cmux</Tabs.Tab>
           )}
-          <Tooltip label="Delete worktree">
-            <ActionIcon
-              variant="subtle"
-              color="red"
-              size="sm"
-              aria-label="Delete worktree"
-              onClick={() => setDeleteOpen(true)}
-              ml="auto"
-            >
-              <IconTrash size={16} />
-            </ActionIcon>
-          </Tooltip>
-        </Group>
+        </Tabs.List>
 
         <Tabs.Panel value="notes" pt={6} keepMounted>
           <NotesPanel
@@ -214,22 +189,6 @@ export function WorktreeDetailCard({ w, onHide }: { w: WorktreeSummary; onHide?:
           </Tabs.Panel>
         )}
       </Tabs>
-
-      {deleteOpen && (
-        <DeleteWorktreeModal
-          opened
-          path={w.path}
-          name={name}
-          branch={git?.branch || w.branch}
-          onClose={() => setDeleteOpen(false)}
-          onDeleted={() => {
-            setDeleteOpen(false)
-            // The worktree is gone; the list is the only place left to be.
-            void qc.invalidateQueries({ queryKey: ["worktrees"] })
-            navigate("/")
-          }}
-        />
-      )}
     </Paper>
   )
 }
