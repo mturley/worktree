@@ -135,7 +135,10 @@ export function ResourceTypeLine({
   )
   if (!aside) return line
   return (
-    <Group justify="space-between" wrap="nowrap" align="flex-start" gap="xs">
+    // Centred, so the line's icons and text, the bells and the drag handle's
+    // slot share one midline. (When a narrow card wraps the line, the aside
+    // centres on the wrapped block.)
+    <Group justify="space-between" wrap="nowrap" align="center" gap="xs">
       {line}
       <Group gap={6} wrap="nowrap" style={{ flex: "none" }}>{aside}</Group>
     </Group>
