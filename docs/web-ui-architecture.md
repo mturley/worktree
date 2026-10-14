@@ -575,7 +575,16 @@ stored in the worktree-owned `worktree_notes` table (keyed by registry path).
   (`NotesMarkdown.tsx`: react-markdown + remark-gfm, raw HTML ignored — never
   add rehype-raw) until "Edit notes" swaps in the textarea; "Done editing",
   Esc, or collapsing the section flushes pending edits and returns to the
-  rendered view. The cmux sync checkbox shows only while editing.
+  rendered view. The "Show notes on home page" and cmux sync checkboxes show
+  only while editing.
+- **Two placements.** Wide, the card's tab row ends in a collapse/expand
+  toggle: expanded, the card sits under the page header across the full
+  width; collapsed (the default, remembered in localStorage by
+  `lib/detailCardPref.ts`), it moves into the resource column above Follow
+  resource and the activity column gets the height back. Moving it remounts
+  the card, so the toggle flushes pending notes edits first. Narrow has no
+  side column: always expanded, no toggle. Expanded and wide, the Git /
+  Environment tab lays git state and the environment out side by side.
 - **Task checkboxes are clickable in the read-only view**, like a GitHub
   description. Each rendered task item knows its source offset (react-markdown
   `node.position`, passed to the checkbox via context); `lib/taskList.ts`

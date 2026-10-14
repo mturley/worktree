@@ -184,6 +184,58 @@ describe("WorktreeDetailPage header", () => {
   })
 })
 
+describe("WorktreeDetailPage details card placement", () => {
+  it("starts collapsed into the resource column, above Follow resource", async () => {
+    setViewport("wide")
+    wrap()
+    const expand = await screen.findByRole("button", { name: "Expand details" })
+    const follow = screen.getByRole("button", { name: /Follow resource/ })
+    expect(follow.closest(".mantine-Grid-col")).toContainElement(expand)
+    expect(expand.compareDocumentPosition(follow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("expands the card under the header and collapses it back", async () => {
+    window.localStorage.setItem("worktree.detail.cardCollapsed", "false")
+    setViewport("wide")
+    const user = userEvent.setup()
+    wrap()
+    const collapse = await screen.findByRole("button", { name: "Collapse details" })
+    // Expanded, it sits in the sticky header.
+    expect(collapse.closest("[data-detail-header]")).toBeNull()
+    expect(screen.getByRole("tab", { name: "Notes" }).compareDocumentPosition(
+      screen.getByRole("button", { name: /Follow resource/ }),
+    ) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    await user.click(collapse)
+    const expand = screen.getByRole("button", { name: "Expand details" })
+    const follow = screen.getByRole("button", { name: /Follow resource/ })
+    // Same column as the list now, and before Follow resource.
+    expect(follow.closest(".mantine-Grid-col")).toContainElement(expand)
+    expect(expand.compareDocumentPosition(follow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // Remembered for the next visit.
+    expect(window.localStorage.getItem("worktree.detail.cardCollapsed")).toBe("true")
+
+    await user.click(expand)
+    expect(screen.getByRole("button", { name: "Collapse details" }).closest(".mantine-Grid-col")).toBeNull()
+  })
+
+  it("opens expanded when that was the last choice", async () => {
+    window.localStorage.setItem("worktree.detail.cardCollapsed", "false")
+    setViewport("wide")
+    wrap()
+    expect(await screen.findByRole("button", { name: "Collapse details" })).toBeInTheDocument()
+  })
+
+  it("has no collapsed placement when narrow", async () => {
+    // No side column to collapse into: always expanded, and no toggle.
+    window.localStorage.setItem("worktree.detail.cardCollapsed", "true")
+    setViewport("narrow")
+    wrap()
+    expect(await screen.findByRole("tab", { name: "Notes" })).toBeVisible()
+    expect(screen.queryByRole("button", { name: /(Collapse|Expand) details/ })).toBeNull()
+  })
+})
+
 describe("WorktreeDetailPage selection", () => {
   it("selects a resource on click and records it in the URL", async () => {
     setViewport("wide")

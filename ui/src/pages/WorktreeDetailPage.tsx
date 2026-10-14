@@ -39,6 +39,7 @@ import { LinkedActionsContext } from "../components/linked/LinkedActionsContext"
 import { AddResourceModal } from "../components/AddResourceModal"
 import { parseThreadUrl } from "../lib/parseThreadUrl"
 import { worktreeName } from "../lib/homeWorktree"
+import { readCardCollapsed, writeCardCollapsed } from "../lib/detailCardPref"
 
 export function WorktreeDetailPage() {
   const [, params] = useRoute("/worktree/:path*")
@@ -138,6 +139,15 @@ export function WorktreeDetailPage() {
   // hides it would look broken. Per page visit, not persisted — see the
   // toggle's comment.
   const [detailsOpen, setDetailsOpen] = useState(true)
+  // Where the card sits: expanded under the header, or collapsed into the
+  // resource column. Wide only — narrow has no side column to collapse into,
+  // so it always shows the card expanded and offers no toggle.
+  const [cardCollapsed, setCardCollapsed] = useState(readCardCollapsed)
+  const toggleCardCollapsed = () => {
+    writeCardCollapsed(!cardCollapsed)
+    setCardCollapsed(!cardCollapsed)
+  }
+  const inColumn = wide && cardCollapsed
   // Narrow only: which of Resources / Activity is showing.
   const [narrowTab, setNarrowTab] = useState("resources")
 
@@ -185,6 +195,20 @@ export function WorktreeDetailPage() {
     },
     selectResource: (key: { type: string; id: string }) => select(key),
   }
+
+  // Keyed by path: the card holds an unsaved notes draft, which must never
+  // carry over to another worktree. The Hide/Show details toggle applies in
+  // both placements.
+  const card = summary && (
+    <Collapse in={detailsOpen}>
+      <WorktreeDetailCard
+        key={summary.path}
+        w={summary}
+        collapsed={inColumn}
+        onToggleCollapsed={wide ? toggleCardCollapsed : undefined}
+      />
+    </Collapse>
+  )
 
   const list = (
     <ResourceList
@@ -322,7 +346,15 @@ export function WorktreeDetailPage() {
         // scrollbar.
         style={{ margin: 0 }}
       >
-        <Grid.Col span={split[0]} style={listSticky}>{list}</Grid.Col>
+        <Grid.Col span={split[0]} style={listSticky}>
+          {/* Always this Stack, with the card's slot first even when empty:
+              wrapping `list` only while collapsed would move it in the tree
+              and remount it, for the reason above. */}
+          <Stack gap="md">
+            {inColumn && card}
+            {list}
+          </Stack>
+        </Grid.Col>
         {/* No scroller: this column's content is what the PAGE scrolls. */}
         <Grid.Col span={split[1]}>{detail || unfiltered}</Grid.Col>
       </Grid>
@@ -473,13 +505,7 @@ export function WorktreeDetailPage() {
             {wide && toolbar}
           </Group>
           {!wide && toolbar}
-          {summary && (
-            <Collapse in={detailsOpen}>
-              {/* Keyed by path: the card holds an unsaved notes draft, which must
-                  never carry over to another worktree. */}
-              <WorktreeDetailCard key={summary.path} w={summary} />
-            </Collapse>
-          )}
+          {!inColumn && card}
         </Stack>
       </Box>
       {/*

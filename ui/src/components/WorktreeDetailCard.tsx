@@ -1,10 +1,11 @@
 import { useEffect, useState, type ReactNode } from "react"
-import { ActionIcon, Button, Checkbox, Code, Group, Paper, Stack, Tabs, Text, Textarea, Tooltip } from "@mantine/core"
-import { IconCheck, IconCopy, IconPencil } from "@tabler/icons-react"
+import { ActionIcon, Box, Button, Checkbox, Code, Group, Paper, Stack, Tabs, Text, Textarea, Tooltip } from "@mantine/core"
+import { IconArrowBarRight, IconArrowBarToLeft, IconCheck, IconCopy, IconPencil } from "@tabler/icons-react"
 import { useQuery } from "@tanstack/react-query"
 import { api } from "../api/client"
 import { useCmux, useCmuxMatches } from "../api/cmux"
 import type { GitStatus, WorktreeSummary } from "../api/types"
+import { useIsWide } from "../hooks/useIsWide"
 import { useWorktreeNotes } from "../hooks/useWorktreeNotes"
 import { toggleTaskAt } from "../lib/taskList"
 import { relativeTime as rel } from "../lib/relativeTime"
@@ -71,8 +72,19 @@ function writeDetailTab(tab: DetailTab): void {
  * A single row of tabs — Notes, Git / Environment and, inside cmux, cmux.
  * Opens on the tab last chosen
  * in this browser tab (Notes the first time).
+ *
+ * Two placements, chosen by the page: expanded, under the header across the
+ * full width, or collapsed into the resource column above Follow resource, so
+ * the activity column gets the height back. The card only draws the toggle
+ * (`onToggleCollapsed`); the page moves it. Moving it remounts it, so the
+ * toggle sends any pending notes edit first.
  */
-export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
+export function WorktreeDetailCard({ w, collapsed = false, onToggleCollapsed }: {
+  w: WorktreeSummary
+  collapsed?: boolean
+  /** Omitted where only one placement exists (narrow): no toggle is drawn. */
+  onToggleCollapsed?: () => void
+}) {
   const info = useQuery({
     queryKey: ["worktree-info", w.path],
     queryFn: () => api.worktreeInfo(w.path),
@@ -86,6 +98,10 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
   const hasCmux = cmuxQuery.data?.available === true
   const git = info.data?.git
   const hasEnv = !!info.data && info.data.env.length > 0
+  // Expanded across a wide page, git state and the environment sit side by
+  // side rather than leaving most of the card's width empty. Collapsed into
+  // the side column, or on a phone, there is no room for two.
+  const envSideBySide = useIsWide() && !collapsed
 
   // The cmux tab only exists inside cmux; if it is selected and goes away,
   // fall back to Notes rather than showing no panel.
@@ -105,7 +121,7 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
     if (activeTab !== tab && absenceKnown) setTab(activeTab)
   }, [activeTab, tab, absenceKnown])
 
-  // Notes are read-only until "Edit notes", so a stray click or keystroke
+  // Notes are read-only until "Edit", so a stray click or keystroke
   // cannot change them. Leaving the Notes tab ends editing: you always come
   // back to the read-only view.
   const [editing, setEditing] = useState(false)
@@ -128,13 +144,33 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
         {/* The worktree and cmux workspace names, the Hide details toggle and
             the delete control all live in the page header. Sized to its tabs,
             so the underline stops after the last tab. */}
-        <Tabs.List w="fit-content">
-          <Tabs.Tab value="notes" fz="xs" py={6}>Notes</Tabs.Tab>
-          <Tabs.Tab value="env" fz="xs" py={6}>Git / Environment</Tabs.Tab>
-          {hasCmux && (
-            <Tabs.Tab value="cmux" fz="xs" py={6}>cmux</Tabs.Tab>
+        <Group justify="space-between" wrap="nowrap" align="center" gap="xs">
+          <Tabs.List w="fit-content">
+            <Tabs.Tab value="notes" fz="xs" py={6}>Notes</Tabs.Tab>
+            <Tabs.Tab value="env" fz="xs" py={6}>Git / Environment</Tabs.Tab>
+            {hasCmux && (
+              <Tabs.Tab value="cmux" fz="xs" py={6}>cmux</Tabs.Tab>
+            )}
+          </Tabs.List>
+          {onToggleCollapsed && (
+            <Tooltip label={collapsed ? "Expand details" : "Collapse details into the side column"}>
+              <ActionIcon
+                variant="subtle"
+                color="gray"
+                size="sm"
+                aria-label={collapsed ? "Expand details" : "Collapse details"}
+                aria-pressed={collapsed}
+                onClick={() => {
+                  if (editing) doneEditing()
+                  onToggleCollapsed()
+                }}
+                style={{ flexShrink: 0 }}
+              >
+                {collapsed ? <IconArrowBarRight size={14} /> : <IconArrowBarToLeft size={14} />}
+              </ActionIcon>
+            </Tooltip>
           )}
-        </Tabs.List>
+        </Group>
 
         <Tabs.Panel value="notes" pt={6} keepMounted>
           <NotesPanel
@@ -154,8 +190,17 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
           they show even when the info request fails.
         */}
         <Tabs.Panel value="env" pt={6} keepMounted>
-          <Stack gap="xs">
-            <Stack gap={2}>
+          {/* Side by side, the git column takes only the width it needs (up to
+              a cap, for a long branch name) and the environment, whose values
+              are long paths and URLs, takes the rest. */}
+          <Box
+            style={{
+              display: "flex",
+              flexDirection: envSideBySide ? "row" : "column",
+              gap: envSideBySide ? "var(--mantine-spacing-xl)" : "var(--mantine-spacing-xs)",
+            }}
+          >
+            <Stack gap={2} style={envSideBySide ? { flex: "0 1 auto", maxWidth: "40%", minWidth: 0 } : undefined}>
               {w.repo && <InfoRow label="Repo">{w.repo}</InfoRow>}
               {(git?.branch || w.branch) && <InfoRow label="Branch">{git?.branch || w.branch}</InfoRow>}
               {git && (
@@ -168,7 +213,7 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
               {git?.upstream && <InfoRow label="Upstream">{git.upstream}</InfoRow>}
               {w.latest_event_ts && <InfoRow label="Updated">{rel(w.latest_event_ts)}</InfoRow>}
             </Stack>
-            <Stack gap={2}>
+            <Stack gap={2} style={envSideBySide ? { flex: "1 1 0", minWidth: 0 } : undefined}>
               <SectionLabel>Environment</SectionLabel>
               {hasEnv ? (
                 info.data!.env.map((kv) => <EnvVarRow key={kv.key} name={kv.key} value={kv.value} />)
@@ -176,7 +221,7 @@ export function WorktreeDetailCard({ w }: { w: WorktreeSummary }) {
                 <Text size="xs" c="dimmed" fs="italic">None</Text>
               )}
             </Stack>
-          </Stack>
+          </Box>
         </Tabs.Panel>
 
         {/*
@@ -246,13 +291,13 @@ function EnvVarRow({ name, value }: { name: string; value: string }) {
 }
 
 /**
- * The notes, read-only (rendered as Markdown) until "Edit notes" swaps in the
+ * The notes, read-only (rendered as Markdown) until "Edit" swaps in the
  * textarea. Task checkboxes stay clickable in the read-only view — a targeted
  * edit to that one marker, saved immediately, like a GitHub description. Editing auto-saves as before; "Done editing" (or Esc) sends any
  * pending edit and returns to the read-only view.
  *
- * The cmux sync checkbox is shown only while editing, so it cannot be toggled
- * by accident either. It is offered only when exactly one cmux workspace
+ * The "Show notes on home page" and cmux sync checkboxes are shown only while
+ * editing, so they cannot be toggled by accident either. The sync one is offered only when exactly one cmux workspace
  * matches: with none there is nothing to write to, and with two there is no
  * right answer. If sync was turned on and the count has since changed, it
  * stays visible (so it can be turned off) with a note saying why nothing
@@ -287,27 +332,36 @@ function NotesPanel({ notes, workspaceCount, hasCmux, editing, onEdit, onDone }:
               leftSection={<IconPencil size={12} />}
               disabled={!notes.loaded}
               onClick={onEdit}
+              // Visibly just "Edit" to save room in the row; the card's tab
+              // already says what is being edited, a screen reader's list of
+              // buttons does not.
+              aria-label="Edit notes"
             >
-              Edit notes
+              Edit
             </Button>
           )}
           <NotesStatus notes={notes} />
-          <Checkbox
-            size="xs"
-            label="Show notes for this worktree on home page"
-            checked={notes.showOnHome}
-            disabled={!notes.loaded}
-            onChange={(e) => notes.setShowOnHome(e.currentTarget.checked)}
-          />
         </Group>
-        {showSync && (
-          <Checkbox
-            size="xs"
-            label="Sync to cmux workspace description"
-            checked={notes.syncCmux}
-            disabled={!notes.loaded}
-            onChange={(e) => notes.setSyncCmux(e.currentTarget.checked)}
-          />
+        {editing && (
+          // Wide apart side by side, but close once they wrap onto two lines.
+          <Group gap="md" wrap="wrap" style={{ rowGap: 4 }}>
+            <Checkbox
+              size="xs"
+              label="Show notes on home page"
+              checked={notes.showOnHome}
+              disabled={!notes.loaded}
+              onChange={(e) => notes.setShowOnHome(e.currentTarget.checked)}
+            />
+            {showSync && (
+              <Checkbox
+                size="xs"
+                label="Sync to cmux workspace description"
+                checked={notes.syncCmux}
+                disabled={!notes.loaded}
+                onChange={(e) => notes.setSyncCmux(e.currentTarget.checked)}
+              />
+            )}
+          </Group>
         )}
       </Group>
       {showSync && notes.syncCmux && workspaceCount !== 1 && (
@@ -322,6 +376,7 @@ function NotesPanel({ notes, workspaceCount, hasCmux, editing, onEdit, onDone }:
           aria-label="Worktree notes"
           placeholder="What's going on in this worktree? (Markdown)"
           size="xs"
+          mt={6}
           autosize
           minRows={3}
           autoFocus
