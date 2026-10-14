@@ -175,8 +175,11 @@ change:**
 `settings_keys_test.go` fails until steps 1-3 are done; it cannot check the
 frontend, so step 4 is on you. The test's three roots (worktree
 `config.Config`, `wconfig.Config`, `wconfig.ConfigFile`) are hard-coded: a
-**new config file or root struct** must also be added to the test's roots,
-and to the modal, or it will be silently unchecked. See
+**new config file or root struct** must also be added to the `files` map in
+`TestSettingsModalCoversEveryConfigKey` (`internal/webui/settings_keys_test.go`),
+with the matching key (the same file key) in `settingsKeyPaths` (and in
+`settingsKeyExclusions` if needed) in `internal/webui/settings_keys.go`, and
+to the modal, or it will be silently unchecked. See
 `docs/web-ui-architecture.md` "Settings modal".
 
 ## Watcher library
@@ -223,7 +226,9 @@ types, cached-state fields, or DB APIs is **cross-repo work**:
 2. Commit, then cut a new library release tag (e.g. `vX.Y.Z`) and **push
    both**: `git push origin main` and `git push origin vX.Y.Z`.
 3. In this repo, re-pin: `go get github.com/mturley/watcher@vX.Y.Z && go mod
-   tidy`, then rebuild/re-test.
+   tidy`, then rebuild/re-test. If the re-pin changes `wconfig.Config` or
+   `wconfig.ConfigFile`, follow "Config files ↔ Settings modal" —
+   `settings_keys_test.go` fails until you do.
 4. Rebuild worktree (`make build`).
 
 Do NOT work around a library limitation with a local patch here — fix it in

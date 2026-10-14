@@ -13,7 +13,7 @@ var (
 	slackTestAndRepair    = credsetup.TestAndRepair
 	slackReplace          = credsetup.Replace
 	slackConfirmRecapture = func() bool {
-		return ui.ConfirmDefault("  Slack credentials are valid. Capture new credentials anyway?", false)
+		return ui.ConfirmDefault("  Capture new Slack credentials anyway?", false)
 	}
 )
 

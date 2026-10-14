@@ -277,3 +277,37 @@ func doPassword(s *Server, body string) *httptest.ResponseRecorder {
 	s.handlePasswordReplace(rec, httptest.NewRequest("PUT", "/api/settings/password", strings.NewReader(body)))
 	return rec
 }
+
+func TestReplaceReloadsAuthAfterValidation(t *testing.T) {
+	s, _ := credServer(t, nil, nil, nil)
+	s.credCheck.github = func(string) error {
+		// A concurrent edit lands while validation is in flight.
+		data, _ := os.ReadFile(s.WatcherAuthPath)
+		changed := strings.Replace(string(data), "email: me@x.com", "email: concurrent@x.com", 1)
+		return os.WriteFile(s.WatcherAuthPath, []byte(changed), 0o600)
+	}
+	rec := doReq(s, "PUT", "/api/settings/credentials/github", `{"token":"ghp_NEW"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d %s", rec.Code, rec.Body)
+	}
+	got := readAuth(t, s)
+	if !strings.Contains(got, "concurrent@x.com") || !strings.Contains(got, "ghp_NEW") {
+		t.Fatalf("concurrent change lost:\n%s", got)
+	}
+}
+
+func TestReplaceSlackConflictWhenStoredHalfChanged(t *testing.T) {
+	s, _ := credServer(t, nil, nil, nil)
+	s.credCheck.slack = func(tok, ck string) error {
+		data, _ := os.ReadFile(s.WatcherAuthPath)
+		changed := strings.Replace(string(data), "xoxc-SECRET3", "xoxc-OTHER", 1)
+		return os.WriteFile(s.WatcherAuthPath, []byte(changed), 0o600)
+	}
+	rec := doReq(s, "PUT", "/api/settings/credentials/slack", `{"cookie":"xoxd-NEW"}`)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "auth.yaml changed during validation; try again") {
+		t.Fatalf("status %d %s", rec.Code, rec.Body)
+	}
+	if got := readAuth(t, s); strings.Contains(got, "xoxd-NEW") {
+		t.Fatalf("saved despite conflict:\n%s", got)
+	}
+}

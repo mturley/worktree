@@ -2,6 +2,7 @@ package webui
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -75,12 +76,12 @@ func TestWatcherAuthPutKeepsSecretsAndConsumers(t *testing.T) {
 	if err := os.WriteFile(s.WatcherAuthPath, []byte(authYAML), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	rec := doReq(s, "PUT", "/api/settings/watcher-auth", `{"jira":{"host":"https://z.atlassian.net/","email":"z@z"},"slack":{"workspace_domain":"z.slack.com"}}`)
+	rec := doReq(s, "PUT", "/api/settings/watcher-auth", `{"jira":{"host":"https://x.atlassian.net/","email":"z@z"},"slack":{"workspace_domain":"z.slack.com"}}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body)
 	}
 	data, _ := os.ReadFile(s.WatcherAuthPath)
-	for _, want := range []string{"JIRA_SECRET2", "xoxd-SECRET4", "/tmp/w.db", "https://z.atlassian.net\n", "z.slack.com"} {
+	for _, want := range []string{"JIRA_SECRET2", "xoxd-SECRET4", "/tmp/w.db", "email: z@z", "z.slack.com"} {
 		if !strings.Contains(string(data), want) {
 			t.Errorf("auth.yaml lost %q:\n%s", want, data)
 		}
@@ -100,5 +101,62 @@ func TestWatcherConfigPutRejectsBlankField(t *testing.T) {
 	rec := doReq(s, "PUT", "/api/settings/watcher-config", `{"jira":{"bot_usernames":[],"custom_fields":{"epic_key":" "}}}`)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status %d", rec.Code)
+	}
+}
+
+func putAuth(s *Server, host, email string) *httptest.ResponseRecorder {
+	return doReq(s, "PUT", "/api/settings/watcher-auth",
+		`{"jira":{"host":"`+host+`","email":"`+email+`"},"slack":{"workspace_domain":"x.slack.com"}}`)
+}
+
+func TestWatcherAuthHostChangeWithStoredTokenRefused(t *testing.T) {
+	s, _ := settingsServer(t, "")
+	if err := os.WriteFile(s.WatcherAuthPath, []byte(authYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rec := putAuth(s, "https://evil.example.com", "me@x.com")
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "Changing the Jira host needs the API token too: enter it under API token and press Replace.") {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+	if got, _ := os.ReadFile(s.WatcherAuthPath); string(got) != authYAML {
+		t.Fatalf("auth.yaml changed:\n%s", got)
+	}
+}
+
+func TestWatcherAuthEmailOnlyChangeAllowed(t *testing.T) {
+	s, _ := settingsServer(t, "")
+	if err := os.WriteFile(s.WatcherAuthPath, []byte(authYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if rec := putAuth(s, "https://x.atlassian.net", "new@x.com"); rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+	if got, _ := os.ReadFile(s.WatcherAuthPath); !strings.Contains(string(got), "email: new@x.com") {
+		t.Fatalf("not saved:\n%s", got)
+	}
+}
+
+func TestWatcherAuthHostChangeWithoutTokenAllowed(t *testing.T) {
+	s, _ := settingsServer(t, "")
+	if rec := putAuth(s, "https://z.atlassian.net", "z@z"); rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestWatcherAuthHostCaseAndSlashNotAChange(t *testing.T) {
+	s, _ := settingsServer(t, "")
+	if err := os.WriteFile(s.WatcherAuthPath, []byte(authYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if rec := putAuth(s, "HTTPS://X.atlassian.net/", "me@x.com"); rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestWatcherConfigPutRejectsDuplicateTrimmedNames(t *testing.T) {
+	s, _ := settingsServer(t, "")
+	rec := doReq(s, "PUT", "/api/settings/watcher-config", `{"jira":{"bot_usernames":[],"custom_fields":{"epic":"a"," epic ":"b"}}}`)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "duplicate custom field name: epic") {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
 	}
 }

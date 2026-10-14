@@ -1820,10 +1820,20 @@ failures are both refused (422, "Nothing was saved"). Jira replace stores
 host, email and token together. A Slack half-replace (only token or only
 cookie) validates against the stored other half and keeps it; if the other
 half isn't stored the replace is refused. The Slack workspace domain is
-re-derived best-effort. Validation runs while `settingsMu` is held, bounded
-by the clients' timeouts. The Test endpoint never sends the stored Jira
+re-derived best-effort. Validation (up to ~20s) runs WITHOUT `settingsMu`;
+only afterwards is the lock taken, auth.yaml reloaded, the change applied to
+that fresh copy and saved, so a concurrent save is never overwritten. For a
+Slack half-replace the stored other half is re-checked after the reload and
+the request is refused with 409 "auth.yaml changed during validation; try
+again" if it moved. The Test endpoint never sends the stored Jira
 token to a host other than the saved one: a differing form host returns
-kind `unsaved` ("Save host first"); an email override is allowed. Password
+kind `unsaved` ("Replace the token to test it with the new host."); an email
+override is allowed. For the same reason `PUT /api/settings/watcher-auth`
+refuses (400) a Jira host change while a Jira token is stored (hosts
+compared with TrimSpace, trailing "/" trimmed, case-insensitive): the poller
+would otherwise send the stored token to the new host. The user must Replace
+the token together with the host. Email-only changes, and host changes when
+no token is stored, are allowed. Password
 replace stores the value verbatim (only blank is rejected), then swaps the
 live password (`Security.SetPassword`); existing sessions stay valid.
 
@@ -1834,7 +1844,9 @@ file, a save with no change does not rewrite it, and writes are atomic
 (temp file + rename, mode 0600) and parse the file once. Watcher
 `auth.yaml` and `config.yaml` are written through the library's typed
 `Save` / `SaveConfig`, which **drops YAML comments and unknown keys**
-(unlike worktree's file). The config.yaml handler starts from the loaded
+(unlike worktree's file), and which use a non-atomic `os.WriteFile`
+(auth.yaml 0600, config.yaml 0644) rather than worktree's temp-file +
+rename, so a crash mid-write could truncate auth.yaml. The config.yaml handler starts from the loaded
 struct and replaces only the Jira block. auth.yaml's `consumers` and
 `jira_custom_fields` are never shown. Missing files read as empty
 sections, and a PUT creates them.
@@ -1842,7 +1854,8 @@ sections, and a PUT creates them.
 **Live vs restart.** Live on save: the cmux gate, Jira alias hosts
 (`jira.SetAliasHosts`) and the UI password. Read per request or per poll,
 so effective without a restart: `jira.projects`, `worktrees_base`, the
-editor and the watcher keys. `ui.https_port`, `ui.allowed_hosts` and
+editor and the watcher keys (`editor` is read by the `worktree open` CLI per
+invocation, not by the server). `ui.https_port`, `ui.allowed_hosts` and
 `ui.tls.*` need a restart; the Remote access section carries the badge
 "Applies after restarting worktree ui". The server persists the file first
 and moves live state only afterwards, so a failed write never leaves the

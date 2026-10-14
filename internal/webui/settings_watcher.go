@@ -106,6 +106,12 @@ func (s *Server) handleSettingsWatcherAuth(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, "reading auth.yaml: "+err.Error())
 		return
 	}
+	// The poller sends the stored Jira token to whatever host is saved, so
+	// a host change must come with a fresh token (the Replace endpoint).
+	if j := cfg.Services.Jira; j != nil && j.Token != "" && !jiraHostEqual(j.Host, host) {
+		writeError(w, http.StatusBadRequest, "Changing the Jira host needs the API token too: enter it under API token and press Replace.")
+		return
+	}
 	changed := false
 	if cfg.Services.Jira == nil && (host != "" || email != "") {
 		cfg.Services.Jira = &wconfig.JiraConfig{}
@@ -145,6 +151,10 @@ func (s *Server) handleSettingsWatcherConfig(w http.ResponseWriter, r *http.Requ
 			writeError(w, http.StatusBadRequest, "custom fields need both a name and a field ID")
 			return
 		}
+		if _, dup := fields[k]; dup {
+			writeError(w, http.StatusBadRequest, "duplicate custom field name: "+k)
+			return
+		}
 		fields[k] = v
 	}
 
@@ -156,8 +166,9 @@ func (s *Server) handleSettingsWatcherConfig(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusInternalServerError, "reading watcher config.yaml: "+err.Error())
 		return
 	}
-	// Start from what is there, so top-level keys this version doesn't
-	// edit survive; only the Jira block is replaced.
+	// Start from what the pinned watcher ConfigFile struct loaded; only the
+	// Jira block is replaced. Keys that struct doesn't know about, and
+	// comments, do not survive: the typed marshal drops them.
 	next := *cfg
 	next.Jira = nil
 	if len(bots) > 0 || len(fields) > 0 {
@@ -176,4 +187,9 @@ func (s *Server) handleSettingsWatcherConfig(w http.ResponseWriter, r *http.Requ
 		}
 	}
 	s.writeSettings(w)
+}
+
+func jiraHostEqual(a, b string) bool {
+	norm := func(h string) string { return strings.TrimRight(strings.TrimSpace(h), "/") }
+	return strings.EqualFold(norm(a), norm(b))
 }

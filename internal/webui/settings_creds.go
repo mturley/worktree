@@ -119,7 +119,7 @@ func (s *Server) handleCredTest(w http.ResponseWriter, r *http.Request) {
 		// stored token must never be sent to a host the user hasn't saved.
 		if req.Host != "" && !strings.EqualFold(req.Host, strings.TrimRight(strings.TrimSpace(j.Host), "/")) {
 			writeJSON(w, http.StatusOK, credResult{Kind: "unsaved",
-				Detail: "Save the Jira host first, or Replace the token to test it with the new host."})
+				Detail: "Replace the token to test it with the new host."})
 			return
 		}
 		if req.Email != "" {
@@ -139,22 +139,22 @@ func (s *Server) handleCredTest(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleCredReplace: PUT /api/settings/credentials/{service}
+//
+// Order matters: read what is needed, validate (a network call that can take
+// many seconds) WITHOUT holding settingsMu, then take the lock, reload
+// auth.yaml and apply the change to that fresh copy — so a concurrent save
+// made during validation is never overwritten with a stale copy.
 func (s *Server) handleCredReplace(w http.ResponseWriter, r *http.Request) {
 	req, err := decodeCred(w, r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	s.settingsMu.Lock()
-	defer s.settingsMu.Unlock()
-	cfg, err := s.loadWatcherAuth()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "reading auth.yaml: "+err.Error())
-		return
-	}
 	v := s.validators()
-	var apply func()
 	var verr error
+	var apply func(cfg *wconfig.Config)
+	// check runs under the lock against the freshly reloaded copy.
+	var check func(cfg *wconfig.Config) bool
 	switch svc := r.PathValue("service"); svc {
 	case "github":
 		if req.Token == "" {
@@ -162,7 +162,7 @@ func (s *Server) handleCredReplace(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		verr = v.github(req.Token)
-		apply = func() { cfg.Services.GitHub = &wconfig.GitHubConfig{Token: req.Token} }
+		apply = func(cfg *wconfig.Config) { cfg.Services.GitHub = &wconfig.GitHubConfig{Token: req.Token} }
 	case "jira":
 		if req.Token == "" || req.Host == "" || req.Email == "" {
 			writeError(w, http.StatusBadRequest, "token, host and email are required")
@@ -173,7 +173,7 @@ func (s *Server) handleCredReplace(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		verr = v.jira(req.Host, req.Email, req.Token)
-		apply = func() {
+		apply = func(cfg *wconfig.Config) {
 			cfg.Services.Jira = &wconfig.JiraConfig{Host: req.Host, Email: req.Email, Token: req.Token}
 		}
 	case "slack":
@@ -181,14 +181,22 @@ func (s *Server) handleCredReplace(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "token or cookie is required")
 			return
 		}
+		// Read-only load for the stored other half; no lock held.
+		stored, err := s.loadWatcherAuth()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "reading auth.yaml: "+err.Error())
+			return
+		}
+		var storedTok, storedCk, storedDomain string
+		if sl := stored.Services.Slack; sl != nil {
+			storedTok, storedCk, storedDomain = sl.Token, sl.Cookie, sl.WorkspaceDomain
+		}
 		tok, ck := req.Token, req.Cookie
-		if sl := cfg.Services.Slack; sl != nil {
-			if tok == "" {
-				tok = sl.Token
-			}
-			if ck == "" {
-				ck = sl.Cookie
-			}
+		if tok == "" {
+			tok = storedTok
+		}
+		if ck == "" {
+			ck = storedCk
 		}
 		if tok == "" || ck == "" {
 			writeJSON(w, http.StatusUnprocessableEntity, credResult{Kind: "missing",
@@ -196,11 +204,22 @@ func (s *Server) handleCredReplace(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		verr = v.slack(tok, ck)
-		apply = func() {
-			domain := v.slackDomain(tok, ck)
-			if domain == "" && cfg.Services.Slack != nil {
-				domain = cfg.Services.Slack.WorkspaceDomain // best-effort; keep the old one
+		domain := ""
+		if verr == nil {
+			domain = v.slackDomain(tok, ck)
+			if domain == "" {
+				domain = storedDomain // best-effort; keep the old one
 			}
+		}
+		check = func(cfg *wconfig.Config) bool {
+			// The half we did not receive must be the one we validated.
+			var t, c string
+			if sl := cfg.Services.Slack; sl != nil {
+				t, c = sl.Token, sl.Cookie
+			}
+			return (req.Token != "" || t == storedTok) && (req.Cookie != "" || c == storedCk)
+		}
+		apply = func(cfg *wconfig.Config) {
 			cfg.Services.Slack = &wconfig.SlackConfig{Token: tok, Cookie: ck, WorkspaceDomain: domain}
 		}
 	default:
@@ -211,7 +230,19 @@ func (s *Server) handleCredReplace(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnprocessableEntity, classify(verr))
 		return
 	}
-	apply()
+
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
+	cfg, err := s.loadWatcherAuth()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "reading auth.yaml: "+err.Error())
+		return
+	}
+	if check != nil && !check(cfg) {
+		writeError(w, http.StatusConflict, "auth.yaml changed during validation; try again")
+		return
+	}
+	apply(cfg)
 	if err := cfg.Save(s.watcherAuthPath()); err != nil {
 		writeError(w, http.StatusInternalServerError, "saving auth.yaml: "+err.Error())
 		return
