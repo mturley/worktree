@@ -402,10 +402,16 @@ export function ResourceCard({
       {notify && path && r.type !== "link" && <ResourceNotifySwitch r={r} path={path} notify={notify} />}
       <RemoveControl r={r} path={path} onRemoved={onRemoved} />
     </Group>
-  ) : bell || unread ? (
+  ) : bell || unread || dragHandle ? (
     <>
       {bell}
       <UnreadBadge unread={unread} count={r.unread_count} />
+      {/* The drag handle's place in the header line. The handle itself is
+          laid over this slot from outside the select button (a button may
+          not hold another), so the bells sit beside it and the title below
+          keeps the card's full width. Same size as the handle (ActionIcon
+          sm). */}
+      {dragHandle && <span aria-hidden style={{ width: "1.375rem", height: "1.375rem", flex: "none" }} />}
     </>
   ) : undefined
 
@@ -440,10 +446,10 @@ export function ResourceCard({
       bg={selected ? "var(--mantine-color-violet-light)" : undefined}
       // One total function over both states rather than two conditional
       // spreads — see cardEdgeStyle for the two bugs the spreads caused.
-      style={cardEdgeStyle(showsUnread(variant) && hasUnread(r), selected)}
+      // Relative: the drag handle is positioned against the card.
+      style={{ ...cardEdgeStyle(showsUnread(variant) && hasUnread(r), selected), position: "relative" }}
     >
       <Group justify="space-between" wrap="nowrap" align="flex-start">
-        {dragHandle}
         {/* The detail card heads its pane and is never a select target; its
             header row holds buttons, which must not nest inside one. */}
         {onSelect && variant !== "detail" ? (
@@ -459,6 +465,13 @@ export function ResourceCard({
           <div style={{ flex: 1, minWidth: 0 }}>{body}</div>
         )}
       </Group>
+      {/* Over its slot at the end of the header line (see aside): the
+          card's top-right corner, inset by the card's padding. */}
+      {dragHandle && (
+        <div style={{ position: "absolute", top: "var(--mantine-spacing-xs)", right: "var(--mantine-spacing-xs)" }}>
+          {dragHandle}
+        </div>
+      )}
       {variant === "detail" && primaryError && (
         <Alert color="red" variant="light" mt={6} withCloseButton onClose={() => setPrimaryError(null)}>
           <Text size="xs">{primaryError}</Text>
