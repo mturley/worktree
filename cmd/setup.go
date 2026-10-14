@@ -29,6 +29,22 @@ func init() {
 		"Run without asking: skip confirmations and answer every other question with its default")
 	setupCmd.Flags().BoolVar(&setupUninstall, "uninstall", false, "Remove worktree configuration")
 	rootCmd.AddCommand(setupCmd)
+	setupSlackCmd.Flags().BoolVar(&setupSlackForce, "force", false,
+		"Skip testing the stored credentials and always capture new ones")
+	setupCmd.AddCommand(setupSlackCmd)
+}
+
+var setupSlackForce bool
+
+var setupSlackCmd = &cobra.Command{
+	Use:   "slack",
+	Short: "Capture Slack credentials from a browser session",
+	Long: "Tests the stored Slack credentials, and captures new ones from a browser\n" +
+		"session (Playwright) when they are missing, rejected, or you ask for fresh ones.",
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return setup.RunSlackSetup(setupSlackForce)
+	},
 }
 
 func runSetup(cmd *cobra.Command, args []string) error {

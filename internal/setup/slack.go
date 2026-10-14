@@ -48,7 +48,7 @@ don't need to find it yourself.
 
 These are session credentials tied to your browser login and typically expire
 after a week or two. When requests start failing with an auth error, just run
-"worktree setup" again to store fresh values.`
+"worktree setup slack" to store fresh values.`
 
 // acquireSlackCreds acquires Slack credentials (token + cookie), either
 // automatically via a headed-browser extraction (when interactive and
