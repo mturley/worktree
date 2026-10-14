@@ -1,10 +1,11 @@
-import { useEffect, useState, type ReactNode } from "react"
+import { useState, type ReactNode } from "react"
 import { ActionIcon, Box, Button, Checkbox, Code, Group, Paper, Stack, Tabs, Text, Textarea, Tooltip } from "@mantine/core"
-import { IconArrowBarRight, IconArrowBarToLeft, IconCheck, IconCopy, IconPencil } from "@tabler/icons-react"
+import { IconCheck, IconCopy, IconPencil } from "@tabler/icons-react"
 import { useQuery } from "@tanstack/react-query"
 import { api } from "../api/client"
 import { useCmux, useCmuxMatches } from "../api/cmux"
 import type { GitStatus, WorktreeSummary } from "../api/types"
+import { isDetailTab, type DetailTab } from "../hooks/useDetailTab"
 import { useIsWide } from "../hooks/useIsWide"
 import { useWorktreeNotes } from "../hooks/useWorktreeNotes"
 import { toggleTaskAt } from "../lib/taskList"
@@ -31,34 +32,6 @@ function gitSummary(g: GitStatus): string {
   return parts.join(" · ")
 }
 
-type DetailTab = "notes" | "env" | "cmux"
-
-/**
- * The card's selected tab, remembered per browser tab so switching worktrees
- * keeps it. sessionStorage, like "Follow cmux": a choice for this tab,
- * not for every tab in the browser. Storage throws in some contexts (private
- * windows); the card then just starts on Notes.
- */
-const DETAIL_TAB_KEY = "worktree.detailTab"
-
-function readDetailTab(): DetailTab {
-  try {
-    const v = window.sessionStorage.getItem(DETAIL_TAB_KEY)
-    if (v === "env" || v === "cmux") return v
-  } catch {
-    // fall through
-  }
-  return "notes"
-}
-
-function writeDetailTab(tab: DetailTab): void {
-  try {
-    window.sessionStorage.setItem(DETAIL_TAB_KEY, tab)
-  } catch {
-    // not remembered; the selection still applies to this card
-  }
-}
-
 /**
  * The details card under the worktree detail page's header.
  *
@@ -70,20 +43,15 @@ function writeDetailTab(tab: DetailTab): void {
  * what was I in the middle of (notes).
  *
  * A single row of tabs — Notes, Git / Environment and, inside cmux, cmux.
- * Opens on the tab last chosen
- * in this browser tab (Notes the first time).
- *
- * Two placements, chosen by the page: expanded, under the header across the
- * full width, or collapsed into the resource column above Follow resource, so
- * the activity column gets the height back. The card only draws the toggle
- * (`onToggleCollapsed`); the page moves it. Moving it remounts it, so the
- * toggle sends any pending notes edit first.
+ * The tab is the page's (useDetailTab), because it also decides where the
+ * page puts the card: wide, Notes sits in the resource column and the other
+ * tabs span the page under the header. Switching between them moves, and so
+ * remounts, the card.
  */
-export function WorktreeDetailCard({ w, collapsed = false, onToggleCollapsed }: {
+export function WorktreeDetailCard({ w, tab, onTabChange }: {
   w: WorktreeSummary
-  collapsed?: boolean
-  /** Omitted where only one placement exists (narrow): no toggle is drawn. */
-  onToggleCollapsed?: () => void
+  tab: DetailTab
+  onTabChange: (tab: DetailTab) => void
 }) {
   const info = useQuery({
     queryKey: ["worktree-info", w.path],
@@ -93,35 +61,15 @@ export function WorktreeDetailCard({ w, collapsed = false, onToggleCollapsed }: 
   const notes = useWorktreeNotes(w.path)
   const workspaces = useCmuxMatches(w.path)
 
-  const [tab, setTab] = useState<DetailTab>(readDetailTab)
   const cmuxQuery = useCmux()
   const hasCmux = cmuxQuery.data?.available === true
   const git = info.data?.git
   const hasEnv = !!info.data && info.data.env.length > 0
-  // Expanded across a wide page, git state and the environment sit side by
-  // side rather than leaving most of the card's width empty. Collapsed into
-  // the side column, or on a phone, there is no room for two.
-  const envSideBySide = useIsWide() && !collapsed
-
-  // The cmux tab only exists inside cmux; if it is selected and goes away,
-  // fall back to Notes rather than showing no panel.
-  const activeTab = tab === "cmux" && !hasCmux ? "notes" : tab
-
-  // The fallback above is a per-render display computation, not a stored
-  // selection: without this, `tab` itself would still say "cmux", so the
-  // moment cmux reappears (a transient blip, a 5s poll) the card would jump
-  // straight back to it instead of staying on Notes.
-  //
-  // Only once the data has actually said the tab is gone, though: before it
-  // loads, a remembered tab (see readDetailTab) is waiting to be shown, not
-  // missing. And never written back to sessionStorage — this tab being
-  // gone for now says nothing about the next card.
-  const absenceKnown = tab === "cmux" && cmuxQuery.data !== undefined
-  useEffect(() => {
-    if (activeTab !== tab && absenceKnown) setTab(activeTab)
-  }, [activeTab, tab, absenceKnown])
-
-  // Notes are read-only until "Edit", so a stray click or keystroke
+  // Wide, the Git / Environment tab spans the page, so git state and the
+  // environment sit side by side rather than leaving most of the width
+  // empty. On a phone there is no room for two.
+  const envSideBySide = useIsWide()
+  // Notes are read-only until "Edit notes", so a stray click or keystroke
   // cannot change them. Leaving the Notes tab ends editing: you always come
   // back to the read-only view.
   const [editing, setEditing] = useState(false)
@@ -131,46 +79,25 @@ export function WorktreeDetailCard({ w, collapsed = false, onToggleCollapsed }: 
   }
 
   const selectTab = (next: string | null) => {
-    if (next !== "notes" && next !== "env" && next !== "cmux") return
+    if (!isDetailTab(next)) return
     // Leaving the notes sends pending edits now.
-    if (activeTab === "notes" && next !== "notes") doneEditing()
-    setTab(next)
-    writeDetailTab(next)
+    if (tab === "notes" && next !== "notes") doneEditing()
+    onTabChange(next)
   }
 
   return (
     <Paper p="sm" withBorder>
-      <Tabs value={activeTab} onChange={selectTab} keepMounted={false}>
+      <Tabs value={tab} onChange={selectTab} keepMounted={false}>
         {/* The worktree and cmux workspace names, the Hide details toggle and
             the delete control all live in the page header. Sized to its tabs,
             so the underline stops after the last tab. */}
-        <Group justify="space-between" wrap="nowrap" align="center" gap="xs">
-          <Tabs.List w="fit-content">
-            <Tabs.Tab value="notes" fz="xs" py={6}>Notes</Tabs.Tab>
-            <Tabs.Tab value="env" fz="xs" py={6}>Git / Environment</Tabs.Tab>
-            {hasCmux && (
-              <Tabs.Tab value="cmux" fz="xs" py={6}>cmux</Tabs.Tab>
-            )}
-          </Tabs.List>
-          {onToggleCollapsed && (
-            <Tooltip label={collapsed ? "Expand details" : "Collapse details into the side column"}>
-              <ActionIcon
-                variant="subtle"
-                color="gray"
-                size="sm"
-                aria-label={collapsed ? "Expand details" : "Collapse details"}
-                aria-pressed={collapsed}
-                onClick={() => {
-                  if (editing) doneEditing()
-                  onToggleCollapsed()
-                }}
-                style={{ flexShrink: 0 }}
-              >
-                {collapsed ? <IconArrowBarRight size={14} /> : <IconArrowBarToLeft size={14} />}
-              </ActionIcon>
-            </Tooltip>
+        <Tabs.List w="fit-content">
+          <Tabs.Tab value="notes" fz="xs" py={6}>Notes</Tabs.Tab>
+          <Tabs.Tab value="env" fz="xs" py={6}>Git / Environment</Tabs.Tab>
+          {hasCmux && (
+            <Tabs.Tab value="cmux" fz="xs" py={6}>cmux</Tabs.Tab>
           )}
-        </Group>
+        </Tabs.List>
 
         <Tabs.Panel value="notes" pt={6} keepMounted>
           <NotesPanel
@@ -291,7 +218,7 @@ function EnvVarRow({ name, value }: { name: string; value: string }) {
 }
 
 /**
- * The notes, read-only (rendered as Markdown) until "Edit" swaps in the
+ * The notes, read-only (rendered as Markdown) until "Edit notes" swaps in the
  * textarea. Task checkboxes stay clickable in the read-only view — a targeted
  * edit to that one marker, saved immediately, like a GitHub description. Editing auto-saves as before; "Done editing" (or Esc) sends any
  * pending edit and returns to the read-only view.
@@ -318,8 +245,39 @@ function NotesPanel({ notes, workspaceCount, hasCmux, editing, onEdit, onDone }:
   }
   const showSync = editing && hasCmux && (workspaceCount === 1 || notes.syncCmux)
   return (
-    <Stack gap={4}>
-      <Group gap="xs" justify="space-between" wrap="wrap" mih={22}>
+    <Stack gap={4} mt={4}>
+      {/* The notes first, their controls after: the text is what you came
+          for, and the Edit notes / Done editing row stays put beneath it. */}
+      {editing ? (
+        <Textarea
+          aria-label="Worktree notes"
+          placeholder="What's going on in this worktree? (Markdown)"
+          size="xs"
+          // Drag the corner to resize. Not Mantine's autosize, which rewrites
+          // the height on every keystroke and would undo a drag; instead the
+          // row count follows the text (3 to 20 lines), until a drag sets an
+          // explicit height that then wins over it.
+          resize="vertical"
+          rows={Math.min(Math.max(notes.notes.split("\n").length + 1, 3), 20)}
+          autoFocus
+          value={notes.notes}
+          onChange={(e) => notes.setNotes(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.preventDefault()
+              onDone()
+            }
+          }}
+        />
+      ) : notes.notes.trim() ? (
+        <NotesMarkdown
+          text={notes.notes}
+          onToggleTask={(offset) => notes.editNotes((text) => toggleTaskAt(text, offset))}
+        />
+      ) : (
+        <Text size="xs" c="dimmed" fs="italic">No notes yet</Text>
+      )}
+      <Group gap="xs" justify="space-between" wrap="wrap" mih={22} mt={6}>
         <Group gap="xs" wrap="wrap">
           {editing ? (
             <Button size="compact-xs" variant="light" leftSection={<IconCheck size={12} />} onClick={onDone}>
@@ -332,12 +290,8 @@ function NotesPanel({ notes, workspaceCount, hasCmux, editing, onEdit, onDone }:
               leftSection={<IconPencil size={12} />}
               disabled={!notes.loaded}
               onClick={onEdit}
-              // Visibly just "Edit" to save room in the row; the card's tab
-              // already says what is being edited, a screen reader's list of
-              // buttons does not.
-              aria-label="Edit notes"
             >
-              Edit
+              Edit notes
             </Button>
           )}
           <NotesStatus notes={notes} />
@@ -370,32 +324,6 @@ function NotesPanel({ notes, workspaceCount, hasCmux, editing, onEdit, onDone }:
             ? "Not syncing: this worktree has no cmux workspace."
             : `Not syncing: this worktree has ${workspaceCount} cmux workspaces.`}
         </Text>
-      )}
-      {editing ? (
-        <Textarea
-          aria-label="Worktree notes"
-          placeholder="What's going on in this worktree? (Markdown)"
-          size="xs"
-          mt={6}
-          autosize
-          minRows={3}
-          autoFocus
-          value={notes.notes}
-          onChange={(e) => notes.setNotes(e.currentTarget.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              e.preventDefault()
-              onDone()
-            }
-          }}
-        />
-      ) : notes.notes.trim() ? (
-        <NotesMarkdown
-          text={notes.notes}
-          onToggleTask={(offset) => notes.editNotes((text) => toggleTaskAt(text, offset))}
-        />
-      ) : (
-        <Text size="xs" c="dimmed" fs="italic">No notes yet</Text>
       )}
     </Stack>
   )

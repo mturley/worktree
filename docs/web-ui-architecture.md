@@ -577,14 +577,15 @@ stored in the worktree-owned `worktree_notes` table (keyed by registry path).
   Esc, or collapsing the section flushes pending edits and returns to the
   rendered view. The "Show notes on home page" and cmux sync checkboxes show
   only while editing.
-- **Two placements.** Wide, the card's tab row ends in a collapse/expand
-  toggle: expanded, the card sits under the page header across the full
-  width; collapsed (the default, remembered in localStorage by
-  `lib/detailCardPref.ts`), it moves into the resource column above Follow
-  resource and the activity column gets the height back. Moving it remounts
-  the card, so the toggle flushes pending notes edits first. Narrow has no
-  side column: always expanded, no toggle. Expanded and wide, the Git /
-  Environment tab lays git state and the environment out side by side.
+- **Placement follows the tab.** Wide, the Notes tab puts the card in the
+  resource column above Follow resource, so the activity column gets the
+  page's height; Git / Environment and cmux put it under the page header
+  across the full width (Git / Environment then lays git state and the
+  environment out side by side). The tab therefore lives in the page
+  (`hooks/useDetailTab.ts`, remembered in sessionStorage), not the card, and
+  switching between the placements remounts the card. Narrow has no side
+  column: the card is always under the header. Clicking the worktree title to
+  reset the page also returns the card to Notes.
 - **Task checkboxes are clickable in the read-only view**, like a GitHub
   description. Each rendered task item knows its source offset (react-markdown
   `node.position`, passed to the checkbox via context); `lib/taskList.ts`

@@ -12,6 +12,7 @@ import { TAB_ID } from "../lib/tabId"
 import { useWorktreeDetail } from "../hooks/useWorktreeDetail"
 import { useSelectedResource } from "../hooks/useSelectedResource"
 import { useIsWide } from "../hooks/useIsWide"
+import { useDetailTab } from "../hooks/useDetailTab"
 import { useWorktrees } from "../hooks/useWorktrees"
 import { useCmuxMatches } from "../api/cmux"
 import { ResourceList } from "../components/ResourceList"
@@ -39,7 +40,6 @@ import { LinkedActionsContext } from "../components/linked/LinkedActionsContext"
 import { AddResourceModal } from "../components/AddResourceModal"
 import { parseThreadUrl } from "../lib/parseThreadUrl"
 import { worktreeName } from "../lib/homeWorktree"
-import { readCardCollapsed, writeCardCollapsed } from "../lib/detailCardPref"
 
 export function WorktreeDetailPage() {
   const [, params] = useRoute("/worktree/:path*")
@@ -139,15 +139,12 @@ export function WorktreeDetailPage() {
   // hides it would look broken. Per page visit, not persisted — see the
   // toggle's comment.
   const [detailsOpen, setDetailsOpen] = useState(true)
-  // Where the card sits: expanded under the header, or collapsed into the
-  // resource column. Wide only — narrow has no side column to collapse into,
-  // so it always shows the card expanded and offers no toggle.
-  const [cardCollapsed, setCardCollapsed] = useState(readCardCollapsed)
-  const toggleCardCollapsed = () => {
-    writeCardCollapsed(!cardCollapsed)
-    setCardCollapsed(!cardCollapsed)
-  }
-  const inColumn = wide && cardCollapsed
+  // The card's tab also decides where it sits, wide: Notes in the resource
+  // column above Follow resource, so the activity column gets the page's
+  // height; Git / Environment and cmux, which want the width, under the
+  // header. Narrow has no side column, so the card is always under the header.
+  const detailTab = useDetailTab()
+  const inColumn = wide && detailTab.tab === "notes"
   // Narrow only: which of Resources / Activity is showing.
   const [narrowTab, setNarrowTab] = useState("resources")
 
@@ -204,8 +201,8 @@ export function WorktreeDetailPage() {
       <WorktreeDetailCard
         key={summary.path}
         w={summary}
-        collapsed={inColumn}
-        onToggleCollapsed={wide ? toggleCardCollapsed : undefined}
+        tab={detailTab.tab}
+        onTabChange={detailTab.select}
       />
     </Collapse>
   )
@@ -363,18 +360,13 @@ export function WorktreeDetailPage() {
 
   // Anything the titles' reset would undo; with none of it, they are plain
   // text rather than a button that does nothing.
-  const cardExpanded = wide && !cardCollapsed
   const narrowed = Boolean(selectedResource) || unreadOnly
-  const resettable = narrowed || cardExpanded
+  const resettable = narrowed || detailTab.tab !== "notes"
   const showOverview = () => {
     if (selectedResource) clear()
     if (unreadOnly) setUnreadOnly(false)
-    // Back to the default layout too. Moving the card remounts it, which
-    // sends any pending notes edit (useWorktreeNotes flushes on unmount).
-    if (cardExpanded) {
-      writeCardCollapsed(true)
-      setCardCollapsed(true)
-    }
+    // Back to the Notes tab too, and so (wide) the card back into the column.
+    if (detailTab.tab !== "notes") detailTab.select("notes")
   }
 
   // The header is fixed and the body scrolls beneath it, so the summary card
@@ -476,10 +468,11 @@ export function WorktreeDetailPage() {
               {/* Inside cmux the workspace is the headline and the worktree
                   name steps down beneath it, as on the home page's cards;
                   outside cmux the name is the full-size title. */}
-              {/* With a resource selected, unreads only on or (wide) the details
-                  card expanded, the titles are a way back to the worktree's
-                  whole overview: they deselect, as "← all resources" does,
-                  turn unreads only off and collapse the details card. A div
+              {/* With a resource selected, unreads only on or the details card
+                  off its Notes tab, the titles are a way back to the
+                  worktree's whole overview: they deselect, as "← all
+                  resources" does, turn unreads only off and return the card
+                  to Notes. A div
                   with role=button rather than a <button>, which may not hold
                   the headings. With none of those there is nothing to reset,
                   so it is plain text. */}
@@ -489,7 +482,7 @@ export function WorktreeDetailPage() {
                 {...(resettable && {
                   role: "button",
                   tabIndex: 0,
-                  title: narrowed ? "Show all resources" : "Collapse details",
+                  title: narrowed ? "Show all resources" : "Show notes",
                   className: "detail-titles",
                   onClick: showOverview,
                   onKeyDown: (e: KeyboardEvent) => {

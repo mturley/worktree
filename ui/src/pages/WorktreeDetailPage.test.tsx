@@ -67,6 +67,8 @@ const wrap = () =>
 beforeEach(() => {
   window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}`)
   window.localStorage.clear()
+  // The details card's tab is remembered per browser tab.
+  window.sessionStorage.clear()
   resources = baseResources
   events = []
 })
@@ -185,53 +187,40 @@ describe("WorktreeDetailPage header", () => {
 })
 
 describe("WorktreeDetailPage details card placement", () => {
-  it("starts collapsed into the resource column, above Follow resource", async () => {
+  /** Whether `el` is in the resource column (vs. under the header). */
+  const inColumn = (el: HTMLElement) =>
+    screen.getByRole("button", { name: /Follow resource/ }).closest(".mantine-Grid-col")!.contains(el)
+
+  it("puts Notes in the resource column, above Follow resource", async () => {
     setViewport("wide")
     wrap()
-    const expand = await screen.findByRole("button", { name: "Expand details" })
-    const follow = screen.getByRole("button", { name: /Follow resource/ })
-    expect(follow.closest(".mantine-Grid-col")).toContainElement(expand)
-    expect(expand.compareDocumentPosition(follow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const notes = await screen.findByRole("tab", { name: "Notes" })
+    expect(inColumn(notes)).toBe(true)
+    expect(notes.compareDocumentPosition(
+      screen.getByRole("button", { name: /Follow resource/ }),
+    ) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it("expands the card under the header and collapses it back", async () => {
-    window.localStorage.setItem("worktree.detail.cardCollapsed", "false")
+  it("moves the card under the header for Git / Environment, and back for Notes", async () => {
     setViewport("wide")
     const user = userEvent.setup()
     wrap()
-    const collapse = await screen.findByRole("button", { name: "Collapse details" })
-    // Expanded, it sits in the sticky header.
-    expect(collapse.closest("[data-detail-header]")).toBeNull()
-    expect(screen.getByRole("tab", { name: "Notes" }).compareDocumentPosition(
-      screen.getByRole("button", { name: /Follow resource/ }),
-    ) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await user.click(await screen.findByRole("tab", { name: "Git / Environment" }))
+    const env = screen.getByRole("tab", { name: "Git / Environment" })
+    expect(env).toHaveAttribute("aria-selected", "true")
+    expect(inColumn(env)).toBe(false)
 
-    await user.click(collapse)
-    const expand = screen.getByRole("button", { name: "Expand details" })
-    const follow = screen.getByRole("button", { name: /Follow resource/ })
-    // Same column as the list now, and before Follow resource.
-    expect(follow.closest(".mantine-Grid-col")).toContainElement(expand)
-    expect(expand.compareDocumentPosition(follow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    // Remembered for the next visit.
-    expect(window.localStorage.getItem("worktree.detail.cardCollapsed")).toBe("true")
-
-    await user.click(expand)
-    expect(screen.getByRole("button", { name: "Collapse details" }).closest(".mantine-Grid-col")).toBeNull()
+    await user.click(screen.getByRole("tab", { name: "Notes" }))
+    expect(inColumn(screen.getByRole("tab", { name: "Notes" }))).toBe(true)
   })
 
-  it("opens expanded when that was the last choice", async () => {
-    window.localStorage.setItem("worktree.detail.cardCollapsed", "false")
-    setViewport("wide")
-    wrap()
-    expect(await screen.findByRole("button", { name: "Collapse details" })).toBeInTheDocument()
-  })
-
-  it("has no collapsed placement when narrow", async () => {
-    // No side column to collapse into: always expanded, and no toggle.
-    window.localStorage.setItem("worktree.detail.cardCollapsed", "true")
+  it("has no toggle, and keeps the card under the header when narrow", async () => {
+    // No side column to put Notes in.
     setViewport("narrow")
     wrap()
-    expect(await screen.findByRole("tab", { name: "Notes" })).toBeVisible()
+    const notes = await screen.findByRole("tab", { name: "Notes" })
+    expect(notes).toBeVisible()
+    expect(notes.closest(".mantine-Grid-col")).toBeNull()
     expect(screen.queryByRole("button", { name: /(Collapse|Expand) details/ })).toBeNull()
   })
 })
@@ -291,16 +280,14 @@ describe("WorktreeDetailPage selection", () => {
     await waitFor(() => expect(window.location.search).not.toContain("resource="))
   })
 
-  it("collapses the details card when the worktree title is clicked", async () => {
-    window.localStorage.setItem("worktree.detail.cardCollapsed", "false")
+  it("returns the details card to Notes when the worktree title is clicked", async () => {
     window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?resource=pr:o%2Fr%231`)
     setViewport("wide")
     const user = userEvent.setup()
     wrap()
-    expect(await screen.findByRole("button", { name: "Collapse details" })).toBeInTheDocument()
+    await user.click(await screen.findByRole("tab", { name: "Git / Environment" }))
     await user.click(await screen.findByRole("button", { name: "foo" }))
-    expect(await screen.findByRole("button", { name: "Expand details" })).toBeInTheDocument()
-    expect(window.localStorage.getItem("worktree.detail.cardCollapsed")).toBe("true")
+    expect(await screen.findByRole("tab", { name: "Notes" })).toHaveAttribute("aria-selected", "true")
   })
 
   it("turns unreads only off when the worktree title is clicked", async () => {
@@ -315,13 +302,13 @@ describe("WorktreeDetailPage selection", () => {
     expect(screen.queryByRole("button", { name: "foo" })).not.toBeInTheDocument()
   })
 
-  it("makes the worktree title clickable when only the details card is expanded", async () => {
-    window.localStorage.setItem("worktree.detail.cardCollapsed", "false")
+  it("makes the worktree title clickable when only the card is off Notes", async () => {
     setViewport("wide")
     const user = userEvent.setup()
     wrap()
+    await user.click(await screen.findByRole("tab", { name: "Git / Environment" }))
     await user.click(await screen.findByRole("button", { name: "foo" }))
-    expect(await screen.findByRole("button", { name: "Expand details" })).toBeInTheDocument()
+    expect(await screen.findByRole("tab", { name: "Notes" })).toHaveAttribute("aria-selected", "true")
     // Nothing left to reset.
     expect(screen.queryByRole("button", { name: "foo" })).not.toBeInTheDocument()
   })

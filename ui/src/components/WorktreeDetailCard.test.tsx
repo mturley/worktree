@@ -4,7 +4,14 @@ import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { WorktreeDetailCard } from "./WorktreeDetailCard"
+import { useDetailTab } from "../hooks/useDetailTab"
 import type { WorktreeInfo, WorktreeSummary } from "../api/types"
+
+/** The card with its tab state wired up the way the page does it. */
+function Card({ w }: { w: WorktreeSummary }) {
+  const { tab, select } = useDetailTab()
+  return <WorktreeDetailCard w={w} tab={tab} onTabChange={select} />
+}
 
 const worktreeInfo = vi.fn()
 const worktreeNotes = vi.fn()
@@ -50,7 +57,7 @@ const wrap = (w: WorktreeSummary) =>
   render(
     <MantineProvider>
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <WorktreeDetailCard w={w} />
+        <Card w={w} />
       </QueryClientProvider>
     </MantineProvider>,
   )
@@ -268,7 +275,7 @@ describe("notes", () => {
     const tree = () => (
       <MantineProvider>
         <QueryClientProvider client={client}>
-          <WorktreeDetailCard w={summary()} />
+          <Card w={summary()} />
         </QueryClientProvider>
       </MantineProvider>
     )
@@ -297,7 +304,7 @@ describe("notes", () => {
     render(
       <MantineProvider>
         <QueryClientProvider client={client}>
-          <WorktreeDetailCard w={summary()} />
+          <Card w={summary()} />
         </QueryClientProvider>
       </MantineProvider>,
     )
@@ -595,7 +602,7 @@ describe("cmux tab", () => {
     render(
       <MantineProvider>
         <QueryClientProvider client={client}>
-          <WorktreeDetailCard w={summary()} />
+          <Card w={summary()} />
         </QueryClientProvider>
       </MantineProvider>,
     )
