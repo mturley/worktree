@@ -1,5 +1,6 @@
 import { Route, Router, Switch } from "wouter"
-import { Alert, Button, Center, Stack } from "@mantine/core"
+import { useEffect, useState } from "react"
+import { Alert, Button, Center, Stack, Text } from "@mantine/core"
 import { useSSE } from "./hooks/useSSE"
 import { useSession } from "./hooks/useSession"
 import { useTabPresence } from "./hooks/useTabPresence"
@@ -17,18 +18,37 @@ export function App() {
   if (session.state === "loading") return null
   if (session.state === "unauthenticated") return <LoginPage />
   if (session.state === "error") {
-    return (
-      <Center mih="100vh" p="md">
-        <Stack gap="sm" maw={420}>
-          <Alert color="red" title="Couldn't reach the worktree server">
-            {session.error instanceof Error ? session.error.message : "The request failed."}
-          </Alert>
-          <Button variant="default" onClick={session.retry}>Retry</Button>
-        </Stack>
-      </Center>
-    )
+    return <ServerUnreachable error={session.error} onRetry={session.retry} />
   }
   return <AuthenticatedApp />
+}
+
+const RELOAD_AFTER_SECONDS = 10
+
+// A full reload rather than a retry: the usual cause is the server restarting
+// after a reinstall, and reloading picks up the new build's assets too.
+function ServerUnreachable({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  const [secondsLeft, setSecondsLeft] = useState(RELOAD_AFTER_SECONDS)
+  useEffect(() => {
+    const id = window.setInterval(() => setSecondsLeft((s) => s - 1), 1000)
+    return () => window.clearInterval(id)
+  }, [])
+  useEffect(() => {
+    if (secondsLeft <= 0) window.location.reload()
+  }, [secondsLeft])
+  return (
+    <Center mih="100vh" p="md">
+      <Stack gap="sm" maw={420}>
+        <Alert color="red" title="Couldn't reach the worktree server">
+          {error instanceof Error ? error.message : "The request failed."}
+        </Alert>
+        <Text size="sm" c="dimmed">
+          Reloading the page in {Math.max(secondsLeft, 0)}s…
+        </Text>
+        <Button variant="default" onClick={onRetry}>Retry</Button>
+      </Stack>
+    </Center>
+  )
 }
 
 // Mounted only with a session, so the event stream never opens while logged
