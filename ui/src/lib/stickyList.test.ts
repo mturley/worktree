@@ -11,15 +11,18 @@ describe("stickyListStyle", () => {
     expect(stickyListStyle(64).top).toBe("calc(64px + var(--mantine-spacing-md) / 2)")
   })
 
-  it("ends the stuck column at the bottom of the viewport, not past it", () => {
+  it("ends the stuck column where the Grid row ends, not past it", () => {
     // maxHeight has to complement top exactly. Change one without the other
     // and the column either runs off the bottom of the screen or stops short
-    // of it, and the list's own scrollbar goes with it.
+    // of it, and the list's own scrollbar goes with it. It stops a half
+    // gutter short of the viewport's bottom because the Grid row does, at the
+    // bottom of the page: any taller and sticky shoves the column up by the
+    // difference as the page reaches its end.
     const { top, maxHeight } = stickyListStyle(64)
     // CSSProperties types these as string | number, so normalise before
     // comparing the two expressions against each other.
     const offset = String(top).replace(/^calc\(/, "").replace(/\)$/, "")
-    expect(String(maxHeight)).toBe(`calc(100dvh - (${offset}))`)
+    expect(String(maxHeight)).toBe(`calc(100dvh - (${offset}) - var(--mantine-spacing-md) / 2)`)
   })
 
   it("tracks a header that changes height", () => {

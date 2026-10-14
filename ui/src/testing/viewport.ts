@@ -12,10 +12,13 @@
  * viewport in the mode you want, since suite/file ordering is not something
  * to depend on.
  */
-export function setViewport(mode: "wide" | "narrow"): void {
+export function setViewport(mode: "wide" | "narrow", opts: { tall?: boolean } = {}): void {
   const matches = mode === "wide"
+  // Height queries (useIsTall) follow the width unless set: wide tests get
+  // the tall desktop layout they were written against.
+  const tall = opts.tall ?? matches
   window.matchMedia = ((query: string) => ({
-    matches,
+    matches: query.includes("min-height") ? tall : matches,
     media: query,
     onchange: null,
     addListener: () => {},

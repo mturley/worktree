@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Anchor, Button, Center, Group, Stack, Tabs, Text } from "@mantine/core"
+import { Anchor, Box, Button, Center, Group, Stack, Tabs, Text } from "@mantine/core"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import type { ResourceDTO } from "../api/types"
 import { useWorktreeTimeline } from "../hooks/useTimeline"
@@ -36,6 +36,12 @@ interface ResourceDetailPaneProps {
   topInset?: number
   /** Notification state for the card's switch; see ResourceNotifyContext. */
   notify?: ResourceNotifyContext
+  /**
+   * PR/Jira only: pin the resource card and its tab bar this far (px) from
+   * the top of the viewport — the page header's height — so the activity or
+   * linked resources scroll beneath them. Omitted, nothing is pinned.
+   */
+  stickyTop?: number
   /** Slack only: a message to bring into view; see ThreadView. */
   focus?: { ts: string; key: number }
 }
@@ -54,12 +60,14 @@ function TimelineBody({
   onRemoved,
   onResourceChanged,
   notify,
+  stickyTop,
 }: {
   path: string
   resource: ResourceDTO
   onRemoved?: () => void
   onResourceChanged?: () => void
   notify?: ResourceNotifyContext
+  stickyTop?: number
 }) {
   const timeline = useWorktreeTimeline(path, { type: resource.type, id: resource.id })
   const [tab, setTab] = useResourceTab(DETAIL_TABS)
@@ -101,27 +109,48 @@ function TimelineBody({
   })
 
   return (
-    <>
-      <ResourceCard
-        r={resource}
-        path={path}
-        onRemoved={onRemoved}
-        onMetaChanged={onResourceChanged}
-        variant="detail"
-        notify={notify}
-      />
-      <Tabs
-        value={tab}
-        onChange={(v) => {
-          if (v) setTab(v)
-        }}
-        // Only the Activity panel stays mounted while hidden (see its
-        // keepMounted). The Linked panel remounts each time it is shown, so
-        // the hierarchy's expand/collapse state starts fresh; the data comes
-        // back from the query cache, so that costs no refetch.
-        keepMounted={false}
+    <Tabs
+      value={tab}
+      onChange={(v) => {
+        if (v) setTab(v)
+      }}
+      // Only the Activity panel stays mounted while hidden (see its
+      // keepMounted). The Linked panel remounts each time it is shown, so
+      // the hierarchy's expand/collapse state starts fresh; the data comes
+      // back from the query cache, so that costs no refetch.
+      keepMounted={false}
+    >
+      {/*
+        The card rides with the tab bar, inside Tabs, so the two can be
+        pinned as one block whose sticky range is the whole pane. Pinned, it
+        is pulled up over the page's gap above the column and re-padded, as
+        the header does, so nothing shows through that strip; opaque, with
+        the gap to the panel below as padding for the same reason. Under the
+        header's z-index (app chrome), over the feed's own small ones.
+      */}
+      <Box
+        style={
+          stickyTop === undefined
+            ? undefined
+            : {
+                position: "sticky",
+                top: stickyTop,
+                zIndex: "calc(var(--mantine-z-index-app) - 1)",
+                marginTop: "calc(-1 * var(--mantine-spacing-md))",
+                paddingTop: "var(--mantine-spacing-md)",
+                background: "var(--mantine-color-body)",
+              }
+        }
       >
-        <Tabs.List>
+        <ResourceCard
+          r={resource}
+          path={path}
+          onRemoved={onRemoved}
+          onMetaChanged={onResourceChanged}
+          variant="detail"
+          notify={notify}
+        />
+        <Tabs.List mt="sm">
           <Tabs.Tab
             value="activity"
             rightSection={
@@ -155,69 +184,69 @@ function TimelineBody({
             )}
           </Group>
         </Tabs.List>
-        <Tabs.Panel value="activity" pt="sm" keepMounted>
-          <Stack gap="sm">
-            {unreadCount > 0 && (
+      </Box>
+      <Tabs.Panel value="activity" pt="sm" keepMounted>
+        <Stack gap="sm">
+          {unreadCount > 0 && (
+            <Button
+              size="compact-sm"
+              // Filled blue, not the theme's primary: primaryColor is "accent"
+              // (purple), and this button clears the very blue the boxes and
+              // bars beside it are drawn in. Same treatment as UnreadBadge, so
+              // every unread affordance reads as one colour.
+              variant="filled"
+              color="blue"
+              // `vars`, not `styles`: Mantine sets --button-hover itself from the
+              // color prop, and a styles.root value loses to it. Lighter rather
+              // than Mantine's darker default — on a dark background, darkening
+              // reads as the button dimming rather than responding.
+              vars={() => ({ root: { "--button-hover": "var(--mantine-color-blue-4)" } })}
+              loading={markRead.isPending}
+              disabled={!newestTS}
+              onClick={() => markRead.mutate()}
+              style={{ alignSelf: "flex-start" }}
+            >
+              {`Mark ${unreadCount} ${unreadCount === 1 ? "event" : "events"} as read`}
+            </Button>
+          )}
+          <TimelineFeed
+            events={timeline.events}
+            loading={timeline.isLoading}
+            error={timeline.error}
+            hasMore={timeline.hasMore}
+            onLoadMore={timeline.loadMore}
+            loadingMore={timeline.loadingMore}
+            // Every event here belongs to the resource named in the card above,
+            // so naming it again on each row says nothing.
+            showResource={false}
+            showUnreadDivider
+            path={path}
+          />
+          {/*
+            The feed only holds what the poller captured for this worktree, which
+            is never the resource's whole history. This is the way out to the rest
+            of it, at the point where the reader has run out of events.
+          */}
+          {resource.url && serviceName(resource.type) && (
+            <Center>
               <Button
-                size="compact-sm"
-                // Filled blue, not the theme's primary: primaryColor is "accent"
-                // (purple), and this button clears the very blue the boxes and
-                // bars beside it are drawn in. Same treatment as UnreadBadge, so
-                // every unread affordance reads as one colour.
-                variant="filled"
-                color="blue"
-                // `vars`, not `styles`: Mantine sets --button-hover itself from the
-                // color prop, and a styles.root value loses to it. Lighter rather
-                // than Mantine's darker default — on a dark background, darkening
-                // reads as the button dimming rather than responding.
-                vars={() => ({ root: { "--button-hover": "var(--mantine-color-blue-4)" } })}
-                loading={markRead.isPending}
-                disabled={!newestTS}
-                onClick={() => markRead.mutate()}
-                style={{ alignSelf: "flex-start" }}
+                size="xs"
+                variant="subtle"
+                component="a"
+                href={resource.url}
+                target="_blank"
+                rel="noreferrer"
               >
-                {`Mark ${unreadCount} ${unreadCount === 1 ? "event" : "events"} as read`}
+                More activity on {serviceName(resource.type)}
               </Button>
-            )}
-            <TimelineFeed
-              events={timeline.events}
-              loading={timeline.isLoading}
-              error={timeline.error}
-              hasMore={timeline.hasMore}
-              onLoadMore={timeline.loadMore}
-              loadingMore={timeline.loadingMore}
-              // Every event here belongs to the resource named in the card above,
-              // so naming it again on each row says nothing.
-              showResource={false}
-              showUnreadDivider
-              path={path}
-            />
-            {/*
-              The feed only holds what the poller captured for this worktree, which
-              is never the resource's whole history. This is the way out to the rest
-              of it, at the point where the reader has run out of events.
-            */}
-            {resource.url && serviceName(resource.type) && (
-              <Center>
-                <Button
-                  size="xs"
-                  variant="subtle"
-                  component="a"
-                  href={resource.url}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  More activity on {serviceName(resource.type)}
-                </Button>
-              </Center>
-            )}
-          </Stack>
-        </Tabs.Panel>
-        <Tabs.Panel value="linked" pt="sm">
-          <LinkedResourcesPanel query={linked} path={path} />
-        </Tabs.Panel>
-      </Tabs>
-    </>
+            </Center>
+          )}
+        </Stack>
+      </Tabs.Panel>
+      <Tabs.Panel value="linked" pt="sm">
+        <LinkedResourcesPanel query={linked} path={path} />
+      </Tabs.Panel>
+    </Tabs>
   )
 }
 
@@ -235,6 +264,7 @@ export function ResourceDetailPane({
   onResourceChanged,
   topInset,
   notify,
+  stickyTop,
   focus,
 }: ResourceDetailPaneProps) {
   return (
@@ -272,6 +302,7 @@ export function ResourceDetailPane({
           onRemoved={onRemoved}
           onResourceChanged={onResourceChanged}
           notify={notify}
+          stickyTop={stickyTop}
         />
       )}
     </Stack>

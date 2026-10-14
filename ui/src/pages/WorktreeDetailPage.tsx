@@ -12,6 +12,7 @@ import { TAB_ID } from "../lib/tabId"
 import { useWorktreeDetail } from "../hooks/useWorktreeDetail"
 import { useSelectedResource } from "../hooks/useSelectedResource"
 import { useIsWide } from "../hooks/useIsWide"
+import { useIsTall } from "../hooks/useIsTall"
 import { useDetailTab } from "../hooks/useDetailTab"
 import { useWorktrees } from "../hooks/useWorktrees"
 import { useCmuxMatches } from "../api/cmux"
@@ -56,6 +57,12 @@ export function WorktreeDetailPage() {
   const { resources, timeline } = useWorktreeDetail(path, sources, unreadOnly, eventTypes)
   const { selected, select, toggle, clear } = useSelectedResource()
   const wide = useIsWide()
+  // The details card and a selected resource's card + tabs are pinned while
+  // the page or the resource column scrolls — but only with room to spare. On
+  // a phone or a short window they would leave too little for what scrolls
+  // beneath them, so they scroll away and only the title row stays pinned.
+  const tall = useIsTall()
+  const pinCards = wide && tall
   const worktrees = useWorktrees()
 
   const items = useMemo(() => resources.data ?? [], [resources.data])
@@ -298,6 +305,7 @@ export function WorktreeDetailPage() {
       onRemoved={resources.refetch}
       onResourceChanged={resources.refetch}
       topInset={headerHeight}
+      stickyTop={pinCards ? headerHeight : undefined}
       notify={notify}
       focus={
         focus && focus.type === selectedResource.type && focus.id === selectedResource.id
@@ -353,8 +361,10 @@ export function WorktreeDetailPage() {
               // scrolls under it (the column is its own scroller once the
               // list outgrows the screen). Pulled up over the column's
               // padding and re-padded, as the page header does, so the list
-              // cannot show through that strip; opaque, with the gap to the
-              // list as padding for the same reason. Capped so long notes
+              // cannot show through that strip. The gap to the list below is
+              // MARGIN, not padding: transparent, so the list scrolls right up
+              // to the card's edge rather than vanishing behind an opaque
+              // band, as the activity does under a resource's tabs. Capped so long notes
               // scroll inside the card rather than crowding out the list.
               //
               // `top` is negative because a sticky element's offsets are
@@ -363,17 +373,21 @@ export function WorktreeDetailPage() {
               // for the list to show through above it and overlapping the
               // Follow resource button below it by as much.
               <Box
-                style={{
-                  position: "sticky",
-                  top: "calc(-1 * var(--grid-col-padding))",
-                  zIndex: 1,
-                  marginTop: "calc(-1 * var(--grid-col-padding))",
-                  paddingTop: "var(--grid-col-padding)",
-                  paddingBottom: "var(--mantine-spacing-md)",
-                  background: "var(--mantine-color-body)",
-                }}
+                style={
+                  pinCards
+                    ? {
+                        position: "sticky",
+                        top: "calc(-1 * var(--grid-col-padding))",
+                        zIndex: 1,
+                        marginTop: "calc(-1 * var(--grid-col-padding))",
+                        paddingTop: "var(--grid-col-padding)",
+                        marginBottom: "var(--mantine-spacing-md)",
+                        background: "var(--mantine-color-body)",
+                      }
+                    : { marginBottom: "var(--mantine-spacing-md)" }
+                }
               >
-                <Box style={{ maxHeight: "40dvh", overflowY: "auto" }}>{card}</Box>
+                <Box style={pinCards ? { maxHeight: "40dvh", overflowY: "auto" } : undefined}>{card}</Box>
               </Box>
             )}
             {list}
@@ -458,6 +472,7 @@ export function WorktreeDetailPage() {
     <Stack p="md" gap="md">
       <Box
         ref={headerRef}
+        data-page-header
         style={{
           position: "sticky",
           top: 0,
@@ -536,9 +551,12 @@ export function WorktreeDetailPage() {
             {wide && toolbar}
           </Group>
           {!wide && toolbar}
-          {!inColumn && card}
+          {/* Pinned with the header only with room to spare; otherwise
+              below it, scrolling away with the page. */}
+          {!inColumn && pinCards && card}
         </Stack>
       </Box>
+      {!inColumn && !pinCards && card}
       {/*
         No Overview/Slack tabs: a Slack thread is selected like any other
         resource and renders in ResourceDetailPane. The narrow-only

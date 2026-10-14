@@ -34,7 +34,11 @@ export function stickyListStyle(headerHeight: number): CSSProperties {
     // scrolls past.
     zIndex: 1,
     alignSelf: "flex-start",
-    maxHeight: `calc(100dvh - ${offset})`,
+    // Less the half gutter by which the Grid row stops short of the page's
+    // bottom (the shell's md padding, less the row's own -md/2 margin). A
+    // column as tall as the full remaining viewport overran the row at the
+    // very bottom of the page, and sticky then shoved it up by that much.
+    maxHeight: `calc(100dvh - ${offset} - var(--mantine-spacing-md) / 2)`,
     overflowY: "auto",
   }
 }

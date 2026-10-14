@@ -1135,6 +1135,13 @@ way:
   of viewport.
 - **`useIsWide()`** (above) owns *how wide* the viewport is, independent of
   selection.
+- **`useIsTall()`** (720px+) decides, with `useIsWide()`, whether the page
+  pins its cards (`pinCards`): the details card (with the header, or atop
+  the resource column on Notes) and a selected PR/Jira resource's card + tab
+  bar (`ResourceDetailPane`'s `stickyTop`), so the activity or linked
+  resources scroll beneath them. On a phone or a short window they scroll
+  away and only the title row stays pinned. Tests set the height with
+  `setViewport(mode, { tall })`; it follows the width by default.
 - **`WorktreeDetailPage`** combines the two: wide renders `ResourceList`
   (sticky) and a right-hand pane side by side in a `Grid`. With nothing
   selected the split is 6/6 and the right pane is the worktree's unified

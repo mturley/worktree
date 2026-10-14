@@ -225,6 +225,56 @@ describe("WorktreeDetailPage details card placement", () => {
   })
 })
 
+describe("WorktreeDetailPage pinned cards", () => {
+  /** The nearest pinned (position: sticky) ancestor of `el`, if any. */
+  const pinned = (el: HTMLElement) => el.closest<HTMLElement>('[style*="sticky"]')
+
+  it("pins the expanded details card with the header when wide and tall", async () => {
+    setViewport("wide")
+    const user = userEvent.setup()
+    wrap()
+    await user.click(await screen.findByRole("tab", { name: "Git / Environment" }))
+    expect(screen.getByRole("tab", { name: "Git / Environment" }).closest("[data-page-header]")).not.toBeNull()
+  })
+
+  it("lets the expanded details card scroll away when short", async () => {
+    setViewport("wide", { tall: false })
+    const user = userEvent.setup()
+    wrap()
+    await user.click(await screen.findByRole("tab", { name: "Git / Environment" }))
+    expect(screen.getByRole("tab", { name: "Git / Environment" }).closest("[data-page-header]")).toBeNull()
+    // The title row itself stays pinned.
+    expect(screen.getByRole("heading", { name: "foo" }).closest("[data-page-header]")).not.toBeNull()
+  })
+
+  it("lets the details card scroll away on a phone", async () => {
+    setViewport("narrow", { tall: true })
+    wrap()
+    expect((await screen.findByRole("tab", { name: "Notes" })).closest("[data-page-header]")).toBeNull()
+  })
+
+  it("does not pin the notes card in the column when short", async () => {
+    setViewport("wide", { tall: false })
+    wrap()
+    const notes = await screen.findByRole("tab", { name: "Notes" })
+    // Its nearest pinned ancestor is the column itself, not a card wrapper.
+    expect(pinned(notes)).toBe(notes.closest(".mantine-Grid-col"))
+  })
+
+  it("pins a selected resource's card and tabs only when wide and tall", async () => {
+    window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?resource=pr:o%2Fr%231`)
+    setViewport("wide")
+    wrap()
+    const activity = await screen.findByRole("tab", { name: /Activity/ })
+    expect(pinned(activity)).not.toBeNull()
+    cleanup()
+
+    setViewport("wide", { tall: false })
+    wrap()
+    expect(pinned(await screen.findByRole("tab", { name: /Activity/ }))).toBeNull()
+  })
+})
+
 describe("WorktreeDetailPage selection", () => {
   it("selects a resource on click and records it in the URL", async () => {
     setViewport("wide")
