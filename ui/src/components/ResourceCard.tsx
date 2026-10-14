@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { ActionIcon, Alert, Badge, Button, Group, Paper, Popover, SegmentedControl, Stack, Text, UnstyledButton } from "@mantine/core"
-import { IconTrash } from "@tabler/icons-react"
+import { IconPencil, IconTrash } from "@tabler/icons-react"
 import type { NotifyMode, ResourceDTO } from "../api/types"
 import { relativeTime, relativeFromNow } from "../lib/relativeTime"
 import { api } from "../api/client"
@@ -482,7 +482,7 @@ export function ResourceCard({
           <Button
             size="xs"
             variant="subtle"
-            leftSection="✎"
+            leftSection={<IconPencil size={12} />}
             onClick={(e) => {
               e.stopPropagation()
               setEditOpen(true)
