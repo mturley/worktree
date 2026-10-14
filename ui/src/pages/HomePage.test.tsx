@@ -69,6 +69,39 @@ describe("HomePage responsive layout", () => {
   })
 })
 
+describe("HomePage pinned headers", () => {
+  const isPinned = (el: Element | null) => (el as HTMLElement | null)?.style.position === "sticky"
+  const headers = () => [
+    document.querySelector("[data-worktrees-header]"),
+    document.querySelector("[data-activity-header]"),
+  ]
+
+  it("scrolls each column on its own when wide, its header pinned atop it", () => {
+    setViewport("wide")
+    wrap()
+    const [worktrees, activity] = headers()
+    expect(isPinned(worktrees)).toBe(true)
+    expect(isPinned(activity)).toBe(true)
+    // The filters ride with the activity header.
+    expect(activity).toContainElement(screen.getByRole("button", { name: /GitHub/i }))
+    for (const h of [worktrees, activity]) {
+      expect((h!.closest(".mantine-Grid-col") as HTMLElement).style.overflowY).toBe("auto")
+    }
+  })
+
+  it("does not pin the headers when short", () => {
+    setViewport("wide", { tall: false })
+    wrap()
+    expect(headers().some(isPinned)).toBe(false)
+  })
+
+  it("does not pin the activity header on a phone", () => {
+    setViewport("narrow", { tall: true })
+    wrap()
+    expect(isPinned(document.querySelector("[data-activity-header]"))).toBe(false)
+  })
+})
+
 describe("HomePage settings", () => {
   it("puts the Settings cog in the Activity header when wide", () => {
     setViewport("wide")

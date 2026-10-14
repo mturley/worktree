@@ -17,7 +17,7 @@ import { useDetailTab } from "../hooks/useDetailTab"
 import { useWorktrees } from "../hooks/useWorktrees"
 import { useCmuxMatches } from "../api/cmux"
 import { ResourceList } from "../components/ResourceList"
-import { stickyListStyle } from "../lib/stickyList"
+import { pinnedStyle, stickyListStyle } from "../lib/stickyList"
 import { ResourceDetailPane } from "../components/ResourceDetailPane"
 import { TimelineFeed } from "../components/TimelineFeed"
 import { EventDetailsModal } from "../components/EventDetailsModal"
@@ -254,24 +254,37 @@ export function WorktreeDetailPage() {
   )
 
   const unfiltered = (
-    <Stack gap="sm">
-      <Group justify="space-between" wrap="wrap" gap="xs">
-        <Group gap={6} wrap="nowrap" align="center">
-          <Title order={5}>Activity</Title>
-          <RefreshWatchersButton />
-          <WatcherLogButton scope={{ worktree: path }} />
-          <MarkAllReadButton resources={items} />
+    // No gap below the header when pinned: its own padding is that space.
+    <Stack gap={pinCards ? 0 : "sm"}>
+      {/* Pinned under the page header, with the filters, while the feed
+          scrolls beneath — with room to spare only, like the cards. */}
+      <Stack
+        gap="sm"
+        data-activity-header
+        // Opaque room below the filters, so the feed passing under them
+        // does not run right up against the buttons.
+        style={pinCards
+          ? { ...pinnedStyle(headerHeight, "var(--mantine-spacing-md)"), paddingBottom: "var(--mantine-spacing-xs)" }
+          : undefined}
+      >
+        <Group justify="space-between" wrap="wrap" gap="xs">
+          <Group gap={6} wrap="nowrap" align="center">
+            <Title order={5}>Activity</Title>
+            <RefreshWatchersButton />
+            <WatcherLogButton scope={{ worktree: path }} />
+            <MarkAllReadButton resources={items} />
+          </Group>
+          <SourceFilter value={sources} onChange={setSources} />
         </Group>
-        <SourceFilter value={sources} onChange={setSources} />
-      </Group>
-      {/* Right-aligned under the source toggles when they sit at the right
-          of the header; narrow, the header wraps them to the left. */}
-      <EventTypeFilter
-        sources={sources}
-        value={categories}
-        onChange={setCategories}
-        justify={wide ? "flex-end" : "flex-start"}
-      />
+        {/* Right-aligned under the source toggles when they sit at the right
+            of the header; narrow, the header wraps them to the left. */}
+        <EventTypeFilter
+          sources={sources}
+          value={categories}
+          onChange={setCategories}
+          justify={wide ? "flex-end" : "flex-start"}
+        />
+      </Stack>
       <TimelineFeed
         events={timeline.events}
         loading={timeline.isLoading}
@@ -376,13 +389,8 @@ export function WorktreeDetailPage() {
                 style={
                   pinCards
                     ? {
-                        position: "sticky",
-                        top: "calc(-1 * var(--grid-col-padding))",
-                        zIndex: 1,
-                        marginTop: "calc(-1 * var(--grid-col-padding))",
-                        paddingTop: "var(--grid-col-padding)",
+                        ...pinnedStyle("calc(-1 * var(--grid-col-padding))", "var(--grid-col-padding)"),
                         marginBottom: "var(--mantine-spacing-md)",
-                        background: "var(--mantine-color-body)",
                       }
                     : { marginBottom: "var(--mantine-spacing-md)" }
                 }

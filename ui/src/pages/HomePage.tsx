@@ -3,11 +3,13 @@ import { useLocation } from "wouter"
 import { serializeResourceKey } from "../lib/resourceKey"
 import { openEventState } from "../lib/openEvent"
 import type { TimelineEvent } from "../api/types"
-import { Button, Grid, Group, Stack, Tabs, Title } from "@mantine/core"
+import { Box, Button, Grid, Group, Stack, Tabs, Title } from "@mantine/core"
 import { IconPlus } from "@tabler/icons-react"
 import { useWorktrees } from "../hooks/useWorktrees"
 import { useGlobalTimeline } from "../hooks/useTimeline"
 import { useIsWide } from "../hooks/useIsWide"
+import { useIsTall } from "../hooks/useIsTall"
+import { pinnedStyle } from "../lib/stickyList"
 import { WorktreeList } from "../components/WorktreeList"
 import { TimelineFeed } from "../components/TimelineFeed"
 import { ArchivedToggle } from "../components/ArchivedToggle"
@@ -28,6 +30,8 @@ import { WorktreeSortControl } from "../components/WorktreeSortControl"
 import { cmuxPositions, sortWorktrees } from "../lib/worktreeSort"
 import { filterWorktreeBySources } from "../lib/sourceFilter"
 
+const columnStyle = { height: "calc(100dvh - var(--mantine-spacing-md))", overflowY: "auto" } as const
+
 export function HomePage() {
   const [, navigate] = useLocation()
   const [archived, setArchived] = useState(false)
@@ -37,6 +41,14 @@ export function HomePage() {
   const [unreadOnly, setUnreadOnly] = useUnreadOnly()
   const [newOpen, setNewOpen] = useState(false)
   const wide = useIsWide()
+  const tall = useIsTall()
+  // Wide, each column scrolls on its own, and its header (with the activity
+  // filters) stays pinned at the top of it — with room to spare only, as on
+  // the worktree page. Inside a scrolling column, so the pin is measured
+  // inside its padding: see pinnedStyle.
+  const headerStyle = wide && tall
+    ? pinnedStyle("calc(-1 * var(--grid-col-padding))", "var(--grid-col-padding)")
+    : undefined
   const wts = useWorktrees()
   const tl = useGlobalTimeline(archived, sources, unreadOnly, eventTypes)
   const sort = useWorktreeSort()
@@ -133,27 +145,36 @@ export function HomePage() {
     />
   )
   const timeline = (
-    <Stack gap="sm">
-      <Group justify="space-between" wrap="wrap" gap="xs" data-testid="activity-header">
-        <Group gap={6} wrap="nowrap" align="center">
-          <Title order={4}>Activity</Title>
-          <RefreshWatchersButton />
-          <WatcherLogButton scope={{}} />
+    // No gap below the header when pinned: its own padding is that space.
+    <Stack gap={headerStyle ? 0 : "sm"}>
+      {/* Opaque room below the filters when pinned, so the feed passing
+          under them does not run right up against the buttons. */}
+      <Stack
+        gap="sm"
+        style={headerStyle && { ...headerStyle, paddingBottom: "var(--mantine-spacing-xs)" }}
+        data-activity-header
+      >
+        <Group justify="space-between" wrap="wrap" gap="xs" data-testid="activity-header">
+          <Group gap={6} wrap="nowrap" align="center">
+            <Title order={4}>Activity</Title>
+            <RefreshWatchersButton />
+            <WatcherLogButton scope={{}} />
+          </Group>
+          {/* The source filter (which also narrows the worktree cards) gets a
+              line of its own below. */}
+          <Group gap="sm" wrap="nowrap">
+            <ArchivedToggle value={archived} onChange={setArchived} />
+            {/* Top-right of the page when wide; the tab bar has it when narrow. */}
+            {wide && <SettingsButton />}
+          </Group>
         </Group>
-        {/* The source filter (which also narrows the worktree cards) gets a
-            line of its own below. */}
-        <Group gap="sm" wrap="nowrap">
-          <ArchivedToggle value={archived} onChange={setArchived} />
-          {/* Top-right of the page when wide; the tab bar has it when narrow. */}
-          {wide && <SettingsButton />}
+        <Group>
+          <SourceFilter value={sources} onChange={setSources} />
         </Group>
-      </Group>
-      <Group>
-        <SourceFilter value={sources} onChange={setSources} />
-      </Group>
-      {/* Narrows only the feed, not the worktree cards: a card follows
-          resources, and every resource has every kind of event. */}
-      <EventTypeFilter sources={sources} value={categories} onChange={setCategories} />
+        {/* Narrows only the feed, not the worktree cards: a card follows
+            resources, and every resource has every kind of event. */}
+        <EventTypeFilter sources={sources} value={categories} onChange={setCategories} />
+      </Stack>
       <TimelineFeed
         events={tl.events}
         loading={tl.isLoading}
@@ -201,14 +222,20 @@ export function HomePage() {
     // a cmux workspace header, two meta lines, focus resources — so the
     // narrower column was wrapping content that the timeline had width to
     // spare for.
+    //
+    // Each column is its own scroller, exactly the viewport's height: the
+    // Grid's md padding less its row's -md/2 margins leaves the row
+    // 100dvh - md tall, so the page itself does not scroll (unless a banner
+    // above it adds its own height). No overflow on the Grid itself — its
+    // row's negative margins would show as a sideways scrollbar.
     <Grid p="md" gutter="md">
-      <Grid.Col span={6}>
+      <Grid.Col span={6} style={columnStyle}>
         <Stack gap="sm">
-          {listToolbar}
+          <Box style={headerStyle} data-worktrees-header>{listToolbar}</Box>
           {worktrees}
         </Stack>
       </Grid.Col>
-      <Grid.Col span={6}>{timeline}</Grid.Col>
+      <Grid.Col span={6} style={columnStyle}>{timeline}</Grid.Col>
       <NewWorktreeModal opened={newOpen} onClose={() => setNewOpen(false)} />
     </Grid>
   )

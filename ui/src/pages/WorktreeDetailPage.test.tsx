@@ -261,6 +261,21 @@ describe("WorktreeDetailPage pinned cards", () => {
     expect(pinned(notes)).toBe(notes.closest(".mantine-Grid-col"))
   })
 
+  it("pins the worktree's activity header, with its filters, only when wide and tall", async () => {
+    setViewport("wide")
+    wrap()
+    await screen.findByRole("heading", { name: "Activity" })
+    const header = document.querySelector<HTMLElement>("[data-activity-header]")!
+    expect(header.style.position).toBe("sticky")
+    expect(header).toContainElement(screen.getByRole("heading", { name: "Activity" }))
+    cleanup()
+
+    setViewport("wide", { tall: false })
+    wrap()
+    await screen.findByRole("heading", { name: "Activity" })
+    expect(document.querySelector<HTMLElement>("[data-activity-header]")!.style.position).toBe("")
+  })
+
   it("pins a selected resource's card and tabs only when wide and tall", async () => {
     window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?resource=pr:o%2Fr%231`)
     setViewport("wide")

@@ -1138,8 +1138,12 @@ way:
 - **`useIsTall()`** (720px+) decides, with `useIsWide()`, whether the page
   pins its cards (`pinCards`): the details card (with the header, or atop
   the resource column on Notes) and a selected PR/Jira resource's card + tab
-  bar (`ResourceDetailPane`'s `stickyTop`), so the activity or linked
-  resources scroll beneath them. On a phone or a short window they scroll
+  bar (`ResourceDetailPane`'s `stickyTop`), and the worktree's Activity
+  header with its filters, so the activity or linked resources scroll
+  beneath them. The home page's wide columns each scroll on their own
+  (exactly viewport-high, so the page itself does not), with their headers
+  pinned on the same condition. All of these use `lib/stickyList.ts`'s
+  `pinnedStyle`. On a phone or a short window they scroll
   away and only the title row stays pinned. Tests set the height with
   `setViewport(mode, { tall })`; it follows the width by default.
 - **`WorktreeDetailPage`** combines the two: wide renders `ResourceList`

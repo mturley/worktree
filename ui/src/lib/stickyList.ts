@@ -42,3 +42,27 @@ export function stickyListStyle(headerHeight: number): CSSProperties {
     overflowY: "auto",
   }
 }
+
+/**
+ * Pins a block — a card, a tab bar, an activity header — `top` from the top
+ * of its scroller, so what follows it scrolls beneath.
+ *
+ * `cover` is the gap above the block's natural position, which it is pulled
+ * up over and re-padded by (as the page header does), so nothing scrolling
+ * beneath shows through that strip once pinned. Opaque for the same reason.
+ * Below the header's z-index (app chrome), above the feed's own small ones.
+ *
+ * Inside a scrolling element (rather than the page), `top` is measured
+ * inside that element's padding, not from its edge; pass the padding,
+ * negated, to pin flush with the edge.
+ */
+export function pinnedStyle(top: string | number, cover: string): CSSProperties {
+  return {
+    position: "sticky",
+    top,
+    zIndex: "calc(var(--mantine-z-index-app) - 1)",
+    marginTop: `calc(-1 * ${cover})`,
+    paddingTop: cover,
+    background: "var(--mantine-color-body)",
+  }
+}

@@ -18,6 +18,7 @@ import { serviceName } from "./ResourceActions"
 import { useLinkedResources } from "../hooks/useLinkedResources"
 import { useResourceTab } from "../hooks/useSelectedResource"
 import { UnreadMarkerDot } from "./UnreadMarkerDot"
+import { pinnedStyle } from "../lib/stickyList"
 import { LinkedResourcesPanel, LinkedTabControls, linkedTabLabel } from "./linked/LinkedResourcesPanel"
 
 /** The PR/Jira pane's tabs, default first (see useResourceTab). */
@@ -122,26 +123,10 @@ function TimelineBody({
     >
       {/*
         The card rides with the tab bar, inside Tabs, so the two can be
-        pinned as one block whose sticky range is the whole pane. Pinned, it
-        is pulled up over the page's gap above the column and re-padded, as
-        the header does, so nothing shows through that strip; opaque, with
-        the gap to the panel below as padding for the same reason. Under the
-        header's z-index (app chrome), over the feed's own small ones.
+        pinned as one block whose sticky range is the whole pane, covering
+        the page's gap above the column (see pinnedStyle).
       */}
-      <Box
-        style={
-          stickyTop === undefined
-            ? undefined
-            : {
-                position: "sticky",
-                top: stickyTop,
-                zIndex: "calc(var(--mantine-z-index-app) - 1)",
-                marginTop: "calc(-1 * var(--mantine-spacing-md))",
-                paddingTop: "var(--mantine-spacing-md)",
-                background: "var(--mantine-color-body)",
-              }
-        }
-      >
+      <Box style={stickyTop === undefined ? undefined : pinnedStyle(stickyTop, "var(--mantine-spacing-md)")}>
         <ResourceCard
           r={resource}
           path={path}
