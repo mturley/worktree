@@ -124,3 +124,26 @@ func TestWorktreeInfoRequiresPath(t *testing.T) {
 		t.Fatalf("status = %d, want 400", resp.StatusCode)
 	}
 }
+
+func TestTildify(t *testing.T) {
+	const home = "/Users/me"
+	for _, tc := range []struct{ in, want string }{
+		{"/Users/me", "~"},
+		{"/Users/me/git/repo", "~/git/repo"},
+		{"/Users/me2/x", "/Users/me2/x"},
+		{"/opt/Users/me/x", "/opt/Users/me/x"},
+		{"/Users/me/bin:/usr/bin:/Users/me", "~/bin:/usr/bin:~"},
+		{"http://localhost:8080", "http://localhost:8080"},
+		{"4090-4099", "4090-4099"},
+	} {
+		if got := tildify(tc.in, home); got != tc.want {
+			t.Errorf("tildify(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+	if got := tildify("/Users/me/x", ""); got != "/Users/me/x" {
+		t.Errorf("empty home: got %q", got)
+	}
+	if got := tildify("/Users/me/x", "/Users/me/"); got != "~/x" {
+		t.Errorf("trailing-slash home: got %q", got)
+	}
+}

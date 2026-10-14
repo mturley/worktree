@@ -2,6 +2,7 @@ package webui
 
 import (
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/mturley/worktree/internal/gitutil"
@@ -39,8 +40,12 @@ func (s *Server) handleWorktreeInfo(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// Shown with ~ for the home directory, which is what most of these
+	// values are under; the copy button copies the shortened form too.
+	home, _ := os.UserHomeDir()
 	for _, line := range lines {
 		if kv, ok := parseExportLine(line); ok {
+			kv.Value = tildify(kv.Value, home)
 			out.Env = append(out.Env, kv)
 		}
 	}
@@ -70,4 +75,24 @@ func parseExportLine(line string) (envVarDTO, bool) {
 		value = value[1 : len(value)-1]
 	}
 	return envVarDTO{Key: key, Value: value}, true
+}
+
+// tildify replaces the home directory with ~ in each colon-separated part of
+// value (so PATH-like lists shorten too), only where it is the whole part or
+// a parent directory of it: "/Users/me2" is not under "/Users/me". An empty
+// home (not resolvable) leaves value as is.
+func tildify(value, home string) string {
+	home = strings.TrimSuffix(home, "/")
+	if home == "" {
+		return value
+	}
+	parts := strings.Split(value, ":")
+	for i, p := range parts {
+		if p == home {
+			parts[i] = "~"
+		} else if rest, ok := strings.CutPrefix(p, home+"/"); ok {
+			parts[i] = "~/" + rest
+		}
+	}
+	return strings.Join(parts, ":")
 }
