@@ -203,6 +203,7 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | POST | `/api/notify` | body: `{path, type?, id?, on, tab?}` (no type/id = the worktree-wide toggle) | `{ok, mode}`; turning ON sends a test notification. 400 for a link or a half-given resource, 404 for an unregistered worktree or untracked resource |
 | POST | `/api/tabs/presence` | body: `{tab, route, visible}` | 204; 404 for an unknown tab or another session's |
 | POST | `/api/tabs/ack` | body: `{tab, notification_id, shown}` | 204; 404 for an unknown tab, another session's, or a notification nobody awaits |
+| GET | `/api/update-status` | — | `{available, behind_by, details_url}`; see "Update check" |
 | GET | `/api/link-image` | `url` (required), `type` (required: `favicon` or `preview`) | image bytes or 404 |
 
 ### `internal/worktreenew` step semantics
@@ -1380,6 +1381,24 @@ resets the tab to Activity/Thread.
     a known minor gap, harmless since Vite's dev server exits with mprocs).
 - `make build` is the production path: `build-web` (npm build → `ui/dist`)
   then `build-cli` (embeds `ui/dist` into the Go binary).
+
+## Update check
+
+`update_check.go` compares the commit the binary was built from against
+`mturley/worktree`'s `main`, at startup and every 15 minutes, through GitHub's
+unauthenticated compare API (`/repos/mturley/worktree/compare/<commit>...main`;
+the repo is public, and 4 requests an hour is well inside the 60/hour
+anonymous limit). `ahead_by` in that response is how many commits `main` has
+that the build lacks; above zero, `UpdateBanner` (polled every 5 minutes)
+shows a dismissible banner at the top of every page, linking to the commit
+list.
+
+The build commit is the Go toolchain's `vcs.revision` stamp
+(`cmd/version.go`'s `buildCommit`), which `make build` gets for free by
+building inside the checkout. A `go run` or `go install …@version` has no
+stamp, and the check is skipped. Every failure — notably a 404 for a binary
+built from a commit that was never pushed — shows no banner, and a failed
+request keeps the previous answer rather than clearing it.
 
 ## Responsiveness
 

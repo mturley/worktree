@@ -141,6 +141,15 @@ type Server struct {
 	// linkedCache fronts /api/linked-resources; lazily built.
 	linkedOnce  sync.Once
 	linkedCache *ttlCache
+
+	// BuildCommit is the full git SHA the binary was built from, compared
+	// against the repo's main branch by the update check (update_check.go).
+	// Empty disables the check.
+	BuildCommit string
+	// updateAPIBase is a seam for tests; "" means https://api.github.com.
+	updateAPIBase string
+	updateOnce    sync.Once
+	update        *updateChecker
 }
 
 func (s *Server) Handler() http.Handler {
@@ -180,6 +189,7 @@ func (s *Server) routes() []route {
 	return []route{
 		{"GET /api/worktrees", s.handleWorktrees},
 		{"GET /api/settings", s.handleSettings},
+		{"GET /api/update-status", s.handleUpdateStatus},
 		{"PUT /api/settings", s.handleSettingsUpdate},
 		{"GET /api/linked-resources", s.handleLinkedResources},
 		{"GET /api/linked-resources/children", s.handleLinkedChildren},

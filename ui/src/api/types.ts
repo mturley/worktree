@@ -309,6 +309,14 @@ export interface SessionInfo {
   notify_mode?: NotifyMode
 }
 
+/** GET /api/update-status: whether the repo's main branch is ahead of this build. */
+export interface UpdateStatus {
+  available: boolean
+  behind_by: number
+  /** The commit list on GitHub. */
+  details_url: string
+}
+
 /** GET/PUT /api/settings: the Settings modal's server-side settings. */
 export interface Settings {
   /** Whether the server can reach cmux at all; the cmux toggle needs it. */

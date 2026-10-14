@@ -150,7 +150,7 @@ func runUI(cmd *cobra.Command, args []string) error {
 
 	srv := &webui.Server{DB: conn, WebFS: webFS, Port: uiPort, DevMode: uiAPIOnly, Logger: logger,
 		SlackClient: slackClient, SlackPoller: slackPoller, SlackDomain: slackDomain, SlackCookie: slackCookie,
-		Security: sec}
+		Security: sec, BuildCommit: buildCommit()}
 	// The Settings modal's "Enable cmux features" toggle; it writes the
 	// config itself, so this is only the starting state.
 	srv.SetCmuxFeaturesDisabled(cfg.UI.CmuxFeaturesDisabled)
@@ -182,6 +182,10 @@ func runUI(cmd *cobra.Command, args []string) error {
 	// unread (internal/selfid).
 	stopSelf := srv.StartSelfIdentity(10 * time.Minute)
 	defer stopSelf()
+
+	// The "updates are available" banner (internal/webui/update_check.go).
+	stopUpdateCheck := srv.StartUpdateCheck(15 * time.Minute)
+	defer stopUpdateCheck()
 
 	if !uiNoOpen && !uiAPIOnly {
 		go openBrowserWhenUp(uiPort, detailPathForCwd(conn))

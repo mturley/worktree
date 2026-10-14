@@ -8,6 +8,7 @@ import { useUnreadFavicon } from "./hooks/useUnreadFavicon"
 import { useTooltipLayer } from "./hooks/useTooltipLayer"
 import { CmuxFollower } from "./components/CmuxFollower"
 import { HomeWorktreeBanner } from "./components/HomeWorktreeBanner"
+import { UpdateBanner } from "./components/UpdateBanner"
 import { useHomeLocation } from "./lib/useHomeLocation"
 import { HomePage } from "./pages/HomePage"
 import { LoginPage } from "./pages/LoginPage"
@@ -68,6 +69,8 @@ function AuthenticatedApp() {
     // The custom hook keeps this tab's home worktree in the URL across every
     // navigation — the only carrier that survives a cmux pane restore.
     <Router hook={useHomeLocation}>
+      {/* Above everything else on every page, like the nav banner below. */}
+      <UpdateBanner />
       {/*
         Outside the Switch, not inside a page: it belongs on every route but
         one, and putting it in each page would mean remembering to add it to

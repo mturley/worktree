@@ -1,4 +1,4 @@
-import type { CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherLogScope, WorktreeInfo, WorktreeNotes, WorktreeSummary } from "./types"
+import type { CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, UpdateStatus, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherLogScope, WorktreeInfo, WorktreeNotes, WorktreeSummary } from "./types"
 import { scopeParams } from "../lib/watcherLog"
 
 export class HttpError extends Error {
@@ -67,6 +67,7 @@ export const api = {
       body: JSON.stringify({ handle }),
     }),
   settings: () => fetchJSON<Settings>("/api/settings"),
+  updateStatus: () => fetchJSON<UpdateStatus>("/api/update-status"),
   updateSettings: (patch: { cmux_features_enabled: boolean }) =>
     fetchJSON<Settings>("/api/settings", {
       method: "PUT",
