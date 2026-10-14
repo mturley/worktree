@@ -102,6 +102,35 @@ describe("SettingsModal", () => {
     expect(onClose).toHaveBeenCalledOnce()
   })
 
+  it("adopts fresh server values after close and reopen", async () => {
+    const spy = vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
+    const qc = new QueryClient()
+    const ui = (opened: boolean) => (
+      <QueryClientProvider client={qc}>
+        <MantineProvider><SettingsModal opened={opened} onClose={() => {}} /></MantineProvider>
+      </QueryClientProvider>
+    )
+    const { rerender } = render(ui(true))
+    expect(await screen.findByLabelText("Editor")).toHaveValue("")
+    rerender(ui(false))
+    const edited = baseSettings()
+    edited.worktree.editor = "zed"
+    spy.mockResolvedValue(edited)
+    rerender(ui(true))
+    await waitFor(() => expect(screen.getByLabelText("Editor")).toHaveValue("zed"))
+    expect(screen.queryByText(/Unsaved changes/)).not.toBeInTheDocument()
+  })
+
+  it("keeps the form when a background refetch fails", async () => {
+    const spy = vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
+    const qc = renderModal(new QueryClient({ defaultOptions: { queries: { retry: false } } }))
+    await screen.findByLabelText("Editor")
+    spy.mockRejectedValue(new Error("boom"))
+    await qc.refetchQueries({ queryKey: ["settings"] })
+    expect(screen.getByLabelText("Editor")).toBeInTheDocument()
+    expect(screen.queryByText("Couldn't load settings")).not.toBeInTheDocument()
+  })
+
   it("marks a tab with unsaved changes", async () => {
     vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
     renderModal()

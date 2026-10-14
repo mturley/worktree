@@ -21,7 +21,7 @@ export function GeneralPanel({ settings, draft, update, error, onShowWatcherAuth
   const env = settings.environment
   const certNames = env.cert_names
   const uncovered = certNames
-    ? draft.ui.allowed_hosts.filter((h) => !certNames.includes(h.toLowerCase()))
+    ? draft.ui.allowed_hosts.filter((h) => !certNames.map((n) => n.toLowerCase()).includes(h.toLowerCase()))
     : []
   return (
     <Stack gap="lg">

@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Alert, Box, Button, Group, Loader, Modal, Tabs, Text } from "@mantine/core"
 import { useQuery, useQueryClient, type Query } from "@tanstack/react-query"
 import { api } from "../api/client"
@@ -36,6 +36,18 @@ export function SettingsModal({ opened, onClose }: { opened: boolean; onClose: (
   const settings = useQuery({ queryKey: settingsKey, queryFn: api.settings, enabled: opened })
   const draft = useSettingsDraft(settings.data)
 
+  // The modal stays mounted between opens, so adopt each refetch. rebase keeps
+  // files with unsaved edits, and is a no-op for dirty flags on identical data.
+  const { rebase } = draft
+  useEffect(() => {
+    if (settings.data) rebase(settings.data)
+  }, [settings.data, rebase])
+
+  // Nothing left to lose (e.g. saved while the confirm showed).
+  useEffect(() => {
+    if (!draft.anyDirty) setConfirmClose(false)
+  }, [draft.anyDirty])
+
   const refetchAfterSecret = async () => {
     const fresh = await qc.fetchQuery({ queryKey: settingsKey, queryFn: api.settings })
     draft.rebase(fresh)
@@ -61,7 +73,7 @@ export function SettingsModal({ opened, onClose }: { opened: boolean; onClose: (
   }
 
   const body = (() => {
-    if (settings.error) return <Alert color="red" title="Couldn't load settings">{settings.error.message}</Alert>
+    if (settings.error && !settings.data) return <Alert color="red" title="Couldn't load settings">{settings.error.message}</Alert>
     if (settings.isLoading || (settings.data && !draft.drafts)) return <Loader size="sm" />
     return null
   })()
