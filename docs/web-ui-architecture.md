@@ -1143,7 +1143,22 @@ way:
   beneath them. The home page's wide columns each scroll on their own
   (exactly viewport-high, so the page itself does not), with their headers
   pinned on the same condition. All of these use `lib/stickyList.ts`'s
-  `pinnedStyle`. On a phone or a short window they scroll
+  `pinnedStyle`.
+  Tooltips are portalled to `<body>` at Mantine's popover z-index, which
+  put one left open over the pinned blocks as its anchor scrolled under
+  them; the theme's Tooltip zIndex is instead `var(--tooltip-z-index)`,
+  which `useTooltipLayer` sets from what the pointer/focus is on: just under
+  the pinned blocks inside a `data-tooltip-layer="content"` area (the
+  scrolling columns), the usual value inside a nearer `"pinned"` one or
+  anywhere else (header, modals, menus). The worktree page's resource list
+  column cannot work that way: being sticky, it is a stacking context of its
+  own (its `zIndex` keeps a dragged card over the activity column's
+  controls), so no z-index on a `<body>` tooltip lands between its list cards
+  and its pinned notes card. Instead the column holds a tooltip target
+  layered between the two, outside its inner scroller so tooltips are not
+  clipped, and a nested `MantineThemeProvider` points the list's tooltips
+  (only — not the notes card's) at it, sized `max-content` since the column
+  is too narrow a containing block for wrapping text. On a phone or a short window they scroll
   away and only the title row stays pinned. Tests set the height with
   `setViewport(mode, { tall })`; it follows the width by default.
 - **`WorktreeDetailPage`** combines the two: wide renders `ResourceList`

@@ -4,6 +4,7 @@ import { useSSE } from "./hooks/useSSE"
 import { useSession } from "./hooks/useSession"
 import { useTabPresence } from "./hooks/useTabPresence"
 import { useUnreadFavicon } from "./hooks/useUnreadFavicon"
+import { useTooltipLayer } from "./hooks/useTooltipLayer"
 import { CmuxFollower } from "./components/CmuxFollower"
 import { HomeWorktreeBanner } from "./components/HomeWorktreeBanner"
 import { useHomeLocation } from "./lib/useHomeLocation"
@@ -41,6 +42,8 @@ function AuthenticatedApp() {
   // Beside useSSE rather than in a page: the tab says the same thing wherever
   // you are in the app, and the stream is what keeps both of them current.
   useUnreadFavicon()
+  // Tooltips in scrolling content open under the pinned headers and cards.
+  useTooltipLayer()
   return (
     // The custom hook keeps this tab's home worktree in the URL across every
     // navigation — the only carrier that survives a cmux pane restore.

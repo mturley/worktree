@@ -126,7 +126,10 @@ function TimelineBody({
         pinned as one block whose sticky range is the whole pane, covering
         the page's gap above the column (see pinnedStyle).
       */}
-      <Box style={stickyTop === undefined ? undefined : pinnedStyle(stickyTop, "var(--mantine-spacing-md)")}>
+      <Box
+        style={stickyTop === undefined ? undefined : pinnedStyle(stickyTop, "var(--mantine-spacing-md)")}
+        data-tooltip-layer={stickyTop === undefined ? undefined : "pinned"}
+      >
         <ResourceCard
           r={resource}
           path={path}

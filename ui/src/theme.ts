@@ -85,6 +85,10 @@ export const theme = createTheme({
      * lifted off the page rather than a light-mode escapee.
      */
     Tooltip: Tooltip.extend({
+      // Normally Mantine's popover layer (300), but low for anchors in
+      // scrolling content, so their tooltips pass under pinned headers and
+      // cards rather than over them; see useTooltipLayer.
+      defaultProps: { zIndex: "var(--tooltip-z-index, 300)" },
       vars: () => ({
         tooltip: {
           "--tooltip-bg": "var(--mantine-color-dark-5)",

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
-import { Anchor, Badge, Box, Button, Collapse, Grid, Group, Stack, Tabs, Title } from "@mantine/core"
+import { Anchor, Badge, Box, Button, Collapse, Grid, Group, MantineThemeProvider, Stack, Tabs, Title } from "@mantine/core"
 import { Link, useRoute } from "wouter"
 import { useQueryClient } from "@tanstack/react-query"
 import { api } from "../api/client"
@@ -17,7 +17,7 @@ import { useDetailTab } from "../hooks/useDetailTab"
 import { useWorktrees } from "../hooks/useWorktrees"
 import { useCmuxMatches } from "../api/cmux"
 import { ResourceList } from "../components/ResourceList"
-import { pinnedStyle, stickyListStyle } from "../lib/stickyList"
+import { pinnedStyle, STICKY_LIST_SCROLLER, stickyListStyle } from "../lib/stickyList"
 import { ResourceDetailPane } from "../components/ResourceDetailPane"
 import { TimelineFeed } from "../components/TimelineFeed"
 import { EventDetailsModal } from "../components/EventDetailsModal"
@@ -261,6 +261,7 @@ export function WorktreeDetailPage() {
       <Stack
         gap="sm"
         data-activity-header
+        data-tooltip-layer={pinCards ? "pinned" : undefined}
         // Opaque room below the filters, so the feed passing under them
         // does not run right up against the buttons.
         style={pinCards
@@ -306,6 +307,30 @@ export function WorktreeDetailPage() {
   // — beside the activity feed and beside a selected resource alike. See
   // stickyListStyle for why the offset is not simply headerHeight.
   const listSticky = stickyListStyle(headerHeight)
+
+  // Where the resource list's tooltips open: inside the sticky column's
+  // stacking context (outside its scroller, so they are not clipped), layered
+  // above the list's cards and below the pinned notes card — so a tooltip
+  // left open as its card scrolls up goes under the notes card. Portalled to
+  // <body>, as tooltips otherwise are, it could only be above or below the
+  // whole column. Scoped to the list alone, so the notes card's own tooltips
+  // still open above everything.
+  const [listTooltipTarget, setListTooltipTarget] = useState<HTMLDivElement | null>(null)
+  const listTooltipTheme = useMemo(
+    () => ({
+      components: {
+        Tooltip: {
+          defaultProps: { portalProps: { target: listTooltipTarget ?? undefined } },
+          // Sized to their text (up to any max width they set), not to the
+          // room left between them and the target's edge: the column, unlike
+          // <body>, is narrow enough that a tooltip near its right edge was
+          // squeezed to a word per line.
+          styles: { tooltip: { width: "max-content" } },
+        },
+      },
+    }),
+    [listTooltipTarget],
+  )
 
   const detail = selectedResource && (
     <ResourceDetailPane
@@ -365,44 +390,50 @@ export function WorktreeDetailPage() {
         style={{ margin: 0 }}
       >
         <Grid.Col span={split[0]} style={listSticky}>
-          {/* Always this Stack, with the card's slot first even when empty:
-              wrapping `list` only while collapsed would move it in the tree
-              and remount it, for the reason above. */}
-          <Stack gap={0}>
-            {inColumn && (
-              // Pinned to the top of the column while the resource list
-              // scrolls under it (the column is its own scroller once the
-              // list outgrows the screen). Pulled up over the column's
-              // padding and re-padded, as the page header does, so the list
-              // cannot show through that strip. The gap to the list below is
-              // MARGIN, not padding: transparent, so the list scrolls right up
-              // to the card's edge rather than vanishing behind an opaque
-              // band, as the activity does under a resource's tabs. Capped so long notes
-              // scroll inside the card rather than crowding out the list.
-              //
-              // `top` is negative because a sticky element's offsets are
-              // measured inside its scroller's PADDING, not from its edge:
-              // top:0 parked it a padding's height low, leaving that strip
-              // for the list to show through above it and overlapping the
-              // Follow resource button below it by as much.
-              <Box
-                style={
-                  pinCards
-                    ? {
-                        ...pinnedStyle("calc(-1 * var(--grid-col-padding))", "var(--grid-col-padding)"),
-                        marginBottom: "var(--mantine-spacing-md)",
-                      }
-                    : { marginBottom: "var(--mantine-spacing-md)" }
-                }
-              >
-                <Box style={pinCards ? { maxHeight: "40dvh", overflowY: "auto" } : undefined}>{card}</Box>
-              </Box>
-            )}
-            {list}
-          </Stack>
+          {/* Above the list's cards (auto), below the pinned notes card (app
+              - 1), all within this column's stacking context; see
+              listTooltipTarget. Never takes the pointer, being over the
+              list. */}
+          <div
+            ref={setListTooltipTarget}
+            style={{
+              position: "absolute",
+              inset: 0,
+              pointerEvents: "none",
+              zIndex: "calc(var(--mantine-z-index-app) - 2)",
+            }}
+          />
+          <Box style={STICKY_LIST_SCROLLER}>
+            {/* Always this Stack, with the card's slot first even when empty:
+                wrapping `list` only while collapsed would move it in the tree
+                and remount it, for the reason above. */}
+            <Stack gap={0}>
+              {inColumn && (
+                // Pinned to the top of the scroller while the resource list
+                // scrolls under it (once the list outgrows the screen). The
+                // gap to the list below is MARGIN, not padding: transparent,
+                // so the list scrolls right up to the card's edge rather than
+                // vanishing behind an opaque band, as the activity does under
+                // a resource's tabs. Capped so long notes scroll inside the
+                // card rather than crowding out the list. The scroller has no
+                // padding, so there is no strip above the card to cover.
+                <Box
+                  style={
+                    pinCards
+                      ? { ...pinnedStyle(0, "0px"), marginBottom: "var(--mantine-spacing-md)" }
+                      : { marginBottom: "var(--mantine-spacing-md)" }
+                  }
+                >
+                  <Box style={pinCards ? { maxHeight: "40dvh", overflowY: "auto" } : undefined}>{card}</Box>
+                </Box>
+              )}
+              <MantineThemeProvider theme={listTooltipTheme}>{list}</MantineThemeProvider>
+            </Stack>
+          </Box>
         </Grid.Col>
-        {/* No scroller: this column's content is what the PAGE scrolls. */}
-        <Grid.Col span={split[1]}>{detail || unfiltered}</Grid.Col>
+        {/* No scroller: this column's content is what the PAGE scrolls.
+            Its tooltips open under the pinned blocks; see useTooltipLayer. */}
+        <Grid.Col span={split[1]} data-tooltip-layer="content">{detail || unfiltered}</Grid.Col>
       </Grid>
     )
   }

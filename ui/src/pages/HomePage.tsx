@@ -153,6 +153,7 @@ export function HomePage() {
         gap="sm"
         style={headerStyle && { ...headerStyle, paddingBottom: "var(--mantine-spacing-xs)" }}
         data-activity-header
+        data-tooltip-layer={headerStyle ? "pinned" : undefined}
       >
         <Group justify="space-between" wrap="wrap" gap="xs" data-testid="activity-header">
           <Group gap={6} wrap="nowrap" align="center">
@@ -229,13 +230,17 @@ export function HomePage() {
     // above it adds its own height). No overflow on the Grid itself — its
     // row's negative margins would show as a sideways scrollbar.
     <Grid p="md" gutter="md">
-      <Grid.Col span={6} style={columnStyle}>
+      {/* Tooltips in both columns open under the pinned headers; see
+          useTooltipLayer. */}
+      <Grid.Col span={6} style={columnStyle} data-tooltip-layer="content">
         <Stack gap="sm">
-          <Box style={headerStyle} data-worktrees-header>{listToolbar}</Box>
+          <Box style={headerStyle} data-worktrees-header data-tooltip-layer={headerStyle ? "pinned" : undefined}>
+            {listToolbar}
+          </Box>
           {worktrees}
         </Stack>
       </Grid.Col>
-      <Grid.Col span={6} style={columnStyle}>{timeline}</Grid.Col>
+      <Grid.Col span={6} style={columnStyle} data-tooltip-layer="content">{timeline}</Grid.Col>
       <NewWorktreeModal opened={newOpen} onClose={() => setNewOpen(false)} />
     </Grid>
   )
