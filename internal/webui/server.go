@@ -125,6 +125,8 @@ type Server struct {
 	transport notifyTransport
 	// Seams: cmux availability and `cmux notify`, for tests.
 	cmuxAvailable func() bool
+	cmuxNotify    func(cmux.NotifyOptions) error
+
 	// cmuxDisabled is the Settings toggle (ui.cmux_features_disabled); see
 	// settings.go. ConfigPath, WatcherAuthPath and WatcherConfigPath are the
 	// files the Settings modal edits; "" means each one's default.
@@ -138,7 +140,6 @@ type Server struct {
 	// credCheck is a test seam for credential validation; nil uses the
 	// watcher library's validators. See settings_creds.go.
 	credCheck *credValidators
-	cmuxNotify    func(cmux.NotifyOptions) error
 
 	// LinkResolver is a seam for tests; nil means a default resolver.
 	LinkResolver *linkmeta.Resolver

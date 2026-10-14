@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/mturley/worktree/internal/cmux"
+	"github.com/mturley/worktree/internal/jira"
 )
 
 func settingsServer(t *testing.T, worktreeYAML string) (*Server, string) {
@@ -65,6 +66,9 @@ func TestSettingsGetWorktreeSection(t *testing.T) {
 	if !got.Environment.InCmux {
 		t.Fatal("in_cmux")
 	}
+	if strings.Contains(doReq(s, "GET", "/api/settings", "").Body.String(), "hunter2") {
+		t.Fatal("password leaked in response body")
+	}
 }
 
 func TestSettingsGetReportsEnvOverride(t *testing.T) {
@@ -91,6 +95,37 @@ func TestSettingsWorktreePutWritesAndValidates(t *testing.T) {
 	bad := strings.Replace(body, "9443", "70000", 1)
 	if rec := doReq(s, "PUT", "/api/settings/worktree", bad); rec.Code != http.StatusBadRequest {
 		t.Fatalf("port 70000: status %d", rec.Code)
+	}
+}
+
+func TestSettingsWorktreePutAppliesAliasHosts(t *testing.T) {
+	t.Cleanup(func() { jira.SetAliasHosts(nil) })
+	s, _ := settingsServer(t, "ui:\n    password: pw\n")
+	const u = "https://old.example.com/browse/ABC-1"
+	if _, ok := jira.ParseJiraURL(u); ok {
+		t.Fatal("precondition: alias should not be known yet")
+	}
+	body := `{"worktrees_base":"","editor":"","cmux_features_enabled":true,
+	  "jira":{"projects":[],"alias_hosts":["old.example.com"]},
+	  "ui":{"https_port":8476,"allowed_hosts":[],"tls":{"cert_file":"","key_file":""}}}`
+	decodeSettings(t, doReq(s, "PUT", "/api/settings/worktree", body))
+	if key, ok := jira.ParseJiraURL(u); !ok || key != "ABC-1" {
+		t.Fatalf("alias host not applied live: %q %v", key, ok)
+	}
+}
+
+func TestSettingsWorktreePutAllowedHostValidation(t *testing.T) {
+	s, _ := settingsServer(t, "ui:\n    password: pw\n")
+	put := func(host string) int {
+		body := `{"cmux_features_enabled":true,"jira":{"projects":[],"alias_hosts":[]},
+		  "ui":{"https_port":8476,"allowed_hosts":["` + host + `"],"tls":{"cert_file":"","key_file":""}}}`
+		return doReq(s, "PUT", "/api/settings/worktree", body).Code
+	}
+	if c := put("a b"); c != http.StatusBadRequest {
+		t.Fatalf("bad host: status %d", c)
+	}
+	if c := put("::1"); c != http.StatusOK {
+		t.Fatalf("ipv6 host: status %d", c)
 	}
 }
 
