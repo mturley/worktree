@@ -347,8 +347,35 @@ export function WorktreeDetailPage() {
           {/* Always this Stack, with the card's slot first even when empty:
               wrapping `list` only while collapsed would move it in the tree
               and remount it, for the reason above. */}
-          <Stack gap="md">
-            {inColumn && card}
+          <Stack gap={0}>
+            {inColumn && (
+              // Pinned to the top of the column while the resource list
+              // scrolls under it (the column is its own scroller once the
+              // list outgrows the screen). Pulled up over the column's
+              // padding and re-padded, as the page header does, so the list
+              // cannot show through that strip; opaque, with the gap to the
+              // list as padding for the same reason. Capped so long notes
+              // scroll inside the card rather than crowding out the list.
+              //
+              // `top` is negative because a sticky element's offsets are
+              // measured inside its scroller's PADDING, not from its edge:
+              // top:0 parked it a padding's height low, leaving that strip
+              // for the list to show through above it and overlapping the
+              // Follow resource button below it by as much.
+              <Box
+                style={{
+                  position: "sticky",
+                  top: "calc(-1 * var(--grid-col-padding))",
+                  zIndex: 1,
+                  marginTop: "calc(-1 * var(--grid-col-padding))",
+                  paddingTop: "var(--grid-col-padding)",
+                  paddingBottom: "var(--mantine-spacing-md)",
+                  background: "var(--mantine-color-body)",
+                }}
+              >
+                <Box style={{ maxHeight: "40dvh", overflowY: "auto" }}>{card}</Box>
+              </Box>
+            )}
             {list}
           </Stack>
         </Grid.Col>
