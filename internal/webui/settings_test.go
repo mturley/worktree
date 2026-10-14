@@ -13,8 +13,25 @@ import (
 	"github.com/mturley/worktree/internal/cmux"
 )
 
-func doSettings(s *Server, method, body string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, "/api/settings", strings.NewReader(body))
+func settingsServer(t *testing.T, worktreeYAML string) (*Server, string) {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if worktreeYAML != "" {
+		if err := os.WriteFile(path, []byte(worktreeYAML), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return &Server{
+		cmuxAvailable:     func() bool { return true },
+		ConfigPath:        path,
+		WatcherAuthPath:   filepath.Join(dir, "auth.yaml"),
+		WatcherConfigPath: filepath.Join(dir, "wconfig.yaml"),
+	}, path
+}
+
+func doReq(s *Server, method, url, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, url, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -33,84 +50,87 @@ func decodeSettings(t *testing.T, rec *httptest.ResponseRecorder) settingsDTO {
 	return got
 }
 
-func TestSettingsGetReportsCmuxAndToggle(t *testing.T) {
-	s := &Server{cmuxAvailable: func() bool { return true }}
-	if got := decodeSettings(t, doSettings(s, "GET", "")); got != (settingsDTO{InCmux: true, CmuxFeaturesEnabled: true}) {
+func TestSettingsGetWorktreeSection(t *testing.T) {
+	s, _ := settingsServer(t, "worktrees_base: ~/wt\neditor: zed\njira:\n    projects: [ABC]\nui:\n    password: hunter2\n")
+	got := decodeSettings(t, doReq(s, "GET", "/api/settings", ""))
+	if got.Worktree.WorktreesBase != "~/wt" || got.Worktree.Editor != "zed" || got.Worktree.Jira.Projects[0] != "ABC" {
+		t.Fatalf("worktree = %+v", got.Worktree)
+	}
+	if got.Worktree.UI.HTTPSPort != 8476 || !got.Worktree.CmuxFeaturesEnabled || !got.Secrets.UIPassword {
 		t.Fatalf("got %+v", got)
 	}
-	s.SetCmuxFeaturesDisabled(true)
-	if got := decodeSettings(t, doSettings(s, "GET", "")); got != (settingsDTO{InCmux: true, CmuxFeaturesEnabled: false}) {
-		t.Fatalf("got %+v", got)
+	if got.Worktree.Jira.AliasHosts == nil || got.Worktree.UI.AllowedHosts == nil {
+		t.Fatal("lists must be [] not null")
+	}
+	if !got.Environment.InCmux {
+		t.Fatal("in_cmux")
 	}
 }
 
-func TestSettingsUpdateRefusedOutsideCmux(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.yaml")
-	s := &Server{cmuxAvailable: func() bool { return false }, ConfigPath: path}
-	if rec := doSettings(s, "PUT", `{"cmux_features_enabled":false}`); rec.Code != http.StatusConflict {
-		t.Fatalf("status = %d, want 409", rec.Code)
-	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatal("a refused update must not write the config")
+func TestSettingsGetReportsEnvOverride(t *testing.T) {
+	t.Setenv("WORKTREES_BASE", "/x")
+	s, _ := settingsServer(t, "")
+	if !decodeSettings(t, doReq(s, "GET", "/api/settings", "")).Environment.WorktreesBaseEnv {
+		t.Fatal("worktrees_base_env should be true")
 	}
 }
 
-func TestSettingsUpdateRejectsMissingField(t *testing.T) {
-	s := &Server{cmuxAvailable: func() bool { return true }}
-	if rec := doSettings(s, "PUT", `{}`); rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", rec.Code)
-	}
-}
-
-func TestSettingsUpdatePersistsAndGatesCmux(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(path, []byte("ui:\n  password: pw\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	s := &Server{
-		DB:            unreadTestDB(t),
-		cmuxAvailable: func() bool { return true },
-		cmuxList:      func() ([]cmux.Workspace, error) { return nil, nil },
-		ConfigPath:    path,
-	}
-	if s.notifyMode() != notifyModeCmux {
-		t.Fatal("expected cmux notifications before disabling")
-	}
-
-	got := decodeSettings(t, doSettings(s, "PUT", `{"cmux_features_enabled":false}`))
-	if got.CmuxFeaturesEnabled || !got.InCmux {
-		t.Fatalf("got %+v", got)
+func TestSettingsWorktreePutWritesAndValidates(t *testing.T) {
+	s, path := settingsServer(t, "# keep\nui:\n    password: pw\n")
+	body := `{"worktrees_base":"~/wt","editor":"zed","cmux_features_enabled":true,
+	  "jira":{"projects":[" ABC ","ABC",""],"alias_hosts":[]},
+	  "ui":{"https_port":9443,"allowed_hosts":["h.local"],"tls":{"cert_file":"","key_file":""}}}`
+	got := decodeSettings(t, doReq(s, "PUT", "/api/settings/worktree", body))
+	if len(got.Worktree.Jira.Projects) != 1 || got.Worktree.Jira.Projects[0] != "ABC" {
+		t.Fatalf("projects not trimmed/deduped: %v", got.Worktree.Jira.Projects)
 	}
 	data, _ := os.ReadFile(path)
-	if !strings.Contains(string(data), "cmux_features_disabled: true") || !strings.Contains(string(data), "password: pw") {
-		t.Fatalf("config = %s", data)
+	if !strings.Contains(string(data), "# keep") || !strings.Contains(string(data), "https_port: 9443") {
+		t.Fatalf("file:\n%s", data)
 	}
-	if s.cmuxEnabled() {
-		t.Fatal("gate still open")
+	bad := strings.Replace(body, "9443", "70000", 1)
+	if rec := doReq(s, "PUT", "/api/settings/worktree", bad); rec.Code != http.StatusBadRequest {
+		t.Fatalf("port 70000: status %d", rec.Code)
 	}
-	if s.notifyMode() != notifyModeBrowser {
-		t.Fatal("notifications should fall back to the browser")
-	}
-	// /api/cmux is one of the endpoints the UI's checks read.
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/cmux", nil))
-	if !strings.Contains(rec.Body.String(), `"available":false`) {
-		t.Fatalf("/api/cmux = %s", rec.Body)
-	}
+}
 
-	got = decodeSettings(t, doSettings(s, "PUT", `{"cmux_features_enabled":true}`))
-	if !got.CmuxFeaturesEnabled || !s.cmuxEnabled() {
-		t.Fatalf("re-enable: got %+v", got)
+func TestSettingsWorktreePutCmuxGate(t *testing.T) {
+	s, path := settingsServer(t, "ui:\n    password: pw\n")
+	s.DB = unreadTestDB(t)
+	s.cmuxList = func() ([]cmux.Workspace, error) { return nil, nil }
+	cur := decodeSettings(t, doReq(s, "GET", "/api/settings", ""))
+	cur.Worktree.CmuxFeaturesEnabled = false
+	b, _ := json.Marshal(cur.Worktree)
+	got := decodeSettings(t, doReq(s, "PUT", "/api/settings/worktree", string(b)))
+	if got.Worktree.CmuxFeaturesEnabled || s.cmuxEnabled() {
+		t.Fatal("gate should be shut")
 	}
-	data, _ = os.ReadFile(path)
-	if strings.Contains(string(data), "cmux_features_disabled") {
-		t.Fatalf("config still disables cmux: %s", data)
+	data, _ := os.ReadFile(path)
+	if !strings.Contains(string(data), "cmux_features_disabled: true") {
+		t.Fatalf("file:\n%s", data)
+	}
+}
+
+func TestSettingsWorktreePutCmuxRefusedOutsideCmux(t *testing.T) {
+	s, path := settingsServer(t, "ui:\n    password: pw\n")
+	s.cmuxAvailable = func() bool { return false }
+	cur := decodeSettings(t, doReq(s, "GET", "/api/settings", ""))
+	cur.Worktree.CmuxFeaturesEnabled = false
+	b, _ := json.Marshal(cur.Worktree)
+	if rec := doReq(s, "PUT", "/api/settings/worktree", string(b)); rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", rec.Code)
+	}
+	data, _ := os.ReadFile(path)
+	if strings.Contains(string(data), "cmux") {
+		t.Fatal("a refused save must write nothing")
 	}
 }
 
 func TestDisablingCmuxStripsUnreadPrefixes(t *testing.T) {
 	s, f, unreadWT, readWT := unreadSyncFixture(t)
 	s.ConfigPath = filepath.Join(t.TempDir(), "config.yaml")
+	s.WatcherAuthPath = filepath.Join(t.TempDir(), "auth.yaml")
+	s.WatcherConfigPath = filepath.Join(t.TempDir(), "wconfig.yaml")
 	f.workspaces = []cmux.Workspace{
 		{ID: "W1", CustomTitle: "📬 Unread", CurrentDirectory: unreadWT},
 		{ID: "W2", CustomTitle: "📬 Read", CurrentDirectory: readWT},
@@ -118,7 +138,10 @@ func TestDisablingCmuxStripsUnreadPrefixes(t *testing.T) {
 		{ID: "W4", CustomTitle: "📬 Elsewhere", CurrentDirectory: t.TempDir()},
 	}
 
-	decodeSettings(t, doSettings(s, "PUT", `{"cmux_features_enabled":false}`))
+	cur := decodeSettings(t, doReq(s, "GET", "/api/settings", ""))
+	cur.Worktree.CmuxFeaturesEnabled = false
+	b, _ := json.Marshal(cur.Worktree)
+	decodeSettings(t, doReq(s, "PUT", "/api/settings/worktree", string(b)))
 
 	got := append([]string(nil), f.calls...)
 	sort.Strings(got)

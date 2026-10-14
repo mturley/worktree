@@ -126,9 +126,18 @@ type Server struct {
 	// Seams: cmux availability and `cmux notify`, for tests.
 	cmuxAvailable func() bool
 	// cmuxDisabled is the Settings toggle (ui.cmux_features_disabled); see
-	// settings.go. ConfigPath is where it persists; "" means the default.
-	cmuxDisabled atomic.Bool
-	ConfigPath   string
+	// settings.go. ConfigPath, WatcherAuthPath and WatcherConfigPath are the
+	// files the Settings modal edits; "" means each one's default.
+	cmuxDisabled      atomic.Bool
+	ConfigPath        string
+	WatcherAuthPath   string
+	WatcherConfigPath string
+	// settingsMu serializes every settings write, so two saves can't
+	// interleave a load and a save of the same file.
+	settingsMu sync.Mutex
+	// credCheck is a test seam for credential validation; nil uses the
+	// watcher library's validators. See settings_creds.go.
+	credCheck *credValidators
 	cmuxNotify    func(cmux.NotifyOptions) error
 
 	// LinkResolver is a seam for tests; nil means a default resolver.
@@ -190,7 +199,7 @@ func (s *Server) routes() []route {
 		{"GET /api/worktrees", s.handleWorktrees},
 		{"GET /api/settings", s.handleSettings},
 		{"GET /api/update-status", s.handleUpdateStatus},
-		{"PUT /api/settings", s.handleSettingsUpdate},
+		{"PUT /api/settings/worktree", s.handleSettingsWorktree},
 		{"GET /api/linked-resources", s.handleLinkedResources},
 		{"GET /api/linked-resources/children", s.handleLinkedChildren},
 		{"GET /api/timeline", s.handleGlobalTimeline},
