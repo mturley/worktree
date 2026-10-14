@@ -1,9 +1,10 @@
 import { useState } from "react"
-import { Alert, Loader, Modal, Stack, Tabs } from "@mantine/core"
-import { useMutation, useQuery, useQueryClient, type Query } from "@tanstack/react-query"
+import { Alert, Box, Button, Group, Loader, Modal, Tabs, Text } from "@mantine/core"
+import { useQuery, useQueryClient, type Query } from "@tanstack/react-query"
 import { api } from "../api/client"
 import { DevicesPanel } from "./DevicesPanel"
-import { Toggle } from "./Toggle"
+import { GeneralPanel } from "./settings/GeneralPanel"
+import { useSettingsDraft, type SettingsFile } from "./settings/useSettingsDraft"
 
 const settingsKey = ["settings"] as const
 
@@ -17,62 +18,107 @@ const affectedByCmux = (q: Pick<Query, "queryKey">) => {
   return typeof head === "string" && (head.startsWith("cmux") || head === "session")
 }
 
-/** The cmux toggle, and the settings that join it later. */
-function GeneralPanel({ active }: { active: boolean }) {
-  const qc = useQueryClient()
-  const settings = useQuery({ queryKey: settingsKey, queryFn: api.settings, enabled: active })
-  const update = useMutation({
-    mutationFn: (patch: { cmux_features_enabled: boolean }) => api.updateSettings(patch),
-    onSuccess: (next) => {
-      qc.setQueryData(settingsKey, next)
-      // The server's gate has already moved; refetch what it gates so cmux
-      // controls appear or vanish now rather than on the next interval.
-      void qc.invalidateQueries({ predicate: affectedByCmux })
-    },
-  })
-
-  if (settings.isLoading) return <Loader size="sm" />
-  if (settings.error) {
-    return <Alert color="red" title="Couldn't load settings">{settings.error.message}</Alert>
-  }
-  const inCmux = settings.data?.in_cmux === true
-  // While a save is in flight, show the value being saved.
-  const enabled = update.isPending ? update.variables.cmux_features_enabled : settings.data?.cmux_features_enabled !== false
-
-  return (
-    <Stack gap="sm">
-      <Toggle
-        label="Enable cmux features"
-        description="Workspace headers, tab controls, Follow cmux focus, cmux notifications and the 📬 unread title prefix."
-        checked={enabled}
-        disabled={!inCmux || update.isPending}
-        onChange={(e) => update.mutate({ cmux_features_enabled: e.currentTarget.checked })}
-        tooltip={inCmux ? undefined : "The worktree UI server is not running inside cmux, so there are no cmux features to turn on or off."}
-      />
-      {update.error && (
-        <Alert color="red" title="Couldn't save the setting">{update.error.message}</Alert>
-      )}
-    </Stack>
-  )
+const tabFile: Record<string, SettingsFile | undefined> = {
+  general: "worktree",
+  "watcher-auth": "watcher_auth",
+  "watcher-config": "watcher_config",
 }
 
-/** The home page's settings: General, and every logged-in device. */
+/**
+ * The home page's settings. The three config tabs share one draft and one
+ * Save/Discard footer; secrets are replaced in place by SecretField and
+ * never sit in the draft. Devices manages logins and has no draft.
+ */
 export function SettingsModal({ opened, onClose }: { opened: boolean; onClose: () => void }) {
+  const qc = useQueryClient()
   const [tab, setTab] = useState<string | null>("general")
+  const [confirmClose, setConfirmClose] = useState(false)
+  const settings = useQuery({ queryKey: settingsKey, queryFn: api.settings, enabled: opened })
+  const draft = useSettingsDraft(settings.data)
+
+  const refetchAfterSecret = async () => {
+    const fresh = await qc.fetchQuery({ queryKey: settingsKey, queryFn: api.settings })
+    draft.rebase(fresh)
+  }
+
+  const requestClose = () => {
+    if (draft.anyDirty) setConfirmClose(true)
+    else onClose()
+  }
+
+  const save = async () => {
+    const wasCmux = draft.drafts && settings.data
+      ? draft.drafts.worktree.cmux_features_enabled !== settings.data.worktree.cmux_features_enabled
+      : false
+    const out = await draft.save()
+    if (out.settings) qc.setQueryData(settingsKey, out.settings)
+    if (wasCmux && out.saved.includes("worktree")) void qc.invalidateQueries({ predicate: affectedByCmux })
+  }
+
+  const label = (name: string, value: string) => {
+    const f = tabFile[value]
+    return <>{name}{f && draft.dirty[f] ? <Text span c="orange" ml={4}>●</Text> : null}</>
+  }
+
+  const body = (() => {
+    if (settings.error) return <Alert color="red" title="Couldn't load settings">{settings.error.message}</Alert>
+    if (settings.isLoading || (settings.data && !draft.drafts)) return <Loader size="sm" />
+    return null
+  })()
+
   return (
-    <Modal opened={opened} onClose={onClose} title="Settings" size="lg">
+    <Modal opened={opened} onClose={requestClose} title="Settings" size="lg">
       <Tabs value={tab} onChange={setTab}>
         <Tabs.List>
-          <Tabs.Tab value="general">General</Tabs.Tab>
+          <Tabs.Tab value="general">{label("General", "general")}</Tabs.Tab>
+          <Tabs.Tab value="watcher-auth">{label("Watcher Auth", "watcher-auth")}</Tabs.Tab>
+          <Tabs.Tab value="watcher-config">{label("Watcher Config", "watcher-config")}</Tabs.Tab>
           <Tabs.Tab value="devices">Devices</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="general" pt="md">
-          <GeneralPanel active={opened && tab === "general"} />
+          {body ?? (settings.data && draft.drafts && (
+            <GeneralPanel
+              settings={settings.data}
+              draft={draft.drafts.worktree}
+              update={(fn) => draft.update("worktree", fn)}
+              error={draft.errors.worktree}
+              onSecretSaved={refetchAfterSecret}
+              onShowWatcherAuth={() => setTab("watcher-auth")}
+            />
+          ))}
         </Tabs.Panel>
+        {/* Task 10 adds the watcher-auth and watcher-config panels here. */}
+        <Tabs.Panel value="watcher-auth" pt="md">{body}</Tabs.Panel>
+        <Tabs.Panel value="watcher-config" pt="md">{body}</Tabs.Panel>
         <Tabs.Panel value="devices" pt="md">
           <DevicesPanel active={opened && tab === "devices"} />
         </Tabs.Panel>
       </Tabs>
+
+      {confirmClose && (
+        <Alert role="alert" color="yellow" mt="md" title="Discard unsaved changes?">
+          <Group gap="xs" mt="xs">
+            <Button size="xs" variant="default" onClick={() => setConfirmClose(false)}>Keep editing</Button>
+            <Button size="xs" color="red" onClick={() => { draft.discard(); setConfirmClose(false); onClose() }}>Discard and close</Button>
+          </Group>
+        </Alert>
+      )}
+
+      {tab !== "devices" && (
+        <Box mt="md" pt="sm" style={{ borderTop: "1px solid var(--mantine-color-default-border)", position: "sticky", bottom: 0, background: "var(--mantine-color-body)" }}>
+          <Group justify="space-between">
+            <Text size="xs" c={draft.anyDirty ? "orange" : "dimmed"}>
+              {draft.anyDirty
+                ? `● Unsaved changes${draft.restartCount ? ` · ${draft.restartCount} ${draft.restartCount === 1 ? "needs" : "need"} a restart` : ""}`
+                : "No unsaved changes"}
+            </Text>
+            <Group gap="xs">
+              <Button size="xs" variant="subtle" disabled={!draft.anyDirty || draft.saving} onClick={draft.discard}>Discard</Button>
+              <Button size="xs" disabled={!draft.anyDirty} loading={draft.saving} onClick={save}>Save</Button>
+            </Group>
+          </Group>
+        </Box>
+      )}
     </Modal>
   )
 }

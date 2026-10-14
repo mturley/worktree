@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { api } from "../../api/client"
 import type { Settings, WatcherAuthSettings, WatcherConfigSettings, WorktreeSettings } from "../../api/types"
 
@@ -34,19 +34,26 @@ const pick = (s: Settings): Drafts => ({ worktree: s.worktree, watcher_auth: s.w
  * replaces them directly.
  */
 export function useSettingsDraft(server: Settings | undefined) {
-  const [base, setBase] = useState<Drafts | null>(server ? pick(server) : null)
-  const [drafts, setDrafts] = useState<Drafts | null>(server ? pick(server) : null)
+  const [base, setBaseState] = useState<Drafts | null>(server ? pick(server) : null)
+  const [drafts, setDraftsState] = useState<Drafts | null>(server ? pick(server) : null)
   const [saving, setSaving] = useState(false)
   const [errors, setErrors] = useState<Partial<Record<SettingsFile, string>>>({})
+  // Refs mirror the state so callbacks read current values and never call one
+  // setter from inside another's updater (updaters must be pure).
+  const baseRef = useRef(base)
+  const draftsRef = useRef(drafts)
+  const savingRef = useRef(false)
+  const setBase = useCallback((v: Drafts | null) => { baseRef.current = v; setBaseState(v) }, [])
+  const setDrafts = useCallback((v: Drafts | null) => { draftsRef.current = v; setDraftsState(v) }, [])
 
   // First load only; later server values arrive through save/rebase so a
   // background refetch never clobbers edits in progress.
   useEffect(() => {
-    if (server && !base) {
+    if (server && !baseRef.current) {
       setBase(pick(server))
       setDrafts(pick(server))
     }
-  }, [server, base])
+  }, [server, setBase, setDrafts])
 
   const dirty = useMemo(() => {
     const out = { worktree: false, watcher_auth: false, watcher_config: false }
@@ -67,50 +74,61 @@ export function useSettingsDraft(server: Settings | undefined) {
   }, [base, drafts])
 
   const update = useCallback(<F extends SettingsFile>(file: F, fn: (d: Drafts[F]) => Drafts[F]) => {
-    setDrafts((d) => (d ? { ...d, [file]: fn(d[file]) } : d))
-  }, [])
+    const d = draftsRef.current
+    if (d) setDrafts({ ...d, [file]: fn(d[file]) })
+  }, [setDrafts])
 
   const discard = useCallback(() => {
-    setDrafts(base)
+    setDrafts(baseRef.current)
     setErrors({})
-  }, [base])
+  }, [setDrafts])
 
   /** New server values for every file that has no unsaved edits. */
   const rebase = useCallback((s: Settings) => {
     const next = pick(s)
-    setBase((b) => {
-      setDrafts((d) => {
-        if (!d || !b) return next
-        const out = { ...d }
-        for (const f of FILES) if (canonical(b[f]) === canonical(d[f])) (out as Record<SettingsFile, unknown>)[f] = next[f]
-        return out
-      })
-      return next
-    })
-  }, [])
+    const b = baseRef.current
+    const d = draftsRef.current
+    if (!d || !b) {
+      setDrafts(next)
+    } else {
+      const out = { ...d }
+      for (const f of FILES) if (canonical(b[f]) === canonical(d[f])) (out as Record<SettingsFile, unknown>)[f] = next[f]
+      setDrafts(out)
+    }
+    setBase(next)
+  }, [setBase, setDrafts])
 
   const save = useCallback(async () => {
     const saved: SettingsFile[] = []
     const errs: Partial<Record<SettingsFile, string>> = {}
     let latest: Settings | undefined
-    if (!drafts) return { saved, errors: errs }
+    if (savingRef.current || !draftsRef.current || !baseRef.current) return { saved, errors: errs }
+    savingRef.current = true
     setSaving(true)
-    for (const f of FILES) {
-      if (!dirty[f]) continue
-      try {
-        latest = await (savers[f] as (d: unknown) => Promise<Settings>)(drafts[f])
-        saved.push(f)
-        const fresh = pick(latest)[f]
-        setBase((b) => (b ? { ...b, [f]: fresh } : b))
-        setDrafts((d) => (d ? { ...d, [f]: fresh } : d))
-      } catch (e) {
-        errs[f] = e instanceof Error ? e.message : String(e)
+    try {
+      for (const f of FILES) {
+        const sent = draftsRef.current?.[f]
+        const b = baseRef.current
+        if (!sent || !b || canonical(b[f]) === canonical(sent)) continue
+        try {
+          latest = await (savers[f] as (d: unknown) => Promise<Settings>)(sent)
+          saved.push(f)
+          const fresh = pick(latest)[f]
+          if (baseRef.current) setBase({ ...baseRef.current, [f]: fresh })
+          // Keep edits made while the PUT was in flight; the baseline still moves.
+          const cur = draftsRef.current
+          if (cur && canonical(cur[f]) === canonical(sent)) setDrafts({ ...cur, [f]: fresh })
+        } catch (e) {
+          errs[f] = e instanceof Error ? e.message : String(e)
+        }
       }
+      setErrors(errs)
+    } finally {
+      savingRef.current = false
+      setSaving(false)
     }
-    setErrors(errs)
-    setSaving(false)
     return { saved, errors: errs, settings: latest }
-  }, [drafts, dirty])
+  }, [setBase, setDrafts])
 
   return { drafts, dirty, anyDirty: FILES.some((f) => dirty[f]), restartCount, update, discard, save, saving, errors, rebase }
 }

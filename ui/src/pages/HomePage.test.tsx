@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { setViewport } from "../testing/viewport"
+import { baseSettings } from "../components/settings/testSettings"
 import type { TimelineEvent, WorktreeSummary } from "../api/types"
 
 const summary: WorktreeSummary = {
@@ -122,7 +123,7 @@ describe("HomePage settings", () => {
 
   it("opens the Settings modal", async () => {
     setViewport("wide")
-    vi.spyOn(api, "settings").mockResolvedValue({ in_cmux: false, cmux_features_enabled: true })
+    vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
     wrap()
     await userEvent.click(screen.getByRole("button", { name: "Settings" }))
     expect(await screen.findByRole("tab", { name: "Devices" })).toBeInTheDocument()

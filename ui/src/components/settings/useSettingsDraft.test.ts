@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, afterEach } from "vitest"
 import { act, renderHook } from "@testing-library/react"
+import type { Settings } from "../../api/types"
 import { api } from "../../api/client"
 import { useSettingsDraft } from "./useSettingsDraft"
 import { baseSettings } from "./testSettings"
@@ -48,5 +49,50 @@ describe("useSettingsDraft", () => {
     expect(out!.saved).toEqual(["worktree"])
     expect(result.current.errors.watcher_auth).toBe("disk full")
     expect(result.current.dirty).toEqual({ worktree: false, watcher_auth: true, watcher_config: false })
+  })
+
+  it("rebase keeps a dirty file's edits and refreshes a clean file", () => {
+    const { result } = renderHook(() => useSettingsDraft(baseSettings()))
+    act(() => result.current.update("worktree", (d) => ({ ...d, editor: "zed" })))
+    const fresh = baseSettings()
+    fresh.worktree.editor = "vim"
+    fresh.watcher_auth.jira.email = "server@x"
+    act(() => result.current.rebase(fresh))
+    expect(result.current.drafts!.worktree.editor).toBe("zed")
+    expect(result.current.drafts!.watcher_auth.jira.email).toBe("server@x")
+    expect(result.current.dirty).toEqual({ worktree: true, watcher_auth: false, watcher_config: false })
+    act(() => result.current.discard())
+    expect(result.current.drafts!.worktree.editor).toBe("vim")
+  })
+
+  it("ignores save() while a save is in flight", async () => {
+    let release!: (s: Settings) => void
+    const w = vi.spyOn(api, "saveWorktreeSettings").mockReturnValue(new Promise<Settings>((r) => { release = r }))
+    const { result } = renderHook(() => useSettingsDraft(baseSettings()))
+    act(() => result.current.update("worktree", (d) => ({ ...d, editor: "zed" })))
+    let p1!: Promise<unknown>
+    let p2!: Promise<unknown>
+    act(() => { p1 = result.current.save(); p2 = result.current.save() })
+    const after = baseSettings()
+    after.worktree.editor = "zed"
+    await act(async () => { release(after); await Promise.all([p1, p2]) })
+    expect(w).toHaveBeenCalledOnce()
+  })
+
+  it("keeps edits made while a save was in flight but moves the baseline", async () => {
+    let release!: (s: Settings) => void
+    vi.spyOn(api, "saveWorktreeSettings").mockReturnValue(new Promise<Settings>((r) => { release = r }))
+    const { result } = renderHook(() => useSettingsDraft(baseSettings()))
+    act(() => result.current.update("worktree", (d) => ({ ...d, editor: "zed" })))
+    let p!: Promise<unknown>
+    act(() => { p = result.current.save() })
+    act(() => result.current.update("worktree", (d) => ({ ...d, editor: "zedd" })))
+    const after = baseSettings()
+    after.worktree.editor = "zed"
+    await act(async () => { release(after); await p })
+    expect(result.current.drafts!.worktree.editor).toBe("zedd")
+    expect(result.current.dirty.worktree).toBe(true)
+    act(() => result.current.discard())
+    expect(result.current.drafts!.worktree.editor).toBe("zed")
   })
 })
