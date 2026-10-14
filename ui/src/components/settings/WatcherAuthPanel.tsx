@@ -106,6 +106,7 @@ export function WatcherAuthPanel({ settings, draft, update, error, active, onSec
           description={<>The xoxc-… token from a logged-in browser. <KeyPath path="services.slack.token" /></>}
           isSet={sec.slack_token}
           onReplace={replacer("slack", (token) => ({ token }))}
+          testable={sec.slack_token && sec.slack_cookie}
           onTest={() => void runTest("slack")}
           test={tests.slack}
         />
@@ -115,6 +116,7 @@ export function WatcherAuthPanel({ settings, draft, update, error, active, onSec
           isSet={sec.slack_cookie}
           placeholder="Paste a new cookie"
           onReplace={replacer("slack", (cookie) => ({ cookie }))}
+          testable={sec.slack_token && sec.slack_cookie}
           onTest={() => void runTest("slack")}
           test={tests.slack}
         />

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react"
+import { useRef, useState, type ReactNode } from "react"
 import { Badge, Button, Group, PasswordInput, Stack, Text } from "@mantine/core"
 import type { CredResult } from "../../api/types"
 
@@ -21,7 +21,7 @@ function TestChip({ test }: { test?: TestState }) {
  * hands the typed value to onReplace (validate-then-write on the server)
  * and forgets it on success. Never part of the modal's Save/Discard draft.
  */
-export function SecretField({ label, description, isSet, placeholder = "Paste a new token", onReplace, onTest, test }: {
+export function SecretField({ label, description, isSet, placeholder = "Paste a new token", onReplace, onTest, test, testable }: {
   label: string
   description: ReactNode
   isSet: boolean
@@ -31,14 +31,20 @@ export function SecretField({ label, description, isSet, placeholder = "Paste a 
   /** Absent: no Test button and no chip (the UI password). */
   onTest?: () => void
   test?: TestState
+  /** Whether Test can run; defaults to isSet (Slack needs token and cookie). */
+  testable?: boolean
 }) {
+  const canTest = testable ?? isSet
   const [editing, setEditing] = useState(false)
   const [value, setValue] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
 
+  const inputRef = useRef<HTMLInputElement>(null)
+
   const cancel = () => {
+    inputRef.current?.blur()
     setEditing(false)
     setValue("")
     setError(null)
@@ -54,6 +60,7 @@ export function SecretField({ label, description, isSet, placeholder = "Paste a 
         return
       }
       setValue("")
+      inputRef.current?.blur()
       setEditing(false)
       setSaved(true)
     } catch (e) {
@@ -70,12 +77,14 @@ export function SecretField({ label, description, isSet, placeholder = "Paste a 
         label={<Group gap="xs" component="span">{label}{onTest && <TestChip test={test} />}{saved && !editing && <Badge size="xs" color="green" variant="light" tt="none">✓ Saved</Badge>}</Group>}
         description={description}
         placeholder={editing ? placeholder : idlePlaceholder}
+        ref={inputRef}
         value={value}
+        data-mantine-stop-propagation={editing ? "true" : undefined}
         visibilityToggleButtonProps={{ style: { display: editing ? undefined : "none" } }}
         onFocus={() => { setEditing(true); setSaved(false) }}
-        onChange={(e) => setValue(e.currentTarget.value)}
+        onChange={(e) => { setEditing(true); setSaved(false); setValue(e.currentTarget.value) }}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && value) void replace()
+          if (e.key === "Enter" && value && !busy) void replace()
           if (e.key === "Escape") { e.stopPropagation(); cancel() }
         }}
         error={error}
@@ -91,7 +100,7 @@ export function SecretField({ label, description, isSet, placeholder = "Paste a 
             <Button size="xs" variant="subtle" onClick={cancel}>Cancel</Button>
           </>
         ) : (
-          onTest && <Button size="xs" variant="default" disabled={!isSet || test?.status === "testing"} onClick={onTest}>Test</Button>
+          onTest && <Button size="xs" variant="default" disabled={!canTest || test?.status === "testing"} onClick={onTest}>Test</Button>
         )}
       </Group>
       {test?.status === "done" && !test.result.ok && test.result.detail && !editing && (

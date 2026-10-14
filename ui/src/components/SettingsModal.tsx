@@ -53,8 +53,12 @@ export function SettingsModal({ opened, onClose }: { opened: boolean; onClose: (
   }, [draft.anyDirty])
 
   const refetchAfterSecret = async () => {
-    const fresh = await qc.fetchQuery({ queryKey: settingsKey, queryFn: api.settings })
-    draft.rebase(fresh)
+    try {
+      const fresh = await qc.fetchQuery({ queryKey: settingsKey, queryFn: api.settings })
+      draft.rebase(fresh)
+    } catch {
+      // The replace itself succeeded; the next open or refetch picks up the new *_set flags.
+    }
   }
 
   const discard = () => {

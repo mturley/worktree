@@ -185,4 +185,63 @@ describe("SettingsModal", () => {
     await waitFor(() => expect(save).toHaveBeenCalledOnce())
     expect(save.mock.calls[0][0].jira.custom_fields).toEqual({ b: "customfield_2" })
   })
+
+  it("Escape in an editing secret cancels the edit without closing; idle Escape closes", async () => {
+    vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
+    const onClose = vi.fn()
+    renderModal(new QueryClient(), onClose)
+    const pw = await screen.findByLabelText("UI password")
+    await userEvent.click(pw)
+    await userEvent.type(pw, "abc")
+    await userEvent.keyboard("{Escape}")
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+    expect(screen.getByLabelText("UI password")).toHaveValue("")
+    await userEvent.keyboard("{Escape}")
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+  })
+
+  it("typing after Escape re-enters editing", async () => {
+    vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
+    renderModal()
+    const pw = await screen.findByLabelText("UI password")
+    await userEvent.click(pw)
+    await userEvent.type(pw, "abc")
+    await userEvent.keyboard("{Escape}")
+    await userEvent.type(screen.getByLabelText("UI password"), "x")
+    expect(screen.getByRole("button", { name: "Replace" })).toBeEnabled()
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument()
+  })
+
+  it("Enter during an in-flight replace does not submit twice", async () => {
+    vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
+    let resolve: () => void = () => {}
+    const replace = vi.spyOn(api, "replacePassword").mockImplementation(() => new Promise<void>((r) => { resolve = r }))
+    renderModal()
+    const pw = await screen.findByLabelText("UI password")
+    await userEvent.type(pw, "abc{Enter}{Enter}")
+    expect(replace).toHaveBeenCalledOnce()
+    resolve()
+    expect(await screen.findByText(/Saved/)).toBeInTheDocument()
+  })
+
+  it("UI password replace calls replacePassword then refetches settings", async () => {
+    const get = vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
+    const replace = vi.spyOn(api, "replacePassword").mockResolvedValue(undefined as never)
+    renderModal()
+    await userEvent.type(await screen.findByLabelText("UI password"), "pw{Enter}")
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("pw"))
+    await waitFor(() => expect(get.mock.calls.length).toBeGreaterThan(1))
+  })
+
+  it("Watcher Auth: a Slack cookie-only replace sends only the cookie", async () => {
+    vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
+    vi.spyOn(api, "testCredential").mockResolvedValue({ ok: true, kind: "ok", detail: "" })
+    const replace = vi.spyOn(api, "replaceCredential").mockResolvedValue({ ok: true, kind: "ok", detail: "" })
+    renderModal()
+    await userEvent.click(screen.getByRole("tab", { name: /Watcher Auth/ }))
+    await userEvent.type(await screen.findByLabelText("Session cookie"), "xoxd-new")
+    await userEvent.click(screen.getByRole("button", { name: "Replace" }))
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("slack", { cookie: "xoxd-new" }))
+  })
 })
