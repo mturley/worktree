@@ -114,6 +114,11 @@ func TestWriteEditableDefaultsDeleteKeys(t *testing.T) {
 			t.Errorf("%s should be removed:\n%s", gone, s)
 		}
 	}
+	for _, keep := range []string{"password: secret", "custom_key: keep-me"} {
+		if !strings.Contains(s, keep) {
+			t.Errorf("file lost %q:\n%s", keep, s)
+		}
+	}
 	if strings.Contains(s, "jira:") {
 		t.Errorf("an emptied jira mapping should be removed:\n%s", s)
 	}
@@ -127,6 +132,25 @@ func TestWriteEditableCreatesFile(t *testing.T) {
 	got, _, _ := ReadEditable(p)
 	if got.Editor != "vim" || got.HTTPSPort != 9000 {
 		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestWriteEditableIsAtomicAndOwnerOnly(t *testing.T) {
+	p := writeSample(t)
+	if err := os.Chmod(p, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cur, _, _ := ReadEditable(p)
+	cur.Editor = "zed"
+	if _, err := WriteEditable(p, cur); err != nil {
+		t.Fatal(err)
+	}
+	if info, _ := os.Stat(p); info.Mode().Perm() != 0o600 {
+		t.Errorf("mode = %o", info.Mode().Perm())
+	}
+	entries, _ := os.ReadDir(filepath.Dir(p))
+	if len(entries) != 1 {
+		t.Errorf("leftover files: %v", entries)
 	}
 }
 

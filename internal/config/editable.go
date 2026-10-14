@@ -1,14 +1,18 @@
 package config
 
-import "slices"
+import (
+	"slices"
+
+	"gopkg.in/yaml.v3"
+)
 
 // Editable is every non-secret key of config.yaml as written in the file:
 // no ~ expansion and no environment overrides, so saving it back never
 // rewrites a value the user didn't touch. The UI's settings modal edits it.
 //
 // When a key is added to Config, add it here (or to ui.password-style
-// secret handling) and to the settings modal — settings_keys_test.go fails
-// until you do.
+// secret handling) and to the settings modal: internal/webui/settings_keys_test.go
+// fails until you add it to settingsKeyPaths in internal/webui/settings_keys.go.
 type Editable struct {
 	WorktreesBase        string
 	Editor               string
@@ -28,6 +32,11 @@ func ReadEditable(path string) (Editable, bool, error) {
 	if err != nil {
 		return Editable{}, false, err
 	}
+	return editableFromDoc(doc)
+}
+
+// editableFromDoc extracts the editable values from an already-parsed doc.
+func editableFromDoc(doc *yaml.Node) (Editable, bool, error) {
 	var raw Config
 	if err := doc.Decode(&raw); err != nil {
 		return Editable{}, false, err
@@ -53,11 +62,11 @@ func ReadEditable(path string) (Editable, bool, error) {
 // nothing else. Zero/default values delete their key (and any mapping left
 // empty). changed is false, and the file untouched, when nothing differs.
 func WriteEditable(path string, next Editable) (bool, error) {
-	cur, _, err := ReadEditable(path)
+	doc, err := readDoc(path)
 	if err != nil {
 		return false, err
 	}
-	doc, err := readDoc(path)
+	cur, _, err := editableFromDoc(doc)
 	if err != nil {
 		return false, err
 	}
