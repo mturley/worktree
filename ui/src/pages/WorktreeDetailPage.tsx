@@ -361,10 +361,20 @@ export function WorktreeDetailPage() {
     )
   }
 
+  // Anything the titles' reset would undo; with none of it, they are plain
+  // text rather than a button that does nothing.
+  const cardExpanded = wide && !cardCollapsed
   const narrowed = Boolean(selectedResource) || unreadOnly
+  const resettable = narrowed || cardExpanded
   const showOverview = () => {
     if (selectedResource) clear()
     if (unreadOnly) setUnreadOnly(false)
+    // Back to the default layout too. Moving the card remounts it, which
+    // sends any pending notes edit (useWorktreeNotes flushes on unmount).
+    if (cardExpanded) {
+      writeCardCollapsed(true)
+      setCardCollapsed(true)
+    }
   }
 
   // The header is fixed and the body scrolls beneath it, so the summary card
@@ -466,19 +476,20 @@ export function WorktreeDetailPage() {
               {/* Inside cmux the workspace is the headline and the worktree
                   name steps down beneath it, as on the home page's cards;
                   outside cmux the name is the full-size title. */}
-              {/* With a resource selected or unreads only on, the titles are
-                  a way back to the worktree's whole overview: they deselect,
-                  as "← all resources" does, and turn unreads only off. A div
+              {/* With a resource selected, unreads only on or (wide) the details
+                  card expanded, the titles are a way back to the worktree's
+                  whole overview: they deselect, as "← all resources" does,
+                  turn unreads only off and collapse the details card. A div
                   with role=button rather than a <button>, which may not hold
-                  the headings. With neither on there is nowhere to go, so it
-                  is plain text. */}
+                  the headings. With none of those there is nothing to reset,
+                  so it is plain text. */}
               <Stack
                 gap={2}
                 style={{ minWidth: 0 }}
-                {...(narrowed && {
+                {...(resettable && {
                   role: "button",
                   tabIndex: 0,
-                  title: "Show all resources",
+                  title: narrowed ? "Show all resources" : "Collapse details",
                   className: "detail-titles",
                   onClick: showOverview,
                   onKeyDown: (e: KeyboardEvent) => {

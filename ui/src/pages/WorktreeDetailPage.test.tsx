@@ -291,6 +291,18 @@ describe("WorktreeDetailPage selection", () => {
     await waitFor(() => expect(window.location.search).not.toContain("resource="))
   })
 
+  it("collapses the details card when the worktree title is clicked", async () => {
+    window.localStorage.setItem("worktree.detail.cardCollapsed", "false")
+    window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?resource=pr:o%2Fr%231`)
+    setViewport("wide")
+    const user = userEvent.setup()
+    wrap()
+    expect(await screen.findByRole("button", { name: "Collapse details" })).toBeInTheDocument()
+    await user.click(await screen.findByRole("button", { name: "foo" }))
+    expect(await screen.findByRole("button", { name: "Expand details" })).toBeInTheDocument()
+    expect(window.localStorage.getItem("worktree.detail.cardCollapsed")).toBe("true")
+  })
+
   it("turns unreads only off when the worktree title is clicked", async () => {
     setViewport("wide")
     const user = userEvent.setup()
@@ -300,6 +312,17 @@ describe("WorktreeDetailPage selection", () => {
     expect(unread).toBeChecked()
     await user.click(await screen.findByRole("button", { name: "foo" }))
     await waitFor(() => expect(unread).not.toBeChecked())
+    expect(screen.queryByRole("button", { name: "foo" })).not.toBeInTheDocument()
+  })
+
+  it("makes the worktree title clickable when only the details card is expanded", async () => {
+    window.localStorage.setItem("worktree.detail.cardCollapsed", "false")
+    setViewport("wide")
+    const user = userEvent.setup()
+    wrap()
+    await user.click(await screen.findByRole("button", { name: "foo" }))
+    expect(await screen.findByRole("button", { name: "Expand details" })).toBeInTheDocument()
+    // Nothing left to reset.
     expect(screen.queryByRole("button", { name: "foo" })).not.toBeInTheDocument()
   })
 
