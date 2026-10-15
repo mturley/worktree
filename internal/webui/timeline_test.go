@@ -666,3 +666,46 @@ func TestTimelineEventTypeFilter(t *testing.T) {
 		}
 	}
 }
+
+// TestGlobalTimelineQueriesNothingWhileRowsAreOpen pins the pool to ONE
+// connection, so any query issued while the timeline's rows are still open
+// waits for a connection that never frees up. That nesting is what deadlocked
+// the live server: in rollback-journal mode the open rows hold a SHARED lock,
+// a writer waiting to commit holds PENDING against it, and the enricher's
+// queries (unread.SlackCursors and friends) then wait on that writer — so all
+// three stalled until busy_timeout and logged "database is locked".
+func TestGlobalTimelineQueriesNothingWhileRowsAreOpen(t *testing.T) {
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	wtPath := testgit.Worktree(t)
+	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
+	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
+	insertEvent(t, conn, "e1", time.Now().UTC().Format(time.RFC3339), "github", "pr_comment", "c1", "pr", "o/r#1", "u1")
+	conn.SetMaxOpenConns(1)
+
+	srv := &Server{DB: conn}
+	rec := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/timeline?limit=50", nil))
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeline request did not complete: a query ran while its rows were open")
+	}
+	var body struct {
+		Events []TimelineEvent `json:"events"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Events) != 1 || len(body.Events[0].Worktrees) != 1 {
+		t.Fatalf("expected one enriched event, got %+v", body.Events)
+	}
+}

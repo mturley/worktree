@@ -388,7 +388,14 @@ func (s *Server) writeTimelineRows(w http.ResponseWriter, rows *sql.Rows, limit 
 	// practice. If Phase 4 (Slack) starts linking multiple resources to a
 	// single event, revisit this with a query-level GROUP BY / windowed
 	// subquery that picks one resource per event before LIMIT is applied.
-	enricher := s.newEventEnricher()
+	//
+	// IMPORTANT: read every row and close rows BEFORE enriching. The
+	// enricher queries the DB, and a query issued while these rows are open
+	// deadlocks against any writer under SQLite's rollback journal: the open
+	// rows hold SHARED, the writer's commit holds PENDING waiting on them, and
+	// the enricher's query waits on the writer. All three stall until
+	// busy_timeout and fail with SQLITE_BUSY (see
+	// TestGlobalTimelineQueriesNothingWhileRowsAreOpen).
 	seen := make(map[string]bool, limit)
 	for rows.Next() {
 		var te TimelineEvent
@@ -402,8 +409,16 @@ func (s *Server) writeTimelineRows(w http.ResponseWriter, rows *sql.Rows, limit 
 		}
 		seen[te.ID] = true
 		te.TypeLabel = watcher.EventType(te.Type).DisplayName()
-		enricher.fillResource(&te)
 		out = append(out, te)
+	}
+	if err := rows.Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	rows.Close()
+	enricher := s.newEventEnricher()
+	for i := range out {
+		enricher.fillResource(&out[i])
 	}
 	writeJSON(w, http.StatusOK, timelineResponse{Events: out, NextCursor: cursorOf(out)})
 }
