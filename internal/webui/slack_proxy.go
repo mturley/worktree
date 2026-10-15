@@ -13,6 +13,7 @@ import (
 
 	"github.com/mturley/watcher"
 	"github.com/mturley/watcher/slack"
+	"github.com/mturley/worktree/internal/config"
 	"github.com/mturley/worktree/internal/slackurl"
 )
 
@@ -119,7 +120,7 @@ type markReadRequest struct {
 // handleMarkRead implements POST /api/thread/mark-read: it marks a thread
 // read up through the given ts via the Slack client.
 func (s *Server) handleMarkRead(w http.ResponseWriter, r *http.Request) {
-	if s.SlackClient == nil {
+	if !s.slackOn() {
 		s.slackUnavailable(w)
 		return
 	}
@@ -150,7 +151,7 @@ func (s *Server) handleMarkRead(w http.ResponseWriter, r *http.Request) {
 // handleMarkUnread implements POST /api/thread/mark-unread: it marks a
 // thread unread as of the given ts via the Slack client.
 func (s *Server) handleMarkUnread(w http.ResponseWriter, r *http.Request) {
-	if s.SlackClient == nil {
+	if !s.slackOn() {
 		s.slackUnavailable(w)
 		return
 	}
@@ -190,7 +191,7 @@ type replyRequest struct {
 // message on success. There is no send-allowlist — replies to any channel
 // are permitted.
 func (s *Server) handleReply(w http.ResponseWriter, r *http.Request) {
-	if s.SlackClient == nil {
+	if !s.slackOn() {
 		s.slackUnavailable(w)
 		return
 	}
@@ -237,7 +238,7 @@ type reactRequest struct {
 // user's reaction on a message via reactions.add/remove. There is no
 // send-allowlist — reactions on any channel are permitted.
 func (s *Server) handleReact(w http.ResponseWriter, r *http.Request) {
-	if s.SlackClient == nil {
+	if !s.slackOn() {
 		s.slackUnavailable(w)
 		return
 	}
@@ -335,15 +336,30 @@ func (s *Server) handleImageProxyAuth(allowedHost string, authorize func(*http.R
 // host-pinned image proxies. avatars/emoji do not forward the session
 // cookie; files.slack.com requires the d= cookie for authenticated
 // downloads.
+//
+// All three refuse while the Slack watcher is off: worktree does not
+// contact Slack at all then, cookie or not.
 func (s *Server) handleSlackAvatar(w http.ResponseWriter, r *http.Request) {
+	if !s.WatcherEnabled(config.ServiceSlack) {
+		watcherOffError(w, "Slack")
+		return
+	}
 	s.handleImageProxyAuth("avatars.slack-edge.com", nil)(w, r)
 }
 
 func (s *Server) handleSlackEmoji(w http.ResponseWriter, r *http.Request) {
+	if !s.WatcherEnabled(config.ServiceSlack) {
+		watcherOffError(w, "Slack")
+		return
+	}
 	s.handleImageProxyAuth("emoji.slack-edge.com", nil)(w, r)
 }
 
 func (s *Server) handleSlackFile(w http.ResponseWriter, r *http.Request) {
+	if !s.WatcherEnabled(config.ServiceSlack) {
+		watcherOffError(w, "Slack")
+		return
+	}
 	s.handleImageProxyAuth("files.slack.com", s.slackCookieAuth)(w, r)
 }
 

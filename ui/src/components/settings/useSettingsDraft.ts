@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { api } from "../../api/client"
+import { serviceName } from "./watcherText"
 import type { CredService, Settings, WatcherAuthSettings, WatcherConfigSettings, WorktreeSettings } from "../../api/types"
 
 export type SettingsFile = "worktree" | "watcher_auth" | "watcher_config"
@@ -146,7 +147,34 @@ export function useSettingsDraft(server: Settings | undefined) {
     if (savingRef.current || !startDrafts || !baseRef.current) return { saved, errors: errs }
     savingRef.current = true
     setSaving(true)
+    const saveFile = async (f: SettingsFile) => {
+      const sent = draftsRef.current?.[f]
+      const b = baseRef.current
+      if (!sent || !b || canonical(b[f]) === canonical(sent)) return
+      // A refused credential leaves its file unsaved: Jira's host change,
+      // for one, only makes sense with the token that failed.
+      if (errs[f]) return
+      const bad = invalidRef.current[f]
+      if (bad) {
+        errs[f] = bad
+        return
+      }
+      try {
+        latest = await (savers[f] as (d: unknown) => Promise<Settings>)(sent)
+        saved.push(f)
+        const fresh = pick(latest)[f]
+        if (baseRef.current) setBase({ ...baseRef.current, [f]: fresh })
+        // Keep edits made while the PUT was in flight; the baseline still moves.
+        const cur = draftsRef.current
+        if (cur && canonical(cur[f]) === canonical(sent)) setDrafts({ ...cur, [f]: fresh })
+      } catch (e) {
+        errs[f] = e instanceof Error ? e.message : String(e)
+      }
+    }
     try {
+      // config.yaml first: it holds the watcher toggles, and the server only
+      // accepts a service's credentials while its watcher is on.
+      await saveFile("worktree")
       // Skipped (not just empty) without pending secrets: awaiting it would let
       // an edit made just after Save leak into the files read below.
       const secretsOut = Object.keys(secretsRef.current).length
@@ -172,30 +200,7 @@ export function useSettingsDraft(server: Settings | undefined) {
           // The secrets are saved; the next refetch picks up their *_set flags.
         }
       }
-      for (const f of FILES) {
-        const sent = draftsRef.current?.[f]
-        const b = baseRef.current
-        if (!sent || !b || canonical(b[f]) === canonical(sent)) continue
-        // A refused credential leaves its file unsaved: Jira's host change,
-        // for one, only makes sense with the token that failed.
-        if (errs[f]) continue
-        const bad = invalidRef.current[f]
-        if (bad) {
-          errs[f] = bad
-          continue
-        }
-        try {
-          latest = await (savers[f] as (d: unknown) => Promise<Settings>)(sent)
-          saved.push(f)
-          const fresh = pick(latest)[f]
-          if (baseRef.current) setBase({ ...baseRef.current, [f]: fresh })
-          // Keep edits made while the PUT was in flight; the baseline still moves.
-          const cur = draftsRef.current
-          if (cur && canonical(cur[f]) === canonical(sent)) setDrafts({ ...cur, [f]: fresh })
-        } catch (e) {
-          errs[f] = e instanceof Error ? e.message : String(e)
-        }
-      }
+      for (const f of FILES) if (f !== "worktree") await saveFile(f)
       setErrors(errs)
     } finally {
       savingRef.current = false
@@ -237,11 +242,20 @@ async function saveSecrets(drafts: Drafts, pending: PendingSecrets) {
     }
   }
   const creds: [CredService, SecretKey[], Parameters<typeof api.replaceCredential>[1]][] = []
-  if (pending.github_token !== undefined) creds.push(["github", ["github_token"], { token: pending.github_token }])
-  if (pending.jira_token !== undefined) {
+  // A service whose watcher is off is never contacted, so its new
+  // credentials wait (still pending) until it's turned back on.
+  const watching = (svc: CredService) => drafts.worktree.watchers?.[svc] !== false
+  for (const svc of ["github", "jira", "slack"] as const) {
+    const keys: SecretKey[] = svc === "slack" ? ["slack_token", "slack_cookie"] : [`${svc}_token` as SecretKey]
+    if (!watching(svc) && keys.some((k) => pending[k] !== undefined)) {
+      fail("watcher_auth", `${credLabel[svc]}: turn the ${serviceName[svc]} watcher on to save it.`)
+    }
+  }
+  if (pending.github_token !== undefined && watching("github")) creds.push(["github", ["github_token"], { token: pending.github_token }])
+  if (pending.jira_token !== undefined && watching("jira")) {
     creds.push(["jira", ["jira_token"], { token: pending.jira_token, host: drafts.watcher_auth.jira.host, email: drafts.watcher_auth.jira.email }])
   }
-  if (pending.slack_token !== undefined || pending.slack_cookie !== undefined) {
+  if ((pending.slack_token !== undefined || pending.slack_cookie !== undefined) && watching("slack")) {
     creds.push(["slack", ["slack_token", "slack_cookie"], { token: pending.slack_token, cookie: pending.slack_cookie }])
   }
   for (const [svc, keys, body] of creds) {

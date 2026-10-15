@@ -14,10 +14,61 @@ import (
 )
 
 type Config struct {
-	WorktreesBase string     `yaml:"worktrees_base"`
-	Jira          JiraConfig `yaml:"jira"`
-	Editor        string     `yaml:"editor"`
-	UI            UIConfig   `yaml:"ui"`
+	WorktreesBase string         `yaml:"worktrees_base"`
+	Jira          JiraConfig     `yaml:"jira"`
+	Editor        string         `yaml:"editor"`
+	UI            UIConfig       `yaml:"ui"`
+	Watchers      WatchersConfig `yaml:"watchers,omitempty"`
+}
+
+// The services worktree's watcher connects to, as named in WatchersConfig.
+const (
+	ServiceGitHub = "github"
+	ServiceJira   = "jira"
+	ServiceSlack  = "slack"
+)
+
+// Services lists every service a watcher can be turned off for.
+var Services = []string{ServiceGitHub, ServiceJira, ServiceSlack}
+
+// WatchersConfig turns worktree's connection to a service off. A missing
+// key means on; only `false` is ever written. Off means no polling, linked
+// resources or (Slack) live thread view — existing resources still show
+// from the DB. Set from the Settings modal or `worktree setup`.
+type WatchersConfig struct {
+	GitHub *bool `yaml:"github,omitempty"`
+	Jira   *bool `yaml:"jira,omitempty"`
+	Slack  *bool `yaml:"slack,omitempty"`
+}
+
+// Enabled reports whether worktree may connect to svc (a Service* name).
+func (w WatchersConfig) Enabled(svc string) bool {
+	var v *bool
+	switch svc {
+	case ServiceGitHub:
+		v = w.GitHub
+	case ServiceJira:
+		v = w.Jira
+	case ServiceSlack:
+		v = w.Slack
+	}
+	return v == nil || *v
+}
+
+// SetEnabled records svc's state: nil (the default) for on, false for off.
+func (w *WatchersConfig) SetEnabled(svc string, on bool) {
+	var v *bool
+	if !on {
+		v = new(bool)
+	}
+	switch svc {
+	case ServiceGitHub:
+		w.GitHub = v
+	case ServiceJira:
+		w.Jira = v
+	case ServiceSlack:
+		w.Slack = v
+	}
 }
 
 // JiraConfig holds worktree-only Jira settings. Credentials (host, email,

@@ -7,6 +7,8 @@ import { JiraPollingSection } from "./JiraPollingSection"
 import { KeyPath, PersistedTo, SettingsSection } from "./parts"
 import { SecretField, type TestState } from "./SecretField"
 import type { SettingsTab } from "./tabDirty"
+import { serviceName, watcherOffMessage } from "./watcherText"
+import { Toggle } from "../Toggle"
 
 const fileTitle: Record<SettingsFile, string> = {
   worktree: "config.yaml",
@@ -20,7 +22,7 @@ const fileTitle: Record<SettingsFile, string> = {
  * config.yaml (Jira project detection) and watcher config.yaml (Jira
  * polling). Excludes auth.yaml's consumers and legacy jira_custom_fields.
  */
-export function ConnectedServicesPanel({ settings, drafts, update, errors, active, secrets, setSecret, setInvalid, resetToken, dirty }: {
+export function ConnectedServicesPanel({ settings, drafts, update, errors, active, secrets, setSecret, setInvalid, resetToken, dirty, service, onServiceChange }: {
   settings: Settings
   drafts: Drafts
   update: <F extends SettingsFile>(file: F, fn: (d: Drafts[F]) => Drafts[F]) => void
@@ -35,11 +37,13 @@ export function ConnectedServicesPanel({ settings, drafts, update, errors, activ
   /** Bumped on Discard and Save, to remount the custom-field rows. */
   resetToken: number
   dirty: Record<SettingsTab, boolean>
+  /** The open sub-tab; the modal owns it so a link can choose one. */
+  service: CredService
+  onServiceChange: (s: CredService) => void
 }) {
   const sec = settings.secrets
   const auth = drafts.watcher_auth
   const paths = settings.paths
-  const [service, setService] = useState<string | null>("github")
   const [tests, setTests] = useState<Record<CredService, TestState>>({
     github: { status: "idle" }, jira: { status: "idle" }, slack: { status: "idle" },
   })
@@ -69,10 +73,11 @@ export function ConnectedServicesPanel({ settings, drafts, update, errors, activ
   useEffect(() => {
     if (!active || tested.current) return
     tested.current = true
-    if (sec.github_token) void runTest("github")
-    if (sec.jira_token) void runTest("jira")
-    if (sec.slack_token && sec.slack_cookie) void runTest("slack")
-  }, [active, runTest, sec.github_token, sec.jira_token, sec.slack_token, sec.slack_cookie])
+    const on = settings.worktree.watchers
+    if (sec.github_token && on.github) void runTest("github")
+    if (sec.jira_token && on.jira) void runTest("jira")
+    if (sec.slack_token && sec.slack_cookie && on.slack) void runTest("slack")
+  }, [active, runTest, sec.github_token, sec.jira_token, sec.slack_token, sec.slack_cookie, settings.worktree.watchers])
 
   /**
    * Replace tests the new value (nothing is written) and, if it passes,
@@ -100,11 +105,27 @@ export function ConnectedServicesPanel({ settings, drafts, update, errors, activ
   const fileErrors = (files: SettingsFile[]) => files.map((f) => errors[f] && (
     <Alert key={f} color="red" title={`Couldn't save ${fileTitle[f]}`}>{errors[f]}</Alert>
   ))
+  /** The draft's watcher state: off disables the service's credential fields. */
+  const watching = drafts.worktree.watchers
+  const offNote = "Turn the watcher on to test or replace credentials."
+  const watcherToggle = (svc: CredService) => (
+    <SettingsSection title="Watcher" file={paths.worktree}>
+      <Toggle
+        label={`Enable ${serviceName[svc]} watcher`}
+        description={!watching[svc] ? watcherOffMessage(svc) : <KeyPath path={`watchers.${svc}`} />}
+        checked={watching[svc]}
+        onChange={(e) => {
+          const on = e.currentTarget.checked
+          update("worktree", (d) => ({ ...d, watchers: { ...d.watchers, [svc]: on } }))
+        }}
+      />
+    </SettingsSection>
+  )
   const label = (name: string, tab: SettingsTab) =>
     <>{name}{dirty[tab] ? <Text span c="orange" ml={4}>●</Text> : null}</>
 
   return (
-    <Tabs value={service} onChange={setService} variant="pills">
+    <Tabs value={service} onChange={(v) => v && onServiceChange(v as CredService)} variant="pills">
       <Tabs.List>
         <Tabs.Tab value="github">{label("GitHub", "github")}</Tabs.Tab>
         <Tabs.Tab value="jira">{label("Jira", "jira")}</Tabs.Tab>
@@ -113,9 +134,10 @@ export function ConnectedServicesPanel({ settings, drafts, update, errors, activ
 
       <Tabs.Panel value="github" pt="md">
         <Stack gap="lg">
-          <PersistedTo path={paths.watcher_auth} />
-          {fileErrors(["watcher_auth"])}
-          <SettingsSection title="Authentication">
+          <PersistedTo paths={[paths.worktree, paths.watcher_auth]} />
+          {fileErrors(["worktree", "watcher_auth"])}
+          {watcherToggle("github")}
+          <SettingsSection title="Authentication" file={paths.watcher_auth}>
             <SecretField
               label="Token"
               description={<>Personal access token with repo read scopes. <KeyPath path="services.github.token" /></>}
@@ -125,6 +147,7 @@ export function ConnectedServicesPanel({ settings, drafts, update, errors, activ
               onReplace={replacer("github", "github_token")}
               onTest={() => void runTest("github")}
               test={tests.github}
+              disabled={!watching.github && offNote}
             />
           </SettingsSection>
         </Stack>
@@ -132,8 +155,9 @@ export function ConnectedServicesPanel({ settings, drafts, update, errors, activ
 
       <Tabs.Panel value="jira" pt="md">
         <Stack gap="lg">
-          <PersistedTo paths={[paths.watcher_auth, paths.worktree, paths.watcher_config]} />
-          {fileErrors(["watcher_auth", "worktree", "watcher_config"])}
+          <PersistedTo paths={[paths.worktree, paths.watcher_auth, paths.watcher_config]} />
+          {fileErrors(["worktree", "watcher_auth", "watcher_config"])}
+          {watcherToggle("jira")}
           <SettingsSection title="Connection" file={paths.watcher_auth}>
             <TextInput
               label="Host"
@@ -160,6 +184,7 @@ export function ConnectedServicesPanel({ settings, drafts, update, errors, activ
               onReplace={replacer("jira", "jira_token")}
               onTest={() => void runTest("jira")}
               test={tests.jira}
+              disabled={!watching.jira && offNote}
             />
           </SettingsSection>
           <SettingsSection title="Issue detection" file={paths.worktree}>
@@ -190,12 +215,13 @@ export function ConnectedServicesPanel({ settings, drafts, update, errors, activ
 
       <Tabs.Panel value="slack" pt="md">
         <Stack gap="lg">
-          <PersistedTo path={paths.watcher_auth} />
-          {fileErrors(["watcher_auth"])}
+          <PersistedTo paths={[paths.worktree, paths.watcher_auth]} />
+          {fileErrors(["worktree", "watcher_auth"])}
+          {watcherToggle("slack")}
           <Alert color="blue" variant="light" p="xs">
             To automatically capture the Slack token and cookie from a browser session, run <Code>worktree setup slack</Code>.
           </Alert>
-          <SettingsSection title="Session">
+          <SettingsSection title="Session" file={paths.watcher_auth}>
             <SecretField
               label="Session token"
               description={<>The xoxc-… token from a logged-in browser. <KeyPath path="services.slack.token" /></>}
@@ -206,6 +232,7 @@ export function ConnectedServicesPanel({ settings, drafts, update, errors, activ
               testable={slackTestable}
               onTest={() => void runTest("slack")}
               test={tests.slack}
+              disabled={!watching.slack && offNote}
             />
             <SecretField
               label="Session cookie"
@@ -218,6 +245,7 @@ export function ConnectedServicesPanel({ settings, drafts, update, errors, activ
               testable={slackTestable}
               onTest={() => void runTest("slack")}
               test={tests.slack}
+              disabled={!watching.slack && offNote}
             />
             <TextInput
               label="Workspace domain"

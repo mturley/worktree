@@ -8,6 +8,8 @@ import { UIAccessPanel } from "./settings/UIAccessPanel"
 import { ConnectedServicesPanel } from "./settings/ConnectedServicesPanel"
 import { tabDirty, type SettingsTab } from "./settings/tabDirty"
 import { useSettingsDraft } from "./settings/useSettingsDraft"
+import type { SettingsTarget } from "./settings/SettingsContext"
+import type { CredService } from "../api/types"
 
 const settingsKey = ["settings"] as const
 
@@ -27,9 +29,16 @@ const affectedByCmux = (q: Pick<Query, "queryKey">) => {
  * holds it in the draft (memory only), and Save writes it. Devices manages
  * logins and has no draft.
  */
-export function SettingsModal({ opened, onClose }: { opened: boolean; onClose: () => void }) {
+export function SettingsModal({ opened, onClose, target }: { opened: boolean; onClose: () => void; target?: SettingsTarget }) {
   const qc = useQueryClient()
   const [tab, setTab] = useState<string | null>("general")
+  const [service, setService] = useState<CredService>("github")
+  // Each open at a target (a "Re-enable it in Settings" link) lands there.
+  useEffect(() => {
+    if (!opened || !target) return
+    setTab(target.tab)
+    if (target.service) setService(target.service)
+  }, [opened, target])
   const [confirmClose, setConfirmClose] = useState(false)
   // Bumped on Discard and after a save, to remount panels holding local rows.
   const [resetToken, setResetToken] = useState(0)
@@ -69,6 +78,11 @@ export function SettingsModal({ opened, onClose }: { opened: boolean; onClose: (
     if (out.saved.includes("watcher_config")) setResetToken((n) => n + 1)
     if (out.settings) qc.setQueryData(settingsKey, out.settings)
     if (wasCmux && out.saved.includes("worktree")) void qc.invalidateQueries({ predicate: affectedByCmux })
+    // Watcher toggles change what the detail views may fetch and show.
+    if (out.saved.includes("worktree")) {
+      void qc.invalidateQueries({ queryKey: ["watcher-health"] })
+      void qc.invalidateQueries({ queryKey: ["linked"] })
+    }
   }
 
   // Tabs and files don't line up one to one, so each tab marks only its own keys.
@@ -119,6 +133,8 @@ export function SettingsModal({ opened, onClose }: { opened: boolean; onClose: (
                 setInvalid={(m) => draft.setInvalid("watcher_config", m)}
                 resetToken={resetToken}
                 dirty={dirty}
+                service={service}
+                onServiceChange={setService}
               />
             ))}
           </Tabs.Panel>

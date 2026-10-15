@@ -135,22 +135,27 @@ func runUI(cmd *cobra.Command, args []string) error {
 	// Build the Slack client + per-thread poller best-effort. Slack being
 	// unconfigured must NOT block the UI: the Slack tab is simply unavailable
 	// (its handlers return 503) while everything else works.
-	var slackClient slack.Client
-	var slackPoller *slackpoller.Poller
-	var slackDomain, slackCookie string
+	srv := &webui.Server{DB: conn, WebFS: webFS, Port: uiPort, DevMode: uiAPIOnly, Logger: logger,
+		Security: sec, BuildCommit: buildCommit()}
+	// The per-service watcher toggles; Settings moves them live.
+	off := map[string]bool{}
+	for _, svc := range config.Services {
+		off[svc] = !cfg.Watchers.Enabled(svc)
+	}
+	srv.SetWatchersDisabled(off)
+
+	// The Slack client is gated on the Slack watcher, and the live-thread
+	// poller is given the gated one, so nothing reaches Slack while it's off.
 	if token, cookie, domain, err := slackcreds.Load(); err == nil {
-		slackClient = slack.New(token, cookie)
-		slackDomain = domain
-		slackCookie = cookie
-		slackPoller = slackpoller.New(slackClient, 8*time.Second, time.Now)
-		defer slackPoller.Close()
+		srv.SlackClient = webui.GateSlack(slack.New(token, cookie),
+			func() bool { return srv.WatcherEnabled(config.ServiceSlack) })
+		srv.SlackDomain = domain
+		srv.SlackCookie = cookie
+		srv.SlackPoller = slackpoller.New(srv.SlackClient, 8*time.Second, time.Now)
+		defer srv.SlackPoller.Close()
 	} else {
 		logger.Printf("Slack not configured (%v); Slack tab will be unavailable", err)
 	}
-
-	srv := &webui.Server{DB: conn, WebFS: webFS, Port: uiPort, DevMode: uiAPIOnly, Logger: logger,
-		SlackClient: slackClient, SlackPoller: slackPoller, SlackDomain: slackDomain, SlackCookie: slackCookie,
-		Security: sec, BuildCommit: buildCommit()}
 	// The Settings modal's "Enable cmux features" toggle; it writes the
 	// config itself, so this is only the starting state.
 	srv.SetCmuxFeaturesDisabled(cfg.UI.CmuxFeaturesDisabled)

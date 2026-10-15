@@ -13,6 +13,7 @@ function TestChip({ test }: { test?: TestState }) {
   if (r.ok) return <Badge size="xs" variant="light" color="green" tt="none">✓ Valid</Badge>
   if (r.kind === "auth") return <Badge size="xs" variant="light" color="red" tt="none" title={r.detail}>✕ Rejected</Badge>
   if (r.kind === "missing") return <Badge size="xs" variant="light" color="gray" tt="none">Not configured</Badge>
+  if (r.kind === "disabled") return <Badge size="xs" variant="light" color="gray" tt="none" title={r.detail}>Watcher off</Badge>
   if (r.kind === "unsaved") return <Badge size="xs" variant="light" color="yellow" tt="none" title={r.detail}>Save host first</Badge>
   return <Badge size="xs" variant="light" color="yellow" tt="none" title={r.detail}>⚠ Couldn't reach</Badge>
 }
@@ -24,7 +25,7 @@ function TestChip({ test }: { test?: TestState }) {
  * held as the modal's pending value for Save to write — and clears the
  * input. A pending value swaps Test for Revert.
  */
-export function SecretField({ label, description, isSet, pending = false, onRevert, placeholder = "Paste a new token", onReplace, onTest, test, testable }: {
+export function SecretField({ label, description, isSet, pending = false, onRevert, placeholder = "Paste a new token", onReplace, onTest, test, testable, disabled = false }: {
   label: string
   description: ReactNode
   isSet: boolean
@@ -40,6 +41,8 @@ export function SecretField({ label, description, isSet, pending = false, onReve
   test?: TestState
   /** Whether Test can run; defaults to isSet (Slack needs token and cookie). */
   testable?: boolean
+  /** A reason the field can't be used now (its watcher is off), or false. */
+  disabled?: string | false
 }) {
   const canTest = testable ?? isSet
   const [editing, setEditing] = useState(false)
@@ -114,7 +117,7 @@ export function SecretField({ label, description, isSet, pending = false, onReve
           size="sm"
           variant="default"
           miw={88}
-          disabled={!canTest || test?.status === "testing"}
+          disabled={!!disabled || !canTest || test?.status === "testing"}
           onClick={() => { clickedTest.current = true; setFlashValid(false); onTest() }}
         >
           Test
@@ -125,6 +128,7 @@ export function SecretField({ label, description, isSet, pending = false, onReve
   return (
     <Stack gap={4}>
       <PasswordInput
+        disabled={!!disabled}
         label={<Group gap="xs" component="span">{label}{onTest && <TestChip test={test} />}{pending && !editing && <Badge size="xs" color="orange" variant="light" tt="none">Unsaved</Badge>}</Group>}
         description={description}
         placeholder={editing ? placeholder : idlePlaceholder}
@@ -156,7 +160,8 @@ export function SecretField({ label, description, isSet, pending = false, onReve
           </Group>
         )}
       />
-      {test?.status === "done" && !test.result.ok && test.result.detail && !editing && (
+      {disabled && <Text size="xs" c="dimmed">{disabled}</Text>}
+      {!disabled && test?.status === "done" && !test.result.ok && test.result.detail && !editing && (
         <Text size="xs" c="dimmed">{test.result.detail}</Text>
       )}
     </Stack>

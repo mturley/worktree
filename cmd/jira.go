@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	wconfig "github.com/mturley/watcher/config"
+	"github.com/mturley/worktree/internal/config"
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/jira"
 	"github.com/mturley/worktree/internal/resources"
@@ -66,7 +67,10 @@ func runJira(cmd *cobra.Command, args []string) error {
 	var client *jira.Client
 	var clientErr error
 	wcfg, wcfgErr := wconfig.Load(wconfig.DefaultPath())
-	if wcfgErr != nil {
+	if cfg, err := config.Load(); err == nil && !cfg.Watchers.Enabled(config.ServiceJira) {
+		// Watcher off: never contact Jira; list the keys and URLs only.
+		clientErr = fmt.Errorf("the Jira watcher is disabled")
+	} else if wcfgErr != nil {
 		clientErr = wcfgErr
 	} else if creds, err := wcfg.Jira(); err != nil {
 		clientErr = err

@@ -8,6 +8,7 @@ import (
 	watcherdb "github.com/mturley/watcher/db"
 	wgithub "github.com/mturley/watcher/github"
 	wjira "github.com/mturley/watcher/jira"
+	"github.com/mturley/worktree/internal/config"
 	wdb "github.com/mturley/worktree/internal/db"
 	wtjira "github.com/mturley/worktree/internal/jira"
 
@@ -53,10 +54,19 @@ func runWatcherRun(cmd *cobra.Command, args []string) error {
 	}
 
 	notConfigured := fmt.Errorf("no credentials configured in ~/.config/watcher/auth.yaml (run watcher auth setup)")
+	// A service whose watcher is off (worktree's config.yaml) is never polled.
+	wtcfg, _ := config.Load()
+	off := func(svc, name string) bool {
+		if wtcfg.Watchers.Enabled(svc) {
+			return false
+		}
+		fmt.Fprintf(cmd.ErrOrStderr(), "%s watcher is disabled; skipping\n", name)
+		return true
+	}
 	polledAny := false
 	configuredAny := false
 
-	if which == "pr" || which == "all" {
+	if (which == "pr" || which == "all") && !off(config.ServiceGitHub, "GitHub") {
 		prs, err := watcherdb.ActiveResources(conn, "pr")
 		if err != nil {
 			return err
@@ -74,7 +84,7 @@ func runWatcherRun(cmd *cobra.Command, args []string) error {
 			}
 		}
 	}
-	if which == "jira" || which == "all" {
+	if (which == "jira" || which == "all") && !off(config.ServiceJira, "Jira") {
 		issues, err := watcherdb.ActiveResources(conn, "jira")
 		if err != nil {
 			return err

@@ -134,6 +134,12 @@ type Server struct {
 	ConfigPath        string
 	WatcherAuthPath   string
 	WatcherConfigPath string
+
+	// The per-service watcher gates (watchers.*); see watchers.go.
+	githubOff, jiraOff, slackOff atomic.Bool
+	// pollingStarted is set by StartPolling; a re-enabled watcher only
+	// triggers an immediate poll when the loop is running.
+	pollingStarted atomic.Bool
 	// settingsMu serializes every settings write, so two saves can't
 	// interleave a load and a save of the same file.
 	settingsMu sync.Mutex
@@ -214,6 +220,7 @@ func (s *Server) routes() []route {
 		{"GET /api/watchers", s.handleWatchers},
 		{"POST /api/watchers/poll", s.handleWatchersPoll},
 		{"GET /api/watchers/resources", s.handleWatchedResources},
+		{"GET /api/watchers/health", s.handleWatcherHealth},
 		{"GET /api/watchers/log", s.handleWatcherLog},
 		{"GET /api/worktree-resources", s.handleWorktreeResources},
 		{"POST /api/resource-meta", s.handleSetResourceMeta},

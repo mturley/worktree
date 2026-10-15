@@ -202,7 +202,13 @@ func (p Plan) Execute() error {
 	}
 
 	if p.TestGitHubCreds || p.TestSlackCreds || p.TestJiraCreds {
-		if err := testAndRepairSharedCreds(p.TestGitHubCreds, p.TestSlackCreds, p.TestJiraCreds); err != nil {
+		// A service whose watcher is off needs no credentials checked.
+		on, err := configureWatchers(p.ConfigPath, p.Cfg)
+		if err != nil {
+			return fmt.Errorf("configuring watchers: %w", err)
+		}
+		if err := testAndRepairSharedCreds(p.TestGitHubCreds && on[config.ServiceGitHub],
+			p.TestSlackCreds && on[config.ServiceSlack], p.TestJiraCreds && on[config.ServiceJira]); err != nil {
 			fmt.Printf("  %s Credential setup failed: %v\n", ui.Yellow("!"), err)
 		}
 	}
@@ -422,6 +428,8 @@ func writeConfig(path string, cfg config.Config) error {
 		Editor        string   `yaml:"editor,omitempty"`
 		Jira          jiraYaml `yaml:"jira,omitempty"`
 		UI            *uiYaml  `yaml:"ui,omitempty"`
+		// Only off watchers are written; all on leaves the key out.
+		Watchers *config.WatchersConfig `yaml:"watchers,omitempty"`
 	}
 
 	yc := yamlConfig{
@@ -450,6 +458,9 @@ func writeConfig(path string, cfg config.Config) error {
 	}
 	if u.Password != "" || u.HTTPSPort != 0 || len(u.AllowedHosts) > 0 || u.TLS != nil || u.CmuxFeaturesDisabled {
 		yc.UI = &u
+	}
+	if w := cfg.Watchers; w.GitHub != nil || w.Jira != nil || w.Slack != nil {
+		yc.Watchers = &w
 	}
 
 	data, err := yaml.Marshal(yc)

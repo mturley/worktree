@@ -3,6 +3,7 @@ package webui
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 )
 
 // handleThreadEvents implements GET /api/thread-events?channel=&thread_ts=:
@@ -12,7 +13,7 @@ import (
 // buildThreadResponse) so the two stay consistent. The subscription is torn
 // down when the client disconnects.
 func (s *Server) handleThreadEvents(w http.ResponseWriter, r *http.Request) {
-	if s.SlackClient == nil || s.SlackPoller == nil {
+	if !s.slackOn() || s.SlackPoller == nil {
 		s.slackUnavailable(w)
 		return
 	}
@@ -39,10 +40,19 @@ func (s *Server) handleThreadEvents(w http.ResponseWriter, r *http.Request) {
 	defer unsubscribe()
 
 	ctx := r.Context()
+	// Turning the Slack watcher off ends the stream, which unsubscribes and
+	// so stops the live poller for this thread. (Its client is gated too, so
+	// nothing reaches Slack in the meantime.)
+	gate := time.NewTicker(time.Second)
+	defer gate.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-gate.C:
+			if !s.slackOn() {
+				return
+			}
 		case u, ok := <-updates:
 			if !ok {
 				return

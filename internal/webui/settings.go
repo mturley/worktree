@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 
 	wconfig "github.com/mturley/watcher/config"
@@ -106,6 +107,9 @@ type worktreeSettings struct {
 			KeyFile  string `json:"key_file"`
 		} `json:"tls"`
 	} `json:"ui"`
+	// Watchers maps each service (config.Services) to whether its watcher
+	// is on. A service missing from a PUT keeps its current state.
+	Watchers map[string]bool `json:"watchers"`
 }
 
 type settingsDTO struct {
@@ -135,6 +139,10 @@ func toWorktreeSettings(e config.Editable) worktreeSettings {
 	w.UI.AllowedHosts = nonNil(e.AllowedHosts)
 	w.UI.TLS.CertFile = e.TLSCertFile
 	w.UI.TLS.KeyFile = e.TLSKeyFile
+	w.Watchers = map[string]bool{}
+	for _, svc := range config.Services {
+		w.Watchers[svc] = e.WatcherEnabled(svc)
+	}
 	return w
 }
 
@@ -209,6 +217,7 @@ func (s *Server) settings() (settingsDTO, error) {
 	dto.Secrets.UIPassword = pwSet
 	// The live gate, not the file, is what the server is doing right now.
 	dto.Worktree.CmuxFeaturesEnabled = !s.cmuxDisabled.Load()
+	dto.Worktree.Watchers = s.watcherStates()
 	return dto, nil
 }
 
@@ -250,6 +259,16 @@ func (s *Server) handleSettingsWorktree(w http.ResponseWriter, r *http.Request) 
 		TLSCertFile:          strings.TrimSpace(req.UI.TLS.CertFile),
 		TLSKeyFile:           strings.TrimSpace(req.UI.TLS.KeyFile),
 		CmuxFeaturesDisabled: !req.CmuxFeaturesEnabled,
+		WatchersDisabled:     map[string]bool{},
+	}
+	for svc, on := range req.Watchers {
+		if !slices.Contains(config.Services, svc) {
+			writeError(w, http.StatusBadRequest, "unknown watcher "+svc)
+			return
+		}
+		if !on {
+			next.WatchersDisabled[svc] = true
+		}
 	}
 	for _, h := range next.AllowedHosts {
 		if strings.ContainsAny(h, " /:") && net.ParseIP(h) == nil {
@@ -260,6 +279,13 @@ func (s *Server) handleSettingsWorktree(w http.ResponseWriter, r *http.Request) 
 
 	s.settingsMu.Lock()
 	defer s.settingsMu.Unlock()
+
+	// A service the request leaves out keeps its live state.
+	for _, svc := range config.Services {
+		if _, ok := req.Watchers[svc]; !ok && !s.WatcherEnabled(svc) {
+			next.WatchersDisabled[svc] = true
+		}
+	}
 
 	disabled := next.CmuxFeaturesDisabled
 	cmuxChanging := disabled != s.cmuxDisabled.Load()
@@ -272,6 +298,7 @@ func (s *Server) handleSettingsWorktree(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	jira.SetAliasHosts(next.JiraAliasHosts)
+	s.applyWatchers(next.WatchersDisabled)
 	if cmuxChanging {
 		s.cmuxDisabled.Store(disabled)
 		if disabled {

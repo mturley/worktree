@@ -10,6 +10,7 @@ import { LinkPane } from "./LinkPane"
 import { RefreshWatchersButton } from "./RefreshWatchersButton"
 import { WatcherLogButton } from "./WatcherLogButton"
 import { WatcherErrorMark } from "./WatcherErrorMark"
+import { WatcherAlert } from "./WatcherAlert"
 import { useWatcherStatus } from "../hooks/useWatchers"
 import { useNow } from "../hooks/useNow"
 import { relativeTime } from "../lib/relativeTime"
@@ -264,6 +265,8 @@ export function ResourceDetailPane({
           ← all resources
         </Anchor>
       )}
+      {/* Its service's watcher is off, or failing: say so, with a way to fix it. */}
+      <WatcherAlert type={resource.type} />
       {resource.type === "slack" ? (
         <SlackThreadPane
           key={`${resource.type}:${resource.id}`}

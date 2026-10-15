@@ -1926,6 +1926,50 @@ already waiting cannot put a prefix back. After a change the modal
 invalidates every query whose key starts with `cmux` plus `["session"]`;
 other open tabs catch up on their next refetch.
 
+### Watcher toggles (`watchers.go`, `config.WatchersConfig`, `WatcherAlert`)
+
+Each service can be turned off: `watchers: {github, jira, slack}` in
+worktree's `config.yaml`, where only `false` is ever written and a missing key
+means on. It is worktree-only: agent-handler, the library's other consumer,
+keeps polling. The toggles sit at the top of each Connected Services sub-tab
+(saved through the footer like everything else) and `worktree setup` asks
+for each, defaulting to the current state so `--yes` never re-enables one;
+a "no" there skips that service's credential checks.
+
+**Off means worktree never contacts the service or uses its credentials.**
+The server holds one gate per service (`githubOff`/`jiraOff`/`slackOff`,
+moved live by `PUT /api/settings/worktree`), checked by:
+
+- `pollAll` / `pollOne`, before the service's credentials are even read;
+- `linkedSources` (an off service's source is nil, so the builder treats it
+  as unconfigured and its links list unenriched) and the linked routes,
+  which return 503 "The X watcher is disabled in Settings" for a resource of
+  that service — the Linked tab shows that as a note, not an error;
+- self-identity lookups (refused per call, so the 10-minute retry resolves
+  them once the watcher is back on);
+- the credential test and replace routes (result kind `disabled`; the modal
+  also disables the fields while the toggle is off, and Save holds back a
+  pending secret for a service turned off);
+- Slack: the client is wrapped once at startup (`GateSlack`), and the
+  live-thread poller is given the wrapped one, so every call fails with
+  `ErrWatcherDisabled` without touching the network; the handlers' guard is
+  `slackOn()`, the SSE stream ends within a second of the toggle going off,
+  and the avatar/emoji/file proxies refuse.
+- CLI: `worktree watcher run` and `worktree jira` skip an off service.
+
+Turning one back on polls straight away (when the loop runs). Polls catch up
+from their cursors: Jira and Slack fully; GitHub within its per-poll window
+(the last 20 reviews/comments, 10 commits).
+
+**Health.** `GET /api/watchers/health` reports, per service, `enabled` and
+`failing` — every polled resource of that service failed its latest poll
+(`watcher_resource_poll_status`), which one successful poll clears — with the
+newest error. `WatcherAlert` at the top of `ResourceDetailPane` shows "The X
+watcher is disabled…" or "X authentication failed…" with a link that opens
+Settings on that service (`SettingsProvider` / `useOpenSettings` in
+`settings/SettingsContext.tsx`, one modal for the whole app). The Slack pane
+doesn't fetch or stream the thread at all while Slack is off.
+
 ### Unread mailbox on workspace titles (`cmux_unread.go`, `cmux/unread_prefix.go`)
 
 A cmux workspace whose worktree has unreads gets `📬 ` (`cmux.UnreadPrefix`)

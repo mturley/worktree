@@ -71,6 +71,10 @@ function Sections({ sections, path }: { sections: LinkedSection[]; path?: string
 
 /** The Linked Resources tab body. */
 export function LinkedResourcesPanel({ query, path }: { query: LinkedQuery; path?: string }) {
+  // The resource's own watcher is off: nothing to retry, and nothing wrong.
+  if (query.error && !query.data && query.error.message.includes("watcher is disabled")) {
+    return <Text size="sm" c="dimmed" ta="center" py="md">{query.error.message}, so linked resources aren't fetched.</Text>
+  }
   if (query.error && !query.data) {
     return (
       <Alert color="red" variant="light" title="Couldn't load linked resources">

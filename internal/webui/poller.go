@@ -14,6 +14,7 @@ import (
 	wjira "github.com/mturley/watcher/jira"
 	"github.com/mturley/watcher/polllog"
 	wslack "github.com/mturley/watcher/slack"
+	"github.com/mturley/worktree/internal/config"
 	wdb "github.com/mturley/worktree/internal/db"
 	wtjira "github.com/mturley/worktree/internal/jira"
 )
@@ -21,6 +22,7 @@ import (
 // StartPolling starts an in-process poll loop: an immediate poll, then one
 // every interval, until stop() is called.
 func (s *Server) StartPolling(interval time.Duration) (stop func()) {
+	s.pollingStarted.Store(true)
 	done := make(chan struct{})
 	go func() {
 		s.safePollAll()
@@ -100,7 +102,9 @@ func (s *Server) pollAll() error {
 	if err != nil {
 		return err
 	}
-	if prs, _ := watcherdb.ActiveResources(s.DB, "pr"); len(prs) > 0 {
+	// A service whose watcher is off is skipped before its credentials are
+	// even read; its resources keep what the DB already has.
+	if prs, _ := watcherdb.ActiveResources(s.DB, "pr"); len(prs) > 0 && s.WatcherEnabled(config.ServiceGitHub) {
 		if gh, err := cfg.GitHub(); err == nil {
 			s.markConfigured("github")
 			if err := wgithub.Poll(s.DB, gh.Token, prs, s.logger()); err != nil {
@@ -111,7 +115,7 @@ func (s *Server) pollAll() error {
 			s.warnUnconfiguredOnce("github", fmt.Sprintf("github not configured; skipping %d pr resources", len(prs)))
 		}
 	}
-	if issues, _ := watcherdb.ActiveResources(s.DB, "jira"); len(issues) > 0 {
+	if issues, _ := watcherdb.ActiveResources(s.DB, "jira"); len(issues) > 0 && s.WatcherEnabled(config.ServiceJira) {
 		if jc, err := cfg.Jira(); err == nil {
 			s.markConfigured("jira")
 			auth := wjira.JiraAuth{URL: jc.Host, Email: jc.Email, Token: jc.Token, CustomFields: wtjira.ConfiguredCustomFields(jc.CustomFields)}
@@ -126,7 +130,7 @@ func (s *Server) pollAll() error {
 			s.warnUnconfiguredOnce("jira", fmt.Sprintf("jira not configured; skipping %d jira resources", len(issues)))
 		}
 	}
-	if threads, _ := watcherdb.ActiveResources(s.DB, "slack"); len(threads) > 0 {
+	if threads, _ := watcherdb.ActiveResources(s.DB, "slack"); len(threads) > 0 && s.WatcherEnabled(config.ServiceSlack) {
 		if sc, err := cfg.Slack(); err == nil {
 			s.markConfigured("slack")
 			auth := wslack.SlackAuth{Token: sc.Token, Cookie: sc.Cookie, WorkspaceDomain: sc.WorkspaceDomain}
@@ -150,6 +154,9 @@ func (s *Server) pollAll() error {
 // Missing creds or a poll error are logged, never fatal (the background
 // pollAll will retry).
 func (s *Server) pollOne(r watcher.Resource) {
+	if svc := serviceForType(r.Type); svc != "" && !s.WatcherEnabled(svc) {
+		return // its watcher is off: never contact the service
+	}
 	cfg, err := wconfig.Load(wconfig.DefaultPath())
 	if err != nil {
 		s.logger().Printf("pollOne: load config: %v", err)

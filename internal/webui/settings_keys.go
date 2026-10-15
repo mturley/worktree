@@ -16,6 +16,9 @@ var settingsKeyPaths = map[string][]string{
 		"ui.tls.cert_file",
 		"ui.tls.key_file",
 		"ui.cmux_features_disabled",
+		"watchers.github", // Connected Services sub-tab toggles
+		"watchers.jira",
+		"watchers.slack",
 	},
 	"watcher_auth": {
 		"services.github.token", // write-only: credentials endpoints

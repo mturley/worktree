@@ -133,7 +133,7 @@ func detachedLookupContext(ctx context.Context) (context.Context, context.Cancel
 // Every result carries a ready-to-insert mrkdwn Token, so the frontend never
 // constructs mention syntax from ids.
 func (s *Server) handleSlackAutocomplete(w http.ResponseWriter, r *http.Request) {
-	if s.SlackClient == nil {
+	if !s.slackOn() {
 		s.slackUnavailable(w)
 		return
 	}

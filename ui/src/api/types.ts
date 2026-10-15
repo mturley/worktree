@@ -323,6 +323,8 @@ export interface WorktreeSettings {
   worktrees_base: string
   editor: string
   cmux_features_enabled: boolean
+  /** Per service, whether worktree's watcher may connect to it (watchers.*; absent in the file = on). */
+  watchers: Record<CredService, boolean>
   jira: {
     projects: string[]
     alias_hosts: string[]
@@ -378,7 +380,7 @@ export type CredService = "github" | "jira" | "slack"
 /** Outcome of testing or replacing a credential. "unsaved": the Jira test was refused because the form's host differs from the saved one. */
 export interface CredResult {
   ok: boolean
-  kind: "ok" | "auth" | "network" | "missing" | "unsaved"
+  kind: "ok" | "auth" | "network" | "missing" | "unsaved" | "disabled"
   detail: string
 }
 
@@ -510,3 +512,6 @@ export interface LinkedResourcesDTO {
   count: number
   sections: LinkedSection[]
 }
+
+/** GET /api/watchers/health: per service, whether its watcher is on and whether every polled resource is failing. */
+export type WatcherHealth = Record<CredService, { enabled: boolean; failing: boolean; error?: string }>

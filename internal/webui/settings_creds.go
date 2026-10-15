@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -50,7 +51,7 @@ func (s *Server) validators() credValidators {
 
 type credResult struct {
 	OK     bool   `json:"ok"`
-	Kind   string `json:"kind"` // ok | auth | network | missing | unsaved
+	Kind   string `json:"kind"` // ok | auth | network | missing | unsaved | disabled
 	Detail string `json:"detail"`
 }
 
@@ -66,6 +67,19 @@ func classify(err error) credResult {
 }
 
 var missing = credResult{Kind: "missing", Detail: "not configured"}
+
+// watcherOff is the result for a service whose watcher is off (as saved):
+// its credentials are never sent anywhere, so they can't be tested or
+// replaced until it's turned back on.
+func watcherOff(svc string) credResult {
+	return credResult{Kind: "disabled", Detail: "The " + serviceName(svc) + " watcher is off. Turn it on and Save to test or replace credentials."}
+}
+
+// credService is the {service} path value if it is a known one.
+func credService(r *http.Request) (string, bool) {
+	svc := r.PathValue("service")
+	return svc, slices.Contains(config.Services, svc)
+}
 
 type credRequest struct {
 	Token  string `json:"token"`
@@ -96,6 +110,10 @@ func (s *Server) handleCredTest(w http.ResponseWriter, r *http.Request) {
 	req, err := decodeCred(w, r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if svc, ok := credService(r); ok && !s.WatcherEnabled(svc) {
+		writeJSON(w, http.StatusOK, watcherOff(svc))
 		return
 	}
 	cfg, err := s.loadWatcherAuth()
@@ -188,6 +206,10 @@ func (s *Server) handleCredReplace(w http.ResponseWriter, r *http.Request) {
 	req, err := decodeCred(w, r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if svc, ok := credService(r); ok && !s.WatcherEnabled(svc) {
+		writeJSON(w, http.StatusUnprocessableEntity, watcherOff(svc))
 		return
 	}
 	v := s.validators()

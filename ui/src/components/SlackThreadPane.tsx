@@ -3,6 +3,7 @@ import { Alert, Code, Group, Stack, Tabs, Text } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
 import { useThread } from "../hooks/useThread"
 import { defaultTabName, type Tab } from "../state/tabs"
+import { useWatcherHealth } from "./WatcherAlert"
 import { ResourceCard, type ResourceNotifyContext } from "./ResourceCard"
 import { ThreadView } from "./slack/ThreadView"
 import { useLinkedResources } from "../hooks/useLinkedResources"
@@ -52,7 +53,12 @@ export function slackTabFromResource(r: ResourceDTO): Tab {
  * so the user isn't told to retry something that needs configuration.
  */
 function isNotConfigured(error: string | undefined): boolean {
-  return !!error && error.includes("503")
+  return !!error && error.includes("503") && !isWatcherOff(error)
+}
+
+/** The same 503, but because the Slack watcher is off in Settings. */
+function isWatcherOff(error: string | undefined): boolean {
+  return !!error && error.includes("watcher is disabled")
 }
 
 /** The Slack pane's tabs, default first (see useResourceTab). */
@@ -69,7 +75,10 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, 
   // so a rejected write would otherwise vanish and look like success.
   const [saveError, setSaveError] = useState<string | null>(null)
   const tab = slackTabFromResource(resource)
-  const thread = useThread(tab)
+  // While the Slack watcher is off, don't fetch or stream the thread at all
+  // (the server would refuse); it loads again once the watcher is back on.
+  const slackOff = useWatcherHealth().data?.slack.enabled === false
+  const thread = useThread(slackOff ? null : tab)
   const [paneTab, setPaneTab] = useResourceTab(THREAD_TABS)
   // See ResourceDetailPane: link titles wait until the Linked tab is shown.
   const [linkedOpened, setLinkedOpened] = useState(paneTab === "linked")
@@ -83,6 +92,18 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, 
     if (focus) setPaneTab("thread", { replace: true })
   }, [focus?.key])
   const linked = useLinkedResources(resource.type, resource.id, linkedOpened)
+
+  // Watcher off: the resource still shows, but the thread can't be loaded
+  // (worktree doesn't contact Slack). ResourceDetailPane's WatcherAlert says
+  // why, with a link to turn it back on.
+  if (slackOff || isWatcherOff(thread.error)) {
+    return (
+      <Stack gap="sm">
+        <ResourceCard r={resource} path={path} onRemoved={onRemoved} variant="detail" onMetaChanged={() => onResourceChanged?.()} notify={notify} />
+        <Text size="sm" c="dimmed">The thread can't be shown while the Slack watcher is disabled.</Text>
+      </Stack>
+    )
+  }
 
   if (isNotConfigured(thread.error)) {
     return (

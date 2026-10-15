@@ -46,6 +46,8 @@ func TestReadEditableKeepsTildeAndIgnoresEnv(t *testing.T) {
 		AllowedHosts:  []string{"host.local"},
 		TLSCertFile:   "~/c.pem",
 		TLSKeyFile:    "~/k.pem",
+		// Every watcher on: present but empty, so callers can index it.
+		WatchersDisabled: map[string]bool{},
 	}
 	if !reflect.DeepEqual(got, want) || !pwSet {
 		t.Fatalf("got %+v pwSet=%v", got, pwSet)
@@ -121,6 +123,50 @@ func TestWriteEditableDefaultsDeleteKeys(t *testing.T) {
 	}
 	if strings.Contains(s, "jira:") {
 		t.Errorf("an emptied jira mapping should be removed:\n%s", s)
+	}
+}
+
+// A watcher is written only as `false` when turned off, and re-enabling
+// deletes the key (and the emptied watchers mapping).
+func TestWriteEditableWatchers(t *testing.T) {
+	p := writeSample(t)
+	cur, _, _ := ReadEditable(p)
+	for _, svc := range Services {
+		if !cur.WatcherEnabled(svc) {
+			t.Fatalf("%s should default to enabled", svc)
+		}
+	}
+	cur.WatchersDisabled = map[string]bool{ServiceJira: true, ServiceSlack: true}
+	if _, err := WriteEditable(p, cur); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(p)
+	if s := string(data); !strings.Contains(s, "watchers:\n    jira: false\n    slack: false\n") || strings.Contains(s, "github:") {
+		t.Fatalf("unexpected watchers block:\n%s", s)
+	}
+	got, _, _ := ReadEditable(p)
+	if got.WatcherEnabled(ServiceJira) || got.WatcherEnabled(ServiceSlack) || !got.WatcherEnabled(ServiceGitHub) {
+		t.Fatalf("read back %+v", got.WatchersDisabled)
+	}
+	got.WatchersDisabled = map[string]bool{}
+	if _, err := WriteEditable(p, got); err != nil {
+		t.Fatal(err)
+	}
+	data, _ = os.ReadFile(p)
+	if strings.Contains(string(data), "watchers") {
+		t.Fatalf("re-enabling should remove the watchers mapping:\n%s", data)
+	}
+}
+
+func TestWatchersConfigEnabled(t *testing.T) {
+	var w WatchersConfig
+	w.SetEnabled(ServiceGitHub, false)
+	if w.Enabled(ServiceGitHub) || !w.Enabled(ServiceJira) {
+		t.Fatalf("%+v", w)
+	}
+	w.SetEnabled(ServiceGitHub, true)
+	if w.GitHub != nil {
+		t.Fatal("enabling should clear the key, not write true")
 	}
 }
 

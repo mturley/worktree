@@ -16,6 +16,7 @@ import (
 	wgithub "github.com/mturley/watcher/github"
 	wjira "github.com/mturley/watcher/jira"
 	"github.com/mturley/watcher/slack"
+	"github.com/mturley/worktree/internal/config"
 	wtjira "github.com/mturley/worktree/internal/jira"
 	"github.com/mturley/worktree/internal/linked"
 	"github.com/mturley/worktree/internal/linkmeta"
@@ -228,24 +229,26 @@ func samePRID(a, b string) bool {
 }
 
 // linkedSources builds Sources from the watcher config. Unconfigured
-// services are left nil, which the builder treats as "not configured".
+// services, and services whose watcher is off, are left nil, which the
+// builder treats as "not configured": their links still list, unenriched,
+// and their credentials are never read.
 func (s *Server) linkedSources() linked.Sources {
 	if s.LinkedSources != nil {
 		return s.LinkedSources()
 	}
 	var src linked.Sources
 	src.Links = cachedLinkResolver{r: s.linkResolver(), cache: s.linkedCacheOrInit()}
-	if s.SlackClient != nil {
+	if s.slackOn() {
 		src.Slack = slackAdapter{s}
 	}
 	cfg, err := wconfig.Load(wconfig.DefaultPath())
 	if err != nil {
 		return src
 	}
-	if gh, err := cfg.GitHub(); err == nil {
+	if gh, err := cfg.GitHub(); err == nil && s.WatcherEnabled(config.ServiceGitHub) {
 		src.PR = prAdapter{token: gh.Token}
 	}
-	if jc, err := cfg.Jira(); err == nil {
+	if jc, err := cfg.Jira(); err == nil && s.WatcherEnabled(config.ServiceJira) {
 		fields := wtjira.ConfiguredCustomFields(jc.CustomFields)
 		ja := jiraAdapter{
 			c:       &wjira.Client{BaseURL: jc.Host, Email: jc.Email, Token: jc.Token},
@@ -303,6 +306,10 @@ func (s *Server) handleLinkedResources(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid id for type "+resType)
 		return
 	}
+	if svc := serviceForType(resType); !s.WatcherEnabled(svc) {
+		watcherOffError(w, serviceName(svc))
+		return
+	}
 	resolveLinks := q.Get("resolve_links") == "1"
 	key := "linked|" + resType + "|" + id + "|" + q.Get("resolve_links")
 	v, err := s.linkedCacheOrInit().get(key, linkedTTL, q.Get("refresh") == "1", func() (interface{}, error) {
@@ -324,6 +331,10 @@ func (s *Server) handleLinkedChildren(w http.ResponseWriter, r *http.Request) {
 	key, ok := wtjira.ParseKey(r.URL.Query().Get("key"))
 	if !ok {
 		writeError(w, http.StatusBadRequest, "invalid issue key")
+		return
+	}
+	if !s.WatcherEnabled(config.ServiceJira) {
+		watcherOffError(w, "Jira")
 		return
 	}
 	type resp struct {

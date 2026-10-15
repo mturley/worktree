@@ -186,6 +186,16 @@ with the matching key (the same file key) in `settingsKeyPaths` (and in
 to the modal, or it will be silently unchecked. See
 `docs/web-ui-architecture.md` "Settings modal".
 
+## Watcher toggles — a disabled service is never contacted
+
+`watchers.{github,jira,slack}: false` in worktree's `config.yaml` turns a
+service off for worktree (not agent-handler). **Any new code that contacts
+GitHub, Jira or Slack, or reads their credentials, must check
+`s.WatcherEnabled(config.Service…)` first** (or, for Slack, go through
+`s.SlackClient`, which `GateSlack` wraps, and guard handlers on
+`s.slackOn()`). On-demand views must degrade to what the DB already has. See
+`docs/web-ui-architecture.md` "Watcher toggles".
+
 ## Watcher library
 
 worktree is a **consumer** of `github.com/mturley/watcher` (GitHub

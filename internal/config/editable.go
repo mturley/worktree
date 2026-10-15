@@ -23,7 +23,13 @@ type Editable struct {
 	TLSCertFile          string
 	TLSKeyFile           string
 	CmuxFeaturesDisabled bool
+	// WatchersDisabled holds the services (config.Services) whose watcher
+	// is off; absent from the map means on.
+	WatchersDisabled map[string]bool
 }
+
+// WatcherEnabled reports whether svc's watcher is on.
+func (e Editable) WatcherEnabled(svc string) bool { return !e.WatchersDisabled[svc] }
 
 // ReadEditable reads path's editable values, and whether ui.password is set.
 // A missing file yields defaults. HTTPSPort is DefaultHTTPSPort when unset.
@@ -51,6 +57,12 @@ func editableFromDoc(doc *yaml.Node) (Editable, bool, error) {
 		TLSCertFile:          raw.UI.TLS.CertFile,
 		TLSKeyFile:           raw.UI.TLS.KeyFile,
 		CmuxFeaturesDisabled: raw.UI.CmuxFeaturesDisabled,
+		WatchersDisabled:     map[string]bool{},
+	}
+	for _, svc := range Services {
+		if !raw.Watchers.Enabled(svc) {
+			e.WatchersDisabled[svc] = true
+		}
 	}
 	if e.HTTPSPort == 0 {
 		e.HTTPSPort = DefaultHTTPSPort
@@ -124,6 +136,20 @@ func WriteEditable(path string, next Editable) (bool, error) {
 			}
 			return setPath(root, boolNode(true), "ui", "cmux_features_disabled")
 		},
+	}
+	for _, svc := range Services {
+		svc := svc
+		steps = append(steps, func() error {
+			if cur.WatcherEnabled(svc) == next.WatcherEnabled(svc) {
+				return nil
+			}
+			changed = true
+			if next.WatcherEnabled(svc) {
+				deletePath(root, "watchers", svc)
+				return nil
+			}
+			return setPath(root, boolNode(false), "watchers", svc)
+		})
 	}
 	for _, step := range steps {
 		if err := step(); err != nil {

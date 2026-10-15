@@ -7,6 +7,7 @@ import (
 	wconfig "github.com/mturley/watcher/config"
 	wgithub "github.com/mturley/watcher/github"
 	wjira "github.com/mturley/watcher/jira"
+	"github.com/mturley/worktree/internal/config"
 	"github.com/mturley/worktree/internal/selfid"
 )
 
@@ -15,15 +16,27 @@ import (
 func (s *Server) StartSelfIdentity(retry time.Duration) (stop func()) {
 	lookups := map[string]selfid.Lookup{}
 	if cfg, err := wconfig.Load(wconfig.DefaultPath()); err == nil {
+		// Gated per call, not here: a lookup refused while its watcher is
+		// off is retried (every retry interval) and succeeds once it's on.
 		if gh, err := cfg.GitHub(); err == nil {
-			lookups["github"] = func(context.Context) (string, error) { return wgithub.ViewerID(gh.Token) }
+			lookups["github"] = func(context.Context) (string, error) {
+				if !s.WatcherEnabled(config.ServiceGitHub) {
+					return "", ErrWatcherDisabled
+				}
+				return wgithub.ViewerID(gh.Token)
+			}
 		}
 		if jc, err := cfg.Jira(); err == nil {
-			lookups["jira"] = func(context.Context) (string, error) { return wjira.AccountID(jc.Host, jc.Email, jc.Token) }
+			lookups["jira"] = func(context.Context) (string, error) {
+				if !s.WatcherEnabled(config.ServiceJira) {
+					return "", ErrWatcherDisabled
+				}
+				return wjira.AccountID(jc.Host, jc.Email, jc.Token)
+			}
 		}
 	}
 	if s.SlackClient != nil {
-		lookups["slack"] = s.whoAmI
+		lookups["slack"] = s.whoAmI // the client itself is gated (GateSlack)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &selfid.Resolver{DB: s.DB, Lookups: lookups, Logf: s.logger().Printf}

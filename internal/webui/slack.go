@@ -40,14 +40,18 @@ type MessageView struct {
 
 // slackUnavailable writes the standard 503 response used when the Slack
 // integration is not configured (no credentials in the shared watcher
-// auth.yaml). Every Slack-backed handler guards on s.SlackClient == nil and
-// returns this rather than nil-panicking.
+// auth.yaml) or its watcher is off in Settings. Every Slack-backed handler
+// guards on !s.slackOn() and returns this rather than nil-panicking.
 func (s *Server) slackUnavailable(w http.ResponseWriter) {
+	if s.SlackClient != nil {
+		watcherOffError(w, "Slack")
+		return
+	}
 	writeError(w, http.StatusServiceUnavailable, "slack not configured; run worktree setup")
 }
 
 func (s *Server) handleThread(w http.ResponseWriter, r *http.Request) {
-	if s.SlackClient == nil {
+	if !s.slackOn() {
 		s.slackUnavailable(w)
 		return
 	}

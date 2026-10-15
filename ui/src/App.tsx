@@ -13,6 +13,7 @@ import { useHomeLocation } from "./lib/useHomeLocation"
 import { HomePage } from "./pages/HomePage"
 import { LoginPage } from "./pages/LoginPage"
 import { WorktreeDetailPage } from "./pages/WorktreeDetailPage"
+import { SettingsProvider } from "./components/settings/SettingsContext"
 
 export function App() {
   const session = useSession()
@@ -80,11 +81,15 @@ function AuthenticatedApp() {
       <HomeWorktreeBanner />
       {/* Every page, for the same reason; it navigates, so it needs the Router. */}
       <CmuxFollower />
-      <Switch>
-        <Route path="/" component={HomePage} />
-        <Route path="/worktree/:path*" component={WorktreeDetailPage} />
-        <Route>Not found</Route>
-      </Switch>
+      {/* One Settings modal for every page: the home page's cog and the
+          worktree page's "Re-enable it in Settings" links both open it. */}
+      <SettingsProvider>
+        <Switch>
+          <Route path="/" component={HomePage} />
+          <Route path="/worktree/:path*" component={WorktreeDetailPage} />
+          <Route>Not found</Route>
+        </Switch>
+      </SettingsProvider>
     </Router>
   )
 }

@@ -181,8 +181,9 @@ describe("SettingsModal", () => {
     renderModal()
     await userEvent.type(await screen.findByLabelText("Editor"), "zed")
     await userEvent.click(screen.getByRole("button", { name: "Save" }))
-    // General, UI Access and Jira all edit config.yaml, so all show its error.
-    expect(await screen.findAllByText("disk full")).toHaveLength(3)
+    // General, UI Access and all three service sub-tabs (their watcher
+    // toggles) edit config.yaml, so all show its error.
+    expect(await screen.findAllByText("disk full")).toHaveLength(5)
     expect(screen.getByLabelText("Editor")).toHaveValue("zed")
   })
 
@@ -419,6 +420,6 @@ describe("SettingsModal tab dots", () => {
     renderModal()
     await openService("Jira")
     const line = screen.getAllByText(/These settings are persisted to/).find((el) => el.textContent?.includes("watcher/config.yaml"))
-    expect(line).toHaveTextContent("~/.config/watcher/auth.yaml, ~/.config/worktree/config.yaml and ~/.config/watcher/config.yaml")
+    expect(line).toHaveTextContent("~/.config/worktree/config.yaml, ~/.config/watcher/auth.yaml and ~/.config/watcher/config.yaml")
   })
 })
