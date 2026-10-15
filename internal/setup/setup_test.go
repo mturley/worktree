@@ -7,7 +7,31 @@ import (
 	"testing"
 
 	"github.com/mturley/worktree/internal/config"
+	"github.com/mturley/worktree/internal/ui"
 )
+
+// TestPromptAndSaveConfigDefaultsEditor verifies a newly created config.yaml
+// names an editor (code), while one already chosen is kept.
+func TestPromptAndSaveConfigDefaultsEditor(t *testing.T) {
+	ui.SetNonInteractive(true)
+	t.Cleanup(func() { ui.SetNonInteractive(false) })
+
+	for _, tc := range []struct{ editor, want string }{{"", "editor: code"}, {"vim", "editor: vim"}} {
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		cfg := config.DefaultConfig()
+		cfg.Editor = tc.editor
+		if err := promptAndSaveConfig(path, cfg); err != nil {
+			t.Fatalf("promptAndSaveConfig: %v", err)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(data), tc.want+"\n") {
+			t.Errorf("editor %q: config.yaml = %q, want a line %q", tc.editor, data, tc.want)
+		}
+	}
+}
 
 // TestBuildPlanJiraCredsAlwaysTested verifies Jira credentials are tested
 // (and repaired if needed) via the shared credsetup flow every run, exactly

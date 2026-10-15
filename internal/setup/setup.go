@@ -272,12 +272,20 @@ func testAndRepairSharedCreds(testGitHub, testSlack, testJira bool) error {
 	return nil
 }
 
+// defaultEditor is written to a newly created config.yaml.
+const defaultEditor = "code"
+
 func promptAndSaveConfig(configPath string, cfg config.Config) error {
 	home, _ := os.UserHomeDir()
 
 	fmt.Println()
 	wtBase := ui.PromptLineDefault("  Where should worktrees be created?", shortenHome(cfg.WorktreesBase, home))
 	cfg.WorktreesBase = config.ExpandHome(wtBase)
+	// A new config names an editor, so `worktree open` and the Settings
+	// modal start from a concrete value rather than $EDITOR guesswork.
+	if cfg.Editor == "" {
+		cfg.Editor = defaultEditor
+	}
 
 	if err := writeConfig(configPath, cfg); err != nil {
 		return err
