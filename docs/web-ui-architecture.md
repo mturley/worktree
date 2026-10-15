@@ -178,6 +178,7 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | GET | `/api/timeline` | `archived` (`"true"`/else false), `limit` (1-500, default 100), `before` (RFC3339 ts, exclusive upper bound), `resource_types`, `event_types` (exact event types, or a prefix ending in `*` such as `ci_*`; the Activity subfilters, see `ui/src/lib/eventTypeFilter.ts`), `unread_only` (`"true"`: unread events only) | `timelineResponse` |
 | GET | `/api/worktree-timeline` | `path` (required, worktree path), `limit`, `before`, `resource_type` + `resource_id` (optional, filters to one resource's events; must be supplied together or the request 400s), `resource_types`, `event_types`, `unread_only` | `timelineResponse` |
 | GET | `/api/worktree-resources` | `path` (required) | `[]resourceDTO` |
+| GET | `/api/all-resources` | — | `[]allResourceDTO` (every followed resource once, with its worktrees; see "Home page Resources tab") |
 | POST | `/api/worktrees/poll` | `path` (required) | `{"polled": bool}` |
 | POST | `/api/resource-meta` | body: `{type, id, name, description}` | — |
 | POST | `/api/resource-read` | body: `{type, id, through_ts}` | 204 No Content |
@@ -1264,6 +1265,35 @@ in **v0.2.5** (`buildPRStateJSON`/`buildJiraStateJSON` in `~/git/watcher`).
 Author is shown on PR cards; **reporter is cached but intentionally not
 displayed** in the UI (a deliberate product decision, not an oversight — if
 you want to show it later, it's already in the cached state JSON).
+
+## Home page Resources tab
+
+The home page's right column is tabbed **Activity | Resources** when wide
+(the Settings cog sits at the tab bar's end, inside each tab's pinned
+header); narrow, the page's tabs are **Worktrees | Activity | Resources**.
+
+`GET /api/all-resources` (`all_resources_api.go`) returns every resource
+followed by any registered worktree, once each: the usual enriched
+`resourceDTO` plus `worktrees` (registry order — "Details" goes to the first;
+a chevron menu offers the rest) and `mine`. `primary` is true when any
+follower has it in focus. `mine` is a PR whose `author_id` or a Jira issue
+whose `assignee_id`/`reporter_id` matches `self_identity`; those IDs and
+`created_at` come from the cached state as of **watcher v0.15.0**, are held
+in unexported `resourceDTO` fields, and are never sent. Resources polled
+before that release lack them until their next poll.
+
+Frontend: `ResourcesPanel` (controls) + `AllResourceRow` (the list card's
+body via the exported `ResourceCardBody`, the worktrees line, and the
+Details / open-or-switch / copy-link group). Sorting and filtering are pure,
+in `lib/resourceListFilter.ts`: sort by last updated, created, status (one
+ramp across types — blocked, in progress/open, review, testing, not started,
+done/merged, closed, then unstatused threads and links), unread first, or
+name. The type toggles are all-or-one; a type opens its subfilters (PR state,
+PR conditions such as CI failing or changes requested, "My PRs"; Jira
+statuses present in the data and "My issues"; Slack channels). Values within
+a group are ORed, groups ANDed. The global unread-only toggle narrows the
+list too. The query key is `["resources", "__all__"]` so every existing
+`["resources"]` invalidation refreshes it.
 
 ## Link resources
 

@@ -201,6 +201,23 @@ function LinkCardBody({ r, variant, aside }: CardBodyProps) {
 }
 
 /**
+ * A card's contents without the card: type line, title and metadata, as the
+ * card of that variant shows them. Exported for lists that format resources
+ * like the cards but lay them out as rows (the home page's Resources tab).
+ */
+export function ResourceCardBody({ r, variant = "compact", aside }: { r: ResourceDTO; variant?: ResourceCardVariant; aside?: React.ReactNode }) {
+  // Slack and links never take the not-yet-fetched path: a thread's card is
+  // useful from its id alone, and a link is resolved once when added and
+  // never polled, so a spinner on it would never stop.
+  if (r.type === "slack") return <SlackCardBody r={r} variant={variant} aside={aside} />
+  if (r.type === "link") return <LinkCardBody r={r} variant={variant} aside={aside} />
+  if (awaitsFetch(r)) return <MinimalRow r={r} variant={variant} aside={aside} />
+  if (r.type === "pr") return <PRCardBody r={r} variant={variant} aside={aside} />
+  if (r.type === "jira") return <JiraCardBody r={r} variant={variant} aside={aside} />
+  return <MinimalRow r={r} variant={variant} aside={aside} />
+}
+
+/**
  * Confirm-then-remove control for a resource. Exported so the Slack thread
  * pane can put the same control in its header — a slack thread has no detail
  * ResourceCard to hang it off, and without it a thread would be the one
@@ -415,22 +432,7 @@ export function ResourceCard({
     </>
   ) : undefined
 
-  // Slack and links never take the not-yet-fetched path: a thread's card is
-  // useful from its id alone, and a link is resolved once when added and
-  // never polled, so a spinner on it would never stop.
-  const body = r.type === "slack" ? (
-    <SlackCardBody r={r} variant={variant} aside={aside} />
-  ) : r.type === "link" ? (
-    <LinkCardBody r={r} variant={variant} aside={aside} />
-  ) : awaitsFetch(r) ? (
-    <MinimalRow r={r} variant={variant} aside={aside} />
-  ) : r.type === "pr" ? (
-    <PRCardBody r={r} variant={variant} aside={aside} />
-  ) : r.type === "jira" ? (
-    <JiraCardBody r={r} variant={variant} aside={aside} />
-  ) : (
-    <MinimalRow r={r} variant={variant} aside={aside} />
-  )
+  const body = <ResourceCardBody r={r} variant={variant} aside={aside} />
 
   return (
     <Paper

@@ -226,6 +226,7 @@ func (s *Server) routes() []route {
 		{"GET /api/watchers/health", s.handleWatcherHealth},
 		{"GET /api/watchers/log", s.handleWatcherLog},
 		{"GET /api/worktree-resources", s.handleWorktreeResources},
+		{"GET /api/all-resources", s.handleAllResources},
 		{"POST /api/resource-meta", s.handleSetResourceMeta},
 		{"POST /api/resource-read", s.handleResourceRead},
 		{"POST /api/worktree-resources/add", s.handleAddResource},

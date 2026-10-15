@@ -29,6 +29,9 @@ import { useWorktreeSort } from "../hooks/useWorktreeSort"
 import { WorktreeSortControl } from "../components/WorktreeSortControl"
 import { cmuxPositions, sortWorktrees } from "../lib/worktreeSort"
 import { filterWorktreeBySources } from "../lib/sourceFilter"
+import { ResourcesPanel } from "../components/ResourcesPanel"
+
+type RightTab = "timeline" | "resources"
 
 const columnStyle = { height: "calc(100dvh - var(--mantine-spacing-md))", overflowY: "auto" } as const
 
@@ -40,6 +43,8 @@ export function HomePage() {
   // worktree list and the activity feed.
   const [unreadOnly, setUnreadOnly] = useUnreadOnly()
   const [newOpen, setNewOpen] = useState(false)
+  // Wide only: which of Activity and Resources fills the right column.
+  const [rightTab, setRightTab] = useState<RightTab>("timeline")
   const wide = useIsWide()
   const tall = useIsTall()
   // Wide, each column scrolls on its own, and its header (with the activity
@@ -144,7 +149,22 @@ export function HomePage() {
       }
     />
   )
-  const timeline = (
+  // Wide, the right column's tab bar, with the Settings cog at its far end
+  // (top-right of the page). It rides at the top of whichever tab's pinned
+  // header is showing, so it stays in reach as the column scrolls.
+  const rightTabBar = (
+    <Tabs value={rightTab} onChange={(v) => v && setRightTab(v as RightTab)}>
+      <Tabs.List>
+        <Tabs.Tab value="timeline">Activity</Tabs.Tab>
+        <Tabs.Tab value="resources">Resources</Tabs.Tab>
+        <Group ml="auto" align="center" pb={4}>
+          <SettingsButton />
+        </Group>
+      </Tabs.List>
+    </Tabs>
+  )
+
+  const timeline = (top?: React.ReactNode) => (
     // No gap below the header when pinned: its own padding is that space.
     <Stack gap={headerStyle ? 0 : "sm"}>
       {/* Opaque room below the filters when pinned, so the feed passing
@@ -155,9 +175,10 @@ export function HomePage() {
         data-activity-header
         data-tooltip-layer={headerStyle ? "pinned" : undefined}
       >
+        {top}
         <Group justify="space-between" wrap="wrap" gap="xs" data-testid="activity-header">
+          {/* No "Activity" title: the tab above it says so. */}
           <Group gap={6} wrap="nowrap" align="center">
-            <Title order={4}>Activity</Title>
             <RefreshWatchersButton />
             <WatcherLogButton scope={{}} />
           </Group>
@@ -165,8 +186,6 @@ export function HomePage() {
               line of its own below. */}
           <Group gap="sm" wrap="nowrap">
             <ArchivedToggle value={archived} onChange={setArchived} />
-            {/* Top-right of the page when wide; the tab bar has it when narrow. */}
-            {wide && <SettingsButton />}
           </Group>
         </Group>
         <Group>
@@ -201,6 +220,7 @@ export function HomePage() {
           <Tabs.List>
             <Tabs.Tab value="worktrees">Worktrees</Tabs.Tab>
             <Tabs.Tab value="timeline">Activity</Tabs.Tab>
+            <Tabs.Tab value="resources">Resources</Tabs.Tab>
             {/* Top-right of the page, whichever tab is showing. */}
             <Group ml="auto" align="center" pb={4}>
               <SettingsButton />
@@ -212,7 +232,15 @@ export function HomePage() {
               {worktrees}
             </Stack>
           </Tabs.Panel>
-          <Tabs.Panel value="timeline" pt="md">{timeline}</Tabs.Panel>
+          <Tabs.Panel value="timeline" pt="md">{timeline()}</Tabs.Panel>
+          <Tabs.Panel value="resources" pt="md">
+            {/* The worktree toolbar, which holds the unread-only toggle when
+                wide, is on another tab here; this tab gets its own. */}
+            <ResourcesPanel
+              unreadOnly={unreadOnly}
+              toolbarEnd={<UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} />}
+            />
+          </Tabs.Panel>
         </Tabs>
       </Stack>
     )
@@ -247,7 +275,11 @@ export function HomePage() {
           {worktrees}
         </Stack>
       </Grid.Col>
-      <Grid.Col span={6} style={columnStyle} data-tooltip-layer="content">{timeline}</Grid.Col>
+      <Grid.Col span={6} style={columnStyle} data-tooltip-layer="content">
+        {rightTab === "timeline"
+          ? timeline(rightTabBar)
+          : <ResourcesPanel unreadOnly={unreadOnly} headerStyle={headerStyle} top={rightTabBar} />}
+      </Grid.Col>
       <NewWorktreeModal opened={newOpen} onClose={() => setNewOpen(false)} />
     </Grid>
   )

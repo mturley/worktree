@@ -36,6 +36,7 @@ type resourceDTO struct {
 	Assignee              string   `json:"assignee,omitempty"`                 // Jira
 	Labels                []string `json:"labels,omitempty"`                   // Jira
 	UpdatedAt             string   `json:"updated_at,omitempty"`               // resource_updated_at (RFC3339)
+	CreatedAt             string   `json:"created_at,omitempty"`               // PR/Jira creation time (watcher >= v0.15.0)
 	UnreadCount           int      `json:"unread_count,omitempty"`             // events newer than the read cursor; see unreadIndex.fill
 	// non-slack: ts of the newest of the UnreadCount events, from the same
 	// snapshot. Mark-all-read sends it as through_ts — see unread.Summary.
@@ -51,6 +52,13 @@ type resourceDTO struct {
 	Favicon      string `json:"favicon,omitempty"`
 	Embeddable   bool   `json:"embeddable,omitempty"`
 	ResolveError string `json:"resolve_error,omitempty"`
+
+	// Account IDs from the cached state, matched against selfid to say
+	// whether a resource is the user's own. Never sent: the UI gets the
+	// answer (see allResourceDTO), not the IDs.
+	authorID   string // PR: GitHub databaseId
+	assigneeID string // Jira accountId
+	reporterID string // Jira accountId
 }
 
 func (s *Server) handleWorktreeResources(w http.ResponseWriter, r *http.Request) {
@@ -136,6 +144,12 @@ func (s *Server) enrichResourceDTO(dto *resourceDTO) {
 		if v, ok := m["author"].(string); ok {
 			dto.Author = v
 		}
+		if v, ok := m["author_id"].(string); ok {
+			dto.authorID = v
+		}
+		if v, ok := m["created_at"].(string); ok {
+			dto.CreatedAt = v
+		}
 	case "jira":
 		if v, ok := m["summary"].(string); ok {
 			dto.Title = v
@@ -157,6 +171,15 @@ func (s *Server) enrichResourceDTO(dto *resourceDTO) {
 		}
 		if v, ok := m["assignee"].(string); ok {
 			dto.Assignee = v
+		}
+		if v, ok := m["assignee_id"].(string); ok {
+			dto.assigneeID = v
+		}
+		if v, ok := m["reporter_id"].(string); ok {
+			dto.reporterID = v
+		}
+		if v, ok := m["created_at"].(string); ok {
+			dto.CreatedAt = v
 		}
 		if raw, ok := m["labels"].([]interface{}); ok {
 			labels := make([]string, 0, len(raw))

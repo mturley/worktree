@@ -44,22 +44,39 @@ beforeEach(() => {
   mocks.timelineArgs = []
   mocks.events = []
   vi.spyOn(api, "cmux").mockResolvedValue({ available: false })
+  vi.spyOn(api, "allResources").mockResolvedValue([
+    { type: "pr", id: "o/r#9", url: "https://gh/pr/9", primary: true, title: "Theirs", state: "OPEN",
+      worktrees: [{ path: "/wt/foo", repo: "odh", branch: "my-branch" }] },
+  ])
 })
 afterEach(() => vi.restoreAllMocks())
 afterEach(cleanup)
 
 describe("HomePage responsive layout", () => {
-  it("shows a Worktrees/Activity tab bar when narrow", () => {
+  it("shows a Worktrees/Activity/Resources tab bar when narrow", () => {
     setViewport("narrow")
     wrap()
     expect(screen.getByRole("tab", { name: "Worktrees" })).toBeInTheDocument()
     expect(screen.getByRole("tab", { name: "Activity" })).toBeInTheDocument()
+    expect(screen.getByRole("tab", { name: "Resources" })).toBeInTheDocument()
   })
 
-  it("shows no tab bar when wide", () => {
+  it("tabs only the right column, Activity and Resources, when wide", () => {
     setViewport("wide")
     wrap()
     expect(screen.queryByRole("tab", { name: "Worktrees" })).not.toBeInTheDocument()
+    expect(screen.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true")
+    expect(screen.getByRole("tab", { name: "Resources" })).toBeInTheDocument()
+  })
+
+  it("swaps the activity feed for the resources list on the Resources tab", async () => {
+    setViewport("wide")
+    wrap()
+    await userEvent.click(screen.getByRole("tab", { name: "Resources" }))
+    expect(document.querySelector("[data-activity-header]")).toBeNull()
+    expect(await screen.findByText("Theirs")).toBeInTheDocument()
+    // The worktree list stays.
+    expect(screen.getByText(/Fix the widget/)).toBeInTheDocument()
   })
 
   it("renders worktrees as cards with their focus resources in both layouts", () => {
@@ -104,12 +121,13 @@ describe("HomePage pinned headers", () => {
 })
 
 describe("HomePage settings", () => {
-  it("puts the Settings cog in the Activity header when wide", () => {
+  it("puts the Settings cog in the right column's tab bar when wide", () => {
     setViewport("wide")
     wrap()
     const cog = screen.getByRole("button", { name: "Settings" })
-    // Beside "Show archived", in the Activity column's header.
-    expect(cog.closest("[data-testid='activity-header']")).not.toBeNull()
+    expect(cog.closest("[role='tablist']")).not.toBeNull()
+    // Pinned with the activity header, so it stays in reach.
+    expect(cog.closest("[data-activity-header]")).not.toBeNull()
     expect(screen.queryByRole("button", { name: "Devices" })).not.toBeInTheDocument()
   })
 
@@ -219,7 +237,8 @@ describe("HomePage unread-only toggle", () => {
       // hidden: on narrow each lives in its own tab, and only one is selected.
       const archived = await screen.findByRole("switch", { name: "Show archived", hidden: true })
       const heading = screen.getByRole("heading", { name: "Worktrees", hidden: true })
-      const toggle = screen.getByRole("switch", { name: "Unreads only", hidden: true })
+      // The first: narrow, the Resources tab has its own after it.
+      const toggle = screen.getAllByRole("switch", { name: "Unreads only", hidden: true })[0]
       expect(toggle.closest(".mantine-Group-root")).toContainElement(heading)
       expect(toggle.closest(".mantine-Group-root")).not.toContainElement(archived)
       expect(heading.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()

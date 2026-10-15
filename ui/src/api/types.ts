@@ -106,6 +106,8 @@ export interface ResourceDTO {
   assignee?: string
   labels?: string[]
   updated_at?: string
+  /** PR/Jira creation time (RFC3339); a Slack thread has created_ts instead. */
+  created_at?: string
   custom_name?: string
   custom_description?: string
   /** link: resolved page metadata. */
@@ -116,6 +118,17 @@ export interface ResourceDTO {
   /** link: whether the page's headers permit rendering it in an iframe. */
   embeddable?: boolean
   resolve_error?: string
+}
+
+/** A worktree following a resource, on the home page's Resources tab. */
+export interface ResourceWorktree { path: string; repo: string; branch: string }
+
+/** GET /api/all-resources: each followed resource once, across every worktree. */
+export interface AllResourceDTO extends ResourceDTO {
+  /** In registry order; never empty. The first is where "Details" goes. */
+  worktrees: ResourceWorktree[]
+  /** A PR the user opened, or a Jira issue assigned to or reported by them. */
+  mine?: boolean
 }
 
 export interface GitStatus {
