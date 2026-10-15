@@ -1,11 +1,11 @@
-import { Button, Code, Tooltip } from "@mantine/core"
+import { Button, Tooltip } from "@mantine/core"
 import { IconCode } from "@tabler/icons-react"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { api } from "../api/client"
 import { settingsKey } from "./SettingsModal"
 
 /**
- * The worktree detail page header's "Open in editor (`code`)" button: runs
+ * The worktree detail page header's "Open in editor (code)" button: runs
  * the configured editor command on the worktree, on the server's machine.
  * Disabled until an editor is set in Settings → General, since the server
  * has no terminal for $EDITOR.
@@ -31,7 +31,7 @@ export function OpenInEditorButton({ path }: { path: string }) {
       // A failed open shows its error until the pointer leaves.
       onMouseLeave={() => open.isError && open.reset()}
     >
-      {editor ? <>Open in editor (<Code fz="inherit" bg="transparent" p={0}>{editor}</Code>)</> : "Open in editor"}
+      {editor ? `Open in editor (${editor})` : "Open in editor"}
     </Button>
   )
 
@@ -49,7 +49,7 @@ export function OpenInEditorButton({ path }: { path: string }) {
   }
   return (
     <Tooltip
-      label={open.isError ? `Couldn't open: ${open.error.message}` : `Runs ${editor} with this worktree's path`}
+      label={open.isError ? `Couldn't open: ${open.error.message}` : `Runs ${editor} with this worktree's path. You can change the editor in settings.`}
       color={open.isError ? "red" : undefined}
       opened={open.isError ? true : undefined}
       multiline

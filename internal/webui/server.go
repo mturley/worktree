@@ -135,7 +135,7 @@ type Server struct {
 	WatcherAuthPath   string
 	WatcherConfigPath string
 	// startEditor is the exec seam for "Open in editor" (editor_api.go); nil
-	// means startDetached.
+	// means runEditor.
 	startEditor func(name string, args ...string) error
 
 	// The per-service watcher gates (watchers.*); see watchers.go.

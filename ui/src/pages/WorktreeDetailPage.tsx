@@ -444,13 +444,18 @@ export function WorktreeDetailPage() {
     if (detailTab.tab !== "notes") detailTab.select("notes")
   }
 
+  // Left-aligned either way. Wide, it sits right after the titles (see the
+  // header below); narrow, it leads the toolbar's own row and the auto
+  // margin pushes everything else to the right.
+  const editorButton = (
+    <div style={{ marginRight: wide ? undefined : "auto", flex: "none" }}>
+      <OpenInEditorButton path={path} />
+    </div>
+  )
+
   const actions = (
     <>
-      {/* Left-aligned: first in the toolbar, and on its own row (narrow)
-          the auto margin pushes everything else to the right. */}
-      <div style={{ marginRight: "auto", flex: "none" }}>
-        <OpenInEditorButton path={path} />
-      </div>
+      {!wide && editorButton}
       <FollowCmuxToggle />
       {summary && <CmuxWorkspaceActions path={path} branch={summary.branch} />}
       {summary && <DeleteWorktreeButton w={summary} />}
@@ -564,6 +569,7 @@ export function WorktreeDetailPage() {
                   {summary && !summary.on_disk && <Badge size="xs" color="red">missing</Badge>}
                 </Group>
               </Stack>
+              {wide && editorButton}
             </Group>
             {wide && toolbar}
           </Group>

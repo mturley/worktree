@@ -49,9 +49,9 @@ describe("OpenInEditorButton", () => {
 
   it("shows why opening failed", async () => {
     vi.spyOn(api, "settings").mockResolvedValue(withEditor("nope"))
-    vi.spyOn(api, "openInEditor").mockRejectedValue(new Error("starting nope: executable file not found"))
+    vi.spyOn(api, "openInEditor").mockRejectedValue(new Error("nope: exit status 1"))
     renderButton()
     await userEvent.click(await screen.findByRole("button", { name: /^Open in editor \(\s*nope\s*\)$/ }))
-    expect(await screen.findByText(/Couldn't open: starting nope/)).toBeInTheDocument()
+    expect(await screen.findByText(/Couldn't open: nope: exit status 1/)).toBeInTheDocument()
   })
 })

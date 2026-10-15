@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mturley/worktree/internal/registry"
 )
@@ -83,5 +84,32 @@ func TestOpenEditorReportsStartFailure(t *testing.T) {
 	rec := postOpenEditor(s, `{"path":"`+wt+`"}`)
 	if rec.Code != http.StatusInternalServerError || !strings.Contains(rec.Body.String(), "not found") {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestRunEditorWaitsForTheCommand(t *testing.T) {
+	if err := runEditor("sh", "-c", "sleep 0.2"); err != nil {
+		t.Fatalf("success: %v", err)
+	}
+	err := runEditor("sh", "-c", "echo 'no such window' >&2; exit 3")
+	if err == nil || !strings.Contains(err.Error(), "exit status 3") || !strings.Contains(err.Error(), "no such window") {
+		t.Fatalf("failure: %v", err)
+	}
+	if err := runEditor("/nonexistent/editor"); err == nil {
+		t.Fatal("missing binary: want an error")
+	}
+}
+
+func TestRunEditorStopsWaitingForAForegroundEditor(t *testing.T) {
+	old := editorWaitLimit
+	editorWaitLimit = 100 * time.Millisecond
+	t.Cleanup(func() { editorWaitLimit = old })
+
+	start := time.Now()
+	if err := runEditor("sleep", "5"); err != nil {
+		t.Fatal(err)
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("waited %v for a command that outlives the limit", d)
 	}
 }

@@ -1,10 +1,13 @@
 package webui
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/mturley/worktree/internal/config"
 	"github.com/mturley/worktree/internal/registry"
@@ -55,26 +58,45 @@ func (s *Server) handleOpenEditor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	start := s.startEditor
-	if start == nil {
-		start = startDetached
+	run := s.startEditor
+	if run == nil {
+		run = runEditor
 	}
-	if err := start(editor, entry.Path); err != nil {
-		writeError(w, http.StatusInternalServerError, "starting "+editor+": "+err.Error())
+	if err := run(editor, entry.Path); err != nil {
+		writeError(w, http.StatusInternalServerError, editor+": "+err.Error())
 		return
 	}
 	s.logger().Printf("opened %s in %s", entry.Path, editor)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-// startDetached starts a command without waiting for it: a GUI editor's CLI
-// usually returns at once, but one that stays in the foreground must not hold
-// the request open. The goroutine reaps it whenever it exits.
-func startDetached(name string, args ...string) error {
+// editorWaitLimit caps how long the request waits for the editor command.
+var editorWaitLimit = 20 * time.Second // a var for tests
+
+// runEditor runs the editor command and waits for it, so the button's
+// spinner lasts while a GUI editor's CLI (`code`, `cursor`, `zed`) launches
+// the app, and a failure (non-zero exit) comes back as an error. An editor
+// that stays in the foreground would hold the request forever, so after
+// editorWaitLimit it is left running, reaped whenever it exits, and the open
+// counts as done.
+func runEditor(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	go func() { _ = cmd.Wait() }()
-	return nil
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			if msg := strings.TrimSpace(stderr.String()); msg != "" {
+				return fmt.Errorf("%w: %s", err, msg)
+			}
+		}
+		return err
+	case <-time.After(editorWaitLimit):
+		return nil
+	}
 }

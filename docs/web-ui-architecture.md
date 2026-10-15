@@ -1931,8 +1931,10 @@ other open tabs catch up on their next refetch.
 The worktree page's toolbar starts with "Open in editor (`code`)", which
 `POST /api/worktrees/open-editor {path}` turns into running the config's
 `editor` (read from disk per request, like `GET /api/settings`) with the
-worktree path, as `worktree open` does, started detached so a foreground
-editor cannot hold the request. Only the config key counts, **not**
+worktree path, as `worktree open` does. The request waits for the command
+to exit (`runEditor`), so the button spins while `code` launches and a
+non-zero exit comes back with its stderr; after `editorWaitLimit` (20s) a
+foreground editor is left running and the open counts as done. Only the config key counts, **not**
 `$EDITOR`/`$VISUAL` as the CLI falls back to: the server has no terminal for
 a terminal editor. With no editor set, the button is disabled with a tooltip
 pointing at Settings → General. The path must be a registered worktree
