@@ -79,6 +79,17 @@ describe("ResourcesPanel", () => {
     expect(titles()).toEqual(["An issue"])
   })
 
+  it("puts My Stuff first and shows only the user's PRs and issues", async () => {
+    const user = userEvent.setup()
+    wrap()
+    await screen.findByText("My open PR")
+    const toggles = screen.getAllByRole("button", { name: /My Stuff|GitHub|Jira|Slack/ })
+    expect(toggles[0]).toHaveTextContent("My Stuff")
+    await user.click(screen.getByRole("button", { name: "My Stuff" }))
+    expect(titles()).toEqual(["My open PR"])
+    expect(screen.queryByTestId("resource-subfilters")).toBeNull()
+  })
+
   it("sorts by status", async () => {
     const user = userEvent.setup()
     wrap()

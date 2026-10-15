@@ -38,7 +38,13 @@ export const PR_STATES = [
 ] as const
 
 /**
- * The filters. `type` null is every type; the per-type subfilters apply only
+ * The "My Stuff" pseudo-type: PRs the user opened and Jira issues they
+ * reported or are assigned, across both types. It has no subfilters.
+ */
+export const MINE_TYPE = "mine"
+
+/**
+ * The filters. `type` null is every type; MINE_TYPE is "My Stuff"; the per-type subfilters apply only
  * while their type is selected. Within one group the values are alternatives
  * (Open OR Merged); separate groups narrow each other (Open AND CI failing
  * AND mine). An empty group does not narrow.
@@ -75,6 +81,7 @@ function anyOf<T>(selected: T[], test: (v: T) => boolean): boolean {
 export function matchesFilter(r: AllResourceDTO, f: ResourceFilter, unreadOnly: boolean): boolean {
   if (unreadOnly && !hasUnread(r)) return false
   if (f.type === null) return true
+  if (f.type === MINE_TYPE) return (r.type === "pr" || r.type === "jira") && Boolean(r.mine)
   if (r.type !== f.type) return false
   switch (r.type) {
     case "pr":

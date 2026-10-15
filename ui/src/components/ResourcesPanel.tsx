@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react"
 import { ActionIcon, Alert, Button, Center, Divider, Group, Loader, NativeSelect, Stack, Text, Tooltip } from "@mantine/core"
-import { IconSortAscending, IconSortDescending, IconWorld } from "@tabler/icons-react"
+import { IconSortAscending, IconSortDescending, IconUser, IconWorld } from "@tabler/icons-react"
 import type { AllResourceDTO } from "../api/types"
 import { useAllResources } from "../hooks/useAllResources"
 import {
-  EMPTY_FILTER, PR_CONDITIONS, PR_STATES, distinctValues, hasResourceSortDirection, isResourceSortMode,
+  EMPTY_FILTER, MINE_TYPE, PR_CONDITIONS, PR_STATES, distinctValues, hasResourceSortDirection, isResourceSortMode,
   matchesFilter, sortResources, type ResourceFilter, type ResourceSortMode, type SortDir,
 } from "../lib/resourceListFilter"
 import { AllResourceRow } from "./AllResourceRow"
@@ -32,6 +32,8 @@ const DEFAULT_DIR: Record<ResourceSortMode, SortDir> = {
 }
 
 const TYPES: { type: string; label: string; icon: React.ReactNode }[] = [
+  // Not a type: PRs and Jira issues that are the user's own, together.
+  { type: MINE_TYPE, label: "My Stuff", icon: <IconUser size={14} /> },
   { type: "pr", label: "GitHub", icon: <GitHubMark size={14} /> },
   { type: "jira", label: "Jira", icon: <JiraMark size={14} /> },
   { type: "slack", label: "Slack", icon: <SlackMark size={14} /> },

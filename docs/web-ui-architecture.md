@@ -1288,7 +1288,8 @@ Details / open-or-switch / copy-link group). Sorting and filtering are pure,
 in `lib/resourceListFilter.ts`: sort by last updated, created, status (one
 ramp across types — blocked, in progress/open, review, testing, not started,
 done/merged, closed, then unstatused threads and links), unread first, or
-name. The type toggles are all-or-one; a type opens its subfilters (PR state,
+name. The type toggles are all-or-one, led by "My Stuff" (`MINE_TYPE`: PRs
+and Jira issues with `mine`, no subfilters); a type opens its subfilters (PR state,
 PR conditions such as CI failing or changes requested, "My PRs"; Jira
 statuses present in the data and "My issues"; Slack channels). Values within
 a group are ORed, groups ANDed. The global unread-only toggle narrows the

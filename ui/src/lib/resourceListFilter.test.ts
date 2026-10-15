@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { AllResourceDTO } from "../api/types"
-import { EMPTY_FILTER, distinctValues, matchesFilter, sortResources, statusRank, timestampMs } from "./resourceListFilter"
+import { EMPTY_FILTER, MINE_TYPE, distinctValues, matchesFilter, sortResources, statusRank, timestampMs } from "./resourceListFilter"
 
 const wt = [{ path: "/wt/a", repo: "r", branch: "a" }]
 const res = (over: Partial<AllResourceDTO>): AllResourceDTO =>
@@ -38,6 +38,11 @@ describe("matchesFilter", () => {
   it("filters to my PRs and my issues", () => {
     expect([openPR, mergedPR].filter((r) => matchesFilter(r, { ...EMPTY_FILTER, type: "pr", mine: true }, false))).toEqual([openPR])
     expect([issue, blocked].filter((r) => matchesFilter(r, { ...EMPTY_FILTER, type: "jira", mine: true }, false))).toEqual([issue])
+  })
+
+  it("shows my PRs and issues together under My Stuff", () => {
+    const f = { ...EMPTY_FILTER, type: MINE_TYPE }
+    expect([openPR, mergedPR, issue, blocked, thread].filter((r) => matchesFilter(r, f, false))).toEqual([openPR, issue])
   })
 
   it("filters Jira by status and Slack by channel", () => {
