@@ -518,9 +518,10 @@ func (e *eventEnricher) fillResource(te *TimelineEvent) {
 //
 // The watcher library bakes the thread's root text into the title when it
 // emits the event ("New reply in <root text>"), so the stored title never
-// reflects a custom name set before or after, and it carries raw "<@U…>"
-// mention tokens the cached title has already resolved. Rebuilding it at read
-// time fixes both, for events already in the DB as well as new ones. Any other
+// reflects a custom name — a worktree concept, set before or after the event.
+// Falling back to the cached title rather than the stored one also keeps
+// events current when the root message is edited, and repairs events stored
+// before watcher v0.14.1, which kept raw "<@U…>" mention tokens. Any other
 // event — or a thread with no name to offer — keeps the title it was stored
 // with.
 func slackEventTitle(source, typ, title string, d *resourceDTO) string {
