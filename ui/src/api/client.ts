@@ -232,6 +232,12 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(args),
     }),
+  openInEditor: (path: string) =>
+    fetchJSON<{ ok: boolean }>("/api/worktrees/open-editor", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path }),
+    }),
   cmuxGroups: () => fetchJSON<CmuxGroupsResponse>("/api/cmux-groups"),
   cmuxCreate: (args: { path: string; name: string; group_ref?: string; color?: string }) =>
     fetchJSON<{ ok: boolean; ref?: string; error?: string }>("/api/cmux/create", {

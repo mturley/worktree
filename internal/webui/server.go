@@ -134,6 +134,9 @@ type Server struct {
 	ConfigPath        string
 	WatcherAuthPath   string
 	WatcherConfigPath string
+	// startEditor is the exec seam for "Open in editor" (editor_api.go); nil
+	// means startDetached.
+	startEditor func(name string, args ...string) error
 
 	// The per-service watcher gates (watchers.*); see watchers.go.
 	githubOff, jiraOff, slackOff atomic.Bool
@@ -227,6 +230,7 @@ func (s *Server) routes() []route {
 		{"POST /api/resource-read", s.handleResourceRead},
 		{"POST /api/worktree-resources/add", s.handleAddResource},
 		{"POST /api/worktrees/delete", s.handleDeleteWorktree},
+		{"POST /api/worktrees/open-editor", s.handleOpenEditor},
 		{"POST /api/worktree-resources/remove", s.handleRemoveResource},
 		{"POST /api/worktree-resources/primary", s.handleSetResourcePrimary},
 		{"POST /api/worktree-resources/order", s.handleSetResourceOrder},

@@ -1926,6 +1926,20 @@ already waiting cannot put a prefix back. After a change the modal
 invalidates every query whose key starts with `cmux` plus `["session"]`;
 other open tabs catch up on their next refetch.
 
+### Open in editor (`editor_api.go`)
+
+The worktree page's toolbar starts with "Open in editor (`code`)", which
+`POST /api/worktrees/open-editor {path}` turns into running the config's
+`editor` (read from disk per request, like `GET /api/settings`) with the
+worktree path, as `worktree open` does, started detached so a foreground
+editor cannot hold the request. Only the config key counts, **not**
+`$EDITOR`/`$VISUAL` as the CLI falls back to: the server has no terminal for
+a terminal editor. With no editor set, the button is disabled with a tooltip
+pointing at Settings → General. The path must be a registered worktree
+(`registry.Get`), so the endpoint cannot pass the editor an arbitrary
+argument. The button reads the modal's `["settings"]` query, so a save there
+updates it at once.
+
 ### Watcher toggles (`watchers.go`, `config.WatchersConfig`, `WatcherAlert`)
 
 Each service can be turned off: `watchers: {github, jira, slack}` in

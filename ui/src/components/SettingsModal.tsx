@@ -11,7 +11,7 @@ import { useSettingsDraft } from "./settings/useSettingsDraft"
 import type { SettingsTarget } from "./settings/SettingsContext"
 import type { CredService } from "../api/types"
 
-const settingsKey = ["settings"] as const
+export const settingsKey = ["settings"] as const
 
 /**
  * Every cmux-backed query (["cmux"], ["cmux-tree", path],

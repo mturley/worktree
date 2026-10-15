@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { api } from "../api/client"
 import { NotifySwitch } from "../components/NotifySwitch"
 import { FollowCmuxToggle } from "../components/FollowCmuxToggle"
+import { OpenInEditorButton } from "../components/OpenInEditorButton"
 import { Logo } from "../components/Logo"
 import { IconChevronLeft } from "@tabler/icons-react"
 import { useNotifyMode } from "../hooks/useNotifyMode"
@@ -445,6 +446,11 @@ export function WorktreeDetailPage() {
 
   const actions = (
     <>
+      {/* Left-aligned: first in the toolbar, and on its own row (narrow)
+          the auto margin pushes everything else to the right. */}
+      <div style={{ marginRight: "auto", flex: "none" }}>
+        <OpenInEditorButton path={path} />
+      </div>
       <FollowCmuxToggle />
       {summary && <CmuxWorkspaceActions path={path} branch={summary.branch} />}
       {summary && <DeleteWorktreeButton w={summary} />}
