@@ -209,3 +209,24 @@ func TestReadNewEventsSkipsMyOwnEvents(t *testing.T) {
 		t.Fatalf("got %v, want [theirs ghost]", got)
 	}
 }
+
+func TestSlackReplyNotificationUsesCustomName(t *testing.T) {
+	conn := unreadTestDB(t)
+	a, _ := twoWorktrees(t, conn)
+	if err := resources.Add(conn, a, resources.Resource{Type: "slack", ID: "C1:1.2", URL: "https://x.slack.com/archives/C1/p12"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := resources.SetMeta(conn, "slack", "C1:1.2", "Rollout", ""); err != nil {
+		t.Fatal(err)
+	}
+	notifyprefs.SetResource(conn, a, "slack", "C1:1.2", true)
+	s := &Server{DB: conn}
+	got, err := s.notifyBatches([]newEvent{{id: "e1", ts: "1", source: "slack", typ: "slack_reply",
+		title: "New reply in hey <@U1> can you look", resType: "slack", resID: "C1:1.2"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Body != "New reply in Rollout" {
+		t.Fatalf("got %+v, want body %q", got, "New reply in Rollout")
+	}
+}

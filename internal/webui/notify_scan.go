@@ -78,7 +78,7 @@ func initNotifyCursor(conn *sql.DB) (notifyCursor, error) {
 }
 
 // newEvent is one (event, resource) pair past the cursor.
-type newEvent struct{ id, ts, title, resType, resID string }
+type newEvent struct{ id, ts, source, typ, title, resType, resID string }
 
 // The user's own events (internal/selfid) are never read, so a mixed
 // batch's count and newest title cover only other people's events.
@@ -86,7 +86,7 @@ type newEvent struct{ id, ts, title, resType, resID string }
 // and the advanced cursor. The cursor advances whatever the caller then does
 // with the events: delivery is fire-and-forget, never retried.
 func readNewEvents(conn *sql.DB, c notifyCursor) ([]newEvent, notifyCursor, error) {
-	q := `SELECT e.id, e.ts, e.title, er.resource_type, er.resource_id
+	q := `SELECT e.id, e.ts, e.source, e.type, e.title, er.resource_type, er.resource_id
 	      FROM watcher_events e JOIN watcher_event_resources er ON er.event_id = e.id
 	      WHERE e.ts >= ? AND e.type NOT IN (?` + strings.Repeat(",?", len(notifySkipTypes)-1) + `)
 	        AND ` + selfid.NotMineSQL + `
@@ -106,7 +106,7 @@ func readNewEvents(conn *sql.DB, c notifyCursor) ([]newEvent, notifyCursor, erro
 	var out []newEvent
 	for rows.Next() {
 		var e newEvent
-		if err := rows.Scan(&e.id, &e.ts, &e.title, &e.resType, &e.resID); err != nil {
+		if err := rows.Scan(&e.id, &e.ts, &e.source, &e.typ, &e.title, &e.resType, &e.resID); err != nil {
 			return nil, c, err
 		}
 		if e.ts > next.ts {
@@ -201,6 +201,7 @@ func (s *Server) notifyBatches(events []newEvent) ([]notifyBatch, error) {
 		type agg struct {
 			count  int
 			newest string
+			dto    resourceDTO
 		}
 		groups := map[notifyprefs.Key]*agg{}
 		var order []notifyprefs.Key
@@ -211,12 +212,12 @@ func (s *Server) notifyBatches(events []newEvent) ([]notifyBatch, error) {
 			}
 			g := groups[k]
 			if g == nil {
-				g = &agg{}
+				g = &agg{dto: s.newResourceDTO(tracked[k])}
 				groups[k] = g
 				order = append(order, k)
 			}
 			g.count++
-			g.newest = ev.title
+			g.newest = slackEventTitle(ev.source, ev.typ, ev.title, &g.dto)
 		}
 		for _, k := range order {
 			g := groups[k]
@@ -228,7 +229,7 @@ func (s *Server) notifyBatches(events []newEvent) ([]notifyBatch, error) {
 				WorktreePath: e.Path,
 				ResourceType: k.Type,
 				ResourceID:   k.ID,
-				Title:        notifyResourceLabel(s.newResourceDTO(tracked[k])),
+				Title:        notifyResourceLabel(g.dto),
 				Subtitle:     filepath.Base(e.Path),
 				Body:         body,
 				Tag:          notifyTag(e.Path, k.Type, k.ID),

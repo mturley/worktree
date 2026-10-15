@@ -501,6 +501,7 @@ func (e *eventEnricher) fillResource(te *TimelineEvent) {
 		// Kept alongside Resource: existing consumers read this directly, and
 		// it is the plain-text fallback when no chip is shown.
 		te.ResourceTitle = dto.Title
+		te.Title = slackEventTitle(te.Source, te.Type, te.Title, dto)
 	}
 	te.Unread = e.unread.IsUnread(te.ResourceType, te.ResourceID, te.TS, te.ExternalTS, te.Source, te.authorID)
 	wts := e.worktreesWatching(te.ResourceType, te.ResourceID)
@@ -510,6 +511,36 @@ func (e *eventEnricher) fillResource(te *TimelineEvent) {
 		te.Worktrees = append(te.Worktrees, w.Branch)
 		te.WorktreePaths = append(te.WorktreePaths, w.Path)
 	}
+}
+
+// slackEventTitle re-renders a Slack thread event's title against the thread's
+// CURRENT name: the user's custom name, else the cached title.
+//
+// The watcher library bakes the thread's root text into the title when it
+// emits the event ("New reply in <root text>"), so the stored title never
+// reflects a custom name set before or after, and it carries raw "<@U…>"
+// mention tokens the cached title has already resolved. Rebuilding it at read
+// time fixes both, for events already in the DB as well as new ones. Any other
+// event — or a thread with no name to offer — keeps the title it was stored
+// with.
+func slackEventTitle(source, typ, title string, d *resourceDTO) string {
+	if source != "slack" || d == nil {
+		return title
+	}
+	name := d.CustomName
+	if name == "" {
+		name = d.Title
+	}
+	if name == "" {
+		return title
+	}
+	switch watcher.EventType(typ) {
+	case watcher.EventTypeSlackReply:
+		return "New reply in " + name
+	case watcher.EventTypeWatchStarted:
+		return "Started watching thread: " + name
+	}
+	return title
 }
 
 // resource returns the event's resource as the same enriched DTO the resource
