@@ -112,7 +112,11 @@ export function AllResourceRow({ r }: { r: AllResourceDTO }) {
       wrap="wrap"
       align="center"
       px="xs"
-      py={6}
+      // More room above the content than below it: the divider sits on the
+      // row's top edge, and the text read as crowded against it. An unread
+      // row has no divider, so its box gets even padding instead.
+      pt={unread ? 8 : 12}
+      pb={unread ? 8 : 6}
       style={{
         border: unread ? UNREAD_BOX_BORDER : READ_BOX_BORDER,
         background: unread ? UNREAD_BG : undefined,
