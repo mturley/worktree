@@ -100,9 +100,12 @@ type worktreeSettings struct {
 		AliasHosts []string `json:"alias_hosts"`
 	} `json:"jira"`
 	UI struct {
-		HTTPSPort    int      `json:"https_port"`
-		AllowedHosts []string `json:"allowed_hosts"`
-		TLS          struct {
+		// RemoteAccessEnabled inverts ui.remote_access_disabled. A PUT that
+		// leaves it out keeps the file's current value.
+		RemoteAccessEnabled *bool    `json:"remote_access_enabled"`
+		HTTPSPort           int      `json:"https_port"`
+		AllowedHosts        []string `json:"allowed_hosts"`
+		TLS                 struct {
 			CertFile string `json:"cert_file"`
 			KeyFile  string `json:"key_file"`
 		} `json:"tls"`
@@ -135,6 +138,8 @@ func toWorktreeSettings(e config.Editable) worktreeSettings {
 	w.CmuxFeaturesEnabled = !e.CmuxFeaturesDisabled
 	w.Jira.Projects = nonNil(e.JiraProjects)
 	w.Jira.AliasHosts = nonNil(e.JiraAliasHosts)
+	remote := !e.RemoteAccessDisabled
+	w.UI.RemoteAccessEnabled = &remote
 	w.UI.HTTPSPort = e.HTTPSPort
 	w.UI.AllowedHosts = nonNil(e.AllowedHosts)
 	w.UI.TLS.CertFile = e.TLSCertFile
@@ -285,6 +290,12 @@ func (s *Server) handleSettingsWorktree(w http.ResponseWriter, r *http.Request) 
 		if _, ok := req.Watchers[svc]; !ok && !s.WatcherEnabled(svc) {
 			next.WatchersDisabled[svc] = true
 		}
+	}
+
+	if req.UI.RemoteAccessEnabled != nil {
+		next.RemoteAccessDisabled = !*req.UI.RemoteAccessEnabled
+	} else if cur, _, err := config.ReadEditable(s.configPath()); err == nil {
+		next.RemoteAccessDisabled = cur.RemoteAccessDisabled
 	}
 
 	disabled := next.CmuxFeaturesDisabled

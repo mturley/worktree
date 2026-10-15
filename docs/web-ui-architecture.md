@@ -28,8 +28,12 @@ touch the UI, read the relevant section below before spelunking the source.
 ### Authentication and remote access
 
 **Listeners.** `Server.Start` opens plain HTTP on `127.0.0.1:<--port>`,
-always loopback, and, when `Security.Remote()` (both `ui.tls` files set),
-HTTPS on every interface at `ui.https_port`. Loopback stays HTTP so cmux
+always loopback, and, when `Security.Remote()` (both `ui.tls` files set,
+and neither `--local-only` nor `ui.remote_access_disabled`), HTTPS on every
+interface at `ui.https_port`. `ui.remote_access_disabled` (the UI Access
+tab's "Enable remote access" switch, and `worktree setup`'s "Keep it
+enabled?") turns the listener off while keeping the certificate and
+addresses, so turning it back on needs no reissue or CA reinstall. Loopback stays HTTP so cmux
 panes and the browser-open path need no certificate trust on this machine.
 The HTTPS listener includes loopback because the `.local` name resolves to
 127.0.0.1 here. `Start` and `Serve` refuse a nil or incomplete `Security`;
@@ -1904,6 +1908,12 @@ It cannot see the frontend, and a new config file or root struct must be
 added to its roots by hand. Exclusions: auth.yaml `consumers` (owned by
 `worktree setup`; a DB path is not a user setting) and `jira_custom_fields`
 (legacy; custom fields belong in watcher config.yaml).
+
+**The remote access toggle** ("Enable remote access", `ui.remote_access_disabled`,
+absent = enabled) is `ui.remote_access_enabled` in the worktree DTO. A PUT
+that omits it keeps the file's value rather than reading as off. It only
+takes effect on restart; while it is off the UI greys out the rest of the
+Remote access section.
 
 **The cmux toggle** ("Enable cmux features", `ui.cmux_features_disabled`,
 absent = enabled) is part of the worktree save. It is refused (409) when the

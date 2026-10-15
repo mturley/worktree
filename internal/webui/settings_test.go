@@ -146,6 +146,34 @@ func TestSettingsWorktreePutCmuxGate(t *testing.T) {
 	}
 }
 
+func TestSettingsWorktreePutRemoteAccessToggle(t *testing.T) {
+	s, path := settingsServer(t, "ui:\n    password: pw\n")
+	cur := decodeSettings(t, doReq(s, "GET", "/api/settings", ""))
+	if on := cur.Worktree.UI.RemoteAccessEnabled; on == nil || !*on {
+		t.Fatalf("remote_access_enabled = %v, want true by default", on)
+	}
+	off := false
+	cur.Worktree.UI.RemoteAccessEnabled = &off
+	b, _ := json.Marshal(cur.Worktree)
+	got := decodeSettings(t, doReq(s, "PUT", "/api/settings/worktree", string(b)))
+	if on := got.Worktree.UI.RemoteAccessEnabled; on == nil || *on {
+		t.Fatal("remote access should read back disabled")
+	}
+	data, _ := os.ReadFile(path)
+	if !strings.Contains(string(data), "remote_access_disabled: true") {
+		t.Fatalf("file:\n%s", data)
+	}
+
+	// A PUT that leaves the field out keeps the file's value.
+	body := `{"cmux_features_enabled":true,"jira":{"projects":[],"alias_hosts":[]},
+	  "ui":{"https_port":8476,"allowed_hosts":[],"tls":{"cert_file":"","key_file":""}}}`
+	doReq(s, "PUT", "/api/settings/worktree", body)
+	data, _ = os.ReadFile(path)
+	if !strings.Contains(string(data), "remote_access_disabled: true") {
+		t.Fatalf("omitted field reset the toggle:\n%s", data)
+	}
+}
+
 func TestSettingsWorktreePutCmuxRefusedOutsideCmux(t *testing.T) {
 	s, path := settingsServer(t, "ui:\n    password: pw\n")
 	s.cmuxAvailable = func() bool { return false }

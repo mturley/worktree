@@ -68,6 +68,21 @@ func TestBuildSecurityEnablesRemoteWhenBothFilesExist(t *testing.T) {
 	}
 }
 
+func TestBuildSecurityRemoteAccessDisabledSkipsTheListener(t *testing.T) {
+	p := writeTestCert(t, []string{"mturley-mac.local"})
+	ui := config.UIConfig{
+		Password: "pw", HTTPSPort: 8476, AllowedHosts: []string{"mturley-mac.local"},
+		TLS: config.UITLSConfig{CertFile: p.Cert, KeyFile: p.Key}, RemoteAccessDisabled: true,
+	}
+	sec, err := buildSecurity(ui, &uisession.Store{}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sec.Remote() {
+		t.Fatal("ui.remote_access_disabled still enabled the HTTPS listener")
+	}
+}
+
 func TestBuildSecurityRejectsHalfATLSConfig(t *testing.T) {
 	for _, tlsCfg := range []config.UITLSConfig{{CertFile: "c.pem"}, {KeyFile: "k.pem"}} {
 		_, err := buildSecurity(config.UIConfig{Password: "pw", TLS: tlsCfg}, &uisession.Store{}, true)

@@ -36,7 +36,8 @@ func buildSecurity(ui config.UIConfig, sessions *uisession.Store, localOnly bool
 	if (cert == "") != (key == "") {
 		return nil, errors.New(`ui.tls needs both cert_file and key_file, and only one is set. Run "worktree setup" to reissue them`)
 	}
-	if cert == "" || localOnly {
+	// ui.remote_access_disabled keeps the certificate but not the listener.
+	if cert == "" || localOnly || ui.RemoteAccessDisabled {
 		return sec, nil
 	}
 	for _, f := range []string{cert, key} {

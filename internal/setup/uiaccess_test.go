@@ -262,7 +262,7 @@ func configured(t *testing.T, d uiAccessDeps) config.Config {
 }
 
 func TestConfiguredDecliningChangeTouchesNothing(t *testing.T) {
-	io := &scriptedIO{t: t, confirms: []bool{true}}
+	io := &scriptedIO{t: t, confirms: []bool{true, true}}
 	d := testDeps(t, io, "mturley-mac.local")
 	cfg := configured(t, d)
 	before, _ := os.ReadFile(d.paths.Cert)
@@ -288,7 +288,7 @@ func TestConfiguredDecliningChangeTouchesNothing(t *testing.T) {
 }
 
 func TestConfiguredAcceptingChangeReissues(t *testing.T) {
-	io := &scriptedIO{t: t, confirms: []bool{false, false}, lines: []string{"192.168.1.50"}}
+	io := &scriptedIO{t: t, confirms: []bool{true, false, false}, lines: []string{"192.168.1.50"}}
 	d := testDeps(t, io, "mturley-mac.local")
 	cfg := configured(t, d)
 	before, _ := os.ReadFile(d.paths.CA)
@@ -311,7 +311,7 @@ func TestConfiguredAcceptingChangeReissues(t *testing.T) {
 }
 
 func TestConfiguredEmptyAnswerKeepsExistingAddresses(t *testing.T) {
-	io := &scriptedIO{t: t, confirms: []bool{false, false}, lines: []string{""}}
+	io := &scriptedIO{t: t, confirms: []bool{true, false, false}, lines: []string{""}}
 	d := testDeps(t, io, "mturley-mac.local")
 	cfg := configured(t, d)
 	changed, err := configureRemoteAccess(&cfg, d)
@@ -327,7 +327,7 @@ func TestConfiguredEmptyAnswerKeepsExistingAddresses(t *testing.T) {
 // prompts must default to false.
 func TestRenewalAndReissuePromptsDefaultToNo(t *testing.T) {
 	t.Run("renew near expiry", func(t *testing.T) {
-		io := &scriptedIO{t: t, confirms: []bool{true}}
+		io := &scriptedIO{t: t, confirms: []bool{true, true}}
 		d := testDeps(t, io, "mturley-mac.local")
 		cfg := configured(t, d)
 		later := setupNow.Add(uitls.LeafValidity - 10*24*time.Hour)
@@ -346,7 +346,7 @@ func TestRenewalAndReissuePromptsDefaultToNo(t *testing.T) {
 	})
 
 	t.Run("re-issue on unreadable certificate", func(t *testing.T) {
-		io := &scriptedIO{t: t, confirms: []bool{true}}
+		io := &scriptedIO{t: t, confirms: []bool{true, true}}
 		d := testDeps(t, io, "mturley-mac.local")
 		cfg := configured(t, d)
 		if err := os.WriteFile(d.paths.Cert, []byte("not a certificate"), 0o644); err != nil {
@@ -367,7 +367,7 @@ func TestRenewalAndReissuePromptsDefaultToNo(t *testing.T) {
 }
 
 func TestConfiguredOffersRenewalNearExpiry(t *testing.T) {
-	io := &scriptedIO{t: t, confirms: []bool{true}}
+	io := &scriptedIO{t: t, confirms: []bool{true, true}}
 	d := testDeps(t, io, "mturley-mac.local")
 	cfg := configured(t, d)
 	old, _ := uitls.ReadCert(d.paths.Cert)
@@ -385,6 +385,74 @@ func TestConfiguredOffersRenewalNearExpiry(t *testing.T) {
 	}
 	if !io.asked("Renew") || io.asked("Keep these remote access") {
 		t.Fatalf("prompts = %v, want renewal and no change prompt", io.prompts)
+	}
+}
+
+// TestRemoteAccessStatesItsStateAndDefaultsToIt mirrors the watcher
+// prompts: each question names the current state and defaults to keeping
+// it, so --yes never changes it.
+func TestRemoteAccessStatesItsStateAndDefaultsToIt(t *testing.T) {
+	io := &scriptedIO{t: t, confirms: []bool{true, true}}
+	d := testDeps(t, io, "mturley-mac.local")
+	cfg := configured(t, d)
+	if _, err := configureRemoteAccess(&cfg, d); err != nil {
+		t.Fatal(err)
+	}
+	io.done()
+	if io.prompts[0] != "  Keep it enabled?" || !io.defaults[0] {
+		t.Fatalf("first prompt %q default %v, want Keep it enabled? defaulting to yes", io.prompts[0], io.defaults[0])
+	}
+	if !strings.Contains(io.out.String(), "Remote access is enabled: https://mturley-mac.local:8476") {
+		t.Errorf("current state not stated:\n%s", io.out.String())
+	}
+}
+
+func TestRemoteAccessTurnedOffKeepsTheCertificate(t *testing.T) {
+	io := &scriptedIO{t: t, confirms: []bool{false}}
+	d := testDeps(t, io, "mturley-mac.local")
+	cfg := configured(t, d)
+	before, _ := os.ReadFile(d.paths.Cert)
+	changed, err := configureRemoteAccess(&cfg, d)
+	io.done()
+	if err != nil || !changed || !cfg.UI.RemoteAccessDisabled {
+		t.Fatalf("configureRemoteAccess = %v, %v; disabled %v", changed, err, cfg.UI.RemoteAccessDisabled)
+	}
+	after, _ := os.ReadFile(d.paths.Cert)
+	if !bytes.Equal(before, after) || !cfg.UI.RemoteEnabled() {
+		t.Fatal("turning remote access off touched the certificate")
+	}
+}
+
+func TestRemoteAccessDisabledStaysOffByDefault(t *testing.T) {
+	io := &scriptedIO{t: t, confirms: []bool{false}}
+	d := testDeps(t, io, "mturley-mac.local")
+	cfg := configured(t, d)
+	cfg.UI.RemoteAccessDisabled = true
+	changed, err := configureRemoteAccess(&cfg, d)
+	io.done()
+	if err != nil || changed || !cfg.UI.RemoteAccessDisabled {
+		t.Fatalf("configureRemoteAccess = %v, %v; disabled %v", changed, err, cfg.UI.RemoteAccessDisabled)
+	}
+	if io.prompts[0] != "  Enable it?" || io.defaults[0] {
+		t.Fatalf("first prompt %q default %v, want Enable it? defaulting to no", io.prompts[0], io.defaults[0])
+	}
+	if !strings.Contains(io.out.String(), "Remote access is disabled") {
+		t.Errorf("current state not stated:\n%s", io.out.String())
+	}
+}
+
+func TestRemoteAccessReEnabled(t *testing.T) {
+	io := &scriptedIO{t: t, confirms: []bool{true, true}}
+	d := testDeps(t, io, "mturley-mac.local")
+	cfg := configured(t, d)
+	cfg.UI.RemoteAccessDisabled = true
+	changed, err := configureRemoteAccess(&cfg, d)
+	io.done()
+	if err != nil || !changed || cfg.UI.RemoteAccessDisabled {
+		t.Fatalf("configureRemoteAccess = %v, %v; disabled %v", changed, err, cfg.UI.RemoteAccessDisabled)
+	}
+	if !io.asked("Keep these remote access addresses?") {
+		t.Fatalf("re-enabling skipped the certificate check: %v", io.prompts)
 	}
 }
 

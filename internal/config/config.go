@@ -106,6 +106,10 @@ type UIConfig struct {
 	// even when the server can reach it. Set from the UI's Settings modal via
 	// SetCmuxFeaturesDisabled; absent means enabled.
 	CmuxFeaturesDisabled bool `yaml:"cmux_features_disabled,omitempty"`
+	// RemoteAccessDisabled keeps `worktree ui` from serving HTTPS even
+	// when a certificate is configured, without discarding it. Set from the
+	// Settings modal or `worktree setup`; absent means enabled.
+	RemoteAccessDisabled bool `yaml:"remote_access_disabled,omitempty"`
 }
 
 type UITLSConfig struct {
@@ -115,7 +119,8 @@ type UITLSConfig struct {
 
 // RemoteEnabled reports whether the HTTPS listener for other devices is
 // configured. Half a configuration is not enabled; `worktree ui` reports it
-// as an error.
+// as an error. It ignores RemoteAccessDisabled: a configured but turned-off
+// listener still has a certificate worth keeping.
 func (u UIConfig) RemoteEnabled() bool {
 	return u.TLS.CertFile != "" && u.TLS.KeyFile != ""
 }

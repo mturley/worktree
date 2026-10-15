@@ -104,8 +104,14 @@ func ensurePassword(cfg *config.Config, d uiAccessDeps) (bool, error) {
 	return true, nil
 }
 
-// configureRemoteAccess sets up, renews or changes the HTTPS listener's
-// certificate and addresses. It reports whether it changed cfg.
+// remoteOffMessage explains what turning remote access off keeps and stops.
+const remoteOffMessage = "The certificate and addresses are kept; `worktree ui` serves only http://127.0.0.1 until remote access is enabled again."
+
+// configureRemoteAccess states whether remote access is on, asks whether it
+// should be (defaulting to the current state, so --yes changes nothing), and
+// sets up, renews or changes the HTTPS listener's certificate and addresses.
+// Turning it off sets ui.remote_access_disabled and keeps the certificate.
+// It reports whether it changed cfg.
 func configureRemoteAccess(cfg *config.Config, d uiAccessDeps) (bool, error) {
 	httpsPort := cfg.UI.HTTPSPort
 	if httpsPort == 0 {
@@ -114,7 +120,7 @@ func configureRemoteAccess(cfg *config.Config, d uiAccessDeps) (bool, error) {
 
 	if !cfg.UI.RemoteEnabled() {
 		explainRemoteAccess(d, httpsPort)
-		if !d.io.ConfirmDefault("  Enable HTTPS access to the web UI from other devices (e.g. your phone)?", false) {
+		if !d.io.ConfirmDefault("  Remote access is disabled. Enable HTTPS access to the web UI from other devices (e.g. your phone)?", false) {
 			return false, nil
 		}
 		hosts := chooseRemoteHosts(d, httpsPort)
@@ -122,10 +128,34 @@ func configureRemoteAccess(cfg *config.Config, d uiAccessDeps) (bool, error) {
 			d.io.Printf("  %s Skipped remote access\n", ui.Dim("—"))
 			return false, nil
 		}
+		cfg.UI.RemoteAccessDisabled = false
 		return true, issueCertificate(cfg, hosts, d)
 	}
 
-	d.io.Printf("  Remote access: %s\n", describeRemote(cfg.UI))
+	if cfg.UI.RemoteAccessDisabled {
+		d.io.Printf("  Remote access is disabled. Its certificate is kept for %s\n", describeRemote(cfg.UI))
+		if !d.io.ConfirmDefault("  Enable it?", false) {
+			return false, nil
+		}
+		cfg.UI.RemoteAccessDisabled = false
+		// Re-enabled: go on to check the certificate, and report the change
+		// even if nothing below makes one.
+		_, err := checkRemoteAccess(cfg, d, httpsPort)
+		return true, err
+	}
+
+	d.io.Printf("  Remote access is enabled: %s\n", describeRemote(cfg.UI))
+	if !d.io.ConfirmDefault("  Keep it enabled?", true) {
+		cfg.UI.RemoteAccessDisabled = true
+		d.io.Printf("    %s\n", ui.Dim(remoteOffMessage))
+		return true, nil
+	}
+	return checkRemoteAccess(cfg, d, httpsPort)
+}
+
+// checkRemoteAccess offers to repair, renew or readdress a configured
+// certificate. It reports whether it changed cfg.
+func checkRemoteAccess(cfg *config.Config, d uiAccessDeps, httpsPort int) (bool, error) {
 	cert, err := uitls.ReadCert(cfg.UI.TLS.CertFile)
 	switch {
 	case err != nil:

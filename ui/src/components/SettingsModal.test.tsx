@@ -400,6 +400,23 @@ describe("SettingsModal", () => {
     await waitFor(() => expect(save).toHaveBeenCalledOnce())
     expect(save.mock.calls[0][0].ui.https_port).toBe(8476)
   })
+
+  it("UI Access: turning remote access off greys out its fields and saves", async () => {
+    const start = baseSettings()
+    vi.spyOn(api, "settings").mockResolvedValue(start)
+    const save = vi.spyOn(api, "saveWorktreeSettings").mockResolvedValue(start)
+    renderModal()
+    await userEvent.click(await screen.findByRole("tab", { name: /UI Access/ }))
+    const toggle = await screen.findByLabelText(/^Enable remote access/)
+    expect(screen.getByLabelText("HTTPS port")).toBeEnabled()
+    await userEvent.click(toggle)
+    for (const label of ["HTTPS port", "TLS certificate", "TLS key"]) {
+      expect(screen.getByLabelText(label)).toBeDisabled()
+    }
+    await userEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() => expect(save).toHaveBeenCalledOnce())
+    expect(save.mock.calls[0][0].ui.remote_access_enabled).toBe(false)
+  })
 })
 
 describe("SettingsModal tab dots", () => {

@@ -87,6 +87,7 @@ export function useSettingsDraft(server: Settings | undefined) {
     const a = base.worktree.ui
     const b = drafts.worktree.ui
     return [
+      a.remote_access_enabled !== b.remote_access_enabled,
       a.https_port !== b.https_port,
       canonical(a.allowed_hosts) !== canonical(b.allowed_hosts),
       a.tls.cert_file !== b.tls.cert_file,

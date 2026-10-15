@@ -7,7 +7,7 @@ export const baseSettings = (): Settings => ({
   worktree: { worktrees_base: "~/.worktrees", editor: "", cmux_features_enabled: true,
     watchers: { github: true, jira: true, slack: true },
     jira: { projects: ["ABC"], alias_hosts: [] },
-    ui: { https_port: 8476, allowed_hosts: ["a.local"], tls: { cert_file: "~/c.pem", key_file: "~/k.pem" } } },
+    ui: { remote_access_enabled: true, https_port: 8476, allowed_hosts: ["a.local"], tls: { cert_file: "~/c.pem", key_file: "~/k.pem" } } },
   watcher_auth: { jira: { host: "https://x.atlassian.net", email: "me@x" }, slack: { workspace_domain: "x.slack.com" } },
   watcher_config: { jira: { bot_usernames: [], custom_fields: { a: "customfield_1", b: "customfield_2" } } },
 })

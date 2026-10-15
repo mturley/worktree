@@ -3,6 +3,7 @@ import type { Settings, WorktreeSettings } from "../../api/types"
 import { KeyPath, PersistedTo, SettingsSection } from "./parts"
 import { SecretField } from "./SecretField"
 import type { PendingSecrets, SecretKey } from "./useSettingsDraft"
+import { Toggle } from "../Toggle"
 
 const DEFAULT_HTTPS_PORT = 8476
 export const RESTART_BADGE = "Applies after restarting worktree ui"
@@ -20,7 +21,8 @@ interface Props {
 /** The ui.* keys of worktree's config.yaml: login and remote access. */
 export function UIAccessPanel({ settings, draft, update, error, secrets, setSecret }: Props) {
   const certNames = settings.environment.cert_names
-  const uncovered = certNames
+  const off = !draft.ui.remote_access_enabled
+  const uncovered = !off && certNames
     ? draft.ui.allowed_hosts.filter((h) => !certNames.map((n) => n.toLowerCase()).includes(h.toLowerCase()))
     : []
   return (
@@ -44,7 +46,14 @@ export function UIAccessPanel({ settings, draft, update, error, secrets, setSecr
       </SettingsSection>
 
       <SettingsSection title="Remote access" badge={RESTART_BADGE}>
+        <Toggle
+          label="Enable remote access"
+          description={<>Serve HTTPS to other devices. Turning it off keeps the certificate and addresses below. <KeyPath path="ui.remote_access_disabled" /></>}
+          checked={draft.ui.remote_access_enabled}
+          onChange={(e) => { const on = e.currentTarget.checked; update((d) => ({ ...d, ui: { ...d.ui, remote_access_enabled: on } })) }}
+        />
         <NumberInput
+          disabled={off}
           label="HTTPS port"
           description={<><KeyPath path="ui.https_port" /> · default 8476</>}
           min={1}
@@ -54,6 +63,7 @@ export function UIAccessPanel({ settings, draft, update, error, secrets, setSecr
           onChange={(v) => update((d) => ({ ...d, ui: { ...d.ui, https_port: typeof v === "number" ? v : Number(v) || DEFAULT_HTTPS_PORT } }))}
         />
         <TagsInput
+          disabled={off}
           label="Allowed hosts"
           description={<>Names and IPs other devices use. Also the certificate's names. <KeyPath path="ui.allowed_hosts" /></>}
           placeholder="Add host…"
@@ -66,11 +76,12 @@ export function UIAccessPanel({ settings, draft, update, error, secrets, setSecr
             reissue it, then reinstall the CA on your phone.
           </Alert>
         )}
-        <Text size="xs" c="dimmed">
+        <Text size="xs" c="dimmed" opacity={off ? 0.6 : undefined}>
           <Code>worktree setup</Code> generates the certificate and key and fills in both paths, along with the
           allowed hosts. Change them only to use a certificate of your own.
         </Text>
         <TextInput
+          disabled={off}
           label="TLS certificate"
           description={<KeyPath path="ui.tls.cert_file" />}
           value={draft.ui.tls.cert_file}
@@ -78,6 +89,7 @@ export function UIAccessPanel({ settings, draft, update, error, secrets, setSecr
           ff="monospace"
         />
         <TextInput
+          disabled={off}
           label="TLS key"
           description={<KeyPath path="ui.tls.key_file" />}
           value={draft.ui.tls.key_file}

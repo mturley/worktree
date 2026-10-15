@@ -330,6 +330,8 @@ export interface WorktreeSettings {
     alias_hosts: string[]
   }
   ui: {
+    /** Inverts ui.remote_access_disabled: off keeps the certificate but skips the HTTPS listener. */
+    remote_access_enabled: boolean
     https_port: number
     allowed_hosts: string[]
     tls: { cert_file: string; key_file: string }
