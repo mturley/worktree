@@ -233,8 +233,15 @@ export function HomePage() {
       {/* Tooltips in both columns open under the pinned headers; see
           useTooltipLayer. */}
       <Grid.Col span={6} style={columnStyle} data-tooltip-layer="content">
-        <Stack gap="sm">
-          <Box style={headerStyle} data-worktrees-header data-tooltip-layer={headerStyle ? "pinned" : undefined}>
+        {/* As the Activity header: pinned, it carries its own opaque room
+            below the toolbar in place of the gap, so the cards scrolling
+            under it do not run right up against the buttons. */}
+        <Stack gap={headerStyle ? 0 : "sm"}>
+          <Box
+            style={headerStyle && { ...headerStyle, paddingBottom: "var(--mantine-spacing-xs)" }}
+            data-worktrees-header
+            data-tooltip-layer={headerStyle ? "pinned" : undefined}
+          >
             {listToolbar}
           </Box>
           {worktrees}
