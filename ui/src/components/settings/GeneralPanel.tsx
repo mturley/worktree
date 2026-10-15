@@ -1,4 +1,4 @@
-import { Alert, Anchor, Code, Stack, TagsInput, Text, TextInput } from "@mantine/core"
+import { Alert, Code, Stack, Text, TextInput } from "@mantine/core"
 import type { Settings, WorktreeSettings } from "../../api/types"
 import { Toggle } from "../Toggle"
 import { KeyPath, PersistedTo, SettingsSection } from "./parts"
@@ -8,12 +8,10 @@ interface Props {
   draft: WorktreeSettings
   update: (fn: (d: WorktreeSettings) => WorktreeSettings) => void
   error?: string
-  /** Jump to the Watcher Auth tab. */
-  onShowWatcherAuth: () => void
 }
 
-/** worktree's config.yaml, except the ui.* keys (UIAccessPanel). */
-export function GeneralPanel({ settings, draft, update, error, onShowWatcherAuth }: Props) {
+/** worktree's config.yaml, except ui.* (UIAccessPanel) and jira.* (Connected Services → Jira). */
+export function GeneralPanel({ settings, draft, update, error }: Props) {
   const env = settings.environment
   return (
     <Stack gap="lg">
@@ -51,26 +49,6 @@ export function GeneralPanel({ settings, draft, update, error, onShowWatcherAuth
         {env.worktrees_base_env && (
           <Text size="xs" c="yellow">$WORKTREES_BASE is set in the server's environment and overrides this value.</Text>
         )}
-      </SettingsSection>
-
-      <SettingsSection title="Jira">
-        <TagsInput
-          label="Project keys"
-          description={<>Prefixes detected in branch names and PR titles. <KeyPath path="jira.projects" /></>}
-          placeholder="Add key…"
-          value={draft.jira.projects}
-          onChange={(v) => update((d) => ({ ...d, jira: { ...d.jira, projects: v } }))}
-        />
-        <TagsInput
-          label="Alias hosts"
-          description={<>Old hostnames whose /browse/KEY links still count as Jira issues. <KeyPath path="jira.alias_hosts" /></>}
-          placeholder="Add host…"
-          value={draft.jira.alias_hosts}
-          onChange={(v) => update((d) => ({ ...d, jira: { ...d.jira, alias_hosts: v } }))}
-        />
-        <Text size="xs" c="dimmed">
-          Jira host, email and token are on the <Anchor component="button" size="xs" onClick={onShowWatcherAuth}>Watcher Auth</Anchor> tab.
-        </Text>
       </SettingsSection>
     </Stack>
   )

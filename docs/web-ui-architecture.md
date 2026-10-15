@@ -1786,14 +1786,26 @@ things constrain any change here:
 ### Settings modal (`settings*.go`, `ui/src/components/settings/`)
 
 The home page's Settings modal (cog in the Activity header when wide, at the
-right of the Worktrees/Activity tab bar when narrow) has five tabs: General
-(worktree's `config.yaml` except `ui.*`), Watcher Auth (watcher `auth.yaml`),
-Watcher Config (watcher `config.yaml`), UI Access (the `ui.*` keys of
-worktree's `config.yaml`: password and remote access) and Devices (login
-sessions). General and UI Access share one draft and one save, but each
-tab's unsaved dot covers only its own keys. Each config tab
-opens with "These settings are persisted to `<path>`" (paths come from
-`GET /api/settings`).
+right of the Worktrees/Activity tab bar when narrow) has four tabs, organised
+by what they configure rather than by file:
+
+- **General** — worktree's `config.yaml` except `ui.*` and `jira.*`.
+- **Connected Services** (`ConnectedServicesPanel`) — sub-tabs GitHub, Jira
+  and Slack, each gathering every key for that service across files.
+  GitHub and Slack are watcher `auth.yaml`. Jira spans all three files:
+  Connection (`auth.yaml` host, email, token), Issue detection (worktree
+  `config.yaml` `jira.projects`/`alias_hosts`) and Polling (watcher
+  `config.yaml`, `JiraPollingSection`); each section names its file.
+- **UI Access** — the `ui.*` keys of worktree's `config.yaml`: password and
+  remote access.
+- **Devices** — login sessions; no draft.
+
+There is still one draft per file and one Save; unsaved dots are per tab and
+sub-tab (`settings/tabDirty.ts`), each covering only its own keys, since
+config.yaml backs three tabs. A file's save error shows on every tab that
+edits it. Each config tab and sub-tab opens with "These settings are
+persisted to `<path>`" (paths come from `GET /api/settings`), listing every
+file it writes.
 
 **Routes** (`server.go`):
 

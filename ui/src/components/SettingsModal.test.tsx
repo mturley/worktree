@@ -7,6 +7,12 @@ import { api } from "../api/client"
 import { SettingsModal } from "./SettingsModal"
 import { baseSettings } from "./settings/testSettings"
 
+/** Open Connected Services and one of its sub-tabs. */
+async function openService(name: "GitHub" | "Jira" | "Slack") {
+  await userEvent.click(screen.getByRole("tab", { name: /Connected Services/ }))
+  await userEvent.click(screen.getByRole("tab", { name: new RegExp(`^${name}`) }))
+}
+
 function renderModal(qc = new QueryClient(), onClose = () => {}) {
   render(
     <QueryClientProvider client={qc}>
@@ -22,10 +28,10 @@ afterEach(() => {
 })
 
 describe("SettingsModal", () => {
-  it("has the five tabs and the persisted-to line", async () => {
+  it("has the four tabs and the persisted-to line", async () => {
     vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
     renderModal()
-    for (const name of ["General", "Watcher Auth", "Watcher Config", "UI Access", "Devices"]) {
+    for (const name of ["General", "Connected Services", "UI Access", "Devices"]) {
       expect(screen.getByRole("tab", { name: new RegExp(name) })).toBeInTheDocument()
     }
     // Every config tab is mounted, each with its own line; General is first.
@@ -143,7 +149,7 @@ describe("SettingsModal", () => {
     await userEvent.click(screen.getByRole("button", { name: "Save" }))
     await waitFor(() => expect(editor).toBeDisabled())
     expect(screen.getByLabelText("UI password")).toBeDisabled()
-    expect(screen.getByRole("tab", { name: /Watcher Auth/ })).toBeEnabled()
+    expect(screen.getByRole("tab", { name: /Connected Services/ })).toBeEnabled()
     const saved = baseSettings()
     saved.worktree.editor = "zed"
     finish(saved)
@@ -155,7 +161,7 @@ describe("SettingsModal", () => {
     renderModal()
     await userEvent.type(await screen.findByLabelText("Editor"), "zed")
     expect(screen.getByRole("tab", { name: /General/ })).toHaveTextContent("●")
-    expect(screen.getByRole("tab", { name: /Watcher Auth/ })).not.toHaveTextContent("●")
+    expect(screen.getByRole("tab", { name: /Connected Services/ })).not.toHaveTextContent("●")
     expect(screen.getByRole("tab", { name: /UI Access/ })).not.toHaveTextContent("●")
   })
 
@@ -175,29 +181,29 @@ describe("SettingsModal", () => {
     renderModal()
     await userEvent.type(await screen.findByLabelText("Editor"), "zed")
     await userEvent.click(screen.getByRole("button", { name: "Save" }))
-    // General and UI Access both edit config.yaml, so both show its error.
-    expect(await screen.findAllByText("disk full")).toHaveLength(2)
+    // General, UI Access and Jira all edit config.yaml, so all show its error.
+    expect(await screen.findAllByText("disk full")).toHaveLength(3)
     expect(screen.getByLabelText("Editor")).toHaveValue("zed")
   })
 
-  it("Watcher Auth: tests configured services on open and never renders secrets", async () => {
+  it("Connected Services: tests configured services on open and never renders secrets", async () => {
     vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
     const test = vi.spyOn(api, "testCredential").mockResolvedValue({ ok: true, kind: "ok", detail: "" })
     renderModal()
-    await userEvent.click(screen.getByRole("tab", { name: /Watcher Auth/ }))
+    await openService("GitHub")
     await waitFor(() => expect(test).toHaveBeenCalledTimes(3))
     expect(test).toHaveBeenCalledWith("jira", { host: "https://x.atlassian.net", email: "me@x" })
     expect(screen.getByText(/To automatically capture/)).toHaveTextContent("run worktree setup slack.")
     expect(screen.queryByText(/agent-handler/i)).not.toBeInTheDocument()
   })
 
-  it("Watcher Auth: a Jira replace tests with the form's host and email, and Save writes it", async () => {
+  it("Connected Services: a Jira replace tests with the form's host and email, and Save writes it", async () => {
     vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
     const test = vi.spyOn(api, "testCredential").mockResolvedValue({ ok: true, kind: "ok", detail: "" })
     const replace = vi.spyOn(api, "replaceCredential").mockResolvedValue({ ok: true, kind: "ok", detail: "" })
     vi.spyOn(api, "saveWatcherAuthSettings").mockResolvedValue(baseSettings())
     renderModal()
-    await userEvent.click(screen.getByRole("tab", { name: /Watcher Auth/ }))
+    await openService("Jira")
     const email = await screen.findByLabelText("Email")
     await userEvent.clear(email)
     await userEvent.type(email, "new@x")
@@ -212,26 +218,26 @@ describe("SettingsModal", () => {
     await waitFor(() => expect(screen.queryByText("Unsaved")).not.toBeInTheDocument())
   })
 
-  it("Watcher Auth: a refused candidate is not held", async () => {
+  it("Connected Services: a refused candidate is not held", async () => {
     vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
     vi.spyOn(api, "testCredential").mockResolvedValue({ ok: false, kind: "auth", detail: "401 Bad credentials" })
     renderModal()
-    await userEvent.click(screen.getByRole("tab", { name: /Watcher Auth/ }))
+    await openService("GitHub")
     await userEvent.type(await screen.findByLabelText("Token"), "bad{Enter}")
     expect(await screen.findByText(/The new value was not kept/)).toBeInTheDocument()
     expect(screen.queryByText("Unsaved")).not.toBeInTheDocument()
-    expect(screen.getByRole("tab", { name: /Watcher Auth/ })).not.toHaveTextContent("●")
+    expect(screen.getByRole("tab", { name: /Connected Services/ })).not.toHaveTextContent("●")
   })
 
-  it("Watcher Auth: Revert and Discard drop a pending secret without writing it", async () => {
+  it("Connected Services: Revert and Discard drop a pending secret without writing it", async () => {
     vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
     vi.spyOn(api, "testCredential").mockResolvedValue({ ok: true, kind: "ok", detail: "" })
     const replace = vi.spyOn(api, "replaceCredential")
     renderModal()
-    await userEvent.click(screen.getByRole("tab", { name: /Watcher Auth/ }))
+    await openService("GitHub")
     await userEvent.type(await screen.findByLabelText("Token"), "ghp_new{Enter}")
     expect(await screen.findByText("Unsaved")).toBeInTheDocument()
-    expect(screen.getByRole("tab", { name: /Watcher Auth/ })).toHaveTextContent("●")
+    expect(screen.getByRole("tab", { name: /Connected Services/ })).toHaveTextContent("●")
     await userEvent.click(screen.getByRole("button", { name: "Revert" }))
     expect(screen.queryByText("Unsaved")).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled()
@@ -242,24 +248,25 @@ describe("SettingsModal", () => {
     expect(replace).not.toHaveBeenCalled()
   })
 
-  it("Watcher Auth: a credential refused at Save stays pending with its error", async () => {
+  it("Connected Services: a credential refused at Save stays pending with its error", async () => {
     vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
     vi.spyOn(api, "testCredential").mockResolvedValue({ ok: true, kind: "ok", detail: "" })
     vi.spyOn(api, "replaceCredential").mockResolvedValue({ ok: false, kind: "auth", detail: "token revoked" })
     renderModal()
-    await userEvent.click(screen.getByRole("tab", { name: /Watcher Auth/ }))
+    await openService("GitHub")
     await userEvent.type(await screen.findByLabelText("Token"), "ghp_new{Enter}")
     expect(await screen.findByText("Unsaved")).toBeInTheDocument()
     await userEvent.click(screen.getByRole("button", { name: "Save" }))
-    expect(await screen.findByText(/GitHub token: token revoked. It was not saved./)).toBeInTheDocument()
+    // auth.yaml backs all three sub-tabs, so each shows its error.
+    expect(await screen.findAllByText(/GitHub token: token revoked. It was not saved./)).toHaveLength(3)
     expect(screen.getByText("Unsaved")).toBeInTheDocument()
   })
 
-  it("Watcher Config: edits custom fields and saves the map", async () => {
+  it("Connected Services → Jira: edits custom fields and saves the map", async () => {
     vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
     const save = vi.spyOn(api, "saveWatcherConfigSettings").mockResolvedValue(baseSettings())
     renderModal()
-    await userEvent.click(screen.getByRole("tab", { name: /Watcher Config/ }))
+    await openService("Jira")
     await userEvent.click(await screen.findByRole("button", { name: "Remove field 1" }))
     await userEvent.click(screen.getByRole("button", { name: "Save" }))
     await waitFor(() => expect(save).toHaveBeenCalledOnce())
@@ -300,7 +307,7 @@ describe("SettingsModal", () => {
     const test = vi.spyOn(api, "testCredential").mockImplementation((_svc, o) =>
       o?.token === "abc" ? new Promise((r) => { resolve = r }) : Promise.resolve({ ok: true, kind: "ok", detail: "" }))
     renderModal()
-    await userEvent.click(screen.getByRole("tab", { name: /Watcher Auth/ }))
+    await openService("GitHub")
     await userEvent.type(await screen.findByLabelText("Token"), "abc{Enter}{Enter}")
     expect(test.mock.calls.filter(([, o]) => o?.token === "abc")).toHaveLength(1)
     resolve({ ok: true, kind: "ok", detail: "" })
@@ -323,12 +330,12 @@ describe("SettingsModal", () => {
     await waitFor(() => expect(screen.getByRole("tab", { name: /UI Access/ })).not.toHaveTextContent("●"))
   })
 
-  it("Watcher Auth: a Slack cookie-only replace tests and saves only the cookie", async () => {
+  it("Connected Services: a Slack cookie-only replace tests and saves only the cookie", async () => {
     vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
     const test = vi.spyOn(api, "testCredential").mockResolvedValue({ ok: true, kind: "ok", detail: "" })
     const replace = vi.spyOn(api, "replaceCredential").mockResolvedValue({ ok: true, kind: "ok", detail: "" })
     renderModal()
-    await userEvent.click(screen.getByRole("tab", { name: /Watcher Auth/ }))
+    await openService("Slack")
     await userEvent.type(await screen.findByLabelText("Session cookie"), "xoxd-new")
     await userEvent.click(screen.getByRole("button", { name: "Replace" }))
     await waitFor(() => expect(test).toHaveBeenCalledWith("slack", { cookie: "xoxd-new" }))
@@ -354,22 +361,22 @@ describe("SettingsModal", () => {
     expect(screen.getByLabelText("Editor")).toHaveValue("zed")
   })
 
-  it("Watcher Auth: warns when the Jira host changes while a token is stored", async () => {
+  it("Connected Services: warns when the Jira host changes while a token is stored", async () => {
     vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
     vi.spyOn(api, "testCredential").mockResolvedValue({ ok: true, kind: "ok", detail: "" })
     renderModal()
-    await userEvent.click(screen.getByRole("tab", { name: /Watcher Auth/ }))
+    await openService("Jira")
     const host = await screen.findByLabelText("Host")
     expect(screen.queryByText(/Changing the host needs the API token/)).not.toBeInTheDocument()
     await userEvent.type(host, "2")
     expect(screen.getByText("Changing the host needs the API token: paste it below and press Replace, then Save.")).toBeInTheDocument()
   })
 
-  it("Watcher Config: a duplicate custom field name shows an error and blocks the save", async () => {
+  it("Connected Services → Jira: a duplicate custom field name shows an error and blocks the save", async () => {
     vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
     const save = vi.spyOn(api, "saveWatcherConfigSettings").mockResolvedValue(baseSettings())
     renderModal()
-    await userEvent.click(screen.getByRole("tab", { name: /Watcher Config/ }))
+    await openService("Jira")
     const second = await screen.findByLabelText("Field 2 name")
     await userEvent.clear(second)
     await userEvent.type(second, "a")
@@ -391,5 +398,27 @@ describe("SettingsModal", () => {
     await userEvent.click(screen.getByRole("button", { name: "Save" }))
     await waitFor(() => expect(save).toHaveBeenCalledOnce())
     expect(save.mock.calls[0][0].ui.https_port).toBe(8476)
+  })
+})
+
+describe("SettingsModal tab dots", () => {
+  it("marks only the Jira sub-tab for a Jira project key, and Connected Services, not General", async () => {
+    vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
+    renderModal()
+    await openService("Jira")
+    await userEvent.type(screen.getByRole("textbox", { name: "Project keys" }), "XYZ{Enter}")
+    expect(screen.getByRole("tab", { name: /^Jira/ })).toHaveTextContent("●")
+    expect(screen.getByRole("tab", { name: /^GitHub/ })).not.toHaveTextContent("●")
+    expect(screen.getByRole("tab", { name: /^Slack/ })).not.toHaveTextContent("●")
+    expect(screen.getByRole("tab", { name: /Connected Services/ })).toHaveTextContent("●")
+    expect(screen.getByRole("tab", { name: /General/ })).not.toHaveTextContent("●")
+  })
+
+  it("the Jira sub-tab names all three files it saves to", async () => {
+    vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
+    renderModal()
+    await openService("Jira")
+    const line = screen.getAllByText(/These settings are persisted to/).find((el) => el.textContent?.includes("watcher/config.yaml"))
+    expect(line).toHaveTextContent("~/.config/watcher/auth.yaml, ~/.config/worktree/config.yaml and ~/.config/watcher/config.yaml")
   })
 })

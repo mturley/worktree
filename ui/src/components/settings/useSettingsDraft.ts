@@ -31,7 +31,7 @@ const savers: { [F in SettingsFile]: (d: Drafts[F]) => Promise<Settings> } = {
 }
 
 /** JSON with object keys sorted, so a reordered map isn't a change. */
-function canonical(v: unknown): string {
+export function canonical(v: unknown): string {
   return JSON.stringify(v, (_k, val) =>
     val && typeof val === "object" && !Array.isArray(val)
       ? Object.fromEntries(Object.entries(val).sort(([a], [b]) => a.localeCompare(b)))

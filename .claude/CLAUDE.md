@@ -154,10 +154,13 @@ Slack threads are worktree resources (`worktree add <slack-thread-url>`). In the
 ## Config files ↔ Settings modal — keep them in sync
 
 The web UI's Settings modal edits every user-facing key of three files:
-worktree's `config.yaml` (`internal/config.Config`, General tab; `ui.*` on
-the UI Access tab), and the
-watcher library's `auth.yaml` (`wconfig.Config`, Watcher Auth tab) and
-`config.yaml` (`wconfig.ConfigFile`, Watcher Config tab).
+worktree's `config.yaml` (`internal/config.Config`), and the watcher
+library's `auth.yaml` (`wconfig.Config`) and `config.yaml`
+(`wconfig.ConfigFile`). Tabs are organised by what they configure, not by
+file: General, Connected Services (GitHub / Jira / Slack sub-tabs, each
+gathering that service's keys from every file), UI Access (`ui.*`) and
+Devices. Put a new key on the tab for what it configures, and update
+`ui/src/components/settings/tabDirty.ts` so its tab's unsaved dot sees it.
 
 **Any change to a key in any of these — added, renamed, removed, or a
 watcher re-pin that changes them — must update the modal in the same

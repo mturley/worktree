@@ -5,9 +5,9 @@ import { api } from "../api/client"
 import { DevicesPanel } from "./DevicesPanel"
 import { GeneralPanel } from "./settings/GeneralPanel"
 import { UIAccessPanel } from "./settings/UIAccessPanel"
-import { WatcherAuthPanel } from "./settings/WatcherAuthPanel"
-import { WatcherConfigPanel } from "./settings/WatcherConfigPanel"
-import { useSettingsDraft, type SettingsFile } from "./settings/useSettingsDraft"
+import { ConnectedServicesPanel } from "./settings/ConnectedServicesPanel"
+import { tabDirty, type SettingsTab } from "./settings/tabDirty"
+import { useSettingsDraft } from "./settings/useSettingsDraft"
 
 const settingsKey = ["settings"] as const
 
@@ -19,13 +19,6 @@ const settingsKey = ["settings"] as const
 const affectedByCmux = (q: Pick<Query, "queryKey">) => {
   const head = q.queryKey[0]
   return typeof head === "string" && (head.startsWith("cmux") || head === "session")
-}
-
-const tabFile: Record<string, SettingsFile | undefined> = {
-  general: "worktree",
-  "watcher-auth": "watcher_auth",
-  "watcher-config": "watcher_config",
-  "ui-access": "worktree",
 }
 
 /**
@@ -78,22 +71,12 @@ export function SettingsModal({ opened, onClose }: { opened: boolean; onClose: (
     if (wasCmux && out.saved.includes("worktree")) void qc.invalidateQueries({ predicate: affectedByCmux })
   }
 
-  // General and UI Access share config.yaml; each marks only its own keys.
-  const uiDirty = draft.secrets.ui_password !== undefined || (!!(draft.drafts && settings.data) &&
-    JSON.stringify(draft.drafts.worktree.ui) !== JSON.stringify(settings.data.worktree.ui))
-  const tabDirty = (value: string) => {
-    const f = tabFile[value]
-    if (!f || !draft.dirty[f]) return false
-    if (value === "ui-access") return uiDirty
-    if (value === "general" && draft.drafts && settings.data) {
-      const { ui: _a, ...rest } = draft.drafts.worktree
-      const { ui: _b, ...base } = settings.data.worktree
-      return JSON.stringify(rest) !== JSON.stringify(base)
-    }
-    return true
-  }
-  const label = (name: string, value: string) =>
-    <>{name}{tabDirty(value) ? <Text span c="orange" ml={4}>●</Text> : null}</>
+  // Tabs and files don't line up one to one, so each tab marks only its own keys.
+  const dirty: Record<SettingsTab, boolean> = settings.data && draft.drafts
+    ? tabDirty(settings.data, draft.drafts, draft.secrets)
+    : { general: false, connected: false, github: false, jira: false, slack: false, "ui-access": false }
+  const label = (name: string, value: SettingsTab) =>
+    <>{name}{dirty[value] ? <Text span c="orange" ml={4}>●</Text> : null}</>
 
   const body = (() => {
     if (settings.error && !settings.data) return <Alert color="red" title="Couldn't load settings">{settings.error.message}</Alert>
@@ -106,8 +89,7 @@ export function SettingsModal({ opened, onClose }: { opened: boolean; onClose: (
       <Tabs value={tab} onChange={setTab}>
         <Tabs.List>
           <Tabs.Tab value="general">{label("General", "general")}</Tabs.Tab>
-          <Tabs.Tab value="watcher-auth">{label("Watcher Auth", "watcher-auth")}</Tabs.Tab>
-          <Tabs.Tab value="watcher-config">{label("Watcher Config", "watcher-config")}</Tabs.Tab>
+          <Tabs.Tab value="connected">{label("Connected Services", "connected")}</Tabs.Tab>
           <Tabs.Tab value="ui-access">{label("UI Access", "ui-access")}</Tabs.Tab>
           <Tabs.Tab value="devices">Devices</Tabs.Tab>
         </Tabs.List>
@@ -121,32 +103,22 @@ export function SettingsModal({ opened, onClose }: { opened: boolean; onClose: (
                 draft={draft.drafts.worktree}
                 update={(fn) => draft.update("worktree", fn)}
                 error={draft.errors.worktree}
-                onShowWatcherAuth={() => setTab("watcher-auth")}
               />
             ))}
           </Tabs.Panel>
-          <Tabs.Panel value="watcher-auth" pt="md">
+          <Tabs.Panel value="connected" pt="md">
             {body ?? (settings.data && draft.drafts && (
-              <WatcherAuthPanel
+              <ConnectedServicesPanel
                 settings={settings.data}
-                draft={draft.drafts.watcher_auth}
-                update={(fn) => draft.update("watcher_auth", fn)}
-                error={draft.errors.watcher_auth}
-                active={opened && tab === "watcher-auth"}
+                drafts={draft.drafts}
+                update={draft.update}
+                errors={draft.errors}
+                active={opened && tab === "connected"}
                 secrets={draft.secrets}
                 setSecret={draft.setSecret}
-              />
-            ))}
-          </Tabs.Panel>
-          <Tabs.Panel value="watcher-config" pt="md">
-            {body ?? (settings.data && draft.drafts && (
-              <WatcherConfigPanel
-                key={resetToken}
-                settings={settings.data}
-                draft={draft.drafts.watcher_config}
-                update={(fn) => draft.update("watcher_config", fn)}
-                error={draft.errors.watcher_config}
                 setInvalid={(m) => draft.setInvalid("watcher_config", m)}
+                resetToken={resetToken}
+                dirty={dirty}
               />
             ))}
           </Tabs.Panel>
