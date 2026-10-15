@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { render, screen, cleanup, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { NotifySwitch } from "./NotifySwitch"
 
 class FakeNotification {
@@ -12,7 +13,11 @@ class FakeNotification {
   })
 }
 
-const wrap = (ui: React.ReactNode) => render(<MantineProvider>{ui}</MantineProvider>)
+const wrap = (ui: React.ReactNode, notificationsEnabled = true) => {
+  const qc = new QueryClient()
+  qc.setQueryData(["session"], { handle: "h", label: "", created_at: "", last_seen_at: "", current: true, notifications_enabled: notificationsEnabled })
+  return render(<QueryClientProvider client={qc}><MantineProvider>{ui}</MantineProvider></QueryClientProvider>)
+}
 
 afterEach(() => {
   cleanup()
@@ -78,5 +83,14 @@ describe("NotifySwitch", () => {
     await waitFor(() =>
       expect(document.body.textContent).toContain("Notifications are enabled for all resources in the worktree"),
     )
+  })
+  it("is disabled, keeping its state, while notifications are disabled in settings", async () => {
+    const onToggle = vi.fn(async () => {})
+    wrap(<NotifySwitch label="Notify on all" checked mode="cmux" onToggle={onToggle} />, false)
+    const input = screen.getByLabelText("Notify on all") as HTMLInputElement
+    expect(input.disabled).toBe(true)
+    expect(input.checked).toBe(true)
+    await userEvent.hover(screen.getByTestId("notify-switch-target"))
+    await waitFor(() => expect(document.body.textContent).toContain("Notifications are disabled in settings"))
   })
 })

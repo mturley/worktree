@@ -51,7 +51,7 @@ func (s *Server) handleSetNotify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	label := ""
+	label, short := "", ""
 	if req.Type == "" {
 		err = notifyprefs.SetAll(s.DB, req.Path, req.On)
 	} else {
@@ -70,7 +70,9 @@ func (s *Server) handleSetNotify(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "resource not tracked by this worktree")
 			return
 		}
-		label = notifyResourceLabel(s.newResourceDTO(*hit))
+		dto := s.newResourceDTO(*hit)
+		label = notifyResourceLabel(dto)
+		short = notifyResourceLabelMax(dto, notifyNameMax)
 		err = notifyprefs.SetResource(s.DB, req.Path, req.Type, req.ID, req.On)
 	}
 	if err != nil {
@@ -88,7 +90,8 @@ func (s *Server) handleSetNotify(w http.ResponseWriter, r *http.Request) {
 		s.deliver(notifyBatch{
 			WorktreePath: req.Path, ResourceType: req.Type, ResourceID: req.ID,
 			Title: "Notifications on", Subtitle: name, Body: body,
-			Tag: notifyTag(req.Path, req.Type, req.ID),
+			Tag:   notifyTag(req.Path, req.Type, req.ID),
+			Event: "Notifications on", Resource: short, Description: body,
 		}, deliverOpts{PreferTab: req.Tab, OnlySession: sess.Handle})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "mode": s.notifyMode()})

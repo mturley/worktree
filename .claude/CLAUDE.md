@@ -161,8 +161,8 @@ worktree's `config.yaml` (`internal/config.Config`), and the watcher
 library's `auth.yaml` (`wconfig.Config`) and `config.yaml`
 (`wconfig.ConfigFile`). Tabs are organised by what they configure, not by
 file: General, Connected Services (GitHub / Jira / Slack sub-tabs, each
-gathering that service's keys from every file), UI Access (`ui.*`) and
-Devices. Put a new key on the tab for what it configures, and update
+gathering that service's keys from every file), Notifications
+(`notifications.*`), UI Access (`ui.*`) and Devices. Put a new key on the tab for what it configures, and update
 `ui/src/components/settings/tabDirty.ts` so its tab's unsaved dot sees it.
 
 **Any change to a key in any of these — added, renamed, removed, or a

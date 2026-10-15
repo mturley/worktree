@@ -6,6 +6,7 @@ import { DevicesPanel } from "./DevicesPanel"
 import { GeneralPanel } from "./settings/GeneralPanel"
 import { UIAccessPanel } from "./settings/UIAccessPanel"
 import { ConnectedServicesPanel } from "./settings/ConnectedServicesPanel"
+import { NotificationsPanel } from "./settings/NotificationsPanel"
 import { tabDirty, type SettingsTab } from "./settings/tabDirty"
 import { useSettingsDraft } from "./settings/useSettingsDraft"
 import type { SettingsTarget } from "./settings/SettingsContext"
@@ -71,6 +72,10 @@ export function SettingsModal({ opened, onClose, target }: { opened: boolean; on
     const wasCmux = draft.drafts && settings.data
       ? draft.drafts.worktree.cmux_features_enabled !== settings.data.worktree.cmux_features_enabled
       : false
+    // The session carries notifications_enabled, which every toggle and bell reads.
+    const wasNotify = draft.drafts && settings.data
+      ? draft.drafts.worktree.notifications?.enabled !== settings.data.worktree.notifications?.enabled
+      : false
     // A GET already in flight could land after setQueryData and rebase clean
     // files back to the old values.
     await qc.cancelQueries({ queryKey: settingsKey })
@@ -78,6 +83,7 @@ export function SettingsModal({ opened, onClose, target }: { opened: boolean; on
     if (out.saved.includes("watcher_config")) setResetToken((n) => n + 1)
     if (out.settings) qc.setQueryData(settingsKey, out.settings)
     if (wasCmux && out.saved.includes("worktree")) void qc.invalidateQueries({ predicate: affectedByCmux })
+    if (wasNotify && out.saved.includes("worktree")) void qc.invalidateQueries({ queryKey: ["session"] })
     // Watcher toggles change what the detail views may fetch and show.
     if (out.saved.includes("worktree")) {
       void qc.invalidateQueries({ queryKey: ["watcher-health"] })
@@ -88,7 +94,7 @@ export function SettingsModal({ opened, onClose, target }: { opened: boolean; on
   // Tabs and files don't line up one to one, so each tab marks only its own keys.
   const dirty: Record<SettingsTab, boolean> = settings.data && draft.drafts
     ? tabDirty(settings.data, draft.drafts, draft.secrets)
-    : { general: false, connected: false, github: false, jira: false, slack: false, "ui-access": false }
+    : { general: false, connected: false, github: false, jira: false, slack: false, "ui-access": false, notifications: false }
   const label = (name: string, value: SettingsTab) =>
     <>{name}{dirty[value] ? <Text span c="orange" ml={4}>●</Text> : null}</>
 
@@ -104,6 +110,7 @@ export function SettingsModal({ opened, onClose, target }: { opened: boolean; on
         <Tabs.List>
           <Tabs.Tab value="general">{label("General", "general")}</Tabs.Tab>
           <Tabs.Tab value="connected">{label("Connected Services", "connected")}</Tabs.Tab>
+          <Tabs.Tab value="notifications">{label("Notifications", "notifications")}</Tabs.Tab>
           <Tabs.Tab value="ui-access">{label("UI Access", "ui-access")}</Tabs.Tab>
           <Tabs.Tab value="devices">Devices</Tabs.Tab>
         </Tabs.List>
@@ -135,6 +142,16 @@ export function SettingsModal({ opened, onClose, target }: { opened: boolean; on
                 dirty={dirty}
                 service={service}
                 onServiceChange={setService}
+              />
+            ))}
+          </Tabs.Panel>
+          <Tabs.Panel value="notifications" pt="md">
+            {body ?? (settings.data && draft.drafts && (
+              <NotificationsPanel
+                settings={settings.data}
+                draft={draft.drafts.worktree}
+                update={(fn) => draft.update("worktree", fn)}
+                error={draft.errors.worktree}
               />
             ))}
           </Tabs.Panel>

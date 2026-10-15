@@ -9,6 +9,7 @@ import { ResourceTypeLine } from "./ResourceTypeLine"
 import { cardEdgeStyle } from "../lib/unread"
 import { UnreadBadge } from "./UnreadBadge"
 import { NotifyBell } from "./NotifyBell"
+import { useNotificationsEnabled } from "../hooks/useNotifyMode"
 import { NotesMarkdown } from "./NotesMarkdown"
 
 interface WorktreeCardProps {
@@ -70,6 +71,9 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
   const href = `/worktree/${encodeURIComponent(w.path)}`
   const name = worktreeName(w.path)
   const related = relatedSummary(w.related_by_type)
+  // Settings' "Enable notifications" off hides the bell (the toggle is kept).
+  const notificationsEnabled = useNotificationsEnabled()
+  const allBell = Boolean(w.notify_all) && notificationsEnabled
 
   // Inside cmux, a matched workspace name is the card's headline, so the
   // worktree title steps down to a subtitle. Same shared query the section
@@ -130,12 +134,12 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
             {/* Pushed to the right of the title row rather than the card's
                 corner: the cmux strip owns the top edge, and a badge floating
                 over it reads as belonging to the workspace, not the worktree. */}
-            {w.notify_all && (
+            {allBell && (
               <Box ml="auto" style={{ display: "inline-flex" }}>
                 <NotifyBell kind="implicit" tooltip="Notifications are on for all resources in this worktree" />
               </Box>
             )}
-            <UnreadBadge unread={!!w.has_unread} count={w.unread_count} ml={w.notify_all ? undefined : "auto"} />
+            <UnreadBadge unread={!!w.has_unread} count={w.unread_count} ml={allBell ? undefined : "auto"} />
           </Group>
           {/*
             Identity only: which repo, which branch. The counts that used to

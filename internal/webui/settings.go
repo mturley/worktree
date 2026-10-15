@@ -75,6 +75,9 @@ type settingsEnvironment struct {
 	// CertNames are the names the current HTTPS certificate covers (DNS
 	// names and IPs), or nil when there is no readable certificate.
 	CertNames []string `json:"cert_names"`
+	// DefaultNotifyCommand is what notifications.command falls back to, for
+	// the Notifications tab's reset.
+	DefaultNotifyCommand string `json:"default_notify_command"`
 }
 
 type settingsPaths struct {
@@ -113,6 +116,16 @@ type worktreeSettings struct {
 	// Watchers maps each service (config.Services) to whether its watcher
 	// is on. A service missing from a PUT keeps its current state.
 	Watchers map[string]bool `json:"watchers"`
+	// Notifications is the notifications.* section. A PUT that leaves it
+	// out keeps the file's current values.
+	Notifications *notificationSettings `json:"notifications"`
+}
+
+type notificationSettings struct {
+	// Enabled inverts notifications.disabled.
+	Enabled        bool   `json:"enabled"`
+	CommandEnabled bool   `json:"command_enabled"`
+	Command        string `json:"command"`
 }
 
 type settingsDTO struct {
@@ -147,6 +160,11 @@ func toWorktreeSettings(e config.Editable) worktreeSettings {
 	w.Watchers = map[string]bool{}
 	for _, svc := range config.Services {
 		w.Watchers[svc] = e.WatcherEnabled(svc)
+	}
+	w.Notifications = &notificationSettings{
+		Enabled:        !e.NotificationsDisabled,
+		CommandEnabled: e.NotifyCommandEnabled,
+		Command:        e.NotifyCommand,
 	}
 	return w
 }
@@ -208,6 +226,8 @@ func (s *Server) settings() (settingsDTO, error) {
 			InCmux:           s.cmuxReachable(),
 			WorktreesBaseEnv: os.Getenv("WORKTREES_BASE") != "",
 			CertNames:        certNames(e.TLSCertFile),
+
+			DefaultNotifyCommand: config.DefaultNotifyCommand,
 		},
 		Paths: settingsPaths{
 			Worktree:      homeRelative(s.configPath()),
@@ -292,10 +312,23 @@ func (s *Server) handleSettingsWorktree(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	cur, _, curErr := config.ReadEditable(s.configPath())
 	if req.UI.RemoteAccessEnabled != nil {
 		next.RemoteAccessDisabled = !*req.UI.RemoteAccessEnabled
-	} else if cur, _, err := config.ReadEditable(s.configPath()); err == nil {
+	} else if curErr == nil {
 		next.RemoteAccessDisabled = cur.RemoteAccessDisabled
+	}
+	if n := req.Notifications; n != nil {
+		next.NotificationsDisabled = !n.Enabled
+		next.NotifyCommandEnabled = n.CommandEnabled
+		next.NotifyCommand = strings.TrimSpace(n.Command)
+	} else if curErr == nil {
+		next.NotificationsDisabled = cur.NotificationsDisabled
+		next.NotifyCommandEnabled = cur.NotifyCommandEnabled
+		next.NotifyCommand = cur.NotifyCommand
+	}
+	if next.NotifyCommandEnabled && next.NotifyCommand == "" {
+		next.NotifyCommand = config.DefaultNotifyCommand
 	}
 
 	disabled := next.CmuxFeaturesDisabled
@@ -310,6 +343,11 @@ func (s *Server) handleSettingsWorktree(w http.ResponseWriter, r *http.Request) 
 	}
 	jira.SetAliasHosts(next.JiraAliasHosts)
 	s.applyWatchers(next.WatchersDisabled)
+	s.SetNotifications(config.NotificationsConfig{
+		Disabled:       next.NotificationsDisabled,
+		CommandEnabled: next.NotifyCommandEnabled,
+		Command:        next.NotifyCommand,
+	})
 	if cmuxChanging {
 		s.cmuxDisabled.Store(disabled)
 		if disabled {

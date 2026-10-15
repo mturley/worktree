@@ -20,6 +20,9 @@ var settingsKeyPaths = map[string][]string{
 		"watchers.github",           // Connected Services sub-tab toggles
 		"watchers.jira",
 		"watchers.slack",
+		"notifications.disabled", // Notifications tab, inverted
+		"notifications.command_enabled",
+		"notifications.command",
 	},
 	"watcher_auth": {
 		"services.github.token", // write-only: credentials endpoints

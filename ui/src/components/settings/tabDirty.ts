@@ -1,7 +1,7 @@
 import type { Settings } from "../../api/types"
 import { canonical, type Drafts, type PendingSecrets } from "./useSettingsDraft"
 
-export type SettingsTab = "general" | "connected" | "github" | "jira" | "slack" | "ui-access"
+export type SettingsTab = "general" | "connected" | "github" | "jira" | "slack" | "ui-access" | "notifications"
 
 /**
  * Which tabs (and Connected Services sub-tabs) hold unsaved changes. A tab
@@ -11,8 +11,8 @@ export type SettingsTab = "general" | "connected" | "github" | "jira" | "slack" 
 export function tabDirty(base: Settings, d: Drafts, p: PendingSecrets): Record<SettingsTab, boolean> {
   const differs = (a: unknown, b: unknown) => canonical(a) !== canonical(b)
   const has = (k: keyof PendingSecrets) => p[k] !== undefined
-  const { ui: _u, jira: _j, watchers: _w, ...general } = d.worktree
-  const { ui: _bu, jira: _bj, watchers: _bw, ...baseGeneral } = base.worktree
+  const { ui: _u, jira: _j, watchers: _w, notifications: _n, ...general } = d.worktree
+  const { ui: _bu, jira: _bj, watchers: _bw, notifications: _bn, ...baseGeneral } = base.worktree
   // watchers.<svc> sits at the top of that service's sub-tab.
   const toggled = (svc: keyof Drafts["worktree"]["watchers"]) => d.worktree.watchers?.[svc] !== base.worktree.watchers?.[svc]
   const github = has("github_token") || toggled("github")
@@ -24,6 +24,7 @@ export function tabDirty(base: Settings, d: Drafts, p: PendingSecrets): Record<S
   return {
     general: differs(general, baseGeneral),
     "ui-access": has("ui_password") || differs(d.worktree.ui, base.worktree.ui),
+    notifications: differs(d.worktree.notifications, base.worktree.notifications),
     github,
     jira,
     slack,

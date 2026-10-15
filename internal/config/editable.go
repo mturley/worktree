@@ -27,6 +27,12 @@ type Editable struct {
 	// WatchersDisabled holds the services (config.Services) whose watcher
 	// is off; absent from the map means on.
 	WatchersDisabled map[string]bool
+	// NotifyCommandEnabled and NotifyCommand are notifications.*.
+	// NotifyCommand reads as DefaultNotifyCommand when unset, and writing
+	// the default (or "") deletes the key.
+	NotificationsDisabled bool
+	NotifyCommandEnabled  bool
+	NotifyCommand         string
 }
 
 // WatcherEnabled reports whether svc's watcher is on.
@@ -49,17 +55,23 @@ func editableFromDoc(doc *yaml.Node) (Editable, bool, error) {
 		return Editable{}, false, err
 	}
 	e := Editable{
-		WorktreesBase:        raw.WorktreesBase,
-		Editor:               raw.Editor,
-		JiraProjects:         raw.Jira.Projects,
-		JiraAliasHosts:       raw.Jira.AliasHosts,
-		HTTPSPort:            raw.UI.HTTPSPort,
-		AllowedHosts:         raw.UI.AllowedHosts,
-		TLSCertFile:          raw.UI.TLS.CertFile,
-		TLSKeyFile:           raw.UI.TLS.KeyFile,
-		CmuxFeaturesDisabled: raw.UI.CmuxFeaturesDisabled,
-		RemoteAccessDisabled: raw.UI.RemoteAccessDisabled,
-		WatchersDisabled:     map[string]bool{},
+		WorktreesBase:         raw.WorktreesBase,
+		Editor:                raw.Editor,
+		JiraProjects:          raw.Jira.Projects,
+		JiraAliasHosts:        raw.Jira.AliasHosts,
+		HTTPSPort:             raw.UI.HTTPSPort,
+		AllowedHosts:          raw.UI.AllowedHosts,
+		TLSCertFile:           raw.UI.TLS.CertFile,
+		TLSKeyFile:            raw.UI.TLS.KeyFile,
+		CmuxFeaturesDisabled:  raw.UI.CmuxFeaturesDisabled,
+		RemoteAccessDisabled:  raw.UI.RemoteAccessDisabled,
+		WatchersDisabled:      map[string]bool{},
+		NotificationsDisabled: raw.Notifications.Disabled,
+		NotifyCommandEnabled:  raw.Notifications.CommandEnabled,
+		NotifyCommand:         raw.Notifications.Command,
+	}
+	if e.NotifyCommand == "" {
+		e.NotifyCommand = DefaultNotifyCommand
 	}
 	for _, svc := range Services {
 		if !raw.Watchers.Enabled(svc) {
@@ -148,6 +160,39 @@ func WriteEditable(path string, next Editable) (bool, error) {
 				return nil
 			}
 			return setPath(root, boolNode(true), "ui", "remote_access_disabled")
+		},
+		func() error {
+			if cur.NotificationsDisabled == next.NotificationsDisabled {
+				return nil
+			}
+			changed = true
+			if !next.NotificationsDisabled {
+				deletePath(root, "notifications", "disabled")
+				return nil
+			}
+			return setPath(root, boolNode(true), "notifications", "disabled")
+		},
+		func() error {
+			if cur.NotifyCommandEnabled == next.NotifyCommandEnabled {
+				return nil
+			}
+			changed = true
+			if !next.NotifyCommandEnabled {
+				deletePath(root, "notifications", "command_enabled")
+				return nil
+			}
+			return setPath(root, boolNode(true), "notifications", "command_enabled")
+		},
+		func() error {
+			val := next.NotifyCommand
+			if val == DefaultNotifyCommand {
+				val = ""
+			}
+			old := cur.NotifyCommand
+			if old == DefaultNotifyCommand {
+				old = ""
+			}
+			return str(old, val, "notifications", "command")
 		},
 	}
 	for _, svc := range Services {

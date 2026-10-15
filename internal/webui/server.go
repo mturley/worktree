@@ -126,6 +126,10 @@ type Server struct {
 	// Seams: cmux availability and `cmux notify`, for tests.
 	cmuxAvailable func() bool
 	cmuxNotify    func(cmux.NotifyOptions) error
+	// notifyOff is the Settings "Enable notifications" switch, inverted, and
+	// notifyCommand the custom command ("" for none); see notify_command.go.
+	notifyOff     atomic.Bool
+	notifyCommand atomic.Pointer[string]
 
 	// cmuxDisabled is the Settings toggle (ui.cmux_features_disabled); see
 	// settings.go. ConfigPath, WatcherAuthPath and WatcherConfigPath are the

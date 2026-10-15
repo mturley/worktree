@@ -14,11 +14,42 @@ import (
 )
 
 type Config struct {
-	WorktreesBase string         `yaml:"worktrees_base"`
-	Jira          JiraConfig     `yaml:"jira"`
-	Editor        string         `yaml:"editor"`
-	UI            UIConfig       `yaml:"ui"`
-	Watchers      WatchersConfig `yaml:"watchers,omitempty"`
+	WorktreesBase string              `yaml:"worktrees_base"`
+	Jira          JiraConfig          `yaml:"jira"`
+	Editor        string              `yaml:"editor"`
+	UI            UIConfig            `yaml:"ui"`
+	Watchers      WatchersConfig      `yaml:"watchers,omitempty"`
+	Notifications NotificationsConfig `yaml:"notifications,omitempty"`
+}
+
+// DefaultNotifyCommand is the custom notification command used when
+// notifications.command is unset.
+const DefaultNotifyCommand = `telert send "$event ($resource) - $description - $worktree ($cmuxtitle)"`
+
+// NotificationsConfig holds the web UI's custom notification command: a
+// shell command run once per delivered notification, alongside the cmux or
+// browser notification. Set from the Settings modal's Notifications tab.
+type NotificationsConfig struct {
+	// Disabled turns every notification off (cmux, browser and the custom
+	// command) without touching the per-worktree toggles, which come back
+	// when it is turned on again. Absent means enabled.
+	Disabled       bool `yaml:"disabled,omitempty"`
+	CommandEnabled bool `yaml:"command_enabled,omitempty"`
+	// Command runs under sh -c with $event, $resource, $description,
+	// $worktree and $cmuxtitle set as shell variables. Empty means
+	// DefaultNotifyCommand.
+	Command string `yaml:"command,omitempty"`
+}
+
+// EffectiveCommand is the command to run, or "" when it is turned off.
+func (n NotificationsConfig) EffectiveCommand() string {
+	if n.Disabled || !n.CommandEnabled {
+		return ""
+	}
+	if strings.TrimSpace(n.Command) == "" {
+		return DefaultNotifyCommand
+	}
+	return n.Command
 }
 
 // The services worktree's watcher connects to, as named in WatchersConfig.

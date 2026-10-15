@@ -5,7 +5,7 @@ import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { api } from "../api/client"
 import { SettingsModal } from "./SettingsModal"
-import { baseSettings } from "./settings/testSettings"
+import { baseSettings, DEFAULT_CMD } from "./settings/testSettings"
 
 /** Open Connected Services and one of its sub-tabs. */
 async function openService(name: "GitHub" | "Jira" | "Slack") {
@@ -175,15 +175,47 @@ describe("SettingsModal", () => {
     expect(screen.getByRole("tab", { name: /General/ })).not.toHaveTextContent("●")
   })
 
+  it("Notifications: the global switch greys out the custom command and marks only its tab dirty", async () => {
+    vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
+    renderModal()
+    await userEvent.click(await screen.findByRole("tab", { name: /Notifications/ }))
+    const custom = await screen.findByLabelText(/^Trigger custom command for each notification/)
+    const command = screen.getByLabelText(/^Command/)
+    expect(custom).not.toBeDisabled()
+    // The custom command defaults to off, so its input is disabled.
+    expect(command).toBeDisabled()
+    await userEvent.click(custom)
+    expect(command).not.toBeDisabled()
+    expect(command).toHaveValue(DEFAULT_CMD)
+    expect(screen.getByRole("tab", { name: /Notifications/ })).toHaveTextContent("●")
+    expect(screen.getByRole("tab", { name: /General/ })).not.toHaveTextContent("●")
+
+    await userEvent.click(screen.getByLabelText(/^Enable notifications/))
+    // Re-queried: the disabled switch gains a tooltip wrapper, remounting it.
+    expect(screen.getByLabelText(/^Trigger custom command for each notification/)).toBeDisabled()
+    expect(screen.getByLabelText(/^Command/)).toBeDisabled()
+  })
+
+  it("Notifications: Reset to default restores the default command", async () => {
+    const s = baseSettings()
+    s.worktree.notifications = { enabled: true, command_enabled: true, command: "echo hi" }
+    vi.spyOn(api, "settings").mockResolvedValue(s)
+    renderModal()
+    await userEvent.click(await screen.findByRole("tab", { name: /Notifications/ }))
+    expect(await screen.findByLabelText(/^Command/)).toHaveValue("echo hi")
+    await userEvent.click(screen.getByRole("button", { name: "Reset to default" }))
+    expect(screen.getByLabelText(/^Command/)).toHaveValue(DEFAULT_CMD)
+  })
+
   it("shows a save error on its tab and keeps the change", async () => {
     vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
     vi.spyOn(api, "saveWorktreeSettings").mockRejectedValue(new Error("disk full"))
     renderModal()
     await userEvent.type(await screen.findByLabelText("Editor"), "zed")
     await userEvent.click(screen.getByRole("button", { name: "Save" }))
-    // General, UI Access and all three service sub-tabs (their watcher
-    // toggles) edit config.yaml, so all show its error.
-    expect(await screen.findAllByText("disk full")).toHaveLength(5)
+    // General, Notifications, UI Access and all three service sub-tabs
+    // (their watcher toggles) edit config.yaml, so all show its error.
+    expect(await screen.findAllByText("disk full")).toHaveLength(6)
     expect(screen.getByLabelText("Editor")).toHaveValue("zed")
   })
 

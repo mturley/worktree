@@ -78,7 +78,7 @@ func initNotifyCursor(conn *sql.DB) (notifyCursor, error) {
 }
 
 // newEvent is one (event, resource) pair past the cursor.
-type newEvent struct{ id, ts, source, typ, title, resType, resID string }
+type newEvent struct{ id, ts, source, typ, title, body, resType, resID string }
 
 // The user's own events (internal/selfid) are never read, so a mixed
 // batch's count and newest title cover only other people's events.
@@ -86,7 +86,7 @@ type newEvent struct{ id, ts, source, typ, title, resType, resID string }
 // and the advanced cursor. The cursor advances whatever the caller then does
 // with the events: delivery is fire-and-forget, never retried.
 func readNewEvents(conn *sql.DB, c notifyCursor) ([]newEvent, notifyCursor, error) {
-	q := `SELECT e.id, e.ts, e.source, e.type, e.title, er.resource_type, er.resource_id
+	q := `SELECT e.id, e.ts, e.source, e.type, e.title, COALESCE(e.body,''), er.resource_type, er.resource_id
 	      FROM watcher_events e JOIN watcher_event_resources er ON er.event_id = e.id
 	      WHERE e.ts >= ? AND e.type NOT IN (?` + strings.Repeat(",?", len(notifySkipTypes)-1) + `)
 	        AND ` + selfid.NotMineSQL + `
@@ -106,7 +106,7 @@ func readNewEvents(conn *sql.DB, c notifyCursor) ([]newEvent, notifyCursor, erro
 	var out []newEvent
 	for rows.Next() {
 		var e newEvent
-		if err := rows.Scan(&e.id, &e.ts, &e.source, &e.typ, &e.title, &e.resType, &e.resID); err != nil {
+		if err := rows.Scan(&e.id, &e.ts, &e.source, &e.typ, &e.title, &e.body, &e.resType, &e.resID); err != nil {
 			return nil, c, err
 		}
 		if e.ts > next.ts {
@@ -132,6 +132,11 @@ type notifyBatch struct {
 	Subtitle     string
 	Body         string
 	Tag          string
+	// The custom notification command's placeholders (notify_command.go):
+	// $event, $resource (key and truncated name) and $description.
+	Event       string
+	Resource    string
+	Description string
 }
 
 // notifyTag identifies a notification's target, so a browser replaces rather
@@ -145,7 +150,11 @@ func notifyTag(path, typ, id string) string {
 
 // notifyResourceLabel names a resource the way its card does: its key, then
 // the user's custom name or the fetched title.
-func notifyResourceLabel(d resourceDTO) string {
+func notifyResourceLabel(d resourceDTO) string { return notifyResourceLabelMax(d, 0) }
+
+// notifyResourceLabelMax is notifyResourceLabel with the name cut to max
+// runes; 0 means no limit.
+func notifyResourceLabelMax(d resourceDTO, max int) string {
 	key := d.ID
 	switch d.Type {
 	case "pr":
@@ -164,6 +173,9 @@ func notifyResourceLabel(d resourceDTO) string {
 	}
 	if name == "" {
 		return key
+	}
+	if max > 0 {
+		name = truncateRunes(name, max)
 	}
 	return key + ": " + name
 }
@@ -201,6 +213,7 @@ func (s *Server) notifyBatches(events []newEvent) ([]notifyBatch, error) {
 		type agg struct {
 			count  int
 			newest string
+			body   string
 			dto    resourceDTO
 		}
 		groups := map[notifyprefs.Key]*agg{}
@@ -218,6 +231,7 @@ func (s *Server) notifyBatches(events []newEvent) ([]notifyBatch, error) {
 			}
 			g.count++
 			g.newest = slackEventTitle(ev.source, ev.typ, ev.title, &g.dto)
+			g.body = ev.body
 		}
 		for _, k := range order {
 			g := groups[k]
@@ -233,6 +247,9 @@ func (s *Server) notifyBatches(events []newEvent) ([]notifyBatch, error) {
 				Subtitle:     filepath.Base(e.Path),
 				Body:         body,
 				Tag:          notifyTag(e.Path, k.Type, k.ID),
+				Event:        body,
+				Resource:     notifyResourceLabelMax(g.dto, notifyNameMax),
+				Description:  truncateRunes(oneLine(g.body), notifyDescriptionMax),
 			})
 		}
 	}

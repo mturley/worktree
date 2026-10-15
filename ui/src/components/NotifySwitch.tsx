@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Button, Group, Stack, Text, Tooltip } from "@mantine/core"
 import { Toggle } from "./Toggle"
 import type { NotifyMode } from "../api/types"
+import { NOTIFICATIONS_DISABLED_REASON, useNotificationsEnabled } from "../hooks/useNotifyMode"
 
 function permission(): NotificationPermission | "unsupported" {
   return typeof Notification === "undefined" ? "unsupported" : Notification.permission
@@ -20,7 +21,7 @@ export function NotifySwitch({
   checked,
   onToggle,
   tooltip,
-  disabledReason,
+  disabledReason: ownReason,
   mode,
 }: {
   label: string
@@ -34,6 +35,9 @@ export function NotifySwitch({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const browser = mode === "browser"
+  // Settings' global switch outranks any reason of the caller's; the stored
+  // state still shows, so it is what comes back when notifications do.
+  const disabledReason = useNotificationsEnabled() ? ownReason : NOTIFICATIONS_DISABLED_REASON
 
   const ask = async () => {
     if (permission() === "default") setPerm(await Notification.requestPermission())

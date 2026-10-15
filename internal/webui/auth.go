@@ -93,6 +93,10 @@ type sessionDTO struct {
 	// NotifyMode is the server's notification delivery path ("cmux" or
 	// "browser"); set only on GET /api/session.
 	NotifyMode string `json:"notify_mode,omitempty"`
+	// NotificationsEnabled is the Settings "Enable notifications" switch;
+	// set only on GET /api/session. Off, the UI disables every notify toggle
+	// and hides the bells, keeping the stored toggles underneath.
+	NotificationsEnabled *bool `json:"notifications_enabled,omitempty"`
 }
 
 func tosessionDTO(sess uisession.Session, current bool) sessionDTO {
@@ -172,6 +176,8 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	// The server's notification delivery path, so the UI knows whether to
 	// ask this browser for notification permission at all.
 	dto.NotifyMode = s.notifyMode()
+	on := s.notificationsEnabled()
+	dto.NotificationsEnabled = &on
 	writeJSON(w, http.StatusOK, dto)
 }
 

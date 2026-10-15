@@ -48,6 +48,7 @@ func TestReadEditableKeepsTildeAndIgnoresEnv(t *testing.T) {
 		TLSKeyFile:    "~/k.pem",
 		// Every watcher on: present but empty, so callers can index it.
 		WatchersDisabled: map[string]bool{},
+		NotifyCommand:    DefaultNotifyCommand,
 	}
 	if !reflect.DeepEqual(got, want) || !pwSet {
 		t.Fatalf("got %+v pwSet=%v", got, pwSet)
@@ -213,5 +214,58 @@ func TestSetPassword(t *testing.T) {
 	data, _ := os.ReadFile(p)
 	if !strings.Contains(string(data), "password: new-pw") || !strings.Contains(string(data), "# my worktree config") {
 		t.Fatalf("got:\n%s", data)
+	}
+}
+
+func TestWriteEditableNotifications(t *testing.T) {
+	p := writeSample(t)
+	e, _, err := ReadEditable(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.NotificationsDisabled || e.NotifyCommandEnabled || e.NotifyCommand != DefaultNotifyCommand {
+		t.Fatalf("defaults: %+v", e)
+	}
+	e.NotificationsDisabled = true
+	e.NotifyCommandEnabled = true
+	e.NotifyCommand = `echo "$event"`
+	if _, err := WriteEditable(p, e); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(p)
+	for _, want := range []string{"notifications:", "disabled: true", "command_enabled: true", `command: echo "$event"`} {
+		if !strings.Contains(string(raw), want) {
+			t.Fatalf("missing %q in:\n%s", want, raw)
+		}
+	}
+	got, _, _ := ReadEditable(p)
+	if !reflect.DeepEqual(got, e) {
+		t.Fatalf("round trip: got %+v want %+v", got, e)
+	}
+	// Back to defaults: the whole section goes, including the default command.
+	e.NotificationsDisabled, e.NotifyCommandEnabled, e.NotifyCommand = false, false, DefaultNotifyCommand
+	if _, err := WriteEditable(p, e); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ = os.ReadFile(p)
+	if strings.Contains(string(raw), "notifications") {
+		t.Fatalf("section left behind:\n%s", raw)
+	}
+}
+
+func TestNotificationsEffectiveCommand(t *testing.T) {
+	cases := []struct {
+		n    NotificationsConfig
+		want string
+	}{
+		{NotificationsConfig{}, ""},
+		{NotificationsConfig{CommandEnabled: true}, DefaultNotifyCommand},
+		{NotificationsConfig{CommandEnabled: true, Command: "x"}, "x"},
+		{NotificationsConfig{CommandEnabled: true, Command: "x", Disabled: true}, ""},
+	}
+	for _, c := range cases {
+		if got := c.n.EffectiveCommand(); got != c.want {
+			t.Errorf("%+v: got %q want %q", c.n, got, c.want)
+		}
 	}
 }

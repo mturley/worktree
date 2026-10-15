@@ -1,5 +1,6 @@
 import { Box, Tooltip } from "@mantine/core"
 import { IconBell, IconBellFilled, IconStack2 } from "@tabler/icons-react"
+import { useNotificationsEnabled } from "../hooks/useNotifyMode"
 
 const EXPLICIT = "Notifications are on for this resource"
 const IMPLICIT =
@@ -13,6 +14,9 @@ const IMPLICIT =
  */
 export function NotifyBell({ kind, tooltip }: { kind: "explicit" | "implicit"; tooltip?: string }) {
   const explicit = kind === "explicit"
+  // With notifications off in Settings, nothing will notify: no bell at all.
+  const enabled = useNotificationsEnabled()
+  if (!enabled) return null
   return (
     <Tooltip label={tooltip ?? (explicit ? EXPLICIT : IMPLICIT)} withArrow multiline maw={280}>
       <Box

@@ -4,7 +4,7 @@ import { SettingsModal } from "../SettingsModal"
 
 /** Where to open the Settings modal: a top-level tab and, for Connected Services, a service. */
 export interface SettingsTarget {
-  tab: "general" | "connected" | "ui-access" | "devices"
+  tab: "general" | "connected" | "notifications" | "ui-access" | "devices"
   service?: CredService
 }
 

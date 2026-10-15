@@ -878,6 +878,29 @@ end of each notifying focus resource's first line. `useSSE` shows a received
 notification and acks; clicking it focuses the tab and navigates to the
 worktree with the resource selected (`lib/browserNotify.ts`).
 
+**Global switch and custom command — `notify_command.go`.** The Settings
+modal's Notifications tab edits `notifications.*` in worktree's config.yaml:
+`disabled` ("Enable notifications", default on), `command_enabled` (default
+off) and `command` (unset = `config.DefaultNotifyCommand`). Saving applies
+them live through `SetNotifications`. With notifications off, `deliver` does
+nothing at all — the notifier's cursor still advances, so turning them back on
+never replays what happened meanwhile — and `GET /api/session` reports
+`notifications_enabled: false`: every `NotifySwitch` is then disabled with
+"Notifications are disabled in settings" (showing its stored state, which is
+untouched) and every `NotifyBell` renders nothing. The modal invalidates
+`["session"]` when the switch changes.
+
+With the command on, `deliver` also runs it, once per notification (summaries
+and test notifications included), under `sh -c` in a goroutine with a 30s
+timeout; failures are logged with their output. The placeholders `$event`,
+`$resource`, `$description`, `$worktree` and `$cmuxtitle` are **environment
+variables**, never spliced into the command text, so event text such as
+`$(…)` is expanded as a value and never run. `notifyBatch` carries them:
+`Event` (the newest event's title + "(+N more)"), `Resource` (key + name cut to
+40 runes), `Description` (the newest event's `body` on one line, cut to 200
+runes). `$worktree` is the directory name; `$cmuxtitle` is the matched
+workspace's `DisplayTitle()`, empty with no workspace or cmux features off.
+
 ## CRITICAL GOTCHA: subscriber canonicalization
 
 **`watcher_subscriptions` rows are keyed by `wdb.Subscriber(path)`
@@ -1830,13 +1853,16 @@ The home page's Settings modal (cog in the Activity header when wide, at the
 right of the Worktrees/Activity tab bar when narrow) has four tabs, organised
 by what they configure rather than by file:
 
-- **General** — worktree's `config.yaml` except `ui.*` and `jira.*`.
+- **General** — worktree's `config.yaml` except `ui.*`, `jira.*` and
+  `notifications.*`.
 - **Connected Services** (`ConnectedServicesPanel`) — sub-tabs GitHub, Jira
   and Slack, each gathering every key for that service across files.
   GitHub and Slack are watcher `auth.yaml`. Jira spans all three files:
   Connection (`auth.yaml` host, email, token), Issue detection (worktree
   `config.yaml` `jira.projects`/`alias_hosts`) and Polling (watcher
   `config.yaml`, `JiraPollingSection`); each section names its file.
+- **Notifications** — `notifications.*` (`NotificationsPanel`): "Enable
+  notifications" and the custom command; see "Notifications".
 - **UI Access** — the `ui.*` keys of worktree's `config.yaml`: password and
   remote access.
 - **Devices** — login sessions; no draft.

@@ -28,8 +28,16 @@ func (s *Server) notifyMode() string {
 	return notifyModeBrowser // or a transport pinned by a test
 }
 
-// deliver sends b through the active transport.
+// deliver sends b through the active transport, and runs the custom
+// notification command alongside it. With notifications turned off in
+// Settings it does nothing.
 func (s *Server) deliver(b notifyBatch, o deliverOpts) {
+	if !s.notificationsEnabled() {
+		return
+	}
+	if cmd := s.notifyCommandLine(); cmd != "" {
+		go s.runNotifyCommand(cmd, b)
+	}
 	switch {
 	case s.transport != nil:
 		s.transport.Deliver(b, o)
@@ -119,6 +127,7 @@ func summarizeBatches(batches []notifyBatch) notifyBatch {
 		Body:  fmt.Sprintf("%d resources have new events", len(batches)),
 		Tag:   "worktree:summary",
 	}
+	sum.Event, sum.Description = sum.Title, sum.Body
 	if len(paths) == 1 {
 		sum.WorktreePath = batches[0].WorktreePath
 		sum.Subtitle = filepath.Base(sum.WorktreePath)
@@ -139,7 +148,11 @@ func (s *Server) StartNotifier(interval time.Duration) (stop func()) {
 		s.logger().Printf("notify: starting cursor: %v", err)
 		c = notifyCursor{}
 	}
-	s.logger().Printf("notifications: %s mode", s.notifyMode())
+	if s.notificationsEnabled() {
+		s.logger().Printf("notifications: %s mode", s.notifyMode())
+	} else {
+		s.logger().Printf("notifications: disabled in settings")
+	}
 	done := make(chan struct{})
 	go func() {
 		t := time.NewTicker(interval)

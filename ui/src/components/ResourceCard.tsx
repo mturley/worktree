@@ -392,6 +392,7 @@ export function ResourceCard({
     }
   }
   // Links are never polled, so they never notify, whatever the toggles say.
+  // (NotifyBell hides itself while Settings has notifications off.)
   const bell =
     !notify || r.type === "link" ? null
     : notify.all ? <NotifyBell kind="implicit" />

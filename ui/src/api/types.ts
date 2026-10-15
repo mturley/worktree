@@ -320,6 +320,8 @@ export interface SessionInfo {
   current: boolean
   /** The server's notification delivery path; only on GET /api/session. */
   notify_mode?: NotifyMode
+  /** The Settings "Enable notifications" switch; only on GET /api/session. */
+  notifications_enabled?: boolean
 }
 
 /** GET /api/update-status: whether the repo's main branch is ahead of this build. */
@@ -349,6 +351,14 @@ export interface WorktreeSettings {
     allowed_hosts: string[]
     tls: { cert_file: string; key_file: string }
   }
+  /** notifications.*: the Notifications tab. */
+  notifications: {
+    /** Inverts notifications.disabled. */
+    enabled: boolean
+    command_enabled: boolean
+    /** Reads as the default command when unset. */
+    command: string
+  }
 }
 
 /** The non-secret keys of watcher's auth.yaml. */
@@ -374,6 +384,8 @@ export interface Settings {
     worktrees_base_env: boolean
     /** Names the HTTPS certificate covers; null when none is configured. */
     cert_names: string[] | null
+    /** What notifications.command falls back to, for the Notifications tab's reset. */
+    default_notify_command: string
   }
   /** Home-relative paths of the three files these settings are persisted to. */
   paths: { worktree: string; watcher_auth: string; watcher_config: string }

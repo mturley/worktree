@@ -159,6 +159,9 @@ func runUI(cmd *cobra.Command, args []string) error {
 	// The Settings modal's "Enable cmux features" toggle; it writes the
 	// config itself, so this is only the starting state.
 	srv.SetCmuxFeaturesDisabled(cfg.UI.CmuxFeaturesDisabled)
+	// The Notifications tab's switch and custom command; Settings moves
+	// them live.
+	srv.SetNotifications(cfg.Notifications)
 
 	// Browser peek screenshots live only for one request; this catches any
 	// a crash left behind (internal/cmux/peek.go).
