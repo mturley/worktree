@@ -5,7 +5,13 @@ import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { AllResourceDTO } from "../api/types"
 import { api } from "../api/client"
-import { ResourcesPanel } from "./ResourcesPanel"
+import { useResourcesView } from "../hooks/useResourcesView"
+import { ResourcesPanel, ResourcesTabControls } from "./ResourcesPanel"
+
+function Harness({ unreadOnly }: { unreadOnly: boolean }) {
+  const view = useResourcesView(unreadOnly)
+  return <ResourcesPanel view={view} top={<ResourcesTabControls view={view} />} />
+}
 
 const a = { path: "/wt/a", repo: "r", branch: "branch-a" }
 const b = { path: "/wt/b", repo: "r", branch: "branch-b" }
@@ -21,7 +27,7 @@ const data: AllResourceDTO[] = [
 const wrap = (unreadOnly = false) =>
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <MantineProvider><ResourcesPanel unreadOnly={unreadOnly} /></MantineProvider>
+      <MantineProvider><Harness unreadOnly={unreadOnly} /></MantineProvider>
     </QueryClientProvider>,
   )
 

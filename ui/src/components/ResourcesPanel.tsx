@@ -1,11 +1,11 @@
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
 import { ActionIcon, Alert, Button, Center, Divider, Group, Loader, NativeSelect, Stack, Text, Tooltip } from "@mantine/core"
 import { IconSortAscending, IconSortDescending, IconUser, IconWorld } from "@tabler/icons-react"
 import type { AllResourceDTO } from "../api/types"
-import { useAllResources } from "../hooks/useAllResources"
+import type { ResourcesView } from "../hooks/useResourcesView"
 import {
   EMPTY_FILTER, MINE_TYPE, PR_CONDITIONS, PR_STATES, distinctValues, hasResourceSortDirection, isResourceSortMode,
-  matchesFilter, sortResources, type ResourceFilter, type ResourceSortMode, type SortDir,
+  type ResourceFilter, type ResourceSortMode, type SortDir,
 } from "../lib/resourceListFilter"
 import { AllResourceRow } from "./AllResourceRow"
 import { GitHubMark } from "./icons/GitHubMark"
@@ -119,34 +119,59 @@ function SubFilters({ all, filter, onChange }: {
 }
 
 /**
- * The home page's Resources tab: every resource any worktree follows, once
- * each, sortable and filterable. The type toggles are all-or-one like the
- * Activity source toggles; picking one opens that type's own filters, and
- * switching type clears them. The global unread-only toggle narrows it too.
- *
- * `toolbarEnd` is rendered at the end of the sort row (the page puts the
- * unread-only toggle there when narrow).
+ * The Resources tab's sort picker and count. Wide, the page puts it in the
+ * right column's tab bar while this tab is active, as the worktree page does
+ * with its tabs' controls; narrow, at the top of the panel.
  */
-export function ResourcesPanel({ unreadOnly, headerStyle, toolbarEnd, top }: {
-  unreadOnly: boolean
-  /** Rendered first inside the (pinned) header: the page's tab bar, when wide. */
+export function ResourcesTabControls({ view }: { view: ResourcesView }) {
+  const { mode, setMode, dir, setDir, query, all, shown, filtered } = view
+  return (
+    <Group gap={6} wrap="nowrap" align="center">
+      <NativeSelect
+        size="xs"
+        aria-label="Sort resources"
+        value={mode}
+        data={(Object.keys(SORT_LABELS) as ResourceSortMode[]).map((m) => ({ value: m, label: SORT_LABELS[m] }))}
+        onChange={(e) => {
+          const v = e.currentTarget.value
+          if (!isResourceSortMode(v)) return
+          setMode(v)
+          setDir(DEFAULT_DIR[v])
+        }}
+      />
+      {hasResourceSortDirection(mode) && (
+        <Tooltip label={DIR_LABELS[mode as "updated" | "created" | "name"][dir]}>
+          <ActionIcon variant="subtle" size="sm" aria-label="Toggle sort direction"
+            onClick={() => setDir(dir === "asc" ? "desc" : "asc")}>
+            {dir === "asc" ? <IconSortAscending size={16} /> : <IconSortDescending size={16} />}
+          </ActionIcon>
+        </Tooltip>
+      )}
+      {query.data && (
+        <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
+          {filtered ? `${shown.length} of ${all.length}` : `${all.length}`} {all.length === 1 ? "resource" : "resources"}
+        </Text>
+      )}
+    </Group>
+  )
+}
+
+/**
+ * The home page's Resources tab: every resource any worktree follows, once
+ * each, filterable. The type toggles are all-or-one like the Activity source
+ * toggles; picking one opens that type's own filters, and switching type
+ * clears them. The global unread-only toggle narrows it too. Sorting lives in
+ * ResourcesTabControls; the state is the page's (useResourcesView).
+ */
+export function ResourcesPanel({ view, headerStyle, top }: {
+  view: ResourcesView
+  /** Rendered first inside the (pinned) header: the tab bar wide, the sort row narrow. */
   top?: React.ReactNode
   /** Pins the controls at the top of a scrolling column; see pinnedStyle. */
   headerStyle?: React.CSSProperties
-  toolbarEnd?: React.ReactNode
 }) {
-  const q = useAllResources()
-  const [mode, setMode] = useState<ResourceSortMode>("updated")
-  const [dir, setDir] = useState<SortDir>("desc")
-  const [filter, setFilter] = useState<ResourceFilter>(EMPTY_FILTER)
-
-  const all = useMemo(() => q.data ?? [], [q.data])
-  const shown = useMemo(
-    () => sortResources(all.filter((r) => matchesFilter(r, filter, unreadOnly)), mode, dir),
-    [all, filter, unreadOnly, mode, dir],
-  )
+  const { query: q, all, shown, filter, setFilter, unreadOnly } = view
   const presentTypes = useMemo(() => new Set(all.map((r) => r.type)), [all])
-  const filtered = filter.type !== null || unreadOnly
 
   const controls = (
     <Stack
@@ -156,36 +181,6 @@ export function ResourcesPanel({ unreadOnly, headerStyle, toolbarEnd, top }: {
       data-testid="resources-header"
     >
       {top}
-      <Group justify="space-between" gap="xs" wrap="wrap">
-        <Group gap={6} wrap="nowrap">
-          <NativeSelect
-            size="xs"
-            aria-label="Sort resources"
-            value={mode}
-            data={(Object.keys(SORT_LABELS) as ResourceSortMode[]).map((m) => ({ value: m, label: SORT_LABELS[m] }))}
-            onChange={(e) => {
-              const v = e.currentTarget.value
-              if (!isResourceSortMode(v)) return
-              setMode(v)
-              setDir(DEFAULT_DIR[v])
-            }}
-          />
-          {hasResourceSortDirection(mode) && (
-            <Tooltip label={DIR_LABELS[mode as "updated" | "created" | "name"][dir]}>
-              <ActionIcon variant="subtle" size="sm" aria-label="Toggle sort direction"
-                onClick={() => setDir(dir === "asc" ? "desc" : "asc")}>
-                {dir === "asc" ? <IconSortAscending size={16} /> : <IconSortDescending size={16} />}
-              </ActionIcon>
-            </Tooltip>
-          )}
-          {q.data && (
-            <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
-              {filtered ? `${shown.length} of ${all.length}` : `${all.length}`} {all.length === 1 ? "resource" : "resources"}
-            </Text>
-          )}
-        </Group>
-        {toolbarEnd}
-      </Group>
       <Group gap={4} wrap="wrap">
         {TYPES.filter((t) => t.type !== "link" || presentTypes.has("link")).map((t) => (
           <Toggle

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest"
-import { act, render, cleanup, screen, waitFor } from "@testing-library/react"
+import { act, render, cleanup, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -117,6 +117,33 @@ describe("HomePage pinned headers", () => {
     setViewport("narrow", { tall: true })
     wrap()
     expect(isPinned(document.querySelector("[data-activity-header]"))).toBe(false)
+  })
+})
+
+describe("HomePage tab bar controls", () => {
+  it("puts the active tab's controls in the tab bar, before Settings, when wide", async () => {
+    setViewport("wide")
+    wrap()
+    const tablist = screen.getByRole("tablist")
+    const archived = within(tablist).getByRole("switch", { name: "Show archived" })
+    expect(within(tablist).getByRole("button", { name: "Settings" })).toBeInTheDocument()
+    expect(within(tablist).queryByRole("combobox", { name: "Sort resources" })).toBeNull()
+    expect(archived.compareDocumentPosition(within(tablist).getByRole("button", { name: "Settings" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    await userEvent.click(screen.getByRole("tab", { name: "Resources" }))
+    const bar = screen.getByRole("tablist")
+    expect(within(bar).getByRole("combobox", { name: "Sort resources" })).toBeInTheDocument()
+    expect(await within(bar).findByText("1 resource")).toBeInTheDocument()
+    expect(within(bar).queryByRole("switch", { name: "Show archived" })).toBeNull()
+  })
+
+  it("keeps them out of the crowded tab bar when narrow", () => {
+    setViewport("narrow")
+    wrap()
+    const tablist = screen.getByRole("tablist")
+    expect(within(tablist).queryByRole("switch", { name: "Show archived", hidden: true })).toBeNull()
+    expect(within(tablist).queryByRole("combobox", { name: "Sort resources", hidden: true })).toBeNull()
+    expect(screen.getByRole("combobox", { name: "Sort resources", hidden: true })).toBeInTheDocument()
   })
 })
 

@@ -1268,9 +1268,15 @@ you want to show it later, it's already in the cached state JSON).
 
 ## Home page Resources tab
 
-The home page's right column is tabbed **Activity | Resources** when wide
-(the Settings cog sits at the tab bar's end, inside each tab's pinned
-header); narrow, the page's tabs are **Worktrees | Activity | Resources**.
+The home page's right column is tabbed **Activity | Resources** when wide.
+As on the worktree page's resource tabs, the active tab's controls sit at
+the tab bar's far end, before the Settings cog: refresh, watcher log and
+"Show archived" for Activity; the sort picker and count
+(`ResourcesTabControls`) for Resources. The bar rides inside each tab's
+pinned header. Narrow, the page's tabs are **Worktrees | Activity |
+Resources** and those controls stay at the top of their panels instead —
+the tab bar has no room. The Resources sort/filter state lives in
+`useResourcesView`, owned by the page so the bar and the panel share it.
 
 `GET /api/all-resources` (`all_resources_api.go`) returns every resource
 followed by any registered worktree, once each: the usual enriched

@@ -29,7 +29,8 @@ import { useWorktreeSort } from "../hooks/useWorktreeSort"
 import { WorktreeSortControl } from "../components/WorktreeSortControl"
 import { cmuxPositions, sortWorktrees } from "../lib/worktreeSort"
 import { filterWorktreeBySources } from "../lib/sourceFilter"
-import { ResourcesPanel } from "../components/ResourcesPanel"
+import { ResourcesPanel, ResourcesTabControls } from "../components/ResourcesPanel"
+import { useResourcesView } from "../hooks/useResourcesView"
 
 type RightTab = "timeline" | "resources"
 
@@ -45,6 +46,7 @@ export function HomePage() {
   const [newOpen, setNewOpen] = useState(false)
   // Wide only: which of Activity and Resources fills the right column.
   const [rightTab, setRightTab] = useState<RightTab>("timeline")
+  const resourcesView = useResourcesView(unreadOnly)
   const wide = useIsWide()
   const tall = useIsTall()
   // Wide, each column scrolls on its own, and its header (with the activity
@@ -149,15 +151,29 @@ export function HomePage() {
       }
     />
   )
-  // Wide, the right column's tab bar, with the Settings cog at its far end
-  // (top-right of the page). It rides at the top of whichever tab's pinned
-  // header is showing, so it stays in reach as the column scrolls.
+  // The Activity tab's own controls: refresh, the watcher log and archived.
+  const activityControls = (
+    <Group gap="sm" wrap="nowrap" align="center" data-testid="activity-controls">
+      <Group gap={6} wrap="nowrap" align="center">
+        <RefreshWatchersButton />
+        <WatcherLogButton scope={{}} />
+      </Group>
+      <ArchivedToggle value={archived} onChange={setArchived} />
+    </Group>
+  )
+
+  // Wide, the right column's tab bar. As on the worktree page's resource
+  // tabs, the active tab's controls sit at the bar's far end, before the
+  // Settings cog (top-right of the page). It rides at the top of whichever
+  // tab's pinned header is showing, so it stays in reach as the column
+  // scrolls.
   const rightTabBar = (
     <Tabs value={rightTab} onChange={(v) => v && setRightTab(v as RightTab)}>
       <Tabs.List>
         <Tabs.Tab value="timeline">Activity</Tabs.Tab>
         <Tabs.Tab value="resources">Resources</Tabs.Tab>
-        <Group ml="auto" align="center" pb={4}>
+        <Group ml="auto" align="center" gap="md" wrap="nowrap" pb={4}>
+          {rightTab === "timeline" ? activityControls : <ResourcesTabControls view={resourcesView} />}
           <SettingsButton />
         </Group>
       </Tabs.List>
@@ -175,19 +191,9 @@ export function HomePage() {
         data-activity-header
         data-tooltip-layer={headerStyle ? "pinned" : undefined}
       >
-        {top}
-        <Group justify="space-between" wrap="wrap" gap="xs" data-testid="activity-header">
-          {/* No "Activity" title: the tab above it says so. */}
-          <Group gap={6} wrap="nowrap" align="center">
-            <RefreshWatchersButton />
-            <WatcherLogButton scope={{}} />
-          </Group>
-          {/* The source filter (which also narrows the worktree cards) gets a
-              line of its own below. */}
-          <Group gap="sm" wrap="nowrap">
-            <ArchivedToggle value={archived} onChange={setArchived} />
-          </Group>
-        </Group>
+        {/* Wide, the tab bar, which carries this tab's controls; narrow,
+            where the tab bar has no room for them, the controls alone. */}
+        {top ?? activityControls}
         <Group>
           <SourceFilter value={sources} onChange={setSources} />
         </Group>
@@ -237,8 +243,13 @@ export function HomePage() {
             {/* The worktree toolbar, which holds the unread-only toggle when
                 wide, is on another tab here; this tab gets its own. */}
             <ResourcesPanel
-              unreadOnly={unreadOnly}
-              toolbarEnd={<UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} />}
+              view={resourcesView}
+              top={
+                <Group justify="space-between" gap="xs" wrap="wrap">
+                  <ResourcesTabControls view={resourcesView} />
+                  <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} />
+                </Group>
+              }
             />
           </Tabs.Panel>
         </Tabs>
@@ -278,7 +289,7 @@ export function HomePage() {
       <Grid.Col span={6} style={columnStyle} data-tooltip-layer="content">
         {rightTab === "timeline"
           ? timeline(rightTabBar)
-          : <ResourcesPanel unreadOnly={unreadOnly} headerStyle={headerStyle} top={rightTabBar} />}
+          : <ResourcesPanel view={resourcesView} headerStyle={headerStyle} top={rightTabBar} />}
       </Grid.Col>
       <NewWorktreeModal opened={newOpen} onClose={() => setNewOpen(false)} />
     </Grid>
