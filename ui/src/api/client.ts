@@ -79,7 +79,7 @@ export const api = {
   saveWorktreeSettings: (s: WorktreeSettings) => putJSON<Settings>("/api/settings/worktree", s),
   saveWatcherAuthSettings: (s: WatcherAuthSettings) => putJSON<Settings>("/api/settings/watcher-auth", s),
   saveWatcherConfigSettings: (s: WatcherConfigSettings) => putJSON<Settings>("/api/settings/watcher-config", s),
-  testCredential: (svc: CredService, override: { host?: string; email?: string } = {}) =>
+  testCredential: (svc: CredService, override: { host?: string; email?: string; token?: string; cookie?: string } = {}) =>
     fetchJSON<CredResult>(`/api/settings/credentials/${svc}/test`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

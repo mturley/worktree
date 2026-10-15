@@ -29,9 +29,10 @@ const tabFile: Record<string, SettingsFile | undefined> = {
 }
 
 /**
- * The home page's settings. The three config tabs share one draft and one
- * Save/Discard footer; secrets are replaced in place by SecretField and
- * never sit in the draft. Devices manages logins and has no draft.
+ * The home page's settings. The config tabs share one draft and one
+ * Save/Discard footer, which covers secrets too: Replace tests a new one and
+ * holds it in the draft (memory only), and Save writes it. Devices manages
+ * logins and has no draft.
  */
 export function SettingsModal({ opened, onClose }: { opened: boolean; onClose: () => void }) {
   const qc = useQueryClient()
@@ -53,17 +54,6 @@ export function SettingsModal({ opened, onClose }: { opened: boolean; onClose: (
   useEffect(() => {
     if (!draft.anyDirty) setConfirmClose(false)
   }, [draft.anyDirty])
-
-  const refetchAfterSecret = async () => {
-    try {
-      // An in-flight GET must not land after this one and revert the form.
-      await qc.cancelQueries({ queryKey: settingsKey })
-      const fresh = await qc.fetchQuery({ queryKey: settingsKey, queryFn: api.settings })
-      draft.rebase(fresh)
-    } catch {
-      // The replace itself succeeded; the next open or refetch picks up the new *_set flags.
-    }
-  }
 
   const discard = () => {
     draft.discard()
@@ -89,8 +79,8 @@ export function SettingsModal({ opened, onClose }: { opened: boolean; onClose: (
   }
 
   // General and UI Access share config.yaml; each marks only its own keys.
-  const uiDirty = !!(draft.drafts && settings.data) &&
-    JSON.stringify(draft.drafts.worktree.ui) !== JSON.stringify(settings.data.worktree.ui)
+  const uiDirty = draft.secrets.ui_password !== undefined || (!!(draft.drafts && settings.data) &&
+    JSON.stringify(draft.drafts.worktree.ui) !== JSON.stringify(settings.data.worktree.ui))
   const tabDirty = (value: string) => {
     const f = tabFile[value]
     if (!f || !draft.dirty[f]) return false
@@ -121,52 +111,58 @@ export function SettingsModal({ opened, onClose }: { opened: boolean; onClose: (
           <Tabs.Tab value="ui-access">{label("UI Access", "ui-access")}</Tabs.Tab>
           <Tabs.Tab value="devices">Devices</Tabs.Tab>
         </Tabs.List>
-        <Tabs.Panel value="general" pt="md">
-          {body ?? (settings.data && draft.drafts && (
-            <GeneralPanel
-              settings={settings.data}
-              draft={draft.drafts.worktree}
-              update={(fn) => draft.update("worktree", fn)}
-              error={draft.errors.worktree}
-              onShowWatcherAuth={() => setTab("watcher-auth")}
-            />
-          ))}
-        </Tabs.Panel>
-        <Tabs.Panel value="watcher-auth" pt="md">
-          {body ?? (settings.data && draft.drafts && (
-            <WatcherAuthPanel
-              settings={settings.data}
-              draft={draft.drafts.watcher_auth}
-              update={(fn) => draft.update("watcher_auth", fn)}
-              error={draft.errors.watcher_auth}
-              active={opened && tab === "watcher-auth"}
-              onSecretSaved={refetchAfterSecret}
-            />
-          ))}
-        </Tabs.Panel>
-        <Tabs.Panel value="watcher-config" pt="md">
-          {body ?? (settings.data && draft.drafts && (
-            <WatcherConfigPanel
-              key={resetToken}
-              settings={settings.data}
-              draft={draft.drafts.watcher_config}
-              update={(fn) => draft.update("watcher_config", fn)}
-              error={draft.errors.watcher_config}
-              setInvalid={(m) => draft.setInvalid("watcher_config", m)}
-            />
-          ))}
-        </Tabs.Panel>
-        <Tabs.Panel value="ui-access" pt="md">
-          {body ?? (settings.data && draft.drafts && (
-            <UIAccessPanel
-              settings={settings.data}
-              draft={draft.drafts.worktree}
-              update={(fn) => draft.update("worktree", fn)}
-              error={draft.errors.worktree}
-              onSecretSaved={refetchAfterSecret}
-            />
-          ))}
-        </Tabs.Panel>
+        {/* A native disabled fieldset locks every field and button of the
+            config tabs while Save runs; the tab list stays usable. */}
+        <fieldset disabled={draft.saving} aria-busy={draft.saving} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
+          <Tabs.Panel value="general" pt="md">
+            {body ?? (settings.data && draft.drafts && (
+              <GeneralPanel
+                settings={settings.data}
+                draft={draft.drafts.worktree}
+                update={(fn) => draft.update("worktree", fn)}
+                error={draft.errors.worktree}
+                onShowWatcherAuth={() => setTab("watcher-auth")}
+              />
+            ))}
+          </Tabs.Panel>
+          <Tabs.Panel value="watcher-auth" pt="md">
+            {body ?? (settings.data && draft.drafts && (
+              <WatcherAuthPanel
+                settings={settings.data}
+                draft={draft.drafts.watcher_auth}
+                update={(fn) => draft.update("watcher_auth", fn)}
+                error={draft.errors.watcher_auth}
+                active={opened && tab === "watcher-auth"}
+                secrets={draft.secrets}
+                setSecret={draft.setSecret}
+              />
+            ))}
+          </Tabs.Panel>
+          <Tabs.Panel value="watcher-config" pt="md">
+            {body ?? (settings.data && draft.drafts && (
+              <WatcherConfigPanel
+                key={resetToken}
+                settings={settings.data}
+                draft={draft.drafts.watcher_config}
+                update={(fn) => draft.update("watcher_config", fn)}
+                error={draft.errors.watcher_config}
+                setInvalid={(m) => draft.setInvalid("watcher_config", m)}
+              />
+            ))}
+          </Tabs.Panel>
+          <Tabs.Panel value="ui-access" pt="md">
+            {body ?? (settings.data && draft.drafts && (
+              <UIAccessPanel
+                settings={settings.data}
+                draft={draft.drafts.worktree}
+                update={(fn) => draft.update("worktree", fn)}
+                error={draft.errors.worktree}
+                secrets={draft.secrets}
+                setSecret={draft.setSecret}
+              />
+            ))}
+          </Tabs.Panel>
+        </fieldset>
         <Tabs.Panel value="devices" pt="md">
           <DevicesPanel active={opened && tab === "devices"} />
         </Tabs.Panel>

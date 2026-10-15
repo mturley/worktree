@@ -88,6 +88,10 @@ func decodeCred(w http.ResponseWriter, r *http.Request) (credRequest, error) {
 }
 
 // handleCredTest: POST /api/settings/credentials/{service}/test
+//
+// A token or cookie in the body is a candidate the modal holds unsaved: it
+// is validated in place of the stored value and never written (Save sends
+// it through handleCredReplace). Without one, the stored value is tested.
 func (s *Server) handleCredTest(w http.ResponseWriter, r *http.Request) {
 	req, err := decodeCred(w, r)
 	if err != nil {
@@ -102,6 +106,10 @@ func (s *Server) handleCredTest(w http.ResponseWriter, r *http.Request) {
 	v := s.validators()
 	switch svc := r.PathValue("service"); svc {
 	case "github":
+		if req.Token != "" {
+			writeJSON(w, http.StatusOK, classify(v.github(req.Token)))
+			return
+		}
 		g := cfg.Services.GitHub
 		if g == nil || g.Token == "" {
 			writeJSON(w, http.StatusOK, missing)
@@ -110,6 +118,29 @@ func (s *Server) handleCredTest(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, classify(v.github(g.Token)))
 	case "jira":
 		j := cfg.Services.Jira
+		if req.Token != "" {
+			// The user's new token, so the form's (possibly unsaved) host is
+			// the one it is meant for.
+			host, email := req.Host, req.Email
+			if j != nil {
+				if host == "" {
+					host = strings.TrimRight(strings.TrimSpace(j.Host), "/")
+				}
+				if email == "" {
+					email = j.Email
+				}
+			}
+			if host == "" || email == "" {
+				writeError(w, http.StatusBadRequest, "host and email are required")
+				return
+			}
+			if !validJiraHost(host) {
+				writeError(w, http.StatusBadRequest, "Jira host must be an http(s) URL")
+				return
+			}
+			writeJSON(w, http.StatusOK, classify(v.jira(host, email, req.Token)))
+			return
+		}
 		if j == nil || j.Token == "" {
 			writeJSON(w, http.StatusOK, missing)
 			return
@@ -127,12 +158,21 @@ func (s *Server) handleCredTest(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, classify(v.jira(host, email, j.Token)))
 	case "slack":
-		sl := cfg.Services.Slack
-		if sl == nil || sl.Token == "" || sl.Cookie == "" {
+		// Validated as a pair: a candidate half is joined with the stored other.
+		tok, ck := req.Token, req.Cookie
+		if sl := cfg.Services.Slack; sl != nil {
+			if tok == "" {
+				tok = sl.Token
+			}
+			if ck == "" {
+				ck = sl.Cookie
+			}
+		}
+		if tok == "" || ck == "" {
 			writeJSON(w, http.StatusOK, missing)
 			return
 		}
-		writeJSON(w, http.StatusOK, classify(v.slack(sl.Token, sl.Cookie)))
+		writeJSON(w, http.StatusOK, classify(v.slack(tok, ck)))
 	default:
 		writeError(w, http.StatusNotFound, "unknown service "+svc)
 	}

@@ -20,15 +20,20 @@ function TestChip({ test }: { test?: TestState }) {
 /**
  * A write-only secret. The stored value never reaches the browser: the
  * field shows only whether one is set. Focusing it offers Replace, which
- * hands the typed value to onReplace (validate-then-write on the server)
- * and forgets it on success. Never part of the modal's Save/Discard draft.
+ * hands the typed value to onReplace — tested there, where testable, and
+ * held as the modal's pending value for Save to write — and clears the
+ * input. A pending value swaps Test for Revert.
  */
-export function SecretField({ label, description, isSet, placeholder = "Paste a new token", onReplace, onTest, test, testable }: {
+export function SecretField({ label, description, isSet, pending = false, onRevert, placeholder = "Paste a new token", onReplace, onTest, test, testable }: {
   label: string
   description: ReactNode
   isSet: boolean
+  /** A replaced value is waiting for Save. */
+  pending?: boolean
+  /** Drop the pending value. */
+  onRevert?: () => void
   placeholder?: string
-  /** Validate-then-write. Resolve with the CredResult; ok:false keeps the field open with the error. */
+  /** Test (if testable) and hold for Save. Resolve with the CredResult; ok:false keeps the field open with the error. */
   onReplace: (value: string) => Promise<CredResult | void>
   /** Absent: no Test button and no chip (the UI password). */
   onTest?: () => void
@@ -41,7 +46,6 @@ export function SecretField({ label, description, isSet, placeholder = "Paste a 
   const [value, setValue] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [saved, setSaved] = useState(false)
 
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -69,29 +73,35 @@ export function SecretField({ label, description, isSet, placeholder = "Paste a 
     try {
       const r = await onReplace(value)
       if (r && !r.ok) {
-        setError(`${r.detail || r.kind}. Nothing was saved, and the old value is still in place.`)
+        setError(`${r.detail || r.kind}. The new value was not kept.`)
         return
       }
       setValue("")
       inputRef.current?.blur()
       setEditing(false)
-      setSaved(true)
     } catch (e) {
-      setError(`${e instanceof Error ? e.message : String(e)}. Nothing was saved.`)
+      setError(`${e instanceof Error ? e.message : String(e)}. The new value was not kept.`)
     } finally {
       setBusy(false)
     }
   }
 
-  const idlePlaceholder = isSet ? "•••••••••••••••• set" : "Not set — click to add"
+  const idlePlaceholder = pending
+    ? "•••••••••••••••• new value, unsaved"
+    : isSet ? "•••••••••••••••• set" : "Not set — click to add"
   const buttons = editing ? (
     <>
-      {/* Secrets skip the Save/Discard draft, so say so before the click. */}
-      <Tooltip label="Saves immediately">
+      <Tooltip label={onTest ? "Tests it now; Save writes it" : "Save writes it"}>
         <Button size="sm" disabled={!value} loading={busy} onClick={replace}>Replace</Button>
       </Tooltip>
       <Button size="sm" variant="subtle" onClick={cancel}>Cancel</Button>
     </>
+  ) : pending ? (
+    onRevert && (
+      <Tooltip label="Keep the saved value">
+        <Button size="sm" variant="default" miw={88} onClick={onRevert}>Revert</Button>
+      </Tooltip>
+    )
   ) : (
     onTest && (
       <Button
@@ -109,15 +119,15 @@ export function SecretField({ label, description, isSet, placeholder = "Paste a 
   return (
     <Stack gap={4}>
       <PasswordInput
-        label={<Group gap="xs" component="span">{label}{onTest && <TestChip test={test} />}{saved && !editing && <Badge size="xs" color="green" variant="light" tt="none">✓ Saved</Badge>}</Group>}
+        label={<Group gap="xs" component="span">{label}{onTest && <TestChip test={test} />}{pending && !editing && <Badge size="xs" color="orange" variant="light" tt="none">Unsaved</Badge>}</Group>}
         description={description}
         placeholder={editing ? placeholder : idlePlaceholder}
         ref={inputRef}
         value={value}
         data-mantine-stop-propagation={editing ? "true" : undefined}
         visibilityToggleButtonProps={{ style: { display: editing ? undefined : "none" } }}
-        onFocus={() => { setEditing(true); setSaved(false) }}
-        onChange={(e) => { setEditing(true); setSaved(false); setValue(e.currentTarget.value) }}
+        onFocus={() => setEditing(true)}
+        onChange={(e) => { setEditing(true); setValue(e.currentTarget.value) }}
         onKeyDown={(e) => {
           if (e.key === "Enter" && value && !busy) void replace()
           if (e.key === "Escape") { e.stopPropagation(); cancel() }

@@ -311,3 +311,50 @@ func TestReplaceSlackConflictWhenStoredHalfChanged(t *testing.T) {
 		t.Fatalf("saved despite conflict:\n%s", got)
 	}
 }
+
+// A candidate in the test body is validated in place of the stored value,
+// and nothing is written: Save writes it later through the replace route.
+func TestCredTestCandidateWritesNothing(t *testing.T) {
+	s, log := credServer(t, nil, nil, nil)
+	before := readAuth(t, s)
+	rec := doReq(s, "POST", "/api/settings/credentials/github/test", `{"token":" ghp_NEW "}`)
+	if r := decodeCredResult(t, rec.Body.String()); !r.OK || log.github[0][0] != "ghp_NEW" {
+		t.Fatalf("rec=%s log=%v", rec.Body, log.github)
+	}
+	if readAuth(t, s) != before {
+		t.Fatal("testing a candidate wrote auth.yaml")
+	}
+	if strings.Contains(rec.Body.String(), "ghp_NEW") {
+		t.Fatal("response echoed the candidate")
+	}
+}
+
+// A candidate Jira token may go to an unsaved host: it is the user's new
+// token for that host, not the stored one.
+func TestCredTestJiraCandidateUsesFormHost(t *testing.T) {
+	s, log := credServer(t, nil, nil, nil)
+	rec := doReq(s, "POST", "/api/settings/credentials/jira/test", `{"token":"NEWJ","host":"https://new.example/","email":"n@n"}`)
+	if r := decodeCredResult(t, rec.Body.String()); !r.OK {
+		t.Fatalf("result %s", rec.Body)
+	}
+	if got := log.jira[0]; got[0] != "https://new.example" || got[1] != "n@n" || got[2] != "NEWJ" {
+		t.Fatalf("got %v", got)
+	}
+}
+
+func TestCredTestJiraCandidateBadHost(t *testing.T) {
+	s, log := credServer(t, nil, nil, nil)
+	rec := doReq(s, "POST", "/api/settings/credentials/jira/test", `{"token":"NEWJ","host":"ftp://x","email":"n@n"}`)
+	if rec.Code != http.StatusBadRequest || len(log.jira) != 0 {
+		t.Fatalf("status %d, calls %v", rec.Code, log.jira)
+	}
+}
+
+// Slack tests the pair, filling a missing half of the candidate from storage.
+func TestCredTestSlackCandidateHalf(t *testing.T) {
+	s, log := credServer(t, nil, nil, nil)
+	doReq(s, "POST", "/api/settings/credentials/slack/test", `{"cookie":"xoxd-NEW"}`)
+	if len(log.slack) != 1 || log.slack[0][0] != "xoxc-SECRET3" || log.slack[0][1] != "xoxd-NEW" {
+		t.Fatalf("calls %v", log.slack)
+	}
+}

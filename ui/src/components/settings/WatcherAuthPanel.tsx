@@ -1,37 +1,46 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Alert, Code, Stack, TextInput } from "@mantine/core"
 import { api } from "../../api/client"
-import type { CredService, Settings, WatcherAuthSettings } from "../../api/types"
+import type { CredResult, CredService, Settings, WatcherAuthSettings } from "../../api/types"
+import type { PendingSecrets, SecretKey } from "./useSettingsDraft"
 import { KeyPath, PersistedTo, SettingsSection } from "./parts"
 import { SecretField, type TestState } from "./SecretField"
 
 /** Every key of the watcher library's auth.yaml, except consumers and the legacy jira_custom_fields. */
-export function WatcherAuthPanel({ settings, draft, update, error, active, onSecretSaved }: {
+export function WatcherAuthPanel({ settings, draft, update, error, active, secrets, setSecret }: {
   settings: Settings
   draft: WatcherAuthSettings
   update: (fn: (d: WatcherAuthSettings) => WatcherAuthSettings) => void
   error?: string
   /** The tab is showing: run each configured service's test once. */
   active: boolean
-  onSecretSaved: () => void
+  /** Replaced values waiting for Save; tests use them in place of the stored ones. */
+  secrets: PendingSecrets
+  setSecret: (key: SecretKey, value: string | null) => void
 }) {
   const sec = settings.secrets
   const [tests, setTests] = useState<Record<CredService, TestState>>({
     github: { status: "idle" }, jira: { status: "idle" }, slack: { status: "idle" },
   })
 
-  // Jira is tested with the host/email in the form, saved or not.
+  /** What a test sends: the form's Jira host/email, and any pending secret in place of the stored one. */
+  const candidate = useCallback((svc: CredService, p: PendingSecrets) => {
+    if (svc === "github") return { token: p.github_token }
+    if (svc === "jira") return { host: draft.jira.host, email: draft.jira.email, token: p.jira_token }
+    return { token: p.slack_token, cookie: p.slack_cookie }
+  }, [draft.jira.host, draft.jira.email])
+
+  const setDone = (svc: CredService, result: CredResult) =>
+    setTests((t) => ({ ...t, [svc]: { status: "done", result, at: Date.now() } }))
+
   const runTest = useCallback(async (svc: CredService) => {
     setTests((t) => ({ ...t, [svc]: { status: "testing" } }))
     try {
-      const override = svc === "jira" ? { host: draft.jira.host, email: draft.jira.email } : undefined
-      const result = await api.testCredential(svc, override)
-      setTests((t) => ({ ...t, [svc]: { status: "done", result, at: Date.now() } }))
+      setDone(svc, await api.testCredential(svc, candidate(svc, secrets)))
     } catch (e) {
-      const detail = e instanceof Error ? e.message : String(e)
-      setTests((t) => ({ ...t, [svc]: { status: "done", at: Date.now(), result: { ok: false, kind: "network", detail } } }))
+      setDone(svc, { ok: false, kind: "network", detail: e instanceof Error ? e.message : String(e) })
     }
-  }, [draft.jira.host, draft.jira.email])
+  }, [candidate, secrets])
 
   // Test every configured service the first time the tab is shown. The ref
   // makes it one-shot even though runTest changes as the form is edited.
@@ -44,18 +53,28 @@ export function WatcherAuthPanel({ settings, draft, update, error, active, onSec
     if (sec.slack_token && sec.slack_cookie) void runTest("slack")
   }, [active, runTest, sec.github_token, sec.jira_token, sec.slack_token, sec.slack_cookie])
 
-  /** Replace = validate-then-write; on success refetch so *_set flags update, and show the result as the chip. */
-  const replacer = (svc: CredService, body: (v: string) => Parameters<typeof api.replaceCredential>[1]) =>
-    async (v: string) => {
-      const r = await api.replaceCredential(svc, body(v))
-      if (r.ok) {
-        setTests((t) => ({ ...t, [svc]: { status: "done", result: r, at: Date.now() } }))
-        onSecretSaved()
-      }
-      return r
+  /**
+   * Replace tests the new value (nothing is written) and, if it passes,
+   * holds it for Save. A Slack half whose partner is neither stored nor
+   * pending can't be tested yet; it is held, and Save checks the pair.
+   */
+  const replacer = (svc: CredService, key: SecretKey) => async (v: string) => {
+    const r = await api.testCredential(svc, candidate(svc, { ...secrets, [key]: v }))
+    if (r.ok || (svc === "slack" && r.kind === "missing")) {
+      setSecret(key, v)
+      setDone(svc, r)
+      return { ...r, ok: true }
     }
+    return r
+  }
+  const reverter = (svc: CredService, key: SecretKey) => () => {
+    setSecret(key, null)
+    setTests((t) => ({ ...t, [svc]: { status: "idle" } }))
+  }
+  const has = (key: SecretKey) => secrets[key] !== undefined
+  const slackTestable = (sec.slack_token || has("slack_token")) && (sec.slack_cookie || has("slack_cookie"))
 
-  const hostChangeNeedsToken = sec.jira_token && draft.jira.host.trim() !== settings.watcher_auth.jira.host.trim()
+  const hostChangeNeedsToken = sec.jira_token && !has("jira_token") && draft.jira.host.trim() !== settings.watcher_auth.jira.host.trim()
   return (
     <Stack gap="lg">
       <PersistedTo path={settings.paths.watcher_auth} />
@@ -66,7 +85,9 @@ export function WatcherAuthPanel({ settings, draft, update, error, active, onSec
           label="Token"
           description={<>Personal access token with repo read scopes. <KeyPath path="services.github.token" /></>}
           isSet={sec.github_token}
-          onReplace={replacer("github", (token) => ({ token }))}
+          pending={has("github_token")}
+          onRevert={reverter("github", "github_token")}
+          onReplace={replacer("github", "github_token")}
           onTest={() => void runTest("github")}
           test={tests.github}
         />
@@ -76,7 +97,7 @@ export function WatcherAuthPanel({ settings, draft, update, error, active, onSec
         <TextInput
           label="Host"
           description={<KeyPath path="services.jira.host" />}
-          error={hostChangeNeedsToken ? "Changing the host needs the API token: paste it below and press Replace (Save alone will be refused)." : undefined}
+          error={hostChangeNeedsToken ? "Changing the host needs the API token: paste it below and press Replace, then Save." : undefined}
           placeholder="https://yourorg.atlassian.net"
           value={draft.jira.host}
           onChange={(e) => { const v = e.currentTarget.value; update((d) => ({ ...d, jira: { ...d.jira, host: v } })) }}
@@ -93,7 +114,9 @@ export function WatcherAuthPanel({ settings, draft, update, error, active, onSec
           label="API token"
           description={<>From id.atlassian.com → Security → API tokens. Tested with the host and email above. <KeyPath path="services.jira.token" /></>}
           isSet={sec.jira_token}
-          onReplace={replacer("jira", (token) => ({ token, host: draft.jira.host, email: draft.jira.email }))}
+          pending={has("jira_token")}
+          onRevert={reverter("jira", "jira_token")}
+          onReplace={replacer("jira", "jira_token")}
           onTest={() => void runTest("jira")}
           test={tests.jira}
         />
@@ -107,8 +130,10 @@ export function WatcherAuthPanel({ settings, draft, update, error, active, onSec
           label="Session token"
           description={<>The xoxc-… token from a logged-in browser. <KeyPath path="services.slack.token" /></>}
           isSet={sec.slack_token}
-          onReplace={replacer("slack", (token) => ({ token }))}
-          testable={sec.slack_token && sec.slack_cookie}
+          pending={has("slack_token")}
+          onRevert={reverter("slack", "slack_token")}
+          onReplace={replacer("slack", "slack_token")}
+          testable={slackTestable}
           onTest={() => void runTest("slack")}
           test={tests.slack}
         />
@@ -117,14 +142,16 @@ export function WatcherAuthPanel({ settings, draft, update, error, active, onSec
           description={<>The browser's d= cookie (xoxd-…). Tested together with the token. <KeyPath path="services.slack.cookie" /></>}
           isSet={sec.slack_cookie}
           placeholder="Paste a new cookie"
-          onReplace={replacer("slack", (cookie) => ({ cookie }))}
-          testable={sec.slack_token && sec.slack_cookie}
+          pending={has("slack_cookie")}
+          onRevert={reverter("slack", "slack_cookie")}
+          onReplace={replacer("slack", "slack_cookie")}
+          testable={slackTestable}
           onTest={() => void runTest("slack")}
           test={tests.slack}
         />
         <TextInput
           label="Workspace domain"
-          description={<>Used to build permalinks. Filled in automatically after a successful Slack replace. <KeyPath path="services.slack.workspace_domain" /></>}
+          description={<>Used to build permalinks. Filled in automatically when new Slack credentials are saved. <KeyPath path="services.slack.workspace_domain" /></>}
           value={draft.slack.workspace_domain}
           onChange={(e) => { const v = e.currentTarget.value; update((d) => ({ ...d, slack: { workspace_domain: v } })) }}
           ff="monospace"

@@ -1,8 +1,8 @@
-import { Alert, Code, NumberInput, Stack, TagsInput, TextInput } from "@mantine/core"
+import { Alert, Code, NumberInput, Stack, TagsInput, Text, TextInput } from "@mantine/core"
 import type { Settings, WorktreeSettings } from "../../api/types"
-import { api } from "../../api/client"
 import { KeyPath, PersistedTo, SettingsSection } from "./parts"
 import { SecretField } from "./SecretField"
+import type { PendingSecrets, SecretKey } from "./useSettingsDraft"
 
 const DEFAULT_HTTPS_PORT = 8476
 export const RESTART_BADGE = "Applies after restarting worktree ui"
@@ -12,12 +12,13 @@ interface Props {
   draft: WorktreeSettings
   update: (fn: (d: WorktreeSettings) => WorktreeSettings) => void
   error?: string
-  /** Called after a secret (the UI password) was replaced, to refetch. */
-  onSecretSaved: () => void
+  /** A replaced password waits here for Save. */
+  secrets: PendingSecrets
+  setSecret: (key: SecretKey, value: string | null) => void
 }
 
 /** The ui.* keys of worktree's config.yaml: login and remote access. */
-export function UIAccessPanel({ settings, draft, update, error, onSecretSaved }: Props) {
+export function UIAccessPanel({ settings, draft, update, error, secrets, setSecret }: Props) {
   const certNames = settings.environment.cert_names
   const uncovered = certNames
     ? draft.ui.allowed_hosts.filter((h) => !certNames.map((n) => n.toLowerCase()).includes(h.toLowerCase()))
@@ -30,10 +31,15 @@ export function UIAccessPanel({ settings, draft, update, error, onSecretSaved }:
       <SettingsSection title="Login">
         <SecretField
           label="UI password"
-          description={<>Required to log in from any device. Takes effect immediately; existing logins stay signed in. <KeyPath path="ui.password" /></>}
+          description={<>Required to log in from any device. Takes effect on Save; existing logins stay signed in. <KeyPath path="ui.password" /></>}
           isSet={settings.secrets.ui_password}
+          pending={secrets.ui_password !== undefined}
+          onRevert={() => setSecret("ui_password", null)}
           placeholder="Type a new password"
-          onReplace={async (pw) => { await api.replacePassword(pw); onSecretSaved() }}
+          onReplace={async (pw) => {
+            if (!pw.trim()) return { ok: false, kind: "missing", detail: "The password can't be blank" }
+            setSecret("ui_password", pw)
+          }}
         />
       </SettingsSection>
 
@@ -60,6 +66,10 @@ export function UIAccessPanel({ settings, draft, update, error, onSecretSaved }:
             reissue it, then reinstall the CA on your phone.
           </Alert>
         )}
+        <Text size="xs" c="dimmed">
+          <Code>worktree setup</Code> generates the certificate and key and fills in both paths, along with the
+          allowed hosts. Change them only to use a certificate of your own.
+        </Text>
         <TextInput
           label="TLS certificate"
           description={<KeyPath path="ui.tls.cert_file" />}

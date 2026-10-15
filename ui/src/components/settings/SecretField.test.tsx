@@ -54,23 +54,33 @@ describe("SecretField", () => {
     expect(screen.queryByRole("button", { name: "Replace" })).not.toBeInTheDocument()
   })
 
-  it("on success clears the value and shows Saved", async () => {
+  it("on success clears the input; the parent holds the value", async () => {
     const onReplace = vi.fn().mockResolvedValue({ ok: true, kind: "ok", detail: "" })
     wrap(<SecretField label="Token" description="d" isSet onReplace={onReplace} />)
     await userEvent.type(screen.getByLabelText("Token"), "new-secret")
     await userEvent.click(screen.getByRole("button", { name: "Replace" }))
     await waitFor(() => expect(onReplace).toHaveBeenCalledWith("new-secret"))
-    expect(await screen.findByText(/Saved/)).toBeInTheDocument()
-    expect(screen.getByLabelText("Token")).toHaveValue("")
+    await waitFor(() => expect(screen.getByLabelText("Token")).toHaveValue(""))
     expect(screen.queryByDisplayValue("new-secret")).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Replace" })).not.toBeInTheDocument()
   })
 
-  it("on refusal keeps the value and explains nothing was saved", async () => {
+  it("a pending value shows Unsaved and swaps Test for Revert", async () => {
+    const onRevert = vi.fn()
+    wrap(<SecretField label="Token" description="d" isSet pending onRevert={onRevert} onReplace={vi.fn()} onTest={vi.fn()} test={{ status: "idle" }} />)
+    expect(screen.getByText("Unsaved")).toBeInTheDocument()
+    expect(screen.getByLabelText("Token")).toHaveAttribute("placeholder", expect.stringMatching(/unsaved/))
+    expect(screen.queryByRole("button", { name: "Test" })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole("button", { name: "Revert" }))
+    expect(onRevert).toHaveBeenCalledOnce()
+  })
+
+  it("on refusal keeps the typed value and says it was not kept", async () => {
     const onReplace = vi.fn().mockResolvedValue({ ok: false, kind: "auth", detail: "401 Bad credentials" })
     wrap(<SecretField label="Token" description="d" isSet onReplace={onReplace} />)
     await userEvent.type(screen.getByLabelText("Token"), "bad")
     await userEvent.click(screen.getByRole("button", { name: "Replace" }))
-    expect(await screen.findByText(/401 Bad credentials/)).toHaveTextContent(/Nothing was saved/)
+    expect(await screen.findByText(/401 Bad credentials/)).toHaveTextContent(/The new value was not kept/)
     expect(screen.getByLabelText("Token")).toHaveValue("bad")
   })
 

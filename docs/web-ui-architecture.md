@@ -1804,7 +1804,7 @@ opens with "These settings are persisted to `<path>`" (paths come from
 | `PUT /api/settings/watcher-auth` | Non-secret auth.yaml fields: Jira host and email, Slack workspace domain. |
 | `PUT /api/settings/watcher-config` | Watcher config.yaml: Jira bot usernames and custom fields. |
 | `PUT /api/settings/credentials/{service}` | Replace a credential (`github`, `jira`, `slack`): validate, then write. |
-| `POST /api/settings/credentials/{service}/test` | Test the stored credential (result chip). |
+| `POST /api/settings/credentials/{service}/test` | Test a credential without writing anything: a `token`/`cookie` in the body is a candidate tested in place of the stored value (Slack fills the other half from storage); without one, the stored value is tested. |
 | `PUT /api/settings/password` | Replace `ui.password`. |
 
 **Save model.** The frontend keeps one draft per file (`useSettingsDraft`)
@@ -1813,10 +1813,27 @@ file, sequentially; a failed file does not stop the rest. Files that saved
 stay saved and only the failed file stays dirty, with its error. The cmux toggle is part of the
 worktree draft, so nothing (not even the live gate) changes until Save.
 Closing with unsaved edits asks first; Discard resets every draft to the
-server values.
+server values. While Save runs, every field and button of the config tabs
+is disabled (one native `<fieldset disabled>`); the tab list stays usable.
+
+**Secrets wait for Save too.** Replace only *tests* the typed value (the
+Test route with the candidate in the body, so nothing is written) and, if
+it passes, holds it in `useSettingsDraft`'s pending secrets: in memory,
+never in the query cache or browser storage. The field then shows
+"Unsaved" and its Test button becomes Revert; its tab gets the unsaved dot.
+The UI password has nothing to test and is simply held. A Slack half whose
+partner is neither stored nor pending is held untested, and the replace at
+Save checks the pair. Save writes pending secrets FIRST, each through the
+validate-then-write replace route (Jira with the form's host and email, so
+a host change plus a new token goes through together), then refetches and
+adopts what those replaces changed in auth.yaml (Jira host/email, the
+Slack domain) for any field the user hasn't edited, and only then saves
+the files. A secret refused at Save stays pending with its error, and its
+file's other edits are not saved. Revert drops one pending secret; Discard
+drops them all.
 
 **Secrets are write-only.** No response contains a token, cookie or the
-password, only `*_set` booleans. A Replace validates against the real
+password, only `*_set` booleans. The replace route validates against the real
 service first (`credValidators`: `wgithub.Validate`, `wjira.Validate`,
 `wslack.Validate`) and writes only on success; auth rejections and network
 failures are both refused (422, "Nothing was saved"). Jira replace stores

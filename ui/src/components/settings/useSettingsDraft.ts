@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { api } from "../../api/client"
-import type { Settings, WatcherAuthSettings, WatcherConfigSettings, WorktreeSettings } from "../../api/types"
+import type { CredService, Settings, WatcherAuthSettings, WatcherConfigSettings, WorktreeSettings } from "../../api/types"
 
 export type SettingsFile = "worktree" | "watcher_auth" | "watcher_config"
 export interface Drafts {
@@ -10,6 +10,19 @@ export interface Drafts {
 }
 
 const FILES: SettingsFile[] = ["worktree", "watcher_auth", "watcher_config"]
+
+/** A secret held unsaved in the modal: already tested (if testable), written on Save. */
+export type SecretKey = "ui_password" | "github_token" | "jira_token" | "slack_token" | "slack_cookie"
+export type PendingSecrets = Partial<Record<SecretKey, string>>
+const secretFile: Record<SecretKey, SettingsFile> = {
+  ui_password: "worktree",
+  github_token: "watcher_auth",
+  jira_token: "watcher_auth",
+  slack_token: "watcher_auth",
+  slack_cookie: "watcher_auth",
+}
+const hasPending = (p: PendingSecrets, f: SettingsFile) =>
+  (Object.keys(p) as SecretKey[]).some((k) => secretFile[k] === f)
 
 const savers: { [F in SettingsFile]: (d: Drafts[F]) => Promise<Settings> } = {
   worktree: (d) => api.saveWorktreeSettings(d),
@@ -30,8 +43,9 @@ const pick = (s: Settings): Drafts => ({ worktree: s.worktree, watcher_auth: s.w
 
 /**
  * The Settings modal's edit buffer: one draft per file, compared with the
- * server's values for dirty state. Secrets are not in here — SecretField
- * replaces them directly.
+ * server's values for dirty state, plus the secrets replaced but not yet
+ * saved. Secrets are never in the server values; a pending one lives only
+ * here, in memory, until Save writes it or Discard drops it.
  */
 export function useSettingsDraft(server: Settings | undefined) {
   const [base, setBaseState] = useState<Drafts | null>(server ? pick(server) : null)
@@ -46,6 +60,9 @@ export function useSettingsDraft(server: Settings | undefined) {
   // Files whose draft fails client-side validation: save() skips them.
   const invalidRef = useRef<Partial<Record<SettingsFile, string>>>({})
   const [invalid, setInvalidState] = useState<Partial<Record<SettingsFile, string>>>({})
+  const [secrets, setSecretsState] = useState<PendingSecrets>({})
+  const secretsRef = useRef(secrets)
+  const setSecrets = useCallback((v: PendingSecrets) => { secretsRef.current = v; setSecretsState(v) }, [])
   const setBase = useCallback((v: Drafts | null) => { baseRef.current = v; setBaseState(v) }, [])
   const setDrafts = useCallback((v: Drafts | null) => { draftsRef.current = v; setDraftsState(v) }, [])
 
@@ -60,9 +77,9 @@ export function useSettingsDraft(server: Settings | undefined) {
 
   const dirty = useMemo(() => {
     const out = { worktree: false, watcher_auth: false, watcher_config: false }
-    if (base && drafts) for (const f of FILES) out[f] = canonical(base[f]) !== canonical(drafts[f])
+    if (base && drafts) for (const f of FILES) out[f] = canonical(base[f]) !== canonical(drafts[f]) || hasPending(secrets, f)
     return out
-  }, [base, drafts])
+  }, [base, drafts, secrets])
 
   const restartCount = useMemo(() => {
     if (!base || !drafts) return 0
@@ -81,6 +98,14 @@ export function useSettingsDraft(server: Settings | undefined) {
     if (d) setDrafts({ ...d, [file]: fn(d[file]) })
   }, [setDrafts])
 
+  /** Hold a secret for Save (value), or drop the pending one (null). */
+  const setSecret = useCallback((key: SecretKey, value: string | null) => {
+    const next = { ...secretsRef.current }
+    if (value === null) delete next[key]
+    else next[key] = value
+    setSecrets(next)
+  }, [setSecrets])
+
   /** Mark a file's draft invalid (message) or valid again (null). */
   const setInvalid = useCallback((file: SettingsFile, message: string | null) => {
     const next = { ...invalidRef.current }
@@ -94,8 +119,9 @@ export function useSettingsDraft(server: Settings | undefined) {
     invalidRef.current = {}
     setInvalidState({})
     setDrafts(baseRef.current)
+    setSecrets({})
     setErrors({})
-  }, [setDrafts])
+  }, [setDrafts, setSecrets])
 
   /** New server values for every file that has no unsaved edits. */
   const rebase = useCallback((s: Settings) => {
@@ -116,14 +142,43 @@ export function useSettingsDraft(server: Settings | undefined) {
     const saved: SettingsFile[] = []
     const errs: Partial<Record<SettingsFile, string>> = {}
     let latest: Settings | undefined
-    if (savingRef.current || !draftsRef.current || !baseRef.current) return { saved, errors: errs }
+    const startDrafts = draftsRef.current
+    if (savingRef.current || !startDrafts || !baseRef.current) return { saved, errors: errs }
     savingRef.current = true
     setSaving(true)
     try {
+      // Skipped (not just empty) without pending secrets: awaiting it would let
+      // an edit made just after Save leak into the files read below.
+      const secretsOut = Object.keys(secretsRef.current).length
+        ? await saveSecrets(startDrafts, secretsRef.current)
+        : { errors: {}, written: [] }
+      Object.assign(errs, secretsOut.errors)
+      if (secretsOut.written.length) {
+        // Drop only what was written, and only if it wasn't changed meanwhile.
+        const next = { ...secretsRef.current }
+        for (const [k, v] of secretsOut.written) if (next[k] === v) delete next[k]
+        setSecrets(next)
+        // The replaces changed auth.yaml (Jira host/email, Slack's domain):
+        // adopt those, keeping any field the user has edited since loading.
+        try {
+          latest = await api.settings()
+          const b = baseRef.current
+          const d = draftsRef.current
+          if (b && d) {
+            setBase({ ...b, watcher_auth: latest.watcher_auth })
+            setDrafts({ ...d, watcher_auth: keepEdits(b.watcher_auth, d.watcher_auth, latest.watcher_auth) })
+          }
+        } catch {
+          // The secrets are saved; the next refetch picks up their *_set flags.
+        }
+      }
       for (const f of FILES) {
         const sent = draftsRef.current?.[f]
         const b = baseRef.current
         if (!sent || !b || canonical(b[f]) === canonical(sent)) continue
+        // A refused credential leaves its file unsaved: Jira's host change,
+        // for one, only makes sense with the token that failed.
+        if (errs[f]) continue
         const bad = invalidRef.current[f]
         if (bad) {
           errs[f] = bad
@@ -147,7 +202,62 @@ export function useSettingsDraft(server: Settings | undefined) {
       setSaving(false)
     }
     return { saved, errors: errs, settings: latest }
-  }, [setBase, setDrafts])
+  }, [setBase, setDrafts, setSecrets])
 
-  return { drafts, dirty, anyDirty: FILES.some((f) => dirty[f]), restartCount, update, discard, save, saving, errors, rebase, setInvalid, invalid }
+  return { drafts, dirty, anyDirty: FILES.some((f) => dirty[f]), restartCount, update, discard, save, saving, errors, rebase, setInvalid, invalid, secrets, setSecret }
+}
+
+/** Each watcher_auth field the user left as loaded takes the fresh value. */
+function keepEdits(base: WatcherAuthSettings, draft: WatcherAuthSettings, fresh: WatcherAuthSettings): WatcherAuthSettings {
+  const pick = (b: string, d: string, f: string) => (b === d ? f : d)
+  return {
+    jira: { host: pick(base.jira.host, draft.jira.host, fresh.jira.host), email: pick(base.jira.email, draft.jira.email, fresh.jira.email) },
+    slack: { workspace_domain: pick(base.slack.workspace_domain, draft.slack.workspace_domain, fresh.slack.workspace_domain) },
+  }
+}
+
+const credLabel = { github: "GitHub token", jira: "Jira API token", slack: "Slack credentials" } as const
+
+/**
+ * Writes every pending secret, each through its validate-then-write route.
+ * A refused one stays pending with an error on its file. Returns what was
+ * written, as [key, value] pairs.
+ */
+async function saveSecrets(drafts: Drafts, pending: PendingSecrets) {
+  const errors: Partial<Record<SettingsFile, string>> = {}
+  const written: [SecretKey, string][] = []
+  const fail = (f: SettingsFile, msg: string) => { errors[f] = errors[f] ? `${errors[f]} ${msg}` : msg }
+
+  if (pending.ui_password !== undefined) {
+    try {
+      await api.replacePassword(pending.ui_password)
+      written.push(["ui_password", pending.ui_password])
+    } catch (e) {
+      fail("worktree", `UI password: ${e instanceof Error ? e.message : String(e)}.`)
+    }
+  }
+  const creds: [CredService, SecretKey[], Parameters<typeof api.replaceCredential>[1]][] = []
+  if (pending.github_token !== undefined) creds.push(["github", ["github_token"], { token: pending.github_token }])
+  if (pending.jira_token !== undefined) {
+    creds.push(["jira", ["jira_token"], { token: pending.jira_token, host: drafts.watcher_auth.jira.host, email: drafts.watcher_auth.jira.email }])
+  }
+  if (pending.slack_token !== undefined || pending.slack_cookie !== undefined) {
+    creds.push(["slack", ["slack_token", "slack_cookie"], { token: pending.slack_token, cookie: pending.slack_cookie }])
+  }
+  for (const [svc, keys, body] of creds) {
+    try {
+      const r = await api.replaceCredential(svc, body)
+      if (r.ok) {
+        for (const k of keys) {
+          const v = pending[k]
+          if (v !== undefined) written.push([k, v])
+        }
+      } else {
+        fail("watcher_auth", `${credLabel[svc]}: ${r.detail || r.kind}. It was not saved.`)
+      }
+    } catch (e) {
+      fail("watcher_auth", `${credLabel[svc]}: ${e instanceof Error ? e.message : String(e)}. It was not saved.`)
+    }
+  }
+  return { errors, written }
 }
