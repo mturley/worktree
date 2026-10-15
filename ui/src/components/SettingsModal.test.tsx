@@ -22,10 +22,10 @@ afterEach(() => {
 })
 
 describe("SettingsModal", () => {
-  it("has the four tabs and the persisted-to line", async () => {
+  it("has the five tabs and the persisted-to line", async () => {
     vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
     renderModal()
-    for (const name of ["General", "Watcher Auth", "Watcher Config", "Devices"]) {
+    for (const name of ["General", "Watcher Auth", "Watcher Config", "UI Access", "Devices"]) {
       expect(screen.getByRole("tab", { name: new RegExp(name) })).toBeInTheDocument()
     }
     // Every config tab is mounted, each with its own line; General is first.
@@ -73,6 +73,7 @@ describe("SettingsModal", () => {
   it("warns when an allowed host is not in the certificate", async () => {
     vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
     renderModal()
+    await userEvent.click(screen.getByRole("tab", { name: /UI Access/ }))
     const hosts = await screen.findByRole("textbox", { name: "Allowed hosts" })
     await userEvent.type(hosts, "10.0.0.5{enter}")
     expect(screen.getByText(/doesn't cover/)).toHaveTextContent("10.0.0.5")
@@ -138,6 +139,17 @@ describe("SettingsModal", () => {
     await userEvent.type(await screen.findByLabelText("Editor"), "zed")
     expect(screen.getByRole("tab", { name: /General/ })).toHaveTextContent("●")
     expect(screen.getByRole("tab", { name: /Watcher Auth/ })).not.toHaveTextContent("●")
+    expect(screen.getByRole("tab", { name: /UI Access/ })).not.toHaveTextContent("●")
+  })
+
+  it("marks UI Access, not General, for a ui.* change, though both are config.yaml", async () => {
+    vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
+    renderModal()
+    await userEvent.click(screen.getByRole("tab", { name: /UI Access/ }))
+    const hosts = await screen.findByRole("textbox", { name: "Allowed hosts" })
+    await userEvent.type(hosts, "box.local{Enter}")
+    expect(screen.getByRole("tab", { name: /UI Access/ })).toHaveTextContent("●")
+    expect(screen.getByRole("tab", { name: /General/ })).not.toHaveTextContent("●")
   })
 
   it("shows a save error on its tab and keeps the change", async () => {
@@ -146,7 +158,8 @@ describe("SettingsModal", () => {
     renderModal()
     await userEvent.type(await screen.findByLabelText("Editor"), "zed")
     await userEvent.click(screen.getByRole("button", { name: "Save" }))
-    expect(await screen.findByText("disk full")).toBeInTheDocument()
+    // General and UI Access both edit config.yaml, so both show its error.
+    expect(await screen.findAllByText("disk full")).toHaveLength(2)
     expect(screen.getByLabelText("Editor")).toHaveValue("zed")
   })
 
@@ -204,6 +217,7 @@ describe("SettingsModal", () => {
   it("typing after Escape re-enters editing", async () => {
     vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
     renderModal()
+    await userEvent.click(screen.getByRole("tab", { name: /UI Access/ }))
     const pw = await screen.findByLabelText("UI password")
     await userEvent.click(pw)
     await userEvent.type(pw, "abc")

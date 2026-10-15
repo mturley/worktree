@@ -1,6 +1,8 @@
-import { useRef, useState, type ReactNode } from "react"
-import { Badge, Button, Group, PasswordInput, Stack, Text } from "@mantine/core"
+import { useEffect, useRef, useState, type ReactNode } from "react"
+import { Badge, Button, Group, PasswordInput, Stack, Text, Tooltip } from "@mantine/core"
 import type { CredResult } from "../../api/types"
+
+export const VALID_FLASH_MS = 3000
 
 export type TestState = { status: "idle" } | { status: "testing" } | { status: "done"; result: CredResult; at: number }
 
@@ -43,6 +45,17 @@ export function SecretField({ label, description, isSet, placeholder = "Paste a 
 
   const inputRef = useRef<HTMLInputElement>(null)
 
+  // A passing test shows "✓ Valid" on the button for a few seconds. Keyed on
+  // the result's timestamp, so each new pass restarts the flash.
+  const validAt = test?.status === "done" && test.result.ok ? test.at : null
+  const [flashValid, setFlashValid] = useState(false)
+  useEffect(() => {
+    if (validAt === null) { setFlashValid(false); return }
+    setFlashValid(true)
+    const t = setTimeout(() => setFlashValid(false), VALID_FLASH_MS)
+    return () => clearTimeout(t)
+  }, [validAt])
+
   const cancel = () => {
     inputRef.current?.blur()
     setEditing(false)
@@ -71,6 +84,28 @@ export function SecretField({ label, description, isSet, placeholder = "Paste a 
   }
 
   const idlePlaceholder = isSet ? "•••••••••••••••• set" : "Not set — click to add"
+  const buttons = editing ? (
+    <>
+      {/* Secrets skip the Save/Discard draft, so say so before the click. */}
+      <Tooltip label="Saves immediately">
+        <Button size="sm" disabled={!value} loading={busy} onClick={replace}>Replace</Button>
+      </Tooltip>
+      <Button size="sm" variant="subtle" onClick={cancel}>Cancel</Button>
+    </>
+  ) : (
+    onTest && (
+      <Button
+        size="sm"
+        variant={flashValid ? "light" : "default"}
+        color={flashValid ? "green" : undefined}
+        miw={88}
+        disabled={!canTest || test?.status === "testing"}
+        onClick={onTest}
+      >
+        {flashValid ? "✓ Valid" : "Test"}
+      </Button>
+    )
+  )
   return (
     <Stack gap={4}>
       <PasswordInput
@@ -91,18 +126,20 @@ export function SecretField({ label, description, isSet, placeholder = "Paste a 
         aria-label={label}
         autoComplete="off"
         ff="monospace"
-        rightSectionWidth={editing ? 0 : undefined}
-      />
-      <Group gap="xs">
-        {editing ? (
-          <>
-            <Button size="xs" disabled={!value} loading={busy} onClick={replace}>Replace</Button>
-            <Button size="xs" variant="subtle" onClick={cancel}>Cancel</Button>
-          </>
-        ) : (
-          onTest && <Button size="xs" variant="default" disabled={!canTest || test?.status === "testing"} onClick={onTest}>Test</Button>
+        // The visibility toggle only shows while editing; reserve its room then.
+        rightSectionWidth={editing ? undefined : 0}
+        // The buttons sit beside the input itself, under the label and
+        // description rather than level with them.
+        // The input's own description/error margins move to the row, so the
+        // buttons centre on the input rather than on input + margin.
+        styles={{ wrapper: { marginTop: 0, marginBottom: 0 } }}
+        inputContainer={(input) => (
+          <Group gap="xs" wrap="nowrap" style={{ marginTop: "var(--input-margin-top)", marginBottom: "var(--input-margin-bottom)" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>{input}</div>
+            {buttons}
+          </Group>
         )}
-      </Group>
+      />
       {test?.status === "done" && !test.result.ok && test.result.detail && !editing && (
         <Text size="xs" c="dimmed">{test.result.detail}</Text>
       )}

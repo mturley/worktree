@@ -1786,9 +1786,12 @@ things constrain any change here:
 ### Settings modal (`settings*.go`, `ui/src/components/settings/`)
 
 The home page's Settings modal (cog in the Activity header when wide, at the
-right of the Worktrees/Activity tab bar when narrow) has four tabs: General
-(worktree's `config.yaml`), Watcher Auth (watcher `auth.yaml`), Watcher
-Config (watcher `config.yaml`) and Devices (login sessions). Each config tab
+right of the Worktrees/Activity tab bar when narrow) has five tabs: General
+(worktree's `config.yaml` except `ui.*`), Watcher Auth (watcher `auth.yaml`),
+Watcher Config (watcher `config.yaml`), UI Access (the `ui.*` keys of
+worktree's `config.yaml`: password and remote access) and Devices (login
+sessions). General and UI Access share one draft and one save, but each
+tab's unsaved dot covers only its own keys. Each config tab
 opens with "These settings are persisted to `<path>`" (paths come from
 `GET /api/settings`).
 

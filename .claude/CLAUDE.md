@@ -154,7 +154,8 @@ Slack threads are worktree resources (`worktree add <slack-thread-url>`). In the
 ## Config files ↔ Settings modal — keep them in sync
 
 The web UI's Settings modal edits every user-facing key of three files:
-worktree's `config.yaml` (`internal/config.Config`, General tab), and the
+worktree's `config.yaml` (`internal/config.Config`, General tab; `ui.*` on
+the UI Access tab), and the
 watcher library's `auth.yaml` (`wconfig.Config`, Watcher Auth tab) and
 `config.yaml` (`wconfig.ConfigFile`, Watcher Config tab).
 

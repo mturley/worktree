@@ -4,6 +4,7 @@ import { useQuery, useQueryClient, type Query } from "@tanstack/react-query"
 import { api } from "../api/client"
 import { DevicesPanel } from "./DevicesPanel"
 import { GeneralPanel } from "./settings/GeneralPanel"
+import { UIAccessPanel } from "./settings/UIAccessPanel"
 import { WatcherAuthPanel } from "./settings/WatcherAuthPanel"
 import { WatcherConfigPanel } from "./settings/WatcherConfigPanel"
 import { useSettingsDraft, type SettingsFile } from "./settings/useSettingsDraft"
@@ -24,6 +25,7 @@ const tabFile: Record<string, SettingsFile | undefined> = {
   general: "worktree",
   "watcher-auth": "watcher_auth",
   "watcher-config": "watcher_config",
+  "ui-access": "worktree",
 }
 
 /**
@@ -86,10 +88,22 @@ export function SettingsModal({ opened, onClose }: { opened: boolean; onClose: (
     if (wasCmux && out.saved.includes("worktree")) void qc.invalidateQueries({ predicate: affectedByCmux })
   }
 
-  const label = (name: string, value: string) => {
+  // General and UI Access share config.yaml; each marks only its own keys.
+  const uiDirty = !!(draft.drafts && settings.data) &&
+    JSON.stringify(draft.drafts.worktree.ui) !== JSON.stringify(settings.data.worktree.ui)
+  const tabDirty = (value: string) => {
     const f = tabFile[value]
-    return <>{name}{f && draft.dirty[f] ? <Text span c="orange" ml={4}>●</Text> : null}</>
+    if (!f || !draft.dirty[f]) return false
+    if (value === "ui-access") return uiDirty
+    if (value === "general" && draft.drafts && settings.data) {
+      const { ui: _a, ...rest } = draft.drafts.worktree
+      const { ui: _b, ...base } = settings.data.worktree
+      return JSON.stringify(rest) !== JSON.stringify(base)
+    }
+    return true
   }
+  const label = (name: string, value: string) =>
+    <>{name}{tabDirty(value) ? <Text span c="orange" ml={4}>●</Text> : null}</>
 
   const body = (() => {
     if (settings.error && !settings.data) return <Alert color="red" title="Couldn't load settings">{settings.error.message}</Alert>
@@ -98,12 +112,13 @@ export function SettingsModal({ opened, onClose }: { opened: boolean; onClose: (
   })()
 
   return (
-    <Modal opened={opened} onClose={requestClose} title="Settings" size="lg">
+    <Modal opened={opened} onClose={requestClose} title="Settings" size="xl">
       <Tabs value={tab} onChange={setTab}>
         <Tabs.List>
           <Tabs.Tab value="general">{label("General", "general")}</Tabs.Tab>
           <Tabs.Tab value="watcher-auth">{label("Watcher Auth", "watcher-auth")}</Tabs.Tab>
           <Tabs.Tab value="watcher-config">{label("Watcher Config", "watcher-config")}</Tabs.Tab>
+          <Tabs.Tab value="ui-access">{label("UI Access", "ui-access")}</Tabs.Tab>
           <Tabs.Tab value="devices">Devices</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="general" pt="md">
@@ -113,7 +128,6 @@ export function SettingsModal({ opened, onClose }: { opened: boolean; onClose: (
               draft={draft.drafts.worktree}
               update={(fn) => draft.update("worktree", fn)}
               error={draft.errors.worktree}
-              onSecretSaved={refetchAfterSecret}
               onShowWatcherAuth={() => setTab("watcher-auth")}
             />
           ))}
@@ -139,6 +153,17 @@ export function SettingsModal({ opened, onClose }: { opened: boolean; onClose: (
               update={(fn) => draft.update("watcher_config", fn)}
               error={draft.errors.watcher_config}
               setInvalid={(m) => draft.setInvalid("watcher_config", m)}
+            />
+          ))}
+        </Tabs.Panel>
+        <Tabs.Panel value="ui-access" pt="md">
+          {body ?? (settings.data && draft.drafts && (
+            <UIAccessPanel
+              settings={settings.data}
+              draft={draft.drafts.worktree}
+              update={(fn) => draft.update("worktree", fn)}
+              error={draft.errors.worktree}
+              onSecretSaved={refetchAfterSecret}
             />
           ))}
         </Tabs.Panel>

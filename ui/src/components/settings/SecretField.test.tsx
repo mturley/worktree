@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { cleanup, render, screen, waitFor } from "@testing-library/react"
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import type { CredResult } from "../../api/types"
-import { SecretField } from "./SecretField"
+import { SecretField, VALID_FLASH_MS } from "./SecretField"
 
 const wrap = (ui: React.ReactNode) => render(<MantineProvider>{ui}</MantineProvider>)
 afterEach(cleanup)
@@ -17,6 +17,25 @@ describe("SecretField", () => {
     expect(input).toHaveAttribute("placeholder", expect.stringMatching(/set/))
     await userEvent.click(screen.getByRole("button", { name: "Test" }))
     expect(onTest).toHaveBeenCalledOnce()
+  })
+
+  it("a passing test flashes ✓ Valid on the button, then reverts to Test", () => {
+    vi.useFakeTimers()
+    try {
+      const field = (test: React.ComponentProps<typeof SecretField>["test"]) => (
+        <MantineProvider><SecretField label="Token" description="d" isSet onReplace={vi.fn()} onTest={vi.fn()} test={test} /></MantineProvider>
+      )
+      const { rerender } = render(field({ status: "testing" }))
+      rerender(field({ status: "done", at: 1, result: { ok: true, kind: "ok", detail: "" } }))
+      expect(screen.getByRole("button", { name: "✓ Valid" })).toBeInTheDocument()
+      act(() => { vi.advanceTimersByTime(VALID_FLASH_MS) })
+      expect(screen.getByRole("button", { name: "Test" })).toBeInTheDocument()
+      // A failed test never flashes.
+      rerender(field({ status: "done", at: 2, result: { ok: false, kind: "auth", detail: "no" } }))
+      expect(screen.getByRole("button", { name: "Test" })).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("disables Test when not set", () => {
