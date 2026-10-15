@@ -80,6 +80,11 @@ func (s *Server) handleCreateWorktree(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	// The live gates are what this server does; a PR-based create must not
+	// reach GitHub while its watcher is off here.
+	for _, svc := range config.Services {
+		cfg.Watchers.SetEnabled(svc, s.WatcherEnabled(svc))
+	}
 
 	res := worktreenew.Run(s.DB, cfg, req.options(), nil)
 

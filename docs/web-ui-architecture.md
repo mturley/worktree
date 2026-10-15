@@ -1956,6 +1956,13 @@ moved live by `PUT /api/settings/worktree`), checked by:
   `slackOn()`, the SSE stream ends within a second of the toggle going off,
   and the avatar/emoji/file proxies refuse.
 - CLI: `worktree watcher run` and `worktree jira` skip an off service.
+- Creating a worktree from a PR (CLI and the web dialog, both
+  `worktreenew.runPR`) reads the PR with the watcher's GitHub token
+  (`worktreenew/prfetch.go`, the library's `FetchPRSummaries` with
+  `headRefName`) — no `gh` — and is refused with `ErrGitHubWatcherDisabled`
+  ("Run `worktree setup`, or enable it in Settings…") while the GitHub
+  watcher is off; the web handler applies the live gates to the config it
+  passes.
 
 Turning one back on polls straight away (when the loop runs). Polls catch up
 from their cursors: Jira and Slack fully; GitHub within its per-poll window

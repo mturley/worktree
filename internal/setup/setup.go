@@ -29,8 +29,6 @@ type Plan struct {
 	TestSlackCreds        bool
 	TestJiraCreds         bool
 	ConfigureUI           bool
-	GHMissing             bool
-	GHNotAuthenticated    bool
 	Cfg                   config.Config
 }
 
@@ -63,15 +61,6 @@ func BuildPlan(cfg config.Config) Plan {
 	plan.TestSlackCreds = true
 	plan.TestJiraCreds = true
 	plan.ConfigureUI = true
-
-	if _, err := exec.LookPath("gh"); err != nil {
-		plan.GHMissing = true
-	} else {
-		cmd := exec.Command("gh", "auth", "status")
-		if err := cmd.Run(); err != nil {
-			plan.GHNotAuthenticated = true
-		}
-	}
 
 	plan.InstallCompletions = true
 	dir := completionDir(rc.Shell)
@@ -114,18 +103,11 @@ func (p Plan) Preview() {
 		}
 		fmt.Printf("  %s Jira projects: %s\n", ui.Green("✓"), strings.Join(p.Cfg.Jira.Projects, ", "))
 	}
-	if !p.GHMissing && !p.GHNotAuthenticated {
-		if !hasExisting {
-			fmt.Println(ui.Dim("Already set up:"))
-			hasExisting = true
-		}
-		fmt.Printf("  %s GitHub CLI (gh)\n", ui.Green("✓"))
-	}
 	if hasExisting {
 		fmt.Println()
 	}
 
-	hasWork := p.HasWork() || p.GHMissing || p.GHNotAuthenticated
+	hasWork := p.HasWork()
 	if hasWork {
 		fmt.Println(ui.Bold("worktree setup will:"))
 	}
@@ -159,13 +141,6 @@ func (p Plan) Preview() {
 	}
 	if p.ConfigureUI {
 		fmt.Println("  • Configure the web UI password and HTTPS access from other devices")
-	}
-	if p.GHMissing {
-		fmt.Printf("\n  %s GitHub CLI (gh) is not installed. PR features will be unavailable.\n", ui.Yellow("!"))
-		fmt.Printf("       Install: %s\n", ui.Bold("https://cli.github.com/"))
-	} else if p.GHNotAuthenticated {
-		fmt.Printf("\n  %s GitHub CLI (gh) is not authenticated. PR features will be unavailable.\n", ui.Yellow("!"))
-		fmt.Printf("       Run: %s\n", ui.Bold("gh auth login"))
 	}
 	if !hasWork {
 		fmt.Println("Nothing to do — already set up.")

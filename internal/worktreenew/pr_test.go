@@ -67,7 +67,7 @@ func TestConfirmKeysAreDistinct(t *testing.T) {
 
 // --- runPR branch logic, exercised through the test seams -------------------
 //
-// github.FetchPRByRepo shells out to `gh` and CreatePRWorktree fetches from a
+// fetchPRInfo reads GitHub with the stored token and CreatePRWorktree fetches from a
 // real remote, so both are replaced here. Everything downstream of them — the
 // confirmation state machine, the fallthrough, SetPRTracking, finalize — is
 // the real code.

@@ -31,7 +31,10 @@ every interface at `ui.https_port` (8476). There is no `--bind`.
   - `registry` — worktree registry (CRUD ops on `worktrees` table)
   - `discovery` — only `IsInsideWorktree` now; worktree discovery moved to DB via `registry.List`
   - `gitutil` — git operations
-  - `github` — GitHub PR metadata via `gh` CLI
+  - `github` — PR URL parsing, `PRInfo`, slugs. Pure: no network and no
+    `gh` (worktree doesn't need gh). Creating a worktree from a PR reads it
+    with the watcher's GitHub token (`worktreenew/prfetch.go`, the library's
+    `FetchPRSummaries`), refused while the GitHub watcher is off.
   - `jira` — Jira REST API client
   - `linked` — assembles the detail pane's "Linked Resources" tab (PR
     description links, Jira Git PR field / description / hierarchy / issue

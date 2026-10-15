@@ -35,19 +35,22 @@ Setup will:
 - Create a SQLite database at `${XDG_DATA_HOME:-~/.local/share}/worktree/worktree.db` if needed
 - Add a shell hook (`chpwd`) that runs `eval "$(worktree env)"` on directory change (zsh, bash, or fish)
 - Install shell completions for `worktree` and `wt` (zsh, bash, fish)
-- Check that `gh` (GitHub CLI) is installed and authenticated
+- Ask whether each service's watcher (GitHub, Jira, Slack) should be on; a
+  service turned off is never contacted, and its credentials are skipped
 - Test and repair credentials for **GitHub, Slack, and Jira** — the shared watcher
   credential flow (`credsetup`) validates each service's credentials in
   `~/.config/watcher/auth.yaml` and, if a credential is missing or invalid, walks
   you through configuring and re-validating a new one. Each service is optional
-  (setup asks before configuring one that isn't set up yet).
+  (setup asks before configuring one that isn't set up yet). For the GitHub
+  token, if the GitHub CLI (`gh`) is installed and logged in, setup offers to
+  use its token (`gh auth token`) instead of having you paste one.
 - Optionally configure Jira project prefixes (used for issue-key detection),
   stored in `~/.config/worktree/config.yaml`
 
 On every run (not just the first), setup re-tests the existing GitHub, Slack, and
 Jira credentials and offers to replace any that fail — so an expired token is
 caught early. Credentials live in the shared `~/.config/watcher/auth.yaml`
-(GitHub via `gh`; Slack + Jira written here), not in worktree's own config.
+(all three written here), not in worktree's own config.
 
 Slack credential setup can extract your browser session token and cookie
 **automatically** — it drives a headed Chromium via Playwright to log in and pull
@@ -370,7 +373,9 @@ These env vars override config file values:
 **Required:** `git`
 
 **Optional:**
-- `gh` (GitHub CLI) — for PR metadata and workflows. Setup checks for this.
+- A GitHub token — for PR activity, linked resources and creating a worktree
+  from a PR URL. Setup configures this, and can take it from the GitHub CLI
+  (`gh auth token`) if you have it; `gh` itself is not needed.
 - Jira API token — for issue detection and enrichment. Setup configures this.
 - [cmux](https://cmux.com/) — for workspace integration with split layouts and browser tabs.
 

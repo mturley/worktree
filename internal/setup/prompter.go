@@ -49,8 +49,15 @@ func (Prompter) Confirm(msg string) bool {
 }
 
 // PromptToken prints the given instructions and asks for a single secret
-// token via ui.PromptSecret.
+// token via ui.PromptSecret. For GitHub, when the gh CLI is installed and
+// logged in, it first offers gh's own token (`gh auth token`); credsetup
+// validates whichever token comes back, exactly as for a pasted one.
 func (Prompter) PromptToken(service credsetup.Service, instructions string) string {
+	if service == credsetup.GitHub {
+		if tok, ok := ghCLIToken(); ok && confirmDefault("  Use your GitHub CLI token (from `gh auth token`)?", true) {
+			return tok
+		}
+	}
 	fmt.Printf("  %s\n", instructions)
 	return ui.PromptSecret(fmt.Sprintf("  New %s token", service))
 }

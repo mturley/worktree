@@ -34,12 +34,13 @@ import (
 	"github.com/mturley/worktree/internal/resourceurl"
 )
 
-// The two calls on the PR path that reach the network — `gh pr view` and the
+// The two calls on the PR path that reach the network — the GitHub GraphQL PR
+// read (with the watcher token; see prfetch.go) and the
 // `git fetch` inside CreatePRWorktree. They are vars so tests can exercise the
 // confirmation state machine without a network or a GitHub account;
 // production never reassigns them.
 var (
-	fetchPRInfo      = github.FetchPRByRepo
+	fetchPRInfo      = fetchPRWithToken
 	createPRWorktree = gitutil.CreatePRWorktree
 	setPRTracking    = gitutil.SetPRTracking
 )
@@ -225,7 +226,7 @@ func Run(conn *sql.DB, cfg config.Config, opts Options, observe func(Step)) Resu
 	var primary *resources.Resource
 	var prTitle, prBody string
 
-	// Creation reaches the network on the PR path (the `gh` fetch and the
+	// Creation reaches the network on the PR path (the GitHub PR read and the
 	// `git fetch` inside CreatePRWorktree), so it announces itself first too.
 	r.record(StepCreateWorktree, StatusPending, "")
 
@@ -316,7 +317,7 @@ type prOutcome struct {
 
 	// Title and Body are the pull request's, carried through so the resources
 	// step can detect Jira keys mentioned in them. runPR already fetched the
-	// PR, so threading them here avoids a second `gh` call.
+	// PR, so threading them here avoids a second GitHub call.
 	Title string
 	Body  string
 }
@@ -326,6 +327,9 @@ type prOutcome struct {
 // the matching Options flag set, and the sequence reaches the same point with
 // the answer already in hand.
 func (r *runner) runPR(pr *PRInput) (prOutcome, error) {
+	if err := checkGitHubWatcher(r.cfg); err != nil {
+		return prOutcome{}, err
+	}
 	info, err := fetchPRInfo(pr.Owner, pr.Repo, pr.Number)
 	if err != nil {
 		return prOutcome{}, err
