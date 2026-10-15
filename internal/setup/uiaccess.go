@@ -142,7 +142,7 @@ func configureRemoteAccess(cfg *config.Config, d uiAccessDeps) (bool, error) {
 		d.io.Printf("  Certificate expires %s\n", cert.NotAfter.Format("2006-01-02"))
 	}
 
-	if !d.io.ConfirmDefault("  Change remote access addresses?", false) {
+	if d.io.ConfirmDefault("  Keep these remote access addresses?", true) {
 		return false, nil
 	}
 	hosts := chooseRemoteHosts(d, httpsPort)

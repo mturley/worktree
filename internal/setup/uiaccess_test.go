@@ -262,7 +262,7 @@ func configured(t *testing.T, d uiAccessDeps) config.Config {
 }
 
 func TestConfiguredDecliningChangeTouchesNothing(t *testing.T) {
-	io := &scriptedIO{t: t, confirms: []bool{false}}
+	io := &scriptedIO{t: t, confirms: []bool{true}}
 	d := testDeps(t, io, "mturley-mac.local")
 	cfg := configured(t, d)
 	before, _ := os.ReadFile(d.paths.Cert)
@@ -288,7 +288,7 @@ func TestConfiguredDecliningChangeTouchesNothing(t *testing.T) {
 }
 
 func TestConfiguredAcceptingChangeReissues(t *testing.T) {
-	io := &scriptedIO{t: t, confirms: []bool{true, false}, lines: []string{"192.168.1.50"}}
+	io := &scriptedIO{t: t, confirms: []bool{false, false}, lines: []string{"192.168.1.50"}}
 	d := testDeps(t, io, "mturley-mac.local")
 	cfg := configured(t, d)
 	before, _ := os.ReadFile(d.paths.CA)
@@ -311,7 +311,7 @@ func TestConfiguredAcceptingChangeReissues(t *testing.T) {
 }
 
 func TestConfiguredEmptyAnswerKeepsExistingAddresses(t *testing.T) {
-	io := &scriptedIO{t: t, confirms: []bool{true, false}, lines: []string{""}}
+	io := &scriptedIO{t: t, confirms: []bool{false, false}, lines: []string{""}}
 	d := testDeps(t, io, "mturley-mac.local")
 	cfg := configured(t, d)
 	changed, err := configureRemoteAccess(&cfg, d)
@@ -383,7 +383,7 @@ func TestConfiguredOffersRenewalNearExpiry(t *testing.T) {
 	if !renewed.NotAfter.After(old.NotAfter) {
 		t.Fatalf("NotAfter %v not later than %v", renewed.NotAfter, old.NotAfter)
 	}
-	if !io.asked("Renew") || io.asked("Change remote access") {
+	if !io.asked("Renew") || io.asked("Keep these remote access") {
 		t.Fatalf("prompts = %v, want renewal and no change prompt", io.prompts)
 	}
 }

@@ -28,6 +28,15 @@ func WatcherOffMessage(svc string) string {
 	return fmt.Sprintf("Existing %s resources will still appear, but worktree will not connect to %s. %s", name, name, detail)
 }
 
+// watcherPrompt states svc's current watcher state and asks whether it
+// should be on, so the question reads right whichever state it is in.
+func watcherPrompt(svc string, enabled bool) string {
+	if enabled {
+		return fmt.Sprintf("  The %s watcher is enabled. Keep it enabled?", serviceNames[svc])
+	}
+	return fmt.Sprintf("  The %s watcher is disabled. Enable it?", serviceNames[svc])
+}
+
 // configureWatchers asks whether each service's watcher should be on. The
 // default is the current state — on, unless it was turned off — so --yes
 // (how `make install` runs setup) never re-enables one the user disabled.
@@ -40,7 +49,7 @@ func configureWatchers(configPath string, cfg config.Config) (map[string]bool, e
 	changed := false
 	for _, svc := range config.Services {
 		cur := cfg.Watchers.Enabled(svc)
-		on := confirmDefault(fmt.Sprintf("  Enable the %s watcher?", serviceNames[svc]), cur)
+		on := confirmDefault(watcherPrompt(svc, cur), cur)
 		if !on {
 			fmt.Printf("    %s\n", ui.Dim(WatcherOffMessage(svc)))
 		}
