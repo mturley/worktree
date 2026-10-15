@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import type { CredResult } from "../../api/types"
@@ -19,20 +19,34 @@ describe("SecretField", () => {
     expect(onTest).toHaveBeenCalledOnce()
   })
 
-  it("a passing test flashes ✓ Valid on the button, then reverts to Test", () => {
+  it("a passing Test click pops a ✓ Valid tooltip; the automatic test doesn't", () => {
     vi.useFakeTimers()
     try {
       const field = (test: React.ComponentProps<typeof SecretField>["test"]) => (
         <MantineProvider><SecretField label="Token" description="d" isSet onReplace={vi.fn()} onTest={vi.fn()} test={test} /></MantineProvider>
       )
+      const ok = (at: number) => field({ status: "done", at, result: { ok: true, kind: "ok", detail: "" } })
+      const tip = () => screen.queryByRole("tooltip", { name: "✓ Valid" })
+      // The tab-open test: nobody clicked, so no tooltip.
       const { rerender } = render(field({ status: "testing" }))
-      rerender(field({ status: "done", at: 1, result: { ok: true, kind: "ok", detail: "" } }))
-      expect(screen.getByRole("button", { name: "✓ Valid" })).toBeInTheDocument()
+      rerender(ok(1))
+      act(() => { vi.advanceTimersByTime(500) })
+      expect(tip()).not.toBeInTheDocument()
+      // A clicked pass pops it, and it goes away; the button keeps saying Test.
+      fireEvent.click(screen.getByRole("button", { name: "Test" }))
+      rerender(field({ status: "testing" }))
+      rerender(ok(2))
+      act(() => { vi.advanceTimersByTime(500) })
+      expect(tip()).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "Test" })).toBeInTheDocument()
       act(() => { vi.advanceTimersByTime(VALID_FLASH_MS) })
-      expect(screen.getByRole("button", { name: "Test" })).toBeInTheDocument()
-      // A failed test never flashes.
-      rerender(field({ status: "done", at: 2, result: { ok: false, kind: "auth", detail: "no" } }))
-      expect(screen.getByRole("button", { name: "Test" })).toBeInTheDocument()
+      act(() => { vi.advanceTimersByTime(500) }) // the close transition
+      expect(tip()).not.toBeInTheDocument()
+      // A clicked failure pops nothing.
+      fireEvent.click(screen.getByRole("button", { name: "Test" }))
+      rerender(field({ status: "done", at: 3, result: { ok: false, kind: "auth", detail: "no" } }))
+      act(() => { vi.advanceTimersByTime(500) })
+      expect(tip()).not.toBeInTheDocument()
     } finally {
       vi.useRealTimers()
     }

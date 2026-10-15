@@ -49,16 +49,21 @@ export function SecretField({ label, description, isSet, pending = false, onReve
 
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // A passing test shows "✓ Valid" on the button for a few seconds. Keyed on
-  // the result's timestamp, so each new pass restarts the flash.
-  const validAt = test?.status === "done" && test.result.ok ? test.at : null
+  // A pass from a Test click pops a "✓ Valid" tooltip for a few seconds; the
+  // automatic test when the tab opens doesn't. Keyed on the result's
+  // timestamp, so each finished test is seen once.
+  const clickedTest = useRef(false)
+  const doneAt = test?.status === "done" ? test.at : null
+  const passed = test?.status === "done" && test.result.ok
   const [flashValid, setFlashValid] = useState(false)
   useEffect(() => {
-    if (validAt === null) { setFlashValid(false); return }
+    if (doneAt === null || !clickedTest.current) return
+    clickedTest.current = false
+    if (!passed) return
     setFlashValid(true)
     const t = setTimeout(() => setFlashValid(false), VALID_FLASH_MS)
     return () => clearTimeout(t)
-  }, [validAt])
+  }, [doneAt, passed])
 
   const cancel = () => {
     inputRef.current?.blur()
@@ -104,16 +109,17 @@ export function SecretField({ label, description, isSet, pending = false, onReve
     )
   ) : (
     onTest && (
-      <Button
-        size="sm"
-        variant={flashValid ? "light" : "default"}
-        color={flashValid ? "green" : undefined}
-        miw={88}
-        disabled={!canTest || test?.status === "testing"}
-        onClick={onTest}
-      >
-        {flashValid ? "✓ Valid" : "Test"}
-      </Button>
+      <Tooltip label="✓ Valid" color="green" opened={flashValid} withArrow>
+        <Button
+          size="sm"
+          variant="default"
+          miw={88}
+          disabled={!canTest || test?.status === "testing"}
+          onClick={() => { clickedTest.current = true; setFlashValid(false); onTest() }}
+        >
+          Test
+        </Button>
+      </Tooltip>
     )
   )
   return (
