@@ -88,9 +88,9 @@ export function WorktreeDetailCard({ w, tab, onTabChange }: {
   return (
     <Paper p="sm" withBorder>
       <Tabs value={tab} onChange={selectTab} keepMounted={false}>
-        {/* The worktree and cmux workspace names, the Hide details toggle and
-            the delete control all live in the page header. Sized to its tabs,
-            so the underline stops after the last tab. */}
+        {/* The worktree and cmux workspace names and the delete control live
+            in the page header. Sized to its tabs, so the underline stops
+            after the last tab. */}
         <Tabs.List w="fit-content">
           <Tabs.Tab value="notes" fz="xs" py={6}>Notes</Tabs.Tab>
           <Tabs.Tab value="env" fz="xs" py={6}>Git / Environment</Tabs.Tab>

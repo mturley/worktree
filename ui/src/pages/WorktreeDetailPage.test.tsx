@@ -112,7 +112,7 @@ describe("WorktreeDetailPage header", () => {
   it("moves the header toolbar to its own row when narrow", async () => {
     setViewport("narrow")
     wrap()
-    await screen.findByRole("button", { name: "Hide details" })
+    await screen.findByRole("button", { name: "Delete worktree" })
     const toolbar = document.querySelector("[data-detail-toolbar]")
     expect(toolbar).toBeInTheDocument()
     // Beside the titles it squeezed them to a few letters per line.
@@ -131,58 +131,21 @@ describe("WorktreeDetailPage header", () => {
   })
 
   it("shows the summary card by default", async () => {
-    // A first visit that hid it would look broken — the card IS the page's
-    // identity. Note toBeVisible, not toBeInTheDocument: Mantine's Collapse
-    // keeps its children mounted, so presence proves nothing about state.
     setViewport("wide")
     wrap()
-    await waitFor(() => expect(screen.getByRole("button", { name: "Hide details" })).toBeInTheDocument())
+    await screen.findByRole("button", { name: "Delete worktree" })
     expect(screen.getByRole("tab", { name: "Notes" })).toBeVisible()
   })
 
-  it("hides the summary card on demand, freeing the space for the resources", async () => {
-    setViewport("wide")
-    wrap()
-    const hide = await screen.findByRole("button", { name: "Hide details" })
-    // The same header toggle, in the spot Show details takes when hidden.
-    expect(hide.closest("[data-detail-header]")).toBeInTheDocument()
-    await userEvent.click(hide)
-    expect(screen.getByRole("tab", { name: "Notes", hidden: true })).not.toBeVisible()
-    // The toggle names the state it will move to, so it reads as an action.
-    const show = screen.getByRole("button", { name: "Show details" })
-    // It sits beside the titles, not out in the toolbar.
-    expect(show.closest("[data-detail-header]")).toBeInTheDocument()
-    expect(show.closest("[data-detail-toolbar]")).toBeNull()
-  })
 
-  it("brings it back on a second click", async () => {
-    setViewport("wide")
-    wrap()
-    await userEvent.click(await screen.findByRole("button", { name: "Hide details" }))
-    await userEvent.click(screen.getByRole("button", { name: "Show details" }))
-    expect(screen.getByRole("tab", { name: "Notes" })).toBeVisible()
-  })
 
-  it("moves the details toggle onto the toolbar row when narrow, left of the actions", async () => {
-    setViewport("narrow")
-    wrap()
-    const hide = await screen.findByRole("button", { name: "Hide details" })
-    const toolbar = hide.closest("[data-detail-toolbar]")
-    expect(toolbar).toBeInTheDocument()
-    const del = screen.getByRole("button", { name: "Delete worktree" })
-    expect(toolbar).toContainElement(del)
-    expect(hide.compareDocumentPosition(del) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-  })
 
   it("puts the delete control in the header toolbar, after the cmux actions", async () => {
     setViewport("wide")
     wrap()
-    await screen.findByRole("button", { name: "Hide details" })
+    await screen.findByRole("button", { name: "Delete worktree" })
     const del = screen.getByRole("button", { name: "Delete worktree" })
     expect(del.closest("[data-detail-toolbar]")).toBeInTheDocument()
-    // Still there with the details hidden: it is not part of the card.
-    await userEvent.click(screen.getByRole("button", { name: "Hide details" }))
-    expect(del).toBeVisible()
   })
 })
 
@@ -567,7 +530,7 @@ describe("WorktreeDetailPage scroll model", () => {
     // is the one that must stay clean all the way up.
     setViewport("wide")
     wrap()
-    await waitFor(() => expect(screen.getByRole("button", { name: "Hide details" })).toBeInTheDocument())
+    await screen.findByRole("button", { name: "Delete worktree" })
 
     const grid = document.querySelector<HTMLElement>(".mantine-Grid-root")
     expect(grid, "expected the layout Grid").toBeTruthy()
@@ -582,7 +545,7 @@ describe("WorktreeDetailPage scroll model", () => {
   it("still renders a sticky header", async () => {
     setViewport("wide")
     wrap()
-    await waitFor(() => expect(screen.getByRole("button", { name: "Hide details" })).toBeInTheDocument())
+    await screen.findByRole("button", { name: "Delete worktree" })
     const header = [...document.querySelectorAll<HTMLElement>("div")]
       .find((el) => el.style.position === "sticky")
     expect(header, "expected a sticky header").toBeTruthy()
@@ -592,7 +555,7 @@ describe("WorktreeDetailPage scroll model", () => {
     // `height: 100dvh` on the shell is what made the page own its scrolling.
     setViewport("wide")
     wrap()
-    await waitFor(() => expect(screen.getByRole("button", { name: "Hide details" })).toBeInTheDocument())
+    await screen.findByRole("button", { name: "Delete worktree" })
     const heights = [...document.querySelectorAll<HTMLElement>("div")]
       .map((el) => el.style.height)
       .filter((h) => h.includes("dvh") || h.includes("vh"))

@@ -186,11 +186,10 @@ describe("layout", () => {
     expect(rowValue("Upstream")).toBe("origin/my-branch")
   })
 
-  it("leaves the details toggle and delete control to the page header", async () => {
+  it("leaves the delete control to the page header", async () => {
     worktreeInfo.mockResolvedValue(info())
     wrap(summary())
     await screen.findByRole("tablist")
-    expect(screen.queryByRole("button", { name: "Hide details" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Delete worktree" })).not.toBeInTheDocument()
   })
 

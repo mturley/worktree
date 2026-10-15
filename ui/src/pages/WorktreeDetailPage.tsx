@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
-import { Anchor, Badge, Box, Button, Collapse, Grid, Group, MantineThemeProvider, Stack, Tabs, Title } from "@mantine/core"
+import { Anchor, Badge, Box, Grid, Group, MantineThemeProvider, Stack, Tabs, Title } from "@mantine/core"
 import { Link, useRoute } from "wouter"
 import { useQueryClient } from "@tanstack/react-query"
 import { api } from "../api/client"
@@ -142,10 +142,6 @@ export function WorktreeDetailPage() {
   // URL the user asked to follow from the Linked Resources tab; non-null
   // while the pre-filled add modal is open.
   const [pendingFollowUrl, setPendingFollowUrl] = useState<string | null>(null)
-  // Open by default: the card is the page's identity, and a first visit that
-  // hides it would look broken. Per page visit, not persisted — see the
-  // toggle's comment.
-  const [detailsOpen, setDetailsOpen] = useState(true)
   // The card's tab also decides where it sits, wide: Notes in the resource
   // column above Follow resource, so the activity column gets the page's
   // height; Git / Environment and cmux, which want the width, under the
@@ -157,8 +153,9 @@ export function WorktreeDetailPage() {
 
   // The sticky resource list has to start below the header, and the header's
   // height is not a constant: the worktree and cmux workspace names wrap, and
-  // the Hide/Show details toggle swings it by the whole summary card. A hardcoded offset would leave the list overlapping the
-  // header or floating below it, so measure the real thing.
+  // the details card's tabs differ in height. A hardcoded offset would leave
+  // the list overlapping the header or floating below it, so measure the real
+  // thing.
   const headerRef = useRef<HTMLDivElement>(null)
   const [headerHeight, setHeaderHeight] = useState(0)
   useEffect(() => {
@@ -201,17 +198,14 @@ export function WorktreeDetailPage() {
   }
 
   // Keyed by path: the card holds an unsaved notes draft, which must never
-  // carry over to another worktree. The Hide/Show details toggle applies in
-  // both placements.
+  // carry over to another worktree.
   const card = summary && (
-    <Collapse in={detailsOpen}>
-      <WorktreeDetailCard
-        key={summary.path}
-        w={summary}
-        tab={detailTab.tab}
-        onTabChange={detailTab.select}
-      />
-    </Collapse>
+    <WorktreeDetailCard
+      key={summary.path}
+      w={summary}
+      tab={detailTab.tab}
+      onTabChange={detailTab.select}
+    />
   )
 
   const list = (
@@ -449,22 +443,6 @@ export function WorktreeDetailPage() {
     if (detailTab.tab !== "notes") detailTab.select("notes")
   }
 
-  // The header is fixed and the body scrolls beneath it, so the summary card
-  // costs the resource list and timeline the same space on every scroll
-  // position. Hiding it is the cheapest way to get that space back on a short
-  // screen. One toggle, named for the state it moves to.
-  const detailsToggle = summary && (
-    <Button
-      size="compact-sm"
-      variant="subtle"
-      onClick={() => setDetailsOpen((o) => !o)}
-      aria-expanded={detailsOpen}
-      style={{ flex: "none" }}
-    >
-      {detailsOpen ? "Hide details" : "Show details"}
-    </Button>
-  )
-
   const actions = (
     <>
       <FollowCmuxToggle />
@@ -473,21 +451,16 @@ export function WorktreeDetailPage() {
     </>
   )
 
-  // Wide, the toolbar sits beside the titles and must not shrink, and the
-  // details toggle stays by the name. Narrow, the toolbar gets a row of its
-  // own (kept beside the titles, it left them a sliver of width that wrapped
-  // them a few letters per line) and takes the toggle with it, split the same
-  // way as the row above: the toggle left, the actions right.
+  // Wide, the toolbar sits beside the titles and must not shrink. Narrow, it
+  // gets a row of its own, right-aligned (kept beside the titles, it left
+  // them a sliver of width that wrapped them a few letters per line).
   const toolbar = wide ? (
     <Group gap="xs" wrap="nowrap" style={{ flex: "none" }} data-detail-toolbar>
       {actions}
     </Group>
   ) : (
-    <Group gap="xs" wrap="wrap" justify="space-between" data-detail-toolbar>
-      {detailsToggle}
-      <Group gap="xs" wrap="wrap" ml="auto">
-        {actions}
-      </Group>
+    <Group gap="xs" wrap="wrap" justify="flex-end" data-detail-toolbar>
+      {actions}
     </Group>
   )
 
@@ -585,7 +558,6 @@ export function WorktreeDetailPage() {
                   {summary && !summary.on_disk && <Badge size="xs" color="red">missing</Badge>}
                 </Group>
               </Stack>
-              {wide && detailsToggle}
             </Group>
             {wide && toolbar}
           </Group>
