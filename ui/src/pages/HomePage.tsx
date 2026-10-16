@@ -50,7 +50,9 @@ export function HomePage() {
   // Wide only: which of Activity and Resources fills the right column.
   const [rightTab, setRightTab] = useState<RightTab>("timeline")
   const search = useSearchQuery()
-  const resourcesView = useResourcesView(unreadOnly, search.terms)
+  // The one spelling of the query every empty state quotes.
+  const queryText = search.q.trim()
+  const resourcesView = useResourcesView(unreadOnly, search.terms, queryText)
   // The same cached query the Resources tab uses.
   const allResources = useAllResources()
   // An archived event has no worktree to route to; picking one in the search
@@ -58,11 +60,15 @@ export function HomePage() {
   const [pickedEvent, setPickedEvent] = useState<TimelineEvent | null>(null)
   // Wide: the header sits above the columns, which shrink by its height.
   const { ref: headerRef, height: headerH } = useElementSize()
-  // Each column is its own scroller: the viewport's height less the page's
-  // md padding, the header above and the grid's sm top padding, so the page
-  // itself does not scroll (unless a banner above it adds its own height).
+  // Each column is its own scroller. The page is the header (measured as its
+  // border box, so its own md top padding is already in headerH) plus the
+  // Grid: its sm top and md bottom padding, around a row whose -md/2
+  // margins cancel the columns' md/2 padding, leaving the row exactly a
+  // column's height H. Page = headerH + sm + H - md + md = 100dvh, so
+  // H = 100dvh - headerH - sm, and the page itself does not scroll (unless a
+  // banner above it adds its own height).
   const columnStyle = {
-    height: `calc(100dvh - var(--mantine-spacing-md) - ${headerH}px - var(--mantine-spacing-sm))`,
+    height: `calc(100dvh - ${headerH}px - var(--mantine-spacing-sm))`,
     overflowY: "auto",
   } as const
   const wide = useIsWide()
@@ -166,7 +172,7 @@ export function HomePage() {
         sortedWorktrees.length === 0
           ? undefined
           : search.terms.length > 0
-            ? `Nothing matches "${search.q.trim()}"`
+            ? `Nothing matches "${queryText}"`
             : sources.length > 0
             ? `No worktrees${unreadOnly ? " with unread events" : ""} following that source`
             : unreadOnly
@@ -234,7 +240,7 @@ export function HomePage() {
         loading={tl.isLoading}
         error={tl.error}
         showWorktrees
-        emptyText={search.debouncedQ ? `Nothing matches "${search.debouncedQ}"` : unreadOnly ? "No unread events." : undefined}
+        emptyText={search.terms.length > 0 ? `Nothing matches "${queryText}"` : unreadOnly ? "No unread events." : undefined}
         hasMore={tl.hasMore}
         onLoadMore={tl.loadMore}
         loadingMore={tl.loadingMore}
@@ -292,11 +298,7 @@ export function HomePage() {
             <Tabs.Panel value="resources" pt="md">
               <ResourcesPanel
                 view={resourcesView}
-                top={
-                  <Group justify="space-between" gap="xs" wrap="wrap">
-                    <ResourcesTabControls view={resourcesView} />
-                  </Group>
-                }
+                top={<ResourcesTabControls view={resourcesView} />}
               />
             </Tabs.Panel>
           </Tabs>

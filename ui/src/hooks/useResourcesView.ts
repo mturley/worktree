@@ -10,7 +10,7 @@ import { matchResource } from "../lib/search"
  * rather than the panel: the sort control and count sit in the page's tab
  * bar when wide, apart from the list they drive.
  */
-export function useResourcesView(unreadOnly: boolean, terms: string[] = []) {
+export function useResourcesView(unreadOnly: boolean, terms: string[] = [], queryText = "") {
   const query = useAllResources()
   const [mode, setMode] = useState<ResourceSortMode>("updated")
   const [dir, setDir] = useState<SortDir>("desc")
@@ -21,7 +21,7 @@ export function useResourcesView(unreadOnly: boolean, terms: string[] = []) {
     [all, filter, unreadOnly, terms, mode, dir],
   )
   return {
-    query, all, shown, mode, setMode, dir, setDir, filter, setFilter, unreadOnly, terms,
+    query, all, shown, mode, setMode, dir, setDir, filter, setFilter, unreadOnly, terms, queryText,
     /** Whether anything narrows the list, so the count says "N of M". */
     filtered: filter.type !== null || unreadOnly || terms.length > 0,
   }
