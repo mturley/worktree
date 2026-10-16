@@ -460,6 +460,7 @@ describe("the resource line matches the resource cards", () => {
     const { rerender } = renderWithProvider(<EventRow e={e} showWorktrees />)
     expect(screen.getByText("Archived")).toBeInTheDocument()
     expect(screen.getByText("Add feature X").style.color).toContain("dimmed")
+    expect(screen.getByLabelText("PR Opened").style.background).toContain("color-mix")
     rerender(<MantineProvider><EventRow e={e} /></MantineProvider>)
     expect(screen.queryByText("Archived")).toBeNull()
     rerender(<MantineProvider><EventRow e={{ ...e, worktrees: ["b"], worktree_paths: ["/wt/b"] }} showWorktrees /></MantineProvider>)

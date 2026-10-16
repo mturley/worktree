@@ -10,9 +10,15 @@ import { eventLabel, eventMeta } from "../lib/eventMeta"
  * to miss entirely — which is why the first version of this appeared not to
  * work at all. Tooltip also matches the rest of the app's hover affordances.
  */
-export function EventDot({ type, size = 22, label: labelOverride }: {
+export function EventDot({ type, size = 22, label: labelOverride, dimmed = false }: {
   type: string
   size?: number
+  /**
+   * Steps the dot back alongside a dimmed title (an archived event). The
+   * colour is mixed toward the page background rather than faded with
+   * opacity, which would let the timeline rail show through the circle.
+   */
+  dimmed?: boolean
   /**
    * Overrides the label. The row passes the event's own type_label ("PR
    * comments"), which is more specific than the mapping's generic name
@@ -35,7 +41,7 @@ export function EventDot({ type, size = 22, label: labelOverride }: {
           width: size,
           height: size,
           borderRadius: "50%",
-          background: cssColor,
+          background: dimmed ? `color-mix(in srgb, ${cssColor} 40%, var(--mantine-color-body))` : cssColor,
           display: "inline-flex",
           alignItems: "center",
           justifyContent: "center",

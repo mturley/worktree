@@ -108,7 +108,7 @@ export function EventRow({
         background: e.unread ? UNREAD_BG : "transparent",
       }}
     >
-      <EventDot type={e.type} label={label} />
+      <EventDot type={e.type} label={label} dimmed={archived} />
       <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
         <Stack gap={2}>
           <Group gap="xs" wrap="wrap" style={{ minWidth: 0 }}>

@@ -30,4 +30,12 @@ describe("EventDot", () => {
     render(<MantineProvider><EventDot type="ci_check_failed" /></MantineProvider>)
     expect(screen.getByLabelText("CI failed")).toBeInTheDocument()
   })
+
+  it("mixes its colour toward the background when dimmed", () => {
+    render(<MantineProvider><EventDot type="pr_merged" dimmed /></MantineProvider>)
+    const dot = screen.getByLabelText("Merged")
+    const bg = dot.style.background || dot.style.backgroundColor
+    expect(bg).toContain("color-mix")
+    expect(bg).toContain(eventMeta("pr_merged").cssColor)
+  })
 })
