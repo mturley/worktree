@@ -45,6 +45,8 @@ export interface WorktreeSummary {
   notify_all?: boolean;
   /** The worktree's notes (Markdown), present only when non-blank and shown on the home page. */
   notes?: string;
+  /** The notes as the search index sees them; absent when there are none. */
+  notes_search?: string;
 }
 export interface TimelineEvent {
   id: string; ts: string; external_ts: string; source: string;
@@ -104,6 +106,8 @@ export interface ResourceDTO {
   /** URL of the icon Jira serves for this issue type; fetch via jiraIconProxy(). */
   issue_type_icon_url?: string
   assignee?: string
+  /** jira: the issue's reporter. Absent when unset or never polled. */
+  reporter?: string
   labels?: string[]
   updated_at?: string
   /** PR/Jira creation time (RFC3339); a Slack thread has created_ts instead. */

@@ -1,0 +1,104 @@
+import { describe, it, expect } from "vitest"
+import type { ResourceDTO, WorktreeSummary } from "../api/types"
+import {
+  parseQuery, snippet, matchResource, matchWorktree, rankResource, rankText, splitHighlight, VISIBLE_FIELDS,
+} from "./search"
+
+const jira: ResourceDTO = {
+  type: "jira", id: "RHOAIENG-41210", url: "u", primary: true,
+  title: "Migrate OAuth proxy", assignee: "Mike Turley", reporter: "Karel Suta", status: "In Review",
+  labels: ["dashboard"],
+}
+const pr: ResourceDTO = { type: "pr", id: "opendatahub-io/odh-dashboard#5123", url: "u", primary: true, title: "fix: expired token", author: "andrew" }
+const wt: WorktreeSummary = {
+  path: "/wt/odh-oauth-fix", repo: "odh-dashboard", branch: "oauth-proxy-fix",
+  on_disk: true, resource_count: 0, primary_count: 0, latest_event_ts: "", primary_by_type: {}, related_count: 0,
+  focus_resources: [], notes_search: "switch to the sidecar once kube-rbac lands",
+}
+
+describe("parseQuery", () => {
+  it("lowercases, splits, dedupes, ignores blank", () => {
+    expect(parseQuery("  OAuth  proxy oauth ")).toEqual(["oauth", "proxy"])
+    expect(parseQuery("   ")).toEqual([])
+  })
+})
+
+describe("snippet", () => {
+  it("matches the Go rule", () => {
+    const long = "alpha ".repeat(10) + "the OAuth   cookie\nis cleared " + "omega ".repeat(10)
+    const s = snippet(long, "oauth")
+    expect(s.startsWith("…") && s.endsWith("…")).toBe(true)
+    expect(s).toContain("the OAuth cookie is cleared")
+    expect(snippet("short oauth text", "oauth")).toBe("short oauth text")
+    expect(snippet("nothing", "oauth")).toBe("")
+  })
+})
+
+describe("matchResource", () => {
+  it("returns null unless every term matches some field", () => {
+    expect(matchResource(jira, ["oauth", "turley"])).not.toBeNull()
+    expect(matchResource(jira, ["oauth", "nope"])).toBeNull()
+  })
+  it("reports the highest-priority field", () => {
+    expect(matchResource(jira, ["41210"])?.field).toBe("key")
+    expect(matchResource(jira, ["oauth"])?.field).toBe("title")
+    expect(matchResource(jira, ["turley"])).toEqual({ field: "assignee", snippet: "Mike Turley" })
+    expect(matchResource(jira, ["suta"])?.field).toBe("reporter")
+    expect(matchResource(jira, ["review"])?.field).toBe("status")
+    expect(matchResource(jira, ["dashboard"])?.field).toBe("labels")
+    expect(matchResource(pr, ["andrew"])?.field).toBe("author")
+  })
+  it("matches the short PR ref", () => {
+    expect(matchResource(pr, ["#5123"])?.field).toBe("key")
+  })
+  it("prefers a custom name and snippets a custom description", () => {
+    const named = { ...pr, custom_name: "Token work", custom_description: "a long note about refresh handling" }
+    expect(matchResource(named, ["token"])?.field).toBe("name")
+    expect(matchResource(named, ["refresh"])).toEqual({ field: "description", snippet: "a long note about refresh handling" })
+  })
+  it("is null for no terms", () => {
+    expect(matchResource(jira, [])).toBeNull()
+  })
+})
+
+describe("matchWorktree", () => {
+  it("matches its own fields in priority order", () => {
+    expect(matchWorktree(wt, [], [], ["oauth"])?.field).toBe("branch")
+    expect(matchWorktree(wt, ["Dashboard auth"], [], ["auth"])?.field).toBe("branch")
+    expect(matchWorktree(wt, ["Kumquat work"], [], ["kumquat"])).toEqual({ field: "workspace", snippet: "Kumquat work" })
+    expect(matchWorktree(wt, [], [], ["sidecar"])).toEqual({ field: "notes", snippet: "switch to the sidecar once kube-rbac lands" })
+  })
+  it("matches via a resource, naming it", () => {
+    expect(matchWorktree(wt, [], [jira], ["turley"])).toEqual({
+      field: "resource", snippet: "Migrate OAuth proxy", viaKey: "RHOAIENG-41210",
+    })
+  })
+  it("ANDs terms across own fields and resources", () => {
+    expect(matchWorktree(wt, [], [jira], ["sidecar", "turley"])).not.toBeNull()
+    expect(matchWorktree(wt, [], [jira], ["sidecar", "nope"])).toBeNull()
+  })
+})
+
+describe("ranking", () => {
+  it("exact key beats title prefix beats title contains beats other", () => {
+    expect(rankResource(jira, ["rhoaieng-41210"])).toBe(0)
+    expect(rankResource(jira, ["migrate"])).toBe(1)
+    expect(rankResource(jira, ["oauth"])).toBe(2)
+    expect(rankResource(jira, ["turley"])).toBe(3)
+    expect(rankText("oauth-proxy-fix", ["oauth"])).toBe(1)
+  })
+})
+
+describe("splitHighlight", () => {
+  it("marks every case-insensitive occurrence of any term", () => {
+    expect(splitHighlight("Fix OAuth and oauth", ["oauth"])).toEqual([
+      { text: "Fix ", hit: false }, { text: "OAuth", hit: true }, { text: " and ", hit: false }, { text: "oauth", hit: true },
+    ])
+    expect(splitHighlight("plain", [])).toEqual([{ text: "plain", hit: false }])
+  })
+})
+
+it("title, name, key, branch and repo matches need no why line", () => {
+  expect(["title", "name", "key", "branch", "repo"].every((f) => VISIBLE_FIELDS.has(f))).toBe(true)
+  expect(VISIBLE_FIELDS.has("notes")).toBe(false)
+})
