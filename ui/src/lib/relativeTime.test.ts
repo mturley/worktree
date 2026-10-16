@@ -6,6 +6,11 @@ describe("relativeTime", () => {
     const tenSecAgo = new Date(Date.now() - 10_000).toISOString()
     expect(relativeTime(tenSecAgo)).toMatch(/^\d+s ago$/)
   })
+
+  it("formats a Slack epoch-seconds ts", () => {
+    const twentyMinAgo = ((Date.now() - 20 * 60_000) / 1000).toFixed(6)
+    expect(relativeTime(twentyMinAgo)).toBe("20m ago")
+  })
 })
 
 function tsAt(date: Date): string {

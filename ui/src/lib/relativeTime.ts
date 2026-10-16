@@ -1,5 +1,8 @@
+// Accepts an ISO string or a Slack `ts` (epoch seconds, e.g.
+// "1792087175.861559") — event rows pass `external_ts || ts`, and a Slack
+// event's external_ts is the message's Slack ts.
 export function relativeTime(ts: string): string {
-  const d = new Date(ts).getTime()
+  const d = /^\d+(\.\d+)?$/.test(ts) ? parseFloat(ts) * 1000 : new Date(ts).getTime()
   if (!d) return ts
   const s = Math.floor((Date.now() - d) / 1000)
   if (s < 60) return `${s}s ago`
