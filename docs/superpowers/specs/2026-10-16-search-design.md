@@ -88,6 +88,9 @@ Navigation matches the rest of the UI:
 On the worktree page the dropdown only offers that worktree's resources and
 events (no Worktrees group).
 
+The Activity group is the first 3 events of the page's own (already
+search-filtered) feed — no extra request.
+
 The dropdown is a single component (`SearchSuggestions`) mounted by
 `SearchBar`; it is an experiment and must be removable by deleting that
 component and its mount.
@@ -106,8 +109,13 @@ current order (events: newest first).
 
 | Item | Fields (priority order for the "why" line) |
 |---|---|
-| Worktree | branch, repo, path, cmux workspace name(s), cmux workspace description(s), notes, **then any of its resources' fields** (shown as `via <key>`) |
+| Worktree | branch, repo, path, cmux workspace name(s), notes, **then any of its resources' fields** (shown as `via <key>`) |
 | Resource | key/ID (PR `owner/repo#N`, `#N`; Jira key; link URL; Slack channel), title, custom name, custom description, assignee, author, reporter, status, labels, link description |
+
+Notes on fields: the cmux response carries only workspace titles, not
+descriptions; with "sync to cmux" on the description mirrors the notes,
+which are searched anyway. `reporter` (a name) is in the cached Jira state
+but not on `resourceDTO` today; it is added as `reporter` (omitempty).
 | Event | title, body, author, then its resource's ID, custom name, cached title (shown as `via <key>`) |
 
 Worktrees do **not** match through their events (one comment would pull in
@@ -184,11 +192,19 @@ notes it already loads.
   existing unread/source filters; Resources tab applies `matchResource`
   inside `lib/resourceListFilter.ts`'s pipeline. Worktree page: the
   resource list applies `matchResource`.
-- `WorktreeCard`, `EventRow`, `AllResourceRow`, the worktree page's
-  resource cards: accept an optional match and render `Highlight` /
-  `MatchWhy`. No match prop → unchanged rendering.
+- Highlighting reads the active terms from a `SearchContext` provided by
+  each page, so `ResourceTitle`, `WorktreeCard`'s name and focus lines and
+  `EventRow`'s title wrap their text in `SearchHighlight` with no prop
+  plumbing. With no terms (or no provider) rendering is unchanged.
+- "Why" lines: `WorktreeCard` and `AllResourceRow` compute their own match
+  from the context (pure `lib/search.ts` calls); `EventRow` renders the
+  server's `match`.
 
 ## Error handling and edge cases
+
+- Worktree page: the selected resource stays in the list even when it does
+  not match, so typing never deselects it (the page's stale-selection
+  effect would otherwise clear it).
 
 - Timeline request with `q` fails → the feed shows its existing error
   state; browser-side panes still filter.
