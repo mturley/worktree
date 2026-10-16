@@ -65,3 +65,53 @@ export function clearOpenEvent(): void {
   delete rest[KEY]
   window.history.replaceState(rest, "")
 }
+
+/**
+ * Whether an event's resource is no longer followed by any worktree — the
+ * rows the global timeline only shows with "show archived" on. Such an event
+ * has nowhere to route, so its row opens details, and the details offer to
+ * follow the resource again.
+ */
+export function isArchivedEvent(e: TimelineEvent): boolean {
+  return !!e.resource_type && !!e.resource_id && (e.worktree_paths ?? e.worktrees).length === 0
+}
+
+/**
+ * Carries an archived resource from the home page's details modal to the
+ * worktree page chosen to follow it, which opens its follow modal prefilled.
+ * History state for the same reason as openEvent: the home page already has
+ * everything, including the custom name and description, which outlive the
+ * subscription.
+ */
+const FOLLOW_KEY = "followResource"
+
+export interface FollowResource { url: string; name?: string; description?: string }
+
+/** The `state` to navigate with. */
+export function followResourceState(f: FollowResource): Record<string, unknown> {
+  return { [FOLLOW_KEY]: f }
+}
+
+/** The resource the current history entry asks to follow, if any. Validated, not trusted. */
+export function readFollowResource(): FollowResource | null {
+  const state: unknown = window.history.state
+  if (!state || typeof state !== "object") return null
+  const f = (state as Record<string, unknown>)[FOLLOW_KEY]
+  if (!f || typeof f !== "object") return null
+  const { url, name, description } = f as Record<string, unknown>
+  if (typeof url !== "string" || !url.trim()) return null
+  return {
+    url,
+    name: typeof name === "string" ? name : undefined,
+    description: typeof description === "string" ? description : undefined,
+  }
+}
+
+/** Drops the follow request so a reload does not open the modal again. */
+export function clearFollowResource(): void {
+  const state: unknown = window.history.state
+  if (!state || typeof state !== "object" || !(FOLLOW_KEY in state)) return
+  const rest = { ...(state as Record<string, unknown>) }
+  delete rest[FOLLOW_KEY]
+  window.history.replaceState(rest, "")
+}

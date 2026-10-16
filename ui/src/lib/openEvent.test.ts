@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import type { TimelineEvent } from "../api/types"
-import { messageFocus } from "./openEvent"
+import { clearFollowResource, followResourceState, isArchivedEvent, messageFocus, readFollowResource } from "./openEvent"
 
 const ev = (o: Partial<TimelineEvent> = {}): TimelineEvent => ({
   id: "e1", ts: "2026-10-01T00:00:00Z", external_ts: "1791561570.240519", source: "slack",
@@ -21,5 +21,34 @@ describe("messageFocus", () => {
   it("is null for a Slack event with no message, and for other sources", () => {
     expect(messageFocus(ev({ external_ts: "" }))).toBeNull()
     expect(messageFocus(ev({ resource_type: "pr", resource_id: "o/r#1" }))).toBeNull()
+  })
+})
+
+describe("isArchivedEvent", () => {
+  it("is true for a resource event no worktree follows", () => {
+    expect(isArchivedEvent(ev({ worktree_paths: [] }))).toBe(true)
+    expect(isArchivedEvent(ev())).toBe(true)
+  })
+
+  it("is false while a worktree follows it, or with no resource at all", () => {
+    expect(isArchivedEvent(ev({ worktrees: ["b"], worktree_paths: ["/wt/b"] }))).toBe(false)
+    expect(isArchivedEvent(ev({ resource_type: "", resource_id: "" }))).toBe(false)
+  })
+})
+
+describe("followResource state", () => {
+  it("round-trips through history state and clears", () => {
+    window.history.replaceState(followResourceState({ url: "https://x/1", name: "N", description: "D" }), "")
+    expect(readFollowResource()).toEqual({ url: "https://x/1", name: "N", description: "D" })
+    clearFollowResource()
+    expect(readFollowResource()).toBeNull()
+  })
+
+  it("rejects malformed state", () => {
+    window.history.replaceState({ followResource: { url: 3 } }, "")
+    expect(readFollowResource()).toBeNull()
+    window.history.replaceState({ followResource: { url: "u", name: 5 } }, "")
+    expect(readFollowResource()).toEqual({ url: "u", name: undefined, description: undefined })
+    window.history.replaceState(null, "")
   })
 })

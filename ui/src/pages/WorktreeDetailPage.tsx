@@ -22,7 +22,10 @@ import { pinnedStyle, STICKY_LIST_SCROLLER, stickyListStyle } from "../lib/stick
 import { ResourceDetailPane } from "../components/ResourceDetailPane"
 import { TimelineFeed } from "../components/TimelineFeed"
 import { EventDetailsModal } from "../components/EventDetailsModal"
-import { clearOpenEvent, messageFocus, readOpenEvent, type MessageFocus } from "../lib/openEvent"
+import {
+  clearFollowResource, clearOpenEvent, messageFocus, readFollowResource, readOpenEvent,
+  type FollowResource, type MessageFocus,
+} from "../lib/openEvent"
 import type { TimelineEvent } from "../api/types"
 import { WorktreeDetailCard } from "../components/WorktreeDetailCard"
 import { DeleteWorktreeButton } from "../components/DeleteWorktreeButton"
@@ -120,6 +123,10 @@ export function WorktreeDetailPage() {
   )
   const [focus, setFocus] = useState<MessageFocus | null>(() => (arrival ? messageFocus(arrival) : null))
   useEffect(() => clearOpenEvent(), [])
+  // Arriving from an archived event's "Follow" menu on the home page: open
+  // the follow modal prefilled, leaving Focus/Related and position to choose.
+  const [arrivalFollow, setArrivalFollow] = useState<FollowResource | null>(readFollowResource)
+  useEffect(() => clearFollowResource(), [])
   // The activity feed does what arriving from the home page does: selects
   // the event's resource, then opens the event's details over it — or, for a
   // Slack message, brings it into view in its thread. Selecting alone left
@@ -605,6 +612,21 @@ export function WorktreeDetailPage() {
           onClose={() => setPendingThreadUrl(null)}
           onAdded={() => {
             setPendingThreadUrl(null)
+            void resources.refetch()
+          }}
+        />
+      )}
+      {arrivalFollow !== null && (
+        <AddResourceModal
+          key={arrivalFollow.url}
+          opened
+          path={path}
+          initialUrl={arrivalFollow.url}
+          initialName={arrivalFollow.name}
+          initialDescription={arrivalFollow.description}
+          onClose={() => setArrivalFollow(null)}
+          onAdded={() => {
+            setArrivalFollow(null)
             void resources.refetch()
           }}
         />

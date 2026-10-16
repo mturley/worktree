@@ -1,10 +1,14 @@
-import { Badge, Divider, Group, Modal, Stack, Text } from "@mantine/core"
+import { Alert, Badge, Divider, Group, Modal, Stack, Text } from "@mantine/core"
+import { IconArchive } from "@tabler/icons-react"
+import { useLocation } from "wouter"
 import type { ResourceDTO, TimelineEvent } from "../api/types"
 import { eventLabel } from "../lib/eventMeta"
 import { relativeTime as rel } from "../lib/relativeTime"
 import { EventDot } from "./EventDot"
 import { EventResourceChip } from "./EventResourceChip"
 import { ResourceActions } from "./ResourceActions"
+import { FollowInWorktreeMenu } from "./FollowInWorktreeMenu"
+import { followResourceState, isArchivedEvent } from "../lib/openEvent"
 
 /**
  * Full detail for one timeline event.
@@ -25,6 +29,24 @@ export function EventDetailsModal({ e, onClose, resolveResource, path }: {
   path?: string
 }) {
   const actionResource = e?.resource_url ? eventResource(e, resolveResource) : undefined
+  const [, navigate] = useLocation()
+
+  /*
+   * Re-follow an archived resource: go to the chosen worktree, whose page
+   * opens its follow modal with the URL — and the custom name and
+   * description, which outlive the subscription — already filled in.
+   */
+  const followIn = (worktreePath: string) => {
+    if (!e?.resource_url) return
+    onClose()
+    navigate(`/worktree/${encodeURIComponent(worktreePath)}`, {
+      state: followResourceState({
+        url: e.resource_url,
+        name: actionResource?.custom_name || undefined,
+        description: actionResource?.custom_description || undefined,
+      }),
+    })
+  }
 
   return (
     <Modal opened={!!e} onClose={onClose} size="lg" title={
@@ -37,6 +59,14 @@ export function EventDetailsModal({ e, onClose, resolveResource, path }: {
     }>
       {e && (
         <Stack gap="sm">
+          {isArchivedEvent(e) && (
+            <Alert color="gray" variant="light" p="xs" icon={<IconArchive size={16} />}>
+              <Group justify="space-between" wrap="nowrap" gap="sm">
+                <Text size="sm">This resource is no longer followed by a worktree.</Text>
+                {e.resource_url && <FollowInWorktreeMenu onPick={(w) => followIn(w.path)} />}
+              </Group>
+            </Alert>
+          )}
           {/*
             Context first: which resource this event is about, and which
             worktrees follow it. Both are read-only labels — the row that

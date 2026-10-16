@@ -1,4 +1,5 @@
 import { Badge, Box, Group, Stack, Text, Tooltip } from "@mantine/core"
+import { IconArchive } from "@tabler/icons-react"
 import type { ResourceDTO, TimelineEvent } from "../api/types"
 import { relativeTime as rel } from "../lib/relativeTime"
 import { eventLabel } from "../lib/eventMeta"
@@ -7,6 +8,7 @@ import { EventResourceChip } from "./EventResourceChip"
 import { UnreadMarkerDot } from "./UnreadMarkerDot"
 import { READ_BOX_BORDER, UNREAD_BG, UNREAD_BOX_BORDER } from "../lib/unread"
 import { ROW_PAD_X } from "./timelineRail"
+import { isArchivedEvent } from "../lib/openEvent"
 
 /**
  * One entry on the timeline rail: a dot on the line, then the event's text.
@@ -148,6 +150,15 @@ export function EventRow({
               // cards, so the same thing looks the same wherever it is named.
               <Badge key={w} size="xs" color="blue" variant="light">Worktree: {w}</Badge>
             ))}
+          </Group>
+        )}
+        {/* Where the worktree badges would be: nothing follows this
+            resource any more, which is why the row opens details. */}
+        {showWorktrees && isArchivedEvent(e) && (
+          <Group gap={6} wrap="wrap">
+            <Badge size="xs" color="gray" variant="light" leftSection={<IconArchive size={10} />}>
+              Archived
+            </Badge>
           </Group>
         )}
       </Stack>

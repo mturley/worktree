@@ -37,6 +37,12 @@ interface AddResourceModalProps {
    * several URLs.
    */
   initialUrl?: string
+  /**
+   * Seed the name and description fields, read at mount like initialUrl —
+   * re-following an archived resource keeps the custom name it had.
+   */
+  initialName?: string
+  initialDescription?: string
 }
 
 const FOCUS_HELP: Record<string, string> = {
@@ -91,12 +97,14 @@ export function AddResourceModal({
   onAdded,
   defaultRelated,
   initialUrl,
+  initialName,
+  initialDescription,
 }: AddResourceModalProps) {
   const [url, setUrl] = useState(initialUrl ?? "")
   const [focus, setFocus] = useState(defaultRelated ? "related" : "focus")
   const [position, setPosition] = useState("top")
-  const [name, setName] = useState("")
-  const [description, setDescription] = useState("")
+  const [name, setName] = useState(initialName ?? "")
+  const [description, setDescription] = useState(initialDescription ?? "")
   useUnsavedChanges(opened && (url.trim() !== "" || name.trim() !== "" || description.trim() !== ""))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -132,8 +140,8 @@ export function AddResourceModal({
     setUrl(initialUrl ?? "")
     setFocus(defaultRelated ? "related" : "focus")
     setPosition("top")
-    setName("")
-    setDescription("")
+    setName(initialName ?? "")
+    setDescription(initialDescription ?? "")
     setError(null)
   }
 

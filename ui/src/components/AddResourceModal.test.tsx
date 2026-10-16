@@ -221,6 +221,18 @@ describe("AddResourceModal", () => {
     expect(addResource).toHaveBeenCalledWith({ path: "/wt", url, related: true, position: "top" })
   })
 
+  it("pre-fills the custom name and description, as re-following an archived resource does", async () => {
+    resourceType.mockResolvedValue({ type: "slack", id: "C1:1700000000.000100" })
+    const url = "https://acme.slack.com/archives/C1/p1700000000000100"
+    const { findByLabelText } = wrap(
+      <AddResourceModal opened path="/wt" onClose={vi.fn()} onAdded={vi.fn()}
+        initialUrl={url} initialName="Deploy thread" initialDescription="Why it broke" />,
+    )
+
+    expect(((await findByLabelText("Custom Name (optional)")) as HTMLInputElement).value).toBe("Deploy thread")
+    expect(((await findByLabelText("Custom Description (optional)")) as HTMLTextAreaElement).value).toBe("Why it broke")
+  })
+
   it("offers a custom name for a link, as it does for a Slack thread", async () => {
     resourceType.mockResolvedValue({ type: "link", id: "https://ex.com/a" })
     wrap(<AddResourceModal opened path="/wt" onClose={vi.fn()} onAdded={vi.fn()} />)

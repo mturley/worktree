@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest"
-import { act, render, cleanup, screen, waitFor } from "@testing-library/react"
+import { act, render, cleanup, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -668,6 +668,27 @@ describe("WorktreeDetailPage event opened from the home page", () => {
     )
     wrap()
     expect(await screen.findByTestId("thread-view")).toHaveTextContent("focus 1791561570.240519")
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+  })
+})
+
+describe("WorktreeDetailPage arriving to follow an archived resource", () => {
+  const url = `/worktree/${encodeURIComponent("/wt/foo")}`
+
+  it("opens the follow modal with the URL prefilled, and drops the request from history", async () => {
+    window.history.replaceState(
+      { followResource: { url: "https://gh/pr/77", name: "Old name" }, other: 1 }, "", url,
+    )
+    wrap()
+    const dialog = await screen.findByRole("dialog")
+    expect((within(dialog).getByLabelText(/url/i) as HTMLInputElement).value).toBe("https://gh/pr/77")
+    expect(window.history.state).toEqual({ other: 1 })
+  })
+
+  it("opens nothing for malformed state", async () => {
+    window.history.replaceState({ followResource: { url: 5 } }, "", url)
+    wrap()
+    await screen.findAllByText("Fix the widget")
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
   })
 })

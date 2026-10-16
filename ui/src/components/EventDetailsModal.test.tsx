@@ -1,11 +1,12 @@
 import { afterEach, describe, it, expect, vi } from "vitest"
+import userEvent from "@testing-library/user-event"
 import { render, cleanup, screen, fireEvent } from "@testing-library/react"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { api } from "../api/client"
 import { EventDetailsModal } from "./EventDetailsModal"
 import { TimelineFeed } from "./TimelineFeed"
-import type { CmuxResponse, ResourceDTO, TimelineEvent } from "../api/types"
+import type { CmuxResponse, ResourceDTO, TimelineEvent, WorktreeSummary } from "../api/types"
 
 if (typeof window.matchMedia !== "function") {
   window.matchMedia = ((query: string) => ({
@@ -142,5 +143,50 @@ describe("the modal's context row is read-only", () => {
     // You should not have to scroll past a long comment to find out what you
     // are reading about.
     expect(chip.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+})
+
+describe("EventDetailsModal for an archived resource", () => {
+  const worktrees = [
+    { path: "/wt/zeta", repo: "r", branch: "zeta" },
+    { path: "/wt/alpha", repo: "r", branch: "alpha" },
+  ] as unknown as WorktreeSummary[]
+  const cmux = {
+    available: true, workspaces: [],
+    matches: { "/wt/zeta": [{ ref: "workspace:1", title: "Zeta work", color: "#ff0000" }] },
+  } as unknown as CmuxResponse
+
+  it("says nothing follows it, and offers worktrees with their cmux workspaces", async () => {
+    vi.spyOn(api, "worktrees").mockResolvedValue(worktrees)
+    vi.spyOn(api, "cmux").mockResolvedValue(cmux)
+    wrap(<EventDetailsModal e={ev({ worktree_paths: [] })} onClose={vi.fn()} />)
+    expect(screen.getByText("This resource is no longer followed by a worktree.")).toBeInTheDocument()
+    await userEvent.click(screen.getByRole("button", { name: "Follow" }))
+    const items = await screen.findAllByRole("menuitem")
+    expect(items.map((i) => i.textContent)).toEqual(["alpha", "Zeta workzeta"])
+  })
+
+  it("routes to the chosen worktree carrying the URL and custom name", async () => {
+    vi.spyOn(api, "worktrees").mockResolvedValue(worktrees)
+    vi.spyOn(api, "cmux").mockResolvedValue(cmux)
+    const onClose = vi.fn()
+    const e = ev({
+      resource_type: "slack", resource_id: "C1:1.2", resource_url: "https://x.slack.com/archives/C1/p12",
+      resource: { type: "slack", id: "C1:1.2", url: "", primary: false, custom_name: "Deploy", custom_description: "Why" } as ResourceDTO,
+    })
+    wrap(<EventDetailsModal e={e} onClose={onClose} />)
+    await userEvent.click(screen.getByRole("button", { name: "Follow" }))
+    await userEvent.click(await screen.findByRole("menuitem", { name: /alpha/ }))
+    expect(onClose).toHaveBeenCalled()
+    expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/alpha")}`)
+    expect(window.history.state).toEqual({
+      followResource: { url: "https://x.slack.com/archives/C1/p12", name: "Deploy", description: "Why" },
+    })
+    window.history.replaceState(null, "", "/")
+  })
+
+  it("has no alert while a worktree still follows the resource", () => {
+    wrap(<EventDetailsModal e={ev({ worktrees: ["b"], worktree_paths: ["/wt/b"] })} onClose={vi.fn()} />)
+    expect(screen.queryByText("This resource is no longer followed by a worktree.")).toBeNull()
   })
 })
