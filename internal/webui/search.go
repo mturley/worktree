@@ -56,8 +56,9 @@ func searchSQL(terms []string) (string, []any) {
                AND COALESCE(m.custom_name,'') LIKE ? ESCAPE '\')
  OR EXISTS (SELECT 1 FROM watcher_resource_state rs
              WHERE rs.resource_type = er.resource_type AND rs.resource_id = er.resource_id
-               AND json_valid(rs.state_json)
-               AND COALESCE(json_extract(rs.state_json,'$.title'),'') || ' ' || COALESCE(json_extract(rs.state_json,'$.summary'),'') LIKE ? ESCAPE '\')
+               AND CASE WHEN json_valid(rs.state_json)
+                   THEN COALESCE(json_extract(rs.state_json,'$.title'),'') || ' ' || COALESCE(json_extract(rs.state_json,'$.summary'),'')
+                   ELSE '' END LIKE ? ESCAPE '\')
 ) `
 	var b strings.Builder
 	args := make([]any, 0, len(terms)*searchArgsPerTerm)
