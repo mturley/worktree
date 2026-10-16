@@ -168,7 +168,7 @@ export function ResourcesPanel({ view, headerStyle, top, searchSummary }: {
   view: ResourcesView
   /** Rendered first inside the (pinned) header: the tab bar wide, the sort row narrow. */
   top?: React.ReactNode
-  /** The "N resources match your search" line, above the filters while searching. */
+  /** The "N resources match your search" line, directly above the results while searching. */
   searchSummary?: React.ReactNode
   /** Pins the controls at the top of a scrolling column; see pinnedStyle. */
   headerStyle?: React.CSSProperties
@@ -184,7 +184,6 @@ export function ResourcesPanel({ view, headerStyle, top, searchSummary }: {
       data-testid="resources-header"
     >
       {top}
-      {searchSummary}
       <Group gap={4} wrap="wrap">
         {TYPES.filter((t) => t.type !== "link" || presentTypes.has("link")).map((t) => (
           <Toggle
@@ -202,6 +201,7 @@ export function ResourcesPanel({ view, headerStyle, top, searchSummary }: {
       {/* Subfilters only exist under a selected type, so a type is the
           whole of "a filter is on". The sort is not a filter: it stays. */}
       <ClearFiltersLink active={filter.type !== null} onClear={() => setFilter(EMPTY_FILTER)} />
+      {searchSummary}
     </Stack>
   )
 

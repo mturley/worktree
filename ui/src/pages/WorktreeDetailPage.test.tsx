@@ -798,6 +798,48 @@ describe("search", () => {
     expect(new URLSearchParams(window.location.search).has("q")).toBe(false)
   })
 
+  it("puts each match line directly above its results, below the toggles and filters", async () => {
+    setViewport("wide")
+    events = [{
+      id: "e1", ts: "2026-10-01T00:00:00Z", external_ts: "", source: "jira", type: "jira_comment", type_label: "",
+      title: "Kumquat note", body: "", author: "a", resource_type: "jira", resource_id: "J-1", resource_url: "",
+      resource_title: "", worktrees: [],
+    }]
+    window.history.replaceState({}, "", url("q=kumquat"))
+    wrap()
+    const after = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+    const lines = () => screen.getAllByTestId("search-summary")
+    const resourceLine = lines().find((n) => /resource/.test(n.textContent ?? ""))!
+    expect(after(screen.getByRole("switch", { name: /Notify on all/ }), resourceLine)).toBe(true)
+    await waitFor(() => expect(lines().some((n) => /event/.test(n.textContent ?? ""))).toBe(true))
+    const eventLine = lines().find((n) => /event/.test(n.textContent ?? ""))!
+    const activityHeader = document.querySelector<HTMLElement>("[data-activity-header]")!
+    const lastFilter = within(activityHeader).getAllByRole("button").filter((b) => !eventLine.contains(b)).at(-1)!
+    expect(after(lastFilter, eventLine)).toBe(true)
+  })
+
+  it("offers See all on an empty unread-only feed, which turns the toggle off", async () => {
+    setViewport("wide")
+    window.history.replaceState({}, "", url(""))
+    const user = userEvent.setup()
+    wrap()
+    const toggle = screen.getAllByRole("switch", { name: "Unreads only" })[0]
+    await user.click(toggle)
+    await user.click(screen.getByRole("button", { name: "See all" }))
+    expect(screen.getAllByRole("switch", { name: "Unreads only" })[0]).not.toBeChecked()
+  })
+
+  it("says when the match lines count only unread things", async () => {
+    setViewport("wide")
+    window.history.replaceState({}, "", url("q=kumquat"))
+    const user = userEvent.setup()
+    wrap()
+    await user.click(screen.getAllByRole("switch", { name: "Unreads only" })[0])
+    const lines = () => screen.getAllByTestId("search-summary").map((n) => n.textContent)
+    expect(lines()).toContain("0 resources with unread events match your search. Clear search")
+    await waitFor(() => expect(lines()).toContain("0 unread events match your search. Clear search"))
+  })
+
   it("counts matching events above the activity filters", async () => {
     setViewport("wide")
     events = [{

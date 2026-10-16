@@ -143,6 +143,38 @@ describe("ResourceDetailPane", () => {
     expect(useWorktreeTimeline).toHaveBeenCalledWith("/wt/foo", { type: "jira", id: "J-1" }, [], false, [], "")
   })
 
+  it("counts matching events directly above the feed while searching", async () => {
+    window.history.replaceState({}, "", "/worktree/wt?q=kumquat")
+    useWorktreeTimeline.mockReturnValue({
+      events: [{
+        id: "e1", ts: "2026-10-01T00:00:00Z", external_ts: "", source: "jira", type: "jira_comment", type_label: "",
+        title: "Kumquat note", body: "", author: "a", resource_type: "jira", resource_id: "J-1", resource_url: "",
+        resource_title: "", worktrees: [],
+      }],
+      isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false,
+    })
+    wrap(<ResourceDetailPane path="/wt/foo" resource={jira} />)
+    expect(await screen.findByText("1 event")).toBeInTheDocument()
+    expect(screen.getByTestId("search-summary").textContent).toBe("1 event matches your search. Clear search")
+  })
+
+  it("counts linked matches in the tab label while searching", async () => {
+    window.history.replaceState({}, "", "/worktree/wt?q=blocker")
+    vi.spyOn(realApi, "linkedResources").mockResolvedValue({
+      fetched_at: "2026-10-09T12:00:00Z", count: 2, sections: [{ kind: "description", title: "D", items: [
+        { type: "jira", id: "P-1", url: "u", resolved: true, title: "Blocker" },
+        { type: "jira", id: "P-2", url: "u", resolved: true, title: "Other" },
+      ] }],
+    })
+    wrap(<ResourceDetailPane path="/wt/foo" resource={jira} />)
+    expect(await screen.findByRole("tab", { name: "Linked Resources (1)" })).toBeInTheDocument()
+  })
+
+  it("shows no match line without a search", () => {
+    wrap(<ResourceDetailPane path="/wt/foo" resource={jira} />)
+    expect(screen.queryByTestId("search-summary")).toBeNull()
+  })
+
   it("shows the detailed resource summary, including Jira labels", () => {
     useWorktreeTimeline.mockReturnValue({ events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false })
     wrap(<ResourceDetailPane path="/wt/foo" resource={jira} />)

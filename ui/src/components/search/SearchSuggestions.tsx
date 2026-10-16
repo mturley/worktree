@@ -1,5 +1,6 @@
-import { useEffect, useRef } from "react"
-import { Badge, Box, Group, Paper, Stack, Text } from "@mantine/core"
+import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useIsWide } from "../../hooks/useIsWide"
+import { Anchor, Badge, Box, Group, Kbd, Paper, Stack, Text } from "@mantine/core"
 import { SearchHighlight } from "./SearchHighlight"
 import type { Suggestion, SuggestionItem } from "./SearchBar"
 import { useCmuxMatches } from "../../api/cmux"
@@ -19,8 +20,15 @@ import type { WorktreeSummary } from "../../api/types"
  * nothing inside it may be a button or link of its own.
  */
 export function SearchSuggestions({
-  items, active, onHover, onPick,
-}: { items: Suggestion[]; active: number; onHover: (i: number) => void; onPick: (s: Suggestion) => void }) {
+  items, active, onHover, onPick, onViewAll,
+}: {
+  items: Suggestion[]
+  active: number
+  onHover: (i: number) => void
+  onPick: (s: Suggestion) => void
+  /** Closes the dropdown, leaving the filtered page. */
+  onViewAll: () => void
+}) {
   const ref = useRef<HTMLDivElement>(null)
   // Keeps the keyboard's row in view as ↑/↓ walk a list taller than the box.
   // jsdom has no scrollIntoView.
@@ -29,17 +37,39 @@ export function SearchSuggestions({
     el?.scrollIntoView?.({ block: "nearest" })
   }, [active])
 
+  // Narrow, the box spans the screen (less the page's gutter) rather than
+  // starting at the bar, which sits right of the logo and would push a
+  // full-width box off the screen's right edge. Positioned from the bar's
+  // own left edge, measured, since the box hangs off the bar.
+  const wide = useIsWide()
+  const boxRef = useRef<HTMLDivElement>(null)
+  const [barLeft, setBarLeft] = useState(0)
+  useLayoutEffect(() => {
+    if (wide) return
+    const measure = () => {
+      const root = boxRef.current?.closest("[data-search-root]")
+      setBarLeft(root ? root.getBoundingClientRect().left : 0)
+    }
+    measure()
+    window.addEventListener("resize", measure)
+    return () => window.removeEventListener("resize", measure)
+  }, [wide])
+
   const counts = new Map<string, number>()
   for (const s of items) counts.set(s.group, (counts.get(s.group) ?? 0) + 1)
 
   return (
     <Paper
+      ref={boxRef}
+      data-testid="search-suggestions"
       withBorder
       shadow="md"
       style={{
-        position: "absolute", top: "100%", left: 0, marginTop: 4,
-        // Wider than the bar: the rows carry what the cards and feed do.
-        width: "min(640px, calc(100vw - 2 * var(--mantine-spacing-md)))",
+        position: "absolute", top: "100%", marginTop: 4,
+        ...(wide
+          // Wider than the bar: the rows carry what the cards and feed do.
+          ? { left: 0, width: "min(640px, calc(100vw - 2 * var(--mantine-spacing-md)))" }
+          : { left: `calc(var(--mantine-spacing-md) - ${barLeft}px)`, width: "calc(100vw - 2 * var(--mantine-spacing-md))" }),
         maxHeight: "70vh", display: "flex", flexDirection: "column", overflow: "hidden",
         zIndex: "var(--mantine-z-index-popover)",
       }}
@@ -47,7 +77,19 @@ export function SearchSuggestions({
       {/* Outside the scrolling list, so it stays put and the section
           headings still pin to the list's own top. */}
       <Text size="xs" c="dimmed" px="sm" py={6} style={{ borderBottom: "1px solid var(--mantine-color-default-border)" }}>
-        The page is also filtered as you type. Press Enter to view all results.
+        {"The page is also filtered as you type. "}
+        <Anchor
+          component="button"
+          type="button"
+          size="xs"
+          // mousedown, as the rows: the input's blur must not close the list first.
+          onMouseDown={(e) => { e.preventDefault(); onViewAll() }}
+        >
+          View all results
+        </Anchor>
+        {/* Enter only means this while no row is highlighted; with one, it
+            picks that row. */}
+        {active === -1 && <span data-testid="view-all-enter"> (<Kbd size="xs">Enter</Kbd>)</span>}
       </Text>
       <Box ref={ref} role="listbox" aria-label="Search suggestions" style={{ overflowY: "auto", minHeight: 0 }}>
       {items.map((s, i) => (

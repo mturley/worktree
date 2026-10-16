@@ -7,7 +7,7 @@ export function WorktreeList({
   emptyText = "No worktrees. Create one with `worktree add`.",
 }: {
   items: WorktreeSummary[]
-  emptyText?: string
+  emptyText?: React.ReactNode
 }) {
   if (items.length === 0) return <Text c="dimmed" size="sm">{emptyText}</Text>
   return (

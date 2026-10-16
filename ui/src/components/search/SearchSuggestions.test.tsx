@@ -30,6 +30,38 @@ describe("dropdown", () => {
     await userEvent.keyboard("{ArrowDown}{ArrowDown}{Enter}")
     expect(picks.b).toHaveBeenCalled()
   })
+  it("counts no-row-highlighted as a stop when cycling with the arrows", async () => {
+    render(<Harness />)
+    await userEvent.type(screen.getByRole("searchbox"), "oa")
+    const selected = () => screen.queryAllByRole("option").findIndex((o) => o.getAttribute("aria-selected") === "true")
+    await userEvent.keyboard("{ArrowDown}")
+    expect(selected()).toBe(0)
+    await userEvent.keyboard("{ArrowUp}")
+    expect(selected()).toBe(-1)
+    await userEvent.keyboard("{ArrowUp}")
+    expect(selected()).toBe(1)
+    await userEvent.keyboard("{ArrowDown}")
+    expect(selected()).toBe(-1)
+  })
+
+  it("offers View all results, with the Enter hint only while no row is highlighted", async () => {
+    render(<Harness />)
+    await userEvent.type(screen.getByRole("searchbox"), "oa")
+    expect(screen.getByTestId("view-all-enter")).toBeInTheDocument()
+    await userEvent.keyboard("{ArrowDown}")
+    expect(screen.queryByTestId("view-all-enter")).toBeNull()
+    expect(screen.getByRole("button", { name: "View all results" })).toBeInTheDocument()
+  })
+
+  it("View all results closes the dropdown and keeps the query", async () => {
+    render(<Harness />)
+    await userEvent.type(screen.getByRole("searchbox"), "oa")
+    await userEvent.click(screen.getByRole("button", { name: "View all results" }))
+    expect(screen.queryByRole("listbox")).toBeNull()
+    expect(screen.getByRole("searchbox")).toHaveValue("oa")
+    expect(picks.a).not.toHaveBeenCalled()
+  })
+
   it("Enter with nothing highlighted closes the dropdown and keeps the query", async () => {
     render(<Harness />)
     await userEvent.type(screen.getByRole("searchbox"), "oa{Enter}")

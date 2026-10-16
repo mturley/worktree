@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { api } from "../../api/client"
 import type { LinkedResourcesDTO } from "../../api/types"
 import { LinkedResourcesPanel, LinkedTabControls, linkedTabLabel } from "./LinkedResourcesPanel"
+import { SearchContext } from "../search/SearchContext"
 
 type Q = Parameters<typeof LinkedResourcesPanel>[0]["query"]
 const q = (over: Partial<Q>): Q => ({ data: undefined, isLoading: false, error: null, refresh: vi.fn(), refreshing: false, refreshError: null, refetch: vi.fn(), ...over })
@@ -165,5 +166,61 @@ describe("LinkedResourcesPanel", () => {
   it("tab label carries the count only once loaded", () => {
     expect(linkedTabLabel(undefined)).toBe("Linked Resources")
     expect(linkedTabLabel({ count: 7 })).toBe("Linked Resources (7)")
+  })
+
+  it("tab label counts matches while searching", () => {
+    expect(linkedTabLabel({ count: 7 }, 2)).toBe("Linked Resources (2)")
+  })
+})
+
+describe("LinkedResourcesPanel search", () => {
+  const search = (query: string) => window.history.replaceState({}, "", `/worktree/wt?q=${encodeURIComponent(query)}`)
+  afterEach(() => window.history.replaceState({}, "", "/"))
+
+  it("keeps only matches, with the match line above them", async () => {
+    vi.spyOn(api, "cmuxBrowserTabs").mockResolvedValue({ available: false } as never)
+    search("blocker")
+    wrap(<LinkedResourcesPanel query={q({ data: dto })} />)
+    expect(screen.getByTestId("search-summary").textContent).toBe("1 linked resource matches your search. Clear search")
+    expect(document.body.textContent).toContain("Blocker")
+    expect(screen.queryByText("Fix thing")).toBeNull()
+    expect(screen.queryByText("Linked in description")).toBeNull()
+    // A section's error is not a result to filter out.
+    expect(screen.getByText("boom")).toBeInTheDocument()
+  })
+
+  it("highlights matches in rows, with the page's search terms", () => {
+    vi.spyOn(api, "cmuxBrowserTabs").mockResolvedValue({ available: false } as never)
+    search("blocker")
+    wrap(
+      <SearchContext.Provider value={{ terms: ["blocker"] }}>
+        <LinkedResourcesPanel query={q({ data: dto })} />
+      </SearchContext.Provider>,
+    )
+    expect(screen.getByText("Blocker", { selector: "mark" })).toBeInTheDocument()
+  })
+
+  it("shows the path down to a match in the hierarchy, unfolded", async () => {
+    vi.spyOn(api, "cmuxBrowserTabs").mockResolvedValue({ available: false } as never)
+    search("sibling")
+    wrap(<LinkedResourcesPanel query={q({ data: dto })} />)
+    expect(document.body.textContent).toContain("Epic")
+    expect(document.body.textContent).toContain("Sibling")
+    expect(screen.queryByText(/Show more children/)).toBeNull()
+  })
+
+  it("says when unloaded branches weren't searched", () => {
+    vi.spyOn(api, "cmuxBrowserTabs").mockResolvedValue({ available: false } as never)
+    search("epic")
+    wrap(<LinkedResourcesPanel query={q({ data: dto })} />)
+    expect(screen.getByText(/branches that haven't been loaded weren't searched/i)).toBeInTheDocument()
+  })
+
+  it("says nothing matches, and clears the search", async () => {
+    search("zzzz")
+    wrap(<LinkedResourcesPanel query={q({ data: { ...dto, sections: dto.sections.filter((s) => !s.error) } })} />)
+    expect(screen.getByText('Nothing matches "zzzz"')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole("button", { name: "Clear search" }))
+    expect(new URLSearchParams(window.location.search).has("q")).toBe(false)
   })
 })

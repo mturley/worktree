@@ -279,7 +279,21 @@ describe("HomePage unread-only toggle", () => {
     window.localStorage.setItem("worktree.unreadOnly", "true")
     setViewport("wide")
     wrap()
-    expect(screen.getByText("No worktrees with unread events")).toBeInTheDocument()
+    expect(screen.getByText(/No worktrees with unread events/)).toBeInTheDocument()
+  })
+
+  it("offers See all, which turns Unreads only off, when nothing is unread", async () => {
+    window.localStorage.setItem("worktree.unreadOnly", "true")
+    setViewport("wide")
+    const user = userEvent.setup()
+    wrap()
+    expect(screen.getByText(/No unread events\./)).toBeInTheDocument()
+    const seeAll = screen.getAllByRole("button", { name: "See all" })
+    expect(seeAll).toHaveLength(2) // the worktree list and the activity feed
+    await user.click(seeAll[0])
+    expect(screen.getByRole("switch", { name: "Unreads only" })).not.toBeChecked()
+    expect(screen.getByText(/my-branch/)).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "See all" })).toBeNull()
   })
 
   it("follows a change made in another tab", async () => {
@@ -370,6 +384,39 @@ describe("HomePage search", () => {
     await user.click(screen.getAllByRole("button", { name: "Clear search" }).at(-1)!)
     expect(screen.queryByTestId("search-summary")).toBeNull()
     expect(new URLSearchParams(window.location.search).has("q")).toBe(false)
+  })
+
+  it("puts each match line directly above its results, below the filters", async () => {
+    setViewport("wide")
+    mocks.events = [{
+      id: "evt-1", ts: "2026-10-01T00:00:00Z", external_ts: "", source: "github",
+      type: "pr_comment", type_label: "", title: "Kumquat remark", body: "", author: "someone",
+      resource_type: "pr", resource_id: "o/r#1", resource_url: "https://gh/pr/1", resource_title: "", worktrees: [],
+    }]
+    window.history.replaceState({}, "", "/?q=kumquat")
+    const user = userEvent.setup()
+    wrap()
+    const after = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+    const line = () => screen.getAllByTestId("search-summary").at(-1)!
+    await waitFor(() => expect(line().textContent).toMatch(/event/))
+    const activityHeader = document.querySelector<HTMLElement>("[data-activity-header]")!
+    expect(after(within(activityHeader).getByRole("button", { name: /GitHub/ }), line())).toBe(true)
+    await user.click(screen.getByRole("tab", { name: /Resources/ }))
+    const typeToggle = within(screen.getByTestId("resources-header")).getByRole("button", { name: /Jira/ })
+    expect(after(typeToggle, line())).toBe(true)
+  })
+
+  it("says when the match lines count only unread things", async () => {
+    setViewport("wide")
+    window.history.replaceState({}, "", "/?q=kumquat")
+    const user = userEvent.setup()
+    wrap()
+    const lines = () => screen.getAllByTestId("search-summary").map((n) => n.textContent)
+    await user.click(screen.getByRole("switch", { name: "Unreads only" }))
+    expect(lines()).toContain("0 worktrees with unread events match your search. Clear search")
+    await waitFor(() => expect(lines()).toContain("0 unread events match your search. Clear search"))
+    await user.click(screen.getByRole("tab", { name: /Resources/ }))
+    expect(lines()).toContain("0 resources with unread events match your search. Clear search")
   })
 
   it("shows no match line without a search", () => {

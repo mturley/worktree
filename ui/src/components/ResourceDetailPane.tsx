@@ -4,6 +4,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import type { ResourceDTO } from "../api/types"
 import { useWorktreeTimeline } from "../hooks/useTimeline"
 import { useSearchQuery } from "../hooks/useSearchQuery"
+import { SearchSummary } from "./search/SearchSummary"
+import { filterLinkedSections } from "../lib/linkedSearch"
 import { api } from "../api/client"
 import { ResourceCard, type ResourceNotifyContext } from "./ResourceCard"
 import { SlackThreadPane } from "./SlackThreadPane"
@@ -72,7 +74,8 @@ function TimelineBody({
   notify?: ResourceNotifyContext
   stickyTop?: number
 }) {
-  const { debouncedQ } = useSearchQuery()
+  const search = useSearchQuery()
+  const { debouncedQ } = search
   const timeline = useWorktreeTimeline(path, { type: resource.type, id: resource.id }, [], false, [], debouncedQ)
   const [tab, setTab] = useResourceTab(DETAIL_TABS)
   // Link titles are only fetched once the Linked tab has been shown — by a
@@ -151,7 +154,9 @@ function TimelineBody({
           >
             Activity
           </Tabs.Tab>
-          <Tabs.Tab value="linked">{linkedTabLabel(linked.data)}</Tabs.Tab>
+          <Tabs.Tab value="linked">
+            {linkedTabLabel(linked.data, linked.data && filterLinkedSections(linked.data.sections, search.terms).count)}
+          </Tabs.Tab>
           {/*
             The active tab's freshness and refresh, at the far end of the tab
             bar. For Activity this is where the source filter sits on the
@@ -199,6 +204,16 @@ function TimelineBody({
             >
               {`Mark ${unreadCount} ${unreadCount === 1 ? "event" : "events"} as read`}
             </Button>
+          )}
+          {/* Directly above the results it counts, once the feed holds the
+              results for what is typed (not mid-debounce). */}
+          {search.terms.length > 0 && debouncedQ === search.q.trim() && !timeline.isLoading && (
+            <SearchSummary
+              count={timeline.events.length}
+              more={timeline.hasMore}
+              noun={["event", "events"]}
+              onClear={() => search.setQ("")}
+            />
           )}
           <TimelineFeed
             events={timeline.events}

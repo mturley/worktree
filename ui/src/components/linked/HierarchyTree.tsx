@@ -41,7 +41,7 @@ function ShowMoreChildrenRow({ parentKey, depth, onShow }: { parentKey: string; 
   )
 }
 
-function TreeNodeView({ node, depth, path }: { node: LinkedTreeNode; depth: number; path?: string }) {
+function TreeNodeView({ node, depth, path, unfold }: { node: LinkedTreeNode; depth: number; path?: string; unfold: boolean }) {
   const [expanded, setExpanded] = useState(node.expanded)
   // An ancestor of the current issue starts out showing only the child on the
   // way down to it. Remounting the panel (leaving the tab and coming back)
@@ -108,7 +108,7 @@ function TreeNodeView({ node, depth, path }: { node: LinkedTreeNode; depth: numb
         <Text size="xs" c="red" pl={(depth + 1) * INDENT_PX + TOGGLE_W + TOGGLE_GAP}>Couldn't load child issues</Text>
       )}
       {expanded && (() => {
-        const folding = !node.current && !showAllChildren && leadsToCurrent(node)
+        const folding = !unfold && !node.current && !showAllChildren && leadsToCurrent(node)
         const shown = folding ? (children ?? []).filter(leadsToCurrent) : (children ?? [])
         const hidden = (children?.length ?? 0) - shown.length + (more ? 1 : 0)
         return (
@@ -118,7 +118,7 @@ function TreeNodeView({ node, depth, path }: { node: LinkedTreeNode; depth: numb
             {folding && hidden > 0 && (
               <ShowMoreChildrenRow parentKey={node.id} depth={depth + 1} onShow={() => setShowAllChildren(true)} />
             )}
-            {shown.map((c) => <TreeNodeView key={c.id} node={c} depth={depth + 1} path={path} />)}
+            {shown.map((c) => <TreeNodeView key={c.id} node={c} depth={depth + 1} path={path} unfold={unfold} />)}
             {!folding && more && <MoreRow url={more.url} depth={depth + 1} />}
           </>
         )
@@ -128,6 +128,11 @@ function TreeNodeView({ node, depth, path }: { node: LinkedTreeNode; depth: numb
 }
 
 /** The Jira hierarchy as an indented tree; collapsed nodes load lazily. */
-export function HierarchyTree({ roots, path }: { roots: LinkedTreeNode[]; path?: string }) {
-  return <>{roots.map((n) => <TreeNodeView key={n.id} node={n} depth={0} path={path} />)}</>
+/**
+ * `unfold` turns off folding siblings behind "Show more children of …":
+ * while searching, every node left in the tree is a match or on the way to
+ * one, so none may hide.
+ */
+export function HierarchyTree({ roots, path, unfold = false }: { roots: LinkedTreeNode[]; path?: string; unfold?: boolean }) {
+  return <>{roots.map((n) => <TreeNodeView key={n.id} node={n} depth={0} path={path} unfold={unfold} />)}</>
 }

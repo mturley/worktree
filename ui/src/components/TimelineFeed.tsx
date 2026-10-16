@@ -44,7 +44,7 @@ export function TimelineFeed({
    */
   showUnreadDivider?: boolean
   /** What an empty feed says, e.g. "No unread events." under that filter. */
-  emptyText?: string
+  emptyText?: React.ReactNode
   /** The worktree this feed is shown in; see EventDetailsModal. */
   path?: string
 }) {

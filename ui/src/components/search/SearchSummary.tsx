@@ -9,6 +9,7 @@ export function SearchSummary({
   count,
   more = false,
   noun,
+  qualifier,
   onClear,
 }: {
   count: number
@@ -16,6 +17,8 @@ export function SearchSummary({
   more?: boolean
   /** Singular and plural, e.g. ["worktree", "worktrees"]. */
   noun: [string, string]
+  /** What else narrows the count, after the noun: "with unread events". */
+  qualifier?: string
   onClear: () => void
 }) {
   const one = count === 1 && !more
@@ -24,6 +27,7 @@ export function SearchSummary({
       <Text span fw={600} c="var(--mantine-color-text)">
         {`${count}${more ? "+" : ""} ${one ? noun[0] : noun[1]}`}
       </Text>
+      {qualifier && ` ${qualifier}`}
       {` ${one ? "matches" : "match"} your search. `}
       <Anchor component="button" type="button" size="sm" onClick={onClear}>Clear search</Anchor>
     </Text>

@@ -91,8 +91,10 @@ export function SearchBar({
 
   const onInputKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
     const n = suggestions?.length ?? 0
-    if (showList && e.key === "ArrowDown") { e.preventDefault(); setActive((a) => (a + 1) % n); return }
-    if (showList && e.key === "ArrowUp") { e.preventDefault(); setActive((a) => (a <= 0 ? n - 1 : a - 1)); return }
+    // -1 (no row highlighted: Enter shows all results) is a stop in the
+    // cycle: ↑ from the first row and ↓ from the last both land on it.
+    if (showList && e.key === "ArrowDown") { e.preventDefault(); setActive((a) => (a >= n - 1 ? -1 : a + 1)); return }
+    if (showList && e.key === "ArrowUp") { e.preventDefault(); setActive((a) => (a === -1 ? n - 1 : a - 1)); return }
     if (e.key === "Enter") {
       e.preventDefault()
       const picked = suggestions?.[active]
@@ -134,7 +136,15 @@ export function SearchBar({
         leftSection={<IconSearch size={14} />}
         rightSection={value ? <CloseButton size="xs" aria-label="Clear search" onClick={() => onChange("")} /> : null}
       />
-      {showList && <SearchSuggestions items={suggestions!} active={active} onHover={setActive} onPick={pick} />}
+      {showList && (
+        <SearchSuggestions
+          items={suggestions!}
+          active={active}
+          onHover={setActive}
+          onPick={pick}
+          onViewAll={() => setOpen(false)}
+        />
+      )}
     </div>
   )
 }

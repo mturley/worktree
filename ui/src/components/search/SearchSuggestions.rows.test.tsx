@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { cleanup, render, screen, within } from "@testing-library/react"
+import { act, cleanup, render, screen, within } from "@testing-library/react"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { api } from "../../api/client"
 import type { AllResourceDTO, TimelineEvent, WorktreeSummary } from "../../api/types"
 import { SearchSuggestions } from "./SearchSuggestions"
 import type { Suggestion } from "./SearchBar"
+import { setViewport } from "../../testing/viewport"
 
 const wt: WorktreeSummary = {
   path: "/wt/foo", repo: "odh", branch: "foo-branch", on_disk: true, resource_count: 0, primary_count: 0,
@@ -38,7 +39,7 @@ const wrap = () =>
   render(
     <MantineProvider>
       <QueryClientProvider client={new QueryClient()}>
-        <SearchSuggestions items={items} active={-1} onHover={() => {}} onPick={() => {}} />
+        <SearchSuggestions items={items} active={-1} onHover={() => {}} onPick={() => {}} onViewAll={() => {}} />
       </QueryClientProvider>
     </MantineProvider>,
   )
@@ -79,8 +80,36 @@ describe("dropdown rows", () => {
 
   it("explains that the page filters too, above the results", () => {
     wrap()
-    const hint = screen.getByText("The page is also filtered as you type. Press Enter to view all results.")
+    const hint = screen.getByText(/The page is also filtered as you type/)
+    expect(hint.textContent).toBe("The page is also filtered as you type. View all results (Enter)")
     expect(hint.compareDocumentPosition(screen.getAllByRole("option")[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("spans the screen on narrow viewports, whatever the bar's position", () => {
+    setViewport("narrow")
+    const { container } = render(
+      <MantineProvider>
+        <QueryClientProvider client={new QueryClient()}>
+          <div data-search-root>
+            <SearchSuggestions items={items} active={-1} onHover={() => {}} onPick={() => {}} onViewAll={() => {}} />
+          </div>
+        </QueryClientProvider>
+      </MantineProvider>,
+    )
+    const root = container.querySelector<HTMLElement>("[data-search-root]")!
+    vi.spyOn(root, "getBoundingClientRect").mockReturnValue({ left: 60 } as DOMRect)
+    act(() => { window.dispatchEvent(new Event("resize")) })
+    const box = screen.getByTestId("search-suggestions")
+    expect(box.style.left).toBe("calc(var(--mantine-spacing-md) - 60px)")
+    expect(box.style.width).toBe("calc(100vw - 2 * var(--mantine-spacing-md))")
+  })
+
+  it("lines up with the bar when wide", () => {
+    setViewport("wide")
+    wrap()
+    const box = screen.getByTestId("search-suggestions")
+    expect(box.style.left).toBe("0px")
+    expect(box.style.width).toBe("min(640px, calc(100vw - 2 * var(--mantine-spacing-md)))")
   })
 
   it("heads each section with its count", () => {

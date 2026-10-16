@@ -39,6 +39,8 @@ interface ResourceListProps {
   emptyText?: string
   /** Extra controls beside Follow resource. */
   toolbar?: React.ReactNode
+  /** A line directly above the cards, below the toolbar (the search's match count). */
+  aboveList?: React.ReactNode
   /** Notification state for the cards' bells; see ResourceNotifyContext. */
   notify?: ResourceNotifyContext
 }
@@ -103,7 +105,7 @@ function ResourceGroup({
 }
 
 export function ResourceList({
-  items, path, onChanged, selectedKey, onSelectResource, allItems, emptyText = "No resources tracked.", toolbar, notify,
+  items, path, onChanged, selectedKey, onSelectResource, allItems, emptyText = "No resources tracked.", toolbar, aboveList, notify,
 }: ResourceListProps) {
   const [addOpen, setAddOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
@@ -350,6 +352,7 @@ export function ResourceList({
         </Button>
         {toolbar}
       </Group>
+      {aboveList}
       {items.length === 0 ? (
         <Text c="dimmed" size="sm">{emptyText}</Text>
       ) : (

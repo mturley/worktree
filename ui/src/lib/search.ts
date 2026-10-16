@@ -1,4 +1,4 @@
-import type { ResourceDTO, WorktreeSummary } from "../api/types"
+import type { LinkedItem, ResourceDTO, WorktreeSummary } from "../api/types"
 import { worktreeName } from "./homeWorktree"
 import { shortResourceRef } from "./resourceRef"
 
@@ -101,6 +101,27 @@ function firstHit(fields: Field[], terms: string[]): SearchMatch | null {
 export function matchResource(r: ResourceDTO, terms: string[]): SearchMatch | null {
   if (terms.length === 0) return null
   const fields = resourceFields(r)
+  if (!allTermsHit(fields.map((f) => f.text.toLowerCase()), terms)) return null
+  return firstHit(fields, terms)
+}
+
+/**
+ * A linked resource (the detail pane's Linked Resources tab): its key, the
+ * fields its row shows, and the text it was linked from.
+ */
+export function matchLinkedItem(item: LinkedItem, terms: string[]): SearchMatch | null {
+  if (terms.length === 0) return null
+  const ctx = item.context
+  const fields: Field[] = [
+    { name: "key", text: `${item.id}\n${shortResourceRef(item.type, item.id)}` },
+    { name: "title", text: item.title ?? "" },
+    { name: "status", text: item.status ?? item.state ?? "" },
+    { name: "issue type", text: item.issue_type ?? "" },
+    { name: "channel", text: item.channel_name ?? "" },
+    { name: "domain", text: item.domain ?? (item.type === "link" ? item.url : "") },
+    { name: "excerpt", text: item.excerpt ?? "", long: true },
+    { name: "context", text: ctx ? `${ctx.before} ${ctx.label} ${ctx.after}` : "", long: true },
+  ]
   if (!allTermsHit(fields.map((f) => f.text.toLowerCase()), terms)) return null
   return firstHit(fields, terms)
 }

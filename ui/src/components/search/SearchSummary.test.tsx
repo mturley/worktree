@@ -21,6 +21,12 @@ describe("SearchSummary", () => {
     wrap(<SearchSummary count={1} more noun={["event", "events"]} onClear={() => {}} />)
     expect(screen.getByTestId("search-summary").textContent).toContain("1+ events match your search.")
   })
+  it("names a qualifier after the noun", () => {
+    wrap(<SearchSummary count={0} noun={["worktree", "worktrees"]} qualifier="with unread events" onClear={() => {}} />)
+    expect(screen.getByTestId("search-summary").textContent)
+      .toBe("0 worktrees with unread events match your search. Clear search")
+  })
+
   it("clears the search", async () => {
     const onClear = vi.fn()
     wrap(<SearchSummary count={0} noun={["event", "events"]} onClear={onClear} />)

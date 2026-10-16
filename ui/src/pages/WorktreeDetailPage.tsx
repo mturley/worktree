@@ -47,6 +47,7 @@ import { parseThreadUrl } from "../lib/parseThreadUrl"
 import { worktreeName } from "../lib/homeWorktree"
 import { SearchBar } from "../components/search/SearchBar"
 import { SearchSummary } from "../components/search/SearchSummary"
+import { SeeAllLink } from "../components/SeeAllLink"
 import { ClearFiltersLink } from "../components/search/ClearFiltersLink"
 import { SearchContext } from "../components/search/SearchContext"
 import { buildSuggestions } from "../components/search/suggestions"
@@ -250,17 +251,17 @@ export function WorktreeDetailPage() {
               ? "No resources with unread events"
               : undefined
       }
+      aboveList={search.terms.length > 0 && (
+        // Matches only: the selection kept listed while it doesn't match
+        // (see shownItems) is not a result.
+        <SearchSummary
+          count={shownItems.filter((r) => matchResource(r, search.terms) !== null).length}
+          noun={["resource", "resources"]}
+          qualifier={unreadOnly ? "with unread events" : undefined}
+          onClear={clearSearch}
+        />
+      )}
       toolbar={
-        <Stack gap="xs">
-        {search.terms.length > 0 && (
-          // Matches only: the selection kept listed while it doesn't match
-          // (see shownItems) is not a result.
-          <SearchSummary
-            count={shownItems.filter((r) => matchResource(r, search.terms) !== null).length}
-            noun={["resource", "resources"]}
-            onClear={clearSearch}
-          />
-        )}
         <Group gap="lg" align="flex-start">
           <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} />
           <NotifySwitch
@@ -277,7 +278,6 @@ export function WorktreeDetailPage() {
             }}
           />
         </Group>
-        </Stack>
       }
       path={path}
       onChanged={resources.refetch}
@@ -311,11 +311,6 @@ export function WorktreeDetailPage() {
           </Group>
           <SourceFilter value={sources} onChange={setSources} />
         </Group>
-        {/* Only once the feed holds the results for what is typed: during
-            the debounce it would count the old ones. */}
-        {search.terms.length > 0 && search.debouncedQ === search.q.trim() && !timeline.isLoading && (
-          <SearchSummary count={timeline.events.length} more={timeline.hasMore} noun={["event", "events"]} onClear={clearSearch} />
-        )}
         {/* Right-aligned under the source toggles when they sit at the right
             of the header; narrow, the header wraps them to the left. */}
         <EventTypeFilter
@@ -330,6 +325,17 @@ export function WorktreeDetailPage() {
         <Group justify={wide ? "flex-end" : "flex-start"}>
           <ClearFiltersLink active={sources.length > 0 || categories.length > 0} onClear={() => setSources([])} />
         </Group>
+        {/* Directly above the results it counts. Only once the feed holds
+            the results for what is typed: during the debounce it would count
+            the old ones. */}
+        {search.terms.length > 0 && search.debouncedQ === search.q.trim() && !timeline.isLoading && (
+          <SearchSummary
+            count={timeline.events.length}
+            more={timeline.hasMore}
+            noun={unreadOnly ? ["unread event", "unread events"] : ["event", "events"]}
+            onClear={clearSearch}
+          />
+        )}
       </Stack>
       <TimelineFeed
         events={timeline.events}
@@ -338,7 +344,9 @@ export function WorktreeDetailPage() {
         hasMore={timeline.hasMore}
         onLoadMore={timeline.loadMore}
         loadingMore={timeline.loadingMore}
-        emptyText={search.terms.length > 0 ? `Nothing matches "${search.q.trim()}"` : unreadOnly ? "No unread events." : undefined}
+        emptyText={search.terms.length > 0
+          ? `Nothing matches "${search.q.trim()}"`
+          : unreadOnly ? <>No unread events. <SeeAllLink onClick={() => setUnreadOnly(false)} /></> : undefined}
         // Only meaningful here: this page has a selection to change, and the
         // worktree's own resource list to resolve icons and titles against.
         onSelectResource={selectFromEvent}

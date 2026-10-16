@@ -2,6 +2,7 @@ import { Anchor, Badge, Box, Group, Text } from "@mantine/core"
 import { IconMessage, IconWorld } from "@tabler/icons-react"
 import type { LinkedItem, ResourceDTO } from "../../api/types"
 import { Mrkdwn } from "../../lib/mrkdwn"
+import { SearchHighlight } from "../search/SearchHighlight"
 import { jiraStatusColor, prStateColor } from "../../lib/statusColors"
 import { LinkFavicon, ResourceStatusIcon } from "../ResourceStatusIcon"
 import { LinkedResourceActions } from "./LinkedResourceActions"
@@ -30,8 +31,9 @@ const NO_USERS = {}
 const NO_EMOJI = {}
 
 function titleNode(item: LinkedItem): React.ReactNode {
+  // A Slack excerpt is mrkdwn, rendered by the shared parser: not highlighted.
   if (item.type === "slack") return <Mrkdwn text={item.excerpt ?? ""} users={NO_USERS} emoji={NO_EMOJI} />
-  return titleText(item)
+  return <SearchHighlight text={titleText(item)} />
 }
 
 function titleText(item: LinkedItem): string {
@@ -81,7 +83,7 @@ export function LinkedResourceRow({ item, path, hideFollow, marker, toggle }: {
               whatever the icon's own size. */}
           <Box w={ICON_SLOT} mr={ICON_GAP} style={{ display: "flex", justifyContent: "center", flexShrink: 0 }}>{icon(item)}</Box>
           <Group gap={6} wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
-            <Text size="sm" c="dimmed" truncate="end" style={{ minWidth: 0 }}>{keyText(item)}</Text>
+            <Text size="sm" c="dimmed" truncate="end" style={{ minWidth: 0 }}><SearchHighlight text={keyText(item)} /></Text>
             {status && <Badge size="sm" variant="light" color={statusColor(item)} style={{ flexShrink: 0 }}>{status}</Badge>}
             {marker}
           </Group>
@@ -122,9 +124,9 @@ function ContextLine({ item, context, indent }: { item: LinkedItem; context: Non
   const { before, label, after } = context
   return (
     <Text size="xs" c="dimmed" fs="italic" pl={indent} data-testid="link-context">
-      {before && <>{before}{HUGS_NEXT.test(before) ? "" : " "}</>}
-      <Anchor href={item.url} target="_blank" rel="noreferrer" inherit>{label}</Anchor>
-      {after && <>{HUGS_PREVIOUS.test(after) ? "" : " "}{after}</>}
+      {before && <><SearchHighlight text={before} />{HUGS_NEXT.test(before) ? "" : " "}</>}
+      <Anchor href={item.url} target="_blank" rel="noreferrer" inherit><SearchHighlight text={label} /></Anchor>
+      {after && <>{HUGS_PREVIOUS.test(after) ? "" : " "}<SearchHighlight text={after} /></>}
     </Text>
   )
 }

@@ -6,11 +6,16 @@ import type { useLinkedResources } from "../../hooks/useLinkedResources"
 import { relativeTime } from "../../lib/relativeTime"
 import { HierarchyTree } from "./HierarchyTree"
 import { LinkedResourceRow } from "./LinkedResourceRow"
+import { useSearchQuery } from "../../hooks/useSearchQuery"
+import { filterLinkedSections } from "../../lib/linkedSearch"
+import { SearchSummary } from "../search/SearchSummary"
 
 type LinkedQuery = ReturnType<typeof useLinkedResources>
 
-export function linkedTabLabel(data?: { count: number }): string {
-  return data ? `Linked Resources (${data.count})` : "Linked Resources"
+/** `matches`, while searching, replaces the total — as the home page's tab badges count results. */
+export function linkedTabLabel(data?: { count: number }, matches?: number | null): string {
+  if (!data) return "Linked Resources"
+  return `Linked Resources (${matches ?? data.count})`
 }
 
 /** A hierarchy that is only the current issue (no parent, no children) says nothing. */
@@ -23,7 +28,7 @@ function isEmpty(s: LinkedSection): boolean {
 }
 
 /** One section as an accordion item: its title is the toggle. */
-function SectionView({ s, path }: { s: LinkedSection; path?: string }) {
+function SectionView({ s, path, searching }: { s: LinkedSection; path?: string; searching: boolean }) {
   return (
     <Accordion.Item value={s.kind}>
       <Accordion.Control>
@@ -42,7 +47,7 @@ function SectionView({ s, path }: { s: LinkedSection; path?: string }) {
               </Stack>
             </Stack>
           ))}
-          {s.tree && <HierarchyTree roots={s.tree} path={path} />}
+          {s.tree && <HierarchyTree roots={s.tree} path={path} unfold={searching} />}
         </Stack>
       </Accordion.Panel>
     </Accordion.Item>
@@ -55,7 +60,7 @@ function SectionView({ s, path }: { s: LinkedSection; path?: string }) {
  * appears on a refresh opens like the rest. The panel remounts each time the
  * tab is shown, which reopens everything.
  */
-function Sections({ sections, path }: { sections: LinkedSection[]; path?: string }) {
+function Sections({ sections, path, searching = false }: { sections: LinkedSection[]; path?: string; searching?: boolean }) {
   const [collapsed, setCollapsed] = useState<string[]>([])
   return (
     <Accordion
@@ -64,13 +69,14 @@ function Sections({ sections, path }: { sections: LinkedSection[]; path?: string
       value={sections.map((s) => s.kind).filter((k) => !collapsed.includes(k))}
       onChange={(open) => setCollapsed(sections.map((s) => s.kind).filter((k) => !open.includes(k)))}
     >
-      {sections.map((s) => <SectionView key={s.kind} s={s} path={path} />)}
+      {sections.map((s) => <SectionView key={s.kind} s={s} path={path} searching={searching} />)}
     </Accordion>
   )
 }
 
 /** The Linked Resources tab body. */
 export function LinkedResourcesPanel({ query, path }: { query: LinkedQuery; path?: string }) {
+  const search = useSearchQuery()
   // The resource's own watcher is off: nothing to retry, and nothing wrong.
   if (query.error && !query.data && query.error.message.includes("watcher is disabled")) {
     return <Text size="sm" c="dimmed" ta="center" py="md">{query.error.message}, so linked resources aren't fetched.</Text>
@@ -92,7 +98,23 @@ export function LinkedResourcesPanel({ query, path }: { query: LinkedQuery; path
   if (visible.length === 0) {
     return <Text size="sm" c="dimmed" ta="center" py="md">No linked resources found</Text>
   }
-  return <Sections sections={visible} path={path} />
+  if (search.terms.length === 0) return <Sections sections={visible} path={path} />
+  const found = filterLinkedSections(visible, search.terms)
+  return (
+    <Stack gap="xs">
+      <SearchSummary count={found.count ?? 0} noun={["linked resource", "linked resources"]} onClear={() => search.setQ("")} />
+      {found.unsearched && (
+        <Text size="xs" c="dimmed" fs="italic">Hierarchy branches that haven't been loaded weren't searched.</Text>
+      )}
+      {found.sections.length === 0 ? (
+        <Text size="sm" c="dimmed" ta="center" py="md">{`Nothing matches "${search.q.trim()}"`}</Text>
+      ) : (
+        // Keyed by the query: the tree's expansion is per-mount state, and a
+        // new search has new paths to open.
+        <Sections key={search.terms.join(" ")} sections={found.sections} path={path} searching />
+      )}
+    </Stack>
+  )
 }
 
 /**
