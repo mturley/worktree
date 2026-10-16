@@ -29,6 +29,18 @@ describe("buildSuggestions", () => {
     expect(groups.filter((g) => g === "Activity")).toHaveLength(SUGGESTION_LIMITS.events)
     expect(groups).toEqual([...groups].sort((a, b) => ["Worktrees", "Resources", "Activity"].indexOf(a) - ["Worktrees", "Resources", "Activity"].indexOf(b)))
   })
+  it("carries each row's thing, for rendering it as the rest of the UI does", () => {
+    const r = res("J-2", "OAuth first")
+    const w = wt("oauth-fix")
+    const out = buildSuggestions({
+      terms: ["oauth"], worktrees: [{ w, workspaceTitles: [], resources: [] }],
+      resources: [{ r, worktreePath: "/wt/a" }], events: [ev("e1")], go,
+    })
+    expect(out.map((s) => s.item?.kind)).toEqual(["worktree", "resource", "event"])
+    expect(out[0].item).toEqual({ kind: "worktree", w })
+    expect(out[1].item).toEqual({ kind: "resource", r })
+  })
+
   it("picks route through go", () => {
     const r = res("J-2", "OAuth first")
     const out = buildSuggestions({ terms: ["oauth"], resources: [{ r, worktreePath: "/wt/a" }], events: [ev("e1")], go })

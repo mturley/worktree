@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { CloseButton, TextInput } from "@mantine/core"
 import { IconSearch } from "@tabler/icons-react"
 import { SearchSuggestions } from "./SearchSuggestions"
+import type { ResourceDTO, TimelineEvent, WorktreeSummary } from "../../api/types"
 
 export interface Suggestion {
   key: string
@@ -9,8 +10,18 @@ export interface Suggestion {
   group: string
   label: string
   detail?: string
+  /**
+   * What the row shows, rendered as it is elsewhere in the UI. Without one
+   * the row is the plain label and detail.
+   */
+  item?: SuggestionItem
   onPick: () => void
 }
+
+export type SuggestionItem =
+  | { kind: "worktree"; w: WorktreeSummary }
+  | { kind: "resource"; r: ResourceDTO }
+  | { kind: "event"; e: TimelineEvent }
 
 function isEditable(el: Element | null): boolean {
   if (!el) return false

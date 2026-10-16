@@ -59,6 +59,29 @@ export function ColorBar({ color }: { color?: string }) {
  * cursor: the card lights up on hover as one surface, but this strip is not
  * itself a navigation target.
  */
+/**
+ * A workspace's color bar and title, display only. The section adds its
+ * Switch button beside it; the search dropdown shows it alone above a
+ * worktree, where a button would sit inside a list option.
+ */
+export function CmuxWorkspaceLabel({ ws, size = "md" }: { ws: CmuxWorkspace; size?: string }) {
+  return (
+    <Group gap={8} wrap="nowrap" align="flex-start" style={{ minWidth: 0 }}>
+      <ColorBar color={ws.color} />
+      <Text
+        fw={700}
+        size={size}
+        // Wraps rather than truncating: a workspace title often carries the
+        // status a person actually needs to read ("… (waiting for review)"),
+        // which an ellipsis would eat.
+        style={{ minWidth: 0, overflowWrap: "anywhere" }}
+      >
+        <SearchHighlight text={ws.title} />
+      </Text>
+    </Group>
+  )
+}
+
 export function CmuxWorkspaceSection({ path, branch }: { path: string; branch: string }) {
   const cmux = useCmux()
   const qc = useQueryClient()
@@ -110,19 +133,7 @@ export function CmuxWorkspaceSection({ path, branch }: { path: string; branch: s
               // Top-aligned so the button stays put when a long name wraps.
               align="flex-start"
             >
-              <Group gap={8} wrap="nowrap" align="flex-start" style={{ minWidth: 0 }}>
-                <ColorBar color={ws.color} />
-                <Text
-                  fw={700}
-                  size="md"
-                  // Wraps rather than truncating: a workspace title often
-                  // carries the status a person actually needs to read
-                  // ("… (waiting for review)"), which an ellipsis would eat.
-                  style={{ minWidth: 0, overflowWrap: "anywhere" }}
-                >
-                  <SearchHighlight text={ws.title} />
-                </Text>
-              </Group>
+              <CmuxWorkspaceLabel ws={ws} />
               <Button
                 size="compact-xs"
                 variant="subtle"

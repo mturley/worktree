@@ -49,14 +49,16 @@ export function buildSuggestions(input: {
 
   return [
     ...wts.map(({ w }): Suggestion => ({
-      key: `wt:${w.path}`, group: "Worktrees", label: w.branch, detail: w.repo, onPick: () => go.worktree(w.path),
+      key: `wt:${w.path}`, group: "Worktrees", label: w.branch, detail: w.repo, item: { kind: "worktree", w },
+      onPick: () => go.worktree(w.path),
     })),
     ...rs.map(({ r, worktreePath }): Suggestion => ({
       key: `res:${r.type}:${r.id}`, group: "Resources", label: resourceLabel(r), detail: shortResourceRef(r.type, r.id),
+      item: { kind: "resource", r },
       onPick: () => go.resource(r, worktreePath),
     })),
     ...evs.map((e): Suggestion => ({
-      key: `ev:${e.id}`, group: "Activity", label: e.title, detail: eventDetail(e),
+      key: `ev:${e.id}`, group: "Activity", label: e.title, detail: eventDetail(e), item: { kind: "event", e },
       onPick: () => go.event(e),
     })),
   ]

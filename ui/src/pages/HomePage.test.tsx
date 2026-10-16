@@ -423,7 +423,27 @@ describe("HomePage search", () => {
     const user = userEvent.setup()
     wrap()
     await user.click(screen.getByRole("searchbox"))
+    // Labeled as the activity list labels it.
+    expect(within(screen.getByRole("listbox")).getByText("Archived")).toBeInTheDocument()
     await user.keyboard("{ArrowDown}{Enter}")
     expect(await screen.findByRole("dialog")).toBeInTheDocument()
+  })
+
+  it("suggests a worktree by its cmux workspace name, shown above it", async () => {
+    setViewport("wide")
+    vi.spyOn(api, "cmux").mockResolvedValue({
+      available: true,
+      matches: { "/wt/foo": [{ ref: "workspace:1", title: "Persimmon workspace", color: "#ff0000", selected: false }] },
+    })
+    window.history.replaceState({}, "", "/?q=persimmon")
+    const user = userEvent.setup()
+    wrap()
+    await user.click(screen.getByRole("searchbox"))
+    const list = await screen.findByRole("listbox")
+    const row = within(list).getAllByRole("option")[0]
+    // The match is highlighted, which splits the title across elements.
+    await waitFor(() => expect(row.textContent).toContain("Persimmon workspace"))
+    expect(row.querySelector("mark")?.textContent).toBe("Persimmon")
+    expect(row.textContent).toContain("odh · my-branch")
   })
 })
