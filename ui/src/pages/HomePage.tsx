@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react"
 import { useLocation } from "wouter"
 import { serializeResourceKey } from "../lib/resourceKey"
-import { openEventState } from "../lib/openEvent"
-import type { TimelineEvent } from "../api/types"
-import { Box, Button, Grid, Group, Stack, Tabs, Title } from "@mantine/core"
+import { isArchivedEvent, openEventState } from "../lib/openEvent"
+import type { ResourceDTO, TimelineEvent } from "../api/types"
+import { Badge, Box, Button, Grid, Group, Stack, Tabs } from "@mantine/core"
+import { useElementSize } from "@mantine/hooks"
 import { IconPlus } from "@tabler/icons-react"
 import { useWorktrees } from "../hooks/useWorktrees"
 import { useGlobalTimeline } from "../hooks/useTimeline"
@@ -13,7 +14,6 @@ import { pinnedStyle } from "../lib/stickyList"
 import { WorktreeList } from "../components/WorktreeList"
 import { TimelineFeed } from "../components/TimelineFeed"
 import { ArchivedToggle } from "../components/ArchivedToggle"
-import { UnreadOnlyToggle } from "../components/UnreadOnlyToggle"
 import { useUnreadOnly } from "../hooks/useUnreadOnly"
 import { SourceFilter } from "../components/SourceFilter"
 import { EventTypeFilter } from "../components/EventTypeFilter"
@@ -21,9 +21,14 @@ import { useActivityFilter } from "../hooks/useActivityFilter"
 import { RefreshWatchersButton } from "../components/RefreshWatchersButton"
 import { WatcherLogButton } from "../components/WatcherLogButton"
 import { NewWorktreeModal } from "../components/NewWorktreeModal"
-import { SettingsButton } from "../components/SettingsButton"
-import { FollowCmuxToggle } from "../components/FollowCmuxToggle"
-import { Logo } from "../components/Logo"
+import { HomeHeader } from "../components/HomeHeader"
+import { EventDetailsModal } from "../components/EventDetailsModal"
+import { SearchBar } from "../components/search/SearchBar"
+import { SearchContext } from "../components/search/SearchContext"
+import { buildSuggestions } from "../components/search/suggestions"
+import { useSearchQuery } from "../hooks/useSearchQuery"
+import { useAllResources } from "../hooks/useAllResources"
+import { matchWorktree } from "../lib/search"
 import { useCmux } from "../api/cmux"
 import { useWorktreeSort } from "../hooks/useWorktreeSort"
 import { WorktreeSortControl } from "../components/WorktreeSortControl"
@@ -33,8 +38,6 @@ import { ResourcesPanel, ResourcesTabControls } from "../components/ResourcesPan
 import { useResourcesView } from "../hooks/useResourcesView"
 
 type RightTab = "timeline" | "resources"
-
-const columnStyle = { height: "calc(100dvh - var(--mantine-spacing-md))", overflowY: "auto" } as const
 
 export function HomePage() {
   const [, navigate] = useLocation()
@@ -46,7 +49,22 @@ export function HomePage() {
   const [newOpen, setNewOpen] = useState(false)
   // Wide only: which of Activity and Resources fills the right column.
   const [rightTab, setRightTab] = useState<RightTab>("timeline")
-  const resourcesView = useResourcesView(unreadOnly)
+  const search = useSearchQuery()
+  const resourcesView = useResourcesView(unreadOnly, search.terms)
+  // The same cached query the Resources tab uses.
+  const allResources = useAllResources()
+  // An archived event has no worktree to route to; picking one in the search
+  // dropdown opens its details here instead.
+  const [pickedEvent, setPickedEvent] = useState<TimelineEvent | null>(null)
+  // Wide: the header sits above the columns, which shrink by its height.
+  const { ref: headerRef, height: headerH } = useElementSize()
+  // Each column is its own scroller: the viewport's height less the page's
+  // md padding, the header above and the grid's sm top padding, so the page
+  // itself does not scroll (unless a banner above it adds its own height).
+  const columnStyle = {
+    height: `calc(100dvh - var(--mantine-spacing-md) - ${headerH}px - var(--mantine-spacing-sm))`,
+    overflowY: "auto",
+  } as const
   const wide = useIsWide()
   const tall = useIsTall()
   // Wide, each column scrolls on its own, and its header (with the activity
@@ -57,7 +75,7 @@ export function HomePage() {
     ? pinnedStyle("calc(-1 * var(--grid-col-padding))", "var(--grid-col-padding)")
     : undefined
   const wts = useWorktrees()
-  const tl = useGlobalTimeline(archived, sources, unreadOnly, eventTypes)
+  const tl = useGlobalTimeline(archived, sources, unreadOnly, eventTypes, search.debouncedQ)
   const sort = useWorktreeSort()
   // Same shared query the cards use, so this costs no extra request.
   const cmux = useCmux()
@@ -72,14 +90,27 @@ export function HomePage() {
     })
   }, [wts.data, sort.mode, sort.createdDir, sort.nameDir, positions])
 
+  // Every resource each worktree follows, related included, for "via"
+  // matches. Falls back to the card's focus resources until it loads.
+  const resourcesByPath = useMemo(() => {
+    const m = new Map<string, ResourceDTO[]>()
+    for (const r of allResources.data ?? []) for (const w of r.worktrees) m.set(w.path, [...(m.get(w.path) ?? []), r])
+    return m
+  }, [allResources.data])
+
   // The Activity source toggles narrow the cards too: each card keeps only
-  // resources of that source, and a card with none of them drops out.
+  // resources of that source, and a card with none of them drops out. Then
+  // the search narrows what is left to the worktrees that match it.
   const shownWorktrees = useMemo(
     () =>
       (unreadOnly ? sortedWorktrees.filter((w) => w.has_unread) : sortedWorktrees)
         .map((w) => filterWorktreeBySources(w, sources))
-        .filter((w): w is NonNullable<typeof w> => w !== null),
-    [sortedWorktrees, unreadOnly, sources],
+        .filter((w): w is NonNullable<typeof w> => w !== null)
+        .filter((w) => search.terms.length === 0 || matchWorktree(
+          w, (cmux.data?.available ? cmux.data.matches?.[w.path] ?? [] : []).map((m) => m.title),
+          resourcesByPath.get(w.path) ?? w.focus_resources, search.terms,
+        ) !== null),
+    [sortedWorktrees, unreadOnly, sources, search.terms, resourcesByPath, cmux.data],
   )
 
   const sortControl = (
@@ -99,17 +130,8 @@ export function HomePage() {
 
   // Above the worktree list on wide, inside the Worktrees tab on narrow.
   const listToolbar = (
-    <Group justify="space-between" gap="xs">
-      <Group gap="lg">
-        {/* The logo stands in for the old "Worktrees" title, and keeps its
-            name as the heading's accessible text. */}
-        <Title order={4}><Logo alt="Worktrees" /></Title>
-        {sortControl}
-        {/* With the worktree list, which it narrows first; it narrows the
-            activity feed too. */}
-        <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} />
-        <FollowCmuxToggle />
-      </Group>
+    <Group justify="space-between" gap="xs" data-testid="worktrees-toolbar">
+      {sortControl}
       {newWorktreeButton}
     </Group>
   )
@@ -143,7 +165,9 @@ export function HomePage() {
       emptyText={
         sortedWorktrees.length === 0
           ? undefined
-          : sources.length > 0
+          : search.terms.length > 0
+            ? `Nothing matches "${search.q.trim()}"`
+            : sources.length > 0
             ? `No worktrees${unreadOnly ? " with unread events" : ""} following that source`
             : unreadOnly
               ? "No worktrees with unread events"
@@ -162,19 +186,23 @@ export function HomePage() {
     </Group>
   )
 
+  // While searching, each tab shows how many results it holds ("N+" when
+  // the feed has more pages).
+  const counting = search.terms.length > 0
+  const countBadge = (n: number, more = false) =>
+    counting ? <Badge size="xs" variant="light" ml={6}>{more ? `${n}+` : n}</Badge> : null
+
   // Wide, the right column's tab bar. As on the worktree page's resource
-  // tabs, the active tab's controls sit at the bar's far end, before the
-  // Settings cog (top-right of the page). It rides at the top of whichever
-  // tab's pinned header is showing, so it stays in reach as the column
-  // scrolls.
+  // tabs, the active tab's controls sit at the bar's far end. It rides at
+  // the top of whichever tab's pinned header is showing, so it stays in
+  // reach as the column scrolls.
   const rightTabBar = (
     <Tabs value={rightTab} onChange={(v) => v && setRightTab(v as RightTab)}>
       <Tabs.List>
-        <Tabs.Tab value="timeline">Activity</Tabs.Tab>
-        <Tabs.Tab value="resources">Resources</Tabs.Tab>
+        <Tabs.Tab value="timeline">Activity{countBadge(tl.events.length, tl.hasMore)}</Tabs.Tab>
+        <Tabs.Tab value="resources">Resources{countBadge(resourcesView.shown.length)}</Tabs.Tab>
         <Group ml="auto" align="center" gap="md" wrap="nowrap" pb={4}>
           {rightTab === "timeline" ? activityControls : <ResourcesTabControls view={resourcesView} />}
-          <SettingsButton />
         </Group>
       </Tabs.List>
     </Tabs>
@@ -206,7 +234,7 @@ export function HomePage() {
         loading={tl.isLoading}
         error={tl.error}
         showWorktrees
-        emptyText={unreadOnly ? "No unread events." : undefined}
+        emptyText={search.debouncedQ ? `Nothing matches "${search.debouncedQ}"` : unreadOnly ? "No unread events." : undefined}
         hasMore={tl.hasMore}
         onLoadMore={tl.loadMore}
         loadingMore={tl.loadingMore}
@@ -216,82 +244,105 @@ export function HomePage() {
     </Stack>
   )
 
+  const suggestions = buildSuggestions({
+    terms: search.terms,
+    worktrees: shownWorktrees.map((w) => ({
+      w, workspaceTitles: (cmux.data?.available ? cmux.data.matches?.[w.path] ?? [] : []).map((m) => m.title),
+      resources: resourcesByPath.get(w.path) ?? w.focus_resources,
+    })),
+    resources: resourcesView.shown.map((r) => ({ r, worktreePath: r.worktrees[0]?.path })),
+    events: tl.events,
+    go: {
+      worktree: (p) => navigate(`/worktree/${encodeURIComponent(p)}`),
+      resource: (r, p) => p && navigate(`/worktree/${encodeURIComponent(p)}?resource=${serializeResourceKey(r)}`),
+      // An archived event (only with "Show archived" on) has no worktree to
+      // route to; like its row, it opens the details modal, which offers to
+      // follow the resource again.
+      event: (e) => (isArchivedEvent(e) || !e.worktree_paths?.length
+        ? setPickedEvent(e)
+        : selectResourceInFirstWorktree({ type: e.resource_type, id: e.resource_id }, e)),
+    },
+  })
+  const searchBar = <SearchBar value={search.q} onChange={search.setQ} suggestions={suggestions} />
+  const header = <HomeHeader search={searchBar} unreadOnly={unreadOnly} onUnreadOnlyChange={setUnreadOnly} />
+  const detailsModal = <EventDetailsModal e={pickedEvent} onClose={() => setPickedEvent(null)} />
+
   // Narrow: the two panes would otherwise stack, pushing the worktree list
   // far off-screen, so offer them as tabs instead.
   if (!wide) {
     return (
-      <Stack p="md" gap="sm">
-        <NewWorktreeModal opened={newOpen} onClose={() => setNewOpen(false)} />
-        <Tabs defaultValue="worktrees">
-          <Tabs.List>
-            <Tabs.Tab value="worktrees">Worktrees</Tabs.Tab>
-            <Tabs.Tab value="timeline">Activity</Tabs.Tab>
-            <Tabs.Tab value="resources">Resources</Tabs.Tab>
-            {/* Top-right of the page, whichever tab is showing. */}
-            <Group ml="auto" align="center" pb={4}>
-              <SettingsButton />
-            </Group>
-          </Tabs.List>
-          <Tabs.Panel value="worktrees" pt="md">
-            <Stack gap="xs">
-              {listToolbar}
-              {worktrees}
-            </Stack>
-          </Tabs.Panel>
-          <Tabs.Panel value="timeline" pt="md">{timeline()}</Tabs.Panel>
-          <Tabs.Panel value="resources" pt="md">
-            {/* The worktree toolbar, which holds the unread-only toggle when
-                wide, is on another tab here; this tab gets its own. */}
-            <ResourcesPanel
-              view={resourcesView}
-              top={
-                <Group justify="space-between" gap="xs" wrap="wrap">
-                  <ResourcesTabControls view={resourcesView} />
-                  <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} />
-                </Group>
-              }
-            />
-          </Tabs.Panel>
-        </Tabs>
-      </Stack>
+      <SearchContext.Provider value={{ terms: search.terms, resourcesByPath }}>
+        <Stack p="md" gap="sm">
+          <NewWorktreeModal opened={newOpen} onClose={() => setNewOpen(false)} />
+          {detailsModal}
+          {header}
+          <Tabs defaultValue="worktrees">
+            <Tabs.List>
+              <Tabs.Tab value="worktrees">Worktrees{countBadge(shownWorktrees.length)}</Tabs.Tab>
+              <Tabs.Tab value="timeline">Activity{countBadge(tl.events.length, tl.hasMore)}</Tabs.Tab>
+              <Tabs.Tab value="resources">Resources{countBadge(resourcesView.shown.length)}</Tabs.Tab>
+            </Tabs.List>
+            <Tabs.Panel value="worktrees" pt="md">
+              <Stack gap="xs">
+                {listToolbar}
+                {worktrees}
+              </Stack>
+            </Tabs.Panel>
+            <Tabs.Panel value="timeline" pt="md">{timeline()}</Tabs.Panel>
+            <Tabs.Panel value="resources" pt="md">
+              <ResourcesPanel
+                view={resourcesView}
+                top={
+                  <Group justify="space-between" gap="xs" wrap="wrap">
+                    <ResourcesTabControls view={resourcesView} />
+                  </Group>
+                }
+              />
+            </Tabs.Panel>
+          </Tabs>
+        </Stack>
+      </SearchContext.Provider>
     )
   }
 
   return (
-    // Even split. The worktree cards carry more per row than they used to —
-    // a cmux workspace header, two meta lines, focus resources — so the
-    // narrower column was wrapping content that the timeline had width to
-    // spare for.
+    // The header sits above the columns. Even split below it. The worktree
+    // cards carry more per row than they used to — a cmux workspace header,
+    // two meta lines, focus resources — so the narrower column was wrapping
+    // content that the timeline had width to spare for.
     //
-    // Each column is its own scroller, exactly the viewport's height: the
-    // Grid's md padding less its row's -md/2 margins leaves the row
-    // 100dvh - md tall, so the page itself does not scroll (unless a banner
-    // above it adds its own height). No overflow on the Grid itself — its
-    // row's negative margins would show as a sideways scrollbar.
-    <Grid p="md" gutter="md">
-      {/* Tooltips in both columns open under the pinned headers; see
-          useTooltipLayer. */}
-      <Grid.Col span={6} style={columnStyle} data-tooltip-layer="content">
-        {/* As the Activity header: pinned, it carries its own opaque room
-            below the toolbar in place of the gap, so the cards scrolling
-            under it do not run right up against the buttons. */}
-        <Stack gap={headerStyle ? 0 : "sm"}>
-          <Box
-            style={headerStyle && { ...headerStyle, paddingBottom: "var(--mantine-spacing-xs)" }}
-            data-worktrees-header
-            data-tooltip-layer={headerStyle ? "pinned" : undefined}
-          >
-            {listToolbar}
-          </Box>
-          {worktrees}
-        </Stack>
-      </Grid.Col>
-      <Grid.Col span={6} style={columnStyle} data-tooltip-layer="content">
-        {rightTab === "timeline"
-          ? timeline(rightTabBar)
-          : <ResourcesPanel view={resourcesView} headerStyle={headerStyle} top={rightTabBar} />}
-      </Grid.Col>
-      <NewWorktreeModal opened={newOpen} onClose={() => setNewOpen(false)} />
-    </Grid>
+    // Each column is its own scroller, sized to what is left under the
+    // header (see columnStyle), so the page itself does not scroll (unless a
+    // banner above it adds its own height). No overflow on the Grid itself —
+    // its row's negative margins would show as a sideways scrollbar.
+    <SearchContext.Provider value={{ terms: search.terms, resourcesByPath }}>
+      <Box px="md" pt="md" ref={headerRef}>{header}</Box>
+      <Grid px="md" pb="md" pt="sm" gutter="md">
+        {/* Tooltips in both columns open under the pinned headers; see
+            useTooltipLayer. */}
+        <Grid.Col span={6} style={columnStyle} data-tooltip-layer="content">
+          {/* As the Activity header: pinned, it carries its own opaque room
+              below the toolbar in place of the gap, so the cards scrolling
+              under it do not run right up against the buttons. */}
+          <Stack gap={headerStyle ? 0 : "sm"}>
+            <Box
+              style={headerStyle && { ...headerStyle, paddingBottom: "var(--mantine-spacing-xs)" }}
+              data-worktrees-header
+              data-tooltip-layer={headerStyle ? "pinned" : undefined}
+            >
+              {listToolbar}
+            </Box>
+            {worktrees}
+          </Stack>
+        </Grid.Col>
+        <Grid.Col span={6} style={columnStyle} data-tooltip-layer="content">
+          {rightTab === "timeline"
+            ? timeline(rightTabBar)
+            : <ResourcesPanel view={resourcesView} headerStyle={headerStyle} top={rightTabBar} />}
+        </Grid.Col>
+        <NewWorktreeModal opened={newOpen} onClose={() => setNewOpen(false)} />
+        {detailsModal}
+      </Grid>
+    </SearchContext.Provider>
   )
 }

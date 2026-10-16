@@ -170,7 +170,7 @@ export function ResourcesPanel({ view, headerStyle, top }: {
   /** Pins the controls at the top of a scrolling column; see pinnedStyle. */
   headerStyle?: React.CSSProperties
 }) {
-  const { query: q, all, shown, filter, setFilter, unreadOnly } = view
+  const { query: q, all, shown, filter, setFilter, unreadOnly, terms } = view
   const presentTypes = useMemo(() => new Set(all.map((r) => r.type)), [all])
 
   const controls = (
@@ -213,7 +213,7 @@ export function ResourcesPanel({ view, headerStyle, top }: {
   } else if (shown.length === 0) {
     body = (
       <Text size="sm" c="dimmed" ta="center" py="md">
-        {all.length === 0 ? "No worktree follows any resources yet." : unreadOnly ? "No unread resources match." : "No resources match these filters."}
+        {terms.length > 0 ? `Nothing matches "${terms.join(" ")}"` : all.length === 0 ? "No worktree follows any resources yet." : unreadOnly ? "No unread resources match." : "No resources match these filters."}
       </Text>
     )
   } else {

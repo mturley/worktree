@@ -125,10 +125,10 @@ describe("HomePage tab bar controls", () => {
     setViewport("wide")
     wrap()
     const tablist = screen.getByRole("tablist")
-    const archived = within(tablist).getByRole("switch", { name: "Show archived" })
-    expect(within(tablist).getByRole("button", { name: "Settings" })).toBeInTheDocument()
+    within(tablist).getByRole("switch", { name: "Show archived" })
+    // Settings lives in the page header now, not the tab bar.
+    expect(within(tablist).queryByRole("button", { name: "Settings" })).toBeNull()
     expect(within(tablist).queryByRole("combobox", { name: "Sort resources" })).toBeNull()
-    expect(archived.compareDocumentPosition(within(tablist).getByRole("button", { name: "Settings" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
     await userEvent.click(screen.getByRole("tab", { name: "Resources" }))
     const bar = screen.getByRole("tablist")
@@ -148,22 +148,16 @@ describe("HomePage tab bar controls", () => {
 })
 
 describe("HomePage settings", () => {
-  it("puts the Settings cog in the right column's tab bar when wide", () => {
-    setViewport("wide")
-    wrap()
-    const cog = screen.getByRole("button", { name: "Settings" })
-    expect(cog.closest("[role='tablist']")).not.toBeNull()
-    // Pinned with the activity header, so it stays in reach.
-    expect(cog.closest("[data-activity-header]")).not.toBeNull()
-    expect(screen.queryByRole("button", { name: "Devices" })).not.toBeInTheDocument()
-  })
-
-  it("puts the Settings cog in the tab bar when narrow", () => {
-    setViewport("narrow")
-    wrap()
-    const cog = screen.getByRole("button", { name: "Settings" })
-    expect(cog.closest("[role='tablist']")).not.toBeNull()
-    expect(screen.getAllByRole("button", { name: "Settings" })).toHaveLength(1)
+  it("puts the Settings cog in the page header at both widths", () => {
+    for (const width of ["wide", "narrow"] as const) {
+      setViewport(width)
+      wrap()
+      const cog = screen.getByRole("button", { name: "Settings" })
+      expect(cog.closest("[data-testid='home-header']")).not.toBeNull()
+      expect(cog.closest("[role='tablist']")).toBeNull()
+      expect(screen.getAllByRole("button", { name: "Settings" })).toHaveLength(1)
+      cleanup()
+    }
   })
 
   it("opens the Settings modal", async () => {
@@ -257,18 +251,14 @@ describe("HomePage unread-only toggle", () => {
     expect(window.localStorage.getItem("worktree.unreadOnly")).toBe("true")
   })
 
-  it("sits with the worktree list's controls, not the activity feed's, in both layouts", async () => {
+  it("sits in the page header, not the worktree list's or activity feed's controls, in both layouts", () => {
     for (const width of ["narrow", "wide"] as const) {
       setViewport(width)
       wrap()
-      // hidden: on narrow each lives in its own tab, and only one is selected.
-      const archived = await screen.findByRole("switch", { name: "Show archived", hidden: true })
-      const heading = screen.getByRole("heading", { name: "Worktrees", hidden: true })
-      // The first: narrow, the Resources tab has its own after it.
-      const toggle = screen.getAllByRole("switch", { name: "Unreads only", hidden: true })[0]
-      expect(toggle.closest(".mantine-Group-root")).toContainElement(heading)
-      expect(toggle.closest(".mantine-Group-root")).not.toContainElement(archived)
-      expect(heading.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      const header = screen.getByTestId("home-header")
+      expect(within(header).getByRole("heading", { name: "Worktrees" })).toBeInTheDocument()
+      expect(within(header).getByRole("switch", { name: "Unreads only" })).toBeInTheDocument()
+      expect(screen.getAllByRole("switch", { name: "Unreads only", hidden: true })).toHaveLength(1)
       cleanup()
     }
   })
@@ -319,5 +309,53 @@ describe("HomePage activity entry click", () => {
     expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/foo")}`)
     expect(new URLSearchParams(window.location.search).get("resource")).toBe("pr:o/r#1")
     expect(window.history.state).toEqual({ openEvent: event })
+  })
+})
+
+describe("HomePage search", () => {
+  it("filters worktrees and resources, passes q to the feed, shows counts", async () => {
+    setViewport("wide")
+    mocks.worktrees = [summary, { ...summary, path: "/wt/bar", branch: "kumquat-branch", focus_resources: [] }]
+    window.history.replaceState({}, "", "/?q=kumquat")
+    wrap()
+    expect(screen.getByRole("searchbox")).toHaveValue("kumquat")
+    expect(screen.queryByText(/my-branch/)).toBeNull()
+    expect(screen.getAllByText(/kumquat/i).length).toBeGreaterThan(0)
+    // Debounced value reaches the feed hook as its 5th argument.
+    await waitFor(() => expect(mocks.timelineArgs.at(-1)?.[4]).toBe("kumquat"))
+  })
+
+  it("clearing restores everything and removes q", async () => {
+    setViewport("wide")
+    window.history.replaceState({}, "", "/?q=nothing-matches")
+    wrap()
+    expect(screen.getAllByText(/Nothing matches/).length).toBeGreaterThan(0)
+    await userEvent.click(screen.getByRole("button", { name: "Clear search" }))
+    expect(screen.getByText(/my-branch/)).toBeInTheDocument()
+    expect(new URLSearchParams(window.location.search).has("q")).toBe(false)
+    await waitFor(() => expect(mocks.timelineArgs.at(-1)?.[4] ?? "").toBe(""))
+  })
+
+  it("moves global controls into the header", () => {
+    setViewport("wide")
+    wrap()
+    const header = screen.getByTestId("home-header")
+    expect(within(header).getByRole("searchbox")).toBeInTheDocument()
+    expect(within(screen.getByTestId("worktrees-toolbar")).queryByText(/unread/i)).toBeNull()
+  })
+
+  it("opens the details dialog for a picked archived event", async () => {
+    setViewport("wide")
+    mocks.events = [{
+      id: "evt-9", ts: "2026-10-01T00:00:00Z", external_ts: "", source: "github",
+      type: "pr_comment", type_label: "", title: "Zucchini remark", body: "", author: "someone",
+      resource_type: "pr", resource_id: "o/r#2", resource_url: "https://gh/pr/2", resource_title: "Gone PR", worktrees: [],
+    }]
+    window.history.replaceState({}, "", "/?q=zucchini")
+    const user = userEvent.setup()
+    wrap()
+    await user.click(screen.getByRole("searchbox"))
+    await user.keyboard("{ArrowDown}{Enter}")
+    expect(await screen.findByRole("dialog")).toBeInTheDocument()
   })
 })
