@@ -76,6 +76,11 @@ export function EventRow({
    */
   const showBody = !!e.body && !e.type.startsWith("ci_")
 
+  // Only on the global feed: nothing follows this resource any more, which
+  // is why the row opens details. The title steps back behind a badge
+  // saying so.
+  const archived = !!showWorktrees && isArchivedEvent(e)
+
   const row = (
     <Box
       component={activate ? "button" : "div"}
@@ -116,7 +121,12 @@ export function EventRow({
               // individually instead.
               <UnreadMarkerDot label="unread event" />
             )}
-            <Text size="sm" fw={600} style={{ overflowWrap: "anywhere", minWidth: 0 }}>{e.title}</Text>
+            {archived && (
+              <Badge size="xs" color="gray" variant="light" leftSection={<IconArchive size={10} />} style={{ flex: "none" }}>
+                Archived
+              </Badge>
+            )}
+            <Text size="sm" fw={600} c={archived ? "dimmed" : undefined} style={{ overflowWrap: "anywhere", minWidth: 0 }}>{e.title}</Text>
             <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
               {e.author && `${e.author} · `}{rel(e.external_ts || e.ts)}
             </Text>
@@ -150,15 +160,6 @@ export function EventRow({
               // cards, so the same thing looks the same wherever it is named.
               <Badge key={w} size="xs" color="blue" variant="light">Worktree: {w}</Badge>
             ))}
-          </Group>
-        )}
-        {/* Where the worktree badges would be: nothing follows this
-            resource any more, which is why the row opens details. */}
-        {showWorktrees && isArchivedEvent(e) && (
-          <Group gap={6} wrap="wrap">
-            <Badge size="xs" color="gray" variant="light" leftSection={<IconArchive size={10} />}>
-              Archived
-            </Badge>
           </Group>
         )}
       </Stack>

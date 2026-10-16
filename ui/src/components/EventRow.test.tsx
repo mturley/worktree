@@ -455,10 +455,11 @@ describe("the resource line matches the resource cards", () => {
     expect(screen.queryByRole("status", { name: "loading" })).not.toBeInTheDocument()
   })
 
-  it("marks an event whose resource no worktree follows as archived, on the global feed only", () => {
+  it("marks an event whose resource no worktree follows as archived, and dims its title, on the global feed only", () => {
     const e = makeEvent({ resource_type: "pr", resource_id: "o/r#42", worktrees: [], worktree_paths: [] })
     const { rerender } = renderWithProvider(<EventRow e={e} showWorktrees />)
     expect(screen.getByText("Archived")).toBeInTheDocument()
+    expect(screen.getByText("Add feature X").style.color).toContain("dimmed")
     rerender(<MantineProvider><EventRow e={e} /></MantineProvider>)
     expect(screen.queryByText("Archived")).toBeNull()
     rerender(<MantineProvider><EventRow e={{ ...e, worktrees: ["b"], worktree_paths: ["/wt/b"] }} showWorktrees /></MantineProvider>)
