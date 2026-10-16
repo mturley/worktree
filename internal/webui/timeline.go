@@ -45,6 +45,8 @@ type TimelineEvent struct {
 	// cursor — Slack's own cursor for a thread, worktree's for everything
 	// else. See unreadIndex.IsUnread.
 	Unread bool `json:"unread,omitempty"`
+	// Match says why the event matched the `q` search; absent without q.
+	Match *searchMatch `json:"match,omitempty"`
 	// authorID is the event's watcher author_id, used only to leave the
 	// user's own events out of unread (internal/selfid). Not sent.
 	authorID string `json:"-"`
@@ -194,7 +196,7 @@ const unreadOnlyClause = `AND (
            AND ` + unread.SlackNewerSQL + `))
 ) AND ` + selfid.NotMineSQL + ` `
 
-// handleGlobalTimeline: GET /api/timeline?archived=&limit=&before=&resource_types=&event_types=&unread_only=
+// handleGlobalTimeline: GET /api/timeline?archived=&limit=&before=&resource_types=&event_types=&unread_only=&q=
 func (s *Server) handleGlobalTimeline(w http.ResponseWriter, r *http.Request) {
 	archived := r.URL.Query().Get("archived") == "true"
 	unreadOnly := r.URL.Query().Get("unread_only") == "true"
@@ -202,6 +204,8 @@ func (s *Server) handleGlobalTimeline(w http.ResponseWriter, r *http.Request) {
 	before := r.URL.Query().Get("before") // RFC3339 ts; "" = newest
 	types := parseResourceTypes(r)
 	eventTypeClause, eventTypeArgs := parseEventTypes(r).sql()
+	terms := parseSearchTerms(r.URL.Query().Get("q"))
+	searchClause, searchArgs := searchSQL(terms)
 
 	var (
 		rows *sql.Rows
@@ -243,11 +247,12 @@ JOIN watcher_event_resources er ON er.event_id = e.id `
 		args = append(args, t)
 	}
 	args = append(args, eventTypeArgs...)
+	args = append(args, searchArgs...)
 	args = append(args, limit)
 
-	q := base + filter + beforeClause + typeClause + eventTypeClause + unreadClause + order
+	q := base + filter + beforeClause + typeClause + eventTypeClause + searchClause + unreadClause + order
 	if !archived {
-		q = base + watchedJoin + filter + beforeClause + typeClause + eventTypeClause + unreadClause + order
+		q = base + watchedJoin + filter + beforeClause + typeClause + eventTypeClause + searchClause + unreadClause + order
 	}
 	rows, err = s.DB.Query(q, args...)
 	if err != nil {
@@ -255,7 +260,7 @@ JOIN watcher_event_resources er ON er.event_id = e.id `
 		return
 	}
 	defer rows.Close()
-	s.writeTimelineRows(w, rows, limit)
+	s.writeTimelineRows(w, rows, limit, terms)
 }
 
 // eventIDsForResource returns the set of event ids linked to one resource.
@@ -373,7 +378,7 @@ func (s *Server) handleWorktreeTimeline(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, timelineResponse{Events: out, NextCursor: cursorOf(out)})
 }
 
-func (s *Server) writeTimelineRows(w http.ResponseWriter, rows *sql.Rows, limit int) {
+func (s *Server) writeTimelineRows(w http.ResponseWriter, rows *sql.Rows, limit int, terms []string) {
 	out := make([]TimelineEvent, 0, limit)
 	// An event can be linked to more than one resource in
 	// watcher_event_resources (the join in handleGlobalTimeline yields one
@@ -419,6 +424,7 @@ func (s *Server) writeTimelineRows(w http.ResponseWriter, rows *sql.Rows, limit 
 	enricher := s.newEventEnricher()
 	for i := range out {
 		enricher.fillResource(&out[i])
+		out[i].Match = matchEvent(&out[i], terms)
 	}
 	writeJSON(w, http.StatusOK, timelineResponse{Events: out, NextCursor: cursorOf(out)})
 }
