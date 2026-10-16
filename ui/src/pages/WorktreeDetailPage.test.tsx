@@ -200,6 +200,14 @@ describe("WorktreeDetailPage pinned cards", () => {
     expect(screen.getByRole("tab", { name: "Git / Environment" }).closest("[data-page-header]")).not.toBeNull()
   })
 
+  it("keeps scrolled content off the toolbar when narrow, without moving it at rest", () => {
+    setViewport("narrow")
+    wrap()
+    const header = document.querySelector<HTMLElement>("[data-page-header]")!
+    expect(header.style.paddingBottom).toBe("var(--mantine-spacing-sm)")
+    expect(header.style.marginBottom).toBe("calc(-1 * var(--mantine-spacing-sm))")
+  })
+
   it("lets the expanded details card scroll away when short", async () => {
     setViewport("wide", { tall: false })
     const user = userEvent.setup()

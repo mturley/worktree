@@ -582,6 +582,14 @@ export function WorktreeDetailPage() {
           // include it.
           marginTop: "calc(-1 * var(--mantine-spacing-md))",
           paddingTop: "var(--mantine-spacing-md)",
+          // Narrow, the toolbar row (editor, search, actions) is the header's
+          // last line, and content scrolling under it ran right up against
+          // the search bar. The same trick at the bottom: opaque padding,
+          // pulled back by the same margin so nothing moves at rest.
+          ...(!wide && {
+            paddingBottom: "var(--mantine-spacing-sm)",
+            marginBottom: "calc(-1 * var(--mantine-spacing-sm))",
+          }),
           background: "var(--mantine-color-body)",
         }}
       >
