@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useEffect, useSyncExternalStore } from "react"
 import { startBlink } from "../lib/blinkTicker"
 import { BASE_TITLE, badgeTitle, unreadBadge } from "../lib/unreadBadge"
 import { useWorktrees } from "./useWorktrees"
@@ -8,7 +8,31 @@ export const BASE_FAVICON = "/favicon.svg?v=2"
 /** The same tile with an unread dot on it. */
 export const UNREAD_FAVICON = "/favicon-unread.svg"
 
+// The icon useUnreadFavicon last set, mirrored for the in-page logos so they
+// blink in step with the tab rather than on a timer of their own.
+let currentIcon = BASE_FAVICON
+const iconListeners = new Set<() => void>()
+
+function subscribeIcon(listener: () => void): () => void {
+  iconListeners.add(listener)
+  return () => { iconListeners.delete(listener) }
+}
+
+/**
+ * The favicon href the tab is showing right now: BASE_FAVICON at rest, and
+ * alternating with UNREAD_FAVICON while any worktree has unread activity.
+ * The headers' Logo renders this, so its dot flashes on the same frame as the
+ * tab's — app-wide, not just for the worktree the page is showing.
+ */
+export function useFaviconHref(): string {
+  return useSyncExternalStore(subscribeIcon, () => currentIcon)
+}
+
 function setIcon(href: string): void {
+  if (href !== currentIcon) {
+    currentIcon = href
+    iconListeners.forEach((l) => l())
+  }
   let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
   if (!link) {
     link = document.createElement("link")

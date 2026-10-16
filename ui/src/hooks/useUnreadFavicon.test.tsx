@@ -3,6 +3,7 @@ import { render, cleanup } from "@testing-library/react"
 import { act } from "react"
 import type { WorktreeSummary } from "../api/types"
 import { BLINK_MS } from "../lib/blinkTicker"
+import { Logo } from "../components/Logo"
 import { BASE_FAVICON, UNREAD_FAVICON, useUnreadFavicon } from "./useUnreadFavicon"
 
 let list: WorktreeSummary[] = []
@@ -94,5 +95,21 @@ describe("useUnreadFavicon", () => {
     view.unmount()
     expect(icon()).toBe(BASE_FAVICON)
     expect(document.title).toBe("worktree")
+  })
+
+  it("flashes the header logo in step with the tab", () => {
+    list = [wt(true, 1)]
+    const view = render(<><Probe /><Logo /></>)
+    const logo = () => view.container.querySelector("img")!.getAttribute("src")
+    expect(logo()).toBe(UNREAD_FAVICON)
+    act(() => void vi.advanceTimersByTime(BLINK_MS))
+    expect(logo()).toBe(BASE_FAVICON)
+    expect(logo()).toBe(icon())
+    act(() => void vi.advanceTimersByTime(BLINK_MS))
+    expect(logo()).toBe(UNREAD_FAVICON)
+
+    list = [wt(false)]
+    view.rerender(<><Probe /><Logo /></>)
+    expect(logo()).toBe(BASE_FAVICON)
   })
 })
