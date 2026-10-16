@@ -140,7 +140,7 @@ describe("ResourceDetailPane", () => {
   it("requests the timeline filtered to the selected resource", () => {
     useWorktreeTimeline.mockReturnValue({ events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false })
     wrap(<ResourceDetailPane path="/wt/foo" resource={jira} />)
-    expect(useWorktreeTimeline).toHaveBeenCalledWith("/wt/foo", { type: "jira", id: "J-1" })
+    expect(useWorktreeTimeline).toHaveBeenCalledWith("/wt/foo", { type: "jira", id: "J-1" }, [], false, [], "")
   })
 
   it("shows the detailed resource summary, including Jira labels", () => {

@@ -3,6 +3,7 @@ import { Anchor, Box, Button, Center, Group, Stack, Tabs, Text } from "@mantine/
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import type { ResourceDTO } from "../api/types"
 import { useWorktreeTimeline } from "../hooks/useTimeline"
+import { useSearchQuery } from "../hooks/useSearchQuery"
 import { api } from "../api/client"
 import { ResourceCard, type ResourceNotifyContext } from "./ResourceCard"
 import { SlackThreadPane } from "./SlackThreadPane"
@@ -71,7 +72,8 @@ function TimelineBody({
   notify?: ResourceNotifyContext
   stickyTop?: number
 }) {
-  const timeline = useWorktreeTimeline(path, { type: resource.type, id: resource.id })
+  const { debouncedQ } = useSearchQuery()
+  const timeline = useWorktreeTimeline(path, { type: resource.type, id: resource.id }, [], false, [], debouncedQ)
   const [tab, setTab] = useResourceTab(DETAIL_TABS)
   // Link titles are only fetched once the Linked tab has been shown — by a
   // click, or by arriving on it through the URL (back/forward, a refresh).

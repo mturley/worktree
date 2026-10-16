@@ -45,6 +45,11 @@ import { LinkedActionsContext } from "../components/linked/LinkedActionsContext"
 import { AddResourceModal } from "../components/AddResourceModal"
 import { parseThreadUrl } from "../lib/parseThreadUrl"
 import { worktreeName } from "../lib/homeWorktree"
+import { SearchBar } from "../components/search/SearchBar"
+import { SearchContext } from "../components/search/SearchContext"
+import { buildSuggestions } from "../components/search/suggestions"
+import { useSearchQuery } from "../hooks/useSearchQuery"
+import { matchResource } from "../lib/search"
 
 export function WorktreeDetailPage() {
   const [, params] = useRoute("/worktree/:path*")
@@ -58,7 +63,10 @@ export function WorktreeDetailPage() {
   // and the worktree's unified feed; a selected resource's own feed is left
   // whole, its unread events already together at the top under the divider.
   const [unreadOnly, setUnreadOnly] = useUnreadOnly()
-  const { resources, timeline } = useWorktreeDetail(path, sources, unreadOnly, eventTypes)
+  // Narrows only this worktree's resources and activity; the query lives in
+  // the URL, shared with the resource's own feed (ResourceDetailPane).
+  const search = useSearchQuery()
+  const { resources, timeline } = useWorktreeDetail(path, sources, unreadOnly, eventTypes, search.debouncedQ)
   const { selected, select, toggle, clear } = useSelectedResource()
   const wide = useIsWide()
   // The details card and a selected resource's card + tabs are pinned while
@@ -73,11 +81,18 @@ export function WorktreeDetailPage() {
   // Memoized, not just derived: ResourceList drops its optimistic order
   // whenever this array changes identity, so a fresh one per render would
   // undo every drag before the save landed.
+  const selType = selected?.type
+  const selId = selected?.id
   const shownItems = useMemo(
-    () => items.filter((r) => (!unreadOnly || hasUnread(r)) && matchesSources(r.type, sources)),
-    [items, unreadOnly, sources],
+    () => items.filter((r) =>
+      (!unreadOnly || hasUnread(r)) && matchesSources(r.type, sources) &&
+      // The selected resource stays listed while searching: typing must not
+      // deselect it (the stale-selection effect below would).
+      (search.terms.length === 0 || matchResource(r, search.terms) !== null ||
+        (r.type === selType && r.id === selId))),
+    [items, unreadOnly, sources, search.terms, selType, selId],
   )
-  const filtered = unreadOnly || sources.length > 0
+  const filtered = unreadOnly || sources.length > 0 || search.terms.length > 0
   const summary = (worktrees.data ?? []).find((w) => w.path === path)
   const notifyMode = useNotifyMode()
   const qc = useQueryClient()
@@ -223,7 +238,9 @@ export function WorktreeDetailPage() {
       emptyText={
         items.length === 0
           ? undefined
-          : sources.length > 0
+          : search.terms.length > 0
+            ? `Nothing matches "${search.q.trim()}"`
+            : sources.length > 0
             ? `No${unreadOnly ? " unread" : ""} resources from that source`
             : unreadOnly
               ? "No resources with unread events"
@@ -295,7 +312,7 @@ export function WorktreeDetailPage() {
         hasMore={timeline.hasMore}
         onLoadMore={timeline.loadMore}
         loadingMore={timeline.loadingMore}
-        emptyText={unreadOnly ? "No unread events." : undefined}
+        emptyText={search.terms.length > 0 ? `Nothing matches "${search.q.trim()}"` : unreadOnly ? "No unread events." : undefined}
         // Only meaningful here: this page has a selection to change, and the
         // worktree's own resource list to resolve icons and titles against.
         onSelectResource={selectFromEvent}
@@ -455,14 +472,33 @@ export function WorktreeDetailPage() {
   // header below); narrow, it leads the toolbar's own row and the auto
   // margin pushes everything else to the right.
   const editorButton = (
-    <div style={{ marginRight: wide ? undefined : "auto", flex: "none" }}>
+    <div style={{ flex: "none" }}>
       <OpenInEditorButton path={path} />
+    </div>
+  )
+
+  const suggestions = buildSuggestions({
+    terms: search.terms,
+    resources: shownItems.map((r) => ({ r })),
+    events: timeline.events,
+    go: {
+      worktree: () => {},
+      resource: (r) => select({ type: r.type, id: r.id }),
+      event: (e) => selectFromEvent({ type: e.resource_type, id: e.resource_id }, e),
+    },
+  })
+  // Wide, it takes the width the titles leave free; narrow, it sits right
+  // after the editor button and the auto margin pushes the other actions right.
+  const searchBar = (
+    <div style={wide ? { flex: "1 1 160px", minWidth: 0 } : { flex: "1 1 160px", marginRight: "auto" }}>
+      <SearchBar value={search.q} onChange={search.setQ} placeholder="Search this worktree…" suggestions={suggestions} />
     </div>
   )
 
   const actions = (
     <>
       {!wide && editorButton}
+      {!wide && searchBar}
       {summary && <CmuxWorkspaceActions path={path} branch={summary.branch} />}
       {summary && <DeleteWorktreeButton w={summary} />}
     </>
@@ -482,6 +518,7 @@ export function WorktreeDetailPage() {
   )
 
   return (
+    <SearchContext.Provider value={{ terms: search.terms }}>
     <ThreadActionsContext.Provider value={threadActions}>
     <LinkedActionsContext.Provider value={linkedActions}>
     {/*
@@ -526,7 +563,7 @@ export function WorktreeDetailPage() {
           {/* In the sticky header, so the way to stop following stays in view. */}
           <FollowingCmuxBanner />
           <Group justify="space-between" wrap="nowrap" align="center" data-detail-header>
-            <Group wrap="nowrap" style={{ minWidth: 0 }}>
+            <Group wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
               {/* The chevron and logo are one link back to the list. */}
               <Anchor
                 component={Link}
@@ -578,6 +615,7 @@ export function WorktreeDetailPage() {
                 </Group>
               </Stack>
               {wide && editorButton}
+              {wide && searchBar}
             </Group>
             {wide && toolbar}
           </Group>
@@ -651,5 +689,6 @@ export function WorktreeDetailPage() {
     </Stack>
     </LinkedActionsContext.Provider>
     </ThreadActionsContext.Provider>
+    </SearchContext.Provider>
   )
 }

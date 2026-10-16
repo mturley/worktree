@@ -728,3 +728,55 @@ describe("WorktreeDetailPage event clicked in its own activity feed", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
   })
 })
+
+describe("search", () => {
+  const url = (qs: string) => `/worktree/${encodeURIComponent("/wt/foo")}?${qs}`
+
+  it("filters this worktree's resources and keeps the selected one", async () => {
+    setViewport("wide")
+    resources = [
+      ...baseResources,
+      { type: "jira", id: "J-2", url: "https://jira/J-2", primary: true, title: "Kumquat proxy", status: "Open" } as ResourceDTO,
+    ]
+    window.history.replaceState({}, "", url("resource=pr:o%2Fr%231&q=kumquat"))
+    wrap()
+    expect(screen.getByRole("searchbox")).toHaveValue("kumquat")
+    // The match is highlighted, which splits the title across elements.
+    expect(document.body.textContent).toContain("Kumquat proxy")
+    // Selected but not matching: still listed, still selected.
+    expect(screen.getAllByText(/Fix the widget/).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/Investigate flux/)).not.toBeInTheDocument()
+    expect(new URLSearchParams(window.location.search).get("resource")).toBe("pr:o/r#1")
+  })
+
+  it("passes q to the worktree feed", async () => {
+    setViewport("wide")
+    window.history.replaceState({}, "", url("q=oauth"))
+    wrap()
+    await waitFor(() => expect(detailArgs.at(-1)?.[4]).toBe("oauth"))
+  })
+
+  it("puts the search bar right after Open in editor", () => {
+    setViewport("wide")
+    wrap()
+    const editor = screen.getByRole("button", { name: /open in editor/i })
+    expect(editor.compareDocumentPosition(screen.getByRole("searchbox")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("puts the search bar right after Open in editor when narrow", async () => {
+    setViewport("narrow")
+    wrap()
+    const editor = screen.getByRole("button", { name: /open in editor/i })
+    const box = screen.getByRole("searchbox")
+    expect(editor.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const del = await screen.findByRole("button", { name: "Delete worktree" })
+    expect(box.compareDocumentPosition(del) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("says nothing matches when no resource does", () => {
+    setViewport("wide")
+    window.history.replaceState({}, "", url("q=zzzz"))
+    wrap()
+    expect(screen.getAllByText('Nothing matches "zzzz"').length).toBeGreaterThan(0)
+  })
+})
