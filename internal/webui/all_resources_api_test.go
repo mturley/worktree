@@ -80,6 +80,19 @@ func TestAllResourcesEndpoint(t *testing.T) {
 	}
 }
 
+func TestEnrichJiraReporter(t *testing.T) {
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	must(t, err)
+	defer conn.Close()
+	must(t, watcherdb.UpsertResourceState(conn, "jira", "J-9", `{"summary":"S","reporter":"Karel Suta"}`, "2026-01-01T00:00:00Z", "x"))
+	srv := &Server{DB: conn}
+	dto := resourceDTO{Type: "jira", ID: "J-9"}
+	srv.enrichResourceDTO(&dto)
+	if dto.Reporter != "Karel Suta" {
+		t.Fatalf("reporter = %q", dto.Reporter)
+	}
+}
+
 func must(t *testing.T, err error) {
 	t.Helper()
 	if err != nil {

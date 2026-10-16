@@ -8,6 +8,30 @@ import (
 	"github.com/mturley/worktree/internal/registry"
 )
 
+func TestAllNonBlankIgnoresShowOnHome(t *testing.T) {
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := Set(conn, "/a", "shown", false, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Set(conn, "/b", "hidden from home", false, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Set(conn, "/c", "   ", false, true); err != nil {
+		t.Fatal(err)
+	}
+	got, err := AllNonBlank(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got["/a"] != "shown" || got["/b"] != "hidden from home" {
+		t.Fatalf("got %v", got)
+	}
+}
+
 func TestGetWithoutNotesIsDefault(t *testing.T) {
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {

@@ -65,6 +65,28 @@ func Set(conn *sql.DB, path, text string, syncCmux, showOnHome bool) (Notes, err
 	return n, nil
 }
 
+// AllNonBlank returns every worktree's non-blank notes, regardless of its
+// "Show notes on home page" setting. Used by search, which must find a
+// worktree by its notes even when the card doesn't display them.
+func AllNonBlank(conn *sql.DB) (map[string]string, error) {
+	rows, err := conn.Query(`SELECT path, notes FROM worktree_notes`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]string)
+	for rows.Next() {
+		var path, text string
+		if err := rows.Scan(&path, &text); err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(text) != "" {
+			out[path] = text
+		}
+	}
+	return out, rows.Err()
+}
+
 // HomeNotes returns, by path, the notes of every worktree that shows them on
 // the home page and has any (whitespace-only notes count as none). One query
 // for the whole worktree list.

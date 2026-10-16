@@ -13,6 +13,7 @@ import (
 
 	watcherdb "github.com/mturley/watcher/db"
 	wdb "github.com/mturley/worktree/internal/db"
+	"github.com/mturley/worktree/internal/notes"
 	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/resources"
 	"github.com/mturley/worktree/internal/testgit"
@@ -84,6 +85,37 @@ func TestWorktreesEndpoint(t *testing.T) {
 	}
 	if w.CreatedAt != "2026-08-13T00:00:00Z" {
 		t.Fatalf("created_at = %q, want the registry's stored value", w.CreatedAt)
+	}
+}
+
+func TestWorktreesEndpointNotesSearch(t *testing.T) {
+	conn := seededDB(t)
+	wt := testgit.Worktree(t)
+	registry.Register(conn, registry.Entry{Path: wt, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
+	if _, err := notes.Set(conn, wt, "switch to the OAuth sidecar", false, false); err != nil {
+		t.Fatal(err)
+	}
+	srv := &Server{DB: conn}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/worktrees")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var got []map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("want 1 worktree, got %d", len(got))
+	}
+	if got[0]["notes_search"] != "switch to the OAuth sidecar" {
+		t.Fatalf("notes_search = %v", got[0]["notes_search"])
+	}
+	if _, ok := got[0]["notes"]; ok {
+		t.Fatal("notes must stay absent while show-on-home is off")
 	}
 }
 

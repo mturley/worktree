@@ -49,6 +49,10 @@ type worktreeSummary struct {
 	// Notes are the worktree's notes, present only when they are non-blank
 	// and its "Show notes on home page" setting is on.
 	Notes string `json:"notes,omitempty"`
+	// NotesSearch is the worktree's notes whenever they are non-blank,
+	// regardless of the show-on-home setting, so search can find a worktree
+	// by its notes. Not rendered.
+	NotesSearch string `json:"notes_search,omitempty"`
 }
 
 func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
@@ -71,6 +75,10 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 	homeNotes, err := notes.HomeNotes(s.DB)
 	if err != nil && s.Logger != nil {
 		s.Logger.Printf("notes.HomeNotes: %v", err)
+	}
+	allNotes, err := notes.AllNonBlank(s.DB)
+	if err != nil && s.Logger != nil {
+		s.Logger.Printf("notes.AllNonBlank: %v", err)
 	}
 	for _, e := range entries {
 		rs, err := resources.Load(s.DB, e.Path)
@@ -130,6 +138,7 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 			UnreadCount:    unreadCount,
 			NotifyAll:      prefs.All,
 			Notes:          homeNotes[e.Path],
+			NotesSearch:    allNotes[e.Path],
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
