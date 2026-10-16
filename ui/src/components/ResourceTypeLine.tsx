@@ -7,6 +7,7 @@ import { SlackMark } from "./icons/SlackMark"
 import { JiraMark } from "./icons/JiraMark"
 import { GitHubMark } from "./icons/GitHubMark"
 import { JiraPriorityIcon } from "./JiraPriorityIcon"
+import { SearchHighlight } from "./search/SearchHighlight"
 
 /**
  * Each resource type's name, brand icon and badge colour.
@@ -128,7 +129,7 @@ export function ResourceTypeLine({
           follows, which is about this resource in particular. */}
       <Badge size="xs" variant="light" color={t?.color} mr={6}>{t?.label ?? r.type}</Badge>
       {resourceIcon(r, pending)}
-      <Text size="xs" c="dimmed">{resourceKey(r)}</Text>
+      <Text size="xs" c="dimmed"><SearchHighlight text={resourceKey(r)} /></Text>
       {r.type === "jira" && <JiraPriorityIcon r={r} />}
       {trailing}
     </Group>

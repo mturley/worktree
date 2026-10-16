@@ -5,6 +5,7 @@ import { MantineProvider } from "@mantine/core"
 import { EventRow } from "./EventRow"
 import type { ResourceDTO, TimelineEvent } from "../api/types"
 import { UNREAD_BORDER_WIDTH } from "../lib/unread"
+import { SearchContext } from "./search/SearchContext"
 import { DOT_CENTER, DOT_SIZE, ROW_PAD_X } from "./timelineRail"
 
 if (typeof window.matchMedia !== "function") {
@@ -465,5 +466,20 @@ describe("the resource line matches the resource cards", () => {
     expect(screen.queryByText("Archived")).toBeNull()
     rerender(<MantineProvider><EventRow e={{ ...e, worktrees: ["b"], worktree_paths: ["/wt/b"] }} showWorktrees /></MantineProvider>)
     expect(screen.queryByText("Archived")).toBeNull()
+  })
+})
+
+describe("a resource search match", () => {
+  it("is explained by the marked chip title, not a via line", () => {
+    const resource = { type: "pr", id: "o/r#42", url: "u", primary: true, title: "Fix OAuth proxy" } as ResourceDTO
+    const e = makeEvent({
+      resource_type: "pr", resource_id: "o/r#42", resource,
+      match: { field: "resource", snippet: "o/r#42" },
+    })
+    const { container } = renderWithProvider(
+      <SearchContext.Provider value={{ terms: ["oauth"] }}><EventRow e={e} /></SearchContext.Provider>,
+    )
+    expect(screen.queryByTestId("match-why")).toBeNull()
+    expect(container.querySelector("mark")?.textContent).toBe("OAuth")
   })
 })

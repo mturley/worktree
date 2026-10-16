@@ -1,6 +1,7 @@
 import { Text } from "@mantine/core"
 import type { ResourceDTO, TimelineEvent } from "../api/types"
 import { ResourceTypeLine } from "./ResourceTypeLine"
+import { SearchHighlight } from "./search/SearchHighlight"
 
 /**
  * Names the resource an event belongs to, with its live status: the same
@@ -39,7 +40,9 @@ export function EventResourceChip({ e, resolveResource }: {
       r={forLine}
       pending={resource ? undefined : false}
       trailing={title && (
-        <Text size="xs" c="dimmed" lineClamp={1} style={{ minWidth: 0, overflowWrap: "anywhere" }}>{title}</Text>
+        <Text size="xs" c="dimmed" lineClamp={1} style={{ minWidth: 0, overflowWrap: "anywhere" }}>
+          <SearchHighlight text={title} />
+        </Text>
       )}
     />
   )

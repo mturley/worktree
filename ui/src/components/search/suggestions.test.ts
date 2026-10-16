@@ -38,6 +38,17 @@ describe("buildSuggestions", () => {
     expect(go.event).toHaveBeenCalled()
     expect(out.some((s) => s.group === "Worktrees")).toBe(false)
   })
+  it("describes an Activity row by the field that matched", () => {
+    const detailOf = (e: TimelineEvent) =>
+      buildSuggestions({ terms: ["x"], resources: [], events: [e], go }).find((s) => s.group === "Activity")?.detail
+    expect(detailOf({ ...ev("e1"), match: { field: "body", snippet: "…a snippet…" } })).toBe("…a snippet…")
+    expect(detailOf({ ...ev("e1"), match: { field: "title", snippet: "oauth e1" } })).toBe("a")
+    expect(detailOf(ev("e1"))).toBe("a")
+    const viaResource = { ...ev("e1"), match: { field: "resource", snippet: "o/r#1" } }
+    expect(detailOf(viaResource)).toBe("#1")
+    expect(detailOf({ ...viaResource, resource: res("J-1", "Tracked title") })).toBe("Tracked title")
+    expect(detailOf({ ...viaResource, resource: { ...res("J-1", "Tracked title"), custom_name: "My name" } })).toBe("My name")
+  })
   it("is empty without terms", () => {
     expect(buildSuggestions({ terms: [], resources: [], events: [ev("e1")], go })).toEqual([])
   })

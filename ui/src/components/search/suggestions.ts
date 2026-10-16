@@ -3,6 +3,18 @@ import { matchResource, matchWorktree, rankResource, rankText, resourceLabel } f
 import { shortResourceRef } from "../../lib/resourceRef"
 import type { Suggestion } from "./SearchBar"
 
+/** What the Activity row says under its title, by the field that matched. */
+function eventDetail(e: TimelineEvent): string | undefined {
+  switch (e.match?.field) {
+    case "body":
+      return e.match.snippet
+    case "resource":
+      return e.resource?.custom_name || e.resource?.title || shortResourceRef(e.resource_type, e.resource_id)
+    default:
+      return e.author
+  }
+}
+
 export const SUGGESTION_LIMITS = { worktrees: 3, resources: 5, events: 3 } as const
 
 /**
@@ -44,7 +56,7 @@ export function buildSuggestions(input: {
       onPick: () => go.resource(r, worktreePath),
     })),
     ...evs.map((e): Suggestion => ({
-      key: `ev:${e.id}`, group: "Activity", label: e.title, detail: e.match?.snippet ?? e.author,
+      key: `ev:${e.id}`, group: "Activity", label: e.title, detail: eventDetail(e),
       onPick: () => go.event(e),
     })),
   ]

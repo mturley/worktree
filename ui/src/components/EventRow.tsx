@@ -136,7 +136,10 @@ export function EventRow({
               {e.author && `${e.author} · `}{rel(e.external_ts || e.ts)}
             </Text>
           </Group>
-          <MatchWhy match={bodyMatch ? null : e.match} />
+          {/* A resource match is not explained here: the server's snippet is the
+              raw resource id, and the chip below names the resource with the
+              term marked. */}
+          <MatchWhy match={bodyMatch || e.match?.field === "resource" ? null : e.match} />
           {/*
             Above the body, not below it: this names what you are looking at,
             and a two-line quote of a comment is no place to learn it. Absent
