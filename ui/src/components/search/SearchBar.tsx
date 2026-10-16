@@ -114,6 +114,14 @@ export function SearchBar({
         type="text"
         role="searchbox"
         aria-label="Search"
+        // Queries are keys, branch names and fragments, not prose: no
+        // autocorrect (iOS), autocapitalize (mobile keyboards), spellcheck
+        // (and the autocorrect Chrome ties to it), or the browser's own
+        // history dropdown over ours.
+        autoCorrect="off"
+        autoCapitalize="off"
+        autoComplete="off"
+        spellCheck={false}
         size="xs"
         placeholder={placeholder}
         value={value}

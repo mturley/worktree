@@ -18,6 +18,15 @@ function Harness({ initial = "", extra }: { initial?: string; extra?: React.Reac
 afterEach(cleanup)
 
 describe("SearchBar", () => {
+  it("turns off browser autocorrect, autocapitalize, autocomplete and spellcheck", () => {
+    render(<Harness />)
+    const box = screen.getByRole("searchbox")
+    expect(box).toHaveAttribute("autocorrect", "off")
+    expect(box).toHaveAttribute("autocapitalize", "off")
+    expect(box).toHaveAttribute("autocomplete", "off")
+    expect(box).toHaveAttribute("spellcheck", "false")
+  })
+
   it("types into the query", async () => {
     render(<Harness />)
     await userEvent.type(screen.getByRole("searchbox"), "oauth")

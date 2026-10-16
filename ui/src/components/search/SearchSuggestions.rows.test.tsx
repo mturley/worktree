@@ -77,6 +77,12 @@ describe("dropdown rows", () => {
     }
   })
 
+  it("explains that the page filters too, above the results", () => {
+    wrap()
+    const hint = screen.getByText("The page is also filtered as you type. Press Enter to view all results.")
+    expect(hint.compareDocumentPosition(screen.getAllByRole("option")[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it("heads each section with its count", () => {
     wrap()
     const headings = screen.getAllByTestId("suggestion-group").map((h) => h.textContent)
