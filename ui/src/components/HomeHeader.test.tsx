@@ -31,4 +31,19 @@ describe("HomeHeader", () => {
     expect(await within(h).findByRole("switch", { name: "Follow cmux" })).toBeInTheDocument()
     expect(within(h).getByRole("button", { name: "Settings" })).toBeInTheDocument()
   })
+
+  it("puts the toggles on a second, full-width row when narrow", async () => {
+    setViewport("narrow")
+    wrap()
+    const h = screen.getByTestId("home-header")
+    const settings = within(h).getByRole("button", { name: "Settings" })
+    const unread = within(h).getByRole("switch", { name: "Unreads only" })
+    expect(settings.compareDocumentPosition(unread) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // The toggles' row is its own direct child of the header, not the search row.
+    const row = Array.from(h.children).find((c) => c.contains(unread)) as HTMLElement
+    expect(row.contains(settings)).toBe(false)
+    expect(row.contains(within(h).getByLabelText("Search"))).toBe(false)
+    expect(row.style.width).toBe("100%")
+    expect(await within(h).findByRole("switch", { name: "Follow cmux" })).toBeInTheDocument()
+  })
 })

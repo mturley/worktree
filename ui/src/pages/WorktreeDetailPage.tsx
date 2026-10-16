@@ -66,6 +66,7 @@ export function WorktreeDetailPage() {
   // Narrows only this worktree's resources and activity; the query lives in
   // the URL, shared with the resource's own feed (ResourceDetailPane).
   const search = useSearchQuery()
+  const searchContext = useMemo(() => ({ terms: search.terms }), [search.terms])
   const { resources, timeline } = useWorktreeDetail(path, sources, unreadOnly, eventTypes, search.debouncedQ)
   const { selected, select, toggle, clear } = useSelectedResource()
   const wide = useIsWide()
@@ -518,7 +519,7 @@ export function WorktreeDetailPage() {
   )
 
   return (
-    <SearchContext.Provider value={{ terms: search.terms }}>
+    <SearchContext.Provider value={searchContext}>
     <ThreadActionsContext.Provider value={threadActions}>
     <LinkedActionsContext.Provider value={linkedActions}>
     {/*

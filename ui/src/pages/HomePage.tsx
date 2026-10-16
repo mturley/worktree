@@ -33,7 +33,7 @@ import { useCmux } from "../api/cmux"
 import { useWorktreeSort } from "../hooks/useWorktreeSort"
 import { WorktreeSortControl } from "../components/WorktreeSortControl"
 import { cmuxPositions, sortWorktrees } from "../lib/worktreeSort"
-import { filterWorktreeBySources } from "../lib/sourceFilter"
+import { filterWorktreeBySources, matchesSources } from "../lib/sourceFilter"
 import { ResourcesPanel, ResourcesTabControls } from "../components/ResourcesPanel"
 import { useResourcesView } from "../hooks/useResourcesView"
 
@@ -100,9 +100,14 @@ export function HomePage() {
   // matches. Falls back to the card's focus resources until it loads.
   const resourcesByPath = useMemo(() => {
     const m = new Map<string, ResourceDTO[]>()
-    for (const r of allResources.data ?? []) for (const w of r.worktrees) m.set(w.path, [...(m.get(w.path) ?? []), r])
+    for (const r of allResources.data ?? []) {
+      if (!matchesSources(r.type, sources)) continue
+      for (const w of r.worktrees) m.set(w.path, [...(m.get(w.path) ?? []), r])
+    }
     return m
-  }, [allResources.data])
+  }, [allResources.data, sources])
+
+  const searchContext = useMemo(() => ({ terms: search.terms, resourcesByPath }), [search.terms, resourcesByPath])
 
   // The Activity source toggles narrow the cards too: each card keeps only
   // resources of that source, and a card with none of them drops out. Then
@@ -277,7 +282,7 @@ export function HomePage() {
   // far off-screen, so offer them as tabs instead.
   if (!wide) {
     return (
-      <SearchContext.Provider value={{ terms: search.terms, resourcesByPath }}>
+      <SearchContext.Provider value={searchContext}>
         <Stack p="md" gap="sm">
           <NewWorktreeModal opened={newOpen} onClose={() => setNewOpen(false)} />
           {detailsModal}
@@ -317,7 +322,7 @@ export function HomePage() {
     // header (see columnStyle), so the page itself does not scroll (unless a
     // banner above it adds its own height). No overflow on the Grid itself —
     // its row's negative margins would show as a sideways scrollbar.
-    <SearchContext.Provider value={{ terms: search.terms, resourcesByPath }}>
+    <SearchContext.Provider value={searchContext}>
       <Box px="md" pt="md" ref={headerRef}>{header}</Box>
       <Grid px="md" pb="md" pt="sm" gutter="md">
         {/* Tooltips in both columns open under the pinned headers; see

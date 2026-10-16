@@ -336,6 +336,19 @@ describe("HomePage search", () => {
     await waitFor(() => expect(mocks.timelineArgs.at(-1)?.[4] ?? "").toBe(""))
   })
 
+  it("does not match a card through a resource the source filter excludes", async () => {
+    setViewport("wide")
+    vi.spyOn(api, "allResources").mockResolvedValue([
+      { type: "jira", id: "J-5", url: "u", primary: false, title: "Unrelated", assignee: "Pat Kumquat",
+        worktrees: [{ path: "/wt/foo", repo: "odh", branch: "my-branch" }] },
+    ])
+    window.history.replaceState({}, "", "/?q=kumquat")
+    wrap()
+    expect(await screen.findByText(/my-branch/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole("button", { name: /GitHub/ }))
+    await waitFor(() => expect(screen.queryByText(/my-branch/)).toBeNull())
+  })
+
   it("moves global controls into the header", () => {
     setViewport("wide")
     wrap()

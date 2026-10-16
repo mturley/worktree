@@ -78,7 +78,7 @@ export function SearchBar({
 
   const pick = (s: Suggestion) => { s.onPick(); setOpen(false); ref.current?.blur() }
 
-  const onInputKey =(e: React.KeyboardEvent<HTMLInputElement>) => {
+  const onInputKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
     const n = suggestions?.length ?? 0
     if (showList && e.key === "ArrowDown") { e.preventDefault(); setActive((a) => (a + 1) % n); return }
     if (showList && e.key === "ArrowUp") { e.preventDefault(); setActive((a) => (a <= 0 ? n - 1 : a - 1)); return }
