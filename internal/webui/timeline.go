@@ -286,7 +286,7 @@ func (s *Server) eventIDsForResource(rtype, rid string) (map[string]struct{}, er
 	return ids, rows.Err()
 }
 
-// handleWorktreeTimeline: GET /api/worktree-timeline?path=<path>&limit=&before=&resource_type=&resource_id=&resource_types=&event_types=&unread_only=
+// handleWorktreeTimeline: GET /api/worktree-timeline?path=<path>&limit=&before=&resource_type=&resource_id=&resource_types=&event_types=&unread_only=&q=
 // A query param (not a path segment) is used because worktree paths contain
 // slashes, which the Go 1.22 mux {wildcard} would split awkwardly.
 //
@@ -331,6 +331,7 @@ func (s *Server) handleWorktreeTimeline(w http.ResponseWriter, r *http.Request) 
 	types := parseResourceTypes(r)
 	eventTypes := parseEventTypes(r)
 	unreadOnly := r.URL.Query().Get("unread_only") == "true"
+	terms := parseSearchTerms(r.URL.Query().Get("q"))
 	typeAllowed := map[string]bool{}
 	for _, t := range types {
 		typeAllowed[t] = true
@@ -372,6 +373,14 @@ func (s *Server) handleWorktreeTimeline(w http.ResponseWriter, r *http.Request) 
 		// verdict, so this filter cannot disagree with the feed's markers.
 		if unreadOnly && !te.Unread {
 			continue
+		}
+		// After enrichment: the resource's custom name and cached title are
+		// searchable, and enrich is what resolves them. Before the append,
+		// so `limit` counts matching rows only.
+		if len(terms) > 0 {
+			if te.Match = matchEvent(&te, terms); te.Match == nil {
+				continue
+			}
 		}
 		out = append(out, te)
 	}

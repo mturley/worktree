@@ -114,3 +114,31 @@ func TestGlobalTimelineSearchMalformedResourceState(t *testing.T) {
 		t.Errorf("malformed state: got %v want [e1]", ids)
 	}
 }
+
+func TestWorktreeTimelineSearch(t *testing.T) {
+	ts, wt := searchFixture(t)
+	base := "/api/worktree-timeline?limit=50&path=" + url.QueryEscape(wt)
+	get := func(extra string) []string { return eventIDs(getTimeline(t, ts.URL, base+extra).Events) }
+	if got := get("&q=oauth"); !slices.Equal(got, []string{"e1"}) {
+		t.Errorf("body: %v", got)
+	}
+	if got := get("&q=kumquat"); !slices.Equal(got, []string{"e2"}) {
+		t.Errorf("cached title: %v", got)
+	}
+	if got := get("&q=" + url.QueryEscape("oauth persimmon")); !slices.Equal(got, []string{"e1"}) {
+		t.Errorf("AND: %v", got)
+	}
+	// Resource-scoped feed (a selected resource's Activity tab) + q.
+	if got := get("&resource_type=pr&resource_id=" + url.QueryEscape("o/r#1") + "&q=broken"); !slices.Equal(got, []string{"e3", "e4"}) {
+		t.Errorf("resource + q: %v", got)
+	}
+	// limit counts matching rows only: a full page of matches.
+	// (Built directly: base already carries limit=50, and Get reads the first.)
+	if got := eventIDs(getTimeline(t, ts.URL, "/api/worktree-timeline?limit=1&q=broken&path="+url.QueryEscape(wt)).Events); !slices.Equal(got, []string{"e3"}) {
+		t.Errorf("limit: %v", got)
+	}
+	evs := getTimeline(t, ts.URL, base+"&q=andrew").Events
+	if len(evs) != 1 || evs[0].Match == nil || evs[0].Match.Field != "author" {
+		t.Errorf("match: %+v", evs)
+	}
+}
