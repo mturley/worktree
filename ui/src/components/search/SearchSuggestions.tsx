@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { useIsWide } from "../../hooks/useIsWide"
 import { Anchor, Badge, Box, Group, Kbd, Paper, Stack, Text } from "@mantine/core"
 import { SearchHighlight } from "./SearchHighlight"
+import { KeyHint } from "./KeyHint"
 import type { Suggestion, SuggestionItem } from "./SearchBar"
 import { useCmuxMatches } from "../../api/cmux"
 import { CmuxWorkspaceLabel } from "../CmuxWorkspaceSection"
@@ -9,6 +10,32 @@ import { ResourceCardBody } from "../ResourceCard"
 import { EventRow } from "../EventRow"
 import { worktreeName } from "../../lib/homeWorktree"
 import type { WorktreeSummary } from "../../api/types"
+
+/** The page's side gutter: --mantine-spacing-md, 16px with the theme's default scale. */
+const GUTTER = 16
+/** As wide as the bar allows when wide: the rows carry what the cards and feed do. */
+const MAX_WIDTH = 640
+
+/**
+ * Where the dropdown goes, in px, its `left` relative to the bar it hangs
+ * from. It always fits the window, keeping the gutter on both sides:
+ *
+ * - Phones: the full window width less the gutters, whatever the bar's
+ *   position (it sits right of the logo).
+ * - Otherwise: up to MAX_WIDTH, lined up with the bar when that fits, and
+ *   shifted left just enough when it would run off the right edge — which
+ *   happens on windows narrow but not narrow enough for the phone layout.
+ */
+export function fitDropdown({ barLeft, viewport, wide }: { barLeft: number; viewport: number; wide: boolean }): {
+  left: number
+  width: number
+} {
+  const room = Math.max(0, viewport - 2 * GUTTER)
+  const width = wide ? Math.min(MAX_WIDTH, room) : room
+  // Never past the right gutter, never past the left one.
+  const left = Math.max(GUTTER - barLeft, Math.min(0, viewport - GUTTER - width - barLeft))
+  return { left, width }
+}
 
 /**
  * The typeahead dropdown. An experiment: to remove it, delete this file,
@@ -37,23 +64,25 @@ export function SearchSuggestions({
     el?.scrollIntoView?.({ block: "nearest" })
   }, [active])
 
-  // Narrow, the box spans the screen (less the page's gutter) rather than
-  // starting at the bar, which sits right of the logo and would push a
-  // full-width box off the screen's right edge. Positioned from the bar's
-  // own left edge, measured, since the box hangs off the bar.
+  // The box hangs off the bar, so where it can go depends on where the bar
+  // sits and how wide the window is: both measured, and again on resize.
   const wide = useIsWide()
   const boxRef = useRef<HTMLDivElement>(null)
-  const [barLeft, setBarLeft] = useState(0)
+  const [place, setPlace] = useState({ barLeft: 0, viewport: 0 })
   useLayoutEffect(() => {
-    if (wide) return
     const measure = () => {
       const root = boxRef.current?.closest("[data-search-root]")
-      setBarLeft(root ? root.getBoundingClientRect().left : 0)
+      setPlace({
+        barLeft: root ? root.getBoundingClientRect().left : 0,
+        // clientWidth, not innerWidth: the box must clear a scrollbar too.
+        viewport: document.documentElement.clientWidth,
+      })
     }
     measure()
     window.addEventListener("resize", measure)
     return () => window.removeEventListener("resize", measure)
-  }, [wide])
+  }, [])
+  const fit = fitDropdown({ ...place, wide })
 
   const counts = new Map<string, number>()
   for (const s of items) counts.set(s.group, (counts.get(s.group) ?? 0) + 1)
@@ -66,10 +95,7 @@ export function SearchSuggestions({
       shadow="md"
       style={{
         position: "absolute", top: "100%", marginTop: 4,
-        ...(wide
-          // Wider than the bar: the rows carry what the cards and feed do.
-          ? { left: 0, width: "min(640px, calc(100vw - 2 * var(--mantine-spacing-md)))" }
-          : { left: `calc(var(--mantine-spacing-md) - ${barLeft}px)`, width: "calc(100vw - 2 * var(--mantine-spacing-md))" }),
+        left: fit.left, width: fit.width,
         maxHeight: "70vh", display: "flex", flexDirection: "column", overflow: "hidden",
         zIndex: "var(--mantine-z-index-popover)",
       }}
@@ -99,12 +125,12 @@ export function SearchSuggestions({
         </Anchor>
         {/* Enter only means this while no row is highlighted; with one, it
             picks that row. */}
-        {active === -1 && <span data-testid="view-all-enter"> <Kbd size="xs">Enter</Kbd></span>}
+        {active === -1 && <span data-testid="view-all-enter"> <KeyHint>Enter</KeyHint></span>}
       </Text>
       {/* No rows, nothing to navigate. */}
       {items.length > 0 && (
         <Text size="xs" c="dimmed" data-testid="nav-hint" style={{ flex: "none", whiteSpace: "nowrap" }}>
-          <Kbd size="xs">↑</Kbd><Kbd size="xs" ml={2}>↓</Kbd>{" to navigate"}
+          <KeyHint>↑</KeyHint>{" "}<KeyHint>↓</KeyHint>{" to navigate"}
         </Text>
       )}
       </Group>

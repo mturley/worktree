@@ -1,4 +1,5 @@
-import { Anchor, Kbd } from "@mantine/core"
+import { Anchor } from "@mantine/core"
+import { KeyHint } from "./KeyHint"
 import { useSeeEverything } from "../../hooks/useSeeEverything"
 import { useUnreadOnly } from "../../hooks/useUnreadOnly"
 
@@ -18,9 +19,7 @@ export function SeeEverythingLink() {
         {unreadOnly ? "See everything" : "Clear search"}
       </Anchor>
       {" "}
-      {/* Inline, centred on the line's text rather than sitting on its
-          baseline, which leaves the key's padding hanging below the line. */}
-      <Kbd size="xs" style={{ verticalAlign: "middle" }}>Esc</Kbd>
+      <KeyHint>Esc</KeyHint>
     </>
   )
 }

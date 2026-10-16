@@ -65,7 +65,7 @@ describe("dropdown", () => {
   it("hints at the arrow keys, and marks the highlighted row with Enter", async () => {
     render(<Harness />)
     await userEvent.type(screen.getByRole("searchbox"), "oa")
-    expect(screen.getByTestId("nav-hint").textContent).toBe("↑↓ to navigate")
+    expect(screen.getByTestId("nav-hint").textContent).toBe("↑ ↓ to navigate")
     expect(screen.queryByTestId("row-enter")).toBeNull()
     await userEvent.keyboard("{ArrowDown}{ArrowDown}")
     const options = screen.getAllByRole("option")

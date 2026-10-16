@@ -140,6 +140,13 @@ describe("SearchBar", () => {
     document.body.removeEventListener("keydown", stop)
     expect(screen.getByTestId("q").textContent).toBe("oauth")
   })
+  it("shows an Esc hint beside the clear button, only while there's a query", async () => {
+    render(<Harness />)
+    expect(screen.queryByTestId("search-esc-hint")).toBeNull()
+    await userEvent.type(screen.getByRole("searchbox"), "oa")
+    expect(screen.getByTestId("search-esc-hint").textContent).toBe("Esc")
+  })
+
   it("the clear button clears", async () => {
     render(<Harness initial="oauth" />)
     await userEvent.click(screen.getByRole("button", { name: "Clear search" }))

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { CloseButton, TextInput } from "@mantine/core"
+import { CloseButton, Group, Kbd, TextInput } from "@mantine/core"
 import { IconSearch } from "@tabler/icons-react"
 import { SearchSuggestions } from "./SearchSuggestions"
 import type { ResourceDTO, TimelineEvent, WorktreeSummary } from "../../api/types"
@@ -155,7 +155,15 @@ export function SearchBar({
         onBlur={() => setOpen(false)}
         onKeyDown={onInputKey}
         leftSection={<IconSearch size={14} />}
-        rightSection={value ? <CloseButton size="xs" aria-label="Clear search" onClick={() => onChange("")} /> : null}
+        // Esc beside the ✕: the key does what the button does (and, with
+        // Unreads only on, turns that off too).
+        rightSectionWidth={value ? 64 : undefined}
+        rightSection={value ? (
+          <Group gap={6} wrap="nowrap">
+            <Kbd size="xs" data-testid="search-esc-hint">Esc</Kbd>
+            <CloseButton size="xs" aria-label="Clear search" onClick={() => onChange("")} />
+          </Group>
+        ) : null}
       />
       {showList && (
         <SearchSuggestions
