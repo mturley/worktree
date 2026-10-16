@@ -17,6 +17,16 @@ function isEditable(el: Element | null): boolean {
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (el as HTMLElement).isContentEditable
 }
 
+/** Hidden (or inside something hidden): a closed or exiting overlay owns no Esc. */
+function isHidden(el: Element): boolean {
+  if (el.closest('[aria-hidden="true"], [hidden]')) return true
+  for (let n: Element | null = el; n; n = n.parentElement) {
+    const st = getComputedStyle(n)
+    if (st.display === "none" || st.visibility === "hidden") return true
+  }
+  return false
+}
+
 /**
  * Whether an Esc belongs to something other than the search: an open
  * modal, menu or listbox (except our own dropdown), or typing in another
@@ -25,7 +35,7 @@ function isEditable(el: Element | null): boolean {
 function escOwnedElsewhere(input: HTMLInputElement | null): boolean {
   const own = input?.closest("[data-search-root]")
   const open = document.querySelectorAll('[role="dialog"], [role="menu"], [role="listbox"]')
-  for (const el of open) if (!own || !own.contains(el)) return true
+  for (const el of open) if ((!own || !own.contains(el)) && !isHidden(el)) return true
   const active = document.activeElement
   return isEditable(active) && active !== input
 }
@@ -71,7 +81,7 @@ export function SearchBar({
     <div data-search-root style={{ flex: "1 1 240px", minWidth: 0, maxWidth: 520 }}>
       <TextInput
         ref={ref}
-        type="search"
+        type="text"
         role="searchbox"
         aria-label="Search"
         size="xs"

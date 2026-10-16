@@ -58,6 +58,37 @@ describe("SearchBar", () => {
     fireEvent.keyDown(document.body, { key: "Escape" })
     expect(screen.getByTestId("q").textContent).toBe("oauth")
   })
+  it("hidden listboxes do not block global Esc", () => {
+    render(
+      <Harness
+        initial="oauth"
+        extra={
+          <>
+            <div role="listbox" hidden />
+            <div role="listbox" style={{ display: "none" }} />
+            <div aria-hidden="true">
+              <div role="menu" />
+            </div>
+          </>
+        }
+      />,
+    )
+    fireEvent.keyDown(document.body, { key: "Escape" })
+    expect(screen.getByTestId("q").textContent).toBe("")
+  })
+  it("a visible menu blocks global Esc", () => {
+    render(<Harness initial="oauth" extra={<div role="menu" />} />)
+    fireEvent.keyDown(document.body, { key: "Escape" })
+    expect(screen.getByTestId("q").textContent).toBe("oauth")
+  })
+  it("an already-handled Esc does not clear", () => {
+    render(<Harness initial="oauth" />)
+    const stop = (e: KeyboardEvent) => e.preventDefault()
+    document.body.addEventListener("keydown", stop)
+    fireEvent.keyDown(document.body, { key: "Escape" })
+    document.body.removeEventListener("keydown", stop)
+    expect(screen.getByTestId("q").textContent).toBe("oauth")
+  })
   it("the clear button clears", async () => {
     render(<Harness initial="oauth" />)
     await userEvent.click(screen.getByRole("button", { name: "Clear search" }))
