@@ -175,8 +175,8 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | Method | Path | Params | Response |
 |---|---|---|---|
 | GET | `/api/worktrees` | — | `[]worktreeSummary` |
-| GET | `/api/timeline` | `archived` (`"true"`/else false), `limit` (1-500, default 100), `before` (RFC3339 ts, exclusive upper bound), `resource_types`, `event_types` (exact event types, or a prefix ending in `*` such as `ci_*`; the Activity subfilters, see `ui/src/lib/eventTypeFilter.ts`), `unread_only` (`"true"`: unread events only) | `timelineResponse` |
-| GET | `/api/worktree-timeline` | `path` (required, worktree path), `limit`, `before`, `resource_type` + `resource_id` (optional, filters to one resource's events; must be supplied together or the request 400s), `resource_types`, `event_types`, `unread_only` | `timelineResponse` |
+| GET | `/api/timeline` | `archived` (`"true"`/else false), `limit` (1-500, default 100), `before` (RFC3339 ts, exclusive upper bound), `resource_types`, `event_types` (exact event types, or a prefix ending in `*` such as `ci_*`; the Activity subfilters, see `ui/src/lib/eventTypeFilter.ts`), `unread_only` (`"true"`: unread events only), `q` (search; see "Search") | `timelineResponse` |
+| GET | `/api/worktree-timeline` | `path` (required, worktree path), `limit`, `before`, `resource_type` + `resource_id` (optional, filters to one resource's events; must be supplied together or the request 400s), `resource_types`, `event_types`, `unread_only`, `q` | `timelineResponse` |
 | GET | `/api/worktree-resources` | `path` (required) | `[]resourceDTO` |
 | GET | `/api/all-resources` | — | `[]allResourceDTO` (every followed resource once, with its worktrees; see "Home page Resources tab") |
 | POST | `/api/worktrees/poll` | `path` (required) | `{"polled": bool}` |
@@ -252,6 +252,7 @@ primary_by_type map[string]int   // e.g. {"pr": 2, "jira": 3} — primary only
 related_count   int
 latest_event_ts string           // "" if no events; from latestEventTSForSubscriber
 focus_resources []resourceDTO   // primary resources, enriched; always [] never null
+notes_search    string           // omitempty; raw note text whenever non-blank, even if `notes` is hidden (search only)
 ```
 
 `focus_resources` lets the home page (and the shared `WorktreeCard`, see
@@ -284,6 +285,7 @@ TimelineEvent {
   resource_title string    // looked up from cached resource_state, "" if unknown
   worktrees      []string  // branch names currently watching this resource
   unread         bool      // omitempty; ts newer than the resource's read cursor (always false for Slack)
+  match          {field, snippet}  // omitempty; only when `q` is set: why the event matched
 }
 ```
 
@@ -320,6 +322,7 @@ review_decision           string    // PR
 ci_status                 string    // PR
 new_commits_since_review  bool      // PR
 author                    string    // PR author
+reporter                  string    // Jira reporter name; omitempty (search only)
 status                    string    // Jira status
 priority                  string    // Jira
 priority_icon_url         string    // Jira; via /api/jira-icon
@@ -1324,6 +1327,91 @@ statuses present in the data and "My issues"; Slack channels). Values within
 a group are ORed, groups ANDed. The global unread-only toggle narrows the
 list too. The query key is `["resources", "__all__"]` so every existing
 `["resources"]` invalidation refreshes it.
+
+## Search
+
+Search is a **filter, not a page**. There is no `/search` route: the query
+live-filters the page you are on. On the home page it narrows the worktree
+list, the Activity feed and the Resources tab together (ANDed with the source,
+event type, unread-only and archived filters). On a worktree page it narrows
+that worktree's resources, its activity and a selected resource's feed, and
+never reaches outside the worktree. The query lives in the URL as `?q=`
+(history replace while typing, so Back and reload keep it).
+
+### Matching rules
+
+Case-insensitive; whitespace splits the query into terms; **every term** must
+match somewhere on the item (different terms may match different fields).
+No phrases or operators. An all-whitespace query is no query.
+
+| Item | Fields (priority order for the "why" line) |
+|---|---|
+| Worktree | branch, repo, path, cmux workspace name(s), notes (`notes_search`), then any of its resources' fields (shown as `via <key>`) |
+| Resource | key/ID, title, custom name, custom description, assignee, author, reporter, status, labels, link description |
+| Event | title, body, author, then its resource's ID, custom name, cached title (`via <key>`) |
+
+Worktrees do not match through events, and resources do not either.
+Worktrees matching through their resources is the single switch
+`MATCH_WORKTREES_VIA_RESOURCES` in `ui/src/lib/search.ts`.
+
+### Backend (`internal/webui/search.go`)
+
+- `parseSearchTerms` mirrors the frontend's `parseQuery`. `likeContains`
+  escapes `%`, `_` and `\` and wraps in `%...%` (queries use `ESCAPE`).
+  SQLite `LIKE` folds case for ASCII only, accepted for v1.
+- `GET /api/timeline` (`handleGlobalTimeline`): `searchSQL(terms)` appends one
+  OR group per term, ANDed. Fields are tested with `EXISTS` subqueries (event
+  title/body/author, resource id, `watcher_resource_meta.custom_name`, and the
+  cached title plus Jira summary as ONE combined `LIKE` guarded by
+  `CASE WHEN json_valid(rs.state_json)`), so `searchArgsPerTerm` is 6. EXISTS
+  rather than joins keeps the existing dedup and pagination unchanged.
+- `GET /api/worktree-timeline` (`handleWorktreeTimeline`): filtered in Go with
+  `matchEvent` after enrichment (so cached titles and custom names are
+  available) and **before** `limit`, so a page is full of matches.
+- `TimelineEvent.match` (`{field, snippet}`): first field, in priority order,
+  containing the first term, with a ~60 rune `snippet` cut at word boundaries
+  (`...` marks cuts). Computed in Go; absent without `q`.
+- `worktreeSummary.notes_search` (via `notes.AllNonBlank`) carries note text
+  even when "Show notes on home page" is off; `resourceDTO.reporter` exposes
+  the cached Jira reporter name.
+- No index. If the first page measures slower than 150 ms on real data a
+  follow-up can add FTS5 in worktree's own schema.
+
+### Frontend map
+
+- `lib/search.ts` (pure): `parseQuery`, `matchWorktree`, `matchResource`,
+  `snippet`, rank helpers, `splitHighlight` (longest term first) and
+  `VISIBLE_FIELDS` (fields already visible in a title, including repo, get no
+  "why" line).
+- `hooks/useSearchQuery.ts`: `?q=` read/write; returns `q`, `setQ`, `terms`
+  and `debouncedQ` (250 ms) which feeds the timeline hooks and their keys.
+- `components/search/`: `SearchContext` (active terms provided per page, so
+  `SearchHighlight` needs no prop plumbing), `SearchHighlight`, `MatchWhy`,
+  `SearchBar`, `SearchSuggestions`, `suggestions.ts` (grouping and ranking).
+- `components/HomeHeader.tsx`: the home page's full-width header (logo, search,
+  Unread only, Follow cmux, Settings). The worktree page places the bar after
+  the "Open in editor" button.
+- Home: the wide column height is 100dvh minus the measured header (border box)
+  minus the `sm` gap. Worktree page: a selected resource stays listed even
+  when it doesn't match. Archived events picked from the dropdown open
+  `EventDetailsModal`.
+
+### The dropdown is removable
+
+`SearchSuggestions` (with `suggestions.ts` and their tests) is mounted only by
+`SearchBar`. Delete those files and the one mount to remove it; the page
+filtering is independent. It resets its highlighted row when the suggestion
+count changes, and a click pick closes it like Enter.
+
+### Keys
+
+- `/` focuses the bar when focus is not in an input. The bar is
+  `type="text" role="searchbox"`; the clear button empties it.
+- Esc in the bar clears the query; a second Esc blurs it. A document-level
+  Esc also clears an active query unless the event is `defaultPrevented`,
+  focus is in another text input, or a modal/popover/menu/dropdown is open.
+  Hidden overlays (`aria-hidden`, `[hidden]`, `display:none`,
+  `visibility:hidden`) are ignored when deciding that.
 
 ## Link resources
 
