@@ -9,6 +9,8 @@ import { UnreadMarkerDot } from "./UnreadMarkerDot"
 import { READ_BOX_BORDER, UNREAD_BG, UNREAD_BOX_BORDER } from "../lib/unread"
 import { ROW_PAD_X } from "./timelineRail"
 import { isArchivedEvent } from "../lib/openEvent"
+import { MatchWhy } from "./search/MatchWhy"
+import { SearchHighlight } from "./search/SearchHighlight"
 
 /**
  * One entry on the timeline rail: a dot on the line, then the event's text.
@@ -75,6 +77,7 @@ export function EventRow({
    * The details modal still shows the list in full.
    */
   const showBody = !!e.body && !e.type.startsWith("ci_")
+  const bodyMatch = e.match?.field === "body" && showBody
 
   // Only on the global feed: nothing follows this resource any more, which
   // is why the row opens details. The title steps back behind a badge
@@ -126,11 +129,14 @@ export function EventRow({
                 Archived
               </Badge>
             )}
-            <Text size="sm" fw={600} c={archived ? "dimmed" : undefined} style={{ overflowWrap: "anywhere", minWidth: 0 }}>{e.title}</Text>
+            <Text size="sm" fw={600} c={archived ? "dimmed" : undefined} style={{ overflowWrap: "anywhere", minWidth: 0 }}>
+              <SearchHighlight text={e.title} />
+            </Text>
             <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
               {e.author && `${e.author} · `}{rel(e.external_ts || e.ts)}
             </Text>
           </Group>
+          <MatchWhy match={bodyMatch ? null : e.match} />
           {/*
             Above the body, not below it: this names what you are looking at,
             and a two-line quote of a comment is no place to learn it. Absent
@@ -144,7 +150,13 @@ export function EventRow({
               <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>{e.resource_title}</Text>
             )
           ))}
-          {showBody && <Text size="xs" c="dimmed" lineClamp={2} style={{ overflowWrap: "anywhere" }}>{e.body}</Text>}
+          {showBody && (
+            <Text size="xs" c="dimmed" lineClamp={2} style={{ overflowWrap: "anywhere" }}>
+              {/* The snippet is centred on the hit, which the clamped first
+                  lines of the body may not contain. */}
+              <SearchHighlight text={e.match?.field === "body" ? e.match.snippet : e.body ?? ""} />
+            </Text>
+          )}
         </Stack>
 
         {/*

@@ -151,7 +151,10 @@ function escapeRegExp(s: string): string {
 
 export function splitHighlight(text: string, terms: string[]): { text: string; hit: boolean }[] {
   if (terms.length === 0 || !text) return [{ text, hit: false }]
-  const re = new RegExp(`(${terms.map(escapeRegExp).join("|")})`, "gi")
+  // Longest first: a regex alternation takes the first alternative that
+  // matches, so ["o", "oauth"] would otherwise mark only the "O" of "OAuth".
+  const longestFirst = [...terms].sort((a, b) => b.length - a.length)
+  const re = new RegExp(`(${longestFirst.map(escapeRegExp).join("|")})`, "gi")
   return text.split(re).filter((p) => p !== "").map((p) => ({
     text: p, hit: terms.includes(p.toLowerCase()),
   }))

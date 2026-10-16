@@ -11,6 +11,10 @@ import { UnreadBadge } from "./UnreadBadge"
 import { NotifyBell } from "./NotifyBell"
 import { useNotificationsEnabled } from "../hooks/useNotifyMode"
 import { NotesMarkdown } from "./NotesMarkdown"
+import { matchWorktree } from "../lib/search"
+import { MatchWhy } from "./search/MatchWhy"
+import { SearchHighlight } from "./search/SearchHighlight"
+import { useSearchContext } from "./search/SearchContext"
 
 interface WorktreeCardProps {
   w: WorktreeSummary
@@ -54,7 +58,7 @@ function FocusResourceLine({ r, notifyAll }: { r: ResourceDTO; notifyAll: boolea
         <Box w={TYPE_LINE_ICON_SIZE} style={{ display: "flex", justifyContent: "center", flexShrink: 0 }}>
           <UnreadDot r={r} />
         </Box>
-        <Text size="sm" c="dimmed" lineClamp={1} style={{ minWidth: 0 }}>{label}</Text>
+        <Text size="sm" c="dimmed" lineClamp={1} style={{ minWidth: 0 }}><SearchHighlight text={label} /></Text>
       </Group>
     </Stack>
   )
@@ -78,7 +82,18 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
   // Inside cmux, a matched workspace name is the card's headline, so the
   // worktree title steps down to a subtitle. Same shared query the section
   // itself reads — no extra request.
-  const hasWorkspace = useCmuxMatches(w.path).length > 0
+  const workspaces = useCmuxMatches(w.path)
+  const hasWorkspace = workspaces.length > 0
+
+  const { terms, resourcesByPath } = useSearchContext()
+  const match = terms.length
+    ? matchWorktree(
+        w,
+        workspaces.map((m) => m.title),
+        resourcesByPath?.get(w.path) ?? w.focus_resources,
+        terms,
+      )
+    : null
 
   // The anchor is the inner Box, not the Paper, because the cmux section
   // sits above it and must not be nested interactive content inside an <a>.
@@ -128,7 +143,7 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
               c={hasWorkspace ? "dimmed" : undefined}
               style={{ overflowWrap: "anywhere" }}
             >
-              {name}
+              <SearchHighlight text={name} />
             </Text>
             {!w.on_disk && <Badge size="xs" color="red">missing</Badge>}
             {/* Pushed to the right of the title row rather than the card's
@@ -150,6 +165,7 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
           <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
             {[w.repo, w.branch].filter(Boolean).join(" · ")}
           </Text>
+          <MatchWhy match={match} />
           {w.notes && (
             // Present only when the worktree opted in on its Notes tab. Read
             // only here: links render as text and task checkboxes are inert,

@@ -96,6 +96,9 @@ describe("splitHighlight", () => {
     ])
     expect(splitHighlight("plain", [])).toEqual([{ text: "plain", hit: false }])
   })
+  it("highlights the longest overlapping term whole", () => {
+    expect(splitHighlight("OAuth", ["o", "oauth"])).toEqual([{ text: "OAuth", hit: true }])
+  })
 })
 
 it("title, name, key, branch and repo matches need no why line", () => {

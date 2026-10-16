@@ -13,6 +13,7 @@ import { SlackMark } from "./icons/SlackMark"
 import { hasUnread } from "../lib/unread"
 import { UnreadMarkerDot } from "./UnreadMarkerDot"
 import { jiraStatusColor } from "../lib/statusColors"
+import { SearchHighlight } from "./search/SearchHighlight"
 
 /**
  * Jira's icon URLs sit behind the same Basic auth as its REST API, so a
@@ -187,7 +188,7 @@ export function ResourceTitle({
       {showUnread && <UnreadDot r={r} />}
       {icon === undefined ? <ResourceStatusIcon r={r} /> : icon}
       <Text size={size} fw={fw} style={{ overflowWrap: "anywhere" }}>
-        {label ?? r.title ?? r.id}
+        <SearchHighlight text={label ?? r.title ?? r.id} />
       </Text>
     </Group>
   )

@@ -10,6 +10,9 @@ import { ResourceCardBody } from "./ResourceCard"
 import { ExistingTabButtons, openLabel as openTooltip, serviceName } from "./ResourceActions"
 import { useCopyLink } from "./resourceActionHooks"
 import { UnreadBadge } from "./UnreadBadge"
+import { matchResource } from "../lib/search"
+import { MatchWhy } from "./search/MatchWhy"
+import { useSearchContext } from "./search/SearchContext"
 
 const btn = { root: { flexShrink: 0 }, label: { whiteSpace: "nowrap" as const } }
 
@@ -100,6 +103,7 @@ export function AllResourceActions({ r }: { r: AllResourceDTO }) {
  */
 export function AllResourceRow({ r }: { r: AllResourceDTO }) {
   const unread = hasUnread(r)
+  const { terms } = useSearchContext()
   return (
     <Group
       // The Linked Resources rows' faint divider, between read rows only:
@@ -126,6 +130,7 @@ export function AllResourceRow({ r }: { r: AllResourceDTO }) {
       <Box style={{ flex: "1 1 260px", minWidth: 0 }}>
         <ResourceCardBody r={r} aside={unread ? <UnreadBadge unread count={r.unread_count} /> : undefined} />
         <WorktreesLine worktrees={r.worktrees} />
+        <MatchWhy match={terms.length ? matchResource(r, terms) : null} />
       </Box>
       <AllResourceActions r={r} />
     </Group>
