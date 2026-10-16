@@ -55,18 +55,21 @@ export function useGlobalTimeline(
   resourceTypes: string[] = [],
   unreadOnly = false,
   eventTypes: string[] = [],
+  q = "",
 ): TimelineResult {
   return flatten(
     useInfiniteQuery({
       // The filter is part of the key, so toggling it is a normal cache-keyed
       // fetch and toggling back is a cache hit. Sorted so the same selection
-      // in a different click order reuses one cache entry.
+      // in a different click order reuses one cache entry. The query is only
+      // appended when set, so clearing a search is a cache hit on the
+      // unfiltered feed.
       queryKey: [
         "timeline", "global", archived, [...resourceTypes].sort().join(","), unreadOnly,
-        [...eventTypes].sort().join(","),
+        [...eventTypes].sort().join(","), ...(q ? [q] : []),
       ],
       queryFn: ({ pageParam }) =>
-        api.globalTimeline(archived, TIMELINE_PAGE_SIZE, pageParam, resourceTypes, unreadOnly, eventTypes),
+        api.globalTimeline(archived, TIMELINE_PAGE_SIZE, pageParam, resourceTypes, unreadOnly, eventTypes, q || undefined),
       initialPageParam: undefined as string | undefined,
       getNextPageParam: nextCursor,
     }),
@@ -79,6 +82,7 @@ export function useWorktreeTimeline(
   resourceTypes: string[] = [],
   unreadOnly = false,
   eventTypes: string[] = [],
+  q = "",
 ): TimelineResult {
   return flatten(
     // The resource is part of the key so switching selection is a normal
@@ -89,9 +93,10 @@ export function useWorktreeTimeline(
       queryKey: [
         "timeline", "worktree", path, resource?.type ?? "", resource?.id ?? "",
         [...resourceTypes].sort().join(","), unreadOnly, [...eventTypes].sort().join(","),
+        ...(q ? [q] : []),
       ],
       queryFn: ({ pageParam }) =>
-        api.worktreeTimeline(path, TIMELINE_PAGE_SIZE, resource, pageParam, resourceTypes, unreadOnly, eventTypes),
+        api.worktreeTimeline(path, TIMELINE_PAGE_SIZE, resource, pageParam, resourceTypes, unreadOnly, eventTypes, q || undefined),
       initialPageParam: undefined as string | undefined,
       getNextPageParam: nextCursor,
       enabled: !!path,

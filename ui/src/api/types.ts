@@ -69,6 +69,8 @@ export interface TimelineEvent {
    * the thread owns that state, and it shows on the resource chip instead.
    */
   unread?: boolean;
+  /** Why the event matched the search (`q`); absent without one. */
+  match?: { field: string; snippet: string };
 }
 export interface TimelineResponse { events: TimelineEvent[]; next_cursor: string }
 export interface ResourceDTO {

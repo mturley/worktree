@@ -8,6 +8,7 @@ export function useWorktreeDetail(
   resourceTypes: string[] = [],
   unreadOnly = false,
   eventTypes: string[] = [],
+  q = "",
 ) {
   const qc = useQueryClient()
   useEffect(() => {
@@ -22,6 +23,6 @@ export function useWorktreeDetail(
   }, [path, qc])
 
   const resources = useQuery({ queryKey: ["resources", path], queryFn: () => api.worktreeResources(path), enabled: !!path })
-  const timeline = useWorktreeTimeline(path, undefined, resourceTypes, unreadOnly, eventTypes)
+  const timeline = useWorktreeTimeline(path, undefined, resourceTypes, unreadOnly, eventTypes, q)
   return { resources, timeline }
 }
