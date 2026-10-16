@@ -212,7 +212,6 @@ function TimelineBody({
               count={timeline.events.length}
               more={timeline.hasMore}
               noun={["event", "events"]}
-              onClear={() => search.setQ("")}
             />
           )}
           <TimelineFeed

@@ -52,7 +52,8 @@ export function TimelineFeed({
 
   if (loading) return <Loader />
   if (error) return <Alert color="red">{String((error as Error).message || error)}</Alert>
-  if (events.length === 0) return <Text c="dimmed" size="sm">{emptyText}</Text>
+  // null: nothing at all, e.g. under a search's "0 events match" line.
+  if (events.length === 0) return emptyText === null ? null : <Text c="dimmed" size="sm">{emptyText}</Text>
 
   // The oldest unread event, i.e. the last one in this newest-first list. The
   // divider goes immediately after it. -1 when nothing is unread.

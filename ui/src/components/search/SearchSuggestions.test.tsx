@@ -62,6 +62,35 @@ describe("dropdown", () => {
     expect(picks.a).not.toHaveBeenCalled()
   })
 
+  it("hints at the arrow keys, and marks the highlighted row with Enter", async () => {
+    render(<Harness />)
+    await userEvent.type(screen.getByRole("searchbox"), "oa")
+    expect(screen.getByTestId("nav-hint").textContent).toBe("↑↓ to navigate")
+    expect(screen.queryByTestId("row-enter")).toBeNull()
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}")
+    const options = screen.getAllByRole("option")
+    expect(options[1]).toContainElement(screen.getByTestId("row-enter"))
+    expect(screen.getAllByTestId("row-enter")).toHaveLength(1)
+  })
+
+  it("still opens with no results, saying nothing matches", async () => {
+    function Empty() {
+      const [q, setQ] = useState("")
+      return <MantineProvider><SearchBar value={q} onChange={setQ} suggestions={[]} /></MantineProvider>
+    }
+    render(<Empty />)
+    await userEvent.type(screen.getByRole("searchbox"), "zz")
+    const empty = screen.getByText("Nothing matches your search")
+    expect(screen.queryAllByRole("option")).toHaveLength(0)
+    // The hint bar still heads it; only the arrow hint, with no rows, goes.
+    const hint = screen.getByText(/The page is also filtered as you type/)
+    expect(hint.compareDocumentPosition(empty) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByRole("button", { name: "View all results" })).toBeInTheDocument()
+    expect(screen.queryByTestId("nav-hint")).toBeNull()
+    await userEvent.keyboard("{Escape}")
+    expect(screen.queryByText("Nothing matches your search")).toBeNull()
+  })
+
   it("Enter with nothing highlighted closes the dropdown and keeps the query", async () => {
     render(<Harness />)
     await userEvent.type(screen.getByRole("searchbox"), "oa{Enter}")
@@ -69,12 +98,12 @@ describe("dropdown", () => {
     expect(picks.a).not.toHaveBeenCalled()
     expect(screen.getByRole("searchbox")).toHaveValue("oa")
   })
-  it("first Esc closes the dropdown, not the query", async () => {
+  it("Esc with the dropdown open clears the search, which closes it", async () => {
     render(<Harness />)
     await userEvent.type(screen.getByRole("searchbox"), "oa")
     await userEvent.keyboard("{Escape}")
     expect(screen.queryByRole("listbox")).toBeNull()
-    expect(screen.getByRole("searchbox")).toHaveValue("oa")
+    expect(screen.getByRole("searchbox")).toHaveValue("")
   })
   it("clicking a row picks it", async () => {
     render(<Harness />)

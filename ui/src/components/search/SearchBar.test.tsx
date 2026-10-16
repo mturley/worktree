@@ -17,6 +17,48 @@ function Harness({ initial = "", extra }: { initial?: string; extra?: React.Reac
 }
 afterEach(cleanup)
 
+describe("SearchBar escape hatch", () => {
+  it("Esc on the page calls onEscape when there's something else to clear, even with no query", () => {
+    const onEscape = vi.fn()
+    render(<MantineProvider><SearchBar value="" onChange={() => {}} onEscape={onEscape} escapeActive /></MantineProvider>)
+    fireEvent.keyDown(document.body, { key: "Escape" })
+    expect(onEscape).toHaveBeenCalledTimes(1)
+  })
+  it("Esc still works with focus on a switch or checkbox, which aren't text fields", () => {
+    const onEscape = vi.fn()
+    render(
+      <MantineProvider>
+        <SearchBar value="" onChange={() => {}} onEscape={onEscape} escapeActive />
+        <input type="checkbox" data-testid="switch" />
+      </MantineProvider>,
+    )
+    const box = screen.getByTestId("switch")
+    box.focus()
+    fireEvent.keyDown(box, { key: "Escape" })
+    expect(onEscape).toHaveBeenCalledTimes(1)
+  })
+
+  it("does nothing when there's nothing to clear", () => {
+    const onEscape = vi.fn()
+    render(<MantineProvider><SearchBar value="" onChange={() => {}} onEscape={onEscape} escapeActive={false} /></MantineProvider>)
+    fireEvent.keyDown(document.body, { key: "Escape" })
+    expect(onEscape).not.toHaveBeenCalled()
+  })
+  it("Esc in the bar calls onEscape too, then blurs on the next press", async () => {
+    const onEscape = vi.fn()
+    const { rerender } = render(
+      <MantineProvider><SearchBar value="oauth" onChange={() => {}} onEscape={onEscape} escapeActive /></MantineProvider>,
+    )
+    const box = screen.getByRole("searchbox")
+    box.focus()
+    await userEvent.keyboard("{Escape}")
+    expect(onEscape).toHaveBeenCalledTimes(1)
+    rerender(<MantineProvider><SearchBar value="" onChange={() => {}} onEscape={onEscape} escapeActive={false} /></MantineProvider>)
+    await userEvent.keyboard("{Escape}")
+    expect(box).not.toHaveFocus()
+  })
+})
+
 describe("SearchBar", () => {
   it("turns off browser autocorrect, autocapitalize, autocomplete and spellcheck", () => {
     render(<Harness />)

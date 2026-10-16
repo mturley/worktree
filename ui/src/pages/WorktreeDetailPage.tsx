@@ -47,7 +47,7 @@ import { parseThreadUrl } from "../lib/parseThreadUrl"
 import { worktreeName } from "../lib/homeWorktree"
 import { SearchBar } from "../components/search/SearchBar"
 import { SearchSummary } from "../components/search/SearchSummary"
-import { SeeAllLink } from "../components/SeeAllLink"
+import { useSeeEverything } from "../hooks/useSeeEverything"
 import { ClearFiltersLink } from "../components/search/ClearFiltersLink"
 import { SearchContext } from "../components/search/SearchContext"
 import { buildSuggestions } from "../components/search/suggestions"
@@ -69,7 +69,7 @@ export function WorktreeDetailPage() {
   // Narrows only this worktree's resources and activity; the query lives in
   // the URL, shared with the resource's own feed (ResourceDetailPane).
   const search = useSearchQuery()
-  const clearSearch = () => search.setQ("")
+  const everything = useSeeEverything()
   const searchContext = useMemo(() => ({ terms: search.terms }), [search.terms])
   const { resources, timeline } = useWorktreeDetail(path, sources, unreadOnly, eventTypes, search.debouncedQ)
   const { selected, select, toggle, clear } = useSelectedResource()
@@ -244,21 +244,24 @@ export function WorktreeDetailPage() {
         items.length === 0
           ? undefined
           : search.terms.length > 0
-            ? `Nothing matches "${search.q.trim()}"`
+            // The "0 resources match your search" line above says it.
+            ? null
             : sources.length > 0
             ? `No${unreadOnly ? " unread" : ""} resources from that source`
             : unreadOnly
-              ? "No resources with unread events"
+              // The "0 resources with unread events" line above says it.
+              ? null
               : undefined
       }
-      aboveList={search.terms.length > 0 && (
-        // Matches only: the selection kept listed while it doesn't match
-        // (see shownItems) is not a result.
+      aboveList={(search.terms.length > 0 || unreadOnly) && (
+        // Searching, matches only: the selection kept listed while it
+        // doesn't match (see shownItems) is not a result.
         <SearchSummary
-          count={shownItems.filter((r) => matchResource(r, search.terms) !== null).length}
+          count={search.terms.length > 0
+            ? shownItems.filter((r) => matchResource(r, search.terms) !== null).length
+            : shownItems.length}
           noun={["resource", "resources"]}
           qualifier={unreadOnly ? "with unread events" : undefined}
-          onClear={clearSearch}
         />
       )}
       toolbar={
@@ -328,12 +331,11 @@ export function WorktreeDetailPage() {
         {/* Directly above the results it counts. Only once the feed holds
             the results for what is typed: during the debounce it would count
             the old ones. */}
-        {search.terms.length > 0 && search.debouncedQ === search.q.trim() && !timeline.isLoading && (
+        {(search.terms.length > 0 || unreadOnly) && search.debouncedQ === search.q.trim() && !timeline.isLoading && (
           <SearchSummary
             count={timeline.events.length}
             more={timeline.hasMore}
             noun={unreadOnly ? ["unread event", "unread events"] : ["event", "events"]}
-            onClear={clearSearch}
           />
         )}
       </Stack>
@@ -344,9 +346,8 @@ export function WorktreeDetailPage() {
         hasMore={timeline.hasMore}
         onLoadMore={timeline.loadMore}
         loadingMore={timeline.loadingMore}
-        emptyText={search.terms.length > 0
-          ? `Nothing matches "${search.q.trim()}"`
-          : unreadOnly ? <>No unread events. <SeeAllLink onClick={() => setUnreadOnly(false)} /></> : undefined}
+        // Searching or unread only, the "0 … events" line above says it.
+        emptyText={search.terms.length > 0 || unreadOnly ? null : undefined}
         // Only meaningful here: this page has a selection to change, and the
         // worktree's own resource list to resolve icons and titles against.
         onSelectResource={selectFromEvent}
@@ -525,7 +526,15 @@ export function WorktreeDetailPage() {
   // after the editor button and the auto margin pushes the other actions right.
   const searchBar = (
     <div style={wide ? { flex: "1 1 160px", minWidth: 0 } : { flex: "1 1 160px", marginRight: "auto" }}>
-      <SearchBar value={search.q} onChange={search.setQ} placeholder="Search this worktree…" suggestions={suggestions} />
+      {/* Esc sees everything: clears the search and turns Unreads only off. */}
+      <SearchBar
+        value={search.q}
+        onChange={search.setQ}
+        placeholder="Search this worktree…"
+        suggestions={suggestions}
+        onEscape={everything.seeEverything}
+        escapeActive={everything.active}
+      />
     </div>
   )
 

@@ -181,7 +181,7 @@ describe("LinkedResourcesPanel search", () => {
     vi.spyOn(api, "cmuxBrowserTabs").mockResolvedValue({ available: false } as never)
     search("blocker")
     wrap(<LinkedResourcesPanel query={q({ data: dto })} />)
-    expect(screen.getByTestId("search-summary").textContent).toBe("1 linked resource matches your search. Clear search")
+    expect(screen.getByTestId("search-summary").textContent).toBe("1 linked resource matches your search. Clear search Esc")
     expect(document.body.textContent).toContain("Blocker")
     expect(screen.queryByText("Fix thing")).toBeNull()
     expect(screen.queryByText("Linked in description")).toBeNull()
@@ -216,10 +216,11 @@ describe("LinkedResourcesPanel search", () => {
     expect(screen.getByText(/branches that haven't been loaded weren't searched/i)).toBeInTheDocument()
   })
 
-  it("says nothing matches, and clears the search", async () => {
+  it("says 0 match, with nothing else, and clears the search", async () => {
     search("zzzz")
     wrap(<LinkedResourcesPanel query={q({ data: { ...dto, sections: dto.sections.filter((s) => !s.error) } })} />)
-    expect(screen.getByText('Nothing matches "zzzz"')).toBeInTheDocument()
+    expect(screen.getByTestId("search-summary").textContent).toBe("0 linked resources match your search. Clear search Esc")
+    expect(screen.queryByText(/Nothing matches/)).toBeNull()
     await userEvent.click(screen.getByRole("button", { name: "Clear search" }))
     expect(new URLSearchParams(window.location.search).has("q")).toBe(false)
   })

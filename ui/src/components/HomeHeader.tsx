@@ -22,7 +22,22 @@ export function HomeHeader({
     </Group>
   )
   return (
-    <Group data-testid="home-header" gap="md" wrap={wide ? "nowrap" : "wrap"} align="center">
+    <Group
+      data-testid="home-header"
+      gap="md"
+      wrap={wide ? "nowrap" : "wrap"}
+      align="center"
+      style={{
+        // The app chrome layer, as the worktree page's sticky header: a
+        // tooltip in the scrolling columns opens just below it (see
+        // useTooltipLayer) and must pass under it, not over, as its anchor
+        // scrolls up. Opaque for the same reason. Also lifts the search
+        // dropdown, which lives in here, above the columns.
+        position: "relative",
+        zIndex: "var(--mantine-z-index-app)",
+        background: "var(--mantine-color-body)",
+      }}
+    >
       {/* The logo stands in for the old "Worktrees" title, and keeps its name
           as the heading's accessible text. */}
       <Title order={4} style={{ flex: "none" }}><Logo alt="Worktrees" /></Title>

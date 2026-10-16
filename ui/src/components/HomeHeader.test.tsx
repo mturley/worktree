@@ -20,6 +20,17 @@ const wrap = () => {
   )
 }
 
+describe("HomeHeader layering", () => {
+  it("sits at the app chrome layer, like the sticky headers, so content tooltips pass under it", () => {
+    setViewport("wide")
+    wrap()
+    const h = screen.getByTestId("home-header")
+    expect(h.style.position).toBe("relative")
+    expect(h.style.zIndex).toBe("var(--mantine-z-index-app)")
+    expect(h.style.background).toBe("var(--mantine-color-body)")
+  })
+})
+
 describe("HomeHeader", () => {
   it("holds the logo, search, global toggles and settings", async () => {
     setViewport("wide")

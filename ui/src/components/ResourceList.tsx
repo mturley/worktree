@@ -35,8 +35,8 @@ interface ResourceListProps {
    * filter hides keep their places — see mergeVisibleOrder.
    */
   allItems?: ResourceDTO[]
-  /** Shown instead of the cards when `items` is empty. */
-  emptyText?: string
+  /** Shown instead of the cards when `items` is empty; null shows nothing. */
+  emptyText?: string | null
   /** Extra controls beside Follow resource. */
   toolbar?: React.ReactNode
   /** A line directly above the cards, below the toolbar (the search's match count). */
@@ -354,7 +354,7 @@ export function ResourceList({
       </Group>
       {aboveList}
       {items.length === 0 ? (
-        <Text c="dimmed" size="sm">{emptyText}</Text>
+        emptyText !== null && <Text c="dimmed" size="sm">{emptyText}</Text>
       ) : (
         <DndContext
           sensors={sensors}

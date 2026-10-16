@@ -22,7 +22,7 @@ import { RefreshWatchersButton } from "../components/RefreshWatchersButton"
 import { WatcherLogButton } from "../components/WatcherLogButton"
 import { NewWorktreeModal } from "../components/NewWorktreeModal"
 import { SearchSummary } from "../components/search/SearchSummary"
-import { SeeAllLink } from "../components/SeeAllLink"
+import { useSeeEverything } from "../hooks/useSeeEverything"
 import { ClearFiltersLink } from "../components/search/ClearFiltersLink"
 import { HomeHeader } from "../components/HomeHeader"
 import { EventDetailsModal } from "../components/EventDetailsModal"
@@ -55,7 +55,7 @@ export function HomePage() {
   const search = useSearchQuery()
   // The one spelling of the query every empty state quotes.
   const queryText = search.q.trim()
-  const resourcesView = useResourcesView(unreadOnly, search.terms, queryText)
+  const resourcesView = useResourcesView(unreadOnly, search.terms)
   // The same cached query the Resources tab uses.
   const allResources = useAllResources()
   // An archived event has no worktree to route to; picking one in the search
@@ -171,14 +171,17 @@ export function HomePage() {
     })
   }
 
-  const clearSearch = () => search.setQ("")
+  const everything = useSeeEverything()
   // Unreads only narrows every pane here, so their match lines say so.
   const withUnread = unreadOnly ? "with unread events" : undefined
   const eventNoun: [string, string] = unreadOnly ? ["unread event", "unread events"] : ["event", "events"]
+  // A search or Unreads only narrows the panes: each then heads its results
+  // with a line saying how many are left, and the way back (SearchSummary).
+  const narrowed = search.terms.length > 0 || unreadOnly
   const worktrees = (
     <Stack gap="xs">
-      {search.terms.length > 0 && (
-        <SearchSummary count={shownWorktrees.length} noun={["worktree", "worktrees"]} qualifier={withUnread} onClear={clearSearch} />
+      {narrowed && (
+        <SearchSummary count={shownWorktrees.length} noun={["worktree", "worktrees"]} qualifier={withUnread} />
       )}
       <WorktreeList
       items={shownWorktrees}
@@ -188,18 +191,20 @@ export function HomePage() {
         sortedWorktrees.length === 0
           ? undefined
           : search.terms.length > 0
-            ? `Nothing matches "${queryText}"`
+            // The "0 worktrees match your search" line above says it.
+            ? null
             : sources.length > 0
             ? `No worktrees${unreadOnly ? " with unread events" : ""} following that source`
             : unreadOnly
-              ? <>No worktrees with unread events. <SeeAllLink onClick={() => setUnreadOnly(false)} /></>
+              // The "0 worktrees with unread events" line above says it.
+              ? null
               : undefined
       }
       />
     </Stack>
   )
-  const resourcesSummary = search.terms.length > 0 && (
-    <SearchSummary count={resourcesView.shown.length} noun={["resource", "resources"]} qualifier={withUnread} onClear={clearSearch} />
+  const resourcesSummary = narrowed && (
+    <SearchSummary count={resourcesView.shown.length} noun={["resource", "resources"]} qualifier={withUnread} />
   )
   // The Activity tab's own controls: refresh, the watcher log and archived.
   const activityControls = (
@@ -261,8 +266,8 @@ export function HomePage() {
         {/* Directly above the results it counts. Only once the feed holds
             the results for what is typed: during the debounce and the first
             fetch it would count the old ones. */}
-        {search.terms.length > 0 && search.debouncedQ === queryText && !tl.isLoading && (
-          <SearchSummary count={tl.events.length} more={tl.hasMore} noun={eventNoun} onClear={clearSearch} />
+        {narrowed && search.debouncedQ === queryText && !tl.isLoading && (
+          <SearchSummary count={tl.events.length} more={tl.hasMore} noun={eventNoun} />
         )}
       </Stack>
       <TimelineFeed
@@ -270,9 +275,8 @@ export function HomePage() {
         loading={tl.isLoading}
         error={tl.error}
         showWorktrees
-        emptyText={search.terms.length > 0
-          ? `Nothing matches "${queryText}"`
-          : unreadOnly ? <>No unread events. <SeeAllLink onClick={() => setUnreadOnly(false)} /></> : undefined}
+        // Searching or unread only, the "0 … events" line above says it.
+        emptyText={narrowed ? null : undefined}
         hasMore={tl.hasMore}
         onLoadMore={tl.loadMore}
         loadingMore={tl.loadingMore}
@@ -301,7 +305,16 @@ export function HomePage() {
         : selectResourceInFirstWorktree({ type: e.resource_type, id: e.resource_id }, e)),
     },
   })
-  const searchBar = <SearchBar value={search.q} onChange={search.setQ} suggestions={suggestions} />
+  // Esc sees everything: clears the search and turns Unreads only off.
+  const searchBar = (
+    <SearchBar
+      value={search.q}
+      onChange={search.setQ}
+      suggestions={suggestions}
+      onEscape={everything.seeEverything}
+      escapeActive={everything.active}
+    />
+  )
   const header = <HomeHeader search={searchBar} unreadOnly={unreadOnly} onUnreadOnlyChange={setUnreadOnly} />
   const detailsModal = <EventDetailsModal e={pickedEvent} onClose={() => setPickedEvent(null)} />
 

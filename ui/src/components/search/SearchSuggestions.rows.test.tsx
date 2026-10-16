@@ -81,7 +81,7 @@ describe("dropdown rows", () => {
   it("explains that the page filters too, above the results", () => {
     wrap()
     const hint = screen.getByText(/The page is also filtered as you type/)
-    expect(hint.textContent).toBe("The page is also filtered as you type. View all results (Enter)")
+    expect(hint.textContent).toBe("The page is also filtered as you type. View all results Enter")
     expect(hint.compareDocumentPosition(screen.getAllByRole("option")[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 

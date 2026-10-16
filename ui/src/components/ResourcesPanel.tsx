@@ -173,7 +173,7 @@ export function ResourcesPanel({ view, headerStyle, top, searchSummary }: {
   /** Pins the controls at the top of a scrolling column; see pinnedStyle. */
   headerStyle?: React.CSSProperties
 }) {
-  const { query: q, all, shown, filter, setFilter, unreadOnly, terms, queryText } = view
+  const { query: q, all, shown, filter, setFilter, unreadOnly, terms } = view
   const presentTypes = useMemo(() => new Set(all.map((r) => r.type)), [all])
 
   const controls = (
@@ -217,10 +217,14 @@ export function ResourcesPanel({ view, headerStyle, top, searchSummary }: {
     )
   } else if (!q.data) {
     body = <Center py="md"><Loader size="sm" /></Center>
+  } else if (shown.length === 0 && all.length > 0 && (terms.length > 0 || unreadOnly)) {
+    // The "0 resources match your search" / "with unread events" line above
+    // says it.
+    body = null
   } else if (shown.length === 0) {
     body = (
       <Text size="sm" c="dimmed" ta="center" py="md">
-        {terms.length > 0 ? `Nothing matches "${queryText}"` : all.length === 0 ? "No worktree follows any resources yet." : unreadOnly ? "No unread resources match." : "No resources match these filters."}
+        {all.length === 0 ? "No worktree follows any resources yet." : "No resources match these filters."}
       </Text>
     )
   } else {

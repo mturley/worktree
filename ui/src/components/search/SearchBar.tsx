@@ -23,10 +23,15 @@ export type SuggestionItem =
   | { kind: "resource"; r: ResourceDTO }
   | { kind: "event"; e: TimelineEvent }
 
+// Inputs you type into. A switch or checkbox is an <input> too, and keeps
+// focus after a click, but Esc and / mean nothing to it.
+const TEXT_INPUT_TYPES = new Set(["text", "search", "email", "url", "tel", "password", "number"])
+
 function isEditable(el: Element | null): boolean {
   if (!el) return false
   const tag = el.tagName
-  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (el as HTMLElement).isContentEditable
+  if (tag === "INPUT") return TEXT_INPUT_TYPES.has((el as HTMLInputElement).type)
+  return tag === "TEXTAREA" || tag === "SELECT" || (el as HTMLElement).isContentEditable
 }
 
 /** Hidden (or inside something hidden): a closed or exiting overlay owns no Esc. */
@@ -57,13 +62,24 @@ export function SearchBar({
   onChange,
   placeholder = "Search worktrees, resources, activity…",
   suggestions,
+  onEscape,
+  escapeActive,
 }: {
   value: string
   onChange: (q: string) => void
   placeholder?: string
   suggestions?: Suggestion[]
+  /**
+   * What Esc does: by default it clears the query; a page passes its "see
+   * everything" (the query AND Unreads only) instead.
+   */
+  onEscape?: () => void
+  /** Whether Esc has anything to clear; defaults to "there is a query". */
+  escapeActive?: boolean
 }) {
   const ref = useRef<HTMLInputElement>(null)
+  const canEscape = escapeActive ?? Boolean(value)
+  const escape = onEscape ?? (() => onChange(""))
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -73,19 +89,21 @@ export function SearchBar({
         ref.current?.focus()
         return
       }
-      if (e.key === "Escape" && value && document.activeElement !== ref.current && !escOwnedElsewhere(ref.current)) {
-        onChange("")
+      if (e.key === "Escape" && canEscape && document.activeElement !== ref.current && !escOwnedElsewhere(ref.current)) {
+        escape()
       }
     }
     document.addEventListener("keydown", onKey)
     return () => document.removeEventListener("keydown", onKey)
-  }, [value, onChange])
+  }, [canEscape, escape])
 
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(-1)
   const count = suggestions?.length ?? 0
   useEffect(() => setActive(-1), [value, count])
-  const showList = open && !!value && (suggestions?.length ?? 0) > 0
+  // Open with no results too: an empty dropdown says so, where a missing
+  // one looks like the search did nothing.
+  const showList = open && !!value.trim() && suggestions !== undefined
 
   const pick = (s: Suggestion) => { s.onPick(); setOpen(false); ref.current?.blur() }
 
@@ -104,8 +122,11 @@ export function SearchBar({
     }
     if (e.key !== "Escape") return
     e.preventDefault()
-    if (showList) { setOpen(false); return }
-    if (value) onChange("")
+    // Esc means "see everything" here as on the page: it clears the search,
+    // and an empty bar has no dropdown. Only with nothing to clear does it
+    // just close the list, then leave the bar.
+    if (canEscape) escape()
+    else if (showList) setOpen(false)
     else ref.current?.blur()
   }
 

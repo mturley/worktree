@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest"
-import { act, render, cleanup, screen, waitFor, within } from "@testing-library/react"
+import { act, fireEvent, render, cleanup, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -608,7 +608,8 @@ describe("WorktreeDetailPage unread-only toggle", () => {
     window.localStorage.setItem("worktree.unreadOnly", "true")
     setViewport("wide")
     wrap()
-    expect(await screen.findByText("No resources with unread events")).toBeInTheDocument()
+    await waitFor(() => expect(screen.getAllByTestId("search-summary").map((n) => n.textContent))
+      .toContain("0 resources with unread events. See everything Esc"))
   })
 
   it("deselects a selected resource once it has nothing unread", async () => {
@@ -792,7 +793,7 @@ describe("search", () => {
     const user = userEvent.setup()
     wrap()
     const lines = () => screen.queryAllByTestId("search-summary").map((n) => n.textContent)
-    expect(lines()).toContain("1 resource matches your search. Clear search")
+    expect(lines()).toContain("1 resource matches your search. Clear search Esc")
     await user.click(screen.getAllByRole("button", { name: "Clear search" }).at(-1)!)
     expect(lines()).toEqual([])
     expect(new URLSearchParams(window.location.search).has("q")).toBe(false)
@@ -818,14 +819,38 @@ describe("search", () => {
     expect(after(lastFilter, eventLine)).toBe(true)
   })
 
-  it("offers See all on an empty unread-only feed, which turns the toggle off", async () => {
+  it("heads the resources and the feed with what Unreads only leaves, with no search", async () => {
+    setViewport("wide")
+    window.history.replaceState({}, "", url(""))
+    const user = userEvent.setup()
+    wrap()
+    await user.click(screen.getAllByRole("switch", { name: "Unreads only" })[0])
+    const lines = () => screen.getAllByTestId("search-summary").map((n) => n.textContent)
+    expect(lines()).toContain("0 resources with unread events. See everything Esc")
+    await waitFor(() => expect(lines()).toContain("0 unread events. See everything Esc"))
+    expect(screen.queryByText(/No resources with unread events/)).toBeNull()
+    expect(screen.queryByText(/No unread events/)).toBeNull()
+  })
+
+  it("Esc turns Unreads only off as well as clearing the search", async () => {
+    setViewport("wide")
+    window.history.replaceState({}, "", url("q=kumquat"))
+    const user = userEvent.setup()
+    wrap()
+    await user.click(screen.getAllByRole("switch", { name: "Unreads only" })[0])
+    fireEvent.keyDown(document.body, { key: "Escape" })
+    expect(screen.getAllByRole("switch", { name: "Unreads only" })[0]).not.toBeChecked()
+    expect(new URLSearchParams(window.location.search).has("q")).toBe(false)
+  })
+
+  it("offers See everything while Unreads only is on, which turns the toggle off", async () => {
     setViewport("wide")
     window.history.replaceState({}, "", url(""))
     const user = userEvent.setup()
     wrap()
     const toggle = screen.getAllByRole("switch", { name: "Unreads only" })[0]
     await user.click(toggle)
-    await user.click(screen.getByRole("button", { name: "See all" }))
+    await user.click(screen.getAllByRole("button", { name: "See everything" })[0])
     expect(screen.getAllByRole("switch", { name: "Unreads only" })[0]).not.toBeChecked()
   })
 
@@ -836,8 +861,8 @@ describe("search", () => {
     wrap()
     await user.click(screen.getAllByRole("switch", { name: "Unreads only" })[0])
     const lines = () => screen.getAllByTestId("search-summary").map((n) => n.textContent)
-    expect(lines()).toContain("0 resources with unread events match your search. Clear search")
-    await waitFor(() => expect(lines()).toContain("0 unread events match your search. Clear search"))
+    expect(lines()).toContain("0 resources with unread events match your search. See everything Esc")
+    await waitFor(() => expect(lines()).toContain("0 unread events match your search. See everything Esc"))
   })
 
   it("counts matching events above the activity filters", async () => {
@@ -850,7 +875,7 @@ describe("search", () => {
     window.history.replaceState({}, "", url("q=kumquat"))
     wrap()
     await waitFor(() => expect(screen.queryAllByTestId("search-summary").map((n) => n.textContent))
-      .toContain("1 event matches your search. Clear search"))
+      .toContain("1 event matches your search. Clear search Esc"))
   })
 
   it("offers Clear filters under the activity filters only while one is on", async () => {
@@ -866,10 +891,22 @@ describe("search", () => {
     expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull()
   })
 
-  it("says nothing matches when no resource does", () => {
+  it("says 0 match when no resource does, and no other empty text", () => {
     setViewport("wide")
     window.history.replaceState({}, "", url("q=zzzz"))
     wrap()
-    expect(screen.getAllByText('Nothing matches "zzzz"').length).toBeGreaterThan(0)
+    expect(screen.getAllByTestId("search-summary").map((n) => n.textContent))
+      .toContain("0 resources match your search. Clear search Esc")
+    expect(screen.queryByText(/Nothing matches/)).toBeNull()
+    expect(screen.queryByText("No resources tracked.")).toBeNull()
+  })
+
+  it("leaves an empty searched feed blank under its 0 line", async () => {
+    setViewport("wide")
+    window.history.replaceState({}, "", url("q=zzzz"))
+    wrap()
+    await waitFor(() => expect(screen.getAllByTestId("search-summary").map((n) => n.textContent))
+      .toContain("0 events match your search. Clear search Esc"))
+    expect(screen.queryByText("No events yet.")).toBeNull()
   })
 })

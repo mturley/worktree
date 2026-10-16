@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest"
-import { act, render, cleanup, screen, waitFor, within } from "@testing-library/react"
+import { act, fireEvent, render, cleanup, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -275,25 +275,50 @@ describe("HomePage unread-only toggle", () => {
     expect(screen.queryByText(/my-branch/)).not.toBeInTheDocument()
   })
 
-  it("says so when no worktree has unread events", () => {
+  it("Esc turns Unreads only off as well as clearing the search", async () => {
+    window.localStorage.setItem("worktree.unreadOnly", "true")
+    window.history.replaceState({}, "", "/?q=kumquat")
+    setViewport("wide")
+    wrap()
+    expect(screen.getByRole("switch", { name: "Unreads only" })).toBeChecked()
+    fireEvent.keyDown(document.body, { key: "Escape" })
+    expect(screen.getByRole("switch", { name: "Unreads only" })).not.toBeChecked()
+    expect(new URLSearchParams(window.location.search).has("q")).toBe(false)
+  })
+
+  it("Esc turns Unreads only off with no search at all", () => {
     window.localStorage.setItem("worktree.unreadOnly", "true")
     setViewport("wide")
     wrap()
-    expect(screen.getByText(/No worktrees with unread events/)).toBeInTheDocument()
+    fireEvent.keyDown(document.body, { key: "Escape" })
+    expect(screen.getByRole("switch", { name: "Unreads only" })).not.toBeChecked()
   })
 
-  it("offers See all, which turns Unreads only off, when nothing is unread", async () => {
+  it("heads each pane with what Unreads only leaves, with no search", async () => {
     window.localStorage.setItem("worktree.unreadOnly", "true")
     setViewport("wide")
     const user = userEvent.setup()
     wrap()
-    expect(screen.getByText(/No unread events\./)).toBeInTheDocument()
-    const seeAll = screen.getAllByRole("button", { name: "See all" })
-    expect(seeAll).toHaveLength(2) // the worktree list and the activity feed
-    await user.click(seeAll[0])
+    const lines = () => screen.getAllByTestId("search-summary").map((n) => n.textContent)
+    expect(lines()).toContain("0 worktrees with unread events. See everything Esc")
+    await waitFor(() => expect(lines()).toContain("0 unread events. See everything Esc"))
+    // The line says it: no empty-list text under it.
+    expect(screen.queryByText(/No worktrees with unread events/)).toBeNull()
+    expect(screen.queryByText(/No unread events/)).toBeNull()
+    await user.click(screen.getByRole("tab", { name: /Resources/ }))
+    expect(lines()).toContain("0 resources with unread events. See everything Esc")
+    expect(screen.queryByText(/No unread resources/)).toBeNull()
+  })
+
+  it("See everything turns Unreads only off, and the lines go", async () => {
+    window.localStorage.setItem("worktree.unreadOnly", "true")
+    setViewport("wide")
+    const user = userEvent.setup()
+    wrap()
+    await user.click(screen.getAllByRole("button", { name: "See everything" })[0])
     expect(screen.getByRole("switch", { name: "Unreads only" })).not.toBeChecked()
     expect(screen.getByText(/my-branch/)).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "See all" })).toBeNull()
+    expect(screen.queryByTestId("search-summary")).toBeNull()
   })
 
   it("follows a change made in another tab", async () => {
@@ -341,9 +366,13 @@ describe("HomePage search", () => {
 
   it("clearing restores everything and removes q", async () => {
     setViewport("wide")
-    window.history.replaceState({}, "", "/?q=nothing-matches")
+    window.history.replaceState({}, "", "/?q=zzzz")
     wrap()
-    expect(screen.getAllByText(/Nothing matches/).length).toBeGreaterThan(0)
+    expect(screen.getAllByTestId("search-summary").map((n) => n.textContent))
+      .toContain("0 worktrees match your search. Clear search Esc")
+    // The 0 line says it: no empty-list text under it.
+    expect(screen.queryByText(/Nothing matches/)).toBeNull()
+    expect(screen.queryByText(/No worktrees/)).toBeNull()
     await userEvent.click(within(screen.getByTestId("home-header")).getByRole("button", { name: "Clear search" }))
     expect(screen.getByText(/my-branch/)).toBeInTheDocument()
     expect(new URLSearchParams(window.location.search).has("q")).toBe(false)
@@ -376,11 +405,11 @@ describe("HomePage search", () => {
     const user = userEvent.setup()
     wrap()
     const lines = () => screen.getAllByTestId("search-summary").map((n) => n.textContent)
-    expect(lines()).toContain("1 worktree matches your search. Clear search")
+    expect(lines()).toContain("1 worktree matches your search. Clear search Esc")
     // The feed's line waits for the debounced query to reach the server.
-    await waitFor(() => expect(lines()).toContain("1 event matches your search. Clear search"))
+    await waitFor(() => expect(lines()).toContain("1 event matches your search. Clear search Esc"))
     await user.click(screen.getByRole("tab", { name: /Resources/ }))
-    expect(lines()).toContain("0 resources match your search. Clear search")
+    expect(lines()).toContain("0 resources match your search. Clear search Esc")
     await user.click(screen.getAllByRole("button", { name: "Clear search" }).at(-1)!)
     expect(screen.queryByTestId("search-summary")).toBeNull()
     expect(new URLSearchParams(window.location.search).has("q")).toBe(false)
@@ -413,10 +442,10 @@ describe("HomePage search", () => {
     wrap()
     const lines = () => screen.getAllByTestId("search-summary").map((n) => n.textContent)
     await user.click(screen.getByRole("switch", { name: "Unreads only" }))
-    expect(lines()).toContain("0 worktrees with unread events match your search. Clear search")
-    await waitFor(() => expect(lines()).toContain("0 unread events match your search. Clear search"))
+    expect(lines()).toContain("0 worktrees with unread events match your search. See everything Esc")
+    await waitFor(() => expect(lines()).toContain("0 unread events match your search. See everything Esc"))
     await user.click(screen.getByRole("tab", { name: /Resources/ }))
-    expect(lines()).toContain("0 resources with unread events match your search. Clear search")
+    expect(lines()).toContain("0 resources with unread events match your search. See everything Esc")
   })
 
   it("shows no match line without a search", () => {

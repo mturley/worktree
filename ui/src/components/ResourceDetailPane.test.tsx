@@ -155,7 +155,7 @@ describe("ResourceDetailPane", () => {
     })
     wrap(<ResourceDetailPane path="/wt/foo" resource={jira} />)
     expect(await screen.findByText("1 event")).toBeInTheDocument()
-    expect(screen.getByTestId("search-summary").textContent).toBe("1 event matches your search. Clear search")
+    expect(screen.getByTestId("search-summary").textContent).toBe("1 event matches your search. Clear search Esc")
   })
 
   it("counts linked matches in the tab label while searching", async () => {

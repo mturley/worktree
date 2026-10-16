@@ -102,15 +102,14 @@ export function LinkedResourcesPanel({ query, path }: { query: LinkedQuery; path
   const found = filterLinkedSections(visible, search.terms)
   return (
     <Stack gap="xs">
-      <SearchSummary count={found.count ?? 0} noun={["linked resource", "linked resources"]} onClear={() => search.setQ("")} />
+      <SearchSummary count={found.count ?? 0} noun={["linked resource", "linked resources"]} />
       {found.unsearched && (
         <Text size="xs" c="dimmed" fs="italic">Hierarchy branches that haven't been loaded weren't searched.</Text>
       )}
-      {found.sections.length === 0 ? (
-        <Text size="sm" c="dimmed" ta="center" py="md">{`Nothing matches "${search.q.trim()}"`}</Text>
-      ) : (
-        // Keyed by the query: the tree's expansion is per-mount state, and a
-        // new search has new paths to open.
+      {/* Keyed by the query: the tree's expansion is per-mount state, and a
+          new search has new paths to open. With no matches the line above
+          says so, and nothing renders here. */}
+      {found.sections.length > 0 && (
         <Sections key={search.terms.join(" ")} sections={found.sections} path={path} searching />
       )}
     </Stack>

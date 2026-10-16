@@ -9,7 +9,8 @@ export function WorktreeList({
   items: WorktreeSummary[]
   emptyText?: React.ReactNode
 }) {
-  if (items.length === 0) return <Text c="dimmed" size="sm">{emptyText}</Text>
+  // null: nothing at all, e.g. under a search's "0 worktrees match" line.
+  if (items.length === 0) return emptyText === null ? null : <Text c="dimmed" size="sm">{emptyText}</Text>
   return (
     <Stack gap="xs">
       {items.map((w) => <WorktreeCard key={w.path} w={w} />)}

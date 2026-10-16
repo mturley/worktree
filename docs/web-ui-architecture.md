@@ -1393,26 +1393,63 @@ Worktrees matching through their resources is the single switch
   Unread only, Follow cmux, Settings). The worktree page places the bar after
   the "Open in editor" button.
 - Home: the wide column height is 100dvh minus the measured header (border box)
-  minus the `sm` gap. Worktree page: a selected resource stays listed even
-  when it doesn't match. Archived events picked from the dropdown open
-  `EventDetailsModal`.
+  minus the `sm` gap. The header sits at `--mantine-z-index-app` with an
+  opaque background, like the worktree page's sticky header, so content
+  tooltips (one layer below, see `useTooltipLayer`) pass under it. Worktree
+  page: a selected resource stays listed even when it doesn't match.
+  Archived events picked from the dropdown open `EventDetailsModal`.
+- Linked Resources (`lib/linkedSearch.ts`, `matchLinkedItem`): items and group
+  items narrow to matches; empty groups and sections go; a failed section
+  keeps its error. The hierarchy keeps paths to matches, expanded, with sibling
+  folding off while searching; lazily loaded branches aren't searched (a note
+  says so). The tab label counts matches.
+
+### The narrowing line (`SearchSummary`)
+
+Whenever a search or Unreads only narrows a pane, a line sits **directly above
+its results** (below the pane's filters): "3 worktrees match your search.",
+"N resources with unread events.", "N unread events match your search.", and
+so on, ending in `SeeEverythingLink`. That link reads "Clear search" while
+Unreads only is off and "See everything" while it's on; either way it does
+what Esc does (`useSeeEverything`: clear the query and turn Unreads only off;
+source/type filters are left to "Clear filters"). It appears on the home
+page's three panes, the worktree page's resources and activity, a selected
+resource's Activity tab and Linked Resources (search only there: those ignore
+Unreads only). Lists pass `emptyText={null}` while narrowed, so no
+"No …"/"Nothing matches" text repeats the line's "0 …". Activity's line waits
+until the feed holds the results for the typed query (not mid-debounce).
 
 ### The dropdown is removable
 
 `SearchSuggestions` (with `suggestions.ts` and their tests) is mounted only by
 `SearchBar`. Delete those files and the one mount to remove it; the page
-filtering is independent. It resets its highlighted row when the suggestion
-count changes, and a click pick closes it like Enter.
+filtering is independent.
+
+- Rows render as elsewhere: a worktree under `CmuxWorkspaceLabel`, a resource
+  as `ResourceCardBody`, an event as `EventRow` (global form, so archived
+  events are labeled). Display only: no buttons or links inside an option.
+- Sticky section headings with counts; up to 640 px wide and 70vh tall when
+  wide, the full screen width (less the gutter) when narrow.
+- A hint bar heads it, also when nothing matches ("Nothing matches your
+  search"): "The page is also filtered as you type. View all results" (closes
+  the dropdown; `Enter` shown while no row is highlighted) and, with rows,
+  "↑ ↓ to navigate". The highlighted row is outlined and shows `Enter`.
+- Arrow keys cycle through "no row highlighted" as a stop. The highlighted
+  row resets when the suggestion count changes; a click pick closes it like
+  Enter.
 
 ### Keys
 
-- `/` focuses the bar when focus is not in an input. The bar is
-  `type="text" role="searchbox"`; the clear button empties it.
-- Esc in the bar clears the query; a second Esc blurs it. A document-level
-  Esc also clears an active query unless the event is `defaultPrevented`,
-  focus is in another text input, or a modal/popover/menu/dropdown is open.
-  Hidden overlays (`aria-hidden`, `[hidden]`, `display:none`,
-  `visibility:hidden`) are ignored when deciding that.
+- `/` focuses the bar when focus is not in a text field. The bar is
+  `type="text" role="searchbox"` with autocorrect, autocapitalize,
+  autocomplete and spellcheck off; the ✕ button empties the query only.
+- Esc means "see everything" (`onEscape`/`escapeActive` on `SearchBar`): in
+  the bar, even with the dropdown open, it clears the query and turns Unreads
+  only off; with nothing to clear it closes the dropdown, then blurs the bar.
+  A document-level Esc does the same unless the event is `defaultPrevented`,
+  focus is in another text field (checkboxes and switches don't count), or a
+  visible dialog/menu/listbox other than the bar's own is open. Hidden overlays
+  (`aria-hidden`, `[hidden]`, `display:none`, `visibility:hidden`) are ignored.
 
 ## Link resources
 
