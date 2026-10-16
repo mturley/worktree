@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ResourceDTO, WorktreeSummary } from "../api/types"
 import { WorktreeCard } from "./WorktreeCard"
 import { api } from "../api/client"
+import { SearchContext } from "./search/SearchContext"
 
 const summary: WorktreeSummary = {
   path: "/wt/foo", repo: "odh", branch: "my-branch",
@@ -374,5 +375,37 @@ describe("notification bells", () => {
     wrap(<WorktreeCard w={{ ...summary, notify_all: false, focus_resources: [{ ...pr, notify: true }, jira] }} />)
     expect(screen.getAllByRole("img", { name: /Notifications on/ })).toHaveLength(1)
     expect(screen.getByRole("img", { name: "Notifications on" })).toBeInTheDocument()
+  })
+})
+
+describe("WorktreeCard via-resource match line", () => {
+  const related = { type: "jira", id: "J-9", url: "u", primary: false, title: "Zucchini audit" } as ResourceDTO
+  const searched = (terms: string[], resources: ResourceDTO[]) =>
+    wrap(
+      <SearchContext.Provider value={{ terms, resourcesByPath: new Map([["/wt/foo", resources]]) }}>
+        <WorktreeCard w={summary} />
+      </SearchContext.Provider>,
+    )
+
+  it("shows no why line when a focus resource's visible title already holds the term", () => {
+    searched(["widget"], summary.focus_resources)
+    expect(screen.queryByTestId("match-why")).toBeNull()
+    expect(document.querySelector("mark")?.textContent).toBe("widget")
+  })
+
+  it("keeps the line for a related resource", () => {
+    searched(["zucchini"], [...summary.focus_resources, related])
+    expect(screen.getByTestId("match-why")).toHaveTextContent("via J-9")
+  })
+
+  it("keeps the line for a hidden field on a focus resource", () => {
+    const withAssignee = [{ ...summary.focus_resources[0], assignee: "Pat Kumquat" }, summary.focus_resources[1]]
+    searched(["kumquat"], withAssignee)
+    expect(screen.getByTestId("match-why")).toBeInTheDocument()
+  })
+
+  it("highlights the repo and branch line", () => {
+    searched(["branch"], summary.focus_resources)
+    expect(document.querySelector("mark")?.textContent).toBe("branch")
   })
 })

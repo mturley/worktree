@@ -71,7 +71,12 @@ describe("matchWorktree", () => {
   it("matches via a resource, naming it", () => {
     expect(matchWorktree(wt, [], [jira], ["turley"])).toEqual({
       field: "resource", snippet: "Migrate OAuth proxy", viaKey: "RHOAIENG-41210",
+      viaType: "jira", viaId: "RHOAIENG-41210", viaField: "assignee",
     })
+  })
+  it("matches the worktree's name, not the path it lives under", () => {
+    expect(matchWorktree(wt, [], [], ["odh-oauth-fix"])).toEqual({ field: "name", snippet: "odh-oauth-fix" })
+    expect(matchWorktree(wt, [], [], ["wt"])).toBeNull()
   })
   it("ANDs terms across own fields and resources", () => {
     expect(matchWorktree(wt, [], [jira], ["sidecar", "turley"])).not.toBeNull()
@@ -102,6 +107,6 @@ describe("splitHighlight", () => {
 })
 
 it("title, name, key, branch and repo matches need no why line", () => {
-  expect(["title", "name", "key", "branch", "repo"].every((f) => VISIBLE_FIELDS.has(f))).toBe(true)
+  expect(["title", "name", "key", "branch", "repo", "workspace"].every((f) => VISIBLE_FIELDS.has(f))).toBe(true)
   expect(VISIBLE_FIELDS.has("notes")).toBe(false)
 })

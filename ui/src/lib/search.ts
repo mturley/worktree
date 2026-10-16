@@ -1,4 +1,5 @@
 import type { ResourceDTO, WorktreeSummary } from "../api/types"
+import { worktreeName } from "./homeWorktree"
 import { shortResourceRef } from "./resourceRef"
 
 /**
@@ -21,10 +22,14 @@ export interface SearchMatch {
   snippet: string
   /** For a worktree matched through a resource: that resource's short key. */
   viaKey?: string
+  /** For a via match: the resource's type and id, and which of its fields hit. */
+  viaType?: string
+  viaId?: string
+  viaField?: string
 }
 
 /** Fields already visible as the item's title; no "why" line for them. */
-export const VISIBLE_FIELDS: ReadonlySet<string> = new Set(["title", "name", "key", "branch", "repo"])
+export const VISIBLE_FIELDS: ReadonlySet<string> = new Set(["title", "name", "key", "branch", "repo", "workspace"])
 
 export function parseQuery(q: string): string[] {
   return [...new Set(q.toLowerCase().split(/\s+/).filter(Boolean))]
@@ -110,7 +115,7 @@ export function matchWorktree(
   const own: Field[] = [
     { name: "branch", text: w.branch },
     { name: "repo", text: w.repo },
-    { name: "path", text: w.path },
+    { name: "name", text: worktreeName(w.path) },
     ...workspaceTitles.map((t) => ({ name: "workspace", text: t })),
     { name: "notes", text: w.notes_search ?? "", long: true },
   ]
@@ -123,8 +128,12 @@ export function matchWorktree(
   const hit = firstHit(own, terms)
   if (hit) return hit
   for (const r of via) {
-    if (firstHit(resourceFields(r), terms)) {
-      return { field: "resource", snippet: resourceLabel(r), viaKey: shortResourceRef(r.type, r.id) }
+    const rHit = firstHit(resourceFields(r), terms)
+    if (rHit) {
+      return {
+        field: "resource", snippet: resourceLabel(r), viaKey: shortResourceRef(r.type, r.id),
+        viaType: r.type, viaId: r.id, viaField: rHit.field,
+      }
     }
   }
   return null

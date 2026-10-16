@@ -109,7 +109,7 @@ current order (events: newest first).
 
 | Item | Fields (priority order for the "why" line) |
 |---|---|
-| Worktree | branch, repo, path, cmux workspace name(s), notes, **then any of its resources' fields** (shown as `via <key>`) |
+| Worktree | branch, repo, worktree name (last path segment), cmux workspace name(s), notes, **then any of its resources' fields** (shown as `via <key>`) |
 | Resource | key/ID (PR `owner/repo#N`, `#N`; Jira key; link URL; Slack channel), title, custom name, custom description, assignee, author, reporter, status, labels, link description |
 
 Notes on fields: the cmux response carries only workspace titles, not
@@ -158,8 +158,8 @@ here.
 ### `match` on `TimelineEvent`
 
 When `q` is set, each returned event carries
-`match: {field, snippet}` — the first field (in the priority order above)
-containing the first term, and a snippet of about 60 runes around the hit,
+`match: {field, snippet}` — the highest-priority field (in the order above)
+containing any term, and a snippet of about 60 runes around the hit,
 cut at word boundaries with `…` marking cuts (same convention as linked
 resources' context). Computed in Go after the query, not in SQL. Absent
 when `q` is empty.

@@ -6,6 +6,7 @@ import { api } from "../api/client"
 import { useCmux } from "../api/cmux"
 import type { CmuxWorkspace } from "../api/types"
 import { CreateWorkspaceModal } from "./CreateWorkspaceModal"
+import { SearchHighlight } from "./search/SearchHighlight"
 
 /** Neutral bar for a workspace with no colour set, so rows stay aligned. */
 const NO_COLOR = "var(--mantine-color-dark-4)"
@@ -119,7 +120,7 @@ export function CmuxWorkspaceSection({ path, branch }: { path: string; branch: s
                   // ("… (waiting for review)"), which an ellipsis would eat.
                   style={{ minWidth: 0, overflowWrap: "anywhere" }}
                 >
-                  {ws.title}
+                  <SearchHighlight text={ws.title} />
                 </Text>
               </Group>
               <Button

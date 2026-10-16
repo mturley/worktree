@@ -11,7 +11,8 @@ import { UnreadBadge } from "./UnreadBadge"
 import { NotifyBell } from "./NotifyBell"
 import { useNotificationsEnabled } from "../hooks/useNotifyMode"
 import { NotesMarkdown } from "./NotesMarkdown"
-import { matchWorktree } from "../lib/search"
+import { VISIBLE_FIELDS, matchWorktree } from "../lib/search"
+import { worktreeName } from "../lib/homeWorktree"
 import { MatchWhy } from "./search/MatchWhy"
 import { SearchHighlight } from "./search/SearchHighlight"
 import { useSearchContext } from "./search/SearchContext"
@@ -64,12 +65,6 @@ function FocusResourceLine({ r, notifyAll }: { r: ResourceDTO; notifyAll: boolea
   )
 }
 
-/** The worktree's own name — the last path segment, e.g. "wt-ui-fixes". */
-function worktreeName(path: string): string {
-  const parts = path.split("/").filter(Boolean)
-  return parts[parts.length - 1] || path
-}
-
 export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
   const [, navigate] = useLocation()
   const href = `/worktree/${encodeURIComponent(w.path)}`
@@ -94,6 +89,12 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
         terms,
       )
     : null
+  // A via hit on a focus resource whose visible field (title, name, key)
+  // holds the term is already shown, highlighted, on its focus line below.
+  const suppressVia = Boolean(
+    match?.field === "resource" && match.viaField && VISIBLE_FIELDS.has(match.viaField) &&
+      w.focus_resources.some((r) => r.type === match.viaType && r.id === match.viaId),
+  )
 
   // The anchor is the inner Box, not the Paper, because the cmux section
   // sits above it and must not be nested interactive content inside an <a>.
@@ -163,9 +164,9 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
             that no longer shows per-resource ones either.
           */}
           <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-            {[w.repo, w.branch].filter(Boolean).join(" · ")}
+            <SearchHighlight text={[w.repo, w.branch].filter(Boolean).join(" · ")} />
           </Text>
-          <MatchWhy match={match} />
+          <MatchWhy match={suppressVia ? null : match} />
           {w.notes && (
             // Present only when the worktree opted in on its Notes tab. Read
             // only here: links render as text and task checkboxes are inert,

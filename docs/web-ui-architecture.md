@@ -1346,7 +1346,7 @@ No phrases or operators. An all-whitespace query is no query.
 
 | Item | Fields (priority order for the "why" line) |
 |---|---|
-| Worktree | branch, repo, path, cmux workspace name(s), notes (`notes_search`), then any of its resources' fields (shown as `via <key>`) |
+| Worktree | branch, repo, worktree name (last path segment), cmux workspace name(s), notes (`notes_search`), then any of its resources' fields (shown as `via <key>`) |
 | Resource | key/ID, title, custom name, custom description, assignee, author, reporter, status, labels, link description |
 | Event | title, body, author, then its resource's ID, custom name, cached title (`via <key>`) |
 
@@ -1360,17 +1360,18 @@ Worktrees matching through their resources is the single switch
   escapes `%`, `_` and `\` and wraps in `%...%` (queries use `ESCAPE`).
   SQLite `LIKE` folds case for ASCII only, accepted for v1.
 - `GET /api/timeline` (`handleGlobalTimeline`): `searchSQL(terms)` appends one
-  OR group per term, ANDed. Fields are tested with `EXISTS` subqueries (event
-  title/body/author, resource id, `watcher_resource_meta.custom_name`, and the
-  cached title plus Jira summary as ONE combined `LIKE` guarded by
-  `CASE WHEN json_valid(rs.state_json)`), so `searchArgsPerTerm` is 6. EXISTS
-  rather than joins keeps the existing dedup and pagination unchanged.
+  OR group per term, ANDed. Event title, body, author and the resource id are
+  direct `LIKE`s; only the two resource-side checks are `EXISTS` subqueries
+  (`watcher_resource_meta.custom_name`, and the cached title plus Jira summary
+  as ONE combined `LIKE` guarded by `CASE WHEN json_valid(rs.state_json)`), so
+  `searchArgsPerTerm` is 6. EXISTS rather than joins keeps the existing dedup
+  and pagination unchanged.
 - `GET /api/worktree-timeline` (`handleWorktreeTimeline`): filtered in Go with
   `matchEvent` after enrichment (so cached titles and custom names are
   available) and **before** `limit`, so a page is full of matches.
-- `TimelineEvent.match` (`{field, snippet}`): first field, in priority order,
-  containing the first term, with a ~60 rune `snippet` cut at word boundaries
-  (`...` marks cuts). Computed in Go; absent without `q`.
+- `TimelineEvent.match` (`{field, snippet}`): highest-priority field
+  containing ANY term, with a ~60 rune `snippet` cut at word boundaries
+  (`…`, U+2026, marks cuts). Computed in Go; absent without `q`.
 - `worktreeSummary.notes_search` (via `notes.AllNonBlank`) carries note text
   even when "Show notes on home page" is off; `resourceDTO.reporter` exposes
   the cached Jira reporter name.
