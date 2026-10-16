@@ -49,5 +49,18 @@ describe("dropdown", () => {
     await userEvent.type(screen.getByRole("searchbox"), "oa")
     await userEvent.click(screen.getByText("OAuth first"))
     expect(picks.b).toHaveBeenCalled()
+    expect(screen.queryByRole("listbox")).toBeNull()
+  })
+  it("Enter after the suggestions shrink does not pick a stale row", async () => {
+    const Live = ({ list }: { list: Suggestion[] }) => {
+      const [q, setQ] = useState("")
+      return <MantineProvider><SearchBar value={q} onChange={setQ} suggestions={q ? list : []} /></MantineProvider>
+    }
+    const { rerender } = render(<Live list={items} />)
+    await userEvent.type(screen.getByRole("searchbox"), "oa")
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}")
+    rerender(<Live list={[items[0]]} />)
+    await userEvent.keyboard("{Enter}")
+    expect(picks.b).not.toHaveBeenCalled()
   })
 })

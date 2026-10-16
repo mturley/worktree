@@ -7,8 +7,8 @@ import type { Suggestion } from "./SearchBar"
  * suggestions.ts, and the `suggestions` prop wiring in SearchBar.
  */
 export function SearchSuggestions({
-  items, active, onHover,
-}: { items: Suggestion[]; active: number; onHover: (i: number) => void }) {
+  items, active, onHover, onPick,
+}: { items: Suggestion[]; active: number; onHover: (i: number) => void; onPick: (s: Suggestion) => void }) {
   return (
     <Paper withBorder shadow="md" p={4} role="listbox" aria-label="Search suggestions"
       style={{ position: "absolute", top: "100%", left: 0, right: 0, marginTop: 4, zIndex: "var(--mantine-z-index-popover)" }}>
@@ -24,7 +24,7 @@ export function SearchSuggestions({
             style={{ cursor: "pointer", borderRadius: 4, background: i === active ? "var(--mantine-color-blue-light)" : undefined }}
             onMouseEnter={() => onHover(i)}
             // mousedown, so the input's blur doesn't close the list first.
-            onMouseDown={(e) => { e.preventDefault(); s.onPick() }}
+            onMouseDown={(e) => { e.preventDefault(); onPick(s) }}
           >
             <Text size="sm" lineClamp={1}><SearchHighlight text={s.label} /></Text>
             {s.detail && <Text size="xs" c="dimmed" lineClamp={1}><SearchHighlight text={s.detail} /></Text>}

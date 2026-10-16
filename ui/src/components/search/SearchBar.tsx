@@ -72,16 +72,20 @@ export function SearchBar({
 
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(-1)
-  useEffect(() => setActive(-1), [value])
+  const count = suggestions?.length ?? 0
+  useEffect(() => setActive(-1), [value, count])
   const showList = open && !!value && (suggestions?.length ?? 0) > 0
 
-  const onInputKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const pick = (s: Suggestion) => { s.onPick(); setOpen(false); ref.current?.blur() }
+
+  const onInputKey =(e: React.KeyboardEvent<HTMLInputElement>) => {
     const n = suggestions?.length ?? 0
     if (showList && e.key === "ArrowDown") { e.preventDefault(); setActive((a) => (a + 1) % n); return }
     if (showList && e.key === "ArrowUp") { e.preventDefault(); setActive((a) => (a <= 0 ? n - 1 : a - 1)); return }
     if (e.key === "Enter") {
       e.preventDefault()
-      if (showList && active >= 0) { suggestions![active].onPick(); setOpen(false); ref.current?.blur(); return }
+      const picked = suggestions?.[active]
+      if (showList && picked) { pick(picked); return }
       setOpen(false)
       return
     }
@@ -111,7 +115,7 @@ export function SearchBar({
         leftSection={<IconSearch size={14} />}
         rightSection={value ? <CloseButton size="xs" aria-label="Clear search" onClick={() => onChange("")} /> : null}
       />
-      {showList && <SearchSuggestions items={suggestions!} active={active} onHover={setActive} />}
+      {showList && <SearchSuggestions items={suggestions!} active={active} onHover={setActive} onPick={pick} />}
     </div>
   )
 }
