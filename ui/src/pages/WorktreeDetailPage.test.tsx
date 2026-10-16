@@ -773,6 +773,49 @@ describe("search", () => {
     expect(box.compareDocumentPosition(del) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it("heads the resource list with its match count, leaving out the kept selection", async () => {
+    setViewport("wide")
+    resources = [
+      ...baseResources,
+      { type: "jira", id: "J-2", url: "https://jira/J-2", primary: true, title: "Kumquat proxy", status: "Open" } as ResourceDTO,
+    ]
+    // The selected PR stays listed but does not match, so it is not counted.
+    window.history.replaceState({}, "", url("resource=pr:o%2Fr%231&q=kumquat"))
+    const user = userEvent.setup()
+    wrap()
+    const lines = () => screen.queryAllByTestId("search-summary").map((n) => n.textContent)
+    expect(lines()).toContain("1 resource matches your search. Clear search")
+    await user.click(screen.getAllByRole("button", { name: "Clear search" }).at(-1)!)
+    expect(lines()).toEqual([])
+    expect(new URLSearchParams(window.location.search).has("q")).toBe(false)
+  })
+
+  it("counts matching events above the activity filters", async () => {
+    setViewport("wide")
+    events = [{
+      id: "e1", ts: "2026-10-01T00:00:00Z", external_ts: "", source: "jira", type: "jira_comment", type_label: "",
+      title: "Kumquat note", body: "", author: "a", resource_type: "jira", resource_id: "J-1", resource_url: "",
+      resource_title: "", worktrees: [],
+    }]
+    window.history.replaceState({}, "", url("q=kumquat"))
+    wrap()
+    await waitFor(() => expect(screen.queryAllByTestId("search-summary").map((n) => n.textContent))
+      .toContain("1 event matches your search. Clear search"))
+  })
+
+  it("offers Clear filters under the activity filters only while one is on", async () => {
+    setViewport("wide")
+    window.history.replaceState({}, "", url(""))
+    const user = userEvent.setup()
+    wrap()
+    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull()
+    await user.click(screen.getByRole("button", { name: /GitHub/ }))
+    expect(detailArgs.at(-1)?.[1]).toEqual(["pr"])
+    await user.click(screen.getByRole("button", { name: "Clear filters" }))
+    expect(detailArgs.at(-1)?.[1]).toEqual([])
+    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull()
+  })
+
   it("says nothing matches when no resource does", () => {
     setViewport("wide")
     window.history.replaceState({}, "", url("q=zzzz"))

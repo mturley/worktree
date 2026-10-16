@@ -8,6 +8,7 @@ import {
   type ResourceFilter, type ResourceSortMode, type SortDir,
 } from "../lib/resourceListFilter"
 import { AllResourceRow } from "./AllResourceRow"
+import { ClearFiltersLink } from "./search/ClearFiltersLink"
 import { GitHubMark } from "./icons/GitHubMark"
 import { JiraMark } from "./icons/JiraMark"
 import { SlackMark } from "./icons/SlackMark"
@@ -163,10 +164,12 @@ export function ResourcesTabControls({ view }: { view: ResourcesView }) {
  * clears them. The global unread-only toggle narrows it too. Sorting lives in
  * ResourcesTabControls; the state is the page's (useResourcesView).
  */
-export function ResourcesPanel({ view, headerStyle, top }: {
+export function ResourcesPanel({ view, headerStyle, top, searchSummary }: {
   view: ResourcesView
   /** Rendered first inside the (pinned) header: the tab bar wide, the sort row narrow. */
   top?: React.ReactNode
+  /** The "N resources match your search" line, above the filters while searching. */
+  searchSummary?: React.ReactNode
   /** Pins the controls at the top of a scrolling column; see pinnedStyle. */
   headerStyle?: React.CSSProperties
 }) {
@@ -181,6 +184,7 @@ export function ResourcesPanel({ view, headerStyle, top }: {
       data-testid="resources-header"
     >
       {top}
+      {searchSummary}
       <Group gap={4} wrap="wrap">
         {TYPES.filter((t) => t.type !== "link" || presentTypes.has("link")).map((t) => (
           <Toggle
@@ -195,6 +199,9 @@ export function ResourcesPanel({ view, headerStyle, top }: {
         ))}
       </Group>
       <SubFilters all={all} filter={filter} onChange={setFilter} />
+      {/* Subfilters only exist under a selected type, so a type is the
+          whole of "a filter is on". The sort is not a filter: it stays. */}
+      <ClearFiltersLink active={filter.type !== null} onClear={() => setFilter(EMPTY_FILTER)} />
     </Stack>
   )
 

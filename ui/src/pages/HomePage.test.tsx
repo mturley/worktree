@@ -330,7 +330,7 @@ describe("HomePage search", () => {
     window.history.replaceState({}, "", "/?q=nothing-matches")
     wrap()
     expect(screen.getAllByText(/Nothing matches/).length).toBeGreaterThan(0)
-    await userEvent.click(screen.getByRole("button", { name: "Clear search" }))
+    await userEvent.click(within(screen.getByTestId("home-header")).getByRole("button", { name: "Clear search" }))
     expect(screen.getByText(/my-branch/)).toBeInTheDocument()
     expect(new URLSearchParams(window.location.search).has("q")).toBe(false)
     await waitFor(() => expect(mocks.timelineArgs.at(-1)?.[4] ?? "").toBe(""))
@@ -347,6 +347,61 @@ describe("HomePage search", () => {
     expect(await screen.findByText(/my-branch/)).toBeInTheDocument()
     await userEvent.click(screen.getByRole("button", { name: /GitHub/ }))
     await waitFor(() => expect(screen.queryByText(/my-branch/)).toBeNull())
+  })
+
+  it("heads each pane with its match count and a way to clear the search", async () => {
+    setViewport("wide")
+    mocks.worktrees = [summary, { ...summary, path: "/wt/bar", branch: "kumquat-branch", focus_resources: [] }]
+    mocks.events = [{
+      id: "evt-1", ts: "2026-10-01T00:00:00Z", external_ts: "", source: "github",
+      type: "pr_comment", type_label: "", title: "Kumquat remark", body: "", author: "someone",
+      resource_type: "pr", resource_id: "o/r#1", resource_url: "https://gh/pr/1", resource_title: "", worktrees: ["my-branch"],
+      worktree_paths: ["/wt/foo"],
+    }]
+    window.history.replaceState({}, "", "/?q=kumquat")
+    const user = userEvent.setup()
+    wrap()
+    const lines = () => screen.getAllByTestId("search-summary").map((n) => n.textContent)
+    expect(lines()).toContain("1 worktree matches your search. Clear search")
+    // The feed's line waits for the debounced query to reach the server.
+    await waitFor(() => expect(lines()).toContain("1 event matches your search. Clear search"))
+    await user.click(screen.getByRole("tab", { name: /Resources/ }))
+    expect(lines()).toContain("0 resources match your search. Clear search")
+    await user.click(screen.getAllByRole("button", { name: "Clear search" }).at(-1)!)
+    expect(screen.queryByTestId("search-summary")).toBeNull()
+    expect(new URLSearchParams(window.location.search).has("q")).toBe(false)
+  })
+
+  it("shows no match line without a search", () => {
+    setViewport("wide")
+    wrap()
+    expect(screen.queryByTestId("search-summary")).toBeNull()
+  })
+
+  it("offers Clear filters under the activity filters only while one is on", async () => {
+    setViewport("wide")
+    const user = userEvent.setup()
+    wrap()
+    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull()
+    await user.click(screen.getByRole("button", { name: /GitHub/ }))
+    expect(mocks.timelineArgs.at(-1)?.[1]).toEqual(["pr"])
+    await user.click(screen.getByRole("button", { name: "Clear filters" }))
+    expect(mocks.timelineArgs.at(-1)?.[1]).toEqual([])
+    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull()
+  })
+
+  it("offers Clear filters under the resource filters only while one is on", async () => {
+    setViewport("wide")
+    const user = userEvent.setup()
+    wrap()
+    await user.click(screen.getByRole("tab", { name: /Resources/ }))
+    expect(await screen.findByText("Theirs")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull()
+    await user.click(within(screen.getByTestId("resources-header")).getByRole("button", { name: /Jira/ }))
+    expect(screen.queryByText("Theirs")).toBeNull()
+    await user.click(screen.getByRole("button", { name: "Clear filters" }))
+    expect(screen.getByText("Theirs")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull()
   })
 
   it("moves global controls into the header", () => {

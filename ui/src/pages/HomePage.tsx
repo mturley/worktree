@@ -21,6 +21,8 @@ import { useActivityFilter } from "../hooks/useActivityFilter"
 import { RefreshWatchersButton } from "../components/RefreshWatchersButton"
 import { WatcherLogButton } from "../components/WatcherLogButton"
 import { NewWorktreeModal } from "../components/NewWorktreeModal"
+import { SearchSummary } from "../components/search/SearchSummary"
+import { ClearFiltersLink } from "../components/search/ClearFiltersLink"
 import { HomeHeader } from "../components/HomeHeader"
 import { EventDetailsModal } from "../components/EventDetailsModal"
 import { SearchBar } from "../components/search/SearchBar"
@@ -168,8 +170,13 @@ export function HomePage() {
     })
   }
 
+  const clearSearch = () => search.setQ("")
   const worktrees = (
-    <WorktreeList
+    <Stack gap="xs">
+      {search.terms.length > 0 && (
+        <SearchSummary count={shownWorktrees.length} noun={["worktree", "worktrees"]} onClear={clearSearch} />
+      )}
+      <WorktreeList
       items={shownWorktrees}
       // Only once there are worktrees to hide: with none at all, the usual
       // "create one" hint is the more useful thing to say.
@@ -184,7 +191,11 @@ export function HomePage() {
               ? "No worktrees with unread events"
               : undefined
       }
-    />
+      />
+    </Stack>
+  )
+  const resourcesSummary = search.terms.length > 0 && (
+    <SearchSummary count={resourcesView.shown.length} noun={["resource", "resources"]} onClear={clearSearch} />
   )
   // The Activity tab's own controls: refresh, the watcher log and archived.
   const activityControls = (
@@ -233,12 +244,21 @@ export function HomePage() {
         {/* Wide, the tab bar, which carries this tab's controls; narrow,
             where the tab bar has no room for them, the controls alone. */}
         {top ?? activityControls}
+        {/* Only once the feed holds the results for what is typed: during
+            the debounce and the first fetch it would count the old ones. */}
+        {search.terms.length > 0 && search.debouncedQ === queryText && !tl.isLoading && (
+          <SearchSummary count={tl.events.length} more={tl.hasMore} noun={["event", "events"]} onClear={clearSearch} />
+        )}
         <Group>
           <SourceFilter value={sources} onChange={setSources} />
         </Group>
         {/* Narrows only the feed, not the worktree cards: a card follows
             resources, and every resource has every kind of event. */}
         <EventTypeFilter sources={sources} value={categories} onChange={setCategories} />
+        {/* Clearing the sources clears the event types with them (see
+            useActivityFilter). Archived, unreads only and the search are
+            separate switches, each with its own way off. */}
+        <ClearFiltersLink active={sources.length > 0 || categories.length > 0} onClear={() => setSources([])} />
       </Stack>
       <TimelineFeed
         events={tl.events}
@@ -304,6 +324,7 @@ export function HomePage() {
               <ResourcesPanel
                 view={resourcesView}
                 top={<ResourcesTabControls view={resourcesView} />}
+                searchSummary={resourcesSummary}
               />
             </Tabs.Panel>
           </Tabs>
@@ -345,7 +366,7 @@ export function HomePage() {
         <Grid.Col span={6} style={columnStyle} data-tooltip-layer="content">
           {rightTab === "timeline"
             ? timeline(rightTabBar)
-            : <ResourcesPanel view={resourcesView} headerStyle={headerStyle} top={rightTabBar} />}
+            : <ResourcesPanel view={resourcesView} headerStyle={headerStyle} top={rightTabBar} searchSummary={resourcesSummary} />}
         </Grid.Col>
         <NewWorktreeModal opened={newOpen} onClose={() => setNewOpen(false)} />
         {detailsModal}

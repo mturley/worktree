@@ -46,6 +46,8 @@ import { AddResourceModal } from "../components/AddResourceModal"
 import { parseThreadUrl } from "../lib/parseThreadUrl"
 import { worktreeName } from "../lib/homeWorktree"
 import { SearchBar } from "../components/search/SearchBar"
+import { SearchSummary } from "../components/search/SearchSummary"
+import { ClearFiltersLink } from "../components/search/ClearFiltersLink"
 import { SearchContext } from "../components/search/SearchContext"
 import { buildSuggestions } from "../components/search/suggestions"
 import { useSearchQuery } from "../hooks/useSearchQuery"
@@ -66,6 +68,7 @@ export function WorktreeDetailPage() {
   // Narrows only this worktree's resources and activity; the query lives in
   // the URL, shared with the resource's own feed (ResourceDetailPane).
   const search = useSearchQuery()
+  const clearSearch = () => search.setQ("")
   const searchContext = useMemo(() => ({ terms: search.terms }), [search.terms])
   const { resources, timeline } = useWorktreeDetail(path, sources, unreadOnly, eventTypes, search.debouncedQ)
   const { selected, select, toggle, clear } = useSelectedResource()
@@ -248,6 +251,16 @@ export function WorktreeDetailPage() {
               : undefined
       }
       toolbar={
+        <Stack gap="xs">
+        {search.terms.length > 0 && (
+          // Matches only: the selection kept listed while it doesn't match
+          // (see shownItems) is not a result.
+          <SearchSummary
+            count={shownItems.filter((r) => matchResource(r, search.terms) !== null).length}
+            noun={["resource", "resources"]}
+            onClear={clearSearch}
+          />
+        )}
         <Group gap="lg" align="flex-start">
           <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} />
           <NotifySwitch
@@ -264,6 +277,7 @@ export function WorktreeDetailPage() {
             }}
           />
         </Group>
+        </Stack>
       }
       path={path}
       onChanged={resources.refetch}
@@ -297,6 +311,11 @@ export function WorktreeDetailPage() {
           </Group>
           <SourceFilter value={sources} onChange={setSources} />
         </Group>
+        {/* Only once the feed holds the results for what is typed: during
+            the debounce it would count the old ones. */}
+        {search.terms.length > 0 && search.debouncedQ === search.q.trim() && !timeline.isLoading && (
+          <SearchSummary count={timeline.events.length} more={timeline.hasMore} noun={["event", "events"]} onClear={clearSearch} />
+        )}
         {/* Right-aligned under the source toggles when they sit at the right
             of the header; narrow, the header wraps them to the left. */}
         <EventTypeFilter
@@ -305,6 +324,12 @@ export function WorktreeDetailPage() {
           onChange={setCategories}
           justify={wide ? "flex-end" : "flex-start"}
         />
+        {/* Clearing the sources clears the event types with them (see
+            useActivityFilter). It widens the resource list too, which the
+            source toggles also narrow. */}
+        <Group justify={wide ? "flex-end" : "flex-start"}>
+          <ClearFiltersLink active={sources.length > 0 || categories.length > 0} onClear={() => setSources([])} />
+        </Group>
       </Stack>
       <TimelineFeed
         events={timeline.events}
