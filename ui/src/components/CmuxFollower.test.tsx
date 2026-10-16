@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MantineProvider } from "@mantine/core"
 import { CmuxFollower, worktreeAt } from "./CmuxFollower"
 import { FollowCmuxToggle } from "./FollowCmuxToggle"
+import { FollowingCmuxBanner } from "./FollowingCmuxBanner"
 import { emitCmuxFocus } from "../lib/cmuxFocusBus"
 import { setFollowCmux, FOLLOW_CMUX_KEY } from "../hooks/useFollowCmux"
 import { useUnsavedChanges } from "../lib/unsavedChanges"
@@ -157,5 +158,20 @@ describe("FollowCmuxToggle", () => {
     wrap(<FollowCmuxToggle />)
     await userEvent.click(await screen.findByRole("switch", { name: /follow cmux/i }))
     expect(window.sessionStorage.getItem(FOLLOW_CMUX_KEY)).toBe("true")
+  })
+})
+
+describe("FollowingCmuxBanner", () => {
+  it("is hidden while following is off", () => {
+    wrap(<FollowingCmuxBanner />)
+    expect(screen.queryByRole("button", { name: /stop following/i })).toBeNull()
+  })
+
+  it("turns following off from its button", async () => {
+    act(() => setFollowCmux(true))
+    wrap(<FollowingCmuxBanner />)
+    await userEvent.click(screen.getByRole("button", { name: /stop following/i }))
+    expect(window.sessionStorage.getItem(FOLLOW_CMUX_KEY)).toBe("false")
+    expect(screen.queryByRole("button", { name: /stop following/i })).toBeNull()
   })
 })

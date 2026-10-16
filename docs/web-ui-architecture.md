@@ -2099,10 +2099,13 @@ in front of its title, and loses it once nothing is unread. The prefix exists
 
 ### Follow cmux (`cmux_focus.go`, `cmux/focus.go`, `CmuxFollower`)
 
-A per-tab toggle (home page worktree toolbar, after Sort by; worktree
-header before the Switch cmux button) that makes the tab
-open whichever worktree cmux switches to. Rendered only when `/api/cmux` says `available`, i.e. the server runs
-inside cmux.
+A per-tab toggle on the home page's worktree toolbar (after Sort by) that
+makes the tab open whichever worktree cmux switches to. Rendered only when
+`/api/cmux` says `available`, i.e. the server runs inside cmux. Following can
+only be turned on there: a worktree page has no toggle, just
+`FollowingCmuxBanner` at the top of its sticky header while following is on
+(whether or not cmux is still available, so it can always be turned off),
+with a "Stop following" button.
 
 - **Source:** `StartCmuxFocusWatch` runs `cmux events --name
   workspace.selected --name window.focused --reconnect` for the server's

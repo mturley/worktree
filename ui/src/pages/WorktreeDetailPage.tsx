@@ -4,7 +4,7 @@ import { Link, useRoute } from "wouter"
 import { useQueryClient } from "@tanstack/react-query"
 import { api } from "../api/client"
 import { NotifySwitch } from "../components/NotifySwitch"
-import { FollowCmuxToggle } from "../components/FollowCmuxToggle"
+import { FollowingCmuxBanner } from "../components/FollowingCmuxBanner"
 import { OpenInEditorButton } from "../components/OpenInEditorButton"
 import { Logo } from "../components/Logo"
 import { IconChevronLeft } from "@tabler/icons-react"
@@ -463,7 +463,6 @@ export function WorktreeDetailPage() {
   const actions = (
     <>
       {!wide && editorButton}
-      <FollowCmuxToggle />
       {summary && <CmuxWorkspaceActions path={path} branch={summary.branch} />}
       {summary && <DeleteWorktreeButton w={summary} />}
     </>
@@ -524,6 +523,8 @@ export function WorktreeDetailPage() {
         }}
       >
         <Stack gap="md">
+          {/* In the sticky header, so the way to stop following stays in view. */}
+          <FollowingCmuxBanner />
           <Group justify="space-between" wrap="nowrap" align="center" data-detail-header>
             <Group wrap="nowrap" style={{ minWidth: 0 }}>
               {/* The chevron and logo are one link back to the list. */}
