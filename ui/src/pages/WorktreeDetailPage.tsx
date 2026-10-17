@@ -48,7 +48,7 @@ import { worktreeName } from "../lib/homeWorktree"
 import { SearchBar } from "../components/search/SearchBar"
 import { SearchSummary } from "../components/search/SearchSummary"
 import { useSeeEverything } from "../hooks/useSeeEverything"
-import { ClearFiltersLink } from "../components/search/ClearFiltersLink"
+import { NarrowingContext } from "../components/search/NarrowingContext"
 import { SearchContext } from "../components/search/SearchContext"
 import { buildSuggestions } from "../components/search/suggestions"
 import { useSearchQuery } from "../hooks/useSearchQuery"
@@ -70,6 +70,19 @@ export function WorktreeDetailPage() {
   // the URL, shared with the resource's own feed (ResourceDetailPane).
   const search = useSearchQuery()
   const everything = useSeeEverything()
+  // Everything that narrows the page, and the one way back (Esc, and every
+  // narrowing line's link): see NarrowingContext. The source toggles narrow
+  // the resource list as well as the feed; the event types only the feed.
+  const sourcesOn = sources.length > 0
+  const narrowing = useMemo(() => ({
+    search: search.terms.length > 0,
+    unread: unreadOnly,
+    filters: sourcesOn || categories.length > 0,
+    clearAll: () => {
+      everything.seeEverything()
+      setSources([]) // clears the event types with it (useActivityFilter)
+    },
+  }), [search.terms, unreadOnly, sourcesOn, categories.length, everything, setSources])
   const searchContext = useMemo(() => ({ terms: search.terms }), [search.terms])
   const { resources, timeline } = useWorktreeDetail(path, sources, unreadOnly, eventTypes, search.debouncedQ)
   const { selected, select, toggle, clear } = useSelectedResource()
@@ -240,20 +253,10 @@ export function WorktreeDetailPage() {
     <ResourceList
       items={shownItems}
       allItems={filtered ? items : undefined}
-      emptyText={
-        items.length === 0
-          ? undefined
-          : search.terms.length > 0
-            // The "0 resources match your search" line above says it.
-            ? null
-            : sources.length > 0
-            ? `No${unreadOnly ? " unread" : ""} resources from that source`
-            : unreadOnly
-              // The "0 resources with unread events" line above says it.
-              ? null
-              : undefined
-      }
-      aboveList={(search.terms.length > 0 || unreadOnly) && (
+      // With none followed at all, the list's own hint; narrowed, the
+      // "0 resources …" line above says it.
+      emptyText={items.length === 0 ? undefined : null}
+      aboveList={(narrowing.search || unreadOnly || sourcesOn) && (
         // Searching, matches only: the selection kept listed while it
         // doesn't match (see shownItems) is not a result.
         <SearchSummary
@@ -262,6 +265,7 @@ export function WorktreeDetailPage() {
             : shownItems.length}
           noun={["resource", "resources"]}
           qualifier={unreadOnly ? "with unread events" : undefined}
+          filtered={sourcesOn}
         />
       )}
       toolbar={
@@ -322,20 +326,15 @@ export function WorktreeDetailPage() {
           onChange={setCategories}
           justify={wide ? "flex-end" : "flex-start"}
         />
-        {/* Clearing the sources clears the event types with them (see
-            useActivityFilter). It widens the resource list too, which the
-            source toggles also narrow. */}
-        <Group justify={wide ? "flex-end" : "flex-start"}>
-          <ClearFiltersLink active={sources.length > 0 || categories.length > 0} onClear={() => setSources([])} />
-        </Group>
         {/* Directly above the results it counts. Only once the feed holds
             the results for what is typed: during the debounce it would count
             the old ones. */}
-        {(search.terms.length > 0 || unreadOnly) && search.debouncedQ === search.q.trim() && !timeline.isLoading && (
+        {(narrowing.search || unreadOnly || narrowing.filters) && search.debouncedQ === search.q.trim() && !timeline.isLoading && (
           <SearchSummary
             count={timeline.events.length}
             more={timeline.hasMore}
             noun={unreadOnly ? ["unread event", "unread events"] : ["event", "events"]}
+            filtered={narrowing.filters}
           />
         )}
       </Stack>
@@ -347,7 +346,7 @@ export function WorktreeDetailPage() {
         onLoadMore={timeline.loadMore}
         loadingMore={timeline.loadingMore}
         // Searching or unread only, the "0 … events" line above says it.
-        emptyText={search.terms.length > 0 || unreadOnly ? null : undefined}
+        emptyText={narrowing.search || unreadOnly || narrowing.filters ? null : undefined}
         // Only meaningful here: this page has a selection to change, and the
         // worktree's own resource list to resolve icons and titles against.
         onSelectResource={selectFromEvent}
@@ -532,8 +531,8 @@ export function WorktreeDetailPage() {
         onChange={search.setQ}
         placeholder="Search this worktree…"
         suggestions={suggestions}
-        onEscape={everything.seeEverything}
-        escapeActive={everything.active}
+        onEscape={narrowing.clearAll}
+        escapeActive={narrowing.search || narrowing.unread || narrowing.filters}
       />
     </div>
   )
@@ -561,7 +560,7 @@ export function WorktreeDetailPage() {
   )
 
   return (
-    <SearchContext.Provider value={searchContext}>
+    <NarrowingContext.Provider value={narrowing}><SearchContext.Provider value={searchContext}>
     <ThreadActionsContext.Provider value={threadActions}>
     <LinkedActionsContext.Provider value={linkedActions}>
     {/*
@@ -740,6 +739,6 @@ export function WorktreeDetailPage() {
     </Stack>
     </LinkedActionsContext.Provider>
     </ThreadActionsContext.Provider>
-    </SearchContext.Provider>
+    </SearchContext.Provider></NarrowingContext.Provider>
   )
 }

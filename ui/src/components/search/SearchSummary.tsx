@@ -1,6 +1,6 @@
 import { Text } from "@mantine/core"
 import { SeeEverythingLink } from "./SeeEverythingLink"
-import { useSearchQuery } from "../../hooks/useSearchQuery"
+import { useNarrowing } from "./NarrowingContext"
 
 /**
  * "3 worktrees match your search. See everything Esc" — the line directly
@@ -12,6 +12,7 @@ export function SearchSummary({
   more = false,
   noun,
   qualifier,
+  filtered = false,
 }: {
   count: number
   /** The feed has more pages, so the count is a floor: "50+ events". */
@@ -20,11 +21,14 @@ export function SearchSummary({
   noun: [string, string]
   /** What else narrows the count, after the noun: "with unread events". */
   qualifier?: string
+  /** Whether the page's filters narrow THIS pane (they don't all reach every pane). */
+  filtered?: boolean
 }) {
   const one = count === 1 && !more
-  // With no search the list is narrowed only by Unreads only (the qualifier
-  // or noun says so): "3 worktrees with unread events."
-  const searching = useSearchQuery().terms.length > 0
+  // "match your search", "… your filters", "… your search and filters", or,
+  // narrowed by Unreads only alone (the qualifier or noun says so), nothing:
+  // "3 worktrees with unread events."
+  const by = [useNarrowing().search && "search", filtered && "filters"].filter(Boolean).join(" and ")
   return (
     <Text
       size="sm"
@@ -35,7 +39,7 @@ export function SearchSummary({
         {`${count}${more ? "+" : ""} ${one ? noun[0] : noun[1]}`}
       </Text>
       {qualifier && ` ${qualifier}`}
-      {searching ? ` ${one ? "matches" : "match"} your search. ` : ". "}
+      {by ? ` ${one ? "matches" : "match"} your ${by}. ` : ". "}
       <SeeEverythingLink />
     </Text>
   )

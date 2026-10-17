@@ -23,7 +23,8 @@ import { WatcherLogButton } from "../components/WatcherLogButton"
 import { NewWorktreeModal } from "../components/NewWorktreeModal"
 import { SearchSummary } from "../components/search/SearchSummary"
 import { useSeeEverything } from "../hooks/useSeeEverything"
-import { ClearFiltersLink } from "../components/search/ClearFiltersLink"
+import { NarrowingContext } from "../components/search/NarrowingContext"
+import { EMPTY_FILTER } from "../lib/resourceListFilter"
 import { HomeHeader } from "../components/HomeHeader"
 import { EventDetailsModal } from "../components/EventDetailsModal"
 import { SearchBar } from "../components/search/SearchBar"
@@ -175,36 +176,52 @@ export function HomePage() {
   // Unreads only narrows every pane here, so their match lines say so.
   const withUnread = unreadOnly ? "with unread events" : undefined
   const eventNoun: [string, string] = unreadOnly ? ["unread event", "unread events"] : ["event", "events"]
-  // A search or Unreads only narrows the panes: each then heads its results
-  // with a line saying how many are left, and the way back (SearchSummary).
-  const narrowed = search.terms.length > 0 || unreadOnly
+  // Which filters reach which pane: the source toggles narrow the worktree
+  // cards and the feed, the event types only the feed, and the Resources
+  // tab has its own.
+  const sourcesOn = sources.length > 0
+  const activityFiltered = sourcesOn || categories.length > 0
+  const resourcesFiltered = resourcesView.filter.type !== null
+  // Everything that narrows the page, and the one way back (Esc, and every
+  // narrowing line's link): see NarrowingContext.
+  const narrowing = useMemo(() => ({
+    search: search.terms.length > 0,
+    unread: unreadOnly,
+    filters: activityFiltered || resourcesFiltered,
+    clearAll: () => {
+      everything.seeEverything()
+      setSources([]) // clears the event types with it (useActivityFilter)
+      resourcesView.setFilter(EMPTY_FILTER)
+    },
+  }), [search.terms, unreadOnly, activityFiltered, resourcesFiltered, everything, setSources, resourcesView])
+  const searchOrUnread = narrowing.search || unreadOnly
+  // Each pane heads its results with how many are left, while anything
+  // narrows it; the line says it, so the lists show no empty text then.
   const worktrees = (
     <Stack gap="xs">
-      {narrowed && (
-        <SearchSummary count={shownWorktrees.length} noun={["worktree", "worktrees"]} qualifier={withUnread} />
+      {(searchOrUnread || sourcesOn) && (
+        <SearchSummary
+          count={shownWorktrees.length}
+          noun={["worktree", "worktrees"]}
+          qualifier={withUnread}
+          filtered={sourcesOn}
+        />
       )}
       <WorktreeList
       items={shownWorktrees}
       // Only once there are worktrees to hide: with none at all, the usual
       // "create one" hint is the more useful thing to say.
-      emptyText={
-        sortedWorktrees.length === 0
-          ? undefined
-          : search.terms.length > 0
-            // The "0 worktrees match your search" line above says it.
-            ? null
-            : sources.length > 0
-            ? `No worktrees${unreadOnly ? " with unread events" : ""} following that source`
-            : unreadOnly
-              // The "0 worktrees with unread events" line above says it.
-              ? null
-              : undefined
-      }
+      emptyText={sortedWorktrees.length === 0 ? undefined : null}
       />
     </Stack>
   )
-  const resourcesSummary = narrowed && (
-    <SearchSummary count={resourcesView.shown.length} noun={["resource", "resources"]} qualifier={withUnread} />
+  const resourcesSummary = (searchOrUnread || resourcesFiltered) && (
+    <SearchSummary
+      count={resourcesView.shown.length}
+      noun={["resource", "resources"]}
+      qualifier={withUnread}
+      filtered={resourcesFiltered}
+    />
   )
   // The Activity tab's own controls: refresh, the watcher log and archived.
   const activityControls = (
@@ -259,15 +276,11 @@ export function HomePage() {
         {/* Narrows only the feed, not the worktree cards: a card follows
             resources, and every resource has every kind of event. */}
         <EventTypeFilter sources={sources} value={categories} onChange={setCategories} />
-        {/* Clearing the sources clears the event types with them (see
-            useActivityFilter). Archived, unreads only and the search are
-            separate switches, each with its own way off. */}
-        <ClearFiltersLink active={sources.length > 0 || categories.length > 0} onClear={() => setSources([])} />
         {/* Directly above the results it counts. Only once the feed holds
             the results for what is typed: during the debounce and the first
             fetch it would count the old ones. */}
-        {narrowed && search.debouncedQ === queryText && !tl.isLoading && (
-          <SearchSummary count={tl.events.length} more={tl.hasMore} noun={eventNoun} />
+        {(searchOrUnread || activityFiltered) && search.debouncedQ === queryText && !tl.isLoading && (
+          <SearchSummary count={tl.events.length} more={tl.hasMore} noun={eventNoun} filtered={activityFiltered} />
         )}
       </Stack>
       <TimelineFeed
@@ -275,8 +288,8 @@ export function HomePage() {
         loading={tl.isLoading}
         error={tl.error}
         showWorktrees
-        // Searching or unread only, the "0 … events" line above says it.
-        emptyText={narrowed ? null : undefined}
+        // Narrowed, the "0 … events" line above says it.
+        emptyText={searchOrUnread || activityFiltered ? null : undefined}
         hasMore={tl.hasMore}
         onLoadMore={tl.loadMore}
         loadingMore={tl.loadingMore}
@@ -311,8 +324,8 @@ export function HomePage() {
       value={search.q}
       onChange={search.setQ}
       suggestions={suggestions}
-      onEscape={everything.seeEverything}
-      escapeActive={everything.active}
+      onEscape={narrowing.clearAll}
+      escapeActive={narrowing.search || narrowing.unread || narrowing.filters}
     />
   )
   const header = <HomeHeader search={searchBar} unreadOnly={unreadOnly} onUnreadOnlyChange={setUnreadOnly} />
@@ -322,7 +335,7 @@ export function HomePage() {
   // far off-screen, so offer them as tabs instead.
   if (!wide) {
     return (
-      <SearchContext.Provider value={searchContext}>
+      <NarrowingContext.Provider value={narrowing}><SearchContext.Provider value={searchContext}>
         <Stack p="md" gap="sm">
           <NewWorktreeModal opened={newOpen} onClose={() => setNewOpen(false)} />
           {detailsModal}
@@ -349,7 +362,7 @@ export function HomePage() {
             </Tabs.Panel>
           </Tabs>
         </Stack>
-      </SearchContext.Provider>
+      </SearchContext.Provider></NarrowingContext.Provider>
     )
   }
 
@@ -363,7 +376,7 @@ export function HomePage() {
     // header (see columnStyle), so the page itself does not scroll (unless a
     // banner above it adds its own height). No overflow on the Grid itself —
     // its row's negative margins would show as a sideways scrollbar.
-    <SearchContext.Provider value={searchContext}>
+    <NarrowingContext.Provider value={narrowing}><SearchContext.Provider value={searchContext}>
       <Box px="md" pt="md" ref={headerRef}>{header}</Box>
       <Grid px="md" pb="md" pt="sm" gutter="md">
         {/* Tooltips in both columns open under the pinned headers; see
@@ -391,6 +404,6 @@ export function HomePage() {
         <NewWorktreeModal opened={newOpen} onClose={() => setNewOpen(false)} />
         {detailsModal}
       </Grid>
-    </SearchContext.Provider>
+    </SearchContext.Provider></NarrowingContext.Provider>
   )
 }

@@ -7,6 +7,7 @@ import type { AllResourceDTO, TimelineEvent, WorktreeSummary } from "../../api/t
 import { SearchSuggestions, fitDropdown } from "./SearchSuggestions"
 import type { Suggestion } from "./SearchBar"
 import { setViewport } from "../../testing/viewport"
+import { READ_BOX_BORDER, UNREAD_BG } from "../../lib/unread"
 
 const wt: WorktreeSummary = {
   path: "/wt/foo", repo: "odh", branch: "foo-branch", on_disk: true, resource_count: 0, primary_count: 0,
@@ -61,6 +62,24 @@ describe("dropdown rows", () => {
     const key = within(row).getByText("RHOAIENG-7")
     const title = within(row).getByText("Migrate the proxy")
     expect(key.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("marks an unread event with the blue background and dot, but no border of its own", () => {
+    const unread: Suggestion = {
+      key: "u", group: "Activity", label: "New note", onPick: () => {},
+      item: { kind: "event", e: { ...archived, id: "u1", title: "New note", unread: true, worktree_paths: ["/wt/foo"], worktrees: ["foo"] } },
+    }
+    render(
+      <MantineProvider>
+        <QueryClientProvider client={new QueryClient()}>
+          <SearchSuggestions items={[unread]} active={0} onHover={() => {}} onPick={() => {}} onViewAll={() => {}} />
+        </QueryClientProvider>
+      </MantineProvider>,
+    )
+    const row = screen.getByRole("option").querySelector<HTMLElement>("[data-unread]")!
+    expect(row.style.background).toBe(UNREAD_BG)
+    expect(row.style.border).toBe(READ_BOX_BORDER)
+    expect(within(screen.getByRole("option")).getByLabelText("unread event")).toBeInTheDocument()
   })
 
   it("renders an event as the activity list does, archived label included", () => {

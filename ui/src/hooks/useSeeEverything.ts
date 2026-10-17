@@ -3,9 +3,9 @@ import { useSearchQuery } from "./useSearchQuery"
 import { useUnreadOnly } from "./useUnreadOnly"
 
 /**
- * The way back to an unnarrowed page: clears the search and turns Unreads
- * only off. Esc does it, and so does every "See everything" link. Source and
- * type filters are left alone — they have their own Clear filters.
+ * Clears the search and turns Unreads only off: the page-independent half of
+ * "see everything". Pages add their own filters on top (NarrowingContext's
+ * clearAll); this alone is the fallback where no page provides that.
  *
  * `active` is whether there is anything to undo, so Esc stays inert (and
  * can blur the bar) when there isn't.

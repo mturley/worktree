@@ -454,30 +454,48 @@ describe("HomePage search", () => {
     expect(screen.queryByTestId("search-summary")).toBeNull()
   })
 
-  it("offers Clear filters under the activity filters only while one is on", async () => {
+  it("a source filter heads the worktrees and the feed with 'match your filters'", async () => {
     setViewport("wide")
     const user = userEvent.setup()
     wrap()
-    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull()
-    await user.click(screen.getByRole("button", { name: /GitHub/ }))
+    expect(screen.queryByTestId("search-summary")).toBeNull()
+    await user.click(within(document.querySelector<HTMLElement>("[data-activity-header]")!).getByRole("button", { name: /GitHub/ }))
     expect(mocks.timelineArgs.at(-1)?.[1]).toEqual(["pr"])
-    await user.click(screen.getByRole("button", { name: "Clear filters" }))
+    const lines = () => screen.getAllByTestId("search-summary").map((n) => n.textContent)
+    expect(lines()).toContain("1 worktree matches your filters. Clear filters Esc")
+    expect(lines()).toContain("0 events match your filters. Clear filters Esc")
+    // The line's link clears them.
+    await user.click(screen.getAllByRole("button", { name: "Clear filters" })[0])
     expect(mocks.timelineArgs.at(-1)?.[1]).toEqual([])
-    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull()
+    expect(screen.queryByTestId("search-summary")).toBeNull()
   })
 
-  it("offers Clear filters under the resource filters only while one is on", async () => {
+  it("a resource filter heads the Resources tab, and Esc clears it", async () => {
     setViewport("wide")
     const user = userEvent.setup()
     wrap()
     await user.click(screen.getByRole("tab", { name: /Resources/ }))
     expect(await screen.findByText("Theirs")).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull()
     await user.click(within(screen.getByTestId("resources-header")).getByRole("button", { name: /Jira/ }))
     expect(screen.queryByText("Theirs")).toBeNull()
-    await user.click(screen.getByRole("button", { name: "Clear filters" }))
+    expect(screen.getAllByTestId("search-summary").map((n) => n.textContent))
+      .toContain("0 resources match your filters. Clear filters Esc")
+    fireEvent.keyDown(document.body, { key: "Escape" })
     expect(screen.getByText("Theirs")).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull()
+    expect(screen.queryByTestId("search-summary")).toBeNull()
+  })
+
+  it("search and filters: 'match your search and filters', See everything, and Esc clears both", async () => {
+    setViewport("wide")
+    window.history.replaceState({}, "", "/?q=my")
+    const user = userEvent.setup()
+    wrap()
+    await user.click(within(document.querySelector<HTMLElement>("[data-activity-header]")!).getByRole("button", { name: /GitHub/ }))
+    expect(screen.getAllByTestId("search-summary").map((n) => n.textContent))
+      .toContain("1 worktree matches your search and filters. See everything Esc")
+    fireEvent.keyDown(document.body, { key: "Escape" })
+    expect(new URLSearchParams(window.location.search).has("q")).toBe(false)
+    expect(mocks.timelineArgs.at(-1)?.[1]).toEqual([])
   })
 
   it("moves global controls into the header", () => {

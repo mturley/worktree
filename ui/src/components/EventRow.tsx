@@ -23,9 +23,16 @@ import { SearchHighlight } from "./search/SearchHighlight"
  */
 export function EventRow({
   e, showWorktrees, showResource = true, onOpen, onSelectResource, resolveResource, canSelectResource,
+  unreadBorder = true,
 }: {
   e: TimelineEvent
   showWorktrees?: boolean
+  /**
+   * Whether an unread row draws its blue border. False in the search
+   * dropdown, whose own highlight is a blue outline: there the background
+   * and dot say unread, and two blue boxes would read as one.
+   */
+  unreadBorder?: boolean
   /**
    * Names the resource this event belongs to. False on a feed already
    * filtered to ONE resource, where every row would repeat the same line.
@@ -106,7 +113,7 @@ export function EventRow({
         // that mistake left behind on mark-read. Same reasoning for
         // background: one complete value per state, so the button's default
         // buttonface never shows through on a read row.
-        border: e.unread ? UNREAD_BOX_BORDER : READ_BOX_BORDER,
+        border: e.unread && unreadBorder ? UNREAD_BOX_BORDER : READ_BOX_BORDER,
         borderRadius: "var(--mantine-radius-sm)",
         background: e.unread ? UNREAD_BG : "transparent",
       }}

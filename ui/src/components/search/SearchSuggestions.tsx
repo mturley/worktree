@@ -217,7 +217,7 @@ function SuggestionBody({ item }: { item: SuggestionItem }) {
       return <ResourceCardBody r={item.r} />
     case "event":
       // The global feed's form, which labels archived events.
-      return <EventRow e={item.e} showWorktrees />
+      return <EventRow e={item.e} showWorktrees unreadBorder={false} />
   }
 }
 

@@ -878,17 +878,30 @@ describe("search", () => {
       .toContain("1 event matches your search. Clear search Esc"))
   })
 
-  it("offers Clear filters under the activity filters only while one is on", async () => {
+  it("a source filter heads the resources and the feed with 'match your filters'; its link clears it", async () => {
     setViewport("wide")
     window.history.replaceState({}, "", url(""))
     const user = userEvent.setup()
     wrap()
-    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull()
+    expect(screen.queryByTestId("search-summary")).toBeNull()
     await user.click(screen.getByRole("button", { name: /GitHub/ }))
     expect(detailArgs.at(-1)?.[1]).toEqual(["pr"])
-    await user.click(screen.getByRole("button", { name: "Clear filters" }))
+    const lines = () => screen.getAllByTestId("search-summary").map((n) => n.textContent)
+    expect(lines()).toContain("1 resource matches your filters. Clear filters Esc")
+    await waitFor(() => expect(lines()).toContain("0 events match your filters. Clear filters Esc"))
+    await user.click(screen.getAllByRole("button", { name: "Clear filters" })[0])
     expect(detailArgs.at(-1)?.[1]).toEqual([])
-    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull()
+    expect(screen.queryByTestId("search-summary")).toBeNull()
+  })
+
+  it("Esc clears the filters too", async () => {
+    setViewport("wide")
+    window.history.replaceState({}, "", url(""))
+    const user = userEvent.setup()
+    wrap()
+    await user.click(screen.getByRole("button", { name: /GitHub/ }))
+    fireEvent.keyDown(document.body, { key: "Escape" })
+    expect(detailArgs.at(-1)?.[1]).toEqual([])
   })
 
   it("says 0 match when no resource does, and no other empty text", () => {

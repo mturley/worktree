@@ -3,11 +3,10 @@ import { Kbd } from "@mantine/core"
 /**
  * A keyboard key shown inline in a line of text ("Clear search Esc").
  *
- * vertical-align: text-top, measured: a Kbd's own padding and border make it
- * taller than the text, and "middle" (the x-height midpoint) or the default
- * baseline sit it ~2-3px low. text-top lands its centre on the text's centre
- * without growing the line.
+ * Deliberately unaligned for now: vertical-align: middle sat it a little
+ * low and text-top a little high beside the link, so it is left at the
+ * default until the line's alignment is revisited as a whole.
  */
 export function KeyHint({ children }: { children: React.ReactNode }) {
-  return <Kbd size="xs" style={{ verticalAlign: "text-top" }}>{children}</Kbd>
+  return <Kbd size="xs">{children}</Kbd>
 }

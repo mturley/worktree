@@ -1406,18 +1406,32 @@ Worktrees matching through their resources is the single switch
 
 ### The narrowing line (`SearchSummary`)
 
-Whenever a search or Unreads only narrows a pane, a line sits **directly above
-its results** (below the pane's filters): "3 worktrees match your search.",
-"N resources with unread events.", "N unread events match your search.", and
-so on, ending in `SeeEverythingLink`. That link reads "Clear search" while
-Unreads only is off and "See everything" while it's on; either way it does
-what Esc does (`useSeeEverything`: clear the query and turn Unreads only off;
-source/type filters are left to "Clear filters"). It appears on the home
-page's three panes, the worktree page's resources and activity, a selected
-resource's Activity tab and Linked Resources (search only there: those ignore
-Unreads only). Lists pass `emptyText={null}` while narrowed, so no
+Whenever a search, Unreads only or a filter narrows a pane, a line sits
+**directly above its results** (below the pane's filters): "3 worktrees match
+your search.", "N events match your filters.", "N resources match your search
+and filters.", "N resources with unread events.", "N unread events match your
+filters.", and so on, ending in `SeeEverythingLink` and an `Esc` hint. There
+is no separate "Clear filters" control.
+
+Which filters reach which pane (the `filtered` prop): the source toggles
+narrow the worktree cards, the feeds and the worktree page's resource list;
+the event types only the feeds; the Resources tab has its own type/subfilters.
+"Show archived" and sort are not filters.
+
+Each page provides `NarrowingContext` (`components/search/NarrowingContext`):
+whether the search, Unreads only and any of its filters are on, and
+`clearAll`, which clears all three (the page-independent half is
+`useSeeEverything`). Esc (`SearchBar`'s `onEscape`/`escapeActive`) and the
+link both run `clearAll`. The link names what that undoes (`clearLabel`):
+"Clear search" or "Clear filters" when it is the only thing on, otherwise (or
+for Unreads only) "See everything". The line appears on the home page's three
+panes, the worktree page's resources and activity, a selected resource's
+Activity tab and Linked Resources (search only there: those ignore Unreads
+only and the filters). Lists pass `emptyText={null}` while narrowed, so no
 "No …"/"Nothing matches" text repeats the line's "0 …". Activity's line waits
 until the feed holds the results for the typed query (not mid-debounce).
+Inline keys use `KeyHint`, a plain `Kbd` for now: aligning it to the line's
+text (middle sat low, text-top high) is left to revisit.
 
 ### The dropdown is removable
 

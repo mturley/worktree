@@ -8,7 +8,6 @@ import {
   type ResourceFilter, type ResourceSortMode, type SortDir,
 } from "../lib/resourceListFilter"
 import { AllResourceRow } from "./AllResourceRow"
-import { ClearFiltersLink } from "./search/ClearFiltersLink"
 import { GitHubMark } from "./icons/GitHubMark"
 import { JiraMark } from "./icons/JiraMark"
 import { SlackMark } from "./icons/SlackMark"
@@ -198,9 +197,6 @@ export function ResourcesPanel({ view, headerStyle, top, searchSummary }: {
         ))}
       </Group>
       <SubFilters all={all} filter={filter} onChange={setFilter} />
-      {/* Subfilters only exist under a selected type, so a type is the
-          whole of "a filter is on". The sort is not a filter: it stays. */}
-      <ClearFiltersLink active={filter.type !== null} onClear={() => setFilter(EMPTY_FILTER)} />
       {searchSummary}
     </Stack>
   )
@@ -217,9 +213,9 @@ export function ResourcesPanel({ view, headerStyle, top, searchSummary }: {
     )
   } else if (!q.data) {
     body = <Center py="md"><Loader size="sm" /></Center>
-  } else if (shown.length === 0 && all.length > 0 && (terms.length > 0 || unreadOnly)) {
-    // The "0 resources match your search" / "with unread events" line above
-    // says it.
+  } else if (shown.length === 0 && all.length > 0 && (terms.length > 0 || unreadOnly || filter.type !== null)) {
+    // The "0 resources match your search/filters" or "with unread events"
+    // line above says it.
     body = null
   } else if (shown.length === 0) {
     body = (

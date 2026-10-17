@@ -1,22 +1,18 @@
 import { Anchor } from "@mantine/core"
 import { KeyHint } from "./KeyHint"
-import { useSeeEverything } from "../../hooks/useSeeEverything"
-import { useUnreadOnly } from "../../hooks/useUnreadOnly"
+import { clearLabel, useNarrowing } from "./NarrowingContext"
 
 /**
- * The way out of a search or Unreads only, beside the text that says the
- * list is narrowed. Does what Esc does (useSeeEverything), and says so.
- *
- * Named for what it undoes: "Clear search" while only the search narrows the
- * page, "See everything" while Unreads only does too.
+ * The way back from whatever narrows the page, beside the line that says
+ * it's narrowed. Does what Esc does (the page's clearAll), and is named for
+ * what that undoes: "Clear search", "Clear filters" or "See everything".
  */
 export function SeeEverythingLink() {
-  const { seeEverything } = useSeeEverything()
-  const [unreadOnly] = useUnreadOnly()
+  const narrowing = useNarrowing()
   return (
     <>
-      <Anchor component="button" type="button" size="sm" onClick={seeEverything}>
-        {unreadOnly ? "See everything" : "Clear search"}
+      <Anchor component="button" type="button" size="sm" onClick={narrowing.clearAll}>
+        {clearLabel(narrowing)}
       </Anchor>
       {" "}
       <KeyHint>Esc</KeyHint>

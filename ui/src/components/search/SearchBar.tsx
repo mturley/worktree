@@ -160,8 +160,8 @@ export function SearchBar({
         rightSectionWidth={value ? 64 : undefined}
         rightSection={value ? (
           <Group gap={6} wrap="nowrap">
-            <Kbd size="xs" data-testid="search-esc-hint">Esc</Kbd>
             <CloseButton size="xs" aria-label="Clear search" onClick={() => onChange("")} />
+            <Kbd size="xs" data-testid="search-esc-hint">Esc</Kbd>
           </Group>
         ) : null}
       />

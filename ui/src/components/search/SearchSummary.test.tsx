@@ -3,7 +3,7 @@ import { act, cleanup, render, renderHook, screen } from "@testing-library/react
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { SearchSummary } from "./SearchSummary"
-import { ClearFiltersLink } from "./ClearFiltersLink"
+import { NarrowingContext, type Narrowing } from "./NarrowingContext"
 import { useUnreadOnly } from "../../hooks/useUnreadOnly"
 
 const wrap = (ui: React.ReactNode) => render(<MantineProvider>{ui}</MantineProvider>)
@@ -62,15 +62,37 @@ describe("SearchSummary", () => {
   })
 })
 
-describe("ClearFiltersLink", () => {
-  it("renders nothing when no filter is on", () => {
-    wrap(<ClearFiltersLink active={false} onClear={() => {}} />)
-    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull()
+describe("SearchSummary with the page's narrowing (filters)", () => {
+  const withPage = (n: Partial<Narrowing>, ui: React.ReactNode) =>
+    wrap(
+      <NarrowingContext.Provider value={{ search: false, unread: false, filters: false, clearAll: () => {}, ...n }}>
+        {ui}
+      </NarrowingContext.Provider>,
+    )
+
+  it("filters only: match your filters, Clear filters", () => {
+    withPage({ filters: true }, <SearchSummary count={4} noun={["event", "events"]} filtered />)
+    expect(screen.getByTestId("search-summary").textContent).toBe("4 events match your filters. Clear filters Esc")
   })
-  it("clears when clicked", async () => {
-    const onClear = vi.fn()
-    wrap(<ClearFiltersLink active onClear={onClear} />)
+  it("search and filters: match your search and filters, See everything", () => {
+    withPage({ search: true, filters: true }, <SearchSummary count={4} noun={["event", "events"]} filtered />)
+    expect(screen.getByTestId("search-summary").textContent)
+      .toBe("4 events match your search and filters. See everything Esc")
+  })
+  it("Unreads only and filters", () => {
+    withPage({ unread: true, filters: true }, <SearchSummary count={2} noun={["unread event", "unread events"]} filtered />)
+    expect(screen.getByTestId("search-summary").textContent).toBe("2 unread events match your filters. See everything Esc")
+  })
+  it("a pane the page's filters don't narrow still names only what does", () => {
+    // Filters are on elsewhere on the page, so the link clears more than one thing.
+    withPage({ search: true, filters: true }, <SearchSummary count={3} noun={["resource", "resources"]} />)
+    expect(screen.getByTestId("search-summary").textContent)
+      .toBe("3 resources match your search. See everything Esc")
+  })
+  it("the link runs the page's clear-everything", async () => {
+    const clearAll = vi.fn()
+    withPage({ filters: true, clearAll }, <SearchSummary count={0} noun={["event", "events"]} filtered />)
     await userEvent.click(screen.getByRole("button", { name: "Clear filters" }))
-    expect(onClear).toHaveBeenCalled()
+    expect(clearAll).toHaveBeenCalled()
   })
 })
