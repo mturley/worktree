@@ -1,12 +1,14 @@
 package worktreenew
 
 import (
+	"database/sql"
 	"os/exec"
 	"path/filepath"
 	"testing"
 
 	"github.com/mturley/worktree/internal/config"
 	wdb "github.com/mturley/worktree/internal/db"
+	"github.com/mturley/worktree/internal/jira/jiratest"
 	"github.com/mturley/worktree/internal/ports"
 	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/resources"
@@ -224,5 +226,64 @@ func TestRunDetectsJiraIssueFromBranchName(t *testing.T) {
 	}
 	if n != 1 {
 		t.Fatalf("PROJ-123 tracked %d times after replay, want 1", n)
+	}
+}
+
+// jiraURLs maps each tracked Jira issue's key to its stored URL.
+func jiraURLs(t *testing.T, conn *sql.DB, path string) map[string]string {
+	t.Helper()
+	tracked, err := resources.Load(conn, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	urls := map[string]string{}
+	for _, r := range tracked {
+		if r.Type == "jira" {
+			urls[r.ID] = r.URL
+		}
+	}
+	return urls
+}
+
+func TestRunFromBareJiraKeyStoresIssueURL(t *testing.T) {
+	jiratest.WriteWatcherAuth(t, "x.atlassian.net")
+	repo := newRepo(t)
+	base := t.TempDir()
+	conn, err := wdb.OpenAt(filepath.Join(base, "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+
+	cfg := config.Config{WorktreesBase: filepath.Join(base, "worktrees")}
+	res := Run(conn, cfg, Options{Input: "PROJ-7", RepoRoot: repo}, nil)
+	if res.Err != nil {
+		t.Fatalf("unexpected error: %v", res.Err)
+	}
+	// Without a URL the detail card has no "Open on Jira" or copy-link button.
+	if got, want := jiraURLs(t, conn, res.Path)["PROJ-7"], "https://x.atlassian.net/browse/PROJ-7"; got != want {
+		t.Fatalf("PROJ-7 url = %q, want %q", got, want)
+	}
+}
+
+func TestRunWithoutJiraHostStoresNoHostlessURL(t *testing.T) {
+	t.Setenv("WATCHER_HOME", t.TempDir())
+	repo := newRepo(t)
+	base := t.TempDir()
+	conn, err := wdb.OpenAt(filepath.Join(base, "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+
+	cfg := config.Config{WorktreesBase: filepath.Join(base, "worktrees")}
+	cfg.Jira.Projects = []string{"PROJ"}
+	res := Run(conn, cfg, Options{Input: "proj-9-fix-thing", RepoRoot: repo}, nil)
+	if res.Err != nil {
+		t.Fatalf("unexpected error: %v", res.Err)
+	}
+	urls := jiraURLs(t, conn, res.Path)
+	if u, ok := urls["PROJ-9"]; !ok || u != "" {
+		t.Fatalf("PROJ-9 tracked=%v url=%q, want tracked with no url", ok, u)
 	}
 }

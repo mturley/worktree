@@ -112,7 +112,11 @@ func handleJiraIssue(key, url string) error {
 		return fmt.Errorf("not in a git repo: %w", err)
 	}
 	if url == "" {
-		url = jira.IssueURL(jira.HostFromWatcherConfig(), key)
+		url = jira.ConfiguredIssueURL(key)
+	}
+	if url == "" {
+		// No Jira host configured: the bare key still names the issue.
+		url = key
 	}
 	return runCreate(url, repoRoot)
 }

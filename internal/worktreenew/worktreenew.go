@@ -415,7 +415,7 @@ func resolveInput(input string) (branch string, primary *resources.Resource) {
 		}
 	}
 	if key, ok := jira.ParseKey(input); ok {
-		return strings.ToLower(key), &resources.Resource{Type: "jira", ID: key}
+		return strings.ToLower(key), &resources.Resource{Type: "jira", ID: key, URL: jira.ConfiguredIssueURL(key)}
 	}
 	return input, nil
 }
@@ -525,13 +525,12 @@ func (r *runner) trackResources(created gitutil.CreateResult, primary *resources
 				seen[res.ID] = true
 			}
 		}
-		host := jira.HostFromWatcherConfig()
 		for _, key := range jira.DetectKeys(created.Branch, prTitle, prBody, r.cfg.Jira.Projects) {
 			if seen[key] {
 				continue
 			}
 			seen[key] = true
-			res := resources.Resource{Type: "jira", ID: key, URL: jira.IssueURL(host, key)}
+			res := resources.Resource{Type: "jira", ID: key, URL: jira.ConfiguredIssueURL(key)}
 			if err := resources.Add(r.conn, created.Path, res); err != nil {
 				failures = append(failures, key+": "+err.Error())
 			} else {

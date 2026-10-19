@@ -182,3 +182,14 @@ func ConfiguredCustomFields(authFields map[string]string) map[string]string {
 	}
 	return EffectiveCustomFields(authFields, cfgFields)
 }
+
+// ConfiguredIssueURL returns key's browse URL on the Jira host configured in
+// the watcher auth.yaml, or "" when no host is configured — never a hostless
+// "https:///browse/KEY", which IssueURL would build from an empty host.
+func ConfiguredIssueURL(key string) string {
+	host := HostFromWatcherConfig()
+	if host == "" {
+		return ""
+	}
+	return IssueURL(host, key)
+}

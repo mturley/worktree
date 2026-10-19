@@ -110,17 +110,7 @@ func runJiraAdd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	host := ""
-	if wcfg, err := wconfig.Load(wconfig.DefaultPath()); err == nil {
-		if creds, err := wcfg.Jira(); err == nil {
-			host = creds.Host
-		}
-	}
-
-	url := jira.IssueURL(host, key)
-	if host == "" {
-		url = key
-	}
+	url := jira.ConfiguredIssueURL(key)
 
 	r := resources.Resource{
 		Type:    "jira",

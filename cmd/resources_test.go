@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	wdb "github.com/mturley/worktree/internal/db"
+	"github.com/mturley/worktree/internal/jira/jiratest"
 	"github.com/mturley/worktree/internal/resources"
 	"github.com/mturley/worktree/internal/unread"
 )
@@ -120,6 +121,14 @@ func TestResolveResourceArgs(t *testing.T) {
 			wantID:   "ABC-1",
 		},
 		{
+			name:     "two-arg jira form without --url builds the issue url",
+			args:     []string{"jira", "ABC-1"},
+			wantType: "jira",
+			wantID:   "ABC-1",
+			wantURL:  "https://y.atlassian.net/browse/ABC-1",
+			setup:    func(t *testing.T) { jiratest.WriteWatcherAuth(t, "y.atlassian.net") },
+		},
+		{
 			name:     "two-arg form carries the --url flag through",
 			args:     []string{"jira", "ABC-1"},
 			wantType: "jira",
@@ -139,6 +148,8 @@ func TestResolveResourceArgs(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			// No Jira configured unless the case says so.
+			t.Setenv("WATCHER_HOME", t.TempDir())
 			if tc.setup != nil {
 				tc.setup(t)
 			}

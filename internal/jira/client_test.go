@@ -1,6 +1,10 @@
 package jira
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/mturley/worktree/internal/jira/jiratest"
+)
 
 func TestNewClientRequiresHostAndEmail(t *testing.T) {
 	if _, err := NewClient("", "me@example.com", "tok"); err == nil {
@@ -71,5 +75,17 @@ func TestEffectiveCustomFields(t *testing.T) {
 	}
 	if EffectiveCustomFields(nil, nil) == nil {
 		t.Error("must return a non-nil map")
+	}
+}
+
+func TestConfiguredIssueURL(t *testing.T) {
+	t.Setenv("WATCHER_HOME", t.TempDir())
+	if got := ConfiguredIssueURL("ABC-1"); got != "" {
+		t.Fatalf("no Jira configured: got %q, want empty", got)
+	}
+
+	jiratest.WriteWatcherAuth(t, "x.atlassian.net")
+	if got, want := ConfiguredIssueURL("ABC-1"), "https://x.atlassian.net/browse/ABC-1"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 
 	wdb "github.com/mturley/worktree/internal/db"
+	"github.com/mturley/worktree/internal/jira"
 	"github.com/mturley/worktree/internal/resourceurl"
 	"github.com/mturley/worktree/internal/resources"
 	"github.com/mturley/worktree/internal/unread"
@@ -185,7 +186,12 @@ func runResourcesList(cmd *cobra.Command, args []string) error {
 // which is exactly why `worktree add` used to accept Slack URLs.
 func resolveResourceArgs(args []string) (resType, id, url string, err error) {
 	if len(args) == 2 {
-		return args[0], args[1], resURL, nil
+		url := resURL
+		if url == "" && args[0] == "jira" {
+			// Without a URL the web UI has nothing to open or copy.
+			url = jira.ConfiguredIssueURL(args[1])
+		}
+		return args[0], args[1], url, nil
 	}
 	t, i, ok := resourceurl.Infer(args[0])
 	if !ok {
