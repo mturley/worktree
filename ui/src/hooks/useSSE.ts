@@ -5,6 +5,7 @@ import type { CmuxFocusMsg, NotificationMsg } from "../api/types"
 import { TAB_ID } from "../lib/tabId"
 import { emitCmuxFocus } from "../lib/cmuxFocusBus"
 import { openNotificationTarget, showBrowserNotification } from "../lib/browserNotify"
+import { pageHidden, streamsPauseWhenHidden } from "../lib/backgroundStreams"
 
 /**
  * The stream URL names this tab and where it is, so the server can register
@@ -24,17 +25,27 @@ export function useSSE() {
   useEffect(() => {
     let es: EventSource | null = null
     let timer: ReturnType<typeof setTimeout> | null = null
+    // Over plain HTTP a hidden tab gives its connection back; see
+    // streamsPauseWhenHidden.
+    const pauses = streamsPauseWhenHidden()
+    const refreshEvents = () => {
+      qc.invalidateQueries({ queryKey: ["timeline"] })
+      qc.invalidateQueries({ queryKey: ["worktrees"] })
+      // Prefix key: matches every ["resources", path]. Resource cards show
+      // cached watcher state (PR/Jira status, thread reply counts), which
+      // an incoming event has usually just changed — without this they
+      // stay stale until a remount forces a refetch.
+      qc.invalidateQueries({ queryKey: ["resources"] })
+    }
+    const disconnect = () => {
+      es?.close()
+      es = null
+      if (timer) clearTimeout(timer)
+      timer = null
+    }
     const connect = () => {
       es = new EventSource(streamUrl())
-      es.addEventListener("events_new", () => {
-        qc.invalidateQueries({ queryKey: ["timeline"] })
-        qc.invalidateQueries({ queryKey: ["worktrees"] })
-        // Prefix key: matches every ["resources", path]. Resource cards show
-        // cached watcher state (PR/Jira status, thread reply counts), which
-        // an incoming event has usually just changed — without this they
-        // stay stale until a remount forces a refetch.
-        qc.invalidateQueries({ queryKey: ["resources"] })
-      })
+      es.addEventListener("events_new", refreshEvents)
       // The server picked this tab to show a notification. Ack either way:
       // shown:false (no permission, no API) sends it on to the next tab at
       // once instead of after the server's timeout.
@@ -69,10 +80,29 @@ export function useSSE() {
         // unauthenticated and the login screen shows instead of a tab that
         // looks alive but can't reach anything.
         qc.invalidateQueries({ queryKey: ["session"] })
-        timer = setTimeout(connect, 3000)
+        timer = setTimeout(() => {
+          timer = null
+          if (!(pauses && pageHidden())) connect()
+        }, 3000)
       }
     }
-    connect()
-    return () => { es?.close(); if (timer) clearTimeout(timer) }
+    const onVisibility = () => {
+      if (pageHidden()) {
+        disconnect()
+        return
+      }
+      if (es) return
+      disconnect()
+      // Whatever arrived while this tab had no stream never reached it.
+      refreshEvents()
+      qc.invalidateQueries({ queryKey: ["cmux"] })
+      connect()
+    }
+    if (!(pauses && pageHidden())) connect()
+    if (pauses) document.addEventListener("visibilitychange", onVisibility)
+    return () => {
+      if (pauses) document.removeEventListener("visibilitychange", onVisibility)
+      disconnect()
+    }
   }, [qc])
 }

@@ -4,6 +4,17 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { useSSE } from "./useSSE"
 import { api } from "../api/client"
 
+const streams = vi.hoisted(() => ({ pause: true }))
+vi.mock("../lib/backgroundStreams", async (orig) => ({
+  ...(await orig<typeof import("../lib/backgroundStreams")>()),
+  streamsPauseWhenHidden: () => streams.pause,
+}))
+
+function setVisibility(state: "visible" | "hidden") {
+  Object.defineProperty(document, "visibilityState", { configurable: true, get: () => state })
+  document.dispatchEvent(new Event("visibilitychange"))
+}
+
 vi.mock("../api/client", async (orig) => ({
   ...(await orig<typeof import("../api/client")>()),
   api: { tabAck: vi.fn(() => Promise.resolve(null)) },
@@ -32,7 +43,25 @@ class FakeEventSource {
   }
 }
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  streams.pause = true
+  setVisibility("visible")
+  vi.useRealTimers()
+})
+
+function renderSSE() {
+  vi.stubGlobal("EventSource", FakeEventSource)
+  const qc = new QueryClient()
+  const invalidate = vi.spyOn(qc, "invalidateQueries")
+  renderHook(() => useSSE(), {
+    wrapper: ({ children }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>,
+  })
+  return invalidate
+}
+
+const invalidatedKeys = (invalidate: ReturnType<typeof renderSSE>) =>
+  invalidate.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey))
 
 describe("useSSE", () => {
   it("invalidates resources as well as timeline and worktrees on events_new", () => {
@@ -91,5 +120,54 @@ describe("useSSE", () => {
     })
     FakeEventSource.last!.emit("notification", JSON.stringify({ id: "n9", title: "t", subtitle: "", body: "", worktree_path: "/w", resource_type: "", resource_id: "", tag: "x" }))
     expect(api.tabAck).toHaveBeenCalledWith(expect.objectContaining({ notification_id: "n9", shown: false }))
+  })
+  describe("over plain HTTP", () => {
+    it("closes the stream while hidden and reopens it, catching up, when shown", () => {
+      const invalidate = renderSSE()
+      const first = FakeEventSource.last!
+
+      setVisibility("hidden")
+      expect(first.closed).toBe(true)
+
+      invalidate.mockClear()
+      setVisibility("visible")
+      expect(FakeEventSource.last).not.toBe(first)
+      expect(FakeEventSource.last!.closed).toBe(false)
+      // Events that arrived while it was disconnected never reached this tab.
+      const keys = invalidatedKeys(invalidate)
+      expect(keys).toContain(JSON.stringify(["timeline"]))
+      expect(keys).toContain(JSON.stringify(["worktrees"]))
+      expect(keys).toContain(JSON.stringify(["resources"]))
+    })
+
+    it("opens no stream for a tab loaded in the background until it is shown", () => {
+      FakeEventSource.last = null
+      setVisibility("hidden")
+      renderSSE()
+      expect(FakeEventSource.last).toBeNull()
+
+      setVisibility("visible")
+      expect(FakeEventSource.last).not.toBeNull()
+    })
+
+    it("does not reconnect after an error while hidden", () => {
+      vi.useFakeTimers()
+      renderSSE()
+      const first = FakeEventSource.last!
+      first.onerror?.()
+      setVisibility("hidden")
+      vi.advanceTimersByTime(10_000)
+      expect(FakeEventSource.last).toBe(first)
+    })
+  })
+
+  it("keeps the stream open while hidden when streams don't pause (HTTPS)", () => {
+    streams.pause = false
+    renderSSE()
+    const first = FakeEventSource.last!
+    setVisibility("hidden")
+    expect(first.closed).toBe(false)
+    setVisibility("visible")
+    expect(FakeEventSource.last).toBe(first)
   })
 })

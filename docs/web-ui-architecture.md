@@ -799,6 +799,22 @@ Every stream also carries `event: cmux_focus` (`{"workspace_id","path"}`)
 whenever cmux focuses a different workspace; see "Follow cmux" under
 "cmux integration".
 
+**Hidden tabs over plain HTTP close their streams** — this one and a Slack
+thread's `/api/thread-events` (`lib/backgroundStreams.ts`). The loopback
+listener is HTTP/1.1, where the browser allows six connections per host, and
+an open stream holds one indefinitely: with enough cmux browser panes on the
+UI (each one a tab, almost all hidden), streams took every connection and
+other tabs' page loads and fetches queued in the browser forever, which
+looked like a hung server. So on `http:` a tab closes its streams on
+`visibilitychange` to hidden, opens none if it loads hidden, and on reshow
+reopens them after invalidating what it may have missed (`useSSE`: timeline,
+worktrees, resources, cmux; `useThread`: refetches the thread in place, since
+`/api/thread-events` sends nothing on connect). cmux does report panes that
+aren't on screen as `hidden`. The cost: a hidden HTTP tab is not in the tab
+registry, so it gets no browser notifications and its unread favicon doesn't
+update. HTTPS (`ui.https_port`) is HTTP/2, which multiplexes everything on
+one connection, so tabs there keep their streams while hidden.
+
 ## Notifications
 
 Per-worktree "Notify on all" and per-resource "Notify on new events" toggles.
@@ -1035,7 +1051,8 @@ unchanged. Fetch failures render inline error states. Frontend:
   - `useSSE()` — connects to `/api/stream`; on `events_new`, invalidates the
     `["timeline"]` and `["worktrees"]` query key prefixes so React Query
     refetches. Auto-reconnects (3s backoff) on error. This is a pure
-    invalidation signal — it carries no event payload itself.
+    invalidation signal — it carries no event payload itself. Over plain
+    HTTP it disconnects while the tab is hidden; see "SSE" above.
   - `useIsWide()` (`useIsWide.ts`) — **the single responsive breakpoint
     predicate for the whole app.** Wraps Mantine's `useMediaQuery` at
     `(min-width: 48em)` (Mantine's `sm`, matching the existing `Grid` `sm`

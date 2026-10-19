@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ApiAuthError, eventsUrl, getThread, type ThreadResponse } from '../api/slackApi'
 import type { Tab } from '../state/tabs'
+import { pageHidden, streamsPauseWhenHidden } from '../lib/backgroundStreams'
 
 export type ThreadStatus = 'loading' | 'ready' | 'error'
 
@@ -28,7 +29,10 @@ export interface UseThreadResult {
  * On mount (and whenever tab.channel/tab.threadTs change), fetches the
  * initial ThreadResponse, then opens an EventSource that replaces the
  * state with each enriched ThreadResponse pushed by the server. The
- * EventSource is closed on unmount or when the tab changes.
+ * EventSource is closed on unmount or when the tab changes. Over plain
+ * HTTP it is also closed while the page is hidden (see
+ * streamsPauseWhenHidden); on reshow the thread is refetched in place, since
+ * the stream sends nothing on connect, and the EventSource reopens.
  *
  * `tab` may be null (e.g. no tab is active yet) — in that case the hook
  * short-circuits: it opens no EventSource, issues no fetch, and returns an
@@ -58,6 +62,40 @@ export function useThread(tab: Tab | null): UseThreadResult {
       return
     }
 
+    const pauses = streamsPauseWhenHidden()
+    // Set once the first load succeeds: from then on a reshow refetches in
+    // place rather than through the loading state.
+    let loaded = false
+
+    function openStream() {
+      if (!tab || source || (pauses && pageHidden())) {
+        return
+      }
+      source = new EventSource(eventsUrl(tab.channel, tab.threadTs))
+      source.onmessage = (event) => {
+        if (cancelled) {
+          return
+        }
+        try {
+          const parsed = JSON.parse(event.data) as ThreadResponse
+          setData(parsed)
+          setStatus('ready')
+          setLastUpdated(new Date())
+        } catch {
+          // Ignore malformed SSE payloads; keep the last good state.
+        }
+      }
+      source.onerror = () => {
+        // EventSource auto-reconnects; don't surface transient network
+        // blips as a hard error state.
+      }
+    }
+
+    function closeStream() {
+      source?.close()
+      source = null
+    }
+
     async function load() {
       if (!tab) {
         return
@@ -70,25 +108,8 @@ export function useThread(tab: Tab | null): UseThreadResult {
         setData(initial)
         setStatus('ready')
         setLastUpdated(new Date())
-
-        source = new EventSource(eventsUrl(tab.channel, tab.threadTs))
-        source.onmessage = (event) => {
-          if (cancelled) {
-            return
-          }
-          try {
-            const parsed = JSON.parse(event.data) as ThreadResponse
-            setData(parsed)
-            setStatus('ready')
-            setLastUpdated(new Date())
-          } catch {
-            // Ignore malformed SSE payloads; keep the last good state.
-          }
-        }
-        source.onerror = () => {
-          // EventSource auto-reconnects; don't surface transient network
-          // blips as a hard error state.
-        }
+        loaded = true
+        openStream()
       } catch (err) {
         if (cancelled) {
           return
@@ -103,11 +124,45 @@ export function useThread(tab: Tab | null): UseThreadResult {
       }
     }
 
+    // Replies that landed while hidden never came down the closed stream.
+    async function resume() {
+      if (!tab) {
+        return
+      }
+      try {
+        const latest = await getThread(tab.channel, tab.threadTs)
+        if (cancelled || pageHidden()) {
+          return
+        }
+        setData(latest)
+        setLastUpdated(new Date())
+      } catch {
+        // Keep showing what we had; the reopened stream brings the next update.
+      }
+      if (!cancelled) {
+        openStream()
+      }
+    }
+
+    function onVisibility() {
+      if (pageHidden()) {
+        closeStream()
+      } else if (loaded && !source) {
+        void resume()
+      }
+    }
+
     void load()
+    if (pauses) {
+      document.addEventListener('visibilitychange', onVisibility)
+    }
 
     return () => {
       cancelled = true
-      source?.close()
+      if (pauses) {
+        document.removeEventListener('visibilitychange', onVisibility)
+      }
+      closeStream()
     }
   }, [tab?.channel, tab?.threadTs, refreshNonce])
 
