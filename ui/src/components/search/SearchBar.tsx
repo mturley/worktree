@@ -79,7 +79,13 @@ export function SearchBar({
 }) {
   const ref = useRef<HTMLInputElement>(null)
   const canEscape = escapeActive ?? Boolean(value)
-  const escape = onEscape ?? (() => onChange(""))
+  // Clearing is usually the start of a new search: leave the cursor in the bar.
+  const escape = () => {
+    if (onEscape) onEscape()
+    else onChange("")
+    ref.current?.focus()
+  }
+  const [focused, setFocused] = useState(false)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -151,19 +157,23 @@ export function SearchBar({
         aria-expanded={showList}
         aria-autocomplete="list"
         onChange={(e) => { onChange(e.currentTarget.value); setOpen(true) }}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
+        onFocus={() => { setOpen(true); setFocused(true) }}
+        onBlur={() => { setOpen(false); setFocused(false) }}
         onKeyDown={onInputKey}
         leftSection={<IconSearch size={14} />}
         // Esc beside the ✕: the key does what the button does (and, with
-        // Unreads only on, turns that off too).
+        // Unreads only on, turns that off too). Empty and unfocused, the
+        // key that gets you here instead; clicks pass through it to the input.
         rightSectionWidth={value ? 64 : undefined}
+        rightSectionPointerEvents={value ? "all" : "none"}
         rightSection={value ? (
           <Group gap={6} wrap="nowrap">
             <CloseButton size="xs" aria-label="Clear search" onClick={() => onChange("")} />
             <Kbd size="xs" data-testid="search-esc-hint">Esc</Kbd>
           </Group>
-        ) : null}
+        ) : focused ? null : (
+          <Kbd size="xs" data-testid="search-slash-hint">/</Kbd>
+        )}
       />
       {showList && (
         <SearchSuggestions
