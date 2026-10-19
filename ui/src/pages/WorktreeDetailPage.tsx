@@ -53,6 +53,7 @@ import { SearchContext } from "../components/search/SearchContext"
 import { buildSuggestions } from "../components/search/suggestions"
 import { useSearchQuery } from "../hooks/useSearchQuery"
 import { matchResource } from "../lib/search"
+import { CrossHoverProvider } from "../components/CrossHoverContext"
 
 export function WorktreeDetailPage() {
   const [, params] = useRoute("/worktree/:path*")
@@ -560,7 +561,7 @@ export function WorktreeDetailPage() {
   )
 
   return (
-    <NarrowingContext.Provider value={narrowing}><SearchContext.Provider value={searchContext}>
+    <NarrowingContext.Provider value={narrowing}><SearchContext.Provider value={searchContext}><CrossHoverProvider>
     <ThreadActionsContext.Provider value={threadActions}>
     <LinkedActionsContext.Provider value={linkedActions}>
     {/*
@@ -739,6 +740,6 @@ export function WorktreeDetailPage() {
     </Stack>
     </LinkedActionsContext.Provider>
     </ThreadActionsContext.Provider>
-    </SearchContext.Provider></NarrowingContext.Provider>
+    </CrossHoverProvider></SearchContext.Provider></NarrowingContext.Provider>
   )
 }

@@ -349,6 +349,20 @@ describe("HomePage activity entry click", () => {
     expect(new URLSearchParams(window.location.search).get("resource")).toBe("pr:o/r#1")
     expect(window.history.state).toEqual({ openEvent: event })
   })
+
+  it("asks which worktree when several follow the event's resource", async () => {
+    setViewport("wide")
+    const shared = { ...event, worktrees: ["my-branch", "other-branch"], worktree_paths: ["/wt/foo", "/wt/bar"] }
+    mocks.events = [shared]
+    wrap()
+    await userEvent.click(screen.getByText("Looks good to me"))
+    expect(window.location.pathname).toBe("/")
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText("Fix the widget")).toBeInTheDocument()
+    await userEvent.click(within(dialog).getByRole("button", { name: "view in other-branch" }))
+    expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/bar")}`)
+    expect(window.history.state).toEqual({ openEvent: shared })
+  })
 })
 
 describe("HomePage search", () => {
@@ -521,6 +535,46 @@ describe("HomePage search", () => {
     expect(within(screen.getByRole("listbox")).getByText("Archived")).toBeInTheDocument()
     await user.keyboard("{ArrowDown}{Enter}")
     expect(await screen.findByRole("dialog")).toBeInTheDocument()
+  })
+
+  it("asks which worktree for a picked resource several worktrees follow", async () => {
+    setViewport("wide")
+    mocks.worktrees = [summary, { ...summary, path: "/wt/bar", branch: "other-branch", focus_resources: [] }]
+    vi.spyOn(api, "allResources").mockResolvedValue([
+      { type: "pr", id: "o/r#3", url: "https://gh/pr/3", primary: true, title: "Persimmon PR", state: "OPEN",
+        worktrees: [{ path: "/wt/foo", repo: "odh", branch: "my-branch" }, { path: "/wt/bar", repo: "odh", branch: "other-branch" }] },
+    ])
+    window.history.replaceState({}, "", "/?q=persimmon")
+    const user = userEvent.setup()
+    wrap()
+    await user.click(screen.getByRole("searchbox"))
+    // Highlighting splits the text, so find the option by its whole content.
+    await waitFor(() => expect(within(screen.getByRole("listbox")).getAllByRole("option").some((o) => o.textContent?.includes("Persimmon PR"))).toBe(true))
+    await user.click(within(screen.getByRole("listbox")).getAllByRole("option").find((o) => o.textContent?.includes("Persimmon PR"))!)
+    const dialog = await screen.findByRole("dialog")
+    await user.click(within(dialog).getByRole("button", { name: "view in other-branch" }))
+    expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/bar")}`)
+    expect(new URLSearchParams(window.location.search).get("resource")).toBe("pr:o/r#3")
+  })
+
+  it("asks which worktree for a picked event several worktrees follow", async () => {
+    setViewport("wide")
+    const shared: TimelineEvent = {
+      id: "evt-4", ts: "2026-10-01T00:00:00Z", external_ts: "", source: "github",
+      type: "pr_comment", type_label: "", title: "Quince remark", body: "", author: "someone",
+      resource_type: "pr", resource_id: "o/r#4", resource_url: "https://gh/pr/4", resource_title: "Shared PR",
+      worktrees: ["my-branch", "other-branch"], worktree_paths: ["/wt/foo", "/wt/bar"],
+    }
+    mocks.events = [shared]
+    window.history.replaceState({}, "", "/?q=quince")
+    const user = userEvent.setup()
+    wrap()
+    await user.click(screen.getByRole("searchbox"))
+    await user.click(within(screen.getByRole("listbox")).getAllByRole("option").find((o) => o.textContent?.includes("Quince remark"))!)
+    const dialog = await screen.findByRole("dialog")
+    await user.click(within(dialog).getByRole("button", { name: "view in other-branch" }))
+    expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/bar")}`)
+    expect(window.history.state).toEqual({ openEvent: shared })
   })
 
   it("suggests a worktree by its cmux workspace name, shown above it", async () => {

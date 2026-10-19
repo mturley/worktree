@@ -104,18 +104,39 @@ describe("ResourcesPanel", () => {
     expect(titles()).toEqual(["My open PR", "An issue", "Merged PR"])
   })
 
-  it("goes to the first worktree following the resource on Details", async () => {
+  it("goes straight to the one worktree following a resource on a row click", async () => {
+    const user = userEvent.setup()
+    wrap()
+    const row = (await screen.findByText("Merged PR")).closest("[data-testid='all-resource-row']") as HTMLElement
+    expect(within(row).queryByRole("button", { name: "Details" })).toBeNull()
+    await user.click(within(row).getByText("Merged PR"))
+    expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/a")}`)
+    expect(new URLSearchParams(window.location.search).get("resource")).toContain("o/r#2")
+  })
+
+  it("asks which worktree when several follow the resource", async () => {
     const user = userEvent.setup()
     wrap()
     const row = (await screen.findByText("My open PR")).closest("[data-testid='all-resource-row']") as HTMLElement
-    await user.click(within(row).getByRole("button", { name: "Details" }))
-    expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/b")}`)
+    await user.click(row)
+    expect(window.location.pathname).toBe("/")
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText("My open PR")).toBeInTheDocument()
+    expect(within(dialog).getByText(/followed by 2 worktrees/)).toBeInTheDocument()
+    await user.click(within(dialog).getByRole("button", { name: "view in branch-a" }))
+    expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/a")}`)
     expect(new URLSearchParams(window.location.search).get("resource")).toContain("o/r#1")
-    // Followed by two, so the others are a menu away; one worktree has no menu.
-    expect(within(row).getByRole("button", { name: "Other worktrees" })).toBeInTheDocument()
-    const single = screen.getByText("Merged PR").closest("[data-testid='all-resource-row']") as HTMLElement
-    expect(within(single).queryByRole("button", { name: "Other worktrees" })).toBeNull()
-    expect(within(single).getByRole("link", { name: "GitHub" })).toHaveAttribute("href", "https://github.com/o/r/pull/2")
-    expect(within(single).getByRole("button", { name: "Copy link" })).toBeInTheDocument()
+  })
+
+  it("names the open buttons for their service, and they do not navigate", async () => {
+    const user = userEvent.setup()
+    wrap()
+    const row = (await screen.findByText("Merged PR")).closest("[data-testid='all-resource-row']") as HTMLElement
+    expect(within(row).getByRole("link", { name: "Open on GitHub" })).toHaveAttribute("href", "https://github.com/o/r/pull/2")
+    const jira = screen.getByText("An issue").closest("[data-testid='all-resource-row']") as HTMLElement
+    expect(within(jira).getByRole("link", { name: "Open on Jira" })).toBeInTheDocument()
+    vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue()
+    await user.click(within(row).getByRole("button", { name: "Copy link" }))
+    expect(window.location.pathname).toBe("/")
   })
 })

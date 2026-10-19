@@ -40,8 +40,19 @@ import { cmuxPositions, sortWorktrees } from "../lib/worktreeSort"
 import { filterWorktreeBySources, matchesSources } from "../lib/sourceFilter"
 import { ResourcesPanel, ResourcesTabControls } from "../components/ResourcesPanel"
 import { useResourcesView } from "../hooks/useResourcesView"
+import { ChooseWorktreeModal } from "../components/ChooseWorktreeModal"
+import { CrossHoverProvider } from "../components/CrossHoverContext"
 
 type RightTab = "timeline" | "resources"
+
+/**
+ * The event's resource as its row shows it, for the worktree picker's
+ * heading — or the bare shape the event itself names, when it carries no
+ * enriched one.
+ */
+function chosenResource(e: TimelineEvent): ResourceDTO {
+  return e.resource ?? { type: e.resource_type, id: e.resource_id, url: e.resource_url, primary: false, title: e.resource_title }
+}
 
 export function HomePage() {
   const [, navigate] = useLocation()
@@ -155,22 +166,32 @@ export function HomePage() {
    * Opens an event's resource from the global timeline, then its details.
    *
    * A resource has no meaning without a worktree here — the feed spans all of
-   * them — so this routes to the FIRST worktree following it, which the event
-   * names in worktree_paths. Rows are only clickable this way for events that
-   * have one (canSelectResource), so there is always a destination.
+   * them — so this routes to a worktree following it, which the event names
+   * in worktree_paths. Rows are only clickable this way for events that have
+   * one (canSelectResource), so there is always a destination.
    *
    * The event rides along in history state, and the worktree page opens its
    * details modal over the selected resource: clicking an entry is asking
    * about THAT entry, and landing on the resource alone left you to find it
    * again in the resource's feed.
    */
-  const selectResourceInFirstWorktree = (key: { type: string; id: string }, e: TimelineEvent) => {
-    const path = e.worktree_paths?.[0]
-    if (!path) return
-    navigate(`/worktree/${encodeURIComponent(path)}?resource=${serializeResourceKey(key)}`, {
+  const openEventIn = (path: string, e: TimelineEvent) => {
+    navigate(`/worktree/${encodeURIComponent(path)}?resource=${serializeResourceKey({ type: e.resource_type, id: e.resource_id })}`, {
       state: openEventState(e),
     })
   }
+  // An event or resource several worktrees follow asks which one
+  // (ChooseWorktreeModal) — from the feed, as a Resources row does, and from
+  // the search dropdown. An event's choice also carries the event along.
+  const [choosing, setChoosing] = useState<{ r: ResourceDTO; worktrees: { path: string; branch: string }[]; e?: TimelineEvent } | null>(null)
+  const selectEventResource = (_key: { type: string; id: string }, e: TimelineEvent) => {
+    const paths = e.worktree_paths ?? []
+    if (paths.length > 1) {
+      setChoosing({ r: chosenResource(e), worktrees: paths.map((path, i) => ({ path, branch: e.worktrees[i] ?? "" })), e })
+    } else if (paths[0]) openEventIn(paths[0], e)
+  }
+  const openResourceIn = (path: string, r: { type: string; id: string }) =>
+    navigate(`/worktree/${encodeURIComponent(path)}?resource=${serializeResourceKey({ type: r.type, id: r.id })}`)
 
   const everything = useSeeEverything()
   // Unreads only narrows every pane here, so their match lines say so.
@@ -293,7 +314,7 @@ export function HomePage() {
         hasMore={tl.hasMore}
         onLoadMore={tl.loadMore}
         loadingMore={tl.loadingMore}
-        onSelectResource={selectResourceInFirstWorktree}
+        onSelectResource={selectEventResource}
         canSelectResource={(e) => Boolean(e.worktree_paths?.length)}
       />
     </Stack>
@@ -309,13 +330,17 @@ export function HomePage() {
     events: tl.events,
     go: {
       worktree: (p) => navigate(`/worktree/${encodeURIComponent(p)}`),
-      resource: (r, p) => p && navigate(`/worktree/${encodeURIComponent(p)}?resource=${serializeResourceKey(r)}`),
+      resource: (r, p) => {
+        const followers = resourcesView.shown.find((x) => x.type === r.type && x.id === r.id)?.worktrees ?? []
+        if (followers.length > 1) setChoosing({ r, worktrees: followers })
+        else if (p) openResourceIn(p, r)
+      },
       // An archived event (only with "Show archived" on) has no worktree to
       // route to; like its row, it opens the details modal, which offers to
       // follow the resource again.
       event: (e) => (isArchivedEvent(e) || !e.worktree_paths?.length
         ? setPickedEvent(e)
-        : selectResourceInFirstWorktree({ type: e.resource_type, id: e.resource_id }, e)),
+        : selectEventResource({ type: e.resource_type, id: e.resource_id }, e)),
     },
   })
   // Esc sees everything: clears the search and turns Unreads only off.
@@ -329,13 +354,28 @@ export function HomePage() {
     />
   )
   const header = <HomeHeader search={searchBar} unreadOnly={unreadOnly} onUnreadOnlyChange={setUnreadOnly} />
-  const detailsModal = <EventDetailsModal e={pickedEvent} onClose={() => setPickedEvent(null)} />
+  const detailsModal = (
+    <>
+      <EventDetailsModal e={pickedEvent} onClose={() => setPickedEvent(null)} />
+      <ChooseWorktreeModal
+        r={choosing?.r ?? null}
+        worktrees={choosing?.worktrees ?? []}
+        onPick={(path) => {
+          const c = choosing
+          setChoosing(null)
+          if (c?.e) openEventIn(path, c.e)
+          else if (c) openResourceIn(path, c.r)
+        }}
+        onClose={() => setChoosing(null)}
+      />
+    </>
+  )
 
   // Narrow: the two panes would otherwise stack, pushing the worktree list
   // far off-screen, so offer them as tabs instead.
   if (!wide) {
     return (
-      <NarrowingContext.Provider value={narrowing}><SearchContext.Provider value={searchContext}>
+      <NarrowingContext.Provider value={narrowing}><SearchContext.Provider value={searchContext}><CrossHoverProvider>
         <Stack p="md" gap="sm">
           <NewWorktreeModal opened={newOpen} onClose={() => setNewOpen(false)} />
           {detailsModal}
@@ -362,7 +402,7 @@ export function HomePage() {
             </Tabs.Panel>
           </Tabs>
         </Stack>
-      </SearchContext.Provider></NarrowingContext.Provider>
+      </CrossHoverProvider></SearchContext.Provider></NarrowingContext.Provider>
     )
   }
 
@@ -376,7 +416,7 @@ export function HomePage() {
     // header (see columnStyle), so the page itself does not scroll (unless a
     // banner above it adds its own height). No overflow on the Grid itself —
     // its row's negative margins would show as a sideways scrollbar.
-    <NarrowingContext.Provider value={narrowing}><SearchContext.Provider value={searchContext}>
+    <NarrowingContext.Provider value={narrowing}><SearchContext.Provider value={searchContext}><CrossHoverProvider>
       <Box px="md" pt="md" ref={headerRef}>{header}</Box>
       <Grid px="md" pb="md" pt="sm" gutter="md">
         {/* Tooltips in both columns open under the pinned headers; see
@@ -404,6 +444,6 @@ export function HomePage() {
         <NewWorktreeModal opened={newOpen} onClose={() => setNewOpen(false)} />
         {detailsModal}
       </Grid>
-    </SearchContext.Provider></NarrowingContext.Provider>
+    </CrossHoverProvider></SearchContext.Provider></NarrowingContext.Provider>
   )
 }

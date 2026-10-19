@@ -11,6 +11,7 @@ import { ROW_PAD_X } from "./timelineRail"
 import { isArchivedEvent } from "../lib/openEvent"
 import { MatchWhy } from "./search/MatchWhy"
 import { SearchHighlight } from "./search/SearchHighlight"
+import { useCrossHover } from "./CrossHoverContext"
 
 /**
  * One entry on the timeline rail: a dot on the line, then the event's text.
@@ -77,6 +78,13 @@ export function EventRow({
       : undefined
   const tip = resourceKey ? "View resource in worktree" : "View event details"
 
+  // Only a row that goes to its resource takes part in cross-hover: one that
+  // opens its details (archived, resourceless, or in a pane already showing
+  // the resource) has no worktree or resource card to point at.
+  const crossHover = useCrossHover(resourceKey
+    ? { kind: "event", type: resourceKey.type, id: resourceKey.id, paths: e.worktree_paths ?? [] }
+    : null)
+
   /*
    * CI events carry their whole check list as the body — dozens of lines of
    * "✓ Unit-Tests". Clamped to two, that is a meaningless fragment beside a
@@ -99,6 +107,7 @@ export function EventRow({
       data-event-row="true"
       data-unread={e.unread ? "true" : undefined}
       data-clickable={activate ? "true" : undefined}
+      {...crossHover}
       style={{
         display: "flex",
         gap: "var(--mantine-spacing-sm)",

@@ -1,19 +1,15 @@
-import { Button, Group, Menu, ScrollArea, Stack, Text } from "@mantine/core"
+import { Button, Menu, ScrollArea } from "@mantine/core"
 import { IconChevronDown } from "@tabler/icons-react"
-import { useCmux } from "../api/cmux"
 import type { WorktreeSummary } from "../api/types"
 import { useWorktrees } from "../hooks/useWorktrees"
-import { ColorBar } from "./CmuxWorkspaceSection"
+import { WorktreeWorkspaceName } from "./WorktreeWorkspaceName"
 
 /**
- * Picks a worktree to follow a resource in. Each worktree is named the way
- * the detail page's header names it: its cmux workspaces, colour bar and
- * title, heading the branch — or just the branch outside cmux.
+ * Picks a worktree to follow a resource in, each named by
+ * WorktreeWorkspaceName.
  */
 export function FollowInWorktreeMenu({ onPick }: { onPick: (w: WorktreeSummary) => void }) {
   const worktrees = useWorktrees()
-  const cmux = useCmux()
-  const matches = cmux.data?.available ? cmux.data.matches ?? {} : {}
   const items = [...(worktrees.data ?? [])].sort((a, b) => a.branch.localeCompare(b.branch))
 
   return (
@@ -29,24 +25,11 @@ export function FollowInWorktreeMenu({ onPick }: { onPick: (w: WorktreeSummary) 
           <Menu.Item disabled>{worktrees.isLoading ? "Loading…" : "No worktrees"}</Menu.Item>
         ) : (
           <ScrollArea.Autosize mah={320} type="auto">
-            {items.map((w) => {
-              const workspaces = matches[w.path] ?? []
-              return (
-                <Menu.Item key={w.path} onClick={() => onPick(w)}>
-                  <Stack gap={2}>
-                    {workspaces.map((ws) => (
-                      <Group key={ws.ref} gap={8} wrap="nowrap">
-                        <ColorBar color={ws.color} />
-                        <Text size="sm" fw={600}>{ws.title}</Text>
-                      </Group>
-                    ))}
-                    <Text size={workspaces.length ? "xs" : "sm"} c={workspaces.length ? "dimmed" : undefined}>
-                      {w.branch}
-                    </Text>
-                  </Stack>
-                </Menu.Item>
-              )
-            })}
+            {items.map((w) => (
+              <Menu.Item key={w.path} onClick={() => onPick(w)}>
+                <WorktreeWorkspaceName path={w.path} branch={w.branch} />
+              </Menu.Item>
+            ))}
           </ScrollArea.Autosize>
         )}
       </Menu.Dropdown>

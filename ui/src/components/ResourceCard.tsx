@@ -16,6 +16,7 @@ import { supportsCustomName } from "../lib/customName"
 import { TAB_ID } from "../lib/tabId"
 import { NotifySwitch } from "./NotifySwitch"
 import { NotifyBell } from "./NotifyBell"
+import { useCrossHover } from "./CrossHoverContext"
 
 function reviewColor(decision?: string): string {
   switch ((decision || "").toUpperCase()) {
@@ -434,6 +435,11 @@ export function ResourceCard({
   ) : undefined
 
   const body = <ResourceCardBody r={r} variant={variant} aside={aside} />
+  // A worktree page's list card answers that resource's activity events —
+  // lit while you hover one, lighting them while you hover it. Only where it
+  // is a select target: the detail card heads its own pane.
+  const selectable = !!onSelect && variant !== "detail"
+  const crossHover = useCrossHover(selectable ? { kind: "resource", type: r.type, id: r.id, paths: path ? [path] : [] } : null)
 
   return (
     <Paper
@@ -441,7 +447,8 @@ export function ResourceCard({
       withBorder
       // Selectable cards get the clickable surface + hover/focus styling from
       // styles/cards.css; the detail pane renders this card without onSelect.
-      data-interactive={onSelect && variant !== "detail" ? "true" : undefined}
+      data-interactive={selectable ? "true" : undefined}
+      {...crossHover}
       // A selected card is tinted so the current selection is obvious next to
       // the pane it drives.
       // Violet, not blue: blue is spoken for by unread, and a selected read

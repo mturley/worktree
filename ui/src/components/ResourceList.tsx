@@ -22,6 +22,7 @@ import { useHoverMenu } from "../lib/useHoverMenu"
 import { SortableResourceCard } from "./SortableResourceCard"
 import type { ResourceNotifyContext } from "./ResourceCard"
 import { AddResourceModal } from "./AddResourceModal"
+import { useSuspendCrossHover } from "./CrossHoverContext"
 
 interface ResourceListProps {
   items: ResourceDTO[]
@@ -109,6 +110,9 @@ export function ResourceList({
 }: ResourceListProps) {
   const [addOpen, setAddOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
+  // A drag sweeps the pointer across cards and would flicker their events
+  // lit as it passes; cross-hover sits it out.
+  useSuspendCrossHover(dragging)
   // The optimistically reordered list. While it is set it wins over `items`,
   // which is what keeps a background refetch from yanking the list out from
   // under a drag, or from snapping it back before a save has landed.

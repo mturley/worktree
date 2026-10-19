@@ -1323,8 +1323,8 @@ the tab bar has no room. The Resources sort/filter state lives in
 
 `GET /api/all-resources` (`all_resources_api.go`) returns every resource
 followed by any registered worktree, once each: the usual enriched
-`resourceDTO` plus `worktrees` (registry order — "Details" goes to the first;
-a chevron menu offers the rest) and `mine`. `primary` is true when any
+`resourceDTO` plus `worktrees` (registry order — a row click goes to the only
+one, or opens `ChooseWorktreeModal` to pick among several) and `mine`. `primary` is true when any
 follower has it in focus. `mine` is a PR whose `author_id` or a Jira issue
 whose `assignee_id`/`reporter_id` matches `self_identity`; those IDs and
 `created_at` come from the cached state as of **watcher v0.15.0**, are held
@@ -1333,7 +1333,25 @@ before that release lack them until their next poll.
 
 Frontend: `ResourcesPanel` (controls) + `AllResourceRow` (the list card's
 body via the exported `ResourceCardBody`, the worktrees line, and the
-Details / open-or-switch / copy-link group). Sorting and filtering are pure,
+open-or-switch / copy-link group; the row itself is the click target, with
+the event rows' hover tint via `data-resource-row`). An Activity event whose
+resource several worktrees follow opens the same `ChooseWorktreeModal`, as
+does picking such an event or resource from the search dropdown.
+
+### Cross-hover
+
+Hovering an item lights its partners elsewhere on the page with the same
+hover style (`data-cross-hover`, styled in `styles/cards.css`): a worktree
+card ↔ the events and Resources rows of resources it follows, and on a
+worktree page a resource card ↔ its events in the unified feed. The pairing
+rule is pure in `lib/crossHover.ts`; `CrossHoverProvider` (home and worktree
+pages) holds a small external store, and `useCrossHover` subscribes each row
+to its own lit/unlit answer so a hover re-renders only the rows that flip.
+Only rows that navigate take part: an event row that opens its details, the
+search dropdown's rows, and the inert detail-page cards have no partner. Mouse pointers only (a touch tap's emulated hover never ends);
+keyboard focus counts too, but only `:focus-visible` focus, so the focus a
+click or a closing modal leaves behind lights nothing. `ResourceList` pauses
+it while a card is dragged (`useSuspendCrossHover`). Sorting and filtering are pure,
 in `lib/resourceListFilter.ts`: sort by last updated, created, status (one
 ramp across types — blocked, in progress/open, review, testing, not started,
 done/merged, closed, then unstatused threads and links), unread first, or

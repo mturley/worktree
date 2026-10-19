@@ -16,6 +16,7 @@ import { worktreeName } from "../lib/homeWorktree"
 import { MatchWhy } from "./search/MatchWhy"
 import { SearchHighlight } from "./search/SearchHighlight"
 import { useSearchContext } from "./search/SearchContext"
+import { useCrossHover } from "./CrossHoverContext"
 
 interface WorktreeCardProps {
   w: WorktreeSummary
@@ -120,12 +121,17 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
   // the anchor lives inside it; cards.css carries the matching focus rule for
   // the nested link.
   const affordance = clickable ? { "data-interactive": "true" } : {}
+  // Lit while you hover an event or resource this worktree follows, and
+  // lights them while you hover the card. Clickable cards only: the inert
+  // copy in the detail-page header is not a destination.
+  const crossHover = useCrossHover(clickable ? { kind: "worktree", path: w.path } : null)
 
   return (
     <Paper
       p="sm"
       withBorder
       {...affordance}
+      {...crossHover}
       // Whole-card cue, from the backend's aggregate rather than the focus
       // lines: related resources are counted but never listed, so reading
       // focus_resources here would leave their unreads invisible.
