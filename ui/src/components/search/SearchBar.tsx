@@ -79,12 +79,7 @@ export function SearchBar({
 }) {
   const ref = useRef<HTMLInputElement>(null)
   const canEscape = escapeActive ?? Boolean(value)
-  // Clearing is usually the start of a new search: leave the cursor in the bar.
-  const escape = () => {
-    if (onEscape) onEscape()
-    else onChange("")
-    ref.current?.focus()
-  }
+  const escape = onEscape ?? (() => onChange(""))
   const [focused, setFocused] = useState(false)
 
   useEffect(() => {

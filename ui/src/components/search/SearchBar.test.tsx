@@ -97,18 +97,6 @@ describe("SearchBar", () => {
     fireEvent.keyDown(document.body, { key: "Escape" })
     expect(screen.getByTestId("q").textContent).toBe("")
   })
-  it("Esc on the page focuses the bar for a new search", () => {
-    render(<Harness initial="oauth" />)
-    fireEvent.keyDown(document.body, { key: "Escape" })
-    expect(screen.getByRole("searchbox")).toHaveFocus()
-  })
-  it("Esc on the page focuses the bar when onEscape clears something else", () => {
-    const onEscape = vi.fn()
-    render(<MantineProvider><SearchBar value="" onChange={() => {}} onEscape={onEscape} escapeActive /></MantineProvider>)
-    fireEvent.keyDown(document.body, { key: "Escape" })
-    expect(onEscape).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole("searchbox")).toHaveFocus()
-  })
   it("shows a / hint while empty and unfocused", async () => {
     render(<Harness />)
     expect(screen.getByTestId("search-slash-hint").textContent).toBe("/")
