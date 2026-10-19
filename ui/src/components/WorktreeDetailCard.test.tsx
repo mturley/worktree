@@ -186,11 +186,13 @@ describe("layout", () => {
     expect(rowValue("Upstream")).toBe("origin/my-branch")
   })
 
-  it("leaves the delete control to the page header", async () => {
+  it("puts the delete control after the tabs, outside the tab list", async () => {
     worktreeInfo.mockResolvedValue(info())
     wrap(summary())
-    await screen.findByRole("tablist")
-    expect(screen.queryByRole("button", { name: "Delete worktree" })).not.toBeInTheDocument()
+    const tablist = await screen.findByRole("tablist")
+    const del = screen.getByRole("button", { name: "Delete worktree" })
+    expect(tablist).not.toContainElement(del)
+    expect(tablist.compareDocumentPosition(del) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it("puts the Notes tab before the Environment tab", async () => {

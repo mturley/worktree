@@ -11,6 +11,7 @@ import { useWorktreeNotes } from "../hooks/useWorktreeNotes"
 import { toggleTaskAt } from "../lib/taskList"
 import { relativeTime as rel } from "../lib/relativeTime"
 import { CmuxPanel } from "./CmuxPanel"
+import { DeleteWorktreeButton } from "./DeleteWorktreeButton"
 import { NotesMarkdown } from "./NotesMarkdown"
 
 /**
@@ -42,7 +43,8 @@ function gitSummary(g: GitStatus): string {
  * what branch am I on, is the tree dirty, when did anything last happen, and
  * what was I in the middle of (notes).
  *
- * A single row of tabs — Notes, Git / Environment and, inside cmux, cmux.
+ * A single row of tabs — Notes, Git / Environment and, inside cmux, cmux —
+ * with the delete control at its right.
  * The tab is the page's (useDetailTab), because it also decides where the
  * page puts the card: wide, Notes sits in the resource column and the other
  * tabs span the page under the header. Switching between them moves, and so
@@ -88,16 +90,19 @@ export function WorktreeDetailCard({ w, tab, onTabChange }: {
   return (
     <Paper p="sm" withBorder>
       <Tabs value={tab} onChange={selectTab} keepMounted={false}>
-        {/* The worktree and cmux workspace names and the delete control live
-            in the page header. Sized to its tabs, so the underline stops
-            after the last tab. */}
-        <Tabs.List w="fit-content">
-          <Tabs.Tab value="notes" fz="xs" py={6}>Notes</Tabs.Tab>
-          <Tabs.Tab value="env" fz="xs" py={6}>Git / Environment</Tabs.Tab>
-          {hasCmux && (
-            <Tabs.Tab value="cmux" fz="xs" py={6}>cmux</Tabs.Tab>
-          )}
-        </Tabs.List>
+        {/* The worktree and cmux workspace names live in the page header.
+            The tab list is sized to its tabs, so the underline stops after
+            the last tab, and the delete control sits at the row's far end. */}
+        <Group justify="space-between" wrap="nowrap" gap="xs" align="flex-start">
+          <Tabs.List w="fit-content">
+            <Tabs.Tab value="notes" fz="xs" py={6}>Notes</Tabs.Tab>
+            <Tabs.Tab value="env" fz="xs" py={6}>Git / Environment</Tabs.Tab>
+            {hasCmux && (
+              <Tabs.Tab value="cmux" fz="xs" py={6}>cmux</Tabs.Tab>
+            )}
+          </Tabs.List>
+          <DeleteWorktreeButton w={w} />
+        </Group>
 
         <Tabs.Panel value="notes" pt={6} keepMounted>
           <NotesPanel

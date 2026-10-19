@@ -28,7 +28,6 @@ import {
 } from "../lib/openEvent"
 import type { TimelineEvent } from "../api/types"
 import { WorktreeDetailCard } from "../components/WorktreeDetailCard"
-import { DeleteWorktreeButton } from "../components/DeleteWorktreeButton"
 import { CmuxWorkspaceActions, CmuxWorkspaceTitles } from "../components/CmuxWorkspaceHeader"
 import { SourceFilter } from "../components/SourceFilter"
 import { EventTypeFilter } from "../components/EventTypeFilter"
@@ -543,7 +542,6 @@ export function WorktreeDetailPage() {
       {!wide && editorButton}
       {!wide && searchBar}
       {summary && <CmuxWorkspaceActions path={path} branch={summary.branch} />}
-      {summary && <DeleteWorktreeButton w={summary} />}
     </>
   )
 

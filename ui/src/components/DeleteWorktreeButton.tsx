@@ -8,7 +8,7 @@ import type { WorktreeSummary } from "../api/types"
 import { DeleteWorktreeModal } from "./DeleteWorktreeModal"
 
 /**
- * The worktree detail page header's delete control: a trash icon that opens
+ * The worktree details card's delete control: a trash icon that opens
  * DeleteWorktreeModal, then returns to the list once the worktree is gone.
  */
 export function DeleteWorktreeButton({ w }: { w: WorktreeSummary }) {

@@ -140,12 +140,12 @@ describe("WorktreeDetailPage header", () => {
 
 
 
-  it("puts the delete control in the header toolbar, after the cmux actions", async () => {
+  it("puts the delete control in the details card, not the header toolbar", async () => {
     setViewport("wide")
     wrap()
-    await screen.findByRole("button", { name: "Delete worktree" })
-    const del = screen.getByRole("button", { name: "Delete worktree" })
-    expect(del.closest("[data-detail-toolbar]")).toBeInTheDocument()
+    const del = await screen.findByRole("button", { name: "Delete worktree" })
+    expect(del.closest("[data-detail-toolbar]")).toBeNull()
+    expect(del.closest(".mantine-Paper-root")).toContainElement(screen.getByRole("tab", { name: "Notes" }))
   })
 })
 
