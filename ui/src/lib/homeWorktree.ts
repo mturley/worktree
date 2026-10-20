@@ -26,6 +26,8 @@
  * the case where a navigation arrives without the parameter in a tab that
  * already knows its home — the param is put back rather than the home lost.
  */
+import { useBannerDismissed } from "./bannerDismiss"
+
 const KEY = "worktree.homePath"
 
 /** The query parameter carrying the home worktree's path. */
@@ -91,6 +93,17 @@ export function getHomeWorktree(): string | null {
     // Fall through to the stored copy.
   }
   return readStored()
+}
+
+/**
+ * The home worktree Esc backs out to: the tab's home, unless its "Back to
+ * current worktree" banner was dismissed. Esc's last step goes where that
+ * banner goes, so hiding the banner hides the shortcut too, and Esc behaves
+ * as in a tab with no `?home=`.
+ */
+export function useEscHome(): string | null {
+  const dismissed = useBannerDismissed("home")
+  return dismissed ? null : getHomeWorktree()
 }
 
 /**

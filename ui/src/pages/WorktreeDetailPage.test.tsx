@@ -333,6 +333,16 @@ describe("WorktreeDetailPage selection", () => {
     await waitFor(() => expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/home")}`))
   })
 
+  it("leaves for the listing on Esc when the home banner was dismissed", async () => {
+    window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?home=${encodeURIComponent("/wt/home")}`)
+    window.sessionStorage.setItem("worktree.banner.dismissed.home", "1")
+    setViewport("wide")
+    wrap()
+    await screen.findByRole("heading", { name: "foo", level: 4 })
+    fireEvent.keyDown(document.body, { key: "Escape" })
+    await waitFor(() => expect(window.location.pathname).toBe("/"))
+  })
+
   it("leaves its own home worktree for the listing on Esc", async () => {
     window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?home=${encodeURIComponent("/wt/foo")}`)
     setViewport("wide")

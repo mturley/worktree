@@ -47,7 +47,7 @@ import { ThreadActionsContext } from "../components/slack/ThreadActionsContext"
 import { LinkedActionsContext } from "../components/linked/LinkedActionsContext"
 import { AddResourceModal } from "../components/AddResourceModal"
 import { parseThreadUrl } from "../lib/parseThreadUrl"
-import { getHomeWorktree, homeWorktreeHref, worktreeName } from "../lib/homeWorktree"
+import { homeWorktreeHref, useEscHome, worktreeName } from "../lib/homeWorktree"
 import { SearchBar } from "../components/search/SearchBar"
 import { SearchSummary } from "../components/search/SearchSummary"
 import { useSeeEverything } from "../hooks/useSeeEverything"
@@ -547,10 +547,11 @@ export function WorktreeDetailPage() {
   // after the editor button and the auto margin pushes the other actions right.
   // Esc with nothing left to clear: deselect, then leave — for the tab's
   // home worktree when it has one and this is not it, else for the listing.
+  // A dismissed home banner drops the home from this (see useEscHome).
+  const escHome = useEscHome()
   const escapeIdle = () => {
     if (selected) { clear(); return }
-    const home = getHomeWorktree()
-    navigate(home && home !== path ? homeWorktreeHref(home) : "/")
+    navigate(escHome && escHome !== path ? homeWorktreeHref(escHome) : "/")
   }
   const searchBar = (
     <div style={wide ? { flex: "1 1 160px", minWidth: 0 } : { flex: "1 1 160px", marginRight: "auto" }}>

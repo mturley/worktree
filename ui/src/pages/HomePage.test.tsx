@@ -40,6 +40,7 @@ const wrap = () => {
 beforeEach(() => {
   window.history.replaceState({}, "", "/")
   window.localStorage.clear()
+  window.sessionStorage.clear()
   mocks.worktrees = [summary]
   mocks.timelineArgs = []
   mocks.events = []
@@ -245,6 +246,15 @@ describe("HomePage Esc", () => {
     wrap()
     fireEvent.keyDown(document.body, { key: "Escape" })
     await waitFor(() => expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/home")}`))
+  })
+
+  it("stays put when the home banner was dismissed, as if unhomed", () => {
+    window.history.replaceState({}, "", `/?home=${encodeURIComponent("/wt/home")}`)
+    window.sessionStorage.setItem("worktree.banner.dismissed.home", "1")
+    setViewport("wide")
+    wrap()
+    fireEvent.keyDown(document.body, { key: "Escape" })
+    expect(window.location.pathname).toBe("/")
   })
 
   it("stays put with nothing to clear and no home worktree", () => {

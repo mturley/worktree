@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest"
-import { dismissBanner, isBannerDismissed } from "./bannerDismiss"
+import { act, renderHook } from "@testing-library/react"
+import { dismissBanner, isBannerDismissed, useBannerDismissed } from "./bannerDismiss"
 
 beforeEach(() => window.sessionStorage.clear())
 afterEach(() => vi.restoreAllMocks())
@@ -20,6 +21,13 @@ describe("bannerDismiss", () => {
     // condition that chose between them — a dismissal must not carry over.
     dismissBanner("home")
     expect(isBannerDismissed("all")).toBe(false)
+  })
+
+  it("re-renders subscribers when a banner is dismissed", () => {
+    const { result } = renderHook(() => useBannerDismissed("home"))
+    expect(result.current).toBe(false)
+    act(() => dismissBanner("home"))
+    expect(result.current).toBe(true)
   })
 
   it("stores in sessionStorage, so a new tab starts over", () => {

@@ -18,7 +18,7 @@ import { ArchivedToggle } from "../components/ArchivedToggle"
 import { useUnreadOnly } from "../hooks/useUnreadOnly"
 import { useUnreadOnlyHotkey } from "../hooks/useUnreadOnlyHotkey"
 import { usePublishEscLeaves } from "../lib/escapeHint"
-import { getHomeWorktree, homeWorktreeHref } from "../lib/homeWorktree"
+import { homeWorktreeHref, useEscHome } from "../lib/homeWorktree"
 import { unreadBadge } from "../lib/unreadBadge"
 import { SourceFilter } from "../components/SourceFilter"
 import { EventTypeFilter } from "../components/EventTypeFilter"
@@ -364,9 +364,10 @@ export function HomePage() {
   // Esc sees everything: clears the search and turns Unreads only off. With
   // nothing to clear it goes to the tab's home worktree, when it has one —
   // the listing is otherwise the top, with nowhere further to back out to.
-  // The banner pointing there carries its hint (see escapeHint).
+  // The banner pointing there carries its hint (see escapeHint), and
+  // dismissing it takes the shortcut with it (see useEscHome).
   const escClears = narrowing.search || narrowing.unread || narrowing.filters
-  const home = getHomeWorktree()
+  const home = useEscHome()
   usePublishEscLeaves(!escClears && home !== null)
   const searchBar = (
     <SearchBar

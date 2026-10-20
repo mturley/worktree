@@ -10,7 +10,12 @@
  *
  * Contrast homeWorktree.ts, where sessionStorage is only a second copy because
  * losing the home across a restore would be a bug.
+ *
+ * Dismissal is also observable (useBannerDismissed): a dismissed banner takes
+ * its Esc shortcut with it, and the pages that decide what Esc does are not
+ * the banner.
  */
+import { useSyncExternalStore } from "react"
 
 /** Which banner. They are mutually exclusive on any given route. */
 export type BannerVariant = "home" | "all"
@@ -30,6 +35,13 @@ export function isBannerDismissed(variant: BannerVariant): boolean {
   }
 }
 
+const listeners = new Set<() => void>()
+
+function subscribe(l: () => void): () => void {
+  listeners.add(l)
+  return () => { listeners.delete(l) }
+}
+
 /** Stops showing `variant` for the rest of this tab's life. */
 export function dismissBanner(variant: BannerVariant): void {
   try {
@@ -38,4 +50,10 @@ export function dismissBanner(variant: BannerVariant): void {
     // The component's own state still hides it for this render; only the
     // memory across navigations is lost.
   }
+  listeners.forEach((l) => l())
+}
+
+/** isBannerDismissed, re-rendering when this tab dismisses `variant`. */
+export function useBannerDismissed(variant: BannerVariant): boolean {
+  return useSyncExternalStore(subscribe, () => isBannerDismissed(variant))
 }

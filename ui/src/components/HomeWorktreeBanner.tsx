@@ -4,7 +4,7 @@ import { IconArrowLeft } from "@tabler/icons-react"
 import { useLocation } from "wouter"
 import { KeyHint } from "./search/KeyHint"
 import { useCmux } from "../api/cmux"
-import { dismissBanner, isBannerDismissed, type BannerVariant } from "../lib/bannerDismiss"
+import { dismissBanner, useBannerDismissed, type BannerVariant } from "../lib/bannerDismiss"
 import { useEscLeaves, usePublishBannerShown } from "../lib/escapeHint"
 import {
   getHomeWorktree,
@@ -40,15 +40,17 @@ import {
 export function HomeWorktreeBanner() {
   const [location, navigate] = useLocation()
   const cmux = useCmux()
-  // Read once per mount rather than per render: the value only ever changes
-  // through the dismiss button below, which sets both at the same time.
-  const [dismissed, setDismissed] = useState(
-    () => ({ home: isBannerDismissed("home"), all: isBannerDismissed("all") }),
-  )
-
+  // Shared with the pages: a dismissed home banner also drops Esc's step
+  // home (see useEscHome). The local copy hides it even when sessionStorage
+  // is blocked and the shared one cannot remember.
+  const [hidden, setHidden] = useState<Partial<Record<BannerVariant, true>>>({})
+  const dismissed = {
+    home: useBannerDismissed("home") || Boolean(hidden.home),
+    all: useBannerDismissed("all") || Boolean(hidden.all),
+  }
   const dismiss = (variant: BannerVariant) => () => {
+    setHidden((h) => ({ ...h, [variant]: true }))
     dismissBanner(variant)
-    setDismissed((d) => ({ ...d, [variant]: true }))
   }
 
   const home = getHomeWorktree()
