@@ -147,15 +147,15 @@ function PRCardBody({ r, variant, aside }: CardBodyProps) {
 }
 
 function JiraCardBody({ r, variant, aside }: CardBodyProps) {
-  // The priority is not among these: it follows the key on the type line.
-  const badges = r.status && <Badge size="xs" variant="light" color={jiraStatusColor(r.status)}>{r.status}</Badge>
-  const inline = badgesInTypeLine(variant)
+  // The status follows the key and priority on the type line in every
+  // variant: unlike a PR's, it is a single badge, so the detail card has no
+  // row of extras to give it a line of its own.
+  const status = r.status && <Badge size="xs" variant="light" color={jiraStatusColor(r.status)}>{r.status}</Badge>
   return (
     <Stack gap={4}>
-      <ResourceTypeLine r={r} aside={aside} trailing={inline ? badges : undefined} />
+      <ResourceTypeLine r={r} aside={aside} trailing={status} />
       <ResourceTitle r={r} label={r.title || r.id} showUnread={showsUnread(variant)} icon={null} {...titleProps(variant)} />
       <CustomDescription r={r} />
-      {!inline && <Group gap={4} wrap="wrap">{badges}</Group>}
       {variant === "detail" && r.labels && r.labels.length > 0 && (
         <Group gap={4} wrap="wrap">
           {r.labels.map((l) => <Badge key={l} size="xs" variant="dot">{l}</Badge>)}

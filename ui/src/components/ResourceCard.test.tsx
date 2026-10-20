@@ -251,7 +251,6 @@ describe("ResourceCard variants and selection", () => {
     expect(screen.getByText("backend")).toBeInTheDocument()
     expect(screen.getByText("urgent")).toBeInTheDocument()
   })
-
   it("calls onSelect when a selectable card is clicked", async () => {
     const onSelect = vi.fn()
     const user = userEvent.setup()
@@ -687,10 +686,10 @@ describe("status badge placement", () => {
     expect(icon.compareDocumentPosition(screen.getByText("In Progress")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it("keeps a detail card's priority icon on the type line", () => {
+  it("keeps a detail card's priority icon and status on the type line", () => {
     wrap(<ResourceCard r={{ ...jira, priority_icon_url: "https://jira/major.svg" }} variant="detail" path="/wt" />)
     expect(typeLine()).toContainElement(screen.getByRole("img", { name: "Priority: Major" }))
-    expect(typeLine()).not.toContainElement(screen.getByText("In Progress"))
+    expect(typeLine()).toContainElement(screen.getByText("In Progress"))
   })
 
   it("keeps the detail card's badges on their own line", () => {
