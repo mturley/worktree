@@ -16,6 +16,7 @@ import { useIsWide } from "../hooks/useIsWide"
 import { useIsTall } from "../hooks/useIsTall"
 import { useDetailTab } from "../hooks/useDetailTab"
 import { useWorktrees } from "../hooks/useWorktrees"
+import { UnreadMarkerDot } from "../components/UnreadMarkerDot"
 import { useCmuxMatches } from "../api/cmux"
 import { ResourceList } from "../components/ResourceList"
 import { pinnedStyle, STICKY_LIST_SCROLLER, stickyListStyle } from "../lib/stickyList"
@@ -629,7 +630,7 @@ export function WorktreeDetailPage() {
                 className="back-home"
               >
                 <IconChevronLeft size={16} />
-                <Logo />
+                <Logo exceptPath={path} />
               </Anchor>
               {/* Inside cmux the workspace is the headline and the worktree
                   name steps down beneath it, as on the home page's cards;
@@ -642,34 +643,40 @@ export function WorktreeDetailPage() {
                   with role=button rather than a <button>, which may not hold
                   the headings. With none of those there is nothing to reset,
                   so it is plain text. */}
-              <Stack
-                gap={2}
-                style={{ minWidth: 0 }}
-                {...(resettable && {
-                  role: "button",
-                  tabIndex: 0,
-                  title: narrowed ? "Show all resources" : "Show notes",
-                  className: "detail-titles",
-                  onClick: showOverview,
-                  onKeyDown: (e: KeyboardEvent) => {
-                    if (e.key !== "Enter" && e.key !== " ") return
-                    e.preventDefault()
-                    showOverview()
-                  },
-                })}
-              >
-                <CmuxWorkspaceTitles path={path} />
-                <Group gap="xs" wrap="wrap" style={{ minWidth: 0 }}>
-                  <Title
-                    order={hasWorkspace ? 6 : 4}
-                    c={hasWorkspace ? "dimmed" : undefined}
-                    style={{ overflowWrap: "anywhere" }}
-                  >
-                    {name}
-                  </Title>
-                  {summary && !summary.on_disk && <Badge size="xs" color="red">missing</Badge>}
-                </Group>
-              </Stack>
+              <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
+                <Stack
+                  gap={2}
+                  style={{ minWidth: 0 }}
+                  {...(resettable && {
+                    role: "button",
+                    tabIndex: 0,
+                    title: narrowed ? "Show all resources" : "Show notes",
+                    className: "detail-titles",
+                    onClick: showOverview,
+                    onKeyDown: (e: KeyboardEvent) => {
+                      if (e.key !== "Enter" && e.key !== " ") return
+                      e.preventDefault()
+                      showOverview()
+                    },
+                  })}
+                >
+                  <CmuxWorkspaceTitles path={path} />
+                  <Group gap="xs" wrap="wrap" style={{ minWidth: 0 }}>
+                    <Title
+                      order={hasWorkspace ? 6 : 4}
+                      c={hasWorkspace ? "dimmed" : undefined}
+                      style={{ overflowWrap: "anywhere" }}
+                    >
+                      {name}
+                    </Title>
+                    {summary && !summary.on_disk && <Badge size="xs" color="red">missing</Badge>}
+                  </Group>
+                </Stack>
+                {/* Static, unlike the logo: this worktree's own unreads, which
+                    the logo deliberately leaves out. Outside the titles so it
+                    is not part of their reset button. */}
+                {summary?.has_unread && <UnreadMarkerDot label="worktree has unreads" />}
+              </Group>
               {wide && editorButton}
               {wide && searchBar}
             </Group>

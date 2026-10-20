@@ -9,9 +9,9 @@ import { BASE_FAVICON, UNREAD_FAVICON, useUnreadFavicon } from "./useUnreadFavic
 let list: WorktreeSummary[] = []
 vi.mock("./useWorktrees", () => ({ useWorktrees: () => ({ data: list }) }))
 
-function wt(has_unread: boolean, unread_count = 0): WorktreeSummary {
+function wt(has_unread: boolean, unread_count = 0, path = "/w/a"): WorktreeSummary {
   return {
-    path: "/w/a", repo: "r", branch: "b", on_disk: true,
+    path, repo: "r", branch: "b", on_disk: true,
     resource_count: 0, primary_count: 0, latest_event_ts: "",
     primary_by_type: {}, related_count: 0, focus_resources: [],
     has_unread, unread_count,
@@ -111,5 +111,22 @@ describe("useUnreadFavicon", () => {
     list = [wt(false)]
     view.rerender(<><Probe /><Logo /></>)
     expect(logo()).toBe(BASE_FAVICON)
+  })
+
+  it("rests the details page's logo when the only unreads are its own worktree's", () => {
+    list = [wt(true, 2, "/w/a"), wt(false, 0, "/w/b")]
+    const view = render(<><Probe /><Logo exceptPath="/w/a" /></>)
+    const logo = () => view.container.querySelector("img")!.getAttribute("src")
+    // The tab still flashes; the header logo does not.
+    expect(icon()).toBe(UNREAD_FAVICON)
+    expect(logo()).toBe(BASE_FAVICON)
+    act(() => void vi.advanceTimersByTime(BLINK_MS * 3))
+    expect(logo()).toBe(BASE_FAVICON)
+
+    list = [wt(true, 2, "/w/a"), wt(true, 1, "/w/b")]
+    view.rerender(<><Probe /><Logo exceptPath="/w/a" /></>)
+    expect(logo()).toBe(icon())
+    act(() => void vi.advanceTimersByTime(BLINK_MS))
+    expect(logo()).toBe(icon())
   })
 })

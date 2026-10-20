@@ -37,6 +37,16 @@ export function unreadBadge(worktrees: WorktreeSummary[] | undefined): UnreadBad
   return { unread, count }
 }
 
+/**
+ * Whether any worktree OTHER than `path` has unread activity — the details
+ * page's header logo flashes on this, so it says "there are unreads
+ * elsewhere" rather than repeating the unread bars already on the page.
+ */
+export function otherUnread(worktrees: WorktreeSummary[] | undefined, path: string): boolean {
+  if (!Array.isArray(worktrees)) return false
+  return worktrees.some((w) => w.has_unread && w.path !== path)
+}
+
 /** The tab title with no badge on it. */
 export const BASE_TITLE = "worktree"
 

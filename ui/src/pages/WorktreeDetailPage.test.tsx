@@ -23,10 +23,11 @@ vi.mock("../hooks/useWorktreeDetail", () => ({
 }))
 // Return a summary whose path matches the route, so the page can render its
 // WorktreeCard header (spec item 3).
+const summaryMock = vi.hoisted(() => ({ hasUnread: false }))
 vi.mock("../hooks/useWorktrees", () => ({
   useWorktrees: () => ({
     data: [{
-      path: "/wt/foo", repo: "odh", branch: "feature/foo-branch",
+      path: "/wt/foo", repo: "odh", branch: "feature/foo-branch", has_unread: summaryMock.hasUnread,
       on_disk: true, resource_count: 2, primary_count: 2, latest_event_ts: "",
       primary_by_type: { pr: 1, jira: 1 }, related_count: 0,
       focus_resources: [
@@ -75,6 +76,7 @@ beforeEach(() => {
   resources = baseResources
   events = []
   timelineMock.events = []
+  summaryMock.hasUnread = false
 })
 afterEach(cleanup)
 
@@ -111,6 +113,20 @@ describe("WorktreeDetailPage header", () => {
     const header = worktree.closest("[data-detail-header]")
     expect(header).toContainElement(screen.getByRole("button", { name: /switch cmux/i }))
     vi.restoreAllMocks()
+  })
+
+  it("marks the title with a static dot only while this worktree has unreads", async () => {
+    setViewport("wide")
+    const view = wrap()
+    await screen.findByRole("heading", { name: "foo", level: 4 })
+    expect(screen.queryByRole("img", { name: "worktree has unreads" })).not.toBeInTheDocument()
+    view.unmount()
+
+    summaryMock.hasUnread = true
+    wrap()
+    const title = await screen.findByRole("heading", { name: "foo", level: 4 })
+    const dot = screen.getByRole("img", { name: "worktree has unreads" })
+    expect(title.compareDocumentPosition(dot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it("moves the header toolbar to its own row when narrow", async () => {
