@@ -779,6 +779,13 @@ is the newest of exactly the events counted, never "now". Slack threads post
 `/api/thread/mark-read` — a write to Slack itself — through their cached
 `updated_ts`, the latest message as of the poll that flagged them.
 
+A selected PR/Jira resource's Activity tab carries the same button at the
+right end of its tab bar, in its `single` form: one resource, so no
+checkboxes — the modal is just the preview of that resource's unread events
+(the worktree feed narrowed to it, unread only), and confirming marks it
+through its `unread_through_ts` like any other. Hidden while a search narrows
+that feed, and on the Linked tab.
+
 **Show unread only** (`UnreadOnlyToggle`) is one UI-wide choice
 (`useUnreadOnly`): persisted in localStorage under `worktree.unreadOnly`, shared
 by every toggle in the tab via `useSyncExternalStore`, and carried to other

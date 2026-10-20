@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest"
-import { render, cleanup, screen, act, waitFor } from "@testing-library/react"
+import { render, cleanup, screen, act, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -77,9 +77,7 @@ describe("ResourceDetailPane", () => {
     const { rerender } = render(mk({ ...jira, id: "J-1", unread_count: 2 }))
     expect(await screen.findByRole("tab", { name: "Linked Resources (3)" })).toBeInTheDocument()
     expect(screen.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true")
-    expect(screen.getByRole("button", { name: "Mark 2 events as read" })).toBeInTheDocument()
     await userEvent.click(screen.getByRole("tab", { name: "Linked Resources (3)" }))
-    expect(screen.queryByRole("button", { name: /Mark .* as read/ })).not.toBeInTheDocument()
     expect(window.location.search).toContain("tab=linked")
     // Back (or anything else that drops ?tab=) returns to Activity; selecting
     // another resource drops it too — see useSelectedResource's tests.
@@ -251,29 +249,36 @@ describe("mark-read button", () => {
       } as TimelineEvent],
       isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false,
     })
+  const unread = (n: number) =>
+    ({ ...jira, unread_count: n, unread_through_ts: "2099-01-02T00:00:00Z" }) as ResourceDTO
 
-  it("draws the button in unread blue, not the theme's purple accent", () => {
-    // primaryColor is "accent" (purple). This button clears the very blue the
-    // event boxes beside it are drawn in, so it wears the same colour — and
-    // hovers LIGHTER, since Mantine's darker default reads as dimming on a
-    // dark background.
+  it("sits in the tab bar as Mark all read, like the other feeds'", () => {
     withEvents()
-    wrap(<ResourceDetailPane path="/wt/foo" resource={{ ...jira, unread_count: 2 } as ResourceDTO} />)
-    const btn = screen.getByRole("button", { name: "Mark 2 events as read" })
-    expect(btn).toHaveAttribute("data-variant", "filled")
-    expect(btn.style.getPropertyValue("--button-hover")).toBe("var(--mantine-color-blue-4)")
+    wrap(<ResourceDetailPane path="/wt/foo" resource={unread(2)} />)
+    const btn = screen.getByRole("button", { name: "Mark all read" })
+    expect(btn.closest('[role="tablist"]')).not.toBeNull()
   })
 
-  it("offers to mark the resource's unread events read", () => {
+  it("confirms in a modal that previews the unread events, with no checkboxes", async () => {
     withEvents()
-    wrap(<ResourceDetailPane path="/wt/foo" resource={{ ...jira, unread_count: 3 } as ResourceDTO} />)
-    expect(screen.getByRole("button", { name: "Mark 3 events as read" })).toBeInTheDocument()
+    wrap(<ResourceDetailPane path="/wt/foo" resource={unread(2)} />)
+    await userEvent.click(screen.getByRole("button", { name: "Mark all read" }))
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).queryByRole("checkbox")).not.toBeInTheDocument()
+    expect(within(dialog).getByText("The following 2 events will be marked as read")).toBeInTheDocument()
+    expect(within(dialog).getByText("event e1")).toBeInTheDocument()
+    // The preview is this resource's unread events alone.
+    expect(useWorktreeTimeline).toHaveBeenCalledWith("/wt/foo", { type: "jira", id: "J-1" }, [], true)
+    expect(markResourceRead).not.toHaveBeenCalled()
   })
 
-  it("sends the newest RENDERED event as through_ts, so later arrivals survive", async () => {
+  it("marks the resource read through what the server counted, on confirm", async () => {
     withEvents()
-    wrap(<ResourceDetailPane path="/wt/foo" resource={{ ...jira, unread_count: 1 } as ResourceDTO} />)
-    await userEvent.click(screen.getByRole("button", { name: "Mark 1 event as read" }))
+    markResourceRead.mockResolvedValue(null)
+    wrap(<ResourceDetailPane path="/wt/foo" resource={unread(1)} />)
+    await userEvent.click(screen.getByRole("button", { name: "Mark all read" }))
+    const dialog = await screen.findByRole("dialog")
+    await userEvent.click(within(dialog).getByRole("button", { name: "Mark read" }))
     expect(markResourceRead).toHaveBeenCalledWith({
       type: "jira", id: "J-1", through_ts: "2099-01-02T00:00:00Z",
     })
@@ -282,23 +287,23 @@ describe("mark-read button", () => {
   it("hides the mark-read button when nothing is unread", () => {
     withEvents()
     wrap(<ResourceDetailPane path="/wt/foo" resource={jira} />)
-    expect(screen.queryByRole("button", { name: /Mark .* as read/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Mark all read" })).not.toBeInTheDocument()
+  })
+
+  it("hides the mark-read button on the Linked tab", async () => {
+    vi.spyOn(realApi, "linkedResources").mockResolvedValue({ fetched_at: "2026-10-09T12:00:00Z", count: 0, sections: [] })
+    withEvents()
+    wrap(<ResourceDetailPane path="/wt/foo" resource={unread(2)} />)
+    await userEvent.click(screen.getByRole("tab", { name: /Linked Resources/ }))
+    expect(screen.queryByRole("button", { name: "Mark all read" })).not.toBeInTheDocument()
   })
 
   it("never calls markResourceRead on a plain render with no interaction", () => {
     // The worst outcome for this feature is an implicit mark-read (e.g. a
     // future useEffect creeping back in). Rendering alone must never call it.
     withEvents()
-    wrap(<ResourceDetailPane path="/wt/foo" resource={{ ...jira, unread_count: 3 } as ResourceDTO} />)
+    wrap(<ResourceDetailPane path="/wt/foo" resource={unread(3)} />)
     expect(markResourceRead).not.toHaveBeenCalled()
-  })
-
-  it("disables the mark-read button when the timeline has no events to source through_ts from", () => {
-    useWorktreeTimeline.mockReturnValue({
-      events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false,
-    })
-    wrap(<ResourceDetailPane path="/wt/foo" resource={{ ...jira, unread_count: 3 } as ResourceDTO} />)
-    expect(screen.getByRole("button", { name: "Mark 3 events as read" })).toBeDisabled()
   })
 })
 

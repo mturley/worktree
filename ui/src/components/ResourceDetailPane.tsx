@@ -1,14 +1,10 @@
 import { useEffect, useState } from "react"
 import { Anchor, Box, Button, Center, Group, Stack, Tabs, Text } from "@mantine/core"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
 import type { ResourceDTO } from "../api/types"
-import { KeyHint } from "./search/KeyHint"
-import { useButtonHotkey } from "../hooks/useButtonHotkey"
 import { useWorktreeTimeline } from "../hooks/useTimeline"
 import { useSearchQuery } from "../hooks/useSearchQuery"
 import { SearchSummary } from "./search/SearchSummary"
 import { filterLinkedSections } from "../lib/linkedSearch"
-import { api } from "../api/client"
 import { ResourceCard, type ResourceNotifyContext } from "./ResourceCard"
 import { SlackThreadPane } from "./SlackThreadPane"
 import { LinkPane } from "./LinkPane"
@@ -19,7 +15,9 @@ import { WatcherAlert } from "./WatcherAlert"
 import { useWatcherStatus } from "../hooks/useWatchers"
 import { useNow } from "../hooks/useNow"
 import { relativeTime } from "../lib/relativeTime"
+import { KeyHint } from "./search/KeyHint"
 import { TimelineFeed } from "./TimelineFeed"
+import { MarkAllReadButton } from "./MarkAllReadButton"
 import { serviceName } from "./ResourceActions"
 import { useLinkedResources } from "../hooks/useLinkedResources"
 import { useResourceTab } from "../hooks/useSelectedResource"
@@ -89,38 +87,11 @@ function TimelineBody({
     if (tab === "linked") setLinkedOpened(true)
   }, [tab])
   const linked = useLinkedResources(resource.type, resource.id, linkedOpened)
-  const qc = useQueryClient()
   const unreadCount = resource.unread_count ?? 0
   // This feed is one resource, so "updated" means the watcher for ITS type.
   const watcher = useWatcherStatus(resource.type)
   // Keeps "3m ago" moving without a per-second re-render of the whole pane.
   useNow(60_000)
-  // The newest event the user can actually see. Sent as through_ts so events
-  // arriving between render and click stay unread rather than being swallowed
-  // by a button that promised to clear a specific number. The feed is
-  // newest-first, so this is the first entry.
-  const newestTS = timeline.events[0]?.ts
-
-  const markRead = useMutation({
-    mutationFn: () => {
-      // Guarded here, not just via the button's `disabled` prop eleven lines
-      // away — this must stay safe even if a future caller triggers the
-      // mutation some other way.
-      if (!newestTS) return Promise.resolve(null)
-      return api.markResourceRead({ type: resource.type, id: resource.id, through_ts: newestTS })
-    },
-    onSuccess: () => {
-      // Three surfaces show this resource's unread state: the home cards'
-      // focus lines, this worktree's resource list, and every timeline's dots
-      // and divider.
-      void qc.invalidateQueries({ queryKey: ["worktrees"] })
-      void qc.invalidateQueries({ queryKey: ["resources", path] })
-      void qc.invalidateQueries({ queryKey: ["timeline"] })
-    },
-  })
-  // R presses it while it is showing (see useButtonHotkey).
-  const markReadRef = useButtonHotkey("r", () => markRead.mutate(), unreadCount > 0 && !!newestTS && !markRead.isPending)
-
   return (
     <Tabs
       value={tab}
@@ -180,6 +151,15 @@ function TimelineBody({
                 <WatcherErrorMark status={watcher} />
                 <RefreshWatchersButton />
                 <WatcherLogButton scope={{ worktree: path, resource: { type: resource.type, id: resource.id, name: resource.custom_name || resource.title || resource.id } }} />
+                {/* Only over the whole feed, as on the worktree's: searching,
+                    it would clear events the search hides. */}
+                {search.terms.length === 0 && (
+                  <MarkAllReadButton
+                    single
+                    resources={[resource]}
+                    feed={{ worktree: path, path, showResource: false }}
+                  />
+                )}
               </>
             ) : (
               <LinkedTabControls query={linked} />
@@ -189,30 +169,6 @@ function TimelineBody({
       </Box>
       <Tabs.Panel value="activity" pt="sm" keepMounted>
         <Stack gap="sm">
-          {unreadCount > 0 && (
-            <Button
-              size="compact-sm"
-              // Filled blue, not the theme's primary: primaryColor is "accent"
-              // (purple), and this button clears the very blue the boxes and
-              // bars beside it are drawn in. Same treatment as UnreadBadge, so
-              // every unread affordance reads as one colour.
-              variant="filled"
-              color="blue"
-              // `vars`, not `styles`: Mantine sets --button-hover itself from the
-              // color prop, and a styles.root value loses to it. Lighter rather
-              // than Mantine's darker default — on a dark background, darkening
-              // reads as the button dimming rather than responding.
-              vars={() => ({ root: { "--button-hover": "var(--mantine-color-blue-4)" } })}
-              loading={markRead.isPending}
-              disabled={!newestTS}
-              onClick={() => markRead.mutate()}
-              ref={markReadRef}
-              rightSection={<KeyHint decorative>R</KeyHint>}
-              style={{ alignSelf: "flex-start" }}
-            >
-              {`Mark ${unreadCount} ${unreadCount === 1 ? "event" : "events"} as read`}
-            </Button>
-          )}
           {/* Directly above the results it counts, once the feed holds the
               results for what is typed (not mid-debounce). */}
           {search.terms.length > 0 && debouncedQ === search.q.trim() && !timeline.isLoading && (

@@ -69,10 +69,16 @@ function toTarget(r: ResourceDTO): Target | null {
  */
 export type MarkAllReadFeed = { worktree?: string } & Pick<
   ComponentProps<typeof TimelineFeed>,
-  "showWorktrees" | "resolveResource" | "path"
+  "showWorktrees" | "resolveResource" | "path" | "showResource"
 >
 
 type PreviewProps = { types: string[]; feed: MarkAllReadFeed }
+
+/** One resource's unread events, from its worktree's feed. */
+function ResourcePreview(props: { worktree: string; resource: ResourceDTO; feed: MarkAllReadFeed }) {
+  const { type, id } = props.resource
+  return <PreviewFeed types={[]} feed={props.feed} tl={useWorktreeTimeline(props.worktree, { type, id }, [], true)} />
+}
 
 /** The global feed's unread events of `types`. */
 function GlobalPreview(props: PreviewProps) {
@@ -113,8 +119,17 @@ function PreviewFeed({ tl, feed }: PreviewProps & {
  *
  * The counts are read live from `resources`, so a poll landing while the
  * modal is open updates the numbers and what gets sent together.
+ *
+ * `single` is the one-resource form, for a selected resource's own feed:
+ * `resources` holds just that resource and `feed.worktree` its worktree.
+ * There is only one thing to mark, so no checkboxes — the modal is the
+ * preview of its unread events alone.
  */
-export function MarkAllReadButton({ resources, feed }: { resources: ResourceDTO[]; feed: MarkAllReadFeed }) {
+export function MarkAllReadButton({ resources, feed, single = false }: {
+  resources: ResourceDTO[]
+  feed: MarkAllReadFeed
+  single?: boolean
+}) {
   const [opened, setOpened] = useState(false)
   const wide = useIsWide()
   const [unchecked, setUnchecked] = useState<ReadonlySet<Kind>>(new Set())
@@ -136,8 +151,9 @@ export function MarkAllReadButton({ resources, feed }: { resources: ResourceDTO[
     mutationFn: () => Promise.all(selected.flatMap((g) => g.targets.map((t) => t.mark()))),
     onSuccess: () => setOpened(false),
     // Settled, not success: a partial failure still moved some cursors, and
-    // the surfaces showing them must catch up either way. Same three as the
-    // per-resource button in ResourceDetailPane.
+    // the surfaces showing them must catch up either way: the home cards'
+    // focus lines, the worktrees' resource lists, and every timeline's dots
+    // and divider.
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: ["worktrees"] })
       void qc.invalidateQueries({ queryKey: ["resources"] })
@@ -157,6 +173,9 @@ export function MarkAllReadButton({ resources, feed }: { resources: ResourceDTO[
     setOpened(true)
   }
 
+  const singleResource = single && feed.worktree ? resources[0] : undefined
+  const singleGroup = singleResource ? groups[0] : undefined
+
   const toggle = (type: Kind, checked: boolean) =>
     setUnchecked((prev) => {
       const next = new Set(prev)
@@ -170,10 +189,16 @@ export function MarkAllReadButton({ resources, feed }: { resources: ResourceDTO[
       {groups.length > 0 && (
         <Button
           size="compact-sm"
-          // Same blue treatment as ResourceDetailPane's mark-read button — see
-          // there for why it is not the theme's primary, and why `vars`.
+          // Filled blue, not the theme's primary: primaryColor is "accent"
+          // (purple), and this button clears the very blue the unread boxes
+          // and bars are drawn in. Same treatment as UnreadBadge, so every
+          // unread affordance reads as one colour.
           variant="filled"
           color="blue"
+          // `vars`, not `styles`: Mantine sets --button-hover itself from the
+          // color prop, and a styles.root value loses to it. Lighter rather
+          // than Mantine's darker default — on a dark background, darkening
+          // reads as the button dimming rather than responding.
           vars={() => ({ root: { "--button-hover": "var(--mantine-color-blue-4)" } })}
           onClick={openModal}
           ref={openRef}
@@ -182,32 +207,45 @@ export function MarkAllReadButton({ resources, feed }: { resources: ResourceDTO[
           Mark all read
         </Button>
       )}
-      <Modal opened={opened} onClose={() => setOpened(false)} title="Mark all read" centered size="xl">
+      <Modal opened={opened} onClose={() => setOpened(false)} title="Mark all read" centered size={singleResource ? "lg" : "xl"}>
         <Stack gap="sm">
-          {/* Side by side when wide; on a phone the preview stacks below. */}
-          <Flex direction={wide ? "row" : "column"} gap="md">
-            <Stack gap="sm" style={wide ? { flex: "0 0 240px" } : undefined}>
-              {groups.map(({ kind, targets, count }) => (
-                <Checkbox
-                  key={kind.type}
-                  checked={!unchecked.has(kind.type)}
-                  onChange={(e) => toggle(kind.type, e.currentTarget.checked)}
-                  label={`Mark ${plural(count, `${kind.source} ${kind.item[0]}`, `${kind.source} ${kind.item[1]}`)}`
-                    + ` in ${plural(targets.length, kind.container[0], kind.container[1])} as read`}
-                />
-              ))}
-            </Stack>
-            <Box style={{ flex: 1, minWidth: 0 }}>
-              <Text size="sm" c="dimmed" mb="xs">The following activity will be marked as read</Text>
+          {singleResource && feed.worktree ? (
+            <Box>
+              <Text size="sm" c="dimmed" mb="xs">
+                {singleGroup
+                  ? `The following ${plural(singleGroup.count, singleGroup.kind.item[0], singleGroup.kind.item[1])} will be marked as read`
+                  : "The following activity will be marked as read"}
+              </Text>
               <ScrollArea.Autosize mah={wide ? "55vh" : "35vh"} type="auto" offsetScrollbars>
-                {/* Nothing checked lists nothing — and asks for nothing: an
-                    empty resource_types means every type to the server. */}
-                {selectedTypes.length === 0 ? null : feed.worktree
-                  ? <WorktreePreview worktree={feed.worktree} types={selectedTypes} feed={feed} />
-                  : <GlobalPreview types={selectedTypes} feed={feed} />}
+                <ResourcePreview worktree={feed.worktree} resource={singleResource} feed={feed} />
               </ScrollArea.Autosize>
             </Box>
-          </Flex>
+          ) : (
+            // Side by side when wide; on a phone the preview stacks below.
+            <Flex direction={wide ? "row" : "column"} gap="md">
+              <Stack gap="sm" style={wide ? { flex: "0 0 240px" } : undefined}>
+                {groups.map(({ kind, targets, count }) => (
+                  <Checkbox
+                    key={kind.type}
+                    checked={!unchecked.has(kind.type)}
+                    onChange={(e) => toggle(kind.type, e.currentTarget.checked)}
+                    label={`Mark ${plural(count, `${kind.source} ${kind.item[0]}`, `${kind.source} ${kind.item[1]}`)}`
+                      + ` in ${plural(targets.length, kind.container[0], kind.container[1])} as read`}
+                  />
+                ))}
+              </Stack>
+              <Box style={{ flex: 1, minWidth: 0 }}>
+                <Text size="sm" c="dimmed" mb="xs">The following activity will be marked as read</Text>
+                <ScrollArea.Autosize mah={wide ? "55vh" : "35vh"} type="auto" offsetScrollbars>
+                  {/* Nothing checked lists nothing — and asks for nothing: an
+                      empty resource_types means every type to the server. */}
+                  {selectedTypes.length === 0 ? null : feed.worktree
+                    ? <WorktreePreview worktree={feed.worktree} types={selectedTypes} feed={feed} />
+                    : <GlobalPreview types={selectedTypes} feed={feed} />}
+                </ScrollArea.Autosize>
+              </Box>
+            </Flex>
+          )}
           {markAll.isError && (
             <Alert color="red">{String((markAll.error as Error)?.message || markAll.error)}</Alert>
           )}
