@@ -39,6 +39,7 @@ import { useWorktreeSort } from "../hooks/useWorktreeSort"
 import { WorktreeSortControl } from "../components/WorktreeSortControl"
 import { cmuxPositions, sortWorktrees } from "../lib/worktreeSort"
 import { filterWorktreeBySources, matchesSources } from "../lib/sourceFilter"
+import { filterWorktreeByUnread } from "../lib/unreadCardFilter"
 import { ResourcesPanel, ResourcesTabControls } from "../components/ResourcesPanel"
 import { useResourcesView } from "../hooks/useResourcesView"
 import { ChooseWorktreeModal } from "../components/ChooseWorktreeModal"
@@ -128,16 +129,19 @@ export function HomePage() {
   // The Activity source toggles narrow the cards too: each card keeps only
   // resources of that source, and a card with none of them drops out. Then
   // the search narrows what is left to the worktrees that match it.
+  // Unreads only also narrows each card's list to its unread resources,
+  // related ones included (filterWorktreeByUnread).
   const shownWorktrees = useMemo(
     () =>
       (unreadOnly ? sortedWorktrees.filter((w) => w.has_unread) : sortedWorktrees)
         .map((w) => filterWorktreeBySources(w, sources))
         .filter((w): w is NonNullable<typeof w> => w !== null)
+        .map((w) => (unreadOnly ? filterWorktreeByUnread(w, allResources.data && (resourcesByPath.get(w.path) ?? [])) : w))
         .filter((w) => search.terms.length === 0 || matchWorktree(
           w, (cmux.data?.available ? cmux.data.matches?.[w.path] ?? [] : []).map((m) => m.title),
           resourcesByPath.get(w.path) ?? w.focus_resources, search.terms,
         ) !== null),
-    [sortedWorktrees, unreadOnly, sources, search.terms, resourcesByPath, cmux.data],
+    [sortedWorktrees, unreadOnly, sources, search.terms, resourcesByPath, allResources.data, cmux.data],
   )
 
   const sortControl = (

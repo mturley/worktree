@@ -275,6 +275,29 @@ describe("HomePage unread-only toggle", () => {
     expect(screen.queryByText(/my-branch/)).not.toBeInTheDocument()
   })
 
+  it("lists only a card's unread resources, related ones included", async () => {
+    window.localStorage.setItem("worktree.unreadOnly", "true")
+    const wt = { path: "/wt/foo", repo: "odh", branch: "my-branch" }
+    mocks.worktrees = [{
+      ...summary, has_unread: true, unread_count: 2, related_count: 2, related_by_type: { slack: 1, jira: 1 },
+      focus_resources: [
+        { type: "pr", id: "o/r#1", url: "", primary: true, title: "Fix the widget" },
+        { type: "pr", id: "o/r#2", url: "", primary: true, title: "Unread focus", unread_count: 1 },
+      ],
+    }]
+    vi.spyOn(api, "allResources").mockResolvedValue([
+      { type: "slack", id: "C1:1", url: "", primary: false, title: "Unread related", has_unread: true, worktrees: [wt] },
+      { type: "jira", id: "J-1", url: "", primary: false, title: "Read related", worktrees: [wt] },
+    ])
+    setViewport("wide")
+    wrap()
+    expect(await screen.findByText("Unread related")).toBeInTheDocument()
+    expect(screen.getByText("Unread focus")).toBeInTheDocument()
+    expect(screen.queryByText("Fix the widget")).not.toBeInTheDocument()
+    expect(screen.queryByText("Read related")).not.toBeInTheDocument()
+    expect(screen.queryByText(/^\+ /)).not.toBeInTheDocument()
+  })
+
   it("Esc turns Unreads only off as well as clearing the search", async () => {
     window.localStorage.setItem("worktree.unreadOnly", "true")
     window.history.replaceState({}, "", "/?q=kumquat")
