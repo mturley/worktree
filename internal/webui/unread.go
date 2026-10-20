@@ -117,13 +117,14 @@ func (ix *unreadIndex) fill(dto *resourceDTO) {
 // A resource with no cursor on either path is read: a missing cursor is
 // absence of evidence, and a dot that cannot be explained is worse than no
 // dot at all.
-func (ix *unreadIndex) IsUnread(resType, id, ts, externalTS, source, authorID string) bool {
+func (ix *unreadIndex) IsUnread(resType, id, ts, externalTS, eventType, source, authorID string) bool {
 	if ix == nil {
 		return false
 	}
-	// The user's own events are never unread: selfid.NotMineSQL's Go twin,
-	// so the unread-only SQL and this flag agree.
-	if selfid.IsMine(ix.mine, source, authorID) {
+	// The user's own events and CI runs still in progress are never unread:
+	// the Go twins of selfid.NotMineSQL and unread.NotPendingCISQL, so the
+	// unread-only SQL and this flag agree.
+	if selfid.IsMine(ix.mine, source, authorID) || unread.IsPendingCI(eventType) {
 		return false
 	}
 	if resType == "slack" {

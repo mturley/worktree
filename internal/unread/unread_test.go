@@ -372,3 +372,24 @@ func TestSummariesAndSlackCountsExcludeMyOwnEvents(t *testing.T) {
 		t.Fatalf("slack count = %d, want 1 (the user's own reply left out)", n)
 	}
 }
+
+func TestSummariesExcludePendingCI(t *testing.T) {
+	conn := openDB(t)
+	if err := unread.EnsureCursor(conn, "pr", "o/r#1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := unread.MarkRead(conn, "pr", "o/r#1", "2099-01-01T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	addTypedEvent(t, conn, "failed", "2099-01-02T00:00:00Z", "ci_failed", "pr", "o/r#1")
+	addTypedEvent(t, conn, "running", "2099-01-03T00:00:00Z", "ci_pending", "pr", "o/r#1")
+	addTypedEvent(t, conn, "wf-running", "2099-01-04T00:00:00Z", "ci_workflows_pending", "pr", "o/r#1")
+
+	sums, err := unread.Summaries(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := sums[unread.Key("pr", "o/r#1")]; s.Count != 1 || s.NewestTS != "2099-01-02T00:00:00Z" {
+		t.Fatalf("summary = %+v, want 1 unread (the failed run), newest failed", s)
+	}
+}

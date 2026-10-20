@@ -194,7 +194,8 @@ const unreadOnlyClause = `AND (
         SELECT 1 FROM watcher_resource_state rs
          WHERE rs.resource_type = 'slack' AND rs.resource_id = er.resource_id
            AND ` + unread.SlackNewerSQL + `))
-) AND ` + selfid.NotMineSQL + ` `
+) AND ` + selfid.NotMineSQL + `
+  AND ` + unread.NotPendingCISQL + ` `
 
 // handleGlobalTimeline: GET /api/timeline?archived=&limit=&before=&resource_types=&event_types=&unread_only=&q=
 func (s *Server) handleGlobalTimeline(w http.ResponseWriter, r *http.Request) {
@@ -533,7 +534,7 @@ func (e *eventEnricher) fillResource(te *TimelineEvent) {
 		te.ResourceTitle = dto.Title
 		te.Title = slackEventTitle(te.Source, te.Type, te.Title, dto)
 	}
-	te.Unread = e.unread.IsUnread(te.ResourceType, te.ResourceID, te.TS, te.ExternalTS, te.Source, te.authorID)
+	te.Unread = e.unread.IsUnread(te.ResourceType, te.ResourceID, te.TS, te.ExternalTS, te.Type, te.Source, te.authorID)
 	wts := e.worktreesWatching(te.ResourceType, te.ResourceID)
 	te.Worktrees = make([]string, 0, len(wts))
 	te.WorktreePaths = make([]string, 0, len(wts))

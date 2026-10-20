@@ -657,6 +657,15 @@ Events without an `author_id` (recorded before watcher v0.10.0, or
 authorless, such as CI) always count. Requires watcher ≥ v0.10.0, which
 added `watcher_events.author_id`.
 
+**CI runs still in progress are never unread.** `ci_pending` ("CI running")
+and `ci_workflows_pending` ("workflows running") are dropped the same way as
+the user's own events: `unread.NotPendingCISQL` in `Summaries`/`Counts` and
+the unread-only clause, `unread.IsPendingCI` in `IsUnread`. They still render
+in the feeds. Only completions (passed, failed, failing) count, and they do
+arrive as unread: the watcher rewrites the commit's CI bundle row in place,
+`type` and `ts` both, so the completed run lands past the cursor.
+Notifications already skip the same two types (`notifySkipTypes`).
+
 **Not the same model as agent-handler's.** Handler tracks unread per
 *subscriber*, so each session has its own read state. This is per *resource*
 and shared: marking a PR read in one worktree clears its dot in every worktree

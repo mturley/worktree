@@ -27,6 +27,21 @@ import (
 // over the same thread.
 var ErrSlackNotSupported = errors.New("slack threads keep their own read state")
 
+// NotPendingCISQL is the condition "this event is not a CI run still in
+// progress", over a watcher_events row aliased e. A running run is churn, not
+// news: only its completion (passed, failed, failing) is worth reading, and
+// the watcher rewrites the same bundle row in place — type AND ts — when the
+// run completes, so the completion still lands past the cursor as unread.
+// Left out exactly like the user's own events (selfid.NotMineSQL): still
+// rendered in the feeds, never counted or flagged unread.
+const NotPendingCISQL = `e.type NOT IN ('ci_pending','ci_workflows_pending')`
+
+// IsPendingCI is NotPendingCISQL's Go twin, for code that already holds an
+// event.
+func IsPendingCI(eventType string) bool {
+	return eventType == "ci_pending" || eventType == "ci_workflows_pending"
+}
+
 // Key is the map key used by Counts and Cursors. The separator is a NUL so it
 // cannot collide with a resource id (Slack ids contain ':', Jira ids '-',
 // PR ids '/' and '#').
@@ -100,8 +115,8 @@ type Summary struct {
 
 // Summaries is Counts with each resource's newest unread ts alongside. Same
 // rules as Counts, including the event types it excludes. The user's own
-// events (internal/selfid) never count, so NewestTS is the newest event
-// someone else caused.
+// events (internal/selfid) and CI runs still in progress (NotPendingCISQL)
+// never count, so NewestTS is the newest event worth reading.
 func Summaries(conn *sql.DB) (map[string]Summary, error) {
 	rows, err := conn.Query(`
 		SELECT er.resource_type, er.resource_id, COUNT(*), MAX(e.ts)
@@ -113,6 +128,7 @@ func Summaries(conn *sql.DB) (map[string]Summary, error) {
 		 WHERE e.ts > c.last_read_ts
 		   AND e.type NOT IN ('watch_started','watcher_error')
 		   AND ` + selfid.NotMineSQL + `
+		   AND ` + NotPendingCISQL + `
 		 GROUP BY er.resource_type, er.resource_id`)
 	if err != nil {
 		return nil, err
