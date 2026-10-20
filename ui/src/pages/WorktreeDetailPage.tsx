@@ -95,9 +95,12 @@ export function WorktreeDetailPage() {
   // What Esc does next, so its hint sits on the control that does the same:
   // the narrowing lines' links (their own hint), "← all resources", then the
   // way out — the banner's, when it is up (see escapeHint), else the logo's.
+  // The tab's home worktree is where Esc ends up, so on it there is no way
+  // out; a dismissed home banner drops the home (see useEscHome).
+  const escHome = useEscHome()
   const escClears = narrowing.search || narrowing.unread || narrowing.filters
   const escDeselects = !escClears && Boolean(selected)
-  const escLeaves = !escClears && !selected
+  const escLeaves = !escClears && !selected && escHome !== path
   usePublishEscLeaves(escLeaves)
   const bannerShown = useBannerShown()
   const wide = useIsWide()
@@ -546,12 +549,12 @@ export function WorktreeDetailPage() {
   // Wide, it takes the width the titles leave free; narrow, it sits right
   // after the editor button and the auto margin pushes the other actions right.
   // Esc with nothing left to clear: deselect, then leave — for the tab's
-  // home worktree when it has one and this is not it, else for the listing.
-  // A dismissed home banner drops the home from this (see useEscHome).
-  const escHome = useEscHome()
+  // home worktree when it has one, else for the listing. On the home
+  // worktree itself it stops at deselecting.
   const escapeIdle = () => {
     if (selected) { clear(); return }
-    navigate(escHome && escHome !== path ? homeWorktreeHref(escHome) : "/")
+    if (!escLeaves) return
+    navigate(escHome ? homeWorktreeHref(escHome) : "/")
   }
   const searchBar = (
     <div style={wide ? { flex: "1 1 160px", minWidth: 0 } : { flex: "1 1 160px", marginRight: "auto" }}>

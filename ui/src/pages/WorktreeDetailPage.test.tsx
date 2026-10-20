@@ -343,8 +343,20 @@ describe("WorktreeDetailPage selection", () => {
     await waitFor(() => expect(window.location.pathname).toBe("/"))
   })
 
-  it("leaves its own home worktree for the listing on Esc", async () => {
+  it("stays on its own home worktree on Esc, with no Esc hint", async () => {
     window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?home=${encodeURIComponent("/wt/foo")}`)
+    setViewport("wide")
+    wrap()
+    await screen.findByRole("heading", { name: "foo", level: 4 })
+    fireEvent.keyDown(document.body, { key: "Escape" })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/foo")}`)
+    expect(screen.getByRole("link", { name: "All worktrees" }).querySelector("kbd")).toBeNull()
+  })
+
+  it("leaves its own home worktree for the listing on Esc once the home banner is dismissed", async () => {
+    window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?home=${encodeURIComponent("/wt/foo")}`)
+    window.sessionStorage.setItem("worktree.banner.dismissed.home", "1")
     setViewport("wide")
     wrap()
     await screen.findByRole("heading", { name: "foo", level: 4 })
