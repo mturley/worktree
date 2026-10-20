@@ -12,17 +12,21 @@ const wrap = (hasUnread: boolean) =>
     </MantineProvider>,
   )
 
+const thumb = () => document.querySelector<HTMLElement>(".mantine-Switch-thumb")!
+
 describe("UnreadOnlyToggle", () => {
-  it("shows the unread dot only when the page has unreads", () => {
+  it("paints the thumb blue only when the page has unreads", () => {
     wrap(false)
-    expect(screen.queryByRole("img", { name: "has unreads" })).not.toBeInTheDocument()
+    expect(thumb().style.backgroundColor).toBe("")
     cleanup()
     wrap(true)
-    expect(screen.getByRole("img", { name: "has unreads" })).toBeInTheDocument()
+    expect(thumb().style.backgroundColor).toBe("var(--mantine-color-blue-5)")
   })
 
-  it("shows the U key hint", () => {
+  it("shows the U key hint before the label", () => {
     wrap(false)
-    expect(screen.getByText("U").tagName).toBe("KBD")
+    const hint = screen.getByText("U")
+    expect(hint.tagName).toBe("KBD")
+    expect(hint.compareDocumentPosition(screen.getByText("Unreads only")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })
