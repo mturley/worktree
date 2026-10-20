@@ -7,6 +7,7 @@ import { useCmux } from "../api/cmux"
 import type { CmuxWorkspace } from "../api/types"
 import { ACTION_MIN_WIDTH, ColorBar } from "./CmuxWorkspaceSection"
 import { CreateWorkspaceModal } from "./CreateWorkspaceModal"
+import { UnreadMarkerDot } from "./UnreadMarkerDot"
 
 /**
  * The detail page's header splits what CmuxWorkspaceSection renders as one
@@ -21,17 +22,19 @@ function useMatches(path: string): CmuxWorkspace[] | null {
   return cmux.data.matches?.[path] ?? []
 }
 
-export function CmuxWorkspaceTitles({ path }: { path: string }) {
+export function CmuxWorkspaceTitles({ path, unread = false }: { path: string; unread?: boolean }) {
   const matches = useMatches(path)
   if (!matches?.length) return null
   return (
     <>
-      {matches.map((ws) => (
+      {matches.map((ws, i) => (
         <Group key={ws.ref} gap={8} wrap="nowrap" style={{ minWidth: 0 }}>
           <ColorBar color={ws.color} />
           {/* The headline: the workspace is how you think about the work, so
               the worktree name steps down beneath it. */}
           <Title order={4} style={{ minWidth: 0, overflowWrap: "anywhere" }}>{ws.title}</Title>
+          {/* The worktree's unread dot, once, on the first headline. */}
+          {unread && i === 0 && <UnreadMarkerDot label="worktree has unreads" />}
         </Group>
       ))}
     </>

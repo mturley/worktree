@@ -14,7 +14,7 @@ const wrap = () => {
   return render(
     <QueryClientProvider client={new QueryClient()}>
       <MantineProvider>
-        <HomeHeader search={<input aria-label="Search" />} unreadOnly={false} onUnreadOnlyChange={() => {}} />
+        <HomeHeader search={<input aria-label="Search" />} unreadOnly={false} onUnreadOnlyChange={() => {}} hasUnread={false} />
       </MantineProvider>
     </QueryClientProvider>,
   )

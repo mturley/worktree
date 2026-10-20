@@ -12,12 +12,12 @@ import { useIsWide } from "../hooks/useIsWide"
  * row so the search keeps its width.
  */
 export function HomeHeader({
-  search, unreadOnly, onUnreadOnlyChange,
-}: { search: React.ReactNode; unreadOnly: boolean; onUnreadOnlyChange: (v: boolean) => void }) {
+  search, unreadOnly, onUnreadOnlyChange, hasUnread,
+}: { search: React.ReactNode; unreadOnly: boolean; onUnreadOnlyChange: (v: boolean) => void; hasUnread: boolean }) {
   const wide = useIsWide()
   const toggles = (
     <Group gap="lg" wrap="nowrap">
-      <UnreadOnlyToggle value={unreadOnly} onChange={onUnreadOnlyChange} />
+      <UnreadOnlyToggle value={unreadOnly} onChange={onUnreadOnlyChange} hasUnread={hasUnread} />
       <FollowCmuxToggle />
     </Group>
   )

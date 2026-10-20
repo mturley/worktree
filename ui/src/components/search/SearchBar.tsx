@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { CloseButton, Group, Kbd, TextInput } from "@mantine/core"
 import { IconSearch } from "@tabler/icons-react"
 import { SearchSuggestions } from "./SearchSuggestions"
+import { isEditable, isHidden } from "../../lib/keyTargets"
 import type { ResourceDTO, TimelineEvent, WorktreeSummary } from "../../api/types"
 
 export interface Suggestion {
@@ -22,27 +23,6 @@ export type SuggestionItem =
   | { kind: "worktree"; w: WorktreeSummary }
   | { kind: "resource"; r: ResourceDTO }
   | { kind: "event"; e: TimelineEvent }
-
-// Inputs you type into. A switch or checkbox is an <input> too, and keeps
-// focus after a click, but Esc and / mean nothing to it.
-const TEXT_INPUT_TYPES = new Set(["text", "search", "email", "url", "tel", "password", "number"])
-
-function isEditable(el: Element | null): boolean {
-  if (!el) return false
-  const tag = el.tagName
-  if (tag === "INPUT") return TEXT_INPUT_TYPES.has((el as HTMLInputElement).type)
-  return tag === "TEXTAREA" || tag === "SELECT" || (el as HTMLElement).isContentEditable
-}
-
-/** Hidden (or inside something hidden): a closed or exiting overlay owns no Esc. */
-function isHidden(el: Element): boolean {
-  if (el.closest('[aria-hidden="true"], [hidden]')) return true
-  for (let n: Element | null = el; n; n = n.parentElement) {
-    const st = getComputedStyle(n)
-    if (st.display === "none" || st.visibility === "hidden") return true
-  }
-  return false
-}
 
 /**
  * Whether an Esc belongs to something other than the search: an open

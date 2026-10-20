@@ -126,7 +126,22 @@ describe("WorktreeDetailPage header", () => {
     wrap()
     const title = await screen.findByRole("heading", { name: "foo", level: 4 })
     const dot = screen.getByRole("img", { name: "worktree has unreads" })
-    expect(title.compareDocumentPosition(dot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(title.parentElement).toContainElement(dot)
+  })
+
+  it("puts the unread dot on the cmux workspace title when there is one", async () => {
+    vi.spyOn(api, "cmux").mockResolvedValue({
+      available: true,
+      matches: { "/wt/foo": [{ ref: "workspace:1", title: "My workspace", color: "#AD1457", selected: false }] },
+    })
+    summaryMock.hasUnread = true
+    setViewport("wide")
+    wrap()
+    const workspace = await screen.findByRole("heading", { name: "My workspace", level: 4 })
+    const dots = screen.getAllByRole("img", { name: "worktree has unreads" })
+    expect(dots).toHaveLength(1)
+    expect(workspace.parentElement).toContainElement(dots[0])
+    vi.restoreAllMocks()
   })
 
   it("moves the header toolbar to its own row when narrow", async () => {

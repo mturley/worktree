@@ -16,6 +16,8 @@ import { TimelineFeed } from "../components/TimelineFeed"
 import { MarkAllReadButton } from "../components/MarkAllReadButton"
 import { ArchivedToggle } from "../components/ArchivedToggle"
 import { useUnreadOnly } from "../hooks/useUnreadOnly"
+import { useUnreadOnlyHotkey } from "../hooks/useUnreadOnlyHotkey"
+import { unreadBadge } from "../lib/unreadBadge"
 import { SourceFilter } from "../components/SourceFilter"
 import { EventTypeFilter } from "../components/EventTypeFilter"
 import { useActivityFilter } from "../hooks/useActivityFilter"
@@ -63,6 +65,7 @@ export function HomePage() {
   // Shared with every worktree page and every other tab; narrows both the
   // worktree list and the activity feed.
   const [unreadOnly, setUnreadOnly] = useUnreadOnly()
+  useUnreadOnlyHotkey(unreadOnly, setUnreadOnly)
   const [newOpen, setNewOpen] = useState(false)
   // Wide only: which of Activity and Resources fills the right column.
   const [rightTab, setRightTab] = useState<RightTab>("timeline")
@@ -366,7 +369,7 @@ export function HomePage() {
       escapeActive={narrowing.search || narrowing.unread || narrowing.filters}
     />
   )
-  const header = <HomeHeader search={searchBar} unreadOnly={unreadOnly} onUnreadOnlyChange={setUnreadOnly} />
+  const header = <HomeHeader search={searchBar} unreadOnly={unreadOnly} onUnreadOnlyChange={setUnreadOnly} hasUnread={unreadBadge(wts.data).unread} />
   const detailsModal = (
     <>
       <EventDetailsModal e={pickedEvent} onClose={() => setPickedEvent(null)} />

@@ -38,6 +38,7 @@ import { WatcherLogButton } from "../components/WatcherLogButton"
 import { MarkAllReadButton } from "../components/MarkAllReadButton"
 import { UnreadOnlyToggle } from "../components/UnreadOnlyToggle"
 import { useUnreadOnly } from "../hooks/useUnreadOnly"
+import { useUnreadOnlyHotkey } from "../hooks/useUnreadOnlyHotkey"
 import { hasUnread } from "../lib/unread"
 import { matchesSources } from "../lib/sourceFilter"
 import { ThreadActionsContext } from "../components/slack/ThreadActionsContext"
@@ -67,6 +68,7 @@ export function WorktreeDetailPage() {
   // and the worktree's unified feed; a selected resource's own feed is left
   // whole, its unread events already together at the top under the divider.
   const [unreadOnly, setUnreadOnly] = useUnreadOnly()
+  useUnreadOnlyHotkey(unreadOnly, setUnreadOnly)
   // Narrows only this worktree's resources and activity; the query lives in
   // the URL, shared with the resource's own feed (ResourceDetailPane).
   const search = useSearchQuery()
@@ -271,7 +273,7 @@ export function WorktreeDetailPage() {
       )}
       toolbar={
         <Group gap="lg" align="flex-start">
-          <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} />
+          <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} hasUnread={!!summary?.has_unread} />
           <NotifySwitch
             label="Notify on all"
             tooltip="Notify on new events for all resources in this worktree"
@@ -643,40 +645,39 @@ export function WorktreeDetailPage() {
                   with role=button rather than a <button>, which may not hold
                   the headings. With none of those there is nothing to reset,
                   so it is plain text. */}
-              <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
-                <Stack
-                  gap={2}
-                  style={{ minWidth: 0 }}
-                  {...(resettable && {
-                    role: "button",
-                    tabIndex: 0,
-                    title: narrowed ? "Show all resources" : "Show notes",
-                    className: "detail-titles",
-                    onClick: showOverview,
-                    onKeyDown: (e: KeyboardEvent) => {
-                      if (e.key !== "Enter" && e.key !== " ") return
-                      e.preventDefault()
-                      showOverview()
-                    },
-                  })}
-                >
-                  <CmuxWorkspaceTitles path={path} />
-                  <Group gap="xs" wrap="wrap" style={{ minWidth: 0 }}>
-                    <Title
-                      order={hasWorkspace ? 6 : 4}
-                      c={hasWorkspace ? "dimmed" : undefined}
-                      style={{ overflowWrap: "anywhere" }}
-                    >
-                      {name}
-                    </Title>
-                    {summary && !summary.on_disk && <Badge size="xs" color="red">missing</Badge>}
-                  </Group>
-                </Stack>
-                {/* Static, unlike the logo: this worktree's own unreads, which
-                    the logo deliberately leaves out. Outside the titles so it
-                    is not part of their reset button. */}
-                {summary?.has_unread && <UnreadMarkerDot label="worktree has unreads" />}
-              </Group>
+              <Stack
+                gap={2}
+                style={{ minWidth: 0 }}
+                {...(resettable && {
+                  role: "button",
+                  tabIndex: 0,
+                  title: narrowed ? "Show all resources" : "Show notes",
+                  className: "detail-titles",
+                  onClick: showOverview,
+                  onKeyDown: (e: KeyboardEvent) => {
+                    if (e.key !== "Enter" && e.key !== " ") return
+                    e.preventDefault()
+                    showOverview()
+                  },
+                })}
+              >
+                {/* The unread dot rides on the headline: the workspace when there is
+                    one, else the worktree name. Static, unlike the logo:
+                    these are this worktree's own unreads, which the logo
+                    deliberately leaves out. */}
+                <CmuxWorkspaceTitles path={path} unread={!!summary?.has_unread} />
+                <Group gap="xs" wrap="wrap" style={{ minWidth: 0 }}>
+                  <Title
+                    order={hasWorkspace ? 6 : 4}
+                    c={hasWorkspace ? "dimmed" : undefined}
+                    style={{ overflowWrap: "anywhere" }}
+                  >
+                    {name}
+                  </Title>
+                  {!hasWorkspace && summary?.has_unread && <UnreadMarkerDot label="worktree has unreads" />}
+                  {summary && !summary.on_disk && <Badge size="xs" color="red">missing</Badge>}
+                </Group>
+              </Stack>
               {wide && editorButton}
               {wide && searchBar}
             </Group>
