@@ -2,6 +2,8 @@ import { useEffect, useState } from "react"
 import { Anchor, Box, Button, Center, Group, Stack, Tabs, Text } from "@mantine/core"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import type { ResourceDTO } from "../api/types"
+import { KeyHint } from "./search/KeyHint"
+import { useButtonHotkey } from "../hooks/useButtonHotkey"
 import { useWorktreeTimeline } from "../hooks/useTimeline"
 import { useSearchQuery } from "../hooks/useSearchQuery"
 import { SearchSummary } from "./search/SearchSummary"
@@ -33,6 +35,8 @@ interface ResourceDetailPaneProps {
   resource: ResourceDTO
   /** Supplied only on narrow viewports, where this pane is a drilldown. */
   onBack?: () => void
+  /** Show the Esc hint on the back link: Esc's next step is to deselect. */
+  escHint?: boolean
   onRemoved?: () => void
   /** Refetch the worktree's resources (used after a Slack details save). */
   onResourceChanged?: () => void
@@ -114,6 +118,8 @@ function TimelineBody({
       void qc.invalidateQueries({ queryKey: ["timeline"] })
     },
   })
+  // R presses it while it is showing (see useButtonHotkey).
+  const markReadRef = useButtonHotkey("r", () => markRead.mutate(), unreadCount > 0 && !!newestTS && !markRead.isPending)
 
   return (
     <Tabs
@@ -200,6 +206,8 @@ function TimelineBody({
               loading={markRead.isPending}
               disabled={!newestTS}
               onClick={() => markRead.mutate()}
+              ref={markReadRef}
+              rightSection={<KeyHint decorative>R</KeyHint>}
               style={{ alignSelf: "flex-start" }}
             >
               {`Mark ${unreadCount} ${unreadCount === 1 ? "event" : "events"} as read`}
@@ -265,6 +273,7 @@ export function ResourceDetailPane({
   path,
   resource,
   onBack,
+  escHint,
   onRemoved,
   onResourceChanged,
   topInset,
@@ -277,9 +286,22 @@ export function ResourceDetailPane({
       {onBack && (
         // Styled as a link to match "← all worktrees", but a <button>
         // underneath: it deselects rather than navigating somewhere new.
-        <Anchor component="button" type="button" size="sm" onClick={onBack} style={{ alignSelf: "flex-start" }}>
-          ← all resources
-        </Anchor>
+        // Pinned, the card below pulls itself up by md over the gap above it
+        // (see pinnedStyle), which is only the Stack's sm here — so pad the
+        // row to md, or the opaque card clips the bottom of the Esc hint.
+        <Group
+          gap={6}
+          wrap="nowrap"
+          style={{
+            alignSelf: "flex-start",
+            ...(stickyTop !== undefined && { paddingBottom: "calc(var(--mantine-spacing-md) - var(--mantine-spacing-sm))" }),
+          }}
+        >
+          <Anchor component="button" type="button" size="sm" onClick={onBack}>
+            ← all resources
+          </Anchor>
+          {escHint && <KeyHint>Esc</KeyHint>}
+        </Group>
       )}
       {/* Its service's watcher is off, or failing: say so, with a way to fix it. */}
       <WatcherAlert type={resource.type} />

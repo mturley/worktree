@@ -44,6 +44,7 @@ export function SearchBar({
   suggestions,
   onEscape,
   escapeActive,
+  onEscapeIdle,
 }: {
   value: string
   onChange: (q: string) => void
@@ -56,6 +57,12 @@ export function SearchBar({
   onEscape?: () => void
   /** Whether Esc has anything to clear; defaults to "there is a query". */
   escapeActive?: boolean
+  /**
+   * What Esc does on the page with nothing to clear: the page's next step
+   * back out (deselect, then leave for home). Not from inside the bar, where
+   * an Esc with nothing to clear only leaves the bar.
+   */
+  onEscapeIdle?: () => void
 }) {
   const ref = useRef<HTMLInputElement>(null)
   const canEscape = escapeActive ?? Boolean(value)
@@ -70,13 +77,14 @@ export function SearchBar({
         ref.current?.focus()
         return
       }
-      if (e.key === "Escape" && canEscape && document.activeElement !== ref.current && !escOwnedElsewhere(ref.current)) {
-        escape()
+      if (e.key === "Escape" && document.activeElement !== ref.current && !escOwnedElsewhere(ref.current)) {
+        if (canEscape) escape()
+        else onEscapeIdle?.()
       }
     }
     document.addEventListener("keydown", onKey)
     return () => document.removeEventListener("keydown", onKey)
-  }, [canEscape, escape])
+  }, [canEscape, escape, onEscapeIdle])
 
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(-1)

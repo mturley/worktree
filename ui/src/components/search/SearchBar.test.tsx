@@ -44,6 +44,23 @@ describe("SearchBar escape hatch", () => {
     fireEvent.keyDown(document.body, { key: "Escape" })
     expect(onEscape).not.toHaveBeenCalled()
   })
+  it("calls onEscapeIdle instead when there's nothing to clear", () => {
+    const onEscape = vi.fn()
+    const onEscapeIdle = vi.fn()
+    render(<MantineProvider><SearchBar value="" onChange={() => {}} onEscape={onEscape} escapeActive={false} onEscapeIdle={onEscapeIdle} /></MantineProvider>)
+    fireEvent.keyDown(document.body, { key: "Escape" })
+    expect(onEscapeIdle).toHaveBeenCalledTimes(1)
+    expect(onEscape).not.toHaveBeenCalled()
+  })
+  it("never calls onEscapeIdle from inside the bar, where Esc only leaves it", () => {
+    const onEscapeIdle = vi.fn()
+    render(<MantineProvider><SearchBar value="" onChange={() => {}} escapeActive={false} onEscapeIdle={onEscapeIdle} /></MantineProvider>)
+    const bar = screen.getByRole("searchbox")
+    bar.focus()
+    fireEvent.keyDown(bar, { key: "Escape" })
+    expect(onEscapeIdle).not.toHaveBeenCalled()
+    expect(document.activeElement).not.toBe(bar)
+  })
   it("Esc in the bar calls onEscape too, then blurs on the next press", async () => {
     const onEscape = vi.fn()
     const { rerender } = render(

@@ -297,6 +297,51 @@ describe("WorktreeDetailPage pinned cards", () => {
 })
 
 describe("WorktreeDetailPage selection", () => {
+  it("backs out with Esc: deselects first, then leaves for the listing", async () => {
+    window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?resource=pr:o%2Fr%231`)
+    setViewport("wide")
+    wrap()
+    await screen.findByRole("tab", { name: /Activity/ })
+    fireEvent.keyDown(document.body, { key: "Escape" })
+    await waitFor(() => expect(new URLSearchParams(window.location.search).has("resource")).toBe(false))
+    expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/foo")}`)
+    fireEvent.keyDown(document.body, { key: "Escape" })
+    await waitFor(() => expect(window.location.pathname).toBe("/"))
+  })
+
+  it("hints Esc on whatever it will do next", async () => {
+    window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?resource=pr:o%2Fr%231`)
+    setViewport("wide")
+    wrap()
+    const back = await screen.findByRole("button", { name: "← all resources" })
+    const backHome = () => screen.getByRole("link", { name: "All worktrees" })
+    // A selection: the hint is beside "← all resources", not on the logo.
+    expect(back.parentElement!.querySelector("kbd")?.textContent).toBe("Esc")
+    expect(backHome().querySelector("kbd")).toBeNull()
+
+    fireEvent.keyDown(document.body, { key: "Escape" })
+    // Nothing left but leaving, and no banner: the logo carries it.
+    await waitFor(() => expect(backHome().querySelector("kbd")?.textContent).toBe("Esc"))
+  })
+
+  it("leaves for the tab's home worktree on Esc when this is another one", async () => {
+    window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?home=${encodeURIComponent("/wt/home")}`)
+    setViewport("wide")
+    wrap()
+    await screen.findByRole("heading", { name: "foo", level: 4 })
+    fireEvent.keyDown(document.body, { key: "Escape" })
+    await waitFor(() => expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/home")}`))
+  })
+
+  it("leaves its own home worktree for the listing on Esc", async () => {
+    window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?home=${encodeURIComponent("/wt/foo")}`)
+    setViewport("wide")
+    wrap()
+    await screen.findByRole("heading", { name: "foo", level: 4 })
+    fireEvent.keyDown(document.body, { key: "Escape" })
+    await waitFor(() => expect(window.location.pathname).toBe("/"))
+  })
+
   it("selects a resource on click and records it in the URL", async () => {
     setViewport("wide")
     const user = userEvent.setup()

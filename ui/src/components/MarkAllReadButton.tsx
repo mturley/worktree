@@ -6,6 +6,8 @@ import { api } from "../api/client"
 import { markRead as markThreadRead } from "../api/slackApi"
 import { useGlobalTimeline, useWorktreeTimeline } from "../hooks/useTimeline"
 import { useIsWide } from "../hooks/useIsWide"
+import { useButtonHotkey } from "../hooks/useButtonHotkey"
+import { KeyHint } from "./search/KeyHint"
 import { slackTabFromResource } from "./SlackThreadPane"
 import { TimelineFeed } from "./TimelineFeed"
 
@@ -143,6 +145,10 @@ export function MarkAllReadButton({ resources, feed }: { resources: ResourceDTO[
     },
   })
 
+  // R opens the preview, and R again in it confirms (see useButtonHotkey).
+  const openRef = useButtonHotkey("r", () => openModal(), groups.length > 0 && !opened)
+  const confirmRef = useButtonHotkey("r", () => markAll.mutate(), opened && selected.length > 0 && !markAll.isPending)
+
   if (groups.length === 0 && !opened) return null
 
   const openModal = () => {
@@ -170,6 +176,8 @@ export function MarkAllReadButton({ resources, feed }: { resources: ResourceDTO[
           color="blue"
           vars={() => ({ root: { "--button-hover": "var(--mantine-color-blue-4)" } })}
           onClick={openModal}
+          ref={openRef}
+          rightSection={<KeyHint decorative>R</KeyHint>}
         >
           Mark all read
         </Button>
@@ -210,6 +218,8 @@ export function MarkAllReadButton({ resources, feed }: { resources: ResourceDTO[
               loading={markAll.isPending}
               disabled={selected.length === 0}
               onClick={() => markAll.mutate()}
+              ref={confirmRef}
+              rightSection={<KeyHint decorative>R</KeyHint>}
             >
               Mark read
             </Button>

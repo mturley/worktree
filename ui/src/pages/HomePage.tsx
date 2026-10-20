@@ -17,6 +17,8 @@ import { MarkAllReadButton } from "../components/MarkAllReadButton"
 import { ArchivedToggle } from "../components/ArchivedToggle"
 import { useUnreadOnly } from "../hooks/useUnreadOnly"
 import { useUnreadOnlyHotkey } from "../hooks/useUnreadOnlyHotkey"
+import { usePublishEscLeaves } from "../lib/escapeHint"
+import { getHomeWorktree, homeWorktreeHref } from "../lib/homeWorktree"
 import { unreadBadge } from "../lib/unreadBadge"
 import { SourceFilter } from "../components/SourceFilter"
 import { EventTypeFilter } from "../components/EventTypeFilter"
@@ -359,14 +361,21 @@ export function HomePage() {
         : selectEventResource({ type: e.resource_type, id: e.resource_id }, e)),
     },
   })
-  // Esc sees everything: clears the search and turns Unreads only off.
+  // Esc sees everything: clears the search and turns Unreads only off. With
+  // nothing to clear it goes to the tab's home worktree, when it has one —
+  // the listing is otherwise the top, with nowhere further to back out to.
+  // The banner pointing there carries its hint (see escapeHint).
+  const escClears = narrowing.search || narrowing.unread || narrowing.filters
+  const home = getHomeWorktree()
+  usePublishEscLeaves(!escClears && home !== null)
   const searchBar = (
     <SearchBar
       value={search.q}
       onChange={search.setQ}
       suggestions={suggestions}
       onEscape={narrowing.clearAll}
-      escapeActive={narrowing.search || narrowing.unread || narrowing.filters}
+      escapeActive={escClears}
+      onEscapeIdle={home ? () => navigate(homeWorktreeHref(home)) : undefined}
     />
   )
   const header = <HomeHeader search={searchBar} unreadOnly={unreadOnly} onUnreadOnlyChange={setUnreadOnly} hasUnread={unreadBadge(wts.data).unread} />

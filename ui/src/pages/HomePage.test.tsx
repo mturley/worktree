@@ -238,6 +238,23 @@ describe("HomePage worktree sorting", () => {
   })
 })
 
+describe("HomePage Esc", () => {
+  it("goes to the tab's home worktree with nothing to clear", async () => {
+    window.history.replaceState({}, "", `/?home=${encodeURIComponent("/wt/home")}`)
+    setViewport("wide")
+    wrap()
+    fireEvent.keyDown(document.body, { key: "Escape" })
+    await waitFor(() => expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/home")}`))
+  })
+
+  it("stays put with nothing to clear and no home worktree", () => {
+    setViewport("wide")
+    wrap()
+    fireEvent.keyDown(document.body, { key: "Escape" })
+    expect(window.location.pathname).toBe("/")
+  })
+})
+
 describe("HomePage unread-only toggle", () => {
   it("is off by default and narrows the feed to unread events when switched on", async () => {
     setViewport("wide")

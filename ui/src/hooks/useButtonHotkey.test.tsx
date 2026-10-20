@@ -1,0 +1,52 @@
+import { afterEach, describe, it, expect, vi } from "vitest"
+import { cleanup, fireEvent, render } from "@testing-library/react"
+import { useButtonHotkey } from "./useButtonHotkey"
+
+function Btn({ onPress, enabled = true, hidden = false }: { onPress: () => void; enabled?: boolean; hidden?: boolean }) {
+  const ref = useButtonHotkey("r", onPress, enabled)
+  return <div hidden={hidden}><button ref={ref}>Mark read</button></div>
+}
+
+afterEach(() => {
+  cleanup()
+  document.body.innerHTML = ""
+})
+
+describe("useButtonHotkey", () => {
+  it("presses on R, either case, while enabled", () => {
+    const onPress = vi.fn()
+    const view = render(<Btn onPress={onPress} />)
+    fireEvent.keyDown(document, { key: "r" })
+    fireEvent.keyDown(document, { key: "R" })
+    expect(onPress).toHaveBeenCalledTimes(2)
+    view.rerender(<Btn onPress={onPress} enabled={false} />)
+    fireEvent.keyDown(document, { key: "r" })
+    expect(onPress).toHaveBeenCalledTimes(2)
+  })
+
+  it("ignores Cmd+R, typing, and a button that is not on screen", () => {
+    const onPress = vi.fn()
+    const view = render(<><Btn onPress={onPress} hidden /><input aria-label="field" /></>)
+    fireEvent.keyDown(document, { key: "r" })
+    fireEvent.keyDown(document, { key: "r", metaKey: true })
+    view.rerender(<><Btn onPress={onPress} /><input aria-label="field" /></>)
+    const field = view.getByLabelText("field")
+    field.focus()
+    fireEvent.keyDown(field, { key: "r" })
+    expect(onPress).not.toHaveBeenCalled()
+  })
+
+  it("under an open dialog, answers only from inside it", () => {
+    const page = vi.fn()
+    const inDialog = vi.fn()
+    render(
+      <>
+        <Btn onPress={page} />
+        <div role="dialog"><Btn onPress={inDialog} /></div>
+      </>,
+    )
+    fireEvent.keyDown(document, { key: "r" })
+    expect(page).not.toHaveBeenCalled()
+    expect(inDialog).toHaveBeenCalledTimes(1)
+  })
+})

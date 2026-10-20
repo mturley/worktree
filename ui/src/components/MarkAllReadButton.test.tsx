@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest"
-import { render, cleanup, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, cleanup, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -140,6 +140,15 @@ describe("MarkAllReadButton", () => {
     expect(markThreadRead).toHaveBeenCalledWith("C1", "1.2", "1790000000.000100")
     expect(markThreadRead).toHaveBeenCalledWith("C2", "3.4", "1790000009.000900")
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
+  })
+
+  it("opens on R, and R again in the preview marks them read", async () => {
+    wrap(everything())
+    fireEvent.keyDown(document, { key: "r" })
+    await screen.findByRole("dialog")
+    fireEvent.keyDown(document, { key: "r" })
+    await waitFor(() => expect(markResourceRead).toHaveBeenCalledTimes(4))
+    expect(markThreadRead).toHaveBeenCalledTimes(2)
   })
 
   it("skips a type that is unchecked", async () => {

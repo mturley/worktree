@@ -2,8 +2,10 @@ import { useState } from "react"
 import { Button, Group } from "@mantine/core"
 import { IconArrowLeft } from "@tabler/icons-react"
 import { useLocation } from "wouter"
+import { KeyHint } from "./search/KeyHint"
 import { useCmux } from "../api/cmux"
 import { dismissBanner, isBannerDismissed, type BannerVariant } from "../lib/bannerDismiss"
+import { useEscLeaves, usePublishBannerShown } from "../lib/escapeHint"
 import {
   getHomeWorktree,
   homeWorktreeHref,
@@ -50,39 +52,47 @@ export function HomeWorktreeBanner() {
   }
 
   const home = getHomeWorktree()
-  if (home && shouldShowHomeBanner(home, location)) {
-    if (dismissed.home) return null
+  const variant: BannerVariant | null =
+    home && shouldShowHomeBanner(home, location) ? "home"
+      : shouldShowAllWorktreesBanner(home, location, cmux.data) ? "all"
+        : null
+  const shown = variant !== null && !dismissed[variant]
+  usePublishBannerShown(shown)
+  // Esc goes where this banner does whenever the page says Esc leaves: the
+  // home worktree from any other, the listing from an overview workspace.
+  const escLeaves = useEscLeaves()
+
+  if (!shown) return null
+  if (variant === "home" && home) {
     return (
       <NavBanner
         label={`Back to current worktree: ${worktreeName(home)}`}
         onBack={() => navigate(homeWorktreeHref(home))}
         onDismiss={dismiss("home")}
+        escHint={escLeaves}
       />
     )
   }
-
-  if (shouldShowAllWorktreesBanner(home, location, cmux.data)) {
-    if (dismissed.all) return null
-    return (
-      <NavBanner
-        label="Back to all worktrees"
-        onBack={() => navigate("/")}
-        onDismiss={dismiss("all")}
-      />
-    )
-  }
-
-  return null
+  return (
+    <NavBanner
+      label="Back to all worktrees"
+      onBack={() => navigate("/")}
+      onDismiss={dismiss("all")}
+      escHint={escLeaves}
+    />
+  )
 }
 
 interface NavBannerProps {
   label: string
   onBack: () => void
   onDismiss: () => void
+  /** Show the Esc hint: Esc's next step is this banner's way back. */
+  escHint: boolean
 }
 
 /** The bar itself: a wide way back, and a quiet way to be rid of it. */
-function NavBanner({ label, onBack, onDismiss }: NavBannerProps) {
+function NavBanner({ label, onBack, onDismiss, escHint }: NavBannerProps) {
   return (
     // Full width and left-aligned so it reads as a bar belonging to the page
     // rather than a floating control, and lands where the eye starts. The
@@ -99,6 +109,7 @@ function NavBanner({ label, onBack, onDismiss }: NavBannerProps) {
         // but only just. It is a signpost, not a headline.
         styles={{ label: { fontSize: "var(--mantine-font-size-xl)" } }}
         leftSection={<IconArrowLeft size={22} />}
+        rightSection={escHint && <span aria-hidden="true" style={{ display: "inline-flex" }}><KeyHint>Esc</KeyHint></span>}
         onClick={onBack}
       >
         {label}

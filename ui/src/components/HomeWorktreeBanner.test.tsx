@@ -6,6 +6,7 @@ import { MantineProvider } from "@mantine/core"
 import { HomeWorktreeBanner } from "./HomeWorktreeBanner"
 import { captureHomeWorktree } from "../lib/homeWorktree"
 import { api } from "../api/client"
+import { usePublishEscLeaves } from "../lib/escapeHint"
 
 const WT = "/Users/me/.worktrees/repo/my-branch"
 const wrap = () => {
@@ -156,5 +157,31 @@ describe("HomeWorktreeBanner dismissal", () => {
     window.sessionStorage.removeItem("worktree.homePath")
     wrap()
     expect(await screen.findByRole("button", backAll)).toBeInTheDocument()
+  })
+})
+
+describe("HomeWorktreeBanner Esc hint", () => {
+  function Leaving() {
+    usePublishEscLeaves(true)
+    return null
+  }
+
+  it("shows Esc only while the page says Esc leaves it", async () => {
+    homedAt("/")
+    const view = wrap()
+    expect((await screen.findByRole("button", backHome)).querySelector("kbd")).toBeNull()
+    view.unmount()
+
+    homedAt("/")
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <MantineProvider>
+        <QueryClientProvider client={qc}>
+          <Leaving />
+          <HomeWorktreeBanner />
+        </QueryClientProvider>
+      </MantineProvider>,
+    )
+    expect((await screen.findByRole("button", backHome)).querySelector("kbd")?.textContent).toBe("Esc")
   })
 })

@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { ActionIcon, Button, Group, Text, Tooltip } from '@mantine/core'
 import { relativeFromNow } from '../../lib/relativeTime'
 import { CopyLinkIcon } from '../CopyLinkIcon'
+import { KeyHint } from '../search/KeyHint'
+import { useButtonHotkey } from '../../hooks/useButtonHotkey'
 
 interface ActionBarProps {
   onMarkRead: () => void
@@ -37,6 +39,9 @@ export function ActionBar({
   now,
 }: ActionBarProps) {
   const [copied, setCopied] = useState(false)
+  // R marks the thread read, as the button does — an explicit action, so it
+  // keeps to "never auto-mark threads read" (see useButtonHotkey).
+  const markReadRef = useButtonHotkey('r', onMarkRead, !markReadDisabled && !markReadLoading)
 
   function handleCopyLink() {
     if (openInSlackDisabled) {
@@ -54,6 +59,8 @@ export function ActionBar({
           size="xs"
           variant="light"
           onClick={onMarkRead}
+          ref={markReadRef}
+          rightSection={<KeyHint decorative>R</KeyHint>}
           loading={markReadLoading}
           disabled={markReadDisabled}
           styles={{ root: { flexShrink: 0 }, label: { whiteSpace: 'nowrap' } }}

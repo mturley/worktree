@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { Anchor, Badge, Box, Grid, Group, MantineThemeProvider, Stack, Tabs, Title } from "@mantine/core"
-import { Link, useRoute } from "wouter"
+import { Link, useLocation, useRoute } from "wouter"
 import { useQueryClient } from "@tanstack/react-query"
 import { api } from "../api/client"
 import { NotifySwitch } from "../components/NotifySwitch"
@@ -39,13 +39,15 @@ import { MarkAllReadButton } from "../components/MarkAllReadButton"
 import { UnreadOnlyToggle } from "../components/UnreadOnlyToggle"
 import { useUnreadOnly } from "../hooks/useUnreadOnly"
 import { useUnreadOnlyHotkey } from "../hooks/useUnreadOnlyHotkey"
+import { useBannerShown, usePublishEscLeaves } from "../lib/escapeHint"
+import { KeyHint } from "../components/search/KeyHint"
 import { hasUnread } from "../lib/unread"
 import { matchesSources } from "../lib/sourceFilter"
 import { ThreadActionsContext } from "../components/slack/ThreadActionsContext"
 import { LinkedActionsContext } from "../components/linked/LinkedActionsContext"
 import { AddResourceModal } from "../components/AddResourceModal"
 import { parseThreadUrl } from "../lib/parseThreadUrl"
-import { worktreeName } from "../lib/homeWorktree"
+import { getHomeWorktree, homeWorktreeHref, worktreeName } from "../lib/homeWorktree"
 import { SearchBar } from "../components/search/SearchBar"
 import { SearchSummary } from "../components/search/SearchSummary"
 import { useSeeEverything } from "../hooks/useSeeEverything"
@@ -58,6 +60,7 @@ import { CrossHoverProvider } from "../components/CrossHoverContext"
 
 export function WorktreeDetailPage() {
   const [, params] = useRoute("/worktree/:path*")
+  const [, navigate] = useLocation()
   const rawPath = params?.["path*"]
   const path = rawPath ? decodeURIComponent(rawPath) : ""
   // Narrows the worktree's unified feed and the resource list. Selecting a
@@ -89,6 +92,14 @@ export function WorktreeDetailPage() {
   const searchContext = useMemo(() => ({ terms: search.terms }), [search.terms])
   const { resources, timeline } = useWorktreeDetail(path, sources, unreadOnly, eventTypes, search.debouncedQ)
   const { selected, select, toggle, clear } = useSelectedResource()
+  // What Esc does next, so its hint sits on the control that does the same:
+  // the narrowing lines' links (their own hint), "← all resources", then the
+  // way out — the banner's, when it is up (see escapeHint), else the logo's.
+  const escClears = narrowing.search || narrowing.unread || narrowing.filters
+  const escDeselects = !escClears && Boolean(selected)
+  const escLeaves = !escClears && !selected
+  usePublishEscLeaves(escLeaves)
+  const bannerShown = useBannerShown()
   const wide = useIsWide()
   // The details card and a selected resource's card + tabs are pinned while
   // the page or the resource column scrolls — but only with room to spare. On
@@ -403,6 +414,7 @@ export function WorktreeDetailPage() {
       // back, and it was previously only reachable by clicking the selected
       // card again.
       onBack={clear}
+      escHint={escDeselects}
       onRemoved={resources.refetch}
       onResourceChanged={resources.refetch}
       topInset={headerHeight}
@@ -533,16 +545,25 @@ export function WorktreeDetailPage() {
   })
   // Wide, it takes the width the titles leave free; narrow, it sits right
   // after the editor button and the auto margin pushes the other actions right.
+  // Esc with nothing left to clear: deselect, then leave — for the tab's
+  // home worktree when it has one and this is not it, else for the listing.
+  const escapeIdle = () => {
+    if (selected) { clear(); return }
+    const home = getHomeWorktree()
+    navigate(home && home !== path ? homeWorktreeHref(home) : "/")
+  }
   const searchBar = (
     <div style={wide ? { flex: "1 1 160px", minWidth: 0 } : { flex: "1 1 160px", marginRight: "auto" }}>
-      {/* Esc sees everything: clears the search and turns Unreads only off. */}
+      {/* Esc backs out a level at a time: it sees everything (clears the
+          search, Unreads only and filters), then deselects, then leaves. */}
       <SearchBar
         value={search.q}
         onChange={search.setQ}
         placeholder="Search this worktree…"
         suggestions={suggestions}
         onEscape={narrowing.clearAll}
-        escapeActive={narrowing.search || narrowing.unread || narrowing.filters}
+        escapeActive={escClears}
+        onEscapeIdle={escapeIdle}
       />
     </div>
   )
@@ -633,6 +654,9 @@ export function WorktreeDetailPage() {
               >
                 <IconChevronLeft size={16} />
                 <Logo exceptPath={path} />
+                {escLeaves && !bannerShown && (
+                  <span aria-hidden="true" style={{ display: "inline-flex", marginLeft: 4 }}><KeyHint>Esc</KeyHint></span>
+                )}
               </Anchor>
               {/* Inside cmux the workspace is the headline and the worktree
                   name steps down beneath it, as on the home page's cards;
