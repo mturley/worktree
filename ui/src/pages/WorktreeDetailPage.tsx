@@ -314,7 +314,14 @@ export function WorktreeDetailPage() {
             <Title order={5}>Activity</Title>
             <RefreshWatchersButton />
             <WatcherLogButton scope={{ worktree: path }} />
-            <MarkAllReadButton resources={items} />
+            {/* Only over the whole feed: it marks every unread event, so
+                beside a narrowed feed it would clear what is not shown. */}
+            {!narrowing.search && !narrowing.filters && (
+              <MarkAllReadButton
+                resources={items}
+                feed={{ worktree: path, onSelectResource: selectFromEvent, resolveResource, path }}
+              />
+            )}
           </Group>
           <SourceFilter value={sources} onChange={setSources} />
         </Group>

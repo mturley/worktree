@@ -35,8 +35,11 @@ vi.mock("../hooks/useWorktrees", () => ({
     }],
   }),
 }))
+// The worktree's own feed comes from useWorktreeDetail above; this one only
+// backs a selected resource's feed and the mark-all-read preview.
+const timelineMock = vi.hoisted(() => ({ events: [] as unknown[] }))
 vi.mock("../hooks/useTimeline", () => ({
-  useWorktreeTimeline: () => ({ events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false }),
+  useWorktreeTimeline: () => ({ events: timelineMock.events, isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false }),
 }))
 
 // Stood in so the Slack event tests can see what the thread was asked to
@@ -71,6 +74,7 @@ beforeEach(() => {
   window.sessionStorage.clear()
   resources = baseResources
   events = []
+  timelineMock.events = []
 })
 afterEach(cleanup)
 
@@ -921,5 +925,51 @@ describe("search", () => {
     await waitFor(() => expect(screen.getAllByTestId("search-summary").map((n) => n.textContent))
       .toContain("0 events match your search. Clear search Esc"))
     expect(screen.queryByText("No events yet.")).toBeNull()
+  })
+})
+
+describe("WorktreeDetailPage mark all read", () => {
+  const unread = () => [
+    { ...baseResources[0], unread_count: 1, unread_through_ts: "2026-10-01T00:00:00Z" },
+    baseResources[1],
+  ] as ResourceDTO[]
+  const button = () => screen.queryByRole("button", { name: "Mark all read" })
+
+  it("is offered over the whole feed", () => {
+    resources = unread()
+    wrap()
+    expect(button()).not.toBeNull()
+  })
+
+  it("is hidden while searching", () => {
+    resources = unread()
+    window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?q=widget`)
+    wrap()
+    expect(button()).toBeNull()
+  })
+
+  it("is hidden while a source filter narrows the feed", async () => {
+    resources = unread()
+    const user = userEvent.setup()
+    wrap()
+    await user.click(screen.getByRole("button", { name: /GitHub/ }))
+    expect(button()).toBeNull()
+  })
+
+  it("a previewed event closes the modal and selects its resource, as in the feed", async () => {
+    resources = unread()
+    timelineMock.events = [{
+      id: "evt-3", ts: "2026-10-01T00:00:00Z", external_ts: "", source: "github",
+      type: "pr_comment", type_label: "", title: "Please take another look", body: "", author: "someone",
+      resource_type: "pr", resource_id: "o/r#1", resource_url: "https://gh/pr/1", resource_title: "Fix the widget",
+      worktrees: [], unread: true,
+    }]
+    const user = userEvent.setup()
+    wrap()
+    await user.click(button()!)
+    const dialog = await screen.findByRole("dialog")
+    await user.click(within(dialog).getByText("Please take another look"))
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Mark all read" })).toBeNull())
+    expect(decodeURIComponent(new URLSearchParams(window.location.search).get("resource") ?? "")).toBe("pr:o/r#1")
   })
 })

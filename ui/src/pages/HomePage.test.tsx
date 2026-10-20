@@ -595,3 +595,67 @@ describe("HomePage search", () => {
     expect(row.textContent).toContain("odh · my-branch")
   })
 })
+
+describe("HomePage mark all read", () => {
+  const event: TimelineEvent = {
+    id: "evt-9", ts: "2026-10-01T00:00:00Z", external_ts: "", source: "github",
+    type: "pr_comment", type_label: "", title: "Please take another look", body: "", author: "someone",
+    resource_type: "pr", resource_id: "o/r#9", resource_url: "https://gh/pr/9", resource_title: "Theirs",
+    worktrees: ["my-branch"], worktree_paths: ["/wt/foo"], unread: true,
+  }
+  beforeEach(() => {
+    vi.spyOn(api, "allResources").mockResolvedValue([
+      { type: "pr", id: "o/r#9", url: "https://gh/pr/9", primary: true, title: "Theirs", state: "OPEN",
+        unread_count: 1, unread_through_ts: "2026-10-01T00:00:00Z",
+        worktrees: [{ path: "/wt/foo", repo: "odh", branch: "my-branch" }] },
+    ])
+  })
+  const button = () => screen.queryByRole("button", { name: "Mark all read" })
+
+  it("offers it over the whole feed, counting every worktree's resources", async () => {
+    setViewport("wide")
+    wrap()
+    await userEvent.click(await screen.findByRole("button", { name: "Mark all read" }))
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByRole("checkbox", { name: "Mark 1 GitHub event in 1 PR as read" })).toBeChecked()
+  })
+
+  it("is hidden while searching", async () => {
+    setViewport("wide")
+    window.history.replaceState({}, "", "/?q=kumquat")
+    wrap()
+    await waitFor(() => expect(api.allResources).toHaveBeenCalled())
+    expect(button()).toBeNull()
+  })
+
+  it("is hidden while a source filter narrows the feed", async () => {
+    setViewport("wide")
+    const user = userEvent.setup()
+    wrap()
+    await screen.findByRole("button", { name: "Mark all read" })
+    await user.click(within(document.querySelector<HTMLElement>("[data-activity-header]")!).getByRole("button", { name: /GitHub/ }))
+    expect(button()).toBeNull()
+  })
+
+  it("stays with Show archived on, which only adds to the feed", async () => {
+    setViewport("wide")
+    const user = userEvent.setup()
+    wrap()
+    await screen.findByRole("button", { name: "Mark all read" })
+    await user.click(screen.getByLabelText("Show archived"))
+    expect(button()).not.toBeNull()
+  })
+
+  it("a previewed event closes the modal and goes to it, as in the feed", async () => {
+    setViewport("wide")
+    mocks.events = [event]
+    const user = userEvent.setup()
+    wrap()
+    await user.click(await screen.findByRole("button", { name: "Mark all read" }))
+    const dialog = await screen.findByRole("dialog")
+    await user.click(within(dialog).getByText("Please take another look"))
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+    expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/foo")}`)
+    expect(new URLSearchParams(window.location.search).get("resource")).toBe("pr:o/r#9")
+  })
+})

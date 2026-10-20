@@ -1,10 +1,13 @@
-import { useState } from "react"
-import { Alert, Button, Checkbox, Group, Modal, Stack } from "@mantine/core"
+import { type ComponentProps, useState } from "react"
+import { Alert, Box, Button, Checkbox, Flex, Group, Modal, ScrollArea, Stack, Text } from "@mantine/core"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import type { ResourceDTO } from "../api/types"
+import type { ResourceDTO, TimelineEvent } from "../api/types"
 import { api } from "../api/client"
 import { markRead as markThreadRead } from "../api/slackApi"
+import { useGlobalTimeline, useWorktreeTimeline } from "../hooks/useTimeline"
+import { useIsWide } from "../hooks/useIsWide"
 import { slackTabFromResource } from "./SlackThreadPane"
+import { TimelineFeed } from "./TimelineFeed"
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 
@@ -53,6 +56,55 @@ function toTarget(r: ResourceDTO): Target | null {
 }
 
 /**
+ * Where the preview column's events come from, and how its rows behave. A
+ * `worktree` previews that worktree's own feed; without one, the global feed
+ * (never archived: the button marks only resources a worktree follows). The
+ * rest is passed through to the TimelineFeed, as the page's own feed sets it,
+ * so a row clicked here does what it does there.
+ */
+export type MarkAllReadFeed = { worktree?: string } & Pick<
+  ComponentProps<typeof TimelineFeed>,
+  "showWorktrees" | "onSelectResource" | "resolveResource" | "canSelectResource" | "path"
+>
+
+type PreviewProps = { types: string[]; feed: MarkAllReadFeed; onNavigate: () => void }
+
+/** The global feed's unread events of `types`. */
+function GlobalPreview(props: PreviewProps) {
+  return <PreviewFeed {...props} tl={useGlobalTimeline(false, props.types, true)} />
+}
+
+/** One worktree's unread events of `types`. */
+function WorktreePreview(props: PreviewProps & { worktree: string }) {
+  return <PreviewFeed {...props} tl={useWorktreeTimeline(props.worktree, undefined, props.types, true)} />
+}
+
+function PreviewFeed({ tl, feed, onNavigate }: PreviewProps & {
+  tl: ReturnType<typeof useGlobalTimeline>
+}) {
+  const { worktree: _, onSelectResource, ...rest } = feed
+  return (
+    <TimelineFeed
+      {...rest}
+      events={tl.events}
+      loading={tl.isLoading}
+      error={tl.error}
+      hasMore={tl.hasMore}
+      onLoadMore={tl.loadMore}
+      loadingMore={tl.loadingMore}
+      emptyText="No unread activity."
+      // Navigating leaves the modal behind, so it closes first. A row that
+      // cannot navigate opens its details over the modal instead, as it
+      // would in the page's feed, and leaves the modal open beneath.
+      onSelectResource={onSelectResource && ((key, e: TimelineEvent) => {
+        onNavigate()
+        onSelectResource(key, e)
+      })}
+    />
+  )
+}
+
+/**
  * Clears unread activity across a worktree's resources, one checkbox per
  * resource type that has any — "Mark 3 GitHub events in 2 PRs as read" —
  * all checked by default. Only the checked types are marked.
@@ -64,8 +116,9 @@ function toTarget(r: ResourceDTO): Target | null {
  * The counts are read live from `resources`, so a poll landing while the
  * modal is open updates the numbers and what gets sent together.
  */
-export function MarkAllReadButton({ resources }: { resources: ResourceDTO[] }) {
+export function MarkAllReadButton({ resources, feed }: { resources: ResourceDTO[]; feed: MarkAllReadFeed }) {
   const [opened, setOpened] = useState(false)
+  const wide = useIsWide()
   const [unchecked, setUnchecked] = useState<ReadonlySet<Kind>>(new Set())
   const qc = useQueryClient()
 
@@ -77,6 +130,7 @@ export function MarkAllReadButton({ resources }: { resources: ResourceDTO[] }) {
     return { kind, targets, count: targets.reduce((n, t) => n + t.count, 0) }
   }).filter((g) => g.targets.length > 0)
   const selected = groups.filter((g) => !unchecked.has(g.kind.type))
+  const selectedTypes = selected.map((g) => g.kind.type)
 
   const markAll = useMutation({
     // Parallel and independent: each call only moves one cursor forward, so a
@@ -124,17 +178,32 @@ export function MarkAllReadButton({ resources }: { resources: ResourceDTO[] }) {
           Mark all read
         </Button>
       )}
-      <Modal opened={opened} onClose={() => setOpened(false)} title="Mark all read" centered>
+      <Modal opened={opened} onClose={() => setOpened(false)} title="Mark all read" centered size="xl">
         <Stack gap="sm">
-          {groups.map(({ kind, targets, count }) => (
-            <Checkbox
-              key={kind.type}
-              checked={!unchecked.has(kind.type)}
-              onChange={(e) => toggle(kind.type, e.currentTarget.checked)}
-              label={`Mark ${plural(count, `${kind.source} ${kind.item[0]}`, `${kind.source} ${kind.item[1]}`)}`
-                + ` in ${plural(targets.length, kind.container[0], kind.container[1])} as read`}
-            />
-          ))}
+          {/* Side by side when wide; on a phone the preview stacks below. */}
+          <Flex direction={wide ? "row" : "column"} gap="md">
+            <Stack gap="sm" style={wide ? { flex: "0 0 240px" } : undefined}>
+              {groups.map(({ kind, targets, count }) => (
+                <Checkbox
+                  key={kind.type}
+                  checked={!unchecked.has(kind.type)}
+                  onChange={(e) => toggle(kind.type, e.currentTarget.checked)}
+                  label={`Mark ${plural(count, `${kind.source} ${kind.item[0]}`, `${kind.source} ${kind.item[1]}`)}`
+                    + ` in ${plural(targets.length, kind.container[0], kind.container[1])} as read`}
+                />
+              ))}
+            </Stack>
+            <Box style={{ flex: 1, minWidth: 0 }}>
+              <Text size="sm" c="dimmed" mb="xs">The following activity will be marked as read</Text>
+              <ScrollArea.Autosize mah={wide ? "55vh" : "35vh"} type="auto" offsetScrollbars>
+                {/* Nothing checked lists nothing — and asks for nothing: an
+                    empty resource_types means every type to the server. */}
+                {selectedTypes.length === 0 ? null : feed.worktree
+                  ? <WorktreePreview worktree={feed.worktree} types={selectedTypes} feed={feed} onNavigate={() => setOpened(false)} />
+                  : <GlobalPreview types={selectedTypes} feed={feed} onNavigate={() => setOpened(false)} />}
+              </ScrollArea.Autosize>
+            </Box>
+          </Flex>
           {markAll.isError && (
             <Alert color="red">{String((markAll.error as Error)?.message || markAll.error)}</Alert>
           )}

@@ -761,7 +761,15 @@ unread rather than being swallowed by a button that promised to clear a
 specific number. The cursor only moves forward, so a stale replay is a no-op.
 
 **Mark all read** (`ui/src/components/MarkAllReadButton.tsx`, on the worktree
-page's unified Activity header) keeps that promise across resources. Its
+page's unified Activity header and the home page's Activity controls, over
+`/api/all-resources`) keeps that promise across resources. It is hidden while
+a search, source toggle or event-type filter narrows the feed: cursors are
+per resource, so it can only clear everything, and beside a narrowed feed it
+would clear what is not shown. Unreads only and Show archived do not hide it.
+Beside the checkboxes, the modal previews what will be cleared: the page's
+own feed (global, never archived; or the worktree's), unread only, narrowed
+to the checked types. A preview row behaves as in the page's feed; one that
+navigates closes the modal first. Its
 modal lists one checkbox per resource type with unreads, all checked by
 default — "Mark 3 GitHub events in 2 PRs as read", "… Jira events in … issues",
 "… Slack messages in … threads" — and marks only the checked types. GitHub/Jira

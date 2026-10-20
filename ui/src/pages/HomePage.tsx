@@ -13,6 +13,7 @@ import { useIsTall } from "../hooks/useIsTall"
 import { pinnedStyle } from "../lib/stickyList"
 import { WorktreeList } from "../components/WorktreeList"
 import { TimelineFeed } from "../components/TimelineFeed"
+import { MarkAllReadButton } from "../components/MarkAllReadButton"
 import { ArchivedToggle } from "../components/ArchivedToggle"
 import { useUnreadOnly } from "../hooks/useUnreadOnly"
 import { SourceFilter } from "../components/SourceFilter"
@@ -250,6 +251,18 @@ export function HomePage() {
       <Group gap={6} wrap="nowrap" align="center">
         <RefreshWatchersButton />
         <WatcherLogButton scope={{}} />
+        {/* Only over the whole feed, as on the worktree page. "Show
+            archived" only adds to the feed, so it does not hide it. */}
+        {!narrowing.search && !activityFiltered && (
+          <MarkAllReadButton
+            resources={allResources.data ?? []}
+            feed={{
+              showWorktrees: true,
+              onSelectResource: selectEventResource,
+              canSelectResource: (e) => Boolean(e.worktree_paths?.length),
+            }}
+          />
+        )}
       </Group>
       <ArchivedToggle value={archived} onChange={setArchived} />
     </Group>
