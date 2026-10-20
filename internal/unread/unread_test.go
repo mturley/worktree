@@ -2,6 +2,7 @@ package unread_test
 
 import (
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -309,11 +310,11 @@ func TestSlackCountsCountRepliesNewerThanSlacksCursor(t *testing.T) {
 		}
 	}
 	state("C1:1.1", "2000.000000")
-	addSlackEvent(t, conn, "a", "2026-01-01T00:00:00Z", "1500.000000", "slack_reply", "C1:1.1") // read
-	addSlackEvent(t, conn, "b", "2026-01-02T00:00:00Z", "2000.000000", "slack_reply", "C1:1.1") // AT the cursor: read
-	addSlackEvent(t, conn, "c", "2026-01-03T00:00:00Z", "3000.000000", "slack_reply", "C1:1.1") // unread
-	addSlackEvent(t, conn, "d", "2026-01-04T00:00:00Z", "10000.000000", "slack_reply", "C1:1.1") // unread; more digits
-	addSlackEvent(t, conn, "e", "2026-01-05T00:00:00Z", "", "slack_reply", "C1:1.1")             // no Slack ts: read
+	addSlackEvent(t, conn, "a", "2026-01-01T00:00:00Z", "1500.000000", "slack_reply", "C1:1.1")   // read
+	addSlackEvent(t, conn, "b", "2026-01-02T00:00:00Z", "2000.000000", "slack_reply", "C1:1.1")   // AT the cursor: read
+	addSlackEvent(t, conn, "c", "2026-01-03T00:00:00Z", "3000.000000", "slack_reply", "C1:1.1")   // unread
+	addSlackEvent(t, conn, "d", "2026-01-04T00:00:00Z", "10000.000000", "slack_reply", "C1:1.1")  // unread; more digits
+	addSlackEvent(t, conn, "e", "2026-01-05T00:00:00Z", "", "slack_reply", "C1:1.1")              // no Slack ts: read
 	addSlackEvent(t, conn, "f", "2026-01-06T00:00:00Z", "9000.000000", "watcher_error", "C1:1.1") // bookkeeping
 
 	// A thread with replies but no cached cursor has nothing to compare.
@@ -391,5 +392,104 @@ func TestSummariesExcludePendingCI(t *testing.T) {
 	}
 	if s := sums[unread.Key("pr", "o/r#1")]; s.Count != 1 || s.NewestTS != "2099-01-02T00:00:00Z" {
 		t.Fatalf("summary = %+v, want 1 unread (the failed run), newest failed", s)
+	}
+}
+
+func TestMarkReportsTheCursorItReplaced(t *testing.T) {
+	conn := openDB(t)
+	if _, err := conn.Exec(`INSERT INTO resource_read_cursor (resource_type, resource_id, last_read_ts, updated_at)
+		VALUES ('pr', 'o/r#1', '2026-01-01T00:00:00Z', 'x')`); err != nil {
+		t.Fatal(err)
+	}
+	ch, err := unread.Mark(conn, "pr", "o/r#1", "2026-01-05T00:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ch.Previous == nil || *ch.Previous != "2026-01-01T00:00:00Z" || ch.Current != "2026-01-05T00:00:00Z" {
+		t.Fatalf("change = %+v (prev %v), want 01-01 -> 01-05", ch, ch.Previous)
+	}
+
+	// A stale through_ts leaves the cursor alone, and says so.
+	ch, err = unread.Mark(conn, "pr", "o/r#1", "2026-01-02T00:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *ch.Previous != ch.Current {
+		t.Fatalf("no-op mark reported a move: %v -> %v", *ch.Previous, ch.Current)
+	}
+}
+
+func TestMarkReportsNoPreviousForAnUnseededResource(t *testing.T) {
+	conn := openDB(t)
+	ch, err := unread.Mark(conn, "jira", "J-1", "2026-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ch.Previous != nil {
+		t.Fatalf("previous = %q, want nil", *ch.Previous)
+	}
+}
+
+func TestRestoreRewindsToThePreviousCursor(t *testing.T) {
+	conn := openDB(t)
+	addEvent(t, conn, "e1", "2026-01-01T00:00:00Z", "pr", "o/r#1")
+	addEvent(t, conn, "e2", "2026-01-05T00:00:00Z", "pr", "o/r#1")
+	if err := unread.EnsureCursor(conn, "pr", "o/r#1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(`UPDATE resource_read_cursor SET last_read_ts = '2026-01-01T00:00:00Z'`); err != nil {
+		t.Fatal(err)
+	}
+	ch, err := unread.Mark(conn, "pr", "o/r#1", "2026-01-05T00:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := unread.Restore(conn, "pr", "o/r#1", ch.Current, ch.Previous); err != nil {
+		t.Fatal(err)
+	}
+	counts, err := unread.Counts(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := counts[unread.Key("pr", "o/r#1")]; got != 1 {
+		t.Fatalf("unread = %d after undo, want 1", got)
+	}
+}
+
+func TestRestoreRemovesACursorThatDidNotExist(t *testing.T) {
+	conn := openDB(t)
+	ch, err := unread.Mark(conn, "jira", "J-1", "2026-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := unread.Restore(conn, "jira", "J-1", ch.Current, ch.Previous); err != nil {
+		t.Fatal(err)
+	}
+	cursors, err := unread.Cursors(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := cursors[unread.Key("jira", "J-1")]; ok {
+		t.Fatal("cursor row survived undo, want it removed")
+	}
+}
+
+// A later read (another tab, the CLI) moved the cursor on; undoing the
+// earlier one must not rewind past it.
+func TestRestoreRefusesWhenTheCursorMovedOn(t *testing.T) {
+	conn := openDB(t)
+	ch, err := unread.Mark(conn, "pr", "o/r#1", "2026-01-05T00:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := unread.MarkRead(conn, "pr", "o/r#1", "2026-01-09T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	if err := unread.Restore(conn, "pr", "o/r#1", ch.Current, ch.Previous); !errors.Is(err, unread.ErrCursorMoved) {
+		t.Fatalf("err = %v, want ErrCursorMoved", err)
+	}
+	cursors, _ := unread.Cursors(conn)
+	if got := cursors[unread.Key("pr", "o/r#1")]; got != "2026-01-09T00:00:00Z" {
+		t.Fatalf("cursor = %q, want the later read kept", got)
 	}
 }

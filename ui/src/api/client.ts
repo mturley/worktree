@@ -1,4 +1,4 @@
-import type { AllResourceDTO, CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, CredResult, CredService, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, UpdateStatus, WatcherHealth, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherAuthSettings, WatcherConfigSettings, WatcherLogScope, WorktreeInfo, WorktreeNotes, WorktreeSettings, WorktreeSummary } from "./types"
+import type { AllResourceDTO, CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, CredResult, CredService, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, ResourceReadChange, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, UpdateStatus, WatcherHealth, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherAuthSettings, WatcherConfigSettings, WatcherLogScope, WorktreeInfo, WorktreeNotes, WorktreeSettings, WorktreeSummary } from "./types"
 import { scopeParams } from "../lib/watcherLog"
 
 export class HttpError extends Error {
@@ -278,8 +278,19 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(args),
     }),
+  /** Moves a cursor forward, answering where it was so the move can be undone. */
   markResourceRead: (args: { type: string; id: string; through_ts: string }) =>
-    fetchJSON<null>("/api/resource-read", {
+    fetchJSON<ResourceReadChange>("/api/resource-read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(args),
+    }),
+  /**
+   * Undoes a markResourceRead, given what it answered. 409 when the cursor
+   * has moved on since — a later read is never rewound past.
+   */
+  restoreResourceRead: (args: { type: string; id: string } & ResourceReadChange) =>
+    fetchJSON<null>("/api/resource-read/restore", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(args),

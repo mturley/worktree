@@ -3,7 +3,7 @@ import { Alert, Button, Group, Paper, Skeleton, Stack, Text } from '@mantine/cor
 import { useQueryClient } from '@tanstack/react-query'
 import type { UseThreadResult } from '../../hooks/useThread'
 import { useNow } from '../../hooks/useNow'
-import { getConfig, markRead, markUnread, postReply, toggleReaction } from '../../api/slackApi'
+import { getConfig, markRead, markUnread, postReply, restoreRead, toggleReaction } from '../../api/slackApi'
 import { deriveThreadMeta } from '../../lib/deriveThreadMeta'
 import { SlackGroupsContext } from './Mention'
 import { applyReactionToggle } from '../../lib/reactionToggle'
@@ -13,6 +13,7 @@ import { ActionBar } from './ActionBar'
 import { Composer, type ComposerProps } from './Composer'
 import { Message } from './Message'
 import { UnreadDivider } from '../UnreadDivider'
+import { showUndoToast } from '../UndoToast'
 
 interface PendingReply {
   localId: string
@@ -228,6 +229,8 @@ export function ThreadView({ tab, thread, onOpenThread, topInset = 0, onComposer
       return
     }
     const latest = data.messages[data.messages.length - 1]
+    // Slack's live cursor before this mark, which an undo puts back.
+    const previous = data.lastRead
     // Optimistically clear the unread state so the divider disappears and
     // the button disables immediately; the next SSE poll reconciles with
     // the server's own unreadIndex/lastRead.
@@ -237,6 +240,16 @@ export function ThreadView({ tab, thread, onOpenThread, topInset = 0, onComposer
     try {
       await markRead(tab.channel, tab.threadTs, latest.TS)
       refreshUnreadSurfaces()
+      showUndoToast({
+        message: 'Thread marked read',
+        undo: () => restoreRead(tab.channel, tab.threadTs, previous, latest.TS),
+        // refresh, not an optimistic patch: the divider lands where Slack
+        // puts it, which this view can't know if the thread changed since.
+        onSettled: () => {
+          refresh()
+          refreshUnreadSurfaces()
+        },
+      })
     } catch (err) {
       setMarkError(err instanceof Error ? err.message : String(err))
       refresh()

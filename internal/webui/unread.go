@@ -171,8 +171,16 @@ func resourceHasUnread(dto resourceDTO) bool {
 	return dto.UnreadCount > 0
 }
 
+// resourceReadResponse is what a mark-read did to the cursor, handed back so
+// the client can offer to undo it (POST /api/resource-read/restore).
+// previous_ts is null when the resource had no cursor before.
+type resourceReadResponse struct {
+	PreviousTS *string `json:"previous_ts"`
+	LastReadTS string  `json:"last_read_ts"`
+}
+
 // handleResourceRead: POST /api/resource-read, body
-// {"type":..., "id":..., "through_ts":...} -> 204.
+// {"type":..., "id":..., "through_ts":...} -> 200 resourceReadResponse.
 //
 // through_ts is the newest event the CLIENT rendered. The server deliberately
 // does NOT substitute its own MAX(ts): events that arrived between render and
@@ -196,7 +204,8 @@ func (s *Server) handleResourceRead(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "through_ts is required")
 		return
 	}
-	if err := unread.MarkRead(s.DB, req.Type, req.ID, req.ThroughTS); err != nil {
+	ch, err := unread.Mark(s.DB, req.Type, req.ID, req.ThroughTS)
+	if err != nil {
 		if errors.Is(err, unread.ErrSlackNotSupported) {
 			// Bad input, not a server fault: Slack owns this thread's read
 			// state and the thread view is where it is cleared.
@@ -206,5 +215,39 @@ func (s *Server) handleResourceRead(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, http.StatusOK, resourceReadResponse{PreviousTS: ch.Previous, LastReadTS: ch.Current})
+}
+
+// handleResourceReadRestore: POST /api/resource-read/restore, body
+// {"type":..., "id":..., "last_read_ts":..., "previous_ts":...|null} -> 204,
+// the undo of a POST /api/resource-read, echoing back what it returned.
+//
+// 409 when the cursor has moved on since (see unread.Restore): a read made
+// after the one being undone is never rewound past.
+func (s *Server) handleResourceReadRestore(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Type       string  `json:"type"`
+		ID         string  `json:"id"`
+		LastReadTS string  `json:"last_read_ts"`
+		PreviousTS *string `json:"previous_ts"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if req.Type == "" || req.ID == "" || req.LastReadTS == "" {
+		writeError(w, http.StatusBadRequest, "type, id and last_read_ts are required")
+		return
+	}
+	err := unread.Restore(s.DB, req.Type, req.ID, req.LastReadTS, req.PreviousTS)
+	switch {
+	case err == nil:
+		w.WriteHeader(http.StatusNoContent)
+	case errors.Is(err, unread.ErrSlackNotSupported):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, unread.ErrCursorMoved):
+		writeError(w, http.StatusConflict, err.Error())
+	default:
+		writeError(w, http.StatusInternalServerError, err.Error())
+	}
 }

@@ -175,22 +175,113 @@ func Cursors(conn *sql.DB) (map[string]string, error) {
 // The cursor only ever moves forward. A stale client replaying an older
 // throughTS is a no-op, not a rewind that resurrects read events.
 func MarkRead(conn *sql.DB, resType, id, throughTS string) error {
+	_, err := Mark(conn, resType, id, throughTS)
+	return err
+}
+
+// Change is what one mark-read did to a cursor: where it was before, and
+// where it is now. It is everything Restore needs to take the write back.
+type Change struct {
+	// Previous is the cursor before the write, nil when the resource had no
+	// cursor row at all (which reads as nothing unread, not everything).
+	Previous *string
+	// Current is the cursor after it. Equal to *Previous when the write was a
+	// no-op because the cursor was already past throughTS.
+	Current string
+}
+
+// Mark is MarkRead reporting the cursor it moved, for an undo. The read and
+// the write share a transaction so Previous is exactly what was replaced.
+func Mark(conn *sql.DB, resType, id, throughTS string) (Change, error) {
 	if resType == "slack" {
-		return ErrSlackNotSupported
+		return Change{}, ErrSlackNotSupported
 	}
 	if throughTS == "" {
-		return errors.New("through_ts is required")
+		return Change{}, errors.New("through_ts is required")
 	}
+	tx, err := conn.Begin()
+	if err != nil {
+		return Change{}, err
+	}
+	defer tx.Rollback()
+
+	var ch Change
+	var prev string
+	err = tx.QueryRow(`
+		SELECT last_read_ts FROM resource_read_cursor
+		 WHERE resource_type = ? AND resource_id = ?`, resType, id).Scan(&prev)
+	switch {
+	case err == nil:
+		ch.Previous = &prev
+	case !errors.Is(err, sql.ErrNoRows):
+		return Change{}, err
+	}
+
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, err := conn.Exec(`
+	if _, err := tx.Exec(`
 		INSERT INTO resource_read_cursor
 			(resource_type, resource_id, last_read_ts, updated_at)
 		VALUES (?, ?, ?, ?)
 		ON CONFLICT (resource_type, resource_id) DO UPDATE SET
 			last_read_ts = MAX(excluded.last_read_ts, resource_read_cursor.last_read_ts),
 			updated_at   = excluded.updated_at`,
-		resType, id, throughTS, now)
-	return err
+		resType, id, throughTS, now); err != nil {
+		return Change{}, err
+	}
+	if err := tx.QueryRow(`
+		SELECT last_read_ts FROM resource_read_cursor
+		 WHERE resource_type = ? AND resource_id = ?`, resType, id).Scan(&ch.Current); err != nil {
+		return Change{}, err
+	}
+	return ch, tx.Commit()
+}
+
+// ErrCursorMoved is returned by Restore when the cursor is no longer where the
+// mark being undone left it.
+var ErrCursorMoved = errors.New("read state changed since it was marked read")
+
+// Restore takes back a Mark: it puts the cursor back to previous (removing the
+// row when previous is nil, as there was none) — but only while the cursor
+// still reads current, the value that Mark left.
+//
+// This is the ONLY way a cursor moves backward, and the compare-and-swap is
+// what keeps that safe. Anything that marked the resource further in the
+// meantime (another tab, the CLI, agent-handler) is a read the user made
+// after the one being undone, and silently rewinding past it would resurrect
+// events they have since read. That case is ErrCursorMoved, not a partial
+// restore.
+func Restore(conn *sql.DB, resType, id, current string, previous *string) error {
+	if resType == "slack" {
+		return ErrSlackNotSupported
+	}
+	if current == "" {
+		return errors.New("current is required")
+	}
+	var res sql.Result
+	var err error
+	if previous == nil {
+		res, err = conn.Exec(`
+			DELETE FROM resource_read_cursor
+			 WHERE resource_type = ? AND resource_id = ? AND last_read_ts = ?`,
+			resType, id, current)
+	} else {
+		res, err = conn.Exec(`
+			UPDATE resource_read_cursor
+			   SET last_read_ts = ?, updated_at = ?
+			 WHERE resource_type = ? AND resource_id = ? AND last_read_ts = ?`,
+			*previous, time.Now().UTC().Format(time.RFC3339), resType, id, current)
+	}
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrCursorMoved
+	}
+	return nil
 }
 
 // SlackCursors returns the read cursor per Slack thread, keyed by Key.

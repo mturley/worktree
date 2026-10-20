@@ -2,10 +2,12 @@ import { afterEach, beforeEach, describe, it, expect, vi } from "vitest"
 import { fireEvent, render, cleanup, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
+import { Notifications, notifications } from "@mantine/notifications"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ResourceDTO, TimelineEvent } from "../api/types"
 
 const markResourceRead = vi.fn()
+const restoreResourceRead = vi.fn()
 const globalTimeline = vi.fn()
 const worktreeTimeline = vi.fn()
 vi.mock("../api/client", async (orig) => {
@@ -14,15 +16,18 @@ vi.mock("../api/client", async (orig) => {
     api: {
       ...actual.api,
       markResourceRead: (...args: unknown[]) => markResourceRead(...args),
+      restoreResourceRead: (...args: unknown[]) => restoreResourceRead(...args),
       globalTimeline: (...args: unknown[]) => globalTimeline(...args),
       worktreeTimeline: (...args: unknown[]) => worktreeTimeline(...args),
     },
   }
 })
 const markThreadRead = vi.fn()
+const restoreThreadRead = vi.fn()
 vi.mock("../api/slackApi", async (orig) => ({
   ...(await orig<typeof import("../api/slackApi")>()),
   markRead: (...args: unknown[]) => markThreadRead(...args),
+  restoreRead: (...args: unknown[]) => restoreThreadRead(...args),
 }))
 
 import { MarkAllReadButton, type MarkAllReadFeed } from "./MarkAllReadButton"
@@ -50,6 +55,7 @@ const slack = (id: string, n: number, latest = "1790000000.000100"): ResourceDTO
 const wrap = (items: ResourceDTO[], feed: MarkAllReadFeed = {}) =>
   render(
     <MantineProvider>
+      <Notifications />
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
         <MarkAllReadButton resources={items} feed={feed} />
       </QueryClientProvider>
@@ -65,15 +71,24 @@ const open = async (user: ReturnType<typeof userEvent.setup>) => {
 // beforeEach as teardown, and mockReset returns the mock itself.
 beforeEach(() => {
   markResourceRead.mockReset()
-  markResourceRead.mockResolvedValue(null)
+  // Every mark moves its cursor forward from an earlier one.
+  markResourceRead.mockImplementation((a: { through_ts: string }) =>
+    Promise.resolve({ previous_ts: "2099-01-01T00:00:00Z", last_read_ts: a.through_ts }))
+  restoreResourceRead.mockReset()
+  restoreResourceRead.mockResolvedValue(null)
   markThreadRead.mockReset()
   markThreadRead.mockResolvedValue(undefined)
+  restoreThreadRead.mockReset()
+  restoreThreadRead.mockResolvedValue(undefined)
   globalTimeline.mockReset()
   globalTimeline.mockImplementation((_a, _l, _b, types?: string[]) => feedFor(types))
   worktreeTimeline.mockReset()
   worktreeTimeline.mockImplementation((_p, _l, _r, _b, types?: string[]) => feedFor(types))
 })
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  notifications.clean()
+})
 
 const everything = () => [
   pr("o/r#1", 2, "2099-01-02T00:00:00Z"),
@@ -212,6 +227,47 @@ describe("MarkAllReadButton", () => {
     await user.click(screen.getByRole("button", { name: "Mark read" }))
     expect(await screen.findByText(/boom/)).toBeInTheDocument()
     expect(screen.getByRole("dialog")).toBeInTheDocument()
+  })
+
+  describe("undo", () => {
+    it("offers to undo, restoring each cursor the mark moved", async () => {
+      const user = userEvent.setup()
+      wrap([
+        pr("o/r#1", 2, "2099-01-02T00:00:00Z"),
+        { ...slack("C1:1.2", 1), last_read: "1789999999.000100" } as ResourceDTO,
+      ])
+      await open(user)
+      await user.click(screen.getByRole("button", { name: "Mark read" }))
+      expect(await screen.findByText("Marked 2 GitHub events, 1 Slack message read")).toBeInTheDocument()
+
+      await user.click(screen.getByRole("button", { name: "Undo" }))
+      await waitFor(() => expect(restoreResourceRead).toHaveBeenCalledTimes(1))
+      expect(restoreResourceRead).toHaveBeenCalledWith({
+        type: "pr", id: "o/r#1", previous_ts: "2099-01-01T00:00:00Z", last_read_ts: "2099-01-02T00:00:00Z",
+      })
+      expect(restoreThreadRead).toHaveBeenCalledWith("C1", "1.2", "1789999999.000100", "1790000000.000100")
+      await waitFor(() => expect(screen.queryByText(/Marked 2 GitHub/)).not.toBeInTheDocument())
+    })
+
+    it("offers nothing when no cursor moved", async () => {
+      markResourceRead.mockResolvedValue({ previous_ts: "2099-01-09T00:00:00Z", last_read_ts: "2099-01-09T00:00:00Z" })
+      const user = userEvent.setup()
+      wrap([jira("J-1", 1, "2099-01-05T00:00:00Z")])
+      await open(user)
+      await user.click(screen.getByRole("button", { name: "Mark read" }))
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
+      expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument()
+    })
+
+    it("says so when the undo is refused", async () => {
+      restoreResourceRead.mockRejectedValue(new Error("read state changed since it was marked read"))
+      const user = userEvent.setup()
+      wrap([jira("J-1", 1, "2099-01-05T00:00:00Z")])
+      await open(user)
+      await user.click(screen.getByRole("button", { name: "Mark read" }))
+      await user.click(await screen.findByRole("button", { name: "Undo" }))
+      expect(await screen.findByText("Couldn't undo: read state changed since it was marked read")).toBeInTheDocument()
+    })
   })
 
   describe("preview column", () => {

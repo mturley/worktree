@@ -207,8 +207,8 @@ func TestResourceReadMarksThroughTheClientsTimestamp(t *testing.T) {
 	resp := postResourceRead(t, ts.URL,
 		`{"type":"pr","id":"o/r#1","through_ts":"2099-01-01T00:00:00Z"}`)
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("status = %d, want 204", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
 	counts, err := unread.Counts(conn)
 	if err != nil {
@@ -636,5 +636,49 @@ func TestIsUnreadIgnoresMyOwnEvents(t *testing.T) {
 	}
 	if !ix.IsUnread("pr", "o/r#1", "2026-01-01T00:00:05Z", "", "pr_comment", "jira", "101") {
 		t.Fatal("the same id under another source is someone else")
+	}
+}
+
+// The mark's response is exactly what its undo needs: posting it back to
+// /restore puts the cursor where it was.
+func TestResourceReadRestoreUndoesAMark(t *testing.T) {
+	conn := unreadTestDB(t)
+	wt := testgit.Worktree(t)
+	if err := resources.Add(conn, wt, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u"}); err != nil {
+		t.Fatal(err)
+	}
+	insertUnreadEvent(t, conn, "e1", "2099-01-01T00:00:00Z", "github", "pr", "o/r#1")
+
+	srv := &Server{DB: conn}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	resp := postResourceRead(t, ts.URL, `{"type":"pr","id":"o/r#1","through_ts":"2099-01-01T00:00:00Z"}`)
+	var got resourceReadResponse
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if got.PreviousTS == nil || got.LastReadTS != "2099-01-01T00:00:00Z" {
+		t.Fatalf("response = %+v, want a previous cursor and the marked ts", got)
+	}
+
+	body, _ := json.Marshal(map[string]any{
+		"type": "pr", "id": "o/r#1", "last_read_ts": got.LastReadTS, "previous_ts": got.PreviousTS,
+	})
+	if code := postJSON(t, ts.URL+"/api/resource-read/restore", string(body)); code != http.StatusNoContent {
+		t.Fatalf("restore status = %d, want 204", code)
+	}
+	counts, err := unread.Counts(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := counts[unread.Key("pr", "o/r#1")]; n != 1 {
+		t.Fatalf("unread = %d after undo, want 1", n)
+	}
+
+	// The cursor is no longer at last_read_ts, so a second undo conflicts.
+	if code := postJSON(t, ts.URL+"/api/resource-read/restore", string(body)); code != http.StatusConflict {
+		t.Fatalf("repeat restore status = %d, want 409", code)
 	}
 }

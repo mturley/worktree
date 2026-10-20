@@ -179,6 +179,88 @@ func (s *Server) handleMarkUnread(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// restoreReadRequest is the JSON body expected by POST /api/thread/restore-read.
+type restoreReadRequest struct {
+	Channel  string `json:"channel"`
+	ThreadTS string `json:"thread_ts"`
+	// LastRead is Slack's cursor before the mark being undone; "" when the
+	// thread had never been read, which restores it wholly unread.
+	LastRead string `json:"last_read"`
+	// Through is the ts that mark sent. If Slack's cursor is now past it,
+	// the thread was read further since, and the undo is refused.
+	Through string `json:"through"`
+}
+
+// handleRestoreRead implements POST /api/thread/restore-read: the undo of a
+// POST /api/thread/mark-read, putting Slack's cursor back to LastRead.
+//
+// Slack has no "set last_read" call. What it has is mark-unread from a
+// message (subscriptions.thread.mark read=0), which sets last_read to just
+// before that message — so the thread is fetched to find the first message
+// after LastRead, and the thread is marked unread from there. Fetching at
+// undo time, rather than recording it at mark time, keeps the extra call off
+// every mark-read (mark all read can mark many threads in one click) and on
+// the rare undo instead.
+//
+// 409 when Slack's cursor is past Through: a read made after the one being
+// undone, in Slack or elsewhere, is never rewound past — the same rule as
+// unread.Restore. Nothing after LastRead (it was already read) is a no-op.
+func (s *Server) handleRestoreRead(w http.ResponseWriter, r *http.Request) {
+	if !s.slackOn() {
+		s.slackUnavailable(w)
+		return
+	}
+	var req restoreReadRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if req.Channel == "" || req.ThreadTS == "" || req.Through == "" {
+		http.Error(w, "channel, thread_ts, and through required", http.StatusBadRequest)
+		return
+	}
+
+	th, err := s.SlackClient.Replies(r.Context(), req.Channel, req.ThreadTS)
+	if errors.Is(err, slack.ErrAuth) {
+		http.Error(w, "auth", http.StatusUnauthorized)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	if slackTSGreater(th.LastRead, req.Through) {
+		http.Error(w, "thread was read further since it was marked read", http.StatusConflict)
+		return
+	}
+	first := ""
+	for _, m := range th.Messages {
+		// An empty or unparseable LastRead never compares greater, so every
+		// message is past it: the whole thread goes back to unread.
+		if req.LastRead == "" || slackTSGreater(m.TS, req.LastRead) {
+			first = m.TS
+			break
+		}
+	}
+	if first == "" {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	err = s.SlackClient.MarkUnread(r.Context(), req.Channel, req.ThreadTS, first)
+	if errors.Is(err, slack.ErrAuth) {
+		http.Error(w, "auth", http.StatusUnauthorized)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	s.refreshSlackThread(req.Channel, req.ThreadTS)
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // replyRequest is the JSON body expected by POST /api/thread/reply.
 type replyRequest struct {
 	Channel  string `json:"channel"`

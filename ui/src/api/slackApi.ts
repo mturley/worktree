@@ -261,6 +261,25 @@ export async function markUnread(channel: string, threadTs: string, ts: string):
   }
 }
 
+/**
+ * Undoes a markRead: puts Slack's cursor back to `lastRead` ("" for a thread
+ * never read), provided it has not moved past `through`, the ts the mark sent.
+ */
+export async function restoreRead(channel: string, threadTs: string, lastRead: string, through: string): Promise<void> {
+  const res = await fetch('/api/thread/restore-read', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ channel, thread_ts: threadTs, last_read: lastRead, through }),
+  })
+  throwIfUnauthorized(res)
+  if (res.status === 409) {
+    throw new Error('the thread was read further since')
+  }
+  if (!res.ok) {
+    throw new Error(`restore-read failed: ${res.status}`)
+  }
+}
+
 export async function postReply(channel: string, threadTs: string, text: string): Promise<Message> {
   const res = await fetch('/api/thread/reply', {
     method: 'POST',

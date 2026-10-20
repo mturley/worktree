@@ -3,13 +3,14 @@ import { Alert, Box, Button, Checkbox, Flex, Group, Modal, ScrollArea, Stack, Te
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import type { ResourceDTO } from "../api/types"
 import { api } from "../api/client"
-import { markRead as markThreadRead } from "../api/slackApi"
+import { markRead as markThreadRead, restoreRead as restoreThreadRead } from "../api/slackApi"
 import { useGlobalTimeline, useWorktreeTimeline } from "../hooks/useTimeline"
 import { useIsWide } from "../hooks/useIsWide"
 import { useButtonHotkey } from "../hooks/useButtonHotkey"
 import { KeyHint } from "./search/KeyHint"
 import { slackTabFromResource } from "./SlackThreadPane"
 import { TimelineFeed } from "./TimelineFeed"
+import { showUndoToast } from "./UndoToast"
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 
@@ -22,10 +23,16 @@ const KINDS = [
 
 type Kind = (typeof KINDS)[number]["type"]
 
-/** One resource to mark read, and the write that does it. */
+/** Takes one mark back. */
+type Undo = () => Promise<unknown>
+
+/**
+ * One resource to mark read, and the write that does it. The write answers
+ * with its undo, or null when it moved nothing (a cursor already past it).
+ */
 interface Target {
   count: number
-  mark: () => Promise<unknown>
+  mark: () => Promise<Undo | null>
 }
 
 /**
@@ -41,6 +48,11 @@ interface Target {
  * Anything newer stays unread, as the per-resource button keeps events that
  * arrive after render. A resource missing its timestamp (an older server, a
  * thread never fully polled) is skipped rather than guessed at.
+ *
+ * Each undo restores the cursor the mark replaced: for GitHub/Jira the one the
+ * server answers with, for Slack its cached last_read ("" when it has none,
+ * which restores the whole thread unread — the only reading of a thread Slack
+ * flags unread with no cursor).
  */
 function toTarget(r: ResourceDTO): Target | null {
   const count = r.unread_count ?? 0
@@ -48,13 +60,28 @@ function toTarget(r: ResourceDTO): Target | null {
     const { channel, threadTs } = slackTabFromResource(r)
     if (!r.has_unread || !r.updated_ts || !threadTs) return null
     const latest = r.updated_ts
+    const lastRead = r.last_read ?? ""
     // unread_count is at least 1 while has_unread (the server guarantees it);
     // the floor only guards an older cached response that predates it.
-    return { count: Math.max(count, 1), mark: () => markThreadRead(channel, threadTs, latest) }
+    return {
+      count: Math.max(count, 1),
+      mark: async () => {
+        await markThreadRead(channel, threadTs, latest)
+        return () => restoreThreadRead(channel, threadTs, lastRead, latest)
+      },
+    }
   }
   if (count <= 0 || !r.unread_through_ts) return null
   const through = r.unread_through_ts
-  return { count, mark: () => api.markResourceRead({ type: r.type, id: r.id, through_ts: through }) }
+  const { type, id } = r
+  return {
+    count,
+    mark: async () => {
+      const change = await api.markResourceRead({ type, id, through_ts: through })
+      if (change.previous_ts === change.last_read_ts) return null
+      return () => api.restoreResourceRead({ type, id, ...change })
+    },
+  }
 }
 
 /**
@@ -145,20 +172,39 @@ export function MarkAllReadButton({ resources, feed, single = false }: {
   const selected = groups.filter((g) => !unchecked.has(g.kind.type))
   const selectedTypes = selected.map((g) => g.kind.type)
 
+  // The home cards' focus lines, the worktrees' resource lists, and every
+  // timeline's dots and divider.
+  const refreshUnreadSurfaces = () => {
+    void qc.invalidateQueries({ queryKey: ["worktrees"] })
+    void qc.invalidateQueries({ queryKey: ["resources"] })
+    void qc.invalidateQueries({ queryKey: ["timeline"] })
+  }
+
   const markAll = useMutation({
     // Parallel and independent: each call only moves one cursor forward, so a
-    // partial failure leaves nothing inconsistent and a retry is safe.
-    mutationFn: () => Promise.all(selected.flatMap((g) => g.targets.map((t) => t.mark()))),
+    // partial failure leaves nothing inconsistent and a retry is safe. The
+    // writes that landed are offered for undo even when another failed —
+    // they moved cursors all the same.
+    mutationFn: async () => {
+      const summary = selected
+        .map((g) => plural(g.count, `${g.kind.source} ${g.kind.item[0]}`, `${g.kind.source} ${g.kind.item[1]}`))
+        .join(", ")
+      const results = await Promise.allSettled(selected.flatMap((g) => g.targets.map((t) => t.mark())))
+      const undos = results.flatMap((r) => (r.status === "fulfilled" && r.value ? [r.value] : []))
+      if (undos.length > 0) {
+        showUndoToast({
+          message: `Marked ${summary} read`,
+          undo: () => Promise.all(undos.map((u) => u())),
+          onSettled: refreshUnreadSurfaces,
+        })
+      }
+      const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected")
+      if (failed) throw failed.reason
+    },
     onSuccess: () => setOpened(false),
     // Settled, not success: a partial failure still moved some cursors, and
-    // the surfaces showing them must catch up either way: the home cards'
-    // focus lines, the worktrees' resource lists, and every timeline's dots
-    // and divider.
-    onSettled: () => {
-      void qc.invalidateQueries({ queryKey: ["worktrees"] })
-      void qc.invalidateQueries({ queryKey: ["resources"] })
-      void qc.invalidateQueries({ queryKey: ["timeline"] })
-    },
+    // the surfaces showing them must catch up either way.
+    onSettled: refreshUnreadSurfaces,
   })
 
   // R opens the preview, and R again in it confirms (see useButtonHotkey).

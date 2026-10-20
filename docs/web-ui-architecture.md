@@ -181,7 +181,8 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | GET | `/api/all-resources` | — | `[]allResourceDTO` (every followed resource once, with its worktrees; see "Home page Resources tab") |
 | POST | `/api/worktrees/poll` | `path` (required) | `{"polled": bool}` |
 | POST | `/api/resource-meta` | body: `{type, id, name, description}` | — |
-| POST | `/api/resource-read` | body: `{type, id, through_ts}` | 204 No Content |
+| POST | `/api/resource-read` | body: `{type, id, through_ts}` | `{previous_ts, last_read_ts}` — the cursor before (null if none) and after, for an undo |
+| POST | `/api/resource-read/restore` | body: `{type, id, last_read_ts, previous_ts}` (what `/api/resource-read` answered) | 204; 409 if the cursor has moved since (see "Undo") |
 | POST | `/api/resource-resolve` | body: `{url}` | resolved link metadata |
 | GET | `/api/resource-type` | `url` (required) | `{type, id}` or error if unrecognized |
 | POST | `/api/worktree-resources/add` | body: `{path, url, related?}` | `resourceDTO` |
@@ -778,6 +779,33 @@ which comes from `unread.Summaries`, the same query as `unread_count`, so it
 is the newest of exactly the events counted, never "now". Slack threads post
 `/api/thread/mark-read` — a write to Slack itself — through their cached
 `updated_ts`, the latest message as of the poll that flagged them.
+
+**Undo** (`ui/src/components/UndoToast.tsx`, `@mantine/notifications`). Every
+mark-read made from the UI — Mark all read, in either form, and the Slack
+thread view's Mark read — shows a toast for 10 seconds with an Undo button
+(also Z; U is taken by Show unread only) that puts the cursors back:
+
+- GitHub/Jira: `/api/resource-read` answers `{previous_ts, last_read_ts}`
+  (`unread.Mark`, read and write in one transaction), and the undo posts it
+  back to `/api/resource-read/restore` (`unread.Restore`). That is the ONLY
+  path that moves a cursor backward, and it is a compare-and-swap: it applies
+  only while the cursor still reads `last_read_ts`. A later read — another
+  tab, the CLI, agent-handler — gets 409 rather than being rewound past. A
+  null `previous_ts` deletes the row again. A mark that moved nothing
+  (`previous_ts == last_read_ts`) is not offered for undo.
+- Slack: Slack has no "set last_read", only mark-unread from a message,
+  which sets last_read to just before it. `/api/thread/restore-read`
+  `{channel, thread_ts, last_read, through}` fetches the thread, finds the
+  first message after `last_read` (`""` = never read = the root) and marks
+  unread from there, then re-polls like the other thread writes. The fetch
+  happens at undo time, not mark time, to keep it off every mark. 409 when
+  Slack's live cursor is past `through` (read further since, possibly in
+  Slack itself). The old `last_read` comes from the thread view's live
+  `lastRead`, or for Mark all read from the resource's cached `last_read`
+  (now on `resourceDTO`).
+
+A partial failure in Mark all read still offers to undo the writes that
+landed.
 
 A selected PR/Jira resource's Activity tab carries the same button at the
 right end of its tab bar, in its `single` form: one resource, so no
@@ -1759,6 +1787,7 @@ conventions:
 | GET | `/api/thread` | `channel`, `thread_ts` | `ThreadResponse` |
 | POST | `/api/thread/mark-read` | body: `{channel, thread_ts}` | — |
 | POST | `/api/thread/mark-unread` | body: `{channel, thread_ts}` | — |
+| POST | `/api/thread/restore-read` | body: `{channel, thread_ts, last_read, through}` | 204; 409 if read past `through` since (see "Undo") |
 | POST | `/api/thread/reply` | body: `{channel, thread_ts, text}` | — |
 | POST | `/api/thread/react` | body: `{channel, thread_ts, message_ts, emoji}` | — |
 | GET | `/api/slack-config` | — | `{workspaceDomain: string}` |

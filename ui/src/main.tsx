@@ -1,8 +1,10 @@
 import React from "react"
 import ReactDOM from "react-dom/client"
 import { MantineProvider } from "@mantine/core"
+import { Notifications } from "@mantine/notifications"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import "@mantine/core/styles.css"
+import "@mantine/notifications/styles.css"
 import "./styles/theme.css"
 import "./styles/cards.css"
 import "./styles/notes.css"
@@ -25,6 +27,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       must not flip it into a light mode nothing is styled for.
     */}
     <MantineProvider theme={theme} forceColorScheme="dark">
+      <Notifications position="bottom-center" />
       <QueryClientProvider client={qc}>
         <App />
       </QueryClientProvider>

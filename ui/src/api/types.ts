@@ -95,6 +95,8 @@ export interface ResourceDTO {
   unread_through_ts?: string
   created_ts?: string
   updated_ts?: string
+  /** slack: Slack's read cursor as of the last poll; absent if never read. */
+  last_read?: string
   state?: string
   review_decision?: string
   ci_status?: string
@@ -548,3 +550,12 @@ export interface LinkedResourcesDTO {
 
 /** GET /api/watchers/health: per service, whether its watcher is on and whether every polled resource is failing. */
 export type WatcherHealth = Record<CredService, { enabled: boolean; failing: boolean; error?: string }>
+
+/**
+ * What POST /api/resource-read did to a cursor. previous_ts is null when the
+ * resource had none (restoring removes it again).
+ */
+export interface ResourceReadChange {
+  previous_ts: string | null
+  last_read_ts: string
+}

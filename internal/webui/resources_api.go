@@ -23,6 +23,7 @@ type resourceDTO struct {
 	HasUnread             bool     `json:"has_unread,omitempty"`               // slack: unread as of the last poll
 	CreatedTS             string   `json:"created_ts,omitempty"`               // slack: root message ts (creation)
 	UpdatedTS             string   `json:"updated_ts,omitempty"`               // slack: latest message ts
+	LastRead              string   `json:"last_read,omitempty"`                // slack: Slack's read cursor as of the last poll
 	State                 string   `json:"state,omitempty"`                    // PR state (open/closed/merged)
 	ReviewDecision        string   `json:"review_decision,omitempty"`          // PR
 	CIStatus              string   `json:"ci_status,omitempty"`                // PR
@@ -214,6 +215,9 @@ func (s *Server) enrichResourceDTO(dto *resourceDTO) {
 		}
 		if v, ok := m["updated_ts"].(string); ok {
 			dto.UpdatedTS = v
+		}
+		if v, ok := m["last_read"].(string); ok {
+			dto.LastRead = v
 		}
 	case "link":
 		if v, ok := m["title"].(string); ok {

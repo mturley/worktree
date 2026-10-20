@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { render, cleanup, fireEvent, waitFor, act } from '@testing-library/react'
 import { MantineProvider } from '@mantine/core'
+import { Notifications, notifications } from '@mantine/notifications'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { $createTextNode, $getRoot, type ElementNode, type LexicalEditor } from 'lexical'
 import { openInSlackUrl, ThreadView } from './ThreadView'
@@ -48,21 +49,24 @@ vi.mock('../../api/slackApi', async (orig) => ({
   postReply: vi.fn(),
   markRead: vi.fn(),
   markUnread: vi.fn(),
+  restoreRead: vi.fn(),
   getConfig: vi.fn().mockRejectedValue(new Error('no config in test')),
   avatarProxy: (url: string) => url,
   emojiProxy: (url: string) => url,
 }))
 
-import { markRead, markUnread, postReply } from '../../api/slackApi'
+import { markRead, markUnread, postReply, restoreRead } from '../../api/slackApi'
 
 const mockPostReply = vi.mocked(postReply)
 const mockMarkRead = vi.mocked(markRead)
 const mockMarkUnread = vi.mocked(markUnread)
+const mockRestoreRead = vi.mocked(restoreRead)
 
 // RTL's queries default to document.body scope; without cleanup, renders
 // from earlier tests in this file would bleed into later ones.
 afterEach(() => {
   cleanup()
+  notifications.clean()
   vi.clearAllMocks()
 })
 
@@ -71,6 +75,7 @@ afterEach(() => {
 function renderWithProvider(ui: React.ReactElement, qc = new QueryClient()) {
   return render(
     <MantineProvider>
+      <Notifications />
       <QueryClientProvider client={qc}>{ui}</QueryClientProvider>
     </MantineProvider>,
   )
@@ -210,6 +215,29 @@ describe('ThreadView refreshes unread surfaces after a read-state change', () =>
     fireEvent.click(getByRole('button', { name: 'Mark read' }))
     await findByText('nope')
     expect(spy).not.toHaveBeenCalled()
+  })
+})
+
+describe('ThreadView undo of mark read', () => {
+  const msg = (ts: string) =>
+    ({ TS: ts, UserID: 'U2', Text: `m ${ts}`, Blocks: null, Reactions: null, Edited: false, Files: null, Attachments: null })
+
+  it('restores Slack\'s cursor from before the mark, then refetches the thread', async () => {
+    mockMarkRead.mockResolvedValue(undefined)
+    mockRestoreRead.mockResolvedValue(undefined)
+    const t = baseThread()
+    t.data = {
+      ...t.data!,
+      messages: [msg('1700000000.000001'), msg('1700000001.000001')],
+      unreadIndex: 1,
+      lastRead: '1700000000.000001',
+    }
+    const { getByRole, findByRole } = renderWithProvider(
+      <ThreadView tab={baseTab()} thread={t} onOpenThread={vi.fn()} />)
+    fireEvent.click(getByRole('button', { name: 'Mark read' }))
+    fireEvent.click(await findByRole('button', { name: 'Undo' }))
+    await waitFor(() => expect(t.refresh).toHaveBeenCalled())
+    expect(mockRestoreRead).toHaveBeenCalledWith('C1', '1700000000.000001', '1700000000.000001', '1700000001.000001')
   })
 })
 

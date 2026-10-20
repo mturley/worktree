@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/mturley/watcher"
+	"github.com/mturley/watcher/slack"
 	"github.com/mturley/worktree/internal/resources"
 	"github.com/mturley/worktree/internal/testgit"
 )
@@ -93,5 +94,74 @@ func TestSlackMarkReadFailureDoesNotRefresh(t *testing.T) {
 	}
 	if got := refreshed(); len(got) != 0 {
 		t.Fatalf("refreshed %v after a failed mark", got)
+	}
+}
+
+// fakeThread is a thread of root 1.0 and replies 2.0, 3.0, read through lastRead.
+func fakeThread(lastRead string) slack.Thread {
+	return slack.Thread{
+		Channel: "C1", ThreadTS: "1.0", LastRead: lastRead,
+		Messages: []slack.Message{{TS: "1.0"}, {TS: "2.0"}, {TS: "3.0"}},
+	}
+}
+
+// Slack has no "set last_read"; restore marks unread from the first message
+// after the old cursor, which puts last_read just before it.
+func TestSlackRestoreReadMarksUnreadFromTheFirstMessageAfterTheOldCursor(t *testing.T) {
+	conn := unreadTestDB(t)
+	wt := testgit.Worktree(t)
+	if err := resources.Add(conn, wt, resources.Resource{Type: "slack", ID: "C1:1.0", URL: "u"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ lastRead, want string }{
+		{"1.0", "2.0"},
+		{"", "1.0"}, // never read: the whole thread goes back to unread
+	} {
+		fake := newFakeSlack()
+		fake.thread = fakeThread("3.0")
+		srv := &Server{DB: conn, SlackClient: fake}
+		refreshed := recordRefresh(srv)
+		ts := httptest.NewServer(srv.Handler())
+		body := `{"channel":"C1","thread_ts":"1.0","last_read":"` + tc.lastRead + `","through":"3.0"}`
+		if code := postJSON(t, ts.URL+"/api/thread/restore-read", body); code != http.StatusNoContent {
+			t.Fatalf("last_read %q: status %d", tc.lastRead, code)
+		}
+		ts.Close()
+		if fake.markUnreadTS != tc.want {
+			t.Fatalf("last_read %q: marked unread from %q, want %q", tc.lastRead, fake.markUnreadTS, tc.want)
+		}
+		if got := refreshed(); len(got) != 1 {
+			t.Fatalf("last_read %q: refreshed %v, want the tracked thread once", tc.lastRead, got)
+		}
+	}
+}
+
+func TestSlackRestoreReadRefusesWhenReadFurtherSince(t *testing.T) {
+	fake := newFakeSlack()
+	fake.thread = fakeThread("4.0")
+	srv := &Server{SlackClient: fake}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	body := `{"channel":"C1","thread_ts":"1.0","last_read":"1.0","through":"3.0"}`
+	if code := postJSON(t, ts.URL+"/api/thread/restore-read", body); code != http.StatusConflict {
+		t.Fatalf("status %d, want 409", code)
+	}
+	if fake.markUnreadTS != "" {
+		t.Fatalf("marked unread from %q despite the conflict", fake.markUnreadTS)
+	}
+}
+
+func TestSlackRestoreReadIsANoOpWhenNothingFollowsTheOldCursor(t *testing.T) {
+	fake := newFakeSlack()
+	fake.thread = fakeThread("3.0")
+	srv := &Server{SlackClient: fake}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	body := `{"channel":"C1","thread_ts":"1.0","last_read":"3.0","through":"3.0"}`
+	if code := postJSON(t, ts.URL+"/api/thread/restore-read", body); code != http.StatusNoContent {
+		t.Fatalf("status %d", code)
+	}
+	if fake.markUnreadTS != "" {
+		t.Fatalf("marked unread from %q, want no write", fake.markUnreadTS)
 	}
 }
