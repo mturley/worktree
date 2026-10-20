@@ -257,14 +257,15 @@ describe("MarkAllReadButton", () => {
       expect(unreadOnly).toBe(true)
     })
 
-    it("closes the modal, then navigates, when an event is clicked", async () => {
-      const onSelectResource = vi.fn()
+    it("opens an event's details over the modal, leaving it open, when an event is clicked", async () => {
       const user = userEvent.setup()
-      wrap(three(), { onSelectResource })
+      wrap(three())
       await open(user)
-      await user.click(await screen.findByText("a PR comment"))
-      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
-      expect(onSelectResource).toHaveBeenCalledWith({ type: "pr", id: "pr-1" }, expect.objectContaining({ id: "e-pr" }))
+      await user.hover(await screen.findByText("a PR comment"))
+      expect(await screen.findByText("View event details")).toBeInTheDocument()
+      await user.click(screen.getByText("a PR comment"))
+      await waitFor(() => expect(screen.getAllByRole("dialog")).toHaveLength(2))
+      expect(screen.getByRole("dialog", { name: "Mark all read" })).toBeInTheDocument()
       expect(markResourceRead).not.toHaveBeenCalled()
     })
   })

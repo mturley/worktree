@@ -1,7 +1,7 @@
 import { type ComponentProps, useState } from "react"
 import { Alert, Box, Button, Checkbox, Flex, Group, Modal, ScrollArea, Stack, Text } from "@mantine/core"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import type { ResourceDTO, TimelineEvent } from "../api/types"
+import type { ResourceDTO } from "../api/types"
 import { api } from "../api/client"
 import { markRead as markThreadRead } from "../api/slackApi"
 import { useGlobalTimeline, useWorktreeTimeline } from "../hooks/useTimeline"
@@ -56,18 +56,21 @@ function toTarget(r: ResourceDTO): Target | null {
 }
 
 /**
- * Where the preview column's events come from, and how its rows behave. A
+ * Where the preview column's events come from, and how its rows look. A
  * `worktree` previews that worktree's own feed; without one, the global feed
  * (never archived: the button marks only resources a worktree follows). The
- * rest is passed through to the TimelineFeed, as the page's own feed sets it,
- * so a row clicked here does what it does there.
+ * rest is passed through to the TimelineFeed, as the page's own feed sets it.
+ *
+ * There is deliberately no onSelectResource: a row clicked here opens its
+ * details over the modal, leaving the modal open beneath, rather than
+ * navigating away from the decision the modal is asking for.
  */
 export type MarkAllReadFeed = { worktree?: string } & Pick<
   ComponentProps<typeof TimelineFeed>,
-  "showWorktrees" | "onSelectResource" | "resolveResource" | "canSelectResource" | "path"
+  "showWorktrees" | "resolveResource" | "path"
 >
 
-type PreviewProps = { types: string[]; feed: MarkAllReadFeed; onNavigate: () => void }
+type PreviewProps = { types: string[]; feed: MarkAllReadFeed }
 
 /** The global feed's unread events of `types`. */
 function GlobalPreview(props: PreviewProps) {
@@ -79,10 +82,10 @@ function WorktreePreview(props: PreviewProps & { worktree: string }) {
   return <PreviewFeed {...props} tl={useWorktreeTimeline(props.worktree, undefined, props.types, true)} />
 }
 
-function PreviewFeed({ tl, feed, onNavigate }: PreviewProps & {
+function PreviewFeed({ tl, feed }: PreviewProps & {
   tl: ReturnType<typeof useGlobalTimeline>
 }) {
-  const { worktree: _, onSelectResource, ...rest } = feed
+  const { worktree: _, ...rest } = feed
   return (
     <TimelineFeed
       {...rest}
@@ -93,13 +96,6 @@ function PreviewFeed({ tl, feed, onNavigate }: PreviewProps & {
       onLoadMore={tl.loadMore}
       loadingMore={tl.loadingMore}
       emptyText="No unread activity."
-      // Navigating leaves the modal behind, so it closes first. A row that
-      // cannot navigate opens its details over the modal instead, as it
-      // would in the page's feed, and leaves the modal open beneath.
-      onSelectResource={onSelectResource && ((key, e: TimelineEvent) => {
-        onNavigate()
-        onSelectResource(key, e)
-      })}
     />
   )
 }
@@ -199,8 +195,8 @@ export function MarkAllReadButton({ resources, feed }: { resources: ResourceDTO[
                 {/* Nothing checked lists nothing — and asks for nothing: an
                     empty resource_types means every type to the server. */}
                 {selectedTypes.length === 0 ? null : feed.worktree
-                  ? <WorktreePreview worktree={feed.worktree} types={selectedTypes} feed={feed} onNavigate={() => setOpened(false)} />
-                  : <GlobalPreview types={selectedTypes} feed={feed} onNavigate={() => setOpened(false)} />}
+                  ? <WorktreePreview worktree={feed.worktree} types={selectedTypes} feed={feed} />
+                  : <GlobalPreview types={selectedTypes} feed={feed} />}
               </ScrollArea.Autosize>
             </Box>
           </Flex>

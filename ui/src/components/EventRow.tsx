@@ -76,7 +76,7 @@ export function EventRow({
     : onOpen
       ? () => onOpen(e)
       : undefined
-  const tip = resourceKey ? "View resource in worktree" : "View event details"
+  const tip = resourceKey ? "View event details in worktree" : "View event details"
 
   // Only a row that goes to its resource takes part in cross-hover: one that
   // opens its details (archived, resourceless, or in a pane already showing

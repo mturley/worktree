@@ -669,16 +669,17 @@ describe("HomePage mark all read", () => {
     expect(button()).not.toBeNull()
   })
 
-  it("a previewed event closes the modal and goes to it, as in the feed", async () => {
+  it("a previewed event opens its details over the modal, and stays on the page", async () => {
     setViewport("wide")
     mocks.events = [event]
     const user = userEvent.setup()
     wrap()
+    const before = window.location.pathname
     await user.click(await screen.findByRole("button", { name: "Mark all read" }))
     const dialog = await screen.findByRole("dialog")
     await user.click(within(dialog).getByText("Please take another look"))
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
-    expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/foo")}`)
-    expect(new URLSearchParams(window.location.search).get("resource")).toBe("pr:o/r#9")
+    await waitFor(() => expect(screen.getAllByRole("dialog")).toHaveLength(2))
+    expect(screen.getByRole("dialog", { name: "Mark all read" })).toBeInTheDocument()
+    expect(window.location.pathname).toBe(before)
   })
 })

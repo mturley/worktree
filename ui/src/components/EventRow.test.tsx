@@ -334,9 +334,9 @@ describe("the row's tooltip names its destination", () => {
     await userEvent.hover(screen.getByRole("button"))
   }
 
-  it('says "View resource in worktree" for a row that opens its resource', async () => {
+  it('says "View event details in worktree" for a row that opens its resource', async () => {
     await hoverRow(<EventRow e={makeEvent({ resource_type: "pr", resource_id: "o/r#42" })} onSelectResource={vi.fn()} />)
-    expect(await screen.findByText("View resource in worktree")).toBeInTheDocument()
+    expect(await screen.findByText("View event details in worktree")).toBeInTheDocument()
   })
 
   it('says "View event details" for a row that opens the modal', async () => {

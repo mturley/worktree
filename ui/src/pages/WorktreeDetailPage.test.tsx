@@ -956,7 +956,7 @@ describe("WorktreeDetailPage mark all read", () => {
     expect(button()).toBeNull()
   })
 
-  it("a previewed event closes the modal and selects its resource, as in the feed", async () => {
+  it("a previewed event opens its details over the modal, selecting nothing", async () => {
     resources = unread()
     timelineMock.events = [{
       id: "evt-3", ts: "2026-10-01T00:00:00Z", external_ts: "", source: "github",
@@ -969,7 +969,8 @@ describe("WorktreeDetailPage mark all read", () => {
     await user.click(button()!)
     const dialog = await screen.findByRole("dialog")
     await user.click(within(dialog).getByText("Please take another look"))
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Mark all read" })).toBeNull())
-    expect(decodeURIComponent(new URLSearchParams(window.location.search).get("resource") ?? "")).toBe("pr:o/r#1")
+    await waitFor(() => expect(screen.getAllByRole("dialog")).toHaveLength(2))
+    expect(screen.getByRole("dialog", { name: "Mark all read" })).toBeInTheDocument()
+    expect(new URLSearchParams(window.location.search).get("resource")).toBeNull()
   })
 })

@@ -319,7 +319,7 @@ export function WorktreeDetailPage() {
             {!narrowing.search && !narrowing.filters && (
               <MarkAllReadButton
                 resources={items}
-                feed={{ worktree: path, onSelectResource: selectFromEvent, resolveResource, path }}
+                feed={{ worktree: path, resolveResource, path }}
               />
             )}
           </Group>

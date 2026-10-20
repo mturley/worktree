@@ -260,11 +260,7 @@ export function HomePage() {
         {!narrowing.search && !activityFiltered && (
           <MarkAllReadButton
             resources={allResources.data ?? []}
-            feed={{
-              showWorktrees: true,
-              onSelectResource: selectEventResource,
-              canSelectResource: (e) => Boolean(e.worktree_paths?.length),
-            }}
+            feed={{ showWorktrees: true }}
           />
         )}
       </Group>
