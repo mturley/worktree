@@ -207,9 +207,9 @@ export function MarkAllReadButton({ resources, feed, single = false }: {
     onSettled: refreshUnreadSurfaces,
   })
 
-  // R opens the preview, and R again in it confirms (see useButtonHotkey).
+  // R opens the preview, and Enter in it confirms (see useButtonHotkey).
   const openRef = useButtonHotkey("r", () => openModal(), groups.length > 0 && !opened)
-  const confirmRef = useButtonHotkey("r", () => markAll.mutate(), opened && selected.length > 0 && !markAll.isPending)
+  const confirmRef = useButtonHotkey("Enter", () => markAll.mutate(), opened && selected.length > 0 && !markAll.isPending)
 
   if (groups.length === 0 && !opened) return null
 
@@ -303,7 +303,10 @@ export function MarkAllReadButton({ resources, feed, single = false }: {
               disabled={selected.length === 0}
               onClick={() => markAll.mutate()}
               ref={confirmRef}
-              rightSection={<KeyHint decorative>R</KeyHint>}
+              // Focus lands here on open, not on the close button, which
+              // Enter would otherwise belong to.
+              data-autofocus
+              rightSection={<KeyHint decorative>Enter</KeyHint>}
             >
               Mark read
             </Button>

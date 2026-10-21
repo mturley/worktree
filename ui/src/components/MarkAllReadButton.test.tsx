@@ -157,13 +157,25 @@ describe("MarkAllReadButton", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
   })
 
-  it("opens on R, and R again in the preview marks them read", async () => {
+  it("opens on R, and Enter in the preview marks them read", async () => {
     wrap(everything())
     fireEvent.keyDown(document, { key: "r" })
     await screen.findByRole("dialog")
     fireEvent.keyDown(document, { key: "r" })
+    expect(markResourceRead).not.toHaveBeenCalled()
+    fireEvent.keyDown(document, { key: "Enter" })
     await waitFor(() => expect(markResourceRead).toHaveBeenCalledTimes(4))
     expect(markThreadRead).toHaveBeenCalledTimes(2)
+  })
+
+  it("leaves Enter to Cancel when Cancel has focus", async () => {
+    const user = userEvent.setup()
+    wrap(everything())
+    await open(user)
+    const cancel = screen.getByRole("button", { name: "Cancel" })
+    cancel.focus()
+    fireEvent.keyDown(cancel, { key: "Enter" })
+    expect(markResourceRead).not.toHaveBeenCalled()
   })
 
   it("skips a type that is unchecked", async () => {

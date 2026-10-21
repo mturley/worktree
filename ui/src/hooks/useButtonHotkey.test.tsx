@@ -49,4 +49,23 @@ describe("useButtonHotkey", () => {
     expect(page).not.toHaveBeenCalled()
     expect(inDialog).toHaveBeenCalledTimes(1)
   })
+
+  it("leaves Enter to another focused control, but not to its own button", () => {
+    const onPress = vi.fn()
+    function EnterBtn() {
+      const ref = useButtonHotkey("Enter", onPress, true)
+      return <><button>Cancel</button><button ref={ref}>Mark read</button></>
+    }
+    const view = render(<EnterBtn />)
+    const cancel = view.getByText("Cancel")
+    cancel.focus()
+    fireEvent.keyDown(cancel, { key: "Enter" })
+    expect(onPress).not.toHaveBeenCalled()
+    const own = view.getByText("Mark read")
+    own.focus()
+    fireEvent.keyDown(own, { key: "Enter" })
+    document.body.focus()
+    fireEvent.keyDown(document, { key: "Enter" })
+    expect(onPress).toHaveBeenCalledTimes(2)
+  })
 })
