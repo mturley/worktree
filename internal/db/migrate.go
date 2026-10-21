@@ -88,6 +88,70 @@ func migrate(conn *sql.DB) error {
 			author_id  TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		)`,
+		// To-do items (internal/tasks). Worktree-owned. rank is a fractional
+		// index (tasks.KeyBetween) giving one master order across every task;
+		// a move rewrites only the moved row. deleted_at is a soft delete.
+		`CREATE TABLE IF NOT EXISTS tasks (
+			id           INTEGER PRIMARY KEY AUTOINCREMENT,
+			title        TEXT NOT NULL,
+			description  TEXT NOT NULL DEFAULT '',
+			state        TEXT NOT NULL DEFAULT 'not_started',
+			priority     TEXT NOT NULL DEFAULT 'none',
+			starred      INTEGER NOT NULL DEFAULT 0,
+			due_date     TEXT,
+			rank         TEXT NOT NULL,
+			created_at   TEXT NOT NULL,
+			updated_at   TEXT NOT NULL,
+			started_at   TEXT,
+			completed_at TEXT,
+			deleted_at   TEXT
+		)`,
+		// Master order: rank, with id breaking ties.
+		`CREATE INDEX IF NOT EXISTS tasks_rank ON tasks (rank, id)`,
+		// A task's links to a resource (type + id) or a worktree (canonical
+		// path). is_primary marks a Focus link; anything else is Related.
+		// Unused columns for the other kind stay '' so UNIQUE still dedups.
+		`CREATE TABLE IF NOT EXISTS task_links (
+			id            INTEGER PRIMARY KEY AUTOINCREMENT,
+			task_id       INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+			kind          TEXT NOT NULL CHECK (kind IN ('resource','worktree')),
+			resource_type TEXT NOT NULL DEFAULT '',
+			resource_id   TEXT NOT NULL DEFAULT '',
+			worktree_path TEXT NOT NULL DEFAULT '',
+			is_primary    INTEGER NOT NULL DEFAULT 0,
+			sort_order    INTEGER,
+			created_at    TEXT NOT NULL,
+			UNIQUE (task_id, kind, resource_type, resource_id, worktree_path)
+		)`,
+		// Reverse lookups: which tasks link a given resource or worktree.
+		`CREATE INDEX IF NOT EXISTS task_links_resource ON task_links (resource_type, resource_id)`,
+		`CREATE INDEX IF NOT EXISTS task_links_worktree ON task_links (worktree_path)`,
+		// A task's checklist, ordered by position.
+		`CREATE TABLE IF NOT EXISTS task_subtasks (
+			id         INTEGER PRIMARY KEY AUTOINCREMENT,
+			task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+			text       TEXT NOT NULL,
+			checked    INTEGER NOT NULL DEFAULT 0,
+			position   INTEGER NOT NULL,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)`,
+		// A task's history. Deliberately NOT watcher_events: those belong to
+		// the watcher library's schema, shared with agent-handler. No FK to
+		// tasks, because history must outlive a later (Phase 6) purge
+		// decision. actor is 'user' or 'agent'. ts uses the same RFC3339 UTC
+		// second format as the rest of the DB.
+		`CREATE TABLE IF NOT EXISTS task_events (
+			id            INTEGER PRIMARY KEY AUTOINCREMENT,
+			task_id       INTEGER NOT NULL,
+			ts            TEXT NOT NULL,
+			type          TEXT NOT NULL,
+			actor         TEXT NOT NULL,
+			actor_session TEXT NOT NULL DEFAULT '',
+			payload       TEXT NOT NULL DEFAULT '{}'
+		)`,
+		// A task's feed, newest first.
+		`CREATE INDEX IF NOT EXISTS task_events_task ON task_events (task_id, ts)`,
 	}
 	for _, s := range stmts {
 		if _, err := conn.Exec(s); err != nil {
