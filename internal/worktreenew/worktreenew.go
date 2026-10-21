@@ -99,6 +99,11 @@ type Options struct {
 	Pull         bool
 	CopyDotfiles bool
 
+	// Branch overrides the branch a PR or Jira input would otherwise get
+	// (DefaultBranch). Empty means the default. It is ignored for a plain
+	// branch name, where Input already is the branch.
+	Branch string
+
 	// Answers carried on the replay.
 	ReuseBranch bool
 	ResetToPR   bool
@@ -196,6 +201,12 @@ func Run(conn *sql.DB, cfg config.Config, opts Options, observe func(Step)) Resu
 	if info, err := os.Stat(opts.RepoRoot); err != nil || !info.IsDir() {
 		return Result{Steps: r.finish(), Err: fmt.Errorf("repo root not found: %s", opts.RepoRoot)}
 	}
+	if !namesResource(opts.Input) {
+		r.opts.Branch = ""
+	} else if opts.Branch != "" && !gitutil.ValidBranchName(opts.Branch) {
+		// Before the pull, so a typo costs nothing.
+		return Result{Steps: r.finish(), Err: fmt.Errorf("%q is not a valid branch name", opts.Branch)}
+	}
 
 	// Pull first, so the new worktree branches from current upstream.
 	if opts.Pull {
@@ -252,6 +263,9 @@ func Run(conn *sql.DB, cfg config.Config, opts Options, observe func(Step)) Resu
 	} else {
 		branch, p := resolveInput(opts.Input)
 		primary = p
+		if r.opts.Branch != "" {
+			branch = r.opts.Branch
+		}
 		existed := false
 		if _, statErr := os.Stat(filepath.Join(
 			cfg.WorktreesBase, repoDirName(opts.RepoRoot), branch)); statErr == nil {
@@ -345,7 +359,7 @@ func (r *runner) runPR(pr *PRInput) (prOutcome, error) {
 
 	res, err := createPRWorktree(
 		r.opts.RepoRoot, r.cfg.WorktreesBase, remote, pr.Number, info.HeadRef,
-		github.Slugify(info.Title))
+		github.Slugify(info.Title), r.opts.Branch)
 	if err != nil {
 		return prOutcome{}, err
 	}
@@ -403,6 +417,46 @@ func (r *runner) runPR(pr *PRInput) (prOutcome, error) {
 		Title: info.Title,
 		Body:  info.Body,
 	}, nil
+}
+
+// namesResource reports whether input names a PR or Jira issue — the inputs
+// whose branch name is derived, and so can be chosen — rather than being a
+// branch name itself.
+func namesResource(input string) bool {
+	if resourceurl.PRURLPattern.MatchString(input) {
+		return true
+	}
+	if _, err := strconv.Atoi(input); err == nil {
+		return true
+	}
+	_, p := resolveInput(input)
+	return p != nil
+}
+
+// DefaultBranch is the branch Run gives input when Options.Branch is empty, so
+// a caller can offer it for editing. It is empty for a plain branch name,
+// which is already the branch. A PR's default needs its title, so this reads
+// the PR from GitHub, under the same watcher gate as Run.
+func DefaultBranch(cfg config.Config, input, repoRoot string) (string, error) {
+	pr, err := parsePRInput(input, repoRoot)
+	if err != nil {
+		return "", err
+	}
+	if pr == nil {
+		branch, primary := resolveInput(input)
+		if primary == nil {
+			return "", nil
+		}
+		return branch, nil
+	}
+	if err := checkGitHubWatcher(cfg); err != nil {
+		return "", err
+	}
+	info, err := fetchPRInfo(pr.Owner, pr.Repo, pr.Number)
+	if err != nil {
+		return "", err
+	}
+	return gitutil.PRBranchName(pr.Number, github.Slugify(info.Title)), nil
 }
 
 // resolveInput turns the polymorphic input into a branch name and, for a Jira

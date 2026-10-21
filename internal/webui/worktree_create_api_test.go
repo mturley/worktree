@@ -147,3 +147,53 @@ func TestCreateWorktreeRequestOptionsCarriesAllFields(t *testing.T) {
 		t.Error("DeclineReset = false, want true")
 	}
 }
+
+func TestDefaultBranchForJiraKey(t *testing.T) {
+	s := &Server{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/worktrees/default-branch?input=PROJ-7&repo_root=/r", nil)
+	s.handleDefaultBranch(rec, req)
+
+	var got defaultBranchResponse
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != http.StatusOK || got.Branch != "proj-7" || got.Error != "" {
+		t.Fatalf("status %d, got %#v; want branch proj-7", rec.Code, got)
+	}
+}
+
+// A plain branch name has no default to offer: the modal hides the field.
+func TestDefaultBranchForPlainBranchIsEmpty(t *testing.T) {
+	s := &Server{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/worktrees/default-branch?input=my-feature&repo_root=/r", nil)
+	s.handleDefaultBranch(rec, req)
+
+	var got defaultBranchResponse
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Branch != "" {
+		t.Fatalf("branch = %q, want empty", got.Branch)
+	}
+}
+
+func TestDefaultBranchRequiresInput(t *testing.T) {
+	s := &Server{}
+	rec := httptest.NewRecorder()
+	s.handleDefaultBranch(rec, httptest.NewRequest(http.MethodGet, "/api/worktrees/default-branch", nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestCreateWorktreeRequestCarriesBranch(t *testing.T) {
+	var req createWorktreeRequest
+	if err := json.Unmarshal([]byte(`{"input":"PROJ-7","repo_root":"/r","branch":"proj-7-x"}`), &req); err != nil {
+		t.Fatal(err)
+	}
+	if got := req.options().Branch; got != "proj-7-x" {
+		t.Fatalf("Options.Branch = %q, want proj-7-x", got)
+	}
+}

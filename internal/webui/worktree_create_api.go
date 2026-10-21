@@ -18,8 +18,11 @@ type createWorktreeRequest struct {
 	RepoRoot     string `json:"repo_root"`
 	Pull         bool   `json:"pull"`
 	CopyDotfiles bool   `json:"copy_dotfiles"`
-	ReuseBranch  bool   `json:"reuse_branch"`
-	ResetToPR    bool   `json:"reset_to_pr"`
+	// Branch is the user's chosen branch for a PR or Jira input; empty means
+	// the default the modal fetched from /api/worktrees/default-branch.
+	Branch      string `json:"branch"`
+	ReuseBranch bool   `json:"reuse_branch"`
+	ResetToPR   bool   `json:"reset_to_pr"`
 	// DeclineReset is "the user was asked to reset and said no", which is a
 	// different thing from ResetToPR being false ("not asked yet"). Without
 	// it the client cannot decline: re-posting would raise the same question
@@ -73,17 +76,12 @@ func (s *Server) handleCreateWorktree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg, err := config.Load()
+	cfg, err := s.createConfig()
 	if err != nil {
 		writeJSON(w, http.StatusOK, createWorktreeResponse{
 			OK: false, Steps: []worktreenew.Step{}, Error: err.Error(),
 		})
 		return
-	}
-	// The live gates are what this server does; a PR-based create must not
-	// reach GitHub while its watcher is off here.
-	for _, svc := range config.Services {
-		cfg.Watchers.SetEnabled(svc, s.WatcherEnabled(svc))
 	}
 
 	res := worktreenew.Run(s.DB, cfg, req.options(), nil)
@@ -101,12 +99,57 @@ func (s *Server) handleCreateWorktree(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// createConfig is the config a creation runs under. The live gates are what
+// this server does; a PR-based create must not reach GitHub while its watcher
+// is off here.
+func (s *Server) createConfig() (config.Config, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return cfg, err
+	}
+	for _, svc := range config.Services {
+		cfg.Watchers.SetEnabled(svc, s.WatcherEnabled(svc))
+	}
+	return cfg, nil
+}
+
+type defaultBranchResponse struct {
+	Branch string `json:"branch"`
+	Error  string `json:"error,omitempty"`
+}
+
+// handleDefaultBranch: GET /api/worktrees/default-branch?input=...&repo_root=...
+//
+// The branch a PR or Jira input would get, so the modal can offer it for
+// editing. Empty for a plain branch name, which is already the branch. A PR's
+// default needs its title from GitHub; a failure comes back as 200 with
+// `error` set, since the create itself will report the same problem.
+func (s *Server) handleDefaultBranch(w http.ResponseWriter, r *http.Request) {
+	input := r.URL.Query().Get("input")
+	if input == "" {
+		writeError(w, http.StatusBadRequest, "missing input")
+		return
+	}
+	cfg, err := s.createConfig()
+	if err != nil {
+		writeJSON(w, http.StatusOK, defaultBranchResponse{Error: err.Error()})
+		return
+	}
+	branch, err := worktreenew.DefaultBranch(cfg, input, r.URL.Query().Get("repo_root"))
+	if err != nil {
+		writeJSON(w, http.StatusOK, defaultBranchResponse{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, defaultBranchResponse{Branch: branch})
+}
+
 func (req createWorktreeRequest) options() worktreenew.Options {
 	return worktreenew.Options{
 		Input:        req.Input,
 		RepoRoot:     req.RepoRoot,
 		Pull:         req.Pull,
 		CopyDotfiles: req.CopyDotfiles,
+		Branch:       req.Branch,
 		ReuseBranch:  req.ReuseBranch,
 		ResetToPR:    req.ResetToPR,
 		DeclineReset: req.DeclineReset,

@@ -150,6 +150,15 @@ func runCreate(input, repoRoot string) error {
 		Pull:         ui.ConfirmDefault("git pull before creating worktree?", true),
 		CopyDotfiles: confirmDotfiles(repoRoot),
 	}
+	// A PR or Jira input names a resource, not a branch, so offer the derived
+	// branch name for editing. Empty means the input is the branch already.
+	def, err := worktreenew.DefaultBranch(cfg, input, repoRoot)
+	if err != nil {
+		return err
+	}
+	if def != "" {
+		opts.Branch = ui.PromptLineDefault("  Branch name", def)
+	}
 
 	var printer stepPrinter
 	for {

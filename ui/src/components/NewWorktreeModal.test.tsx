@@ -26,6 +26,41 @@ describe("NewWorktreeModal", () => {
     ])
     vi.spyOn(api, "repoDotfiles").mockResolvedValue([".env.local"])
     vi.spyOn(api, "cmux").mockResolvedValue({ available: false })
+    vi.spyOn(api, "defaultBranch").mockImplementation(async (input) => ({
+      branch: /^[A-Z]+-\d+$/.test(input) ? input.toLowerCase() : "",
+    }))
+  })
+
+  it("offers the issue's default branch for editing and posts the edit", async () => {
+    const create = vi.spyOn(api, "createWorktree")
+      .mockResolvedValue({ ok: true, steps: [], confirm: null, path: "/wt/x" })
+
+    renderModal()
+    await screen.findByDisplayValue("worktree")
+    await userEvent.type(screen.getByLabelText(/branch, pr, or issue/i), "PROJ-7")
+
+    const branch = await screen.findByDisplayValue("proj-7")
+    await userEvent.type(branch, "-tidy")
+    await userEvent.click(screen.getByRole("button", { name: /^create$/i }))
+
+    expect(create).toHaveBeenLastCalledWith(
+      expect.objectContaining({ input: "PROJ-7", branch: "proj-7-tidy" }),
+    )
+  })
+
+  it("asks no branch name for a plain branch input", async () => {
+    const create = vi.spyOn(api, "createWorktree")
+      .mockResolvedValue({ ok: true, steps: [], confirm: null, path: "/wt/x" })
+
+    renderModal()
+    await screen.findByDisplayValue("worktree")
+    await userEvent.type(screen.getByLabelText(/branch, pr, or issue/i), "my-feature")
+    await vi.waitFor(() =>
+      expect(api.defaultBranch).toHaveBeenCalledWith("my-feature", "/git/worktree"))
+    expect(screen.queryByLabelText(/^branch name/i)).toBeNull()
+
+    await userEvent.click(screen.getByRole("button", { name: /^create$/i }))
+    expect(create.mock.lastCall?.[0].branch).toBeUndefined()
   })
 
   it("defaults to the first (most recent) repo", async () => {

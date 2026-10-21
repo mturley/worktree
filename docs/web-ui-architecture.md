@@ -204,6 +204,7 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | POST | `/api/cmux/close-tab` | body: `{id, surface, type, title}` | guarded: re-reads the tree, `{ok:false, stale:true}` unless the tab still matches |
 | POST | `/api/cmux/move-tab` | body: `{id, surface, type, title, pane, anchor?: {surface, type, title, position}}` | guarded (tab and anchor); same pane → `reorder-surface`, other pane → `move-surface` |
 | POST | `/api/worktrees/create` | drives `internal/worktreenew` | `{ok, confirm?, steps[]}` — a pending question is HTTP 200 + `confirm`, never an error status |
+| GET | `/api/worktrees/default-branch` | `input` (required), `repo_root` | `{branch, error?}` — `worktreenew.DefaultBranch`; empty `branch` for a plain branch name. The modal shows its editable "Branch name" field only when it is non-empty |
 | GET | `/api/repos` | — | registry repos, newest worktree first |
 | GET | `/api/repo-dotfiles` | `repo` (required) | gitignored dotfiles that repo would copy into a new worktree |
 | GET | `/api/stream` | `tab`, `route`, `visible` (all optional; see "Notifications") | SSE stream (`text/event-stream`) |
@@ -228,6 +229,11 @@ new consumer:
   threaded through every layer that can answer a confirmation (the CLI
   driver, the HTTP request struct, the modal); it was missed at each of those
   layers once during development.
+- **`Options.Branch` is the user's chosen branch for a PR or Jira input.**
+  Both surfaces offer `DefaultBranch` for editing (the CLI's "Branch name"
+  prompt, the modal's field) and send the result back; it is ignored for a
+  plain branch name. A PR's directory stays `pr-<N>-<slug>` whatever the
+  branch is called, so a re-run on the same PR still finds its worktree.
 - **A step's `pending` status is overloaded.** It means both "in progress
   right now" (a slow step is recorded `pending` when it *starts*, so the CLI
   can show a spinner) and "never reached" (`finish()` pads every unreached

@@ -274,6 +274,7 @@ func (s *Server) routes() []route {
 		{"GET /api/jira-icon", s.handleJiraIcon},
 		{"GET /api/slack-avatar", s.handleSlackAvatar},
 		{"POST /api/worktrees/create", s.handleCreateWorktree},
+		{"GET /api/worktrees/default-branch", s.handleDefaultBranch},
 		{"GET /api/repos", s.handleRepos},
 		{"GET /api/repo-dotfiles", s.handleRepoDotfiles},
 		{"GET /api/slack-emoji", s.handleSlackEmoji},

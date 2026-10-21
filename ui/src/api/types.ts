@@ -199,6 +199,12 @@ export interface CreateStep {
   detail?: string
 }
 
+/** The branch a PR or Jira input would get; empty for a plain branch name. */
+export interface DefaultBranchResponse {
+  branch: string
+  error?: string
+}
+
 export interface CreateWorktreeResponse {
   ok: boolean
   confirm: CreateConfirm | null

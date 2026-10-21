@@ -110,7 +110,7 @@ func stubPRInfo(t *testing.T, info *github.PRInfo, res gitutil.PRWorktreeResult)
 		out.Number = number
 		return &out, nil
 	}
-	createPRWorktree = func(repoRoot, base, remote string, n int, headRef, slug string) (gitutil.PRWorktreeResult, error) {
+	createPRWorktree = func(repoRoot, base, remote string, n int, headRef, slug, branch string) (gitutil.PRWorktreeResult, error) {
 		return res, nil
 	}
 	t.Cleanup(func() { fetchPRInfo, createPRWorktree = origFetch, origCreate })

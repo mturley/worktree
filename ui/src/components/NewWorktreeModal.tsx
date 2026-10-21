@@ -3,6 +3,7 @@ import {
 } from "@mantine/core"
 import { IconCheck, IconX, IconMinus, IconPoint } from "@tabler/icons-react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useDebouncedValue } from "@mantine/hooks"
 import { useEffect, useState } from "react"
 import { useUnsavedChanges } from "../lib/unsavedChanges"
 import { useLocation } from "wouter"
@@ -33,6 +34,9 @@ export function NewWorktreeModal({ opened, onClose }: { opened: boolean; onClose
   const [repoRoot, setRepoRoot] = useState<string | null>(null)
   const [pull, setPull] = useState(true)
   const [copyDotfiles, setCopyDotfiles] = useState(false)
+  // null until the user edits the branch name; until then the field shows the
+  // server's default for the input.
+  const [branchEdit, setBranchEdit] = useState<string | null>(null)
   const [wsName, setWsName] = useState("")
   const [wsGroup, setWsGroup] = useState<string | null>(null)
   const [wsColor, setWsColor] = useState<string | null>(null)
@@ -40,7 +44,8 @@ export function NewWorktreeModal({ opened, onClose }: { opened: boolean; onClose
   const [confirm, setConfirm] = useState<CreateConfirm | null>(null)
   const [error, setError] = useState("")
   const [donePath, setDonePath] = useState("")
-  useUnsavedChanges(opened && (input.trim() !== "" || wsName.trim() !== ""))
+  useUnsavedChanges(opened && (input.trim() !== "" || wsName.trim() !== "" || branchEdit !== null))
+  const [debouncedInput] = useDebouncedValue(input.trim(), 300)
 
   const repos = useQuery({ queryKey: ["repos"], queryFn: () => api.repos(), enabled: opened })
   const dotfiles = useQuery({
@@ -48,6 +53,20 @@ export function NewWorktreeModal({ opened, onClose }: { opened: boolean; onClose
     queryFn: () => api.repoDotfiles(repoRoot!),
     enabled: opened && !!repoRoot,
   })
+  // A PR's default needs its title from GitHub, hence the debounce.
+  const defaultBranch = useQuery({
+    queryKey: ["default-branch", debouncedInput, repoRoot],
+    queryFn: () => api.defaultBranch(debouncedInput, repoRoot!),
+    enabled: opened && !!debouncedInput && !!repoRoot,
+  })
+  // A plain branch name has no default: the input already is the branch.
+  const branchDefault = debouncedInput === input.trim() ? defaultBranch.data?.branch ?? "" : ""
+  const branch = branchEdit ?? branchDefault
+  const asksBranch = branchDefault !== "" || branchEdit !== null
+
+  // An edit belongs to the input it was made for.
+  useEffect(() => { setBranchEdit(null) }, [input, repoRoot])
+
   const cmuxMeta = useQuery({
     queryKey: ["cmux-groups"],
     queryFn: () => api.cmuxGroups(),
@@ -74,6 +93,7 @@ export function NewWorktreeModal({ opened, onClose }: { opened: boolean; onClose
         repo_root: repoRoot!,
         pull,
         copy_dotfiles: copyDotfiles,
+        branch: asksBranch && branch.trim() ? branch.trim() : undefined,
         ...answers,
       }),
     onSuccess: async (res) => {
@@ -106,6 +126,14 @@ export function NewWorktreeModal({ opened, onClose }: { opened: boolean; onClose
           onChange={(e) => setInput(e.currentTarget.value)}
           disabled={create.isPending || !!donePath}
         />
+        {asksBranch && (
+          <TextInput
+            label="Branch name"
+            value={branch}
+            onChange={(e) => setBranchEdit(e.currentTarget.value)}
+            disabled={create.isPending || !!donePath}
+          />
+        )}
         <Select
           label="Repo"
           value={repoRoot}

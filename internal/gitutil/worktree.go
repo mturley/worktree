@@ -66,11 +66,26 @@ type PRWorktreeResult struct {
 	FetchRef    string // the ref name used for the PR
 }
 
-func CreatePRWorktree(repoRoot, worktreesBase, remote string, prNumber int, headRef, slug string) (PRWorktreeResult, error) {
+// PRBranchName is the branch a PR worktree gets unless the user picks another.
+func PRBranchName(prNumber int, slug string) string {
+	return fmt.Sprintf("review/pr-%d-%s", prNumber, slug)
+}
+
+// ValidBranchName reports whether git would accept name as a new branch.
+func ValidBranchName(name string) bool {
+	return exec.Command("git", "check-ref-format", "--branch", name).Run() == nil
+}
+
+// CreatePRWorktree creates the worktree for a PR. An empty branchName means
+// PRBranchName's default. The directory is always pr-<N>-<slug>, whatever the
+// branch is called, so a re-run on the same PR finds the existing worktree.
+func CreatePRWorktree(repoRoot, worktreesBase, remote string, prNumber int, headRef, slug, branchName string) (PRWorktreeResult, error) {
 	repoName := repoDirName(repoRoot)
 	dirName := fmt.Sprintf("pr-%d-%s", prNumber, slug)
 	wtPath := filepath.Join(worktreesBase, repoName, dirName)
-	branchName := fmt.Sprintf("review/pr-%d-%s", prNumber, slug)
+	if branchName == "" {
+		branchName = PRBranchName(prNumber, slug)
+	}
 
 	fetchRef := fmt.Sprintf("refs/pr-review/%d", prNumber)
 	err := Fetch(repoRoot, remote, fmt.Sprintf("+pull/%d/head:%s", prNumber, fetchRef))
