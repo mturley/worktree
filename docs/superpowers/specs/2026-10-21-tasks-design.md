@@ -9,6 +9,22 @@ reading. Mockups from the brainstorm live (gitignored) under
 `.superpowers/brainstorm/*/content/` in the `tasks` worktree:
 `home-pinned.html`, `task-modal.html`, `worktree-detail-v2.html`.
 
+## Phases
+
+This section is the progress tracker for the whole effort. Update it when a
+phase's status changes. Each phase ships working software on its own. Each
+phase's plan is written only after the previous phase lands, so it reflects
+the real code.
+
+| # | Phase | Scope | Plan | Status |
+|---|---|---|---|---|
+| 1 | Core + CLI | `internal/tasks` (schema, links Focus/Related, master order, subtasks, actor-stamped task events, membership + archived) and the `worktree tasks` CLI | `docs/superpowers/plans/2026-10-21-tasks-phase1-core-cli.md` | plan written |
+| 2 | Task lists in the UI | web API; Tasks tabs everywhere (Links get a Details tab); rows, quick add, sort/filter, starred group, drag reorder (incl. star/priority by drag), pinning, badges, search | — | not started |
+| 3 | Detail modal | Details/Activity tabs and sidebar, link editing, subtask editing, linked events (with snapshots), "＋ task" from events and Slack messages | — | not started |
+| 4 | Activity integration | task events in feeds + "Tasks" source filter, per-task read cursors, unread counts, mark-read (and its undo), notifications for agent events | — | not started |
+| 5 | Blockers | task / resource / other blockers, `task:` subscription holds + subscriber audit, watcher `status_category` release, Unblocked events + notifications, "blocks N tasks" | — | not started |
+| 6 | Undo | state / subtask / delete undo with CAS and cascades, delayed Unblocked notifications, soft-delete purge sweep | — | not started |
+
 ## Why
 
 Users need one place that answers "what is the next most important thing to
