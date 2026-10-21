@@ -32,7 +32,10 @@ type Filter struct {
 	IncludeCompleted bool
 	IncludeArchived  bool       // only meaningful with IncludeCompleted
 	Priorities       []Priority // empty = all
-	StarredOnly      bool
+	// States narrows to these states (empty = all). It never widens:
+	// selecting StateDone still needs IncludeCompleted.
+	States      []State
+	StarredOnly bool
 }
 
 type resKey struct{ typ, id string }
@@ -66,6 +69,26 @@ func list(conn *sql.DB, f Filter, onlyID *int64) ([]Task, error) {
 	default:
 		return nil, fmt.Errorf("%w: scope kind %q is not all, worktree or resource", ErrInvalid, sc.Kind)
 	}
+	var prio map[Priority]bool
+	if len(f.Priorities) > 0 {
+		prio = make(map[Priority]bool, len(f.Priorities))
+		for _, p := range f.Priorities {
+			if err := validPriority(p); err != nil {
+				return nil, err
+			}
+			prio[p] = true
+		}
+	}
+	var states map[State]bool
+	if len(f.States) > 0 {
+		states = make(map[State]bool, len(f.States))
+		for _, s := range f.States {
+			if err := validState(s); err != nil {
+				return nil, err
+			}
+			states[s] = true
+		}
+	}
 
 	tasks, err := loadTasks(conn, onlyID)
 	if err != nil {
@@ -86,14 +109,6 @@ func list(conn *sql.DB, f Filter, onlyID *int64) ([]Task, error) {
 	registered, err := loadRegistry(conn)
 	if err != nil {
 		return nil, err
-	}
-
-	var prio map[Priority]bool
-	if len(f.Priorities) > 0 {
-		prio = make(map[Priority]bool, len(f.Priorities))
-		for _, p := range f.Priorities {
-			prio[p] = true
-		}
 	}
 
 	out := []Task{}
@@ -125,6 +140,9 @@ func list(conn *sql.DB, f Filter, onlyID *int64) ([]Task, error) {
 		sort.Strings(t.Implicit)
 
 		if t.State == StateDone && (!f.IncludeCompleted || (t.Archived && !f.IncludeArchived)) {
+			continue
+		}
+		if states != nil && !states[t.State] {
 			continue
 		}
 		if prio != nil && !prio[t.Priority] {
@@ -241,9 +259,12 @@ func loadLinks(q dbtx, onlyID *int64) (map[int64][]Link, error) {
 // loadSubscriptions reads `worktree:` subscriptions only (every other
 // subscriber, e.g. a task blocker's, does not count as following), split
 // into active (resource -> paths) and tombstoned (resource -> path set).
+// A subscription whose lease has expired is neither, as in
+// watcherdb.ActiveResources.
 func loadSubscriptions(q dbtx) (map[resKey][]string, map[resKey]map[string]bool, error) {
 	rows, err := q.QueryContext(bg, `SELECT subscriber, resource_type, resource_id, deleted_at IS NULL FROM watcher_subscriptions
-		  WHERE subscriber LIKE 'worktree:%'`)
+		  WHERE subscriber LIKE 'worktree:%'
+		    AND (expires_at IS NULL OR expires_at > ?)`, now())
 	if err != nil {
 		return nil, nil, err
 	}

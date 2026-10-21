@@ -160,3 +160,30 @@ func TestSetSubtaskOrderForgiving(t *testing.T) {
 		t.Fatalf("missing task: %v", err)
 	}
 }
+
+func TestSubtaskWritesBumpUpdatedAt(t *testing.T) {
+	conn := newDB(t)
+	tk := mustCreate(t, conn, "t")
+	var s Subtask
+	checkBumps(t, conn, tk.ID, true, []step{
+		{"AddSubtask", func() (err error) { s, err = AddSubtask(conn, user, tk.ID, "a"); return err }},
+		{"EditSubtask", func() error { return EditSubtask(conn, user, s.ID, "b") }},
+		{"check", func() error { _, err := SetSubtaskChecked(conn, user, s.ID, true); return err }},
+		{"uncheck", func() error { _, err := SetSubtaskChecked(conn, user, s.ID, false); return err }},
+		{"RemoveSubtask", func() error { return RemoveSubtask(conn, user, s.ID) }},
+	})
+
+	a, err := AddSubtask(conn, user, tk.ID, "a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := AddSubtask(conn, user, tk.ID, "b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkBumps(t, conn, tk.ID, false, []step{
+		{"EditSubtask same text", func() error { return EditSubtask(conn, user, a.ID, "a") }},
+		{"uncheck unchecked", func() error { _, err := SetSubtaskChecked(conn, user, a.ID, false); return err }},
+		{"SetSubtaskOrder", func() error { return SetSubtaskOrder(conn, tk.ID, []int64{b.ID, a.ID}) }},
+	})
+}

@@ -87,6 +87,9 @@ func AddSubtask(conn *sql.DB, a Actor, taskID int64, text string) (Subtask, erro
 			return err
 		}
 		s = Subtask{ID: id, TaskID: taskID, Text: text, Position: pos}
+		if err := touch(tx, taskID, ts); err != nil {
+			return err
+		}
 		_, err = record(tx, a, taskID, ts, EventSubtaskAdded, subtaskPayload(s))
 		return err
 	})
@@ -118,6 +121,9 @@ func EditSubtask(conn *sql.DB, a Actor, id int64, text string) error {
 			return err
 		}
 		cur.Text = text
+		if err := touch(tx, cur.TaskID, ts); err != nil {
+			return err
+		}
 		_, err = record(tx, a, cur.TaskID, ts, EventSubtaskEdited, subtaskPayload(cur))
 		return err
 	})
@@ -141,6 +147,9 @@ func SetSubtaskChecked(conn *sql.DB, a Actor, id int64, checked bool) (SubtaskCh
 		}
 		ts := now()
 		if _, err := tx.ExecContext(bg, `UPDATE task_subtasks SET checked = ?, updated_at = ? WHERE id = ?`, bit(checked), ts, id); err != nil {
+			return err
+		}
+		if err := touch(tx, cur.TaskID, ts); err != nil {
 			return err
 		}
 		typ := EventSubtaskUnchecked
@@ -169,14 +178,19 @@ func RemoveSubtask(conn *sql.DB, a Actor, id int64) error {
 		if _, err := tx.ExecContext(bg, `DELETE FROM task_subtasks WHERE id = ?`, id); err != nil {
 			return err
 		}
-		_, err = record(tx, a, cur.TaskID, now(), EventSubtaskRemoved, subtaskPayload(cur))
+		ts := now()
+		if err := touch(tx, cur.TaskID, ts); err != nil {
+			return err
+		}
+		_, err = record(tx, a, cur.TaskID, ts, EventSubtaskRemoved, subtaskPayload(cur))
 		return err
 	})
 }
 
 // SetSubtaskOrder reorders a task's subtasks declaratively: ids not
 // belonging to the task are ignored (and repeats collapse), subtasks left
-// out keep their relative order after the listed ones. It records no event.
+// out keep their relative order after the listed ones. It records no event
+// and, like moving a task, leaves the task's updated_at alone.
 func SetSubtaskOrder(conn *sql.DB, taskID int64, ids []int64) error {
 	return inTx(conn, func(tx dbtx) error {
 		if _, err := load(tx, taskID); err != nil {

@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -300,5 +301,80 @@ func TestListRejectsBadScope(t *testing.T) {
 		if _, err := List(conn, f); err == nil {
 			t.Errorf("List(%+v) succeeded", f)
 		}
+	}
+}
+
+func TestListRejectsUnknownPriorityAndState(t *testing.T) {
+	conn := newDB(t)
+	mustCreate(t, conn, "t")
+	for _, f := range []Filter{
+		{Priorities: []Priority{"hgh"}},
+		{Priorities: []Priority{PriorityHigh, ""}},
+		{States: []State{"finished"}},
+	} {
+		if _, err := List(conn, f); !errors.Is(err, ErrInvalid) {
+			t.Errorf("List(%+v) err = %v, want ErrInvalid", f, err)
+		}
+	}
+}
+
+func TestListStateFilter(t *testing.T) {
+	conn := newDB(t)
+	a := mustCreate(t, conn, "a")
+	b := mustCreate(t, conn, "b")
+	c := mustCreate(t, conn, "c")
+	if _, err := SetState(conn, user, b.ID, StateInProgress); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SetState(conn, user, c.ID, StateDone); err != nil {
+		t.Fatal(err)
+	}
+	if got := mustList(t, conn, Filter{States: []State{StateInProgress}}); !sameIDs(got, b.ID) {
+		t.Errorf("in_progress = %v", ids(got))
+	}
+	if got := mustList(t, conn, Filter{States: []State{StateNotStarted, StateInProgress}}); !sameIDs(got, a.ID, b.ID) {
+		t.Errorf("open states = %v", ids(got))
+	}
+	// The state filter narrows; it does not widen past IncludeCompleted.
+	if got := mustList(t, conn, Filter{States: []State{StateDone}}); !sameIDs(got) {
+		t.Errorf("done without completed = %v", ids(got))
+	}
+	if got := mustList(t, conn, Filter{States: []State{StateDone}, IncludeCompleted: true}); !sameIDs(got, c.ID) {
+		t.Errorf("done = %v", ids(got))
+	}
+	if got := mustList(t, conn, Filter{IncludeCompleted: true}); !sameIDs(got, a.ID, b.ID, c.ID) {
+		t.Errorf("no state filter = %v", ids(got))
+	}
+}
+
+func TestListIgnoresExpiredLease(t *testing.T) {
+	conn := newDB(t)
+	x := mkWorktree(t, conn, "x")
+	tk := mustCreate(t, conn, "t")
+	if _, err := AddLink(conn, user, tk.ID, prLink, true); err != nil {
+		t.Fatal(err)
+	}
+	subscribe(t, conn, x, prLink)
+	if got := mustGet(t, conn, tk.ID); got.Archived || len(got.Implicit) != 1 {
+		t.Fatalf("live lease: %+v", got)
+	}
+	setExpiry := func(ts string) {
+		t.Helper()
+		if _, err := conn.Exec(`UPDATE watcher_subscriptions SET expires_at = ? WHERE resource_id = ?`,
+			ts, prLink.ResourceID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setExpiry("2000-01-01T00:00:00Z")
+	got := mustGet(t, conn, tk.ID)
+	if !got.Archived || len(got.Implicit) != 0 || !got.Links[0].Archived {
+		t.Fatalf("expired lease still counts as following: %+v", got)
+	}
+	if ts := mustList(t, conn, wtScope(x)); len(ts) != 0 {
+		t.Fatalf("expired lease still puts the task in x's scope: %v", ids(ts))
+	}
+	setExpiry("2999-01-01T00:00:00Z")
+	if got := mustGet(t, conn, tk.ID); got.Archived || len(got.Implicit) != 1 {
+		t.Fatalf("future lease: %+v", got)
 	}
 }

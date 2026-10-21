@@ -54,6 +54,10 @@ var (
 	ErrNotFound = errors.New("task not found")
 	// ErrInvalid is wrapped with a message saying what was wrong with the input.
 	ErrInvalid = errors.New("invalid task input")
+	// ErrLinkNotFound is returned for a link the task does not have. It
+	// wraps ErrNotFound; test for it to tell a missing link from a missing
+	// task.
+	ErrLinkNotFound = fmt.Errorf("%w: no such link", ErrNotFound)
 )
 
 // Task is one to-do item.
@@ -140,6 +144,13 @@ func validDue(s string) error {
 	return nil
 }
 
+func validState(s State) error {
+	if !s.valid() {
+		return fmt.Errorf("%w: state %q is not not_started, in_progress or done", ErrInvalid, s)
+	}
+	return nil
+}
+
 func validPriority(p Priority) error {
 	if !p.valid() {
 		return fmt.Errorf("%w: priority %q is not high, medium, low or none", ErrInvalid, p)
@@ -178,6 +189,13 @@ func load(q dbtx, id int64) (Task, error) {
 	t.Starred = starred != 0
 	t.Due, t.StartedAt, t.CompletedAt = due.String, started.String, completed.String
 	return t, nil
+}
+
+// touch bumps taskID's updated_at to ts. Writes to a task's links and
+// subtasks call it, so updated_at reflects any change to the task.
+func touch(tx dbtx, taskID int64, ts string) error {
+	_, err := tx.ExecContext(bg, `UPDATE tasks SET updated_at = ? WHERE id = ?`, ts, taskID)
+	return err
 }
 
 // inTx runs fn in a transaction, committing only when it returns nil.
@@ -376,8 +394,8 @@ func SetState(conn *sql.DB, a Actor, id int64, to State) (StateChange, error) {
 	if err := validActor(a); err != nil {
 		return StateChange{}, err
 	}
-	if !to.valid() {
-		return StateChange{}, fmt.Errorf("%w: state %q is not not_started, in_progress or done", ErrInvalid, to)
+	if err := validState(to); err != nil {
+		return StateChange{}, err
 	}
 	var sc StateChange
 	err := inTx(conn, func(tx dbtx) error {

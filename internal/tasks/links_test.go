@@ -331,3 +331,112 @@ func TestSetLinkOrderRecordsGroupChanges(t *testing.T) {
 		t.Fatalf("zero actor err = %v", err)
 	}
 }
+
+func TestNormalizeTrimsStoredValues(t *testing.T) {
+	conn := newDB(t)
+	wt := filepath.Join(t.TempDir(), "trim")
+	if err := os.Mkdir(wt, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tk := mustCreate(t, conn, "t")
+	if _, err := AddLink(conn, user, tk.ID, LinkTarget{Kind: LinkResource, ResourceType: " pr ", ResourceID: " o/r#1"}, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AddLink(conn, user, tk.ID, LinkTarget{Kind: LinkWorktree, Worktree: " " + wt + " "}, false); err != nil {
+		t.Fatal(err)
+	}
+	got := mustGet(t, conn, tk.ID).Links
+	if len(got) != 2 || got[0].LinkTarget != prLink || got[1].Worktree != canon(wt) {
+		t.Fatalf("links = %+v", got)
+	}
+	var stored string
+	if err := conn.QueryRow(`SELECT resource_id FROM task_links WHERE kind = 'resource'`).Scan(&stored); err != nil || stored != "o/r#1" {
+		t.Fatalf("stored resource_id = %q, %v", stored, err)
+	}
+	// Lookups match the trimmed form too.
+	if err := RemoveLink(conn, user, tk.ID, LinkTarget{Kind: LinkResource, ResourceType: "pr", ResourceID: "o/r#1 "}); err != nil {
+		t.Fatalf("remove with padding: %v", err)
+	}
+}
+
+func TestErrLinkNotFound(t *testing.T) {
+	conn := newDB(t)
+	tk := mustCreate(t, conn, "t")
+	err := RemoveLink(conn, user, tk.ID, prLink)
+	if !errors.Is(err, ErrLinkNotFound) || !errors.Is(err, ErrNotFound) {
+		t.Fatalf("RemoveLink missing link err = %v", err)
+	}
+	if err := SetLinkFocus(conn, user, tk.ID, prLink, true); !errors.Is(err, ErrLinkNotFound) {
+		t.Fatalf("SetLinkFocus missing link err = %v", err)
+	}
+	// A missing task is ErrNotFound but not ErrLinkNotFound.
+	if err := RemoveLink(conn, user, 999, prLink); !errors.Is(err, ErrNotFound) || errors.Is(err, ErrLinkNotFound) {
+		t.Fatalf("RemoveLink missing task err = %v", err)
+	}
+}
+
+// staleTS backdates a task's updated_at so a later bump is visible despite
+// the one-second timestamp resolution.
+const staleTS = "2000-01-01T00:00:00Z"
+
+func backdate(t *testing.T, conn *sql.DB, id int64) {
+	t.Helper()
+	if _, err := conn.Exec(`UPDATE tasks SET updated_at = ? WHERE id = ?`, staleTS, id); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func updatedAt(t *testing.T, conn *sql.DB, id int64) string {
+	t.Helper()
+	return mustGet(t, conn, id).UpdatedAt
+}
+
+type step struct {
+	name string
+	do   func() error
+}
+
+// checkBumps runs each step from a backdated updated_at and checks whether
+// it bumped it.
+func checkBumps(t *testing.T, conn *sql.DB, id int64, wantBump bool, steps []step) {
+	t.Helper()
+	for _, s := range steps {
+		backdate(t, conn, id)
+		if err := s.do(); err != nil {
+			t.Fatalf("%s: %v", s.name, err)
+		}
+		got := updatedAt(t, conn, id)
+		if wantBump && got == staleTS {
+			t.Errorf("%s did not bump updated_at", s.name)
+		}
+		if !wantBump && got != staleTS {
+			t.Errorf("%s bumped updated_at to %s", s.name, got)
+		}
+	}
+}
+
+func TestLinkWritesBumpUpdatedAt(t *testing.T) {
+	conn := newDB(t)
+	tk := mustCreate(t, conn, "t")
+	checkBumps(t, conn, tk.ID, true, []step{
+		{"AddLink", func() error { _, err := AddLink(conn, user, tk.ID, prLink, false); return err }},
+		{"AddLink jira", func() error { _, err := AddLink(conn, user, tk.ID, jiraLink, false); return err }},
+		{"AddLink other group", func() error { _, err := AddLink(conn, user, tk.ID, prLink, true); return err }},
+		{"SetLinkFocus", func() error { return SetLinkFocus(conn, user, tk.ID, prLink, false) }},
+		{"SetLinkOrder group change", func() error {
+			return SetLinkOrder(conn, user, tk.ID, []LinkTarget{jiraLink}, []LinkTarget{prLink})
+		}},
+		{"AddLink pr2", func() error { _, err := AddLink(conn, user, tk.ID, pr2Link, false); return err }},
+		{"SetLinkOrder reorder", func() error {
+			return SetLinkOrder(conn, user, tk.ID, []LinkTarget{jiraLink}, []LinkTarget{pr2Link, prLink})
+		}},
+		{"RemoveLink", func() error { return RemoveLink(conn, user, tk.ID, prLink) }},
+	})
+	checkBumps(t, conn, tk.ID, false, []step{
+		{"AddLink same group", func() error { _, err := AddLink(conn, user, tk.ID, jiraLink, true); return err }},
+		{"SetLinkFocus same group", func() error { return SetLinkFocus(conn, user, tk.ID, jiraLink, true) }},
+		{"SetLinkOrder unchanged", func() error {
+			return SetLinkOrder(conn, user, tk.ID, []LinkTarget{jiraLink}, []LinkTarget{pr2Link})
+		}},
+	})
+}
