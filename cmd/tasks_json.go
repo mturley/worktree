@@ -236,7 +236,7 @@ func writeTaskDetail(w io.Writer, t tasks.Task, events []tasks.Event) {
 			if s.Checked {
 				box = "[x]"
 			}
-			fmt.Fprintf(w, "  %s %s\n", box, s.Text)
+			fmt.Fprintf(w, "  %s (#%d) %s\n", box, s.ID, s.Text)
 		}
 	}
 	if len(events) > 0 {

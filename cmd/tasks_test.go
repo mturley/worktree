@@ -513,3 +513,88 @@ func TestTasksDefaultContextInRegisteredWorktree(t *testing.T) {
 		t.Fatalf("--all list = %v", list)
 	}
 }
+
+// listIDs runs `tasks list --all --json` with extra args and returns the
+// listed IDs in order.
+func listIDs(t *testing.T, args ...string) []string {
+	t.Helper()
+	out, err := runTasks(t, append([]string{"list", "--all", "--json"}, args...)...)
+	if err != nil {
+		t.Fatalf("list %v: %v\n%s", args, err, out)
+	}
+	var list []map[string]any
+	if err := json.Unmarshal([]byte(out), &list); err != nil {
+		t.Fatalf("list json: %v\n%s", err, out)
+	}
+	ids := []string{}
+	for _, r := range list {
+		ids = append(ids, r["id"].(string))
+	}
+	return ids
+}
+
+func TestTasksListStateArchivedAndPriorityFlags(t *testing.T) {
+	t.Setenv("WORKTREE_DB", filepath.Join(t.TempDir(), "w.db"))
+	// T1 open; T2 in progress; T3 done and global; T4 done with only an
+	// unfollowed (so archived) link.
+	steps := [][]string{
+		{"add", "open", "--global", "--priority", "high"},
+		{"add", "doing", "--global"},
+		{"add", "done", "--global"},
+		{"add", "archived", "--focus", "jira:X-1"},
+		{"state", "T2", "in_progress"},
+		{"state", "T3", "done"},
+		{"state", "T4", "done"},
+	}
+	for _, s := range steps {
+		if out, err := runTasks(t, s...); err != nil {
+			t.Fatalf("%v: %v\n%s", s, err, out)
+		}
+	}
+	cases := []struct {
+		args []string
+		want string
+	}{
+		{nil, "T1,T2"},
+		{[]string{"--completed"}, "T1,T2,T3"},
+		{[]string{"--archived"}, "T1,T2,T3,T4"},
+		{[]string{"--state", "in_progress"}, "T2"},
+		{[]string{"--state", "not_started", "--state", "in_progress"}, "T1,T2"},
+		{[]string{"--state", "done"}, "T3"},
+		{[]string{"--state", "done", "--archived"}, "T3,T4"},
+		{[]string{"--priority", "high"}, "T1"},
+	}
+	for _, c := range cases {
+		if got := strings.Join(listIDs(t, c.args...), ","); got != c.want {
+			t.Errorf("list %v = %s, want %s", c.args, got, c.want)
+		}
+	}
+	for _, bad := range [][]string{{"--priority", "hgh"}, {"--state", "finished"}} {
+		if out, err := runTasks(t, append([]string{"list", "--all"}, bad...)...); err == nil {
+			t.Errorf("list %v should fail; got\n%s", bad, out)
+		}
+	}
+}
+
+func TestTasksShowPrintsSubtaskIDs(t *testing.T) {
+	t.Setenv("WORKTREE_DB", filepath.Join(t.TempDir(), "w.db"))
+	for _, s := range [][]string{
+		{"add", "A", "--global"},
+		{"subtask", "add", "T1", "first"},
+		{"subtask", "add", "T1", "second"},
+		{"subtask", "check", "2"},
+	} {
+		if out, err := runTasks(t, s...); err != nil {
+			t.Fatalf("%v: %v\n%s", s, err, out)
+		}
+	}
+	out, err := runTasks(t, "show", "T1")
+	if err != nil {
+		t.Fatalf("show: %v\n%s", err, out)
+	}
+	for _, want := range []string{"[ ] (#1) first", "[x] (#2) second"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("show output missing %q:\n%s", want, out)
+		}
+	}
+}

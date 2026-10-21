@@ -116,6 +116,7 @@ var (
 	tasksCompleted   bool
 	tasksArchived    bool
 	tasksPriorities  []string
+	tasksStates      []string
 	tasksStarredOnly bool
 
 	tasksPriority    string
@@ -204,8 +205,9 @@ func init() {
 	lf.StringVar(&tasksWorktree, "worktree", "", "list tasks for this worktree path")
 	lf.StringVar(&tasksResource, "resource", "", "list tasks for this resource (URL or <type>:<id>)")
 	lf.BoolVar(&tasksCompleted, "completed", false, "include done tasks")
-	lf.BoolVar(&tasksArchived, "archived", false, "include archived tasks")
-	lf.StringArrayVar(&tasksPriorities, "priority", nil, "only this priority (repeatable)")
+	lf.BoolVar(&tasksArchived, "archived", false, "include done tasks whose links are all archived (implies --completed)")
+	lf.StringArrayVar(&tasksPriorities, "priority", nil, "only this priority: high, medium, low or none (repeatable)")
+	lf.StringArrayVar(&tasksStates, "state", nil, "only this state: not_started, in_progress or done (repeatable; done implies --completed)")
 	lf.BoolVar(&tasksStarredOnly, "starred", false, "only starred tasks")
 
 	af := tasksAddCmd.Flags()
@@ -302,8 +304,19 @@ func runTasksList(cmd *cobra.Command, args []string) error {
 		Scope: scope, IncludeCompleted: tasksCompleted, IncludeArchived: tasksArchived,
 		StarredOnly: tasksStarredOnly,
 	}
+	// Archived tasks are done tasks, so asking for them, or for done, means
+	// asking for completed tasks too.
+	if tasksArchived {
+		f.IncludeCompleted = true
+	}
 	for _, p := range tasksPriorities {
 		f.Priorities = append(f.Priorities, tasks.Priority(p))
+	}
+	for _, s := range tasksStates {
+		f.States = append(f.States, tasks.State(s))
+		if tasks.State(s) == tasks.StateDone {
+			f.IncludeCompleted = true
+		}
 	}
 	ts, err := tasks.List(conn, f)
 	if err != nil {
@@ -621,7 +634,7 @@ func init() {
 
 // linkErr reports a missing link as such, and a missing task as a missing task.
 func linkErr(id int64, ref string, err error) error {
-	if errors.Is(err, tasks.ErrNotFound) && strings.Contains(err.Error(), "no such link") {
+	if errors.Is(err, tasks.ErrLinkNotFound) {
 		return fmt.Errorf("task %s has no link %s", formatTaskID(id), ref)
 	}
 	return taskErr(id, err)
