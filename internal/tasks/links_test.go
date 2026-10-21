@@ -210,7 +210,7 @@ func TestSetLinkOrder(t *testing.T) {
 	mustAddLink(t, conn, tk.ID, a, false)
 	mustAddLink(t, conn, tk.ID, b, false)
 	mustAddLink(t, conn, tk.ID, c, false)
-	if err := SetLinkOrder(conn, tk.ID, []LinkTarget{c}, []LinkTarget{b, a}); err != nil {
+	if err := SetLinkOrder(conn, user, tk.ID, []LinkTarget{c}, []LinkTarget{b, a}); err != nil {
 		t.Fatal(err)
 	}
 	got := mustGet(t, conn, tk.ID).Links
@@ -231,7 +231,7 @@ func TestSetLinkOrderForgiving(t *testing.T) {
 	// pr2 is left out (keeps its group, goes to the end); an unknown target is
 	// ignored; a duplicate is claimed once.
 	unknown := LinkTarget{Kind: LinkResource, ResourceType: "pr", ResourceID: "gone"}
-	if err := SetLinkOrder(conn, tk.ID, []LinkTarget{unknown, jiraLink}, []LinkTarget{prLink, jiraLink}); err != nil {
+	if err := SetLinkOrder(conn, user, tk.ID, []LinkTarget{unknown, jiraLink}, []LinkTarget{prLink, jiraLink}); err != nil {
 		t.Fatal(err)
 	}
 	got := mustGet(t, conn, tk.ID).Links
@@ -239,7 +239,7 @@ func TestSetLinkOrderForgiving(t *testing.T) {
 		got[1].LinkTarget != prLink || got[1].Primary || got[2].LinkTarget != pr2Link || got[2].Primary {
 		t.Fatalf("order %+v", got)
 	}
-	if err := SetLinkOrder(conn, 999, nil, nil); !errors.Is(err, ErrNotFound) {
+	if err := SetLinkOrder(conn, user, 999, nil, nil); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing task err = %v", err)
 	}
 }
@@ -286,5 +286,48 @@ func TestWorktreeLinkMissingPath(t *testing.T) {
 	l := mustAddLink(t, conn, tk.ID, LinkTarget{Kind: LinkWorktree, Worktree: p}, false)
 	if l.Worktree != filepath.Clean(canon(p)) || !l.Archived {
 		t.Fatalf("link %+v", l)
+	}
+}
+
+func TestSetLinkOrderRecordsGroupChanges(t *testing.T) {
+	conn := newDB(t)
+	tk := mustCreate(t, conn, "x")
+	mustAddLink(t, conn, tk.ID, prLink, true)
+	mustAddLink(t, conn, tk.ID, jiraLink, false)
+	mustAddLink(t, conn, tk.ID, pr2Link, false)
+
+	// Same-group reorder: no event.
+	if err := SetLinkOrder(conn, user, tk.ID, []LinkTarget{prLink}, []LinkTarget{pr2Link, jiraLink}); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(eventsOfType(t, conn, tk.ID, EventTaskFocusChanged)); n != 0 {
+		t.Fatalf("same-group reorder wrote %d task_focus_changed", n)
+	}
+
+	// pr -> Related, jira -> Focus; pr2 stays Related: exactly two events.
+	if err := SetLinkOrder(conn, user, tk.ID, []LinkTarget{jiraLink}, []LinkTarget{prLink, pr2Link}); err != nil {
+		t.Fatal(err)
+	}
+	ev := eventsOfType(t, conn, tk.ID, EventTaskFocusChanged)
+	if len(ev) != 2 {
+		t.Fatalf("task_focus_changed events = %d, want 2", len(ev))
+	}
+	got := map[string]any{}
+	for _, e := range ev {
+		var p map[string]any
+		if err := json.Unmarshal(e.Payload, &p); err != nil {
+			t.Fatal(err)
+		}
+		if p["kind"] != "resource" || p["resource_type"] == nil || e.Actor != ActorUser {
+			t.Fatalf("event %+v payload %v", e, p)
+		}
+		got[p["resource_id"].(string)] = p["focus"]
+	}
+	if len(got) != 2 || got["o/r#1"] != false || got["ABC-1"] != true {
+		t.Fatalf("flipped = %v", got)
+	}
+
+	if err := SetLinkOrder(conn, Actor{}, tk.ID, nil, nil); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("zero actor err = %v", err)
 	}
 }

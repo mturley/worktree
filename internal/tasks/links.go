@@ -230,9 +230,13 @@ func SetLinkFocus(conn *sql.DB, a Actor, taskID int64, t LinkTarget, focus bool)
 // Like resources.SetOrder it forgives a stale caller: a link named in
 // neither list keeps its group and goes to that group's end (in its current
 // relative order), and a target that is not linked, or is invalid, is
-// ignored. A target named twice counts once, at its first mention. Reordering
-// records no event.
-func SetLinkOrder(conn *sql.DB, taskID int64, focus, related []LinkTarget) error {
+// ignored. A target named twice counts once, at its first mention. A pure
+// reorder records no event; each link whose group changes records one
+// task_focus_changed.
+func SetLinkOrder(conn *sql.DB, a Actor, taskID int64, focus, related []LinkTarget) error {
+	if err := validActor(a); err != nil {
+		return err
+	}
 	return inTx(conn, func(tx *sql.Tx) error {
 		if _, err := load(tx, taskID); err != nil {
 			return err
@@ -274,11 +278,17 @@ func SetLinkOrder(conn *sql.DB, taskID int64, focus, related []LinkTarget) error
 				wantRelated = append(wantRelated, l)
 			}
 		}
+		ts := now()
 		write := func(group []Link, primary bool) error {
 			for i, l := range group {
 				if _, err := tx.Exec(`UPDATE task_links SET is_primary = ?, sort_order = ? WHERE id = ?`,
 					bit(primary), i+1, l.ID); err != nil {
 					return err
+				}
+				if l.Primary != primary {
+					if _, err := record(tx, a, taskID, ts, EventTaskFocusChanged, linkPayload(l.LinkTarget, primary)); err != nil {
+						return err
+					}
 				}
 			}
 			return nil
