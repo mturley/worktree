@@ -500,7 +500,7 @@ func runTasksDelete(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer conn.Close()
-	if err := tasks.Delete(conn, tasksActor(), id); err != nil {
+	if _, err := tasks.Delete(conn, tasksActor(), id); err != nil {
 		return taskErr(id, err)
 	}
 	if tasksJSON {

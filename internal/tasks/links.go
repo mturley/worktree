@@ -75,9 +75,9 @@ func linkPayload(t LinkTarget, focus bool) map[string]any {
 
 // findLink returns the row id and group of taskID's link to t (already
 // normalised), or sql.ErrNoRows.
-func findLink(tx *sql.Tx, taskID int64, t LinkTarget) (id int64, primary bool, err error) {
+func findLink(tx dbtx, taskID int64, t LinkTarget) (id int64, primary bool, err error) {
 	var p int
-	err = tx.QueryRow(
+	err = tx.QueryRowContext(bg,
 		`SELECT id, is_primary FROM task_links
 		  WHERE task_id = ? AND kind = ? AND resource_type = ? AND resource_id = ? AND worktree_path = ?`,
 		taskID, t.Kind, t.ResourceType, t.ResourceID, t.Worktree).Scan(&id, &p)
@@ -86,9 +86,9 @@ func findLink(tx *sql.Tx, taskID int64, t LinkTarget) (id int64, primary bool, e
 
 // nextSortOrder is the sort_order that puts a link at the bottom of
 // taskID's focus or related group.
-func nextSortOrder(tx *sql.Tx, taskID int64, focus bool) (int64, error) {
+func nextSortOrder(tx dbtx, taskID int64, focus bool) (int64, error) {
 	var n int64
-	err := tx.QueryRow(
+	err := tx.QueryRowContext(bg,
 		`SELECT COALESCE(MAX(sort_order), 0) + 1 FROM task_links WHERE task_id = ? AND is_primary = ?`,
 		taskID, bit(focus)).Scan(&n)
 	return n, err
@@ -96,12 +96,12 @@ func nextSortOrder(tx *sql.Tx, taskID int64, focus bool) (int64, error) {
 
 // insertLink adds a new link (t already normalised) at the bottom of its
 // group and records task_linked.
-func insertLink(tx *sql.Tx, a Actor, taskID int64, t LinkTarget, focus bool, ts string) error {
+func insertLink(tx dbtx, a Actor, taskID int64, t LinkTarget, focus bool, ts string) error {
 	order, err := nextSortOrder(tx, taskID, focus)
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(
+	if _, err := tx.ExecContext(bg,
 		`INSERT INTO task_links (task_id, kind, resource_type, resource_id, worktree_path, is_primary, sort_order, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		taskID, t.Kind, t.ResourceType, t.ResourceID, t.Worktree, bit(focus), order, ts); err != nil {
@@ -113,12 +113,12 @@ func insertLink(tx *sql.Tx, a Actor, taskID int64, t LinkTarget, focus bool, ts 
 
 // moveLinkGroup moves link row id to the bottom of the other group and
 // records task_focus_changed.
-func moveLinkGroup(tx *sql.Tx, a Actor, taskID, id int64, t LinkTarget, focus bool) error {
+func moveLinkGroup(tx dbtx, a Actor, taskID, id int64, t LinkTarget, focus bool) error {
 	order, err := nextSortOrder(tx, taskID, focus)
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`UPDATE task_links SET is_primary = ?, sort_order = ? WHERE id = ?`, bit(focus), order, id); err != nil {
+	if _, err := tx.ExecContext(bg, `UPDATE task_links SET is_primary = ?, sort_order = ? WHERE id = ?`, bit(focus), order, id); err != nil {
 		return err
 	}
 	_, err = record(tx, a, taskID, now(), EventTaskFocusChanged, linkPayload(t, focus))
@@ -136,7 +136,7 @@ func AddLink(conn *sql.DB, a Actor, taskID int64, t LinkTarget, focus bool) (Lin
 	if err != nil {
 		return Link{}, err
 	}
-	err = inTx(conn, func(tx *sql.Tx) error {
+	err = inTx(conn, func(tx dbtx) error {
 		if _, err := load(tx, taskID); err != nil {
 			return err
 		}
@@ -177,7 +177,7 @@ func RemoveLink(conn *sql.DB, a Actor, taskID int64, t LinkTarget) error {
 	if err != nil {
 		return err
 	}
-	return inTx(conn, func(tx *sql.Tx) error {
+	return inTx(conn, func(tx dbtx) error {
 		if _, err := load(tx, taskID); err != nil {
 			return err
 		}
@@ -188,7 +188,7 @@ func RemoveLink(conn *sql.DB, a Actor, taskID int64, t LinkTarget) error {
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(`DELETE FROM task_links WHERE id = ?`, id); err != nil {
+		if _, err := tx.ExecContext(bg, `DELETE FROM task_links WHERE id = ?`, id); err != nil {
 			return err
 		}
 		_, err = record(tx, a, taskID, now(), EventTaskUnlinked, linkPayload(t, primary))
@@ -207,7 +207,7 @@ func SetLinkFocus(conn *sql.DB, a Actor, taskID int64, t LinkTarget, focus bool)
 	if err != nil {
 		return err
 	}
-	return inTx(conn, func(tx *sql.Tx) error {
+	return inTx(conn, func(tx dbtx) error {
 		if _, err := load(tx, taskID); err != nil {
 			return err
 		}
@@ -237,7 +237,7 @@ func SetLinkOrder(conn *sql.DB, a Actor, taskID int64, focus, related []LinkTarg
 	if err := validActor(a); err != nil {
 		return err
 	}
-	return inTx(conn, func(tx *sql.Tx) error {
+	return inTx(conn, func(tx dbtx) error {
 		if _, err := load(tx, taskID); err != nil {
 			return err
 		}
@@ -281,7 +281,7 @@ func SetLinkOrder(conn *sql.DB, a Actor, taskID int64, focus, related []LinkTarg
 		ts := now()
 		write := func(group []Link, primary bool) error {
 			for i, l := range group {
-				if _, err := tx.Exec(`UPDATE task_links SET is_primary = ?, sort_order = ? WHERE id = ?`,
+				if _, err := tx.ExecContext(bg, `UPDATE task_links SET is_primary = ?, sort_order = ? WHERE id = ?`,
 					bit(primary), i+1, l.ID); err != nil {
 					return err
 				}

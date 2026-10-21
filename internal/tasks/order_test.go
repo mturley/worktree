@@ -105,7 +105,7 @@ func TestMoveRewritesOnlyMovedRow(t *testing.T) {
 func TestMoveAroundDeletedNeighbour(t *testing.T) {
 	conn := newDB(t)
 	a, b, c := mustCreate(t, conn, "A"), mustCreate(t, conn, "B"), mustCreate(t, conn, "C")
-	if err := Delete(conn, user, b.ID); err != nil {
+	if _, err := Delete(conn, user, b.ID); err != nil {
 		t.Fatal(err)
 	}
 	if err := MoveAfter(conn, c.ID, a.ID); err != nil {
@@ -145,7 +145,7 @@ func TestMoveSelfNoOpAndNotFound(t *testing.T) {
 	if err := MoveToBottom(conn, 999); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("bottom missing: %v", err)
 	}
-	if err := Delete(conn, user, b.ID); err != nil {
+	if _, err := Delete(conn, user, b.ID); err != nil {
 		t.Fatal(err)
 	}
 	if err := MoveAfter(conn, a.ID, b.ID); !errors.Is(err, ErrNotFound) {

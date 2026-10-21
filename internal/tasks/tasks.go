@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -146,20 +147,26 @@ func validPriority(p Priority) error {
 	return nil
 }
 
-// querier is satisfied by *sql.DB and *sql.Tx.
-type querier interface {
-	QueryRow(query string, args ...any) *sql.Row
+// dbtx is what the package's reads and writes run against: satisfied by
+// *sql.Conn (inside inTx's transaction) and by *sql.DB (plain reads).
+type dbtx interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
+
+// bg is the context every query runs under; nothing here is cancellable.
+var bg = context.Background()
 
 const taskCols = `id, title, description, state, priority, starred, due_date, rank,
 	created_at, updated_at, started_at, completed_at`
 
 // load reads a live (not deleted) task's own columns.
-func load(q querier, id int64) (Task, error) {
+func load(q dbtx, id int64) (Task, error) {
 	var t Task
 	var starred int
 	var due, started, completed sql.NullString
-	err := q.QueryRow(`SELECT `+taskCols+` FROM tasks WHERE id = ? AND deleted_at IS NULL`, id).Scan(
+	err := q.QueryRowContext(bg, `SELECT `+taskCols+` FROM tasks WHERE id = ? AND deleted_at IS NULL`, id).Scan(
 		&t.ID, &t.Title, &t.Description, &t.State, &t.Priority, &starred, &due, &t.Rank,
 		&t.CreatedAt, &t.UpdatedAt, &started, &completed)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -174,16 +181,38 @@ func load(q querier, id int64) (Task, error) {
 }
 
 // inTx runs fn in a transaction, committing only when it returns nil.
-func inTx(conn *sql.DB, fn func(*sql.Tx) error) error {
-	tx, err := conn.Begin()
+//
+// It takes the write lock up front with BEGIN IMMEDIATE on a dedicated
+// connection. Every write here reads before it writes, and under the
+// rollback journal a deferred transaction's read-to-write lock upgrade fails
+// at once with SQLITE_BUSY when another connection (the `worktree ui` poll
+// loop, another CLI) holds a lock: busy_timeout is not consulted there.
+// Waiting for the lock at BEGIN is where busy_timeout does apply.
+func inTx(conn *sql.DB, fn func(dbtx) error) error {
+	c, err := conn.Conn(bg)
 	if err != nil {
 		return err
 	}
-	if err := fn(tx); err != nil {
-		_ = tx.Rollback()
+	defer c.Close()
+	if _, err := c.ExecContext(bg, `BEGIN IMMEDIATE`); err != nil {
 		return err
 	}
-	return tx.Commit()
+	done := false
+	defer func() {
+		if !done {
+			// Covers fn's error, a failed COMMIT and a panic alike, so the
+			// connection never goes back to the pool mid-transaction.
+			_, _ = c.ExecContext(bg, `ROLLBACK`)
+		}
+	}()
+	if err := fn(c); err != nil {
+		return err
+	}
+	if _, err := c.ExecContext(bg, `COMMIT`); err != nil {
+		return err
+	}
+	done = true
+	return nil
 }
 
 // Create adds a task at the bottom of the master order, linking each of
@@ -218,11 +247,11 @@ func Create(conn *sql.DB, a Actor, n NewTask) (Task, error) {
 		}
 	}
 	var id int64
-	err = inTx(conn, func(tx *sql.Tx) error {
+	err = inTx(conn, func(tx dbtx) error {
 		// Max over ALL rows, deleted included, so a later restore can't
 		// collide with a newer task's rank.
 		var last sql.NullString
-		if err := tx.QueryRow(`SELECT MAX(rank) FROM tasks`).Scan(&last); err != nil {
+		if err := tx.QueryRowContext(bg, `SELECT MAX(rank) FROM tasks`).Scan(&last); err != nil {
 			return err
 		}
 		rank, err := KeyBetween(last.String, "")
@@ -230,7 +259,7 @@ func Create(conn *sql.DB, a Actor, n NewTask) (Task, error) {
 			return err
 		}
 		ts := now()
-		res, err := tx.Exec(
+		res, err := tx.ExecContext(bg,
 			`INSERT INTO tasks (title, description, state, priority, starred, due_date, rank, created_at, updated_at)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			title, n.Description, StateNotStarted, n.Priority, bit(n.Starred), nullable(n.Due), rank, ts, ts)
@@ -293,7 +322,7 @@ func Update(conn *sql.DB, a Actor, id int64, p Patch) (Task, error) {
 			return Task{}, err
 		}
 	}
-	err := inTx(conn, func(tx *sql.Tx) error {
+	err := inTx(conn, func(tx dbtx) error {
 		cur, err := load(tx, id)
 		if err != nil {
 			return err
@@ -324,7 +353,7 @@ func Update(conn *sql.DB, a Actor, id int64, p Patch) (Task, error) {
 			return nil
 		}
 		ts := now()
-		if _, err := tx.Exec(
+		if _, err := tx.ExecContext(bg,
 			`UPDATE tasks SET title = ?, description = ?, priority = ?, starred = ?, due_date = ?, updated_at = ?
 			 WHERE id = ?`,
 			next.Title, next.Description, next.Priority, bit(next.Starred), nullable(next.Due), ts, id); err != nil {
@@ -351,7 +380,7 @@ func SetState(conn *sql.DB, a Actor, id int64, to State) (StateChange, error) {
 		return StateChange{}, fmt.Errorf("%w: state %q is not not_started, in_progress or done", ErrInvalid, to)
 	}
 	var sc StateChange
-	err := inTx(conn, func(tx *sql.Tx) error {
+	err := inTx(conn, func(tx dbtx) error {
 		cur, err := load(tx, id)
 		if err != nil {
 			return err
@@ -379,7 +408,7 @@ func SetState(conn *sql.DB, a Actor, id int64, to State) (StateChange, error) {
 			}
 			sc.CompletedAt = ts
 		}
-		if _, err := tx.Exec(
+		if _, err := tx.ExecContext(bg,
 			`UPDATE tasks SET state = ?, started_at = ?, completed_at = ?, updated_at = ? WHERE id = ?`,
 			to, nullable(sc.StartedAt), nullable(sc.CompletedAt), ts, id); err != nil {
 			return err
@@ -393,14 +422,16 @@ func SetState(conn *sql.DB, a Actor, id int64, to State) (StateChange, error) {
 	return sc, nil
 }
 
-// Delete soft-deletes a task by setting deleted_at. Its events remain.
-func Delete(conn *sql.DB, a Actor, id int64) error {
+// Delete soft-deletes a task by setting deleted_at, returning the ID of the
+// task_deleted event it records (for an undo to point at). Its events remain.
+func Delete(conn *sql.DB, a Actor, id int64) (int64, error) {
 	if err := validActor(a); err != nil {
-		return err
+		return 0, err
 	}
-	return inTx(conn, func(tx *sql.Tx) error {
+	var eventID int64
+	err := inTx(conn, func(tx dbtx) error {
 		ts := now()
-		res, err := tx.Exec(`UPDATE tasks SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`, ts, ts, id)
+		res, err := tx.ExecContext(bg, `UPDATE tasks SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`, ts, ts, id)
 		if err != nil {
 			return err
 		}
@@ -411,7 +442,11 @@ func Delete(conn *sql.DB, a Actor, id int64) error {
 		if n == 0 {
 			return ErrNotFound
 		}
-		_, err = record(tx, a, id, ts, EventTaskDeleted, nil)
+		eventID, err = record(tx, a, id, ts, EventTaskDeleted, nil)
 		return err
 	})
+	if err != nil {
+		return 0, err
+	}
+	return eventID, nil
 }

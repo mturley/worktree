@@ -40,7 +40,7 @@ type change struct {
 
 // record writes one event inside tx, stamped with ts, and returns its ID. A
 // nil payload is stored as {}.
-func record(tx *sql.Tx, a Actor, taskID int64, ts, typ string, payload any) (int64, error) {
+func record(tx dbtx, a Actor, taskID int64, ts, typ string, payload any) (int64, error) {
 	body := []byte("{}")
 	if payload != nil {
 		b, err := json.Marshal(payload)
@@ -49,7 +49,7 @@ func record(tx *sql.Tx, a Actor, taskID int64, ts, typ string, payload any) (int
 		}
 		body = b
 	}
-	res, err := tx.Exec(
+	res, err := tx.ExecContext(bg,
 		`INSERT INTO task_events (task_id, ts, type, actor, actor_session, payload)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
 		taskID, ts, typ, a.Kind, a.Session, string(body))

@@ -32,10 +32,10 @@ func cleanSubtaskText(s string) (string, error) {
 
 // loadSubtask reads a subtask whose parent task is live; otherwise it
 // returns ErrNotFound.
-func loadSubtask(tx *sql.Tx, id int64) (Subtask, error) {
+func loadSubtask(tx dbtx, id int64) (Subtask, error) {
 	var s Subtask
 	var checked int
-	err := tx.QueryRow(
+	err := tx.QueryRowContext(bg,
 		`SELECT s.id, s.task_id, s.text, s.checked, s.position
 		   FROM task_subtasks s JOIN tasks t ON t.id = s.task_id
 		  WHERE s.id = ? AND t.deleted_at IS NULL`, id).Scan(&s.ID, &s.TaskID, &s.Text, &checked, &s.Position)
@@ -63,12 +63,12 @@ func AddSubtask(conn *sql.DB, a Actor, taskID int64, text string) (Subtask, erro
 		return Subtask{}, err
 	}
 	var s Subtask
-	err = inTx(conn, func(tx *sql.Tx) error {
+	err = inTx(conn, func(tx dbtx) error {
 		if _, err := load(tx, taskID); err != nil {
 			return err
 		}
 		var last sql.NullInt64
-		if err := tx.QueryRow(`SELECT MAX(position) FROM task_subtasks WHERE task_id = ?`, taskID).Scan(&last); err != nil {
+		if err := tx.QueryRowContext(bg, `SELECT MAX(position) FROM task_subtasks WHERE task_id = ?`, taskID).Scan(&last); err != nil {
 			return err
 		}
 		pos := 0
@@ -76,7 +76,7 @@ func AddSubtask(conn *sql.DB, a Actor, taskID int64, text string) (Subtask, erro
 			pos = int(last.Int64) + 1
 		}
 		ts := now()
-		res, err := tx.Exec(
+		res, err := tx.ExecContext(bg,
 			`INSERT INTO task_subtasks (task_id, text, checked, position, created_at, updated_at)
 			 VALUES (?, ?, 0, ?, ?, ?)`, taskID, text, pos, ts, ts)
 		if err != nil {
@@ -105,7 +105,7 @@ func EditSubtask(conn *sql.DB, a Actor, id int64, text string) error {
 	if err != nil {
 		return err
 	}
-	return inTx(conn, func(tx *sql.Tx) error {
+	return inTx(conn, func(tx dbtx) error {
 		cur, err := loadSubtask(tx, id)
 		if err != nil {
 			return err
@@ -114,7 +114,7 @@ func EditSubtask(conn *sql.DB, a Actor, id int64, text string) error {
 			return nil
 		}
 		ts := now()
-		if _, err := tx.Exec(`UPDATE task_subtasks SET text = ?, updated_at = ? WHERE id = ?`, text, ts, id); err != nil {
+		if _, err := tx.ExecContext(bg, `UPDATE task_subtasks SET text = ?, updated_at = ? WHERE id = ?`, text, ts, id); err != nil {
 			return err
 		}
 		cur.Text = text
@@ -130,7 +130,7 @@ func SetSubtaskChecked(conn *sql.DB, a Actor, id int64, checked bool) (SubtaskCh
 		return SubtaskChange{}, err
 	}
 	var sc SubtaskChange
-	err := inTx(conn, func(tx *sql.Tx) error {
+	err := inTx(conn, func(tx dbtx) error {
 		cur, err := loadSubtask(tx, id)
 		if err != nil {
 			return err
@@ -140,7 +140,7 @@ func SetSubtaskChecked(conn *sql.DB, a Actor, id int64, checked bool) (SubtaskCh
 			return nil
 		}
 		ts := now()
-		if _, err := tx.Exec(`UPDATE task_subtasks SET checked = ?, updated_at = ? WHERE id = ?`, bit(checked), ts, id); err != nil {
+		if _, err := tx.ExecContext(bg, `UPDATE task_subtasks SET checked = ?, updated_at = ? WHERE id = ?`, bit(checked), ts, id); err != nil {
 			return err
 		}
 		typ := EventSubtaskUnchecked
@@ -161,12 +161,12 @@ func RemoveSubtask(conn *sql.DB, a Actor, id int64) error {
 	if err := validActor(a); err != nil {
 		return err
 	}
-	return inTx(conn, func(tx *sql.Tx) error {
+	return inTx(conn, func(tx dbtx) error {
 		cur, err := loadSubtask(tx, id)
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(`DELETE FROM task_subtasks WHERE id = ?`, id); err != nil {
+		if _, err := tx.ExecContext(bg, `DELETE FROM task_subtasks WHERE id = ?`, id); err != nil {
 			return err
 		}
 		_, err = record(tx, a, cur.TaskID, now(), EventSubtaskRemoved, subtaskPayload(cur))
@@ -178,11 +178,11 @@ func RemoveSubtask(conn *sql.DB, a Actor, id int64) error {
 // belonging to the task are ignored (and repeats collapse), subtasks left
 // out keep their relative order after the listed ones. It records no event.
 func SetSubtaskOrder(conn *sql.DB, taskID int64, ids []int64) error {
-	return inTx(conn, func(tx *sql.Tx) error {
+	return inTx(conn, func(tx dbtx) error {
 		if _, err := load(tx, taskID); err != nil {
 			return err
 		}
-		rows, err := tx.Query(`SELECT id FROM task_subtasks WHERE task_id = ? ORDER BY position, id`, taskID)
+		rows, err := tx.QueryContext(bg, `SELECT id FROM task_subtasks WHERE task_id = ? ORDER BY position, id`, taskID)
 		if err != nil {
 			return err
 		}
@@ -217,7 +217,7 @@ func SetSubtaskOrder(conn *sql.DB, taskID int64, ids []int64) error {
 			}
 		}
 		for i, id := range order {
-			if _, err := tx.Exec(`UPDATE task_subtasks SET position = ? WHERE id = ?`, i, id); err != nil {
+			if _, err := tx.ExecContext(bg, `UPDATE task_subtasks SET position = ? WHERE id = ?`, i, id); err != nil {
 				return err
 			}
 		}
@@ -227,7 +227,7 @@ func SetSubtaskOrder(conn *sql.DB, taskID int64, ids []int64) error {
 
 // loadSubtasks reads the subtasks of every live task (or just onlyID's),
 // keyed by task, ordered by position then id.
-func loadSubtasks(q rowsQuerier, onlyID *int64) (map[int64][]Subtask, error) {
+func loadSubtasks(q dbtx, onlyID *int64) (map[int64][]Subtask, error) {
 	query := `SELECT s.id, s.task_id, s.text, s.checked, s.position
 	            FROM task_subtasks s JOIN tasks t ON t.id = s.task_id
 	           WHERE t.deleted_at IS NULL`
@@ -236,7 +236,7 @@ func loadSubtasks(q rowsQuerier, onlyID *int64) (map[int64][]Subtask, error) {
 		query += ` AND s.task_id = ?`
 		args = append(args, *onlyID)
 	}
-	rows, err := q.Query(query+` ORDER BY s.task_id, s.position, s.id`, args...)
+	rows, err := q.QueryContext(bg, query+` ORDER BY s.task_id, s.position, s.id`, args...)
 	if err != nil {
 		return nil, err
 	}

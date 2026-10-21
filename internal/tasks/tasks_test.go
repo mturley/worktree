@@ -6,6 +6,7 @@ import (
 	"errors"
 	"path/filepath"
 	"sort"
+	"sync"
 	"testing"
 
 	wdb "github.com/mturley/worktree/internal/db"
@@ -98,7 +99,7 @@ func TestCreateRankCountsDeletedRows(t *testing.T) {
 	conn := newDB(t)
 	a := mustCreate(t, conn, "a")
 	b := mustCreate(t, conn, "b")
-	if err := Delete(conn, user, b.ID); err != nil {
+	if _, err := Delete(conn, user, b.ID); err != nil {
 		t.Fatal(err)
 	}
 	c := mustCreate(t, conn, "c")
@@ -294,7 +295,8 @@ func TestUpdateClearsDue(t *testing.T) {
 func TestDeleteHidesTask(t *testing.T) {
 	conn := newDB(t)
 	tk := mustCreate(t, conn, "x")
-	if err := Delete(conn, user, tk.ID); err != nil {
+	eventID, err := Delete(conn, user, tk.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Get(conn, tk.ID); !errors.Is(err, ErrNotFound) {
@@ -307,10 +309,70 @@ func TestDeleteHidesTask(t *testing.T) {
 	if len(ev) == 0 || ev[0].Type != EventTaskDeleted {
 		t.Fatalf("events %+v", ev)
 	}
-	if err := Delete(conn, user, tk.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("second Delete err = %v", err)
+	if eventID == 0 || eventID != ev[0].ID {
+		t.Fatalf("Delete returned event id %d, want the task_deleted event %d", eventID, ev[0].ID)
+	}
+	if id, err := Delete(conn, user, tk.ID); !errors.Is(err, ErrNotFound) || id != 0 {
+		t.Fatalf("second Delete = %d, %v", id, err)
 	}
 	if _, err := SetState(conn, user, tk.ID, StateDone); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("SetState on deleted err = %v", err)
+	}
+}
+
+// TestConcurrentWritersAcrossConnections drives writes from two separate
+// pools on one file, as the CLI and `worktree ui` do. A deferred BEGIN that
+// reads before writing fails its lock upgrade at once with "database is
+// locked"; BEGIN IMMEDIATE waits under busy_timeout instead.
+func TestConcurrentWritersAcrossConnections(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "w.db")
+	var conns []*sql.DB
+	for i := 0; i < 2; i++ {
+		c, err := wdb.OpenAt(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { c.Close() })
+		conns = append(conns, c)
+	}
+	const workers, perWorker = 4, 10
+	total := len(conns) * workers * perWorker
+	var wg sync.WaitGroup
+	errs := make(chan error, 2*total)
+	idCh := make(chan int64, total)
+	for _, c := range conns {
+		for w := 0; w < workers; w++ {
+			wg.Add(1)
+			go func(c *sql.DB) {
+				defer wg.Done()
+				for i := 0; i < perWorker; i++ {
+					tk, err := Create(c, user, NewTask{Title: "t"})
+					if err != nil {
+						errs <- err
+						continue
+					}
+					idCh <- tk.ID
+					if _, err := SetState(c, user, tk.ID, StateInProgress); err != nil {
+						errs <- err
+					}
+				}
+			}(c)
+		}
+	}
+	wg.Wait()
+	close(errs)
+	close(idCh)
+	for err := range errs {
+		t.Errorf("concurrent write: %v", err)
+	}
+	seen := map[int64]bool{}
+	for id := range idCh {
+		if seen[id] {
+			t.Errorf("duplicate id %d", id)
+		}
+		seen[id] = true
+	}
+	if len(seen) != total {
+		t.Errorf("created %d tasks, want %d", len(seen), total)
 	}
 }

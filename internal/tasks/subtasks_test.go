@@ -120,7 +120,7 @@ func TestSubtaskErrors(t *testing.T) {
 	if err := RemoveSubtask(conn, user, 999); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing: %v", err)
 	}
-	if err := Delete(conn, user, tk.ID); err != nil {
+	if _, err := Delete(conn, user, tk.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := AddSubtask(conn, user, tk.ID, "z"); !errors.Is(err, ErrNotFound) {

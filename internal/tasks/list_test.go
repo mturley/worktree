@@ -281,7 +281,7 @@ func TestListFiltersAndOrder(t *testing.T) {
 	if l := mustList(t, conn, Filter{StarredOnly: true, Priorities: []Priority{PriorityLow, PriorityNone}}); !sameIDs(l, b.ID) {
 		t.Fatalf("starred+low = %v", ids(l))
 	}
-	if err := Delete(conn, user, a.ID); err != nil {
+	if _, err := Delete(conn, user, a.ID); err != nil {
 		t.Fatal(err)
 	}
 	if l := mustList(t, conn, Filter{}); !sameIDs(l, c.ID, b.ID) {

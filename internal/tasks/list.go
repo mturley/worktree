@@ -35,11 +35,6 @@ type Filter struct {
 	StarredOnly      bool
 }
 
-// rowsQuerier is satisfied by *sql.DB and *sql.Tx.
-type rowsQuerier interface {
-	Query(query string, args ...any) (*sql.Rows, error)
-}
-
 type resKey struct{ typ, id string }
 
 // List returns the tasks f selects, in master order (rank, then id), each
@@ -184,14 +179,14 @@ func inScope(t Task, sc Scope, tombstoned map[resKey]map[string]bool, registered
 
 // loadTasks reads every live task's own columns (or just onlyID's) in
 // master order.
-func loadTasks(q rowsQuerier, onlyID *int64) ([]Task, error) {
+func loadTasks(q dbtx, onlyID *int64) ([]Task, error) {
 	query := `SELECT ` + taskCols + ` FROM tasks WHERE deleted_at IS NULL`
 	var args []any
 	if onlyID != nil {
 		query += ` AND id = ?`
 		args = append(args, *onlyID)
 	}
-	rows, err := q.Query(query+` ORDER BY rank, id`, args...)
+	rows, err := q.QueryContext(bg, query+` ORDER BY rank, id`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -215,7 +210,7 @@ func loadTasks(q rowsQuerier, onlyID *int64) ([]Task, error) {
 // loadLinks reads the links of every live task (or just onlyID's), keyed by
 // task, in display order: Focus before Related, then sort_order (NULL
 // last), then created_at. Archived is left false.
-func loadLinks(q rowsQuerier, onlyID *int64) (map[int64][]Link, error) {
+func loadLinks(q dbtx, onlyID *int64) (map[int64][]Link, error) {
 	query := `SELECT l.id, l.task_id, l.kind, l.resource_type, l.resource_id, l.worktree_path, l.is_primary
 	            FROM task_links l JOIN tasks t ON t.id = l.task_id
 	           WHERE t.deleted_at IS NULL`
@@ -224,7 +219,7 @@ func loadLinks(q rowsQuerier, onlyID *int64) (map[int64][]Link, error) {
 		query += ` AND l.task_id = ?`
 		args = append(args, *onlyID)
 	}
-	rows, err := q.Query(query+` ORDER BY l.task_id, l.is_primary DESC, l.sort_order IS NULL, l.sort_order, l.created_at, l.id`, args...)
+	rows, err := q.QueryContext(bg, query+` ORDER BY l.task_id, l.is_primary DESC, l.sort_order IS NULL, l.sort_order, l.created_at, l.id`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -246,8 +241,8 @@ func loadLinks(q rowsQuerier, onlyID *int64) (map[int64][]Link, error) {
 // loadSubscriptions reads `worktree:` subscriptions only (every other
 // subscriber, e.g. a task blocker's, does not count as following), split
 // into active (resource -> paths) and tombstoned (resource -> path set).
-func loadSubscriptions(q rowsQuerier) (map[resKey][]string, map[resKey]map[string]bool, error) {
-	rows, err := q.Query(`SELECT subscriber, resource_type, resource_id, deleted_at IS NULL FROM watcher_subscriptions
+func loadSubscriptions(q dbtx) (map[resKey][]string, map[resKey]map[string]bool, error) {
+	rows, err := q.QueryContext(bg, `SELECT subscriber, resource_type, resource_id, deleted_at IS NULL FROM watcher_subscriptions
 		  WHERE subscriber LIKE 'worktree:%'`)
 	if err != nil {
 		return nil, nil, err
