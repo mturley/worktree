@@ -45,7 +45,9 @@ func MoveToBottom(conn *sql.DB, id int64) error {
 
 // moveRelative moves id next to ref. The neighbour on the far side is found
 // among ALL other rows, deleted included, so hidden tasks stay where they
-// were. Only id's row is rewritten, and no event is recorded.
+// were. Bounds are strictly greater/smaller ranks, so a tie on ref's rank
+// can never yield an empty KeyBetween interval; the move lands just outside
+// the whole tied group. Only id's row is rewritten, and no event is recorded.
 func moveRelative(conn *sql.DB, id, ref int64, after bool) error {
 	return inTx(conn, func(tx *sql.Tx) error {
 		if _, err := load(tx, id); err != nil {
@@ -62,13 +64,13 @@ func moveRelative(conn *sql.DB, id, ref int64, after bool) error {
 		var other sql.NullString
 		if after {
 			err = tx.QueryRow(
-				`SELECT rank FROM tasks WHERE id != ? AND (rank > ? OR (rank = ? AND id > ?))
-				 ORDER BY rank, id LIMIT 1`, id, r.Rank, r.Rank, ref).Scan(&other)
+				`SELECT rank FROM tasks WHERE id != ? AND rank > ?
+				 ORDER BY rank LIMIT 1`, id, r.Rank).Scan(&other)
 			lo, hi = r.Rank, other.String
 		} else {
 			err = tx.QueryRow(
-				`SELECT rank FROM tasks WHERE id != ? AND (rank < ? OR (rank = ? AND id < ?))
-				 ORDER BY rank DESC, id DESC LIMIT 1`, id, r.Rank, r.Rank, ref).Scan(&other)
+				`SELECT rank FROM tasks WHERE id != ? AND rank < ?
+				 ORDER BY rank DESC LIMIT 1`, id, r.Rank).Scan(&other)
 			lo, hi = other.String, r.Rank
 		}
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {

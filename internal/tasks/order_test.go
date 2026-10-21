@@ -167,3 +167,40 @@ func TestMoveWritesNoEvent(t *testing.T) {
 		t.Fatal("move wrote an event")
 	}
 }
+
+func TestMoveRelativeToTiedRanks(t *testing.T) {
+	for _, after := range []bool{true, false} {
+		for _, refIsFirst := range []bool{true, false} {
+			conn := newDB(t)
+			a, b, c, _ := four(t, conn)
+			// Tie A and B: same rank, ordered by id.
+			if _, err := conn.Exec(`UPDATE tasks SET rank = ? WHERE id = ?`, a.Rank, b.ID); err != nil {
+				t.Fatal(err)
+			}
+			ref := b.ID
+			if refIsFirst {
+				ref = a.ID
+			}
+			var err error
+			if after {
+				err = MoveAfter(conn, c.ID, ref)
+			} else {
+				err = MoveBefore(conn, c.ID, ref)
+			}
+			if err != nil {
+				t.Fatalf("after=%v ref=%d: %v", after, ref, err)
+			}
+			pos := map[int64]int{}
+			order := masterOrder(t, conn)
+			for i, id := range order {
+				pos[id] = i
+			}
+			if after && pos[c.ID] < pos[ref] || !after && pos[c.ID] > pos[ref] {
+				t.Fatalf("after=%v ref=%d: wrong side, order %v", after, ref, order)
+			}
+			if after && pos[c.ID] != pos[b.ID]+1 || !after && pos[c.ID] != pos[a.ID]-1 {
+				t.Fatalf("after=%v: not just outside the tied group, order %v", after, order)
+			}
+		}
+	}
+}
