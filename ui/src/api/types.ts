@@ -16,6 +16,8 @@ export interface CmuxResponse {
 }
 
 export interface WorktreeSummary {
+  /** Open (not done) tasks linked to this worktree, directly or via a followed resource. */
+  open_task_count?: number;
   path: string; repo: string; branch: string;
   on_disk: boolean; resource_count: number; primary_count: number; latest_event_ts: string;
   primary_by_type: Record<string, number>; related_count: number;
@@ -74,6 +76,8 @@ export interface TimelineEvent {
 }
 export interface TimelineResponse { events: TimelineEvent[]; next_cursor: string }
 export interface ResourceDTO {
+  /** Open tasks linked to this resource. */
+  open_task_count?: number
   type: string; id: string; url: string; primary: boolean
   /** This resource's own notification toggle; the effective state is `notify || worktree.notify_all`. */
   notify?: boolean
@@ -636,3 +640,40 @@ export interface DiffPatch {
 export type DiffBase = "merge-base" | "tracking"
 /** "all" is All changes; from/to are commit SHAs or "uncommitted" (from oldest, to newest). */
 export type DiffRange = "all" | { from: string; to: string }
+
+export type TaskState = "not_started" | "in_progress" | "done"
+export type Priority = "none" | "low" | "medium" | "high"
+
+/** One of a task's links; mirrors taskLinkDTO in internal/webui/tasks_api.go. */
+export interface TaskLink {
+  kind: "resource" | "worktree"
+  resource_type?: string
+  resource_id?: string
+  worktree?: string
+  /** The task's Primary flag. */
+  focus: boolean
+  archived: boolean
+}
+
+/** GET /api/tasks; mirrors taskDTO in internal/webui/tasks_api.go field for field. */
+export interface Task {
+  id: number
+  /** Display ref, "T42". */
+  ref: string
+  title: string
+  description: string
+  state: TaskState
+  priority: Priority
+  starred: boolean
+  due?: string
+  rank: string
+  created_at: string
+  updated_at: string
+  started_at?: string
+  completed_at?: string
+  archived: boolean
+  links: TaskLink[]
+  implicit_worktrees: string[]
+  subtasks_total: number
+  subtasks_done: number
+}

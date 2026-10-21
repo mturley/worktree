@@ -85,7 +85,7 @@ export function WorktreeDetailPage() {
   const everything = useSeeEverything()
   const sourcesOn = sources.length > 0
   const searchContext = useMemo(() => ({ terms: search.terms }), [search.terms])
-  const { resources, timeline } = useWorktreeDetail(path, sources, unreadOnly, eventTypes, search.debouncedQ)
+  const { resources, timeline, refreshResources } = useWorktreeDetail(path, sources, unreadOnly, eventTypes, search.debouncedQ)
   const { selected, select, toggle, clear } = useSelectedResource()
   // `?diff`: the Code tab's drill-down replaces the page body (the details
   // card and the resources) under the same header.
@@ -333,7 +333,7 @@ export function WorktreeDetailPage() {
         </Group>
       }
       path={path}
-      onChanged={resources.refetch}
+      onChanged={refreshResources}
       selectedKey={selected}
       onSelectResource={toggle}
       notify={notify}
@@ -446,8 +446,8 @@ export function WorktreeDetailPage() {
       // card again.
       onBack={clear}
       escHint={escDeselects}
-      onRemoved={resources.refetch}
-      onResourceChanged={resources.refetch}
+      onRemoved={refreshResources}
+      onResourceChanged={refreshResources}
       topInset={headerHeight}
       stickyTop={pinCards ? headerHeight : undefined}
       notify={notify}
@@ -793,7 +793,7 @@ export function WorktreeDetailPage() {
           onClose={() => setPendingThreadUrl(null)}
           onAdded={() => {
             setPendingThreadUrl(null)
-            void resources.refetch()
+            void refreshResources()
           }}
         />
       )}
@@ -808,7 +808,7 @@ export function WorktreeDetailPage() {
           onClose={() => setArrivalFollow(null)}
           onAdded={() => {
             setArrivalFollow(null)
-            void resources.refetch()
+            void refreshResources()
           }}
         />
       )}
@@ -823,7 +823,7 @@ export function WorktreeDetailPage() {
           onClose={() => setPendingFollowUrl(null)}
           onAdded={() => {
             setPendingFollowUrl(null)
-            void resources.refetch()
+            void refreshResources()
           }}
         />
       )}

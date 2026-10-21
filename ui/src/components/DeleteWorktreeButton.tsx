@@ -42,6 +42,8 @@ export function DeleteWorktreeButton({ w }: { w: WorktreeSummary }) {
             setOpen(false)
             // The worktree is gone; the list is the only place left to be.
             void qc.invalidateQueries({ queryKey: ["worktrees"] })
+            // Its tasks lose their worktree link.
+            void qc.invalidateQueries({ queryKey: ["tasks"] })
             navigate("/")
           }}
         />

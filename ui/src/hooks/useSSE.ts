@@ -36,6 +36,16 @@ export function useSSE() {
       // an incoming event has usually just changed — without this they
       // stay stale until a remount forces a refetch.
       qc.invalidateQueries({ queryKey: ["resources"] })
+      // Task changes arrive as their own event, but one missed while hidden
+      // is only recovered here.
+      refreshTasks()
+    }
+    // Prefix keys: every scope's lists, plus the open-task counts that ride
+    // on worktree summaries and resource DTOs.
+    const refreshTasks = () => {
+      qc.invalidateQueries({ queryKey: ["tasks"] })
+      qc.invalidateQueries({ queryKey: ["worktrees"] })
+      qc.invalidateQueries({ queryKey: ["resources"] })
     }
     const disconnect = () => {
       es?.close()
@@ -46,6 +56,7 @@ export function useSSE() {
     const connect = () => {
       es = new EventSource(streamUrl())
       es.addEventListener("events_new", refreshEvents)
+      es.addEventListener("tasks_changed", refreshTasks)
       // The server picked this tab to show a notification. Ack either way:
       // shown:false (no permission, no API) sends it on to the next tab at
       // once instead of after the server's timeout.

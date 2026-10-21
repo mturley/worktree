@@ -84,6 +84,13 @@ describe("useSSE", () => {
     expect(keys).toContain(JSON.stringify(["resources"]))
   })
 
+  it("invalidates tasks, worktrees and resources on tasks_changed", () => {
+    const invalidate = renderSSE()
+    FakeEventSource.last!.emit("tasks_changed", "{}")
+    const keys = invalidatedKeys(invalidate)
+    for (const k of [["tasks"], ["worktrees"], ["resources"]]) expect(keys).toContain(JSON.stringify(k))
+  })
+
   it("invalidates the session query on a stream error", () => {
     vi.stubGlobal("EventSource", FakeEventSource)
     const qc = new QueryClient()
@@ -138,6 +145,7 @@ describe("useSSE", () => {
       expect(keys).toContain(JSON.stringify(["timeline"]))
       expect(keys).toContain(JSON.stringify(["worktrees"]))
       expect(keys).toContain(JSON.stringify(["resources"]))
+      expect(keys).toContain(JSON.stringify(["tasks"]))
     })
 
     it("opens no stream for a tab loaded in the background until it is shown", () => {

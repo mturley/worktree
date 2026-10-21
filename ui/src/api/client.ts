@@ -1,4 +1,4 @@
-import type { DiffBase, DiffCommits, DiffFiles, DiffPatch, DiffRange, WorktreeGit, AllResourceDTO, CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, CredResult, DefaultBranchResponse, CredService, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, ResourceReadChange, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, UpdateStatus, WatcherHealth, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherAuthSettings, WatcherConfigSettings, WorktreeInfo, WorktreeNotes, WorktreeSettings, WorktreeSummary } from "./types"
+import type { DiffBase, DiffCommits, DiffFiles, DiffPatch, DiffRange, WorktreeGit, AllResourceDTO, CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, CredResult, DefaultBranchResponse, CredService, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, ResourceReadChange, Priority, Task, TaskState, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, UpdateStatus, WatcherHealth, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherAuthSettings, WatcherConfigSettings, WorktreeInfo, WorktreeNotes, WorktreeSettings, WorktreeSummary } from "./types"
 
 export class HttpError extends Error {
   constructor(message: string, readonly status: number) {
@@ -53,6 +53,14 @@ function diffParams(path: string, base: DiffBase, range?: DiffRange): URLSearchP
 
 function cmuxPost(url: string, body: unknown) {
   return fetchJSON<CmuxActionResult>(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+}
+
+function postJSON<T>(url: string, body: unknown) {
+  return fetchJSON<T>(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -134,6 +142,36 @@ export const api = {
       throw new HttpError((data && data.error) || `HTTP ${res.status}`, res.status)
     }
   },
+  tasks: (
+    scope: { kind: "all" } | { kind: "worktree"; path: string } | { kind: "resource"; type: string; id: string },
+    opts: { completed?: boolean; archived?: boolean } = {},
+  ) => {
+    const params = new URLSearchParams({ scope: scope.kind })
+    if (scope.kind === "worktree") params.set("path", scope.path)
+    if (scope.kind === "resource") {
+      params.set("type", scope.type)
+      params.set("id", scope.id)
+    }
+    if (opts.completed) params.set("completed", "1")
+    if (opts.archived) params.set("archived", "1")
+    return fetchJSON<Task[]>(`/api/tasks?${params}`)
+  },
+  createTask: (args: {
+    title: string
+    priority?: Priority
+    starred?: boolean
+    path?: string
+    type?: string
+    id?: string
+    after?: number
+    before?: number
+  }) => postJSON<Task>("/api/tasks", args),
+  updateTask: (id: number, patch: { title?: string; priority?: Priority; starred?: boolean; due?: string }) =>
+    postJSON<Task>("/api/tasks/update", { id, ...patch }),
+  setTaskState: (id: number, state: TaskState) => postJSON<Task>("/api/tasks/state", { id, state }),
+  /** Resolves on the server's 204. */
+  moveTask: (id: number, place: { after: number } | { before: number }) =>
+    postJSON<null>("/api/tasks/move", { id, ...place }).then((): void => {}),
   worktrees: () => fetchJSON<WorktreeSummary[]>("/api/worktrees"),
   allResources: () => fetchJSON<AllResourceDTO[]>("/api/all-resources"),
   /**
