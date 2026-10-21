@@ -10,7 +10,7 @@ import { ResourceStatusTab } from "../watcherlog/ResourceStatusTab"
 export function LogsPanel({ active }: { active: boolean }) {
   if (!active) return null
   return (
-    <Tabs defaultValue="log" keepMounted={false}>
+    <Tabs defaultValue="log" keepMounted={false} variant="pills">
       <Tabs.List>
         <Tabs.Tab value="log">Watcher log</Tabs.Tab>
         <Tabs.Tab value="status">Resource status</Tabs.Tab>
