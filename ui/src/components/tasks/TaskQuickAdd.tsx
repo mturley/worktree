@@ -2,6 +2,15 @@ import { useRef, useState } from "react"
 import { ActionIcon, Button, Group, Select, TextInput } from "@mantine/core"
 import type { Priority } from "../../api/types"
 
+/**
+ * WebKit (Safari, the cmux browser pane) does not focus a button on click, so
+ * pressing one blurs the input to the body, the row collapses, and the button
+ * is gone before its click lands. Preventing mousedown's default keeps focus
+ * in the input. The priority picker needs none of this: it is an input, and
+ * takes focus inside the row.
+ */
+const keepInputFocus = (e: React.MouseEvent) => e.preventDefault()
+
 const PRIORITY_OPTIONS: { value: Priority; label: string }[] = [
   { value: "high", label: "High" },
   { value: "medium", label: "Medium" },
@@ -62,6 +71,7 @@ export function TaskQuickAdd({ onAdd }: {
             aria-label={starred ? "Unstar new task" : "Star new task"}
             aria-pressed={starred}
             disabled={busy}
+            onMouseDown={keepInputFocus}
             onClick={() => setStarred((s) => !s)}
             style={{ color: starred ? "var(--task-accent)" : "var(--mantine-color-dark-3)", flex: "none" }}
           >
@@ -99,7 +109,7 @@ export function TaskQuickAdd({ onAdd }: {
         }}
       />
       {expanded && (
-        <Button size="xs" variant="light" disabled={busy || title.trim() === ""} loading={busy} onClick={() => void submit()}>
+        <Button size="xs" variant="light" disabled={busy || title.trim() === ""} loading={busy} onMouseDown={keepInputFocus} onClick={() => void submit()}>
           Add
         </Button>
       )}

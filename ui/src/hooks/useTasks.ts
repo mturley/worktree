@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient, type QueryClient, type QueryKey } from "@tanstack/react-query"
+import { keepPreviousData, useQuery, useQueryClient, type QueryClient, type QueryKey } from "@tanstack/react-query"
 import { api } from "../api/client"
 import type { Priority, Task, TaskState } from "../api/types"
 
@@ -19,10 +19,22 @@ export function taskScopeKey(s: TaskScope): unknown[] {
   }
 }
 
+/** Whether a task query's key belongs to the scope whose key is `scopeKey`. */
+function sameScope(key: readonly unknown[], scopeKey: unknown[]): boolean {
+  return scopeKey.every((part, i) => key[i] === part)
+}
+
 export function useTasks(scope: TaskScope, opts: { completed: boolean; archived: boolean }) {
+  const scopeKey = taskScopeKey(scope)
   return useQuery({
-    queryKey: [...taskScopeKey(scope), { completed: opts.completed, archived: opts.archived }],
+    queryKey: [...scopeKey, { completed: opts.completed, archived: opts.archived }],
     queryFn: () => api.tasks(scope, opts),
+    // Toggling Show completed or Include archived changes the key: keep
+    // showing the old list meanwhile rather than dropping to "Loading tasks…",
+    // which would unmount the list's DndContext. Only within one scope: another
+    // worktree's or resource's tasks are not a stand-in for this one's.
+    placeholderData: (prev, prevQuery) =>
+      prevQuery && sameScope(prevQuery.queryKey, scopeKey) ? keepPreviousData(prev) : undefined,
   })
 }
 

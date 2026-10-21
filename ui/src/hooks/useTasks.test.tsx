@@ -61,6 +61,48 @@ describe("useTasks", () => {
   })
 })
 
+describe("useTasks while its flags change", () => {
+  it("keeps the previous list while the new one loads, so the list never drops to Loading", async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    )
+    const { result, rerender } = renderHook(
+      ({ completed }: { completed: boolean }) => useTasks({ kind: "all" }, { completed, archived: false }),
+      { wrapper, initialProps: { completed: false } },
+    )
+    await waitFor(() => expect(ids(result.current.data)).toEqual([1, 2, 3]))
+
+    let resolve!: (ts: Task[]) => void
+    vi.mocked(api.tasks).mockReturnValue(new Promise<Task[]>((r) => { resolve = r }))
+    rerender({ completed: true })
+    expect(result.current.isPending).toBe(false)
+    expect(result.current.isPlaceholderData).toBe(true)
+    expect(ids(result.current.data)).toEqual([1, 2, 3])
+
+    act(() => resolve([A, B, C, task(4, { state: "done" })]))
+    await waitFor(() => expect(ids(result.current.data)).toEqual([1, 2, 3, 4]))
+    expect(result.current.isPlaceholderData).toBe(false)
+  })
+
+  it("does not carry one scope's tasks over to another", async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    )
+    const { result, rerender } = renderHook(
+      ({ scope }: { scope: TaskScope }) => useTasks(scope, { completed: false, archived: false }),
+      { wrapper, initialProps: { scope: { kind: "worktree", path: "/a" } as TaskScope } },
+    )
+    await waitFor(() => expect(ids(result.current.data)).toEqual([1, 2, 3]))
+
+    vi.mocked(api.tasks).mockReturnValue(new Promise<Task[]>(() => {}))
+    rerender({ scope: { kind: "worktree", path: "/b" } })
+    expect(result.current.isPending).toBe(true)
+    expect(result.current.data).toBeUndefined()
+  })
+})
+
 describe("useTaskMutations", () => {
   it("move reorders the cached list optimistically and rolls back on failure", async () => {
     const { result } = setup({ kind: "all" })
