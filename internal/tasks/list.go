@@ -80,6 +80,10 @@ func list(conn *sql.DB, f Filter, onlyID *int64) ([]Task, error) {
 	if err != nil {
 		return nil, err
 	}
+	subtasks, err := loadSubtasks(conn, onlyID)
+	if err != nil {
+		return nil, err
+	}
 	active, tombstoned, err := loadSubscriptions(conn)
 	if err != nil {
 		return nil, err
@@ -100,6 +104,9 @@ func list(conn *sql.DB, f Filter, onlyID *int64) ([]Task, error) {
 	out := []Task{}
 	for _, t := range tasks {
 		t.Links = links[t.ID]
+		if t.Subtasks = subtasks[t.ID]; t.Subtasks == nil {
+			t.Subtasks = []Subtask{}
+		}
 		implicit := map[string]bool{}
 		allArchived := len(t.Links) > 0
 		for i := range t.Links {

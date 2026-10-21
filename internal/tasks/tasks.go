@@ -55,9 +55,6 @@ var (
 	ErrInvalid = errors.New("invalid task input")
 )
 
-// Subtask is a placeholder; Task 5 defines it.
-type Subtask struct{}
-
 // Task is one to-do item.
 type Task struct {
 	ID          int64
@@ -73,7 +70,7 @@ type Task struct {
 	Links                                        []Link    // filled by Get/List, in display order
 	Implicit                                     []string  // canonical worktree paths actively following a resource link, sorted
 	Archived                                     bool      // has links and every one is archived; false for a global task
-	Subtasks                                     []Subtask // filled by Get/List (Task 5)
+	Subtasks                                     []Subtask // filled by Get/List, never nil
 }
 
 // NewTask is the input to Create. A zero Priority means PriorityNone.
