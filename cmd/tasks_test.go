@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
+	wdb "github.com/mturley/worktree/internal/db"
+	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/tasks"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -299,5 +302,214 @@ func TestTasksEditStateStarDelete(t *testing.T) {
 	_, err = runTasks(t, "show", "T1")
 	if err == nil || err.Error() != "task T1 not found" {
 		t.Fatalf("show deleted: %v", err)
+	}
+}
+
+func showJSON(t *testing.T, id string) map[string]any {
+	t.Helper()
+	out, err := runTasks(t, "show", id, "--json")
+	if err != nil {
+		t.Fatalf("show %s: %v\n%s", id, err, out)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("show json: %v\n%s", err, out)
+	}
+	return got
+}
+
+func TestTasksLinkFocusMoveCLI(t *testing.T) {
+	t.Setenv("WORKTREE_DB", filepath.Join(t.TempDir(), "w.db"))
+	for _, title := range []string{"A", "B"} {
+		if out, err := runTasks(t, "add", title, "--global"); err != nil {
+			t.Fatalf("add: %v\n%s", err, out)
+		}
+	}
+	if out, err := runTasks(t, "link", "T1", "jira:RH-1"); err != nil {
+		t.Fatalf("link: %v\n%s", err, out)
+	}
+	if l := showJSON(t, "T1")["links"].([]any); len(l) != 1 || l[0].(map[string]any)["focus"] != false {
+		t.Fatalf("links after link = %v", l)
+	}
+	if out, err := runTasks(t, "focus", "T1", "jira:RH-1"); err != nil {
+		t.Fatalf("focus: %v\n%s", err, out)
+	}
+	if l := showJSON(t, "T1")["links"].([]any); l[0].(map[string]any)["focus"] != true {
+		t.Fatalf("links after focus = %v", l)
+	}
+	if out, err := runTasks(t, "unfocus", "T1", "jira:RH-1"); err != nil {
+		t.Fatalf("unfocus: %v\n%s", err, out)
+	}
+	if l := showJSON(t, "T1")["links"].([]any); l[0].(map[string]any)["focus"] != false {
+		t.Fatalf("links after unfocus = %v", l)
+	}
+	if out, err := runTasks(t, "link", "T1", "jira:RH-2", "--focus"); err != nil {
+		t.Fatalf("link --focus: %v\n%s", err, out)
+	}
+	if out, err := runTasks(t, "unlink", "T1", "jira:RH-2"); err != nil {
+		t.Fatalf("unlink: %v\n%s", err, out)
+	}
+	if l := showJSON(t, "T1")["links"].([]any); len(l) != 1 {
+		t.Fatalf("links after unlink = %v", l)
+	}
+
+	if out, err := runTasks(t, "move", "T2", "--top"); err != nil {
+		t.Fatalf("move: %v\n%s", err, out)
+	}
+	out, _ := runTasks(t, "list", "--all", "--json")
+	var list []map[string]any
+	_ = json.Unmarshal([]byte(out), &list)
+	if len(list) != 2 || list[0]["id"] != "T2" || list[1]["id"] != "T1" {
+		t.Fatalf("order = %v", list)
+	}
+	if _, err := runTasks(t, "move", "T1", "--after", "T2"); err != nil {
+		t.Fatalf("move after: %v", err)
+	}
+	if _, err := runTasks(t, "move", "T1", "--before", "T2"); err != nil {
+		t.Fatalf("move before: %v", err)
+	}
+	if _, err := runTasks(t, "move", "T1", "--bottom"); err != nil {
+		t.Fatalf("move bottom: %v", err)
+	}
+	if _, err := runTasks(t, "move", "T1", "--top", "--bottom"); err == nil || !strings.Contains(err.Error(), "exactly one") {
+		t.Fatalf("two flags: %v", err)
+	}
+	if _, err := runTasks(t, "move", "T1"); err == nil || !strings.Contains(err.Error(), "exactly one") {
+		t.Fatalf("no flags: %v", err)
+	}
+}
+
+func TestTasksSubtaskCLI(t *testing.T) {
+	t.Setenv("WORKTREE_DB", filepath.Join(t.TempDir(), "w.db"))
+	if out, err := runTasks(t, "add", "A", "--global"); err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	out, err := runTasks(t, "subtask", "add", "T1", "a")
+	if err != nil {
+		t.Fatalf("subtask add: %v\n%s", err, out)
+	}
+	aID := strings.TrimSpace(out)
+	if aID != "1" {
+		t.Fatalf("subtask id output = %q", out)
+	}
+	out, err = runTasks(t, "subtask", "add", "T1", "b", "--json")
+	if err != nil {
+		t.Fatalf("subtask add: %v\n%s", err, out)
+	}
+	var added map[string]any
+	_ = json.Unmarshal([]byte(out), &added)
+	f, _ := added["id"].(float64)
+	bID := strconv.FormatInt(int64(f), 10)
+	if _, err := runTasks(t, "subtask", "check", aID); err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	st := showJSON(t, "T1")["subtasks"].([]any)
+	if len(st) != 2 || st[0].(map[string]any)["text"] != "a" || st[0].(map[string]any)["checked"] != true ||
+		st[1].(map[string]any)["checked"] != false {
+		t.Fatalf("subtasks = %v", st)
+	}
+	if _, err := runTasks(t, "subtask", "uncheck", aID); err != nil {
+		t.Fatalf("uncheck: %v", err)
+	}
+	if _, err := runTasks(t, "subtask", "edit", aID, "a2"); err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+	if _, err := runTasks(t, "subtask", "order", "T1", bID, aID); err != nil {
+		t.Fatalf("order: %v", err)
+	}
+	st = showJSON(t, "T1")["subtasks"].([]any)
+	if st[0].(map[string]any)["text"] != "b" || st[1].(map[string]any)["text"] != "a2" {
+		t.Fatalf("after order = %v", st)
+	}
+	if _, err := runTasks(t, "subtask", "remove", bID); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if st = showJSON(t, "T1")["subtasks"].([]any); len(st) != 1 {
+		t.Fatalf("after remove = %v", st)
+	}
+}
+
+func TestTasksNotFoundMessages(t *testing.T) {
+	t.Setenv("WORKTREE_DB", filepath.Join(t.TempDir(), "w.db"))
+	if out, err := runTasks(t, "add", "A", "--global"); err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	cases := []struct {
+		want string
+		args []string
+	}{
+		{"task T1 has no link jira:X-9", []string{"unlink", "T1", "jira:X-9"}},
+		{"task T1 has no link jira:X-9", []string{"focus", "T1", "jira:X-9"}},
+		{"task T1 has no link jira:X-9", []string{"unfocus", "T1", "jira:X-9"}},
+		{"task T5 not found", []string{"unlink", "T5", "jira:X-9"}},
+		{"task T5 not found", []string{"link", "T5", "jira:X-9"}},
+		{"task T5 not found", []string{"subtask", "add", "T5", "x"}},
+		{"task T5 not found", []string{"move", "T5", "--top"}},
+		{"subtask 99 not found", []string{"subtask", "check", "99"}},
+		{"subtask 99 not found", []string{"subtask", "uncheck", "99"}},
+		{"subtask 99 not found", []string{"subtask", "edit", "99", "x"}},
+		{"subtask 99 not found", []string{"subtask", "remove", "99"}},
+	}
+	for _, c := range cases {
+		_, err := runTasks(t, c.args...)
+		if err == nil || err.Error() != c.want {
+			t.Errorf("%v: got %v, want %q", c.args, err, c.want)
+		}
+	}
+}
+
+func registerTempWorktree(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := wdb.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if err := registry.Register(conn, registry.Entry{Path: dir, Repo: "r", RepoRoot: dir, Branch: "b"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	return canonicalWorktree(dir)
+}
+
+func TestTasksDefaultContextInRegisteredWorktree(t *testing.T) {
+	t.Setenv("WORKTREE_DB", filepath.Join(t.TempDir(), "w.db"))
+	wt := registerTempWorktree(t)
+
+	if out, err := runTasks(t, "add", "linked"); err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	if out, err := runTasks(t, "add", "global", "--global"); err != nil {
+		t.Fatalf("add --global: %v\n%s", err, out)
+	}
+	links := showJSON(t, "T1")["links"].([]any)
+	if len(links) != 1 {
+		t.Fatalf("T1 links = %v", links)
+	}
+	l := links[0].(map[string]any)
+	if l["kind"] != "worktree" || l["worktree"] != wt || l["focus"] != true {
+		t.Fatalf("T1 link = %v, want Focus wt:%s", l, wt)
+	}
+	if l := showJSON(t, "T2")["links"].([]any); len(l) != 0 {
+		t.Fatalf("--global should not link: %v", l)
+	}
+
+	out, err := runTasks(t, "list", "--json")
+	if err != nil {
+		t.Fatalf("list: %v\n%s", err, out)
+	}
+	var list []map[string]any
+	_ = json.Unmarshal([]byte(out), &list)
+	if len(list) != 1 || list[0]["id"] != "T1" {
+		t.Fatalf("default list should be scoped to the worktree: %v", list)
+	}
+	out, _ = runTasks(t, "list", "--all", "--json")
+	_ = json.Unmarshal([]byte(out), &list)
+	if len(list) != 2 {
+		t.Fatalf("--all list = %v", list)
 	}
 }

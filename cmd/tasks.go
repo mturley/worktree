@@ -509,3 +509,350 @@ func runTasksDelete(cmd *cobra.Command, args []string) error {
 	fmt.Fprintf(cmd.OutOrStdout(), "deleted %s\n", formatTaskID(id))
 	return nil
 }
+
+var (
+	tasksLinkFocus  bool
+	tasksMoveAfter  string
+	tasksMoveBefore string
+	tasksMoveTop    bool
+	tasksMoveBottom bool
+)
+
+var tasksLinkCmd = &cobra.Command{
+	Use:   "link <id> <ref>",
+	Short: "Link a task to a resource or worktree (Related unless --focus)",
+	Args:  cobra.ExactArgs(2),
+	RunE:  runTasksLink,
+}
+
+var tasksUnlinkCmd = &cobra.Command{
+	Use:   "unlink <id> <ref>",
+	Short: "Remove a task's link",
+	Args:  cobra.ExactArgs(2),
+	RunE:  func(cmd *cobra.Command, args []string) error { return runTasksLinkChange(cmd, args, "unlink") },
+}
+
+var tasksFocusCmd = &cobra.Command{
+	Use:   "focus <id> <ref>",
+	Short: "Make a linked resource or worktree a Focus link",
+	Args:  cobra.ExactArgs(2),
+	RunE:  func(cmd *cobra.Command, args []string) error { return runTasksLinkChange(cmd, args, "focus") },
+}
+
+var tasksUnfocusCmd = &cobra.Command{
+	Use:   "unfocus <id> <ref>",
+	Short: "Make a Focus link Related",
+	Args:  cobra.ExactArgs(2),
+	RunE:  func(cmd *cobra.Command, args []string) error { return runTasksLinkChange(cmd, args, "unfocus") },
+}
+
+var tasksMoveCmd = &cobra.Command{
+	Use:   "move <id> (--after <id> | --before <id> | --top | --bottom)",
+	Short: "Move a task within the master order",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runTasksMove,
+}
+
+var tasksSubtaskCmd = &cobra.Command{
+	Use:   "subtask",
+	Short: "Manage a task's checkbox subtasks",
+}
+
+var tasksSubtaskAddCmd = &cobra.Command{
+	Use:   "add <id> <text>",
+	Short: "Add a subtask (prints its id)",
+	Args:  cobra.ExactArgs(2),
+	RunE:  runSubtaskAdd,
+}
+
+var tasksSubtaskEditCmd = &cobra.Command{
+	Use:   "edit <subtask-id> <text>",
+	Short: "Change a subtask's text",
+	Args:  cobra.ExactArgs(2),
+	RunE:  runSubtaskEdit,
+}
+
+var tasksSubtaskCheckCmd = &cobra.Command{
+	Use:   "check <subtask-id>",
+	Short: "Check a subtask",
+	Args:  cobra.ExactArgs(1),
+	RunE:  func(cmd *cobra.Command, args []string) error { return runSubtaskCheck(cmd, args, true) },
+}
+
+var tasksSubtaskUncheckCmd = &cobra.Command{
+	Use:   "uncheck <subtask-id>",
+	Short: "Uncheck a subtask",
+	Args:  cobra.ExactArgs(1),
+	RunE:  func(cmd *cobra.Command, args []string) error { return runSubtaskCheck(cmd, args, false) },
+}
+
+var tasksSubtaskRemoveCmd = &cobra.Command{
+	Use:   "remove <subtask-id>",
+	Short: "Remove a subtask",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runSubtaskRemove,
+}
+
+var tasksSubtaskOrderCmd = &cobra.Command{
+	Use:   "order <id> <subtask-id>...",
+	Short: "Reorder a task's subtasks; unlisted ones follow in their current order",
+	Args:  cobra.MinimumNArgs(2),
+	RunE:  runSubtaskOrder,
+}
+
+func init() {
+	subs := []*cobra.Command{tasksSubtaskAddCmd, tasksSubtaskEditCmd, tasksSubtaskCheckCmd,
+		tasksSubtaskUncheckCmd, tasksSubtaskRemoveCmd, tasksSubtaskOrderCmd}
+	for _, c := range append([]*cobra.Command{tasksLinkCmd, tasksUnlinkCmd, tasksFocusCmd,
+		tasksUnfocusCmd, tasksMoveCmd}, subs...) {
+		c.Flags().BoolVar(&tasksJSON, "json", false, "machine-readable JSON output")
+	}
+	tasksLinkCmd.Flags().BoolVar(&tasksLinkFocus, "focus", false, "link as Focus instead of Related")
+	mf := tasksMoveCmd.Flags()
+	mf.StringVar(&tasksMoveAfter, "after", "", "place directly after this task")
+	mf.StringVar(&tasksMoveBefore, "before", "", "place directly before this task")
+	mf.BoolVar(&tasksMoveTop, "top", false, "move to the top")
+	mf.BoolVar(&tasksMoveBottom, "bottom", false, "move to the bottom")
+
+	tasksSubtaskCmd.AddCommand(subs...)
+	tasksCmd.AddCommand(tasksLinkCmd, tasksUnlinkCmd, tasksFocusCmd, tasksUnfocusCmd,
+		tasksMoveCmd, tasksSubtaskCmd)
+}
+
+// linkErr reports a missing link as such, and a missing task as a missing task.
+func linkErr(id int64, ref string, err error) error {
+	if errors.Is(err, tasks.ErrNotFound) && strings.Contains(err.Error(), "no such link") {
+		return fmt.Errorf("task %s has no link %s", formatTaskID(id), ref)
+	}
+	return taskErr(id, err)
+}
+
+// subtaskErr reports a missing subtask; ErrNotFound from the subtask-id
+// commands is the subtask (task-level commands go through taskErr).
+func subtaskErr(id int64, err error) error {
+	if errors.Is(err, tasks.ErrNotFound) {
+		return fmt.Errorf("subtask %d not found", id)
+	}
+	return err
+}
+
+func parseSubtaskID(s string) (int64, error) {
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil || n <= 0 {
+		return 0, fmt.Errorf("invalid subtask id %q: want a positive integer", s)
+	}
+	return n, nil
+}
+
+func printTaskByID(cmd *cobra.Command, conn *sql.DB, id int64) error {
+	t, err := tasks.Get(conn, id)
+	if err != nil {
+		return taskErr(id, err)
+	}
+	return printTask(cmd, t)
+}
+
+func runTasksLink(cmd *cobra.Command, args []string) error {
+	id, err := parseTaskID(args[0])
+	if err != nil {
+		return err
+	}
+	target, err := parseLinkRef(args[1])
+	if err != nil {
+		return err
+	}
+	conn, err := wdb.Open()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if _, err := tasks.AddLink(conn, tasksActor(), id, target, tasksLinkFocus); err != nil {
+		return taskErr(id, err)
+	}
+	return printTaskByID(cmd, conn, id)
+}
+
+func runTasksLinkChange(cmd *cobra.Command, args []string, op string) error {
+	id, err := parseTaskID(args[0])
+	if err != nil {
+		return err
+	}
+	target, err := parseLinkRef(args[1])
+	if err != nil {
+		return err
+	}
+	conn, err := wdb.Open()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	a := tasksActor()
+	switch op {
+	case "unlink":
+		err = tasks.RemoveLink(conn, a, id, target)
+	case "focus":
+		err = tasks.SetLinkFocus(conn, a, id, target, true)
+	default:
+		err = tasks.SetLinkFocus(conn, a, id, target, false)
+	}
+	if err != nil {
+		return linkErr(id, args[1], err)
+	}
+	return printTaskByID(cmd, conn, id)
+}
+
+func runTasksMove(cmd *cobra.Command, args []string) error {
+	id, err := parseTaskID(args[0])
+	if err != nil {
+		return err
+	}
+	fl := cmd.Flags()
+	after, before := fl.Changed("after"), fl.Changed("before")
+	set := 0
+	for _, b := range []bool{after, before, tasksMoveTop, tasksMoveBottom} {
+		if b {
+			set++
+		}
+	}
+	if set != 1 {
+		return fmt.Errorf("pass exactly one of --after, --before, --top or --bottom")
+	}
+	var ref int64
+	if after || before {
+		s := tasksMoveAfter
+		if before {
+			s = tasksMoveBefore
+		}
+		if ref, err = parseTaskID(s); err != nil {
+			return err
+		}
+	}
+	conn, err := wdb.Open()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	switch {
+	case after:
+		err = tasks.MoveAfter(conn, id, ref)
+	case before:
+		err = tasks.MoveBefore(conn, id, ref)
+	case tasksMoveTop:
+		err = tasks.MoveToTop(conn, id)
+	default:
+		err = tasks.MoveToBottom(conn, id)
+	}
+	if err != nil {
+		if errors.Is(err, tasks.ErrNotFound) && ref != 0 {
+			if _, gerr := tasks.Get(conn, id); gerr == nil {
+				return fmt.Errorf("task %s not found", formatTaskID(ref))
+			}
+		}
+		return taskErr(id, err)
+	}
+	return printTaskByID(cmd, conn, id)
+}
+
+func runSubtaskAdd(cmd *cobra.Command, args []string) error {
+	id, err := parseTaskID(args[0])
+	if err != nil {
+		return err
+	}
+	conn, err := wdb.Open()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	s, err := tasks.AddSubtask(conn, tasksActor(), id, args[1])
+	if err != nil {
+		return taskErr(id, err)
+	}
+	if tasksJSON {
+		return writeJSON(cmd.OutOrStdout(), subtaskJSON{ID: s.ID, Text: s.Text, Checked: s.Checked})
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), s.ID)
+	return nil
+}
+
+func runSubtaskEdit(cmd *cobra.Command, args []string) error {
+	sid, err := parseSubtaskID(args[0])
+	if err != nil {
+		return err
+	}
+	conn, err := wdb.Open()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if err := tasks.EditSubtask(conn, tasksActor(), sid, args[1]); err != nil {
+		return subtaskErr(sid, err)
+	}
+	return printSubtaskResult(cmd, sid, "edited")
+}
+
+func runSubtaskCheck(cmd *cobra.Command, args []string, checked bool) error {
+	sid, err := parseSubtaskID(args[0])
+	if err != nil {
+		return err
+	}
+	conn, err := wdb.Open()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if _, err := tasks.SetSubtaskChecked(conn, tasksActor(), sid, checked); err != nil {
+		return subtaskErr(sid, err)
+	}
+	if checked {
+		return printSubtaskResult(cmd, sid, "checked")
+	}
+	return printSubtaskResult(cmd, sid, "unchecked")
+}
+
+func runSubtaskRemove(cmd *cobra.Command, args []string) error {
+	sid, err := parseSubtaskID(args[0])
+	if err != nil {
+		return err
+	}
+	conn, err := wdb.Open()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if err := tasks.RemoveSubtask(conn, tasksActor(), sid); err != nil {
+		return subtaskErr(sid, err)
+	}
+	return printSubtaskResult(cmd, sid, "removed")
+}
+
+func printSubtaskResult(cmd *cobra.Command, sid int64, what string) error {
+	if tasksJSON {
+		return writeJSON(cmd.OutOrStdout(), map[string]any{"id": sid, what: true})
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "%s subtask %d\n", what, sid)
+	return nil
+}
+
+func runSubtaskOrder(cmd *cobra.Command, args []string) error {
+	id, err := parseTaskID(args[0])
+	if err != nil {
+		return err
+	}
+	var ids []int64
+	for _, s := range args[1:] {
+		sid, err := parseSubtaskID(s)
+		if err != nil {
+			return err
+		}
+		ids = append(ids, sid)
+	}
+	conn, err := wdb.Open()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if err := tasks.SetSubtaskOrder(conn, id, ids); err != nil {
+		return taskErr(id, err)
+	}
+	return printTaskByID(cmd, conn, id)
+}

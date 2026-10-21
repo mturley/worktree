@@ -159,6 +159,25 @@ a worktree's **primary** resources when a session registers, and propagates its
 own `/watch` back via `worktree resources add`. worktree works fine without
 agent-handler; the integration is best-effort on both sides.
 
+#### Tasks
+
+```bash
+worktree tasks add <title> [--priority high|medium|low|none] [--star] [--due YYYY-MM-DD] [--focus <ref>] [--related <ref>] [--global]  # In a registered worktree, links it as Focus unless --global
+worktree tasks list [--all | --worktree <path> | --resource <ref>] [--completed] [--archived] [--starred]  # Default: the current worktree's tasks, else all
+worktree tasks show <id>         # Links, subtasks and recent history
+worktree tasks edit <id> [--title ...] [--description ...] [--priority ...] [--due ...]
+worktree tasks state <id> <not_started|in_progress|done>
+worktree tasks star <id>         # or: unstar
+worktree tasks delete <id>
+worktree tasks link <id> <ref> [--focus]  # Related unless --focus; also: unlink, focus, unfocus
+worktree tasks move <id> (--after <id> | --before <id> | --top | --bottom)
+worktree tasks subtask add <id> <text>    # Also: edit, check, uncheck, remove <subtask-id>; order <id> <subtask-id>...
+```
+
+A `<ref>` is a URL, `<type>:<id>`, `wt:<path>`, or `.` (the current worktree). Task ids are `T<n>`
+(`t<n>` and `<n>` also work). Every command takes `--json`; pass `--as-agent` (implied under Claude
+Code or agent-handler) to record a change as made by an agent.
+
 #### Watcher (Timeline Integration)
 
 ```bash
