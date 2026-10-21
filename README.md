@@ -162,9 +162,9 @@ agent-handler; the integration is best-effort on both sides.
 #### Tasks
 
 ```bash
-worktree tasks add <title> [--priority high|medium|low|none] [--star] [--due YYYY-MM-DD] [--focus <ref>] [--related <ref>] [--global]  # In a registered worktree, links it as Focus unless --global
-worktree tasks list [--all | --worktree <path> | --resource <ref>] [--completed] [--archived] [--starred]  # Default: the current worktree's tasks, else all
-worktree tasks show <id>         # Links, subtasks and recent history
+worktree tasks add <title> [--description ...] [--priority high|medium|low|none] [--star] [--due YYYY-MM-DD] [--focus <ref>] [--related <ref>] [--global]  # In a registered worktree, links it as Focus unless --global
+worktree tasks list [--all | --worktree <path> | --resource <ref>] [--completed] [--archived] [--priority <p>]... [--state <s>]... [--starred]  # Default: the current worktree's open tasks, else all
+worktree tasks show <id>         # Links, subtasks (with their ids) and recent history
 worktree tasks edit <id> [--title ...] [--description ...] [--priority ...] [--due ...]
 worktree tasks state <id> <not_started|in_progress|done>
 worktree tasks star <id>         # or: unstar
@@ -175,8 +175,11 @@ worktree tasks subtask add <id> <text>    # Also: edit, check, uncheck, remove <
 ```
 
 A `<ref>` is a URL, `<type>:<id>`, `wt:<path>`, or `.` (the current worktree). Task ids are `T<n>`
-(`t<n>` and `<n>` also work). Every command takes `--json`; pass `--as-agent` (implied under Claude
-Code or agent-handler) to record a change as made by an agent.
+(`t<n>` and `<n>` also work). `--priority` and `--state` repeat to match any of several values;
+`--archived` (done tasks whose links are all archived) and `--state done` imply `--completed`.
+Every command takes `--json` (the bare `subtask` group, which only holds subcommands, does not);
+pass `--as-agent` (implied under Claude Code or agent-handler) to record a change as made by an
+agent.
 
 #### Watcher (Timeline Integration)
 

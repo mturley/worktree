@@ -18,7 +18,7 @@ the real code.
 
 | # | Phase | Scope | Plan | Status |
 |---|---|---|---|---|
-| 1 | Core + CLI | `internal/tasks` (schema, links Focus/Related, master order, subtasks, actor-stamped task events, membership + archived) and the `worktree tasks` CLI | `docs/superpowers/plans/2026-10-21-tasks-phase1-core-cli.md` | plan written |
+| 1 | Core + CLI | `internal/tasks` (schema, links Focus/Related, master order, subtasks, actor-stamped task events, membership + archived) and the `worktree tasks` CLI | `docs/superpowers/plans/2026-10-21-tasks-phase1-core-cli.md` | done |
 | 2 | Task lists in the UI | web API; Tasks tabs everywhere (Links get a Details tab); rows, quick add, sort/filter, starred group, drag reorder (incl. star/priority by drag), pinning, badges, search | — | not started |
 | 3 | Detail modal | Details/Activity tabs and sidebar, link editing, subtask editing, linked events (with snapshots), "＋ task" from events and Slack messages | — | not started |
 | 4 | Activity integration | task events in feeds + "Tasks" source filter, per-task read cursors, unread counts, mark-read (and its undo), notifications for agent events | — | not started |

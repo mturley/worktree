@@ -61,6 +61,12 @@ func midpoint(a, b string) string {
 // KeyBetween returns a key strictly between a and b under plain string
 // comparison. "" for a means before everything; "" for b means after
 // everything. It errors when both are set and a >= b.
+//
+// Repeated appends at the bottom (KeyBetween(last, "")) grow keys linearly,
+// by about one character per six appends, since each halves the gap to the
+// end. That is fine at to-do-list scale. Keys are opaque to everything
+// outside this package, so a rebalance (rewriting every rank evenly spaced)
+// can be added later without a schema migration.
 func KeyBetween(a, b string) (string, error) {
 	if a != "" && b != "" && a >= b {
 		return "", errors.New("tasks: KeyBetween requires a < b")
