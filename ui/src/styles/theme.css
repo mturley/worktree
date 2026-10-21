@@ -97,3 +97,29 @@ body,
   outline: 2px solid var(--mantine-primary-color-filled);
   outline-offset: 2px;
 }
+
+/* Tasks: every task colour derives from this one token. */
+:root {
+  --task-accent: #a3e635;
+}
+
+.task-panel {
+  background: color-mix(in srgb, var(--task-accent) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--task-accent) 35%, transparent);
+  border-left: 3px solid var(--task-accent);
+  border-radius: var(--mantine-radius-md);
+}
+
+.task-count-badge {
+  background: var(--task-accent);
+  color: var(--mantine-color-dark-9);
+}
+
+[data-task-row] .task-grip {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+[data-task-row]:hover .task-grip {
+  opacity: 1;
+}

@@ -69,6 +69,12 @@ const surface: MantineColorsTuple = [
   "#000000",
 ]
 
+/**
+ * The ONE task accent (electric lime). Mirrors --task-accent in
+ * styles/theme.css; change both together. Never blue: blue means unread.
+ */
+export const TASK_ACCENT = "#a3e635"
+
 export const theme = createTheme({
   fontSizes: { md: "0.9375rem" },
   primaryColor: "accent",
