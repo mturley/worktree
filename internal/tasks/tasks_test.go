@@ -376,3 +376,132 @@ func TestConcurrentWritersAcrossConnections(t *testing.T) {
 		t.Errorf("created %d tasks, want %d", len(seen), total)
 	}
 }
+
+func TestCreatePlacement(t *testing.T) {
+	conn := newDB(t)
+	a, b, c := mustCreate(t, conn, "A"), mustCreate(t, conn, "B"), mustCreate(t, conn, "C")
+	d, err := Create(conn, user, NewTask{Title: "D", After: a.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := masterOrder(t, conn), []int64{a.ID, d.ID, b.ID, c.ID}; !equalIDs(got, want) {
+		t.Fatalf("after: order = %v, want %v", got, want)
+	}
+	e, err := Create(conn, user, NewTask{Title: "E", Before: a.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := masterOrder(t, conn), []int64{e.ID, a.ID, d.ID, b.ID, c.ID}; !equalIDs(got, want) {
+		t.Fatalf("before: order = %v, want %v", got, want)
+	}
+
+	n := count(t, conn, "tasks")
+	if _, err := Create(conn, user, NewTask{Title: "F", After: a.ID, Before: b.ID}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("both set: err = %v, want ErrInvalid", err)
+	}
+	if _, err := Create(conn, user, NewTask{Title: "G", After: 9999}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing after: err = %v, want ErrNotFound", err)
+	}
+	if _, err := Create(conn, user, NewTask{Title: "H", Before: 9999}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing before: err = %v, want ErrNotFound", err)
+	}
+	if got := count(t, conn, "tasks"); got != n {
+		t.Fatalf("rejected creates wrote rows: %d -> %d", n, got)
+	}
+}
+
+func TestCreatePlacementAroundDeletedNeighbour(t *testing.T) {
+	conn := newDB(t)
+	a, b, c := mustCreate(t, conn, "A"), mustCreate(t, conn, "B"), mustCreate(t, conn, "C")
+	if _, err := Delete(conn, user, b.ID); err != nil {
+		t.Fatal(err)
+	}
+	// As MoveAfter: the deleted B keeps its slot right after A.
+	d, err := Create(conn, user, NewTask{Title: "D", After: a.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := masterOrder(t, conn), []int64{a.ID, d.ID, b.ID, c.ID}; !equalIDs(got, want) {
+		t.Fatalf("order = %v, want %v", got, want)
+	}
+}
+
+func equalIDs(a, b []int64) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func mustVersion(t *testing.T, conn *sql.DB) int64 {
+	t.Helper()
+	v, err := Version(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
+}
+
+func TestVersionBumpsOnEveryWrite(t *testing.T) {
+	conn := newDB(t)
+	v0 := mustVersion(t, conn)
+	a := mustCreate(t, conn, "A")
+	if v := mustVersion(t, conn); v != v0+1 {
+		t.Fatalf("after Create: v = %d, want %d", v, v0+1)
+	}
+	b := mustCreate(t, conn, "B")
+	v1 := mustVersion(t, conn)
+	if err := MoveToTop(conn, b.ID); err != nil {
+		t.Fatal(err)
+	}
+	if v := mustVersion(t, conn); v != v1+1 {
+		t.Fatalf("after MoveToTop: v = %d, want %d", v, v1+1)
+	}
+	s1, err := AddSubtask(conn, user, a.ID, "one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s2, err := AddSubtask(conn, user, a.ID, "two")
+	if err != nil {
+		t.Fatal(err)
+	}
+	v2 := mustVersion(t, conn)
+	if err := SetSubtaskOrder(conn, a.ID, []int64{s2.ID, s1.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if v := mustVersion(t, conn); v != v2+1 {
+		t.Fatalf("after SetSubtaskOrder: v = %d, want %d", v, v2+1)
+	}
+	v3 := mustVersion(t, conn)
+	if _, err := SetState(conn, user, a.ID, StateNotStarted); err != nil {
+		t.Fatal(err)
+	}
+	if v := mustVersion(t, conn); v != v3 {
+		t.Fatalf("no-op SetState bumped: v = %d, want %d", v, v3)
+	}
+	same := "A"
+	if _, err := Update(conn, user, a.ID, Patch{Title: &same}); err != nil {
+		t.Fatal(err)
+	}
+	if v := mustVersion(t, conn); v != v3 {
+		t.Fatalf("no-op Update bumped: v = %d, want %d", v, v3)
+	}
+	// A failed write rolls back, bump included.
+	if _, err := SetState(conn, user, 9999, StateDone); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("err = %v", err)
+	}
+	if v := mustVersion(t, conn); v != v3 {
+		t.Fatalf("failed write bumped: v = %d, want %d", v, v3)
+	}
+	if _, err := SetState(conn, user, a.ID, StateDone); err != nil {
+		t.Fatal(err)
+	}
+	if v := mustVersion(t, conn); v != v3+1 {
+		t.Fatalf("after SetState: v = %d, want %d", v, v3+1)
+	}
+}

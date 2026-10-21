@@ -90,6 +90,48 @@ func list(conn *sql.DB, f Filter, onlyID *int64) ([]Task, error) {
 		}
 	}
 
+	c, err := compute(conn, onlyID)
+	if err != nil {
+		return nil, err
+	}
+
+	out := []Task{}
+	for _, t := range c.tasks {
+		if t.State == StateDone && (!f.IncludeCompleted || (t.Archived && !f.IncludeArchived)) {
+			continue
+		}
+		if states != nil && !states[t.State] {
+			continue
+		}
+		if prio != nil && !prio[t.Priority] {
+			continue
+		}
+		if f.StarredOnly && !t.Starred {
+			continue
+		}
+		if !c.inScope(t, sc) {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out, nil
+}
+
+// computed is every live task (or just one) with its links, subtasks,
+// implicit worktrees and archived state filled in, plus what scope
+// membership needs. It is the one membership compute path: List and
+// OpenCounts both go through it.
+type computed struct {
+	tasks      []Task // master order
+	tombstoned map[resKey]map[string]bool
+	registered map[string]bool
+}
+
+func (c *computed) inScope(t Task, sc Scope) bool {
+	return inScope(t, sc, c.tombstoned, c.registered)
+}
+
+func compute(conn *sql.DB, onlyID *int64) (*computed, error) {
 	tasks, err := loadTasks(conn, onlyID)
 	if err != nil {
 		return nil, err
@@ -111,8 +153,8 @@ func list(conn *sql.DB, f Filter, onlyID *int64) ([]Task, error) {
 		return nil, err
 	}
 
-	out := []Task{}
-	for _, t := range tasks {
+	for i := range tasks {
+		t := &tasks[i]
 		t.Links = links[t.ID]
 		if t.Subtasks = subtasks[t.ID]; t.Subtasks == nil {
 			t.Subtasks = []Subtask{}
@@ -138,25 +180,8 @@ func list(conn *sql.DB, f Filter, onlyID *int64) ([]Task, error) {
 			t.Implicit = append(t.Implicit, p)
 		}
 		sort.Strings(t.Implicit)
-
-		if t.State == StateDone && (!f.IncludeCompleted || (t.Archived && !f.IncludeArchived)) {
-			continue
-		}
-		if states != nil && !states[t.State] {
-			continue
-		}
-		if prio != nil && !prio[t.Priority] {
-			continue
-		}
-		if f.StarredOnly && !t.Starred {
-			continue
-		}
-		if !inScope(t, sc, tombstoned, registered) {
-			continue
-		}
-		out = append(out, t)
 	}
-	return out, nil
+	return &computed{tasks: tasks, tombstoned: tombstoned, registered: registered}, nil
 }
 
 // inScope reports whether t (with links, Implicit and Archived filled)

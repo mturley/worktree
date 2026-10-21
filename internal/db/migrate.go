@@ -152,6 +152,15 @@ func migrate(conn *sql.DB) error {
 		)`,
 		// A task's feed, newest first.
 		`CREATE INDEX IF NOT EXISTS task_events_task ON task_events (task_id, ts)`,
+		// A single-row change counter for tasks. Every committed write in
+		// internal/tasks bumps v, moves and subtask reorders included (they
+		// record no task_events), so a reader polling it learns "something
+		// changed" without diffing.
+		`CREATE TABLE IF NOT EXISTS tasks_version (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			v  INTEGER NOT NULL
+		)`,
+		`INSERT OR IGNORE INTO tasks_version (id, v) VALUES (1, 0)`,
 	}
 	for _, s := range stmts {
 		if _, err := conn.Exec(s); err != nil {

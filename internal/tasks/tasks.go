@@ -85,6 +85,10 @@ type NewTask struct {
 	Starred            bool
 	Due                string
 	Focus              []LinkTarget // the creating context, linked as Focus
+	// Placement, in the same transaction as the insert. Neither set means
+	// the bottom of the master order; both set is ErrInvalid.
+	After  int64 // place immediately after this task (as MoveAfter); 0 = unset
+	Before int64 // place immediately before this task (as MoveBefore); 0 = unset
 }
 
 // Patch is the input to Update. A nil field is left alone; Due "" clears.
@@ -199,6 +203,9 @@ func touch(tx dbtx, taskID int64, ts string) error {
 }
 
 // inTx runs fn in a transaction, committing only when it returns nil.
+// When fn wrote anything, the commit also bumps tasks_version, so every
+// committed change (moves and subtask reorders included) is visible to
+// Version. A fn that returns nil without writing (a no-op) bumps nothing.
 //
 // It takes the write lock up front with BEGIN IMMEDIATE on a dedicated
 // connection. Every write here reads before it writes, and under the
@@ -223,8 +230,24 @@ func inTx(conn *sql.DB, fn func(dbtx) error) error {
 			_, _ = c.ExecContext(bg, `ROLLBACK`)
 		}
 	}()
+	// total_changes() is per connection and cumulative, and c is ours alone
+	// for the transaction, so the difference across fn is exactly what fn
+	// wrote.
+	before, err := totalChanges(c)
+	if err != nil {
+		return err
+	}
 	if err := fn(c); err != nil {
 		return err
+	}
+	after, err := totalChanges(c)
+	if err != nil {
+		return err
+	}
+	if after != before {
+		if _, err := c.ExecContext(bg, `UPDATE tasks_version SET v = v + 1 WHERE id = 1`); err != nil {
+			return err
+		}
 	}
 	if _, err := c.ExecContext(bg, `COMMIT`); err != nil {
 		return err
@@ -233,11 +256,29 @@ func inTx(conn *sql.DB, fn func(dbtx) error) error {
 	return nil
 }
 
-// Create adds a task at the bottom of the master order, linking each of
+func totalChanges(q dbtx) (int64, error) {
+	var n int64
+	err := q.QueryRowContext(bg, `SELECT total_changes()`).Scan(&n)
+	return n, err
+}
+
+// Version returns the tasks change counter. It increases monotonically:
+// every committed write in this package bumps it, and nothing else does.
+func Version(conn *sql.DB) (int64, error) {
+	var v int64
+	err := conn.QueryRowContext(bg, `SELECT v FROM tasks_version WHERE id = 1`).Scan(&v)
+	return v, err
+}
+
+// Create adds a task at the bottom of the master order (or next to n.After
+// or n.Before, as MoveAfter/MoveBefore would place it), linking each of
 // n.Focus as a Focus link (duplicates collapse to one).
 func Create(conn *sql.DB, a Actor, n NewTask) (Task, error) {
 	if err := validActor(a); err != nil {
 		return Task{}, err
+	}
+	if n.After != 0 && n.Before != 0 {
+		return Task{}, fmt.Errorf("%w: set at most one of after and before", ErrInvalid)
 	}
 	title, err := cleanTitle(n.Title)
 	if err != nil {
@@ -266,13 +307,28 @@ func Create(conn *sql.DB, a Actor, n NewTask) (Task, error) {
 	}
 	var id int64
 	err = inTx(conn, func(tx dbtx) error {
-		// Max over ALL rows, deleted included, so a later restore can't
-		// collide with a newer task's rank.
-		var last sql.NullString
-		if err := tx.QueryRowContext(bg, `SELECT MAX(rank) FROM tasks`).Scan(&last); err != nil {
-			return err
+		var lo, hi string
+		var err error
+		switch {
+		case n.After != 0:
+			// The new row isn't inserted yet, so there is no id to exclude.
+			if lo, hi, err = relativeBounds(tx, 0, n.After, true); err != nil {
+				return err
+			}
+		case n.Before != 0:
+			if lo, hi, err = relativeBounds(tx, 0, n.Before, false); err != nil {
+				return err
+			}
+		default:
+			// Max over ALL rows, deleted included, so a later restore can't
+			// collide with a newer task's rank.
+			var last sql.NullString
+			if err := tx.QueryRowContext(bg, `SELECT MAX(rank) FROM tasks`).Scan(&last); err != nil {
+				return err
+			}
+			lo = last.String
 		}
-		rank, err := KeyBetween(last.String, "")
+		rank, err := KeyBetween(lo, hi)
 		if err != nil {
 			return err
 		}

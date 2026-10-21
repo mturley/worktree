@@ -53,31 +53,42 @@ func moveRelative(conn *sql.DB, id, ref int64, after bool) error {
 		if _, err := load(tx, id); err != nil {
 			return err
 		}
-		r, err := load(tx, ref)
+		lo, hi, err := relativeBounds(tx, id, ref, after)
 		if err != nil {
 			return err
 		}
 		if id == ref {
 			return nil
 		}
-		var lo, hi string
-		var other sql.NullString
-		if after {
-			err = tx.QueryRowContext(bg,
-				`SELECT rank FROM tasks WHERE id != ? AND rank > ?
-				 ORDER BY rank LIMIT 1`, id, r.Rank).Scan(&other)
-			lo, hi = r.Rank, other.String
-		} else {
-			err = tx.QueryRowContext(bg,
-				`SELECT rank FROM tasks WHERE id != ? AND rank < ?
-				 ORDER BY rank DESC LIMIT 1`, id, r.Rank).Scan(&other)
-			lo, hi = other.String, r.Rank
-		}
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
 		return writeRank(tx, id, lo, hi)
 	})
+}
+
+// relativeBounds returns the rank interval (lo, hi) that places a row
+// immediately after (or before) ref, ignoring row id (0 for a row not yet
+// inserted). It is ErrNotFound when ref is missing or deleted. Shared by
+// moveRelative and Create's placement; see moveRelative for the rules.
+func relativeBounds(tx dbtx, id, ref int64, after bool) (lo, hi string, err error) {
+	r, err := load(tx, ref)
+	if err != nil {
+		return "", "", err
+	}
+	var other sql.NullString
+	if after {
+		err = tx.QueryRowContext(bg,
+			`SELECT rank FROM tasks WHERE id != ? AND rank > ?
+			 ORDER BY rank LIMIT 1`, id, r.Rank).Scan(&other)
+		lo, hi = r.Rank, other.String
+	} else {
+		err = tx.QueryRowContext(bg,
+			`SELECT rank FROM tasks WHERE id != ? AND rank < ?
+			 ORDER BY rank DESC LIMIT 1`, id, r.Rank).Scan(&other)
+		lo, hi = other.String, r.Rank
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return "", "", err
+	}
+	return lo, hi, nil
 }
 
 // writeRank sets id's rank to a key between lo and hi ("" = unbounded).
