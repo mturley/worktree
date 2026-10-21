@@ -34,7 +34,6 @@ import { SourceFilter } from "../components/SourceFilter"
 import { EventTypeFilter } from "../components/EventTypeFilter"
 import { useActivityFilter } from "../hooks/useActivityFilter"
 import { RefreshWatchersButton } from "../components/RefreshWatchersButton"
-import { WatcherLogButton } from "../components/WatcherLogButton"
 import { MarkAllReadButton } from "../components/MarkAllReadButton"
 import { UnreadOnlyToggle } from "../components/UnreadOnlyToggle"
 import { useUnreadOnly } from "../hooks/useUnreadOnly"
@@ -330,7 +329,6 @@ export function WorktreeDetailPage() {
           <Group gap={6} wrap="nowrap" align="center">
             <Title order={5}>Activity</Title>
             <RefreshWatchersButton />
-            <WatcherLogButton scope={{ worktree: path }} />
             {/* Only over the whole feed: it marks every unread event, so
                 beside a narrowed feed it would clear what is not shown. */}
             {!narrowing.search && !narrowing.filters && (

@@ -306,7 +306,7 @@ export function MarkAllReadButton({ resources, feed, single = false }: {
               // Focus lands here on open, not on the close button, which
               // Enter would otherwise belong to.
               data-autofocus
-              rightSection={<KeyHint decorative>Enter</KeyHint>}
+              rightSection={<KeyHint decorative>↵</KeyHint>}
             >
               Mark read
             </Button>

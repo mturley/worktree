@@ -125,7 +125,7 @@ export function SearchSuggestions({
         </Anchor>
         {/* Enter only means this while no row is highlighted; with one, it
             picks that row. */}
-        {active === -1 && <span data-testid="view-all-enter"> <KeyHint>Enter</KeyHint></span>}
+        {active === -1 && <span data-testid="view-all-enter"> <KeyHint>↵</KeyHint></span>}
       </Text>
       {/* No rows, nothing to navigate. */}
       {items.length > 0 && (
@@ -189,7 +189,7 @@ export function SearchSuggestions({
                 aria-hidden={i !== active || undefined}
                 style={{ flex: "none", visibility: i === active ? "visible" : "hidden" }}
               >
-                Enter
+                ↵
               </Kbd>
             </Group>
           </Box>

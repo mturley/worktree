@@ -1,5 +1,4 @@
-import type { AllResourceDTO, CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, CredResult, CredService, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, ResourceReadChange, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, UpdateStatus, WatcherHealth, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherAuthSettings, WatcherConfigSettings, WatcherLogScope, WorktreeInfo, WorktreeNotes, WorktreeSettings, WorktreeSummary } from "./types"
-import { scopeParams } from "../lib/watcherLog"
+import type { AllResourceDTO, CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, CredResult, CredService, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, ResourceReadChange, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, UpdateStatus, WatcherHealth, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherAuthSettings, WatcherConfigSettings, WorktreeInfo, WorktreeNotes, WorktreeSettings, WorktreeSummary } from "./types"
 
 export class HttpError extends Error {
   constructor(message: string, readonly status: number) {
@@ -301,10 +300,10 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
     }),
-  watchedResources: (scope: WatcherLogScope) =>
-    fetchJSON<{ resources: WatchedResourceStatus[] }>(`/api/watchers/resources?${scopeParams(scope)}`),
-  watcherLog: (scope: WatcherLogScope, q: WatcherLogQuery) => {
-    const p = scopeParams(scope)
+  watchedResources: () =>
+    fetchJSON<{ resources: WatchedResourceStatus[] }>("/api/watchers/resources"),
+  watcherLog: (q: WatcherLogQuery) => {
+    const p = new URLSearchParams()
     if (q.source) p.set("source", q.source)
     if (q.level && q.level !== "info") p.set("level", q.level)
     if (q.after_id) p.set("after_id", String(q.after_id))

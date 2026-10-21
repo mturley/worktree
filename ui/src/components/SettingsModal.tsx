@@ -7,6 +7,7 @@ import { GeneralPanel } from "./settings/GeneralPanel"
 import { UIAccessPanel } from "./settings/UIAccessPanel"
 import { ConnectedServicesPanel } from "./settings/ConnectedServicesPanel"
 import { NotificationsPanel } from "./settings/NotificationsPanel"
+import { LogsPanel } from "./settings/LogsPanel"
 import { tabDirty, type SettingsTab } from "./settings/tabDirty"
 import { useSettingsDraft } from "./settings/useSettingsDraft"
 import type { SettingsTarget } from "./settings/SettingsContext"
@@ -28,7 +29,7 @@ const affectedByCmux = (q: Pick<Query, "queryKey">) => {
  * The home page's settings. The config tabs share one draft and one
  * Save/Discard footer, which covers secrets too: Replace tests a new one and
  * holds it in the draft (memory only), and Save writes it. Devices manages
- * logins and has no draft.
+ * logins and Logs is read-only; neither has a draft.
  */
 export function SettingsModal({ opened, onClose, target }: { opened: boolean; onClose: () => void; target?: SettingsTarget }) {
   const qc = useQueryClient()
@@ -113,6 +114,7 @@ export function SettingsModal({ opened, onClose, target }: { opened: boolean; on
           <Tabs.Tab value="notifications">{label("Notifications", "notifications")}</Tabs.Tab>
           <Tabs.Tab value="ui-access">{label("UI Access", "ui-access")}</Tabs.Tab>
           <Tabs.Tab value="devices">Devices</Tabs.Tab>
+          <Tabs.Tab value="logs">Logs</Tabs.Tab>
         </Tabs.List>
         {/* A native disabled fieldset locks every field and button of the
             config tabs while Save runs; the tab list stays usable. */}
@@ -171,6 +173,9 @@ export function SettingsModal({ opened, onClose, target }: { opened: boolean; on
         <Tabs.Panel value="devices" pt="md">
           <DevicesPanel active={opened && tab === "devices"} />
         </Tabs.Panel>
+        <Tabs.Panel value="logs" pt="md">
+          <LogsPanel active={opened && tab === "logs"} />
+        </Tabs.Panel>
       </Tabs>
 
       {confirmClose && (
@@ -182,7 +187,7 @@ export function SettingsModal({ opened, onClose, target }: { opened: boolean; on
         </Alert>
       )}
 
-      {tab !== "devices" && (
+      {tab !== "devices" && tab !== "logs" && (
         <Box mt="md" pt="sm" style={{ borderTop: "1px solid var(--mantine-color-default-border)", position: "sticky", bottom: 0, background: "var(--mantine-color-body)" }}>
           <Group justify="space-between">
             <Text size="xs" c={draft.anyDirty ? "orange" : "dimmed"}>

@@ -15,11 +15,10 @@ import (
 )
 
 type watcherLogFixture struct {
-	srv          *Server
-	url          string
-	wtA, wtALink string // wtALink is a symlink to wtA
-	wtB          string
-	prA, slackB  watcher.Resource
+	srv         *Server
+	url         string
+	wtA, wtB    string
+	prA, slackB watcher.Resource
 }
 
 func newWatcherLogFixture(t *testing.T) watcherLogFixture {
@@ -27,7 +26,7 @@ func newWatcherLogFixture(t *testing.T) watcherLogFixture {
 	srv, ts := watchersTestServer(t)
 	root := t.TempDir()
 	f := watcherLogFixture{srv: srv, url: ts.URL,
-		wtA: filepath.Join(root, "a"), wtB: filepath.Join(root, "b"), wtALink: filepath.Join(root, "a-link"),
+		wtA: filepath.Join(root, "a"), wtB: filepath.Join(root, "b"),
 		prA:    watcher.Resource{Type: "pr", ID: "o/r#1", URL: "https://github.com/o/r/pull/1"},
 		slackB: watcher.Resource{Type: "slack", ID: "C1:1699000000.000100"},
 	}
@@ -35,9 +34,6 @@ func newWatcherLogFixture(t *testing.T) watcherLogFixture {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
-	}
-	if err := os.Symlink(f.wtA, f.wtALink); err != nil {
-		t.Fatal(err)
 	}
 	must := func(err error) {
 		if err != nil {
@@ -80,30 +76,6 @@ func TestWatchedResources_Unscoped(t *testing.T) {
 	}
 	if got[1].Name != "My PR" || got[1].Status != "never" || len(got[1].Worktrees) != 2 {
 		t.Fatalf("pr row: %+v", got[1])
-	}
-}
-
-func TestWatchedResources_WorktreeScopeViaSymlink(t *testing.T) {
-	f := newWatcherLogFixture(t)
-	got := getWatched(t, f.url, url.Values{"worktree": {f.wtALink}})
-	if len(got) != 1 || got[0].ID != f.prA.ID {
-		t.Fatalf("scoped via symlink = %+v", got)
-	}
-}
-
-func TestWatchedResources_SlackIDWithColon(t *testing.T) {
-	f := newWatcherLogFixture(t)
-	got := getWatched(t, f.url, url.Values{"resource": {"slack:" + f.slackB.ID}, "worktree": {f.wtA}})
-	if len(got) != 1 || got[0].Type != "slack" || got[0].ID != f.slackB.ID {
-		t.Fatalf("resource wins over worktree; got %+v", got)
-	}
-}
-
-func TestWatchedResources_BadResourceParam(t *testing.T) {
-	f := newWatcherLogFixture(t)
-	resp, _ := http.Get(f.url + "/api/watchers/resources?resource=nocolon")
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("status %d, want 400", resp.StatusCode)
 	}
 }
 
@@ -169,15 +141,6 @@ func TestWatcherLog_UnscopedNewestFirstWithNames(t *testing.T) {
 	}
 }
 
-func TestWatcherLog_ResourceScopeIncludesOwnSourcePollRowsOnly(t *testing.T) {
-	f := newWatcherLogFixture(t)
-	gh, pr, _, _ := seedLog(t, f)
-	got := getLog(t, f.url, url.Values{"resource": {"pr:" + f.prA.ID}}, 200)
-	if want := []int64{pr, gh}; fmt.Sprint(entryIDs(got)) != fmt.Sprint(want) {
-		t.Fatalf("ids %v want %v", entryIDs(got), want)
-	}
-}
-
 func TestWatcherLog_FiltersAndCursors(t *testing.T) {
 	f := newWatcherLogFixture(t)
 	gh, pr, sl, ji := seedLog(t, f)
@@ -203,7 +166,7 @@ func TestWatcherLog_BadParams(t *testing.T) {
 	f := newWatcherLogFixture(t)
 	for _, q := range []url.Values{
 		{"level": {"loud"}}, {"source": {"bitbucket"}}, {"after_id": {"x"}},
-		{"limit": {"0"}}, {"limit": {"501"}}, {"resource": {"nocolon"}},
+		{"limit": {"0"}}, {"limit": {"501"}},
 	} {
 		getLog(t, f.url, q, http.StatusBadRequest)
 	}
@@ -222,8 +185,5 @@ func TestWatchedResources_ExcludesLinkResources(t *testing.T) {
 	got := getWatched(t, ts.URL, url.Values{})
 	if len(got) != 1 || got[0].Type != "pr" {
 		t.Fatalf("got %+v, want only the pr", got)
-	}
-	if got := getWatched(t, ts.URL, url.Values{"worktree": {wt}}); len(got) != 1 || got[0].Type != "pr" {
-		t.Fatalf("worktree scope got %+v, want only the pr", got)
 	}
 }

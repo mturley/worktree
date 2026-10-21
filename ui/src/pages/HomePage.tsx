@@ -24,7 +24,6 @@ import { SourceFilter } from "../components/SourceFilter"
 import { EventTypeFilter } from "../components/EventTypeFilter"
 import { useActivityFilter } from "../hooks/useActivityFilter"
 import { RefreshWatchersButton } from "../components/RefreshWatchersButton"
-import { WatcherLogButton } from "../components/WatcherLogButton"
 import { NewWorktreeModal } from "../components/NewWorktreeModal"
 import { SearchSummary } from "../components/search/SearchSummary"
 import { useSeeEverything } from "../hooks/useSeeEverything"
@@ -254,12 +253,11 @@ export function HomePage() {
       filtered={resourcesFiltered}
     />
   )
-  // The Activity tab's own controls: refresh, the watcher log and archived.
+  // The Activity tab's own controls: refresh and archived.
   const activityControls = (
     <Group gap="sm" wrap="nowrap" align="center" data-testid="activity-controls">
       <Group gap={6} wrap="nowrap" align="center">
         <RefreshWatchersButton />
-        <WatcherLogButton scope={{}} />
         {/* Only over the whole feed, as on the worktree page. "Show
             archived" only adds to the feed, so it does not hide it. */}
         {!narrowing.search && !activityFiltered && (

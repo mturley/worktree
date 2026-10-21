@@ -1,20 +1,10 @@
 import { describe, expect, it } from "vitest"
 import type { PollLogEntry, WatchedResourceStatus } from "../api/types"
-import { appendOlder, formatBytes, httpSummary, mergeNewer, nextSort, scopeParams, sortResources } from "./watcherLog"
+import { appendOlder, formatBytes, httpSummary, mergeNewer, nextSort, sortResources } from "./watcherLog"
 
 const e = (id: number, over: Partial<PollLogEntry> = {}): PollLogEntry => ({
   id, ts: "2026-10-13T13:18:32.000000Z", source: "github", level: "info", kind: "poll",
   message: `m${id}`, resources: [], ...over,
-})
-
-describe("scopeParams", () => {
-  it("resource wins over worktree", () => {
-    const p = scopeParams({ worktree: "/w", resource: { type: "slack", id: "C1:1.2", name: "t" } })
-    expect(p.get("resource")).toBe("slack:C1:1.2")
-    expect(p.has("worktree")).toBe(false)
-  })
-  it("worktree only", () => expect(scopeParams({ worktree: "/w" }).get("worktree")).toBe("/w"))
-  it("unscoped is empty", () => expect(scopeParams({}).toString()).toBe(""))
 })
 
 describe("mergeNewer / appendOlder", () => {

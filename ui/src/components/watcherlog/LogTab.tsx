@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Box, Button, Code, Group, ScrollArea, SegmentedControl, Stack, Switch, Text, UnstyledButton } from "@mantine/core"
+import { Box, Button, Code, Group, ScrollArea, Stack, Switch, Text, UnstyledButton } from "@mantine/core"
 import { api } from "../../api/client"
-import type { PollLogEntry, WatcherLogScope } from "../../api/types"
+import type { PollLogEntry } from "../../api/types"
 import { appendOlder, httpSummary, mergeNewer } from "../../lib/watcherLog"
+import { SourceFilter } from "../SourceFilter"
 
 const POLL_MS = 3000
 const PAGE = 200
@@ -12,6 +13,9 @@ const LEVEL_COLOR: Record<PollLogEntry["level"], string> = {
   error: "var(--mantine-color-red-6)",
 }
 const SOURCE_LABEL: Record<string, string> = { github: "GitHub", jira: "Jira", slack: "Slack" }
+// SourceFilter speaks resource types; the log's GitHub source is "github", not "pr".
+const TYPE_TO_SOURCE: Record<string, string> = { pr: "github", jira: "jira", slack: "slack" }
+const SOURCE_TO_TYPE: Record<string, string> = { github: "pr", jira: "jira", slack: "slack" }
 
 function clock(ts: string): string {
   const d = new Date(ts)
@@ -22,8 +26,8 @@ function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-export function LogTab({ scope }: { scope: WatcherLogScope }) {
-  const [source, setSource] = useState("all")
+export function LogTab() {
+  const [source, setSource] = useState<string | undefined>()
   const [warnOnly, setWarnOnly] = useState(false)
   const [entries, setEntries] = useState<PollLogEntry[]>([])
   const [hasMore, setHasMore] = useState(false)
@@ -37,13 +41,13 @@ export function LogTab({ scope }: { scope: WatcherLogScope }) {
 
   const query = useCallback(
     (extra: { after_id?: number; before_id?: number }) =>
-      api.watcherLog(scope, {
-        source: source === "all" ? undefined : source,
+      api.watcherLog({
+        source,
         level: warnOnly ? "warn" : undefined,
         limit: PAGE,
         ...extra,
       }),
-    [scope, source, warnOnly],
+    [source, warnOnly],
   )
 
   useEffect(() => {
@@ -109,16 +113,9 @@ export function LogTab({ scope }: { scope: WatcherLogScope }) {
   return (
     <Stack gap="xs">
       <Group justify="space-between">
-        <SegmentedControl
-          size="xs"
-          value={source}
-          onChange={setSource}
-          data={[
-            { value: "all", label: "All" },
-            { value: "github", label: "GitHub" },
-            { value: "jira", label: "Jira" },
-            { value: "slack", label: "Slack" },
-          ]}
+        <SourceFilter
+          value={source ? [SOURCE_TO_TYPE[source]] : []}
+          onChange={(types) => setSource(types[0] ? TYPE_TO_SOURCE[types[0]] : undefined)}
         />
         <Switch size="xs" label="Errors & warnings only" checked={warnOnly} onChange={(e) => setWarnOnly(e.currentTarget.checked)} />
       </Group>

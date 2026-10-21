@@ -1,12 +1,4 @@
-import type { PollLogEntry, WatchedResourceStatus, WatcherLogScope } from "../api/types"
-
-/** Query params for a watcher log scope. A resource scope wins over a worktree. */
-export function scopeParams(scope: WatcherLogScope): URLSearchParams {
-  const p = new URLSearchParams()
-  if (scope.resource) p.set("resource", `${scope.resource.type}:${scope.resource.id}`)
-  else if (scope.worktree) p.set("worktree", scope.worktree)
-  return p
-}
+import type { PollLogEntry, WatchedResourceStatus } from "../api/types"
 
 function dedupeDesc(rows: PollLogEntry[]): PollLogEntry[] {
   const seen = new Set<number>()

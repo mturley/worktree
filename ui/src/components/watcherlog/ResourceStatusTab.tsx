@@ -3,7 +3,7 @@ import { Anchor, Group, Stack, Table, Text, Tooltip, UnstyledButton } from "@man
 import { IconAlertTriangleFilled, IconChevronDown, IconChevronUp, IconCircleCheckFilled, IconMinus, IconSelector } from "@tabler/icons-react"
 import { useQuery } from "@tanstack/react-query"
 import { api } from "../../api/client"
-import type { WatchedResourceStatus, WatcherLogScope } from "../../api/types"
+import type { WatchedResourceStatus } from "../../api/types"
 import { relativeTime } from "../../lib/relativeTime"
 import { nextSort, SOURCE_LABEL, sortResources, type ResourceSort, type ResourceSortColumn } from "../../lib/watcherLog"
 
@@ -62,10 +62,10 @@ function StatusIcon({ r }: { r: WatchedResourceStatus }) {
   )
 }
 
-export function ResourceStatusTab({ scope }: { scope: WatcherLogScope }) {
+export function ResourceStatusTab() {
   const { data, isLoading, error } = useQuery({
-    queryKey: ["watcher-resources", scope],
-    queryFn: () => api.watchedResources(scope),
+    queryKey: ["watcher-resources"],
+    queryFn: api.watchedResources,
     refetchInterval: 10_000,
   })
   const [sort, setSort] = useState<ResourceSort>(null)

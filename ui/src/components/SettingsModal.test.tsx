@@ -28,14 +28,32 @@ afterEach(() => {
 })
 
 describe("SettingsModal", () => {
-  it("has the four tabs and the persisted-to line", async () => {
+  it("has the top-level tabs and the persisted-to line", async () => {
     vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
     renderModal()
-    for (const name of ["General", "Connected Services", "UI Access", "Devices"]) {
+    for (const name of ["General", "Connected Services", "UI Access", "Devices", "Logs"]) {
       expect(screen.getByRole("tab", { name: new RegExp(name) })).toBeInTheDocument()
     }
     // Every config tab is mounted, each with its own line; General is first.
     expect((await screen.findAllByText(/These settings are persisted to/))[0]).toHaveTextContent("~/.config/worktree/config.yaml")
+  })
+
+  it("Logs: fetches nothing until opened, then shows the watcher log and resource status sub-tabs", async () => {
+    vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
+    const log = vi.spyOn(api, "watcherLog").mockResolvedValue({ entries: [], has_more: false })
+    const resources = vi.spyOn(api, "watchedResources").mockResolvedValue({ resources: [] })
+    renderModal()
+    await screen.findAllByText(/These settings are persisted to/)
+    expect(log).not.toHaveBeenCalled()
+    expect(resources).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole("tab", { name: "Logs" }))
+    expect(await screen.findByText("No watcher activity recorded yet.")).toBeInTheDocument()
+    expect(resources).not.toHaveBeenCalled()
+    // Read-only: no Save/Discard footer.
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull()
+    await userEvent.click(screen.getByRole("tab", { name: "Resource status" }))
+    expect(await screen.findByText("No resources are being watched.")).toBeInTheDocument()
+    expect(resources).toHaveBeenCalled()
   })
 
   it("does not save the cmux toggle until Save, then refreshes cmux queries", async () => {

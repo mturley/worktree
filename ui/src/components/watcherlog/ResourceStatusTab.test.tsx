@@ -58,7 +58,7 @@ describe("ResourceStatusTab", () => {
         res({ type: "jira", id: "ABC-1", name: "ABC-1", status: "never" }),
       ],
     })
-    wrap(<ResourceStatusTab scope={{}} />)
+    wrap(<ResourceStatusTab />)
     await screen.findByText("Thread")
     const rows = screen.getAllByRole("row")
     expect(rows.slice(1).map((r) => r.textContent)).toEqual([
@@ -79,7 +79,7 @@ describe("ResourceStatusTab", () => {
         detail: { ok: false, http_status: 504, duration_ms: 12300, events_emitted: 0 } })],
     })
     const user = userEvent.setup()
-    wrap(<ResourceStatusTab scope={{}} />)
+    wrap(<ResourceStatusTab />)
     await user.hover(await screen.findByLabelText("error"))
     expect(await screen.findByText(/GitHub API error: Unicorn! · GitHub/)).toBeTruthy()
     expect(screen.getByText(/HTTP 504/)).toBeTruthy()
@@ -88,13 +88,13 @@ describe("ResourceStatusTab", () => {
 
   it("empty state", async () => {
     watchedResources.mockResolvedValue({ resources: [] })
-    wrap(<ResourceStatusTab scope={{}} />)
+    wrap(<ResourceStatusTab />)
     expect(await screen.findByText("No resources are being watched.")).toBeTruthy()
   })
 
   it("shows an error instead of the empty state when the query fails", async () => {
     watchedResources.mockRejectedValue(new Error("boom"))
-    wrap(<ResourceStatusTab scope={{}} />)
+    wrap(<ResourceStatusTab />)
     expect(await screen.findByText(/Couldn't load resource status: boom/)).toBeTruthy()
     expect(screen.queryByText("No resources are being watched.")).toBeNull()
   })
@@ -108,7 +108,7 @@ describe("ResourceStatusTab", () => {
       ],
     })
     const user = userEvent.setup()
-    wrap(<ResourceStatusTab scope={{}} />)
+    wrap(<ResourceStatusTab />)
     await screen.findByText("Thread")
     const order = () => screen.getAllByRole("row").slice(1).map((r) => r.querySelector("td:nth-child(2)")?.textContent)
     const header = (name: string) => screen.getByRole("columnheader", { name: new RegExp(name) })

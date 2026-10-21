@@ -1,7 +1,6 @@
 package webui
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -15,7 +14,7 @@ import (
 )
 
 // Watcher log endpoints. Both are read-only and are called only by the
-// watcher log modal while it is open — never on ordinary page loads.
+// Settings modal's Logs tab while it is open — never on ordinary page loads.
 
 type watchedResource struct {
 	watcher.Resource
@@ -23,8 +22,6 @@ type watchedResource struct {
 	Worktrees []string
 	UpdatedAt string
 }
-
-var errBadScope = errors.New("resource must be <type>:<id>")
 
 // allWatched returns every resource with a live worktree subscription, with
 // the worktrees tracking it and its display name (custom → title → id).
@@ -86,42 +83,6 @@ func firstNonEmpty(ss ...string) string {
 	return ""
 }
 
-// resolveWatcherScope applies ?resource=<type>:<id> (wins) or ?worktree=<path>.
-// It returns the scoped list, the full watched list, and whether a scope applied.
-func (s *Server) resolveWatcherScope(r *http.Request) (scope, all []watchedResource, scoped bool, err error) {
-	all, err = s.allWatched()
-	if err != nil {
-		return nil, nil, false, err
-	}
-	q := r.URL.Query()
-	if res := q.Get("resource"); res != "" {
-		typ, id, ok := strings.Cut(res, ":")
-		if !ok || typ == "" || id == "" {
-			return nil, nil, false, errBadScope
-		}
-		for _, wr := range all {
-			if wr.Type == typ && wr.ID == id {
-				return []watchedResource{wr}, all, true, nil
-			}
-		}
-		return []watchedResource{{Resource: watcher.Resource{Type: typ, ID: id}, Name: id}}, all, true, nil
-	}
-	if wt := q.Get("worktree"); wt != "" {
-		want, _ := wdb.WorktreePathFromSubscriber(wdb.Subscriber(wt))
-		var out []watchedResource
-		for _, wr := range all {
-			for _, p := range wr.Worktrees {
-				if p == want {
-					out = append(out, wr)
-					break
-				}
-			}
-		}
-		return out, all, true, nil
-	}
-	return all, all, false, nil
-}
-
 type watchedResourceDTO struct {
 	Type              string                        `json:"type"`
 	ID                string                        `json:"id"`
@@ -138,19 +99,15 @@ type watchedResourceDTO struct {
 }
 
 // handleWatchedResources: GET /api/watchers/resources — per-resource last
-// poll status for the requested scope, failing resources first.
+// poll status for every watched resource, failing resources first.
 func (s *Server) handleWatchedResources(w http.ResponseWriter, r *http.Request) {
-	scope, _, _, err := s.resolveWatcherScope(r)
-	if errors.Is(err, errBadScope) {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
+	all, err := s.allWatched()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	rs := make([]watcher.Resource, len(scope))
-	for i, wr := range scope {
+	rs := make([]watcher.Resource, len(all))
+	for i, wr := range all {
 		rs[i] = wr.Resource
 	}
 	statuses, err := watcherdb.GetResourcePollStatuses(s.DB, rs)
@@ -158,8 +115,8 @@ func (s *Server) handleWatchedResources(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	out := make([]watchedResourceDTO, 0, len(scope))
-	for _, wr := range scope {
+	out := make([]watchedResourceDTO, 0, len(all))
+	for _, wr := range all {
 		dto := watchedResourceDTO{Type: wr.Type, ID: wr.ID, URL: wr.URL, Name: wr.Name,
 			Worktrees: wr.Worktrees, Status: "never", ResourceUpdatedAt: wr.UpdatedAt}
 		if dto.Worktrees == nil {
@@ -259,29 +216,14 @@ func (s *Server) handleWatcherLog(w http.ResponseWriter, r *http.Request) {
 		pq.Limit = n
 	}
 
-	scope, all, scoped, err := s.resolveWatcherScope(r)
-	if errors.Is(err, errBadScope) {
-		bad(err.Error())
-		return
-	}
+	all, err := s.allWatched()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	names := map[watcherdb.ResourceKey]string{}
-	for _, wr := range scope {
+	for _, wr := range all {
 		names[watcherdb.ResourceKey{Type: wr.Type, ID: wr.ID}] = wr.Name
-	}
-	if scoped {
-		pq.ResourceScoped = true
-		for _, wr := range scope {
-			pq.Resources = append(pq.Resources, wr.Resource)
-		}
-		// Tags on scoped rows can name resources outside the scope (a GitHub
-		// batch row lists every PR); resolve those names too.
-		for _, wr := range all {
-			names[watcherdb.ResourceKey{Type: wr.Type, ID: wr.ID}] = wr.Name
-		}
 	}
 
 	entries, more, err := watcherdb.QueryPollLog(s.DB, pq)

@@ -9,7 +9,6 @@ import { ResourceCard, type ResourceNotifyContext } from "./ResourceCard"
 import { SlackThreadPane } from "./SlackThreadPane"
 import { LinkPane } from "./LinkPane"
 import { RefreshWatchersButton } from "./RefreshWatchersButton"
-import { WatcherLogButton } from "./WatcherLogButton"
 import { WatcherErrorMark } from "./WatcherErrorMark"
 import { WatcherAlert } from "./WatcherAlert"
 import { useWatcherStatus } from "../hooks/useWatchers"
@@ -150,7 +149,6 @@ function TimelineBody({
                 )}
                 <WatcherErrorMark status={watcher} />
                 <RefreshWatchersButton />
-                <WatcherLogButton scope={{ worktree: path, resource: { type: resource.type, id: resource.id, name: resource.custom_name || resource.title || resource.id } }} />
                 {/* Only over the whole feed, as on the worktree's: searching,
                     it would clear events the search hides. */}
                 {search.terms.length === 0 && (

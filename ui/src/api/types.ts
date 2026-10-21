@@ -234,12 +234,6 @@ export interface WatchersResponse {
   polling: boolean;
 }
 
-/** The scope a watcher log / resource status request covers. */
-export interface WatcherLogScope {
-  worktree?: string;
-  resource?: { type: string; id: string; name: string };
-}
-
 export interface ResourcePollDetail {
   ok: boolean;
   duration_ms?: number;
