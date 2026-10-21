@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
-import type { ResourceDTO, WorktreeSummary } from "../api/types"
+import type { ResourceDTO, Task, WorktreeSummary } from "../api/types"
 import {
-  parseQuery, snippet, matchResource, matchWorktree, rankResource, rankText, splitHighlight, VISIBLE_FIELDS,
+  parseQuery, snippet, matchResource, matchTask, matchWorktree, rankResource, rankText, splitHighlight, VISIBLE_FIELDS,
 } from "./search"
 
 const jira: ResourceDTO = {
@@ -109,4 +109,32 @@ describe("splitHighlight", () => {
 it("title, name, key, branch and repo matches need no why line", () => {
   expect(["title", "name", "key", "branch", "repo", "workspace"].every((f) => VISIBLE_FIELDS.has(f))).toBe(true)
   expect(VISIBLE_FIELDS.has("notes")).toBe(false)
+})
+
+describe("matchTask", () => {
+  const task: Task = {
+    id: 1, ref: "T1", title: "Fix OAuth proxy", description: "alpha ".repeat(10) + "remember the sidecar cookie " + "omega ".repeat(10),
+    state: "not_started", priority: "none", starred: false, rank: "a", created_at: "", updated_at: "",
+    archived: false, links: [], implicit_worktrees: [], subtasks_total: 0, subtasks_done: 0,
+  }
+
+  it("is null with no terms", () => {
+    expect(matchTask(task, [])).toBeNull()
+  })
+
+  it("matches the title first, whole", () => {
+    expect(matchTask(task, ["oauth"])).toEqual({ field: "title", snippet: "Fix OAuth proxy" })
+  })
+
+  it("matches the description with a snippet", () => {
+    const m = matchTask(task, ["sidecar"])
+    expect(m?.field).toBe("description")
+    expect(m?.snippet.startsWith("…")).toBe(true)
+    expect(m?.snippet).toContain("remember the sidecar cookie")
+  })
+
+  it("needs every term somewhere across title and description", () => {
+    expect(matchTask(task, ["proxy", "sidecar"])?.field).toBe("title")
+    expect(matchTask(task, ["proxy", "nope"])).toBeNull()
+  })
 })

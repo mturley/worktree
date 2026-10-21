@@ -1,4 +1,4 @@
-import type { LinkedItem, ResourceDTO, WorktreeSummary } from "../api/types"
+import type { LinkedItem, ResourceDTO, Task, WorktreeSummary } from "../api/types"
 import { worktreeName } from "./homeWorktree"
 import { shortResourceRef } from "./resourceRef"
 
@@ -101,6 +101,17 @@ function firstHit(fields: Field[], terms: string[]): SearchMatch | null {
 export function matchResource(r: ResourceDTO, terms: string[]): SearchMatch | null {
   if (terms.length === 0) return null
   const fields = resourceFields(r)
+  if (!allTermsHit(fields.map((f) => f.text.toLowerCase()), terms)) return null
+  return firstHit(fields, terms)
+}
+
+/** A task, over its title and description, with matchResource's term rules. */
+export function matchTask(t: Task, terms: string[]): SearchMatch | null {
+  if (terms.length === 0) return null
+  const fields: Field[] = [
+    { name: "title", text: t.title },
+    { name: "description", text: t.description ?? "", long: true },
+  ]
   if (!allTermsHit(fields.map((f) => f.text.toLowerCase()), terms)) return null
   return firstHit(fields, terms)
 }
