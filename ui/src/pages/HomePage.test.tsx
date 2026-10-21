@@ -5,13 +5,20 @@ import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { setViewport } from "../testing/viewport"
 import { baseSettings } from "../components/settings/testSettings"
-import type { TimelineEvent, WorktreeSummary } from "../api/types"
+import type { Task, TimelineEvent, WorktreeSummary } from "../api/types"
+import { TASK_LIST_KEY } from "../lib/taskListPrefs"
 
 const summary: WorktreeSummary = {
   path: "/wt/foo", repo: "odh", branch: "my-branch",
   on_disk: true, resource_count: 1, primary_count: 1, latest_event_ts: "",
   primary_by_type: { pr: 1 }, related_count: 0,
   focus_resources: [{ type: "pr", id: "o/r#1", url: "https://gh/pr/1", primary: true, title: "Fix the widget", state: "OPEN" }],
+}
+
+const homeTask: Task = {
+  id: 1, ref: "T1", title: "Write the docs", description: "", state: "not_started", priority: "none", starred: false,
+  rank: "r1", created_at: "", updated_at: "", archived: false, links: [], implicit_worktrees: [],
+  subtasks_total: 0, subtasks_done: 0,
 }
 
 const mocks = vi.hoisted(() => ({
@@ -45,6 +52,7 @@ beforeEach(() => {
   mocks.timelineArgs = []
   mocks.events = []
   vi.spyOn(api, "cmux").mockResolvedValue({ available: false })
+  vi.spyOn(api, "tasks").mockResolvedValue([homeTask])
   vi.spyOn(api, "allResources").mockResolvedValue([
     { type: "pr", id: "o/r#9", url: "https://gh/pr/9", primary: true, title: "Theirs", state: "OPEN",
       worktrees: [{ path: "/wt/foo", repo: "odh", branch: "my-branch" }] },
@@ -708,5 +716,81 @@ describe("HomePage mark all read", () => {
     await waitFor(() => expect(screen.getAllByRole("dialog")).toHaveLength(2))
     expect(screen.getByRole("dialog", { name: "Mark all read" })).toBeInTheDocument()
     expect(window.location.pathname).toBe(before)
+  })
+})
+
+describe("HomePage tasks", () => {
+  const pin = () => window.localStorage.setItem(TASK_LIST_KEY, JSON.stringify({ pinned: true }))
+
+  it("not pinned: Tasks is the last tab with a lime count; its toolbar has Pin", async () => {
+    setViewport("wide")
+    wrap()
+    const tabs = within(screen.getByRole("tablist")).getAllByRole("tab")
+    expect(tabs.map((t) => t.textContent?.replace(/\d+$/, ""))).toEqual(["Activity", "Resources", "Tasks"])
+    const tasksTab = tabs[2]!
+    expect((await within(tasksTab).findByText("1")).closest(".task-count-badge")).not.toBeNull()
+
+    await userEvent.click(tasksTab)
+    const bar = screen.getByRole("tablist")
+    expect(within(bar).getByRole("button", { name: "Pin task list" })).toBeInTheDocument()
+    expect(within(bar).getByLabelText("Sort tasks")).toBeInTheDocument()
+    expect(within(bar).queryByRole("switch", { name: "Show archived" })).toBeNull()
+    expect(await screen.findByText("Write the docs")).toBeInTheDocument()
+    // The tab bar stays pinned atop the column on the Tasks tab too.
+    const header = document.querySelector("[data-tasks-header]") as HTMLElement
+    expect(header.style.position).toBe("sticky")
+    expect(header).toContainElement(bar)
+  })
+
+  it("pinning moves the list above the tab bar and removes the Tasks tab; Unpin restores it", async () => {
+    setViewport("wide")
+    wrap()
+    await userEvent.click(screen.getByRole("tab", { name: /Tasks/ }))
+    await userEvent.click(within(screen.getByRole("tablist")).getByRole("button", { name: "Pin task list" }))
+
+    expect(screen.queryByRole("tab", { name: /Tasks/ })).toBeNull()
+    const panel = document.querySelector(".task-panel") as HTMLElement
+    expect(await within(panel).findByText("Write the docs")).toBeInTheDocument()
+    // Above the tab bar, in the right column.
+    const bar = screen.getByRole("tablist")
+    expect(panel.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(panel.closest(".mantine-Grid-col")).toBe(bar.closest(".mantine-Grid-col"))
+
+    await userEvent.click(within(panel).getByRole("button", { name: "Unpin task list" }))
+    expect(document.querySelector(".task-panel")).toBeNull()
+    expect(screen.getByRole("tab", { name: /Tasks/ })).toBeInTheDocument()
+  })
+
+  it("pinning while on the Tasks tab falls back to Activity", async () => {
+    setViewport("wide")
+    wrap()
+    await userEvent.click(screen.getByRole("tab", { name: /Tasks/ }))
+    await userEvent.click(screen.getByRole("button", { name: "Pin task list" }))
+    expect(screen.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true")
+    expect(document.querySelector("[data-activity-header]")).not.toBeNull()
+  })
+
+  it("narrow + pinned: the pinned list renders above the narrow tabs", async () => {
+    setViewport("narrow")
+    pin()
+    wrap()
+    const panel = document.querySelector(".task-panel") as HTMLElement
+    expect(await within(panel).findByText("Write the docs")).toBeInTheDocument()
+    const bar = screen.getByRole("tablist")
+    expect(panel.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(within(bar).queryByRole("tab", { name: /Tasks/ })).toBeNull()
+  })
+
+  it("narrow, not pinned: Tasks is the last tab, its toolbar atop its panel", async () => {
+    setViewport("narrow")
+    wrap()
+    const tabs = within(screen.getByRole("tablist")).getAllByRole("tab")
+    expect(tabs.at(-1)).toHaveTextContent(/^Tasks/)
+    await userEvent.click(tabs.at(-1)!)
+    expect(screen.getByRole("button", { name: "Pin task list" })).toBeInTheDocument()
+    expect(await screen.findByText("Write the docs")).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole("button", { name: "Pin task list" }))
+    expect(screen.getByRole("tab", { name: /Activity/ })).toHaveAttribute("aria-selected", "true")
   })
 })

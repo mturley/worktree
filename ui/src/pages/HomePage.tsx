@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import { useLocation } from "wouter"
 import { serializeResourceKey } from "../lib/resourceKey"
 import { isArchivedEvent, openEventState } from "../lib/openEvent"
@@ -47,8 +47,13 @@ import { ResourcesPanel, ResourcesTabControls } from "../components/ResourcesPan
 import { useResourcesView } from "../hooks/useResourcesView"
 import { ChooseWorktreeModal } from "../components/ChooseWorktreeModal"
 import { CrossHoverProvider } from "../components/CrossHoverContext"
+import { tasksFallbackTab, useTasksPlacement } from "../components/tasks/TasksSection"
 
-type RightTab = "timeline" | "resources"
+type RightTab = "timeline" | "resources" | "tasks"
+type NarrowTab = "worktrees" | RightTab
+
+/** Every task, with no context to link a new one to. */
+const HOME_TASKS = { kind: "all" } as const
 
 /**
  * The event's resource as its row shows it, for the worktree picker's
@@ -70,6 +75,8 @@ export function HomePage() {
   const [newOpen, setNewOpen] = useState(false)
   // Wide only: which of Activity and Resources fills the right column.
   const [rightTab, setRightTab] = useState<RightTab>("timeline")
+  // Narrow: the page's one tab bar, Worktrees first.
+  const [narrowTab, setNarrowTab] = useState<NarrowTab>("worktrees")
   const search = useSearchQuery()
   // The one spelling of the query every empty state quotes.
   const queryText = search.q.trim()
@@ -94,6 +101,12 @@ export function HomePage() {
   } as const
   const wide = useIsWide()
   const tall = useIsTall()
+  // A Tasks tab, or the list pinned above the tab bar; pinning while on
+  // Tasks goes back to Activity.
+  const toActivity = useCallback(() => (wide ? setRightTab : setNarrowTab)("timeline"), [wide])
+  const tasks = useTasksPlacement(HOME_TASKS, undefined, { activeTab: wide ? rightTab : narrowTab, onFallback: toActivity })
+  const shownRightTab = tasksFallbackTab(rightTab, tasks.pinned, "timeline")
+  const shownNarrowTab = tasksFallbackTab(narrowTab, tasks.pinned, "timeline")
   // Wide, each column scrolls on its own, and its header (with the activity
   // filters) stays pinned at the top of it — with room to spare only, as on
   // the worktree page. Inside a scrolling column, so the pin is measured
@@ -282,12 +295,17 @@ export function HomePage() {
   // the top of whichever tab's pinned header is showing, so it stays in
   // reach as the column scrolls.
   const rightTabBar = (
-    <Tabs value={rightTab} onChange={(v) => v && setRightTab(v as RightTab)}>
+    <Tabs value={shownRightTab} onChange={(v) => v && setRightTab(v as RightTab)}>
       <Tabs.List>
         <Tabs.Tab value="timeline">Activity{countBadge(tl.events.length, tl.hasMore)}</Tabs.Tab>
         <Tabs.Tab value="resources">Resources{countBadge(resourcesView.shown.length)}</Tabs.Tab>
+        {tasks.tab}
         <Group ml="auto" align="center" gap="md" wrap="nowrap" pb={4}>
-          {rightTab === "timeline" ? activityControls : <ResourcesTabControls view={resourcesView} />}
+          {shownRightTab === "timeline"
+            ? activityControls
+            : shownRightTab === "resources"
+              ? <ResourcesTabControls view={resourcesView} />
+              : tasks.toolbar}
         </Group>
       </Tabs.List>
     </Tabs>
@@ -404,11 +422,13 @@ export function HomePage() {
           <NewWorktreeModal opened={newOpen} onClose={() => setNewOpen(false)} />
           {detailsModal}
           {header}
-          <Tabs defaultValue="worktrees">
+          {tasks.pinnedPanel}
+          <Tabs value={shownNarrowTab} onChange={(v) => v && setNarrowTab(v as NarrowTab)}>
             <Tabs.List>
               <Tabs.Tab value="worktrees">Worktrees{countBadge(shownWorktrees.length)}</Tabs.Tab>
               <Tabs.Tab value="timeline">Activity{countBadge(tl.events.length, tl.hasMore)}</Tabs.Tab>
               <Tabs.Tab value="resources">Resources{countBadge(resourcesView.shown.length)}</Tabs.Tab>
+              {tasks.tab}
             </Tabs.List>
             <Tabs.Panel value="worktrees" pt="md">
               <Stack gap="xs">
@@ -424,6 +444,14 @@ export function HomePage() {
                 searchSummary={resourcesSummary}
               />
             </Tabs.Panel>
+            {!tasks.pinned && (
+              <Tabs.Panel value="tasks" pt="md">
+                <Stack gap="sm">
+                  {tasks.toolbar}
+                  {tasks.tabPanelBody}
+                </Stack>
+              </Tabs.Panel>
+            )}
           </Tabs>
         </Stack>
       </CrossHoverProvider></SearchContext.Provider></NarrowingContext.Provider>
@@ -461,9 +489,26 @@ export function HomePage() {
           </Stack>
         </Grid.Col>
         <Grid.Col span={6} style={columnStyle} data-tooltip-layer="content">
-          {rightTab === "timeline"
-            ? timeline(rightTabBar)
-            : <ResourcesPanel view={resourcesView} headerStyle={headerStyle} top={rightTabBar} searchSummary={resourcesSummary} />}
+          {/* Pinned, the task list heads the column and scrolls away with
+              it; the tab bar's own pinned header then sticks as before. */}
+          {tasks.pinnedPanel && <Box mb="sm">{tasks.pinnedPanel}</Box>}
+          {shownRightTab === "timeline" && timeline(rightTabBar)}
+          {shownRightTab === "resources" && (
+            <ResourcesPanel view={resourcesView} headerStyle={headerStyle} top={rightTabBar} searchSummary={resourcesSummary} />
+          )}
+          {shownRightTab === "tasks" && (
+            // As the Activity header: the tab bar pinned atop the column.
+            <Stack gap={headerStyle ? 0 : "sm"}>
+              <Box
+                style={headerStyle && { ...headerStyle, paddingBottom: "var(--mantine-spacing-xs)" }}
+                data-tasks-header
+                data-tooltip-layer={headerStyle ? "pinned" : undefined}
+              >
+                {rightTabBar}
+              </Box>
+              {tasks.tabPanelBody}
+            </Stack>
+          )}
         </Grid.Col>
         <NewWorktreeModal opened={newOpen} onClose={() => setNewOpen(false)} />
         {detailsModal}
