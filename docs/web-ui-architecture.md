@@ -163,6 +163,8 @@ discovery.
   `POST /api/worktrees/poll` (poll-on-view), and the `pollInFlight`
   atomic-bool guard (`safePollAll`) against overlapping polls.
 - **`stream.go`** — `GET /api/stream`, an SSE endpoint.
+- **`tasks_api.go`** — the `/api/tasks*` routes, the open-task count helpers,
+  and the `tasks_changed` version check; see "Tasks" below.
 - **`slack.go`**, **`slack_proxy.go`**, **`slack_sse.go`** — the Slack thread
   view's routes (`/api/thread*`, `/api/slack-*`); see "Slack thread view" below.
 
@@ -209,6 +211,11 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | GET | `/api/repo-dotfiles` | `repo` (required) | gitignored dotfiles that repo would copy into a new worktree |
 | GET | `/api/stream` | `tab`, `route`, `visible` (all optional; see "Notifications") | SSE stream (`text/event-stream`) |
 | POST | `/api/notify` | body: `{path, type?, id?, on, tab?}` (no type/id = the worktree-wide toggle) | `{ok, mode}`; turning ON sends a test notification. 400 for a link or a half-given resource, 404 for an unregistered worktree or untracked resource |
+| GET | `/api/tasks` | `scope` (`all` default, `worktree`, `resource`), `path` (worktree scope), `type` + `id` (resource scope), `completed=1`, `archived=1` | `[]taskDTO` in master order; see "Tasks" |
+| POST | `/api/tasks` | body: `{title, priority?, starred?, path?, type?, id?, after?, before?}`; `path` → Focus worktree link, `type`+`id` → Focus resource link, neither → global | `taskDTO` |
+| POST | `/api/tasks/update` | body: `{id, title?, priority?, starred?, due?}` (absent = unchanged; `due: ""` clears) | `taskDTO` |
+| POST | `/api/tasks/state` | body: `{id, state}` | `taskDTO` |
+| POST | `/api/tasks/move` | body: `{id, after}` or `{id, before}`, exactly one | 204 No Content |
 | POST | `/api/tabs/presence` | body: `{tab, route, visible}` | 204; 404 for an unknown tab or another session's |
 | POST | `/api/tabs/ack` | body: `{tab, notification_id, shown}` | 204; 404 for an unknown tab, another session's, or a notification nobody awaits |
 | GET | `/api/update-status` | — | `{available, behind_by, details_url}`; see "Update check" |
@@ -260,6 +267,7 @@ related_count   int
 latest_event_ts string           // "" if no events; from latestEventTSForSubscriber
 focus_resources []resourceDTO   // primary resources, enriched; always [] never null
 notes_search    string           // omitempty; raw note text whenever non-blank, even if `notes` is hidden (search only)
+open_task_count int              // open tasks in this worktree's scope; see "Tasks"
 ```
 
 `focus_resources` lets the home page (and the shared `WorktreeCard`, see
@@ -321,6 +329,7 @@ type    string    // "pr" | "jira"
 id      string
 url     string
 primary bool      // !res.Related — see "Focus vs primary" below
+open_task_count int // open tasks linking this resource, always sent; see "Tasks"
 
 // enriched from cached watcher_resource_state (omitempty; absent if never polled):
 title                     string    // PR title or Jira summary
@@ -850,7 +859,9 @@ No params. On connect, sends nothing but flushes headers. Every 5s, checks
 `MAX(ts)` on `watcher_events`; if it advanced since the last tick (or since
 connect), emits `event: events_new\ndata: {}\n\n`, then always emits `event:
 heartbeat\ndata: {}\n\n`. The frontend treats `events_new` purely as a
-cache-invalidation signal (no payload).
+cache-invalidation signal (no payload). In the same tick it compares
+`tasks.Version` with the value seen at connect (or last tick) and emits
+`event: tasks_changed\ndata: {}\n\n` when it advanced; see "Tasks".
 
 A stream opened with `?tab=<id>&route=<path>&visible=1|0` also registers that
 tab for browser notifications, and may carry `event: notification` messages
@@ -875,6 +886,37 @@ aren't on screen as `hidden`. The cost: a hidden HTTP tab is not in the tab
 registry, so it gets no browser notifications and its unread favicon doesn't
 update. HTTPS (`ui.https_port`) is HTTP/2, which multiplexes everything on
 one connection, so tabs there keep their streams while hidden.
+
+## Tasks
+
+`internal/webui/tasks_api.go` is a thin JSON layer over `internal/tasks`
+(the routes are in the HTTP API table above). Every web write is
+`tasks.Actor{Kind: tasks.ActorUser}`. Tasks contact no external service, so
+the watcher toggles do not apply.
+
+- **Wire shape.** `taskDTO` mirrors the CLI's JSON (`cmd/tasks_json.go`) but
+  with a numeric `id` plus its display `ref` (`"T42"`), the `rank`, and
+  `subtasks_total`/`subtasks_done` instead of the subtasks. `links` and
+  `implicit_worktrees` are always `[]`, never null. Link `focus` is the
+  library's `Primary`.
+- **Errors.** `tasks.ErrInvalid` → 400, `tasks.ErrNotFound` (including
+  `ErrLinkNotFound`) → 404, else 500. Bodies are capped at 64 KiB.
+- **The server only scopes.** `GET /api/tasks` returns the scope's tasks in
+  master order; sorting (priority, due, recently updated) and filtering
+  (priority, starred, search) happen client-side.
+- **Open-task counts.** `worktreeSummary.open_task_count` and
+  `resourceDTO.open_task_count` (so also `allResourceDTO` and the worktree
+  list's focus resources) come from ONE `tasks.OpenCounts` per request. A
+  worktree's count is looked up by its canonical path
+  (`wdb.WorktreePathFromSubscriber(wdb.Subscriber(path))`, see the subscriber
+  gotcha); a resource's by `"type:id"`. If `OpenCounts` fails, the listing is
+  still served, with counts of 0, and the error is logged.
+- **Live updates are version-driven.** `tasks.Version` is a counter every
+  committed tasks write bumps (CLI and agents included, since they share the
+  DB). `/api/stream` seeds it on connect and emits `tasks_changed` on the 5s
+  tick when it has advanced (`seedTasksVersion` / `tasksVersionAdvanced`,
+  unit-tested directly because the ticker has no seam). The client treats it
+  as an invalidation signal for its task queries and counts.
 
 ## Notifications
 

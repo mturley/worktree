@@ -53,6 +53,9 @@ type worktreeSummary struct {
 	// regardless of the show-on-home setting, so search can find a worktree
 	// by its notes. Not rendered.
 	NotesSearch string `json:"notes_search,omitempty"`
+	// OpenTaskCount is how many open tasks are in this worktree's scope
+	// (tasks.OpenCounts' ByWorktree): linked, implicit, or archived fallback.
+	OpenTaskCount int `json:"open_task_count"`
 }
 
 func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
@@ -80,6 +83,8 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 	if err != nil && s.Logger != nil {
 		s.Logger.Printf("notes.AllNonBlank: %v", err)
 	}
+	// One load for every worktree's and resource's open-task count.
+	taskCounts := s.openTaskCounts()
 	for _, e := range entries {
 		rs, err := resources.Load(s.DB, e.Path)
 		if err != nil {
@@ -104,6 +109,7 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 				dto := s.newResourceDTO(res)
 				ix.fill(&dto)
 				dto.Notify = prefs.Resources[notifyprefs.Key{Type: dto.Type, ID: dto.ID}]
+				dto.OpenTaskCount = resourceTaskCount(taskCounts, dto.Type, dto.ID)
 				focus = append(focus, dto)
 				hasUnread = hasUnread || resourceHasUnread(dto)
 				unreadCount += dto.UnreadCount
@@ -139,6 +145,7 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 			NotifyAll:      prefs.All,
 			Notes:          homeNotes[e.Path],
 			NotesSearch:    allNotes[e.Path],
+			OpenTaskCount:  worktreeTaskCount(taskCounts, e.Path),
 		})
 	}
 	writeJSON(w, http.StatusOK, out)

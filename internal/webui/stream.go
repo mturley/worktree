@@ -36,6 +36,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 
 	var last string
 	s.DB.QueryRow(`SELECT COALESCE(MAX(ts),'') FROM watcher_events`).Scan(&last)
+	lastTasks := s.seedTasksVersion()
 
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
@@ -57,6 +58,9 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 			if cur != last {
 				last = cur
 				fmt.Fprintf(w, "event: events_new\ndata: {}\n\n")
+			}
+			if s.tasksVersionAdvanced(&lastTasks) {
+				fmt.Fprintf(w, "event: tasks_changed\ndata: {}\n\n")
 			}
 			fmt.Fprintf(w, "event: heartbeat\ndata: {}\n\n")
 			flusher.Flush()
