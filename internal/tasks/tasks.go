@@ -55,12 +55,6 @@ var (
 	ErrInvalid = errors.New("invalid task input")
 )
 
-// LinkTarget is a placeholder; Task 4 defines it in links.go.
-type LinkTarget struct{}
-
-// Link is a placeholder; Task 4 defines it.
-type Link struct{}
-
 // Subtask is a placeholder; Task 5 defines it.
 type Subtask struct{}
 
@@ -76,9 +70,9 @@ type Task struct {
 	Rank        string
 	// RFC3339 UTC; "" when unset.
 	CreatedAt, UpdatedAt, StartedAt, CompletedAt string
-	Links                                        []Link    // filled by Get/List (Task 4)
-	Implicit                                     []string  // canonical worktree paths reached via live resource links (Task 4)
-	Archived                                     bool      // every link archived (Task 4); false for a global task
+	Links                                        []Link    // filled by Get/List, in display order
+	Implicit                                     []string  // canonical worktree paths actively following a resource link, sorted
+	Archived                                     bool      // has links and every one is archived; false for a global task
 	Subtasks                                     []Subtask // filled by Get/List (Task 5)
 }
 
@@ -88,7 +82,7 @@ type NewTask struct {
 	Priority           Priority
 	Starred            bool
 	Due                string
-	Focus              []LinkTarget
+	Focus              []LinkTarget // the creating context, linked as Focus
 }
 
 // Patch is the input to Update. A nil field is left alone; Due "" clears.
@@ -195,8 +189,8 @@ func inTx(conn *sql.DB, fn func(*sql.Tx) error) error {
 	return tx.Commit()
 }
 
-// Create adds a task at the bottom of the master order. n.Focus is ignored
-// until Task 4 wires links in.
+// Create adds a task at the bottom of the master order, linking each of
+// n.Focus as a Focus link (duplicates collapse to one).
 func Create(conn *sql.DB, a Actor, n NewTask) (Task, error) {
 	if err := validActor(a); err != nil {
 		return Task{}, err
@@ -213,6 +207,18 @@ func Create(conn *sql.DB, a Actor, n NewTask) (Task, error) {
 	}
 	if err := validDue(n.Due); err != nil {
 		return Task{}, err
+	}
+	var focus []LinkTarget
+	seen := map[LinkTarget]bool{}
+	for _, f := range n.Focus {
+		lt, err := normalize(f)
+		if err != nil {
+			return Task{}, err
+		}
+		if !seen[lt] {
+			seen[lt] = true
+			focus = append(focus, lt)
+		}
 	}
 	var id int64
 	err = inTx(conn, func(tx *sql.Tx) error {
@@ -237,8 +243,15 @@ func Create(conn *sql.DB, a Actor, n NewTask) (Task, error) {
 		if id, err = res.LastInsertId(); err != nil {
 			return err
 		}
-		_, err = record(tx, a, id, ts, EventTaskCreated, nil)
-		return err
+		if _, err := record(tx, a, id, ts, EventTaskCreated, nil); err != nil {
+			return err
+		}
+		for _, lt := range focus {
+			if err := insertLink(tx, a, id, lt, true, ts); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return Task{}, err
@@ -246,9 +259,18 @@ func Create(conn *sql.DB, a Actor, n NewTask) (Task, error) {
 	return Get(conn, id)
 }
 
-// Get returns a task, or ErrNotFound when it is missing or deleted.
+// Get returns a task with its links, implicit worktrees and archived state,
+// or ErrNotFound when it is missing or deleted. It is List over every task,
+// completed and archived included, narrowed to id.
 func Get(conn *sql.DB, id int64) (Task, error) {
-	return load(conn, id)
+	ts, err := list(conn, Filter{IncludeCompleted: true, IncludeArchived: true}, &id)
+	if err != nil {
+		return Task{}, err
+	}
+	if len(ts) == 0 {
+		return Task{}, ErrNotFound
+	}
+	return ts[0], nil
 }
 
 // Update applies p, recording a task_edited event listing only the fields

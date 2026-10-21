@@ -1,0 +1,290 @@
+package tasks
+
+import (
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+
+	wdb "github.com/mturley/worktree/internal/db"
+	"github.com/mturley/worktree/internal/registry"
+)
+
+var (
+	prLink   = LinkTarget{Kind: LinkResource, ResourceType: "pr", ResourceID: "o/r#1"}
+	jiraLink = LinkTarget{Kind: LinkResource, ResourceType: "jira", ResourceID: "ABC-1"}
+	pr2Link  = LinkTarget{Kind: LinkResource, ResourceType: "pr", ResourceID: "o/r#2"}
+)
+
+// canon returns the canonical form of a worktree path, as stored.
+func canon(p string) string {
+	c, _ := wdb.WorktreePathFromSubscriber(wdb.Subscriber(p))
+	return c
+}
+
+func register(t *testing.T, conn *sql.DB, path string) {
+	t.Helper()
+	if err := registry.Register(conn, registry.Entry{Path: path, Repo: "r", RepoRoot: "/r", Branch: "b", CreatedAt: now()}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func mustGet(t *testing.T, conn *sql.DB, id int64) Task {
+	t.Helper()
+	tk, err := Get(conn, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tk
+}
+
+func mustAddLink(t *testing.T, conn *sql.DB, id int64, lt LinkTarget, focus bool) Link {
+	t.Helper()
+	l, err := AddLink(conn, user, id, lt, focus)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return l
+}
+
+func eventsOfType(t *testing.T, conn *sql.DB, id int64, typ string) []Event {
+	t.Helper()
+	ev, err := Events(conn, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []Event
+	for _, e := range ev {
+		if e.Type == typ {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+func TestCreateWithFocusContext(t *testing.T) {
+	conn := newDB(t)
+	tk, err := Create(conn, user, NewTask{Title: "x", Focus: []LinkTarget{prLink}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := mustGet(t, conn, tk.ID)
+	if len(got.Links) != 1 || !got.Links[0].Primary || got.Links[0].LinkTarget != prLink {
+		t.Fatalf("links %+v", got.Links)
+	}
+	if len(tk.Links) != 1 {
+		t.Fatalf("Create's returned task lacks links: %+v", tk.Links)
+	}
+	if n := len(eventsOfType(t, conn, tk.ID, EventTaskLinked)); n != 1 {
+		t.Fatalf("task_linked events = %d, want 1", n)
+	}
+}
+
+func TestCreateRejectsInvalidFocus(t *testing.T) {
+	conn := newDB(t)
+	_, err := Create(conn, user, NewTask{Title: "x", Focus: []LinkTarget{{Kind: LinkResource, ResourceType: "pr"}}})
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("err = %v, want ErrInvalid", err)
+	}
+	if n := count(t, conn, "tasks"); n != 0 {
+		t.Fatalf("tasks = %d, want 0", n)
+	}
+}
+
+func TestAddLinkDefaultsAndRemoveDoesNotPromote(t *testing.T) {
+	conn := newDB(t)
+	tk, err := Create(conn, user, NewTask{Title: "x", Focus: []LinkTarget{prLink}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := mustAddLink(t, conn, tk.ID, jiraLink, false)
+	if l.Primary || l.LinkTarget != jiraLink || l.ID == 0 {
+		t.Fatalf("added link %+v", l)
+	}
+	if err := RemoveLink(conn, user, tk.ID, prLink); err != nil {
+		t.Fatal(err)
+	}
+	got := mustGet(t, conn, tk.ID)
+	if len(got.Links) != 1 || got.Links[0].LinkTarget != jiraLink || got.Links[0].Primary {
+		t.Fatalf("links after remove %+v", got.Links)
+	}
+	ev := eventsOfType(t, conn, tk.ID, EventTaskUnlinked)
+	if len(ev) != 1 {
+		t.Fatalf("task_unlinked events = %d", len(ev))
+	}
+	var p map[string]any
+	if err := json.Unmarshal(ev[0].Payload, &p); err != nil {
+		t.Fatal(err)
+	}
+	if p["kind"] != "resource" || p["resource_type"] != "pr" || p["resource_id"] != "o/r#1" || p["focus"] != true {
+		t.Fatalf("unlinked payload %v", p)
+	}
+	if err := RemoveLink(conn, user, tk.ID, prLink); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("removing a missing link: err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestAddLinkTwice(t *testing.T) {
+	conn := newDB(t)
+	tk := mustCreate(t, conn, "x")
+	mustAddLink(t, conn, tk.ID, prLink, false)
+	mustAddLink(t, conn, tk.ID, prLink, false)
+	if n := count(t, conn, "task_links"); n != 1 {
+		t.Fatalf("rows = %d, want 1", n)
+	}
+	if n := len(eventsOfType(t, conn, tk.ID, EventTaskLinked)); n != 1 {
+		t.Fatalf("task_linked events = %d, want 1", n)
+	}
+	l := mustAddLink(t, conn, tk.ID, prLink, true)
+	if !l.Primary {
+		t.Fatalf("focus not flipped: %+v", l)
+	}
+	if n := count(t, conn, "task_links"); n != 1 {
+		t.Fatalf("rows = %d, want 1", n)
+	}
+	if n := len(eventsOfType(t, conn, tk.ID, EventTaskFocusChanged)); n != 1 {
+		t.Fatalf("task_focus_changed events = %d, want 1", n)
+	}
+}
+
+func TestAddLinkValidation(t *testing.T) {
+	conn := newDB(t)
+	tk := mustCreate(t, conn, "x")
+	bad := []LinkTarget{
+		{},
+		{Kind: "other", ResourceType: "pr", ResourceID: "1"},
+		{Kind: LinkResource, ResourceID: "1"},
+		{Kind: LinkResource, ResourceType: "pr"},
+		{Kind: LinkWorktree},
+	}
+	for _, b := range bad {
+		if _, err := AddLink(conn, user, tk.ID, b, false); !errors.Is(err, ErrInvalid) {
+			t.Errorf("AddLink(%+v) err = %v, want ErrInvalid", b, err)
+		}
+	}
+	if _, err := AddLink(conn, Actor{}, tk.ID, prLink, false); !errors.Is(err, ErrInvalid) {
+		t.Errorf("zero actor err = %v", err)
+	}
+	if _, err := AddLink(conn, user, 999, prLink, false); !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing task err = %v", err)
+	}
+}
+
+func TestSetLinkFocusLandsAtBottom(t *testing.T) {
+	conn := newDB(t)
+	tk := mustCreate(t, conn, "x")
+	mustAddLink(t, conn, tk.ID, prLink, true)
+	mustAddLink(t, conn, tk.ID, jiraLink, false)
+	mustAddLink(t, conn, tk.ID, pr2Link, true)
+	if err := SetLinkFocus(conn, user, tk.ID, prLink, false); err != nil {
+		t.Fatal(err)
+	}
+	got := mustGet(t, conn, tk.ID).Links
+	want := []LinkTarget{pr2Link, jiraLink, prLink}
+	for i, w := range want {
+		if got[i].LinkTarget != w {
+			t.Fatalf("order %+v, want %+v", got, want)
+		}
+	}
+	if !got[0].Primary || got[1].Primary || got[2].Primary {
+		t.Fatalf("groups %+v", got)
+	}
+	// A no-op records nothing.
+	if err := SetLinkFocus(conn, user, tk.ID, prLink, false); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(eventsOfType(t, conn, tk.ID, EventTaskFocusChanged)); n != 1 {
+		t.Fatalf("task_focus_changed events = %d, want 1", n)
+	}
+	if err := SetLinkFocus(conn, user, tk.ID, LinkTarget{Kind: LinkResource, ResourceType: "pr", ResourceID: "nope"}, true); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing link err = %v", err)
+	}
+}
+
+func TestSetLinkOrder(t *testing.T) {
+	conn := newDB(t)
+	tk := mustCreate(t, conn, "x")
+	a, b, c := prLink, jiraLink, pr2Link
+	mustAddLink(t, conn, tk.ID, a, false)
+	mustAddLink(t, conn, tk.ID, b, false)
+	mustAddLink(t, conn, tk.ID, c, false)
+	if err := SetLinkOrder(conn, tk.ID, []LinkTarget{c}, []LinkTarget{b, a}); err != nil {
+		t.Fatal(err)
+	}
+	got := mustGet(t, conn, tk.ID).Links
+	if len(got) != 3 || got[0].LinkTarget != c || got[1].LinkTarget != b || got[2].LinkTarget != a {
+		t.Fatalf("order %+v", got)
+	}
+	if !got[0].Primary || got[1].Primary || got[2].Primary {
+		t.Fatalf("groups %+v", got)
+	}
+}
+
+func TestSetLinkOrderForgiving(t *testing.T) {
+	conn := newDB(t)
+	tk := mustCreate(t, conn, "x")
+	mustAddLink(t, conn, tk.ID, prLink, true)
+	mustAddLink(t, conn, tk.ID, jiraLink, false)
+	mustAddLink(t, conn, tk.ID, pr2Link, false)
+	// pr2 is left out (keeps its group, goes to the end); an unknown target is
+	// ignored; a duplicate is claimed once.
+	unknown := LinkTarget{Kind: LinkResource, ResourceType: "pr", ResourceID: "gone"}
+	if err := SetLinkOrder(conn, tk.ID, []LinkTarget{unknown, jiraLink}, []LinkTarget{prLink, jiraLink}); err != nil {
+		t.Fatal(err)
+	}
+	got := mustGet(t, conn, tk.ID).Links
+	if len(got) != 3 || got[0].LinkTarget != jiraLink || !got[0].Primary ||
+		got[1].LinkTarget != prLink || got[1].Primary || got[2].LinkTarget != pr2Link || got[2].Primary {
+		t.Fatalf("order %+v", got)
+	}
+	if err := SetLinkOrder(conn, 999, nil, nil); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing task err = %v", err)
+	}
+}
+
+func TestWorktreeLinkCanonicalisesSymlink(t *testing.T) {
+	conn := newDB(t)
+	dir := t.TempDir()
+	d := filepath.Join(dir, "real")
+	if err := os.Mkdir(d, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s := filepath.Join(dir, "link")
+	if err := os.Symlink(d, s); err != nil {
+		t.Fatal(err)
+	}
+	register(t, conn, d)
+	tk := mustCreate(t, conn, "x")
+	mustAddLink(t, conn, tk.ID, LinkTarget{Kind: LinkWorktree, Worktree: s}, false)
+	got := mustGet(t, conn, tk.ID)
+	if len(got.Links) != 1 || got.Links[0].Worktree != canon(d) || got.Links[0].Archived {
+		t.Fatalf("links %+v, want worktree %q", got.Links, canon(d))
+	}
+	if got.Archived {
+		t.Fatal("task archived")
+	}
+	ts, err := List(conn, Filter{Scope: Scope{Kind: ScopeWorktree, Worktree: d}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ts) != 1 || ts[0].ID != tk.ID {
+		t.Fatalf("List(worktree D) = %+v", ts)
+	}
+	// The same link given via the real path is the same link.
+	mustAddLink(t, conn, tk.ID, LinkTarget{Kind: LinkWorktree, Worktree: d}, false)
+	if n := count(t, conn, "task_links"); n != 1 {
+		t.Fatalf("rows = %d, want 1", n)
+	}
+}
+
+func TestWorktreeLinkMissingPath(t *testing.T) {
+	conn := newDB(t)
+	tk := mustCreate(t, conn, "x")
+	p := filepath.Join(t.TempDir(), "gone", "..", "gone")
+	l := mustAddLink(t, conn, tk.ID, LinkTarget{Kind: LinkWorktree, Worktree: p}, false)
+	if l.Worktree != filepath.Clean(canon(p)) || !l.Archived {
+		t.Fatalf("link %+v", l)
+	}
+}

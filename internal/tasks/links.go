@@ -1,0 +1,291 @@
+package tasks
+
+import (
+	"database/sql"
+	"errors"
+	"fmt"
+	"strings"
+
+	wdb "github.com/mturley/worktree/internal/db"
+)
+
+// LinkKind says what a link points at.
+type LinkKind string
+
+const (
+	LinkResource LinkKind = "resource"
+	LinkWorktree LinkKind = "worktree"
+)
+
+// LinkTarget is what a link points at: a resource (ResourceType +
+// ResourceID) or a worktree (Worktree). Worktree may be any path on input;
+// it is canonicalised through wdb.Subscriber on write, and always holds the
+// canonical path on output.
+type LinkTarget struct {
+	Kind                     LinkKind
+	ResourceType, ResourceID string
+	Worktree                 string
+}
+
+// Link is one of a task's links.
+type Link struct {
+	ID int64
+	LinkTarget
+	Primary  bool // Focus; false means Related
+	Archived bool // a resource no live worktree follows, or a worktree gone from the registry
+}
+
+// canonicalPath is the canonical form of a worktree path, the same one
+// wdb.Subscriber keys subscriptions by. A path that does not exist falls
+// back to its absolute, cleaned form.
+func canonicalPath(p string) string {
+	c, _ := wdb.WorktreePathFromSubscriber(wdb.Subscriber(p))
+	return c
+}
+
+// normalize validates t and returns it with only the fields its kind uses,
+// and a worktree path canonicalised.
+func normalize(t LinkTarget) (LinkTarget, error) {
+	switch t.Kind {
+	case LinkResource:
+		if strings.TrimSpace(t.ResourceType) == "" || strings.TrimSpace(t.ResourceID) == "" {
+			return LinkTarget{}, fmt.Errorf("%w: a resource link needs a type and an id", ErrInvalid)
+		}
+		return LinkTarget{Kind: LinkResource, ResourceType: t.ResourceType, ResourceID: t.ResourceID}, nil
+	case LinkWorktree:
+		if strings.TrimSpace(t.Worktree) == "" {
+			return LinkTarget{}, fmt.Errorf("%w: a worktree link needs a path", ErrInvalid)
+		}
+		return LinkTarget{Kind: LinkWorktree, Worktree: canonicalPath(t.Worktree)}, nil
+	default:
+		return LinkTarget{}, fmt.Errorf("%w: link kind %q is not %q or %q", ErrInvalid, t.Kind, LinkResource, LinkWorktree)
+	}
+}
+
+// linkPayload identifies a link target in an event payload.
+func linkPayload(t LinkTarget, focus bool) map[string]any {
+	return map[string]any{
+		"kind":          t.Kind,
+		"resource_type": t.ResourceType,
+		"resource_id":   t.ResourceID,
+		"worktree":      t.Worktree,
+		"focus":         focus,
+	}
+}
+
+// findLink returns the row id and group of taskID's link to t (already
+// normalised), or sql.ErrNoRows.
+func findLink(tx *sql.Tx, taskID int64, t LinkTarget) (id int64, primary bool, err error) {
+	var p int
+	err = tx.QueryRow(
+		`SELECT id, is_primary FROM task_links
+		  WHERE task_id = ? AND kind = ? AND resource_type = ? AND resource_id = ? AND worktree_path = ?`,
+		taskID, t.Kind, t.ResourceType, t.ResourceID, t.Worktree).Scan(&id, &p)
+	return id, p != 0, err
+}
+
+// nextSortOrder is the sort_order that puts a link at the bottom of
+// taskID's focus or related group.
+func nextSortOrder(tx *sql.Tx, taskID int64, focus bool) (int64, error) {
+	var n int64
+	err := tx.QueryRow(
+		`SELECT COALESCE(MAX(sort_order), 0) + 1 FROM task_links WHERE task_id = ? AND is_primary = ?`,
+		taskID, bit(focus)).Scan(&n)
+	return n, err
+}
+
+// insertLink adds a new link (t already normalised) at the bottom of its
+// group and records task_linked.
+func insertLink(tx *sql.Tx, a Actor, taskID int64, t LinkTarget, focus bool, ts string) error {
+	order, err := nextSortOrder(tx, taskID, focus)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(
+		`INSERT INTO task_links (task_id, kind, resource_type, resource_id, worktree_path, is_primary, sort_order, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		taskID, t.Kind, t.ResourceType, t.ResourceID, t.Worktree, bit(focus), order, ts); err != nil {
+		return err
+	}
+	_, err = record(tx, a, taskID, ts, EventTaskLinked, linkPayload(t, focus))
+	return err
+}
+
+// moveLinkGroup moves link row id to the bottom of the other group and
+// records task_focus_changed.
+func moveLinkGroup(tx *sql.Tx, a Actor, taskID, id int64, t LinkTarget, focus bool) error {
+	order, err := nextSortOrder(tx, taskID, focus)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE task_links SET is_primary = ?, sort_order = ? WHERE id = ?`, bit(focus), order, id); err != nil {
+		return err
+	}
+	_, err = record(tx, a, taskID, now(), EventTaskFocusChanged, linkPayload(t, focus))
+	return err
+}
+
+// AddLink links taskID to t, as Focus when focus is set and Related
+// otherwise, at the bottom of that group. Adding an existing link in the
+// same group changes nothing; in the other group it behaves as SetLinkFocus.
+func AddLink(conn *sql.DB, a Actor, taskID int64, t LinkTarget, focus bool) (Link, error) {
+	if err := validActor(a); err != nil {
+		return Link{}, err
+	}
+	t, err := normalize(t)
+	if err != nil {
+		return Link{}, err
+	}
+	err = inTx(conn, func(tx *sql.Tx) error {
+		if _, err := load(tx, taskID); err != nil {
+			return err
+		}
+		id, primary, err := findLink(tx, taskID, t)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			return insertLink(tx, a, taskID, t, focus, now())
+		case err != nil:
+			return err
+		case primary == focus:
+			return nil
+		default:
+			return moveLinkGroup(tx, a, taskID, id, t, focus)
+		}
+	})
+	if err != nil {
+		return Link{}, err
+	}
+	tk, err := Get(conn, taskID)
+	if err != nil {
+		return Link{}, err
+	}
+	for _, l := range tk.Links {
+		if l.LinkTarget == t {
+			return l, nil
+		}
+	}
+	return Link{}, fmt.Errorf("link %+v vanished after AddLink", t)
+}
+
+// RemoveLink removes taskID's link to t. Removing a Focus link promotes
+// nothing. A link that does not exist is ErrNotFound.
+func RemoveLink(conn *sql.DB, a Actor, taskID int64, t LinkTarget) error {
+	if err := validActor(a); err != nil {
+		return err
+	}
+	t, err := normalize(t)
+	if err != nil {
+		return err
+	}
+	return inTx(conn, func(tx *sql.Tx) error {
+		if _, err := load(tx, taskID); err != nil {
+			return err
+		}
+		id, primary, err := findLink(tx, taskID, t)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: task %d has no such link", ErrNotFound, taskID)
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`DELETE FROM task_links WHERE id = ?`, id); err != nil {
+			return err
+		}
+		_, err = record(tx, a, taskID, now(), EventTaskUnlinked, linkPayload(t, primary))
+		return err
+	})
+}
+
+// SetLinkFocus moves taskID's link to t into the Focus group (focus) or
+// the Related group, landing at the bottom of it. Setting the group it is
+// already in changes nothing. A link that does not exist is ErrNotFound.
+func SetLinkFocus(conn *sql.DB, a Actor, taskID int64, t LinkTarget, focus bool) error {
+	if err := validActor(a); err != nil {
+		return err
+	}
+	t, err := normalize(t)
+	if err != nil {
+		return err
+	}
+	return inTx(conn, func(tx *sql.Tx) error {
+		if _, err := load(tx, taskID); err != nil {
+			return err
+		}
+		id, primary, err := findLink(tx, taskID, t)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: task %d has no such link", ErrNotFound, taskID)
+		}
+		if err != nil {
+			return err
+		}
+		if primary == focus {
+			return nil
+		}
+		return moveLinkGroup(tx, a, taskID, id, t, focus)
+	})
+}
+
+// SetLinkOrder declares the full order of taskID's links: a link's group
+// comes from which list names it, and its position from its index there.
+// Like resources.SetOrder it forgives a stale caller: a link named in
+// neither list keeps its group and goes to that group's end (in its current
+// relative order), and a target that is not linked, or is invalid, is
+// ignored. A target named twice counts once, at its first mention. Reordering
+// records no event.
+func SetLinkOrder(conn *sql.DB, taskID int64, focus, related []LinkTarget) error {
+	return inTx(conn, func(tx *sql.Tx) error {
+		if _, err := load(tx, taskID); err != nil {
+			return err
+		}
+		current, err := loadLinks(tx, &taskID)
+		if err != nil {
+			return err
+		}
+		links := current[taskID]
+		byTarget := make(map[LinkTarget]Link, len(links))
+		for _, l := range links {
+			byTarget[l.LinkTarget] = l
+		}
+		claimed := make(map[LinkTarget]bool, len(links))
+		build := func(requested []LinkTarget) []Link {
+			var group []Link
+			for _, r := range requested {
+				n, err := normalize(r)
+				if err != nil {
+					continue
+				}
+				l, ok := byTarget[n]
+				if !ok || claimed[n] {
+					continue
+				}
+				claimed[n] = true
+				group = append(group, l)
+			}
+			return group
+		}
+		wantFocus, wantRelated := build(focus), build(related)
+		for _, l := range links {
+			if claimed[l.LinkTarget] {
+				continue
+			}
+			if l.Primary {
+				wantFocus = append(wantFocus, l)
+			} else {
+				wantRelated = append(wantRelated, l)
+			}
+		}
+		write := func(group []Link, primary bool) error {
+			for i, l := range group {
+				if _, err := tx.Exec(`UPDATE task_links SET is_primary = ?, sort_order = ? WHERE id = ?`,
+					bit(primary), i+1, l.ID); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+		if err := write(wantFocus, true); err != nil {
+			return err
+		}
+		return write(wantRelated, false)
+	})
+}
