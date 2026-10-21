@@ -294,7 +294,9 @@ export function HomePage() {
   // tabs, the active tab's controls sit at the bar's far end. It rides at
   // the top of whichever tab's pinned header is showing, so it stays in
   // reach as the column scrolls.
-  const rightTabBar = (
+  // A pinned task list rides in the same header, just above the bar, so it
+  // stays in view with it.
+  const rightTabBar = tasks.pinnedAbove(
     <Tabs value={shownRightTab} onChange={(v) => v && setRightTab(v as RightTab)}>
       <Tabs.List>
         <Tabs.Tab value="timeline">Activity{countBadge(tl.events.length, tl.hasMore)}</Tabs.Tab>
@@ -308,7 +310,7 @@ export function HomePage() {
               : tasks.toolbar}
         </Group>
       </Tabs.List>
-    </Tabs>
+    </Tabs>,
   )
 
   const timeline = (top?: React.ReactNode) => (
@@ -489,9 +491,8 @@ export function HomePage() {
           </Stack>
         </Grid.Col>
         <Grid.Col span={6} style={columnStyle} data-tooltip-layer="content">
-          {/* Pinned, the task list heads the column and scrolls away with
-              it; the tab bar's own pinned header then sticks as before. */}
-          {tasks.pinnedPanel && <Box mb="sm">{tasks.pinnedPanel}</Box>}
+          {/* A pinned task list is part of rightTabBar, so it pins with the
+              header of whichever tab is showing. */}
           {shownRightTab === "timeline" && timeline(rightTabBar)}
           {shownRightTab === "resources" && (
             <ResourcesPanel view={resourcesView} headerStyle={headerStyle} top={rightTabBar} searchSummary={resourcesSummary} />

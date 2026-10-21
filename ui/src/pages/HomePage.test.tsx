@@ -761,6 +761,23 @@ describe("HomePage tasks", () => {
     expect(screen.getByRole("tab", { name: /Tasks/ })).toBeInTheDocument()
   })
 
+  it("wide + pinned: the panel rides inside the pinned header above the tab bar, on every tab", async () => {
+    setViewport("wide")
+    pin()
+    wrap()
+    const inPinnedHeader = (selector: string) => {
+      const header = document.querySelector(selector) as HTMLElement
+      const panel = document.querySelector(".task-panel") as HTMLElement
+      expect(header.style.position).toBe("sticky")
+      expect(header).toHaveAttribute("data-tooltip-layer", "pinned")
+      expect(header).toContainElement(panel)
+      expect(panel.compareDocumentPosition(within(header).getByRole("tablist")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    }
+    inPinnedHeader("[data-activity-header]")
+    await userEvent.click(screen.getByRole("tab", { name: "Resources" }))
+    inPinnedHeader("[data-testid=resources-header]")
+  })
+
   it("pinning while on the Tasks tab falls back to Activity", async () => {
     setViewport("wide")
     wrap()

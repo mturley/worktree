@@ -31,6 +31,11 @@ export function tasksFallbackTab<T extends string>(tab: T, pinned: boolean, fall
  * Tasks is active, and a pin landing while it is calls `onFallback` (the
  * page then goes back to its first tab). Render with tasksFallbackTab too,
  * so the frame before that state change shows no empty panel.
+ *
+ * Where the page pins a header (sticky, data-tooltip-layer="pinned"), render
+ * `pinnedAbove(tabBar)` inside it rather than `pinnedPanel` above it: the
+ * panel then stays in view with the tab bar instead of scrolling away, and
+ * its tooltips share the header's layer. Its row cap keeps the header bounded.
  */
 export function useTasksPlacement(
   scope: TaskScope,
@@ -42,6 +47,7 @@ export function useTasksPlacement(
   tabPanelBody: ReactNode
   pinnedPanel: ReactNode
   toolbar: ReactNode
+  pinnedAbove: (bar: ReactNode) => ReactNode
 } {
   const [prefs, setPrefs] = useTaskListPrefs()
   const { pinned } = prefs
@@ -88,5 +94,12 @@ export function useTasksPlacement(
     tabPanelBody: <TaskList scope={scope} ownResource={ownResource} />,
     pinnedPanel,
     toolbar,
+    pinnedAbove: (bar) =>
+      pinnedPanel ? (
+        <Stack gap="sm">
+          {pinnedPanel}
+          {bar}
+        </Stack>
+      ) : bar,
   }
 }
