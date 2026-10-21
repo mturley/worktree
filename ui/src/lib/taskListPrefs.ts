@@ -1,0 +1,69 @@
+import type { Priority } from "../api/types"
+import type { TaskListPrefs, TaskSort } from "./taskSections"
+
+/**
+ * The task lists' view choices, remembered per browser: sort, priority
+ * filter, show completed, include archived, and whether the list is pinned.
+ *
+ * ONE value for every task list on every page (pinning is a single global
+ * preference), so one JSON key. localStorage, like unreadOnlyPref.ts: a new
+ * tab should keep it.
+ */
+export const TASK_LIST_KEY = "worktree.taskList"
+
+export type StoredTaskListPrefs = TaskListPrefs & { pinned: boolean }
+
+export const DEFAULT_TASK_LIST_PREFS: StoredTaskListPrefs = {
+  sort: "custom",
+  priority: "all",
+  showCompleted: false,
+  includeArchived: false,
+  pinned: false,
+}
+
+const SORTS: readonly TaskSort[] = ["custom", "priority", "due", "updated"]
+const PRIORITIES: readonly (Priority | "all")[] = ["all", "high", "medium", "low", "none"]
+
+/** Stored values over the defaults, each field checked on its own: a bad one falls back alone. */
+export function parseTaskListPrefs(raw: string | null): StoredTaskListPrefs {
+  const out = { ...DEFAULT_TASK_LIST_PREFS }
+  if (!raw) return out
+  let v: unknown
+  try {
+    v = JSON.parse(raw)
+  } catch {
+    return out
+  }
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return out
+  const o = v as Record<string, unknown>
+  if (SORTS.includes(o.sort as TaskSort)) out.sort = o.sort as TaskSort
+  if (PRIORITIES.includes(o.priority as Priority | "all")) out.priority = o.priority as Priority | "all"
+  if (typeof o.showCompleted === "boolean") out.showCompleted = o.showCompleted
+  if (typeof o.includeArchived === "boolean") out.includeArchived = o.includeArchived
+  if (typeof o.pinned === "boolean") out.pinned = o.pinned
+  return out
+}
+
+/** The raw stored string, or undefined when storage is blocked (private windows throw). */
+export function readTaskListPrefsRaw(): string | null | undefined {
+  try {
+    return window.localStorage.getItem(TASK_LIST_KEY)
+  } catch {
+    return undefined
+  }
+}
+
+/** The saved prefs, or the defaults when nothing usable is saved or storage is blocked. */
+export function readTaskListPrefs(): StoredTaskListPrefs {
+  return parseTaskListPrefs(readTaskListPrefsRaw() ?? null)
+}
+
+/** Whether the prefs were saved; false when storage is blocked. */
+export function writeTaskListPrefs(p: StoredTaskListPrefs): boolean {
+  try {
+    window.localStorage.setItem(TASK_LIST_KEY, JSON.stringify(p))
+    return true
+  } catch {
+    return false
+  }
+}
