@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest"
-import { render, cleanup, screen, within } from "@testing-library/react"
+import { render, cleanup, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import type { ResourceDTO } from "../api/types"
+import type { ResourceDTO, Task } from "../api/types"
+import { TASK_LIST_KEY } from "../lib/taskListPrefs"
 
 const resolveResource = vi.fn()
 vi.mock("../api/client", async (orig) => {
@@ -15,6 +16,7 @@ vi.mock("../api/client", async (orig) => {
 })
 
 import { LinkPane } from "./LinkPane"
+import { api } from "../api/client"
 
 const link = (overrides: Partial<ResourceDTO> = {}): ResourceDTO => ({
   type: "link", id: "https://ex.com/a", url: "https://ex.com/a", primary: true,
@@ -98,5 +100,54 @@ describe("LinkPane", () => {
   it("shows an error alert when resolve_error is set", () => {
     wrap(<LinkPane resource={link({ resolve_error: "timeout" })} path="/wt" />)
     expect(screen.getByText("Couldn't load page details")).toBeInTheDocument()
+  })
+})
+
+describe("LinkPane tasks", () => {
+  const task: Task = {
+    id: 7, ref: "T7", title: "Read the page", description: "", state: "not_started", priority: "none", starred: false,
+    rank: "r1", created_at: "", updated_at: "", archived: false, links: [], implicit_worktrees: [],
+    subtasks_total: 0, subtasks_done: 0,
+  }
+  beforeEach(() => {
+    window.history.replaceState({}, "", "/worktree/wt")
+    window.localStorage.clear()
+    vi.spyOn(api, "tasks").mockResolvedValue([task])
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  it("has Details · Tasks tabs, with today's content under Details", async () => {
+    wrap(<LinkPane resource={link({ embeddable: false })} path="/wt" />)
+    const tabs = within(screen.getByRole("tablist")).getAllByRole("tab")
+    expect(tabs.map((t) => t.textContent?.replace(/\d+$/, ""))).toEqual(["Details", "Tasks"])
+    expect(tabs[0]).toHaveAttribute("aria-selected", "true")
+    expect((await within(tabs[1]!).findByText("1")).closest(".task-count-badge")).not.toBeNull()
+    const details = screen.getByRole("tabpanel")
+    expect(within(details).getByText("Can't embed page")).toBeInTheDocument()
+    expect(within(details).getByRole("button", { name: "Refresh page details" })).toBeInTheDocument()
+
+    await userEvent.click(tabs[1]!)
+    expect(await screen.findByText("Read the page")).toBeInTheDocument()
+    expect(within(screen.getByRole("tablist")).getByRole("button", { name: "Pin task list" })).toBeInTheDocument()
+    expect(api.tasks).toHaveBeenCalledWith({ kind: "resource", type: "link", id: "https://ex.com/a" }, expect.anything())
+  })
+
+  it("pinned: the list sits between the card and the tab bar, and Tasks is not a tab", async () => {
+    window.localStorage.setItem(TASK_LIST_KEY, JSON.stringify({ pinned: true }))
+    wrap(<LinkPane resource={link({ embeddable: false })} path="/wt" />)
+    const panel = document.querySelector(".task-panel") as HTMLElement
+    expect(await within(panel).findByText("Read the page")).toBeInTheDocument()
+    const bar = screen.getByRole("tablist")
+    expect(within(bar).queryByRole("tab", { name: /Tasks/ })).toBeNull()
+    expect(panel.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const title = screen.getAllByText("Example page")[0]!
+    expect(title.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("pinning while on Tasks falls back to Details", async () => {
+    wrap(<LinkPane resource={link({ embeddable: false })} path="/wt" />)
+    await userEvent.click(screen.getByRole("tab", { name: /Tasks/ }))
+    await userEvent.click(screen.getByRole("button", { name: "Pin task list" }))
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Details" })).toHaveAttribute("aria-selected", "true"))
   })
 })

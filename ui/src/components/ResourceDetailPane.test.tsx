@@ -3,7 +3,8 @@ import { render, cleanup, screen, act, waitFor, within } from "@testing-library/
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import type { ResourceDTO, TimelineEvent } from "../api/types"
+import type { ResourceDTO, Task, TimelineEvent } from "../api/types"
+import { TASK_LIST_KEY } from "../lib/taskListPrefs"
 import { api as realApi } from "../api/client"
 
 const useWorktreeTimeline = vi.fn()
@@ -362,5 +363,54 @@ describe("the selected resource's feed", () => {
     await screen.findByText("a comment")
     // The title appears once — on the resource card, not again on the row.
     expect(screen.getAllByText("Investigate flux")).toHaveLength(1)
+  })
+})
+
+describe("ResourceDetailPane tasks", () => {
+  const task: Task = {
+    id: 3, ref: "T3", title: "Chase the reviewer", description: "", state: "not_started", priority: "none", starred: false,
+    rank: "r1", created_at: "", updated_at: "", archived: false, links: [], implicit_worktrees: [],
+    subtasks_total: 0, subtasks_done: 0,
+  }
+  beforeEach(() => {
+    window.localStorage.clear()
+    vi.spyOn(realApi, "tasks").mockResolvedValue([task])
+    vi.spyOn(realApi, "linkedResources").mockResolvedValue({ fetched_at: "", count: 0, sections: [] })
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  it("Activity · Linked Resources · Tasks, Tasks last with a count, scoped to the resource", async () => {
+    wrap(<ResourceDetailPane path="/wt/foo" resource={jira} />)
+    const tabs = within(screen.getByRole("tablist")).getAllByRole("tab")
+    expect(tabs.map((t) => t.textContent?.replace(/\d+$/, "").replace(/ \(\d+\)$/, ""))).toEqual(["Activity", "Linked Resources", "Tasks"])
+    expect((await within(tabs[2]!).findByText("1")).closest(".task-count-badge")).not.toBeNull()
+    expect(realApi.tasks).toHaveBeenCalledWith({ kind: "resource", type: "jira", id: "J-1" }, expect.anything())
+
+    await userEvent.click(tabs[2]!)
+    expect(window.location.search).toContain("tab=tasks")
+    expect(await screen.findByText("Chase the reviewer")).toBeInTheDocument()
+    expect(within(screen.getByRole("tablist")).getByRole("button", { name: "Pin task list" })).toBeInTheDocument()
+  })
+
+  it("pinned: the list sits in the sticky block between the card and the tab bar", async () => {
+    window.localStorage.setItem(TASK_LIST_KEY, JSON.stringify({ pinned: true }))
+    wrap(<ResourceDetailPane path="/wt/foo" resource={jira} stickyTop={60} />)
+    const panel = document.querySelector(".task-panel") as HTMLElement
+    expect(await within(panel).findByText("Chase the reviewer")).toBeInTheDocument()
+    const bar = screen.getByRole("tablist")
+    expect(within(bar).queryByRole("tab", { name: /Tasks/ })).toBeNull()
+    expect(panel.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const title = screen.getByText("Investigate flux")
+    expect(title.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const sticky = bar.parentElement!.closest<HTMLElement>("[data-tooltip-layer=pinned]")!
+    expect(sticky.style.position).toBe("sticky")
+    expect(sticky).toContainElement(panel)
+  })
+
+  it("pinning while on Tasks falls back to Activity", async () => {
+    wrap(<ResourceDetailPane path="/wt/foo" resource={jira} />)
+    await userEvent.click(screen.getByRole("tab", { name: /Tasks/ }))
+    await userEvent.click(screen.getByRole("button", { name: "Pin task list" }))
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true"))
   })
 })

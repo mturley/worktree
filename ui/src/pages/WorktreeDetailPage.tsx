@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
 import { Anchor, Badge, Box, Grid, Group, MantineThemeProvider, Stack, Tabs, Title } from "@mantine/core"
 import { Link, useLocation, useRoute } from "wouter"
 import { useQueryClient } from "@tanstack/react-query"
@@ -58,12 +58,16 @@ import { useSearchQuery } from "../hooks/useSearchQuery"
 import { matchResource } from "../lib/search"
 import { CrossHoverProvider } from "../components/CrossHoverContext"
 import { DiffViewBoundary, installPreloadReload } from "../components/gitdiff/DiffViewBoundary"
+import { tasksFallbackTab, useTasksPlacement } from "../components/tasks/TasksSection"
 
 // The diff drill-down, and with it @pierre/diffs, is its own chunk: fetched
 // the first time someone opens a diff, never on a plain page load.
 const DiffView = lazy(() => import("../components/gitdiff/DiffView"))
 // A chunk missing after an upgrade reloads the page (once) instead of failing.
 installPreloadReload()
+
+type RightTab = "activity" | "tasks"
+type NarrowTab = "resources" | RightTab
 
 export function WorktreeDetailPage() {
   const [, params] = useRoute("/worktree/:path*")
@@ -234,8 +238,21 @@ export function WorktreeDetailPage() {
   // height; Environment, Code and cmux, which want the width, under the
   // header. Narrow has no side column, so the card is always under the header.
   const inColumn = wide && detailTab.tab === "notes"
-  // Narrow only: which of Resources / Activity is showing.
-  const [narrowTab, setNarrowTab] = useState("resources")
+  // Narrow only: which of Resources / Activity / Tasks is showing.
+  const [narrowTab, setNarrowTab] = useState<NarrowTab>("resources")
+  // Wide, nothing selected: which of Activity / Tasks fills the right column.
+  const [rightTab, setRightTab] = useState<RightTab>("activity")
+  // The worktree's tasks: a Tasks tab, or the list pinned above the tab bar.
+  // Pinning while on Tasks goes back to the first tab. A selected resource's
+  // pane places its own list (see ResourceDetailPane).
+  const toFirstTab = useCallback(() => (wide ? setRightTab("activity") : setNarrowTab("resources")), [wide])
+  const taskScope = useMemo(() => ({ kind: "worktree" as const, path }), [path])
+  const tasks = useTasksPlacement(taskScope, undefined, {
+    activeTab: wide ? rightTab : narrowTab,
+    onFallback: toFirstTab,
+  })
+  const shownRightTab = tasksFallbackTab(rightTab, tasks.pinned, "activity")
+  const shownNarrowTab = tasksFallbackTab(narrowTab, tasks.pinned, "resources")
 
   // The sticky resource list has to start below the header, and the header's
   // height is not a constant: the worktree and cmux workspace names wrap, and
@@ -340,34 +357,60 @@ export function WorktreeDetailPage() {
     />
   )
 
-  const unfiltered = (
+  // The Activity tab's own controls: refresh, the watcher log and mark all
+  // read. Wide, at the tab bar's far end; narrow, heading the feed.
+  const activityControls = (
+    <Group gap={6} wrap="nowrap" align="center" data-testid="activity-controls">
+      <RefreshWatchersButton />
+      {/* Only over the whole feed: it marks every unread event, so
+          beside a narrowed feed it would clear what is not shown. */}
+      {!narrowing.search && !narrowing.filters && (
+        <MarkAllReadButton
+          resources={items}
+          feed={{ worktree: path, resolveResource, path }}
+        />
+      )}
+    </Group>
+  )
+
+  // Pinned under the page header while the column scrolls beneath — with
+  // room to spare only, like the cards. Opaque room below, so the content
+  // passing under it does not run right up against the buttons.
+  const headerStyle = pinCards
+    ? { ...pinnedStyle(headerHeight, "var(--mantine-spacing-md)"), paddingBottom: "var(--mantine-spacing-xs)" }
+    : undefined
+
+  // Wide, nothing selected: the right column's tab bar, with the active
+  // tab's controls at its far end, as on the home page. It heads whichever
+  // tab's pinned header is showing, and a pinned task list rides in the same
+  // header just above it.
+  const rightTabBar = tasks.pinnedAbove(
+    <Tabs value={shownRightTab} onChange={(v) => v && setRightTab(v as RightTab)}>
+      <Tabs.List>
+        <Tabs.Tab value="activity">Activity</Tabs.Tab>
+        {tasks.tab}
+        <Group ml="auto" align="center" gap="md" wrap="nowrap" pb={4}>
+          {shownRightTab === "activity" ? activityControls : tasks.toolbar}
+        </Group>
+      </Tabs.List>
+    </Tabs>,
+  )
+
+  const unfiltered = (top?: ReactNode) => (
     // No gap below the header when pinned: its own padding is that space.
     <Stack gap={pinCards ? 0 : "sm"}>
       {/* Pinned under the page header, with the filters, while the feed
-          scrolls beneath — with room to spare only, like the cards. */}
+          scrolls beneath. */}
       <Stack
         gap="sm"
         data-activity-header
         data-tooltip-layer={pinCards ? "pinned" : undefined}
-        // Opaque room below the filters, so the feed passing under them
-        // does not run right up against the buttons.
-        style={pinCards
-          ? { ...pinnedStyle(headerHeight, "var(--mantine-spacing-md)"), paddingBottom: "var(--mantine-spacing-xs)" }
-          : undefined}
+        style={headerStyle}
       >
-        <Group justify="space-between" wrap="wrap" gap="xs">
-          <Group gap={6} wrap="nowrap" align="center">
-            <Title order={5}>Activity</Title>
-            <RefreshWatchersButton />
-            {/* Only over the whole feed: it marks every unread event, so
-                beside a narrowed feed it would clear what is not shown. */}
-            {!narrowing.search && !narrowing.filters && (
-              <MarkAllReadButton
-                resources={items}
-                feed={{ worktree: path, resolveResource, path }}
-              />
-            )}
-          </Group>
+        {/* Wide, the tab bar, which carries the controls; narrow, where the
+            page's tab bar is above, the controls alone. */}
+        {top ?? activityControls}
+        <Group justify={wide ? "flex-end" : "flex-start"}>
           <SourceFilter value={sources} onChange={setSources} />
         </Group>
         {/* Right-aligned under the source toggles when they sit at the right
@@ -467,15 +510,28 @@ export function WorktreeDetailPage() {
     // resources, so they are tabs instead, as on the home page. The tab is
     // page state rather than the Tabs' own, so backing out of a drill-down
     // lands on the tab you left.
+    // Pinned, the task list sits above the tabs, as on the home page.
     overview = detail || (
-      <Tabs value={narrowTab} onChange={(v) => setNarrowTab(v ?? "resources")}>
-        <Tabs.List>
-          <Tabs.Tab value="resources">Resources</Tabs.Tab>
-          <Tabs.Tab value="activity">Activity</Tabs.Tab>
-        </Tabs.List>
-        <Tabs.Panel value="resources" pt="md">{list}</Tabs.Panel>
-        <Tabs.Panel value="activity" pt="md">{unfiltered}</Tabs.Panel>
-      </Tabs>
+      <Stack gap="sm">
+        {tasks.pinnedPanel}
+        <Tabs value={shownNarrowTab} onChange={(v) => setNarrowTab((v as NarrowTab | null) ?? "resources")}>
+          <Tabs.List>
+            <Tabs.Tab value="resources">Resources</Tabs.Tab>
+            <Tabs.Tab value="activity">Activity</Tabs.Tab>
+            {tasks.tab}
+          </Tabs.List>
+          <Tabs.Panel value="resources" pt="md">{list}</Tabs.Panel>
+          <Tabs.Panel value="activity" pt="md">{unfiltered()}</Tabs.Panel>
+          {!tasks.pinned && (
+            <Tabs.Panel value="tasks" pt="md">
+              <Stack gap="sm">
+                {tasks.toolbar}
+                {tasks.tabPanelBody}
+              </Stack>
+            </Tabs.Panel>
+          )}
+        </Tabs>
+      </Stack>
     )
   } else {
     const split = selectedResource ? [4, 8] : [6, 6]
@@ -539,7 +595,21 @@ export function WorktreeDetailPage() {
         </Grid.Col>
         {/* No scroller: this column's content is what the PAGE scrolls.
             Its tooltips open under the pinned blocks; see useTooltipLayer. */}
-        <Grid.Col span={split[1]} data-tooltip-layer="content">{detail || unfiltered}</Grid.Col>
+        <Grid.Col span={split[1]} data-tooltip-layer="content">
+          {detail || (shownRightTab === "activity" ? unfiltered(rightTabBar) : (
+            // As the Activity header: the tab bar pinned atop the column.
+            <Stack gap={pinCards ? 0 : "sm"}>
+              <Box
+                style={headerStyle}
+                data-tasks-header
+                data-tooltip-layer={pinCards ? "pinned" : undefined}
+              >
+                {rightTabBar}
+              </Box>
+              {tasks.tabPanelBody}
+            </Stack>
+          ))}
+        </Grid.Col>
       </Grid>
     )
   }

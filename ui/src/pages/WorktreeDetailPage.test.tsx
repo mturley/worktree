@@ -3,8 +3,9 @@ import { act, fireEvent, render, cleanup, screen, waitFor, within } from "@testi
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import type { ResourceDTO } from "../api/types"
+import type { ResourceDTO, Task } from "../api/types"
 import { api } from "../api/client"
+import { TASK_LIST_KEY } from "../lib/taskListPrefs"
 
 const baseResources: ResourceDTO[] = [
   { type: "pr", id: "o/r#1", url: "https://gh/pr/1", primary: true, title: "Fix the widget", state: "OPEN" } as ResourceDTO,
@@ -278,15 +279,15 @@ describe("WorktreeDetailPage pinned cards", () => {
   it("pins the worktree's activity header, with its filters, only when wide and tall", async () => {
     setViewport("wide")
     wrap()
-    await screen.findByRole("heading", { name: "Activity" })
+    await screen.findByRole("tab", { name: "Activity" })
     const header = document.querySelector<HTMLElement>("[data-activity-header]")!
     expect(header.style.position).toBe("sticky")
-    expect(header).toContainElement(screen.getByRole("heading", { name: "Activity" }))
+    expect(header).toContainElement(screen.getByRole("tab", { name: "Activity" }))
     cleanup()
 
     setViewport("wide", { tall: false })
     wrap()
-    await screen.findByRole("heading", { name: "Activity" })
+    await screen.findByRole("tab", { name: "Activity" })
     expect(document.querySelector<HTMLElement>("[data-activity-header]")!.style.position).toBe("")
   })
 
@@ -548,7 +549,7 @@ describe("WorktreeDetailPage wide layout", () => {
     setViewport("wide")
     wrap()
     const card = await screen.findByRole("button", { name: /select resource o\/r#1/i })
-    const heading = screen.getByRole("heading", { name: "Activity" })
+    const heading = screen.getByRole("tab", { name: "Activity" })
     const listCol = card.closest<HTMLElement>(".mantine-Grid-col")
     const feedCol = heading.closest<HTMLElement>(".mantine-Grid-col")
     expect(listCol).toBeTruthy()
@@ -576,12 +577,14 @@ describe("WorktreeDetailPage wide layout", () => {
     expect(colBasis(listCol)).toMatch(/^33\.33/)
   })
 
-  it("shows no Resources/Activity tab bar", async () => {
+  it("shows no Resources tab: the feed column's own tab bar is Activity · Tasks", async () => {
     setViewport("wide")
     wrap()
     await screen.findByRole("button", { name: /select resource o\/r#1/i })
     expect(screen.queryByRole("tab", { name: "Resources" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("tab", { name: "Activity" })).not.toBeInTheDocument()
+    const bar = within(document.querySelector<HTMLElement>("[data-activity-header]")!).getByRole("tablist")
+    const tabs = within(bar).getAllByRole("tab")
+    expect(tabs.map((t) => t.textContent?.replace(/\d+$/, ""))).toEqual(["Activity", "Tasks"])
   })
 })
 
@@ -597,7 +600,8 @@ describe("WorktreeDetailPage narrow layout", () => {
     expect(screen.getByRole("button", { name: /select resource o\/r#1/i })).toBeVisible()
 
     await user.click(screen.getByRole("tab", { name: "Activity" }))
-    expect(screen.getByRole("heading", { name: "Activity" })).toBeVisible()
+    // The tab names the feed; its header carries the feed's controls.
+    expect(screen.getByTestId("activity-controls")).toBeVisible()
     expect(screen.getByRole("button", { name: /jira/i })).toBeInTheDocument()
   })
 
@@ -1302,5 +1306,97 @@ describe("WorktreeDetailPage Esc back to Notes", () => {
     setViewport("wide")
     wrap()
     expect((await screen.findByRole("tab", { name: "Notes" })).querySelector("kbd")).toBeNull()
+  })
+})
+
+describe("WorktreeDetailPage tasks", () => {
+  const task: Task = {
+    id: 5, ref: "T5", title: "Tidy the branch", description: "", state: "not_started", priority: "none", starred: false,
+    rank: "r1", created_at: "", updated_at: "", archived: false, links: [], implicit_worktrees: [],
+    subtasks_total: 0, subtasks_done: 0,
+  }
+  const pin = () => window.localStorage.setItem(TASK_LIST_KEY, JSON.stringify({ pinned: true }))
+  const activityHeader = () => document.querySelector<HTMLElement>("[data-activity-header]")!
+  beforeEach(() => {
+    vi.spyOn(api, "tasks").mockResolvedValue([task])
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  it("wide: Activity · Tasks, with the activity controls at the bar's end; Tasks shows the worktree's list", async () => {
+    setViewport("wide")
+    wrap()
+    const bar = within(activityHeader()).getByRole("tablist")
+    const tabs = within(bar).getAllByRole("tab")
+    expect(tabs.map((t) => t.textContent?.replace(/\d+$/, ""))).toEqual(["Activity", "Tasks"])
+    expect(within(bar).getByTestId("activity-controls")).toBeInTheDocument()
+    expect(within(bar).getByRole("button", { name: "Refresh watchers" })).toBeInTheDocument()
+    expect((await within(tabs[1]!).findByText("1")).closest(".task-count-badge")).not.toBeNull()
+    expect(api.tasks).toHaveBeenCalledWith({ kind: "worktree", path: "/wt/foo" }, expect.anything())
+
+    await userEvent.click(tabs[1]!)
+    expect(await screen.findByText("Tidy the branch")).toBeInTheDocument()
+    const header = document.querySelector<HTMLElement>("[data-tasks-header]")!
+    expect(header.style.position).toBe("sticky")
+    const tasksBar = within(header).getByRole("tablist")
+    expect(within(tasksBar).getByRole("button", { name: "Pin task list" })).toBeInTheDocument()
+    expect(within(tasksBar).queryByTestId("activity-controls")).toBeNull()
+  })
+
+  it("wide + pinned: the panel rides in the pinned activity header, above the tab bar", async () => {
+    setViewport("wide")
+    pin()
+    wrap()
+    const header = activityHeader()
+    const panel = document.querySelector(".task-panel") as HTMLElement
+    expect(await within(panel).findByText("Tidy the branch")).toBeInTheDocument()
+    expect(header.style.position).toBe("sticky")
+    expect(header).toHaveAttribute("data-tooltip-layer", "pinned")
+    expect(header).toContainElement(panel)
+    const bar = within(header).getByRole("tablist")
+    expect(panel.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(within(bar).queryByRole("tab", { name: /Tasks/ })).toBeNull()
+  })
+
+  it("wide: pinning while on Tasks falls back to Activity", async () => {
+    setViewport("wide")
+    wrap()
+    await userEvent.click(within(within(activityHeader()).getByRole("tablist")).getByRole("tab", { name: /Tasks/ }))
+    await userEvent.click(screen.getByRole("button", { name: "Pin task list" }))
+    expect(within(activityHeader()).getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true")
+  })
+
+  it("narrow: Resources · Activity · Tasks", async () => {
+    setViewport("narrow")
+    wrap()
+    const resourcesTab = await screen.findByRole("tab", { name: "Resources" })
+    const bar = resourcesTab.closest<HTMLElement>("[role=tablist]")!
+    const tabs = within(bar).getAllByRole("tab")
+    expect(tabs.map((t) => t.textContent?.replace(/\d+$/, ""))).toEqual(["Resources", "Activity", "Tasks"])
+    await userEvent.click(tabs[2]!)
+    expect(await screen.findByText("Tidy the branch")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Pin task list" })).toBeInTheDocument()
+    // Pinned while on Tasks: back to the first tab.
+    await userEvent.click(screen.getByRole("button", { name: "Pin task list" }))
+    expect(screen.getByRole("tab", { name: "Resources" })).toHaveAttribute("aria-selected", "true")
+  })
+
+  it("narrow + pinned: the panel sits above the tabs, which have no Tasks tab", async () => {
+    setViewport("narrow")
+    pin()
+    wrap()
+    const panel = document.querySelector(".task-panel") as HTMLElement
+    expect(await within(panel).findByText("Tidy the branch")).toBeInTheDocument()
+    const bar = screen.getByRole("tab", { name: "Resources" }).closest<HTMLElement>("[role=tablist]")!
+    expect(panel.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(within(bar).queryByRole("tab", { name: /Tasks/ })).toBeNull()
+  })
+
+  it("a selected resource's pane shows that resource's tasks, not the worktree's tab bar", async () => {
+    window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?resource=pr:o%2Fr%231`)
+    setViewport("wide")
+    wrap()
+    await screen.findByRole("tab", { name: /Linked Resources/ })
+    expect(document.querySelector("[data-activity-header]")).toBeNull()
+    await waitFor(() => expect(api.tasks).toHaveBeenCalledWith({ kind: "resource", type: "pr", id: "o/r#1" }, expect.anything()))
   })
 })

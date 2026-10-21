@@ -23,9 +23,10 @@ import { useResourceTab } from "../hooks/useSelectedResource"
 import { UnreadMarkerDot } from "./UnreadMarkerDot"
 import { pinnedStyle } from "../lib/stickyList"
 import { LinkedResourcesPanel, LinkedTabControls, linkedTabLabel } from "./linked/LinkedResourcesPanel"
+import { TASKS_TAB, useResourceTasksPlacement } from "./tasks/TasksSection"
 
 /** The PR/Jira pane's tabs, default first (see useResourceTab). */
-const DETAIL_TABS = ["activity", "linked"] as const
+const DETAIL_TABS = ["activity", "linked", TASKS_TAB] as const
 
 interface ResourceDetailPaneProps {
   path: string
@@ -78,7 +79,9 @@ function TimelineBody({
   const search = useSearchQuery()
   const { debouncedQ } = search
   const timeline = useWorktreeTimeline(path, { type: resource.type, id: resource.id }, [], false, [], debouncedQ)
-  const [tab, setTab] = useResourceTab(DETAIL_TABS)
+  const [urlTab, setTab] = useResourceTab(DETAIL_TABS)
+  // A Tasks tab, or the list pinned between the card and the tab bar.
+  const { tasks, shownTab: tab } = useResourceTasksPlacement(resource, urlTab, setTab, "activity")
   // Link titles are only fetched once the Linked tab has been shown — by a
   // click, or by arriving on it through the URL (back/forward, a refresh).
   const [linkedOpened, setLinkedOpened] = useState(tab === "linked")
@@ -120,6 +123,9 @@ function TimelineBody({
           variant="detail"
           notify={notify}
         />
+        {/* Pinned, the task list rides in this sticky block, between the
+            card and the tab bar, so it stays in view with them. */}
+        {tasks.pinnedPanel && <Box mt="sm">{tasks.pinnedPanel}</Box>}
         <Tabs.List mt="sm">
           <Tabs.Tab
             value="activity"
@@ -133,6 +139,7 @@ function TimelineBody({
           <Tabs.Tab value="linked">
             {linkedTabLabel(linked.data, linked.data && filterLinkedSections(linked.data.sections, search.terms).count)}
           </Tabs.Tab>
+          {tasks.tab}
           {/*
             The active tab's freshness and refresh, at the far end of the tab
             bar. For Activity this is where the source filter sits on the
@@ -159,8 +166,10 @@ function TimelineBody({
                   />
                 )}
               </>
-            ) : (
+            ) : tab === "linked" ? (
               <LinkedTabControls query={linked} />
+            ) : (
+              tasks.toolbar
             )}
           </Group>
         </Tabs.List>
@@ -213,6 +222,11 @@ function TimelineBody({
       <Tabs.Panel value="linked" pt="sm">
         <LinkedResourcesPanel query={linked} path={path} />
       </Tabs.Panel>
+      {!tasks.pinned && (
+        <Tabs.Panel value={TASKS_TAB} pt="sm">
+          {tasks.tabPanelBody}
+        </Tabs.Panel>
+      )}
     </Tabs>
   )
 }

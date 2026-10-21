@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, type ReactNode } from "react"
 import { Box, Group, Stack, Tabs, Text } from "@mantine/core"
 import { useTasks, type TaskScope } from "../../hooks/useTasks"
 import { useTaskListPrefs } from "../../hooks/useTaskListPrefs"
@@ -102,4 +102,25 @@ export function useTasksPlacement(
         </Stack>
       ) : bar,
   }
+}
+
+/**
+ * useTasksPlacement for a selected resource's pane, whose tab lives in the
+ * URL (useResourceTab): the resource's own list, with its link chip
+ * suppressed, falling back to `firstTab` when the pin lands on Tasks. The
+ * fallback replaces the history entry: the user chose the pin, not the tab.
+ * Returns the tab to render too (see tasksFallbackTab).
+ */
+export function useResourceTasksPlacement(
+  resource: { type: string; id: string },
+  tab: string,
+  setTab: (tab: string, opts?: { replace?: boolean }) => void,
+  firstTab: string,
+) {
+  const { type, id } = resource
+  const toFirst = useCallback(() => setTab(firstTab, { replace: true }), [setTab, firstTab])
+  const scope = useMemo(() => ({ kind: "resource" as const, type, id }), [type, id])
+  const own = useMemo(() => ({ type, id }), [type, id])
+  const tasks = useTasksPlacement(scope, own, { activeTab: tab, onFallback: toFirst })
+  return { tasks, shownTab: tasksFallbackTab(tab, tasks.pinned, firstTab) }
 }

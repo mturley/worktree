@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest"
-import { render, cleanup, screen } from "@testing-library/react"
+import { render, cleanup, screen, waitFor, within } from "@testing-library/react"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import userEvent from "@testing-library/user-event"
-import type { ResourceDTO } from "../api/types"
+import type { ResourceDTO, Task } from "../api/types"
+import { TASK_LIST_KEY } from "../lib/taskListPrefs"
 import { api } from "../api/client"
 
 if (typeof (globalThis as { EventSource?: unknown }).EventSource !== "function") {
@@ -134,5 +135,48 @@ describe("ResourceDetailPane slack remove control", () => {
     useWorktreeTimeline.mockReturnValue({ events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false })
     wrap(<ResourceDetailPane path="/wt/foo" resource={slack} onRemoved={vi.fn()} />)
     expect(screen.getByRole("button", { name: "Unfollow resource" })).toBeInTheDocument()
+  })
+})
+
+describe("ResourceDetailPane slack tasks", () => {
+  const task: Task = {
+    id: 4, ref: "T4", title: "Answer the thread", description: "", state: "not_started", priority: "none", starred: false,
+    rank: "r1", created_at: "", updated_at: "", archived: false, links: [], implicit_worktrees: [],
+    subtasks_total: 0, subtasks_done: 0,
+  }
+  beforeEach(() => {
+    window.localStorage.clear()
+    vi.spyOn(api, "tasks").mockResolvedValue([task])
+    vi.spyOn(api, "linkedResources").mockResolvedValue({ fetched_at: "", count: 0, sections: [] })
+  })
+
+  it("Thread · Linked Resources · Tasks, Tasks last with a count", async () => {
+    wrap(<ResourceDetailPane path="/wt/foo" resource={slack} />)
+    const tabs = within(screen.getByRole("tablist")).getAllByRole("tab")
+    expect(tabs.map((t) => t.textContent?.replace(/\d+$/, "").replace(/ \(\d+\)$/, ""))).toEqual(["Thread", "Linked Resources", "Tasks"])
+    expect((await within(tabs[2]!).findByText("1")).closest(".task-count-badge")).not.toBeNull()
+    expect(api.tasks).toHaveBeenCalledWith({ kind: "resource", type: "slack", id: slack.id }, expect.anything())
+    await userEvent.click(tabs[2]!)
+    expect(await screen.findByText("Answer the thread")).toBeInTheDocument()
+    expect(within(screen.getByRole("tablist")).getByRole("button", { name: "Pin task list" })).toBeInTheDocument()
+  })
+
+  it("pinned: the list sits between the card and the tab bar", async () => {
+    window.localStorage.setItem(TASK_LIST_KEY, JSON.stringify({ pinned: true }))
+    wrap(<ResourceDetailPane path="/wt/foo" resource={slack} />)
+    const panel = document.querySelector(".task-panel") as HTMLElement
+    expect(await within(panel).findByText("Answer the thread")).toBeInTheDocument()
+    const bar = screen.getByRole("tablist")
+    expect(within(bar).queryByRole("tab", { name: /Tasks/ })).toBeNull()
+    expect(panel.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const title = screen.getAllByText("Deploy thread")[0]!
+    expect(title.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("pinning while on Tasks falls back to Thread", async () => {
+    wrap(<ResourceDetailPane path="/wt/foo" resource={slack} />)
+    await userEvent.click(await screen.findByRole("tab", { name: /Tasks/ }))
+    await userEvent.click(screen.getByRole("button", { name: "Pin task list" }))
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Thread" })).toHaveAttribute("aria-selected", "true"))
   })
 })
