@@ -1298,6 +1298,31 @@ user's own events (`selfid.NotMineSQL`; see "Unread"). Matching goes through
 batch per (worktree, resource): title = the resource's key + custom name or
 title, subtitle = worktree name, body = newest event's title + "(+N more)".
 
+**Task events** notify through the same pass and delivery
+(`readNewTaskEvents` / `notifyTaskBatches` in `notify_scan.go`). The cursor
+has a second field, `taskID`: the newest `task_events.id` read. That id is an
+AUTOINCREMENT integer assigned under SQLite's single write lock, so ids commit
+in order and `id > cursor` needs no lookback window. `initNotifyCursor` sets it
+to `MAX(id)` together with the watcher cursor, so a restart never replays
+task history and a failed initialisation retries both. Every row past the
+cursor advances it, but only agent events (`actor = 'agent'`) of non-deleted
+tasks notify; the user's own never do. A worktree is notified when the task is
+in its scope (`tasks.BuildScopeIndex`: linked directly, implicitly or by the
+archived fallback) AND it has "Notify on all", or "Notify on new events" on a
+resource the task links that the worktree tracks (`resources.Load`). A global
+task is in no worktree's scope, so it notifies nobody. One batch per
+(worktree, task): title = the task's title, subtitle = worktree name, body =
+the newest event's `taskEventToTimeline` title + "(+N more)", tag =
+`notifyTag(path, "task", <id>)`, with `resource_type` `task` so a browser
+click opens `?task=<id>` over the worktree (`lib/browserNotify.ts`) and a cmux
+banner switches to the worktree's workspace. The command placeholders are
+`$event` = the body, `$resource` = `T<id>: <title>` (title cut to 40 runes)
+and `$description` = the newest event's title. The two sources are read and
+matched independently (a failure in one never holds back the other), and
+their batches are merged before the `notifyMaxPerPass` check, so a flood of
+either or both folds into one summary, which names "resources", "tasks" or
+"resources and tasks".
+
 **Delivery mode** is chosen once per process: `cmux.IsAvailable()` (not
 `InPane` — the server drives cmux from wherever it runs) → `cmux notify
 --workspace <id>` for the worktree's matched workspace, so clicking the banner

@@ -3,6 +3,7 @@ package webui
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -80,7 +81,8 @@ func (t *cmuxTransport) Deliver(b notifyBatch, _ deliverOpts) {
 }
 
 // notifyPass reads past the cursor and delivers one notification per
-// (worktree, resource). The cursor advances whether or not delivery works.
+// (worktree, resource) for watcher events, and per (worktree, task) for
+// agent task events. The cursor advances whether or not delivery works.
 func (s *Server) notifyPass(c *notifyCursor) {
 	if !c.ready {
 		// Never read with an uninitialised cursor: it would treat the whole
@@ -94,17 +96,31 @@ func (s *Server) notifyPass(c *notifyCursor) {
 		*c = nc
 		return
 	}
-	events, next, err := readNewEvents(s.DB, *c)
-	if err != nil {
+	// The two sources are read and matched independently, so a failure in
+	// one never holds back the other; each cursor advances on its own read.
+	var batches []notifyBatch
+	if events, next, err := readNewEvents(s.DB, *c); err != nil {
 		s.logger().Printf("notify: reading events: %v", err)
-		return
+	} else {
+		*c = next
+		if bs, err := s.notifyBatches(events); err != nil {
+			s.logger().Printf("notify: matching events: %v", err)
+		} else {
+			batches = append(batches, bs...)
+		}
 	}
-	*c = next
-	batches, err := s.notifyBatches(events)
-	if err != nil {
-		s.logger().Printf("notify: matching events: %v", err)
-		return
+	if events, next, err := readNewTaskEvents(s.DB, *c); err != nil {
+		s.logger().Printf("notify: reading task events: %v", err)
+	} else {
+		c.taskID = next
+		if bs, err := s.notifyTaskBatches(events); err != nil {
+			s.logger().Printf("notify: matching task events: %v", err)
+		} else {
+			batches = append(batches, bs...)
+		}
 	}
+	// A pass's watcher and task batches count together toward the cap.
+	sort.SliceStable(batches, func(i, j int) bool { return batches[i].WorktreePath < batches[j].WorktreePath })
 	if len(batches) > notifyMaxPerPass {
 		batches = []notifyBatch{summarizeBatches(batches)}
 	}
@@ -122,9 +138,22 @@ func summarizeBatches(batches []notifyBatch) notifyBatch {
 	for _, b := range batches {
 		paths[b.WorktreePath] = true
 	}
+	nTasks := 0
+	for _, b := range batches {
+		if b.ResourceType == "task" {
+			nTasks++
+		}
+	}
+	noun := "resources"
+	switch {
+	case nTasks == len(batches):
+		noun = "tasks"
+	case nTasks > 0:
+		noun = "resources and tasks"
+	}
 	sum := notifyBatch{
 		Title: "New activity",
-		Body:  fmt.Sprintf("%d resources have new events", len(batches)),
+		Body:  fmt.Sprintf("%d %s have new events", len(batches), noun),
 		Tag:   "worktree:summary",
 	}
 	sum.Event, sum.Description = sum.Title, sum.Body

@@ -9,6 +9,8 @@ export function notificationHref(msg: NotificationMsg): string {
   if (!msg.worktree_path) return "/"
   const base = `/worktree/${encodeURIComponent(msg.worktree_path)}`
   if (!msg.resource_type) return base
+  // A task notification opens the task modal over its worktree.
+  if (msg.resource_type === "task") return `${base}?task=${encodeURIComponent(msg.resource_id)}`
   return `${base}?resource=${serializeResourceKey({ type: msg.resource_type, id: msg.resource_id })}`
 }
 
@@ -39,6 +41,6 @@ export function openNotificationTarget(msg: NotificationMsg): void {
   const here = new URL(window.location.href)
   const sameResource =
     here.pathname === target.pathname &&
-    (here.searchParams.get("resource") ?? "") === (target.searchParams.get("resource") ?? "")
+    ["resource", "task"].every((k) => (here.searchParams.get(k) ?? "") === (target.searchParams.get(k) ?? ""))
   if (!sameResource) navigate(withHomeParam(href))
 }

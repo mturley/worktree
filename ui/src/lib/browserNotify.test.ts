@@ -29,6 +29,9 @@ describe("notificationHref", () => {
   it("targets the home page for a summary spanning worktrees", () => {
     expect(notificationHref({ ...msg, worktree_path: "", resource_type: "", resource_id: "" })).toBe("/")
   })
+  it("opens the task modal over the worktree for a task notification", () => {
+    expect(notificationHref({ ...msg, resource_type: "task", resource_id: "12" })).toBe("/worktree/%2Fw%2Fwt-a?task=12")
+  })
   it("targets the bare worktree page for a worktree-wide notification", () => {
     expect(notificationHref({ ...msg, resource_type: "", resource_id: "" })).toBe("/worktree/%2Fw%2Fwt-a")
   })
