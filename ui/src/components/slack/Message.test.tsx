@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, fireEvent } from '@testing-library/react'
 import { MantineProvider } from '@mantine/core'
 import { Message } from './Message'
+import { ThreadActionsContext } from './ThreadActionsContext'
 import type { Block, Message as MessageData, User } from '../../api/slackApi'
 
 // jsdom doesn't implement window.matchMedia; MantineProvider's color-scheme
@@ -190,5 +191,52 @@ describe('Message', () => {
       <Message message={baseMessage({})} users={users} emoji={{}} />,
     )
     expect(queryByLabelText('Copy link to this message')).toBeNull()
+  })
+})
+
+describe('Make task', () => {
+  const thread = { channel: 'C1', threadTs: '1700000000.000001' }
+
+  it('sends a slack: key and a snapshot built from the message and its thread', () => {
+    const makeTask = vi.fn()
+    const message = baseMessage({ TS: '1700000100.000200', Text: '\n  Please fix the login page  \nmore detail' })
+    const { getByLabelText } = renderWithProvider(
+      <ThreadActionsContext.Provider value={{ makeTask }}>
+        <Message
+          message={message}
+          users={users}
+          emoji={{}}
+          thread={thread}
+          permalink="https://x.slack.com/archives/C1/p1700000100000200"
+        />
+      </ThreadActionsContext.Provider>,
+    )
+    fireEvent.click(getByLabelText('Make task from this message'))
+    expect(makeTask).toHaveBeenCalledWith('slack:C1:1700000100.000200', {
+      source: 'slack',
+      type: 'slack_reply',
+      title: 'Please fix the login page',
+      author: 'jane',
+      body: message.Text,
+      url: 'https://x.slack.com/archives/C1/p1700000100000200',
+      ts: new Date(1700000100000.2).toISOString(),
+      resource_type: 'slack',
+      resource_id: 'C1:1700000000.000001',
+    })
+  })
+
+  it('is hidden with no task context, or no thread', () => {
+    const { queryByLabelText, rerender } = renderWithProvider(
+      <Message message={baseMessage({})} users={users} emoji={{}} thread={thread} />,
+    )
+    expect(queryByLabelText('Make task from this message')).toBeNull()
+    rerender(
+      <MantineProvider>
+        <ThreadActionsContext.Provider value={{ makeTask: vi.fn() }}>
+          <Message message={baseMessage({})} users={users} emoji={{}} />
+        </ThreadActionsContext.Provider>
+      </MantineProvider>,
+    )
+    expect(queryByLabelText('Make task from this message')).toBeNull()
   })
 })

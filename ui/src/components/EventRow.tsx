@@ -1,4 +1,5 @@
-import { Badge, Box, Group, Stack, Text, Tooltip } from "@mantine/core"
+import { useState } from "react"
+import { Badge, Box, Button, Group, Stack, Text, Tooltip } from "@mantine/core"
 import { IconArchive } from "@tabler/icons-react"
 import type { ResourceDTO, TimelineEvent } from "../api/types"
 import { relativeTime as rel } from "../lib/relativeTime"
@@ -12,6 +13,7 @@ import { isArchivedEvent } from "../lib/openEvent"
 import { MatchWhy } from "./search/MatchWhy"
 import { SearchHighlight } from "./search/SearchHighlight"
 import { useCrossHover } from "./CrossHoverContext"
+import { eventTaskKey } from "../lib/taskEventKey"
 
 /**
  * One entry on the timeline rail: a dot on the line, then the event's text.
@@ -21,10 +23,15 @@ import { useCrossHover } from "./CrossHoverContext"
  * button nested inside a button is invalid markup with an ambiguous click
  * target, so the row can only be a single surface if nothing inside it is
  * interactive too.
+ *
+ * The one exception is the opt-in "＋ task" hover action (`onMakeTask`),
+ * which is therefore NOT inside the row: the row and the action are
+ * siblings in a positioned wrapper, the action floating over the row's
+ * top-right corner, so its click never reaches the row.
  */
 export function EventRow({
   e, showWorktrees, showResource = true, onOpen, onSelectResource, resolveResource, canSelectResource,
-  unreadBorder = true,
+  unreadBorder = true, onMakeTask,
 }: {
   e: TimelineEvent
   showWorktrees?: boolean
@@ -56,7 +63,14 @@ export function EventRow({
    * falls back to opening its details instead.
    */
   canSelectResource?: (e: TimelineEvent) => boolean
+  /**
+   * Offers "＋ task" on hover: makes a task from this event. Opt-in per feed,
+   * and shown only on watcher events (a task's own events can't be linked).
+   */
+  onMakeTask?: (e: TimelineEvent) => void
 }) {
+  const [hovered, setHovered] = useState(false)
+  const [focused, setFocused] = useState(false)
   // Only the dot shows the type now — as its tooltip.
   const label = eventLabel(e.type, e.type_label)
 
@@ -209,5 +223,36 @@ export function EventRow({
    * it for a tooltip to occupy — it ran off the page. Above costs it the row
    * above's text, which is the lesser of the two.
    */
-  return activate ? <Tooltip label={tip} position="top-start">{row}</Tooltip> : row
+  const surface = activate ? <Tooltip label={tip} position="top-start">{row}</Tooltip> : row
+  if (!onMakeTask || !eventTaskKey(e)) return surface
+
+  return (
+    <Box
+      style={{ position: "relative" }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {surface}
+      <Tooltip label="Make a task from this event" position="top-end">
+        <Button
+          size="compact-xs"
+          variant="default"
+          aria-label="Make task from this event"
+          onClick={() => onMakeTask(e)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          style={{
+            position: "absolute",
+            top: 4,
+            right: 4,
+            // Shown on hover, and to the keyboard when tabbed to.
+            opacity: hovered || focused ? 1 : 0,
+            transition: "opacity 100ms ease",
+          }}
+        >
+          ＋ task
+        </Button>
+      </Tooltip>
+    </Box>
+  )
 }

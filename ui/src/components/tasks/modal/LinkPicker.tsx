@@ -147,8 +147,10 @@ function PickerInput({ task, onDone }: { task: TaskDetail; onDone: () => void })
               onChange={(e) => {
                 setQuery(e.currentTarget.value)
                 setError(null)
+                // Selection is the effect's alone (keyed on the trimmed query):
+                // resetting it here too would clear it on a keystroke that
+                // leaves the trimmed query, and so the effect, unchanged.
                 store.openDropdown()
-                store.resetSelectedOption()
               }}
               onClick={() => store.openDropdown()}
               onFocus={() => store.openDropdown()}

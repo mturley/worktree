@@ -1,9 +1,13 @@
-import { describe, it, expect, vi } from "vitest"
-import { render, screen, fireEvent } from "@testing-library/react"
+import { afterEach, describe, it, expect, vi } from "vitest"
+import { cleanup, render, screen, fireEvent, waitFor } from "@testing-library/react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { api } from "../api/client"
+import { TaskModalProvider, useTaskModal } from "./tasks/modal/TaskModalProvider"
+import { useMakeTaskFromEvent } from "./tasks/useMakeTask"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { EventRow } from "./EventRow"
-import type { ResourceDTO, TimelineEvent } from "../api/types"
+import type { ResourceDTO, TaskDetail, TimelineEvent } from "../api/types"
 import { UNREAD_BORDER_WIDTH } from "../lib/unread"
 import { SearchContext } from "./search/SearchContext"
 import { DOT_CENTER, DOT_SIZE, ROW_PAD_X } from "./timelineRail"
@@ -481,5 +485,69 @@ describe("a resource search match", () => {
     )
     expect(screen.queryByTestId("match-why")).toBeNull()
     expect(container.querySelector("mark")?.textContent).toBe("OAuth")
+  })
+})
+
+describe("＋ task", () => {
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+    window.history.replaceState({}, "", "/")
+  })
+
+  /** A feed row as the feeds wire it: useMakeTaskFromEvent behind the action. */
+  function Feed({ e, onOpen, onSelect }: {
+    e: TimelineEvent
+    onOpen: (e: TimelineEvent) => void
+    onSelect: (k: { type: string; id: string }, e: TimelineEvent) => void
+  }) {
+    const make = useMakeTaskFromEvent("/wt/a")
+    const { openId } = useTaskModal()
+    return (
+      <>
+        <EventRow e={e} onOpen={onOpen} onSelectResource={onSelect} onMakeTask={make} />
+        <span data-testid="open-id">{openId ?? "none"}</span>
+      </>
+    )
+  }
+
+  const wrapFeed = (ui: React.ReactNode) =>
+    render(
+      <MantineProvider>
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <TaskModalProvider>{ui}</TaskModalProvider>
+        </QueryClientProvider>
+      </MantineProvider>,
+    )
+
+  it("is absent unless the feed opts in", () => {
+    renderWithProvider(<EventRow e={makeEvent({ id: "42" })} onOpen={vi.fn()} />)
+    expect(screen.queryByRole("button", { name: /Make task/ })).toBeNull()
+  })
+
+  it("is absent on an event that is not a watcher event", () => {
+    renderWithProvider(<EventRow e={makeEvent({ id: "task:3" })} onMakeTask={vi.fn()} />)
+    expect(screen.queryByRole("button", { name: /Make task/ })).toBeNull()
+  })
+
+  it("sits outside the row's button, never inside it", () => {
+    renderWithProvider(<EventRow e={makeEvent({ id: "42" })} onOpen={vi.fn()} onMakeTask={vi.fn()} />)
+    const action = screen.getByRole("button", { name: "Make task from this event" })
+    expect(action.closest("[data-event-row]")).toBeNull()
+    expect(document.querySelector("[data-event-row] button")).toBeNull()
+  })
+
+  it("creates a task from the event and opens it, without the row's own click", async () => {
+    const created = { id: 7 } as TaskDetail
+    const fromEvent = vi.spyOn(api, "taskFromEvent").mockResolvedValue(created)
+    const onOpen = vi.fn()
+    const onSelect = vi.fn()
+    const user = userEvent.setup()
+    wrapFeed(<Feed e={makeEvent({ id: "42" })} onOpen={onOpen} onSelect={onSelect} />)
+    await user.click(screen.getByRole("button", { name: "Make task from this event" }))
+    expect(fromEvent).toHaveBeenCalledWith("ev:42", undefined, "/wt/a")
+    await waitFor(() => expect(screen.getByTestId("open-id").textContent).toBe("7"))
+    expect(onOpen).not.toHaveBeenCalled()
+    expect(onSelect).not.toHaveBeenCalled()
   })
 })

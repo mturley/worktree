@@ -1,5 +1,6 @@
 import { createContext, useContext } from "react"
 
+import type { TaskEventSnapshot } from "../../api/types"
 import type { ResourceKey } from "../../lib/resourceKey"
 
 interface ThreadActions {
@@ -24,6 +25,13 @@ interface ThreadActions {
   trackedThread?: (url: string) => ResourceKey | null
   /** Selects an already-tracked resource, showing it in the detail pane. */
   selectThread?: (key: ResourceKey) => void
+  /**
+   * Makes a task from a message (key `slack:<channel>:<ts>`, plus the
+   * snapshot the server stores, since a message is not a watcher event) and
+   * opens it. Undefined where there are no tasks to open (ThreadView
+   * rendered standalone): the message's "Make task" action hides.
+   */
+  makeTask?: (key: string, snapshot: TaskEventSnapshot) => void
 }
 
 /**

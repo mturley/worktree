@@ -1,0 +1,71 @@
+import type { TaskEventSnapshot, TimelineEvent } from "../api/types"
+import type { Message, User } from "../api/slackApi"
+
+/** The most runes of a Slack message's first line a task title takes; mirrors the server. */
+const MAX_TITLE = 120
+
+/**
+ * The event-link key of a watcher event (`ev:<id>`), or null for an event
+ * that is not one — a task's own events (`task:<n>`) and snapshot rows
+ * (whose id is already a key) can't be linked or made into a task.
+ */
+export function eventTaskKey(e: TimelineEvent): string | null {
+  return /^\d+$/.test(e.id) ? `ev:${e.id}` : null
+}
+
+/**
+ * Every key that names this event, as the server's eventKeys does: its ev:
+ * key, and for a Slack thread event its slack:<channel>:<message ts> key too,
+ * since a message linked from the thread view is stored under that one.
+ */
+export function eventTaskKeys(e: TimelineEvent): string[] {
+  const ev = eventTaskKey(e)
+  if (!ev) return []
+  const keys = [ev]
+  if (e.resource_type === "slack" && e.external_ts) {
+    const channel = e.resource_id.split(":")[0]
+    if (channel) keys.push(`slack:${channel}:${e.external_ts}`)
+  }
+  return keys
+}
+
+/** A Slack message's identity key. */
+export function slackMessageKey(channel: string, ts: string): string {
+  return `slack:${channel}:${ts}`
+}
+
+/** A Slack ts ("1700000000.000100") as an RFC 3339 time, as event rows expect; "" if unparseable. */
+function slackTsToISO(ts: string): string {
+  const secs = Number(ts)
+  return Number.isFinite(secs) && secs > 0 ? new Date(secs * 1000).toISOString() : ""
+}
+
+/**
+ * The snapshot an event link stores for a Slack message: Slack messages are
+ * not watcher events, so the server takes the client's. The title is the
+ * first non-blank line of the text (the server titles the task the same way);
+ * a message with no text is named by its author.
+ */
+export function slackMessageSnapshot(
+  message: Message,
+  users: Record<string, User>,
+  thread: { channel: string; threadTs: string },
+  permalink?: string,
+): TaskEventSnapshot {
+  const user = users[message.UserID]
+  const author = user?.DisplayName || user?.RealName || message.UserID
+  const text = message.Text ?? ""
+  const first = text.split("\n").map((l) => l.trim()).find((l) => l !== "") ?? ""
+  const title = first ? Array.from(first).slice(0, MAX_TITLE).join("").trim() : `Message from ${author}`
+  return {
+    source: "slack",
+    type: "slack_reply",
+    title,
+    author,
+    body: text,
+    url: permalink ?? "",
+    ts: slackTsToISO(message.TS),
+    resource_type: "slack",
+    resource_id: `${thread.channel}:${thread.threadTs}`,
+  }
+}

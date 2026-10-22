@@ -303,6 +303,9 @@ export function ThreadView({ tab, thread, onOpenThread, topInset = 0, onComposer
     handleCopyMessageLink(tab.threadTs)
   }
 
+  // Which thread each message is in, for its "Make task" action.
+  const messageThread = { channel: tab.channel, threadTs: tab.threadTs }
+
   function handleCopyMessageLink(ts: string) {
     if (!workspaceDomain) {
       return
@@ -466,6 +469,12 @@ export function ThreadView({ tab, thread, onOpenThread, topInset = 0, onComposer
                     onCopyLink={workspaceDomain ? handleCopyMessageLink : undefined}
                     onToggleReaction={handleToggleReaction}
                     onOpenThread={onOpenThread}
+                    thread={messageThread}
+                    permalink={
+                      workspaceDomain
+                        ? openInSlackUrl(tab.channel, tab.threadTs, message.TS, workspaceDomain)
+                        : undefined
+                    }
                   />
                 </div>
               </div>

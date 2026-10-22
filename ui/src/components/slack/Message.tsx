@@ -9,6 +9,9 @@ import { FileAttachments } from './FileAttachments'
 import { ReactionPill } from './ReactionPill'
 import { RichText } from './RichText'
 import { CopyLinkIcon } from '../CopyLinkIcon'
+import { IconSquarePlus } from '@tabler/icons-react'
+import { slackMessageKey, slackMessageSnapshot } from '../../lib/taskEventKey'
+import { useThreadActions } from './ThreadActionsContext'
 
 interface MessageProps {
   message: MessageData
@@ -27,6 +30,10 @@ interface MessageProps {
    * tab. Threaded through to the Attachments renderer.
    */
   onOpenThread?: (url: string, opts: { background: boolean }) => void
+  /** The thread this message is in. With ThreadActionsContext's makeTask, offers "Make task". */
+  thread?: { channel: string; threadTs: string }
+  /** This message's link, for a task made from it. Absent until the workspace domain is known. */
+  permalink?: string
 }
 
 const COPIED_FEEDBACK_MS = 1500
@@ -40,7 +47,10 @@ export function Message({
   onCopyLink,
   onToggleReaction,
   onOpenThread,
+  thread,
+  permalink,
 }: MessageProps) {
+  const { makeTask } = useThreadActions()
   const user = users[message.UserID]
   const displayName = user?.DisplayName || user?.RealName || message.UserID
   const [hovered, setHovered] = useState(false)
@@ -101,6 +111,25 @@ export function Message({
                 style={{ opacity: hovered ? 1 : 0, transition: 'opacity 100ms ease' }}
               >
                 <CopyLinkIcon />
+              </ActionIcon>
+            </Tooltip>
+          )}
+          {makeTask && thread && (
+            <Tooltip label="Make a task from this message">
+              <ActionIcon
+                variant="subtle"
+                color="gray"
+                size="xs"
+                aria-label="Make task from this message"
+                onClick={() =>
+                  makeTask(
+                    slackMessageKey(thread.channel, message.TS),
+                    slackMessageSnapshot(message, users, thread, permalink),
+                  )
+                }
+                style={{ opacity: hovered ? 1 : 0, transition: 'opacity 100ms ease' }}
+              >
+                <IconSquarePlus size={14} />
               </ActionIcon>
             </Tooltip>
           )}

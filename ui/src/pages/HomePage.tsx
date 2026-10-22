@@ -48,6 +48,7 @@ import { useResourcesView } from "../hooks/useResourcesView"
 import { ChooseWorktreeModal } from "../components/ChooseWorktreeModal"
 import { CrossHoverProvider } from "../components/CrossHoverContext"
 import { tasksFallbackTab, useTasksPlacement } from "../components/tasks/TasksSection"
+import { useMakeTaskFromEvent } from "../components/tasks/useMakeTask"
 
 type RightTab = "timeline" | "resources" | "tasks"
 type NarrowTab = "worktrees" | RightTab
@@ -66,6 +67,8 @@ function chosenResource(e: TimelineEvent): ResourceDTO {
 
 export function HomePage() {
   const [, navigate] = useLocation()
+  // "Make task" from an event: the global feed has no worktree to act in.
+  const makeTaskFromEvent = useMakeTaskFromEvent()
   const [archived, setArchived] = useState(false)
   const { sources, setSources, categories, setCategories, eventTypes } = useActivityFilter()
   // Shared with every worktree page and every other tab; narrows both the
@@ -352,6 +355,7 @@ export function HomePage() {
         loadingMore={tl.loadingMore}
         onSelectResource={selectEventResource}
         canSelectResource={(e) => Boolean(e.worktree_paths?.length)}
+        onMakeTask={makeTaskFromEvent}
       />
     </Stack>
   )
@@ -400,7 +404,7 @@ export function HomePage() {
   const header = <HomeHeader search={searchBar} unreadOnly={unreadOnly} onUnreadOnlyChange={setUnreadOnly} hasUnread={unreadBadge(wts.data).unread} />
   const detailsModal = (
     <>
-      <EventDetailsModal e={pickedEvent} onClose={() => setPickedEvent(null)} />
+      <EventDetailsModal e={pickedEvent} onClose={() => setPickedEvent(null)} onMakeTask={makeTaskFromEvent} />
       <ChooseWorktreeModal
         r={choosing?.r ?? null}
         worktrees={choosing?.worktrees ?? []}

@@ -28,7 +28,7 @@ import {
   clearFollowResource, clearOpenEvent, messageFocus, readFollowResource, readOpenEvent,
   type FollowResource, type MessageFocus,
 } from "../lib/openEvent"
-import type { TimelineEvent } from "../api/types"
+import type { TaskEventSnapshot, TimelineEvent } from "../api/types"
 import { WorktreeDetailCard } from "../components/WorktreeDetailCard"
 import { CmuxWorkspaceActions, CmuxWorkspaceTitles } from "../components/CmuxWorkspaceHeader"
 import { SourceFilter } from "../components/SourceFilter"
@@ -59,6 +59,7 @@ import { matchResource } from "../lib/search"
 import { CrossHoverProvider } from "../components/CrossHoverContext"
 import { DiffViewBoundary, installPreloadReload } from "../components/gitdiff/DiffViewBoundary"
 import { tasksFallbackTab, useTasksPlacement } from "../components/tasks/TasksSection"
+import { useMakeTask, useMakeTaskFromEvent } from "../components/tasks/useMakeTask"
 
 // The diff drill-down, and with it @pierre/diffs, is its own chunk: fetched
 // the first time someone opens a diff, never on a plain page load.
@@ -74,6 +75,9 @@ export function WorktreeDetailPage() {
   const [, navigate] = useLocation()
   const rawPath = params?.["path*"]
   const path = rawPath ? decodeURIComponent(rawPath) : ""
+  // "Make task" from an event or a Slack message, acting in this worktree.
+  const makeTask = useMakeTask(path)
+  const makeTaskFromEvent = useMakeTaskFromEvent(path)
   // Narrows the worktree's unified feed and the resource list. Selecting a
   // resource already narrows the timeline to that one resource, so the
   // toggles are hidden there rather than left as dead controls.
@@ -289,6 +293,7 @@ export function WorktreeDetailPage() {
       return hit ? { type: hit.type, id: hit.id } : null
     },
     selectThread: (key: { type: string; id: string }) => select(key),
+    makeTask: (key: string, snapshot: TaskEventSnapshot) => void makeTask(key, snapshot),
   }
 
   const linkedActions = {
@@ -447,6 +452,7 @@ export function WorktreeDetailPage() {
         onSelectResource={selectFromEvent}
         resolveResource={resolveResource}
         path={path}
+        onMakeTask={makeTaskFromEvent}
       />
     </Stack>
   )
@@ -897,7 +903,13 @@ export function WorktreeDetailPage() {
           }}
         />
       )}
-      <EventDetailsModal e={openedEvent} onClose={() => setOpenedEvent(null)} resolveResource={resolveResource} path={path} />
+      <EventDetailsModal
+        e={openedEvent}
+        onClose={() => setOpenedEvent(null)}
+        resolveResource={resolveResource}
+        path={path}
+        onMakeTask={makeTaskFromEvent}
+      />
     </Stack>
     </LinkedActionsContext.Provider>
     </ThreadActionsContext.Provider>

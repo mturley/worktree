@@ -50,6 +50,30 @@ describe("EventDetailsModal", () => {
     expect(getComputedStyle(node).whiteSpace).toBe("pre-wrap")
   })
 
+  it("Make task closes this modal first, then makes the task", async () => {
+    const calls: string[] = []
+    const onClose = vi.fn(() => calls.push("close"))
+    const onMakeTask = vi.fn(() => calls.push("make"))
+    const e = ev({ id: "42" })
+    wrap(<EventDetailsModal e={e} onClose={onClose} onMakeTask={onMakeTask} />)
+    await userEvent.click(screen.getByRole("button", { name: "Make task" }))
+    expect(onMakeTask).toHaveBeenCalledWith(e)
+    expect(calls).toEqual(["close", "make"])
+  })
+
+  it("offers Make task only when asked to, and only for a watcher event", () => {
+    const { rerender } = wrap(<EventDetailsModal e={ev({ id: "42" })} onClose={vi.fn()} />)
+    expect(screen.queryByRole("button", { name: "Make task" })).toBeNull()
+    rerender(
+      <MantineProvider>
+        <QueryClientProvider client={new QueryClient()}>
+          <EventDetailsModal e={ev({ id: "task:1" })} onClose={vi.fn()} onMakeTask={vi.fn()} />
+        </QueryClientProvider>
+      </MantineProvider>,
+    )
+    expect(screen.queryByRole("button", { name: "Make task" })).toBeNull()
+  })
+
   it("links out to the resource, naming the destination", () => {
     // "Open" alone did not say where it went; matches the resource card's
     // button wording.

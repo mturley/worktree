@@ -1,4 +1,4 @@
-import { Alert, Badge, Divider, Group, Modal, Stack, Text } from "@mantine/core"
+import { Alert, Badge, Button, Divider, Group, Modal, Stack, Text } from "@mantine/core"
 import { IconArchive } from "@tabler/icons-react"
 import { useLocation } from "wouter"
 import type { ResourceDTO, TimelineEvent } from "../api/types"
@@ -9,6 +9,7 @@ import { EventResourceChip } from "./EventResourceChip"
 import { ResourceActions } from "./ResourceActions"
 import { FollowInWorktreeMenu } from "./FollowInWorktreeMenu"
 import { followResourceState, isArchivedEvent } from "../lib/openEvent"
+import { eventTaskKey } from "../lib/taskEventKey"
 
 /**
  * Full detail for one timeline event.
@@ -17,7 +18,7 @@ import { followResourceState, isArchivedEvent } from "../lib/openEvent"
  * scannable, which left long comments unreadable in the UI — the text was
  * fetched and then thrown away. Here it is shown in full.
  */
-export function EventDetailsModal({ e, onClose, resolveResource, path }: {
+export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTask }: {
   e: TimelineEvent | null
   onClose: () => void
   resolveResource?: (type: string, id: string) => ResourceDTO | undefined
@@ -27,6 +28,11 @@ export function EventDetailsModal({ e, onClose, resolveResource, path }: {
    * the event.
    */
   path?: string
+  /**
+   * Offers "Make task". This modal closes first: the task modal opens over
+   * the page, and two modals stacked would leave this one behind it.
+   */
+  onMakeTask?: (e: TimelineEvent) => void
 }) {
   const actionResource = e?.resource_url ? eventResource(e, resolveResource) : undefined
   const [, navigate] = useLocation()
@@ -107,6 +113,21 @@ export function EventDetailsModal({ e, onClose, resolveResource, path }: {
             <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
               {e.body}
             </Text>
+          )}
+
+          {onMakeTask && eventTaskKey(e) && (
+            <Group justify="flex-end">
+              <Button
+                size="xs"
+                variant="light"
+                onClick={() => {
+                  onClose()
+                  onMakeTask(e)
+                }}
+              >
+                Make task
+              </Button>
+            </Group>
           )}
         </Stack>
       )}

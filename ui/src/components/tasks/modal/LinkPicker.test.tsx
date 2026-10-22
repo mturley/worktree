@@ -107,6 +107,19 @@ describe("LinkPicker", () => {
     expect(api.addTaskLink).toHaveBeenCalledTimes(1)
   })
 
+  it("a trailing space keeps the first match selected", async () => {
+    const { user, input } = await openPicker()
+    await user.type(input, "logout")
+    const option = await screen.findByRole("option", { name: /Fix logout/ })
+    await waitFor(() => expect(option).toHaveAttribute("data-combobox-selected"))
+    // The trimmed query is unchanged, so nothing re-selects: typing must not
+    // have cleared the selection on its own.
+    await user.type(input, " ")
+    await waitFor(() =>
+      expect(screen.getByRole("option", { name: /Fix logout/ })).toHaveAttribute("data-combobox-selected"),
+    )
+  })
+
   it("a pasted URL is linked by URL on Enter", async () => {
     const { user, input } = await openPicker()
     await user.click(input)

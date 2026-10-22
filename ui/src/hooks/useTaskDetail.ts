@@ -1,4 +1,5 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useCallback } from "react"
+import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query"
 import { api, HttpError } from "../api/client"
 import type {
   Priority,
@@ -43,14 +44,39 @@ export function useTaskActivity(id: number | undefined, q: ActivityQuery) {
 
 type Patch = { title?: string; description?: string; priority?: Priority; starred?: boolean; due?: string }
 
+/** What every task write refreshes: the task lists and the counts on worktrees and resources. */
+function settleTaskWrite(qc: QueryClient) {
+  void qc.invalidateQueries({ queryKey: ["tasks"] })
+  void qc.invalidateQueries({ queryKey: ["worktrees"] })
+  void qc.invalidateQueries({ queryKey: ["resources"] })
+}
+
+/**
+ * Creates a task from an event and returns its detail, already cached for the
+ * modal. For callers with no task yet (a feed row, a Slack message); the
+ * caller opens the modal.
+ */
+export function useTaskFromEvent() {
+  const qc = useQueryClient()
+  return useCallback(
+    async (key: string, snapshot?: TaskEventSnapshot, path?: string) => {
+      try {
+        const d = await api.taskFromEvent(key, snapshot, path)
+        qc.setQueryData(taskDetailKey(d.id), d)
+        return d
+      } finally {
+        settleTaskWrite(qc)
+      }
+    },
+    [qc],
+  )
+}
+
 export function useTaskDetailMutations(id: number) {
   const qc = useQueryClient()
+  const fromEvent = useTaskFromEvent()
 
-  const settle = () => {
-    void qc.invalidateQueries({ queryKey: ["tasks"] })
-    void qc.invalidateQueries({ queryKey: ["worktrees"] })
-    void qc.invalidateQueries({ queryKey: ["resources"] })
-  }
+  const settle = () => settleTaskWrite(qc)
 
   /** Runs a call, shows its detail response at once, and settles either way. */
   const run = async (call: () => Promise<TaskDetail>) => {
@@ -89,7 +115,6 @@ export function useTaskDetailMutations(id: number) {
     linkEvent: (key: string, snapshot?: TaskEventSnapshot) => run(() => api.linkTaskEvent(id, key, snapshot)),
     unlinkEvent: (key: string) => run(() => api.unlinkTaskEvent(id, key)),
     /** Creates a task from an event and returns its detail; the caller opens the modal. */
-    fromEvent: (key: string, snapshot?: TaskEventSnapshot, path?: string) =>
-      run(() => api.taskFromEvent(key, snapshot, path)),
+    fromEvent,
   }
 }
