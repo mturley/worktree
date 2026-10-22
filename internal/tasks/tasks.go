@@ -538,6 +538,10 @@ func SetState(conn *sql.DB, a Actor, id int64, to State) (StateChange, error) {
 	if err != nil {
 		return StateChange{}, err
 	}
+	if sc.From != sc.To {
+		// Completing releases the task's holds; reopening re-acquires them.
+		reconcileHoldsAfterWrite(conn)
+	}
 	return sc, nil
 }
 
@@ -567,5 +571,6 @@ func Delete(conn *sql.DB, a Actor, id int64) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	reconcileHoldsAfterWrite(conn) // a deleted task holds nothing
 	return eventID, nil
 }

@@ -249,6 +249,7 @@ func AddBlocker(conn *sql.DB, a Actor, taskID int64, t BlockerTarget) (Blocker, 
 	if err != nil {
 		return Blocker{}, err
 	}
+	reconcileHoldsAfterWrite(conn) // a resource blocker holds its resource
 	return loadBlocker(conn, id)
 }
 
@@ -257,7 +258,7 @@ func RemoveBlocker(conn *sql.DB, a Actor, blockerID int64) error {
 	if err := validActor(a); err != nil {
 		return err
 	}
-	return inTx(conn, func(tx dbtx) error {
+	err := inTx(conn, func(tx dbtx) error {
 		b, err := loadBlocker(tx, blockerID)
 		if err != nil {
 			return err
@@ -276,6 +277,11 @@ func RemoveBlocker(conn *sql.DB, a Actor, blockerID int64) error {
 		_, err = record(tx, a, b.TaskID, ts, EventTaskBlockerRemoved, p)
 		return err
 	})
+	if err != nil {
+		return err
+	}
+	reconcileHoldsAfterWrite(conn) // release a removed resource blocker's hold
+	return nil
 }
 
 // SetBlockerResolved resolves (or unresolves) a blocker by hand. Only free

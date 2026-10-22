@@ -241,9 +241,11 @@ SELECT DISTINCT e.id, e.ts, COALESCE(e.external_ts,''), e.source, e.type,
        er.resource_type, er.resource_id, COALESCE(er.resource_url,'')
 FROM watcher_events e
 JOIN watcher_event_resources er ON er.event_id = e.id `
+	// "Watched" means followed by a worktree: a task: blocker hold keeps a
+	// resource polled but never makes it watched (see tasks.HoldSubscriber).
 	watchedJoin := `JOIN watcher_subscriptions s
        ON s.resource_type = er.resource_type AND s.resource_id = er.resource_id
-       AND s.deleted_at IS NULL `
+       AND s.deleted_at IS NULL AND s.subscriber LIKE 'worktree:%' `
 	filter := `WHERE e.type NOT IN ('watch_started','watcher_error') `
 	order := `ORDER BY e.ts DESC LIMIT ?`
 
