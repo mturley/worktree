@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -21,6 +22,23 @@ func TestOpenAtCreatesTables(t *testing.T) {
 		if err != nil {
 			t.Fatalf("expected table %q to exist: %v", tbl, err)
 		}
+	}
+}
+
+// The activity feeds read task_events across tasks by ts (tasks.FeedEvents),
+// and the notifier and Load more page on it, so it needs its own index.
+func TestOpenAtCreatesTaskEventsTSIndex(t *testing.T) {
+	conn, err := OpenAt(filepath.Join(t.TempDir(), "worktree.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	var sqlText string
+	if err := conn.QueryRow(`SELECT sql FROM sqlite_master WHERE type='index' AND name='task_events_ts'`).Scan(&sqlText); err != nil {
+		t.Fatalf("expected index task_events_ts: %v", err)
+	}
+	if want := "ON task_events (ts, id)"; !strings.Contains(sqlText, want) {
+		t.Errorf("index sql = %q, want it to contain %q", sqlText, want)
 	}
 }
 

@@ -162,6 +162,8 @@ func migrate(conn *sql.DB) error {
 		)`,
 		// A task's feed, newest first.
 		`CREATE INDEX IF NOT EXISTS task_events_task ON task_events (task_id, ts)`,
+		// The activity feeds, newest first across tasks (tasks.FeedEvents).
+		`CREATE INDEX IF NOT EXISTS task_events_ts ON task_events (ts, id)`,
 		// A single-row change counter for tasks. Every committed write in
 		// internal/tasks bumps v, moves and subtask reorders included (they
 		// record no task_events), so a reader polling it learns "something
