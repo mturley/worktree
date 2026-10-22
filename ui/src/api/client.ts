@@ -1,4 +1,4 @@
-import type { DiffBase, DiffCommits, DiffFiles, DiffPatch, DiffRange, WorktreeGit, AllResourceDTO, CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, CredResult, DefaultBranchResponse, CredService, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, ResourceReadChange, Priority, Task, TaskState, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, UpdateStatus, WatcherHealth, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherAuthSettings, WatcherConfigSettings, WorktreeInfo, WorktreeNotes, WorktreeSettings, WorktreeSummary } from "./types"
+import type { DiffBase, DiffCommits, DiffFiles, DiffPatch, DiffRange, WorktreeGit, AllResourceDTO, CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, CredResult, DefaultBranchResponse, CredService, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, ResourceReadChange, Priority, Task, TaskState, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, UpdateStatus, WatcherHealth, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherAuthSettings, WatcherConfigSettings, WorktreeInfo, WorktreeNotes, WorktreeSettings, WorktreeSummary, TaskActivityFilter, TaskDetail, TaskEventSnapshot, TaskLinkTarget, TimelineEvent } from "./types"
 
 export class HttpError extends Error {
   constructor(message: string, readonly status: number) {
@@ -166,12 +166,48 @@ export const api = {
     after?: number
     before?: number
   }) => postJSON<Task>("/api/tasks", args),
-  updateTask: (id: number, patch: { title?: string; priority?: Priority; starred?: boolean; due?: string }) =>
+  updateTask: (id: number, patch: { title?: string; description?: string; priority?: Priority; starred?: boolean; due?: string }) =>
     postJSON<Task>("/api/tasks/update", { id, ...patch }),
   setTaskState: (id: number, state: TaskState) => postJSON<Task>("/api/tasks/state", { id, state }),
   /** Resolves on the server's 204. */
   moveTask: (id: number, place: { after: number } | { before: number }) =>
     postJSON<null>("/api/tasks/move", { id, ...place }).then((): void => {}),
+  taskDetail: (id: number) => fetchJSON<TaskDetail>(`/api/tasks/detail?id=${id}`),
+  taskActivity: (id: number, filter: TaskActivityFilter, resource?: { type: string; rid: string }) => {
+    const params = new URLSearchParams({ id: String(id), filter })
+    if (filter === "resource" && resource) {
+      params.set("type", resource.type)
+      params.set("rid", resource.rid)
+    }
+    return fetchJSON<TimelineEvent[]>(`/api/tasks/activity?${params}`)
+  },
+  /** Resolves on the server's 204. */
+  deleteTask: (id: number) => postJSON<null>("/api/tasks/delete", { id }).then((): void => {}),
+  addTaskLink: (id: number, target: { url: string } | TaskLinkTarget, focus?: boolean) => {
+    let body: Record<string, unknown>
+    if ("url" in target) body = { id, url: target.url }
+    else if (target.kind === "resource") body = { id, type: target.type, rid: target.rid }
+    else body = { id, path: target.path }
+    if (focus !== undefined) body.focus = focus
+    return postJSON<TaskDetail>("/api/tasks/links/add", body)
+  },
+  removeTaskLink: (id: number, t: TaskLinkTarget) => postJSON<TaskDetail>("/api/tasks/links/remove", { id, ...t }),
+  setTaskLinkFocus: (id: number, t: TaskLinkTarget, focus: boolean) =>
+    postJSON<TaskDetail>("/api/tasks/links/focus", { id, ...t, focus }),
+  orderTaskLinks: (id: number, focus: TaskLinkTarget[], related: TaskLinkTarget[]) =>
+    postJSON<TaskDetail>("/api/tasks/links/order", { id, focus, related }),
+  addSubtask: (id: number, text: string) => postJSON<TaskDetail>("/api/tasks/subtasks/add", { id, text }),
+  editSubtask: (subtaskId: number, text: string) =>
+    postJSON<TaskDetail>("/api/tasks/subtasks/edit", { subtask_id: subtaskId, text }),
+  checkSubtask: (subtaskId: number, checked: boolean) =>
+    postJSON<TaskDetail>("/api/tasks/subtasks/check", { subtask_id: subtaskId, checked }),
+  removeSubtask: (subtaskId: number) => postJSON<TaskDetail>("/api/tasks/subtasks/remove", { subtask_id: subtaskId }),
+  orderSubtasks: (id: number, ids: number[]) => postJSON<TaskDetail>("/api/tasks/subtasks/order", { id, ids }),
+  linkTaskEvent: (id: number, key: string, snapshot?: TaskEventSnapshot) =>
+    postJSON<TaskDetail>("/api/tasks/events/link", { id, key, snapshot }),
+  unlinkTaskEvent: (id: number, key: string) => postJSON<TaskDetail>("/api/tasks/events/unlink", { id, key }),
+  taskFromEvent: (key: string, snapshot?: TaskEventSnapshot, path?: string) =>
+    postJSON<TaskDetail>("/api/tasks/from-event", { key, snapshot, path }),
   worktrees: () => fetchJSON<WorktreeSummary[]>("/api/worktrees"),
   allResources: () => fetchJSON<AllResourceDTO[]>("/api/all-resources"),
   /**

@@ -73,6 +73,8 @@ export interface TimelineEvent {
   unread?: boolean;
   /** Why the event matched the search (`q`); absent without one. */
   match?: { field: string; snippet: string };
+  /** Task activity feed only: this event is linked to the task. */
+  linked_to_task?: boolean;
 }
 export interface TimelineResponse { events: TimelineEvent[]; next_cursor: string }
 export interface ResourceDTO {
@@ -677,3 +679,60 @@ export interface Task {
   subtasks_total: number
   subtasks_done: number
 }
+
+/** A link target; the body shape of the task link routes. */
+export type TaskLinkTarget =
+  | { kind: "resource"; type: string; rid: string }
+  | { kind: "worktree"; path: string }
+
+/** Mirrors taskDetailLinkDTO in internal/webui/tasks_detail_api.go. */
+export interface TaskDetailLink extends TaskLink {
+  /** Custom name, else cached title, else short ref; a worktree's branch, else basename. */
+  title: string
+  url?: string
+}
+
+/** A worktree shown only because it follows one of the task's resource links. */
+export interface TaskImplicit {
+  worktree: string
+  branch?: string
+  /** "type:id" of the resource links it follows. */
+  via: string[]
+}
+
+export interface TaskSubtask {
+  id: number
+  text: string
+  checked: boolean
+}
+
+/** What a linked event looked like when linked; mirrors tasks.EventSnapshot. */
+export interface TaskEventSnapshot {
+  source: string
+  type: string
+  title: string
+  author: string
+  body: string
+  url: string
+  ts: string
+  resource_type: string
+  resource_id: string
+}
+
+export interface TaskEventLink {
+  /** "ev:<watcher event id>" or "slack:<channel>:<message ts>". */
+  key: string
+  snapshot: TaskEventSnapshot
+  /** The event as it is now; only present while it exists with the snapshot's type. */
+  live?: TimelineEvent
+}
+
+/** GET /api/tasks/detail; mirrors taskDetailDTO. */
+export interface TaskDetail extends Task {
+  detail_links: TaskDetailLink[]
+  implicit: TaskImplicit[]
+  subtasks: TaskSubtask[]
+  event_links: TaskEventLink[]
+}
+
+export type TaskActivityFilter = "all" | "task" | "linked" | "resource"
