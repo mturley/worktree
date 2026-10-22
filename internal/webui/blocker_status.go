@@ -25,7 +25,8 @@ const jiraSearchChunk = 50
 // initTaskHooks points the tasks package's logging at this server's logger
 // and registers the server as the sink for resolutions the tasks package
 // makes inside its own writes (a task completed, reopened or deleted, a
-// blocker added). Called from Handler and StartPolling; runs once.
+// blocker added). Called from Handler and StartPolling; runs once. Serve
+// unregisters the sink when it returns.
 func (s *Server) initTaskHooks() {
 	s.taskHooksOnce.Do(func() {
 		tasks.Logf = s.logger().Printf
@@ -35,18 +36,24 @@ func (s *Server) initTaskHooks() {
 	})
 }
 
-// afterTaskWrite runs blocker resolution with the full status lookup, then
-// reconciles holds, and hands what changed to handleResolutions. The web
-// API calls it after a task write that can change a blocker's condition,
-// so a resource blocker resolves at once (task blockers already resolved
-// inside the tasks write itself); the poll loop calls it after every pass.
-// Errors are logged: the write it follows has committed, and the next pass
-// retries.
-func (s *Server) afterTaskWrite() {
+// afterTaskWrite is what the web API runs after a task write that can
+// change a blocker's condition: a resolution pass that never touches the
+// network (PR state from the DB cache, Jira statuses as the last poll pass
+// fetched them), then hold reconciliation, then handleResolutions. A
+// checkbox click must never wait on Jira: the poll loop is the only caller
+// that searches it (resolvePass(true)). Task blockers were already
+// resolved inside the tasks write itself.
+func (s *Server) afterTaskWrite() { s.resolvePass(false) }
+
+// resolvePass runs ResolveBlockers, ReconcileHolds and handleResolutions.
+// With network, the pass searches Jira (refreshing the cached statuses);
+// without, it reads only the DB and that cache. Errors are logged: the
+// write it follows has committed, and the next pass retries.
+func (s *Server) resolvePass(network bool) {
 	if s.DB == nil {
 		return
 	}
-	rs, err := tasks.ResolveBlockers(s.DB, s.blockerStatusLookup())
+	rs, err := tasks.ResolveBlockers(s.DB, s.blockerStatusLookup(network))
 	if err != nil {
 		s.logger().Printf("blockers: %v", err)
 	}
@@ -69,17 +76,20 @@ func (s *Server) handleResolutions(rs []tasks.Resolution) {
 	}
 }
 
-// blockerStatusLookup builds the StatusLookup for one resolution pass. Its
-// Jira results are cached for the pass, so a pass makes one search (per
-// chunk of keys) however many blockers name Jira issues, and none when no
-// blocker does.
-func (s *Server) blockerStatusLookup() tasks.StatusLookup {
-	l := &blockerLookup{s: s}
+// blockerStatusLookup builds the StatusLookup for one resolution pass.
+// With network, the pass's first Jira question runs the searches (one per
+// chunk of keys, however many blockers name Jira issues, and none when no
+// blocker does) and merges what they found into the server's Jira status
+// cache; without, it answers Jira from that cache alone. Either way the
+// pass sees one fixed set of Jira answers.
+func (s *Server) blockerStatusLookup(network bool) tasks.StatusLookup {
+	l := &blockerLookup{s: s, network: network}
 	return l.lookup
 }
 
 type blockerLookup struct {
 	s          *Server
+	network    bool
 	jiraLoaded bool
 	jira       map[string]wjira.IssueSummary // by upper-case key; nil when unavailable
 }
@@ -93,10 +103,7 @@ func (l *blockerLookup) lookup(typ, id string) (tasks.ResourceStatus, bool) {
 		if !ok {
 			return tasks.ResourceStatus{}, false
 		}
-		if !l.jiraLoaded {
-			l.jiraLoaded = true
-			l.jira = l.s.searchBlockerIssues()
-		}
+		l.loadJira()
 		is, ok := l.jira[key]
 		if !ok {
 			return tasks.ResourceStatus{}, false
@@ -109,6 +116,52 @@ func (l *blockerLookup) lookup(typ, id string) (tasks.ResourceStatus, bool) {
 	}
 	// Slack threads and links are resolved by hand.
 	return tasks.ResourceStatus{}, false
+}
+
+// loadJira fills l.jira once per pass: from a search (network), or from
+// the statuses earlier searches found. Nothing, while the Jira watcher is
+// off: every Jira blocker then keeps its last state.
+func (l *blockerLookup) loadJira() {
+	if l.jiraLoaded {
+		return
+	}
+	l.jiraLoaded = true
+	if !l.s.WatcherEnabled(config.ServiceJira) {
+		return
+	}
+	if l.network {
+		l.jira = l.s.searchBlockerIssues()
+		l.s.storeJiraStatuses(l.jira)
+		return
+	}
+	l.jira = l.s.cachedJiraStatuses()
+}
+
+// storeJiraStatuses merges a search's results into the server's Jira
+// status cache. A key the search did not answer keeps its previous status.
+func (s *Server) storeJiraStatuses(found map[string]wjira.IssueSummary) {
+	if len(found) == 0 {
+		return
+	}
+	s.jiraStatusMu.Lock()
+	defer s.jiraStatusMu.Unlock()
+	if s.jiraStatus == nil {
+		s.jiraStatus = map[string]wjira.IssueSummary{}
+	}
+	for k, is := range found {
+		s.jiraStatus[k] = is
+	}
+}
+
+// cachedJiraStatuses is a copy of the Jira status cache.
+func (s *Server) cachedJiraStatuses() map[string]wjira.IssueSummary {
+	s.jiraStatusMu.Lock()
+	defer s.jiraStatusMu.Unlock()
+	out := make(map[string]wjira.IssueSummary, len(s.jiraStatus))
+	for k, is := range s.jiraStatus {
+		out[k] = is
+	}
+	return out
 }
 
 // prBlockerStatus reads a PR's cached state (watcher_resource_state's
@@ -144,9 +197,14 @@ func prBlockerStatus(s *Server, id string) (tasks.ResourceStatus, bool) {
 // searchBlockerIssues looks up every Jira issue a resolvable blocker names,
 // returning them by key. It returns nil, and contacts nothing, when the
 // Jira watcher is off, Jira is not configured or no blocker names an
-// issue. A failed batch search is retried key by key, since one missing or
-// forbidden key fails a whole `key in (...)` query; keys that still fail
-// are absent (unknown: their blockers keep their last state).
+// issue. Only the poll loop calls it. Keys no search answered are absent
+// (unknown: their blockers keep their last state).
+//
+// One missing or forbidden key makes Jira reject a whole `key in (...)`
+// query with a 400, so a chunk that fails with a 400 is retried key by key.
+// Any other failure (a transport error, a timeout, a 401, a 5xx) would fail
+// every key alike, so the search stops there rather than paying the
+// timeout once per key.
 func (s *Server) searchBlockerIssues() map[string]wjira.IssueSummary {
 	if !s.WatcherEnabled(config.ServiceJira) {
 		return nil
@@ -173,9 +231,10 @@ func (s *Server) searchBlockerIssues() map[string]wjira.IssueSummary {
 		return nil
 	}
 	out := map[string]wjira.IssueSummary{}
-	add := func(keys []string) error {
+	search := func(keys []string) error {
 		got, _, err := c.SearchSummaries("key in ("+strings.Join(keys, ", ")+")", len(keys))
 		if err != nil {
+			s.logger().Printf("blockers: jira search %s: %v", strings.Join(keys, ","), err)
 			return err
 		}
 		for _, is := range got {
@@ -185,20 +244,30 @@ func (s *Server) searchBlockerIssues() map[string]wjira.IssueSummary {
 	}
 	for i := 0; i < len(keys); i += jiraSearchChunk {
 		chunk := keys[i:min(i+jiraSearchChunk, len(keys))]
-		err := add(chunk)
-		if err == nil || len(chunk) == 1 {
-			if err != nil {
-				s.logger().Printf("blockers: jira search %s: %v", chunk[0], err)
-			}
+		err := search(chunk)
+		switch {
+		case err == nil:
 			continue
+		case !isJiraBadRequest(err):
+			return out // Jira is unreachable or refusing us: stop
+		case len(chunk) == 1:
+			continue // that key is bad; the next chunk may be fine
 		}
 		for _, k := range chunk {
-			if err := add([]string{k}); err != nil {
-				s.logger().Printf("blockers: jira search %s: %v", k, err)
+			if err := search([]string{k}); err != nil && !isJiraBadRequest(err) {
+				return out
 			}
 		}
 	}
 	return out
+}
+
+// isJiraBadRequest reports whether a wjira error is an HTTP 400. wjira
+// returns only an untyped `fmt.Errorf("API returned status %d: %s", ...)`,
+// and changing the watcher library is out of scope here, so this matches
+// the text.
+func isJiraBadRequest(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "status 400")
 }
 
 // blockerJiraSearcher returns the Jira client for blocker lookups, or false

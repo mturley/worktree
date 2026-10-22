@@ -84,7 +84,10 @@ func ResolvableResourceIDs(conn *sql.DB, typ string) ([]string, error) {
 // lookup runs before the transaction, since it may call out to Jira, and
 // must not write to conn. The writes then happen in one inTx, which reloads
 // each blocker and re-reads task state, so a concurrent write is never
-// overwritten with a stale decision.
+// overwritten with a stale decision. A pass with nothing it could change
+// (no task blockers, and no resource the lookup knows) never opens it.
+// A blocker whose own reads fail (its row, its task's state, its label)
+// is logged via Logf and skipped; only a failed write fails the pass.
 func ResolveBlockers(conn *sql.DB, lookup StatusLookup) ([]Resolution, error) {
 	rows, err := conn.QueryContext(bg,
 		`SELECT `+blockerCols+` FROM task_blockers b JOIN tasks t ON t.id = b.task_id
@@ -105,16 +108,26 @@ func ResolveBlockers(conn *sql.DB, lookup StatusLookup) ([]Resolution, error) {
 		return nil, fmt.Errorf("resolve blockers: %w", err)
 	}
 
+	// Only resource blockers the lookup knows can change; dropping the rest
+	// here means a pass with nothing to decide never takes the write lock.
 	statuses := map[int64]ResourceStatus{}
-	if lookup != nil {
-		for _, b := range cands {
-			if b.Kind != BlockerResource {
+	kept := cands[:0]
+	for _, b := range cands {
+		if b.Kind == BlockerResource {
+			if lookup == nil {
 				continue
 			}
-			if st, ok := lookup(b.ResourceType, b.ResourceID); ok {
-				statuses[b.ID] = st
+			st, ok := lookup(b.ResourceType, b.ResourceID)
+			if !ok {
+				continue
 			}
+			statuses[b.ID] = st
 		}
+		kept = append(kept, b)
+	}
+	cands = kept
+	if len(cands) == 0 {
+		return nil, nil
 	}
 
 	var out []Resolution
@@ -126,14 +139,16 @@ func ResolveBlockers(conn *sql.DB, lookup StatusLookup) ([]Resolution, error) {
 				continue // removed, or its task deleted, since the read
 			}
 			if err != nil {
-				return err
+				Logf("tasks: resolve blocker %d: %v (skipped)", c.ID, err)
+				continue
 			}
 			if b.ResolvedAt != "" && !b.ResolvedAuto {
 				continue // resolved by hand since the read
 			}
 			var state State
 			if err := tx.QueryRowContext(bg, `SELECT state FROM tasks WHERE id = ?`, b.TaskID).Scan(&state); err != nil {
-				return err
+				Logf("tasks: resolve blocker %d: task state: %v (skipped)", b.ID, err)
+				continue
 			}
 			if state == StateDone {
 				continue
@@ -141,9 +156,9 @@ func ResolveBlockers(conn *sql.DB, lookup StatusLookup) ([]Resolution, error) {
 			done, reason, known := false, "", false
 			switch b.Kind {
 			case BlockerTask:
-				done, reason, err = blockingTaskDone(tx, b.BlockingTaskID)
-				if err != nil {
-					return err
+				if done, reason, err = blockingTaskDone(tx, b.BlockingTaskID); err != nil {
+					Logf("tasks: resolve blocker %d: blocking task state: %v (skipped)", b.ID, err)
+					continue
 				}
 				known = true
 			case BlockerResource:
@@ -154,11 +169,13 @@ func ResolveBlockers(conn *sql.DB, lookup StatusLookup) ([]Resolution, error) {
 			if !known || done == (b.ResolvedAt != "") {
 				continue
 			}
-			if err := setResolvedTx(tx, Actor{Kind: ActorSystem}, b, done, true, reason, ts); err != nil {
-				return err
-			}
 			label, err := blockerLabel(tx, b.BlockerTarget)
 			if err != nil {
+				Logf("tasks: resolve blocker %d: label: %v (skipped)", b.ID, err)
+				continue
+			}
+			// Only a failed write fails the pass (and rolls it back).
+			if err := setResolvedTx(tx, Actor{Kind: ActorSystem}, b, done, true, reason, ts); err != nil {
 				return err
 			}
 			r := Resolution{TaskID: b.TaskID, BlockerID: b.ID, Resolved: done, Label: label}

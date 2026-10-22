@@ -1259,14 +1259,18 @@ and `system`-actor events and returns `[]tasks.Resolution`.
 - **Resource blockers** need the `StatusLookup` from
   `internal/webui/blocker_status.go`: PRs from the cached
   `watcher_resource_state` `"state"` (MERGED → "merged", CLOSED → "closed",
-  OPEN → unresolved); Jira from one `key in (…)` search per pass (retried key
-  by key if the batch fails), only while the Jira watcher is on and Jira is
-  configured. Unknown means the blocker keeps its last state. The CLI leaves
-  them to the next `worktree ui` pass.
-- `s.afterTaskWrite()` (resolve with the full lookup, `ReconcileHolds`, then
-  `handleResolutions`) runs after every poll pass — even when a source
-  failed — and after the web's state change and delete. `handleResolutions`
-  is the seam for the "Unblocked" notification.
+  OPEN → unresolved); Jira from one `key in (…)` search per pass (a chunk
+  that fails with HTTP 400 is retried key by key; any other failure stops
+  the search), only while the Jira watcher is on and Jira is configured.
+  Unknown means the blocker keeps its last state. The CLI leaves them to the
+  next `worktree ui` pass.
+- `s.resolvePass(network)` resolves, runs `ReconcileHolds`, then
+  `handleResolutions` (the seam for the "Unblocked" notification). The poll
+  loop runs it with network after every pass, even when a source failed:
+  it is the ONLY Jira search, and it merges what it finds into the server's
+  Jira status cache. The web's state change and delete call
+  `s.afterTaskWrite()` = `resolvePass(false)`, which reads only the DB and
+  that cache, so a request never waits on Jira.
 
 ### Task detail modal (`ui/src/components/tasks/modal/`)
 
