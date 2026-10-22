@@ -72,6 +72,25 @@ describe("TimelineFeed unread divider", () => {
     expect(screen.queryByText("New")).not.toBeInTheDocument()
   })
 
+  it("draws no divider when the unread events are not one run at the top", () => {
+    // A resource's feed also carries its linked tasks' events, each on its
+    // own cursor, so a read event can sit between unread ones. One line
+    // would then call a read event new; the per-row marks say it instead.
+    wrap(
+      <TimelineFeed
+        events={[
+          ev("e3", { unread: true }),
+          ev("e2", { unread: false }),
+          ev("e1", { unread: true }),
+        ]}
+        loading={false}
+        error={null}
+        showUnreadDivider
+      />,
+    )
+    expect(screen.queryByText("New")).not.toBeInTheDocument()
+  })
+
   it("draws no divider on a feed that did not ask for one", () => {
     // A unified feed interleaves resources, so a single line would be a lie.
     wrap(<TimelineFeed events={[ev("e1", { unread: true })]} loading={false} error={null} />)

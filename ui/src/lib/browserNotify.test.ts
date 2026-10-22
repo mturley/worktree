@@ -75,11 +75,26 @@ describe("openNotificationTarget", () => {
     expect(here()).toBe("/worktree/%2Fw%2Fwt-a?task=12")
   })
 
-  it("leaves params it does not set alone on a worktree-wide notification", () => {
+  const wide = { ...msg, resource_type: "", resource_id: "" }
+
+  it("shows the bare worktree for a worktree-wide notification, clearing the selection", () => {
+    go("/worktree/%2Fw%2Fwt-a?resource=pr:o%2Fr%233")
+    openNotificationTarget(wide)
+    expect(here()).toBe("/worktree/%2Fw%2Fwt-a")
+  })
+
+  it("closes an open task modal for a worktree-wide notification", () => {
     go("/worktree/%2Fw%2Fwt-a?task=12")
-    const before = here()
-    openNotificationTarget({ ...msg, resource_type: "", resource_id: "" })
-    expect(here()).toBe(before)
+    openNotificationTarget(wide)
+    expect(here()).toBe("/worktree/%2Fw%2Fwt-a")
+  })
+
+  it("stays put for a worktree-wide notification on the bare worktree", () => {
+    go("/worktree/%2Fw%2Fwt-a")
+    const len = window.history.length
+    openNotificationTarget(wide)
+    expect(here()).toBe("/worktree/%2Fw%2Fwt-a")
+    expect(window.history.length).toBe(len)
   })
 })
 

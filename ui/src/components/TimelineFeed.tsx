@@ -60,10 +60,13 @@ export function TimelineFeed({
   if (events.length === 0) return emptyText === null ? null : <Text c="dimmed" size="sm">{emptyText}</Text>
 
   // The oldest unread event, i.e. the last one in this newest-first list. The
-  // divider goes immediately after it. -1 when nothing is unread.
-  const dividerIndex = showUnreadDivider
-    ? events.reduce((acc, e, i) => (e.unread ? i : acc), -1)
-    : -1
+  // divider goes immediately after it. -1 when nothing is unread — and when
+  // the unread events are not one contiguous run at the top: a resource's
+  // feed also carries its linked tasks' events, each on its own cursor, so a
+  // read event can sit between unread ones. A single line would then call
+  // that read event new; the per-row marks carry it instead.
+  const lastUnread = showUnreadDivider ? events.reduce((acc, e, i) => (e.unread ? i : acc), -1) : -1
+  const dividerIndex = lastUnread >= 0 && events.slice(0, lastUnread + 1).every((e) => e.unread) ? lastUnread : -1
 
   return (
     <>

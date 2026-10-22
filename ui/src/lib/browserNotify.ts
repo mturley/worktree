@@ -42,8 +42,8 @@ export function showBrowserNotification(msg: NotificationMsg, onClick: () => voi
  * (`resource` or `task`) is compared and written; the other is kept as it
  * is. A resource notification must not close an open task modal, and a task
  * notification opens its modal over the selected resource rather than
- * dropping the selection. A worktree-wide notification sets neither, so
- * being on that worktree at all is enough.
+ * dropping the selection. A worktree-wide notification sets neither: it
+ * goes to the bare worktree, clearing both, unless both are already absent.
  */
 export function openNotificationTarget(msg: NotificationMsg): void {
   const href = notificationHref(msg)
@@ -54,7 +54,13 @@ export function openNotificationTarget(msg: NotificationMsg): void {
     return
   }
   const key = ["task", "resource"].find((k) => target.searchParams.has(k))
-  if (!key) return
+  if (!key) {
+    // A worktree-wide summary ("N resources have new events") means "show
+    // this worktree's activity": clear any selection and open task, unless
+    // there is neither to clear.
+    if (here.searchParams.has("resource") || here.searchParams.has("task")) navigate(withHomeParam(href))
+    return
+  }
   const value = target.searchParams.get(key) ?? ""
   if (here.searchParams.get(key) === value) return
   here.searchParams.set(key, value)
