@@ -8,11 +8,13 @@ import (
 
 // FeedQuery selects task events across tasks, for the activity feeds.
 type FeedQuery struct {
-	TaskIDs   []int64 // nil = every non-deleted task; empty non-nil = none
-	Before    string  // exclusive ts cursor; "" = newest
-	Limit     int     // <= 0 = no limit
-	AgentOnly bool    // only actor = 'agent'
-	SinceTS   string  // inclusive lower bound; "" = none (for unread)
+	TaskIDs []int64 // nil = every non-deleted task; empty non-nil = none
+	Before  string  // exclusive ts cursor; "" = newest
+	Limit   int     // <= 0 = no limit
+	// UnreadActorsOnly keeps only events whose actor counts as unread
+	// (UnreadActorSQL).
+	UnreadActorsOnly bool
+	SinceTS          string // inclusive lower bound; "" = none (for unread)
 	// AtTS selects only events at exactly this ts; "" = any. The feeds use
 	// it to fetch the rest of a same-second cluster a LIMIT cut through.
 	AtTS string
@@ -55,8 +57,10 @@ func FeedEvents(conn *sql.DB, q FeedQuery) ([]FeedEvent, error) {
 		query += ` AND e.ts = ?`
 		args = append(args, q.AtTS)
 	}
-	if q.AgentOnly {
-		query += ` AND e.actor = 'agent'`
+	if q.UnreadActorsOnly {
+		clause, a := UnreadActorSQL("e.actor")
+		query += ` AND ` + clause
+		args = append(args, a...)
 	}
 	query += ` ORDER BY e.ts DESC, e.id DESC`
 	if q.Limit > 0 {

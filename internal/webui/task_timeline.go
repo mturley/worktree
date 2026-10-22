@@ -44,12 +44,13 @@ func taskEventToTimeline(ev tasks.Event, t tasks.Task) TimelineEvent {
 }
 
 // taskFeedRow converts a feed event for the activity feeds: the converted
-// row, with Unread set by the unread rule — an agent's event newer than its
-// task's cursor (cursors is unread.Cursors; a missing cursor reads as "", so
-// every agent event counts). The user's own events are never unread.
+// row, with Unread set by the unread rule — an event whose actor counts as
+// unread (tasks.CountsAsUnread) newer than its task's cursor (cursors is
+// unread.Cursors; a missing cursor reads as "", so every such event counts).
+// The user's own events are never unread.
 func taskFeedRow(fe tasks.FeedEvent, cursors map[string]string) TimelineEvent {
 	te := taskEventToTimeline(fe.Event, tasks.Task{ID: fe.TaskID, Title: fe.TaskTitle})
-	te.Unread = fe.Actor == tasks.ActorAgent && fe.TS > cursors[unread.Key("task", te.ResourceID)]
+	te.Unread = tasks.CountsAsUnread(fe.Actor) && fe.TS > cursors[unread.Key("task", te.ResourceID)]
 	return te
 }
 

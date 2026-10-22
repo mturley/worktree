@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/mturley/worktree/internal/selfid"
+	"github.com/mturley/worktree/internal/tasks"
 )
 
 // ErrSlackNotSupported is returned for any write against a Slack thread.
@@ -146,23 +147,25 @@ func Summaries(conn *sql.DB) (map[string]Summary, error) {
 	return out, rows.Err()
 }
 
-// TaskSummaries returns the unread task events per task id: the AGENT events
-// of non-deleted tasks newer than the task's cursor. A task's cursor is a
-// resource_read_cursor row with resource_type 'task' and the task id as its
-// resource_id; a missing row reads as '' so every agent event counts (unlike
-// Summaries, where no row means nothing unread). The user's own events never
-// count. Mark and Restore already work for resType "task". Plain SQL over the
-// tables, so this package does not import internal/tasks.
+// TaskSummaries returns the unread task events per task id: the events of
+// non-deleted tasks whose actor counts as unread (tasks.UnreadActorSQL, the
+// one source of the actor rule) and that are newer than the task's cursor. A
+// task's cursor is a resource_read_cursor row with resource_type "task" and
+// the task id as its resource_id; a missing row reads as the empty string,
+// so every such event counts (unlike Summaries, where no row means nothing
+// unread). The user's own events never count. Mark and Restore already work
+// for resType "task".
 func TaskSummaries(conn *sql.DB) (map[int64]Summary, error) {
+	actorClause, args := tasks.UnreadActorSQL("e.actor")
 	rows, err := conn.Query(`
 		SELECT e.task_id, COUNT(*), MAX(e.ts)
 		  FROM task_events e
 		  JOIN tasks t ON t.id = e.task_id AND t.deleted_at IS NULL
 		  LEFT JOIN resource_read_cursor c
 		    ON c.resource_type = 'task' AND c.resource_id = CAST(e.task_id AS TEXT)
-		 WHERE e.actor = 'agent'
+		 WHERE `+actorClause+`
 		   AND e.ts > COALESCE(c.last_read_ts, '')
-		 GROUP BY e.task_id`)
+		 GROUP BY e.task_id`, args...)
 	if err != nil {
 		return nil, err
 	}

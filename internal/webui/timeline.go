@@ -375,7 +375,7 @@ func (s *Server) mergeTaskEvents(rows []TimelineEvent, q taskFeedQuery) ([]Timel
 	if !q.include {
 		return rows, nil
 	}
-	fq := tasks.FeedQuery{TaskIDs: q.taskIDs, Before: q.before, Limit: q.limit, AgentOnly: q.unreadOnly}
+	fq := tasks.FeedQuery{TaskIDs: q.taskIDs, Before: q.before, Limit: q.limit, UnreadActorsOnly: q.unreadOnly}
 	if q.unreadOnly || len(q.terms) > 0 {
 		fq.Limit = 0
 	}

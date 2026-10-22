@@ -814,6 +814,12 @@ cursor rather than resetting it.
 unread when `actor = 'agent'` and `ts > cursor`; unlike a resource, a MISSING
 row reads as `''`, so every agent event counts until the task is first marked
 read. The user's own events never count, and a deleted task's never appear.
+The actor rule has ONE source, `internal/tasks/unread.go`: the unread-actors
+list (agent only; Phase 5 adds `system`), `tasks.CountsAsUnread(actor)` for
+Go and `tasks.UnreadActorSQL(col)` for SQL. `unread.TaskSummaries`, the
+feeds' `unread` flag (`taskFeedRow`), their `unread_only` filter
+(`FeedQuery.UnreadActorsOnly`) and the notifier (`readNewTaskEvents`) all go
+through it; none spells `'agent'` itself.
 `unread.TaskSummaries` returns `{Count, NewestTS}` per task in one query.
 Written by `POST /api/task-read` (404 for a missing or deleted task) and
 undone by `/api/task-read/restore` (the same CAS 409 as resources).

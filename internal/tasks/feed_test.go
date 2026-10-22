@@ -90,7 +90,7 @@ func TestFeedEventsTaskIDsNilVsEmpty(t *testing.T) {
 	}
 }
 
-func TestFeedEventsAgentOnlyAndDeleted(t *testing.T) {
+func TestFeedEventsUnreadActorsOnlyAndDeleted(t *testing.T) {
 	conn := newDB(t)
 	t1 := mustCreate(t, conn, "one")
 	t2 := mustCreate(t, conn, "two")
@@ -99,14 +99,14 @@ func TestFeedEventsAgentOnlyAndDeleted(t *testing.T) {
 	ag := feedEvent(t, conn, t1.ID, "2026-01-01T00:00:02Z", "agent")
 	feedEvent(t, conn, t2.ID, "2026-01-01T00:00:03Z", "agent")
 
-	evs, _ := FeedEvents(conn, FeedQuery{AgentOnly: true, Limit: 10})
+	evs, _ := FeedEvents(conn, FeedQuery{UnreadActorsOnly: true, Limit: 10})
 	if len(evs) != 2 {
 		t.Fatalf("agent only %v", feedIDs(evs))
 	}
 	if _, err := Delete(conn, user, t2.ID); err != nil {
 		t.Fatal(err)
 	}
-	evs, _ = FeedEvents(conn, FeedQuery{AgentOnly: true, Limit: 10})
+	evs, _ = FeedEvents(conn, FeedQuery{UnreadActorsOnly: true, Limit: 10})
 	if !equalIDs(feedIDs(evs), []int64{ag}) {
 		t.Fatalf("deleted task leaked: %v", feedIDs(evs))
 	}

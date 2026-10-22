@@ -269,7 +269,8 @@ func (s *Server) notifyBatches(events []newEvent) ([]notifyBatch, error) {
 	return out, nil
 }
 
-// readNewTaskEvents returns the agent task events past c.taskID, oldest
+// readNewTaskEvents returns the task events past c.taskID whose actor counts
+// as unread (tasks.CountsAsUnread: an agent's), oldest
 // first, and the advanced id cursor. Every row past the cursor advances it,
 // including the user's own events and those of deleted tasks, which are then
 // dropped: the user's events never notify, and a deleted task's never count.
@@ -296,7 +297,7 @@ func readNewTaskEvents(conn *sql.DB, c notifyCursor) ([]tasks.FeedEvent, int64, 
 		if e.ID > next {
 			next = e.ID
 		}
-		if !live || e.Actor != tasks.ActorAgent {
+		if !live || !tasks.CountsAsUnread(e.Actor) {
 			continue
 		}
 		e.Payload = []byte(payload)
