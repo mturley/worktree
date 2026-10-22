@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func taskTarget(id int64) BlockerTarget { return BlockerTarget{Kind: BlockerTask, TaskID: id} }
+func taskTarget(id int64) BlockerTarget { return BlockerTarget{Kind: BlockerTask, BlockingTaskID: id} }
 
 func resTarget(typ, id string) BlockerTarget {
 	return BlockerTarget{Kind: BlockerResource, ResourceType: typ, ResourceID: id}
@@ -358,6 +358,29 @@ func TestBlockingAndResourceBlockCounts(t *testing.T) {
 	// A deleted task's blockers are excluded everywhere.
 	if _, err := Blockers(conn, gone.ID); !errors.Is(err, ErrNotFound) {
 		t.Errorf("deleted task's blockers: %v", err)
+	}
+}
+
+// The blocked and the blocking task ids both survive JSON encoding (an
+// embedded field named like an outer one would be silently dropped).
+func TestBlockerJSONHasBothTaskIDs(t *testing.T) {
+	conn := newDB(t)
+	tk := mustCreate(t, conn, "blocked")
+	dep := mustCreate(t, conn, "dep")
+	b := mustAddBlocker(t, conn, tk.ID, taskTarget(dep.ID))
+	if b.TaskID != tk.ID || b.BlockingTaskID != dep.ID {
+		t.Fatalf("ids %+v", b)
+	}
+	raw, err := json.Marshal(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	if m["TaskID"] != float64(tk.ID) || m["BlockingTaskID"] != float64(dep.ID) {
+		t.Fatalf("json %s", raw)
 	}
 }
 

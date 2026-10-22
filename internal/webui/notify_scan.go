@@ -270,7 +270,7 @@ func (s *Server) notifyBatches(events []newEvent) ([]notifyBatch, error) {
 }
 
 // readNewTaskEvents returns the task events past c.taskID whose actor counts
-// as unread (tasks.CountsAsUnread: an agent's), oldest
+// as unread (tasks.CountsAsUnread: an agent's or the system's), oldest
 // first, and the advanced id cursor. Every row past the cursor advances it,
 // including the user's own events and those of deleted tasks, which are then
 // dropped: the user's events never notify, and a deleted task's never count.

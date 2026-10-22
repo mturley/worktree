@@ -14,12 +14,14 @@ const (
 	BlockerOther    = "other"    // free text, resolved by hand
 )
 
-// BlockerTarget is what blocks a task: another task (TaskID), a resource
-// (ResourceType + ResourceID) or free text (Text). Only the fields its
-// kind uses are set once normalised.
+// BlockerTarget is what blocks a task: another task (BlockingTaskID), a
+// resource (ResourceType + ResourceID) or free text (Text). Only the fields
+// its kind uses are set once normalised. The field is BlockingTaskID, not
+// TaskID, so it never collides with Blocker.TaskID (the blocked task), which
+// would shadow it and drop it from Blocker's JSON encoding.
 type BlockerTarget struct {
 	Kind                     string
-	TaskID                   int64
+	BlockingTaskID           int64
 	ResourceType, ResourceID string
 	Text                     string
 }
@@ -43,10 +45,10 @@ var ErrBlockerNotFound = fmt.Errorf("%w: no such blocker", ErrNotFound)
 func normalizeBlocker(t BlockerTarget) (BlockerTarget, error) {
 	switch t.Kind {
 	case BlockerTask:
-		if t.TaskID <= 0 {
+		if t.BlockingTaskID <= 0 {
 			return BlockerTarget{}, fmt.Errorf("%w: a task blocker needs a task id", ErrInvalid)
 		}
-		return BlockerTarget{Kind: BlockerTask, TaskID: t.TaskID}, nil
+		return BlockerTarget{Kind: BlockerTask, BlockingTaskID: t.BlockingTaskID}, nil
 	case BlockerResource:
 		typ, id := strings.TrimSpace(t.ResourceType), strings.TrimSpace(t.ResourceID)
 		if typ == "" || id == "" {
@@ -75,13 +77,13 @@ func manuallyResolvable(b BlockerTarget) bool {
 const blockerCols = `b.id, b.task_id, b.kind, COALESCE(b.blocking_task_id, 0), b.resource_type, b.resource_id, b.text,
 	b.resolved_at, b.resolved_auto, b.resolved_reason, b.created_at`
 
-// scanBlocker reads one row selected with blockerCols. Note Blocker.TaskID
-// is the blocked task; the blocking task is Blocker.BlockerTarget.TaskID.
+// scanBlocker reads one row selected with blockerCols. Blocker.TaskID is
+// the blocked task; BlockingTaskID is the blocking one (task kind only).
 func scanBlocker(s interface{ Scan(...any) error }) (Blocker, error) {
 	var b Blocker
 	var resolved sql.NullString
 	var auto int
-	err := s.Scan(&b.ID, &b.TaskID, &b.Kind, &b.BlockerTarget.TaskID, &b.ResourceType, &b.ResourceID, &b.Text,
+	err := s.Scan(&b.ID, &b.TaskID, &b.Kind, &b.BlockingTaskID, &b.ResourceType, &b.ResourceID, &b.Text,
 		&resolved, &auto, &b.ResolvedReason, &b.CreatedAt)
 	b.ResolvedAt, b.ResolvedAuto = resolved.String, auto != 0
 	return b, err
@@ -106,14 +108,14 @@ func blockerLabel(q dbtx, b BlockerTarget) (string, error) {
 	switch b.Kind {
 	case BlockerTask:
 		var title string
-		err := q.QueryRowContext(bg, `SELECT title FROM tasks WHERE id = ?`, b.TaskID).Scan(&title)
+		err := q.QueryRowContext(bg, `SELECT title FROM tasks WHERE id = ?`, b.BlockingTaskID).Scan(&title)
 		if errors.Is(err, sql.ErrNoRows) {
-			return fmt.Sprintf("T%d", b.TaskID), nil
+			return fmt.Sprintf("T%d", b.BlockingTaskID), nil
 		}
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("T%d %s", b.TaskID, title), nil
+		return fmt.Sprintf("T%d %s", b.BlockingTaskID, title), nil
 	case BlockerResource:
 		return b.ResourceType + ":" + b.ResourceID, nil
 	default:
@@ -198,7 +200,7 @@ func AddBlocker(conn *sql.DB, a Actor, taskID int64, t BlockerTarget) (Blocker, 
 			`SELECT id FROM task_blockers
 			  WHERE task_id = ? AND kind = ? AND COALESCE(blocking_task_id, 0) = ?
 			    AND resource_type = ? AND resource_id = ? AND text = ?`,
-			taskID, t.Kind, t.TaskID, t.ResourceType, t.ResourceID, t.Text).Scan(&id)
+			taskID, t.Kind, t.BlockingTaskID, t.ResourceType, t.ResourceID, t.Text).Scan(&id)
 		if err == nil {
 			return nil // duplicate: no-op
 		}
@@ -206,12 +208,12 @@ func AddBlocker(conn *sql.DB, a Actor, taskID int64, t BlockerTarget) (Blocker, 
 			return err
 		}
 		if t.Kind == BlockerTask {
-			if _, err := load(tx, t.TaskID); errors.Is(err, ErrNotFound) {
-				return fmt.Errorf("%w: blocking task %d does not exist", ErrInvalid, t.TaskID)
+			if _, err := load(tx, t.BlockingTaskID); errors.Is(err, ErrNotFound) {
+				return fmt.Errorf("%w: blocking task %d does not exist", ErrInvalid, t.BlockingTaskID)
 			} else if err != nil {
 				return err
 			}
-			cyc, err := wouldCycle(tx, taskID, t.TaskID)
+			cyc, err := wouldCycle(tx, taskID, t.BlockingTaskID)
 			if err != nil {
 				return err
 			}
@@ -222,7 +224,7 @@ func AddBlocker(conn *sql.DB, a Actor, taskID int64, t BlockerTarget) (Blocker, 
 		ts := now()
 		var blocking any
 		if t.Kind == BlockerTask {
-			blocking = t.TaskID
+			blocking = t.BlockingTaskID
 		}
 		res, err := tx.ExecContext(bg,
 			`INSERT INTO task_blockers (task_id, kind, blocking_task_id, resource_type, resource_id, text, created_at)
