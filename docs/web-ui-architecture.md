@@ -965,6 +965,13 @@ to break.
   `min(8 rows, 25dvh)` (`pinnedMaxHeight` in `TaskList.tsx`), then it
   scrolls inside itself. The row cap alone took 70–80% of a short screen
   once the resource card and tab bar sat around it.
+- **A Slack thread that can't load keeps its tasks.** `SlackThreadPane`'s
+  early returns (Slack watcher off, Slack not configured) keep their
+  notice but render it through `withTasks`: pinned, the panel then the
+  notice; otherwise a minimal Thread · Tasks tab bar with the notice as the
+  Thread panel. There is no Linked tab there, since resolving links
+  contacts the services. Tasks contact none, so watcher toggles never hide
+  them.
 - **Nothing moves when a drag starts.** In the draggable sorts (Custom,
   Priority) an empty section is a slim dashed strip ("Drag here to star",
   "Drag here for medium priority") rendered AT REST, and whether sections
@@ -1005,9 +1012,9 @@ to break.
   straight into hiding.
 - **Counts.** `TaskCountBadge` is the lime count (dark text, never blue —
   blue is unread). It appears on the Tasks tab while that tab is not active
-  and the list is not pinned, and on worktree cards and list resource cards
-  beside `UnreadBadge` (`open_task_count`, absent = 0, titled "N open
-  tasks"). The selected resource's detail card has none: its own Tasks tab
+  and the list is not pinned, and beside `UnreadBadge` on worktree cards,
+  list resource cards and the home page's Resources rows (`AllResourceRow`)
+  (`open_task_count`, absent = 0, titled "N open tasks"). The selected resource's detail card has none: its own Tasks tab
   or pinned panel shows the count. `useSSE` answers `tasks_changed` by
   invalidating `["tasks"]`, `["worktrees"]` and `["resources"]`, so lists
   and badges both follow CLI and agent writes within the stream's 5s tick.

@@ -28,8 +28,10 @@ vi.mock("./slack/ThreadView", () => ({
   ),
 }))
 
+// A test sets this to stand in for a failed thread fetch.
+const threadError: { current: string | undefined } = { current: undefined }
 vi.mock("../hooks/useThread", () => ({
-  useThread: () => ({ data: undefined, status: "ready", error: undefined, refresh: vi.fn(), applyLocal: vi.fn() }),
+  useThread: () => ({ data: undefined, status: "ready", error: threadError.current, refresh: vi.fn(), applyLocal: vi.fn() }),
 }))
 
 import { ResourceDetailPane } from "./ResourceDetailPane"
@@ -179,4 +181,62 @@ describe("ResourceDetailPane slack tasks", () => {
     await userEvent.click(screen.getByRole("button", { name: "Pin task list" }))
     await waitFor(() => expect(screen.getByRole("tab", { name: "Thread" })).toHaveAttribute("aria-selected", "true"))
   })
+})
+
+/*
+ * Tasks contact no external service, so a thread that can't be shown (the
+ * Slack watcher off, or Slack not configured) still has its task list.
+ */
+describe("ResourceDetailPane slack tasks without a thread", () => {
+  const task: Task = {
+    id: 5, ref: "T5", title: "Follow up on the thread", description: "", state: "not_started", priority: "none",
+    starred: false, rank: "r1", created_at: "", updated_at: "", archived: false, links: [], implicit_worktrees: [],
+    subtasks_total: 0, subtasks_done: 0,
+  }
+  const off = { github: { enabled: true, failing: false }, jira: { enabled: true, failing: false }, slack: { enabled: false, failing: false } }
+  beforeEach(() => {
+    window.localStorage.clear()
+    vi.spyOn(api, "tasks").mockResolvedValue([task])
+    vi.spyOn(api, "linkedResources").mockResolvedValue({ fetched_at: "", count: 0, sections: [] })
+  })
+  afterEach(() => {
+    threadError.current = undefined
+  })
+
+  const cases = {
+    "watcher off": {
+      setup: () => {
+        vi.spyOn(api, "watcherHealth").mockResolvedValue(off)
+      },
+      notice: "The thread can't be shown while the Slack watcher is disabled.",
+    },
+    "not configured": {
+      setup: () => {
+        threadError.current = "HTTP 503: slack not configured"
+      },
+      notice: "Slack not configured",
+    },
+  }
+
+  for (const [name, { setup, notice }] of Object.entries(cases)) {
+    it(`${name}: keeps the notice, with a Tasks tab beside it`, async () => {
+      setup()
+      wrap(<ResourceDetailPane path="/wt/foo" resource={slack} />)
+      expect(await screen.findByText(notice)).toBeInTheDocument()
+      const tabs = within(screen.getByRole("tablist")).getAllByRole("tab")
+      expect(tabs.map((t) => t.textContent?.replace(/\d+$/, ""))).toEqual(["Thread", "Tasks"])
+      await userEvent.click(tabs[1]!)
+      expect(await screen.findByText("Follow up on the thread")).toBeInTheDocument()
+    })
+
+    it(`${name}: pinned, the list shows with the notice`, async () => {
+      setup()
+      window.localStorage.setItem(TASK_LIST_KEY, JSON.stringify({ pinned: true }))
+      wrap(<ResourceDetailPane path="/wt/foo" resource={slack} />)
+      expect(await screen.findByText(notice)).toBeInTheDocument()
+      const panel = document.querySelector(".task-panel") as HTMLElement
+      expect(panel).not.toBeNull()
+      expect(await within(panel).findByText("Follow up on the thread")).toBeInTheDocument()
+    })
+  }
 })

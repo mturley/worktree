@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 import { Alert, Code, Group, Stack, Tabs, Text } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
 import { useThread } from "../hooks/useThread"
@@ -96,6 +96,41 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, 
   }, [focus?.key])
   const linked = useLinkedResources(resource.type, resource.id, linkedOpened)
 
+  /*
+   * When the thread can't be shown, its notice stands where the thread
+   * would, but the task list stays: tasks contact no external service.
+   * Pinned, the panel comes first, as it sits above the tab bar elsewhere;
+   * otherwise a minimal Thread · Tasks tab bar (no Linked tab: resolving
+   * links contacts the services).
+   */
+  const withTasks = (notice: ReactNode) =>
+    tasks.pinned ? (
+      <>
+        {tasks.pinnedPanel}
+        {notice}
+      </>
+    ) : (
+      <Tabs
+        value={paneTab === TASKS_TAB ? TASKS_TAB : "thread"}
+        keepMounted={false}
+        onChange={(v) => {
+          if (v) setPaneTab(v)
+        }}
+      >
+        <Tabs.List>
+          <Tabs.Tab value="thread">Thread</Tabs.Tab>
+          {tasks.tab}
+          {paneTab === TASKS_TAB && (
+            <Group gap={4} wrap="nowrap" align="center" ml="auto" pb={4} style={{ flex: "none" }}>
+              {tasks.toolbar}
+            </Group>
+          )}
+        </Tabs.List>
+        <Tabs.Panel value="thread" pt="sm">{notice}</Tabs.Panel>
+        <Tabs.Panel value={TASKS_TAB} pt="sm">{tasks.tabPanelBody}</Tabs.Panel>
+      </Tabs>
+    )
+
   // Watcher off: the resource still shows, but the thread can't be loaded
   // (worktree doesn't contact Slack). ResourceDetailPane's WatcherAlert says
   // why, with a link to turn it back on.
@@ -103,18 +138,22 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, 
     return (
       <Stack gap="sm">
         <ResourceCard r={resource} path={path} onRemoved={onRemoved} variant="detail" onMetaChanged={() => onResourceChanged?.()} notify={notify} />
-        <Text size="sm" c="dimmed">The thread can't be shown while the Slack watcher is disabled.</Text>
+        {withTasks(<Text size="sm" c="dimmed">The thread can't be shown while the Slack watcher is disabled.</Text>)}
       </Stack>
     )
   }
 
   if (isNotConfigured(thread.error)) {
     return (
-      <Alert color="yellow" variant="light" title="Slack not configured">
-        <Text size="sm">
-          Run <Code>worktree setup</Code> to enable Slack.
-        </Text>
-      </Alert>
+      <Stack gap="sm">
+        {withTasks(
+          <Alert color="yellow" variant="light" title="Slack not configured">
+            <Text size="sm">
+              Run <Code>worktree setup</Code> to enable Slack.
+            </Text>
+          </Alert>,
+        )}
+      </Stack>
     )
   }
 

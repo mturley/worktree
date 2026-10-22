@@ -11,6 +11,7 @@ import { ResourceCardBody } from "./ResourceCard"
 import { ExistingTabButtons, openLabel } from "./ResourceActions"
 import { useCopyLink } from "./resourceActionHooks"
 import { UnreadBadge } from "./UnreadBadge"
+import { TaskCountBadge, openTasksLabel } from "./tasks/TaskCountBadge"
 import { matchResource } from "../lib/search"
 import { MatchWhy } from "./search/MatchWhy"
 import { useSearchContext } from "./search/SearchContext"
@@ -84,6 +85,7 @@ export function AllResourceRow({ r }: { r: AllResourceDTO }) {
   const [, navigate] = useLocation()
   const [choosing, setChoosing] = useState(false)
   const unread = hasUnread(r)
+  const openTasks = r.open_task_count ?? 0
   const { terms } = useSearchContext()
   const crossHover = useCrossHover({ kind: "resource", type: r.type, id: r.id, paths: r.worktrees.map((w) => w.path) })
 
@@ -125,7 +127,15 @@ export function AllResourceRow({ r }: { r: AllResourceDTO }) {
           aria-label={`view ${r.custom_name || r.title || r.id}`}
           style={{ flex: "1 1 260px", minWidth: 0, textAlign: "left", cursor: "inherit" }}
         >
-          <ResourceCardBody r={r} aside={unread ? <UnreadBadge unread count={r.unread_count} /> : undefined} />
+          <ResourceCardBody
+            r={r}
+            aside={unread || openTasks > 0 ? (
+              <>
+                {unread && <UnreadBadge unread count={r.unread_count} />}
+                <TaskCountBadge count={openTasks} title={openTasksLabel(openTasks)} />
+              </>
+            ) : undefined}
+          />
           <WorktreesLine worktrees={r.worktrees} />
           <MatchWhy match={terms.length ? matchResource(r, terms) : null} />
         </UnstyledButton>
