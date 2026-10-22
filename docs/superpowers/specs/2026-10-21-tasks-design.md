@@ -22,7 +22,7 @@ the real code.
 | 2 | Task lists in the UI | web API; Tasks tabs everywhere (Links get a Details tab); rows, quick add, sort/filter, starred group, drag reorder (incl. star/priority by drag), pinning, badges, search | `docs/superpowers/plans/2026-10-21-tasks-phase2-ui-lists.md` | done |
 | 3 | Detail modal | Details/Activity tabs and sidebar, link editing, subtask editing, linked events (with snapshots), "＋ task" from events and Slack messages | `docs/superpowers/plans/2026-10-21-tasks-phase3-detail-modal.md` | done |
 | 4 | Activity integration | task events in feeds + "Tasks" source filter, per-task read cursors, unread counts, mark-read (and its undo), notifications for agent events | `docs/superpowers/plans/2026-10-22-tasks-phase4-activity.md` | done |
-| 5 | Blockers | task / resource / other blockers, `task:` subscription holds + subscriber audit, watcher `status_category` release, Unblocked events + notifications, "blocks N tasks" | — | not started |
+| 5 | Blockers | task / resource / other blockers, `task:` subscription holds + subscriber audit, watcher `status_category` release, Unblocked events + notifications, "blocks N tasks" | `docs/superpowers/plans/2026-10-22-tasks-phase5-blockers.md` | plan written |
 | 6 | Undo | state / subtask / delete undo with CAS and cascades, delayed Unblocked notifications, soft-delete purge sweep | — | not started |
 
 ## Why
