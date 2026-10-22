@@ -93,6 +93,44 @@ describe("SubtasksSection", () => {
     expect(api.editSubtask).toHaveBeenCalledTimes(1)
   })
 
+  it("clears the input as the add is sent, so typing during the save is kept", async () => {
+    let resolve!: (d: TaskDetail) => void
+    vi.mocked(api.addSubtask).mockReturnValue(new Promise((r) => { resolve = r }))
+    const user = userEvent.setup()
+    show()
+    const input = screen.getByRole("textbox", { name: "New subtask" })
+    await user.type(input, "fourth{Enter}")
+    expect(api.addSubtask).toHaveBeenCalledWith(1, "fourth")
+    // Cleared before the server answers.
+    expect(input).toHaveValue("")
+    await user.type(input, "fifth")
+    await act(async () => resolve(base))
+    expect(input).toHaveValue("fifth")
+  })
+
+  it("a failed add puts the text back and says why", async () => {
+    vi.mocked(api.addSubtask).mockRejectedValue(new Error("disk full"))
+    const user = userEvent.setup()
+    show()
+    const input = screen.getByRole("textbox", { name: "New subtask" })
+    await user.type(input, "fourth{Enter}")
+    expect(await screen.findByText(/disk full/)).toBeInTheDocument()
+    expect(input).toHaveValue("fourth")
+  })
+
+  it("a failed add does not overwrite what was typed since", async () => {
+    let reject!: (e: Error) => void
+    vi.mocked(api.addSubtask).mockReturnValue(new Promise((_, r) => { reject = r }))
+    const user = userEvent.setup()
+    show()
+    const input = screen.getByRole("textbox", { name: "New subtask" })
+    await user.type(input, "fourth{Enter}")
+    await user.type(input, "fifth")
+    await act(async () => reject(new Error("disk full")))
+    expect(await screen.findByText(/disk full/)).toBeInTheDocument()
+    expect(input).toHaveValue("fifth")
+  })
+
   it("removes without asking", async () => {
     const user = userEvent.setup()
     show()

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { ActionIcon, Alert, Button, Combobox, Group, Stack, Text, TextInput, useCombobox } from "@mantine/core"
 import { IconX } from "@tabler/icons-react"
 import { useQueries, useQuery } from "@tanstack/react-query"
@@ -100,6 +100,19 @@ function PickerInput({ task, onDone }: { task: TaskDetail; onDone: () => void })
     : suggestions
   ).slice(0, MAX_OPTIONS)
   const url = isURL(q) ? q : null
+
+  // While there is a query, the first option (the pasted URL's, or the best
+  // match) is preselected, so Enter picks it. An empty query selects nothing.
+  // After render, because selectFirstOption finds options in the DOM.
+  // Keyed on the query and the first option, not every render, so arrowing to
+  // another option sticks. (The store object is new each render; its methods
+  // are stable.)
+  const firstValue = url ? URL_VALUE : matches[0]?.value
+  const { selectFirstOption, resetSelectedOption } = store
+  useEffect(() => {
+    if (q && firstValue !== undefined) selectFirstOption()
+    else resetSelectedOption()
+  }, [q, firstValue, selectFirstOption, resetSelectedOption])
 
   const choose = async (value: string) => {
     if (busy) return

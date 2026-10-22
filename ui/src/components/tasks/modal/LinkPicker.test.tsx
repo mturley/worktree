@@ -35,6 +35,15 @@ const withWorktree = detail({
   implicit_worktrees: ["/w/impl"],
 })
 
+// Selecting an option scrolls it into view; jsdom has no scrollIntoView.
+const originalScroll = Element.prototype.scrollIntoView
+beforeEach(() => {
+  Element.prototype.scrollIntoView = vi.fn()
+})
+afterEach(() => {
+  Element.prototype.scrollIntoView = originalScroll
+})
+
 beforeEach(() => {
   vi.mocked(api.taskDetail).mockResolvedValue(withWorktree)
   vi.mocked(api.worktrees).mockResolvedValue(wts)
@@ -86,6 +95,18 @@ describe("LinkPicker", () => {
     expect(api.addTaskLink).toHaveBeenCalledWith(1, { kind: "worktree", path: "/w/other" }, false)
   })
 
+  it("typing preselects the first match, so Enter links it", async () => {
+    const { user, input } = await openPicker()
+    await user.type(input, "logout")
+    const option = await screen.findByRole("option", { name: /Fix logout/ })
+    await waitFor(() => expect(option).toHaveAttribute("data-combobox-selected"))
+    await user.keyboard("{Enter}")
+    await waitFor(() =>
+      expect(api.addTaskLink).toHaveBeenCalledWith(1, { kind: "resource", type: "pr", rid: "o/r#2" }, false),
+    )
+    expect(api.addTaskLink).toHaveBeenCalledTimes(1)
+  })
+
   it("a pasted URL is linked by URL on Enter", async () => {
     const { user, input } = await openPicker()
     await user.click(input)
@@ -94,6 +115,8 @@ describe("LinkPicker", () => {
     await waitFor(() =>
       expect(api.addTaskLink).toHaveBeenCalledWith(1, { url: "https://github.com/o/r/pull/77" }, false),
     )
+    // Once: the preselected "Link <url>" option and the Enter fallback are one path.
+    expect(api.addTaskLink).toHaveBeenCalledTimes(1)
   })
 
   it("a task with no worktrees suggests from all resources", async () => {

@@ -22,7 +22,7 @@ import { CSS } from "@dnd-kit/utilities"
 import type { TaskDetail, TaskSubtask } from "../../../api/types"
 import { taskDetailKey, useTaskDetailMutations } from "../../../hooks/useTaskDetail"
 import { useQueryClient } from "@tanstack/react-query"
-import { useSectionAction } from "./sectionAction"
+import { errorText, useSectionAction } from "./sectionAction"
 
 const sortableId = (id: number) => `subtask:${id}`
 
@@ -34,7 +34,7 @@ const sortableId = (id: number) => `subtask:${id}`
 export function SubtasksSection({ task }: { task: TaskDetail }) {
   const m = useTaskDetailMutations(task.id)
   const qc = useQueryClient()
-  const { run, alert } = useSectionAction()
+  const { run, alert, setError } = useSectionAction()
   const [text, setText] = useState("")
   const [adding, setAdding] = useState(false)
   // The optimistic order while a reorder saves, as ResourceList's `pending`.
@@ -70,12 +70,16 @@ export function SubtasksSection({ task }: { task: TaskDetail }) {
     const t = text.trim()
     if (!t || adding) return
     setAdding(true)
+    setError(null)
+    // Cleared as it is sent, so whatever is typed during the save survives it.
+    setText("")
     try {
       await m.addSubtask(t)
-      setText("")
     } catch (e) {
-      // Keeps the text to retry; the alert says why.
-      run(Promise.reject(e))
+      // Back in the input to retry, unless something new was typed since;
+      // the alert says why.
+      setText((cur) => (cur === "" ? t : cur))
+      setError(errorText(e))
     } finally {
       setAdding(false)
     }
