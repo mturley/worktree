@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { cleanup, render, screen, waitFor } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -147,12 +147,38 @@ describe("TaskList", () => {
     expect(screen.queryByText("beta two")).toBeNull()
   })
 
-  it("hides empty sections and labels a lone section not at all", async () => {
+  it("an empty Starred section is a slim strip at rest, and a lone section has no label", async () => {
     wrap(<TaskList scope={{ kind: "all" }} />)
     await screen.findByText("beta two")
-    // Starred is empty (a drop target only while dragging), so only "Tasks" remains.
+    // Present before any drag, so starting one shifts nothing.
+    expect(screen.getByText("Drag here to star")).toBeInTheDocument()
     expect(screen.queryByText("Starred")).toBeNull()
     expect(screen.queryByText("Tasks")).toBeNull()
+  })
+
+  it("Priority sort labels every group and shows empty ones as strips at rest", async () => {
+    setPrefs({ sort: "priority" })
+    vi.mocked(api.tasks).mockResolvedValue([task(1, { priority: "high" }), task(2)])
+    wrap(<TaskList scope={{ kind: "all" }} />)
+    await screen.findByText("task 2")
+    for (const label of ["High", "Medium", "Low", "No priority"]) expect(screen.getByText(label)).toBeInTheDocument()
+    expect(screen.getByText("Drag here for medium priority")).toBeInTheDocument()
+    expect(screen.getByText("Drag here for low priority")).toBeInTheDocument()
+    expect(screen.getByText("Drag here to star")).toBeInTheDocument()
+  })
+
+  it("no strips outside the draggable sorts", async () => {
+    setPrefs({ sort: "due" })
+    wrap(<TaskList scope={{ kind: "all" }} />)
+    await screen.findByText("beta two")
+    expect(screen.queryByText("Drag here to star")).toBeNull()
+  })
+
+  it("an empty list says so rather than showing bare strips", async () => {
+    vi.mocked(api.tasks).mockResolvedValue([])
+    wrap(<TaskList scope={{ kind: "all" }} />)
+    expect(await screen.findByText("No tasks.")).toBeInTheDocument()
+    expect(screen.queryByText("Drag here to star")).toBeNull()
   })
 
   it("labels sections when there is more than one", async () => {
@@ -163,10 +189,83 @@ describe("TaskList", () => {
     expect(screen.getByText("Tasks")).toBeInTheDocument()
   })
 
-  it("caps its height at maxRows", async () => {
+  it("caps its height at maxRows, and at a quarter of the viewport", async () => {
     wrap(<TaskList scope={{ kind: "all" }} maxRows={8} />)
     await screen.findByText("beta two")
-    expect(screen.getByTestId("task-list-body")).toHaveStyle({ maxHeight: "240px", overflowY: "auto" })
+    const body = screen.getByTestId("task-list-body")
+    expect(body.style.maxHeight).toBe("min(240px, 25dvh)")
+    expect(body).toHaveStyle({ overflowY: "auto" })
+  })
+})
+
+/*
+ * End-to-end drags through dnd-kit's KeyboardSensor: focus a grip, Space to
+ * pick up, an arrow to move, Space to drop. jsdom has no layout, so rows and
+ * empty-section strips are laid out 30px apart in document order, and a
+ * section's drop area spans what it holds. The overlay measures as the row
+ * it lifts.
+ */
+describe("TaskList keyboard drag", () => {
+  const ROW = 30
+  const rect = (top: number, height: number) =>
+    ({ x: 0, y: top, top, left: 0, width: 300, height, right: 300, bottom: top + height, toJSON: () => ({}) }) as DOMRect
+  const leaves = () => Array.from(document.querySelectorAll<HTMLElement>("[data-task-sortable],[data-task-strip]"))
+  let lifted: HTMLElement | null = null
+
+  beforeEach(() => {
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+      const all = leaves()
+      const leafRect = (el: Element) => rect(all.indexOf(el as HTMLElement) * ROW, ROW)
+      if (this.matches("[data-task-sortable],[data-task-strip]")) return leafRect(this)
+      if (this.matches("[data-task-drop]")) {
+        const inner = all.filter((l) => this.contains(l))
+        if (inner.length === 0) return rect(0, 0)
+        const top = all.indexOf(inner[0]) * ROW
+        return rect(top, inner.length * ROW)
+      }
+      // dnd-kit measures the overlay by its content.
+      if (lifted && this.matches("[data-testid=task-drag-overlay]")) return leafRect(lifted)
+      return rect(0, 0)
+    })
+  })
+  afterEach(() => {
+    lifted = null
+    vi.mocked(Element.prototype.getBoundingClientRect).mockRestore()
+  })
+
+  async function drag(title: string, key: "ArrowDown" | "ArrowUp") {
+    const grip = screen.getByRole("button", { name: `Drag to reorder ${title}` })
+    lifted = grip.closest<HTMLElement>("[data-task-sortable]")
+    const before = leaves().length
+    act(() => grip.focus())
+    fireEvent.keyDown(grip, { code: "Space", key: " " })
+    // Picking up a row adds no labels or strips: nothing moves under it.
+    expect(leaves()).toHaveLength(before)
+    expect(await screen.findByTestId("task-drag-overlay")).toHaveTextContent(title)
+    fireEvent.keyDown(grip, { code: key, key })
+    fireEvent.keyDown(grip, { code: "Space", key: " " })
+  }
+
+  it("Custom sort: reorders through mutations.move", async () => {
+    vi.mocked(api.moveTask).mockResolvedValue(undefined as never)
+    wrap(<TaskList scope={{ kind: "all" }} />)
+    await screen.findByText("beta two")
+    await drag("alpha one", "ArrowDown")
+    await waitFor(() => expect(api.moveTask).toHaveBeenCalledWith(1, { after: 2 }))
+    expect(api.updateTask).not.toHaveBeenCalled()
+  })
+
+  it("Priority sort: a drag into another group patches priority and places it", async () => {
+    setPrefs({ sort: "priority" })
+    vi.mocked(api.tasks).mockResolvedValue([task(1, { title: "alpha one", priority: "high" }), task(2, { title: "beta two" })])
+    vi.mocked(api.moveTask).mockResolvedValue(undefined as never)
+    vi.mocked(api.updateTask).mockResolvedValue(undefined as never)
+    wrap(<TaskList scope={{ kind: "all" }} />)
+    await screen.findByText("beta two")
+    // Down from High lands on Medium's empty strip.
+    await drag("alpha one", "ArrowDown")
+    await waitFor(() => expect(api.moveTask).toHaveBeenCalledWith(1, { before: 2 }))
+    expect(api.updateTask).toHaveBeenCalledWith(1, { priority: "medium" })
   })
 })
 

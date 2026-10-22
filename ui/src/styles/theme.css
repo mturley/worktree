@@ -120,6 +120,15 @@ body,
   transition: opacity 120ms ease;
 }
 
-[data-task-row]:hover .task-grip {
+/* Shown on hover, and for keyboard focus anywhere in the row. Touch screens
+   have no hover, so there it always shows. */
+[data-task-row]:hover .task-grip,
+[data-task-row]:focus-within .task-grip {
   opacity: 1;
+}
+
+@media (hover: none) {
+  [data-task-row] .task-grip {
+    opacity: 1;
+  }
 }

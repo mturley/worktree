@@ -961,8 +961,22 @@ to break.
   (`pinnedAbove(tabBar)`, or `pinnedPanel` between the detail card and its
   `Tabs.List`). Rendered above the sticky block instead, it scrolls away as
   the feed scrolls, and its tooltips land under the header's layer. The
-  panel's own row cap (8 rows, then it scrolls inside itself) is what keeps
-  the header bounded.
+  panel's own cap is what keeps the header bounded: its list body is
+  `min(8 rows, 25dvh)` (`pinnedMaxHeight` in `TaskList.tsx`), then it
+  scrolls inside itself. The row cap alone took 70–80% of a short screen
+  once the resource card and tab bar sat around it.
+- **Nothing moves when a drag starts.** In the draggable sorts (Custom,
+  Priority) an empty section is a slim dashed strip ("Drag here to star",
+  "Drag here for medium priority") rendered AT REST, and whether sections
+  are labelled never depends on a drag being on. Inserting drop targets at
+  drag start pushed the dragged row ~70px away from the pointer. The row
+  that follows the pointer is a `DragOverlay`; the original stays as a faint
+  placeholder, and `MeasuringStrategy.Always` keeps drop rects current.
+  The grip shows on hover, on `:focus-within` (keyboard) and always under
+  `@media (hover: none)` (touch), in `styles/theme.css`.
+  `TaskList.test.tsx` drives real drags through the `KeyboardSensor`
+  (Space, arrow, Space) with a stubbed `getBoundingClientRect` that lays
+  rows and strips out 30px apart.
 - **`keepPreviousData` is scoped.** `useTasks` keys each query by scope
   plus `{completed, archived}`; toggling Show completed changes the key, and
   dropping to "Loading tasks…" would unmount the list's `DndContext`. So

@@ -100,6 +100,16 @@ describe("useTasksPlacement", () => {
     expect(screen.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true")
   })
 
+  it("the pinned list is capped by rows and by the viewport, and scrolls inside itself", async () => {
+    window.localStorage.setItem(TASK_LIST_KEY, JSON.stringify({ pinned: true }))
+    wrap()
+    const panel = document.querySelector(".task-panel") as HTMLElement
+    await within(panel).findByText("task 1")
+    const body = within(panel).getByTestId("task-list-body")
+    expect(body.style.maxHeight).toBe("min(240px, 25dvh)")
+    expect(body).toHaveStyle({ overflowY: "auto" })
+  })
+
   it("a pin from another tab or list also falls back", async () => {
     wrap()
     await userEvent.click(screen.getByRole("tab", { name: /Tasks/ }))
