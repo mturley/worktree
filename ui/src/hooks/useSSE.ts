@@ -6,6 +6,7 @@ import { TAB_ID } from "../lib/tabId"
 import { emitCmuxFocus } from "../lib/cmuxFocusBus"
 import { openNotificationTarget, showBrowserNotification } from "../lib/browserNotify"
 import { pageHidden, streamsPauseWhenHidden } from "../lib/backgroundStreams"
+import { TASK_ACTIVITY_STALE_MS } from "./useTaskDetail"
 
 /**
  * The stream URL names this tab and where it is, so the server can register
@@ -43,15 +44,39 @@ export function useSSE() {
     // Prefix keys: every scope's lists, plus the open-task counts that ride
     // on worktree summaries and resource DTOs.
     const refreshTasks = () => {
-      qc.invalidateQueries({ queryKey: ["tasks"] })
+      qc.invalidateQueries({ queryKey: ["tasks"], predicate: (q) => q.queryKey[1] !== "activity" })
+      refreshActivity()
       qc.invalidateQueries({ queryKey: ["worktrees"] })
       qc.invalidateQueries({ queryKey: ["resources"] })
+    }
+    // A task's activity feed reads up to 200 events per linked resource, so
+    // a burst of stream events must not refetch it once each. A feed fetched
+    // within the last TASK_ACTIVITY_STALE_MS is left alone, and refreshed
+    // once when that window ends; any other is refreshed now. (Its staleTime
+    // alone can't do this: invalidateQueries refetches fresh queries too.)
+    let activityTimer: ReturnType<typeof setTimeout> | null = null
+    const refreshActivity = () => {
+      const now = Date.now()
+      const fresh = qc
+        .getQueryCache()
+        .findAll({ queryKey: ["tasks", "activity"] })
+        .filter((q) => now - q.state.dataUpdatedAt < TASK_ACTIVITY_STALE_MS)
+      qc.invalidateQueries({ queryKey: ["tasks", "activity"], predicate: (q) => !fresh.includes(q) })
+      if (fresh.length > 0 && activityTimer === null) {
+        const newest = Math.max(...fresh.map((q) => q.state.dataUpdatedAt))
+        activityTimer = setTimeout(() => {
+          activityTimer = null
+          refreshActivity()
+        }, newest + TASK_ACTIVITY_STALE_MS - now)
+      }
     }
     const disconnect = () => {
       es?.close()
       es = null
       if (timer) clearTimeout(timer)
       timer = null
+      if (activityTimer) clearTimeout(activityTimer)
+      activityTimer = null
     }
     const connect = () => {
       es = new EventSource(streamUrl())

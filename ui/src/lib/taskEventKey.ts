@@ -1,5 +1,6 @@
 import type { TaskEventSnapshot, TimelineEvent } from "../api/types"
 import type { Message, User } from "../api/slackApi"
+import { mrkdwnToPlain } from "./mrkdwnPlain"
 
 /** The most runes of a Slack message's first line a task title takes; mirrors the server. */
 const MAX_TITLE = 120
@@ -22,22 +23,10 @@ export function eventTaskKey(e: TimelineEvent): string | null {
 }
 
 /**
- * Every key that names this event, as the server's eventKeys does: its ev:
- * key, and for a Slack thread event its slack:<channel>:<message ts> key too,
- * since a message linked from the thread view is stored under that one.
+ * A Slack message's identity key. Linking a Slack message's watcher event by
+ * its ev: key stores it under this one too (the server canonicalises it), so
+ * a message has one key however it was linked.
  */
-export function eventTaskKeys(e: TimelineEvent): string[] {
-  const ev = eventTaskKey(e)
-  if (!ev) return []
-  const keys = [ev]
-  if (e.resource_type === "slack" && e.external_ts) {
-    const channel = e.resource_id.split(":")[0]
-    if (channel) keys.push(`slack:${channel}:${e.external_ts}`)
-  }
-  return keys
-}
-
-/** A Slack message's identity key. */
 export function slackMessageKey(channel: string, ts: string): string {
   return `slack:${channel}:${ts}`
 }
@@ -50,9 +39,11 @@ function slackTsToISO(ts: string): string {
 
 /**
  * The snapshot an event link stores for a Slack message: Slack messages are
- * not watcher events, so the server takes the client's. The title is the
- * first non-blank line of the text (the server titles the task the same way);
- * a message with no text is named by its author.
+ * not watcher events, so the server takes the client's (validated; it sets
+ * source and type itself). The title is the first non-blank line of the text
+ * as plain text — mentions, channels and links resolved, entities unescaped
+ * (the server titles the task the same way); a message with no text is named
+ * by its author.
  */
 export function slackMessageSnapshot(
   message: Message,
@@ -63,7 +54,8 @@ export function slackMessageSnapshot(
   const user = users[message.UserID]
   const author = user?.DisplayName || user?.RealName || message.UserID
   const text = message.Text ?? ""
-  const first = text.split("\n").map((l) => l.trim()).find((l) => l !== "") ?? ""
+  const line = text.split("\n").map((l) => l.trim()).find((l) => l !== "") ?? ""
+  const first = mrkdwnToPlain(line, users).trim()
   const title = first ? Array.from(first).slice(0, MAX_TITLE).join("").trim() : `Message from ${author}`
   return {
     source: "slack",

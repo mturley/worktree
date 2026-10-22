@@ -2,6 +2,7 @@ import { afterEach, describe, it, expect, vi } from "vitest"
 import { renderHook, cleanup } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { useSSE } from "./useSSE"
+import { TASK_ACTIVITY_STALE_MS } from "./useTaskDetail"
 import { api } from "../api/client"
 
 const streams = vi.hoisted(() => ({ pause: true }))
@@ -89,6 +90,35 @@ describe("useSSE", () => {
     FakeEventSource.last!.emit("tasks_changed", "{}")
     const keys = invalidatedKeys(invalidate)
     for (const k of [["tasks"], ["worktrees"], ["resources"]]) expect(keys).toContain(JSON.stringify(k))
+  })
+
+  it("collapses a burst of task events into one activity refresh, after the fresh window", () => {
+    vi.useFakeTimers()
+    vi.stubGlobal("EventSource", FakeEventSource)
+    const qc = new QueryClient()
+    const activity = ["tasks", "activity", 1, "all"]
+    const list = ["tasks", "list"]
+    renderHook(() => useSSE(), {
+      wrapper: ({ children }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>,
+    })
+    qc.setQueryData(activity, [])
+    qc.setQueryData(list, [])
+    const invalidated = (k: unknown[]) => qc.getQueryState(k)?.isInvalidated ?? false
+
+    for (let i = 0; i < 5; i++) FakeEventSource.last!.emit("tasks_changed", "{}")
+    // The lists refresh at once; the just-fetched activity feed waits.
+    expect(invalidated(list)).toBe(true)
+    expect(invalidated(activity)).toBe(false)
+    vi.advanceTimersByTime(TASK_ACTIVITY_STALE_MS - 1)
+    expect(invalidated(activity)).toBe(false)
+    vi.advanceTimersByTime(1)
+    expect(invalidated(activity)).toBe(true)
+
+    // A feed older than the window refreshes at once.
+    qc.setQueryData(activity, [])
+    vi.advanceTimersByTime(TASK_ACTIVITY_STALE_MS)
+    FakeEventSource.last!.emit("events_new")
+    expect(invalidated(activity)).toBe(true)
   })
 
   it("invalidates the session query on a stream error", () => {

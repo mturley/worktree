@@ -3,7 +3,7 @@ import { ActionIcon, Alert, Button, Center, Group, Loader, Stack, Text, Tooltip 
 import { IconLink, IconLinkOff } from "@tabler/icons-react"
 import type { TaskDetail, TimelineEvent } from "../../../api/types"
 import { type ActivityQuery, useTaskActivity, useTaskDetailMutations } from "../../../hooks/useTaskDetail"
-import { eventTaskKey, eventTaskKeys } from "../../../lib/taskEventKey"
+import { eventTaskKey } from "../../../lib/taskEventKey"
 import { EventRow } from "../../EventRow"
 import { useSectionAction } from "./sectionAction"
 
@@ -33,16 +33,6 @@ function resourcePills(task: TaskDetail): Pill[] {
 }
 
 /**
- * The key to unlink an event by: the one it was actually linked under. A
- * Slack message linked from the thread view is stored as slack:<channel>:<ts>,
- * not as its watcher event's ev: key, and the server reports both as linked.
- */
-function linkedKey(task: TaskDetail, e: TimelineEvent): string | null {
-  const keys = eventTaskKeys(e)
-  return keys.find((k) => task.event_links.some((l) => l.key === k)) ?? keys[0] ?? null
-}
-
-/**
  * The Activity tab: the task's own events merged with its linked resources'
  * events, newest first, narrowed by the filter pills. Each resource event
  * has a link toggle. The rows are inert, as on the Details tab: navigating
@@ -59,14 +49,20 @@ export function ActivityTab({ task }: { task: TaskDetail }) {
   const m = useTaskDetailMutations(task.id)
   const { run, alert } = useSectionAction()
 
+  /**
+   * The key a toggle acts on. A linked row unlinks by the key the server says
+   * it is linked under (linked_key: a Slack message's slack: key, or the ev:
+   * key of a link stored before keys were canonicalised, or a snapshot row's
+   * own key). An unlinked watcher event links by its ev: key, and the server
+   * stores a Slack message's under its slack: key.
+   */
+  const toggleKey = (e: TimelineEvent): string | null =>
+    e.linked_to_task ? e.linked_key || null : eventTaskKey(e)
+
   const toggle = (e: TimelineEvent) => {
-    if (e.linked_to_task) {
-      const key = linkedKey(task, e)
-      if (key) run(m.unlinkEvent(key))
-    } else {
-      const key = eventTaskKey(e)
-      if (key) run(m.linkEvent(key))
-    }
+    const key = toggleKey(e)
+    if (!key) return
+    run(e.linked_to_task ? m.unlinkEvent(key) : m.linkEvent(key))
   }
 
   return (
@@ -98,7 +94,7 @@ export function ActivityTab({ task }: { task: TaskDetail }) {
       ) : (
         <Stack gap={2}>
           {activity.data.map((e) => {
-            const linkable = eventTaskKey(e) !== null
+            const linkable = toggleKey(e) !== null
             const linked = !!e.linked_to_task
             const label = `${linked ? "Unlink" : "Link"} event: ${e.title}`
             return (

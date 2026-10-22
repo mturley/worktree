@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useMediaQuery } from "@mantine/hooks"
 import { Badge, Box, Button, Group, Stack, Text, Tooltip } from "@mantine/core"
 import { IconArchive } from "@tabler/icons-react"
 import type { ResourceDTO, TimelineEvent } from "../api/types"
@@ -71,6 +72,9 @@ export function EventRow({
 }) {
   const [hovered, setHovered] = useState(false)
   const [focused, setFocused] = useState(false)
+  // A touch screen has no hover to reveal "＋ task", so there it always shows.
+  const noHover = useMediaQuery("(hover: none)")
+  const actionShown = hovered || focused || noHover
   // Only the dot shows the type now — as its tooltip.
   const label = eventLabel(e.type, e.type_label)
 
@@ -245,8 +249,10 @@ export function EventRow({
             position: "absolute",
             top: 4,
             right: 4,
-            // Shown on hover, and to the keyboard when tabbed to.
-            opacity: hovered || focused ? 1 : 0,
+            // Shown on hover, and to the keyboard when tabbed to. While
+            // hidden it takes no taps or clicks (focus still reaches it).
+            opacity: actionShown ? 1 : 0,
+            pointerEvents: actionShown ? "auto" : "none",
             transition: "opacity 100ms ease",
           }}
         >

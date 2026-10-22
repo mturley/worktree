@@ -38,10 +38,15 @@ const base = detail({ detail_links: [prLink, slackLink, wtLink], links: [prLink,
 const events = [
   ev({ id: "task:5", source: "tasks", type: "task_created", title: "Task created", resource_type: "task", resource_id: "task:1" }),
   ev({ id: "a1111111-1111-4111-8111-111111111111", title: "Comment one" }),
-  ev({ id: "a2222222-2222-4222-8222-222222222222", title: "Linked comment", linked_to_task: true }),
+  ev({ id: "a2222222-2222-4222-8222-222222222222", title: "Linked comment", linked_to_task: true, linked_key: "ev:a2222222-2222-4222-8222-222222222222" }),
   ev({
     id: "a3333333-3333-4333-8333-333333333333", title: "Slack reply", source: "slack", type: "slack_reply", resource_type: "slack",
-    resource_id: "C1:100.000", external_ts: "200.000", linked_to_task: true,
+    resource_id: "C1:100.000", external_ts: "200.000", linked_to_task: true, linked_key: "slack:C1:200.000",
+  }),
+  // A link with no live event: the server built this row from its snapshot.
+  ev({
+    id: "slack:C9:7.7", title: "Gone message", source: "slack", type: "slack_reply", resource_type: "slack",
+    resource_id: "C9:7.0", linked_to_task: true, linked_key: "slack:C9:7.7",
   }),
 ]
 
@@ -99,11 +104,18 @@ describe("ActivityTab", () => {
     expect(api.unlinkTaskEvent).toHaveBeenCalledWith(1, "ev:a2222222-2222-4222-8222-222222222222")
   })
 
-  it("unlinks a Slack message by the key it was linked under", async () => {
+  it("unlinks a Slack message by the key the server says it is linked under", async () => {
     const user = userEvent.setup()
     show()
     await user.click(await screen.findByRole("button", { name: "Unlink event: Slack reply" }))
     expect(api.unlinkTaskEvent).toHaveBeenCalledWith(1, "slack:C1:200.000")
+  })
+
+  it("a snapshot row can be unlinked, by its link key", async () => {
+    const user = userEvent.setup()
+    show()
+    await user.click(await screen.findByRole("button", { name: "Unlink event: Gone message" }))
+    expect(api.unlinkTaskEvent).toHaveBeenCalledWith(1, "slack:C9:7.7")
   })
 
   it("the task's own events have no link toggle", async () => {

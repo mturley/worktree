@@ -75,6 +75,11 @@ export interface TimelineEvent {
   match?: { field: string; snippet: string };
   /** Task activity feed only: this event is linked to the task. */
   linked_to_task?: boolean;
+  /**
+   * Task activity feed only, with linked_to_task: the key the event is linked
+   * under, to unlink it by (a Slack message's slack: key, or an older ev: one).
+   */
+  linked_key?: string;
 }
 export interface TimelineResponse { events: TimelineEvent[]; next_cursor: string }
 export interface ResourceDTO {

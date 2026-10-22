@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from "vitest"
-import { cleanup, render, screen, fireEvent, waitFor } from "@testing-library/react"
+import { act, cleanup, render, screen, fireEvent, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { api } from "../api/client"
 import { TaskModalProvider, useTaskModal } from "./tasks/modal/TaskModalProvider"
@@ -530,6 +530,38 @@ describe("＋ task", () => {
     expect(screen.queryByRole("button", { name: /Make task/ })).toBeNull()
   })
 
+  it("takes no pointer events while hidden, and does once shown", () => {
+    renderWithProvider(<EventRow e={makeEvent({ id: "0b7e3c1a-5d2f-4a8b-9c6e-1f2a3b4c5d6e" })} onMakeTask={vi.fn()} />)
+    const action = screen.getByRole("button", { name: "Make task from this event" })
+    expect(action.style.pointerEvents).toBe("none")
+    expect(action.style.opacity).toBe("0")
+    fireEvent.focus(action)
+    expect(action.style.pointerEvents).toBe("auto")
+    expect(action.style.opacity).toBe("1")
+  })
+
+  it("is always shown and tappable where nothing can hover", () => {
+    const real = window.matchMedia
+    window.matchMedia = ((query: string) => ({
+      matches: query === "(hover: none)",
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia
+    try {
+      renderWithProvider(<EventRow e={makeEvent({ id: "0b7e3c1a-5d2f-4a8b-9c6e-1f2a3b4c5d6e" })} onMakeTask={vi.fn()} />)
+      const action = screen.getByRole("button", { name: "Make task from this event" })
+      expect(action.style.pointerEvents).toBe("auto")
+      expect(action.style.opacity).toBe("1")
+    } finally {
+      window.matchMedia = real
+    }
+  })
+
   it("sits outside the row's button, never inside it", () => {
     renderWithProvider(<EventRow e={makeEvent({ id: "0b7e3c1a-5d2f-4a8b-9c6e-1f2a3b4c5d6e" })} onOpen={vi.fn()} onMakeTask={vi.fn()} />)
     const action = screen.getByRole("button", { name: "Make task from this event" })
@@ -544,7 +576,12 @@ describe("＋ task", () => {
     const onSelect = vi.fn()
     const user = userEvent.setup()
     wrapFeed(<Feed e={makeEvent({ id: "0b7e3c1a-5d2f-4a8b-9c6e-1f2a3b4c5d6e" })} onOpen={onOpen} onSelect={onSelect} />)
-    await user.click(screen.getByRole("button", { name: "Make task from this event" }))
+    // Hidden, it takes no clicks: reveal it first, as Tab does. (user-event's
+    // pointer move from the row reads as leaving the wrapper, so a hover
+    // would hide it again on the way to the button.)
+    const action = screen.getByRole("button", { name: "Make task from this event" })
+    act(() => action.focus())
+    await user.click(action)
     expect(fromEvent).toHaveBeenCalledWith("ev:0b7e3c1a-5d2f-4a8b-9c6e-1f2a3b4c5d6e", undefined, "/wt/a")
     await waitFor(() => expect(screen.getByTestId("open-id").textContent).toBe("7"))
     expect(onOpen).not.toHaveBeenCalled()

@@ -32,6 +32,14 @@ export function useTaskDetail(id: number | undefined) {
   })
 }
 
+/**
+ * How long an activity fetch stays fresh. useSSE invalidates every "tasks"
+ * query on each events_new and tasks_changed; while fresh, an invalidation
+ * only marks the feed stale, so a burst of them costs one refetch rather
+ * than one each.
+ */
+export const TASK_ACTIVITY_STALE_MS = 5000
+
 /** The task's merged activity feed, newest first. */
 export function useTaskActivity(id: number | undefined, q: ActivityQuery) {
   return useQuery({
@@ -39,6 +47,7 @@ export function useTaskActivity(id: number | undefined, q: ActivityQuery) {
     queryFn: () =>
       api.taskActivity(id as number, q.filter, q.filter === "resource" ? { type: q.type, rid: q.rid } : undefined),
     enabled: id !== undefined,
+    staleTime: TASK_ACTIVITY_STALE_MS,
   })
 }
 
