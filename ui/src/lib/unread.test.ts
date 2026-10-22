@@ -22,4 +22,15 @@ describe("hasUnread", () => {
     // thread's own read state is the only authority.
     expect(hasUnread(base({ type: "slack", id: "C1:1.2", has_unread: false, unread_count: 5 }))).toBe(false)
   })
+
+  it("counts a Slack thread's linked tasks' unread events, which Slack knows nothing of", () => {
+    // has_unread stays Slack's own verdict (the server never folds task
+    // events into it), so the task part arrives separately.
+    expect(hasUnread(base({ type: "slack", id: "C1:1.2", has_unread: false, task_unread_count: 1, unread_count: 1 }))).toBe(true)
+    expect(hasUnread(base({ type: "slack", id: "C1:1.2", has_unread: false, task_unread_count: 0 }))).toBe(false)
+  })
+
+  it("already counts task events for other types, through unread_count", () => {
+    expect(hasUnread(base({ unread_count: 1, task_unread_count: 1 }))).toBe(true)
+  })
 })

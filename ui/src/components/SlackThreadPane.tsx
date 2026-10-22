@@ -10,7 +10,6 @@ import { useLinkedResources } from "../hooks/useLinkedResources"
 import { useResourceTab } from "../hooks/useSelectedResource"
 import { LinkedResourcesPanel, LinkedTabControls, linkedTabLabel } from "./linked/LinkedResourcesPanel"
 import { UnreadMarkerDot } from "./UnreadMarkerDot"
-import { hasUnread } from "../lib/unread"
 import { TASKS_TAB, useResourceTasksPlacement } from "./tasks/TasksSection"
 
 interface SlackThreadPaneProps {
@@ -199,9 +198,10 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, 
           <Tabs.Tab
             value="thread"
             rightSection={
-              // Unread replies you can't see from the Linked tab (Slack's own
-              // read state, as on the thread's card).
-              hasUnread(resource) && paneTab !== "thread" ? <UnreadMarkerDot label="unread replies" /> : undefined
+              // Unread replies you can't see from the Linked tab: Slack's own
+              // read state, not hasUnread, which also counts linked tasks'
+              // events — those are not replies in this thread.
+              resource.has_unread && paneTab !== "thread" ? <UnreadMarkerDot label="unread replies" /> : undefined
             }
           >
             Thread

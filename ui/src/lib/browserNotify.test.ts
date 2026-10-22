@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { notificationHref, showBrowserNotification } from "./browserNotify"
+import { notificationHref, openNotificationTarget, showBrowserNotification } from "./browserNotify"
 import type { NotificationMsg } from "../api/types"
 
 const msg: NotificationMsg = {
@@ -34,6 +34,52 @@ describe("notificationHref", () => {
   })
   it("targets the bare worktree page for a worktree-wide notification", () => {
     expect(notificationHref({ ...msg, resource_type: "", resource_id: "" })).toBe("/worktree/%2Fw%2Fwt-a")
+  })
+})
+
+describe("openNotificationTarget", () => {
+  const taskMsg: NotificationMsg = { ...msg, resource_type: "task", resource_id: "12" }
+  const go = (url: string) => window.history.replaceState({}, "", url)
+  const here = () => window.location.pathname + window.location.search
+  afterEach(() => go("/"))
+
+  it("opens a task over the selected resource, keeping the selection", () => {
+    go("/worktree/%2Fw%2Fwt-a?resource=pr:o%2Fr%233")
+    openNotificationTarget(taskMsg)
+    const url = new URL(window.location.href)
+    expect(url.pathname).toBe("/worktree/%2Fw%2Fwt-a")
+    expect(url.searchParams.get("task")).toBe("12")
+    expect(url.searchParams.get("resource")).toBe("pr:o/r#3")
+  })
+
+  it("selects a resource without closing the task modal that is open", () => {
+    go("/worktree/%2Fw%2Fwt-a?task=12")
+    openNotificationTarget(msg)
+    const url = new URL(window.location.href)
+    expect(url.searchParams.get("resource")).toBe("pr:o/r#3")
+    expect(url.searchParams.get("task")).toBe("12")
+  })
+
+  it("stays put when the target is already showing, whatever else is", () => {
+    go("/worktree/%2Fw%2Fwt-a?resource=pr:o%2Fr%233&task=4")
+    const before = here()
+    const len = window.history.length
+    openNotificationTarget(msg)
+    expect(here()).toBe(before)
+    expect(window.history.length).toBe(len)
+  })
+
+  it("goes to the target plainly from another worktree", () => {
+    go("/worktree/%2Fw%2Fwt-b?resource=jira:J-1")
+    openNotificationTarget(taskMsg)
+    expect(here()).toBe("/worktree/%2Fw%2Fwt-a?task=12")
+  })
+
+  it("leaves params it does not set alone on a worktree-wide notification", () => {
+    go("/worktree/%2Fw%2Fwt-a?task=12")
+    const before = here()
+    openNotificationTarget({ ...msg, resource_type: "", resource_id: "" })
+    expect(here()).toBe(before)
   })
 })
 

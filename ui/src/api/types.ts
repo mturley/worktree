@@ -100,6 +100,12 @@ export interface ResourceDTO {
    */
   unread_count?: number
   /**
+   * The part of unread_count that is unread events of the tasks linking this
+   * resource. For a Slack thread, has_unread stays Slack's own verdict and
+   * never includes these, so hasUnread counts them separately.
+   */
+  task_unread_count?: number
+  /**
    * non-slack: ts of the newest of those unread events, from the same server
    * snapshot. Sent as through_ts by "mark all read" — see MarkAllReadButton.
    */
@@ -683,6 +689,12 @@ export interface Task {
   implicit_worktrees: string[]
   subtasks_total: number
   subtasks_done: number
+  /**
+   * The task's unread events: an agent's events newer than its read cursor.
+   * Always sent by the server; optional so a task built client-side (or an
+   * older cached response) reads as zero.
+   */
+  unread_count?: number
 }
 
 /** A link target; the body shape of the task link routes. */

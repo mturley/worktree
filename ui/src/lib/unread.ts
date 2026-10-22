@@ -8,9 +8,16 @@ import type { ResourceDTO } from "../api/types"
  * against worktree's own per-resource cursor. Every surface calls this rather
  * than branching on type itself, so the split stays in one place — and so
  * adding a third source later touches one file.
+ *
+ * Unread events of the tasks linking a resource count too. For GitHub/Jira
+ * they are already in unread_count; for a Slack thread they arrive as
+ * task_unread_count, because has_unread must stay Slack's own verdict. That
+ * is also why the callers that act on SLACK's read state — marking the thread
+ * read in Slack, the Thread tab's "unread replies" dot — read has_unread
+ * directly rather than calling this.
  */
 export function hasUnread(r: ResourceDTO): boolean {
-  if (r.type === "slack") return !!r.has_unread
+  if (r.type === "slack") return !!r.has_unread || (r.task_unread_count ?? 0) > 0
   return (r.unread_count ?? 0) > 0
 }
 

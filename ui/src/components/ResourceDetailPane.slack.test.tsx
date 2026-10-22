@@ -74,6 +74,15 @@ describe("ResourceDetailPane slack branch", () => {
     expect(screen.getByLabelText("unread replies")).toBeInTheDocument()
   })
 
+  it("does not dot the Thread tab for linked tasks' unread events, which are not replies", async () => {
+    // hasUnread counts them for the card; the Thread tab is about Slack's
+    // own read state alone.
+    vi.spyOn(api, "linkedResources").mockResolvedValue({ fetched_at: "", count: 0, sections: [] })
+    wrap(<ResourceDetailPane path="/wt/foo" resource={{ ...slack, has_unread: false, task_unread_count: 2, unread_count: 2 }} />)
+    await userEvent.click(await screen.findByRole("tab", { name: /Linked Resources/ }))
+    expect(screen.queryByLabelText("unread replies")).not.toBeInTheDocument()
+  })
+
   it("does not dot the Thread tab when the thread is read", async () => {
     vi.spyOn(api, "linkedResources").mockResolvedValue({ fetched_at: "", count: 0, sections: [] })
     wrap(<ResourceDetailPane path="/wt/foo" resource={{ ...slack, has_unread: false }} />)

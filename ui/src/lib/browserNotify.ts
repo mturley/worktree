@@ -34,13 +34,29 @@ export function showBrowserNotification(msg: NotificationMsg, onClick: () => voi
   return true
 }
 
-/** Brings the notification's worktree/resource up in this tab, unless it already is. */
+/**
+ * Brings the notification's worktree/resource/task up in this tab, unless it
+ * already is.
+ *
+ * On the target's own worktree page, only the ONE param the target sets
+ * (`resource` or `task`) is compared and written; the other is kept as it
+ * is. A resource notification must not close an open task modal, and a task
+ * notification opens its modal over the selected resource rather than
+ * dropping the selection. A worktree-wide notification sets neither, so
+ * being on that worktree at all is enough.
+ */
 export function openNotificationTarget(msg: NotificationMsg): void {
   const href = notificationHref(msg)
   const target = new URL(href, window.location.origin)
   const here = new URL(window.location.href)
-  const sameResource =
-    here.pathname === target.pathname &&
-    ["resource", "task"].every((k) => (here.searchParams.get(k) ?? "") === (target.searchParams.get(k) ?? ""))
-  if (!sameResource) navigate(withHomeParam(href))
+  if (here.pathname !== target.pathname) {
+    navigate(withHomeParam(href))
+    return
+  }
+  const key = ["task", "resource"].find((k) => target.searchParams.has(k))
+  if (!key) return
+  const value = target.searchParams.get(key) ?? ""
+  if (here.searchParams.get(key) === value) return
+  here.searchParams.set(key, value)
+  navigate(withHomeParam(here.pathname + here.search + here.hash))
 }
