@@ -117,3 +117,15 @@ describe("App authentication gate", () => {
     expect(await screen.findByText("home page")).toBeInTheDocument()
   })
 })
+
+describe("App task modal", () => {
+  it("opens the task modal on any page from ?task=<id>", async () => {
+    window.history.replaceState({}, "", "/?task=7")
+    const fetchMock = mockServer({ "GET /api/session": () => ({ status: 200, body: session }) })
+    renderApp()
+    expect(await screen.findByText("home page")).toBeInTheDocument()
+    // The detail route is unmocked here, so it answers 404.
+    expect(await screen.findByText("Task not found")).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledWith("/api/tasks/detail?id=7", undefined)
+  })
+})

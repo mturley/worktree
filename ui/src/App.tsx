@@ -14,6 +14,8 @@ import { HomePage } from "./pages/HomePage"
 import { LoginPage } from "./pages/LoginPage"
 import { WorktreeDetailPage } from "./pages/WorktreeDetailPage"
 import { SettingsProvider } from "./components/settings/SettingsContext"
+import { TaskModalProvider } from "./components/tasks/modal/TaskModalProvider"
+import { TaskDetailModal } from "./components/tasks/modal/TaskDetailModal"
 
 export function App() {
   const session = useSession()
@@ -84,11 +86,16 @@ function AuthenticatedApp() {
       {/* One Settings modal for every page: the home page's cog and the
           worktree page's "Re-enable it in Settings" links both open it. */}
       <SettingsProvider>
-        <Switch>
-          <Route path="/" component={HomePage} />
-          <Route path="/worktree/:path*" component={WorktreeDetailPage} />
-          <Route>Not found</Route>
-        </Switch>
+        {/* One task modal for every page, driven by ?task=<id>: any page
+            opens it with useTaskModal().open(id). */}
+        <TaskModalProvider>
+          <Switch>
+            <Route path="/" component={HomePage} />
+            <Route path="/worktree/:path*" component={WorktreeDetailPage} />
+            <Route>Not found</Route>
+          </Switch>
+          <TaskDetailModal />
+        </TaskModalProvider>
       </SettingsProvider>
     </Router>
   )

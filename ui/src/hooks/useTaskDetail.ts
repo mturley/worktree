@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { api } from "../api/client"
+import { api, HttpError } from "../api/client"
 import type {
   Priority,
   TaskActivityFilter,
@@ -26,6 +26,8 @@ export function useTaskDetail(id: number | undefined) {
     queryKey: taskDetailKey(id ?? 0),
     queryFn: () => api.taskDetail(id as number),
     enabled: id !== undefined,
+    // A missing (or just deleted) task won't appear on a retry: say so at once.
+    retry: (failures, err) => !(err instanceof HttpError && err.status === 404) && failures < 3,
   })
 }
 

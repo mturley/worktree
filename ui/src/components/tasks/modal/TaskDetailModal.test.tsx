@@ -1,0 +1,238 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
+import { MantineProvider } from "@mantine/core"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { api, HttpError } from "../../../api/client"
+import type { TaskDetail } from "../../../api/types"
+import { taskDetailKey } from "../../../hooks/useTaskDetail"
+import { TaskDetailModal } from "./TaskDetailModal"
+import { TaskModalProvider, useTaskModal } from "./TaskModalProvider"
+
+vi.mock("../../../api/client", async (orig) => ({
+  ...(await orig<typeof import("../../../api/client")>()),
+  api: {
+    taskDetail: vi.fn(),
+    taskActivity: vi.fn(),
+    updateTask: vi.fn(),
+    setTaskState: vi.fn(),
+    deleteTask: vi.fn(),
+  },
+}))
+
+const detail = (id: number, extra: Partial<TaskDetail> = {}): TaskDetail => ({
+  id, ref: `T${id}`, title: `task ${id}`, description: "", state: "not_started", priority: "none", starred: false,
+  rank: "r", created_at: "2026-10-20T00:00:00Z", updated_at: "2026-10-21T00:00:00Z", archived: false,
+  links: [], implicit_worktrees: [], subtasks_total: 0, subtasks_done: 0,
+  detail_links: [], implicit: [], subtasks: [], event_links: [], ...extra,
+})
+
+function Opener() {
+  const { open, openId } = useTaskModal()
+  return (
+    <>
+      <span data-testid="open-id">{openId ?? "none"}</span>
+      <button onClick={() => open(9)}>open nine</button>
+    </>
+  )
+}
+
+let qc: QueryClient
+function wrap() {
+  qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <MantineProvider>
+      <QueryClientProvider client={qc}>
+        <TaskModalProvider>
+          <Opener />
+          <TaskDetailModal />
+        </TaskModalProvider>
+      </QueryClientProvider>
+    </MantineProvider>,
+  )
+}
+
+const param = () => new URLSearchParams(window.location.search).get("task")
+
+beforeEach(() => {
+  window.history.replaceState({}, "", "/worktree/wt?resource=pr:x&task=5")
+  vi.mocked(api.taskDetail).mockImplementation(async (id: number) => detail(id))
+  vi.mocked(api.updateTask).mockResolvedValue(detail(5))
+  vi.mocked(api.setTaskState).mockResolvedValue(detail(5))
+  vi.mocked(api.deleteTask).mockResolvedValue(undefined as never)
+})
+afterEach(() => {
+  cleanup()
+  vi.clearAllMocks()
+})
+
+const titleButton = () => screen.findByRole("button", { name: /^Edit title/ })
+
+describe("TaskDetailModal", () => {
+  it("opens for ?task=5, and closing removes only the task param", async () => {
+    const user = userEvent.setup()
+    wrap()
+    expect(await titleButton()).toHaveTextContent("task 5")
+    expect(api.taskDetail).toHaveBeenCalledWith(5)
+    await user.click(screen.getByRole("button", { name: "Close task" }))
+    await waitFor(() => expect(param()).toBeNull())
+    expect(new URLSearchParams(window.location.search).get("resource")).toBe("pr:x")
+    await waitFor(() => expect(screen.queryByRole("button", { name: /^Edit title/ })).not.toBeInTheDocument())
+  })
+
+  it("open(id) sets the param and keeps the others", async () => {
+    window.history.replaceState({}, "", "/worktree/wt?resource=pr:x")
+    const user = userEvent.setup()
+    wrap()
+    expect(screen.getByTestId("open-id")).toHaveTextContent("none")
+    await user.click(screen.getByRole("button", { name: "open nine" }))
+    expect(param()).toBe("9")
+    expect(new URLSearchParams(window.location.search).get("resource")).toBe("pr:x")
+    expect(await titleButton()).toHaveTextContent("task 9")
+  })
+
+  it("renders the Details and Activity tabs and the sidebar", async () => {
+    wrap()
+    await titleButton()
+    expect(screen.getByRole("tab", { name: "Details" })).toBeInTheDocument()
+    expect(screen.getByRole("tab", { name: "Activity" })).toBeInTheDocument()
+    expect(screen.getByLabelText("Priority")).toBeInTheDocument()
+    expect(screen.getByText("Created")).toBeInTheDocument()
+  })
+
+  it("saves the title on Enter and shows it at once", async () => {
+    let resolve!: (d: TaskDetail) => void
+    vi.mocked(api.updateTask).mockReturnValue(new Promise((r) => { resolve = r }))
+    const user = userEvent.setup()
+    wrap()
+    await user.click(await titleButton())
+    const input = screen.getByRole("textbox", { name: "Title" })
+    await user.clear(input)
+    await user.type(input, "Renamed{Enter}")
+    expect(api.updateTask).toHaveBeenCalledTimes(1)
+    expect(api.updateTask).toHaveBeenCalledWith(5, { title: "Renamed" })
+    // Optimistic: shown before the server replies.
+    expect(await titleButton()).toHaveTextContent("Renamed")
+    await act(async () => resolve(detail(5, { title: "Renamed" })))
+  })
+
+  it("saves the title on blur", async () => {
+    const user = userEvent.setup()
+    wrap()
+    await user.click(await titleButton())
+    const input = screen.getByRole("textbox", { name: "Title" })
+    await user.type(input, "!")
+    fireEvent.blur(input)
+    expect(api.updateTask).toHaveBeenCalledWith(5, { title: "task 5!" })
+  })
+
+  it("reverts the title on Esc without closing the modal", async () => {
+    const user = userEvent.setup()
+    wrap()
+    await user.click(await titleButton())
+    const input = screen.getByRole("textbox", { name: "Title" })
+    await user.type(input, " changed{Escape}")
+    expect(api.updateTask).not.toHaveBeenCalled()
+    expect(await titleButton()).toHaveTextContent(/^task 5$/)
+    expect(param()).toBe("5")
+  })
+
+  it("never overwrites the draft with a refetch while the title is focused", async () => {
+    const user = userEvent.setup()
+    wrap()
+    await user.click(await titleButton())
+    const input = screen.getByRole("textbox", { name: "Title" })
+    await user.clear(input)
+    await user.type(input, "My draft")
+    vi.mocked(api.taskDetail).mockResolvedValue(detail(5, { title: "Server changed it" }))
+    await act(async () => { await qc.refetchQueries({ queryKey: taskDetailKey(5) }) })
+    expect(qc.getQueryData<TaskDetail>(taskDetailKey(5))?.title).toBe("Server changed it")
+    expect(screen.getByRole("textbox", { name: "Title" })).toHaveValue("My draft")
+  })
+
+  it("saves priority on change, and shows it before the server replies", async () => {
+    vi.mocked(api.updateTask).mockReturnValue(new Promise(() => {}))
+    const user = userEvent.setup()
+    wrap()
+    await titleButton()
+    await user.selectOptions(screen.getByLabelText("Priority"), "high")
+    expect(api.updateTask).toHaveBeenCalledWith(5, { priority: "high" })
+    expect(screen.getByLabelText("Priority")).toHaveValue("high")
+  })
+
+  it("rolls the optimistic change back when the save fails", async () => {
+    vi.mocked(api.updateTask).mockRejectedValue(new Error("nope"))
+    const user = userEvent.setup()
+    wrap()
+    await titleButton()
+    await user.selectOptions(screen.getByLabelText("Priority"), "low")
+    await waitFor(() => expect(screen.getByLabelText("Priority")).toHaveValue("none"))
+  })
+
+  it("saves state from the sidebar, and shows it before the server replies", async () => {
+    vi.mocked(api.setTaskState).mockReturnValue(new Promise(() => {}))
+    const user = userEvent.setup()
+    wrap()
+    await titleButton()
+    await user.selectOptions(screen.getByLabelText("State"), "in_progress")
+    expect(api.setTaskState).toHaveBeenCalledWith(5, "in_progress")
+    expect(screen.getByLabelText("State")).toHaveValue("in_progress")
+  })
+
+  it("saves starred from the sidebar", async () => {
+    const user = userEvent.setup()
+    wrap()
+    await titleButton()
+    await user.click(screen.getByRole("checkbox", { name: "Starred" }))
+    expect(api.updateTask).toHaveBeenCalledWith(5, { starred: true })
+  })
+
+  it("saves the due date on change, and clearing it sends an empty due", async () => {
+    vi.mocked(api.taskDetail).mockImplementation(async (id: number) => detail(id, { due: "2026-10-30" }))
+    vi.mocked(api.updateTask).mockReturnValue(new Promise(() => {}))
+    const user = userEvent.setup()
+    wrap()
+    await titleButton()
+    const due = screen.getByLabelText("Due date")
+    expect(due).toHaveValue("2026-10-30")
+    fireEvent.change(due, { target: { value: "2026-11-01" } })
+    expect(api.updateTask).toHaveBeenCalledWith(5, { due: "2026-11-01" })
+    await user.click(screen.getByRole("button", { name: "Clear due date" }))
+    expect(api.updateTask).toHaveBeenLastCalledWith(5, { due: "" })
+    expect(screen.getByLabelText("Due date")).toHaveValue("")
+  })
+
+  it("asks before deleting; No keeps the task", async () => {
+    const user = userEvent.setup()
+    wrap()
+    await titleButton()
+    await user.click(screen.getByRole("button", { name: "Delete task" }))
+    expect(screen.getByText("Delete?")).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "No" }))
+    expect(api.deleteTask).not.toHaveBeenCalled()
+    expect(screen.getByRole("button", { name: "Delete task" })).toBeInTheDocument()
+  })
+
+  it("deletes on Yes, closing the modal and dropping the task's cached detail", async () => {
+    const user = userEvent.setup()
+    wrap()
+    await titleButton()
+    await user.click(screen.getByRole("button", { name: "Delete task" }))
+    await user.click(screen.getByRole("button", { name: "Yes" }))
+    expect(api.deleteTask).toHaveBeenCalledWith(5)
+    expect(param()).toBeNull()
+    expect(qc.getQueryData(taskDetailKey(5))).toBeUndefined()
+    // No refetch of the deleted task after the delete's invalidation.
+    await waitFor(() => expect(api.deleteTask).toHaveBeenCalledTimes(1))
+    expect(api.taskDetail).toHaveBeenCalledTimes(1)
+  })
+
+  it("shows Task not found for an unknown id, with a close button", async () => {
+    vi.mocked(api.taskDetail).mockRejectedValue(new HttpError("task not found", 404))
+    const user = userEvent.setup()
+    wrap()
+    expect(await screen.findByText("Task not found")).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Close" }))
+    await waitFor(() => expect(param()).toBeNull())
+  })
+})
