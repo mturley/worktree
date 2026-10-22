@@ -873,9 +873,30 @@ is the newest of exactly the events counted, never "now". Slack threads post
 `/api/thread/mark-read` — a write to Slack itself — through their cached
 `updated_ts`, the latest message as of the poll that flagged them.
 
+Every form also clears the unread **tasks** of its feed (`taskScope`: `all`
+on the home page, the worktree on its page, the resource in the single form),
+listed by `GET /api/task-unread` (query key `["tasks", "unread", scope]`, so
+the stream's task invalidations keep it live) and each posted to
+`/api/task-read` through its `newest_ts`. The multi-resource modal lists them
+as rows below the types ("T7 title", the ref in `--task-accent`), each
+checked by default and remembered as an exclusion like the types; the preview
+adds the `task` type while any is checked and drops an unchecked task's rows
+client-side. A resource's line counts only its OWN unread
+(`unread_count − task_unread_count`): its tasks clear through their own
+cursors. So a Slack thread whose only unread is task activity (`has_unread`
+false) is not marked in Slack at all; its tasks are. The button shows while
+either kind has anything unread.
+
+The task modal's header has its own **Mark read**, shown while
+`unread_count > 0`. It marks through the task's newest event, read at the
+click from its own activity (`/api/tasks/activity?filter=task`, the Activity
+tab's "This task only" query) rather than `/api/task-unread`, which would
+summarise every task to keep one row; a newer event of the user's own is the
+same mark, since those are never unread. Opening the modal marks nothing.
+
 **Undo** (`ui/src/components/UndoToast.tsx`, `@mantine/notifications`). Every
-mark-read made from the UI — Mark all read, in either form, and the Slack
-thread view's Mark read — shows a toast for 10 seconds with an Undo button
+mark-read made from the UI — Mark all read, in either form, the Slack
+thread view's Mark read and the task modal's — shows a toast for 10 seconds with an Undo button
 (also Z; U is taken by Show unread only) that puts the cursors back:
 
 - GitHub/Jira: `/api/resource-read` answers `{previous_ts, last_read_ts}`
@@ -897,8 +918,13 @@ thread view's Mark read — shows a toast for 10 seconds with an Undo button
   `lastRead`, or for Mark all read from the resource's cached `last_read`
   (now on `resourceDTO`).
 
+- Tasks: `/api/task-read` and `/api/task-read/restore`, exactly as
+  GitHub/Jira, over the task's cursor.
+
 A partial failure in Mark all read still offers to undo the writes that
-landed.
+landed. Its undo (`undoAll`) runs every restore to the end even when one is
+refused, so a 409 on one cursor still restores the rest, and reports every
+distinct failure in one "Couldn't undo" toast.
 
 A selected PR/Jira resource's Activity tab carries the same button at the
 right end of its tab bar, in its `single` form: one resource, so no

@@ -10,6 +10,9 @@ const markResourceRead = vi.fn()
 const restoreResourceRead = vi.fn()
 const globalTimeline = vi.fn()
 const worktreeTimeline = vi.fn()
+const taskUnread = vi.fn()
+const taskRead = vi.fn()
+const taskReadRestore = vi.fn()
 vi.mock("../api/client", async (orig) => {
   const actual = await orig<typeof import("../api/client")>()
   return {
@@ -19,6 +22,9 @@ vi.mock("../api/client", async (orig) => {
       restoreResourceRead: (...args: unknown[]) => restoreResourceRead(...args),
       globalTimeline: (...args: unknown[]) => globalTimeline(...args),
       worktreeTimeline: (...args: unknown[]) => worktreeTimeline(...args),
+      taskUnread: (...args: unknown[]) => taskUnread(...args),
+      taskRead: (...args: unknown[]) => taskRead(...args),
+      taskReadRestore: (...args: unknown[]) => taskReadRestore(...args),
     },
   }
 })
@@ -31,6 +37,7 @@ vi.mock("../api/slackApi", async (orig) => ({
 }))
 
 import { MarkAllReadButton, type MarkAllReadFeed } from "./MarkAllReadButton"
+import type { TaskScope } from "../api/types"
 
 const ev = (id: string, resource_type: string, title: string): TimelineEvent =>
   ({ id, ts: "2099-01-01T00:00:00Z", type: "pr_comment", type_label: "", title, body: "", author: "",
@@ -52,12 +59,21 @@ const jira = (id: string, n: number, through?: string): ResourceDTO =>
 const slack = (id: string, n: number, latest = "1790000000.000100"): ResourceDTO =>
   ({ type: "slack", id, url: "u", primary: false, has_unread: n > 0, unread_count: n, updated_ts: latest }) as ResourceDTO
 
-const wrap = (items: ResourceDTO[], feed: MarkAllReadFeed = {}) =>
+const wrap = (
+  items: ResourceDTO[],
+  feed: MarkAllReadFeed = {},
+  opts: { taskScope?: TaskScope; single?: boolean } = {},
+) =>
   render(
     <MantineProvider>
       <Notifications />
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <MarkAllReadButton resources={items} feed={feed} />
+        <MarkAllReadButton
+          resources={items}
+          feed={feed}
+          taskScope={opts.taskScope ?? { kind: "all" }}
+          single={opts.single}
+        />
       </QueryClientProvider>
     </MantineProvider>,
   )
@@ -84,6 +100,13 @@ beforeEach(() => {
   globalTimeline.mockImplementation((_a, _l, _b, types?: string[]) => feedFor(types))
   worktreeTimeline.mockReset()
   worktreeTimeline.mockImplementation((_p, _l, _r, _b, types?: string[]) => feedFor(types))
+  taskUnread.mockReset()
+  taskUnread.mockResolvedValue([])
+  taskRead.mockReset()
+  taskRead.mockImplementation((a: { through_ts: string }) =>
+    Promise.resolve({ previous_ts: "2099-01-01T00:00:00Z", last_read_ts: a.through_ts }))
+  taskReadRestore.mockReset()
+  taskReadRestore.mockResolvedValue(null)
 })
 afterEach(() => {
   cleanup()
@@ -102,9 +125,19 @@ const everything = () => [
 ]
 
 describe("MarkAllReadButton", () => {
-  it("renders nothing when nothing is unread", () => {
+  it("renders nothing when nothing is unread", async () => {
     wrap([pr("o/r#1", 0), jira("J-1", 0), slack("C1:1.2", 0)])
+    await waitFor(() => expect(taskUnread).toHaveBeenCalled())
     expect(screen.queryByRole("button", { name: /mark all read/i })).not.toBeInTheDocument()
+  })
+
+  it("counts a resource's own events only, not its tasks'", async () => {
+    // unread_count includes task_unread_count; the tasks are marked through
+    // their own cursors, so the resource's line counts only its own.
+    const user = userEvent.setup()
+    wrap([{ ...pr("o/r#1", 5, "2099-01-02T00:00:00Z"), task_unread_count: 3 } as ResourceDTO])
+    await open(user)
+    expect(screen.getByRole("checkbox", { name: "Mark 2 GitHub events in 1 PR as read" })).toBeInTheDocument()
   })
 
   it("lists each type with unreads, with its own counts, all checked", async () => {
@@ -344,6 +377,171 @@ describe("MarkAllReadButton", () => {
       await waitFor(() => expect(screen.getAllByRole("dialog")).toHaveLength(2))
       expect(screen.getByRole("dialog", { name: "Mark all read" })).toBeInTheDocument()
       expect(markResourceRead).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("tasks", () => {
+    const fixIt = { id: 7, title: "Fix it", count: 2, newest_ts: "2099-02-01T00:00:00Z" }
+    const other = { id: 8, title: "Other", count: 1, newest_ts: "2099-02-02T00:00:00Z" }
+
+    it("asks for the unread tasks of its scope", async () => {
+      wrap([], { worktree: "/wt/a" }, { taskScope: { kind: "worktree", path: "/wt/a" } })
+      await waitFor(() => expect(taskUnread).toHaveBeenCalledWith({ kind: "worktree", path: "/wt/a" }))
+    })
+
+    it("shows the button when only tasks are unread", async () => {
+      taskUnread.mockResolvedValue([fixIt])
+      wrap([])
+      expect(await screen.findByRole("button", { name: /mark all read/i })).toBeInTheDocument()
+    })
+
+    it("lists each unread task as a checked row, and marks each through its newest unread event", async () => {
+      taskUnread.mockResolvedValue([fixIt, other])
+      const user = userEvent.setup()
+      wrap([jira("J-1", 1, "2099-01-05T00:00:00Z")])
+      await screen.findByRole("button", { name: /mark all read/i })
+      await open(user)
+      expect(await screen.findByRole("checkbox", { name: "T7 Fix it" })).toBeChecked()
+      expect(screen.getByRole("checkbox", { name: "T8 Other" })).toBeChecked()
+      await user.click(screen.getByRole("button", { name: "Mark read" }))
+      await waitFor(() => expect(taskRead).toHaveBeenCalledTimes(2))
+      expect(taskRead).toHaveBeenCalledWith({ id: 7, through_ts: "2099-02-01T00:00:00Z" })
+      expect(taskRead).toHaveBeenCalledWith({ id: 8, through_ts: "2099-02-02T00:00:00Z" })
+      expect(markResourceRead).toHaveBeenCalledTimes(1)
+      expect(await screen.findByText("Marked 1 Jira event, 3 task events read")).toBeInTheDocument()
+    })
+
+    it("skips an unchecked task", async () => {
+      taskUnread.mockResolvedValue([fixIt, other])
+      const user = userEvent.setup()
+      wrap([])
+      await screen.findByRole("button", { name: /mark all read/i })
+      await open(user)
+      await user.click(screen.getByRole("checkbox", { name: "T7 Fix it" }))
+      await user.click(screen.getByRole("button", { name: "Mark read" }))
+      await waitFor(() => expect(taskRead).toHaveBeenCalledTimes(1))
+      expect(taskRead).toHaveBeenCalledWith({ id: 8, through_ts: "2099-02-02T00:00:00Z" })
+    })
+
+    it("disables Mark read with every resource type and task unchecked", async () => {
+      taskUnread.mockResolvedValue([fixIt])
+      const user = userEvent.setup()
+      wrap([jira("J-1", 1, "2099-01-05T00:00:00Z")])
+      await screen.findByRole("button", { name: /mark all read/i })
+      await open(user)
+      await user.click(screen.getByRole("checkbox", { name: /Jira/ }))
+      expect(screen.getByRole("button", { name: "Mark read" })).toBeEnabled()
+      await user.click(screen.getByRole("checkbox", { name: "T7 Fix it" }))
+      expect(screen.getByRole("button", { name: "Mark read" })).toBeDisabled()
+    })
+
+    it("previews the checked tasks' events, and drops an unchecked task's", async () => {
+      taskUnread.mockResolvedValue([fixIt, other])
+      const taskEv = (id: string, task: string, title: string) =>
+        ({ ...ev(id, "task", title), source: "tasks", resource_id: task }) as TimelineEvent
+      globalTimeline.mockImplementation((_a, _l, _b, types?: string[]) =>
+        Promise.resolve({
+          events: [taskEv("task:1", "7", "agent did seven"), taskEv("task:2", "8", "agent did eight")]
+            .filter(() => types?.includes("task")),
+          next_cursor: "",
+        }))
+      const user = userEvent.setup()
+      wrap([])
+      await screen.findByRole("button", { name: /mark all read/i })
+      await open(user)
+      expect(await screen.findByText("agent did seven")).toBeInTheDocument()
+      expect(screen.getByText("agent did eight")).toBeInTheDocument()
+      await user.click(screen.getByRole("checkbox", { name: "T7 Fix it" }))
+      await waitFor(() => expect(screen.queryByText("agent did seven")).not.toBeInTheDocument())
+      expect(screen.getByText("agent did eight")).toBeInTheDocument()
+    })
+
+    it("undo restores the task cursors too, and one refused still restores the rest", async () => {
+      taskUnread.mockResolvedValue([fixIt, other])
+      taskReadRestore.mockImplementation((a: { id: number }) =>
+        a.id === 7 ? Promise.reject(new Error("read state changed since it was marked read")) : Promise.resolve(null))
+      const user = userEvent.setup()
+      wrap([jira("J-1", 1, "2099-01-05T00:00:00Z")])
+      await screen.findByRole("button", { name: /mark all read/i })
+      await open(user)
+      await user.click(screen.getByRole("button", { name: "Mark read" }))
+      await user.click(await screen.findByRole("button", { name: "Undo" }))
+      expect(await screen.findByText("Couldn't undo: read state changed since it was marked read")).toBeInTheDocument()
+      expect(taskReadRestore).toHaveBeenCalledWith({
+        id: 7, previous_ts: "2099-01-01T00:00:00Z", last_read_ts: "2099-02-01T00:00:00Z",
+      })
+      expect(taskReadRestore).toHaveBeenCalledWith({
+        id: 8, previous_ts: "2099-01-01T00:00:00Z", last_read_ts: "2099-02-02T00:00:00Z",
+      })
+      expect(restoreResourceRead).toHaveBeenCalledTimes(1)
+    })
+
+    it("reports every distinct undo failure", async () => {
+      taskUnread.mockResolvedValue([fixIt])
+      taskReadRestore.mockRejectedValue(new Error("task cursor moved"))
+      restoreResourceRead.mockRejectedValue(new Error("resource cursor moved"))
+      const user = userEvent.setup()
+      wrap([jira("J-1", 1, "2099-01-05T00:00:00Z")])
+      await screen.findByRole("button", { name: /mark all read/i })
+      await open(user)
+      await user.click(screen.getByRole("button", { name: "Mark read" }))
+      await user.click(await screen.findByRole("button", { name: "Undo" }))
+      expect(await screen.findByText("Couldn't undo: resource cursor moved; task cursor moved")).toBeInTheDocument()
+    })
+
+    it("offers undo for the writes that landed when a task mark fails", async () => {
+      taskUnread.mockResolvedValue([fixIt])
+      taskRead.mockRejectedValue(new Error("task gone"))
+      const user = userEvent.setup()
+      wrap([jira("J-1", 1, "2099-01-05T00:00:00Z")])
+      await screen.findByRole("button", { name: /mark all read/i })
+      await open(user)
+      await user.click(screen.getByRole("button", { name: "Mark read" }))
+      expect(await screen.findByText(/task gone/)).toBeInTheDocument()
+      await user.click(await screen.findByRole("button", { name: "Undo" }))
+      await waitFor(() => expect(restoreResourceRead).toHaveBeenCalledTimes(1))
+      expect(taskReadRestore).not.toHaveBeenCalled()
+    })
+
+    describe("single form", () => {
+      it("marks the tasks linking the resource", async () => {
+        taskUnread.mockResolvedValue([fixIt])
+        const user = userEvent.setup()
+        const r = { ...jira("J-1", 3, "2099-01-05T00:00:00Z"), task_unread_count: 2 } as ResourceDTO
+        wrap([r], { worktree: "/wt/a" }, { single: true, taskScope: { kind: "resource", type: "jira", id: "J-1" } })
+        await waitFor(() => expect(taskUnread).toHaveBeenCalledWith({ kind: "resource", type: "jira", id: "J-1" }))
+        await open(user)
+        await user.click(screen.getByRole("button", { name: "Mark read" }))
+        await waitFor(() => expect(taskRead).toHaveBeenCalledWith({ id: 7, through_ts: "2099-02-01T00:00:00Z" }))
+        expect(markResourceRead).toHaveBeenCalledWith({ type: "jira", id: "J-1", through_ts: "2099-01-05T00:00:00Z" })
+        expect(await screen.findByText("Marked 1 Jira event, 2 task events read")).toBeInTheDocument()
+      })
+
+      it("clears a Slack thread whose only unread is task activity, without marking the thread", async () => {
+        taskUnread.mockResolvedValue([fixIt])
+        const user = userEvent.setup()
+        const thread = { ...slack("C1:1.2", 0), unread_count: 2, task_unread_count: 2 } as ResourceDTO
+        wrap([thread], { worktree: "/wt/a" }, { single: true, taskScope: { kind: "resource", type: "slack", id: "C1:1.2" } })
+        await screen.findByRole("button", { name: /mark all read/i })
+        await open(user)
+        await user.click(screen.getByRole("button", { name: "Mark read" }))
+        await waitFor(() => expect(taskRead).toHaveBeenCalledWith({ id: 7, through_ts: "2099-02-01T00:00:00Z" }))
+        expect(markThreadRead).not.toHaveBeenCalled()
+        await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
+      })
+    })
+
+    it("clears a Slack thread whose only unread is task activity from the worktree's form too", async () => {
+      taskUnread.mockResolvedValue([fixIt])
+      const user = userEvent.setup()
+      const thread = { ...slack("C1:1.2", 0), unread_count: 2, task_unread_count: 2 } as ResourceDTO
+      wrap([thread], { worktree: "/wt/a" }, { taskScope: { kind: "worktree", path: "/wt/a" } })
+      await screen.findByRole("button", { name: /mark all read/i })
+      await open(user)
+      expect(screen.queryByRole("checkbox", { name: /Slack/ })).not.toBeInTheDocument()
+      await user.click(screen.getByRole("button", { name: "Mark read" }))
+      await waitFor(() => expect(taskRead).toHaveBeenCalledTimes(1))
+      expect(markThreadRead).not.toHaveBeenCalled()
     })
   })
 })

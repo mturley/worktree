@@ -10,6 +10,20 @@ export const UNDO_WINDOW_MS = 10_000
 let nextID = 0
 
 /**
+ * Several undos as one, for a toast that took back more than one mark. Every
+ * undo runs to the end even when another is refused (a 409 on one cursor
+ * must not leave the others marked), and it settles only once all have, so
+ * the caller's refetch sees them all. Fails with every distinct failure's
+ * message, joined, so a toast reports each one.
+ */
+export async function undoAll(undos: (() => Promise<unknown>)[]): Promise<void> {
+  const results = await Promise.allSettled(undos.map((u) => u()))
+  const messages = results.flatMap((r) =>
+    r.status === "rejected" ? [r.reason instanceof Error ? r.reason.message : String(r.reason)] : [])
+  if (messages.length > 0) throw new Error([...new Set(messages)].join("; "))
+}
+
+/**
  * Offers to take back a mark-read for UNDO_WINDOW_MS: a toast reading
  * `message`, with an Undo button (and Z) that runs `undo`.
  *

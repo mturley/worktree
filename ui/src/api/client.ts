@@ -1,4 +1,4 @@
-import type { DiffBase, DiffCommits, DiffFiles, DiffPatch, DiffRange, WorktreeGit, AllResourceDTO, CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, CredResult, DefaultBranchResponse, CredService, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, ResourceReadChange, Priority, Task, TaskState, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, UpdateStatus, WatcherHealth, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherAuthSettings, WatcherConfigSettings, WorktreeInfo, WorktreeNotes, WorktreeSettings, WorktreeSummary, TaskActivityFilter, TaskDetail, TaskEventSnapshot, TaskLinkTarget, TimelineEvent } from "./types"
+import type { DiffBase, DiffCommits, DiffFiles, DiffPatch, DiffRange, WorktreeGit, AllResourceDTO, CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, CredResult, DefaultBranchResponse, CredService, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, ResourceReadChange, Priority, Task, TaskState, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, UpdateStatus, WatcherHealth, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherAuthSettings, WatcherConfigSettings, WorktreeInfo, WorktreeNotes, WorktreeSettings, WorktreeSummary, TaskActivityFilter, TaskDetail, TaskEventSnapshot, TaskLinkTarget, TimelineEvent, TaskScope, TaskUnread } from "./types"
 
 export class HttpError extends Error {
   constructor(message: string, readonly status: number) {
@@ -57,6 +57,17 @@ function cmuxPost(url: string, body: unknown) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   })
+}
+
+/** A task scope as GET /api/tasks and /api/task-unread take it. */
+function taskScopeParams(scope: TaskScope): URLSearchParams {
+  const params = new URLSearchParams({ scope: scope.kind })
+  if (scope.kind === "worktree") params.set("path", scope.path)
+  if (scope.kind === "resource") {
+    params.set("type", scope.type)
+    params.set("id", scope.id)
+  }
+  return params
 }
 
 function postJSON<T>(url: string, body: unknown) {
@@ -142,20 +153,21 @@ export const api = {
       throw new HttpError((data && data.error) || `HTTP ${res.status}`, res.status)
     }
   },
-  tasks: (
-    scope: { kind: "all" } | { kind: "worktree"; path: string } | { kind: "resource"; type: string; id: string },
-    opts: { completed?: boolean; archived?: boolean } = {},
-  ) => {
-    const params = new URLSearchParams({ scope: scope.kind })
-    if (scope.kind === "worktree") params.set("path", scope.path)
-    if (scope.kind === "resource") {
-      params.set("type", scope.type)
-      params.set("id", scope.id)
-    }
+  tasks: (scope: TaskScope, opts: { completed?: boolean; archived?: boolean } = {}) => {
+    const params = taskScopeParams(scope)
     if (opts.completed) params.set("completed", "1")
     if (opts.archived) params.set("archived", "1")
     return fetchJSON<Task[]>(`/api/tasks?${params}`)
   },
+  /** The scope's tasks with unread events, newest unread first; never null. */
+  taskUnread: (scope: TaskScope) => fetchJSON<TaskUnread[]>(`/api/task-unread?${taskScopeParams(scope)}`),
+  /** Moves a task's read cursor forward, answering where it was so the move can be undone. 404 for a missing task. */
+  taskRead: (args: { id: number; through_ts: string }) => postJSON<ResourceReadChange>("/api/task-read", args),
+  /**
+   * Undoes a taskRead, given what it answered. 409 when the cursor has moved
+   * on since — a later read is never rewound past.
+   */
+  taskReadRestore: (args: { id: number } & ResourceReadChange) => postJSON<null>("/api/task-read/restore", args),
   createTask: (args: {
     title: string
     priority?: Priority

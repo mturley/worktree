@@ -169,6 +169,7 @@ function TimelineBody({
                     single
                     resources={[resource]}
                     feed={{ worktree: path, path, showResource: false }}
+                    taskScope={{ kind: "resource", type: resource.type, id: resource.id }}
                   />
                 )}
               </>

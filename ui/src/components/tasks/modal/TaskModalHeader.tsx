@@ -1,16 +1,74 @@
 import { useRef, useState } from "react"
-import { ActionIcon, CloseButton, Group, Modal, Text, TextInput, UnstyledButton } from "@mantine/core"
+import { ActionIcon, Button, CloseButton, Group, Modal, Text, TextInput, UnstyledButton } from "@mantine/core"
+import { notifications } from "@mantine/notifications"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { api } from "../../../api/client"
 import type { TaskDetail, TaskState } from "../../../api/types"
+import { taskActivityKey } from "../../../hooks/useTaskDetail"
+import { showUndoToast, UNDO_WINDOW_MS } from "../../UndoToast"
 import { TaskStateCheckbox } from "../TaskStateCheckbox"
 import type { TaskPatch } from "./useOptimisticTask"
 
-/** State checkbox · star · title (editable in place) · close. */
+/**
+ * Marks one task's activity read, offering an undo, as Mark all read does
+ * for a feed.
+ *
+ * It marks through the task's NEWEST event, read from the task's own
+ * activity (filter "task": just this task's events, newest first, the query
+ * the Activity tab's "This task only" pill shares). That is the cheapest
+ * correct source: GET /api/task-unread would answer the exact newest unread
+ * ts, but only by summarising every task's events and listing every task in
+ * its scope, to keep one row. Marking through a newer event of the user's
+ * own is the same mark, since the user's events are never unread. Fetched at
+ * the click, never while the modal is merely open: opening it marks nothing.
+ */
+function useMarkTaskRead(task: TaskDetail) {
+  const qc = useQueryClient()
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ["tasks"] })
+    void qc.invalidateQueries({ queryKey: ["worktrees"] })
+    void qc.invalidateQueries({ queryKey: ["resources"] })
+    void qc.invalidateQueries({ queryKey: ["timeline"] })
+  }
+  return useMutation({
+    mutationFn: async () => {
+      const { id } = task
+      const count = task.unread_count ?? 0
+      const events = await qc.fetchQuery({
+        queryKey: taskActivityKey(id, { filter: "task" }),
+        queryFn: () => api.taskActivity(id, "task", undefined),
+        staleTime: 0,
+      })
+      const through = events[0]?.ts
+      if (!through) return
+      const change = await api.taskRead({ id, through_ts: through })
+      if (change.previous_ts === change.last_read_ts) return
+      showUndoToast({
+        message: `Marked ${count} task ${count === 1 ? "event" : "events"} read`,
+        undo: () => api.taskReadRestore({ id, ...change }),
+        onSettled: refresh,
+      })
+    },
+    onError: (err) =>
+      notifications.show({
+        color: "red",
+        autoClose: UNDO_WINDOW_MS,
+        message: `Couldn't mark read: ${err instanceof Error ? err.message : String(err)}`,
+      }),
+    onSettled: refresh,
+  })
+}
+
+/** State checkbox · star · title (editable in place) · Mark read (while unread) · close. */
 export function TaskModalHeader({ task, onUpdate, onState, onClose }: {
   task: TaskDetail
   onUpdate: (patch: TaskPatch) => void
   onState: (s: TaskState) => void
   onClose: () => void
 }) {
+  // Here, not in a child that renders only while unread: the mark's own
+  // refetch removes the button, and the mutation must outlive it.
+  const markRead = useMarkTaskRead(task)
   return (
     <Group gap="xs" wrap="nowrap" align="center">
       <TaskStateCheckbox state={task.state} title={task.title} onPick={onState} />
@@ -26,6 +84,18 @@ export function TaskModalHeader({ task, onUpdate, onState, onClose }: {
       </ActionIcon>
       <EditableTitle title={task.title} onSave={(title) => onUpdate({ title })} />
       <Text size="xs" c="dimmed" style={{ flex: "none" }}>{task.ref}</Text>
+      {(task.unread_count ?? 0) > 0 && (
+        <Button
+          size="compact-xs"
+          variant="filled"
+          color="blue"
+          loading={markRead.isPending}
+          onClick={() => markRead.mutate()}
+          style={{ flex: "none" }}
+        >
+          Mark read
+        </Button>
+      )}
       <CloseButton aria-label="Close task" onClick={onClose} style={{ flex: "none" }} />
     </Group>
   )

@@ -1,7 +1,7 @@
 import { type ComponentProps, useState } from "react"
 import { Alert, Box, Button, Checkbox, Flex, Group, Modal, ScrollArea, Stack, Text } from "@mantine/core"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
-import type { ResourceDTO } from "../api/types"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import type { ResourceDTO, TaskScope, TaskUnread } from "../api/types"
 import { api } from "../api/client"
 import { markRead as markThreadRead, restoreRead as restoreThreadRead } from "../api/slackApi"
 import { useGlobalTimeline, useWorktreeTimeline } from "../hooks/useTimeline"
@@ -10,7 +10,7 @@ import { useButtonHotkey } from "../hooks/useButtonHotkey"
 import { KeyHint } from "./search/KeyHint"
 import { slackTabFromResource } from "./SlackThreadPane"
 import { TimelineFeed } from "./TimelineFeed"
-import { showUndoToast } from "./UndoToast"
+import { showUndoToast, undoAll } from "./UndoToast"
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 
@@ -53,9 +53,15 @@ interface Target {
  * server answers with, for Slack its cached last_read ("" when it has none,
  * which restores the whole thread unread — the only reading of a thread Slack
  * flags unread with no cursor).
+ *
+ * The count is the resource's OWN unread: unread_count also holds the unread
+ * events of the tasks linking it (task_unread_count), and those are cleared
+ * through each task's cursor (taskTarget), never the resource's. So a Slack
+ * thread whose only unread is task activity (has_unread false) is no target
+ * here — Slack is never told to mark it — and its tasks still are.
  */
 function toTarget(r: ResourceDTO): Target | null {
-  const count = r.unread_count ?? 0
+  const count = (r.unread_count ?? 0) - (r.task_unread_count ?? 0)
   if (r.type === "slack") {
     const { channel, threadTs } = slackTabFromResource(r)
     if (!r.has_unread || !r.updated_ts || !threadTs) return null
@@ -85,6 +91,25 @@ function toTarget(r: ResourceDTO): Target | null {
 }
 
 /**
+ * An unread task as a mark-read target: marked through newest_ts, the newest
+ * of the unread events GET /api/task-unread counted — what the modal showed,
+ * so an agent event landing after it stays unread. Undone like a resource.
+ */
+function taskTarget(t: TaskUnread): Target {
+  return {
+    count: t.count,
+    mark: async () => {
+      const change = await api.taskRead({ id: t.id, through_ts: t.newest_ts })
+      if (change.previous_ts === change.last_read_ts) return null
+      return () => api.taskReadRestore({ id: t.id, ...change })
+    },
+  }
+}
+
+/** The query key of a scope's unread tasks; under "tasks", so every task invalidation refreshes it. */
+const taskUnreadKey = (scope: TaskScope) => ["tasks", "unread", scope] as const
+
+/**
  * Where the preview column's events come from, and how its rows look. A
  * `worktree` previews that worktree's own feed; without one, the global feed
  * (never archived: the button marks only resources a worktree follows). The
@@ -99,7 +124,11 @@ export type MarkAllReadFeed = { worktree?: string } & Pick<
   "showWorktrees" | "resolveResource" | "path" | "showResource"
 >
 
-type PreviewProps = { types: string[]; feed: MarkAllReadFeed }
+/**
+ * `hiddenTasks` are unchecked tasks: the server filters by type only, so
+ * their events are dropped here, leaving the checked tasks' in view.
+ */
+type PreviewProps = { types: string[]; feed: MarkAllReadFeed; hiddenTasks?: ReadonlySet<number> }
 
 /** One resource's unread events, from its worktree's feed. */
 function ResourcePreview(props: { worktree: string; resource: ResourceDTO; feed: MarkAllReadFeed }) {
@@ -117,14 +146,17 @@ function WorktreePreview(props: PreviewProps & { worktree: string }) {
   return <PreviewFeed {...props} tl={useWorktreeTimeline(props.worktree, undefined, props.types, true)} />
 }
 
-function PreviewFeed({ tl, feed }: PreviewProps & {
+function PreviewFeed({ tl, feed, hiddenTasks }: PreviewProps & {
   tl: ReturnType<typeof useGlobalTimeline>
 }) {
   const { worktree: _, ...rest } = feed
+  const events = hiddenTasks?.size
+    ? tl.events.filter((e) => !(e.resource_type === "task" && hiddenTasks.has(Number(e.resource_id))))
+    : tl.events
   return (
     <TimelineFeed
       {...rest}
-      events={tl.events}
+      events={events}
       loading={tl.isLoading}
       error={tl.error}
       hasMore={tl.hasMore}
@@ -151,16 +183,33 @@ function PreviewFeed({ tl, feed }: PreviewProps & {
  * `resources` holds just that resource and `feed.worktree` its worktree.
  * There is only one thing to mark, so no checkboxes — the modal is the
  * preview of its unread events alone.
+ *
+ * Every form also clears the unread tasks of its feed, `taskScope`: every
+ * task on the home page, the worktree's tasks on its page, and the tasks
+ * linking the resource in the single form — each through its own cursor
+ * (taskTarget). The multi-resource form lists them as rows beside the
+ * resource types, each checked by default and remembered as an exclusion
+ * like the types; the single form marks them along with the resource.
  */
-export function MarkAllReadButton({ resources, feed, single = false }: {
+export function MarkAllReadButton({ resources, feed, taskScope, single = false }: {
   resources: ResourceDTO[]
   feed: MarkAllReadFeed
+  taskScope: TaskScope
   single?: boolean
 }) {
   const [opened, setOpened] = useState(false)
   const wide = useIsWide()
   const [unchecked, setUnchecked] = useState<ReadonlySet<Kind>>(new Set())
+  const [uncheckedTasks, setUncheckedTasks] = useState<ReadonlySet<number>>(new Set())
   const qc = useQueryClient()
+
+  // Live like `resources`: useSSE invalidates "tasks" on every new event, so
+  // a task gaining unreads while the modal is open arrives (checked).
+  // A failed fetch costs only the task rows; the resources still mark.
+  const taskUnread = useQuery({ queryKey: taskUnreadKey(taskScope), queryFn: () => api.taskUnread(taskScope) })
+  const tasks = taskUnread.data ?? []
+  const selectedTasks = tasks.filter((t) => !uncheckedTasks.has(t.id))
+  const taskCount = selectedTasks.reduce((n, t) => n + t.count, 0)
 
   const groups = KINDS.map((kind) => {
     const targets = resources
@@ -171,10 +220,16 @@ export function MarkAllReadButton({ resources, feed, single = false }: {
   }).filter((g) => g.targets.length > 0)
   const selected = groups.filter((g) => !unchecked.has(g.kind.type))
   const selectedTypes = selected.map((g) => g.kind.type)
+  // The preview's types: "task" while any task is checked (the unchecked
+  // ones are dropped from its rows, as hiddenTasks).
+  const previewTypes: string[] = selectedTasks.length > 0 ? [...selectedTypes, "task"] : selectedTypes
+  const anything = groups.length > 0 || tasks.length > 0
+  const anySelected = selected.length > 0 || selectedTasks.length > 0
 
-  // The home cards' focus lines, the worktrees' resource lists, and every
-  // timeline's dots and divider.
+  // The home cards' focus lines, the worktrees' resource lists, the task
+  // lists' dots and counts, and every timeline's dots and divider.
   const refreshUnreadSurfaces = () => {
+    void qc.invalidateQueries({ queryKey: ["tasks"] })
     void qc.invalidateQueries({ queryKey: ["worktrees"] })
     void qc.invalidateQueries({ queryKey: ["resources"] })
     void qc.invalidateQueries({ queryKey: ["timeline"] })
@@ -186,15 +241,18 @@ export function MarkAllReadButton({ resources, feed, single = false }: {
     // writes that landed are offered for undo even when another failed —
     // they moved cursors all the same.
     mutationFn: async () => {
-      const summary = selected
-        .map((g) => plural(g.count, `${g.kind.source} ${g.kind.item[0]}`, `${g.kind.source} ${g.kind.item[1]}`))
-        .join(", ")
-      const results = await Promise.allSettled(selected.flatMap((g) => g.targets.map((t) => t.mark())))
+      const summary = [
+        ...selected.map((g) =>
+          plural(g.count, `${g.kind.source} ${g.kind.item[0]}`, `${g.kind.source} ${g.kind.item[1]}`)),
+        ...(taskCount > 0 ? [plural(taskCount, "task event", "task events")] : []),
+      ].join(", ")
+      const targets = [...selected.flatMap((g) => g.targets), ...selectedTasks.map(taskTarget)]
+      const results = await Promise.allSettled(targets.map((t) => t.mark()))
       const undos = results.flatMap((r) => (r.status === "fulfilled" && r.value ? [r.value] : []))
       if (undos.length > 0) {
         showUndoToast({
           message: `Marked ${summary} read`,
-          undo: () => Promise.all(undos.map((u) => u())),
+          undo: () => undoAll(undos),
           onSettled: refreshUnreadSurfaces,
         })
       }
@@ -208,13 +266,14 @@ export function MarkAllReadButton({ resources, feed, single = false }: {
   })
 
   // R opens the preview, and Enter in it confirms (see useButtonHotkey).
-  const openRef = useButtonHotkey("r", () => openModal(), groups.length > 0 && !opened)
-  const confirmRef = useButtonHotkey("Enter", () => markAll.mutate(), opened && selected.length > 0 && !markAll.isPending)
+  const openRef = useButtonHotkey("r", () => openModal(), anything && !opened)
+  const confirmRef = useButtonHotkey("Enter", () => markAll.mutate(), opened && anySelected && !markAll.isPending)
 
-  if (groups.length === 0 && !opened) return null
+  if (!anything && !opened) return null
 
   const openModal = () => {
     setUnchecked(new Set())
+    setUncheckedTasks(new Set())
     markAll.reset()
     setOpened(true)
   }
@@ -229,10 +288,17 @@ export function MarkAllReadButton({ resources, feed, single = false }: {
       else next.add(type)
       return next
     })
+  const toggleTask = (id: number, checked: boolean) =>
+    setUncheckedTasks((prev) => {
+      const next = new Set(prev)
+      if (checked) next.delete(id)
+      else next.add(id)
+      return next
+    })
 
   return (
     <>
-      {groups.length > 0 && (
+      {anything && (
         <Button
           size="compact-sm"
           // Filled blue, not the theme's primary: primaryColor is "accent"
@@ -258,7 +324,9 @@ export function MarkAllReadButton({ resources, feed, single = false }: {
           {singleResource && feed.worktree ? (
             <Box>
               <Text size="sm" c="dimmed" mb="xs">
-                {singleGroup
+                {/* Its tasks' events are in the preview too (a resource's
+                    feed carries the tasks linking it), and are no "messages". */}
+                {singleGroup && taskCount === 0
                   ? `The following ${plural(singleGroup.count, singleGroup.kind.item[0], singleGroup.kind.item[1])} will be marked as read`
                   : "The following activity will be marked as read"}
               </Text>
@@ -279,15 +347,35 @@ export function MarkAllReadButton({ resources, feed, single = false }: {
                       + ` in ${plural(targets.length, kind.container[0], kind.container[1])} as read`}
                   />
                 ))}
+                {tasks.length > 0 && (
+                  <Stack gap={6}>
+                    <Text size="xs" c="dimmed" fw={600}>Tasks</Text>
+                    {tasks.map((t) => (
+                      <Checkbox
+                        key={t.id}
+                        checked={!uncheckedTasks.has(t.id)}
+                        onChange={(e) => toggleTask(t.id, e.currentTarget.checked)}
+                        label={
+                          <>
+                            <Text span fw={600} style={{ color: "var(--task-accent)" }}>{`T${t.id}`}</Text>
+                            {` ${t.title}`}
+                          </>
+                        }
+                        description={plural(t.count, "unread event", "unread events")}
+                        styles={{ label: { overflowWrap: "anywhere" } }}
+                      />
+                    ))}
+                  </Stack>
+                )}
               </Stack>
               <Box style={{ flex: 1, minWidth: 0 }}>
                 <Text size="sm" c="dimmed" mb="xs">The following activity will be marked as read</Text>
                 <ScrollArea.Autosize mah={wide ? "55vh" : "35vh"} type="auto" offsetScrollbars>
                   {/* Nothing checked lists nothing — and asks for nothing: an
                       empty resource_types means every type to the server. */}
-                  {selectedTypes.length === 0 ? null : feed.worktree
-                    ? <WorktreePreview worktree={feed.worktree} types={selectedTypes} feed={feed} />
-                    : <GlobalPreview types={selectedTypes} feed={feed} />}
+                  {previewTypes.length === 0 ? null : feed.worktree
+                    ? <WorktreePreview worktree={feed.worktree} types={previewTypes} feed={feed} hiddenTasks={uncheckedTasks} />
+                    : <GlobalPreview types={previewTypes} feed={feed} hiddenTasks={uncheckedTasks} />}
                 </ScrollArea.Autosize>
               </Box>
             </Flex>
@@ -300,7 +388,7 @@ export function MarkAllReadButton({ resources, feed, single = false }: {
             <Button
               color="blue"
               loading={markAll.isPending}
-              disabled={selected.length === 0}
+              disabled={!anySelected}
               onClick={() => markAll.mutate()}
               ref={confirmRef}
               // Focus lands here on open, not on the close button, which

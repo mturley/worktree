@@ -753,3 +753,19 @@ export interface TaskDetail extends Task {
 }
 
 export type TaskActivityFilter = "all" | "task" | "linked" | "resource"
+
+/** Which tasks a list (GET /api/tasks) or an unread summary (GET /api/task-unread) covers. */
+export type TaskScope =
+  | { kind: "all" }
+  | { kind: "worktree"; path: string }
+  | { kind: "resource"; type: string; id: string }
+
+/** GET /api/task-unread; mirrors taskUnreadDTO in internal/webui/tasks_api.go. */
+export interface TaskUnread {
+  id: number
+  title: string
+  /** Its unread events: an agent's, newer than the task's cursor. */
+  count: number
+  /** The newest of those events; sent as through_ts to mark the task read. */
+  newest_ts: string
+}

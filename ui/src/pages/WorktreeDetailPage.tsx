@@ -376,6 +376,7 @@ export function WorktreeDetailPage() {
         <MarkAllReadButton
           resources={items}
           feed={{ worktree: path, resolveResource, path }}
+          taskScope={{ kind: "worktree", path }}
         />
       )}
     </Group>

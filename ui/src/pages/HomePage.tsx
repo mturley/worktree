@@ -283,6 +283,7 @@ export function HomePage() {
           <MarkAllReadButton
             resources={allResources.data ?? []}
             feed={{ showWorktrees: true }}
+            taskScope={{ kind: "all" }}
           />
         )}
       </Group>
