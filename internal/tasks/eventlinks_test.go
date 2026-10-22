@@ -101,3 +101,111 @@ func TestEventLinkCascadeOnDelete(t *testing.T) {
 		t.Fatalf("rows = %d", n)
 	}
 }
+
+func TestEventLinkRelinkKeepsVersionFlat(t *testing.T) {
+	conn := newDB(t)
+	tk := mustCreate(t, conn, "t")
+	if err := LinkEvent(conn, user, tk.ID, "ev:5", snapA); err != nil {
+		t.Fatal(err)
+	}
+	v := mustVersion(t, conn)
+	if err := LinkEvent(conn, user, tk.ID, "ev:5", snapA); err != nil {
+		t.Fatal(err)
+	}
+	if got := mustVersion(t, conn); got != v {
+		t.Fatalf("version after no-op relink = %d, want %d", got, v)
+	}
+}
+
+func TestLinkEventReplaceOverwritesSnapshot(t *testing.T) {
+	conn := newDB(t)
+	tk := mustCreate(t, conn, "t")
+	client := EventSnapshot{Title: "client", Source: "slack"}
+	if err := LinkEvent(conn, user, tk.ID, "slack:C1:1.2", client); err != nil {
+		t.Fatal(err)
+	}
+	// LinkEvent leaves an existing snapshot alone.
+	if err := LinkEvent(conn, user, tk.ID, "slack:C1:1.2", snapA); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := EventLinks(conn, tk.ID); got[0].Snapshot != client {
+		t.Fatalf("LinkEvent replaced the snapshot: %+v", got[0].Snapshot)
+	}
+	if err := LinkEventReplace(conn, user, tk.ID, "slack:C1:1.2", snapA); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := EventLinks(conn, tk.ID)
+	if len(got) != 1 || got[0].Snapshot != snapA {
+		t.Fatalf("after replace = %+v", got)
+	}
+	if n := len(eventsOfType(t, conn, tk.ID, EventTaskEventLinked)); n != 1 {
+		t.Fatalf("a replaced snapshot records no event; linked events = %d", n)
+	}
+	v := mustVersion(t, conn)
+	if err := LinkEventReplace(conn, user, tk.ID, "slack:C1:1.2", snapA); err != nil {
+		t.Fatal(err)
+	}
+	if mustVersion(t, conn) != v {
+		t.Fatal("replacing with the same snapshot bumped Version")
+	}
+	// A new key links as LinkEvent would.
+	if err := LinkEventReplace(conn, user, tk.ID, "ev:9", snapA); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(eventsOfType(t, conn, tk.ID, EventTaskEventLinked)); n != 2 {
+		t.Fatalf("linked events = %d", n)
+	}
+}
+
+func TestCreateFromEvent(t *testing.T) {
+	conn := newDB(t)
+	tk, err := CreateFromEvent(conn, user, NewTask{Title: "from ev", Focus: []LinkTarget{
+		{Kind: LinkResource, ResourceType: "pr", ResourceID: "o/r#1"},
+	}}, "ev:5", snapA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tk.Title != "from ev" || len(tk.Links) != 1 {
+		t.Fatalf("task = %+v", tk)
+	}
+	links, err := EventLinks(conn, tk.ID)
+	if err != nil || len(links) != 1 || links[0].Key != "ev:5" || links[0].Snapshot != snapA {
+		t.Fatalf("event links = %+v, %v", links, err)
+	}
+	if n := len(eventsOfType(t, conn, tk.ID, EventTaskEventLinked)); n != 1 {
+		t.Fatalf("linked events = %d", n)
+	}
+}
+
+func TestCreateFromEventIsAtomic(t *testing.T) {
+	conn := newDB(t)
+	// Make the event-link insert fail inside the transaction.
+	if _, err := conn.Exec(`CREATE TRIGGER boom BEFORE INSERT ON task_event_links
+		BEGIN SELECT RAISE(ABORT, 'boom'); END`); err != nil {
+		t.Fatal(err)
+	}
+	v := mustVersion(t, conn)
+	if _, err := CreateFromEvent(conn, user, NewTask{Title: "x", Focus: []LinkTarget{
+		{Kind: LinkResource, ResourceType: "pr", ResourceID: "o/r#1"},
+	}}, "ev:5", snapA); err == nil {
+		t.Fatal("want an error")
+	}
+	for _, table := range []string{"tasks", "task_links", "task_events", "task_event_links"} {
+		if n := count(t, conn, table); n != 0 {
+			t.Errorf("%s rows = %d after a failed CreateFromEvent", table, n)
+		}
+	}
+	if mustVersion(t, conn) != v {
+		t.Error("a failed CreateFromEvent bumped Version")
+	}
+	// Bad input fails before anything is written.
+	if _, err := CreateFromEvent(conn, user, NewTask{Title: "x"}, "bogus:1", snapA); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("bad key = %v", err)
+	}
+	if _, err := CreateFromEvent(conn, user, NewTask{Title: " "}, "ev:1", snapA); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("empty title = %v", err)
+	}
+	if _, err := CreateFromEvent(conn, Actor{}, NewTask{Title: "x"}, "ev:1", snapA); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("bad actor = %v", err)
+	}
+}

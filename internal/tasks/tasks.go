@@ -274,89 +274,113 @@ func Version(conn *sql.DB) (int64, error) {
 // or n.Before, as MoveAfter/MoveBefore would place it), linking each of
 // n.Focus as a Focus link (duplicates collapse to one).
 func Create(conn *sql.DB, a Actor, n NewTask) (Task, error) {
-	if err := validActor(a); err != nil {
+	p, err := prepareNew(a, n)
+	if err != nil {
 		return Task{}, err
 	}
+	var id int64
+	err = inTx(conn, func(tx dbtx) error {
+		id, err = createTx(tx, a, p)
+		return err
+	})
+	if err != nil {
+		return Task{}, err
+	}
+	return Get(conn, id)
+}
+
+// preparedTask is a NewTask validated and normalised for createTx.
+type preparedTask struct {
+	NewTask
+	title string
+	focus []LinkTarget
+}
+
+// prepareNew validates a and n outside any transaction.
+func prepareNew(a Actor, n NewTask) (preparedTask, error) {
+	if err := validActor(a); err != nil {
+		return preparedTask{}, err
+	}
 	if n.After != 0 && n.Before != 0 {
-		return Task{}, fmt.Errorf("%w: set at most one of after and before", ErrInvalid)
+		return preparedTask{}, fmt.Errorf("%w: set at most one of after and before", ErrInvalid)
 	}
 	title, err := cleanTitle(n.Title)
 	if err != nil {
-		return Task{}, err
+		return preparedTask{}, err
 	}
 	if n.Priority == "" {
 		n.Priority = PriorityNone
 	}
 	if err := validPriority(n.Priority); err != nil {
-		return Task{}, err
+		return preparedTask{}, err
 	}
 	if err := validDue(n.Due); err != nil {
-		return Task{}, err
+		return preparedTask{}, err
 	}
 	var focus []LinkTarget
 	seen := map[LinkTarget]bool{}
 	for _, f := range n.Focus {
 		lt, err := normalize(f)
 		if err != nil {
-			return Task{}, err
+			return preparedTask{}, err
 		}
 		if !seen[lt] {
 			seen[lt] = true
 			focus = append(focus, lt)
 		}
 	}
-	var id int64
-	err = inTx(conn, func(tx dbtx) error {
-		var lo, hi string
-		var err error
-		switch {
-		case n.After != 0:
-			// The new row isn't inserted yet, so there is no id to exclude.
-			if lo, hi, err = relativeBounds(tx, 0, n.After, true); err != nil {
-				return err
-			}
-		case n.Before != 0:
-			if lo, hi, err = relativeBounds(tx, 0, n.Before, false); err != nil {
-				return err
-			}
-		default:
-			// Max over ALL rows, deleted included, so a later restore can't
-			// collide with a newer task's rank.
-			var last sql.NullString
-			if err := tx.QueryRowContext(bg, `SELECT MAX(rank) FROM tasks`).Scan(&last); err != nil {
-				return err
-			}
-			lo = last.String
+	return preparedTask{NewTask: n, title: title, focus: focus}, nil
+}
+
+// createTx inserts p inside an inTx body and returns its id. It calls no
+// public function (they open their own transaction and would deadlock).
+func createTx(tx dbtx, a Actor, p preparedTask) (int64, error) {
+	var lo, hi string
+	var err error
+	switch {
+	case p.After != 0:
+		// The new row isn't inserted yet, so there is no id to exclude.
+		if lo, hi, err = relativeBounds(tx, 0, p.After, true); err != nil {
+			return 0, err
 		}
-		rank, err := KeyBetween(lo, hi)
-		if err != nil {
-			return err
+	case p.Before != 0:
+		if lo, hi, err = relativeBounds(tx, 0, p.Before, false); err != nil {
+			return 0, err
 		}
-		ts := now()
-		res, err := tx.ExecContext(bg,
-			`INSERT INTO tasks (title, description, state, priority, starred, due_date, rank, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			title, n.Description, StateNotStarted, n.Priority, bit(n.Starred), nullable(n.Due), rank, ts, ts)
-		if err != nil {
-			return err
+	default:
+		// Max over ALL rows, deleted included, so a later restore can't
+		// collide with a newer task's rank.
+		var last sql.NullString
+		if err := tx.QueryRowContext(bg, `SELECT MAX(rank) FROM tasks`).Scan(&last); err != nil {
+			return 0, err
 		}
-		if id, err = res.LastInsertId(); err != nil {
-			return err
-		}
-		if _, err := record(tx, a, id, ts, EventTaskCreated, nil); err != nil {
-			return err
-		}
-		for _, lt := range focus {
-			if err := insertLink(tx, a, id, lt, true, ts); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return Task{}, err
+		lo = last.String
 	}
-	return Get(conn, id)
+	rank, err := KeyBetween(lo, hi)
+	if err != nil {
+		return 0, err
+	}
+	ts := now()
+	res, err := tx.ExecContext(bg,
+		`INSERT INTO tasks (title, description, state, priority, starred, due_date, rank, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.title, p.Description, StateNotStarted, p.Priority, bit(p.Starred), nullable(p.Due), rank, ts, ts)
+	if err != nil {
+		return 0, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	if _, err := record(tx, a, id, ts, EventTaskCreated, nil); err != nil {
+		return 0, err
+	}
+	for _, lt := range p.focus {
+		if err := insertLink(tx, a, id, lt, true, ts); err != nil {
+			return 0, err
+		}
+	}
+	return id, nil
 }
 
 // Get returns a task with its links, implicit worktrees and archived state,

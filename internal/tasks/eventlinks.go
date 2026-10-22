@@ -48,16 +48,22 @@ func eventLinkPayload(key, title string) map[string]any {
 // LinkEvent links taskID to the event identified by key, remembering snap.
 // Linking an already-linked key changes nothing and records no event.
 func LinkEvent(conn *sql.DB, a Actor, taskID int64, key string, snap EventSnapshot) error {
+	return linkEvent(conn, a, taskID, key, snap, false)
+}
+
+// LinkEventReplace is LinkEvent, except that an already-linked key takes
+// snap in place of the snapshot it had (recording no event). For a caller
+// whose snapshot is authoritative: one the server built from the event
+// itself beats one a client sent.
+func LinkEventReplace(conn *sql.DB, a Actor, taskID int64, key string, snap EventSnapshot) error {
+	return linkEvent(conn, a, taskID, key, snap, true)
+}
+
+func linkEvent(conn *sql.DB, a Actor, taskID int64, key string, snap EventSnapshot, replace bool) error {
 	if err := validActor(a); err != nil {
 		return err
 	}
-	if err := validEventKey(key); err != nil {
-		return err
-	}
-	if r := []rune(snap.Body); len(r) > maxSnapshotBody {
-		snap.Body = string(r[:maxSnapshotBody])
-	}
-	raw, err := json.Marshal(snap)
+	raw, err := prepareEventLink(key, &snap)
 	if err != nil {
 		return err
 	}
@@ -65,22 +71,81 @@ func LinkEvent(conn *sql.DB, a Actor, taskID int64, key string, snap EventSnapsh
 		if _, err := load(tx, taskID); err != nil {
 			return err
 		}
-		ts := now()
+		return linkEventTx(tx, a, taskID, key, snap.Title, raw, replace)
+	})
+}
+
+// CreateFromEvent creates a task (as Create) with the event key linked (as
+// LinkEvent), in one transaction: either both happen or neither does.
+func CreateFromEvent(conn *sql.DB, a Actor, n NewTask, key string, snap EventSnapshot) (Task, error) {
+	p, err := prepareNew(a, n)
+	if err != nil {
+		return Task{}, err
+	}
+	raw, err := prepareEventLink(key, &snap)
+	if err != nil {
+		return Task{}, err
+	}
+	var id int64
+	err = inTx(conn, func(tx dbtx) error {
+		if id, err = createTx(tx, a, p); err != nil {
+			return err
+		}
+		return linkEventTx(tx, a, id, key, snap.Title, raw, false)
+	})
+	if err != nil {
+		return Task{}, err
+	}
+	return Get(conn, id)
+}
+
+// prepareEventLink validates key, truncates snap's body and serializes it.
+func prepareEventLink(key string, snap *EventSnapshot) (string, error) {
+	if err := validEventKey(key); err != nil {
+		return "", err
+	}
+	if r := []rune(snap.Body); len(r) > maxSnapshotBody {
+		snap.Body = string(r[:maxSnapshotBody])
+	}
+	raw, err := json.Marshal(snap)
+	return string(raw), err
+}
+
+// linkEventTx links key to taskID (a live task) inside an inTx body. It
+// calls no public function. With replace, an existing link's snapshot
+// becomes raw; one that already is raw writes nothing, so Version stays put.
+func linkEventTx(tx dbtx, a Actor, taskID int64, key, title, raw string, replace bool) error {
+	ts := now()
+	res, err := tx.ExecContext(bg,
+		`INSERT OR IGNORE INTO task_event_links (task_id, event_key, snapshot, created_at) VALUES (?, ?, ?, ?)`,
+		taskID, key, raw, ts)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		if !replace {
+			return nil
+		}
 		res, err := tx.ExecContext(bg,
-			`INSERT OR IGNORE INTO task_event_links (task_id, event_key, snapshot, created_at) VALUES (?, ?, ?, ?)`,
-			taskID, key, string(raw), ts)
+			`UPDATE task_event_links SET snapshot = ? WHERE task_id = ? AND event_key = ? AND snapshot <> ?`,
+			raw, taskID, key, raw)
 		if err != nil {
 			return err
 		}
 		if n, err := res.RowsAffected(); err != nil || n == 0 {
 			return err
 		}
-		if err := touch(tx, taskID, ts); err != nil {
-			return err
-		}
-		_, err = record(tx, a, taskID, ts, EventTaskEventLinked, eventLinkPayload(key, snap.Title))
+		return touch(tx, taskID, ts)
+	}
+	if err := touch(tx, taskID, ts); err != nil {
 		return err
-	})
+	}
+	_, err = record(tx, a, taskID, ts, EventTaskEventLinked, eventLinkPayload(key, title))
+	return err
 }
 
 // UnlinkEvent removes taskID's link to key. A key that is not linked is
