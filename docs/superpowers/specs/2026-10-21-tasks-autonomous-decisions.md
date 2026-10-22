@@ -52,7 +52,7 @@ Format: **Q:** the question · **A:** what was done · **Why** · **To change:**
 - **Q:** What does Back do after closing the modal?
   **A:** It leaves the page as it was. `close()` calls `history.back()` when `open()` pushed the entry, and replaces the URL for deep links. To change: `modal/TaskModalProvider.tsx`.
 - **Q:** What happens on delete?
-  **A:** The modal closes first. If the delete fails, the task reopens with a red notice. To change: `modal/TaskModalHeader.tsx`, `modal/TaskModalProvider.tsx` (`open(id, { error })`).
+  **A:** The modal closes first. If the delete fails, the task reopens with a red notice. To change: `ui/src/components/tasks/modal/TaskDetailModal.tsx` (delete-failure logic), `ui/src/components/tasks/modal/TaskSidebar.tsx` (the control), `modal/TaskModalProvider.tsx` (`open(id, { error })`).
 - **Q:** What is "Add & open"?
   **A:** A subtle button beside Add in quick add: it creates, clears the input, opens the modal, and does not refocus the input. Enter and Add still add and stay. To change: `tasks/TaskQuickAdd.tsx`.
 - **Q:** How do the header and sidebar edit controls behave?
@@ -64,7 +64,7 @@ Format: **Q:** the question · **A:** what was done · **Why** · **To change:**
 - **Q:** Do the Details sections share one error alert?
   **A:** No, each shows its own inline alert. The description saves without optimism, so a failed save keeps the text. To change: `modal/sectionAction.tsx`, `modal/DescriptionSection.tsx`.
 - **Q:** Which task rows open the modal?
-  **A:** Any click on the row except the grip, star, state checkbox (and its portalled menu) and link chip. The due and subtask badges open it, and so does a click that ends a text selection. To change: `tasks/TaskRow.tsx`.
+  **A:** Any click on the row except the grip, star, state checkbox (and its portalled menu) and link chip. The due and subtask badges open it, and the row has no text-selection guard, so finishing a selection drag on it opens the modal. To change: `tasks/TaskRow.tsx`.
 - **Q:** Where does "＋ task" sit, and which events get it?
   **A:** It overlays the row's top-right corner on hover or focus, so it can cover the end of a long title. Only watcher events and Slack messages get it; task events and snapshot rows do not. Errors are a toast. To change: `components/EventRow.tsx`, `components/slack/Message.tsx`, `components/tasks/useMakeTask.ts`.
 - **Q:** What title and body does a task made from a Slack message keep?
@@ -76,7 +76,7 @@ Format: **Q:** the question · **A:** what was done · **Why** · **To change:**
 - **Q:** Is making a task from an event atomic?
   **A:** No. It runs in two transactions (create, then link the event), so a failure between them leaves a task without the link. To change: the `from-event` handler in `internal/webui/tasks_detail_api.go`.
 - **Q:** What is in the Activity feed?
-  **A:** The task's own events plus every watcher event of its linked resources (full history per resource, newest 200). A Slack thread event shows as linked when its `slack:` key is linked. To change: `internal/webui/task_timeline.go`.
+  **A:** The task's own events plus every watcher event of its linked resources (full history per resource, newest 200). A Slack thread event shows as linked when its `slack:` key is linked. To change: `handleTaskActivity` in `internal/webui/tasks_detail_api.go`.
 - **Q:** What if a linked `ev:` event is pruned or its type changes?
   **A:** The UI renders the stored snapshot. The server ignores a client-sent snapshot for `ev:` keys but trusts one for `slack:` keys. To change: `internal/webui/tasks_detail_api.go`.
 

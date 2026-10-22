@@ -1093,13 +1093,14 @@ URL param (`?task=<id>`) through **`TaskModalProvider`**
   inert. A failed delete reopens the task through `open(id, { error })`; the
   provider exposes it as `notice` and the modal's red Alert shows it.
 - **Files.** `TaskDetailModal` (shell; keeps the last id mounted through the
-  close transition), `TaskModalHeader` (state menu, title, star, delete with
-  inline "Delete? Yes / No"), `TaskSidebar` (state, priority, due, starred),
-  and two tabs. `DetailsTab` stacks `DescriptionSection`, `SubtasksSection`,
+  close transition), `TaskModalHeader` (state menu, star, editable title),
+  `TaskSidebar` (state, priority, due, starred, and the delete control with
+  its inline "Delete? Yes / No"; the delete-failure logic is in
+  `TaskDetailModal`), and two tabs. `DetailsTab` stacks `DescriptionSection`, `SubtasksSection`,
   `LinksSection` (with `LinkPicker` and the pure `linkTargets.ts`) and
   `LinkedEventsSection`; `ActivityTab` shows the merged feed.
   `sectionAction.tsx` (`useSectionAction`) gives each section its own inline
-  error alert. Data hooks are in `hooks/useTaskDetail.ts` (`useTaskDetail`,
+  error alert. Data hooks are in `ui/src/hooks/useTaskDetail.ts` (`useTaskDetail`,
   `useTaskActivity`, `useTaskDetailMutations`, `useTaskFromEvent`).
 - **Optimistic updates.** `useOptimisticTask(id)` wraps `update`/`setState`:
   the patched fields are written to the detail cache at once and, on failure,
