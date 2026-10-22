@@ -1,4 +1,4 @@
-# Git Diff tab and diff view — design
+# Code tab and diff view — design
 
 Date: 2026-10-21 (revised 2026-10-22 after three UX spikes)
 Status: draft
@@ -23,8 +23,8 @@ the diff under the reader" rule below.
 
 ## Goals
 
-1. Split the tab: an **Environment** tab (the env vars) and a **Git Diff** tab.
-2. The Git Diff tab's summary shows the **merge base** with `main`'s upstream
+1. Split the tab: an **Environment** tab (the env vars) and a **Code** tab.
+2. The Code tab's summary shows the **merge base** with `main`'s upstream
    and the **tracking branch**, each with its own ahead/behind.
 3. A **Files changed** list with per-file `+/-`, for a chosen comparison: a
    base (merge base or tracking branch) and a contiguous **range of commits**,
@@ -32,9 +32,9 @@ the diff under the reader" rule below.
 4. A GitHub-"Files changed"-style **diff view**, drilled into from the detail
    page: file tree, split/unified, hide-whitespace, expandable context.
 5. **Open in editor** for any changed file, from the list and the diff view.
-6. A **badge on the Git Diff tab** summarizing the state without opening it.
+6. A **badge on the Code tab** summarizing the state without opening it.
 7. The badge and file list stay current on their own; remote-tracking refs stay
-   current through a background `git fetch` while the Git Diff tab is open.
+   current through a background `git fetch` while the Code tab is open.
 
 ## Non-goals
 
@@ -71,16 +71,16 @@ the diff under the reader" rule below.
 
 ### Tabs
 
-`Notes | Environment | Git Diff (badge) | cmux` — Environment before Git Diff.
+`Notes | Environment | Code (badge) | cmux` — Environment before Code.
 
 - **Environment** holds the env var rows the old tab showed (unchanged
   `EnvVarRow`s). Wide, it sits under the header like the old tab did.
-- **Git Diff** holds everything below. Wide, it spans the page under the header.
+- **Code** holds everything below. Wide, it spans the page under the header.
 - `useDetailTab`'s persisted ids change: today `"env"` means Git / Environment.
-  New ids `"env"` (Environment) and `"git"` (Git Diff). *Builder's call* how to
+  New ids `"env"` (Environment) and `"code"` (Code). *Builder's call* how to
   map an old remembered `"env"` — either is harmless.
 
-### Git Diff tab: summary
+### Code tab: summary
 
 Two columns (stacked when narrow):
 
@@ -101,7 +101,7 @@ Working tree   2 modified · 2 untracked Tracking branch  origin/diff-view
 - "Working tree" is today's `gitSummary` (yellow when dirty). **Updated** (the
   old tab's last-event row) moves along with it.
 
-### Git Diff tab: Files changed
+### Code tab: Files changed
 
 Header row: **Files changed (N)** with total `+x −y`, then the two selectors
 (labels outside the controls, to their left), then **View diff**:
@@ -187,7 +187,7 @@ tracking branch): an inline explanation.
 
 ### Tab badge
 
-On the Git Diff tab label, for the worktree's remembered base: `↑A ↓B · N`
+On the Code tab label, for the worktree's remembered base: `↑A ↓B · N`
 (A/B = commits ahead/behind that base, N = files changed in the working tree;
 the `· N` part only when N > 0). Hidden when every number is zero. Shown on any
 tab, from the polled status endpoint — no extra request. Style it like the
@@ -205,7 +205,7 @@ route (`/worktree/:path*` would swallow `/worktree/<path>/diff`):
   cmux, etc.). Only the body below it is replaced. *My call:* typing in the
   header search leaves the drill-down for the worktree view, since that's where
   search results live.
-- **Breadcrumb row** under the header: `← Git Diff / Changes`, plus "Esc to go
+- **Breadcrumb row** under the header: `← Code / Changes`, plus "Esc to go
   back". Esc joins the page's existing Esc ladder: from the drill-down it goes
   back to the worktree view (not while focus is in an input/popover).
 - **Sidebar (left, collapsible)**:
@@ -396,7 +396,7 @@ See "Open in editor" above.
 ### Background `git fetch`
 
 - **Trigger:** status polls carrying `fetch=1`, which the page sends only while
-  the **Git Diff tab** (or the diff view) is showing and the browser tab is
+  the **Code tab** (or the diff view) is showing and the browser tab is
   visible (Mike's call). Polls from other tabs update the badge from local refs.
 - **Lock check:** skip — retry next poll, not counted as an attempt — when any
   git lock file is present in the common dir or the worktree's git dir
@@ -425,12 +425,12 @@ See "Open in editor" above.
 ## Frontend data flow
 
 - `useWorktreeGit(path, { fetch })` — endpoint 1, `refetchInterval: 5000`
-  while visible; `fetch` true only while Git Diff / the diff view shows. Feeds
+  while visible; `fetch` true only while Code / the diff view shows. Feeds
   the badge, the summary and the stale check.
 - `useDiffSelection(path, listId)` — the persisted `{ base, range }`; resets to
   All when `listId` changes.
 - `useDiffCommits`, `useDiffFiles` — endpoints 2 and 3, query keys include the
-  fingerprint; enabled only while Git Diff or the diff view shows.
+  fingerprint; enabled only while Code or the diff view shows.
 - Diff view: endpoint 4 on entry / Refresh / selection or whitespace change; it
   remembers the fingerprint it loaded at for the Refresh notice.
 
