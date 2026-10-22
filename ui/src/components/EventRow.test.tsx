@@ -521,7 +521,7 @@ describe("＋ task", () => {
     )
 
   it("is absent unless the feed opts in", () => {
-    renderWithProvider(<EventRow e={makeEvent({ id: "42" })} onOpen={vi.fn()} />)
+    renderWithProvider(<EventRow e={makeEvent({ id: "0b7e3c1a-5d2f-4a8b-9c6e-1f2a3b4c5d6e" })} onOpen={vi.fn()} />)
     expect(screen.queryByRole("button", { name: /Make task/ })).toBeNull()
   })
 
@@ -531,7 +531,7 @@ describe("＋ task", () => {
   })
 
   it("sits outside the row's button, never inside it", () => {
-    renderWithProvider(<EventRow e={makeEvent({ id: "42" })} onOpen={vi.fn()} onMakeTask={vi.fn()} />)
+    renderWithProvider(<EventRow e={makeEvent({ id: "0b7e3c1a-5d2f-4a8b-9c6e-1f2a3b4c5d6e" })} onOpen={vi.fn()} onMakeTask={vi.fn()} />)
     const action = screen.getByRole("button", { name: "Make task from this event" })
     expect(action.closest("[data-event-row]")).toBeNull()
     expect(document.querySelector("[data-event-row] button")).toBeNull()
@@ -543,9 +543,9 @@ describe("＋ task", () => {
     const onOpen = vi.fn()
     const onSelect = vi.fn()
     const user = userEvent.setup()
-    wrapFeed(<Feed e={makeEvent({ id: "42" })} onOpen={onOpen} onSelect={onSelect} />)
+    wrapFeed(<Feed e={makeEvent({ id: "0b7e3c1a-5d2f-4a8b-9c6e-1f2a3b4c5d6e" })} onOpen={onOpen} onSelect={onSelect} />)
     await user.click(screen.getByRole("button", { name: "Make task from this event" }))
-    expect(fromEvent).toHaveBeenCalledWith("ev:42", undefined, "/wt/a")
+    expect(fromEvent).toHaveBeenCalledWith("ev:0b7e3c1a-5d2f-4a8b-9c6e-1f2a3b4c5d6e", undefined, "/wt/a")
     await waitFor(() => expect(screen.getByTestId("open-id").textContent).toBe("7"))
     expect(onOpen).not.toHaveBeenCalled()
     expect(onSelect).not.toHaveBeenCalled()

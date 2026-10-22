@@ -225,6 +225,22 @@ describe('Make task', () => {
     })
   })
 
+  it('shows its hover actions to the keyboard while one has focus', () => {
+    const { getByLabelText } = renderWithProvider(
+      <ThreadActionsContext.Provider value={{ makeTask: vi.fn() }}>
+        <Message message={baseMessage({})} users={users} emoji={{}} thread={thread} onCopyLink={vi.fn()} />
+      </ThreadActionsContext.Provider>,
+    )
+    const make = getByLabelText('Make task from this message')
+    const copy = getByLabelText('Copy link to this message')
+    expect(make.style.opacity).toBe('0')
+    fireEvent.focus(make)
+    expect(make.style.opacity).toBe('1')
+    expect(copy.style.opacity).toBe('1')
+    fireEvent.blur(make)
+    expect(make.style.opacity).toBe('0')
+  })
+
   it('is hidden with no task context, or no thread', () => {
     const { queryByLabelText, rerender } = renderWithProvider(
       <Message message={baseMessage({})} users={users} emoji={{}} thread={thread} />,

@@ -37,10 +37,10 @@ const base = detail({ detail_links: [prLink, slackLink, wtLink], links: [prLink,
 
 const events = [
   ev({ id: "task:5", source: "tasks", type: "task_created", title: "Task created", resource_type: "task", resource_id: "task:1" }),
-  ev({ id: "11", title: "Comment one" }),
-  ev({ id: "12", title: "Linked comment", linked_to_task: true }),
+  ev({ id: "a1111111-1111-4111-8111-111111111111", title: "Comment one" }),
+  ev({ id: "a2222222-2222-4222-8222-222222222222", title: "Linked comment", linked_to_task: true }),
   ev({
-    id: "13", title: "Slack reply", source: "slack", type: "slack_reply", resource_type: "slack",
+    id: "a3333333-3333-4333-8333-333333333333", title: "Slack reply", source: "slack", type: "slack_reply", resource_type: "slack",
     resource_id: "C1:100.000", external_ts: "200.000", linked_to_task: true,
   }),
 ]
@@ -89,14 +89,14 @@ describe("ActivityTab", () => {
     const user = userEvent.setup()
     show()
     await user.click(await screen.findByRole("button", { name: "Link event: Comment one" }))
-    expect(api.linkTaskEvent).toHaveBeenCalledWith(1, "ev:11", undefined)
+    expect(api.linkTaskEvent).toHaveBeenCalledWith(1, "ev:a1111111-1111-4111-8111-111111111111", undefined)
   })
 
   it("unlinks a linked event by its ev: key", async () => {
     const user = userEvent.setup()
     show()
     await user.click(await screen.findByRole("button", { name: "Unlink event: Linked comment" }))
-    expect(api.unlinkTaskEvent).toHaveBeenCalledWith(1, "ev:12")
+    expect(api.unlinkTaskEvent).toHaveBeenCalledWith(1, "ev:a2222222-2222-4222-8222-222222222222")
   })
 
   it("unlinks a Slack message by the key it was linked under", async () => {

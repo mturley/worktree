@@ -54,7 +54,7 @@ describe("EventDetailsModal", () => {
     const calls: string[] = []
     const onClose = vi.fn(() => calls.push("close"))
     const onMakeTask = vi.fn(() => calls.push("make"))
-    const e = ev({ id: "42" })
+    const e = ev({ id: "0b7e3c1a-5d2f-4a8b-9c6e-1f2a3b4c5d6e" })
     wrap(<EventDetailsModal e={e} onClose={onClose} onMakeTask={onMakeTask} />)
     await userEvent.click(screen.getByRole("button", { name: "Make task" }))
     expect(onMakeTask).toHaveBeenCalledWith(e)
@@ -62,7 +62,7 @@ describe("EventDetailsModal", () => {
   })
 
   it("offers Make task only when asked to, and only for a watcher event", () => {
-    const { rerender } = wrap(<EventDetailsModal e={ev({ id: "42" })} onClose={vi.fn()} />)
+    const { rerender } = wrap(<EventDetailsModal e={ev({ id: "0b7e3c1a-5d2f-4a8b-9c6e-1f2a3b4c5d6e" })} onClose={vi.fn()} />)
     expect(screen.queryByRole("button", { name: "Make task" })).toBeNull()
     rerender(
       <MantineProvider>

@@ -54,6 +54,10 @@ export function Message({
   const user = users[message.UserID]
   const displayName = user?.DisplayName || user?.RealName || message.UserID
   const [hovered, setHovered] = useState(false)
+  // Focus anywhere in the message (tabbing to one of its hover actions)
+  // shows the actions too, so the keyboard can see what it has reached.
+  const [focusWithin, setFocusWithin] = useState(false)
+  const showActions = hovered || focusWithin
   const [copied, setCopied] = useState(false)
 
   function handleCopyLink() {
@@ -69,6 +73,10 @@ export function Message({
       gap="sm"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onFocus={() => setFocusWithin(true)}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocusWithin(false)
+      }}
     >
       <Avatar src={user?.Avatar72 ? avatarProxy(user.Avatar72) : undefined} radius="xl" size="md">
         {displayName.slice(0, 1).toUpperCase()}
@@ -94,7 +102,7 @@ export function Message({
                 size="xs"
                 aria-label="Mark unread from here"
                 onClick={() => onMarkUnread(message.TS)}
-                style={{ opacity: hovered ? 1 : 0, transition: 'opacity 100ms ease' }}
+                style={{ opacity: showActions ? 1 : 0, transition: 'opacity 100ms ease' }}
               >
                 ●
               </ActionIcon>
@@ -108,7 +116,7 @@ export function Message({
                 size="xs"
                 aria-label="Copy link to this message"
                 onClick={handleCopyLink}
-                style={{ opacity: hovered ? 1 : 0, transition: 'opacity 100ms ease' }}
+                style={{ opacity: showActions ? 1 : 0, transition: 'opacity 100ms ease' }}
               >
                 <CopyLinkIcon />
               </ActionIcon>
@@ -127,7 +135,7 @@ export function Message({
                     slackMessageSnapshot(message, users, thread, permalink),
                   )
                 }
-                style={{ opacity: hovered ? 1 : 0, transition: 'opacity 100ms ease' }}
+                style={{ opacity: showActions ? 1 : 0, transition: 'opacity 100ms ease' }}
               >
                 <IconSquarePlus size={14} />
               </ActionIcon>

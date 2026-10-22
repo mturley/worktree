@@ -5,12 +5,20 @@ import type { Message, User } from "../api/slackApi"
 const MAX_TITLE = 120
 
 /**
+ * Ids that are not watcher events: a task's own events (`task:<n>`, from
+ * the server's task timeline) and snapshot rows, whose id is already their
+ * link key (`ev:…` / `slack:…`; see LinkedEventsSection).
+ */
+const NOT_WATCHER = /^(task|ev|slack):/
+
+/**
  * The event-link key of a watcher event (`ev:<id>`), or null for an event
- * that is not one — a task's own events (`task:<n>`) and snapshot rows
- * (whose id is already a key) can't be linked or made into a task.
+ * that is not one. Watcher ids are opaque strings (UUIDs, in practice), so
+ * this goes by what an id is NOT rather than by its shape.
  */
 export function eventTaskKey(e: TimelineEvent): string | null {
-  return /^\d+$/.test(e.id) ? `ev:${e.id}` : null
+  if (!e.id || NOT_WATCHER.test(e.id) || e.source === "tasks") return null
+  return `ev:${e.id}`
 }
 
 /**
