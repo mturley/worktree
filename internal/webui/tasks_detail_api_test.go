@@ -268,7 +268,8 @@ func TestEventLinkRendersFromSnapshot(t *testing.T) {
 		t.Errorf("bad key = %d", rec.Code)
 	}
 	d = decodeDetail(t, serveTasks(t, s, http.MethodPost, "/api/tasks/events/link",
-		map[string]any{"id": tk.ID, "key": "slack:C1:1.2", "snapshot": map[string]any{"title": "hi", "body": "hello", "source": "slack"}}))
+		map[string]any{"id": tk.ID, "key": "slack:C1:1.2", "snapshot": map[string]any{"title": "hi", "body": "hello", "source": "slack",
+			"resource_type": "slack", "resource_id": "C1:1.0"}}))
 	if len(d.EventLinks) != 2 || d.EventLinks[1].Snapshot.Body != "hello" {
 		t.Fatalf("slack link = %+v", d.EventLinks)
 	}
@@ -284,7 +285,7 @@ func TestTaskActivityFilters(t *testing.T) {
 	insertEvent(t, s.DB, "e2", "2026-01-01T00:00:02Z", "jira", "jira_comment", "jira one", "jira", "X-1", "u2")
 	insertEvent(t, s.DB, "e3", "2026-01-01T00:00:03Z", "github", "pr_comment", "unrelated", "pr", "o/r#9", "u9")
 	tk := mustTask(t, s, tasks.NewTask{Title: "t", Focus: []tasks.LinkTarget{resLink("pr", "o/r#1"), resLink("jira", "X-1")}})
-	must(t, tasks.LinkEvent(s.DB, webUser, tk.ID, "ev:e1", tasks.EventSnapshot{Title: "pr one"}))
+	must(t, tasks.LinkEvent(s.DB, webUser, tk.ID, "ev:e1", tasks.EventSnapshot{Title: "pr one", Type: "pr_comment"}))
 
 	ids := func(evs []TimelineEvent) string {
 		var out []string

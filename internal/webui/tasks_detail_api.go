@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/mturley/watcher"
 	watcherdb "github.com/mturley/watcher/db"
@@ -54,8 +56,9 @@ type taskSubtaskDTO struct {
 type taskEventLinkDTO struct {
 	Key      string              `json:"key"`
 	Snapshot tasks.EventSnapshot `json:"snapshot"`
-	// Live is the watcher event as it is now, present when it still exists
-	// with the snapshot's type. Only ev: keys have one.
+	// Live is the watcher event as it is now (see liveEvent): an ev: key's
+	// event while it still exists with the snapshot's type, a slack: key's
+	// message matched by its external ts.
 	Live *TimelineEvent `json:"live,omitempty"`
 }
 
@@ -118,11 +121,10 @@ func (s *Server) taskDetail(id int64) (taskDetailDTO, error) {
 	}
 	for _, l := range links {
 		el := taskEventLinkDTO{Key: l.Key, Snapshot: l.Snapshot}
-		if wid, ok := strings.CutPrefix(l.Key, "ev:"); ok {
-			if ev, err := s.loadWatcherEvent(wid); err == nil && string(ev.Type) == l.Snapshot.Type {
-				te := e.enrich(*ev)
-				el.Live = &te
-			}
+		// A lookup failure degrades to the snapshot.
+		if ev, err := s.liveEvent(l); err == nil && ev != nil {
+			te := e.enrich(*ev)
+			el.Live = &te
 		}
 		d.EventLinks = append(d.EventLinks, el)
 	}
@@ -218,18 +220,54 @@ func (s *Server) resourceURL(typ, id string) string {
 // errEventNotFound is a missing watcher event; it maps to 404.
 var errEventNotFound = fmt.Errorf("%w: no such event", tasks.ErrNotFound)
 
+// watcherEventCols are the watcher_events columns scanWatcherEvent reads, as
+// columns of the alias e.
+const watcherEventCols = `e.id, e.ts, e.external_ts, e.source, e.type, COALESCE(e.title,''), e.body, e.author, e.author_id`
+
 // loadWatcherEvent reads one watcher event by id.
 func (s *Server) loadWatcherEvent(id string) (*watcher.Event, error) {
-	var ev watcher.Event
-	var typ string
-	var ext, body, author, authorID sql.NullString
-	err := s.DB.QueryRow(`SELECT id, ts, external_ts, source, type, title, body, author, author_id
-		FROM watcher_events WHERE id = ?`, id).
-		Scan(&ev.ID, &ev.TS, &ext, &ev.Source, &typ, &ev.Title, &body, &author, &authorID)
+	ev, err := scanWatcherEvent(s.DB.QueryRow(`SELECT `+watcherEventCols+` FROM watcher_events e WHERE e.id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errEventNotFound
 	}
 	if err != nil {
+		return nil, err
+	}
+	return ev, nil
+}
+
+// recentResourceEvents is one resource's newest limit events, newest first,
+// leaving out the watcher's bookkeeping types as the timeline does. A direct
+// query rather than watcherdb.EventsForResource, which loads the resource's
+// whole history, unpaged — and the task activity feed re-runs on every SSE
+// events_new and tasks_changed.
+func (s *Server) recentResourceEvents(typ, rid string, limit int) ([]watcher.Event, error) {
+	rows, err := s.DB.Query(`SELECT `+watcherEventCols+` FROM watcher_events e
+		JOIN watcher_event_resources er ON er.event_id = e.id
+		WHERE er.resource_type = ? AND er.resource_id = ?
+		  AND e.type NOT IN ('watch_started','watcher_error')
+		ORDER BY e.ts DESC LIMIT ?`, typ, rid, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []watcher.Event
+	for rows.Next() {
+		ev, err := scanWatcherEvent(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *ev)
+	}
+	return out, rows.Err()
+}
+
+// scanWatcherEvent scans one row of watcherEventCols.
+func scanWatcherEvent(row interface{ Scan(...any) error }) (*watcher.Event, error) {
+	var ev watcher.Event
+	var typ string
+	var ext, body, author, authorID sql.NullString
+	if err := row.Scan(&ev.ID, &ev.TS, &ext, &ev.Source, &typ, &ev.Title, &body, &author, &authorID); err != nil {
 		return nil, err
 	}
 	ev.Type = watcher.EventType(typ)
@@ -256,35 +294,158 @@ func snapshotOf(te TimelineEvent) tasks.EventSnapshot {
 	}
 }
 
-// eventSnapshot resolves the snapshot to store for key. An ev: key is
-// rebuilt from watcher_events, ignoring the client's, so a snapshot always
-// says what the event really said. Any other key takes the client's, which
-// must have a title or a body.
-func (s *Server) eventSnapshot(key string, client *tasks.EventSnapshot) (tasks.EventSnapshot, error) {
+// resolveEventLink is the key and snapshot an events/link or from-event
+// request stores, and whether the snapshot is server-built.
+//
+// An ev: key's snapshot is rebuilt from watcher_events, ignoring the
+// client's, so it always says what the event really said; and a Slack
+// message's ev: key becomes its canonical slack:<channel>:<ts> key, so a
+// message has one identity however it was linked. A slack: key takes the
+// client's snapshot, validated (validSlackSnapshot). Anything else is
+// ErrInvalid.
+func (s *Server) resolveEventLink(key string, client *tasks.EventSnapshot) (string, tasks.EventSnapshot, bool, error) {
 	if wid, ok := strings.CutPrefix(key, "ev:"); ok {
 		ev, err := s.loadWatcherEvent(wid)
 		if err != nil {
-			return tasks.EventSnapshot{}, err
+			return "", tasks.EventSnapshot{}, false, err
 		}
-		return snapshotOf(s.newEventEnricher().enrich(*ev)), nil
+		te := s.newEventEnricher().enrich(*ev)
+		if k := slackKeyOf(te); k != "" {
+			key = k
+		}
+		return key, snapshotOf(te), true, nil
 	}
-	if client == nil || (strings.TrimSpace(client.Title) == "" && strings.TrimSpace(client.Body) == "") {
-		return tasks.EventSnapshot{}, fmt.Errorf("%w: the snapshot needs a title or a body", tasks.ErrInvalid)
+	if strings.HasPrefix(key, "slack:") {
+		snap, err := validSlackSnapshot(key, client)
+		return key, snap, false, err
 	}
-	return *client, nil
+	return "", tasks.EventSnapshot{}, false, fmt.Errorf("%w: key must start with ev: or slack:", tasks.ErrInvalid)
 }
 
-// eventKeys are the event-link keys that name te: its ev: key, and for a
-// Slack message its slack:<channel>:<ts> key too, so a message linked from
-// the thread view shows as linked in the feed.
-func eventKeys(te TimelineEvent) []string {
-	keys := []string{"ev:" + te.ID}
-	if te.ResourceType == "slack" && te.ExternalTS != "" {
-		if ch, _, ok := strings.Cut(te.ResourceID, ":"); ok {
-			keys = append(keys, "slack:"+ch+":"+te.ExternalTS)
+// maxSlackSnapshotTitle caps a client-sent Slack snapshot's title, in runes.
+const maxSlackSnapshotTitle = 200
+
+// parseSlackKey splits slack:<channel>:<message ts>, both parts non-empty.
+func parseSlackKey(key string) (channel, ts string, ok bool) {
+	rest, ok := strings.CutPrefix(key, "slack:")
+	if !ok {
+		return "", "", false
+	}
+	channel, ts, ok = strings.Cut(rest, ":")
+	return channel, ts, ok && channel != "" && ts != "" && !strings.Contains(ts, ":")
+}
+
+// validSlackSnapshot checks the client's snapshot for a slack: key. It must
+// name a thread in the key's channel, have a title or a body, and have an
+// empty or http(s) URL. The server sets source and type and caps the title,
+// so a client can't pass a snapshot off as some other kind of event.
+func validSlackSnapshot(key string, c *tasks.EventSnapshot) (tasks.EventSnapshot, error) {
+	bad := func(msg string) (tasks.EventSnapshot, error) {
+		return tasks.EventSnapshot{}, fmt.Errorf("%w: %s", tasks.ErrInvalid, msg)
+	}
+	ch, _, ok := parseSlackKey(key)
+	if !ok {
+		return bad("a slack: key is slack:<channel>:<message ts>")
+	}
+	if c == nil || (strings.TrimSpace(c.Title) == "" && strings.TrimSpace(c.Body) == "") {
+		return bad("the snapshot needs a title or a body")
+	}
+	if c.ResourceType != "slack" {
+		return bad(`the snapshot's resource_type must be "slack"`)
+	}
+	if thread, ok := strings.CutPrefix(c.ResourceID, ch+":"); !ok || thread == "" {
+		return bad("the snapshot's resource_id must be <channel>:<thread ts> in the key's channel")
+	}
+	if c.URL != "" {
+		u, err := url.Parse(c.URL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return bad("the snapshot's url must be empty or http(s)")
 		}
 	}
-	return keys
+	snap := *c
+	snap.Source, snap.Type = "slack", string(watcher.EventTypeSlackReply)
+	if r := []rune(snap.Title); len(r) > maxSlackSnapshotTitle {
+		snap.Title = string(r[:maxSlackSnapshotTitle])
+	}
+	return snap, nil
+}
+
+// slackKeyOf is a Slack thread event's canonical event-link key,
+// slack:<channel>:<message ts>; "" for any other event.
+func slackKeyOf(te TimelineEvent) string {
+	if te.ResourceType != "slack" || te.ExternalTS == "" {
+		return ""
+	}
+	ch, _, ok := strings.Cut(te.ResourceID, ":")
+	if !ok || ch == "" {
+		return ""
+	}
+	return "slack:" + ch + ":" + te.ExternalTS
+}
+
+// linkedKeyOf is the key te is linked to the task under, or "": its
+// canonical slack: key, else its ev: key (how a Slack message linked from
+// the feed was stored before keys were canonicalised).
+func linkedKeyOf(te TimelineEvent, linked map[string]bool) string {
+	for _, k := range []string{slackKeyOf(te), "ev:" + te.ID} {
+		if k != "" && linked[k] {
+			return k
+		}
+	}
+	return ""
+}
+
+// liveEvent is the watcher event a link renders from while it exists: an
+// ev: key's event while its type still matches the snapshot's, and a
+// slack: key's message found by its external ts in a thread of that
+// channel. nil when there is none.
+func (s *Server) liveEvent(l tasks.EventLink) (*watcher.Event, error) {
+	if wid, ok := strings.CutPrefix(l.Key, "ev:"); ok {
+		ev, err := s.loadWatcherEvent(wid)
+		if errors.Is(err, errEventNotFound) {
+			return nil, nil
+		}
+		if err != nil || string(ev.Type) != l.Snapshot.Type {
+			return nil, err
+		}
+		return ev, nil
+	}
+	ch, ts, ok := parseSlackKey(l.Key)
+	if !ok {
+		return nil, nil
+	}
+	var id string
+	err := s.DB.QueryRow(`SELECT e.id FROM watcher_events e
+		JOIN watcher_event_resources er ON er.event_id = e.id
+		WHERE er.resource_type = 'slack' AND substr(er.resource_id, 1, ?) = ? AND e.external_ts = ?
+		  AND e.type NOT IN ('watch_started','watcher_error')
+		ORDER BY e.ts DESC LIMIT 1`, utf8.RuneCountInString(ch)+1, ch+":", ts).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	ev, err := s.loadWatcherEvent(id)
+	if errors.Is(err, errEventNotFound) {
+		return nil, nil
+	}
+	return ev, err
+}
+
+// snapshotEvent is the feed row of a link with no live event, built from
+// its snapshot as the modal's eventFromLink builds one: no unread state, no
+// worktrees, and the link key as its id.
+func snapshotEvent(l tasks.EventLink) TimelineEvent {
+	sn := l.Snapshot
+	return TimelineEvent{
+		ID: l.Key, TS: sn.TS, Source: sn.Source, Type: sn.Type,
+		TypeLabel: watcher.EventType(sn.Type).DisplayName(),
+		Title:     sn.Title, Body: sn.Body, Author: sn.Author,
+		ResourceType: sn.ResourceType, ResourceID: sn.ResourceID, ResourceURL: sn.URL,
+		Worktrees: []string{}, WorktreePaths: []string{},
+		LinkedToTask: true, LinkedKey: l.Key,
+	}
 }
 
 func parseTaskIDParam(w http.ResponseWriter, r *http.Request) (int64, bool) {
@@ -305,12 +466,13 @@ func (s *Server) handleTaskDetail(w http.ResponseWriter, r *http.Request) {
 	s.writeTaskDetail(w, id)
 }
 
-// activityItem is one feed row before enrichment: a converted task event,
-// or a raw watcher event (enriched only if it survives the limit).
+// activityItem is one feed row before enrichment: a row already built (a
+// converted task event, or an event link's snapshot), or a raw watcher event
+// (enriched only if it survives the limit).
 type activityItem struct {
-	ts   time.Time
-	task *TimelineEvent
-	ev   *watcher.Event
+	ts    time.Time
+	built *TimelineEvent
+	ev    *watcher.Event
 }
 
 func parseTS(s string) time.Time {
@@ -323,9 +485,12 @@ func parseTS(s string) time.Time {
 
 // handleTaskActivity: GET /api/tasks/activity?id=&filter=all|task|linked|resource&type=&rid=
 //
-// all: the task's own events plus every event of its linked resources.
-// task: its own events. linked: the live rows of its ev: event links.
-// resource: one linked resource's events. Newest first, at most 200.
+// all: the task's own events plus its linked resources' events. task: its
+// own events. linked: every event link, as its live event or else as a row
+// built from its snapshot. resource: one linked resource's events. Each
+// resource contributes at most its newest taskActivityLimit events (one
+// limited query each), and the merged feed is newest first, at most
+// taskActivityLimit rows.
 func (s *Server) handleTaskActivity(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseTaskIDParam(w, r)
 	if !ok {
@@ -366,7 +531,7 @@ func (s *Server) handleTaskActivity(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, ev := range evs {
 			te := taskEventToTimeline(ev, t)
-			items = append(items, activityItem{ts: parseTS(te.TS), task: &te})
+			items = append(items, activityItem{ts: parseTS(te.TS), built: &te})
 		}
 	}
 	seen := map[string]bool{}
@@ -379,18 +544,21 @@ func (s *Server) handleTaskActivity(w http.ResponseWriter, r *http.Request) {
 			items = append(items, activityItem{ts: parseTS(evs[i].TS), ev: &evs[i]})
 		}
 	}
+	addResource := func(typ, rid string) bool {
+		evs, err := s.recentResourceEvents(typ, rid, taskActivityLimit)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return false
+		}
+		addEvents(evs)
+		return true
+	}
 	switch filter {
 	case "all":
 		for _, l := range t.Links {
-			if l.Kind != tasks.LinkResource {
-				continue
-			}
-			evs, err := watcherdb.EventsForResource(s.DB, l.ResourceType, l.ResourceID)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, err.Error())
+			if l.Kind == tasks.LinkResource && !addResource(l.ResourceType, l.ResourceID) {
 				return
 			}
-			addEvents(evs)
 		}
 	case "resource":
 		typ, rid := q.Get("type"), q.Get("rid")
@@ -406,27 +574,22 @@ func (s *Server) handleTaskActivity(w http.ResponseWriter, r *http.Request) {
 			writeTaskError(w, tasks.ErrLinkNotFound)
 			return
 		}
-		evs, err := watcherdb.EventsForResource(s.DB, typ, rid)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+		if !addResource(typ, rid) {
 			return
 		}
-		addEvents(evs)
 	case "linked":
 		for _, l := range links {
-			wid, ok := strings.CutPrefix(l.Key, "ev:")
-			if !ok {
-				continue
-			}
-			ev, err := s.loadWatcherEvent(wid)
-			if errors.Is(err, errEventNotFound) {
-				continue
-			}
+			ev, err := s.liveEvent(l)
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
-			addEvents([]watcher.Event{*ev})
+			if ev != nil {
+				addEvents([]watcher.Event{*ev})
+				continue
+			}
+			te := snapshotEvent(l)
+			items = append(items, activityItem{ts: parseTS(te.TS), built: &te})
 		}
 	}
 
@@ -437,13 +600,13 @@ func (s *Server) handleTaskActivity(w http.ResponseWriter, r *http.Request) {
 	e := s.newEventEnricher()
 	out := make([]TimelineEvent, 0, len(items))
 	for _, it := range items {
-		if it.task != nil {
-			out = append(out, *it.task)
+		if it.built != nil {
+			out = append(out, *it.built)
 			continue
 		}
 		te := e.enrich(*it.ev)
-		for _, k := range eventKeys(te) {
-			te.LinkedToTask = te.LinkedToTask || linked[k]
+		if k := linkedKeyOf(te, linked); k != "" {
+			te.LinkedToTask, te.LinkedKey = true, k
 		}
 		out = append(out, te)
 	}
@@ -676,22 +839,24 @@ type taskEventLinkRequest struct {
 	Snapshot *tasks.EventSnapshot `json:"snapshot"`
 }
 
-// handleLinkTaskEvent: POST /api/tasks/events/link
+// handleLinkTaskEvent: POST /api/tasks/events/link. The stored key and
+// snapshot come from resolveEventLink; a server-built snapshot replaces any
+// the key already had (a client's, linked from the thread view).
 func (s *Server) handleLinkTaskEvent(w http.ResponseWriter, r *http.Request) {
 	var req taskEventLinkRequest
 	if !decodeTaskBody(w, r, &req) {
 		return
 	}
-	if !strings.HasPrefix(req.Key, "ev:") && !strings.HasPrefix(req.Key, "slack:") {
-		writeError(w, http.StatusBadRequest, "key must start with ev: or slack:")
-		return
-	}
-	snap, err := s.eventSnapshot(req.Key, req.Snapshot)
+	key, snap, serverBuilt, err := s.resolveEventLink(req.Key, req.Snapshot)
 	if err != nil {
 		writeTaskError(w, err)
 		return
 	}
-	if err := tasks.LinkEvent(s.DB, webActor, req.ID, req.Key, snap); err != nil {
+	link := tasks.LinkEvent
+	if serverBuilt {
+		link = tasks.LinkEventReplace
+	}
+	if err := link(s.DB, webActor, req.ID, key, snap); err != nil {
 		writeTaskError(w, err)
 		return
 	}
@@ -718,7 +883,8 @@ type fromEventRequest struct {
 }
 
 // fromEventTitle is a new task's title from its event: a Slack message's
-// first non-blank line, else the event title, trimmed to 120 runes.
+// first non-blank line as plain text (slackPlain), else the event title,
+// trimmed to 120 runes.
 func fromEventTitle(snap tasks.EventSnapshot) string {
 	title := strings.TrimSpace(snap.Title)
 	if snap.Source == "slack" {
@@ -731,6 +897,9 @@ func fromEventTitle(snap tasks.EventSnapshot) string {
 	}
 	if title == "" {
 		title = strings.TrimSpace(snap.Body)
+	}
+	if snap.Source == "slack" {
+		title = strings.TrimSpace(slackPlain(title))
 	}
 	if r := []rune(title); len(r) > maxFromEventTitle {
 		title = strings.TrimSpace(string(r[:maxFromEventTitle]))
@@ -755,20 +924,17 @@ func (s *Server) follows(path, typ, id string) bool {
 }
 
 // handleTaskFromEvent: POST /api/tasks/from-event. Creates a task titled
-// from the event, Focus-linked to its resource, with the event linked. path
-// (the worktree the user acted in) is added as a Focus worktree link only
-// when that worktree does not already follow the event's resource — when it
-// does, the task shows there implicitly.
+// from the event, Focus-linked to its resource, with the event linked (under
+// the key resolveEventLink settles on), all in one transaction
+// (tasks.CreateFromEvent). path (the worktree the user acted in) is added as
+// a Focus worktree link only when that worktree does not already follow the
+// event's resource — when it does, the task shows there implicitly.
 func (s *Server) handleTaskFromEvent(w http.ResponseWriter, r *http.Request) {
 	var req fromEventRequest
 	if !decodeTaskBody(w, r, &req) {
 		return
 	}
-	if !strings.HasPrefix(req.Key, "ev:") && !strings.HasPrefix(req.Key, "slack:") {
-		writeError(w, http.StatusBadRequest, "key must start with ev: or slack:")
-		return
-	}
-	snap, err := s.eventSnapshot(req.Key, req.Snapshot)
+	key, snap, _, err := s.resolveEventLink(req.Key, req.Snapshot)
 	if err != nil {
 		writeTaskError(w, err)
 		return
@@ -781,12 +947,8 @@ func (s *Server) handleTaskFromEvent(w http.ResponseWriter, r *http.Request) {
 	if req.Path != "" && (!hasResource || !s.follows(req.Path, snap.ResourceType, snap.ResourceID)) {
 		n.Focus = append(n.Focus, tasks.LinkTarget{Kind: tasks.LinkWorktree, Worktree: req.Path})
 	}
-	t, err := tasks.Create(s.DB, webActor, n)
+	t, err := tasks.CreateFromEvent(s.DB, webActor, n, key, snap)
 	if err != nil {
-		writeTaskError(w, err)
-		return
-	}
-	if err := tasks.LinkEvent(s.DB, webActor, t.ID, req.Key, snap); err != nil {
 		writeTaskError(w, err)
 		return
 	}
