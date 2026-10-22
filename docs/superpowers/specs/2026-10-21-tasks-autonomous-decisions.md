@@ -110,15 +110,15 @@ Format: **Q:** the question · **A:** what was done · **Why** · **To change:**
 - **Q:** Which task events count as unread?
   **A:** Only agent events (`actor = 'agent'`) past the task's own cursor. Your own events never do.
   **Why:** Unread means "something happened that you didn't do", the same as the user-is-never-unread rule for PRs and Jira.
-  **To change:** `TaskSummaries` in `internal/unread/task.go`.
+  **To change:** the unread-actors list in `internal/tasks/unread.go` (`CountsAsUnread`, `UnreadActorSQL`: the rule's one source); the cursor comparison is `TaskSummaries` in `internal/unread/unread.go`.
 - **Q:** A task with no cursor row yet: read or unread?
   **A:** Unread. A missing cursor reads as `''`, so everything an agent did counts until you first mark the task read. Resources do the opposite (seeded at their newest event).
   **Why:** Tasks are created by agents as often as by you, and their first activity should be seen.
-  **To change:** the same function, `internal/unread/task.go`, or seed a cursor where tasks are created in `internal/tasks`.
+  **To change:** `TaskSummaries` in `internal/unread/unread.go`, or seed a cursor where tasks are created in `internal/tasks`.
 - **Q:** Paging the merged feed: same-second events at a page boundary can be skipped. Is that OK?
-  **A:** Yes. Both sources use a strict before-cursor, like the existing watcher paging. The frontend doesn't page with `next_cursor` today, so nothing is lost in practice.
-  **Why:** Fixing it would mean a compound cursor for the whole timeline.
-  **To change:** `mergeTaskEvents` in `internal/webui/timeline.go` (and the watcher timeline query).
+  **A:** No (revised in the final review: the frontend does page with `next_cursor`, through Load more, and task ts values have one-second resolution). The cursor stays a plain strict `before`, but every page is OVERFILLED with every remaining row, from either source, sharing the last kept row's ts, so no cluster is split. The frontend treats only a short page as the end, so an overfull page is safe.
+  **Why:** It fixes the loss without a compound cursor.
+  **To change:** `mergeTaskEvents` and the two handlers in `internal/webui/timeline.go`, and `FeedQuery.AtTS` in `internal/tasks/feed.go`.
 - **Q:** Does a Slack thread's `has_unread` include task unread?
   **A:** No. `has_unread` stays Slack's own verdict, because Mark all read uses it to decide whether to write to Slack. Task unread is a separate `task_unread_count`, folded into `unread_count`, the dot and the badges.
   **To change:** `resourceHasUnread` in `internal/webui/unread.go`, and `hasUnread()` in `ui/src/lib/unread.ts`.
@@ -135,6 +135,10 @@ Format: **Q:** the question · **A:** what was done · **Why** · **To change:**
 - **Q:** Clicking a worktree-wide notification while a resource is selected or a task modal is open?
   **A:** It clears the selection and closes the modal, going to the bare worktree. Resource and task notifications change only their own URL param.
   **To change:** `openNotificationTarget` in `ui/src/lib/browserNotify.ts`.
+- **Q:** Does a global task's unread count toward the browser tab's badge and favicon?
+  **A:** No. The tab badge sums the worktree list (`lib/unreadBadge.ts`), and a global task (one in no worktree's scope) belongs to no worktree. Its unread shows on the task's row, in the home feed and in Mark all read on the home page, but not in the tab title or favicon.
+  **Why:** The badge's one source is `["worktrees"]`, the query the stream already invalidates; adding global tasks would mean another source to fetch and keep in step for an edge case.
+  **To change:** `ui/src/hooks/useUnreadFavicon.ts` and `ui/src/lib/unreadBadge.ts` (fold in `GET /api/task-unread?scope=all`, or a global count on the worktree list response).
 - **Q:** When does the unread divider show in a feed mixing task events?
   **A:** Only when the unread rows are one contiguous run at the top. Task events have their own cursors, so otherwise a single divider line would be wrong; the per-row marks still show.
   **To change:** `ui/src/components/TimelineFeed.tsx`.
