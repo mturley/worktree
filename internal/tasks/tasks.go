@@ -539,6 +539,10 @@ func SetState(conn *sql.DB, a Actor, id int64, to State) (StateChange, error) {
 		return StateChange{}, err
 	}
 	if sc.From != sc.To {
+		// Completing resolves the task blockers naming this task, and
+		// leaving done unresolves them; reopening this task puts its own
+		// blockers back under evaluation.
+		resolveAfterWrite(conn)
 		// Completing releases the task's holds; reopening re-acquires them.
 		reconcileHoldsAfterWrite(conn)
 	}
@@ -571,6 +575,7 @@ func Delete(conn *sql.DB, a Actor, id int64) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	resolveAfterWrite(conn)        // task blockers naming it resolve as "deleted"
 	reconcileHoldsAfterWrite(conn) // a deleted task holds nothing
 	return eventID, nil
 }

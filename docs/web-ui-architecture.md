@@ -1241,6 +1241,33 @@ to break.
   activity feeds), `["worktrees"]` and `["resources"]`, so lists, feeds and
   badges all follow CLI and agent writes within the stream's 5s tick.
 
+### Blockers (resolution)
+
+A short note; the full section comes with the rest of Phase 5.
+`tasks.ResolveBlockers(conn, lookup)` owns task blockers and PR/Jira
+resource blockers that are unresolved or were resolved automatically, on
+tasks neither done nor deleted; it never touches one the user resolved, nor
+Slack thread, link or free-text blockers. It writes resolve/unresolve rows
+and `system`-actor events and returns `[]tasks.Resolution`.
+
+- **Task blockers** resolve inside the tasks package itself, after commit
+  (`resolveAfterWrite`, a resolver pass with a nil lookup) in `AddBlocker`,
+  `SetState` and `Delete`, so the CLI resolves them at once too. A deleted
+  blocking task resolves with reason "deleted". Those resolutions go to the
+  connection's sink (`tasks.SetResolutionSink`), which `worktree ui`
+  registers in `initTaskHooks` (also pointing `tasks.Logf` at its logger).
+- **Resource blockers** need the `StatusLookup` from
+  `internal/webui/blocker_status.go`: PRs from the cached
+  `watcher_resource_state` `"state"` (MERGED → "merged", CLOSED → "closed",
+  OPEN → unresolved); Jira from one `key in (…)` search per pass (retried key
+  by key if the batch fails), only while the Jira watcher is on and Jira is
+  configured. Unknown means the blocker keeps its last state. The CLI leaves
+  them to the next `worktree ui` pass.
+- `s.afterTaskWrite()` (resolve with the full lookup, `ReconcileHolds`, then
+  `handleResolutions`) runs after every poll pass — even when a source
+  failed — and after the web's state change and delete. `handleResolutions`
+  is the seam for the "Unblocked" notification.
+
 ### Task detail modal (`ui/src/components/tasks/modal/`)
 
 One modal, mounted once in `App` as `TaskDetailModal`, driven by the `task`

@@ -3,7 +3,6 @@ package tasks
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"sync"
 
 	"github.com/mturley/watcher"
@@ -134,6 +133,6 @@ func knownResourceURL(q dbtx, typ, id string) string {
 // reconciles again after every pass, which repairs any drift.
 func reconcileHoldsAfterWrite(conn *sql.DB) {
 	if err := ReconcileHolds(conn); err != nil {
-		log.Printf("tasks: %v (the poll loop will retry)", err)
+		Logf("tasks: %v (the poll loop will retry)", err)
 	}
 }

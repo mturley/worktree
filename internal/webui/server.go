@@ -20,6 +20,7 @@ import (
 	"github.com/mturley/worktree/internal/linked"
 	"github.com/mturley/worktree/internal/linkmeta"
 	"github.com/mturley/worktree/internal/slackpoller"
+	"github.com/mturley/worktree/internal/tasks"
 )
 
 type Server struct {
@@ -168,6 +169,14 @@ type Server struct {
 	// watcher library's validators. See settings_creds.go.
 	credCheck *credValidators
 
+	// Blocker resolution; see blocker_status.go. blockerJira is the seam
+	// for the Jira search (nil builds a client from the watcher config);
+	// onResolutions is a test seam that sees every resolution handed to the
+	// notifier hook. taskHooksOnce guards initTaskHooks.
+	blockerJira   func() (jiraSearcher, bool)
+	onResolutions func([]tasks.Resolution)
+	taskHooksOnce sync.Once
+
 	// LinkResolver is a seam for tests; nil means a default resolver.
 	LinkResolver *linkmeta.Resolver
 
@@ -190,6 +199,7 @@ type Server struct {
 }
 
 func (s *Server) Handler() http.Handler {
+	s.initTaskHooks()
 	mux := http.NewServeMux()
 	for _, rt := range s.routes() {
 		mux.HandleFunc(rt.pattern, rt.handler)

@@ -630,6 +630,7 @@ func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
 		writeTaskError(w, err)
 		return
 	}
+	s.afterTaskWrite()
 	w.WriteHeader(http.StatusNoContent)
 }
 

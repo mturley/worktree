@@ -23,6 +23,7 @@ import (
 // every interval, until stop() is called.
 func (s *Server) StartPolling(interval time.Duration) (stop func()) {
 	s.pollingStarted.Store(true)
+	s.initTaskHooks()
 	done := make(chan struct{})
 	go func() {
 		s.safePollAll()
@@ -54,6 +55,9 @@ func (s *Server) safePollAll() {
 	if err := s.pollAll(); err != nil {
 		s.logger().Printf("poll: %v", err)
 	}
+	// Whatever the sources did, failed ones included: resolve blockers from
+	// what the DB now holds, reconcile holds, and hand on the resolutions.
+	s.afterTaskWrite()
 }
 
 func (s *Server) logger() *log.Logger {

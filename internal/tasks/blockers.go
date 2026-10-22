@@ -249,6 +249,7 @@ func AddBlocker(conn *sql.DB, a Actor, taskID int64, t BlockerTarget) (Blocker, 
 	if err != nil {
 		return Blocker{}, err
 	}
+	resolveAfterWrite(conn)        // a task blocker on a done task resolves at once
 	reconcileHoldsAfterWrite(conn) // a resource blocker holds its resource
 	return loadBlocker(conn, id)
 }

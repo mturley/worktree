@@ -266,9 +266,15 @@ func (s *Server) handleSetTaskState(w http.ResponseWriter, r *http.Request) {
 	if !decodeTaskBody(w, r, &req) {
 		return
 	}
-	if _, err := tasks.SetState(s.DB, webActor, req.ID, tasks.State(req.State)); err != nil {
+	sc, err := tasks.SetState(s.DB, webActor, req.ID, tasks.State(req.State))
+	if err != nil {
 		writeTaskError(w, err)
 		return
+	}
+	if sc.From != sc.To {
+		// Reopening puts the task's resource blockers back under
+		// evaluation; task blockers already resolved inside SetState.
+		s.afterTaskWrite()
 	}
 	t, err := tasks.Get(s.DB, req.ID)
 	if err != nil {
