@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
+	"sort"
 	"strconv"
 
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/tasks"
+	"github.com/mturley/worktree/internal/unread"
 )
 
 // maxTaskBodyBytes caps a task write's request body.
@@ -48,6 +51,9 @@ type taskDTO struct {
 	Implicit      []string      `json:"implicit_worktrees"` // never null
 	SubtasksTotal int           `json:"subtasks_total"`
 	SubtasksDone  int           `json:"subtasks_done"`
+	// UnreadCount is the task's unread events: agent events newer than its
+	// cursor (unread.TaskSummaries). Always sent, 0 included.
+	UnreadCount int `json:"unread_count"`
 }
 
 func newTaskDTO(t tasks.Task) taskDTO {
@@ -109,24 +115,8 @@ func decodeTaskBody(w http.ResponseWriter, r *http.Request, v any) bool {
 // The result is in master order.
 func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	var sc tasks.Scope
-	switch q.Get("scope") {
-	case "", "all":
-		sc.Kind = tasks.ScopeAll
-	case "worktree":
-		if q.Get("path") == "" {
-			writeError(w, http.StatusBadRequest, "missing path")
-			return
-		}
-		sc = tasks.Scope{Kind: tasks.ScopeWorktree, Worktree: q.Get("path")}
-	case "resource":
-		if q.Get("type") == "" || q.Get("id") == "" {
-			writeError(w, http.StatusBadRequest, "missing type or id")
-			return
-		}
-		sc = tasks.Scope{Kind: tasks.ScopeResource, ResourceType: q.Get("type"), ResourceID: q.Get("id")}
-	default:
-		writeError(w, http.StatusBadRequest, "scope must be all, worktree or resource")
+	sc, ok := parseTaskScope(w, q)
+	if !ok {
 		return
 	}
 	ts, err := tasks.List(s.DB, tasks.Filter{
@@ -138,11 +128,57 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 		writeTaskError(w, err)
 		return
 	}
+	sums := s.taskUnreadSummaries()
 	out := make([]taskDTO, 0, len(ts))
 	for _, t := range ts {
-		out = append(out, newTaskDTO(t))
+		d := newTaskDTO(t)
+		d.UnreadCount = sums[t.ID].Count
+		out = append(out, d)
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// parseTaskScope reads ?scope=all|worktree|resource with its path or
+// type+id. It writes the 400 itself and reports false on bad input.
+func parseTaskScope(w http.ResponseWriter, q url.Values) (tasks.Scope, bool) {
+	switch q.Get("scope") {
+	case "", "all":
+		return tasks.Scope{Kind: tasks.ScopeAll}, true
+	case "worktree":
+		if q.Get("path") == "" {
+			writeError(w, http.StatusBadRequest, "missing path")
+			return tasks.Scope{}, false
+		}
+		return tasks.Scope{Kind: tasks.ScopeWorktree, Worktree: q.Get("path")}, true
+	case "resource":
+		if q.Get("type") == "" || q.Get("id") == "" {
+			writeError(w, http.StatusBadRequest, "missing type or id")
+			return tasks.Scope{}, false
+		}
+		return tasks.Scope{Kind: tasks.ScopeResource, ResourceType: q.Get("type"), ResourceID: q.Get("id")}, true
+	default:
+		writeError(w, http.StatusBadRequest, "scope must be all, worktree or resource")
+		return tasks.Scope{}, false
+	}
+}
+
+// taskUnreadSummaries is every task's unread summary, read once per
+// request. A failure is logged and costs only the counts (all 0).
+func (s *Server) taskUnreadSummaries() map[int64]unread.Summary {
+	sums, err := unread.TaskSummaries(s.DB)
+	if err != nil {
+		s.logger().Printf("unread.TaskSummaries: %v", err)
+		return map[int64]unread.Summary{}
+	}
+	return sums
+}
+
+// newTaskDTOWithUnread is newTaskDTO with unread_count filled, for the
+// endpoints that return one task.
+func (s *Server) newTaskDTOWithUnread(t tasks.Task) taskDTO {
+	d := newTaskDTO(t)
+	d.UnreadCount = s.taskUnreadSummaries()[t.ID].Count
+	return d
 }
 
 type createTaskRequest struct {
@@ -182,7 +218,7 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		writeTaskError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, newTaskDTO(t))
+	writeJSON(w, http.StatusOK, s.newTaskDTOWithUnread(t))
 }
 
 // updateTaskRequest: an absent field is unchanged; due "" clears.
@@ -211,7 +247,7 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		writeTaskError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, newTaskDTO(t))
+	writeJSON(w, http.StatusOK, s.newTaskDTOWithUnread(t))
 }
 
 type setTaskStateRequest struct {
@@ -234,7 +270,7 @@ func (s *Server) handleSetTaskState(w http.ResponseWriter, r *http.Request) {
 		writeTaskError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, newTaskDTO(t))
+	writeJSON(w, http.StatusOK, s.newTaskDTOWithUnread(t))
 }
 
 type moveTaskRequest struct {
@@ -310,4 +346,114 @@ func (s *Server) tasksVersionAdvanced(last *int64) bool {
 	}
 	*last = v
 	return true
+}
+
+// handleTaskRead: POST /api/task-read, body {"id":..., "through_ts":...}
+// -> 200 resourceReadResponse ({previous_ts, last_read_ts}).
+//
+// The task twin of handleResourceRead, over the task's cursor
+// (resource_type "task", resource_id the task id). through_ts is the newest
+// task event the client rendered, never the server's MAX(ts), for the same
+// reason. 404 for a task that is missing or deleted.
+func (s *Server) handleTaskRead(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID        int64  `json:"id"`
+		ThroughTS string `json:"through_ts"`
+	}
+	if !decodeTaskBody(w, r, &req) {
+		return
+	}
+	if req.ID <= 0 {
+		writeError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+	if req.ThroughTS == "" {
+		writeError(w, http.StatusBadRequest, "through_ts is required")
+		return
+	}
+	if _, err := tasks.Get(s.DB, req.ID); err != nil {
+		writeTaskError(w, err)
+		return
+	}
+	ch, err := unread.Mark(s.DB, taskResourceType, strconv.FormatInt(req.ID, 10), req.ThroughTS)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resourceReadResponse{PreviousTS: ch.Previous, LastReadTS: ch.Current})
+}
+
+// handleTaskReadRestore: POST /api/task-read/restore, body
+// {"id":..., "last_read_ts":..., "previous_ts":...|null} -> 204, the undo of
+// a POST /api/task-read, echoing back what it returned. 409 when the cursor
+// has moved on since (unread.Restore's compare-and-swap).
+func (s *Server) handleTaskReadRestore(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID         int64   `json:"id"`
+		LastReadTS string  `json:"last_read_ts"`
+		PreviousTS *string `json:"previous_ts"`
+	}
+	if !decodeTaskBody(w, r, &req) {
+		return
+	}
+	if req.ID <= 0 || req.LastReadTS == "" {
+		writeError(w, http.StatusBadRequest, "id and last_read_ts are required")
+		return
+	}
+	err := unread.Restore(s.DB, taskResourceType, strconv.FormatInt(req.ID, 10), req.LastReadTS, req.PreviousTS)
+	switch {
+	case err == nil:
+		w.WriteHeader(http.StatusNoContent)
+	case errors.Is(err, unread.ErrCursorMoved):
+		writeError(w, http.StatusConflict, err.Error())
+	default:
+		writeError(w, http.StatusInternalServerError, err.Error())
+	}
+}
+
+// taskUnreadDTO is one task with unread events, for GET /api/task-unread.
+type taskUnreadDTO struct {
+	ID       int64  `json:"id"`
+	Title    string `json:"title"`
+	Count    int    `json:"count"`
+	NewestTS string `json:"newest_ts"`
+}
+
+// handleTaskUnread: GET /api/task-unread?scope=all|worktree|resource
+// (&path= | &type=&id=, as GET /api/tasks) -> []taskUnreadDTO, never null.
+//
+// Every task in the scope's FEED membership (completed and archived tasks
+// included, as tasks.ScopeTaskIDs) with unread events, newest unread first.
+// A mark-all-read uses it to clear the tasks of its feed, sending each
+// newest_ts as through_ts.
+func (s *Server) handleTaskUnread(w http.ResponseWriter, r *http.Request) {
+	sc, ok := parseTaskScope(w, r.URL.Query())
+	if !ok {
+		return
+	}
+	sums, err := unread.TaskSummaries(s.DB)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	out := []taskUnreadDTO{}
+	if len(sums) > 0 {
+		ts, err := tasks.List(s.DB, tasks.Filter{Scope: sc, IncludeCompleted: true, IncludeArchived: true})
+		if err != nil {
+			writeTaskError(w, err)
+			return
+		}
+		for _, t := range ts {
+			if sum := sums[t.ID]; sum.Count > 0 {
+				out = append(out, taskUnreadDTO{ID: t.ID, Title: t.Title, Count: sum.Count, NewestTS: sum.NewestTS})
+			}
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].NewestTS != out[j].NewestTS {
+			return out[i].NewestTS > out[j].NewestTS
+		}
+		return out[i].ID > out[j].ID
+	})
+	writeJSON(w, http.StatusOK, out)
 }

@@ -1,12 +1,16 @@
 package webui
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 
+	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/selfid"
+	"github.com/mturley/worktree/internal/tasks"
 	"github.com/mturley/worktree/internal/unread"
 )
 
@@ -35,6 +39,82 @@ type unreadIndex struct {
 	// mine is the user's own ID per source (internal/selfid); their events
 	// are never unread.
 	mine map[string]string
+
+	// Task unread, loaded on first use (see loadTasks): most requests that
+	// build an index never ask about tasks.
+	db          *sql.DB
+	logger      *log.Logger
+	tasksLoaded bool
+	taskSums    map[int64]unread.Summary // unread.TaskSummaries
+	taskScope   tasks.ScopeIndex         // which tasks each worktree/resource holds
+}
+
+// loadTasks reads every task's unread summary and every scope's task
+// membership, once per index: one query plus one tasks load, however many
+// worktrees and resources the request then asks about. A failure degrades to
+// "no task unread", like every other read here.
+func (ix *unreadIndex) loadTasks() {
+	if ix.tasksLoaded {
+		return
+	}
+	ix.tasksLoaded = true
+	ix.taskSums = map[int64]unread.Summary{}
+	if ix.db == nil {
+		return
+	}
+	sums, err := unread.TaskSummaries(ix.db)
+	if err != nil {
+		ix.logf("unread.TaskSummaries: %v", err)
+		return
+	}
+	ix.taskSums = sums
+	if len(sums) == 0 {
+		return // nothing unread: membership cannot change any count
+	}
+	sc, err := tasks.BuildScopeIndex(ix.db)
+	if err != nil {
+		ix.logf("tasks.BuildScopeIndex: %v", err)
+		return
+	}
+	ix.taskScope = sc
+}
+
+func (ix *unreadIndex) logf(format string, args ...any) {
+	if ix.logger != nil {
+		ix.logger.Printf(format, args...)
+	}
+}
+
+// sumTasks is the total unread count of the tasks ids.
+func (ix *unreadIndex) sumTasks(ids []int64) int {
+	n := 0
+	for _, id := range ids {
+		n += ix.taskSums[id].Count
+	}
+	return n
+}
+
+// resourceTaskUnread is the unread task events of the (non-deleted, open or
+// done) tasks linking resource typ:id.
+func (ix *unreadIndex) resourceTaskUnread(typ, id string) int {
+	if ix == nil {
+		return 0
+	}
+	ix.loadTasks()
+	return ix.sumTasks(ix.taskScope.ByResource[typ+":"+id])
+}
+
+// worktreeTaskUnread is the unread task events of the DISTINCT tasks in
+// path's scope (linked directly or implicitly, or the archived fallback).
+// Not the sum over the worktree's resources: a task linking two of them
+// counts once. Exact, since every task event belongs to exactly one task.
+func (ix *unreadIndex) worktreeTaskUnread(path string) int {
+	if ix == nil {
+		return 0
+	}
+	ix.loadTasks()
+	canon, _ := wdb.WorktreePathFromSubscriber(wdb.Subscriber(path))
+	return ix.sumTasks(ix.taskScope.ByWorktree[canon])
 }
 
 func (s *Server) newUnreadIndex() *unreadIndex {
@@ -44,6 +124,8 @@ func (s *Server) newUnreadIndex() *unreadIndex {
 		cursors:     map[string]string{},
 		slack:       map[string]string{},
 		mine:        map[string]string{},
+		db:          s.DB,
+		logger:      s.Logger,
 	}
 	if m, err := selfid.Load(s.DB); err == nil {
 		ix.mine = m
@@ -89,20 +171,29 @@ func (s *Server) newUnreadIndex() *unreadIndex {
 //
 // Slack threads get no through_ts: Slack owns their cursor, and they are
 // marked read through their cached latest message (updated_ts) instead.
+//
+// On top of its own events, a resource counts the unread task events of the
+// tasks linking it (task_unread_count, also included in unread_count).
+// through_ts stays the resource's own: a task's events are cleared through
+// the task's cursor (POST /api/task-read), never the resource's. Slack's
+// has_unread is left as Slack's verdict; resourceHasUnread reads the task
+// count beside it.
 func (ix *unreadIndex) fill(dto *resourceDTO) {
 	if ix == nil {
 		return
 	}
 	key := unread.Key(dto.Type, dto.ID)
+	dto.TaskUnreadCount = ix.resourceTaskUnread(dto.Type, dto.ID)
 	if dto.Type == "slack" {
 		dto.UnreadCount = 0
 		if dto.HasUnread {
 			dto.UnreadCount = max(ix.slackCounts[key], 1)
 		}
+		dto.UnreadCount += dto.TaskUnreadCount
 		return
 	}
 	sum := ix.counts[key]
-	dto.UnreadCount = sum.Count
+	dto.UnreadCount = sum.Count + dto.TaskUnreadCount
 	dto.UnreadThroughTS = sum.NewestTS
 }
 
@@ -159,14 +250,15 @@ func slackTSGreater(a, b string) bool {
 // resourceHasUnread answers, for one enriched resource, the question the
 // frontend's hasUnread() answers: two sources, one verdict. A Slack thread's
 // read state is Slack's own, cached on the DTO as HasUnread; everything else
-// is counted against worktree's per-resource cursor.
+// is counted against worktree's per-resource cursor. Either way, unread task
+// events of the tasks linking the resource (TaskUnreadCount) count too.
 //
 // Kept beside IsUnread rather than in internal/unread because it needs a
 // resourceDTO — the enrichment step is what turns cached Slack state into the
 // HasUnread bool this reads.
 func resourceHasUnread(dto resourceDTO) bool {
 	if dto.Type == "slack" {
-		return dto.HasUnread
+		return dto.HasUnread || dto.TaskUnreadCount > 0
 	}
 	return dto.UnreadCount > 0
 }

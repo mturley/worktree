@@ -42,7 +42,11 @@ type worktreeSummary struct {
 	HasUnread bool `json:"has_unread"`
 	// UnreadCount totals unread_count across those same resources — Slack
 	// threads included, each counting at least 1 while unread (see
-	// unreadIndex.fill), so it is non-zero whenever HasUnread is.
+	// unreadIndex.fill), so it is non-zero whenever HasUnread is — minus
+	// their task_unread_count, plus the unread task events of the DISTINCT
+	// tasks in the worktree's scope (unreadIndex.worktreeTaskUnread), so a
+	// task linked to two of its resources counts once. HasUnread is also
+	// true while that task count is above 0.
 	UnreadCount int `json:"unread_count"`
 	// NotifyAll is the worktree-wide "Notify on all" toggle.
 	NotifyAll bool `json:"notify_all"`
@@ -112,7 +116,7 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 				dto.OpenTaskCount = resourceTaskCount(taskCounts, dto.Type, dto.ID)
 				focus = append(focus, dto)
 				hasUnread = hasUnread || resourceHasUnread(dto)
-				unreadCount += dto.UnreadCount
+				unreadCount += dto.UnreadCount - dto.TaskUnreadCount
 			} else {
 				relatedCount++
 				relatedByType[res.Type]++
@@ -123,8 +127,13 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 				dto := s.newResourceDTO(res)
 				ix.fill(&dto)
 				hasUnread = hasUnread || resourceHasUnread(dto)
-				unreadCount += dto.UnreadCount
+				unreadCount += dto.UnreadCount - dto.TaskUnreadCount
 			}
+		}
+		// Task events count once per task, not once per resource linking it.
+		if n := ix.worktreeTaskUnread(e.Path); n > 0 {
+			hasUnread = true
+			unreadCount += n
 		}
 		_, statErr := os.Stat(e.Path)
 		out = append(out, worktreeSummary{

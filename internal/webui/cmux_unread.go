@@ -113,15 +113,19 @@ func (s *Server) syncUnreadPrefixes(want func(path string) (has, ok bool), gated
 }
 
 // worktreeHasUnread answers the question /api/worktrees answers with
-// has_unread — any focus or related resource unread — through the same
-// ix.fill and resourceHasUnread, so the mailbox and the UI's unread accent
-// cannot disagree. ok is false when the worktree's resources could not be
-// read.
+// has_unread — any focus or related resource unread, or any unread task
+// event of a task in the worktree's scope — through the same ix.fill,
+// resourceHasUnread and ix.worktreeTaskUnread, so the mailbox and the UI's
+// unread accent cannot disagree. ok is false when the worktree's resources
+// could not be read.
 func (s *Server) worktreeHasUnread(ix *unreadIndex, path string) (has, ok bool) {
 	rs, err := resources.Load(s.DB, path)
 	if err != nil {
 		s.logger().Printf("cmux unread sync: resources.Load(%s): %v", path, err)
 		return false, false
+	}
+	if ix.worktreeTaskUnread(path) > 0 {
+		return true, true
 	}
 	for _, res := range rs {
 		dto := s.newResourceDTO(res)

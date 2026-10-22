@@ -39,9 +39,14 @@ type resourceDTO struct {
 	Labels                []string `json:"labels,omitempty"`                   // Jira
 	UpdatedAt             string   `json:"updated_at,omitempty"`               // resource_updated_at (RFC3339)
 	CreatedAt             string   `json:"created_at,omitempty"`               // PR/Jira creation time (watcher >= v0.15.0)
-	UnreadCount           int      `json:"unread_count,omitempty"`             // events newer than the read cursor; see unreadIndex.fill
-	// non-slack: ts of the newest of the UnreadCount events, from the same
-	// snapshot. Mark-all-read sends it as through_ts — see unread.Summary.
+	UnreadCount           int      `json:"unread_count,omitempty"`             // events newer than the read cursor, plus TaskUnreadCount; see unreadIndex.fill
+	// TaskUnreadCount is the part of UnreadCount that is unread task events
+	// of the tasks linking this resource. Those clear through each task's
+	// own cursor (POST /api/task-read), not this resource's.
+	TaskUnreadCount int `json:"task_unread_count,omitempty"`
+	// non-slack: ts of the newest of the resource's OWN unread events (task
+	// events excluded), from the same snapshot. Mark-all-read sends it as
+	// through_ts — see unread.Summary.
 	UnreadThroughTS string `json:"unread_through_ts,omitempty"`
 	// Notify is this resource's explicit notification toggle in the
 	// requesting worktree. The worktree-wide toggle is NotifyAll on the

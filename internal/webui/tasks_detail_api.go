@@ -83,7 +83,7 @@ func (s *Server) taskDetail(id int64) (taskDetailDTO, error) {
 	branches := s.registryBranches()
 	e := s.newEventEnricher()
 	d := taskDetailDTO{
-		taskDTO:     newTaskDTO(t),
+		taskDTO:     s.newTaskDTOWithUnread(t),
 		DetailLinks: make([]taskDetailLinkDTO, 0, len(t.Links)),
 		ImplicitVia: make([]taskImplicitDTO, 0, len(t.Implicit)),
 		Subtasks:    make([]taskSubtaskDTO, 0, len(t.Subtasks)),

@@ -235,6 +235,9 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | POST | `/api/tasks/events/link` | body: `{id, key, snapshot?}`; `ev:` keys rebuild the snapshot server-side, `slack:` keys need a snapshot with a title or body | `taskDetailDTO` |
 | POST | `/api/tasks/events/unlink` | body: `{id, key}` | `taskDetailDTO` |
 | POST | `/api/tasks/from-event` | body: `{key, snapshot?, path?}`; creates a task from the event | `taskDetailDTO` |
+| POST | `/api/task-read` | body: `{id, through_ts}` | `{previous_ts, last_read_ts}` (as `/api/resource-read`); 404 for a missing or deleted task. See "Unread" |
+| POST | `/api/task-read/restore` | body: `{id, last_read_ts, previous_ts}` (what `/api/task-read` answered) | 204; 409 if the task's cursor has moved since |
+| GET | `/api/task-unread` | `scope` (`all` default, `worktree`, `resource`), `path` / `type` + `id` as `/api/tasks` | `[{id, title, count, newest_ts}]`, never null: tasks in the scope (completed and archived included) with unread events, newest unread first |
 | POST | `/api/tabs/presence` | body: `{tab, route, visible}` | 204; 404 for an unknown tab or another session's |
 | POST | `/api/tabs/ack` | body: `{tab, notification_id, shown}` | 204; 404 for an unknown tab, another session's, or a notification nobody awaits |
 | GET | `/api/update-status` | — | `{available, behind_by, details_url}`; see "Update check" |
@@ -780,6 +783,36 @@ actually get written or a resource would never earn its first dot:
 backfills existing ones at their newest event. Both are INSERT OR IGNORE, so a
 second worktree subscribing to a resource someone already reads inherits that
 cursor rather than resetting it.
+
+**Tasks have cursors too, in the same table.** A task's cursor is a
+`resource_read_cursor` row with `resource_type` `task` and the task id as
+`resource_id`, so `unread.Mark`/`Restore` serve it unchanged. A task event is
+unread when `actor = 'agent'` and `ts > cursor`; unlike a resource, a MISSING
+row reads as `''`, so every agent event counts until the task is first marked
+read. The user's own events never count, and a deleted task's never appear.
+`unread.TaskSummaries` returns `{Count, NewestTS}` per task in one query.
+Written by `POST /api/task-read` (404 for a missing or deleted task) and
+undone by `/api/task-read/restore` (the same CAS 409 as resources).
+`GET /api/task-unread` lists a scope's tasks with unread events (feed
+membership: completed and archived included), newest first, for mark-all-read.
+
+**How task unread counts in the badges.** `unreadIndex` loads the task
+summaries and `tasks.BuildScopeIndex` (every worktree's and resource's task
+ids, from ONE tasks load) lazily, on the first task question, so
+`/api/worktrees` pays for membership once however many worktrees it lists,
+and requests that never ask (the timelines) pay nothing.
+- A resource's `unread_count` adds its linking tasks' unread
+  (`task_unread_count`, reported separately too). `unread_through_ts` stays
+  the resource's own: task events clear through the task's cursor. For a
+  Slack thread `has_unread` stays Slack's verdict and `resourceHasUnread`
+  ORs in `task_unread_count`.
+- A worktree's `unread_count` is its resources' own unread (each
+  `unread_count − task_unread_count`) plus `worktreeTaskUnread`: the sum over
+  the DISTINCT tasks in its scope, so a task linking two of its resources
+  counts once. That is exact because every task event belongs to exactly one
+  task. `has_unread` turns on while that is above 0, and the cmux mailbox
+  (`worktreeHasUnread`) asks the same question.
+- `taskDTO.unread_count` is the task's own count.
 
 **`unreadIndex` is request-scoped**, for the same reason `eventEnricher` is:
 cursors move from other processes (`worktree resources mark-read`,
