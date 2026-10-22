@@ -50,6 +50,24 @@ describe("buildSuggestions", () => {
     expect(go.event).toHaveBeenCalled()
     expect(out.some((s) => s.group === "Worktrees")).toBe(false)
   })
+  it("opens the task for a task event's row, as the feeds' rows do", () => {
+    const task = vi.fn()
+    const event = vi.fn()
+    const te: TimelineEvent = { ...ev("task:7"), source: "tasks", type: "task_edited", resource_type: "task", resource_id: "42", resource_title: "oauth task" }
+    const out = buildSuggestions({ terms: ["oauth"], resources: [], events: [te, ev("e1")], go: { ...go, event, task } })
+    out[0].onPick()
+    expect(task).toHaveBeenCalledWith(42)
+    expect(event).not.toHaveBeenCalled()
+    // A watcher event still routes through go.event.
+    out[1].onPick()
+    expect(event).toHaveBeenCalledTimes(1)
+    expect(task).toHaveBeenCalledTimes(1)
+    // Matched on the task's title: the row names the task, not its id.
+    const viaTask = buildSuggestions({
+      terms: ["oauth"], resources: [], events: [{ ...te, match: { field: "resource", snippet: "oauth task" } }], go,
+    })
+    expect(viaTask[0].detail).toBe("oauth task")
+  })
   it("describes an Activity row by the field that matched", () => {
     const detailOf = (e: TimelineEvent) =>
       buildSuggestions({ terms: ["x"], resources: [], events: [e], go }).find((s) => s.group === "Activity")?.detail

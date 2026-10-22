@@ -386,6 +386,7 @@ export function HomePage() {
       event: (e) => (isArchivedEvent(e) || !e.worktree_paths?.length
         ? setPickedEvent(e)
         : selectEventResource({ type: e.resource_type, id: e.resource_id }, e)),
+      task: openTask,
     },
   })
   // Esc sees everything: clears the search and turns Unreads only off. With

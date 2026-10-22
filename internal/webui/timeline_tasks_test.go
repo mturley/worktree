@@ -245,6 +245,39 @@ func TestTimelineTaskEventsSearch(t *testing.T) {
 	}
 }
 
+// q also matches a task event's author, as matchEvent does a watcher
+// event's: "agent", the agent's session name, or "you".
+func TestTimelineTaskEventsSearchAuthor(t *testing.T) {
+	f := taskFeedFixture(t)
+	res, err := f.s.DB.Exec(`INSERT INTO task_events (task_id, ts, type, actor, actor_session, payload)
+		VALUES (?, ?, ?, 'agent', 'otter-session', '{}')`, f.alpha.ID, tts(3), tasks.EventTaskEdited)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, _ := res.LastInsertId()
+	sess := "task:" + strconv.FormatInt(n, 10)
+	agent := insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(2), tasks.EventTaskEdited, tasks.ActorAgent, "")
+	user := insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(1), tasks.EventTaskEdited, tasks.ActorUser, "")
+	for _, feed := range []struct {
+		name string
+		get  func(*testing.T, string) timelineResponse
+	}{{"home", f.home}, {"worktree", f.worktree}} {
+		got := feed.get(t, "q=otter").Events
+		if joinIDs(got) != sess {
+			t.Fatalf("%s q=otter = %s, want %s", feed.name, joinIDs(got), sess)
+		}
+		if m := got[0].Match; m == nil || m.Field != "author" || m.Snippet != "agent (otter-session)" {
+			t.Errorf("%s author match = %+v", feed.name, m)
+		}
+		if got := joinIDs(feed.get(t, "q=agent").Events); got != sess+","+agent {
+			t.Errorf("%s q=agent = %s", feed.name, got)
+		}
+		if got := joinIDs(feed.get(t, "q=you").Events); got != user {
+			t.Errorf("%s q=you = %s", feed.name, got)
+		}
+	}
+}
+
 // pageAll follows next_cursor until a short page, as useTimeline does, and
 // returns every id it saw in order.
 func pageAll(t *testing.T, get func(*testing.T, string) timelineResponse, limit int, extra string) []string {

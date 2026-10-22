@@ -356,7 +356,8 @@ events (`tasks.FeedEvents`, converted by `taskFeedRow` →
 - Filters: `resource_types` accepts `task`, and `event_types` the category
   `task` (every task event type). A non-empty filter excludes task events
   unless it names them (`taskEventsSelected`). `unread_only` and `q` are
-  applied in Go (`matchTaskEvent`: converted title and task title), so with
+  applied in Go (`matchTaskEvent`: converted title, author — "agent",
+  "agent (<session>)" or "you" — and task title), so with
   either set every candidate task event is read rather than `limit`.
 - `unread` on a task row: `actor = 'agent'` and `ts` > the task's cursor
   (`unread.Cursors`, missing = "").
@@ -2023,6 +2024,12 @@ filtering is independent.
 - Rows render as elsewhere: a worktree under `CmuxWorkspaceLabel`, a resource
   as `ResourceCardBody`, an event as `EventRow` (global form, so archived
   events are labeled). Display only: no buttons or links inside an option.
+- Picking routes through the page's `go` (`buildSuggestions`). A task
+  event's row opens its task (`go.task`, the pages' `useTaskModal().open`,
+  as the feeds' rows do through `onOpenTask`), never `go.event`: its
+  pseudo-resource is nothing to select. The routing lives in
+  `suggestions.ts`, not on the row, so Enter and a click agree and the row
+  stays display-only.
 - Sticky section headings with counts; up to 640 px wide and 70vh tall when
   wide, the full screen width (less the gutter) when narrow.
 - A hint bar heads it, also when nothing matches ("Nothing matches your

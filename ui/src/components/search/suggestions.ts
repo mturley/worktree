@@ -9,10 +9,19 @@ function eventDetail(e: TimelineEvent): string | undefined {
     case "body":
       return e.match.snippet
     case "resource":
-      return e.resource?.custom_name || e.resource?.title || shortResourceRef(e.resource_type, e.resource_id)
+      // A task event's pseudo-resource has no DTO; resource_title is its task's title.
+      return e.resource?.custom_name || e.resource?.title || e.resource_title
+        || shortResourceRef(e.resource_type, e.resource_id)
     default:
       return e.author
   }
+}
+
+/** The task a task event belongs to, or null for any other event. */
+function taskIdOf(e: TimelineEvent): number | null {
+  if (e.resource_type !== "task") return null
+  const id = Number(e.resource_id)
+  return Number.isInteger(id) && id > 0 ? id : null
 }
 
 export const SUGGESTION_LIMITS = { worktrees: 3, resources: 5, events: 3 } as const
@@ -32,6 +41,12 @@ export function buildSuggestions(input: {
     worktree: (path: string) => void
     resource: (r: ResourceDTO, path?: string) => void
     event: (e: TimelineEvent) => void
+    /**
+     * Opens a task: a task event's row picks this, as its row in the feeds
+     * does (EventRow's onOpenTask), never go.event — its pseudo-resource
+     * ("task", "<id>") is nothing to select.
+     */
+    task?: (id: number) => void
   }
 }): Suggestion[] {
   const { terms, go } = input
@@ -59,7 +74,11 @@ export function buildSuggestions(input: {
     })),
     ...evs.map((e): Suggestion => ({
       key: `ev:${e.id}`, group: "Activity", label: e.title, detail: eventDetail(e), item: { kind: "event", e },
-      onPick: () => go.event(e),
+      onPick: () => {
+        const taskId = taskIdOf(e)
+        if (taskId !== null && go.task) go.task(taskId)
+        else go.event(e)
+      },
     })),
   ]
 }

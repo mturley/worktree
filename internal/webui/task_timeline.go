@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -55,18 +56,23 @@ func taskFeedRow(fe tasks.FeedEvent, cursors map[string]string) TimelineEvent {
 }
 
 // matchTaskEvent is matchEvent for a converted task event: every term must
-// appear in the converted title or the task's title, case-insensitively.
-// The match names the first of those fields holding any term, as matchEvent
-// does; a task-title match is reported as "resource" (the pseudo-resource the
-// row is attributed to), with the task title as its snippet.
+// appear in the converted title, the author ("agent", "agent (<session>)" or
+// "you", as taskEventAuthor renders it) or the task's title,
+// case-insensitively. The match names the first of those fields holding any
+// term, as matchEvent does; a task-title match is reported as "resource" (the
+// pseudo-resource the row is attributed to), with the task title as its
+// snippet.
 func matchTaskEvent(te *TimelineEvent, terms []string) *searchMatch {
 	if len(terms) == 0 {
 		return nil
 	}
-	fields := []struct{ name, text string }{{"title", te.Title}, {"resource", te.ResourceTitle}}
-	lower := []string{strings.ToLower(fields[0].text), strings.ToLower(fields[1].text)}
+	fields := []struct{ name, text string }{{"title", te.Title}, {"author", te.Author}, {"resource", te.ResourceTitle}}
+	lower := make([]string, len(fields))
+	for i, f := range fields {
+		lower[i] = strings.ToLower(f.text)
+	}
 	for _, t := range terms {
-		if !strings.Contains(lower[0], t) && !strings.Contains(lower[1], t) {
+		if !slices.ContainsFunc(lower, func(l string) bool { return strings.Contains(l, t) }) {
 			return nil
 		}
 	}
