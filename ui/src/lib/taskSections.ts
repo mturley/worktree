@@ -129,6 +129,18 @@ export function buildSections(tasks: Task[], prefs: TaskListPrefs, terms: string
 }
 
 /**
+ * The task quick add places a new task after. In the draggable sorts the
+ * display IS master order, so it is the last visible open task. In Due and
+ * Recently updated the display order means nothing in master order, so it
+ * is the visible open task last in master order instead.
+ */
+export function quickAddAnchor(sections: TaskSection[], sort: TaskSort): Task | undefined {
+  const open = sections.filter((s) => s.key !== "completed").flatMap((s) => s.tasks)
+  if (canDrag(sort)) return open.at(-1)
+  return open.reduce<Task | undefined>((max, t) => (!max || byMaster(t, max) > 0 ? t : max), undefined)
+}
+
+/**
  * Turns a drop into a move and an edit. `toIndex` indexes the destination's
  * tasks as they are WITHOUT the active one. The task goes after the one just
  * above the drop point, else before the one just below; into a section with

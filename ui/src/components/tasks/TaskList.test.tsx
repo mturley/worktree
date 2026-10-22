@@ -86,6 +86,36 @@ describe("TaskList quick add", () => {
     expect(api.createTask).toHaveBeenCalledWith({ title: "first", priority: "none", starred: false })
   })
 
+  it("in a non-draggable sort, adds after the open task last in MASTER order, not display order", async () => {
+    setPrefs({ sort: "due" })
+    // Due order shows 2 (due) before 1 (no due); master order is 1, 2, so the
+    // display's last row (1) is the wrong anchor.
+    vi.mocked(api.tasks).mockResolvedValue([
+      task(1, { title: "alpha one" }), task(2, { title: "beta two", due: "2026-01-01" }),
+      task(3, { title: "done", state: "done", rank: "r9" }),
+    ])
+    const user = userEvent.setup()
+    wrap(<TaskList scope={{ kind: "all" }} />)
+    await screen.findByText("beta two")
+    await user.type(screen.getByRole("textbox", { name: "New task" }), "next{Enter}")
+    await waitFor(() => expect(api.createTask).toHaveBeenCalled())
+    expect(api.createTask).toHaveBeenCalledWith({ title: "next", priority: "none", starred: false, after: 2 })
+  })
+
+  it("seeds the priority picker from the active priority filter, so the new task stays visible", async () => {
+    setPrefs({ priority: "high" })
+    vi.mocked(api.tasks).mockResolvedValue([task(1, { title: "alpha one", priority: "high" })])
+    const user = userEvent.setup()
+    wrap(<TaskList scope={{ kind: "all" }} />)
+    await screen.findByText("alpha one")
+    const input = screen.getByRole("textbox", { name: "New task" })
+    await user.click(input)
+    expect(screen.getByRole("textbox", { name: "New task priority" })).toHaveValue("High")
+    await user.type(input, "urgent{Enter}")
+    await waitFor(() => expect(api.createTask).toHaveBeenCalled())
+    expect(api.createTask).toHaveBeenCalledWith({ title: "urgent", priority: "high", starred: false, after: 1 })
+  })
+
   it("Enter keeps focus for the next task", async () => {
     const user = userEvent.setup()
     wrap(<TaskList scope={{ kind: "all" }} />)

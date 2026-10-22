@@ -19,7 +19,7 @@ import { CSS } from "@dnd-kit/utilities"
 import type { Task } from "../../api/types"
 import { useTaskMutations, useTasks, type TaskScope } from "../../hooks/useTasks"
 import { useTaskListPrefs } from "../../hooks/useTaskListPrefs"
-import { buildSections, canDrag, type TaskSection } from "../../lib/taskSections"
+import { buildSections, canDrag, quickAddAnchor, type TaskSection } from "../../lib/taskSections"
 import { useSearchContext } from "../search/SearchContext"
 import { TaskQuickAdd } from "./TaskQuickAdd"
 import { TaskRow } from "./TaskRow"
@@ -214,10 +214,9 @@ export function TaskList({ scope, ownResource, maxRows }: {
   // label); otherwise labels appear once two sections hold tasks.
   const labelled = prefs.sort === "priority" || sections.filter((s) => s.tasks.length > 0).length > 1
   const activeTask = activeId === null ? undefined : sections.flatMap((s) => s.tasks).find((t) => t.id === activeId)
-  const lastVisible = sections
-    .filter((s) => s.key !== "completed")
-    .flatMap((s) => s.tasks)
-    .at(-1)
+  const anchor = quickAddAnchor(sections, prefs.sort)
+  // Under a priority filter a "none" task would vanish on creation.
+  const newPriority: Task["priority"] = prefs.priority === "all" ? "none" : prefs.priority
 
   const sensors = useSensors(
     // Only the grip starts a drag; a few pixels of travel so a press isn't one.
@@ -249,7 +248,7 @@ export function TaskList({ scope, ownResource, maxRows }: {
 
   const add = (input: { title: string; priority: Task["priority"]; starred: boolean }) => {
     setError(null)
-    return mutations.create(lastVisible ? { ...input, after: lastVisible.id } : input).catch((e: unknown) => {
+    return mutations.create(anchor ? { ...input, after: anchor.id } : input).catch((e: unknown) => {
       setError(errorText(e))
       throw e
     })
@@ -319,7 +318,7 @@ export function TaskList({ scope, ownResource, maxRows }: {
       >
         {body}
       </Box>
-      <TaskQuickAdd onAdd={add} />
+      <TaskQuickAdd onAdd={add} defaultPriority={newPriority} />
     </Stack>
   )
 }

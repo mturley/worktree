@@ -990,6 +990,13 @@ to break.
   `relatedTarget`, collapsed the controls, and the click landed on nothing.
   Preventing the mousedown default keeps focus in the input; keep it on any
   control added there.
+- **Where quick add puts a task** (`quickAddAnchor` in `lib/taskSections.ts`):
+  after the last visible open task in Custom and Priority sort, where the
+  display is master order; in Due and Recently updated, after the visible
+  open task last in MASTER order (greatest `rank`), since display order
+  means nothing there. Its priority picker starts at the list's priority
+  filter when one is on (`defaultPriority`), or a new task would be created
+  straight into hiding.
 - **Counts.** `TaskCountBadge` is the lime count (dark text, never blue —
   blue is unread). It appears on the Tasks tab while that tab is not active
   and the list is not pinned, and on worktree cards and list resource cards
