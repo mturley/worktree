@@ -327,9 +327,11 @@ TimelineEvent {
 ```
 
 `next_cursor` is the `ts` of the last event in the page (empty if the page is
-empty) — a "before" cursor for pagination. **The frontend does not currently
-use it**; `HomePage`/`WorktreeDetailPage` only render the first page (see
-"Known deferred items" below).
+empty) — an exclusive "before" cursor for pagination. The frontend follows it:
+`useTimeline`'s `getNextPageParam` and the feeds' "Load more" button. A page
+holds `limit` events plus every further event sharing the last one's `ts`
+(see "Paging and same-ts clusters" below), so it can come back OVERFULL; the
+frontend treats only a SHORT page as the end, so that is safe.
 
 Global timeline query notes (`handleGlobalTimeline`):
 - Excludes internal event types `watch_started` and `watcher_error`.
@@ -358,11 +360,21 @@ events (`tasks.FeedEvents`, converted by `taskFeedRow` →
   either set every candidate task event is read rather than `limit`.
 - `unread` on a task row: `actor = 'agent'` and `ts` > the task's cursor
   (`unread.Cursors`, missing = "").
-- Merge: ts DESC, a tie putting the watcher row first, cut to `limit`. Both
-  sides apply the same strict `before`, so `next_cursor` pages both; as with
-  watcher events alone, same-ts rows straddling a page boundary can be
-  skipped. The task side's cut-off is therefore not exact either: the
-frontend does not use `next_cursor` today (see "Known deferred items").
+- Merge: ts DESC, a tie putting the watcher row first, cut to `limit`, then
+  overfilled (below). Both sides apply the same strict `before`, so
+  `next_cursor` pages both.
+- Paging and same-ts clusters: task `ts` values have one-second resolution,
+  so several events can share a `ts`, and a strict `before` would skip the
+  rest of a cluster a page boundary cut through. So every page is
+  OVERFILLED: after the cut to `limit`, it takes every remaining row, from
+  either source, whose `ts` equals the last kept row's. For that, each side
+  brings its whole boundary cluster: the global watcher query re-reads
+  `e.ts = <boundary>` with the same filters when its page is full; the
+  worktree scan keeps scanning while rows tie; the task side re-reads with
+  `FeedQuery.AtTS` when its `LIMIT` was hit (and with `unread_only`/`q` it
+  reads everything anyway). The watcher-only path overfills the same way.
+  Pinned by `TestTimelinePagingSameTSTaskCluster` and
+  `TestTimelinePagingSameTSWatcherTaskTie`.
 
 **Tasks in the feed UI.** The source filter has a "Tasks" entry
 (`resource_types=task`). It narrows only the feed: resource lists and
@@ -3111,8 +3123,3 @@ aware of them if your change touches the same area:
   per event *before* the SQL `LIMIT` is applied (today, dedup happens
   *after* `LIMIT`, so a page could theoretically come back under-filled;
   not observable yet because it never fires).
-- **Pagination not surfaced in the UI**: the API supports `before`/
-  `next_cursor` (see the table above), and it's tested for the global
-  timeline, but neither `HomePage` nor `WorktreeDetailPage` uses it — only
-  the first page (`limit=100` default) is ever shown. Add "load more" /
-  infinite scroll using `next_cursor` if this becomes a problem.

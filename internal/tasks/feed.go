@@ -13,6 +13,9 @@ type FeedQuery struct {
 	Limit     int     // <= 0 = no limit
 	AgentOnly bool    // only actor = 'agent'
 	SinceTS   string  // inclusive lower bound; "" = none (for unread)
+	// AtTS selects only events at exactly this ts; "" = any. The feeds use
+	// it to fetch the rest of a same-second cluster a LIMIT cut through.
+	AtTS string
 }
 
 // FeedEvent is a task event with its task's current title.
@@ -47,6 +50,10 @@ func FeedEvents(conn *sql.DB, q FeedQuery) ([]FeedEvent, error) {
 	if q.SinceTS != "" {
 		query += ` AND e.ts >= ?`
 		args = append(args, q.SinceTS)
+	}
+	if q.AtTS != "" {
+		query += ` AND e.ts = ?`
+		args = append(args, q.AtTS)
 	}
 	if q.AgentOnly {
 		query += ` AND e.actor = 'agent'`

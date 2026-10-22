@@ -244,3 +244,93 @@ func TestTimelineTaskEventsSearch(t *testing.T) {
 		}
 	}
 }
+
+// pageAll follows next_cursor until a short page, as useTimeline does, and
+// returns every id it saw in order.
+func pageAll(t *testing.T, get func(*testing.T, string) timelineResponse, limit int, extra string) []string {
+	t.Helper()
+	var all []string
+	before := ""
+	for page := 0; page < 20; page++ {
+		q := "limit=" + strconv.Itoa(limit) + extra
+		if before != "" {
+			q += "&before=" + url.QueryEscape(before)
+		}
+		resp := get(t, q)
+		all = append(all, eventIDs(resp.Events)...)
+		if len(resp.Events) < limit {
+			return all
+		}
+		before = resp.NextCursor
+	}
+	t.Fatalf("paging did not end: %v", all)
+	return nil
+}
+
+// assertSameIDs fails unless got holds exactly want's ids, each once.
+func assertSameIDs(t *testing.T, name string, got, want []string) {
+	t.Helper()
+	seen := map[string]int{}
+	for _, id := range got {
+		seen[id]++
+	}
+	for _, id := range want {
+		if seen[id] != 1 {
+			t.Errorf("%s: %s seen %d times; paged %v", name, id, seen[id], got)
+		}
+		delete(seen, id)
+	}
+	for id := range seen {
+		t.Errorf("%s: unexpected %s; paged %v", name, id, got)
+	}
+}
+
+// Task ts values have one-second resolution, so a cluster of events in one
+// second can straddle a page boundary. The strict `before` cursor would skip
+// the rest of the cluster, so the page overfills with every row sharing the
+// last kept row's ts.
+func TestTimelinePagingSameTSTaskCluster(t *testing.T) {
+	f := taskFeedFixture(t)
+	want := []string{insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(9), tasks.EventTaskEdited, tasks.ActorAgent, "")}
+	for i := 0; i < 5; i++ {
+		want = append(want, insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(5), tasks.EventTaskEdited, tasks.ActorAgent, ""))
+	}
+	want = append(want, insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(1), tasks.EventTaskEdited, tasks.ActorAgent, ""))
+	for _, feed := range []struct {
+		name string
+		get  func(*testing.T, string) timelineResponse
+	}{{"home", f.home}, {"worktree", f.worktree}} {
+		// The plain path (SQL LIMIT) and the Go-filtered ones.
+		for _, extra := range []string{"", "&q=alpha", "&unread_only=true"} {
+			assertSameIDs(t, feed.name+extra, pageAll(t, feed.get, 3, extra), want)
+		}
+	}
+}
+
+// A watcher/task tie at the boundary: both sides' rows at that ts land on
+// the same page, and neither side's are lost or repeated.
+func TestTimelinePagingSameTSWatcherTaskTie(t *testing.T) {
+	f := taskFeedFixture(t)
+	insertEvent(t, f.s.DB, "w9", tts(9), "github", "pr_comment", "c", "pr", "o/r#1", "u1")
+	want := []string{"w9"}
+	for _, id := range []string{"w5a", "w5b", "w5c"} {
+		insertEvent(t, f.s.DB, id, tts(5), "github", "pr_comment", "c", "pr", "o/r#1", "u1")
+		want = append(want, id)
+	}
+	for i := 0; i < 3; i++ {
+		want = append(want, insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(5), tasks.EventTaskEdited, tasks.ActorUser, ""))
+	}
+	insertEvent(t, f.s.DB, "w1", tts(1), "github", "pr_comment", "c", "pr", "o/r#1", "u1")
+	want = append(want, "w1", insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(1), tasks.EventTaskEdited, tasks.ActorUser, ""))
+	for _, feed := range []struct {
+		name string
+		get  func(*testing.T, string) timelineResponse
+	}{{"home", f.home}, {"worktree", f.worktree}} {
+		for _, limit := range []int{2, 3, 4} {
+			assertSameIDs(t, feed.name+" limit="+strconv.Itoa(limit), pageAll(t, feed.get, limit, ""), want)
+		}
+		// The watcher-only path overfills too.
+		assertSameIDs(t, feed.name+" watcher only", pageAll(t, feed.get, 2, "&resource_types=pr"),
+			[]string{"w9", "w5a", "w5b", "w5c", "w1"})
+	}
+}

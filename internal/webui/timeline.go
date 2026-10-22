@@ -263,21 +263,26 @@ JOIN watcher_event_resources er ON er.event_id = e.id `
 		unreadClause = unreadOnlyClause
 	}
 
+	// restArgs are the args of every clause after the cursor's.
+	restArgs := []any{}
+	for _, t := range types {
+		restArgs = append(restArgs, t)
+	}
+	restArgs = append(restArgs, eventTypeArgs...)
+	restArgs = append(restArgs, searchArgs...)
 	args := []any{}
 	if before != "" {
 		args = append(args, before)
 	}
-	for _, t := range types {
-		args = append(args, t)
-	}
-	args = append(args, eventTypeArgs...)
-	args = append(args, searchArgs...)
+	args = append(args, restArgs...)
 	args = append(args, limit)
 
-	q := base + filter + beforeClause + typeClause + eventTypeClause + searchClause + unreadClause + order
+	from := base
 	if !archived {
-		q = base + watchedJoin + filter + beforeClause + typeClause + eventTypeClause + searchClause + unreadClause + order
+		from = base + watchedJoin
 	}
+	rest := typeClause + eventTypeClause + searchClause + unreadClause
+	q := from + filter + beforeClause + rest + order
 	rows, err = s.DB.Query(q, args...)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -288,6 +293,24 @@ JOIN watcher_event_resources er ON er.event_id = e.id `
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	// A full page may have cut through a same-second cluster: read the rest
+	// of it with the same filters, `e.ts = <boundary>` in place of the cursor
+	// and the LIMIT, so the page overfills (see mergeTaskEvents).
+	if len(out) >= limit {
+		tieArgs := append([]any{out[len(out)-1].TS}, restArgs...)
+		tieRows, err := s.DB.Query(from+filter+"AND e.ts = ? "+rest+"ORDER BY e.ts DESC", tieArgs...)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		ties, err := s.collectTimelineRows(tieRows, 0, terms)
+		tieRows.Close()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		out = appendUnseen(out, ties)
 	}
 	// Every non-deleted task's events, whatever `archived` says: archived
 	// only governs watcher events.
@@ -331,9 +354,18 @@ type taskFeedQuery struct {
 }
 
 // mergeTaskEvents merges the task events q selects into a page of watcher
-// rows (newest first, at most q.limit), returning the newest q.limit of the
-// union: ts DESC, a tie putting the watcher row first. Both sides apply the
-// same strict `before`, so the page's last ts (cursorOf) pages both.
+// rows (newest first: q.limit rows plus any tying the last one's ts),
+// returning the newest q.limit of the union, ts DESC, a tie putting the
+// watcher row first, OVERFILLED with every remaining row of either side
+// whose ts equals the last kept row's. Both sides apply the same strict
+// `before`, so the page's last ts (cursorOf) pages both; the overfill is
+// what keeps that strict cursor from skipping the rest of a same-second
+// cluster (task ts values have one-second resolution). An overfull page is
+// safe: useTimeline treats only a short page as the end.
+//
+// Each side brings its whole boundary cluster (the watcher side via
+// watcherTies or the worktree scan, the task side via FeedQuery.AtTS), so
+// every row tying the merged page's boundary is at hand.
 //
 // unread_only and q are applied in Go, so with either set every candidate
 // task event is read rather than the newest q.limit: a LIMIT before the
@@ -351,6 +383,24 @@ func (s *Server) mergeTaskEvents(rows []TimelineEvent, q taskFeedQuery) ([]Timel
 	if err != nil {
 		return nil, err
 	}
+	// A LIMIT can cut through a same-second cluster; read the rest of it, so
+	// the page can overfill with every row at its boundary ts. FeedEvents
+	// orders ties by id DESC, so the rows the cut left out are those with a
+	// smaller id than the last one read.
+	if fq.Limit > 0 && len(evs) == fq.Limit {
+		last := evs[len(evs)-1]
+		tq := fq
+		tq.Before, tq.Limit, tq.AtTS = "", 0, last.TS
+		ties, err := tasks.FeedEvents(s.DB, tq)
+		if err != nil {
+			return nil, err
+		}
+		for _, fe := range ties {
+			if fe.ID < last.ID {
+				evs = append(evs, fe)
+			}
+		}
+	}
 	if len(evs) == 0 {
 		return rows, nil
 	}
@@ -360,6 +410,10 @@ func (s *Server) mergeTaskEvents(rows []TimelineEvent, q taskFeedQuery) ([]Timel
 	}
 	taskRows := make([]TimelineEvent, 0, len(evs))
 	for _, fe := range evs {
+		// Past q.limit rows, keep only those tying the last one's ts.
+		if len(taskRows) >= q.limit && fe.TS < taskRows[len(taskRows)-1].TS {
+			break
+		}
 		te := taskFeedRow(fe, cursors)
 		if q.unreadOnly && !te.Unread {
 			continue
@@ -370,18 +424,25 @@ func (s *Server) mergeTaskEvents(rows []TimelineEvent, q taskFeedQuery) ([]Timel
 			}
 		}
 		taskRows = append(taskRows, te)
-		if len(taskRows) == q.limit {
-			break
-		}
 	}
 	out := make([]TimelineEvent, 0, min(q.limit, len(rows)+len(taskRows)))
 	i, j := 0, 0
-	for len(out) < q.limit && (i < len(rows) || j < len(taskRows)) {
-		if j == len(taskRows) || (i < len(rows) && rows[i].TS >= taskRows[j].TS) {
-			out = append(out, rows[i])
+	for i < len(rows) || j < len(taskRows) {
+		fromRows := j == len(taskRows) || (i < len(rows) && rows[i].TS >= taskRows[j].TS)
+		var next *TimelineEvent
+		if fromRows {
+			next = &rows[i]
+		} else {
+			next = &taskRows[j]
+		}
+		// Full: overfill only with rows tying the boundary ts (see overfill).
+		if len(out) >= q.limit && next.TS != out[len(out)-1].TS {
+			break
+		}
+		out = append(out, *next)
+		if fromRows {
 			i++
 		} else {
-			out = append(out, taskRows[j])
 			j++
 		}
 	}
@@ -468,12 +529,15 @@ func (s *Server) handleWorktreeTimeline(w http.ResponseWriter, r *http.Request) 
 	out := make([]TimelineEvent, 0, outCap)
 	enricher := s.newEventEnricher()
 	// reverse (EventsForSubscriberSince returns ASC)
-	for i := len(evs) - 1; i >= 0 && len(out) < limit; i-- {
+	for i := len(evs) - 1; i >= 0; i-- {
+		// Full: keep scanning only for rows tying the last kept row's ts, so
+		// the page overfills with the rest of a same-second cluster and the
+		// strict cursor below cannot skip it (see mergeTaskEvents).
+		if len(out) >= limit && evs[i].TS < out[len(out)-1].TS {
+			break
+		}
 		// Strictly less-than, so the event the cursor names is not repeated
-		// as the first row of the next page. Shared limitation with
-		// handleGlobalTimeline's SQL `e.ts < ?`: events sharing an identical
-		// ts straddle a page boundary and the later ones are skipped. Not a
-		// concern while the pollers stamp distinct ts values per event.
+		// as the first row of the next page.
 		if before != "" && evs[i].TS >= before {
 			continue
 		}
@@ -789,6 +853,21 @@ func (e *eventEnricher) worktreesWatching(rtype, rid string) []watchingWorktree 
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Branch < out[j].Branch })
 	e.watching[key] = out
+	return out
+}
+
+// appendUnseen appends the events of more whose id out does not hold yet.
+func appendUnseen(out, more []TimelineEvent) []TimelineEvent {
+	seen := make(map[string]bool, len(out))
+	for _, e := range out {
+		seen[e.ID] = true
+	}
+	for _, e := range more {
+		if !seen[e.ID] {
+			seen[e.ID] = true
+			out = append(out, e)
+		}
+	}
 	return out
 }
 
