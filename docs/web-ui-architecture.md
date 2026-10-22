@@ -361,7 +361,19 @@ events (`tasks.FeedEvents`, converted by `taskFeedRow` →
 - Merge: ts DESC, a tie putting the watcher row first, cut to `limit`. Both
   sides apply the same strict `before`, so `next_cursor` pages both; as with
   watcher events alone, same-ts rows straddling a page boundary can be
-  skipped.
+  skipped. The task side's cut-off is therefore not exact either: the
+frontend does not use `next_cursor` today (see "Known deferred items").
+
+**Tasks in the feed UI.** The source filter has a "Tasks" entry
+(`resource_types=task`). It narrows only the feed: resource lists and
+worktree cards ignore it, because no resource has type `task` and the lists
+would empty. The `task` event category exists (`event_types=task`) but
+`categoriesFor` (`lib/eventTypeFilter.ts`) hides a single-category bar, as for
+Slack, so nothing in the UI sends it. A task event's row shows its task chip
+even in a single resource's feed (`showResource={false}`). Task rows carry
+their own per-task unread flag, so `TimelineFeed` draws the unread divider
+only when the unread rows are a contiguous prefix of the feed; otherwise the
+per-row marks alone show what is unread.
 
 ### `resourceDTO` (resources_api.go)
 
@@ -1352,8 +1364,9 @@ their batches are merged before the `notifyMaxPerPass` check, so a flood of
 either or both folds into one summary, which names "resources", "tasks" or
 "resources and tasks".
 
-**Delivery mode** is chosen once per process: `cmux.IsAvailable()` (not
-`InPane` — the server drives cmux from wherever it runs) → `cmux notify
+**Delivery mode** is chosen per delivery (`notifyMode`, never cached):
+`cmuxEnabled()` (cmux reachable AND the Settings toggle on; not `InPane` —
+the server drives cmux from wherever it runs) → `cmux notify
 --workspace <id>` for the worktree's matched workspace, so clicking the banner
 switches to it; with no match it posts untargeted (the UI server's own
 workspace). Failures are logged and dropped. Otherwise browser mode. The mode
@@ -1391,6 +1404,14 @@ on the worktree card when "Notify on all" is on, else an explicit bell at the
 end of each notifying focus resource's first line. `useSSE` shows a received
 notification and acks; clicking it focuses the tab and navigates to the
 worktree with the resource selected (`lib/browserNotify.ts`).
+
+`browserNotify` builds the target by `resource_type`: a task notification
+opens `<worktree>?task=<id>` (the modal over the worktree), a resource
+notification `?resource=<key>`, and a worktree-wide one (summary or test)
+the bare worktree. Navigation compares and writes only the param of its own
+kind (`resource` or `task`) and keeps the other, so a resource notification
+never closes an open task modal and a task one never drops the resource
+selection. A worktree-wide notification clears both, closing the modal.
 
 **Global switch and custom command — `notify_command.go`.** The Settings
 modal's Notifications tab edits `notifications.*` in worktree's config.yaml:

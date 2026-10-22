@@ -105,6 +105,49 @@ Format: **Q:** the question · **A:** what was done · **Why** · **To change:**
 - **Q:** What names the modal for screen readers?
   **A:** The task's title, through Mantine's `Modal.Title` in the header, instead of the fixed "Task details" label (which landed on the modal's root, not the dialog). To change: `ModalTitleText` in `modal/TaskModalHeader.tsx`.
 
+## Phase 4 — activity, unread and notifications
+
+- **Q:** Which task events count as unread?
+  **A:** Only agent events (`actor = 'agent'`) past the task's own cursor. Your own events never do.
+  **Why:** Unread means "something happened that you didn't do", the same as the user-is-never-unread rule for PRs and Jira.
+  **To change:** `TaskSummaries` in `internal/unread/task.go`.
+- **Q:** A task with no cursor row yet: read or unread?
+  **A:** Unread. A missing cursor reads as `''`, so everything an agent did counts until you first mark the task read. Resources do the opposite (seeded at their newest event).
+  **Why:** Tasks are created by agents as often as by you, and their first activity should be seen.
+  **To change:** the same function, `internal/unread/task.go`, or seed a cursor where tasks are created in `internal/tasks`.
+- **Q:** Paging the merged feed: same-second events at a page boundary can be skipped. Is that OK?
+  **A:** Yes. Both sources use a strict before-cursor, like the existing watcher paging. The frontend doesn't page with `next_cursor` today, so nothing is lost in practice.
+  **Why:** Fixing it would mean a compound cursor for the whole timeline.
+  **To change:** `mergeTaskEvents` in `internal/webui/timeline.go` (and the watcher timeline query).
+- **Q:** Does a Slack thread's `has_unread` include task unread?
+  **A:** No. `has_unread` stays Slack's own verdict, because Mark all read uses it to decide whether to write to Slack. Task unread is a separate `task_unread_count`, folded into `unread_count`, the dot and the badges.
+  **To change:** `resourceHasUnread` in `internal/webui/unread.go`, and `hasUnread()` in `ui/src/lib/unread.ts`.
+- **Q:** Should the "Task activity" category get a filter bar?
+  **A:** No. A one-category bar is hidden, as for Slack, and under the Tasks source every event is task activity anyway. `event_types=task` still works through the API.
+  **To change:** `categoriesFor` in `ui/src/lib/eventTypeFilter.ts`.
+- **Q:** Does the Tasks source filter narrow resource lists and worktree cards?
+  **A:** No, only the feed. No resource has type `task`, so narrowing them would empty the pages.
+  **To change:** `ui/src/hooks/useActivityFilter.ts` and the lists that consume it.
+- **Q:** Who is notified of task events?
+  **A:** Agent events only. A worktree is notified when the task is in its scope and it has "Notify on all", or "Notify on new events" on a resource the task links AND the worktree tracks. A global task notifies nobody, and only registered worktrees are notified.
+  **Why:** A global task belongs to no worktree, so there is nowhere to send the banner.
+  **To change:** `notifyTaskBatches` in `internal/webui/notify_scan.go`.
+- **Q:** Clicking a worktree-wide notification while a resource is selected or a task modal is open?
+  **A:** It clears the selection and closes the modal, going to the bare worktree. Resource and task notifications change only their own URL param.
+  **To change:** `openNotificationTarget` in `ui/src/lib/browserNotify.ts`.
+- **Q:** When does the unread divider show in a feed mixing task events?
+  **A:** Only when the unread rows are one contiguous run at the top. Task events have their own cursors, so otherwise a single divider line would be wrong; the per-row marks still show.
+  **To change:** `ui/src/components/TimelineFeed.tsx`.
+- **Q:** What does a task's Mark read clear?
+  **A:** Exactly what was counted: it marks through `unread_through_ts` from the same summary as the count. Events arriving after render stay unread. When nothing would move it says "Already read" with no undo.
+  **To change:** `useMarkTaskRead` in `ui/src/components/tasks/modal/`, and `taskDTO` in `internal/webui/tasks_api.go`.
+- **Q:** Mark all read with tasks?
+  **A:** Every form also lists and clears the unread tasks of its scope (checked by default in the modal, via `GET /api/task-unread`). A resource's line counts only its own unread, so a Slack thread with only task unread isn't marked in Slack. One failure reports all failed undos in a single toast, each named.
+  **To change:** `ui/src/components/MarkAllReadButton.tsx`.
+- **Q:** Cost of the extra request?
+  **A:** Each Mark all read button fetches `GET /api/task-unread` on mount and on task invalidations. It is cheap and the failure is silent.
+  **To change:** the query in `MarkAllReadButton.tsx`.
+
 ## Browser check (run this yourself)
 
 A throwaway config, with a throwaway UI password, watchers and cmux off, is at
