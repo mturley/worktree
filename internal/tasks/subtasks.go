@@ -165,6 +165,16 @@ func SetSubtaskChecked(conn *sql.DB, a Actor, id int64, checked bool) (SubtaskCh
 	return sc, nil
 }
 
+// SubtaskTaskID returns the ID of the live task subtask id belongs to, or
+// ErrNotFound when the subtask is missing or its task is deleted.
+func SubtaskTaskID(conn *sql.DB, id int64) (int64, error) {
+	s, err := loadSubtask(conn, id)
+	if err != nil {
+		return 0, err
+	}
+	return s.TaskID, nil
+}
+
 // RemoveSubtask deletes a subtask.
 func RemoveSubtask(conn *sql.DB, a Actor, id int64) error {
 	if err := validActor(a); err != nil {

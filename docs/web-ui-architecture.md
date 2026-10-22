@@ -165,6 +165,10 @@ discovery.
 - **`stream.go`** — `GET /api/stream`, an SSE endpoint.
 - **`tasks_api.go`** — the `/api/tasks*` routes, the open-task count helpers,
   and the `tasks_changed` version check; see "Tasks" below.
+- **`tasks_detail_api.go`** — the task detail modal's routes (detail, edits,
+  links, subtasks, event links, from-event, activity); **`task_timeline.go`**
+  — `taskEventToTimeline`, a task event as a `TimelineEvent`. See "Task
+  detail API" below.
 - **`slack.go`**, **`slack_proxy.go`**, **`slack_sse.go`** — the Slack thread
   view's routes (`/api/thread*`, `/api/slack-*`); see "Slack thread view" below.
 
@@ -213,9 +217,24 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | POST | `/api/notify` | body: `{path, type?, id?, on, tab?}` (no type/id = the worktree-wide toggle) | `{ok, mode}`; turning ON sends a test notification. 400 for a link or a half-given resource, 404 for an unregistered worktree or untracked resource |
 | GET | `/api/tasks` | `scope` (`all` default, `worktree`, `resource`), `path` (worktree scope), `type` + `id` (resource scope), `completed=1`, `archived=1` | `[]taskDTO` in master order; see "Tasks" |
 | POST | `/api/tasks` | body: `{title, priority?, starred?, path?, type?, id?, after?, before?}`; `path` → Focus worktree link, `type`+`id` → Focus resource link, neither → global | `taskDTO` |
-| POST | `/api/tasks/update` | body: `{id, title?, priority?, starred?, due?}` (absent = unchanged; `due: ""` clears) | `taskDTO` |
+| POST | `/api/tasks/update` | body: `{id, title?, description?, priority?, starred?, due?}` (absent = unchanged; `due: ""` clears) | `taskDTO` |
 | POST | `/api/tasks/state` | body: `{id, state}` | `taskDTO` |
 | POST | `/api/tasks/move` | body: `{id, after}` or `{id, before}`, exactly one | 204 No Content |
+| GET | `/api/tasks/detail` | `id` | `taskDetailDTO`; 404 if missing or deleted. See "Task detail API" |
+| GET | `/api/tasks/activity` | `id`, `filter` (`all` default, `task`, `linked`, `resource`), `type` + `rid` (with `filter=resource`; must be a linked resource, else 404) | `[]TimelineEvent`, newest first, at most 200; resource events carry `linked_to_task` |
+| POST | `/api/tasks/delete` | body: `{id}` | 204 No Content |
+| POST | `/api/tasks/links/add` | body: `{id, url?, type?, rid?, path?, focus?}`, exactly one of `url`, `type`+`rid`, `path`; a URL resolves with `resourceurl.InferAny` (unrecognised → 400) | `taskDetailDTO` |
+| POST | `/api/tasks/links/remove` | body: `{id, kind, type?, rid?, path?}` | `taskDetailDTO` |
+| POST | `/api/tasks/links/focus` | body: `{id, kind, type?, rid?, path?, focus}`; a link the task lacks → 404 | `taskDetailDTO` |
+| POST | `/api/tasks/links/order` | body: `{id, focus: [target…], related: [target…]}` (target = `{kind, type?, rid?, path?}`) | `taskDetailDTO` |
+| POST | `/api/tasks/subtasks/add` | body: `{id, text}` | `taskDetailDTO` |
+| POST | `/api/tasks/subtasks/edit` | body: `{subtask_id, text}` | `taskDetailDTO` |
+| POST | `/api/tasks/subtasks/check` | body: `{subtask_id, checked}` | `taskDetailDTO` |
+| POST | `/api/tasks/subtasks/remove` | body: `{subtask_id}` | `taskDetailDTO` |
+| POST | `/api/tasks/subtasks/order` | body: `{id, ids: [...]}` | `taskDetailDTO` |
+| POST | `/api/tasks/events/link` | body: `{id, key, snapshot?}`; `ev:` keys rebuild the snapshot server-side, `slack:` keys need a snapshot with a title or body | `taskDetailDTO` |
+| POST | `/api/tasks/events/unlink` | body: `{id, key}` | `taskDetailDTO` |
+| POST | `/api/tasks/from-event` | body: `{key, snapshot?, path?}`; creates a task from the event | `taskDetailDTO` |
 | POST | `/api/tabs/presence` | body: `{tab, route, visible}` | 204; 404 for an unknown tab or another session's |
 | POST | `/api/tabs/ack` | body: `{tab, notification_id, shown}` | 204; 404 for an unknown tab, another session's, or a notification nobody awaits |
 | GET | `/api/update-status` | — | `{available, behind_by, details_url}`; see "Update check" |
@@ -917,6 +936,40 @@ the watcher toggles do not apply.
   tick when it has advanced (`seedTasksVersion` / `tasksVersionAdvanced`,
   unit-tested directly because the ticker has no seam). The client treats it
   as an invalidation signal for its task queries and counts.
+
+### Task detail API (`tasks_detail_api.go`, `task_timeline.go`)
+
+- **`taskDetailDTO`** is `taskDTO` plus `detail_links` (same order as
+  `links`, each with a display `title` — custom name, else cached title,
+  else short ref like `#123`; a worktree's branch, else basename — and the
+  resource `url`, found from any subscription, else any event, else derived
+  for PRs and links), `implicit` (each implicit worktree with its branch and
+  `via`, the `"type:id"` resource links it follows), `subtasks`, and
+  `event_links`. Every write route answers with the fresh detail.
+- **Event-link snapshots.** A linked event is stored as a key (`ev:<watcher
+  event id>` or `slack:<channel>:<message ts>`) plus a snapshot (source,
+  type, title, author, body ≤ 500 runes, URL, ts, resource). For `ev:` keys
+  the server builds the snapshot itself from `watcher_events`, enriched as
+  the timeline is, and ignores any snapshot the client sent, so it stays
+  truthful. `slack:` messages are not watcher events, so the client's
+  snapshot is taken (it must have a title or a body). On read, an `ev:` link
+  gets `live` (the enriched current event) while that event still exists
+  with the snapshot's type; otherwise the UI renders the snapshot.
+- **Activity merge.** `/api/tasks/activity` merges the task's own events
+  (`taskEventToTimeline`: id `task:<event id>`, source `tasks`, resource
+  `task:<task id>`, a human-readable title per event type, author `you` or
+  `agent (<session>)`) with every watcher event of the task's linked
+  resources (`watcherdb.EventsForResource`, deduplicated by id). It sorts
+  newest first by `ts`, cuts to 200, and only then enriches the surviving
+  watcher events. A watcher event is `linked_to_task` when its `ev:` key —
+  or, for a Slack thread event, its `slack:<channel>:<external_ts>` key — is
+  linked to the task.
+- **From an event.** `/api/tasks/from-event` titles the task from the event
+  (a Slack message's first non-blank line, trimmed to 120 runes), Focus-links
+  the event's resource, and links the event. `path`, the worktree the user
+  acted in, is added as a Focus worktree link only when that worktree does
+  not already follow the resource (otherwise the task shows there
+  implicitly).
 
 ### Task lists in the UI (`ui/src/components/tasks/`)
 

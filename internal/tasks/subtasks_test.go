@@ -187,3 +187,24 @@ func TestSubtaskWritesBumpUpdatedAt(t *testing.T) {
 		{"SetSubtaskOrder", func() error { return SetSubtaskOrder(conn, tk.ID, []int64{b.ID, a.ID}) }},
 	})
 }
+
+func TestSubtaskTaskID(t *testing.T) {
+	conn := newDB(t)
+	tk := mustCreate(t, conn, "t")
+	st, err := AddSubtask(conn, user, tk.ID, "a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := SubtaskTaskID(conn, st.ID); err != nil || got != tk.ID {
+		t.Fatalf("SubtaskTaskID = %d, %v; want %d", got, err, tk.ID)
+	}
+	if _, err := SubtaskTaskID(conn, 999); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing subtask: %v", err)
+	}
+	if _, err := Delete(conn, user, tk.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SubtaskTaskID(conn, st.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("subtask of a deleted task: %v", err)
+	}
+}

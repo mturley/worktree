@@ -187,11 +187,12 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 
 // updateTaskRequest: an absent field is unchanged; due "" clears.
 type updateTaskRequest struct {
-	ID       int64   `json:"id"`
-	Title    *string `json:"title"`
-	Priority *string `json:"priority"`
-	Starred  *bool   `json:"starred"`
-	Due      *string `json:"due"`
+	ID          int64   `json:"id"`
+	Title       *string `json:"title"`
+	Description *string `json:"description"`
+	Priority    *string `json:"priority"`
+	Starred     *bool   `json:"starred"`
+	Due         *string `json:"due"`
 }
 
 // handleUpdateTask: POST /api/tasks/update
@@ -200,7 +201,7 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	if !decodeTaskBody(w, r, &req) {
 		return
 	}
-	p := tasks.Patch{Title: req.Title, Starred: req.Starred, Due: req.Due}
+	p := tasks.Patch{Title: req.Title, Description: req.Description, Starred: req.Starred, Due: req.Due}
 	if req.Priority != nil {
 		pr := tasks.Priority(*req.Priority)
 		p.Priority = &pr
