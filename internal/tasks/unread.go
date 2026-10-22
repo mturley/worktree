@@ -6,11 +6,11 @@ import (
 )
 
 // unreadActors is THE unread actor rule: the actor kinds whose task events
-// count as unread and notify. The user's own events never do. Every reader
-// of the rule goes through CountsAsUnread (Go) or UnreadActorSQL (SQL):
-// internal/unread's counts, the feeds' unread flag and unread_only filter,
-// and the notifier. Phase 5 adds "system".
-var unreadActors = []string{ActorAgent}
+// count as unread and notify, i.e. every actor but the user. The user's own
+// events never do. Every reader of the rule goes through CountsAsUnread (Go)
+// or UnreadActorSQL (SQL): internal/unread's counts, the feeds' unread flag
+// and unread_only filter, and the notifier.
+var unreadActors = []string{ActorAgent, ActorSystem}
 
 // UnreadActors returns a copy of the actor kinds whose events count as unread.
 func UnreadActors() []string { return slices.Clone(unreadActors) }

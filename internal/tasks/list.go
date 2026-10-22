@@ -144,6 +144,10 @@ func compute(conn *sql.DB, onlyID *int64) (*computed, error) {
 	if err != nil {
 		return nil, err
 	}
+	blockerCounts, err := loadBlockerCounts(conn, onlyID)
+	if err != nil {
+		return nil, err
+	}
 	active, tombstoned, err := loadSubscriptions(conn)
 	if err != nil {
 		return nil, err
@@ -159,6 +163,8 @@ func compute(conn *sql.DB, onlyID *int64) (*computed, error) {
 		if t.Subtasks = subtasks[t.ID]; t.Subtasks == nil {
 			t.Subtasks = []Subtask{}
 		}
+		t.BlockerCount = blockerCounts[t.ID]
+		t.Blocked = t.BlockerCount > 0
 		implicit := map[string]bool{}
 		allArchived := len(t.Links) > 0
 		for i := range t.Links {
@@ -277,6 +283,33 @@ func loadLinks(q dbtx, onlyID *int64) (map[int64][]Link, error) {
 		}
 		l.Primary = primary != 0
 		out[taskID] = append(out[taskID], l)
+	}
+	return out, rows.Err()
+}
+
+// loadBlockerCounts counts the unresolved blockers of every live task (or
+// just onlyID's) in one query, keyed by task. Tasks with none are absent.
+func loadBlockerCounts(q dbtx, onlyID *int64) (map[int64]int, error) {
+	query := `SELECT b.task_id, COUNT(*) FROM task_blockers b JOIN tasks t ON t.id = b.task_id
+	           WHERE t.deleted_at IS NULL AND b.resolved_at IS NULL`
+	var args []any
+	if onlyID != nil {
+		query += ` AND b.task_id = ?`
+		args = append(args, *onlyID)
+	}
+	rows, err := q.QueryContext(bg, query+` GROUP BY b.task_id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]int{}
+	for rows.Next() {
+		var id int64
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, err
+		}
+		out[id] = n
 	}
 	return out, rows.Err()
 }

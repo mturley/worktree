@@ -2,15 +2,15 @@ package tasks
 
 import "testing"
 
-// The unread actor rule: an agent's events count as unread, the user's
-// never do. Phase 5 adds "system".
+// The unread actor rule: actor != user. An agent's and the system's events
+// count as unread; the user's never do.
 func TestCountsAsUnread(t *testing.T) {
-	for actor, want := range map[string]bool{ActorAgent: true, ActorUser: false, "": false, "bogus": false} {
+	for actor, want := range map[string]bool{ActorAgent: true, ActorSystem: true, ActorUser: false, "": false, "bogus": false} {
 		if got := CountsAsUnread(actor); got != want {
 			t.Errorf("CountsAsUnread(%q) = %v, want %v", actor, got, want)
 		}
 	}
-	if got := UnreadActors(); len(got) != 1 || got[0] != ActorAgent {
+	if got := UnreadActors(); len(got) != 2 || got[0] != ActorAgent || got[1] != ActorSystem {
 		t.Errorf("UnreadActors() = %v", got)
 	}
 }
@@ -21,7 +21,7 @@ func TestUnreadActorSQLAgreesWithCountsAsUnread(t *testing.T) {
 	tk := mustCreate(t, conn, "alpha")
 	clearEvents(t, conn)
 	ids := map[int64]string{}
-	for _, a := range []string{ActorAgent, ActorUser, "bogus"} {
+	for _, a := range []string{ActorAgent, ActorSystem, ActorUser, "bogus"} {
 		ids[feedEvent(t, conn, tk.ID, "2026-01-01T00:00:01Z", a)] = a
 	}
 	clause, args := UnreadActorSQL("e.actor")

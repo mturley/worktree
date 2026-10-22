@@ -40,12 +40,17 @@ func (p Priority) valid() bool {
 const (
 	ActorUser  = "user"
 	ActorAgent = "agent"
+	// ActorSystem is worktree itself, e.g. the blocker resolver. Only
+	// internal write paths accept it (validInternalActor): every public
+	// write function rejects it, so the CLI and the web, which build an
+	// Actor from their input, can never write as system.
+	ActorSystem = "system"
 )
 
 // Actor is who made a change: the user, or an agent (optionally naming its
-// session).
+// session), or (internal callers only) the system.
 type Actor struct {
-	Kind    string // ActorUser or ActorAgent
+	Kind    string // ActorUser, ActorAgent, or ActorSystem (internal only)
 	Session string
 }
 
@@ -76,6 +81,10 @@ type Task struct {
 	Implicit                                     []string  // canonical worktree paths actively following a resource link, sorted
 	Archived                                     bool      // has links and every one is archived; false for a global task
 	Subtasks                                     []Subtask // filled by Get/List, never nil
+	// Blocked is true while any blocker is unresolved; BlockerCount is the
+	// number of unresolved blockers. Filled by Get/List.
+	Blocked      bool
+	BlockerCount int
 }
 
 // NewTask is the input to Create. A zero Priority means PriorityNone.
@@ -123,11 +132,23 @@ func nullable(s string) any {
 	return s
 }
 
+// validActor is the check every public write function makes: user or agent
+// only, never system.
 func validActor(a Actor) error {
 	if a.Kind != ActorUser && a.Kind != ActorAgent {
 		return fmt.Errorf("%w: actor kind %q is not %q or %q", ErrInvalid, a.Kind, ActorUser, ActorAgent)
 	}
 	return nil
+}
+
+// validInternalActor also accepts ActorSystem. It is for internal write
+// paths (the blocker resolver) and is record's last line of defence, so no
+// event is ever stamped with an unknown actor.
+func validInternalActor(a Actor) error {
+	if a.Kind == ActorSystem {
+		return nil
+	}
+	return validActor(a)
 }
 
 func cleanTitle(s string) (string, error) {

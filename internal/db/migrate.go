@@ -173,6 +173,26 @@ func migrate(conn *sql.DB) error {
 			v  INTEGER NOT NULL
 		)`,
 		`INSERT OR IGNORE INTO tasks_version (id, v) VALUES (1, 0)`,
+		// What blocks a task (internal/tasks blockers.go): another task
+		// (blocking_task_id), a resource (resource_type + resource_id) or
+		// free text. resolved_at is NULL while the blocker holds;
+		// resolved_auto says the resolver (not the user) resolved it.
+		`CREATE TABLE IF NOT EXISTS task_blockers (
+			id               INTEGER PRIMARY KEY AUTOINCREMENT,
+			task_id          INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+			kind             TEXT NOT NULL CHECK (kind IN ('task','resource','other')),
+			blocking_task_id INTEGER,
+			resource_type    TEXT NOT NULL DEFAULT '',
+			resource_id      TEXT NOT NULL DEFAULT '',
+			text             TEXT NOT NULL DEFAULT '',
+			resolved_at      TEXT,
+			resolved_auto    INTEGER NOT NULL DEFAULT 0,
+			resolved_reason  TEXT NOT NULL DEFAULT '',
+			created_at       TEXT NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS task_blockers_task ON task_blockers (task_id)`,
+		`CREATE INDEX IF NOT EXISTS task_blockers_blocking ON task_blockers (blocking_task_id)`,
+		`CREATE INDEX IF NOT EXISTS task_blockers_resource ON task_blockers (resource_type, resource_id)`,
 	}
 	for _, s := range stmts {
 		if _, err := conn.Exec(s); err != nil {

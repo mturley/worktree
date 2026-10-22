@@ -44,6 +44,7 @@ func TestTaskSummaries(t *testing.T) {
 	addTaskEvent(t, conn, 1, "2026-01-01T00:00:04Z", "user")
 	addTaskEvent(t, conn, 2, "2026-01-01T00:00:01Z", "agent")
 	addTaskEvent(t, conn, 2, "2026-01-01T00:00:05Z", "agent")
+	addTaskEvent(t, conn, 2, "2026-01-01T00:00:06Z", "system") // system events count too
 	addTaskEvent(t, conn, 3, "2026-01-01T00:00:01Z", "agent")
 	addTaskEvent(t, conn, 4, "2026-01-01T00:00:01Z", "user")
 	if _, err := unread.Mark(conn, "task", "1", "2026-01-01T00:00:01Z"); err != nil {
@@ -60,7 +61,7 @@ func TestTaskSummaries(t *testing.T) {
 	if s := got[1]; s.Count != 2 || s.NewestTS != "2026-01-01T00:00:03Z" {
 		t.Fatalf("task 1 = %+v", s)
 	}
-	if s := got[2]; s.Count != 2 || s.NewestTS != "2026-01-01T00:00:05Z" {
+	if s := got[2]; s.Count != 3 || s.NewestTS != "2026-01-01T00:00:06Z" {
 		t.Fatalf("task 2 = %+v", s)
 	}
 }

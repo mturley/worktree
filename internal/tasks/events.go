@@ -22,6 +22,12 @@ const (
 	EventSubtaskRemoved    = "subtask_removed"
 	EventTaskEventLinked   = "task_event_linked"   // {"key","title"}
 	EventTaskEventUnlinked = "task_event_unlinked" // {"key","title"}
+	// Blocker events. Every payload has {"blocker_id","kind","label"};
+	// resolved adds "auto" and "reason". Automatic ones use ActorSystem.
+	EventTaskBlockerAdded      = "task_blocker_added"
+	EventTaskBlockerRemoved    = "task_blocker_removed"
+	EventTaskBlockerResolved   = "task_blocker_resolved"
+	EventTaskBlockerUnresolved = "task_blocker_unresolved"
 )
 
 // Event is one row of a task's history.
@@ -29,7 +35,7 @@ type Event struct {
 	ID, TaskID   int64
 	TS           string // RFC3339 UTC
 	Type         string
-	Actor        string // ActorUser or ActorAgent
+	Actor        string // ActorUser, ActorAgent or ActorSystem
 	ActorSession string // "" when unknown
 	Payload      json.RawMessage
 }
@@ -43,6 +49,9 @@ type change struct {
 // record writes one event inside tx, stamped with ts, and returns its ID. A
 // nil payload is stored as {}.
 func record(tx dbtx, a Actor, taskID int64, ts, typ string, payload any) (int64, error) {
+	if err := validInternalActor(a); err != nil {
+		return 0, err
+	}
 	body := []byte("{}")
 	if payload != nil {
 		b, err := json.Marshal(payload)
