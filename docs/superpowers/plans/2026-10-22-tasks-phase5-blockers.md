@@ -104,7 +104,7 @@ CREATE INDEX IF NOT EXISTS task_blockers_resource ON task_blockers (resource_typ
 **Interfaces:**
 
 ```go
-type BlockerTarget struct{ Kind string; TaskID int64; ResourceType, ResourceID, Text string }
+type BlockerTarget struct{ Kind string; BlockingTaskID int64; ResourceType, ResourceID, Text string } // renamed from TaskID in review (shadowed Blocker.TaskID)
 type Blocker struct{ ID, TaskID int64; BlockerTarget; ResolvedAt string; ResolvedAuto bool; ResolvedReason string; CreatedAt string }
 func AddBlocker(conn *sql.DB, a Actor, taskID int64, t BlockerTarget) (Blocker, error) // validates; rejects duplicates (same target) as no-op returning existing; cycle check for kind task
 func RemoveBlocker(conn *sql.DB, a Actor, blockerID int64) error
