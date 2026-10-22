@@ -150,6 +150,16 @@ func migrate(conn *sql.DB) error {
 			actor_session TEXT NOT NULL DEFAULT '',
 			payload       TEXT NOT NULL DEFAULT '{}'
 		)`,
+		// Specific activity events a task points at. event_key is an identity
+		// ('ev:<watcher_events.id>' or 'slack:<channel>:<ts>'); snapshot is the
+		// JSON an event row renders from once the live event is gone.
+		`CREATE TABLE IF NOT EXISTS task_event_links (
+			task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+			event_key  TEXT NOT NULL,
+			snapshot   TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			PRIMARY KEY (task_id, event_key)
+		)`,
 		// A task's feed, newest first.
 		`CREATE INDEX IF NOT EXISTS task_events_task ON task_events (task_id, ts)`,
 		// A single-row change counter for tasks. Every committed write in

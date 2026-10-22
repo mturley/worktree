@@ -8,18 +8,20 @@ import (
 // Event types written to task_events. Reordering tasks or subtasks writes no
 // event: it is noise in a feed.
 const (
-	EventTaskCreated      = "task_created"
-	EventTaskEdited       = "task_edited"        // {"changes":{"<field>":{"from":…,"to":…}}}
-	EventTaskStateChanged = "task_state_changed" // {"from":…,"to":…}
-	EventTaskDeleted      = "task_deleted"
-	EventTaskLinked       = "task_linked"
-	EventTaskUnlinked     = "task_unlinked"
-	EventTaskFocusChanged = "task_focus_changed"
-	EventSubtaskAdded     = "subtask_added"
-	EventSubtaskEdited    = "subtask_edited"
-	EventSubtaskChecked   = "subtask_checked"
-	EventSubtaskUnchecked = "subtask_unchecked"
-	EventSubtaskRemoved   = "subtask_removed"
+	EventTaskCreated       = "task_created"
+	EventTaskEdited        = "task_edited"        // {"changes":{"<field>":{"from":…,"to":…}}}
+	EventTaskStateChanged  = "task_state_changed" // {"from":…,"to":…}
+	EventTaskDeleted       = "task_deleted"
+	EventTaskLinked        = "task_linked"
+	EventTaskUnlinked      = "task_unlinked"
+	EventTaskFocusChanged  = "task_focus_changed"
+	EventSubtaskAdded      = "subtask_added"
+	EventSubtaskEdited     = "subtask_edited"
+	EventSubtaskChecked    = "subtask_checked"
+	EventSubtaskUnchecked  = "subtask_unchecked"
+	EventSubtaskRemoved    = "subtask_removed"
+	EventTaskEventLinked   = "task_event_linked"   // {"key","title"}
+	EventTaskEventUnlinked = "task_event_unlinked" // {"key","title"}
 )
 
 // Event is one row of a task's history.
