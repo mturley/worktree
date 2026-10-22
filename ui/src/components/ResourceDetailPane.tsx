@@ -25,6 +25,7 @@ import { pinnedStyle } from "../lib/stickyList"
 import { LinkedResourcesPanel, LinkedTabControls, linkedTabLabel } from "./linked/LinkedResourcesPanel"
 import { TASKS_TAB, useResourceTasksPlacement } from "./tasks/TasksSection"
 import { useMakeTaskFromEvent } from "./tasks/useMakeTask"
+import { useTaskModal } from "./tasks/modal/TaskModalProvider"
 
 /** The PR/Jira pane's tabs, default first (see useResourceTab). */
 const DETAIL_TABS = ["activity", "linked", TASKS_TAB] as const
@@ -81,6 +82,9 @@ function TimelineBody({
   const { debouncedQ } = search
   const timeline = useWorktreeTimeline(path, { type: resource.type, id: resource.id }, [], false, [], debouncedQ)
   const makeTaskFromEvent = useMakeTaskFromEvent(path)
+  // The tasks linking this resource put their events in its feed; a row of
+  // one opens the task.
+  const { open: openTask } = useTaskModal()
   const [urlTab, setTab] = useResourceTab(DETAIL_TABS)
   // A Tasks tab, or the list pinned between the card and the tab bar.
   const { tasks, shownTab: tab } = useResourceTasksPlacement(resource, urlTab, setTab, "activity")
@@ -200,6 +204,7 @@ function TimelineBody({
             showUnreadDivider
             path={path}
             onMakeTask={makeTaskFromEvent}
+            onOpenTask={openTask}
           />
           {/*
             The feed only holds what the poller captured for this worktree, which

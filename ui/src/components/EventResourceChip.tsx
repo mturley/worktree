@@ -1,4 +1,5 @@
-import { Text } from "@mantine/core"
+import { Badge, Group, Text } from "@mantine/core"
+import { IconChecklist } from "@tabler/icons-react"
 import type { ResourceDTO, TimelineEvent } from "../api/types"
 import { ResourceTypeLine } from "./ResourceTypeLine"
 import { SearchHighlight } from "./search/SearchHighlight"
@@ -23,6 +24,22 @@ export function EventResourceChip({ e, resolveResource }: {
   resolveResource?: (type: string, id: string) => ResourceDTO | undefined
 }) {
   if (!e.resource_type || !e.resource_id) return null
+
+  // A task's own event: its pseudo-resource is the task, which has no
+  // resource type line of its own. Named as one, in the task accent.
+  if (e.resource_type === "task") {
+    return (
+      <Group gap={6} wrap="nowrap" align="center" data-resource-type-line>
+        <IconChecklist size={14} color="var(--task-accent)" aria-hidden style={{ flexShrink: 0 }} />
+        <Badge size="xs" variant="light" color="lime" mr={6} style={{ flex: "none" }}>Task</Badge>
+        {e.resource_title && (
+          <Text size="xs" c="dimmed" lineClamp={1} style={{ minWidth: 0, overflowWrap: "anywhere" }}>
+            <SearchHighlight text={e.resource_title} />
+          </Text>
+        )}
+      </Group>
+    )
+  }
 
   // The worktree page resolves against its own list (freshest, and already
   // loaded); the global timeline has no such list, so the event carries the

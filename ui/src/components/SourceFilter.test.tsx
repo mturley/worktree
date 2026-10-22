@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest"
-import { render, cleanup, screen, fireEvent } from "@testing-library/react"
+import { render, cleanup, screen, fireEvent, waitFor } from "@testing-library/react"
+import { api } from "../api/client"
+import { useActivityFilter } from "../hooks/useActivityFilter"
+import { useGlobalTimeline } from "../hooks/useTimeline"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { SourceFilter } from "./SourceFilter"
@@ -63,11 +66,36 @@ describe("SourceFilter", () => {
   })
 })
 
+describe("the Tasks source", () => {
+  it("offers Tasks, whose value is the task type the server filters on", () => {
+    const onChange = vi.fn()
+    wrap(<SourceFilter value={[]} onChange={onChange} />)
+    fireEvent.click(screen.getByRole("button", { name: /tasks/i }))
+    expect(onChange).toHaveBeenCalledWith(["task"])
+  })
+
+  it("narrows the timeline query to task events", async () => {
+    const spy = vi.spyOn(api, "globalTimeline").mockResolvedValue({ events: [], next_cursor: "" })
+    function Harness() {
+      const { sources, setSources, eventTypes } = useActivityFilter()
+      useGlobalTimeline(false, sources, false, eventTypes)
+      return <SourceFilter value={sources} onChange={setSources} />
+    }
+    wrap(<Harness />)
+    await waitFor(() => expect(spy).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole("button", { name: /tasks/i }))
+    await waitFor(() => expect(spy.mock.calls.some((c) => c[3]?.join(",") === "task")).toBe(true))
+    spy.mockRestore()
+  })
+})
+
 describe("SourceFilter branding", () => {
   it("uses each source's official mark, with its colour in the artwork", () => {
     const { container } = wrap(<SourceFilter value={[]} onChange={vi.fn()} />)
     const svgs = [...container.querySelectorAll("svg")]
-    expect(svgs).toHaveLength(3)
+    // GitHub, Jira, Slack, then Tasks' checklist in the task accent.
+    expect(svgs).toHaveLength(4)
+    expect(svgs[3].getAttribute("stroke")).toBe("var(--task-accent)")
 
     // Slack: its own four-colour mark, colours baked into the fills.
     const slackFills = [...svgs[2].querySelectorAll("path")].map((p) => p.getAttribute("fill"))

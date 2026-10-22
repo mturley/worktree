@@ -60,6 +60,7 @@ import { CrossHoverProvider } from "../components/CrossHoverContext"
 import { DiffViewBoundary, installPreloadReload } from "../components/gitdiff/DiffViewBoundary"
 import { tasksFallbackTab, useTasksPlacement } from "../components/tasks/TasksSection"
 import { useMakeTask, useMakeTaskFromEvent } from "../components/tasks/useMakeTask"
+import { useTaskModal } from "../components/tasks/modal/TaskModalProvider"
 
 // The diff drill-down, and with it @pierre/diffs, is its own chunk: fetched
 // the first time someone opens a diff, never on a plain page load.
@@ -78,6 +79,8 @@ export function WorktreeDetailPage() {
   // "Make task" from an event or a Slack message, acting in this worktree.
   const makeTask = useMakeTask(path)
   const makeTaskFromEvent = useMakeTaskFromEvent(path)
+  // A task event's row opens its task, over this page.
+  const { open: openTask } = useTaskModal()
   // Narrows the worktree's unified feed and the resource list. Selecting a
   // resource already narrows the timeline to that one resource, so the
   // toggles are hidden there rather than left as dead controls.
@@ -453,6 +456,7 @@ export function WorktreeDetailPage() {
         resolveResource={resolveResource}
         path={path}
         onMakeTask={makeTaskFromEvent}
+        onOpenTask={openTask}
       />
     </Stack>
   )

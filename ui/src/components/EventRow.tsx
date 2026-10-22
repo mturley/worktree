@@ -32,7 +32,7 @@ import { eventTaskKey } from "../lib/taskEventKey"
  */
 export function EventRow({
   e, showWorktrees, showResource = true, onOpen, onSelectResource, resolveResource, canSelectResource,
-  unreadBorder = true, onMakeTask,
+  unreadBorder = true, onMakeTask, onOpenTask,
 }: {
   e: TimelineEvent
   showWorktrees?: boolean
@@ -69,6 +69,12 @@ export function EventRow({
    * and shown only on watcher events (a task's own events can't be linked).
    */
   onMakeTask?: (e: TimelineEvent) => void
+  /**
+   * Opens a task's modal, for a task's own events (resource_type "task").
+   * Wired by the page, as onMakeTask is. Without it a task event row opens
+   * its details; it never selects its pseudo-resource either way.
+   */
+  onOpenTask?: (id: number) => void
 }) {
   const [hovered, setHovered] = useState(false)
   const [focused, setFocused] = useState(false)
@@ -85,16 +91,21 @@ export function EventRow({
    * and the worktree page both supply onSelectResource, while the pane that
    * ALREADY has the resource selected supplies none, so its rows open details.
    */
-  const resourceKey = onSelectResource && e.resource_type && e.resource_id
+  // A task's own event is attributed to a pseudo-resource ("task", "<id>")
+  // that no worktree follows: it opens the task, never a resource selection.
+  const taskId = e.resource_type === "task" ? Number(e.resource_id) : NaN
+  const openTask = onOpenTask && Number.isInteger(taskId) && taskId > 0 ? () => onOpenTask(taskId) : null
+  const resourceKey = onSelectResource && e.resource_type && e.resource_id && e.resource_type !== "task"
     && (canSelectResource?.(e) ?? true)
     ? { type: e.resource_type, id: e.resource_id }
     : null
-  const activate = resourceKey
-    ? () => onSelectResource?.(resourceKey, e)
-    : onOpen
-      ? () => onOpen(e)
-      : undefined
-  const tip = resourceKey ? "View event details in worktree" : "View event details"
+  const activate = openTask
+    ?? (resourceKey
+      ? () => onSelectResource?.(resourceKey, e)
+      : onOpen
+        ? () => onOpen(e)
+        : undefined)
+  const tip = openTask ? "Open task" : resourceKey ? "View event details in worktree" : "View event details"
 
   // Only a row that goes to its resource takes part in cross-hover: one that
   // opens its details (archived, resourceless, or in a pane already showing
@@ -180,7 +191,9 @@ export function EventRow({
             entirely on a single-resource feed, where it is the same line on
             every row.
           */}
-          {showResource && (e.resource_type && e.resource_id ? (
+          {/* A task event is named even on a single-resource feed: it
+              belongs to a task linking that resource, not to the resource. */}
+          {(showResource || e.resource_type === "task") && (e.resource_type && e.resource_id ? (
             <EventResourceChip e={e} resolveResource={resolveResource} />
           ) : (
             e.resource_title && (

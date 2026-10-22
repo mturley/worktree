@@ -20,6 +20,17 @@ describe("matchesSources", () => {
   })
 })
 
+describe("the Tasks source", () => {
+  // Tasks are not resources: picking Tasks narrows the FEED to task events,
+  // and leaves the resource lists and worktree cards whole rather than
+  // emptying them (no resource has type "task").
+  it("does not narrow resources", () => {
+    expect(matchesSources("pr", ["task"])).toBe(true)
+    const w = wt({ focus_resources: [res("pr", "1")] })
+    expect(filterWorktreeBySources(w, ["task"])).toBe(w)
+  })
+})
+
 describe("filterWorktreeBySources", () => {
   it("returns the worktree untouched with no selection", () => {
     const w = wt({ focus_resources: [res("pr", "1")] })

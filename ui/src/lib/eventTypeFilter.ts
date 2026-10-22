@@ -31,6 +31,12 @@ export const EVENT_CATEGORIES: Record<string, EventCategory[]> = {
   // Slack threads only produce replies today, so a bar would be one button
   // that changes nothing. Add categories here when the library grows more.
   slack: [],
+  // "task" is the server's exact category value (not a prefix): it selects
+  // every task_*/subtask_* event. While it is the only category under Tasks,
+  // categoriesFor draws no bar for it — under that source every event is
+  // already task activity — but it is the value any finer task category, or
+  // a cross-source selection, would send.
+  task: [{ key: "task", label: "Task activity", types: ["task"] }],
 }
 
 /**

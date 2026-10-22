@@ -7,6 +7,7 @@ import { useMakeTaskFromEvent } from "./tasks/useMakeTask"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { EventRow } from "./EventRow"
+import { TimelineFeed } from "./TimelineFeed"
 import type { ResourceDTO, TaskDetail, TimelineEvent } from "../api/types"
 import { UNREAD_BORDER_WIDTH } from "../lib/unread"
 import { SearchContext } from "./search/SearchContext"
@@ -485,6 +486,73 @@ describe("a resource search match", () => {
     )
     expect(screen.queryByTestId("match-why")).toBeNull()
     expect(container.querySelector("mark")?.textContent).toBe("OAuth")
+  })
+})
+
+describe("a task event row", () => {
+  const taskEvent = (o: Partial<TimelineEvent> = {}) => makeEvent({
+    id: "task:9", source: "tasks", type: "subtask_checked", type_label: "Subtask checked",
+    title: "Checked “write tests”", resource_type: "task", resource_id: "12", resource_title: "Ship it", ...o,
+  })
+
+  it("opens the task modal rather than selecting a resource", () => {
+    const onOpenTask = vi.fn()
+    const onSelectResource = vi.fn()
+    const onOpen = vi.fn()
+    renderWithProvider(
+      <EventRow e={taskEvent()} onOpen={onOpen} onSelectResource={onSelectResource} onOpenTask={onOpenTask} />,
+    )
+    fireEvent.click(screen.getByRole("button"))
+    expect(onOpenTask).toHaveBeenCalledWith(12)
+    expect(onSelectResource).not.toHaveBeenCalled()
+    expect(onOpen).not.toHaveBeenCalled()
+  })
+
+  it("never selects its pseudo-resource, even on a feed that cannot open tasks", () => {
+    const onSelectResource = vi.fn()
+    const onOpen = vi.fn()
+    renderWithProvider(<EventRow e={taskEvent()} onOpen={onOpen} onSelectResource={onSelectResource} />)
+    fireEvent.click(screen.getByRole("button"))
+    expect(onSelectResource).not.toHaveBeenCalled()
+    expect(onOpen).toHaveBeenCalled()
+  })
+
+  it("names the destination in its tooltip", async () => {
+    renderWithProvider(<EventRow e={taskEvent()} onOpenTask={vi.fn()} />)
+    await userEvent.hover(screen.getByRole("button"))
+    expect(await screen.findByText("Open task")).toBeInTheDocument()
+  })
+
+  it("names the task it belongs to", () => {
+    renderWithProvider(<EventRow e={taskEvent()} />)
+    expect(screen.getByText("Ship it")).toBeInTheDocument()
+    expect(screen.getByText("Task")).toBeInTheDocument()
+  })
+
+  it("names its task even on a single-resource feed, where it is not that resource's", () => {
+    renderWithProvider(<EventRow e={taskEvent()} showResource={false} />)
+    expect(screen.getByText("Ship it")).toBeInTheDocument()
+  })
+
+  it("offers no ＋ task", () => {
+    renderWithProvider(<EventRow e={taskEvent()} onMakeTask={vi.fn()} onOpenTask={vi.fn()} />)
+    expect(screen.queryByRole("button", { name: /Make task/ })).toBeNull()
+  })
+
+  it("wires through the feed to the task modal", async () => {
+    function Page() {
+      const { open, openId } = useTaskModal()
+      return (
+        <>
+          <TimelineFeed events={[taskEvent()]} loading={false} error={null} onOpenTask={open} onSelectResource={vi.fn()} />
+          <span data-testid="open-id">{openId ?? "none"}</span>
+        </>
+      )
+    }
+    render(<MantineProvider><TaskModalProvider><Page /></TaskModalProvider></MantineProvider>)
+    fireEvent.click(screen.getByRole("button", { name: /write tests/ }))
+    await waitFor(() => expect(screen.getByTestId("open-id")).toHaveTextContent("12"))
+    window.history.replaceState({}, "", "/")
   })
 })
 

@@ -49,6 +49,7 @@ import { ChooseWorktreeModal } from "../components/ChooseWorktreeModal"
 import { CrossHoverProvider } from "../components/CrossHoverContext"
 import { tasksFallbackTab, useTasksPlacement } from "../components/tasks/TasksSection"
 import { useMakeTaskFromEvent } from "../components/tasks/useMakeTask"
+import { useTaskModal } from "../components/tasks/modal/TaskModalProvider"
 
 type RightTab = "timeline" | "resources" | "tasks"
 type NarrowTab = "worktrees" | RightTab
@@ -69,6 +70,8 @@ export function HomePage() {
   const [, navigate] = useLocation()
   // "Make task" from an event: the global feed has no worktree to act in.
   const makeTaskFromEvent = useMakeTaskFromEvent()
+  // A task event's row opens its task, over this page.
+  const { open: openTask } = useTaskModal()
   const [archived, setArchived] = useState(false)
   const { sources, setSources, categories, setCategories, eventTypes } = useActivityFilter()
   // Shared with every worktree page and every other tab; narrows both the
@@ -356,6 +359,7 @@ export function HomePage() {
         onSelectResource={selectEventResource}
         canSelectResource={(e) => Boolean(e.worktree_paths?.length)}
         onMakeTask={makeTaskFromEvent}
+        onOpenTask={openTask}
       />
     </Stack>
   )

@@ -39,3 +39,18 @@ describe("EventDot", () => {
     expect(bg).toContain(eventMeta("pr_merged").cssColor)
   })
 })
+
+describe("EventDot for a task event", () => {
+  it("paints with the task accent variable", () => {
+    render(<MantineProvider><EventDot type="subtask_checked" /></MantineProvider>)
+    const dot = screen.getByLabelText("Subtask checked")
+    expect(dot.style.background || dot.style.backgroundColor).toBe("var(--task-accent)")
+  })
+
+  it("dims the accent like any other colour", () => {
+    render(<MantineProvider><EventDot type="task_created" dimmed /></MantineProvider>)
+    const dot = screen.getByLabelText("Created")
+    expect(dot.style.background).toContain("color-mix")
+    expect(dot.style.background).toContain("var(--task-accent)")
+  })
+})

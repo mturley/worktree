@@ -9,7 +9,7 @@ import { UnreadDivider } from "./UnreadDivider"
 export function TimelineFeed({
   events, loading, error, showWorktrees, showResource, hasMore, onLoadMore, loadingMore,
   onSelectResource, resolveResource, canSelectResource,
-  showUnreadDivider, emptyText = "No events yet.", path, onMakeTask,
+  showUnreadDivider, emptyText = "No events yet.", path, onMakeTask, onOpenTask,
 }: {
   events: TimelineEvent[]; loading: boolean; error: unknown; showWorktrees?: boolean
   /**
@@ -49,6 +49,8 @@ export function TimelineFeed({
   path?: string
   /** Offers "Make task" on each row and in the details modal; see EventRow. */
   onMakeTask?: (e: TimelineEvent) => void
+  /** Opens the task modal from a task event's row; see EventRow. */
+  onOpenTask?: (id: number) => void
 }) {
   const [detail, setDetail] = useState<TimelineEvent | null>(null)
 
@@ -98,6 +100,7 @@ export function TimelineFeed({
                 resolveResource={resolveResource}
                 canSelectResource={canSelectResource}
                 onMakeTask={onMakeTask}
+                onOpenTask={onOpenTask}
               />
               {/*
                 dividerIndex is the last (oldest) unread event's index — the

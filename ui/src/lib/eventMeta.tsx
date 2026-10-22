@@ -2,12 +2,23 @@ import {
   IconAlertTriangle,
   IconBell,
   IconCheck,
+  IconChecklist,
   IconEye,
   IconGitCommit,
   IconGitMerge,
   IconGitPullRequestClosed,
+  IconLink,
+  IconLinkOff,
   IconMessage,
+  IconPencil,
+  IconProgress,
+  IconSquare,
+  IconSquareCheck,
+  IconSquareMinus,
+  IconSquarePlus,
   IconTag,
+  IconTarget,
+  IconTrash,
   IconUserCheck,
   IconX,
 } from "@tabler/icons-react"
@@ -42,7 +53,22 @@ interface Entry {
   color: string
   Icon: IconComponent
   label: string
+  /**
+   * A raw CSS colour that overrides the palette shade for cssColor. Only the
+   * task events use it: their colour is the one task accent, a CSS variable
+   * (--task-accent) that is not a Mantine palette entry. `color` keeps the
+   * nearest palette name for the surfaces that can only take one.
+   */
+  cssColor?: string
 }
+
+/**
+ * A task event: the task accent, whatever the type, so a task's history reads
+ * as one thing in a mixed feed. The icon and label tell the kinds apart.
+ * "lime" is the palette's nearest match to the accent (electric lime).
+ */
+const task = (Icon: IconComponent, label: string): Entry =>
+  ({ color: "lime", cssColor: "var(--task-accent)", Icon, label })
 
 /**
  * Per-type colours. Types that genuinely mean the same outcome share one
@@ -70,6 +96,23 @@ const TYPES: Record<string, Entry> = {
   // Slack
   slack_reply: { color: "grape", Icon: IconMessage, label: "reply" },
 
+  // Tasks — worktree's own task events (internal/tasks/events.go). These
+  // labels are fallbacks: the server sends its own type_label.
+  task_created: task(IconChecklist, "created"),
+  task_edited: task(IconPencil, "edited"),
+  task_state_changed: task(IconProgress, "state changed"),
+  task_deleted: task(IconTrash, "deleted"),
+  task_linked: task(IconLink, "linked"),
+  task_unlinked: task(IconLinkOff, "unlinked"),
+  task_focus_changed: task(IconTarget, "focus changed"),
+  task_event_linked: task(IconLink, "event linked"),
+  task_event_unlinked: task(IconLinkOff, "event unlinked"),
+  subtask_added: task(IconSquarePlus, "subtask added"),
+  subtask_edited: task(IconPencil, "subtask edited"),
+  subtask_checked: task(IconSquareCheck, "subtask checked"),
+  subtask_unchecked: task(IconSquare, "subtask unchecked"),
+  subtask_removed: task(IconSquareMinus, "subtask removed"),
+
   // Watcher's own bookkeeping
   watch_started: { color: "gray", Icon: IconBell, label: "watch started" },
   watcher_error: { color: "red", Icon: IconAlertTriangle, label: "watcher error" },
@@ -91,6 +134,12 @@ function entryFor(type: string): Entry {
     return { color: "gray", Icon: IconCheck, label: "CI" }
   }
 
+  // A task event type newer than this file (blockers, say) still reads as
+  // task activity rather than as an anonymous grey event.
+  if (type.startsWith("task_") || type.startsWith("subtask_")) {
+    return task(IconChecklist, type.replace(/_/g, " "))
+  }
+
   return { color: "gray", Icon: IconGitCommit, label: type || "event" }
 }
 
@@ -109,11 +158,11 @@ export function eventLabel(type: string, typeLabel?: string): string {
 }
 
 export function eventMeta(type: string): EventMeta {
-  const { color, Icon, label } = entryFor(type)
+  const { color, Icon, label, cssColor } = entryFor(type)
   return {
     color,
     shade: DEFAULT_SHADE,
-    cssColor: `var(--mantine-color-${color}-${DEFAULT_SHADE})`,
+    cssColor: cssColor ?? `var(--mantine-color-${color}-${DEFAULT_SHADE})`,
     Icon,
     label,
   }

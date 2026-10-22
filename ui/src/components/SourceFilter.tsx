@@ -7,12 +7,16 @@ import type { WatcherStatus } from "../api/types"
 import { SlackMark } from "./icons/SlackMark"
 import { JiraMark } from "./icons/JiraMark"
 import { GitHubMark } from "./icons/GitHubMark"
+import { IconChecklist } from "@tabler/icons-react"
+import { TASK_SOURCE } from "../lib/sourceFilter"
 
 /** Resource types, in the order the toggles appear. */
 const SOURCES: { type: string; label: string }[] = [
   { type: "pr", label: "GitHub" },
   { type: "jira", label: "Jira" },
   { type: "slack", label: "Slack" },
+  // Not a watcher: the task events worktree records itself.
+  { type: TASK_SOURCE, label: "Tasks" },
 ]
 
 /**
@@ -24,6 +28,8 @@ const SOURCES: { type: string; label: string }[] = [
  * ships for dark backgrounds, so it is the artwork rather than a tint.
  */
 function SourceIcon({ type }: { type: string }) {
+  // Tasks have no brand; the checklist in the task accent matches their dots.
+  if (type === TASK_SOURCE) return <IconChecklist size={14} color="var(--task-accent)" aria-hidden />
   if (type === "slack") return <SlackMark size={14} />
   if (type === "jira") return <JiraMark size={14} />
   return <GitHubMark size={14} />

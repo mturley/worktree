@@ -3,6 +3,7 @@ import { ActionIcon, Badge, Group, Text, Tooltip, UnstyledButton } from "@mantin
 import type { Priority, Task, TaskState } from "../../api/types"
 import { dueLabel, linkChip } from "../../lib/taskSections"
 import { TaskStateCheckbox } from "./TaskStateCheckbox"
+import { UnreadMarkerDot } from "../UnreadMarkerDot"
 
 const PRIORITY_MARK: Record<Priority, { text: string; color: string } | null> = {
   high: { text: "!!!", color: "var(--mantine-color-red-4)" },
@@ -110,6 +111,11 @@ export function TaskRow({ task, ownResource, dragHandle, onState, onToggleStar, 
         </UnstyledButton>
       ) : (
         <div style={{ flex: 1, minWidth: 0 }}>{titleText}</div>
+      )}
+      {(task.unread_count ?? 0) > 0 && (
+        // An agent's events newer than the task's read cursor. Opening the
+        // modal does not clear it; only a mark read does.
+        <UnreadMarkerDot label="unread task activity" />
       )}
       {due && (
         <Tooltip label={due.title}>

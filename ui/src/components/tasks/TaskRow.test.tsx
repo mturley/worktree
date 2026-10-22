@@ -146,6 +146,19 @@ describe("TaskRow opens the modal", () => {
     expect(screen.queryByRole("button", { name: "Write the thing" })).toBeNull()
     expect(screen.getByText("Write the thing")).toBeInTheDocument()
   })
+
+  it("shows the blue unread dot while the task has unread events", () => {
+    wrap(<TaskRow task={task({ unread_count: 2 })} onState={() => {}} onToggleStar={() => {}} />)
+    expect(screen.getByLabelText("unread task activity")).toBeInTheDocument()
+  })
+
+  it("shows no unread dot when the task is read, or the count is absent", () => {
+    const { unmount } = wrap(<TaskRow task={task({ unread_count: 0 })} onState={() => {}} onToggleStar={() => {}} />)
+    expect(screen.queryByLabelText("unread task activity")).toBeNull()
+    unmount()
+    wrap(<TaskRow task={task()} onState={() => {}} onToggleStar={() => {}} />)
+    expect(screen.queryByLabelText("unread task activity")).toBeNull()
+  })
 })
 
 describe("TaskCountBadge", () => {
