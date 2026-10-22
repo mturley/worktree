@@ -1072,6 +1072,72 @@ to break.
   invalidating `["tasks"]`, `["worktrees"]` and `["resources"]`, so lists
   and badges both follow CLI and agent writes within the stream's 5s tick.
 
+### Task detail modal (`ui/src/components/tasks/modal/`)
+
+One modal, mounted once in `App` as `TaskDetailModal`, driven by the `task`
+URL param (`?task=<id>`) through **`TaskModalProvider`**
+(`useTaskModal()` → `openId`, `open(id, { error? })`, `close()`, `notice`,
+`clearNotice()`). It throws outside the provider, so any test that renders a
+`TaskList` (which calls it) wraps in one.
+
+- **History.** `open()` pushes a history entry and remembers that it did
+  (`pushed`); `close()` then calls `history.back()`, so Back after close does
+  not reopen the modal. A deep link or refresh (nothing pushed) is closed by
+  replacing the URL without the param instead. `open()` while a modal is
+  already open replaces, so one close still returns to the page underneath.
+  Because `back()` is async, `close()` also records the search it is leaving
+  and `openId` reads null while the URL still equals it. Consequence: **do not
+  navigate in-app from inside the modal** — a push would make `close()`'s
+  `back()` land on the wrong entry. Resource titles and event "Open" links
+  open in a new tab, worktree titles are plain text, and linked-event rows are
+  inert. A failed delete reopens the task through `open(id, { error })`; the
+  provider exposes it as `notice` and the modal's red Alert shows it.
+- **Files.** `TaskDetailModal` (shell; keeps the last id mounted through the
+  close transition), `TaskModalHeader` (state menu, title, star, delete with
+  inline "Delete? Yes / No"), `TaskSidebar` (state, priority, due, starred),
+  and two tabs. `DetailsTab` stacks `DescriptionSection`, `SubtasksSection`,
+  `LinksSection` (with `LinkPicker` and the pure `linkTargets.ts`) and
+  `LinkedEventsSection`; `ActivityTab` shows the merged feed.
+  `sectionAction.tsx` (`useSectionAction`) gives each section its own inline
+  error alert. Data hooks are in `hooks/useTaskDetail.ts` (`useTaskDetail`,
+  `useTaskActivity`, `useTaskDetailMutations`, `useTaskFromEvent`).
+- **Optimistic updates.** `useOptimisticTask(id)` wraps `update`/`setState`:
+  the patched fields are written to the detail cache at once and, on failure,
+  only those fields are restored (a concurrent edit of another field
+  survives). The mutation's invalidation refetches the truth either way, which
+  is what fills `started_at`/`completed_at`. The description does NOT use it:
+  it calls the mutation directly and patches the cache on success, since
+  swallowing a failure would lose a long edit. Subtask add clears its input
+  on send and restores the text on failure only if the input is still empty.
+- **Event links.** A task links an event by key: `ev:<watcher event id>` or
+  `slack:<channel>:<message ts>`, each stored with a snapshot (see "Task
+  detail API"), so the link outlives watcher pruning. Keys are derived in
+  **`lib/taskEventKey.ts`**: `eventTaskKey` / `eventTaskKeys` classify by
+  prefix, because watcher event ids are opaque UUIDs. `task:`, `ev:` and
+  `slack:` ids and `source === "tasks"` are NOT watcher events (null); any
+  other non-empty id is. `slackMessageKey` / `slackMessageSnapshot` build the
+  Slack side (title = first non-blank line of the raw mrkdwn, up to 120
+  runes; `type` `slack_reply`; `ts` converted to ISO). The Activity tab
+  unlinks under whichever key the event was actually linked with.
+- **"＋ task".** `components/tasks/useMakeTask.ts` (`useMakeTask`,
+  `useMakeTaskFromEvent`) calls `useTaskFromEvent`, then `open(d.id)`; a
+  failure is a toast. `EventRow` and `TimelineFeed` take an `onMakeTask`
+  prop (pages supply it; they don't use the modal provider themselves, so
+  their tests and `SearchSuggestions` need none); Slack messages use
+  `ThreadActionsContext.makeTask`. The button overlays the row's top-right
+  corner on hover/focus.
+- **Row click guards.** `TaskRow` takes `onOpen`; `TaskList` supplies it from
+  `useTaskModal()` (the drag overlay's copy gets none and is inert). The title
+  is a real `<button>`. The grip wrapper, star and link chip call
+  `stopPropagation` (`keepFromRow`) so they don't open the modal.
+  `TaskStateCheckbox` guards its trigger AND `Menu.Dropdown`: the dropdown is
+  portalled out of the row's DOM, but React still bubbles its events through
+  the component tree, so a pick would otherwise open the modal. The guard
+  lives in the component, not a row wrapper, so the modal header's reuse is
+  covered. The click that ends a drag is suppressed by dnd-kit itself (a
+  capture-phase listener for 50ms). `TaskQuickAdd` gets "Add & open"
+  (`onOpen`): create, clear, then open; Enter and Add still stay.
+
 ## Notifications
 
 Per-worktree "Notify on all" and per-resource "Notify on new events" toggles.

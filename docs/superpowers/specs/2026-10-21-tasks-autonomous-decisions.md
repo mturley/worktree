@@ -47,6 +47,38 @@ Format: **Q:** the question · **A:** what was done · **Why** · **To change:**
   **A:** Yes, with an inline "Delete? Yes / No" until Phase 6 adds undo.
 - **Q:** A Phase 3 table had to be added to the database. Should that have needed sign-off?
   **A:** No. It's `task_event_links`, which stores a snapshot of each linked event so the link survives the watcher pruning that event.
+- **Q:** Can you navigate in-app from inside the modal?
+  **A:** No. Resource titles and event "Open" links open a new tab, worktree titles are plain text, and linked-event rows are inert. An in-app push would break `close()`'s `history.back()`. To change: `modal/LinksSection.tsx`, `modal/LinkedEventsSection.tsx` (close the modal first, then navigate).
+- **Q:** What does Back do after closing the modal?
+  **A:** It leaves the page as it was. `close()` calls `history.back()` when `open()` pushed the entry, and replaces the URL for deep links. To change: `modal/TaskModalProvider.tsx`.
+- **Q:** What happens on delete?
+  **A:** The modal closes first. If the delete fails, the task reopens with a red notice. To change: `modal/TaskModalHeader.tsx`, `modal/TaskModalProvider.tsx` (`open(id, { error })`).
+- **Q:** What is "Add & open"?
+  **A:** A subtle button beside Add in quick add: it creates, clears the input, opens the modal, and does not refocus the input. Enter and Add still add and stay. To change: `tasks/TaskQuickAdd.tsx`.
+- **Q:** How do the header and sidebar edit controls behave?
+  **A:** State is a select in the sidebar (the header has the checkbox menu). Starred is both the header star and a sidebar checkbox. Clearing a due date needs the Clear button, since clearing the native input by keyboard is ignored. To change: `modal/TaskSidebar.tsx`.
+- **Q:** How are links removed and moved between Focus and Related?
+  **A:** The ✕ is inline on every link row; "Make Focus/Related" is in the grip's hover menu (no keyboard path, but keyboard dragging between groups does the same). Dragging shows no preview; the link changes group on drop. To change: `modal/LinksSection.tsx`.
+- **Q:** What does "global task" mean in the link picker?
+  **A:** A task with no direct worktree link and no implicit worktree. Its suggestions come from all resources; otherwise they are scoped to its worktrees. Suggestions are capped at 50. To change: `modal/linkTargets.ts`, `modal/LinkPicker.tsx`.
+- **Q:** Do the Details sections share one error alert?
+  **A:** No, each shows its own inline alert. The description saves without optimism, so a failed save keeps the text. To change: `modal/sectionAction.tsx`, `modal/DescriptionSection.tsx`.
+- **Q:** Which task rows open the modal?
+  **A:** Any click on the row except the grip, star, state checkbox (and its portalled menu) and link chip. The due and subtask badges open it, and so does a click that ends a text selection. To change: `tasks/TaskRow.tsx`.
+- **Q:** Where does "＋ task" sit, and which events get it?
+  **A:** It overlays the row's top-right corner on hover or focus, so it can cover the end of a long title. Only watcher events and Slack messages get it; task events and snapshot rows do not. Errors are a toast. To change: `components/EventRow.tsx`, `components/slack/Message.tsx`, `components/tasks/useMakeTask.ts`.
+- **Q:** What title and body does a task made from a Slack message keep?
+  **A:** The title is the first non-blank line of the raw mrkdwn (so `<@U…>` and `<url|label>` stay unrendered), up to 120 characters. The snapshot body is the raw text too. To change: `lib/taskEventKey.ts` (`slackMessageSnapshot`) and the `from-event` handler in `internal/webui/tasks_detail_api.go`.
+- **Q:** Are Activity tab rows interactive?
+  **A:** No, they are inert, so a long clamped body can't be expanded there. To change: `modal/ActivityTab.tsx`.
+- **Q:** What does `from-event`'s `path` do?
+  **A:** It adds the worktree the user acted in as a Focus link, but only if that worktree doesn't already follow the event's resource. To change: `internal/webui/tasks_detail_api.go`.
+- **Q:** Is making a task from an event atomic?
+  **A:** No. It runs in two transactions (create, then link the event), so a failure between them leaves a task without the link. To change: the `from-event` handler in `internal/webui/tasks_detail_api.go`.
+- **Q:** What is in the Activity feed?
+  **A:** The task's own events plus every watcher event of its linked resources (full history per resource, newest 200). A Slack thread event shows as linked when its `slack:` key is linked. To change: `internal/webui/task_timeline.go`.
+- **Q:** What if a linked `ev:` event is pruned or its type changes?
+  **A:** The UI renders the stored snapshot. The server ignores a client-sent snapshot for `ev:` keys but trusts one for `slack:` keys. To change: `internal/webui/tasks_detail_api.go`.
 
 ## Browser check (run this yourself)
 
