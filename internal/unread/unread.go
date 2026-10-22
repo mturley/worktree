@@ -146,6 +146,39 @@ func Summaries(conn *sql.DB) (map[string]Summary, error) {
 	return out, rows.Err()
 }
 
+// TaskSummaries returns the unread task events per task id: the AGENT events
+// of non-deleted tasks newer than the task's cursor. A task's cursor is a
+// resource_read_cursor row with resource_type 'task' and the task id as its
+// resource_id; a missing row reads as '' so every agent event counts (unlike
+// Summaries, where no row means nothing unread). The user's own events never
+// count. Mark and Restore already work for resType "task". Plain SQL over the
+// tables, so this package does not import internal/tasks.
+func TaskSummaries(conn *sql.DB) (map[int64]Summary, error) {
+	rows, err := conn.Query(`
+		SELECT e.task_id, COUNT(*), MAX(e.ts)
+		  FROM task_events e
+		  JOIN tasks t ON t.id = e.task_id AND t.deleted_at IS NULL
+		  LEFT JOIN resource_read_cursor c
+		    ON c.resource_type = 'task' AND c.resource_id = CAST(e.task_id AS TEXT)
+		 WHERE e.actor = 'agent'
+		   AND e.ts > COALESCE(c.last_read_ts, '')
+		 GROUP BY e.task_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]Summary{}
+	for rows.Next() {
+		var id int64
+		var sum Summary
+		if err := rows.Scan(&id, &sum.Count, &sum.NewestTS); err != nil {
+			return nil, err
+		}
+		out[id] = sum
+	}
+	return out, rows.Err()
+}
+
 // Cursors returns every stored cursor, keyed by Key. Used to decide whether an
 // individual event is unread without a query per event.
 func Cursors(conn *sql.DB) (map[string]string, error) {
