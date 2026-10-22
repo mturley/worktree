@@ -362,6 +362,23 @@ func TestTaskActivityLinkedToTaskSlackKey(t *testing.T) {
 	}
 }
 
+// Only a Slack reply is a Slack message with a canonical slack: key; a
+// bookkeeping event on the thread (watch_started) carries an external_ts too
+// but must keep its ev: key.
+func TestSlackKeyOfOnlyReplies(t *testing.T) {
+	reply := TimelineEvent{Type: "slack_reply", ResourceType: "slack", ResourceID: "C1:100.1", ExternalTS: "100.5"}
+	if got := slackKeyOf(reply); got != "slack:C1:100.5" {
+		t.Errorf("reply key = %q", got)
+	}
+	for _, typ := range []string{"watch_started", "watcher_error", "slack_thread_resolved"} {
+		ev := reply
+		ev.Type = typ
+		if got := slackKeyOf(ev); got != "" {
+			t.Errorf("%s key = %q, want none", typ, got)
+		}
+	}
+}
+
 func TestFromEvent(t *testing.T) {
 	s, wt := tasksServer(t)
 	insertEvent(t, s.DB, "e1", "2026-01-01T00:00:00Z", "github", "pr_comment", "Review requested", "pr", "o/r#1", "https://github.com/o/r/pull/1")
