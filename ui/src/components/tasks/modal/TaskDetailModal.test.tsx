@@ -227,6 +227,76 @@ describe("TaskDetailModal", () => {
     expect(api.taskDetail).toHaveBeenCalledTimes(1)
   })
 
+  it("reopens the task and says why when the delete fails", async () => {
+    vi.mocked(api.deleteTask).mockRejectedValue(new Error("disk full"))
+    const user = userEvent.setup()
+    wrap()
+    await titleButton()
+    await user.click(screen.getByRole("button", { name: "Delete task" }))
+    await user.click(screen.getByRole("button", { name: "Yes" }))
+    expect(await screen.findByText("Couldn't delete: disk full")).toBeInTheDocument()
+    expect(param()).toBe("5")
+    expect(await titleButton()).toHaveTextContent("task 5")
+  })
+
+  it("reopens on the page showing at failure time, not the one from before the delete", async () => {
+    let reject!: (e: Error) => void
+    vi.mocked(api.deleteTask).mockReturnValue(new Promise((_, r) => { reject = r }))
+    const user = userEvent.setup()
+    wrap()
+    await titleButton()
+    await user.click(screen.getByRole("button", { name: "Delete task" }))
+    await user.click(screen.getByRole("button", { name: "Yes" }))
+    // The user moves on while the delete is in flight.
+    act(() => {
+      window.history.pushState({}, "", "/worktree/other?resource=jira:J-1")
+      window.dispatchEvent(new PopStateEvent("popstate"))
+    })
+    await act(async () => reject(new Error("nope")))
+    await waitFor(() => expect(param()).toBe("5"))
+    expect(window.location.pathname).toBe("/worktree/other")
+    expect(new URLSearchParams(window.location.search).get("resource")).toBe("jira:J-1")
+  })
+
+  it("closing a modal that open() pushed goes back, so Back doesn't reopen it", async () => {
+    window.history.replaceState({}, "", "/worktree/wt?resource=pr:x")
+    const back = vi.spyOn(window.history, "back")
+    const user = userEvent.setup()
+    wrap()
+    await user.click(screen.getByRole("button", { name: "open nine" }))
+    await titleButton()
+    await user.click(screen.getByRole("button", { name: "Close task" }))
+    expect(back).toHaveBeenCalledTimes(1)
+    // Closed at once, before the popstate lands.
+    expect(screen.getByTestId("open-id")).toHaveTextContent("none")
+    await waitFor(() => expect(window.location.search).toBe("?resource=pr:x"))
+    expect(screen.getByTestId("open-id")).toHaveTextContent("none")
+  })
+
+  it("closing a deep-linked modal replaces the URL rather than going back", async () => {
+    const back = vi.spyOn(window.history, "back")
+    const before = window.history.length
+    const user = userEvent.setup()
+    wrap()
+    await user.click(await screen.findByRole("button", { name: "Close task" }))
+    expect(back).not.toHaveBeenCalled()
+    expect(param()).toBeNull()
+    expect(window.location.pathname).toBe("/worktree/wt")
+    expect(window.history.length).toBe(before)
+  })
+
+  it("Esc in the header's state menu closes the menu, not the modal", async () => {
+    const user = userEvent.setup()
+    wrap()
+    await titleButton()
+    await user.click(screen.getByRole("button", { name: /^State of “task 5”/ }))
+    expect(await screen.findByRole("menuitem", { name: /In progress/ })).toBeInTheDocument()
+    await user.keyboard("{Escape}")
+    await waitFor(() => expect(screen.queryByRole("menuitem", { name: /In progress/ })).not.toBeInTheDocument())
+    expect(param()).toBe("5")
+    expect(screen.getByRole("button", { name: /^Edit title/ })).toBeInTheDocument()
+  })
+
   it("shows Task not found for an unknown id, with a close button", async () => {
     vi.mocked(api.taskDetail).mockRejectedValue(new HttpError("task not found", 404))
     const user = userEvent.setup()

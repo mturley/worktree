@@ -62,7 +62,7 @@ function TaskModalBody({ id, active }: { id: number; active: boolean }) {
 }
 
 function TaskView({ task }: { task: TaskDetail }) {
-  const { close, open } = useTaskModal()
+  const { close, open, notice, clearNotice } = useTaskModal()
   const qc = useQueryClient()
   const edits = useOptimisticTask(task.id)
   const [tab, setTab] = useState<string>("details")
@@ -73,8 +73,10 @@ function TaskView({ task }: { task: TaskDetail }) {
     close()
     qc.removeQueries({ queryKey: taskDetailKey(task.id), exact: true })
     qc.removeQueries({ queryKey: ["tasks", "activity", task.id] })
-    // A failed delete brings the task back rather than losing it silently.
-    edits.remove().catch(() => open(task.id))
+    // A failed delete brings the task back, saying why.
+    edits.remove().catch((e: unknown) =>
+      open(task.id, { error: `Couldn't delete: ${e instanceof Error ? e.message : "the request failed"}` }),
+    )
   }
 
   return (
@@ -85,11 +87,15 @@ function TaskView({ task }: { task: TaskDetail }) {
         onState={edits.setState}
         onClose={close}
       />
-      {edits.error && (
+      {edits.error ? (
         <Alert color="red" withCloseButton onClose={edits.clearError} py={6}>
           Couldn't save: {edits.error}
         </Alert>
-      )}
+      ) : notice ? (
+        <Alert color="red" withCloseButton onClose={clearNotice} py={6}>
+          {notice}
+        </Alert>
+      ) : null}
       <Flex gap="lg" direction={{ base: "column", sm: "row" }} align="flex-start">
         <Tabs value={tab} onChange={(v) => v && setTab(v)} style={{ flex: 1, minWidth: 0, width: "100%" }}>
           <Tabs.List>
