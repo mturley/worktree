@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import { ActionIcon, Badge, Group, Text, Tooltip } from "@mantine/core"
+import { ActionIcon, Badge, Group, Text, Tooltip, UnstyledButton } from "@mantine/core"
 import type { Priority, Task, TaskState } from "../../api/types"
 import { dueLabel, linkChip } from "../../lib/taskSections"
 import { TaskStateCheckbox } from "./TaskStateCheckbox"
@@ -17,27 +17,74 @@ const DUE_COLOR = {
   neutral: "gray",
 } as const
 
-/** One compact task line. A row click does nothing yet (the modal is Phase 3). */
-export function TaskRow({ task, ownResource, dragHandle, onState, onToggleStar }: {
+/**
+ * Stops a control's click from reaching the row, which would open the modal.
+ * React bubbles synthetic events along the component tree, so this also
+ * catches clicks inside portals rendered beneath it.
+ */
+const keepFromRow = (e: React.SyntheticEvent) => e.stopPropagation()
+
+/**
+ * One compact task line. With `onOpen`, a click anywhere on the row opens the
+ * task, and the title is a real button so the keyboard can too. The row's
+ * controls (state checkbox and its portalled menu, star, grip, link chip)
+ * keep their clicks to themselves.
+ */
+export function TaskRow({ task, ownResource, dragHandle, onState, onToggleStar, onOpen }: {
   task: Task
   ownResource?: { type: string; id: string }
   dragHandle?: ReactNode
   onState: (s: TaskState) => void
   onToggleStar: () => void
+  /** Opens the task's modal. Absent for the drag overlay's copy of the row. */
+  onOpen?: () => void
 }) {
   const mark = PRIORITY_MARK[task.priority]
   const due = task.due ? dueLabel(task.due, new Date()) : null
   const link = linkChip(task, ownResource)
+  const titleText = (
+    <Text
+      span
+      size="sm"
+      truncate="end"
+      style={{ display: "block", opacity: task.state === "done" ? 0.6 : 1 }}
+      td={task.state === "done" ? "line-through" : undefined}
+    >
+      {task.title}
+    </Text>
+  )
   return (
-    <Group data-task-row gap="xs" wrap="nowrap" py={4} px="xs">
-      <span className="task-grip" style={{ width: 14, flex: "none" }}>{dragHandle}</span>
+    <Group
+      data-task-row
+      gap="xs"
+      wrap="nowrap"
+      py={4}
+      px="xs"
+      onClick={onOpen ? () => onOpen() : undefined}
+      style={onOpen ? { cursor: "pointer" } : undefined}
+    >
+      {/* The grip is dnd-kit's activator. Its press must not reach the row
+          (a plain click on it would open the modal); dnd-kit's own listeners
+          sit on the grip itself, below this, so they still run. The click
+          after a real drag is swallowed by dnd-kit at the document. */}
+      <span
+        className="task-grip"
+        style={{ width: 14, flex: "none" }}
+        onClick={keepFromRow}
+        onPointerDown={keepFromRow}
+      >
+        {dragHandle}
+      </span>
       <TaskStateCheckbox state={task.state} title={task.title} onPick={onState} />
       <ActionIcon
         variant="transparent"
         size="sm"
         aria-label={task.starred ? `Unstar “${task.title}”` : `Star “${task.title}”`}
         aria-pressed={task.starred}
-        onClick={onToggleStar}
+        onClick={(e) => {
+          keepFromRow(e)
+          onToggleStar()
+        }}
         style={{ color: task.starred ? "var(--task-accent)" : "var(--mantine-color-dark-3)", flex: "none" }}
       >
         {task.starred ? "★" : "☆"}
@@ -50,14 +97,20 @@ export function TaskRow({ task, ownResource, dragHandle, onState, onToggleStar }
       >
         {mark?.text ?? "!"}
       </Text>
-      <Text
-        size="sm"
-        truncate="end"
-        style={{ flex: 1, minWidth: 0, opacity: task.state === "done" ? 0.6 : 1 }}
-        td={task.state === "done" ? "line-through" : undefined}
-      >
-        {task.title}
-      </Text>
+      {onOpen ? (
+        <UnstyledButton
+          style={{ flex: 1, minWidth: 0, display: "block" }}
+          onClick={(e) => {
+            // The row would open it too; once is enough.
+            keepFromRow(e)
+            onOpen()
+          }}
+        >
+          {titleText}
+        </UnstyledButton>
+      ) : (
+        <div style={{ flex: 1, minWidth: 0 }}>{titleText}</div>
+      )}
       {due && (
         <Tooltip label={due.title}>
           <Badge size="xs" variant="light" color={DUE_COLOR[due.tone]} style={{ flex: "none" }}>
@@ -73,6 +126,7 @@ export function TaskRow({ task, ownResource, dragHandle, onState, onToggleStar }
       {link && (
         <Badge
           data-testid="task-link-chip"
+          onClick={keepFromRow}
           size="xs"
           variant="outline"
           color="gray"

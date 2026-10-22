@@ -10,6 +10,7 @@ import { TASK_LIST_KEY } from "../../lib/taskListPrefs"
 import { buildSections } from "../../lib/taskSections"
 import { useTaskListPrefs } from "../../hooks/useTaskListPrefs"
 import { TaskList } from "./TaskList"
+import { TaskModalProvider, useTaskModal } from "./modal/TaskModalProvider"
 import { TaskListToolbar } from "./TaskListToolbar"
 import { dropPlanFor, sectionDroppableId, taskDraggableId } from "./taskDrag"
 
@@ -30,12 +31,22 @@ const task = (id: number, extra: Partial<Task> = {}): Task => ({
   subtasks_total: 0, subtasks_done: 0, ...extra,
 })
 
+/** Shows which task the modal has open. */
+function OpenProbe() {
+  const { openId } = useTaskModal()
+  return <span data-testid="open-id">{openId ?? "none"}</span>
+}
+const openId = () => screen.getByTestId("open-id").textContent
+
 function wrap(ui: React.ReactNode, terms: string[] = []) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <MantineProvider>
       <QueryClientProvider client={qc}>
-        <SearchContext.Provider value={{ terms }}>{ui}</SearchContext.Provider>
+        <TaskModalProvider>
+          <SearchContext.Provider value={{ terms }}>{ui}</SearchContext.Provider>
+          <OpenProbe />
+        </TaskModalProvider>
       </QueryClientProvider>
     </MantineProvider>,
   )
@@ -51,6 +62,44 @@ afterEach(() => {
   cleanup()
   vi.clearAllMocks()
   window.localStorage.clear()
+  // The modal lives in ?task=; jsdom's URL outlives a test.
+  window.history.replaceState({}, "", "/")
+})
+
+describe("TaskList opens the modal", () => {
+  it("a row click opens its task", async () => {
+    const user = userEvent.setup()
+    wrap(<TaskList scope={{ kind: "all" }} />)
+    await user.click(await screen.findByRole("button", { name: "beta two" }))
+    expect(openId()).toBe("2")
+    expect(new URLSearchParams(window.location.search).get("task")).toBe("2")
+  })
+
+  it("picking a state from a row's portalled menu changes state without opening", async () => {
+    vi.mocked(api.setTaskState).mockResolvedValue(undefined as never)
+    const user = userEvent.setup()
+    wrap(<TaskList scope={{ kind: "all" }} />)
+    await user.click(await screen.findByRole("button", { name: "State of “alpha one”: Not started" }))
+    await user.click(await screen.findByRole("menuitem", { name: "Done" }))
+    await waitFor(() => expect(api.setTaskState).toHaveBeenCalled())
+    expect(openId()).toBe("none")
+  })
+
+  it("Add & open creates the task and opens the new id; Enter only adds", async () => {
+    const user = userEvent.setup()
+    wrap(<TaskList scope={{ kind: "all" }} />)
+    await screen.findByText("beta two")
+    const input = screen.getByRole("textbox", { name: "New task" })
+    await user.type(input, "stay{Enter}")
+    await waitFor(() => expect(api.createTask).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(input).toHaveValue(""))
+    expect(openId()).toBe("none")
+    await user.type(input, "go")
+    await user.click(screen.getByRole("button", { name: "Add & open" }))
+    await waitFor(() => expect(openId()).toBe("9"))
+    expect(api.createTask).toHaveBeenCalledTimes(2)
+    expect(api.createTask).toHaveBeenLastCalledWith({ title: "go", priority: "none", starred: false, after: 2 })
+  })
 })
 
 describe("TaskList quick add", () => {
@@ -275,6 +324,37 @@ describe("TaskList keyboard drag", () => {
     fireEvent.keyDown(grip, { code: key, key })
     fireEvent.keyDown(grip, { code: "Space", key: " " })
   }
+
+  it("a grip press without a drag, a keyboard drag, and the click after a mouse drag do not open the modal", async () => {
+    vi.mocked(api.moveTask).mockResolvedValue(undefined as never)
+    const user = userEvent.setup()
+    wrap(<TaskList scope={{ kind: "all" }} />)
+    await screen.findByText("beta two")
+    // A plain click on the grip.
+    await user.click(screen.getByRole("button", { name: "Drag to reorder alpha one" }))
+    expect(openId()).toBe("none")
+
+    // A keyboard drag: Space/Enter on the grip are the sensor's, not the row's.
+    await drag("alpha one", "ArrowDown")
+    await waitFor(() => expect(api.moveTask).toHaveBeenCalledTimes(1))
+    expect(openId()).toBe("none")
+
+    // A mouse drag past the 4px threshold, then the click the browser fires
+    // on release, landing on the row: dnd-kit swallows it at the document.
+    const grip = screen.getByRole("button", { name: "Drag to reorder beta two" })
+    lifted = grip.closest<HTMLElement>("[data-task-sortable]")
+    fireEvent.mouseDown(grip, { button: 0, clientX: 5, clientY: 5 })
+    fireEvent.mouseMove(document, { clientX: 5, clientY: 20 })
+    expect(await screen.findByTestId("task-drag-overlay")).toHaveTextContent("beta two")
+    fireEvent.mouseUp(document, { clientX: 5, clientY: 20 })
+    const row = lifted!.querySelector<HTMLElement>("[data-task-row]")!
+    fireEvent.click(row)
+    expect(openId()).toBe("none")
+    // The control: once dnd-kit's 50ms suppression lapses, the same click opens.
+    await act(() => new Promise((r) => setTimeout(r, 80)))
+    fireEvent.click(row)
+    expect(openId()).toBe("2")
+  })
 
   it("Custom sort: reorders through mutations.move", async () => {
     vi.mocked(api.moveTask).mockResolvedValue(undefined as never)

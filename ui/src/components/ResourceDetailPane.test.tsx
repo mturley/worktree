@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from "vitest"
 import { render, cleanup, screen, act, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
+import { TaskModalProvider } from "./tasks/modal/TaskModalProvider"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ResourceDTO, Task, TimelineEvent } from "../api/types"
 import { TASK_LIST_KEY } from "../lib/taskListPrefs"
@@ -38,7 +39,7 @@ const wrap = (ui: React.ReactNode) => {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <MantineProvider>
-      <QueryClientProvider client={qc}>{ui}</QueryClientProvider>
+      <QueryClientProvider client={qc}><TaskModalProvider>{ui}</TaskModalProvider></QueryClientProvider>
     </MantineProvider>,
   )
 }
@@ -71,7 +72,7 @@ describe("ResourceDetailPane", () => {
     const mk = (r: ResourceDTO) => (
       <MantineProvider>
         <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-          <ResourceDetailPane path="/wt/foo" resource={r} />
+          <TaskModalProvider><ResourceDetailPane path="/wt/foo" resource={r} /></TaskModalProvider>
         </QueryClientProvider>
       </MantineProvider>
     )
@@ -191,7 +192,7 @@ describe("ResourceDetailPane", () => {
     rerender(
       <MantineProvider>
         <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-          <ResourceDetailPane path="/wt/foo" resource={jira} />
+          <TaskModalProvider><ResourceDetailPane path="/wt/foo" resource={jira} /></TaskModalProvider>
         </QueryClientProvider>
       </MantineProvider>,
     )

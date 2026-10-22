@@ -21,14 +21,21 @@ const PRIORITY_OPTIONS: { value: Priority; label: string }[] = [
 /**
  * The input at the bottom of every task list. Just the input until it is
  * focused or holds text; then a star toggle and a priority picker appear to
- * its left and Add to its right. Enter or Add creates the task, clears the
- * input and keeps focus for the next one.
+ * its left and Add (and, with `onOpen`, "Add & open") to its right. Enter or
+ * Add creates the task, clears the input and keeps focus for the next one;
+ * "Add & open" creates it and opens its modal.
  *
  * While a create is in flight the controls are disabled, but the input is
  * only read-only: disabling it would drop focus, and Enter must keep it.
  */
-export function TaskQuickAdd({ onAdd, defaultPriority = "none" }: {
-  onAdd(input: { title: string; priority: Priority; starred: boolean }): Promise<unknown>
+export function TaskQuickAdd({ onAdd, onOpen, defaultPriority = "none" }: {
+  /** Creates the task; resolves to it (its id is what "Add & open" opens). */
+  onAdd(input: { title: string; priority: Priority; starred: boolean }): Promise<{ id: number } | void>
+  /**
+   * Opens a task's modal. When given, "Add & open" appears beside Add: it
+   * creates the task, then opens it. Enter still adds and stays.
+   */
+  onOpen?: (id: number) => void
   /**
    * The picker's starting value: the list's priority filter, when one is on,
    * so a new task is not created straight into hiding. It follows the filter
@@ -47,18 +54,25 @@ export function TaskQuickAdd({ onAdd, defaultPriority = "none" }: {
   const inputRef = useRef<HTMLInputElement>(null)
   const expanded = focused || title !== ""
 
-  const submit = async () => {
+  const submit = async (andOpen = false) => {
     const t = title.trim()
     if (!t || busy) return
     setBusy(true)
+    let opened = false
     try {
-      await onAdd({ title: t, priority, starred })
+      const created = await onAdd({ title: t, priority, starred })
       setTitle("")
+      if (andOpen && onOpen && created) {
+        onOpen(created.id)
+        opened = true
+      }
     } catch {
       // Left in the input to retry; the list reports the error.
     } finally {
       setBusy(false)
-      inputRef.current?.focus()
+      // The modal takes focus when it opens; pulling it back here would
+      // fight its focus trap.
+      if (!opened) inputRef.current?.focus()
     }
   }
 
@@ -121,6 +135,18 @@ export function TaskQuickAdd({ onAdd, defaultPriority = "none" }: {
       {expanded && (
         <Button size="xs" variant="light" disabled={busy || title.trim() === ""} loading={busy} onMouseDown={keepInputFocus} onClick={() => void submit()}>
           Add
+        </Button>
+      )}
+      {expanded && onOpen && (
+        <Button
+          size="xs"
+          variant="subtle"
+          style={{ flex: "none" }}
+          disabled={busy || title.trim() === ""}
+          onMouseDown={keepInputFocus}
+          onClick={() => void submit(true)}
+        >
+          Add &amp; open
         </Button>
       )}
     </Group>

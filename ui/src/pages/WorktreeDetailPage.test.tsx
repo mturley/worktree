@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from "vitest"
 import { act, fireEvent, render, cleanup, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
+import { TaskModalProvider } from "../components/tasks/modal/TaskModalProvider"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ResourceDTO, Task } from "../api/types"
 import { api } from "../api/client"
@@ -72,7 +73,7 @@ const wrap = () =>
   render(
     <MantineProvider>
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <WorktreeDetailPage />
+        <TaskModalProvider><WorktreeDetailPage /></TaskModalProvider>
       </QueryClientProvider>
     </MantineProvider>,
   )

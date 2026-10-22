@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { act, cleanup, render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider, Tabs } from "@mantine/core"
+import { TaskModalProvider } from "./modal/TaskModalProvider"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { useState } from "react"
 import { api } from "../../api/client"
@@ -45,7 +46,7 @@ function wrap() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <MantineProvider>
-      <QueryClientProvider client={qc}><Host /></QueryClientProvider>
+      <QueryClientProvider client={qc}><TaskModalProvider><Host /></TaskModalProvider></QueryClientProvider>
     </MantineProvider>,
   )
 }

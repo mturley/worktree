@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from "vitest"
 import { act, fireEvent, render, cleanup, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
+import { TaskModalProvider } from "../components/tasks/modal/TaskModalProvider"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { setViewport } from "../testing/viewport"
 import { baseSettings } from "../components/settings/testSettings"
@@ -39,7 +40,7 @@ const wrap = () => {
   const qc = new QueryClient()
   return render(
     <QueryClientProvider client={qc}>
-      <MantineProvider><HomePage /></MantineProvider>
+      <MantineProvider><TaskModalProvider><HomePage /></TaskModalProvider></MantineProvider>
     </QueryClientProvider>,
   )
 }

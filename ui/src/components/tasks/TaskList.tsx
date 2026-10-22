@@ -21,6 +21,7 @@ import { useTaskMutations, useTasks, type TaskScope } from "../../hooks/useTasks
 import { useTaskListPrefs } from "../../hooks/useTaskListPrefs"
 import { buildSections, canDrag, quickAddAnchor, type TaskSection } from "../../lib/taskSections"
 import { useSearchContext } from "../search/SearchContext"
+import { useTaskModal } from "./modal/TaskModalProvider"
 import { TaskQuickAdd } from "./TaskQuickAdd"
 import { TaskRow } from "./TaskRow"
 import { dropPlanFor, sectionDroppableId, taskCollisions, taskDraggableId } from "./taskDrag"
@@ -57,13 +58,14 @@ const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
  * grip renders disabled with a hint when the sort can't be reordered, and not
  * at all in Completed, whose order isn't master order.
  */
-function SortableTaskRow({ task, section, sortDraggable, ownResource, mutations, onError }: {
+function SortableTaskRow({ task, section, sortDraggable, ownResource, mutations, onError, onOpen }: {
   task: Task
   section: TaskSection
   sortDraggable: boolean
   ownResource?: { type: string; id: string }
   mutations: Pick<ReturnType<typeof useTaskMutations>, "setState" | "update">
   onError: (msg: string) => void
+  onOpen: (id: number) => void
 }) {
   const { setState, update } = mutations
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
@@ -130,6 +132,7 @@ function SortableTaskRow({ task, section, sortDraggable, ownResource, mutations,
         dragHandle={grip}
         onState={(s) => run(setState(task.id, s))}
         onToggleStar={() => run(update(task.id, { starred: !task.starred }))}
+        onOpen={() => onOpen(task.id)}
       />
     </div>
   )
@@ -201,6 +204,7 @@ export function TaskList({ scope, ownResource, maxRows }: {
   const { terms } = useSearchContext()
   const query = useTasks(scope, { completed: prefs.showCompleted, archived: prefs.includeArchived })
   const mutations = useTaskMutations(scope)
+  const { open } = useTaskModal()
   const [activeId, setActiveId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -288,6 +292,7 @@ export function TaskList({ scope, ownResource, maxRows }: {
                   ownResource={ownResource}
                   mutations={mutations}
                   onError={setError}
+                  onOpen={open}
                 />
               ))}
             </SortableContext>
@@ -318,7 +323,7 @@ export function TaskList({ scope, ownResource, maxRows }: {
       >
         {body}
       </Box>
-      <TaskQuickAdd onAdd={add} defaultPriority={newPriority} />
+      <TaskQuickAdd onAdd={add} onOpen={(id) => open(id)} defaultPriority={newPriority} />
     </Stack>
   )
 }

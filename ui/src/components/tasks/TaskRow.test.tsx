@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { cleanup, render, screen } from "@testing-library/react"
+import { act, cleanup, render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import type { Task } from "../../api/types"
@@ -78,6 +78,73 @@ describe("TaskRow", () => {
   it("the state checkbox names its task", () => {
     wrap(<TaskRow task={task()} onState={() => {}} onToggleStar={() => {}} />)
     expect(screen.getByRole("button", { name: "State of “Write the thing”: In progress" })).toBeInTheDocument()
+  })
+})
+
+describe("TaskRow opens the modal", () => {
+  const row = () => document.querySelector<HTMLElement>("[data-task-row]")!
+
+  it("a click on the row opens it, once", async () => {
+    const onOpen = vi.fn()
+    wrap(<TaskRow task={task()} onState={() => {}} onToggleStar={() => {}} onOpen={onOpen} />)
+    // The priority mark: part of the row, not a control.
+    await userEvent.click(screen.getByText("!!!"))
+    expect(onOpen).toHaveBeenCalledTimes(1)
+    await userEvent.click(row())
+    expect(onOpen).toHaveBeenCalledTimes(2)
+  })
+
+  it("the title is a button: a click, Enter or Space on it opens, once each", async () => {
+    const onOpen = vi.fn()
+    const user = userEvent.setup()
+    wrap(<TaskRow task={task()} onState={() => {}} onToggleStar={() => {}} onOpen={onOpen} />)
+    const title = screen.getByRole("button", { name: "Write the thing" })
+    await user.click(title)
+    expect(onOpen).toHaveBeenCalledTimes(1)
+    act(() => title.focus())
+    await user.keyboard("{Enter}")
+    expect(onOpen).toHaveBeenCalledTimes(2)
+    await user.keyboard(" ")
+    expect(onOpen).toHaveBeenCalledTimes(3)
+  })
+
+  it("the checkbox, a state picked from its portalled menu, and the star do not open it", async () => {
+    const onOpen = vi.fn()
+    const onState = vi.fn()
+    const onToggleStar = vi.fn()
+    wrap(<TaskRow task={task()} onState={onState} onToggleStar={onToggleStar} onOpen={onOpen} />)
+    await userEvent.click(screen.getByRole("button", { name: "State of “Write the thing”: In progress" }))
+    const done = await screen.findByRole("menuitem", { name: "Done" })
+    // Rendered in a portal, outside the row's DOM; React still bubbles to it.
+    expect(row().contains(done)).toBe(false)
+    await userEvent.click(done)
+    expect(onState).toHaveBeenCalledWith("done")
+    await userEvent.click(screen.getByRole("button", { name: "Star “Write the thing”" }))
+    expect(onToggleStar).toHaveBeenCalled()
+    expect(onOpen).not.toHaveBeenCalled()
+  })
+
+  it("the grip and the link chip do not open it", async () => {
+    const onOpen = vi.fn()
+    const onGrip = vi.fn()
+    const onGripDown = vi.fn()
+    wrap(<TaskRow
+      task={task({ links: [{ kind: "resource", resource_type: "github_pr", resource_id: "o/r#5", focus: true, archived: false }] })}
+      dragHandle={<button type="button" aria-label="grip" onClick={onGrip} onPointerDown={onGripDown}>::</button>}
+      onState={() => {}} onToggleStar={() => {}} onOpen={onOpen}
+    />)
+    await userEvent.click(screen.getByRole("button", { name: "grip" }))
+    // The grip's own handlers (where dnd-kit's listeners live) still run.
+    expect(onGrip).toHaveBeenCalled()
+    expect(onGripDown).toHaveBeenCalled()
+    await userEvent.click(screen.getByTestId("task-link-chip"))
+    expect(onOpen).not.toHaveBeenCalled()
+  })
+
+  it("without onOpen the title is plain text (the drag overlay's copy)", () => {
+    wrap(<TaskRow task={task()} onState={() => {}} onToggleStar={() => {}} />)
+    expect(screen.queryByRole("button", { name: "Write the thing" })).toBeNull()
+    expect(screen.getByText("Write the thing")).toBeInTheDocument()
   })
 })
 

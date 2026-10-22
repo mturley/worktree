@@ -9,6 +9,9 @@ const STATES: { state: TaskState; label: string }[] = [
 
 const SIZE = 16
 
+/** Keeps the checkbox's clicks from the row (or other host) around it. */
+const keepFromHost = (e: React.MouseEvent) => e.stopPropagation()
+
 /**
  * Empty = not started, diagonally half-filled = in progress, filled with a
  * check = done. A click only opens the menu; nothing changes until a pick.
@@ -30,6 +33,7 @@ export function TaskStateCheckbox({ state, title, onPick }: {
     <Menu position="bottom-start" withinPortal>
       <Menu.Target>
         <UnstyledButton
+          onClick={keepFromHost}
           aria-label={`State of “${title}”: ${current.label}`}
           style={{
             width: SIZE, height: SIZE, flex: "none", borderRadius: 4,
@@ -41,7 +45,9 @@ export function TaskStateCheckbox({ state, title, onPick }: {
           {state === "done" ? "✓" : null}
         </UnstyledButton>
       </Menu.Target>
-      <Menu.Dropdown>
+      {/* A portal in the DOM, but React bubbles its events up the component
+          tree all the same: without this a pick would also click the row. */}
+      <Menu.Dropdown onClick={keepFromHost}>
         {/* Mantine fixes role="menuitem" (no menuitemradio), so the current
             state is marked with aria-current and a check. */}
         {STATES.map((s) => (
