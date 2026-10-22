@@ -85,11 +85,13 @@ describe("useSSE", () => {
     expect(keys).toContain(JSON.stringify(["resources"]))
   })
 
-  it("invalidates tasks, worktrees and resources on tasks_changed", () => {
+  it("invalidates tasks, the feeds, worktrees and resources on tasks_changed", () => {
     const invalidate = renderSSE()
     FakeEventSource.last!.emit("tasks_changed", "{}")
     const keys = invalidatedKeys(invalidate)
-    for (const k of [["tasks"], ["worktrees"], ["resources"]]) expect(keys).toContain(JSON.stringify(k))
+    // ["timeline"]: task events ride in the activity feeds, so a task change
+    // must refresh them live too.
+    for (const k of [["tasks"], ["timeline"], ["worktrees"], ["resources"]]) expect(keys).toContain(JSON.stringify(k))
   })
 
   it("collapses a burst of task events into one activity refresh, after the fresh window", () => {

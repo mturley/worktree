@@ -41,11 +41,13 @@ export function useSSE() {
       // is only recovered here.
       refreshTasks()
     }
-    // Prefix keys: every scope's lists, plus the open-task counts that ride
-    // on worktree summaries and resource DTOs.
+    // Prefix keys: every scope's lists, the activity feeds (task events ride
+    // in them), plus the open-task and unread counts that ride on worktree
+    // summaries and resource DTOs.
     const refreshTasks = () => {
       qc.invalidateQueries({ queryKey: ["tasks"], predicate: (q) => q.queryKey[1] !== "activity" })
       refreshActivity()
+      qc.invalidateQueries({ queryKey: ["timeline"] })
       qc.invalidateQueries({ queryKey: ["worktrees"] })
       qc.invalidateQueries({ queryKey: ["resources"] })
     }

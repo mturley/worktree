@@ -1217,8 +1217,9 @@ to break.
   list resource cards and the home page's Resources rows (`AllResourceRow`)
   (`open_task_count`, absent = 0, titled "N open tasks"). The selected resource's detail card has none: its own Tasks tab
   or pinned panel shows the count. `useSSE` answers `tasks_changed` by
-  invalidating `["tasks"]`, `["worktrees"]` and `["resources"]`, so lists
-  and badges both follow CLI and agent writes within the stream's 5s tick.
+  invalidating `["tasks"]`, `["timeline"]` (task events ride in the
+  activity feeds), `["worktrees"]` and `["resources"]`, so lists, feeds and
+  badges all follow CLI and agent writes within the stream's 5s tick.
 
 ### Task detail modal (`ui/src/components/tasks/modal/`)
 
