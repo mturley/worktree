@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/mturley/worktree/internal/tasks"
+	"github.com/mturley/worktree/internal/unread"
 )
 
 // taskEventToTimeline renders one of a task's own events as a TimelineEvent,
@@ -40,6 +41,42 @@ func taskEventToTimeline(ev tasks.Event, t tasks.Task) TimelineEvent {
 		Worktrees:     []string{},
 		WorktreePaths: []string{},
 	}
+}
+
+// taskFeedRow converts a feed event for the activity feeds: the converted
+// row, with Unread set by the unread rule — an agent's event newer than its
+// task's cursor (cursors is unread.Cursors; a missing cursor reads as "", so
+// every agent event counts). The user's own events are never unread.
+func taskFeedRow(fe tasks.FeedEvent, cursors map[string]string) TimelineEvent {
+	te := taskEventToTimeline(fe.Event, tasks.Task{ID: fe.TaskID, Title: fe.TaskTitle})
+	te.Unread = fe.Actor == tasks.ActorAgent && fe.TS > cursors[unread.Key("task", te.ResourceID)]
+	return te
+}
+
+// matchTaskEvent is matchEvent for a converted task event: every term must
+// appear in the converted title or the task's title, case-insensitively.
+// The match names the first of those fields holding any term, as matchEvent
+// does; a task-title match is reported as "resource" (the pseudo-resource the
+// row is attributed to), with the task title as its snippet.
+func matchTaskEvent(te *TimelineEvent, terms []string) *searchMatch {
+	if len(terms) == 0 {
+		return nil
+	}
+	fields := []struct{ name, text string }{{"title", te.Title}, {"resource", te.ResourceTitle}}
+	lower := []string{strings.ToLower(fields[0].text), strings.ToLower(fields[1].text)}
+	for _, t := range terms {
+		if !strings.Contains(lower[0], t) && !strings.Contains(lower[1], t) {
+			return nil
+		}
+	}
+	for i, f := range fields {
+		for _, t := range terms {
+			if strings.Contains(lower[i], t) {
+				return &searchMatch{Field: f.name, Snippet: f.text}
+			}
+		}
+	}
+	return nil
 }
 
 func taskEventAuthor(ev tasks.Event) string {

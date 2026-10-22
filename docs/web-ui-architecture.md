@@ -336,10 +336,29 @@ Global timeline query notes (`handleGlobalTimeline`):
 - Archived (`archived=true`): skips that join, showing events for resources
   no longer watched by any worktree too.
 - Dedup: an event can join to more than one row in `watcher_event_resources`.
-  `writeTimelineRows` dedupes by `e.id` in Go (first row wins, deterministic
+  `collectTimelineRows` dedupes by `e.id` in Go (first row wins, deterministic
   given `ORDER BY e.ts DESC`) so each event appears once. **This is currently
   safe** because watcher writes exactly one resource per event today; see
   "Known deferred items."
+
+Task events in the feeds (`mergeTaskEvents`): both handlers merge task
+events (`tasks.FeedEvents`, converted by `taskFeedRow` →
+`taskEventToTimeline`: id `task:<event id>`, source `tasks`,
+`resource_type "task"`, `resource_id "<task id>"`) into the watcher page.
+- Membership: home = every non-deleted task (regardless of `archived`, which
+  governs watcher events only); worktree feed = `tasks.ScopeTaskIDs` of the
+  worktree scope; resource-filtered feed = tasks linking that resource.
+- Filters: `resource_types` accepts `task`, and `event_types` the category
+  `task` (every task event type). A non-empty filter excludes task events
+  unless it names them (`taskEventsSelected`). `unread_only` and `q` are
+  applied in Go (`matchTaskEvent`: converted title and task title), so with
+  either set every candidate task event is read rather than `limit`.
+- `unread` on a task row: `actor = 'agent'` and `ts` > the task's cursor
+  (`unread.Cursors`, missing = "").
+- Merge: ts DESC, a tie putting the watcher row first, cut to `limit`. Both
+  sides apply the same strict `before`, so `next_cursor` pages both; as with
+  watcher events alone, same-ts rows straddling a page boundary can be
+  skipped.
 
 ### `resourceDTO` (resources_api.go)
 
@@ -2972,7 +2991,7 @@ aware of them if your change touches the same area:
   and `["worktrees"]` on `events_new`, but not `["resources", path]` — a
   detail page's resource cards won't auto-refresh on a new event without a
   poll-on-view trigger (page remount) or manual refresh.
-- **Global timeline dedup by event id**: `writeTimelineRows` dedupes on
+- **Global timeline dedup by event id**: `collectTimelineRows` dedupes on
   `e.id` because today watcher writes exactly one resource per event. If
   Phase 4 (Slack) starts linking multiple resources to a single event, this
   dedup (and the underlying `SELECT DISTINCT` query) will need revisiting —

@@ -14,6 +14,7 @@ import (
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/selfid"
+	"github.com/mturley/worktree/internal/tasks"
 	"github.com/mturley/worktree/internal/unread"
 )
 
@@ -76,14 +77,17 @@ func parseLimit(r *http.Request) int {
 }
 
 // parseResourceTypes reads the repeated/comma-separated `resource_types`
-// filter ("pr", "jira", "slack"). Empty means no filter — an explicit
+// filter ("pr", "jira", "slack", "task"). "task" selects task events (see
+// mergeTaskEvents); as a watcher resource type it matches no row, so a
+// filter of only "task" leaves the watcher side empty. Empty means no
+// filter — an explicit
 // all-off state is not representable and does not need to be: the UI treats
 // "nothing selected" as "show everything".
 //
 // Unknown values are dropped rather than passed to SQL, so a typo cannot
 // produce a query that silently matches nothing.
 func parseResourceTypes(r *http.Request) []string {
-	known := map[string]bool{"pr": true, "jira": true, "slack": true}
+	known := map[string]bool{"pr": true, "jira": true, "slack": true, taskResourceType: true}
 	seen := map[string]bool{}
 	out := []string{}
 	for _, raw := range r.URL.Query()["resource_types"] {
@@ -138,6 +142,17 @@ func parseEventTypes(r *http.Request) eventTypeFilter {
 }
 
 func (f eventTypeFilter) empty() bool { return len(f.exact) == 0 && len(f.prefixes) == 0 }
+
+// taskEventCategory is the `event_types` value of the "Task activity"
+// category: it selects every task event (task_* and subtask_* alike). No
+// watcher event has this type, so it matches nothing on the watcher side.
+const taskEventCategory = "task"
+
+// includesTasks reports whether task events pass the filter: always when it
+// is empty, else only when the task category is selected.
+func (f eventTypeFilter) includesTasks() bool {
+	return f.empty() || slices.Contains(f.exact, taskEventCategory)
+}
 
 // matches is the Go twin of sql, for the worktree timeline's in-memory scan.
 func (f eventTypeFilter) matches(t string) bool {
@@ -211,7 +226,8 @@ func (s *Server) handleGlobalTimeline(w http.ResponseWriter, r *http.Request) {
 	limit := parseLimit(r)
 	before := r.URL.Query().Get("before") // RFC3339 ts; "" = newest
 	types := parseResourceTypes(r)
-	eventTypeClause, eventTypeArgs := parseEventTypes(r).sql()
+	eventTypes := parseEventTypes(r)
+	eventTypeClause, eventTypeArgs := eventTypes.sql()
 	terms := parseSearchTerms(r.URL.Query().Get("q"))
 	searchClause, searchArgs := searchSQL(terms)
 
@@ -268,7 +284,108 @@ JOIN watcher_event_resources er ON er.event_id = e.id `
 		return
 	}
 	defer rows.Close()
-	s.writeTimelineRows(w, rows, limit, terms)
+	out, err := s.collectTimelineRows(rows, limit, terms)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// Every non-deleted task's events, whatever `archived` says: archived
+	// only governs watcher events.
+	out, err = s.mergeTaskEvents(out, taskFeedQuery{
+		include:    taskEventsSelected(types, eventTypes),
+		before:     before,
+		limit:      limit,
+		unreadOnly: unreadOnly,
+		terms:      terms,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeTimeline(w, out)
+}
+
+// taskResourceType is the pseudo-resource type task events are attributed
+// to, and the `resource_types` value that selects them.
+const taskResourceType = "task"
+
+// taskEventsSelected reports whether the source and event-type filters let
+// task events through: an empty filter does, a non-empty one only when it
+// names tasks.
+func taskEventsSelected(types []string, eventTypes eventTypeFilter) bool {
+	if len(types) > 0 && !slices.Contains(types, taskResourceType) {
+		return false
+	}
+	return eventTypes.includesTasks()
+}
+
+// taskFeedQuery is the task side of a timeline page, mirroring the filters
+// the watcher side was read with.
+type taskFeedQuery struct {
+	include    bool    // false = the filters exclude task events
+	taskIDs    []int64 // nil = every non-deleted task (see tasks.FeedQuery)
+	before     string  // exclusive ts cursor, as the watcher side's
+	limit      int
+	unreadOnly bool
+	terms      []string
+}
+
+// mergeTaskEvents merges the task events q selects into a page of watcher
+// rows (newest first, at most q.limit), returning the newest q.limit of the
+// union: ts DESC, a tie putting the watcher row first. Both sides apply the
+// same strict `before`, so the page's last ts (cursorOf) pages both.
+//
+// unread_only and q are applied in Go, so with either set every candidate
+// task event is read rather than the newest q.limit: a LIMIT before the
+// filter would short a page while matching events sat further back. Task
+// history is small next to watcher history, so this stays cheap.
+func (s *Server) mergeTaskEvents(rows []TimelineEvent, q taskFeedQuery) ([]TimelineEvent, error) {
+	if !q.include {
+		return rows, nil
+	}
+	fq := tasks.FeedQuery{TaskIDs: q.taskIDs, Before: q.before, Limit: q.limit, AgentOnly: q.unreadOnly}
+	if q.unreadOnly || len(q.terms) > 0 {
+		fq.Limit = 0
+	}
+	evs, err := tasks.FeedEvents(s.DB, fq)
+	if err != nil {
+		return nil, err
+	}
+	if len(evs) == 0 {
+		return rows, nil
+	}
+	cursors, err := unread.Cursors(s.DB)
+	if err != nil {
+		return nil, err
+	}
+	taskRows := make([]TimelineEvent, 0, len(evs))
+	for _, fe := range evs {
+		te := taskFeedRow(fe, cursors)
+		if q.unreadOnly && !te.Unread {
+			continue
+		}
+		if len(q.terms) > 0 {
+			if te.Match = matchTaskEvent(&te, q.terms); te.Match == nil {
+				continue
+			}
+		}
+		taskRows = append(taskRows, te)
+		if len(taskRows) == q.limit {
+			break
+		}
+	}
+	out := make([]TimelineEvent, 0, min(q.limit, len(rows)+len(taskRows)))
+	i, j := 0, 0
+	for len(out) < q.limit && (i < len(rows) || j < len(taskRows)) {
+		if j == len(taskRows) || (i < len(rows) && rows[i].TS >= taskRows[j].TS) {
+			out = append(out, rows[i])
+			i++
+		} else {
+			out = append(out, taskRows[j])
+			j++
+		}
+	}
+	return out, nil
 }
 
 // eventIDsForResource returns the set of event ids linked to one resource.
@@ -392,10 +509,40 @@ func (s *Server) handleWorktreeTimeline(w http.ResponseWriter, r *http.Request) 
 		}
 		out = append(out, te)
 	}
+	// The worktree's scope (linked directly or implicitly, plus the archived
+	// fallback), or with a resource filter the tasks linking that resource.
+	scope := tasks.Scope{Kind: tasks.ScopeWorktree, Worktree: path}
+	if rtype != "" {
+		scope = tasks.Scope{Kind: tasks.ScopeResource, ResourceType: rtype, ResourceID: rid}
+	}
+	q := taskFeedQuery{
+		include:    taskEventsSelected(types, eventTypes),
+		before:     before,
+		limit:      limit,
+		unreadOnly: unreadOnly,
+		terms:      terms,
+	}
+	if q.include {
+		if q.taskIDs, err = tasks.ScopeTaskIDs(s.DB, scope); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if out, err = s.mergeTaskEvents(out, q); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeTimeline(w, out)
+}
+
+// writeTimeline writes a timeline page, its cursor the last row's ts.
+func writeTimeline(w http.ResponseWriter, out []TimelineEvent) {
 	writeJSON(w, http.StatusOK, timelineResponse{Events: out, NextCursor: cursorOf(out)})
 }
 
-func (s *Server) writeTimelineRows(w http.ResponseWriter, rows *sql.Rows, limit int, terms []string) {
+// collectTimelineRows reads the global timeline's watcher rows into enriched
+// DTOs, at most limit, each event once.
+func (s *Server) collectTimelineRows(rows *sql.Rows, limit int, terms []string) ([]TimelineEvent, error) {
 	out := make([]TimelineEvent, 0, limit)
 	// An event can be linked to more than one resource in
 	// watcher_event_resources (the join in handleGlobalTimeline yields one
@@ -423,8 +570,7 @@ func (s *Server) writeTimelineRows(w http.ResponseWriter, rows *sql.Rows, limit 
 		var te TimelineEvent
 		if err := rows.Scan(&te.ID, &te.TS, &te.ExternalTS, &te.Source, &te.Type,
 			&te.Title, &te.Body, &te.Author, &te.authorID, &te.ResourceType, &te.ResourceID, &te.ResourceURL); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
+			return nil, err
 		}
 		if seen[te.ID] {
 			continue
@@ -434,8 +580,7 @@ func (s *Server) writeTimelineRows(w http.ResponseWriter, rows *sql.Rows, limit 
 		out = append(out, te)
 	}
 	if err := rows.Err(); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+		return nil, err
 	}
 	rows.Close()
 	enricher := s.newEventEnricher()
@@ -443,7 +588,7 @@ func (s *Server) writeTimelineRows(w http.ResponseWriter, rows *sql.Rows, limit 
 		enricher.fillResource(&out[i])
 		out[i].Match = matchEvent(&out[i], terms)
 	}
-	writeJSON(w, http.StatusOK, timelineResponse{Events: out, NextCursor: cursorOf(out)})
+	return out, nil
 }
 
 // eventEnricher turns raw events into TimelineEvent DTOs for ONE request.
