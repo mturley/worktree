@@ -990,6 +990,12 @@ to break.
   `relatedTarget`, collapsed the controls, and the click landed on nothing.
   Preventing the mousedown default keeps focus in the input; keep it on any
   control added there.
+- **Row controls name their task.** The state checkbox is `State of
+  “<title>”: In progress`, the star `Star “<title>”` / `Unstar “<title>”`
+  with `aria-pressed`, the grip `Drag to reorder <title>`. The state menu
+  marks the current state with `aria-current` and a check (Mantine fixes
+  `role="menuitem"`, so no `menuitemradio`). Quick add's star keeps ONE
+  label and lets `aria-pressed` carry the state.
 - **Where quick add puts a task** (`quickAddAnchor` in `lib/taskSections.ts`):
   after the last visible open task in Custom and Priority sort, where the
   display is master order; in Due and Recently updated, after the visible

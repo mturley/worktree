@@ -77,7 +77,8 @@ export function TaskQuickAdd({ onAdd, defaultPriority = "none" }: {
           <ActionIcon
             variant="transparent"
             size="sm"
-            aria-label={starred ? "Unstar new task" : "Star new task"}
+            // A fixed name: aria-pressed alone says whether it is on.
+            aria-label="Star new task"
             aria-pressed={starred}
             disabled={busy}
             onMouseDown={keepInputFocus}

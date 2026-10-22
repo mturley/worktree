@@ -22,10 +22,11 @@ function task(over: Partial<Task> = {}): Task {
 describe("TaskStateCheckbox", () => {
   it("opens the state menu and changes nothing until a pick", async () => {
     const onPick = vi.fn()
-    wrap(<TaskStateCheckbox state="in_progress" onPick={onPick} />)
-    await userEvent.click(screen.getByRole("button", { name: /task state/i }))
-    expect(await screen.findByRole("menuitem", { name: "In progress" })).toBeInTheDocument()
-    expect(screen.getByRole("menuitem", { name: "Done" })).toBeInTheDocument()
+    wrap(<TaskStateCheckbox state="in_progress" title="Write the thing" onPick={onPick} />)
+    await userEvent.click(screen.getByRole("button", { name: "State of “Write the thing”: In progress" }))
+    // The current state is marked; the others are not.
+    expect(await screen.findByRole("menuitem", { name: /In progress/ })).toHaveAttribute("aria-current", "true")
+    expect(screen.getByRole("menuitem", { name: "Done" })).not.toHaveAttribute("aria-current")
     expect(onPick).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole("menuitem", { name: "Not started" }))
     expect(onPick).toHaveBeenCalledWith("not_started")
@@ -60,11 +61,23 @@ describe("TaskRow", () => {
     expect(screen.queryByTestId("task-link-chip")).toBeNull()
   })
 
-  it("star button calls onToggleStar", async () => {
+  it("star button names its task, reports pressed, and calls onToggleStar", async () => {
     const onToggleStar = vi.fn()
     wrap(<TaskRow task={task()} onState={() => {}} onToggleStar={onToggleStar} />)
-    await userEvent.click(screen.getByRole("button", { name: "Star task" }))
+    const star = screen.getByRole("button", { name: "Star “Write the thing”" })
+    expect(star).toHaveAttribute("aria-pressed", "false")
+    await userEvent.click(star)
     expect(onToggleStar).toHaveBeenCalled()
+  })
+
+  it("a starred row's star offers Unstar, pressed", () => {
+    wrap(<TaskRow task={task({ starred: true })} onState={() => {}} onToggleStar={() => {}} />)
+    expect(screen.getByRole("button", { name: "Unstar “Write the thing”" })).toHaveAttribute("aria-pressed", "true")
+  })
+
+  it("the state checkbox names its task", () => {
+    wrap(<TaskRow task={task()} onState={() => {}} onToggleStar={() => {}} />)
+    expect(screen.getByRole("button", { name: "State of “Write the thing”: In progress" })).toBeInTheDocument()
   })
 })
 

@@ -23,7 +23,8 @@ describe("TaskQuickAdd under WebKit focus rules", () => {
     const input = screen.getByRole("textbox", { name: "New task" })
     act(() => input.focus())
     webkitClick(screen.getByRole("button", { name: "Star new task" }), input)
-    expect(screen.getByRole("button", { name: "Unstar new task" })).toHaveAttribute("aria-pressed", "true")
+    // A fixed label; aria-pressed carries the state.
+    expect(screen.getByRole("button", { name: "Star new task" })).toHaveAttribute("aria-pressed", "true")
     expect(input).toHaveFocus()
   })
 

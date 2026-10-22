@@ -31,11 +31,12 @@ export function TaskRow({ task, ownResource, dragHandle, onState, onToggleStar }
   return (
     <Group data-task-row gap="xs" wrap="nowrap" py={4} px="xs">
       <span className="task-grip" style={{ width: 14, flex: "none" }}>{dragHandle}</span>
-      <TaskStateCheckbox state={task.state} onPick={onState} />
+      <TaskStateCheckbox state={task.state} title={task.title} onPick={onState} />
       <ActionIcon
         variant="transparent"
         size="sm"
-        aria-label={task.starred ? "Unstar task" : "Star task"}
+        aria-label={task.starred ? `Unstar “${task.title}”` : `Star “${task.title}”`}
+        aria-pressed={task.starred}
         onClick={onToggleStar}
         style={{ color: task.starred ? "var(--task-accent)" : "var(--mantine-color-dark-3)", flex: "none" }}
       >
