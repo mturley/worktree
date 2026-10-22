@@ -1,10 +1,20 @@
 import { Badge } from "@mantine/core"
 
+/** "1 open task" / "N open tasks": names a card's bare-number badge on hover. */
+export function openTasksLabel(count: number): string {
+  return count === 1 ? "1 open task" : `${count} open tasks`
+}
+
 /**
  * The lime count of open tasks. Same shape as UnreadBadge, but in the task
  * accent (never blue: blue means unread). Nothing for zero.
  */
-export function TaskCountBadge({ count, ...rest }: { count: number; ml?: string }) {
+export function TaskCountBadge({ count, ...rest }: {
+  count: number
+  ml?: string
+  /** Hover text, for a card where a bare number beside "N unreads" needs naming. */
+  title?: string
+}) {
   if (count <= 0) return null
   return (
     <Badge

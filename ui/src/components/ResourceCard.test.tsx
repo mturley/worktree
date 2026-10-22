@@ -828,3 +828,34 @@ describe("bell on list cards", () => {
     expect(screen.queryByRole("img", { name: /Notifications on/ })).toBeNull()
   })
 })
+
+describe("open task badge", () => {
+  const badge = () => document.querySelector(".task-count-badge") as HTMLElement | null
+  const pr = { type: "pr", id: "o/r#1", url: "u", primary: true, title: "t" } as ResourceDTO
+
+  it("badges a list card with its open task count, in the type line's row", () => {
+    wrap(<ResourceCard r={{ ...pr, open_task_count: 2 }} onSelect={vi.fn()} />)
+    expect(badge()).toHaveTextContent("2")
+    expect(badge()).toHaveAttribute("title", "2 open tasks")
+    expect(typeLine().parentElement?.contains(badge())).toBe(true)
+  })
+
+  it("shows no task badge at zero or when the count is absent", () => {
+    wrap(<ResourceCard r={{ ...pr, open_task_count: 0 }} />)
+    expect(badge()).toBeNull()
+    cleanup()
+    wrap(<ResourceCard r={pr} />)
+    expect(badge()).toBeNull()
+  })
+
+  it("sits beside the unread badge", () => {
+    wrap(<ResourceCard r={{ ...pr, unread_count: 4, open_task_count: 1 }} />)
+    expect(badge()).toHaveAttribute("title", "1 open task")
+    expect(badge()?.parentElement).toBe(screen.getByText("4 unreads").closest(".mantine-Badge-root")?.parentElement)
+  })
+
+  it("leaves the detail card bare: its own Tasks tab carries the count", () => {
+    wrap(<ResourceCard r={{ ...pr, open_task_count: 2 }} variant="detail" path="/wt" />)
+    expect(badge()).toBeNull()
+  })
+})

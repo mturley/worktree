@@ -8,6 +8,7 @@ import { UnreadDot } from "./ResourceStatusIcon"
 import { ResourceTypeLine } from "./ResourceTypeLine"
 import { cardEdgeStyle } from "../lib/unread"
 import { UnreadBadge } from "./UnreadBadge"
+import { TaskCountBadge, openTasksLabel } from "./tasks/TaskCountBadge"
 import { NotifyBell } from "./NotifyBell"
 import { useNotificationsEnabled } from "../hooks/useNotifyMode"
 import { NotesMarkdown } from "./NotesMarkdown"
@@ -162,6 +163,13 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
               </Box>
             )}
             <UnreadBadge unread={!!w.has_unread} count={w.unread_count} ml={allBell ? undefined : "auto"} />
+            {/* After the unread badge, and pushed right itself only when nothing
+                before it already is (the unread badge renders nothing when read). */}
+            <TaskCountBadge
+              count={w.open_task_count ?? 0}
+              title={openTasksLabel(w.open_task_count ?? 0)}
+              ml={allBell || w.has_unread ? undefined : "auto"}
+            />
           </Group>
           {/*
             Identity only: which repo, which branch. The counts that used to

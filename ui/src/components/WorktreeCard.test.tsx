@@ -409,3 +409,27 @@ describe("WorktreeCard via-resource match line", () => {
     expect(document.querySelector("mark")?.textContent).toBe("branch")
   })
 })
+
+describe("open task badge", () => {
+  const badge = () => document.querySelector(".task-count-badge") as HTMLElement | null
+
+  it("badges the worktree with its open task count", () => {
+    wrap(<WorktreeCard w={{ ...summary, open_task_count: 3 }} />)
+    expect(badge()).toHaveTextContent("3")
+    expect(badge()).toHaveAttribute("title", "3 open tasks")
+  })
+
+  it("shows no task badge at zero or when the count is absent", () => {
+    wrap(<WorktreeCard w={{ ...summary, open_task_count: 0 }} />)
+    expect(badge()).toBeNull()
+    cleanup()
+    wrap(<WorktreeCard w={summary} />)
+    expect(badge()).toBeNull()
+  })
+
+  it("sits beside the unread badge", () => {
+    wrap(<WorktreeCard w={{ ...summary, has_unread: true, unread_count: 2, open_task_count: 1 }} />)
+    expect(badge()).toHaveAttribute("title", "1 open task")
+    expect(badge()?.parentElement).toBe(screen.getByText("2 unreads").closest(".mantine-Badge-root")?.parentElement)
+  })
+})

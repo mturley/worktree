@@ -918,6 +918,73 @@ the watcher toggles do not apply.
   unit-tested directly because the ticker has no seam). The client treats it
   as an invalidation signal for its task queries and counts.
 
+### Task lists in the UI (`ui/src/components/tasks/`)
+
+The spec (`docs/superpowers/specs/2026-10-21-tasks-design.md`) owns what a
+list looks like; this is where its pieces live and the rules that are easy
+to break.
+
+- **Files.** `components/tasks/` holds `TaskList` (sections, drag and drop,
+  quick add at the bottom), `TaskRow`, `TaskStateCheckbox`,
+  `TaskListToolbar` (sort, priority filter, show completed / include
+  archived, Pin), `TaskQuickAdd`, `TaskCountBadge` (plus `openTasksLabel`)
+  and `TasksSection.tsx` (placement, below). `taskDrag.ts` namespaces the
+  dnd-kit ids (`task:<id>`, `section:<key>`) and turns a drop into
+  `planDrop`'s arguments. All pure list logic — sections, sorting, filters,
+  `openCount`, `planDrop` (what a drop does: reorder, star/unstar, change
+  priority), `dueLabel`, `linkChip` — is in **`lib/taskSections.ts`**.
+  `lib/taskList.ts` is unrelated: it toggles Markdown checkboxes in notes.
+- **One pref, one key.** `lib/taskListPrefs.ts` stores sort, priority
+  filter, show completed, include archived AND `pinned` as one JSON value
+  under `worktree.taskList` in localStorage, each field validated on its own
+  (a bad one falls back alone). `hooks/useTaskListPrefs.ts` reads it with
+  `useSyncExternalStore` and tells its own tab's other lists on write (the
+  browser fires `storage` only in other tabs). Every list on every page
+  shares it, so pinning is global: pin on home and a selected PR's list is
+  pinned too.
+- **Placement lives in one hook.** `useTasksPlacement(scope, ownResource?,
+  { activeTab, onFallback })` decides "tab or pinned panel" for every page
+  and returns `tab` (the last `Tabs.Tab`, or `null` while pinned, with the
+  open count while not active), `tabPanelBody`, `pinnedPanel`, `toolbar`
+  (for the tab bar's right-hand end) and `pinnedAbove(bar)`. When the pin
+  lands while Tasks is the active tab, its effect calls `onFallback`; for
+  the one render before that state change lands, pages render the tab
+  through `tasksFallbackTab(tab, pinned, fallback)` so no empty panel
+  flashes. A selected resource's pane uses `useResourceTasksPlacement`,
+  which does the same for a tab kept in the URL (`useResourceTab`),
+  replacing the history entry on fallback (the user chose the pin, not the
+  tab) and suppressing the link chip that points back at that resource.
+- **A pinned panel lives inside the sticky header.** Where a page pins a
+  header (sticky, `data-tooltip-layer="pinned"`) — the home and worktree
+  pages' right-column tab bars, the resource detail pane's card + tab bar —
+  the panel goes INSIDE that block, just above the tab bar
+  (`pinnedAbove(tabBar)`, or `pinnedPanel` between the detail card and its
+  `Tabs.List`). Rendered above the sticky block instead, it scrolls away as
+  the feed scrolls, and its tooltips land under the header's layer. The
+  panel's own row cap (8 rows, then it scrolls inside itself) is what keeps
+  the header bounded.
+- **`keepPreviousData` is scoped.** `useTasks` keys each query by scope
+  plus `{completed, archived}`; toggling Show completed changes the key, and
+  dropping to "Loading tasks…" would unmount the list's `DndContext`. So
+  `placeholderData` keeps the previous data — but only when the previous
+  query was the SAME scope (`sameScope`). Another worktree's or resource's
+  tasks are never a stand-in for this one's.
+- **Quick add's controls use `onMouseDown` + `preventDefault`.** The star
+  toggle, priority picker and Add button only exist while the input is
+  focused or has text. WebKit (Safari, and every iOS browser) does not
+  focus a button on click, so the input's blur fired with no
+  `relatedTarget`, collapsed the controls, and the click landed on nothing.
+  Preventing the mousedown default keeps focus in the input; keep it on any
+  control added there.
+- **Counts.** `TaskCountBadge` is the lime count (dark text, never blue —
+  blue is unread). It appears on the Tasks tab while that tab is not active
+  and the list is not pinned, and on worktree cards and list resource cards
+  beside `UnreadBadge` (`open_task_count`, absent = 0, titled "N open
+  tasks"). The selected resource's detail card has none: its own Tasks tab
+  or pinned panel shows the count. `useSSE` answers `tasks_changed` by
+  invalidating `["tasks"]`, `["worktrees"]` and `["resources"]`, so lists
+  and badges both follow CLI and agent writes within the stream's 5s tick.
+
 ## Notifications
 
 Per-worktree "Notify on all" and per-resource "Notify on new events" toggles.
@@ -1191,6 +1258,11 @@ states. Frontend: `ui/src/components/settings/LogsPanel.tsx`,
     left. Automatic switches (a Slack message focus bringing the Thread tab
     forward) pass `{ replace: true }` so they don't add a step. Tests that
     switch tabs must reset the URL in `beforeEach`.
+  - `useTasks(scope, {completed, archived})` / `useTaskMutations(scope)`
+    (`useTasks.ts`) — task lists under query keys rooted at `["tasks"]`
+    (`taskScopeKey`), with optimistic reorders. `useTaskListPrefs()` — the
+    one global task-list preference, pin included. See "Task lists in the
+    UI" above for both.
 - **Pages** (`ui/src/pages/`):
   - `HomePage.tsx` — worktree list + global timeline + archived toggle. On
     wide viewports these render side by side in a `Grid`; on narrow
@@ -1211,11 +1283,16 @@ states. Frontend: `ui/src/components/settings/LogsPanel.tsx`,
   selection" below). Every on/off switch (`UnreadOnlyToggle`,
   `ArchivedToggle`, `NotifySwitch`, `FollowCmuxToggle`) renders `Toggle`, the
   one place their size is set — use it rather than Mantine's `Switch`.
+  `components/tasks/` is the task lists, their Tasks tab or pinned panel
+  (`TasksSection.tsx`'s `useTasksPlacement`) and `TaskCountBadge` — see
+  "Task lists in the UI" above.
 - **Lib** (`ui/src/lib/`): `resourceSummary.ts` (builds the "2 PRs, 3 Jira
   issues · 2 related resources" summary string from `primary_by_type` +
   `related_count`), `worktreeSort.ts` + `worktreeSortPref.ts` (see "Worktree
   list sorting" below), `relativeTime.ts`, `resourceKey.ts` (see
-  `useSelectedResource` above).
+  `useSelectedResource` above), `taskSections.ts` + `taskListPrefs.ts` (task
+  list logic and the one stored task-list pref; NOT `taskList.ts`, which
+  toggles Markdown checkboxes in notes).
 - **Routing**: `wouter`. `App.tsx` defines `/` → `HomePage`, `/worktree/:path*`
   → `WorktreeDetailPage`. The `:path*` wildcard param comes back from
   `useRoute` under the **typed key `"path*"`** (not `"path"` — a real wouter
