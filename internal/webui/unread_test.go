@@ -232,6 +232,34 @@ func TestResourceReadRejectsSlack(t *testing.T) {
 	}
 }
 
+// The cursor is compared as a string against RFC3339 ts values, so anything
+// else — a Slack ts above all — would silently mark everything read or
+// nothing. It is refused, and no cursor is written.
+func TestResourceReadRejectsNonRFC3339ThroughTS(t *testing.T) {
+	conn := unreadTestDB(t)
+	srv := &Server{DB: conn}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	for _, through := range []string{"1787257539.775119", "2099-01-01", "garbage", "2099-01-01 00:00:00"} {
+		resp := postResourceRead(t, ts.URL, `{"type":"pr","id":"o/r#1","through_ts":"`+through+`"}`)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("through_ts %q: status = %d, want 400", through, resp.StatusCode)
+		}
+	}
+	var n int
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM resource_read_cursor`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("cursors written: %d (%v)", n, err)
+	}
+	// Fractional seconds are still RFC3339.
+	resp := postResourceRead(t, ts.URL, `{"type":"pr","id":"o/r#1","through_ts":"2099-01-01T00:00:00.5Z"}`)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("fractional RFC3339: status = %d, want 200", resp.StatusCode)
+	}
+}
+
 func TestResourceReadRequiresTypeIDAndThroughTS(t *testing.T) {
 	conn := unreadTestDB(t)
 	srv := &Server{DB: conn}

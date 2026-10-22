@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/selfid"
@@ -297,6 +298,23 @@ func resourceHasUnread(dto resourceDTO) bool {
 	return dto.UnreadCount > 0
 }
 
+// validThroughTS checks a mark-read's through_ts, writing the 400 itself
+// when it fails. It must be RFC3339: cursors are compared as strings against
+// the RFC3339 ts of watcher and task events, so any other shape — a Slack
+// message ts above all, which belongs to a different clock — would silently
+// mark everything read or nothing.
+func validThroughTS(w http.ResponseWriter, ts string) bool {
+	if ts == "" {
+		writeError(w, http.StatusBadRequest, "through_ts is required")
+		return false
+	}
+	if _, err := time.Parse(time.RFC3339, ts); err != nil {
+		writeError(w, http.StatusBadRequest, "through_ts must be an RFC3339 timestamp")
+		return false
+	}
+	return true
+}
+
 // resourceReadResponse is what a mark-read did to the cursor, handed back so
 // the client can offer to undo it (POST /api/resource-read/restore).
 // previous_ts is null when the resource had no cursor before.
@@ -326,8 +344,7 @@ func (s *Server) handleResourceRead(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "type and id are required")
 		return
 	}
-	if req.ThroughTS == "" {
-		writeError(w, http.StatusBadRequest, "through_ts is required")
+	if !validThroughTS(w, req.ThroughTS) {
 		return
 	}
 	ch, err := unread.Mark(s.DB, req.Type, req.ID, req.ThroughTS)

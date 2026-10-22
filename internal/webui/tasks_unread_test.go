@@ -181,6 +181,9 @@ func TestTaskReadErrors(t *testing.T) {
 	}{
 		{"no id", "/api/task-read", map[string]any{"through_ts": tts(1)}, http.StatusBadRequest},
 		{"no through_ts", "/api/task-read", map[string]any{"id": f.both.ID}, http.StatusBadRequest},
+		{"slack ts through_ts", "/api/task-read", map[string]any{"id": f.both.ID, "through_ts": "1787257539.775119"}, http.StatusBadRequest},
+		{"date-only through_ts", "/api/task-read", map[string]any{"id": f.both.ID, "through_ts": "2026-01-01"}, http.StatusBadRequest},
+		{"garbage through_ts", "/api/task-read", map[string]any{"id": f.both.ID, "through_ts": "garbage"}, http.StatusBadRequest},
 		{"missing task", "/api/task-read", map[string]any{"id": 9999, "through_ts": tts(1)}, http.StatusNotFound},
 		{"deleted task", "/api/task-read", map[string]any{"id": f.gone.ID, "through_ts": tts(1)}, http.StatusNotFound},
 		{"restore no last_read_ts", "/api/task-read/restore", map[string]any{"id": f.both.ID}, http.StatusBadRequest},

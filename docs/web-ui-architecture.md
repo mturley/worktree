@@ -187,7 +187,7 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | GET | `/api/all-resources` | — | `[]allResourceDTO` (every followed resource once, with its worktrees; see "Home page Resources tab") |
 | POST | `/api/worktrees/poll` | `path` (required) | `{"polled": bool}` |
 | POST | `/api/resource-meta` | body: `{type, id, name, description}` | — |
-| POST | `/api/resource-read` | body: `{type, id, through_ts}` | `{previous_ts, last_read_ts}` — the cursor before (null if none) and after, for an undo |
+| POST | `/api/resource-read` | body: `{type, id, through_ts}` | `{previous_ts, last_read_ts}` — the cursor before (null if none) and after, for an undo; 400 unless `through_ts` is RFC3339 (`validThroughTS`: a Slack ts never belongs here) |
 | POST | `/api/resource-read/restore` | body: `{type, id, last_read_ts, previous_ts}` (what `/api/resource-read` answered) | 204; 409 if the cursor has moved since (see "Undo") |
 | POST | `/api/resource-resolve` | body: `{url}` | resolved link metadata |
 | GET | `/api/resource-type` | `url` (required) | `{type, id}` or error if unrecognized |
@@ -235,7 +235,7 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | POST | `/api/tasks/events/link` | body: `{id, key, snapshot?}`; `ev:` keys rebuild the snapshot server-side, `slack:` keys need a snapshot with a title or body | `taskDetailDTO` |
 | POST | `/api/tasks/events/unlink` | body: `{id, key}` | `taskDetailDTO` |
 | POST | `/api/tasks/from-event` | body: `{key, snapshot?, path?}`; creates a task from the event | `taskDetailDTO` |
-| POST | `/api/task-read` | body: `{id, through_ts}` | `{previous_ts, last_read_ts}` (as `/api/resource-read`); 404 for a missing or deleted task. See "Unread" |
+| POST | `/api/task-read` | body: `{id, through_ts}` | `{previous_ts, last_read_ts}` (as `/api/resource-read`); 400 unless `through_ts` is RFC3339; 404 for a missing or deleted task. See "Unread" |
 | POST | `/api/task-read/restore` | body: `{id, last_read_ts, previous_ts}` (what `/api/task-read` answered) | 204; 409 if the task's cursor has moved since |
 | GET | `/api/task-unread` | `scope` (`all` default, `worktree`, `resource`), `path` / `type` + `id` as `/api/tasks` | `[{id, title, count, newest_ts}]`, never null: tasks in the scope (completed and archived included) with unread events, newest unread first |
 | POST | `/api/tabs/presence` | body: `{tab, route, visible}` | 204; 404 for an unknown tab or another session's |

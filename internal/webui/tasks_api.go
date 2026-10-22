@@ -376,8 +376,7 @@ func (s *Server) handleTaskRead(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "id is required")
 		return
 	}
-	if req.ThroughTS == "" {
-		writeError(w, http.StatusBadRequest, "through_ts is required")
+	if !validThroughTS(w, req.ThroughTS) {
 		return
 	}
 	if _, err := tasks.Get(s.DB, req.ID); err != nil {
