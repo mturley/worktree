@@ -948,28 +948,56 @@ the watcher toggles do not apply.
   `event_links`. Every write route answers with the fresh detail.
 - **Event-link snapshots.** A linked event is stored as a key (`ev:<watcher
   event id>` or `slack:<channel>:<message ts>`) plus a snapshot (source,
-  type, title, author, body ≤ 500 runes, URL, ts, resource). For `ev:` keys
-  the server builds the snapshot itself from `watcher_events`, enriched as
-  the timeline is, and ignores any snapshot the client sent, so it stays
-  truthful. `slack:` messages are not watcher events, so the client's
-  snapshot is taken (it must have a title or a body). On read, an `ev:` link
-  gets `live` (the enriched current event) while that event still exists
-  with the snapshot's type; otherwise the UI renders the snapshot.
+  type, title, author, body ≤ 500 runes, URL, ts, resource). Both write
+  routes (`events/link`, `from-event`) resolve the key and snapshot through
+  `resolveEventLink`:
+  - An `ev:` key's snapshot is built by the server from `watcher_events`,
+    enriched as the timeline is; any snapshot the client sent is ignored,
+    so it stays truthful.
+  - **Canonical Slack keys.** When that `ev:` event is a Slack thread event
+    with an `external_ts`, the link is stored under
+    `slack:<channel>:<external_ts>` instead (the channel is the resource
+    id's part before `:`), so a message has one identity whether it was
+    linked from the feed or from the thread view. `events/link` stores a
+    server-built snapshot with `tasks.LinkEventReplace`, which overwrites
+    a client snapshot the key already had. Links stored under a Slack
+    message's `ev:` key before this keep working (see `linked_key` below).
+  - A `slack:` key takes the client's snapshot, validated by
+    `validSlackSnapshot` (400 otherwise): the key must be
+    `slack:<channel>:<ts>` with both parts non-empty; the snapshot needs a
+    title or a body, `resource_type` `slack` and a `resource_id` of
+    `<channel>:<thread ts>` in the key's channel, and an empty or `http(s)`
+    `url`. The server sets `source` `slack` and `type` `slack_reply`, and
+    cuts the title to 200 runes.
+- **Live or snapshot.** `liveEvent` finds the watcher event a link renders
+  from: an `ev:` key's event while it still exists with the snapshot's
+  type, or a `slack:` key's message found by `external_ts` in a thread of
+  that channel. The detail's `event_links[].live` is that event, enriched;
+  without one the UI renders the snapshot.
 - **Activity merge.** `/api/tasks/activity` merges the task's own events
   (`taskEventToTimeline`: id `task:<event id>`, source `tasks`, resource
   `task:<task id>`, a human-readable title per event type, author `you` or
-  `agent (<session>)`) with every watcher event of the task's linked
-  resources (`watcherdb.EventsForResource`, deduplicated by id). It sorts
-  newest first by `ts`, cuts to 200, and only then enriches the surviving
-  watcher events. A watcher event is `linked_to_task` when its `ev:` key —
-  or, for a Slack thread event, its `slack:<channel>:<external_ts>` key — is
-  linked to the task.
+  `agent (<session>)`) with the events of the task's linked resources. Each
+  resource is read by `recentResourceEvents`: one direct query over
+  `watcher_events` JOIN `watcher_event_resources`, newest first, `LIMIT
+  200`, leaving out `watch_started`/`watcher_error` as the timeline does.
+  It replaced `watcherdb.EventsForResource`, which loads a resource's whole
+  history unpaged, on a route every SSE refresh re-runs. The merge is
+  deduplicated by id, sorted newest first by `ts`, cut to 200, and only then
+  are the surviving watcher events enriched. `filter=linked` renders EVERY
+  event link: its live event, else a row built from its snapshot
+  (`snapshotEvent`, whose id is the link key). A row is `linked_to_task`
+  when its `slack:` key or its `ev:` key is linked, and `linked_key` says
+  which, so the UI unlinks by the key actually stored.
 - **From an event.** `/api/tasks/from-event` titles the task from the event
-  (a Slack message's first non-blank line, trimmed to 120 runes), Focus-links
-  the event's resource, and links the event. `path`, the worktree the user
-  acted in, is added as a Focus worktree link only when that worktree does
-  not already follow the resource (otherwise the task shows there
-  implicitly).
+  (a Slack message's first non-blank line, made plain text by `slackPlain`
+  in `slackplain.go` — `<@U…|name>` → `@name` or `@user`, `<#C…|name>` →
+  `#name`, `<url|label>` → `label`, `<url>` → `url`, `&lt;`/`&gt;`/`&amp;`
+  unescaped — and trimmed to 120 runes), Focus-links the event's resource,
+  and links the event, all in one transaction (`tasks.CreateFromEvent`).
+  `path`, the worktree the user acted in, is added as a Focus worktree link
+  only when that worktree does not already follow the resource (otherwise
+  the task shows there implicitly).
 
 ### Task lists in the UI (`ui/src/components/tasks/`)
 
@@ -1102,6 +1130,32 @@ URL param (`?task=<id>`) through **`TaskModalProvider`**
   `sectionAction.tsx` (`useSectionAction`) gives each section its own inline
   error alert. Data hooks are in `ui/src/hooks/useTaskDetail.ts` (`useTaskDetail`,
   `useTaskActivity`, `useTaskDetailMutations`, `useTaskFromEvent`).
+- **Label.** The header renders the title as `Modal.Title` (a span inside
+  the title's button, and a hidden copy while the title is being edited),
+  so Mantine points the dialog's `aria-labelledby` at it and the dialog is
+  named by the task's title. Mantine's `Modal` overrides an
+  `aria-labelledby` passed to it, and an `aria-label` lands on its root, not
+  on the dialog.
+- **Activity refreshes.** `useSSE` invalidates every `["tasks"]` query on
+  `events_new` and `tasks_changed`, and `invalidateQueries` refetches even
+  fresh queries, so `useTaskActivity`'s 5 s `staleTime`
+  (`TASK_ACTIVITY_STALE_MS`) alone would not stop a burst of events from
+  refetching the feed once each. `useSSE` therefore leaves an activity feed
+  fetched within that window alone and refreshes it once when the window
+  ends. Task writes from the UI (`settleTaskWrite`) still refetch it at
+  once.
+- **Unsaved description.** `DescriptionSection` is dirty while its text
+  differs from the saved description. It reports that through
+  `onDirtyChange` (via `DetailsTab`) to `TaskDetailModal`, which keys it by
+  task id; registers it with `useUnsavedChanges`; and keeps the draft in
+  `sessionStorage` under `task-description-draft:<id>`. While dirty, an
+  outside click does not close the modal, and the close button or Esc asks
+  `window.confirm("Discard unsaved description?")` (discarding forgets the
+  draft). Back can't be blocked in an SPA, so it closes the modal anyway;
+  the kept draft is restored into the editor, with an "Unsaved draft
+  restored" note, when the task is opened again. Save, Cancel and deleting
+  the task clear it. Switching to the Activity tab unmounts the section but
+  keeps the draft (and the dirty flag).
 - **Optimistic updates.** `useOptimisticTask(id)` wraps `update`/`setState`:
   the patched fields are written to the detail cache at once and, on failure,
   only those fields are restored (a concurrent edit of another field
@@ -1113,20 +1167,27 @@ URL param (`?task=<id>`) through **`TaskModalProvider`**
 - **Event links.** A task links an event by key: `ev:<watcher event id>` or
   `slack:<channel>:<message ts>`, each stored with a snapshot (see "Task
   detail API"), so the link outlives watcher pruning. Keys are derived in
-  **`lib/taskEventKey.ts`**: `eventTaskKey` / `eventTaskKeys` classify by
-  prefix, because watcher event ids are opaque UUIDs. `task:`, `ev:` and
-  `slack:` ids and `source === "tasks"` are NOT watcher events (null); any
-  other non-empty id is. `slackMessageKey` / `slackMessageSnapshot` build the
-  Slack side (title = first non-blank line of the raw mrkdwn, up to 120
-  runes; `type` `slack_reply`; `ts` converted to ISO). The Activity tab
-  unlinks under whichever key the event was actually linked with.
+  **`lib/taskEventKey.ts`**: `eventTaskKey` classifies by prefix, because
+  watcher event ids are opaque UUIDs. `task:`, `ev:` and `slack:` ids and
+  `source === "tasks"` are NOT watcher events (null); any other non-empty
+  id is. `slackMessageKey` / `slackMessageSnapshot` build the Slack side
+  (title = the first non-blank line made plain text by `mrkdwnToPlain` in
+  `lib/mrkdwnPlain.ts` — the server's `slackPlain`, plus display names from
+  the thread's users — up to 120 runes; `type` `slack_reply`; `ts`
+  converted to ISO). Linking a Slack message's watcher event by its `ev:`
+  key is stored under its `slack:` key by the server, so the client never
+  computes a second key. The Activity tab links by `eventTaskKey` and
+  unlinks by the row's `linked_key` (the key the server says it is stored
+  under), which also lets snapshot rows in "Linked events" be unlinked.
 - **"＋ task".** `components/tasks/useMakeTask.ts` (`useMakeTask`,
   `useMakeTaskFromEvent`) calls `useTaskFromEvent`, then `open(d.id)`; a
   failure is a toast. `EventRow` and `TimelineFeed` take an `onMakeTask`
   prop (pages supply it; they don't use the modal provider themselves, so
   their tests and `SearchSuggestions` need none); Slack messages use
   `ThreadActionsContext.makeTask`. The button overlays the row's top-right
-  corner on hover/focus.
+  corner on hover/focus; while hidden it has `pointer-events: none`, so a
+  tap can't hit it unseen, and where nothing can hover
+  (`useMediaQuery("(hover: none)")`) it is always shown.
 - **Row click guards.** `TaskRow` takes `onOpen`; `TaskList` supplies it from
   `useTaskModal()` (the drag overlay's copy gets none and is inert). The title
   is a real `<button>`. The grip wrapper, star and link chip call
