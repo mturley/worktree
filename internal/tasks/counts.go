@@ -13,25 +13,40 @@ type Counts struct {
 // ONE load through List's compute path, so each count equals the length of
 // the matching default List (open tasks only).
 func OpenCounts(conn *sql.DB) (Counts, error) {
+	c, _, err := CountsAndScope(conn)
+	return c, err
+}
+
+// CountsAndScope is OpenCounts and BuildScopeIndex from the SAME single
+// load, for a request that needs both (the worktree list: open-task counts
+// and unread task badges).
+func CountsAndScope(conn *sql.DB) (Counts, ScopeIndex, error) {
 	c, err := compute(conn, nil)
 	if err != nil {
-		return Counts{}, err
+		return Counts{}, ScopeIndex{}, err
 	}
-	out := Counts{ByWorktree: map[string]int{}, ByResource: map[string]int{}}
+	counts := Counts{ByWorktree: map[string]int{}, ByResource: map[string]int{}}
+	scope := ScopeIndex{ByWorktree: map[string][]int64{}, ByResource: map[string][]int64{}}
 	for _, t := range c.tasks {
-		if t.State == StateDone {
-			continue
+		open := t.State != StateDone
+		if open {
+			counts.Total++
 		}
-		out.Total++
 		wts, res := c.memberships(t)
 		for _, p := range wts {
-			out.ByWorktree[p]++
+			scope.ByWorktree[p] = append(scope.ByWorktree[p], t.ID)
+			if open {
+				counts.ByWorktree[p]++
+			}
 		}
 		for _, k := range res {
-			out.ByResource[k]++
+			scope.ByResource[k] = append(scope.ByResource[k], t.ID)
+			if open {
+				counts.ByResource[k]++
+			}
 		}
 	}
-	return out, nil
+	return counts, scope, nil
 }
 
 // ScopeIndex is the feed membership ScopeTaskIDs computes for one scope —
@@ -46,21 +61,8 @@ type ScopeIndex struct {
 // many worktrees' or resources' task membership in one request (the worktree
 // list's unread badges) and so must not call ScopeTaskIDs per worktree.
 func BuildScopeIndex(conn *sql.DB) (ScopeIndex, error) {
-	c, err := compute(conn, nil)
-	if err != nil {
-		return ScopeIndex{}, err
-	}
-	out := ScopeIndex{ByWorktree: map[string][]int64{}, ByResource: map[string][]int64{}}
-	for _, t := range c.tasks {
-		wts, res := c.memberships(t)
-		for _, p := range wts {
-			out.ByWorktree[p] = append(out.ByWorktree[p], t.ID)
-		}
-		for _, k := range res {
-			out.ByResource[k] = append(out.ByResource[k], t.ID)
-		}
-	}
-	return out, nil
+	_, s, err := CountsAndScope(conn)
+	return s, err
 }
 
 // memberships returns the canonical worktrees whose scope holds t and the

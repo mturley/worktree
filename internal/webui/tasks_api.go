@@ -302,16 +302,20 @@ func (s *Server) handleMoveTask(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// openTaskCounts loads every scope's open-task count once per request. A
-// failure is logged and costs only the counts (all 0), never the listing.
-func (s *Server) openTaskCounts() tasks.Counts {
-	c, err := tasks.OpenCounts(s.DB)
+// openTaskCountsPriming loads every scope's open-task count once per
+// request, and primes ix with the task membership from the SAME load
+// (tasks.CountsAndScope), so the request's unread badges do not compute it
+// a second time. A failure is logged and costs only the counts (all 0),
+// never the listing; ix is then left unprimed and tries its own load.
+func (s *Server) openTaskCountsPriming(ix *unreadIndex) tasks.Counts {
+	c, sc, err := tasks.CountsAndScope(s.DB)
 	if err != nil {
 		if s.Logger != nil {
-			s.Logger.Printf("tasks.OpenCounts: %v", err)
+			s.Logger.Printf("tasks.CountsAndScope: %v", err)
 		}
 		return tasks.Counts{}
 	}
+	ix.primeTaskScope(sc)
 	return c
 }
 

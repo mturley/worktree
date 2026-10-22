@@ -47,6 +47,23 @@ type unreadIndex struct {
 	tasksLoaded bool
 	taskSums    map[int64]unread.Summary // unread.TaskSummaries
 	taskScope   tasks.ScopeIndex         // which tasks each worktree/resource holds
+	scopePrimed bool                     // taskScope was handed in by primeTaskScope
+}
+
+// taskUnreadLoadHook, when set (tests only), is called with "summaries" or
+// "scope" each time an unreadIndex actually reads that part of task unread,
+// so a test can prove a path never pays for it.
+var taskUnreadLoadHook func(what string)
+
+// primeTaskScope hands the index a ScopeIndex the request already computed
+// (the worktree list gets it from tasks.CountsAndScope alongside its
+// open-task counts), so loadTasks does not compute membership a second time.
+func (ix *unreadIndex) primeTaskScope(sc tasks.ScopeIndex) {
+	if ix == nil {
+		return
+	}
+	ix.taskScope = sc
+	ix.scopePrimed = true
 }
 
 // loadTasks reads every task's unread summary and every scope's task
@@ -62,14 +79,20 @@ func (ix *unreadIndex) loadTasks() {
 	if ix.db == nil {
 		return
 	}
+	if taskUnreadLoadHook != nil {
+		taskUnreadLoadHook("summaries")
+	}
 	sums, err := unread.TaskSummaries(ix.db)
 	if err != nil {
 		ix.logf("unread.TaskSummaries: %v", err)
 		return
 	}
 	ix.taskSums = sums
-	if len(sums) == 0 {
-		return // nothing unread: membership cannot change any count
+	if len(sums) == 0 || ix.scopePrimed {
+		return // nothing unread, or membership already in hand
+	}
+	if taskUnreadLoadHook != nil {
+		taskUnreadLoadHook("scope")
 	}
 	sc, err := tasks.BuildScopeIndex(ix.db)
 	if err != nil {
@@ -182,18 +205,29 @@ func (ix *unreadIndex) fill(dto *resourceDTO) {
 	if ix == nil {
 		return
 	}
-	key := unread.Key(dto.Type, dto.ID)
+	ix.fillOwn(dto)
 	dto.TaskUnreadCount = ix.resourceTaskUnread(dto.Type, dto.ID)
+	dto.UnreadCount += dto.TaskUnreadCount
+}
+
+// fillOwn is fill without the task part: the resource's own unread only,
+// task_unread_count left 0. The timeline enricher's resource chips use it,
+// so a timeline request never loads task unread (no TaskSummaries query, no
+// tasks compute). Every card, badge and total goes through fill.
+func (ix *unreadIndex) fillOwn(dto *resourceDTO) {
+	if ix == nil {
+		return
+	}
+	key := unread.Key(dto.Type, dto.ID)
 	if dto.Type == "slack" {
 		dto.UnreadCount = 0
 		if dto.HasUnread {
 			dto.UnreadCount = max(ix.slackCounts[key], 1)
 		}
-		dto.UnreadCount += dto.TaskUnreadCount
 		return
 	}
 	sum := ix.counts[key]
-	dto.UnreadCount = sum.Count + dto.TaskUnreadCount
+	dto.UnreadCount = sum.Count
 	dto.UnreadThroughTS = sum.NewestTS
 }
 

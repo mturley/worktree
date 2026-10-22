@@ -799,8 +799,12 @@ membership: completed and archived included), newest first, for mark-all-read.
 **How task unread counts in the badges.** `unreadIndex` loads the task
 summaries and `tasks.BuildScopeIndex` (every worktree's and resource's task
 ids, from ONE tasks load) lazily, on the first task question, so
-`/api/worktrees` pays for membership once however many worktrees it lists,
-and requests that never ask (the timelines) pay nothing.
+`/api/worktrees` pays for membership once however many worktrees it lists.
+The worktree and resource lists already load tasks for `open_task_count`,
+so they use `tasks.CountsAndScope` and prime the index with its membership
+(`openTaskCountsPriming`): one compute serves both. The timeline enricher's
+resource chips use `fillOwn`, which skips the task part, so timelines never
+load task unread (`TestTimelinesDoNotLoadTaskUnread`).
 - A resource's `unread_count` adds its linking tasks' unread
   (`task_unread_count`, reported separately too). `unread_through_ts` stays
   the resource's own: task events clear through the task's cursor. For a

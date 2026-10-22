@@ -88,7 +88,7 @@ func (s *Server) handleWorktreeResources(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	counts := s.openTaskCounts()
+	counts := s.openTaskCountsPriming(ix)
 	out := make([]resourceDTO, 0, len(rs))
 	for _, res := range rs {
 		dto := s.newResourceDTO(res)

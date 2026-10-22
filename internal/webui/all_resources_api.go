@@ -41,7 +41,7 @@ func (s *Server) handleAllResources(w http.ResponseWriter, r *http.Request) {
 		s.Logger.Printf("selfid.Load: %v", err)
 	}
 	ix := s.newUnreadIndex()
-	counts := s.openTaskCounts()
+	counts := s.openTaskCountsPriming(ix)
 	type key struct{ typ, id string }
 	byKey := map[key]int{}
 	out := make([]allResourceDTO, 0)

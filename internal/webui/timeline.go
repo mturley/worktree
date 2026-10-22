@@ -749,7 +749,9 @@ func (e *eventEnricher) resource(rtype, rid string) *resourceDTO {
 		dto.CustomDescription = meta.CustomDescription
 	}
 	e.s.enrichResourceDTO(dto)
-	e.unread.fill(dto)
+	// Chips need no task counts, and fill's task part would load them on
+	// every timeline request.
+	e.unread.fillOwn(dto)
 	e.resources[key] = dto
 	return dto
 }

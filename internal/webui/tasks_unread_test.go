@@ -257,6 +257,83 @@ func TestTaskDTOUnreadCount(t *testing.T) {
 	}
 }
 
+// recordTaskUnreadLoads counts what unreadIndex.loadTasks reads, by part.
+func recordTaskUnreadLoads(t *testing.T) map[string]int {
+	t.Helper()
+	got := map[string]int{}
+	taskUnreadLoadHook = func(what string) { got[what]++ }
+	t.Cleanup(func() { taskUnreadLoadHook = nil })
+	return got
+}
+
+// Timelines render resource chips through fillOwn, so they never load task
+// unread — even with task and watcher events unread and on the page.
+func TestTimelinesDoNotLoadTaskUnread(t *testing.T) {
+	f := taskUnreadFixture(t)
+	f.seed(t)
+	insertUnreadEvent(t, f.s.DB, "e1", "2099-01-01T00:00:00Z", "github", "pr", "o/r#1")
+	loads := recordTaskUnreadLoads(t)
+	for _, target := range []string{
+		"/api/timeline?archived=false",
+		"/api/worktree-timeline?path=" + url.QueryEscape(f.wt),
+	} {
+		rec := serveAll(t, f.s, http.MethodGet, target, nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s = %d: %s", target, rec.Code, rec.Body.String())
+		}
+	}
+	if len(loads) != 0 {
+		t.Fatalf("timelines loaded task unread: %v", loads)
+	}
+}
+
+// The worktree list computes task membership once: its open-task counts'
+// load primes the unread index, which then never builds its own.
+func TestWorktreeListComputesTaskScopeOnce(t *testing.T) {
+	f := taskUnreadFixture(t)
+	f.seed(t)
+	loads := recordTaskUnreadLoads(t)
+	if w := f.worktree(t); w.UnreadCount != 3 {
+		t.Fatalf("unread_count = %d, want 3", w.UnreadCount)
+	}
+	if loads["summaries"] != 1 || loads["scope"] != 0 {
+		t.Fatalf("loads = %v, want one summaries read and no scope build", loads)
+	}
+}
+
+// A Slack thread Slack calls read still counts its linking tasks' unread:
+// has_unread stays Slack's verdict, resourceHasUnread ORs in the task count,
+// and the worktree total counts the task once.
+func TestSlackResourceWithTaskUnread(t *testing.T) {
+	s, wt := tasksServer(t)
+	must(t, resources.Add(s.DB, wt, resources.Resource{Type: "slack", ID: "C1:1.2", URL: "https://x.slack.com/archives/C1/p12"}))
+	tk := mustTask(t, s, tasks.NewTask{Title: "thread task", Focus: []tasks.LinkTarget{resLink("slack", "C1:1.2")}})
+	if _, err := s.DB.Exec(`DELETE FROM task_events`); err != nil {
+		t.Fatal(err)
+	}
+	insertTaskEvent(t, s.DB, tk.ID, tts(1), "task_updated", "agent", "")
+	insertTaskEvent(t, s.DB, tk.ID, tts(2), "task_updated", "agent", "")
+	f := &taskUnread{s: s, wt: wt}
+
+	w := f.worktree(t)
+	if !w.HasUnread || w.UnreadCount != 2 {
+		t.Fatalf("worktree has_unread %v unread_count %d; want true, 2", w.HasUnread, w.UnreadCount)
+	}
+	if len(w.FocusResources) != 1 {
+		t.Fatalf("focus = %+v", w.FocusResources)
+	}
+	dto := w.FocusResources[0]
+	if dto.HasUnread || dto.UnreadCount != 2 || dto.TaskUnreadCount != 2 {
+		t.Fatalf("slack dto = %+v", dto)
+	}
+	if !resourceHasUnread(dto) {
+		t.Fatal("resourceHasUnread = false for a Slack thread with task unread")
+	}
+	if has, ok := s.worktreeHasUnread(s.newUnreadIndex(), wt); !ok || !has {
+		t.Fatalf("mailbox: has %v ok %v", has, ok)
+	}
+}
+
 func TestCmuxMailboxForTaskOnlyUnread(t *testing.T) {
 	f := taskUnreadFixture(t)
 	if has, ok := f.s.worktreeHasUnread(f.s.newUnreadIndex(), f.wt); !ok || has {

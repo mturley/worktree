@@ -87,8 +87,9 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 	if err != nil && s.Logger != nil {
 		s.Logger.Printf("notes.AllNonBlank: %v", err)
 	}
-	// One load for every worktree's and resource's open-task count.
-	taskCounts := s.openTaskCounts()
+	// One load for every worktree's and resource's open-task count, which
+	// also gives the unread index its task membership (no second compute).
+	taskCounts := s.openTaskCountsPriming(ix)
 	for _, e := range entries {
 		rs, err := resources.Load(s.DB, e.Path)
 		if err != nil {
