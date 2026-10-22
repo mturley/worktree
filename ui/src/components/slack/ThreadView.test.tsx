@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi, type MockInstance } from 'vitest'
 import { render, cleanup, fireEvent, waitFor, act } from '@testing-library/react'
 import { MantineProvider } from '@mantine/core'
 import { Notifications, notifications } from '@mantine/notifications'
@@ -56,6 +56,7 @@ vi.mock('../../api/slackApi', async (orig) => ({
 }))
 
 import { markRead, markUnread, postReply, restoreRead } from '../../api/slackApi'
+import { api } from '../../api/client'
 
 const mockPostReply = vi.mocked(postReply)
 const mockMarkRead = vi.mocked(markRead)
@@ -238,6 +239,90 @@ describe('ThreadView undo of mark read', () => {
     fireEvent.click(await findByRole('button', { name: 'Undo' }))
     await waitFor(() => expect(t.refresh).toHaveBeenCalled())
     expect(mockRestoreRead).toHaveBeenCalledWith('C1', '1700000000.000001', '1700000000.000001', '1700000001.000001')
+  })
+})
+
+describe('ThreadView mark read with linking tasks unread', () => {
+  const msg = (ts: string) =>
+    ({ TS: ts, UserID: 'U2', Text: `m ${ts}`, Blocks: null, Reactions: null, Edited: false, Files: null, Attachments: null })
+  const readThread = () => {
+    const t = baseThread()
+    t.data = { ...t.data!, messages: [msg('1700000000.000001'), msg('1700000001.000001')], lastRead: '1700000001.000001' }
+    return t
+  }
+  const unreadThread = () => {
+    const t = baseThread()
+    t.data = { ...t.data!, messages: [msg('1700000000.000001'), msg('1700000001.000001')], unreadIndex: 1, lastRead: '1700000000.000001' }
+    return t
+  }
+  const unreadTasks = [
+    { id: 4, title: 'four', count: 1, newest_ts: '2026-01-01T00:00:04Z' },
+    { id: 5, title: 'five', count: 2, newest_ts: '2026-01-01T00:00:05Z' },
+  ]
+  let taskUnread: MockInstance<typeof api.taskUnread>
+  let taskRead: MockInstance<typeof api.taskRead>
+  let taskReadRestore: MockInstance<typeof api.taskReadRestore>
+  beforeEach(() => {
+    taskUnread = vi.spyOn(api, 'taskUnread').mockResolvedValue(unreadTasks)
+    taskRead = vi.spyOn(api, 'taskRead').mockImplementation(async ({ through_ts }) => ({ previous_ts: null, last_read_ts: through_ts }))
+    taskReadRestore = vi.spyOn(api, 'taskReadRestore').mockResolvedValue(null)
+  })
+  afterEach(() => {
+    taskUnread.mockRestore()
+    taskRead.mockRestore()
+    taskReadRestore.mockRestore()
+  })
+
+  it('a thread Slack calls read, with task unread: Mark read marks the tasks, not Slack, and undoes them', async () => {
+    const qc = new QueryClient()
+    const spy = vi.spyOn(qc, 'invalidateQueries')
+    const { getByRole, findByRole } = renderWithProvider(
+      <ThreadView tab={baseTab()} thread={readThread()} taskUnreadCount={3} onOpenThread={vi.fn()} />, qc)
+    const button = getByRole('button', { name: 'Mark read' })
+    expect(button).not.toBeDisabled()
+    fireEvent.click(button)
+    await waitFor(() => expect(taskRead).toHaveBeenCalledTimes(2))
+    expect(taskUnread).toHaveBeenCalledWith({ kind: 'resource', type: 'slack', id: 't1' })
+    expect(taskRead).toHaveBeenCalledWith({ id: 4, through_ts: '2026-01-01T00:00:04Z' })
+    expect(taskRead).toHaveBeenCalledWith({ id: 5, through_ts: '2026-01-01T00:00:05Z' })
+    expect(mockMarkRead).not.toHaveBeenCalled()
+    await waitFor(() => expect(spy).toHaveBeenCalledWith({ queryKey: ['tasks'] }))
+
+    fireEvent.click(await findByRole('button', { name: 'Undo' }))
+    await waitFor(() => expect(taskReadRestore).toHaveBeenCalledTimes(2))
+    expect(taskReadRestore).toHaveBeenCalledWith({ id: 4, previous_ts: null, last_read_ts: '2026-01-01T00:00:04Z' })
+    expect(mockRestoreRead).not.toHaveBeenCalled()
+  })
+
+  it('both unread: marks Slack and the tasks in one action, and one undo restores both', async () => {
+    mockMarkRead.mockResolvedValue(undefined)
+    mockRestoreRead.mockResolvedValue(undefined)
+    const t = unreadThread()
+    const { getByRole, findByRole } = renderWithProvider(
+      <ThreadView tab={baseTab()} thread={t} taskUnreadCount={3} onOpenThread={vi.fn()} />)
+    fireEvent.click(getByRole('button', { name: 'Mark read' }))
+    await waitFor(() => expect(taskRead).toHaveBeenCalledTimes(2))
+    expect(mockMarkRead).toHaveBeenCalledWith('C1', '1700000000.000001', '1700000001.000001')
+
+    fireEvent.click(await findByRole('button', { name: 'Undo' }))
+    await waitFor(() => expect(taskReadRestore).toHaveBeenCalledTimes(2))
+    expect(mockRestoreRead).toHaveBeenCalledWith('C1', '1700000000.000001', '1700000000.000001', '1700000001.000001')
+  })
+
+  it('no task unread: the thread is marked as before, and task-unread is never fetched', async () => {
+    mockMarkRead.mockResolvedValue(undefined)
+    const { getByRole, findByRole } = renderWithProvider(
+      <ThreadView tab={baseTab()} thread={unreadThread()} taskUnreadCount={0} onOpenThread={vi.fn()} />)
+    fireEvent.click(getByRole('button', { name: 'Mark read' }))
+    await findByRole('button', { name: 'Undo' })
+    expect(mockMarkRead).toHaveBeenCalled()
+    expect(taskUnread).not.toHaveBeenCalled()
+  })
+
+  it('nothing unread anywhere: Mark read is disabled', () => {
+    const { getByRole } = renderWithProvider(
+      <ThreadView tab={baseTab()} thread={readThread()} taskUnreadCount={0} onOpenThread={vi.fn()} />)
+    expect(getByRole('button', { name: 'Mark read' })).toBeDisabled()
   })
 })
 

@@ -8,7 +8,7 @@ import { useState } from "react"
 import { api } from "../../api/client"
 import type { Task } from "../../api/types"
 import { TASK_LIST_KEY } from "../../lib/taskListPrefs"
-import { tasksFallbackTab, useTasksPlacement } from "./TasksSection"
+import { tasksFallbackTab, useResourceTasksPlacement, useTasksPlacement } from "./TasksSection"
 
 vi.mock("../../api/client", async (orig) => ({
   ...(await orig<typeof import("../../api/client")>()),
@@ -22,9 +22,9 @@ const task = (id: number, extra: Partial<Task> = {}): Task => ({
 })
 
 /** A two-tab host shaped like the pages': Activity, then Tasks last. */
-function Host() {
+function Host({ unread }: { unread?: number }) {
   const [tab, setTab] = useState("timeline")
-  const p = useTasksPlacement({ kind: "all" }, undefined, { activeTab: tab, onFallback: () => setTab("timeline") })
+  const p = useTasksPlacement({ kind: "all" }, undefined, { activeTab: tab, onFallback: () => setTab("timeline"), unread })
   const shown = tasksFallbackTab(tab, p.pinned, "timeline")
   return (
     <>
@@ -42,11 +42,11 @@ function Host() {
   )
 }
 
-function wrap() {
+function wrap(unread?: number) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <MantineProvider>
-      <QueryClientProvider client={qc}><TaskModalProvider><Host /></TaskModalProvider></QueryClientProvider>
+      <QueryClientProvider client={qc}><TaskModalProvider><Host unread={unread} /></TaskModalProvider></QueryClientProvider>
     </MantineProvider>,
   )
 }
@@ -79,6 +79,31 @@ describe("useTasksPlacement", () => {
     expect(within(tab).queryByText("2")).toBeNull()
     expect(within(screen.getByTestId("bar-end")).getByRole("button", { name: "Pin task list" })).toBeInTheDocument()
     expect(await screen.findByText("task 1")).toBeInTheDocument()
+  })
+
+  it("unread task events: a dot on the Tasks tab while it is not active", async () => {
+    wrap(2)
+    const tab = screen.getByRole("tab", { name: /Tasks/ })
+    expect(within(tab).getByRole("img", { name: "unread task activity" })).toBeInTheDocument()
+    await userEvent.click(tab)
+    expect(within(tab).queryByRole("img", { name: "unread task activity" })).toBeNull()
+  })
+
+  it("unread task events, pinned: the dot moves to the panel header", async () => {
+    window.localStorage.setItem(TASK_LIST_KEY, JSON.stringify({ pinned: true }))
+    wrap(1)
+    const panel = document.querySelector(".task-panel") as HTMLElement
+    expect(within(panel).getByRole("img", { name: "unread task activity" })).toBeInTheDocument()
+  })
+
+  it("no unread task events: no dot, tab or panel", async () => {
+    wrap(0)
+    expect(screen.queryByRole("img", { name: "unread task activity" })).toBeNull()
+    act(() => {
+      window.localStorage.setItem(TASK_LIST_KEY, JSON.stringify({ pinned: true }))
+      window.dispatchEvent(new StorageEvent("storage", { key: TASK_LIST_KEY }))
+    })
+    expect(screen.queryByRole("img", { name: "unread task activity" })).toBeNull()
   })
 
   it("pinning moves the list into the panel and drops the tab; Unpin brings it back", async () => {
@@ -120,5 +145,32 @@ describe("useTasksPlacement", () => {
     })
     expect(screen.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true")
     expect(document.querySelector(".task-panel")).not.toBeNull()
+  })
+})
+
+/** A Slack pane's shape: Thread, then Tasks, the unread count passed through. */
+function ResourceHost({ unread }: { unread?: number }) {
+  const [tab, setTab] = useState("thread")
+  const { tasks, shownTab } = useResourceTasksPlacement({ type: "slack", id: "C1:1.2" }, tab, setTab, "thread", unread)
+  return (
+    <Tabs value={shownTab} onChange={(v) => v && setTab(v)}>
+      <Tabs.List>
+        <Tabs.Tab value="thread">Thread</Tabs.Tab>
+        {tasks.tab}
+      </Tabs.List>
+    </Tabs>
+  )
+}
+
+describe("useResourceTasksPlacement", () => {
+  it("passes the resource's task unread through to the Tasks tab's dot", async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <MantineProvider>
+        <QueryClientProvider client={qc}><TaskModalProvider><ResourceHost unread={2} /></TaskModalProvider></QueryClientProvider>
+      </MantineProvider>,
+    )
+    const tab = screen.getByRole("tab", { name: /Tasks/ })
+    expect(within(tab).getByRole("img", { name: "unread task activity" })).toBeInTheDocument()
   })
 })

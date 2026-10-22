@@ -14,6 +14,7 @@ import { Composer, type ComposerProps } from './Composer'
 import { Message } from './Message'
 import { UnreadDivider } from '../UnreadDivider'
 import { showUndoToast } from '../UndoToast'
+import { api } from '../../api/client'
 
 interface PendingReply {
   localId: string
@@ -40,6 +41,10 @@ interface ThreadViewProps {
    *  asking for the same message again flashes it again. Applied once per
    *  key, after the initial position, which it overrides. */
   focus?: { ts: string; key: number }
+  /** The unread events of the tasks linking this thread (the resource's
+   *  task_unread_count). Above 0, Mark read also marks those tasks read,
+   *  and is enabled even while Slack calls the thread read. */
+  taskUnreadCount?: number
 }
 
 // A focused message's highlight: Slack's own yellow, pulsed twice to
@@ -74,7 +79,7 @@ export function openInSlackUrl(channel: string, threadTs: string, latestTs: stri
   return `https://${workspaceDomain}/archives/${channel}/p${pMessageId}?thread_ts=${threadTs}&cid=${channel}`
 }
 
-export function ThreadView({ tab, thread, onOpenThread, topInset = 0, onComposerEditorReady, focus }: ThreadViewProps) {
+export function ThreadView({ tab, thread, onOpenThread, topInset = 0, onComposerEditorReady, focus, taskUnreadCount }: ThreadViewProps) {
   const { data, status, error, authExpired, lastUpdated, refresh, applyLocal } = thread
   const now = useNow()
   const [workspaceDomain, setWorkspaceDomain] = useState<string | null>(cachedWorkspaceDomain)
@@ -224,38 +229,88 @@ export function ThreadView({ tab, thread, onOpenThread, topInset = 0, onComposer
   const meta = data ? deriveThreadMeta(data) : undefined
   const hasUnread = !!meta && meta.hasUnread
 
+  const tasksUnread = (taskUnreadCount ?? 0) > 0
+  const slackUnread = !!data && data.messages.length > 0 && hasUnread
+
+  /*
+   * Marks the thread read in Slack, and the unread tasks linking it through
+   * their own cursors: the thread's card counts those tasks' events, and this
+   * is the only Mark read the thread view has. The Slack mark is unchanged;
+   * the tasks are fetched now (GET /api/task-unread, the resource's scope)
+   * and each is marked through the newest_ts it reports, so an agent event
+   * landing after that stays unread. One undo restores all of it.
+   */
   async function handleMarkRead() {
-    if (!data || data.messages.length === 0 || !hasUnread) {
+    if (!data || (!slackUnread && !tasksUnread)) {
       return
     }
-    const latest = data.messages[data.messages.length - 1]
-    // Slack's live cursor before this mark, which an undo puts back.
-    const previous = data.lastRead
-    // Optimistically clear the unread state so the divider disappears and
-    // the button disables immediately; the next SSE poll reconciles with
-    // the server's own unreadIndex/lastRead.
-    applyLocal((d) => ({ ...d, unreadIndex: -1, lastRead: latest.TS }))
     setMarking(true)
     setMarkError(undefined)
+    const undos: (() => Promise<unknown>)[] = []
+    let markedThread = false
+    let markedTasks = 0
     try {
-      await markRead(tab.channel, tab.threadTs, latest.TS)
-      refreshUnreadSurfaces()
-      showUndoToast({
-        message: 'Thread marked read',
-        undo: () => restoreRead(tab.channel, tab.threadTs, previous, latest.TS),
-        // refresh, not an optimistic patch: the divider lands where Slack
-        // puts it, which this view can't know if the thread changed since.
-        onSettled: () => {
-          refresh()
-          refreshUnreadSurfaces()
-        },
-      })
+      if (slackUnread) {
+        const latest = data.messages[data.messages.length - 1]
+        // Slack's live cursor before this mark, which an undo puts back.
+        const previous = data.lastRead
+        // Optimistically clear the unread state so the divider disappears and
+        // the button disables immediately; the next SSE poll reconciles with
+        // the server's own unreadIndex/lastRead.
+        applyLocal((d) => ({ ...d, unreadIndex: -1, lastRead: latest.TS }))
+        await markRead(tab.channel, tab.threadTs, latest.TS)
+        markedThread = true
+        undos.push(() => restoreRead(tab.channel, tab.threadTs, previous, latest.TS))
+      }
+      if (tasksUnread) {
+        const unreadTasks = await api.taskUnread({ kind: 'resource', type: 'slack', id: tab.id })
+        for (const t of unreadTasks) {
+          const change = await api.taskRead({ id: t.id, through_ts: t.newest_ts })
+          markedTasks++
+          if (change.previous_ts !== change.last_read_ts) {
+            undos.push(() => api.taskReadRestore({ id: t.id, ...change }))
+          }
+        }
+      }
     } catch (err) {
       setMarkError(err instanceof Error ? err.message : String(err))
       refresh()
     } finally {
       setMarking(false)
     }
+    if (!markedThread && markedTasks === 0) {
+      return
+    }
+    refreshUnreadSurfaces()
+    if (markedTasks > 0) {
+      void qc.invalidateQueries({ queryKey: ['tasks'] })
+    }
+    if (undos.length === 0) {
+      return
+    }
+    const tasksNoun = `${markedTasks} ${markedTasks === 1 ? 'task' : 'tasks'}`
+    showUndoToast({
+      message: markedThread && markedTasks > 0
+        ? `Thread and ${tasksNoun} marked read`
+        : markedThread ? 'Thread marked read' : `${tasksNoun} marked read`,
+      // Every restore runs, even after one fails; any failure is then named.
+      undo: async () => {
+        const results = await Promise.allSettled(undos.map((u) => u()))
+        const failed = results.filter((r) => r.status === 'rejected').length
+        if (failed > 0) {
+          throw new Error(`${failed} of ${results.length} could not be restored`)
+        }
+      },
+      // refresh, not an optimistic patch: the divider lands where Slack
+      // puts it, which this view can't know if the thread changed since.
+      onSettled: () => {
+        refresh()
+        refreshUnreadSurfaces()
+        if (markedTasks > 0) {
+          void qc.invalidateQueries({ queryKey: ['tasks'] })
+        }
+      },
+    })
   }
 
   async function handleMarkUnread(ts: string) {
@@ -394,8 +449,8 @@ export function ThreadView({ tab, thread, onOpenThread, topInset = 0, onComposer
     <ActionBar
       onMarkRead={handleMarkRead}
       markReadLoading={marking}
-      markReadDisabled={!data || !hasUnread}
-      markReadDisabledReason={data && !hasUnread ? 'Thread is already read' : undefined}
+      markReadDisabled={!data || (!hasUnread && !tasksUnread)}
+      markReadDisabledReason={data && !hasUnread && !tasksUnread ? 'Thread is already read' : undefined}
       onOpenInSlack={handleOpenInSlack}
       openInSlackDisabled={!data || data.messages.length === 0 || !workspaceDomain}
       onCopyLink={handleCopyLink}

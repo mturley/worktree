@@ -80,8 +80,12 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, 
   const slackOff = useWatcherHealth().data?.slack.enabled === false
   const thread = useThread(slackOff ? null : tab)
   const [urlTab, setPaneTab] = useResourceTab(THREAD_TABS)
-  // A Tasks tab, or the list pinned between the card and the tab bar.
-  const { tasks, shownTab: paneTab } = useResourceTasksPlacement(resource, urlTab, setPaneTab, "thread")
+  // A Tasks tab, or the list pinned between the card and the tab bar. The
+  // thread's card counts its linking tasks' unread events, which no tab here
+  // but Tasks can show, so that tab (or the pinned panel) carries the dot.
+  const { tasks, shownTab: paneTab } = useResourceTasksPlacement(
+    resource, urlTab, setPaneTab, "thread", resource.task_unread_count,
+  )
   // See ResourceDetailPane: link titles wait until the Linked tab is shown.
   const [linkedOpened, setLinkedOpened] = useState(paneTab === "linked")
   useEffect(() => {
@@ -225,6 +229,7 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, 
             thread={thread}
             topInset={topInset}
             focus={focus}
+            taskUnreadCount={resource.task_unread_count}
             onOpenThread={(url, opts) => {
               window.open(url, opts.background ? "_blank" : "_self", "noreferrer")
             }}

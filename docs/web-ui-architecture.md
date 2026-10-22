@@ -827,6 +827,23 @@ undone by `/api/task-read/restore` (the same CAS 409 as resources).
 `GET /api/task-unread` lists a scope's tasks with unread events (feed
 membership: completed and archived included), newest first, for mark-all-read.
 
+Same-second events can be marked read unseen. `ts` has one-second
+resolution and the cursor compares `ts > cursor`, so marking read through an
+event's `ts` also reads any other event stamped in that same second, even one
+that landed after the page was rendered. Resources share this (their `ts`
+is the same RFC3339 second clock); it is accepted as the cost of a plain-ts
+cursor.
+
+A Slack thread's card counts its linking tasks' unread
+(`task_unread_count`), which the thread view itself cannot show, so the
+Slack pane carries it: its Tasks tab shows an unread dot while not active,
+or, pinned, the pinned panel's header does (`useTasksPlacement`'s
+`active.unread`, passed by `useResourceTasksPlacement`). And the thread
+view's Mark read (`ThreadView`'s `handleMarkRead`, `taskUnreadCount` prop)
+also marks those tasks: it fetches `GET /api/task-unread?scope=resource&type=slack&id=<id>`
+and marks each through its `newest_ts`, after the unchanged Slack mark; it
+is enabled while either is unread, and its one undo restores both.
+
 **How task unread counts in the badges.** `unreadIndex` loads the task
 summaries and `tasks.BuildScopeIndex` (every worktree's and resource's task
 ids, from ONE tasks load) lazily, on the first task question, so
@@ -874,7 +891,10 @@ countable tally behind it (only an older cached response now — Slack threads
 count at least 1 while unread). It has no
 polling of its own: the `["worktrees"]` query the pages already use is
 invalidated by the stream, so the tab starts on the event and stops on the
-mark-read.
+mark-read. A GLOBAL task's unread (a task in no worktree's scope) is not in
+the badge or the favicon: they sum the worktree list, and such a task belongs
+to no worktree. It shows on the task's row and in the home feed instead (see
+the Phase 4 decisions log).
 
 The blink ticks from a Worker (`lib/blinkTicker.ts` + `blinkWorker.ts`), not
 `setInterval`. Chrome throttles a chained page timer to roughly once a minute

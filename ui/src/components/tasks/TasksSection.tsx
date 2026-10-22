@@ -6,6 +6,7 @@ import { openCount } from "../../lib/taskSections"
 import { TaskCountBadge } from "./TaskCountBadge"
 import { TaskList } from "./TaskList"
 import { TaskListToolbar } from "./TaskListToolbar"
+import { UnreadMarkerDot } from "../UnreadMarkerDot"
 
 /** The Tasks tab's value on every page that has one. */
 export const TASKS_TAB = "tasks"
@@ -32,6 +33,11 @@ export function tasksFallbackTab<T extends string>(tab: T, pinned: boolean, fall
  * page then goes back to its first tab). Render with tasksFallbackTab too,
  * so the frame before that state change shows no empty panel.
  *
+ * `active.unread` is the unread task events behind the list, for a page whose
+ * other tabs cannot show them (a Slack thread's pane: its Thread tab is the
+ * thread, not a feed holding task events). Above 0, an unread dot marks the
+ * Tasks tab while it is not active, or the pinned panel's header.
+ *
  * Where the page pins a header (sticky, data-tooltip-layer="pinned"), render
  * `pinnedAbove(tabBar)` inside it rather than `pinnedPanel` above it: the
  * panel then stays in view with the tab bar instead of scrolling away, and
@@ -40,7 +46,7 @@ export function tasksFallbackTab<T extends string>(tab: T, pinned: boolean, fall
 export function useTasksPlacement(
   scope: TaskScope,
   ownResource?: { type: string; id: string },
-  active?: { activeTab?: string; onFallback?: () => void },
+  active?: { activeTab?: string; onFallback?: () => void; unread?: number },
 ): {
   pinned: boolean
   tab: ReactNode | null
@@ -55,6 +61,8 @@ export function useTasksPlacement(
   const query = useTasks(scope, { completed: prefs.showCompleted, archived: prefs.includeArchived })
   const open = openCount(query.data ?? [])
   const tasksActive = active?.activeTab === TASKS_TAB
+  const unread = (active?.unread ?? 0) > 0
+  const unreadDot = <UnreadMarkerDot label="unread task activity" />
 
   const onFallback = active?.onFallback
   useEffect(() => {
@@ -71,7 +79,7 @@ export function useTasksPlacement(
   )
 
   const tab = pinned ? null : (
-    <Tabs.Tab value={TASKS_TAB}>
+    <Tabs.Tab value={TASKS_TAB} rightSection={unread && !tasksActive ? unreadDot : undefined}>
       Tasks{!tasksActive && <TaskCountBadge count={open} ml="6px" />}
     </Tabs.Tab>
   )
@@ -80,7 +88,10 @@ export function useTasksPlacement(
     <Box className="task-panel" p="xs" data-testid="pinned-tasks">
       <Stack gap={6}>
         <Group justify="space-between" gap="xs" wrap="wrap">
-          <Text size="sm" fw={700}>Tasks · {open} open</Text>
+          <Group gap={6} wrap="nowrap">
+            <Text size="sm" fw={700}>Tasks · {open} open</Text>
+            {unread && unreadDot}
+          </Group>
           {toolbar}
         </Group>
         <TaskList scope={scope} ownResource={ownResource} maxRows={PINNED_ROWS} />
@@ -109,18 +120,20 @@ export function useTasksPlacement(
  * URL (useResourceTab): the resource's own list, with its link chip
  * suppressed, falling back to `firstTab` when the pin lands on Tasks. The
  * fallback replaces the history entry: the user chose the pin, not the tab.
- * Returns the tab to render too (see tasksFallbackTab).
+ * Returns the tab to render too (see tasksFallbackTab). `unread`: see
+ * useTasksPlacement's `active.unread`.
  */
 export function useResourceTasksPlacement(
   resource: { type: string; id: string },
   tab: string,
   setTab: (tab: string, opts?: { replace?: boolean }) => void,
   firstTab: string,
+  unread?: number,
 ) {
   const { type, id } = resource
   const toFirst = useCallback(() => setTab(firstTab, { replace: true }), [setTab, firstTab])
   const scope = useMemo(() => ({ kind: "resource" as const, type, id }), [type, id])
   const own = useMemo(() => ({ type, id }), [type, id])
-  const tasks = useTasksPlacement(scope, own, { activeTab: tab, onFallback: toFirst })
+  const tasks = useTasksPlacement(scope, own, { activeTab: tab, onFallback: toFirst, unread })
   return { tasks, shownTab: tasksFallbackTab(tab, tasks.pinned, firstTab) }
 }
