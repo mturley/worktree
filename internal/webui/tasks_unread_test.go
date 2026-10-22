@@ -359,6 +359,22 @@ func TestSlackResourceWithTaskUnread(t *testing.T) {
 	}
 }
 
+// The mailbox runs every 5s, so it checks the resources' own unread first
+// and loads task unread only when none is: a worktree with an unread
+// resource never pays for the task load.
+func TestCmuxMailboxChecksResourceUnreadFirst(t *testing.T) {
+	f := taskUnreadFixture(t)
+	f.seed(t)
+	insertUnreadEvent(t, f.s.DB, "e1", "2099-01-01T00:00:00Z", "github", "pr", "o/r#1")
+	loads := recordTaskUnreadLoads(t)
+	if has, ok := f.s.worktreeHasUnread(f.s.newUnreadIndex(), f.wt); !ok || !has {
+		t.Fatalf("has %v ok %v", has, ok)
+	}
+	if len(loads) != 0 {
+		t.Fatalf("resource unread, yet task unread loaded: %v", loads)
+	}
+}
+
 func TestCmuxMailboxForTaskOnlyUnread(t *testing.T) {
 	f := taskUnreadFixture(t)
 	if has, ok := f.s.worktreeHasUnread(f.s.newUnreadIndex(), f.wt); !ok || has {

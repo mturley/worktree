@@ -114,25 +114,28 @@ func (s *Server) syncUnreadPrefixes(want func(path string) (has, ok bool), gated
 
 // worktreeHasUnread answers the question /api/worktrees answers with
 // has_unread — any focus or related resource unread, or any unread task
-// event of a task in the worktree's scope — through the same ix.fill,
+// event of a task in the worktree's scope — through the same ix.fillOwn,
 // resourceHasUnread and ix.worktreeTaskUnread, so the mailbox and the UI's
 // unread accent cannot disagree. ok is false when the worktree's resources
 // could not be read.
+//
+// The resources' OWN unread is checked first, and task unread only when none
+// is: this runs every few seconds, and the task check loads every task's
+// summary and scope membership. Checking only own unread per resource loses
+// nothing: a task linking one of the worktree's resources is in the
+// worktree's scope, so worktreeTaskUnread already counts it.
 func (s *Server) worktreeHasUnread(ix *unreadIndex, path string) (has, ok bool) {
 	rs, err := resources.Load(s.DB, path)
 	if err != nil {
 		s.logger().Printf("cmux unread sync: resources.Load(%s): %v", path, err)
 		return false, false
 	}
-	if ix.worktreeTaskUnread(path) > 0 {
-		return true, true
-	}
 	for _, res := range rs {
 		dto := s.newResourceDTO(res)
-		ix.fill(&dto)
+		ix.fillOwn(&dto)
 		if resourceHasUnread(dto) {
 			return true, true
 		}
 	}
-	return false, true
+	return ix.worktreeTaskUnread(path) > 0, true
 }

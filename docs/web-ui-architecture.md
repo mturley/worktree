@@ -845,7 +845,11 @@ load task unread (`TestTimelinesDoNotLoadTaskUnread`).
   the DISTINCT tasks in its scope, so a task linking two of its resources
   counts once. That is exact because every task event belongs to exactly one
   task. `has_unread` turns on while that is above 0, and the cmux mailbox
-  (`worktreeHasUnread`) asks the same question.
+  (`worktreeHasUnread`) asks the same question. It runs every 5s, so it
+  checks the resources' own unread (`fillOwn`) FIRST and loads task unread
+  (`worktreeTaskUnread`) only when none is; a task linking one of the
+  worktree's resources is in its scope, so nothing is lost
+  (`TestCmuxMailboxChecksResourceUnreadFirst`).
 - `taskDTO.unread_count` is the task's own count, and `unread_through_ts`
   (absent at 0) the newest of those events, from the same summary.
 
