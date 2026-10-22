@@ -13,14 +13,19 @@ let nextID = 0
  * Several undos as one, for a toast that took back more than one mark. Every
  * undo runs to the end even when another is refused (a 409 on one cursor
  * must not leave the others marked), and it settles only once all have, so
- * the caller's refetch sees them all. Fails with every distinct failure's
- * message, joined, so a toast reports each one.
+ * the caller's refetch sees them all. Fails with every failure, joined, so
+ * a toast reports each one — named by its `label` ("T12: …; #4521: …")
+ * whenever the undo covered more than one item, so it is clear which stayed
+ * read. A lone item's failure reads as just its message.
  */
-export async function undoAll(undos: (() => Promise<unknown>)[]): Promise<void> {
-  const results = await Promise.allSettled(undos.map((u) => u()))
-  const messages = results.flatMap((r) =>
-    r.status === "rejected" ? [r.reason instanceof Error ? r.reason.message : String(r.reason)] : [])
-  if (messages.length > 0) throw new Error([...new Set(messages)].join("; "))
+export async function undoAll(undos: { label: string; undo: () => Promise<unknown> }[]): Promise<void> {
+  const results = await Promise.allSettled(undos.map((u) => u.undo()))
+  const messages = results.flatMap((r, i) => {
+    if (r.status !== "rejected") return []
+    const msg = r.reason instanceof Error ? r.reason.message : String(r.reason)
+    return [undos.length > 1 ? `${undos[i].label}: ${msg}` : msg]
+  })
+  if (messages.length > 0) throw new Error(messages.join("; "))
 }
 
 /**

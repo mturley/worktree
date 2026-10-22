@@ -54,6 +54,10 @@ type taskDTO struct {
 	// UnreadCount is the task's unread events: agent events newer than its
 	// cursor (unread.TaskSummaries). Always sent, 0 included.
 	UnreadCount int `json:"unread_count"`
+	// UnreadThroughTS is the newest of those events, from the same summary:
+	// what the task modal's Mark read sends as through_ts, so it clears only
+	// what was counted, never an event that arrived after. Absent at 0.
+	UnreadThroughTS string `json:"unread_through_ts,omitempty"`
 }
 
 func newTaskDTO(t tasks.Task) taskDTO {
@@ -132,7 +136,7 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 	out := make([]taskDTO, 0, len(ts))
 	for _, t := range ts {
 		d := newTaskDTO(t)
-		d.UnreadCount = sums[t.ID].Count
+		d.UnreadCount, d.UnreadThroughTS = sums[t.ID].Count, sums[t.ID].NewestTS
 		out = append(out, d)
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -177,7 +181,8 @@ func (s *Server) taskUnreadSummaries() map[int64]unread.Summary {
 // endpoints that return one task.
 func (s *Server) newTaskDTOWithUnread(t tasks.Task) taskDTO {
 	d := newTaskDTO(t)
-	d.UnreadCount = s.taskUnreadSummaries()[t.ID].Count
+	sum := s.taskUnreadSummaries()[t.ID]
+	d.UnreadCount, d.UnreadThroughTS = sum.Count, sum.NewestTS
 	return d
 }
 

@@ -466,7 +466,7 @@ describe("MarkAllReadButton", () => {
       await open(user)
       await user.click(screen.getByRole("button", { name: "Mark read" }))
       await user.click(await screen.findByRole("button", { name: "Undo" }))
-      expect(await screen.findByText("Couldn't undo: read state changed since it was marked read")).toBeInTheDocument()
+      expect(await screen.findByText("Couldn't undo: T7: read state changed since it was marked read")).toBeInTheDocument()
       expect(taskReadRestore).toHaveBeenCalledWith({
         id: 7, previous_ts: "2099-01-01T00:00:00Z", last_read_ts: "2099-02-01T00:00:00Z",
       })
@@ -476,17 +476,17 @@ describe("MarkAllReadButton", () => {
       expect(restoreResourceRead).toHaveBeenCalledTimes(1)
     })
 
-    it("reports every distinct undo failure", async () => {
+    it("reports every undo failure, naming each item", async () => {
       taskUnread.mockResolvedValue([fixIt])
       taskReadRestore.mockRejectedValue(new Error("task cursor moved"))
       restoreResourceRead.mockRejectedValue(new Error("resource cursor moved"))
       const user = userEvent.setup()
-      wrap([jira("J-1", 1, "2099-01-05T00:00:00Z")])
+      wrap([pr("o/r#4521", 1, "2099-01-05T00:00:00Z")])
       await screen.findByRole("button", { name: /mark all read/i })
       await open(user)
       await user.click(screen.getByRole("button", { name: "Mark read" }))
       await user.click(await screen.findByRole("button", { name: "Undo" }))
-      expect(await screen.findByText("Couldn't undo: resource cursor moved; task cursor moved")).toBeInTheDocument()
+      expect(await screen.findByText("Couldn't undo: #4521: resource cursor moved; T7: task cursor moved")).toBeInTheDocument()
     })
 
     it("offers undo for the writes that landed when a task mark fails", async () => {

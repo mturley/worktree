@@ -48,7 +48,7 @@ function wrap(task: TaskDetail) {
 }
 
 beforeEach(() => {
-  // Newest first, as the server sends them.
+  // A newer event than any test's unread_through_ts: Mark read must not use it.
   vi.mocked(api.taskActivity).mockResolvedValue([
     taskEv("task:3", "2099-03-03T00:00:00Z"),
     taskEv("task:2", "2099-03-02T00:00:00Z"),
@@ -75,27 +75,46 @@ describe("TaskModalHeader Mark read", () => {
     expect(api.taskRead).not.toHaveBeenCalled()
   })
 
-  it("marks the task read through its newest event, and undoes it", async () => {
+  it("marks through the rendered unread_through_ts, even with a newer event since, and undoes it", async () => {
+    // The activity holds a newer event (03-03) than the one the header counted
+    // through (03-02): an agent event that arrived after render stays unread.
     const user = userEvent.setup()
-    wrap(detail({ unread_count: 2 }))
+    wrap(detail({ unread_count: 2, unread_through_ts: "2099-03-02T00:00:00Z" }))
     const invalidate = vi.spyOn(qc, "invalidateQueries")
     await user.click(screen.getByRole("button", { name: "Mark read" }))
-    await waitFor(() => expect(api.taskRead).toHaveBeenCalledWith({ id: 5, through_ts: "2099-03-03T00:00:00Z" }))
-    expect(api.taskActivity).toHaveBeenCalledWith(5, "task", undefined)
+    await waitFor(() => expect(api.taskRead).toHaveBeenCalledWith({ id: 5, through_ts: "2099-03-02T00:00:00Z" }))
+    expect(api.taskActivity).not.toHaveBeenCalled()
     expect(await screen.findByText("Marked 2 task events read")).toBeInTheDocument()
     const keys = invalidate.mock.calls.map(([f]) => JSON.stringify(f?.queryKey))
     for (const k of ['["tasks"]', '["worktrees"]', '["resources"]', '["timeline"]']) expect(keys).toContain(k)
 
     await user.click(screen.getByRole("button", { name: "Undo" }))
     await waitFor(() => expect(api.taskReadRestore).toHaveBeenCalledWith({
-      id: 5, previous_ts: "2099-01-01T00:00:00Z", last_read_ts: "2099-03-03T00:00:00Z",
+      id: 5, previous_ts: "2099-01-01T00:00:00Z", last_read_ts: "2099-03-02T00:00:00Z",
     }))
+  })
+
+  it("says Already read when the mark moves nothing", async () => {
+    vi.mocked(api.taskRead).mockResolvedValue({ previous_ts: "2099-03-09T00:00:00Z", last_read_ts: "2099-03-09T00:00:00Z" })
+    const user = userEvent.setup()
+    wrap(detail({ unread_count: 1, unread_through_ts: "2099-03-02T00:00:00Z" }))
+    await user.click(screen.getByRole("button", { name: "Mark read" }))
+    expect(await screen.findByText("Already read")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument()
+  })
+
+  it("says Already read, writing nothing, without an unread_through_ts", async () => {
+    const user = userEvent.setup()
+    wrap(detail({ unread_count: 1 }))
+    await user.click(screen.getByRole("button", { name: "Mark read" }))
+    expect(await screen.findByText("Already read")).toBeInTheDocument()
+    expect(api.taskRead).not.toHaveBeenCalled()
   })
 
   it("reports a failed mark", async () => {
     vi.mocked(api.taskRead).mockRejectedValue(new Error("task gone"))
     const user = userEvent.setup()
-    wrap(detail({ unread_count: 1 }))
+    wrap(detail({ unread_count: 1, unread_through_ts: "2099-03-02T00:00:00Z" }))
     await user.click(screen.getByRole("button", { name: "Mark read" }))
     expect(await screen.findByText(/Couldn't mark read: task gone/)).toBeInTheDocument()
   })

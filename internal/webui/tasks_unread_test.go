@@ -257,6 +257,31 @@ func TestTaskDTOUnreadCount(t *testing.T) {
 	}
 }
 
+// unread_through_ts is the newest of the counted events — the same summary as
+// unread_count — and is absent with nothing unread. A user event newer than
+// it (direct's tts(4)) is not it.
+func TestTaskDTOUnreadThroughTS(t *testing.T) {
+	f := taskUnreadFixture(t)
+	f.seed(t)
+	got := map[int64]string{}
+	for _, tk := range listTasks(t, f.s, "scope=all") {
+		got[tk.ID] = tk.UnreadThroughTS
+	}
+	if got[f.both.ID] != tts(5) || got[f.direct.ID] != tts(3) || got[f.global.ID] != tts(2) {
+		t.Fatalf("unread_through_ts = %v", got)
+	}
+	if det := getDetail(t, f.s, f.direct.ID); det.UnreadThroughTS != tts(3) {
+		t.Fatalf("detail unread_through_ts = %q", det.UnreadThroughTS)
+	}
+	rec := serveAll(t, f.s, http.MethodPost, "/api/task-read", map[string]any{"id": f.direct.ID, "through_ts": tts(3)})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("task-read = %d: %s", rec.Code, rec.Body.String())
+	}
+	if det := getDetail(t, f.s, f.direct.ID); det.UnreadThroughTS != "" || det.UnreadCount != 0 {
+		t.Fatalf("after read: %q, %d; want absent", det.UnreadThroughTS, det.UnreadCount)
+	}
+}
+
 // recordTaskUnreadLoads counts what unreadIndex.loadTasks reads, by part.
 func recordTaskUnreadLoads(t *testing.T) map[string]int {
 	t.Helper()

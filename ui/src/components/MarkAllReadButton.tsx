@@ -32,7 +32,16 @@ type Undo = () => Promise<unknown>
  */
 interface Target {
   count: number
+  /** How a failed undo names it: "#4521", "PROJ-1", "T12", a thread's name. */
+  label: string
   mark: () => Promise<Undo | null>
+}
+
+/** A resource's short name, for an undo failure. */
+function resourceLabel(r: ResourceDTO): string {
+  if (r.type === "pr") return r.id.includes("#") ? `#${r.id.split("#").pop()}` : r.id
+  if (r.type === "slack") return r.custom_name || r.title || "Slack thread"
+  return r.id
 }
 
 /**
@@ -71,6 +80,7 @@ function toTarget(r: ResourceDTO): Target | null {
     // the floor only guards an older cached response that predates it.
     return {
       count: Math.max(count, 1),
+      label: resourceLabel(r),
       mark: async () => {
         await markThreadRead(channel, threadTs, latest)
         return () => restoreThreadRead(channel, threadTs, lastRead, latest)
@@ -82,6 +92,7 @@ function toTarget(r: ResourceDTO): Target | null {
   const { type, id } = r
   return {
     count,
+    label: resourceLabel(r),
     mark: async () => {
       const change = await api.markResourceRead({ type, id, through_ts: through })
       if (change.previous_ts === change.last_read_ts) return null
@@ -98,6 +109,7 @@ function toTarget(r: ResourceDTO): Target | null {
 function taskTarget(t: TaskUnread): Target {
   return {
     count: t.count,
+    label: `T${t.id}`,
     mark: async () => {
       const change = await api.taskRead({ id: t.id, through_ts: t.newest_ts })
       if (change.previous_ts === change.last_read_ts) return null
@@ -248,7 +260,8 @@ export function MarkAllReadButton({ resources, feed, taskScope, single = false }
       ].join(", ")
       const targets = [...selected.flatMap((g) => g.targets), ...selectedTasks.map(taskTarget)]
       const results = await Promise.allSettled(targets.map((t) => t.mark()))
-      const undos = results.flatMap((r) => (r.status === "fulfilled" && r.value ? [r.value] : []))
+      const undos = results.flatMap((r, i) =>
+        r.status === "fulfilled" && r.value ? [{ label: targets[i].label, undo: r.value }] : [])
       if (undos.length > 0) {
         showUndoToast({
           message: `Marked ${summary} read`,

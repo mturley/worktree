@@ -4,7 +4,6 @@ import { notifications } from "@mantine/notifications"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { api } from "../../../api/client"
 import type { TaskDetail, TaskState } from "../../../api/types"
-import { taskActivityKey } from "../../../hooks/useTaskDetail"
 import { showUndoToast, UNDO_WINDOW_MS } from "../../UndoToast"
 import { TaskStateCheckbox } from "../TaskStateCheckbox"
 import type { TaskPatch } from "./useOptimisticTask"
@@ -13,14 +12,13 @@ import type { TaskPatch } from "./useOptimisticTask"
  * Marks one task's activity read, offering an undo, as Mark all read does
  * for a feed.
  *
- * It marks through the task's NEWEST event, read from the task's own
- * activity (filter "task": just this task's events, newest first, the query
- * the Activity tab's "This task only" pill shares). That is the cheapest
- * correct source: GET /api/task-unread would answer the exact newest unread
- * ts, but only by summarising every task's events and listing every task in
- * its scope, to keep one row. Marking through a newer event of the user's
- * own is the same mark, since the user's events are never unread. Fetched at
- * the click, never while the modal is merely open: opening it marks nothing.
+ * It marks through the task's unread_through_ts: the newest of the unread
+ * events its unread_count counted, from the same server snapshot. So it
+ * clears exactly what the header promised, and an agent event that arrived
+ * after render stays unread (the through_ts contract; see "Unread" in
+ * docs/web-ui-architecture.md). A task without one, or a mark that moved
+ * nothing (read further elsewhere since), says "Already read" rather than
+ * offering an undo of nothing. Opening the modal marks nothing.
  */
 function useMarkTaskRead(task: TaskDetail) {
   const qc = useQueryClient()
@@ -30,19 +28,14 @@ function useMarkTaskRead(task: TaskDetail) {
     void qc.invalidateQueries({ queryKey: ["resources"] })
     void qc.invalidateQueries({ queryKey: ["timeline"] })
   }
+  const alreadyRead = () => notifications.show({ message: "Already read", autoClose: 3000 })
   return useMutation({
     mutationFn: async () => {
-      const { id } = task
+      const { id, unread_through_ts: through } = task
       const count = task.unread_count ?? 0
-      const events = await qc.fetchQuery({
-        queryKey: taskActivityKey(id, { filter: "task" }),
-        queryFn: () => api.taskActivity(id, "task", undefined),
-        staleTime: 0,
-      })
-      const through = events[0]?.ts
-      if (!through) return
+      if (!through) return alreadyRead()
       const change = await api.taskRead({ id, through_ts: through })
-      if (change.previous_ts === change.last_read_ts) return
+      if (change.previous_ts === change.last_read_ts) return alreadyRead()
       showUndoToast({
         message: `Marked ${count} task ${count === 1 ? "event" : "events"} read`,
         undo: () => api.taskReadRestore({ id, ...change }),

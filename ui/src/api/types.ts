@@ -695,6 +695,12 @@ export interface Task {
    * older cached response) reads as zero.
    */
   unread_count?: number
+  /**
+   * The newest of those unread events, from the same server snapshot; absent
+   * with nothing unread. Sent as through_ts by the task modal's Mark read, so
+   * it clears only what was counted, never an event that arrived after.
+   */
+  unread_through_ts?: string
 }
 
 /** A link target; the body shape of the task link routes. */

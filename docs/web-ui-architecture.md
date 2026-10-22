@@ -816,7 +816,8 @@ load task unread (`TestTimelinesDoNotLoadTaskUnread`).
   counts once. That is exact because every task event belongs to exactly one
   task. `has_unread` turns on while that is above 0, and the cmux mailbox
   (`worktreeHasUnread`) asks the same question.
-- `taskDTO.unread_count` is the task's own count.
+- `taskDTO.unread_count` is the task's own count, and `unread_through_ts`
+  (absent at 0) the newest of those events, from the same summary.
 
 **`unreadIndex` is request-scoped**, for the same reason `eventEnricher` is:
 cursors move from other processes (`worktree resources mark-read`,
@@ -888,11 +889,12 @@ false) is not marked in Slack at all; its tasks are. The button shows while
 either kind has anything unread.
 
 The task modal's header has its own **Mark read**, shown while
-`unread_count > 0`. It marks through the task's newest event, read at the
-click from its own activity (`/api/tasks/activity?filter=task`, the Activity
-tab's "This task only" query) rather than `/api/task-unread`, which would
-summarise every task to keep one row; a newer event of the user's own is the
-same mark, since those are never unread. Opening the modal marks nothing.
+`unread_count > 0`. It marks through the task's `unread_through_ts`
+(`taskDTO`, the `NewestTS` of the same `unread.TaskSummaries` row that fills
+`unread_count`), so it clears exactly the events the header counted. An agent
+event arriving after render stays unread, the same `through_ts` contract as
+resources. Without one, or when the mark moves nothing, it says "Already
+read" and offers no undo. Opening the modal marks nothing.
 
 **Undo** (`ui/src/components/UndoToast.tsx`, `@mantine/notifications`). Every
 mark-read made from the UI — Mark all read, in either form, the Slack
@@ -924,7 +926,8 @@ thread view's Mark read and the task modal's — shows a toast for 10 seconds wi
 A partial failure in Mark all read still offers to undo the writes that
 landed. Its undo (`undoAll`) runs every restore to the end even when one is
 refused, so a 409 on one cursor still restores the rest, and reports every
-distinct failure in one "Couldn't undo" toast.
+failure in one "Couldn't undo" toast, each named by its item when the undo
+covered more than one ("T12: …; #4521: …").
 
 A selected PR/Jira resource's Activity tab carries the same button at the
 right end of its tab bar, in its `single` form: one resource, so no
