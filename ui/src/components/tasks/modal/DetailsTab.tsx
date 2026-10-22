@@ -6,10 +6,14 @@ import { LinksSection } from "./LinksSection"
 import { SubtasksSection } from "./SubtasksSection"
 
 /** The Details tab: Description, Subtasks, Linked to, Linked events — in that order. */
-export function DetailsTab({ task }: { task: TaskDetail }) {
+export function DetailsTab({ task, onDescriptionDirty }: {
+  task: TaskDetail
+  /** Whether the description has unsaved edits; see DescriptionSection. */
+  onDescriptionDirty?: (dirty: boolean) => void
+}) {
   return (
     <Stack gap="md" data-testid="task-details-tab">
-      <DescriptionSection task={task} />
+      <DescriptionSection task={task} onDirtyChange={onDescriptionDirty} />
       <Divider />
       <SubtasksSection task={task} />
       <Divider />

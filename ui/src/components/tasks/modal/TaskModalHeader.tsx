@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { ActionIcon, CloseButton, Group, Text, TextInput, UnstyledButton } from "@mantine/core"
+import { ActionIcon, CloseButton, Group, Modal, Text, TextInput, UnstyledButton } from "@mantine/core"
 import type { TaskDetail, TaskState } from "../../../api/types"
 import { TaskStateCheckbox } from "../TaskStateCheckbox"
 import type { TaskPatch } from "./useOptimisticTask"
@@ -61,31 +61,54 @@ function EditableTitle({ title, onSave }: { title: string; onSave: (t: string) =
         onClick={start}
         style={{ flex: 1, minWidth: 0 }}
       >
-        <Text fw={600} size="lg" style={{ overflowWrap: "anywhere" }}>{title}</Text>
+        <ModalTitleText title={title} />
       </UnstyledButton>
     )
   }
   return (
-    <TextInput
-      aria-label="Title"
-      autoFocus
-      value={draft}
-      onChange={(e) => setDraft(e.currentTarget.value)}
-      onBlur={() => finish(true)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.preventDefault()
-          finish(true)
-        } else if (e.key === "Escape") {
-          e.preventDefault()
-          finish(false)
-        }
-      }}
-      // Mantine's Modal closes on Escape from a capture-phase window listener;
-      // this attribute is the one thing it checks to leave the key alone.
-      data-mantine-stop-propagation="true"
-      style={{ flex: 1, minWidth: 0 }}
-      styles={{ input: { fontWeight: 600, fontSize: "var(--mantine-font-size-lg)" } }}
-    />
+    <>
+      {/* Keeps the dialog named by the saved title while it is edited. */}
+      <ModalTitleText title={title} hidden />
+      <TextInput
+        aria-label="Title"
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.currentTarget.value)}
+        onBlur={() => finish(true)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault()
+            finish(true)
+          } else if (e.key === "Escape") {
+            e.preventDefault()
+            finish(false)
+          }
+        }}
+        // Mantine's Modal closes on Escape from a capture-phase window listener;
+        // this attribute is the one thing it checks to leave the key alone.
+        data-mantine-stop-propagation="true"
+        style={{ flex: 1, minWidth: 0 }}
+        styles={{ input: { fontWeight: 600, fontSize: "var(--mantine-font-size-lg)" } }}
+      />
+    </>
+  )
+}
+
+/**
+ * The title as the modal's Modal.Title: Mantine points the dialog's
+ * aria-labelledby at it, so the dialog is named by the task's title. A span,
+ * since it sits inside the title's button.
+ */
+function ModalTitleText({ title, hidden }: { title: string; hidden?: boolean }) {
+  return (
+    <Modal.Title
+      component="span"
+      hidden={hidden}
+      fw={600}
+      fz="lg"
+      style={{ display: hidden ? "none" : "block", lineHeight: 1.55, overflowWrap: "anywhere" }}
+    >
+      {title}
+    </Modal.Title>
   )
 }

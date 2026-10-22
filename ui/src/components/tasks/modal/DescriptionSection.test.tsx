@@ -13,7 +13,10 @@ vi.mock("../../../api/client", async (orig) => ({
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
+  sessionStorage.clear()
 })
+
+const DRAFT = "task-description-draft:1"
 
 describe("DescriptionSection", () => {
   it("renders the description as markdown", () => {
@@ -51,6 +54,55 @@ describe("DescriptionSection", () => {
     expect(screen.queryByRole("textbox", { name: "Description" })).toBeNull()
     expect(screen.getByText("old")).toBeInTheDocument()
     expect(api.updateTask).not.toHaveBeenCalled()
+  })
+
+  it("reports whether the description has unsaved edits", async () => {
+    const onDirty = vi.fn()
+    const user = userEvent.setup()
+    renderDetail(detail({ description: "old" }), (t) => <DescriptionSection task={t} onDirtyChange={onDirty} />)
+    await user.click(screen.getByRole("button", { name: "Edit description" }))
+    // Opening the editor changes nothing yet.
+    expect(onDirty).not.toHaveBeenCalledWith(true)
+    await user.type(screen.getByRole("textbox", { name: "Description" }), "!")
+    expect(onDirty).toHaveBeenLastCalledWith(true)
+    await user.click(screen.getByRole("button", { name: "Cancel" }))
+    expect(onDirty).toHaveBeenLastCalledWith(false)
+  })
+
+  it("keeps an unsaved draft for the task, and restores it when shown again", async () => {
+    const user = userEvent.setup()
+    const first = renderDetail(detail({ description: "old" }), (t) => <DescriptionSection task={t} />)
+    await user.click(screen.getByRole("button", { name: "Edit description" }))
+    await user.type(screen.getByRole("textbox", { name: "Description" }), " draft")
+    expect(sessionStorage.getItem(DRAFT)).toBe("old draft")
+    // Lost the way Back loses it: the modal unmounts without asking.
+    first.unmount()
+
+    renderDetail(detail({ description: "old" }), (t) => <DescriptionSection task={t} />)
+    expect(screen.getByRole("textbox", { name: "Description" })).toHaveValue("old draft")
+    expect(screen.getByText("Unsaved draft restored")).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Cancel" }))
+    expect(sessionStorage.getItem(DRAFT)).toBeNull()
+    expect(screen.queryByText("Unsaved draft restored")).toBeNull()
+  })
+
+  it("a save clears the kept draft", async () => {
+    vi.mocked(api.updateTask).mockResolvedValue(detail({ description: "old!" }))
+    vi.mocked(api.taskDetail).mockResolvedValue(detail({ description: "old!" }))
+    const user = userEvent.setup()
+    renderDetail(detail({ description: "old" }), (t) => <DescriptionSection task={t} />)
+    await user.click(screen.getByRole("button", { name: "Edit description" }))
+    await user.type(screen.getByRole("textbox", { name: "Description" }), "!")
+    expect(sessionStorage.getItem(DRAFT)).toBe("old!")
+    await user.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() => expect(screen.queryByRole("textbox", { name: "Description" })).toBeNull())
+    expect(sessionStorage.getItem(DRAFT)).toBeNull()
+  })
+
+  it("ignores a kept draft that matches the description", () => {
+    sessionStorage.setItem(DRAFT, "same")
+    renderDetail(detail({ description: "same" }), (t) => <DescriptionSection task={t} />)
+    expect(screen.queryByRole("textbox", { name: "Description" })).toBeNull()
   })
 
   it("a failed save keeps the editor and the text, and says why", async () => {

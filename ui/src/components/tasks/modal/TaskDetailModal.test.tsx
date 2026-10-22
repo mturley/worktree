@@ -297,6 +297,95 @@ describe("TaskDetailModal", () => {
     expect(screen.getByRole("button", { name: /^Edit title/ })).toBeInTheDocument()
   })
 
+  it("is labelled by the title in its header", async () => {
+    const user = userEvent.setup()
+    wrap()
+    const dialog = await screen.findByRole("dialog", { name: "task 5" })
+    const label = document.getElementById(dialog.getAttribute("aria-labelledby") ?? "")
+    expect(label).toHaveTextContent("task 5")
+    expect(screen.getByRole("button", { name: /^Edit title/ })).toContainElement(label)
+    // Still named while the title is being edited.
+    await user.click(await titleButton())
+    expect(screen.getByRole("dialog", { name: "task 5" })).toBeInTheDocument()
+  })
+
+  describe("with unsaved description edits", () => {
+    const overlay = () => document.querySelector<HTMLElement>(".mantine-Modal-overlay")!
+    const editDescription = async (user: ReturnType<typeof userEvent.setup>) => {
+      await titleButton()
+      await user.click(screen.getByRole("button", { name: "Edit description" }))
+      await user.type(screen.getByRole("textbox", { name: "Description" }), "draft")
+    }
+    afterEach(() => sessionStorage.clear())
+
+    it("an outside click closes a clean modal", async () => {
+      wrap()
+      await titleButton()
+      fireEvent.click(overlay())
+      await waitFor(() => expect(param()).toBeNull())
+    })
+
+    it("an outside click does not close it", async () => {
+      const user = userEvent.setup()
+      wrap()
+      await editDescription(user)
+      fireEvent.click(overlay())
+      expect(param()).toBe("5")
+      expect(screen.getByRole("textbox", { name: "Description" })).toHaveValue("draft")
+    })
+
+    it("the close button asks first, and No keeps the draft", async () => {
+      const confirm = vi.spyOn(window, "confirm").mockReturnValue(false)
+      const user = userEvent.setup()
+      wrap()
+      await editDescription(user)
+      await user.click(screen.getByRole("button", { name: "Close task" }))
+      expect(confirm).toHaveBeenCalledWith("Discard unsaved description?")
+      expect(param()).toBe("5")
+      expect(screen.getByRole("textbox", { name: "Description" })).toHaveValue("draft")
+    })
+
+    it("discarding closes and forgets the draft", async () => {
+      vi.spyOn(window, "confirm").mockReturnValue(true)
+      const user = userEvent.setup()
+      wrap()
+      await editDescription(user)
+      await user.click(screen.getByRole("button", { name: "Close task" }))
+      await waitFor(() => expect(param()).toBeNull())
+      expect(sessionStorage.getItem("task-description-draft:5")).toBeNull()
+    })
+
+    it("a clean modal closes without asking", async () => {
+      const confirm = vi.spyOn(window, "confirm")
+      const user = userEvent.setup()
+      wrap()
+      await titleButton()
+      await user.click(screen.getByRole("button", { name: "Edit description" }))
+      await user.click(screen.getByRole("button", { name: "Close task" }))
+      expect(confirm).not.toHaveBeenCalled()
+      await waitFor(() => expect(param()).toBeNull())
+    })
+
+    it("Back closes it without asking, and reopening restores the draft", async () => {
+      const confirm = vi.spyOn(window, "confirm")
+      const user = userEvent.setup()
+      wrap()
+      await editDescription(user)
+      act(() => {
+        window.history.pushState({}, "", "/worktree/wt?resource=pr:x")
+        window.dispatchEvent(new PopStateEvent("popstate"))
+      })
+      await waitFor(() => expect(screen.queryByRole("textbox", { name: "Description" })).not.toBeInTheDocument())
+      expect(confirm).not.toHaveBeenCalled()
+      act(() => {
+        window.history.pushState({}, "", "/worktree/wt?resource=pr:x&task=5")
+        window.dispatchEvent(new PopStateEvent("popstate"))
+      })
+      expect(await screen.findByRole("textbox", { name: "Description" })).toHaveValue("draft")
+      expect(screen.getByText("Unsaved draft restored")).toBeInTheDocument()
+    })
+  })
+
   it("shows Task not found for an unknown id, with a close button", async () => {
     vi.mocked(api.taskDetail).mockRejectedValue(new HttpError("task not found", 404))
     const user = userEvent.setup()
