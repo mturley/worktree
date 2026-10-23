@@ -19,8 +19,24 @@ export function formatBadge(git: WorktreeGit, base: DiffBase): string | null {
  */
 export function badgeColor(git: WorktreeGit): "yellow" | "orange" | "gray" {
   if ((git.working?.files ?? 0) > 0) return "yellow"
-  const unpushed = git.tracking ? (git.vs_tracking?.ahead ?? 0) : (git.vs_merge_base?.ahead ?? 0)
-  return unpushed > 0 ? "orange" : "gray"
+  return unpushedCommits(git) > 0 ? "orange" : "gray"
+}
+
+/**
+ * Commits not pushed: those ahead of the tracking branch, or with no
+ * tracking branch, every commit past the merge base. The one definition
+ * behind both the badge's orange and the summary's "(N unpushed commits)",
+ * so the two can't disagree.
+ */
+export function unpushedCommits(git: WorktreeGit): number {
+  return git.tracking ? (git.vs_tracking?.ahead ?? 0) : (git.vs_merge_base?.ahead ?? 0)
+}
+
+/** "3 unpushed commits", "1 unpushed commit", or null when everything is pushed. */
+export function unpushedLabel(git: WorktreeGit): string | null {
+  const n = unpushedCommits(git)
+  if (n <= 0) return null
+  return `${n} unpushed commit${n === 1 ? "" : "s"}`
 }
 
 /**

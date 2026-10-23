@@ -2,6 +2,7 @@ import { ActionIcon, Box, CopyButton, Group, Stack, Text, Tooltip } from "@manti
 import { IconAlertTriangle, IconCheck, IconCopy } from "@tabler/icons-react"
 import type { AheadBehind, WorktreeGit } from "../../api/types"
 import { useIsWide } from "../../hooks/useIsWide"
+import { unpushedLabel } from "../../lib/diffLabels"
 import { relativeTime } from "../../lib/relativeTime"
 import { InfoRow } from "../InfoRow"
 
@@ -26,6 +27,21 @@ function AheadBehindLine({ ab }: { ab: AheadBehind | undefined }) {
   )
 }
 
+/** A small copy-to-clipboard icon, after the value it copies. */
+function CopyIcon({ value, label, tooltip }: { value: string; label: string; tooltip: string }) {
+  return (
+    <CopyButton value={value}>
+      {({ copied, copy }) => (
+        <Tooltip label={copied ? "Copied" : tooltip}>
+          <ActionIcon variant="subtle" color={copied ? "teal" : "gray"} size="xs" aria-label={label} onClick={copy}>
+            {copied ? <IconCheck size={12} /> : <IconCopy size={12} />}
+          </ActionIcon>
+        </Tooltip>
+      )}
+    </CopyButton>
+  )
+}
+
 /**
  * The Code tab's summary: what this worktree is (left) and where it stands
  * against its merge base and tracking branch (right). Two columns wide,
@@ -38,6 +54,7 @@ export function GitSummary({ git, repo, updated }: { git: WorktreeGit; repo: str
   }
   const dirty = git.working.staged || git.working.modified || git.working.untracked
   const short = git.merge_base?.slice(0, 7)
+  const unpushed = unpushedLabel(git)
 
   return (
     <Box
@@ -49,9 +66,27 @@ export function GitSummary({ git, repo, updated }: { git: WorktreeGit; repo: str
     >
       <Stack gap={2} style={wide ? { flex: "0 1 auto", maxWidth: "50%", minWidth: 0 } : undefined}>
         {repo && <InfoRow label="Repo">{repo}</InfoRow>}
-        {git.branch && <InfoRow label="Branch">{git.branch}</InfoRow>}
+        {git.branch && (
+          <InfoRow label="Branch">
+            <Group gap={4} wrap="nowrap" component="span">
+              <span>{git.branch}</span>
+              <CopyIcon value={git.branch} label="Copy branch name" tooltip="Copy branch name" />
+            </Group>
+          </InfoRow>
+        )}
         <InfoRow label="Working tree">
-          <Text span inherit c={dirty ? "yellow" : undefined}>{workingSummary(git.working)}</Text>
+          <span data-testid="working-tree">
+            <Text span inherit c={dirty ? "yellow" : undefined}>{workingSummary(git.working)}</Text>
+            {unpushed && (
+              <>
+                {" "}
+                {/* Orange like the badge, but only when it is the whole
+                    story: uncommitted changes are the stronger warning and
+                    keep the line's color to themselves. */}
+                <Text span inherit c={dirty ? undefined : "orange"}>{`(${unpushed})`}</Text>
+              </>
+            )}
+          </span>
         </InfoRow>
         {updated && <InfoRow label="Updated">{relativeTime(updated)}</InfoRow>}
       </Stack>
@@ -60,21 +95,7 @@ export function GitSummary({ git, repo, updated }: { git: WorktreeGit; repo: str
           {git.merge_base && git.main_upstream ? (
             <Group gap={4} wrap="nowrap" component="span">
               <span>{`${git.main_upstream} @ ${short}`}</span>
-              <CopyButton value={git.merge_base}>
-                {({ copied, copy }) => (
-                  <Tooltip label={copied ? "Copied" : `Copy ${git.merge_base}`}>
-                    <ActionIcon
-                      variant="subtle"
-                      color={copied ? "teal" : "gray"}
-                      size="xs"
-                      aria-label="Copy merge base SHA"
-                      onClick={copy}
-                    >
-                      {copied ? <IconCheck size={12} /> : <IconCopy size={12} />}
-                    </ActionIcon>
-                  </Tooltip>
-                )}
-              </CopyButton>
+              <CopyIcon value={git.merge_base} label="Copy merge base SHA" tooltip={`Copy ${git.merge_base}`} />
             </Group>
           ) : (
             <Text span inherit c="dimmed">{git.main_upstream ? "unavailable" : "main has no upstream"}</Text>

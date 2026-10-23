@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { Commit, WorktreeGit } from "../api/types"
-import { badgeColor, formatBadge, rangeLabel } from "./diffLabels"
+import { badgeColor, formatBadge, rangeLabel, unpushedCommits, unpushedLabel } from "./diffLabels"
 
 const commit = (sha: string): Commit => ({ sha, short: sha, subject: sha, author: "a", date: "2026-01-01T00:00:00Z" })
 // Newest first, as the server lists them.
@@ -14,6 +14,24 @@ const git = (over: Partial<WorktreeGit>): WorktreeGit => ({
   working: { staged: 0, modified: 0, untracked: 0, files: 0 },
   fetch: { in_progress: false },
   ...over,
+})
+
+describe("unpushedCommits / unpushedLabel", () => {
+  it("counts commits ahead of the tracking branch when there is one", () => {
+    const g = git({ tracking: "origin/x", vs_tracking: { ahead: 3, behind: 1 }, vs_merge_base: { ahead: 9, behind: 0 } })
+    expect(unpushedCommits(g)).toBe(3)
+    expect(unpushedLabel(g)).toBe("3 unpushed commits")
+  })
+  it("counts commits past the merge base for a branch never pushed", () => {
+    const g = git({ vs_merge_base: { ahead: 1, behind: 4 } })
+    expect(unpushedCommits(g)).toBe(1)
+    expect(unpushedLabel(g)).toBe("1 unpushed commit")
+  })
+  it("is zero, with no label, when everything is pushed or nothing is known", () => {
+    expect(unpushedLabel(git({ tracking: "origin/x", vs_tracking: { ahead: 0, behind: 2 }, vs_merge_base: { ahead: 5, behind: 0 } }))).toBeNull()
+    expect(unpushedCommits(git({}))).toBe(0)
+    expect(unpushedLabel(git({}))).toBeNull()
+  })
 })
 
 describe("badgeColor", () => {
