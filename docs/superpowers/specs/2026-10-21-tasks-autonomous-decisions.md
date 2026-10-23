@@ -172,7 +172,7 @@ Format: **Q:** the question · **A:** what was done · **Why** · **To change:**
   **A:** Adding a blocker that would form a cycle is refused (400). But an automatic unresolve (a PR reopened) may re-form a mutual block, and that is accepted: blocking never prevents completion, so both tasks just show blocked until one resolves.
   **To change:** `wouldCycle` in `internal/tasks/blockers.go` and `ResolveBlockers` in `internal/tasks/resolve.go`.
 - **Q:** How late is an Unblocked notification, and which toggles apply?
-  **A:** About 10-15s after the resolution: each event is held for 10s from the notifier pass that finds it (on top of the 5s scan), then re-checked: the event must still exist, its task must not be deleted, and its blocker must still exist and still be resolved. Phase 6 aligns the hold with the undo window. Only the global "Enable notifications" switch, the delivery mode and the custom command apply; the per-worktree and per-resource toggles are ignored. Automatic unresolves never notify. Held items do not survive a restart, and a resolution the CLI makes notifies only while `worktree ui` is running (its cursor starts at the newest event).
+  **A:** (Hold length superseded by Phase 6, "When does "Unblocked" notify?": the hold is now 15s, `UNDO_WINDOW_MS` + the 5s scan. The rest stands.) About 10-15s after the resolution: each event is held for 10s from the notifier pass that finds it (on top of the 5s scan), then re-checked: the event must still exist, its task must not be deleted, and its blocker must still exist and still be resolved. Phase 6 aligns the hold with the undo window. Only the global "Enable notifications" switch, the delivery mode and the custom command apply; the per-worktree and per-resource toggles are ignored. Automatic unresolves never notify. Held items do not survive a restart, and a resolution the CLI makes notifies only while `worktree ui` is running (its cursor starts at the newest event).
   **Why:** Phase 6's undo deletes the events it cascades, and a notification for an undone action would be wrong.
   **To change:** `unblockHoldDefault` and `unblockStillStands` in `internal/webui/notify_unblock.go`.
 - **Q:** Where does an Unblocked notification go?
@@ -250,6 +250,31 @@ Format: **Q:** the question · **A:** what was done · **Why** · **To change:**
 - **Q:** When does "Unblocked" notify?
   **A:** 15s after the notifier sees the event (`UNDO_WINDOW_MS` + the 5s scan), so an undo through the toast always lands first.
   **To change:** `unblockHoldDefault` in `internal/webui/notify_unblock.go`.
+
+### Phase 6 final review fixes
+
+- **Q:** Who may undo what?
+  **A:** The user may undo any undoable event. An agent may undo only an event whose actor is `agent`; otherwise `ErrUndoForbidden` ("only the user can undo the user's changes"), a 409 on the web (which always acts as the user, so it never sees it) and exit 1 in the CLI. No `actor_session` match is required between agents.
+  **Why:** An undo writes no event, so without this an agent could change the user's work with no trace, no unread mark and no notification.
+  **To change:** `checkUndoActor` in `internal/tasks/undo.go`; `writeTaskError` in `internal/webui/tasks_api.go`.
+- **Q:** What does an undo return when the task was deleted or the subtask removed since?
+  **A:** 409 (`ErrUndoConflict`), not 404. 404 is only for an event id never issued. A subtask check undo now loads the event before the subtask, so an unknown id is still a 404. A purged task's events are purged with it, so its undo is a 409 as well.
+  **Why:** The event was issued and the thing changed since, the same rule as "already undone".
+  **To change:** `UndoStateChange`, `UndoSubtaskCheck` and `UndoDelete` in `internal/tasks/undo.go`.
+- **Q:** Can an undo set off an "Unblocked" notification?
+  **A:** No. An undo settles the restored task's task-kind blockers in its own transaction (`settleTaskBlockersTx` with `markOnUndo`). A resolution it writes carries `"on_undo": true`, which the notifier skips like `on_add`. An unresolve of a blocker whose resolution was an earlier undo's `on_undo` one deletes that event and clears the row instead of writing an unresolve. So "X blocked by W; delete X; delete W; undo X's delete; undo W's delete" leaves X's history as it was. This is also true for undoing a completion whose own blocker's blocking task finished meanwhile: the blocker resolves quietly, because the undo is the user's own action. The after-commit resolver still runs after every undo as a safety net, and finds nothing.
+  **Why:** An undo puts back the user's own earlier state, and that is not news. Without this, the reported ordering wrote "Unblocked" and then "blocked again", and notified if the second undo came more than 15s later.
+  **To change:** `settleTaskBlockersTx` and `withdrawUndoResolutionTx` in `internal/tasks/resolve.go`; `isUnblockEvent` in `internal/webui/notify_unblock.go`.
+- **Q:** Does Z undo while the task modal is open?
+  **A:** Yes. `useButtonHotkey` takes an opt-in `aboveOverlays`, which the undo toast passes, so its Z is not ignored for being outside the open dialog. Typing still never triggers it. No other caller changes. With several undo toasts open, Z still presses all of them, as it already did for mark-read (pre-existing).
+  **To change:** `ui/src/hooks/useButtonHotkey.ts`, `ui/src/components/UndoToast.tsx`.
+- **Q:** How does a failed `tasks undo` print?
+  **A:** The error, once, on stderr, exit 1, with no usage block. Only the undo command sets `SilenceUsage` and `SilenceErrors`; other commands keep cobra's behaviour (error, usage, error), unchanged.
+  **Why:** Undo is the first command meant to fail routinely, for agents that parse its output. Silencing on root would also drop the usage block from argument errors on every command, which is a wider change than this phase needs.
+  **To change:** `tasksUndoCmd` in `cmd/tasks.go` (or `rootCmd` in `cmd/root.go` to apply it everywhere).
+- **Q:** What does a task blocker read as when the blocking tasks can't be read?
+  **A:** A neutral "T<id>" with no status. "T<id> (deleted)" is only for an id with no row (purged), after a successful read. A soft-deleted, not yet purged, task keeps "T<id> <title>" with status "deleted".
+  **To change:** `blockerLabeler` in `internal/webui/tasks_blockers_api.go`.
 
 ## Browser check (run this yourself)
 

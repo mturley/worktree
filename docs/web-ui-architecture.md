@@ -223,7 +223,7 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | GET | `/api/tasks/detail` | `id` | `taskDetailDTO`; 404 if missing or deleted. See "Task detail API" |
 | GET | `/api/tasks/activity` | `id`, `filter` (`all` default, `task`, `linked`, `resource`), `type` + `rid` (with `filter=resource`; must be a linked resource, else 404) | `[]TimelineEvent`, newest first, at most 200; resource events carry `linked_to_task` |
 | POST | `/api/tasks/delete` | body: `{id}` | `{undo_event_id}` |
-| POST | `/api/tasks/undo` | body: `{event_id}` | 204; 409 if the change is no longer the current one; 404 for an unknown event or purged task; 400 for an event that is not undoable |
+| POST | `/api/tasks/undo` | body: `{event_id}` | 204; 409 if the change is no longer the current one (including an event already undone or purged, and a task deleted or subtask removed since); 404 only for an event id never issued; 400 for an event that is not undoable |
 | POST | `/api/tasks/links/add` | body: `{id, url?, type?, rid?, path?, focus?}`, exactly one of `url`, `type`+`rid`, `path`; a URL resolves with `resourceurl.InferAny` (unrecognised → 400) | `taskDetailDTO` |
 | POST | `/api/tasks/links/remove` | body: `{id, kind, type?, rid?, path?}` | `taskDetailDTO` |
 | POST | `/api/tasks/links/focus` | body: `{id, kind, type?, rid?, path?, focus}`; a link the task lacks → 404 | `taskDetailDTO` |
@@ -959,9 +959,13 @@ read" and offers no undo. Opening the modal marks nothing.
 **Undo** (`ui/src/components/UndoToast.tsx`, `@mantine/notifications`). Every
 mark-read made from the UI — Mark all read, in either form, the Slack
 thread view's Mark read and the task modal's — shows a toast for 10 seconds with an Undo button
-(also Z; U is taken by Show unread only) that puts the cursors back. The toast ends at a
-fixed deadline (`UNDO_WINDOW_MS`, a `setTimeout` that hides it): hovering does
-not extend it, unlike Mantine's own `autoClose`. A task's state change, subtask check and
+(also Z; U is taken by Show unread only) that puts the cursors back. Z works
+with a modal open too: the toast lives in the notifications portal, outside
+any modal, so it passes `aboveOverlays` to `useButtonHotkey`, which otherwise
+ignores a button outside a dialog while an overlay is open. The toast ends at a
+fixed deadline (`UNDO_WINDOW_MS`, a `setTimeout` that hides it, cleared by
+the toast's `onClose` when it closes first): hovering does not extend it,
+unlike Mantine's own `autoClose`. A task's state change, subtask check and
 delete show the same toast (see "Undo for tasks"):
 
 - GitHub/Jira: `/api/resource-read` answers `{previous_ts, last_read_ts}`
@@ -998,7 +1002,9 @@ and its cascade events rather than writing a "reverted" one, so history shows
 nothing and a restored blocker never sends a second "Unblocked" notification.
 It runs `afterTaskWrite()` afterwards, like the writes it reverses. The CLI is
 `worktree tasks undo <event-id>`; its `state`, `delete` and `subtask
-check`/`uncheck` `--json` carry the same `undo_event_id`.
+check`/`uncheck` `--json` carry the same `undo_event_id`. A failed `tasks
+undo` prints just its error, once, with no usage block, and exits 1
+(`SilenceUsage`/`SilenceErrors` on that command only).
 
 Details, as built (`internal/tasks/undo.go`, `purge.go`):
 
@@ -1011,10 +1017,20 @@ Details, as built (`internal/tasks/undo.go`, `purge.go`):
   newest check/uncheck event for that subtask and the box still equals `to`.
   Delete: `deleted_at` equals the event's `ts`. Anything else, including an
   agent change in between, is `ErrUndoConflict` -> 409 and changes nothing
-  (no version bump). Only the newest change is undoable.
+  (no version bump). Only the newest change is undoable. A state change or
+  subtask check whose task has since been deleted, or whose subtask has
+  since been removed, is a 409 too: the event was issued and the thing
+  changed since.
+- **Who may undo.** The user may undo any undoable event. An agent (the CLI
+  under Claude Code or a handler session, or `--as-agent`) may undo only an
+  event whose actor is `agent`; anything else is `ErrUndoForbidden` ("only
+  the user can undo the user's changes") -> 409 on the web and exit 1 in the
+  CLI. An undo writes no event, so this is what keeps an agent from changing
+  the user's work invisibly. The web always acts as the user.
 - **Missing event.** `task_events` is AUTOINCREMENT, so a missing id at or
   below `sqlite_sequence.seq` was issued once and has since been undone or
-  purged: conflict (409). An id never issued is `ErrNotFound` (404). A wrong
+  purged: conflict (409). An id never issued is `ErrNotFound` (404), and that
+  is the only 404. A wrong
   event type, another task's event, the system actor or a pre-undo event
   without `prev_*` is `ErrInvalid` (400).
 - **Cascades are in the transaction, both ways.** `SetState` and `Delete`
@@ -1026,9 +1042,17 @@ Details, as built (`internal/tasks/undo.go`, `purge.go`):
   resolved_event_id = <that event>` (exact match, so a later resolution is
   left alone), and an unresolve only while the blocker is still unresolved,
   restoring the earlier resolution field for field. `AddBlocker` also settles
-  an already-satisfied task blocker in its own transaction. The after-commit
-  resolver stays as a safety net for drift (it finds nothing after these
-  writes) and runs after every undo.
+  an already-satisfied task blocker in its own transaction.
+- **Undo settles too.** After putting the task back, an undo calls
+  `settleTaskBlockersTx` for it in the same transaction, marked `on_undo`:
+  a resolution it writes carries `"on_undo": true`, which the Unblocked
+  notifier skips like `on_add` (the user's own undo is not news), and an
+  unresolve of a blocker whose resolution was itself an earlier undo's
+  `on_undo` one deletes that event and clears the row instead of writing an
+  unresolve. So X blocked by W, delete X, delete W, undo X's delete, undo W's
+  delete leaves X's history exactly as before, with no "Unblocked" at any
+  point. The after-commit resolver stays as a safety net for drift (it finds
+  nothing after these writes) and runs after every undo.
 - **Undo deletes history.** The undone event and its cascade events are
   deleted, even for a cascade blocker that changed since (otherwise the
   notifier could still send "Unblocked" for a completion that was undone). No
@@ -1038,7 +1062,10 @@ Details, as built (`internal/tasks/undo.go`, `purge.go`):
   ago (`taskPurgeAfter`): the task, its events, read cursor and `task:<id>`
   subscriptions, with subtasks, links and its own blockers cascading. Other
   tasks' blockers on a purged task stay (`blocking_task_id` has no FK) and
-  label as "T<id> (deleted)". An undo of a purged task's event is a 409.
+  label as "T<id> (deleted)" (a soft-deleted, not yet purged, one keeps its
+  "T<id> <title>" with status "deleted"; if reading the blocking tasks fails,
+  the label is a neutral "T<id>" with no status). An undo of a purged task's
+  event is a 409, since its events are purged with it.
   A no-op sweep bumps nothing.
 - **API shape.** `/api/tasks/delete` answers 200 `{undo_event_id}` (it was
   204). Delete in the UI is one click with an Undo toast; undoing it reopens
@@ -1647,7 +1674,7 @@ made it — the poll loop's `resolvePass(true, …)`, a web write's
 `afterTaskWrite`, or the tasks package's own `resolveAfterWrite` inside a CLI
 process. A CLI-made resolution notifies only while `worktree ui` is running:
 the notifier's task cursor starts at `MAX(id)`, so events written while it
-was down are never read. An `on_add` resolution notifies nowhere. All `system`
+was down are never read. An `on_add` or `on_undo` resolution notifies nowhere. All `system`
 blocker events (resolves and unresolves) are kept OUT of the per-worktree
 task path, so a resolution never notifies twice and never goes through the
 per-worktree or per-resource toggles; an automatic unresolve never
@@ -1656,14 +1683,14 @@ notifies at all. Only the global "Enable notifications" switch applies (in
 notification.
 
 Each found event is **held** in memory (`Server.unblockPending`) for
-`unblockHoldDefault`: about 10s after the notifier sees the event (not after
+`unblockHoldDefault`, counted from when the notifier sees the event (not from
 the resolution). The hold is `UNDO_WINDOW_MS` + 5s = 15s (the notifier's scan interval), so an undo made through the toast always lands before a notification. Then
 `unblockStillStands` re-checks it: an event that is gone (an undo deleted
 it; an undo deletes the events it cascaded), whose task is deleted, or whose
 blocker (the payload's `blocker_id`) was removed or is no longer resolved is
 dropped silently. Held items
 do not survive a restart: the new cursor starts past their events, so a
-resolution in the last 10s before a restart never notifies. Due items join
+resolution in the last 15s before a restart never notifies. Due items join
 the pass's other batches before the `notifyMaxPerPass` check, so they count
 toward the summary. `unblockHold` and `notifyNow` are the test seams for the
 window and the clock.
