@@ -89,9 +89,12 @@ func ListID(commits []Commit, mergeBase string) string {
 // commit SHA, or a snapshot tree SHA when the range includes Uncommitted.
 //
 // When the run reaches the list's oldest commit, the old side is the merge
-// base rather than that commit's parent: if the branch merged main in, the
-// parent may sit on main's side and would show main's changes as the
-// branch's own.
+// base of the run's newest end (HEAD when it includes Uncommitted) with
+// baseRef, rather than that commit's parent: if the branch merged main in, the
+// parent may sit on main's side and would show main's changes as the branch's
+// own. Using the run's own newest end, not always HEAD, keeps a run that stops
+// before the merge at its fork point instead of main's later tip, which would
+// show main's incoming changes as deletions.
 func ResolveRange(dir, baseRef string, commits []Commit, r Range) (oldRev, newRev string, err error) {
 	if r == (Range{}) {
 		mb, ok := MergeBase(dir, baseRef)
@@ -131,7 +134,11 @@ func ResolveRange(dir, baseRef string, commits []Commit, r Range) (oldRev, newRe
 		}
 		oldRev = head
 	case fromIdx == len(commits)-1:
-		mb, ok := MergeBase(dir, baseRef)
+		tip := r.To
+		if tip == Uncommitted {
+			tip = "HEAD"
+		}
+		mb, ok := mergeBaseOf(dir, tip, baseRef)
 		if !ok {
 			return "", "", fmt.Errorf("no merge base with %s", baseRef)
 		}
@@ -149,4 +156,13 @@ func ResolveRange(dir, baseRef string, commits []Commit, r Range) (oldRev, newRe
 		return oldRev, newRev, err
 	}
 	return oldRev, r.To, nil
+}
+
+// mergeBaseOf returns the full SHA of the merge base of two revs.
+func mergeBaseOf(dir, a, b string) (string, bool) {
+	out, err := git(dir, "merge-base", a, b)
+	if err != nil || out == "" {
+		return "", false
+	}
+	return out, true
 }

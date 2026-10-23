@@ -139,6 +139,24 @@ func TestResolveFullRunAfterMergingMainUsesMergeBase(t *testing.T) {
 	}
 }
 
+func TestResolvePartialRunAfterMergingMainUsesForkPoint(t *testing.T) {
+	repo, run := newRemoteRepo(t)
+	run("checkout", "-b", "feature")
+	commitSubject(t, repo, "f1.txt", "f1")
+	advanceOriginMain(t, repo, 1)
+	run("merge", "--no-ff", "-m", "merge main", "origin/main")
+	commitSubject(t, repo, "f2.txt", "f2")
+	commits, _ := FirstParentCommits(repo, "origin/main")
+	oldest := commits[len(commits)-1].SHA
+	old, nw, err := ResolveRange(repo, "origin/main", commits, Range{From: oldest, To: oldest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := run("rev-parse", oldest+"^"); old != want || nw != oldest {
+		t.Errorf("got (%s, %s), want (%s, %s)", old, nw, want, oldest)
+	}
+}
+
 func TestResolveMiddleRun(t *testing.T) {
 	repo, run, shas := threeCommits(t)
 	commits, _ := FirstParentCommits(repo, "origin/main")
