@@ -68,4 +68,25 @@ describe("useButtonHotkey", () => {
     fireEvent.keyDown(document, { key: "Enter" })
     expect(onPress).toHaveBeenCalledTimes(2)
   })
+
+  it("with aboveOverlays, answers outside an open dialog too", () => {
+    const onPress = vi.fn()
+    function Floating() {
+      const ref = useButtonHotkey("z", onPress, true, { aboveOverlays: true })
+      return <button ref={ref}>Undo</button>
+    }
+    const view = render(
+      <>
+        <Floating />
+        <div role="dialog"><input aria-label="field" /></div>
+      </>,
+    )
+    fireEvent.keyDown(document, { key: "z" })
+    expect(onPress).toHaveBeenCalledTimes(1)
+    // Still not while typing, even in the dialog.
+    const field = view.getByLabelText("field")
+    field.focus()
+    fireEvent.keyDown(field, { key: "z" })
+    expect(onPress).toHaveBeenCalledTimes(1)
+  })
 })

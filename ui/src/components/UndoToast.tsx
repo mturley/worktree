@@ -52,16 +52,18 @@ export function showUndoToast({ message, undo, onSettled }: {
   onSettled?: () => void
 }) {
   const id = `undo-${++nextID}`
+  // A fixed deadline, not Mantine's autoClose: that one pauses while the
+  // toast is hovered, and the offer must end when the server's Unblocked
+  // hold assumes it has. A toast that closes first (Undo, Z, its close
+  // button) clears it.
+  const deadline = window.setTimeout(() => notifications.hide(id), UNDO_WINDOW_MS)
   notifications.show({
     id,
     message: <UndoToastBody id={id} message={message} undo={undo} onSettled={onSettled} />,
-    // A fixed deadline, not Mantine's autoClose: that one pauses while the
-    // toast is hovered, and the offer must end when the server's Unblocked
-    // hold assumes it has. Hiding a toast already gone is a no-op.
     autoClose: false,
     withCloseButton: true,
+    onClose: () => window.clearTimeout(deadline),
   })
-  window.setTimeout(() => notifications.hide(id), UNDO_WINDOW_MS)
 }
 
 function UndoToastBody({ id, message, undo, onSettled }: {
@@ -90,7 +92,9 @@ function UndoToastBody({ id, message, undo, onSettled }: {
     }
   }
 
-  const ref = useButtonHotkey("z", () => void run(), !pending)
+  // Above overlays: the toast sits in the notifications portal, outside the
+  // task modal, where most task undos are made.
+  const ref = useButtonHotkey("z", () => void run(), !pending, { aboveOverlays: true })
 
   return (
     <Group justify="space-between" wrap="nowrap" gap="sm">

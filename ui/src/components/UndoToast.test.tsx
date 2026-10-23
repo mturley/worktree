@@ -47,4 +47,39 @@ describe("showUndoToast", () => {
     act(() => vi.advanceTimersByTime(200))
     expect(undoToasts()).toHaveLength(0)
   })
+
+  it("answers Z while a modal is open", async () => {
+    const undo = vi.fn(async () => {})
+    render(
+      <MantineProvider>
+        <Notifications />
+        <div role="dialog" aria-label="Task">
+          <button>inside the modal</button>
+        </div>
+      </MantineProvider>,
+    )
+    act(() => showUndoToast({ message: "Marked “a” done", undo }))
+    await screen.findByText("Marked “a” done")
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "z" })
+    })
+    expect(undo).toHaveBeenCalledTimes(1)
+  })
+
+  it("clears its deadline when it closes early", () => {
+    vi.useFakeTimers()
+    const set = vi.spyOn(window, "setTimeout")
+    const clear = vi.spyOn(window, "clearTimeout")
+    wrap()
+    act(() => showUndoToast({ message: "Deleted “a”", undo: async () => {} }))
+    const deadline = set.mock.results[0]?.value
+    expect(deadline).toBeDefined()
+    expect(clear).not.toHaveBeenCalledWith(deadline)
+    act(() => {
+      notifications.hide(String(undoToasts()[0].id))
+    })
+    expect(clear).toHaveBeenCalledWith(deadline)
+    set.mockRestore()
+    clear.mockRestore()
+  })
 })

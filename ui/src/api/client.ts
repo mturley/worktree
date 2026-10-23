@@ -193,7 +193,7 @@ export const api = {
     }
     return fetchJSON<TimelineEvent[]>(`/api/tasks/activity?${params}`)
   },
-  /** Resolves once deleted; the answer's undo_event_id is not read yet (Task 4 wires undo). */
+  /** Resolves once deleted, with the undo_event_id that undoTask takes to restore the task. */
   deleteTask: (id: number) => postJSON<TaskDeleteResult>("/api/tasks/delete", { id }),
   /**
    * Takes back the write that recorded `eventId` (an undo_event_id). Resolves

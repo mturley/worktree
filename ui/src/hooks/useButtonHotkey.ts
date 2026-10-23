@@ -14,7 +14,10 @@ const activatesOnEnter = (el: Element | null) =>
  * the visible one answers: one in a hidden tab panel or behind a closed
  * collapse stays quiet. With a modal or menu open, only a button inside a
  * dialog answers, so Enter in the Mark all read preview confirms it rather
- * than reaching through to the page behind.
+ * than reaching through to the page behind. `aboveOverlays` opts out of that for
+ * a button that floats above every overlay rather than sitting behind one:
+ * the undo toast, rendered in the notifications portal outside any modal,
+ * must still answer Z while the task modal that made the change is open.
  *
  * Not while typing, nor with a modifier held (Cmd+R reloads). Enter also
  * stands aside while focus is on some other control Enter already activates
@@ -24,6 +27,7 @@ export function useButtonHotkey<T extends HTMLElement = HTMLButtonElement>(
   key: string,
   onPress: () => void,
   enabled: boolean,
+  { aboveOverlays = false }: { aboveOverlays?: boolean } = {},
 ): RefObject<T | null> {
   const ref = useRef<T>(null)
   const press = useRef(onPress)
@@ -38,13 +42,13 @@ export function useButtonHotkey<T extends HTMLElement = HTMLButtonElement>(
       if (!el || !el.isConnected || isHidden(el)) return
       if (isEditable(document.activeElement)) return
       if (e.key === "Enter" && activatesOnEnter(document.activeElement) && document.activeElement !== el) return
-      if (overlayOpen() && !el.closest('[role="dialog"]')) return
+      if (!aboveOverlays && overlayOpen() && !el.closest('[role="dialog"]')) return
       e.preventDefault()
       press.current()
     }
     document.addEventListener("keydown", onKey)
     return () => document.removeEventListener("keydown", onKey)
-  }, [key, enabled])
+  }, [key, enabled, aboveOverlays])
 
   return ref
 }
