@@ -7,6 +7,41 @@ The newest entries are at the bottom of each phase.
 
 Format: **Q:** the question · **A:** what was done · **Why** · **To change:** what to edit if you disagree.
 
+## May reconsider after further testing
+
+Mike's review on 2026-10-23 kept these as built for now. He'll use them for a
+while before deciding. Each one links back to the full entry below.
+
+- **In-app navigation from the modal** (Phase 3, "Can you navigate in-app from
+  inside the modal?"). Today resource titles and event "Open" links open a new
+  tab. Mike may want in-app navigation instead, because new tabs can get
+  messy. The way to do it is to close the modal first, then navigate, so
+  `close()`'s `history.back()` doesn't undo the push. Files:
+  `modal/LinksSection.tsx`, `modal/LinkedEventsSection.tsx`.
+- **The modal closes before a delete finishes** (Phase 3, "What happens on
+  delete?"). Today it closes at once and reopens with a red notice if the
+  delete fails. Mike tends to prefer that a modal stays open with a spinner
+  until an action that can fail is done, then closes. Files:
+  `modal/TaskDetailModal.tsx` (delete-failure logic), `modal/TaskSidebar.tsx`
+  (the control), `modal/TaskModalProvider.tsx` (`open(id, { error })`).
+- **Delete is one click, with no confirmation** (Phase 6, "How does deleting a
+  task work now?"). Today the Undo toast replaced the inline "Delete? Yes /
+  No". Deleting a task can be a big deal, so Mike may want the confirmation
+  back as extra safety, alongside Undo. Files: `onDelete` in
+  `modal/TaskDetailModal.tsx`; `handleDeleteTask` in
+  `internal/webui/tasks_detail_api.go` can keep its 200 `{undo_event_id}`.
+- **Z undoes everything in every open toast** (Phase 6 final review fixes, "Does Z
+  undo while the task modal is open?"). With several undo toasts open, one Z
+  press undoes all of them, and the same was already true of mark-read toasts
+  before this work. That could undo more than the user meant. One option is to
+  show the Z hint, and bind Z, only on the newest undo toast. Files:
+  `ui/src/hooks/useButtonHotkey.ts`, `ui/src/components/UndoToast.tsx`.
+
+**Backward compatibility:** none is needed with earlier phases of this work.
+All six phases ship together, and nothing from them has been used for real.
+For example, `ev:` links to Slack messages don't need migrating (Phase 3 final
+review fixes).
+
 ## Phase 2 — task lists in the UI
 
 - **Q:** The real-browser check can't run in this sandbox, because pointing the binary at a throwaway config (XDG_CONFIG_HOME) is refused. Do I work around that?
