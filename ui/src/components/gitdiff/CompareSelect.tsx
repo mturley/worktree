@@ -23,8 +23,8 @@ export function CompareSelect({
   labelPosition: LabelPosition
 }) {
   const data = [
-    { value: "merge-base", label: `merge base (${mainUpstream ?? "unavailable"})` },
-    { value: "tracking", label: `tracking branch (${tracking ?? "none"})`, disabled: !tracking },
+    { value: "merge-base", label: `Merge base (${mainUpstream ?? "unavailable"})` },
+    { value: "tracking", label: `Tracking branch (${tracking ?? "none"})`, disabled: !tracking },
   ]
   return (
     <LabeledControl label="Compare with:" labelPosition={labelPosition}>

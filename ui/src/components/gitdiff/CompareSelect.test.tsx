@@ -27,9 +27,9 @@ describe("CompareSelect", () => {
   it("names the refs and switches base", async () => {
     const { onChange, user } = setup("origin/feature")
     expect(screen.getByText("Compare with:")).toBeInTheDocument()
-    expect(screen.getByRole("textbox", { name: "Compare with" })).toHaveValue("merge base (upstream/main)")
+    expect(screen.getByRole("textbox", { name: "Compare with" })).toHaveValue("Merge base (upstream/main)")
     await user.click(screen.getByRole("textbox", { name: "Compare with" }))
-    await user.click(await screen.findByRole("option", { name: "tracking branch (origin/feature)" }))
+    await user.click(await screen.findByRole("option", { name: "Tracking branch (origin/feature)" }))
     expect(onChange).toHaveBeenCalledWith("tracking")
   })
 
@@ -44,7 +44,7 @@ describe("CompareSelect", () => {
   it("disables the tracking option when there is none", async () => {
     const { onChange, user } = setup(undefined)
     await user.click(screen.getByRole("textbox", { name: "Compare with" }))
-    const option = await screen.findByRole("option", { name: "tracking branch (none)" })
+    const option = await screen.findByRole("option", { name: "Tracking branch (none)" })
     expect(option).toHaveAttribute("data-combobox-disabled")
     await user.click(option)
     expect(onChange).not.toHaveBeenCalled()
