@@ -72,25 +72,33 @@ func (s *Server) afterBlockerAdd(id int64) {
 	s.resolvePass(false, tasks.ResolveOptions{OnAddBlocker: id})
 }
 
-// resolvePass runs ResolveBlockers, then ReconcileHolds. With network, the
-// pass searches Jira (refreshing the cached statuses); without, it reads
-// only the DB and that cache. Errors are logged: the write it follows has
+// resolvePass runs ResolveBlockers, then ReconcileHolds. With network, it
+// first searches Jira and merges the answers into the status cache
+// (refreshJiraStatuses); the resolution itself always reads only the DB
+// (PR state) and that cache. Errors are logged: the write it follows has
 // committed, and the next pass retries. What it resolves needs no handing
 // on: the notifier finds the system events it wrote (notify_unblock.go).
 //
-// resolveMu holds for the WHOLE pass. ResolveBlockers re-reads each
-// blocker inside its transaction, but it acts on the statuses its lookup
-// read before it: without the lock, a web pass that looked up "open" just
-// before the poll committed "merged" would then unresolve the blocker
-// (and the poll's next pass resolve it again, notifying twice). Another
-// process (the CLI) never looks resources up, so it cannot race this way.
+// resolveMu holds for the rest of the pass: lookup, resolve, reconcile.
+// ResolveBlockers re-reads each blocker inside its transaction, but it acts
+// on the statuses its lookup read before it: without the lock, a web pass
+// that looked up "open" just before the poll committed "merged" would then
+// unresolve the blocker (and the poll's next pass resolve it again,
+// notifying twice). The Jira search runs BEFORE the lock, so a web write
+// never waits on Jira behind it; that is safe because the lookup under the
+// lock reads only the cache, which only the poll writes, and only before
+// taking the lock. Another process (the CLI) never looks resources up, so
+// it cannot race this way.
 func (s *Server) resolvePass(network bool, opts tasks.ResolveOptions) {
 	if s.DB == nil {
 		return
 	}
+	if network {
+		s.refreshJiraStatuses()
+	}
 	s.resolveMu.Lock()
 	defer s.resolveMu.Unlock()
-	lookup := s.blockerStatusLookup(network)
+	lookup := s.blockerStatusLookup(false)
 	if s.blockerLookupFor != nil {
 		lookup = s.blockerLookupFor(network)
 	}
@@ -100,6 +108,17 @@ func (s *Server) resolvePass(network bool, opts tasks.ResolveOptions) {
 	if err := tasks.ReconcileHolds(s.DB); err != nil {
 		s.logger().Printf("blockers: %v", err)
 	}
+}
+
+// refreshJiraStatuses searches Jira for every key a resolvable blocker
+// names and merges the answers into the status cache. Only the poll's
+// resolvePass calls it, outside resolveMu. Nothing while the Jira watcher
+// is off.
+func (s *Server) refreshJiraStatuses() {
+	if !s.WatcherEnabled(config.ServiceJira) {
+		return
+	}
+	s.storeJiraStatuses(s.searchBlockerIssues())
 }
 
 // blockerStatusLookup builds the StatusLookup for one resolution pass.

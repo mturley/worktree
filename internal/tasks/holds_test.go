@@ -283,6 +283,36 @@ func TestHoldURLFollowsWorktreeSubscriptions(t *testing.T) {
 	}
 }
 
+// Holds of one resource whose blockers were pasted from different URLs all
+// settle, in one pass, on the same deterministic URL (the lexically first),
+// whatever order the reconcile visits them in.
+func TestHoldURLIsDeterministicAndSettlesInOnePass(t *testing.T) {
+	const ua, ub = "https://github.com/o/r/pull/1#a", "https://github.com/o/r/pull/1#b"
+	for i := 0; i < 15; i++ {
+		conn := newDB(t)
+		t1, t2 := mustCreate(t, conn, "one"), mustCreate(t, conn, "two")
+		mustAddBlocker(t, conn, t1.ID, BlockerTarget{Kind: BlockerResource, ResourceType: "pr", ResourceID: "o/r#1", URL: ub})
+		mustAddBlocker(t, conn, t2.ID, BlockerTarget{Kind: BlockerResource, ResourceType: "pr", ResourceID: "o/r#1", URL: ua})
+		if got := activeRows(t, conn, "pr"); len(got) != 1 || got[0] != "o/r#1 "+ua {
+			t.Fatalf("run %d: active resources = %q, want one with %s", i, got, ua)
+		}
+		var before string
+		if err := conn.QueryRow(`SELECT group_concat(subscriber || '=' || COALESCE(resource_url,''), ',') FROM watcher_subscriptions`).Scan(&before); err != nil {
+			t.Fatal(err)
+		}
+		if err := ReconcileHolds(conn); err != nil {
+			t.Fatal(err)
+		}
+		var after string
+		if err := conn.QueryRow(`SELECT group_concat(subscriber || '=' || COALESCE(resource_url,''), ',') FROM watcher_subscriptions`).Scan(&after); err != nil {
+			t.Fatal(err)
+		}
+		if before != after {
+			t.Fatalf("run %d: a settled reconcile still wrote: %s -> %s", i, before, after)
+		}
+	}
+}
+
 func TestHoldCopiesKnownURL(t *testing.T) {
 	conn := newDB(t)
 	r := watcher.Resource{Type: "pr", ID: "o/r#1", URL: "https://github.com/o/r/pull/1"}

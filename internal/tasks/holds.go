@@ -97,12 +97,22 @@ func ReconcileHolds(conn *sql.DB) error {
 			return fmt.Errorf("reconcile holds: release %s %s:%s: %w", h.sub, h.typ, h.id, err)
 		}
 	}
-	urls := map[[2]string]string{} // one URL decision per resource per pass
-	for h, blockerURL := range wanted {
+	// One URL decision per resource per pass, from inputs that do not
+	// depend on map order: the lexically first non-empty blocker URL among
+	// the resource's wanted holds.
+	blockerURLs := map[[2]string]string{}
+	for h, u := range wanted {
+		k := [2]string{h.typ, h.id}
+		if cur := blockerURLs[k]; u != "" && (cur == "" || u < cur) {
+			blockerURLs[k] = u
+		}
+	}
+	urls := map[[2]string]string{}
+	for h := range wanted {
 		k := [2]string{h.typ, h.id}
 		u, ok := urls[k]
 		if !ok {
-			u = holdURL(conn, h.typ, h.id, blockerURL, nowTS)
+			u = holdURL(conn, h.typ, h.id, blockerURLs[k], nowTS)
 			urls[k] = u
 		}
 		cur, isLive := live[h]
@@ -130,14 +140,16 @@ func ReconcileHolds(conn *sql.DB) error {
 // lists one row per distinct (type, id, url), so a hold whose URL differed
 // from the resource's other live subscriptions would make the pollers see
 // the resource twice. While anything else follows the resource, the hold
-// therefore copies its URL (the newest non-empty one, else none). Otherwise
-// it is the URL the blocker was added from, else any URL known for the
-// resource. Every hold on one resource records the same URL.
+// therefore copies theirs: the lexically first non-empty one, else none.
+// Otherwise it is the lexically first URL the resource's blockers were
+// added from, else any URL known for the resource. Every choice is in a
+// stable order, so every hold on one resource records the same URL and a
+// reconcile settles in one pass.
 func holdURL(q dbtx, typ, id, blockerURL, nowTS string) string {
 	rows, err := q.QueryContext(bg, `SELECT COALESCE(resource_url, '') FROM watcher_subscriptions
 		WHERE resource_type = ? AND resource_id = ? AND subscriber NOT LIKE 'task:%'
 		  AND deleted_at IS NULL AND (expires_at IS NULL OR expires_at > ?)
-		ORDER BY COALESCE(resource_url, '') = '', created_at DESC`, typ, id, nowTS)
+		ORDER BY COALESCE(resource_url, '') = '', resource_url`, typ, id, nowTS)
 	if err == nil {
 		others, u := false, ""
 		for rows.Next() {
@@ -165,12 +177,14 @@ func knownResourceURL(q dbtx, typ, id string) string {
 	var u string
 	_ = q.QueryRowContext(bg, `SELECT resource_url FROM watcher_subscriptions
 		WHERE resource_type = ? AND resource_id = ? AND COALESCE(resource_url,'') <> ''
-		ORDER BY deleted_at IS NOT NULL, created_at DESC LIMIT 1`, typ, id).Scan(&u)
+		  AND subscriber NOT LIKE 'task:%'
+		ORDER BY deleted_at IS NOT NULL, resource_url LIMIT 1`, typ, id).Scan(&u)
 	if u != "" {
 		return u
 	}
 	_ = q.QueryRowContext(bg, `SELECT resource_url FROM watcher_event_resources
-		WHERE resource_type = ? AND resource_id = ? AND COALESCE(resource_url,'') <> '' LIMIT 1`, typ, id).Scan(&u)
+		WHERE resource_type = ? AND resource_id = ? AND COALESCE(resource_url,'') <> ''
+		ORDER BY resource_url LIMIT 1`, typ, id).Scan(&u)
 	return u
 }
 

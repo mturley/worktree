@@ -1323,8 +1323,13 @@ blocked until one resolves.
   `worktree ui` pass.
 - `s.resolvePass(network, opts)` resolves (`tasks.ResolveBlockersWith`),
   then runs `ReconcileHolds`. The poll loop runs it with network after every
-  pass, even when a source failed. **`resolveMu`** holds for the whole pass,
-  lookup included: `ResolveBlockers` re-reads each blocker in its
+  pass, even when a source failed. With network it first searches Jira and
+  merges the answers into the status cache (`refreshJiraStatuses`), BEFORE
+  taking **`resolveMu`**, so a web write never waits behind the search; the
+  lookup under the lock is always cache-only (PR state from the DB, Jira
+  from the cache, which only the poll writes, before the lock).
+  `resolveMu` holds for the rest of the pass, lookup included:
+  `ResolveBlockers` re-reads each blocker in its
   transaction but acts on statuses its lookup read before it, so without
   the lock a web pass that read a PR as open just before the poll committed
   "merged" would unresolve it (and the next pass resolve it again,

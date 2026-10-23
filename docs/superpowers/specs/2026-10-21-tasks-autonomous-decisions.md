@@ -204,6 +204,9 @@ Format: **Q:** the question · **A:** what was done · **Why** · **To change:**
   **A:** No. A blocker the same request resolves (a merged PR added in the web UI, or a task blocker whose task is already done, from either side) is resolved with `on_add: true` in its event payload, and the Unblocked path skips it. Only that blocker is marked; any other blocker the same pass happens to resolve still notifies. A later resolution of the same blocker notifies as usual.
   **Why:** The user just clicked it; there is nothing to tell them.
   **To change:** `ResolveOptions.OnAddBlocker` in `internal/tasks/resolve.go`, `afterBlockerAdd` in `internal/webui/blocker_status.go` and `isUnblockEvent` in `internal/webui/notify_unblock.go`.
+- **Q:** And an already-satisfied PR or Jira blocker added from the CLI?
+  **A:** The CLI can't look resources up, so the next `worktree ui` pass resolves it, and that resolution does notify: the `on_add` suppression covers only a resolution made in the same request as the add (a web add, or any task blocker whose task is already done).
+  **To change:** `runTasksBlock` in `cmd/tasks_blockers.go`.
 - **Q:** Do link blockers hold a subscription?
   **A:** No. Nothing ever polls a link for a status, so a hold would keep nothing fresh; existing link holds are released by the next reconcile. Every other resource blocker still holds one. A hold records the URL its blocker was pasted from, unless another subscription follows the resource, whose URL it copies so the poller never sees the resource twice.
   **To change:** the wanted query and `holdURL` in `internal/tasks/holds.go`.
@@ -212,7 +215,7 @@ Format: **Q:** the question · **A:** what was done · **Why** · **To change:**
   **Why:** A finished task has nothing left to wait on.
   **To change:** `loadBlockerCounts` in `internal/tasks/list.go` and the chip in `ui/src/components/tasks/TaskRow.tsx`.
 - **Q:** What stops two resolution passes in one process from fighting?
-  **A:** `resolveMu` on the server holds for the whole `resolvePass` (lookup, resolve, reconcile), so a web write's pass that looked a PR up as open can't unresolve what the poll just resolved as merged. A Jira key rejected with HTTP 400 is left out of searches, and reported unknown, for an hour.
+  **A:** `resolveMu` on the server holds for the `resolvePass` lookup, resolve and reconcile, so a web write's pass that looked a PR up as open can't unresolve what the poll just resolved as merged. The poll's Jira search runs before the lock and only fills the cache, so a web write never waits on Jira. A Jira key rejected with HTTP 400 is left out of searches, and reported unknown, for an hour.
   **To change:** `resolvePass`, `jiraBadKeyTTL` in `internal/webui/blocker_status.go`.
 
 ## Browser check (run this yourself)

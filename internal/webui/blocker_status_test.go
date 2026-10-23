@@ -386,6 +386,47 @@ func TestConcurrentResolvePassesNeverUnresolveFromAStaleLookup(t *testing.T) {
 	}
 }
 
+// The poll's Jira search runs outside resolveMu: a web write made while it
+// is in flight answers at once.
+func TestWebWriteDoesNotWaitOnPollJiraSearch(t *testing.T) {
+	s, _ := tasksServer(t)
+	f := &fakeJira{block: make(chan struct{}),
+		issues: map[string]wjira.IssueSummary{"ABC-1": {Key: "ABC-1", Status: "Done", StatusCategory: "done"}}}
+	entered := make(chan struct{})
+	var once sync.Once
+	s.blockerJira = func() (jiraSearcher, bool) {
+		once.Do(func() { close(entered) })
+		return f, true
+	}
+	tk := mustTask(t, s, tasks.NewTask{Title: "A"})
+	mustBlock(t, s, tk.ID, "jira", "ABC-1")
+
+	pollDone := make(chan struct{})
+	go func() { s.resolvePass(true, tasks.ResolveOptions{}); close(pollDone) }()
+	<-entered
+	time.Sleep(20 * time.Millisecond) // let the poll reach the (blocked) search
+
+	webDone := make(chan int, 1)
+	go func() {
+		webDone <- serveTasks(t, s, "POST", "/api/tasks/state", map[string]any{"id": tk.ID, "state": "in_progress"}).Code
+	}()
+	select {
+	case code := <-webDone:
+		if code != 200 {
+			t.Fatalf("state: %d", code)
+		}
+	case <-time.After(3 * time.Second):
+		close(f.block)
+		<-pollDone
+		t.Fatal("a web write waited on the poll's Jira search")
+	}
+	close(f.block)
+	<-pollDone
+	if bl := blockerOf(t, s, tk.ID); bl.ResolvedAt == "" || bl.ResolvedReason != "Done" {
+		t.Fatalf("poll did not resolve from its search: %+v", bl)
+	}
+}
+
 // A key Jira rejected with a 400 is left out of later searches until its
 // TTL expires, and is unknown meanwhile.
 func TestJiraBadKeyIsRememberedUntilItsTTLExpires(t *testing.T) {
