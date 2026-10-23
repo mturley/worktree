@@ -45,6 +45,7 @@ export function SearchBar({
   onEscape,
   escapeActive,
   onEscapeIdle,
+  onEscapeFirst,
 }: {
   value: string
   onChange: (q: string) => void
@@ -63,6 +64,12 @@ export function SearchBar({
    * an Esc with nothing to clear only leaves the bar.
    */
   onEscapeIdle?: () => void
+  /**
+   * A step the page's Esc takes before clearing anything (the worktree page's
+   * details card back to Notes), while there is one. Not from inside the bar,
+   * where Esc stays the search's.
+   */
+  onEscapeFirst?: () => void
 }) {
   const ref = useRef<HTMLInputElement>(null)
   const canEscape = escapeActive ?? Boolean(value)
@@ -78,13 +85,14 @@ export function SearchBar({
         return
       }
       if (e.key === "Escape" && document.activeElement !== ref.current && !escOwnedElsewhere(ref.current)) {
-        if (canEscape) escape()
+        if (onEscapeFirst) onEscapeFirst()
+        else if (canEscape) escape()
         else onEscapeIdle?.()
       }
     }
     document.addEventListener("keydown", onKey)
     return () => document.removeEventListener("keydown", onKey)
-  }, [canEscape, escape, onEscapeIdle])
+  }, [canEscape, escape, onEscapeIdle, onEscapeFirst])
 
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(-1)

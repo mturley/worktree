@@ -18,6 +18,12 @@ export interface Narrowing {
   filters: boolean
   /** Clears the search, Unreads only and every filter on the page. */
   clearAll: () => void
+  /**
+   * Whether the page's next Esc is `clearAll`, so the links show its hint.
+   * Absent means it is; a page whose Esc takes another step first (the
+   * worktree page's details card back to Notes) says false meanwhile.
+   */
+  escHint?: boolean
 }
 
 export const NarrowingContext = createContext<Narrowing | null>(null)

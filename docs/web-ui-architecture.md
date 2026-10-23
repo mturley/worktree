@@ -2355,7 +2355,10 @@ the scheduler is created**, so a change applies after `worktree ui` restarts.
   rather than "Loading…".
 - The worker must be `@pierre/diffs/worker/worker-portable.js?worker` (the
   plain `worker.js` fails under Vite), with no theme override on the pool.
-- Esc in the diff view leaves it before it deselects or leaves the worktree.
+- Esc in the diff view leaves it (as does the breadcrumb's "← Worktree details")
+  before anything else; then, with the details card off Notes, Esc returns it
+  to Notes (its hint on the Notes tab), and only then clears, deselects or
+  leaves the worktree. In the search bar Esc stays the search's.
 
 ### Watcher toggles (`watchers.go`, `config.WatchersConfig`, `WatcherAlert`)
 

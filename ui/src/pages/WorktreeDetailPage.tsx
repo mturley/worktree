@@ -83,19 +83,7 @@ export function WorktreeDetailPage() {
   // the URL, shared with the resource's own feed (ResourceDetailPane).
   const search = useSearchQuery()
   const everything = useSeeEverything()
-  // Everything that narrows the page, and the one way back (Esc, and every
-  // narrowing line's link): see NarrowingContext. The source toggles narrow
-  // the resource list as well as the feed; the event types only the feed.
   const sourcesOn = sources.length > 0
-  const narrowing = useMemo(() => ({
-    search: search.terms.length > 0,
-    unread: unreadOnly,
-    filters: sourcesOn || categories.length > 0,
-    clearAll: () => {
-      everything.seeEverything()
-      setSources([]) // clears the event types with it (useActivityFilter)
-    },
-  }), [search.terms, unreadOnly, sourcesOn, categories.length, everything, setSources])
   const searchContext = useMemo(() => ({ terms: search.terms }), [search.terms])
   const { resources, timeline } = useWorktreeDetail(path, sources, unreadOnly, eventTypes, search.debouncedQ)
   const { selected, select, toggle, clear } = useSelectedResource()
@@ -103,18 +91,43 @@ export function WorktreeDetailPage() {
   // card and the resources) under the same header.
   const diffView = useDiffView()
   const inDiff = diffView.open
+  // The details card's tab is the page's: it decides where the card sits
+  // (see inColumn below), and Esc returns it to Notes.
+  const detailTab = useDetailTab()
   // What Esc does next, so its hint sits on the control that does the same:
-  // the narrowing lines' links (their own hint), "← all resources", then the
-  // way out — the banner's, when it is up (see escapeHint), else the logo's.
-  // The tab's home worktree is where Esc ends up, so on it there is no way
-  // out; a dismissed home banner drops the home (see useEscHome).
+  // the Notes tab, the narrowing lines' links (their own hint), "← all
+  // resources", then the way out — the banner's, when it is up (see
+  // escapeHint), else the logo's. The tab's home worktree is where Esc ends
+  // up, so on it there is no way out; a dismissed home banner drops the home
+  // (see useEscHome).
   const escHome = useEscHome()
   // In the diff drill-down Esc goes back to the worktree before anything
   // else: the narrowing and selection it would otherwise undo are out of view.
-  const escClears = !inDiff && (narrowing.search || narrowing.unread || narrowing.filters)
-  const escDeselects = !inDiff && !escClears && Boolean(selected)
-  const escLeaves = !inDiff && !escClears && !selected && escHome !== path
+  // Then, with the card off Notes, it returns the card to Notes (and so, wide,
+  // to the resource column) before undoing anything else: Notes is the card's
+  // home, as its X and the titles' reset already treat it.
+  const escNotes = !inDiff && detailTab.tab !== "notes"
+  const filtersOn = sourcesOn || categories.length > 0
+  // In the search bar Esc stays the search's (clearing it) whatever tab the
+  // card is on; only the page's Esc takes the Notes step first.
+  const barClears = !inDiff && (search.terms.length > 0 || unreadOnly || filtersOn)
+  const escClears = !escNotes && barClears
+  const escDeselects = !inDiff && !escNotes && !escClears && Boolean(selected)
+  const escLeaves = !inDiff && !escNotes && !escClears && !selected && escHome !== path
   usePublishEscLeaves(escLeaves)
+  // Everything that narrows the page, and the one way back (Esc, and every
+  // narrowing line's link): see NarrowingContext. The source toggles narrow
+  // the resource list as well as the feed; the event types only the feed.
+  const narrowing = useMemo(() => ({
+    search: search.terms.length > 0,
+    unread: unreadOnly,
+    filters: filtersOn,
+    escHint: escClears,
+    clearAll: () => {
+      everything.seeEverything()
+      setSources([]) // clears the event types with it (useActivityFilter)
+    },
+  }), [search.terms, unreadOnly, filtersOn, escClears, everything, setSources])
   const bannerShown = useBannerShown()
   const wide = useIsWide()
   // The details card and a selected resource's card + tabs are pinned while
@@ -217,7 +230,6 @@ export function WorktreeDetailPage() {
   // column above Follow resource, so the activity column gets the page's
   // height; Environment, Code and cmux, which want the width, under the
   // header. Narrow has no side column, so the card is always under the header.
-  const detailTab = useDetailTab()
   const inColumn = wide && detailTab.tab === "notes"
   // Narrow only: which of Resources / Activity is showing.
   const [narrowTab, setNarrowTab] = useState("resources")
@@ -276,6 +288,7 @@ export function WorktreeDetailPage() {
       w={summary}
       tab={detailTab.tab}
       onTabChange={detailTab.select}
+      escHint={escNotes}
     />
   )
 
@@ -571,8 +584,9 @@ export function WorktreeDetailPage() {
   }
   const searchBar = (
     <div style={wide ? { flex: "1 1 160px", minWidth: 0 } : { flex: "1 1 160px", marginRight: "auto" }}>
-      {/* Esc backs out a level at a time: it sees everything (clears the
-          search, Unreads only and filters), then deselects, then leaves. */}
+      {/* Esc backs out a level at a time: out of the diff drill-down, the
+          card back to Notes, then it sees everything (clears the search,
+          Unreads only and filters), then deselects, then leaves. */}
       <SearchBar
         value={search.q}
         // Search results live in the worktree view, so typing leaves the
@@ -582,8 +596,9 @@ export function WorktreeDetailPage() {
         placeholder="Search this worktree…"
         suggestions={suggestions}
         onEscape={narrowing.clearAll}
-        escapeActive={escClears}
+        escapeActive={barClears}
         onEscapeIdle={escapeIdle}
+        onEscapeFirst={escNotes ? () => detailTab.select("notes") : undefined}
       />
     </div>
   )

@@ -244,7 +244,8 @@ describe("DiffView", () => {
   it("goes back to the worktree from the breadcrumb", async () => {
     setup()
     await screen.findByTestId("diff-body")
-    await userEvent.click(screen.getByRole("button", { name: "← Code" }))
+    expect(document.querySelector("[data-diff-breadcrumb]")?.textContent).toMatch(/^← Worktree details\/Changes/)
+    await userEvent.click(screen.getByRole("button", { name: "← Worktree details" }))
     expect(new URLSearchParams(window.location.search).has("diff")).toBe(false)
   })
 

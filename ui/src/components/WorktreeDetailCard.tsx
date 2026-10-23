@@ -16,6 +16,7 @@ import { CmuxPanel } from "./CmuxPanel"
 import { DeleteWorktreeButton } from "./DeleteWorktreeButton"
 import { GitDiffPanel } from "./gitdiff/GitDiffPanel"
 import { NotesMarkdown } from "./NotesMarkdown"
+import { KeyHint } from "./search/KeyHint"
 
 /**
  * The details card under the worktree detail page's header.
@@ -35,10 +36,12 @@ import { NotesMarkdown } from "./NotesMarkdown"
  * tabs span the page under the header. Switching between them moves, and so
  * remounts, the card.
  */
-export function WorktreeDetailCard({ w, tab, onTabChange }: {
+export function WorktreeDetailCard({ w, tab, onTabChange, escHint }: {
   w: WorktreeSummary
   tab: DetailTab
   onTabChange: (tab: DetailTab) => void
+  /** Show the Esc hint on the Notes tab: the page's next Esc returns to it. */
+  escHint?: boolean
 }) {
   const info = useQuery({
     queryKey: ["worktree-info", w.path],
@@ -90,7 +93,14 @@ export function WorktreeDetailCard({ w, tab, onTabChange }: {
             the last tab, and the delete control sits at the row's far end. */}
         <Group justify="space-between" wrap="nowrap" gap="xs" align="flex-start">
           <Tabs.List w="fit-content">
-            <Tabs.Tab value="notes" fz="xs" py={6}>Notes</Tabs.Tab>
+            <Tabs.Tab
+              value="notes"
+              fz="xs"
+              py={6}
+              rightSection={escHint ? <KeyHint decorative>Esc</KeyHint> : undefined}
+            >
+              Notes
+            </Tabs.Tab>
             <Tabs.Tab value="env" fz="xs" py={6} onClick={backToNotesOn("env")}>Environment</Tabs.Tab>
             <Tabs.Tab
               value="code"

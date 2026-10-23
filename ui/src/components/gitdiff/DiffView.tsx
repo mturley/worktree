@@ -348,7 +348,7 @@ export default function DiffView({ path, headerHeight }: { path: string; headerH
     >
       <Group gap="xs" wrap="nowrap" style={{ flex: "none", minHeight: 28 }} data-diff-breadcrumb>
         <Anchor component="button" type="button" size="sm" onClick={() => view.leave()}>
-          ← Code
+          ← Worktree details
         </Anchor>
         <Text size="sm" c="dimmed">/</Text>
         <Text size="sm">Changes</Text>
