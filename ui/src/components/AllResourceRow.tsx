@@ -11,7 +11,7 @@ import { ResourceCardBody } from "./ResourceCard"
 import { ExistingTabButtons, openLabel } from "./ResourceActions"
 import { useCopyLink } from "./resourceActionHooks"
 import { UnreadBadge } from "./UnreadBadge"
-import { TaskCountBadge, openTasksLabel } from "./tasks/TaskCountBadge"
+import { BlocksBadge, TaskCountBadge, openTasksLabel } from "./tasks/TaskCountBadge"
 import { matchResource } from "../lib/search"
 import { MatchWhy } from "./search/MatchWhy"
 import { useSearchContext } from "./search/SearchContext"
@@ -86,6 +86,7 @@ export function AllResourceRow({ r }: { r: AllResourceDTO }) {
   const [choosing, setChoosing] = useState(false)
   const unread = hasUnread(r)
   const openTasks = r.open_task_count ?? 0
+  const blocks = r.blocks_count ?? 0
   const { terms } = useSearchContext()
   const crossHover = useCrossHover({ kind: "resource", type: r.type, id: r.id, paths: r.worktrees.map((w) => w.path) })
 
@@ -129,10 +130,11 @@ export function AllResourceRow({ r }: { r: AllResourceDTO }) {
         >
           <ResourceCardBody
             r={r}
-            aside={unread || openTasks > 0 ? (
+            aside={unread || openTasks > 0 || blocks > 0 ? (
               <>
                 {unread && <UnreadBadge unread count={r.unread_count} />}
                 <TaskCountBadge count={openTasks} title={openTasksLabel(openTasks)} />
+                <BlocksBadge count={blocks} />
               </>
             ) : undefined}
           />

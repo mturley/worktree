@@ -13,24 +13,57 @@ import { errorText } from "./sectionAction"
 const URL_VALUE = "__url__"
 const MAX_OPTIONS = 50
 
-interface Suggestion {
+/** One combobox option of a SuggestPicker. */
+export interface Suggestion {
   value: string
   label: string
   detail: string
+}
+
+interface LinkSuggestion extends Suggestion {
   target: TaskLinkTarget
 }
 
 const isURL = (s: string) => /^https?:\/\/\S+$/i.test(s)
 
-function resourceSuggestion(r: ResourceDTO): Suggestion {
+/** A resource as a suggestion, keyed by its link target's key. */
+export function resourceSuggestion(r: ResourceDTO): Suggestion & { target: TaskLinkTarget & { kind: "resource" } } {
   const ref = shortResourceRef(r.type, r.id)
-  const target: TaskLinkTarget = { kind: "resource", type: r.type, rid: r.id }
+  const target = { kind: "resource" as const, type: r.type, rid: r.id }
   return {
     value: targetKey(target),
     label: r.custom_name || r.title || ref || r.id,
     detail: ref || r.type,
     target,
   }
+}
+
+/**
+ * The resources a task can link (or be blocked by) without pasting a URL: those
+ * its worktrees follow (its direct worktree links and its implicit ones), or
+ * every followed resource for a task with no worktree. Deduplicated.
+ */
+export function useTaskScopeResources(task: TaskDetail): ResourceDTO[] {
+  const paths = useMemo(() => {
+    const direct = task.detail_links.flatMap((l) => (l.kind === "worktree" && l.worktree ? [l.worktree] : []))
+    return [...new Set([...direct, ...task.implicit.map((w) => w.worktree)])]
+  }, [task.detail_links, task.implicit])
+  const global = paths.length === 0
+
+  // The same keys as the worktree page and home page, so these share cache.
+  const perWorktree = useQueries({
+    queries: paths.map((path) => ({ queryKey: ["resources", path], queryFn: () => api.worktreeResources(path) })),
+  })
+  const all = useQuery({ queryKey: ["resources", "__all__"], queryFn: api.allResources, enabled: global })
+
+  // Recomputed each render: a few hundred entries at most, and useQueries
+  // hands back a new array every render, so a memo would never hit.
+  const out = new Map<string, ResourceDTO>()
+  for (const r of global ? all.data ?? [] : perWorktree.flatMap((q) => q.data ?? [])) {
+    const k = `${r.type}:${r.id}`
+    if (!out.has(k)) out.set(k, r)
+  }
+  return [...out.values()]
 }
 
 /**
@@ -56,31 +89,13 @@ export function LinkPicker({ task }: { task: TaskDetail }) {
 
 function PickerInput({ task, onDone }: { task: TaskDetail; onDone: () => void }) {
   const m = useTaskDetailMutations(task.id)
-  const [query, setQuery] = useState("")
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const store = useCombobox({ onDropdownClose: () => store.resetSelectedOption() })
-
-  const paths = useMemo(() => {
-    const direct = task.detail_links.flatMap((l) => (l.kind === "worktree" && l.worktree ? [l.worktree] : []))
-    return [...new Set([...direct, ...task.implicit.map((w) => w.worktree)])]
-  }, [task.detail_links, task.implicit])
-  const global = paths.length === 0
-
-  // The same keys as the worktree page and home page, so these share cache.
-  const perWorktree = useQueries({
-    queries: paths.map((path) => ({ queryKey: ["resources", path], queryFn: () => api.worktreeResources(path) })),
-  })
-  const all = useQuery({ queryKey: ["resources", "__all__"], queryFn: api.allResources, enabled: global })
+  const resources = useTaskScopeResources(task)
   const worktrees = useWorktrees()
 
   const linked = useMemo(() => new Set(task.detail_links.map(linkKey)), [task.detail_links])
 
-  // Recomputed each render: a few hundred entries at most, and useQueries
-  // hands back a new array every render, so a memo would never hit.
   const suggestions = (() => {
-    const out = new Map<string, Suggestion>()
-    const resources = global ? all.data ?? [] : perWorktree.flatMap((q) => q.data ?? [])
+    const out = new Map<string, LinkSuggestion>()
     for (const r of resources) {
       const s = resourceSuggestion(r)
       if (!out.has(s.value)) out.set(s.value, s)
@@ -93,13 +108,65 @@ function PickerInput({ task, onDone }: { task: TaskDetail; onDone: () => void })
     return [...out.values()].filter((s) => !linked.has(s.value))
   })()
 
+  return (
+    <SuggestPicker
+      ariaLabel="Link resource or worktree"
+      cancelLabel="Cancel linking"
+      urlOption={(url) => `Link ${url}`}
+      emptyText="No matches. Paste a URL to link it."
+      errorPrefix="Couldn't link"
+      suggestions={suggestions}
+      onChoose={async (choice) => {
+        const target = "url" in choice ? choice : suggestions.find((s) => s.value === choice.value)?.target
+        if (!target) return
+        await m.addLink(target, false)
+      }}
+      onDone={onDone}
+    />
+  )
+}
+
+/**
+ * A search-as-you-type combobox over `suggestions`, with Enter on the best
+ * match. With `urlOption`, a pasted http(s) URL is offered as its own first
+ * option. `onChoose` runs the write: when it throws, its message is shown
+ * inline and the picker stays open; when it resolves, `onDone` closes it.
+ * Escape leaves the picker, not the modal.
+ */
+export function SuggestPicker({
+  ariaLabel,
+  placeholder,
+  cancelLabel,
+  urlOption,
+  emptyText,
+  errorPrefix,
+  suggestions,
+  onChoose,
+  onDone,
+}: {
+  ariaLabel: string
+  placeholder?: string
+  cancelLabel: string
+  /** The pasted URL option's text; absent when a URL is not a choice. */
+  urlOption?: (url: string) => string
+  emptyText: string
+  errorPrefix: string
+  suggestions: Suggestion[]
+  onChoose: (choice: { value: string } | { url: string }) => Promise<void>
+  onDone: () => void
+}) {
+  const [query, setQuery] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const store = useCombobox({ onDropdownClose: () => store.resetSelectedOption() })
+
   const q = query.trim()
   const needle = q.toLowerCase()
   const matches = (needle
     ? suggestions.filter((s) => `${s.label} ${s.detail} ${s.value}`.toLowerCase().includes(needle))
     : suggestions
   ).slice(0, MAX_OPTIONS)
-  const url = isURL(q) ? q : null
+  const url = urlOption && isURL(q) ? q : null
 
   // While there is a query, the first option (the pasted URL's, or the best
   // match) is preselected, so Enter picks it. An empty query selects nothing.
@@ -116,14 +183,19 @@ function PickerInput({ task, onDone }: { task: TaskDetail; onDone: () => void })
 
   const choose = async (value: string) => {
     if (busy) return
-    const target: { url: string } | TaskLinkTarget | undefined =
-      value === URL_VALUE && url ? { url } : suggestions.find((s) => s.value === value)?.target
-    if (!target) return
+    let choice: { value: string } | { url: string }
+    if (value === URL_VALUE) {
+      if (!url) return
+      choice = { url }
+    } else {
+      if (!suggestions.some((s) => s.value === value)) return
+      choice = { value }
+    }
     setBusy(true)
     setError(null)
     store.closeDropdown()
     try {
-      await m.addLink(target, false)
+      await onChoose(choice)
       onDone()
     } catch (e) {
       setError(errorText(e))
@@ -138,8 +210,8 @@ function PickerInput({ task, onDone }: { task: TaskDetail; onDone: () => void })
           <Combobox.Target>
             <TextInput
               size="xs"
-              aria-label="Link resource or worktree"
-              placeholder="Search, or paste a URL"
+              aria-label={ariaLabel}
+              placeholder={placeholder ?? (urlOption ? "Search, or paste a URL" : "Search")}
               autoFocus
               disabled={busy}
               style={{ flex: 1 }}
@@ -170,9 +242,9 @@ function PickerInput({ task, onDone }: { task: TaskDetail; onDone: () => void })
           </Combobox.Target>
           <Combobox.Dropdown>
             <Combobox.Options mah={260} style={{ overflowY: "auto" }}>
-              {url && (
+              {url && urlOption && (
                 <Combobox.Option value={URL_VALUE}>
-                  <Text size="sm" truncate>Link {url}</Text>
+                  <Text size="sm" truncate>{urlOption(url)}</Text>
                 </Combobox.Option>
               )}
               {matches.map((s) => (
@@ -181,17 +253,17 @@ function PickerInput({ task, onDone }: { task: TaskDetail; onDone: () => void })
                   <Text size="xs" c="dimmed" truncate>{s.detail}</Text>
                 </Combobox.Option>
               ))}
-              {!url && matches.length === 0 && <Combobox.Empty>No matches. Paste a URL to link it.</Combobox.Empty>}
+              {!url && matches.length === 0 && <Combobox.Empty>{emptyText}</Combobox.Empty>}
             </Combobox.Options>
           </Combobox.Dropdown>
         </Combobox>
-        <ActionIcon variant="subtle" color="gray" size="sm" aria-label="Cancel linking" onClick={onDone}>
+        <ActionIcon variant="subtle" color="gray" size="sm" aria-label={cancelLabel} onClick={onDone}>
           <IconX size={14} />
         </ActionIcon>
       </Group>
       {error && (
         <Alert color="red" variant="light" py={4}>
-          <Text size="xs">Couldn't link: {error}</Text>
+          <Text size="xs">{errorPrefix}: {error}</Text>
         </Alert>
       )}
     </Stack>

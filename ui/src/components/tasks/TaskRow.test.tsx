@@ -14,7 +14,7 @@ function task(over: Partial<Task> = {}): Task {
   return {
     id: 1, ref: "T1", title: "Write the thing", description: "", state: "in_progress",
     priority: "high", starred: false, rank: "a", created_at: "", updated_at: "",
-    archived: false, links: [], implicit_worktrees: [], subtasks_total: 0, subtasks_done: 0,
+    archived: false, links: [], implicit_worktrees: [], subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, blocker_labels: [],
     ...over,
   }
 }
@@ -169,5 +169,27 @@ describe("TaskCountBadge", () => {
   it("renders the count", () => {
     wrap(<TaskCountBadge count={3} />)
     expect(screen.getByText("3")).toBeInTheDocument()
+  })
+})
+
+describe("TaskRow blocked chip", () => {
+  it("shows a red blocked chip whose tooltip lists the unresolved blockers", async () => {
+    const user = userEvent.setup()
+    wrap(<TaskRow
+      task={task({ blocked: true, blocker_count: 2, blocker_labels: ["T4 Ship the API", "#4498"] })}
+      onState={() => {}} onToggleStar={() => {}}
+    />)
+    const chip = screen.getByTestId("task-blocked-chip")
+    expect(chip).toHaveTextContent("⛔ blocked")
+    expect(chip.closest(".mantine-Badge-root")).toHaveStyle({ "--badge-color": "var(--mantine-color-red-light-color)" })
+    await user.hover(chip)
+    const tip = await screen.findByRole("tooltip")
+    expect(tip).toHaveTextContent("T4 Ship the API")
+    expect(tip).toHaveTextContent("#4498")
+  })
+
+  it("shows no chip for an unblocked task", () => {
+    wrap(<TaskRow task={task()} onState={() => {}} onToggleStar={() => {}} />)
+    expect(screen.queryByTestId("task-blocked-chip")).toBeNull()
   })
 })

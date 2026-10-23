@@ -108,7 +108,7 @@ describe("LinkPane tasks", () => {
   const task: Task = {
     id: 7, ref: "T7", title: "Read the page", description: "", state: "not_started", priority: "none", starred: false,
     rank: "r1", created_at: "", updated_at: "", archived: false, links: [], implicit_worktrees: [],
-    subtasks_total: 0, subtasks_done: 0,
+    subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, blocker_labels: [],
   }
   beforeEach(() => {
     window.history.replaceState({}, "", "/worktree/wt")

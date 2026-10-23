@@ -6,6 +6,7 @@ describe("task events", () => {
     "task_created", "task_edited", "task_state_changed", "task_deleted", "task_linked",
     "task_unlinked", "task_focus_changed", "subtask_added", "subtask_edited", "subtask_checked",
     "subtask_unchecked", "subtask_removed", "task_event_linked", "task_event_unlinked",
+    "task_blocker_added", "task_blocker_removed", "task_blocker_resolved", "task_blocker_unresolved",
   ]
 
   it("paints every task event type in the task accent, not a Mantine palette colour", () => {
@@ -19,6 +20,10 @@ describe("task events", () => {
     }
     expect(eventLabel("subtask_checked")).toBe("Subtask checked")
     expect(eventLabel("task_state_changed")).toBe("State changed")
+    expect(eventLabel("task_blocker_added")).toBe("Blocker added")
+    expect(eventLabel("task_blocker_removed")).toBe("Blocker removed")
+    expect(eventLabel("task_blocker_resolved")).toBe("Blocker resolved")
+    expect(eventLabel("task_blocker_unresolved")).toBe("Blocker unresolved")
   })
 
   it("keeps a Mantine colour NAME for surfaces that take one", () => {

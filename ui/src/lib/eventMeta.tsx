@@ -1,8 +1,11 @@
 import {
   IconAlertTriangle,
+  IconBan,
   IconBell,
   IconCheck,
   IconChecklist,
+  IconCircleCheck,
+  IconCircleDashed,
   IconEye,
   IconGitCommit,
   IconGitMerge,
@@ -107,6 +110,10 @@ const TYPES: Record<string, Entry> = {
   task_focus_changed: task(IconTarget, "focus changed"),
   task_event_linked: task(IconLink, "event linked"),
   task_event_unlinked: task(IconLinkOff, "event unlinked"),
+  task_blocker_added: task(IconBan, "blocker added"),
+  task_blocker_removed: task(IconTrash, "blocker removed"),
+  task_blocker_resolved: task(IconCircleCheck, "blocker resolved"),
+  task_blocker_unresolved: task(IconCircleDashed, "blocker unresolved"),
   subtask_added: task(IconSquarePlus, "subtask added"),
   subtask_edited: task(IconPencil, "subtask edited"),
   subtask_checked: task(IconSquareCheck, "subtask checked"),
@@ -134,7 +141,7 @@ function entryFor(type: string): Entry {
     return { color: "gray", Icon: IconCheck, label: "CI" }
   }
 
-  // A task event type newer than this file (blockers, say) still reads as
+  // A task event type newer than this file still reads as
   // task activity rather than as an anonymous grey event.
   if (type.startsWith("task_") || type.startsWith("subtask_")) {
     return task(IconChecklist, type.replace(/_/g, " "))

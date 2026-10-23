@@ -7,7 +7,7 @@ import type { TaskDetail, TaskEventSnapshot, TaskLinkTarget, TimelineEvent } fro
 const detail = (extra: Partial<TaskDetail> = {}): TaskDetail => ({
   id: 7, ref: "T7", title: "t", description: "", state: "not_started", priority: "none", starred: false,
   rank: "r", created_at: "", updated_at: "", archived: false, links: [], implicit_worktrees: [],
-  subtasks_total: 0, subtasks_done: 0, detail_links: [], implicit: [], subtasks: [], event_links: [], ...extra,
+  subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, blocker_labels: [], detail_links: [], implicit: [], subtasks: [], event_links: [], blockers: [], blocks: [], ...extra,
 })
 
 let fetchMock: ReturnType<typeof vi.fn>
@@ -97,6 +97,12 @@ describe("useTaskDetailMutations", () => {
     ["orderSubtasks", "/api/tasks/subtasks/order", (m) => m.orderSubtasks([2, 1]), { id: 7, ids: [2, 1] }],
     ["linkEvent", "/api/tasks/events/link", (m) => m.linkEvent("slack:C:1", snap), { id: 7, key: "slack:C:1", snapshot: snap }],
     ["unlinkEvent", "/api/tasks/events/unlink", (m) => m.unlinkEvent("ev:9"), { id: 7, key: "ev:9" }],
+    ["addBlocker task", "/api/tasks/blockers/add", (m) => m.addBlocker({ kind: "task", task_id: 4 }), { id: 7, kind: "task", task_id: 4 }],
+    ["addBlocker url", "/api/tasks/blockers/add", (m) => m.addBlocker({ kind: "resource", url: "https://x/y" }), { id: 7, kind: "resource", url: "https://x/y" }],
+    ["addBlocker resource", "/api/tasks/blockers/add", (m) => m.addBlocker({ kind: "resource", type: "pr", rid: "o/r#1" }), { id: 7, kind: "resource", type: "pr", rid: "o/r#1" }],
+    ["addBlocker other", "/api/tasks/blockers/add", (m) => m.addBlocker({ kind: "other", text: "legal" }), { id: 7, kind: "other", text: "legal" }],
+    ["removeBlocker", "/api/tasks/blockers/remove", (m) => m.removeBlocker(5), { blocker_id: 5 }],
+    ["resolveBlocker", "/api/tasks/blockers/resolve", (m) => m.resolveBlocker(5, true), { blocker_id: 5, resolved: true }],
     ["fromEvent", "/api/tasks/from-event", (m) => m.fromEvent("ev:9", undefined, "/w"), { key: "ev:9", path: "/w" }],
   ]
 

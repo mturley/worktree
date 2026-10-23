@@ -30,3 +30,29 @@ export function TaskCountBadge({ count, ...rest }: {
     </Badge>
   )
 }
+
+/** "Blocks 1 open task" / "Blocks N open tasks": the blocks badge's hover text. */
+export function blocksLabel(count: number): string {
+  return count === 1 ? "Blocks 1 open task" : `Blocks ${count} open tasks`
+}
+
+/**
+ * "⛔ blocks N": the open tasks a resource blocks, unresolved blockers only.
+ * Red-tinted, in the overdue chip's style; it sits beside TaskCountBadge.
+ * Nothing for zero.
+ */
+export function BlocksBadge({ count }: { count: number }) {
+  if (count <= 0) return null
+  return (
+    <Badge
+      data-testid="blocks-badge"
+      size="xs"
+      variant="light"
+      color="red"
+      title={blocksLabel(count)}
+      style={{ flex: "none", textTransform: "none" }}
+    >
+      ⛔ blocks {count}
+    </Badge>
+  )
+}

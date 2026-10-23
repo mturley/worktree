@@ -28,7 +28,7 @@ vi.mock("../../api/client", async (orig) => ({
 const task = (id: number, extra: Partial<Task> = {}): Task => ({
   id, ref: `T${id}`, title: `task ${id}`, description: "", state: "not_started", priority: "none", starred: false,
   rank: `r${id}`, created_at: "", updated_at: "", archived: false, links: [], implicit_worktrees: [],
-  subtasks_total: 0, subtasks_done: 0, ...extra,
+  subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, blocker_labels: [], ...extra,
 })
 
 /** Shows which task the modal has open. */

@@ -9,7 +9,7 @@ function mk(id: number, rank: string, over: Partial<Task> = {}): Task {
   return {
     id, ref: `T${id}`, title: `task ${id}`, description: "", state: "not_started", priority: "none",
     starred: false, rank, created_at: "2026-10-01T00:00:00Z", updated_at: "2026-10-01T00:00:00Z",
-    archived: false, links: [], implicit_worktrees: [], subtasks_total: 0, subtasks_done: 0, ...over,
+    archived: false, links: [], implicit_worktrees: [], subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, blocker_labels: [], ...over,
   }
 }
 

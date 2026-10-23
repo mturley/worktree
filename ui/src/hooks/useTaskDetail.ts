@@ -4,6 +4,7 @@ import { api, HttpError } from "../api/client"
 import type {
   Priority,
   TaskActivityFilter,
+  TaskBlockerTarget,
   TaskDetail,
   TaskEventSnapshot,
   TaskLinkTarget,
@@ -123,6 +124,9 @@ export function useTaskDetailMutations(id: number) {
     orderSubtasks: (ids: number[]) => run(() => api.orderSubtasks(id, ids)),
     linkEvent: (key: string, snapshot?: TaskEventSnapshot) => run(() => api.linkTaskEvent(id, key, snapshot)),
     unlinkEvent: (key: string) => run(() => api.unlinkTaskEvent(id, key)),
+    addBlocker: (target: TaskBlockerTarget) => run(() => api.addTaskBlocker(id, target)),
+    removeBlocker: (blockerId: number) => run(() => api.removeTaskBlocker(blockerId)),
+    resolveBlocker: (blockerId: number, resolved: boolean) => run(() => api.resolveTaskBlocker(blockerId, resolved)),
     /** Creates a task from an event and returns its detail; the caller opens the modal. */
     fromEvent,
   }

@@ -85,6 +85,8 @@ export interface TimelineResponse { events: TimelineEvent[]; next_cursor: string
 export interface ResourceDTO {
   /** Open tasks linked to this resource. */
   open_task_count?: number
+  /** Open tasks this resource blocks, unresolved blockers only. */
+  blocks_count?: number
   type: string; id: string; url: string; primary: boolean
   /** This resource's own notification toggle; the effective state is `notify || worktree.notify_all`. */
   notify?: boolean
@@ -701,7 +703,53 @@ export interface Task {
    * it clears only what was counted, never an event that arrived after.
    */
   unread_through_ts?: string
+  /** Some blocker is unresolved. */
+  blocked: boolean
+  /** How many blockers are unresolved. */
+  blocker_count: number
+  /** The unresolved blockers' labels, oldest first, for the row chip's tooltip. Never null. */
+  blocker_labels: string[]
 }
+
+export type TaskBlockerKind = "task" | "resource" | "other"
+
+/** One of a task's blockers; mirrors taskBlockerDTO in internal/webui/tasks_blockers_api.go. */
+export interface TaskBlocker {
+  id: number
+  kind: TaskBlockerKind
+  /** "T<id> <title>", a resource's display title, or the free text. */
+  label: string
+  /** A resource blocker's URL. */
+  url?: string
+  /** The blocking thing's status ("merged", "In Progress", "done", "resolved"); "" when unknown. */
+  status_label: string
+  resolved: boolean
+  /** Resolved by its condition (a merged PR, a done task) rather than by hand. */
+  resolved_auto: boolean
+  resolved_reason: string
+  /** Free-text, Slack thread and link blockers: resolved by hand. */
+  manual_resolvable: boolean
+  /** The blocking task. */
+  task_id?: number
+  resource_type?: string
+  resource_id?: string
+  text?: string
+}
+
+/** A task this one blocks; mirrors taskBlocksDTO. */
+export interface TaskBlocks {
+  id: number
+  ref: string
+  title: string
+  state: TaskState
+}
+
+/** The body of POST /api/tasks/blockers/add, less the task id. */
+export type TaskBlockerTarget =
+  | { kind: "task"; task_id: number }
+  | { kind: "resource"; url: string }
+  | { kind: "resource"; type: string; rid: string }
+  | { kind: "other"; text: string }
 
 /** A link target; the body shape of the task link routes. */
 export type TaskLinkTarget =
@@ -756,6 +804,10 @@ export interface TaskDetail extends Task {
   implicit: TaskImplicit[]
   subtasks: TaskSubtask[]
   event_links: TaskEventLink[]
+  /** Unresolved first, then oldest first. Never null. */
+  blockers: TaskBlocker[]
+  /** The tasks this one blocks, in master order. Never null. */
+  blocks: TaskBlocks[]
 }
 
 export type TaskActivityFilter = "all" | "task" | "linked" | "resource"

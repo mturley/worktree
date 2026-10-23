@@ -14,9 +14,9 @@ afterEach(() => {
 })
 
 describe("DetailsTab", () => {
-  it("shows Description, Subtasks, Linked to and Linked events, in that order", () => {
+  it("shows Description, Subtasks, Linked to, Linked events and Blocks, in that order", () => {
     renderDetail(detail(), (t) => <DetailsTab task={t} />)
     const headings = screen.getAllByRole("heading").map((h) => h.textContent)
-    expect(headings).toEqual(["Description", "Subtasks", "Linked to", "Linked events"])
+    expect(headings).toEqual(["Description", "Subtasks", "Linked to", "Linked events", "Blocks"])
   })
 })

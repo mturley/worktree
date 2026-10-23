@@ -117,6 +117,32 @@ export function TaskRow({ task, ownResource, dragHandle, onState, onToggleStar, 
         // modal does not clear it; only a mark read does.
         <UnreadMarkerDot label="unread task activity" />
       )}
+      {task.blocked && (
+        // Never red for a resolved blocker: the server sends only the
+        // unresolved ones' labels, and blocked only while one is left.
+        <Tooltip
+          multiline
+          maw={320}
+          label={
+            <>
+              <Text size="xs" fw={600}>Blocked by</Text>
+              {task.blocker_labels.map((l, i) => (
+                <Text size="xs" key={i}>{l}</Text>
+              ))}
+            </>
+          }
+        >
+          <Badge
+            data-testid="task-blocked-chip"
+            size="xs"
+            variant="light"
+            color="red"
+            style={{ flex: "none", textTransform: "none" }}
+          >
+            ⛔ blocked
+          </Badge>
+        </Tooltip>
+      )}
       {due && (
         <Tooltip label={due.title}>
           <Badge size="xs" variant="light" color={DUE_COLOR[due.tone]} style={{ flex: "none" }}>

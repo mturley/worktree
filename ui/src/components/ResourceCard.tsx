@@ -10,7 +10,7 @@ import { ResourceTitle } from "./ResourceStatusIcon"
 import { ResourceTypeLine, awaitsFetch } from "./ResourceTypeLine"
 import { cardEdgeStyle, hasUnread } from "../lib/unread"
 import { UnreadBadge } from "./UnreadBadge"
-import { TaskCountBadge, openTasksLabel } from "./tasks/TaskCountBadge"
+import { BlocksBadge, TaskCountBadge, openTasksLabel } from "./tasks/TaskCountBadge"
 import { jiraStatusColor, prStateColor } from "../lib/statusColors"
 import { EditResourceDetailsModal } from "./EditResourceDetailsModal"
 import { supportsCustomName } from "../lib/customName"
@@ -414,6 +414,8 @@ export function ResourceCard({
   // Lime beside the blue, on list cards only: the detail card heads the pane
   // whose own Tasks tab (or pinned list) already shows this count.
   const openTasks = variant === "detail" ? 0 : r.open_task_count ?? 0
+  // Red beside the lime, on list cards only, as the open-task count.
+  const blocks = variant === "detail" ? 0 : r.blocks_count ?? 0
   // The detail card carries the switch and the remove control instead of a
   // bell, in the same type-line row so the title below keeps the card's full
   // width. Only the detail card has the remove control: list cards are
@@ -425,11 +427,12 @@ export function ResourceCard({
       {notify && path && r.type !== "link" && <ResourceNotifySwitch r={r} path={path} notify={notify} />}
       <RemoveControl r={r} path={path} onRemoved={onRemoved} />
     </Group>
-  ) : bell || unread || openTasks > 0 || dragHandle ? (
+  ) : bell || unread || openTasks > 0 || blocks > 0 || dragHandle ? (
     <>
       {bell}
       <UnreadBadge unread={unread} count={r.unread_count} />
       <TaskCountBadge count={openTasks} title={openTasksLabel(openTasks)} />
+      <BlocksBadge count={blocks} />
       {/* The drag handle's place in the header line. The handle itself is
           laid over this slot from outside the select button (a button may
           not hold another), so the bells sit beside it and the title below

@@ -2,6 +2,7 @@ import { useState } from "react"
 import { ActionIcon, Button, Checkbox, Group, NativeSelect, Stack, Text, TextInput } from "@mantine/core"
 import type { Priority, TaskDetail, TaskState } from "../../../api/types"
 import { relativeTime } from "../../../lib/relativeTime"
+import { BlockersSection } from "./BlockersSection"
 import type { TaskPatch } from "./useOptimisticTask"
 
 const STATES: { value: TaskState; label: string }[] = [
@@ -71,8 +72,7 @@ export function TaskSidebar({ task, onUpdate, onState, onDelete }: {
         checked={task.starred}
         onChange={(e) => onUpdate({ starred: e.currentTarget.checked })}
       />
-      {/* Blocked-by is reserved for Phase 5 and renders nothing yet. */}
-      <BlockedBy />
+      <BlockersSection task={task} />
       <Stack gap={2}>
         <Stamp label="Created" ts={task.created_at} />
         <Stamp label="Started" ts={task.started_at} />
@@ -82,10 +82,6 @@ export function TaskSidebar({ task, onUpdate, onState, onDelete }: {
       <DeleteControl onDelete={onDelete} />
     </Stack>
   )
-}
-
-function BlockedBy() {
-  return null
 }
 
 function Stamp({ label, ts }: { label: string; ts?: string }) {

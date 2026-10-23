@@ -23,8 +23,8 @@ vi.mock("../../../api/client", async (orig) => ({
 const detail = (id: number, extra: Partial<TaskDetail> = {}): TaskDetail => ({
   id, ref: `T${id}`, title: `task ${id}`, description: "", state: "not_started", priority: "none", starred: false,
   rank: "r", created_at: "2026-10-20T00:00:00Z", updated_at: "2026-10-21T00:00:00Z", archived: false,
-  links: [], implicit_worktrees: [], subtasks_total: 0, subtasks_done: 0,
-  detail_links: [], implicit: [], subtasks: [], event_links: [], ...extra,
+  links: [], implicit_worktrees: [], subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, blocker_labels: [],
+  detail_links: [], implicit: [], subtasks: [], event_links: [], blockers: [], blocks: [], ...extra,
 })
 
 function Opener() {

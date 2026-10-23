@@ -1314,7 +1314,7 @@ describe("WorktreeDetailPage tasks", () => {
   const task: Task = {
     id: 5, ref: "T5", title: "Tidy the branch", description: "", state: "not_started", priority: "none", starred: false,
     rank: "r1", created_at: "", updated_at: "", archived: false, links: [], implicit_worktrees: [],
-    subtasks_total: 0, subtasks_done: 0,
+    subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, blocker_labels: [],
   }
   const pin = () => window.localStorage.setItem(TASK_LIST_KEY, JSON.stringify({ pinned: true }))
   const activityHeader = () => document.querySelector<HTMLElement>("[data-activity-header]")!

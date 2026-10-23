@@ -49,3 +49,17 @@ describe("AllResourceRow task count", () => {
     expect(container.querySelector(".task-count-badge")).toBeNull()
   })
 })
+
+describe("AllResourceRow blocks badge", () => {
+  it("shows a red blocks badge when the resource blocks open tasks", () => {
+    wrap(<AllResourceRow r={pr({ blocks_count: 2, open_task_count: 1 })} />)
+    const badge = within(screen.getByTestId("all-resource-row")).getByTestId("blocks-badge")
+    expect(badge).toHaveTextContent("⛔ blocks 2")
+    expect(badge).toHaveAttribute("title", "Blocks 2 open tasks")
+  })
+
+  it("shows none at zero or absent", () => {
+    wrap(<AllResourceRow r={pr({ blocks_count: 0 })} />)
+    expect(screen.queryByTestId("blocks-badge")).toBeNull()
+  })
+})

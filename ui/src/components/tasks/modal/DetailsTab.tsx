@@ -1,11 +1,12 @@
 import { Divider, Stack } from "@mantine/core"
 import type { TaskDetail } from "../../../api/types"
+import { BlocksSection } from "./BlocksSection"
 import { DescriptionSection } from "./DescriptionSection"
 import { LinkedEventsSection } from "./LinkedEventsSection"
 import { LinksSection } from "./LinksSection"
 import { SubtasksSection } from "./SubtasksSection"
 
-/** The Details tab: Description, Subtasks, Linked to, Linked events — in that order. */
+/** The Details tab: Description, Subtasks, Linked to, Linked events, Blocks — in that order. */
 export function DetailsTab({ task, onDescriptionDirty }: {
   task: TaskDetail
   /** Whether the description has unsaved edits; see DescriptionSection. */
@@ -20,6 +21,8 @@ export function DetailsTab({ task, onDescriptionDirty }: {
       <LinksSection task={task} />
       <Divider />
       <LinkedEventsSection task={task} />
+      <Divider />
+      <BlocksSection task={task} />
     </Stack>
   )
 }

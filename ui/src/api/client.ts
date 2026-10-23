@@ -1,4 +1,4 @@
-import type { DiffBase, DiffCommits, DiffFiles, DiffPatch, DiffRange, WorktreeGit, AllResourceDTO, CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, CredResult, DefaultBranchResponse, CredService, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, ResourceReadChange, Priority, Task, TaskState, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, UpdateStatus, WatcherHealth, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherAuthSettings, WatcherConfigSettings, WorktreeInfo, WorktreeNotes, WorktreeSettings, WorktreeSummary, TaskActivityFilter, TaskDetail, TaskEventSnapshot, TaskLinkTarget, TimelineEvent, TaskScope, TaskUnread } from "./types"
+import type { DiffBase, DiffCommits, DiffFiles, DiffPatch, DiffRange, WorktreeGit, AllResourceDTO, CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, CredResult, DefaultBranchResponse, CredService, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, ResourceReadChange, Priority, Task, TaskState, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, UpdateStatus, WatcherHealth, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherAuthSettings, WatcherConfigSettings, WorktreeInfo, WorktreeNotes, WorktreeSettings, WorktreeSummary, TaskActivityFilter, TaskDetail, TaskEventSnapshot, TaskLinkTarget, TimelineEvent, TaskScope, TaskUnread, TaskBlockerTarget } from "./types"
 
 export class HttpError extends Error {
   constructor(message: string, readonly status: number) {
@@ -218,6 +218,12 @@ export const api = {
   linkTaskEvent: (id: number, key: string, snapshot?: TaskEventSnapshot) =>
     postJSON<TaskDetail>("/api/tasks/events/link", { id, key, snapshot }),
   unlinkTaskEvent: (id: number, key: string) => postJSON<TaskDetail>("/api/tasks/events/unlink", { id, key }),
+  addTaskBlocker: (id: number, target: TaskBlockerTarget) =>
+    postJSON<TaskDetail>("/api/tasks/blockers/add", { id, ...target }),
+  removeTaskBlocker: (blockerId: number) =>
+    postJSON<TaskDetail>("/api/tasks/blockers/remove", { blocker_id: blockerId }),
+  resolveTaskBlocker: (blockerId: number, resolved: boolean) =>
+    postJSON<TaskDetail>("/api/tasks/blockers/resolve", { blocker_id: blockerId, resolved }),
   taskFromEvent: (key: string, snapshot?: TaskEventSnapshot, path?: string) =>
     postJSON<TaskDetail>("/api/tasks/from-event", { key, snapshot, path }),
   worktrees: () => fetchJSON<WorktreeSummary[]>("/api/worktrees"),

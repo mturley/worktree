@@ -4,14 +4,15 @@ import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { TaskDetail } from "../../../api/types"
 import { taskDetailKey, useTaskDetail } from "../../../hooks/useTaskDetail"
+import { TaskModalProvider } from "./TaskModalProvider"
 
 /** Test-only helpers for the Details tab's section tests. */
 
 export const detail = (extra: Partial<TaskDetail> = {}): TaskDetail => ({
   id: 1, ref: "T1", title: "task 1", description: "", state: "not_started", priority: "none", starred: false,
   rank: "r", created_at: "2026-10-20T00:00:00Z", updated_at: "2026-10-21T00:00:00Z", archived: false,
-  links: [], implicit_worktrees: [], subtasks_total: 0, subtasks_done: 0,
-  detail_links: [], implicit: [], subtasks: [], event_links: [], ...extra,
+  links: [], implicit_worktrees: [], subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, blocker_labels: [],
+  detail_links: [], implicit: [], subtasks: [], event_links: [], blockers: [], blocks: [], ...extra,
 })
 
 function Live({ id, children }: { id: number; children: (t: TaskDetail) => ReactNode }) {
@@ -21,7 +22,8 @@ function Live({ id, children }: { id: number; children: (t: TaskDetail) => React
 
 /**
  * Renders `ui` against the task detail held in the query cache, as the modal
- * does: a mutation's response lands in the cache and re-renders it.
+ * does: a mutation's response lands in the cache and re-renders it. Inside a
+ * TaskModalProvider, so sections that open another task can.
  */
 export function renderDetail(initial: TaskDetail, ui: (t: TaskDetail) => ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
@@ -29,7 +31,9 @@ export function renderDetail(initial: TaskDetail, ui: (t: TaskDetail) => ReactNo
   const utils = render(
     <MantineProvider>
       <QueryClientProvider client={qc}>
-        <Live id={initial.id}>{ui}</Live>
+        <TaskModalProvider>
+          <Live id={initial.id}>{ui}</Live>
+        </TaskModalProvider>
       </QueryClientProvider>
     </MantineProvider>,
   )

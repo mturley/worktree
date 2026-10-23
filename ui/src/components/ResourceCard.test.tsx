@@ -859,3 +859,25 @@ describe("open task badge", () => {
     expect(badge()).toBeNull()
   })
 })
+
+describe("blocks badge", () => {
+  const pr = { type: "pr", id: "o/r#1", url: "u", primary: true, title: "t" } as ResourceDTO
+  const badge = () => screen.queryByTestId("blocks-badge")
+
+  it("badges a list card with the open tasks it blocks, beside the task count", () => {
+    wrap(<ResourceCard r={{ ...pr, blocks_count: 1, open_task_count: 2 }} onSelect={vi.fn()} />)
+    expect(badge()).toHaveTextContent("⛔ blocks 1")
+    expect(badge()).toHaveAttribute("title", "Blocks 1 open task")
+    expect(badge()?.parentElement).toBe(document.querySelector(".task-count-badge")?.parentElement)
+  })
+
+  it("shows it with nothing else in the aside", () => {
+    wrap(<ResourceCard r={{ ...pr, blocks_count: 3 }} />)
+    expect(badge()).toHaveTextContent("⛔ blocks 3")
+  })
+
+  it("shows none at zero or absent", () => {
+    wrap(<ResourceCard r={{ ...pr, blocks_count: 0 }} />)
+    expect(badge()).toBeNull()
+  })
+})
