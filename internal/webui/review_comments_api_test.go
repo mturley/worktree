@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -69,7 +70,7 @@ func TestReviewCommentsCreateCapturesSnippet(t *testing.T) {
 	if len(c.Snippet) != 1 || c.Snippet[0] != "two" {
 		t.Fatalf("snippet = %q", c.Snippet)
 	}
-	if c.StartLine != 2 || c.EndLine != 2 || c.Source != "draft" || !c.Editable || c.Version != 1 {
+	if c.StartLine != 2 || c.EndLine != 2 || c.Source != "draft" || !c.Editable || c.Version != 1 || c.Rev != strings.TrimSpace(gitIn(t, wt, "rev-parse", "HEAD")) {
 		t.Fatalf("unexpected comment %+v", c)
 	}
 	if c.BaseRef != "origin/main" {
@@ -109,6 +110,7 @@ func TestReviewCommentsCreateRejects(t *testing.T) {
 	}{
 		{"empty body", func(m map[string]any) { m["body"] = "  " }, 400},
 		{"bad file", func(m map[string]any) { m["file"] = "../x" }, 400},
+		{"absolute file", func(m map[string]any) { m["file"] = "/etc/passwd" }, 400},
 		{"zero line", func(m map[string]any) { m["start_line"] = 0 }, 400},
 		{"unknown rev", func(m map[string]any) { m["new_rev"] = "deadbeef" }, 404},
 		{"unregistered", func(m map[string]any) { m["path"] = "/not/registered" }, 404},

@@ -188,6 +188,14 @@ func (s *Server) handleCreateReviewComment(w http.ResponseWriter, r *http.Reques
 	stored := reviewcomments.RevUncommitted
 	if gitutil.IsCommit(dir, rev) {
 		stored = rev
+	} else if blob, ok := gitutil.BlobSHA(dir, rev, req.File); ok {
+		// A snapshot tree: if the file is unchanged from HEAD, the content
+		// is committed and HEAD names it.
+		if head, ok := gitutil.BlobSHA(dir, "HEAD", req.File); ok && head == blob {
+			if sha := gitutil.RevParse(dir, "HEAD"); sha != "" {
+				stored = sha
+			}
+		}
 	}
 	c, err := reviewcomments.Create(s.DB, dir, reviewcomments.NewComment{
 		File: req.File, Side: side, Rev: stored, Base: req.Base, BaseRef: baseRef,
