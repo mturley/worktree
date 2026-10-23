@@ -1,0 +1,101 @@
+import { ActionIcon, Box, CopyButton, Group, Stack, Text, Tooltip } from "@mantine/core"
+import { IconAlertTriangle, IconCheck, IconCopy } from "@tabler/icons-react"
+import type { AheadBehind, WorktreeGit } from "../../api/types"
+import { useIsWide } from "../../hooks/useIsWide"
+import { relativeTime } from "../../lib/relativeTime"
+import { InfoRow } from "../InfoRow"
+
+const RIGHT_LABEL_WIDTH = 100
+
+/** "3 modified · 1 untracked", or "clean" when the working tree has nothing outstanding. */
+function workingSummary(w: WorktreeGit["working"]): string {
+  const parts: string[] = []
+  if (w.staged) parts.push(`${w.staged} staged`)
+  if (w.modified) parts.push(`${w.modified} modified`)
+  if (w.untracked) parts.push(`${w.untracked} untracked`)
+  return parts.length === 0 ? "clean" : parts.join(" · ")
+}
+
+/** Ahead/behind on its own indented line under the ref it counts against. */
+function AheadBehindLine({ ab }: { ab: AheadBehind | undefined }) {
+  if (!ab) return null
+  return (
+    <Text size="xs" c="dimmed" pl={RIGHT_LABEL_WIDTH + 8}>
+      {`${ab.ahead} ahead · ${ab.behind} behind`}
+    </Text>
+  )
+}
+
+/**
+ * The Code tab's summary: what this worktree is (left) and where it stands
+ * against its merge base and tracking branch (right). Two columns wide,
+ * stacked on a phone.
+ */
+export function GitSummary({ git, repo, updated }: { git: WorktreeGit; repo: string; updated?: string }) {
+  const wide = useIsWide()
+  if (!git.on_disk) {
+    return <Text size="xs" c="dimmed" fs="italic">Worktree is missing from disk</Text>
+  }
+  const dirty = git.working.staged || git.working.modified || git.working.untracked
+  const short = git.merge_base?.slice(0, 7)
+
+  return (
+    <Box
+      style={{
+        display: "flex",
+        flexDirection: wide ? "row" : "column",
+        gap: wide ? "var(--mantine-spacing-xl)" : "var(--mantine-spacing-xs)",
+      }}
+    >
+      <Stack gap={2} style={wide ? { flex: "0 1 auto", maxWidth: "50%", minWidth: 0 } : undefined}>
+        {repo && <InfoRow label="Repo">{repo}</InfoRow>}
+        {git.branch && <InfoRow label="Branch">{git.branch}</InfoRow>}
+        <InfoRow label="Working tree">
+          <Text span inherit c={dirty ? "yellow" : undefined}>{workingSummary(git.working)}</Text>
+        </InfoRow>
+        {updated && <InfoRow label="Updated">{relativeTime(updated)}</InfoRow>}
+      </Stack>
+      <Stack gap={2} style={wide ? { flex: "1 1 0", minWidth: 0 } : undefined}>
+        <InfoRow label="Merge base" labelWidth={RIGHT_LABEL_WIDTH}>
+          {git.merge_base && git.main_upstream ? (
+            <Group gap={4} wrap="nowrap" component="span">
+              <span>{`${git.main_upstream} @ ${short}`}</span>
+              <CopyButton value={git.merge_base}>
+                {({ copied, copy }) => (
+                  <Tooltip label={copied ? "Copied" : `Copy ${git.merge_base}`}>
+                    <ActionIcon
+                      variant="subtle"
+                      color={copied ? "teal" : "gray"}
+                      size="xs"
+                      aria-label="Copy merge base SHA"
+                      onClick={copy}
+                    >
+                      {copied ? <IconCheck size={12} /> : <IconCopy size={12} />}
+                    </ActionIcon>
+                  </Tooltip>
+                )}
+              </CopyButton>
+            </Group>
+          ) : (
+            <Text span inherit c="dimmed">{git.main_upstream ? "unavailable" : "main has no upstream"}</Text>
+          )}
+        </InfoRow>
+        <AheadBehindLine ab={git.vs_merge_base} />
+        <InfoRow label="Tracking branch" labelWidth={RIGHT_LABEL_WIDTH}>
+          {git.tracking ?? <Text span inherit c="dimmed">none (not pushed)</Text>}
+        </InfoRow>
+        {git.tracking && <AheadBehindLine ab={git.vs_tracking} />}
+        <InfoRow label="Fetched" labelWidth={RIGHT_LABEL_WIDTH}>
+          <Group gap={4} wrap="nowrap" component="span">
+            <span>{git.fetch.last_ok_at ? relativeTime(git.fetch.last_ok_at) : "never"}</span>
+            {git.fetch.last_error && (
+              <Tooltip label={git.fetch.last_error} multiline maw={360}>
+                <IconAlertTriangle size={12} color="var(--mantine-color-yellow-6)" aria-label="Last fetch failed" />
+              </Tooltip>
+            )}
+          </Group>
+        </InfoRow>
+      </Stack>
+    </Box>
+  )
+}

@@ -199,12 +199,12 @@ describe("WorktreeDetailPage details card placement", () => {
     ) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it("moves the card under the header for Git / Environment, and back for Notes", async () => {
+  it("moves the card under the header for Environment, and back for Notes", async () => {
     setViewport("wide")
     const user = userEvent.setup()
     wrap()
-    await user.click(await screen.findByRole("tab", { name: "Git / Environment" }))
-    const env = screen.getByRole("tab", { name: "Git / Environment" })
+    await user.click(await screen.findByRole("tab", { name: "Environment" }))
+    const env = screen.getByRole("tab", { name: "Environment" })
     expect(env).toHaveAttribute("aria-selected", "true")
     expect(inColumn(env)).toBe(false)
 
@@ -231,8 +231,8 @@ describe("WorktreeDetailPage pinned cards", () => {
     setViewport("wide")
     const user = userEvent.setup()
     wrap()
-    await user.click(await screen.findByRole("tab", { name: "Git / Environment" }))
-    expect(screen.getByRole("tab", { name: "Git / Environment" }).closest("[data-page-header]")).not.toBeNull()
+    await user.click(await screen.findByRole("tab", { name: "Environment" }))
+    expect(screen.getByRole("tab", { name: "Environment" }).closest("[data-page-header]")).not.toBeNull()
   })
 
   it("keeps scrolled content off the toolbar when narrow, without moving it at rest", () => {
@@ -247,8 +247,8 @@ describe("WorktreeDetailPage pinned cards", () => {
     setViewport("wide", { tall: false })
     const user = userEvent.setup()
     wrap()
-    await user.click(await screen.findByRole("tab", { name: "Git / Environment" }))
-    expect(screen.getByRole("tab", { name: "Git / Environment" }).closest("[data-page-header]")).toBeNull()
+    await user.click(await screen.findByRole("tab", { name: "Environment" }))
+    expect(screen.getByRole("tab", { name: "Environment" }).closest("[data-page-header]")).toBeNull()
     // The title row itself stays pinned.
     expect(screen.getByRole("heading", { name: "foo" }).closest("[data-page-header]")).not.toBeNull()
   })
@@ -423,7 +423,7 @@ describe("WorktreeDetailPage selection", () => {
     setViewport("wide")
     const user = userEvent.setup()
     wrap()
-    await user.click(await screen.findByRole("tab", { name: "Git / Environment" }))
+    await user.click(await screen.findByRole("tab", { name: "Environment" }))
     await user.click(await screen.findByRole("button", { name: "foo" }))
     expect(await screen.findByRole("tab", { name: "Notes" })).toHaveAttribute("aria-selected", "true")
   })
@@ -444,7 +444,7 @@ describe("WorktreeDetailPage selection", () => {
     setViewport("wide")
     const user = userEvent.setup()
     wrap()
-    await user.click(await screen.findByRole("tab", { name: "Git / Environment" }))
+    await user.click(await screen.findByRole("tab", { name: "Environment" }))
     await user.click(await screen.findByRole("button", { name: "foo" }))
     expect(await screen.findByRole("tab", { name: "Notes" })).toHaveAttribute("aria-selected", "true")
     // Nothing left to reset.

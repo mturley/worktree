@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { useCmux } from "../api/cmux"
 
-export type DetailTab = "notes" | "env" | "cmux"
+export type DetailTab = "notes" | "env" | "code" | "cmux"
 
 /**
  * The details card's selected tab, remembered per browser tab so switching
@@ -14,7 +14,7 @@ const DETAIL_TAB_KEY = "worktree.detailTab"
 function readDetailTab(): DetailTab {
   try {
     const v = window.sessionStorage.getItem(DETAIL_TAB_KEY)
-    if (v === "env" || v === "cmux") return v
+    if (v === "env" || v === "code" || v === "cmux") return v
   } catch {
     // fall through
   }
@@ -30,7 +30,7 @@ function writeDetailTab(tab: DetailTab): void {
 }
 
 export function isDetailTab(v: string | null): v is DetailTab {
-  return v === "notes" || v === "env" || v === "cmux"
+  return v === "notes" || v === "env" || v === "code" || v === "cmux"
 }
 
 /**

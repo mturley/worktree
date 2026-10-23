@@ -21,6 +21,11 @@ export function useWorktreeGit(path: string, opts: { fetch: boolean }) {
     queryKey: ["worktree-git", path, opts.fetch],
     queryFn: () => api.worktreeGit(path, opts.fetch),
     enabled: !!path,
+    // `fetch` is in the key, so flipping it (opening the Code tab) is a new
+    // query with no data; keep showing the last result so the tab badge does
+    // not blink while it loads. Only within the same worktree, though: another
+    // worktree's status must never stand in for this one's.
+    placeholderData: (prev, prevQuery) => (prevQuery?.queryKey[1] === path ? prev : undefined),
     refetchInterval: 5000,
     refetchIntervalInBackground: false,
   })

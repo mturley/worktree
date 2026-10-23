@@ -5,7 +5,7 @@ import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { WorktreeDetailCard } from "./WorktreeDetailCard"
 import { useDetailTab } from "../hooks/useDetailTab"
-import type { WorktreeInfo, WorktreeSummary } from "../api/types"
+import type { WorktreeGit, WorktreeInfo, WorktreeSummary } from "../api/types"
 
 /** The card with its tab state wired up the way the page does it. */
 function Card({ w }: { w: WorktreeSummary }) {
@@ -14,6 +14,7 @@ function Card({ w }: { w: WorktreeSummary }) {
 }
 
 const worktreeInfo = vi.fn()
+const worktreeGit = vi.fn()
 const worktreeNotes = vi.fn()
 const saveWorktreeNotes = vi.fn()
 const cmux = vi.fn()
@@ -24,6 +25,7 @@ vi.mock("../api/client", async (orig) => {
     api: {
       ...actual.api,
       worktreeInfo: (...a: unknown[]) => worktreeInfo(...a),
+      worktreeGit: (...a: unknown[]) => worktreeGit(...a),
       worktreeNotes: (...a: unknown[]) => worktreeNotes(...a),
       saveWorktreeNotes: (...a: unknown[]) => saveWorktreeNotes(...a),
       cmux: (...a: unknown[]) => cmux(...a),
@@ -34,6 +36,8 @@ vi.mock("../api/client", async (orig) => {
 
 beforeEach(() => {
   window.sessionStorage.clear()
+  window.localStorage.clear()
+  worktreeGit.mockResolvedValue(gitStatus())
   worktreeNotes.mockResolvedValue({ notes: "", sync_cmux: false })
   saveWorktreeNotes.mockImplementation(async (args: { notes: string; sync_cmux: boolean; show_on_home: boolean }) => ({
     notes: args.notes, sync_cmux: args.sync_cmux, show_on_home: args.show_on_home, updated_at: "2026-09-21T00:00:00Z",
@@ -41,6 +45,16 @@ beforeEach(() => {
   }))
   cmux.mockResolvedValue({ available: true, matches: {} })
   cmuxTree.mockResolvedValue({ available: true, workspaces: [] })
+})
+
+const gitStatus = (o: Partial<WorktreeGit> = {}): WorktreeGit => ({
+  on_disk: true, fingerprint: "f", working_fingerprint: "wf", branch: "my-branch",
+  main_upstream: "upstream/main", merge_base: "76ef50c1234567890abcdef1234567890abcdef12",
+  vs_merge_base: { ahead: 0, behind: 0 },
+  tracking: "origin/my-branch", vs_tracking: { ahead: 0, behind: 0 },
+  working: { staged: 0, modified: 0, untracked: 0, files: 0 },
+  fetch: { last_ok_at: new Date().toISOString(), in_progress: false },
+  ...o,
 })
 
 const summary = (o: Partial<WorktreeSummary> = {}): WorktreeSummary => ({
@@ -70,7 +84,7 @@ const rowValue = (label: string) => screen.getByText(label).nextElementSibling?.
 
 afterEach(() => {
   cleanup()
-  for (const m of [worktreeInfo, worktreeNotes, saveWorktreeNotes, cmux, cmuxTree]) m.mockReset()
+  for (const m of [worktreeInfo, worktreeGit, worktreeNotes, saveWorktreeNotes, cmux, cmuxTree]) m.mockReset()
 })
 
 const info = (o: Partial<WorktreeInfo> = {}): WorktreeInfo => ({
@@ -94,13 +108,12 @@ describe("WorktreeDetailCard", () => {
     expect(await screen.findByText("4090-4099")).not.toBeVisible()
   })
 
-  it("keeps the Git / Environment tab when there is no environment, saying so", async () => {
-    // The git half always has something to show.
+  it("keeps the Environment tab when there is no environment, saying so", async () => {
     worktreeInfo.mockResolvedValue(info({ env: [] }))
     const user = userEvent.setup()
     wrap(summary())
     await waitFor(() => expect(worktreeInfo).toHaveBeenCalled())
-    await user.click(await screen.findByRole("tab", { name: "Git / Environment" }))
+    await user.click(await screen.findByRole("tab", { name: "Environment" }))
     expect(await screen.findByText("None")).toBeVisible()
   })
 
@@ -137,33 +150,6 @@ describe("WorktreeDetailCard", () => {
     expect(screen.queryByText("Focus PR title")).not.toBeInTheDocument()
   })
 
-  it("summarises a dirty tree, counting staged/modified/untracked separately", async () => {
-    worktreeInfo.mockResolvedValue(info({
-      git: { branch: "b", ahead: 0, behind: 0, staged: 2, modified: 3, untracked: 1 },
-    }))
-    wrap(summary())
-    expect(await screen.findByText(/2 staged · 3 modified · 1 untracked/)).toBeInTheDocument()
-  })
-
-  it("reports ahead/behind even when the tree is clean", async () => {
-    // A branch with unpushed commits is not the same as one in sync, so
-    // "clean" alone would hide something worth seeing.
-    worktreeInfo.mockResolvedValue(info({
-      git: { branch: "b", ahead: 2, behind: 1, staged: 0, modified: 0, untracked: 0 },
-    }))
-    wrap(summary())
-    expect(await screen.findByText(/clean · ahead 2 · behind 1/)).toBeInTheDocument()
-  })
-
-  it("still renders the repo and branch when the info request fails", async () => {
-    // A worktree missing from disk, or git unavailable, must not blank the card.
-    worktreeInfo.mockRejectedValue(new Error("boom"))
-    wrap(summary())
-    await userEvent.click(await screen.findByRole("tab", { name: "Git / Environment" }))
-    expect(rowValue("Repo")).toBe("odh")
-    expect(rowValue("Branch")).toBe("my-branch")
-  })
-
   it("leaves the worktree name to the page header", async () => {
     worktreeInfo.mockResolvedValue(info())
     wrap(summary())
@@ -173,19 +159,124 @@ describe("WorktreeDetailCard", () => {
   })
 })
 
-describe("layout", () => {
-  it("breaks the git state into labelled rows", async () => {
-    worktreeInfo.mockResolvedValue(info({
-      git: { branch: "my-branch", upstream: "origin/my-branch", ahead: 0, behind: 0, staged: 0, modified: 3, untracked: 0 },
+const openCode = async () => userEvent.click(await screen.findByRole("tab", { name: /^Code/ }))
+
+describe("tabs", () => {
+  it("orders them Notes, Environment, Code, cmux", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    wrap(summary())
+    await screen.findByRole("tab", { name: "cmux" })
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Notes", "Environment", "Code", "cmux"])
+  })
+})
+
+describe("Code tab badge", () => {
+  it("shows ahead, behind and changed files for the merge base", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    worktreeGit.mockResolvedValue(gitStatus({
+      vs_merge_base: { ahead: 8, behind: 12 },
+      working: { staged: 0, modified: 4, untracked: 0, files: 4 },
     }))
     wrap(summary())
-    await screen.findByText(/3 modified/)
-    expect(rowValue("Repo")).toBe("odh")
-    expect(rowValue("Branch")).toBe("my-branch")
-    expect(rowValue("Status")).toBe("3 modified")
-    expect(rowValue("Upstream")).toBe("origin/my-branch")
+    expect(await screen.findByText("↑8 ↓12 · 4")).toBeVisible()
   })
 
+  it("is absent when every number is zero", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    wrap(summary())
+    await waitFor(() => expect(worktreeGit).toHaveBeenCalled())
+    expect(screen.getByRole("tab", { name: "Code" })).toBeVisible()
+    expect(screen.queryByText(/↑/)).toBeNull()
+  })
+
+  it("counts against the remembered tracking base", async () => {
+    window.localStorage.setItem("worktree.diffSelection:/wt/foo", JSON.stringify({ base: "tracking", range: "all" }))
+    worktreeInfo.mockResolvedValue(info())
+    worktreeGit.mockResolvedValue(gitStatus({
+      vs_merge_base: { ahead: 8, behind: 12 },
+      vs_tracking: { ahead: 3, behind: 0 },
+    }))
+    wrap(summary())
+    expect(await screen.findByText("↑3 ↓0")).toBeVisible()
+  })
+})
+
+describe("Code tab summary", () => {
+  it("lays out the left column's rows, with yellow only when dirty", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    worktreeGit.mockResolvedValue(gitStatus({ working: { staged: 2, modified: 3, untracked: 1, files: 6 } }))
+    wrap(summary())
+    await openCode()
+    expect(await screen.findByText("2 staged · 3 modified · 1 untracked")).toBeVisible()
+    expect(rowValue("Repo")).toBe("odh")
+    expect(rowValue("Branch")).toBe("my-branch")
+    expect(rowValue("Updated")).toMatch(/ago$/)
+  })
+
+  it("says clean for a clean tree", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    wrap(summary())
+    await openCode()
+    expect(await screen.findByText("clean")).toBeVisible()
+  })
+
+  it("puts ahead/behind on its own line under the merge base", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    worktreeGit.mockResolvedValue(gitStatus({ vs_merge_base: { ahead: 8, behind: 12 } }))
+    wrap(summary())
+    await openCode()
+    expect(await screen.findByText("upstream/main @ 76ef50c")).toBeVisible()
+    const line = screen.getByText("8 ahead · 12 behind")
+    expect(line.textContent).toBe("8 ahead · 12 behind")
+    const mergeBaseRow = screen.getByText("Merge base").parentElement!
+    expect(mergeBaseRow.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(mergeBaseRow).not.toContainElement(line)
+  })
+
+  it("explains an unavailable merge base", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    worktreeGit.mockResolvedValue(gitStatus({ merge_base: undefined, main_upstream: undefined, vs_merge_base: undefined }))
+    wrap(summary())
+    await openCode()
+    expect(await screen.findByText("main has no upstream")).toBeVisible()
+  })
+
+  it("says the branch is not pushed, with no ahead/behind line, when there is no tracking branch", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    worktreeGit.mockResolvedValue(gitStatus({ tracking: undefined, vs_tracking: undefined }))
+    wrap(summary())
+    await openCode()
+    expect(await screen.findByText("none (not pushed)")).toBeVisible()
+    // Only the merge base's line remains.
+    expect(screen.getAllByText(/ahead · .* behind/)).toHaveLength(1)
+  })
+
+  it("flags a failed fetch with a warning icon", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    worktreeGit.mockResolvedValue(gitStatus({ fetch: { last_ok_at: null, last_error: "network down", in_progress: false } }))
+    wrap(summary())
+    await openCode()
+    expect(await screen.findByLabelText("Last fetch failed")).toBeVisible()
+  })
+
+  it("says the worktree is missing from disk", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    worktreeGit.mockResolvedValue(gitStatus({ on_disk: false }))
+    wrap(summary())
+    await openCode()
+    expect(await screen.findByText("Worktree is missing from disk")).toBeVisible()
+  })
+
+  it("asks the server to fetch only while the Code tab is open", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    wrap(summary())
+    await waitFor(() => expect(worktreeGit).toHaveBeenCalledWith("/wt/foo", false))
+    await openCode()
+    await waitFor(() => expect(worktreeGit).toHaveBeenCalledWith("/wt/foo", true))
+  })
+})
+
+describe("layout", () => {
   it("puts the delete control after the tabs, outside the tab list", async () => {
     worktreeInfo.mockResolvedValue(info())
     wrap(summary())

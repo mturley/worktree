@@ -1,37 +1,21 @@
-import { useState, type ReactNode } from "react"
-import { ActionIcon, Box, Button, Checkbox, Code, Group, Paper, Stack, Tabs, Text, Textarea, Tooltip } from "@mantine/core"
+import { useState } from "react"
+import { ActionIcon, Badge, Button, Checkbox, Code, Group, Paper, Stack, Tabs, Text, Textarea, Tooltip } from "@mantine/core"
 import { IconCheck, IconCopy, IconPencil } from "@tabler/icons-react"
 import { useQuery } from "@tanstack/react-query"
 import { api } from "../api/client"
 import { useCmux, useCmuxMatches } from "../api/cmux"
-import type { GitStatus, WorktreeSummary } from "../api/types"
+import type { WorktreeSummary } from "../api/types"
 import { isDetailTab, type DetailTab } from "../hooks/useDetailTab"
-import { useIsWide } from "../hooks/useIsWide"
+import { useDiffSelection } from "../hooks/useDiffSelection"
+import { useWorktreeGit } from "../hooks/useWorktreeGit"
 import { useWorktreeNotes } from "../hooks/useWorktreeNotes"
+import { formatBadge } from "../lib/diffLabels"
 import { toggleTaskAt } from "../lib/taskList"
 import { relativeTime as rel } from "../lib/relativeTime"
 import { CmuxPanel } from "./CmuxPanel"
 import { DeleteWorktreeButton } from "./DeleteWorktreeButton"
+import { GitDiffPanel } from "./gitdiff/GitDiffPanel"
 import { NotesMarkdown } from "./NotesMarkdown"
-
-/**
- * Renders a git status as a short line: "3 modified · 1 untracked · ahead 2",
- * or "clean" when the working tree has nothing outstanding.
- *
- * Ahead/behind are reported even when clean, because a branch with unpushed
- * commits is not the same situation as one in sync — a single "dirty" flag
- * would hide that.
- */
-function gitSummary(g: GitStatus): string {
-  const parts: string[] = []
-  if (g.staged) parts.push(`${g.staged} staged`)
-  if (g.modified) parts.push(`${g.modified} modified`)
-  if (g.untracked) parts.push(`${g.untracked} untracked`)
-  if (parts.length === 0) parts.push("clean")
-  if (g.ahead) parts.push(`ahead ${g.ahead}`)
-  if (g.behind) parts.push(`behind ${g.behind}`)
-  return parts.join(" · ")
-}
 
 /**
  * The details card under the worktree detail page's header.
@@ -43,7 +27,7 @@ function gitSummary(g: GitStatus): string {
  * what branch am I on, is the tree dirty, when did anything last happen, and
  * what was I in the middle of (notes).
  *
- * A single row of tabs — Notes, Git / Environment and, inside cmux, cmux —
+ * A single row of tabs — Notes, Environment, Code and, inside cmux, cmux —
  * with the delete control at its right.
  * The tab is the page's (useDetailTab), because it also decides where the
  * page puts the card: wide, Notes sits in the resource column and the other
@@ -67,10 +51,12 @@ export function WorktreeDetailCard({ w, tab, onTabChange }: {
   const hasCmux = cmuxQuery.data?.available === true
   const git = info.data?.git
   const hasEnv = !!info.data && info.data.env.length > 0
-  // Wide, the Git / Environment tab spans the page, so git state and the
-  // environment sit side by side rather than leaving most of the width
-  // empty. On a phone there is no room for two.
-  const envSideBySide = useIsWide()
+  // Polled whichever tab is showing, so the Code tab's badge is always
+  // current. `fetch` only while the Code tab is open: that is when someone is
+  // looking at the fetch state and wants it fresh.
+  const gitStatus = useWorktreeGit(w.path, { fetch: tab === "code" })
+  const { base } = useDiffSelection(w.path, undefined)
+  const badge = gitStatus.data?.on_disk ? formatBadge(gitStatus.data, base) : null
   // Notes are read-only until "Edit notes", so a stray click or keystroke
   // cannot change them. Leaving the Notes tab ends editing: you always come
   // back to the read-only view.
@@ -96,7 +82,17 @@ export function WorktreeDetailCard({ w, tab, onTabChange }: {
         <Group justify="space-between" wrap="nowrap" gap="xs" align="flex-start">
           <Tabs.List w="fit-content">
             <Tabs.Tab value="notes" fz="xs" py={6}>Notes</Tabs.Tab>
-            <Tabs.Tab value="env" fz="xs" py={6}>Git / Environment</Tabs.Tab>
+            <Tabs.Tab value="env" fz="xs" py={6}>Environment</Tabs.Tab>
+            <Tabs.Tab
+              value="code"
+              fz="xs"
+              py={6}
+              rightSection={
+                badge ? <Badge size="xs" variant="light" color="gray" style={{ flex: "none" }}>{badge}</Badge> : undefined
+              }
+            >
+              Code
+            </Tabs.Tab>
             {hasCmux && (
               <Tabs.Tab value="cmux" fz="xs" py={6}>cmux</Tabs.Tab>
             )}
@@ -115,45 +111,24 @@ export function WorktreeDetailCard({ w, tab, onTabChange }: {
           />
         </Tabs.Panel>
 
-        {/*
-          Git state, then the same environment `worktree info` prints: what
-          you need when you open a terminal in this worktree, previously only
-          reachable from the CLI. Repo and branch come from the summary, so
-          they show even when the info request fails.
-        */}
+        {/* The same environment `worktree info` prints: what you need when
+            you open a terminal in this worktree, previously only reachable
+            from the CLI. */}
         <Tabs.Panel value="env" pt={6} keepMounted>
-          {/* Side by side, the git column takes only the width it needs (up to
-              a cap, for a long branch name) and the environment, whose values
-              are long paths and URLs, takes the rest. */}
-          <Box
-            style={{
-              display: "flex",
-              flexDirection: envSideBySide ? "row" : "column",
-              gap: envSideBySide ? "var(--mantine-spacing-xl)" : "var(--mantine-spacing-xs)",
-            }}
-          >
-            <Stack gap={2} style={envSideBySide ? { flex: "0 1 auto", maxWidth: "40%", minWidth: 0 } : undefined}>
-              {w.repo && <InfoRow label="Repo">{w.repo}</InfoRow>}
-              {(git?.branch || w.branch) && <InfoRow label="Branch">{git?.branch || w.branch}</InfoRow>}
-              {git && (
-                <InfoRow label="Status">
-                  <Text span inherit c={git.staged || git.modified || git.untracked ? "yellow" : undefined}>
-                    {gitSummary(git)}
-                  </Text>
-                </InfoRow>
-              )}
-              {git?.upstream && <InfoRow label="Upstream">{git.upstream}</InfoRow>}
-              {w.latest_event_ts && <InfoRow label="Updated">{rel(w.latest_event_ts)}</InfoRow>}
-            </Stack>
-            <Stack gap={2} style={envSideBySide ? { flex: "1 1 0", minWidth: 0 } : undefined}>
-              <SectionLabel>Environment</SectionLabel>
-              {hasEnv ? (
-                info.data!.env.map((kv) => <EnvVarRow key={kv.key} name={kv.key} value={kv.value} />)
-              ) : (
-                <Text size="xs" c="dimmed" fs="italic">None</Text>
-              )}
-            </Stack>
-          </Box>
+          <Stack gap={2}>
+            {hasEnv ? (
+              info.data!.env.map((kv) => <EnvVarRow key={kv.key} name={kv.key} value={kv.value} />)
+            ) : (
+              <Text size="xs" c="dimmed" fs="italic">None</Text>
+            )}
+          </Stack>
+        </Tabs.Panel>
+
+        {/* Unmounted when not selected (the Tabs default): that stops the
+            panel's fetch nudge and resets its state. The badge on the tab
+            label comes from the card's own polled status above. */}
+        <Tabs.Panel value="code" pt={6}>
+          <GitDiffPanel path={w.path} repo={w.repo} updated={w.latest_event_ts} />
         </Tabs.Panel>
 
         {/*
@@ -167,20 +142,6 @@ export function WorktreeDetailCard({ w, tab, onTabChange }: {
         )}
       </Tabs>
     </Paper>
-  )
-}
-
-function SectionLabel({ children }: { children: ReactNode }) {
-  return <Text size="xs" fw={600} tt="uppercase" c="dimmed">{children}</Text>
-}
-
-/** One labelled line of git state: "Branch   my-branch". */
-function InfoRow({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <Group gap="xs" wrap="nowrap" align="flex-start">
-      <Text size="xs" c="dimmed" w={70} style={{ flex: "none" }}>{label}</Text>
-      <Text size="xs" style={{ overflowWrap: "anywhere", minWidth: 0 }}>{children}</Text>
-    </Group>
   )
 }
 

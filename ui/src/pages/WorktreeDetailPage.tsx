@@ -201,7 +201,7 @@ export function WorktreeDetailPage() {
   const [pendingFollowUrl, setPendingFollowUrl] = useState<string | null>(null)
   // The card's tab also decides where it sits, wide: Notes in the resource
   // column above Follow resource, so the activity column gets the page's
-  // height; Git / Environment and cmux, which want the width, under the
+  // height; Environment, Code and cmux, which want the width, under the
   // header. Narrow has no side column, so the card is always under the header.
   const detailTab = useDetailTab()
   const inColumn = wide && detailTab.tab === "notes"
