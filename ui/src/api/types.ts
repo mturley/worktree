@@ -709,6 +709,17 @@ export interface Task {
   blocker_count: number
   /** The unresolved blockers' labels, oldest first, for the row chip's tooltip. Never null. */
   blocker_labels: string[]
+  /**
+   * Only on the answer to an undoable write (a state change, a subtask
+   * check) that changed something: the event it recorded, which
+   * POST /api/tasks/undo takes back.
+   */
+  undo_event_id?: number
+}
+
+/** POST /api/tasks/delete: the task_deleted event, which POST /api/tasks/undo takes back. */
+export interface TaskDeleteResult {
+  undo_event_id: number
 }
 
 export type TaskBlockerKind = "task" | "resource" | "other"

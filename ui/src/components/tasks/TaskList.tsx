@@ -16,7 +16,7 @@ import {
 } from "@dnd-kit/core"
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import type { Task } from "../../api/types"
+import type { Task, TaskState } from "../../api/types"
 import { useTaskMutations, useTasks, type TaskScope } from "../../hooks/useTasks"
 import { useTaskListPrefs } from "../../hooks/useTaskListPrefs"
 import { buildSections, canDrag, quickAddAnchor, type TaskSection } from "../../lib/taskSections"
@@ -24,6 +24,7 @@ import { useSearchContext } from "../search/SearchContext"
 import { useTaskModal } from "./modal/TaskModalProvider"
 import { TaskQuickAdd } from "./TaskQuickAdd"
 import { TaskRow } from "./TaskRow"
+import { taskUndoMessage, useOfferTaskUndo } from "./taskUndo"
 import { dropPlanFor, sectionDroppableId, taskCollisions, taskDraggableId } from "./taskDrag"
 
 /** A compact row's height, for capping a pinned list at `maxRows`. */
@@ -109,8 +110,14 @@ function SortableTaskRow({ task, section, sortDraggable, ownResource, mutations,
     )
   }
 
+  const offerUndo = useOfferTaskUndo()
   const run = (p: Promise<unknown>) => {
     p.catch((e: unknown) => onError(errorText(e)))
+  }
+  const pickState = (s: TaskState) => {
+    // The title as clicked, so a rename landing meanwhile can't change what the toast names.
+    const title = task.title
+    run(setState(task.id, s).then((t) => offerUndo(t.undo_event_id, taskUndoMessage.state(title, s))))
   }
 
   return (
@@ -130,7 +137,7 @@ function SortableTaskRow({ task, section, sortDraggable, ownResource, mutations,
         task={task}
         ownResource={ownResource}
         dragHandle={grip}
-        onState={(s) => run(setState(task.id, s))}
+        onState={pickState}
         onToggleStar={() => run(update(task.id, { starred: !task.starred }))}
         onOpen={() => onOpen(task.id)}
       />

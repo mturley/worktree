@@ -1,4 +1,4 @@
-import type { DiffBase, DiffCommits, DiffFiles, DiffPatch, DiffRange, WorktreeGit, AllResourceDTO, CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, CredResult, DefaultBranchResponse, CredService, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, ResourceReadChange, Priority, Task, TaskState, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, UpdateStatus, WatcherHealth, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherAuthSettings, WatcherConfigSettings, WorktreeInfo, WorktreeNotes, WorktreeSettings, WorktreeSummary, TaskActivityFilter, TaskDetail, TaskEventSnapshot, TaskLinkTarget, TimelineEvent, TaskScope, TaskUnread, TaskBlockerTarget } from "./types"
+import type { DiffBase, DiffCommits, DiffFiles, DiffPatch, DiffRange, WorktreeGit, AllResourceDTO, CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, CredResult, DefaultBranchResponse, CredService, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, ResourceReadChange, Priority, Task, TaskState, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, UpdateStatus, WatcherHealth, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherAuthSettings, WatcherConfigSettings, WorktreeInfo, WorktreeNotes, WorktreeSettings, WorktreeSummary, TaskActivityFilter, TaskDetail, TaskEventSnapshot, TaskLinkTarget, TimelineEvent, TaskScope, TaskUnread, TaskBlockerTarget, TaskDeleteResult } from "./types"
 
 export class HttpError extends Error {
   constructor(message: string, readonly status: number) {
@@ -194,7 +194,13 @@ export const api = {
     return fetchJSON<TimelineEvent[]>(`/api/tasks/activity?${params}`)
   },
   /** Resolves once deleted; the answer's undo_event_id is not read yet (Task 4 wires undo). */
-  deleteTask: (id: number) => postJSON<null>("/api/tasks/delete", { id }).then((): void => {}),
+  deleteTask: (id: number) => postJSON<TaskDeleteResult>("/api/tasks/delete", { id }),
+  /**
+   * Takes back the write that recorded `eventId` (an undo_event_id). Resolves
+   * on the server's 204; a 409 (the task changed since) rejects with the
+   * server's message.
+   */
+  undoTask: (eventId: number) => postJSON<null>("/api/tasks/undo", { event_id: eventId }).then((): void => {}),
   addTaskLink: (id: number, target: { url: string } | TaskLinkTarget, focus?: boolean) => {
     let body: Record<string, unknown>
     if ("url" in target) body = { id, url: target.url }

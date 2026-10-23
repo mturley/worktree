@@ -22,6 +22,7 @@ import { CSS } from "@dnd-kit/utilities"
 import type { TaskDetail, TaskSubtask } from "../../../api/types"
 import { taskDetailKey, useTaskDetailMutations } from "../../../hooks/useTaskDetail"
 import { useQueryClient } from "@tanstack/react-query"
+import { taskUndoMessage, useOfferTaskUndo } from "../taskUndo"
 import { errorText, useSectionAction } from "./sectionAction"
 
 const sortableId = (id: number) => `subtask:${id}`
@@ -35,6 +36,7 @@ export function SubtasksSection({ task }: { task: TaskDetail }) {
   const m = useTaskDetailMutations(task.id)
   const qc = useQueryClient()
   const { run, alert, setError } = useSectionAction()
+  const offerUndo = useOfferTaskUndo()
   const [text, setText] = useState("")
   const [adding, setAdding] = useState(false)
   // The optimistic order while a reorder saves, as ResourceList's `pending`.
@@ -118,7 +120,11 @@ export function SubtasksSection({ task }: { task: TaskDetail }) {
                 s={s}
                 onCheck={(checked) => {
                   patchSubtask(s.id, { checked })
-                  run(m.checkSubtask(s.id, checked))
+                  run(
+                    m.checkSubtask(s.id, checked).then((d) =>
+                      offerUndo(d.undo_event_id, taskUndoMessage.subtask(s.text, checked)),
+                    ),
+                  )
                 }}
                 onEdit={(t) => {
                   patchSubtask(s.id, { text: t })

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
+import { Notifications, notifications } from "@mantine/notifications"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { api, HttpError } from "../../../api/client"
 import type { TaskDetail } from "../../../api/types"
@@ -17,6 +18,7 @@ vi.mock("../../../api/client", async (orig) => ({
     updateTask: vi.fn(),
     setTaskState: vi.fn(),
     deleteTask: vi.fn(),
+    undoTask: vi.fn(),
   },
 }))
 
@@ -42,6 +44,7 @@ function wrap() {
   qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <MantineProvider>
+      <Notifications />
       <QueryClientProvider client={qc}>
         <TaskModalProvider>
           <Opener />
@@ -59,10 +62,12 @@ beforeEach(() => {
   vi.mocked(api.taskDetail).mockImplementation(async (id: number) => detail(id))
   vi.mocked(api.updateTask).mockResolvedValue(detail(5))
   vi.mocked(api.setTaskState).mockResolvedValue(detail(5))
-  vi.mocked(api.deleteTask).mockResolvedValue(undefined as never)
+  vi.mocked(api.deleteTask).mockResolvedValue({ undo_event_id: 61 })
+  vi.mocked(api.undoTask).mockResolvedValue(undefined)
 })
 afterEach(() => {
   cleanup()
+  notifications.clean()
   vi.clearAllMocks()
 })
 
@@ -202,23 +207,11 @@ describe("TaskDetailModal", () => {
     expect(screen.getByLabelText("Due date")).toHaveValue("")
   })
 
-  it("asks before deleting; No keeps the task", async () => {
+  it("deletes in one click, closing the modal and dropping the task's cached detail", async () => {
     const user = userEvent.setup()
     wrap()
     await titleButton()
     await user.click(screen.getByRole("button", { name: "Delete task" }))
-    expect(screen.getByText("Delete?")).toBeInTheDocument()
-    await user.click(screen.getByRole("button", { name: "No" }))
-    expect(api.deleteTask).not.toHaveBeenCalled()
-    expect(screen.getByRole("button", { name: "Delete task" })).toBeInTheDocument()
-  })
-
-  it("deletes on Yes, closing the modal and dropping the task's cached detail", async () => {
-    const user = userEvent.setup()
-    wrap()
-    await titleButton()
-    await user.click(screen.getByRole("button", { name: "Delete task" }))
-    await user.click(screen.getByRole("button", { name: "Yes" }))
     expect(api.deleteTask).toHaveBeenCalledWith(5)
     expect(param()).toBeNull()
     expect(qc.getQueryData(taskDetailKey(5))).toBeUndefined()
@@ -233,7 +226,6 @@ describe("TaskDetailModal", () => {
     wrap()
     await titleButton()
     await user.click(screen.getByRole("button", { name: "Delete task" }))
-    await user.click(screen.getByRole("button", { name: "Yes" }))
     expect(await screen.findByText("Couldn't delete: disk full")).toBeInTheDocument()
     expect(param()).toBe("5")
     expect(await titleButton()).toHaveTextContent("task 5")
@@ -246,7 +238,6 @@ describe("TaskDetailModal", () => {
     wrap()
     await titleButton()
     await user.click(screen.getByRole("button", { name: "Delete task" }))
-    await user.click(screen.getByRole("button", { name: "Yes" }))
     // The user moves on while the delete is in flight.
     act(() => {
       window.history.pushState({}, "", "/worktree/other?resource=jira:J-1")
@@ -256,6 +247,76 @@ describe("TaskDetailModal", () => {
     await waitFor(() => expect(param()).toBe("5"))
     expect(window.location.pathname).toBe("/worktree/other")
     expect(new URLSearchParams(window.location.search).get("resource")).toBe("jira:J-1")
+  })
+
+  describe("undo", () => {
+    it("a state change from the header offers an undo, which takes back its event", async () => {
+      vi.mocked(api.setTaskState).mockResolvedValue(detail(5, { state: "done", undo_event_id: 71 }))
+      const user = userEvent.setup()
+      wrap()
+      await titleButton()
+      await user.click(screen.getByRole("button", { name: /^State of “task 5”/ }))
+      await user.click(await screen.findByRole("menuitem", { name: /Done/ }))
+      expect(await screen.findByText("Marked “task 5” done")).toBeInTheDocument()
+      await user.click(screen.getByRole("button", { name: "Undo" }))
+      expect(api.undoTask).toHaveBeenCalledWith(71)
+    })
+
+    it("a state change from the sidebar offers an undo", async () => {
+      vi.mocked(api.setTaskState).mockResolvedValue(detail(5, { state: "in_progress", undo_event_id: 72 }))
+      const user = userEvent.setup()
+      wrap()
+      await titleButton()
+      await user.selectOptions(screen.getByLabelText("State"), "in_progress")
+      expect(await screen.findByText("Marked “task 5” in progress")).toBeInTheDocument()
+    })
+
+    it("offers no undo when the change changed nothing", async () => {
+      vi.mocked(api.setTaskState).mockResolvedValue(detail(5))
+      const user = userEvent.setup()
+      wrap()
+      await titleButton()
+      await user.selectOptions(screen.getByLabelText("State"), "in_progress")
+      await waitFor(() => expect(api.setTaskState).toHaveBeenCalled())
+      await new Promise((r) => setTimeout(r, 20))
+      expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument()
+    })
+
+    it("a refused undo (409) says why", async () => {
+      vi.mocked(api.setTaskState).mockResolvedValue(detail(5, { state: "not_started", undo_event_id: 73 }))
+      vi.mocked(api.undoTask).mockRejectedValue(new HttpError("The task changed since; nothing was undone.", 409))
+      vi.mocked(api.taskDetail).mockImplementation(async (id: number) => detail(id, { state: "done" }))
+      const user = userEvent.setup()
+      wrap()
+      await titleButton()
+      await user.selectOptions(screen.getByLabelText("State"), "not_started")
+      await user.click(await screen.findByRole("button", { name: "Undo" }))
+      expect(await screen.findByText("Couldn't undo: The task changed since; nothing was undone.")).toBeInTheDocument()
+    })
+
+    it("a delete offers an undo, which brings the task back and reopens its modal", async () => {
+      const user = userEvent.setup()
+      wrap()
+      await titleButton()
+      await user.click(screen.getByRole("button", { name: "Delete task" }))
+      expect(param()).toBeNull()
+      expect(await screen.findByText("Deleted “task 5”")).toBeInTheDocument()
+      await user.click(screen.getByRole("button", { name: "Undo" }))
+      expect(api.undoTask).toHaveBeenCalledWith(61)
+      await waitFor(() => expect(param()).toBe("5"))
+      expect(await titleButton()).toHaveTextContent("task 5")
+    })
+
+    it("a refused delete undo leaves the modal closed", async () => {
+      vi.mocked(api.undoTask).mockRejectedValue(new HttpError("gone", 404))
+      const user = userEvent.setup()
+      wrap()
+      await titleButton()
+      await user.click(screen.getByRole("button", { name: "Delete task" }))
+      await user.click(await screen.findByRole("button", { name: "Undo" }))
+      expect(await screen.findByText("Couldn't undo: gone")).toBeInTheDocument()
+      expect(param()).toBeNull()
+    })
   })
 
   it("closing a modal that open() pushed goes back, so Back doesn't reopen it", async () => {

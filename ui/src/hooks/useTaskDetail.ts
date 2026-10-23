@@ -107,6 +107,8 @@ export function useTaskDetailMutations(id: number) {
     }
   }
 
+  // setState, checkSubtask and remove answer with the undo_event_id that
+  // takes them back, when they changed something (see useOfferTaskUndo).
   return {
     update: (patch: Patch) => plain(() => api.updateTask(id, patch)),
     setState: (state: TaskState) => plain(() => api.setTaskState(id, state)),

@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from "react"
 import { Alert, Box, Button, Center, Flex, Loader, Modal, Stack, Tabs, Text } from "@mantine/core"
 import { useQueryClient } from "@tanstack/react-query"
 import { HttpError } from "../../../api/client"
-import type { TaskDetail } from "../../../api/types"
+import type { TaskDetail, TaskState } from "../../../api/types"
 import { taskDetailKey, useTaskDetail } from "../../../hooks/useTaskDetail"
+import { taskUndoMessage, useOfferTaskUndo } from "../taskUndo"
 import { ActivityTab } from "./ActivityTab"
 import { discardDescriptionDraft } from "./DescriptionSection"
 import { DetailsTab } from "./DetailsTab"
@@ -108,19 +109,30 @@ function TaskView({ task, onClose, onDirtyChange }: {
   const qc = useQueryClient()
   const edits = useOptimisticTask(task.id)
   const [tab, setTab] = useState<string>("details")
+  const offerUndo = useOfferTaskUndo()
+
+  // Header and sidebar both change state through here, so both offer the undo.
+  const onState = (s: TaskState) => {
+    const title = task.title
+    void edits.setState(s).then((t) => offerUndo(t?.undo_event_id, taskUndoMessage.state(title, s)))
+  }
 
   const onDelete = () => {
+    const { id, title } = task
     // Close first, then drop the cached detail and activity: the delete's
     // invalidation would otherwise refetch them (404) while still on screen.
     // A deleted task's unsaved description goes with it, unasked.
-    discardDescriptionDraft(task.id)
+    discardDescriptionDraft(id)
     onDirtyChange(false)
     close()
-    qc.removeQueries({ queryKey: taskDetailKey(task.id), exact: true })
-    qc.removeQueries({ queryKey: ["tasks", "activity", task.id] })
-    // A failed delete brings the task back, saying why.
-    edits.remove().catch((e: unknown) =>
-      open(task.id, { error: `Couldn't delete: ${e instanceof Error ? e.message : "the request failed"}` }),
+    qc.removeQueries({ queryKey: taskDetailKey(id), exact: true })
+    qc.removeQueries({ queryKey: ["tasks", "activity", id] })
+    // One click, no confirmation: the undo toast is the way back, and
+    // undoing reopens the modal the delete closed. A failed delete brings
+    // the task back, saying why.
+    edits.remove().then(
+      (r) => offerUndo(r.undo_event_id, taskUndoMessage.deleted(title), () => open(id)),
+      (e: unknown) => open(id, { error: `Couldn't delete: ${e instanceof Error ? e.message : "the request failed"}` }),
     )
   }
 
@@ -129,7 +141,7 @@ function TaskView({ task, onClose, onDirtyChange }: {
       <TaskModalHeader
         task={task}
         onUpdate={edits.update}
-        onState={edits.setState}
+        onState={onState}
         onClose={onClose}
       />
       {edits.error ? (
@@ -152,7 +164,7 @@ function TaskView({ task, onClose, onDirtyChange }: {
           <Tabs.Panel value="activity" pt="sm">{tab === "activity" && <ActivityTab task={task} />}</Tabs.Panel>
         </Tabs>
         <Box w={{ base: "100%", sm: 220 }} style={{ flex: "none" }}>
-          <TaskSidebar task={task} onUpdate={edits.update} onState={edits.setState} onDelete={onDelete} />
+          <TaskSidebar task={task} onUpdate={edits.update} onState={onState} onDelete={onDelete} />
         </Box>
       </Flex>
     </Stack>

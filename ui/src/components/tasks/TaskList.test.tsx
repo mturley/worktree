@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
+import { Notifications, notifications } from "@mantine/notifications"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { api } from "../../api/client"
 import type { Task } from "../../api/types"
@@ -22,6 +23,7 @@ vi.mock("../../api/client", async (orig) => ({
     updateTask: vi.fn(),
     setTaskState: vi.fn(),
     moveTask: vi.fn(),
+    undoTask: vi.fn(),
   },
 }))
 
@@ -42,6 +44,7 @@ function wrap(ui: React.ReactNode, terms: string[] = []) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <MantineProvider>
+      <Notifications />
       <QueryClientProvider client={qc}>
         <TaskModalProvider>
           <SearchContext.Provider value={{ terms }}>{ui}</SearchContext.Provider>
@@ -60,10 +63,36 @@ beforeEach(() => {
 })
 afterEach(() => {
   cleanup()
+  notifications.clean()
   vi.clearAllMocks()
   window.localStorage.clear()
   // The modal lives in ?task=; jsdom's URL outlives a test.
   window.history.replaceState({}, "", "/")
+})
+
+describe("TaskList undo", () => {
+  it("a row's state change offers an undo, which takes back its event", async () => {
+    vi.mocked(api.setTaskState).mockResolvedValue(task(1, { state: "in_progress", undo_event_id: 41 }))
+    vi.mocked(api.undoTask).mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    wrap(<TaskList scope={{ kind: "all" }} />)
+    await user.click(await screen.findByRole("button", { name: "State of “alpha one”: Not started" }))
+    await user.click(await screen.findByRole("menuitem", { name: "In progress" }))
+    expect(await screen.findByText("Marked “alpha one” in progress")).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Undo" }))
+    expect(api.undoTask).toHaveBeenCalledWith(41)
+  })
+
+  it("offers no undo when the change changed nothing", async () => {
+    vi.mocked(api.setTaskState).mockResolvedValue(task(1))
+    const user = userEvent.setup()
+    wrap(<TaskList scope={{ kind: "all" }} />)
+    await user.click(await screen.findByRole("button", { name: "State of “alpha one”: Not started" }))
+    await user.click(await screen.findByRole("menuitem", { name: "Not started" }))
+    await waitFor(() => expect(api.setTaskState).toHaveBeenCalled())
+    await new Promise((r) => setTimeout(r, 20))
+    expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument()
+  })
 })
 
 describe("TaskList opens the modal", () => {
@@ -76,7 +105,7 @@ describe("TaskList opens the modal", () => {
   })
 
   it("picking a state from a row's portalled menu changes state without opening", async () => {
-    vi.mocked(api.setTaskState).mockResolvedValue(undefined as never)
+    vi.mocked(api.setTaskState).mockResolvedValue(task(1, { state: "done" }))
     const user = userEvent.setup()
     wrap(<TaskList scope={{ kind: "all" }} />)
     await user.click(await screen.findByRole("button", { name: "State of “alpha one”: Not started" }))

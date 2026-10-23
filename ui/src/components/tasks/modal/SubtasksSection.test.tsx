@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+import { notifications } from "@mantine/notifications"
 import { api } from "../../../api/client"
 import type { TaskDetail } from "../../../api/types"
 import { SubtasksSection } from "./SubtasksSection"
@@ -15,6 +16,7 @@ vi.mock("../../../api/client", async (orig) => ({
     checkSubtask: vi.fn(),
     removeSubtask: vi.fn(),
     orderSubtasks: vi.fn(),
+    undoTask: vi.fn(),
   },
 }))
 
@@ -42,10 +44,41 @@ beforeEach(() => {
 })
 afterEach(() => {
   cleanup()
+  notifications.clean()
   vi.clearAllMocks()
 })
 
 const show = (t = base) => renderDetail(t, (d) => <SubtasksSection task={d} />)
+
+describe("SubtasksSection undo", () => {
+  it("checking offers an undo, which takes back its event", async () => {
+    vi.mocked(api.checkSubtask).mockResolvedValue({ ...base, undo_event_id: 52 })
+    vi.mocked(api.undoTask).mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    show()
+    await user.click(screen.getByRole("checkbox", { name: "Subtask done: second" }))
+    expect(await screen.findByText("Checked “second”")).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Undo" }))
+    expect(api.undoTask).toHaveBeenCalledWith(52)
+  })
+
+  it("unchecking says so", async () => {
+    vi.mocked(api.checkSubtask).mockResolvedValue({ ...base, undo_event_id: 53 })
+    const user = userEvent.setup()
+    show()
+    await user.click(screen.getByRole("checkbox", { name: "Subtask done: first" }))
+    expect(await screen.findByText("Unchecked “first”")).toBeInTheDocument()
+  })
+
+  it("offers no undo when the check changed nothing", async () => {
+    const user = userEvent.setup()
+    show()
+    await user.click(screen.getByRole("checkbox", { name: "Subtask done: second" }))
+    await waitFor(() => expect(api.checkSubtask).toHaveBeenCalled())
+    await new Promise((r) => setTimeout(r, 20))
+    expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument()
+  })
+})
 
 describe("SubtasksSection", () => {
   it("shows done/total", () => {

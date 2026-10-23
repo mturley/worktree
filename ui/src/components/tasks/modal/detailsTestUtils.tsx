@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 import { render } from "@testing-library/react"
 import { MantineProvider } from "@mantine/core"
+import { Notifications } from "@mantine/notifications"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { TaskDetail } from "../../../api/types"
 import { taskDetailKey, useTaskDetail } from "../../../hooks/useTaskDetail"
@@ -23,13 +24,15 @@ function Live({ id, children }: { id: number; children: (t: TaskDetail) => React
 /**
  * Renders `ui` against the task detail held in the query cache, as the modal
  * does: a mutation's response lands in the cache and re-renders it. Inside a
- * TaskModalProvider, so sections that open another task can.
+ * TaskModalProvider, so sections that open another task can, with
+ * Notifications, so a section's toasts (an undo) render.
  */
 export function renderDetail(initial: TaskDetail, ui: (t: TaskDetail) => ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   qc.setQueryData(taskDetailKey(initial.id), initial)
   const utils = render(
     <MantineProvider>
+      <Notifications />
       <QueryClientProvider client={qc}>
         <TaskModalProvider>
           <Live id={initial.id}>{ui}</Live>

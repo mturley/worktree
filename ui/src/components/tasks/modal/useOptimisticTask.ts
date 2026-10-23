@@ -11,7 +11,8 @@ export type TaskPatch = { title?: string; description?: string; priority?: Prior
  * sidebar reflect a change before the server replies. On failure only those
  * fields are put back (a concurrent edit to another field survives), and the
  * error is kept for the modal to show. The mutation's own invalidation then
- * refetches the real state either way.
+ * refetches the real state either way. Each answers the server's response
+ * (a state change's carries its undo_event_id), or undefined on failure.
  */
 export function useOptimisticTask(id: number) {
   const qc = useQueryClient()
@@ -19,7 +20,7 @@ export function useOptimisticTask(id: number) {
   const [error, setError] = useState<string | null>(null)
 
   const optimistic = useCallback(
-    async (fields: Partial<TaskDetail>, call: () => Promise<unknown>) => {
+    async <T,>(fields: Partial<TaskDetail>, call: () => Promise<T>): Promise<T | undefined> => {
       const key = taskDetailKey(id)
       // An in-flight fetch that started before this edit would land the old
       // value on top of the optimistic one.
@@ -28,13 +29,14 @@ export function useOptimisticTask(id: number) {
       if (prev) qc.setQueryData<TaskDetail>(key, { ...prev, ...fields })
       setError(null)
       try {
-        await call()
+        return await call()
       } catch (e) {
         if (prev) {
           const undo = Object.fromEntries(Object.keys(fields).map((k) => [k, prev[k as keyof TaskDetail]]))
           qc.setQueryData<TaskDetail>(key, (cur) => (cur ? { ...cur, ...undo } : cur))
         }
         setError(e instanceof Error ? e.message : "The change could not be saved.")
+        return undefined
       }
     },
     [id, qc],

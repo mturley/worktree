@@ -1,4 +1,3 @@
-import { useState } from "react"
 import { ActionIcon, Button, Checkbox, Group, NativeSelect, Stack, Text, TextInput } from "@mantine/core"
 import type { Priority, TaskDetail, TaskState } from "../../../api/types"
 import { relativeTime } from "../../../lib/relativeTime"
@@ -76,7 +75,10 @@ export function TaskSidebar({ task, onUpdate, onState, onDelete }: {
         <Stamp label="Updated" ts={task.updated_at} />
         <Stamp label="Completed" ts={task.completed_at} />
       </Stack>
-      <DeleteControl onDelete={onDelete} />
+      {/* One click: the delete offers an undo instead of asking first. */}
+      <Button variant="subtle" color="red" size="xs" onClick={onDelete}>
+        Delete task
+      </Button>
     </Stack>
   )
 }
@@ -90,25 +92,6 @@ function Stamp({ label, ts }: { label: string; ts?: string }) {
       ) : (
         <Text size="xs" c="dimmed">—</Text>
       )}
-    </Group>
-  )
-}
-
-/** Mantine's modals manager isn't installed, so the confirmation is inline. */
-function DeleteControl({ onDelete }: { onDelete: () => void }) {
-  const [asking, setAsking] = useState(false)
-  if (!asking) {
-    return (
-      <Button variant="subtle" color="red" size="xs" onClick={() => setAsking(true)}>
-        Delete task
-      </Button>
-    )
-  }
-  return (
-    <Group gap="xs" wrap="nowrap">
-      <Text size="sm">Delete?</Text>
-      <Button size="xs" color="red" onClick={onDelete}>Yes</Button>
-      <Button size="xs" variant="default" onClick={() => setAsking(false)}>No</Button>
     </Group>
   )
 }

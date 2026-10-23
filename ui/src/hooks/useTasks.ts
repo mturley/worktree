@@ -86,9 +86,10 @@ export function useTaskMutations(scope: TaskScope) {
     }
   }
 
+  /** Answers the task, whose undo_event_id (when the state changed) takes it back. */
   const setState = async (id: number, state: TaskState) => {
     try {
-      await api.setTaskState(id, state)
+      return await api.setTaskState(id, state)
     } finally {
       settle()
     }

@@ -1446,9 +1446,9 @@ URL param (`?task=<id>`) through **`TaskModalProvider`**
   provider exposes it as `notice` and the modal's red Alert shows it.
 - **Files.** `TaskDetailModal` (shell; keeps the last id mounted through the
   close transition), `TaskModalHeader` (state menu, star, editable title),
-  `TaskSidebar` (state, priority, due, starred, and the delete control with
-  its inline "Delete? Yes / No"; the delete-failure logic is in
-  `TaskDetailModal`), and two tabs. `DetailsTab` stacks `DescriptionSection`, `SubtasksSection`,
+  `TaskSidebar` (state, priority, due, starred, and a one-click Delete whose
+  undo toast reopens the modal; the delete, its undo and its failure logic
+  are in `TaskDetailModal`, the undo toasts in `tasks/taskUndo.ts`), and two tabs. `DetailsTab` stacks `DescriptionSection`, `SubtasksSection`,
   `LinksSection` (with `LinkPicker` and the pure `linkTargets.ts`) and
   `LinkedEventsSection`; `ActivityTab` shows the merged feed.
   `sectionAction.tsx` (`useSectionAction`) gives each section its own inline

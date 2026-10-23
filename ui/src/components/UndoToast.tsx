@@ -33,8 +33,9 @@ export async function undoAll(undos: { label: string; undo: () => Promise<unknow
 }
 
 /**
- * Offers to take back a mark-read for UNDO_WINDOW_MS: a toast reading
- * `message`, with an Undo button (and Z) that runs `undo`.
+ * Offers to take back a mark-read (or a task write) for exactly
+ * UNDO_WINDOW_MS — hovering does not extend it: a toast reading `message`,
+ * with an Undo button (and Z) that runs `undo`.
  *
  * `undo` puts the read cursors back where they were; the server refuses with
  * 409 when one has moved on since (read further in another tab, the CLI, or
@@ -54,9 +55,13 @@ export function showUndoToast({ message, undo, onSettled }: {
   notifications.show({
     id,
     message: <UndoToastBody id={id} message={message} undo={undo} onSettled={onSettled} />,
-    autoClose: UNDO_WINDOW_MS,
+    // A fixed deadline, not Mantine's autoClose: that one pauses while the
+    // toast is hovered, and the offer must end when the server's Unblocked
+    // hold assumes it has. Hiding a toast already gone is a no-op.
+    autoClose: false,
     withCloseButton: true,
   })
+  window.setTimeout(() => notifications.hide(id), UNDO_WINDOW_MS)
 }
 
 function UndoToastBody({ id, message, undo, onSettled }: {
