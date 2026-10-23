@@ -13,6 +13,7 @@ import (
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/discovery"
 	"github.com/mturley/worktree/internal/notifyprefs"
+	"github.com/mturley/worktree/internal/reviewcomments"
 	"github.com/mturley/worktree/internal/unread"
 )
 
@@ -230,6 +231,10 @@ func RemoveAll(conn *sql.DB, worktreePath string) error {
 	// Delete all primary-flag rows for this subscriber (covers any rows whose
 	// subscription was already tombstoned and thus not returned by Load).
 	if _, err := conn.Exec(`DELETE FROM worktree_primary WHERE subscriber = ?`, sub); err != nil {
+		return err
+	}
+	// Review comments are about this worktree's diff and go with it.
+	if err := reviewcomments.DeleteAll(conn, worktreePath); err != nil {
 		return err
 	}
 	// The toggles go with the subscriptions: nothing could match them now.
