@@ -119,6 +119,16 @@ describe("DiffView", () => {
     expect(screen.getByText("1 file changed")).toBeInTheDocument()
   })
 
+  it("shows the commit list's error instead of loading forever", async () => {
+    apiMock.diffCommits.mockImplementation(async () => {
+      throw new Error("bad revision")
+    })
+    setup()
+    expect(await screen.findByText(/Could not load changes against upstream\/main: bad revision/)).toBeInTheDocument()
+    expect(screen.queryByText("Loading…")).not.toBeInTheDocument()
+    expect(apiMock.diffPatch).not.toHaveBeenCalled()
+  })
+
   it("hides the Refresh notice while what it shows is current", async () => {
     setup()
     await screen.findByTestId("diff-body")

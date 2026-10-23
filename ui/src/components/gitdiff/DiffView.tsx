@@ -78,6 +78,7 @@ export default function DiffView({ path, headerHeight }: { path: string; headerH
   // whether the stored range still applies.
   const { base } = useDiffSelection(path, undefined)
   const unavailable = git ? diffUnavailable(git, base) : undefined
+  const baseRef = base === "merge-base" ? git?.main_upstream : git?.tracking
   const commits = useDiffCommits(path, base, !!git?.on_disk && !unavailable, git?.fingerprint)
   const sel = useDiffSelection(path, commits.data?.list_id)
 
@@ -301,6 +302,14 @@ export default function DiffView({ path, headerHeight }: { path: string; headerH
   if (!git) body = <Message>Loading…</Message>
   else if (!git.on_disk) body = <Message>This worktree is not on disk.</Message>
   else if (unavailable) body = <Message>{unavailable}</Message>
+  // The first request waits for the commit list, so without this a failed
+  // list would leave the view on "Loading…" for good. Worded as GitDiffPanel.
+  else if (commits.isError && !request)
+    body = (
+      <Message error>
+        Could not load changes{baseRef ? ` against ${baseRef}` : ""}: {commits.error.message}
+      </Message>
+    )
   else if (patch.isError && !shown) body = <Message error>Could not load the diff: {patch.error.message}</Message>
   else if (!shown) body = <Message>Loading…</Message>
   else if (files.length === 0) body = <Message>No changes</Message>

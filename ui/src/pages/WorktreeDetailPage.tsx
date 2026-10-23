@@ -57,10 +57,13 @@ import { buildSuggestions } from "../components/search/suggestions"
 import { useSearchQuery } from "../hooks/useSearchQuery"
 import { matchResource } from "../lib/search"
 import { CrossHoverProvider } from "../components/CrossHoverContext"
+import { DiffViewBoundary, installPreloadReload } from "../components/gitdiff/DiffViewBoundary"
 
 // The diff drill-down, and with it @pierre/diffs, is its own chunk: fetched
 // the first time someone opens a diff, never on a plain page load.
 const DiffView = lazy(() => import("../components/gitdiff/DiffView"))
+// A chunk missing after an upgrade reloads the page (once) instead of failing.
+installPreloadReload()
 
 export function WorktreeDetailPage() {
   const [, params] = useRoute("/worktree/:path*")
@@ -747,9 +750,11 @@ export function WorktreeDetailPage() {
         silently stop the header and list above from sticking.
       */}
       {inDiff ? (
-        <Suspense fallback={null}>
-          <DiffView path={path} headerHeight={headerHeight} />
-        </Suspense>
+        <DiffViewBoundary>
+          <Suspense fallback={null}>
+            <DiffView path={path} headerHeight={headerHeight} />
+          </Suspense>
+        </DiffViewBoundary>
       ) : (
         <Box style={{ display: "flex", flexDirection: "column" }}>
           {overview}
