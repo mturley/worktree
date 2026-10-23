@@ -2,14 +2,11 @@ import { useState } from "react"
 import { ActionIcon, Button, Checkbox, Group, NativeSelect, Stack, Text, TextInput } from "@mantine/core"
 import type { Priority, TaskDetail, TaskState } from "../../../api/types"
 import { relativeTime } from "../../../lib/relativeTime"
+import { TASK_STATE_LABEL, TASK_STATES } from "../TaskStateCheckbox"
 import { BlockersSection } from "./BlockersSection"
 import type { TaskPatch } from "./useOptimisticTask"
 
-const STATES: { value: TaskState; label: string }[] = [
-  { value: "not_started", label: "Not started" },
-  { value: "in_progress", label: "In progress" },
-  { value: "done", label: "Done" },
-]
+const STATES: { value: TaskState; label: string }[] = TASK_STATES.map((value) => ({ value, label: TASK_STATE_LABEL[value] }))
 
 const PRIORITIES: { value: Priority; label: string }[] = [
   { value: "none", label: "None" },

@@ -1,12 +1,7 @@
 import { Badge, Group, Stack, Text, Title, UnstyledButton } from "@mantine/core"
-import type { TaskDetail, TaskState } from "../../../api/types"
+import type { TaskDetail } from "../../../api/types"
+import { taskStateLabel } from "../TaskStateCheckbox"
 import { useTaskModal } from "./TaskModalProvider"
-
-const STATE_LABEL: Record<TaskState, string> = {
-  not_started: "Not started",
-  in_progress: "In progress",
-  done: "Done",
-}
 
 /**
  * "Blocks": the tasks this one blocks. Each row opens its task in this
@@ -42,7 +37,7 @@ export function BlocksSection({ task }: { task: TaskDetail }) {
                   {b.title}
                 </Text>
                 <Badge size="xs" variant="light" color="gray" style={{ flex: "none" }}>
-                  {STATE_LABEL[b.state] ?? b.state}
+                  {taskStateLabel(b.state)}
                 </Badge>
               </Group>
             </UnstyledButton>

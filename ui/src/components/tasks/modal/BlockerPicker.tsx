@@ -4,6 +4,7 @@ import { IconX } from "@tabler/icons-react"
 import type { TaskBlockerKind, TaskBlockerTarget, TaskDetail } from "../../../api/types"
 import { useTaskDetailMutations } from "../../../hooks/useTaskDetail"
 import { useTasks } from "../../../hooks/useTasks"
+import { TASK_STATE_LABEL } from "../TaskStateCheckbox"
 import { resourceSuggestion, SuggestPicker, useTaskScopeResources } from "./LinkPicker"
 import { errorText } from "./sectionAction"
 
@@ -41,11 +42,14 @@ const ERROR_PREFIX = "Couldn't add blocker"
  */
 function TaskBlockerPicker({ task, add, onDone }: PickerProps) {
   const tasks = useTasks({ kind: "all" }, { completed: false, archived: false })
+  // task.blocks lists every task this one blocks, resolved or not. Only an
+  // unresolved one would make a cycle, but offering a task this one blocks
+  // as its blocker is never what is meant, so all of them are left out.
   const blocks = new Set(task.blocks.map((b) => b.id))
   const blocking = new Set(task.blockers.flatMap((b) => (b.kind === "task" && b.task_id ? [b.task_id] : [])))
   const suggestions = (tasks.data ?? [])
     .filter((t) => t.state !== "done" && t.id !== task.id && !blocks.has(t.id) && !blocking.has(t.id))
-    .map((t) => ({ value: String(t.id), label: `${t.ref} ${t.title}`, detail: t.state.replace(/_/g, " ") }))
+    .map((t) => ({ value: String(t.id), label: `${t.ref} ${t.title}`, detail: TASK_STATE_LABEL[t.state] }))
   return (
     <SuggestPicker
       ariaLabel="Blocking task"

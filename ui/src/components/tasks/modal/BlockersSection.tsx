@@ -6,6 +6,7 @@ import { useTaskDetailMutations } from "../../../hooks/useTaskDetail"
 import { GitHubMark } from "../../icons/GitHubMark"
 import { JiraMark } from "../../icons/JiraMark"
 import { SlackMark } from "../../icons/SlackMark"
+import { taskStateLabel } from "../TaskStateCheckbox"
 import { BlockerPicker } from "./BlockerPicker"
 import { useSectionAction } from "./sectionAction"
 import { useTaskModal } from "./TaskModalProvider"
@@ -101,6 +102,12 @@ function BlockerRow({ b, onRemove, onResolve }: {
   const taskId = b.kind === "task" ? b.task_id : undefined
   const openTask = taskId ? () => open(taskId) : undefined
 
+  // A task blocker's status is its state, spelled as everywhere else;
+  // "deleted" (or anything else) passes through.
+  const status = b.kind === "task" ? taskStateLabel(b.status_label) : b.status_label
+  // Why it resolved ("merged"), when that adds to the status.
+  const reason = b.resolved && b.resolved_reason && b.resolved_reason !== b.status_label ? b.resolved_reason : ""
+
   let label: ReactNode
   if (openTask) {
     label = (
@@ -139,12 +146,13 @@ function BlockerRow({ b, onRemove, onResolve }: {
       <span style={{ display: "inline-flex", marginTop: 2 }}>{kindIcon(b)}</span>
       <div style={{ flex: 1, minWidth: 0 }}>
         {label}
-        {(b.status_label || b.resolved) && (
+        {(status || b.resolved) && (
           <Group gap={4} wrap="nowrap">
             {b.resolved && (
               <Text span size="xs" c="teal" role="img" aria-label="resolved">✓</Text>
             )}
-            {b.status_label && <Text span size="xs" c="dimmed" truncate="end">{b.status_label}</Text>}
+            {reason && <Text span size="xs" c="dimmed" data-testid="blocker-reason">{reason}</Text>}
+            {status && <Text span size="xs" c="dimmed" truncate="end">{status}</Text>}
           </Group>
         )}
       </div>

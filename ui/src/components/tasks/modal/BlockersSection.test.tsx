@@ -91,13 +91,40 @@ describe("BlockersSection", () => {
     const r = rows()
     expect(r.map((e) => e.dataset.blockerId)).toEqual(["11", "13", "12", "14"])
     expect(r[0]).toHaveTextContent("T4 Ship the API")
-    expect(r[0]).toHaveTextContent("in_progress")
+    // A task's state, spelled as everywhere else; never the raw enum.
+    expect(r[0]).toHaveTextContent("In progress")
+    expect(r[0]).not.toHaveTextContent("in_progress")
     expect(r[0]).not.toHaveAttribute("data-resolved")
     expect(r[2]).toHaveTextContent("Fix login")
     expect(r[2]).toHaveTextContent("merged")
     expect(r[2]).toHaveAttribute("data-resolved", "true")
     expect(within(r[2]).getByLabelText("resolved")).toHaveTextContent("✓")
     expect(r[2].style.opacity).toBe("0.6")
+    // Reason "merged" equals the status, so it is not repeated.
+    expect(within(r[2]).queryByTestId("blocker-reason")).toBeNull()
+  })
+
+  it("shows a resolved blocker's reason when it adds to the status", () => {
+    renderDetail(
+      detail({
+        blockers: [
+          blocker({
+            id: 21, kind: "task", label: "T9 Gone", task_id: 9, status_label: "deleted",
+            resolved: true, resolved_auto: true, resolved_reason: "deleted",
+          }),
+          blocker({
+            id: 22, kind: "task", label: "T8 Finished", task_id: 8, status_label: "done",
+            resolved: true, resolved_auto: true, resolved_reason: "completed",
+          }),
+        ],
+      }),
+      (d) => <BlockersSection task={d} />,
+    )
+    const [gone, finished] = rows()
+    expect(gone).toHaveTextContent("deleted")
+    expect(within(gone).queryByTestId("blocker-reason")).toBeNull()
+    expect(within(finished).getByTestId("blocker-reason")).toHaveTextContent("completed")
+    expect(finished).toHaveTextContent("Done")
   })
 
   it("opens a resource blocker's URL in a new tab", () => {
@@ -151,7 +178,7 @@ describe("BlockersSection", () => {
     const user = await startAdding("Task")
     const input = screen.getByRole("textbox", { name: "Blocking task" })
     await user.click(input)
-    expect(await screen.findByRole("option", { name: /Open candidate/ })).toBeInTheDocument()
+    expect(await screen.findByRole("option", { name: /Open candidate/ })).toHaveTextContent("Not started")
     expect(api.tasks).toHaveBeenCalledWith({ kind: "all" }, { completed: false, archived: false })
     for (const gone of [/task 1/, /Downstream/, /Ship the API/, /Finished one/]) {
       expect(screen.queryByRole("option", { name: gone })).toBeNull()

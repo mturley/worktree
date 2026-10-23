@@ -1,11 +1,22 @@
 import { Menu, UnstyledButton } from "@mantine/core"
 import type { TaskState } from "../../api/types"
 
-const STATES: { state: TaskState; label: string }[] = [
-  { state: "not_started", label: "Not started" },
-  { state: "in_progress", label: "In progress" },
-  { state: "done", label: "Done" },
-]
+/** Every task state's display name: the one place a state is spelled out. */
+export const TASK_STATE_LABEL: Record<TaskState, string> = {
+  not_started: "Not started",
+  in_progress: "In progress",
+  done: "Done",
+}
+
+/** The states in their natural order. */
+export const TASK_STATES: TaskState[] = ["not_started", "in_progress", "done"]
+
+/** A state's display name, or `v` unchanged when it is not a TaskState ("deleted", say). */
+export function taskStateLabel(v: string): string {
+  return v in TASK_STATE_LABEL ? TASK_STATE_LABEL[v as TaskState] : v
+}
+
+const STATES = TASK_STATES.map((state) => ({ state, label: TASK_STATE_LABEL[state] }))
 
 const SIZE = 16
 
