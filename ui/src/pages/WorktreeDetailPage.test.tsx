@@ -54,6 +54,12 @@ vi.mock("../hooks/useThread", () => ({
   useThread: () => ({ data: undefined, status: "ready", error: undefined, refresh: vi.fn(), applyLocal: vi.fn() }),
 }))
 
+// The drill-down is lazy and pulls in pierre; the page only decides when it
+// shows and what replaces it, so stand it in.
+vi.mock("../components/gitdiff/DiffView", () => ({
+  default: ({ headerHeight }: { headerHeight: number }) => <div data-testid="diff-view" data-header={headerHeight} />,
+}))
+
 import { setViewport } from "../testing/viewport"
 import { WorktreeDetailPage } from "./WorktreeDetailPage"
 
@@ -1070,5 +1076,44 @@ describe("WorktreeDetailPage mark all read", () => {
     await waitFor(() => expect(screen.getAllByRole("dialog")).toHaveLength(2))
     expect(screen.getByRole("dialog", { name: "Mark all read" })).toBeInTheDocument()
     expect(new URLSearchParams(window.location.search).get("resource")).toBeNull()
+  })
+})
+
+describe("WorktreeDetailPage diff drill-down", () => {
+  const diffUrl = (extra = "") => `/worktree/${encodeURIComponent("/wt/foo")}?diff${extra}`
+
+  it("replaces the details card and the resources with the diff view, keeping the header", async () => {
+    window.history.replaceState({}, "", diffUrl())
+    setViewport("wide")
+    wrap()
+    expect(await screen.findByTestId("diff-view")).toBeInTheDocument()
+    expect(screen.getByRole("searchbox")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Delete worktree" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /select resource o\/r#1/i })).not.toBeInTheDocument()
+  })
+
+  it("goes back to the worktree on Esc, staying on the page", async () => {
+    window.history.replaceState({}, "", diffUrl("&file=a.go"))
+    setViewport("wide")
+    wrap()
+    await screen.findByTestId("diff-view")
+    fireEvent.keyDown(document.body, { key: "Escape" })
+    await waitFor(() => expect(screen.queryByTestId("diff-view")).not.toBeInTheDocument())
+    const params = new URLSearchParams(window.location.search)
+    expect(params.has("diff")).toBe(false)
+    expect(params.has("file")).toBe(false)
+    expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/foo")}`)
+  })
+
+  it("leaves the drill-down when typing in the header search, keeping the query", async () => {
+    window.history.replaceState({}, "", diffUrl())
+    setViewport("wide")
+    wrap()
+    await screen.findByTestId("diff-view")
+    await userEvent.type(screen.getByRole("searchbox"), "w")
+    await waitFor(() => expect(screen.queryByTestId("diff-view")).not.toBeInTheDocument())
+    const params = new URLSearchParams(window.location.search)
+    expect(params.has("diff")).toBe(false)
+    expect(params.get("q")).toBe("w")
   })
 })

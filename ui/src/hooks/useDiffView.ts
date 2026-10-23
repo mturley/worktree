@@ -10,7 +10,8 @@ export function useDiffView(): {
   open: boolean
   file: string | null
   enter: (file?: string) => void
-  leave: () => void
+  /** Closes the view; `set` params are written in the same navigation (see below). */
+  leave: (set?: Record<string, string>) => void
 } {
   const search = useSearch()
   const [location, navigate] = useLocation()
@@ -37,12 +38,19 @@ export function useDiffView(): {
     },
     [search, go],
   )
-  const leave = useCallback(() => {
-    const p = new URLSearchParams(search)
-    p.delete("diff")
-    p.delete("file")
-    go(p)
-  }, [search, go])
+  // Each navigation here rebuilds the URL from this render's params, so a
+  // second write in the same tick (the search box's setQ after leave) would
+  // drop the first: `set` lets the caller leave and write in one step.
+  const leave = useCallback(
+    (set?: Record<string, string>) => {
+      const p = new URLSearchParams(search)
+      p.delete("diff")
+      p.delete("file")
+      for (const [k, v] of Object.entries(set ?? {})) p.set(k, v)
+      go(p)
+    },
+    [search, go],
+  )
 
   return { open, file, enter, leave }
 }

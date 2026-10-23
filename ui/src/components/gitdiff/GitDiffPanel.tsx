@@ -4,6 +4,7 @@ import { useDiffCommits, useDiffFiles } from "../../hooks/useDiffData"
 import { useDiffSelection } from "../../hooks/useDiffSelection"
 import { useDiffView } from "../../hooks/useDiffView"
 import { useWorktreeGit } from "../../hooks/useWorktreeGit"
+import { diffUnavailable } from "../../lib/diffLabels"
 import { CompareSelect } from "./CompareSelect"
 import { FilesChangedList } from "./FilesChangedList"
 import { GitSummary } from "./GitSummary"
@@ -40,14 +41,7 @@ function FilesChanged({ path, git }: { path: string; git: WorktreeGit }) {
   // the selection against the loaded list. Both instances share one store.
   const { base } = useDiffSelection(path, undefined)
   const baseRef = base === "merge-base" ? git.main_upstream : git.tracking
-  const unavailable =
-    base === "merge-base"
-      ? !git.main_upstream || !git.merge_base
-        ? "No merge base to compare with: main has no upstream."
-        : undefined
-      : !git.tracking
-        ? "No tracking branch to compare with: this branch isn't pushed."
-        : undefined
+  const unavailable = diffUnavailable(git, base)
 
   const commits = useDiffCommits(path, base, !unavailable, git.fingerprint)
   const sel = useDiffSelection(path, commits.data?.list_id)

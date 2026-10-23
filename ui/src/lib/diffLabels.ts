@@ -11,6 +11,17 @@ export function formatBadge(git: WorktreeGit, base: DiffBase): string | null {
 }
 
 /**
+ * Why there is nothing to compare against for `base`, or undefined when there
+ * is: the merge base needs main's upstream, the tracking branch a push.
+ */
+export function diffUnavailable(git: WorktreeGit, base: DiffBase): string | undefined {
+  if (base === "merge-base") {
+    return !git.main_upstream || !git.merge_base ? "No merge base to compare with: main has no upstream." : undefined
+  }
+  return !git.tracking ? "No tracking branch to compare with: this branch isn't pushed." : undefined
+}
+
+/**
  * The commit picker's summary of a range. `commits` is newest first; the
  * picker's entries are "uncommitted" followed by those commits, and a range
  * runs from its oldest entry to its newest.

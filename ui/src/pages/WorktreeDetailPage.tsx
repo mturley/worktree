@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { Anchor, Badge, Box, Grid, Group, MantineThemeProvider, Stack, Tabs, Title } from "@mantine/core"
 import { Link, useLocation, useRoute } from "wouter"
 import { useQueryClient } from "@tanstack/react-query"
@@ -15,6 +15,7 @@ import { useSelectedResource } from "../hooks/useSelectedResource"
 import { useIsWide } from "../hooks/useIsWide"
 import { useIsTall } from "../hooks/useIsTall"
 import { useDetailTab } from "../hooks/useDetailTab"
+import { useDiffView } from "../hooks/useDiffView"
 import { useWorktrees } from "../hooks/useWorktrees"
 import { UnreadMarkerDot } from "../components/UnreadMarkerDot"
 import { useCmuxMatches } from "../api/cmux"
@@ -57,6 +58,10 @@ import { useSearchQuery } from "../hooks/useSearchQuery"
 import { matchResource } from "../lib/search"
 import { CrossHoverProvider } from "../components/CrossHoverContext"
 
+// The diff drill-down, and with it @pierre/diffs, is its own chunk: fetched
+// the first time someone opens a diff, never on a plain page load.
+const DiffView = lazy(() => import("../components/gitdiff/DiffView"))
+
 export function WorktreeDetailPage() {
   const [, params] = useRoute("/worktree/:path*")
   const [, navigate] = useLocation()
@@ -91,15 +96,21 @@ export function WorktreeDetailPage() {
   const searchContext = useMemo(() => ({ terms: search.terms }), [search.terms])
   const { resources, timeline } = useWorktreeDetail(path, sources, unreadOnly, eventTypes, search.debouncedQ)
   const { selected, select, toggle, clear } = useSelectedResource()
+  // `?diff`: the Code tab's drill-down replaces the page body (the details
+  // card and the resources) under the same header.
+  const diffView = useDiffView()
+  const inDiff = diffView.open
   // What Esc does next, so its hint sits on the control that does the same:
   // the narrowing lines' links (their own hint), "← all resources", then the
   // way out — the banner's, when it is up (see escapeHint), else the logo's.
   // The tab's home worktree is where Esc ends up, so on it there is no way
   // out; a dismissed home banner drops the home (see useEscHome).
   const escHome = useEscHome()
-  const escClears = narrowing.search || narrowing.unread || narrowing.filters
-  const escDeselects = !escClears && Boolean(selected)
-  const escLeaves = !escClears && !selected && escHome !== path
+  // In the diff drill-down Esc goes back to the worktree before anything
+  // else: the narrowing and selection it would otherwise undo are out of view.
+  const escClears = !inDiff && (narrowing.search || narrowing.unread || narrowing.filters)
+  const escDeselects = !inDiff && !escClears && Boolean(selected)
+  const escLeaves = !inDiff && !escClears && !selected && escHome !== path
   usePublishEscLeaves(escLeaves)
   const bannerShown = useBannerShown()
   const wide = useIsWide()
@@ -550,6 +561,7 @@ export function WorktreeDetailPage() {
   // home worktree when it has one, else for the listing. On the home
   // worktree itself it stops at deselecting.
   const escapeIdle = () => {
+    if (inDiff) { diffView.leave(); return }
     if (selected) { clear(); return }
     if (!escLeaves) return
     navigate(escHome ? homeWorktreeHref(escHome) : "/")
@@ -560,7 +572,10 @@ export function WorktreeDetailPage() {
           search, Unreads only and filters), then deselects, then leaves. */}
       <SearchBar
         value={search.q}
-        onChange={search.setQ}
+        // Search results live in the worktree view, so typing leaves the
+        // drill-down for it — in one navigation, or the two URL writes
+        // would race and one would be lost (see useDiffView's leave).
+        onChange={(q) => (inDiff ? diffView.leave(q ? { q } : {}) : search.setQ(q))}
         placeholder="Search this worktree…"
         suggestions={suggestions}
         onEscape={narrowing.clearAll}
@@ -608,6 +623,11 @@ export function WorktreeDetailPage() {
       Nothing above this may set an overflow value either — sticky positioning
       dies silently under ANY scrolling ancestor. If the header stops sticking,
       look for a new overflow before looking here.
+
+      The ONE deliberate exception is the diff drill-down (`?diff`): pierre's
+      Virtualizer must own its scroll container, so DiffView sizes itself to
+      the viewport below this header and scrolls inside. The header still
+      sticks, since the scroller is below it rather than around it.
     */}
     <Stack p="md" gap="md">
       <Box
@@ -712,10 +732,10 @@ export function WorktreeDetailPage() {
           {!wide && toolbar}
           {/* Pinned with the header only with room to spare; otherwise
               below it, scrolling away with the page. */}
-          {!inColumn && pinCards && card}
+          {!inDiff && !inColumn && pinCards && card}
         </Stack>
       </Box>
-      {!inColumn && !pinCards && card}
+      {!inDiff && !inColumn && !pinCards && card}
       {/*
         No Overview/Slack tabs: a Slack thread is selected like any other
         resource and renders in ResourceDetailPane. The narrow-only
@@ -726,9 +746,15 @@ export function WorktreeDetailPage() {
         scroller; now the document is, and any overflow value on this box would
         silently stop the header and list above from sticking.
       */}
-      <Box style={{ display: "flex", flexDirection: "column" }}>
-        {overview}
-      </Box>
+      {inDiff ? (
+        <Suspense fallback={null}>
+          <DiffView path={path} headerHeight={headerHeight} />
+        </Suspense>
+      ) : (
+        <Box style={{ display: "flex", flexDirection: "column" }}>
+          {overview}
+        </Box>
+      )}
       {pendingThreadUrl !== null && (
         // Keyed by URL so the modal remounts per thread: it seeds its fields
         // from initialUrl at mount, and a stale instance would show the

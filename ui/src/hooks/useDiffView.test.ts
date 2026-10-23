@@ -39,4 +39,14 @@ describe("useDiffView", () => {
     expect(params.get("q")).toBe("oauth")
     expect(result.current.open).toBe(false)
   })
+
+  it("leave(set) sets params in the same navigation, so nothing overwrites them", () => {
+    const { result } = renderHook(() => useDiffView())
+    act(() => result.current.enter())
+    act(() => result.current.leave({ q: "new query" }))
+    const params = new URLSearchParams(window.location.search)
+    expect(params.has("diff")).toBe(false)
+    expect(params.get("q")).toBe("new query")
+    expect(params.get("resource")).toBe("pr:o/r#1")
+  })
 })
