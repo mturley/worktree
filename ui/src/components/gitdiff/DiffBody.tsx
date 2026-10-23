@@ -124,8 +124,9 @@ export function DiffBody({
                     unsafeCSS: HEADER_CSS,
                   }}
                   renderHeaderPrefix={() => (
-                    <HeaderPrefix file={f} path={path} open={isOpen} onToggle={() => setOpen(f.path, !isOpen)} />
+                    <FoldToggle file={f} open={isOpen} onToggle={() => setOpen(f.path, !isOpen)} />
                   )}
+                  renderHeaderFilenameSuffix={() => <EditorIcon file={f} path={path} />}
                 />
               )}
             </Box>
@@ -146,43 +147,35 @@ function isHeaderClick(e: MouseEvent): boolean {
 }
 
 /**
- * A fixed-width column ahead of pierre's file icon and name, so the chevrons
- * and editor icons line up down the page whatever the file's name. Both stop
- * their clicks, which would otherwise also reach the header's own toggle.
+ * The fold chevron, ahead of pierre's file icon and name. It stops its click,
+ * which would otherwise also reach the header's own toggle and undo it.
  */
-function HeaderPrefix({
-  file,
-  path,
-  open,
-  onToggle,
-}: {
-  file: DiffFile
-  path: string
-  open: boolean
-  onToggle?: () => void
-}) {
+function FoldToggle({ file, open, onToggle }: { file: DiffFile; open: boolean; onToggle: () => void }) {
   return (
-    <Group gap={2} wrap="nowrap" style={{ width: 52, flexShrink: 0 }}>
-      {onToggle ? (
-        <ActionIcon
-          size="sm"
-          variant="subtle"
-          color="gray"
-          aria-label={open ? `Collapse ${file.path}` : `Expand ${file.path}`}
-          onClick={(e) => {
-            e.stopPropagation()
-            onToggle()
-          }}
-        >
-          {open ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
-        </ActionIcon>
-      ) : (
-        <Box style={{ width: 22 }} />
-      )}
-      <span style={{ display: "inline-flex" }} onClick={(e) => e.stopPropagation()}>
-        <OpenFileInEditorIcon path={path} file={file.path} disabled={file.type === "deleted"} />
-      </span>
-    </Group>
+    <ActionIcon
+      size="sm"
+      variant="subtle"
+      color="gray"
+      aria-label={open ? `Collapse ${file.path}` : `Expand ${file.path}`}
+      onClick={(e) => {
+        e.stopPropagation()
+        onToggle()
+      }}
+    >
+      {open ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
+    </ActionIcon>
+  )
+}
+
+/**
+ * Open in editor, right after the file's name as in the Code tab's list. Its
+ * click is stopped too, so opening the file doesn't also fold it.
+ */
+function EditorIcon({ file, path }: { file: DiffFile; path: string }) {
+  return (
+    <span style={{ display: "inline-flex", marginLeft: 4 }} onClick={(e) => e.stopPropagation()}>
+      <OpenFileInEditorIcon path={path} file={file.path} disabled={file.type === "deleted"} />
+    </span>
   )
 }
 
@@ -196,11 +189,13 @@ function BinaryPlaceholder({ file, path }: { file: DiffFile; path: string }) {
       py={8}
       style={{ border: "1px solid var(--mantine-color-default-border)", borderRadius: 6 }}
     >
-      <HeaderPrefix file={file} path={path} open={false} />
-      <Text size="sm" ff="monospace" truncate style={{ flex: 1, minWidth: 0 }}>
+      {/* Where the chevron sits on the other files, so the names line up. */}
+      <Box style={{ width: 22, flexShrink: 0 }} />
+      <Text size="sm" ff="monospace" truncate style={{ minWidth: 0 }}>
         {file.prevPath ? `${file.prevPath} → ${file.path}` : file.path}
       </Text>
-      <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
+      <EditorIcon file={file} path={path} />
+      <Text size="xs" c="dimmed" ml="auto" style={{ flexShrink: 0 }}>
         {file.type === "new" ? "Binary file added" : file.type === "deleted" ? "Binary file deleted" : "Binary file changed"}
       </Text>
     </Group>

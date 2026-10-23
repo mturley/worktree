@@ -21,10 +21,12 @@ vi.mock("@pierre/diffs/react", () => ({
     fileDiff,
     options,
     renderHeaderPrefix,
+    renderHeaderFilenameSuffix,
   }: {
     fileDiff: FileDiffMetadata
     options: { collapsed?: boolean; unsafeCSS?: string }
     renderHeaderPrefix?: (fd: FileDiffMetadata) => ReactNode
+    renderHeaderFilenameSuffix?: (fd: FileDiffMetadata) => ReactNode
   }) => {
     const host = useRef<HTMLDivElement>(null)
     useLayoutEffect(() => {
@@ -32,12 +34,14 @@ vi.mock("@pierre/diffs/react", () => ({
       const root = el.shadowRoot ?? el.attachShadow({ mode: "open" })
       root.innerHTML =
         `<div data-diffs-header="default"><slot name="header-prefix"></slot>` +
-        `<div data-title>${fileDiff.name}</div><div data-metadata><span>+1</span></div></div>` +
+        `<div data-title>${fileDiff.name}<slot name="header-filename-suffix"></slot></div>` +
+        `<div data-metadata><span>+1</span></div></div>` +
         `<pre data-code>line</pre>`
     }, [fileDiff.name])
     return (
       <div ref={host} data-testid={`host-${fileDiff.name}`} data-collapsed={String(!!options.collapsed)} data-css={options.unsafeCSS}>
         <div slot="header-prefix">{renderHeaderPrefix?.(fileDiff)}</div>
+        <div slot="header-filename-suffix">{renderHeaderFilenameSuffix?.(fileDiff)}</div>
       </div>
     )
   },
@@ -134,6 +138,14 @@ describe("DiffBody file header", () => {
     await vi.waitFor(() => expect(icon()).toBeEnabled())
     await user.click(icon())
     expect(collapsed("a.go")).toBe("false")
+  })
+
+  it("puts the editor icon after the file name, the chevron before it", async () => {
+    await wrap()
+    const icon = screen.getByRole("button", { name: "Open a.go in editor" })
+    expect(icon.closest('[slot="header-filename-suffix"]')).not.toBeNull()
+    const chevron = screen.getByRole("button", { name: "Collapse a.go" })
+    expect(chevron.closest('[slot="header-prefix"]')).not.toBeNull()
   })
 
   it("gives the header a pointer cursor", async () => {

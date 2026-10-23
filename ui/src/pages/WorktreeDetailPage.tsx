@@ -93,7 +93,7 @@ export function WorktreeDetailPage() {
   const inDiff = diffView.open
   // The details card's tab is the page's: it decides where the card sits
   // (see inColumn below), and Esc returns it to Notes.
-  const detailTab = useDetailTab()
+  const detailTab = useDetailTab(path, inDiff)
   // What Esc does next, so its hint sits on the control that does the same:
   // the Notes tab, the narrowing lines' links (their own hint), "← all
   // resources", then the way out — the banner's, when it is up (see

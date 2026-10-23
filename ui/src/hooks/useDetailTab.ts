@@ -1,45 +1,39 @@
 import { useEffect, useState } from "react"
 import { useCmux } from "../api/cmux"
+import { useFollowCmux } from "./useFollowCmux"
 
 export type DetailTab = "notes" | "env" | "code" | "cmux"
-
-/**
- * The details card's selected tab, remembered per browser tab so switching
- * worktrees keeps it. sessionStorage, like "Follow cmux": a choice for this
- * tab, not for every tab in the browser. Storage throws in some contexts
- * (private windows); the card then just starts on Notes.
- */
-const DETAIL_TAB_KEY = "worktree.detailTab"
-
-function readDetailTab(): DetailTab {
-  try {
-    const v = window.sessionStorage.getItem(DETAIL_TAB_KEY)
-    if (v === "env" || v === "code" || v === "cmux") return v
-  } catch {
-    // fall through
-  }
-  return "notes"
-}
-
-function writeDetailTab(tab: DetailTab): void {
-  try {
-    window.sessionStorage.setItem(DETAIL_TAB_KEY, tab)
-  } catch {
-    // not remembered; the selection still applies to this card
-  }
-}
 
 export function isDetailTab(v: string | null): v is DetailTab {
   return v === "notes" || v === "env" || v === "code" || v === "cmux"
 }
 
 /**
+ * The tab a worktree's card opens on. Not remembered across worktrees: a tab
+ * chosen for one worktree says nothing about the next. While following cmux
+ * the page is the terminal's companion, so it opens on cmux; landing in the
+ * diff drill-down opens on Code, the tab that drill-down belongs to.
+ */
+function initialTab(following: boolean, inDiff: boolean): DetailTab {
+  if (inDiff) return "code"
+  return following ? "cmux" : "notes"
+}
+
+/**
  * The worktree detail page's details-card tab. Owned by the page rather than
  * the card because the tab decides where the card goes: Notes sits in the
- * resource column, the other tabs span the page under the header.
+ * resource column, the other tabs span the page under the header. The page
+ * isn't remounted between worktrees, so the selection is held per path and
+ * starts over (see initialTab) when the path changes.
  */
-export function useDetailTab(): { tab: DetailTab; select: (next: DetailTab) => void } {
-  const [tab, setTab] = useState<DetailTab>(readDetailTab)
+export function useDetailTab(path: string, inDiff: boolean): { tab: DetailTab; select: (next: DetailTab) => void } {
+  const [following] = useFollowCmux()
+  const [state, setState] = useState(() => ({ path, tab: initialTab(following, inDiff) }))
+  // Adjusted during render rather than in an effect, so a new worktree's
+  // first paint is already on its own tab.
+  const current = state.path === path ? state : { path, tab: initialTab(following, inDiff) }
+  if (current !== state) setState(current)
+  const tab = current.tab
   const cmuxQuery = useCmux()
   const hasCmux = cmuxQuery.data?.available === true
 
@@ -53,19 +47,15 @@ export function useDetailTab(): { tab: DetailTab; select: (next: DetailTab) => v
   // straight back to it instead of staying on Notes.
   //
   // Only once the data has actually said the tab is gone, though: before it
-  // loads, a remembered tab (see readDetailTab) is waiting to be shown, not
-  // missing. And never written back to sessionStorage — this tab being
-  // gone for now says nothing about the next card.
+  // loads, the cmux tab a following page opens on is waiting to be shown,
+  // not missing.
   const absenceKnown = tab === "cmux" && cmuxQuery.data !== undefined
   useEffect(() => {
-    if (activeTab !== tab && absenceKnown) setTab(activeTab)
-  }, [activeTab, tab, absenceKnown])
+    if (activeTab !== tab && absenceKnown) setState({ path, tab: activeTab })
+  }, [activeTab, tab, absenceKnown, path])
 
   return {
     tab: activeTab,
-    select: (next) => {
-      setTab(next)
-      writeDetailTab(next)
-    },
+    select: (next) => setState({ path, tab: next }),
   }
 }

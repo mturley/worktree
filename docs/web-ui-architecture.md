@@ -599,8 +599,11 @@ stored in the worktree-owned `worktree_notes` table (keyed by registry path).
   page's height; Git / Environment and cmux put it under the page header
   across the full width (Git / Environment then lays git state and the
   environment out side by side). The tab therefore lives in the page
-  (`hooks/useDetailTab.ts`, remembered in sessionStorage), not the card, and
-  switching between the placements remounts the card. Narrow has no side
+  (`hooks/useDetailTab.ts`), not the card, and switching between the
+  placements remounts the card. The tab is not remembered across worktrees:
+  each worktree's page opens on Notes, or on cmux while "Follow cmux" is on
+  (the page is then the terminal's companion), or on Code when landing in the
+  `?diff` drill-down. Narrow has no side
   column: the card is always under the header. Clicking the worktree title to
   reset the page also returns the card to Notes.
 - **Task checkboxes are clickable in the read-only view**, like a GitHub

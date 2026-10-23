@@ -347,16 +347,15 @@ export default function DiffView({ path, headerHeight }: { path: string; headerH
       }}
     >
       <Group gap="xs" wrap="nowrap" style={{ flex: "none", minHeight: 28 }} data-diff-breadcrumb>
-        <Anchor component="button" type="button" size="sm" onClick={() => view.leave()}>
-          ← Worktree details
-        </Anchor>
+        {/* The Esc hint sits on the control that does the same, as "← all resources" has it. */}
+        <Group gap={6} wrap="nowrap">
+          <Anchor component="button" type="button" size="sm" onClick={() => view.leave()}>
+            ← Worktree details
+          </Anchor>
+          {wide && <KeyHint>Esc</KeyHint>}
+        </Group>
         <Text size="sm" c="dimmed">/</Text>
         <Text size="sm">Changes</Text>
-        {wide && (
-          <Text size="xs" c="dimmed" ml="auto">
-            <KeyHint>Esc</KeyHint> to go back
-          </Text>
-        )}
       </Group>
       <Box
         style={{

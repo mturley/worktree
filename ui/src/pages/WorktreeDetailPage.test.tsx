@@ -1120,15 +1120,16 @@ describe("WorktreeDetailPage diff drill-down", () => {
 
 describe("WorktreeDetailPage Esc back to Notes", () => {
   const at = (query = "") => window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}${query}`)
-  const onTab = (tab: string) => window.sessionStorage.setItem("worktree.detailTab", tab)
+  // The card opens on Notes; pick the tab the way the user does.
+  const onTab = async (name: string | RegExp) => userEvent.click(await screen.findByRole("tab", { name }))
   const notesTab = () => screen.getByRole("tab", { name: "Notes" })
   const esc = () => fireEvent.keyDown(document.body, { key: "Escape" })
 
   it("returns the card to Notes from the Environment tab before deselecting", async () => {
     at("?resource=pr:o%2Fr%231")
-    onTab("env")
     setViewport("wide")
     wrap()
+    await onTab("Environment")
     expect(await screen.findByRole("tab", { name: "Environment" })).toHaveAttribute("aria-selected", "true")
     esc()
     await waitFor(() => expect(notesTab()).toHaveAttribute("aria-selected", "true"))
@@ -1140,9 +1141,9 @@ describe("WorktreeDetailPage Esc back to Notes", () => {
 
   it("returns the card to Notes from the Code tab", async () => {
     at()
-    onTab("code")
     setViewport("wide")
     wrap()
+    await onTab(/Code/)
     expect(await screen.findByRole("tab", { name: /Code/ })).toHaveAttribute("aria-selected", "true")
     esc()
     await waitFor(() => expect(notesTab()).toHaveAttribute("aria-selected", "true"))
@@ -1153,9 +1154,9 @@ describe("WorktreeDetailPage Esc back to Notes", () => {
   it("returns the card to Notes from the cmux tab", async () => {
     vi.spyOn(api, "cmux").mockResolvedValue({ available: true, matches: {} })
     at()
-    onTab("cmux")
     setViewport("wide")
     wrap()
+    await onTab("cmux")
     await waitFor(() => expect(screen.getByRole("tab", { name: "cmux" })).toHaveAttribute("aria-selected", "true"))
     esc()
     await waitFor(() => expect(notesTab()).toHaveAttribute("aria-selected", "true"))
@@ -1164,7 +1165,6 @@ describe("WorktreeDetailPage Esc back to Notes", () => {
 
   it("leaves the diff drill-down first, then returns the card to Notes", async () => {
     at("?diff")
-    onTab("code")
     setViewport("wide")
     wrap()
     await screen.findByTestId("diff-view")
@@ -1178,9 +1178,9 @@ describe("WorktreeDetailPage Esc back to Notes", () => {
 
   it("comes before clearing the search, which the next Esc still does", async () => {
     at("?q=widget")
-    onTab("env")
     setViewport("wide")
     wrap()
+    await onTab("Environment")
     await screen.findByRole("tab", { name: "Environment" })
     esc()
     await waitFor(() => expect(notesTab()).toHaveAttribute("aria-selected", "true"))
@@ -1201,9 +1201,9 @@ describe("WorktreeDetailPage Esc back to Notes", () => {
 
   it("keeps Esc in the search bar for the search", async () => {
     at("?q=widget")
-    onTab("env")
     setViewport("wide")
     wrap()
+    await onTab("Environment")
     await screen.findByRole("tab", { name: "Environment" })
     fireEvent.keyDown(screen.getByRole("searchbox"), { key: "Escape" })
     await waitFor(() => expect(new URLSearchParams(window.location.search).has("q")).toBe(false))
@@ -1212,9 +1212,9 @@ describe("WorktreeDetailPage Esc back to Notes", () => {
 
   it("hints Esc on the Notes tab, and nowhere else, while that is Esc's next step", async () => {
     at("?resource=pr:o%2Fr%231&q=widget")
-    onTab("env")
     setViewport("wide")
     wrap()
+    await onTab("Environment")
     await screen.findByRole("tab", { name: "Environment" })
     const lines = () => screen.queryAllByTestId("search-summary").map((n) => n.textContent)
     await waitFor(() => expect(notesTab().querySelector("kbd")?.textContent).toBe("Esc"))
@@ -1234,9 +1234,9 @@ describe("WorktreeDetailPage Esc back to Notes", () => {
 
   it("moves the hint from the Notes tab to the logo when leaving is next", async () => {
     at()
-    onTab("env")
     setViewport("wide")
     wrap()
+    await onTab("Environment")
     await screen.findByRole("tab", { name: "Environment" })
     const backHome = () => screen.getByRole("link", { name: "All worktrees" })
     await waitFor(() => expect(notesTab().querySelector("kbd")).not.toBeNull())

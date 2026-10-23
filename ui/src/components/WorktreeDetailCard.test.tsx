@@ -9,7 +9,7 @@ import type { WorktreeGit, WorktreeInfo, WorktreeSummary } from "../api/types"
 
 /** The card with its tab state wired up the way the page does it. */
 function Card({ w }: { w: WorktreeSummary }) {
-  const { tab, select } = useDetailTab()
+  const { tab, select } = useDetailTab(w.path, false)
   return <WorktreeDetailCard w={w} tab={tab} onTabChange={select} />
 }
 
@@ -662,29 +662,47 @@ describe("cmux tab", () => {
     expect(screen.queryByText(/no cmux workspace/i)).not.toBeInTheDocument()
   })
 
-  it("keeps the chosen tab for the next worktree's card", async () => {
+  // The page isn't remounted between worktrees (only the card is keyed), so
+  // these rerender the same hook with another path.
+  const tree = (client: QueryClient, w: WorktreeSummary) => (
+    <MantineProvider>
+      <QueryClientProvider client={client}>
+        <Card w={w} />
+      </QueryClientProvider>
+    </MantineProvider>
+  )
+  const selected = (name: RegExp) => expect(screen.getByRole("tab", { name })).toHaveAttribute("aria-selected", "true")
+
+  it("opens the next worktree on Notes, not the tab chosen for the last one", async () => {
     worktreeInfo.mockResolvedValue(info())
     const user = userEvent.setup()
-    wrap(summary())
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { rerender } = render(tree(client, summary()))
     await user.click(await screen.findByRole("tab", { name: /environment/i }))
-    cleanup()
-    // The page keys the card by path, so switching worktrees remounts it.
-    wrap(summary({ path: "/wt/bar" }))
-    await waitFor(() =>
-      expect(screen.getByRole("tab", { name: /environment/i })).toHaveAttribute("aria-selected", "true"),
-    )
+    selected(/environment/i)
+    rerender(tree(client, summary({ path: "/wt/bar" })))
+    await waitFor(() => selected(/notes/i))
   })
 
-  it("shows Notes where the remembered tab doesn't exist, without forgetting it", async () => {
-    window.sessionStorage.setItem("worktree.detailTab", "cmux")
+  it("opens every worktree on the cmux tab while following cmux", async () => {
+    window.sessionStorage.setItem("worktree.followCmuxFocus", "true")
+    worktreeInfo.mockResolvedValue(info())
+    const user = userEvent.setup()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { rerender } = render(tree(client, summary()))
+    await waitFor(() => selected(/cmux/i))
+    await user.click(screen.getByRole("tab", { name: /environment/i }))
+    rerender(tree(client, summary({ path: "/wt/bar" })))
+    await waitFor(() => selected(/cmux/i))
+  })
+
+  it("opens on Notes while following cmux when cmux isn't there", async () => {
+    window.sessionStorage.setItem("worktree.followCmuxFocus", "true")
     worktreeInfo.mockResolvedValue(info())
     cmux.mockResolvedValue({ available: false })
     wrap(summary())
     await waitFor(() => expect(cmux).toHaveBeenCalled())
-    await waitFor(() =>
-      expect(screen.getByRole("tab", { name: /notes/i })).toHaveAttribute("aria-selected", "true"),
-    )
-    expect(window.sessionStorage.getItem("worktree.detailTab")).toBe("cmux")
+    await waitFor(() => selected(/notes/i))
   })
 
   it("falls back to Notes if cmux goes away while its tab is selected", async () => {
