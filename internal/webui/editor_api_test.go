@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -84,6 +85,92 @@ func TestOpenEditorReportsStartFailure(t *testing.T) {
 	rec := postOpenEditor(s, `{"path":"`+wt+`"}`)
 	if rec.Code != http.StatusInternalServerError || !strings.Contains(rec.Body.String(), "not found") {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
+	}
+}
+
+// fileEditorServer is editorTestServer with a worktree that exists on disk,
+// since opening a file checks it there.
+func fileEditorServer(t *testing.T) (*Server, *[]editorCall, string) {
+	t.Helper()
+	s, calls, _ := editorTestServer(t, "code")
+	wt, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Register(s.DB, registry.Entry{Path: wt, Repo: "r", RepoRoot: "/r", Branch: "b2", CreatedAt: "now"}); err != nil {
+		t.Fatal(err)
+	}
+	return s, calls, wt
+}
+
+func writeTestFile(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestOpenEditorWithFilePassesWorktreeAndFile(t *testing.T) {
+	s, calls, wt := fileEditorServer(t)
+	writeTestFile(t, filepath.Join(wt, "pkg", "a.go"))
+	rec := postOpenEditor(s, `{"path":"`+wt+`","file":"pkg/a.go"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
+	}
+	want := []string{wt, filepath.Join(wt, "pkg", "a.go")}
+	if len(*calls) != 1 || (*calls)[0].name != "code" || strings.Join((*calls)[0].args, "|") != strings.Join(want, "|") {
+		t.Fatalf("calls = %+v, want args %v", *calls, want)
+	}
+}
+
+func TestOpenEditorFileRejectsEscape(t *testing.T) {
+	s, calls, wt := fileEditorServer(t)
+	outside := t.TempDir()
+	writeTestFile(t, filepath.Join(outside, "secret"))
+	if err := os.Symlink(outside, filepath.Join(wt, "link")); err != nil {
+		t.Fatal(err)
+	}
+	// A sibling whose name starts with the worktree's must not count as inside.
+	sibling := wt + "2"
+	writeTestFile(t, filepath.Join(sibling, "f"))
+	t.Cleanup(func() { os.RemoveAll(sibling) })
+	if err := os.Symlink(sibling, filepath.Join(wt, "sib")); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range []string{"../x", "a/../../x", "/etc/passwd", "link/secret", "sib/f", "  "} {
+		body, _ := json.Marshal(map[string]string{"path": wt, "file": file})
+		if rec := postOpenEditor(s, string(body)); rec.Code != http.StatusBadRequest {
+			t.Errorf("file %q: status = %d, want 400: %s", file, rec.Code, rec.Body)
+		}
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("editor ran: %+v", *calls)
+	}
+}
+
+func TestOpenEditorFileMissing404(t *testing.T) {
+	s, calls, wt := fileEditorServer(t)
+	rec := postOpenEditor(s, `{"path":"`+wt+`","file":"nope.go"}`)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("editor ran: %+v", *calls)
+	}
+}
+
+func TestOpenEditorFileOddName(t *testing.T) {
+	s, calls, wt := fileEditorServer(t)
+	writeTestFile(t, filepath.Join(wt, "a b", "naïve.go"))
+	rec := postOpenEditor(s, `{"path":"`+wt+`","file":"a b/naïve.go"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
+	}
+	if got := (*calls)[0].args[1]; got != filepath.Join(wt, "a b", "naïve.go") {
+		t.Fatalf("file arg = %q", got)
 	}
 }
 
