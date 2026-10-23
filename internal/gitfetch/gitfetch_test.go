@@ -287,6 +287,22 @@ func TestRedactErrorHidesCredentials(t *testing.T) {
 	}
 }
 
+// A password may itself hold "@" or "/" (unencoded, as git echoes it back):
+// everything up to the last "@" of the URL is userinfo, never just the first.
+func TestRedactErrorHidesPasswordsWithAtOrSlash(t *testing.T) {
+	for _, in := range []string{
+		"fatal: unable to access 'https://user:p@ss@github.com/x.git/': 403",
+		"fatal: unable to access 'https://user:p/w@github.com/x.git/': 403",
+		"fatal: unable to access 'https://user:a@b/c@github.com/x.git/': 403",
+	} {
+		got := redactError(in)
+		want := "fatal: unable to access 'https://***@github.com/x.git/': 403"
+		if got != want {
+			t.Errorf("redactError(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestRedactErrorTruncates(t *testing.T) {
 	got := redactError(strings.Repeat("é", 2000))
 	if n := len([]rune(got)); n > maxErrorRunes+1 {

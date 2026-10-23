@@ -238,7 +238,10 @@ const maxErrorRunes = 500
 
 // credentialsInURL matches the userinfo of a URL ("https://user:token@"),
 // which git echoes back in errors about https remotes with embedded tokens.
-var credentialsInURL = regexp.MustCompile(`(\w+://)[^/@\s]+@`)
+// Greedy to the URL's LAST "@": a password may hold "@" or "/" itself, so
+// stopping at the first of either would leak the rest of it. A path with an
+// "@" in it gets over-masked, which is the safe way to be wrong.
+var credentialsInURL = regexp.MustCompile(`(\w+://)[^\s'"]*@`)
 
 // redactError makes a fetch error safe to show in the UI: credentials in
 // remote URLs are masked and the text is truncated.
