@@ -58,6 +58,12 @@ type taskDTO struct {
 	// what the task modal's Mark read sends as through_ts, so it clears only
 	// what was counted, never an event that arrived after. Absent at 0.
 	UnreadThroughTS string `json:"unread_through_ts,omitempty"`
+	// Blocked: some blocker is unresolved; BlockerCount is how many.
+	Blocked      bool `json:"blocked"`
+	BlockerCount int  `json:"blocker_count"`
+	// BlockerLabels names the unresolved blockers (blockerLabeler), oldest
+	// first, for the row chip's tooltip. Never null.
+	BlockerLabels []string `json:"blocker_labels"`
 }
 
 func newTaskDTO(t tasks.Task) taskDTO {
@@ -71,6 +77,8 @@ func newTaskDTO(t tasks.Task) taskDTO {
 		Links:         make([]taskLinkDTO, 0, len(t.Links)),
 		Implicit:      append(make([]string, 0, len(t.Implicit)), t.Implicit...),
 		SubtasksTotal: len(t.Subtasks),
+		Blocked:       t.Blocked, BlockerCount: t.BlockerCount,
+		BlockerLabels: []string{},
 	}
 	for _, l := range t.Links {
 		out.Links = append(out.Links, taskLinkDTO{
@@ -133,10 +141,14 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sums := s.taskUnreadSummaries()
+	labels := s.allBlockerLabels()
 	out := make([]taskDTO, 0, len(ts))
 	for _, t := range ts {
 		d := newTaskDTO(t)
 		d.UnreadCount, d.UnreadThroughTS = sums[t.ID].Count, sums[t.ID].NewestTS
+		if l := labels[t.ID]; l != nil {
+			d.BlockerLabels = l
+		}
 		out = append(out, d)
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -177,12 +189,15 @@ func (s *Server) taskUnreadSummaries() map[int64]unread.Summary {
 	return sums
 }
 
-// newTaskDTOWithUnread is newTaskDTO with unread_count filled, for the
-// endpoints that return one task.
+// newTaskDTOWithUnread is newTaskDTO with unread_count and blocker_labels
+// filled, for the endpoints that return one task.
 func (s *Server) newTaskDTOWithUnread(t tasks.Task) taskDTO {
 	d := newTaskDTO(t)
 	sum := s.taskUnreadSummaries()[t.ID]
 	d.UnreadCount, d.UnreadThroughTS = sum.Count, sum.NewestTS
+	if t.BlockerCount > 0 {
+		d.BlockerLabels = s.taskBlockerLabels(t.ID)
+	}
 	return d
 }
 
@@ -327,6 +342,17 @@ func (s *Server) openTaskCountsPriming(ix *unreadIndex) tasks.Counts {
 		return tasks.Counts{}
 	}
 	ix.primeTaskScope(sc)
+	return c
+}
+
+// resourceBlockCounts is tasks.ResourceBlockCounts, read once per request.
+// A failure is logged and costs only the counts (all 0).
+func (s *Server) resourceBlockCounts() map[string]int {
+	c, err := tasks.ResourceBlockCounts(s.DB)
+	if err != nil {
+		s.logger().Printf("tasks.ResourceBlockCounts: %v", err)
+		return map[string]int{}
+	}
 	return c
 }
 

@@ -93,6 +93,9 @@ func taskEventAuthor(ev tasks.Event) string {
 		}
 		return "agent"
 	}
+	if ev.Actor == tasks.ActorSystem {
+		return "worktree" // e.g. the blocker resolver
+	}
 	return "you"
 }
 
@@ -112,6 +115,9 @@ type taskEventPayload struct {
 	Text         string                     `json:"text"`
 	Key          string                     `json:"key"`
 	Title        string                     `json:"title"`
+	Label        string                     `json:"label"`  // blocker events
+	Auto         bool                       `json:"auto"`   // task_blocker_resolved
+	Reason       string                     `json:"reason"` // task_blocker_resolved
 }
 
 func parseTaskPayload(raw json.RawMessage) taskEventPayload {
@@ -157,32 +163,46 @@ var taskEventTitles = map[string]taskTitleFunc{
 		}
 		return "Moved " + linkPayloadRef(p) + " to " + group
 	},
-	tasks.EventSubtaskAdded:      subtaskTitle("Added subtask "),
-	tasks.EventSubtaskEdited:     subtaskTitle("Edited subtask "),
-	tasks.EventSubtaskChecked:    subtaskTitle("Checked "),
-	tasks.EventSubtaskUnchecked:  subtaskTitle("Unchecked "),
-	tasks.EventSubtaskRemoved:    subtaskTitle("Removed subtask "),
-	tasks.EventTaskEventLinked:   eventLinkTitle("Linked event "),
-	tasks.EventTaskEventUnlinked: eventLinkTitle("Unlinked event "),
+	tasks.EventSubtaskAdded:       subtaskTitle("Added subtask "),
+	tasks.EventSubtaskEdited:      subtaskTitle("Edited subtask "),
+	tasks.EventSubtaskChecked:     subtaskTitle("Checked "),
+	tasks.EventSubtaskUnchecked:   subtaskTitle("Unchecked "),
+	tasks.EventSubtaskRemoved:     subtaskTitle("Removed subtask "),
+	tasks.EventTaskEventLinked:    eventLinkTitle("Linked event "),
+	tasks.EventTaskEventUnlinked:  eventLinkTitle("Unlinked event "),
+	tasks.EventTaskBlockerAdded:   blockerTitle("Blocked by "),
+	tasks.EventTaskBlockerRemoved: blockerTitle("Removed blocker "),
+	tasks.EventTaskBlockerResolved: func(raw json.RawMessage, _ tasks.Task) string {
+		p := parseTaskPayload(raw)
+		if p.Auto {
+			return strings.TrimSpace("Unblocked: " + blockerPayloadLabel(p) + " " + p.Reason)
+		}
+		return "Resolved blocker " + blockerPayloadLabel(p)
+	},
+	tasks.EventTaskBlockerUnresolved: blockerTitle("Blocked again by "),
 }
 
 // taskEventLabels is the short type label shown beside a row, like a
 // watcher event's DisplayName.
 var taskEventLabels = map[string]string{
-	tasks.EventTaskCreated:       "Created",
-	tasks.EventTaskEdited:        "Edited",
-	tasks.EventTaskStateChanged:  "State",
-	tasks.EventTaskDeleted:       "Deleted",
-	tasks.EventTaskLinked:        "Linked",
-	tasks.EventTaskUnlinked:      "Unlinked",
-	tasks.EventTaskFocusChanged:  "Focus",
-	tasks.EventSubtaskAdded:      "Subtask",
-	tasks.EventSubtaskEdited:     "Subtask",
-	tasks.EventSubtaskChecked:    "Subtask",
-	tasks.EventSubtaskUnchecked:  "Subtask",
-	tasks.EventSubtaskRemoved:    "Subtask",
-	tasks.EventTaskEventLinked:   "Event linked",
-	tasks.EventTaskEventUnlinked: "Event unlinked",
+	tasks.EventTaskCreated:           "Created",
+	tasks.EventTaskEdited:            "Edited",
+	tasks.EventTaskStateChanged:      "State",
+	tasks.EventTaskDeleted:           "Deleted",
+	tasks.EventTaskLinked:            "Linked",
+	tasks.EventTaskUnlinked:          "Unlinked",
+	tasks.EventTaskFocusChanged:      "Focus",
+	tasks.EventSubtaskAdded:          "Subtask",
+	tasks.EventSubtaskEdited:         "Subtask",
+	tasks.EventSubtaskChecked:        "Subtask",
+	tasks.EventSubtaskUnchecked:      "Subtask",
+	tasks.EventSubtaskRemoved:        "Subtask",
+	tasks.EventTaskEventLinked:       "Event linked",
+	tasks.EventTaskEventUnlinked:     "Event unlinked",
+	tasks.EventTaskBlockerAdded:      "Blocker",
+	tasks.EventTaskBlockerRemoved:    "Blocker",
+	tasks.EventTaskBlockerResolved:   "Unblocked",
+	tasks.EventTaskBlockerUnresolved: "Blocked",
 }
 
 func subtaskTitle(prefix string) taskTitleFunc {
@@ -200,6 +220,28 @@ func eventLinkTitle(prefix string) taskTitleFunc {
 		}
 		return prefix + quote(name)
 	}
+}
+
+func blockerTitle(prefix string) taskTitleFunc {
+	return func(raw json.RawMessage, _ tasks.Task) string {
+		return prefix + blockerPayloadLabel(parseTaskPayload(raw))
+	}
+}
+
+// blockerPayloadLabel names a blocker from its event payload's label: a
+// task's "T<id> <title>" as is, a resource's "type:id" as its short ref
+// ("#4498", "RHOAIENG-1"), other text quoted.
+func blockerPayloadLabel(p taskEventPayload) string {
+	switch p.Kind {
+	case tasks.BlockerResource:
+		if typ, id, ok := strings.Cut(p.Label, ":"); ok {
+			return shortResourceRef(typ, id)
+		}
+		return p.Label
+	case tasks.BlockerOther:
+		return quote(p.Label)
+	}
+	return p.Label
 }
 
 // linkPayloadRef names a link from a task_linked/unlinked/focus_changed

@@ -67,9 +67,9 @@ func normalizeBlocker(t BlockerTarget) (BlockerTarget, error) {
 	}
 }
 
-// manuallyResolvable reports whether the user may resolve b by hand: free
+// ManuallyResolvable reports whether the user may resolve b by hand: free
 // text, or a Slack thread or link (nothing resolves those automatically).
-func manuallyResolvable(b BlockerTarget) bool {
+func ManuallyResolvable(b BlockerTarget) bool {
 	return b.Kind == BlockerOther ||
 		(b.Kind == BlockerResource && (b.ResourceType == "slack" || b.ResourceType == "link"))
 }
@@ -298,7 +298,7 @@ func SetBlockerResolved(conn *sql.DB, a Actor, blockerID int64, resolved bool) e
 		if err != nil {
 			return err
 		}
-		if !manuallyResolvable(b.BlockerTarget) {
+		if !ManuallyResolvable(b.BlockerTarget) {
 			return fmt.Errorf("%w: only free-text, Slack thread and link blockers are resolved by hand", ErrInvalid)
 		}
 		return setResolvedTx(tx, a, b, resolved, false, "", now())
@@ -413,6 +413,80 @@ func ResourceBlockCounts(conn *sql.DB) (map[string]int, error) {
 			return nil, err
 		}
 		out[typ+":"+id] = n
+	}
+	return out, rows.Err()
+}
+
+// BlockerTaskID returns the id of the task blocker id belongs to;
+// ErrBlockerNotFound when the blocker is missing or its task deleted.
+func BlockerTaskID(conn *sql.DB, id int64) (int64, error) {
+	b, err := loadBlocker(conn, id)
+	if err != nil {
+		return 0, err
+	}
+	return b.TaskID, nil
+}
+
+// UnresolvedBlockers maps every live task with an unresolved blocker to
+// those blockers, oldest first, in one query: what a listing needs to name
+// each task's blockers without a query per task. Tasks with none are
+// absent.
+func UnresolvedBlockers(conn *sql.DB) (map[int64][]Blocker, error) {
+	rows, err := conn.QueryContext(bg,
+		`SELECT `+blockerCols+` FROM task_blockers b JOIN tasks t ON t.id = b.task_id
+		  WHERE t.deleted_at IS NULL AND b.resolved_at IS NULL
+		  ORDER BY b.task_id, b.created_at, b.id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64][]Blocker{}
+	for rows.Next() {
+		b, err := scanBlocker(rows)
+		if err != nil {
+			return nil, err
+		}
+		out[b.TaskID] = append(out[b.TaskID], b)
+	}
+	return out, rows.Err()
+}
+
+// Head is the little of a task a blocker's label and status need. Unlike
+// Get, it is answered for a deleted task too (Deleted set): a task blocker
+// outlives its blocking task.
+type Head struct {
+	Title   string
+	State   State
+	Deleted bool
+}
+
+// Heads returns the heads of the tasks in ids, deleted ones included. Ids
+// with no row are absent. Never nil.
+func Heads(conn *sql.DB, ids []int64) (map[int64]Head, error) {
+	out := map[int64]Head{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := conn.QueryContext(bg,
+		`SELECT id, title, state, deleted_at IS NOT NULL FROM tasks
+		  WHERE id IN (?`+strings.Repeat(",?", len(ids)-1)+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var h Head
+		var deleted int
+		if err := rows.Scan(&id, &h.Title, &h.State, &deleted); err != nil {
+			return nil, err
+		}
+		h.Deleted = deleted != 0
+		out[id] = h
 	}
 	return out, rows.Err()
 }

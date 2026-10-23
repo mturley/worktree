@@ -55,6 +55,9 @@ type resourceDTO struct {
 	// OpenTaskCount is how many open tasks link this resource
 	// (tasks.OpenCounts' ByResource). Always sent, 0 included.
 	OpenTaskCount int `json:"open_task_count"`
+	// BlocksCount is how many open tasks this resource blocks, unresolved
+	// blockers only (tasks.ResourceBlockCounts). Always sent, 0 included.
+	BlocksCount int `json:"blocks_count"`
 	// link: resolved page metadata (see internal/linkmeta)
 	Description  string `json:"description,omitempty"`
 	Image        string `json:"image,omitempty"`
@@ -89,11 +92,13 @@ func (s *Server) handleWorktreeResources(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	counts := s.openTaskCountsPriming(ix)
+	blocks := s.resourceBlockCounts()
 	out := make([]resourceDTO, 0, len(rs))
 	for _, res := range rs {
 		dto := s.newResourceDTO(res)
 		ix.fill(&dto)
 		dto.OpenTaskCount = resourceTaskCount(counts, dto.Type, dto.ID)
+		dto.BlocksCount = blocks[dto.Type+":"+dto.ID]
 		dto.Notify = prefs.Resources[notifyprefs.Key{Type: dto.Type, ID: dto.ID}]
 		out = append(out, dto)
 	}

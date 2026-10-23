@@ -42,6 +42,7 @@ func (s *Server) handleAllResources(w http.ResponseWriter, r *http.Request) {
 	}
 	ix := s.newUnreadIndex()
 	counts := s.openTaskCountsPriming(ix)
+	blocks := s.resourceBlockCounts()
 	type key struct{ typ, id string }
 	byKey := map[key]int{}
 	out := make([]allResourceDTO, 0)
@@ -64,6 +65,7 @@ func (s *Server) handleAllResources(w http.ResponseWriter, r *http.Request) {
 			dto := s.newResourceDTO(res)
 			ix.fill(&dto)
 			dto.OpenTaskCount = resourceTaskCount(counts, dto.Type, dto.ID)
+			dto.BlocksCount = blocks[dto.Type+":"+dto.ID]
 			byKey[k] = len(out)
 			out = append(out, allResourceDTO{
 				resourceDTO: dto,

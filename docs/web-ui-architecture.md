@@ -232,6 +232,9 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | POST | `/api/tasks/subtasks/check` | body: `{subtask_id, checked}` | `taskDetailDTO` |
 | POST | `/api/tasks/subtasks/remove` | body: `{subtask_id}` | `taskDetailDTO` |
 | POST | `/api/tasks/subtasks/order` | body: `{id, ids: [...]}` | `taskDetailDTO` |
+| POST | `/api/tasks/blockers/add` | body: `{id, kind, task_id?, url?, type?, rid?, text?}`: `task` takes `task_id`; `resource` exactly one of `url` (`resourceurl.InferAny`; unrecognised → 400) and `type`+`rid`; `other` takes `text`. A cycle → 400 "would create a blocking cycle"; a duplicate is a no-op | `taskDetailDTO`, after `afterTaskWrite` (an already-satisfied blocker comes back resolved) |
+| POST | `/api/tasks/blockers/remove` | body: `{blocker_id}`; missing → 404 | `taskDetailDTO` |
+| POST | `/api/tasks/blockers/resolve` | body: `{blocker_id, resolved}`; only `manual_resolvable` blockers, else 400 | `taskDetailDTO` |
 | POST | `/api/tasks/events/link` | body: `{id, key, snapshot?}`; `ev:` keys rebuild the snapshot server-side, `slack:` keys need a snapshot with a title or body | `taskDetailDTO` |
 | POST | `/api/tasks/events/unlink` | body: `{id, key}` | `taskDetailDTO` |
 | POST | `/api/tasks/from-event` | body: `{key, snapshot?, path?}`; creates a task from the event | `taskDetailDTO` |
@@ -396,6 +399,7 @@ id      string
 url     string
 primary bool      // !res.Related — see "Focus vs primary" below
 open_task_count int // open tasks linking this resource, always sent; see "Tasks"
+blocks_count    int // open tasks this resource blocks (unresolved blockers), always sent
 
 // enriched from cached watcher_resource_state (omitempty; absent if never polled):
 title                     string    // PR title or Jira summary
@@ -1086,6 +1090,29 @@ the watcher toggles do not apply.
   for PRs and links), `implicit` (each implicit worktree with its branch and
   `via`, the `"type:id"` resource links it follows), `subtasks`, and
   `event_links`. Every write route answers with the fresh detail.
+- **Blockers** (`tasks_blockers_api.go`). `taskDTO` carries `blocked`,
+  `blocker_count` (unresolved) and `blocker_labels` (the unresolved
+  blockers' labels, oldest first, never null; `GET /api/tasks` builds them
+  from one `tasks.UnresolvedBlockers` per request). The detail adds
+  `blockers` (unresolved first: `{id, kind, label, url?, status_label,
+  resolved, resolved_auto, resolved_reason, manual_resolvable, task_id?,
+  resource_type?, resource_id?, text?}`) and `blocks` (`[{id, ref, title,
+  state}]`, the tasks this one blocks, in master order); both never null.
+  A label is "T<id> <title>" for a task (deleted ones too, via
+  `tasks.Heads`), the same display title as `detail_links` for a resource
+  (`resourceDisplayTitle`), the text for other. `status_label` is a task's
+  state ("deleted" once gone), a PR's merged/closed/open from the cached
+  state, a Jira issue's cached status name (else the blocker search's
+  cached status), and "resolved" or "" for Slack, link and other. All of it
+  reads only the DB and the in-memory Jira cache, never the network.
+  `manual_resolvable` is `tasks.ManuallyResolvable`: other, Slack, link.
+  Every blocker write runs `s.afterTaskWrite()` before answering.
+  `resourceDTO.blocks_count` comes from ONE `tasks.ResourceBlockCounts` per
+  request in `/api/worktree-resources` and `/api/all-resources`. Blocker
+  events are titled "Blocked by …", "Removed blocker …", "Unblocked: #4498
+  merged" (automatic) / "Resolved blocker …" (by hand) and "Blocked again
+  by …", with a resource's `type:id` label shortened to its short ref;
+  `system` events are authored "worktree".
 - **Event-link snapshots.** A linked event is stored as a key (`ev:<watcher
   event id>` or `slack:<channel>:<message ts>`) plus a snapshot (source,
   type, title, author, body ≤ 500 runes, URL, ts, resource). Both write

@@ -389,3 +389,85 @@ func TestSystemActorCountsAsUnread(t *testing.T) {
 		t.Fatal("system events must count as unread")
 	}
 }
+
+func TestUnresolvedBlockersByTask(t *testing.T) {
+	conn := newDB(t)
+	dep := mustCreate(t, conn, "dep")
+	a := mustCreate(t, conn, "a")
+	gone := mustCreate(t, conn, "gone")
+	mustAddBlocker(t, conn, a.ID, taskTarget(dep.ID))
+	mustAddBlocker(t, conn, a.ID, otherTarget("wait"))
+	done := mustAddBlocker(t, conn, a.ID, otherTarget("finished"))
+	if err := SetBlockerResolved(conn, user, done.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	mustAddBlocker(t, conn, gone.ID, otherTarget("x"))
+	if _, err := Delete(conn, user, gone.ID); err != nil {
+		t.Fatal(err)
+	}
+	m, err := UnresolvedBlockers(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m) != 1 || len(m[a.ID]) != 2 || m[a.ID][0].BlockingTaskID != dep.ID || m[a.ID][1].Text != "wait" {
+		t.Fatalf("unresolved = %+v", m)
+	}
+}
+
+func TestBlockerTaskID(t *testing.T) {
+	conn := newDB(t)
+	a := mustCreate(t, conn, "a")
+	b := mustAddBlocker(t, conn, a.ID, otherTarget("x"))
+	if id, err := BlockerTaskID(conn, b.ID); err != nil || id != a.ID {
+		t.Fatalf("BlockerTaskID = %d, %v", id, err)
+	}
+	if _, err := BlockerTaskID(conn, 999); !errors.Is(err, ErrBlockerNotFound) {
+		t.Fatalf("missing: %v", err)
+	}
+	if _, err := Delete(conn, user, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := BlockerTaskID(conn, b.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleted task: %v", err)
+	}
+}
+
+func TestHeadsIncludeDeletedTasks(t *testing.T) {
+	conn := newDB(t)
+	a := mustCreate(t, conn, "a")
+	b := mustCreate(t, conn, "b")
+	if _, err := SetState(conn, user, a.ID, StateDone); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Delete(conn, user, b.ID); err != nil {
+		t.Fatal(err)
+	}
+	h, err := Heads(conn, []int64{a.ID, b.ID, 99})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(h) != 2 || h[a.ID] != (Head{Title: "a", State: StateDone}) || !h[b.ID].Deleted || h[b.ID].Title != "b" {
+		t.Fatalf("heads = %+v", h)
+	}
+	if h, err := Heads(conn, nil); err != nil || len(h) != 0 {
+		t.Fatalf("empty heads = %+v, %v", h, err)
+	}
+}
+
+func TestManuallyResolvableExported(t *testing.T) {
+	for _, c := range []struct {
+		bt   BlockerTarget
+		want bool
+	}{
+		{otherTarget("x"), true},
+		{resTarget("slack", "C:1"), true},
+		{resTarget("link", "https://x"), true},
+		{resTarget("pr", "o/r#1"), false},
+		{resTarget("jira", "X-1"), false},
+		{taskTarget(1), false},
+	} {
+		if got := ManuallyResolvable(c.bt); got != c.want {
+			t.Errorf("ManuallyResolvable(%+v) = %v", c.bt, got)
+		}
+	}
+}

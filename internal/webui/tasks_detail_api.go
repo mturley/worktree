@@ -68,6 +68,10 @@ type taskDetailDTO struct {
 	ImplicitVia []taskImplicitDTO   `json:"implicit"`
 	Subtasks    []taskSubtaskDTO    `json:"subtasks"`
 	EventLinks  []taskEventLinkDTO  `json:"event_links"`
+	// Blockers: unresolved first, then oldest first. Blocks: the tasks this
+	// one blocks, in master order. Both never null.
+	Blockers []taskBlockerDTO `json:"blockers"`
+	Blocks   []taskBlocksDTO  `json:"blocks"`
 }
 
 // taskDetail loads task id and builds its detail DTO.
@@ -82,8 +86,17 @@ func (s *Server) taskDetail(id int64) (taskDetailDTO, error) {
 	}
 	branches := s.registryBranches()
 	e := s.newEventEnricher()
+	blockers, blocks, labels, err := s.detailBlockers(id, e.resource)
+	if err != nil {
+		return taskDetailDTO{}, err
+	}
+	td := newTaskDTO(t)
+	sum := s.taskUnreadSummaries()[t.ID]
+	td.UnreadCount, td.UnreadThroughTS, td.BlockerLabels = sum.Count, sum.NewestTS, labels
 	d := taskDetailDTO{
-		taskDTO:     s.newTaskDTOWithUnread(t),
+		taskDTO:     td,
+		Blockers:    blockers,
+		Blocks:      blocks,
 		DetailLinks: make([]taskDetailLinkDTO, 0, len(t.Links)),
 		ImplicitVia: make([]taskImplicitDTO, 0, len(t.Implicit)),
 		Subtasks:    make([]taskSubtaskDTO, 0, len(t.Subtasks)),
@@ -94,13 +107,7 @@ func (s *Server) taskDetail(id int64) (taskDetailDTO, error) {
 		switch l.Kind {
 		case tasks.LinkResource:
 			dl.URL = s.resourceURL(l.ResourceType, l.ResourceID)
-			if r := e.resource(l.ResourceType, l.ResourceID); r != nil && r.CustomName != "" {
-				dl.Title = r.CustomName
-			} else if r != nil && r.Title != "" {
-				dl.Title = r.Title
-			} else {
-				dl.Title = shortResourceRef(l.ResourceType, l.ResourceID)
-			}
+			dl.Title = resourceDisplayTitle(e.resource(l.ResourceType, l.ResourceID), l.ResourceType, l.ResourceID)
 		case tasks.LinkWorktree:
 			if b := branches[l.Worktree]; b != "" {
 				dl.Title = b
