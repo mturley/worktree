@@ -15,7 +15,7 @@
 - Tabs order: `Notes | Environment | Code | cmux`; UI never says "upstream" for the branch's own upstream — it is "Tracking branch".
 - Main upstream = `git rev-parse --abbrev-ref main@{upstream}`, fallback `git symbolic-ref --short refs/remotes/origin/HEAD`.
 - Commit list = `git rev-list --first-parent <base-ref>..HEAD`, newest first.
-- A run including the list's oldest commit uses `merge-base(HEAD, base-ref)` as its old side; full runs are labelled "All commits"/"All changes", never "N of N commits".
+- A run including the list's oldest commit uses `merge-base(<run's newest end>, base-ref)` as its old side — the newest end is HEAD when the run includes uncommitted changes, otherwise the run's newest commit (so a run that stops before a merge of main keeps its fork point); full runs are labelled "All commits"/"All changes", never "N of N commits".
 - Working-tree comparisons diff against a snapshot tree (temp `GIT_INDEX_FILE` copy + `git add -A` + `git write-tree`); the real index is never written.
 - File contents are only ever served via `git show <rev>:<file>` for a `rev` the server handed out.
 - Fingerprint uses `git status --porcelain=v1 -uall` plus size+mtime of each listed file.

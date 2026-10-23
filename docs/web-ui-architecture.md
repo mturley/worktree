@@ -2304,8 +2304,15 @@ TTL, 200 entries, oldest evicted); anything else is 404.
 
 **Polling and fingerprints.** `useWorktreeGit` polls `/api/worktree-git` every
 5s while the page is visible. `fingerprint` moves on commits, fetches, branch
-switches and working-tree edits; `working_fingerprint` only on the last. The
-diff hooks (`useDiffData`) refetch when it changes. The server computes the
+switches and working-tree edits; `working_fingerprint` only on the last. Both,
+and the `working` counts, come from **one** `git status -uall -z` per poll
+(`gitutil.WorkingState`). Every `gitutil` git call runs with
+`--no-optional-locks` (in `gitRaw`), so polling never refreshes the index under
+`index.lock` and races the user's own commands; diff and log calls also pin
+their output against user config (`--no-ext-diff --no-color --no-textconv`,
+explicit `a/`/`b/` prefixes, `--no-show-signature`). The
+diff hooks (`useDiffData`) refetch when it changes, keeping the previous answer
+as placeholder only for the same worktree, base and (for files) range. The server computes the
 fingerprint **before** snapshotting, so an edit landing mid-request makes the
 next poll refetch rather than leaving a patch newer than its label. `list_id`
 identifies the commit list; `useDiffSelection` stores it with the range and
@@ -2325,8 +2332,11 @@ repository** (not per worktree), one fetch per repo at a time, honours the
 interval (failed attempts count), and **skips while a git lock file exists**
 (the user's own git command is mid-flight; a skip does not count against the
 interval). Remotes are those behind the compared refs (`RemotesFor`). It runs
-`git fetch --prune <remote>` with `GIT_TERMINAL_PROMPT=0` and ssh `BatchMode`,
-60s timeout, so it can never prompt. Settings → General: `git.background_fetch`
+`git fetch --prune --no-auto-maintenance <remote>` with `GIT_TERMINAL_PROMPT=0`,
+`GIT_ASKPASS`/`SSH_ASKPASS` cleared, `GCM_INTERACTIVE=never` and ssh
+`BatchMode`, 60s timeout, so it can never prompt (`fetchCommand`). `last_error`
+is redacted (`redactError`: URL credentials become `***@`) and capped at 500
+characters. Settings → General: `git.background_fetch`
 is read **per request** (applies at once); `git.fetch_interval` is read **when
 the scheduler is created**, so a change applies after `worktree ui` restarts.
 
@@ -2337,7 +2347,12 @@ the scheduler is created**, so a change applies after `worktree ui` restarts.
   the space below the pinned header (see the comment in `WorktreeDetailPage`).
   Everywhere else the page keeps its single scroller.
 - `DiffView` is `lazy()`-loaded as its own chunk; `@pierre/diffs` is fetched
-  the first time someone opens a diff, never on a plain page load.
+  the first time someone opens a diff, never on a plain page load. It sits in
+  `DiffViewBoundary` (its own module, outside the chunk), which shows a Reload
+  prompt if the chunk fails; `installPreloadReload` reloads the page once on
+  `vite:preloadError` (a build replaced by `make install`), with a 10s
+  sessionStorage guard against looping. A failed commit list shows its error
+  rather than "Loading…".
 - The worker must be `@pierre/diffs/worker/worker-portable.js?worker` (the
   plain `worker.js` fails under Vite), with no theme override on the pool.
 - Esc in the diff view leaves it before it deselects or leaves the worktree.
