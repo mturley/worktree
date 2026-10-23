@@ -226,8 +226,8 @@ describe("Code tab summary", () => {
     wrap(summary())
     await openCode()
     expect(await screen.findByText("upstream/main @ 76ef50c")).toBeVisible()
-    const line = screen.getByText("8 ahead · 12 behind")
-    expect(line.textContent).toBe("8 ahead · 12 behind")
+    const line = screen.getByText("(8 ahead · 12 behind)")
+    expect(line.textContent).toBe("(8 ahead · 12 behind)")
     const mergeBaseRow = screen.getByText("Merge base").parentElement!
     expect(mergeBaseRow.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(mergeBaseRow).not.toContainElement(line)

@@ -17,12 +17,12 @@ function workingSummary(w: WorktreeGit["working"]): string {
   return parts.length === 0 ? "clean" : parts.join(" · ")
 }
 
-/** Ahead/behind on its own indented line under the ref it counts against. */
+/** Ahead/behind on its own line, indented past the value of the ref it counts against. */
 function AheadBehindLine({ ab }: { ab: AheadBehind | undefined }) {
   if (!ab) return null
   return (
-    <Text size="xs" c="dimmed" pl={RIGHT_LABEL_WIDTH + 8}>
-      {`${ab.ahead} ahead · ${ab.behind} behind`}
+    <Text size="xs" c="dimmed" pl={RIGHT_LABEL_WIDTH + 20}>
+      {`(${ab.ahead} ahead · ${ab.behind} behind)`}
     </Text>
   )
 }
