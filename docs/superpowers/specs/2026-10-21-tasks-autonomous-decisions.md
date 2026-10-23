@@ -152,6 +152,51 @@ Format: **Q:** the question · **A:** what was done · **Why** · **To change:**
   **A:** Each Mark all read button fetches `GET /api/task-unread` on mount and on task invalidations. It is cheap and the failure is silent.
   **To change:** the query in `MarkAllReadButton.tsx`.
 
+## Phase 5 — blockers
+
+- **Q:** How is a Jira blocker found to be Done?
+  **A:** Through the existing Jira search (`SearchSummaries`, status category "done"), one `key in (...)` query per 50 keys, with a key-by-key retry only on HTTP 400. No watcher release was cut.
+  **Why:** The search already returns the status category, so a library change would only add a release to coordinate.
+  **To change:** `searchBlockerIssues` in `internal/webui/blocker_status.go`.
+- **Q:** Can a Jira resolution lag?
+  **A:** Yes, by up to one poll interval. Web requests (`afterTaskWrite`) never contact Jira; they use the PR cache and the status cache the last poll left in memory. Only the poll loop's `resolvePass(true)` searches Jira.
+  **Why:** A request should never wait on a network service.
+  **To change:** `resolvePass` and `afterTaskWrite` in `internal/webui/blocker_status.go`, and the call in `safePollAll` (`internal/webui/poller.go`).
+- **Q:** May any request search Jira?
+  **A:** The explicit poll-on-view route may, because it already waits on network polling (it goes through `safePollAll`). It can be slower when Jira blockers exist.
+  **To change:** `handlePollWorktree` in `internal/webui/poller.go`.
+- **Q:** Do Slack-thread blockers keep a `task:<id>` hold?
+  **A:** Yes, like every resource blocker, though Slack threads never resolve themselves. It keeps the cached title and status fresh for the label, at the cost of one `conversations.replies` call per Slack blocker per poll.
+  **To change:** `ReconcileHolds` in `internal/tasks/holds.go`.
+- **Q:** Can two tasks block each other?
+  **A:** Adding a blocker that would form a cycle is refused (400). But an automatic unresolve (a PR reopened) may re-form a mutual block, and that is accepted: blocking never prevents completion, so both tasks just show blocked until one resolves.
+  **To change:** `wouldCycle` in `internal/tasks/blockers.go` and `ResolveBlockers` in `internal/tasks/resolve.go`.
+- **Q:** How late is an Unblocked notification, and which toggles apply?
+  **A:** About 10-15s after the resolution: each event is held for the 10s undo window (`UNDO_WINDOW_MS`), then re-checked, on top of the 5s scan. Only the global "Enable notifications" switch, the delivery mode and the custom command apply; the per-worktree and per-resource toggles are ignored. Automatic unresolves never notify. Held items do not survive a restart.
+  **Why:** Phase 6's undo deletes the events it cascades, and a notification for an undone action would be wrong.
+  **To change:** `unblockHoldDefault` in `internal/webui/notify_unblock.go` (and `UNDO_WINDOW_MS` in `ui/src/components/UndoToast.tsx`).
+- **Q:** Where does an Unblocked notification go?
+  **A:** To the worktree of the task's first Focus link (a registered worktree, or the first follower of a Focus resource), else the first worktree whose scope holds the task, else untargeted. An untargeted one opens the task over the home page (`/?task=<id>`; cmux: the UI server's own workspace).
+  **To change:** `unblockTargeter` in `internal/webui/notify_unblock.go` and `ui/src/lib/browserNotify.ts`.
+- **Q:** Are system events unread?
+  **A:** Yes. An event is unread when its actor is not you: `agent` or `system`. System blocker events do not notify through the per-worktree task path (they are dropped or go through the Unblocked path).
+  **To change:** `unreadActors` in `internal/tasks/unread.go`; the skip in `readNewTaskEvents` (`internal/webui/notify_scan.go`).
+- **Q:** Who is the author of a system event?
+  **A:** "worktree", shown in the timeline and in search.
+  **To change:** the author mapping in `internal/webui/task_timeline.go`.
+- **Q:** How are blocker states labelled?
+  **A:** A task's state shows as "Not started", "In progress" or "Done" everywhere, from one map; a deleted task shows "deleted" and a resolved Slack, link or other blocker "resolved". A resolved blocker also shows its reason ("merged", "closed", a status name) when it adds to the status.
+  **To change:** `TASK_STATE_LABEL` in `ui/src/components/tasks/TaskStateCheckbox.tsx`; `status_label` in `internal/webui/tasks_blockers_api.go`.
+- **Q:** What can the blocker pickers choose?
+  **A:** Tasks: not done, not this task, not a task it blocks, not one already blocking it. Resources: from the task's scope plus a pasted URL, minus those already blockers. Other: free text.
+  **To change:** `ui/src/components/tasks/modal/BlockerPicker.tsx`.
+- **Q:** What does the resource badge say?
+  **A:** "⛔ blocks N" on list cards and Resources rows (the full "Blocks N open tasks" on hover), not on the detail card, whose aside is already full.
+  **To change:** `BlocksBadge` in `ui/src/components/tasks/TaskCountBadge.tsx`.
+- **Q:** Who can mark a blocker resolved?
+  **A:** You, only for free-text, Slack and link blockers. PR, Jira and task blockers resolve themselves and can't be ticked.
+  **To change:** `ManuallyResolvable` in `internal/tasks/blockers.go`.
+
 ## Browser check (run this yourself)
 
 A throwaway config, with a throwaway UI password, watchers and cmux off, is at

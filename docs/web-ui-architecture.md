@@ -362,7 +362,7 @@ events (`tasks.FeedEvents`, converted by `taskFeedRow` →
   applied in Go (`matchTaskEvent`: converted title, author — "agent",
   "agent (<session>)" or "you" — and task title), so with
   either set every candidate task event is read rather than `limit`.
-- `unread` on a task row: `actor = 'agent'` and `ts` > the task's cursor
+- `unread` on a task row: actor is `agent` or `system` (not the user) and `ts` > the task's cursor
   (`unread.Cursors`, missing = "").
 - Merge: ts DESC, a tie putting the watcher row first, cut to `limit`, then
   overfilled (below). Both sides apply the same strict `before`, so
@@ -816,11 +816,11 @@ cursor rather than resetting it.
 **Tasks have cursors too, in the same table.** A task's cursor is a
 `resource_read_cursor` row with `resource_type` `task` and the task id as
 `resource_id`, so `unread.Mark`/`Restore` serve it unchanged. A task event is
-unread when `actor = 'agent'` and `ts > cursor`; unlike a resource, a MISSING
-row reads as `''`, so every agent event counts until the task is first marked
+unread when its actor is not the user (`agent` or `system`) and `ts > cursor`; unlike a resource, a MISSING
+row reads as `''`, so every non-user event counts until the task is first marked
 read. The user's own events never count, and a deleted task's never appear.
 The actor rule has ONE source, `internal/tasks/unread.go`: the unread-actors
-list (agent only; Phase 5 adds `system`), `tasks.CountsAsUnread(actor)` for
+list (`agent` and `system`), `tasks.CountsAsUnread(actor)` for
 Go and `tasks.UnreadActorSQL(col)` for SQL. `unread.TaskSummaries`, the
 feeds' `unread` flag (`taskFeedRow`), their `unread_only` filter
 (`FeedQuery.UnreadActorsOnly`) and the notifier (`readNewTaskEvents`) all go
@@ -1268,36 +1268,100 @@ to break.
   activity feeds), `["worktrees"]` and `["resources"]`, so lists, feeds and
   badges all follow CLI and agent writes within the stream's 5s tick.
 
-### Blockers (resolution)
+### Blockers
 
-A short note; the full section comes with the rest of Phase 5.
+A task can be blocked by another task, a resource or free text. Blocking is
+informational: it never stops a task being worked on or completed.
+
+**Kinds** (`tasks.BlockerTask`, `BlockerResource`, `BlockerOther`) and how
+each resolves:
+
+- **task** resolves when the blocking task is done, or deleted (reason
+  "done" / "deleted").
+- **resource**: a PR resolves from the cached `watcher_resource_state`
+  `"state"` (MERGED → "merged", CLOSED → "closed", OPEN stays unresolved); a
+  Jira issue resolves when its status category is Done, read from a poll-only
+  status cache (below). Slack thread and link blockers never resolve
+  themselves.
+- **other** (free text), Slack and link blockers are resolved by hand:
+  `tasks.ManuallyResolvable`, which is also the DTO's `manual_resolvable`.
+
 `tasks.ResolveBlockers(conn, lookup)` owns task blockers and PR/Jira
-resource blockers that are unresolved or were resolved automatically, on
-tasks neither done nor deleted; it never touches one the user resolved, nor
-Slack thread, link or free-text blockers. It writes resolve/unresolve rows
-and `system`-actor events and returns `[]tasks.Resolution`.
+resource blockers that are unresolved or were resolved automatically
+(`resolved_auto`), on tasks neither done nor deleted. It never touches a
+blocker the user resolved by hand, nor Slack, link or free-text blockers. It
+writes resolve/unresolve rows and `system`-actor events and returns
+`[]tasks.Resolution`. The lookup runs before the transaction because it may
+call Jira.
 
-- **Task blockers** resolve inside the tasks package itself, after commit
-  (`resolveAfterWrite`, a resolver pass with a nil lookup) in `AddBlocker`,
-  `SetState` and `Delete`, so the CLI resolves them at once too. A deleted
-  blocking task resolves with reason "deleted". Nothing is handed on: the
-  `system` events they write are what the notifier reads (see
-  "Notifications"), whichever process wrote them. `initTaskHooks` points
-  `tasks.Logf` at the server's logger.
-- **Resource blockers** need the `StatusLookup` from
-  `internal/webui/blocker_status.go`: PRs from the cached
-  `watcher_resource_state` `"state"` (MERGED → "merged", CLOSED → "closed",
-  OPEN → unresolved); Jira from one `key in (…)` search per pass (a chunk
-  that fails with HTTP 400 is retried key by key; any other failure stops
-  the search), only while the Jira watcher is on and Jira is configured.
-  Unknown means the blocker keeps its last state. The CLI leaves them to the
-  next `worktree ui` pass.
+**Auto-unresolve.** A blocker that was resolved automatically but whose
+source is no longer satisfied (a PR reopened, a Jira issue moved out of Done,
+a blocking task reopened) is unresolved again by the next pass and its event
+reads "Blocked again by …". A manual resolve is final until the user undoes
+it. **Cycles:** adding a blocker that would close a cycle is refused
+(`wouldCycle`; web 400 "would create a blocking cycle"), but an automatic
+unresolve may re-form a mutual block (A blocks B, B blocks A). That is
+accepted, since blocking never prevents completion: both tasks just show
+blocked until one resolves.
+
+**Where resolution runs.**
+
+- Task blockers resolve inside the tasks package after commit
+  (`resolveAfterWrite`, a pass with a nil lookup) in `AddBlocker`,
+  `SetState` and `Delete`, so the CLI resolves them at once too. Nothing is
+  handed on: the `system` events they write are what the notifier reads,
+  whichever process wrote them. `initTaskHooks` points `tasks.Logf` at the
+  server's logger.
+- Resource blockers need the `StatusLookup` from
+  `internal/webui/blocker_status.go`. The CLI leaves them to the next
+  `worktree ui` pass.
 - `s.resolvePass(network)` resolves, then runs `ReconcileHolds`. The poll
-  loop runs it with network after every pass, even when a source failed:
-  it is the ONLY Jira search, and it merges what it finds into the server's
-  Jira status cache. The web's state change and delete call
-  `s.afterTaskWrite()` = `resolvePass(false)`, which reads only the DB and
-  that cache, so a request never waits on Jira.
+  loop runs it with network after every pass, even when a source failed.
+- **Web requests never contact Jira.** The poll loop's pass is the ONLY Jira
+  search: one `key in (…)` query per chunk of 50 (a chunk that fails with
+  HTTP 400 is retried key by key; any other failure stops the search), only
+  while the Jira watcher is on and Jira is configured. It merges what it finds
+  into the server's in-memory Jira status cache. A state change or delete
+  calls `s.afterTaskWrite()` = `resolvePass(false)`, which reads only the DB
+  and that cache, so a request never waits on Jira and a Jira resolution can
+  lag up to one poll interval. The explicit poll-on-view route (`handlePollWorktree` via `safePollAll`)
+  already waits on network polling and so runs the search too. Done is the search's
+  `StatusCategory`, so no watcher release is needed. Unknown means the
+  blocker keeps its last state.
+
+**Holds and the subscriber-audit rule.** Every resource blocker of an open
+task (resolved or not, Slack threads included) keeps a `task:<id>`
+subscription in `watcher_subscriptions` (`tasks.HoldSubscriber`), so the
+resource is polled even when no worktree follows it. `tasks.ReconcileHolds`
+makes the live holds match exactly what is wanted (idempotent, serialised by
+`holdsMu`, reviving the pair's tombstone) and runs after commit, never inside
+`inTx`, because the watcher library opens its own transactions. A hold must
+never make a resource look followed: **every query that means "followed by a
+worktree"** (timelines, all-resources, archived detection, unread,
+notifications, `resources.Load`) restricts to `worktree:` subscribers,
+tombstones included. Only polling (`watcherdb.ActiveResources`) counts holds,
+deliberately.
+
+**The `system` actor.** Automatic resolutions and unresolutions are recorded
+with `tasks.ActorSystem`; the timeline authors them "worktree". Unread rule
+(`internal/tasks/unread.go`, `unreadActors`): a task event is unread when its
+actor is not the user, i.e. `agent` or `system`.
+
+**Unblocked notifications** are described under "Notifications".
+
+**API and UI.** The routes and DTO fields are in the Tasks API notes
+(`tasks_blockers_api.go`). The UI: `BlockersSection` in the task sidebar
+(kind icon, label, status line from `status_label` / `resolved_reason`,
+manual-resolve checkbox only where `manual_resolvable`, remove, and a "+ Add"
+menu), `BlockerPicker` (Task picker excludes done tasks, the task itself,
+tasks it blocks and tasks already blocking it; Resource picker uses
+`LinkPicker`'s suggestions through the shared `SuggestPicker` and excludes
+existing blockers; Other is free text), `BlocksSection` on the Details tab,
+a "⛔ blocked" chip on task rows (tooltip lists the unresolved blockers),
+`BlocksBadge` "⛔ blocks N" on resource cards and Resources rows
+(`blocks_count`), and the four `task_blocker_*` event labels in `eventMeta`.
+Task states are labelled once, by `TASK_STATE_LABEL` in
+`TaskStateCheckbox.tsx`.
 
 ### Task detail modal (`ui/src/components/tasks/modal/`)
 
@@ -1448,8 +1512,9 @@ AUTOINCREMENT integer assigned under SQLite's single write lock, so ids commit
 in order and `id > cursor` needs no lookback window. `initNotifyCursor` sets it
 to `MAX(id)` together with the watcher cursor, so a restart never replays
 task history and a failed initialisation retries both. Every row past the
-cursor advances it, but only agent events (`actor = 'agent'`) of non-deleted
-tasks notify; the user's own never do. A worktree is notified when the task is
+cursor advances it. Agent events of non-deleted tasks notify through this
+per-worktree path; `system` blocker events never do, since they go through
+the Unblocked path below or are dropped; the user's own never notify. A worktree is notified when the task is
 in its scope (`tasks.BuildScopeIndex`: linked directly, implicitly or by the
 archived fallback) AND it has "Notify on all", or "Notify on new events" on a
 resource the task links that the worktree tracks (`resources.Load`). A global
