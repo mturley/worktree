@@ -16,6 +16,7 @@ import (
 	"github.com/mturley/watcher"
 	"github.com/mturley/watcher/slack"
 	"github.com/mturley/worktree/internal/cmux"
+	"github.com/mturley/worktree/internal/gitfetch"
 	"github.com/mturley/worktree/internal/linked"
 	"github.com/mturley/worktree/internal/linkmeta"
 	"github.com/mturley/worktree/internal/slackpoller"
@@ -27,6 +28,14 @@ type Server struct {
 	Port    int
 	DevMode bool
 	Logger  *log.Logger
+
+	// fetcher runs the Code tab's background `git fetch`. It is created on
+	// first use (see fetchScheduler) because its interval comes from the
+	// config; tests set it directly to one with a fake Fetch. Serve cancels
+	// fetcherCancel when it returns so in-flight fetches do not outlive it.
+	fetcher       *gitfetch.Scheduler
+	fetcherMu     sync.Mutex
+	fetcherCancel context.CancelFunc
 
 	// Security is required to serve (Start and Serve refuse a nil one). A
 	// Handler built without it skips the Host and session guards, which is
@@ -255,6 +264,7 @@ func (s *Server) routes() []route {
 		{"GET /api/slack-autocomplete", s.handleSlackAutocomplete},
 		{"GET /api/thread-events", s.handleThreadEvents},
 		{"GET /api/worktree-info", s.handleWorktreeInfo},
+		{"GET /api/worktree-git", s.handleWorktreeGit},
 		{"GET /api/worktree-notes", s.handleGetWorktreeNotes},
 		{"POST /api/worktree-notes", s.handleSetWorktreeNotes},
 		{"POST /api/notify", s.handleSetNotify},
@@ -351,6 +361,7 @@ func (s *Server) Serve(httpLn, httpsLn net.Listener) error {
 	if err := s.Security.validate(); err != nil {
 		return err
 	}
+	defer s.stopFetcher()
 	h := s.Handler()
 	errc := make(chan error, 2)
 

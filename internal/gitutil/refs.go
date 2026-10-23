@@ -54,6 +54,16 @@ func MainUpstream(dir string) (string, bool) {
 	return "", false
 }
 
+// CurrentBranch names the checked-out branch, including an unborn one in a
+// repo with no commits. ok is false for a detached HEAD.
+func CurrentBranch(dir string) (string, bool) {
+	out, err := git(dir, "symbolic-ref", "--short", "-q", "HEAD")
+	if err != nil || out == "" {
+		return "", false
+	}
+	return out, true
+}
+
 // TrackingBranch names the current branch's upstream (HEAD@{upstream}). It is
 // absent for an unpushed branch and for a detached HEAD.
 func TrackingBranch(dir string) (string, bool) {

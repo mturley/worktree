@@ -101,3 +101,41 @@ func parseBranchHeader(h string, st *Status) {
 	}
 	st.Branch = h
 }
+
+// WorkingSummary counts the working tree's changes from a single
+// `git status -uall`. Unlike ShortStatus it lists every file of an untracked
+// directory, so Untracked counts files and Files is the number of distinct
+// changed paths — what the Code tab's "N files changed" needs.
+type WorkingSummary struct {
+	Staged    int
+	Modified  int
+	Untracked int
+	Files     int
+}
+
+// WorkingCounts returns ok=false when dir is not a git worktree.
+func WorkingCounts(dir string) (WorkingSummary, bool) {
+	out, err := exec.Command("git", "-C", dir, "status", "--porcelain=v1", "-uall").Output()
+	if err != nil {
+		return WorkingSummary{}, false
+	}
+	var ws WorkingSummary
+	for _, line := range strings.Split(string(out), "\n") {
+		if len(line) < 3 {
+			continue
+		}
+		// One porcelain line per path, so lines are distinct paths.
+		ws.Files++
+		if strings.HasPrefix(line, "?? ") {
+			ws.Untracked++
+			continue
+		}
+		if x := line[0]; x != ' ' && x != '?' {
+			ws.Staged++
+		}
+		if y := line[1]; y != ' ' && y != '?' {
+			ws.Modified++
+		}
+	}
+	return ws, true
+}
