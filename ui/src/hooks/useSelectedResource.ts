@@ -10,6 +10,8 @@ import {
 const PARAM = "resource"
 /** The selected resource's active tab; absent means its default tab. */
 const TAB_PARAM = "tab"
+/** The URL params a selection lives in, for a caller clearing it in its own navigation. */
+export const SELECTION_PARAMS = [PARAM, TAB_PARAM] as const
 
 /**
  * The selected resource, stored in the URL as `?resource=<type>:<id>`.

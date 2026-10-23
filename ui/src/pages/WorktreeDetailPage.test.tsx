@@ -1094,6 +1094,31 @@ describe("WorktreeDetailPage diff drill-down", () => {
     expect(screen.queryByRole("button", { name: /select resource o\/r#1/i })).not.toBeInTheDocument()
   })
 
+  it("closes from the titles, along with their other resets, in one navigation", async () => {
+    window.history.replaceState({}, "", diffUrl("&file=a.go&resource=pr:o%2Fr%231&q=w"))
+    setViewport("wide")
+    wrap()
+    await screen.findByTestId("diff-view")
+    await userEvent.click(screen.getByTitle("Show all resources"))
+    await waitFor(() => expect(screen.queryByTestId("diff-view")).not.toBeInTheDocument())
+    const params = new URLSearchParams(window.location.search)
+    expect(params.has("diff")).toBe(false)
+    expect(params.has("file")).toBe(false)
+    expect(params.has("resource")).toBe(false)
+    // The search isn't one of the titles' resets.
+    expect(params.get("q")).toBe("w")
+    expect(await screen.findByRole("tab", { name: "Notes" })).toHaveAttribute("aria-selected", "true")
+  })
+
+  it("makes the titles a way out even with nothing else to reset", async () => {
+    window.history.replaceState({}, "", diffUrl())
+    setViewport("wide")
+    wrap()
+    await screen.findByTestId("diff-view")
+    await userEvent.click(screen.getByTitle("Show notes"))
+    await waitFor(() => expect(screen.queryByTestId("diff-view")).not.toBeInTheDocument())
+  })
+
   it("goes back to the worktree on Esc, staying on the page", async () => {
     window.history.replaceState({}, "", diffUrl("&file=a.go"))
     setViewport("wide")

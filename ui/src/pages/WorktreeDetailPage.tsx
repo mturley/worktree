@@ -11,7 +11,7 @@ import { IconChevronLeft } from "@tabler/icons-react"
 import { useNotifyMode } from "../hooks/useNotifyMode"
 import { TAB_ID } from "../lib/tabId"
 import { useWorktreeDetail } from "../hooks/useWorktreeDetail"
-import { useSelectedResource } from "../hooks/useSelectedResource"
+import { SELECTION_PARAMS, useSelectedResource } from "../hooks/useSelectedResource"
 import { useIsWide } from "../hooks/useIsWide"
 import { useIsTall } from "../hooks/useIsTall"
 import { useDetailTab } from "../hooks/useDetailTab"
@@ -547,9 +547,12 @@ export function WorktreeDetailPage() {
   // Anything the titles' reset would undo; with none of it, they are plain
   // text rather than a button that does nothing.
   const narrowed = Boolean(selectedResource) || unreadOnly
-  const resettable = narrowed || detailTab.tab !== "notes"
+  const resettable = narrowed || inDiff || detailTab.tab !== "notes"
   const showOverview = () => {
-    if (selectedResource) clear()
+    // Out of the diff drill-down too, clearing the selection in the same
+    // navigation: two URL writes in one tick would drop the first.
+    if (inDiff) diffView.leave({}, selectedResource ? SELECTION_PARAMS : [])
+    else if (selectedResource) clear()
     if (unreadOnly) setUnreadOnly(false)
     // Back to the Notes tab too, and so (wide) the card back into the column.
     if (detailTab.tab !== "notes") detailTab.select("notes")
@@ -704,11 +707,11 @@ export function WorktreeDetailPage() {
               {/* Inside cmux the workspace is the headline and the worktree
                   name steps down beneath it, as on the home page's cards;
                   outside cmux the name is the full-size title. */}
-              {/* With a resource selected, unreads only on or the details card
-                  off its Notes tab, the titles are a way back to the
-                  worktree's whole overview: they deselect, as "← all
-                  resources" does, turn unreads only off and return the card
-                  to Notes. A div
+              {/* With a resource selected, unreads only on, the diff
+                  drill-down open or the details card off its Notes tab, the
+                  titles are a way back to the worktree's whole overview: they
+                  close the drill-down, deselect, as "← all resources" does,
+                  turn unreads only off and return the card to Notes. A div
                   with role=button rather than a <button>, which may not hold
                   the headings. With none of those there is nothing to reset,
                   so it is plain text. */}
