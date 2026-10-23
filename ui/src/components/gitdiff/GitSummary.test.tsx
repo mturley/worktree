@@ -17,7 +17,7 @@ const base: WorktreeGit = {
 const show = (over: Partial<WorktreeGit> = {}) =>
   render(
     <MantineProvider>
-      <GitSummary git={{ ...base, ...over }} repo="r" />
+      <GitSummary path="/wt/foo" git={{ ...base, ...over }} repo="r" />
     </MantineProvider>,
   )
 
@@ -57,6 +57,24 @@ describe("GitSummary labels", () => {
     for (const label of ["Working tree", "Merge base", "Tracking branch"]) {
       expect(screen.getByText(label).style.whiteSpace).toBe("nowrap")
     }
+  })
+})
+
+describe("GitSummary directory", () => {
+  it("heads the summary with the working directory and a button that copies it", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true })
+    const { container } = show()
+    // First, ahead of the columns (Mantine's style tag leads the text).
+    expect(container.textContent).toMatch(/\}Directory\/wt\/fooRepo/)
+    await userEvent.click(screen.getByRole("button", { name: "Copy directory path" }))
+    expect(writeText).toHaveBeenCalledWith("/wt/foo")
+  })
+
+  it("still shows it when the worktree is missing from disk", () => {
+    show({ on_disk: false })
+    expect(screen.getByText("/wt/foo")).toBeInTheDocument()
+    expect(screen.getByText("Worktree is missing from disk")).toBeInTheDocument()
   })
 })
 

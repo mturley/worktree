@@ -47,7 +47,25 @@ function CopyIcon({ value, label, tooltip }: { value: string; label: string; too
  * against its merge base and tracking branch (right). Two columns wide,
  * stacked on a phone.
  */
-export function GitSummary({ git, repo, updated }: { git: WorktreeGit; repo: string; updated?: string }) {
+export function GitSummary({ path, git, repo, updated }: { path: string; git: WorktreeGit; repo: string; updated?: string }) {
+  // The working directory heads the summary, across both columns.
+  const directory = (
+    <InfoRow label="Directory">
+      <Group gap={4} wrap="nowrap" component="span">
+        <span>{path}</span>
+        <CopyIcon value={path} label="Copy directory path" tooltip="Copy directory path" />
+      </Group>
+    </InfoRow>
+  )
+  return (
+    <Stack gap={2}>
+      {directory}
+      <Columns git={git} repo={repo} updated={updated} />
+    </Stack>
+  )
+}
+
+function Columns({ git, repo, updated }: { git: WorktreeGit; repo: string; updated?: string }) {
   const wide = useIsWide()
   if (!git.on_disk) {
     return <Text size="xs" c="dimmed" fs="italic">Worktree is missing from disk</Text>
