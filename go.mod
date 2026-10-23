@@ -3,7 +3,7 @@ module github.com/mturley/worktree
 go 1.26.4
 
 require (
-	github.com/mturley/watcher v0.15.0
+	github.com/mturley/watcher v0.16.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.9
 	golang.org/x/net v0.59.0
