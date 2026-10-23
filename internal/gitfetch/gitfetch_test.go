@@ -26,7 +26,7 @@ type fakes struct {
 func newFakes() *fakes { return &fakes{now: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)} }
 
 func (f *fakes) scheduler(interval time.Duration) *Scheduler {
-	s := New(interval)
+	s := New(context.Background(), interval)
 	s.Now = func() time.Time { f.mu.Lock(); defer f.mu.Unlock(); return f.now }
 	s.Fetch = func(ctx context.Context, dir, remote string) error {
 		f.mu.Lock()
@@ -83,8 +83,8 @@ func TestMaybeFetchesOnceWhenDue(t *testing.T) {
 	dir := testgit.Worktree(t)
 	f := newFakes()
 	s := f.scheduler(time.Minute)
-	s.Maybe(context.Background(), dir, []string{"origin", "upstream"})
-	s.Maybe(context.Background(), dir, []string{"origin", "upstream"})
+	s.Maybe(dir, []string{"origin", "upstream"})
+	s.Maybe(dir, []string{"origin", "upstream"})
 	settle(t, s, dir)
 	if got := f.count(); got != 2 {
 		t.Fatalf("fetches = %d, want 2 (one per remote)", got)
@@ -99,9 +99,9 @@ func TestMaybeDedupsAcrossWorktreesOfSameRepo(t *testing.T) {
 	b := addSibling(t, a)
 	f := newFakes()
 	s := f.scheduler(time.Minute)
-	s.Maybe(context.Background(), a, []string{"origin"})
+	s.Maybe(a, []string{"origin"})
 	settle(t, s, a)
-	s.Maybe(context.Background(), b, []string{"origin"})
+	s.Maybe(b, []string{"origin"})
 	settle(t, s, b)
 	if got := f.count(); got != 1 {
 		t.Fatalf("fetches = %d, want 1", got)
@@ -115,16 +115,16 @@ func TestMaybeWaitsOutInterval(t *testing.T) {
 	dir := testgit.Worktree(t)
 	f := newFakes()
 	s := f.scheduler(time.Minute)
-	s.Maybe(context.Background(), dir, []string{"origin"})
+	s.Maybe(dir, []string{"origin"})
 	settle(t, s, dir)
 	f.advance(time.Minute - time.Second)
-	s.Maybe(context.Background(), dir, []string{"origin"})
+	s.Maybe(dir, []string{"origin"})
 	settle(t, s, dir)
 	if got := f.count(); got != 1 {
 		t.Fatalf("fetches = %d before interval elapsed, want 1", got)
 	}
 	f.advance(time.Second)
-	s.Maybe(context.Background(), dir, []string{"origin"})
+	s.Maybe(dir, []string{"origin"})
 	settle(t, s, dir)
 	if got := f.count(); got != 2 {
 		t.Fatalf("fetches = %d after interval, want 2", got)
@@ -136,12 +136,12 @@ func TestMaybeFailureWaitsOutInterval(t *testing.T) {
 	f := newFakes()
 	f.err = errors.New("boom")
 	s := f.scheduler(time.Minute)
-	s.Maybe(context.Background(), dir, []string{"origin"})
+	s.Maybe(dir, []string{"origin"})
 	settle(t, s, dir)
 	if st := s.State(dir); st.LastError == "" || st.LastOKAt != nil {
 		t.Fatalf("state = %+v, want error and no LastOKAt", st)
 	}
-	s.Maybe(context.Background(), dir, []string{"origin"})
+	s.Maybe(dir, []string{"origin"})
 	settle(t, s, dir)
 	if got := f.count(); got != 1 {
 		t.Fatalf("fetches = %d, want 1 (failure must wait out the interval)", got)
@@ -156,7 +156,7 @@ func TestMaybeSkipsWhileLockFilePresent(t *testing.T) {
 	if err := os.WriteFile(lock, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s.Maybe(context.Background(), dir, []string{"origin"})
+	s.Maybe(dir, []string{"origin"})
 	settle(t, s, dir)
 	if f.count() != 0 {
 		t.Fatal("fetched while index.lock was present")
@@ -164,7 +164,7 @@ func TestMaybeSkipsWhileLockFilePresent(t *testing.T) {
 	if err := os.Remove(lock); err != nil {
 		t.Fatal(err)
 	}
-	s.Maybe(context.Background(), dir, []string{"origin"})
+	s.Maybe(dir, []string{"origin"})
 	settle(t, s, dir)
 	if f.count() != 1 {
 		t.Fatal("a skipped attempt must not count against the interval")
@@ -180,7 +180,7 @@ func TestMaybeSkipsWhileRefLockPresent(t *testing.T) {
 	if err := os.WriteFile(lock, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s.Maybe(context.Background(), dir, []string{"origin"})
+	s.Maybe(dir, []string{"origin"})
 	settle(t, s, dir)
 	if f.count() != 0 {
 		t.Fatal("fetched while a ref lock was present")
@@ -192,9 +192,9 @@ func TestMaybeNeverConcurrentPerRepo(t *testing.T) {
 	f := newFakes()
 	f.block = make(chan struct{})
 	s := f.scheduler(time.Minute)
-	s.Maybe(context.Background(), dir, []string{"origin"})
+	s.Maybe(dir, []string{"origin"})
 	f.advance(time.Hour)
-	s.Maybe(context.Background(), dir, []string{"origin"})
+	s.Maybe(dir, []string{"origin"})
 	if !s.State(dir).InProgress {
 		t.Fatal("InProgress should be true")
 	}
@@ -202,6 +202,38 @@ func TestMaybeNeverConcurrentPerRepo(t *testing.T) {
 	settle(t, s, dir)
 	if got := f.count(); got != 1 {
 		t.Fatalf("fetches = %d, want 1", got)
+	}
+}
+
+func TestMaybeCancelledWithLifetimeContext(t *testing.T) {
+	dir := testgit.Worktree(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s := New(ctx, time.Minute)
+	started := make(chan struct{})
+	var sawCancel sync.WaitGroup
+	sawCancel.Add(1)
+	s.Fetch = func(c context.Context, dir, remote string) error {
+		close(started)
+		<-c.Done()
+		sawCancel.Done()
+		return c.Err()
+	}
+	s.Maybe(dir, []string{"origin"})
+	<-started
+	if !s.State(dir).InProgress {
+		t.Fatal("InProgress should be true")
+	}
+	cancel()
+	sawCancel.Wait()
+	settle(t, s, dir)
+
+	// With the lifetime context done, Maybe must not start anything.
+	s.Fetch = func(context.Context, string, string) error { t.Error("fetch after shutdown"); return nil }
+	s.Now = func() time.Time { return time.Now().Add(time.Hour) }
+	s.Maybe(dir, []string{"origin"})
+	if s.State(dir).InProgress {
+		t.Fatal("started a fetch after shutdown")
 	}
 }
 

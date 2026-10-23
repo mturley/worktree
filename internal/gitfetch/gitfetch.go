@@ -41,8 +41,12 @@ type repoState struct {
 // Scheduler fetches remotes in the background. Now and Fetch are fields so
 // tests can fake the clock and the network.
 type Scheduler struct {
+	// Ctx is the server's lifetime context: every fetch derives from it, so
+	// shutdown cancels in-flight git processes. A request context must never
+	// govern a background fetch.
+	Ctx      context.Context
 	Interval time.Duration
-	Now      func() time.Time
+	Now     func() time.Time
 	Fetch    func(ctx context.Context, dir, remote string) error
 
 	mu    sync.Mutex
@@ -50,8 +54,9 @@ type Scheduler struct {
 }
 
 // New returns a Scheduler that runs the real git fetch.
-func New(interval time.Duration) *Scheduler {
+func New(ctx context.Context, interval time.Duration) *Scheduler {
 	return &Scheduler{
+		Ctx:      ctx,
 		Interval: interval,
 		Now:      time.Now,
 		Fetch:    gitFetch,
@@ -102,8 +107,8 @@ func (s *Scheduler) State(dir string) State {
 // flight, when the last attempt (successful or not) is within Interval, or when
 // a git lock file shows the user's own git command is mid-flight; a skipped
 // attempt does not count against the interval.
-func (s *Scheduler) Maybe(ctx context.Context, dir string, remotes []string) {
-	if len(remotes) == 0 {
+func (s *Scheduler) Maybe(dir string, remotes []string) {
+	if len(remotes) == 0 || s.Ctx.Err() != nil {
 		return
 	}
 	key := repoKey(dir)
@@ -132,8 +137,7 @@ func (s *Scheduler) Maybe(ctx context.Context, dir string, remotes []string) {
 	s.mu.Unlock()
 
 	remotes = append([]string(nil), remotes...)
-	// The request that triggered us ends long before the fetch does.
-	bg := context.WithoutCancel(ctx)
+	bg := s.Ctx
 	go func() {
 		var firstErr error
 		for _, r := range remotes {
