@@ -39,6 +39,10 @@ type Blocker struct {
 	ResolvedAuto   bool   // resolved by the system, not the user
 	ResolvedReason string // e.g. "merged"; "" when resolved by hand
 	CreatedAt      string
+	// resolvedEventID is the task_blocker_resolved event that resolved it
+	// (0 while unresolved, or when resolved before it was recorded). Undo
+	// matches a cascade by it. Unexported, so it stays out of the JSON.
+	resolvedEventID int64
 }
 
 // ErrBlockerNotFound is returned for a blocker that does not exist or whose
@@ -80,7 +84,7 @@ func ManuallyResolvable(b BlockerTarget) bool {
 }
 
 const blockerCols = `b.id, b.task_id, b.kind, COALESCE(b.blocking_task_id, 0), b.resource_type, b.resource_id, b.resource_url, b.text,
-	b.resolved_at, b.resolved_auto, b.resolved_reason, b.created_at`
+	b.resolved_at, b.resolved_auto, b.resolved_reason, b.created_at, COALESCE(b.resolved_event_id, 0)`
 
 // scanBlocker reads one row selected with blockerCols. Blocker.TaskID is
 // the blocked task; BlockingTaskID is the blocking one (task kind only).
@@ -89,7 +93,7 @@ func scanBlocker(s interface{ Scan(...any) error }) (Blocker, error) {
 	var resolved sql.NullString
 	var auto int
 	err := s.Scan(&b.ID, &b.TaskID, &b.Kind, &b.BlockingTaskID, &b.ResourceType, &b.ResourceID, &b.URL, &b.Text,
-		&resolved, &auto, &b.ResolvedReason, &b.CreatedAt)
+		&resolved, &auto, &b.ResolvedReason, &b.CreatedAt, &b.resolvedEventID)
 	b.ResolvedAt, b.ResolvedAuto = resolved.String, auto != 0
 	return b, err
 }
@@ -187,7 +191,9 @@ func wouldCycle(q dbtx, taskID, blocking int64) (bool, error) {
 // AddBlocker adds t as a blocker of taskID, unresolved. Adding a target the
 // task already has (resolved or not) is a no-op returning the existing
 // blocker. A task blocker must name a live task and must not close a cycle
-// among unresolved task blockers (ErrInvalid). User or agent only.
+// among unresolved task blockers (ErrInvalid); one whose blocking task is
+// already done is resolved in the same transaction, marked on_add (see
+// ResolveOptions), unless taskID is itself done. User or agent only.
 func AddBlocker(conn *sql.DB, a Actor, taskID int64, t BlockerTarget) (Blocker, error) {
 	if err := validActor(a); err != nil {
 		return Blocker{}, err
@@ -198,10 +204,11 @@ func AddBlocker(conn *sql.DB, a Actor, taskID int64, t BlockerTarget) (Blocker, 
 	}
 	var id int64
 	err = inTx(conn, func(tx dbtx) error {
-		if _, err := load(tx, taskID); err != nil {
+		cur, err := load(tx, taskID)
+		if err != nil {
 			return err
 		}
-		err := tx.QueryRowContext(bg,
+		err = tx.QueryRowContext(bg,
 			`SELECT id FROM task_blockers
 			  WHERE task_id = ? AND kind = ? AND COALESCE(blocking_task_id, 0) = ?
 			    AND resource_type = ? AND resource_id = ? AND text = ?`,
@@ -253,13 +260,27 @@ func AddBlocker(conn *sql.DB, a Actor, taskID int64, t BlockerTarget) (Blocker, 
 		if err != nil {
 			return err
 		}
-		_, err = record(tx, a, taskID, ts, EventTaskBlockerAdded, p)
+		if _, err = record(tx, a, taskID, ts, EventTaskBlockerAdded, p); err != nil {
+			return err
+		}
+		if t.Kind != BlockerTask || cur.State == StateDone {
+			return nil
+		}
+		// The blocking task was loaded live above, so only "done" applies.
+		done, reason, err := blockingTaskDone(tx, t.BlockingTaskID)
+		if err != nil || !done {
+			return err
+		}
+		b, err := loadBlocker(tx, id)
+		if err != nil {
+			return err
+		}
+		_, err = setResolvedTx(tx, Actor{Kind: ActorSystem}, b, true, true, true, reason, ts)
 		return err
 	})
 	if err != nil {
 		return Blocker{}, err
 	}
-	resolveAfterAdd(conn, id)      // a task blocker on a done task resolves at once
 	reconcileHoldsAfterWrite(conn) // a resource blocker holds its resource
 	return loadBlocker(conn, id)
 }
@@ -311,7 +332,8 @@ func SetBlockerResolved(conn *sql.DB, a Actor, blockerID int64, resolved bool) e
 		if !ManuallyResolvable(b.BlockerTarget) {
 			return fmt.Errorf("%w: only free-text, Slack thread and link blockers are resolved by hand", ErrInvalid)
 		}
-		return setResolvedTx(tx, a, b, resolved, false, false, "", now())
+		_, err = setResolvedTx(tx, a, b, resolved, false, false, "", now())
+		return err
 	})
 }
 
@@ -319,43 +341,47 @@ func SetBlockerResolved(conn *sql.DB, a Actor, blockerID int64, resolved bool) e
 // stamping auto and reason, bumping its task's updated_at and recording
 // task_blocker_resolved {blocker_id, kind, label, auto, reason} (plus
 // on_add: true when onAdd, see ResolveOptions) or
-// task_blocker_unresolved {blocker_id, kind, label}. It is the one write
-// path for resolution, shared with the resolver, which passes ActorSystem;
-// a is checked with validInternalActor. A blocker already in the wanted
-// state is left alone. It calls no public function.
-func setResolvedTx(tx dbtx, a Actor, b Blocker, resolved, auto, onAdd bool, reason, ts string) error {
+// task_blocker_unresolved {blocker_id, kind, label}, and returns that
+// event's id. A resolution also stores the id as the blocker's
+// resolved_event_id (an unresolve clears it). It is the one write path for
+// resolution, shared with the resolver and the in-transaction cascades,
+// which pass ActorSystem; a is checked with validInternalActor. A blocker
+// already in the wanted state is left alone (id 0). It calls no public
+// function.
+func setResolvedTx(tx dbtx, a Actor, b Blocker, resolved, auto, onAdd bool, reason, ts string) (int64, error) {
 	if err := validInternalActor(a); err != nil {
-		return err
+		return 0, err
 	}
 	if (b.ResolvedAt != "") == resolved {
-		return nil
+		return 0, nil
 	}
 	p, err := blockerPayload(tx, b.ID, b.BlockerTarget)
 	if err != nil {
-		return err
-	}
-	typ := EventTaskBlockerUnresolved
-	if resolved {
-		typ = EventTaskBlockerResolved
-		p["auto"], p["reason"] = auto, reason
-		if onAdd {
-			p["on_add"] = true
-		}
-		_, err = tx.ExecContext(bg,
-			`UPDATE task_blockers SET resolved_at = ?, resolved_auto = ?, resolved_reason = ? WHERE id = ?`,
-			ts, bit(auto), reason, b.ID)
-	} else {
-		_, err = tx.ExecContext(bg,
-			`UPDATE task_blockers SET resolved_at = NULL, resolved_auto = 0, resolved_reason = '' WHERE id = ?`, b.ID)
-	}
-	if err != nil {
-		return err
+		return 0, err
 	}
 	if err := touch(tx, b.TaskID, ts); err != nil {
-		return err
+		return 0, err
 	}
-	_, err = record(tx, a, b.TaskID, ts, typ, p)
-	return err
+	if !resolved {
+		if _, err := tx.ExecContext(bg,
+			`UPDATE task_blockers SET resolved_at = NULL, resolved_auto = 0, resolved_reason = '', resolved_event_id = NULL
+			  WHERE id = ?`, b.ID); err != nil {
+			return 0, err
+		}
+		return record(tx, a, b.TaskID, ts, EventTaskBlockerUnresolved, p)
+	}
+	p["auto"], p["reason"] = auto, reason
+	if onAdd {
+		p["on_add"] = true
+	}
+	id, err := record(tx, a, b.TaskID, ts, EventTaskBlockerResolved, p)
+	if err != nil {
+		return 0, err
+	}
+	_, err = tx.ExecContext(bg,
+		`UPDATE task_blockers SET resolved_at = ?, resolved_auto = ?, resolved_reason = ?, resolved_event_id = ?
+		  WHERE id = ?`, ts, bit(auto), reason, id, b.ID)
+	return id, err
 }
 
 // Blockers returns taskID's blockers, unresolved first, then oldest first;

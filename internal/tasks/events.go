@@ -10,15 +10,15 @@ import (
 const (
 	EventTaskCreated       = "task_created"
 	EventTaskEdited        = "task_edited"        // {"changes":{"<field>":{"from":…,"to":…}}}
-	EventTaskStateChanged  = "task_state_changed" // {"from":…,"to":…}
-	EventTaskDeleted       = "task_deleted"
+	EventTaskStateChanged  = "task_state_changed" // {"from","to","prev_started_at","prev_completed_at","cascade"}
+	EventTaskDeleted       = "task_deleted"       // {"cascade"}
 	EventTaskLinked        = "task_linked"
 	EventTaskUnlinked      = "task_unlinked"
 	EventTaskFocusChanged  = "task_focus_changed"
 	EventSubtaskAdded      = "subtask_added"
 	EventSubtaskEdited     = "subtask_edited"
-	EventSubtaskChecked    = "subtask_checked"
-	EventSubtaskUnchecked  = "subtask_unchecked"
+	EventSubtaskChecked    = "subtask_checked"   // {"subtask_id","text","from","to"}
+	EventSubtaskUnchecked  = "subtask_unchecked" // likewise
 	EventSubtaskRemoved    = "subtask_removed"
 	EventTaskEventLinked   = "task_event_linked"   // {"key","title"}
 	EventTaskEventUnlinked = "task_event_unlinked" // {"key","title"}

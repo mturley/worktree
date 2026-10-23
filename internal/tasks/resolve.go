@@ -189,7 +189,7 @@ func ResolveBlockersWith(conn *sql.DB, lookup StatusLookup, opts ResolveOptions)
 			}
 			// Only a failed write fails the pass (and rolls it back).
 			onAdd := opts.OnAddBlocker != 0 && b.ID == opts.OnAddBlocker
-			if err := setResolvedTx(tx, Actor{Kind: ActorSystem}, b, done, true, onAdd, reason, ts); err != nil {
+			if _, err := setResolvedTx(tx, Actor{Kind: ActorSystem}, b, done, true, onAdd, reason, ts); err != nil {
 				return err
 			}
 			r := Resolution{TaskID: b.TaskID, BlockerID: b.ID, Resolved: done, Label: label}
@@ -225,21 +225,86 @@ func blockingTaskDone(q dbtx, id int64) (bool, string, error) {
 	return false, "", nil
 }
 
-// resolveAfterWrite is what a public write that can change a task
-// blocker's condition calls after its commit: it resolves task blockers at
-// once (they depend only on this DB). Resource blockers need a
+// cascadeEntry is one blocker a state change or delete moved in its own
+// transaction, as listed in its event's "cascade": the blocker and the
+// system event that moved it. An unresolve also records the resolution it
+// undid (its Prev* fields), so undoing it can put that back unchanged
+// without writing an event.
+type cascadeEntry struct {
+	BlockerID           int64  `json:"blocker_id"`
+	EventID             int64  `json:"event_id"`
+	Resolved            bool   `json:"resolved"`
+	PrevResolvedAt      string `json:"prev_resolved_at,omitempty"`
+	PrevResolvedAuto    bool   `json:"prev_resolved_auto,omitempty"`
+	PrevResolvedReason  string `json:"prev_resolved_reason,omitempty"`
+	PrevResolvedEventID int64  `json:"prev_resolved_event_id,omitempty"`
+}
+
+// settleTaskBlockersTx brings every task blocker the resolver owns (see
+// candidateWhere) that involves taskID, as the blocking task or as the
+// blocked one, in line with its blocking task, inside a write's
+// transaction: resolved (reason "done" or "deleted") while that task is
+// done or deleted, unresolved otherwise. SetState and Delete call it after
+// changing taskID, so completing it, deleting it, leaving done, or
+// reopening a task whose own blocking task finished meanwhile all commit
+// with the resolutions they set off, and the after-commit pass finds
+// nothing left to do for them. It returns what it moved, for the event's
+// cascade. It calls no public function.
+func settleTaskBlockersTx(tx dbtx, taskID int64, ts string) ([]cascadeEntry, error) {
+	rows, err := tx.QueryContext(bg,
+		`SELECT `+blockerCols+` FROM task_blockers b JOIN tasks t ON t.id = b.task_id
+		  WHERE `+candidateWhere+` AND b.kind = 'task' AND (b.blocking_task_id = ? OR b.task_id = ?)
+		  ORDER BY b.id`, taskID, taskID)
+	if err != nil {
+		return nil, err
+	}
+	var cands []Blocker
+	for rows.Next() {
+		b, err := scanBlocker(rows)
+		if err != nil {
+			rows.Close()
+			return nil, err
+		}
+		cands = append(cands, b)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	var out []cascadeEntry
+	for _, b := range cands {
+		done, reason, err := blockingTaskDone(tx, b.BlockingTaskID)
+		if err != nil {
+			return nil, err
+		}
+		if done == (b.ResolvedAt != "") {
+			continue
+		}
+		id, err := setResolvedTx(tx, Actor{Kind: ActorSystem}, b, done, true, false, reason, ts)
+		if err != nil {
+			return nil, err
+		}
+		e := cascadeEntry{BlockerID: b.ID, EventID: id, Resolved: done}
+		if !done {
+			e.PrevResolvedAt, e.PrevResolvedAuto = b.ResolvedAt, b.ResolvedAuto
+			e.PrevResolvedReason, e.PrevResolvedEventID = b.ResolvedReason, b.resolvedEventID
+		}
+		out = append(out, e)
+	}
+	return out, nil
+}
+
+// resolveAfterWrite runs a resolver pass after a commit. SetState, Delete
+// and AddBlocker settle task blockers in their own transactions and no
+// longer call it; undo does, since putting a task back can leave a blocker
+// outside its cascade out of line (one a later write settled, or a blocked
+// task's own blockers when its delete is undone). Resource blockers need a
 // StatusLookup, which only `worktree ui` has; they wait for its next pass
 // (or its own after-write step). The resolutions need no handing on: the
 // events they write are what `worktree ui`'s notifier reads, whichever
 // process wrote them. As with holds, an error is logged, not returned: the
 // write has committed, and the poll loop resolves again after every pass.
-func resolveAfterWrite(conn *sql.DB) { resolveAfterAdd(conn, 0) }
-
-// resolveAfterAdd is resolveAfterWrite for AddBlocker: a resolution of the
-// blocker it just added (a task blocker whose blocking task is already
-// done) is marked on_add, so it does not notify.
-func resolveAfterAdd(conn *sql.DB, added int64) {
-	if _, err := ResolveBlockersWith(conn, nil, ResolveOptions{OnAddBlocker: added}); err != nil {
+func resolveAfterWrite(conn *sql.DB) {
+	if _, err := ResolveBlockers(conn, nil); err != nil {
 		Logf("tasks: %v (the poll loop will retry)", err)
 	}
 }

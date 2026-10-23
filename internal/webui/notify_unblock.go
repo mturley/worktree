@@ -16,10 +16,12 @@ import (
 
 // unblockHoldDefault is how long an "Unblocked" notification waits, from
 // the notifier pass that finds its event, before it is sent, so an undo
-// can withdraw it first. The wait therefore ends about 10s after the
-// notifier sees the event, not 10s after the resolution; Phase 6 (undo)
-// aligns it with the undo toast's window.
-const unblockHoldDefault = 10 * time.Second
+// can withdraw it first (an undone completion deletes the event, and the
+// recheck before sending drops it). It is the undo toast's window,
+// UNDO_WINDOW_MS (10s, ui/src/components/UndoToast.tsx), plus the
+// notifier's 5s scan interval, since the wait starts when a pass finds the
+// event, up to one interval after it was written. Change them together.
+const unblockHoldDefault = 10*time.Second + 5*time.Second
 
 // pendingUnblock is an automatic blocker resolution found by a pass and
 // held until due. Pending items live only in memory: a restart drops them

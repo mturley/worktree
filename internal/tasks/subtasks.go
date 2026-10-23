@@ -129,8 +129,10 @@ func EditSubtask(conn *sql.DB, a Actor, id int64, text string) error {
 	})
 }
 
-// SetSubtaskChecked sets a subtask's checkbox. Setting the current value
-// changes nothing and returns EventID 0.
+// SetSubtaskChecked sets a subtask's checkbox, recording subtask_checked or
+// subtask_unchecked {subtask_id, text, from, to}. Setting the current value
+// changes nothing and returns EventID 0; otherwise EventID is what
+// UndoSubtaskCheck takes.
 func SetSubtaskChecked(conn *sql.DB, a Actor, id int64, checked bool) (SubtaskChange, error) {
 	if err := validActor(a); err != nil {
 		return SubtaskChange{}, err
@@ -156,7 +158,9 @@ func SetSubtaskChecked(conn *sql.DB, a Actor, id int64, checked bool) (SubtaskCh
 		if checked {
 			typ = EventSubtaskChecked
 		}
-		sc.EventID, err = record(tx, a, cur.TaskID, ts, typ, subtaskPayload(cur))
+		p := subtaskPayload(cur)
+		p["from"], p["to"] = cur.Checked, checked
+		sc.EventID, err = record(tx, a, cur.TaskID, ts, typ, p)
 		return err
 	})
 	if err != nil {

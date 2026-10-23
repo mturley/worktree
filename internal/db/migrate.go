@@ -221,6 +221,12 @@ func migrate(conn *sql.DB) error {
 	if err := addColumnIfMissing(conn, "task_blockers", "resource_url", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	// resolved_event_id is the task_blocker_resolved event that resolved
+	// the blocker (NULL while unresolved, and for resolutions recorded
+	// before it existed). Undo matches a cascade by it exactly.
+	if err := addColumnIfMissing(conn, "task_blockers", "resolved_event_id", "INTEGER"); err != nil {
+		return err
+	}
 
 	// Backfill: every already-subscribed non-Slack resource starts fully
 	// read, so the feature goes live silent instead of announcing a backlog

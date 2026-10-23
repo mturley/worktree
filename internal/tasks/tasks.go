@@ -488,10 +488,31 @@ func Update(conn *sql.DB, a Actor, id int64, p Patch) (Task, error) {
 	return Get(conn, id)
 }
 
+// stateChangePayload is a task_state_changed event's payload: everything
+// UndoStateChange needs to put the change back. The Prev* fields are
+// pointers so an event recorded before they existed reads as nil, not as
+// "unset".
+type stateChangePayload struct {
+	From            State          `json:"from"`
+	To              State          `json:"to"`
+	PrevStartedAt   *string        `json:"prev_started_at"`
+	PrevCompletedAt *string        `json:"prev_completed_at"`
+	Cascade         []cascadeEntry `json:"cascade,omitempty"`
+}
+
+// deletePayload is a task_deleted event's payload.
+type deletePayload struct {
+	Cascade []cascadeEntry `json:"cascade,omitempty"`
+}
+
 // SetState moves a task to state to, maintaining started_at (set on first
 // reaching in_progress or done, cleared on returning to not_started) and
 // completed_at (set on entering done, cleared on leaving it). Setting the
-// current state changes nothing and returns EventID 0.
+// current state changes nothing and returns EventID 0. In the same
+// transaction it settles the task blockers involving the task (see
+// settleTaskBlockersTx): completing it resolves the blockers naming it,
+// leaving done unresolves them. Its event lists them as its cascade, and
+// sc.EventID is what UndoStateChange takes.
 func SetState(conn *sql.DB, a Actor, id int64, to State) (StateChange, error) {
 	if err := validActor(a); err != nil {
 		return StateChange{}, err
@@ -533,17 +554,21 @@ func SetState(conn *sql.DB, a Actor, id int64, to State) (StateChange, error) {
 			to, nullable(sc.StartedAt), nullable(sc.CompletedAt), ts, id); err != nil {
 			return err
 		}
-		sc.EventID, err = record(tx, a, id, ts, EventTaskStateChanged, map[string]State{"from": cur.State, "to": to})
+		cascade, err := settleTaskBlockersTx(tx, id, ts)
+		if err != nil {
+			return err
+		}
+		sc.EventID, err = record(tx, a, id, ts, EventTaskStateChanged, stateChangePayload{
+			From: cur.State, To: to,
+			PrevStartedAt: &sc.PrevStartedAt, PrevCompletedAt: &sc.PrevCompletedAt,
+			Cascade: cascade,
+		})
 		return err
 	})
 	if err != nil {
 		return StateChange{}, err
 	}
 	if sc.From != sc.To {
-		// Completing resolves the task blockers naming this task, and
-		// leaving done unresolves them; reopening this task puts its own
-		// blockers back under evaluation.
-		resolveAfterWrite(conn)
 		// Completing releases the task's holds; reopening re-acquires them.
 		reconcileHoldsAfterWrite(conn)
 	}
@@ -551,7 +576,9 @@ func SetState(conn *sql.DB, a Actor, id int64, to State) (StateChange, error) {
 }
 
 // Delete soft-deletes a task by setting deleted_at, returning the ID of the
-// task_deleted event it records (for an undo to point at). Its events remain.
+// task_deleted event it records (for UndoDelete to point at). Its events
+// remain. In the same transaction the task blockers naming it resolve as
+// "deleted", listed as the event's cascade.
 func Delete(conn *sql.DB, a Actor, id int64) (int64, error) {
 	if err := validActor(a); err != nil {
 		return 0, err
@@ -570,13 +597,16 @@ func Delete(conn *sql.DB, a Actor, id int64) (int64, error) {
 		if n == 0 {
 			return ErrNotFound
 		}
-		eventID, err = record(tx, a, id, ts, EventTaskDeleted, nil)
+		cascade, err := settleTaskBlockersTx(tx, id, ts)
+		if err != nil {
+			return err
+		}
+		eventID, err = record(tx, a, id, ts, EventTaskDeleted, deletePayload{Cascade: cascade})
 		return err
 	})
 	if err != nil {
 		return 0, err
 	}
-	resolveAfterWrite(conn)        // task blockers naming it resolve as "deleted"
 	reconcileHoldsAfterWrite(conn) // a deleted task holds nothing
 	return eventID, nil
 }
