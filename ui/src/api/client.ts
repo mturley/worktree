@@ -1,4 +1,4 @@
-import type { AllResourceDTO, CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, CredResult, DefaultBranchResponse, CredService, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, ResourceReadChange, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, UpdateStatus, WatcherHealth, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherAuthSettings, WatcherConfigSettings, WorktreeInfo, WorktreeNotes, WorktreeSettings, WorktreeSummary } from "./types"
+import type { DiffBase, DiffCommits, DiffFiles, DiffPatch, DiffRange, WorktreeGit, AllResourceDTO, CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, CredResult, DefaultBranchResponse, CredService, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, ResourceReadChange, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, UpdateStatus, WatcherHealth, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherAuthSettings, WatcherConfigSettings, WorktreeInfo, WorktreeNotes, WorktreeSettings, WorktreeSummary } from "./types"
 
 export class HttpError extends Error {
   constructor(message: string, readonly status: number) {
@@ -28,6 +28,27 @@ async function fetchJSON<T>(url: string, init?: RequestInit, opts: { reportLogin
   const data = await res.json().catch(() => null)
   if (!res.ok) throw new HttpError((data && data.error) || `HTTP ${res.status}`, res.status)
   return data as T
+}
+
+/** Like fetchJSON, for endpoints that return raw text; errors are still JSON. */
+async function fetchText(url: string): Promise<string> {
+  const res = await fetch(url)
+  reportIfLoginRequired(res)
+  if (!res.ok) {
+    const data = await res.json().catch(() => null)
+    throw new HttpError((data && data.error) || `HTTP ${res.status}`, res.status)
+  }
+  return res.text()
+}
+
+function diffParams(path: string, base: DiffBase, range?: DiffRange): URLSearchParams {
+  const params = new URLSearchParams({ path, base })
+  // "all" (or no range) sends neither: the server reads that as All changes.
+  if (range && range !== "all") {
+    params.set("from", range.from)
+    params.set("to", range.to)
+  }
+  return params
 }
 
 function cmuxPost(url: string, body: unknown) {
@@ -236,6 +257,22 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(args),
     }),
+  worktreeGit: (path: string, fetch: boolean) => {
+    const params = new URLSearchParams({ path })
+    if (fetch) params.set("fetch", "1")
+    return fetchJSON<WorktreeGit>(`/api/worktree-git?${params}`)
+  },
+  diffCommits: (path: string, base: DiffBase) =>
+    fetchJSON<DiffCommits>(`/api/worktree-diff/commits?${diffParams(path, base)}`),
+  diffFiles: (path: string, base: DiffBase, range: DiffRange) =>
+    fetchJSON<DiffFiles>(`/api/worktree-diff/files?${diffParams(path, base, range)}`),
+  diffPatch: (path: string, base: DiffBase, range: DiffRange, ignoreWs: boolean) => {
+    const params = diffParams(path, base, range)
+    if (ignoreWs) params.set("ignore_ws", "1")
+    return fetchJSON<DiffPatch>(`/api/worktree-diff/patch?${params}`)
+  },
+  diffFileContents: (path: string, rev: string, file: string) =>
+    fetchText(`/api/worktree-diff/file?${new URLSearchParams({ path, rev, file })}`),
   openInEditor: (path: string, file?: string) =>
     fetchJSON<{ ok: boolean }>("/api/worktrees/open-editor", {
       method: "POST",

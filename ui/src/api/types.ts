@@ -566,3 +566,71 @@ export interface ResourceReadChange {
   previous_ts: string | null
   last_read_ts: string
 }
+
+// --- Code tab: git status and diff (mirror internal/webui/worktree_git_api.go,
+// worktree_diff_api.go and internal/gitutil) ---
+
+export interface AheadBehind {
+  ahead: number
+  behind: number
+}
+
+export interface WorktreeGit {
+  on_disk: boolean
+  /** Moves on commits, fetches, branch switches and working-tree edits. */
+  fingerprint: string
+  /** Moves only on working-tree edits. */
+  working_fingerprint: string
+  /** Empty when detached. */
+  branch: string
+  main_upstream?: string
+  merge_base?: string
+  vs_merge_base?: AheadBehind
+  tracking?: string
+  vs_tracking?: AheadBehind
+  working: { staged: number; modified: number; untracked: number; files: number }
+  fetch: { last_ok_at?: string | null; last_error?: string; in_progress: boolean }
+}
+
+export interface Commit {
+  sha: string
+  short: string
+  subject: string
+  author: string
+  date: string
+}
+
+export interface FileChange {
+  path: string
+  old_path?: string
+  /** A, M, D or R. */
+  status: string
+  additions: number
+  deletions: number
+  binary: boolean
+}
+
+export interface DiffCommits {
+  list_id: string
+  base_ref: string
+  merge_base: string
+  commits: Commit[]
+}
+
+export interface DiffFiles {
+  fingerprint: string
+  list_id: string
+  files: FileChange[]
+}
+
+export interface DiffPatch {
+  list_id: string
+  working_fingerprint: string
+  old_rev: string
+  new_rev: string
+  patch: string
+}
+
+export type DiffBase = "merge-base" | "tracking"
+/** "all" is All changes; from/to are commit SHAs or "uncommitted" (from oldest, to newest). */
+export type DiffRange = "all" | { from: string; to: string }
