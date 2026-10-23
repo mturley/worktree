@@ -118,3 +118,38 @@ func TestPurgeDeletedKeepsOtherTasksBlockerOnIt(t *testing.T) {
 		t.Fatalf("blocker row: blocking=%d err=%v", blocking, err)
 	}
 }
+
+// Purging task 1 removes only task:1's holds: task 12's "task:12" shares
+// the prefix but must survive.
+func TestPurgeDeletedKeepsHoldOfTaskWithSharedIDPrefix(t *testing.T) {
+	conn := newDB(t)
+	var one, twelve Task
+	for i := 1; i <= 12; i++ {
+		tk := mustCreate(t, conn, "t")
+		switch tk.ID {
+		case 1:
+			one = tk
+		case 12:
+			twelve = tk
+		}
+	}
+	if one.ID != 1 || twelve.ID != 12 {
+		t.Fatalf("setup: ids %d and %d", one.ID, twelve.ID)
+	}
+	mustAddBlocker(t, conn, one.ID, resTarget("pr", "o/r#1"))
+	mustAddBlocker(t, conn, twelve.ID, resTarget("pr", "o/r#12"))
+	const live = `SELECT COUNT(*) FROM watcher_subscriptions WHERE subscriber = ? AND deleted_at IS NULL`
+	if c := rowCount(t, conn, live, HoldSubscriber(twelve.ID)); c != 1 {
+		t.Fatalf("setup: task 12 has %d live holds, want 1", c)
+	}
+	deleteAgo(t, conn, one.ID, 2*time.Hour)
+	if n, err := PurgeDeleted(conn, time.Now().Add(-time.Hour)); err != nil || n != 1 {
+		t.Fatalf("PurgeDeleted = %d, %v", n, err)
+	}
+	if c := rowCount(t, conn, `SELECT COUNT(*) FROM watcher_subscriptions WHERE subscriber = ?`, HoldSubscriber(one.ID)); c != 0 {
+		t.Errorf("task 1's hold rows left: %d", c)
+	}
+	if c := rowCount(t, conn, live, HoldSubscriber(twelve.ID)); c != 1 {
+		t.Errorf("task 12's live holds after purging task 1 = %d, want 1", c)
+	}
+}

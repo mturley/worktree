@@ -47,7 +47,11 @@ func (s *Server) StartPolling(interval time.Duration) (stop func()) {
 			}
 		}
 	}()
-	go runEvery(taskPurgeInterval, done, s.purgeDeletedTasks)
+	sweep := s.purgeDeletedTasks
+	if s.purgeSweep != nil {
+		sweep = s.purgeSweep
+	}
+	go runEvery(taskPurgeInterval, done, sweep)
 	var once sync.Once
 	return func() { once.Do(func() { close(done) }) }
 }

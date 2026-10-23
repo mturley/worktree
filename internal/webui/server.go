@@ -157,6 +157,9 @@ type Server struct {
 	// startEditor is the exec seam for "Open in editor" (editor_api.go); nil
 	// means runEditor.
 	startEditor func(name string, args ...string) error
+	// purgeSweep is the seam for the deleted-task purge StartPolling
+	// starts; nil means purgeDeletedTasks.
+	purgeSweep func()
 
 	// The per-service watcher gates (watchers.*); see watchers.go.
 	githubOff, jiraOff, slackOff atomic.Bool

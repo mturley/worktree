@@ -63,8 +63,11 @@ func resourceDisplayTitle(r *resourceDTO, typ, id string) string {
 // <title>" (deleted tasks included), a resource as resourceDisplayTitle,
 // other as its text. It reads each blocking task and resource once.
 type blockerLabeler struct {
-	s        *Server
-	heads    map[int64]tasks.Head
+	s     *Server
+	heads map[int64]tasks.Head
+	// headsOK is false when reading heads failed: a task missing from heads
+	// is then unknown, not purged, and is labelled neutrally.
+	headsOK  bool
 	resource func(typ, id string) *resourceDTO
 }
 
@@ -79,6 +82,7 @@ func (s *Server) newBlockerLabeler(bs []tasks.Blocker, resource func(typ, id str
 		}
 	}
 	heads, err := tasks.Heads(s.DB, ids)
+	headsOK := err == nil
 	if err != nil {
 		s.logger().Printf("tasks.Heads: %v", err)
 		heads = map[int64]tasks.Head{}
@@ -99,7 +103,7 @@ func (s *Server) newBlockerLabeler(bs []tasks.Blocker, resource func(typ, id str
 			return r
 		}
 	}
-	return &blockerLabeler{s: s, heads: heads, resource: resource}
+	return &blockerLabeler{s: s, heads: heads, headsOK: headsOK, resource: resource}
 }
 
 func (l *blockerLabeler) label(b tasks.Blocker) string {
@@ -107,6 +111,9 @@ func (l *blockerLabeler) label(b tasks.Blocker) string {
 	case tasks.BlockerTask:
 		if h, ok := l.heads[b.BlockingTaskID]; ok {
 			return fmt.Sprintf("T%d %s", b.BlockingTaskID, h.Title)
+		}
+		if !l.headsOK {
+			return fmt.Sprintf("T%d", b.BlockingTaskID) // unknown: the read failed
 		}
 		// Purged: the blocker keeps its dangling id (see tasks.PurgeDeleted).
 		return fmt.Sprintf("T%d (deleted)", b.BlockingTaskID)
@@ -122,7 +129,10 @@ func (l *blockerLabeler) statusLabel(b tasks.Blocker) string {
 	switch b.Kind {
 	case tasks.BlockerTask:
 		h, ok := l.heads[b.BlockingTaskID]
-		if !ok || h.Deleted {
+		switch {
+		case !ok && !l.headsOK:
+			return "" // unknown: the read failed
+		case !ok || h.Deleted:
 			return "deleted"
 		}
 		return string(h.State)
