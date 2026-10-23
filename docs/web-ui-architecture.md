@@ -1092,7 +1092,8 @@ the watcher toggles do not apply.
   `event_links`. Every write route answers with the fresh detail.
 - **Blockers** (`tasks_blockers_api.go`). `taskDTO` carries `blocked`,
   `blocker_count` (unresolved) and `blocker_labels` (the unresolved
-  blockers' labels, oldest first, never null; `GET /api/tasks` builds them
+  blockers' labels, oldest first, never null; false, 0 and [] for a done
+  task, which is never blocked; `GET /api/tasks` builds them
   from one `tasks.UnresolvedBlockers` per request). The detail adds
   `blockers` (unresolved first: `{id, kind, label, url?, status_label,
   resolved, resolved_auto, resolved_reason, manual_resolvable, task_id?,
@@ -1106,7 +1107,10 @@ the watcher toggles do not apply.
   cached status), and "resolved" or "" for Slack, link and other. All of it
   reads only the DB and the in-memory Jira cache, never the network.
   `manual_resolvable` is `tasks.ManuallyResolvable`: other, Slack, link.
-  Every blocker write runs `s.afterTaskWrite()` before answering.
+  Every blocker write runs `s.afterTaskWrite()` before answering (an add
+  runs `s.afterBlockerAdd(id)`, which marks the new blocker's resolution
+  `on_add`). A resource added by `url` keeps it (`url` in the DTO, and on
+  its hold).
   `resourceDTO.blocks_count` comes from ONE `tasks.ResourceBlockCounts` per
   request in `/api/worktree-resources` and `/api/all-resources`. Blocker
   events are titled "Blocked by …", "Removed blocker …", "Unblocked: #4498
@@ -1308,21 +1312,39 @@ blocked until one resolves.
 
 - Task blockers resolve inside the tasks package after commit
   (`resolveAfterWrite`, a pass with a nil lookup) in `AddBlocker`,
-  `SetState` and `Delete`, so the CLI resolves them at once too. Nothing is
+  `SetState` and `Delete`, so the CLI resolves them at once too.
+  `AddBlocker`'s pass is `resolveAfterAdd`, which marks a resolution of the
+  blocker it just added `on_add` (below). Nothing is
   handed on: the `system` events they write are what the notifier reads,
   whichever process wrote them. `initTaskHooks` points `tasks.Logf` at the
   server's logger.
 - Resource blockers need the `StatusLookup` from
   `internal/webui/blocker_status.go`. The CLI leaves them to the next
   `worktree ui` pass.
-- `s.resolvePass(network)` resolves, then runs `ReconcileHolds`. The poll
-  loop runs it with network after every pass, even when a source failed.
+- `s.resolvePass(network, opts)` resolves (`tasks.ResolveBlockersWith`),
+  then runs `ReconcileHolds`. The poll loop runs it with network after every
+  pass, even when a source failed. **`resolveMu`** holds for the whole pass,
+  lookup included: `ResolveBlockers` re-reads each blocker in its
+  transaction but acts on statuses its lookup read before it, so without
+  the lock a web pass that read a PR as open just before the poll committed
+  "merged" would unresolve it (and the next pass resolve it again,
+  notifying twice). The CLI never looks resources up, so it can't race this
+  way. `blockerLookupFor` is the test seam that replaces the lookup.
+- **`on_add`.** A resolution made by the request that added the blocker is
+  not news: `ResolveOptions.OnAddBlocker` marks that one blocker's
+  `task_blocker_resolved` payload `"on_add": true`, and the Unblocked path
+  skips it. The web add handler runs `s.afterBlockerAdd(id)` (an
+  already-merged PR); `AddBlocker` itself does the same for a task blocker
+  whose task is already done. Other blockers the pass moves are unmarked.
 - **Web requests never contact Jira.** The poll loop's pass is the ONLY Jira
   search: one `key in (…)` query per chunk of 50 (a chunk that fails with
   HTTP 400 is retried key by key; any other failure stops the search), only
-  while the Jira watcher is on and Jira is configured. It merges what it finds
+  while the Jira watcher is on and Jira is configured. A key that fails on
+  its own with a 400 is remembered in `jiraBadKeys` for `jiraBadKeyTTL` (an
+  hour): it is left out of searches and reported unknown until then, so one
+  bad key is not retried every pass. It merges what it finds
   into the server's in-memory Jira status cache. A state change or delete
-  calls `s.afterTaskWrite()` = `resolvePass(false)`, which reads only the DB
+  calls `s.afterTaskWrite()` = `resolvePass(false, …)`, which reads only the DB
   and that cache, so a request never waits on Jira and a Jira resolution can
   lag up to one poll interval. The explicit poll-on-view route (`handlePollWorktree` via `safePollAll`)
   already waits on network polling and so runs the search too. Done is the search's
@@ -1330,9 +1352,16 @@ blocked until one resolves.
   blocker keeps its last state.
 
 **Holds and the subscriber-audit rule.** Every resource blocker of an open
-task (resolved or not, Slack threads included) keeps a `task:<id>`
+task (resolved or not, Slack threads included, links excepted: nothing polls
+a link for a status) keeps a `task:<id>`
 subscription in `watcher_subscriptions` (`tasks.HoldSubscriber`), so the
-resource is polled even when no worktree follows it. `tasks.ReconcileHolds`
+resource is polled even when no worktree follows it. A hold's URL
+(`holdURL`): while another live subscription follows the resource, the
+newest non-empty URL among them (else none), since
+`watcherdb.ActiveResources` lists one row per distinct URL and a differing
+hold would make the pollers see the resource twice; otherwise the URL the
+blocker was pasted from (`task_blockers.resource_url`, `BlockerTarget.URL`),
+else any URL the DB knows. A live hold whose URL is not that is rewritten. `tasks.ReconcileHolds`
 makes the live holds match exactly what is wanted (idempotent, serialised by
 `holdsMu`, reviving the pair's tombstone) and runs after commit, never inside
 `inTx`, because the watcher library opens its own transactions. A hold must
@@ -1357,11 +1386,23 @@ menu), `BlockerPicker` (Task picker excludes done tasks, the task itself,
 tasks it blocks and tasks already blocking it; Resource picker uses
 `LinkPicker`'s suggestions through the shared `SuggestPicker` and excludes
 existing blockers; Other is free text), `BlocksSection` on the Details tab,
-a "⛔ blocked" chip on task rows (tooltip lists the unresolved blockers),
+a "⛔ blocked" chip on task rows (tooltip lists the unresolved blockers;
+never on a done task, which the server also never reports blocked),
 `BlocksBadge` "⛔ blocks N" on resource cards and Resources rows
 (`blocks_count`), and the four `task_blocker_*` event labels in `eventMeta`.
 Task states are labelled once, by `TASK_STATE_LABEL` in
 `TaskStateCheckbox.tsx`.
+
+**CLI** (`cmd/tasks_blockers.go`), thin wrappers over `internal/tasks`:
+`tasks block <id> (--task <id> | --resource <ref> | --other <text>)` prints
+the new blocker's id (a `--resource` URL is kept for the hold, and a
+`wt:`/`.` ref is refused); `tasks unblock <blocker-id>` removes one; `tasks
+resolve <blocker-id> [--unresolve]` resolves a Slack, link or free-text
+blocker by hand. Each takes `--json`. `list --json` and `show --json` carry
+`blocked`, `blocker_count` and `blocker_labels` (the web DTO's names; labels
+are the event labels, "T4 Ship it" or "pr:o/r#4498", not display titles),
+and `show` adds `blockers` and `blocks`, in JSON and text. A task blocker
+resolves at once from the CLI; PR and Jira blockers wait for `worktree ui`.
 
 ### Task detail modal (`ui/src/components/tasks/modal/`)
 
@@ -1534,9 +1575,12 @@ either or both folds into one summary, which names "resources", "tasks" or
 **Unblocked notifications** (`notify_unblock.go`). A blocker that resolves
 on its own notifies through a dedicated path. Its source is the same
 task-event scan: `readNewTaskEvents` splits off every `system`-actor
-`task_blocker_resolved` with payload `auto: true`, whoever made it — the
-poll loop's `resolvePass(true)`, a web write's `afterTaskWrite`, or the
-tasks package's own `resolveAfterWrite` inside a CLI process. All `system`
+`task_blocker_resolved` with payload `auto: true` and no `on_add`, whoever
+made it — the poll loop's `resolvePass(true, …)`, a web write's
+`afterTaskWrite`, or the tasks package's own `resolveAfterWrite` inside a CLI
+process. A CLI-made resolution notifies only while `worktree ui` is running:
+the notifier's task cursor starts at `MAX(id)`, so events written while it
+was down are never read. An `on_add` resolution notifies nowhere. All `system`
 blocker events (resolves and unresolves) are kept OUT of the per-worktree
 task path, so a resolution never notifies twice and never goes through the
 per-worktree or per-resource toggles; an automatic unresolve never
@@ -1545,10 +1589,12 @@ notifies at all. Only the global "Enable notifications" switch applies (in
 notification.
 
 Each found event is **held** in memory (`Server.unblockPending`) for
-`unblockHoldDefault` (10s, matching `UNDO_WINDOW_MS` in
-`ui/src/components/UndoToast.tsx`; change both together), then its row is
-re-read: an event that is gone (an undo deleted it; Phase 6's undo deletes
-cascaded events) or whose task is deleted is dropped silently. Held items
+`unblockHoldDefault`: about 10s after the notifier sees the event (not after
+the resolution; Phase 6 aligns it with the undo window). Then
+`unblockStillStands` re-checks it: an event that is gone (an undo deleted
+it; Phase 6's undo deletes cascaded events), whose task is deleted, or whose
+blocker (the payload's `blocker_id`) was removed or is no longer resolved is
+dropped silently. Held items
 do not survive a restart: the new cursor starts past their events, so a
 resolution in the last 10s before a restart never notifies. Due items join
 the pass's other batches before the `notifyMaxPerPass` check, so they count

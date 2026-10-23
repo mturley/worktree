@@ -22,7 +22,7 @@ the real code.
 | 2 | Task lists in the UI | web API; Tasks tabs everywhere (Links get a Details tab); rows, quick add, sort/filter, starred group, drag reorder (incl. star/priority by drag), pinning, badges, search | `docs/superpowers/plans/2026-10-21-tasks-phase2-ui-lists.md` | done |
 | 3 | Detail modal | Details/Activity tabs and sidebar, link editing, subtask editing, linked events (with snapshots), "＋ task" from events and Slack messages | `docs/superpowers/plans/2026-10-21-tasks-phase3-detail-modal.md` | done |
 | 4 | Activity integration | task events in feeds + "Tasks" source filter, per-task read cursors, unread counts, mark-read (and its undo), notifications for agent events | `docs/superpowers/plans/2026-10-22-tasks-phase4-activity.md` | done |
-| 5 | Blockers | task / resource / other blockers, `task:` subscription holds + subscriber audit, watcher `status_category` release, Unblocked events + notifications, "blocks N tasks" | `docs/superpowers/plans/2026-10-22-tasks-phase5-blockers.md` | done |
+| 5 | Blockers | task / resource / other blockers, `task:` subscription holds + subscriber audit, status_category via the existing wjira search; no watcher release, Unblocked events + notifications, "blocks N tasks" | `docs/superpowers/plans/2026-10-22-tasks-phase5-blockers.md` | done |
 | 6 | Undo | state / subtask / delete undo with CAS and cascades, delayed Unblocked notifications, soft-delete purge sweep | — | not started |
 
 ## Why
@@ -223,13 +223,17 @@ resolution is still noticed. The hold is released when the blocker is
 removed, or the task is completed or deleted, and re-acquired if the task
 is reopened. It is *not* released when the blocker resolves, because a
 closed PR can be reopened **(my call)**. The subscription itself needs no
-watcher library change.
+watcher library change. *As built: link blockers hold nothing, since a link
+is never polled for a status; the hold carries the URL a blocker was pasted
+from.*
 
-**Jira "Done" needs a watcher release.** The watcher's cached Jira state
-(`buildJiraStateJSON`) stores the status name but not its category. Add
-`status_category` to the cached state in the watcher library, release it
-and re-pin, following "Watcher library" in the repo's CLAUDE.md. Do not
-guess Done from status names **(my call)**.
+**Jira "Done" comes from the status category.** Do not guess Done from
+status names **(my call)**. *As built: status_category via the existing
+wjira search; no watcher release.* The plan was to add `status_category` to
+the watcher's cached Jira state (`buildJiraStateJSON`) and re-pin; instead
+`worktree ui`'s poll pass searches `key in (…)` with the library's existing
+`SearchSummaries`, whose `IssueSummary.StatusCategory` is already there (see
+`docs/web-ui-architecture.md` "Blockers").
 
 **Builder warning:** code that assumes every subscriber is a worktree will
 now see `task:` subscribers. That includes the archived logic, the home

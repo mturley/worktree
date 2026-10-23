@@ -166,15 +166,15 @@ Format: **Q:** the question · **A:** what was done · **Why** · **To change:**
   **A:** The explicit poll-on-view route may, because it already waits on network polling (it goes through `safePollAll`). It can be slower when Jira blockers exist.
   **To change:** `handlePollWorktree` in `internal/webui/poller.go`.
 - **Q:** Do Slack-thread blockers keep a `task:<id>` hold?
-  **A:** Yes, like every resource blocker, though Slack threads never resolve themselves. It keeps the cached title and status fresh for the label, at the cost of one `conversations.replies` call per Slack blocker per poll.
+  **A:** Yes, like every resource blocker but a link, though Slack threads never resolve themselves. It keeps the cached title and status fresh for the label, at the cost of one `conversations.replies` call per Slack blocker per poll.
   **To change:** `ReconcileHolds` in `internal/tasks/holds.go`.
 - **Q:** Can two tasks block each other?
   **A:** Adding a blocker that would form a cycle is refused (400). But an automatic unresolve (a PR reopened) may re-form a mutual block, and that is accepted: blocking never prevents completion, so both tasks just show blocked until one resolves.
   **To change:** `wouldCycle` in `internal/tasks/blockers.go` and `ResolveBlockers` in `internal/tasks/resolve.go`.
 - **Q:** How late is an Unblocked notification, and which toggles apply?
-  **A:** About 10-15s after the resolution: each event is held for the 10s undo window (`UNDO_WINDOW_MS`), then re-checked, on top of the 5s scan. Only the global "Enable notifications" switch, the delivery mode and the custom command apply; the per-worktree and per-resource toggles are ignored. Automatic unresolves never notify. Held items do not survive a restart.
+  **A:** About 10-15s after the resolution: each event is held for 10s from the notifier pass that finds it (on top of the 5s scan), then re-checked: the event must still exist, its task must not be deleted, and its blocker must still exist and still be resolved. Phase 6 aligns the hold with the undo window. Only the global "Enable notifications" switch, the delivery mode and the custom command apply; the per-worktree and per-resource toggles are ignored. Automatic unresolves never notify. Held items do not survive a restart, and a resolution the CLI makes notifies only while `worktree ui` is running (its cursor starts at the newest event).
   **Why:** Phase 6's undo deletes the events it cascades, and a notification for an undone action would be wrong.
-  **To change:** `unblockHoldDefault` in `internal/webui/notify_unblock.go` (and `UNDO_WINDOW_MS` in `ui/src/components/UndoToast.tsx`).
+  **To change:** `unblockHoldDefault` and `unblockStillStands` in `internal/webui/notify_unblock.go`.
 - **Q:** Where does an Unblocked notification go?
   **A:** To the worktree of the task's first Focus link (a registered worktree, or the first follower of a Focus resource), else the first worktree whose scope holds the task, else untargeted. An untargeted one opens the task over the home page (`/?task=<id>`; cmux: the UI server's own workspace).
   **To change:** `unblockTargeter` in `internal/webui/notify_unblock.go` and `ui/src/lib/browserNotify.ts`.
@@ -196,6 +196,24 @@ Format: **Q:** the question · **A:** what was done · **Why** · **To change:**
 - **Q:** Who can mark a blocker resolved?
   **A:** You, only for free-text, Slack and link blockers. PR, Jira and task blockers resolve themselves and can't be ticked.
   **To change:** `ManuallyResolvable` in `internal/tasks/blockers.go`.
+- **Q:** What blocker commands does the CLI have?
+  **A:** `tasks block <id> (--task <id> | --resource <ref> | --other <text>)`, which prints the blocker's id; `tasks unblock <blocker-id>`; and `tasks resolve <blocker-id> [--unresolve]`, for Slack, link and free-text blockers only. Each takes `--json`. `list --json` and `show --json` carry `blocked`, `blocker_count` and `blocker_labels` (the web DTO's names), and `show` adds `blockers` and `blocks`. A task blocker resolves at once from the CLI; PR and Jira blockers wait for `worktree ui`'s next pass, since only it looks them up. CLI labels are the event labels ("T4 Ship it", "pr:o/r#4498"), not the UI's display titles.
+  **Why:** Thin wrappers over `internal/tasks`, like the other `tasks` commands; the CLI has no network status lookup.
+  **To change:** `cmd/tasks_blockers.go`.
+- **Q:** Does adding an already-satisfied blocker notify?
+  **A:** No. A blocker the same request resolves (a merged PR added in the web UI, or a task blocker whose task is already done, from either side) is resolved with `on_add: true` in its event payload, and the Unblocked path skips it. Only that blocker is marked; any other blocker the same pass happens to resolve still notifies. A later resolution of the same blocker notifies as usual.
+  **Why:** The user just clicked it; there is nothing to tell them.
+  **To change:** `ResolveOptions.OnAddBlocker` in `internal/tasks/resolve.go`, `afterBlockerAdd` in `internal/webui/blocker_status.go` and `isUnblockEvent` in `internal/webui/notify_unblock.go`.
+- **Q:** Do link blockers hold a subscription?
+  **A:** No. Nothing ever polls a link for a status, so a hold would keep nothing fresh; existing link holds are released by the next reconcile. Every other resource blocker still holds one. A hold records the URL its blocker was pasted from, unless another subscription follows the resource, whose URL it copies so the poller never sees the resource twice.
+  **To change:** the wanted query and `holdURL` in `internal/tasks/holds.go`.
+- **Q:** Can a done task show as blocked?
+  **A:** No. `blocked` is false and `blocker_count` 0 for a done task, and its row shows no chip, even while a blocker is unresolved. The blockers stay listed in the modal, and the task is blocked again if it is reopened.
+  **Why:** A finished task has nothing left to wait on.
+  **To change:** `loadBlockerCounts` in `internal/tasks/list.go` and the chip in `ui/src/components/tasks/TaskRow.tsx`.
+- **Q:** What stops two resolution passes in one process from fighting?
+  **A:** `resolveMu` on the server holds for the whole `resolvePass` (lookup, resolve, reconcile), so a web write's pass that looked a PR up as open can't unresolve what the poll just resolved as merged. A Jira key rejected with HTTP 400 is left out of searches, and reported unknown, for an hour.
+  **To change:** `resolvePass`, `jiraBadKeyTTL` in `internal/webui/blocker_status.go`.
 
 ## Browser check (run this yourself)
 
