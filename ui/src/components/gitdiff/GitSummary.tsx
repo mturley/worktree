@@ -48,12 +48,14 @@ function CopyIcon({ value, label, tooltip }: { value: string; label: string; too
  * stacked on a phone.
  */
 export function GitSummary({ path, git, repo, updated }: { path: string; git: WorktreeGit; repo: string; updated?: string }) {
-  // The working directory heads the summary, across both columns.
+  // The working directory heads the summary, across both columns. With ~ for
+  // the home directory, copied as shown, like the Environment tab's paths.
+  const dir = git.directory ?? path
   const directory = (
     <InfoRow label="Directory">
       <Group gap={4} wrap="nowrap" component="span">
-        <span>{path}</span>
-        <CopyIcon value={path} label="Copy directory path" tooltip="Copy directory path" />
+        <span>{dir}</span>
+        <CopyIcon value={dir} label="Copy directory path" tooltip="Copy directory path" />
       </Group>
     </InfoRow>
   )

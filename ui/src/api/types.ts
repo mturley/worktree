@@ -577,6 +577,8 @@ export interface AheadBehind {
 
 export interface WorktreeGit {
   on_disk: boolean
+  /** The worktree's path with ~ for the home directory (the server knows it). Absent from an older server. */
+  directory?: string
   /** Moves on commits, fetches, branch switches and working-tree edits. */
   fingerprint: string
   /** Moves only on working-tree edits. */

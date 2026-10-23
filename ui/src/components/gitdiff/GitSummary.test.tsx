@@ -71,6 +71,15 @@ describe("GitSummary directory", () => {
     expect(writeText).toHaveBeenCalledWith("/wt/foo")
   })
 
+  it("shows the server's ~ form of the path, and copies it as shown", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true })
+    show({ directory: "~/wt/foo" })
+    expect(screen.getByText("~/wt/foo")).toBeInTheDocument()
+    await userEvent.click(screen.getByRole("button", { name: "Copy directory path" }))
+    expect(writeText).toHaveBeenCalledWith("~/wt/foo")
+  })
+
   it("still shows it when the worktree is missing from disk", () => {
     show({ on_disk: false })
     expect(screen.getByText("/wt/foo")).toBeInTheDocument()

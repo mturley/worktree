@@ -167,6 +167,25 @@ func TestWorktreeGitMissingFromDisk(t *testing.T) {
 	}
 }
 
+func TestWorktreeGitDirectoryUsesTilde(t *testing.T) {
+	wt := forkRepo(t)
+	_, ts := gitTestServer(t, wt, nil)
+	t.Setenv("HOME", filepath.Dir(wt))
+	_, got := getWorktreeGit(t, ts, wt, "")
+	if want := "~/" + filepath.Base(wt); got.Directory != want {
+		t.Fatalf("directory = %q, want %q", got.Directory, want)
+	}
+
+	// Off disk it still names the directory.
+	if err := os.RemoveAll(wt); err != nil {
+		t.Fatal(err)
+	}
+	_, got = getWorktreeGit(t, ts, wt, "")
+	if got.OnDisk || got.Directory != "~/"+filepath.Base(wt) {
+		t.Fatalf("missing: %+v", got)
+	}
+}
+
 func TestWorktreeGitNoCommits(t *testing.T) {
 	dir := t.TempDir()
 	gitIn(t, dir, "init", "-b", "feature")

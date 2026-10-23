@@ -25,6 +25,9 @@ type workingDTO struct {
 
 type worktreeGitDTO struct {
 	OnDisk bool `json:"on_disk"`
+	// Directory is the worktree's path with ~ for the home directory, as the
+	// Environment tab shows paths (tildify); set even when it is off disk.
+	Directory string `json:"directory"`
 	// Fingerprint moves on commits, fetches, branch switches and working-tree
 	// edits; WorkingFingerprint only on the latter. The Code tab polls this
 	// endpoint and refetches the diff when one of them changes.
@@ -58,8 +61,10 @@ func (s *Server) handleWorktreeGit(w http.ResponseWriter, r *http.Request) {
 
 	// A registered worktree can be gone from disk; report that and compute
 	// nothing, so the UI can say so instead of showing a git error.
+	home, _ := os.UserHomeDir()
+	directory := tildify(path, home)
 	if st, err := os.Stat(path); err != nil || !st.IsDir() {
-		writeJSON(w, http.StatusOK, worktreeGitDTO{})
+		writeJSON(w, http.StatusOK, worktreeGitDTO{Directory: directory})
 		return
 	}
 
@@ -72,7 +77,7 @@ func (s *Server) handleWorktreeGit(w http.ResponseWriter, r *http.Request) {
 	}
 	fetcher := s.fetchScheduler(config.GitConfig{FetchInterval: e.FetchInterval}.Interval())
 
-	out := worktreeGitDTO{OnDisk: true}
+	out := worktreeGitDTO{OnDisk: true, Directory: directory}
 	if b, ok := gitutil.CurrentBranch(path); ok {
 		out.Branch = b
 	}
