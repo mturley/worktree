@@ -3,7 +3,7 @@ import { ActionIcon, Anchor, Box, Button, Drawer, Group, SegmentedControl, Stack
 import { IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand } from "@tabler/icons-react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { api } from "../../api/client"
-import type { DiffBase, DiffPatch, DiffRange } from "../../api/types"
+import type { Commit, DiffBase, DiffPatch, DiffRange } from "../../api/types"
 import { useDiffCommits } from "../../hooks/useDiffData"
 import { useDiffSelection } from "../../hooks/useDiffSelection"
 import { useDiffView } from "../../hooks/useDiffView"
@@ -36,11 +36,16 @@ function writePref(key: string, value: string) {
   }
 }
 
-/** One patch request: the selection it was made for, and a counter so Refresh always refetches. */
+/**
+ * One patch request: the selection it was made for, the commit list that
+ * selection was made against, and a counter so Refresh always refetches.
+ */
 interface Request {
   base: DiffBase
   range: DiffRange
   ignoreWs: boolean
+  /** The list the range's SHAs come from, so the picker can still describe it once the live list moves on. */
+  commits: Commit[]
   n: number
 }
 type Loaded = DiffPatch & { request: Request }
@@ -81,23 +86,30 @@ export default function DiffView({ path, headerHeight }: { path: string; headerH
   // The first load waits for the commit list, so a range left over from an
   // older list has already fallen back to "all".
   useEffect(() => {
-    if (!request && commits.data) setRequest({ base: sel.base, range: sel.range, ignoreWs, n: 0 })
+    if (!request && commits.data)
+      setRequest({ base: sel.base, range: sel.range, ignoreWs, commits: commits.data.commits, n: 0 })
   }, [request, commits.data, sel.base, sel.range, ignoreWs])
 
   /** Reloads with the live selection, overridden by whatever just changed. */
   const reload = useCallback(
-    (over: Partial<Omit<Request, "n">> = {}) =>
+    (over: Partial<Omit<Request, "n" | "commits">> = {}) => {
+      const b = over.base ?? sel.base
       setRequest((r) => ({
-        base: over.base ?? sel.base,
+        base: b,
         range: over.range ?? sel.range,
         ignoreWs: over.ignoreWs ?? ignoreWs,
+        // A new base's list isn't loaded yet; its range is "all", which
+        // needs no list to describe.
+        commits: b === base ? (commits.data?.commits ?? []) : [],
         n: (r?.n ?? 0) + 1,
-      })),
-    [sel.base, sel.range, ignoreWs],
+      }))
+    },
+    [sel.base, sel.range, ignoreWs, base, commits.data],
   )
 
   const patch = useQuery({
-    queryKey: ["diff-patch", path, request],
+    // The commit snapshot is carried along, not part of the identity.
+    queryKey: ["diff-patch", path, request && { ...request, commits: undefined }],
     queryFn: async (): Promise<Loaded> => {
       const r = request!
       return { ...(await api.diffPatch(path, r.base, r.range, r.ignoreWs)), request: r }
@@ -176,7 +188,10 @@ export default function DiffView({ path, headerHeight }: { path: string; headerH
         labelPosition={labelPosition}
       />
       <RangePicker
-        commits={commits.data?.commits ?? []}
+        // While stale, the pinned list: the label and checkboxes describe
+        // what is on screen, not a list it was never chosen from. Refresh
+        // hands back to the live list.
+        commits={(stale ? shown?.request.commits : undefined) ?? commits.data?.commits ?? []}
         uncommittedCount={git?.working.files ?? 0}
         range={shownRange}
         onChange={(r) => {

@@ -23,6 +23,7 @@ vi.mock("../../hooks/useWorktreeGit", () => ({
 
 const apiMock = vi.hoisted(() => ({
   listId: "L1",
+  commits: [] as DiffCommits["commits"],
   patches: [] as DiffPatch[],
   diffPatch: vi.fn(),
   diffCommits: vi.fn(),
@@ -68,8 +69,9 @@ const commits = (): DiffCommits => ({
   list_id: apiMock.listId,
   base_ref: "upstream/main",
   merge_base: "mb",
-  commits: [{ sha: "c1", short: "c1", subject: "first", author: "me", date: "2026-10-01T00:00:00Z" }],
+  commits: apiMock.commits,
 })
+const commit = (sha: string) => ({ sha, short: sha, subject: `subject ${sha}`, author: "me", date: "2026-10-01T00:00:00Z" })
 
 const patch = (over: Partial<DiffPatch> = {}): DiffPatch => ({
   list_id: "L1",
@@ -100,6 +102,7 @@ beforeEach(() => {
   window.localStorage.clear()
   gitMock.value = git()
   apiMock.listId = "L1"
+  apiMock.commits = [commit("c1")]
   apiMock.patches = [patch()]
   apiMock.diffPatch.mockReset()
   apiMock.diffPatch.mockImplementation(async () => apiMock.patches.shift() ?? patch())
@@ -164,6 +167,29 @@ describe("DiffView", () => {
     rerender(tree())
     await waitFor(() => expect(apiMock.diffCommits).toHaveBeenCalledTimes(2))
     expect(screen.queryByRole("button", { name: "Refresh" })).not.toBeInTheDocument()
+  })
+
+  it("labels the selectors with the pinned selection while stale, then the live one after Refresh", async () => {
+    apiMock.commits = [commit("c2"), commit("c1")]
+    window.localStorage.setItem(
+      "worktree.diffSelection:/wt/foo",
+      JSON.stringify({ base: "merge-base", range: { from: "c1", to: "c1" }, listId: "L1" }),
+    )
+    const { rerender } = setup()
+    await screen.findByTestId("diff-body")
+    expect(screen.getByTestId("range-picker-trigger")).toHaveTextContent("1 commit")
+    // A rebase: c1 is gone from the live list, which resets the live range.
+    apiMock.listId = "L2"
+    apiMock.commits = [commit("c3")]
+    gitMock.value = git({ fingerprint: "F2" })
+    rerender(tree())
+    await screen.findByRole("button", { name: "Refresh" })
+    expect(screen.getByTestId("range-picker-trigger")).toHaveTextContent("1 commit")
+    apiMock.patches = [patch({ list_id: "L2" })]
+    await userEvent.click(screen.getByRole("button", { name: "Refresh" }))
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Refresh" })).not.toBeInTheDocument())
+    expect(apiMock.diffPatch).toHaveBeenLastCalledWith("/wt/foo", "merge-base", "all", false)
+    expect(screen.getByTestId("range-picker-trigger")).toHaveTextContent("All changes")
   })
 
   it("reloads the patch on Refresh, and the notice clears", async () => {
