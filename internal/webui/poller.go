@@ -17,6 +17,7 @@ import (
 	"github.com/mturley/worktree/internal/config"
 	wdb "github.com/mturley/worktree/internal/db"
 	wtjira "github.com/mturley/worktree/internal/jira"
+	"github.com/mturley/worktree/internal/tasks"
 )
 
 // StartPolling starts an in-process poll loop: an immediate poll, then one
@@ -58,7 +59,7 @@ func (s *Server) safePollAll() {
 	// Whatever the sources did, failed ones included: resolve blockers from
 	// what the DB now holds (and a fresh Jira search: the only place one
 	// runs), reconcile holds, and hand on the resolutions.
-	s.resolvePass(true)
+	s.resolvePass(true, tasks.ResolveOptions{})
 }
 
 func (s *Server) logger() *log.Logger {

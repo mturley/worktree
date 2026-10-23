@@ -118,6 +118,8 @@ type taskEventPayload struct {
 	Label        string                     `json:"label"`  // blocker events
 	Auto         bool                       `json:"auto"`   // task_blocker_resolved
 	Reason       string                     `json:"reason"` // task_blocker_resolved
+	BlockerID    int64                      `json:"blocker_id"`
+	OnAdd        bool                       `json:"on_add"` // task_blocker_resolved by the request that added it
 }
 
 func parseTaskPayload(raw json.RawMessage) taskEventPayload {

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	watcherdb "github.com/mturley/watcher/db"
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/notifyprefs"
 	"github.com/mturley/worktree/internal/registry"
@@ -339,5 +340,104 @@ func TestUnblockCountsTowardSummary(t *testing.T) {
 	if len(r.ft.got) != 1 || r.ft.got[0].Title != "New activity" ||
 		!strings.HasPrefix(r.ft.got[0].Body, strconv.Itoa(notifyMaxPerPass+1)+" tasks") {
 		t.Fatalf("delivered %+v, want one summary", r.ft.got)
+	}
+}
+
+// Adding a blocker that is already satisfied resolves it at once, and the
+// user's own click is not news: no Unblocked notification. A later
+// resolution of the same blocker still notifies.
+func TestAddingSatisfiedBlockerDoesNotNotify(t *testing.T) {
+	conn := unreadTestDB(t)
+	twoWorktrees(t, conn)
+	waiter := newLinkedTask(t, conn, userActor, "Ship it", "o/r#7")
+	r := newUnblockRig(t, conn)
+	must(t, watcherdb.UpsertResourceState(conn, "pr", "o/r#4498", `{"title":"T","state":"MERGED"}`, "2026-01-01T00:00:00Z", "x"))
+
+	d := decodeDetail(t, serveTasks(t, r.s, "POST", "/api/tasks/blockers/add",
+		map[string]any{"id": waiter.ID, "kind": "resource", "type": "pr", "rid": "o/r#4498"}))
+	if len(d.Blockers) != 1 || !d.Blockers[0].Resolved {
+		t.Fatalf("blockers = %+v, want resolved at once", d.Blockers)
+	}
+	r.settle()
+	if len(r.ft.got) != 0 {
+		t.Fatalf("adding a merged PR notified: %+v", r.ft.got)
+	}
+
+	// Reopened, then merged again: that one is news.
+	must(t, watcherdb.UpsertResourceState(conn, "pr", "o/r#4498", `{"title":"T","state":"OPEN"}`, "2026-01-01T00:00:01Z", "x"))
+	r.s.afterTaskWrite()
+	must(t, watcherdb.UpsertResourceState(conn, "pr", "o/r#4498", `{"title":"T","state":"MERGED"}`, "2026-01-01T00:00:02Z", "x"))
+	r.s.afterTaskWrite()
+	r.settle()
+	if len(r.ft.got) != 1 || !strings.HasPrefix(r.ft.got[0].Body, "Unblocked: ") {
+		t.Fatalf("later resolution delivered %+v, want one Unblocked", r.ft.got)
+	}
+}
+
+// The task-kind path: a blocking task already done resolves inside
+// AddBlocker, with the same on_add mark.
+func TestAddingDoneTaskBlockerDoesNotNotify(t *testing.T) {
+	conn := unreadTestDB(t)
+	twoWorktrees(t, conn)
+	waiter := newLinkedTask(t, conn, userActor, "Ship it", "o/r#7")
+	dep := mustCreateTask(t, conn, tasks.NewTask{Title: "Already done"})
+	mustDone(t, conn, dep.ID)
+	r := newUnblockRig(t, conn)
+
+	b := mustAddBlocker(t, conn, waiter.ID, tasks.BlockerTarget{Kind: tasks.BlockerTask, BlockingTaskID: dep.ID})
+	if b.ResolvedAt == "" {
+		t.Fatalf("blocker = %+v, want resolved at once", b)
+	}
+	r.settle()
+	if len(r.ft.got) != 0 {
+		t.Fatalf("adding a done task's blocker notified: %+v", r.ft.got)
+	}
+
+	// Reopened and finished again: notifies.
+	if _, err := tasks.SetState(conn, userActor, dep.ID, tasks.StateInProgress); err != nil {
+		t.Fatal(err)
+	}
+	mustDone(t, conn, dep.ID)
+	r.settle()
+	if len(r.ft.got) != 1 {
+		t.Fatalf("later resolution delivered %+v, want 1", r.ft.got)
+	}
+}
+
+// A held Unblocked is dropped when, by the time it is due, its blocker was
+// removed or has been unresolved.
+func TestUnblockDroppedWhenBlockerRemovedOrUnresolvedWithinHold(t *testing.T) {
+	merged := prLookup(map[string]tasks.ResourceStatus{"pr:o/r#4498": {Done: true, Label: "merged"}})
+	open := prLookup(map[string]tasks.ResourceStatus{"pr:o/r#4498": {Done: false, Label: "open"}})
+	for _, c := range []struct {
+		name string
+		undo func(t *testing.T, conn *sql.DB, b tasks.Blocker)
+	}{
+		{"removed", func(t *testing.T, conn *sql.DB, b tasks.Blocker) {
+			must(t, tasks.RemoveBlocker(conn, userActor, b.ID))
+		}},
+		{"unresolved", func(t *testing.T, conn *sql.DB, b tasks.Blocker) {
+			if _, err := tasks.ResolveBlockers(conn, open); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			conn := unreadTestDB(t)
+			twoWorktrees(t, conn)
+			waiter := newLinkedTask(t, conn, userActor, "Ship it", "o/r#7")
+			b := mustAddBlocker(t, conn, waiter.ID, tasks.BlockerTarget{Kind: tasks.BlockerResource, ResourceType: "pr", ResourceID: "o/r#4498"})
+			r := newUnblockRig(t, conn)
+			if _, err := tasks.ResolveBlockers(conn, merged); err != nil {
+				t.Fatal(err)
+			}
+			r.pass() // found, held
+			c.undo(t, conn, b)
+			r.now = r.now.Add(time.Minute)
+			r.pass()
+			if len(r.ft.got) != 0 {
+				t.Fatalf("delivered %+v, want nothing", r.ft.got)
+			}
+		})
 	}
 }

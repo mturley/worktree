@@ -106,6 +106,39 @@ func TestAddBlockerOnDoneTaskResolvesAtOnce(t *testing.T) {
 	if got.ResolvedAt == "" || !got.ResolvedAuto || got.ResolvedReason != "done" {
 		t.Fatalf("AddBlocker returned %+v, want it already auto-resolved", got)
 	}
+	if p := payloadOf(t, lastEvent(t, conn, a.ID)); p["on_add"] != true {
+		t.Fatalf("resolve payload %v, want on_add true", p)
+	}
+	// A later resolution is not the add's: no on_add.
+	if _, err := SetState(conn, user, b.ID, StateInProgress); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SetState(conn, user, b.ID, StateDone); err != nil {
+		t.Fatal(err)
+	}
+	if p := payloadOf(t, lastEvent(t, conn, a.ID)); p["on_add"] != nil || p["auto"] != true {
+		t.Fatalf("later resolve payload %v, want no on_add", p)
+	}
+}
+
+func TestResolveOnAddMarksOnlyThatBlocker(t *testing.T) {
+	conn := newDB(t)
+	a := mustCreate(t, conn, "A")
+	b1 := mustAddBlocker(t, conn, a.ID, resTarget("pr", "o/r#1"))
+	b2 := mustAddBlocker(t, conn, a.ID, resTarget("pr", "o/r#2"))
+	merged := fakeLookup{"pr:o/r#1": {Done: true, Label: "merged"}, "pr:o/r#2": {Done: true, Label: "merged"}}
+	rs, err := ResolveBlockersWith(conn, merged.lookup, ResolveOptions{OnAddBlocker: b2.ID})
+	if err != nil || len(rs) != 2 {
+		t.Fatalf("resolutions %+v, %v", rs, err)
+	}
+	onAdd := map[int64]any{}
+	for _, e := range eventsOfType(t, conn, a.ID, EventTaskBlockerResolved) {
+		p := payloadOf(t, e)
+		onAdd[int64(p["blocker_id"].(float64))] = p["on_add"]
+	}
+	if onAdd[b1.ID] != nil || onAdd[b2.ID] != true {
+		t.Fatalf("on_add by blocker = %v, want only %d marked", onAdd, b2.ID)
+	}
 }
 
 func TestResourceBlockerFollowsLookup(t *testing.T) {

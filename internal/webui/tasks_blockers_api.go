@@ -285,9 +285,10 @@ func (r addBlockerRequest) target() (tasks.BlockerTarget, string) {
 
 // handleAddTaskBlocker: POST /api/tasks/blockers/add
 // {id, kind, task_id? | url? | type+rid? | text?} -> the task's detail.
-// A cycle is a 400 ("would create a blocking cycle"). afterTaskWrite runs
+// A cycle is a 400 ("would create a blocking cycle"). afterBlockerAdd runs
 // before the response, so a blocker already satisfied (a merged PR) comes
-// back resolved.
+// back resolved, marked on_add so that it sends no Unblocked notification.
+// The URL a resource blocker was added from is kept, for its hold.
 func (s *Server) handleAddTaskBlocker(w http.ResponseWriter, r *http.Request) {
 	var req addBlockerRequest
 	if !decodeTaskBody(w, r, &req) {
@@ -298,11 +299,12 @@ func (s *Server) handleAddTaskBlocker(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
-	if _, err := tasks.AddBlocker(s.DB, webActor, req.ID, bt); err != nil {
+	b, err := tasks.AddBlocker(s.DB, webActor, req.ID, bt)
+	if err != nil {
 		writeTaskError(w, err)
 		return
 	}
-	s.afterTaskWrite()
+	s.afterBlockerAdd(b.ID)
 	s.writeTaskDetail(w, req.ID)
 }
 

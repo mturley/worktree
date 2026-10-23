@@ -20,7 +20,7 @@ const (
 // TaskID, so it never collides with Blocker.TaskID (the blocked task), which
 // would shadow it and drop it from Blocker's JSON encoding.
 //
-// URL is the URL a resource blocker was added from ('' when added by type
+// URL is the URL a resource blocker was added from (” when added by type
 // and id). It is not part of the blocker's identity: it is stored so the
 // resource's hold can carry it (see ReconcileHolds).
 type BlockerTarget struct {
@@ -259,7 +259,7 @@ func AddBlocker(conn *sql.DB, a Actor, taskID int64, t BlockerTarget) (Blocker, 
 	if err != nil {
 		return Blocker{}, err
 	}
-	resolveAfterWrite(conn)        // a task blocker on a done task resolves at once
+	resolveAfterAdd(conn, id)      // a task blocker on a done task resolves at once
 	reconcileHoldsAfterWrite(conn) // a resource blocker holds its resource
 	return loadBlocker(conn, id)
 }
@@ -311,18 +311,19 @@ func SetBlockerResolved(conn *sql.DB, a Actor, blockerID int64, resolved bool) e
 		if !ManuallyResolvable(b.BlockerTarget) {
 			return fmt.Errorf("%w: only free-text, Slack thread and link blockers are resolved by hand", ErrInvalid)
 		}
-		return setResolvedTx(tx, a, b, resolved, false, "", now())
+		return setResolvedTx(tx, a, b, resolved, false, false, "", now())
 	})
 }
 
 // setResolvedTx moves b (as loaded inside tx) to resolved or unresolved,
 // stamping auto and reason, bumping its task's updated_at and recording
-// task_blocker_resolved {blocker_id, kind, label, auto, reason} or
+// task_blocker_resolved {blocker_id, kind, label, auto, reason} (plus
+// on_add: true when onAdd, see ResolveOptions) or
 // task_blocker_unresolved {blocker_id, kind, label}. It is the one write
 // path for resolution, shared with the resolver, which passes ActorSystem;
 // a is checked with validInternalActor. A blocker already in the wanted
 // state is left alone. It calls no public function.
-func setResolvedTx(tx dbtx, a Actor, b Blocker, resolved, auto bool, reason, ts string) error {
+func setResolvedTx(tx dbtx, a Actor, b Blocker, resolved, auto, onAdd bool, reason, ts string) error {
 	if err := validInternalActor(a); err != nil {
 		return err
 	}
@@ -337,6 +338,9 @@ func setResolvedTx(tx dbtx, a Actor, b Blocker, resolved, auto bool, reason, ts 
 	if resolved {
 		typ = EventTaskBlockerResolved
 		p["auto"], p["reason"] = auto, reason
+		if onAdd {
+			p["on_add"] = true
+		}
 		_, err = tx.ExecContext(bg,
 			`UPDATE task_blockers SET resolved_at = ?, resolved_auto = ?, resolved_reason = ? WHERE id = ?`,
 			ts, bit(auto), reason, b.ID)

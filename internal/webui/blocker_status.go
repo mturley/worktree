@@ -3,6 +3,7 @@ package webui
 import (
 	"encoding/json"
 	"strings"
+	"time"
 
 	wconfig "github.com/mturley/watcher/config"
 	watcherdb "github.com/mturley/watcher/db"
@@ -22,6 +23,32 @@ type jiraSearcher interface {
 // Jira's maxResults ceiling.
 const jiraSearchChunk = 50
 
+// jiraBadKeyTTL is how long a key Jira rejected with a 400 (deleted, moved,
+// or never visible to us) is left out of searches, and reported unknown.
+const jiraBadKeyTTL = time.Hour
+
+// jiraKeyBad reports whether key was rejected within its TTL.
+func (s *Server) jiraKeyBad(key string) bool {
+	s.jiraBadMu.Lock()
+	defer s.jiraBadMu.Unlock()
+	exp, ok := s.jiraBadKeys[key]
+	if ok && !time.Now().Before(exp) {
+		delete(s.jiraBadKeys, key)
+		return false
+	}
+	return ok
+}
+
+// rememberJiraBadKey records that Jira rejected key on its own.
+func (s *Server) rememberJiraBadKey(key string) {
+	s.jiraBadMu.Lock()
+	defer s.jiraBadMu.Unlock()
+	if s.jiraBadKeys == nil {
+		s.jiraBadKeys = map[string]time.Time{}
+	}
+	s.jiraBadKeys[key] = time.Now().Add(jiraBadKeyTTL)
+}
+
 // initTaskHooks points the tasks package's logging at this server's
 // logger. Called from Handler and StartPolling; runs once.
 func (s *Server) initTaskHooks() {
@@ -33,20 +60,41 @@ func (s *Server) initTaskHooks() {
 // network (PR state from the DB cache, Jira statuses as the last poll pass
 // fetched them), then hold reconciliation. A checkbox click must never
 // wait on Jira: the poll loop is the only caller that searches it
-// (resolvePass(true)). Task blockers were already resolved inside the
+// (resolvePass(true, ...)). Task blockers were already resolved inside the
 // tasks write itself.
-func (s *Server) afterTaskWrite() { s.resolvePass(false) }
+func (s *Server) afterTaskWrite() { s.resolvePass(false, tasks.ResolveOptions{}) }
+
+// afterBlockerAdd is afterTaskWrite for the request that added blocker id:
+// if this pass resolves it (a PR already merged), the resolution is marked
+// on_add and sends no Unblocked notification, since it only answers the
+// user's own click.
+func (s *Server) afterBlockerAdd(id int64) {
+	s.resolvePass(false, tasks.ResolveOptions{OnAddBlocker: id})
+}
 
 // resolvePass runs ResolveBlockers, then ReconcileHolds. With network, the
 // pass searches Jira (refreshing the cached statuses); without, it reads
 // only the DB and that cache. Errors are logged: the write it follows has
 // committed, and the next pass retries. What it resolves needs no handing
 // on: the notifier finds the system events it wrote (notify_unblock.go).
-func (s *Server) resolvePass(network bool) {
+//
+// resolveMu holds for the WHOLE pass. ResolveBlockers re-reads each
+// blocker inside its transaction, but it acts on the statuses its lookup
+// read before it: without the lock, a web pass that looked up "open" just
+// before the poll committed "merged" would then unresolve the blocker
+// (and the poll's next pass resolve it again, notifying twice). Another
+// process (the CLI) never looks resources up, so it cannot race this way.
+func (s *Server) resolvePass(network bool, opts tasks.ResolveOptions) {
 	if s.DB == nil {
 		return
 	}
-	if _, err := tasks.ResolveBlockers(s.DB, s.blockerStatusLookup(network)); err != nil {
+	s.resolveMu.Lock()
+	defer s.resolveMu.Unlock()
+	lookup := s.blockerStatusLookup(network)
+	if s.blockerLookupFor != nil {
+		lookup = s.blockerLookupFor(network)
+	}
+	if _, err := tasks.ResolveBlockersWith(s.DB, lookup, opts); err != nil {
 		s.logger().Printf("blockers: %v", err)
 	}
 	if err := tasks.ReconcileHolds(s.DB); err != nil {
@@ -78,8 +126,8 @@ func (l *blockerLookup) lookup(typ, id string) (tasks.ResourceStatus, bool) {
 		return prBlockerStatus(l.s, id)
 	case "jira":
 		key, ok := wtjira.ParseKey(id)
-		if !ok {
-			return tasks.ResourceStatus{}, false
+		if !ok || l.s.jiraKeyBad(key) {
+			return tasks.ResourceStatus{}, false // a key Jira rejected is unknown
 		}
 		l.loadJira()
 		is, ok := l.jira[key]
@@ -180,6 +228,9 @@ func prBlockerStatus(s *Server, id string) (tasks.ResourceStatus, bool) {
 //
 // One missing or forbidden key makes Jira reject a whole `key in (...)`
 // query with a 400, so a chunk that fails with a 400 is retried key by key.
+// A key that fails on its own is remembered (rememberJiraBadKey) and left
+// out of searches for jiraBadKeyTTL, so one bad key costs one retry an
+// hour rather than one every pass.
 // Any other failure (a transport error, a timeout, a 401, a 5xx) would fail
 // every key alike, so the search stops there rather than paying the
 // timeout once per key.
@@ -195,8 +246,9 @@ func (s *Server) searchBlockerIssues() map[string]wjira.IssueSummary {
 	var keys []string
 	seen := map[string]bool{}
 	for _, id := range ids {
-		// Validated keys only: they go into JQL verbatim.
-		if k, ok := wtjira.ParseKey(id); ok && !seen[k] {
+		// Validated keys only: they go into JQL verbatim. A key Jira
+		// rejected recently stays out until its TTL expires.
+		if k, ok := wtjira.ParseKey(id); ok && !seen[k] && !s.jiraKeyBad(k) {
 			seen[k] = true
 			keys = append(keys, k)
 		}
@@ -229,10 +281,16 @@ func (s *Server) searchBlockerIssues() map[string]wjira.IssueSummary {
 		case !isJiraBadRequest(err):
 			return out // Jira is unreachable or refusing us: stop
 		case len(chunk) == 1:
+			s.rememberJiraBadKey(chunk[0])
 			continue // that key is bad; the next chunk may be fine
 		}
 		for _, k := range chunk {
-			if err := search([]string{k}); err != nil && !isJiraBadRequest(err) {
+			err := search([]string{k})
+			switch {
+			case err == nil:
+			case isJiraBadRequest(err):
+				s.rememberJiraBadKey(k)
+			default:
 				return out
 			}
 		}

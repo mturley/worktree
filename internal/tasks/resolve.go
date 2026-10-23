@@ -88,6 +88,20 @@ func ResolvableResourceIDs(conn *sql.DB, typ string) ([]string, error) {
 // A blocker whose own reads fail (its row, its task's state, its label)
 // is logged via Logf and skipped; only a failed write fails the pass.
 func ResolveBlockers(conn *sql.DB, lookup StatusLookup) ([]Resolution, error) {
+	return ResolveBlockersWith(conn, lookup, ResolveOptions{})
+}
+
+// ResolveOptions adjusts one ResolveBlockers pass.
+type ResolveOptions struct {
+	// OnAddBlocker, when set, is a blocker the same request just added: if
+	// this pass resolves it, its task_blocker_resolved payload carries
+	// "on_add": true, and the Unblocked notifier skips it (the user's own
+	// click is not news). Other blockers the pass moves are unmarked.
+	OnAddBlocker int64
+}
+
+// ResolveBlockersWith is ResolveBlockers with options.
+func ResolveBlockersWith(conn *sql.DB, lookup StatusLookup, opts ResolveOptions) ([]Resolution, error) {
 	rows, err := conn.QueryContext(bg,
 		`SELECT `+blockerCols+` FROM task_blockers b JOIN tasks t ON t.id = b.task_id
 		  WHERE `+candidateWhere+` ORDER BY b.id`)
@@ -174,7 +188,8 @@ func ResolveBlockers(conn *sql.DB, lookup StatusLookup) ([]Resolution, error) {
 				continue
 			}
 			// Only a failed write fails the pass (and rolls it back).
-			if err := setResolvedTx(tx, Actor{Kind: ActorSystem}, b, done, true, reason, ts); err != nil {
+			onAdd := opts.OnAddBlocker != 0 && b.ID == opts.OnAddBlocker
+			if err := setResolvedTx(tx, Actor{Kind: ActorSystem}, b, done, true, onAdd, reason, ts); err != nil {
 				return err
 			}
 			r := Resolution{TaskID: b.TaskID, BlockerID: b.ID, Resolved: done, Label: label}
@@ -218,8 +233,13 @@ func blockingTaskDone(q dbtx, id int64) (bool, string, error) {
 // events they write are what `worktree ui`'s notifier reads, whichever
 // process wrote them. As with holds, an error is logged, not returned: the
 // write has committed, and the poll loop resolves again after every pass.
-func resolveAfterWrite(conn *sql.DB) {
-	if _, err := ResolveBlockers(conn, nil); err != nil {
+func resolveAfterWrite(conn *sql.DB) { resolveAfterAdd(conn, 0) }
+
+// resolveAfterAdd is resolveAfterWrite for AddBlocker: a resolution of the
+// blocker it just added (a task blocker whose blocking task is already
+// done) is marked on_add, so it does not notify.
+func resolveAfterAdd(conn *sql.DB, added int64) {
+	if _, err := ResolveBlockersWith(conn, nil, ResolveOptions{OnAddBlocker: added}); err != nil {
 		Logf("tasks: %v (the poll loop will retry)", err)
 	}
 }

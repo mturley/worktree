@@ -21,6 +21,7 @@ import (
 	"github.com/mturley/worktree/internal/linked"
 	"github.com/mturley/worktree/internal/linkmeta"
 	"github.com/mturley/worktree/internal/slackpoller"
+	"github.com/mturley/worktree/internal/tasks"
 )
 
 type Server struct {
@@ -174,10 +175,19 @@ type Server struct {
 	// taskHooksOnce guards initTaskHooks. jiraStatus holds the Jira
 	// statuses poll passes found, by key, so web writes can resolve Jira
 	// blockers without contacting Jira; jiraStatusMu guards it.
-	blockerJira   func() (jiraSearcher, bool)
-	taskHooksOnce sync.Once
-	jiraStatusMu  sync.Mutex
-	jiraStatus    map[string]wjira.IssueSummary
+	// jiraBadKeys remembers keys Jira rejected with a 400, until the
+	// recorded expiry (jiraBadKeyTTL), so they are not searched every pass;
+	// jiraBadMu guards it. resolveMu serialises whole resolution passes
+	// (lookup, ResolveBlockers, reconcile) within this process.
+	// blockerLookupFor, when set, replaces blockerStatusLookup: a test seam.
+	blockerJira      func() (jiraSearcher, bool)
+	taskHooksOnce    sync.Once
+	jiraStatusMu     sync.Mutex
+	jiraStatus       map[string]wjira.IssueSummary
+	jiraBadMu        sync.Mutex
+	jiraBadKeys      map[string]time.Time
+	resolveMu        sync.Mutex
+	blockerLookupFor func(network bool) tasks.StatusLookup
 
 	// "Unblocked" notifications; see notify_unblock.go. unblockHold is the
 	// hold before one is sent (0 = unblockHoldDefault) and notifyNow the

@@ -14,10 +14,11 @@ import (
 	"github.com/mturley/worktree/internal/tasks"
 )
 
-// unblockHoldDefault is how long an "Unblocked" notification waits before
-// it is sent, so an undo can withdraw it first. It matches the undo
-// toast's UNDO_WINDOW_MS (ui/src/components/UndoToast.tsx): change both
-// together.
+// unblockHoldDefault is how long an "Unblocked" notification waits, from
+// the notifier pass that finds its event, before it is sent, so an undo
+// can withdraw it first. The wait therefore ends about 10s after the
+// notifier sees the event, not 10s after the resolution; Phase 6 (undo)
+// aligns it with the undo toast's window.
 const unblockHoldDefault = 10 * time.Second
 
 // pendingUnblock is an automatic blocker resolution found by a pass and
@@ -25,10 +26,11 @@ const unblockHoldDefault = 10 * time.Second
 // (the new cursor starts past their events), which costs at most one
 // notification per resolution made in the last hold window.
 type pendingUnblock struct {
-	eventID int64
-	taskID  int64
-	due     time.Time
-	body    string // "Unblocked: <label> <reason>"
+	eventID   int64
+	taskID    int64
+	blockerID int64
+	due       time.Time
+	body      string // "Unblocked: <label> <reason>"
 }
 
 func (s *Server) unblockHoldWindow() time.Duration {
@@ -47,12 +49,17 @@ func (s *Server) notifyClock() time.Time {
 
 // isUnblockEvent reports whether e is an automatic blocker resolution: a
 // task_blocker_resolved written by the system actor with auto set. Those
-// notify only through the Unblocked path, never the per-worktree one.
+// notify only through the Unblocked path, never the per-worktree one. A
+// resolution made by the request that added the blocker (on_add: an
+// already-merged PR, an already-done task) is not one: the user's own
+// click is not news. isSystemBlockerEvent still keeps it off the
+// per-worktree path, so it notifies nowhere.
 func isUnblockEvent(e tasks.FeedEvent) bool {
 	if e.Type != tasks.EventTaskBlockerResolved || e.Actor != tasks.ActorSystem {
 		return false
 	}
-	return parseTaskPayload(e.Payload).Auto
+	p := parseTaskPayload(e.Payload)
+	return p.Auto && !p.OnAdd
 }
 
 // isSystemBlockerEvent reports whether e is a system resolve or unresolve.
@@ -90,16 +97,18 @@ func (s *Server) holdUnblocks(evs []tasks.FeedEvent) {
 	s.unblockMu.Lock()
 	defer s.unblockMu.Unlock()
 	for _, e := range evs {
+		p := parseTaskPayload(e.Payload)
 		s.unblockPending = append(s.unblockPending, pendingUnblock{
-			eventID: e.ID, taskID: e.TaskID, due: due,
-			body: unblockedText(parseTaskPayload(e.Payload)),
+			eventID: e.ID, taskID: e.TaskID, blockerID: p.BlockerID, due: due,
+			body: unblockedText(p),
 		})
 	}
 }
 
 // dueUnblockBatches takes the held items whose hold has elapsed and builds
-// their notifications. Each event row is re-read first: one gone (an undo
-// deleted it) or whose task is deleted is dropped silently. No toggle is
+// their notifications. Each is re-checked first (unblockStillStands): one
+// whose event is gone (an undo deleted it), whose task is deleted, or
+// whose blocker was removed or is no longer resolved is dropped silently. No toggle is
 // consulted; only the global switch, in deliver, applies.
 func (s *Server) dueUnblockBatches() []notifyBatch {
 	now := s.notifyClock()
@@ -137,14 +146,18 @@ func (s *Server) dueUnblockBatches() []notifyBatch {
 	return out
 }
 
-// unblockStillStands re-reads p's event: ok when the row still exists and
-// its task is not deleted, with the task's current title.
+// unblockStillStands re-reads p's event: ok when the row still exists, its
+// task is not deleted, and the blocker it resolved still exists and is
+// still resolved, with the task's current title.
 func unblockStillStands(conn *sql.DB, p pendingUnblock) (title string, ok bool, err error) {
 	var live bool
 	err = conn.QueryRow(
-		`SELECT COALESCE(t.title,''), (t.id IS NOT NULL AND t.deleted_at IS NULL)
-		   FROM task_events e LEFT JOIN tasks t ON t.id = e.task_id
-		  WHERE e.id = ?`, p.eventID).Scan(&title, &live)
+		`SELECT COALESCE(t.title,''),
+		        (t.id IS NOT NULL AND t.deleted_at IS NULL AND b.resolved_at IS NOT NULL)
+		   FROM task_events e
+		   LEFT JOIN tasks t ON t.id = e.task_id
+		   LEFT JOIN task_blockers b ON b.id = ? AND b.task_id = e.task_id
+		  WHERE e.id = ?`, p.blockerID, p.eventID).Scan(&title, &live)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil
 	}

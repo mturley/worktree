@@ -136,7 +136,7 @@ func TestJiraBlockerLookupDisabledNeverBuildsClient(t *testing.T) {
 	if _, ok := s.blockerStatusLookup(true)("jira", "ABC-1"); ok {
 		t.Fatal("lookup known while the Jira watcher is off")
 	}
-	s.resolvePass(true)
+	s.resolvePass(true, tasks.ResolveOptions{})
 	s.afterTaskWrite()
 	if *built != 0 || len(f.queries) != 0 {
 		t.Fatalf("Jira contacted while disabled: built %d, queries %v", *built, f.queries)
@@ -158,7 +158,7 @@ func TestJiraBlockerDoneResolvesWithOneSearchPerPass(t *testing.T) {
 	mustBlock(t, s, b.ID, "jira", "abc-2") // case-insensitive key
 	mustBlock(t, s, b.ID, "jira", "not a key")
 
-	s.resolvePass(true)
+	s.resolvePass(true, tasks.ResolveOptions{})
 	if len(f.queries) != 1 {
 		t.Fatalf("searches = %v, want exactly one", f.queries)
 	}
@@ -262,7 +262,7 @@ func TestWebWriteResolvesJiraFromPollCache(t *testing.T) {
 	withJira(s, f)
 	a := mustTask(t, s, tasks.NewTask{Title: "A"})
 	mustBlock(t, s, a.ID, "jira", "ABC-1")
-	s.resolvePass(true) // the poll pass: searches and caches
+	s.resolvePass(true, tasks.ResolveOptions{}) // the poll pass: searches and caches
 	if n := f.count(); n != 1 {
 		t.Fatalf("poll pass searches = %d, want 1", n)
 	}
@@ -299,7 +299,7 @@ func TestJiraSearchRetriesKeyByKeyOnlyOn400(t *testing.T) {
 	tk := mustTask(t, s, tasks.NewTask{Title: "A"})
 	mustBlock(t, s, tk.ID, "jira", "ABC-1")
 	mustBlock(t, s, tk.ID, "jira", "BAD-9")
-	s.resolvePass(true)
+	s.resolvePass(true, tasks.ResolveOptions{})
 	// The batch, then one search per key.
 	if n := f.count(); n != 3 {
 		t.Fatalf("searches = %v, want batch + 2 singles", f.queries)
@@ -325,7 +325,7 @@ func TestJiraSearchStopsOnTransportError(t *testing.T) {
 	tk := mustTask(t, s, tasks.NewTask{Title: "A"})
 	mustBlock(t, s, tk.ID, "jira", "ABC-1")
 	mustBlock(t, s, tk.ID, "jira", "ABC-2")
-	s.resolvePass(true)
+	s.resolvePass(true, tasks.ResolveOptions{})
 	if n := f.count(); n != 1 {
 		t.Fatalf("searches = %v, want only the batch", f.queries)
 	}
@@ -338,4 +338,104 @@ func mustBlockers(t *testing.T, s *Server, taskID int64) []tasks.Blocker {
 		t.Fatal(err)
 	}
 	return bs
+}
+
+// Two passes in one process, the poll's and a web write's, must not
+// interleave as "stale lookup, then the poll commits, then the stale pass
+// unresolves": resolveMu serialises whole passes.
+func TestConcurrentResolvePassesNeverUnresolveFromAStaleLookup(t *testing.T) {
+	s, _ := tasksServer(t)
+	tk := mustTask(t, s, tasks.NewTask{Title: "A"})
+	mustBlock(t, s, tk.ID, "pr", "o/r#1")
+
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	s.blockerLookupFor = func(network bool) tasks.StatusLookup {
+		if network { // the poll: the PR has merged
+			return func(string, string) (tasks.ResourceStatus, bool) {
+				return tasks.ResourceStatus{Done: true, Label: "merged"}, true
+			}
+		}
+		// The web write: it read "open" just before the merge landed.
+		return func(string, string) (tasks.ResourceStatus, bool) {
+			once.Do(func() { close(entered) })
+			<-release
+			return tasks.ResourceStatus{Done: false, Label: "open"}, true
+		}
+	}
+
+	webDone, pollDone := make(chan struct{}), make(chan struct{})
+	go func() { s.afterTaskWrite(); close(webDone) }()
+	<-entered
+	go func() { s.resolvePass(true, tasks.ResolveOptions{}); close(pollDone) }()
+	select {
+	case <-pollDone: // without the mutex, the poll commits here
+	case <-time.After(300 * time.Millisecond): // with it, the poll waits
+	}
+	close(release)
+	<-webDone
+	<-pollDone
+
+	if bl := blockerOf(t, s, tk.ID); bl.ResolvedAt == "" || bl.ResolvedReason != "merged" {
+		t.Fatalf("blocker = %+v, want resolved \"merged\"", bl)
+	}
+	var unresolves int
+	must(t, s.DB.QueryRow(`SELECT COUNT(*) FROM task_events WHERE type = ?`, tasks.EventTaskBlockerUnresolved).Scan(&unresolves))
+	if unresolves != 0 {
+		t.Fatalf("%d unresolve events: a stale pass undid the poll's resolution", unresolves)
+	}
+}
+
+// A key Jira rejected with a 400 is left out of later searches until its
+// TTL expires, and is unknown meanwhile.
+func TestJiraBadKeyIsRememberedUntilItsTTLExpires(t *testing.T) {
+	s, _ := tasksServer(t)
+	f := &fakeJira{
+		issues: map[string]wjira.IssueSummary{
+			"ABC-1": {Key: "ABC-1", Status: "Done", StatusCategory: "done"},
+			"BAD-9": {Key: "BAD-9", Status: "Done", StatusCategory: "done"},
+		},
+		errFor: func(jql string) error {
+			if strings.Contains(jql, "BAD-9") {
+				return errors.New("API returned status 400: An issue with key 'BAD-9' does not exist")
+			}
+			return nil
+		},
+	}
+	withJira(s, f)
+	tk := mustTask(t, s, tasks.NewTask{Title: "A"})
+	mustBlock(t, s, tk.ID, "jira", "ABC-1")
+	mustBlock(t, s, tk.ID, "jira", "BAD-9")
+	s.resolvePass(true, tasks.ResolveOptions{}) // batch + two singles
+	if n := f.count(); n != 3 {
+		t.Fatalf("first pass searches = %v", f.queries)
+	}
+
+	s.resolvePass(true, tasks.ResolveOptions{})
+	if n := f.count(); n != 4 || strings.Contains(f.queries[3], "BAD-9") {
+		t.Fatalf("second pass searches = %v, want one batch without BAD-9", f.queries)
+	}
+	if _, ok := s.blockerStatusLookup(true)("jira", "BAD-9"); ok {
+		t.Fatal("a remembered bad key is known")
+	}
+
+	// Its TTL expires: it is searched again (and, the fake now answering
+	// it, resolves).
+	s.jiraBadMu.Lock()
+	for k := range s.jiraBadKeys {
+		s.jiraBadKeys[k] = time.Now().Add(-time.Second)
+	}
+	s.jiraBadMu.Unlock()
+	f.mu.Lock()
+	f.errFor = nil
+	f.mu.Unlock()
+	s.resolvePass(true, tasks.ResolveOptions{})
+	if n := f.count(); n != 5 || !strings.Contains(f.queries[4], "BAD-9") {
+		t.Fatalf("after the TTL, searches = %v, want BAD-9 back in the batch", f.queries)
+	}
+	for _, b := range mustBlockers(t, s, tk.ID) {
+		if b.ResourceID == "BAD-9" && b.ResolvedAt == "" {
+			t.Fatalf("BAD-9 not resolved after its TTL: %+v", b)
+		}
+	}
 }
