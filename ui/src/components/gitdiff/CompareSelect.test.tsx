@@ -33,6 +33,14 @@ describe("CompareSelect", () => {
     expect(onChange).toHaveBeenCalledWith("tracking")
   })
 
+  it("reads as a menu button, with no text caret", () => {
+    setup("origin/feature")
+    const input = screen.getByRole("textbox", { name: "Compare with" })
+    // jsdom computes neither, so read the inline style Mantine writes.
+    expect(input.style.cursor).toBe("pointer")
+    expect(input.style.caretColor).toBe("transparent")
+  })
+
   it("disables the tracking option when there is none", async () => {
     const { onChange, user } = setup(undefined)
     await user.click(screen.getByRole("textbox", { name: "Compare with" }))

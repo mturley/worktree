@@ -35,6 +35,10 @@ export function CompareSelect({
         value={value}
         allowDeselect={false}
         checkIconPosition="right"
+        // Not searchable, but Mantine's Select is still a (read-only) input
+        // underneath, which shows a text caret once clicked into; it reads as
+        // a menu button instead.
+        styles={{ input: { cursor: "pointer", caretColor: "transparent" } }}
         comboboxProps={{ width: "max-content", position: "bottom-start" }}
         onChange={(v) => (v === "merge-base" || v === "tracking") && onChange(v)}
         renderOption={({ option }) =>
