@@ -186,7 +186,7 @@ func TestTaskDetailEditRoutes(t *testing.T) {
 		t.Fatalf("after remove = %+v", d.Subtasks)
 	}
 
-	if rec := serveTasks(t, s, http.MethodPost, "/api/tasks/delete", map[string]any{"id": id}); rec.Code != http.StatusNoContent {
+	if rec := serveTasks(t, s, http.MethodPost, "/api/tasks/delete", map[string]any{"id": id}); rec.Code != http.StatusOK {
 		t.Fatalf("delete = %d %s", rec.Code, rec.Body.String())
 	}
 	if rec := serveTasks(t, s, http.MethodGet, "/api/tasks/detail?id="+strconv.FormatInt(id, 10), nil); rec.Code != http.StatusNotFound {

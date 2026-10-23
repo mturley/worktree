@@ -193,7 +193,7 @@ export const api = {
     }
     return fetchJSON<TimelineEvent[]>(`/api/tasks/activity?${params}`)
   },
-  /** Resolves on the server's 204. */
+  /** Resolves once deleted; the answer's undo_event_id is not read yet (Task 4 wires undo). */
   deleteTask: (id: number) => postJSON<null>("/api/tasks/delete", { id }).then((): void => {}),
   addTaskLink: (id: number, target: { url: string } | TaskLinkTarget, focus?: boolean) => {
     let body: Record<string, unknown>

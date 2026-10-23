@@ -312,6 +312,7 @@ func (s *Server) routes() []route {
 		{"POST /api/tasks", s.handleCreateTask},
 		{"POST /api/tasks/update", s.handleUpdateTask},
 		{"POST /api/tasks/state", s.handleSetTaskState},
+		{"POST /api/tasks/undo", s.handleUndo},
 		{"POST /api/tasks/move", s.handleMoveTask},
 		{"GET /api/tasks/detail", s.handleTaskDetail},
 		{"GET /api/tasks/activity", s.handleTaskActivity},

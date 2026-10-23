@@ -104,8 +104,11 @@ func quote(s string) string { return "“" + s + "”" }
 
 // taskEventPayload is the union of the task event payloads' fields.
 type taskEventPayload struct {
-	From         string                     `json:"from"`
-	To           string                     `json:"to"`
+	// From and To are strings on a state change and booleans on a subtask
+	// check: raw, so a typed read never fails the whole payload. Read them
+	// through stateFrom and stateTo.
+	From         json.RawMessage            `json:"from"`
+	To           json.RawMessage            `json:"to"`
 	Changes      map[string]json.RawMessage `json:"changes"`
 	Kind         string                     `json:"kind"`
 	ResourceType string                     `json:"resource_type"`
@@ -121,6 +124,16 @@ type taskEventPayload struct {
 	BlockerID    int64                      `json:"blocker_id"`
 	OnAdd        bool                       `json:"on_add"` // task_blocker_resolved by the request that added it
 }
+
+// rawString is raw as a JSON string, "" for anything else.
+func rawString(raw json.RawMessage) string {
+	var s string
+	_ = json.Unmarshal(raw, &s)
+	return s
+}
+
+func (p taskEventPayload) stateFrom() string { return rawString(p.From) }
+func (p taskEventPayload) stateTo() string   { return rawString(p.To) }
 
 func parseTaskPayload(raw json.RawMessage) taskEventPayload {
 	var p taskEventPayload
@@ -138,13 +151,13 @@ var taskEventTitles = map[string]taskTitleFunc{
 	tasks.EventTaskEdited:  taskEditedTitle,
 	tasks.EventTaskStateChanged: func(raw json.RawMessage, t tasks.Task) string {
 		p := parseTaskPayload(raw)
-		switch tasks.State(p.To) {
+		switch tasks.State(p.stateTo()) {
 		case tasks.StateInProgress:
 			return "Started " + quote(t.Title)
 		case tasks.StateDone:
 			return "Completed " + quote(t.Title)
 		case tasks.StateNotStarted:
-			if tasks.State(p.From) == tasks.StateDone {
+			if tasks.State(p.stateFrom()) == tasks.StateDone {
 				return "Reopened " + quote(t.Title)
 			}
 			return "Marked " + quote(t.Title) + " not started"

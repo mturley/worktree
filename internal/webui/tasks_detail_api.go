@@ -630,18 +630,19 @@ type taskIDRequest struct {
 	ID int64 `json:"id"`
 }
 
-// handleDeleteTask: POST /api/tasks/delete → 204
+// handleDeleteTask: POST /api/tasks/delete → {undo_event_id}
 func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
 	var req taskIDRequest
 	if !decodeTaskBody(w, r, &req) {
 		return
 	}
-	if _, err := tasks.Delete(s.DB, webActor, req.ID); err != nil {
+	eventID, err := tasks.Delete(s.DB, webActor, req.ID)
+	if err != nil {
 		writeTaskError(w, err)
 		return
 	}
 	s.afterTaskWrite()
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, http.StatusOK, map[string]int64{"undo_event_id": eventID})
 }
 
 // linkTargetBody names one link: kind plus type+rid or path.
@@ -788,9 +789,9 @@ type subtaskRequest struct {
 }
 
 // subtaskWrite runs op on the subtask named in the body and answers with
-// its task's detail. The task is looked up first: after a removal there is
+// its task's detail (with the undo event id op answered, 0 for none). The task is looked up first: after a removal there is
 // no subtask left to find it from.
-func (s *Server) subtaskWrite(w http.ResponseWriter, r *http.Request, op func(subtaskRequest) error) {
+func (s *Server) subtaskWrite(w http.ResponseWriter, r *http.Request, op func(subtaskRequest) (int64, error)) {
 	var req subtaskRequest
 	if !decodeTaskBody(w, r, &req) {
 		return
@@ -800,32 +801,39 @@ func (s *Server) subtaskWrite(w http.ResponseWriter, r *http.Request, op func(su
 		writeTaskError(w, err)
 		return
 	}
-	if err := op(req); err != nil {
+	undoID, err := op(req)
+	if err != nil {
 		writeTaskError(w, err)
 		return
 	}
-	s.writeTaskDetail(w, taskID)
+	d, err := s.taskDetail(taskID)
+	if err != nil {
+		writeTaskError(w, err)
+		return
+	}
+	d.UndoEventID = undoID
+	writeJSON(w, http.StatusOK, d)
 }
 
 // handleEditSubtask: POST /api/tasks/subtasks/edit
 func (s *Server) handleEditSubtask(w http.ResponseWriter, r *http.Request) {
-	s.subtaskWrite(w, r, func(req subtaskRequest) error {
-		return tasks.EditSubtask(s.DB, webActor, req.SubtaskID, req.Text)
+	s.subtaskWrite(w, r, func(req subtaskRequest) (int64, error) {
+		return 0, tasks.EditSubtask(s.DB, webActor, req.SubtaskID, req.Text)
 	})
 }
 
 // handleCheckSubtask: POST /api/tasks/subtasks/check
 func (s *Server) handleCheckSubtask(w http.ResponseWriter, r *http.Request) {
-	s.subtaskWrite(w, r, func(req subtaskRequest) error {
-		_, err := tasks.SetSubtaskChecked(s.DB, webActor, req.SubtaskID, req.Checked)
-		return err
+	s.subtaskWrite(w, r, func(req subtaskRequest) (int64, error) {
+		sc, err := tasks.SetSubtaskChecked(s.DB, webActor, req.SubtaskID, req.Checked)
+		return sc.EventID, err
 	})
 }
 
 // handleRemoveSubtask: POST /api/tasks/subtasks/remove
 func (s *Server) handleRemoveSubtask(w http.ResponseWriter, r *http.Request) {
-	s.subtaskWrite(w, r, func(req subtaskRequest) error {
-		return tasks.RemoveSubtask(s.DB, webActor, req.SubtaskID)
+	s.subtaskWrite(w, r, func(req subtaskRequest) (int64, error) {
+		return 0, tasks.RemoveSubtask(s.DB, webActor, req.SubtaskID)
 	})
 }
 

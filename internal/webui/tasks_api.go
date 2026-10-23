@@ -64,6 +64,10 @@ type taskDTO struct {
 	// BlockerLabels names the unresolved blockers (blockerLabeler), oldest
 	// first, for the row chip's tooltip. Never null.
 	BlockerLabels []string `json:"blocker_labels"`
+	// UndoEventID is set only on the answer to a write that changed
+	// something undoable (a state change, a subtask check): the event id for
+	// POST /api/tasks/undo. Absent when the write changed nothing.
+	UndoEventID int64 `json:"undo_event_id,omitempty"`
 }
 
 func newTaskDTO(t tasks.Task) taskDTO {
@@ -102,6 +106,8 @@ func writeTaskError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, tasks.ErrNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, tasks.ErrUndoConflict):
+		writeError(w, http.StatusConflict, err.Error())
 	default:
 		writeError(w, http.StatusInternalServerError, err.Error())
 	}
@@ -296,7 +302,29 @@ func (s *Server) handleSetTaskState(w http.ResponseWriter, r *http.Request) {
 		writeTaskError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.newTaskDTOWithUnread(t))
+	dto := s.newTaskDTOWithUnread(t)
+	dto.UndoEventID = sc.EventID
+	writeJSON(w, http.StatusOK, dto)
+}
+
+type undoRequest struct {
+	EventID int64 `json:"event_id"`
+}
+
+// handleUndo: POST /api/tasks/undo {event_id} → 204. 409 when the change
+// is no longer the current one (already undone, or something followed it),
+// 404 for an event never issued, 400 for one that is not undoable.
+func (s *Server) handleUndo(w http.ResponseWriter, r *http.Request) {
+	var req undoRequest
+	if !decodeTaskBody(w, r, &req) {
+		return
+	}
+	if err := tasks.Undo(s.DB, webActor, req.EventID); err != nil {
+		writeTaskError(w, err)
+		return
+	}
+	s.afterTaskWrite()
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type moveTaskRequest struct {

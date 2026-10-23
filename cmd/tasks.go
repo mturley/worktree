@@ -193,6 +193,13 @@ var tasksDeleteCmd = &cobra.Command{
 	RunE:  runTasksDelete,
 }
 
+var tasksUndoCmd = &cobra.Command{
+	Use:   "undo <event-id>",
+	Short: "Undo a state change, subtask check or delete, by the event id its command answered",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runTasksUndo,
+}
+
 func init() {
 	tasksCmd.PersistentFlags().BoolVar(&tasksAsAgent, "as-agent", false, "record changes as made by an agent")
 	for _, c := range []*cobra.Command{tasksListCmd, tasksShowCmd, tasksAddCmd, tasksEditCmd,
@@ -226,7 +233,7 @@ func init() {
 	ef.StringVar(&tasksDue, "due", "", "due date, YYYY-MM-DD (\"\" clears)")
 
 	tasksCmd.AddCommand(tasksListCmd, tasksShowCmd, tasksAddCmd, tasksEditCmd,
-		tasksStateCmd, tasksStarCmd, tasksUnstarCmd, tasksDeleteCmd)
+		tasksStateCmd, tasksStarCmd, tasksUnstarCmd, tasksDeleteCmd, tasksUndoCmd)
 	rootCmd.AddCommand(tasksCmd)
 }
 
@@ -493,14 +500,40 @@ func runTasksState(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer conn.Close()
-	if _, err := tasks.SetState(conn, tasksActor(), id, tasks.State(args[1])); err != nil {
+	sc, err := tasks.SetState(conn, tasksActor(), id, tasks.State(args[1]))
+	if err != nil {
 		return taskErr(id, err)
 	}
 	t, err := tasks.Get(conn, id)
 	if err != nil {
 		return taskErr(id, err)
 	}
+	if tasksJSON {
+		j, err := taskJSONFor(conn, t)
+		if err != nil {
+			return err
+		}
+		j.UndoEventID = sc.EventID
+		return writeJSON(cmd.OutOrStdout(), j)
+	}
 	return printTask(cmd, conn, t)
+}
+
+func runTasksUndo(cmd *cobra.Command, args []string) error {
+	eventID, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil || eventID <= 0 {
+		return fmt.Errorf("invalid event id %q: expected a positive number", args[0])
+	}
+	conn, err := wdb.Open()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if err := tasks.Undo(conn, tasksActor(), eventID); err != nil {
+		return err // ErrUndoConflict reads "changed since; nothing was undone"
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), "Undone.")
+	return nil
 }
 
 func runTasksSetStar(cmd *cobra.Command, args []string, starred bool) error {
@@ -530,11 +563,12 @@ func runTasksDelete(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer conn.Close()
-	if _, err := tasks.Delete(conn, tasksActor(), id); err != nil {
+	eventID, err := tasks.Delete(conn, tasksActor(), id)
+	if err != nil {
 		return taskErr(id, err)
 	}
 	if tasksJSON {
-		return writeJSON(cmd.OutOrStdout(), map[string]any{"id": formatTaskID(id), "deleted": true})
+		return writeJSON(cmd.OutOrStdout(), map[string]any{"id": formatTaskID(id), "deleted": true, "undo_event_id": eventID})
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "deleted %s\n", formatTaskID(id))
 	return nil
@@ -830,13 +864,22 @@ func runSubtaskCheck(cmd *cobra.Command, args []string, checked bool) error {
 		return err
 	}
 	defer conn.Close()
-	if _, err := tasks.SetSubtaskChecked(conn, tasksActor(), sid, checked); err != nil {
+	sc, err := tasks.SetSubtaskChecked(conn, tasksActor(), sid, checked)
+	if err != nil {
 		return subtaskErr(sid, err)
 	}
+	what := "unchecked"
 	if checked {
-		return printSubtaskResult(cmd, sid, "checked")
+		what = "checked"
 	}
-	return printSubtaskResult(cmd, sid, "unchecked")
+	if tasksJSON {
+		out := map[string]any{"id": sid, what: true}
+		if sc.EventID != 0 {
+			out["undo_event_id"] = sc.EventID
+		}
+		return writeJSON(cmd.OutOrStdout(), out)
+	}
+	return printSubtaskResult(cmd, sid, what)
 }
 
 func runSubtaskRemove(cmd *cobra.Command, args []string) error {

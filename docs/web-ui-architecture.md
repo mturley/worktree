@@ -218,18 +218,19 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | GET | `/api/tasks` | `scope` (`all` default, `worktree`, `resource`), `path` (worktree scope), `type` + `id` (resource scope), `completed=1`, `archived=1` | `[]taskDTO` in master order; see "Tasks" |
 | POST | `/api/tasks` | body: `{title, priority?, starred?, path?, type?, id?, after?, before?}`; `path` → Focus worktree link, `type`+`id` → Focus resource link, neither → global | `taskDTO` |
 | POST | `/api/tasks/update` | body: `{id, title?, description?, priority?, starred?, due?}` (absent = unchanged; `due: ""` clears) | `taskDTO` |
-| POST | `/api/tasks/state` | body: `{id, state}` | `taskDTO` |
+| POST | `/api/tasks/state` | body: `{id, state}` | `taskDTO`, plus `undo_event_id` when the state changed (see "Undo for tasks") |
 | POST | `/api/tasks/move` | body: `{id, after}` or `{id, before}`, exactly one | 204 No Content |
 | GET | `/api/tasks/detail` | `id` | `taskDetailDTO`; 404 if missing or deleted. See "Task detail API" |
 | GET | `/api/tasks/activity` | `id`, `filter` (`all` default, `task`, `linked`, `resource`), `type` + `rid` (with `filter=resource`; must be a linked resource, else 404) | `[]TimelineEvent`, newest first, at most 200; resource events carry `linked_to_task` |
-| POST | `/api/tasks/delete` | body: `{id}` | 204 No Content |
+| POST | `/api/tasks/delete` | body: `{id}` | `{undo_event_id}` |
+| POST | `/api/tasks/undo` | body: `{event_id}` | 204; 409 if the change is no longer the current one; 404 for an unknown event or purged task; 400 for an event that is not undoable |
 | POST | `/api/tasks/links/add` | body: `{id, url?, type?, rid?, path?, focus?}`, exactly one of `url`, `type`+`rid`, `path`; a URL resolves with `resourceurl.InferAny` (unrecognised → 400) | `taskDetailDTO` |
 | POST | `/api/tasks/links/remove` | body: `{id, kind, type?, rid?, path?}` | `taskDetailDTO` |
 | POST | `/api/tasks/links/focus` | body: `{id, kind, type?, rid?, path?, focus}`; a link the task lacks → 404 | `taskDetailDTO` |
 | POST | `/api/tasks/links/order` | body: `{id, focus: [target…], related: [target…]}` (target = `{kind, type?, rid?, path?}`) | `taskDetailDTO` |
 | POST | `/api/tasks/subtasks/add` | body: `{id, text}` | `taskDetailDTO` |
 | POST | `/api/tasks/subtasks/edit` | body: `{subtask_id, text}` | `taskDetailDTO` |
-| POST | `/api/tasks/subtasks/check` | body: `{subtask_id, checked}` | `taskDetailDTO` |
+| POST | `/api/tasks/subtasks/check` | body: `{subtask_id, checked}` | `taskDetailDTO`, plus `undo_event_id` when the box changed |
 | POST | `/api/tasks/subtasks/remove` | body: `{subtask_id}` | `taskDetailDTO` |
 | POST | `/api/tasks/subtasks/order` | body: `{id, ids: [...]}` | `taskDetailDTO` |
 | POST | `/api/tasks/blockers/add` | body: `{id, kind, task_id?, url?, type?, rid?, text?}`: `task` takes `task_id`; `resource` exactly one of `url` (`resourceurl.InferAny`; unrecognised → 400) and `type`+`rid`; `other` takes `text`. A cycle → 400 "would create a blocking cycle"; a duplicate is a no-op | `taskDetailDTO`, after `afterTaskWrite` (an already-satisfied blocker comes back resolved) |
@@ -981,6 +982,20 @@ thread view's Mark read and the task modal's — shows a toast for 10 seconds wi
 
 - Tasks: `/api/task-read` and `/api/task-read/restore`, exactly as
   GitHub/Jira, over the task's cursor.
+
+**Undo for tasks.** A state change, a subtask check or uncheck, and a delete
+answer with `undo_event_id` (omitted when nothing changed, so there is
+nothing to offer), the id of the event the write recorded. `POST
+/api/tasks/undo {event_id}` takes only that id: `tasks.Undo` dispatches on the
+event's type and restores everything from the stored event, including a
+completion's or delete's blocker cascade. It is a compare-and-swap like
+`/api/resource-read/restore`: 409 unless the event is still the task's newest
+of its kind and the value is still the one it set. An undo deletes the event
+and its cascade events rather than writing a "reverted" one, so history shows
+nothing and a restored blocker never sends a second "Unblocked" notification.
+It runs `afterTaskWrite()` afterwards, like the writes it reverses. The CLI is
+`worktree tasks undo <event-id>`; its `state`, `delete` and `subtask
+check`/`uncheck` `--json` carry the same `undo_event_id`.
 
 A partial failure in Mark all read still offers to undo the writes that
 landed. Its undo (`undoAll`) runs every restore to the end even when one is

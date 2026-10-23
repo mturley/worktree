@@ -37,6 +37,9 @@ type taskJSON struct {
 	Blockers      *[]blockerJSON `json:"blockers,omitempty"` // show only
 	Blocks        *[]blocksJSON  `json:"blocks,omitempty"`   // show only
 	Events        []eventJSON    `json:"events,omitempty"`   // show only
+	// UndoEventID: the event `tasks undo` takes, on the answer to a write
+	// that changed something undoable. Absent when nothing changed.
+	UndoEventID int64 `json:"undo_event_id,omitempty"`
 }
 
 type linkJSON struct {
