@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { ActionIcon, Badge, Button, Checkbox, Code, Group, Paper, Stack, Tabs, Text, Textarea, Tooltip } from "@mantine/core"
-import { IconCheck, IconCopy, IconPencil } from "@tabler/icons-react"
+import { IconCheck, IconCopy, IconPencil, IconX } from "@tabler/icons-react"
 import { useQuery } from "@tanstack/react-query"
 import { api } from "../api/client"
 import { useCmux, useCmuxMatches } from "../api/cmux"
@@ -9,7 +9,7 @@ import { isDetailTab, type DetailTab } from "../hooks/useDetailTab"
 import { useDiffSelection } from "../hooks/useDiffSelection"
 import { useWorktreeGit } from "../hooks/useWorktreeGit"
 import { useWorktreeNotes } from "../hooks/useWorktreeNotes"
-import { formatBadge } from "../lib/diffLabels"
+import { badgeColor, formatBadge } from "../lib/diffLabels"
 import { toggleTaskAt } from "../lib/taskList"
 import { relativeTime as rel } from "../lib/relativeTime"
 import { CmuxPanel } from "./CmuxPanel"
@@ -28,7 +28,8 @@ import { NotesMarkdown } from "./NotesMarkdown"
  * what was I in the middle of (notes).
  *
  * A single row of tabs — Notes, Environment, Code and, inside cmux, cmux —
- * with the delete control at its right.
+ * with the delete control at its right. Off Notes, an X before the delete
+ * control (or clicking the active tab again) goes back to Notes.
  * The tab is the page's (useDetailTab), because it also decides where the
  * page puts the card: wide, Notes sits in the resource column and the other
  * tabs span the page under the header. Switching between them moves, and so
@@ -57,6 +58,8 @@ export function WorktreeDetailCard({ w, tab, onTabChange }: {
   const gitStatus = useWorktreeGit(w.path, { fetch: tab === "code" })
   const { base } = useDiffSelection(w.path, undefined)
   const badge = gitStatus.data?.on_disk ? formatBadge(gitStatus.data, base) : null
+  // Yellow for uncommitted changes, orange for unpushed commits, else gray.
+  const badgeTint = gitStatus.data?.on_disk ? badgeColor(gitStatus.data) : "gray"
   // Notes are read-only until "Edit notes", so a stray click or keystroke
   // cannot change them. Leaving the Notes tab ends editing: you always come
   // back to the read-only view.
@@ -72,6 +75,12 @@ export function WorktreeDetailCard({ w, tab, onTabChange }: {
     if (tab === "notes" && next !== "notes") doneEditing()
     onTabChange(next)
   }
+  // Notes is home: clicking the tab that is already showing goes back to it.
+  // Mantine's Tab runs onChange before onClick, so on an inactive tab `tab`
+  // is still the previous one here and this does nothing.
+  const backToNotesOn = (value: DetailTab) => () => {
+    if (tab === value && value !== "notes") selectTab("notes")
+  }
 
   return (
     <Paper p="sm" withBorder>
@@ -82,22 +91,36 @@ export function WorktreeDetailCard({ w, tab, onTabChange }: {
         <Group justify="space-between" wrap="nowrap" gap="xs" align="flex-start">
           <Tabs.List w="fit-content">
             <Tabs.Tab value="notes" fz="xs" py={6}>Notes</Tabs.Tab>
-            <Tabs.Tab value="env" fz="xs" py={6}>Environment</Tabs.Tab>
+            <Tabs.Tab value="env" fz="xs" py={6} onClick={backToNotesOn("env")}>Environment</Tabs.Tab>
             <Tabs.Tab
               value="code"
               fz="xs"
               py={6}
+              onClick={backToNotesOn("code")}
               rightSection={
-                badge ? <Badge size="xs" variant="light" color="gray" style={{ flex: "none" }}>{badge}</Badge> : undefined
+                // Badge sets its own default cursor; keep the tab's pointer
+                // all the way across it.
+                badge ? (
+                  <Badge size="xs" variant="light" color={badgeTint} style={{ flex: "none", cursor: "pointer" }}>{badge}</Badge>
+                ) : undefined
               }
             >
               Code
             </Tabs.Tab>
             {hasCmux && (
-              <Tabs.Tab value="cmux" fz="xs" py={6}>cmux</Tabs.Tab>
+              <Tabs.Tab value="cmux" fz="xs" py={6} onClick={backToNotesOn("cmux")}>cmux</Tabs.Tab>
             )}
           </Tabs.List>
-          <DeleteWorktreeButton w={w} />
+          <Group gap={4} wrap="nowrap">
+            {tab !== "notes" && (
+              <Tooltip label="Back to notes">
+                <ActionIcon variant="subtle" color="gray" aria-label="Back to notes" onClick={() => selectTab("notes")}>
+                  <IconX size={16} />
+                </ActionIcon>
+              </Tooltip>
+            )}
+            <DeleteWorktreeButton w={w} />
+          </Group>
         </Group>
 
         <Tabs.Panel value="notes" pt={6} keepMounted>

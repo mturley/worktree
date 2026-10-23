@@ -1,4 +1,6 @@
-import { Box, Button, Group, Stack, Text } from "@mantine/core"
+import { useState } from "react"
+import { ActionIcon, Box, Button, Group, Stack, Text, UnstyledButton } from "@mantine/core"
+import { IconChevronDown, IconChevronRight } from "@tabler/icons-react"
 import type { WorktreeGit } from "../../api/types"
 import { useDiffCommits, useDiffFiles } from "../../hooks/useDiffData"
 import { useDiffSelection } from "../../hooks/useDiffSelection"
@@ -30,12 +32,40 @@ export function GitDiffPanel({ path, repo, updated }: { path: string; repo: stri
 }
 
 /**
- * "Files changed (N) +x −y · Compare with · Changes from · View diff", then
- * the list. The selection is the worktree's shared one, so the diff view and
- * the tab badge follow it.
+ * Whether the Files changed list is expanded. One choice for every worktree,
+ * remembered per browser like the other display preferences. Collapsed by
+ * default, so the details card stays compact above the page's content.
+ */
+const FILES_OPEN_KEY = "worktree.filesChangedOpen"
+
+function readFilesOpen(): boolean {
+  try {
+    return window.localStorage.getItem(FILES_OPEN_KEY) === "true"
+  } catch {
+    return false
+  }
+}
+
+function writeFilesOpen(open: boolean): void {
+  try {
+    window.localStorage.setItem(FILES_OPEN_KEY, open ? "true" : "false")
+  } catch {
+    // Storage blocked or full: the choice lasts for this page view.
+  }
+}
+
+/**
+ * "▸ Files changed (N) +x −y · Compare with · Changes from · View diff", then
+ * the list while expanded. The selection is the worktree's shared one, so the
+ * diff view and the tab badge follow it.
  */
 function FilesChanged({ path, git }: { path: string; git: WorktreeGit }) {
   const diffView = useDiffView()
+  const [open, setOpen] = useState(readFilesOpen)
+  const toggle = () => {
+    setOpen(!open)
+    writeFilesOpen(!open)
+  }
   // The base picks which commit list to load, and the list's id decides
   // whether the stored range still applies — so read the base first, then
   // the selection against the loaded list. Both instances share one store.
@@ -46,6 +76,7 @@ function FilesChanged({ path, git }: { path: string; git: WorktreeGit }) {
   const commits = useDiffCommits(path, base, !unavailable, git.fingerprint)
   const sel = useDiffSelection(path, commits.data?.list_id)
   // The range names commits from this list, so wait for it before asking.
+  // Loaded while collapsed too: the header's count and totals come from it.
   const files = useDiffFiles(path, base, sel.range, !unavailable && !!commits.data, git.fingerprint)
 
   const list = files.data?.files
@@ -57,9 +88,16 @@ function FilesChanged({ path, git }: { path: string; git: WorktreeGit }) {
     <Stack gap="xs">
       <Group gap="md" wrap="wrap" align="center">
         <Group gap={8} wrap="nowrap">
-          <Text size="sm" fw={600}>
-            {list ? `Files changed (${list.length})` : "Files changed"}
-          </Text>
+          <ActionIcon size="sm" variant="subtle" color="gray" aria-label={open ? "Hide files" : "Show files"} onClick={toggle}>
+            {open ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
+          </ActionIcon>
+          {/* The chevron is the labelled control; the title is a larger
+              target for the same toggle, so it stays out of the tab order. */}
+          <UnstyledButton tabIndex={-1} onClick={toggle}>
+            <Text size="sm" fw={600}>
+              {list ? `Files changed (${list.length})` : "Files changed"}
+            </Text>
+          </UnstyledButton>
           {list && (
             <Text size="xs" ff="monospace">
               <Text span inherit c="green">{`+${additions}`}</Text>{" "}
@@ -86,12 +124,13 @@ function FilesChanged({ path, git }: { path: string; git: WorktreeGit }) {
           View diff
         </Button>
       </Group>
+      {/* Collapsed, only what explains a header with no count stays. */}
       <Box>
         {unavailable ? (
           <Text size="xs" c="dimmed" fs="italic">{unavailable}</Text>
         ) : error && !list ? (
           <Text size="xs" c="red">Could not load changes{baseRef ? ` against ${baseRef}` : ""}: {error.message}</Text>
-        ) : !list ? (
+        ) : !open ? null : !list ? (
           <Text size="xs" c="dimmed">Loading…</Text>
         ) : list.length === 0 ? (
           <Text size="xs" c="dimmed">No changes</Text>

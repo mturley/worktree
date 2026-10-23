@@ -713,3 +713,102 @@ describe("cmux tab", () => {
     expect(screen.getByRole("tab", { name: /notes/i })).toHaveAttribute("aria-selected", "true")
   })
 })
+
+describe("returning to Notes", () => {
+  it("clicking the active tab again goes back to Notes", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    const user = userEvent.setup()
+    wrap(summary())
+    await user.click(await screen.findByRole("tab", { name: /environment/i }))
+    expect(screen.getByRole("tab", { name: /environment/i })).toHaveAttribute("aria-selected", "true")
+    await user.click(screen.getByRole("tab", { name: /environment/i }))
+    expect(screen.getByRole("tab", { name: /notes/i })).toHaveAttribute("aria-selected", "true")
+    expect(screen.getByRole("tab", { name: /environment/i })).toHaveAttribute("aria-selected", "false")
+  })
+
+  it("clicking an inactive tab still selects it", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    const user = userEvent.setup()
+    wrap(summary())
+    await user.click(await screen.findByRole("tab", { name: /environment/i }))
+    await openCode()
+    expect(screen.getByRole("tab", { name: /^Code/ })).toHaveAttribute("aria-selected", "true")
+  })
+
+  it("clicking Notes while on Notes leaves it there, still editing", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    const user = userEvent.setup()
+    wrap(summary())
+    await startEditing(user)
+    await user.click(screen.getByRole("tab", { name: /notes/i }))
+    expect(screen.getByRole("tab", { name: /notes/i })).toHaveAttribute("aria-selected", "true")
+    expect(notesBox()).toBeInTheDocument()
+  })
+
+  it("flushes a notes edit when the tab leaves Notes and is clicked back", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    const user = userEvent.setup()
+    wrap(summary())
+    await startEditing(user)
+    await user.type(notesBox(), "x")
+    await user.click(screen.getByRole("tab", { name: /environment/i }))
+    expect(saveWorktreeNotes).toHaveBeenCalledTimes(1)
+    await user.click(screen.getByRole("tab", { name: /environment/i }))
+    expect(screen.getByRole("tab", { name: /notes/i })).toHaveAttribute("aria-selected", "true")
+    expect(screen.queryByRole("textbox", { name: /worktree notes/i })).not.toBeInTheDocument()
+  })
+
+  it("shows a Back to notes button only off Notes, just before the delete control", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    const user = userEvent.setup()
+    wrap(summary())
+    await screen.findByRole("tab", { name: /environment/i })
+    expect(screen.queryByRole("button", { name: "Back to notes" })).toBeNull()
+    await openCode()
+    const back = screen.getByRole("button", { name: "Back to notes" })
+    const del = screen.getByRole("button", { name: "Delete worktree" })
+    expect(back.compareDocumentPosition(del) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await user.click(back)
+    expect(screen.getByRole("tab", { name: /notes/i })).toHaveAttribute("aria-selected", "true")
+    expect(screen.queryByRole("button", { name: "Back to notes" })).toBeNull()
+  })
+})
+
+describe("Code tab badge cursor", () => {
+  it("shows a pointer over the badge, like the rest of the tab", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    worktreeGit.mockResolvedValue(gitStatus({ vs_merge_base: { ahead: 2, behind: 0 } }))
+    wrap(summary())
+    const badge = await screen.findByText("↑2 ↓0")
+    expect(badge.closest(".mantine-Badge-root")).toHaveStyle({ cursor: "pointer" })
+  })
+})
+
+describe("Code tab badge color", () => {
+  const badgeStyle = async (text: string) =>
+    (await screen.findByText(text)).closest(".mantine-Badge-root")!.getAttribute("style") ?? ""
+
+  it("is yellow with uncommitted changes", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    worktreeGit.mockResolvedValue(gitStatus({
+      vs_tracking: { ahead: 2, behind: 0 },
+      working: { staged: 0, modified: 1, untracked: 0, files: 1 },
+    }))
+    wrap(summary())
+    expect(await badgeStyle("↑0 ↓0 · 1")).toMatch(/yellow/)
+  })
+
+  it("is orange with unpushed commits", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    worktreeGit.mockResolvedValue(gitStatus({ vs_merge_base: { ahead: 2, behind: 0 }, vs_tracking: { ahead: 2, behind: 0 } }))
+    wrap(summary())
+    expect(await badgeStyle("↑2 ↓0")).toMatch(/orange/)
+  })
+
+  it("stays gray when everything is pushed", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    worktreeGit.mockResolvedValue(gitStatus({ vs_merge_base: { ahead: 2, behind: 0 } }))
+    wrap(summary())
+    expect(await badgeStyle("↑2 ↓0")).toMatch(/gray/)
+  })
+})

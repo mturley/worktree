@@ -98,6 +98,16 @@ export function DiffBody({
                 outline: lit ? "2px solid var(--mantine-color-blue-filled)" : undefined,
                 outlineOffset: -2,
               }}
+              // The whole file header toggles the fold, like the chevron.
+              // pierre has no header click callback, and the header lives in
+              // its shadow DOM, so listen here: a click inside the shadow root
+              // reaches React retargeted to pierre's host, with the real path
+              // still in composedPath(). React's own delegation means nothing
+              // to attach or detach as pierre re-renders. The chevron and the
+              // editor icon stop their clicks before they get here.
+              onClick={f.binary ? undefined : (e) => {
+                if (isHeaderClick(e.nativeEvent)) setOpen(f.path, !isOpen)
+              }}
             >
               {f.binary ? (
                 <BinaryPlaceholder file={f} path={path} />
@@ -111,6 +121,7 @@ export function DiffBody({
                     collapsed: !isOpen,
                     expansionLineCount: 20,
                     loadDiffFiles,
+                    unsafeCSS: HEADER_CSS,
                   }}
                   renderHeaderPrefix={() => (
                     <HeaderPrefix file={f} path={path} open={isOpen} onToggle={() => setOpen(f.path, !isOpen)} />
@@ -125,9 +136,19 @@ export function DiffBody({
   )
 }
 
+// pierre's header is inside its shadow root, out of reach of page styles;
+// unsafeCSS is its supported way in.
+const HEADER_CSS = "[data-diffs-header] { cursor: pointer; }"
+
+/** Whether a click landed on a pierre file header (any part of it). */
+function isHeaderClick(e: MouseEvent): boolean {
+  return e.composedPath().some((n) => n instanceof Element && n.hasAttribute("data-diffs-header"))
+}
+
 /**
  * A fixed-width column ahead of pierre's file icon and name, so the chevrons
- * and editor icons line up down the page whatever the file's name.
+ * and editor icons line up down the page whatever the file's name. Both stop
+ * their clicks, which would otherwise also reach the header's own toggle.
  */
 function HeaderPrefix({
   file,
@@ -143,13 +164,24 @@ function HeaderPrefix({
   return (
     <Group gap={2} wrap="nowrap" style={{ width: 52, flexShrink: 0 }}>
       {onToggle ? (
-        <ActionIcon size="sm" variant="subtle" color="gray" aria-label={open ? `Collapse ${file.path}` : `Expand ${file.path}`} onClick={onToggle}>
+        <ActionIcon
+          size="sm"
+          variant="subtle"
+          color="gray"
+          aria-label={open ? `Collapse ${file.path}` : `Expand ${file.path}`}
+          onClick={(e) => {
+            e.stopPropagation()
+            onToggle()
+          }}
+        >
           {open ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
         </ActionIcon>
       ) : (
         <Box style={{ width: 22 }} />
       )}
-      <OpenFileInEditorIcon path={path} file={file.path} disabled={file.type === "deleted"} />
+      <span style={{ display: "inline-flex" }} onClick={(e) => e.stopPropagation()}>
+        <OpenFileInEditorIcon path={path} file={file.path} disabled={file.type === "deleted"} />
+      </span>
     </Group>
   )
 }

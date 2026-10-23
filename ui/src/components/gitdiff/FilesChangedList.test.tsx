@@ -40,16 +40,28 @@ const setup = (files: FileChange[], onOpenFile = vi.fn(), onViewDiff = vi.fn()) 
 }
 
 describe("FilesChangedList", () => {
-  it("renders glyph, editor icon, path and counts in order, sorted by path", async () => {
+  it("renders glyph, path, editor icon and counts in order, sorted by path", async () => {
     setup([file("b/z.go"), file("a/y.go", { status: "A", additions: 128, deletions: 0 })])
     const rows = screen.getAllByTestId("file-row")
     expect(rows.map((r) => r.textContent)).toEqual(["Aa/y.go+128 −0", "Mb/z.go+3 −1"])
     const first = rows[0]
     const cells = Array.from(first.children)
     expect(cells[0]).toHaveTextContent("A")
-    expect(cells[1].querySelector("button[aria-label^='Open']")).not.toBeNull()
-    expect(cells[2]).toHaveTextContent("a/y.go")
+    expect(cells[1]).toHaveTextContent("a/y.go")
+    expect(cells[2].querySelector("button[aria-label^='Open']")).not.toBeNull()
     expect(cells[3]).toHaveTextContent("+128 −0")
+  })
+
+  it("keeps the editor icon beside the name rather than stretching the path", () => {
+    setup([file("a.go")])
+    const pathCell = screen.getByRole("button", { name: "a.go" }).parentElement!
+    expect(pathCell).toHaveStyle({ flexGrow: "0" })
+    expect(pathCell.nextElementSibling!.querySelector("button[aria-label='Open a.go in editor']")).not.toBeNull()
+  })
+
+  it("caps the list's width so the counts sit near the names", () => {
+    setup([file("a.go")])
+    expect(screen.getByTestId("file-row").parentElement).toHaveStyle({ maxWidth: "900px" })
   })
 
   it("shows renames as old → new and binary files as binary", () => {

@@ -9,8 +9,9 @@ const MAX_ROWS = 200
 const STATUS_COLOR: Record<string, string> = { A: "green", M: "yellow", D: "red", R: "violet" }
 
 /**
- * The Code tab's file list: status glyph · open-in-editor · path · +x −y,
- * sorted by path. A path drills into the diff view at that file.
+ * The Code tab's file list: status glyph · path · open-in-editor · +x −y,
+ * sorted by path. A path drills into the diff view at that file. (The diff
+ * view's file headers put the editor icon before the name instead.)
  */
 export function FilesChangedList({
   path,
@@ -28,7 +29,8 @@ export function FilesChangedList({
   const more = sorted.length - shown.length
 
   return (
-    <Box>
+    // Capped so on a wide page the counts stay within reach of the names.
+    <Box style={{ maxWidth: 900 }}>
       {shown.map((f) => (
         <Box key={f.path} data-testid="file-row" style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 26 }}>
           <Text
@@ -40,10 +42,9 @@ export function FilesChangedList({
           >
             {f.status}
           </Text>
-          <Box style={{ flexShrink: 0, display: "inline-flex" }}>
-            <OpenFileInEditorIcon path={path} file={f.path} disabled={f.status === "D"} />
-          </Box>
-          <Box style={{ flex: 1, minWidth: 0 }}>
+          {/* Sized to the name (shrinking to an ellipsis when it must), so
+              the editor icon sits right after it rather than at the far edge. */}
+          <Box style={{ flex: "0 1 auto", minWidth: 0 }}>
             <Anchor
               component="button"
               type="button"
@@ -55,7 +56,10 @@ export function FilesChangedList({
               {f.old_path ? `${f.old_path} → ${f.path}` : f.path}
             </Anchor>
           </Box>
-          <Text size="xs" ff="monospace" style={{ flexShrink: 0, whiteSpace: "nowrap" }}>
+          <Box style={{ flexShrink: 0, display: "inline-flex" }}>
+            <OpenFileInEditorIcon path={path} file={f.path} disabled={f.status === "D"} />
+          </Box>
+          <Text size="xs" ff="monospace" style={{ flexShrink: 0, whiteSpace: "nowrap", marginLeft: "auto" }}>
             {f.binary ? (
               <Text span inherit c="dimmed">binary</Text>
             ) : (

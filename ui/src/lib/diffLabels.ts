@@ -11,6 +11,19 @@ export function formatBadge(git: WorktreeGit, base: DiffBase): string | null {
 }
 
 /**
+ * The Code tab badge's color, by what is at risk of being lost: yellow for
+ * uncommitted changes (the stronger warning, so it wins), else orange for
+ * commits not pushed (ahead of the tracking branch, or with no tracking
+ * branch, any commits past the merge base), else gray. Independent of the
+ * chosen base: unpushed is unpushed whatever the badge counts against.
+ */
+export function badgeColor(git: WorktreeGit): "yellow" | "orange" | "gray" {
+  if ((git.working?.files ?? 0) > 0) return "yellow"
+  const unpushed = git.tracking ? (git.vs_tracking?.ahead ?? 0) : (git.vs_merge_base?.ahead ?? 0)
+  return unpushed > 0 ? "orange" : "gray"
+}
+
+/**
  * Why there is nothing to compare against for `base`, or undefined when there
  * is: the merge base needs main's upstream, the tracking branch a push.
  */

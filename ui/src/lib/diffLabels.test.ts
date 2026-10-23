@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { Commit, WorktreeGit } from "../api/types"
-import { formatBadge, rangeLabel } from "./diffLabels"
+import { badgeColor, formatBadge, rangeLabel } from "./diffLabels"
 
 const commit = (sha: string): Commit => ({ sha, short: sha, subject: sha, author: "a", date: "2026-01-01T00:00:00Z" })
 // Newest first, as the server lists them.
@@ -14,6 +14,31 @@ const git = (over: Partial<WorktreeGit>): WorktreeGit => ({
   working: { staged: 0, modified: 0, untracked: 0, files: 0 },
   fetch: { in_progress: false },
   ...over,
+})
+
+describe("badgeColor", () => {
+  const dirty = { staged: 0, modified: 2, untracked: 0, files: 2 }
+  const pushed = { tracking: "origin/x", vs_tracking: { ahead: 0, behind: 3 }, vs_merge_base: { ahead: 4, behind: 0 } }
+  const unpushed = { tracking: "origin/x", vs_tracking: { ahead: 2, behind: 0 }, vs_merge_base: { ahead: 4, behind: 0 } }
+
+  it("is gray when clean and pushed", () => {
+    expect(badgeColor(git(pushed))).toBe("gray")
+  })
+  it("is orange with unpushed commits", () => {
+    expect(badgeColor(git(unpushed))).toBe("orange")
+  })
+  it("is yellow with uncommitted changes", () => {
+    expect(badgeColor(git({ ...pushed, working: dirty }))).toBe("yellow")
+  })
+  it("is yellow when both apply: uncommitted changes are the stronger warning", () => {
+    expect(badgeColor(git({ ...unpushed, working: dirty }))).toBe("yellow")
+  })
+  it("is orange for a branch never pushed with commits past the merge base", () => {
+    expect(badgeColor(git({ vs_merge_base: { ahead: 1, behind: 0 } }))).toBe("orange")
+  })
+  it("is gray for a branch never pushed with nothing past the merge base", () => {
+    expect(badgeColor(git({ vs_merge_base: { ahead: 0, behind: 5 } }))).toBe("gray")
+  })
 })
 
 describe("formatBadge", () => {
