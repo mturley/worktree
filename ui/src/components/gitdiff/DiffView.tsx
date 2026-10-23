@@ -355,7 +355,8 @@ export default function DiffView({
         flexDirection: "column",
       }}
     >
-      <Group gap="xs" wrap="nowrap" style={{ flex: "none", minHeight: 28 }} data-diff-breadcrumb>
+      {/* Padded below so the Esc hint clears the bordered body under it. */}
+      <Group gap="xs" wrap="nowrap" pb="xs" style={{ flex: "none", minHeight: 28 }} data-diff-breadcrumb>
         {/* The Esc hint sits on the control that does the same, as "← all resources" has it. */}
         <Group gap={6} wrap="nowrap">
           <Anchor component="button" type="button" size="sm" onClick={() => view.leave()}>
