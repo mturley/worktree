@@ -99,14 +99,15 @@ func newTaskDTO(t tasks.Task) taskDTO {
 }
 
 // writeTaskError maps a tasks error to its status: ErrInvalid 400,
-// ErrNotFound (ErrLinkNotFound included) 404, anything else 500.
+// ErrNotFound (ErrLinkNotFound included) 404, ErrUndoConflict and
+// ErrUndoForbidden 409, anything else 500.
 func writeTaskError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, tasks.ErrInvalid):
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, tasks.ErrNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
-	case errors.Is(err, tasks.ErrUndoConflict):
+	case errors.Is(err, tasks.ErrUndoConflict), errors.Is(err, tasks.ErrUndoForbidden):
 		writeError(w, http.StatusConflict, err.Error())
 	default:
 		writeError(w, http.StatusInternalServerError, err.Error())

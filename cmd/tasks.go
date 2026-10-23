@@ -193,11 +193,16 @@ var tasksDeleteCmd = &cobra.Command{
 	RunE:  runTasksDelete,
 }
 
+// tasksUndoCmd is meant to fail routinely (a conflict, or an agent's undo
+// of the user's change), for callers that parse its output, so a failure
+// prints only the error, once (by Execute), with no usage block.
 var tasksUndoCmd = &cobra.Command{
-	Use:   "undo <event-id>",
-	Short: "Undo a state change, subtask check or delete, by the event id its command answered",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runTasksUndo,
+	Use:           "undo <event-id>",
+	Short:         "Undo a state change, subtask check or delete, by the event id its command answered",
+	Args:          cobra.ExactArgs(1),
+	RunE:          runTasksUndo,
+	SilenceUsage:  true,
+	SilenceErrors: true,
 }
 
 func init() {
@@ -530,7 +535,9 @@ func runTasksUndo(cmd *cobra.Command, args []string) error {
 	}
 	defer conn.Close()
 	if err := tasks.Undo(conn, tasksActor(), eventID); err != nil {
-		return err // ErrUndoConflict reads "changed since; nothing was undone"
+		// ErrUndoConflict reads "changed since; nothing was undone";
+		// ErrUndoForbidden "only the user can undo the user's changes".
+		return err
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), "Undone.")
 	return nil
@@ -851,7 +858,7 @@ func runSubtaskEdit(cmd *cobra.Command, args []string) error {
 	if err := tasks.EditSubtask(conn, tasksActor(), sid, args[1]); err != nil {
 		return subtaskErr(sid, err)
 	}
-	return printSubtaskResult(cmd, sid, "edited")
+	return printSubtaskResult(cmd, sid, "edited", 0)
 }
 
 func runSubtaskCheck(cmd *cobra.Command, args []string, checked bool) error {
@@ -872,14 +879,7 @@ func runSubtaskCheck(cmd *cobra.Command, args []string, checked bool) error {
 	if checked {
 		what = "checked"
 	}
-	if tasksJSON {
-		out := map[string]any{"id": sid, what: true}
-		if sc.EventID != 0 {
-			out["undo_event_id"] = sc.EventID
-		}
-		return writeJSON(cmd.OutOrStdout(), out)
-	}
-	return printSubtaskResult(cmd, sid, what)
+	return printSubtaskResult(cmd, sid, what, sc.EventID)
 }
 
 func runSubtaskRemove(cmd *cobra.Command, args []string) error {
@@ -895,12 +895,19 @@ func runSubtaskRemove(cmd *cobra.Command, args []string) error {
 	if err := tasks.RemoveSubtask(conn, tasksActor(), sid); err != nil {
 		return subtaskErr(sid, err)
 	}
-	return printSubtaskResult(cmd, sid, "removed")
+	return printSubtaskResult(cmd, sid, "removed", 0)
 }
 
-func printSubtaskResult(cmd *cobra.Command, sid int64, what string) error {
+// printSubtaskResult prints a subtask write's result; its JSON carries
+// undo_event_id when undoEventID is set (a check or uncheck that changed
+// the box).
+func printSubtaskResult(cmd *cobra.Command, sid int64, what string, undoEventID int64) error {
 	if tasksJSON {
-		return writeJSON(cmd.OutOrStdout(), map[string]any{"id": sid, what: true})
+		out := map[string]any{"id": sid, what: true}
+		if undoEventID != 0 {
+			out["undo_event_id"] = undoEventID
+		}
+		return writeJSON(cmd.OutOrStdout(), out)
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s subtask %d\n", what, sid)
 	return nil

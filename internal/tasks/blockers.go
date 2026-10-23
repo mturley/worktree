@@ -275,7 +275,7 @@ func AddBlocker(conn *sql.DB, a Actor, taskID int64, t BlockerTarget) (Blocker, 
 		if err != nil {
 			return err
 		}
-		_, err = setResolvedTx(tx, Actor{Kind: ActorSystem}, b, true, true, true, reason, ts)
+		_, err = setResolvedTx(tx, Actor{Kind: ActorSystem}, b, true, true, markOnAdd, reason, ts)
 		return err
 	})
 	if err != nil {
@@ -332,15 +332,28 @@ func SetBlockerResolved(conn *sql.DB, a Actor, blockerID int64, resolved bool) e
 		if !ManuallyResolvable(b.BlockerTarget) {
 			return fmt.Errorf("%w: only free-text, Slack thread and link blockers are resolved by hand", ErrInvalid)
 		}
-		_, err = setResolvedTx(tx, a, b, resolved, false, false, "", now())
+		_, err = setResolvedTx(tx, a, b, resolved, false, markNone, "", now())
 		return err
 	})
 }
 
+// resolveMark is the flag a task_blocker_resolved payload carries when the
+// resolution answers the user's own action, so the Unblocked notifier
+// skips it: markOnAdd ("on_add") for one made by the request that added
+// the blocker, markOnUndo ("on_undo") for one an undo settled in its own
+// transaction (see settleTaskBlockersTx). markNone carries neither.
+type resolveMark string
+
+const (
+	markNone   resolveMark = ""
+	markOnAdd  resolveMark = "on_add"
+	markOnUndo resolveMark = "on_undo"
+)
+
 // setResolvedTx moves b (as loaded inside tx) to resolved or unresolved,
 // stamping auto and reason, bumping its task's updated_at and recording
 // task_blocker_resolved {blocker_id, kind, label, auto, reason} (plus
-// on_add: true when onAdd, see ResolveOptions) or
+// <mark>: true when mark is set, see resolveMark) or
 // task_blocker_unresolved {blocker_id, kind, label}, and returns that
 // event's id. A resolution also stores the id as the blocker's
 // resolved_event_id (an unresolve clears it). It is the one write path for
@@ -348,7 +361,7 @@ func SetBlockerResolved(conn *sql.DB, a Actor, blockerID int64, resolved bool) e
 // which pass ActorSystem; a is checked with validInternalActor. A blocker
 // already in the wanted state is left alone (id 0). It calls no public
 // function.
-func setResolvedTx(tx dbtx, a Actor, b Blocker, resolved, auto, onAdd bool, reason, ts string) (int64, error) {
+func setResolvedTx(tx dbtx, a Actor, b Blocker, resolved, auto bool, mark resolveMark, reason, ts string) (int64, error) {
 	if err := validInternalActor(a); err != nil {
 		return 0, err
 	}
@@ -371,8 +384,8 @@ func setResolvedTx(tx dbtx, a Actor, b Blocker, resolved, auto, onAdd bool, reas
 		return record(tx, a, b.TaskID, ts, EventTaskBlockerUnresolved, p)
 	}
 	p["auto"], p["reason"] = auto, reason
-	if onAdd {
-		p["on_add"] = true
+	if mark != markNone {
+		p[string(mark)] = true
 	}
 	id, err := record(tx, a, b.TaskID, ts, EventTaskBlockerResolved, p)
 	if err != nil {

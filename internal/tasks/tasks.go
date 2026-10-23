@@ -554,7 +554,7 @@ func SetState(conn *sql.DB, a Actor, id int64, to State) (StateChange, error) {
 			to, nullable(sc.StartedAt), nullable(sc.CompletedAt), ts, id); err != nil {
 			return err
 		}
-		cascade, err := settleTaskBlockersTx(tx, id, ts)
+		cascade, err := settleTaskBlockersTx(tx, id, ts, markNone)
 		if err != nil {
 			return err
 		}
@@ -597,7 +597,7 @@ func Delete(conn *sql.DB, a Actor, id int64) (int64, error) {
 		if n == 0 {
 			return ErrNotFound
 		}
-		cascade, err := settleTaskBlockersTx(tx, id, ts)
+		cascade, err := settleTaskBlockersTx(tx, id, ts, markNone)
 		if err != nil {
 			return err
 		}

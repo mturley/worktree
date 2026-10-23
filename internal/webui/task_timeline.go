@@ -122,7 +122,8 @@ type taskEventPayload struct {
 	Auto         bool                       `json:"auto"`   // task_blocker_resolved
 	Reason       string                     `json:"reason"` // task_blocker_resolved
 	BlockerID    int64                      `json:"blocker_id"`
-	OnAdd        bool                       `json:"on_add"` // task_blocker_resolved by the request that added it
+	OnAdd        bool                       `json:"on_add"`  // task_blocker_resolved by the request that added it
+	OnUndo       bool                       `json:"on_undo"` // task_blocker_resolved settled by an undo
 }
 
 // rawString is raw as a JSON string, "" for anything else.

@@ -195,12 +195,12 @@ func TestUndoInvalidAndNotFound(t *testing.T) {
 		t.Fatalf("a refused undo changed the task: %+v", got)
 	}
 
-	// The event's task deleted since: not found.
+	// The event's task deleted since: a conflict (the event was issued).
 	if _, err := Delete(conn, user, tk.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := UndoStateChange(conn, user, tk.ID, sc.EventID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("undo on a deleted task = %v, want ErrNotFound", err)
+	if err := UndoStateChange(conn, user, tk.ID, sc.EventID); !errors.Is(err, ErrUndoConflict) {
+		t.Fatalf("undo on a deleted task = %v, want ErrUndoConflict", err)
 	}
 }
 

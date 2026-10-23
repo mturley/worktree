@@ -188,8 +188,11 @@ func ResolveBlockersWith(conn *sql.DB, lookup StatusLookup, opts ResolveOptions)
 				continue
 			}
 			// Only a failed write fails the pass (and rolls it back).
-			onAdd := opts.OnAddBlocker != 0 && b.ID == opts.OnAddBlocker
-			if _, err := setResolvedTx(tx, Actor{Kind: ActorSystem}, b, done, true, onAdd, reason, ts); err != nil {
+			mark := markNone
+			if opts.OnAddBlocker != 0 && b.ID == opts.OnAddBlocker {
+				mark = markOnAdd
+			}
+			if _, err := setResolvedTx(tx, Actor{Kind: ActorSystem}, b, done, true, mark, reason, ts); err != nil {
 				return err
 			}
 			r := Resolution{TaskID: b.TaskID, BlockerID: b.ID, Resolved: done, Label: label}
@@ -250,7 +253,16 @@ type cascadeEntry struct {
 // with the resolutions they set off, and the after-commit pass finds
 // nothing left to do for them. It returns what it moved, for the event's
 // cascade. It calls no public function.
-func settleTaskBlockersTx(tx dbtx, taskID int64, ts string) ([]cascadeEntry, error) {
+//
+// An undo settles too (mark markOnUndo), so that it leaves the after-commit
+// pass nothing to move and nothing to notify about: its resolutions carry
+// on_undo, which the Unblocked notifier skips (the user's own undo is not
+// news), and an unresolve of a blocker whose resolution was itself an
+// earlier undo's on_undo one deletes that event and clears the row
+// silently instead of writing an unresolve, so undoing deletes in either
+// order leaves no history behind. An undo writes no event of its own, so
+// what it moves here is listed in no cascade.
+func settleTaskBlockersTx(tx dbtx, taskID int64, ts string, mark resolveMark) ([]cascadeEntry, error) {
 	rows, err := tx.QueryContext(bg,
 		`SELECT `+blockerCols+` FROM task_blockers b JOIN tasks t ON t.id = b.task_id
 		  WHERE `+candidateWhere+` AND b.kind = 'task' AND (b.blocking_task_id = ? OR b.task_id = ?)
@@ -279,7 +291,16 @@ func settleTaskBlockersTx(tx dbtx, taskID int64, ts string) ([]cascadeEntry, err
 		if done == (b.ResolvedAt != "") {
 			continue
 		}
-		id, err := setResolvedTx(tx, Actor{Kind: ActorSystem}, b, done, true, false, reason, ts)
+		if !done && mark == markOnUndo {
+			withdrawn, err := withdrawUndoResolutionTx(tx, b)
+			if err != nil {
+				return nil, err
+			}
+			if withdrawn {
+				continue
+			}
+		}
+		id, err := setResolvedTx(tx, Actor{Kind: ActorSystem}, b, done, true, mark, reason, ts)
 		if err != nil {
 			return nil, err
 		}
@@ -293,11 +314,37 @@ func settleTaskBlockersTx(tx dbtx, taskID int64, ts string) ([]cascadeEntry, err
 	return out, nil
 }
 
+// withdrawUndoResolutionTx unresolves b without an event when its current
+// resolution was written by an undo's settle (its event's payload carries
+// on_undo): it clears the row and deletes that event, and reports true.
+// Anything else is left for setResolvedTx (false).
+func withdrawUndoResolutionTx(tx dbtx, b Blocker) (bool, error) {
+	if b.resolvedEventID == 0 {
+		return false, nil
+	}
+	var onUndo sql.NullBool
+	err := tx.QueryRowContext(bg,
+		`SELECT json_extract(payload, '$.on_undo') FROM task_events WHERE id = ? AND type = ?`,
+		b.resolvedEventID, EventTaskBlockerResolved).Scan(&onUndo)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil || !onUndo.Bool {
+		return false, err
+	}
+	if _, err := tx.ExecContext(bg,
+		`UPDATE task_blockers SET resolved_at = NULL, resolved_auto = 0, resolved_reason = '', resolved_event_id = NULL
+		  WHERE id = ?`, b.ID); err != nil {
+		return false, err
+	}
+	return true, deleteEvent(tx, b.resolvedEventID)
+}
+
 // resolveAfterWrite runs a resolver pass after a commit. SetState, Delete
 // and AddBlocker settle task blockers in their own transactions and no
-// longer call it; undo does, since putting a task back can leave a blocker
-// outside its cascade out of line (one a later write settled, or a blocked
-// task's own blockers when its delete is undone). Resource blockers need a
+// longer call it. Undo settles in its transaction too (markOnUndo) and
+// still calls it afterwards, only as a safety net: it should find no task
+// blocker left to move. Resource blockers need a
 // StatusLookup, which only `worktree ui` has; they wait for its next pass
 // (or its own after-write step). The resolutions need no handing on: the
 // events they write are what `worktree ui`'s notifier reads, whichever

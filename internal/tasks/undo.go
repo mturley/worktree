@@ -12,12 +12,33 @@ import (
 // the same kind followed it, or the value moved on. Nothing is undone.
 var ErrUndoConflict = errors.New("changed since; nothing was undone")
 
+// ErrUndoForbidden is returned when an agent asks to undo a change it did
+// not make: an agent may undo only events whose actor is an agent, since
+// an undo writes no event and so would change the user's work invisibly.
+// The user may undo any undoable event. Nothing is undone.
+var ErrUndoForbidden = errors.New("only the user can undo the user's changes")
+
 // An undo puts back exactly what the write recorded in its event changed,
 // including its cascade, and DELETES that event and every cascaded one: it
 // writes no "reverted" event, so an accidental click leaves no history.
 // Everything to restore comes from the stored event, never from the
-// caller. Each undo is one inTx, followed (after commit) by a resolver pass
-// and a hold reconcile, like any other write.
+// caller. Each undo is one inTx, which also settles the restored task's
+// task blockers (settleTaskBlockersTx, markOnUndo), followed (after commit)
+// by a resolver pass, as a safety net, and a hold reconcile.
+//
+// Errors: ErrNotFound only for an event id that was never issued. An
+// issued event that is gone, or whose task or subtask is gone or changed
+// since, is ErrUndoConflict. ErrUndoForbidden for an agent undoing a
+// non-agent event (checkUndoActor).
+
+// checkUndoActor refuses an agent's undo of an event an agent did not
+// make.
+func checkUndoActor(a Actor, e Event) error {
+	if a.Kind == ActorAgent && e.Actor != ActorAgent {
+		return ErrUndoForbidden
+	}
+	return nil
+}
 
 // loadUndoEvent reads event id inside tx. A missing event is
 // ErrUndoConflict when its id was once used (task_events is AUTOINCREMENT,
@@ -47,9 +68,22 @@ func loadUndoEvent(tx dbtx, id int64) (Event, error) {
 	return e, nil
 }
 
-// undoEventFor loads event id for an undo of one of types on taskID:
-// ErrInvalid when it is another type or another task's.
-func undoEventFor(tx dbtx, id, taskID int64, types ...string) (Event, error) {
+// undoEventFor loads event id for a's undo of one of types on taskID:
+// ErrInvalid when it is another type or another task's, ErrUndoForbidden
+// when a may not undo it (checkUndoActor).
+func undoEventFor(tx dbtx, a Actor, id, taskID int64, types ...string) (Event, error) {
+	e, err := undoEventOfType(tx, a, id, types...)
+	if err != nil {
+		return Event{}, err
+	}
+	if e.TaskID != taskID {
+		return Event{}, fmt.Errorf("%w: event %d is not task %d's", ErrInvalid, id, taskID)
+	}
+	return e, nil
+}
+
+// undoEventOfType is undoEventFor without the task check.
+func undoEventOfType(tx dbtx, a Actor, id int64, types ...string) (Event, error) {
 	e, err := loadUndoEvent(tx, id)
 	if err != nil {
 		return Event{}, err
@@ -61,8 +95,8 @@ func undoEventFor(tx dbtx, id, taskID int64, types ...string) (Event, error) {
 	if !ok {
 		return Event{}, fmt.Errorf("%w: event %d (%s) cannot be undone here", ErrInvalid, id, e.Type)
 	}
-	if e.TaskID != taskID {
-		return Event{}, fmt.Errorf("%w: event %d is not task %d's", ErrInvalid, id, taskID)
+	if err := checkUndoActor(a, e); err != nil {
+		return Event{}, err
 	}
 	return e, nil
 }
@@ -108,10 +142,10 @@ func nullableID(id int64) any {
 	return id
 }
 
-// afterUndo is what every undo runs after its commit: a resolver pass, for
-// a blocker outside the cascade that putting the task back left out of
-// line, and a hold reconcile (completing released holds, deleting released
-// them all).
+// afterUndo is what every undo runs after its commit: a resolver pass, a
+// safety net that should find nothing (the undo settled the restored
+// task's task blockers in its transaction), and a hold reconcile
+// (completing released holds, deleting released them all).
 func afterUndo(conn *sql.DB) {
 	resolveAfterWrite(conn)
 	reconcileHoldsAfterWrite(conn)
@@ -122,15 +156,15 @@ func afterUndo(conn *sql.DB) {
 // values, its cascade is reversed, and the event and its cascade events
 // are deleted. It applies only while the event is the task's newest state
 // change and the task is still in the event's "to" state; otherwise
-// ErrUndoConflict. ErrNotFound when the task or event is missing (or the
-// task deleted); ErrInvalid when the event is not a state change of this
-// task. User or agent only.
+// ErrUndoConflict, as when the task has since been deleted. ErrNotFound
+// when the event id was never issued; ErrInvalid when the event is not a
+// state change of this task. User or agent only (ErrUndoForbidden).
 func UndoStateChange(conn *sql.DB, a Actor, taskID, eventID int64) error {
 	if err := validActor(a); err != nil {
 		return err
 	}
 	err := inTx(conn, func(tx dbtx) error {
-		e, err := undoEventFor(tx, eventID, taskID, EventTaskStateChanged)
+		e, err := undoEventFor(tx, a, eventID, taskID, EventTaskStateChanged)
 		if err != nil {
 			return err
 		}
@@ -142,6 +176,9 @@ func UndoStateChange(conn *sql.DB, a Actor, taskID, eventID int64) error {
 			return fmt.Errorf("%w: event %d was recorded before undo existed", ErrInvalid, eventID)
 		}
 		cur, err := load(tx, taskID)
+		if errors.Is(err, ErrNotFound) {
+			return ErrUndoConflict // deleted since
+		}
 		if err != nil {
 			return err
 		}
@@ -162,7 +199,11 @@ func UndoStateChange(conn *sql.DB, a Actor, taskID, eventID int64) error {
 		if err := undoCascadeTx(tx, p.Cascade); err != nil {
 			return err
 		}
-		return deleteEvent(tx, eventID)
+		if err := deleteEvent(tx, eventID); err != nil {
+			return err
+		}
+		_, err = settleTaskBlockersTx(tx, taskID, now(), markOnUndo)
+		return err
 	})
 	if err != nil {
 		return err
@@ -174,20 +215,16 @@ func UndoStateChange(conn *sql.DB, a Actor, taskID, eventID int64) error {
 // UndoSubtaskCheck reverses the subtask_checked or subtask_unchecked event
 // eventID of subtaskID, putting the checkbox back and deleting the event.
 // It applies only while the event is the subtask's newest check event and
-// the box still holds the event's value; otherwise ErrUndoConflict.
-// ErrNotFound when the subtask (or its live task) or the event is missing;
-// ErrInvalid when the event is not a check of this subtask. User or agent
-// only.
+// the box still holds the event's value; otherwise ErrUndoConflict, as
+// when the subtask has since been removed or its task deleted. ErrNotFound
+// when the event id was never issued; ErrInvalid when the event is not a
+// check of this subtask. User or agent only (ErrUndoForbidden).
 func UndoSubtaskCheck(conn *sql.DB, a Actor, subtaskID, eventID int64) error {
 	if err := validActor(a); err != nil {
 		return err
 	}
 	err := inTx(conn, func(tx dbtx) error {
-		s, err := loadSubtask(tx, subtaskID)
-		if err != nil {
-			return err
-		}
-		e, err := undoEventFor(tx, eventID, s.TaskID, EventSubtaskChecked, EventSubtaskUnchecked)
+		e, err := undoEventOfType(tx, a, eventID, EventSubtaskChecked, EventSubtaskUnchecked)
 		if err != nil {
 			return err
 		}
@@ -198,6 +235,16 @@ func UndoSubtaskCheck(conn *sql.DB, a Actor, subtaskID, eventID int64) error {
 			return err
 		}
 		if p.SubtaskID != subtaskID {
+			return fmt.Errorf("%w: event %d is not subtask %d's", ErrInvalid, eventID, subtaskID)
+		}
+		s, err := loadSubtask(tx, subtaskID)
+		if errors.Is(err, ErrNotFound) {
+			return ErrUndoConflict // removed, or its task deleted, since
+		}
+		if err != nil {
+			return err
+		}
+		if s.TaskID != e.TaskID {
 			return fmt.Errorf("%w: event %d is not subtask %d's", ErrInvalid, eventID, subtaskID)
 		}
 		var newer bool
@@ -235,14 +282,16 @@ func UndoSubtaskCheck(conn *sql.DB, a Actor, subtaskID, eventID int64) error {
 // deleted_at, reverses the cascade and deletes the events. It applies only
 // while the task is still deleted by that event (its deleted_at is the
 // event's timestamp, which Delete stamps both with); otherwise
-// ErrUndoConflict. ErrNotFound when the task (purged) or event is missing;
-// ErrInvalid when the event is not this task's delete. User or agent only.
+// ErrUndoConflict (a purged task's events are purged with it, so its undo
+// is a conflict too). ErrNotFound when the event id was never issued;
+// ErrInvalid when the event is not this task's delete. User or agent only
+// (ErrUndoForbidden).
 func UndoDelete(conn *sql.DB, a Actor, taskID, eventID int64) error {
 	if err := validActor(a); err != nil {
 		return err
 	}
 	err := inTx(conn, func(tx dbtx) error {
-		e, err := undoEventFor(tx, eventID, taskID, EventTaskDeleted)
+		e, err := undoEventFor(tx, a, eventID, taskID, EventTaskDeleted)
 		if err != nil {
 			return err
 		}
@@ -253,7 +302,7 @@ func UndoDelete(conn *sql.DB, a Actor, taskID, eventID int64) error {
 		var deleted sql.NullString
 		err = tx.QueryRowContext(bg, `SELECT deleted_at FROM tasks WHERE id = ?`, taskID).Scan(&deleted)
 		if errors.Is(err, sql.ErrNoRows) {
-			return ErrNotFound
+			return ErrUndoConflict // purged
 		}
 		if err != nil {
 			return err
@@ -268,7 +317,11 @@ func UndoDelete(conn *sql.DB, a Actor, taskID, eventID int64) error {
 		if err := undoCascadeTx(tx, p.Cascade); err != nil {
 			return err
 		}
-		return deleteEvent(tx, eventID)
+		if err := deleteEvent(tx, eventID); err != nil {
+			return err
+		}
+		_, err = settleTaskBlockersTx(tx, taskID, now(), markOnUndo)
+		return err
 	})
 	if err != nil {
 		return err
@@ -287,6 +340,9 @@ func Undo(conn *sql.DB, a Actor, eventID int64) error {
 	}
 	e, err := loadUndoEvent(conn, eventID)
 	if err != nil {
+		return err
+	}
+	if err := checkUndoActor(a, e); err != nil {
 		return err
 	}
 	switch e.Type {

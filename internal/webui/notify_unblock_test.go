@@ -441,3 +441,38 @@ func TestUnblockDroppedWhenBlockerRemovedOrUnresolvedWithinHold(t *testing.T) {
 		})
 	}
 }
+
+// The final review's ordering: the waiter and its blocking task are both
+// deleted, then the waiter's delete is undone while the blocking task is
+// still deleted. That undo settles the blocker quietly (on_undo), so no
+// Unblocked goes out, however long the second undo takes.
+func TestUndoingDeletesOutOfOrderDoesNotNotify(t *testing.T) {
+	conn := unreadTestDB(t)
+	twoWorktrees(t, conn)
+	waiter := newLinkedTask(t, conn, userActor, "Ship it", "o/r#7")
+	dep := blockOnTask(t, conn, waiter.ID)
+	waiterDel, err := tasks.Delete(conn, userActor, waiter.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	depDel, err := tasks.Delete(conn, userActor, dep.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := newUnblockRig(t, conn)
+
+	if err := tasks.Undo(conn, userActor, waiterDel); err != nil {
+		t.Fatal(err)
+	}
+	r.settle()
+	if len(r.ft.got) != 0 {
+		t.Fatalf("undoing the waiter's delete notified: %+v", r.ft.got)
+	}
+	if err := tasks.Undo(conn, userActor, depDel); err != nil {
+		t.Fatal(err)
+	}
+	r.settle()
+	if len(r.ft.got) != 0 {
+		t.Fatalf("undoing the blocking task's delete notified: %+v", r.ft.got)
+	}
+}

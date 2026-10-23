@@ -54,14 +54,16 @@ func (s *Server) notifyClock() time.Time {
 // notify only through the Unblocked path, never the per-worktree one. A
 // resolution made by the request that added the blocker (on_add: an
 // already-merged PR, an already-done task) is not one: the user's own
-// click is not news. isSystemBlockerEvent still keeps it off the
-// per-worktree path, so it notifies nowhere.
+// click is not news. Nor is one an undo settled in its own transaction
+// (on_undo): the undo puts back the user's own earlier state. In both
+// cases isSystemBlockerEvent still keeps it off the per-worktree path, so
+// it notifies nowhere.
 func isUnblockEvent(e tasks.FeedEvent) bool {
 	if e.Type != tasks.EventTaskBlockerResolved || e.Actor != tasks.ActorSystem {
 		return false
 	}
 	p := parseTaskPayload(e.Payload)
-	return p.Auto && !p.OnAdd
+	return p.Auto && !p.OnAdd && !p.OnUndo
 }
 
 // isSystemBlockerEvent reports whether e is a system resolve or unresolve.

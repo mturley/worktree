@@ -169,7 +169,7 @@ worktree tasks edit <id> [--title ...] [--description ...] [--priority ...] [--d
 worktree tasks state <id> <not_started|in_progress|done>
 worktree tasks star <id>         # or: unstar
 worktree tasks delete <id>
-worktree tasks undo <event-id>   # Undo a state change, subtask check or delete; <event-id> is the undo_event_id its --json answered. Exits 1 if it changed since
+worktree tasks undo <event-id>   # Undo a state change, subtask check or delete; <event-id> is the undo_event_id its --json answered. Exits 1 if it changed since, or if an agent tries to undo the user's change
 worktree tasks link <id> <ref> [--focus]  # Related unless --focus; also: unlink, focus, unfocus
 worktree tasks move <id> (--after <id> | --before <id> | --top | --bottom)
 worktree tasks subtask add <id> <text>    # Also: edit, check, uncheck, remove <subtask-id>; order <id> <subtask-id>...
