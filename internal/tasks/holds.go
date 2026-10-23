@@ -35,8 +35,7 @@ var holdsMu sync.Mutex
 // are subscribed (reviving the pair's tombstone, so complete/reopen cycles
 // reuse one row rather than piling them up); live holds nothing wants are
 // unsubscribed. A live hold whose URL is not what holdURL now picks is
-// rewritten, so it never splits the resource in watcherdb.ActiveResources.
-// It is idempotent: a second call writes nothing.
+// rewritten. It is idempotent: a second call writes nothing.
 //
 // It goes through the watcher library, which opens its own transactions on
 // conn, so it must never run inside inTx: callers run it after commit.
@@ -112,7 +111,7 @@ func ReconcileHolds(conn *sql.DB) error {
 		k := [2]string{h.typ, h.id}
 		u, ok := urls[k]
 		if !ok {
-			u = holdURL(conn, h.typ, h.id, blockerURLs[k], nowTS)
+			u = holdURL(conn, h.typ, h.id, blockerURLs[k])
 			urls[k] = u
 		}
 		cur, isLive := live[h]
@@ -136,55 +135,27 @@ func ReconcileHolds(conn *sql.DB) error {
 	return nil
 }
 
-// holdURL is the URL a hold on (typ, id) records. watcherdb.ActiveResources
-// lists one row per distinct (type, id, url), so a hold whose URL differed
-// from the resource's other live subscriptions would make the pollers see
-// the resource twice. While anything else follows the resource, the hold
-// therefore copies theirs: the lexically first non-empty one, else none.
-// Otherwise it is the lexically first URL the resource's blockers were
-// added from, else any URL known for the resource. Every choice is in a
-// stable order, so every hold on one resource records the same URL and a
-// reconcile settles in one pass.
-func holdURL(q dbtx, typ, id, blockerURL, nowTS string) string {
-	rows, err := q.QueryContext(bg, `SELECT COALESCE(resource_url, '') FROM watcher_subscriptions
-		WHERE resource_type = ? AND resource_id = ? AND subscriber NOT LIKE 'task:%'
-		  AND deleted_at IS NULL AND (expires_at IS NULL OR expires_at > ?)
-		ORDER BY COALESCE(resource_url, '') = '', resource_url`, typ, id, nowTS)
-	if err == nil {
-		others, u := false, ""
-		for rows.Next() {
-			var s string
-			if rows.Scan(&s) == nil && !others {
-				others, u = true, s
-			}
-		}
-		rows.Close()
-		if others {
-			return u
-		}
-	}
+// holdURL is the URL a hold on (typ, id) records: the lexically first URL
+// the resource's blockers were added from, else the URL already known for
+// the resource (watcherdb.ResourceURL), else none. The pollers work from
+// the id alone, so a hold without a URL still polls, and since watcher
+// v0.16.0 watcherdb.ActiveResources lists each resource once whatever URLs
+// its subscriptions record, so a hold's URL never makes it polled twice.
+//
+// ReconcileHolds computes it once per resource per pass, before writing any
+// hold on that resource, so all of one resource's holds record the same
+// URL. It settles in one pass: from blocker URLs the answer does not depend
+// on the holds at all; from ResourceURL, the next pass sees the holds'
+// own URL among the live ones, and it was already the lexically first.
+func holdURL(conn *sql.DB, typ, id, blockerURL string) string {
 	if blockerURL != "" {
 		return blockerURL
 	}
-	return knownResourceURL(q, typ, id)
-}
-
-// knownResourceURL is the resource's URL as any subscription (live first) or
-// event already records it, or "" when nothing does: holdURL's last resort
-// for a blocker added by type and id. The pollers work from the id alone,
-// so a hold without a URL still polls.
-func knownResourceURL(q dbtx, typ, id string) string {
-	var u string
-	_ = q.QueryRowContext(bg, `SELECT resource_url FROM watcher_subscriptions
-		WHERE resource_type = ? AND resource_id = ? AND COALESCE(resource_url,'') <> ''
-		  AND subscriber NOT LIKE 'task:%'
-		ORDER BY deleted_at IS NOT NULL, resource_url LIMIT 1`, typ, id).Scan(&u)
-	if u != "" {
-		return u
+	u, err := watcherdb.ResourceURL(conn, typ, id)
+	if err != nil {
+		Logf("tasks: hold url %s %s: %v", typ, id, err)
+		return ""
 	}
-	_ = q.QueryRowContext(bg, `SELECT resource_url FROM watcher_event_resources
-		WHERE resource_type = ? AND resource_id = ? AND COALESCE(resource_url,'') <> ''
-		ORDER BY resource_url LIMIT 1`, typ, id).Scan(&u)
 	return u
 }
 

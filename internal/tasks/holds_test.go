@@ -263,13 +263,18 @@ func TestHoldURLFollowsWorktreeSubscriptions(t *testing.T) {
 		t.Fatalf("after a worktree follows with a URL = %q", got)
 	}
 
-	// A blocker's pasted URL never splits the resource from a worktree that
-	// follows it without one.
+	// A blocker's pasted URL is the hold's, whatever a worktree following
+	// the resource records; the library still polls the resource once.
 	tk2 := mustCreate(t, conn, "other")
 	if err := watcherdb.Subscribe(conn, "worktree:/y", watcher.Resource{Type: "pr", ID: "o/r#1"}, watcherdb.SubscribeOpts{}); err != nil {
 		t.Fatal(err)
 	}
-	mustAddBlocker(t, conn, tk2.ID, BlockerTarget{Kind: BlockerResource, ResourceType: "pr", ResourceID: "o/r#1", URL: "https://github.com/o/r/pull/1"})
+	const pu = "https://github.com/o/r/pull/1"
+	mustAddBlocker(t, conn, tk2.ID, BlockerTarget{Kind: BlockerResource, ResourceType: "pr", ResourceID: "o/r#1", URL: pu})
+	subs, err := watcherdb.ActiveSubscriptions(conn, HoldSubscriber(tk2.ID), false)
+	if err != nil || len(subs) != 1 || subs[0].Resource.URL != pu {
+		t.Fatalf("hold = %+v, %v; want URL %s", subs, err, pu)
+	}
 	if got := activeRows(t, conn, "pr"); len(got) != 1 {
 		t.Fatalf("pr active resources = %q, want one row", got)
 	}
@@ -327,5 +332,33 @@ func TestHoldCopiesKnownURL(t *testing.T) {
 	}
 	if len(subs) != 1 || subs[0].Resource.URL != r.URL {
 		t.Fatalf("hold = %+v, want URL %s", subs, r.URL)
+	}
+
+	// A second worktree follows from a lexically earlier URL: the next pass
+	// moves the hold to it, and the one after writes nothing.
+	r2 := r
+	r2.URL = "http://github.com/o/r/pull/1"
+	if err := watcherdb.Subscribe(conn, "worktree:/y", r2, watcherdb.SubscribeOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := func() string {
+		var s string
+		if err := conn.QueryRow(`SELECT group_concat(subscriber || '=' || COALESCE(resource_url,''), ',') FROM watcher_subscriptions`).Scan(&s); err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	if err := ReconcileHolds(conn); err != nil {
+		t.Fatal(err)
+	}
+	if subs, _ := watcherdb.ActiveSubscriptions(conn, HoldSubscriber(tk.ID), false); len(subs) != 1 || subs[0].Resource.URL != r2.URL {
+		t.Fatalf("hold = %+v, want URL %s", subs, r2.URL)
+	}
+	before := snapshot()
+	if err := ReconcileHolds(conn); err != nil {
+		t.Fatal(err)
+	}
+	if after := snapshot(); after != before {
+		t.Fatalf("a settled reconcile still wrote: %s -> %s", before, after)
 	}
 }
