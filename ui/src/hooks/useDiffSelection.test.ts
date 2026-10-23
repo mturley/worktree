@@ -46,6 +46,21 @@ describe("useDiffSelection", () => {
     expect(result.current.range).toBe("all")
   })
 
+  it("shares one selection between instances for the same path", () => {
+    // The card's badge and the Code tab each hold an instance; a base change
+    // in the tab must reach the badge without a remount.
+    const card = renderHook(() => useDiffSelection("/w/a", undefined))
+    const tab = renderHook(() => useDiffSelection("/w/a", "L1"))
+    const other = renderHook(() => useDiffSelection("/w/b", "L1"))
+    act(() => tab.result.current.setBase("tracking"))
+    expect(card.result.current.base).toBe("tracking")
+    expect(other.result.current.base).toBe("merge-base")
+    act(() => card.result.current.setBase("merge-base"))
+    expect(tab.result.current.base).toBe("merge-base")
+    act(() => tab.result.current.setRange({ from: "x", to: "y" }))
+    expect(card.result.current.range).toEqual({ from: "x", to: "y" })
+  })
+
   it("survives storage throwing", () => {
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
       throw new Error("blocked")

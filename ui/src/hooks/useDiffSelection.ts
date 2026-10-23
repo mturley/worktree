@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react"
+import { useCallback, useSyncExternalStore } from "react"
 import type { DiffBase, DiffRange } from "../api/types"
 
 interface Stored {
@@ -16,10 +16,9 @@ function isRange(v: unknown): v is DiffRange {
   return !!r && typeof r === "object" && typeof r.from === "string" && typeof r.to === "string"
 }
 
-function read(path: string): Stored {
+function parse(raw: string | null): Stored {
+  if (!raw) return DEFAULT
   try {
-    const raw = window.localStorage.getItem(keyFor(path))
-    if (!raw) return DEFAULT
     const v = JSON.parse(raw)
     if (!v || (v.base !== "merge-base" && v.base !== "tracking") || !isRange(v.range)) return DEFAULT
     return { base: v.base, range: v.range, listId: typeof v.listId === "string" ? v.listId : undefined }
@@ -28,49 +27,79 @@ function read(path: string): Stored {
   }
 }
 
-function write(path: string, s: Stored) {
+// One selection per worktree path, shared by every hook instance (the card's
+// badge and the Code tab both read it, so a base change in the tab moves the
+// badge). localStorage is the source of truth; `cache` keeps each path's
+// parsed value stable for useSyncExternalStore. Each entry records the stored
+// string it stands for, so storage changing underneath is noticed, and a write
+// storage refused (blocked or full) is kept as long as storage still holds
+// what it held then: the selection just lasts for this page view.
+const cache = new Map<string, { raw: string | null | undefined; stored: Stored }>()
+const listeners = new Map<string, Set<() => void>>()
+
+/** The stored string, or undefined when storage can't be read. */
+function readRaw(path: string): string | null | undefined {
   try {
-    window.localStorage.setItem(keyFor(path), JSON.stringify(s))
+    return window.localStorage.getItem(keyFor(path))
   } catch {
-    // Storage blocked: the selection just lasts for this page view.
+    return undefined
+  }
+}
+
+function snapshot(path: string): Stored {
+  const entry = cache.get(path)
+  const raw = readRaw(path)
+  if (raw === undefined) return entry?.stored ?? DEFAULT
+  if (entry && entry.raw === raw) return entry.stored
+  const stored = parse(raw)
+  cache.set(path, { raw, stored })
+  return stored
+}
+
+function write(path: string, stored: Stored) {
+  let raw: string | null | undefined = JSON.stringify(stored)
+  try {
+    window.localStorage.setItem(keyFor(path), raw)
+  } catch {
+    raw = readRaw(path)
+  }
+  cache.set(path, { raw, stored })
+  listeners.get(path)?.forEach((l) => l())
+}
+
+function subscribe(path: string, listener: () => void) {
+  let set = listeners.get(path)
+  if (!set) listeners.set(path, (set = new Set()))
+  set.add(listener)
+  return () => {
+    set.delete(listener)
+    if (set.size === 0) listeners.delete(path)
   }
 }
 
 /**
- * The diff view's base and commit range, remembered per worktree. A range
- * names commits, so it is only meaningful for the commit list it was chosen
- * from: when the list's id changes (new commit, rebase) the range falls back
- * to "all". While the list is still loading (`listId` undefined) the stored
- * range is kept.
+ * The diff view's base and commit range, remembered per worktree and shared
+ * by every instance for the same path. A range names commits, so it is only
+ * meaningful for the commit list it was chosen from: when the list's id
+ * changes (new commit, rebase) the range falls back to "all". While the list
+ * is still loading (`listId` undefined) the stored range is kept.
  */
 export function useDiffSelection(path: string, listId: string | undefined) {
-  const [state, setState] = useState<{ path: string; stored: Stored }>(() => ({ path, stored: read(path) }))
-  // Another worktree: reload its saved selection during render, so there is
-  // no frame showing the previous worktree's range.
-  let stored = state.stored
-  if (state.path !== path) {
-    stored = read(path)
-    setState({ path, stored })
-  }
+  const sub = useCallback((l: () => void) => subscribe(path, l), [path])
+  const get = useCallback(() => snapshot(path), [path])
+  const stored = useSyncExternalStore(sub, get)
 
   const stale = listId !== undefined && stored.listId !== undefined && stored.listId !== listId
   const range: DiffRange = stale ? "all" : stored.range
 
-  const commit = useCallback(
-    (next: Stored) => {
-      write(path, next)
-      setState({ path, stored: next })
-    },
-    [path],
-  )
   const effectiveListId = listId ?? stored.listId
   const setBase = useCallback(
-    (base: DiffBase) => commit({ base, range: "all", listId: effectiveListId }),
-    [commit, effectiveListId],
+    (base: DiffBase) => write(path, { base, range: "all", listId: effectiveListId }),
+    [path, effectiveListId],
   )
   const setRange = useCallback(
-    (r: DiffRange) => commit({ base: stored.base, range: r, listId: effectiveListId }),
-    [commit, stored.base, effectiveListId],
+    (r: DiffRange) => write(path, { base: snapshot(path).base, range: r, listId: effectiveListId }),
+    [path, effectiveListId],
   )
 
   return { base: stored.base, range, setBase, setRange }
