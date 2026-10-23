@@ -3,10 +3,12 @@ import { fileAnchorId } from "./parsedPatch"
 /** The class DiffBody puts on pierre's Virtualizer, the diff body's own scroll container. */
 export const DIFF_SCROLLER_CLASS = "diff-body-scroller"
 
-// Up to ~2s of frames for the file to appear and the files above it to be
-// measured; a file counts as landed once it has stayed at the top this many
-// frames in a row.
-const MAX_FRAMES = 120
+// How long to keep trying, in time rather than frames: on entry the patch,
+// pierre's worker and its measuring all have to finish first, which takes as
+// long as it takes, not a fixed number of frames. A file counts as landed
+// once it has stayed at the top, with the content no longer growing, this
+// many frames in a row.
+const MAX_MS = 4000
 const SETTLE_FRAMES = 5
 
 /**
@@ -17,13 +19,20 @@ const SETTLE_FRAMES = 5
  *
  * Retried each frame until the target exists and stays put, because on entry
  * (`&file=`) the wrapper may not be rendered yet, and pierre measures the
- * files above it as they render, which moves it after a first jump. Stops
- * early when the reader takes over (wheel, touch, pointer) and when the
- * scroller can go no further. Returns a cancel function.
+ * files above it as they render, which moves it after a first jump.
+ *
+ * "The scroller can go no further" is never taken as done: right after entry
+ * the files have not been measured, so the scroller is not even scrollable
+ * yet and is trivially "at the end" with the target a few pixels down. That
+ * used to end the scroll at the first file. Instead it keeps holding until
+ * the time bound, which costs nothing when the target really is near the
+ * end. Stops early when the reader takes over (wheel, touch, pointer, keys).
+ * Returns a cancel function.
  */
 export function scrollToFile(file: string): () => void {
-  let frames = 0
+  const deadline = performance.now() + MAX_MS
   let stable = 0
+  let lastHeight = -1
   let id = 0
   let done = false
   let scroller: HTMLElement | null = null
@@ -45,15 +54,16 @@ export function scrollToFile(file: string): () => void {
         for (const ev of USER_INPUT) s.addEventListener(ev, stop, { passive: true })
       }
       const delta = el.getBoundingClientRect().top - s.getBoundingClientRect().top
-      const atEnd = delta > 0 && s.scrollTop >= s.scrollHeight - s.clientHeight - 1
-      if (Math.abs(delta) < 1 || atEnd) stable++
+      const grown = s.scrollHeight !== lastHeight
+      lastHeight = s.scrollHeight
+      if (Math.abs(delta) < 1 && !grown) stable++
       else {
         stable = 0
-        s.scrollTop += delta
+        if (Math.abs(delta) >= 1) s.scrollTop += delta
       }
       if (stable >= SETTLE_FRAMES) return stop()
     }
-    if (++frames >= MAX_FRAMES) return stop()
+    if (performance.now() >= deadline) return stop()
     id = requestAnimationFrame(step)
   }
 
@@ -61,4 +71,4 @@ export function scrollToFile(file: string): () => void {
   return stop
 }
 
-const USER_INPUT = ["wheel", "touchstart", "pointerdown"] as const
+const USER_INPUT = ["wheel", "touchstart", "pointerdown", "keydown"] as const
