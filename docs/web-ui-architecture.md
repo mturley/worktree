@@ -2247,6 +2247,101 @@ pointing at Settings → General. The path must be a registered worktree
 argument. The button reads the modal's `["settings"]` query, so a save there
 updates it at once.
 
+### Code tab and diff view (`worktree_git_api.go`, `worktree_diff_api.go`, `ui/src/components/gitdiff/`)
+
+The details card's old Environment tab is split: **Environment** keeps the
+env/ports, **Code** (`GitDiffPanel`) shows the git summary (`GitSummary`:
+merge-base against the main upstream, ahead/behind, tracking branch, working
+counts, background-fetch state) and a "Files changed" list (`FilesChangedList`)
+with two selectors: the **base** (`merge-base` or `tracking`, `CompareSelect`)
+and the **range** (`RangePicker`: All changes, or a run of first-parent commits
+plus an optional Uncommitted entry). The card's tab label carries a badge from
+the same data. `?diff[&file=<path>]` (`useDiffView`) opens the drill-down
+(`DiffView`), which replaces the page body.
+
+**Endpoints** (all take a registered worktree `path`; an unregistered one is
+refused):
+
+- `GET /api/worktree-git?path=[&fetch=1]` returns `worktreeGitDTO`: `on_disk`,
+  `fingerprint`, `working_fingerprint`, `branch`, `main_upstream`,
+  `merge_base`, `vs_merge_base` / `vs_tracking` (`{ahead, behind}`),
+  `tracking`, `working` (`staged/modified/untracked/files`), `fetch`
+  (`gitfetch.State`: `last_ok_at`, `last_error`, `in_progress`). It sits
+  **beside** `/api/worktree-info`, whose `git` field stays because
+  `DeleteWorktreeButton` reads it. A worktree gone from disk returns
+  `on_disk:false` and nothing else.
+- `GET /api/worktree-diff/commits?path&base=` returns `{list_id, base_ref,
+  merge_base, commits}`; the list is `git rev-list --first-parent
+  <base-ref>..HEAD`.
+- `GET /api/worktree-diff/files?path&base=[&from=&to=]` returns
+  `{fingerprint, list_id, files}` (numstat + status per file).
+- `GET /api/worktree-diff/patch?path&base=[&from=&to=][&ignore_ws=1]` returns
+  `{list_id, working_fingerprint, old_rev, new_rev, patch}`; 413 past
+  `gitutil.MaxPatchBytes`.
+- `GET /api/worktree-diff/file?path&rev=&file=` returns `text/plain` contents
+  at `rev`, so the view can expand unchanged lines.
+
+A `base` other than `merge-base`/`tracking` is 400; a valid one the repo cannot
+supply (no upstream, no tracking branch) is 409, which the UI shows as an
+explanation. `from`/`to` go together (both omitted means All changes). Opening
+a changed file in the editor reuses the editor endpoint ("Open in editor").
+
+**Range resolution** (`gitutil.ResolveRange`). The new side is the run's newest
+commit, or a **working-tree snapshot** when Uncommitted is included. The old
+side is the run's oldest commit's `^1`, except that a run including the list's
+**oldest** commit uses `merge-base(<run's newest end>, base-ref)` (HEAD when it
+includes Uncommitted), so a branch that merged main never shows main's changes
+as its own. Only Uncommitted selected: the old side is `HEAD`.
+
+**Snapshot.** `gitutil.SnapshotWorkingTree` writes a tree object of the working
+tree (tracked, staged and untracked, not ignored) using a scratch copy of the
+index (`GIT_INDEX_FILE`), so the real index and the user's staging are never
+touched.
+
+**Rev-set security model.** `/file` serves blob contents at a rev, so it only
+answers for revs `/patch` handed out for that same worktree (`revSet`: 30 min
+TTL, 200 entries, oldest evicted); anything else is 404.
+
+**Polling and fingerprints.** `useWorktreeGit` polls `/api/worktree-git` every
+5s while the page is visible. `fingerprint` moves on commits, fetches, branch
+switches and working-tree edits; `working_fingerprint` only on the last. The
+diff hooks (`useDiffData`) refetch when it changes. The server computes the
+fingerprint **before** snapshotting, so an edit landing mid-request makes the
+next poll refetch rather than leaving a patch newer than its label. `list_id`
+identifies the commit list; `useDiffSelection` stores it with the range and
+falls back to All changes when the list changed underneath (rebase, new
+commits), and the view labels its selectors with the pinned list while stale.
+
+**Selection store.** `useDiffSelection` is one shared store per worktree path
+(`useSyncExternalStore`) persisted to localStorage
+(`worktree.diffSelection:<path>`), so the card badge and the Code tab move
+together. Blocked or full storage degrades to a per-page-view selection.
+
+**Background fetch** (`internal/gitfetch`). `New(ctx, interval)` takes the
+server's lifetime context (the scheduler is created lazily and the context is
+cancelled when `Serve` returns, killing in-flight fetches). The status poll,
+with `fetch=1`, calls the non-blocking `Maybe(dir, remotes)`: deduped **per
+repository** (not per worktree), one fetch per repo at a time, honours the
+interval (failed attempts count), and **skips while a git lock file exists**
+(the user's own git command is mid-flight; a skip does not count against the
+interval). Remotes are those behind the compared refs (`RemotesFor`). It runs
+`git fetch --prune <remote>` with `GIT_TERMINAL_PROMPT=0` and ssh `BatchMode`,
+60s timeout, so it can never prompt. Settings → General: `git.background_fetch`
+is read **per request** (applies at once); `git.fetch_interval` is read **when
+the scheduler is created**, so a change applies after `worktree ui` restarts.
+
+**Frontend gotchas.**
+
+- The diff view is the page's **one deliberate inner scroller**: pierre's
+  `Virtualizer` must own its scroll container, so `DiffView` sizes itself to
+  the space below the pinned header (see the comment in `WorktreeDetailPage`).
+  Everywhere else the page keeps its single scroller.
+- `DiffView` is `lazy()`-loaded as its own chunk; `@pierre/diffs` is fetched
+  the first time someone opens a diff, never on a plain page load.
+- The worker must be `@pierre/diffs/worker/worker-portable.js?worker` (the
+  plain `worker.js` fails under Vite), with no theme override on the pool.
+- Esc in the diff view leaves it before it deselects or leaves the worktree.
+
 ### Watcher toggles (`watchers.go`, `config.WatchersConfig`, `WatcherAlert`)
 
 Each service can be turned off: `watchers: {github, jira, slack}` in

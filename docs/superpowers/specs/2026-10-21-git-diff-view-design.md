@@ -154,7 +154,9 @@ tracking branch): an inline explanation.
 - The picker's commit list is `git rev-list --first-parent <base-ref>..HEAD`
   (newest first), where base-ref is the main upstream or the tracking branch.
 - **Old side:** when the run includes the **oldest** commit in the list, the old
-  side is `merge-base(HEAD, base-ref)` — not that commit's `^1` — so a branch
+  side is `merge-base(<run's newest end>, base-ref)` (HEAD when the run
+  includes Uncommitted) — not that commit's `^1`, and not always
+  `merge-base(HEAD, base-ref)` — so a branch
   that has merged `main` in never shows `main`'s changes as its own (GitHub's
   PR diff does the same). Otherwise, a run whose oldest selected commit is A
   starts at `A^1` (for a merge commit in the middle that shows what the merge
