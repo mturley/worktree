@@ -31,4 +31,39 @@ describe("useWorktreeGit", () => {
     expect(result.current.data).toBe(git)
     release()
   })
+
+  it("shows the other variant's cached data when mounted fresh, as when the card moves off the Code tab", async () => {
+    let release!: () => void
+    worktreeGit.mockReset()
+    worktreeGit.mockResolvedValueOnce(git)
+    worktreeGit.mockImplementationOnce(() => new Promise((r) => { release = () => r(git) }))
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    )
+    const first = renderHook(() => useWorktreeGit("/wt/a", { fetch: true }), { wrapper })
+    await waitFor(() => expect(first.result.current.data).toBe(git))
+    first.unmount()
+
+    const { result } = renderHook(() => useWorktreeGit("/wt/a", { fetch: false }), { wrapper })
+    expect(worktreeGit).toHaveBeenLastCalledWith("/wt/a", false)
+    expect(result.current.data).toBe(git)
+    release()
+  })
+
+  it("never shows another worktree's cached status", async () => {
+    worktreeGit.mockReset()
+    worktreeGit.mockResolvedValueOnce(git)
+    worktreeGit.mockImplementationOnce(() => new Promise(() => {}))
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    )
+    const first = renderHook(() => useWorktreeGit("/wt/a", { fetch: true }), { wrapper })
+    await waitFor(() => expect(first.result.current.data).toBe(git))
+    first.unmount()
+
+    const { result } = renderHook(() => useWorktreeGit("/wt/b", { fetch: false }), { wrapper })
+    expect(result.current.data).toBeUndefined()
+  })
 })
