@@ -42,6 +42,11 @@ type Server struct {
 	revs   *revSet
 	revsMu sync.Mutex
 
+	// review resolves review comment positions and caches their inputs.
+	// Created on first use (see reviewResolver).
+	review   *reviewResolver
+	reviewMu sync.Mutex
+
 	// Security is required to serve (Start and Serve refuse a nil one). A
 	// Handler built without it skips the Host and session guards, which is
 	// what in-process tests rely on.

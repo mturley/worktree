@@ -55,6 +55,24 @@ func newReviewCommentDTO(c reviewcomments.Comment) reviewCommentDTO {
 // so later additions (resolved view, prompt) do not reshape it.
 type reviewCommentItem struct {
 	reviewCommentDTO
+	View   *reviewViewDTO  `json:"view,omitempty"`
+	Prompt reviewPromptDTO `json:"prompt"`
+}
+
+// reviewViewDTO is where a comment sits in the diff the client is showing.
+type reviewViewDTO struct {
+	Status    string `json:"status"`
+	StartLine int    `json:"start_line,omitempty"`
+	EndLine   int    `json:"end_line,omitempty"`
+	Moved     bool   `json:"moved,omitempty"`
+}
+
+// reviewPromptDTO is where a comment sits in the working tree, which is what
+// an agent sent the comments will edit.
+type reviewPromptDTO struct {
+	Status    string `json:"status"`
+	StartLine int    `json:"start_line"`
+	EndLine   int    `json:"end_line"`
 }
 
 // registeredBodyPath resolves a JSON body's path to a registered worktree's
@@ -97,20 +115,38 @@ func checkReviewCommentBody(w http.ResponseWriter, body string) bool {
 	return true
 }
 
-// handleListReviewComments: GET /api/review-comments?path=
+// handleListReviewComments: GET /api/review-comments?path=&old_rev=&new_rev=
+//
+// Every comment carries its prompt position (in the working tree). With both
+// revs of a diff /patch handed out, each also carries its view position.
 func (s *Server) handleListReviewComments(w http.ResponseWriter, r *http.Request) {
 	dir, ok := s.registeredWorktreePath(w, r)
 	if !ok {
 		return
+	}
+	q := r.URL.Query()
+	oldRev, newRev := q.Get("old_rev"), q.Get("new_rev")
+	if (oldRev == "") != (newRev == "") {
+		writeError(w, http.StatusBadRequest, "old_rev and new_rev must be given together")
+		return
+	}
+	var view *reviewView
+	if oldRev != "" {
+		if !s.revSet().has(dir, oldRev) || !s.revSet().has(dir, newRev) {
+			writeError(w, http.StatusNotFound, "unknown rev")
+			return
+		}
+		view = &reviewView{oldRev: oldRev, newRev: newRev}
 	}
 	comments, err := reviewcomments.List(s.DB, dir)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	items := make([]reviewCommentItem, 0, len(comments))
-	for _, c := range comments {
-		items = append(items, reviewCommentItem{newReviewCommentDTO(c)})
+	items, err := s.reviewResolver().resolve(dir, comments, view)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"comments": items})
 }
