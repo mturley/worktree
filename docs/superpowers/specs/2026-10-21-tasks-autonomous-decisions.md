@@ -218,6 +218,39 @@ Format: **Q:** the question · **A:** what was done · **Why** · **To change:**
   **A:** `resolveMu` on the server holds for the `resolvePass` lookup, resolve and reconcile, so a web write's pass that looked a PR up as open can't unresolve what the poll just resolved as merged. The poll's Jira search runs before the lock and only fills the cache, so a web write never waits on Jira. A Jira key rejected with HTTP 400 is left out of searches, and reported unknown, for an hour.
   **To change:** `resolvePass`, `jiraBadKeyTTL` in `internal/webui/blocker_status.go`.
 
+## Phase 6 — undo
+
+- **Q:** How does deleting a task work now?
+  **A:** One click, with an Undo toast. The old inline "Delete? Yes / No" is gone. `/api/tasks/delete` answers 200 `{undo_event_id}` instead of 204.
+  **Why:** Undo makes the confirmation redundant.
+  **To change:** `onDelete` in `ui/src/components/tasks/modal/TaskDetailModal.tsx`, `handleDeleteTask` in `internal/webui/tasks_detail_api.go`.
+- **Q:** When is a deleted task really gone?
+  **A:** A sweep every 5 minutes removes tasks deleted more than 1 hour ago, with their events, read cursor and holds. Another task's blocker on it stays and labels "T<id> (deleted)".
+  **To change:** `taskPurgeInterval`, `taskPurgeAfter` in `internal/webui/poller.go`; `internal/tasks/purge.go`.
+- **Q:** Does an undo leave a trace?
+  **A:** No. It deletes the undone event and its cascade events and writes no "reverted" event.
+  **Why:** History stays truthful about what stands, and no second "Unblocked" can fire for a completion that was undone.
+  **To change:** `internal/tasks/undo.go`.
+- **Q:** What can be undone?
+  **A:** Only the newest change (compare-and-swap on the event and the current value). If an agent changed the task in between, the answer is 409 and nothing changes.
+  **To change:** the CAS checks in `internal/tasks/undo.go`.
+- **Q:** What about the CLI?
+  **A:** `worktree tasks undo <event-id>` prints "Undone." and exits non-zero on a conflict. `state`, `delete` and subtask `check`/`uncheck` with `--json` carry `undo_event_id`.
+  **To change:** `cmd/tasks.go`, `cmd/tasks_json.go`.
+- **Q:** What happened to the after-commit blocker resolver for tasks?
+  **A:** It is kept as a safety net and runs after every undo and each poll, but `SetState`, `Delete` and `AddBlocker` now settle task-kind blockers in their own transaction, so undo can reverse them exactly (`resolved_event_id`).
+  **To change:** `settleTaskBlockersTx` in `internal/tasks/resolve.go`.
+- **Q:** What does undoing an event that no longer exists return?
+  **A:** 409 if the id was issued once (at or below `sqlite_sequence`; undone or purged), 404 only for an id never issued.
+  **Why:** "Already undone" is a conflict, not a mistake.
+  **To change:** `loadUndoEvent` in `internal/tasks/undo.go`.
+- **Q:** How long does the toast last?
+  **A:** A fixed 10s deadline; hovering no longer extends it. This applies to the mark-read toasts too.
+  **To change:** `ui/src/components/UndoToast.tsx`.
+- **Q:** When does "Unblocked" notify?
+  **A:** 15s after the notifier sees the event (`UNDO_WINDOW_MS` + the 5s scan), so an undo through the toast always lands first.
+  **To change:** `unblockHoldDefault` in `internal/webui/notify_unblock.go`.
+
 ## Browser check (run this yourself)
 
 A throwaway config, with a throwaway UI password, watchers and cmux off, is at

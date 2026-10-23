@@ -959,7 +959,10 @@ read" and offers no undo. Opening the modal marks nothing.
 **Undo** (`ui/src/components/UndoToast.tsx`, `@mantine/notifications`). Every
 mark-read made from the UI — Mark all read, in either form, the Slack
 thread view's Mark read and the task modal's — shows a toast for 10 seconds with an Undo button
-(also Z; U is taken by Show unread only) that puts the cursors back:
+(also Z; U is taken by Show unread only) that puts the cursors back. The toast ends at a
+fixed deadline (`UNDO_WINDOW_MS`, a `setTimeout` that hides it): hovering does
+not extend it, unlike Mantine's own `autoClose`. A task's state change, subtask check and
+delete show the same toast (see "Undo for tasks"):
 
 - GitHub/Jira: `/api/resource-read` answers `{previous_ts, last_read_ts}`
   (`unread.Mark`, read and write in one transaction), and the undo posts it
@@ -996,6 +999,50 @@ nothing and a restored blocker never sends a second "Unblocked" notification.
 It runs `afterTaskWrite()` afterwards, like the writes it reverses. The CLI is
 `worktree tasks undo <event-id>`; its `state`, `delete` and `subtask
 check`/`uncheck` `--json` carry the same `undo_event_id`.
+
+Details, as built (`internal/tasks/undo.go`, `purge.go`):
+
+- **The token is the event id.** Nothing else identifies the change; the
+  server re-derives the task, the restored values and the cascade from the
+  stored `task_events` row. `state` payloads carry `prev_started_at` /
+  `prev_completed_at`; subtask payloads carry `{subtask_id, text, from, to}`.
+- **CAS and 409.** State change: the event is the task's newest
+  `task_state_changed` and the state still equals its `to`. Subtask: the
+  newest check/uncheck event for that subtask and the box still equals `to`.
+  Delete: `deleted_at` equals the event's `ts`. Anything else, including an
+  agent change in between, is `ErrUndoConflict` -> 409 and changes nothing
+  (no version bump). Only the newest change is undoable.
+- **Missing event.** `task_events` is AUTOINCREMENT, so a missing id at or
+  below `sqlite_sequence.seq` was issued once and has since been undone or
+  purged: conflict (409). An id never issued is `ErrNotFound` (404). A wrong
+  event type, another task's event, the system actor or a pre-undo event
+  without `prev_*` is `ErrInvalid` (400).
+- **Cascades are in the transaction, both ways.** `SetState` and `Delete`
+  call `settleTaskBlockersTx` in their own transaction: every resolver-owned
+  task blocker naming the task (as blocking or blocked task) is resolved or
+  unresolved as `system`, and the entries are stored in the event payload's
+  `cascade`. Each resolve stores the id of its event as
+  `task_blockers.resolved_event_id`. Undo reverses a resolve only `WHERE
+  resolved_event_id = <that event>` (exact match, so a later resolution is
+  left alone), and an unresolve only while the blocker is still unresolved,
+  restoring the earlier resolution field for field. `AddBlocker` also settles
+  an already-satisfied task blocker in its own transaction. The after-commit
+  resolver stays as a safety net for drift (it finds nothing after these
+  writes) and runs after every undo.
+- **Undo deletes history.** The undone event and its cascade events are
+  deleted, even for a cascade blocker that changed since (otherwise the
+  notifier could still send "Unblocked" for a completion that was undone). No
+  "reverted" event is written. The task's `updated_at` becomes now.
+- **Purge.** `tasks.PurgeDeleted` runs from `StartPolling` at start and every
+  5 minutes (`taskPurgeInterval`) and removes tasks deleted more than 1 hour
+  ago (`taskPurgeAfter`): the task, its events, read cursor and `task:<id>`
+  subscriptions, with subtasks, links and its own blockers cascading. Other
+  tasks' blockers on a purged task stay (`blocking_task_id` has no FK) and
+  label as "T<id> (deleted)". An undo of a purged task's event is a 409.
+  A no-op sweep bumps nothing.
+- **API shape.** `/api/tasks/delete` answers 200 `{undo_event_id}` (it was
+  204). Delete in the UI is one click with an Undo toast; undoing it reopens
+  the modal.
 
 A partial failure in Mark all read still offers to undo the writes that
 landed. Its undo (`undoAll`) runs every restore to the end even when one is
@@ -1610,9 +1657,9 @@ notification.
 
 Each found event is **held** in memory (`Server.unblockPending`) for
 `unblockHoldDefault`: about 10s after the notifier sees the event (not after
-the resolution; Phase 6 aligns it with the undo window). Then
+the resolution). The hold is `UNDO_WINDOW_MS` + 5s = 15s (the notifier's scan interval), so an undo made through the toast always lands before a notification. Then
 `unblockStillStands` re-checks it: an event that is gone (an undo deleted
-it; Phase 6's undo deletes cascaded events), whose task is deleted, or whose
+it; an undo deletes the events it cascaded), whose task is deleted, or whose
 blocker (the payload's `blocker_id`) was removed or is no longer resolved is
 dropped silently. Held items
 do not survive a restart: the new cursor starts past their events, so a
