@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/mturley/watcher"
-	wjira "github.com/mturley/watcher/jira"
 	"github.com/mturley/watcher/slack"
 	"github.com/mturley/worktree/internal/cmux"
 	"github.com/mturley/worktree/internal/gitfetch"
@@ -173,24 +172,13 @@ type Server struct {
 	// watcher library's validators. See settings_creds.go.
 	credCheck *credValidators
 
-	// Blocker resolution; see blocker_status.go. blockerJira is the seam
-	// for the Jira search (nil builds a client from the watcher config).
-	// taskHooksOnce guards initTaskHooks. jiraStatus holds the Jira
-	// statuses poll passes found, by key, so web writes can resolve Jira
-	// blockers without contacting Jira; jiraStatusMu guards it.
-	// jiraBadKeys remembers keys Jira rejected with a 400, until the
-	// recorded expiry (jiraBadKeyTTL), so they are not searched every pass;
-	// jiraBadMu guards it. resolveMu serialises whole resolution passes
-	// (lookup, ResolveBlockers, reconcile) within this process.
-	// blockerLookupFor, when set, replaces blockerStatusLookup: a test seam.
-	blockerJira      func() (jiraSearcher, bool)
+	// Blocker resolution; see blocker_status.go. taskHooksOnce guards
+	// initTaskHooks. resolveMu serialises whole resolution passes (lookup,
+	// ResolveBlockers, reconcile) within this process. blockerLookupFor,
+	// when set, replaces blockerStatusLookup: a test seam.
 	taskHooksOnce    sync.Once
-	jiraStatusMu     sync.Mutex
-	jiraStatus       map[string]wjira.IssueSummary
-	jiraBadMu        sync.Mutex
-	jiraBadKeys      map[string]time.Time
 	resolveMu        sync.Mutex
-	blockerLookupFor func(network bool) tasks.StatusLookup
+	blockerLookupFor func() tasks.StatusLookup
 
 	// "Unblocked" notifications; see notify_unblock.go. unblockHold is the
 	// hold before one is sent (0 = unblockHoldDefault) and notifyNow the

@@ -1,64 +1,16 @@
 package webui
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	watcherdb "github.com/mturley/watcher/db"
-	wjira "github.com/mturley/watcher/jira"
-	"github.com/mturley/worktree/internal/config"
 	"github.com/mturley/worktree/internal/tasks"
 )
-
-// fakeJira is the blocker lookup's Jira seam: it records every search.
-type fakeJira struct {
-	mu      sync.Mutex
-	issues  map[string]wjira.IssueSummary
-	err     error
-	errFor  func(jql string) error // per-query failure; nil = none
-	block   chan struct{}          // when set, every search waits on it
-	queries []string
-}
-
-func (f *fakeJira) SearchSummaries(jql string, max int) ([]wjira.IssueSummary, bool, error) {
-	if f.block != nil {
-		<-f.block
-	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.queries = append(f.queries, jql)
-	if f.err != nil {
-		return nil, false, f.err
-	}
-	if f.errFor != nil {
-		if err := f.errFor(jql); err != nil {
-			return nil, false, err
-		}
-	}
-	var out []wjira.IssueSummary
-	for k, is := range f.issues {
-		if strings.Contains(jql, k) {
-			out = append(out, is)
-		}
-	}
-	return out, false, nil
-}
-
-// withJira installs f as the server's Jira searcher, counting how often the
-// seam is asked for one.
-func withJira(s *Server, f *fakeJira) *int {
-	n := 0
-	s.blockerJira = func() (jiraSearcher, bool) {
-		n++
-		return f, true
-	}
-	return &n
-}
 
 func mustBlock(t *testing.T, s *Server, taskID int64, typ, id string) tasks.Blocker {
 	t.Helper()
@@ -86,7 +38,7 @@ func setPRState(t *testing.T, s *Server, id, state string) {
 
 func TestBlockerLookupPRState(t *testing.T) {
 	s, _ := tasksServer(t)
-	l := s.blockerStatusLookup(false)
+	l := s.blockerStatusLookup
 	if _, ok := l("pr", "o/r#1"); ok {
 		t.Fatal("never-polled PR is known")
 	}
@@ -96,7 +48,7 @@ func TestBlockerLookupPRState(t *testing.T) {
 		"OPEN":   {Done: false, Label: "open"},
 	} {
 		setPRState(t, s, "o/r#1", state)
-		if got, ok := s.blockerStatusLookup(false)("pr", "o/r#1"); !ok || got != want {
+		if got, ok := s.blockerStatusLookup("pr", "o/r#1"); !ok || got != want {
 			t.Fatalf("%s: lookup = %+v, %v; want %+v", state, got, ok, want)
 		}
 	}
@@ -125,65 +77,81 @@ func TestPRBlockerMergedThenReopened(t *testing.T) {
 	}
 }
 
-func TestJiraBlockerLookupDisabledNeverBuildsClient(t *testing.T) {
-	s, _ := tasksServer(t)
-	f := &fakeJira{issues: map[string]wjira.IssueSummary{"ABC-1": {Key: "ABC-1", Status: "Done", StatusCategory: "done"}}}
-	built := withJira(s, f)
-	tk := mustTask(t, s, tasks.NewTask{Title: "A"})
-	mustBlock(t, s, tk.ID, "jira", "ABC-1")
-	s.SetWatchersDisabled(map[string]bool{config.ServiceJira: true})
-
-	if _, ok := s.blockerStatusLookup(true)("jira", "ABC-1"); ok {
-		t.Fatal("lookup known while the Jira watcher is off")
-	}
-	s.resolvePass(true, tasks.ResolveOptions{})
-	s.afterTaskWrite()
-	if *built != 0 || len(f.queries) != 0 {
-		t.Fatalf("Jira contacted while disabled: built %d, queries %v", *built, f.queries)
-	}
-	if bl := blockerOf(t, s, tk.ID); bl.ResolvedAt != "" {
-		t.Fatalf("blocker changed while Jira is off: %+v", bl)
-	}
+func setJiraState(t *testing.T, s *Server, key, stateJSON string) {
+	t.Helper()
+	must(t, watcherdb.UpsertResourceState(s.DB, "jira", key, stateJSON, "2026-01-01T00:00:00Z", "x"))
 }
 
-func TestJiraBlockerDoneResolvesWithOneSearchPerPass(t *testing.T) {
+func TestBlockerLookupJiraState(t *testing.T) {
 	s, _ := tasksServer(t)
-	f := &fakeJira{issues: map[string]wjira.IssueSummary{
-		"ABC-1": {Key: "ABC-1", Status: "Done", StatusCategory: "done"},
-		"ABC-2": {Key: "ABC-2", Status: "In Progress", StatusCategory: "indeterminate"},
-	}}
-	withJira(s, f)
-	a, b := mustTask(t, s, tasks.NewTask{Title: "A"}), mustTask(t, s, tasks.NewTask{Title: "B"})
-	mustBlock(t, s, a.ID, "jira", "ABC-1")
-	mustBlock(t, s, b.ID, "jira", "abc-2") // case-insensitive key
-	mustBlock(t, s, b.ID, "jira", "not a key")
-
-	s.resolvePass(true, tasks.ResolveOptions{})
-	if len(f.queries) != 1 {
-		t.Fatalf("searches = %v, want exactly one", f.queries)
+	if _, ok := s.blockerStatusLookup("jira", "ABC-1"); ok {
+		t.Fatal("never-polled issue is known")
 	}
-	if bl := blockerOf(t, s, a.ID); bl.ResolvedAt == "" || bl.ResolvedReason != "Done" {
-		t.Fatalf("ABC-1 blocker = %+v, want resolved \"Done\"", bl)
-	}
-	bs, _ := tasks.Blockers(s.DB, b.ID)
-	for _, bl := range bs {
-		if bl.ResolvedAt != "" {
-			t.Fatalf("B blocker resolved: %+v", bl)
+	for _, c := range []struct {
+		state string
+		want  tasks.ResourceStatus
+		ok    bool
+	}{
+		{`{"status":"Done","status_category":"done"}`, tasks.ResourceStatus{Done: true, Label: "Done"}, true},
+		{`{"status":"Closed","status_category":"done"}`, tasks.ResourceStatus{Done: true, Label: "Closed"}, true},
+		{`{"status":"In Progress","status_category":"indeterminate"}`, tasks.ResourceStatus{Label: "In Progress"}, true},
+		{`{"status":"New","status_category":"new"}`, tasks.ResourceStatus{Label: "New"}, true},
+		{`{"status_category":"done"}`, tasks.ResourceStatus{Done: true, Label: "done"}, true},
+		// Cached before watcher v0.16.0 added the category: unknown.
+		{`{"status":"Done"}`, tasks.ResourceStatus{}, false},
+		{`{"status":"Done","status_category":""}`, tasks.ResourceStatus{}, false},
+		{`not json`, tasks.ResourceStatus{}, false},
+	} {
+		setJiraState(t, s, "ABC-1", c.state)
+		got, ok := s.blockerStatusLookup("jira", "ABC-1")
+		if ok != c.ok || got != c.want {
+			t.Fatalf("%s: lookup = %+v, %v; want %+v, %v", c.state, got, ok, c.want, c.ok)
 		}
 	}
-	if st, ok := s.blockerStatusLookup(false)("jira", "ABC-2"); !ok || st.Done || st.Label != "In Progress" {
-		t.Fatalf("ABC-2 status = %+v, %v", st, ok)
+}
+
+func TestJiraBlockerResolvesFromCachedState(t *testing.T) {
+	s, _ := tasksServer(t)
+	tk := mustTask(t, s, tasks.NewTask{Title: "A"})
+	mustBlock(t, s, tk.ID, "jira", "ABC-1")
+
+	setJiraState(t, s, "ABC-1", `{"status":"In Review","status_category":"indeterminate"}`)
+	s.afterTaskWrite()
+	if bl := blockerOf(t, s, tk.ID); bl.ResolvedAt != "" {
+		t.Fatalf("not done, blocker = %+v", bl)
+	}
+
+	setJiraState(t, s, "ABC-1", `{"status":"Done","status_category":"done"}`)
+	s.afterTaskWrite()
+	if bl := blockerOf(t, s, tk.ID); bl.ResolvedAt == "" || bl.ResolvedReason != "Done" {
+		t.Fatalf("after Done, blocker = %+v", bl)
+	}
+
+	// A row without the category is unknown: the blocker keeps its state.
+	setJiraState(t, s, "ABC-1", `{"status":"Reopened"}`)
+	s.afterTaskWrite()
+	if bl := blockerOf(t, s, tk.ID); bl.ResolvedAt == "" {
+		t.Fatalf("unknown state unresolved the blocker: %+v", bl)
+	}
+
+	setJiraState(t, s, "ABC-1", `{"status":"Reopened","status_category":"indeterminate"}`)
+	s.afterTaskWrite()
+	if bl := blockerOf(t, s, tk.ID); bl.ResolvedAt != "" {
+		t.Fatalf("after reopen, blocker = %+v", bl)
 	}
 }
 
-func TestJiraBlockerSearchErrorIsUnknown(t *testing.T) {
+func TestPollResolvesJiraBlockerFromCachedState(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("WATCHER_HOME", home)
+	must(t, os.WriteFile(filepath.Join(home, "auth.yaml"), []byte(":\tnot yaml: ["), 0o600))
 	s, _ := tasksServer(t)
-	f := &fakeJira{err: errors.New("boom")}
-	withJira(s, f)
 	tk := mustTask(t, s, tasks.NewTask{Title: "A"})
 	mustBlock(t, s, tk.ID, "jira", "ABC-1")
-	if _, ok := s.blockerStatusLookup(true)("jira", "ABC-1"); ok {
-		t.Fatal("lookup known after a failed search")
+	setJiraState(t, s, "ABC-1", `{"status":"Done","status_category":"done"}`)
+	s.safePollAll()
+	if bl := blockerOf(t, s, tk.ID); bl.ResolvedAt == "" || bl.ResolvedReason != "Done" {
+		t.Fatalf("poll did not resolve: %+v", bl)
 	}
 }
 
@@ -224,113 +192,6 @@ func TestPollRunsResolverEvenWhenPollFails(t *testing.T) {
 	}
 }
 
-func (f *fakeJira) count() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return len(f.queries)
-}
-
-func TestWebStateChangeNeverSearchesJira(t *testing.T) {
-	s, _ := tasksServer(t)
-	f := &fakeJira{block: make(chan struct{}), err: errors.New("failed to execute request: timeout")}
-	t.Cleanup(func() { close(f.block) })
-	withJira(s, f)
-	tk := mustTask(t, s, tasks.NewTask{Title: "A"})
-	mustBlock(t, s, tk.ID, "jira", "ABC-1")
-
-	done := make(chan int, 1)
-	go func() {
-		rec := serveTasks(t, s, "POST", "/api/tasks/state", map[string]any{"id": tk.ID, "state": "in_progress"})
-		done <- rec.Code
-	}()
-	select {
-	case code := <-done:
-		if code != 200 {
-			t.Fatalf("state: %d", code)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("state change waited on Jira")
-	}
-	if n := f.count(); n != 0 {
-		t.Fatalf("web write made %d Jira searches, want 0", n)
-	}
-}
-
-func TestWebWriteResolvesJiraFromPollCache(t *testing.T) {
-	s, _ := tasksServer(t)
-	f := &fakeJira{issues: map[string]wjira.IssueSummary{"ABC-1": {Key: "ABC-1", Status: "Done", StatusCategory: "done"}}}
-	withJira(s, f)
-	a := mustTask(t, s, tasks.NewTask{Title: "A"})
-	mustBlock(t, s, a.ID, "jira", "ABC-1")
-	s.resolvePass(true, tasks.ResolveOptions{}) // the poll pass: searches and caches
-	if n := f.count(); n != 1 {
-		t.Fatalf("poll pass searches = %d, want 1", n)
-	}
-
-	b := mustTask(t, s, tasks.NewTask{Title: "B"})
-	mustBlock(t, s, b.ID, "jira", "ABC-1")
-	if bl := blockerOf(t, s, b.ID); bl.ResolvedAt != "" {
-		t.Fatalf("resolved before any web pass: %+v", bl)
-	}
-	rec := serveTasks(t, s, "POST", "/api/tasks/state", map[string]any{"id": b.ID, "state": "in_progress"})
-	if rec.Code != 200 {
-		t.Fatalf("state: %d %s", rec.Code, rec.Body)
-	}
-	if bl := blockerOf(t, s, b.ID); bl.ResolvedAt == "" || bl.ResolvedReason != "Done" {
-		t.Fatalf("web write did not resolve from the cache: %+v", bl)
-	}
-	if n := f.count(); n != 1 {
-		t.Fatalf("searches = %d after the web write, want still 1", n)
-	}
-}
-
-func TestJiraSearchRetriesKeyByKeyOnlyOn400(t *testing.T) {
-	s, _ := tasksServer(t)
-	f := &fakeJira{
-		issues: map[string]wjira.IssueSummary{"ABC-1": {Key: "ABC-1", Status: "Done", StatusCategory: "done"}},
-		errFor: func(jql string) error {
-			if strings.Contains(jql, "BAD-9") {
-				return errors.New("API returned status 400: An issue with key 'BAD-9' does not exist")
-			}
-			return nil
-		},
-	}
-	withJira(s, f)
-	tk := mustTask(t, s, tasks.NewTask{Title: "A"})
-	mustBlock(t, s, tk.ID, "jira", "ABC-1")
-	mustBlock(t, s, tk.ID, "jira", "BAD-9")
-	s.resolvePass(true, tasks.ResolveOptions{})
-	// The batch, then one search per key.
-	if n := f.count(); n != 3 {
-		t.Fatalf("searches = %v, want batch + 2 singles", f.queries)
-	}
-	resolved := 0
-	for _, b := range mustBlockers(t, s, tk.ID) {
-		if b.ResolvedAt != "" {
-			resolved++
-			if b.ResourceID != "ABC-1" {
-				t.Fatalf("wrong blocker resolved: %+v", b)
-			}
-		}
-	}
-	if resolved != 1 {
-		t.Fatal("ABC-1 not resolved")
-	}
-}
-
-func TestJiraSearchStopsOnTransportError(t *testing.T) {
-	s, _ := tasksServer(t)
-	f := &fakeJira{err: errors.New("failed to execute request: context deadline exceeded")}
-	withJira(s, f)
-	tk := mustTask(t, s, tasks.NewTask{Title: "A"})
-	mustBlock(t, s, tk.ID, "jira", "ABC-1")
-	mustBlock(t, s, tk.ID, "jira", "ABC-2")
-	s.resolvePass(true, tasks.ResolveOptions{})
-	if n := f.count(); n != 1 {
-		t.Fatalf("searches = %v, want only the batch", f.queries)
-	}
-}
-
 func mustBlockers(t *testing.T, s *Server, taskID int64) []tasks.Blocker {
 	t.Helper()
 	bs, err := tasks.Blockers(s.DB, taskID)
@@ -350,8 +211,9 @@ func TestConcurrentResolvePassesNeverUnresolveFromAStaleLookup(t *testing.T) {
 
 	entered, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
-	s.blockerLookupFor = func(network bool) tasks.StatusLookup {
-		if network { // the poll: the PR has merged
+	var calls atomic.Int32
+	s.blockerLookupFor = func() tasks.StatusLookup {
+		if calls.Add(1) > 1 { // the second pass, the poll's: the PR has merged
 			return func(string, string) (tasks.ResourceStatus, bool) {
 				return tasks.ResourceStatus{Done: true, Label: "merged"}, true
 			}
@@ -367,7 +229,7 @@ func TestConcurrentResolvePassesNeverUnresolveFromAStaleLookup(t *testing.T) {
 	webDone, pollDone := make(chan struct{}), make(chan struct{})
 	go func() { s.afterTaskWrite(); close(webDone) }()
 	<-entered
-	go func() { s.resolvePass(true, tasks.ResolveOptions{}); close(pollDone) }()
+	go func() { s.resolvePass(tasks.ResolveOptions{}); close(pollDone) }()
 	select {
 	case <-pollDone: // without the mutex, the poll commits here
 	case <-time.After(300 * time.Millisecond): // with it, the poll waits
@@ -383,100 +245,5 @@ func TestConcurrentResolvePassesNeverUnresolveFromAStaleLookup(t *testing.T) {
 	must(t, s.DB.QueryRow(`SELECT COUNT(*) FROM task_events WHERE type = ?`, tasks.EventTaskBlockerUnresolved).Scan(&unresolves))
 	if unresolves != 0 {
 		t.Fatalf("%d unresolve events: a stale pass undid the poll's resolution", unresolves)
-	}
-}
-
-// The poll's Jira search runs outside resolveMu: a web write made while it
-// is in flight answers at once.
-func TestWebWriteDoesNotWaitOnPollJiraSearch(t *testing.T) {
-	s, _ := tasksServer(t)
-	f := &fakeJira{block: make(chan struct{}),
-		issues: map[string]wjira.IssueSummary{"ABC-1": {Key: "ABC-1", Status: "Done", StatusCategory: "done"}}}
-	entered := make(chan struct{})
-	var once sync.Once
-	s.blockerJira = func() (jiraSearcher, bool) {
-		once.Do(func() { close(entered) })
-		return f, true
-	}
-	tk := mustTask(t, s, tasks.NewTask{Title: "A"})
-	mustBlock(t, s, tk.ID, "jira", "ABC-1")
-
-	pollDone := make(chan struct{})
-	go func() { s.resolvePass(true, tasks.ResolveOptions{}); close(pollDone) }()
-	<-entered
-	time.Sleep(20 * time.Millisecond) // let the poll reach the (blocked) search
-
-	webDone := make(chan int, 1)
-	go func() {
-		webDone <- serveTasks(t, s, "POST", "/api/tasks/state", map[string]any{"id": tk.ID, "state": "in_progress"}).Code
-	}()
-	select {
-	case code := <-webDone:
-		if code != 200 {
-			t.Fatalf("state: %d", code)
-		}
-	case <-time.After(3 * time.Second):
-		close(f.block)
-		<-pollDone
-		t.Fatal("a web write waited on the poll's Jira search")
-	}
-	close(f.block)
-	<-pollDone
-	if bl := blockerOf(t, s, tk.ID); bl.ResolvedAt == "" || bl.ResolvedReason != "Done" {
-		t.Fatalf("poll did not resolve from its search: %+v", bl)
-	}
-}
-
-// A key Jira rejected with a 400 is left out of later searches until its
-// TTL expires, and is unknown meanwhile.
-func TestJiraBadKeyIsRememberedUntilItsTTLExpires(t *testing.T) {
-	s, _ := tasksServer(t)
-	f := &fakeJira{
-		issues: map[string]wjira.IssueSummary{
-			"ABC-1": {Key: "ABC-1", Status: "Done", StatusCategory: "done"},
-			"BAD-9": {Key: "BAD-9", Status: "Done", StatusCategory: "done"},
-		},
-		errFor: func(jql string) error {
-			if strings.Contains(jql, "BAD-9") {
-				return errors.New("API returned status 400: An issue with key 'BAD-9' does not exist")
-			}
-			return nil
-		},
-	}
-	withJira(s, f)
-	tk := mustTask(t, s, tasks.NewTask{Title: "A"})
-	mustBlock(t, s, tk.ID, "jira", "ABC-1")
-	mustBlock(t, s, tk.ID, "jira", "BAD-9")
-	s.resolvePass(true, tasks.ResolveOptions{}) // batch + two singles
-	if n := f.count(); n != 3 {
-		t.Fatalf("first pass searches = %v", f.queries)
-	}
-
-	s.resolvePass(true, tasks.ResolveOptions{})
-	if n := f.count(); n != 4 || strings.Contains(f.queries[3], "BAD-9") {
-		t.Fatalf("second pass searches = %v, want one batch without BAD-9", f.queries)
-	}
-	if _, ok := s.blockerStatusLookup(true)("jira", "BAD-9"); ok {
-		t.Fatal("a remembered bad key is known")
-	}
-
-	// Its TTL expires: it is searched again (and, the fake now answering
-	// it, resolves).
-	s.jiraBadMu.Lock()
-	for k := range s.jiraBadKeys {
-		s.jiraBadKeys[k] = time.Now().Add(-time.Second)
-	}
-	s.jiraBadMu.Unlock()
-	f.mu.Lock()
-	f.errFor = nil
-	f.mu.Unlock()
-	s.resolvePass(true, tasks.ResolveOptions{})
-	if n := f.count(); n != 5 || !strings.Contains(f.queries[4], "BAD-9") {
-		t.Fatalf("after the TTL, searches = %v, want BAD-9 back in the batch", f.queries)
-	}
-	for _, b := range mustBlockers(t, s, tk.ID) {
-		if b.ResourceID == "BAD-9" && b.ResolvedAt == "" {
-			t.Fatalf("BAD-9 not resolved after its TTL: %+v", b)
-		}
 	}
 }

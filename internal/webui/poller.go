@@ -100,9 +100,9 @@ func (s *Server) safePollAll() {
 		s.logger().Printf("poll: %v", err)
 	}
 	// Whatever the sources did, failed ones included: resolve blockers from
-	// what the DB now holds (and a fresh Jira search: the only place one
-	// runs), reconcile holds, and hand on the resolutions.
-	s.resolvePass(true, tasks.ResolveOptions{})
+	// the states the DB now holds (this poll may just have cached a merge or
+	// a Done), and reconcile holds.
+	s.resolvePass(tasks.ResolveOptions{})
 }
 
 func (s *Server) logger() *log.Logger {

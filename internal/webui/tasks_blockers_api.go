@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	watcherdb "github.com/mturley/watcher/db"
-	wtjira "github.com/mturley/worktree/internal/jira"
 	"github.com/mturley/worktree/internal/resourceurl"
 	"github.com/mturley/worktree/internal/tasks"
 )
@@ -123,8 +122,8 @@ func (l *blockerLabeler) label(b tasks.Blocker) string {
 	return b.Text
 }
 
-// statusLabel is taskBlockerDTO.StatusLabel. It reads only the DB and the
-// server's Jira status cache: never the network.
+// statusLabel is taskBlockerDTO.StatusLabel. It reads only the DB: never
+// the network.
 func (l *blockerLabeler) statusLabel(b tasks.Blocker) string {
 	switch b.Kind {
 	case tasks.BlockerTask:
@@ -144,13 +143,11 @@ func (l *blockerLabeler) statusLabel(b tasks.Blocker) string {
 			}
 			return ""
 		case "jira":
-			if r := l.resource(b.ResourceType, b.ResourceID); r != nil && r.Status != "" {
-				return r.Status
+			if st, ok := jiraBlockerStatus(l.s, b.ResourceID); ok {
+				return st.Label
 			}
-			if key, ok := wtjira.ParseKey(b.ResourceID); ok {
-				if is, ok := l.s.cachedJiraStatuses()[key]; ok {
-					return is.Status
-				}
+			if r := l.resource(b.ResourceType, b.ResourceID); r != nil {
+				return r.Status // cached before status_category was
 			}
 			return ""
 		}

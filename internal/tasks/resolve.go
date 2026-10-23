@@ -22,7 +22,7 @@ type ResourceStatus struct {
 }
 
 // StatusLookup reports a resource's status. ok=false means unknown (never
-// polled, its watcher off, a failed lookup, or a Slack thread or link,
+// polled, no usable cached state, a failed read, or a Slack thread or link,
 // which only the user resolves): the blocker then keeps its last state.
 type StatusLookup func(resourceType, resourceID string) (ResourceStatus, bool)
 
@@ -49,29 +49,6 @@ const candidateWhere = `t.deleted_at IS NULL AND t.state != 'done'
 	AND (b.resolved_at IS NULL OR b.resolved_auto = 1)
 	AND (b.kind = 'task' OR (b.kind = 'resource' AND b.resource_type NOT IN ('slack', 'link')))`
 
-// ResolvableResourceIDs returns the distinct ids of resources of type typ
-// that some blocker the resolver owns names, sorted. A StatusLookup uses it
-// to batch its own lookups (one Jira search per pass). Never nil.
-func ResolvableResourceIDs(conn *sql.DB, typ string) ([]string, error) {
-	rows, err := conn.QueryContext(bg,
-		`SELECT DISTINCT b.resource_id FROM task_blockers b JOIN tasks t ON t.id = b.task_id
-		  WHERE `+candidateWhere+` AND b.kind = 'resource' AND b.resource_type = ?
-		  ORDER BY b.resource_id`, typ)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []string{}
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		out = append(out, id)
-	}
-	return out, rows.Err()
-}
-
 // ResolveBlockers evaluates every blocker it owns (see candidateWhere): a
 // task blocker holds until its blocking task is done or deleted; a
 // resource blocker follows lookup, and is left alone when lookup is nil or
@@ -80,11 +57,13 @@ func ResolvableResourceIDs(conn *sql.DB, typ string) ([]string, error) {
 // condition stopped holding (PR reopened, issue left Done, task reopened)
 // is unresolved. It returns what changed.
 //
-// lookup runs before the transaction, since it may call out to Jira, and
-// must not write to conn. The writes then happen in one inTx, which reloads
-// each blocker and re-reads task state, so a concurrent write is never
-// overwritten with a stale decision. A pass with nothing it could change
-// (no task blockers, and no resource the lookup knows) never opens it.
+// lookup runs before the transaction, since it reads through conn (a read
+// on another connection while this one holds the write lock could wait on
+// it), and must not write to conn. The writes then happen in one inTx,
+// which reloads each blocker and re-reads task state, so a concurrent write
+// is never overwritten with a stale decision. A pass with nothing it could
+// change (no task blockers, and no resource the lookup knows) never opens
+// it.
 // A blocker whose own reads fail (its row, its task's state, its label)
 // is logged via Logf and skipped; only a failed write fails the pass.
 func ResolveBlockers(conn *sql.DB, lookup StatusLookup) ([]Resolution, error) {
