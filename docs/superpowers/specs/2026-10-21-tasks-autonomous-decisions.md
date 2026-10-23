@@ -39,6 +39,15 @@ while before deciding. Each one links back to the full entry below.
   reads Mantine's `notificationsStore` rather than which toasts are mounted,
   because a hidden toast stays mounted through its exit transition. Files:
   `newestUndoID` in `ui/src/components/UndoToast.tsx`.
+- **The watcher library owns what Tasks worked around** (Phase 3 final
+  review fixes; Phase 5, Jira blockers and hold URLs). watcher v0.16.0 adds
+  Jira `status_category` to cached state, lists each resource once in
+  `ActiveResources`, and adds `RecentEventsForResource`, `GetEvent`,
+  `EventByExternalTS` and `ResourceURL`. Jira blockers now resolve from
+  cached state with no Jira search at all; holds record their blocker's
+  URL; the event and URL reads go through the library. The `ev:` fallback
+  for Slack-message links is gone too (see below). Each entry is rewritten
+  in place.
 
 **Backward compatibility:** none is needed with earlier phases of this work.
 All six phases ship together, and nothing from them has been used for real.
@@ -121,13 +130,13 @@ review fixes).
 ### Phase 3 final review fixes
 
 - **Q:** The activity feed loaded each linked resource's full event history on every SSE refresh. Fix it in the watcher library (a paged `EventsForResource`) or here?
-  **A:** Here. `recentResourceEvents` in `internal/webui/tasks_detail_api.go` queries `watcher_events` JOIN `watcher_event_resources` directly, as `timeline.go` already does: `ORDER BY e.ts DESC LIMIT 200` per resource, leaving out `watch_started`/`watcher_error`. `useTaskActivity` got a 5 s `staleTime`, and because `invalidateQueries` refetches fresh queries anyway, `useSSE` also holds back the refresh of a feed fetched within the last 5 s until that window ends.
-  **Why:** A library change needs a release tag pushed, and this run pushes nothing. The direct query follows an existing pattern in this repo, so it is no new coupling to the schema.
-  **To change:** If you'd rather the library own it, add a limited `EventsForResource` to `~/git/watcher/db`, release, re-pin, and swap `recentResourceEvents` for it. The SSE throttle is `refreshActivity` in `ui/src/hooks/useSSE.ts`; the window is `TASK_ACTIVITY_STALE_MS` in `ui/src/hooks/useTaskDetail.ts`.
+  **A:** *(Changed 2026-10-23 after Mike's review: library owns it, watcher v0.16.0.)* In the library. The feed reads each resource with `watcherdb.RecentEventsForResource` (newest first, at most 200, bookkeeping excluded); the local `recentResourceEvents` query is gone, as are the local reads of one event (`watcherdb.GetEvent`), a Slack message's event by ts (`watcherdb.EventByExternalTS`) and a resource's URL (`watcherdb.ResourceURL`). `useTaskActivity` has a 5 s `staleTime`, and because `invalidateQueries` refetches fresh queries anyway, `useSSE` also holds back the refresh of a feed fetched within the last 5 s until that window ends. (Before: a direct query here, because this run pushed no library release.)
+  **Why:** Queries over the library's schema belong in the library, which agent-handler shares.
+  **To change:** `handleTaskActivity` and `liveEvent` in `internal/webui/tasks_detail_api.go`. The SSE throttle is `refreshActivity` in `ui/src/hooks/useSSE.ts`; the window is `TASK_ACTIVITY_STALE_MS` in `ui/src/hooks/useTaskDetail.ts`.
 - **Q:** A Slack message could be linked under two keys, `slack:<channel>:<ts>` from the thread view and `ev:<id>` from a feed. Which is its identity?
-  **A:** `slack:<channel>:<ts>`. Linking a Slack thread event's `ev:` key (through `events/link` or `from-event`) stores it under the `slack:` key with the server-built snapshot, which overwrites a client snapshot the key already had (`tasks.LinkEventReplace`). Links already stored the old way keep working: a feed row reports the key it is linked under as `linked_key`, and the Activity tab unlinks by that. `filter=linked` now renders every link, from its live event (an `ev:` key's while the type matches, a `slack:` key's by `external_ts`) or else from its snapshot.
+  **A:** `slack:<channel>:<ts>`. Linking a Slack thread event's `ev:` key (through `events/link` or `from-event`) stores it under the `slack:` key with the server-built snapshot, which overwrites a client snapshot the key already had (`tasks.LinkEventReplace`). A feed row reports the key it is linked under as `linked_key` (a live Slack row's `slack:` key, which the client can't derive from its id), and the Activity tab unlinks by that. `filter=linked` renders every link, from its live event (an `ev:` key's while the type matches, a `slack:` key's by `external_ts`) or else from its snapshot. *(Changed 2026-10-23 after Mike's review: no backward compatibility.)* Links stored under a Slack message's `ev:` key before this are no longer recognised: `linkedKeyOf` matches a Slack message by its `slack:` key only.
   **Why:** One key per message means one link, one "linked" state, and no client-side guessing between keys.
-  **To change:** `resolveEventLink`, `liveEvent` and `linkedKeyOf` in `internal/webui/tasks_detail_api.go`; `ActivityTab.tsx`. Existing `ev:` links to Slack messages are not migrated; a one-off rewrite of `task_event_links` would do it.
+  **To change:** `resolveEventLink`, `liveEvent` and `linkedKeyOf` in `internal/webui/tasks_detail_api.go`; `ActivityTab.tsx`.
 - **Q:** What does the server accept as a client snapshot for a `slack:` key?
   **A:** Only a snapshot for a Slack thread in the key's channel (`resource_type` `slack`, `resource_id` `<channel>:<thread ts>`), with a title or body and an empty or `http(s)` URL; the key needs a non-empty channel and ts. The server sets `source`/`type` itself and cuts the title to 200 runes. Anything else is a 400.
   **To change:** `validSlackSnapshot` in `internal/webui/tasks_detail_api.go`.
@@ -193,16 +202,16 @@ review fixes).
 ## Phase 5 — blockers
 
 - **Q:** How is a Jira blocker found to be Done?
-  **A:** Through the existing Jira search (`SearchSummaries`, status category "done"), one `key in (...)` query per 50 keys, with a key-by-key retry only on HTTP 400. No watcher release was cut.
-  **Why:** The search already returns the status category, so a library change would only add a release to coordinate.
-  **To change:** `searchBlockerIssues` in `internal/webui/blocker_status.go`.
+  **A:** *(Changed 2026-10-23 after Mike's review: library owns it, watcher v0.16.0.)* From its cached state, as a PR's is: the task's `task:` hold keeps the issue polled, and the Jira poller caches `status_category`. Done iff it is `done`; the reason is the cached `status` name. No state, or a row cached before v0.16.0 without the category (until the next poll rewrites it), is unknown, and the blocker keeps its last state. (Before: a poll-time `key in (...)` Jira search with an in-memory status cache, a key-by-key retry on HTTP 400 and an hour-long bad-key memory, all now deleted.)
+  **Why:** The hold already polls the issue; a second Jira read was only needed while the cache lacked the category.
+  **To change:** `jiraBlockerStatus` in `internal/webui/blocker_status.go`.
 - **Q:** Can a Jira resolution lag?
-  **A:** Yes, by up to one poll interval. Web requests (`afterTaskWrite`) never contact Jira; they use the PR cache and the status cache the last poll left in memory. Only the poll loop's `resolvePass(true)` searches Jira.
+  **A:** *(Changed 2026-10-23 after Mike's review: library owns it, watcher v0.16.0.)* Yes, by up to one poll interval, like a PR's: resolution reads only cached state. The poll loop runs a resolution pass after every poll, so a state it just cached resolves at once; task writes run one too.
   **Why:** A request should never wait on a network service.
   **To change:** `resolvePass` and `afterTaskWrite` in `internal/webui/blocker_status.go`, and the call in `safePollAll` (`internal/webui/poller.go`).
 - **Q:** May any request search Jira?
-  **A:** The explicit poll-on-view route may, because it already waits on network polling (it goes through `safePollAll`). It can be slower when Jira blockers exist.
-  **To change:** `handlePollWorktree` in `internal/webui/poller.go`.
+  **A:** *(Changed 2026-10-23 after Mike's review: library owns it, watcher v0.16.0.)* For blockers, no request contacts Jira at all, the poll-on-view route included. Only the watcher library's poller reads Jira.
+  **To change:** `blockerStatusLookup` in `internal/webui/blocker_status.go`.
 - **Q:** Do Slack-thread blockers keep a `task:<id>` hold?
   **A:** Yes, like every resource blocker but a link, though Slack threads never resolve themselves. It keeps the cached title and status fresh for the label, at the cost of one `conversations.replies` call per Slack blocker per poll.
   **To change:** `ReconcileHolds` in `internal/tasks/holds.go`.
@@ -246,15 +255,15 @@ review fixes).
   **A:** The CLI can't look resources up, so the next `worktree ui` pass resolves it, and that resolution does notify: the `on_add` suppression covers only a resolution made in the same request as the add (a web add, or any task blocker whose task is already done).
   **To change:** `runTasksBlock` in `cmd/tasks_blockers.go`.
 - **Q:** Do link blockers hold a subscription?
-  **A:** No. Nothing ever polls a link for a status, so a hold would keep nothing fresh; existing link holds are released by the next reconcile. Every other resource blocker still holds one. A hold records the URL its blocker was pasted from, unless another subscription follows the resource, whose URL it copies so the poller never sees the resource twice.
+  **A:** No. Nothing ever polls a link for a status, so a hold would keep nothing fresh; existing link holds are released by the next reconcile. Every other resource blocker still holds one. *(Changed 2026-10-23 after Mike's review: library owns it, watcher v0.16.0.)* A hold records the lexically first URL its resource's blockers were pasted from, else the URL the DB knows (`watcherdb.ResourceURL`). `ActiveResources` now lists each resource once, so a hold no longer copies other subscriptions' URL to avoid double polling.
   **To change:** the wanted query and `holdURL` in `internal/tasks/holds.go`.
 - **Q:** Can a done task show as blocked?
   **A:** No. `blocked` is false and `blocker_count` 0 for a done task, and its row shows no chip, even while a blocker is unresolved. The blockers stay listed in the modal, and the task is blocked again if it is reopened.
   **Why:** A finished task has nothing left to wait on.
   **To change:** `loadBlockerCounts` in `internal/tasks/list.go` and the chip in `ui/src/components/tasks/TaskRow.tsx`.
 - **Q:** What stops two resolution passes in one process from fighting?
-  **A:** `resolveMu` on the server holds for the `resolvePass` lookup, resolve and reconcile, so a web write's pass that looked a PR up as open can't unresolve what the poll just resolved as merged. The poll's Jira search runs before the lock and only fills the cache, so a web write never waits on Jira. A Jira key rejected with HTTP 400 is left out of searches, and reported unknown, for an hour.
-  **To change:** `resolvePass`, `jiraBadKeyTTL` in `internal/webui/blocker_status.go`.
+  **A:** `resolveMu` on the server holds for the `resolvePass` lookup, resolve and reconcile, so a web write's pass that looked a PR up as open can't unresolve what the poll just resolved as merged. *(Changed 2026-10-23 after Mike's review: library owns it, watcher v0.16.0.)* The pass contacts no service, so nothing it holds the lock across can wait on the network.
+  **To change:** `resolvePass` in `internal/webui/blocker_status.go`.
 
 ## Phase 6 — undo
 

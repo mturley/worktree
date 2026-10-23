@@ -1195,9 +1195,9 @@ the watcher toggles do not apply.
   `tasks.Heads`), the same display title as `detail_links` for a resource
   (`resourceDisplayTitle`), the text for other. `status_label` is a task's
   state ("deleted" once gone), a PR's merged/closed/open from the cached
-  state, a Jira issue's cached status name (else the blocker search's
-  cached status), and "resolved" or "" for Slack, link and other. All of it
-  reads only the DB and the in-memory Jira cache, never the network.
+  state, a Jira issue's cached status name (`jiraBlockerStatus`, else the
+  resource card's status), and "resolved" or "" for Slack, link and other.
+  All of it reads only the DB, never the network.
   `manual_resolvable` is `tasks.ManuallyResolvable`: other, Slack, link.
   Every blocker write runs `s.afterTaskWrite()` before answering (an add
   runs `s.afterBlockerAdd(id)`, which marks the new blocker's resolution
@@ -1223,8 +1223,8 @@ the watcher toggles do not apply.
     id's part before `:`), so a message has one identity whether it was
     linked from the feed or from the thread view. `events/link` stores a
     server-built snapshot with `tasks.LinkEventReplace`, which overwrites
-    a client snapshot the key already had. Links stored under a Slack
-    message's `ev:` key before this keep working (see `linked_key` below).
+    a client snapshot the key already had. A Slack message is never stored
+    under its `ev:` key.
   - A `slack:` key takes the client's snapshot, validated by
     `validSlackSnapshot` (400 otherwise): the key must be
     `slack:<channel>:<ts>` with both parts non-empty; the snapshot needs a
@@ -1233,25 +1233,27 @@ the watcher toggles do not apply.
     `url`. The server sets `source` `slack` and `type` `slack_reply`, and
     cuts the title to 200 runes.
 - **Live or snapshot.** `liveEvent` finds the watcher event a link renders
-  from: an `ev:` key's event while it still exists with the snapshot's
-  type, or a `slack:` key's message found by `external_ts` in a thread of
-  that channel. The detail's `event_links[].live` is that event, enriched;
+  from: an `ev:` key's event (`watcherdb.GetEvent`) while it still exists
+  with the snapshot's type, or a `slack:` key's message found by
+  `external_ts` in a thread of that channel
+  (`watcherdb.EventByExternalTS(conn, "slack", "<channel>:", ts)`). The detail's `event_links[].live` is that event, enriched;
   without one the UI renders the snapshot.
 - **Activity merge.** `/api/tasks/activity` merges the task's own events
   (`taskEventToTimeline`: id `task:<event id>`, source `tasks`, resource
   `task:<task id>`, a human-readable title per event type, author `you` or
   `agent (<session>)`) with the events of the task's linked resources. Each
-  resource is read by `recentResourceEvents`: one direct query over
-  `watcher_events` JOIN `watcher_event_resources`, newest first, `LIMIT
-  200`, leaving out `watch_started`/`watcher_error` as the timeline does.
-  It replaced `watcherdb.EventsForResource`, which loads a resource's whole
-  history unpaged, on a route every SSE refresh re-runs. The merge is
+  resource is read by `watcherdb.RecentEventsForResource` (watcher
+  v0.16.0): newest first, at most 200, bookkeeping types left out as the
+  timeline does — not `watcherdb.EventsForResource`, which loads a
+  resource's whole history unpaged, on a route every SSE refresh re-runs.
+  The merge is
   deduplicated by id, sorted newest first by `ts`, cut to 200, and only then
   are the surviving watcher events enriched. `filter=linked` renders EVERY
   event link: its live event, else a row built from its snapshot
   (`snapshotEvent`, whose id is the link key). A row is `linked_to_task`
-  when its `slack:` key or its `ev:` key is linked, and `linked_key` says
-  which, so the UI unlinks by the key actually stored.
+  when its key is linked (`linkedKeyOf`: a Slack message's `slack:` key,
+  any other event's `ev:` key), and `linked_key` names that key, so the UI
+  unlinks a live Slack row by a key it could not derive from the row's id.
 - **From an event.** `/api/tasks/from-event` titles the task from the event
   (a Slack message's first non-blank line, made plain text by `slackPlain`
   in `slackplain.go` — `<@U…|name>` → `@name` or `@user`, `<#C…|name>` →
@@ -1376,9 +1378,9 @@ each resolves:
   "done" / "deleted").
 - **resource**: a PR resolves from the cached `watcher_resource_state`
   `"state"` (MERGED → "merged", CLOSED → "closed", OPEN stays unresolved); a
-  Jira issue resolves when its status category is Done, read from a poll-only
-  status cache (below). Slack thread and link blockers never resolve
-  themselves.
+  Jira issue resolves when its cached `"status_category"` is `done` (reason:
+  the cached `"status"` name, e.g. "Done" or "Closed"). Slack thread and
+  link blockers never resolve themselves.
 - **other** (free text), Slack and link blockers are resolved by hand:
   `tasks.ManuallyResolvable`, which is also the DTO's `manual_resolvable`.
 
@@ -1387,8 +1389,8 @@ resource blockers that are unresolved or were resolved automatically
 (`resolved_auto`), on tasks neither done nor deleted. It never touches a
 blocker the user resolved by hand, nor Slack, link or free-text blockers. It
 writes resolve/unresolve rows and `system`-actor events and returns
-`[]tasks.Resolution`. The lookup runs before the transaction because it may
-call Jira.
+`[]tasks.Resolution`. The lookup runs before the transaction because it
+reads through the pool on other connections.
 
 **Auto-unresolve.** A blocker that was resolved automatically but whose
 source is no longer satisfied (a PR reopened, a Jira issue moved out of Done,
@@ -1413,14 +1415,12 @@ blocked until one resolves.
 - Resource blockers need the `StatusLookup` from
   `internal/webui/blocker_status.go`. The CLI leaves them to the next
   `worktree ui` pass.
-- `s.resolvePass(network, opts)` resolves (`tasks.ResolveBlockersWith`),
-  then runs `ReconcileHolds`. The poll loop runs it with network after every
-  pass, even when a source failed. With network it first searches Jira and
-  merges the answers into the status cache (`refreshJiraStatuses`), BEFORE
-  taking **`resolveMu`**, so a web write never waits behind the search; the
-  lookup under the lock is always cache-only (PR state from the DB, Jira
-  from the cache, which only the poll writes, before the lock).
-  `resolveMu` holds for the rest of the pass, lookup included:
+- `s.resolvePass(opts)` resolves (`tasks.ResolveBlockersWith`), then runs
+  `ReconcileHolds`. The poll loop runs it after every pass, even when a
+  source failed, so states that poll just cached resolve at once; task
+  writes run it too (`afterTaskWrite`, `afterBlockerAdd`). The lookup
+  (`blockerStatusLookup`) reads only cached state from the DB.
+  **`resolveMu`** holds for the whole pass, lookup included:
   `ResolveBlockers` re-reads each blocker in its
   transaction but acts on statuses its lookup read before it, so without
   the lock a web pass that read a PR as open just before the poll committed
@@ -1433,32 +1433,31 @@ blocked until one resolves.
   skips it. The web add handler runs `s.afterBlockerAdd(id)` (an
   already-merged PR); `AddBlocker` itself does the same for a task blocker
   whose task is already done. Other blockers the pass moves are unmarked.
-- **Web requests never contact Jira.** The poll loop's pass is the ONLY Jira
-  search: one `key in (…)` query per chunk of 50 (a chunk that fails with
-  HTTP 400 is retried key by key; any other failure stops the search), only
-  while the Jira watcher is on and Jira is configured. A key that fails on
-  its own with a 400 is remembered in `jiraBadKeys` for `jiraBadKeyTTL` (an
-  hour): it is left out of searches and reported unknown until then, so one
-  bad key is not retried every pass. It merges what it finds
-  into the server's in-memory Jira status cache. A state change or delete
-  calls `s.afterTaskWrite()` = `resolvePass(false, …)`, which reads only the DB
-  and that cache, so a request never waits on Jira and a Jira resolution can
-  lag up to one poll interval. The explicit poll-on-view route (`handlePollWorktree` via `safePollAll`)
-  already waits on network polling and so runs the search too. Done is the search's
-  `StatusCategory`, so no watcher release is needed. Unknown means the
-  blocker keeps its last state.
+- **Resolution never contacts GitHub or Jira.** A PR or Jira blocker's
+  resource is kept polled by its task's hold (below), and the watcher
+  library's pollers cache its state (`watcher_resource_state`; the Jira
+  poller rewrites every active issue's state, `status_category` included
+  as of watcher v0.16.0, on each successful pass). `prBlockerStatus` and
+  `jiraBlockerStatus` read that, so a resolution lags its source by at
+  most one poll interval, and a disabled watcher only stops the cache
+  moving. Unknown — never polled, or a Jira row cached before v0.16.0
+  without `status_category` (until the next poll rewrites it) — means the
+  blocker keeps its last state. The blocker DTO's `status_label` reads the
+  same state.
 
 **Holds and the subscriber-audit rule.** Every resource blocker of an open
 task (resolved or not, Slack threads included, links excepted: nothing polls
 a link for a status) keeps a `task:<id>`
 subscription in `watcher_subscriptions` (`tasks.HoldSubscriber`), so the
 resource is polled even when no worktree follows it. A hold's URL
-(`holdURL`): while another live subscription follows the resource, the
-newest non-empty URL among them (else none), since
-`watcherdb.ActiveResources` lists one row per distinct URL and a differing
-hold would make the pollers see the resource twice; otherwise the URL the
-blocker was pasted from (`task_blockers.resource_url`, `BlockerTarget.URL`),
-else any URL the DB knows. A live hold whose URL is not that is rewritten. `tasks.ReconcileHolds`
+(`holdURL`) is the lexically first URL the resource's blockers were pasted
+from (`task_blockers.resource_url`, `BlockerTarget.URL`), else the URL the
+DB knows for it (`watcherdb.ResourceURL`), else none (the pollers work from
+the id). It need not match other subscriptions' URLs: as of watcher v0.16.0
+`watcherdb.ActiveResources` lists each (type, id) once. It is decided once
+per resource per reconcile, before any of its holds is written, so every
+hold on a resource records the same URL, and a live hold whose URL is not
+that is rewritten; a second reconcile writes nothing. `tasks.ReconcileHolds`
 makes the live holds match exactly what is wanted (idempotent, serialised by
 `holdsMu`, reviving the pair's tombstone) and runs after commit, never inside
 `inTx`, because the watcher library opens its own transactions. A hold must
@@ -1579,7 +1578,8 @@ URL param (`?task=<id>`) through **`TaskModalProvider`**
   key is stored under its `slack:` key by the server, so the client never
   computes a second key. The Activity tab links by `eventTaskKey` and
   unlinks by the row's `linked_key` (the key the server says it is stored
-  under), which also lets snapshot rows in "Linked events" be unlinked.
+  under: a live Slack row's `slack:` key), which also lets snapshot rows in
+  "Linked events" be unlinked.
 - **"＋ task".** `components/tasks/useMakeTask.ts` (`useMakeTask`,
   `useMakeTaskFromEvent`) calls `useTaskFromEvent`, then `open(d.id)`; a
   failure is a toast. `EventRow` and `TimelineFeed` take an `onMakeTask`
@@ -1673,7 +1673,7 @@ either or both folds into one summary, which names "resources", "tasks" or
 on its own notifies through a dedicated path. Its source is the same
 task-event scan: `readNewTaskEvents` splits off every `system`-actor
 `task_blocker_resolved` with payload `auto: true` and no `on_add`, whoever
-made it — the poll loop's `resolvePass(true, …)`, a web write's
+made it — the poll loop's `resolvePass`, a web write's
 `afterTaskWrite`, or the tasks package's own `resolveAfterWrite` inside a CLI
 process. A CLI-made resolution notifies only while `worktree ui` is running:
 the notifier's task cursor starts at `MAX(id)`, so events written while it
