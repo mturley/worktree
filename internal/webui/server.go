@@ -37,6 +37,11 @@ type Server struct {
 	fetcherMu     sync.Mutex
 	fetcherCancel context.CancelFunc
 
+	// revs remembers the revs /api/worktree-diff/patch handed out; /file only
+	// serves those. Created on first use (see revSet).
+	revs   *revSet
+	revsMu sync.Mutex
+
 	// Security is required to serve (Start and Serve refuse a nil one). A
 	// Handler built without it skips the Host and session guards, which is
 	// what in-process tests rely on.
@@ -265,6 +270,10 @@ func (s *Server) routes() []route {
 		{"GET /api/thread-events", s.handleThreadEvents},
 		{"GET /api/worktree-info", s.handleWorktreeInfo},
 		{"GET /api/worktree-git", s.handleWorktreeGit},
+		{"GET /api/worktree-diff/commits", s.handleDiffCommits},
+		{"GET /api/worktree-diff/files", s.handleDiffFiles},
+		{"GET /api/worktree-diff/patch", s.handleDiffPatch},
+		{"GET /api/worktree-diff/file", s.handleDiffFile},
 		{"GET /api/worktree-notes", s.handleGetWorktreeNotes},
 		{"POST /api/worktree-notes", s.handleSetWorktreeNotes},
 		{"POST /api/notify", s.handleSetNotify},

@@ -9,7 +9,6 @@ import (
 	"github.com/mturley/worktree/internal/config"
 	"github.com/mturley/worktree/internal/gitfetch"
 	"github.com/mturley/worktree/internal/gitutil"
-	"github.com/mturley/worktree/internal/registry"
 )
 
 type aheadBehindDTO struct {
@@ -52,21 +51,10 @@ type worktreeGitDTO struct {
 // setting is on); the response never waits for it — the fetch state reported
 // is whatever it is at that moment.
 func (s *Server) handleWorktreeGit(w http.ResponseWriter, r *http.Request) {
-	path := r.URL.Query().Get("path")
-	if path == "" {
-		writeError(w, http.StatusBadRequest, "missing path")
+	path, ok := s.registeredWorktreePath(w, r)
+	if !ok {
 		return
 	}
-	entry, err := registry.Get(s.DB, path)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if entry == nil {
-		writeError(w, http.StatusNotFound, "not a registered worktree")
-		return
-	}
-	path = entry.Path
 
 	// A registered worktree can be gone from disk; report that and compute
 	// nothing, so the UI can say so instead of showing a git error.
