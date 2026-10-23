@@ -14,6 +14,7 @@ import { KeyHint } from "../search/KeyHint"
 import { CompareSelect } from "./CompareSelect"
 import { DiffBody, type DiffMode } from "./DiffBody"
 import { DiffFileTree } from "./DiffFileTree"
+import { Loading } from "./Loading"
 import { parseDiff } from "./parsedPatch"
 import { scrollToFile } from "./scrollToFile"
 import { RangePicker } from "./RangePicker"
@@ -313,7 +314,7 @@ export default function DiffView({
   )
 
   let body: ReactNode
-  if (!git) body = <Message>Loading…</Message>
+  if (!git) body = <Box p="xs"><Loading size="sm" /></Box>
   else if (!git.on_disk) body = <Message>This worktree is not on disk.</Message>
   else if (unavailable) body = <Message>{unavailable}</Message>
   // The first request waits for the commit list, so without this a failed
@@ -325,7 +326,7 @@ export default function DiffView({
       </Message>
     )
   else if (patch.isError && !shown) body = <Message error>Could not load the diff: {patch.error.message}</Message>
-  else if (!shown) body = <Message>Loading…</Message>
+  else if (!shown) body = <Box p="xs"><Loading size="sm" /></Box>
   else if (files.length === 0) body = <Message>No changes</Message>
   else
     body = (

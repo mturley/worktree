@@ -9,6 +9,7 @@ import { useWorktreeGit } from "../../hooks/useWorktreeGit"
 import { diffUnavailable } from "../../lib/diffLabels"
 import { CompareSelect } from "./CompareSelect"
 import { FilesChangedList } from "./FilesChangedList"
+import { Loading } from "./Loading"
 import { GitSummary } from "./GitSummary"
 import { RangePicker } from "./RangePicker"
 
@@ -22,7 +23,7 @@ export function GitDiffPanel({ path, repo, updated }: { path: string; repo: stri
   if (git.isError && !git.data) {
     return <Text size="xs" c="red">Could not load git status: {git.error.message}</Text>
   }
-  if (!git.data) return <Text size="xs" c="dimmed">Loading…</Text>
+  if (!git.data) return <Loading />
   return (
     <Stack gap="sm">
       <GitSummary git={git.data} repo={repo} updated={updated} />
@@ -131,7 +132,7 @@ function FilesChanged({ path, git }: { path: string; git: WorktreeGit }) {
         ) : error && !list ? (
           <Text size="xs" c="red">Could not load changes{baseRef ? ` against ${baseRef}` : ""}: {error.message}</Text>
         ) : !open ? null : !list ? (
-          <Text size="xs" c="dimmed">Loading…</Text>
+          <Loading />
         ) : list.length === 0 ? (
           <Text size="xs" c="dimmed">No changes</Text>
         ) : (
