@@ -24,18 +24,21 @@ while before deciding. Each one links back to the full entry below.
   until an action that can fail is done, then closes. Files:
   `modal/TaskDetailModal.tsx` (delete-failure logic), `modal/TaskSidebar.tsx`
   (the control), `modal/TaskModalProvider.tsx` (`open(id, { error })`).
-- **Delete is one click, with no confirmation** (Phase 6, "How does deleting a
-  task work now?"). Today the Undo toast replaced the inline "Delete? Yes /
-  No". Deleting a task can be a big deal, so Mike may want the confirmation
-  back as extra safety, alongside Undo. Files: `onDelete` in
-  `modal/TaskDetailModal.tsx`; `handleDeleteTask` in
-  `internal/webui/tasks_detail_api.go` can keep its 200 `{undo_event_id}`.
-- **Z undoes everything in every open toast** (Phase 6 final review fixes, "Does Z
-  undo while the task modal is open?"). With several undo toasts open, one Z
-  press undoes all of them, and the same was already true of mark-read toasts
-  before this work. That could undo more than the user meant. One option is to
-  show the Z hint, and bind Z, only on the newest undo toast. Files:
-  `ui/src/hooks/useButtonHotkey.ts`, `ui/src/components/UndoToast.tsx`.
+### Changed after review
+
+- **Delete asks first again** (was Phase 6, "How does deleting a task work
+  now?"). Mike: deleting a task can be a big deal. The sidebar's inline
+  "Delete? Yes / No" is back, and Yes still offers the Undo toast.
+  `/api/tasks/delete` keeps its 200 `{undo_event_id}`. Files:
+  `DeleteControl` in `modal/TaskSidebar.tsx`.
+- **Z undoes only the newest toast** (was Phase 6 final review fixes, "Does Z
+  undo while the task modal is open?"). Mike: one Z undoing several things at
+  once is risky. Only the newest undo toast on screen binds Z and shows its
+  hint, for mark-read and task toasts alike. Older toasts keep their Undo
+  button, and each one takes over Z once every newer toast has closed. It
+  reads Mantine's `notificationsStore` rather than which toasts are mounted,
+  because a hidden toast stays mounted through its exit transition. Files:
+  `newestUndoID` in `ui/src/components/UndoToast.tsx`.
 
 **Backward compatibility:** none is needed with earlier phases of this work.
 All six phases ship together, and nothing from them has been used for real.

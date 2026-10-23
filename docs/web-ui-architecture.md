@@ -962,7 +962,10 @@ thread view's Mark read and the task modal's — shows a toast for 10 seconds wi
 (also Z; U is taken by Show unread only) that puts the cursors back. Z works
 with a modal open too: the toast lives in the notifications portal, outside
 any modal, so it passes `aboveOverlays` to `useButtonHotkey`, which otherwise
-ignores a button outside a dialog while an overlay is open. The toast ends at a
+ignores a button outside a dialog while an overlay is open. Only the newest
+undo toast on screen answers Z and shows its hint (read from Mantine's
+`notificationsStore`), so one press never undoes several things; older
+toasts keep their Undo buttons. The toast ends at a
 fixed deadline (`UNDO_WINDOW_MS`, a `setTimeout` that hides it, cleared by
 the toast's `onClose` when it closes first): hovering does not extend it,
 unlike Mantine's own `autoClose`. A task's state change, subtask check and
@@ -1068,8 +1071,8 @@ Details, as built (`internal/tasks/undo.go`, `purge.go`):
   event is a 409, since its events are purged with it.
   A no-op sweep bumps nothing.
 - **API shape.** `/api/tasks/delete` answers 200 `{undo_event_id}` (it was
-  204). Delete in the UI is one click with an Undo toast; undoing it reopens
-  the modal.
+  204). Delete in the UI asks first (an inline "Delete? Yes / No"), then
+  offers an Undo toast; undoing it reopens the modal.
 
 A partial failure in Mark all read still offers to undo the writes that
 landed. Its undo (`undoAll`) runs every restore to the end even when one is
@@ -1520,8 +1523,8 @@ URL param (`?task=<id>`) through **`TaskModalProvider`**
   provider exposes it as `notice` and the modal's red Alert shows it.
 - **Files.** `TaskDetailModal` (shell; keeps the last id mounted through the
   close transition), `TaskModalHeader` (state menu, star, editable title),
-  `TaskSidebar` (state, priority, due, starred, and a one-click Delete whose
-  undo toast reopens the modal; the delete, its undo and its failure logic
+  `TaskSidebar` (state, priority, due, starred, and a Delete that asks inline
+  "Delete? Yes / No" first and whose undo toast reopens the modal; the delete, its undo and its failure logic
   are in `TaskDetailModal`, the undo toasts in `tasks/taskUndo.ts`), and two tabs. `DetailsTab` stacks `DescriptionSection`, `SubtasksSection`,
   `LinksSection` (with `LinkPicker` and the pure `linkTargets.ts`) and
   `LinkedEventsSection`; `ActivityTab` shows the merged feed.

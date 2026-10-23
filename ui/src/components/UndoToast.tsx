@@ -1,6 +1,6 @@
-import { useState } from "react"
+import { useState, useSyncExternalStore } from "react"
 import { Button, Group, Text } from "@mantine/core"
-import { notifications } from "@mantine/notifications"
+import { notifications, notificationsStore } from "@mantine/notifications"
 import { useButtonHotkey } from "../hooks/useButtonHotkey"
 import { KeyHint } from "./search/KeyHint"
 
@@ -12,6 +12,19 @@ import { KeyHint } from "./search/KeyHint"
 export const UNDO_WINDOW_MS = 10_000
 
 let nextID = 0
+
+// Only the newest undo toast on screen answers Z (and shows its hint): one
+// key press must never take back several things at once. Read from Mantine's
+// store, which drops a toast the moment it is hidden (its markup lingers
+// through the exit transition) and keeps toasts over the limit queued.
+const newestUndoID = () => {
+  let best = -1
+  for (const n of notificationsStore.getState().notifications) {
+    const m = /^undo-(\d+)$/.exec(String(n.id))
+    if (m && Number(m[1]) > best) best = Number(m[1])
+  }
+  return best < 0 ? undefined : `undo-${best}`
+}
 
 /**
  * Several undos as one, for a toast that took back more than one mark. Every
@@ -43,8 +56,9 @@ export async function undoAll(undos: { label: string; undo: () => Promise<unknow
  * later read would resurrect messages the user has since seen. `onSettled`
  * runs after the undo either way, for the caller to refetch what it shows.
  *
- * Each mark gets its own toast; an earlier one keeps its own undo, so marking
- * two things in quick succession can undo either.
+ * Each mark gets its own toast; an earlier one keeps its own undo button, so
+ * marking two things in quick succession can undo either. Z undoes only the
+ * newest.
  */
 export function showUndoToast({ message, undo, onSettled }: {
   message: string
@@ -73,6 +87,7 @@ function UndoToastBody({ id, message, undo, onSettled }: {
   onSettled?: () => void
 }) {
   const [pending, setPending] = useState(false)
+  const newest = useSyncExternalStore(notificationsStore.subscribe, newestUndoID) === id
 
   const run = async () => {
     setPending(true)
@@ -94,7 +109,7 @@ function UndoToastBody({ id, message, undo, onSettled }: {
 
   // Above overlays: the toast sits in the notifications portal, outside the
   // task modal, where most task undos are made.
-  const ref = useButtonHotkey("z", () => void run(), !pending, { aboveOverlays: true })
+  const ref = useButtonHotkey("z", () => void run(), newest && !pending, { aboveOverlays: true })
 
   return (
     <Group justify="space-between" wrap="nowrap" gap="sm">
@@ -105,7 +120,7 @@ function UndoToastBody({ id, message, undo, onSettled }: {
         loading={pending}
         onClick={() => void run()}
         ref={ref}
-        rightSection={<KeyHint decorative>Z</KeyHint>}
+        rightSection={newest ? <KeyHint decorative>Z</KeyHint> : undefined}
       >
         Undo
       </Button>

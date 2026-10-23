@@ -66,6 +66,26 @@ describe("showUndoToast", () => {
     expect(undo).toHaveBeenCalledTimes(1)
   })
 
+  it("Z undoes only the newest toast, then the next newest", async () => {
+    const first = vi.fn(async () => {})
+    const second = vi.fn(async () => {})
+    wrap()
+    act(() => showUndoToast({ message: "Marked “a” done", undo: first }))
+    act(() => showUndoToast({ message: "Marked “b” done", undo: second }))
+    await screen.findByText("Marked “b” done")
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "z" })
+    })
+    expect(second).toHaveBeenCalledTimes(1)
+    expect(first).not.toHaveBeenCalled()
+    expect(undoToasts()).toHaveLength(1)
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "z" })
+    })
+    expect(first).toHaveBeenCalledTimes(1)
+    expect(second).toHaveBeenCalledTimes(1)
+  })
+
   it("clears its deadline when it closes early", () => {
     vi.useFakeTimers()
     const set = vi.spyOn(window, "setTimeout")
