@@ -1,7 +1,9 @@
 package gitutil
 
 import (
+	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 )
@@ -34,18 +36,29 @@ func SnapshotWorkingTree(dir string) (string, error) {
 	if !filepath.IsAbs(indexPath) {
 		indexPath = filepath.Join(dir, indexPath)
 	}
-	if src, err := os.Open(indexPath); err == nil {
+	src, err := os.Open(indexPath)
+	switch {
+	case err == nil:
 		_, copyErr := io.Copy(tmp, src)
 		src.Close()
 		if copyErr != nil {
 			tmp.Close()
 			return "", copyErr
 		}
+	case !errors.Is(err, fs.ErrNotExist):
+		tmp.Close()
+		return "", err
 	}
-	// A missing index (fresh repo) leaves an empty file, which git treats as
-	// an empty index.
 	if err := tmp.Close(); err != nil {
 		return "", err
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		// No real index (fresh repo, nothing ever staged). git rejects a
+		// zero-length index file as corrupt but treats a missing one as
+		// empty, so drop the placeholder; git add recreates it at tmpPath.
+		if err := os.Remove(tmpPath); err != nil {
+			return "", err
+		}
 	}
 
 	env := []string{"GIT_INDEX_FILE=" + tmpPath}

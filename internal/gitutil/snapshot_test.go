@@ -77,6 +77,23 @@ func TestSnapshotLeavesRealIndexUntouched(t *testing.T) {
 	}
 }
 
+func TestSnapshotOnRepoWithNoCommits(t *testing.T) {
+	repo := t.TempDir()
+	runIn(t, repo, "init", "-b", "main")
+	writeFile(t, repo, "first.txt", "hello\n")
+
+	tree, err := SnapshotWorkingTree(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := runIn(t, repo, "show", tree+":first.txt"); got != "hello" {
+		t.Fatalf("first.txt = %q, want hello", got)
+	}
+	if _, err := os.Stat(filepath.Join(repo, ".git", "index")); !os.IsNotExist(err) {
+		t.Fatalf("real index was created (stat err = %v)", err)
+	}
+}
+
 func TestSnapshotInLinkedWorktree(t *testing.T) {
 	wt := testgit.Worktree(t)
 	writeFile(t, wt, "linked.txt", "from worktree\n")
