@@ -1,0 +1,141 @@
+package gitutil
+
+import (
+	"errors"
+	"fmt"
+	"sort"
+	"strconv"
+	"strings"
+)
+
+// FileChange is one row of the "Files changed" list.
+type FileChange struct {
+	Path      string `json:"path"`
+	OldPath   string `json:"old_path,omitempty"`
+	Status    string `json:"status"` // A, M, D or R
+	Additions int    `json:"additions"`
+	Deletions int    `json:"deletions"`
+	Binary    bool   `json:"binary"`
+}
+
+// MaxPatchBytes bounds the patch DiffPatch will return. It is a var so tests
+// can lower it.
+var MaxPatchBytes = 20 << 20
+
+// ErrPatchTooLarge means the patch exceeded MaxPatchBytes.
+var ErrPatchTooLarge = errors.New("patch too large")
+
+// DiffFiles lists the files that differ between oldRev and newRev, sorted by
+// path. Either rev may be a commit or a tree (a working-tree snapshot).
+// Counts come from --numstat and statuses from --name-status; both are -z so
+// odd paths round-trip, and are merged by (new) path.
+func DiffFiles(dir, oldRev, newRev string) ([]FileChange, error) {
+	stat, err := gitRaw(dir, nil, "diff", "-z", "-M", "--numstat", oldRev, newRev)
+	if err != nil {
+		return nil, err
+	}
+	names, err := gitRaw(dir, nil, "diff", "-z", "-M", "--name-status", oldRev, newRev)
+	if err != nil {
+		return nil, err
+	}
+
+	byPath := map[string]*FileChange{}
+	// name-status: STATUS\0path\0, or R<score>\0old\0new\0 for renames.
+	toks := splitNUL(names)
+	for i := 0; i < len(toks); {
+		code := toks[i]
+		if code == "" {
+			return nil, fmt.Errorf("unexpected name-status output")
+		}
+		fc := &FileChange{Status: code[:1]}
+		if fc.Status == "R" {
+			if i+2 >= len(toks) {
+				return nil, fmt.Errorf("truncated name-status output")
+			}
+			fc.OldPath, fc.Path = toks[i+1], toks[i+2]
+			i += 3
+		} else {
+			if i+1 >= len(toks) {
+				return nil, fmt.Errorf("truncated name-status output")
+			}
+			fc.Path = toks[i+1]
+			i += 2
+		}
+		byPath[fc.Path] = fc
+	}
+
+	// numstat: adds\tdels\tpath\0, or adds\tdels\t\0old\0new\0 for renames.
+	toks = splitNUL(stat)
+	for i := 0; i < len(toks); {
+		parts := strings.SplitN(toks[i], "\t", 3)
+		if len(parts) != 3 {
+			return nil, fmt.Errorf("unexpected numstat record %q", toks[i])
+		}
+		path := parts[2]
+		i++
+		if path == "" { // rename: the next two tokens are old and new
+			if i+1 >= len(toks) {
+				return nil, fmt.Errorf("truncated numstat output")
+			}
+			path = toks[i+1]
+			i += 2
+		}
+		fc, ok := byPath[path]
+		if !ok {
+			return nil, fmt.Errorf("numstat path %q missing from name-status", path)
+		}
+		if parts[0] == "-" && parts[1] == "-" {
+			fc.Binary = true
+			continue
+		}
+		if fc.Additions, err = strconv.Atoi(parts[0]); err != nil {
+			return nil, fmt.Errorf("numstat additions %q: %w", parts[0], err)
+		}
+		if fc.Deletions, err = strconv.Atoi(parts[1]); err != nil {
+			return nil, fmt.Errorf("numstat deletions %q: %w", parts[1], err)
+		}
+	}
+
+	out := make([]FileChange, 0, len(byPath))
+	for _, fc := range byPath {
+		out = append(out, *fc)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	return out, nil
+}
+
+// splitNUL splits NUL-terminated output into tokens, dropping the empty
+// token after the final terminator.
+func splitNUL(s string) []string {
+	if s == "" {
+		return nil
+	}
+	return strings.Split(strings.TrimSuffix(s, "\x00"), "\x00")
+}
+
+// DiffPatch returns the unified patch between oldRev and newRev, untrimmed.
+// Binary files appear as git's "Binary files differ" line; the UI renders a
+// placeholder for them.
+func DiffPatch(dir, oldRev, newRev string, ignoreWhitespace bool) (string, error) {
+	args := []string{"diff", "-M"}
+	if ignoreWhitespace {
+		args = append(args, "-w")
+	}
+	out, err := gitRaw(dir, nil, append(args, oldRev, newRev)...)
+	if err != nil {
+		return "", err
+	}
+	if len(out) > MaxPatchBytes {
+		return "", ErrPatchTooLarge
+	}
+	return out, nil
+}
+
+// ShowFile returns file's contents at rev (a commit or a tree), byte for byte.
+func ShowFile(dir, rev, file string) ([]byte, error) {
+	out, err := gitRaw(dir, nil, "show", rev+":"+file)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(out), nil
+}
