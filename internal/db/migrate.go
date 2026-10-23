@@ -177,6 +177,8 @@ func migrate(conn *sql.DB) error {
 		// (blocking_task_id), a resource (resource_type + resource_id) or
 		// free text. resolved_at is NULL while the blocker holds;
 		// resolved_auto says the resolver (not the user) resolved it.
+		// resource_url is the URL the user pasted for a resource blocker
+		// ('' when added by type+id), handed on to the resource's hold.
 		`CREATE TABLE IF NOT EXISTS task_blockers (
 			id               INTEGER PRIMARY KEY AUTOINCREMENT,
 			task_id          INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -184,6 +186,7 @@ func migrate(conn *sql.DB) error {
 			blocking_task_id INTEGER,
 			resource_type    TEXT NOT NULL DEFAULT '',
 			resource_id      TEXT NOT NULL DEFAULT '',
+			resource_url     TEXT NOT NULL DEFAULT '',
 			text             TEXT NOT NULL DEFAULT '',
 			resolved_at      TEXT,
 			resolved_auto    INTEGER NOT NULL DEFAULT 0,
@@ -211,6 +214,11 @@ func migrate(conn *sql.DB) error {
 	// Likewise worktree_notes predates show_on_home. It defaults ON, so
 	// existing notes start showing on the home page.
 	if err := addColumnIfMissing(conn, "worktree_notes", "show_on_home", "INTEGER NOT NULL DEFAULT 1"); err != nil {
+		return err
+	}
+
+	// task_blockers predates resource_url (a pre-release Tasks database).
+	if err := addColumnIfMissing(conn, "task_blockers", "resource_url", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 

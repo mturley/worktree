@@ -100,8 +100,27 @@ func TestHoldOnlyForResourceBlockers(t *testing.T) {
 	dep := mustCreate(t, conn, "dep")
 	mustAddBlocker(t, conn, tk.ID, taskTarget(dep.ID))
 	mustAddBlocker(t, conn, tk.ID, otherTarget("legal"))
+	mustAddBlocker(t, conn, tk.ID, resTarget("link", "https://example.com/doc"))
 	if h := liveHolds(t, conn); len(h) != 0 {
-		t.Fatalf("task/other blockers must not hold: %v", h)
+		t.Fatalf("task/other/link blockers must not hold: %v", h)
+	}
+}
+
+// A link is never polled for a status, so holding one serves no purpose:
+// a hold left from before that rule is released.
+func TestReconcileReleasesLinkHolds(t *testing.T) {
+	conn := newDB(t)
+	tk := mustCreate(t, conn, "blocked")
+	mustAddBlocker(t, conn, tk.ID, resTarget("link", "https://example.com/doc"))
+	old := watcher.Resource{Type: "link", ID: "https://example.com/doc"}
+	if err := watcherdb.Subscribe(conn, HoldSubscriber(tk.ID), old, watcherdb.SubscribeOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReconcileHolds(conn); err != nil {
+		t.Fatal(err)
+	}
+	if h := liveHolds(t, conn); len(h) != 0 {
+		t.Fatalf("link hold not released: %v", h)
 	}
 }
 
@@ -189,6 +208,78 @@ func TestHoldLeavesWorktreeSubscriptionsAlone(t *testing.T) {
 	}
 	if len(subs) != 1 {
 		t.Fatalf("worktree subscription disturbed: %+v", subs)
+	}
+}
+
+// activeRows is watcherdb.ActiveResources(typ) as "id url" strings.
+func activeRows(t *testing.T, conn *sql.DB, typ string) []string {
+	t.Helper()
+	rs, err := watcherdb.ActiveResources(conn, typ)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, r := range rs {
+		out = append(out, r.ID+" "+r.URL)
+	}
+	return out
+}
+
+func TestHoldCarriesTheBlockersPastedURL(t *testing.T) {
+	conn := newDB(t)
+	tk := mustCreate(t, conn, "blocked")
+	const u = "https://example.atlassian.net/browse/X-1"
+	b := mustAddBlocker(t, conn, tk.ID, BlockerTarget{Kind: BlockerResource, ResourceType: "jira", ResourceID: "X-1", URL: " " + u + " "})
+	if b.URL != u {
+		t.Fatalf("blocker URL = %q, want %q", b.URL, u)
+	}
+	if got := activeRows(t, conn, "jira"); len(got) != 1 || got[0] != "X-1 "+u {
+		t.Fatalf("active resources = %q", got)
+	}
+	// A non-resource blocker keeps no URL.
+	o := mustAddBlocker(t, conn, tk.ID, BlockerTarget{Kind: BlockerOther, Text: "x", URL: u})
+	if o.URL != "" {
+		t.Fatalf("other blocker URL = %q", o.URL)
+	}
+}
+
+func TestHoldURLFollowsWorktreeSubscriptions(t *testing.T) {
+	conn := newDB(t)
+	tk := mustCreate(t, conn, "blocked")
+	mustAddBlocker(t, conn, tk.ID, resTarget("jira", "X-1")) // no URL known anywhere
+	if got := activeRows(t, conn, "jira"); len(got) != 1 || got[0] != "X-1 " {
+		t.Fatalf("before = %q", got)
+	}
+
+	// A worktree starts following it with a URL: the hold backfills it.
+	const u = "https://example.atlassian.net/browse/X-1"
+	if err := watcherdb.Subscribe(conn, "worktree:/x", watcher.Resource{Type: "jira", ID: "X-1", URL: u}, watcherdb.SubscribeOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReconcileHolds(conn); err != nil {
+		t.Fatal(err)
+	}
+	if got := activeRows(t, conn, "jira"); len(got) != 1 || got[0] != "X-1 "+u {
+		t.Fatalf("after a worktree follows with a URL = %q", got)
+	}
+
+	// A blocker's pasted URL never splits the resource from a worktree that
+	// follows it without one.
+	tk2 := mustCreate(t, conn, "other")
+	if err := watcherdb.Subscribe(conn, "worktree:/y", watcher.Resource{Type: "pr", ID: "o/r#1"}, watcherdb.SubscribeOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	mustAddBlocker(t, conn, tk2.ID, BlockerTarget{Kind: BlockerResource, ResourceType: "pr", ResourceID: "o/r#1", URL: "https://github.com/o/r/pull/1"})
+	if got := activeRows(t, conn, "pr"); len(got) != 1 {
+		t.Fatalf("pr active resources = %q, want one row", got)
+	}
+	// Idempotent: nothing more to write.
+	before := holdRows(t, conn)
+	if err := ReconcileHolds(conn); err != nil {
+		t.Fatal(err)
+	}
+	if n := holdRows(t, conn); n != before || n != 2 {
+		t.Fatalf("hold rows = %d (was %d), want 2", n, before)
 	}
 }
 

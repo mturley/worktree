@@ -19,10 +19,15 @@ const (
 // its kind uses are set once normalised. The field is BlockingTaskID, not
 // TaskID, so it never collides with Blocker.TaskID (the blocked task), which
 // would shadow it and drop it from Blocker's JSON encoding.
+//
+// URL is the URL a resource blocker was added from ('' when added by type
+// and id). It is not part of the blocker's identity: it is stored so the
+// resource's hold can carry it (see ReconcileHolds).
 type BlockerTarget struct {
 	Kind                     string
 	BlockingTaskID           int64
 	ResourceType, ResourceID string
+	URL                      string
 	Text                     string
 }
 
@@ -54,7 +59,7 @@ func normalizeBlocker(t BlockerTarget) (BlockerTarget, error) {
 		if typ == "" || id == "" {
 			return BlockerTarget{}, fmt.Errorf("%w: a resource blocker needs a type and an id", ErrInvalid)
 		}
-		return BlockerTarget{Kind: BlockerResource, ResourceType: typ, ResourceID: id}, nil
+		return BlockerTarget{Kind: BlockerResource, ResourceType: typ, ResourceID: id, URL: strings.TrimSpace(t.URL)}, nil
 	case BlockerOther:
 		text := strings.TrimSpace(t.Text)
 		if text == "" {
@@ -74,7 +79,7 @@ func ManuallyResolvable(b BlockerTarget) bool {
 		(b.Kind == BlockerResource && (b.ResourceType == "slack" || b.ResourceType == "link"))
 }
 
-const blockerCols = `b.id, b.task_id, b.kind, COALESCE(b.blocking_task_id, 0), b.resource_type, b.resource_id, b.text,
+const blockerCols = `b.id, b.task_id, b.kind, COALESCE(b.blocking_task_id, 0), b.resource_type, b.resource_id, b.resource_url, b.text,
 	b.resolved_at, b.resolved_auto, b.resolved_reason, b.created_at`
 
 // scanBlocker reads one row selected with blockerCols. Blocker.TaskID is
@@ -83,7 +88,7 @@ func scanBlocker(s interface{ Scan(...any) error }) (Blocker, error) {
 	var b Blocker
 	var resolved sql.NullString
 	var auto int
-	err := s.Scan(&b.ID, &b.TaskID, &b.Kind, &b.BlockingTaskID, &b.ResourceType, &b.ResourceID, &b.Text,
+	err := s.Scan(&b.ID, &b.TaskID, &b.Kind, &b.BlockingTaskID, &b.ResourceType, &b.ResourceID, &b.URL, &b.Text,
 		&resolved, &auto, &b.ResolvedReason, &b.CreatedAt)
 	b.ResolvedAt, b.ResolvedAuto = resolved.String, auto != 0
 	return b, err
@@ -202,7 +207,12 @@ func AddBlocker(conn *sql.DB, a Actor, taskID int64, t BlockerTarget) (Blocker, 
 			    AND resource_type = ? AND resource_id = ? AND text = ?`,
 			taskID, t.Kind, t.BlockingTaskID, t.ResourceType, t.ResourceID, t.Text).Scan(&id)
 		if err == nil {
-			return nil // duplicate: no-op
+			// Duplicate: a no-op, except that a URL first given now is kept.
+			if t.URL != "" {
+				_, err = tx.ExecContext(bg,
+					`UPDATE task_blockers SET resource_url = ? WHERE id = ? AND resource_url = ''`, t.URL, id)
+			}
+			return err
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
@@ -227,9 +237,9 @@ func AddBlocker(conn *sql.DB, a Actor, taskID int64, t BlockerTarget) (Blocker, 
 			blocking = t.BlockingTaskID
 		}
 		res, err := tx.ExecContext(bg,
-			`INSERT INTO task_blockers (task_id, kind, blocking_task_id, resource_type, resource_id, text, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			taskID, t.Kind, blocking, t.ResourceType, t.ResourceID, t.Text, ts)
+			`INSERT INTO task_blockers (task_id, kind, blocking_task_id, resource_type, resource_id, resource_url, text, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			taskID, t.Kind, blocking, t.ResourceType, t.ResourceID, t.URL, t.Text, ts)
 		if err != nil {
 			return err
 		}

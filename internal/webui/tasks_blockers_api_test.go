@@ -187,6 +187,23 @@ func TestTaskListCarriesBlockedFields(t *testing.T) {
 	}
 }
 
+func TestPastedBlockerURLReachesTheHold(t *testing.T) {
+	s, _ := tasksServer(t)
+	tk := mustTask(t, s, tasks.NewTask{Title: "main"})
+	const u = "https://example.atlassian.net/browse/X-9"
+	d := addBlockerReq(t, s, map[string]any{"id": tk.ID, "kind": "resource", "url": u})
+	if len(d.Blockers) != 1 || d.Blockers[0].URL != u || d.Blockers[0].ResourceID != "X-9" {
+		t.Fatalf("blockers = %+v", d.Blockers)
+	}
+	rs, err := watcherdb.ActiveResources(s.DB, "jira")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rs) != 1 || rs[0].URL != u {
+		t.Fatalf("active jira resources = %+v, want one with URL %s", rs, u)
+	}
+}
+
 func TestDoneTaskDTOIsNeverBlocked(t *testing.T) {
 	s, _ := tasksServer(t)
 	tk := mustTask(t, s, tasks.NewTask{Title: "main"})

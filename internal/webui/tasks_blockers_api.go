@@ -158,7 +158,10 @@ func (l *blockerLabeler) dto(b tasks.Blocker) taskBlockerDTO {
 		TaskID:           b.BlockingTaskID, ResourceType: b.ResourceType, ResourceID: b.ResourceID, Text: b.Text,
 	}
 	if b.Kind == tasks.BlockerResource {
-		d.URL = l.s.resourceURL(b.ResourceType, b.ResourceID)
+		// The URL the user pasted, else whatever the DB knows.
+		if d.URL = b.URL; d.URL == "" {
+			d.URL = l.s.resourceURL(b.ResourceType, b.ResourceID)
+		}
 	}
 	return d
 }
@@ -267,7 +270,7 @@ func (r addBlockerRequest) target() (tasks.BlockerTarget, string) {
 			if !ok {
 				return tasks.BlockerTarget{}, "unrecognised URL"
 			}
-			return tasks.BlockerTarget{Kind: r.Kind, ResourceType: typ, ResourceID: id}, ""
+			return tasks.BlockerTarget{Kind: r.Kind, ResourceType: typ, ResourceID: id, URL: strings.TrimSpace(r.URL)}, ""
 		}
 		return tasks.BlockerTarget{Kind: r.Kind, ResourceType: r.Type, ResourceID: r.RID}, ""
 	case tasks.BlockerOther:

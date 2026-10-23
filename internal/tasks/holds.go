@@ -29,10 +29,14 @@ var holdsMu sync.Mutex
 
 // ReconcileHolds makes the live `task:` subscriptions match exactly what
 // should be held: one per (task, resource) for every resource blocker
-// (resolved or not) of a task that is neither done nor deleted. Missing holds
+// (resolved or not) of a task that is neither done nor deleted, links
+// excepted: a link is never polled for a status (only the user resolves
+// it), so holding one would serve no purpose. Missing holds
 // are subscribed (reviving the pair's tombstone, so complete/reopen cycles
 // reuse one row rather than piling them up); live holds nothing wants are
-// unsubscribed. It is idempotent: a second call writes nothing.
+// unsubscribed. A live hold whose URL is not what holdURL now picks is
+// rewritten, so it never splits the resource in watcherdb.ActiveResources.
+// It is idempotent: a second call writes nothing.
 //
 // It goes through the watcher library, which opens its own transactions on
 // conn, so it must never run inside inTx: callers run it after commit.
@@ -41,23 +45,26 @@ func ReconcileHolds(conn *sql.DB) error {
 	defer holdsMu.Unlock()
 
 	type hold struct{ sub, typ, id string }
-	wanted := map[hold]bool{}
+	wanted := map[hold]string{} // -> the blocker's own URL ('' if none)
 	rows, err := conn.QueryContext(bg,
-		`SELECT DISTINCT b.task_id, b.resource_type, b.resource_id
+		`SELECT b.task_id, b.resource_type, b.resource_id, MAX(b.resource_url)
 		   FROM task_blockers b JOIN tasks t ON t.id = b.task_id
-		  WHERE b.kind = 'resource' AND t.deleted_at IS NULL AND t.state != ?`, StateDone)
+		  WHERE b.kind = 'resource' AND b.resource_type != 'link'
+		    AND t.deleted_at IS NULL AND t.state != ?
+		  GROUP BY b.task_id, b.resource_type, b.resource_id`, StateDone)
 	if err != nil {
 		return fmt.Errorf("reconcile holds: %w", err)
 	}
 	for rows.Next() {
 		var taskID int64
 		var h hold
-		if err := rows.Scan(&taskID, &h.typ, &h.id); err != nil {
+		var u string
+		if err := rows.Scan(&taskID, &h.typ, &h.id, &u); err != nil {
 			rows.Close()
 			return fmt.Errorf("reconcile holds: %w", err)
 		}
 		h.sub = HoldSubscriber(taskID)
-		wanted[h] = true
+		wanted[h] = u
 	}
 	if err := rows.Close(); err != nil {
 		return fmt.Errorf("reconcile holds: %w", err)
@@ -69,40 +76,49 @@ func ReconcileHolds(conn *sql.DB) error {
 	if err != nil {
 		return fmt.Errorf("reconcile holds: %w", err)
 	}
-	live := map[hold]bool{}
+	live := map[hold]string{} // -> the live hold's URL
 	userTomb := map[hold]bool{}
 	nowTS := now()
 	for _, s := range all {
 		h := hold{s.Subscriber, s.Resource.Type, s.Resource.ID}
 		switch {
 		case s.DeletedAt == nil && (s.ExpiresAt == nil || *s.ExpiresAt > nowTS):
-			live[h] = true
+			live[h] = s.Resource.URL
 		case s.DeletedAt != nil && s.UnsubscribedByUser:
 			userTomb[h] = true
 		}
 	}
 
 	for h := range live {
-		if wanted[h] {
+		if _, ok := wanted[h]; ok {
 			continue
 		}
 		if err := watcherdb.Unsubscribe(conn, h.sub, watcher.Resource{Type: h.typ, ID: h.id}); err != nil {
 			return fmt.Errorf("reconcile holds: release %s %s:%s: %w", h.sub, h.typ, h.id, err)
 		}
 	}
-	for h := range wanted {
-		if live[h] {
+	urls := map[[2]string]string{} // one URL decision per resource per pass
+	for h, blockerURL := range wanted {
+		k := [2]string{h.typ, h.id}
+		u, ok := urls[k]
+		if !ok {
+			u = holdURL(conn, h.typ, h.id, blockerURL, nowTS)
+			urls[k] = u
+		}
+		cur, isLive := live[h]
+		if isLive && cur == u {
 			continue
 		}
-		r := watcher.Resource{Type: h.typ, ID: h.id, URL: knownResourceURL(conn, h.typ, h.id)}
-		if userTomb[h] {
+		r := watcher.Resource{Type: h.typ, ID: h.id, URL: u}
+		if !isLive && userTomb[h] {
 			// Nobody user-unsubscribes a hold on purpose; revive it.
 			if err := watcherdb.Reinstate(conn, h.sub, r); err != nil {
 				return fmt.Errorf("reconcile holds: reinstate %s %s:%s: %w", h.sub, h.typ, h.id, err)
 			}
 		}
 		// Not IfAbsent: a live row whose lease expired is not live here, and
-		// a plain Subscribe clears its expiry (TTL 0 never expires).
+		// a plain Subscribe clears its expiry (TTL 0 never expires). On a
+		// live hold it only rewrites the URL.
 		if err := watcherdb.Subscribe(conn, h.sub, r, watcherdb.SubscribeOpts{}); err != nil {
 			return fmt.Errorf("reconcile holds: hold %s %s:%s: %w", h.sub, h.typ, h.id, err)
 		}
@@ -110,10 +126,41 @@ func ReconcileHolds(conn *sql.DB) error {
 	return nil
 }
 
+// holdURL is the URL a hold on (typ, id) records. watcherdb.ActiveResources
+// lists one row per distinct (type, id, url), so a hold whose URL differed
+// from the resource's other live subscriptions would make the pollers see
+// the resource twice. While anything else follows the resource, the hold
+// therefore copies its URL (the newest non-empty one, else none). Otherwise
+// it is the URL the blocker was added from, else any URL known for the
+// resource. Every hold on one resource records the same URL.
+func holdURL(q dbtx, typ, id, blockerURL, nowTS string) string {
+	rows, err := q.QueryContext(bg, `SELECT COALESCE(resource_url, '') FROM watcher_subscriptions
+		WHERE resource_type = ? AND resource_id = ? AND subscriber NOT LIKE 'task:%'
+		  AND deleted_at IS NULL AND (expires_at IS NULL OR expires_at > ?)
+		ORDER BY COALESCE(resource_url, '') = '', created_at DESC`, typ, id, nowTS)
+	if err == nil {
+		others, u := false, ""
+		for rows.Next() {
+			var s string
+			if rows.Scan(&s) == nil && !others {
+				others, u = true, s
+			}
+		}
+		rows.Close()
+		if others {
+			return u
+		}
+	}
+	if blockerURL != "" {
+		return blockerURL
+	}
+	return knownResourceURL(q, typ, id)
+}
+
 // knownResourceURL is the resource's URL as any subscription (live first) or
-// event already records it, or "" when nothing does. A resource blocker
-// stores only a type and id; the pollers work from the id alone, so a hold
-// without a URL still polls.
+// event already records it, or "" when nothing does: holdURL's last resort
+// for a blocker added by type and id. The pollers work from the id alone,
+// so a hold without a URL still polls.
 func knownResourceURL(q dbtx, typ, id string) string {
 	var u string
 	_ = q.QueryRowContext(bg, `SELECT resource_url FROM watcher_subscriptions
