@@ -23,7 +23,7 @@ the real code.
 | 3 | Detail modal | Details/Activity tabs and sidebar, link editing, subtask editing, linked events (with snapshots), "＋ task" from events and Slack messages | `docs/superpowers/plans/2026-10-21-tasks-phase3-detail-modal.md` | done |
 | 4 | Activity integration | task events in feeds + "Tasks" source filter, per-task read cursors, unread counts, mark-read (and its undo), notifications for agent events | `docs/superpowers/plans/2026-10-22-tasks-phase4-activity.md` | done |
 | 5 | Blockers | task / resource / other blockers, `task:` subscription holds + subscriber audit, status_category via the existing wjira search; no watcher release, Unblocked events + notifications, "blocks N tasks" | `docs/superpowers/plans/2026-10-22-tasks-phase5-blockers.md` | done |
-| 6 | Undo | state / subtask / delete undo with CAS and cascades, delayed Unblocked notifications, soft-delete purge sweep | — | not started |
+| 6 | Undo | state / subtask / delete undo with CAS and cascades, delayed Unblocked notifications, soft-delete purge sweep | `docs/superpowers/plans/2026-10-23-tasks-phase6-undo.md` | plan written |
 
 ## Why
 
