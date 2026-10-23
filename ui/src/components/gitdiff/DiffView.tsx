@@ -67,7 +67,16 @@ const rangeKey = (r: DiffRange) => (r === "all" ? "all" : `${r.from}..${r.to}`)
  * Changing the selection or the whitespace switch is an explicit action and
  * reloads at once.
  */
-export default function DiffView({ path, headerHeight }: { path: string; headerHeight: number }) {
+export default function DiffView({
+  path,
+  headerHeight,
+  escHint = true,
+}: {
+  path: string
+  headerHeight: number
+  /** Whether Esc's next step is leaving (the page's: a query in the search bar comes first). */
+  escHint?: boolean
+}) {
   const view = useDiffView()
   const wide = useIsWide()
   const qc = useQueryClient()
@@ -352,7 +361,7 @@ export default function DiffView({ path, headerHeight }: { path: string; headerH
           <Anchor component="button" type="button" size="sm" onClick={() => view.leave()}>
             ← Worktree details
           </Anchor>
-          {wide && <KeyHint>Esc</KeyHint>}
+          {wide && escHint && <KeyHint>Esc</KeyHint>}
         </Group>
         <Text size="sm" c="dimmed">/</Text>
         <Text size="sm">Changes</Text>

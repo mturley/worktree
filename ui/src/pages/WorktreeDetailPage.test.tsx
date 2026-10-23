@@ -57,7 +57,9 @@ vi.mock("../hooks/useThread", () => ({
 // The drill-down is lazy and pulls in pierre; the page only decides when it
 // shows and what replaces it, so stand it in.
 vi.mock("../components/gitdiff/DiffView", () => ({
-  default: ({ headerHeight }: { headerHeight: number }) => <div data-testid="diff-view" data-header={headerHeight} />,
+  default: ({ headerHeight, escHint }: { headerHeight: number; escHint?: boolean }) => (
+    <div data-testid="diff-view" data-header={headerHeight} data-esc-hint={String(escHint)} />
+  ),
 }))
 
 import { setViewport } from "../testing/viewport"
@@ -901,7 +903,7 @@ describe("search", () => {
     const user = userEvent.setup()
     wrap()
     const lines = () => screen.queryAllByTestId("search-summary").map((n) => n.textContent)
-    expect(lines()).toContain("1 resource matches your search. Clear search Esc")
+    expect(lines()).toContain("1 resource matches your search. Clear search")
     await user.click(screen.getAllByRole("button", { name: "Clear search" }).at(-1)!)
     expect(lines()).toEqual([])
     expect(new URLSearchParams(window.location.search).has("q")).toBe(false)
@@ -969,8 +971,8 @@ describe("search", () => {
     wrap()
     await user.click(screen.getAllByRole("switch", { name: "Unreads only" })[0])
     const lines = () => screen.getAllByTestId("search-summary").map((n) => n.textContent)
-    expect(lines()).toContain("0 resources with unread events match your search. See everything Esc")
-    await waitFor(() => expect(lines()).toContain("0 unread events match your search. See everything Esc"))
+    expect(lines()).toContain("0 resources with unread events match your search. See everything")
+    await waitFor(() => expect(lines()).toContain("0 unread events match your search. See everything"))
   })
 
   it("counts matching events above the activity filters", async () => {
@@ -983,7 +985,7 @@ describe("search", () => {
     window.history.replaceState({}, "", url("q=kumquat"))
     wrap()
     await waitFor(() => expect(screen.queryAllByTestId("search-summary").map((n) => n.textContent))
-      .toContain("1 event matches your search. Clear search Esc"))
+      .toContain("1 event matches your search. Clear search"))
   })
 
   it("a source filter heads the resources and the feed with 'match your filters'; its link clears it", async () => {
@@ -1017,7 +1019,7 @@ describe("search", () => {
     window.history.replaceState({}, "", url("q=zzzz"))
     wrap()
     expect(screen.getAllByTestId("search-summary").map((n) => n.textContent))
-      .toContain("0 resources match your search. Clear search Esc")
+      .toContain("0 resources match your search. Clear search")
     expect(screen.queryByText(/Nothing matches/)).toBeNull()
     expect(screen.queryByText("No resources tracked.")).toBeNull()
   })
@@ -1027,7 +1029,7 @@ describe("search", () => {
     window.history.replaceState({}, "", url("q=zzzz"))
     wrap()
     await waitFor(() => expect(screen.getAllByTestId("search-summary").map((n) => n.textContent))
-      .toContain("0 events match your search. Clear search Esc"))
+      .toContain("0 events match your search. Clear search"))
     expect(screen.queryByText("No events yet.")).toBeNull()
   })
 })
@@ -1176,17 +1178,34 @@ describe("WorktreeDetailPage Esc back to Notes", () => {
     expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/foo")}`)
   })
 
-  it("comes before clearing the search, which the next Esc still does", async () => {
+  it("comes after clearing a search, which Esc always does first", async () => {
     at("?q=widget")
     setViewport("wide")
     wrap()
     await onTab("Environment")
-    await screen.findByRole("tab", { name: "Environment" })
-    esc()
-    await waitFor(() => expect(notesTab()).toHaveAttribute("aria-selected", "true"))
-    expect(new URLSearchParams(window.location.search).get("q")).toBe("widget")
     esc()
     await waitFor(() => expect(new URLSearchParams(window.location.search).has("q")).toBe(false))
+    expect(screen.getByRole("tab", { name: "Environment" })).toHaveAttribute("aria-selected", "true")
+    esc()
+    await waitFor(() => expect(notesTab()).toHaveAttribute("aria-selected", "true"))
+  })
+
+  it("clears a search in the diff drill-down before leaving it, hinting Esc only in the bar", async () => {
+    at("?diff&q=widget")
+    setViewport("wide")
+    wrap()
+    await screen.findByTestId("diff-view")
+    // DiffView is stubbed here; it shows its breadcrumb's hint by this prop.
+    const crumbHint = () => screen.getByTestId("diff-view").dataset.escHint
+    expect(screen.getByTestId("search-esc-hint")).toBeInTheDocument()
+    expect(crumbHint()).toBe("false")
+    esc()
+    await waitFor(() => expect(new URLSearchParams(window.location.search).has("q")).toBe(false))
+    expect(screen.getByTestId("diff-view")).toBeInTheDocument()
+    expect(screen.queryByTestId("search-esc-hint")).toBeNull()
+    expect(crumbHint()).toBe("true")
+    esc()
+    await waitFor(() => expect(screen.queryByTestId("diff-view")).not.toBeInTheDocument())
   })
 
   it("on Notes, Esc does what it did before: clears the search", async () => {
@@ -1210,26 +1229,33 @@ describe("WorktreeDetailPage Esc back to Notes", () => {
     expect(screen.getByRole("tab", { name: "Environment" })).toHaveAttribute("aria-selected", "true")
   })
 
-  it("hints Esc on the Notes tab, and nowhere else, while that is Esc's next step", async () => {
+  it("hints Esc in one place at a time: the search bar, then the Notes tab", async () => {
     at("?resource=pr:o%2Fr%231&q=widget")
     setViewport("wide")
     wrap()
     await onTab("Environment")
-    await screen.findByRole("tab", { name: "Environment" })
     const lines = () => screen.queryAllByTestId("search-summary").map((n) => n.textContent)
+    const back = () => screen.getByRole("button", { name: "← all resources" })
+    // A query: only the bar hints Esc.
+    expect(screen.getByTestId("search-esc-hint")).toBeInTheDocument()
+    expect(notesTab().querySelector("kbd")).toBeNull()
+    expect(lines().length).toBeGreaterThan(0)
+    for (const line of lines()) expect(line).not.toMatch(/Esc$/)
+    expect(back().parentElement!.querySelector("kbd")).toBeNull()
+
+    esc()
+    // Cleared: the Notes tab is next, and only it hints.
     await waitFor(() => expect(notesTab().querySelector("kbd")?.textContent).toBe("Esc"))
     // The tab's accessible name is still just "Notes" (the key is decorative).
     expect(notesTab()).toHaveAccessibleName("Notes")
-    expect(lines().length).toBeGreaterThan(0)
-    for (const line of lines()) expect(line).not.toMatch(/Esc$/)
-    const back = screen.getByRole("button", { name: "← all resources" })
-    expect(back.parentElement!.querySelector("kbd")).toBeNull()
+    expect(screen.queryByTestId("search-esc-hint")).toBeNull()
+    expect(back().parentElement!.querySelector("kbd")).toBeNull()
     expect(screen.getByRole("link", { name: "All worktrees" }).querySelector("kbd")).toBeNull()
 
     esc()
-    // On Notes the hint moves on to the narrowing lines.
+    // On Notes the hint moves on to deselecting.
     await waitFor(() => expect(notesTab().querySelector("kbd")).toBeNull())
-    for (const line of lines()) expect(line).toMatch(/Esc$/)
+    expect(back().parentElement!.querySelector("kbd")?.textContent).toBe("Esc")
   })
 
   it("moves the hint from the Notes tab to the logo when leaving is next", async () => {

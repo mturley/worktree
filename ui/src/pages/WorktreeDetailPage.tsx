@@ -101,16 +101,18 @@ export function WorktreeDetailPage() {
   // up, so on it there is no way out; a dismissed home banner drops the home
   // (see useEscHome).
   const escHome = useEscHome()
-  // In the diff drill-down Esc goes back to the worktree before anything
-  // else: the narrowing and selection it would otherwise undo are out of view.
-  // Then, with the card off Notes, it returns the card to Notes (and so, wide,
-  // to the resource column) before undoing anything else: Notes is the card's
+  // A query in the search bar comes first, wherever Esc is pressed: the bar
+  // shows its own Esc hint beside it, and only one control hints Esc at a
+  // time. Then, in the diff drill-down, Esc goes back to the worktree: the
+  // other narrowing and the selection it would undo are out of view. Then,
+  // with the card off Notes, it returns the card to Notes (and so, wide, to
+  // the resource column) before undoing anything else: Notes is the card's
   // home, as its X and the titles' reset already treat it.
-  const escNotes = !inDiff && detailTab.tab !== "notes"
+  const queryOn = search.q.length > 0
+  const escDiff = inDiff && !queryOn
+  const escNotes = !inDiff && !queryOn && detailTab.tab !== "notes"
   const filtersOn = sourcesOn || categories.length > 0
-  // In the search bar Esc stays the search's (clearing it) whatever tab the
-  // card is on; only the page's Esc takes the Notes step first.
-  const barClears = !inDiff && (search.terms.length > 0 || unreadOnly || filtersOn)
+  const barClears = queryOn || (!inDiff && (unreadOnly || filtersOn))
   const escClears = !escNotes && barClears
   const escDeselects = !inDiff && !escNotes && !escClears && Boolean(selected)
   const escLeaves = !inDiff && !escNotes && !escClears && !selected && escHome !== path
@@ -122,12 +124,13 @@ export function WorktreeDetailPage() {
     search: search.terms.length > 0,
     unread: unreadOnly,
     filters: filtersOn,
-    escHint: escClears,
+    // With a query the bar's own hint already says it.
+    escHint: escClears && !queryOn,
     clearAll: () => {
       everything.seeEverything()
       setSources([]) // clears the event types with it (useActivityFilter)
     },
-  }), [search.terms, unreadOnly, filtersOn, escClears, everything, setSources])
+  }), [search.terms, unreadOnly, filtersOn, escClears, queryOn, everything, setSources])
   const bannerShown = useBannerShown()
   const wide = useIsWide()
   // The details card and a selected resource's card + tabs are pinned while
@@ -584,9 +587,9 @@ export function WorktreeDetailPage() {
   }
   const searchBar = (
     <div style={wide ? { flex: "1 1 160px", minWidth: 0 } : { flex: "1 1 160px", marginRight: "auto" }}>
-      {/* Esc backs out a level at a time: out of the diff drill-down, the
-          card back to Notes, then it sees everything (clears the search,
-          Unreads only and filters), then deselects, then leaves. */}
+      {/* Esc backs out a level at a time: a query first, then out of the
+          diff drill-down, the card back to Notes, then it sees everything
+          (clears Unreads only and filters), then deselects, then leaves. */}
       <SearchBar
         value={search.q}
         // Search results live in the worktree view, so typing leaves the
@@ -767,7 +770,7 @@ export function WorktreeDetailPage() {
       {inDiff ? (
         <DiffViewBoundary>
           <Suspense fallback={null}>
-            <DiffView path={path} headerHeight={headerHeight} />
+            <DiffView path={path} headerHeight={headerHeight} escHint={escDiff} />
           </Suspense>
         </DiffViewBoundary>
       ) : (

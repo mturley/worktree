@@ -86,18 +86,18 @@ const patch = (over: Partial<DiffPatch> = {}): DiffPatch => ({
   ...over,
 })
 
-const tree = () => (
+const tree = (props: { escHint?: boolean } = {}) => (
   <MantineProvider>
     <QueryClientProvider client={client}>
-      <DiffView path="/wt/foo" headerHeight={100} />
+      <DiffView path="/wt/foo" headerHeight={100} {...props} />
     </QueryClientProvider>
   </MantineProvider>
 )
 let client: QueryClient
 
-const setup = () => {
+const setup = (props: { escHint?: boolean } = {}) => {
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(tree())
+  return render(tree(props))
 }
 
 beforeEach(() => {
@@ -250,6 +250,12 @@ describe("DiffView", () => {
     expect(crumb.textContent).not.toMatch(/go back/)
     await userEvent.click(screen.getByRole("button", { name: "← Worktree details" }))
     expect(new URLSearchParams(window.location.search).has("diff")).toBe(false)
+  })
+
+  it("drops the breadcrumb's Esc hint when Esc's next step is the page's", async () => {
+    setup({ escHint: false })
+    await screen.findByTestId("diff-body")
+    expect(document.querySelector("[data-diff-breadcrumb] kbd")).toBeNull()
   })
 
   it("highlights the file named in the URL", async () => {
