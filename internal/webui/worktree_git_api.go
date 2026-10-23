@@ -95,10 +95,9 @@ func (s *Server) handleWorktreeGit(w http.ResponseWriter, r *http.Request) {
 			out.VsTracking = &aheadBehindDTO{Ahead: a, Behind: b}
 		}
 	}
-	if ws, ok := gitutil.WorkingCounts(path); ok {
+	// One status pass yields both the counts and the fingerprints.
+	if ws, fp, err := gitutil.WorkingState(path, refs...); err == nil {
 		out.Working = workingDTO{Staged: ws.Staged, Modified: ws.Modified, Untracked: ws.Untracked, Files: ws.Files}
-	}
-	if fp, err := gitutil.ComputeFingerprint(path, refs...); err == nil {
 		out.Fingerprint, out.WorkingFingerprint = fp.Full, fp.Working
 	}
 

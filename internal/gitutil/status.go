@@ -1,7 +1,6 @@
 package gitutil
 
 import (
-	"os/exec"
 	"strconv"
 	"strings"
 )
@@ -33,13 +32,13 @@ func (s Status) Clean() bool {
 func ShortStatus(dir string) (Status, bool) {
 	// --porcelain=v1 is a stable, documented format; -b adds the branch header;
 	// -unormal counts untracked files without descending into every file of an
-	// untracked directory.
-	out, err := exec.Command("git", "-C", dir, "status", "--porcelain=v1", "-b", "-unormal").Output()
+	// untracked directory. gitRaw adds --no-optional-locks: this is polled.
+	out, err := gitRaw(dir, nil, "status", "--porcelain=v1", "-b", "-unormal")
 	if err != nil {
 		return Status{}, false
 	}
 	var st Status
-	for _, line := range strings.Split(string(out), "\n") {
+	for _, line := range strings.Split(out, "\n") {
 		if line == "" {
 			continue
 		}
@@ -102,40 +101,10 @@ func parseBranchHeader(h string, st *Status) {
 	st.Branch = h
 }
 
-// WorkingSummary counts the working tree's changes from a single
-// `git status -uall`. Unlike ShortStatus it lists every file of an untracked
-// directory, so Untracked counts files and Files is the number of distinct
-// changed paths — what the Code tab's "N files changed" needs.
+// WorkingSummary is the Code tab's working-tree counts, from WorkingState.
 type WorkingSummary struct {
 	Staged    int
 	Modified  int
 	Untracked int
 	Files     int
-}
-
-// WorkingCounts returns ok=false when dir is not a git worktree.
-func WorkingCounts(dir string) (WorkingSummary, bool) {
-	out, err := exec.Command("git", "-C", dir, "status", "--porcelain=v1", "-uall").Output()
-	if err != nil {
-		return WorkingSummary{}, false
-	}
-	var ws WorkingSummary
-	for _, line := range strings.Split(string(out), "\n") {
-		if len(line) < 3 {
-			continue
-		}
-		// One porcelain line per path, so lines are distinct paths.
-		ws.Files++
-		if strings.HasPrefix(line, "?? ") {
-			ws.Untracked++
-			continue
-		}
-		if x := line[0]; x != ' ' && x != '?' {
-			ws.Staged++
-		}
-		if y := line[1]; y != ' ' && y != '?' {
-			ws.Modified++
-		}
-	}
-	return ws, true
 }

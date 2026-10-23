@@ -41,7 +41,9 @@ func FirstParentCommits(dir, baseRef string) ([]Commit, error) {
 	if _, ok := RevSHA(dir, "HEAD"); !ok {
 		return []Commit{}, nil
 	}
-	out, err := gitRaw(dir, nil, "log", "--first-parent", "-z",
+	// --no-show-signature: log.showSignature=true would interleave GPG
+	// verification text with the records and break the field count.
+	out, err := gitRaw(dir, nil, "log", "--no-show-signature", "--first-parent", "-z",
 		"--format=%H%x00%h%x00%an%x00%aI%x00%s", baseRef+"..HEAD")
 	if err != nil {
 		return nil, err

@@ -148,3 +148,40 @@ func TestShowFileFromSnapshotTree(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+// The user's git config must not leak into output the server parses or the
+// UI renders: colour codes, missing a/ b/ prefixes or signature lines would
+// all break it.
+func TestDiffAndLogIgnoreUserConfig(t *testing.T) {
+	repo, run := newRemoteRepo(t)
+	run("config", "color.diff", "always")
+	run("config", "color.ui", "always")
+	run("config", "diff.noprefix", "true")
+	run("config", "log.showSignature", "true")
+	commitFile(t, repo, "b.txt", "two\n")
+
+	patch, err := DiffPatch(repo, "origin/main", "HEAD", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(patch, "diff --git a/b.txt b/b.txt") {
+		t.Errorf("patch does not start with an a/ b/ header: %q", patch)
+	}
+	if strings.Contains(patch, "\x1b") {
+		t.Errorf("patch contains ESC bytes: %q", patch)
+	}
+	files, err := DiffFiles(repo, "origin/main", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 1 || files[0].Path != "b.txt" {
+		t.Errorf("DiffFiles = %+v, want b.txt", files)
+	}
+	commits, err := FirstParentCommits(repo, "origin/main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(commits) != 1 || commits[0].Subject != "add b.txt" {
+		t.Errorf("FirstParentCommits = %+v, want one 'add b.txt'", commits)
+	}
+}

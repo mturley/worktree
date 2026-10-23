@@ -249,3 +249,64 @@ func TestRemotesForForkSetup(t *testing.T) {
 		t.Fatalf("RemotesFor = %v, want %v", got, want)
 	}
 }
+
+func TestFetchCommandNeverPrompts(t *testing.T) {
+	args, env := fetchCommand("/repo", "origin", "ssh -i key")
+	want := []string{"-C", "/repo", "fetch", "--prune", "--no-auto-maintenance", "origin"}
+	if !reflect.DeepEqual(args, want) {
+		t.Errorf("args = %q, want %q", args, want)
+	}
+	for _, kv := range []string{
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_ASKPASS=",
+		"SSH_ASKPASS=",
+		"GCM_INTERACTIVE=never",
+		"GIT_SSH_COMMAND=ssh -i key -o BatchMode=yes",
+	} {
+		found := false
+		for _, e := range env {
+			if e == kv {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("env %q missing from %q", kv, env)
+		}
+	}
+}
+
+func TestRedactErrorHidesCredentials(t *testing.T) {
+	got := redactError("fatal: unable to access 'https://user:tok@github.com/x.git/': 403")
+	want := "fatal: unable to access 'https://***@github.com/x.git/': 403"
+	if got != want {
+		t.Errorf("redactError = %q, want %q", got, want)
+	}
+	// Scp-style SSH remotes carry no secret and keep their user.
+	if s := "git@github.com:x.git: Permission denied"; redactError(s) != s {
+		t.Errorf("redactError changed %q to %q", s, redactError(s))
+	}
+}
+
+func TestRedactErrorTruncates(t *testing.T) {
+	got := redactError(strings.Repeat("é", 2000))
+	if n := len([]rune(got)); n > maxErrorRunes+1 {
+		t.Errorf("redacted error is %d runes, want at most %d", n, maxErrorRunes+1)
+	}
+	if !strings.HasSuffix(got, "…") {
+		t.Errorf("truncated error does not end with an ellipsis")
+	}
+}
+
+// The UI shows LastError verbatim, so the scheduler must redact what Fetch
+// returns before storing it.
+func TestMaybeStoresRedactedError(t *testing.T) {
+	dir := testgit.Worktree(t)
+	f := newFakes()
+	f.err = errors.New("fatal: could not read from https://me:secret@example.com/r.git")
+	s := f.scheduler(time.Minute)
+	s.Maybe(dir, []string{"origin"})
+	settle(t, s, dir)
+	if st := s.State(dir); strings.Contains(st.LastError, "secret") || !strings.Contains(st.LastError, "https://***@example.com") {
+		t.Errorf("LastError = %q, want credentials redacted", st.LastError)
+	}
+}

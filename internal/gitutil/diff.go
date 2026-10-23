@@ -30,11 +30,12 @@ var ErrPatchTooLarge = errors.New("patch too large")
 // Counts come from --numstat and statuses from --name-status; both are -z so
 // odd paths round-trip, and are merged by (new) path.
 func DiffFiles(dir, oldRev, newRev string) ([]FileChange, error) {
-	stat, err := gitRaw(dir, nil, "diff", "-z", "-M", "--numstat", oldRev, newRev)
+	// --no-ext-diff/--no-color: see DiffPatch.
+	stat, err := gitRaw(dir, nil, "diff", "--no-ext-diff", "--no-color", "-z", "-M", "--numstat", oldRev, newRev)
 	if err != nil {
 		return nil, err
 	}
-	names, err := gitRaw(dir, nil, "diff", "-z", "-M", "--name-status", oldRev, newRev)
+	names, err := gitRaw(dir, nil, "diff", "--no-ext-diff", "--no-color", "-z", "-M", "--name-status", oldRev, newRev)
 	if err != nil {
 		return nil, err
 	}
@@ -116,8 +117,15 @@ func splitNUL(s string) []string {
 // DiffPatch returns the unified patch between oldRev and newRev, untrimmed.
 // Binary files appear as git's "Binary files differ" line; the UI renders a
 // placeholder for them.
+//
+// The flags pin the output format against the user's git config, which `git
+// diff` (a porcelain command) otherwise honours: an external diff driver or
+// textconv would replace the patch, color.diff=always would embed escape
+// codes, and diff.noprefix / diff.mnemonicPrefix would change the a/ b/ path
+// prefixes the UI's patch parser relies on.
 func DiffPatch(dir, oldRev, newRev string, ignoreWhitespace bool) (string, error) {
-	args := []string{"diff", "-M"}
+	args := []string{"diff", "--no-ext-diff", "--no-color", "--no-textconv",
+		"--src-prefix=a/", "--dst-prefix=b/", "-M"}
 	if ignoreWhitespace {
 		args = append(args, "-w")
 	}

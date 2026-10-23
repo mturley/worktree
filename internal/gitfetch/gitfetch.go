@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -46,7 +47,7 @@ type Scheduler struct {
 	// govern a background fetch.
 	Ctx      context.Context
 	Interval time.Duration
-	Now     func() time.Time
+	Now      func() time.Time
 	Fetch    func(ctx context.Context, dir, remote string) error
 
 	mu    sync.Mutex
@@ -150,7 +151,7 @@ func (s *Scheduler) Maybe(dir string, remotes []string) {
 		defer s.mu.Unlock()
 		rs.inProgress = false
 		if firstErr != nil {
-			rs.lastError = firstErr.Error()
+			rs.lastError = redactError(firstErr.Error())
 			return
 		}
 		rs.lastError = ""
@@ -205,15 +206,48 @@ func gitFetch(ctx context.Context, dir, remote string) error {
 		ssh = "ssh"
 	}
 
-	cmd := exec.CommandContext(ctx, "git", "-C", dir, "fetch", "--prune", remote)
-	cmd.Env = append(os.Environ(),
-		"GIT_TERMINAL_PROMPT=0",
-		"GIT_SSH_COMMAND="+ssh+" -o BatchMode=yes",
-	)
+	args, env := fetchCommand(dir, remote, ssh)
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Env = append(os.Environ(), env...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+// fetchCommand builds gitFetch's git arguments and the environment entries it
+// appends, given the resolved ssh command. Split out so tests can check that
+// every prompt path is closed without running a fetch.
+func fetchCommand(dir, remote, ssh string) (args, env []string) {
+	// --no-auto-maintenance: a background fetch must not kick off `git
+	// maintenance`/gc, which takes locks the user's commands would then hit.
+	args = []string{"-C", dir, "fetch", "--prune", "--no-auto-maintenance", remote}
+	env = []string{
+		"GIT_TERMINAL_PROMPT=0", // git's own username/password prompt
+		"GIT_ASKPASS=",          // a configured askpass helper would pop a GUI dialog
+		"SSH_ASKPASS=",
+		"GCM_INTERACTIVE=never", // Git Credential Manager's browser/device flow
+		"GIT_SSH_COMMAND=" + ssh + " -o BatchMode=yes", // ssh passphrase and host-key prompts
+	}
+	return args, env
+}
+
+// maxErrorRunes bounds LastError: git can print pages of output, and the UI
+// shows the error in a tooltip.
+const maxErrorRunes = 500
+
+// credentialsInURL matches the userinfo of a URL ("https://user:token@"),
+// which git echoes back in errors about https remotes with embedded tokens.
+var credentialsInURL = regexp.MustCompile(`(\w+://)[^/@\s]+@`)
+
+// redactError makes a fetch error safe to show in the UI: credentials in
+// remote URLs are masked and the text is truncated.
+func redactError(msg string) string {
+	msg = credentialsInURL.ReplaceAllString(msg, "${1}***@")
+	if r := []rune(msg); len(r) > maxErrorRunes {
+		msg = string(r[:maxErrorRunes]) + "…"
+	}
+	return msg
 }
 
 // RemotesFor returns the distinct, sorted remote names behind refs such as
