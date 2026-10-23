@@ -366,7 +366,8 @@ export default function DiffView({
           {wide && escHint && <KeyHint>Esc</KeyHint>}
         </Group>
         <Text size="sm" c="dimmed">/</Text>
-        <Text size="sm">Changes</Text>
+        {/* The branch, when there is one (empty when detached). */}
+        <Text size="sm">{git?.branch ? `Changes (${git.branch})` : "Changes"}</Text>
       </Group>
       <Box
         style={{

@@ -246,7 +246,7 @@ describe("DiffView", () => {
     await screen.findByTestId("diff-body")
     const crumb = document.querySelector("[data-diff-breadcrumb]")!
     // Esc's hint sits beside the link that does the same (wide only).
-    expect(crumb.textContent).toMatch(/^← Worktree details(Esc)?\/Changes$/)
+    expect(crumb.textContent).toMatch(/^← Worktree details(Esc)?\/Changes \(feat\)$/)
     expect(crumb.textContent).not.toMatch(/go back/)
     await userEvent.click(screen.getByRole("button", { name: "← Worktree details" }))
     expect(new URLSearchParams(window.location.search).has("diff")).toBe(false)
