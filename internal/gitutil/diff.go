@@ -139,6 +139,13 @@ func DiffPatch(dir, oldRev, newRev string, ignoreWhitespace bool) (string, error
 	return out, nil
 }
 
+// IsCommit reports whether rev names a commit (as opposed to a tree, such as
+// a working-tree snapshot, or nothing at all).
+func IsCommit(dir, rev string) bool {
+	out, err := git(dir, "cat-file", "-t", rev)
+	return err == nil && out == "commit"
+}
+
 // ShowFile returns file's contents at rev (a commit or a tree), byte for byte.
 func ShowFile(dir, rev, file string) ([]byte, error) {
 	out, err := gitRaw(dir, nil, "show", rev+":"+file)

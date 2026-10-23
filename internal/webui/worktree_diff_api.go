@@ -116,25 +116,31 @@ func (s *Server) diffTargetFor(w http.ResponseWriter, r *http.Request) (diffTarg
 		writeError(w, http.StatusConflict, "worktree is missing from disk")
 		return diffTarget{}, false
 	}
-	var ref string
-	switch base := r.URL.Query().Get("base"); base {
-	case "merge-base":
-		ref, ok = gitutil.MainUpstream(dir)
-		if !ok {
-			writeError(w, http.StatusConflict, "no upstream main branch to compare against")
-			return diffTarget{}, false
-		}
-	case "tracking":
-		ref, ok = gitutil.TrackingBranch(dir)
-		if !ok {
-			writeError(w, http.StatusConflict, "this branch has no tracking branch")
-			return diffTarget{}, false
-		}
-	default:
-		writeError(w, http.StatusBadRequest, "base must be merge-base or tracking")
+	ref, status, msg := baseRefFor(dir, r.URL.Query().Get("base"))
+	if status != 0 {
+		writeError(w, status, msg)
 		return diffTarget{}, false
 	}
 	return diffTarget{dir: dir, baseRef: ref}, true
+}
+
+// baseRefFor maps a base value to the ref it compares against. status is 0 on
+// success, else the HTTP status and message to answer with.
+func baseRefFor(dir, base string) (ref string, status int, msg string) {
+	var ok bool
+	switch base {
+	case "merge-base":
+		if ref, ok = gitutil.MainUpstream(dir); !ok {
+			return "", http.StatusConflict, "no upstream main branch to compare against"
+		}
+	case "tracking":
+		if ref, ok = gitutil.TrackingBranch(dir); !ok {
+			return "", http.StatusConflict, "this branch has no tracking branch"
+		}
+	default:
+		return "", http.StatusBadRequest, "base must be merge-base or tracking"
+	}
+	return ref, 0, ""
 }
 
 // commitsAndListID lists the branch's commits and the list's identity.

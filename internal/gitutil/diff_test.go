@@ -102,6 +102,25 @@ func TestDiffFilesAgainstSnapshotTree(t *testing.T) {
 	}
 }
 
+func TestIsCommit(t *testing.T) {
+	repo, run := newRemoteRepo(t)
+	head := run("rev-parse", "HEAD")
+	writeFile(t, repo, "wip.txt", "x\n")
+	tree, err := SnapshotWorkingTree(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !IsCommit(repo, head) {
+		t.Error("IsCommit(HEAD sha) = false")
+	}
+	if IsCommit(repo, tree) {
+		t.Error("IsCommit(tree sha) = true")
+	}
+	if IsCommit(repo, "nope") {
+		t.Error("IsCommit(nope) = true")
+	}
+}
+
 func TestDiffPatchIgnoreWhitespace(t *testing.T) {
 	repo, run := newRemoteRepo(t)
 	old := run("rev-parse", "HEAD")
