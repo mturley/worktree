@@ -108,7 +108,8 @@ func (l *blockerLabeler) label(b tasks.Blocker) string {
 		if h, ok := l.heads[b.BlockingTaskID]; ok {
 			return fmt.Sprintf("T%d %s", b.BlockingTaskID, h.Title)
 		}
-		return fmt.Sprintf("T%d", b.BlockingTaskID)
+		// Purged: the blocker keeps its dangling id (see tasks.PurgeDeleted).
+		return fmt.Sprintf("T%d (deleted)", b.BlockingTaskID)
 	case tasks.BlockerResource:
 		return resourceDisplayTitle(l.resource(b.ResourceType, b.ResourceID), b.ResourceType, b.ResourceID)
 	}

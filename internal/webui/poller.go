@@ -20,6 +20,14 @@ import (
 	"github.com/mturley/worktree/internal/tasks"
 )
 
+const (
+	// taskPurgeInterval is how often the sweep for soft-deleted tasks runs.
+	taskPurgeInterval = 5 * time.Minute
+	// taskPurgeAfter is how long a deleted task stays recoverable (undo)
+	// before the sweep removes it for good.
+	taskPurgeAfter = time.Hour
+)
+
 // StartPolling starts an in-process poll loop: an immediate poll, then one
 // every interval, until stop() is called.
 func (s *Server) StartPolling(interval time.Duration) (stop func()) {
@@ -39,8 +47,39 @@ func (s *Server) StartPolling(interval time.Duration) (stop func()) {
 			}
 		}
 	}()
+	go runEvery(taskPurgeInterval, done, s.purgeDeletedTasks)
 	var once sync.Once
 	return func() { once.Do(func() { close(done) }) }
+}
+
+// runEvery calls fn once, then every interval, until done closes. It is the
+// seam that lets a test drive the purge loop without waiting minutes.
+func runEvery(interval time.Duration, done <-chan struct{}, fn func()) {
+	fn()
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-t.C:
+			fn()
+		}
+	}
+}
+
+// purgeDeletedTasks is one sweep: it removes tasks deleted more than
+// taskPurgeAfter ago. The tasks_version bump a purge makes is what tells
+// the SSE stream to refresh, so there is nothing else to notify.
+func (s *Server) purgeDeletedTasks() {
+	n, err := tasks.PurgeDeleted(s.DB, time.Now().Add(-taskPurgeAfter))
+	if err != nil {
+		s.logger().Printf("tasks.PurgeDeleted: %v", err)
+		return
+	}
+	if n > 0 {
+		s.logger().Printf("purged %d deleted task(s)", n)
+	}
 }
 
 // safePollAll runs pollAll, skipping if a poll is already in flight. The
