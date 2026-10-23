@@ -23,6 +23,8 @@ var settingsKeyPaths = map[string][]string{
 		"notifications.disabled", // Notifications tab, inverted
 		"notifications.command_enabled",
 		"notifications.command",
+		"git.background_fetch", // General tab
+		"git.fetch_interval",
 	},
 	"watcher_auth": {
 		"services.github.token", // write-only: credentials endpoints

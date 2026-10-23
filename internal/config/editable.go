@@ -33,6 +33,11 @@ type Editable struct {
 	NotificationsDisabled bool
 	NotifyCommandEnabled  bool
 	NotifyCommand         string
+	// BackgroundFetch and FetchInterval are git.*. They read as true and
+	// DefaultFetchInterval when unset, and writing those defaults deletes
+	// the keys.
+	BackgroundFetch bool
+	FetchInterval   string
 }
 
 // WatcherEnabled reports whether svc's watcher is on.
@@ -69,6 +74,11 @@ func editableFromDoc(doc *yaml.Node) (Editable, bool, error) {
 		NotificationsDisabled: raw.Notifications.Disabled,
 		NotifyCommandEnabled:  raw.Notifications.CommandEnabled,
 		NotifyCommand:         raw.Notifications.Command,
+	}
+	e.BackgroundFetch = raw.Git.FetchEnabled()
+	e.FetchInterval = raw.Git.FetchInterval
+	if e.FetchInterval == "" {
+		e.FetchInterval = DefaultFetchInterval
 	}
 	if e.NotifyCommand == "" {
 		e.NotifyCommand = DefaultNotifyCommand
@@ -193,6 +203,28 @@ func WriteEditable(path string, next Editable) (bool, error) {
 				old = ""
 			}
 			return str(old, val, "notifications", "command")
+		},
+		func() error {
+			if cur.BackgroundFetch == next.BackgroundFetch {
+				return nil
+			}
+			changed = true
+			if next.BackgroundFetch {
+				deletePath(root, "git", "background_fetch")
+				return nil
+			}
+			return setPath(root, boolNode(false), "git", "background_fetch")
+		},
+		func() error {
+			val := next.FetchInterval
+			if val == DefaultFetchInterval {
+				val = ""
+			}
+			old := cur.FetchInterval
+			if old == DefaultFetchInterval {
+				old = ""
+			}
+			return str(old, val, "git", "fetch_interval")
 		},
 	}
 	for _, svc := range Services {

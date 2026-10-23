@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -20,6 +21,40 @@ type Config struct {
 	UI            UIConfig            `yaml:"ui"`
 	Watchers      WatchersConfig      `yaml:"watchers,omitempty"`
 	Notifications NotificationsConfig `yaml:"notifications,omitempty"`
+	Git           GitConfig           `yaml:"git,omitempty"`
+}
+
+// Defaults and floor for the background git fetch. DefaultFetchInterval is
+// the text form so the Settings modal shows (and the file omits) "3m".
+const (
+	DefaultFetchInterval = "3m"
+	defaultFetchDuration = 3 * time.Minute
+	MinFetchInterval     = time.Minute
+)
+
+// GitConfig controls the background `git fetch` that keeps a worktree's Code
+// tab comparison fresh. Set from the Settings modal's General tab.
+type GitConfig struct {
+	// BackgroundFetch is a pointer so an absent key reads as on.
+	BackgroundFetch *bool `yaml:"background_fetch,omitempty"`
+	// FetchInterval is a Go duration ("3m"). Empty or unparsable means
+	// DefaultFetchInterval; anything under MinFetchInterval is raised to it.
+	FetchInterval string `yaml:"fetch_interval,omitempty"`
+}
+
+// FetchEnabled reports whether the background fetch is on (the default).
+func (g GitConfig) FetchEnabled() bool { return g.BackgroundFetch == nil || *g.BackgroundFetch }
+
+// Interval is how often to fetch, with the default and floor applied.
+func (g GitConfig) Interval() time.Duration {
+	d, err := time.ParseDuration(strings.TrimSpace(g.FetchInterval))
+	if err != nil {
+		return defaultFetchDuration
+	}
+	if d < MinFetchInterval {
+		return MinFetchInterval
+	}
+	return d
 }
 
 // DefaultNotifyCommand is the custom notification command used when

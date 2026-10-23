@@ -49,6 +49,8 @@ func TestReadEditableKeepsTildeAndIgnoresEnv(t *testing.T) {
 		// Every watcher on: present but empty, so callers can index it.
 		WatchersDisabled: map[string]bool{},
 		NotifyCommand:    DefaultNotifyCommand,
+		BackgroundFetch:  true,
+		FetchInterval:    DefaultFetchInterval,
 	}
 	if !reflect.DeepEqual(got, want) || !pwSet {
 		t.Fatalf("got %+v pwSet=%v", got, pwSet)

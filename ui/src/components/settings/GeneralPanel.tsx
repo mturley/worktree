@@ -50,6 +50,24 @@ export function GeneralPanel({ settings, draft, update, error }: Props) {
           <Text size="xs" c="yellow">$WORKTREES_BASE is set in the server's environment and overrides this value.</Text>
         )}
       </SettingsSection>
+
+      <SettingsSection title="Git">
+        <Toggle
+          label="Background git fetch"
+          description={<>Fetches the remotes a worktree's Code tab compares against, while that tab is open. <KeyPath path="git.background_fetch" /></>}
+          checked={draft.git.background_fetch}
+          onChange={(e) => { const on = e.currentTarget.checked; update((d) => ({ ...d, git: { ...d.git, background_fetch: on } })) }}
+        />
+        <TextInput
+          label="Fetch interval"
+          description={<>How often to fetch, as a duration of at least 1m, like <Code>3m</Code>. <KeyPath path="git.fetch_interval" /></>}
+          placeholder="3m"
+          value={draft.git.fetch_interval}
+          disabled={!draft.git.background_fetch}
+          onChange={(e) => { const v = e.currentTarget.value; update((d) => ({ ...d, git: { ...d.git, fetch_interval: v } })) }}
+          ff="monospace"
+        />
+      </SettingsSection>
     </Stack>
   )
 }

@@ -367,6 +367,13 @@ export interface WorktreeSettings {
     /** Reads as the default command when unset. */
     command: string
   }
+  /** git.*: the General tab. */
+  git: {
+    /** The background `git fetch` that keeps a Code tab comparison fresh. */
+    background_fetch: boolean
+    /** A Go duration of at least 1m; "3m" is the default. */
+    fetch_interval: string
+  }
 }
 
 /** The non-secret keys of watcher's auth.yaml. */

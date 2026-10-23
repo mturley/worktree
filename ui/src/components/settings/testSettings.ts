@@ -10,7 +10,8 @@ export const baseSettings = (): Settings => ({
     watchers: { github: true, jira: true, slack: true },
     jira: { projects: ["ABC"], alias_hosts: [] },
     ui: { remote_access_enabled: true, https_port: 8476, allowed_hosts: ["a.local"], tls: { cert_file: "~/c.pem", key_file: "~/k.pem" } },
-    notifications: { enabled: true, command_enabled: false, command: DEFAULT_CMD } },
+    notifications: { enabled: true, command_enabled: false, command: DEFAULT_CMD },
+    git: { background_fetch: true, fetch_interval: "3m" } },
   watcher_auth: { jira: { host: "https://x.atlassian.net", email: "me@x" }, slack: { workspace_domain: "x.slack.com" } },
   watcher_config: { jira: { bot_usernames: [], custom_fields: { a: "customfield_1", b: "customfield_2" } } },
 })

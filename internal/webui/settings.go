@@ -7,6 +7,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	wconfig "github.com/mturley/watcher/config"
 	"github.com/mturley/worktree/internal/cmux"
@@ -119,6 +120,14 @@ type worktreeSettings struct {
 	// Notifications is the notifications.* section. A PUT that leaves it
 	// out keeps the file's current values.
 	Notifications *notificationSettings `json:"notifications"`
+	// Git is the git.* section. A PUT that leaves it out keeps the file's
+	// current values.
+	Git *gitSettings `json:"git"`
+}
+
+type gitSettings struct {
+	BackgroundFetch bool   `json:"background_fetch"`
+	FetchInterval   string `json:"fetch_interval"`
 }
 
 type notificationSettings struct {
@@ -166,6 +175,7 @@ func toWorktreeSettings(e config.Editable) worktreeSettings {
 		CommandEnabled: e.NotifyCommandEnabled,
 		Command:        e.NotifyCommand,
 	}
+	w.Git = &gitSettings{BackgroundFetch: e.BackgroundFetch, FetchInterval: e.FetchInterval}
 	return w
 }
 
@@ -326,6 +336,23 @@ func (s *Server) handleSettingsWorktree(w http.ResponseWriter, r *http.Request) 
 		next.NotificationsDisabled = cur.NotificationsDisabled
 		next.NotifyCommandEnabled = cur.NotifyCommandEnabled
 		next.NotifyCommand = cur.NotifyCommand
+	}
+	if g := req.Git; g != nil {
+		next.BackgroundFetch = g.BackgroundFetch
+		next.FetchInterval = strings.TrimSpace(g.FetchInterval)
+		// Interval() would silently floor or default these; reject instead
+		// so the user sees why their value didn't stick.
+		d, err := time.ParseDuration(next.FetchInterval)
+		if err != nil || d < config.MinFetchInterval {
+			writeError(w, http.StatusBadRequest, "fetch interval must be a duration of at least 1m, like 3m")
+			return
+		}
+	} else if curErr == nil {
+		next.BackgroundFetch = cur.BackgroundFetch
+		next.FetchInterval = cur.FetchInterval
+	} else {
+		next.BackgroundFetch = true
+		next.FetchInterval = config.DefaultFetchInterval
 	}
 	if next.NotifyCommandEnabled && next.NotifyCommand == "" {
 		next.NotifyCommand = config.DefaultNotifyCommand
