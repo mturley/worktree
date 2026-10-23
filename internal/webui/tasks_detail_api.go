@@ -1,7 +1,6 @@
 package webui
 
 import (
-	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
@@ -11,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/mturley/watcher"
 	watcherdb "github.com/mturley/watcher/db"
@@ -200,19 +198,14 @@ func (s *Server) implicitVia(t tasks.Task) map[string][]string {
 	return out
 }
 
-// resourceURL finds a resource's URL: from any subscription to it (live or
-// not), else from an event about it, else derived from its id where that is
-// possible (a PR, a link). "" when nothing knows it.
+// resourceURL finds a resource's URL: as a subscription or event records it
+// (watcherdb.ResourceURL), else derived from its id where that is possible
+// (a PR, a link). "" when nothing knows it.
 func (s *Server) resourceURL(typ, id string) string {
-	var u string
-	_ = s.DB.QueryRow(`SELECT resource_url FROM watcher_subscriptions
-		WHERE resource_type = ? AND resource_id = ? AND COALESCE(resource_url,'') <> ''
-		ORDER BY deleted_at IS NOT NULL, created_at DESC LIMIT 1`, typ, id).Scan(&u)
-	if u != "" {
-		return u
+	u, err := watcherdb.ResourceURL(s.DB, typ, id)
+	if err != nil {
+		s.logger().Printf("resource url %s %s: %v", typ, id, err)
 	}
-	_ = s.DB.QueryRow(`SELECT resource_url FROM watcher_event_resources
-		WHERE resource_type = ? AND resource_id = ? AND COALESCE(resource_url,'') <> '' LIMIT 1`, typ, id).Scan(&u)
 	if u != "" {
 		return u
 	}
@@ -230,70 +223,17 @@ func (s *Server) resourceURL(typ, id string) string {
 // errEventNotFound is a missing watcher event; it maps to 404.
 var errEventNotFound = fmt.Errorf("%w: no such event", tasks.ErrNotFound)
 
-// watcherEventCols are the watcher_events columns scanWatcherEvent reads, as
-// columns of the alias e.
-const watcherEventCols = `e.id, e.ts, e.external_ts, e.source, e.type, COALESCE(e.title,''), e.body, e.author, e.author_id`
-
-// loadWatcherEvent reads one watcher event by id.
+// loadWatcherEvent reads one watcher event by id; errEventNotFound when
+// there is none.
 func (s *Server) loadWatcherEvent(id string) (*watcher.Event, error) {
-	ev, err := scanWatcherEvent(s.DB.QueryRow(`SELECT `+watcherEventCols+` FROM watcher_events e WHERE e.id = ?`, id))
-	if errors.Is(err, sql.ErrNoRows) {
+	ev, err := watcherdb.GetEvent(s.DB, id)
+	if err != nil {
+		return nil, err
+	}
+	if ev == nil {
 		return nil, errEventNotFound
 	}
-	if err != nil {
-		return nil, err
-	}
 	return ev, nil
-}
-
-// recentResourceEvents is one resource's newest limit events, newest first,
-// leaving out the watcher's bookkeeping types as the timeline does. A direct
-// query rather than watcherdb.EventsForResource, which loads the resource's
-// whole history, unpaged — and the task activity feed re-runs on every SSE
-// events_new and tasks_changed.
-func (s *Server) recentResourceEvents(typ, rid string, limit int) ([]watcher.Event, error) {
-	rows, err := s.DB.Query(`SELECT `+watcherEventCols+` FROM watcher_events e
-		JOIN watcher_event_resources er ON er.event_id = e.id
-		WHERE er.resource_type = ? AND er.resource_id = ?
-		  AND e.type NOT IN ('watch_started','watcher_error')
-		ORDER BY e.ts DESC LIMIT ?`, typ, rid, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []watcher.Event
-	for rows.Next() {
-		ev, err := scanWatcherEvent(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *ev)
-	}
-	return out, rows.Err()
-}
-
-// scanWatcherEvent scans one row of watcherEventCols.
-func scanWatcherEvent(row interface{ Scan(...any) error }) (*watcher.Event, error) {
-	var ev watcher.Event
-	var typ string
-	var ext, body, author, authorID sql.NullString
-	if err := row.Scan(&ev.ID, &ev.TS, &ext, &ev.Source, &typ, &ev.Title, &body, &author, &authorID); err != nil {
-		return nil, err
-	}
-	ev.Type = watcher.EventType(typ)
-	if ext.Valid {
-		ev.ExternalTS = &ext.String
-	}
-	if body.Valid {
-		ev.Body = &body.String
-	}
-	if author.Valid {
-		ev.Author = &author.String
-	}
-	if authorID.Valid {
-		ev.AuthorID = &authorID.String
-	}
-	return &ev, nil
 }
 
 // snapshotOf is what an event link remembers of a watcher event.
@@ -427,23 +367,7 @@ func (s *Server) liveEvent(l tasks.EventLink) (*watcher.Event, error) {
 	if !ok {
 		return nil, nil
 	}
-	var id string
-	err := s.DB.QueryRow(`SELECT e.id FROM watcher_events e
-		JOIN watcher_event_resources er ON er.event_id = e.id
-		WHERE er.resource_type = 'slack' AND substr(er.resource_id, 1, ?) = ? AND e.external_ts = ?
-		  AND e.type NOT IN ('watch_started','watcher_error')
-		ORDER BY e.ts DESC LIMIT 1`, utf8.RuneCountInString(ch)+1, ch+":", ts).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	ev, err := s.loadWatcherEvent(id)
-	if errors.Is(err, errEventNotFound) {
-		return nil, nil
-	}
-	return ev, err
+	return watcherdb.EventByExternalTS(s.DB, "slack", ch+":", ts)
 }
 
 // snapshotEvent is the feed row of a link with no live event, built from
@@ -558,7 +482,7 @@ func (s *Server) handleTaskActivity(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	addResource := func(typ, rid string) bool {
-		evs, err := s.recentResourceEvents(typ, rid, taskActivityLimit)
+		evs, err := watcherdb.RecentEventsForResource(s.DB, typ, rid, taskActivityLimit)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return false

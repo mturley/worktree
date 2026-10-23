@@ -20,7 +20,7 @@ func insertSlackReply(t *testing.T, s *Server, id, ts, title, rid, ext, body str
 	}
 }
 
-func TestRecentResourceEventsLimitsPerResourceAndSkipsBookkeeping(t *testing.T) {
+func TestTaskActivitySkipsBookkeeping(t *testing.T) {
 	s, _ := tasksServer(t)
 	for i := 1; i <= 5; i++ {
 		insertEvent(t, s.DB, fmt.Sprintf("a%d", i), fmt.Sprintf("2026-01-01T00:00:0%dZ", i), "github", "pr_comment", "a", "pr", "o/r#1", "u")
@@ -29,24 +29,19 @@ func TestRecentResourceEventsLimitsPerResourceAndSkipsBookkeeping(t *testing.T) 
 	insertEvent(t, s.DB, "we", "2026-01-01T00:00:09Z", "github", "watcher_error", "w", "pr", "o/r#1", "u")
 	insertEvent(t, s.DB, "b1", "2026-01-01T00:00:01Z", "jira", "jira_comment", "b", "jira", "X-1", "u")
 
-	evs, err := s.recentResourceEvents("pr", "o/r#1", 3)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var ids []string
-	for _, e := range evs {
-		ids = append(ids, e.ID)
-	}
-	if got := strings.Join(ids, ","); got != "a5,a4,a3" {
-		t.Fatalf("events = %s, want the 3 newest non-bookkeeping", got)
-	}
-
 	tk := mustTask(t, s, tasks.NewTask{Title: "t", Focus: []tasks.LinkTarget{resLink("pr", "o/r#1"), resLink("jira", "X-1")}})
 	for _, q := range []string{"filter=all", "filter=resource&type=pr&rid=o/r%231"} {
+		var ids []string
 		for _, e := range getActivity(t, s, tk.ID, q) {
 			if e.Type == "watch_started" || e.Type == "watcher_error" {
 				t.Errorf("%s includes bookkeeping event %s", q, e.ID)
 			}
+			if e.ResourceType == "pr" {
+				ids = append(ids, e.ID)
+			}
+		}
+		if got := strings.Join(ids, ","); got != "a5,a4,a3,a2,a1" {
+			t.Errorf("%s pr events = %s, want newest first", q, got)
 		}
 	}
 }
