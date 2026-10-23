@@ -14,7 +14,8 @@ import { KeyHint } from "../search/KeyHint"
 import { CompareSelect } from "./CompareSelect"
 import { DiffBody, type DiffMode } from "./DiffBody"
 import { DiffFileTree } from "./DiffFileTree"
-import { fileAnchorId, parseDiff } from "./parsedPatch"
+import { parseDiff } from "./parsedPatch"
+import { scrollToFile } from "./scrollToFile"
 import { RangePicker } from "./RangePicker"
 
 const MODE_KEY = "worktree.diffMode"
@@ -159,19 +160,23 @@ export default function DiffView({ path, headerHeight }: { path: string; headerH
   const [drawerOpen, setDrawerOpen] = useState(false)
 
   const [highlighted, setHighlighted] = useState<string | null>(view.file)
-  const scrollTo = (file: string) => {
+  // One scroll in flight at a time: a new jump (or leaving) cancels the last.
+  const cancelScroll = useRef<(() => void) | null>(null)
+  const scrollTo = useCallback((file: string) => {
     setHighlighted(file)
-    document.getElementById(fileAnchorId(file))?.scrollIntoView?.({ block: "start" })
-  }
-  // `&file=` lands on that file once, after its wrapper exists.
+    cancelScroll.current?.()
+    cancelScroll.current = scrollToFile(file)
+  }, [])
+  useEffect(() => () => cancelScroll.current?.(), [])
+  // `&file=` lands on that file once, through the same path as a tree click;
+  // scrollToFile waits for the wrapper to render and settle.
   const landed = useRef(false)
   useEffect(() => {
     const target = view.file
     if (landed.current || !target || !files.some((f) => f.path === target)) return
     landed.current = true
-    const id = requestAnimationFrame(() => document.getElementById(fileAnchorId(target))?.scrollIntoView?.({ block: "start" }))
-    return () => cancelAnimationFrame(id)
-  }, [view.file, files])
+    scrollTo(target)
+  }, [view.file, files, scrollTo])
 
   // The selectors show the pinned selection (what is loaded or loading).
   const shownBase = request?.base ?? sel.base

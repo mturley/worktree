@@ -52,6 +52,53 @@ describe("DiffFileTree", () => {
     expect(onSelect).not.toHaveBeenCalled()
   })
 
+  it("starts with every directory open when the files arrive after mounting", () => {
+    // The view mounts the tree before the patch loads, so its first data is empty.
+    const { rerender } = render(
+      <MantineProvider>
+        <DiffFileTree files={[]} selected={null} onSelect={() => {}} />
+      </MantineProvider>,
+    )
+    rerender(
+      <MantineProvider>
+        <DiffFileTree files={[f("ui/src/a.ts"), f("ui/README.md"), f("internal/webui/b.go")]} selected={null} onSelect={() => {}} />
+      </MantineProvider>,
+    )
+    expect(screen.getByTestId("tree-file-ui/src/a.ts")).toBeInTheDocument()
+    expect(screen.getByTestId("tree-file-ui/README.md")).toBeInTheDocument()
+    expect(screen.getByTestId("tree-file-internal/webui/b.go")).toBeInTheDocument()
+  })
+
+  it("keeps a folded directory folded when the files change", async () => {
+    const files = [f("ui/src/a.ts"), f("ui/README.md")]
+    const { rerender } = render(
+      <MantineProvider>
+        <DiffFileTree files={files} selected={null} onSelect={() => {}} />
+      </MantineProvider>,
+    )
+    await userEvent.click(screen.getByText("src"))
+    expect(screen.queryByTestId("tree-file-ui/src/a.ts")).not.toBeInTheDocument()
+    rerender(
+      <MantineProvider>
+        <DiffFileTree files={[...files, f("go.mod")]} selected={null} onSelect={() => {}} />
+      </MantineProvider>,
+    )
+    expect(screen.queryByTestId("tree-file-ui/src/a.ts")).not.toBeInTheDocument()
+    expect(screen.getByTestId("tree-file-go.mod")).toBeInTheDocument()
+  })
+
+  it("leaves file rows Mantine's per-level indent", () => {
+    setup([f("ui/src/a.ts"), f("ui/README.md")])
+    // Mantine indents a row's label with padding-inline-start:
+    // var(--label-offset), set per level on its <li>; an inline padding on
+    // the row would override it.
+    const row = screen.getByTestId("tree-file-ui/README.md")
+    expect(row.closest("li")).toHaveAttribute("data-level", "2")
+    expect(row.style.paddingLeft).toBe("")
+    expect(row.style.paddingInlineStart).toBe("")
+    expect(row.style.paddingInline).toBe("")
+  })
+
   it("marks the selected file", () => {
     setup([f("a.go"), f("b.go")], "b.go")
     expect(screen.getByTestId("tree-file-b.go")).toHaveAttribute("data-active", "true")

@@ -16,6 +16,10 @@ vi.mock("./DiffBody", () => ({
   ),
 }))
 
+// Scrolling is scrollToFile's (tested on its own); here, only that it is asked.
+const scrollMock = vi.hoisted(() => ({ scrollToFile: vi.fn(() => () => {}) }))
+vi.mock("./scrollToFile", () => ({ DIFF_SCROLLER_CLASS: "diff-body-scroller", scrollToFile: scrollMock.scrollToFile }))
+
 const gitMock = vi.hoisted(() => ({ value: undefined as WorktreeGit | undefined }))
 vi.mock("../../hooks/useWorktreeGit", () => ({
   useWorktreeGit: () => ({ data: gitMock.value }),
@@ -104,6 +108,7 @@ beforeEach(() => {
   apiMock.listId = "L1"
   apiMock.commits = [commit("c1")]
   apiMock.patches = [patch()]
+  scrollMock.scrollToFile.mockClear()
   apiMock.diffPatch.mockReset()
   apiMock.diffPatch.mockImplementation(async () => apiMock.patches.shift() ?? patch())
   apiMock.diffCommits.mockReset()
@@ -247,6 +252,8 @@ describe("DiffView", () => {
     window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?diff&file=a.go`)
     setup()
     await waitFor(() => expect(screen.getByTestId("diff-body")).toHaveAttribute("data-highlighted", "a.go"))
+    expect(scrollMock.scrollToFile).toHaveBeenCalledTimes(1)
+    expect(scrollMock.scrollToFile).toHaveBeenCalledWith("a.go")
   })
 
   it("highlights a file picked in the tree", async () => {
@@ -255,6 +262,7 @@ describe("DiffView", () => {
     await screen.findByTestId("diff-body")
     await userEvent.click(screen.getByTestId("tree-file-b.go"))
     expect(screen.getByTestId("diff-body")).toHaveAttribute("data-highlighted", "b.go")
+    expect(scrollMock.scrollToFile).toHaveBeenLastCalledWith("b.go")
   })
 
   it("filters the tree", async () => {

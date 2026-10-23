@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react"
+import { useEffect, useMemo, useRef } from "react"
 import { Box, Text, Tree, getTreeExpandedState, useTree, type TreeNodeData } from "@mantine/core"
 import { IconChevronRight, IconFile } from "@tabler/icons-react"
 
@@ -70,10 +70,18 @@ export function DiffFileTree({
   const data = useMemo(() => build(files), [files])
   const tree = useTree({ initialExpandedState: getTreeExpandedState(data, "*") })
   const { setExpandedState } = tree
-  // Directories that appear later (the filter narrowing and widening again,
-  // a reload adding files) start open; ones already folded stay folded.
+  // Directories that appear later (the patch arriving after mount, the filter
+  // narrowing and widening again) start open; ones already folded stay
+  // folded. Tracked by what this component has seen rather than by what the
+  // expanded state holds: Tree's own effect (a child's, so it runs first)
+  // records every new node as collapsed, so "not in the state yet" never
+  // holds by the time this runs.
+  const seen = useRef(new Set<string>())
   useEffect(() => {
-    setExpandedState((prev) => ({ ...getTreeExpandedState(data, "*"), ...prev }))
+    const fresh = Object.keys(getTreeExpandedState(data, "*")).filter((v) => !seen.current.has(v))
+    if (fresh.length === 0) return
+    for (const v of fresh) seen.current.add(v)
+    setExpandedState((prev) => ({ ...prev, ...Object.fromEntries(fresh.map((v) => [v, true])) }))
   }, [data, setExpandedState])
 
   return (
@@ -111,7 +119,9 @@ export function DiffFileTree({
               alignItems: "center",
               gap: 4,
               paddingBlock: 2,
-              paddingInline: 4,
+              // End only: the start padding is Mantine's per-level indent
+              // (padding-inline-start: var(--label-offset)).
+              paddingInlineEnd: 4,
               borderRadius: 4,
               cursor: "pointer",
               background: active ? "var(--mantine-color-default-hover)" : undefined,

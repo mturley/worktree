@@ -11,6 +11,7 @@ import DiffsWorker from "@pierre/diffs/worker/worker-portable.js?worker"
 import { api } from "../../api/client"
 import { OpenFileInEditorIcon } from "./OpenFileInEditorIcon"
 import { fileAnchorId, type DiffFile } from "./parsedPatch"
+import { DIFF_SCROLLER_CLASS } from "./scrollToFile"
 
 export type DiffMode = "split" | "unified"
 
@@ -21,7 +22,7 @@ const highlighterOptions = {}
  * The diff view's body: one pierre `FileDiff` per file inside pierre's
  * `Virtualizer`, which is its own scroll container and so is given an
  * explicit height. Each file sits in a wrapper with a stable id
- * (`fileAnchorId`) for `scrollIntoView`; pierre renders in shadow DOM, so the
+ * (`fileAnchorId`) for scrollToFile; pierre renders in shadow DOM, so the
  * wrappers are also what tests and the rest of the page can see.
  *
  * `oldRev`/`newRev` are the resolved revisions the patch was computed
@@ -81,7 +82,7 @@ export function DiffBody({
 
   return (
     <WorkerPoolContextProvider poolOptions={poolOptions} highlighterOptions={highlighterOptions}>
-      <Virtualizer style={{ height, overflow: "auto" }}>
+      <Virtualizer className={DIFF_SCROLLER_CLASS} style={{ height, overflow: "auto" }}>
         {files.map((f) => {
           const isOpen = open[f.path] ?? !f.autoCollapse
           const lit = f.path === highlighted
