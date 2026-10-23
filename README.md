@@ -164,7 +164,7 @@ agent-handler; the integration is best-effort on both sides.
 ```bash
 worktree tasks add <title> [--description ...] [--priority high|medium|low|none] [--star] [--due YYYY-MM-DD] [--focus <ref>] [--related <ref>] [--global]  # In a registered worktree, links it as Focus unless --global
 worktree tasks list [--all | --worktree <path> | --resource <ref>] [--completed] [--archived] [--priority <p>]... [--state <s>]... [--starred]  # Default: the current worktree's open tasks, else all
-worktree tasks show <id>         # Links, subtasks (with their ids) and recent history
+worktree tasks show <id>         # Links, subtasks (with their ids), blockers, what it blocks and recent history
 worktree tasks edit <id> [--title ...] [--description ...] [--priority ...] [--due ...]
 worktree tasks state <id> <not_started|in_progress|done>
 worktree tasks star <id>         # or: unstar
@@ -172,11 +172,19 @@ worktree tasks delete <id>
 worktree tasks link <id> <ref> [--focus]  # Related unless --focus; also: unlink, focus, unfocus
 worktree tasks move <id> (--after <id> | --before <id> | --top | --bottom)
 worktree tasks subtask add <id> <text>    # Also: edit, check, uncheck, remove <subtask-id>; order <id> <subtask-id>...
+worktree tasks block <id> (--task <id> | --resource <ref> | --other <text>)  # Prints the blocker's id
+worktree tasks unblock <blocker-id>      # Remove a blocker
+worktree tasks resolve <blocker-id> [--unresolve]  # Slack, link and free-text blockers only
 ```
 
 A `<ref>` is a URL, `<type>:<id>`, `wt:<path>`, or `.` (the current worktree). Task ids are `T<n>`
 (`t<n>` and `<n>` also work). `--priority` and `--state` repeat to match any of several values;
 `--archived` (done tasks whose links are all archived) and `--state done` imply `--completed`.
+A task is blocked while any of its blockers is unresolved, and a done task is never blocked. A
+task blocker resolves when its task is done (at once, from the CLI too); a PR or Jira blocker
+resolves when `worktree ui` sees the PR merged or closed or the issue Done, so it waits for the UI
+server's next pass. `list --json` and `show --json` carry `blocked`, `blocker_count` and
+`blocker_labels`; `show --json` adds `blockers` and `blocks`.
 Every command takes `--json` (the bare `subtask` group, which only holds subcommands, does not);
 pass `--as-agent` (implied under Claude Code or agent-handler) to record a change as made by an
 agent.

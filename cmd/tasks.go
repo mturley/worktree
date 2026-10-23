@@ -241,9 +241,13 @@ func taskErr(id int64, err error) error {
 }
 
 // printTask prints one task as JSON or as its list line.
-func printTask(cmd *cobra.Command, t tasks.Task) error {
+func printTask(cmd *cobra.Command, conn *sql.DB, t tasks.Task) error {
 	if tasksJSON {
-		return writeJSON(cmd.OutOrStdout(), toTaskJSON(t))
+		j, err := taskJSONFor(conn, t)
+		if err != nil {
+			return err
+		}
+		return writeJSON(cmd.OutOrStdout(), j)
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), taskLine(t))
 	return nil
@@ -324,9 +328,13 @@ func runTasksList(cmd *cobra.Command, args []string) error {
 	}
 	out := cmd.OutOrStdout()
 	if tasksJSON {
+		labels, err := allBlockerLabels(conn)
+		if err != nil {
+			return err
+		}
 		rows := make([]taskJSON, 0, len(ts))
 		for _, t := range ts {
-			rows = append(rows, toTaskJSON(t))
+			rows = append(rows, withBlockerLabels(t, labels))
 		}
 		return writeJSON(out, rows)
 	}
@@ -359,12 +367,21 @@ func runTasksShow(cmd *cobra.Command, args []string) error {
 	if len(events) > showEventLimit {
 		events = events[:showEventLimit]
 	}
+	sb, err := loadShowBlockers(conn, id)
+	if err != nil {
+		return err
+	}
 	if tasksJSON {
-		j := toTaskJSON(t)
+		j, err := taskJSONFor(conn, t)
+		if err != nil {
+			return err
+		}
+		blockers, blocks := sb.json(), sb.blocks
+		j.Blockers, j.Blocks = &blockers, &blocks
 		j.Events = toEventsJSON(events)
 		return writeJSON(cmd.OutOrStdout(), j)
 	}
-	writeTaskDetail(cmd.OutOrStdout(), t, events)
+	writeTaskDetail(cmd.OutOrStdout(), t, sb, events)
 	return nil
 }
 
@@ -463,7 +480,7 @@ func runTasksEdit(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return taskErr(id, err)
 	}
-	return printTask(cmd, t)
+	return printTask(cmd, conn, t)
 }
 
 func runTasksState(cmd *cobra.Command, args []string) error {
@@ -483,7 +500,7 @@ func runTasksState(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return taskErr(id, err)
 	}
-	return printTask(cmd, t)
+	return printTask(cmd, conn, t)
 }
 
 func runTasksSetStar(cmd *cobra.Command, args []string, starred bool) error {
@@ -500,7 +517,7 @@ func runTasksSetStar(cmd *cobra.Command, args []string, starred bool) error {
 	if err != nil {
 		return taskErr(id, err)
 	}
-	return printTask(cmd, t)
+	return printTask(cmd, conn, t)
 }
 
 func runTasksDelete(cmd *cobra.Command, args []string) error {
@@ -662,7 +679,7 @@ func printTaskByID(cmd *cobra.Command, conn *sql.DB, id int64) error {
 	if err != nil {
 		return taskErr(id, err)
 	}
-	return printTask(cmd, t)
+	return printTask(cmd, conn, t)
 }
 
 func runTasksLink(cmd *cobra.Command, args []string) error {

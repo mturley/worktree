@@ -94,7 +94,7 @@ func TestTaskJSONContract(t *testing.T) {
 	if got["id"] != "T7" {
 		t.Errorf("id = %v", got["id"])
 	}
-	for _, k := range []string{"links", "implicit_worktrees", "subtasks"} {
+	for _, k := range []string{"links", "implicit_worktrees", "subtasks", "blocker_labels"} {
 		if arr, ok := got[k].([]any); !ok || len(arr) != 0 {
 			t.Errorf("%s = %#v, want []", k, got[k])
 		}
@@ -104,7 +104,7 @@ func TestTaskJSONContract(t *testing.T) {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	want := []string{"archived", "created_at", "description", "id", "implicit_worktrees", "links",
+	want := []string{"archived", "blocked", "blocker_count", "blocker_labels", "created_at", "description", "id", "implicit_worktrees", "links",
 		"priority", "starred", "state", "subtasks", "title", "updated_at"}
 	if strings.Join(keys, ",") != strings.Join(want, ",") {
 		t.Errorf("keys = %v\nwant   %v", keys, want)

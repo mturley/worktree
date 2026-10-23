@@ -28,7 +28,15 @@ type taskJSON struct {
 	Links             []linkJSON    `json:"links"`
 	ImplicitWorktrees []string      `json:"implicit_worktrees"`
 	Subtasks          []subtaskJSON `json:"subtasks"`
-	Events            []eventJSON   `json:"events,omitempty"` // show only
+	// Blocked: some blocker is unresolved (never for a done task);
+	// BlockerCount is how many, BlockerLabels names them, oldest first.
+	// The same names as the web UI's task DTO.
+	Blocked       bool           `json:"blocked"`
+	BlockerCount  int            `json:"blocker_count"`
+	BlockerLabels []string       `json:"blocker_labels"`
+	Blockers      *[]blockerJSON `json:"blockers,omitempty"` // show only
+	Blocks        *[]blocksJSON  `json:"blocks,omitempty"`   // show only
+	Events        []eventJSON    `json:"events,omitempty"`   // show only
 }
 
 type linkJSON struct {
@@ -64,6 +72,9 @@ func toTaskJSON(t tasks.Task) taskJSON {
 		Links:             make([]linkJSON, 0, len(t.Links)),
 		ImplicitWorktrees: make([]string, 0, len(t.Implicit)),
 		Subtasks:          make([]subtaskJSON, 0, len(t.Subtasks)),
+		Blocked:           t.Blocked,
+		BlockerCount:      t.BlockerCount,
+		BlockerLabels:     []string{},
 	}
 	for _, l := range t.Links {
 		out.Links = append(out.Links, linkJSON{
@@ -174,7 +185,7 @@ func taskLine(t tasks.Task) string {
 }
 
 // writeTaskDetail renders `tasks show` for a human.
-func writeTaskDetail(w io.Writer, t tasks.Task, events []tasks.Event) {
+func writeTaskDetail(w io.Writer, t tasks.Task, sb showBlockers, events []tasks.Event) {
 	fmt.Fprintln(w, taskLine(t))
 	fmt.Fprintf(w, "  state:    %s\n", t.State)
 	fmt.Fprintf(w, "  priority: %s\n", t.Priority)
@@ -239,6 +250,7 @@ func writeTaskDetail(w io.Writer, t tasks.Task, events []tasks.Event) {
 			fmt.Fprintf(w, "  %s (#%d) %s\n", box, s.ID, s.Text)
 		}
 	}
+	sb.write(w)
 	if len(events) > 0 {
 		fmt.Fprintln(w, "\nHistory:")
 		for _, e := range events {
