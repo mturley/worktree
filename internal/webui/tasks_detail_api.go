@@ -336,14 +336,16 @@ func slackKeyOf(te TimelineEvent) string {
 	return "slack:" + ch + ":" + te.ExternalTS
 }
 
-// linkedKeyOf is the key te is linked to the task under, or "": its
-// canonical slack: key, else its ev: key (how a Slack message linked from
-// the feed was stored before keys were canonicalised).
+// linkedKeyOf is the key te is linked to the task under, or "": a Slack
+// message's canonical slack: key (resolveEventLink never stores one under
+// ev:), any other watcher event's ev: key.
 func linkedKeyOf(te TimelineEvent, linked map[string]bool) string {
-	for _, k := range []string{slackKeyOf(te), "ev:" + te.ID} {
-		if k != "" && linked[k] {
-			return k
-		}
+	k := slackKeyOf(te)
+	if k == "" {
+		k = "ev:" + te.ID
+	}
+	if linked[k] {
+		return k
 	}
 	return ""
 }

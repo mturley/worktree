@@ -52,8 +52,8 @@ type TimelineEvent struct {
 	// linked to the task whose feed it is (see tasks_detail_api.go).
 	LinkedToTask bool `json:"linked_to_task,omitempty"`
 	// LinkedKey is the event-link key it is linked under, with LinkedToTask:
-	// the key to unlink it by (a Slack message's slack: key, or the ev: key
-	// it was stored under before keys were canonicalised).
+	// the key to unlink it by (a Slack message's slack: key, which the
+	// client cannot derive from the row's id; any other event's ev: key).
 	LinkedKey string `json:"linked_key,omitempty"`
 	// authorID is the event's watcher author_id, used only to leave the
 	// user's own events out of unread (internal/selfid). Not sent.

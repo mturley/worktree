@@ -379,6 +379,25 @@ func TestSlackKeyOfOnlyReplies(t *testing.T) {
 	}
 }
 
+// A Slack message is linked only under its slack: key; any other event
+// under its ev: key.
+func TestLinkedKeyOf(t *testing.T) {
+	reply := TimelineEvent{ID: "s1", Type: "slack_reply", ResourceType: "slack", ResourceID: "C1:100.1", ExternalTS: "100.5"}
+	pr := TimelineEvent{ID: "e1", Type: "pr_comment", ResourceType: "pr", ResourceID: "o/r#1"}
+	linked := map[string]bool{"slack:C1:100.5": true, "ev:e1": true, "ev:s2": true}
+	if got := linkedKeyOf(reply, linked); got != "slack:C1:100.5" {
+		t.Errorf("reply = %q", got)
+	}
+	if got := linkedKeyOf(pr, linked); got != "ev:e1" {
+		t.Errorf("pr event = %q", got)
+	}
+	other := reply
+	other.ID, other.ExternalTS = "s2", "100.6"
+	if got := linkedKeyOf(other, linked); got != "" {
+		t.Errorf("a Slack message is not linked by its ev: key: %q", got)
+	}
+}
+
 func TestFromEvent(t *testing.T) {
 	s, wt := tasksServer(t)
 	insertEvent(t, s.DB, "e1", "2026-01-01T00:00:00Z", "github", "pr_comment", "Review requested", "pr", "o/r#1", "https://github.com/o/r/pull/1")

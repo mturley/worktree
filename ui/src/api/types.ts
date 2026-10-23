@@ -77,7 +77,7 @@ export interface TimelineEvent {
   linked_to_task?: boolean;
   /**
    * Task activity feed only, with linked_to_task: the key the event is linked
-   * under, to unlink it by (a Slack message's slack: key, or an older ev: one).
+   * under, to unlink it by (a Slack message's slack: key, else its ev: key).
    */
   linked_key?: string;
 }

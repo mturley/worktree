@@ -51,10 +51,10 @@ export function ActivityTab({ task }: { task: TaskDetail }) {
 
   /**
    * The key a toggle acts on. A linked row unlinks by the key the server says
-   * it is linked under (linked_key: a Slack message's slack: key, or the ev:
-   * key of a link stored before keys were canonicalised, or a snapshot row's
-   * own key). An unlinked watcher event links by its ev: key, and the server
-   * stores a Slack message's under its slack: key.
+   * it is linked under (linked_key: a Slack message's slack: key, another
+   * event's ev: key, or a snapshot row's own key). An unlinked watcher event
+   * links by its ev: key, and the server stores a Slack message's under its
+   * slack: key.
    */
   const toggleKey = (e: TimelineEvent): string | null =>
     e.linked_to_task ? e.linked_key || null : eventTaskKey(e)
