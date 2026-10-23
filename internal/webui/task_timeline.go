@@ -175,7 +175,7 @@ var taskEventTitles = map[string]taskTitleFunc{
 	tasks.EventTaskBlockerResolved: func(raw json.RawMessage, _ tasks.Task) string {
 		p := parseTaskPayload(raw)
 		if p.Auto {
-			return strings.TrimSpace("Unblocked: " + blockerPayloadLabel(p) + " " + p.Reason)
+			return unblockedText(p) // the Unblocked notification's body too
 		}
 		return "Resolved blocker " + blockerPayloadLabel(p)
 	},

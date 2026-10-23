@@ -234,7 +234,7 @@ func TestBlockerEventTitles(t *testing.T) {
 		{tasks.EventTaskBlockerAdded, "user", `{"blocker_id":1,"kind":"other","label":"legal"}`, "Blocked by “legal”"},
 		{tasks.EventTaskBlockerRemoved, "user", `{"blocker_id":1,"kind":"resource","label":"jira:X-1"}`, "Removed blocker X-1"},
 		{tasks.EventTaskBlockerResolved, "system", `{"blocker_id":1,"kind":"resource","label":"pr:o/r#4498","auto":true,"reason":"merged"}`, "Unblocked: #4498 merged"},
-		{tasks.EventTaskBlockerResolved, "system", `{"blocker_id":1,"kind":"task","label":"T2 dep","auto":true,"reason":"done"}`, "Unblocked: T2 dep done"},
+		{tasks.EventTaskBlockerResolved, "system", `{"blocker_id":1,"kind":"task","label":"T2 dep","auto":true,"reason":"done"}`, "Unblocked: T2 dep is done"},
 		{tasks.EventTaskBlockerResolved, "user", `{"blocker_id":1,"kind":"other","label":"legal","auto":false,"reason":""}`, "Resolved blocker “legal”"},
 		{tasks.EventTaskBlockerUnresolved, "system", `{"blocker_id":1,"kind":"resource","label":"pr:o/r#4498"}`, "Blocked again by #4498"},
 	} {

@@ -2,7 +2,7 @@ package tasks
 
 import (
 	"database/sql"
-	"sync"
+	"encoding/json"
 	"testing"
 )
 
@@ -188,28 +188,33 @@ func TestDoneOrDeletedTasksAreNotEvaluated(t *testing.T) {
 	}
 }
 
-func TestResolutionSinkGetsWriteTimeResolutions(t *testing.T) {
+// A write-time resolution is recorded as a system event, which is all
+// `worktree ui`'s notifier needs, whichever process made the write.
+func TestWriteTimeResolutionRecordsSystemEvent(t *testing.T) {
 	conn := newDB(t)
 	a, b := mustCreate(t, conn, "A"), mustCreate(t, conn, "B")
 	blk := mustAddBlocker(t, conn, a.ID, taskTarget(b.ID))
 
-	var mu sync.Mutex
-	var got []Resolution
-	SetResolutionSink(conn, func(rs []Resolution) {
-		mu.Lock()
-		got = append(got, rs...)
-		mu.Unlock()
-	})
-	t.Cleanup(func() { SetResolutionSink(conn, nil) })
-
 	if _, err := SetState(conn, user, b.ID, StateDone); err != nil {
 		t.Fatal(err)
 	}
-	mu.Lock()
-	defer mu.Unlock()
-	if len(got) != 1 || got[0].BlockerID != blk.ID || !got[0].Resolved || got[0].Reason != "done" ||
-		got[0].Label != "T"+itoa(b.ID)+" B" {
-		t.Fatalf("sink got %+v", got)
+	evs, err := Events(conn, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ev := evs[0] // newest first
+	var p struct {
+		BlockerID int64  `json:"blocker_id"`
+		Label     string `json:"label"`
+		Auto      bool   `json:"auto"`
+		Reason    string `json:"reason"`
+	}
+	if err := json.Unmarshal(ev.Payload, &p); err != nil {
+		t.Fatal(err)
+	}
+	if ev.Type != EventTaskBlockerResolved || ev.Actor != ActorSystem || p.BlockerID != blk.ID ||
+		!p.Auto || p.Reason != "done" || p.Label != "T"+itoa(b.ID)+" B" {
+		t.Fatalf("newest event = %+v, payload %+v", ev, p)
 	}
 }
 

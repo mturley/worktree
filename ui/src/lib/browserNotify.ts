@@ -6,7 +6,9 @@ import { withHomeParam } from "./homeWorktree"
 /** Where clicking a notification goes: the worktree, with the resource selected. */
 export function notificationHref(msg: NotificationMsg): string {
   // A burst summary spanning several worktrees has no one worktree to open.
-  if (!msg.worktree_path) return "/"
+  // An untargeted task notification (an Unblocked one for a task in no
+  // worktree's scope) opens the task modal over the home page.
+  if (!msg.worktree_path) return msg.resource_type === "task" ? `/?task=${encodeURIComponent(msg.resource_id)}` : "/"
   const base = `/worktree/${encodeURIComponent(msg.worktree_path)}`
   if (!msg.resource_type) return base
   // A task notification opens the task modal over its worktree.

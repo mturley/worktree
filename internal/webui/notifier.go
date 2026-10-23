@@ -81,8 +81,10 @@ func (t *cmuxTransport) Deliver(b notifyBatch, _ deliverOpts) {
 }
 
 // notifyPass reads past the cursor and delivers one notification per
-// (worktree, resource) for watcher events, and per (worktree, task) for
-// agent task events. The cursor advances whether or not delivery works.
+// (worktree, resource) for watcher events, per (worktree, task) for agent
+// task events, and one per automatic blocker resolution whose undo window
+// has passed (notify_unblock.go). The cursor advances whether or not
+// delivery works.
 func (s *Server) notifyPass(c *notifyCursor) {
 	if !c.ready {
 		// Never read with an uninitialised cursor: it would treat the whole
@@ -109,7 +111,7 @@ func (s *Server) notifyPass(c *notifyCursor) {
 			batches = append(batches, bs...)
 		}
 	}
-	if events, next, err := readNewTaskEvents(s.DB, *c); err != nil {
+	if events, unblocks, next, err := readNewTaskEvents(s.DB, *c); err != nil {
 		s.logger().Printf("notify: reading task events: %v", err)
 	} else {
 		c.taskID = next
@@ -118,7 +120,11 @@ func (s *Server) notifyPass(c *notifyCursor) {
 		} else {
 			batches = append(batches, bs...)
 		}
+		s.holdUnblocks(unblocks)
 	}
+	// Unblocked notifications whose undo window has passed, from this pass
+	// or earlier ones (notify_unblock.go). They count toward the cap too.
+	batches = append(batches, s.dueUnblockBatches()...)
 	// A pass's watcher and task batches count together toward the cap.
 	sort.SliceStable(batches, func(i, j int) bool { return batches[i].WorktreePath < batches[j].WorktreePath })
 	if len(batches) > notifyMaxPerPass {

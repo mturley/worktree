@@ -1280,9 +1280,10 @@ and `system`-actor events and returns `[]tasks.Resolution`.
 - **Task blockers** resolve inside the tasks package itself, after commit
   (`resolveAfterWrite`, a resolver pass with a nil lookup) in `AddBlocker`,
   `SetState` and `Delete`, so the CLI resolves them at once too. A deleted
-  blocking task resolves with reason "deleted". Those resolutions go to the
-  connection's sink (`tasks.SetResolutionSink`), which `worktree ui`
-  registers in `initTaskHooks` (also pointing `tasks.Logf` at its logger).
+  blocking task resolves with reason "deleted". Nothing is handed on: the
+  `system` events they write are what the notifier reads (see
+  "Notifications"), whichever process wrote them. `initTaskHooks` points
+  `tasks.Logf` at the server's logger.
 - **Resource blockers** need the `StatusLookup` from
   `internal/webui/blocker_status.go`: PRs from the cached
   `watcher_resource_state` `"state"` (MERGED → "merged", CLOSED → "closed",
@@ -1291,8 +1292,7 @@ and `system`-actor events and returns `[]tasks.Resolution`.
   the search), only while the Jira watcher is on and Jira is configured.
   Unknown means the blocker keeps its last state. The CLI leaves them to the
   next `worktree ui` pass.
-- `s.resolvePass(network)` resolves, runs `ReconcileHolds`, then
-  `handleResolutions` (the seam for the "Unblocked" notification). The poll
+- `s.resolvePass(network)` resolves, then runs `ReconcileHolds`. The poll
   loop runs it with network after every pass, even when a source failed:
   it is the ONLY Jira search, and it merges what it finds into the server's
   Jira status cache. The web's state change and delete call
@@ -1465,6 +1465,45 @@ matched independently (a failure in one never holds back the other), and
 their batches are merged before the `notifyMaxPerPass` check, so a flood of
 either or both folds into one summary, which names "resources", "tasks" or
 "resources and tasks".
+
+**Unblocked notifications** (`notify_unblock.go`). A blocker that resolves
+on its own notifies through a dedicated path. Its source is the same
+task-event scan: `readNewTaskEvents` splits off every `system`-actor
+`task_blocker_resolved` with payload `auto: true`, whoever made it — the
+poll loop's `resolvePass(true)`, a web write's `afterTaskWrite`, or the
+tasks package's own `resolveAfterWrite` inside a CLI process. All `system`
+blocker events (resolves and unresolves) are kept OUT of the per-worktree
+task path, so a resolution never notifies twice and never goes through the
+per-worktree or per-resource toggles; an automatic unresolve never
+notifies at all. Only the global "Enable notifications" switch applies (in
+`deliver`), along with the delivery mode and custom command like any other
+notification.
+
+Each found event is **held** in memory (`Server.unblockPending`) for
+`unblockHoldDefault` (10s, matching `UNDO_WINDOW_MS` in
+`ui/src/components/UndoToast.tsx`; change both together), then its row is
+re-read: an event that is gone (an undo deleted it; Phase 6's undo deletes
+cascaded events) or whose task is deleted is dropped silently. Held items
+do not survive a restart: the new cursor starts past their events, so a
+resolution in the last 10s before a restart never notifies. Due items join
+the pass's other batches before the `notifyMaxPerPass` check, so they count
+toward the summary. `unblockHold` and `notifyNow` are the test seams for the
+window and the clock.
+
+The notification: title = the task's current title; body = "Unblocked:
+<label> <reason>" (`unblockedText`, also the timeline's title for the
+event): a resource label is its short ref ("#4498", "ABC-1"), a task's
+"T<id> <title>", and a task blocker's reason reads "is done" or "was
+deleted"; a PR's or Jira issue's reason ("merged", "closed", a status name)
+is appended as is. `resource_type` is `task`, so a click opens
+`?task=<id>`. Target, in order: the worktree of the task's FIRST Focus
+link, if that is a registered worktree or a resource some worktree follows
+(`resources.Load`, the first in registry order); else the first worktree in
+registry order whose scope holds the task (`tasks.BuildScopeIndex`); else
+untargeted (cmux: the UI server's own workspace; browser: `/?task=<id>`,
+the modal over the home page). The tag is per event
+(`…|task:<id>|unblocked:<event id>`), so two unblocks of one task never
+replace each other.
 
 **Delivery mode** is chosen per delivery (`notifyMode`, never cached):
 `cmuxEnabled()` (cmux reachable AND the Settings toggle on; not `InPane` —

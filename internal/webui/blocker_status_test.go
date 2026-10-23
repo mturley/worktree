@@ -109,27 +109,19 @@ func TestBlockerLookupPRState(t *testing.T) {
 
 func TestPRBlockerMergedThenReopened(t *testing.T) {
 	s, _ := tasksServer(t)
-	var got []tasks.Resolution
-	s.onResolutions = func(rs []tasks.Resolution) { got = append(got, rs...) }
 	tk := mustTask(t, s, tasks.NewTask{Title: "A"})
-	b := mustBlock(t, s, tk.ID, "pr", "o/r#4498")
+	mustBlock(t, s, tk.ID, "pr", "o/r#4498")
 
 	setPRState(t, s, "o/r#4498", "MERGED")
 	s.afterTaskWrite()
 	if bl := blockerOf(t, s, tk.ID); bl.ResolvedAt == "" || bl.ResolvedReason != "merged" {
 		t.Fatalf("after merge, blocker = %+v", bl)
 	}
-	if len(got) != 1 || got[0].BlockerID != b.ID || !got[0].Resolved || got[0].Reason != "merged" {
-		t.Fatalf("resolutions handed on = %+v", got)
-	}
 
 	setPRState(t, s, "o/r#4498", "OPEN")
 	s.afterTaskWrite()
 	if bl := blockerOf(t, s, tk.ID); bl.ResolvedAt != "" {
 		t.Fatalf("after reopen, blocker = %+v", bl)
-	}
-	if len(got) != 2 || got[1].Resolved {
-		t.Fatalf("resolutions handed on = %+v", got)
 	}
 }
 
@@ -195,12 +187,8 @@ func TestJiraBlockerSearchErrorIsUnknown(t *testing.T) {
 	}
 }
 
-func TestTaskWriteUnblocksThroughSink(t *testing.T) {
+func TestTaskWriteUnblocks(t *testing.T) {
 	s, _ := tasksServer(t)
-	var got []tasks.Resolution
-	s.onResolutions = func(rs []tasks.Resolution) { got = append(got, rs...) }
-	s.initTaskHooks()
-	t.Cleanup(func() { tasks.SetResolutionSink(s.DB, nil) })
 	a, b := mustTask(t, s, tasks.NewTask{Title: "A"}), mustTask(t, s, tasks.NewTask{Title: "B"})
 	if _, err := tasks.AddBlocker(s.DB, webUser, a.ID, tasks.BlockerTarget{Kind: tasks.BlockerTask, BlockingTaskID: b.ID}); err != nil {
 		t.Fatal(err)
@@ -210,8 +198,8 @@ func TestTaskWriteUnblocksThroughSink(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatalf("state: %d %s", rec.Code, rec.Body)
 	}
-	if len(got) != 1 || !got[0].Resolved || got[0].Reason != "done" {
-		t.Fatalf("resolutions = %+v", got)
+	if bl := blockerOf(t, s, a.ID); bl.ResolvedAt == "" || bl.ResolvedReason != "done" {
+		t.Fatalf("blocker = %+v", bl)
 	}
 	if tk, _ := tasks.Get(s.DB, a.ID); tk.Blocked {
 		t.Fatal("A still blocked")

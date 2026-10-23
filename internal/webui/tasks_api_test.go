@@ -26,9 +26,7 @@ func tasksServer(t *testing.T) (*Server, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Unregister any resolution sink initTaskHooks adds, so none outlives
-	// its test.
-	t.Cleanup(func() { tasks.SetResolutionSink(conn, nil); conn.Close() })
+	t.Cleanup(func() { conn.Close() })
 	wt := testgit.Worktree(t)
 	if err := registry.Register(conn, registry.Entry{Path: wt, Repo: "r", RepoRoot: wt, Branch: "b", CreatedAt: "now"}); err != nil {
 		t.Fatal(err)

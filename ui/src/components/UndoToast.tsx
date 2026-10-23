@@ -4,7 +4,11 @@ import { notifications } from "@mantine/notifications"
 import { useButtonHotkey } from "../hooks/useButtonHotkey"
 import { KeyHint } from "./search/KeyHint"
 
-/** How long an undo stays on offer. */
+/**
+ * How long an undo stays on offer. The server holds an "Unblocked"
+ * notification for the same window (`unblockHoldDefault` in
+ * internal/webui/notify_unblock.go): change both together.
+ */
 export const UNDO_WINDOW_MS = 10_000
 
 let nextID = 0

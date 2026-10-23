@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"sync"
 )
 
 // Logf is where the package logs what it cannot return: failures of the
@@ -211,50 +210,16 @@ func blockingTaskDone(q dbtx, id int64) (bool, string, error) {
 	return false, "", nil
 }
 
-// Resolution sinks, keyed by connection: where write-time resolutions go
-// (see resolveAfterWrite). Keyed by conn so two servers in one process
-// (tests) never see each other's.
-var (
-	sinksMu sync.Mutex
-	sinks   = map[*sql.DB]func([]Resolution){}
-)
-
-// SetResolutionSink registers fn to receive the resolutions that this
-// package's own writes on conn make (a task completed, reopened or deleted,
-// a blocker added), which their callers never see: SetState, Delete and
-// AddBlocker return their usual results. `worktree ui` registers its
-// notifier here; fn nil unregisters. fn runs synchronously on the writing
-// goroutine, after commit.
-func SetResolutionSink(conn *sql.DB, fn func([]Resolution)) {
-	sinksMu.Lock()
-	defer sinksMu.Unlock()
-	if fn == nil {
-		delete(sinks, conn)
-		return
-	}
-	sinks[conn] = fn
-}
-
 // resolveAfterWrite is what a public write that can change a task
 // blocker's condition calls after its commit: it resolves task blockers at
-// once (they depend only on this DB) and hands any change to conn's sink.
-// Resource blockers need a StatusLookup, which only `worktree ui` has; they
-// wait for its next pass (or its own after-write step). As with holds, an
-// error is logged, not returned: the write has committed, and the poll
-// loop resolves again after every pass.
+// once (they depend only on this DB). Resource blockers need a
+// StatusLookup, which only `worktree ui` has; they wait for its next pass
+// (or its own after-write step). The resolutions need no handing on: the
+// events they write are what `worktree ui`'s notifier reads, whichever
+// process wrote them. As with holds, an error is logged, not returned: the
+// write has committed, and the poll loop resolves again after every pass.
 func resolveAfterWrite(conn *sql.DB) {
-	rs, err := ResolveBlockers(conn, nil)
-	if err != nil {
+	if _, err := ResolveBlockers(conn, nil); err != nil {
 		Logf("tasks: %v (the poll loop will retry)", err)
-		return
-	}
-	if len(rs) == 0 {
-		return
-	}
-	sinksMu.Lock()
-	fn := sinks[conn]
-	sinksMu.Unlock()
-	if fn != nil {
-		fn(rs)
 	}
 }

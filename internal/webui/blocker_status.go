@@ -22,57 +22,35 @@ type jiraSearcher interface {
 // Jira's maxResults ceiling.
 const jiraSearchChunk = 50
 
-// initTaskHooks points the tasks package's logging at this server's logger
-// and registers the server as the sink for resolutions the tasks package
-// makes inside its own writes (a task completed, reopened or deleted, a
-// blocker added). Called from Handler and StartPolling; runs once. Serve
-// unregisters the sink when it returns.
+// initTaskHooks points the tasks package's logging at this server's
+// logger. Called from Handler and StartPolling; runs once.
 func (s *Server) initTaskHooks() {
-	s.taskHooksOnce.Do(func() {
-		tasks.Logf = s.logger().Printf
-		if s.DB != nil {
-			tasks.SetResolutionSink(s.DB, s.handleResolutions)
-		}
-	})
+	s.taskHooksOnce.Do(func() { tasks.Logf = s.logger().Printf })
 }
 
 // afterTaskWrite is what the web API runs after a task write that can
 // change a blocker's condition: a resolution pass that never touches the
 // network (PR state from the DB cache, Jira statuses as the last poll pass
-// fetched them), then hold reconciliation, then handleResolutions. A
-// checkbox click must never wait on Jira: the poll loop is the only caller
-// that searches it (resolvePass(true)). Task blockers were already
-// resolved inside the tasks write itself.
+// fetched them), then hold reconciliation. A checkbox click must never
+// wait on Jira: the poll loop is the only caller that searches it
+// (resolvePass(true)). Task blockers were already resolved inside the
+// tasks write itself.
 func (s *Server) afterTaskWrite() { s.resolvePass(false) }
 
-// resolvePass runs ResolveBlockers, ReconcileHolds and handleResolutions.
-// With network, the pass searches Jira (refreshing the cached statuses);
-// without, it reads only the DB and that cache. Errors are logged: the
-// write it follows has committed, and the next pass retries.
+// resolvePass runs ResolveBlockers, then ReconcileHolds. With network, the
+// pass searches Jira (refreshing the cached statuses); without, it reads
+// only the DB and that cache. Errors are logged: the write it follows has
+// committed, and the next pass retries. What it resolves needs no handing
+// on: the notifier finds the system events it wrote (notify_unblock.go).
 func (s *Server) resolvePass(network bool) {
 	if s.DB == nil {
 		return
 	}
-	rs, err := tasks.ResolveBlockers(s.DB, s.blockerStatusLookup(network))
-	if err != nil {
+	if _, err := tasks.ResolveBlockers(s.DB, s.blockerStatusLookup(network)); err != nil {
 		s.logger().Printf("blockers: %v", err)
 	}
 	if err := tasks.ReconcileHolds(s.DB); err != nil {
 		s.logger().Printf("blockers: %v", err)
-	}
-	s.handleResolutions(rs)
-}
-
-// handleResolutions is where every automatic blocker resolution ends up,
-// from the poll loop, afterTaskWrite and the tasks package's write-time
-// sink. It is the seam for the "Unblocked" notification (Phase 5, Task 5),
-// which will take the resolved ones from here.
-func (s *Server) handleResolutions(rs []tasks.Resolution) {
-	if len(rs) == 0 {
-		return
-	}
-	if s.onResolutions != nil {
-		s.onResolutions(rs)
 	}
 }
 

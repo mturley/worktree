@@ -274,7 +274,11 @@ func (s *Server) notifyBatches(events []newEvent) ([]notifyBatch, error) {
 // first, and the advanced id cursor. Every row past the cursor advances it,
 // including the user's own events and those of deleted tasks, which are then
 // dropped: the user's events never notify, and a deleted task's never count.
-func readNewTaskEvents(conn *sql.DB, c notifyCursor) ([]tasks.FeedEvent, int64, error) {
+//
+// System blocker events never reach the per-worktree path (events): an
+// automatic resolution comes back in unblocks, for the Unblocked path
+// (notify_unblock.go), and an automatic unresolve is dropped.
+func readNewTaskEvents(conn *sql.DB, c notifyCursor) (events, unblocks []tasks.FeedEvent, next int64, err error) {
 	rows, err := conn.Query(
 		`SELECT e.id, e.task_id, e.ts, e.type, e.actor, e.actor_session, e.payload,
 		        COALESCE(t.title,''), (t.id IS NOT NULL AND t.deleted_at IS NULL)
@@ -282,17 +286,16 @@ func readNewTaskEvents(conn *sql.DB, c notifyCursor) ([]tasks.FeedEvent, int64, 
 		  WHERE e.id > ?
 		  ORDER BY e.id`, c.taskID)
 	if err != nil {
-		return nil, c.taskID, err
+		return nil, nil, c.taskID, err
 	}
 	defer rows.Close()
-	next := c.taskID
-	var out []tasks.FeedEvent
+	next = c.taskID
 	for rows.Next() {
 		var e tasks.FeedEvent
 		var payload string
 		var live bool
 		if err := rows.Scan(&e.ID, &e.TaskID, &e.TS, &e.Type, &e.Actor, &e.ActorSession, &payload, &e.TaskTitle, &live); err != nil {
-			return nil, c.taskID, err
+			return nil, nil, c.taskID, err
 		}
 		if e.ID > next {
 			next = e.ID
@@ -301,12 +304,18 @@ func readNewTaskEvents(conn *sql.DB, c notifyCursor) ([]tasks.FeedEvent, int64, 
 			continue
 		}
 		e.Payload = []byte(payload)
-		out = append(out, e)
+		switch {
+		case isUnblockEvent(e):
+			unblocks = append(unblocks, e)
+		case isSystemBlockerEvent(e):
+		default:
+			events = append(events, e)
+		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, c.taskID, err
+		return nil, nil, c.taskID, err
 	}
-	return out, next, nil
+	return events, unblocks, next, nil
 }
 
 // notifyTaskBatches matches agent task events to worktrees, one batch per

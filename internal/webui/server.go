@@ -21,7 +21,6 @@ import (
 	"github.com/mturley/worktree/internal/linked"
 	"github.com/mturley/worktree/internal/linkmeta"
 	"github.com/mturley/worktree/internal/slackpoller"
-	"github.com/mturley/worktree/internal/tasks"
 )
 
 type Server struct {
@@ -171,16 +170,23 @@ type Server struct {
 	credCheck *credValidators
 
 	// Blocker resolution; see blocker_status.go. blockerJira is the seam
-	// for the Jira search (nil builds a client from the watcher config);
-	// onResolutions is a test seam that sees every resolution handed to the
-	// notifier hook. taskHooksOnce guards initTaskHooks. jiraStatus holds
-	// the Jira statuses poll passes found, by key, so web writes can resolve
-	// Jira blockers without contacting Jira; jiraStatusMu guards it.
+	// for the Jira search (nil builds a client from the watcher config).
+	// taskHooksOnce guards initTaskHooks. jiraStatus holds the Jira
+	// statuses poll passes found, by key, so web writes can resolve Jira
+	// blockers without contacting Jira; jiraStatusMu guards it.
 	blockerJira   func() (jiraSearcher, bool)
-	onResolutions func([]tasks.Resolution)
 	taskHooksOnce sync.Once
 	jiraStatusMu  sync.Mutex
 	jiraStatus    map[string]wjira.IssueSummary
+
+	// "Unblocked" notifications; see notify_unblock.go. unblockHold is the
+	// hold before one is sent (0 = unblockHoldDefault) and notifyNow the
+	// notifier's clock (nil = time.Now): test seams. unblockPending holds
+	// the found ones until their hold elapses; unblockMu guards it.
+	unblockHold    time.Duration
+	notifyNow      func() time.Time
+	unblockMu      sync.Mutex
+	unblockPending []pendingUnblock
 
 	// LinkResolver is a seam for tests; nil means a default resolver.
 	LinkResolver *linkmeta.Resolver
@@ -431,9 +437,6 @@ func (s *Server) Serve(httpLn, httpsLn net.Listener) error {
 	}
 
 	err := <-errc
-	if s.DB != nil {
-		tasks.SetResolutionSink(s.DB, nil) // registered by initTaskHooks
-	}
 	local.Close()
 	if remote != nil {
 		remote.Close()
