@@ -92,7 +92,10 @@ func (s *Server) taskDetail(id int64) (taskDetailDTO, error) {
 	}
 	td := newTaskDTO(t)
 	sum := s.taskUnreadSummaries()[t.ID]
-	td.UnreadCount, td.UnreadThroughTS, td.BlockerLabels = sum.Count, sum.NewestTS, labels
+	td.UnreadCount, td.UnreadThroughTS = sum.Count, sum.NewestTS
+	if t.Blocked { // a done task is never blocked, so names no blockers
+		td.BlockerLabels = labels
+	}
 	d := taskDetailDTO{
 		taskDTO:     td,
 		Blockers:    blockers,

@@ -187,6 +187,31 @@ func TestTaskListCarriesBlockedFields(t *testing.T) {
 	}
 }
 
+func TestDoneTaskDTOIsNeverBlocked(t *testing.T) {
+	s, _ := tasksServer(t)
+	tk := mustTask(t, s, tasks.NewTask{Title: "main"})
+	addBlockerReq(t, s, map[string]any{"id": tk.ID, "kind": "other", "text": "waiting"})
+	if _, err := tasks.SetState(s.DB, tasks.Actor{Kind: tasks.ActorUser}, tk.ID, tasks.StateDone); err != nil {
+		t.Fatal(err)
+	}
+	var out []taskDTO
+	if err := json.Unmarshal(serveTasks(t, s, http.MethodGet, "/api/tasks?completed=1", nil).Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range out {
+		if d.ID == tk.ID && (d.Blocked || d.BlockerCount != 0 || len(d.BlockerLabels) != 0) {
+			t.Errorf("done task in list = blocked %v count %d labels %q", d.Blocked, d.BlockerCount, d.BlockerLabels)
+		}
+	}
+	d := getDetail(t, s, tk.ID)
+	if d.Blocked || d.BlockerCount != 0 || len(d.BlockerLabels) != 0 || d.BlockerLabels == nil {
+		t.Errorf("done task detail = blocked %v count %d labels %#v", d.Blocked, d.BlockerCount, d.BlockerLabels)
+	}
+	if len(d.Blockers) != 1 || d.Blockers[0].Resolved {
+		t.Errorf("its blocker stays listed, unresolved: %+v", d.Blockers)
+	}
+}
+
 func TestResourceDTOsCarryBlocksCount(t *testing.T) {
 	s, x := tasksServer(t)
 	must(t, resources.Add(s.DB, x, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"}))

@@ -288,10 +288,11 @@ func loadLinks(q dbtx, onlyID *int64) (map[int64][]Link, error) {
 }
 
 // loadBlockerCounts counts the unresolved blockers of every live task (or
-// just onlyID's) in one query, keyed by task. Tasks with none are absent.
+// just onlyID's) in one query, keyed by task. Tasks with none are absent,
+// and so are done tasks: a done task is never blocked.
 func loadBlockerCounts(q dbtx, onlyID *int64) (map[int64]int, error) {
 	query := `SELECT b.task_id, COUNT(*) FROM task_blockers b JOIN tasks t ON t.id = b.task_id
-	           WHERE t.deleted_at IS NULL AND b.resolved_at IS NULL`
+	           WHERE t.deleted_at IS NULL AND t.state != 'done' AND b.resolved_at IS NULL`
 	var args []any
 	if onlyID != nil {
 		query += ` AND b.task_id = ?`

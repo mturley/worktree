@@ -471,3 +471,27 @@ func TestManuallyResolvableExported(t *testing.T) {
 		}
 	}
 }
+
+func TestDoneTaskIsNeverBlocked(t *testing.T) {
+	conn := newDB(t)
+	tk := mustCreate(t, conn, "t")
+	mustAddBlocker(t, conn, tk.ID, otherTarget("waiting"))
+	if _, err := SetState(conn, user, tk.ID, StateDone); err != nil {
+		t.Fatal(err)
+	}
+	got := mustGet(t, conn, tk.ID)
+	if got.Blocked || got.BlockerCount != 0 {
+		t.Fatalf("done task: blocked %v count %d, want false 0", got.Blocked, got.BlockerCount)
+	}
+	for _, x := range mustList(t, conn, Filter{IncludeCompleted: true}) {
+		if x.ID == tk.ID && (x.Blocked || x.BlockerCount != 0) {
+			t.Fatalf("done task in list: blocked %v count %d", x.Blocked, x.BlockerCount)
+		}
+	}
+	if _, err := SetState(conn, user, tk.ID, StateInProgress); err != nil {
+		t.Fatal(err)
+	}
+	if got := mustGet(t, conn, tk.ID); !got.Blocked || got.BlockerCount != 1 {
+		t.Fatalf("reopened: blocked %v count %d, want true 1", got.Blocked, got.BlockerCount)
+	}
+}

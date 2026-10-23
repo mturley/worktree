@@ -82,7 +82,8 @@ type Task struct {
 	Archived                                     bool      // has links and every one is archived; false for a global task
 	Subtasks                                     []Subtask // filled by Get/List, never nil
 	// Blocked is true while any blocker is unresolved; BlockerCount is the
-	// number of unresolved blockers. Filled by Get/List.
+	// number of unresolved blockers. Filled by Get/List. A done task is
+	// never blocked: both are false and 0 for it.
 	Blocked      bool
 	BlockerCount int
 }

@@ -192,4 +192,12 @@ describe("TaskRow blocked chip", () => {
     wrap(<TaskRow task={task()} onState={() => {}} onToggleStar={() => {}} />)
     expect(screen.queryByTestId("task-blocked-chip")).toBeNull()
   })
+
+  it("shows no chip for a done task, even one still flagged blocked", () => {
+    wrap(<TaskRow
+      task={task({ state: "done", blocked: true, blocker_count: 1, blocker_labels: ["#4498"] })}
+      onState={() => {}} onToggleStar={() => {}}
+    />)
+    expect(screen.queryByTestId("task-blocked-chip")).toBeNull()
+  })
 })

@@ -13,7 +13,7 @@ export const TASK_STATES: TaskState[] = ["not_started", "in_progress", "done"]
 
 /** A state's display name, or `v` unchanged when it is not a TaskState ("deleted", say). */
 export function taskStateLabel(v: string): string {
-  return v in TASK_STATE_LABEL ? TASK_STATE_LABEL[v as TaskState] : v
+  return Object.hasOwn(TASK_STATE_LABEL, v) ? TASK_STATE_LABEL[v as TaskState] : v
 }
 
 const STATES = TASK_STATES.map((state) => ({ state, label: TASK_STATE_LABEL[state] }))

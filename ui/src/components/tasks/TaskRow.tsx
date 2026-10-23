@@ -117,9 +117,10 @@ export function TaskRow({ task, ownResource, dragHandle, onState, onToggleStar, 
         // modal does not clear it; only a mark read does.
         <UnreadMarkerDot label="unread task activity" />
       )}
-      {task.blocked && (
+      {task.blocked && task.state !== "done" && (
         // Never red for a resolved blocker: the server sends only the
         // unresolved ones' labels, and blocked only while one is left.
+        // A done task is never blocked (the server agrees).
         <Tooltip
           multiline
           maw={320}

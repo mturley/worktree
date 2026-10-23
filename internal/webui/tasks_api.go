@@ -146,7 +146,7 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 	for _, t := range ts {
 		d := newTaskDTO(t)
 		d.UnreadCount, d.UnreadThroughTS = sums[t.ID].Count, sums[t.ID].NewestTS
-		if l := labels[t.ID]; l != nil {
+		if l := labels[t.ID]; l != nil && t.Blocked { // a done task is never blocked
 			d.BlockerLabels = l
 		}
 		out = append(out, d)
