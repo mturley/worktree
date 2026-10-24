@@ -17,7 +17,16 @@ vi.mock("../api/client", async (orig) => {
 })
 
 import { HttpError } from "../api/client"
-import { conflictComment, useDeletedDrafts, useReviewCommentMutations, useReviewComments } from "./useReviewComments"
+import {
+  conflictComment,
+  editDraftKey,
+  NEW_DRAFT_KEY,
+  useDeletedDrafts,
+  useEditingCommentIds,
+  useEditorDraft,
+  useReviewCommentMutations,
+  useReviewComments,
+} from "./useReviewComments"
 
 function wrapper() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -95,5 +104,40 @@ describe("useDeletedDrafts", () => {
     act(() => a.result.current.dismiss(2))
     act(() => a.result.current.dismiss(1))
     expect(a.result.current.drafts).toEqual([])
+  })
+})
+
+describe("editor drafts", () => {
+  it("sets, updates, clears and scopes per path and key", () => {
+    const a = renderHook(() => useEditorDraft("/ea", editDraftKey("inline", 3)))
+    const other = renderHook(() => useEditorDraft("/eb", editDraftKey("inline", 3)))
+    act(() => a.result.current[1]({ text: "x", baseVersion: 2 }))
+    act(() => a.result.current[1]((d) => d && { ...d, text: "xy" }))
+    expect(a.result.current[0]).toEqual({ text: "xy", baseVersion: 2 })
+    expect(other.result.current[0]).toBeUndefined()
+    act(() => a.result.current[1](undefined))
+    expect(a.result.current[0]).toBeUndefined()
+  })
+
+  it("lists the comments being edited, in either variant, and not a new comment", () => {
+    const ids = renderHook(() => useEditingCommentIds("/ec"))
+    const inline = renderHook(() => useEditorDraft("/ec", editDraftKey("inline", 4)))
+    const sidebar = renderHook(() => useEditorDraft("/ec", editDraftKey("sidebar", 9)))
+    const added = renderHook(() => useEditorDraft("/ec", NEW_DRAFT_KEY))
+    act(() => added.result.current[1]({ text: "new", target: "t" }))
+    expect(ids.result.current).toEqual([])
+    act(() => inline.result.current[1]({ text: "a", baseVersion: 1 }))
+    act(() => sidebar.result.current[1]({ text: "b", baseVersion: 1 }))
+    const before = ids.result.current
+    expect(before).toEqual([4, 9])
+    // Typing changes nothing here.
+    act(() => inline.result.current[1]((d) => d && { ...d, text: "ab" }))
+    expect(ids.result.current).toBe(before)
+    act(() => {
+      inline.result.current[1](undefined)
+      sidebar.result.current[1](undefined)
+      added.result.current[1](undefined)
+    })
+    expect(ids.result.current).toEqual([])
   })
 })

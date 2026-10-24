@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react"
+import { act, cleanup, render, renderHook, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { DiffLineAnnotation, FileDiffMetadata, SelectedLineRange } from "@pierre/diffs"
+import { HttpError } from "../../api/client"
 import type { ReviewCommentItem } from "../../api/types"
 import { useDeletedDrafts } from "../../hooks/useReviewComments"
 import type { CommentTarget } from "./commentRange"
@@ -71,13 +72,16 @@ vi.mock("@pierre/diffs/react", () => ({
   },
 }))
 
+const apiMock = vi.hoisted(() => ({ updateReviewComment: vi.fn() }))
 vi.mock("../../api/client", async (orig) => {
   const actual = await orig<typeof import("../../api/client")>()
   return {
+    ...actual,
     api: {
       ...actual.api,
       settings: async () => ({ worktree: { editor: "code" } }),
       openInEditor: vi.fn(async () => ({ ok: true })),
+      updateReviewComment: apiMock.updateReviewComment,
     },
   }
 })
@@ -330,7 +334,7 @@ describe("DiffBody review comments", () => {
     function Seed() {
       const { add, dismiss: d } = useDeletedDrafts("/w/a")
       dismiss = d
-      useEffect(() => add({ comment: c, text: "my unsaved text" }), [add])
+      useEffect(() => add({ comment: c, text: "my unsaved text", view: "o..n" }), [add])
       return null
     }
     const r = await wrap({ comments: [c] })
@@ -341,5 +345,37 @@ describe("DiffBody review comments", () => {
     expect(s).toHaveTextContent("my unsaved text")
     act(() => dismiss(5))
     expect(slot("a.go", "additions", 12)).toBeNull()
+  })
+
+  it("leaves a tombstone from another view (or none) out of the diff", async () => {
+    let dismiss: (id: number) => void = noop
+    function Seed() {
+      const { add, dismiss: d } = useDeletedDrafts("/w/a")
+      dismiss = d
+      useEffect(() => {
+        add({ comment: item(5), text: "older view", view: "o0..n0" })
+        add({ comment: item(6, { end_line: 13 }), text: "unknown view" })
+      }, [add])
+      return null
+    }
+    await wrap()
+    render(<Seed />)
+    expect(slot("a.go", "additions", 12)).toBeNull()
+    expect(slot("a.go", "additions", 13)).toBeNull()
+    act(() => {
+      dismiss(5)
+      dismiss(6)
+    })
+  })
+
+  it("inline cards record the view with a tombstone", async () => {
+    apiMock.updateReviewComment.mockRejectedValueOnce(new HttpError("gone", 404))
+    const drafts = renderHook(() => useDeletedDrafts("/w/a")).result
+    await wrap({ comments: [item(8)] })
+    await userEvent.click(screen.getByRole("button", { name: "Edit comment" }))
+    await userEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() => expect(drafts.current.drafts).toHaveLength(1))
+    expect(drafts.current.drafts[0].view).toBe("o..n")
+    act(() => drafts.current.dismiss(8))
   })
 })

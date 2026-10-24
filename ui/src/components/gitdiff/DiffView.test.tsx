@@ -15,6 +15,8 @@ vi.mock("./DiffBody", () => ({
     highlighted: string | null
     comments: { id: number }[]
     openFile: { file: string; n: number } | null
+    onStartComment: (t: { file: string; side: "new"; start: number; end: number }) => void
+    onPendingDone: () => void
   }) => (
     <div
       data-testid="diff-body"
@@ -24,6 +26,8 @@ vi.mock("./DiffBody", () => ({
       data-open-file={p.openFile?.file ?? ""}
     >
       {p.files.map((f) => f.path).join(",")}
+      <button onClick={() => p.onStartComment({ file: "a.go", side: "new", start: 1, end: 1 })}>start comment</button>
+      <button onClick={p.onPendingDone}>end comment</button>
     </div>
   ),
 }))
@@ -64,7 +68,7 @@ vi.mock("../../api/client", async (orig) => {
 })
 
 import { HttpError } from "../../api/client"
-import { useDeletedDrafts } from "../../hooks/useReviewComments"
+import { editDraftKey, useDeletedDrafts, useEditorDraft } from "../../hooks/useReviewComments"
 import DiffView from "./DiffView"
 
 const PATCH = (file: string) => `diff --git a/${file} b/${file}
@@ -516,6 +520,73 @@ describe("DiffView", () => {
     await refetchComments()
     await waitFor(() => expect(apiMock.diffPatch).toHaveBeenCalledTimes(2))
     expect(apiMock.diffPatch).toHaveBeenLastCalledWith("/wt/foo", "merge-base", { from: "c1", to: "c1" }, false)
+  })
+
+  it("does not reload on an unknown rev while a comment is edited, and does once it closes", async () => {
+    let expired = false
+    let refused = 0
+    apiMock.reviewComments.mockImplementation(async (_p: string, v?: { newRev: string }) => {
+      if (v && expired) {
+        refused++
+        throw new HttpError("unknown rev", 404)
+      }
+      return { comments: [comment(1, "shown")] }
+    })
+    setup()
+    await screen.findByRole("button", { name: "Review comments (1)" })
+    await waitFor(() => expect(apiMock.reviewComments).toHaveBeenCalledWith("/wt/foo", { oldRev: "mb", newRev: "snap" }))
+    const edit = renderHook(() => useEditorDraft("/wt/foo", editDraftKey("inline", 1))).result
+    act(() => edit.current[1]({ text: "typing", baseVersion: 1 }))
+    expired = true
+    await refetchComments()
+    await waitFor(() => expect(refused).toBe(1))
+    await act(async () => {})
+    expect(apiMock.diffPatch).toHaveBeenCalledTimes(1)
+    act(() => edit.current[1](undefined))
+    await waitFor(() => expect(apiMock.diffPatch).toHaveBeenCalledTimes(2))
+  })
+
+  it("does not reload on an unknown rev while a new comment is open", async () => {
+    let expired = false
+    let refused = 0
+    apiMock.reviewComments.mockImplementation(async (_p: string, v?: { newRev: string }) => {
+      if (v && expired) {
+        refused++
+        throw new HttpError("unknown rev", 404)
+      }
+      return { comments: [] }
+    })
+    setup()
+    await screen.findByTestId("diff-body")
+    await waitFor(() => expect(apiMock.reviewComments).toHaveBeenCalledWith("/wt/foo", { oldRev: "mb", newRev: "snap" }))
+    await userEvent.click(screen.getByRole("button", { name: "start comment" }))
+    expired = true
+    await refetchComments()
+    await waitFor(() => expect(refused).toBe(1))
+    await act(async () => {})
+    expect(apiMock.diffPatch).toHaveBeenCalledTimes(1)
+    await userEvent.click(screen.getByRole("button", { name: "end comment" }))
+    await waitFor(() => expect(apiMock.diffPatch).toHaveBeenCalledTimes(2))
+  })
+
+  it("gives the body no comments until the new view's own list arrives", async () => {
+    let answer: (v: { comments: ReviewCommentItem[] }) => void = () => {}
+    apiMock.reviewComments.mockImplementation((_p: string, v?: { newRev: string }) =>
+      v?.newRev === "snap2"
+        ? new Promise((resolve) => { answer = resolve })
+        : Promise.resolve({ comments: [comment(1, "shown")] }),
+    )
+    apiMock.patches = [patch(), patch({ new_rev: "snap2" })]
+    window.sessionStorage.setItem("worktree.reviewSidebar", "true")
+    setup()
+    await waitFor(() => expect(screen.getByTestId("diff-body")).toHaveAttribute("data-comments", "1"))
+    await userEvent.click(screen.getByRole("switch", { name: "Hide whitespace" }))
+    await waitFor(() => expect(apiMock.reviewComments).toHaveBeenCalledWith("/wt/foo", { oldRev: "mb", newRev: "snap2" }))
+    expect(screen.getByTestId("diff-body")).toHaveAttribute("data-comments", "")
+    // The sidebar keeps the list meanwhile.
+    expect(screen.getByRole("button", { name: "Review comments (1)" })).toBeInTheDocument()
+    await act(async () => answer({ comments: [comment(2, "shown")] }))
+    await waitFor(() => expect(screen.getByTestId("diff-body")).toHaveAttribute("data-comments", "2"))
   })
 
   it("reloads at most once for the same revs", async () => {

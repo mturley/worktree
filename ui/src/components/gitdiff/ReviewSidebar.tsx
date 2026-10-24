@@ -16,9 +16,11 @@ const OUTSIDE_CHANGES = "Outside the changes — this file has no changes to sho
  * while being edited, kept until dismissed. Sends them to an agent as one
  * prompt, or clears them all.
  */
-export function ReviewSidebar({ path, comments, prompt, onJump, onClose, escHint }: {
+export function ReviewSidebar({ path, comments, viewKey, prompt, onJump, onClose, escHint }: {
   path: string
   comments: ReviewCommentItem[]
+  /** The view (`old_rev..new_rev`) the comments' positions are for, when known. */
+  viewKey?: string
   prompt: string
   onJump: (c: ReviewCommentItem) => void
   /** Given when the sidebar has its own close control (wide; the drawer has one). */
@@ -65,6 +67,7 @@ export function ReviewSidebar({ path, comments, prompt, onJump, onClose, escHint
           variant="sidebar"
           onJump={() => onJump(c)}
           jumpDisabledReason={c.view?.status === "outside_changes" ? OUTSIDE_CHANGES : undefined}
+          viewKey={viewKey}
         />
       ))}
       {gone.map((d) => (

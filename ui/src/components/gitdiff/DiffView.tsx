@@ -8,7 +8,7 @@ import { useDiffCommits } from "../../hooks/useDiffData"
 import { useDiffSelection } from "../../hooks/useDiffSelection"
 import { useDiffView } from "../../hooks/useDiffView"
 import { useIsWide } from "../../hooks/useIsWide"
-import { useDeletedDrafts, useReviewComments } from "../../hooks/useReviewComments"
+import { useDeletedDrafts, useEditingCommentIds, useReviewComments } from "../../hooks/useReviewComments"
 import { useReviewSidebar } from "../../hooks/useReviewSidebar"
 import { useWorktreeGit } from "../../hooks/useWorktreeGit"
 import { diffUnavailable } from "../../lib/diffLabels"
@@ -209,7 +209,7 @@ export default function DiffView({
 
   // Review comments, positioned for the view on screen. The list goes to
   // DiffBody as react-query hands it over, so its annotations stay put
-  // across polls that change nothing.
+  // across polls that change nothing (but not another view's: see below).
   const review = useReviewComments(path, shown ? { oldRev: shown.old_rev, newRev: shown.new_rev } : undefined)
   const comments = review.data ?? NO_COMMENTS
   const fresh = !!review.data && !review.isPlaceholderData
@@ -222,22 +222,7 @@ export default function DiffView({
     if (review.data && reviewCount === 0 && reviewOpen) setReviewOpen(false)
   }, [review.data, reviewCount, reviewOpen, setReviewOpen])
 
-  // The server forgets a view's revs after a while; the list then answers
-  // 404. A fresh load of the same view (its own request, never a pending
-  // selection change) hands out fresh revs. Once per rev pair, until the
-  // list loads again, so a load that doesn't help can't loop.
   const revPair = shown ? `${shown.old_rev}..${shown.new_rev}` : undefined
-  const shownRequest = shown?.request
-  const autoReloaded = useRef<string | null>(null)
-  const reviewError = review.error
-  useEffect(() => {
-    if (fresh && !reviewError) autoReloaded.current = null
-    if (!revPair || !shownRequest || !(reviewError instanceof HttpError) || reviewError.status !== 404) return
-    if (autoReloaded.current === revPair) return
-    autoReloaded.current = revPair
-    refetchCommentsOnLoad.current = true
-    reload({ base: shownRequest.base, range: shownRequest.range, ignoreWs: shownRequest.ignoreWs })
-  }, [fresh, reviewError, revPair, shownRequest, reload])
 
   // A view change: anything that loads a different patch.
   const viewKey = shown ? `${loadKey}:${shown.old_rev}..${shown.new_rev}` : ""
@@ -257,6 +242,26 @@ export default function DiffView({
     recheckAsked.current = false
     setPendingJump((j) => (j && j.key === undefined ? { ...j, key: viewKey } : null))
   }, [viewKey])
+
+  // The server forgets a view's revs once unused for a while; the list then
+  // answers 404. A fresh load of the same view (its own request, never a
+  // pending selection change) hands out fresh revs. Once per rev pair, until
+  // the list loads again, so a load that doesn't help can't loop. Never while
+  // a comment is being written or edited: the load would move the diff under
+  // it. The next poll after it closes tries again.
+  const editingIds = useEditingCommentIds(path)
+  const editorOpen = pendingComment !== null || editingIds.some((id) => comments.some((c) => c.id === id))
+  const shownRequest = shown?.request
+  const autoReloaded = useRef<string | null>(null)
+  const reviewError = review.error
+  useEffect(() => {
+    if (fresh && !reviewError) autoReloaded.current = null
+    if (!revPair || !shownRequest || !(reviewError instanceof HttpError) || reviewError.status !== 404) return
+    if (editorOpen || autoReloaded.current === revPair) return
+    autoReloaded.current = revPair
+    refetchCommentsOnLoad.current = true
+    reload({ base: shownRequest.base, range: shownRequest.range, ignoreWs: shownRequest.ignoreWs })
+  }, [fresh, reviewError, revPair, shownRequest, reload, editorOpen])
 
   const [openFile, setOpenFile] = useState<{ file: string; n: number } | null>(null)
   const showComment = useCallback((c: ReviewCommentItem) => {
@@ -309,6 +314,7 @@ export default function DiffView({
       <ReviewSidebar
         path={path}
         comments={comments}
+        viewKey={fresh ? revPair : undefined}
         prompt={prompt}
         onJump={jump}
         onClose={onClose}
@@ -480,7 +486,9 @@ export default function DiffView({
         path={path}
         highlighted={highlighted}
         height="100%"
-        comments={comments}
+        // Until the shown view's own list arrives, the last view's positions
+        // would land on lines of this patch: none at all, then.
+        comments={fresh ? comments : NO_COMMENTS}
         pending={pendingComment}
         onStartComment={setPendingComment}
         onPendingDone={() => setPendingComment(null)}

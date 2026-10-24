@@ -5,8 +5,11 @@ import { Button, Group, Stack, Text, Textarea } from "@mantine/core"
  * A comment's text box. Cmd/Ctrl+Enter submits and Escape cancels; Escape is
  * stopped here so it does not also close whatever the editor sits inside.
  */
-export function CommentEditor({ initial, submitLabel, onSubmit, onCancel, busy, error }: {
+export function CommentEditor({ initial, onChange, submitLabel, onSubmit, onCancel, busy, error }: {
+  /** The text it opens with; later values are ignored. */
   initial: string
+  /** Each change to the text, for whoever keeps it beyond this editor's life. */
+  onChange?: (text: string) => void
   submitLabel: string
   onSubmit: (text: string) => void
   onCancel: () => void
@@ -27,7 +30,10 @@ export function CommentEditor({ initial, submitLabel, onSubmit, onCancel, busy, 
         rows={Math.min(Math.max(text.split("\n").length + 1, 3), 20)}
         autoFocus
         value={text}
-        onChange={(e) => setText(e.currentTarget.value)}
+        onChange={(e) => {
+          setText(e.currentTarget.value)
+          onChange?.(e.currentTarget.value)
+        }}
         onKeyDown={(e) => {
           if (e.key === "Escape") {
             e.preventDefault()

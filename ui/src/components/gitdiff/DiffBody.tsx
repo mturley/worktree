@@ -106,14 +106,18 @@ export function DiffBody({
   }, [openFileName, openFileN, setOpen])
 
   // The comments to place: those the view shows, and the ones deleted
-  // elsewhere while being edited, at their last place, until dismissed.
+  // elsewhere while being edited, at their last place, until dismissed. That
+  // place is a line of the view it was deleted in, so only that view has it.
   const deleted = useDeletedDrafts(path).drafts
   const placed = useMemo(() => {
     const shown = comments.filter((c) => c.view?.status === "shown")
     const ids = new Set(comments.map((c) => c.id))
-    const gone = deleted.map((d) => d.comment).filter((c) => !ids.has(c.id) && c.view?.status === "shown")
+    const gone = deleted
+      .filter((d) => d.view === `${oldRev}..${newRev}`)
+      .map((d) => d.comment)
+      .filter((c) => !ids.has(c.id) && c.view?.status === "shown")
     return [...shown, ...gone]
-  }, [comments, deleted])
+  }, [comments, deleted, oldRev, newRev])
 
   // pierre compares options shallowly, so the gutter callback must not change
   // with every render of the page above.
@@ -282,7 +286,13 @@ function CommentableFileDiff({
       renderAnnotation={({ metadata: { items, pending: target } }) => (
         <Stack gap={4} p={4}>
           {items.map((c) => (
-            <ReviewCommentCard key={c.id} path={path} comment={c} variant="inline" />
+            <ReviewCommentCard
+              key={c.id}
+              path={path}
+              comment={c}
+              variant="inline"
+              viewKey={`${view.oldRev}..${view.newRev}`}
+            />
           ))}
           {target && (
             <NewCommentCard

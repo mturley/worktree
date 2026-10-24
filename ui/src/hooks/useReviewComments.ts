@@ -1,4 +1,4 @@
-import { useCallback, useSyncExternalStore } from "react"
+import { useCallback, useMemo, useSyncExternalStore } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { api, HttpError } from "../api/client"
 import type { NewReviewComment, ReviewComment, ReviewCommentItem } from "../api/types"
@@ -47,6 +47,11 @@ export function conflictComment(err: unknown): ReviewComment | undefined {
 export interface DeletedDraft {
   comment: ReviewCommentItem
   text: string
+  /**
+   * The view (`old_rev..new_rev`) whose position `comment.view` holds, when
+   * known; only that view shows the tombstone inline, the sidebar always.
+   */
+  view?: string
 }
 
 // In-memory only, per worktree path. The list no longer holds a deleted
@@ -79,4 +84,73 @@ export function useDeletedDrafts(path: string) {
     [path],
   )
   return { drafts, add, dismiss }
+}
+
+/**
+ * An open comment editor's state. pierre keys annotation slots by index, so
+ * an inline card remounts whenever an earlier annotation in its file comes or
+ * goes; kept here, the editor survives that with its text.
+ */
+export interface EditorDraft {
+  text: string
+  /** An edit's: the version it started from, which its save names. */
+  baseVersion?: number
+  /** An edit's: the newer comment a save found, whose version the next save names. */
+  conflict?: ReviewComment
+  /** A new comment's: which target (see newDraftTarget) the text was typed for. */
+  target?: string
+}
+
+/** The store key of an edit, per card variant: inline and sidebar cards edit independently. */
+export const editDraftKey = (variant: "inline" | "sidebar", id: number) => `edit:${variant}:${id}`
+/** The store key of the new comment; only one is ever being written. */
+export const NEW_DRAFT_KEY = "new"
+/** Names a new comment's target within its view. */
+export const newDraftTarget = (
+  view: { oldRev: string; newRev: string },
+  t: { file: string; side: string; start: number; end: number },
+) => `${view.oldRev}..${view.newRev}:${t.file}:${t.side}:${t.start}-${t.end}`
+
+export type DraftUpdate = EditorDraft | undefined | ((d: EditorDraft | undefined) => EditorDraft | undefined)
+
+// In-memory only, per worktree path, then per key.
+const NO_EDITOR_DRAFTS: ReadonlyMap<string, EditorDraft> = new Map()
+let editorDrafts = new Map<string, ReadonlyMap<string, EditorDraft>>()
+const editorListeners = new Set<() => void>()
+
+function setEditorDraft(path: string, key: string, update: DraftUpdate): void {
+  const cur = editorDrafts.get(path) ?? NO_EDITOR_DRAFTS
+  const next = typeof update === "function" ? update(cur.get(key)) : update
+  if (next === cur.get(key)) return
+  const forPath = new Map(cur)
+  if (next) forPath.set(key, next)
+  else forPath.delete(key)
+  editorDrafts = new Map(editorDrafts)
+  if (forPath.size) editorDrafts.set(path, forPath)
+  else editorDrafts.delete(path)
+  editorListeners.forEach((l) => l())
+}
+
+function subscribeEditors(onChange: () => void): () => void {
+  editorListeners.add(onChange)
+  return () => { editorListeners.delete(onChange) }
+}
+
+/** One editor's draft, and its setter (undefined clears it). */
+export function useEditorDraft(path: string, key: string) {
+  const draft = useSyncExternalStore(subscribeEditors, () => editorDrafts.get(path)?.get(key))
+  const set = useCallback((update: DraftUpdate) => setEditorDraft(path, key, update), [path, key])
+  return [draft, set] as const
+}
+
+/** The ids of the comments being edited in path, in either card variant. */
+export function useEditingCommentIds(path: string): number[] {
+  // A string, so typing (which replaces the drafts) re-renders nothing here.
+  const ids = useSyncExternalStore(subscribeEditors, () =>
+    [...(editorDrafts.get(path) ?? NO_EDITOR_DRAFTS).keys()]
+      .filter((k) => k.startsWith("edit:"))
+      .map((k) => k.slice(k.lastIndexOf(":") + 1))
+      .join(","),
+  )
+  return useMemo(() => (ids ? ids.split(",").map(Number) : []), [ids])
 }

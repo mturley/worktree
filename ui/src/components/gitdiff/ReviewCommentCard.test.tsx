@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { cleanup, render, screen, waitFor } from "@testing-library/react"
+import { act, cleanup, render, renderHook, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -16,6 +16,7 @@ vi.mock("../../api/client", async (orig) => {
 })
 
 import { HttpError } from "../../api/client"
+import { useDeletedDrafts } from "../../hooks/useReviewComments"
 import { NewCommentCard, ReviewCommentCard } from "./ReviewCommentCard"
 
 const item = (over: Partial<ReviewCommentItem> = {}): ReviewCommentItem => ({
@@ -41,11 +42,13 @@ const item = (over: Partial<ReviewCommentItem> = {}): ReviewCommentItem => ({
 
 function wrap(ui: React.ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
+  const tree = (u: React.ReactNode) => (
     <MantineProvider>
-      <QueryClientProvider client={qc}>{ui}</QueryClientProvider>
-    </MantineProvider>,
+      <QueryClientProvider client={qc}>{u}</QueryClientProvider>
+    </MantineProvider>
   )
+  const r = render(tree(ui))
+  return { ...r, rerender: (u: React.ReactNode) => r.rerender(tree(u)) }
 }
 
 beforeEach(() => vi.clearAllMocks())
@@ -102,6 +105,85 @@ describe("ReviewCommentCard", () => {
     expect(screen.getByText("mine")).toBeInTheDocument()
     await userEvent.click(screen.getByRole("button", { name: "Dismiss" }))
     expect(screen.queryByText("mine")).toBeNull()
+  })
+
+  it("saves with the version the edit started from, though a poll brought a newer one", async () => {
+    const newer = { ...item(), body: "theirs", version: 3 }
+    apiMock.updateReviewComment.mockRejectedValueOnce(new HttpError("conflict", 409, { comment: newer }))
+    const view = wrap(<ReviewCommentCard path="/w-base" comment={item()} variant="inline" />)
+    await userEvent.click(screen.getByRole("button", { name: "Edit comment" }))
+    const box = screen.getByRole("textbox")
+    await userEvent.clear(box)
+    await userEvent.type(box, "mine")
+    // Another client saved meanwhile; the next poll hands the card version 3.
+    view.rerender(<ReviewCommentCard path="/w-base" comment={newer} variant="inline" />)
+    await userEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() =>
+      expect(apiMock.updateReviewComment).toHaveBeenCalledWith({ path: "/w-base", id: 7, version: 2, body: "mine" }),
+    )
+    expect(await screen.findByText("Changed elsewhere — your text is kept below")).toBeInTheDocument()
+    expect(screen.getByRole("textbox")).toHaveValue("mine")
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }))
+  })
+
+  it("keeps an edit, its text and its start version across a remount", async () => {
+    apiMock.updateReviewComment.mockResolvedValue({})
+    const first = wrap(<ReviewCommentCard path="/w-remount" comment={item()} variant="inline" />)
+    await userEvent.click(screen.getByRole("button", { name: "Edit comment" }))
+    const box = screen.getByRole("textbox")
+    await userEvent.clear(box)
+    await userEvent.type(box, "half typed")
+    // pierre remounts the slot when an earlier annotation comes or goes.
+    first.unmount()
+    wrap(<ReviewCommentCard path="/w-remount" comment={item({ version: 5, body: "polled" })} variant="inline" />)
+    expect(screen.getByRole("textbox")).toHaveValue("half typed")
+    await userEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() =>
+      expect(apiMock.updateReviewComment).toHaveBeenCalledWith({
+        path: "/w-remount",
+        id: 7,
+        version: 2,
+        body: "half typed",
+      }),
+    )
+    // Saved: the draft is gone, so a fresh card is not editing.
+    await waitFor(() => expect(screen.queryByRole("textbox")).toBeNull())
+    cleanup()
+    wrap(<ReviewCommentCard path="/w-remount" comment={item()} variant="inline" />)
+    expect(screen.queryByRole("textbox")).toBeNull()
+  })
+
+  it("cancel drops the edit draft", async () => {
+    const first = wrap(<ReviewCommentCard path="/w-cancel" comment={item()} variant="inline" />)
+    await userEvent.click(screen.getByRole("button", { name: "Edit comment" }))
+    await userEvent.type(screen.getByRole("textbox"), " more")
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }))
+    first.unmount()
+    wrap(<ReviewCommentCard path="/w-cancel" comment={item()} variant="inline" />)
+    expect(screen.queryByRole("textbox")).toBeNull()
+  })
+
+  it("an inline edit does not open the sidebar card's editor", async () => {
+    wrap(
+      <>
+        <ReviewCommentCard path="/w-variant" comment={item()} variant="inline" />
+        <ReviewCommentCard path="/w-variant" comment={item()} variant="sidebar" />
+      </>,
+    )
+    await userEvent.click(screen.getAllByRole("button", { name: "Edit comment" })[0])
+    expect(screen.getAllByRole("textbox")).toHaveLength(1)
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }))
+  })
+
+  it("records the view with a deleted-elsewhere tombstone", async () => {
+    apiMock.updateReviewComment.mockRejectedValue(new HttpError("gone", 404))
+    const drafts = renderHook(() => useDeletedDrafts("/w-tomb")).result
+    wrap(<ReviewCommentCard path="/w-tomb" comment={item()} variant="inline" viewKey="o1..n1" />)
+    await userEvent.click(screen.getByRole("button", { name: "Edit comment" }))
+    await userEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() => expect(drafts.current.drafts).toHaveLength(1))
+    expect(drafts.current.drafts[0].view).toBe("o1..n1")
+    act(() => drafts.current.dismiss(7))
   })
 
   it("delete calls remove without confirmation", async () => {
@@ -170,6 +252,36 @@ describe("NewCommentCard", () => {
     await waitFor(() =>
       expect(apiMock.createReviewComment).toHaveBeenCalledWith(expect.objectContaining({ from: "a", to: "b" })),
     )
+  })
+
+  it("keeps the typed text across a remount, for the same target only", async () => {
+    const first = wrap(<NewCommentCard path="/w-new" target={target} view={view} onDone={() => {}} />)
+    await userEvent.type(screen.getByRole("textbox"), "half")
+    first.unmount()
+    const second = wrap(<NewCommentCard path="/w-new" target={target} view={view} onDone={() => {}} />)
+    expect(screen.getByRole("textbox")).toHaveValue("half")
+    second.unmount()
+    const other = wrap(<NewCommentCard path="/w-new" target={{ ...target, start: 1, end: 1 }} view={view} onDone={() => {}} />)
+    expect(screen.getByRole("textbox")).toHaveValue("")
+    other.unmount()
+    // Cancelled, it is gone.
+    const third = wrap(<NewCommentCard path="/w-new" target={target} view={view} onDone={() => {}} />)
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }))
+    third.unmount()
+    wrap(<NewCommentCard path="/w-new" target={target} view={view} onDone={() => {}} />)
+    expect(screen.getByRole("textbox")).toHaveValue("")
+  })
+
+  it("drops the draft once created", async () => {
+    apiMock.createReviewComment.mockResolvedValue({})
+    const onDone = vi.fn()
+    const first = wrap(<NewCommentCard path="/w-made" target={target} view={view} onDone={onDone} />)
+    await userEvent.type(screen.getByRole("textbox"), "nice")
+    await userEvent.click(screen.getByRole("button", { name: "Comment" }))
+    await waitFor(() => expect(onDone).toHaveBeenCalled())
+    first.unmount()
+    wrap(<NewCommentCard path="/w-made" target={target} view={view} onDone={onDone} />)
+    expect(screen.getByRole("textbox")).toHaveValue("")
   })
 
   it("keeps text on failure", async () => {

@@ -15,6 +15,7 @@ vi.mock("../../api/client", async (orig) => {
   return { ...actual, api: { ...actual.api, ...apiMock } }
 })
 
+import { HttpError } from "../../api/client"
 import { useDeletedDrafts } from "../../hooks/useReviewComments"
 import { ReviewSidebar } from "./ReviewSidebar"
 
@@ -108,5 +109,16 @@ describe("ReviewSidebar", () => {
     expect(texts).toEqual(["body 1", "typed text"])
     await userEvent.click(screen.getByRole("button", { name: "Dismiss" }))
     expect(screen.queryByText("Deleted elsewhere")).not.toBeInTheDocument()
+  })
+
+  it("its cards record the list's view with a tombstone", async () => {
+    apiMock.updateReviewComment.mockRejectedValueOnce(new HttpError("gone", 404))
+    const drafts = renderHook(() => useDeletedDrafts("/w")).result
+    wrap(sidebar({ comments: [item(1)], viewKey: "o..n" }))
+    await userEvent.click(screen.getByRole("button", { name: "Edit comment" }))
+    await userEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() => expect(drafts.current.drafts).toHaveLength(1))
+    expect(drafts.current.drafts[0].view).toBe("o..n")
+    act(() => drafts.current.dismiss(1))
   })
 })

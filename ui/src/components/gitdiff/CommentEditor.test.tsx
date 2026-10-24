@@ -24,6 +24,18 @@ describe("CommentEditor", () => {
     expect(onSubmit).toHaveBeenCalledWith("hello")
   })
 
+  it("opens with the initial text and reports each change", async () => {
+    const onChange = vi.fn()
+    render(
+      <MantineProvider>
+        <CommentEditor initial="ab" onChange={onChange} submitLabel="Save" onSubmit={vi.fn()} onCancel={vi.fn()} />
+      </MantineProvider>,
+    )
+    expect(screen.getByRole("textbox")).toHaveValue("ab")
+    await userEvent.type(screen.getByRole("textbox"), "c")
+    expect(onChange).toHaveBeenLastCalledWith("abc")
+  })
+
   it("Ctrl+Enter submits", async () => {
     const { onSubmit } = setup()
     await userEvent.type(screen.getByRole("textbox"), "hello{Control>}{Enter}{/Control}")

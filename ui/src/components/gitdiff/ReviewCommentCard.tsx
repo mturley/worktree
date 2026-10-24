@@ -3,7 +3,15 @@ import { ActionIcon, Badge, Box, Button, Group, Stack, Text, Tooltip } from "@ma
 import { IconArrowRight, IconPencil, IconTrash } from "@tabler/icons-react"
 import { HttpError } from "../../api/client"
 import type { CommentSource, DiffBase, DiffRange, ReviewComment, ReviewCommentItem } from "../../api/types"
-import { conflictComment, useDeletedDrafts, useReviewCommentMutations } from "../../hooks/useReviewComments"
+import {
+  conflictComment,
+  editDraftKey,
+  NEW_DRAFT_KEY,
+  newDraftTarget,
+  useDeletedDrafts,
+  useEditorDraft,
+  useReviewCommentMutations,
+} from "../../hooks/useReviewComments"
 import { CommentEditor } from "./CommentEditor"
 import type { CommentTarget } from "./commentRange"
 
@@ -30,18 +38,23 @@ const Body = ({ text }: { text: string }) => (
   <Text size="xs" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{text}</Text>
 )
 
-export function ReviewCommentCard({ path, comment, variant, onJump, jumpDisabledReason }: {
+export function ReviewCommentCard({ path, comment, variant, onJump, jumpDisabledReason, viewKey }: {
   path: string
   comment: ReviewCommentItem
   variant: "inline" | "sidebar"
   onJump?: () => void
   jumpDisabledReason?: string
+  /** The view (`old_rev..new_rev`) the comment's `view` position is for, when known. */
+  viewKey?: string
 }) {
   const { update, remove } = useReviewCommentMutations(path)
-  const [editing, setEditing] = useState(false)
-  // Set when a save found the comment edited elsewhere: the newer comment,
-  // whose version the next save carries.
-  const [conflict, setConflict] = useState<ReviewComment>()
+  // The open edit lives in the store, not here, so it survives the card
+  // remounting (see EditorDraft): its text, the version it started from, and
+  // the newer comment a save found edited elsewhere, whose version the next
+  // save carries instead.
+  const [draft, setDraft] = useEditorDraft(path, editDraftKey(variant, comment.id))
+  const editing = !!draft
+  const conflict = draft?.conflict
   // A save that found the comment deleted leaves a tombstone in the store, so
   // this state survives the list dropping the comment and the card remounting.
   const deleted = useDeletedDrafts(path)
@@ -56,22 +69,20 @@ export function ReviewCommentCard({ path, comment, variant, onJump, jumpDisabled
   const lines = first === last ? `${first}` : `${first}-${last}`
 
   const save = (text: string) => {
+    if (!draft) return
     setError(undefined)
-    update.mutate(
-      { id: comment.id, version: conflict?.version ?? comment.version, body: text },
-      {
-        onSuccess: () => {
-          setEditing(false)
-          setConflict(undefined)
-        },
-        onError: (err) => {
-          const newer = conflictComment(err)
-          if (newer) setConflict(newer)
-          else if (err instanceof HttpError && err.status === 404) {
-            deleted.add({ comment, text })
-            setEditing(false)
-          } else setError(errMessage(err))
-        },
+    // mutateAsync, not mutate's callbacks: those are dropped if the card
+    // remounts before the save answers.
+    const version = conflict?.version ?? draft.baseVersion ?? comment.version
+    update.mutateAsync({ id: comment.id, version, body: text }).then(
+      () => setDraft(undefined),
+      (err: unknown) => {
+        const newer = conflictComment(err)
+        if (newer) setDraft((d) => d && { ...d, text, conflict: newer })
+        else if (err instanceof HttpError && err.status === 404) {
+          deleted.add({ comment, text, view: viewKey })
+          setDraft(undefined)
+        } else setError(errMessage(err))
       },
     )
   }
@@ -108,7 +119,12 @@ export function ReviewCommentCard({ path, comment, variant, onJump, jumpDisabled
           {!editing && (
             <Group gap={2} wrap="nowrap">
               {comment.editable && (
-                <ActionIcon size="sm" variant="subtle" aria-label="Edit comment" onClick={() => setEditing(true)}>
+                <ActionIcon
+                  size="sm"
+                  variant="subtle"
+                  aria-label="Edit comment"
+                  onClick={() => setDraft({ text: comment.body, baseVersion: comment.version })}
+                >
                   <IconPencil size={14} />
                 </ActionIcon>
               )}
@@ -155,14 +171,14 @@ export function ReviewCommentCard({ path, comment, variant, onJump, jumpDisabled
               </Stack>
             )}
             <CommentEditor
-              initial={comment.body}
+              initial={draft.text}
+              onChange={(text) => setDraft((d) => d && { ...d, text })}
               submitLabel="Save"
               busy={update.isPending}
               error={error}
               onSubmit={save}
               onCancel={() => {
-                setEditing(false)
-                setConflict(undefined)
+                setDraft(undefined)
                 setError(undefined)
               }}
             />
@@ -184,18 +200,28 @@ export function NewCommentCard({ path, target, view, onDone }: {
 }) {
   const { create } = useReviewCommentMutations(path)
   const [error, setError] = useState<string>()
+  // The typed text lives in the store, so it survives the card remounting
+  // (see EditorDraft); a draft typed for another target is not this one's.
+  const mine = newDraftTarget(view, target)
+  const [stored, setDraft] = useEditorDraft(path, NEW_DRAFT_KEY)
+  const draft = stored?.target === mine ? stored : undefined
+  const drop = () => setDraft((d) => (d?.target === mine ? undefined : d))
   return (
     <Frame>
       <CommentEditor
-        initial=""
+        initial={draft?.text ?? ""}
+        onChange={(text) => setDraft({ text, target: mine })}
         submitLabel="Comment"
         busy={create.isPending}
         error={error}
-        onCancel={onDone}
+        onCancel={() => {
+          drop()
+          onDone()
+        }}
         onSubmit={(body) => {
           setError(undefined)
-          create.mutate(
-            {
+          create
+            .mutateAsync({
               file: target.file,
               side: target.side,
               start_line: target.start,
@@ -205,9 +231,14 @@ export function NewCommentCard({ path, target, view, onDone }: {
               ...(view.range === "all" ? {} : { from: view.range.from, to: view.range.to }),
               old_rev: view.oldRev,
               new_rev: view.newRev,
-            },
-            { onSuccess: onDone, onError: (err) => setError(errMessage(err)) },
-          )
+            })
+            .then(
+              () => {
+                drop()
+                onDone()
+              },
+              (err: unknown) => setError(errMessage(err)),
+            )
         }}
       />
     </Frame>
