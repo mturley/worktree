@@ -2359,7 +2359,8 @@ the scheduler is created**, so a change applies after `worktree ui` restarts.
 - The worker must be `@pierre/diffs/worker/worker-portable.js?worker` (the
   plain `worker.js` fails under Vite), with no theme override on the pool.
 - Esc clears a query in the search bar before anything else, wherever it is
-  pressed. Then, in the diff view, it leaves it (as does the breadcrumb's
+  pressed. Then, in the diff view, it closes the review comments sidebar if
+  open, and otherwise leaves the view (as does the breadcrumb's
   "← Worktree details", where its hint sits); then, with the details card off
   Notes, it returns it to Notes (its hint on the Notes tab), and only then
   clears Unreads only and filters, deselects or leaves the worktree. Only one
@@ -2404,9 +2405,13 @@ non-blank and at most 64 KiB; `file` must be `filepath.IsLocal`.
 - `GET /api/review-comments?path=[&old_rev=&new_rev=]` returns `{comments}`,
   each a `reviewCommentItem`: the comment DTO (context lines are never sent;
   `snippet` is) plus `view` and `prompt`. The two revs go together and must be
-  ones `/patch` handed out. Once they expire (30 min TTL) the list answers
-  404 "unknown rev"; the UI then reloads the shown view's own request once per
-  rev pair, which hands out fresh ones.
+  ones `/patch` handed out. They expire 30 minutes after last use (`revSet.has`
+  renews an entry on every hit, so a view whose list is polled keeps its
+  revs); then the list answers 404 "unknown rev" and the UI reloads the shown
+  view's own request once per rev pair, which hands out fresh ones. It never
+  does so while a comment is being edited or written (an edit draft for a
+  listed comment, or a pending new comment): the reload would move the diff
+  under the editor. The next poll after it closes retries.
 - `POST /api/review-comments` creates (201, the DTO).
 - `POST /api/review-comments/update` `{path, id, version, body}`: a stale
   `version` is 409 with `{error, comment}` (the current comment); a missing
@@ -2428,7 +2433,11 @@ function (`reviewcomments.Resolve`), never stored.
 - `prompt`: where it sits in the **working tree** (read from disk, a
   regular file only), which is what an agent will edit. `current`, `moved`,
   `outdated` (original lines kept), or `removed` for every old-side comment
-  (it is about code that no longer exists).
+  (it is about code that no longer exists). Anchors come from git objects,
+  but an `eol=crlf` / `core.autocrlf` checkout has CRLF on disk for an LF
+  blob, so when the working-tree lines end in `\r` and the anchor's do not,
+  one trailing `\r` is dropped from each working-tree line first
+  (`matchAnchorEOL`; only in that direction).
 
 **Resolve** (`anchor.go`). If the snippet and both context sides match at the
 stored lines, `current`. Otherwise it scans every position: exactly one full
@@ -2451,12 +2460,33 @@ the shown line (else the stored one), then id.
 
 **Editing from two places.** Clients poll the list every 5s while the diff
 is open (`useReviewComments`) and invalidate after their own writes; there
-is no push. An edit carries `version`. A 409 keeps the user's text under
-"Changed elsewhere — your text is kept below" beside the current comment. A
-404 on save (deleted elsewhere) moves the card's text into
-`useDeletedDrafts`, an in-memory per-path store, and the "Deleted elsewhere"
-tombstone renders inline at its last position and in the sidebar until
-dismissed.
+is no push. An edit carries the `version` it **started from** (recorded when
+edit mode opens), never the polled one, so another client's save in the
+meantime is a 409, not a silent overwrite. A 409 keeps the user's text under
+"Changed elsewhere — your text is kept below" beside the current comment, and
+the next save carries that comment's version. A 404 on save (deleted
+elsewhere) moves the card's text into `useDeletedDrafts`, an in-memory
+per-path store, with the view (`old_rev..new_rev`) its position belongs to.
+The "Deleted elsewhere" tombstone shows in the sidebar until dismissed, and
+inline at its last position only while that same view is shown (a tombstone
+with no known view stays sidebar-only).
+
+**Editor drafts survive remounts.** pierre keys annotation slots by index, so
+an inline card remounts whenever an earlier annotation in its file appears or
+disappears. Open editors therefore keep their state in `useEditorDraft`, an
+in-memory module store keyed per path: edits by `edit:<variant>:<id>` (text,
+start version, any conflict; inline and sidebar cards edit independently),
+and the one new comment under `new` with the target it was typed for
+(`newDraftTarget`: view revs, file, side, lines). Cards restore from it on
+mount and clear it on a successful save or cancel. Saves use `mutateAsync`,
+whose promise settles even if the card remounted meanwhile.
+`useEditingCommentIds` tells `DiffView` which comments are being edited.
+
+**No stale positions on a new patch.** While the list is react-query
+placeholder data (the previous view's, after a Refresh or view change),
+`DiffView` gives `DiffBody` no comments; the sidebar keeps showing the list.
+Otherwise the query's array goes to `DiffBody` as is, for stable
+annotations.
 
 **Frontend.**
 
