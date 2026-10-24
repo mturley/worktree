@@ -3,7 +3,7 @@ import { ActionIcon, Anchor, Box, Button, Drawer, Group, SegmentedControl, Stack
 import { IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand } from "@tabler/icons-react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { api } from "../../api/client"
-import type { Commit, DiffBase, DiffPatch, DiffRange } from "../../api/types"
+import type { Commit, DiffBase, DiffPatch, DiffRange, ReviewCommentItem } from "../../api/types"
 import { useDiffCommits } from "../../hooks/useDiffData"
 import { useDiffSelection } from "../../hooks/useDiffSelection"
 import { useDiffView } from "../../hooks/useDiffView"
@@ -12,6 +12,7 @@ import { useWorktreeGit } from "../../hooks/useWorktreeGit"
 import { diffUnavailable } from "../../lib/diffLabels"
 import { KeyHint } from "../search/KeyHint"
 import { CompareSelect } from "./CompareSelect"
+import type { CommentTarget } from "./commentRange"
 import { DiffBody, type DiffMode } from "./DiffBody"
 import { DiffFileTree } from "./DiffFileTree"
 import { Loading } from "./Loading"
@@ -22,6 +23,8 @@ import { RangePicker } from "./RangePicker"
 const MODE_KEY = "worktree.diffMode"
 const SIDEBAR_KEY = "worktree.diffSidebar"
 const SIDEBAR_WIDTH = 280
+// Until the view loads its review comments, none show inline.
+const NO_COMMENTS: ReviewCommentItem[] = []
 
 function readPref(key: string): string | null {
   try {
@@ -154,6 +157,7 @@ export default function DiffView({
     ? `${shown.list_id}:${shown.working_fingerprint}:${shown.request.ignoreWs}:${shown.request.base}:${rangeKey(shown.request.range)}`
     : ""
   const files = useMemo(() => (shown ? parseDiff(shown.patch, loadKey) : []), [shown, loadKey])
+  const [pendingComment, setPendingComment] = useState<CommentTarget | null>(null)
   const additions = files.reduce((n, f) => n + f.additions, 0)
   const deletions = files.reduce((n, f) => n + f.deletions, 0)
 
@@ -339,6 +343,13 @@ export default function DiffView({
         path={path}
         highlighted={highlighted}
         height="100%"
+        comments={NO_COMMENTS}
+        pending={pendingComment}
+        onStartComment={setPendingComment}
+        onPendingDone={() => setPendingComment(null)}
+        // A new comment is made against the view on screen.
+        view={{ base: shown.request.base, range: shown.request.range, oldRev: shown.old_rev, newRev: shown.new_rev }}
+        openFile={null}
       />
     )
 
