@@ -72,3 +72,39 @@ export function scrollToFile(file: string): () => void {
 }
 
 const USER_INPUT = ["wheel", "touchstart", "pointerdown", "keydown"] as const
+
+/**
+ * Brings a review comment into view: scrolls to its file (scrollToFile),
+ * then, retried each frame within the same time bound, centres the comment
+ * once pierre has rendered it, ending the file scroll so the two don't
+ * fight. The diff view fills the page, so `scrollIntoView` has nothing above
+ * the diff body to move. Returns a cancel function.
+ */
+export function scrollToComment(file: string, id: number): () => void {
+  const cancelFile = scrollToFile(file)
+  const deadline = performance.now() + MAX_MS
+  let frame = 0
+  let done = false
+
+  const stop = () => {
+    if (done) return
+    done = true
+    cancelAnimationFrame(frame)
+    cancelFile()
+  }
+
+  const step = () => {
+    if (done) return
+    const el = document.querySelector(`[data-review-comment-id="${id}"]`)
+    if (el) {
+      stop()
+      el.scrollIntoView({ block: "center" })
+      return
+    }
+    if (performance.now() >= deadline) return stop()
+    frame = requestAnimationFrame(step)
+  }
+
+  step()
+  return stop
+}

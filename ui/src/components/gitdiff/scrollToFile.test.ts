@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { fileAnchorId } from "./parsedPatch"
-import { DIFF_SCROLLER_CLASS, scrollToFile } from "./scrollToFile"
+import { DIFF_SCROLLER_CLASS, scrollToComment, scrollToFile } from "./scrollToFile"
 
 // Frames run only when the test says so, each one 16ms after the last.
 let frames: FrameRequestCallback[] = []
@@ -139,5 +139,35 @@ describe("scrollToFile", () => {
     expect(frames).toHaveLength(1)
     runFrames(100) // past the 4s bound
     expect(frames).toHaveLength(0)
+  })
+})
+
+describe("scrollToComment", () => {
+  it("scrollToComment scrolls to the comment once it renders", () => {
+    addFile("b.go", () => 300)
+    scrollToComment("b.go", 42)
+    runFrames(3)
+    // The file comes into view first, while the comment is not yet rendered.
+    expect(scroller.scrollTop).toBe(300)
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled()
+    const card = document.createElement("div")
+    card.setAttribute("data-review-comment-id", "42")
+    scroller.appendChild(card)
+    runFrames(1)
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(Element.prototype.scrollIntoView).mock.contexts[0]).toBe(card)
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: "center" })
+    // Done: the file scroll no longer holds the file at the top.
+    scroller.scrollTop = 50
+    runFrames(10)
+    expect(scroller.scrollTop).toBe(50)
+    expect(frames).toHaveLength(0)
+  })
+
+  it("gives up after a bounded time", () => {
+    scrollToComment("missing.go", 1)
+    runFrames(300)
+    expect(frames).toHaveLength(0)
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled()
   })
 })

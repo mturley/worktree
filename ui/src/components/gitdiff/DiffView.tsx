@@ -2,28 +2,33 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { ActionIcon, Anchor, Box, Button, Drawer, Group, SegmentedControl, Stack, Switch, Text, TextInput, Tooltip } from "@mantine/core"
 import { IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand } from "@tabler/icons-react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { api } from "../../api/client"
+import { api, HttpError } from "../../api/client"
 import type { Commit, DiffBase, DiffPatch, DiffRange, ReviewCommentItem } from "../../api/types"
 import { useDiffCommits } from "../../hooks/useDiffData"
 import { useDiffSelection } from "../../hooks/useDiffSelection"
 import { useDiffView } from "../../hooks/useDiffView"
 import { useIsWide } from "../../hooks/useIsWide"
+import { useDeletedDrafts, useReviewComments } from "../../hooks/useReviewComments"
+import { useReviewSidebar } from "../../hooks/useReviewSidebar"
 import { useWorktreeGit } from "../../hooks/useWorktreeGit"
 import { diffUnavailable } from "../../lib/diffLabels"
 import { KeyHint } from "../search/KeyHint"
+import { buildPrompt } from "./buildPrompt"
 import { CompareSelect } from "./CompareSelect"
 import type { CommentTarget } from "./commentRange"
 import { DiffBody, type DiffMode } from "./DiffBody"
 import { DiffFileTree } from "./DiffFileTree"
 import { Loading } from "./Loading"
 import { parseDiff } from "./parsedPatch"
-import { scrollToFile } from "./scrollToFile"
+import { ReviewSidebar } from "./ReviewSidebar"
+import { scrollToComment, scrollToFile } from "./scrollToFile"
 import { RangePicker } from "./RangePicker"
 
 const MODE_KEY = "worktree.diffMode"
 const SIDEBAR_KEY = "worktree.diffSidebar"
 const SIDEBAR_WIDTH = 280
-// Until the view loads its review comments, none show inline.
+const REVIEW_SIDEBAR_WIDTH = 340
+// Until the list loads, no comments. Stable, so DiffBody's annotations are.
 const NO_COMMENTS: ReviewCommentItem[] = []
 
 function readPref(key: string): string | null {
@@ -75,11 +80,14 @@ export default function DiffView({
   path,
   headerHeight,
   escHint = true,
+  sidebarEscHint = false,
 }: {
   path: string
   headerHeight: number
   /** Whether Esc's next step is leaving (the page's: a query in the search bar comes first). */
   escHint?: boolean
+  /** Whether Esc's next step is closing the review comments sidebar. */
+  sidebarEscHint?: boolean
 }) {
   const view = useDiffView()
   const wide = useIsWide()
@@ -139,10 +147,18 @@ export default function DiffView({
   })
   const shown = patch.data
 
+  // Set when a load was asked for because the comment list's revs expired:
+  // that load's revs are fresh, so the list is asked again at once.
+  const refetchCommentsOnLoad = useRef(false)
   // The status poll may be up to 5s older than the patch; without catching it
   // up, its older working fingerprint would flash Refresh after every load.
   useEffect(() => {
-    if (shown) void qc.invalidateQueries({ queryKey: ["worktree-git", path] })
+    if (!shown) return
+    void qc.invalidateQueries({ queryKey: ["worktree-git", path] })
+    if (refetchCommentsOnLoad.current) {
+      refetchCommentsOnLoad.current = false
+      void qc.invalidateQueries({ queryKey: ["review-comments", path] })
+    }
   }, [shown, qc, path])
 
   const stale =
@@ -157,7 +173,6 @@ export default function DiffView({
     ? `${shown.list_id}:${shown.working_fingerprint}:${shown.request.ignoreWs}:${shown.request.base}:${rangeKey(shown.request.range)}`
     : ""
   const files = useMemo(() => (shown ? parseDiff(shown.patch, loadKey) : []), [shown, loadKey])
-  const [pendingComment, setPendingComment] = useState<CommentTarget | null>(null)
   const additions = files.reduce((n, f) => n + f.additions, 0)
   const deletions = files.reduce((n, f) => n + f.deletions, 0)
 
@@ -191,6 +206,113 @@ export default function DiffView({
     landed.current = true
     scrollTo(target)
   }, [view.file, files, scrollTo])
+
+  // Review comments, positioned for the view on screen. The list goes to
+  // DiffBody as react-query hands it over, so its annotations stay put
+  // across polls that change nothing.
+  const review = useReviewComments(path, shown ? { oldRev: shown.old_rev, newRev: shown.new_rev } : undefined)
+  const comments = review.data ?? NO_COMMENTS
+  const fresh = !!review.data && !review.isPlaceholderData
+  // Comments deleted elsewhere while being edited stay in the sidebar until dismissed.
+  const deletedDrafts = useDeletedDrafts(path).drafts
+  const reviewCount = comments.length + deletedDrafts.filter((d) => !comments.some((c) => c.id === d.comment.id)).length
+  const [reviewOpen, setReviewOpen] = useReviewSidebar()
+  // Nothing left to show: closed, so the next first comment doesn't open it.
+  useEffect(() => {
+    if (review.data && reviewCount === 0 && reviewOpen) setReviewOpen(false)
+  }, [review.data, reviewCount, reviewOpen, setReviewOpen])
+
+  // The server forgets a view's revs after a while; the list then answers
+  // 404. A fresh load hands out fresh revs. Once per rev pair, until the
+  // list loads again, so a load that doesn't help can't loop.
+  const revPair = shown ? `${shown.old_rev}..${shown.new_rev}` : undefined
+  const autoReloaded = useRef<string | null>(null)
+  const reviewError = review.error
+  useEffect(() => {
+    if (fresh && !reviewError) autoReloaded.current = null
+    if (!revPair || !(reviewError instanceof HttpError) || reviewError.status !== 404) return
+    if (autoReloaded.current === revPair) return
+    autoReloaded.current = revPair
+    refetchCommentsOnLoad.current = true
+    reload()
+  }, [fresh, reviewError, revPair, reload])
+
+  // A view change: anything that loads a different patch.
+  const viewKey = shown ? `${loadKey}:${shown.old_rev}..${shown.new_rev}` : ""
+  const [pendingComment, setPendingComment] = useState<CommentTarget | null>(null)
+  // Refresh asks for a recheck: how the comments fared against the new revs.
+  const recheckAsked = useRef(false)
+  const [recheckKey, setRecheckKey] = useState<string | null>(null)
+  // A jump to a comment in another view: waits through the view change it
+  // asked for (`key` is that view), and no further.
+  const [pendingJump, setPendingJump] = useState<{ id: number; key?: string } | null>(null)
+  const seenViewKey = useRef(viewKey)
+  useEffect(() => {
+    if (viewKey === seenViewKey.current) return
+    seenViewKey.current = viewKey
+    setPendingComment(null)
+    setRecheckKey(recheckAsked.current ? viewKey : null)
+    recheckAsked.current = false
+    setPendingJump((j) => (j && j.key === undefined ? { ...j, key: viewKey } : null))
+  }, [viewKey])
+
+  const [openFile, setOpenFile] = useState<{ file: string; n: number } | null>(null)
+  const showComment = useCallback((c: ReviewCommentItem) => {
+    setHighlighted(c.file)
+    setOpenFile((o) => ({ file: c.file, n: (o?.n ?? 0) + 1 }))
+    cancelScroll.current?.()
+    cancelScroll.current = scrollToComment(c.file, c.id)
+  }, [])
+  useEffect(() => {
+    if (!pendingJump || pendingJump.key !== viewKey || !fresh) return
+    const c = comments.find((x) => x.id === pendingJump.id)
+    if (c?.view?.status !== "shown") return
+    setPendingJump(null)
+    showComment(c)
+  }, [pendingJump, viewKey, fresh, comments, showComment])
+
+  const jump = (c: ReviewCommentItem) => {
+    // The drawer covers the diff on a phone.
+    if (!wide) setReviewOpen(false)
+    switch (c.view?.status) {
+      case "shown":
+        showComment(c)
+        break
+      case "outdated":
+        scrollTo(c.file)
+        break
+      case "not_in_view":
+        sel.setBase(c.base)
+        reload({ base: c.base, range: "all" })
+        setPendingJump({ id: c.id })
+        break
+    }
+  }
+
+  const prompt = useMemo(
+    () =>
+      git && commits.data
+        ? buildPrompt({
+            directory: git.directory ?? path,
+            branch: git.branch || undefined,
+            baseRef: commits.data.base_ref,
+            comments,
+          })
+        : undefined,
+    [git, commits.data, path, comments],
+  )
+  const recheck = recheckKey === viewKey && fresh ? recheckSummary(comments) : undefined
+  const reviewSidebar = (onClose?: () => void) =>
+    prompt !== undefined && (
+      <ReviewSidebar
+        path={path}
+        comments={comments}
+        prompt={prompt}
+        onJump={jump}
+        onClose={onClose}
+        escHint={sidebarEscHint}
+      />
+    )
 
   // The selectors show the pinned selection (what is loaded or loading).
   const shownBase = request?.base ?? sel.base
@@ -282,10 +404,23 @@ export default function DiffView({
       {stale && (
         <Group gap={6} wrap="nowrap" data-testid="diff-stale">
           <Text size="xs" c="yellow">Files changed on disk ·</Text>
-          <Button size="compact-xs" variant="light" color="yellow" onClick={() => reload()}>
+          <Button
+            size="compact-xs"
+            variant="light"
+            color="yellow"
+            onClick={() => {
+              recheckAsked.current = true
+              reload()
+            }}
+          >
             Refresh
           </Button>
         </Group>
+      )}
+      {recheck && (
+        <Text size="xs" c="dimmed" data-testid="comment-recheck">
+          {recheck}
+        </Text>
       )}
       <Group gap="sm" wrap="nowrap" ml="auto">
         {wide && (
@@ -343,13 +478,13 @@ export default function DiffView({
         path={path}
         highlighted={highlighted}
         height="100%"
-        comments={NO_COMMENTS}
+        comments={comments}
         pending={pendingComment}
         onStartComment={setPendingComment}
         onPendingDone={() => setPendingComment(null)}
         // A new comment is made against the view on screen.
         view={{ base: shown.request.base, range: shown.request.range, oldRev: shown.old_rev, newRev: shown.new_rev }}
-        openFile={null}
+        openFile={openFile}
       />
     )
 
@@ -379,6 +514,16 @@ export default function DiffView({
         <Text size="sm" c="dimmed">/</Text>
         {/* The branch, when there is one (empty when detached). */}
         <Text size="sm">{git?.branch ? `Changes (${git.branch})` : "Changes"}</Text>
+        {reviewCount > 0 && (
+          <Button
+            ml="auto"
+            size="compact-xs"
+            variant={reviewOpen ? "filled" : "light"}
+            onClick={() => setReviewOpen(!reviewOpen)}
+          >
+            {`Review comments (${reviewCount})`}
+          </Button>
+        )}
       </Group>
       <Box
         style={{
@@ -409,14 +554,55 @@ export default function DiffView({
             <Box style={{ position: "absolute", inset: 0, padding: "var(--mantine-spacing-xs)" }}>{body}</Box>
           </Box>
         </Box>
+        {wide && reviewOpen && reviewCount > 0 && (
+          <Box
+            style={{
+              width: REVIEW_SIDEBAR_WIDTH,
+              flexShrink: 0,
+              overflowY: "auto",
+              borderLeft: "1px solid var(--mantine-color-default-border)",
+            }}
+          >
+            {reviewSidebar(() => setReviewOpen(false))}
+          </Box>
+        )}
       </Box>
       {!wide && (
         <Drawer opened={drawerOpen} onClose={() => setDrawerOpen(false)} title="Files" size="85%">
           {sidebar}
         </Drawer>
       )}
+      {!wide && (
+        <Drawer
+          opened={reviewOpen && reviewCount > 0}
+          onClose={() => setReviewOpen(false)}
+          position="right"
+          size="85%"
+          title="Review comments"
+        >
+          {reviewSidebar()}
+        </Drawer>
+      )}
     </Box>
   )
+}
+
+/** How the comments fared against a refreshed view: "2 still match, 1 moved", non-zero parts only. */
+function recheckSummary(comments: ReviewCommentItem[]): string {
+  let still = 0
+  let moved = 0
+  let outdated = 0
+  for (const c of comments) {
+    if (c.view?.status === "shown") {
+      if (c.view.moved) moved++
+      else still++
+    } else if (c.view?.status === "outdated") outdated++
+  }
+  const parts: string[] = []
+  if (still) parts.push(`${still} still match`)
+  if (moved) parts.push(`${moved} moved`)
+  if (outdated) parts.push(`${outdated} out of date`)
+  return parts.join(", ")
 }
 
 function Message({ children, error }: { children: ReactNode; error?: boolean }) {
