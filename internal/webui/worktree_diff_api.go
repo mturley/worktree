@@ -20,7 +20,8 @@ const (
 // can refuse anything else. /file runs `git show <rev>:<file>`, and an
 // arbitrary rev would let a caller read any object in the repository; a
 // snapshot tree built from the working tree (which excludes ignored files) is
-// only reachable by being named in a /patch response. Entries expire and the
+// only reachable by being named in a /patch response. Entries expire once
+// unused for revSetTTL (each hit renews one), and the
 // set is capped, oldest evicted first, so it cannot grow without bound.
 type revSet struct {
 	mu      sync.Mutex
@@ -55,12 +56,19 @@ func (s *revSet) add(path string, revs ...string) {
 	}
 }
 
+// has reports whether rev was handed out for path. A hit renews the entry,
+// so the TTL counts from last use: a view kept open (its comment list is
+// polled) never loses its revs, while an abandoned one still expires.
 func (s *revSet) has(path, rev string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.pruneLocked(s.now())
-	for _, e := range s.entries {
+	now := s.now()
+	s.pruneLocked(now)
+	for i, e := range s.entries {
 		if e.path == path && e.rev == rev {
+			// Moved to the end, keeping the entries in time order for pruneLocked.
+			s.entries = append(s.entries[:i], s.entries[i+1:]...)
+			s.entries = append(s.entries, revEntry{path, rev, now})
 			return true
 		}
 	}

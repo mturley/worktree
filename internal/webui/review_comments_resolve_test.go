@@ -95,6 +95,21 @@ func TestReviewCommentsPromptMoved(t *testing.T) {
 	}
 }
 
+func TestReviewCommentsPromptCRLFWorkingTree(t *testing.T) {
+	wt := forkRepo(t)
+	commitFile(t, wt, "multi", rcMulti)
+	_, ts := gitTestServer(t, wt, nil)
+	p := getPatch(t, ts, wt, "")
+	rcCreate(t, ts, rcCreateReq(wt, "multi", "new", 4, "c", p))
+	// What an eol=crlf checkout leaves on disk for the LF blob.
+	writeWT(t, wt, "multi", strings.ReplaceAll(rcMulti, "\n", "\r\n"))
+
+	got := rcOne(t, ts, wt, p)
+	if got.Prompt.Status != "current" || got.Prompt.StartLine != 4 || got.Prompt.EndLine != 4 {
+		t.Fatalf("prompt = %+v", got.Prompt)
+	}
+}
+
 func TestReviewCommentsViewMovedAfterRefresh(t *testing.T) {
 	wt := forkRepo(t)
 	commitFile(t, wt, "multi", rcMulti)

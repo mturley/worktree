@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/mturley/worktree/internal/gitutil"
@@ -259,11 +260,35 @@ func promptPosition(dir string, c reviewcomments.Comment) reviewPromptDTO {
 	if err != nil {
 		return anchored("outdated")
 	}
-	pos := reviewcomments.Resolve(c.Anchor, reviewcomments.SplitLines(content))
+	pos := reviewcomments.Resolve(c.Anchor, matchAnchorEOL(c.Anchor, reviewcomments.SplitLines(content)))
 	if pos.Match == reviewcomments.MatchOutdated {
 		return anchored("outdated")
 	}
 	return reviewPromptDTO{Status: string(pos.Match), StartLine: pos.Start, EndLine: pos.End}
+}
+
+// matchAnchorEOL compares working-tree lines on the anchor's terms. Anchors
+// come from git objects, but an eol=crlf (or core.autocrlf) checkout puts CRLF
+// on disk for an LF blob; then each line's single trailing "\r" is dropped.
+// Only in that direction: an anchor that itself has "\r" is left alone.
+func matchAnchorEOL(a reviewcomments.Anchor, lines []string) []string {
+	if !anyEndsInCR(lines) || anyEndsInCR(a.Snippet) || anyEndsInCR(a.Before) || anyEndsInCR(a.After) {
+		return lines
+	}
+	out := make([]string, len(lines))
+	for i, l := range lines {
+		out[i] = strings.TrimSuffix(l, "\r")
+	}
+	return out
+}
+
+func anyEndsInCR(lines []string) bool {
+	for _, l := range lines {
+		if strings.HasSuffix(l, "\r") {
+			return true
+		}
+	}
+	return false
 }
 
 // reviewResolver returns the server's review comment resolver, creating it on
