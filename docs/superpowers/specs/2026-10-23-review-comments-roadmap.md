@@ -12,7 +12,7 @@ Line comments in the web UI's diff view. They start as a review Mike hands back 
 
 | Phase | What | Status |
 |---|---|---|
-| 1 | **Draft review comments for the agent**: comment on lines and ranges, edit/delete inline and in a sidebar, persist in the DB, survive code changes (move / out of date), copy as a prompt ("Send comments to agent") | Designing: `2026-10-23-review-comments-design.md`, worktree `review-comments` |
+| 1 | **Draft review comments for the agent**: comment on lines and ranges, edit/delete inline and in a sidebar, persist in the DB, survive code changes (move / out of date), copy as a prompt ("Send comments to agent") | Done (branch review-comments, not yet merged): `2026-10-23-review-comments-design.md` |
 | 2 | **PR comments shown inline, read-only**: the open PR's review comments rendered in the diff and listed in the sidebar beside the drafts, visually distinct | Future |
 | 3 | **Submit a review to GitHub**: a "Post review on PR" button beside "Send comments to agent", opening a GitHub-style dropdown (top-level comment; Approve / Comment / Request changes) that posts the drafts as the review's comments | Future |
 

@@ -2367,6 +2367,127 @@ the scheduler is created**, so a change applies after `worktree ui` restarts.
   only one (the narrowing lines drop theirs). In the search bar Esc stays the
   search's.
 
+#### Review comments (`internal/reviewcomments`, `review_comments_api.go`, `review_comments_resolve.go`)
+
+Draft comments on lines or ranges of the diff, kept per worktree, shown inline
+and in a sidebar, and copied as one prompt for an agent ("Send comments to
+agent"). Nothing is posted anywhere; `source` is always `draft`, and the DTO's
+`source` / `author` / `editable` leave room for read-only PR comments later.
+
+**Table `review_comments`** (migrate.go; the name must not start with
+`watcher_`). Rows are keyed by `wdb.Subscriber(path)` (column `worktree`).
+Unlike notes they are deleted with the worktree: `resources.RemoveAll` calls
+`reviewcomments.DeleteAll`, which covers unregister. Columns: `file`, `side`
+(`old`/`new` = GitHub LEFT/RIGHT), `start_line`/`end_line`, `rev`, `base`
+(`merge-base`/`tracking`), `base_ref`, `range_from`/`range_to` (empty for All
+changes), `snippet`/`context_before`/`context_after` (JSON arrays of lines),
+`body`, `source`, `version`, `created_at`/`updated_at`. **Anchors are
+immutable**: lines, snippet and context are written once at create and no
+client ever writes a position; only `body` (with `version`, `updated_at`)
+changes.
+
+**Create captures the anchor on the server.** `POST /api/review-comments`
+takes `{path, file, side, start_line, end_line, body, base, from, to, old_rev,
+new_rev}`. The rev for the side must be one `/patch` handed out (`revSet`,
+else 404 "unknown rev"); the server reads the file there (`gitutil.ShowFile`)
+and `reviewcomments.Capture` takes the snippet and `ContextLines = 3` lines each
+side, so a client cannot lie about what the lines said. Stored `rev` is the sha
+when the rev is a commit (`gitutil.IsCommit`); for a working-tree snapshot it
+is HEAD's sha if the file's blob equals HEAD's (`gitutil.BlobSHA`), else
+`"uncommitted"`. `store.Create` also rejects an anchor whose `End` is not
+`Start + len(Snippet) - 1` (Resolve trusts a loaded anchor). Text must be
+non-blank and at most 64 KiB; `file` must be `filepath.IsLocal`.
+
+**Routes** (no wildcard path params; POST bodies are JSON, as
+`guardMutations` requires; the path is a registered worktree):
+
+- `GET /api/review-comments?path=[&old_rev=&new_rev=]` returns `{comments}`,
+  each a `reviewCommentItem`: the comment DTO (context lines are never sent;
+  `snippet` is) plus `view` and `prompt`. The two revs go together and must be
+  ones `/patch` handed out. Once they expire (30 min TTL) the list answers
+  404 "unknown rev"; the UI then reloads the shown view's own request once per
+  rev pair, which hands out fresh ones.
+- `POST /api/review-comments` creates (201, the DTO).
+- `POST /api/review-comments/update` `{path, id, version, body}`: a stale
+  `version` is 409 with `{error, comment}` (the current comment); a missing
+  comment is 404.
+- `POST /api/review-comments/delete` `{path, id}` (204; deleting a missing
+  comment succeeds) and `POST /api/review-comments/clear` `{path}` (204).
+
+**Two positions per comment.** Both are recomputed on every list by a pure
+function (`reviewcomments.Resolve`), never stored.
+
+- `view`: where the comment sits in the diff the client shows (present only
+  when revs were given). `status` is `shown` (with `start_line`/`end_line`
+  and `moved`), `outdated` (new side, file in the view, snippet gone),
+  `not_in_view` or `outside_changes`. A comment whose file is not among the
+  view's changed files is `not_in_view` when its file is changed in All
+  changes for the comment's own base, else `outside_changes`. An old-side
+  comment that no longer matches the old side is `not_in_view`, not out of
+  date.
+- `prompt`: where it sits in the **working tree** (read from disk, a
+  regular file only), which is what an agent will edit. `current`, `moved`,
+  `outdated` (original lines kept), or `removed` for every old-side comment
+  (it is about code that no longer exists).
+
+**Resolve** (`anchor.go`). If the snippet and both context sides match at the
+stored lines, `current`. Otherwise it scans every position: exactly one full
+match (snippet + context) is `moved`; failing that, exactly one snippet-only
+match is `moved` too, unless the snippet is **low-information** (no line has
+a Unicode letter or digit, e.g. a lone `}`), which never moves on the snippet
+alone. An informative snippet whose context changed therefore still follows
+its lines. Anything else is `outdated`. Context is clipped at file edges, and
+`SplitLines` keeps a `\r` and ignores one trailing newline.
+
+**Caches and lock** (`reviewResolver`, created lazily on the server). Only
+**inputs** are cached: file contents at revs `/patch` handed out (immutable
+shas and snapshot trees; **successful reads only**, so a failed git read is
+retried on the next request), changed-file lists between two such revs, and
+All-changes file sets keyed by dir, base and working-tree fingerprint. Each
+cache is cleared whole at 512 entries. Working-tree files are read per
+request. Resolution runs under a **per-worktree mutex**, so concurrent lists
+do not build the same snapshot tree twice. The list is sorted by file, then
+the shown line (else the stored one), then id.
+
+**Editing from two places.** Clients poll the list every 5s while the diff
+is open (`useReviewComments`) and invalidate after their own writes; there
+is no push. An edit carries `version`. A 409 keeps the user's text under
+"Changed elsewhere — your text is kept below" beside the current comment. A
+404 on save (deleted elsewhere) moves the card's text into
+`useDeletedDrafts`, an in-memory per-path store, and the "Deleted elsewhere"
+tombstone renders inline at its last position and in the sidebar until
+dismissed.
+
+**Frontend.**
+
+- Selection to target (`commentRange.ts`): pierre's line selection becomes
+  `{file, side, start, end}`. A context click on the old side maps to its
+  new-side line (`oldToNew`), a range containing a removed line stays
+  old-side, and a selection whose ends are on different sides clamps to the
+  starting side.
+- A file with a shown comment outside every hunk renders with pierre
+  `options.expandUnchanged: true` so the line exists to annotate. Comments sit
+  as pierre annotations under the line they end on; the gutter "+" starts one.
+- `ReviewCommentCard` is the one card for inline and sidebar (`variant`), with
+  per-source styling (`SOURCE_STYLE`). Badge `Out of date`; notes
+  `Not in this view` / `Outside the changes` (jump disabled with that reason).
+  `Moved` comments show the new lines.
+- Jump (`scrollToComment`) scrolls to the file, then centres the card, looking
+  **only inside the diff scroller** (`.diff-body-scroller`), since the sidebar
+  holds a copy with the same id. Jumping to a `not_in_view` comment sets the
+  selection's base to the comment's and reloads, then scrolls once it is shown.
+- `ReviewSidebar` (title `Review comments (N)`) holds `Send comments to agent`
+  (`SendToAgentModal`: `buildPrompt` text, `Copy to clipboard` / `Copied`) and
+  `Clear comments` (`ClearCommentsModal`). The prompt uses each comment's
+  `prompt` position: `file:lines`, `removed line, previously N`, or `out of
+  date`, with the snippet in a fence longer than any backtick run inside it.
+  Open state is sessionStorage `worktree.reviewSidebar` (`useReviewSidebar`),
+  forced closed when the loaded list becomes empty. Below the wide breakpoint
+  it is a right-hand Drawer.
+- Esc ladder in the diff: a search query, then the review sidebar, then
+  leaving the diff. One Esc hint at a time (on the sidebar's close control
+  while it is open); on narrow screens the Drawer owns Esc.
+
 ### Watcher toggles (`watchers.go`, `config.WatchersConfig`, `WatcherAlert`)
 
 Each service can be turned off: `watchers: {github, jira, slack}` in
