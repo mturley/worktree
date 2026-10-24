@@ -86,7 +86,7 @@ describe("ReviewCommentCard", () => {
 
   it("keeps typed text when the comment was deleted elsewhere", async () => {
     apiMock.updateReviewComment.mockRejectedValue(new HttpError("gone", 404))
-    wrap(<ReviewCommentCard path="/w" comment={item()} variant="inline" />)
+    const view = wrap(<ReviewCommentCard path="/w" comment={item()} variant="inline" />)
     await userEvent.click(screen.getByRole("button", { name: "Edit comment" }))
     const box = screen.getByRole("textbox")
     await userEvent.clear(box)
@@ -95,6 +95,11 @@ describe("ReviewCommentCard", () => {
     expect(await screen.findByText("Deleted elsewhere")).toBeInTheDocument()
     expect(screen.getByText("mine")).toBeInTheDocument()
     expect(screen.queryByRole("textbox")).toBeNull()
+    // The list drops the comment and the card unmounts; a fresh card still shows it.
+    view.unmount()
+    wrap(<ReviewCommentCard path="/w" comment={item()} variant="inline" />)
+    expect(screen.getByText("Deleted elsewhere")).toBeInTheDocument()
+    expect(screen.getByText("mine")).toBeInTheDocument()
     await userEvent.click(screen.getByRole("button", { name: "Dismiss" }))
     expect(screen.queryByText("mine")).toBeNull()
   })

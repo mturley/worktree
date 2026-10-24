@@ -3,7 +3,7 @@ import { ActionIcon, Badge, Box, Button, Group, Stack, Text, Tooltip } from "@ma
 import { IconArrowRight, IconPencil, IconTrash } from "@tabler/icons-react"
 import { HttpError } from "../../api/client"
 import type { CommentSource, DiffBase, DiffRange, ReviewComment, ReviewCommentItem } from "../../api/types"
-import { conflictComment, useReviewCommentMutations } from "../../hooks/useReviewComments"
+import { conflictComment, useDeletedDrafts, useReviewCommentMutations } from "../../hooks/useReviewComments"
 import { CommentEditor } from "./CommentEditor"
 import type { CommentTarget } from "./commentRange"
 
@@ -42,11 +42,11 @@ export function ReviewCommentCard({ path, comment, variant, onJump, jumpDisabled
   // Set when a save found the comment edited elsewhere: the newer comment,
   // whose version the next save carries.
   const [conflict, setConflict] = useState<ReviewComment>()
-  // Set when a save found the comment deleted: the text that was being typed.
-  const [deletedText, setDeletedText] = useState<string>()
+  // A save that found the comment deleted leaves a tombstone in the store, so
+  // this state survives the list dropping the comment and the card remounting.
+  const deleted = useDeletedDrafts(path)
+  const tombstone = deleted.drafts.find((d) => d.comment.id === comment.id)
   const [error, setError] = useState<string>()
-  const [dismissed, setDismissed] = useState(false)
-  if (dismissed) return null
 
   const view = comment.view
   const outdated = view?.status === "outdated" || comment.prompt.status === "outdated"
@@ -68,7 +68,7 @@ export function ReviewCommentCard({ path, comment, variant, onJump, jumpDisabled
           const newer = conflictComment(err)
           if (newer) setConflict(newer)
           else if (err instanceof HttpError && err.status === 404) {
-            setDeletedText(text)
+            deleted.add({ comment, text })
             setEditing(false)
           } else setError(errMessage(err))
         },
@@ -76,14 +76,14 @@ export function ReviewCommentCard({ path, comment, variant, onJump, jumpDisabled
     )
   }
 
-  if (deletedText !== undefined) {
+  if (tombstone) {
     return (
       <Frame comment={comment}>
         <Stack gap={4}>
           <Text size="xs" c="red">Deleted elsewhere</Text>
-          <Body text={deletedText} />
+          <Body text={tombstone.text} />
           <Group>
-            <Button size="compact-xs" variant="subtle" color="gray" onClick={() => setDismissed(true)}>
+            <Button size="compact-xs" variant="subtle" color="gray" onClick={() => deleted.dismiss(comment.id)}>
               Dismiss
             </Button>
           </Group>

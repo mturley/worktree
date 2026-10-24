@@ -1,3 +1,4 @@
+import { useCallback, useSyncExternalStore } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { api, HttpError } from "../api/client"
 import type { NewReviewComment, ReviewComment, ReviewCommentItem } from "../api/types"
@@ -40,4 +41,42 @@ export function conflictComment(err: unknown): ReviewComment | undefined {
   if (!c || typeof c !== "object") return undefined
   if (typeof c.id !== "number" || typeof c.version !== "number" || typeof c.body !== "string") return undefined
   return c as ReviewComment
+}
+
+/** A comment whose save found it deleted elsewhere, and the text that was being typed. */
+export interface DeletedDraft {
+  comment: ReviewCommentItem
+  text: string
+}
+
+// In-memory only, per worktree path. The list no longer holds a deleted
+// comment, so its card unmounts; this keeps the typed text until dismissed.
+const NONE: DeletedDraft[] = []
+let deletedDrafts = new Map<string, DeletedDraft[]>()
+const deletedListeners = new Set<() => void>()
+
+function setDeleted(path: string, next: DeletedDraft[]): void {
+  deletedDrafts = new Map(deletedDrafts)
+  if (next.length) deletedDrafts.set(path, next)
+  else deletedDrafts.delete(path)
+  deletedListeners.forEach((l) => l())
+}
+
+function subscribeDeleted(onChange: () => void): () => void {
+  deletedListeners.add(onChange)
+  return () => { deletedListeners.delete(onChange) }
+}
+
+export function useDeletedDrafts(path: string) {
+  const drafts = useSyncExternalStore(subscribeDeleted, () => deletedDrafts.get(path) ?? NONE)
+  const add = useCallback(
+    (d: DeletedDraft) =>
+      setDeleted(path, [...(deletedDrafts.get(path) ?? NONE).filter((x) => x.comment.id !== d.comment.id), d]),
+    [path],
+  )
+  const dismiss = useCallback(
+    (id: number) => setDeleted(path, (deletedDrafts.get(path) ?? NONE).filter((x) => x.comment.id !== id)),
+    [path],
+  )
+  return { drafts, add, dismiss }
 }

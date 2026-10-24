@@ -17,7 +17,7 @@ vi.mock("../api/client", async (orig) => {
 })
 
 import { HttpError } from "../api/client"
-import { conflictComment, useReviewCommentMutations, useReviewComments } from "./useReviewComments"
+import { conflictComment, useDeletedDrafts, useReviewCommentMutations, useReviewComments } from "./useReviewComments"
 
 function wrapper() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -77,5 +77,23 @@ describe("conflictComment", () => {
     expect(conflictComment(new HttpError("stale", 409, { comment: "nope" }))).toBeUndefined()
     expect(conflictComment(new HttpError("stale", 409))).toBeUndefined()
     expect(conflictComment(new Error("x"))).toBeUndefined()
+  })
+})
+
+describe("useDeletedDrafts", () => {
+  const draft = (id: number, text: string) =>
+    ({ comment: { id } as import("../api/types").ReviewCommentItem, text })
+
+  it("adds, replaces, dismisses and scopes per path", () => {
+    const a = renderHook(() => useDeletedDrafts("/da"))
+    const b = renderHook(() => useDeletedDrafts("/db"))
+    act(() => a.result.current.add(draft(1, "one")))
+    act(() => a.result.current.add(draft(2, "two")))
+    act(() => a.result.current.add(draft(1, "uno")))
+    expect(a.result.current.drafts.map((d) => [d.comment.id, d.text])).toEqual([[2, "two"], [1, "uno"]])
+    expect(b.result.current.drafts).toEqual([])
+    act(() => a.result.current.dismiss(2))
+    act(() => a.result.current.dismiss(1))
+    expect(a.result.current.drafts).toEqual([])
   })
 })
