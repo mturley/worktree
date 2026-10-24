@@ -223,19 +223,21 @@ export default function DiffView({
   }, [review.data, reviewCount, reviewOpen, setReviewOpen])
 
   // The server forgets a view's revs after a while; the list then answers
-  // 404. A fresh load hands out fresh revs. Once per rev pair, until the
+  // 404. A fresh load of the same view (its own request, never a pending
+  // selection change) hands out fresh revs. Once per rev pair, until the
   // list loads again, so a load that doesn't help can't loop.
   const revPair = shown ? `${shown.old_rev}..${shown.new_rev}` : undefined
+  const shownRequest = shown?.request
   const autoReloaded = useRef<string | null>(null)
   const reviewError = review.error
   useEffect(() => {
     if (fresh && !reviewError) autoReloaded.current = null
-    if (!revPair || !(reviewError instanceof HttpError) || reviewError.status !== 404) return
+    if (!revPair || !shownRequest || !(reviewError instanceof HttpError) || reviewError.status !== 404) return
     if (autoReloaded.current === revPair) return
     autoReloaded.current = revPair
     refetchCommentsOnLoad.current = true
-    reload()
-  }, [fresh, reviewError, revPair, reload])
+    reload({ base: shownRequest.base, range: shownRequest.range, ignoreWs: shownRequest.ignoreWs })
+  }, [fresh, reviewError, revPair, shownRequest, reload])
 
   // A view change: anything that loads a different patch.
   const viewKey = shown ? `${loadKey}:${shown.old_rev}..${shown.new_rev}` : ""

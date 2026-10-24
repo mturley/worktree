@@ -164,6 +164,23 @@ describe("scrollToComment", () => {
     expect(frames).toHaveLength(0)
   })
 
+  it("ignores the sidebar's card for the same comment, waiting for the one in the diff", () => {
+    const decoy = document.createElement("div")
+    decoy.setAttribute("data-review-comment-id", "42")
+    document.body.appendChild(decoy)
+    addFile("b.go", () => 300)
+    scrollToComment("b.go", 42)
+    runFrames(3)
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled()
+    expect(scroller.scrollTop).toBe(300)
+    const card = document.createElement("div")
+    card.setAttribute("data-review-comment-id", "42")
+    scroller.appendChild(card)
+    runFrames(1)
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(Element.prototype.scrollIntoView).mock.contexts[0]).toBe(card)
+  })
+
   it("gives up after a bounded time", () => {
     scrollToComment("missing.go", 1)
     runFrames(300)

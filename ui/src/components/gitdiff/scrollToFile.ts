@@ -95,7 +95,7 @@ export function scrollToComment(file: string, id: number): () => void {
 
   const step = () => {
     if (done) return
-    const el = document.querySelector(`[data-review-comment-id="${id}"]`)
+    const el = document.querySelector(`.${DIFF_SCROLLER_CLASS} [data-review-comment-id="${id}"]`)
     if (el) {
       stop()
       el.scrollIntoView({ block: "center" })

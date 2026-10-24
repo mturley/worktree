@@ -493,6 +493,31 @@ describe("DiffView", () => {
     expect(screen.queryByText(/unknown rev/)).not.toBeInTheDocument()
   })
 
+  it("reloads the shown view's own request, not a pending selection, on an unknown rev", async () => {
+    let expired = false
+    apiMock.reviewComments.mockImplementation(async (_p: string, v?: { newRev: string }) => {
+      if (v && expired) throw new HttpError("unknown rev", 404)
+      return { comments: [] }
+    })
+    window.localStorage.setItem(
+      "worktree.diffSelection:/wt/foo",
+      JSON.stringify({ base: "merge-base", range: { from: "c1", to: "c1" }, listId: "L1" }),
+    )
+    const { rerender } = setup()
+    await screen.findByTestId("diff-body")
+    await waitFor(() => expect(apiMock.reviewComments).toHaveBeenCalledWith("/wt/foo", { oldRev: "mb", newRev: "snap" }))
+    // A rebase resets the live range to "all"; the view stays pinned (stale).
+    apiMock.listId = "L2"
+    apiMock.commits = [commit("c3")]
+    gitMock.value = git({ fingerprint: "F2" })
+    rerender(tree())
+    await screen.findByRole("button", { name: "Refresh" })
+    expired = true
+    await refetchComments()
+    await waitFor(() => expect(apiMock.diffPatch).toHaveBeenCalledTimes(2))
+    expect(apiMock.diffPatch).toHaveBeenLastCalledWith("/wt/foo", "merge-base", { from: "c1", to: "c1" }, false)
+  })
+
   it("reloads at most once for the same revs", async () => {
     apiMock.reviewComments.mockImplementation(async (_p: string, v?: { newRev: string }) => {
       if (v) throw new HttpError("unknown rev", 404)
