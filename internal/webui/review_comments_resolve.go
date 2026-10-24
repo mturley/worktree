@@ -24,9 +24,12 @@ const reviewCacheMax = 512
 type reviewResolver struct {
 	mu       sync.Mutex
 	locks    map[string]*sync.Mutex          // per worktree dir
-	contents map[string][]string             // rev\0file → lines; nil = missing
+	contents map[string][]string             // rev\0file → lines; successful reads only
 	changed  map[string][]gitutil.FileChange // old\0new → changes
 	all      map[string][]gitutil.FileChange // dir\0base\0fingerprint → changes
+
+	// showFile reads a file at a rev; a field so tests can make it fail.
+	showFile func(dir, rev, file string) ([]byte, error)
 }
 
 func newReviewResolver() *reviewResolver {
@@ -35,6 +38,7 @@ func newReviewResolver() *reviewResolver {
 		contents: map[string][]string{},
 		changed:  map[string][]gitutil.FileChange{},
 		all:      map[string][]gitutil.FileChange{},
+		showFile: gitutil.ShowFile,
 	}
 }
 
@@ -68,17 +72,20 @@ func cachePut[V any](r *reviewResolver, m map[string]V, key string, v V) {
 	m[key] = v
 }
 
-// linesAt returns file's lines at rev, or nil when it does not exist there.
-// rev must be one /patch handed out, so it names immutable content.
+// linesAt returns file's lines at rev, or nil when they cannot be read. rev
+// must be one /patch handed out, so it names immutable content. Only
+// successful reads are cached: a failure may be transient (fork failure, too
+// many open files), and git does not tell it apart from a missing file.
 func (r *reviewResolver) linesAt(dir, rev, file string) []string {
 	key := rev + "\x00" + file
 	if lines, ok := cacheGet(r, r.contents, key); ok {
 		return lines
 	}
-	var lines []string
-	if content, err := gitutil.ShowFile(dir, rev, file); err == nil {
-		lines = reviewcomments.SplitLines(content)
+	content, err := r.showFile(dir, rev, file)
+	if err != nil {
+		return nil
 	}
+	lines := reviewcomments.SplitLines(content)
 	cachePut(r, r.contents, key, lines)
 	return lines
 }

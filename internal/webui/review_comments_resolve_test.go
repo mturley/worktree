@@ -2,6 +2,7 @@ package webui
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/mturley/worktree/internal/gitutil"
 )
 
 // rcListView lists with a view's revs, returning the status, raw body and
@@ -182,6 +185,32 @@ func TestReviewCommentsPromptFileGone(t *testing.T) {
 	got := rcOne(t, ts, wt, p)
 	if got.Prompt.Status != "outdated" || got.Prompt.StartLine != 4 || got.Prompt.EndLine != 4 {
 		t.Fatalf("prompt = %+v", got.Prompt)
+	}
+}
+
+func TestReviewCommentsViewReadFailureNotCached(t *testing.T) {
+	wt := forkRepo(t)
+	commitFile(t, wt, "multi", rcMulti)
+	srv, ts := gitTestServer(t, wt, nil)
+	p := getPatch(t, ts, wt, "")
+	rcCreate(t, ts, rcCreateReq(wt, "multi", "new", 4, "c", p))
+
+	res := srv.reviewResolver()
+	failed := false
+	res.showFile = func(dir, rev, file string) ([]byte, error) {
+		if !failed {
+			failed = true
+			return nil, errors.New("fork/exec: resource temporarily unavailable")
+		}
+		return gitutil.ShowFile(dir, rev, file)
+	}
+
+	if got := rcOne(t, ts, wt, p); got.View == nil || got.View.Status != "outdated" {
+		t.Fatalf("first view = %+v, want outdated from the failed read", got.View)
+	}
+	got := rcOne(t, ts, wt, p)
+	if got.View == nil || got.View.Status != "shown" || got.View.StartLine != 4 {
+		t.Fatalf("second view = %+v, want shown (failure must not be cached)", got.View)
 	}
 }
 
