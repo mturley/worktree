@@ -16,6 +16,7 @@ import { useIsWide } from "../hooks/useIsWide"
 import { useIsTall } from "../hooks/useIsTall"
 import { useDetailTab } from "../hooks/useDetailTab"
 import { useDiffView } from "../hooks/useDiffView"
+import { useReviewSidebar } from "../hooks/useReviewSidebar"
 import { useWorktrees } from "../hooks/useWorktrees"
 import { UnreadMarkerDot } from "../components/UnreadMarkerDot"
 import { useCmuxMatches } from "../api/cmux"
@@ -91,6 +92,9 @@ export function WorktreeDetailPage() {
   // card and the resources) under the same header.
   const diffView = useDiffView()
   const inDiff = diffView.open
+  // DiffView closes this itself when there is nothing to list, so the flag
+  // is "the sidebar is showing". Esc closes it before it leaves the diff.
+  const [sidebarOpen, setSidebarOpen] = useReviewSidebar()
   // The details card's tab is the page's: it decides where the card sits
   // (see inColumn below), and Esc returns it to Notes.
   const detailTab = useDetailTab(path, inDiff)
@@ -583,6 +587,7 @@ export function WorktreeDetailPage() {
   // home worktree when it has one, else for the listing. On the home
   // worktree itself it stops at deselecting.
   const escapeIdle = () => {
+    if (inDiff && sidebarOpen) { setSidebarOpen(false); return }
     if (inDiff) { diffView.leave(); return }
     if (selected) { clear(); return }
     if (!escLeaves) return
@@ -773,7 +778,7 @@ export function WorktreeDetailPage() {
       {inDiff ? (
         <DiffViewBoundary>
           <Suspense fallback={null}>
-            <DiffView path={path} headerHeight={headerHeight} escHint={escDiff} />
+            <DiffView path={path} headerHeight={headerHeight} escHint={escDiff && !sidebarOpen} sidebarEscHint={escDiff && sidebarOpen} />
           </Suspense>
         </DiffViewBoundary>
       ) : (

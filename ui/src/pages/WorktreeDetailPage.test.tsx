@@ -57,8 +57,10 @@ vi.mock("../hooks/useThread", () => ({
 // The drill-down is lazy and pulls in pierre; the page only decides when it
 // shows and what replaces it, so stand it in.
 vi.mock("../components/gitdiff/DiffView", () => ({
-  default: ({ headerHeight, escHint }: { headerHeight: number; escHint?: boolean }) => (
-    <div data-testid="diff-view" data-header={headerHeight} data-esc-hint={String(escHint)} />
+  default: ({ headerHeight, escHint, sidebarEscHint }: { headerHeight: number; escHint?: boolean; sidebarEscHint?: boolean }) => (
+    <div data-testid="diff-view" data-header={headerHeight} data-esc-hint={String(escHint)} data-sidebar-esc-hint={String(sidebarEscHint)}>
+      <textarea aria-label="comment editor" onKeyDown={(e) => { if (e.key === "Escape") e.stopPropagation() }} />
+    </div>
   ),
 }))
 
@@ -1117,6 +1119,47 @@ describe("WorktreeDetailPage diff drill-down", () => {
     await screen.findByTestId("diff-view")
     await userEvent.click(screen.getByTitle("Show notes"))
     await waitFor(() => expect(screen.queryByTestId("diff-view")).not.toBeInTheDocument())
+  })
+
+  describe("with the review sidebar open", () => {
+    beforeEach(() => { window.sessionStorage.setItem("worktree.reviewSidebar", "true") })
+    afterEach(() => { window.sessionStorage.removeItem("worktree.reviewSidebar") })
+
+    it("Esc closes the review sidebar before leaving the diff", async () => {
+      window.history.replaceState({}, "", diffUrl())
+      setViewport("wide")
+      wrap()
+      await screen.findByTestId("diff-view")
+      fireEvent.keyDown(document.body, { key: "Escape" })
+      await waitFor(() => expect(window.sessionStorage.getItem("worktree.reviewSidebar")).toBe("false"))
+      expect(screen.getByTestId("diff-view")).toBeInTheDocument()
+      expect(new URLSearchParams(window.location.search).has("diff")).toBe(true)
+      fireEvent.keyDown(document.body, { key: "Escape" })
+      await waitFor(() => expect(screen.queryByTestId("diff-view")).not.toBeInTheDocument())
+    })
+
+    it("only the sidebar's Esc hint shows while it is open", async () => {
+      window.history.replaceState({}, "", diffUrl())
+      setViewport("wide")
+      wrap()
+      const view = await screen.findByTestId("diff-view")
+      expect(view.dataset.escHint).toBe("false")
+      expect(view.dataset.sidebarEscHint).toBe("true")
+      fireEvent.keyDown(document.body, { key: "Escape" })
+      await waitFor(() => expect(screen.getByTestId("diff-view").dataset.escHint).toBe("true"))
+      expect(screen.getByTestId("diff-view").dataset.sidebarEscHint).toBe("false")
+    })
+
+    it("Esc in a comment editor does not close the sidebar or leave", async () => {
+      window.history.replaceState({}, "", diffUrl())
+      setViewport("wide")
+      wrap()
+      const editor = await screen.findByLabelText("comment editor")
+      editor.focus()
+      fireEvent.keyDown(editor, { key: "Escape" })
+      expect(window.sessionStorage.getItem("worktree.reviewSidebar")).toBe("true")
+      expect(screen.getByTestId("diff-view")).toBeInTheDocument()
+    })
   })
 
   it("goes back to the worktree on Esc, staying on the page", async () => {
