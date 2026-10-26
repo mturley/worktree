@@ -1377,14 +1377,50 @@ to break.
   labelled never depends on a drag being on (Priority order labels every
   group shown). A drop therefore always lands on a row of a non-empty
   section. Inserting drop targets at drag start pushed the dragged row
-  ~70px away from the pointer. The row
-  that follows the pointer is a `DragOverlay`; the original stays as a faint
-  placeholder, and `MeasuringStrategy.Always` keeps drop rects current.
-  The grip shows on hover, on `:focus-within` (keyboard) and always under
-  `@media (hover: none)` (touch), in `styles/theme.css`.
+  ~70px away from the pointer. `MeasuringStrategy.Always` keeps drop rects
+  current. The grip shows on hover, on `:focus-within` (keyboard) and
+  always under `@media (hover: none)` (touch), in `styles/theme.css`.
   `TaskList.test.tsx` drives real drags through the `KeyboardSensor`
   (Space, arrow, Space) with a stubbed `getBoundingClientRect` that lays
   rows out 30px apart.
+- **What a drag looks like** (classes in `styles/theme.css`). The row that
+  follows the pointer is a `DragOverlay` copy on an opaque, lifted surface
+  (`.task-drag-overlay`: the accent mixed into the card colour, plus a
+  shadow) — not the panel's `.task-panel` wash, which is 6% over
+  transparency and let the rows it passed over show through. The row's own
+  slot becomes an empty dashed outline (`.task-drag-placeholder`,
+  `data-dragging`; its contents `visibility: hidden`, so it keeps its
+  height), never a faded copy: within a section the sortable moves that slot
+  to where the row will land, and a translucent copy there overlapped its
+  neighbours' text.
+- **Landing line across sections.** A sortable only opens a slot inside its
+  own `SortableContext`, so over another section nothing used to move.
+  ResourceList solves the same thing by moving the card into the other
+  group mid-drag (multiple-containers); tasks can't cheaply do that, since
+  a task's section is derived from its star/priority. Instead
+  `dropIndicatorFor` (`taskDrag.ts`) reads the landing spot off the very
+  plan the drop will carry out (`dropPlanFor`): `{before: X}` draws a line
+  on row X's top edge, `{after: X}` on its bottom (`.task-drop-line`,
+  absolutely placed so it shifts nothing), and the target section gets
+  ResourceGroup's dashed `isOver`-style outline (`data-drop-target`). It is
+  recomputed on every `onDragMove`, since the before/after side follows the
+  pointer within the hovered row. Within a section there is no line: the
+  open slot already shows it.
+- **Drops are optimistic, twice over.** `applyMove` (`lib/taskSections.ts`)
+  computes the list as the server will have it — the patch applied and
+  every task re-ranked in its new master order, because display order
+  follows `rank`, not array position (moving the task in the array alone
+  changed nothing on screen, which was the old snap-back). `TaskList` sets
+  it as its `pending` list in the same render that drops the overlay, and
+  `pending` wins over the query — ResourceList's pattern — so a refetch
+  landing mid-save (SSE fires after the star/priority update, before the
+  move) can't flash the old order. `useTaskMutations().move` also writes it
+  into every query of the scope synchronously: it starts
+  `cancelQueries` first (cancelling reverts an in-flight fetch at once, so
+  the write must follow it), and resolves only after its own refetch has
+  landed, which is when `TaskList` clears `pending` (once no other save is
+  in flight). A failure restores the cache snapshot, clears `pending` and
+  shows the error in the list's alert.
 - **`keepPreviousData` is scoped.** `useTasks` keys each query by scope
   plus `{completed, archived}`; toggling Show completed changes the key, and
   dropping to "Loading tasks…" would unmount the list's `DndContext`. So

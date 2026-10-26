@@ -1,6 +1,5 @@
 import type { UniqueIdentifier } from "@dnd-kit/core"
 import { planDrop, type DropPlan, type TaskSection } from "../../lib/taskSections"
-
 /*
  * dnd-kit ids for the task list. Rows are the only draggables and the only
  * drop targets, and a row is "task:<id>".
@@ -33,4 +32,35 @@ export function dropPlanFor(
   }
   const i = dest.tasks.findIndex((t) => t.id === over)
   return planDrop(sections, active, dest.key, below ? i + 1 : i)
+}
+
+/** Where a cross-section drop will land: a line on one edge of a row. */
+export interface DropIndicator {
+  section: string
+  id: number
+  edge: "before" | "after"
+}
+
+/**
+ * The landing line for a drag over ANOTHER section, read off the very plan
+ * the drop will carry out (dropPlanFor), so the line can't disagree with the
+ * drop: `{after: X}` is a line under row X, `{before: X}` one over it.
+ *
+ * Within the dragged row's own section there is none: there the sortable
+ * opens a slot where the row will land, which already says it. A drop that
+ * changes nothing shows nothing either.
+ */
+export function dropIndicatorFor(
+  sections: TaskSection[], activeId: UniqueIdentifier, overId: UniqueIdentifier, below: boolean,
+): DropIndicator | null {
+  const active = parseTaskId(activeId)
+  const over = parseTaskId(overId)
+  if (active === null || over === null) return null
+  const dest = sections.find((s) => s.tasks.some((t) => t.id === over))
+  if (!dest || dest.tasks.some((t) => t.id === active)) return null
+  const { place } = dropPlanFor(sections, activeId, overId, below)
+  if (!place) return null
+  return "after" in place
+    ? { section: dest.key, id: place.after, edge: "after" }
+    : { section: dest.key, id: place.before, edge: "before" }
 }

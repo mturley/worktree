@@ -1,6 +1,7 @@
 import { keepPreviousData, useQuery, useQueryClient, type QueryClient, type QueryKey } from "@tanstack/react-query"
 import { api } from "../api/client"
 import type { Priority, Task, TaskState } from "../api/types"
+import { applyMove } from "../lib/taskSections"
 
 export type TaskScope =
   | { kind: "all" }
@@ -41,27 +42,16 @@ export function useTasks(scope: TaskScope, opts: { completed: boolean; archived:
 type Place = { after: number } | { before: number }
 type Patch = { title?: string; priority?: Priority; starred?: boolean; due?: string }
 
-/** `list` with task `id` moved next to its target, and `patch` applied to it. */
-function reorder(list: Task[], id: number, place: Place, patch?: { starred?: boolean; priority?: Priority }): Task[] {
-  const moving = list.find((t) => t.id === id)
-  if (!moving) return list
-  const rest = list.filter((t) => t.id !== id)
-  const targetId = "after" in place ? place.after : place.before
-  const at = rest.findIndex((t) => t.id === targetId)
-  const next = { ...moving, ...patch }
-  if (at < 0) return list.map((t) => (t.id === id ? next : t))
-  rest.splice("after" in place ? at + 1 : at, 0, next)
-  return rest
-}
-
 export function useTaskMutations(scope: TaskScope) {
   const qc = useQueryClient()
   const scopeKey = taskScopeKey(scope)
 
+  /** Resolves once the task lists' refetch has landed. */
   const settle = () => {
-    void qc.invalidateQueries({ queryKey: ["tasks"] })
+    const tasks = qc.invalidateQueries({ queryKey: ["tasks"] })
     void qc.invalidateQueries({ queryKey: ["worktrees"] })
     void qc.invalidateQueries({ queryKey: ["resources"] })
+    return tasks
   }
 
   const create = async (input: { title: string; priority: Priority; starred: boolean; after?: number; before?: number }) => {
@@ -74,7 +64,7 @@ export function useTaskMutations(scope: TaskScope) {
     try {
       return await api.createTask({ ...input, ...ctx })
     } finally {
-      settle()
+      void settle()
     }
   }
 
@@ -82,7 +72,7 @@ export function useTaskMutations(scope: TaskScope) {
     try {
       await api.updateTask(id, patch)
     } finally {
-      settle()
+      void settle()
     }
   }
 
@@ -91,14 +81,25 @@ export function useTaskMutations(scope: TaskScope) {
     try {
       return await api.setTaskState(id, state)
     } finally {
-      settle()
+      void settle()
     }
   }
 
+  /**
+   * Shows the move in the cache at once, synchronously: the drop's own render
+   * must already see it, or the row snaps back for a frame. An in-flight
+   * fetch is cancelled first (it would land the old order); cancelling
+   * reverts that query synchronously, so the write must come after it.
+   *
+   * Resolves (or rejects) only once the refetch it triggers has landed, so a
+   * caller holding its own optimistic copy (TaskList) knows when the cache
+   * has caught up with the server.
+   */
   const move = async (id: number, place: Place, patch?: { starred?: boolean; priority?: Priority }) => {
-    await qc.cancelQueries({ queryKey: scopeKey })
+    const cancelled = qc.cancelQueries({ queryKey: scopeKey })
     const snapshot = qc.getQueriesData<Task[]>({ queryKey: scopeKey })
-    qc.setQueriesData<Task[]>({ queryKey: scopeKey }, (old) => (old ? reorder(old, id, place, patch) : old))
+    qc.setQueriesData<Task[]>({ queryKey: scopeKey }, (old) => (old ? applyMove(old, id, place, patch) : old))
+    await cancelled
     try {
       if (patch && (patch.starred !== undefined || patch.priority !== undefined)) await api.updateTask(id, patch)
       await api.moveTask(id, place)
@@ -106,7 +107,7 @@ export function useTaskMutations(scope: TaskScope) {
       restore(qc, snapshot)
       throw e
     } finally {
-      settle()
+      await settle()
     }
   }
 

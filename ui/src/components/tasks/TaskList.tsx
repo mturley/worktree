@@ -11,21 +11,24 @@ import {
   TouchSensor,
   useSensor,
   useSensors,
+  type Active,
   type DragEndEvent,
+  type DragMoveEvent,
   type DragStartEvent,
+  type Over,
 } from "@dnd-kit/core"
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import type { Task, TaskState } from "../../api/types"
 import { useTaskMutations, useTasks, type TaskScope } from "../../hooks/useTasks"
 import { useTaskListPrefs } from "../../hooks/useTaskListPrefs"
-import { buildSections, canDrag, quickAddAnchor, type TaskSection } from "../../lib/taskSections"
+import { applyMove, buildSections, canDrag, quickAddAnchor, type TaskSection } from "../../lib/taskSections"
 import { useSearchContext } from "../search/SearchContext"
 import { useTaskModal } from "./modal/TaskModalProvider"
 import { TaskQuickAdd } from "./TaskQuickAdd"
 import { TaskRow } from "./TaskRow"
 import { taskUndoMessage, useOfferTaskUndo } from "./taskUndo"
-import { dropPlanFor, taskDraggableId } from "./taskDrag"
+import { dropIndicatorFor, dropPlanFor, taskDraggableId, type DropIndicator } from "./taskDrag"
 
 /** A compact row's height, for capping a list at `maxRows`. */
 const ROW_PX = 30
@@ -44,6 +47,12 @@ export function cappedMaxHeight(maxRows: number): string {
 const DRAG_HINT = "Drag to reorder works in Custom or Priority order"
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
+
+/** Whether the dragged row's centre is below the centre of the row it is over. */
+function isBelow(active: Active, over: Over): boolean {
+  const dragged = active.rect.current.translated
+  return dragged ? dragged.top + dragged.height / 2 > over.rect.top + over.rect.height / 2 : false
+}
 
 /**
  * Whether a capped body overflows its cap: measured after layout, and again
@@ -80,11 +89,13 @@ function useOverflow(capped: boolean, shape: string) {
  * grip renders disabled with a hint when the sort can't be reordered, and not
  * at all in Completed, whose order isn't master order.
  */
-function SortableTaskRow({ task, section, sortDraggable, flush, ownResource, mutations, onError, onOpen }: {
+function SortableTaskRow({ task, section, sortDraggable, flush, dropEdge, ownResource, mutations, onError, onOpen }: {
   task: Task
   flush: boolean
   section: TaskSection
   sortDraggable: boolean
+  /** A cross-section drag will land on this edge of the row: draw the line. */
+  dropEdge?: DropIndicator["edge"]
   ownResource?: { type: string; id: string }
   mutations: Pick<ReturnType<typeof useTaskMutations>, "setState" | "update">
   onError: (msg: string) => void
@@ -146,15 +157,20 @@ function SortableTaskRow({ task, section, sortDraggable, flush, ownResource, mut
     <div
       ref={setNodeRef}
       data-task-sortable={task.id}
+      // The row's own slot, while the DragOverlay copy follows the pointer:
+      // an empty outlined placeholder (theme.css), never a faded copy, whose
+      // text would show through the copy passing over it.
+      className={isDragging ? "task-drag-placeholder" : undefined}
+      data-dragging={isDragging || undefined}
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
         zIndex: isDragging ? 1 : undefined,
         position: "relative",
-        // A faint placeholder: the DragOverlay is what follows the pointer.
-        opacity: isDragging ? 0.35 : 1,
       }}
     >
+      {/* Absolute, so drawing it moves nothing under the pointer. */}
+      {dropEdge && <div className="task-drop-line" data-task-drop-line={dropEdge} aria-hidden />}
       <TaskRow
         task={task}
         ownResource={ownResource}
@@ -174,13 +190,15 @@ function SortableTaskRow({ task, section, sortDraggable, flush, ownResource, mut
  * sections that hold tasks are rendered, so there is nothing to drop onto but
  * rows: a drop's section follows from the row it lands on.
  */
-function SectionBlock({ section, labelled, children }: {
+function SectionBlock({ section, labelled, dropTarget, children }: {
   section: TaskSection
   labelled: boolean
+  /** A drag from another section will land here: outlined, as ResourceGroup's isOver. */
+  dropTarget: boolean
   children: React.ReactNode
 }) {
   return (
-    <Stack gap={0} data-task-section={section.key}>
+    <Stack gap={0} data-task-section={section.key} data-drop-target={dropTarget || undefined}>
       {labelled && (
         <Text size="xs" fw={700} tt="uppercase" c="dimmed" px="xs" pt={4}>
           {section.label}
@@ -220,8 +238,19 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
   const { open } = useTaskModal()
   const [activeId, setActiveId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Where a cross-section drag will land, while one is over another section.
+  const [indicator, setIndicator] = useState<DropIndicator | null>(null)
+  // The list as of the latest drop, as ResourceList's `pending`: while set it
+  // wins over the query, so a refetch landing mid-save (an SSE invalidation
+  // between the star/priority update and the move, say) can't flash the old
+  // order. Cleared once every save has settled and its refetch has landed —
+  // mutations.move resolves only then — or on failure, when the cache is
+  // already rolled back.
+  const [pending, setPending] = useState<Task[] | null>(null)
+  const saving = useRef(0)
 
-  const sections = buildSections(query.data ?? [], prefs, terms)
+  const tasks = pending ?? query.data ?? []
+  const sections = buildSections(tasks, prefs, terms)
   // Every task the list shows, across its sections: Show all's count.
   const shownCount = sections.reduce((n, s) => n + s.tasks.length, 0)
   // Expanded drops the cap.
@@ -255,17 +284,41 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
     setActiveId(Number(String(active.id).replace(/^task:/, "")))
   }
 
+  // On every move, not just when `over` changes: which side of the hovered
+  // row the drop lands on follows the pointer within that row.
+  const handleDragMove = ({ active, over }: DragMoveEvent) => {
+    const next = over ? dropIndicatorFor(sections, active.id, over.id, isBelow(active, over)) : null
+    setIndicator((cur) =>
+      cur?.section === next?.section && cur?.id === next?.id && cur?.edge === next?.edge ? cur : next,
+    )
+  }
+
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
     setActiveId(null)
+    setIndicator(null)
     if (!over) return
-    const dragged = active.rect.current.translated
-    const below = dragged ? dragged.top + dragged.height / 2 > over.rect.top + over.rect.height / 2 : false
-    const plan = dropPlanFor(sections, active.id, over.id, below)
+    const plan = dropPlanFor(sections, active.id, over.id, isBelow(active, over))
     const id = Number(String(active.id).replace(/^task:/, ""))
     // Every drop lands on a row of a non-empty section, so a plan that
     // changes anything has a place.
     if (!plan.place) return
-    mutations.move(id, plan.place, plan.patch).catch((e: unknown) => setError(errorText(e)))
+    // In this same render as the overlay's removal, so the row never shows
+    // back in its old slot while the save is in flight.
+    setPending(applyMove(tasks, id, plan.place, plan.patch))
+    setError(null)
+    saving.current++
+    mutations
+      .move(id, plan.place, plan.patch)
+      .catch((e: unknown) => setError(errorText(e)))
+      .finally(() => {
+        saving.current--
+        if (saving.current === 0) setPending(null)
+      })
+  }
+
+  const handleDragCancel = () => {
+    setActiveId(null)
+    setIndicator(null)
   }
 
   const add = (input: { title: string; priority: Task["priority"]; starred: boolean }) => {
@@ -296,11 +349,13 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
         // move rows, and their rects must follow.
         measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
         onDragStart={handleDragStart}
+        onDragMove={handleDragMove}
+        onDragOver={handleDragMove}
         onDragEnd={handleDragEnd}
-        onDragCancel={() => setActiveId(null)}
+        onDragCancel={handleDragCancel}
       >
         {shown.map((s) => (
-          <SectionBlock key={s.key} section={s} labelled={labelled}>
+          <SectionBlock key={s.key} section={s} labelled={labelled} dropTarget={indicator?.section === s.key}>
             <SortableContext items={s.tasks.map((t) => taskDraggableId(t.id))} strategy={verticalListSortingStrategy}>
               {s.tasks.map((t) => (
                 <SortableTaskRow
@@ -309,6 +364,7 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
                   section={s}
                   sortDraggable={sortDraggable}
                   flush={!labelled}
+                  dropEdge={indicator?.id === t.id ? indicator.edge : undefined}
                   ownResource={ownResource}
                   mutations={mutations}
                   onError={setError}
@@ -318,10 +374,13 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
             </SortableContext>
           </SectionBlock>
         ))}
-        {/* The dragged row follows the pointer here; its own slot stays put. */}
+        {/* The dragged row follows the pointer here, its own slot left as an
+            empty placeholder. On an opaque, lifted surface (theme.css): the
+            panel's own wash is translucent, and the rows it passes over showed
+            through it. */}
         <DragOverlay dropAnimation={null}>
           {activeTask ? (
-            <Box className="task-panel" style={{ cursor: "grabbing" }} data-testid="task-drag-overlay">
+            <Box className="task-drag-overlay" data-testid="task-drag-overlay">
               <TaskRow task={activeTask} ownResource={ownResource} flush={!labelled} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} />
             </Box>
           ) : null}

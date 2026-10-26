@@ -110,6 +110,58 @@ body,
   border-radius: var(--mantine-radius-md);
 }
 
+/* The task being dragged, following the pointer (TaskList's DragOverlay).
+   Opaque — the accent tint mixed into the card surface rather than over
+   transparency — and lifted with a shadow, so the rows it passes over never
+   show through it. */
+.task-drag-overlay {
+  background: color-mix(in srgb, var(--task-accent) 10%, var(--mantine-color-dark-6));
+  border: 1px solid color-mix(in srgb, var(--task-accent) 50%, var(--mantine-color-dark-6));
+  border-left: 3px solid var(--task-accent);
+  border-radius: var(--mantine-radius-sm);
+  box-shadow: var(--mantine-shadow-md);
+  cursor: grabbing;
+}
+
+/* The dragged task's own slot: an empty outline where it will land, its
+   contents hidden (not removed, so the slot keeps the row's height). An
+   inset outline, so it adds no height. */
+.task-drag-placeholder {
+  border-radius: var(--mantine-radius-sm);
+  outline: 1px dashed color-mix(in srgb, var(--task-accent) 60%, transparent);
+  outline-offset: -1px;
+  background: color-mix(in srgb, var(--task-accent) 6%, transparent);
+}
+.task-drag-placeholder > * {
+  visibility: hidden;
+}
+
+/* Where a drag from another section will land: a line on the row's edge,
+   absolutely placed so drawing it shifts nothing under the pointer. */
+.task-drop-line {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--task-accent);
+  box-shadow: 0 0 4px var(--task-accent);
+  pointer-events: none;
+  z-index: 2;
+}
+.task-drop-line[data-task-drop-line="before"] {
+  top: -1px;
+}
+.task-drop-line[data-task-drop-line="after"] {
+  bottom: -1px;
+}
+/* The section that drag will land in, outlined as ResourceList's groups are. */
+[data-task-section][data-drop-target] {
+  border-radius: var(--mantine-radius-sm);
+  outline: 1px dashed color-mix(in srgb, var(--task-accent) 60%, transparent);
+  outline-offset: -1px;
+}
+
 .task-count-badge {
   background: var(--task-accent);
   color: var(--mantine-color-dark-9);

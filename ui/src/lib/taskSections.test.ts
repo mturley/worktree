@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { Task, TaskLink } from "../api/types"
 import {
-  buildSections, canDrag, dueLabel, linkChip, openCount, planDrop,
+  applyMove, buildSections, canDrag, dueLabel, linkChip, openCount, planDrop,
   type TaskListPrefs, type TaskSection,
 } from "./taskSections"
 
@@ -362,5 +362,43 @@ describe("linkChip", () => {
   it("names a Slack thread, which has no short ref", () => {
     const slack: TaskLink = { kind: "resource", resource_type: "slack", resource_id: "C1:1.2", focus: true, archived: false }
     expect(linkChip(withLinks([slack]))?.text).toBe("Slack thread")
+  })
+})
+
+describe("applyMove", () => {
+  const order = (ts: Task[], p: Partial<TaskListPrefs> = {}) =>
+    buildSections(ts, prefs(p), []).flatMap((s) => s.tasks.map((t) => t.id))
+
+  it("moves the task in DISPLAY order, which follows rank, not array order", () => {
+    const ts = [mk(1, "a"), mk(2, "b"), mk(3, "c")]
+    expect(order(applyMove(ts, 3, { after: 1 }))).toEqual([1, 3, 2])
+    expect(order(applyMove(ts, 1, { after: 3 }))).toEqual([2, 3, 1])
+    expect(order(applyMove(ts, 3, { before: 1 }))).toEqual([3, 1, 2])
+  })
+
+  it("places by master order whatever order the array arrives in", () => {
+    const ts = [mk(3, "c"), mk(1, "a"), mk(2, "b")]
+    expect(order(applyMove(ts, 3, { after: 1 }))).toEqual([1, 3, 2])
+  })
+
+  it("applies the patch, so the task shows in its new section", () => {
+    const ts = [mk(1, "a", { starred: true }), mk(2, "b"), mk(3, "c")]
+    const next = applyMove(ts, 1, { after: 2 }, { starred: false })
+    expect(next.find((t) => t.id === 1)?.starred).toBe(false)
+    expect(order(next)).toEqual([2, 1, 3])
+  })
+
+  it("leaves the input untouched", () => {
+    const ts = [mk(1, "a"), mk(2, "b")]
+    applyMove(ts, 1, { after: 2 })
+    expect(ts.map((t) => [t.id, t.rank])).toEqual([[1, "a"], [2, "b"]])
+  })
+
+  it("an unknown task changes nothing; an unknown target only patches", () => {
+    const ts = [mk(1, "a"), mk(2, "b")]
+    expect(applyMove(ts, 9, { after: 1 })).toBe(ts)
+    const next = applyMove(ts, 1, { after: 9 }, { priority: "high" })
+    expect(order(next)).toEqual([1, 2])
+    expect(next.find((t) => t.id === 1)?.priority).toBe("high")
   })
 })

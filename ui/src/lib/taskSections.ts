@@ -166,6 +166,31 @@ export function planDrop(sections: TaskSection[], activeId: number, toSection: s
   return plan
 }
 
+/**
+ * A move as the list will show it once the server has made it: task `id`
+ * placed next to its target in master order, with `patch` applied. Display
+ * order follows `rank`, not array position, so moving the task in the array
+ * would change nothing on screen: every task is re-ranked instead, in its new
+ * master order. The ranks are stand-ins, meaningful only against each other,
+ * and last until the next fetch brings the server's. Unknown task: the list
+ * as given. Unknown target: the patch alone.
+ */
+export function applyMove(
+  list: Task[], id: number, place: { after: number } | { before: number },
+  patch?: { starred?: boolean; priority?: Priority },
+): Task[] {
+  const moving = list.find((t) => t.id === id)
+  if (!moving) return list
+  const next = { ...moving, ...patch }
+  const rest = list.filter((t) => t.id !== id).sort(byMaster)
+  const targetId = "after" in place ? place.after : place.before
+  const at = rest.findIndex((t) => t.id === targetId)
+  if (at < 0) return list.map((t) => (t.id === id ? next : t))
+  rest.splice("after" in place ? at + 1 : at, 0, next)
+  // Fixed width, so code-unit order is numeric order.
+  return rest.map((t, i) => ({ ...t, rank: String(i).padStart(6, "0") }))
+}
+
 const DAY_MS = 24 * 60 * 60 * 1000
 
 /** A YYYY-MM-DD as a LOCAL date; `new Date("YYYY-MM-DD")` would be UTC. */

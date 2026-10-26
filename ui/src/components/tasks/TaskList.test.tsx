@@ -14,7 +14,7 @@ import { useTaskListPrefs } from "../../hooks/useTaskListPrefs"
 import { TaskList } from "./TaskList"
 import { TaskModalProvider, useTaskModal } from "./modal/TaskModalProvider"
 import { TaskListToolbar } from "./TaskListToolbar"
-import { dropPlanFor, taskDraggableId } from "./taskDrag"
+import { dropIndicatorFor, dropPlanFor, taskDraggableId } from "./taskDrag"
 
 vi.mock("../../api/client", async (orig) => ({
   ...(await orig<typeof import("../../api/client")>()),
@@ -43,6 +43,7 @@ const openId = () => screen.getByTestId("open-id").textContent
 
 function wrap(ui: React.ReactNode, terms: string[] = []) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  lastQc = qc
   return render(
     <MantineProvider>
       <Notifications />
@@ -55,6 +56,9 @@ function wrap(ui: React.ReactNode, terms: string[] = []) {
     </MantineProvider>,
   )
 }
+
+/** The QueryClient of the latest wrap, for tests that stand in for SSE. */
+let lastQc!: QueryClient
 
 const setPrefs = (p: object) => window.localStorage.setItem(TASK_LIST_KEY, JSON.stringify(p))
 
@@ -516,6 +520,120 @@ describe("TaskList keyboard drag", () => {
     expect(openId()).toBe("2")
   })
 
+  const order = () => leaves().map((el) => Number(el.dataset.taskSortable))
+  /** A promise and the handles to settle it, for an API call held in flight. */
+  function deferred<T>() {
+    let resolve!: (v: T) => void
+    let reject!: (e: Error) => void
+    const promise = new Promise<T>((rs, rj) => { resolve = rs; reject = rj })
+    return { promise, resolve, reject }
+  }
+
+  it("a drop shows the new order at once, and holds it through a refetch until the save lands", async () => {
+    vi.mocked(api.tasks).mockResolvedValue([task(1, { title: "alpha one" }), task(2, { title: "beta two" }), task(3, { title: "gamma" })])
+    const save = deferred<undefined>()
+    vi.mocked(api.moveTask).mockReturnValue(save.promise as never)
+    wrap(<TaskList scope={{ kind: "all" }} />)
+    await screen.findByText("gamma")
+    await drag("alpha one", "ArrowDown")
+    // No snap back to the old order while the save is in flight.
+    expect(order()).toEqual([2, 1, 3])
+    await waitFor(() => expect(api.moveTask).toHaveBeenCalledWith(1, { after: 2 }))
+
+    // An SSE refetch mid-save still answers the old order: it must not show.
+    await act(() => lastQc.invalidateQueries({ queryKey: ["tasks"] }))
+    expect(order()).toEqual([2, 1, 3])
+
+    // The save lands and the server agrees.
+    vi.mocked(api.tasks).mockResolvedValue([
+      task(2, { title: "beta two" }), task(1, { title: "alpha one", rank: "r2m" }), task(3, { title: "gamma" }),
+    ])
+    await act(async () => { save.resolve(undefined) })
+    await waitFor(() => expect(order()).toEqual([2, 1, 3]))
+
+    // From then on the server's order is what shows: nothing optimistic lingers.
+    vi.mocked(api.tasks).mockResolvedValue([
+      task(3, { title: "gamma", rank: "r0" }), task(2, { title: "beta two" }), task(1, { title: "alpha one", rank: "r2m" }),
+    ])
+    await act(() => lastQc.invalidateQueries({ queryKey: ["tasks"] }))
+    await waitFor(() => expect(order()).toEqual([3, 2, 1]))
+  })
+
+  it("a failed drop puts the old order back and says why", async () => {
+    const save = deferred<undefined>()
+    vi.mocked(api.moveTask).mockReturnValue(save.promise as never)
+    wrap(<TaskList scope={{ kind: "all" }} />)
+    await screen.findByText("beta two")
+    await drag("alpha one", "ArrowDown")
+    expect(order()).toEqual([2, 1])
+    await act(async () => { save.reject(new Error("boom")) })
+    await waitFor(() => expect(order()).toEqual([1, 2]))
+    expect(screen.getByText("boom")).toBeInTheDocument()
+  })
+
+  it("while dragging, the source slot is an empty placeholder and the copy is opaque", async () => {
+    wrap(<TaskList scope={{ kind: "all" }} />)
+    await screen.findByText("beta two")
+    const grip = screen.getByRole("button", { name: "Drag to reorder alpha one" })
+    lifted = grip.closest<HTMLElement>("[data-task-sortable]")
+    act(() => grip.focus())
+    fireEvent.keyDown(grip, { code: "Space", key: " " })
+    const overlay = await screen.findByTestId("task-drag-overlay")
+    expect(overlay).toHaveClass("task-drag-overlay")
+    // Not the panel's translucent wash: the rows beneath must not show through.
+    expect(overlay).not.toHaveClass("task-panel")
+    expect(lifted).toHaveAttribute("data-dragging")
+    expect(lifted).toHaveClass("task-drag-placeholder")
+    fireEvent.keyDown(grip, { code: "Escape", key: "Escape" })
+    await waitFor(() => expect(lifted).not.toHaveAttribute("data-dragging"))
+  })
+
+  it("a drag into another section marks where it will land, before the row it is over", async () => {
+    vi.mocked(api.tasks).mockResolvedValue([
+      task(4, { title: "star four", starred: true }), task(1, { title: "alpha one" }), task(2, { title: "beta two" }),
+    ])
+    vi.mocked(api.moveTask).mockResolvedValue(undefined as never)
+    vi.mocked(api.updateTask).mockResolvedValue(undefined as never)
+    wrap(<TaskList scope={{ kind: "all" }} />)
+    await screen.findByText("star four")
+    const grip = screen.getByRole("button", { name: "Drag to reorder star four" })
+    lifted = grip.closest<HTMLElement>("[data-task-sortable]")
+    act(() => grip.focus())
+    fireEvent.keyDown(grip, { code: "Space", key: " " })
+    await screen.findByTestId("task-drag-overlay")
+    expect(document.querySelector("[data-task-drop-line]")).toBeNull()
+    fireEvent.keyDown(grip, { code: "ArrowDown", key: "ArrowDown" })
+
+    const alpha = document.querySelector<HTMLElement>('[data-task-sortable="1"]')!
+    await waitFor(() => expect(alpha.querySelector("[data-task-drop-line]")).toHaveAttribute("data-task-drop-line", "before"))
+    expect(document.querySelectorAll("[data-task-drop-line]")).toHaveLength(1)
+    expect(document.querySelector('[data-task-section="rest"]')).toHaveAttribute("data-drop-target")
+    expect(document.querySelector('[data-task-section="starred"]')).not.toHaveAttribute("data-drop-target")
+
+    // And the drop lands exactly there.
+    fireEvent.keyDown(grip, { code: "Space", key: " " })
+    await waitFor(() => expect(api.moveTask).toHaveBeenCalledWith(4, { before: 1 }))
+    expect(api.updateTask).toHaveBeenCalledWith(4, { starred: false })
+    expect(document.querySelector("[data-task-drop-line]")).toBeNull()
+    expect(document.querySelector("[data-drop-target]")).toBeNull()
+  })
+
+  it("a drag within a section marks no line: its open slot already shows where it lands", async () => {
+    vi.mocked(api.tasks).mockResolvedValue([task(1, { title: "alpha one" }), task(2, { title: "beta two" }), task(3, { title: "gamma" })])
+    wrap(<TaskList scope={{ kind: "all" }} />)
+    await screen.findByText("gamma")
+    const grip = screen.getByRole("button", { name: "Drag to reorder alpha one" })
+    lifted = grip.closest<HTMLElement>("[data-task-sortable]")
+    act(() => grip.focus())
+    fireEvent.keyDown(grip, { code: "Space", key: " " })
+    await screen.findByTestId("task-drag-overlay")
+    fireEvent.keyDown(grip, { code: "ArrowDown", key: "ArrowDown" })
+    await act(() => new Promise((r) => setTimeout(r, 0)))
+    expect(document.querySelector("[data-task-drop-line]")).toBeNull()
+    expect(document.querySelector("[data-drop-target]")).toBeNull()
+    fireEvent.keyDown(grip, { code: "Escape", key: "Escape" })
+  })
+
   it("Custom sort: reorders through mutations.move", async () => {
     vi.mocked(api.moveTask).mockResolvedValue(undefined as never)
     wrap(<TaskList scope={{ kind: "all" }} />)
@@ -566,6 +684,17 @@ describe("dropPlanFor", () => {
     expect(dropPlanFor(sections, taskDraggableId(2), taskDraggableId(4), true)).toEqual({
       place: { after: 4 }, patch: { starred: true },
     })
+  })
+
+  it("dropIndicatorFor marks the row the plan places against, on the side it lands", () => {
+    expect(dropIndicatorFor(sections, taskDraggableId(2), taskDraggableId(4), false)).toEqual({ section: "starred", id: 4, edge: "before" })
+    expect(dropIndicatorFor(sections, taskDraggableId(2), taskDraggableId(4), true)).toEqual({ section: "starred", id: 4, edge: "after" })
+    expect(dropIndicatorFor(sections, taskDraggableId(4), taskDraggableId(3), true)).toEqual({ section: "rest", id: 3, edge: "after" })
+  })
+
+  it("dropIndicatorFor marks nothing within a section, or for a drop that goes nowhere", () => {
+    expect(dropIndicatorFor(sections, taskDraggableId(1), taskDraggableId(3), false)).toBeNull()
+    expect(dropIndicatorFor(sections, taskDraggableId(1), "nope", false)).toBeNull()
   })
 
   it("ignores unknown ids", () => {

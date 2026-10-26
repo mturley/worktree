@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { useTaskMutations, useTasks, taskScopeKey, type TaskScope } from "./useTasks"
 import { api } from "../api/client"
 import type { Task } from "../api/types"
+import { buildSections } from "../lib/taskSections"
 
 vi.mock("../api/client", async (orig) => ({
   ...(await orig<typeof import("../api/client")>()),
@@ -23,6 +24,9 @@ const task = (id: number, extra: Partial<Task> = {}): Task => ({
 })
 const [A, B, C] = [task(1), task(2), task(3)]
 const ids = (ts?: Task[]) => ts?.map((t) => t.id)
+/** Ids in display order: the list sorts by rank, not by array position. */
+const shown = (ts?: Task[]) =>
+  buildSections(ts ?? [], { sort: "custom", showCompleted: false, includeArchived: false }, []).flatMap((s) => s.tasks.map((t) => t.id))
 
 function setup(scope: TaskScope) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -34,7 +38,9 @@ function setup(scope: TaskScope) {
     () => ({ q: useTasks(scope, { completed: false, archived: false }), m: useTaskMutations(scope) }),
     { wrapper },
   )
-  return { ...hook, invalidate }
+  /** The scope's cached list, read straight from the cache, not via a render. */
+  const cached = () => qc.getQueriesData<Task[]>({ queryKey: taskScopeKey(scope) })[0]?.[1]
+  return { ...hook, invalidate, cached }
 }
 
 beforeEach(() => {
@@ -105,17 +111,31 @@ describe("useTasks while its flags change", () => {
 
 describe("useTaskMutations", () => {
   it("move reorders the cached list optimistically and rolls back on failure", async () => {
-    const { result } = setup({ kind: "all" })
+    const { result, cached } = setup({ kind: "all" })
     await waitFor(() => expect(ids(result.current.q.data)).toEqual([1, 2, 3]))
     let reject!: (e: Error) => void
     vi.mocked(api.moveTask).mockReturnValue(new Promise<void>((_, rj) => { reject = rj }))
 
     let p!: Promise<void>
     act(() => { p = result.current.m.move(3, { after: 1 }) })
-    await waitFor(() => expect(ids(result.current.q.data)).toEqual([1, 3, 2]))
+    // At once, before anything awaits, and in the order the list SHOWS: by rank.
+    expect(shown(cached())).toEqual([1, 3, 2])
+    await waitFor(() => expect(shown(result.current.q.data)).toEqual([1, 3, 2]))
     reject(new Error("boom"))
     await act(async () => { await expect(p).rejects.toThrow("boom") })
+    await waitFor(() => expect(shown(result.current.q.data)).toEqual([1, 2, 3]))
+  })
+
+  it("move cancels an in-flight fetch without it reverting the optimistic write", async () => {
+    const { result } = setup({ kind: "all" })
     await waitFor(() => expect(ids(result.current.q.data)).toEqual([1, 2, 3]))
+    // A refetch in flight (an SSE invalidation) that would answer the old order.
+    vi.mocked(api.tasks).mockReturnValue(new Promise(() => {}))
+    act(() => { void result.current.q.refetch() })
+    vi.mocked(api.moveTask).mockReturnValue(new Promise(() => {}))
+    act(() => { void result.current.m.move(3, { after: 1 }) })
+    await act(() => new Promise((r) => setTimeout(r, 0)))
+    expect(shown(result.current.q.data)).toEqual([1, 3, 2])
   })
 
   it("move with a patch updates first, then moves", async () => {
