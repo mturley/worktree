@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from "react"
 import { ActionIcon, Alert, Box, Button, Group, Stack, Text, Tooltip } from "@mantine/core"
 import { IconGripVertical } from "@tabler/icons-react"
 import {
+  closestCenter,
   DndContext,
   DragOverlay,
   KeyboardSensor,
@@ -24,7 +25,7 @@ import { useTaskModal } from "./modal/TaskModalProvider"
 import { TaskQuickAdd } from "./TaskQuickAdd"
 import { TaskRow } from "./TaskRow"
 import { taskUndoMessage, useOfferTaskUndo } from "./taskUndo"
-import { dropPlanFor, taskCollisions, taskDraggableId } from "./taskDrag"
+import { dropPlanFor, taskDraggableId } from "./taskDrag"
 
 /** A compact row's height, for capping a list at `maxRows`. */
 const ROW_PX = 30
@@ -46,26 +47,32 @@ const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 /**
  * Whether a capped body overflows its cap: measured after layout, and again
- * whenever the body resizes or the number of tasks it shows changes (a cap
- * that holds keeps the box's size while its content grows).
+ * whenever the capped box or the content inside it resizes, or the list's
+ * shape (`shape`: its count, sections and labels) changes. Under a cap that
+ * holds, the box keeps its size while its content grows, so the content is
+ * observed too (`contentRef`), and `shape` covers environments without
+ * ResizeObserver.
+ *
+ * Uncapped (expanded), the last answer is kept rather than reset: the footer
+ * shows regardless while expanded, and a reset would unmount Show less's
+ * button on the way back, taking the keyboard focus with it.
  */
-function useOverflow(capped: boolean, count: number) {
+function useOverflow(capped: boolean, shape: string) {
   const ref = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
   const [value, setValue] = useState(false)
   useLayoutEffect(() => {
     const el = ref.current
-    if (!el || !capped) {
-      setValue(false)
-      return
-    }
+    if (!el || !capped) return
     const check = () => setValue(el.scrollHeight > el.clientHeight + 1)
     check()
     if (typeof ResizeObserver === "undefined") return
     const ro = new ResizeObserver(check)
     ro.observe(el)
+    if (contentRef.current) ro.observe(contentRef.current)
     return () => ro.disconnect()
-  }, [capped, count])
-  return { ref, value }
+  }, [capped, shape])
+  return { ref, contentRef, value }
 }
 
 /**
@@ -177,9 +184,7 @@ function SectionBlock({ section, labelled, children }: {
           {section.label}
         </Text>
       )}
-      <Stack gap={0} data-task-drop={section.key}>
-        {children}
-      </Stack>
+      {children}
     </Stack>
   )
 }
@@ -214,7 +219,6 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
   const shownCount = sections.reduce((n, s) => n + s.tasks.length, 0)
   // Expanded drops the cap.
   const cap = expand?.expanded ? undefined : maxRows
-  const overflows = useOverflow(cap !== undefined, shownCount)
   const sortDraggable = canDrag(prefs.sort)
   // Empty sections are not rendered at all, so a drag shifts nothing and
   // there is no empty target.
@@ -223,6 +227,9 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
   // Priority order labels every group shown; otherwise labels appear once two
   // sections hold tasks.
   const labelled = prefs.sort === "priority" || shown.length > 1
+  // A label adds height without adding a task, so the shape is more than the count.
+  const shape = `${shownCount}|${labelled}|${shown.map((s) => `${s.key}:${s.tasks.length}`).join(",")}`
+  const overflows = useOverflow(cap !== undefined, shape)
   const activeTask = activeId === null ? undefined : sections.flatMap((s) => s.tasks).find((t) => t.id === activeId)
   const anchor = quickAddAnchor(sections, prefs.sort)
   // Under a priority filter a "none" task would vanish on creation.
@@ -271,7 +278,8 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
     body = (
       <DndContext
         sensors={sensors}
-        collisionDetection={taskCollisions}
+        // Rows are the only drop targets: the nearest one wins.
+        collisionDetection={closestCenter}
         // Off for the same reason as ResourceList: it ran away with sticky
         // and capped scroll containers.
         autoScroll={false}
@@ -324,7 +332,8 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
         data-testid="task-list-body"
         style={cap !== undefined ? { maxHeight: cappedMaxHeight(cap), overflowY: "auto" } : undefined}
       >
-        {body}
+        {/* Observed for overflow: under a holding cap only this grows. */}
+        <div ref={overflows.contentRef}>{body}</div>
       </Box>
       {expand && (expand.expanded || overflows.value) && (
         <Group justify="center">

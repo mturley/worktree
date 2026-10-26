@@ -16,7 +16,20 @@ describe("selects", () => {
     const input = screen.getByRole("textbox", { name: "s" })
     // jsdom's computed style drops caret-color, so read the inline style.
     expect(input.style.caretColor).toBe("transparent")
-    expect(input.style.cursor).toBe("pointer")
+    // No inline cursor: Mantine's own pointer (data-pointer) applies, and an
+    // inline one would beat its not-allowed on a disabled Select.
+    expect(input.style.cursor).toBe("")
+  })
+
+  it("leaves a disabled one's cursor to Mantine", () => {
+    render(
+      <MantineProvider theme={theme} forceColorScheme="dark">
+        <Select aria-label="s" data={["a"]} disabled />
+      </MantineProvider>,
+    )
+    const input = screen.getByRole("textbox", { name: "s" })
+    expect(input.style.caretColor).toBe("transparent")
+    expect(input.style.cursor).toBe("")
   })
 
   it("leaves a searchable one alone", () => {

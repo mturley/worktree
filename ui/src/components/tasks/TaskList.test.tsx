@@ -1,3 +1,4 @@
+import { useState } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
@@ -13,7 +14,7 @@ import { useTaskListPrefs } from "../../hooks/useTaskListPrefs"
 import { TaskList } from "./TaskList"
 import { TaskModalProvider, useTaskModal } from "./modal/TaskModalProvider"
 import { TaskListToolbar } from "./TaskListToolbar"
-import { dropPlanFor, sectionDroppableId, taskDraggableId } from "./taskDrag"
+import { dropPlanFor, taskDraggableId } from "./taskDrag"
 
 vi.mock("../../api/client", async (orig) => ({
   ...(await orig<typeof import("../../api/client")>()),
@@ -291,6 +292,73 @@ describe("TaskList expand footer", () => {
     expect(onToggle).toHaveBeenCalledTimes(1)
   })
 
+  it("Show less keeps the same button, and its focus", async () => {
+    mockOverflow(500, 240)
+    vi.mocked(api.tasks).mockResolvedValue(twelve())
+    function Harness() {
+      const [expanded, setExpanded] = useState(false)
+      return <TaskList scope={{ kind: "all" }} maxRows={8} expand={{ expanded, onToggle: () => setExpanded((e) => !e) }} />
+    }
+    const user = userEvent.setup()
+    wrap(<Harness />)
+    const btn = await screen.findByRole("button", { name: "Show all (12)" })
+    await user.click(btn)
+    expect(btn).toHaveTextContent("Show less")
+    await user.click(btn)
+    expect(btn.isConnected).toBe(true)
+    expect(btn).toHaveTextContent("Show all (12)")
+    expect(document.activeElement).toBe(btn)
+  })
+
+  it("re-measures when labels appear with the count unchanged", async () => {
+    // Seven rows fit the 240px cap (210px); a section label pushes it over.
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get: () => (document.body.textContent?.includes("No priority") ? 260 : 210),
+    })
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get: () => 240 })
+    vi.mocked(api.tasks).mockResolvedValue(Array.from({ length: 7 }, (_, i) => task(i + 1)))
+    wrap(<TaskList scope={{ kind: "all" }} maxRows={8} expand={{ expanded: false, onToggle: vi.fn() }} />)
+    await screen.findByText("task 7")
+    expect(screen.queryByRole("button", { name: /Show all/ })).toBeNull()
+    // Priority sort labels its lone group: same seven tasks, taller content.
+    act(() => {
+      window.localStorage.setItem(TASK_LIST_KEY, JSON.stringify({ sort: "priority" }))
+      window.dispatchEvent(new StorageEvent("storage", { key: TASK_LIST_KEY }))
+    })
+    expect(await screen.findByRole("button", { name: "Show all (7)" })).toBeInTheDocument()
+  })
+
+  it("watches the content under the cap, not only the capped box", async () => {
+    // Each observation with the callback that would hear about it.
+    const observed: { el: Element; cb: (entries: ResizeObserverEntry[]) => void }[] = []
+    const Orig = globalThis.ResizeObserver
+    globalThis.ResizeObserver = class {
+      cb: (entries: ResizeObserverEntry[]) => void
+      constructor(cb: (entries: ResizeObserverEntry[]) => void) { this.cb = cb }
+      observe(el: Element) { observed.push({ el, cb: this.cb }) }
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver
+    try {
+      let tall = false
+      Object.defineProperty(HTMLElement.prototype, "scrollHeight", { configurable: true, get: () => (tall ? 300 : 210) })
+      Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get: () => 240 })
+      vi.mocked(api.tasks).mockResolvedValue(Array.from({ length: 7 }, (_, i) => task(i + 1)))
+      wrap(<TaskList scope={{ kind: "all" }} maxRows={8} expand={{ expanded: false, onToggle: vi.fn() }} />)
+      await screen.findByText("task 7")
+      const body = screen.getByTestId("task-list-body")
+      const inner = observed.find(({ el }) => el !== body && body.contains(el))
+      expect(inner).toBeDefined()
+      // Only the content grew: tell just its observer.
+      tall = true
+      act(() => inner!.cb([]))
+      expect(await screen.findByRole("button", { name: "Show all (7)" })).toBeInTheDocument()
+    } finally {
+      globalThis.ResizeObserver = Orig
+    }
+  })
+
   it("without expand, neither button renders", async () => {
     mockOverflow(500, 240)
     vi.mocked(api.tasks).mockResolvedValue(twelve())
@@ -382,9 +450,9 @@ describe("TaskList", () => {
 
 /*
  * End-to-end drags through dnd-kit's KeyboardSensor: focus a grip, Space to
- * pick up, an arrow to move, Space to drop. jsdom has no layout, so rows are laid out 30px apart in document order, and a
- * section's drop area spans what it holds. The overlay measures as the row
- * it lifts.
+ * pick up, an arrow to move, Space to drop. jsdom has no layout, so rows
+ * are laid out 30px apart in document order. The overlay measures as the
+ * row it lifts.
  */
 describe("TaskList keyboard drag", () => {
   const ROW = 30
@@ -398,12 +466,6 @@ describe("TaskList keyboard drag", () => {
       const all = leaves()
       const leafRect = (el: Element) => rect(all.indexOf(el as HTMLElement) * ROW, ROW)
       if (this.matches("[data-task-sortable]")) return leafRect(this)
-      if (this.matches("[data-task-drop]")) {
-        const inner = all.filter((l) => this.contains(l))
-        if (inner.length === 0) return rect(0, 0)
-        const top = all.indexOf(inner[0]) * ROW
-        return rect(top, inner.length * ROW)
-      }
       // dnd-kit measures the overlay by its content.
       if (lifted && this.matches("[data-testid=task-drag-overlay]")) return leafRect(lifted)
       return rect(0, 0)
@@ -507,12 +569,6 @@ describe("dropPlanFor", () => {
     })
     expect(dropPlanFor(sections, taskDraggableId(2), taskDraggableId(4), true)).toEqual({
       place: { after: 4 }, patch: { starred: true },
-    })
-  })
-
-  it("onto a section's droppable goes to its end", () => {
-    expect(dropPlanFor(sections, taskDraggableId(4), sectionDroppableId("rest"), false)).toEqual({
-      place: { after: 3 }, patch: { starred: false },
     })
   })
 

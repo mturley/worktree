@@ -793,7 +793,7 @@ describe("HomePage tasks", () => {
     wrap()
     const panel = screen.getByTestId("tasks-panel")
     expect(panel).toHaveAttribute("data-level", "collapsed")
-    expect(within(panel).getByRole("button", { name: "Expand task list" })).toBeInTheDocument()
+    expect(within(panel).getByRole("button", { name: /^Expand task list/ })).toBeInTheDocument()
     expect(within(panel).queryByTestId("task-list-body")).toBeNull()
   })
 })

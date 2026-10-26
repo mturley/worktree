@@ -122,7 +122,7 @@ describe("useTasksPanel", () => {
     expect(within(a()).queryByLabelText("Sort tasks")).toBeNull()
     expect(within(a()).queryByPlaceholderText("Add a task…")).toBeNull()
     expect(within(a()).queryByTestId("task-list-body")).toBeNull()
-    const line = within(a()).getByRole("button", { name: "Expand task list" })
+    const line = within(a()).getByRole("button", { name: /^Expand task list/ })
     expect(within(line).getByText("Tasks · 2 open")).toBeInTheDocument()
     expect(JSON.parse(window.localStorage.getItem(TASK_LIST_KEY)!).collapsed).toBe(true)
     // ONE global setting: the other panel collapsed too.
@@ -152,7 +152,7 @@ describe("useTasksPanel", () => {
     await within(panel()).findByText("task 1")
     await expand()
     await userEvent.click(within(panel()).getByRole("button", { name: "Collapse task list" }))
-    await userEvent.click(within(panel()).getByRole("button", { name: "Expand task list" }))
+    await userEvent.click(within(panel()).getByRole("button", { name: /^Expand task list/ }))
     expect(panel()).toHaveAttribute("data-level", "normal")
   })
 
@@ -213,12 +213,118 @@ describe("useTasksPanel", () => {
     wrap(<Host unread={2} />)
     expect(within(panel()).getByRole("img", { name: "unread task activity" })).toBeInTheDocument()
     await userEvent.click(within(panel()).getByRole("button", { name: "Collapse task list" }))
-    const line = within(panel()).getByRole("button", { name: "Expand task list" })
+    const line = within(panel()).getByRole("button", { name: /^Expand task list/ })
     expect(within(line).getByRole("img", { name: "unread task activity" })).toBeInTheDocument()
   })
 
   it("no unread task events: no dot", () => {
     wrap(<Host unread={0} />)
     expect(screen.queryByRole("img", { name: "unread task activity" })).toBeNull()
+  })
+
+  it("the collapsed line's name carries the count and the unread state", async () => {
+    const { rerender } = wrap(<Host unread={2} />)
+    await within(panel()).findByText("Tasks · 2 open")
+    await userEvent.click(within(panel()).getByRole("button", { name: "Collapse task list" }))
+    expect(within(panel()).getByRole("button", { name: "Expand task list (2 open, unread activity)" })).toBeInTheDocument()
+    rerender(<Host unread={0} />)
+    expect(within(panel()).getByRole("button", { name: "Expand task list (2 open)" })).toBeInTheDocument()
+  })
+})
+
+describe("useTasksPanel focus", () => {
+  it("collapsing moves focus to the expand line, and expanding moves it back", async () => {
+    const user = userEvent.setup()
+    wrap(<Host />)
+    await within(panel()).findByText("Tasks · 2 open")
+    const collapse = within(panel()).getByRole("button", { name: "Collapse task list" })
+    expect(collapse).toHaveAttribute("aria-expanded", "true")
+    await user.click(collapse)
+    const line = within(panel()).getByRole("button", { name: /^Expand task list/ })
+    expect(line).toHaveAttribute("aria-expanded", "false")
+    expect(document.activeElement).toBe(line)
+
+    await user.keyboard("{Enter}")
+    expect(panel()).toHaveAttribute("data-level", "normal")
+    expect(document.activeElement).toBe(within(panel()).getByRole("button", { name: "Collapse task list" }))
+  })
+
+  it("leaves focus alone when the toggle was not focused", async () => {
+    wrap(<Host />)
+    await within(panel()).findByText("Tasks · 2 open")
+    act(() => within(panel()).getByRole("button", { name: "Collapse task list" }).click())
+    expect(panel()).toHaveAttribute("data-level", "collapsed")
+    expect(document.activeElement).toBe(document.body)
+  })
+})
+
+/**
+ * jsdom has no layout: getBoundingClientRect is stubbed so the panel sits at
+ * `top`, and scrollIntoView (which jsdom lacks) records which element asked.
+ */
+describe("useTasksPanel keeps an expanded panel in view", () => {
+  let scrolled: Element[] = []
+  let calls: unknown[] = []
+  function place(top: number) {
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+      const t = this.matches("[data-testid=tasks-panel]") ? top : 0
+      return { x: 0, y: t, top: t, left: 0, width: 300, height: 100, right: 300, bottom: t + 100, toJSON: () => ({}) } as DOMRect
+    })
+  }
+  beforeEach(() => {
+    scrolled = []
+    calls = []
+    Element.prototype.scrollIntoView = function (this: Element, arg?: unknown) {
+      scrolled.push(this)
+      calls.push(arg)
+    }
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+  })
+
+  it("scrolls the panel to the top when expanding leaves it above the viewport", async () => {
+    mockOverflow()
+    wrap(<Host />)
+    await within(panel()).findByText("task 1")
+    place(-400)
+    await expand()
+    expect(scrolled).toEqual([panel()])
+    expect(calls).toEqual([{ block: "start" }])
+  })
+
+  it("does not scroll when the expanded panel is still in view", async () => {
+    mockOverflow()
+    wrap(<Host />)
+    await within(panel()).findByText("task 1")
+    place(50)
+    await expand()
+    expect(scrolled).toEqual([])
+  })
+
+  it("counts a page header's inset as out of view, and margins the scroll by it", async () => {
+    mockOverflow()
+    function Inset() {
+      const t = useTasksPanel(ALL, { topInset: 80 })
+      return <>{t.panel}</>
+    }
+    wrap(<Inset />)
+    await within(panel()).findByText("task 1")
+    expect(panel().style.scrollMarginTop).toBe("80px")
+    place(40)
+    await expand()
+    expect(scrolled).toEqual([panel()])
+  })
+
+  it("does not scroll on Show less", async () => {
+    mockOverflow()
+    wrap(<Host />)
+    await within(panel()).findByText("task 1")
+    place(50)
+    await expand()
+    place(-400)
+    await userEvent.click(within(panel()).getByRole("button", { name: "Show less" }))
+    expect(scrolled).toEqual([])
   })
 })

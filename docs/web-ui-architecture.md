@@ -1284,9 +1284,9 @@ to break.
   `TaskListToolbar` (sort, priority filter, show completed / include
   archived), `TaskPriorityMenu` (the row's priority mark as a menu),
   `TaskQuickAdd`, `TaskCountBadge` (plus `openTasksLabel`) and
-  `TasksSection.tsx` (the panel, below). `taskDrag.ts` namespaces the
-  dnd-kit ids (`task:<id>`, `section:<key>`) and turns a drop into
-  `planDrop`'s arguments. All pure list logic — sections, sorting, filters,
+  `TasksSection.tsx` (the panel, below). `taskDrag.ts` holds the row's
+  dnd-kit id (`task:<id>`; rows are the only drop targets) and turns a drop
+  into `planDrop`'s arguments. All pure list logic — sections, sorting, filters,
   `openCount`, `planDrop` (what a drop does: reorder, star/unstar, change
   priority), `dueLabel`, `linkChip` — is in **`lib/taskSections.ts`**.
   `lib/taskList.ts` is unrelated: it toggles Markdown checkboxes in notes.
@@ -1313,11 +1313,20 @@ to break.
     `TaskList`, `NORMAL_ROWS` = 8 in `TasksSection.tsx`), scrolling inside
     itself. When the capped list actually overflows (measured, so a list
     that fits offers nothing) a "Show all (N)" button sits under it, above
-    quick add; N is the number of tasks the list shows.
+    quick add; N is the number of tasks the list shows. `useOverflow`
+    re-measures when the capped box OR an inner content wrapper resizes
+    (under a holding cap only the content grows), and when the list's shape
+    (count, sections, labels) changes. While expanded it keeps its last
+    answer instead of resetting, so "Show less" stays the same mounted
+    button and keeps the keyboard focus.
   - **collapsed**: the saved global `collapsed` pref. A top-right
     ActionIcon ("Collapse task list") collapses; the whole one-line panel
-    ("Tasks · N open", dot, chevron) is a button ("Expand task list") that
-    returns to normal. Toolbar, list and quick add are not rendered.
+    ("Tasks · N open", dot, chevron) is a button that returns to normal; its
+    accessible name leads with "Expand task list" and carries the count and
+    unread state (`Expand task list (3 open, unread activity)`). Toolbar,
+    list and quick add are not rendered. Both toggles carry `aria-expanded`,
+    and each lives in a different render branch, so activating one hands
+    the focus to the other (only when the toggle had it).
   - **expanded**: "Show all" removes the cap and the button reads "Show
     less". Never saved: it is state keyed by `location | scope | resetKey`,
     and a stale key is dropped while rendering, so navigating, changing
@@ -1340,6 +1349,14 @@ to break.
   activity header and the resource pane's card block all drop
   `position: sticky` and scroll with the page until the panel leaves
   expanded. The page tests assert the sticky style is absent while expanded.
+  Unpinned, the header snaps back to its place in the flow, which on a
+  scrolled page is above the viewport; so on the change to expanded, if the
+  panel's top is above the visible area (its nearest scrolling ancestor's
+  top — the home page's right column — or else the viewport's below
+  `topInset`), the hook calls `scrollIntoView({ block: "start" })` on it.
+  `topInset` is the sticky page header's height (the worktree page's
+  `headerHeight`, passed on to the resource panes) and is also the panel's
+  `scroll-margin-top`, so it lands below that header.
 - **A Slack thread that can't load keeps its tasks.** `SlackThreadPane`'s
   early returns (Slack watcher off, Slack not configured) keep their
   notice but render it through `withTasks`: the panel, then the notice, with
@@ -2123,9 +2140,11 @@ way:
   `setViewport(mode, { tall })`; it follows the width by default.
 - **Theme component defaults** (`ui/src/theme.ts`, tested in `theme.test.tsx`).
   Besides the Tooltip rules above, a non-searchable `Select` gets
-  `caretColor: transparent` and `cursor: pointer` on its input, theme-wide:
-  it is a text input underneath, and a blinking caret in what behaves as a
-  button looks broken. A searchable one is unchanged. The rule reads the
+  `caretColor: transparent` on its input, theme-wide: it is a text input
+  underneath, and a blinking caret in what behaves as a button looks broken.
+  It sets no `cursor`: Mantine already shows the pointer through
+  `data-pointer`, and an inline cursor would override Mantine's
+  `not-allowed` on a disabled Select. A searchable one is unchanged. The rule reads the
   `pointer` prop (falling back to `!searchable`) because the input's styles
   are resolved with the props Select hands to its InputBase, which no longer
   include `searchable`. jsdom drops `caret-color` from computed styles, so

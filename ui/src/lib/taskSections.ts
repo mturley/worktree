@@ -143,9 +143,9 @@ export function quickAddAnchor(sections: TaskSection[], sort: TaskSort): Task | 
 /**
  * Turns a drop into a move and an edit. `toIndex` indexes the destination's
  * tasks as they are WITHOUT the active one. The task goes after the one just
- * above the drop point, else before the one just below; into a section with
- * no other tasks, next to the nearest task in the flattened draggable
- * sections. Completed is never a neighbour: its order isn't master order.
+ * above the drop point, else before the one just below. A drop always lands
+ * on a row, so the destination holds another task; with none there is no
+ * place, and nothing changes.
  */
 export function planDrop(sections: TaskSection[], activeId: number, toSection: string, toIndex: number): DropPlan {
   const dest = sections.find((s) => s.key === toSection)
@@ -160,24 +160,12 @@ export function planDrop(sections: TaskSection[], activeId: number, toSection: s
   }
 
   const others = dest.tasks.filter((t) => t.id !== activeId)
-  let place: DropPlan["place"]
-  if (others.length > 0) {
-    const i = Math.max(0, Math.min(toIndex, others.length))
-    // Dropped back at its own index: the order is unchanged.
-    if (dest === from && dest.tasks.indexOf(active) === i) return {}
-    place = i > 0 ? { after: others[i - 1].id } : { before: others[0].id }
-  } else if (dest !== from) {
-    const di = sections.indexOf(dest)
-    const flat = (ss: TaskSection[]) => ss.filter((s) => s.draggable).flatMap((s) => s.tasks).filter((t) => t.id !== activeId)
-    const above = flat(sections.slice(0, di))
-    const below = flat(sections.slice(di + 1))
-    if (above.length > 0) place = { after: above[above.length - 1].id }
-    else if (below.length > 0) place = { before: below[0].id }
-  }
-  // else: alone in its own section, dropped back there; nothing moves.
+  if (others.length === 0) return {}
+  const i = Math.max(0, Math.min(toIndex, others.length))
+  // Dropped back at its own index: the order is unchanged.
+  if (dest === from && dest.tasks.indexOf(active) === i) return {}
 
-  const plan: DropPlan = {}
-  if (place) plan.place = place
+  const plan: DropPlan = { place: i > 0 ? { after: others[i - 1].id } : { before: others[0].id } }
   if (Object.keys(patch).length > 0) plan.patch = patch
   return plan
 }

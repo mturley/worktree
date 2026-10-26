@@ -252,30 +252,12 @@ describe("planDrop", () => {
     expect(planDrop(custom, 5, "rest", 2)).toEqual({})
   })
 
-  it("into an empty starred section: stars it, before the first rest task", () => {
+  it("into a section with no other tasks: nothing to place against, so nothing", () => {
+    // Rows are the only drop targets, so an empty section is never one; a
+    // stray call still changes nothing rather than guessing a place.
     const ss = buildSections([mk(3, "c"), mk(4, "d")], prefs(), [])
     expect(ids(sec(ss, "starred"))).toEqual([])
-    expect(planDrop(ss, 4, "starred", 0)).toEqual({ place: { before: 3 }, patch: { starred: true } })
-  })
-
-  it("into an empty section, places relative to the nearest flat neighbour", () => {
-    // Priority: high [1], medium [2], low [], none [3]
-    const ss = buildSections([
-      mk(1, "a", { priority: "high" }), mk(2, "b", { priority: "medium" }), mk(3, "c"),
-    ], prefs({ sort: "priority" }), [])
-    expect(ids(sec(ss, "low"))).toEqual([])
-    // Predecessor of "low" without task 2 is high's last task.
-    expect(planDrop(ss, 2, "low", 0)).toEqual({ place: { after: 1 }, patch: { priority: "low" } })
-    // Nothing above "high": before the first task below it.
-    const ss2 = buildSections([mk(2, "b", { priority: "medium" }), mk(3, "c")], prefs({ sort: "priority" }), [])
-    expect(planDrop(ss2, 3, "high", 0)).toEqual({ place: { before: 2 }, patch: { priority: "high" } })
-  })
-
-  it("dragging a medium task to index 0 of an empty low section with medium tasks left", () => {
-    const ss = buildSections([
-      mk(1, "a", { priority: "medium" }), mk(2, "b", { priority: "medium" }), mk(3, "c", { priority: "none" }),
-    ], prefs({ sort: "priority" }), [])
-    expect(planDrop(ss, 1, "low", 0)).toEqual({ place: { after: 2 }, patch: { priority: "low" } })
+    expect(planDrop(ss, 4, "starred", 0)).toEqual({})
   })
 
   it("a starred task dropped into a priority section unstars it and sets the priority if it differs", () => {
@@ -293,22 +275,9 @@ describe("planDrop", () => {
     expect(planDrop(ss, 2, "starred", 1)).toEqual({ place: { after: 1 }, patch: { starred: true } })
   })
 
-  it("the only task in the list gets a patch but no place", () => {
-    const ss = buildSections([mk(1, "a", { priority: "medium" })], prefs({ sort: "priority" }), [])
-    expect(planDrop(ss, 1, "high", 0)).toEqual({ patch: { priority: "high" } })
-    expect(planDrop(ss, 1, "medium", 0)).toEqual({})
-  })
-
   it("the only task in its section, dropped back there, changes nothing", () => {
     const ss = buildSections([mk(1, "a", { starred: true }), mk(2, "b")], prefs(), [])
     expect(planDrop(ss, 1, "starred", 0)).toEqual({})
-  })
-
-  it("never places relative to a completed task", () => {
-    const ss = buildSections([
-      mk(1, "a", { priority: "medium" }), mk(2, "b", { state: "done", completed_at: "2026-10-02T00:00:00Z" }),
-    ], prefs({ sort: "priority", showCompleted: true }), [])
-    expect(planDrop(ss, 1, "low", 0)).toEqual({ patch: { priority: "low" } })
   })
 
   it("refuses completed, unknown sections, non-draggable sorts and an unknown task", () => {

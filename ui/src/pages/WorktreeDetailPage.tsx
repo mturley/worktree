@@ -255,15 +255,21 @@ export function WorktreeDetailPage() {
   // while a resource is selected, so the selection resets an expanded panel:
   // coming back from a resource shows it normal.
   const taskScope = useMemo(() => ({ kind: "worktree" as const, path }), [path])
-  const tasks = useTasksPanel(taskScope, { resetKey: selected ? serializeResourceKey(selected) : "" })
+  // The page header's measured height (see the ResizeObserver below).
+  const headerRef = useRef<HTMLDivElement>(null)
+  const [headerHeight, setHeaderHeight] = useState(0)
+  const tasks = useTasksPanel(taskScope, {
+    resetKey: selected ? serializeResourceKey(selected) : "",
+    // The sticky page header covers the top of the viewport: an expanded
+    // panel brought back into view lands below it.
+    topInset: headerHeight,
+  })
 
   // The sticky resource list has to start below the header, and the header's
   // height is not a constant: the worktree and cmux workspace names wrap, and
   // the details card's tabs differ in height. A hardcoded offset would leave
   // the list overlapping the header or floating below it, so measure the real
   // thing.
-  const headerRef = useRef<HTMLDivElement>(null)
-  const [headerHeight, setHeaderHeight] = useState(0)
   useEffect(() => {
     const el = headerRef.current
     if (!el || typeof ResizeObserver === "undefined") return

@@ -104,8 +104,10 @@ export const theme = createTheme({
     }),
     /*
      * A non-searchable Select still renders a text input, so a click showed a
-     * blinking caret in what is really a button. Hide it and show the pointer;
-     * a searchable Select is left alone because there the caret is the point.
+     * blinking caret in what is really a button. Hide it; a searchable Select
+     * is left alone because there the caret is the point. No cursor here:
+     * Mantine already shows the pointer (data-pointer), and an inline cursor
+     * would override its not-allowed on a disabled Select.
      *
      * The input's styles are resolved with the props Select hands to its
      * InputBase, and `searchable` is not among them (Select consumes it and
@@ -115,7 +117,7 @@ export const theme = createTheme({
     Select: Select.extend({
       styles: (_theme, props) =>
         (props.pointer ?? !props.searchable)
-          ? { input: { caretColor: "transparent", cursor: "pointer" } }
+          ? { input: { caretColor: "transparent" } }
           : {},
     }),
   },

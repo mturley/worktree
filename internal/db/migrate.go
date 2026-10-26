@@ -259,6 +259,10 @@ func migrate(conn *sql.DB) error {
 	// to be recorded too; their rows go. Like the backfill below this runs
 	// on every migrate, and once they are gone it deletes nothing, since
 	// nothing writes these types any more.
+	//
+	// WARNING: these type names are retired for good. Never reuse one for a
+	// new task event: this DELETE runs at every start, so events of a reused
+	// type would be silently deleted each time worktree starts.
 	if _, err := conn.Exec(`
 		DELETE FROM task_events WHERE type IN (
 			'task_edited', 'task_linked', 'task_unlinked', 'task_focus_changed',

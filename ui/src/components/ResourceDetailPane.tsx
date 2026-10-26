@@ -70,6 +70,7 @@ function TimelineBody({
   onResourceChanged,
   notify,
   stickyTop,
+  topInset,
 }: {
   path: string
   resource: ResourceDTO
@@ -77,6 +78,7 @@ function TimelineBody({
   onResourceChanged?: () => void
   notify?: ResourceNotifyContext
   stickyTop?: number
+  topInset?: number
 }) {
   const search = useSearchQuery()
   const { debouncedQ } = search
@@ -89,7 +91,7 @@ function TimelineBody({
   // The resource's own task panel, between the card and the tab bar; its
   // rows don't chip the resource they are already under.
   const { type, id } = resource
-  const tasks = useTasksPanel({ kind: "resource", type, id }, { ownResource: { type, id } })
+  const tasks = useTasksPanel({ kind: "resource", type, id }, { ownResource: { type, id }, topInset })
   // An expanded panel has no cap, so the card block stops pinning while it is.
   const pinTop = tasks.expanded ? undefined : stickyTop
   // Link titles are only fetched once the Linked tab has been shown — by a
@@ -296,6 +298,7 @@ export function ResourceDetailPane({
           path={path}
           onRemoved={onRemoved}
           onResourceChanged={onResourceChanged}
+          topInset={topInset}
         />
       ) : (
         <TimelineBody
@@ -306,6 +309,7 @@ export function ResourceDetailPane({
           onResourceChanged={onResourceChanged}
           notify={notify}
           stickyTop={stickyTop}
+          topInset={topInset}
         />
       )}
     </Stack>
