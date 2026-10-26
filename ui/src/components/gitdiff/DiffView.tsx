@@ -30,6 +30,9 @@ const SIDEBAR_WIDTH = 280
 const REVIEW_SIDEBAR_WIDTH = 340
 // Until the list loads, no comments. Stable, so DiffBody's annotations are.
 const NO_COMMENTS: ReviewCommentItem[] = []
+// Which edit drafts are on screen: the sidebar's only while it is open.
+const BOTH_VARIANTS = ["inline", "sidebar"] as const
+const INLINE_ONLY = ["inline"] as const
 
 function readPref(key: string): string | null {
   try {
@@ -247,9 +250,10 @@ export default function DiffView({
   // answers 404. A fresh load of the same view (its own request, never a
   // pending selection change) hands out fresh revs. Once per rev pair, until
   // the list loads again, so a load that doesn't help can't loop. Never while
-  // a comment is being written or edited: the load would move the diff under
-  // it. The next poll after it closes tries again.
-  const editingIds = useEditingCommentIds(path)
+  // a comment is being written or edited on screen: the load would move the
+  // diff under it. A sidebar edit hidden by closing the sidebar doesn't count;
+  // its draft outlives the load. Tries again as soon as the editor closes.
+  const editingIds = useEditingCommentIds(path, reviewOpen ? BOTH_VARIANTS : INLINE_ONLY)
   const editorOpen = pendingComment !== null || editingIds.some((id) => comments.some((c) => c.id === id))
   const shownRequest = shown?.request
   const autoReloaded = useRef<string | null>(null)

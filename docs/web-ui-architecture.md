@@ -2409,9 +2409,12 @@ non-blank and at most 64 KiB; `file` must be `filepath.IsLocal`.
   renews an entry on every hit, so a view whose list is polled keeps its
   revs); then the list answers 404 "unknown rev" and the UI reloads the shown
   view's own request once per rev pair, which hands out fresh ones. It never
-  does so while a comment is being edited or written (an edit draft for a
-  listed comment, or a pending new comment): the reload would move the diff
-  under the editor. The next poll after it closes retries.
+  does so while a comment is being edited or written on screen (an inline
+  edit draft for a listed comment, a sidebar one while the sidebar is open,
+  or a pending new comment): the reload would move the diff under the editor.
+  A sidebar edit hidden by closing the sidebar doesn't hold it back; its
+  draft lives in the store and outlives the reload. The reload runs as soon
+  as the last such editor closes, without waiting for a poll.
 - `POST /api/review-comments` creates (201, the DTO).
 - `POST /api/review-comments/update` `{path, id, version, body}`: a stale
   `version` is 409 with `{error, comment}` (the current comment); a missing

@@ -69,6 +69,7 @@ vi.mock("../../api/client", async (orig) => {
 
 import { HttpError } from "../../api/client"
 import { editDraftKey, useDeletedDrafts, useEditorDraft } from "../../hooks/useReviewComments"
+import { setReviewSidebar } from "../../hooks/useReviewSidebar"
 import DiffView from "./DiffView"
 
 const PATCH = (file: string) => `diff --git a/${file} b/${file}
@@ -544,6 +545,35 @@ describe("DiffView", () => {
     expect(apiMock.diffPatch).toHaveBeenCalledTimes(1)
     act(() => edit.current[1](undefined))
     await waitFor(() => expect(apiMock.diffPatch).toHaveBeenCalledTimes(2))
+  })
+
+  it("reloads on an unknown rev despite a sidebar edit hidden by the closed sidebar", async () => {
+    let expired = false
+    let refused = 0
+    apiMock.reviewComments.mockImplementation(async (_p: string, v?: { newRev: string }) => {
+      if (v && expired) {
+        refused++
+        throw new HttpError("unknown rev", 404)
+      }
+      return { comments: [comment(1, "shown")] }
+    })
+    window.sessionStorage.setItem("worktree.reviewSidebar", "true")
+    setup()
+    await screen.findByRole("button", { name: "Send comments to agent" })
+    await waitFor(() => expect(apiMock.reviewComments).toHaveBeenCalledWith("/wt/foo", { oldRev: "mb", newRev: "snap" }))
+    const edit = renderHook(() => useEditorDraft("/wt/foo", editDraftKey("sidebar", 1))).result
+    act(() => edit.current[1]({ text: "typing", baseVersion: 1 }))
+    expired = true
+    await refetchComments()
+    await waitFor(() => expect(refused).toBe(1))
+    await act(async () => {})
+    // Open, the sidebar's editor holds the reload back.
+    expect(apiMock.diffPatch).toHaveBeenCalledTimes(1)
+    act(() => setReviewSidebar(false))
+    await waitFor(() => expect(apiMock.diffPatch).toHaveBeenCalledTimes(2))
+    // The hidden draft outlives the reload.
+    expect(edit.current[0]?.text).toBe("typing")
+    act(() => edit.current[1](undefined))
   })
 
   it("does not reload on an unknown rev while a new comment is open", async () => {

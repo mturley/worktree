@@ -143,12 +143,13 @@ export function useEditorDraft(path: string, key: string) {
   return [draft, set] as const
 }
 
-/** The ids of the comments being edited in path, in either card variant. */
-export function useEditingCommentIds(path: string): number[] {
+/** The ids of the comments being edited in path, in the given card variants. */
+export function useEditingCommentIds(path: string, variants: readonly ("inline" | "sidebar")[]): number[] {
+  const prefixes = variants.map((v) => `edit:${v}:`)
   // A string, so typing (which replaces the drafts) re-renders nothing here.
   const ids = useSyncExternalStore(subscribeEditors, () =>
     [...(editorDrafts.get(path) ?? NO_EDITOR_DRAFTS).keys()]
-      .filter((k) => k.startsWith("edit:"))
+      .filter((k) => prefixes.some((p) => k.startsWith(p)))
       .map((k) => k.slice(k.lastIndexOf(":") + 1))
       .join(","),
   )

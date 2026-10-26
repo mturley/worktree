@@ -120,7 +120,8 @@ describe("editor drafts", () => {
   })
 
   it("lists the comments being edited, in either variant, and not a new comment", () => {
-    const ids = renderHook(() => useEditingCommentIds("/ec"))
+    const ids = renderHook(() => useEditingCommentIds("/ec", ["inline", "sidebar"]))
+    const inlineIds = renderHook(() => useEditingCommentIds("/ec", ["inline"]))
     const inline = renderHook(() => useEditorDraft("/ec", editDraftKey("inline", 4)))
     const sidebar = renderHook(() => useEditorDraft("/ec", editDraftKey("sidebar", 9)))
     const added = renderHook(() => useEditorDraft("/ec", NEW_DRAFT_KEY))
@@ -130,6 +131,8 @@ describe("editor drafts", () => {
     act(() => sidebar.result.current[1]({ text: "b", baseVersion: 1 }))
     const before = ids.result.current
     expect(before).toEqual([4, 9])
+    // Only the variants asked for.
+    expect(inlineIds.result.current).toEqual([4])
     // Typing changes nothing here.
     act(() => inline.result.current[1]((d) => d && { ...d, text: "ab" }))
     expect(ids.result.current).toBe(before)
