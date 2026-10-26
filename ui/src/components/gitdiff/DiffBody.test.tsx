@@ -26,8 +26,15 @@ type MockOptions = {
   expandUnchanged?: boolean
   enableGutterUtility?: boolean
   onGutterUtilityClick?: (range: SelectedLineRange) => void
+  onLineSelectionStart?: (range: SelectedLineRange | null) => void
+  onLineSelectionChange?: (range: SelectedLineRange | null) => void
+  onLineSelectionEnd?: (range: SelectedLineRange | null) => void
 }
-const pierre = vi.hoisted(() => ({ options: {} as Record<string, MockOptions[]> }))
+// `selected` is each file's last selectedLines prop (absent: uncontrolled).
+const pierre = vi.hoisted(() => ({
+  options: {} as Record<string, MockOptions[]>,
+  selected: {} as Record<string, SelectedLineRange | null | undefined>,
+}))
 vi.mock("@pierre/diffs/react", () => ({
   WorkerPoolContextProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
   Virtualizer: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -38,9 +45,11 @@ vi.mock("@pierre/diffs/react", () => ({
     renderHeaderFilenameSuffix,
     lineAnnotations,
     renderAnnotation,
+    selectedLines,
   }: {
     fileDiff: FileDiffMetadata
     options: MockOptions
+    selectedLines?: SelectedLineRange | null
     renderHeaderPrefix?: (fd: FileDiffMetadata) => ReactNode
     renderHeaderFilenameSuffix?: (fd: FileDiffMetadata) => ReactNode
     lineAnnotations?: DiffLineAnnotation<unknown>[]
@@ -48,6 +57,7 @@ vi.mock("@pierre/diffs/react", () => ({
   }) => {
     const seen = (pierre.options[fileDiff.name] ??= [])
     if (seen[seen.length - 1] !== options) seen.push(options)
+    pierre.selected[fileDiff.name] = selectedLines
     const host = useRef<HTMLDivElement>(null)
     useLayoutEffect(() => {
       const el = host.current!
@@ -278,6 +288,26 @@ describe("DiffBody review comments", () => {
     expect(o.enableGutterUtility).toBe(true)
     act(() => o.onGutterUtilityClick!({ start: 13, end: 11, side: "additions" }))
     expect(onStartComment).toHaveBeenCalledWith({ file: "a.go", side: "new", start: 11, end: 13 })
+  })
+
+  it("holds the lines a + drag selects only while the drag lasts", async () => {
+    // Uncontrolled, pierre keeps the selection after the press, pins the + to
+    // it and starts every later press from it: the + gets stuck.
+    await wrap()
+    expect(pierre.selected["a.go"]).toBeNull()
+    const range: SelectedLineRange = { start: 11, end: 11, side: "additions" }
+    act(() => lastOptions("a.go").onLineSelectionStart!(range))
+    expect(pierre.selected["a.go"]).toEqual(range)
+    const wider: SelectedLineRange = { start: 11, end: 14, side: "additions" }
+    act(() => lastOptions("a.go").onLineSelectionChange!(wider))
+    expect(pierre.selected["a.go"]).toEqual(wider)
+    act(() => {
+      lastOptions("a.go").onGutterUtilityClick!(wider)
+      lastOptions("a.go").onLineSelectionEnd!(wider)
+    })
+    expect(pierre.selected["a.go"]).toBeNull()
+    // Another file's selection is untouched.
+    expect(pierre.selected["b.go"]).toBeNull()
   })
 
   it("pending target renders the new-comment editor", async () => {

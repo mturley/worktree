@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { CommentEditor } from "./CommentEditor"
@@ -18,6 +18,26 @@ function setup(initial = "") {
 }
 
 describe("CommentEditor", () => {
+  it("takes focus when it opens", () => {
+    setup()
+    expect(screen.getByRole("textbox")).toHaveFocus()
+  })
+
+  it("takes focus once it lands in the page, when it mounts detached (a diff annotation slot)", async () => {
+    const slot = document.createElement("div")
+    render(
+      <MantineProvider>
+        <CommentEditor initial="" submitLabel="Save" onSubmit={vi.fn()} onCancel={vi.fn()} />
+      </MantineProvider>,
+      { container: slot },
+    )
+    const box = slot.querySelector("textarea")!
+    expect(box).not.toHaveFocus()
+    document.body.appendChild(slot)
+    await waitFor(() => expect(box).toHaveFocus())
+    slot.remove()
+  })
+
   it("Cmd+Enter submits", async () => {
     const { onSubmit } = setup()
     await userEvent.type(screen.getByRole("textbox"), "hello{Meta>}{Enter}{/Meta}")

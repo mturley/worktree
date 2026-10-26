@@ -28,7 +28,7 @@ import { KeyHint } from "./search/KeyHint"
  * what branch am I on, is the tree dirty, when did anything last happen, and
  * what was I in the middle of (notes).
  *
- * A single row of tabs — Notes, Environment, Code and, inside cmux, cmux —
+ * A single row of tabs — Notes, Code, Environment and, inside cmux, cmux —
  * with the delete control at its right. Off Notes, an X before the delete
  * control (or clicking the active tab again) goes back to Notes.
  * The tab is the page's (useDetailTab), because it also decides where the
@@ -101,7 +101,6 @@ export function WorktreeDetailCard({ w, tab, onTabChange, escHint }: {
             >
               Notes
             </Tabs.Tab>
-            <Tabs.Tab value="env" fz="xs" py={6} onClick={backToNotesOn("env")}>Environment</Tabs.Tab>
             <Tabs.Tab
               value="code"
               fz="xs"
@@ -117,6 +116,7 @@ export function WorktreeDetailCard({ w, tab, onTabChange, escHint }: {
             >
               Code
             </Tabs.Tab>
+            <Tabs.Tab value="env" fz="xs" py={6} onClick={backToNotesOn("env")}>Environment</Tabs.Tab>
             {hasCmux && (
               <Tabs.Tab value="cmux" fz="xs" py={6} onClick={backToNotesOn("cmux")}>cmux</Tabs.Tab>
             )}

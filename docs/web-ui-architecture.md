@@ -2236,8 +2236,8 @@ other open tabs catch up on their next refetch.
 
 ### Open in editor (`editor_api.go`)
 
-The Code tab's top line holds "Open in editor (`code`)" beside "Review changes" (the page header has the cmux button there instead), which
-`POST /api/worktrees/open-editor {path}` turns into running the config's
+The Code tab's top line (above the git summary) holds "Open in editor (`code`)" beside "Review changes", and the diff view's breadcrumb has the same button after its title (the page header has the cmux button there instead). The server turns its
+`POST /api/worktrees/open-editor {path}` into running the config's
 `editor` (read from disk per request, like `GET /api/settings`) with the
 worktree path, as `worktree open` does. The request waits for the command
 to exit (`runEditor`), so the button spins while `code` launches and a
@@ -2253,7 +2253,7 @@ updates it at once.
 ### Code tab and diff view (`worktree_git_api.go`, `worktree_diff_api.go`, `ui/src/components/gitdiff/`)
 
 The details card's old Environment tab is split: **Environment** keeps the
-env/ports, **Code** (`GitDiffPanel`) shows the git summary (`GitSummary`:
+env/ports and sits after **Code**, which follows Notes. **Code** (`GitDiffPanel`) shows "Review changes" and "Open in editor" on its top line (while the worktree has local review comments, "Review changes" is filled in the unread blue and reads `Review changes (N pending local comments)`, counted from the view-less `GET /api/review-comments` list), then the git summary (`GitSummary`:
 merge-base against the main upstream, ahead/behind, tracking branch, working
 counts, background-fetch state) and a "Files changed" list (`FilesChangedList`)
 with two selectors: the **base** (`merge-base` or `tracking`, `CompareSelect`)
@@ -2514,7 +2514,18 @@ annotations.
   **only inside the diff scroller** (`.diff-body-scroller`), since the sidebar
   holds a copy with the same id. Jumping to a `not_in_view` comment sets the
   selection's base to the comment's and reloads, then scrolls once it is shown.
-- `ReviewSidebar` (opened by the breadcrumb's `Local review comments (N)`, filled in the unread blue, which reads `Close comments sidebar` (light primary, Esc hint inside) while it is open and is its only close control when wide; the narrow drawer's title is `Local review comments`) holds `Copy comments for agent`
+- The file tree (`DiffFileTree`) marks every file a comment was made on with
+  the unread blue dot (`UnreadMarkerDot`, labelled `has comments`), and
+  remembers each directory's folding across filtering (Mantine's `Tree`
+  rebuilds its expanded state from the visible nodes alone).
+- The gutter "+" keeps pierre's line selection **controlled**
+  (`selectedLines`, held only while a "+" drag lasts). Uncontrolled, pierre
+  keeps the selection after the press, pins the "+" to it and starts every
+  later press from it, so no other line could start a comment.
+  `CommentEditor` focuses itself by retrying for a few frames rather than
+  `autoFocus`, because pierre attaches an annotation slot to the page only
+  after React has mounted into it.
+- `ReviewSidebar` (opened by the breadcrumb's `Pending local review comments (N)`, filled in the unread blue, which reads `Close comments sidebar` (light primary, Esc hint inside) while it is open and is its only close control when wide; the narrow drawer's title is `Local review comments`) holds `Copy comments for agent`
   (`SendToAgentModal`: `buildPrompt` text, `Copy to clipboard` / `Copied`) and
   `Clear all` (`ClearCommentsModal`, titled `Clear comments`). The prompt uses each comment's
   `prompt` position: `file:lines`, `removed line, previously N`, or `out of

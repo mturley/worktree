@@ -301,8 +301,10 @@ describe("DiffView", () => {
     await screen.findByTestId("diff-body")
     const crumb = document.querySelector("[data-diff-breadcrumb]")!
     // Esc's hint sits beside the link that does the same (wide only).
-    expect(crumb.textContent).toMatch(/^← Worktree details(Esc)?\/Changes \(feat\)$/)
+    // Open in editor follows the title.
+    expect(crumb.textContent).toMatch(/^← Worktree details(Esc)?\/Changes \(feat\)Open in editor/)
     expect(crumb.textContent).not.toMatch(/go back/)
+    expect(await within(crumb as HTMLElement).findByRole("button", { name: "Open in editor (code)" })).toBeInTheDocument()
     await userEvent.click(screen.getByRole("button", { name: "← Worktree details" }))
     expect(new URLSearchParams(window.location.search).has("diff")).toBe(false)
   })
@@ -371,10 +373,10 @@ describe("DiffView", () => {
     expect(screen.queryByRole("button", { name: /Local review comments/ })).not.toBeInTheDocument()
   })
 
-  it("shows Local review comments (2) and toggles the sidebar", async () => {
+  it("shows Pending local review comments (2) and toggles the sidebar", async () => {
     listComments(() => [comment(1, "shown"), comment(2, "shown")])
     setup()
-    const button = await screen.findByRole("button", { name: "Local review comments (2)" })
+    const button = await screen.findByRole("button", { name: "Pending local review comments (2)" })
     await waitFor(() => expect(screen.getByTestId("diff-body")).toHaveAttribute("data-comments", "1,2"))
     expect(screen.queryByRole("button", { name: "Copy comments for agent" })).not.toBeInTheDocument()
     await userEvent.click(button)
@@ -384,7 +386,7 @@ describe("DiffView", () => {
     expect(button).toHaveTextContent("Close comments sidebar")
     await userEvent.click(button)
     expect(screen.queryByRole("button", { name: "Copy comments for agent" })).not.toBeInTheDocument()
-    expect(button).toHaveTextContent("Local review comments (2)")
+    expect(button).toHaveTextContent("Pending local review comments (2)")
   })
 
   it("shows Esc's hint beside Close comments sidebar only when Esc would close it", async () => {
@@ -403,7 +405,7 @@ describe("DiffView", () => {
     setViewport("narrow")
     listComments(() => [comment(1, "shown")])
     setup()
-    await userEvent.click(await screen.findByRole("button", { name: "Local review comments (1)" }))
+    await userEvent.click(await screen.findByRole("button", { name: "Pending local review comments (1)" }))
     const drawer = await screen.findByRole("dialog", { name: "Local review comments" })
     expect(within(drawer).getByRole("button", { name: "Copy comments for agent" })).toBeInTheDocument()
     expect(within(drawer).queryByRole("button", { name: "Close review comments" })).not.toBeInTheDocument()
@@ -452,7 +454,7 @@ describe("DiffView", () => {
     )
     apiMock.patches = [patch(), patch({ working_fingerprint: "W2", new_rev: "snap2" })]
     const { rerender } = setup()
-    await screen.findByRole("button", { name: "Local review comments (4)" })
+    await screen.findByRole("button", { name: "Pending local review comments (4)" })
     expect(screen.queryByTestId("comment-recheck")).not.toBeInTheDocument()
     gitMock.value = git({ fingerprint: "F2", working_fingerprint: "W2" })
     rerender(tree())
@@ -505,7 +507,7 @@ describe("DiffView", () => {
     })
     apiMock.patches = [patch(), patch({ new_rev: "snap2" })]
     setup()
-    expect(await screen.findByRole("button", { name: "Local review comments (1)" })).toBeInTheDocument()
+    expect(await screen.findByRole("button", { name: "Pending local review comments (1)" })).toBeInTheDocument()
     expect(apiMock.diffPatch).toHaveBeenCalledTimes(2)
     expect(screen.queryByText(/unknown rev/)).not.toBeInTheDocument()
   })
@@ -546,7 +548,7 @@ describe("DiffView", () => {
       return { comments: [comment(1, "shown")] }
     })
     setup()
-    await screen.findByRole("button", { name: "Local review comments (1)" })
+    await screen.findByRole("button", { name: "Pending local review comments (1)" })
     await waitFor(() => expect(apiMock.reviewComments).toHaveBeenCalledWith("/wt/foo", { oldRev: "mb", newRev: "snap" }))
     const edit = renderHook(() => useEditorDraft("/wt/foo", editDraftKey("inline", 1))).result
     act(() => edit.current[1]({ text: "typing", baseVersion: 1 }))

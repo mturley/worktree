@@ -262,6 +262,12 @@ function CommentableFileDiff({
     },
     [f, onStartComment],
   )
+  // The selection is controlled. Left to itself, pierre keeps the lines a "+"
+  // press selected, pins the "+" to them and starts every later press from
+  // them, so no other line could start a comment. Here the lines show only
+  // while a "+" drag lasts, and the "+" then follows the pointer again.
+  const [dragging, setDragging] = useState<SelectedLineRange | null>(null)
+  const endDrag = useCallback(() => setDragging(null), [])
   const options = useMemo(
     () => ({
       diffStyle: mode,
@@ -274,14 +280,18 @@ function CommentableFileDiff({
       unsafeCSS: HEADER_CSS,
       enableGutterUtility: true,
       onGutterUtilityClick,
+      onLineSelectionStart: setDragging,
+      onLineSelectionChange: setDragging,
+      onLineSelectionEnd: endDrag,
     }),
-    [mode, open, expand, loadDiffFiles, onGutterUtilityClick],
+    [mode, open, expand, loadDiffFiles, onGutterUtilityClick, endDrag],
   )
 
   return (
     <FileDiff<CommentAnnotation>
       fileDiff={meta}
       options={options}
+      selectedLines={dragging}
       lineAnnotations={annotations}
       renderAnnotation={({ metadata: { items, pending: target } }) => (
         <Stack gap={4} p={4}>

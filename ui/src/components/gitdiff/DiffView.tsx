@@ -12,6 +12,7 @@ import { useDeletedDrafts, useEditingCommentIds, useReviewComments } from "../..
 import { useReviewSidebar } from "../../hooks/useReviewSidebar"
 import { useWorktreeGit } from "../../hooks/useWorktreeGit"
 import { diffUnavailable } from "../../lib/diffLabels"
+import { OpenInEditorButton } from "../OpenInEditorButton"
 import { KeyHint } from "../search/KeyHint"
 import { buildPrompt } from "./buildPrompt"
 import { CompareSelect } from "./CompareSelect"
@@ -219,6 +220,8 @@ export default function DiffView({
   // Comments deleted elsewhere while being edited stay in the sidebar until dismissed.
   const deletedDrafts = useDeletedDrafts(path).drafts
   const reviewCount = comments.length + deletedDrafts.filter((d) => !comments.some((c) => c.id === d.comment.id)).length
+  // The tree's blue dots: every file a comment was made on.
+  const commentedFiles = useMemo(() => new Set(comments.map((c) => c.file)), [comments])
   const [reviewOpen, setReviewOpen] = useReviewSidebar()
   // Nothing left to show: closed, so the next first comment doesn't open it.
   useEffect(() => {
@@ -370,6 +373,7 @@ export default function DiffView({
       <DiffFileTree
         files={treeFiles}
         selected={highlighted}
+        commented={commentedFiles}
         onSelect={(f) => {
           setDrawerOpen(false)
           scrollTo(f)
@@ -526,6 +530,7 @@ export default function DiffView({
         <Text size="sm" c="dimmed">/</Text>
         {/* The branch, when there is one (empty when detached). */}
         <Text size="sm">{git?.branch ? `Changes (${git.branch})` : "Changes"}</Text>
+        <OpenInEditorButton path={path} />
         {reviewCount > 0 && (
           // Closed, filled in the unread blue (as Mark all read: lighter on
           // hover), so the review in progress is hard to miss. Open, dimmer:
@@ -540,7 +545,7 @@ export default function DiffView({
             rightSection={wide && reviewOpen && sidebarEscHint ? <KeyHint decorative>Esc</KeyHint> : undefined}
             onClick={() => setReviewOpen(!reviewOpen)}
           >
-            {reviewOpen ? "Close comments sidebar" : `Local review comments (${reviewCount})`}
+            {reviewOpen ? "Close comments sidebar" : `Pending local review comments (${reviewCount})`}
           </Button>
         )}
       </Group>

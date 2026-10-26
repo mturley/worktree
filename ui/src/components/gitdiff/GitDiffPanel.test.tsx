@@ -10,6 +10,7 @@ const api = vi.hoisted(() => ({
   worktreeGit: vi.fn(),
   diffCommits: vi.fn(),
   diffFiles: vi.fn(),
+  reviewComments: vi.fn(),
 }))
 
 vi.mock("../../api/client", async (orig) => {
@@ -20,6 +21,7 @@ vi.mock("../../api/client", async (orig) => {
       worktreeGit: api.worktreeGit,
       diffCommits: api.diffCommits,
       diffFiles: api.diffFiles,
+      reviewComments: api.reviewComments,
       settings: async () => ({ worktree: { editor: "code" } }),
     },
   }
@@ -50,6 +52,7 @@ beforeEach(() => {
   api.worktreeGit.mockResolvedValue(git)
   api.diffCommits.mockResolvedValue(commits)
   api.diffFiles.mockResolvedValue(files)
+  api.reviewComments.mockResolvedValue({ comments: [] })
 })
 afterEach(() => {
   cleanup()
@@ -65,6 +68,29 @@ const wrap = () =>
     </MantineProvider>,
   )
 
+describe("Review changes button", () => {
+  it("counts the worktree's pending local comments, in the unread blue", async () => {
+    api.reviewComments.mockResolvedValue({ comments: [{ id: 1 }, { id: 2 }, { id: 3 }] })
+    wrap()
+    const button = await screen.findByRole("button", { name: "Review changes (3 pending local comments)" })
+    expect(button).toHaveAttribute("data-variant", "filled")
+    // No view: the whole worktree's list.
+    expect(api.reviewComments).toHaveBeenCalledWith("/w/a", undefined)
+  })
+
+  it("says comment for one", async () => {
+    api.reviewComments.mockResolvedValue({ comments: [{ id: 1 }] })
+    wrap()
+    expect(await screen.findByRole("button", { name: "Review changes (1 pending local comment)" })).toBeInTheDocument()
+  })
+
+  it("is plain with none", async () => {
+    wrap()
+    const button = await screen.findByRole("button", { name: "Review changes" })
+    expect(button).toHaveAttribute("data-variant", "light")
+  })
+})
+
 describe("Files changed section", () => {
   it("starts collapsed, with the header's count and totals still shown", async () => {
     wrap()
@@ -72,11 +98,11 @@ describe("Files changed section", () => {
     expect(screen.getByText("+8")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Show files" })).toBeInTheDocument()
     expect(screen.queryByTestId("file-row")).toBeNull()
-    // The header's controls stay.
-    // On their own line above the section: Review changes, then Open in editor.
+    // At the top, above the git summary: Review changes, then Open in editor.
     const review = screen.getByRole("button", { name: "Review changes" })
     const editor = screen.getByRole("button", { name: /Open in editor/ })
     expect(review.compareDocumentPosition(editor) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(editor.compareDocumentPosition(screen.getByText(/^upstream\/main @/)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(editor.compareDocumentPosition(screen.getByText("Files changed (2)")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 

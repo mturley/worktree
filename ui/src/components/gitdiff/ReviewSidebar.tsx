@@ -31,7 +31,7 @@ export function ReviewSidebar({ path, comments, viewKey, prompt, onJump }: {
   return (
     <Stack gap="xs" p="xs">
       <Group gap="xs" wrap="wrap">
-        {/* The unread blue, as the breadcrumb's Local review comments (lighter on hover). */}
+        {/* The unread blue, as the breadcrumb's Pending local review comments (lighter on hover). */}
         <Button
           size="compact-xs"
           variant="filled"
