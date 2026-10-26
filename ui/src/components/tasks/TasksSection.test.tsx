@@ -10,7 +10,7 @@ import type { Task } from "../../api/types"
 import type { TaskScope } from "../../hooks/useTasks"
 import { TASK_LIST_KEY } from "../../lib/taskListPrefs"
 import { TaskModalProvider } from "./modal/TaskModalProvider"
-import { useTasksPanel } from "./TasksSection"
+import { scopeContext, useTasksPanel } from "./TasksSection"
 
 vi.mock("../../api/client", async (orig) => ({
   ...(await orig<typeof import("../../api/client")>()),
@@ -73,7 +73,7 @@ function unmockOverflow() {
 }
 
 async function expand() {
-  await userEvent.click(await within(panel()).findByRole("button", { name: /^Show all/ }))
+  await userEvent.click(await within(panel()).findByRole("button", { name: /^Show all \(/ }))
   expect(panel()).toHaveAttribute("data-level", "expanded")
 }
 
@@ -92,7 +92,7 @@ describe("useTasksPanel", () => {
     wrap(<Host />)
     const p = panel()
     expect(p).toHaveAttribute("data-level", "normal")
-    expect(await within(p).findByText("Tasks · 2 open")).toBeInTheDocument()
+    expect(await within(p).findByText("Tasks (all)")).toBeInTheDocument()
     expect(within(p).getByLabelText("Sort tasks")).toBeInTheDocument()
     expect(await within(p).findByText("task 1")).toBeInTheDocument()
     expect(within(p).getByPlaceholderText("Add a task…")).toBeInTheDocument()
@@ -115,15 +115,15 @@ describe("useTasksPanel", () => {
     )
     const a = () => panel(screen.getByTestId("a"))
     const b = () => panel(screen.getByTestId("b"))
-    await within(a()).findByText("Tasks · 2 open")
-    await userEvent.click(within(a()).getByRole("button", { name: "Collapse task list" }))
+    await within(a()).findByText("Tasks (all)")
+    await userEvent.click(within(a()).getByRole("button", { name: /^Collapse task list/ }))
 
     expect(a()).toHaveAttribute("data-level", "collapsed")
     expect(within(a()).queryByLabelText("Sort tasks")).toBeNull()
     expect(within(a()).queryByPlaceholderText("Add a task…")).toBeNull()
     expect(within(a()).queryByTestId("task-list-body")).toBeNull()
     const line = within(a()).getByRole("button", { name: /^Expand task list/ })
-    expect(within(line).getByText("Tasks · 2 open")).toBeInTheDocument()
+    expect(within(line).getByText("Tasks (all) · 2 open")).toBeInTheDocument()
     expect(JSON.parse(window.localStorage.getItem(TASK_LIST_KEY)!).collapsed).toBe(true)
     // ONE global setting: the other panel collapsed too.
     expect(b()).toHaveAttribute("data-level", "collapsed")
@@ -151,7 +151,7 @@ describe("useTasksPanel", () => {
     wrap(<Host />)
     await within(panel()).findByText("task 1")
     await expand()
-    await userEvent.click(within(panel()).getByRole("button", { name: "Collapse task list" }))
+    await userEvent.click(within(panel()).getByRole("button", { name: /^Collapse task list/ }))
     await userEvent.click(within(panel()).getByRole("button", { name: /^Expand task list/ }))
     expect(panel()).toHaveAttribute("data-level", "normal")
   })
@@ -212,7 +212,7 @@ describe("useTasksPanel", () => {
   it("unread task events: a dot in the normal header and on the collapsed line", async () => {
     wrap(<Host unread={2} />)
     expect(within(panel()).getByRole("img", { name: "unread task activity" })).toBeInTheDocument()
-    await userEvent.click(within(panel()).getByRole("button", { name: "Collapse task list" }))
+    await userEvent.click(within(panel()).getByRole("button", { name: /^Collapse task list/ }))
     const line = within(panel()).getByRole("button", { name: /^Expand task list/ })
     expect(within(line).getByRole("img", { name: "unread task activity" })).toBeInTheDocument()
   })
@@ -224,35 +224,80 @@ describe("useTasksPanel", () => {
 
   it("the collapsed line's name carries the count and the unread state", async () => {
     const { rerender } = wrap(<Host unread={2} />)
-    await within(panel()).findByText("Tasks · 2 open")
-    await userEvent.click(within(panel()).getByRole("button", { name: "Collapse task list" }))
+    await within(panel()).findByText("Tasks (all)")
+    await userEvent.click(within(panel()).getByRole("button", { name: /^Collapse task list/ }))
     expect(within(panel()).getByRole("button", { name: "Expand task list (2 open, unread activity)" })).toBeInTheDocument()
     rerender(<Host unread={0} />)
     expect(within(panel()).getByRole("button", { name: "Expand task list (2 open)" })).toBeInTheDocument()
   })
 })
 
-describe("useTasksPanel focus", () => {
-  it("collapsing moves focus to the expand line, and expanding moves it back", async () => {
+describe("useTasksPanel summary toggle", () => {
+  it("cycles normal → expanded → collapsed → normal when the list overflows", async () => {
+    mockOverflow()
+    try {
+      const user = userEvent.setup()
+      wrap(<Host />)
+      await within(panel()).findByText("Tasks (all)")
+      const toggle = await within(panel()).findByRole("button", { name: /^Show all tasks/ })
+      await user.click(toggle)
+      expect(panel()).toHaveAttribute("data-level", "expanded")
+      expect(toggle).toHaveAccessibleName(/^Collapse task list/)
+      await user.click(toggle)
+      expect(panel()).toHaveAttribute("data-level", "collapsed")
+      expect(toggle).toHaveAccessibleName(/^Expand task list/)
+      await user.click(toggle)
+      expect(panel()).toHaveAttribute("data-level", "normal")
+    } finally {
+      unmockOverflow()
+    }
+  })
+
+  it("goes straight from normal to collapsed when the list fits", async () => {
     const user = userEvent.setup()
     wrap(<Host />)
-    await within(panel()).findByText("Tasks · 2 open")
-    const collapse = within(panel()).getByRole("button", { name: "Collapse task list" })
-    expect(collapse).toHaveAttribute("aria-expanded", "true")
-    await user.click(collapse)
-    const line = within(panel()).getByRole("button", { name: /^Expand task list/ })
-    expect(line).toHaveAttribute("aria-expanded", "false")
-    expect(document.activeElement).toBe(line)
+    await within(panel()).findByText("Tasks (all)")
+    await user.click(within(panel()).getByRole("button", { name: /^Collapse task list/ }))
+    expect(panel()).toHaveAttribute("data-level", "collapsed")
+  })
+})
+
+describe("scopeContext", () => {
+  it("names which tasks the panel lists", () => {
+    expect(scopeContext({ kind: "all" })).toBe("all")
+    expect(scopeContext({ kind: "worktree", path: "/w" })).toBe("this worktree")
+    expect(scopeContext({ kind: "resource", type: "pr", id: "o/r#1" })).toBe("this PR")
+    expect(scopeContext({ kind: "resource", type: "jira", id: "J-1" })).toBe("this issue")
+    expect(scopeContext({ kind: "resource", type: "slack", id: "C1:1.2" })).toBe("this thread")
+    expect(scopeContext({ kind: "resource", type: "link", id: "https://x" })).toBe("this link")
+    expect(scopeContext({ kind: "resource", type: "other", id: "x" })).toBe("this resource")
+  })
+})
+
+describe("useTasksPanel focus", () => {
+  it("one toggle, holding the summary, collapses and expands and keeps the focus", async () => {
+    const user = userEvent.setup()
+    wrap(<Host />)
+    await within(panel()).findByText("Tasks (all)")
+    const toggle = within(panel()).getByRole("button", { name: /^Collapse task list/ })
+    expect(toggle).toHaveAttribute("aria-expanded", "true")
+    expect(toggle).toHaveTextContent(/^Tasks \(all\)$/)
+    await user.click(toggle)
+    expect(panel()).toHaveAttribute("data-level", "collapsed")
+    expect(toggle).toHaveTextContent("Tasks (all) · 2 open")
+    expect(toggle).toHaveAttribute("aria-expanded", "false")
+    expect(within(panel()).getByRole("button", { name: /^Expand task list/ })).toBe(toggle)
+    expect(document.activeElement).toBe(toggle)
 
     await user.keyboard("{Enter}")
     expect(panel()).toHaveAttribute("data-level", "normal")
-    expect(document.activeElement).toBe(within(panel()).getByRole("button", { name: "Collapse task list" }))
+    expect(document.activeElement).toBe(toggle)
   })
 
   it("leaves focus alone when the toggle was not focused", async () => {
     wrap(<Host />)
-    await within(panel()).findByText("Tasks · 2 open")
-    act(() => within(panel()).getByRole("button", { name: "Collapse task list" }).click())
+    await within(panel()).findByText("Tasks (all)")
+    act(() => within(panel()).getByRole("button", { name: /^Collapse task list/ }).click())
     expect(panel()).toHaveAttribute("data-level", "collapsed")
     expect(document.activeElement).toBe(document.body)
   })

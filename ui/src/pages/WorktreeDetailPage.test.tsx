@@ -1394,7 +1394,7 @@ describe("WorktreeDetailPage tasks", () => {
     const user = userEvent.setup()
     wrap()
     const panel = within(activityHeader()).getByTestId("tasks-panel")
-    await user.click(await within(panel).findByRole("button", { name: /^Show all/ }))
+    await user.click(await within(panel).findByRole("button", { name: /^Show all \(/ }))
     expect(screen.getByTestId("tasks-panel")).toHaveAttribute("data-level", "expanded")
     expect(activityHeader().style.position).not.toBe("sticky")
     expect(activityHeader()).not.toHaveAttribute("data-tooltip-layer")

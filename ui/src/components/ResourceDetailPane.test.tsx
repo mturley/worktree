@@ -408,7 +408,7 @@ describe("ResourceDetailPane tasks", () => {
     try {
       wrap(<ResourceDetailPane path="/wt/foo" resource={jira} stickyTop={60} />)
       const panel = screen.getByTestId("tasks-panel")
-      await userEvent.click(await within(panel).findByRole("button", { name: /^Show all/ }))
+      await userEvent.click(await within(panel).findByRole("button", { name: /^Show all \(/ }))
       expect(panel).toHaveAttribute("data-level", "expanded")
       const block = screen.getByRole("tablist").parentElement!.closest<HTMLElement>("[data-resource-card-block]")!
       expect(block).toContainElement(panel)

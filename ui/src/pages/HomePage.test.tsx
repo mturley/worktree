@@ -764,7 +764,7 @@ describe("HomePage tasks", () => {
     mockOverflow()
     wrap()
     const panel = screen.getByTestId("tasks-panel")
-    await userEvent.click(await within(panel).findByRole("button", { name: /^Show all/ }))
+    await userEvent.click(await within(panel).findByRole("button", { name: /^Show all \(/ }))
     expect(screen.getByTestId("tasks-panel")).toHaveAttribute("data-level", "expanded")
     const activity = document.querySelector("[data-activity-header]") as HTMLElement
     expect(activity.style.position).not.toBe("sticky")

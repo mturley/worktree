@@ -65,6 +65,7 @@ export function TaskStateCheckbox({ state, title, onPick }: {
         <UnstyledButton
           onClick={keepFromHost}
           aria-label={`State of “${title}”: ${current.label}`}
+          className="task-row-control task-row-control-pad"
           style={{ flex: "none", display: "flex" }}
         >
           <StateBox state={state} size={SIZE} />
@@ -79,8 +80,12 @@ export function TaskStateCheckbox({ state, title, onPick }: {
           <Menu.Item
             key={s.state}
             aria-current={s.state === state ? "true" : undefined}
-            leftSection={<span aria-hidden style={{ width: 12, display: "inline-block" }}>{s.state === state ? "✓" : ""}</span>}
-            rightSection={<StateBox state={s.state} size={12} />}
+            leftSection={
+              <span aria-hidden style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <span style={{ width: 12, display: "inline-block" }}>{s.state === state ? "✓" : ""}</span>
+                <StateBox state={s.state} size={SIZE} />
+              </span>
+            }
             onClick={() => onPick(s.state)}
           >
             {s.label}

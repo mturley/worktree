@@ -1,47 +1,41 @@
-import { Group, Select, Switch } from "@mantine/core"
-import type { Priority } from "../../api/types"
+import { Group, Select, Switch, Text } from "@mantine/core"
 import type { TaskListPrefs, TaskSort } from "../../lib/taskSections"
 
 const SORT_OPTIONS: { value: TaskSort; label: string }[] = [
   { value: "custom", label: "Custom" },
   { value: "priority", label: "Priority" },
   { value: "due", label: "Due date" },
-  { value: "updated", label: "Recently updated" },
+  { value: "updated", label: "Updated" },
 ]
 
-const PRIORITY_OPTIONS: { value: Priority | "all"; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "high", label: "High" },
-  { value: "medium", label: "Medium" },
-  { value: "low", label: "Low" },
-  { value: "none", label: "None" },
-]
+/**
+ * A closed Select just wide enough for the option it shows: the text in `ch`,
+ * plus room for the input's padding and chevron. Its open list sizes itself
+ * (`comboboxProps.width: "max-content"`).
+ */
+const fitWidth = (options: { value: string; label: string }[], value: string) =>
+  `calc(${(options.find((o) => o.value === value) ?? options[0]).label.length}ch + 40px)`
 
-/** Sort, priority filter and show completed (+ include archived), for every task list at once. */
+/** Sort and show completed (+ include archived), for every task list at once. */
 export function TaskListToolbar({ prefs, onChange }: {
   prefs: TaskListPrefs
   onChange(p: Partial<TaskListPrefs>): void
 }) {
   return (
-    <Group gap="xs" wrap="wrap">
-      <Select
-        size="xs"
-        w={150}
-        aria-label="Sort tasks"
-        data={SORT_OPTIONS}
-        value={prefs.sort}
-        allowDeselect={false}
-        onChange={(v) => v && onChange({ sort: v as TaskSort })}
-      />
-      <Select
-        size="xs"
-        w={110}
-        aria-label="Filter tasks by priority"
-        data={PRIORITY_OPTIONS}
-        value={prefs.priority}
-        allowDeselect={false}
-        onChange={(v) => v && onChange({ priority: v as Priority | "all" })}
-      />
+    <Group gap="sm" wrap="wrap" justify="flex-end">
+      <Group gap={4} wrap="nowrap">
+        <Text size="xs" c="dimmed">Sort:</Text>
+        <Select
+          size="xs"
+          w={fitWidth(SORT_OPTIONS, prefs.sort)}
+          comboboxProps={{ width: "max-content" }}
+          aria-label="Sort tasks"
+          data={SORT_OPTIONS}
+          value={prefs.sort}
+          allowDeselect={false}
+          onChange={(v) => v && onChange({ sort: v as TaskSort })}
+        />
+      </Group>
       <Switch
         size="xs"
         label="Show completed"

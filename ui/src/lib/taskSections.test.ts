@@ -14,7 +14,7 @@ function mk(id: number, rank: string, over: Partial<Task> = {}): Task {
 }
 
 const prefs = (over: Partial<TaskListPrefs> = {}): TaskListPrefs => ({
-  sort: "custom", priority: "all", showCompleted: false, includeArchived: false, ...over,
+  sort: "custom", showCompleted: false, includeArchived: false, ...over,
 })
 
 const ids = (s: TaskSection | undefined) => s?.tasks.map((t) => t.id)
@@ -152,11 +152,6 @@ describe("buildSections: priority", () => {
     expect(sec(ss, "starred")?.priority).toBeUndefined()
   })
 
-  it("with a priority filter, returns only that priority's section", () => {
-    const ss = buildSections(tasks, prefs({ sort: "priority", priority: "high" }), [])
-    expect(keys(ss)).toEqual(["starred", "high"])
-    expect(ids(sec(ss, "high"))).toEqual([5, 1])
-  })
 })
 
 describe("buildSections: filters", () => {
@@ -167,14 +162,6 @@ describe("buildSections: filters", () => {
     mk(4, "d", { priority: "high", title: "oauth done", state: "done", completed_at: "2026-10-02T00:00:00Z" }),
     mk(5, "e", { priority: "low", title: "low done", state: "done", completed_at: "2026-10-03T00:00:00Z" }),
   ]
-
-  it("applies the priority filter to every section", () => {
-    const ss = buildSections(tasks, prefs({ priority: "high", showCompleted: true }), [])
-    expect(keys(ss)).toEqual(["starred", "rest", "completed"])
-    expect(ids(sec(ss, "starred"))).toEqual([])
-    expect(ids(sec(ss, "rest"))).toEqual([1, 3])
-    expect(ids(sec(ss, "completed"))).toEqual([4])
-  })
 
   it("applies search terms to every section, over title and description", () => {
     const ss = buildSections(tasks, prefs({ showCompleted: true }), ["oauth"])

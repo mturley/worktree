@@ -181,20 +181,6 @@ describe("TaskList quick add", () => {
     expect(api.createTask).toHaveBeenCalledWith({ title: "next", priority: "none", starred: false, after: 2 })
   })
 
-  it("seeds the priority picker from the active priority filter, so the new task stays visible", async () => {
-    setPrefs({ priority: "high" })
-    vi.mocked(api.tasks).mockResolvedValue([task(1, { title: "alpha one", priority: "high" })])
-    const user = userEvent.setup()
-    wrap(<TaskList scope={{ kind: "all" }} />)
-    await screen.findByText("alpha one")
-    const input = screen.getByRole("textbox", { name: "New task" })
-    await user.click(input)
-    expect(screen.getByRole("textbox", { name: "New task priority" })).toHaveValue("High")
-    await user.type(input, "urgent{Enter}")
-    await waitFor(() => expect(api.createTask).toHaveBeenCalled())
-    expect(api.createTask).toHaveBeenCalledWith({ title: "urgent", priority: "high", starred: false, after: 1 })
-  })
-
   it("Enter keeps focus for the next task", async () => {
     const user = userEvent.setup()
     wrap(<TaskList scope={{ kind: "all" }} />)
@@ -437,6 +423,16 @@ describe("TaskList", () => {
     await screen.findByText("task 2")
     expect(screen.getByText("Starred")).toBeInTheDocument()
     expect(screen.getByText("Tasks")).toBeInTheDocument()
+    document.querySelectorAll<HTMLElement>("[data-task-row]").forEach((r) =>
+      expect(parseFloat(r.style.paddingLeft)).not.toBe(0))
+  })
+
+  it("an unlabelled list's rows are flush", async () => {
+    wrap(<TaskList scope={{ kind: "all" }} />)
+    await screen.findByText("beta two")
+    const rows = document.querySelectorAll<HTMLElement>("[data-task-row]")
+    expect(rows.length).toBeGreaterThan(0)
+    rows.forEach((r) => expect(parseFloat(r.style.paddingLeft)).toBe(0))
   })
 
   it("caps its height at maxRows, and at a quarter of the viewport", async () => {
@@ -547,7 +543,7 @@ describe("TaskList keyboard drag", () => {
 })
 
 describe("dropPlanFor", () => {
-  const prefs = { sort: "custom", priority: "all", showCompleted: false, includeArchived: false } as const
+  const prefs = { sort: "custom", showCompleted: false, includeArchived: false } as const
   const sections = buildSections([task(1), task(2), task(3), task(4, { starred: true })], prefs, [])
 
   it("moves down within a section: lands where the item it is over was", () => {

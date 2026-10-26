@@ -13,7 +13,6 @@ export type TaskSort = "custom" | "priority" | "due" | "updated"
 
 export interface TaskListPrefs {
   sort: TaskSort
-  priority: Priority | "all"
   showCompleted: boolean
   includeArchived: boolean
 }
@@ -83,16 +82,14 @@ const SORTS: Record<TaskSort, (a: Task, b: Task) => number> = {
 /**
  * Groups and orders a task list for display. Starred open tasks are always
  * on top and appear only there. In Priority sort every priority section is
- * returned even when empty (TaskList renders only sections that hold tasks),
- * but a priority filter leaves only its own section, since dropping into
- * another would hide the task. Completed is last, newest first, when shown.
+ * returned even when empty (TaskList renders only sections that hold
+ * tasks). Completed is last, newest first, when shown.
  */
 export function buildSections(tasks: Task[], prefs: TaskListPrefs, terms: string[]): TaskSection[] {
   // Archived gates only done tasks: an open task whose links are all
   // orphaned still shows (marked archived), matching the server.
   const visible = tasks.filter((t) =>
     (prefs.includeArchived || !t.archived || t.state !== "done") &&
-    (prefs.priority === "all" || t.priority === prefs.priority) &&
     (terms.length === 0 || matchTask(t, terms) !== null),
   )
   const cmp = SORTS[prefs.sort]
@@ -108,7 +105,6 @@ export function buildSections(tasks: Task[], prefs: TaskListPrefs, terms: string
   const rest = open.filter((t) => !t.starred)
   if (prefs.sort === "priority") {
     for (const p of PRIORITY_SECTIONS) {
-      if (prefs.priority !== "all" && prefs.priority !== p.key) continue
       sections.push({
         key: p.key, label: p.label, tasks: rest.filter((t) => t.priority === p.key),
         draggable, starred: false, priority: p.key,
@@ -131,7 +127,7 @@ export function buildSections(tasks: Task[], prefs: TaskListPrefs, terms: string
 /**
  * The task quick add places a new task after. In the draggable sorts the
  * display IS master order, so it is the last visible open task. In Due and
- * Recently updated the display order means nothing in master order, so it
+ * Updated the display order means nothing in master order, so it
  * is the visible open task last in master order instead.
  */
 export function quickAddAnchor(sections: TaskSection[], sort: TaskSort): Task | undefined {

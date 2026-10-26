@@ -18,6 +18,11 @@ export const PRIORITY_LABEL: Record<Priority, string> = {
 /** The priorities in menu order. */
 export const PRIORITIES: Priority[] = ["high", "medium", "low", "none"]
 
+/** A mark as the row shows it; the menu's options use the same. */
+const MARK_STYLE = {
+  width: 22, display: "inline-block", fontWeight: 700, fontSize: "var(--mantine-font-size-sm)",
+} as const
+
 /** Keeps the menu's clicks from the row (or other host) around it. */
 const keepFromHost = (e: React.MouseEvent) => e.stopPropagation()
 
@@ -37,11 +42,8 @@ export function TaskPriorityMenu({ priority, title, onPick }: {
         <UnstyledButton
           onClick={keepFromHost}
           aria-label={`Priority of “${title}”: ${PRIORITY_LABEL[priority]}`}
-          className={mark ? undefined : "task-priority-none"}
-          style={{
-            width: 22, flex: "none", fontWeight: 700, fontSize: "var(--mantine-font-size-sm)",
-            color: mark?.color ?? "var(--mantine-color-gray-5)",
-          }}
+          className={mark ? "task-row-control" : "task-row-control task-priority-none"}
+          style={{ ...MARK_STYLE, flex: "none", color: mark?.color ?? "var(--mantine-color-gray-5)" }}
         >
           {mark?.text ?? "!"}
         </UnstyledButton>
@@ -53,10 +55,10 @@ export function TaskPriorityMenu({ priority, title, onPick }: {
           <Menu.Item
             key={p}
             aria-current={p === priority ? "true" : undefined}
-            leftSection={<span aria-hidden style={{ width: 12, display: "inline-block" }}>{p === priority ? "✓" : ""}</span>}
-            rightSection={
-              <span aria-hidden style={{ width: 22, display: "inline-block", fontWeight: 700, color: PRIORITY_MARK[p]?.color }}>
-                {PRIORITY_MARK[p]?.text ?? ""}
+            leftSection={
+              <span aria-hidden style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <span style={{ width: 12, display: "inline-block" }}>{p === priority ? "✓" : ""}</span>
+                <span style={{ ...MARK_STYLE, color: PRIORITY_MARK[p]?.color }}>{PRIORITY_MARK[p]?.text ?? ""}</span>
               </span>
             }
             onClick={() => onPick(p)}

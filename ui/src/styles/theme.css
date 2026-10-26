@@ -127,6 +127,30 @@ body,
   opacity: 1;
 }
 
+/* The task panel's summary is its level toggle: show it can be clicked. */
+.task-panel-toggle {
+  transition: background-color 120ms ease;
+}
+.task-panel-toggle:hover {
+  background-color: var(--mantine-color-default-hover);
+}
+
+/* A task row's own controls (state checkbox, star, priority mark) show
+   they can be clicked. Scoped under the row to outrank ActionIcon's own
+   transparent-variant hover. */
+[data-task-row] .task-row-control {
+  border-radius: 4px;
+  transition: background-color 120ms ease;
+}
+[data-task-row] .task-row-control:hover {
+  background-color: var(--mantine-color-default-hover);
+}
+/* The checkbox is exactly its box: pad the hover area without moving it. */
+[data-task-row] .task-row-control-pad {
+  padding: 3px;
+  margin: -3px;
+}
+
 .task-priority-none {
   opacity: 0;
 }

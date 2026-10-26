@@ -1,5 +1,5 @@
-import { useLayoutEffect, useRef, useState } from "react"
-import { ActionIcon, Alert, Box, Button, Group, Stack, Text, Tooltip } from "@mantine/core"
+import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { ActionIcon, Alert, Box, Button, Stack, Text, Tooltip } from "@mantine/core"
 import { IconGripVertical } from "@tabler/icons-react"
 import {
   closestCenter,
@@ -80,8 +80,9 @@ function useOverflow(capped: boolean, shape: string) {
  * grip renders disabled with a hint when the sort can't be reordered, and not
  * at all in Completed, whose order isn't master order.
  */
-function SortableTaskRow({ task, section, sortDraggable, ownResource, mutations, onError, onOpen }: {
+function SortableTaskRow({ task, section, sortDraggable, flush, ownResource, mutations, onError, onOpen }: {
   task: Task
+  flush: boolean
   section: TaskSection
   sortDraggable: boolean
   ownResource?: { type: string; id: string }
@@ -158,6 +159,7 @@ function SortableTaskRow({ task, section, sortDraggable, ownResource, mutations,
         task={task}
         ownResource={ownResource}
         dragHandle={grip}
+        flush={flush}
         onState={pickState}
         onPriority={(priority) => run(update(task.id, { priority }))}
         onToggleStar={() => run(update(task.id, { starred: !task.starred }))}
@@ -204,7 +206,12 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
   scope: TaskScope
   ownResource?: { type: string; id: string }
   maxRows?: number
-  expand?: { expanded: boolean; onToggle: () => void }
+  expand?: {
+    expanded: boolean
+    onToggle: () => void
+    /** Told whether the capped list overflows, whenever that changes. */
+    onOverflow?: (overflows: boolean) => void
+  }
 }) {
   const [prefs] = useTaskListPrefs()
   const { terms } = useSearchContext()
@@ -230,10 +237,12 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
   // A label adds height without adding a task, so the shape is more than the count.
   const shape = `${shownCount}|${labelled}|${shown.map((s) => `${s.key}:${s.tasks.length}`).join(",")}`
   const overflows = useOverflow(cap !== undefined, shape)
+  const onOverflow = expand?.onOverflow
+  useEffect(() => {
+    onOverflow?.(overflows.value)
+  }, [onOverflow, overflows.value])
   const activeTask = activeId === null ? undefined : sections.flatMap((s) => s.tasks).find((t) => t.id === activeId)
   const anchor = quickAddAnchor(sections, prefs.sort)
-  // Under a priority filter a "none" task would vanish on creation.
-  const newPriority: Task["priority"] = prefs.priority === "all" ? "none" : prefs.priority
 
   const sensors = useSensors(
     // Only the grip starts a drag; a few pixels of travel so a press isn't one.
@@ -299,6 +308,7 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
                   task={t}
                   section={s}
                   sortDraggable={sortDraggable}
+                  flush={!labelled}
                   ownResource={ownResource}
                   mutations={mutations}
                   onError={setError}
@@ -312,7 +322,7 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
         <DragOverlay dropAnimation={null}>
           {activeTask ? (
             <Box className="task-panel" style={{ cursor: "grabbing" }} data-testid="task-drag-overlay">
-              <TaskRow task={activeTask} ownResource={ownResource} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} />
+              <TaskRow task={activeTask} ownResource={ownResource} flush={!labelled} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} />
             </Box>
           ) : null}
         </DragOverlay>
@@ -336,13 +346,11 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
         <div ref={overflows.contentRef}>{body}</div>
       </Box>
       {expand && (expand.expanded || overflows.value) && (
-        <Group justify="center">
-          <Button variant="subtle" size="compact-xs" onClick={expand.onToggle}>
-            {expand.expanded ? "Show less" : `Show all (${shownCount})`}
-          </Button>
-        </Group>
+        <Button variant="subtle" size="compact-xs" fullWidth onClick={expand.onToggle}>
+          {expand.expanded ? "Show less" : `Show all (${shownCount})`}
+        </Button>
       )}
-      <TaskQuickAdd onAdd={add} onOpen={(id) => open(id)} defaultPriority={newPriority} />
+      <TaskQuickAdd onAdd={add} onOpen={(id) => open(id)} />
     </Stack>
   )
 }

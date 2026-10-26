@@ -1281,8 +1281,8 @@ to break.
 
 - **Files.** `components/tasks/` holds `TaskList` (sections, drag and drop,
   quick add at the bottom), `TaskRow`, `TaskStateCheckbox`,
-  `TaskListToolbar` (sort, priority filter, show completed / include
-  archived), `TaskPriorityMenu` (the row's priority mark as a menu),
+  `TaskListToolbar` (sort, show completed / include archived; there is no
+  priority filter: Priority sort groups by priority), `TaskPriorityMenu` (the row's priority mark as a menu),
   `TaskQuickAdd`, `TaskCountBadge` (plus `openTasksLabel`) and
   `TasksSection.tsx` (the panel, below). `taskDrag.ts` holds the row's
   dnd-kit id (`task:<id>`; rows are the only drop targets) and turns a drop
@@ -1308,8 +1308,8 @@ to break.
   `ownResource` suppresses the link chip that points back at the resource the
   panel is already in; `unread` puts the unread dot by the count (the Slack
   pane, whose other tabs can't show it). Three levels:
-  - **normal** (the default): "Tasks · N open", the unread dot, the list
-    toolbar, and the list capped at `min(8 rows, 25dvh)` (`maxRows` on
+  - **normal** (the default): the summary "Tasks (<context>)", the unread
+    dot, the list toolbar, and the list capped at `min(8 rows, 25dvh)` (`maxRows` on
     `TaskList`, `NORMAL_ROWS` = 8 in `TasksSection.tsx`), scrolling inside
     itself. When the capped list actually overflows (measured, so a list
     that fits offers nothing) a "Show all (N)" button sits under it, above
@@ -1319,14 +1319,23 @@ to break.
     (count, sections, labels) changes. While expanded it keeps its last
     answer instead of resetting, so "Show less" stays the same mounted
     button and keeps the keyboard focus.
-  - **collapsed**: the saved global `collapsed` pref. A top-right
-    ActionIcon ("Collapse task list") collapses; the whole one-line panel
-    ("Tasks · N open", dot, chevron) is a button that returns to normal; its
-    accessible name leads with "Expand task list" and carries the count and
-    unread state (`Expand task list (3 open, unread activity)`). Toolbar,
-    list and quick add are not rendered. Both toggles carry `aria-expanded`,
-    and each lives in a different render branch, so activating one hands
-    the focus to the other (only when the toggle had it).
+  - **collapsed**: the saved global `collapsed` pref. One toggle at the
+    left of the header, in every level, holds the chevron (right collapsed,
+    down normal, double-down expanded) and the summary "Tasks (<context>)"
+    plus the unread dot; it fills the header up to the toolbar and reaches
+    into the panel's padding, so it is easy to hit. Only while collapsed
+    does the summary add " · N open". `scopeContext` gives the context:
+    "all", "this worktree", or "this PR / issue / thread / link". Clicking
+    it cycles the levels: normal → expanded (as Show all) → collapsed →
+    normal; a list that fits (`TaskList`'s `expand.onOverflow` reports false)
+    goes from normal straight to collapsed. Its accessible name leads with
+    the next action, "Show all tasks", "Collapse task list" or "Expand task
+    list", and carries the count and unread state (`Expand task list (3
+    open, unread activity)`), with `aria-expanded`. It is the same mounted
+    element in every level, so it keeps the keyboard focus. Collapsed, the
+    toolbar, list and quick add are not rendered; otherwise the toolbar
+    ("Sort:", a Select whose closed width fits the option it shows, and
+    "Show completed") sits right-aligned beside the summary.
   - **expanded**: "Show all" removes the cap and the button reads "Show
     less". Never saved: it is state keyed by `location | scope | resetKey`,
     and a stale key is dropped while rendering, so navigating, changing
@@ -1403,7 +1412,7 @@ to break.
   label and lets `aria-pressed` carry the state.
 - **Where quick add puts a task** (`quickAddAnchor` in `lib/taskSections.ts`):
   after the last visible open task in Custom and Priority sort, where the
-  display is master order; in Due and Recently updated, after the visible
+  display is master order; in Due and Updated, after the visible
   open task last in MASTER order (greatest `rank`), since display order
   means nothing there. Its priority picker starts at the list's priority
   filter when one is on (`defaultPriority`), or a new task would be created

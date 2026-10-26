@@ -25,10 +25,12 @@ const keepFromRow = (e: React.SyntheticEvent) => e.stopPropagation()
  * controls (state checkbox and its portalled menu, star, grip, link chip)
  * keep their clicks to themselves.
  */
-export function TaskRow({ task, ownResource, dragHandle, onState, onPriority, onToggleStar, onOpen }: {
+export function TaskRow({ task, ownResource, dragHandle, flush, onState, onPriority, onToggleStar, onOpen }: {
   task: Task
   ownResource?: { type: string; id: string }
   dragHandle?: ReactNode
+  /** No padding before the grip: the list has no section labels, so rows sit flush with the panel's edge. */
+  flush?: boolean
   onState: (s: TaskState) => void
   onPriority: (p: Priority) => void
   onToggleStar: () => void
@@ -54,7 +56,8 @@ export function TaskRow({ task, ownResource, dragHandle, onState, onPriority, on
       gap="xs"
       wrap="nowrap"
       py={4}
-      px="xs"
+      pl={flush ? 0 : "xs"}
+      pr="xs"
       onClick={onOpen ? () => onOpen() : undefined}
       style={onOpen ? { cursor: "pointer" } : undefined}
     >
@@ -72,6 +75,7 @@ export function TaskRow({ task, ownResource, dragHandle, onState, onPriority, on
       </span>
       <TaskStateCheckbox state={task.state} title={task.title} onPick={onState} />
       <ActionIcon
+        className="task-row-control"
         variant="transparent"
         size="sm"
         aria-label={task.starred ? `Unstar “${task.title}”` : `Star “${task.title}”`}

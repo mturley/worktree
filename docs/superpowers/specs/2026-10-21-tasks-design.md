@@ -350,7 +350,11 @@ releases its blocker holds, and does so permanently only on purge.
 Left to right: drag grip (shown on hover) · state checkbox · star · priority
 marker (`!!!` red / `!!` amber / `!` grey / blank) · title (one line,
 ellipsised) · chips: due, blocked, subtask progress (`2/5`), unread dot, link
-chip.
+chip. When the list shows no section labels, rows have no padding before the
+grip, so it lines up with the panel's edge and the full-width Show all
+button. The checkbox, star and priority mark show a hover background, as
+does the panel's summary toggle. In the state and priority
+menus, each option's checkbox or mark sits at its left, at the row's size.
 
 - **State checkbox**: empty = not started, **diagonally half-filled** =
   in progress, filled ✓ = done. Clicking opens a small menu of the three
@@ -370,9 +374,12 @@ chip.
 
 ### The list
 
-- Toolbar: Sort (Custom / Priority / …), Priority filter, "Show completed"
-  with its "Include archived" sub-toggle. There is no Pin button. The toolbar
-  sits in the task panel's header (see "The task panel").
+- Toolbar: "Sort:" (Custom / Priority / Due date / Updated), its closed
+  dropdown just wide enough for the option it shows, and "Show completed" with its "Include
+  archived" sub-toggle. There is no priority filter: Priority sort groups the
+  list by priority. There is no Pin
+  button. The toolbar sits right-aligned in the task panel's header (see
+  "The task panel").
 - Starred group at the top, then the rest, then (if shown) Completed. A
   section with no tasks is not rendered at all, so there are **no drop
   strips**; in Priority order every shown group is labelled, and an empty
@@ -409,18 +416,21 @@ A URL with `?tab=tasks` falls back to the pane's first tab.
 The panel is always shown, in the place the old pinned panel sat: just above
 the tab bar. On the home page that is the top of the right column. With a
 resource selected it's between the resource card and its tab bar. Its header
-reads "Tasks · N open", with the unread dot and the list toolbar. It has
+reads "Tasks (all | this worktree | this PR | this issue | this thread |
+this link)", with the unread dot and the list toolbar. It has
 three levels:
 
 - **Normal** (the default): the list is capped at `min(8 rows, 25dvh)` and
   scrolls inside itself, so it doesn't push the feed off-screen. When the
-  capped list overflows, a **Show all (N)** button sits directly under the
+  capped list overflows, a full-width **Show all (N)** button sits directly under the
   list, above quick add, where N is the number of tasks the list shows. A
   list that fits offers no Show all.
-- **Collapsed**: a top-right icon button ("Collapse task list") shrinks the
-  panel to one line, "Tasks · N open", the unread dot and a chevron. The whole
-  line is a button ("Expand task list") that returns it to normal. The
-  toolbar, list and quick add are hidden. Collapsed is **one global saved
+- **Collapsed**: the panel shrinks to its one-line summary, which then adds
+  " · N open". The summary itself (a chevron, "Tasks (…)" and the unread
+  dot, at the left of the header, with a generous click area) cycles the
+  levels: normal → expanded (as Show all) → collapsed → normal. A list that
+  fits skips expanded: normal goes straight to collapsed. The toolbar, list and quick
+  add are hidden. Collapsed is **one global saved
   setting**: `collapsed` (default `false`) in localStorage key
   `worktree.taskList`.
 - **Expanded**: Show all removes the cap, and the button becomes **Show

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useRef, useState } from "react"
 import { ActionIcon, Button, Group, Select, TextInput } from "@mantine/core"
 import type { Priority } from "../../api/types"
 
@@ -28,7 +28,7 @@ const PRIORITY_OPTIONS: { value: Priority; label: string }[] = [
  * While a create is in flight the controls are disabled, but the input is
  * only read-only: disabling it would drop focus, and Enter must keep it.
  */
-export function TaskQuickAdd({ onAdd, onOpen, defaultPriority = "none" }: {
+export function TaskQuickAdd({ onAdd, onOpen }: {
   /** Creates the task; resolves to it (its id is what "Add & open" opens). */
   onAdd(input: { title: string; priority: Priority; starred: boolean }): Promise<{ id: number } | void>
   /**
@@ -36,19 +36,10 @@ export function TaskQuickAdd({ onAdd, onOpen, defaultPriority = "none" }: {
    * creates the task, then opens it. Enter still adds and stays.
    */
   onOpen?: (id: number) => void
-  /**
-   * The picker's starting value: the list's priority filter, when one is on,
-   * so a new task is not created straight into hiding. It follows the filter
-   * when that changes.
-   */
-  defaultPriority?: Priority
 }) {
   const [title, setTitle] = useState("")
   const [starred, setStarred] = useState(false)
-  const [priority, setPriority] = useState<Priority>(defaultPriority)
-  useEffect(() => {
-    setPriority(defaultPriority)
-  }, [defaultPriority])
+  const [priority, setPriority] = useState<Priority>("none")
   const [focused, setFocused] = useState(false)
   const [busy, setBusy] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)

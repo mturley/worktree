@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react"
-import { ActionIcon, Box, Group, Stack, Text, Tooltip, UnstyledButton } from "@mantine/core"
-import { IconChevronDown, IconChevronUp } from "@tabler/icons-react"
+import { Box, Group, Stack, Text, UnstyledButton } from "@mantine/core"
+import { IconChevronDown, IconChevronRight, IconChevronsDown } from "@tabler/icons-react"
 import { useLocation } from "wouter"
 import { useTasks, type TaskScope } from "../../hooks/useTasks"
 import { useTaskListPrefs } from "../../hooks/useTaskListPrefs"
@@ -13,6 +13,21 @@ import { UnreadMarkerDot } from "../UnreadMarkerDot"
 const NORMAL_ROWS = 8
 
 export type TasksPanelLevel = "collapsed" | "normal" | "expanded"
+
+/** What a resource type is called in the panel's summary. */
+const RESOURCE_NOUN: Record<string, string> = { pr: "PR", jira: "issue", slack: "thread", link: "link" }
+
+/** Which tasks the panel lists, for its summary: "all", "this worktree", "this PR"… */
+export function scopeContext(scope: TaskScope): string {
+  switch (scope.kind) {
+    case "all":
+      return "all"
+    case "worktree":
+      return "this worktree"
+    case "resource":
+      return `this ${RESOURCE_NOUN[scope.type] ?? "resource"}`
+  }
+}
 
 /**
  * The task panel every page shows above its tab bar: the list for `scope`,
@@ -89,27 +104,52 @@ export function useTasksPanel(
     if (el.getBoundingClientRect().top < visibleTop) el.scrollIntoView({ block: "start" })
   }, [expanded, topInset])
 
-  // Collapse and Expand live in different branches, so the one activated
-  // unmounts: hand the focus to its counterpart, when it had it.
-  const collapseRef = useRef<HTMLButtonElement>(null)
-  const expandRef = useRef<HTMLButtonElement>(null)
-  const focusNext = useRef(false)
-  useLayoutEffect(() => {
-    if (!focusNext.current) return
-    focusNext.current = false
-    ;(collapsed ? expandRef : collapseRef).current?.focus()
-  }, [collapsed])
-  const toggleCollapsed = (next: boolean, from: HTMLElement) => {
-    focusNext.current = document.activeElement === from
+  const toggleCollapsed = (next: boolean) => {
     if (next) setExpandedKey(null)
     setPrefs({ collapsed: next })
   }
 
-  const count = (
-    <Group gap={6} wrap="nowrap">
-      <Text size="sm" fw={700}>Tasks · {open} open</Text>
-      {unread && <UnreadMarkerDot label="unread task activity" />}
-    </Group>
+  // One toggle on the left, the summary inside it, in both levels: the same
+  // element stays mounted, so it keeps the focus across a toggle.
+  // The summary cycles the levels: normal → expanded (Show all) → collapsed
+  // → normal. A list that fits has nothing to show all of, so normal goes
+  // straight to collapsed then.
+  const [overflows, setOverflows] = useState(false)
+  const toExpanded = !collapsed && !expanded && overflows
+  const cycle = () => {
+    if (collapsed) toggleCollapsed(false)
+    else if (toExpanded) setExpandedKey(key)
+    else toggleCollapsed(true)
+  }
+  const action = collapsed ? "Expand task list" : toExpanded ? "Show all tasks" : "Collapse task list"
+
+  const toggle = (
+    <UnstyledButton
+      // Leads with what it does; the count and the dot are in here too, or a
+      // screen reader would hear neither.
+      aria-label={`${action} (${open} open${unread ? ", unread activity" : ""})`}
+      aria-expanded={!collapsed}
+      onClick={cycle}
+      className="task-panel-toggle"
+      // A big target: it fills the header up to the toolbar, and reaches
+      // into the panel's padding (negative margin, matching padding) without
+      // moving what it shows.
+      style={{
+        flex: "1 1 auto",
+        alignSelf: "stretch",
+        margin: "calc(-1 * var(--mantine-spacing-xs))",
+        marginRight: 0,
+        padding: "var(--mantine-spacing-xs)",
+        paddingRight: 0,
+        borderRadius: "var(--mantine-radius-md)",
+      }}
+    >
+      <Group gap={6} wrap="nowrap">
+        {collapsed ? <IconChevronRight size={16} /> : expanded ? <IconChevronsDown size={16} /> : <IconChevronDown size={16} />}
+        <Text size="sm" fw={700}>Tasks ({scopeContext(scope)}){collapsed && ` · ${open} open`}</Text>
+        {unread && <UnreadMarkerDot label="unread task activity" />}
+      </Group>
+    </UnstyledButton>
   )
 
   const panel = (
@@ -121,49 +161,20 @@ export function useTasksPanel(
       data-level={level}
       style={topInset > 0 ? { scrollMarginTop: topInset } : undefined}
     >
-      {collapsed ? (
-        <UnstyledButton
-          ref={expandRef}
-          w="100%"
-          // Leads with "Expand task list"; the count and the dot are in here
-          // too, or a screen reader would hear neither.
-          aria-label={`Expand task list (${open} open${unread ? ", unread activity" : ""})`}
-          aria-expanded={false}
-          onClick={(e) => toggleCollapsed(false, e.currentTarget)}
-        >
-          <Group justify="space-between" gap="xs" wrap="nowrap">
-            {count}
-            <IconChevronDown size={16} />
-          </Group>
-        </UnstyledButton>
-      ) : (
-        <Stack gap={6}>
-          <Group justify="space-between" align="flex-start" gap="xs" wrap="nowrap">
-            <Group gap="xs" wrap="wrap">
-              {count}
-              <TaskListToolbar prefs={prefs} onChange={setPrefs} />
-            </Group>
-            <Tooltip label="Collapse the task list">
-              <ActionIcon
-                ref={collapseRef}
-                variant="subtle"
-                color="gray"
-                aria-label="Collapse task list"
-                aria-expanded
-                onClick={(e) => toggleCollapsed(true, e.currentTarget)}
-              >
-                <IconChevronUp size={16} />
-              </ActionIcon>
-            </Tooltip>
-          </Group>
+      <Stack gap={6}>
+        <Group gap="md" wrap="wrap">
+          {toggle}
+          {!collapsed && <Box ml="auto"><TaskListToolbar prefs={prefs} onChange={setPrefs} /></Box>}
+        </Group>
+        {!collapsed && (
           <TaskList
             scope={scope}
             ownResource={opts?.ownResource}
             maxRows={NORMAL_ROWS}
-            expand={{ expanded, onToggle: () => setExpandedKey(expanded ? null : key) }}
+            expand={{ expanded, onToggle: () => setExpandedKey(expanded ? null : key), onOverflow: setOverflows }}
           />
-        </Stack>
-      )}
+        )}
+      </Stack>
     </Box>
   )
 

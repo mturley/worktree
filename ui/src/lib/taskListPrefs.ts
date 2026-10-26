@@ -1,4 +1,3 @@
-import type { Priority } from "../api/types"
 import type { TaskListPrefs, TaskSort } from "./taskSections"
 
 /**
@@ -16,14 +15,12 @@ export type StoredTaskListPrefs = TaskListPrefs & { collapsed: boolean }
 
 export const DEFAULT_TASK_LIST_PREFS: StoredTaskListPrefs = {
   sort: "custom",
-  priority: "all",
   showCompleted: false,
   includeArchived: false,
   collapsed: false,
 }
 
 const SORTS: readonly TaskSort[] = ["custom", "priority", "due", "updated"]
-const PRIORITIES: readonly (Priority | "all")[] = ["all", "high", "medium", "low", "none"]
 
 /** Stored values over the defaults, each field checked on its own: a bad one falls back alone. */
 export function parseTaskListPrefs(raw: string | null): StoredTaskListPrefs {
@@ -38,7 +35,6 @@ export function parseTaskListPrefs(raw: string | null): StoredTaskListPrefs {
   if (typeof v !== "object" || v === null || Array.isArray(v)) return out
   const o = v as Record<string, unknown>
   if (SORTS.includes(o.sort as TaskSort)) out.sort = o.sort as TaskSort
-  if (PRIORITIES.includes(o.priority as Priority | "all")) out.priority = o.priority as Priority | "all"
   if (typeof o.showCompleted === "boolean") out.showCompleted = o.showCompleted
   if (typeof o.includeArchived === "boolean") out.includeArchived = o.includeArchived
   if (typeof o.collapsed === "boolean") out.collapsed = o.collapsed
