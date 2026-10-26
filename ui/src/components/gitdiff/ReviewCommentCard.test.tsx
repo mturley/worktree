@@ -241,6 +241,9 @@ describe("ReviewCommentCard", () => {
     expect(await screen.findByText("Part of your local review, not submitted anywhere.")).toBeInTheDocument()
     await userEvent.click(screen.getByRole("button", { name: "View all and copy" }))
     expect(window.sessionStorage.getItem("worktree.reviewSidebar")).toBe("true")
+    // Open, the link has nothing left to do.
+    expect(screen.queryByRole("button", { name: "View all and copy" })).not.toBeInTheDocument()
+    expect(screen.getByText("You (local)")).toBeInTheDocument()
   })
 
   it("in the sidebar, has no author line", () => {

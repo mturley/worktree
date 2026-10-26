@@ -13,7 +13,7 @@ import {
   useReviewCommentMutations,
   useReviewComments,
 } from "../../hooks/useReviewComments"
-import { setReviewSidebar } from "../../hooks/useReviewSidebar"
+import { useReviewSidebar } from "../../hooks/useReviewSidebar"
 import { NotesMarkdown } from "../NotesMarkdown"
 import { CommentEditor } from "./CommentEditor"
 import { DeleteCommentModal } from "./DeleteCommentModal"
@@ -66,6 +66,8 @@ export function ReviewCommentCard({ path, comment, variant, onJump, jumpDisabled
 }) {
   const { update } = useReviewCommentMutations(path)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  // "View all and copy" opens the sidebar, so it is offered only while closed.
+  const [sidebarOpen, setSidebarOpen] = useReviewSidebar()
   // The open edit lives in the store, not here, so it survives the card
   // remounting (see EditorDraft): its text, the version it started from, and
   // the newer comment a save found edited elsewhere, whose version the next
@@ -132,9 +134,11 @@ export function ReviewCommentCard({ path, comment, variant, onJump, jumpDisabled
                 <Tooltip label={SOURCE_STYLE[comment.source].authorTip} withArrow>
                   <Text size="xs" fw={600}>{SOURCE_STYLE[comment.source].author}</Text>
                 </Tooltip>
-                <Anchor component="button" type="button" size="xs" onClick={() => setReviewSidebar(true)}>
-                  View all and copy
-                </Anchor>
+                {!sidebarOpen && (
+                  <Anchor component="button" type="button" size="xs" onClick={() => setSidebarOpen(true)}>
+                    View all and copy
+                  </Anchor>
+                )}
               </>
             )}
             {variant === "sidebar" &&

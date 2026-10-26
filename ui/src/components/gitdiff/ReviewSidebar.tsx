@@ -31,7 +31,15 @@ export function ReviewSidebar({ path, comments, viewKey, prompt, onJump }: {
   return (
     <Stack gap="xs" p="xs">
       <Group gap="xs" wrap="wrap">
-        <Button size="compact-xs" variant="light" disabled={comments.length === 0} onClick={() => setSending(true)}>
+        {/* The unread blue, as the breadcrumb's Local review comments (lighter on hover). */}
+        <Button
+          size="compact-xs"
+          variant="filled"
+          color="blue"
+          vars={() => ({ root: { "--button-hover": "var(--mantine-color-blue-4)" } })}
+          disabled={comments.length === 0}
+          onClick={() => setSending(true)}
+        >
           Copy comments for agent
         </Button>
         <Button
