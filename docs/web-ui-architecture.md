@@ -2236,7 +2236,7 @@ other open tabs catch up on their next refetch.
 
 ### Open in editor (`editor_api.go`)
 
-The Code tab's top line (above the git summary) holds "Open in editor (`code`)" beside "Review changes", and the diff view's breadcrumb has the same button after its title (the page header has the cmux button there instead). The server turns its
+The Code tab's top line (above the git summary) holds "Open in editor (`code`)" followed by "Review changes", and the diff view's breadcrumb has the same button after its title (the page header has the cmux button there instead). The server turns its
 `POST /api/worktrees/open-editor {path}` into running the config's
 `editor` (read from disk per request, like `GET /api/settings`) with the
 worktree path, as `worktree open` does. The request waits for the command
@@ -2253,7 +2253,7 @@ updates it at once.
 ### Code tab and diff view (`worktree_git_api.go`, `worktree_diff_api.go`, `ui/src/components/gitdiff/`)
 
 The details card's old Environment tab is split: **Environment** keeps the
-env/ports and sits after **Code**, which follows Notes. **Code** (`GitDiffPanel`) shows "Review changes" and "Open in editor" on its top line (while the worktree has local review comments, "Review changes" is filled in the unread blue and reads `Review changes (N pending local comments)`, counted from the view-less `GET /api/review-comments` list), then the git summary (`GitSummary`:
+env/ports and sits after **Code**, which follows Notes. **Code** (`GitDiffPanel`) shows "Open in editor" then "Review changes" on its top line (while the worktree has local review comments, "Review changes" is filled in the unread blue and reads `Review changes (N pending local comments)`, counted from the view-less `GET /api/review-comments` list), then the git summary (`GitSummary`:
 merge-base against the main upstream, ahead/behind, tracking branch, working
 counts, background-fetch state) and a "Files changed" list (`FilesChangedList`)
 with two selectors: the **base** (`merge-base` or `tracking`, `CompareSelect`)

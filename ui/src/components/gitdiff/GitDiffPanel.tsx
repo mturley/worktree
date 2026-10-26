@@ -16,7 +16,7 @@ import { GitSummary } from "./GitSummary"
 import { RangePicker } from "./RangePicker"
 
 /**
- * The Code tab: Review changes and Open in editor, the git summary, then the
+ * The Code tab: Open in editor and Review changes, the git summary, then the
  * Files changed section.
  * Mounted only while the tab is selected, so `fetch: true` asks the server to
  * nudge its background fetch exactly while someone is looking.
@@ -36,7 +36,7 @@ export function GitDiffPanel({ path, repo, updated }: { path: string; repo: stri
   )
 }
 
-/** "Review changes · Open in editor": what to do with the changes, on its own line at the top. */
+/** "Open in editor · Review changes": what to do with the changes, on its own line at the top. */
 function Actions({ path, git }: { path: string; git: WorktreeGit }) {
   const diffView = useDiffView()
   // The same shared base as Files changed below, so both agree on whether there is a diff.
@@ -45,7 +45,9 @@ function Actions({ path, git }: { path: string; git: WorktreeGit }) {
   // With no view, the worktree's whole list: every comment not yet cleared.
   const pending = useReviewComments(path, undefined).data?.length ?? 0
   return (
-    <Group gap="xs" wrap="wrap">
+    // Spaced from the card's tabs above.
+    <Group gap="xs" wrap="wrap" mt="xs">
+      <OpenInEditorButton path={path} />
       {/* A review in progress is filled in the unread blue, as the diff view's
           own "Local review comments" button is, so it's hard to miss. */}
       <Button
@@ -60,7 +62,6 @@ function Actions({ path, git }: { path: string; git: WorktreeGit }) {
           ? `Review changes (${pending} pending local comment${pending === 1 ? "" : "s"})`
           : "Review changes"}
       </Button>
-      <OpenInEditorButton path={path} />
     </Group>
   )
 }

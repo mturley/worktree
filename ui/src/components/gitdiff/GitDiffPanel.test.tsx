@@ -98,12 +98,12 @@ describe("Files changed section", () => {
     expect(screen.getByText("+8")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Show files" })).toBeInTheDocument()
     expect(screen.queryByTestId("file-row")).toBeNull()
-    // At the top, above the git summary: Review changes, then Open in editor.
+    // At the top, above the git summary: Open in editor, then Review changes.
     const review = screen.getByRole("button", { name: "Review changes" })
     const editor = screen.getByRole("button", { name: /Open in editor/ })
-    expect(review.compareDocumentPosition(editor) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(editor.compareDocumentPosition(screen.getByText(/^upstream\/main @/)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(editor.compareDocumentPosition(screen.getByText("Files changed (2)")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(editor.compareDocumentPosition(review) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(review.compareDocumentPosition(screen.getByText(/^upstream\/main @/)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(review.compareDocumentPosition(screen.getByText("Files changed (2)")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it("expands and collapses from the chevron, remembering the choice", async () => {
