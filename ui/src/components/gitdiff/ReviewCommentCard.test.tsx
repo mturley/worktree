@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { act, cleanup, render, renderHook, screen, waitFor } from "@testing-library/react"
+import { act, cleanup, render, renderHook, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -9,6 +9,7 @@ const apiMock = vi.hoisted(() => ({
   createReviewComment: vi.fn(),
   updateReviewComment: vi.fn(),
   deleteReviewComment: vi.fn(),
+  reviewComments: vi.fn(),
 }))
 vi.mock("../../api/client", async (orig) => {
   const actual = await orig<typeof import("../../api/client")>()
@@ -51,7 +52,10 @@ function wrap(ui: React.ReactNode) {
   return { ...r, rerender: (u: React.ReactNode) => r.rerender(tree(u)) }
 }
 
-beforeEach(() => vi.clearAllMocks())
+beforeEach(() => {
+  vi.clearAllMocks()
+  apiMock.reviewComments.mockResolvedValue({ comments: [] })
+})
 afterEach(cleanup)
 
 describe("ReviewCommentCard", () => {
@@ -186,11 +190,28 @@ describe("ReviewCommentCard", () => {
     act(() => drafts.current.dismiss(7))
   })
 
-  it("delete calls remove without confirmation", async () => {
+  it.each(["inline", "sidebar"] as const)("delete asks first (%s)", async (variant) => {
     apiMock.deleteReviewComment.mockResolvedValue({})
+    wrap(<ReviewCommentCard path="/w" comment={item()} variant={variant} />)
+    await userEvent.click(screen.getByRole("button", { name: "Delete comment" }))
+    const dialog = await screen.findByRole("dialog", { name: "Delete comment" })
+    expect(within(dialog).getByText("Delete the comment on src/a.ts:3-5? This can't be undone.")).toBeInTheDocument()
+    await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }))
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
+    expect(apiMock.deleteReviewComment).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole("button", { name: "Delete comment" }))
+    await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Delete" }))
+    await waitFor(() => expect(apiMock.deleteReviewComment).toHaveBeenCalledWith("/w", 7))
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
+  })
+
+  it("a failed delete says why and stays open", async () => {
+    apiMock.deleteReviewComment.mockRejectedValue(new Error("boom"))
     wrap(<ReviewCommentCard path="/w" comment={item()} variant="inline" />)
     await userEvent.click(screen.getByRole("button", { name: "Delete comment" }))
-    await waitFor(() => expect(apiMock.deleteReviewComment).toHaveBeenCalledWith("/w", 7))
+    const dialog = await screen.findByRole("dialog", { name: "Delete comment" })
+    await userEvent.click(within(dialog).getByRole("button", { name: "Delete" }))
+    expect(await within(dialog).findByText("boom")).toBeInTheDocument()
   })
 
   it("out of date badge", () => {
@@ -229,7 +250,7 @@ describe("NewCommentCard", () => {
     const onDone = vi.fn()
     wrap(<NewCommentCard path="/w" target={target} view={view} onDone={onDone} />)
     await userEvent.type(screen.getByRole("textbox"), "nice")
-    await userEvent.click(screen.getByRole("button", { name: "Comment" }))
+    await userEvent.click(screen.getByRole("button", { name: "Start local review" }))
     await waitFor(() => expect(onDone).toHaveBeenCalled())
     expect(apiMock.createReviewComment).toHaveBeenCalledWith({
       path: "/w",
@@ -244,11 +265,30 @@ describe("NewCommentCard", () => {
     })
   })
 
+  it("starts the review, with a tooltip saying so, when there are no comments", async () => {
+    wrap(<NewCommentCard path="/w" target={target} view={view} onDone={() => {}} />)
+    await waitFor(() => expect(apiMock.reviewComments).toHaveBeenCalledWith("/w", { oldRev: "o1", newRev: "n1" }))
+    const submit = screen.getByRole("button", { name: "Start local review" })
+    expect(submit).toHaveAttribute("aria-disabled", "true")
+    await userEvent.hover(submit)
+    expect(await screen.findByText("Start collecting comments locally to hand off to an agent")).toBeInTheDocument()
+    // Empty, a click does nothing.
+    await userEvent.click(submit)
+    expect(apiMock.createReviewComment).not.toHaveBeenCalled()
+  })
+
+  it("adds to the review once there are comments", async () => {
+    apiMock.reviewComments.mockResolvedValue({ comments: [item()] })
+    wrap(<NewCommentCard path="/w" target={target} view={view} onDone={() => {}} />)
+    expect(await screen.findByRole("button", { name: "Add local comment" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Start local review" })).not.toBeInTheDocument()
+  })
+
   it("passes from and to for a commit range", async () => {
     apiMock.createReviewComment.mockResolvedValue({})
     wrap(<NewCommentCard path="/w" target={target} view={{ ...view, range: { from: "a", to: "b" } }} onDone={() => {}} />)
     await userEvent.type(screen.getByRole("textbox"), "x")
-    await userEvent.click(screen.getByRole("button", { name: "Comment" }))
+    await userEvent.click(screen.getByRole("button", { name: "Start local review" }))
     await waitFor(() =>
       expect(apiMock.createReviewComment).toHaveBeenCalledWith(expect.objectContaining({ from: "a", to: "b" })),
     )
@@ -277,7 +317,7 @@ describe("NewCommentCard", () => {
     const onDone = vi.fn()
     const first = wrap(<NewCommentCard path="/w-made" target={target} view={view} onDone={onDone} />)
     await userEvent.type(screen.getByRole("textbox"), "nice")
-    await userEvent.click(screen.getByRole("button", { name: "Comment" }))
+    await userEvent.click(screen.getByRole("button", { name: "Start local review" }))
     await waitFor(() => expect(onDone).toHaveBeenCalled())
     first.unmount()
     wrap(<NewCommentCard path="/w-made" target={target} view={view} onDone={onDone} />)
@@ -289,7 +329,7 @@ describe("NewCommentCard", () => {
     const onDone = vi.fn()
     wrap(<NewCommentCard path="/w" target={target} view={view} onDone={onDone} />)
     await userEvent.type(screen.getByRole("textbox"), "nice")
-    await userEvent.click(screen.getByRole("button", { name: "Comment" }))
+    await userEvent.click(screen.getByRole("button", { name: "Start local review" }))
     expect(await screen.findByText("boom")).toBeInTheDocument()
     expect(screen.getByRole("textbox")).toHaveValue("nice")
     expect(onDone).not.toHaveBeenCalled()

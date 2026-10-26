@@ -4,7 +4,7 @@ import { IconCheck, IconCopy } from "@tabler/icons-react"
 /** The review comments as one prompt, to copy into an agent's session. */
 export function SendToAgentModal({ opened, onClose, prompt }: { opened: boolean; onClose: () => void; prompt: string }) {
   return (
-    <Modal opened={opened} onClose={onClose} title="Send comments to agent" centered size="xl">
+    <Modal opened={opened} onClose={onClose} title="Copy comments for agent" centered size="xl">
       <Stack gap="sm">
         <Textarea
           aria-label="Prompt"

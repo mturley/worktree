@@ -11,8 +11,10 @@ import {
   useDeletedDrafts,
   useEditorDraft,
   useReviewCommentMutations,
+  useReviewComments,
 } from "../../hooks/useReviewComments"
 import { CommentEditor } from "./CommentEditor"
+import { DeleteCommentModal } from "./DeleteCommentModal"
 import type { CommentTarget } from "./commentRange"
 
 export const SOURCE_STYLE: Record<CommentSource, { borderColor: string; label?: string }> = {
@@ -47,7 +49,8 @@ export function ReviewCommentCard({ path, comment, variant, onJump, jumpDisabled
   /** The view (`old_rev..new_rev`) the comment's `view` position is for, when known. */
   viewKey?: string
 }) {
-  const { update, remove } = useReviewCommentMutations(path)
+  const { update } = useReviewCommentMutations(path)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
   // The open edit lives in the store, not here, so it survives the card
   // remounting (see EditorDraft): its text, the version it started from, and
   // the newer comment a save found edited elsewhere, whose version the next
@@ -134,8 +137,7 @@ export function ReviewCommentCard({ path, comment, variant, onJump, jumpDisabled
                   variant="subtle"
                   color="red"
                   aria-label="Delete comment"
-                  loading={remove.isPending}
-                  onClick={() => remove.mutate(comment.id)}
+                  onClick={() => setConfirmingDelete(true)}
                 >
                   <IconTrash size={14} />
                 </ActionIcon>
@@ -186,8 +188,14 @@ export function ReviewCommentCard({ path, comment, variant, onJump, jumpDisabled
         ) : (
           <Body text={comment.body} />
         )}
-        {remove.isError && <Text size="xs" c="red">{errMessage(remove.error)}</Text>}
       </Stack>
+      <DeleteCommentModal
+        opened={confirmingDelete}
+        onClose={() => setConfirmingDelete(false)}
+        path={path}
+        id={comment.id}
+        where={`${comment.file}:${lines}`}
+      />
     </Frame>
   )
 }
@@ -206,12 +214,15 @@ export function NewCommentCard({ path, target, view, onDone }: {
   const [stored, setDraft] = useEditorDraft(path, NEW_DRAFT_KEY)
   const draft = stored?.target === mine ? stored : undefined
   const drop = () => setDraft((d) => (d?.target === mine ? undefined : d))
+  // The view's own list (DiffView's query, shared): the first comment starts the review.
+  const started = (useReviewComments(path, { oldRev: view.oldRev, newRev: view.newRev }).data?.length ?? 0) > 0
   return (
     <Frame>
       <CommentEditor
         initial={draft?.text ?? ""}
         onChange={(text) => setDraft({ text, target: mine })}
-        submitLabel="Comment"
+        submitLabel={started ? "Add local comment" : "Start local review"}
+        submitTooltip={started ? undefined : "Start collecting comments locally to hand off to an agent"}
         busy={create.isPending}
         error={error}
         onCancel={() => {

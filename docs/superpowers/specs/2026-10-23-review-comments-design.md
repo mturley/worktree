@@ -16,7 +16,7 @@ What success looks like: he reads a diff once, top to bottom, comments as he goe
 2. **Edit and delete comments inline** in the diff, where they appear as widgets under the last line of their range.
 3. **"Review comments (N)" button** at the right end of the diff view's breadcrumb bar. It is shown only while there is at least one comment, and toggles a **right-hand sidebar**.
 4. **The sidebar lists every comment** in diff order (by file, then line). Each item is editable and deletable in place, and has a **jump** button that scrolls the diff to it.
-5. **"Send comments to agent"**, at the top of the sidebar, opens a modal with a single **read-only textarea** holding the prompt (format below) and a **copy to clipboard** button.
+5. **"Copy comments for agent"**, at the top of the sidebar, opens a modal with a single **read-only textarea** holding the prompt (format below) and a **copy to clipboard** button.
 6. **"Clear comments"**, at the top of the sidebar, asks for confirmation in a modal, then deletes every comment so a fresh review can start.
 7. **Comments persist in the database.** They survive reloads and are shared by every client (laptop, phone), scoped to the worktree.
 8. **Comments survive code changes** (see "When the code changes"): they move when their code just shifted, and are marked **out of date** when it changed. Positions handed to the agent are always accurate or explicitly flagged.
@@ -41,7 +41,7 @@ What success looks like: he reads a diff once, top to bottom, comments as he goe
 Phase 2 (read-only PR comments) and phase 3 (submit a review to GitHub) are tracked in `2026-10-23-review-comments-roadmap.md`. Phase 1 must leave room for them:
 
 - **PR comments shown inline, read-only**, visually distinct from Mike's drafts. So every comment has a `source` (phase 1 only `draft`), an author, and an editable flag in its DTO. The inline widget and the sidebar row are one component with per-source styling, so a read-only variant slots in.
-- **"Post review on PR"**: a button beside "Send comments to agent" opening a GitHub-style dropdown (top-level comment; Approve / Comment / Request changes). So:
+- **"Post review on PR"**: a button beside "Copy comments for agent" opening a GitHub-style dropdown (top-level comment; Approve / Comment / Request changes). So:
   - The sidebar's top area is an action row that can take another button.
   - Each comment's anchor is expressed in GitHub's review-comment terms: path, side (old/new = GitHub LEFT/RIGHT), start line, end line, and the commit it was written against.
   - Comments made against uncommitted changes record that (no commit). A later phase must say they can't be posted rather than fail.
@@ -59,7 +59,7 @@ Phase 2 (read-only PR comments) and phase 3 (submit a review to GitHub) are trac
 ### Editing and deleting
 
 - Inline and in the sidebar, the same comment is edited with the same fields. Saving uses the version check in "Concurrency".
-- Delete asks no confirmation: it's one comment, and it's easy to retype. Clear does ask.
+- Delete asks for confirmation in a modal (changed 2026-10-26 at Mike's request; first designed without one). Clear does ask too.
 
 ### The sidebar
 
@@ -108,7 +108,7 @@ Refresh reports what happened in one line, e.g. "5 still match, 2 moved, 1 out o
 
 Out-of-date comments can't be re-attached to a new line in phase 1. Deleting and re-commenting does the same job. *Builder's call to add a "re-attach" action if it falls out cheaply.*
 
-### The prompt ("Send comments to agent")
+### The prompt ("Copy comments for agent")
 
 Plain text with no preamble. Mike wraps it in his own words. Diff order. Example:
 
@@ -188,7 +188,7 @@ From the builder check:
 
 - Comments are deleted with their worktree, and when it's unregistered.
 - View positions resolve against the frozen view until Refresh, not live HEAD.
-- Delete has no confirmation. Clear does.
+- Delete and Clear both ask for confirmation.
 - Out-of-date comments aren't shown inline and can't be re-attached in phase 1.
 - The context window for matching is 3 lines each side, and matching has two tiers.
 - Other clients learn of changes by polling (5s), not push.

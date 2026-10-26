@@ -37,7 +37,7 @@ export function ReviewSidebar({ path, comments, viewKey, prompt, onJump, onClose
     <Stack gap="xs" p="xs">
       <Group gap="xs" wrap="wrap">
         <Button size="compact-xs" variant="light" disabled={comments.length === 0} onClick={() => setSending(true)}>
-          Send comments to agent
+          Copy comments for agent
         </Button>
         <Button
           size="compact-xs"

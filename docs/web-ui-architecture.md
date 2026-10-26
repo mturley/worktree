@@ -2371,7 +2371,7 @@ the scheduler is created**, so a change applies after `worktree ui` restarts.
 #### Review comments (`internal/reviewcomments`, `review_comments_api.go`, `review_comments_resolve.go`)
 
 Draft comments on lines or ranges of the diff, kept per worktree, shown inline
-and in a sidebar, and copied as one prompt for an agent ("Send comments to
+and in a sidebar, and copied as one prompt for an agent ("Copy comments for
 agent"). Nothing is posted anywhere; `source` is always `draft`, and the DTO's
 `source` / `author` / `editable` leave room for read-only PR comments later.
 
@@ -2504,12 +2504,17 @@ annotations.
 - `ReviewCommentCard` is the one card for inline and sidebar (`variant`), with
   per-source styling (`SOURCE_STYLE`). Badge `Out of date`; notes
   `Not in this view` / `Outside the changes` (jump disabled with that reason).
-  `Moved` comments show the new lines.
+  `Moved` comments show the new lines. Delete asks first (`DeleteCommentModal`,
+  `Delete the comment on file:lines?`).
+- `NewCommentCard`'s submit reads `Start local review` (tooltip `Start
+  collecting comments locally to hand off to an agent`) while the view's list
+  is empty, else `Add local comment`. It reads that list through the same
+  query as `DiffView`, so it adds no request.
 - Jump (`scrollToComment`) scrolls to the file, then centres the card, looking
   **only inside the diff scroller** (`.diff-body-scroller`), since the sidebar
   holds a copy with the same id. Jumping to a `not_in_view` comment sets the
   selection's base to the comment's and reloads, then scrolls once it is shown.
-- `ReviewSidebar` (title `Review comments (N)`) holds `Send comments to agent`
+- `ReviewSidebar` (opened by the breadcrumb's bright `Local review comments (N)`; the narrow drawer's title is `Local review comments`) holds `Copy comments for agent`
   (`SendToAgentModal`: `buildPrompt` text, `Copy to clipboard` / `Copied`) and
   `Clear comments` (`ClearCommentsModal`). The prompt uses each comment's
   `prompt` position: `file:lines`, `removed line, previously N`, or `out of

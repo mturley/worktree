@@ -529,13 +529,16 @@ export default function DiffView({
         {/* The branch, when there is one (empty when detached). */}
         <Text size="sm">{git?.branch ? `Changes (${git.branch})` : "Changes"}</Text>
         {reviewCount > 0 && (
+          // Bright either way, so the review in progress is hard to miss.
           <Button
             ml="auto"
-            size="compact-xs"
-            variant={reviewOpen ? "filled" : "light"}
+            size="xs"
+            variant="gradient"
+            gradient={{ from: "orange", to: "pink", deg: 90 }}
+            aria-pressed={reviewOpen}
             onClick={() => setReviewOpen(!reviewOpen)}
           >
-            {`Review comments (${reviewCount})`}
+            {`Local review comments (${reviewCount})`}
           </Button>
         )}
       </Group>
@@ -592,7 +595,7 @@ export default function DiffView({
           onClose={() => setReviewOpen(false)}
           position="right"
           size="85%"
-          title="Review comments"
+          title="Local review comments"
         >
           {reviewSidebar()}
         </Drawer>

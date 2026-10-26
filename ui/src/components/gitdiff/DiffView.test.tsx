@@ -368,32 +368,33 @@ describe("DiffView", () => {
     setup()
     await screen.findByTestId("diff-body")
     await waitFor(() => expect(apiMock.reviewComments).toHaveBeenCalledWith("/wt/foo", { oldRev: "mb", newRev: "snap" }))
-    expect(screen.queryByRole("button", { name: /Review comments/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /Local review comments/ })).not.toBeInTheDocument()
   })
 
-  it("shows Review comments (2) and toggles the sidebar", async () => {
+  it("shows Local review comments (2) and toggles the sidebar", async () => {
     listComments(() => [comment(1, "shown"), comment(2, "shown")])
     setup()
-    const button = await screen.findByRole("button", { name: "Review comments (2)" })
+    const button = await screen.findByRole("button", { name: "Local review comments (2)" })
     await waitFor(() => expect(screen.getByTestId("diff-body")).toHaveAttribute("data-comments", "1,2"))
-    expect(screen.queryByRole("button", { name: "Send comments to agent" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Copy comments for agent" })).not.toBeInTheDocument()
     await userEvent.click(button)
-    expect(screen.getByRole("button", { name: "Send comments to agent" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Copy comments for agent" })).toBeInTheDocument()
     expect(window.sessionStorage.getItem("worktree.reviewSidebar")).toBe("true")
+    expect(button).toHaveAttribute("aria-pressed", "true")
     await userEvent.click(screen.getByRole("button", { name: "Close review comments" }))
-    expect(screen.queryByRole("button", { name: "Send comments to agent" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Copy comments for agent" })).not.toBeInTheDocument()
     await userEvent.click(button)
     await userEvent.click(button)
-    expect(screen.queryByRole("button", { name: "Send comments to agent" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Copy comments for agent" })).not.toBeInTheDocument()
   })
 
   it("sidebar is a drawer when narrow", async () => {
     setViewport("narrow")
     listComments(() => [comment(1, "shown")])
     setup()
-    await userEvent.click(await screen.findByRole("button", { name: "Review comments (1)" }))
-    const drawer = await screen.findByRole("dialog", { name: "Review comments" })
-    expect(within(drawer).getByRole("button", { name: "Send comments to agent" })).toBeInTheDocument()
+    await userEvent.click(await screen.findByRole("button", { name: "Local review comments (1)" }))
+    const drawer = await screen.findByRole("dialog", { name: "Local review comments" })
+    expect(within(drawer).getByRole("button", { name: "Copy comments for agent" })).toBeInTheDocument()
     expect(within(drawer).queryByRole("button", { name: "Close review comments" })).not.toBeInTheDocument()
   })
 
@@ -440,7 +441,7 @@ describe("DiffView", () => {
     )
     apiMock.patches = [patch(), patch({ working_fingerprint: "W2", new_rev: "snap2" })]
     const { rerender } = setup()
-    await screen.findByRole("button", { name: "Review comments (4)" })
+    await screen.findByRole("button", { name: "Local review comments (4)" })
     expect(screen.queryByTestId("comment-recheck")).not.toBeInTheDocument()
     gitMock.value = git({ fingerprint: "F2", working_fingerprint: "W2" })
     rerender(tree())
@@ -456,12 +457,12 @@ describe("DiffView", () => {
     listComments(() => list)
     window.sessionStorage.setItem("worktree.reviewSidebar", "true")
     setup()
-    await screen.findByRole("button", { name: "Send comments to agent" })
+    await screen.findByRole("button", { name: "Copy comments for agent" })
     await waitFor(() => expect(apiMock.reviewComments).toHaveBeenCalledWith("/wt/foo", { oldRev: "mb", newRev: "snap" }))
     list = []
     await refetchComments()
-    await waitFor(() => expect(screen.queryByRole("button", { name: /Review comments/ })).not.toBeInTheDocument())
-    expect(screen.queryByRole("button", { name: "Send comments to agent" })).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Local review comments/ })).not.toBeInTheDocument())
+    expect(screen.queryByRole("button", { name: "Copy comments for agent" })).not.toBeInTheDocument()
     expect(window.sessionStorage.getItem("worktree.reviewSidebar")).toBe("false")
   })
 
@@ -470,18 +471,18 @@ describe("DiffView", () => {
     listComments(() => list)
     window.sessionStorage.setItem("worktree.reviewSidebar", "true")
     setup()
-    await screen.findByRole("button", { name: "Send comments to agent" })
+    await screen.findByRole("button", { name: "Copy comments for agent" })
     const drafts = renderHook(() => useDeletedDrafts("/wt/foo")).result
     act(() => drafts.current.add({ comment: comment(1, "shown"), text: "typed" }))
     await waitFor(() => expect(apiMock.reviewComments).toHaveBeenCalledWith("/wt/foo", { oldRev: "mb", newRev: "snap" }))
     list = []
     await refetchComments()
     await waitFor(() => expect(screen.getByTestId("diff-body")).toHaveAttribute("data-comments", ""))
-    expect(screen.getByRole("button", { name: "Review comments (1)" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Local review comments (1)" })).toBeInTheDocument()
     expect(screen.getByText("Deleted elsewhere")).toBeInTheDocument()
     expect(window.sessionStorage.getItem("worktree.reviewSidebar")).toBe("true")
     await userEvent.click(screen.getByRole("button", { name: "Dismiss" }))
-    await waitFor(() => expect(screen.queryByRole("button", { name: /Review comments/ })).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Local review comments/ })).not.toBeInTheDocument())
     expect(window.sessionStorage.getItem("worktree.reviewSidebar")).toBe("false")
   })
 
@@ -493,7 +494,7 @@ describe("DiffView", () => {
     })
     apiMock.patches = [patch(), patch({ new_rev: "snap2" })]
     setup()
-    expect(await screen.findByRole("button", { name: "Review comments (1)" })).toBeInTheDocument()
+    expect(await screen.findByRole("button", { name: "Local review comments (1)" })).toBeInTheDocument()
     expect(apiMock.diffPatch).toHaveBeenCalledTimes(2)
     expect(screen.queryByText(/unknown rev/)).not.toBeInTheDocument()
   })
@@ -534,7 +535,7 @@ describe("DiffView", () => {
       return { comments: [comment(1, "shown")] }
     })
     setup()
-    await screen.findByRole("button", { name: "Review comments (1)" })
+    await screen.findByRole("button", { name: "Local review comments (1)" })
     await waitFor(() => expect(apiMock.reviewComments).toHaveBeenCalledWith("/wt/foo", { oldRev: "mb", newRev: "snap" }))
     const edit = renderHook(() => useEditorDraft("/wt/foo", editDraftKey("inline", 1))).result
     act(() => edit.current[1]({ text: "typing", baseVersion: 1 }))
@@ -559,7 +560,7 @@ describe("DiffView", () => {
     })
     window.sessionStorage.setItem("worktree.reviewSidebar", "true")
     setup()
-    await screen.findByRole("button", { name: "Send comments to agent" })
+    await screen.findByRole("button", { name: "Copy comments for agent" })
     await waitFor(() => expect(apiMock.reviewComments).toHaveBeenCalledWith("/wt/foo", { oldRev: "mb", newRev: "snap" }))
     const edit = renderHook(() => useEditorDraft("/wt/foo", editDraftKey("sidebar", 1))).result
     act(() => edit.current[1]({ text: "typing", baseVersion: 1 }))
@@ -614,7 +615,7 @@ describe("DiffView", () => {
     await waitFor(() => expect(apiMock.reviewComments).toHaveBeenCalledWith("/wt/foo", { oldRev: "mb", newRev: "snap2" }))
     expect(screen.getByTestId("diff-body")).toHaveAttribute("data-comments", "")
     // The sidebar keeps the list meanwhile.
-    expect(screen.getByRole("button", { name: "Review comments (1)" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Local review comments (1)" })).toBeInTheDocument()
     await act(async () => answer({ comments: [comment(2, "shown")] }))
     await waitFor(() => expect(screen.getByTestId("diff-body")).toHaveAttribute("data-comments", "2"))
   })

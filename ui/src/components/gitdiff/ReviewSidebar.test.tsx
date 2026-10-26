@@ -65,7 +65,7 @@ describe("ReviewSidebar", () => {
 
   it("send opens the modal with the prompt and a copy button", async () => {
     wrap(sidebar())
-    await userEvent.click(screen.getByRole("button", { name: "Send comments to agent" }))
+    await userEvent.click(screen.getByRole("button", { name: "Copy comments for agent" }))
     const dialog = await screen.findByRole("dialog")
     expect(within(dialog).getByRole("textbox")).toHaveValue("the prompt")
     expect(within(dialog).getByRole("textbox")).toHaveAttribute("readonly")
