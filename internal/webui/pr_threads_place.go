@@ -15,19 +15,71 @@ type prThreadView struct {
 	view   *reviewViewDTO
 }
 
+// prGitMemo memoizes the git lookups thread anchoring makes, so threads
+// sharing a commit ask git once per placeThreads call.
+type prGitMemo struct {
+	dir       string
+	isCommit  map[string]bool
+	mergeBase map[string]string // commit\0base → merge-base, "" on failure
+}
+
+func newPRGitMemo(dir string) *prGitMemo {
+	return &prGitMemo{dir: dir, isCommit: map[string]bool{}, mergeBase: map[string]string{}}
+}
+
+func (m *prGitMemo) commitOK(rev string) bool {
+	if rev == "" {
+		return false
+	}
+	ok, seen := m.isCommit[rev]
+	if !seen {
+		ok = gitutil.IsCommit(m.dir, rev)
+		m.isCommit[rev] = ok
+	}
+	return ok
+}
+
+func (m *prGitMemo) mergeBaseOf(commit, base string) (string, bool) {
+	key := commit + "\x00" + base
+	mb, seen := m.mergeBase[key]
+	if !seen {
+		mb, _ = gitutil.MergeBaseOf(m.dir, commit, base)
+		m.mergeBase[key] = mb
+	}
+	return mb, mb != ""
+}
+
 // prThreadAnchor builds a synthetic comment for t from its first comment,
 // capturing the anchor from the file as that comment saw it: at its original
-// commit for the RIGHT side, and for LEFT at merge-base(original commit,
-// baseOid), the PR's base as it was. lines reads a file at a rev (nil when
-// unreadable). ok is false when the commit is not in the local repo, the
-// merge-base cannot be computed, or GitHub's lines are not in the file.
+// commit, lines OriginalStartLine (or OriginalLine) through OriginalLine.
+// When the original commit is not in the local repo (a force-push), it falls
+// back to the comment's current commit with StartLine (or Line) through Line,
+// provided that commit is local and Line is set. RIGHT is the new side at
+// that commit; LEFT is the old side at merge-base(commit, baseOid), the PR's
+// base as it was. lines reads a file at a rev (nil when unreadable). ok is
+// false when neither commit is usable, the merge-base cannot be computed, or
+// GitHub's lines are not in the file.
 func prThreadAnchor(dir string, t wgithub.ReviewThread, baseOid string, lines func(rev, file string) []string) (reviewcomments.Comment, bool) {
+	return anchorPRThread(newPRGitMemo(dir), t, baseOid, lines)
+}
+
+func anchorPRThread(m *prGitMemo, t wgithub.ReviewThread, baseOid string, lines func(rev, file string) []string) (reviewcomments.Comment, bool) {
 	if len(t.Comments) == 0 || t.Path == "" {
 		return reviewcomments.Comment{}, false
 	}
-	commit := t.Comments[0].OriginalCommit
-	if commit == "" || !gitutil.IsCommit(dir, commit) {
+	first := t.Comments[0]
+	var commit string
+	var start, end int
+	switch {
+	case m.commitOK(first.OriginalCommit):
+		commit, start, end = first.OriginalCommit, t.OriginalStartLine, t.OriginalLine
+	case t.Line != 0 && m.commitOK(first.Commit):
+		commit, start, end = first.Commit, t.StartLine, t.Line
+	default:
 		return reviewcomments.Comment{}, false
+	}
+	if start == 0 {
+		start = end
 	}
 	side, rev := reviewcomments.SideNew, commit
 	switch t.DiffSide {
@@ -36,7 +88,7 @@ func prThreadAnchor(dir string, t wgithub.ReviewThread, baseOid string, lines fu
 		if baseOid == "" {
 			return reviewcomments.Comment{}, false
 		}
-		mb, ok := gitutil.MergeBaseOf(dir, commit, baseOid)
+		mb, ok := m.mergeBaseOf(commit, baseOid)
 		if !ok {
 			return reviewcomments.Comment{}, false
 		}
@@ -44,11 +96,7 @@ func prThreadAnchor(dir string, t wgithub.ReviewThread, baseOid string, lines fu
 	default:
 		return reviewcomments.Comment{}, false
 	}
-	start := t.OriginalStartLine
-	if start == 0 {
-		start = t.OriginalLine
-	}
-	anchor, err := reviewcomments.Capture(lines(rev, t.Path), start, t.OriginalLine)
+	anchor, err := reviewcomments.Capture(lines(rev, t.Path), start, end)
 	if err != nil {
 		return reviewcomments.Comment{}, false
 	}
@@ -58,22 +106,33 @@ func prThreadAnchor(dir string, t wgithub.ReviewThread, baseOid string, lines fu
 // placeThreads places each of t's threads in view, in thread order. A thread
 // that cannot be anchored is "unavailable". GitHub's own outdated flag wins
 // over a local match, except where the thread is not in this view at all.
+//
+// With a nil view (no revs) nothing is placed: each placeable thread gets its
+// anchor and a nil view, and only unplaceable threads get a view, "unavailable".
 func (r *reviewResolver) placeThreads(dir string, t *wgithub.PRReviewThreads, view *reviewView) ([]prThreadView, error) {
 	unlock := r.lockDir(dir)
 	defer unlock()
 
-	viewFiles, err := r.changedFiles(dir, view.oldRev, view.newRev)
-	if err != nil {
-		return nil, err
+	var viewFiles []gitutil.FileChange
+	if view != nil {
+		var err error
+		if viewFiles, err = r.changedFiles(dir, view.oldRev, view.newRev); err != nil {
+			return nil, err
+		}
 	}
 	lines := func(rev, file string) []string { return r.linesAt(dir, rev, file) }
+	memo := newPRGitMemo(dir)
 	allByBase := map[string]allResult{}
 
 	out := make([]prThreadView, 0, len(t.Threads))
 	for _, th := range t.Threads {
-		c, ok := prThreadAnchor(dir, th, t.BaseRefOid, lines)
+		c, ok := anchorPRThread(memo, th, t.BaseRefOid, lines)
 		if !ok {
 			out = append(out, prThreadView{view: &reviewViewDTO{Status: "unavailable"}})
+			continue
+		}
+		if view == nil {
+			out = append(out, prThreadView{anchor: &c})
 			continue
 		}
 		v := r.placeInView(dir, c, view, viewFiles, allByBase)

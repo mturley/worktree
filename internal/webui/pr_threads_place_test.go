@@ -156,3 +156,51 @@ func TestPlaceThreadsGitHubOutdatedKeepsNotInView(t *testing.T) {
 		t.Fatalf("view = %+v", got.view)
 	}
 }
+
+func TestPlaceThreadsFallsBackToCurrentCommit(t *testing.T) {
+	wt := forkRepo(t)
+	commitFile(t, wt, "multi", "new1\nnew2\n"+rcMulti)
+	c2 := headSHA(t, wt)
+	_, ts := gitTestServer(t, wt, nil)
+	p := getPatch(t, ts, wt, "")
+
+	// The original commit was force-pushed away; GitHub's current position
+	// (delta at line 6) is on a local commit.
+	th := rightThread("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", 0, 4)
+	th.Comments[0].Commit = c2
+	th.StartLine, th.Line = 5, 6
+	got := placeOne(t, wt, th, p)
+	if got.view == nil || got.view.Status != "shown" || got.view.StartLine != 5 || got.view.EndLine != 6 {
+		t.Fatalf("view = %+v", got.view)
+	}
+	if got.anchor == nil || got.anchor.Rev != c2 || got.anchor.Anchor.Snippet[1] != "delta" {
+		t.Fatalf("anchor = %+v", got.anchor)
+	}
+}
+
+func TestPlaceThreadsNilView(t *testing.T) {
+	wt := forkRepo(t)
+	commitFile(t, wt, "multi", rcMulti)
+	c1 := headSHA(t, wt)
+	baseOid := strings.TrimSpace(gitIn(t, wt, "rev-parse", "origin/main"))
+
+	got, err := newReviewResolver().placeThreads(wt, &wgithub.PRReviewThreads{
+		BaseRefOid: baseOid,
+		Threads: []wgithub.ReviewThread{
+			rightThread(c1, 0, 4),
+			rightThread("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", 0, 4),
+		},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d", len(got))
+	}
+	if got[0].anchor == nil || got[0].anchor.Anchor.Start != 4 || got[0].view != nil {
+		t.Fatalf("placeable = anchor %+v view %+v", got[0].anchor, got[0].view)
+	}
+	if got[1].anchor != nil || got[1].view == nil || got[1].view.Status != "unavailable" {
+		t.Fatalf("unplaceable = anchor %+v view %+v", got[1].anchor, got[1].view)
+	}
+}
