@@ -79,6 +79,16 @@ func MergeBase(dir, ref string) (string, bool) {
 	return out, true
 }
 
+// MergeBaseOf returns the best common ancestor of revs a and b. ok is false
+// when either rev is unknown or they share no history.
+func MergeBaseOf(dir, a, b string) (string, bool) {
+	out, err := git(dir, "merge-base", a, b)
+	if err != nil || out == "" {
+		return "", false
+	}
+	return out, true
+}
+
 // AheadBehind counts the commits HEAD has that ref lacks (ahead) and the
 // commits ref has that HEAD lacks (behind).
 func AheadBehind(dir, ref string) (ahead, behind int, ok bool) {
