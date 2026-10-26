@@ -137,10 +137,15 @@ export function useTasksPanel(
       style={{
         flex: "1 1 auto",
         alignSelf: "stretch",
-        margin: "calc(-1 * var(--mantine-spacing-xs))",
-        marginRight: 0,
-        padding: "var(--mantine-spacing-xs)",
-        paddingRight: 0,
+        // Collapsed, it is the whole bar, to every edge of the panel. Open,
+        // it is short vertically (4px), so its hover doesn't fill the
+        // panel's top padding, and stops at the toolbar.
+        ...(collapsed
+          ? { margin: "calc(-1 * var(--mantine-spacing-xs))", padding: "var(--mantine-spacing-xs)" }
+          : {
+              margin: "-4px 0 -4px calc(-1 * var(--mantine-spacing-xs))",
+              padding: "4px 0 4px var(--mantine-spacing-xs)",
+            }),
         borderRadius: "var(--mantine-radius-md)",
       }}
     >
