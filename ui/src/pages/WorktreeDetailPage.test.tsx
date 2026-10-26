@@ -59,8 +59,10 @@ vi.mock("../hooks/useThread", () => ({
 // The drill-down is lazy and pulls in pierre; the page only decides when it
 // shows and what replaces it, so stand it in.
 vi.mock("../components/gitdiff/DiffView", () => ({
-  default: ({ headerHeight, escHint }: { headerHeight: number; escHint?: boolean }) => (
-    <div data-testid="diff-view" data-header={headerHeight} data-esc-hint={String(escHint)} />
+  default: ({ headerHeight, escHint, sidebarEscHint }: { headerHeight: number; escHint?: boolean; sidebarEscHint?: boolean }) => (
+    <div data-testid="diff-view" data-header={headerHeight} data-esc-hint={String(escHint)} data-sidebar-esc-hint={String(sidebarEscHint)}>
+      <textarea aria-label="comment editor" onKeyDown={(e) => { if (e.key === "Escape") e.stopPropagation() }} />
+    </div>
   ),
 }))
 
@@ -880,21 +882,20 @@ describe("search", () => {
     await waitFor(() => expect(detailArgs.at(-1)?.[4]).toBe("oauth"))
   })
 
-  it("puts the search bar right after Open in editor", () => {
-    setViewport("wide")
+  it.each(["wide", "narrow"] as const)("puts Switch cmux right before the search bar (%s)", async (viewport) => {
+    vi.spyOn(api, "cmux").mockResolvedValue({
+      available: true,
+      matches: { "/wt/foo": [{ ref: "workspace:1", title: "My workspace", color: "#AD1457", selected: false }] },
+    })
+    setViewport(viewport)
     wrap()
-    const editor = screen.getByRole("button", { name: /open in editor/i })
-    expect(editor.compareDocumentPosition(screen.getByRole("searchbox")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-  })
-
-  it("puts the search bar right after Open in editor when narrow", async () => {
-    setViewport("narrow")
-    wrap()
-    const editor = screen.getByRole("button", { name: /open in editor/i })
+    const cmux = await screen.findByRole("button", { name: "Switch cmux" })
     const box = screen.getByRole("searchbox")
-    expect(editor.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    const del = await screen.findByRole("button", { name: "Delete worktree" })
-    expect(box.compareDocumentPosition(del) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(cmux.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // Open in editor moved to the Code tab.
+    expect(document.querySelector("[data-detail-header]")).not.toHaveTextContent(/Open in editor/i)
+    expect(document.querySelector("[data-detail-toolbar]") ?? document.body).not.toHaveTextContent(/Open in editor/i)
+    vi.restoreAllMocks()
   })
 
   it("heads the resource list with its match count, leaving out the kept selection", async () => {
@@ -1122,6 +1123,47 @@ describe("WorktreeDetailPage diff drill-down", () => {
     await screen.findByTestId("diff-view")
     await userEvent.click(screen.getByTitle("Show notes"))
     await waitFor(() => expect(screen.queryByTestId("diff-view")).not.toBeInTheDocument())
+  })
+
+  describe("with the review sidebar open", () => {
+    beforeEach(() => { window.sessionStorage.setItem("worktree.reviewSidebar", "true") })
+    afterEach(() => { window.sessionStorage.removeItem("worktree.reviewSidebar") })
+
+    it("Esc closes the review sidebar before leaving the diff", async () => {
+      window.history.replaceState({}, "", diffUrl())
+      setViewport("wide")
+      wrap()
+      await screen.findByTestId("diff-view")
+      fireEvent.keyDown(document.body, { key: "Escape" })
+      await waitFor(() => expect(window.sessionStorage.getItem("worktree.reviewSidebar")).toBe("false"))
+      expect(screen.getByTestId("diff-view")).toBeInTheDocument()
+      expect(new URLSearchParams(window.location.search).has("diff")).toBe(true)
+      fireEvent.keyDown(document.body, { key: "Escape" })
+      await waitFor(() => expect(screen.queryByTestId("diff-view")).not.toBeInTheDocument())
+    })
+
+    it("only the sidebar's Esc hint shows while it is open", async () => {
+      window.history.replaceState({}, "", diffUrl())
+      setViewport("wide")
+      wrap()
+      const view = await screen.findByTestId("diff-view")
+      expect(view.dataset.escHint).toBe("false")
+      expect(view.dataset.sidebarEscHint).toBe("true")
+      fireEvent.keyDown(document.body, { key: "Escape" })
+      await waitFor(() => expect(screen.getByTestId("diff-view").dataset.escHint).toBe("true"))
+      expect(screen.getByTestId("diff-view").dataset.sidebarEscHint).toBe("false")
+    })
+
+    it("Esc in a comment editor does not close the sidebar or leave", async () => {
+      window.history.replaceState({}, "", diffUrl())
+      setViewport("wide")
+      wrap()
+      const editor = await screen.findByLabelText("comment editor")
+      editor.focus()
+      fireEvent.keyDown(editor, { key: "Escape" })
+      expect(window.sessionStorage.getItem("worktree.reviewSidebar")).toBe("true")
+      expect(screen.getByTestId("diff-view")).toBeInTheDocument()
+    })
   })
 
   it("goes back to the worktree on Esc, staying on the page", async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { render, screen } from "@testing-library/react"
+import { render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { DiffFileTree, type TreeFile } from "./DiffFileTree"
@@ -38,6 +38,16 @@ describe("DiffFileTree", () => {
     const row = screen.getByTestId("tree-file-a.go")
     expect(row).toHaveTextContent("+12")
     expect(row).toHaveTextContent("−4")
+  })
+
+  it("puts a blue dot on each file with comments", () => {
+    render(
+      <MantineProvider>
+        <DiffFileTree files={[f("a.go"), f("b.go")]} selected={null} onSelect={() => {}} commented={new Set(["b.go"])} />
+      </MantineProvider>,
+    )
+    expect(within(screen.getByTestId("tree-file-b.go")).getByRole("img", { name: "has comments" })).toBeInTheDocument()
+    expect(within(screen.getByTestId("tree-file-a.go")).queryByRole("img", { name: "has comments" })).toBeNull()
   })
 
   it("calls onSelect with the file's path when a file is clicked", async () => {
@@ -85,6 +95,24 @@ describe("DiffFileTree", () => {
     )
     expect(screen.queryByTestId("tree-file-ui/src/a.ts")).not.toBeInTheDocument()
     expect(screen.getByTestId("tree-file-go.mod")).toBeInTheDocument()
+  })
+
+  it("remembers every directory's state across a filter that hides it", async () => {
+    const all = [f("ui/src/a.ts"), f("ui/README.md"), f("docs/x.md"), f("docs/y.md")]
+    const tree = (files: TreeFile[]) => (
+      <MantineProvider>
+        <DiffFileTree files={files} selected={null} onSelect={() => {}} />
+      </MantineProvider>
+    )
+    const { rerender } = render(tree(all))
+    await userEvent.click(screen.getByText("src"))
+    expect(screen.queryByTestId("tree-file-ui/src/a.ts")).not.toBeInTheDocument()
+    // A filter matching only go.mod hides every directory; clearing it brings them back as they were.
+    rerender(tree([f("go.mod")]))
+    rerender(tree(all))
+    expect(screen.queryByTestId("tree-file-ui/src/a.ts")).not.toBeInTheDocument()
+    expect(screen.getByTestId("tree-file-ui/README.md")).toBeInTheDocument()
+    expect(screen.getByTestId("tree-file-docs/x.md")).toBeInTheDocument()
   })
 
   it("leaves file rows Mantine's per-level indent", () => {

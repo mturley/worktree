@@ -838,3 +838,50 @@ export interface TaskUnread {
   /** The newest of those events; sent as through_ts to mark the task read. */
   newest_ts: string
 }
+
+// Review comments
+
+export type CommentSource = "draft"
+export type CommentSide = "old" | "new"
+
+export interface ReviewComment {
+  id: number
+  source: CommentSource
+  author?: string
+  editable: boolean
+  file: string
+  side: CommentSide
+  start_line: number
+  end_line: number
+  rev: string
+  base: DiffBase
+  base_ref: string
+  range_from?: string
+  range_to?: string
+  snippet: string[]
+  body: string
+  version: number
+  created_at: string
+  updated_at: string
+}
+
+export type ViewStatus = "shown" | "outdated" | "not_in_view" | "outside_changes"
+
+export interface ReviewCommentItem extends ReviewComment {
+  view?: { status: ViewStatus; start_line?: number; end_line?: number; moved?: boolean }
+  prompt: { status: "current" | "moved" | "outdated" | "removed"; start_line: number; end_line: number }
+}
+
+export interface NewReviewComment {
+  path: string
+  file: string
+  side: CommentSide
+  start_line: number
+  end_line: number
+  body: string
+  base: DiffBase
+  from?: string
+  to?: string
+  old_rev: string
+  new_rev: string
+}

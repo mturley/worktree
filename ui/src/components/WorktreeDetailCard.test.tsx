@@ -162,11 +162,11 @@ describe("WorktreeDetailCard", () => {
 const openCode = async () => userEvent.click(await screen.findByRole("tab", { name: /^Code/ }))
 
 describe("tabs", () => {
-  it("orders them Notes, Environment, Code, cmux", async () => {
+  it("orders them Notes, Code, Environment, cmux", async () => {
     worktreeInfo.mockResolvedValue(info())
     wrap(summary())
     await screen.findByRole("tab", { name: "cmux" })
-    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Notes", "Environment", "Code", "cmux"])
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Notes", "Code", "Environment", "cmux"])
   })
 })
 

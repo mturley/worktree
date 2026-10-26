@@ -20,7 +20,8 @@ const (
 // can refuse anything else. /file runs `git show <rev>:<file>`, and an
 // arbitrary rev would let a caller read any object in the repository; a
 // snapshot tree built from the working tree (which excludes ignored files) is
-// only reachable by being named in a /patch response. Entries expire and the
+// only reachable by being named in a /patch response. Entries expire once
+// unused for revSetTTL (each hit renews one), and the
 // set is capped, oldest evicted first, so it cannot grow without bound.
 type revSet struct {
 	mu      sync.Mutex
@@ -55,12 +56,19 @@ func (s *revSet) add(path string, revs ...string) {
 	}
 }
 
+// has reports whether rev was handed out for path. A hit renews the entry,
+// so the TTL counts from last use: a view kept open (its comment list is
+// polled) never loses its revs, while an abandoned one still expires.
 func (s *revSet) has(path, rev string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.pruneLocked(s.now())
-	for _, e := range s.entries {
+	now := s.now()
+	s.pruneLocked(now)
+	for i, e := range s.entries {
 		if e.path == path && e.rev == rev {
+			// Moved to the end, keeping the entries in time order for pruneLocked.
+			s.entries = append(s.entries[:i], s.entries[i+1:]...)
+			s.entries = append(s.entries, revEntry{path, rev, now})
 			return true
 		}
 	}
@@ -116,25 +124,31 @@ func (s *Server) diffTargetFor(w http.ResponseWriter, r *http.Request) (diffTarg
 		writeError(w, http.StatusConflict, "worktree is missing from disk")
 		return diffTarget{}, false
 	}
-	var ref string
-	switch base := r.URL.Query().Get("base"); base {
-	case "merge-base":
-		ref, ok = gitutil.MainUpstream(dir)
-		if !ok {
-			writeError(w, http.StatusConflict, "no upstream main branch to compare against")
-			return diffTarget{}, false
-		}
-	case "tracking":
-		ref, ok = gitutil.TrackingBranch(dir)
-		if !ok {
-			writeError(w, http.StatusConflict, "this branch has no tracking branch")
-			return diffTarget{}, false
-		}
-	default:
-		writeError(w, http.StatusBadRequest, "base must be merge-base or tracking")
+	ref, status, msg := baseRefFor(dir, r.URL.Query().Get("base"))
+	if status != 0 {
+		writeError(w, status, msg)
 		return diffTarget{}, false
 	}
 	return diffTarget{dir: dir, baseRef: ref}, true
+}
+
+// baseRefFor maps a base value to the ref it compares against. status is 0 on
+// success, else the HTTP status and message to answer with.
+func baseRefFor(dir, base string) (ref string, status int, msg string) {
+	var ok bool
+	switch base {
+	case "merge-base":
+		if ref, ok = gitutil.MainUpstream(dir); !ok {
+			return "", http.StatusConflict, "no upstream main branch to compare against"
+		}
+	case "tracking":
+		if ref, ok = gitutil.TrackingBranch(dir); !ok {
+			return "", http.StatusConflict, "this branch has no tracking branch"
+		}
+	default:
+		return "", http.StatusBadRequest, "base must be merge-base or tracking"
+	}
+	return ref, 0, ""
 }
 
 // commitsAndListID lists the branch's commits and the list's identity.

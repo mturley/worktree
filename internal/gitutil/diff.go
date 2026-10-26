@@ -139,6 +139,20 @@ func DiffPatch(dir, oldRev, newRev string, ignoreWhitespace bool) (string, error
 	return out, nil
 }
 
+// IsCommit reports whether rev names a commit (as opposed to a tree, such as
+// a working-tree snapshot, or nothing at all).
+func IsCommit(dir, rev string) bool {
+	out, err := git(dir, "cat-file", "-t", rev)
+	return err == nil && out == "commit"
+}
+
+// BlobSHA returns the object id of file at rev (a commit or a tree), and
+// whether the file exists there.
+func BlobSHA(dir, rev, file string) (string, bool) {
+	out, err := git(dir, "rev-parse", "--verify", "--quiet", rev+":"+file)
+	return out, err == nil && out != ""
+}
+
 // ShowFile returns file's contents at rev (a commit or a tree), byte for byte.
 func ShowFile(dir, rev, file string) ([]byte, error) {
 	out, err := gitRaw(dir, nil, "show", rev+":"+file)

@@ -282,3 +282,25 @@ func TestRevSetExpiresAndEvicts(t *testing.T) {
 		t.Fatalf("len = %d", len(rs.entries))
 	}
 }
+
+func TestRevSetHasSlidesTheExpiry(t *testing.T) {
+	now := time.Unix(1000, 0)
+	rs := newRevSet()
+	rs.now = func() time.Time { return now }
+
+	rs.add("/a", "used", "untouched")
+	// Asked about every 20 minutes: well past the TTL in all, never idle that long.
+	for i := 0; i < 3; i++ {
+		now = now.Add(20 * time.Minute)
+		if !rs.has("/a", "used") {
+			t.Fatalf("entry in use expired after %d checks", i)
+		}
+	}
+	if rs.has("/a", "untouched") {
+		t.Fatal("an entry nobody asks about should still expire")
+	}
+	now = now.Add(revSetTTL + time.Second)
+	if rs.has("/a", "used") {
+		t.Fatal("an entry left idle past the TTL should expire")
+	}
+}

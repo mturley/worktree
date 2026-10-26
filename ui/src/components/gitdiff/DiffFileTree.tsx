@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react"
 import { Box, Text, Tree, getTreeExpandedState, useTree, type TreeNodeData } from "@mantine/core"
 import { IconChevronRight, IconFile } from "@tabler/icons-react"
+import { UnreadMarkerDot } from "../UnreadMarkerDot"
 
 export interface TreeFile {
   path: string
@@ -57,32 +58,38 @@ function toNodes(d: Dir, prefix: string): TreeNodeData[] {
  * The diff view sidebar's file tree: directories collapsible, single-child
  * directory chains compacted, `+x −y` per file. Clicking a file selects it
  * (the view scrolls the diff to it); clicking a directory only folds it.
+ * A file with review comments gets the unread blue dot.
  */
 export function DiffFileTree({
   files,
   selected,
   onSelect,
+  commented,
 }: {
   files: TreeFile[]
   selected: string | null
   onSelect: (path: string) => void
+  commented?: ReadonlySet<string>
 }) {
   const data = useMemo(() => build(files), [files])
   const tree = useTree({ initialExpandedState: getTreeExpandedState(data, "*") })
-  const { setExpandedState } = tree
-  // Directories that appear later (the patch arriving after mount, the filter
-  // narrowing and widening again) start open; ones already folded stay
-  // folded. Tracked by what this component has seen rather than by what the
-  // expanded state holds: Tree's own effect (a child's, so it runs first)
-  // records every new node as collapsed, so "not in the state yet" never
-  // holds by the time this runs.
-  const seen = useRef(new Set<string>())
+  const { expandedState, setExpandedState } = tree
+  // Each directory as it was last left, kept here because Tree's own effect
+  // (a child's, so it runs first) rebuilds the expanded state from the nodes
+  // in `data` alone: one the filter hid would come back collapsed, and one
+  // that appears later (the patch arriving after mount) arrives collapsed.
+  // So on every new `data`, a directory gets its remembered state, or opens
+  // when it is new. Declared before the recorder below, so in the commit
+  // that brings new data the recorder still sees the old state, never Tree's
+  // collapsed rebuild.
+  const remembered = useRef(new Map<string, boolean>())
   useEffect(() => {
-    const fresh = Object.keys(getTreeExpandedState(data, "*")).filter((v) => !seen.current.has(v))
-    if (fresh.length === 0) return
-    for (const v of fresh) seen.current.add(v)
-    setExpandedState((prev) => ({ ...prev, ...Object.fromEntries(fresh.map((v) => [v, true])) }))
+    const values = Object.keys(getTreeExpandedState(data, "*"))
+    setExpandedState((prev) => ({ ...prev, ...Object.fromEntries(values.map((v) => [v, remembered.current.get(v) ?? true])) }))
   }, [data, setExpandedState])
+  useEffect(() => {
+    for (const [v, isOpen] of Object.entries(expandedState)) remembered.current.set(v, isOpen)
+  }, [expandedState])
 
   return (
     <Tree
@@ -129,6 +136,7 @@ export function DiffFileTree({
           >
             <IconFile size={12} style={{ flexShrink: 0 }} />
             <Text size="xs" truncate style={{ flex: 1, minWidth: 0 }}>{node.label}</Text>
+            {commented?.has(file.path) && <UnreadMarkerDot label="has comments" />}
             <Text size="xs" ff="monospace" style={{ flexShrink: 0, whiteSpace: "nowrap" }}>
               {file.binary ? (
                 <Text span inherit c="dimmed">bin</Text>

@@ -196,6 +196,32 @@ func migrate(conn *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS task_blockers_task ON task_blockers (task_id)`,
 		`CREATE INDEX IF NOT EXISTS task_blockers_blocking ON task_blockers (blocking_task_id)`,
 		`CREATE INDEX IF NOT EXISTS task_blockers_resource ON task_blockers (resource_type, resource_id)`,
+		// Review comments on a worktree's diff. Unlike worktree_notes, these
+		// are removed with the worktree by resources.RemoveAll. Positions are
+		// never trusted from clients; the anchor (lines, snippet, context) is
+		// written once at create time.
+		`CREATE TABLE IF NOT EXISTS review_comments (
+			id             INTEGER PRIMARY KEY AUTOINCREMENT,
+			worktree       TEXT NOT NULL, -- wdb.Subscriber(path)
+			file           TEXT NOT NULL,
+			side           TEXT NOT NULL CHECK (side IN ('old','new')),
+			start_line     INTEGER NOT NULL,
+			end_line       INTEGER NOT NULL,
+			rev            TEXT NOT NULL,
+			base           TEXT NOT NULL,
+			base_ref       TEXT NOT NULL,
+			range_from     TEXT NOT NULL DEFAULT '',
+			range_to       TEXT NOT NULL DEFAULT '',
+			snippet        TEXT NOT NULL,
+			context_before TEXT NOT NULL, -- JSON array of lines
+			context_after  TEXT NOT NULL, -- JSON array of lines
+			body           TEXT NOT NULL,
+			source         TEXT NOT NULL DEFAULT 'draft',
+			version        INTEGER NOT NULL DEFAULT 1,
+			created_at     TEXT NOT NULL,
+			updated_at     TEXT NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS review_comments_worktree ON review_comments(worktree)`,
 	}
 	for _, s := range stmts {
 		if _, err := conn.Exec(s); err != nil {

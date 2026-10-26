@@ -1,7 +1,7 @@
-import type { DiffBase, DiffCommits, DiffFiles, DiffPatch, DiffRange, WorktreeGit, AllResourceDTO, CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, CredResult, DefaultBranchResponse, CredService, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, ResourceReadChange, Priority, Task, TaskState, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, UpdateStatus, WatcherHealth, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherAuthSettings, WatcherConfigSettings, WorktreeInfo, WorktreeNotes, WorktreeSettings, WorktreeSummary, TaskActivityFilter, TaskDetail, TaskEventSnapshot, TaskLinkTarget, TimelineEvent, TaskScope, TaskUnread, TaskBlockerTarget, TaskDeleteResult } from "./types"
+import type { DiffBase, DiffCommits, DiffFiles, DiffPatch, DiffRange, WorktreeGit, AllResourceDTO, CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, CredResult, DefaultBranchResponse, CredService, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, ResourceReadChange, Priority, Task, TaskState, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, UpdateStatus, WatcherHealth, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherAuthSettings, WatcherConfigSettings, WorktreeInfo, WorktreeNotes, WorktreeSettings, WorktreeSummary, TaskActivityFilter, TaskDetail, TaskEventSnapshot, TaskLinkTarget, TimelineEvent, TaskScope, TaskUnread, TaskBlockerTarget, TaskDeleteResult, NewReviewComment, ReviewComment, ReviewCommentItem } from "./types"
 
 export class HttpError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(message: string, readonly status: number, readonly body?: unknown) {
     super(message)
     this.name = "HttpError"
   }
@@ -25,8 +25,9 @@ export function reportIfLoginRequired(res: Response): boolean {
 async function fetchJSON<T>(url: string, init?: RequestInit, opts: { reportLoginRequired?: boolean } = {}): Promise<T> {
   const res = await fetch(url, init)
   if (opts.reportLoginRequired !== false) reportIfLoginRequired(res)
-  const data = await res.json().catch(() => null)
-  if (!res.ok) throw new HttpError((data && data.error) || `HTTP ${res.status}`, res.status)
+  // 204 has no body: nothing to parse, and callers of those endpoints ignore the value.
+  const data = res.status === 204 ? null : await res.json().catch(() => null)
+  if (!res.ok) throw new HttpError((data && data.error) || `HTTP ${res.status}`, res.status, data ?? undefined)
   return data as T
 }
 
@@ -369,6 +370,19 @@ export const api = {
     if (ignoreWs) params.set("ignore_ws", "1")
     return fetchJSON<DiffPatch>(`/api/worktree-diff/patch?${params}`)
   },
+  reviewComments: (path: string, view?: { oldRev: string; newRev: string }) => {
+    const params = new URLSearchParams({ path })
+    if (view) {
+      params.set("old_rev", view.oldRev)
+      params.set("new_rev", view.newRev)
+    }
+    return fetchJSON<{ comments: ReviewCommentItem[] }>(`/api/review-comments?${params}`)
+  },
+  createReviewComment: (req: NewReviewComment) => postJSON<ReviewComment>("/api/review-comments", req),
+  updateReviewComment: (req: { path: string; id: number; version: number; body: string }) =>
+    postJSON<ReviewComment>("/api/review-comments/update", req),
+  deleteReviewComment: (path: string, id: number) => postJSON<void>("/api/review-comments/delete", { path, id }),
+  clearReviewComments: (path: string) => postJSON<void>("/api/review-comments/clear", { path }),
   diffFileContents: (path: string, rev: string, file: string) =>
     fetchText(`/api/worktree-diff/file?${new URLSearchParams({ path, rev, file })}`),
   openInEditor: (path: string, file?: string) =>

@@ -10,6 +10,7 @@ import (
 	watcherdb "github.com/mturley/watcher/db"
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/notifyprefs"
+	"github.com/mturley/worktree/internal/reviewcomments"
 	"github.com/mturley/worktree/internal/unread"
 )
 
@@ -154,6 +155,30 @@ func TestRemoveAllClearsSubscriptionsAndPrimary(t *testing.T) {
 	}
 	if n != 0 {
 		t.Fatalf("expected 0 worktree_primary rows, got %d", n)
+	}
+}
+
+func TestRemoveAllDeletesReviewComments(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/rc"
+	_, err := reviewcomments.Create(conn, wt, reviewcomments.NewComment{
+		File: "a.go", Side: reviewcomments.SideNew, Rev: reviewcomments.RevUncommitted,
+		Base: "main", BaseRef: "abc",
+		Anchor: reviewcomments.Anchor{Start: 1, End: 1, Snippet: []string{"x"}},
+		Body:   "hi",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveAll(conn, wt); err != nil {
+		t.Fatal(err)
+	}
+	cs, err := reviewcomments.List(conn, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cs) != 0 {
+		t.Fatalf("expected no review comments after RemoveAll, got %+v", cs)
 	}
 }
 

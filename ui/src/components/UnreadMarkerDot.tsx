@@ -4,11 +4,12 @@
  * Purely presentational, and deliberately the only place its dimensions and
  * colour are written down: the resource dot (UnreadDot in ResourceStatusIcon)
  * and the per-event dot (EventRow) are the same visual signal, and two copies
- * of the same 7px circle drift apart the first time either is tweaked.
+ * of the same 7px circle drift apart the first time either is tweaked. The
+ * diff view's file tree borrows it for a file with review comments.
  *
- * The aria-label is the caller's, not this component's — the two callers label
- * different subjects ("unread" for a resource, "unread event" for one event)
- * and tests assert on those exact strings.
+ * The aria-label is the caller's, not this component's — the callers label
+ * different subjects ("unread" for a resource, "unread event" for one event,
+ * "has comments" for a file) and tests assert on those exact strings.
  */
 export function UnreadMarkerDot({ label }: { label: string }) {
   return (

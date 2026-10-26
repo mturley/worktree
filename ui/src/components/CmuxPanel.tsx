@@ -1,5 +1,5 @@
 import { ActionIcon, Button, Group, Popover, Stack, Text, TextInput, Tooltip, UnstyledButton } from "@mantine/core"
-import { IconPencil, IconPrompt } from "@tabler/icons-react"
+import { IconPencil } from "@tabler/icons-react"
 import { useQuery } from "@tanstack/react-query"
 import { useState } from "react"
 import { api } from "../api/client"
@@ -63,17 +63,6 @@ function WorkspaceBlock({ path, ws, onMove, onClose, onDragActiveChange }: {
   // One line under the header; cleared by the next action that succeeds.
   const [error, setError] = useState<string | null>(null)
   const act = async (action: () => Promise<CmuxActionResult>) => setError(await run(action))
-  // Tracked separately from `error` so the button disables for the
-  // duration of the switch, not just while an earlier error is showing.
-  const [switching, setSwitching] = useState(false)
-  const switchHere = async () => {
-    setSwitching(true)
-    try {
-      setError(await run(() => api.cmuxSelect(ws.id)))
-    } finally {
-      setSwitching(false)
-    }
-  }
 
   return (
     <Stack gap={6}>
@@ -82,16 +71,7 @@ function WorkspaceBlock({ path, ws, onMove, onClose, onDragActiveChange }: {
         <div style={{ flex: "0 1 auto", minWidth: 0 }}>
           <EditableTitle title={ws.title} onSave={(t) => act(() => api.cmuxRename(ws.id, t))} />
         </div>
-        <Button
-          size="compact-xs"
-          variant="subtle"
-          style={{ flex: "none" }}
-          leftSection={<IconPrompt size={14} />}
-          disabled={ws.selected || switching}
-          onClick={switchHere}
-        >
-          {ws.selected ? "Current" : "Switch cmux"}
-        </Button>
+        {/* No Switch cmux here: the page header has it. */}
       </Group>
       {error && <Text size="xs" c="red">{error}</Text>}
       {ws.error ? (

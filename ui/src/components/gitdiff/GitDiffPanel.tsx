@@ -5,8 +5,10 @@ import type { WorktreeGit } from "../../api/types"
 import { useDiffCommits, useDiffFiles } from "../../hooks/useDiffData"
 import { useDiffSelection } from "../../hooks/useDiffSelection"
 import { useDiffView } from "../../hooks/useDiffView"
+import { useReviewComments } from "../../hooks/useReviewComments"
 import { useWorktreeGit } from "../../hooks/useWorktreeGit"
 import { diffUnavailable } from "../../lib/diffLabels"
+import { OpenInEditorButton } from "../OpenInEditorButton"
 import { CompareSelect } from "./CompareSelect"
 import { FilesChangedList } from "./FilesChangedList"
 import { Loading } from "./Loading"
@@ -14,7 +16,8 @@ import { GitSummary } from "./GitSummary"
 import { RangePicker } from "./RangePicker"
 
 /**
- * The Code tab: the git summary, then the Files changed section.
+ * The Code tab: Open in editor and Review changes, the git summary, then the
+ * Files changed section.
  * Mounted only while the tab is selected, so `fetch: true` asks the server to
  * nudge its background fetch exactly while someone is looking.
  */
@@ -26,9 +29,40 @@ export function GitDiffPanel({ path, repo, updated }: { path: string; repo: stri
   if (!git.data) return <Loading />
   return (
     <Stack gap="sm">
+      {git.data.on_disk && <Actions path={path} git={git.data} />}
       <GitSummary path={path} git={git.data} repo={repo} updated={updated} />
       {git.data.on_disk && <FilesChanged path={path} git={git.data} />}
     </Stack>
+  )
+}
+
+/** "Open in editor · Review changes": what to do with the changes, on its own line at the top. */
+function Actions({ path, git }: { path: string; git: WorktreeGit }) {
+  const diffView = useDiffView()
+  // The same shared base as Files changed below, so both agree on whether there is a diff.
+  const { base } = useDiffSelection(path, undefined)
+  const unavailable = diffUnavailable(git, base)
+  // With no view, the worktree's whole list: every comment not yet cleared.
+  const pending = useReviewComments(path, undefined).data?.length ?? 0
+  return (
+    // Spaced from the card's tabs above.
+    <Group gap="xs" wrap="wrap" mt="xs">
+      <OpenInEditorButton path={path} />
+      {/* A review in progress is filled in the unread blue, as the diff view's
+          own "Local review comments" button is, so it's hard to miss. */}
+      <Button
+        size="xs"
+        variant={pending > 0 ? "filled" : "light"}
+        color={pending > 0 ? "blue" : undefined}
+        vars={pending > 0 ? () => ({ root: { "--button-hover": "var(--mantine-color-blue-4)" } }) : undefined}
+        disabled={!!unavailable}
+        onClick={() => diffView.enter()}
+      >
+        {pending > 0
+          ? `Review changes (${pending} pending local comment${pending === 1 ? "" : "s"})`
+          : "Review changes"}
+      </Button>
+    </Group>
   )
 }
 
@@ -56,7 +90,7 @@ function writeFilesOpen(open: boolean): void {
 }
 
 /**
- * "▸ Files changed (N) +x −y · Compare with · Changes from · View diff", then
+ * "▸ Files changed (N) +x −y · Compare with · Changes from", then
  * the list while expanded. The selection is the worktree's shared one, so the
  * diff view and the tab badge follow it.
  */
@@ -121,9 +155,6 @@ function FilesChanged({ path, git }: { path: string; git: WorktreeGit }) {
           labelPosition="left"
           disabled={!!unavailable || !commits.data}
         />
-        <Button size="xs" variant="light" disabled={!!unavailable} onClick={() => diffView.enter()}>
-          View diff
-        </Button>
       </Group>
       {/* Collapsed, only what explains a header with no count stays. */}
       <Box>

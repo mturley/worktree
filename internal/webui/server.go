@@ -43,6 +43,11 @@ type Server struct {
 	revs   *revSet
 	revsMu sync.Mutex
 
+	// review resolves review comment positions and caches their inputs.
+	// Created on first use (see reviewResolver).
+	review   *reviewResolver
+	reviewMu sync.Mutex
+
 	// Security is required to serve (Start and Serve refuse a nil one). A
 	// Handler built without it skips the Host and session guards, which is
 	// what in-process tests rely on.
@@ -298,6 +303,11 @@ func (s *Server) routes() []route {
 		{"GET /api/worktree-diff/file", s.handleDiffFile},
 		{"GET /api/worktree-notes", s.handleGetWorktreeNotes},
 		{"POST /api/worktree-notes", s.handleSetWorktreeNotes},
+		{"GET /api/review-comments", s.handleListReviewComments},
+		{"POST /api/review-comments", s.handleCreateReviewComment},
+		{"POST /api/review-comments/update", s.handleUpdateReviewComment},
+		{"POST /api/review-comments/delete", s.handleDeleteReviewComment},
+		{"POST /api/review-comments/clear", s.handleClearReviewComments},
 		{"POST /api/notify", s.handleSetNotify},
 		{"GET /api/tasks", s.handleListTasks},
 		{"POST /api/tasks", s.handleCreateTask},

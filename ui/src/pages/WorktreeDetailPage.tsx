@@ -5,7 +5,6 @@ import { useQueryClient } from "@tanstack/react-query"
 import { api } from "../api/client"
 import { NotifySwitch } from "../components/NotifySwitch"
 import { FollowingCmuxBanner } from "../components/FollowingCmuxBanner"
-import { OpenInEditorButton } from "../components/OpenInEditorButton"
 import { Logo } from "../components/Logo"
 import { IconChevronLeft } from "@tabler/icons-react"
 import { useNotifyMode } from "../hooks/useNotifyMode"
@@ -16,6 +15,7 @@ import { useIsWide } from "../hooks/useIsWide"
 import { useIsTall } from "../hooks/useIsTall"
 import { useDetailTab } from "../hooks/useDetailTab"
 import { useDiffView } from "../hooks/useDiffView"
+import { useReviewSidebar } from "../hooks/useReviewSidebar"
 import { useWorktrees } from "../hooks/useWorktrees"
 import { UnreadMarkerDot } from "../components/UnreadMarkerDot"
 import { useCmuxMatches } from "../api/cmux"
@@ -102,6 +102,9 @@ export function WorktreeDetailPage() {
   // card and the resources) under the same header.
   const diffView = useDiffView()
   const inDiff = diffView.open
+  // DiffView closes this itself when there is nothing to list, so the flag
+  // is "the sidebar is showing". Esc closes it before it leaves the diff.
+  const [sidebarOpen, setSidebarOpen] = useReviewSidebar()
   // The details card's tab is the page's: it decides where the card sits
   // (see inColumn below), and Esc returns it to Notes.
   const detailTab = useDetailTab(path, inDiff)
@@ -242,7 +245,7 @@ export function WorktreeDetailPage() {
   const [pendingFollowUrl, setPendingFollowUrl] = useState<string | null>(null)
   // The card's tab also decides where it sits, wide: Notes in the resource
   // column above Follow resource, so the activity column gets the page's
-  // height; Environment, Code and cmux, which want the width, under the
+  // height; Code, Environment and cmux, which want the width, under the
   // header. Narrow has no side column, so the card is always under the header.
   const inColumn = wide && detailTab.tab === "notes"
   // Narrow only: which of Resources / Activity / Tasks is showing.
@@ -641,11 +644,12 @@ export function WorktreeDetailPage() {
 
   // Left-aligned either way. Wide, it sits right after the titles (see the
   // header below); narrow, it leads the toolbar's own row and the auto
-  // margin pushes everything else to the right.
-  const editorButton = (
-    <div style={{ flex: "none" }}>
-      <OpenInEditorButton path={path} />
-    </div>
+  // margin pushes everything else to the right. (Open in editor lives in the
+  // Code tab, beside Review changes.)
+  const cmuxButton = summary && (
+    <Group gap="xs" wrap="nowrap" style={{ flex: "none" }}>
+      <CmuxWorkspaceActions path={path} branch={summary.branch} />
+    </Group>
   )
 
   const suggestions = buildSuggestions({
@@ -660,11 +664,12 @@ export function WorktreeDetailPage() {
     },
   })
   // Wide, it takes the width the titles leave free; narrow, it sits right
-  // after the editor button and the auto margin pushes the other actions right.
+  // after the cmux button, filling the rest of the row.
   // Esc with nothing left to clear: deselect, then leave — for the tab's
   // home worktree when it has one, else for the listing. On the home
   // worktree itself it stops at deselecting.
   const escapeIdle = () => {
+    if (inDiff && sidebarOpen) { setSidebarOpen(false); return }
     if (inDiff) { diffView.leave(); return }
     if (selected) { clear(); return }
     if (!escLeaves) return
@@ -691,24 +696,13 @@ export function WorktreeDetailPage() {
     </div>
   )
 
-  const actions = (
-    <>
-      {!wide && editorButton}
-      {!wide && searchBar}
-      {summary && <CmuxWorkspaceActions path={path} branch={summary.branch} />}
-    </>
-  )
-
-  // Wide, the toolbar sits beside the titles and must not shrink. Narrow, it
-  // gets a row of its own, right-aligned (kept beside the titles, it left
-  // them a sliver of width that wrapped them a few letters per line).
-  const toolbar = wide ? (
-    <Group gap="xs" wrap="nowrap" style={{ flex: "none" }} data-detail-toolbar>
-      {actions}
-    </Group>
-  ) : (
+  // Wide, the cmux button and search bar sit beside the titles. Narrow, they
+  // get a row of their own (kept beside the titles, they left them a sliver
+  // of width that wrapped them a few letters per line).
+  const toolbar = !wide && (
     <Group gap="xs" wrap="wrap" justify="flex-end" data-detail-toolbar>
-      {actions}
+      {cmuxButton}
+      {searchBar}
     </Group>
   )
 
@@ -830,10 +824,9 @@ export function WorktreeDetailPage() {
                   {summary && !summary.on_disk && <Badge size="xs" color="red">missing</Badge>}
                 </Group>
               </Stack>
-              {wide && editorButton}
+              {wide && cmuxButton}
               {wide && searchBar}
             </Group>
-            {wide && toolbar}
           </Group>
           {!wide && toolbar}
           {/* Pinned with the header only with room to spare; otherwise
@@ -855,7 +848,7 @@ export function WorktreeDetailPage() {
       {inDiff ? (
         <DiffViewBoundary>
           <Suspense fallback={null}>
-            <DiffView path={path} headerHeight={headerHeight} escHint={escDiff} />
+            <DiffView path={path} headerHeight={headerHeight} escHint={escDiff && !sidebarOpen} sidebarEscHint={escDiff && sidebarOpen} />
           </Suspense>
         </DiffViewBoundary>
       ) : (
