@@ -26,8 +26,13 @@ const task = (id: number, extra: Partial<Task> = {}): Task => ({
 const ALL: TaskScope = { kind: "all" }
 
 /** A page's shape: the panel above its tab bar. */
-function Host({ scope = ALL, unread, testId = "host" }: { scope?: TaskScope; unread?: number; testId?: string }) {
-  const t = useTasksPanel(scope, { unread })
+function Host({ scope = ALL, unread, resetKey, testId = "host" }: {
+  scope?: TaskScope
+  unread?: number
+  resetKey?: string
+  testId?: string
+}) {
+  const t = useTasksPanel(scope, { unread, resetKey })
   return (
     <div data-testid={testId} data-expanded={t.expanded}>
       {t.above(<div data-testid="bar">tab bar</div>)}
@@ -175,26 +180,32 @@ describe("useTasksPanel", () => {
     expect(panel()).toHaveAttribute("data-level", "normal")
   })
 
-  it("a panel that leaves the page and comes back is normal; one that only moves stays expanded", async () => {
+  it("a change of resetKey resets expanded, and changing it back stays normal", async () => {
     mockOverflow()
-    /** The worktree page's shape: the hook outlives its panel. */
-    function Mover({ where }: { where: "a" | "b" | "none" }) {
-      const t = useTasksPanel(ALL)
-      return (
-        <>
-          <section data-testid="a">{where === "a" && t.panel}</section>
-          <div data-testid="b">{where === "b" && t.panel}</div>
-        </>
-      )
-    }
-    const { rerender } = wrap(<Mover where="a" />)
+    const { rerender } = wrap(<Host resetKey="" />)
     await within(panel()).findByText("task 1")
     await expand()
-    // Re-parented in one commit, as the home page's tab bar is on a tab change.
-    rerender(<Mover where="b" />)
-    expect(panel(screen.getByTestId("b"))).toHaveAttribute("data-level", "expanded")
-    await act(async () => rerender(<Mover where="none" />))
-    await act(async () => rerender(<Mover where="b" />))
+    rerender(<Host resetKey="" />)
+    expect(panel()).toHaveAttribute("data-level", "expanded")
+    rerender(<Host resetKey="pr:o/r#1" />)
+    expect(panel()).toHaveAttribute("data-level", "normal")
+    rerender(<Host resetKey="" />)
+    expect(panel()).toHaveAttribute("data-level", "normal")
+  })
+
+  it("a collapse from another browser tab clears expanded: un-collapsing gives normal", async () => {
+    mockOverflow()
+    wrap(<Host />)
+    await within(panel()).findByText("task 1")
+    await expand()
+    const fromOtherTab = (collapsed: boolean) =>
+      act(() => {
+        window.localStorage.setItem(TASK_LIST_KEY, JSON.stringify({ collapsed }))
+        window.dispatchEvent(new StorageEvent("storage", { key: TASK_LIST_KEY }))
+      })
+    fromOtherTab(true)
+    expect(panel()).toHaveAttribute("data-level", "collapsed")
+    fromOtherTab(false)
     expect(panel()).toHaveAttribute("data-level", "normal")
   })
 

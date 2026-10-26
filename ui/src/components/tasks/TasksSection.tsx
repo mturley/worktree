@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react"
+import { useState, type ReactNode } from "react"
 import { ActionIcon, Box, Group, Stack, Text, Tooltip, UnstyledButton } from "@mantine/core"
 import { IconChevronDown, IconChevronUp } from "@tabler/icons-react"
 import { useLocation } from "wouter"
@@ -11,30 +11,6 @@ import { UnreadMarkerDot } from "../UnreadMarkerDot"
 
 /** Rows the normal panel shows before its list scrolls inside itself. */
 const NORMAL_ROWS = 8
-
-/**
- * Counts the panel on screen, and calls `onGone` once none is left after a
- * commit. A page whose hook outlives its panel (the worktree page, whose
- * panel gives way to a selected resource's pane while its own scope stays
- * the same) then comes back to a normal panel, not an expanded one. A panel
- * that only moves within one commit (the home page's tab bar, re-parented
- * under another tab's header) unmounts and remounts before the check runs,
- * so a tab change keeps expanded.
- */
-function PanelPresence({ count, onGone }: { count: { current: number }; onGone: () => void }) {
-  const gone = useRef(onGone)
-  gone.current = onGone
-  useLayoutEffect(() => {
-    count.current++
-    return () => {
-      count.current--
-      queueMicrotask(() => {
-        if (count.current === 0) gone.current()
-      })
-    }
-  }, [count])
-  return null
-}
 
 export type TasksPanelLevel = "collapsed" | "normal" | "expanded"
 
@@ -56,6 +32,11 @@ export type TasksPanelLevel = "collapsed" | "normal" | "expanded"
  * other tabs cannot show them (a Slack thread's pane); above 0 an unread dot
  * sits by the count, at every level.
  *
+ * `opts.resetKey` is anything else that should put an expanded panel back
+ * to normal, for a page whose hook outlives its panel: the worktree page
+ * passes its selected resource, since selecting one swaps its panel for the
+ * resource pane's while the worktree's own path and scope stay the same.
+ *
  * Where the page pins a header (sticky, data-tooltip-layer="pinned"), render
  * `above(tabBar)` inside it rather than `panel` above it: the panel stays in
  * view with the tab bar, and its tooltips share the header's layer. The
@@ -64,7 +45,7 @@ export type TasksPanelLevel = "collapsed" | "normal" | "expanded"
  */
 export function useTasksPanel(
   scope: TaskScope,
-  opts?: { ownResource?: { type: string; id: string }; unread?: number },
+  opts?: { ownResource?: { type: string; id: string }; unread?: number; resetKey?: string },
 ): { panel: ReactNode; expanded: boolean; above: (bar: ReactNode) => ReactNode } {
   const [prefs, setPrefs] = useTaskListPrefs()
   const { collapsed } = prefs
@@ -74,16 +55,16 @@ export function useTasksPanel(
   const unread = (opts?.unread ?? 0) > 0
   const [location] = useLocation()
 
-  // Expanded is the key it was set under: once path or scope moves on, the
-  // key no longer matches and the panel is normal again, without an effect.
-  // A stale key is dropped as soon as it is seen (React's "adjust state while
-  // rendering"), so coming back to the old path or scope stays normal.
-  const key = `${location}|${JSON.stringify(scope)}`
+  // Expanded is the key it was set under: once path, scope or resetKey moves
+  // on, the key no longer matches and the panel is normal again, without an
+  // effect. A stale key is dropped as soon as it is seen (React's "adjust
+  // state while rendering"), so coming back to the old key stays normal; so
+  // is any key while collapsed, so a collapse from another browser tab
+  // un-collapses to normal.
+  const key = `${location}|${JSON.stringify(scope)}|${opts?.resetKey ?? ""}`
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
-  if (expandedKey !== null && expandedKey !== key) setExpandedKey(null)
+  if (expandedKey !== null && (collapsed || expandedKey !== key)) setExpandedKey(null)
   const expanded = !collapsed && expandedKey === key
-  // How many copies of the panel are on screen; see PanelPresence.
-  const shown = useRef(0)
   const level: TasksPanelLevel = collapsed ? "collapsed" : expanded ? "expanded" : "normal"
 
   const count = (
@@ -95,7 +76,6 @@ export function useTasksPanel(
 
   const panel = (
     <Box className="task-panel" p="xs" data-testid="tasks-panel" data-level={level}>
-      <PanelPresence count={shown} onGone={() => setExpandedKey(null)} />
       {collapsed ? (
         <UnstyledButton
           w="100%"

@@ -59,6 +59,7 @@ import { matchResource } from "../lib/search"
 import { CrossHoverProvider } from "../components/CrossHoverContext"
 import { DiffViewBoundary, installPreloadReload } from "../components/gitdiff/DiffViewBoundary"
 import { useTasksPanel } from "../components/tasks/TasksSection"
+import { serializeResourceKey } from "../lib/resourceKey"
 import { useMakeTask, useMakeTaskFromEvent } from "../components/tasks/useMakeTask"
 import { useTaskModal } from "../components/tasks/modal/TaskModalProvider"
 
@@ -250,9 +251,11 @@ export function WorktreeDetailPage() {
   // Narrow only: which of Resources / Activity is showing.
   const [narrowTab, setNarrowTab] = useState<NarrowTab>("resources")
   // The worktree's task panel, above the tab bar. A selected resource's pane
-  // shows its own (see ResourceDetailPane).
+  // shows its own (see ResourceDetailPane). This hook outlives the panel
+  // while a resource is selected, so the selection resets an expanded panel:
+  // coming back from a resource shows it normal.
   const taskScope = useMemo(() => ({ kind: "worktree" as const, path }), [path])
-  const tasks = useTasksPanel(taskScope)
+  const tasks = useTasksPanel(taskScope, { resetKey: selected ? serializeResourceKey(selected) : "" })
 
   // The sticky resource list has to start below the header, and the header's
   // height is not a constant: the worktree and cmux workspace names wrap, and
