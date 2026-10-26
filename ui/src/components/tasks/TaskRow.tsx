@@ -3,14 +3,8 @@ import { ActionIcon, Badge, Group, Text, Tooltip, UnstyledButton } from "@mantin
 import type { Priority, Task, TaskState } from "../../api/types"
 import { dueLabel, linkChip } from "../../lib/taskSections"
 import { TaskStateCheckbox } from "./TaskStateCheckbox"
+import { TaskPriorityMenu } from "./TaskPriorityMenu"
 import { UnreadMarkerDot } from "../UnreadMarkerDot"
-
-const PRIORITY_MARK: Record<Priority, { text: string; color: string } | null> = {
-  high: { text: "!!!", color: "var(--mantine-color-red-4)" },
-  medium: { text: "!!", color: "var(--mantine-color-amber-4, var(--mantine-color-yellow-4))" },
-  low: { text: "!", color: "var(--mantine-color-gray-5)" },
-  none: null,
-}
 
 const DUE_COLOR = {
   overdue: "red",
@@ -31,16 +25,16 @@ const keepFromRow = (e: React.SyntheticEvent) => e.stopPropagation()
  * controls (state checkbox and its portalled menu, star, grip, link chip)
  * keep their clicks to themselves.
  */
-export function TaskRow({ task, ownResource, dragHandle, onState, onToggleStar, onOpen }: {
+export function TaskRow({ task, ownResource, dragHandle, onState, onPriority, onToggleStar, onOpen }: {
   task: Task
   ownResource?: { type: string; id: string }
   dragHandle?: ReactNode
   onState: (s: TaskState) => void
+  onPriority: (p: Priority) => void
   onToggleStar: () => void
   /** Opens the task's modal. Absent for the drag overlay's copy of the row. */
   onOpen?: () => void
 }) {
-  const mark = PRIORITY_MARK[task.priority]
   const due = task.due ? dueLabel(task.due, new Date()) : null
   const link = linkChip(task, ownResource)
   const titleText = (
@@ -90,14 +84,7 @@ export function TaskRow({ task, ownResource, dragHandle, onState, onToggleStar, 
       >
         {task.starred ? "★" : "☆"}
       </ActionIcon>
-      <Text
-        span
-        fw={700}
-        size="sm"
-        style={{ width: 22, flex: "none", color: mark?.color, visibility: mark ? "visible" : "hidden" }}
-      >
-        {mark?.text ?? "!"}
-      </Text>
+      <TaskPriorityMenu priority={task.priority} title={task.title} onPick={onPriority} />
       {onOpen ? (
         <UnstyledButton
           style={{ flex: 1, minWidth: 0, display: "block" }}

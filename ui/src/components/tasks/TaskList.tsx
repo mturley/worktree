@@ -152,6 +152,7 @@ function SortableTaskRow({ task, section, sortDraggable, ownResource, mutations,
         ownResource={ownResource}
         dragHandle={grip}
         onState={pickState}
+        onPriority={(priority) => run(update(task.id, { priority }))}
         onToggleStar={() => run(update(task.id, { starred: !task.starred }))}
         onOpen={() => onOpen(task.id)}
       />
@@ -303,7 +304,7 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
         <DragOverlay dropAnimation={null}>
           {activeTask ? (
             <Box className="task-panel" style={{ cursor: "grabbing" }} data-testid="task-drag-overlay">
-              <TaskRow task={activeTask} ownResource={ownResource} onState={() => {}} onToggleStar={() => {}} />
+              <TaskRow task={activeTask} ownResource={ownResource} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} />
             </Box>
           ) : null}
         </DragOverlay>

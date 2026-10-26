@@ -127,8 +127,19 @@ body,
   opacity: 1;
 }
 
+.task-priority-none {
+  opacity: 0;
+}
+[data-task-row]:hover .task-priority-none,
+[data-task-row]:focus-within .task-priority-none {
+  opacity: 0.35;
+}
+
 @media (hover: none) {
   [data-task-row] .task-grip {
     opacity: 1;
+  }
+  .task-priority-none {
+    opacity: 0.35;
   }
 }

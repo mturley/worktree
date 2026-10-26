@@ -43,7 +43,7 @@ describe("TaskRow", () => {
         due: iso, subtasks_total: 5, subtasks_done: 2,
         links: [{ kind: "resource", resource_type: "github_pr", resource_id: "o/r#5", focus: true, archived: false }],
       })}
-      onState={() => {}} onToggleStar={() => {}}
+      onState={() => {}} onPriority={() => {}} onToggleStar={() => {}}
     />)
     expect(screen.getByText("Write the thing")).toBeInTheDocument()
     expect(screen.getByText("!!!")).toBeInTheDocument()
@@ -56,14 +56,14 @@ describe("TaskRow", () => {
     wrap(<TaskRow
       task={task({ links: [{ kind: "resource", resource_type: "github_pr", resource_id: "o/r#5", focus: true, archived: false }] })}
       ownResource={{ type: "github_pr", id: "o/r#5" }}
-      onState={() => {}} onToggleStar={() => {}}
+      onState={() => {}} onPriority={() => {}} onToggleStar={() => {}}
     />)
     expect(screen.queryByTestId("task-link-chip")).toBeNull()
   })
 
   it("star button names its task, reports pressed, and calls onToggleStar", async () => {
     const onToggleStar = vi.fn()
-    wrap(<TaskRow task={task()} onState={() => {}} onToggleStar={onToggleStar} />)
+    wrap(<TaskRow task={task()} onState={() => {}} onPriority={() => {}} onToggleStar={onToggleStar} />)
     const star = screen.getByRole("button", { name: "Star “Write the thing”" })
     expect(star).toHaveAttribute("aria-pressed", "false")
     await userEvent.click(star)
@@ -71,12 +71,12 @@ describe("TaskRow", () => {
   })
 
   it("a starred row's star offers Unstar, pressed", () => {
-    wrap(<TaskRow task={task({ starred: true })} onState={() => {}} onToggleStar={() => {}} />)
+    wrap(<TaskRow task={task({ starred: true })} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} />)
     expect(screen.getByRole("button", { name: "Unstar “Write the thing”" })).toHaveAttribute("aria-pressed", "true")
   })
 
   it("the state checkbox names its task", () => {
-    wrap(<TaskRow task={task()} onState={() => {}} onToggleStar={() => {}} />)
+    wrap(<TaskRow task={task()} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} />)
     expect(screen.getByRole("button", { name: "State of “Write the thing”: In progress" })).toBeInTheDocument()
   })
 })
@@ -86,18 +86,15 @@ describe("TaskRow opens the modal", () => {
 
   it("a click on the row opens it, once", async () => {
     const onOpen = vi.fn()
-    wrap(<TaskRow task={task()} onState={() => {}} onToggleStar={() => {}} onOpen={onOpen} />)
-    // The priority mark: part of the row, not a control.
-    await userEvent.click(screen.getByText("!!!"))
-    expect(onOpen).toHaveBeenCalledTimes(1)
+    wrap(<TaskRow task={task()} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} onOpen={onOpen} />)
     await userEvent.click(row())
-    expect(onOpen).toHaveBeenCalledTimes(2)
+    expect(onOpen).toHaveBeenCalledTimes(1)
   })
 
   it("the title is a button: a click, Enter or Space on it opens, once each", async () => {
     const onOpen = vi.fn()
     const user = userEvent.setup()
-    wrap(<TaskRow task={task()} onState={() => {}} onToggleStar={() => {}} onOpen={onOpen} />)
+    wrap(<TaskRow task={task()} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} onOpen={onOpen} />)
     const title = screen.getByRole("button", { name: "Write the thing" })
     await user.click(title)
     expect(onOpen).toHaveBeenCalledTimes(1)
@@ -112,7 +109,7 @@ describe("TaskRow opens the modal", () => {
     const onOpen = vi.fn()
     const onState = vi.fn()
     const onToggleStar = vi.fn()
-    wrap(<TaskRow task={task()} onState={onState} onToggleStar={onToggleStar} onOpen={onOpen} />)
+    wrap(<TaskRow task={task()} onState={onState} onPriority={() => {}} onToggleStar={onToggleStar} onOpen={onOpen} />)
     await userEvent.click(screen.getByRole("button", { name: "State of “Write the thing”: In progress" }))
     const done = await screen.findByRole("menuitem", { name: "Done" })
     // Rendered in a portal, outside the row's DOM; React still bubbles to it.
@@ -131,7 +128,7 @@ describe("TaskRow opens the modal", () => {
     wrap(<TaskRow
       task={task({ links: [{ kind: "resource", resource_type: "github_pr", resource_id: "o/r#5", focus: true, archived: false }] })}
       dragHandle={<button type="button" aria-label="grip" onClick={onGrip} onPointerDown={onGripDown}>::</button>}
-      onState={() => {}} onToggleStar={() => {}} onOpen={onOpen}
+      onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} onOpen={onOpen}
     />)
     await userEvent.click(screen.getByRole("button", { name: "grip" }))
     // The grip's own handlers (where dnd-kit's listeners live) still run.
@@ -142,21 +139,21 @@ describe("TaskRow opens the modal", () => {
   })
 
   it("without onOpen the title is plain text (the drag overlay's copy)", () => {
-    wrap(<TaskRow task={task()} onState={() => {}} onToggleStar={() => {}} />)
+    wrap(<TaskRow task={task()} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} />)
     expect(screen.queryByRole("button", { name: "Write the thing" })).toBeNull()
     expect(screen.getByText("Write the thing")).toBeInTheDocument()
   })
 
   it("shows the blue unread dot while the task has unread events", () => {
-    wrap(<TaskRow task={task({ unread_count: 2 })} onState={() => {}} onToggleStar={() => {}} />)
+    wrap(<TaskRow task={task({ unread_count: 2 })} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} />)
     expect(screen.getByLabelText("unread task activity")).toBeInTheDocument()
   })
 
   it("shows no unread dot when the task is read, or the count is absent", () => {
-    const { unmount } = wrap(<TaskRow task={task({ unread_count: 0 })} onState={() => {}} onToggleStar={() => {}} />)
+    const { unmount } = wrap(<TaskRow task={task({ unread_count: 0 })} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} />)
     expect(screen.queryByLabelText("unread task activity")).toBeNull()
     unmount()
-    wrap(<TaskRow task={task()} onState={() => {}} onToggleStar={() => {}} />)
+    wrap(<TaskRow task={task()} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} />)
     expect(screen.queryByLabelText("unread task activity")).toBeNull()
   })
 })
@@ -177,7 +174,7 @@ describe("TaskRow blocked chip", () => {
     const user = userEvent.setup()
     wrap(<TaskRow
       task={task({ blocked: true, blocker_count: 2, blocker_labels: ["T4 Ship the API", "#4498"] })}
-      onState={() => {}} onToggleStar={() => {}}
+      onState={() => {}} onPriority={() => {}} onToggleStar={() => {}}
     />)
     const chip = screen.getByTestId("task-blocked-chip")
     expect(chip).toHaveTextContent("⛔ blocked")
@@ -189,14 +186,14 @@ describe("TaskRow blocked chip", () => {
   })
 
   it("shows no chip for an unblocked task", () => {
-    wrap(<TaskRow task={task()} onState={() => {}} onToggleStar={() => {}} />)
+    wrap(<TaskRow task={task()} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} />)
     expect(screen.queryByTestId("task-blocked-chip")).toBeNull()
   })
 
   it("shows no chip for a done task, even one still flagged blocked", () => {
     wrap(<TaskRow
       task={task({ state: "done", blocked: true, blocker_count: 1, blocker_labels: ["#4498"] })}
-      onState={() => {}} onToggleStar={() => {}}
+      onState={() => {}} onPriority={() => {}} onToggleStar={() => {}}
     />)
     expect(screen.queryByTestId("task-blocked-chip")).toBeNull()
   })

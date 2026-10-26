@@ -207,6 +207,18 @@ describe("TaskList quick add", () => {
   })
 })
 
+describe("TaskList priority menu", () => {
+  it("picking a priority updates the task with it", async () => {
+    vi.mocked(api.updateTask).mockResolvedValue(task(1, { priority: "high" }))
+    const user = userEvent.setup()
+    wrap(<TaskList scope={{ kind: "all" }} />)
+    await user.click(await screen.findByRole("button", { name: "Priority of “alpha one”: None" }))
+    await user.click(await screen.findByRole("menuitem", { name: /High/ }))
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith(1, { priority: "high" }))
+    expect(openId()).toBe("none")
+  })
+})
+
 function ToolbarHarness() {
   const [prefs, set] = useTaskListPrefs()
   return <TaskListToolbar prefs={prefs} onChange={set} />
