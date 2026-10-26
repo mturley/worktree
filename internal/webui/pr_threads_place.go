@@ -9,7 +9,9 @@ import (
 
 // prThreadView is one PR review thread placed in a view. anchor is the
 // synthetic comment built from the thread's first comment, nil when the
-// thread cannot be placed; view is never nil.
+// thread cannot be placed. view is where it sits in the shown view; it is
+// nil only for a placeable thread when placeThreads had no view to place in
+// (an unplaceable thread always gets {Status: "unavailable"}).
 type prThreadView struct {
 	anchor *reviewcomments.Comment
 	view   *reviewViewDTO

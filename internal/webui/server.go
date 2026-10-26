@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/mturley/watcher"
+	wgithub "github.com/mturley/watcher/github"
 	"github.com/mturley/watcher/slack"
 	"github.com/mturley/worktree/internal/cmux"
 	"github.com/mturley/worktree/internal/gitfetch"
@@ -205,6 +206,14 @@ type Server struct {
 	linkedOnce  sync.Once
 	linkedCache *ttlCache
 
+	// FetchPRSummaries and FetchReviewThreads are seams for tests; nil
+	// means the watcher library's calls. prThreadsCache fronts both for
+	// /api/pr-comments* (pr_comments_api.go); lazily built.
+	FetchPRSummaries   func(token string, refs []wgithub.PRRef) (map[wgithub.PRRef]wgithub.PRSummary, error)
+	FetchReviewThreads func(token string, ref wgithub.PRRef) (*wgithub.PRReviewThreads, error)
+	prThreadsOnce      sync.Once
+	prThreadsCache     *ttlCache
+
 	// BuildCommit is the full git SHA the binary was built from, compared
 	// against the repo's main branch by the update check (update_check.go).
 	// Empty disables the check.
@@ -308,6 +317,9 @@ func (s *Server) routes() []route {
 		{"POST /api/review-comments/update", s.handleUpdateReviewComment},
 		{"POST /api/review-comments/delete", s.handleDeleteReviewComment},
 		{"POST /api/review-comments/clear", s.handleClearReviewComments},
+		{"GET /api/pr-comments", s.handlePRComments},
+		{"GET /api/pr-comments/threads", s.handlePRCommentThreads},
+		{"GET /api/pr-comments/locate", s.handlePRCommentLocate},
 		{"POST /api/notify", s.handleSetNotify},
 		{"GET /api/tasks", s.handleListTasks},
 		{"POST /api/tasks", s.handleCreateTask},
