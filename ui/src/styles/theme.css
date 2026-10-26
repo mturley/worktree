@@ -145,6 +145,12 @@ body,
 [data-task-row] .task-row-control:hover {
   background-color: var(--mantine-color-default-hover);
 }
+/* The title opens the task: underlined on hover, like a link. A done task's
+   strike-through (set inline) stays. */
+[data-task-row] .task-title-link:hover > * {
+  text-decoration: underline;
+}
+
 /* The checkbox is exactly its box: pad the hover area without moving it. */
 [data-task-row] .task-row-control-pad {
   padding: 3px;

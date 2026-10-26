@@ -91,6 +91,7 @@ export function TaskRow({ task, ownResource, dragHandle, flush, onState, onPrior
       <TaskPriorityMenu priority={task.priority} title={task.title} onPick={onPriority} />
       {onOpen ? (
         <UnstyledButton
+          className="task-title-link"
           style={{ flex: 1, minWidth: 0, display: "block" }}
           onClick={(e) => {
             // The row would open it too; once is enough.
