@@ -2236,7 +2236,7 @@ other open tabs catch up on their next refetch.
 
 ### Open in editor (`editor_api.go`)
 
-The worktree page's toolbar starts with "Open in editor (`code`)", which
+The Code tab's top line holds "Open in editor (`code`)" beside "Review changes" (the page header has the cmux button there instead), which
 `POST /api/worktrees/open-editor {path}` turns into running the config's
 `editor` (read from disk per request, like `GET /api/settings`) with the
 worktree path, as `worktree open` does. The request waits for the command
@@ -2504,7 +2504,7 @@ annotations.
 - `ReviewCommentCard` is the one card for inline and sidebar (`variant`), with
   per-source styling (`SOURCE_STYLE`). Badge `Out of date`; notes
   `Not in this view` / `Outside the changes` (jump disabled with that reason).
-  `Moved` comments show the new lines. Inline cards start with an author line from `SOURCE_STYLE` (`You (local)`, tooltip `Part of your local review, not submitted anywhere.`) and a `View all and copy` link that opens the sidebar. The body renders as Markdown (`NotesMarkdown`; the card sets the text font, since inline it sits in pierre's monospace). In the sidebar the `file:lines` label is the jump control. Delete asks first (`DeleteCommentModal`,
+  `Moved` comments show the new lines. Inline cards start with an author line from `SOURCE_STYLE` (`You (local)`, tooltip `Part of your local review, not submitted anywhere.`) and, while the sidebar is closed, a `View all and copy` link that opens it. The body renders as Markdown (`NotesMarkdown`; the card sets the text font, since inline it sits in pierre's monospace). In the sidebar the `file:lines` label is the jump control. Delete asks first (`DeleteCommentModal`,
   `Delete the comment on file:lines?`).
 - `NewCommentCard`'s submit reads `Start local review` (tooltip `Start
   collecting comments locally to hand off to an agent`) while the view's list

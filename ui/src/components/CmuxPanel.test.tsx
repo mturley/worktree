@@ -191,29 +191,11 @@ describe("CmuxPanel", () => {
     }
   })
 
-  it("switches to this cmux workspace", async () => {
+  it("has no Switch cmux of its own (the page header has it)", async () => {
     vi.spyOn(api, "cmuxTree").mockResolvedValue(tree())
-    const select = vi.spyOn(api, "cmuxSelect").mockResolvedValue(ok)
-    const user = userEvent.setup()
     wrap()
-    await user.click(await screen.findByRole("button", { name: "Switch cmux" }))
-    expect(select).toHaveBeenCalledWith("W")
-  })
-
-  it("shows Current, disabled, for the already-selected workspace", async () => {
-    vi.spyOn(api, "cmuxTree").mockResolvedValue(tree({ selected: true }))
-    wrap()
-    const button = await screen.findByRole("button", { name: "Current" })
-    expect(button).toBeDisabled()
-  })
-
-  it("shows the error line when switching fails", async () => {
-    vi.spyOn(api, "cmuxTree").mockResolvedValue(tree())
-    vi.spyOn(api, "cmuxSelect").mockResolvedValue({ ok: false, error: "boom" })
-    const user = userEvent.setup()
-    wrap()
-    await user.click(await screen.findByRole("button", { name: "Switch cmux" }))
-    expect(await screen.findByText("boom")).toBeInTheDocument()
+    await screen.findByRole("button", { name: "Switch to Tab 2" })
+    expect(screen.queryByRole("button", { name: /Switch cmux|Current/ })).not.toBeInTheDocument()
   })
 
   it("clears an earlier error after a successful action", async () => {

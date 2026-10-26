@@ -877,21 +877,20 @@ describe("search", () => {
     await waitFor(() => expect(detailArgs.at(-1)?.[4]).toBe("oauth"))
   })
 
-  it("puts the search bar right after Open in editor", () => {
-    setViewport("wide")
+  it.each(["wide", "narrow"] as const)("puts Switch cmux right before the search bar (%s)", async (viewport) => {
+    vi.spyOn(api, "cmux").mockResolvedValue({
+      available: true,
+      matches: { "/wt/foo": [{ ref: "workspace:1", title: "My workspace", color: "#AD1457", selected: false }] },
+    })
+    setViewport(viewport)
     wrap()
-    const editor = screen.getByRole("button", { name: /open in editor/i })
-    expect(editor.compareDocumentPosition(screen.getByRole("searchbox")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-  })
-
-  it("puts the search bar right after Open in editor when narrow", async () => {
-    setViewport("narrow")
-    wrap()
-    const editor = screen.getByRole("button", { name: /open in editor/i })
+    const cmux = await screen.findByRole("button", { name: "Switch cmux" })
     const box = screen.getByRole("searchbox")
-    expect(editor.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    const del = await screen.findByRole("button", { name: "Delete worktree" })
-    expect(box.compareDocumentPosition(del) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(cmux.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // Open in editor moved to the Code tab.
+    expect(document.querySelector("[data-detail-header]")).not.toHaveTextContent(/Open in editor/i)
+    expect(document.querySelector("[data-detail-toolbar]") ?? document.body).not.toHaveTextContent(/Open in editor/i)
+    vi.restoreAllMocks()
   })
 
   it("heads the resource list with its match count, leaving out the kept selection", async () => {

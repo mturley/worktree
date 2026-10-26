@@ -5,7 +5,6 @@ import { useQueryClient } from "@tanstack/react-query"
 import { api } from "../api/client"
 import { NotifySwitch } from "../components/NotifySwitch"
 import { FollowingCmuxBanner } from "../components/FollowingCmuxBanner"
-import { OpenInEditorButton } from "../components/OpenInEditorButton"
 import { Logo } from "../components/Logo"
 import { IconChevronLeft } from "@tabler/icons-react"
 import { useNotifyMode } from "../hooks/useNotifyMode"
@@ -564,11 +563,12 @@ export function WorktreeDetailPage() {
 
   // Left-aligned either way. Wide, it sits right after the titles (see the
   // header below); narrow, it leads the toolbar's own row and the auto
-  // margin pushes everything else to the right.
-  const editorButton = (
-    <div style={{ flex: "none" }}>
-      <OpenInEditorButton path={path} />
-    </div>
+  // margin pushes everything else to the right. (Open in editor lives in the
+  // Code tab, beside Review changes.)
+  const cmuxButton = summary && (
+    <Group gap="xs" wrap="nowrap" style={{ flex: "none" }}>
+      <CmuxWorkspaceActions path={path} branch={summary.branch} />
+    </Group>
   )
 
   const suggestions = buildSuggestions({
@@ -582,7 +582,7 @@ export function WorktreeDetailPage() {
     },
   })
   // Wide, it takes the width the titles leave free; narrow, it sits right
-  // after the editor button and the auto margin pushes the other actions right.
+  // after the cmux button, filling the rest of the row.
   // Esc with nothing left to clear: deselect, then leave — for the tab's
   // home worktree when it has one, else for the listing. On the home
   // worktree itself it stops at deselecting.
@@ -614,24 +614,13 @@ export function WorktreeDetailPage() {
     </div>
   )
 
-  const actions = (
-    <>
-      {!wide && editorButton}
-      {!wide && searchBar}
-      {summary && <CmuxWorkspaceActions path={path} branch={summary.branch} />}
-    </>
-  )
-
-  // Wide, the toolbar sits beside the titles and must not shrink. Narrow, it
-  // gets a row of its own, right-aligned (kept beside the titles, it left
-  // them a sliver of width that wrapped them a few letters per line).
-  const toolbar = wide ? (
-    <Group gap="xs" wrap="nowrap" style={{ flex: "none" }} data-detail-toolbar>
-      {actions}
-    </Group>
-  ) : (
+  // Wide, the cmux button and search bar sit beside the titles. Narrow, they
+  // get a row of their own (kept beside the titles, they left them a sliver
+  // of width that wrapped them a few letters per line).
+  const toolbar = !wide && (
     <Group gap="xs" wrap="wrap" justify="flex-end" data-detail-toolbar>
-      {actions}
+      {cmuxButton}
+      {searchBar}
     </Group>
   )
 
@@ -753,10 +742,9 @@ export function WorktreeDetailPage() {
                   {summary && !summary.on_disk && <Badge size="xs" color="red">missing</Badge>}
                 </Group>
               </Stack>
-              {wide && editorButton}
+              {wide && cmuxButton}
               {wide && searchBar}
             </Group>
-            {wide && toolbar}
           </Group>
           {!wide && toolbar}
           {/* Pinned with the header only with room to spare; otherwise

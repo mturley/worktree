@@ -7,6 +7,7 @@ import { useDiffSelection } from "../../hooks/useDiffSelection"
 import { useDiffView } from "../../hooks/useDiffView"
 import { useWorktreeGit } from "../../hooks/useWorktreeGit"
 import { diffUnavailable } from "../../lib/diffLabels"
+import { OpenInEditorButton } from "../OpenInEditorButton"
 import { CompareSelect } from "./CompareSelect"
 import { FilesChangedList } from "./FilesChangedList"
 import { Loading } from "./Loading"
@@ -56,7 +57,7 @@ function writeFilesOpen(open: boolean): void {
 }
 
 /**
- * "▸ Files changed (N) +x −y · Compare with · Changes from · View diff", then
+ * "Review changes · Open in editor", then "▸ Files changed (N) +x −y · Compare with · Changes from", then
  * the list while expanded. The selection is the worktree's shared one, so the
  * diff view and the tab badge follow it.
  */
@@ -87,6 +88,13 @@ function FilesChanged({ path, git }: { path: string; git: WorktreeGit }) {
 
   return (
     <Stack gap="xs">
+      {/* What to do with the changes, on its own line above them. */}
+      <Group gap="xs" wrap="wrap">
+        <Button size="xs" variant="light" disabled={!!unavailable} onClick={() => diffView.enter()}>
+          Review changes
+        </Button>
+        <OpenInEditorButton path={path} />
+      </Group>
       <Group gap="md" wrap="wrap" align="center">
         <Group gap={8} wrap="nowrap">
           <ActionIcon size="sm" variant="subtle" color="gray" aria-label={open ? "Hide files" : "Show files"} onClick={toggle}>
@@ -121,9 +129,6 @@ function FilesChanged({ path, git }: { path: string; git: WorktreeGit }) {
           labelPosition="left"
           disabled={!!unavailable || !commits.data}
         />
-        <Button size="xs" variant="light" disabled={!!unavailable} onClick={() => diffView.enter()}>
-          View diff
-        </Button>
       </Group>
       {/* Collapsed, only what explains a header with no count stays. */}
       <Box>
