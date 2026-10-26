@@ -50,7 +50,7 @@ function wrap(ui: React.ReactNode) {
 }
 
 const sidebar = (over: Partial<React.ComponentProps<typeof ReviewSidebar>> = {}) => (
-  <ReviewSidebar path="/w" comments={[item(2), item(1)]} prompt="the prompt" onJump={() => {}} escHint={false} {...over} />
+  <ReviewSidebar path="/w" comments={[item(2), item(1)]} prompt="the prompt" onJump={() => {}} {...over} />
 )
 
 beforeEach(() => vi.clearAllMocks())
@@ -75,7 +75,7 @@ describe("ReviewSidebar", () => {
   it("clear asks for confirmation then clears", async () => {
     apiMock.clearReviewComments.mockResolvedValue(undefined)
     wrap(sidebar())
-    await userEvent.click(screen.getByRole("button", { name: "Clear comments" }))
+    await userEvent.click(screen.getByRole("button", { name: "Clear all" }))
     const dialog = await screen.findByRole("dialog")
     expect(within(dialog).getByText("Delete all 2 review comments? This can't be undone.")).toBeInTheDocument()
     expect(apiMock.clearReviewComments).not.toHaveBeenCalled()
@@ -83,21 +83,9 @@ describe("ReviewSidebar", () => {
     await waitFor(() => expect(apiMock.clearReviewComments).toHaveBeenCalledWith("/w"))
   })
 
-  it("close shows the Esc hint only when escHint", async () => {
-    const onClose = vi.fn()
-    const { unmount } = wrap(sidebar({ onClose, escHint: true }))
-    expect(screen.getByText("Esc")).toBeInTheDocument()
-    await userEvent.click(screen.getByRole("button", { name: "Close review comments" }))
-    expect(onClose).toHaveBeenCalled()
-    unmount()
-    wrap(sidebar({ onClose, escHint: false }))
-    expect(screen.getByRole("button", { name: "Close review comments" })).toBeInTheDocument()
-    expect(screen.queryByText("Esc")).not.toBeInTheDocument()
-  })
-
   it("disables jump for a comment outside the changes", () => {
     wrap(sidebar({ comments: [item(1, { view: { status: "outside_changes" } })] }))
-    expect(screen.getByRole("button", { name: "Jump to comment" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: /^Jump to comment/ })).toBeDisabled()
   })
 
   it("lists a deleted-elsewhere draft after the live comments until dismissed", async () => {

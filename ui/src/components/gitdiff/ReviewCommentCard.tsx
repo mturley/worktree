@@ -1,6 +1,6 @@
 import { useState } from "react"
-import { ActionIcon, Badge, Box, Button, Group, Stack, Text, Tooltip } from "@mantine/core"
-import { IconArrowRight, IconPencil, IconTrash } from "@tabler/icons-react"
+import { ActionIcon, Anchor, Badge, Box, Button, Group, Stack, Text, Tooltip } from "@mantine/core"
+import { IconPencil, IconTrash } from "@tabler/icons-react"
 import { HttpError } from "../../api/client"
 import type { CommentSource, DiffBase, DiffRange, ReviewComment, ReviewCommentItem } from "../../api/types"
 import {
@@ -13,6 +13,7 @@ import {
   useReviewCommentMutations,
   useReviewComments,
 } from "../../hooks/useReviewComments"
+import { NotesMarkdown } from "../NotesMarkdown"
 import { CommentEditor } from "./CommentEditor"
 import { DeleteCommentModal } from "./DeleteCommentModal"
 import type { CommentTarget } from "./commentRange"
@@ -29,6 +30,8 @@ function Frame({ comment, children }: { comment?: ReviewComment; children: React
     <Box
       data-review-comment-id={comment?.id}
       p="xs"
+      // Inline, the card sits in pierre's monospace diff; it reads as prose.
+      ff="text"
       style={{ borderLeft: `3px solid ${style.borderColor}`, background: "var(--mantine-color-body)", borderRadius: 4 }}
     >
       {children}
@@ -36,7 +39,14 @@ function Frame({ comment, children }: { comment?: ReviewComment; children: React
   )
 }
 
+// A comment's text, as Markdown (raw HTML is never rendered; see NotesMarkdown).
 const Body = ({ text }: { text: string }) => (
+  <Box style={{ overflowWrap: "anywhere" }}>
+    <NotesMarkdown text={text} />
+  </Box>
+)
+// Typed text kept to copy back: shown as typed.
+const RawBody = ({ text }: { text: string }) => (
   <Text size="xs" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{text}</Text>
 )
 
@@ -95,7 +105,7 @@ export function ReviewCommentCard({ path, comment, variant, onJump, jumpDisabled
       <Frame comment={comment}>
         <Stack gap={4}>
           <Text size="xs" c="red">Deleted elsewhere</Text>
-          <Body text={tombstone.text} />
+          <RawBody text={tombstone.text} />
           <Group>
             <Button size="compact-xs" variant="subtle" color="gray" onClick={() => deleted.dismiss(comment.id)}>
               Dismiss
@@ -111,11 +121,34 @@ export function ReviewCommentCard({ path, comment, variant, onJump, jumpDisabled
       <Stack gap={4}>
         <Group gap={6} justify="space-between" wrap="nowrap" align="flex-start">
           <Group gap={6} wrap="wrap">
-            {variant === "sidebar" && (
-              <Text size="xs" ff="monospace" fw={600} style={{ overflowWrap: "anywhere" }}>
-                {`${comment.file}:${lines}`}
-              </Text>
-            )}
+            {variant === "sidebar" &&
+              (onJump ? (
+                // The place is the jump. Disabled, the span keeps the reason's tooltip hoverable.
+                <Tooltip label={jumpDisabledReason ?? "Jump to comment"} openDelay={jumpDisabledReason ? 0 : 500}>
+                  <span>
+                    <Anchor
+                      component="button"
+                      type="button"
+                      size="xs"
+                      ff="monospace"
+                      fw={600}
+                      ta="left"
+                      c={jumpDisabledReason ? "dimmed" : undefined}
+                      underline={jumpDisabledReason ? "never" : "hover"}
+                      style={{ overflowWrap: "anywhere", cursor: jumpDisabledReason ? "default" : undefined }}
+                      aria-label={`Jump to comment at ${comment.file}:${lines}`}
+                      disabled={!!jumpDisabledReason}
+                      onClick={onJump}
+                    >
+                      {`${comment.file}:${lines}`}
+                    </Anchor>
+                  </span>
+                </Tooltip>
+              ) : (
+                <Text size="xs" ff="monospace" fw={600} style={{ overflowWrap: "anywhere" }}>
+                  {`${comment.file}:${lines}`}
+                </Text>
+              ))}
             {comment.side === "old" && <Text size="xs" c="dimmed">(old)</Text>}
             {outdated && <Badge size="xs" color="yellow" variant="light">Out of date</Badge>}
           </Group>
@@ -141,21 +174,6 @@ export function ReviewCommentCard({ path, comment, variant, onJump, jumpDisabled
                 >
                   <IconTrash size={14} />
                 </ActionIcon>
-              )}
-              {variant === "sidebar" && onJump && (
-                <Tooltip label={jumpDisabledReason} disabled={!jumpDisabledReason}>
-                  <span>
-                    <ActionIcon
-                      size="sm"
-                      variant="subtle"
-                      aria-label="Jump to comment"
-                      disabled={!!jumpDisabledReason}
-                      onClick={onJump}
-                    >
-                      <IconArrowRight size={14} />
-                    </ActionIcon>
-                  </span>
-                </Tooltip>
               )}
             </Group>
           )}

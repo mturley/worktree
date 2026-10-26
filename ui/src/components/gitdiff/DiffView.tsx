@@ -313,7 +313,7 @@ export default function DiffView({
     [git, commits.data, path, comments],
   )
   const recheck = recheckKey === viewKey && fresh ? recheckSummary(comments) : undefined
-  const reviewSidebar = (onClose?: () => void) =>
+  const reviewSidebar = () =>
     prompt !== undefined && (
       <ReviewSidebar
         path={path}
@@ -321,8 +321,6 @@ export default function DiffView({
         viewKey={fresh ? revPair : undefined}
         prompt={prompt}
         onJump={jump}
-        onClose={onClose}
-        escHint={sidebarEscHint}
       />
     )
 
@@ -529,17 +527,15 @@ export default function DiffView({
         {/* The branch, when there is one (empty when detached). */}
         <Text size="sm">{git?.branch ? `Changes (${git.branch})` : "Changes"}</Text>
         {reviewCount > 0 && (
-          // Bright either way, so the review in progress is hard to miss.
-          <Button
-            ml="auto"
-            size="xs"
-            variant="gradient"
-            gradient={{ from: "orange", to: "pink", deg: 90 }}
-            aria-pressed={reviewOpen}
-            onClick={() => setReviewOpen(!reviewOpen)}
-          >
-            {`Local review comments (${reviewCount})`}
-          </Button>
+          // Filled primary either way, so the review in progress is hard to
+          // miss. Open, it is the sidebar's close, with Esc's hint when Esc
+          // would do the same.
+          <Group gap={6} wrap="nowrap" ml="auto">
+            {wide && reviewOpen && sidebarEscHint && <KeyHint>Esc</KeyHint>}
+            <Button size="xs" variant="filled" onClick={() => setReviewOpen(!reviewOpen)}>
+              {reviewOpen ? "Close comments sidebar" : `Local review comments (${reviewCount})`}
+            </Button>
+          </Group>
         )}
       </Group>
       <Box
@@ -580,7 +576,7 @@ export default function DiffView({
               borderLeft: "1px solid var(--mantine-color-default-border)",
             }}
           >
-            {reviewSidebar(() => setReviewOpen(false))}
+            {reviewSidebar()}
           </Box>
         )}
       </Box>

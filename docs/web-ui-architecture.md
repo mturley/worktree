@@ -2504,7 +2504,7 @@ annotations.
 - `ReviewCommentCard` is the one card for inline and sidebar (`variant`), with
   per-source styling (`SOURCE_STYLE`). Badge `Out of date`; notes
   `Not in this view` / `Outside the changes` (jump disabled with that reason).
-  `Moved` comments show the new lines. Delete asks first (`DeleteCommentModal`,
+  `Moved` comments show the new lines. The body renders as Markdown (`NotesMarkdown`; the card sets the text font, since inline it sits in pierre's monospace). In the sidebar the `file:lines` label is the jump control. Delete asks first (`DeleteCommentModal`,
   `Delete the comment on file:lines?`).
 - `NewCommentCard`'s submit reads `Start local review` (tooltip `Start
   collecting comments locally to hand off to an agent`) while the view's list
@@ -2514,16 +2514,16 @@ annotations.
   **only inside the diff scroller** (`.diff-body-scroller`), since the sidebar
   holds a copy with the same id. Jumping to a `not_in_view` comment sets the
   selection's base to the comment's and reloads, then scrolls once it is shown.
-- `ReviewSidebar` (opened by the breadcrumb's bright `Local review comments (N)`; the narrow drawer's title is `Local review comments`) holds `Copy comments for agent`
+- `ReviewSidebar` (opened by the breadcrumb's filled primary `Local review comments (N)`, which reads `Close comments sidebar` while it is open and is its only close control when wide; the narrow drawer's title is `Local review comments`) holds `Copy comments for agent`
   (`SendToAgentModal`: `buildPrompt` text, `Copy to clipboard` / `Copied`) and
-  `Clear comments` (`ClearCommentsModal`). The prompt uses each comment's
+  `Clear all` (`ClearCommentsModal`, titled `Clear comments`). The prompt uses each comment's
   `prompt` position: `file:lines`, `removed line, previously N`, or `out of
   date`, with the snippet in a fence longer than any backtick run inside it.
   Open state is sessionStorage `worktree.reviewSidebar` (`useReviewSidebar`),
   forced closed when the loaded list becomes empty. Below the wide breakpoint
   it is a right-hand Drawer.
 - Esc ladder in the diff: a search query, then the review sidebar, then
-  leaving the diff. One Esc hint at a time (on the sidebar's close control
+  leaving the diff. One Esc hint at a time (on `Close comments sidebar`
   while it is open); on narrow screens the Drawer owns Esc.
 
 ### Watcher toggles (`watchers.go`, `config.WatchersConfig`, `WatcherAlert`)

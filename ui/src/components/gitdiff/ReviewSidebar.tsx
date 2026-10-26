@@ -1,9 +1,7 @@
 import { useState } from "react"
-import { ActionIcon, Button, Group, Stack, Tooltip } from "@mantine/core"
-import { IconX } from "@tabler/icons-react"
+import { Button, Group, Stack } from "@mantine/core"
 import type { ReviewCommentItem } from "../../api/types"
 import { useDeletedDrafts } from "../../hooks/useReviewComments"
-import { KeyHint } from "../search/KeyHint"
 import { ClearCommentsModal } from "./ClearCommentsModal"
 import { ReviewCommentCard } from "./ReviewCommentCard"
 import { SendToAgentModal } from "./SendToAgentModal"
@@ -16,16 +14,13 @@ const OUTSIDE_CHANGES = "Outside the changes — this file has no changes to sho
  * while being edited, kept until dismissed. Sends them to an agent as one
  * prompt, or clears them all.
  */
-export function ReviewSidebar({ path, comments, viewKey, prompt, onJump, onClose, escHint }: {
+export function ReviewSidebar({ path, comments, viewKey, prompt, onJump }: {
   path: string
   comments: ReviewCommentItem[]
   /** The view (`old_rev..new_rev`) the comments' positions are for, when known. */
   viewKey?: string
   prompt: string
   onJump: (c: ReviewCommentItem) => void
-  /** Given when the sidebar has its own close control (wide; the drawer has one). */
-  onClose?: () => void
-  escHint: boolean
 }) {
   const [sending, setSending] = useState(false)
   const [clearing, setClearing] = useState(false)
@@ -46,18 +41,8 @@ export function ReviewSidebar({ path, comments, viewKey, prompt, onJump, onClose
           disabled={comments.length === 0}
           onClick={() => setClearing(true)}
         >
-          Clear comments
+          Clear all
         </Button>
-        {onClose && (
-          <Group gap={4} wrap="nowrap" ml="auto">
-            {escHint && <KeyHint>Esc</KeyHint>}
-            <Tooltip label="Close">
-              <ActionIcon variant="subtle" color="gray" size="sm" aria-label="Close review comments" onClick={onClose}>
-                <IconX size={14} />
-              </ActionIcon>
-            </Tooltip>
-          </Group>
-        )}
       </Group>
       {comments.map((c) => (
         <ReviewCommentCard

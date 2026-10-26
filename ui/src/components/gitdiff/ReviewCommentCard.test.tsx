@@ -233,11 +233,35 @@ describe("ReviewCommentCard", () => {
     expect(screen.queryByText("src/a.ts:3-5")).toBeNull()
   })
 
+  it("in the sidebar, the file and lines are the jump", async () => {
+    const onJump = vi.fn()
+    wrap(<ReviewCommentCard path="/w" comment={item()} variant="sidebar" onJump={onJump} />)
+    const place = screen.getByRole("button", { name: "Jump to comment at src/a.ts:3-5" })
+    expect(place).toHaveTextContent("src/a.ts:3-5")
+    await userEvent.click(place)
+    expect(onJump).toHaveBeenCalledTimes(1)
+    // No separate jump control.
+    expect(screen.getAllByRole("button", { name: /^Jump to comment/ })).toHaveLength(1)
+  })
+
+  it("renders the body as Markdown, never as raw HTML", () => {
+    wrap(
+      <ReviewCommentCard
+        path="/w"
+        comment={item({ body: "**bold** and `code`\n\n<b>raw</b>" })}
+        variant="inline"
+      />,
+    )
+    expect(screen.getByText("bold").tagName).toBe("STRONG")
+    expect(screen.getByText("code").tagName).toBe("CODE")
+    expect(document.querySelector("b")).toBeNull()
+  })
+
   it("jump disabled with reason", () => {
     wrap(
       <ReviewCommentCard path="/w" comment={item()} variant="sidebar" onJump={vi.fn()} jumpDisabledReason="Not here" />,
     )
-    expect(screen.getByRole("button", { name: "Jump to comment" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: /^Jump to comment/ })).toBeDisabled()
   })
 })
 

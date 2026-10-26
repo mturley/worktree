@@ -137,7 +137,7 @@ const patch = (over: Partial<DiffPatch> = {}): DiffPatch => ({
   ...over,
 })
 
-const tree = (props: { escHint?: boolean } = {}) => (
+const tree = (props: { escHint?: boolean; sidebarEscHint?: boolean } = {}) => (
   <MantineProvider>
     <QueryClientProvider client={client}>
       <DiffView path="/wt/foo" headerHeight={100} {...props} />
@@ -146,7 +146,7 @@ const tree = (props: { escHint?: boolean } = {}) => (
 )
 let client: QueryClient
 
-const setup = (props: { escHint?: boolean } = {}) => {
+const setup = (props: { escHint?: boolean; sidebarEscHint?: boolean } = {}) => {
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(tree(props))
 }
@@ -380,12 +380,23 @@ describe("DiffView", () => {
     await userEvent.click(button)
     expect(screen.getByRole("button", { name: "Copy comments for agent" })).toBeInTheDocument()
     expect(window.sessionStorage.getItem("worktree.reviewSidebar")).toBe("true")
-    expect(button).toHaveAttribute("aria-pressed", "true")
-    await userEvent.click(screen.getByRole("button", { name: "Close review comments" }))
-    expect(screen.queryByRole("button", { name: "Copy comments for agent" })).not.toBeInTheDocument()
-    await userEvent.click(button)
+    // Open, the same button closes it.
+    expect(button).toHaveTextContent("Close comments sidebar")
     await userEvent.click(button)
     expect(screen.queryByRole("button", { name: "Copy comments for agent" })).not.toBeInTheDocument()
+    expect(button).toHaveTextContent("Local review comments (2)")
+  })
+
+  it("shows Esc's hint beside Close comments sidebar only when Esc would close it", async () => {
+    listComments(() => [comment(1, "shown")])
+    window.sessionStorage.setItem("worktree.reviewSidebar", "true")
+    const { unmount } = setup({ escHint: false, sidebarEscHint: true })
+    const button = await screen.findByRole("button", { name: "Close comments sidebar" })
+    expect(button.parentElement).toHaveTextContent(/^EscClose comments sidebar$/)
+    unmount()
+    setup({ escHint: false })
+    const plain = await screen.findByRole("button", { name: "Close comments sidebar" })
+    expect(plain.parentElement).not.toHaveTextContent("Esc")
   })
 
   it("sidebar is a drawer when narrow", async () => {
@@ -402,7 +413,7 @@ describe("DiffView", () => {
     listComments(() => [comment(3, "shown")])
     window.sessionStorage.setItem("worktree.reviewSidebar", "true")
     setup()
-    await userEvent.click(await screen.findByRole("button", { name: "Jump to comment" }))
+    await userEvent.click(await screen.findByRole("button", { name: /^Jump to comment/ }))
     expect(scrollMock.scrollToComment).toHaveBeenCalledWith("a.go", 3)
     expect(screen.getByTestId("diff-body")).toHaveAttribute("data-open-file", "a.go")
   })
@@ -414,7 +425,7 @@ describe("DiffView", () => {
     window.sessionStorage.setItem("worktree.reviewSidebar", "true")
     setup()
     await screen.findByText("Not in this view")
-    await userEvent.click(screen.getByRole("button", { name: "Jump to comment" }))
+    await userEvent.click(screen.getByRole("button", { name: /^Jump to comment/ }))
     await waitFor(() => expect(apiMock.diffPatch).toHaveBeenLastCalledWith("/wt/foo", "tracking", "all", false))
     await waitFor(() => expect(scrollMock.scrollToComment).toHaveBeenCalledWith("a.go", 4))
     expect(scrollMock.scrollToComment).toHaveBeenCalledTimes(1)
@@ -424,7 +435,7 @@ describe("DiffView", () => {
     listComments(() => [comment(5, "outside_changes")])
     window.sessionStorage.setItem("worktree.reviewSidebar", "true")
     setup()
-    expect(await screen.findByRole("button", { name: "Jump to comment" })).toBeDisabled()
+    expect(await screen.findByRole("button", { name: /^Jump to comment/ })).toBeDisabled()
     expect(screen.getByText("Outside the changes")).toBeInTheDocument()
   })
 
@@ -478,11 +489,11 @@ describe("DiffView", () => {
     list = []
     await refetchComments()
     await waitFor(() => expect(screen.getByTestId("diff-body")).toHaveAttribute("data-comments", ""))
-    expect(screen.getByRole("button", { name: "Local review comments (1)" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Close comments sidebar" })).toBeInTheDocument()
     expect(screen.getByText("Deleted elsewhere")).toBeInTheDocument()
     expect(window.sessionStorage.getItem("worktree.reviewSidebar")).toBe("true")
     await userEvent.click(screen.getByRole("button", { name: "Dismiss" }))
-    await waitFor(() => expect(screen.queryByRole("button", { name: /Local review comments/ })).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Local review comments|Close comments sidebar/ })).not.toBeInTheDocument())
     expect(window.sessionStorage.getItem("worktree.reviewSidebar")).toBe("false")
   })
 
@@ -615,7 +626,7 @@ describe("DiffView", () => {
     await waitFor(() => expect(apiMock.reviewComments).toHaveBeenCalledWith("/wt/foo", { oldRev: "mb", newRev: "snap2" }))
     expect(screen.getByTestId("diff-body")).toHaveAttribute("data-comments", "")
     // The sidebar keeps the list meanwhile.
-    expect(screen.getByRole("button", { name: "Local review comments (1)" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /^Jump to comment/ })).toBeInTheDocument()
     await act(async () => answer({ comments: [comment(2, "shown")] }))
     await waitFor(() => expect(screen.getByTestId("diff-body")).toHaveAttribute("data-comments", "2"))
   })
