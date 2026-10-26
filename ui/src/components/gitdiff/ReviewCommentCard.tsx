@@ -25,6 +25,11 @@ export const SOURCE_STYLE: Record<CommentSource, { borderColor: string; label?: 
     author: "You (local)",
     authorTip: "Part of your local review, not submitted anywhere.",
   },
+  pr: {
+    borderColor: "var(--mantine-color-grape-6)",
+    author: "PR comment",
+    authorTip: "A review comment on the pull request, from GitHub.",
+  },
 }
 
 const errMessage = (e: unknown) => (e instanceof Error ? e.message : String(e))
