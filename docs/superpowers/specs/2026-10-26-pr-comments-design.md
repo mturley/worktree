@@ -77,7 +77,7 @@ A **resolved** thread renders collapsed, both in the sidebar and inline, as one 
 - **Author line:** "@login on PR #1234", with the avatar, a relative time, and two links:
   - **"View all"** opens the review sidebar on the PR comments tab.
   - **"View on GitHub"** opens that comment's permalink.
-- Read-only: no edit or delete icons. `editable: false`, with a new comment source `pr` in the existing DTO and `SOURCE_STYLE`.
+- Read-only: no edit or delete icons. `SOURCE_STYLE` gains a `pr` entry for the accent. A thread holds several comments, so PR threads get their own DTO and card, reusing the draft card's frame and body pieces. They don't go through the draft DTO.
 - The Outdated badge works as it does for drafts.
 
 ### Sidebar
