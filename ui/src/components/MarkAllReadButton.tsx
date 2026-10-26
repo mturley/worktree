@@ -203,11 +203,13 @@ function PreviewFeed({ tl, feed, hiddenTasks }: PreviewProps & {
  * resource types, each checked by default and remembered as an exclusion
  * like the types; the single form marks them along with the resource.
  */
-export function MarkAllReadButton({ resources, feed, taskScope, single = false }: {
+export function MarkAllReadButton({ resources, feed, taskScope, single = false, onMarked }: {
   resources: ResourceDTO[]
   feed: MarkAllReadFeed
   taskScope: TaskScope
   single?: boolean
+  /** Called after a mark succeeds, for surfaces that show read state of their own. */
+  onMarked?: () => void
 }) {
   const [opened, setOpened] = useState(false)
   const wide = useIsWide()
@@ -272,7 +274,10 @@ export function MarkAllReadButton({ resources, feed, taskScope, single = false }
       const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected")
       if (failed) throw failed.reason
     },
-    onSuccess: () => setOpened(false),
+    onSuccess: () => {
+      setOpened(false)
+      onMarked?.()
+    },
     // Settled, not success: a partial failure still moved some cursors, and
     // the surfaces showing them must catch up either way.
     onSettled: refreshUnreadSurfaces,
