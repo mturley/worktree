@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { fileAnchorId } from "./parsedPatch"
-import { DIFF_SCROLLER_CLASS, scrollToComment, scrollToFile } from "./scrollToFile"
+import { DIFF_SCROLLER_CLASS, scrollToComment, scrollToFile, scrollToPRThread, scrollToSidebarThread } from "./scrollToFile"
 
 // Frames run only when the test says so, each one 16ms after the last.
 let frames: FrameRequestCallback[] = []
@@ -186,5 +186,38 @@ describe("scrollToComment", () => {
     runFrames(300)
     expect(frames).toHaveLength(0)
     expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled()
+  })
+})
+
+describe("PR thread scrolls", () => {
+  it("scrollToPRThread centres the thread's inline card, not the sidebar's", () => {
+    const decoy = document.createElement("div")
+    decoy.setAttribute("data-pr-thread-id", "PRRT_a=")
+    document.body.appendChild(decoy)
+    addFile("b.go", () => 300)
+    scrollToPRThread("b.go", "PRRT_a=")
+    runFrames(3)
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled()
+    const card = document.createElement("div")
+    card.setAttribute("data-pr-thread-id", "PRRT_a=")
+    scroller.appendChild(card)
+    runFrames(1)
+    expect(vi.mocked(Element.prototype.scrollIntoView).mock.contexts[0]).toBe(card)
+  })
+
+  it("scrollToSidebarThread centres the sidebar's card once it renders", () => {
+    const inline = document.createElement("div")
+    inline.setAttribute("data-pr-thread-id", "t1")
+    scroller.appendChild(inline)
+    scrollToSidebarThread("t1")
+    runFrames(2)
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled()
+    const card = document.createElement("div")
+    card.setAttribute("data-pr-thread-id", "t1")
+    document.body.appendChild(card)
+    runFrames(1)
+    expect(vi.mocked(Element.prototype.scrollIntoView).mock.contexts[0]).toBe(card)
+    runFrames(5)
+    expect(frames).toHaveLength(0)
   })
 })

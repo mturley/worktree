@@ -19,11 +19,17 @@ export function usePRCommentsSummary(path: string) {
  * refreshKey (bumped by the user's Refresh) is the only thing that reloads, so
  * code never shifts under the reader.
  */
-export function usePRThreads(path: string, view: { oldRev: string; newRev: string } | undefined, refreshKey: number) {
+export function usePRThreads(
+  path: string,
+  view: { oldRev: string; newRev: string } | undefined,
+  refreshKey: number,
+  opts: { enabled?: boolean } = {},
+) {
   return useQuery<PRThreads>({
     queryKey: ["pr-threads", path, view?.oldRev, view?.newRev, refreshKey],
     queryFn: () => api.prThreads(path, view),
     staleTime: Infinity,
+    enabled: opts.enabled ?? true,
   })
 }
 

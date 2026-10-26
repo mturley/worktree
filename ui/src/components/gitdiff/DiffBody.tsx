@@ -9,10 +9,11 @@ import { FileDiff, Virtualizer, WorkerPoolContextProvider } from "@pierre/diffs/
 // same reason no `theme` is passed below, only `themeType`.
 import DiffsWorker from "@pierre/diffs/worker/worker-portable.js?worker"
 import { api } from "../../api/client"
-import type { DiffBase, DiffRange, ReviewCommentItem } from "../../api/types"
+import type { DiffBase, DiffRange, PRRefDTO, PRThread, ResourceDTO, ReviewCommentItem } from "../../api/types"
 import { useDeletedDrafts } from "../../hooks/useReviewComments"
 import { lineInHunks, pierreSide, toCommentTarget, type CommentTarget } from "./commentRange"
 import { OpenFileInEditorIcon } from "./OpenFileInEditorIcon"
+import { PRThreadCard } from "./PRThreadCard"
 import { NewCommentCard, ReviewCommentCard } from "./ReviewCommentCard"
 import { fileAnchorId, type DiffFile } from "./parsedPatch"
 import { DIFF_SCROLLER_CLASS } from "./scrollToFile"
@@ -27,11 +28,23 @@ export interface CommentView {
   newRev: string
 }
 
-/** What one pierre annotation holds: the comments ending on its line, and the one being written there. */
+/** What one pierre annotation holds: the comments and PR threads ending on its line, and the one being written there. */
 export interface CommentAnnotation {
   items: ReviewCommentItem[]
+  threads: PRThread[]
   pending?: CommentTarget
 }
+
+/** The PR review threads to show inline (those the view shows), and what their cards need. */
+export interface PRInline {
+  threads: PRThread[]
+  pr: PRRefDTO
+  unreadIds: ReadonlySet<number>
+  prResource?: ResourceDTO
+}
+
+// Stable, so the annotations stay put with no PR threads.
+const NO_THREADS: PRThread[] = []
 
 const poolOptions = { workerFactory: () => new DiffsWorker() }
 const highlighterOptions = {}
@@ -48,7 +61,8 @@ const highlighterOptions = {}
  * so it keeps working while the view is stale.
  *
  * Review comments the view shows sit inside the diff as pierre annotations,
- * under the line they end on; the gutter's "+" starts a new one there.
+ * under the line they end on; the gutter's "+" starts a new one there. PR
+ * review threads the view shows sit there too, read-only.
  */
 export function DiffBody({
   files,
@@ -65,6 +79,7 @@ export function DiffBody({
   onPendingDone,
   view,
   openFile,
+  prThreads,
 }: {
   files: DiffFile[]
   /** Changes with every load; folds reset with it. */
@@ -84,6 +99,8 @@ export function DiffBody({
   view: CommentView
   /** Each new value unfolds that file. */
   openFile: { file: string; n: number } | null
+  /** PR review threads; those the view shows render inline. Absent: none inline. */
+  prThreads?: PRInline
 }) {
   // Per-file fold overrides on top of each file's default (autoCollapse),
   // for this load only.
@@ -118,6 +135,11 @@ export function DiffBody({
       .filter((c) => !ids.has(c.id) && c.view?.status === "shown")
     return [...shown, ...gone]
   }, [comments, deleted, oldRev, newRev])
+  const allThreads = prThreads?.threads
+  const placedThreads = useMemo(
+    () => allThreads?.filter((t) => t.view?.status === "shown") ?? NO_THREADS,
+    [allThreads],
+  )
 
   // pierre compares options shallowly, so the gutter callback must not change
   // with every render of the page above.
@@ -184,6 +206,8 @@ export function DiffBody({
                   path={path}
                   loadDiffFiles={loadDiffFiles}
                   comments={placed}
+                  threads={placedThreads}
+                  pr={prThreads}
                   pending={pending}
                   onStartComment={startComment}
                   onPendingDone={onPendingDone}
@@ -211,6 +235,8 @@ function CommentableFileDiff({
   path,
   loadDiffFiles,
   comments,
+  threads,
+  pr,
   pending,
   onStartComment,
   onPendingDone,
@@ -223,6 +249,9 @@ function CommentableFileDiff({
   path: string
   loadDiffFiles: (fd: FileDiffMetadata) => Promise<FileDiffLoadedFiles>
   comments: ReviewCommentItem[]
+  /** The PR threads the view shows. */
+  threads: PRThread[]
+  pr?: PRInline
   pending: CommentTarget | null
   onStartComment: (t: CommentTarget) => void
   onPendingDone: () => void
@@ -237,7 +266,7 @@ function CommentableFileDiff({
       const key = `${side}:${line}`
       let a = groups.get(key)
       if (!a) {
-        a = { side: pierreSide(side), lineNumber: line, metadata: { items: [] } }
+        a = { side: pierreSide(side), lineNumber: line, metadata: { items: [], threads: [] } }
         groups.set(key, a)
       }
       return a.metadata
@@ -251,9 +280,17 @@ function CommentableFileDiff({
       // Lines outside every hunk are folded away, and the comment with them.
       if (!lineInHunks(meta, c.side, start) || !lineInHunks(meta, c.side, end)) expand = true
     }
+    // PR threads the same way, at their place in this view.
+    for (const t of threads) {
+      if (t.file !== fileOn(t.side)) continue
+      const start = t.view?.start_line ?? t.start_line
+      const end = t.view?.end_line ?? t.end_line
+      at(t.side, end).threads.push(t)
+      if (!lineInHunks(meta, t.side, start) || !lineInHunks(meta, t.side, end)) expand = true
+    }
     if (pending && pending.file === fileOn(pending.side)) at(pending.side, pending.end).pending = pending
     return { annotations: [...groups.values()], expand }
-  }, [meta, comments, pending])
+  }, [meta, comments, threads, pending])
 
   const onGutterUtilityClick = useCallback(
     (range: SelectedLineRange) => {
@@ -293,7 +330,7 @@ function CommentableFileDiff({
       options={options}
       selectedLines={dragging}
       lineAnnotations={annotations}
-      renderAnnotation={({ metadata: { items, pending: target } }) => (
+      renderAnnotation={({ metadata: { items, threads: prs, pending: target } }) => (
         <Stack gap={4} p={4}>
           {items.map((c) => (
             <ReviewCommentCard
@@ -304,6 +341,18 @@ function CommentableFileDiff({
               viewKey={`${view.oldRev}..${view.newRev}`}
             />
           ))}
+          {pr &&
+            prs.map((t) => (
+              <PRThreadCard
+                key={t.id}
+                path={path}
+                thread={t}
+                pr={pr.pr}
+                variant="inline"
+                unreadIds={pr.unreadIds}
+                prResource={pr.prResource}
+              />
+            ))}
           {target && (
             <NewCommentCard
               // A new target is a new comment, with an empty editor.
