@@ -743,36 +743,30 @@ describe("HomePage tasks", () => {
     expect(await within(panel).findByText("Write the docs")).toBeInTheDocument()
   })
 
-  it("wide: the panel rides inside the pinned header above the tab bar, on every tab", async () => {
-    setViewport("wide")
-    wrap()
-    const inPinnedHeader = (selector: string) => {
-      const header = document.querySelector(selector) as HTMLElement
-      const panel = screen.getByTestId("tasks-panel")
-      expect(header.style.position).toBe("sticky")
-      expect(header).toHaveAttribute("data-tooltip-layer", "pinned")
-      expect(header).toContainElement(panel)
-      expect(panel.compareDocumentPosition(within(header).getByRole("tablist")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    }
-    inPinnedHeader("[data-activity-header]")
-    await userEvent.click(screen.getByRole("tab", { name: "Resources" }))
-    inPinnedHeader("[data-testid=resources-header]")
-  })
-
-  it("wide + expanded: the right column's header stops being sticky, on every tab", async () => {
+  it("wide: the panel scrolls with the column above the pinned header, on every tab, in every level", async () => {
     setViewport("wide")
     mockOverflow()
     wrap()
-    const panel = screen.getByTestId("tasks-panel")
-    await userEvent.click(await within(panel).findByRole("button", { name: /^Show all \(/ }))
-    expect(screen.getByTestId("tasks-panel")).toHaveAttribute("data-level", "expanded")
-    const activity = document.querySelector("[data-activity-header]") as HTMLElement
-    expect(activity.style.position).not.toBe("sticky")
-    expect(activity).not.toHaveAttribute("data-tooltip-layer")
-    // A tab change keeps it expanded, and Resources' header is not pinned either.
+    const panel = () => screen.getByTestId("tasks-panel")
+    const aboveThePinnedHeader = (selector: string, level: string) => {
+      const header = document.querySelector(selector) as HTMLElement
+      expect(panel()).toHaveAttribute("data-level", level)
+      expect(header.style.position).toBe("sticky")
+      expect(header).toHaveAttribute("data-tooltip-layer", "pinned")
+      expect(header).not.toContainElement(panel())
+      expect(panel().closest("[style*=sticky]")).toBeNull()
+      expect(panel().compareDocumentPosition(within(header).getByRole("tablist")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    }
+    aboveThePinnedHeader("[data-activity-header]", "normal")
+    await userEvent.click(await within(panel()).findByRole("button", { name: /^Show all \(/ }))
+    aboveThePinnedHeader("[data-activity-header]", "expanded")
+    // A tab change keeps it expanded; Resources' header is pinned too.
     await userEvent.click(screen.getByRole("tab", { name: "Resources" }))
-    expect(screen.getByTestId("tasks-panel")).toHaveAttribute("data-level", "expanded")
-    expect((document.querySelector("[data-testid=resources-header]") as HTMLElement).style.position).not.toBe("sticky")
+    aboveThePinnedHeader("[data-testid=resources-header]", "expanded")
+    await userEvent.click(within(panel()).getByRole("button", { name: /^Collapse task list/ }))
+    aboveThePinnedHeader("[data-testid=resources-header]", "collapsed")
+    await userEvent.click(screen.getByRole("tab", { name: "Activity" }))
+    aboveThePinnedHeader("[data-activity-header]", "collapsed")
     // The worktree column scrolls on its own; its header stays pinned.
     expect((document.querySelector("[data-worktrees-header]") as HTMLElement).style.position).toBe("sticky")
   })

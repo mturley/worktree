@@ -1372,32 +1372,36 @@ describe("WorktreeDetailPage tasks", () => {
     delete (HTMLElement.prototype as { clientHeight?: number }).clientHeight
   })
 
-  it("wide: the panel rides in the pinned activity header, above the tab bar, with the worktree's list", async () => {
+  it("wide: the panel scrolls with the page above the pinned activity header, with the worktree's list", async () => {
     setViewport("wide")
     wrap()
     const header = activityHeader()
-    const panel = within(header).getByTestId("tasks-panel")
+    const panel = screen.getByTestId("tasks-panel")
     expect(panel).toHaveAttribute("data-level", "normal")
     expect(await within(panel).findByText("Tidy the branch")).toBeInTheDocument()
     expect(api.tasks).toHaveBeenCalledWith({ kind: "worktree", path: "/wt/foo" }, expect.anything())
     expect(header.style.position).toBe("sticky")
     expect(header).toHaveAttribute("data-tooltip-layer", "pinned")
+    expect(header).not.toContainElement(panel)
+    // Not in the page header either: nothing sticky carries it.
+    expect(panel.closest("[style*=sticky]")).toBeNull()
     const bar = within(header).getByRole("tablist")
     expect(panel.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(within(bar).getByTestId("activity-controls")).toBeInTheDocument()
     expect(within(bar).queryByLabelText("Sort tasks")).toBeNull()
   })
 
-  it("wide + expanded: the activity header stops being sticky; a selection and back resets it", async () => {
+  it("wide: the activity header stays pinned in every level; a selection and back resets expanded", async () => {
     setViewport("wide")
     mockOverflow()
     const user = userEvent.setup()
     wrap()
-    const panel = within(activityHeader()).getByTestId("tasks-panel")
+    const panel = screen.getByTestId("tasks-panel")
     await user.click(await within(panel).findByRole("button", { name: /^Show all \(/ }))
     expect(screen.getByTestId("tasks-panel")).toHaveAttribute("data-level", "expanded")
-    expect(activityHeader().style.position).not.toBe("sticky")
-    expect(activityHeader()).not.toHaveAttribute("data-tooltip-layer")
+    expect(activityHeader().style.position).toBe("sticky")
+    expect(activityHeader()).toHaveAttribute("data-tooltip-layer", "pinned")
+    expect(activityHeader()).not.toContainElement(screen.getByTestId("tasks-panel"))
 
     // Selecting a resource changes the panel's scope, not the path.
     await user.click(screen.getByRole("button", { name: /select resource o\/r#1/i }))

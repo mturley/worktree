@@ -413,7 +413,7 @@ A URL with `?tab=tasks` falls back to the pane's first tab.
 
 ### The task panel
 
-The panel is always shown, in the place the old pinned panel sat: just above
+The panel is always shown, just above
 the tab bar. On the home page that is the top of the right column. With a
 resource selected it's between the resource card and its tab bar. Its header
 reads "Tasks (all | this worktree | this PR | this issue | this thread |
@@ -438,9 +438,11 @@ three levels:
   scope (selecting a different resource on the worktree page), resets it to
   normal. Changing a tab does not.
 
-While the panel is expanded, the home page's right-column header, the
-worktree page's activity header and the resource pane's card block stop being
-sticky, so everything scrolls with the page until the panel leaves expanded.
+The panel is never pinned: it scrolls with the content, in every level.
+The tab bar beneath it (with whatever already sticks with the tab bar, such
+as the activity filters on the home and worktree pages) sticks once it is
+scrolled to. With a resource selected, the card and the panel scroll away
+and only the tab bar sticks.
 
 ### Badges elsewhere
 

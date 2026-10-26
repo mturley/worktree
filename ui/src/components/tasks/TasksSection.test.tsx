@@ -35,7 +35,8 @@ function Host({ scope = ALL, unread, resetKey, testId = "host" }: {
   const t = useTasksPanel(scope, { unread, resetKey })
   return (
     <div data-testid={testId} data-expanded={t.expanded}>
-      {t.above(<div data-testid="bar">tab bar</div>)}
+      {t.panel}
+      <div data-testid="bar">tab bar</div>
     </div>
   )
 }
@@ -304,72 +305,34 @@ describe("useTasksPanel focus", () => {
 })
 
 /**
- * jsdom has no layout: getBoundingClientRect is stubbed so the panel sits at
- * `top`, and scrollIntoView (which jsdom lacks) records which element asked.
+ * The panel is in the page's normal flow (never in a sticky header), so it
+ * never moves the page: expanding it, even far above the viewport, scrolls
+ * nothing. jsdom has no layout, so getBoundingClientRect places the panel
+ * well above the viewport, and scrollIntoView (which jsdom lacks) records.
  */
-describe("useTasksPanel keeps an expanded panel in view", () => {
-  let scrolled: Element[] = []
-  let calls: unknown[] = []
-  function place(top: number) {
+describe("useTasksPanel does not scroll the page", () => {
+  const scrolled: Element[] = []
+  beforeEach(() => {
+    scrolled.length = 0
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this)
+    }
     vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
-      const t = this.matches("[data-testid=tasks-panel]") ? top : 0
+      const t = this.matches("[data-testid=tasks-panel]") ? -400 : 0
       return { x: 0, y: t, top: t, left: 0, width: 300, height: 100, right: 300, bottom: t + 100, toJSON: () => ({}) } as DOMRect
     })
-  }
-  beforeEach(() => {
-    scrolled = []
-    calls = []
-    Element.prototype.scrollIntoView = function (this: Element, arg?: unknown) {
-      scrolled.push(this)
-      calls.push(arg)
-    }
   })
   afterEach(() => {
     vi.restoreAllMocks()
     delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
   })
 
-  it("scrolls the panel to the top when expanding leaves it above the viewport", async () => {
+  it("expanding an out-of-view panel scrolls nothing, and the panel sets no scroll margin", async () => {
     mockOverflow()
     wrap(<Host />)
     await within(panel()).findByText("task 1")
-    place(-400)
-    await expand()
-    expect(scrolled).toEqual([panel()])
-    expect(calls).toEqual([{ block: "start" }])
-  })
-
-  it("does not scroll when the expanded panel is still in view", async () => {
-    mockOverflow()
-    wrap(<Host />)
-    await within(panel()).findByText("task 1")
-    place(50)
     await expand()
     expect(scrolled).toEqual([])
-  })
-
-  it("counts a page header's inset as out of view, and margins the scroll by it", async () => {
-    mockOverflow()
-    function Inset() {
-      const t = useTasksPanel(ALL, { topInset: 80 })
-      return <>{t.panel}</>
-    }
-    wrap(<Inset />)
-    await within(panel()).findByText("task 1")
-    expect(panel().style.scrollMarginTop).toBe("80px")
-    place(40)
-    await expand()
-    expect(scrolled).toEqual([panel()])
-  })
-
-  it("does not scroll on Show less", async () => {
-    mockOverflow()
-    wrap(<Host />)
-    await within(panel()).findByText("task 1")
-    place(50)
-    await expand()
-    place(-400)
-    await userEvent.click(within(panel()).getByRole("button", { name: "Show less" }))
-    expect(scrolled).toEqual([])
+    expect(panel().style.scrollMarginTop).toBe("")
   })
 })

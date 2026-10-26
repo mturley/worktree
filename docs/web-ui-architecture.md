@@ -1302,9 +1302,9 @@ to break.
   panel is collapsed too.
 - **The panel lives in one hook.** There is no Tasks tab and no Pin.
   `useTasksPanel(scope, { ownResource?, unread?, resetKey? })` returns
-  `{ panel, expanded, above(bar) }` for every page. `panel` is the always-shown
-  task panel (`data-testid="tasks-panel"`, `data-level`); `above(bar)` stacks
-  it over a tab bar; `expanded` tells the page to stop pinning its header.
+  `{ panel, expanded }` for every page. `panel` is the always-shown task
+  panel (`data-testid="tasks-panel"`, `data-level`), which the page renders
+  in its flow just above its tab bar; `expanded` is whether it is expanded.
   `ownResource` suppresses the link chip that points back at the resource the
   panel is already in; `unread` puts the unread dot by the count (the Slack
   pane, whose other tabs can't show it). Three levels:
@@ -1345,27 +1345,28 @@ to break.
     resource as `resetKey`, because selecting one changes the panel but not
     the path or the worktree's own scope. Collapsing, or a collapse arriving
     from another browser tab, also clears it.
-- **The panel lives inside the sticky header, until it is expanded.** Where
-  a page pins a header (sticky, `data-tooltip-layer="pinned"`) — the home
-  and worktree pages' right-column tab bars, the resource detail pane's
-  card + tab bar — the panel goes INSIDE that block, just above the tab bar
-  (`tasks.above(tabBar)`, or `tasks.panel` between the detail card and its
-  `Tabs.List`). Rendered above the sticky block instead, it scrolls away as
-  the feed scrolls, and its tooltips land under the header's layer. The
-  normal level's cap is what keeps the header bounded. An expanded panel has
-  no cap, so a pinned header around it would eat the screen: while
-  `tasks.expanded`, the home page's right-column header, the worktree page's
-  activity header and the resource pane's card block all drop
-  `position: sticky` and scroll with the page until the panel leaves
-  expanded. The page tests assert the sticky style is absent while expanded.
-  Unpinned, the header snaps back to its place in the flow, which on a
-  scrolled page is above the viewport; so on the change to expanded, if the
-  panel's top is above the visible area (its nearest scrolling ancestor's
-  top — the home page's right column — or else the viewport's below
-  `topInset`), the hook calls `scrollIntoView({ block: "start" })` on it.
-  `topInset` is the sticky page header's height (the worktree page's
-  `headerHeight`, passed on to the resource panes) and is also the panel's
-  `scroll-margin-top`, so it lands below that header.
+- **The panel scrolls with the content; the tab bar below it sticks.** The
+  panel is never inside a sticky block. Where a page pins a header (sticky,
+  `data-tooltip-layer="pinned"`) — the home page's right-column headers
+  (Activity's `data-activity-header`, Resources' `resources-header`), the
+  worktree page's `data-activity-header`, and the resource detail pane's
+  `data-resource-tab-bar` around its `Tabs.List` — the panel sits just above
+  it in the normal flow and scrolls away with the content, and the header
+  (the tab bar, plus the activity filters that already ride with it) pins
+  once scrolled to. On the resource pane the card and the panel both scroll
+  away, and only the tab bar pins, at `stickyTop` with the same opaque md
+  strip above it the card block had. Because nothing sticky holds the
+  panel, no level — not even an uncapped expanded list — can fill the
+  screen from a pinned header, so headers pin in every level, and nothing
+  scrolls the page when the panel changes level. Each pinned header's
+  opaque cover (`pinnedStyle`'s pulled-up padding) is no taller than the gap
+  between it and the panel, so pinning never paints over the panel's
+  bottom edge: the worktree page puts `md` (its cover) between them, the
+  home page `sm` (over its column-padding cover), and the resource pane's
+  tab bar carries that gap as its own padding (marginTop 0). The page
+  tests assert the panel is not inside the sticky header and that the
+  header stays sticky in every level. The Slack and link panes pin nothing:
+  the panel sits between the card and the tabs in the flow.
 - **A Slack thread that can't load keeps its tasks.** `SlackThreadPane`'s
   early returns (Slack watcher off, Slack not configured) keep their
   notice but render it through `withTasks`: the panel, then the notice, with
@@ -2121,15 +2122,14 @@ way:
   selection.
 - **`useIsTall()`** (720px+) decides, with `useIsWide()`, whether the page
   pins its cards (`pinCards`): the details card (with the header, or atop
-  the resource column on Notes) and a selected PR/Jira resource's card + tab
-  bar (`ResourceDetailPane`'s `stickyTop`), and the worktree's Activity
+  the resource column on Notes) and a selected PR/Jira resource's tab bar
+  (`ResourceDetailPane`'s `stickyTop`), and the worktree's Activity
   header with its filters, so the activity or linked resources scroll
   beneath them. The home page's wide columns each scroll on their own
   (exactly viewport-high, so the page itself does not), with their headers
   pinned on the same condition. All of these use `lib/stickyList.ts`'s
-  `pinnedStyle`. The task panel (when it is the tall part of one of these
-  headers) is the exception: while it is expanded the header is not pinned;
-  see "Task lists in the UI".
+  `pinnedStyle`. The task panel is never inside these pinned blocks: it
+  sits above them and scrolls away; see "Task lists in the UI".
   Tooltips are portalled to `<body>` at Mantine's popover z-index, which
   put one left open over the pinned blocks as its anchor scrolled under
   them; the theme's Tooltip zIndex is instead `var(--tooltip-z-index)`,

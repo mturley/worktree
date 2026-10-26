@@ -107,7 +107,7 @@ export function HomePage() {
   } as const
   const wide = useIsWide()
   const tall = useIsTall()
-  // The task panel, always above the tab bar.
+  // The task panel, always above the tab bar, scrolling with the content.
   const tasks = useTasksPanel(HOME_TASKS)
   // Wide, each column scrolls on its own, and its header (with the activity
   // filters) stays pinned at the top of it — with room to spare only, as on
@@ -116,9 +116,6 @@ export function HomePage() {
   const headerStyle = wide && tall
     ? pinnedStyle("calc(-1 * var(--grid-col-padding))", "var(--grid-col-padding)")
     : undefined
-  // The right column's header carries the task panel: an expanded panel has
-  // no cap, so while it is expanded the header scrolls with the column.
-  const rightHeaderStyle = tasks.expanded ? undefined : headerStyle
   const wts = useWorktrees()
   const tl = useGlobalTimeline(archived, sources, unreadOnly, eventTypes, search.debouncedQ)
   const sort = useWorktreeSort()
@@ -299,10 +296,9 @@ export function HomePage() {
   // Wide, the right column's tab bar. As on the worktree page's resource
   // tabs, the active tab's controls sit at the bar's far end. It rides at
   // the top of whichever tab's pinned header is showing, so it stays in
-  // reach as the column scrolls.
-  // The task panel rides in the same header, just above the bar, so it
-  // stays in view with it.
-  const rightTabBar = tasks.above(
+  // reach as the column scrolls. The task panel is not in that header: it
+  // sits above it, in the column's flow, and scrolls away.
+  const rightTabBar = (
     <Tabs value={rightTab} onChange={(v) => v && setRightTab(v as RightTab)}>
       <Tabs.List>
         <Tabs.Tab value="timeline">Activity{countBadge(tl.events.length, tl.hasMore)}</Tabs.Tab>
@@ -311,19 +307,19 @@ export function HomePage() {
           {rightTab === "timeline" ? activityControls : <ResourcesTabControls view={resourcesView} />}
         </Group>
       </Tabs.List>
-    </Tabs>,
+    </Tabs>
   )
 
   const timeline = (top?: React.ReactNode) => (
     // No gap below the header when pinned: its own padding is that space.
-    <Stack gap={rightHeaderStyle ? 0 : "sm"}>
+    <Stack gap={headerStyle ? 0 : "sm"}>
       {/* Opaque room below the filters when pinned, so the feed passing
           under them does not run right up against the buttons. */}
       <Stack
         gap="sm"
-        style={rightHeaderStyle && { ...rightHeaderStyle, paddingBottom: "var(--mantine-spacing-xs)" }}
+        style={headerStyle && { ...headerStyle, paddingBottom: "var(--mantine-spacing-xs)" }}
         data-activity-header
-        data-tooltip-layer={rightHeaderStyle ? "pinned" : undefined}
+        data-tooltip-layer={headerStyle ? "pinned" : undefined}
       >
         {/* Wide, the tab bar, which carries this tab's controls; narrow,
             where the tab bar has no room for them, the controls alone. */}
@@ -486,12 +482,17 @@ export function HomePage() {
           </Stack>
         </Grid.Col>
         <Grid.Col span={6} style={columnStyle} data-tooltip-layer="content">
-          {/* The task panel is part of rightTabBar, so it pins with the
-              header of whichever tab is showing. */}
-          {rightTab === "timeline" && timeline(rightTabBar)}
-          {rightTab === "resources" && (
-            <ResourcesPanel view={resourcesView} headerStyle={rightHeaderStyle} top={rightTabBar} searchSummary={resourcesSummary} />
-          )}
+          {/* The task panel scrolls away with the column; the tab's header
+              below it, carrying the tab bar, pins once scrolled to. Its
+              cover (the column padding) is less than this gap, so pinning
+              never paints over the panel's bottom edge. */}
+          <Stack gap="sm">
+            {tasks.panel}
+            {rightTab === "timeline" && timeline(rightTabBar)}
+            {rightTab === "resources" && (
+              <ResourcesPanel view={resourcesView} headerStyle={headerStyle} top={rightTabBar} searchSummary={resourcesSummary} />
+            )}
+          </Stack>
         </Grid.Col>
         <NewWorktreeModal opened={newOpen} onClose={() => setNewOpen(false)} />
         {detailsModal}

@@ -147,7 +147,7 @@ export function WorktreeDetailPage() {
   }), [search.terms, unreadOnly, filtersOn, escClears, queryOn, everything, setSources])
   const bannerShown = useBannerShown()
   const wide = useIsWide()
-  // The details card and a selected resource's card + tabs are pinned while
+  // The details card and a selected resource's tab bar are pinned while
   // the page or the resource column scrolls — but only with room to spare. On
   // a phone or a short window they would leave too little for what scrolls
   // beneath them, so they scroll away and only the title row stays pinned.
@@ -258,12 +258,7 @@ export function WorktreeDetailPage() {
   // The page header's measured height (see the ResizeObserver below).
   const headerRef = useRef<HTMLDivElement>(null)
   const [headerHeight, setHeaderHeight] = useState(0)
-  const tasks = useTasksPanel(taskScope, {
-    resetKey: selected ? serializeResourceKey(selected) : "",
-    // The sticky page header covers the top of the viewport: an expanded
-    // panel brought back into view lands below it.
-    topInset: headerHeight,
-  })
+  const tasks = useTasksPanel(taskScope, { resetKey: selected ? serializeResourceKey(selected) : "" })
 
   // The sticky resource list has to start below the header, and the header's
   // height is not a constant: the worktree and cmux workspace names wrap, and
@@ -386,17 +381,15 @@ export function WorktreeDetailPage() {
 
   // Pinned under the page header while the column scrolls beneath — with
   // room to spare only, like the cards. Opaque room below, so the content
-  // passing under it does not run right up against the buttons. Wide, it
-  // carries the task panel, which has no cap while expanded: then the header
-  // scrolls with the page.
-  const headerStyle = pinCards && !tasks.expanded
+  // passing under it does not run right up against the buttons. The task
+  // panel is never in it: wide, it sits above the header and scrolls away.
+  const headerStyle = pinCards
     ? { ...pinnedStyle(headerHeight, "var(--mantine-spacing-md)"), paddingBottom: "var(--mantine-spacing-xs)" }
     : undefined
 
   // Wide, nothing selected: the right column's tab bar, with the activity
-  // controls at its far end, as on the home page. The task panel rides in
-  // the same pinned header just above it.
-  const rightTabBar = tasks.above(
+  // controls at its far end, as on the home page.
+  const rightTabBar = (
     <Tabs value="activity">
       <Tabs.List>
         <Tabs.Tab value="activity">Activity</Tabs.Tab>
@@ -404,7 +397,7 @@ export function WorktreeDetailPage() {
           {activityControls}
         </Group>
       </Tabs.List>
-    </Tabs>,
+    </Tabs>
   )
 
   const unfiltered = (top?: ReactNode) => (
@@ -600,7 +593,15 @@ export function WorktreeDetailPage() {
         {/* No scroller: this column's content is what the PAGE scrolls.
             Its tooltips open under the pinned blocks; see useTooltipLayer. */}
         <Grid.Col span={split[1]} data-tooltip-layer="content">
-          {detail || unfiltered(rightTabBar)}
+          {detail || (
+            // The task panel scrolls away with the page; the activity header
+            // below it pins once scrolled to. The gap is the header's cover
+            // (md; see pinnedStyle), so pinning never paints over the panel.
+            <Stack gap={headerStyle ? "md" : "sm"}>
+              {tasks.panel}
+              {unfiltered(rightTabBar)}
+            </Stack>
+          )}
         </Grid.Col>
       </Grid>
     )

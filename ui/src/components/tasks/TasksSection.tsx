@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react"
+import { useState, type ReactNode } from "react"
 import { Box, Group, Stack, Text, UnstyledButton } from "@mantine/core"
 import { IconChevronDown, IconChevronRight, IconChevronsDown } from "@tabler/icons-react"
 import { useLocation } from "wouter"
@@ -52,23 +52,15 @@ export function scopeContext(scope: TaskScope): string {
  * passes its selected resource, since selecting one swaps its panel for the
  * resource pane's while the worktree's own path and scope stay the same.
  *
- * Where the page pins a header (sticky, data-tooltip-layer="pinned"), render
- * `above(tabBar)` inside it rather than `panel` above it: the panel stays in
- * view with the tab bar, and its tooltips share the header's layer. The
- * normal cap keeps that header bounded; an expanded panel is not bounded, so
- * the page must drop the header's stickiness while `expanded`.
- *
- * Dropping it sends the header back to its place in the flow, which on a
- * scrolled page is far above the viewport. So when the panel expands and
- * its top has ended up above the visible area (its scroll container's, or
- * the viewport's below `opts.topInset`), it is scrolled back to the top of
- * it. `opts.topInset` is the height (px) of a sticky page header that would
- * cover it there; it becomes the panel's scroll-margin-top.
+ * Pages render `panel` in their normal flow, ABOVE (never inside) the
+ * sticky block that pins their tab bar: the panel scrolls away with the
+ * content, and the tab bar sticks once it is scrolled to. So no level, not
+ * even an uncapped expanded list, can fill the screen from a pinned header.
  */
 export function useTasksPanel(
   scope: TaskScope,
-  opts?: { ownResource?: { type: string; id: string }; unread?: number; resetKey?: string; topInset?: number },
-): { panel: ReactNode; expanded: boolean; above: (bar: ReactNode) => ReactNode } {
+  opts?: { ownResource?: { type: string; id: string }; unread?: number; resetKey?: string },
+): { panel: ReactNode; expanded: boolean } {
   const [prefs, setPrefs] = useTaskListPrefs()
   const { collapsed } = prefs
   // The same query (and cache entry) the list itself uses.
@@ -88,21 +80,6 @@ export function useTasksPanel(
   if (expandedKey !== null && (collapsed || expandedKey !== key)) setExpandedKey(null)
   const expanded = !collapsed && expandedKey === key
   const level: TasksPanelLevel = collapsed ? "collapsed" : expanded ? "expanded" : "normal"
-
-  // Keep an expanded panel in view: see the doc comment. Only on the change
-  // to expanded, and only when it is out of view.
-  const rootRef = useRef<HTMLDivElement>(null)
-  const topInset = opts?.topInset ?? 0
-  const wasExpanded = useRef(expanded)
-  useLayoutEffect(() => {
-    const became = expanded && !wasExpanded.current
-    wasExpanded.current = expanded
-    const el = rootRef.current
-    if (!became || !el) return
-    const scroller = scrollParent(el)
-    const visibleTop = scroller ? scroller.getBoundingClientRect().top : topInset
-    if (el.getBoundingClientRect().top < visibleTop) el.scrollIntoView({ block: "start" })
-  }, [expanded, topInset])
 
   const toggleCollapsed = (next: boolean) => {
     if (next) setExpandedKey(null)
@@ -158,14 +135,7 @@ export function useTasksPanel(
   )
 
   const panel = (
-    <Box
-      ref={rootRef}
-      className="task-panel"
-      p="xs"
-      data-testid="tasks-panel"
-      data-level={level}
-      style={topInset > 0 ? { scrollMarginTop: topInset } : undefined}
-    >
+    <Box className="task-panel" p="xs" data-testid="tasks-panel" data-level={level}>
       <Stack gap={6}>
         <Group gap="md" wrap="wrap">
           {toggle}
@@ -183,23 +153,5 @@ export function useTasksPanel(
     </Box>
   )
 
-  return {
-    panel,
-    expanded,
-    above: (bar) => (
-      <Stack gap="sm">
-        {panel}
-        {bar}
-      </Stack>
-    ),
-  }
-}
-
-/** The nearest ancestor that scrolls vertically, or null for the document. */
-function scrollParent(el: HTMLElement): HTMLElement | null {
-  for (let p = el.parentElement; p && p !== document.body && p !== document.documentElement; p = p.parentElement) {
-    const { overflowY } = getComputedStyle(p)
-    if (overflowY === "auto" || overflowY === "scroll") return p
-  }
-  return null
+  return { panel, expanded }
 }

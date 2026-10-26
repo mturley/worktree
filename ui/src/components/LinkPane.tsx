@@ -21,13 +21,11 @@ const LINK_TABS = ["details"] as const
  * page — it has no events, is never polled, and has no unread state, so there
  * is nothing for a feed to contain.
  */
-export function LinkPane({ resource, path, onRemoved, onResourceChanged, topInset }: {
+export function LinkPane({ resource, path, onRemoved, onResourceChanged }: {
   resource: ResourceDTO
   path: string
   onRemoved?: () => void
   onResourceChanged?: () => void
-  /** Height (px) of the page's sticky header; see useTasksPanel. */
-  topInset?: number
 }) {
   const qc = useQueryClient()
   const refresh = useMutation({
@@ -40,7 +38,7 @@ export function LinkPane({ resource, path, onRemoved, onResourceChanged, topInse
   const embed = canEmbed(resource.url, resource.embeddable, window.location.origin)
   const [tab, setTab] = useResourceTab(LINK_TABS)
   const { type, id } = resource
-  const tasks = useTasksPanel({ kind: "resource", type, id }, { ownResource: { type, id }, topInset })
+  const tasks = useTasksPanel({ kind: "resource", type, id }, { ownResource: { type, id } })
 
   return (
     <>

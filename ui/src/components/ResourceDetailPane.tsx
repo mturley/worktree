@@ -46,9 +46,10 @@ interface ResourceDetailPaneProps {
   /** Notification state for the card's switch; see ResourceNotifyContext. */
   notify?: ResourceNotifyContext
   /**
-   * PR/Jira only: pin the resource card and its tab bar this far (px) from
-   * the top of the viewport — the page header's height — so the activity or
-   * linked resources scroll beneath them. Omitted, nothing is pinned.
+   * PR/Jira only: pin the tab bar this far (px) from the top of the
+   * viewport — the page header's height — so the activity or linked
+   * resources scroll beneath it. The card and the task panel above it scroll
+   * away. Omitted, nothing is pinned.
    */
   stickyTop?: number
   /** Slack only: a message to bring into view; see ThreadView. */
@@ -70,7 +71,6 @@ function TimelineBody({
   onResourceChanged,
   notify,
   stickyTop,
-  topInset,
 }: {
   path: string
   resource: ResourceDTO
@@ -78,7 +78,6 @@ function TimelineBody({
   onResourceChanged?: () => void
   notify?: ResourceNotifyContext
   stickyTop?: number
-  topInset?: number
 }) {
   const search = useSearchQuery()
   const { debouncedQ } = search
@@ -91,9 +90,7 @@ function TimelineBody({
   // The resource's own task panel, between the card and the tab bar; its
   // rows don't chip the resource they are already under.
   const { type, id } = resource
-  const tasks = useTasksPanel({ kind: "resource", type, id }, { ownResource: { type, id }, topInset })
-  // An expanded panel has no cap, so the card block stops pinning while it is.
-  const pinTop = tasks.expanded ? undefined : stickyTop
+  const tasks = useTasksPanel({ kind: "resource", type, id }, { ownResource: { type, id } })
   // Link titles are only fetched once the Linked tab has been shown — by a
   // click, or by arriving on it through the URL (back/forward, a refresh).
   const [linkedOpened, setLinkedOpened] = useState(tab === "linked")
@@ -118,28 +115,34 @@ function TimelineBody({
       // back from the query cache, so that costs no refetch.
       keepMounted={false}
     >
+      {/* The card and the task panel scroll away with the pane. */}
+      <ResourceCard
+        r={resource}
+        path={path}
+        onRemoved={onRemoved}
+        onMetaChanged={onResourceChanged}
+        variant="detail"
+        notify={notify}
+      />
+      <Box mt="sm">{tasks.panel}</Box>
       {/*
-        The card rides with the tab bar, inside Tabs, so the two can be
-        pinned as one block whose sticky range is the whole pane, covering
-        the page's gap above the column (see pinnedStyle).
+        The tab bar pins once scrolled to, inside Tabs so its sticky range is
+        the whole pane. Pinned, it sits stickyTop down with an opaque md of
+        padding above the bar, so the content scrolling beneath does not show
+        through that strip (see pinnedStyle). That padding IS the gap to the
+        panel here (no pulled-up margin), so the opaque strip never paints
+        over the panel's bottom edge.
       */}
       <Box
-        data-resource-card-block
-        style={pinTop === undefined ? undefined : pinnedStyle(pinTop, "var(--mantine-spacing-md)")}
-        data-tooltip-layer={pinTop === undefined ? undefined : "pinned"}
+        data-resource-tab-bar
+        style={
+          stickyTop !== undefined
+            ? { ...pinnedStyle(stickyTop, "var(--mantine-spacing-md)"), marginTop: 0 }
+            : { marginTop: "var(--mantine-spacing-sm)" }
+        }
+        data-tooltip-layer={stickyTop !== undefined ? "pinned" : undefined}
       >
-        <ResourceCard
-          r={resource}
-          path={path}
-          onRemoved={onRemoved}
-          onMetaChanged={onResourceChanged}
-          variant="detail"
-          notify={notify}
-        />
-        {/* The task panel rides in this sticky block, between the card and
-            the tab bar, so it stays in view with them. */}
-        <Box mt="sm">{tasks.panel}</Box>
-        <Tabs.List mt="sm">
+        <Tabs.List>
           <Tabs.Tab
             value="activity"
             rightSection={
@@ -262,17 +265,7 @@ export function ResourceDetailPane({
       {onBack && (
         // Styled as a link to match "← all worktrees", but a <button>
         // underneath: it deselects rather than navigating somewhere new.
-        // Pinned, the card below pulls itself up by md over the gap above it
-        // (see pinnedStyle), which is only the Stack's sm here — so pad the
-        // row to md, or the opaque card clips the bottom of the Esc hint.
-        <Group
-          gap={6}
-          wrap="nowrap"
-          style={{
-            alignSelf: "flex-start",
-            ...(stickyTop !== undefined && { paddingBottom: "calc(var(--mantine-spacing-md) - var(--mantine-spacing-sm))" }),
-          }}
-        >
+        <Group gap={6} wrap="nowrap" style={{ alignSelf: "flex-start" }}>
           <Anchor component="button" type="button" size="sm" onClick={onBack}>
             ← all resources
           </Anchor>
@@ -298,7 +291,6 @@ export function ResourceDetailPane({
           path={path}
           onRemoved={onRemoved}
           onResourceChanged={onResourceChanged}
-          topInset={topInset}
         />
       ) : (
         <TimelineBody
@@ -309,7 +301,6 @@ export function ResourceDetailPane({
           onResourceChanged={onResourceChanged}
           notify={notify}
           stickyTop={stickyTop}
-          topInset={topInset}
         />
       )}
     </Stack>

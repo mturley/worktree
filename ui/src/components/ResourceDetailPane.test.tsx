@@ -388,36 +388,43 @@ describe("ResourceDetailPane tasks", () => {
     expect(realApi.tasks).toHaveBeenCalledWith({ kind: "resource", type: "jira", id: "J-1" }, expect.anything())
   })
 
-  it("the panel sits in the sticky block between the card and the tab bar", async () => {
-    wrap(<ResourceDetailPane path="/wt/foo" resource={jira} stickyTop={60} />)
-    const panel = screen.getByTestId("tasks-panel")
-    expect(await within(panel).findByText("Chase the reviewer")).toBeInTheDocument()
-    const bar = screen.getByRole("tablist")
-    expect(panel.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    const title = screen.getByText("Investigate flux")
-    expect(title.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    const sticky = bar.parentElement!.closest<HTMLElement>("[data-tooltip-layer=pinned]")!
-    expect(sticky.style.position).toBe("sticky")
-    expect(sticky).toContainElement(panel)
-  })
-
-  it("expanded, the card block stops being sticky", async () => {
+  it("the card and the panel scroll away; only the tab bar sticks, in every level", async () => {
     // jsdom has no layout: make the capped list read as overflowing.
     Object.defineProperty(HTMLElement.prototype, "scrollHeight", { configurable: true, get: () => 500 })
     Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get: () => 240 })
     try {
       wrap(<ResourceDetailPane path="/wt/foo" resource={jira} stickyTop={60} />)
-      const panel = screen.getByTestId("tasks-panel")
-      await userEvent.click(await within(panel).findByRole("button", { name: /^Show all \(/ }))
-      expect(panel).toHaveAttribute("data-level", "expanded")
-      const block = screen.getByRole("tablist").parentElement!.closest<HTMLElement>("[data-resource-card-block]")!
-      expect(block).toContainElement(panel)
-      expect(block.style.position).not.toBe("sticky")
-      expect(block).not.toHaveAttribute("data-tooltip-layer")
+      const panel = () => screen.getByTestId("tasks-panel")
+      expect(await within(panel()).findByText("Chase the reviewer")).toBeInTheDocument()
+      const title = screen.getByText("Investigate flux")
+      expect(title.compareDocumentPosition(panel()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      const check = (level: string) => {
+        expect(panel()).toHaveAttribute("data-level", level)
+        const bar = screen.getByRole("tablist")
+        expect(panel().compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        const sticky = bar.closest<HTMLElement>("[data-tooltip-layer=pinned]")!
+        expect(sticky).toHaveAttribute("data-resource-tab-bar")
+        expect(sticky.style.position).toBe("sticky")
+        expect(sticky.style.top).toBe("60px")
+        expect(sticky).not.toContainElement(panel())
+        expect(sticky).not.toContainElement(title)
+        expect(panel().closest("[style*=sticky]")).toBeNull()
+      }
+      check("normal")
+      await userEvent.click(within(panel()).getByRole("button", { name: /^Show all \(/ }))
+      check("expanded")
+      await userEvent.click(within(panel()).getByRole("button", { name: /^Collapse task list/ }))
+      check("collapsed")
     } finally {
       delete (HTMLElement.prototype as { scrollHeight?: number }).scrollHeight
       delete (HTMLElement.prototype as { clientHeight?: number }).clientHeight
     }
+  })
+
+  it("without stickyTop, nothing is pinned", async () => {
+    wrap(<ResourceDetailPane path="/wt/foo" resource={jira} />)
+    await within(screen.getByTestId("tasks-panel")).findByText("Chase the reviewer")
+    expect(screen.getByRole("tablist").closest("[style*=sticky]")).toBeNull()
   })
 
   it("an old ?tab=tasks falls back to Activity", async () => {
