@@ -340,7 +340,7 @@ export function WorktreeDetailPage() {
         />
       )}
       toolbar={
-        <Group gap="lg" align="flex-start">
+        <Group gap="lg" align="center">
           <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} hasUnread={!!summary?.has_unread} />
           <NotifySwitch
             label="Notify on all"
