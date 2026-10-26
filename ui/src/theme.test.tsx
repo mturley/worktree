@@ -1,10 +1,35 @@
 import { describe, it, expect, afterEach } from "vitest"
 import { render, screen, cleanup } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { MantineProvider, Tooltip } from "@mantine/core"
+import { MantineProvider, Select, Tooltip } from "@mantine/core"
 import { theme } from "./theme"
 
 afterEach(cleanup)
+
+describe("selects", () => {
+  it("hides the text cursor in a non-searchable one", () => {
+    render(
+      <MantineProvider theme={theme} forceColorScheme="dark">
+        <Select aria-label="s" data={["a"]} />
+      </MantineProvider>,
+    )
+    const input = screen.getByRole("textbox", { name: "s" })
+    // jsdom's computed style drops caret-color, so read the inline style.
+    expect(input.style.caretColor).toBe("transparent")
+    expect(input.style.cursor).toBe("pointer")
+  })
+
+  it("leaves a searchable one alone", () => {
+    render(
+      <MantineProvider theme={theme} forceColorScheme="dark">
+        <Select aria-label="s" data={["a"]} searchable />
+      </MantineProvider>,
+    )
+    const input = screen.getByRole("textbox", { name: "s" })
+    expect(input.style.caretColor).toBe("")
+    expect(input.style.cursor).toBe("")
+  })
+})
 
 describe("tooltips in a dark-only app", () => {
   it("paints them dark-on-light-text, not Mantine's inverted default", async () => {

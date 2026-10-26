@@ -7,7 +7,8 @@ import (
 
 // Event types written to task_events. Only state-like changes are events:
 // edits (title, links, subtask text, event links, adding or removing a
-// blocker) and reorders still save and bump updated_at, but record nothing.
+// blocker) still save and bump updated_at, but record nothing; reorders
+// record no event either.
 const (
 	EventTaskCreated      = "task_created"
 	EventTaskStateChanged = "task_state_changed" // {"from","to","prev_started_at","prev_completed_at","cascade"}

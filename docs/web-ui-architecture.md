@@ -350,6 +350,15 @@ Global timeline query notes (`handleGlobalTimeline`):
   safe** because watcher writes exactly one resource per event today; see
   "Known deferred items."
 
+Which task events exist: only `task_created`, `task_state_changed`,
+`task_deleted`, `task_blocker_resolved`, `task_blocker_unresolved`,
+`subtask_checked` and `subtask_unchecked` are recorded (`internal/tasks/events.go`).
+Every other edit (title, description, priority, due, star, subtask text or
+order, links, event links, adding or removing a blocker) records no event, and
+reorders none either, so the feeds and a task's history show only things that
+happened to it. `migrate` deletes existing rows of the eleven dropped types
+on every start.
+
 Task events in the feeds (`mergeTaskEvents`): both handlers merge task
 events (`tasks.FeedEvents`, converted by `taskFeedRow` →
 `taskEventToTimeline`: id `task:<event id>`, source `tasks`,
@@ -841,9 +850,9 @@ cursor.
 
 A Slack thread's card counts its linking tasks' unread
 (`task_unread_count`), which the thread view itself cannot show, so the
-Slack pane carries it: its Tasks tab shows an unread dot while not active,
-or, pinned, the pinned panel's header does (`useTasksPlacement`'s
-`active.unread`, passed by `useResourceTasksPlacement`). And the thread
+Slack pane carries it: `SlackThreadPane` passes `useTasksPanel` the
+`unread` option, and the task panel's header shows the dot beside "Tasks · N
+open" at every level. And the thread
 view's Mark read (`ThreadView`'s `handleMarkRead`, `taskUnreadCount` prop)
 also marks those tasks: it fetches `GET /api/task-unread?scope=resource&type=slack&id=<id>`
 and marks each through its `newest_ts`, after the unchanged Slack mark; it
@@ -1273,51 +1282,69 @@ to break.
 - **Files.** `components/tasks/` holds `TaskList` (sections, drag and drop,
   quick add at the bottom), `TaskRow`, `TaskStateCheckbox`,
   `TaskListToolbar` (sort, priority filter, show completed / include
-  archived, Pin), `TaskQuickAdd`, `TaskCountBadge` (plus `openTasksLabel`)
-  and `TasksSection.tsx` (placement, below). `taskDrag.ts` namespaces the
+  archived), `TaskPriorityMenu` (the row's priority mark as a menu),
+  `TaskQuickAdd`, `TaskCountBadge` (plus `openTasksLabel`) and
+  `TasksSection.tsx` (the panel, below). `taskDrag.ts` namespaces the
   dnd-kit ids (`task:<id>`, `section:<key>`) and turns a drop into
   `planDrop`'s arguments. All pure list logic — sections, sorting, filters,
   `openCount`, `planDrop` (what a drop does: reorder, star/unstar, change
   priority), `dueLabel`, `linkChip` — is in **`lib/taskSections.ts`**.
   `lib/taskList.ts` is unrelated: it toggles Markdown checkboxes in notes.
 - **One pref, one key.** `lib/taskListPrefs.ts` stores sort, priority
-  filter, show completed, include archived AND `pinned` as one JSON value
-  under `worktree.taskList` in localStorage, each field validated on its own
-  (a bad one falls back alone). `hooks/useTaskListPrefs.ts` reads it with
+  filter, show completed, include archived AND `collapsed` (default `false`)
+  as one JSON value under `worktree.taskList` in localStorage, each field
+  validated on its own (a bad one falls back alone). The old `pinned` field
+  is gone outright, with no migration: a stored `{"pinned":true}` parses to
+  the defaults. `hooks/useTaskListPrefs.ts` reads it with
   `useSyncExternalStore` and tells its own tab's other lists on write (the
   browser fires `storage` only in other tabs). Every list on every page
-  shares it, so pinning is global: pin on home and a selected PR's list is
-  pinned too.
-- **Placement lives in one hook.** `useTasksPlacement(scope, ownResource?,
-  { activeTab, onFallback })` decides "tab or pinned panel" for every page
-  and returns `tab` (the last `Tabs.Tab`, or `null` while pinned, with the
-  open count while not active), `tabPanelBody`, `pinnedPanel`, `toolbar`
-  (for the tab bar's right-hand end) and `pinnedAbove(bar)`. When the pin
-  lands while Tasks is the active tab, its effect calls `onFallback`; for
-  the one render before that state change lands, pages render the tab
-  through `tasksFallbackTab(tab, pinned, fallback)` so no empty panel
-  flashes. A selected resource's pane uses `useResourceTasksPlacement`,
-  which does the same for a tab kept in the URL (`useResourceTab`),
-  replacing the history entry on fallback (the user chose the pin, not the
-  tab) and suppressing the link chip that points back at that resource.
-- **A pinned panel lives inside the sticky header.** Where a page pins a
-  header (sticky, `data-tooltip-layer="pinned"`) — the home and worktree
-  pages' right-column tab bars, the resource detail pane's card + tab bar —
-  the panel goes INSIDE that block, just above the tab bar
-  (`pinnedAbove(tabBar)`, or `pinnedPanel` between the detail card and its
+  shares it, so collapsing is global: collapse on home and a selected PR's
+  panel is collapsed too.
+- **The panel lives in one hook.** There is no Tasks tab and no Pin.
+  `useTasksPanel(scope, { ownResource?, unread?, resetKey? })` returns
+  `{ panel, expanded, above(bar) }` for every page. `panel` is the always-shown
+  task panel (`data-testid="tasks-panel"`, `data-level`); `above(bar)` stacks
+  it over a tab bar; `expanded` tells the page to stop pinning its header.
+  `ownResource` suppresses the link chip that points back at the resource the
+  panel is already in; `unread` puts the unread dot by the count (the Slack
+  pane, whose other tabs can't show it). Three levels:
+  - **normal** (the default): "Tasks · N open", the unread dot, the list
+    toolbar, and the list capped at `min(8 rows, 25dvh)` (`maxRows` on
+    `TaskList`, `NORMAL_ROWS` = 8 in `TasksSection.tsx`), scrolling inside
+    itself. When the capped list actually overflows (measured, so a list
+    that fits offers nothing) a "Show all (N)" button sits under it, above
+    quick add; N is the number of tasks the list shows.
+  - **collapsed**: the saved global `collapsed` pref. A top-right
+    ActionIcon ("Collapse task list") collapses; the whole one-line panel
+    ("Tasks · N open", dot, chevron) is a button ("Expand task list") that
+    returns to normal. Toolbar, list and quick add are not rendered.
+  - **expanded**: "Show all" removes the cap and the button reads "Show
+    less". Never saved: it is state keyed by `location | scope | resetKey`,
+    and a stale key is dropped while rendering, so navigating, changing
+    scope, or a changed `resetKey` is normal again without an effect (and
+    coming back to the old key stays normal). A tab change keeps it, since
+    tabs live in the query string. The worktree page passes the selected
+    resource as `resetKey`, because selecting one changes the panel but not
+    the path or the worktree's own scope. Collapsing, or a collapse arriving
+    from another browser tab, also clears it.
+- **The panel lives inside the sticky header, until it is expanded.** Where
+  a page pins a header (sticky, `data-tooltip-layer="pinned"`) — the home
+  and worktree pages' right-column tab bars, the resource detail pane's
+  card + tab bar — the panel goes INSIDE that block, just above the tab bar
+  (`tasks.above(tabBar)`, or `tasks.panel` between the detail card and its
   `Tabs.List`). Rendered above the sticky block instead, it scrolls away as
   the feed scrolls, and its tooltips land under the header's layer. The
-  panel's own cap is what keeps the header bounded: its list body is
-  `min(8 rows, 25dvh)` (`pinnedMaxHeight` in `TaskList.tsx`), then it
-  scrolls inside itself. The row cap alone took 70–80% of a short screen
-  once the resource card and tab bar sat around it.
+  normal level's cap is what keeps the header bounded. An expanded panel has
+  no cap, so a pinned header around it would eat the screen: while
+  `tasks.expanded`, the home page's right-column header, the worktree page's
+  activity header and the resource pane's card block all drop
+  `position: sticky` and scroll with the page until the panel leaves
+  expanded. The page tests assert the sticky style is absent while expanded.
 - **A Slack thread that can't load keeps its tasks.** `SlackThreadPane`'s
   early returns (Slack watcher off, Slack not configured) keep their
-  notice but render it through `withTasks`: pinned, the panel then the
-  notice; otherwise a minimal Thread · Tasks tab bar with the notice as the
-  Thread panel. There is no Linked tab there, since resolving links
-  contacts the services. Tasks contact none, so watcher toggles never hide
-  them.
+  notice but render it through `withTasks`: the panel, then the notice, with
+  no tab bar (there is no Linked tab there, since resolving links contacts
+  the services). Tasks contact none, so watcher toggles never hide them.
 - **Nothing moves when a drag starts.** An empty section is not rendered at
   all (no drop strip, even in Priority order), and whether sections are
   labelled never depends on a drag being on (Priority order labels every
@@ -1348,7 +1375,14 @@ to break.
   “<title>”: In progress`, the star `Star “<title>”` / `Unstar “<title>”`
   with `aria-pressed`, the grip `Drag to reorder <title>`. The state menu
   marks the current state with `aria-current` and a check (Mantine fixes
-  `role="menuitem"`, so no `menuitemradio`). Quick add's star keeps ONE
+  `role="menuitem"`, so no `menuitemradio`), and draws each option's
+  checkbox (`StateBox`). The priority mark is a menu too
+  (`TaskPriorityMenu`): High / Medium / Low / None, each with its mark and
+  the current one ticked, saved at once through the task update. A task with
+  no priority shows a faint `!` placeholder target, hidden at rest, opacity
+  0.35 on row hover or focus-within and always under `(hover: none)`. Both
+  menus are portalled, so their clicks must not bubble to the row (which
+  opens the modal). Quick add's star keeps ONE
   label and lets `aria-pressed` carry the state.
 - **Where quick add puts a task** (`quickAddAnchor` in `lib/taskSections.ts`):
   after the last visible open task in Custom and Priority sort, where the
@@ -1358,11 +1392,10 @@ to break.
   filter when one is on (`defaultPriority`), or a new task would be created
   straight into hiding.
 - **Counts.** `TaskCountBadge` is the lime count (dark text, never blue —
-  blue is unread). It appears on the Tasks tab while that tab is not active
-  and the list is not pinned, and beside `UnreadBadge` on worktree cards,
+  blue is unread). It appears beside `UnreadBadge` on worktree cards,
   list resource cards and the home page's Resources rows (`AllResourceRow`)
-  (`open_task_count`, absent = 0, titled "N open tasks"). The selected resource's detail card has none: its own Tasks tab
-  or pinned panel shows the count. `useSSE` answers `tasks_changed` by
+  (`open_task_count`, absent = 0, titled "N open tasks"). The selected
+  resource's detail card has none: its own task panel shows the count. `useSSE` answers `tasks_changed` by
   invalidating `["tasks"]`, `["timeline"]` (task events ride in the
   activity feeds), `["worktrees"]` and `["resources"]`, so lists, feeds and
   badges all follow CLI and agent writes within the stream's 5s tick.
@@ -1486,7 +1519,8 @@ existing blockers; Other is free text), `BlocksSection` on the Details tab,
 a "⛔ blocked" chip on task rows (tooltip lists the unresolved blockers;
 never on a done task, which the server also never reports blocked),
 `BlocksBadge` "⛔ blocks N" on resource cards and Resources rows
-(`blocks_count`), and the four `task_blocker_*` event labels in `eventMeta`.
+(`blocks_count`), and the `task_blocker_resolved` / `task_blocker_unresolved`
+event labels in `eventMeta`.
 Task states are labelled once, by `TASK_STATE_LABEL` in
 `TaskStateCheckbox.tsx`.
 
@@ -1957,8 +1991,8 @@ states. Frontend: `ui/src/components/settings/LogsPanel.tsx`,
   - `useTasks(scope, {completed, archived})` / `useTaskMutations(scope)`
     (`useTasks.ts`) — task lists under query keys rooted at `["tasks"]`
     (`taskScopeKey`), with optimistic reorders. `useTaskListPrefs()` — the
-    one global task-list preference, pin included. See "Task lists in the
-    UI" above for both.
+    one global task-list preference, `collapsed` included. See "Task lists
+    in the UI" above for both.
 - **Pages** (`ui/src/pages/`):
   - `HomePage.tsx` — worktree list + global timeline + archived toggle. On
     wide viewports these render side by side in a `Grid`; on narrow
@@ -1979,8 +2013,8 @@ states. Frontend: `ui/src/components/settings/LogsPanel.tsx`,
   selection" below). Every on/off switch (`UnreadOnlyToggle`,
   `ArchivedToggle`, `NotifySwitch`, `FollowCmuxToggle`) renders `Toggle`, the
   one place their size is set — use it rather than Mantine's `Switch`.
-  `components/tasks/` is the task lists, their Tasks tab or pinned panel
-  (`TasksSection.tsx`'s `useTasksPlacement`) and `TaskCountBadge` — see
+  `components/tasks/` is the task lists, their always-shown task panel
+  (`TasksSection.tsx`'s `useTasksPanel`) and `TaskCountBadge` — see
   "Task lists in the UI" above.
 - **Lib** (`ui/src/lib/`): `resourceSummary.ts` (builds the "2 PRs, 3 Jira
   issues · 2 related resources" summary string from `primary_by_type` +
@@ -2067,7 +2101,9 @@ way:
   beneath them. The home page's wide columns each scroll on their own
   (exactly viewport-high, so the page itself does not), with their headers
   pinned on the same condition. All of these use `lib/stickyList.ts`'s
-  `pinnedStyle`.
+  `pinnedStyle`. The task panel (when it is the tall part of one of these
+  headers) is the exception: while it is expanded the header is not pinned;
+  see "Task lists in the UI".
   Tooltips are portalled to `<body>` at Mantine's popover z-index, which
   put one left open over the pinned blocks as its anchor scrolled under
   them; the theme's Tooltip zIndex is instead `var(--tooltip-z-index)`,
@@ -2085,6 +2121,15 @@ way:
   is too narrow a containing block for wrapping text. On a phone or a short window they scroll
   away and only the title row stays pinned. Tests set the height with
   `setViewport(mode, { tall })`; it follows the width by default.
+- **Theme component defaults** (`ui/src/theme.ts`, tested in `theme.test.tsx`).
+  Besides the Tooltip rules above, a non-searchable `Select` gets
+  `caretColor: transparent` and `cursor: pointer` on its input, theme-wide:
+  it is a text input underneath, and a blinking caret in what behaves as a
+  button looks broken. A searchable one is unchanged. The rule reads the
+  `pointer` prop (falling back to `!searchable`) because the input's styles
+  are resolved with the props Select hands to its InputBase, which no longer
+  include `searchable`. jsdom drops `caret-color` from computed styles, so
+  the test reads the inline `style`.
 - **`WorktreeDetailPage`** combines the two: wide renders `ResourceList`
   (sticky) and a right-hand pane side by side in a `Grid`. With nothing
   selected the split is 6/6 and the right pane is the worktree's unified

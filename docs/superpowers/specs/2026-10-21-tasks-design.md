@@ -19,7 +19,7 @@ the real code.
 | # | Phase | Scope | Plan | Status |
 |---|---|---|---|---|
 | 1 | Core + CLI | `internal/tasks` (schema, links Focus/Related, master order, subtasks, actor-stamped task events, membership + archived) and the `worktree tasks` CLI | `docs/superpowers/plans/2026-10-21-tasks-phase1-core-cli.md` | done |
-| 2 | Task lists in the UI | web API; Tasks tabs everywhere (Links get a Details tab); rows, quick add, sort/filter, starred group, drag reorder (incl. star/priority by drag), pinning, badges, search | `docs/superpowers/plans/2026-10-21-tasks-phase2-ui-lists.md` | done |
+| 2 | Task lists in the UI | web API; task lists (first as Tasks tabs with pinning, now the always-shown task panel; Links get a Details tab); rows, quick add, sort/filter, starred group, drag reorder (incl. star/priority by drag), badges, search | `docs/superpowers/plans/2026-10-21-tasks-phase2-ui-lists.md` | done |
 | 3 | Detail modal | Details/Activity tabs and sidebar, link editing, subtask editing, linked events (with snapshots), "＋ task" from events and Slack messages | `docs/superpowers/plans/2026-10-21-tasks-phase3-detail-modal.md` | done |
 | 4 | Activity integration | task events in feeds + "Tasks" source filter, per-task read cursors, unread counts, mark-read (and its undo), notifications for agent events | `docs/superpowers/plans/2026-10-22-tasks-phase4-activity.md` | done |
 | 5 | Blockers | task / resource / other blockers, `task:` subscription holds + subscriber audit, status_category from cached state (watcher v0.16.0), Unblocked events + notifications, "blocks N tasks" | `docs/superpowers/plans/2026-10-22-tasks-phase5-blockers.md` | done |
@@ -267,11 +267,17 @@ Task events are stored in a worktree-owned table, **not** `watcher_events`
 **(my call)**. They aren't watcher data, and agent-handler shares that
 schema. The timeline queries merge them in.
 
-Event types (at least): created, edited (title / description / priority /
-due / star changes; the payload says what changed), state changed, subtask
-added / checked / unchecked / removed, linked / unlinked (resource,
-worktree, event), focus changed, blocker added / removed / resolved
-("Unblocked"), deleted.
+Event types are deliberately few, and only these are recorded: `task_created`,
+`task_state_changed`, `task_deleted`, `task_blocker_resolved` and
+`task_blocker_unresolved` ("Unblocked" and its reversal), and `subtask_checked`
+/ `subtask_unchecked`. **Edits record no event**: title, description,
+priority, due date, star, subtask text or order, links and their order,
+linked events, and adding or removing a blocker all save (and bump
+`updated_at`) without writing to the history, and reorders record no event
+either, so the feeds only show things that happened to the task, not
+housekeeping.
+`migrate` deletes any existing rows of the eleven dropped types on every
+start.
 
 - Each event records **who**: `user` or `agent`, plus an optional session
   name. The web UI always writes `user`. A CLI write is `agent` when it runs
@@ -349,7 +355,14 @@ chip.
 - **State checkbox**: empty = not started, **diagonally half-filled** =
   in progress, filled ✓ = done. Clicking opens a small menu of the three
   states and changes nothing until one is picked, so an in-progress task can
-  go back to not started without passing through done.
+  go back to not started without passing through done. Each menu option draws
+  its own checkbox, and the current one keeps its ✓ column.
+- **Priority mark** is a menu too: clicking it opens High / Medium / Low /
+  None, each drawn with its mark (`!!!` red, `!!` amber, `!` grey, blank for
+  None) and the current one ticked. A pick saves at once. A task with no
+  priority shows a faint `!` placeholder as the click target: hidden at rest,
+  shown at opacity 0.35 on row hover or focus-within, and always shown where
+  `(hover: none)`. Clicks in either menu never open the detail modal.
 - **Due chip** is relative: "Due today", "Due tomorrow", "3 days left",
   "Overdue 2 days". The absolute date is on hover. Overdue is red, today is
   amber, and everything else is neutral.
@@ -358,10 +371,12 @@ chip.
 ### The list
 
 - Toolbar: Sort (Custom / Priority / …), Priority filter, "Show completed"
-  with its "Include archived" sub-toggle, and **Pin**. When the list is in a
-  tab, these sit in the tab bar's right-hand toolbar, like other tabs'
-  controls. When pinned, they sit in the pinned panel's header.
-- Starred group at the top, then the rest, then (if shown) Completed.
+  with its "Include archived" sub-toggle. There is no Pin button. The toolbar
+  sits in the task panel's header (see "The task panel").
+- Starred group at the top, then the rest, then (if shown) Completed. A
+  section with no tasks is not rendered at all, so there are **no drop
+  strips**; in Priority order every shown group is labelled, and an empty
+  priority group is hidden. Dropping onto a non-empty section still works.
 - The existing search box narrows task lists too, matching title and
   description **(my call; it follows "search is a filter" from the Search
   design)**.
@@ -374,34 +389,48 @@ chip.
 
 ### Tabs
 
-Tasks is always the **last** tab.
+There is **no Tasks tab** anywhere. Tasks is the task panel (below), so the
+tab bars are the ones each place already had:
 
 | Place | Tab bar |
 |---|---|
-| Home (wide, right column) | Activity · Resources · **Tasks** |
-| Home (narrow) | Worktrees · Activity · Resources · **Tasks** |
-| Worktree page, nothing selected (wide, right column) | **Activity · Tasks** (new tab bar; today it's a bare Activity header) |
-| Worktree page, nothing selected (narrow) | Resources · Activity · **Tasks** |
-| PR / Jira selected | Activity · Linked Resources · **Tasks** |
-| Slack thread selected | Thread · Linked Resources · **Tasks** |
-| Link selected | **Details** (today's link pane content) · **Tasks** |
+| Home (wide, right column) | Activity · Resources |
+| Home (narrow) | Worktrees · Activity · Resources |
+| Worktree page, nothing selected (wide, right column) | Activity |
+| Worktree page, nothing selected (narrow) | Resources · Activity |
+| PR / Jira selected | Activity · Linked Resources |
+| Slack thread selected | Thread · Linked Resources |
+| Link selected | **Details** (today's link pane content) |
 
-When the Tasks tab isn't active (and the list isn't pinned), it shows a lime
-count of open tasks.
+A URL with `?tab=tasks` falls back to the pane's first tab.
 
-### Pinning
+### The task panel
 
-"Pin" moves the task list out of its tab to just above the tab bar, and
-removes the Tasks tab. On the home page that is the top of the right column.
-With a resource selected it's between the resource card and its tab bar. The
-pinned panel's header carries the list toolbar and an **Unpin** button. The
-pinned list caps at about 8 rows and scrolls inside itself, so it doesn't
-push the feed off-screen.
+The panel is always shown, in the place the old pinned panel sat: just above
+the tab bar. On the home page that is the top of the right column. With a
+resource selected it's between the resource card and its tab bar. Its header
+reads "Tasks · N open", with the unread dot and the list toolbar. It has
+three levels:
 
-Pinning is **one global preference**: pin anywhere and it's pinned
-everywhere. Store it like the other UI prefs (`ui/src/lib/*Pref.ts`). If this
-feels wrong, the fallback is one preference per kind of place (home,
-worktree, resource).
+- **Normal** (the default): the list is capped at `min(8 rows, 25dvh)` and
+  scrolls inside itself, so it doesn't push the feed off-screen. When the
+  capped list overflows, a **Show all (N)** button sits directly under the
+  list, above quick add, where N is the number of tasks the list shows. A
+  list that fits offers no Show all.
+- **Collapsed**: a top-right icon button ("Collapse task list") shrinks the
+  panel to one line, "Tasks · N open", the unread dot and a chevron. The whole
+  line is a button ("Expand task list") that returns it to normal. The
+  toolbar, list and quick add are hidden. Collapsed is **one global saved
+  setting**: `collapsed` (default `false`) in localStorage key
+  `worktree.taskList`.
+- **Expanded**: Show all removes the cap, and the button becomes **Show
+  less**. Expanded is **never saved**: a change of path, or of the panel's
+  scope (selecting a different resource on the worktree page), resets it to
+  normal. Changing a tab does not.
+
+While the panel is expanded, the home page's right-column header, the
+worktree page's activity header and the resource pane's card block stop being
+sticky, so everything scrolls with the page until the panel leaves expanded.
 
 ### Badges elsewhere
 

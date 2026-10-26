@@ -1,4 +1,4 @@
-import { createTheme, Tooltip, type MantineColorsTuple } from "@mantine/core"
+import { createTheme, Select, Tooltip, type MantineColorsTuple } from "@mantine/core"
 
 /**
  * Dark-only theme.
@@ -101,6 +101,22 @@ export const theme = createTheme({
           "--tooltip-color": "var(--mantine-color-gray-0)",
         },
       }),
+    }),
+    /*
+     * A non-searchable Select still renders a text input, so a click showed a
+     * blinking caret in what is really a button. Hide it and show the pointer;
+     * a searchable Select is left alone because there the caret is the point.
+     *
+     * The input's styles are resolved with the props Select hands to its
+     * InputBase, and `searchable` is not among them (Select consumes it and
+     * passes `pointer: !searchable` instead). So read `pointer`, falling back
+     * to `searchable` for a call made with Select's own props.
+     */
+    Select: Select.extend({
+      styles: (_theme, props) =>
+        (props.pointer ?? !props.searchable)
+          ? { input: { caretColor: "transparent", cursor: "pointer" } }
+          : {},
     }),
   },
 })
