@@ -3,22 +3,23 @@ import type { TaskListPrefs, TaskSort } from "./taskSections"
 
 /**
  * The task lists' view choices, remembered per browser: sort, priority
- * filter, show completed, include archived, and whether the list is pinned.
+ * filter, show completed, include archived, and whether the task panel is
+ * collapsed.
  *
- * ONE value for every task list on every page (pinning is a single global
+ * ONE value for every task list on every page (collapsed is a single global
  * preference), so one JSON key. localStorage, like unreadOnlyPref.ts: a new
  * tab should keep it.
  */
 export const TASK_LIST_KEY = "worktree.taskList"
 
-export type StoredTaskListPrefs = TaskListPrefs & { pinned: boolean }
+export type StoredTaskListPrefs = TaskListPrefs & { collapsed: boolean }
 
 export const DEFAULT_TASK_LIST_PREFS: StoredTaskListPrefs = {
   sort: "custom",
   priority: "all",
   showCompleted: false,
   includeArchived: false,
-  pinned: false,
+  collapsed: false,
 }
 
 const SORTS: readonly TaskSort[] = ["custom", "priority", "due", "updated"]
@@ -40,7 +41,7 @@ export function parseTaskListPrefs(raw: string | null): StoredTaskListPrefs {
   if (PRIORITIES.includes(o.priority as Priority | "all")) out.priority = o.priority as Priority | "all"
   if (typeof o.showCompleted === "boolean") out.showCompleted = o.showCompleted
   if (typeof o.includeArchived === "boolean") out.includeArchived = o.includeArchived
-  if (typeof o.pinned === "boolean") out.pinned = o.pinned
+  if (typeof o.collapsed === "boolean") out.collapsed = o.collapsed
   return out
 }
 

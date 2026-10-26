@@ -1,11 +1,10 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest"
-import { render, cleanup, screen, waitFor, within } from "@testing-library/react"
+import { render, cleanup, screen, within } from "@testing-library/react"
 import { MantineProvider } from "@mantine/core"
 import { TaskModalProvider } from "./tasks/modal/TaskModalProvider"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import userEvent from "@testing-library/user-event"
 import type { ResourceDTO, Task } from "../api/types"
-import { TASK_LIST_KEY } from "../lib/taskListPrefs"
 import { api } from "../api/client"
 
 if (typeof (globalThis as { EventSource?: unknown }).EventSource !== "function") {
@@ -162,34 +161,39 @@ describe("ResourceDetailPane slack tasks", () => {
     vi.spyOn(api, "linkedResources").mockResolvedValue({ fetched_at: "", count: 0, sections: [] })
   })
 
-  it("Thread · Linked Resources · Tasks, Tasks last with a count", async () => {
+  it("Thread · Linked Resources, with the thread's own task panel", async () => {
     wrap(<ResourceDetailPane path="/wt/foo" resource={slack} />)
     const tabs = within(screen.getByRole("tablist")).getAllByRole("tab")
-    expect(tabs.map((t) => t.textContent?.replace(/\d+$/, "").replace(/ \(\d+\)$/, ""))).toEqual(["Thread", "Linked Resources", "Tasks"])
-    expect((await within(tabs[2]!).findByText("1")).closest(".task-count-badge")).not.toBeNull()
+    expect(tabs.map((t) => t.textContent?.replace(/\d+$/, "").replace(/ \(\d+\)$/, ""))).toEqual(["Thread", "Linked Resources"])
     expect(api.tasks).toHaveBeenCalledWith({ kind: "resource", type: "slack", id: slack.id }, expect.anything())
-    await userEvent.click(tabs[2]!)
-    expect(await screen.findByText("Answer the thread")).toBeInTheDocument()
-    expect(within(screen.getByRole("tablist")).getByRole("button", { name: "Pin task list" })).toBeInTheDocument()
+    const panel = screen.getByTestId("tasks-panel")
+    expect(await within(panel).findByText("Answer the thread")).toBeInTheDocument()
   })
 
-  it("pinned: the list sits between the card and the tab bar", async () => {
-    window.localStorage.setItem(TASK_LIST_KEY, JSON.stringify({ pinned: true }))
+  it("the panel sits between the card and the tab bar", async () => {
     wrap(<ResourceDetailPane path="/wt/foo" resource={slack} />)
-    const panel = document.querySelector(".task-panel") as HTMLElement
+    const panel = screen.getByTestId("tasks-panel")
     expect(await within(panel).findByText("Answer the thread")).toBeInTheDocument()
     const bar = screen.getByRole("tablist")
-    expect(within(bar).queryByRole("tab", { name: /Tasks/ })).toBeNull()
     expect(panel.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     const title = screen.getAllByText("Deploy thread")[0]!
     expect(title.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it("pinning while on Tasks falls back to Thread", async () => {
-    wrap(<ResourceDetailPane path="/wt/foo" resource={slack} />)
-    await userEvent.click(await screen.findByRole("tab", { name: /Tasks/ }))
-    await userEvent.click(screen.getByRole("button", { name: "Pin task list" }))
-    await waitFor(() => expect(screen.getByRole("tab", { name: "Thread" })).toHaveAttribute("aria-selected", "true"))
+  it("the thread's unread task events put a dot on the panel", async () => {
+    wrap(<ResourceDetailPane path="/wt/foo" resource={{ ...slack, task_unread_count: 2 }} />)
+    const panel = screen.getByTestId("tasks-panel")
+    expect(within(panel).getByRole("img", { name: "unread task activity" })).toBeInTheDocument()
+  })
+
+  it("an old ?tab=tasks falls back to Thread", async () => {
+    window.history.replaceState({}, "", "/?tab=tasks")
+    try {
+      wrap(<ResourceDetailPane path="/wt/foo" resource={slack} />)
+      expect(await screen.findByRole("tab", { name: "Thread" })).toHaveAttribute("aria-selected", "true")
+    } finally {
+      window.history.replaceState({}, "", "/")
+    }
   })
 })
 
@@ -229,24 +233,14 @@ describe("ResourceDetailPane slack tasks without a thread", () => {
   }
 
   for (const [name, { setup, notice }] of Object.entries(cases)) {
-    it(`${name}: keeps the notice, with a Tasks tab beside it`, async () => {
+    it(`${name}: keeps the notice, with the task panel above it and no tab bar`, async () => {
       setup()
       wrap(<ResourceDetailPane path="/wt/foo" resource={slack} />)
-      expect(await screen.findByText(notice)).toBeInTheDocument()
-      const tabs = within(screen.getByRole("tablist")).getAllByRole("tab")
-      expect(tabs.map((t) => t.textContent?.replace(/\d+$/, ""))).toEqual(["Thread", "Tasks"])
-      await userEvent.click(tabs[1]!)
-      expect(await screen.findByText("Follow up on the thread")).toBeInTheDocument()
-    })
-
-    it(`${name}: pinned, the list shows with the notice`, async () => {
-      setup()
-      window.localStorage.setItem(TASK_LIST_KEY, JSON.stringify({ pinned: true }))
-      wrap(<ResourceDetailPane path="/wt/foo" resource={slack} />)
-      expect(await screen.findByText(notice)).toBeInTheDocument()
-      const panel = document.querySelector(".task-panel") as HTMLElement
-      expect(panel).not.toBeNull()
+      const shown = await screen.findByText(notice)
+      expect(screen.queryByRole("tablist")).toBeNull()
+      const panel = screen.getByTestId("tasks-panel")
       expect(await within(panel).findByText("Follow up on the thread")).toBeInTheDocument()
+      expect(panel.compareDocumentPosition(shown) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     })
   }
 })

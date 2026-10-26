@@ -1,139 +1,152 @@
-import { useCallback, useEffect, useMemo, type ReactNode } from "react"
-import { Box, Group, Stack, Tabs, Text } from "@mantine/core"
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react"
+import { ActionIcon, Box, Group, Stack, Text, Tooltip, UnstyledButton } from "@mantine/core"
+import { IconChevronDown, IconChevronUp } from "@tabler/icons-react"
+import { useLocation } from "wouter"
 import { useTasks, type TaskScope } from "../../hooks/useTasks"
 import { useTaskListPrefs } from "../../hooks/useTaskListPrefs"
 import { openCount } from "../../lib/taskSections"
-import { TaskCountBadge } from "./TaskCountBadge"
 import { TaskList } from "./TaskList"
 import { TaskListToolbar } from "./TaskListToolbar"
 import { UnreadMarkerDot } from "../UnreadMarkerDot"
 
-/** The Tasks tab's value on every page that has one. */
-export const TASKS_TAB = "tasks"
-
-/** Rows a pinned list shows before it scrolls inside itself. */
-const PINNED_ROWS = 8
+/** Rows the normal panel shows before its list scrolls inside itself. */
+const NORMAL_ROWS = 8
 
 /**
- * The tab a page should show: its own choice, except that a pinned list has
- * no Tasks tab, so "tasks" becomes `fallback`. For the render in which the
- * pin lands, before useTasksPlacement's effect has moved the page's state.
+ * Counts the panel on screen, and calls `onGone` once none is left after a
+ * commit. A page whose hook outlives its panel (the worktree page, whose
+ * panel gives way to a selected resource's pane while its own scope stays
+ * the same) then comes back to a normal panel, not an expanded one. A panel
+ * that only moves within one commit (the home page's tab bar, re-parented
+ * under another tab's header) unmounts and remounts before the check runs,
+ * so a tab change keeps expanded.
  */
-export function tasksFallbackTab<T extends string>(tab: T, pinned: boolean, fallback: T): T {
-  return pinned && tab === TASKS_TAB ? fallback : tab
+function PanelPresence({ count, onGone }: { count: { current: number }; onGone: () => void }) {
+  const gone = useRef(onGone)
+  gone.current = onGone
+  useLayoutEffect(() => {
+    count.current++
+    return () => {
+      count.current--
+      queueMicrotask(() => {
+        if (count.current === 0) gone.current()
+      })
+    }
+  }, [count])
+  return null
 }
 
+export type TasksPanelLevel = "collapsed" | "normal" | "expanded"
+
 /**
- * Where a page's task list goes: a Tasks tab (always the last one) or, while
- * the global pin is on, a lime panel above the page's tab bar. Every page
- * uses this, so the "tab or pinned" rule lives in one place.
+ * The task panel every page shows above its tab bar: the list for `scope`,
+ * at one of three levels.
  *
- * `active` tells it which tab the page shows: the tab's count hides while
- * Tasks is active, and a pin landing while it is calls `onFallback` (the
- * page then goes back to its first tab). Render with tasksFallbackTab too,
- * so the frame before that state change shows no empty panel.
+ * - normal (the default): the count, the toolbar, and the list capped at
+ *   NORMAL_ROWS (and a quarter of the viewport), with "Show all" under it
+ *   when it overflows.
+ * - collapsed: one line, the count and a chevron, that expands back to
+ *   normal. ONE global saved choice (useTaskListPrefs' `collapsed`).
+ * - expanded: "Show all" lifted the cap. Never saved, and only for the path
+ *   and scope it was set under: navigating to another path or changing scope
+ *   (another resource selected on the same page) puts the panel back to
+ *   normal. A tab change does not: tabs live in the query string.
  *
- * `active.unread` is the unread task events behind the list, for a page whose
- * other tabs cannot show them (a Slack thread's pane: its Thread tab is the
- * thread, not a feed holding task events). Above 0, an unread dot marks the
- * Tasks tab while it is not active, or the pinned panel's header.
+ * `opts.unread` is the unread task events behind the list, for a page whose
+ * other tabs cannot show them (a Slack thread's pane); above 0 an unread dot
+ * sits by the count, at every level.
  *
  * Where the page pins a header (sticky, data-tooltip-layer="pinned"), render
- * `pinnedAbove(tabBar)` inside it rather than `pinnedPanel` above it: the
- * panel then stays in view with the tab bar instead of scrolling away, and
- * its tooltips share the header's layer. Its row cap keeps the header bounded.
+ * `above(tabBar)` inside it rather than `panel` above it: the panel stays in
+ * view with the tab bar, and its tooltips share the header's layer. The
+ * normal cap keeps that header bounded; an expanded panel is not bounded, so
+ * the page must drop the header's stickiness while `expanded`.
  */
-export function useTasksPlacement(
+export function useTasksPanel(
   scope: TaskScope,
-  ownResource?: { type: string; id: string },
-  active?: { activeTab?: string; onFallback?: () => void; unread?: number },
-): {
-  pinned: boolean
-  tab: ReactNode | null
-  tabPanelBody: ReactNode
-  pinnedPanel: ReactNode
-  toolbar: ReactNode
-  pinnedAbove: (bar: ReactNode) => ReactNode
-} {
+  opts?: { ownResource?: { type: string; id: string }; unread?: number },
+): { panel: ReactNode; expanded: boolean; above: (bar: ReactNode) => ReactNode } {
   const [prefs, setPrefs] = useTaskListPrefs()
-  const { pinned } = prefs
+  const { collapsed } = prefs
   // The same query (and cache entry) the list itself uses.
   const query = useTasks(scope, { completed: prefs.showCompleted, archived: prefs.includeArchived })
   const open = openCount(query.data ?? [])
-  const tasksActive = active?.activeTab === TASKS_TAB
-  const unread = (active?.unread ?? 0) > 0
-  const unreadDot = <UnreadMarkerDot label="unread task activity" />
+  const unread = (opts?.unread ?? 0) > 0
+  const [location] = useLocation()
 
-  const onFallback = active?.onFallback
-  useEffect(() => {
-    if (pinned && tasksActive) onFallback?.()
-  }, [pinned, tasksActive, onFallback])
+  // Expanded is the key it was set under: once path or scope moves on, the
+  // key no longer matches and the panel is normal again, without an effect.
+  // A stale key is dropped as soon as it is seen (React's "adjust state while
+  // rendering"), so coming back to the old path or scope stays normal.
+  const key = `${location}|${JSON.stringify(scope)}`
+  const [expandedKey, setExpandedKey] = useState<string | null>(null)
+  if (expandedKey !== null && expandedKey !== key) setExpandedKey(null)
+  const expanded = !collapsed && expandedKey === key
+  // How many copies of the panel are on screen; see PanelPresence.
+  const shown = useRef(0)
+  const level: TasksPanelLevel = collapsed ? "collapsed" : expanded ? "expanded" : "normal"
 
-  const toolbar = (
-    <TaskListToolbar
-      prefs={prefs}
-      onChange={setPrefs}
-      pinned={pinned}
-      onPinnedChange={(v) => setPrefs({ pinned: v })}
-    />
+  const count = (
+    <Group gap={6} wrap="nowrap">
+      <Text size="sm" fw={700}>Tasks · {open} open</Text>
+      {unread && <UnreadMarkerDot label="unread task activity" />}
+    </Group>
   )
 
-  const tab = pinned ? null : (
-    <Tabs.Tab value={TASKS_TAB} rightSection={unread && !tasksActive ? unreadDot : undefined}>
-      Tasks{!tasksActive && <TaskCountBadge count={open} ml="6px" />}
-    </Tabs.Tab>
-  )
-
-  const pinnedPanel = pinned ? (
-    <Box className="task-panel" p="xs" data-testid="pinned-tasks">
-      <Stack gap={6}>
-        <Group justify="space-between" gap="xs" wrap="wrap">
-          <Group gap={6} wrap="nowrap">
-            <Text size="sm" fw={700}>Tasks · {open} open</Text>
-            {unread && unreadDot}
+  const panel = (
+    <Box className="task-panel" p="xs" data-testid="tasks-panel" data-level={level}>
+      <PanelPresence count={shown} onGone={() => setExpandedKey(null)} />
+      {collapsed ? (
+        <UnstyledButton
+          w="100%"
+          aria-label="Expand task list"
+          onClick={() => setPrefs({ collapsed: false })}
+        >
+          <Group justify="space-between" gap="xs" wrap="nowrap">
+            {count}
+            <IconChevronDown size={16} />
           </Group>
-          {toolbar}
-        </Group>
-        <TaskList scope={scope} ownResource={ownResource} maxRows={PINNED_ROWS} />
-      </Stack>
+        </UnstyledButton>
+      ) : (
+        <Stack gap={6}>
+          <Group justify="space-between" align="flex-start" gap="xs" wrap="nowrap">
+            <Group gap="xs" wrap="wrap">
+              {count}
+              <TaskListToolbar prefs={prefs} onChange={setPrefs} />
+            </Group>
+            <Tooltip label="Collapse the task list">
+              <ActionIcon
+                variant="subtle"
+                color="gray"
+                aria-label="Collapse task list"
+                onClick={() => {
+                  setExpandedKey(null)
+                  setPrefs({ collapsed: true })
+                }}
+              >
+                <IconChevronUp size={16} />
+              </ActionIcon>
+            </Tooltip>
+          </Group>
+          <TaskList
+            scope={scope}
+            ownResource={opts?.ownResource}
+            maxRows={NORMAL_ROWS}
+            expand={{ expanded, onToggle: () => setExpandedKey(expanded ? null : key) }}
+          />
+        </Stack>
+      )}
     </Box>
-  ) : null
+  )
 
   return {
-    pinned,
-    tab,
-    tabPanelBody: <TaskList scope={scope} ownResource={ownResource} />,
-    pinnedPanel,
-    toolbar,
-    pinnedAbove: (bar) =>
-      pinnedPanel ? (
-        <Stack gap="sm">
-          {pinnedPanel}
-          {bar}
-        </Stack>
-      ) : bar,
+    panel,
+    expanded,
+    above: (bar) => (
+      <Stack gap="sm">
+        {panel}
+        {bar}
+      </Stack>
+    ),
   }
-}
-
-/**
- * useTasksPlacement for a selected resource's pane, whose tab lives in the
- * URL (useResourceTab): the resource's own list, with its link chip
- * suppressed, falling back to `firstTab` when the pin lands on Tasks. The
- * fallback replaces the history entry: the user chose the pin, not the tab.
- * Returns the tab to render too (see tasksFallbackTab). `unread`: see
- * useTasksPlacement's `active.unread`.
- */
-export function useResourceTasksPlacement(
-  resource: { type: string; id: string },
-  tab: string,
-  setTab: (tab: string, opts?: { replace?: boolean }) => void,
-  firstTab: string,
-  unread?: number,
-) {
-  const { type, id } = resource
-  const toFirst = useCallback(() => setTab(firstTab, { replace: true }), [setTab, firstTab])
-  const scope = useMemo(() => ({ kind: "resource" as const, type, id }), [type, id])
-  const own = useMemo(() => ({ type, id }), [type, id])
-  const tasks = useTasksPlacement(scope, own, { activeTab: tab, onFallback: toFirst, unread })
-  return { tasks, shownTab: tasksFallbackTab(tab, tasks.pinned, firstTab) }
 }

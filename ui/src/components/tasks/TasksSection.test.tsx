@@ -1,14 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { act, cleanup, render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { MantineProvider, Tabs } from "@mantine/core"
-import { TaskModalProvider } from "./modal/TaskModalProvider"
+import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { useState } from "react"
+import { Router } from "wouter"
+import { memoryLocation } from "wouter/memory-location"
 import { api } from "../../api/client"
 import type { Task } from "../../api/types"
+import type { TaskScope } from "../../hooks/useTasks"
 import { TASK_LIST_KEY } from "../../lib/taskListPrefs"
-import { tasksFallbackTab, useResourceTasksPlacement, useTasksPlacement } from "./TasksSection"
+import { TaskModalProvider } from "./modal/TaskModalProvider"
+import { useTasksPanel } from "./TasksSection"
 
 vi.mock("../../api/client", async (orig) => ({
   ...(await orig<typeof import("../../api/client")>()),
@@ -21,34 +23,53 @@ const task = (id: number, extra: Partial<Task> = {}): Task => ({
   subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, blocker_labels: [], ...extra,
 })
 
-/** A two-tab host shaped like the pages': Activity, then Tasks last. */
-function Host({ unread }: { unread?: number }) {
-  const [tab, setTab] = useState("timeline")
-  const p = useTasksPlacement({ kind: "all" }, undefined, { activeTab: tab, onFallback: () => setTab("timeline"), unread })
-  const shown = tasksFallbackTab(tab, p.pinned, "timeline")
+const ALL: TaskScope = { kind: "all" }
+
+/** A page's shape: the panel above its tab bar. */
+function Host({ scope = ALL, unread, testId = "host" }: { scope?: TaskScope; unread?: number; testId?: string }) {
+  const t = useTasksPanel(scope, { unread })
   return (
-    <>
-      {p.pinnedPanel}
-      <Tabs value={shown} onChange={(v) => v && setTab(v)}>
-        <Tabs.List>
-          <Tabs.Tab value="timeline">Activity</Tabs.Tab>
-          {p.tab}
-          <div data-testid="bar-end">{shown === "tasks" && p.toolbar}</div>
-        </Tabs.List>
-        <Tabs.Panel value="timeline">activity body</Tabs.Panel>
-        <Tabs.Panel value="tasks">{p.tabPanelBody}</Tabs.Panel>
-      </Tabs>
-    </>
+    <div data-testid={testId} data-expanded={t.expanded}>
+      {t.above(<div data-testid="bar">tab bar</div>)}
+    </div>
   )
 }
 
-function wrap(unread?: number) {
+function wrap(ui: React.ReactNode, path = "/") {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
+  const loc = memoryLocation({ path })
+  const tree = (node: React.ReactNode) => (
     <MantineProvider>
-      <QueryClientProvider client={qc}><TaskModalProvider><Host unread={unread} /></TaskModalProvider></QueryClientProvider>
-    </MantineProvider>,
+      <QueryClientProvider client={qc}>
+        <Router hook={loc.hook}>
+          <TaskModalProvider>{node}</TaskModalProvider>
+        </Router>
+      </QueryClientProvider>
+    </MantineProvider>
   )
+  const r = render(tree(ui))
+  return { ...r, navigate: loc.navigate, rerender: (node: React.ReactNode) => r.rerender(tree(node)) }
+}
+
+const panel = (root: HTMLElement | Document = document) =>
+  within(root as HTMLElement).getByTestId("tasks-panel")
+
+/**
+ * jsdom has no layout: mock scrollHeight over clientHeight so the capped
+ * list reads as overflowing, and Show all is offered.
+ */
+function mockOverflow() {
+  Object.defineProperty(HTMLElement.prototype, "scrollHeight", { configurable: true, get: () => 500 })
+  Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get: () => 240 })
+}
+function unmockOverflow() {
+  delete (HTMLElement.prototype as { scrollHeight?: number }).scrollHeight
+  delete (HTMLElement.prototype as { clientHeight?: number }).clientHeight
+}
+
+async function expand() {
+  await userEvent.click(await within(panel()).findByRole("button", { name: /^Show all/ }))
+  expect(panel()).toHaveAttribute("data-level", "expanded")
 }
 
 beforeEach(() => {
@@ -56,121 +77,137 @@ beforeEach(() => {
 })
 afterEach(() => {
   cleanup()
+  unmockOverflow()
   vi.clearAllMocks()
   window.localStorage.clear()
 })
 
-describe("tasksFallbackTab", () => {
-  it("swaps tasks for the fallback only while pinned", () => {
-    expect(tasksFallbackTab("tasks", true, "timeline")).toBe("timeline")
-    expect(tasksFallbackTab("tasks", false, "timeline")).toBe("tasks")
-    expect(tasksFallbackTab("resources", true, "timeline")).toBe("resources")
-  })
-})
-
-describe("useTasksPlacement", () => {
-  it("not pinned: a Tasks tab with the open count, hidden while active; the toolbar offers Pin", async () => {
-    wrap()
-    const tab = screen.getByRole("tab", { name: /Tasks/ })
-    expect((await within(tab).findByText("2")).closest(".task-count-badge")).not.toBeNull()
-    expect(document.querySelector(".task-panel")).toBeNull()
-
-    await userEvent.click(tab)
-    expect(within(tab).queryByText("2")).toBeNull()
-    expect(within(screen.getByTestId("bar-end")).getByRole("button", { name: "Pin task list" })).toBeInTheDocument()
-    expect(await screen.findByText("task 1")).toBeInTheDocument()
+describe("useTasksPanel", () => {
+  it("is normal by default: the count, the toolbar and the list, above the tab bar", async () => {
+    wrap(<Host />)
+    const p = panel()
+    expect(p).toHaveAttribute("data-level", "normal")
+    expect(await within(p).findByText("Tasks · 2 open")).toBeInTheDocument()
+    expect(within(p).getByLabelText("Sort tasks")).toBeInTheDocument()
+    expect(await within(p).findByText("task 1")).toBeInTheDocument()
+    expect(within(p).getByPlaceholderText("Add a task…")).toBeInTheDocument()
+    // Panel first, then the bar.
+    expect(p.compareDocumentPosition(screen.getByTestId("bar")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it("unread task events: a dot on the Tasks tab while it is not active", async () => {
-    wrap(2)
-    const tab = screen.getByRole("tab", { name: /Tasks/ })
-    expect(within(tab).getByRole("img", { name: "unread task activity" })).toBeInTheDocument()
-    await userEvent.click(tab)
-    expect(within(tab).queryByRole("img", { name: "unread task activity" })).toBeNull()
+  it("the normal list is capped by rows and by the viewport", async () => {
+    wrap(<Host />)
+    await within(panel()).findByText("task 1")
+    expect(within(panel()).getByTestId("task-list-body").style.maxHeight).toBe("min(240px, 25dvh)")
   })
 
-  it("unread task events, pinned: the dot moves to the panel header", async () => {
-    window.localStorage.setItem(TASK_LIST_KEY, JSON.stringify({ pinned: true }))
-    wrap(1)
-    const panel = document.querySelector(".task-panel") as HTMLElement
-    expect(within(panel).getByRole("img", { name: "unread task activity" })).toBeInTheDocument()
-  })
-
-  it("no unread task events: no dot, tab or panel", async () => {
-    wrap(0)
-    expect(screen.queryByRole("img", { name: "unread task activity" })).toBeNull()
-    act(() => {
-      window.localStorage.setItem(TASK_LIST_KEY, JSON.stringify({ pinned: true }))
-      window.dispatchEvent(new StorageEvent("storage", { key: TASK_LIST_KEY }))
-    })
-    expect(screen.queryByRole("img", { name: "unread task activity" })).toBeNull()
-  })
-
-  it("pinning moves the list into the panel and drops the tab; Unpin brings it back", async () => {
-    wrap()
-    await userEvent.click(screen.getByRole("tab", { name: /Tasks/ }))
-    await userEvent.click(screen.getByRole("button", { name: "Pin task list" }))
-
-    expect(screen.queryByRole("tab", { name: /Tasks/ })).toBeNull()
-    // Fell back to Activity.
-    expect(screen.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true")
-    const panel = document.querySelector(".task-panel") as HTMLElement
-    expect(panel).not.toBeNull()
-    expect(await within(panel).findByText("Tasks · 2 open")).toBeInTheDocument()
-    expect(await within(panel).findByText("task 1")).toBeInTheDocument()
-
-    await userEvent.click(within(panel).getByRole("button", { name: "Unpin task list" }))
-    expect(document.querySelector(".task-panel")).toBeNull()
-    expect(screen.getByRole("tab", { name: /Tasks/ })).toBeInTheDocument()
-    // Stays on Activity: unpinning does not jump back.
-    expect(screen.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true")
-  })
-
-  it("the pinned list is capped by rows and by the viewport, and scrolls inside itself", async () => {
-    window.localStorage.setItem(TASK_LIST_KEY, JSON.stringify({ pinned: true }))
-    wrap()
-    const panel = document.querySelector(".task-panel") as HTMLElement
-    await within(panel).findByText("task 1")
-    const body = within(panel).getByTestId("task-list-body")
-    expect(body.style.maxHeight).toBe("min(240px, 25dvh)")
-    expect(body).toHaveStyle({ overflowY: "auto" })
-  })
-
-  it("a pin from another tab or list also falls back", async () => {
-    wrap()
-    await userEvent.click(screen.getByRole("tab", { name: /Tasks/ }))
-    act(() => {
-      window.localStorage.setItem(TASK_LIST_KEY, JSON.stringify({ pinned: true }))
-      window.dispatchEvent(new StorageEvent("storage", { key: TASK_LIST_KEY }))
-    })
-    expect(screen.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true")
-    expect(document.querySelector(".task-panel")).not.toBeNull()
-  })
-})
-
-/** A Slack pane's shape: Thread, then Tasks, the unread count passed through. */
-function ResourceHost({ unread }: { unread?: number }) {
-  const [tab, setTab] = useState("thread")
-  const { tasks, shownTab } = useResourceTasksPlacement({ type: "slack", id: "C1:1.2" }, tab, setTab, "thread", unread)
-  return (
-    <Tabs value={shownTab} onChange={(v) => v && setTab(v)}>
-      <Tabs.List>
-        <Tabs.Tab value="thread">Thread</Tabs.Tab>
-        {tasks.tab}
-      </Tabs.List>
-    </Tabs>
-  )
-}
-
-describe("useResourceTasksPlacement", () => {
-  it("passes the resource's task unread through to the Tasks tab's dot", async () => {
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(
-      <MantineProvider>
-        <QueryClientProvider client={qc}><TaskModalProvider><ResourceHost unread={2} /></TaskModalProvider></QueryClientProvider>
-      </MantineProvider>,
+  it("collapses to one line, saved globally, and expands back to normal", async () => {
+    wrap(
+      <>
+        <Host testId="a" />
+        <Host testId="b" />
+      </>,
     )
-    const tab = screen.getByRole("tab", { name: /Tasks/ })
-    expect(within(tab).getByRole("img", { name: "unread task activity" })).toBeInTheDocument()
+    const a = () => panel(screen.getByTestId("a"))
+    const b = () => panel(screen.getByTestId("b"))
+    await within(a()).findByText("Tasks · 2 open")
+    await userEvent.click(within(a()).getByRole("button", { name: "Collapse task list" }))
+
+    expect(a()).toHaveAttribute("data-level", "collapsed")
+    expect(within(a()).queryByLabelText("Sort tasks")).toBeNull()
+    expect(within(a()).queryByPlaceholderText("Add a task…")).toBeNull()
+    expect(within(a()).queryByTestId("task-list-body")).toBeNull()
+    const line = within(a()).getByRole("button", { name: "Expand task list" })
+    expect(within(line).getByText("Tasks · 2 open")).toBeInTheDocument()
+    expect(JSON.parse(window.localStorage.getItem(TASK_LIST_KEY)!).collapsed).toBe(true)
+    // ONE global setting: the other panel collapsed too.
+    expect(b()).toHaveAttribute("data-level", "collapsed")
+
+    await userEvent.click(line)
+    expect(a()).toHaveAttribute("data-level", "normal")
+    expect(b()).toHaveAttribute("data-level", "normal")
+  })
+
+  it("Show all expands, without saving anything about it; Show less returns to normal", async () => {
+    mockOverflow()
+    wrap(<Host />)
+    await within(panel()).findByText("task 1")
+    await expand()
+    expect(screen.getByTestId("host")).toHaveAttribute("data-expanded", "true")
+    expect(within(panel()).getByTestId("task-list-body").style.maxHeight).toBe("")
+    const stored = window.localStorage.getItem(TASK_LIST_KEY)
+    expect(stored === null ? {} : JSON.parse(stored)).not.toHaveProperty("expanded")
+    await userEvent.click(within(panel()).getByRole("button", { name: "Show less" }))
+    expect(panel()).toHaveAttribute("data-level", "normal")
+  })
+
+  it("collapsing from expanded clears it: expanding the line comes back normal", async () => {
+    mockOverflow()
+    wrap(<Host />)
+    await within(panel()).findByText("task 1")
+    await expand()
+    await userEvent.click(within(panel()).getByRole("button", { name: "Collapse task list" }))
+    await userEvent.click(within(panel()).getByRole("button", { name: "Expand task list" }))
+    expect(panel()).toHaveAttribute("data-level", "normal")
+  })
+
+  it("expanded resets to normal on navigation to another path", async () => {
+    mockOverflow()
+    const { navigate } = wrap(<Host />, "/a")
+    await within(panel()).findByText("task 1")
+    await expand()
+    act(() => navigate("/b"))
+    expect(panel()).toHaveAttribute("data-level", "normal")
+    // Coming back does not restore it.
+    act(() => navigate("/a"))
+    expect(panel()).toHaveAttribute("data-level", "normal")
+  })
+
+  it("expanded resets to normal on a change of scope, and survives a re-render with the same one", async () => {
+    mockOverflow()
+    const { rerender } = wrap(<Host scope={{ kind: "worktree", path: "/w" }} />)
+    await within(panel()).findByText("task 1")
+    await expand()
+    // A new but equal scope object: still expanded.
+    rerender(<Host scope={{ kind: "worktree", path: "/w" }} />)
+    expect(panel()).toHaveAttribute("data-level", "expanded")
+    rerender(<Host scope={{ kind: "resource", type: "github_pr", id: "o/r#1" }} />)
+    expect(panel()).toHaveAttribute("data-level", "normal")
+  })
+
+  it("a panel that leaves the page and comes back is normal; one that only moves stays expanded", async () => {
+    mockOverflow()
+    /** The worktree page's shape: the hook outlives its panel. */
+    function Mover({ where }: { where: "a" | "b" | "none" }) {
+      const t = useTasksPanel(ALL)
+      return (
+        <>
+          <section data-testid="a">{where === "a" && t.panel}</section>
+          <div data-testid="b">{where === "b" && t.panel}</div>
+        </>
+      )
+    }
+    const { rerender } = wrap(<Mover where="a" />)
+    await within(panel()).findByText("task 1")
+    await expand()
+    // Re-parented in one commit, as the home page's tab bar is on a tab change.
+    rerender(<Mover where="b" />)
+    expect(panel(screen.getByTestId("b"))).toHaveAttribute("data-level", "expanded")
+    await act(async () => rerender(<Mover where="none" />))
+    await act(async () => rerender(<Mover where="b" />))
+    expect(panel()).toHaveAttribute("data-level", "normal")
+  })
+
+  it("unread task events: a dot in the normal header and on the collapsed line", async () => {
+    wrap(<Host unread={2} />)
+    expect(within(panel()).getByRole("img", { name: "unread task activity" })).toBeInTheDocument()
+    await userEvent.click(within(panel()).getByRole("button", { name: "Collapse task list" }))
+    const line = within(panel()).getByRole("button", { name: "Expand task list" })
+    expect(within(line).getByRole("img", { name: "unread task activity" })).toBeInTheDocument()
+  })
+
+  it("no unread task events: no dot", () => {
+    wrap(<Host unread={0} />)
+    expect(screen.queryByRole("img", { name: "unread task activity" })).toBeNull()
   })
 })

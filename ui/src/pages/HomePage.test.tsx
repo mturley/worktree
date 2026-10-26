@@ -721,54 +721,34 @@ describe("HomePage mark all read", () => {
 })
 
 describe("HomePage tasks", () => {
-  const pin = () => window.localStorage.setItem(TASK_LIST_KEY, JSON.stringify({ pinned: true }))
-
-  it("not pinned: Tasks is the last tab with a lime count; its toolbar has Pin", async () => {
-    setViewport("wide")
-    wrap()
-    const tabs = within(screen.getByRole("tablist")).getAllByRole("tab")
-    expect(tabs.map((t) => t.textContent?.replace(/\d+$/, ""))).toEqual(["Activity", "Resources", "Tasks"])
-    const tasksTab = tabs[2]!
-    expect((await within(tasksTab).findByText("1")).closest(".task-count-badge")).not.toBeNull()
-
-    await userEvent.click(tasksTab)
-    const bar = screen.getByRole("tablist")
-    expect(within(bar).getByRole("button", { name: "Pin task list" })).toBeInTheDocument()
-    expect(within(bar).getByLabelText("Sort tasks")).toBeInTheDocument()
-    expect(within(bar).queryByRole("switch", { name: "Show archived" })).toBeNull()
-    expect(await screen.findByText("Write the docs")).toBeInTheDocument()
-    // The tab bar stays pinned atop the column on the Tasks tab too.
-    const header = document.querySelector("[data-tasks-header]") as HTMLElement
-    expect(header.style.position).toBe("sticky")
-    expect(header).toContainElement(bar)
+  /** jsdom has no layout: make the capped list read as overflowing. */
+  const mockOverflow = () => {
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", { configurable: true, get: () => 500 })
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get: () => 240 })
+  }
+  afterEach(() => {
+    delete (HTMLElement.prototype as { scrollHeight?: number }).scrollHeight
+    delete (HTMLElement.prototype as { clientHeight?: number }).clientHeight
   })
 
-  it("pinning moves the list above the tab bar and removes the Tasks tab; Unpin restores it", async () => {
+  it("wide: no Tasks tab; the panel carries the list and its toolbar", async () => {
     setViewport("wide")
     wrap()
-    await userEvent.click(screen.getByRole("tab", { name: /Tasks/ }))
-    await userEvent.click(within(screen.getByRole("tablist")).getByRole("button", { name: "Pin task list" }))
-
-    expect(screen.queryByRole("tab", { name: /Tasks/ })).toBeNull()
-    const panel = document.querySelector(".task-panel") as HTMLElement
+    const bar = screen.getByRole("tablist")
+    expect(within(bar).getAllByRole("tab").map((t) => t.textContent?.replace(/\d+$/, ""))).toEqual(["Activity", "Resources"])
+    expect(within(bar).queryByLabelText("Sort tasks")).toBeNull()
+    const panel = screen.getByTestId("tasks-panel")
+    expect(panel).toHaveAttribute("data-level", "normal")
+    expect(within(panel).getByLabelText("Sort tasks")).toBeInTheDocument()
     expect(await within(panel).findByText("Write the docs")).toBeInTheDocument()
-    // Above the tab bar, in the right column.
-    const bar = screen.getByRole("tablist")
-    expect(panel.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(panel.closest(".mantine-Grid-col")).toBe(bar.closest(".mantine-Grid-col"))
-
-    await userEvent.click(within(panel).getByRole("button", { name: "Unpin task list" }))
-    expect(document.querySelector(".task-panel")).toBeNull()
-    expect(screen.getByRole("tab", { name: /Tasks/ })).toBeInTheDocument()
   })
 
-  it("wide + pinned: the panel rides inside the pinned header above the tab bar, on every tab", async () => {
+  it("wide: the panel rides inside the pinned header above the tab bar, on every tab", async () => {
     setViewport("wide")
-    pin()
     wrap()
     const inPinnedHeader = (selector: string) => {
       const header = document.querySelector(selector) as HTMLElement
-      const panel = document.querySelector(".task-panel") as HTMLElement
+      const panel = screen.getByTestId("tasks-panel")
       expect(header.style.position).toBe("sticky")
       expect(header).toHaveAttribute("data-tooltip-layer", "pinned")
       expect(header).toContainElement(panel)
@@ -779,36 +759,41 @@ describe("HomePage tasks", () => {
     inPinnedHeader("[data-testid=resources-header]")
   })
 
-  it("pinning while on the Tasks tab falls back to Activity", async () => {
+  it("wide + expanded: the right column's header stops being sticky, on every tab", async () => {
     setViewport("wide")
+    mockOverflow()
     wrap()
-    await userEvent.click(screen.getByRole("tab", { name: /Tasks/ }))
-    await userEvent.click(screen.getByRole("button", { name: "Pin task list" }))
-    expect(screen.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true")
-    expect(document.querySelector("[data-activity-header]")).not.toBeNull()
+    const panel = screen.getByTestId("tasks-panel")
+    await userEvent.click(await within(panel).findByRole("button", { name: /^Show all/ }))
+    expect(screen.getByTestId("tasks-panel")).toHaveAttribute("data-level", "expanded")
+    const activity = document.querySelector("[data-activity-header]") as HTMLElement
+    expect(activity.style.position).not.toBe("sticky")
+    expect(activity).not.toHaveAttribute("data-tooltip-layer")
+    // A tab change keeps it expanded, and Resources' header is not pinned either.
+    await userEvent.click(screen.getByRole("tab", { name: "Resources" }))
+    expect(screen.getByTestId("tasks-panel")).toHaveAttribute("data-level", "expanded")
+    expect((document.querySelector("[data-testid=resources-header]") as HTMLElement).style.position).not.toBe("sticky")
+    // The worktree column scrolls on its own; its header stays pinned.
+    expect((document.querySelector("[data-worktrees-header]") as HTMLElement).style.position).toBe("sticky")
   })
 
-  it("narrow + pinned: the pinned list renders above the narrow tabs", async () => {
+  it("narrow: the panel renders above the tabs, which have no Tasks tab", async () => {
     setViewport("narrow")
-    pin()
     wrap()
-    const panel = document.querySelector(".task-panel") as HTMLElement
+    const panel = screen.getByTestId("tasks-panel")
     expect(await within(panel).findByText("Write the docs")).toBeInTheDocument()
     const bar = screen.getByRole("tablist")
     expect(panel.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(within(bar).queryByRole("tab", { name: /Tasks/ })).toBeNull()
+    expect(within(bar).getAllByRole("tab").map((t) => t.textContent?.replace(/\d+$/, ""))).toEqual(["Worktrees", "Activity", "Resources"])
   })
 
-  it("narrow, not pinned: Tasks is the last tab, its toolbar atop its panel", async () => {
-    setViewport("narrow")
+  it("collapsed: one line above the tab bar", async () => {
+    setViewport("wide")
+    window.localStorage.setItem(TASK_LIST_KEY, JSON.stringify({ collapsed: true }))
     wrap()
-    const tabs = within(screen.getByRole("tablist")).getAllByRole("tab")
-    expect(tabs.at(-1)).toHaveTextContent(/^Tasks/)
-    await userEvent.click(tabs.at(-1)!)
-    expect(screen.getByRole("button", { name: "Pin task list" })).toBeInTheDocument()
-    expect(await screen.findByText("Write the docs")).toBeInTheDocument()
-
-    await userEvent.click(screen.getByRole("button", { name: "Pin task list" }))
-    expect(screen.getByRole("tab", { name: /Activity/ })).toHaveAttribute("aria-selected", "true")
+    const panel = screen.getByTestId("tasks-panel")
+    expect(panel).toHaveAttribute("data-level", "collapsed")
+    expect(within(panel).getByRole("button", { name: "Expand task list" })).toBeInTheDocument()
+    expect(within(panel).queryByTestId("task-list-body")).toBeNull()
   })
 })

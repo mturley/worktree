@@ -6,7 +6,6 @@ import { TaskModalProvider } from "../components/tasks/modal/TaskModalProvider"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ResourceDTO, Task } from "../api/types"
 import { api } from "../api/client"
-import { TASK_LIST_KEY } from "../lib/taskListPrefs"
 
 const baseResources: ResourceDTO[] = [
   { type: "pr", id: "o/r#1", url: "https://gh/pr/1", primary: true, title: "Fix the widget", state: "OPEN" } as ResourceDTO,
@@ -580,14 +579,14 @@ describe("WorktreeDetailPage wide layout", () => {
     expect(colBasis(listCol)).toMatch(/^33\.33/)
   })
 
-  it("shows no Resources tab: the feed column's own tab bar is Activity · Tasks", async () => {
+  it("shows no Resources tab: the feed column's own tab bar is Activity alone", async () => {
     setViewport("wide")
     wrap()
     await screen.findByRole("button", { name: /select resource o\/r#1/i })
     expect(screen.queryByRole("tab", { name: "Resources" })).not.toBeInTheDocument()
     const bar = within(document.querySelector<HTMLElement>("[data-activity-header]")!).getByRole("tablist")
     const tabs = within(bar).getAllByRole("tab")
-    expect(tabs.map((t) => t.textContent?.replace(/\d+$/, ""))).toEqual(["Activity", "Tasks"])
+    expect(tabs.map((t) => t.textContent?.replace(/\d+$/, ""))).toEqual(["Activity"])
   })
 })
 
@@ -1358,80 +1357,67 @@ describe("WorktreeDetailPage tasks", () => {
     rank: "r1", created_at: "", updated_at: "", archived: false, links: [], implicit_worktrees: [],
     subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, blocker_labels: [],
   }
-  const pin = () => window.localStorage.setItem(TASK_LIST_KEY, JSON.stringify({ pinned: true }))
   const activityHeader = () => document.querySelector<HTMLElement>("[data-activity-header]")!
+  /** jsdom has no layout: make the capped list read as overflowing. */
+  const mockOverflow = () => {
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", { configurable: true, get: () => 500 })
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get: () => 240 })
+  }
   beforeEach(() => {
     vi.spyOn(api, "tasks").mockResolvedValue([task])
   })
-  afterEach(() => vi.restoreAllMocks())
-
-  it("wide: Activity · Tasks, with the activity controls at the bar's end; Tasks shows the worktree's list", async () => {
-    setViewport("wide")
-    wrap()
-    const bar = within(activityHeader()).getByRole("tablist")
-    const tabs = within(bar).getAllByRole("tab")
-    expect(tabs.map((t) => t.textContent?.replace(/\d+$/, ""))).toEqual(["Activity", "Tasks"])
-    expect(within(bar).getByTestId("activity-controls")).toBeInTheDocument()
-    expect(within(bar).getByRole("button", { name: "Refresh watchers" })).toBeInTheDocument()
-    expect((await within(tabs[1]!).findByText("1")).closest(".task-count-badge")).not.toBeNull()
-    expect(api.tasks).toHaveBeenCalledWith({ kind: "worktree", path: "/wt/foo" }, expect.anything())
-
-    await userEvent.click(tabs[1]!)
-    expect(await screen.findByText("Tidy the branch")).toBeInTheDocument()
-    const header = document.querySelector<HTMLElement>("[data-tasks-header]")!
-    expect(header.style.position).toBe("sticky")
-    const tasksBar = within(header).getByRole("tablist")
-    expect(within(tasksBar).getByRole("button", { name: "Pin task list" })).toBeInTheDocument()
-    expect(within(tasksBar).queryByTestId("activity-controls")).toBeNull()
+  afterEach(() => {
+    vi.restoreAllMocks()
+    delete (HTMLElement.prototype as { scrollHeight?: number }).scrollHeight
+    delete (HTMLElement.prototype as { clientHeight?: number }).clientHeight
   })
 
-  it("wide + pinned: the panel rides in the pinned activity header, above the tab bar", async () => {
+  it("wide: the panel rides in the pinned activity header, above the tab bar, with the worktree's list", async () => {
     setViewport("wide")
-    pin()
     wrap()
     const header = activityHeader()
-    const panel = document.querySelector(".task-panel") as HTMLElement
+    const panel = within(header).getByTestId("tasks-panel")
+    expect(panel).toHaveAttribute("data-level", "normal")
     expect(await within(panel).findByText("Tidy the branch")).toBeInTheDocument()
+    expect(api.tasks).toHaveBeenCalledWith({ kind: "worktree", path: "/wt/foo" }, expect.anything())
     expect(header.style.position).toBe("sticky")
     expect(header).toHaveAttribute("data-tooltip-layer", "pinned")
-    expect(header).toContainElement(panel)
     const bar = within(header).getByRole("tablist")
     expect(panel.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(within(bar).queryByRole("tab", { name: /Tasks/ })).toBeNull()
+    expect(within(bar).getByTestId("activity-controls")).toBeInTheDocument()
+    expect(within(bar).queryByLabelText("Sort tasks")).toBeNull()
   })
 
-  it("wide: pinning while on Tasks falls back to Activity", async () => {
+  it("wide + expanded: the activity header stops being sticky; a selection and back resets it", async () => {
     setViewport("wide")
+    mockOverflow()
+    const user = userEvent.setup()
     wrap()
-    await userEvent.click(within(within(activityHeader()).getByRole("tablist")).getByRole("tab", { name: /Tasks/ }))
-    await userEvent.click(screen.getByRole("button", { name: "Pin task list" }))
-    expect(within(activityHeader()).getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true")
+    const panel = within(activityHeader()).getByTestId("tasks-panel")
+    await user.click(await within(panel).findByRole("button", { name: /^Show all/ }))
+    expect(screen.getByTestId("tasks-panel")).toHaveAttribute("data-level", "expanded")
+    expect(activityHeader().style.position).not.toBe("sticky")
+    expect(activityHeader()).not.toHaveAttribute("data-tooltip-layer")
+
+    // Selecting a resource changes the panel's scope, not the path.
+    await user.click(screen.getByRole("button", { name: /select resource o\/r#1/i }))
+    await screen.findByRole("tab", { name: /Linked Resources/ })
+    expect(screen.getByTestId("tasks-panel")).toHaveAttribute("data-level", "normal")
+    await user.click(screen.getByRole("button", { name: "← all resources" }))
+    await waitFor(() => expect(document.querySelector("[data-activity-header]")).not.toBeNull())
+    expect(screen.getByTestId("tasks-panel")).toHaveAttribute("data-level", "normal")
+    expect(activityHeader().style.position).toBe("sticky")
   })
 
-  it("narrow: Resources · Activity · Tasks", async () => {
+  it("narrow: the panel sits above Resources · Activity", async () => {
     setViewport("narrow")
     wrap()
     const resourcesTab = await screen.findByRole("tab", { name: "Resources" })
     const bar = resourcesTab.closest<HTMLElement>("[role=tablist]")!
-    const tabs = within(bar).getAllByRole("tab")
-    expect(tabs.map((t) => t.textContent?.replace(/\d+$/, ""))).toEqual(["Resources", "Activity", "Tasks"])
-    await userEvent.click(tabs[2]!)
-    expect(await screen.findByText("Tidy the branch")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Pin task list" })).toBeInTheDocument()
-    // Pinned while on Tasks: back to the first tab.
-    await userEvent.click(screen.getByRole("button", { name: "Pin task list" }))
-    expect(screen.getByRole("tab", { name: "Resources" })).toHaveAttribute("aria-selected", "true")
-  })
-
-  it("narrow + pinned: the panel sits above the tabs, which have no Tasks tab", async () => {
-    setViewport("narrow")
-    pin()
-    wrap()
-    const panel = document.querySelector(".task-panel") as HTMLElement
+    expect(within(bar).getAllByRole("tab").map((t) => t.textContent?.replace(/\d+$/, ""))).toEqual(["Resources", "Activity"])
+    const panel = screen.getByTestId("tasks-panel")
     expect(await within(panel).findByText("Tidy the branch")).toBeInTheDocument()
-    const bar = screen.getByRole("tab", { name: "Resources" }).closest<HTMLElement>("[role=tablist]")!
     expect(panel.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(within(bar).queryByRole("tab", { name: /Tasks/ })).toBeNull()
   })
 
   it("a selected resource's pane shows that resource's tasks, not the worktree's tab bar", async () => {

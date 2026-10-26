@@ -10,7 +10,7 @@ import { useLinkedResources } from "../hooks/useLinkedResources"
 import { useResourceTab } from "../hooks/useSelectedResource"
 import { LinkedResourcesPanel, LinkedTabControls, linkedTabLabel } from "./linked/LinkedResourcesPanel"
 import { UnreadMarkerDot } from "./UnreadMarkerDot"
-import { TASKS_TAB, useResourceTasksPlacement } from "./tasks/TasksSection"
+import { useTasksPanel } from "./tasks/TasksSection"
 
 interface SlackThreadPaneProps {
   resource: ResourceDTO
@@ -62,7 +62,7 @@ function isWatcherOff(error: string | undefined): boolean {
 }
 
 /** The Slack pane's tabs, default first (see useResourceTab). */
-const THREAD_TABS = ["thread", "linked", TASKS_TAB] as const
+const THREAD_TABS = ["thread", "linked"] as const
 
 /**
  * The selected-resource pane's Slack branch: renders the thread itself where
@@ -79,12 +79,14 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, 
   // (the server would refuse); it loads again once the watcher is back on.
   const slackOff = useWatcherHealth().data?.slack.enabled === false
   const thread = useThread(slackOff ? null : tab)
-  const [urlTab, setPaneTab] = useResourceTab(THREAD_TABS)
-  // A Tasks tab, or the list pinned between the card and the tab bar. The
-  // thread's card counts its linking tasks' unread events, which no tab here
-  // but Tasks can show, so that tab (or the pinned panel) carries the dot.
-  const { tasks, shownTab: paneTab } = useResourceTasksPlacement(
-    resource, urlTab, setPaneTab, "thread", resource.task_unread_count,
+  const [paneTab, setPaneTab] = useResourceTab(THREAD_TABS)
+  // The thread's task panel, between the card and the tab bar. The thread's
+  // card counts its linking tasks' unread events, which no tab here can
+  // show, so the panel carries the dot.
+  const { type, id } = resource
+  const tasks = useTasksPanel(
+    { kind: "resource", type, id },
+    { ownResource: { type, id }, unread: resource.task_unread_count },
   )
   // See ResourceDetailPane: link titles wait until the Linked tab is shown.
   const [linkedOpened, setLinkedOpened] = useState(paneTab === "linked")
@@ -101,38 +103,16 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, 
 
   /*
    * When the thread can't be shown, its notice stands where the thread
-   * would, but the task list stays: tasks contact no external service.
-   * Pinned, the panel comes first, as it sits above the tab bar elsewhere;
-   * otherwise a minimal Thread · Tasks tab bar (no Linked tab: resolving
-   * links contacts the services).
+   * would, but the task panel stays: tasks contact no external service. The
+   * panel comes first, as it sits above the tab bar elsewhere, and there is
+   * no tab bar (no Linked tab: resolving links contacts the services).
    */
-  const withTasks = (notice: ReactNode) =>
-    tasks.pinned ? (
-      <>
-        {tasks.pinnedPanel}
-        {notice}
-      </>
-    ) : (
-      <Tabs
-        value={paneTab === TASKS_TAB ? TASKS_TAB : "thread"}
-        keepMounted={false}
-        onChange={(v) => {
-          if (v) setPaneTab(v)
-        }}
-      >
-        <Tabs.List>
-          <Tabs.Tab value="thread">Thread</Tabs.Tab>
-          {tasks.tab}
-          {paneTab === TASKS_TAB && (
-            <Group gap={4} wrap="nowrap" align="center" ml="auto" pb={4} style={{ flex: "none" }}>
-              {tasks.toolbar}
-            </Group>
-          )}
-        </Tabs.List>
-        <Tabs.Panel value="thread" pt="sm">{notice}</Tabs.Panel>
-        <Tabs.Panel value={TASKS_TAB} pt="sm">{tasks.tabPanelBody}</Tabs.Panel>
-      </Tabs>
-    )
+  const withTasks = (notice: ReactNode) => (
+    <>
+      {tasks.panel}
+      {notice}
+    </>
+  )
 
   // Watcher off: the resource still shows, but the thread can't be loaded
   // (worktree doesn't contact Slack). ResourceDetailPane's WatcherAlert says
@@ -186,8 +166,8 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, 
         onMetaChanged={() => onResourceChanged?.()}
         notify={notify}
       />
-      {/* Pinned, the task list sits between the card and the tab bar. */}
-      {tasks.pinnedPanel}
+      {/* The task panel sits between the card and the tab bar. */}
+      {tasks.panel}
       <Tabs
         value={paneTab}
         // Only the Thread panel stays mounted while hidden (its keepMounted
@@ -211,15 +191,9 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, 
             Thread
           </Tabs.Tab>
           <Tabs.Tab value="linked">{linkedTabLabel(linked.data)}</Tabs.Tab>
-          {tasks.tab}
           {paneTab === "linked" && (
             <Group gap={4} wrap="nowrap" align="center" ml="auto" style={{ flex: "none" }}>
               <LinkedTabControls query={linked} />
-            </Group>
-          )}
-          {paneTab === TASKS_TAB && (
-            <Group gap={4} wrap="nowrap" align="center" ml="auto" pb={4} style={{ flex: "none" }}>
-              {tasks.toolbar}
             </Group>
           )}
         </Tabs.List>
@@ -238,11 +212,6 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, 
         <Tabs.Panel value="linked" pt="sm">
           <LinkedResourcesPanel query={linked} path={path} />
         </Tabs.Panel>
-        {!tasks.pinned && (
-          <Tabs.Panel value={TASKS_TAB} pt="sm">
-            {tasks.tabPanelBody}
-          </Tabs.Panel>
-        )}
       </Tabs>
     </Stack>
   )

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { useLocation } from "wouter"
 import { serializeResourceKey } from "../lib/resourceKey"
 import { isArchivedEvent, openEventState } from "../lib/openEvent"
@@ -47,11 +47,11 @@ import { ResourcesPanel, ResourcesTabControls } from "../components/ResourcesPan
 import { useResourcesView } from "../hooks/useResourcesView"
 import { ChooseWorktreeModal } from "../components/ChooseWorktreeModal"
 import { CrossHoverProvider } from "../components/CrossHoverContext"
-import { tasksFallbackTab, useTasksPlacement } from "../components/tasks/TasksSection"
+import { useTasksPanel } from "../components/tasks/TasksSection"
 import { useMakeTaskFromEvent } from "../components/tasks/useMakeTask"
 import { useTaskModal } from "../components/tasks/modal/TaskModalProvider"
 
-type RightTab = "timeline" | "resources" | "tasks"
+type RightTab = "timeline" | "resources"
 type NarrowTab = "worktrees" | RightTab
 
 /** Every task, with no context to link a new one to. */
@@ -107,12 +107,8 @@ export function HomePage() {
   } as const
   const wide = useIsWide()
   const tall = useIsTall()
-  // A Tasks tab, or the list pinned above the tab bar; pinning while on
-  // Tasks goes back to Activity.
-  const toActivity = useCallback(() => (wide ? setRightTab : setNarrowTab)("timeline"), [wide])
-  const tasks = useTasksPlacement(HOME_TASKS, undefined, { activeTab: wide ? rightTab : narrowTab, onFallback: toActivity })
-  const shownRightTab = tasksFallbackTab(rightTab, tasks.pinned, "timeline")
-  const shownNarrowTab = tasksFallbackTab(narrowTab, tasks.pinned, "timeline")
+  // The task panel, always above the tab bar.
+  const tasks = useTasksPanel(HOME_TASKS)
   // Wide, each column scrolls on its own, and its header (with the activity
   // filters) stays pinned at the top of it — with room to spare only, as on
   // the worktree page. Inside a scrolling column, so the pin is measured
@@ -120,6 +116,9 @@ export function HomePage() {
   const headerStyle = wide && tall
     ? pinnedStyle("calc(-1 * var(--grid-col-padding))", "var(--grid-col-padding)")
     : undefined
+  // The right column's header carries the task panel: an expanded panel has
+  // no cap, so while it is expanded the header scrolls with the column.
+  const rightHeaderStyle = tasks.expanded ? undefined : headerStyle
   const wts = useWorktrees()
   const tl = useGlobalTimeline(archived, sources, unreadOnly, eventTypes, search.debouncedQ)
   const sort = useWorktreeSort()
@@ -301,20 +300,15 @@ export function HomePage() {
   // tabs, the active tab's controls sit at the bar's far end. It rides at
   // the top of whichever tab's pinned header is showing, so it stays in
   // reach as the column scrolls.
-  // A pinned task list rides in the same header, just above the bar, so it
+  // The task panel rides in the same header, just above the bar, so it
   // stays in view with it.
-  const rightTabBar = tasks.pinnedAbove(
-    <Tabs value={shownRightTab} onChange={(v) => v && setRightTab(v as RightTab)}>
+  const rightTabBar = tasks.above(
+    <Tabs value={rightTab} onChange={(v) => v && setRightTab(v as RightTab)}>
       <Tabs.List>
         <Tabs.Tab value="timeline">Activity{countBadge(tl.events.length, tl.hasMore)}</Tabs.Tab>
         <Tabs.Tab value="resources">Resources{countBadge(resourcesView.shown.length)}</Tabs.Tab>
-        {tasks.tab}
         <Group ml="auto" align="center" gap="md" wrap="nowrap" pb={4}>
-          {shownRightTab === "timeline"
-            ? activityControls
-            : shownRightTab === "resources"
-              ? <ResourcesTabControls view={resourcesView} />
-              : tasks.toolbar}
+          {rightTab === "timeline" ? activityControls : <ResourcesTabControls view={resourcesView} />}
         </Group>
       </Tabs.List>
     </Tabs>,
@@ -322,14 +316,14 @@ export function HomePage() {
 
   const timeline = (top?: React.ReactNode) => (
     // No gap below the header when pinned: its own padding is that space.
-    <Stack gap={headerStyle ? 0 : "sm"}>
+    <Stack gap={rightHeaderStyle ? 0 : "sm"}>
       {/* Opaque room below the filters when pinned, so the feed passing
           under them does not run right up against the buttons. */}
       <Stack
         gap="sm"
-        style={headerStyle && { ...headerStyle, paddingBottom: "var(--mantine-spacing-xs)" }}
+        style={rightHeaderStyle && { ...rightHeaderStyle, paddingBottom: "var(--mantine-spacing-xs)" }}
         data-activity-header
-        data-tooltip-layer={headerStyle ? "pinned" : undefined}
+        data-tooltip-layer={rightHeaderStyle ? "pinned" : undefined}
       >
         {/* Wide, the tab bar, which carries this tab's controls; narrow,
             where the tab bar has no room for them, the controls alone. */}
@@ -434,13 +428,12 @@ export function HomePage() {
           <NewWorktreeModal opened={newOpen} onClose={() => setNewOpen(false)} />
           {detailsModal}
           {header}
-          {tasks.pinnedPanel}
-          <Tabs value={shownNarrowTab} onChange={(v) => v && setNarrowTab(v as NarrowTab)}>
+          {tasks.panel}
+          <Tabs value={narrowTab} onChange={(v) => v && setNarrowTab(v as NarrowTab)}>
             <Tabs.List>
               <Tabs.Tab value="worktrees">Worktrees{countBadge(shownWorktrees.length)}</Tabs.Tab>
               <Tabs.Tab value="timeline">Activity{countBadge(tl.events.length, tl.hasMore)}</Tabs.Tab>
               <Tabs.Tab value="resources">Resources{countBadge(resourcesView.shown.length)}</Tabs.Tab>
-              {tasks.tab}
             </Tabs.List>
             <Tabs.Panel value="worktrees" pt="md">
               <Stack gap="xs">
@@ -456,14 +449,6 @@ export function HomePage() {
                 searchSummary={resourcesSummary}
               />
             </Tabs.Panel>
-            {!tasks.pinned && (
-              <Tabs.Panel value="tasks" pt="md">
-                <Stack gap="sm">
-                  {tasks.toolbar}
-                  {tasks.tabPanelBody}
-                </Stack>
-              </Tabs.Panel>
-            )}
           </Tabs>
         </Stack>
       </CrossHoverProvider></SearchContext.Provider></NarrowingContext.Provider>
@@ -501,24 +486,11 @@ export function HomePage() {
           </Stack>
         </Grid.Col>
         <Grid.Col span={6} style={columnStyle} data-tooltip-layer="content">
-          {/* A pinned task list is part of rightTabBar, so it pins with the
+          {/* The task panel is part of rightTabBar, so it pins with the
               header of whichever tab is showing. */}
-          {shownRightTab === "timeline" && timeline(rightTabBar)}
-          {shownRightTab === "resources" && (
-            <ResourcesPanel view={resourcesView} headerStyle={headerStyle} top={rightTabBar} searchSummary={resourcesSummary} />
-          )}
-          {shownRightTab === "tasks" && (
-            // As the Activity header: the tab bar pinned atop the column.
-            <Stack gap={headerStyle ? 0 : "sm"}>
-              <Box
-                style={headerStyle && { ...headerStyle, paddingBottom: "var(--mantine-spacing-xs)" }}
-                data-tasks-header
-                data-tooltip-layer={headerStyle ? "pinned" : undefined}
-              >
-                {rightTabBar}
-              </Box>
-              {tasks.tabPanelBody}
-            </Stack>
+          {rightTab === "timeline" && timeline(rightTabBar)}
+          {rightTab === "resources" && (
+            <ResourcesPanel view={resourcesView} headerStyle={rightHeaderStyle} top={rightTabBar} searchSummary={resourcesSummary} />
           )}
         </Grid.Col>
         <NewWorktreeModal opened={newOpen} onClose={() => setNewOpen(false)} />

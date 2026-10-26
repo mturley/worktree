@@ -854,7 +854,7 @@ describe("open task badge", () => {
     expect(badge()?.parentElement).toBe(screen.getByText("4 unreads").closest(".mantine-Badge-root")?.parentElement)
   })
 
-  it("leaves the detail card bare: its own Tasks tab carries the count", () => {
+  it("leaves the detail card bare: its own task panel carries the count", () => {
     wrap(<ResourceCard r={{ ...pr, open_task_count: 2 }} variant="detail" path="/wt" />)
     expect(badge()).toBeNull()
   })

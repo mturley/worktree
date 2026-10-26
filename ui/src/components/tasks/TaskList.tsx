@@ -1,5 +1,5 @@
-import { useState } from "react"
-import { ActionIcon, Alert, Box, Stack, Text, Tooltip } from "@mantine/core"
+import { useLayoutEffect, useRef, useState } from "react"
+import { ActionIcon, Alert, Box, Button, Group, Stack, Text, Tooltip } from "@mantine/core"
 import { IconGripVertical } from "@tabler/icons-react"
 import {
   DndContext,
@@ -27,20 +27,20 @@ import { TaskRow } from "./TaskRow"
 import { taskUndoMessage, useOfferTaskUndo } from "./taskUndo"
 import { dropPlanFor, sectionDroppableId, taskCollisions, taskDraggableId } from "./taskDrag"
 
-/** A compact row's height, for capping a pinned list at `maxRows`. */
+/** A compact row's height, for capping a list at `maxRows`. */
 const ROW_PX = 30
 /**
- * A pinned list is also capped at a quarter of the viewport: inside a sticky
+ * A capped list is also capped at a quarter of the viewport: inside a sticky
  * header (card + panel + tab bar) 8 rows alone could take most of a short
  * screen.
  */
-const PINNED_VIEWPORT_CAP = "25dvh"
+const VIEWPORT_CAP = "25dvh"
 /** An empty section's drop strip: present at rest, so a drag shifts nothing. */
 const STRIP_PX = 22
 
 /** The list body's height cap for `maxRows`, rows and viewport both. */
-export function pinnedMaxHeight(maxRows: number): string {
-  return `min(${maxRows * ROW_PX}px, ${PINNED_VIEWPORT_CAP})`
+export function cappedMaxHeight(maxRows: number): string {
+  return `min(${maxRows * ROW_PX}px, ${VIEWPORT_CAP})`
 }
 
 /** What an empty section's strip says: what dropping there does. */
@@ -53,6 +53,30 @@ function stripText(section: TaskSection): string {
 const DRAG_HINT = "Drag to reorder works in Custom or Priority order"
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
+
+/**
+ * Whether a capped body overflows its cap: measured after layout, and again
+ * whenever the body resizes or the number of tasks it shows changes (a cap
+ * that holds keeps the box's size while its content grows).
+ */
+function useOverflow(capped: boolean, count: number) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [value, setValue] = useState(false)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el || !capped) {
+      setValue(false)
+      return
+    }
+    const check = () => setValue(el.scrollHeight > el.clientHeight + 1)
+    check()
+    if (typeof ResizeObserver === "undefined") return
+    const ro = new ResizeObserver(check)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [capped, count])
+  return { ref, value }
+}
 
 /**
  * A TaskRow that drags by its grip only, as SortableResourceCard does. The
@@ -201,11 +225,17 @@ function SectionBlock({ section, labelled, children }: {
  * completed last), drag reordering across sections, and quick add at the
  * bottom. View prefs are global (useTaskListPrefs); the toolbar that edits
  * them is rendered by whoever hosts the list.
+ *
+ * `maxRows` caps the body, which then scrolls inside itself. With `expand`,
+ * a capped body that overflows offers "Show all (N)" under it, and an
+ * expanded one (`maxRows` ignored) offers "Show less"; both call `onToggle`,
+ * and the host owns the level.
  */
-export function TaskList({ scope, ownResource, maxRows }: {
+export function TaskList({ scope, ownResource, maxRows, expand }: {
   scope: TaskScope
   ownResource?: { type: string; id: string }
   maxRows?: number
+  expand?: { expanded: boolean; onToggle: () => void }
 }) {
   const [prefs] = useTaskListPrefs()
   const { terms } = useSearchContext()
@@ -216,6 +246,11 @@ export function TaskList({ scope, ownResource, maxRows }: {
   const [error, setError] = useState<string | null>(null)
 
   const sections = buildSections(query.data ?? [], prefs, terms)
+  // Every task the list shows, across its sections: Show all's count.
+  const shownCount = sections.reduce((n, s) => n + s.tasks.length, 0)
+  // Expanded drops the cap.
+  const cap = expand?.expanded ? undefined : maxRows
+  const overflows = useOverflow(cap !== undefined, shownCount)
   const sortDraggable = canDrag(prefs.sort)
   // Empty draggable sections show as drop strips at rest; nothing here
   // depends on whether a drag is on, so starting one moves no row.
@@ -325,11 +360,19 @@ export function TaskList({ scope, ownResource, maxRows }: {
         </Alert>
       )}
       <Box
+        ref={overflows.ref}
         data-testid="task-list-body"
-        style={maxRows ? { maxHeight: pinnedMaxHeight(maxRows), overflowY: "auto" } : undefined}
+        style={cap !== undefined ? { maxHeight: cappedMaxHeight(cap), overflowY: "auto" } : undefined}
       >
         {body}
       </Box>
+      {expand && (expand.expanded || overflows.value) && (
+        <Group justify="center">
+          <Button variant="subtle" size="compact-xs" onClick={expand.onToggle}>
+            {expand.expanded ? "Show less" : `Show all (${shownCount})`}
+          </Button>
+        </Group>
+      )}
       <TaskQuickAdd onAdd={add} onOpen={(id) => open(id)} defaultPriority={newPriority} />
     </Stack>
   )

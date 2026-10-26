@@ -412,7 +412,7 @@ export function ResourceCard({
   // into whatever width was left beside it on a narrow card.
   const unread = showsUnread(variant) && hasUnread(r)
   // Lime beside the blue, on list cards only: the detail card heads the pane
-  // whose own Tasks tab (or pinned list) already shows this count.
+  // whose own task panel already shows this count.
   const openTasks = variant === "detail" ? 0 : r.open_task_count ?? 0
   // Red beside the lime, on list cards only, as the open-task count.
   const blocks = variant === "detail" ? 0 : r.blocks_count ?? 0

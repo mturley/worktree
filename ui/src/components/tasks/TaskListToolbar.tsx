@@ -1,5 +1,4 @@
-import { ActionIcon, Group, Select, Switch, Tooltip } from "@mantine/core"
-import { IconPin, IconPinnedOff } from "@tabler/icons-react"
+import { Group, Select, Switch } from "@mantine/core"
 import type { Priority } from "../../api/types"
 import type { TaskListPrefs, TaskSort } from "../../lib/taskSections"
 
@@ -18,12 +17,10 @@ const PRIORITY_OPTIONS: { value: Priority | "all"; label: string }[] = [
   { value: "none", label: "None" },
 ]
 
-/** Sort, priority filter, show completed (+ include archived) and Pin, for every task list at once. */
-export function TaskListToolbar({ prefs, onChange, pinned, onPinnedChange }: {
+/** Sort, priority filter and show completed (+ include archived), for every task list at once. */
+export function TaskListToolbar({ prefs, onChange }: {
   prefs: TaskListPrefs
   onChange(p: Partial<TaskListPrefs>): void
-  pinned: boolean
-  onPinnedChange(v: boolean): void
 }) {
   return (
     <Group gap="xs" wrap="wrap">
@@ -59,16 +56,6 @@ export function TaskListToolbar({ prefs, onChange, pinned, onPinnedChange }: {
           onChange={(e) => onChange({ includeArchived: e.currentTarget.checked })}
         />
       )}
-      <Tooltip label={pinned ? "Unpin the task list" : "Pin the task list above the tabs"}>
-        <ActionIcon
-          variant="subtle"
-          color="gray"
-          aria-label={pinned ? "Unpin task list" : "Pin task list"}
-          onClick={() => onPinnedChange(!pinned)}
-        >
-          {pinned ? <IconPinnedOff size={16} /> : <IconPin size={16} />}
-        </ActionIcon>
-      </Tooltip>
     </Group>
   )
 }

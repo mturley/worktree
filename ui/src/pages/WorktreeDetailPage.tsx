@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
 import { Anchor, Badge, Box, Grid, Group, MantineThemeProvider, Stack, Tabs, Title } from "@mantine/core"
 import { Link, useLocation, useRoute } from "wouter"
 import { useQueryClient } from "@tanstack/react-query"
@@ -58,7 +58,7 @@ import { useSearchQuery } from "../hooks/useSearchQuery"
 import { matchResource } from "../lib/search"
 import { CrossHoverProvider } from "../components/CrossHoverContext"
 import { DiffViewBoundary, installPreloadReload } from "../components/gitdiff/DiffViewBoundary"
-import { tasksFallbackTab, useTasksPlacement } from "../components/tasks/TasksSection"
+import { useTasksPanel } from "../components/tasks/TasksSection"
 import { useMakeTask, useMakeTaskFromEvent } from "../components/tasks/useMakeTask"
 import { useTaskModal } from "../components/tasks/modal/TaskModalProvider"
 
@@ -68,8 +68,7 @@ const DiffView = lazy(() => import("../components/gitdiff/DiffView"))
 // A chunk missing after an upgrade reloads the page (once) instead of failing.
 installPreloadReload()
 
-type RightTab = "activity" | "tasks"
-type NarrowTab = "resources" | RightTab
+type NarrowTab = "resources" | "activity"
 
 export function WorktreeDetailPage() {
   const [, params] = useRoute("/worktree/:path*")
@@ -248,21 +247,12 @@ export function WorktreeDetailPage() {
   // height; Code, Environment and cmux, which want the width, under the
   // header. Narrow has no side column, so the card is always under the header.
   const inColumn = wide && detailTab.tab === "notes"
-  // Narrow only: which of Resources / Activity / Tasks is showing.
+  // Narrow only: which of Resources / Activity is showing.
   const [narrowTab, setNarrowTab] = useState<NarrowTab>("resources")
-  // Wide, nothing selected: which of Activity / Tasks fills the right column.
-  const [rightTab, setRightTab] = useState<RightTab>("activity")
-  // The worktree's tasks: a Tasks tab, or the list pinned above the tab bar.
-  // Pinning while on Tasks goes back to the first tab. A selected resource's
-  // pane places its own list (see ResourceDetailPane).
-  const toFirstTab = useCallback(() => (wide ? setRightTab("activity") : setNarrowTab("resources")), [wide])
+  // The worktree's task panel, above the tab bar. A selected resource's pane
+  // shows its own (see ResourceDetailPane).
   const taskScope = useMemo(() => ({ kind: "worktree" as const, path }), [path])
-  const tasks = useTasksPlacement(taskScope, undefined, {
-    activeTab: wide ? rightTab : narrowTab,
-    onFallback: toFirstTab,
-  })
-  const shownRightTab = tasksFallbackTab(rightTab, tasks.pinned, "activity")
-  const shownNarrowTab = tasksFallbackTab(narrowTab, tasks.pinned, "resources")
+  const tasks = useTasksPanel(taskScope)
 
   // The sticky resource list has to start below the header, and the header's
   // height is not a constant: the worktree and cmux workspace names wrap, and
@@ -387,22 +377,22 @@ export function WorktreeDetailPage() {
 
   // Pinned under the page header while the column scrolls beneath — with
   // room to spare only, like the cards. Opaque room below, so the content
-  // passing under it does not run right up against the buttons.
-  const headerStyle = pinCards
+  // passing under it does not run right up against the buttons. Wide, it
+  // carries the task panel, which has no cap while expanded: then the header
+  // scrolls with the page.
+  const headerStyle = pinCards && !tasks.expanded
     ? { ...pinnedStyle(headerHeight, "var(--mantine-spacing-md)"), paddingBottom: "var(--mantine-spacing-xs)" }
     : undefined
 
-  // Wide, nothing selected: the right column's tab bar, with the active
-  // tab's controls at its far end, as on the home page. It heads whichever
-  // tab's pinned header is showing, and a pinned task list rides in the same
-  // header just above it.
-  const rightTabBar = tasks.pinnedAbove(
-    <Tabs value={shownRightTab} onChange={(v) => v && setRightTab(v as RightTab)}>
+  // Wide, nothing selected: the right column's tab bar, with the activity
+  // controls at its far end, as on the home page. The task panel rides in
+  // the same pinned header just above it.
+  const rightTabBar = tasks.above(
+    <Tabs value="activity">
       <Tabs.List>
         <Tabs.Tab value="activity">Activity</Tabs.Tab>
-        {tasks.tab}
         <Group ml="auto" align="center" gap="md" wrap="nowrap" pb={4}>
-          {shownRightTab === "activity" ? activityControls : tasks.toolbar}
+          {activityControls}
         </Group>
       </Tabs.List>
     </Tabs>,
@@ -410,13 +400,13 @@ export function WorktreeDetailPage() {
 
   const unfiltered = (top?: ReactNode) => (
     // No gap below the header when pinned: its own padding is that space.
-    <Stack gap={pinCards ? 0 : "sm"}>
+    <Stack gap={headerStyle ? 0 : "sm"}>
       {/* Pinned under the page header, with the filters, while the feed
           scrolls beneath. */}
       <Stack
         gap="sm"
         data-activity-header
-        data-tooltip-layer={pinCards ? "pinned" : undefined}
+        data-tooltip-layer={headerStyle ? "pinned" : undefined}
         style={headerStyle}
       >
         {/* Wide, the tab bar, which carries the controls; narrow, where the
@@ -524,26 +514,17 @@ export function WorktreeDetailPage() {
     // resources, so they are tabs instead, as on the home page. The tab is
     // page state rather than the Tabs' own, so backing out of a drill-down
     // lands on the tab you left.
-    // Pinned, the task list sits above the tabs, as on the home page.
+    // The task panel sits above the tabs, as on the home page.
     overview = detail || (
       <Stack gap="sm">
-        {tasks.pinnedPanel}
-        <Tabs value={shownNarrowTab} onChange={(v) => setNarrowTab((v as NarrowTab | null) ?? "resources")}>
+        {tasks.panel}
+        <Tabs value={narrowTab} onChange={(v) => setNarrowTab((v as NarrowTab | null) ?? "resources")}>
           <Tabs.List>
             <Tabs.Tab value="resources">Resources</Tabs.Tab>
             <Tabs.Tab value="activity">Activity</Tabs.Tab>
-            {tasks.tab}
           </Tabs.List>
           <Tabs.Panel value="resources" pt="md">{list}</Tabs.Panel>
           <Tabs.Panel value="activity" pt="md">{unfiltered()}</Tabs.Panel>
-          {!tasks.pinned && (
-            <Tabs.Panel value="tasks" pt="md">
-              <Stack gap="sm">
-                {tasks.toolbar}
-                {tasks.tabPanelBody}
-              </Stack>
-            </Tabs.Panel>
-          )}
         </Tabs>
       </Stack>
     )
@@ -610,19 +591,7 @@ export function WorktreeDetailPage() {
         {/* No scroller: this column's content is what the PAGE scrolls.
             Its tooltips open under the pinned blocks; see useTooltipLayer. */}
         <Grid.Col span={split[1]} data-tooltip-layer="content">
-          {detail || (shownRightTab === "activity" ? unfiltered(rightTabBar) : (
-            // As the Activity header: the tab bar pinned atop the column.
-            <Stack gap={pinCards ? 0 : "sm"}>
-              <Box
-                style={headerStyle}
-                data-tasks-header
-                data-tooltip-layer={pinCards ? "pinned" : undefined}
-              >
-                {rightTabBar}
-              </Box>
-              {tasks.tabPanelBody}
-            </Stack>
-          ))}
+          {detail || unfiltered(rightTabBar)}
         </Grid.Col>
       </Grid>
     )

@@ -23,12 +23,12 @@ import { useResourceTab } from "../hooks/useSelectedResource"
 import { UnreadMarkerDot } from "./UnreadMarkerDot"
 import { pinnedStyle } from "../lib/stickyList"
 import { LinkedResourcesPanel, LinkedTabControls, linkedTabLabel } from "./linked/LinkedResourcesPanel"
-import { TASKS_TAB, useResourceTasksPlacement } from "./tasks/TasksSection"
+import { useTasksPanel } from "./tasks/TasksSection"
 import { useMakeTaskFromEvent } from "./tasks/useMakeTask"
 import { useTaskModal } from "./tasks/modal/TaskModalProvider"
 
 /** The PR/Jira pane's tabs, default first (see useResourceTab). */
-const DETAIL_TABS = ["activity", "linked", TASKS_TAB] as const
+const DETAIL_TABS = ["activity", "linked"] as const
 
 interface ResourceDetailPaneProps {
   path: string
@@ -85,9 +85,13 @@ function TimelineBody({
   // The tasks linking this resource put their events in its feed; a row of
   // one opens the task.
   const { open: openTask } = useTaskModal()
-  const [urlTab, setTab] = useResourceTab(DETAIL_TABS)
-  // A Tasks tab, or the list pinned between the card and the tab bar.
-  const { tasks, shownTab: tab } = useResourceTasksPlacement(resource, urlTab, setTab, "activity")
+  const [tab, setTab] = useResourceTab(DETAIL_TABS)
+  // The resource's own task panel, between the card and the tab bar; its
+  // rows don't chip the resource they are already under.
+  const { type, id } = resource
+  const tasks = useTasksPanel({ kind: "resource", type, id }, { ownResource: { type, id } })
+  // An expanded panel has no cap, so the card block stops pinning while it is.
+  const pinTop = tasks.expanded ? undefined : stickyTop
   // Link titles are only fetched once the Linked tab has been shown — by a
   // click, or by arriving on it through the URL (back/forward, a refresh).
   const [linkedOpened, setLinkedOpened] = useState(tab === "linked")
@@ -118,8 +122,9 @@ function TimelineBody({
         the page's gap above the column (see pinnedStyle).
       */}
       <Box
-        style={stickyTop === undefined ? undefined : pinnedStyle(stickyTop, "var(--mantine-spacing-md)")}
-        data-tooltip-layer={stickyTop === undefined ? undefined : "pinned"}
+        data-resource-card-block
+        style={pinTop === undefined ? undefined : pinnedStyle(pinTop, "var(--mantine-spacing-md)")}
+        data-tooltip-layer={pinTop === undefined ? undefined : "pinned"}
       >
         <ResourceCard
           r={resource}
@@ -129,9 +134,9 @@ function TimelineBody({
           variant="detail"
           notify={notify}
         />
-        {/* Pinned, the task list rides in this sticky block, between the
-            card and the tab bar, so it stays in view with them. */}
-        {tasks.pinnedPanel && <Box mt="sm">{tasks.pinnedPanel}</Box>}
+        {/* The task panel rides in this sticky block, between the card and
+            the tab bar, so it stays in view with them. */}
+        <Box mt="sm">{tasks.panel}</Box>
         <Tabs.List mt="sm">
           <Tabs.Tab
             value="activity"
@@ -145,7 +150,6 @@ function TimelineBody({
           <Tabs.Tab value="linked">
             {linkedTabLabel(linked.data, linked.data && filterLinkedSections(linked.data.sections, search.terms).count)}
           </Tabs.Tab>
-          {tasks.tab}
           {/*
             The active tab's freshness and refresh, at the far end of the tab
             bar. For Activity this is where the source filter sits on the
@@ -173,10 +177,8 @@ function TimelineBody({
                   />
                 )}
               </>
-            ) : tab === "linked" ? (
-              <LinkedTabControls query={linked} />
             ) : (
-              tasks.toolbar
+              <LinkedTabControls query={linked} />
             )}
           </Group>
         </Tabs.List>
@@ -231,11 +233,6 @@ function TimelineBody({
       <Tabs.Panel value="linked" pt="sm">
         <LinkedResourcesPanel query={linked} path={path} />
       </Tabs.Panel>
-      {!tasks.pinned && (
-        <Tabs.Panel value={TASKS_TAB} pt="sm">
-          {tasks.tabPanelBody}
-        </Tabs.Panel>
-      )}
     </Tabs>
   )
 }

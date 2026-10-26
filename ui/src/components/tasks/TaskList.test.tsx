@@ -209,7 +209,7 @@ describe("TaskList quick add", () => {
 
 function ToolbarHarness() {
   const [prefs, set] = useTaskListPrefs()
-  return <TaskListToolbar prefs={prefs} onChange={set} pinned={prefs.pinned} onPinnedChange={(v) => set({ pinned: v })} />
+  return <TaskListToolbar prefs={prefs} onChange={set} />
 }
 
 describe("TaskListToolbar", () => {
@@ -222,12 +222,70 @@ describe("TaskListToolbar", () => {
     expect(JSON.parse(window.localStorage.getItem(TASK_LIST_KEY)!).showCompleted).toBe(true)
   })
 
-  it("pins and unpins", async () => {
-    const user = userEvent.setup()
+  it("has no pin", () => {
     wrap(<ToolbarHarness />)
-    await user.click(screen.getByRole("button", { name: "Pin task list" }))
-    expect(screen.getByRole("button", { name: "Unpin task list" })).toBeInTheDocument()
-    expect(JSON.parse(window.localStorage.getItem(TASK_LIST_KEY)!).pinned).toBe(true)
+    expect(screen.queryByRole("button", { name: /pin task list/i })).toBeNull()
+  })
+})
+
+/**
+ * jsdom has no layout: every element's scrollHeight and clientHeight are 0.
+ * Mock both on the prototype so the list body reads as overflowing (or not).
+ */
+function mockOverflow(scrollHeight: number, clientHeight: number) {
+  Object.defineProperty(HTMLElement.prototype, "scrollHeight", { configurable: true, get: () => scrollHeight })
+  Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get: () => clientHeight })
+}
+function unmockOverflow() {
+  // Deleting the own properties restores Element.prototype's getters.
+  delete (HTMLElement.prototype as { scrollHeight?: number }).scrollHeight
+  delete (HTMLElement.prototype as { clientHeight?: number }).clientHeight
+}
+
+describe("TaskList expand footer", () => {
+  const twelve = () => Array.from({ length: 12 }, (_, i) => task(i + 1))
+  afterEach(unmockOverflow)
+
+  it("offers Show all (N) when the capped list overflows, and calls onToggle", async () => {
+    mockOverflow(500, 240)
+    vi.mocked(api.tasks).mockResolvedValue(twelve())
+    const onToggle = vi.fn()
+    const user = userEvent.setup()
+    wrap(<TaskList scope={{ kind: "all" }} maxRows={8} expand={{ expanded: false, onToggle }} />)
+    await screen.findByText("task 12")
+    const btn = await screen.findByRole("button", { name: "Show all (12)" })
+    await user.click(btn)
+    expect(onToggle).toHaveBeenCalledTimes(1)
+  })
+
+  it("offers nothing when the list fits", async () => {
+    mockOverflow(240, 240)
+    vi.mocked(api.tasks).mockResolvedValue(twelve())
+    wrap(<TaskList scope={{ kind: "all" }} maxRows={8} expand={{ expanded: false, onToggle: vi.fn() }} />)
+    await screen.findByText("task 12")
+    expect(screen.queryByRole("button", { name: /Show all/ })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Show less" })).toBeNull()
+  })
+
+  it("expanded: Show less, and no cap", async () => {
+    mockOverflow(500, 500)
+    vi.mocked(api.tasks).mockResolvedValue(twelve())
+    const onToggle = vi.fn()
+    const user = userEvent.setup()
+    wrap(<TaskList scope={{ kind: "all" }} maxRows={8} expand={{ expanded: true, onToggle }} />)
+    await screen.findByText("task 12")
+    expect(screen.getByTestId("task-list-body").style.maxHeight).toBe("")
+    await user.click(screen.getByRole("button", { name: "Show less" }))
+    expect(onToggle).toHaveBeenCalledTimes(1)
+  })
+
+  it("without expand, neither button renders", async () => {
+    mockOverflow(500, 240)
+    vi.mocked(api.tasks).mockResolvedValue(twelve())
+    wrap(<TaskList scope={{ kind: "all" }} maxRows={8} />)
+    await screen.findByText("task 12")
+    expect(screen.queryByRole("button", { name: /Show all/ })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Show less" })).toBeNull()
   })
 })
 

@@ -1,11 +1,10 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest"
-import { render, cleanup, screen, waitFor, within } from "@testing-library/react"
+import { render, cleanup, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { TaskModalProvider } from "./tasks/modal/TaskModalProvider"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ResourceDTO, Task } from "../api/types"
-import { TASK_LIST_KEY } from "../lib/taskListPrefs"
 
 const resolveResource = vi.fn()
 vi.mock("../api/client", async (orig) => {
@@ -117,38 +116,27 @@ describe("LinkPane tasks", () => {
   })
   afterEach(() => vi.restoreAllMocks())
 
-  it("has Details · Tasks tabs, with today's content under Details", async () => {
+  it("has a lone Details tab, with the link's task panel between the card and the tab bar", async () => {
     wrap(<LinkPane resource={link({ embeddable: false })} path="/wt" />)
-    const tabs = within(screen.getByRole("tablist")).getAllByRole("tab")
-    expect(tabs.map((t) => t.textContent?.replace(/\d+$/, ""))).toEqual(["Details", "Tasks"])
+    const bar = screen.getByRole("tablist")
+    const tabs = within(bar).getAllByRole("tab")
+    expect(tabs.map((t) => t.textContent)).toEqual(["Details"])
     expect(tabs[0]).toHaveAttribute("aria-selected", "true")
-    expect((await within(tabs[1]!).findByText("1")).closest(".task-count-badge")).not.toBeNull()
     const details = screen.getByRole("tabpanel")
     expect(within(details).getByText("Can't embed page")).toBeInTheDocument()
     expect(within(details).getByRole("button", { name: "Refresh page details" })).toBeInTheDocument()
 
-    await userEvent.click(tabs[1]!)
-    expect(await screen.findByText("Read the page")).toBeInTheDocument()
-    expect(within(screen.getByRole("tablist")).getByRole("button", { name: "Pin task list" })).toBeInTheDocument()
-    expect(api.tasks).toHaveBeenCalledWith({ kind: "resource", type: "link", id: "https://ex.com/a" }, expect.anything())
-  })
-
-  it("pinned: the list sits between the card and the tab bar, and Tasks is not a tab", async () => {
-    window.localStorage.setItem(TASK_LIST_KEY, JSON.stringify({ pinned: true }))
-    wrap(<LinkPane resource={link({ embeddable: false })} path="/wt" />)
-    const panel = document.querySelector(".task-panel") as HTMLElement
+    const panel = screen.getByTestId("tasks-panel")
     expect(await within(panel).findByText("Read the page")).toBeInTheDocument()
-    const bar = screen.getByRole("tablist")
-    expect(within(bar).queryByRole("tab", { name: /Tasks/ })).toBeNull()
     expect(panel.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     const title = screen.getAllByText("Example page")[0]!
     expect(title.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(api.tasks).toHaveBeenCalledWith({ kind: "resource", type: "link", id: "https://ex.com/a" }, expect.anything())
   })
 
-  it("pinning while on Tasks falls back to Details", async () => {
+  it("an old ?tab=tasks falls back to Details", () => {
+    window.history.replaceState({}, "", "/worktree/wt?tab=tasks")
     wrap(<LinkPane resource={link({ embeddable: false })} path="/wt" />)
-    await userEvent.click(screen.getByRole("tab", { name: /Tasks/ }))
-    await userEvent.click(screen.getByRole("button", { name: "Pin task list" }))
-    await waitFor(() => expect(screen.getByRole("tab", { name: "Details" })).toHaveAttribute("aria-selected", "true"))
+    expect(screen.getByRole("tab", { name: "Details" })).toHaveAttribute("aria-selected", "true")
   })
 })

@@ -49,8 +49,9 @@ function setPrefs(p: Partial<StoredTaskListPrefs>): void {
 }
 
 /**
- * The task lists' shared view prefs (pinned included): one value for every
- * mounted list, remembered per browser, and kept in step across tabs.
+ * The task lists' shared view prefs (the panel's collapsed choice included):
+ * one value for every mounted list, remembered per browser, and kept in step
+ * across tabs.
  */
 export function useTaskListPrefs(): [StoredTaskListPrefs, (p: Partial<StoredTaskListPrefs>) => void] {
   return [useSyncExternalStore(subscribe, getSnapshot), setPrefs]

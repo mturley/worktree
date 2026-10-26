@@ -6,16 +6,16 @@ import { ResourceCard } from "./ResourceCard"
 import { canEmbed } from "../lib/linkEmbed"
 import { shortResourceRef } from "../lib/resourceRef"
 import { useResourceTab } from "../hooks/useSelectedResource"
-import { TASKS_TAB, useResourceTasksPlacement } from "./tasks/TasksSection"
+import { useTasksPanel } from "./tasks/TasksSection"
 
 export const EMBED_SANDBOX = "allow-scripts allow-same-origin allow-forms allow-popups"
 
 /** The link pane's tabs, default first (see useResourceTab). */
-const LINK_TABS = ["details", TASKS_TAB] as const
+const LINK_TABS = ["details"] as const
 
 /**
- * The body of a selected link resource: its card, then the page itself under
- * Details, and the link's tasks under Tasks.
+ * The body of a selected link resource: its card, the link's task panel,
+ * then the page itself under Details.
  *
  * Where a PR or Jira issue shows a filtered activity feed, a link shows the
  * page — it has no events, is never polled, and has no unread state, so there
@@ -37,27 +37,20 @@ export function LinkPane({ resource, path, onRemoved, onResourceChanged }: {
   })
   const embed = canEmbed(resource.url, resource.embeddable, window.location.origin)
   const [tab, setTab] = useResourceTab(LINK_TABS)
-  const { tasks, shownTab } = useResourceTasksPlacement(resource, tab, setTab, "details")
+  const { type, id } = resource
+  const tasks = useTasksPanel({ kind: "resource", type, id }, { ownResource: { type, id } })
 
   return (
     <>
       <ResourceCard r={resource} path={path} onRemoved={onRemoved}
         onMetaChanged={onResourceChanged} variant="detail" />
-      {/* Pinned, the task list sits between the card and the tab bar. */}
-      {tasks.pinnedPanel}
-      <Tabs value={shownTab} onChange={(v) => v && setTab(v)} keepMounted={false}>
+      {/* The task panel sits between the card and the tab bar. */}
+      {tasks.panel}
+      <Tabs value={tab} onChange={(v) => v && setTab(v)}>
         <Tabs.List>
           <Tabs.Tab value="details">Details</Tabs.Tab>
-          {tasks.tab}
-          {shownTab === TASKS_TAB && (
-            <Group gap={4} wrap="nowrap" align="center" ml="auto" pb={4} style={{ flex: "none" }}>
-              {tasks.toolbar}
-            </Group>
-          )}
         </Tabs.List>
-        {/* Kept mounted, so the framed page is not reloaded on coming back
-            from Tasks. */}
-        <Tabs.Panel value="details" pt="sm" keepMounted>
+        <Tabs.Panel value="details" pt="sm">
           <Stack gap="sm">
             {resource.resolve_error && (
               <Alert color="red" variant="light">
@@ -98,11 +91,6 @@ export function LinkPane({ resource, path, onRemoved, onResourceChanged }: {
             )}
           </Stack>
         </Tabs.Panel>
-        {!tasks.pinned && (
-          <Tabs.Panel value={TASKS_TAB} pt="sm">
-            {tasks.tabPanelBody}
-          </Tabs.Panel>
-        )}
       </Tabs>
     </>
   )
