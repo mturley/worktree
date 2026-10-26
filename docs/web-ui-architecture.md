@@ -2504,7 +2504,7 @@ annotations.
 - `ReviewCommentCard` is the one card for inline and sidebar (`variant`), with
   per-source styling (`SOURCE_STYLE`). Badge `Out of date`; notes
   `Not in this view` / `Outside the changes` (jump disabled with that reason).
-  `Moved` comments show the new lines. The body renders as Markdown (`NotesMarkdown`; the card sets the text font, since inline it sits in pierre's monospace). In the sidebar the `file:lines` label is the jump control. Delete asks first (`DeleteCommentModal`,
+  `Moved` comments show the new lines. Inline cards start with an author line from `SOURCE_STYLE` (`You (local)`, tooltip `Part of your local review, not submitted anywhere.`) and a `View all and copy` link that opens the sidebar. The body renders as Markdown (`NotesMarkdown`; the card sets the text font, since inline it sits in pierre's monospace). In the sidebar the `file:lines` label is the jump control. Delete asks first (`DeleteCommentModal`,
   `Delete the comment on file:lines?`).
 - `NewCommentCard`'s submit reads `Start local review` (tooltip `Start
   collecting comments locally to hand off to an agent`) while the view's list
@@ -2514,7 +2514,7 @@ annotations.
   **only inside the diff scroller** (`.diff-body-scroller`), since the sidebar
   holds a copy with the same id. Jumping to a `not_in_view` comment sets the
   selection's base to the comment's and reloads, then scrolls once it is shown.
-- `ReviewSidebar` (opened by the breadcrumb's filled primary `Local review comments (N)`, which reads `Close comments sidebar` while it is open and is its only close control when wide; the narrow drawer's title is `Local review comments`) holds `Copy comments for agent`
+- `ReviewSidebar` (opened by the breadcrumb's `Local review comments (N)`, filled in the unread blue, which reads `Close comments sidebar` (light primary, Esc hint inside) while it is open and is its only close control when wide; the narrow drawer's title is `Local review comments`) holds `Copy comments for agent`
   (`SendToAgentModal`: `buildPrompt` text, `Copy to clipboard` / `Copied`) and
   `Clear all` (`ClearCommentsModal`, titled `Clear comments`). The prompt uses each comment's
   `prompt` position: `file:lines`, `removed line, previously N`, or `out of

@@ -13,13 +13,18 @@ import {
   useReviewCommentMutations,
   useReviewComments,
 } from "../../hooks/useReviewComments"
+import { setReviewSidebar } from "../../hooks/useReviewSidebar"
 import { NotesMarkdown } from "../NotesMarkdown"
 import { CommentEditor } from "./CommentEditor"
 import { DeleteCommentModal } from "./DeleteCommentModal"
 import type { CommentTarget } from "./commentRange"
 
-export const SOURCE_STYLE: Record<CommentSource, { borderColor: string; label?: string }> = {
-  draft: { borderColor: "var(--mantine-color-blue-6)" },
+export const SOURCE_STYLE: Record<CommentSource, { borderColor: string; label?: string; author: string; authorTip: string }> = {
+  draft: {
+    borderColor: "var(--mantine-color-blue-6)",
+    author: "You (local)",
+    authorTip: "Part of your local review, not submitted anywhere.",
+  },
 }
 
 const errMessage = (e: unknown) => (e instanceof Error ? e.message : String(e))
@@ -121,6 +126,17 @@ export function ReviewCommentCard({ path, comment, variant, onJump, jumpDisabled
       <Stack gap={4}>
         <Group gap={6} justify="space-between" wrap="nowrap" align="flex-start">
           <Group gap={6} wrap="wrap">
+            {variant === "inline" && (
+              // Who wrote it, and the way to the rest of the review.
+              <>
+                <Tooltip label={SOURCE_STYLE[comment.source].authorTip} withArrow>
+                  <Text size="xs" fw={600}>{SOURCE_STYLE[comment.source].author}</Text>
+                </Tooltip>
+                <Anchor component="button" type="button" size="xs" onClick={() => setReviewSidebar(true)}>
+                  View all and copy
+                </Anchor>
+              </>
+            )}
             {variant === "sidebar" &&
               (onJump ? (
                 // The place is the jump. Disabled, the span keeps the reason's tooltip hoverable.

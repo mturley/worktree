@@ -391,12 +391,12 @@ describe("DiffView", () => {
     listComments(() => [comment(1, "shown")])
     window.sessionStorage.setItem("worktree.reviewSidebar", "true")
     const { unmount } = setup({ escHint: false, sidebarEscHint: true })
-    const button = await screen.findByRole("button", { name: "Close comments sidebar" })
-    expect(button.parentElement).toHaveTextContent(/^EscClose comments sidebar$/)
+    const button = await screen.findByRole("button", { name: /^Close comments sidebar/ })
+    expect(button).toHaveTextContent(/^Close comments sidebar\s*Esc$/)
     unmount()
     setup({ escHint: false })
     const plain = await screen.findByRole("button", { name: "Close comments sidebar" })
-    expect(plain.parentElement).not.toHaveTextContent("Esc")
+    expect(plain).not.toHaveTextContent("Esc")
   })
 
   it("sidebar is a drawer when narrow", async () => {

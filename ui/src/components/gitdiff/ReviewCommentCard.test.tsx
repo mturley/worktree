@@ -233,6 +233,22 @@ describe("ReviewCommentCard", () => {
     expect(screen.queryByText("src/a.ts:3-5")).toBeNull()
   })
 
+  it("inline, names the author and opens the sidebar from View all and copy", async () => {
+    window.sessionStorage.setItem("worktree.reviewSidebar", "false")
+    wrap(<ReviewCommentCard path="/w" comment={item()} variant="inline" />)
+    const author = screen.getByText("You (local)")
+    await userEvent.hover(author)
+    expect(await screen.findByText("Part of your local review, not submitted anywhere.")).toBeInTheDocument()
+    await userEvent.click(screen.getByRole("button", { name: "View all and copy" }))
+    expect(window.sessionStorage.getItem("worktree.reviewSidebar")).toBe("true")
+  })
+
+  it("in the sidebar, has no author line", () => {
+    wrap(<ReviewCommentCard path="/w" comment={item()} variant="sidebar" />)
+    expect(screen.queryByText("You (local)")).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "View all and copy" })).not.toBeInTheDocument()
+  })
+
   it("in the sidebar, the file and lines are the jump", async () => {
     const onJump = vi.fn()
     wrap(<ReviewCommentCard path="/w" comment={item()} variant="sidebar" onJump={onJump} />)

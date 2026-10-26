@@ -527,15 +527,21 @@ export default function DiffView({
         {/* The branch, when there is one (empty when detached). */}
         <Text size="sm">{git?.branch ? `Changes (${git.branch})` : "Changes"}</Text>
         {reviewCount > 0 && (
-          // Filled primary either way, so the review in progress is hard to
-          // miss. Open, it is the sidebar's close, with Esc's hint when Esc
-          // would do the same.
-          <Group gap={6} wrap="nowrap" ml="auto">
-            {wide && reviewOpen && sidebarEscHint && <KeyHint>Esc</KeyHint>}
-            <Button size="xs" variant="filled" onClick={() => setReviewOpen(!reviewOpen)}>
-              {reviewOpen ? "Close comments sidebar" : `Local review comments (${reviewCount})`}
-            </Button>
-          </Group>
+          // Closed, filled in the unread blue (as Mark all read: lighter on
+          // hover), so the review in progress is hard to miss. Open, dimmer:
+          // it is the sidebar's close, with Esc's hint inside when Esc would
+          // do the same.
+          <Button
+            ml="auto"
+            size="xs"
+            variant={reviewOpen ? "light" : "filled"}
+            color={reviewOpen ? undefined : "blue"}
+            vars={reviewOpen ? undefined : () => ({ root: { "--button-hover": "var(--mantine-color-blue-4)" } })}
+            rightSection={wide && reviewOpen && sidebarEscHint ? <KeyHint decorative>Esc</KeyHint> : undefined}
+            onClick={() => setReviewOpen(!reviewOpen)}
+          >
+            {reviewOpen ? "Close comments sidebar" : `Local review comments (${reviewCount})`}
+          </Button>
         )}
       </Group>
       <Box
