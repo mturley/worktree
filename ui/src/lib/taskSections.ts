@@ -83,9 +83,9 @@ const SORTS: Record<TaskSort, (a: Task, b: Task) => number> = {
 /**
  * Groups and orders a task list for display. Starred open tasks are always
  * on top and appear only there. In Priority sort every priority section is
- * returned even when empty (so it can take a drop), but a priority filter
- * leaves only its own section, since dropping into another would hide the
- * task. Completed is last, newest first, when shown.
+ * returned even when empty (TaskList renders only sections that hold tasks),
+ * but a priority filter leaves only its own section, since dropping into
+ * another would hide the task. Completed is last, newest first, when shown.
  */
 export function buildSections(tasks: Task[], prefs: TaskListPrefs, terms: string[]): TaskSection[] {
   // Archived gates only done tasks: an open task whose links are all
@@ -101,7 +101,7 @@ export function buildSections(tasks: Task[], prefs: TaskListPrefs, terms: string
   const sections: TaskSection[] = []
 
   const starred = open.filter((t) => t.starred)
-  // Empty, it still shows while dragging is possible: it is a drop target.
+  // Returned empty too while dragging is possible; TaskList hides it then.
   if (starred.length > 0 || draggable) {
     sections.push({ key: "starred", label: "Starred", tasks: starred, draggable, starred: true })
   }
