@@ -1318,18 +1318,19 @@ to break.
   Thread panel. There is no Linked tab there, since resolving links
   contacts the services. Tasks contact none, so watcher toggles never hide
   them.
-- **Nothing moves when a drag starts.** In the draggable sorts (Custom,
-  Priority) an empty section is a slim dashed strip ("Drag here to star",
-  "Drag here for medium priority") rendered AT REST, and whether sections
-  are labelled never depends on a drag being on. Inserting drop targets at
-  drag start pushed the dragged row ~70px away from the pointer. The row
+- **Nothing moves when a drag starts.** An empty section is not rendered at
+  all (no drop strip, even in Priority order), and whether sections are
+  labelled never depends on a drag being on (Priority order labels every
+  group shown). A drop therefore always lands on a row of a non-empty
+  section. Inserting drop targets at drag start pushed the dragged row
+  ~70px away from the pointer. The row
   that follows the pointer is a `DragOverlay`; the original stays as a faint
   placeholder, and `MeasuringStrategy.Always` keeps drop rects current.
   The grip shows on hover, on `:focus-within` (keyboard) and always under
   `@media (hover: none)` (touch), in `styles/theme.css`.
   `TaskList.test.tsx` drives real drags through the `KeyboardSensor`
   (Space, arrow, Space) with a stubbed `getBoundingClientRect` that lays
-  rows and strips out 30px apart.
+  rows out 30px apart.
 - **`keepPreviousData` is scoped.** `useTasks` keys each query by scope
   plus `{completed, archived}`; toggling Show completed changes the key, and
   dropping to "Loading tasks…" would unmount the list's `DndContext`. So

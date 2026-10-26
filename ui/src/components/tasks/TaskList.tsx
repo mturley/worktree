@@ -8,7 +8,6 @@ import {
   MeasuringStrategy,
   MouseSensor,
   TouchSensor,
-  useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
@@ -25,7 +24,7 @@ import { useTaskModal } from "./modal/TaskModalProvider"
 import { TaskQuickAdd } from "./TaskQuickAdd"
 import { TaskRow } from "./TaskRow"
 import { taskUndoMessage, useOfferTaskUndo } from "./taskUndo"
-import { dropPlanFor, sectionDroppableId, taskCollisions, taskDraggableId } from "./taskDrag"
+import { dropPlanFor, taskCollisions, taskDraggableId } from "./taskDrag"
 
 /** A compact row's height, for capping a list at `maxRows`. */
 const ROW_PX = 30
@@ -35,21 +34,12 @@ const ROW_PX = 30
  * screen.
  */
 const VIEWPORT_CAP = "25dvh"
-/** An empty section's drop strip: present at rest, so a drag shifts nothing. */
-const STRIP_PX = 22
 
 /** The list body's height cap for `maxRows`, rows and viewport both. */
 export function cappedMaxHeight(maxRows: number): string {
   return `min(${maxRows * ROW_PX}px, ${VIEWPORT_CAP})`
 }
 
-/** What an empty section's strip says: what dropping there does. */
-function stripText(section: TaskSection): string {
-  if (section.key === "starred") return "Drag here to star"
-  if (section.priority === "none") return "Drag here for no priority"
-  if (section.priority) return `Drag here for ${section.label.toLowerCase()} priority`
-  return "Drag here to unstar"
-}
 const DRAG_HINT = "Drag to reorder works in Custom or Priority order"
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
@@ -170,51 +160,24 @@ function SortableTaskRow({ task, section, sortDraggable, ownResource, mutations,
 }
 
 /**
- * A section: its label (when the list is labelled) and its rows. An empty
- * draggable section is a slim dashed strip saying what a drop there does. It
- * renders at rest, not only mid-drag, so starting a drag shifts nothing
- * under the pointer. An empty Starred strip carries no label: its text says
- * it all.
+ * A section: its label (when the list is labelled) and its rows. Only
+ * sections that hold tasks are rendered, so there is nothing to drop onto but
+ * rows: a drop's section follows from the row it lands on.
  */
 function SectionBlock({ section, labelled, children }: {
   section: TaskSection
   labelled: boolean
   children: React.ReactNode
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: sectionDroppableId(section.key), disabled: !section.draggable })
-  const empty = section.tasks.length === 0
   return (
     <Stack gap={0} data-task-section={section.key}>
-      {labelled && !(empty && section.key === "starred") && (
+      {labelled && (
         <Text size="xs" fw={700} tt="uppercase" c="dimmed" px="xs" pt={4}>
           {section.label}
         </Text>
       )}
-      <Stack
-        gap={0}
-        ref={setNodeRef}
-        data-task-drop={section.key}
-        style={{ borderRadius: 6, outline: isOver && !empty ? "2px dashed var(--task-accent)" : undefined }}
-      >
-        {empty ? (
-          <Text
-            data-task-strip={section.key}
-            c="dimmed"
-            size="xs"
-            px="xs"
-            mx="xs"
-            my={2}
-            style={{
-              height: STRIP_PX,
-              lineHeight: `${STRIP_PX - 2}px`,
-              borderRadius: 6,
-              border: `1px dashed ${isOver ? "var(--task-accent)" : "var(--mantine-color-default-border)"}`,
-              opacity: isOver ? 1 : 0.7,
-            }}
-          >
-            {stripText(section)}
-          </Text>
-        ) : children}
+      <Stack gap={0} data-task-drop={section.key}>
+        {children}
       </Stack>
     </Stack>
   )
@@ -252,13 +215,13 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
   const cap = expand?.expanded ? undefined : maxRows
   const overflows = useOverflow(cap !== undefined, shownCount)
   const sortDraggable = canDrag(prefs.sort)
-  // Empty draggable sections show as drop strips at rest; nothing here
-  // depends on whether a drag is on, so starting one moves no row.
-  const shown = sections.filter((s) => s.tasks.length > 0 || s.draggable)
-  const anyTasks = sections.some((s) => s.tasks.length > 0)
-  // Priority groups are always labelled (an empty one is a strip under its
-  // label); otherwise labels appear once two sections hold tasks.
-  const labelled = prefs.sort === "priority" || sections.filter((s) => s.tasks.length > 0).length > 1
+  // Empty sections are not rendered at all, so a drag shifts nothing and
+  // there is no empty target.
+  const shown = sections.filter((s) => s.tasks.length > 0)
+  const anyTasks = shown.length > 0
+  // Priority order labels every group shown; otherwise labels appear once two
+  // sections hold tasks.
+  const labelled = prefs.sort === "priority" || shown.length > 1
   const activeTask = activeId === null ? undefined : sections.flatMap((s) => s.tasks).find((t) => t.id === activeId)
   const anchor = quickAddAnchor(sections, prefs.sort)
   // Under a priority filter a "none" task would vanish on creation.
@@ -270,7 +233,6 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
     useSensor(TouchSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
-  const collisions = taskCollisions((key) => sections.find((s) => s.key === key)?.tasks.length === 0)
 
   const handleDragStart = ({ active }: DragStartEvent) => {
     setActiveId(Number(String(active.id).replace(/^task:/, "")))
@@ -283,13 +245,10 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
     const below = dragged ? dragged.top + dragged.height / 2 > over.rect.top + over.rect.height / 2 : false
     const plan = dropPlanFor(sections, active.id, over.id, below)
     const id = Number(String(active.id).replace(/^task:/, ""))
-    if (!plan.place && !plan.patch) return
-    if (plan.place) {
-      mutations.move(id, plan.place, plan.patch).catch((e: unknown) => setError(errorText(e)))
-    } else if (plan.patch) {
-      // A move to an empty section with nothing else around: only the edit.
-      mutations.update(id, plan.patch).catch((e: unknown) => setError(errorText(e)))
-    }
+    // Every drop lands on a row of a non-empty section, so a plan that
+    // changes anything has a place.
+    if (!plan.place) return
+    mutations.move(id, plan.place, plan.patch).catch((e: unknown) => setError(errorText(e)))
   }
 
   const add = (input: { title: string; priority: Task["priority"]; starred: boolean }) => {
@@ -311,12 +270,12 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
     body = (
       <DndContext
         sensors={sensors}
-        collisionDetection={collisions}
+        collisionDetection={taskCollisions}
         // Off for the same reason as ResourceList: it ran away with sticky
         // and capped scroll containers.
         autoScroll={false}
         // Re-measure drop targets throughout a drag: sortable transforms
-        // move rows, and the strips' rects must follow.
+        // move rows, and their rects must follow.
         measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}

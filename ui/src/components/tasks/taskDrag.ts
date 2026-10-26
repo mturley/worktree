@@ -1,4 +1,4 @@
-import { closestCenter, pointerWithin, rectIntersection, type CollisionDetection, type UniqueIdentifier } from "@dnd-kit/core"
+import { closestCenter, type CollisionDetection, type UniqueIdentifier } from "@dnd-kit/core"
 import { planDrop, type DropPlan, type TaskSection } from "../../lib/taskSections"
 
 /*
@@ -49,22 +49,11 @@ export function dropPlanFor(
 }
 
 /**
- * As resourceCollisions: an EMPTY section under the pointer wins outright
- * (there is no row in it to aim at); otherwise section areas are ignored and
- * the nearest row wins, since a section spans its rows and would compete.
+ * Nearest row wins. Only non-empty sections render, and a section's area
+ * spans its rows, so it never competes with them.
  */
-export function taskCollisions(isEmptySection: (key: string) => boolean): CollisionDetection {
-  return (args) => {
-    const underPointer = pointerWithin(args)
-    const hits = underPointer.length > 0 ? underPointer : rectIntersection(args)
-    const empty = hits.find((h) => {
-      const key = parseSectionKey(h.id)
-      return key !== null && isEmptySection(key)
-    })
-    if (empty) return [empty]
-    return closestCenter({
-      ...args,
-      droppableContainers: args.droppableContainers.filter((c) => parseSectionKey(c.id) === null),
-    })
-  }
-}
+export const taskCollisions: CollisionDetection = (args) =>
+  closestCenter({
+    ...args,
+    droppableContainers: args.droppableContainers.filter((c) => parseSectionKey(c.id) === null),
+  })

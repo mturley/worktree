@@ -313,38 +313,42 @@ describe("TaskList", () => {
     expect(screen.queryByText("beta two")).toBeNull()
   })
 
-  it("an empty Starred section is a slim strip at rest, and a lone section has no label", async () => {
+  it("an empty section renders nothing: no strip, no label", async () => {
     wrap(<TaskList scope={{ kind: "all" }} />)
     await screen.findByText("beta two")
-    // Present before any drag, so starting one shifts nothing.
-    expect(screen.getByText("Drag here to star")).toBeInTheDocument()
+    expect(screen.queryByText(/Drag here/)).toBeNull()
+    expect(document.querySelector("[data-task-strip]")).toBeNull()
+    expect(document.querySelector("[data-task-section=starred]")).toBeNull()
     expect(screen.queryByText("Starred")).toBeNull()
     expect(screen.queryByText("Tasks")).toBeNull()
   })
 
-  it("Priority sort labels every group and shows empty ones as strips at rest", async () => {
+  it("Priority sort labels each group that holds tasks and hides the empty ones", async () => {
     setPrefs({ sort: "priority" })
-    vi.mocked(api.tasks).mockResolvedValue([task(1, { priority: "high" }), task(2)])
+    vi.mocked(api.tasks).mockResolvedValue([task(1), task(2, { priority: "medium" })])
     wrap(<TaskList scope={{ kind: "all" }} />)
     await screen.findByText("task 2")
-    for (const label of ["High", "Medium", "Low", "No priority"]) expect(screen.getByText(label)).toBeInTheDocument()
-    expect(screen.getByText("Drag here for medium priority")).toBeInTheDocument()
-    expect(screen.getByText("Drag here for low priority")).toBeInTheDocument()
-    expect(screen.getByText("Drag here to star")).toBeInTheDocument()
+    expect(screen.getByText("Medium")).toBeInTheDocument()
+    expect(screen.getByText("No priority")).toBeInTheDocument()
+    expect(screen.queryByText("High")).toBeNull()
+    expect(screen.queryByText("Low")).toBeNull()
+    expect(screen.queryByText(/Drag here/)).toBeNull()
+    expect(document.querySelector("[data-task-strip]")).toBeNull()
   })
 
-  it("no strips outside the draggable sorts", async () => {
-    setPrefs({ sort: "due" })
+  it("Priority sort labels even a lone group", async () => {
+    setPrefs({ sort: "priority" })
+    vi.mocked(api.tasks).mockResolvedValue([task(2, { priority: "medium" })])
     wrap(<TaskList scope={{ kind: "all" }} />)
-    await screen.findByText("beta two")
-    expect(screen.queryByText("Drag here to star")).toBeNull()
+    await screen.findByText("task 2")
+    expect(screen.getByText("Medium")).toBeInTheDocument()
   })
 
-  it("an empty list says so rather than showing bare strips", async () => {
+  it("an empty list says so", async () => {
     vi.mocked(api.tasks).mockResolvedValue([])
     wrap(<TaskList scope={{ kind: "all" }} />)
     expect(await screen.findByText("No tasks.")).toBeInTheDocument()
-    expect(screen.queryByText("Drag here to star")).toBeNull()
+    expect(screen.queryByText(/Drag here/)).toBeNull()
   })
 
   it("labels sections when there is more than one", async () => {
@@ -366,8 +370,7 @@ describe("TaskList", () => {
 
 /*
  * End-to-end drags through dnd-kit's KeyboardSensor: focus a grip, Space to
- * pick up, an arrow to move, Space to drop. jsdom has no layout, so rows and
- * empty-section strips are laid out 30px apart in document order, and a
+ * pick up, an arrow to move, Space to drop. jsdom has no layout, so rows are laid out 30px apart in document order, and a
  * section's drop area spans what it holds. The overlay measures as the row
  * it lifts.
  */
@@ -375,14 +378,14 @@ describe("TaskList keyboard drag", () => {
   const ROW = 30
   const rect = (top: number, height: number) =>
     ({ x: 0, y: top, top, left: 0, width: 300, height, right: 300, bottom: top + height, toJSON: () => ({}) }) as DOMRect
-  const leaves = () => Array.from(document.querySelectorAll<HTMLElement>("[data-task-sortable],[data-task-strip]"))
+  const leaves = () => Array.from(document.querySelectorAll<HTMLElement>("[data-task-sortable]"))
   let lifted: HTMLElement | null = null
 
   beforeEach(() => {
     vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
       const all = leaves()
       const leafRect = (el: Element) => rect(all.indexOf(el as HTMLElement) * ROW, ROW)
-      if (this.matches("[data-task-sortable],[data-task-strip]")) return leafRect(this)
+      if (this.matches("[data-task-sortable]")) return leafRect(this)
       if (this.matches("[data-task-drop]")) {
         const inner = all.filter((l) => this.contains(l))
         if (inner.length === 0) return rect(0, 0)
@@ -405,7 +408,7 @@ describe("TaskList keyboard drag", () => {
     const before = leaves().length
     act(() => grip.focus())
     fireEvent.keyDown(grip, { code: "Space", key: " " })
-    // Picking up a row adds no labels or strips: nothing moves under it.
+    // Picking up a row adds no labels: nothing moves under it.
     expect(leaves()).toHaveLength(before)
     expect(await screen.findByTestId("task-drag-overlay")).toHaveTextContent(title)
     fireEvent.keyDown(grip, { code: key, key })
@@ -452,16 +455,19 @@ describe("TaskList keyboard drag", () => {
     expect(api.updateTask).not.toHaveBeenCalled()
   })
 
-  it("Priority sort: a drag into another group patches priority and places it", async () => {
+  it("Priority sort: a drag into another non-empty group patches priority and places it", async () => {
     setPrefs({ sort: "priority" })
-    vi.mocked(api.tasks).mockResolvedValue([task(1, { title: "alpha one", priority: "high" }), task(2, { title: "beta two" })])
+    vi.mocked(api.tasks).mockResolvedValue([
+      task(1, { title: "alpha one", priority: "high" }),
+      task(2, { title: "beta two", priority: "medium" }),
+    ])
     vi.mocked(api.moveTask).mockResolvedValue(undefined as never)
     vi.mocked(api.updateTask).mockResolvedValue(undefined as never)
     wrap(<TaskList scope={{ kind: "all" }} />)
     await screen.findByText("beta two")
-    // Down from High lands on Medium's empty strip.
     await drag("alpha one", "ArrowDown")
-    await waitFor(() => expect(api.moveTask).toHaveBeenCalledWith(1, { before: 2 }))
+    await waitFor(() => expect(api.moveTask).toHaveBeenCalledTimes(1))
+    expect(api.moveTask).toHaveBeenCalledWith(1, { before: 2 })
     expect(api.updateTask).toHaveBeenCalledWith(1, { priority: "medium" })
   })
 })
