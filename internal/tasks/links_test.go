@@ -2,7 +2,6 @@ package tasks
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -77,9 +76,6 @@ func TestCreateWithFocusContext(t *testing.T) {
 	if len(tk.Links) != 1 {
 		t.Fatalf("Create's returned task lacks links: %+v", tk.Links)
 	}
-	if n := len(eventsOfType(t, conn, tk.ID, EventTaskLinked)); n != 1 {
-		t.Fatalf("task_linked events = %d, want 1", n)
-	}
 }
 
 func TestCreateRejectsInvalidFocus(t *testing.T) {
@@ -110,17 +106,6 @@ func TestAddLinkDefaultsAndRemoveDoesNotPromote(t *testing.T) {
 	if len(got.Links) != 1 || got.Links[0].LinkTarget != jiraLink || got.Links[0].Primary {
 		t.Fatalf("links after remove %+v", got.Links)
 	}
-	ev := eventsOfType(t, conn, tk.ID, EventTaskUnlinked)
-	if len(ev) != 1 {
-		t.Fatalf("task_unlinked events = %d", len(ev))
-	}
-	var p map[string]any
-	if err := json.Unmarshal(ev[0].Payload, &p); err != nil {
-		t.Fatal(err)
-	}
-	if p["kind"] != "resource" || p["resource_type"] != "pr" || p["resource_id"] != "o/r#1" || p["focus"] != true {
-		t.Fatalf("unlinked payload %v", p)
-	}
 	if err := RemoveLink(conn, user, tk.ID, prLink); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("removing a missing link: err = %v, want ErrNotFound", err)
 	}
@@ -134,18 +119,12 @@ func TestAddLinkTwice(t *testing.T) {
 	if n := count(t, conn, "task_links"); n != 1 {
 		t.Fatalf("rows = %d, want 1", n)
 	}
-	if n := len(eventsOfType(t, conn, tk.ID, EventTaskLinked)); n != 1 {
-		t.Fatalf("task_linked events = %d, want 1", n)
-	}
 	l := mustAddLink(t, conn, tk.ID, prLink, true)
 	if !l.Primary {
 		t.Fatalf("focus not flipped: %+v", l)
 	}
 	if n := count(t, conn, "task_links"); n != 1 {
 		t.Fatalf("rows = %d, want 1", n)
-	}
-	if n := len(eventsOfType(t, conn, tk.ID, EventTaskFocusChanged)); n != 1 {
-		t.Fatalf("task_focus_changed events = %d, want 1", n)
 	}
 }
 
@@ -191,12 +170,13 @@ func TestSetLinkFocusLandsAtBottom(t *testing.T) {
 	if !got[0].Primary || got[1].Primary || got[2].Primary {
 		t.Fatalf("groups %+v", got)
 	}
-	// A no-op records nothing.
+	// A no-op writes nothing.
+	v := mustVersion(t, conn)
 	if err := SetLinkFocus(conn, user, tk.ID, prLink, false); err != nil {
 		t.Fatal(err)
 	}
-	if n := len(eventsOfType(t, conn, tk.ID, EventTaskFocusChanged)); n != 1 {
-		t.Fatalf("task_focus_changed events = %d, want 1", n)
+	if mustVersion(t, conn) != v {
+		t.Fatal("a no-op SetLinkFocus bumped the version")
 	}
 	if err := SetLinkFocus(conn, user, tk.ID, LinkTarget{Kind: LinkResource, ResourceType: "pr", ResourceID: "nope"}, true); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing link err = %v", err)
@@ -289,42 +269,32 @@ func TestWorktreeLinkMissingPath(t *testing.T) {
 	}
 }
 
-func TestSetLinkOrderRecordsGroupChanges(t *testing.T) {
+func TestSetLinkOrderAppliesGroupChanges(t *testing.T) {
 	conn := newDB(t)
 	tk := mustCreate(t, conn, "x")
 	mustAddLink(t, conn, tk.ID, prLink, true)
 	mustAddLink(t, conn, tk.ID, jiraLink, false)
 	mustAddLink(t, conn, tk.ID, pr2Link, false)
 
-	// Same-group reorder: no event.
-	if err := SetLinkOrder(conn, user, tk.ID, []LinkTarget{prLink}, []LinkTarget{pr2Link, jiraLink}); err != nil {
-		t.Fatal(err)
-	}
-	if n := len(eventsOfType(t, conn, tk.ID, EventTaskFocusChanged)); n != 0 {
-		t.Fatalf("same-group reorder wrote %d task_focus_changed", n)
-	}
-
-	// pr -> Related, jira -> Focus; pr2 stays Related: exactly two events.
+	// pr -> Related, jira -> Focus; pr2 stays Related.
 	if err := SetLinkOrder(conn, user, tk.ID, []LinkTarget{jiraLink}, []LinkTarget{prLink, pr2Link}); err != nil {
 		t.Fatal(err)
 	}
-	ev := eventsOfType(t, conn, tk.ID, EventTaskFocusChanged)
-	if len(ev) != 2 {
-		t.Fatalf("task_focus_changed events = %d, want 2", len(ev))
+	got := mustGet(t, conn, tk.ID).Links
+	want := []struct {
+		target  LinkTarget
+		primary bool
+	}{{jiraLink, true}, {prLink, false}, {pr2Link, false}}
+	if len(got) != len(want) {
+		t.Fatalf("links %+v", got)
 	}
-	got := map[string]any{}
-	for _, e := range ev {
-		var p map[string]any
-		if err := json.Unmarshal(e.Payload, &p); err != nil {
-			t.Fatal(err)
+	for i, w := range want {
+		if got[i].LinkTarget != w.target || got[i].Primary != w.primary {
+			t.Fatalf("links %+v, want %+v", got, want)
 		}
-		if p["kind"] != "resource" || p["resource_type"] == nil || e.Actor != ActorUser {
-			t.Fatalf("event %+v payload %v", e, p)
-		}
-		got[p["resource_id"].(string)] = p["focus"]
 	}
-	if len(got) != 2 || got["o/r#1"] != false || got["ABC-1"] != true {
-		t.Fatalf("flipped = %v", got)
+	if n := count(t, conn, "task_events"); n != 1 {
+		t.Fatalf("task_events = %d, want only task_created", n)
 	}
 
 	if err := SetLinkOrder(conn, Actor{}, tk.ID, nil, nil); !errors.Is(err, ErrInvalid) {

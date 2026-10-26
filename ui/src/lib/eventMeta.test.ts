@@ -2,12 +2,24 @@ import { describe, it, expect } from "vitest"
 import { eventLabel, eventMeta } from "./eventMeta"
 
 describe("task events", () => {
+  // The types internal/tasks still records: only state-like changes.
   const TASK_TYPES = [
-    "task_created", "task_edited", "task_state_changed", "task_deleted", "task_linked",
-    "task_unlinked", "task_focus_changed", "subtask_added", "subtask_edited", "subtask_checked",
-    "subtask_unchecked", "subtask_removed", "task_event_linked", "task_event_unlinked",
-    "task_blocker_added", "task_blocker_removed", "task_blocker_resolved", "task_blocker_unresolved",
+    "task_created", "task_state_changed", "task_deleted", "subtask_checked",
+    "subtask_unchecked", "task_blocker_resolved", "task_blocker_unresolved",
   ]
+  // Edits are no longer task events: their rows are deleted, so they need
+  // no entry of their own.
+  const DROPPED_TYPES = [
+    "task_edited", "task_linked", "task_unlinked", "task_focus_changed",
+    "subtask_added", "subtask_edited", "subtask_removed", "task_event_linked",
+    "task_event_unlinked", "task_blocker_added", "task_blocker_removed",
+  ]
+
+  it("has no entry for the types that are no longer recorded", () => {
+    // The generic task fallback labels a type by its words, so a hit on it
+    // means no entry exists.
+    for (const t of DROPPED_TYPES) expect(eventMeta(t).label, t).toBe(t.replace(/_/g, " "))
+  })
 
   it("paints every task event type in the task accent, not a Mantine palette colour", () => {
     for (const t of TASK_TYPES) expect(eventMeta(t).cssColor, t).toBe("var(--task-accent)")
@@ -20,8 +32,6 @@ describe("task events", () => {
     }
     expect(eventLabel("subtask_checked")).toBe("Subtask checked")
     expect(eventLabel("task_state_changed")).toBe("State changed")
-    expect(eventLabel("task_blocker_added")).toBe("Blocker added")
-    expect(eventLabel("task_blocker_removed")).toBe("Blocker removed")
     expect(eventLabel("task_blocker_resolved")).toBe("Blocker resolved")
     expect(eventLabel("task_blocker_unresolved")).toBe("Blocker unresolved")
   })
@@ -33,7 +43,7 @@ describe("task events", () => {
   })
 
   it("gives a task event type the server adds later the accent too", () => {
-    expect(eventMeta("task_blocker_added").cssColor).toBe("var(--task-accent)")
+    expect(eventMeta("task_snoozed").cssColor).toBe("var(--task-accent)")
     expect(eventMeta("subtask_reordered").cssColor).toBe("var(--task-accent)")
   })
 })

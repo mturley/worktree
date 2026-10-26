@@ -325,3 +325,66 @@ func TestOpenAtAddsSortOrderToExistingPrimaryTable(t *testing.T) {
 		t.Fatalf("sort_order = %v, want NULL for a row that predates ordering", sortOrder)
 	}
 }
+
+// Only state-like task changes are task events. migrate deletes every row of
+// the types no longer recorded, keeps the rest, and a second run changes
+// nothing.
+func TestMigrateDeletesDroppedTaskEventTypes(t *testing.T) {
+	conn, err := OpenAt(filepath.Join(t.TempDir(), "worktree.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	dropped := []string{
+		"task_edited", "task_linked", "task_unlinked", "task_focus_changed",
+		"subtask_added", "subtask_edited", "subtask_removed",
+		"task_event_linked", "task_event_unlinked",
+		"task_blocker_added", "task_blocker_removed",
+	}
+	insert := func(typ string) {
+		t.Helper()
+		if _, err := conn.Exec(`INSERT INTO task_events (task_id, ts, type, actor, actor_session, payload)
+			VALUES (1, '2026-01-01T00:00:00Z', ?, 'user', '', '{}')`, typ); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, typ := range dropped {
+		insert(typ)
+	}
+	insert("task_state_changed")
+
+	types := func() []string {
+		t.Helper()
+		rows, err := conn.Query(`SELECT type FROM task_events ORDER BY id`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rows.Close()
+		var out []string
+		for rows.Next() {
+			var s string
+			if err := rows.Scan(&s); err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, s)
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+
+	if err := migrate(conn); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	if got := types(); len(got) != 1 || got[0] != "task_state_changed" {
+		t.Fatalf("after migrate, task_events types = %v, want [task_state_changed]", got)
+	}
+	if err := migrate(conn); err != nil {
+		t.Fatalf("second migrate: %v", err)
+	}
+	if got := types(); len(got) != 1 || got[0] != "task_state_changed" {
+		t.Fatalf("after second migrate, task_events types = %v, want [task_state_changed]", got)
+	}
+}

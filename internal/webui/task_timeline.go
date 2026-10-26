@@ -2,13 +2,9 @@ package webui
 
 import (
 	"encoding/json"
-	"fmt"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/mturley/worktree/internal/tasks"
 	"github.com/mturley/worktree/internal/unread"
@@ -107,23 +103,16 @@ type taskEventPayload struct {
 	// From and To are strings on a state change and booleans on a subtask
 	// check: raw, so a typed read never fails the whole payload. Read them
 	// through stateFrom and stateTo.
-	From         json.RawMessage            `json:"from"`
-	To           json.RawMessage            `json:"to"`
-	Changes      map[string]json.RawMessage `json:"changes"`
-	Kind         string                     `json:"kind"`
-	ResourceType string                     `json:"resource_type"`
-	ResourceID   string                     `json:"resource_id"`
-	Worktree     string                     `json:"worktree"`
-	Focus        bool                       `json:"focus"`
-	Text         string                     `json:"text"`
-	Key          string                     `json:"key"`
-	Title        string                     `json:"title"`
-	Label        string                     `json:"label"`  // blocker events
-	Auto         bool                       `json:"auto"`   // task_blocker_resolved
-	Reason       string                     `json:"reason"` // task_blocker_resolved
-	BlockerID    int64                      `json:"blocker_id"`
-	OnAdd        bool                       `json:"on_add"`  // task_blocker_resolved by the request that added it
-	OnUndo       bool                       `json:"on_undo"` // task_blocker_resolved settled by an undo
+	From      json.RawMessage `json:"from"`
+	To        json.RawMessage `json:"to"`
+	Kind      string          `json:"kind"`   // blocker events
+	Text      string          `json:"text"`   // subtask checks
+	Label     string          `json:"label"`  // blocker events
+	Auto      bool            `json:"auto"`   // task_blocker_resolved
+	Reason    string          `json:"reason"` // task_blocker_resolved
+	BlockerID int64           `json:"blocker_id"`
+	OnAdd     bool            `json:"on_add"`  // task_blocker_resolved by the request that added it
+	OnUndo    bool            `json:"on_undo"` // task_blocker_resolved settled by an undo
 }
 
 // rawString is raw as a JSON string, "" for anything else.
@@ -149,7 +138,6 @@ type taskTitleFunc func(raw json.RawMessage, t tasks.Task) string
 var taskEventTitles = map[string]taskTitleFunc{
 	tasks.EventTaskCreated: func(_ json.RawMessage, t tasks.Task) string { return "Created " + quote(t.Title) },
 	tasks.EventTaskDeleted: func(_ json.RawMessage, t tasks.Task) string { return "Deleted " + quote(t.Title) },
-	tasks.EventTaskEdited:  taskEditedTitle,
 	tasks.EventTaskStateChanged: func(raw json.RawMessage, t tasks.Task) string {
 		p := parseTaskPayload(raw)
 		switch tasks.State(p.stateTo()) {
@@ -165,29 +153,8 @@ var taskEventTitles = map[string]taskTitleFunc{
 		}
 		return ""
 	},
-	tasks.EventTaskLinked: func(raw json.RawMessage, _ tasks.Task) string {
-		return "Linked " + linkPayloadRef(parseTaskPayload(raw))
-	},
-	tasks.EventTaskUnlinked: func(raw json.RawMessage, _ tasks.Task) string {
-		return "Unlinked " + linkPayloadRef(parseTaskPayload(raw))
-	},
-	tasks.EventTaskFocusChanged: func(raw json.RawMessage, _ tasks.Task) string {
-		p := parseTaskPayload(raw)
-		group := "Related"
-		if p.Focus {
-			group = "Focus"
-		}
-		return "Moved " + linkPayloadRef(p) + " to " + group
-	},
-	tasks.EventSubtaskAdded:       subtaskTitle("Added subtask "),
-	tasks.EventSubtaskEdited:      subtaskTitle("Edited subtask "),
-	tasks.EventSubtaskChecked:     subtaskTitle("Checked "),
-	tasks.EventSubtaskUnchecked:   subtaskTitle("Unchecked "),
-	tasks.EventSubtaskRemoved:     subtaskTitle("Removed subtask "),
-	tasks.EventTaskEventLinked:    eventLinkTitle("Linked event "),
-	tasks.EventTaskEventUnlinked:  eventLinkTitle("Unlinked event "),
-	tasks.EventTaskBlockerAdded:   blockerTitle("Blocked by "),
-	tasks.EventTaskBlockerRemoved: blockerTitle("Removed blocker "),
+	tasks.EventSubtaskChecked:   subtaskTitle("Checked "),
+	tasks.EventSubtaskUnchecked: subtaskTitle("Unchecked "),
 	tasks.EventTaskBlockerResolved: func(raw json.RawMessage, _ tasks.Task) string {
 		p := parseTaskPayload(raw)
 		if p.Auto {
@@ -202,21 +169,10 @@ var taskEventTitles = map[string]taskTitleFunc{
 // watcher event's DisplayName.
 var taskEventLabels = map[string]string{
 	tasks.EventTaskCreated:           "Created",
-	tasks.EventTaskEdited:            "Edited",
 	tasks.EventTaskStateChanged:      "State",
 	tasks.EventTaskDeleted:           "Deleted",
-	tasks.EventTaskLinked:            "Linked",
-	tasks.EventTaskUnlinked:          "Unlinked",
-	tasks.EventTaskFocusChanged:      "Focus",
-	tasks.EventSubtaskAdded:          "Subtask",
-	tasks.EventSubtaskEdited:         "Subtask",
 	tasks.EventSubtaskChecked:        "Subtask",
 	tasks.EventSubtaskUnchecked:      "Subtask",
-	tasks.EventSubtaskRemoved:        "Subtask",
-	tasks.EventTaskEventLinked:       "Event linked",
-	tasks.EventTaskEventUnlinked:     "Event unlinked",
-	tasks.EventTaskBlockerAdded:      "Blocker",
-	tasks.EventTaskBlockerRemoved:    "Blocker",
 	tasks.EventTaskBlockerResolved:   "Unblocked",
 	tasks.EventTaskBlockerUnresolved: "Blocked",
 }
@@ -224,17 +180,6 @@ var taskEventLabels = map[string]string{
 func subtaskTitle(prefix string) taskTitleFunc {
 	return func(raw json.RawMessage, _ tasks.Task) string {
 		return prefix + quote(parseTaskPayload(raw).Text)
-	}
-}
-
-func eventLinkTitle(prefix string) taskTitleFunc {
-	return func(raw json.RawMessage, _ tasks.Task) string {
-		p := parseTaskPayload(raw)
-		name := p.Title
-		if name == "" {
-			name = p.Key
-		}
-		return prefix + quote(name)
 	}
 }
 
@@ -258,69 +203,6 @@ func blockerPayloadLabel(p taskEventPayload) string {
 		return quote(p.Label)
 	}
 	return p.Label
-}
-
-// linkPayloadRef names a link from a task_linked/unlinked/focus_changed
-// payload: a resource's short ref, or "worktree <basename>".
-func linkPayloadRef(p taskEventPayload) string {
-	if tasks.LinkKind(p.Kind) == tasks.LinkWorktree {
-		return "worktree " + filepath.Base(p.Worktree)
-	}
-	return shortResourceRef(p.ResourceType, p.ResourceID)
-}
-
-// taskEditFields is the order task_edited changes are described in; the
-// payload is a map, so the order has to come from somewhere fixed.
-var taskEditFields = []string{"title", "description", "priority", "starred", "due"}
-
-func taskEditedTitle(raw json.RawMessage, _ tasks.Task) string {
-	p := parseTaskPayload(raw)
-	var parts []string
-	for _, f := range taskEditFields {
-		c, ok := p.Changes[f]
-		if !ok {
-			continue
-		}
-		var ch struct{ From, To any }
-		_ = json.Unmarshal(c, &ch)
-		from, to := fmt.Sprint(ch.From), fmt.Sprint(ch.To)
-		switch f {
-		case "title":
-			parts = append(parts, "renamed "+quote(from)+" to "+quote(to))
-		case "description":
-			parts = append(parts, "edited the description")
-		case "priority":
-			if to == string(tasks.PriorityNone) || to == "" {
-				parts = append(parts, "cleared the priority")
-			} else {
-				parts = append(parts, "set priority to "+to)
-			}
-		case "starred":
-			if to == "true" {
-				parts = append(parts, "starred")
-			} else {
-				parts = append(parts, "unstarred")
-			}
-		case "due":
-			if to == "" || ch.To == nil {
-				parts = append(parts, "cleared the due date")
-			} else {
-				parts = append(parts, "set the due date to "+to)
-			}
-		}
-	}
-	if len(parts) == 0 {
-		return "Edited"
-	}
-	return capitalize(strings.Join(parts, "; "))
-}
-
-func capitalize(s string) string {
-	r, n := utf8.DecodeRuneInString(s)
-	if n == 0 {
-		return s
-	}
-	return string(unicode.ToUpper(r)) + s[n:]
 }
 
 // shortResourceRef is a resource's compact name: "#123" for a PR, the key

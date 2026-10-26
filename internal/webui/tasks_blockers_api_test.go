@@ -271,10 +271,9 @@ func TestBlockerEventTitles(t *testing.T) {
 	for _, c := range []struct {
 		typ, actor, payload, want string
 	}{
-		{tasks.EventTaskBlockerAdded, "user", `{"blocker_id":1,"kind":"task","label":"T2 dep"}`, "Blocked by T2 dep"},
-		{tasks.EventTaskBlockerAdded, "user", `{"blocker_id":1,"kind":"resource","label":"pr:o/r#4498"}`, "Blocked by #4498"},
-		{tasks.EventTaskBlockerAdded, "user", `{"blocker_id":1,"kind":"other","label":"legal"}`, "Blocked by “legal”"},
-		{tasks.EventTaskBlockerRemoved, "user", `{"blocker_id":1,"kind":"resource","label":"jira:X-1"}`, "Removed blocker X-1"},
+		{tasks.EventTaskBlockerUnresolved, "user", `{"blocker_id":1,"kind":"task","label":"T2 dep"}`, "Blocked again by T2 dep"},
+		{tasks.EventTaskBlockerUnresolved, "user", `{"blocker_id":1,"kind":"other","label":"legal"}`, "Blocked again by “legal”"},
+		{tasks.EventTaskBlockerResolved, "user", `{"blocker_id":1,"kind":"resource","label":"jira:X-1"}`, "Resolved blocker X-1"},
 		{tasks.EventTaskBlockerResolved, "system", `{"blocker_id":1,"kind":"resource","label":"pr:o/r#4498","auto":true,"reason":"merged"}`, "Unblocked: #4498 merged"},
 		{tasks.EventTaskBlockerResolved, "system", `{"blocker_id":1,"kind":"task","label":"T2 dep","auto":true,"reason":"done"}`, "Unblocked: T2 dep is done"},
 		{tasks.EventTaskBlockerResolved, "user", `{"blocker_id":1,"kind":"other","label":"legal","auto":false,"reason":""}`, "Resolved blocker “legal”"},

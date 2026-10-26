@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
-	"sort"
 	"sync"
 	"testing"
 
@@ -230,9 +229,13 @@ func TestRejectsInvalidInput(t *testing.T) {
 	}
 }
 
-func TestUpdateRecordsChangedFieldsOnly(t *testing.T) {
+// An edit saves and bumps updated_at but is not a task event; a patch that
+// changes nothing writes nothing.
+func TestUpdateSavesWithoutAnEvent(t *testing.T) {
 	conn := newDB(t)
 	tk := mustCreate(t, conn, "old")
+	backdate(t, conn, tk.ID)
+	before := updatedAt(t, conn, tk.ID)
 	title, starred := "new", true
 	got, err := Update(conn, user, tk.ID, Patch{Title: &title, Starred: &starred})
 	if err != nil {
@@ -241,38 +244,19 @@ func TestUpdateRecordsChangedFieldsOnly(t *testing.T) {
 	if got.Title != "new" || !got.Starred {
 		t.Fatalf("Update returned %+v", got)
 	}
-	ev, err := Events(conn, tk.ID)
-	if err != nil {
-		t.Fatal(err)
+	if updatedAt(t, conn, tk.ID) == before {
+		t.Fatal("updated_at not bumped")
 	}
-	if ev[0].Type != EventTaskEdited {
-		t.Fatalf("latest event %q", ev[0].Type)
-	}
-	var p struct {
-		Changes map[string]struct{ From, To any } `json:"changes"`
-	}
-	if err := json.Unmarshal(ev[0].Payload, &p); err != nil {
-		t.Fatal(err)
-	}
-	var keys []string
-	for k := range p.Changes {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	if len(keys) != 2 || keys[0] != "starred" || keys[1] != "title" {
-		t.Fatalf("changed keys %v (payload %s)", keys, ev[0].Payload)
-	}
-	if p.Changes["title"].From != "old" || p.Changes["title"].To != "new" ||
-		p.Changes["starred"].From != false || p.Changes["starred"].To != true {
-		t.Fatalf("payload %s", ev[0].Payload)
+	if n := count(t, conn, "task_events"); n != 1 {
+		t.Fatalf("task_events = %d, want only task_created", n)
 	}
 
-	before := count(t, conn, "task_events")
+	v := mustVersion(t, conn)
 	if _, err := Update(conn, user, tk.ID, Patch{Title: &title, Starred: &starred}); err != nil {
 		t.Fatal(err)
 	}
-	if n := count(t, conn, "task_events"); n != before {
-		t.Fatalf("no-op update wrote an event")
+	if mustVersion(t, conn) != v {
+		t.Fatalf("no-op update wrote something")
 	}
 }
 

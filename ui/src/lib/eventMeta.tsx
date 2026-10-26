@@ -1,6 +1,5 @@
 import {
   IconAlertTriangle,
-  IconBan,
   IconBell,
   IconCheck,
   IconChecklist,
@@ -10,17 +9,11 @@ import {
   IconGitCommit,
   IconGitMerge,
   IconGitPullRequestClosed,
-  IconLink,
-  IconLinkOff,
   IconMessage,
-  IconPencil,
   IconProgress,
   IconSquare,
   IconSquareCheck,
-  IconSquareMinus,
-  IconSquarePlus,
   IconTag,
-  IconTarget,
   IconTrash,
   IconUserCheck,
   IconX,
@@ -100,25 +93,15 @@ const TYPES: Record<string, Entry> = {
   slack_reply: { color: "grape", Icon: IconMessage, label: "reply" },
 
   // Tasks — worktree's own task events (internal/tasks/events.go). These
-  // labels are fallbacks: the server sends its own type_label.
+  // labels are fallbacks: the server sends its own type_label. Only
+  // state-like changes are task events; edits record nothing.
   task_created: task(IconChecklist, "created"),
-  task_edited: task(IconPencil, "edited"),
   task_state_changed: task(IconProgress, "state changed"),
   task_deleted: task(IconTrash, "deleted"),
-  task_linked: task(IconLink, "linked"),
-  task_unlinked: task(IconLinkOff, "unlinked"),
-  task_focus_changed: task(IconTarget, "focus changed"),
-  task_event_linked: task(IconLink, "event linked"),
-  task_event_unlinked: task(IconLinkOff, "event unlinked"),
-  task_blocker_added: task(IconBan, "blocker added"),
-  task_blocker_removed: task(IconTrash, "blocker removed"),
   task_blocker_resolved: task(IconCircleCheck, "blocker resolved"),
   task_blocker_unresolved: task(IconCircleDashed, "blocker unresolved"),
-  subtask_added: task(IconSquarePlus, "subtask added"),
-  subtask_edited: task(IconPencil, "subtask edited"),
   subtask_checked: task(IconSquareCheck, "subtask checked"),
   subtask_unchecked: task(IconSquare, "subtask unchecked"),
-  subtask_removed: task(IconSquareMinus, "subtask removed"),
 
   // Watcher's own bookkeeping
   watch_started: { color: "gray", Icon: IconBell, label: "watch started" },

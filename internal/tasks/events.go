@@ -5,27 +5,18 @@ import (
 	"encoding/json"
 )
 
-// Event types written to task_events. Reordering tasks or subtasks writes no
-// event: it is noise in a feed.
+// Event types written to task_events. Only state-like changes are events:
+// edits (title, links, subtask text, event links, adding or removing a
+// blocker) and reorders still save and bump updated_at, but record nothing.
 const (
-	EventTaskCreated       = "task_created"
-	EventTaskEdited        = "task_edited"        // {"changes":{"<field>":{"from":…,"to":…}}}
-	EventTaskStateChanged  = "task_state_changed" // {"from","to","prev_started_at","prev_completed_at","cascade"}
-	EventTaskDeleted       = "task_deleted"       // {"cascade"}
-	EventTaskLinked        = "task_linked"
-	EventTaskUnlinked      = "task_unlinked"
-	EventTaskFocusChanged  = "task_focus_changed"
-	EventSubtaskAdded      = "subtask_added"
-	EventSubtaskEdited     = "subtask_edited"
-	EventSubtaskChecked    = "subtask_checked"   // {"subtask_id","text","from","to"}
-	EventSubtaskUnchecked  = "subtask_unchecked" // likewise
-	EventSubtaskRemoved    = "subtask_removed"
-	EventTaskEventLinked   = "task_event_linked"   // {"key","title"}
-	EventTaskEventUnlinked = "task_event_unlinked" // {"key","title"}
-	// Blocker events. Every payload has {"blocker_id","kind","label"};
-	// resolved adds "auto" and "reason". Automatic ones use ActorSystem.
-	EventTaskBlockerAdded      = "task_blocker_added"
-	EventTaskBlockerRemoved    = "task_blocker_removed"
+	EventTaskCreated      = "task_created"
+	EventTaskStateChanged = "task_state_changed" // {"from","to","prev_started_at","prev_completed_at","cascade"}
+	EventTaskDeleted      = "task_deleted"       // {"cascade"}
+	EventSubtaskChecked   = "subtask_checked"    // {"subtask_id","text","from","to"}
+	EventSubtaskUnchecked = "subtask_unchecked"  // likewise
+	// Blocker resolution events. Every payload has {"blocker_id","kind",
+	// "label"}; resolved adds "auto" and "reason". Automatic ones use
+	// ActorSystem.
 	EventTaskBlockerResolved   = "task_blocker_resolved"
 	EventTaskBlockerUnresolved = "task_blocker_unresolved"
 )
@@ -38,12 +29,6 @@ type Event struct {
 	Actor        string // ActorUser, ActorAgent or ActorSystem
 	ActorSession string // "" when unknown
 	Payload      json.RawMessage
-}
-
-// change is one field's before and after in a task_edited payload.
-type change struct {
-	From any `json:"from"`
-	To   any `json:"to"`
 }
 
 // record writes one event inside tx, stamped with ts, and returns its ID. A

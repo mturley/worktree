@@ -442,6 +442,9 @@ func TestUndoDeleteKeepsHistoryAndConflicts(t *testing.T) {
 	if _, err := Update(conn, agent, tk.ID, Patch{Title: &t2}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := SetState(conn, agent, tk.ID, StateInProgress); err != nil {
+		t.Fatal(err)
+	}
 	ev, err := Delete(conn, user, tk.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -452,7 +455,7 @@ func TestUndoDeleteKeepsHistoryAndConflicts(t *testing.T) {
 	if got := mustGet(t, conn, tk.ID); got.Title != "T2" {
 		t.Fatalf("restored task = %+v", got)
 	}
-	if es := eventsOfType(t, conn, tk.ID, EventTaskEdited); len(es) != 1 || es[0].Actor != ActorAgent {
+	if es := eventsOfType(t, conn, tk.ID, EventTaskStateChanged); len(es) != 1 || es[0].Actor != ActorAgent {
 		t.Fatalf("agent events after undo = %+v", es)
 	}
 	if eventExists(t, conn, ev) || len(eventsOfType(t, conn, tk.ID, EventTaskDeleted)) != 0 {

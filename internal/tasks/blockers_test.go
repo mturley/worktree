@@ -69,10 +69,14 @@ func TestAddListRemoveBlockerEachKind(t *testing.T) {
 		if updatedAt(t, conn, tk.ID) == before {
 			t.Errorf("%s: updated_at not bumped", c.target.Kind)
 		}
-		evs := eventsOfType(t, conn, tk.ID, EventTaskBlockerAdded)
-		p := payloadOf(t, evs[0])
-		if p["label"] != c.label || p["kind"] != string(c.target.Kind) || int64(p["blocker_id"].(float64)) != b.ID {
-			t.Errorf("added payload %v, want label %q", p, c.label)
+		// Adding records no event, but the resolution events' payload
+		// names the blocker this way.
+		p, err := blockerPayload(conn, b.ID, b.BlockerTarget)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p["label"] != c.label || p["kind"] != c.target.Kind || p["blocker_id"] != b.ID {
+			t.Errorf("payload %v, want label %q", p, c.label)
 		}
 	}
 	bs := mustBlockers(t, conn, tk.ID)
@@ -97,11 +101,6 @@ func TestAddListRemoveBlockerEachKind(t *testing.T) {
 		}
 		if updatedAt(t, conn, tk.ID) == before {
 			t.Errorf("remove %d: updated_at not bumped", i)
-		}
-		evs := eventsOfType(t, conn, tk.ID, EventTaskBlockerRemoved)
-		p := payloadOf(t, evs[0])
-		if p["label"] != cases[i].label || int64(p["blocker_id"].(float64)) != b.ID {
-			t.Errorf("removed payload %v", p)
 		}
 	}
 	if bs := mustBlockers(t, conn, tk.ID); len(bs) != 0 {
@@ -159,16 +158,12 @@ func TestAddBlockerDuplicateIsNoOp(t *testing.T) {
 	for _, bt := range []BlockerTarget{taskTarget(dep.ID), resTarget("pr", "o/r#1"), otherTarget("legal")} {
 		first := mustAddBlocker(t, conn, tk.ID, bt)
 		v := mustVersion(t, conn)
-		nEvents := len(eventsOfType(t, conn, tk.ID, EventTaskBlockerAdded))
 		again := mustAddBlocker(t, conn, tk.ID, bt)
 		if again.ID != first.ID {
 			t.Errorf("%s: duplicate made a new row %d (first %d)", bt.Kind, again.ID, first.ID)
 		}
 		if mustVersion(t, conn) != v {
 			t.Errorf("%s: duplicate bumped version", bt.Kind)
-		}
-		if n := len(eventsOfType(t, conn, tk.ID, EventTaskBlockerAdded)); n != nEvents {
-			t.Errorf("%s: duplicate recorded an event", bt.Kind)
 		}
 	}
 	if n := len(mustBlockers(t, conn, tk.ID)); n != 3 {

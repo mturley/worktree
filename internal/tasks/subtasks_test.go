@@ -67,19 +67,15 @@ func TestSubtaskLifecycle(t *testing.T) {
 		t.Fatalf("last event %s", evs[0].Type)
 	}
 
-	n := len(evs)
+	v := mustVersion(t, conn)
 	if err := EditSubtask(conn, user, ids[0], "a"); err != nil {
 		t.Fatal(err)
 	}
-	if evs, _ = Events(conn, tk.ID); len(evs) != n {
-		t.Fatal("unchanged edit recorded an event")
+	if mustVersion(t, conn) != v {
+		t.Fatal("unchanged edit wrote something")
 	}
 	if err := EditSubtask(conn, user, ids[0], "a2"); err != nil {
 		t.Fatal(err)
-	}
-	evs, _ = Events(conn, tk.ID)
-	if evs[0].Type != EventSubtaskEdited {
-		t.Fatalf("last event %s", evs[0].Type)
 	}
 
 	if err := RemoveSubtask(conn, user, ids[2]); err != nil {
@@ -88,10 +84,6 @@ func TestSubtaskLifecycle(t *testing.T) {
 	got = mustGet(t, conn, tk.ID)
 	if !eqStrings(subtaskTexts(got), []string{"a2", "b"}) {
 		t.Fatalf("texts = %v", subtaskTexts(got))
-	}
-	evs, _ = Events(conn, tk.ID)
-	if evs[0].Type != EventSubtaskRemoved {
-		t.Fatalf("last event %s", evs[0].Type)
 	}
 }
 

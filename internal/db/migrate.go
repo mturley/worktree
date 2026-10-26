@@ -254,6 +254,20 @@ func migrate(conn *sql.DB) error {
 		return err
 	}
 
+	// Only state-like task changes are task events: creation, state
+	// changes, deletion, blocker resolution and subtask checks. Edits used
+	// to be recorded too; their rows go. Like the backfill below this runs
+	// on every migrate, and once they are gone it deletes nothing, since
+	// nothing writes these types any more.
+	if _, err := conn.Exec(`
+		DELETE FROM task_events WHERE type IN (
+			'task_edited', 'task_linked', 'task_unlinked', 'task_focus_changed',
+			'subtask_added', 'subtask_edited', 'subtask_removed',
+			'task_event_linked', 'task_event_unlinked',
+			'task_blocker_added', 'task_blocker_removed')`); err != nil {
+		return err
+	}
+
 	// Backfill: every already-subscribed non-Slack resource starts fully
 	// read, so the feature goes live silent instead of announcing a backlog
 	// nobody will clear by hand.

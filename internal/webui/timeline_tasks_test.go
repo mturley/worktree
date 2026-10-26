@@ -116,7 +116,7 @@ func TestTimelineMergePaging(t *testing.T) {
 			insertEvent(t, f.s.DB, id, tts(sec), "github", "pr_comment", "c", "pr", "o/r#1", "u1")
 			want = append(want, id)
 		} else {
-			want = append(want, insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(sec), tasks.EventTaskEdited, tasks.ActorUser, ""))
+			want = append(want, insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(sec), tasks.EventTaskStateChanged, tasks.ActorUser, ""))
 		}
 	}
 	for name, get := range map[string]func(*testing.T, string) timelineResponse{"home": f.home, "worktree": f.worktree} {
@@ -143,10 +143,10 @@ func TestTimelineMergePaging(t *testing.T) {
 func TestTimelineTaskEventsWorktreeAndResourceScope(t *testing.T) {
 	f := taskFeedFixture(t)
 	insertEvent(t, f.s.DB, "e1", tts(1), "github", "pr_comment", "c", "pr", "o/r#1", "u1")
-	a := insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(4), tasks.EventTaskEdited, tasks.ActorUser, "")
-	b := insertTaskEvent(t, f.s.DB, f.beta.ID, tts(3), tasks.EventTaskEdited, tasks.ActorUser, "")
-	insertTaskEvent(t, f.s.DB, f.gamma.ID, tts(2), tasks.EventTaskEdited, tasks.ActorUser, "")
-	insertTaskEvent(t, f.s.DB, f.delta.ID, tts(5), tasks.EventTaskEdited, tasks.ActorUser, "")
+	a := insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(4), tasks.EventTaskStateChanged, tasks.ActorUser, "")
+	b := insertTaskEvent(t, f.s.DB, f.beta.ID, tts(3), tasks.EventTaskStateChanged, tasks.ActorUser, "")
+	insertTaskEvent(t, f.s.DB, f.gamma.ID, tts(2), tasks.EventTaskStateChanged, tasks.ActorUser, "")
+	insertTaskEvent(t, f.s.DB, f.delta.ID, tts(5), tasks.EventTaskStateChanged, tasks.ActorUser, "")
 
 	if got, want := joinIDs(f.worktree(t, "").Events), strings.Join([]string{a, b, "e1"}, ","); got != want {
 		t.Errorf("worktree feed = %s, want %s", got, want)
@@ -159,7 +159,7 @@ func TestTimelineTaskEventsWorktreeAndResourceScope(t *testing.T) {
 func TestTimelineTaskEventsFilters(t *testing.T) {
 	f := taskFeedFixture(t)
 	insertEvent(t, f.s.DB, "e1", tts(1), "github", "pr_comment", "c", "pr", "o/r#1", "u1")
-	a := insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(2), tasks.EventTaskEdited, tasks.ActorUser, "")
+	a := insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(2), tasks.EventTaskStateChanged, tasks.ActorUser, "")
 	for _, feed := range []struct {
 		name string
 		get  func(*testing.T, string) timelineResponse
@@ -184,15 +184,15 @@ func TestTimelineTaskEventsFilters(t *testing.T) {
 func TestTimelineTaskEventsUnread(t *testing.T) {
 	f := taskFeedFixture(t)
 	// alpha: agent events either side of its cursor.
-	readA := insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(2), tasks.EventTaskEdited, tasks.ActorAgent, "")
-	newA := insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(6), tasks.EventTaskEdited, tasks.ActorAgent, "")
+	readA := insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(2), tasks.EventTaskStateChanged, tasks.ActorAgent, "")
+	newA := insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(6), tasks.EventTaskStateChanged, tasks.ActorAgent, "")
 	if _, err := f.s.DB.Exec(`INSERT INTO resource_read_cursor (resource_type, resource_id, last_read_ts, updated_at) VALUES ('task', ?, ?, ?)`,
 		strconv.FormatInt(f.alpha.ID, 10), tts(4), tts(4)); err != nil {
 		t.Fatal(err)
 	}
 	// beta: no cursor, so every agent event is unread; the user's never is.
-	agentB := insertTaskEvent(t, f.s.DB, f.beta.ID, tts(3), tasks.EventTaskEdited, tasks.ActorAgent, "")
-	userB := insertTaskEvent(t, f.s.DB, f.beta.ID, tts(5), tasks.EventTaskEdited, tasks.ActorUser, "")
+	agentB := insertTaskEvent(t, f.s.DB, f.beta.ID, tts(3), tasks.EventTaskStateChanged, tasks.ActorAgent, "")
+	userB := insertTaskEvent(t, f.s.DB, f.beta.ID, tts(5), tasks.EventTaskStateChanged, tasks.ActorUser, "")
 
 	for _, feed := range []struct {
 		name string
@@ -214,9 +214,9 @@ func TestTimelineTaskEventsUnread(t *testing.T) {
 func TestTimelineTaskEventsSearch(t *testing.T) {
 	f := taskFeedFixture(t)
 	insertEvent(t, f.s.DB, "e1", tts(1), "github", "pr_comment", "giraffe comment", "pr", "o/r#1", "u1")
-	sub := insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(3), tasks.EventSubtaskAdded, tasks.ActorUser, `{"text":"Giraffe"}`)
-	edit := insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(2), tasks.EventTaskEdited, tasks.ActorUser, "")
-	insertTaskEvent(t, f.s.DB, f.beta.ID, tts(4), tasks.EventTaskEdited, tasks.ActorUser, "")
+	sub := insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(3), tasks.EventSubtaskChecked, tasks.ActorUser, `{"text":"Giraffe"}`)
+	edit := insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(2), tasks.EventTaskStateChanged, tasks.ActorUser, "")
+	insertTaskEvent(t, f.s.DB, f.beta.ID, tts(4), tasks.EventTaskStateChanged, tasks.ActorUser, "")
 
 	for _, feed := range []struct {
 		name string
@@ -227,7 +227,7 @@ func TestTimelineTaskEventsSearch(t *testing.T) {
 		if joinIDs(got) != sub+",e1" {
 			t.Fatalf("%s q=GIRAFFE = %s", feed.name, joinIDs(got))
 		}
-		if m := got[0].Match; m == nil || m.Field != "title" || m.Snippet != "Added subtask “Giraffe”" {
+		if m := got[0].Match; m == nil || m.Field != "title" || m.Snippet != "Checked “Giraffe”" {
 			t.Errorf("%s match = %+v", feed.name, m)
 		}
 		// The task's title.
@@ -250,14 +250,14 @@ func TestTimelineTaskEventsSearch(t *testing.T) {
 func TestTimelineTaskEventsSearchAuthor(t *testing.T) {
 	f := taskFeedFixture(t)
 	res, err := f.s.DB.Exec(`INSERT INTO task_events (task_id, ts, type, actor, actor_session, payload)
-		VALUES (?, ?, ?, 'agent', 'otter-session', '{}')`, f.alpha.ID, tts(3), tasks.EventTaskEdited)
+		VALUES (?, ?, ?, 'agent', 'otter-session', '{}')`, f.alpha.ID, tts(3), tasks.EventTaskStateChanged)
 	if err != nil {
 		t.Fatal(err)
 	}
 	n, _ := res.LastInsertId()
 	sess := "task:" + strconv.FormatInt(n, 10)
-	agent := insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(2), tasks.EventTaskEdited, tasks.ActorAgent, "")
-	user := insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(1), tasks.EventTaskEdited, tasks.ActorUser, "")
+	agent := insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(2), tasks.EventTaskStateChanged, tasks.ActorAgent, "")
+	user := insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(1), tasks.EventTaskStateChanged, tasks.ActorUser, "")
 	for _, feed := range []struct {
 		name string
 		get  func(*testing.T, string) timelineResponse
@@ -324,11 +324,11 @@ func assertSameIDs(t *testing.T, name string, got, want []string) {
 // last kept row's ts.
 func TestTimelinePagingSameTSTaskCluster(t *testing.T) {
 	f := taskFeedFixture(t)
-	want := []string{insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(9), tasks.EventTaskEdited, tasks.ActorAgent, "")}
+	want := []string{insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(9), tasks.EventTaskStateChanged, tasks.ActorAgent, "")}
 	for i := 0; i < 5; i++ {
-		want = append(want, insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(5), tasks.EventTaskEdited, tasks.ActorAgent, ""))
+		want = append(want, insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(5), tasks.EventTaskStateChanged, tasks.ActorAgent, ""))
 	}
-	want = append(want, insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(1), tasks.EventTaskEdited, tasks.ActorAgent, ""))
+	want = append(want, insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(1), tasks.EventTaskStateChanged, tasks.ActorAgent, ""))
 	for _, feed := range []struct {
 		name string
 		get  func(*testing.T, string) timelineResponse
@@ -351,10 +351,10 @@ func TestTimelinePagingSameTSWatcherTaskTie(t *testing.T) {
 		want = append(want, id)
 	}
 	for i := 0; i < 3; i++ {
-		want = append(want, insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(5), tasks.EventTaskEdited, tasks.ActorUser, ""))
+		want = append(want, insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(5), tasks.EventTaskStateChanged, tasks.ActorUser, ""))
 	}
 	insertEvent(t, f.s.DB, "w1", tts(1), "github", "pr_comment", "c", "pr", "o/r#1", "u1")
-	want = append(want, "w1", insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(1), tasks.EventTaskEdited, tasks.ActorUser, ""))
+	want = append(want, "w1", insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(1), tasks.EventTaskStateChanged, tasks.ActorUser, ""))
 	for _, feed := range []struct {
 		name string
 		get  func(*testing.T, string) timelineResponse

@@ -27,7 +27,7 @@ func addTask(t *testing.T, conn *sql.DB, id int, deleted bool) {
 func addTaskEvent(t *testing.T, conn *sql.DB, task int, ts, actor string) {
 	t.Helper()
 	if _, err := conn.Exec(`INSERT INTO task_events (task_id, ts, type, actor, actor_session, payload)
-		VALUES (?, ?, 'task_edited', ?, '', '{}')`, task, ts, actor); err != nil {
+		VALUES (?, ?, 'task_created', ?, '', '{}')`, task, ts, actor); err != nil {
 		t.Fatal(err)
 	}
 }

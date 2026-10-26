@@ -49,6 +49,7 @@ func loadSubtask(tx dbtx, id int64) (Subtask, error) {
 	return s, nil
 }
 
+// subtaskPayload identifies a subtask in a subtask_checked/unchecked payload.
 func subtaskPayload(s Subtask) map[string]any {
 	return map[string]any{"subtask_id": s.ID, "text": s.Text}
 }
@@ -87,11 +88,7 @@ func AddSubtask(conn *sql.DB, a Actor, taskID int64, text string) (Subtask, erro
 			return err
 		}
 		s = Subtask{ID: id, TaskID: taskID, Text: text, Position: pos}
-		if err := touch(tx, taskID, ts); err != nil {
-			return err
-		}
-		_, err = record(tx, a, taskID, ts, EventSubtaskAdded, subtaskPayload(s))
-		return err
+		return touch(tx, taskID, ts)
 	})
 	if err != nil {
 		return Subtask{}, err
@@ -120,12 +117,7 @@ func EditSubtask(conn *sql.DB, a Actor, id int64, text string) error {
 		if _, err := tx.ExecContext(bg, `UPDATE task_subtasks SET text = ?, updated_at = ? WHERE id = ?`, text, ts, id); err != nil {
 			return err
 		}
-		cur.Text = text
-		if err := touch(tx, cur.TaskID, ts); err != nil {
-			return err
-		}
-		_, err = record(tx, a, cur.TaskID, ts, EventSubtaskEdited, subtaskPayload(cur))
-		return err
+		return touch(tx, cur.TaskID, ts)
 	})
 }
 
@@ -192,12 +184,7 @@ func RemoveSubtask(conn *sql.DB, a Actor, id int64) error {
 		if _, err := tx.ExecContext(bg, `DELETE FROM task_subtasks WHERE id = ?`, id); err != nil {
 			return err
 		}
-		ts := now()
-		if err := touch(tx, cur.TaskID, ts); err != nil {
-			return err
-		}
-		_, err = record(tx, a, cur.TaskID, ts, EventSubtaskRemoved, subtaskPayload(cur))
-		return err
+		return touch(tx, cur.TaskID, now())
 	})
 }
 

@@ -64,17 +64,6 @@ func normalize(t LinkTarget) (LinkTarget, error) {
 	}
 }
 
-// linkPayload identifies a link target in an event payload.
-func linkPayload(t LinkTarget, focus bool) map[string]any {
-	return map[string]any{
-		"kind":          t.Kind,
-		"resource_type": t.ResourceType,
-		"resource_id":   t.ResourceID,
-		"worktree":      t.Worktree,
-		"focus":         focus,
-	}
-}
-
 // findLink returns the row id and group of taskID's link to t (already
 // normalised), or sql.ErrNoRows.
 func findLink(tx dbtx, taskID int64, t LinkTarget) (id int64, primary bool, err error) {
@@ -97,8 +86,8 @@ func nextSortOrder(tx dbtx, taskID int64, focus bool) (int64, error) {
 }
 
 // insertLink adds a new link (t already normalised) at the bottom of its
-// group, bumps the task's updated_at and records task_linked.
-func insertLink(tx dbtx, a Actor, taskID int64, t LinkTarget, focus bool, ts string) error {
+// group and bumps the task's updated_at.
+func insertLink(tx dbtx, taskID int64, t LinkTarget, focus bool, ts string) error {
 	order, err := nextSortOrder(tx, taskID, focus)
 	if err != nil {
 		return err
@@ -109,16 +98,12 @@ func insertLink(tx dbtx, a Actor, taskID int64, t LinkTarget, focus bool, ts str
 		taskID, t.Kind, t.ResourceType, t.ResourceID, t.Worktree, bit(focus), order, ts); err != nil {
 		return err
 	}
-	if err := touch(tx, taskID, ts); err != nil {
-		return err
-	}
-	_, err = record(tx, a, taskID, ts, EventTaskLinked, linkPayload(t, focus))
-	return err
+	return touch(tx, taskID, ts)
 }
 
-// moveLinkGroup moves link row id to the bottom of the other group, bumps
-// the task's updated_at and records task_focus_changed.
-func moveLinkGroup(tx dbtx, a Actor, taskID, id int64, t LinkTarget, focus bool) error {
+// moveLinkGroup moves link row id to the bottom of the other group and
+// bumps the task's updated_at.
+func moveLinkGroup(tx dbtx, taskID, id int64, focus bool) error {
 	order, err := nextSortOrder(tx, taskID, focus)
 	if err != nil {
 		return err
@@ -126,12 +111,7 @@ func moveLinkGroup(tx dbtx, a Actor, taskID, id int64, t LinkTarget, focus bool)
 	if _, err := tx.ExecContext(bg, `UPDATE task_links SET is_primary = ?, sort_order = ? WHERE id = ?`, bit(focus), order, id); err != nil {
 		return err
 	}
-	ts := now()
-	if err := touch(tx, taskID, ts); err != nil {
-		return err
-	}
-	_, err = record(tx, a, taskID, ts, EventTaskFocusChanged, linkPayload(t, focus))
-	return err
+	return touch(tx, taskID, now())
 }
 
 // AddLink links taskID to t, as Focus when focus is set and Related
@@ -152,13 +132,13 @@ func AddLink(conn *sql.DB, a Actor, taskID int64, t LinkTarget, focus bool) (Lin
 		id, primary, err := findLink(tx, taskID, t)
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
-			return insertLink(tx, a, taskID, t, focus, now())
+			return insertLink(tx, taskID, t, focus, now())
 		case err != nil:
 			return err
 		case primary == focus:
 			return nil
 		default:
-			return moveLinkGroup(tx, a, taskID, id, t, focus)
+			return moveLinkGroup(tx, taskID, id, focus)
 		}
 	})
 	if err != nil {
@@ -190,7 +170,7 @@ func RemoveLink(conn *sql.DB, a Actor, taskID int64, t LinkTarget) error {
 		if _, err := load(tx, taskID); err != nil {
 			return err
 		}
-		id, primary, err := findLink(tx, taskID, t)
+		id, _, err := findLink(tx, taskID, t)
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrLinkNotFound
 		}
@@ -200,12 +180,7 @@ func RemoveLink(conn *sql.DB, a Actor, taskID int64, t LinkTarget) error {
 		if _, err := tx.ExecContext(bg, `DELETE FROM task_links WHERE id = ?`, id); err != nil {
 			return err
 		}
-		ts := now()
-		if err := touch(tx, taskID, ts); err != nil {
-			return err
-		}
-		_, err = record(tx, a, taskID, ts, EventTaskUnlinked, linkPayload(t, primary))
-		return err
+		return touch(tx, taskID, now())
 	})
 }
 
@@ -234,7 +209,7 @@ func SetLinkFocus(conn *sql.DB, a Actor, taskID int64, t LinkTarget, focus bool)
 		if primary == focus {
 			return nil
 		}
-		return moveLinkGroup(tx, a, taskID, id, t, focus)
+		return moveLinkGroup(tx, taskID, id, focus)
 	})
 }
 
@@ -243,10 +218,9 @@ func SetLinkFocus(conn *sql.DB, a Actor, taskID int64, t LinkTarget, focus bool)
 // Like resources.SetOrder it forgives a stale caller: a link named in
 // neither list keeps its group and goes to that group's end (in its current
 // relative order), and a target that is not linked, or is invalid, is
-// ignored. A target named twice counts once, at its first mention. A pure
-// reorder records no event; each link whose group changes records one
-// task_focus_changed. Any change bumps the task's updated_at; a request
-// that leaves the order as it was writes nothing.
+// ignored. A target named twice counts once, at its first mention. It
+// records no event. Any change bumps the task's updated_at; a request that
+// leaves the order as it was writes nothing.
 func SetLinkOrder(conn *sql.DB, a Actor, taskID int64, focus, related []LinkTarget) error {
 	if err := validActor(a); err != nil {
 		return err
@@ -304,8 +278,7 @@ func SetLinkOrder(conn *sql.DB, a Actor, taskID int64, focus, related []LinkTarg
 		if !changed {
 			return nil
 		}
-		ts := now()
-		if err := touch(tx, taskID, ts); err != nil {
+		if err := touch(tx, taskID, now()); err != nil {
 			return err
 		}
 		write := func(group []Link, primary bool) error {
@@ -313,11 +286,6 @@ func SetLinkOrder(conn *sql.DB, a Actor, taskID int64, focus, related []LinkTarg
 				if _, err := tx.ExecContext(bg, `UPDATE task_links SET is_primary = ?, sort_order = ? WHERE id = ?`,
 					bit(primary), i+1, l.ID); err != nil {
 					return err
-				}
-				if l.Primary != primary {
-					if _, err := record(tx, a, taskID, ts, EventTaskFocusChanged, linkPayload(l.LinkTarget, primary)); err != nil {
-						return err
-					}
 				}
 			}
 			return nil

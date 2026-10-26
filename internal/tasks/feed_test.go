@@ -10,7 +10,7 @@ func feedEvent(t *testing.T, conn *sql.DB, taskID int64, ts, actor string) int64
 	t.Helper()
 	res, err := conn.Exec(
 		`INSERT INTO task_events (task_id, ts, type, actor, actor_session, payload)
-		 VALUES (?, ?, 'task_edited', ?, '', '{}')`, taskID, ts, actor)
+		 VALUES (?, ?, 'task_created', ?, '', '{}')`, taskID, ts, actor)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -256,13 +256,6 @@ func AddBlocker(conn *sql.DB, a Actor, taskID int64, t BlockerTarget) (Blocker, 
 		if err := touch(tx, taskID, ts); err != nil {
 			return err
 		}
-		p, err := blockerPayload(tx, id, t)
-		if err != nil {
-			return err
-		}
-		if _, err = record(tx, a, taskID, ts, EventTaskBlockerAdded, p); err != nil {
-			return err
-		}
 		if t.Kind != BlockerTask || cur.State == StateDone {
 			return nil
 		}
@@ -295,19 +288,10 @@ func RemoveBlocker(conn *sql.DB, a Actor, blockerID int64) error {
 		if err != nil {
 			return err
 		}
-		p, err := blockerPayload(tx, b.ID, b.BlockerTarget)
-		if err != nil {
-			return err
-		}
 		if _, err := tx.ExecContext(bg, `DELETE FROM task_blockers WHERE id = ?`, b.ID); err != nil {
 			return err
 		}
-		ts := now()
-		if err := touch(tx, b.TaskID, ts); err != nil {
-			return err
-		}
-		_, err = record(tx, a, b.TaskID, ts, EventTaskBlockerRemoved, p)
-		return err
+		return touch(tx, b.TaskID, now())
 	})
 	if err != nil {
 		return err

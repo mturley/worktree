@@ -30,14 +30,11 @@ func TestEventLinkRoundTrip(t *testing.T) {
 	if err != nil || len(ids) != 1 || ids[0] != tk.ID {
 		t.Fatalf("TasksLinkingEvent = %v, %v", ids, err)
 	}
-	if n := len(eventsOfType(t, conn, tk.ID, EventTaskEventLinked)); n != 2 {
-		t.Fatalf("linked events = %d", n)
-	}
 	if err := UnlinkEvent(conn, user, tk.ID, "ev:5"); err != nil {
 		t.Fatal(err)
 	}
 	got, _ = EventLinks(conn, tk.ID)
-	if len(got) != 1 || len(eventsOfType(t, conn, tk.ID, EventTaskEventUnlinked)) != 1 {
+	if len(got) != 1 || got[0].Key != "slack:C1:123.4" {
 		t.Fatalf("after unlink: %+v", got)
 	}
 }
@@ -50,8 +47,8 @@ func TestEventLinkIdempotent(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if n := len(eventsOfType(t, conn, tk.ID, EventTaskEventLinked)); n != 1 {
-		t.Fatalf("linked events = %d, want 1", n)
+	if n := count(t, conn, "task_event_links"); n != 1 {
+		t.Fatalf("event links = %d, want 1", n)
 	}
 }
 
@@ -138,9 +135,6 @@ func TestLinkEventReplaceOverwritesSnapshot(t *testing.T) {
 	if len(got) != 1 || got[0].Snapshot != snapA {
 		t.Fatalf("after replace = %+v", got)
 	}
-	if n := len(eventsOfType(t, conn, tk.ID, EventTaskEventLinked)); n != 1 {
-		t.Fatalf("a replaced snapshot records no event; linked events = %d", n)
-	}
 	v := mustVersion(t, conn)
 	if err := LinkEventReplace(conn, user, tk.ID, "slack:C1:1.2", snapA); err != nil {
 		t.Fatal(err)
@@ -152,8 +146,8 @@ func TestLinkEventReplaceOverwritesSnapshot(t *testing.T) {
 	if err := LinkEventReplace(conn, user, tk.ID, "ev:9", snapA); err != nil {
 		t.Fatal(err)
 	}
-	if n := len(eventsOfType(t, conn, tk.ID, EventTaskEventLinked)); n != 2 {
-		t.Fatalf("linked events = %d", n)
+	if got, _ := EventLinks(conn, tk.ID); len(got) != 2 {
+		t.Fatalf("event links = %+v, want 2", got)
 	}
 }
 
@@ -172,8 +166,8 @@ func TestCreateFromEvent(t *testing.T) {
 	if err != nil || len(links) != 1 || links[0].Key != "ev:5" || links[0].Snapshot != snapA {
 		t.Fatalf("event links = %+v, %v", links, err)
 	}
-	if n := len(eventsOfType(t, conn, tk.ID, EventTaskEventLinked)); n != 1 {
-		t.Fatalf("linked events = %d", n)
+	if ev, _ := Events(conn, tk.ID); len(ev) != 1 || ev[0].Type != EventTaskCreated {
+		t.Fatalf("events = %+v, want only task_created", ev)
 	}
 }
 

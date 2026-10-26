@@ -31,9 +31,11 @@ func newLinkedTask(t *testing.T, conn *sql.DB, a tasks.Actor, title, prID string
 	return tk
 }
 
-func renameTask(t *testing.T, conn *sql.DB, a tasks.Actor, id int64, title string) {
+// setTaskState records a task event as a: a state change, since edits are
+// not task events.
+func setTaskState(t *testing.T, conn *sql.DB, a tasks.Actor, id int64, s tasks.State) {
 	t.Helper()
-	if _, err := tasks.Update(conn, a, id, tasks.Patch{Title: &title}); err != nil {
+	if _, err := tasks.SetState(conn, a, id, s); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -70,7 +72,7 @@ func TestTaskNotifyCursorStartsAtMax(t *testing.T) {
 	a, _ := twoWorktrees(t, conn)
 	notifyprefs.SetAll(conn, a, true)
 	tk := newLinkedTask(t, conn, agentActor, "Old work", "o/r#7")
-	renameTask(t, conn, agentActor, tk.ID, "Older work")
+	setTaskState(t, conn, agentActor, tk.ID, tasks.StateInProgress)
 
 	ft := &fakeTransport{}
 	s := &Server{DB: conn, transport: ft}
@@ -98,10 +100,10 @@ func TestTaskNotifyUninitialisedCursorNeverReplays(t *testing.T) {
 	if len(ft.got) != 0 {
 		t.Fatalf("replayed history: %+v", ft.got)
 	}
-	renameTask(t, conn, agentActor, tk.ID, "New work")
+	setTaskState(t, conn, agentActor, tk.ID, tasks.StateInProgress)
 	s.notifyPass(&c)
-	if len(ft.got) != 1 || ft.got[0].Title != "New work" {
-		t.Fatalf("after initialising, got %+v, want one batch for the rename", ft.got)
+	if len(ft.got) != 1 || ft.got[0].Title != "Old work" {
+		t.Fatalf("after initialising, got %+v, want one batch for the state change", ft.got)
 	}
 }
 
@@ -113,8 +115,8 @@ func TestTaskNotifyLinkedResourceToggleNotifiesThatWorktreeOnce(t *testing.T) {
 	s := &Server{DB: conn, transport: ft}
 	c := readyCursor(t, conn)
 
-	tk := newLinkedTask(t, conn, agentActor, "Fix the flake", "o/r#7")
-	renameTask(t, conn, agentActor, tk.ID, "Fix the flaky test")
+	tk := newLinkedTask(t, conn, agentActor, "Fix the flaky test", "o/r#7")
+	setTaskState(t, conn, agentActor, tk.ID, tasks.StateInProgress)
 	s.notifyPass(&c)
 	s.notifyPass(&c)
 
@@ -183,13 +185,13 @@ func TestTaskNotifyUserEventsNeverNotify(t *testing.T) {
 	s := &Server{DB: conn, transport: ft}
 	c := readyCursor(t, conn)
 	tk := newLinkedTask(t, conn, userActor, "Mine", "o/r#7")
-	renameTask(t, conn, userActor, tk.ID, "Still mine")
+	setTaskState(t, conn, userActor, tk.ID, tasks.StateInProgress)
 	s.notifyPass(&c)
 	if len(ft.got) != 0 {
 		t.Fatalf("the user's own events notified: %+v", ft.got)
 	}
 	// The cursor still moved past them: a later agent event notifies alone.
-	renameTask(t, conn, agentActor, tk.ID, "Agent touched it")
+	setTaskState(t, conn, agentActor, tk.ID, tasks.StateDone)
 	s.notifyPass(&c)
 	if len(ft.got) != 2 || ft.got[0].Body != ft.got[1].Body || strings.Contains(ft.got[0].Body, "more") {
 		t.Fatalf("got %+v, want one single-event batch per worktree", ft.got)

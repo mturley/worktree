@@ -398,7 +398,7 @@ func createTx(tx dbtx, a Actor, p preparedTask) (int64, error) {
 		return 0, err
 	}
 	for _, lt := range p.focus {
-		if err := insertLink(tx, a, id, lt, true, ts); err != nil {
+		if err := insertLink(tx, id, lt, true, ts); err != nil {
 			return 0, err
 		}
 	}
@@ -419,8 +419,8 @@ func Get(conn *sql.DB, id int64) (Task, error) {
 	return ts[0], nil
 }
 
-// Update applies p, recording a task_edited event listing only the fields
-// that actually changed. A patch that changes nothing writes nothing.
+// Update applies p, bumping updated_at. It records no event: edits are not
+// task events. A patch that changes nothing writes nothing.
 func Update(conn *sql.DB, a Actor, id int64, p Patch) (Task, error) {
 	if err := validActor(a); err != nil {
 		return Task{}, err
@@ -447,39 +447,30 @@ func Update(conn *sql.DB, a Actor, id int64, p Patch) (Task, error) {
 		if err != nil {
 			return err
 		}
-		changes := map[string]change{}
 		next := cur
-		if p.Title != nil && *p.Title != cur.Title {
-			changes["title"] = change{cur.Title, *p.Title}
+		if p.Title != nil {
 			next.Title = *p.Title
 		}
-		if p.Description != nil && *p.Description != cur.Description {
-			changes["description"] = change{cur.Description, *p.Description}
+		if p.Description != nil {
 			next.Description = *p.Description
 		}
-		if p.Priority != nil && *p.Priority != cur.Priority {
-			changes["priority"] = change{cur.Priority, *p.Priority}
+		if p.Priority != nil {
 			next.Priority = *p.Priority
 		}
-		if p.Starred != nil && *p.Starred != cur.Starred {
-			changes["starred"] = change{cur.Starred, *p.Starred}
+		if p.Starred != nil {
 			next.Starred = *p.Starred
 		}
-		if p.Due != nil && *p.Due != cur.Due {
-			changes["due"] = change{cur.Due, *p.Due}
+		if p.Due != nil {
 			next.Due = *p.Due
 		}
-		if len(changes) == 0 {
+		if next.Title == cur.Title && next.Description == cur.Description && next.Priority == cur.Priority &&
+			next.Starred == cur.Starred && next.Due == cur.Due {
 			return nil
 		}
-		ts := now()
-		if _, err := tx.ExecContext(bg,
+		_, err = tx.ExecContext(bg,
 			`UPDATE tasks SET title = ?, description = ?, priority = ?, starred = ?, due_date = ?, updated_at = ?
 			 WHERE id = ?`,
-			next.Title, next.Description, next.Priority, bit(next.Starred), nullable(next.Due), ts, id); err != nil {
-			return err
-		}
-		_, err = record(tx, a, id, ts, EventTaskEdited, map[string]any{"changes": changes})
+			next.Title, next.Description, next.Priority, bit(next.Starred), nullable(next.Due), now(), id)
 		return err
 	})
 	if err != nil {

@@ -454,23 +454,12 @@ func TestTaskDetailTimelineTitles(t *testing.T) {
 		typ, payload, actor, session, want string
 	}{
 		{tasks.EventTaskCreated, `{}`, tasks.ActorUser, "", "Created “Ship it”"},
-		{tasks.EventTaskEdited, `{"changes":{"title":{"from":"a","to":"Ship it"}}}`, tasks.ActorUser, "", "Renamed “a” to “Ship it”"},
-		{tasks.EventTaskEdited, `{"changes":{"priority":{"from":"none","to":"high"},"starred":{"from":false,"to":true}}}`, tasks.ActorUser, "", "Set priority to high; starred"},
-		{tasks.EventTaskEdited, `{"changes":{"due":{"from":"2026-01-01","to":""},"description":{"from":"","to":"x"}}}`, tasks.ActorUser, "", "Edited the description; cleared the due date"},
 		{tasks.EventTaskStateChanged, `{"from":"not_started","to":"in_progress"}`, tasks.ActorAgent, "s1", "Started “Ship it”"},
 		{tasks.EventTaskStateChanged, `{"from":"in_progress","to":"done"}`, tasks.ActorUser, "", "Completed “Ship it”"},
 		{tasks.EventTaskStateChanged, `{"from":"done","to":"not_started"}`, tasks.ActorUser, "", "Reopened “Ship it”"},
 		{tasks.EventTaskDeleted, `{}`, tasks.ActorUser, "", "Deleted “Ship it”"},
-		{tasks.EventTaskLinked, `{"kind":"resource","resource_type":"pr","resource_id":"o/r#4521","focus":true}`, tasks.ActorUser, "", "Linked #4521"},
-		{tasks.EventTaskUnlinked, `{"kind":"worktree","worktree":"/x/y/feature"}`, tasks.ActorUser, "", "Unlinked worktree feature"},
-		{tasks.EventTaskFocusChanged, `{"kind":"resource","resource_type":"jira","resource_id":"X-1","focus":false}`, tasks.ActorUser, "", "Moved X-1 to Related"},
-		{tasks.EventSubtaskAdded, `{"subtask_id":1,"text":"a"}`, tasks.ActorUser, "", "Added subtask “a”"},
-		{tasks.EventSubtaskEdited, `{"subtask_id":1,"text":"a"}`, tasks.ActorUser, "", "Edited subtask “a”"},
 		{tasks.EventSubtaskChecked, `{"subtask_id":1,"text":"a"}`, tasks.ActorUser, "", "Checked “a”"},
 		{tasks.EventSubtaskUnchecked, `{"subtask_id":1,"text":"a"}`, tasks.ActorUser, "", "Unchecked “a”"},
-		{tasks.EventSubtaskRemoved, `{"subtask_id":1,"text":"a"}`, tasks.ActorUser, "", "Removed subtask “a”"},
-		{tasks.EventTaskEventLinked, `{"key":"ev:1","title":"CI failed"}`, tasks.ActorUser, "", "Linked event “CI failed”"},
-		{tasks.EventTaskEventUnlinked, `{"key":"ev:1","title":"CI failed"}`, tasks.ActorUser, "", "Unlinked event “CI failed”"},
 		{"something_new", `{}`, tasks.ActorUser, "", "something_new"},
 	}
 	for _, c := range cases {

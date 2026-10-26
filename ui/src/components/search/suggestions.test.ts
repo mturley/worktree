@@ -53,7 +53,7 @@ describe("buildSuggestions", () => {
   it("opens the task for a task event's row, as the feeds' rows do", () => {
     const task = vi.fn()
     const event = vi.fn()
-    const te: TimelineEvent = { ...ev("task:7"), source: "tasks", type: "task_edited", resource_type: "task", resource_id: "42", resource_title: "oauth task" }
+    const te: TimelineEvent = { ...ev("task:7"), source: "tasks", type: "task_state_changed", resource_type: "task", resource_id: "42", resource_title: "oauth task" }
     const out = buildSuggestions({ terms: ["oauth"], resources: [], events: [te, ev("e1")], go: { ...go, event, task } })
     out[0].onPick()
     expect(task).toHaveBeenCalledWith(42)
