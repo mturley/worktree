@@ -47,6 +47,17 @@ describe("OtherTasksBadge", () => {
     expect(vi.mocked(api.tasks).mock.calls[0][0]).toMatchObject({ kind: "worktree", path: "/w" })
   })
 
+  it("drops \"other\" when the resource has no open tasks of its own", async () => {
+    vi.mocked(api.tasks).mockResolvedValue([
+      task(1, { links: [prLink], state: "done" }),
+      task(2),
+      task(3),
+    ])
+    wrap()
+    expect(await screen.findByText("2 tasks")).toBeInTheDocument()
+    expect(screen.queryByText(/other/)).toBeNull()
+  })
+
   it("renders nothing when every open task links the resource", async () => {
     vi.mocked(api.tasks).mockResolvedValue([task(1, { links: [prLink] })])
     const { container } = wrap()

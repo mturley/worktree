@@ -384,7 +384,8 @@ describe("ResourceDetailPane tasks", () => {
     const onBack = vi.fn()
     wrap(<ResourceDetailPane path="/wt/foo" resource={jira} onBack={onBack} escHint />)
     const back = screen.getByRole("button", { name: /^← all resources/ })
-    const badge = await within(back).findByText("1 other task")
+    // The resource has no tasks of its own, so not "other".
+    const badge = await within(back).findByText("1 task")
     const esc = back.parentElement!.querySelector("kbd")!
     expect(esc.textContent).toBe("Esc")
     expect(back.compareDocumentPosition(esc) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
