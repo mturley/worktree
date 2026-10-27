@@ -88,3 +88,44 @@ func TestServesIndexFallbackForDirectoryPath(t *testing.T) {
 		t.Fatalf("dir path: expected index.html body, got %q (looks like a directory listing?)", string(body))
 	}
 }
+
+func TestIndexIsNeverCached(t *testing.T) {
+	// A browser that restores a slept tab from cache would otherwise rebuild
+	// the page from an old index.html whose hashed bundle is gone.
+	webFS := fstest.MapFS{
+		"index.html": {Data: []byte("<!doctype html><title>worktree</title>")},
+	}
+	ts := httptest.NewServer(testServer(t, webFS).Handler())
+	defer ts.Close()
+
+	for _, path := range []string{"/", "/worktree/some-branch"} {
+		resp, err := http.Get(ts.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if cc := resp.Header.Get("Cache-Control"); cc != "no-store" {
+			t.Fatalf("%s: Cache-Control = %q, want no-store", path, cc)
+		}
+	}
+}
+
+func TestMissingAssetIs404(t *testing.T) {
+	// A bundle from an older build must fail as a 404, not come back as
+	// index.html, which a browser refuses to run as a module script.
+	webFS := fstest.MapFS{
+		"index.html":    {Data: []byte("<!doctype html><title>worktree</title>")},
+		"assets/app.js": {Data: []byte("console.log(1)")},
+	}
+	ts := httptest.NewServer(testServer(t, webFS).Handler())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/assets/index-OLDHASH.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing asset: got %d, want 404", resp.StatusCode)
+	}
+}

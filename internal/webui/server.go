@@ -4,11 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"log"
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -393,10 +395,21 @@ func (s *Server) routes() []route {
 	}
 }
 
+// serveStatic serves the built UI. A cmux browser tab that wakes from sleep
+// is rebuilt from WebKit's cached index.html, so index.html is never cached:
+// a cached copy names the hashed bundle of whatever build was installed then,
+// which `make install` has since removed. And a missing asset is a 404, not
+// the SPA fallback: index.html served as a module script is refused without
+// any error the page can see, leaving it blank.
 func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
-		if info, err := fs.Stat(s.WebFS, r.URL.Path[1:]); err == nil && !info.IsDir() {
+		info, err := fs.Stat(s.WebFS, strings.TrimSuffix(r.URL.Path[1:], "/"))
+		if err == nil && !info.IsDir() {
 			http.FileServer(http.FS(s.WebFS)).ServeHTTP(w, r)
+			return
+		}
+		if errors.Is(err, fs.ErrNotExist) && strings.HasPrefix(r.URL.Path, "/assets/") {
+			http.NotFound(w, r)
 			return
 		}
 	}
@@ -406,6 +419,7 @@ func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
 	w.Write(indexData)
 }
 
