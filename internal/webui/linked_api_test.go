@@ -162,6 +162,66 @@ func TestTTLCachePanicDoesNotWedgeKey(t *testing.T) {
 	}
 }
 
+// A fetch in flight when its key is dropped must not store its stale value
+// back, and a get after the drop must not join it.
+func TestTTLCacheDelDiscardsInFlightResult(t *testing.T) {
+	t.Parallel()
+	c := newTTLCache()
+	started, release := make(chan struct{}), make(chan struct{})
+	staleDone := make(chan interface{}, 1)
+	go func() {
+		v, _ := c.get("k", time.Minute, false, func() (interface{}, error) {
+			close(started)
+			<-release
+			return "stale", nil
+		})
+		staleDone <- v
+	}()
+	<-started
+	c.del("k")
+
+	freshDone := make(chan interface{}, 1)
+	go func() {
+		v, _ := c.get("k", time.Minute, false, func() (interface{}, error) { return "fresh", nil })
+		freshDone <- v
+	}()
+	select {
+	case fresh := <-freshDone:
+		if fresh != "fresh" {
+			t.Errorf("get after del = %v; want a fresh computation", fresh)
+		}
+		close(release)
+	case <-time.After(2 * time.Second):
+		close(release)
+		t.Fatal("get after del joined the in-flight fetch instead of computing afresh")
+	}
+	if v := <-staleDone; v != "stale" {
+		t.Errorf("the in-flight caller got %v, want its own result", v)
+	}
+	if v, ok := c.peek("k"); !ok || v != "fresh" {
+		t.Errorf("peek = %v, %v; want the fresh value, not the stale one stored over it", v, ok)
+	}
+
+	// With no fresh get in between, the stale result is not stored at all.
+	started2, release2 := make(chan struct{}), make(chan struct{})
+	done2 := make(chan struct{})
+	go func() {
+		_, _ = c.get("k2", time.Minute, false, func() (interface{}, error) {
+			close(started2)
+			<-release2
+			return "stale", nil
+		})
+		close(done2)
+	}()
+	<-started2
+	c.del("k2")
+	close(release2)
+	<-done2
+	if v, ok := c.peek("k2"); ok {
+		t.Errorf("peek = %v after del during the fetch; want nothing cached", v)
+	}
+}
+
 type countingMeta struct{ calls int }
 
 func (c *countingMeta) Resolve(context.Context, string) linkmeta.Meta {

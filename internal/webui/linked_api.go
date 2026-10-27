@@ -35,6 +35,9 @@ type ttlCache struct {
 	lastSweep time.Time
 	entries   map[string]ttlEntry
 	inflight  map[string]*ttlCall
+	// gen counts each key's drops: a computation stores its result only
+	// if the key was not dropped while it ran.
+	gen map[string]uint64
 	// now is the clock; tests replace it. nil means time.Now.
 	now func() time.Time
 }
@@ -59,7 +62,7 @@ type ttlCall struct {
 }
 
 func newTTLCache() *ttlCache {
-	return &ttlCache{entries: map[string]ttlEntry{}, inflight: map[string]*ttlCall{}}
+	return &ttlCache{entries: map[string]ttlEntry{}, inflight: map[string]*ttlCall{}, gen: map[string]uint64{}}
 }
 
 // get returns the cached value for key, or computes it with fn. bypass
@@ -84,6 +87,7 @@ func (c *ttlCache) getErrTTL(key string, ttl, errTTL time.Duration, bypass bool,
 	call := &ttlCall{}
 	call.wg.Add(1)
 	c.inflight[key] = call
+	gen := c.gen[key]
 	c.mu.Unlock()
 
 	// The deferred cleanup runs even if fn panics, so waiters are released
@@ -97,6 +101,8 @@ func (c *ttlCache) getErrTTL(key string, ttl, errTTL time.Duration, bypass bool,
 			delete(c.inflight, key)
 		}
 		switch {
+		case c.gen[key] != gen:
+			// Dropped while it ran: the result is stale, so not stored.
 		case call.err == nil:
 			now := c.clock()
 			c.sweepLocked(now)
@@ -114,8 +120,6 @@ func (c *ttlCache) getErrTTL(key string, ttl, errTTL time.Duration, bypass bool,
 	return call.val, call.err
 }
 
-// del drops keys' cached values. A computation already in flight still
-// stores its result when it finishes.
 // peek is key's cached value when it is present, unexpired and not an
 // error. It never fetches.
 func (c *ttlCache) peek(key string) (interface{}, bool) {
@@ -128,11 +132,16 @@ func (c *ttlCache) peek(key string) (interface{}, bool) {
 	return e.val, true
 }
 
+// del drops keys' cached values. A computation already in flight is
+// detached: it returns its result to its own callers but never stores it,
+// and a get after del computes afresh rather than joining it.
 func (c *ttlCache) del(keys ...string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for _, k := range keys {
 		delete(c.entries, k)
+		delete(c.inflight, k)
+		c.gen[k]++
 	}
 }
 
