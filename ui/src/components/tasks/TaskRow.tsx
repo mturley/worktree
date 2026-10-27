@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react"
+import { useMemo, useState, type ReactNode } from "react"
 import { useLocation } from "wouter"
 import { ActionIcon, Badge, Group, Text, Tooltip, UnstyledButton } from "@mantine/core"
 import type { Priority, Task, TaskState } from "../../api/types"
@@ -7,6 +7,8 @@ import { serializeResourceKey } from "../../lib/resourceKey"
 import { TaskStateCheckbox } from "./TaskStateCheckbox"
 import { TaskPriorityMenu } from "./TaskPriorityMenu"
 import { UnreadMarkerDot } from "../UnreadMarkerDot"
+import { useCrossHover } from "../CrossHoverContext"
+import { type CrossHoverItem, crossResourceRef } from "../../lib/crossHover"
 
 const DUE_COLOR = {
   overdue: "red",
@@ -20,6 +22,24 @@ const DUE_COLOR = {
  * catches clicks inside portals rendered beneath it.
  */
 const keepFromRow = (e: React.SyntheticEvent) => e.stopPropagation()
+
+/**
+ * The task as a cross-hover item (lib/crossHover): the resources it links,
+ * and every worktree it belongs to — linked directly, or following one of
+ * its linked resources.
+ */
+export function taskCrossHoverItem(task: Task): CrossHoverItem {
+  const resources: string[] = []
+  const paths = new Set(task.implicit_worktrees)
+  for (const l of task.links) {
+    if (l.kind === "worktree" && l.worktree) paths.add(l.worktree)
+    if (l.kind === "resource" && l.resource_type && l.resource_id) {
+      resources.push(crossResourceRef(l.resource_type, l.resource_id))
+      for (const w of l.worktrees ?? []) paths.add(w)
+    }
+  }
+  return { kind: "task", id: String(task.id), resources, paths: [...paths] }
+}
 
 /**
  * One compact task line. With `onOpen`, a click anywhere on the row opens the
@@ -42,6 +62,11 @@ export function TaskRow({ task, ownResource, ownWorktree, dragHandle, onState, o
   const due = task.due ? dueLabel(task.due, new Date()) : null
   const link = linkChip(task, ownResource, ownWorktree)
   const [, navigate] = useLocation()
+  // Only a row that opens takes part in cross-hover: the drag overlay's copy
+  // has no partners. Built once per task, so a hover elsewhere only tests it.
+  const opens = !!onOpen
+  const crossItem = useMemo(() => (opens ? taskCrossHoverItem(task) : null), [task, opens])
+  const crossHover = useCrossHover(crossItem)
   // The full title on hover, only when the ellipsis cut it: measured as the
   // pointer arrives, so no observer runs per row.
   const [truncated, setTruncated] = useState(false)
@@ -67,6 +92,8 @@ export function TaskRow({ task, ownResource, ownWorktree, dragHandle, onState, o
   return (
     <Group
       data-task-row
+      data-clickable={onOpen ? "true" : undefined}
+      {...crossHover}
       gap="xs"
       wrap="nowrap"
       py={4}

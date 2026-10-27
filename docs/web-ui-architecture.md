@@ -2388,15 +2388,22 @@ does picking such an event or resource from the search dropdown.
 Hovering an item lights its partners elsewhere on the page with the same
 hover style (`data-cross-hover`, styled in `styles/cards.css`): a worktree
 card ↔ the events and Resources rows of resources it follows, and on a
-worktree page a resource card ↔ its events in the unified feed. The pairing
-rule is pure in `lib/crossHover.ts`; `CrossHoverProvider` (home and worktree
+worktree page a resource card ↔ its events in the unified feed. Task rows
+take part too: a task ↔ the resources it links, the worktrees it belongs to
+(linked directly, or following a linked resource: its links' `worktree` /
+`worktrees` plus `implicit_worktrees`) and its own task events (resource
+type `task`); `TaskRow` builds that item once per task
+(`taskCrossHoverItem`), and a lit task row shows its hover (the row tint,
+grip and empty priority mark, `styles/theme.css`). Pairs are one hop and
+never same-kind: a task lights its resources, not their events or other
+tasks. The pairing rule is pure in `lib/crossHover.ts`; `CrossHoverProvider` (home and worktree
 pages) holds a small external store, and `useCrossHover` subscribes each row
 to its own lit/unlit answer so a hover re-renders only the rows that flip.
 Only rows that navigate take part: an event row that opens its details, the
 search dropdown's rows, and the inert detail-page cards have no partner. Mouse pointers only (a touch tap's emulated hover never ends);
 keyboard focus counts too, but only `:focus-visible` focus, so the focus a
-click or a closing modal leaves behind lights nothing. `ResourceList` pauses
-it while a card is dragged (`useSuspendCrossHover`). Sorting and filtering are pure,
+click or a closing modal leaves behind lights nothing. `ResourceList` and
+`TaskList` pause it while a card or row is dragged (`useSuspendCrossHover`). Sorting and filtering are pure,
 in `lib/resourceListFilter.ts`: sort by last updated, created, status (one
 ramp across types — blocked, in progress/open, review, testing, not started,
 done/merged, closed, then unstatused threads and links), unread first, or

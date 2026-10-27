@@ -31,6 +31,7 @@ import { TaskRow } from "./TaskRow"
 import { TASK_STATE_LABEL } from "./TaskStateCheckbox"
 import { taskUndoMessage, useOfferTaskUndo } from "./taskUndo"
 import { dropHint, dropIndicatorFor, dropPlanFor, taskDraggableId, type DropIndicator } from "./taskDrag"
+import { useSuspendCrossHover } from "../CrossHoverContext"
 
 /** A compact row's height, for capping a list at `maxRows`. */
 const ROW_PX = 30
@@ -268,6 +269,8 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
   const offerUndo = useOfferTaskUndo()
   const { open } = useTaskModal()
   const [activeId, setActiveId] = useState<number | null>(null)
+  // A drag sweeps the pointer across rows it means nothing about.
+  useSuspendCrossHover(activeId !== null)
   const [error, setError] = useState<string | null>(null)
   // Where a cross-section drag will land, while one is over another section.
   const [indicator, setIndicator] = useState<DropIndicator | null>(null)

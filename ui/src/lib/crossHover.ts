@@ -2,17 +2,22 @@
  * Cross-hover: hovering one thing lights up the things elsewhere on the page
  * that a click on it would take you to (or that would take you to it).
  *
- * Three kinds of item take part. A worktree card, a resource (a home-page
- * Resources row, or a worktree page's resource card) and an event row. Each
- * names itself, and whether two items answer each other depends only on the
- * pair:
+ * Four kinds of item take part. A worktree card, a resource (a home-page
+ * Resources row, or a worktree page's resource card), an event row and a
+ * task row. Each names itself, and whether two items answer each other
+ * depends only on the pair:
  *
- *   worktree ↔ resource or event   the resource or event lists that path
- *   resource ↔ event               the same resource
+ *   worktree ↔ resource, event or task   the other lists that path
+ *   resource ↔ event                     the same resource
+ *   task     ↔ resource                  the task links that resource
+ *   task     ↔ event                     the task's own event (type "task")
+ *
+ * A task's paths are every worktree it belongs to: the ones it links, and
+ * the ones following a resource it links.
  *
  * Two items of the same kind never do: hovering one event does not light the
  * others on the same resource, and hovering a worktree card lights no other
- * card.
+ * card. Nor does it cascade: a task lights its resources, not their events.
  */
 export type CrossHoverItem =
   | { kind: "worktree"; path: string }
@@ -23,12 +28,35 @@ export type CrossHoverItem =
       /** The worktrees that follow this resource (or this event's resource). */
       paths: readonly string[]
     }
+  | {
+      kind: "task"
+      /** The task's id, as its events' resource_id spells it. */
+      id: string
+      /** The resources it links, each as crossResourceRef(type, id). */
+      resources: readonly string[]
+      /** Its worktrees, linked directly or following a linked resource. */
+      paths: readonly string[]
+    }
+
+/** A resource's entry in a task item's `resources`. */
+export function crossResourceRef(type: string, id: string): string {
+  return `${type}\n${id}`
+}
+
+/** Whether `a` lights `b`, read in one direction; crossLit asks both. */
+function answers(a: CrossHoverItem, b: CrossHoverItem): boolean {
+  if (a.kind === "worktree") return b.kind !== "worktree" && b.paths.includes(a.path)
+  if (a.kind === "task") {
+    if (b.kind === "resource") return a.resources.includes(crossResourceRef(b.type, b.id))
+    if (b.kind === "event") return b.type === "task" && b.id === a.id
+    return false
+  }
+  return a.kind === "resource" && b.kind === "event" && a.type === b.type && a.id === b.id
+}
 
 export function crossLit(hovered: CrossHoverItem | null, self: CrossHoverItem): boolean {
   if (!hovered || hovered.kind === self.kind) return false
-  if (hovered.kind === "worktree") return self.kind !== "worktree" && self.paths.includes(hovered.path)
-  if (self.kind === "worktree") return hovered.paths.includes(self.path)
-  return hovered.type === self.type && hovered.id === self.id
+  return answers(hovered, self) || answers(self, hovered)
 }
 
 /**
@@ -37,9 +65,9 @@ export function crossLit(hovered: CrossHoverItem | null, self: CrossHoverItem): 
  * an object comparison.
  */
 export function crossHoverKey(item: CrossHoverItem): string {
-  return item.kind === "worktree"
-    ? `worktree:${item.path}`
-    : `${item.kind}:${item.type}:${item.id}:${item.paths.join("\n")}`
+  if (item.kind === "worktree") return `worktree:${item.path}`
+  if (item.kind === "task") return `task:${item.id}:${item.resources.join("\t")}:${item.paths.join("\n")}`
+  return `${item.kind}:${item.type}:${item.id}:${item.paths.join("\n")}`
 }
 
 /**

@@ -107,11 +107,13 @@ export function EventRow({
         : undefined)
   const tip = openTask ? "Open task" : resourceKey ? "View event details in worktree" : "View event details"
 
-  // Only a row that goes to its resource takes part in cross-hover: one that
-  // opens its details (archived, resourceless, or in a pane already showing
-  // the resource) has no worktree or resource card to point at.
-  const crossHover = useCrossHover(resourceKey
-    ? { kind: "event", type: resourceKey.type, id: resourceKey.id, paths: e.worktree_paths ?? [] }
+  // Only a row that goes to its resource (or, for a task's event, opens its
+  // task) takes part in cross-hover: one that opens its details (archived,
+  // resourceless, or in a pane already showing the resource) has no
+  // worktree, resource or task row to point at.
+  const crossKey = openTask ? { type: "task", id: String(taskId) } : resourceKey
+  const crossHover = useCrossHover(crossKey
+    ? { kind: "event", type: crossKey.type, id: crossKey.id, paths: e.worktree_paths ?? [] }
     : null)
 
   /*

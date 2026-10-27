@@ -2,13 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import type { AllResourceDTO, TimelineEvent, WorktreeSummary } from "../api/types"
+import type { AllResourceDTO, Task, TimelineEvent, WorktreeSummary } from "../api/types"
 import { api } from "../api/client"
 import { AllResourceRow } from "./AllResourceRow"
 import { CrossHoverProvider } from "./CrossHoverContext"
 import { EventRow } from "./EventRow"
 import { ResourceCard } from "./ResourceCard"
 import { WorktreeCard } from "./WorktreeCard"
+import { TaskRow } from "./tasks/TaskRow"
 
 const wt = (path: string, branch: string): WorktreeSummary => ({
   path, repo: "r", branch, on_disk: true, resource_count: 1, primary_count: 1, latest_event_ts: "",
@@ -25,6 +26,18 @@ const event = (overrides: Partial<TimelineEvent> = {}): TimelineEvent => ({
   type_label: "PR Opened", title: "Opened it", body: "", author: "", resource_type: "pr", resource_id: "o/r#1",
   resource_url: "", resource_title: "", worktrees: ["branch-a"], worktree_paths: ["/wt/a"], ...overrides,
 })
+
+const task = (over: Partial<Task> = {}): Task => ({
+  id: 1, ref: "T1", title: "Task one", description: "", state: "not_started", priority: "none", starred: false,
+  rank: "a", created_at: "", updated_at: "", archived: false, links: [], implicit_worktrees: [], subtasks_total: 0,
+  subtasks_done: 0, blocked: false, blocker_count: 0, blocker_labels: [], ...over,
+})
+const taskRow = (t: Task) => (
+  <TaskRow task={t} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} onOpen={() => {}} />
+)
+const prLink = { kind: "resource" as const, resource_type: "pr", resource_id: "o/r#1", focus: false, archived: false, worktrees: ["/wt/a", "/wt/b"] }
+const wtLink = (path: string) => ({ kind: "worktree" as const, worktree: path, focus: false, archived: false, worktrees: [] })
+const taskRowEl = (title: string) => screen.getByText(title).closest("[data-task-row]")!
 
 const wrap = (ui: React.ReactNode) =>
   render(
@@ -151,5 +164,69 @@ describe("cross-hover", () => {
     const row = document.querySelector("[data-event-row]")!
     enter(row)
     expect(row.hasAttribute("data-cross-hover")).toBe(false)
+  })
+
+  it("lights a hovered task's resources and worktrees, direct and implicit", () => {
+    wrap(<>
+      <WorktreeCard w={wt("/wt/a", "branch-a")} />
+      <WorktreeCard w={wt("/wt/b", "branch-b")} />
+      <WorktreeCard w={wt("/wt/c", "branch-c")} />
+      <WorktreeCard w={wt("/wt/d", "branch-d")} />
+      <AllResourceRow r={pr} />
+      <AllResourceRow r={{ ...pr, id: "o/r#2", title: "Other PR", worktrees: [] }} />
+      {taskRow(task({ links: [prLink, wtLink("/wt/c")], implicit_worktrees: ["/wt/a", "/wt/b"] }))}
+    </>)
+    const row = taskRowEl("Task one")
+    enter(row)
+    expect([lit(card("a")), lit(card("b")), lit(card("c")), lit(card("d"))]).toEqual([true, true, true, false])
+    const [mine, other] = screen.getAllByTestId("all-resource-row")
+    expect([lit(mine), lit(other)]).toEqual([true, false])
+    leave(row)
+    expect([lit(card("a")), lit(card("c")), lit(mine)]).toEqual([false, false, false])
+  })
+
+  it("lights a worktree page's resource card for a hovered task linking it", () => {
+    const { container } = wrap(<>
+      <ResourceCard r={pr} path="/wt/a" onSelect={() => {}} />
+      {taskRow(task({ links: [prLink] }))}
+    </>)
+    enter(taskRowEl("Task one"))
+    expect(lit(container.querySelector("[data-interactive]")!)).toBe(true)
+  })
+
+  it("lights the tasks linking a hovered resource", () => {
+    wrap(<>
+      <AllResourceRow r={pr} />
+      {taskRow(task({ links: [prLink] }))}
+      {taskRow(task({ id: 2, title: "Task two", links: [wtLink("/wt/a")] }))}
+    </>)
+    enter(screen.getByTestId("all-resource-row"))
+    expect([lit(taskRowEl("Task one")), lit(taskRowEl("Task two"))]).toEqual([true, false])
+  })
+
+  it("lights the tasks a hovered worktree holds, directly or through a resource", () => {
+    wrap(<>
+      <WorktreeCard w={wt("/wt/a", "branch-a")} />
+      {taskRow(task({ links: [wtLink("/wt/a")] }))}
+      {taskRow(task({ id: 2, title: "Task two", links: [prLink], implicit_worktrees: ["/wt/a"] }))}
+      {taskRow(task({ id: 3, title: "Task three", links: [wtLink("/wt/z")] }))}
+    </>)
+    enter(card("a"))
+    expect([lit(taskRowEl("Task one")), lit(taskRowEl("Task two")), lit(taskRowEl("Task three"))])
+      .toEqual([true, true, false])
+  })
+
+  it("pairs a task row with its own events in the feed", () => {
+    const { container } = wrap(<>
+      {taskRow(task())}
+      <EventRow e={event({ resource_type: "task", resource_id: "1", worktree_paths: [] })} onOpenTask={() => {}} />
+      <EventRow e={event({ id: "evt-2", resource_type: "task", resource_id: "2", worktree_paths: [] })} onOpenTask={() => {}} />
+    </>)
+    const [mine, other] = container.querySelectorAll("[data-event-row]")
+    enter(taskRowEl("Task one"))
+    expect([lit(mine), lit(other)]).toEqual([true, false])
+    leave(taskRowEl("Task one"))
+    enter(mine)
+    expect(lit(taskRowEl("Task one"))).toBe(true)
   })
 })

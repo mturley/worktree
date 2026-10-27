@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { type CrossHoverItem, createCrossHoverStore, crossLit } from "./crossHover"
+import { type CrossHoverItem, createCrossHoverStore, crossLit, crossResourceRef } from "./crossHover"
 
 const wtA: CrossHoverItem = { kind: "worktree", path: "/wt/a" }
 const wtB: CrossHoverItem = { kind: "worktree", path: "/wt/b" }
@@ -60,5 +60,36 @@ describe("createCrossHoverStore", () => {
     resumeTwo()
     store.set(wtB)
     expect(store.get()).toBe(wtB)
+  })
+})
+
+describe("crossLit with tasks", () => {
+  const task = (id: string, resources: string[], paths: string[]): CrossHoverItem =>
+    ({ kind: "task", id, resources, paths })
+  const t1 = task("1", [crossResourceRef("pr", "1")], ["/wt/a"])
+
+  it("pairs a task with the resources it links, both ways", () => {
+    expect(crossLit(t1, res("1", []))).toBe(true)
+    expect(crossLit(res("1", []), t1)).toBe(true)
+    expect(crossLit(t1, res("2", []))).toBe(false)
+    expect(crossLit(res("2", ["/wt/a"]), t1)).toBe(false)
+  })
+
+  it("pairs a task with its worktrees, both ways", () => {
+    expect(crossLit(t1, wtA)).toBe(true)
+    expect(crossLit(wtA, t1)).toBe(true)
+    expect(crossLit(wtB, t1)).toBe(false)
+  })
+
+  it("pairs a task with its own task events, not its resources' events", () => {
+    const own: CrossHoverItem = { kind: "event", type: "task", id: "1", paths: [] }
+    expect(crossLit(t1, own)).toBe(true)
+    expect(crossLit(own, t1)).toBe(true)
+    expect(crossLit(t1, { kind: "event", type: "task", id: "2", paths: [] })).toBe(false)
+    expect(crossLit(t1, evt("1", []))).toBe(false)
+  })
+
+  it("never pairs two tasks", () => {
+    expect(crossLit(t1, task("2", [crossResourceRef("pr", "1")], ["/wt/a"]))).toBe(false)
   })
 })
