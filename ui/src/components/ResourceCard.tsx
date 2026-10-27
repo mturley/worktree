@@ -28,6 +28,12 @@ function reviewColor(decision?: string): string {
   }
 }
 
+// "NONE" means no reviewer has approved or requested changes and the repo
+// requires no review, so there is nothing to show.
+function hasReviewDecision(decision?: string): decision is string {
+  return !!decision && decision.toUpperCase() !== "NONE"
+}
+
 function reviewLabel(decision?: string): string {
   switch ((decision || "").toUpperCase()) {
     case "APPROVED": return "approved"
@@ -127,7 +133,7 @@ function PRCardBody({ r, variant, aside }: CardBodyProps) {
   const badges = (
     <>
       {r.state && <Badge size="xs" variant="light" color={prStateColor(r.state)}>{r.state.toLowerCase()}</Badge>}
-      {!inline && r.review_decision && <Badge size="xs" variant="light" color={reviewColor(r.review_decision)}>{reviewLabel(r.review_decision)}</Badge>}
+      {!inline && hasReviewDecision(r.review_decision) && <Badge size="xs" variant="light" color={reviewColor(r.review_decision)}>{reviewLabel(r.review_decision)}</Badge>}
       {!inline && r.ci_status && <Badge size="xs" variant="light" color={ciColor(r.ci_status)}>ci: {r.ci_status}</Badge>}
       {!inline && r.new_commits_since_review && <Badge size="xs" variant="light" color="blue">new commits</Badge>}
     </>

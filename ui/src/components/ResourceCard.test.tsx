@@ -672,6 +672,11 @@ describe("status badge placement", () => {
     expect(screen.getByText("new commits")).toBeInTheDocument()
   })
 
+  it("shows no review badge when the decision is NONE", () => {
+    wrap(<ResourceCard r={{ ...pr, review_decision: "NONE" }} variant="detail" path="/wt" />)
+    expect(screen.queryByText("NONE")).toBeNull()
+  })
+
   it("flows a list card's Jira badges into the type line after the key", () => {
     wrap(<ResourceCard r={jira} onSelect={vi.fn()} />)
     expect(typeLine()).toContainElement(screen.getByText("In Progress"))
