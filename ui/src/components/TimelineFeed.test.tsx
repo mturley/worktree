@@ -1,6 +1,7 @@
 import { afterEach, describe, it, expect, vi } from "vitest"
 import { render, cleanup, screen, fireEvent } from "@testing-library/react"
 import { MantineProvider } from "@mantine/core"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { TimelineFeed } from "./TimelineFeed"
 import type { TimelineEvent } from "../api/types"
 
@@ -10,7 +11,7 @@ const ev = (id: string, o: Partial<TimelineEvent> = {}): TimelineEvent =>
      resource_type: "pr", resource_id: "o/r#1", resource_url: "u", resource_title: "",
      worktrees: [], ...o }) as TimelineEvent
 
-const wrap = (ui: React.ReactNode) => render(<MantineProvider>{ui}</MantineProvider>)
+const wrap = (ui: React.ReactNode) => render(<MantineProvider><QueryClientProvider client={new QueryClient()}>{ui}</QueryClientProvider></MantineProvider>)
 
 afterEach(cleanup)
 

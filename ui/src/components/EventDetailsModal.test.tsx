@@ -214,3 +214,34 @@ describe("EventDetailsModal for an archived resource", () => {
     expect(screen.queryByText("This resource is no longer followed by a worktree.")).toBeNull()
   })
 })
+
+describe("EventDetailsModal go to comment", () => {
+  const rc = () => ev({ type: "pr_review_comment" })
+
+  it("jumps to the comment in the diff view and closes", async () => {
+    vi.spyOn(api, "locatePRComment").mockResolvedValue({ path: "/w/a", comment_id: 11 })
+    const onClose = vi.fn()
+    wrap(<EventDetailsModal e={rc()} onClose={onClose} path="/w/b" />)
+    await userEvent.click(await screen.findByRole("button", { name: "Go to comment in diff view" }))
+    expect(api.locatePRComment).toHaveBeenCalledWith("e1", "/w/b")
+    expect(onClose).toHaveBeenCalled()
+    expect(window.location.pathname).toBe("/worktree/%2Fw%2Fa")
+    expect(window.location.search).toBe("?diff&prcomment=11")
+  })
+
+  it("has no button when the comment cannot be located", async () => {
+    const spy = vi.spyOn(api, "locatePRComment").mockRejectedValue(new Error("404"))
+    wrap(<EventDetailsModal e={rc()} onClose={vi.fn()} />)
+    await vi.waitFor(() => expect(spy).toHaveBeenCalled())
+    await new Promise((r) => setTimeout(r, 20))
+    expect(screen.queryByRole("button", { name: "Go to comment in diff view" })).toBeNull()
+  })
+
+  it("never locates other event types", async () => {
+    const spy = vi.spyOn(api, "locatePRComment").mockResolvedValue({ path: "/w/a", comment_id: 11 })
+    wrap(<EventDetailsModal e={ev()} onClose={vi.fn()} />)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(spy).not.toHaveBeenCalled()
+    expect(screen.queryByRole("button", { name: "Go to comment in diff view" })).toBeNull()
+  })
+})

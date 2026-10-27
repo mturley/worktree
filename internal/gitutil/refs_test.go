@@ -191,3 +191,20 @@ func TestRefsOnRepoWithNoCommits(t *testing.T) {
 		t.Errorf("RevSHA = (%q, true)", got)
 	}
 }
+
+func TestMergeBaseOf(t *testing.T) {
+	repo, run := newRemoteRepo(t)
+	m := run("rev-parse", "HEAD")
+	run("checkout", "-b", "a")
+	commitFile(t, repo, "a.txt", "a")
+	run("checkout", "-b", "b", m)
+	commitFile(t, repo, "b.txt", "b")
+
+	got, ok := MergeBaseOf(repo, "a", "b")
+	if !ok || got != m {
+		t.Fatalf("MergeBaseOf(a, b) = %q, %v; want %q, true", got, ok, m)
+	}
+	if got, ok := MergeBaseOf(repo, "a", "no-such-rev"); ok || got != "" {
+		t.Fatalf("unknown rev: got %q, %v; want \"\", false", got, ok)
+	}
+}

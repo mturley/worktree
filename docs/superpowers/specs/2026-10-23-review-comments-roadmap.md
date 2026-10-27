@@ -13,7 +13,7 @@ Line comments in the web UI's diff view. They start as a review Mike hands back 
 | Phase | What | Status |
 |---|---|---|
 | 1 | **Draft review comments for the agent**: comment on lines and ranges, edit/delete inline and in a sidebar, persist in the DB, survive code changes (move / out of date), copy as a prompt ("Copy comments for agent") | Done (branch review-comments, not yet merged): `2026-10-23-review-comments-design.md` |
-| 2 | **PR comments shown inline, read-only**: the open PR's review comments rendered in the diff and listed in the sidebar beside the drafts, visually distinct | Future |
+| 2 | **PR comments shown inline, read-only**: the open PR's review comments rendered in the diff and listed in the sidebar beside the drafts, visually distinct | Done (branch pr-comments): `2026-10-26-pr-comments-design.md` |
 | 3 | **Submit a review to GitHub**: a "Post review on PR" button beside "Copy comments for agent", opening a GitHub-style dropdown (top-level comment; Approve / Comment / Request changes) that posts the drafts as the review's comments | Future |
 
 Each phase ships on its own. Phase 1 is useful without the others; phase 3 doesn't require phase 2.
@@ -27,7 +27,7 @@ See its design document. What it must leave in place for later phases:
 - **Anchors in GitHub's terms**: path, side (old/new = GitHub LEFT/RIGHT), start line, end line, and the commit the comment was written against (or "uncommitted").
 - **A sidebar action row** at the top that can take another button beside "Copy comments for agent".
 
-## Phase 2 — PR comments shown inline, read-only (future)
+## Phase 2 — PR comments shown inline, read-only (done)
 
 - **Which PR:** the worktree's primary (focus) PR resource, if it has one. The detail page already tracks PR resources per worktree.
 - **Fetching:** PR review comments come from GitHub. Per `.claude/CLAUDE.md`:

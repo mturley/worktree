@@ -35,11 +35,21 @@ type ttlCache struct {
 	lastSweep time.Time
 	entries   map[string]ttlEntry
 	inflight  map[string]*ttlCall
+	// now is the clock; tests replace it. nil means time.Now.
+	now func() time.Time
 }
 
 type ttlEntry struct {
 	val     interface{}
+	err     error
 	expires time.Time
+}
+
+func (c *ttlCache) clock() time.Time {
+	if c.now != nil {
+		return c.now()
+	}
+	return time.Now()
 }
 
 type ttlCall struct {
@@ -55,10 +65,16 @@ func newTTLCache() *ttlCache {
 // get returns the cached value for key, or computes it with fn. bypass
 // skips the read but still stores the fresh value. Errors are not cached.
 func (c *ttlCache) get(key string, ttl time.Duration, bypass bool, fn func() (interface{}, error)) (val interface{}, err error) {
+	return c.getErrTTL(key, ttl, 0, bypass, fn)
+}
+
+// getErrTTL is get, but an error is cached too, for errTTL (never when
+// errTTL is 0), so a failing upstream is not asked again on every call.
+func (c *ttlCache) getErrTTL(key string, ttl, errTTL time.Duration, bypass bool, fn func() (interface{}, error)) (val interface{}, err error) {
 	c.mu.Lock()
-	if e, ok := c.entries[key]; ok && !bypass && time.Now().Before(e.expires) {
+	if e, ok := c.entries[key]; ok && !bypass && c.clock().Before(e.expires) {
 		c.mu.Unlock()
-		return e.val, nil
+		return e.val, e.err
 	}
 	if call, ok := c.inflight[key]; ok && !bypass {
 		c.mu.Unlock()
@@ -80,10 +96,15 @@ func (c *ttlCache) get(key string, ttl time.Duration, bypass bool, fn func() (in
 		if c.inflight[key] == call {
 			delete(c.inflight, key)
 		}
-		if call.err == nil {
-			now := time.Now()
+		switch {
+		case call.err == nil:
+			now := c.clock()
 			c.sweepLocked(now)
 			c.entries[key] = ttlEntry{val: call.val, expires: now.Add(ttl)}
+		case errTTL > 0:
+			now := c.clock()
+			c.sweepLocked(now)
+			c.entries[key] = ttlEntry{err: call.err, expires: now.Add(errTTL)}
 		}
 		c.mu.Unlock()
 		call.wg.Done()

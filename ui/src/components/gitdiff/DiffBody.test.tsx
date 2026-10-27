@@ -6,7 +6,7 @@ import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { DiffLineAnnotation, FileDiffMetadata, SelectedLineRange } from "@pierre/diffs"
 import { HttpError } from "../../api/client"
-import type { ReviewCommentItem } from "../../api/types"
+import type { PRThread, ReviewCommentItem } from "../../api/types"
 import { useDeletedDrafts } from "../../hooks/useReviewComments"
 import type { CommentTarget } from "./commentRange"
 import type { DiffFile } from "./parsedPatch"
@@ -34,6 +34,7 @@ type MockOptions = {
 const pierre = vi.hoisted(() => ({
   options: {} as Record<string, MockOptions[]>,
   selected: {} as Record<string, SelectedLineRange | null | undefined>,
+  annotations: {} as Record<string, DiffLineAnnotation<unknown>[] | undefined>,
 }))
 vi.mock("@pierre/diffs/react", () => ({
   WorkerPoolContextProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -58,6 +59,7 @@ vi.mock("@pierre/diffs/react", () => ({
     const seen = (pierre.options[fileDiff.name] ??= [])
     if (seen[seen.length - 1] !== options) seen.push(options)
     pierre.selected[fileDiff.name] = selectedLines
+    pierre.annotations[fileDiff.name] = lineAnnotations
     const host = useRef<HTMLDivElement>(null)
     useLayoutEffect(() => {
       const el = host.current!
@@ -176,6 +178,7 @@ const wrap = async (over: Partial<BodyProps> = {}) => {
 afterEach(() => {
   cleanup()
   pierre.options = {}
+  pierre.annotations = {}
 })
 
 const collapsed = (name: string) => screen.getByTestId(`host-${name}`).dataset.collapsed
@@ -407,5 +410,56 @@ describe("DiffBody review comments", () => {
     await waitFor(() => expect(drafts.current.drafts).toHaveLength(1))
     expect(drafts.current.drafts[0].view).toBe("o..n")
     act(() => drafts.current.dismiss(8))
+  })
+})
+
+const PR = { id: "o/r#12", number: 12, url: "https://github.com/o/r/pull/12" }
+const prThread = (id: string, over: Partial<PRThread> = {}): PRThread => ({
+  id,
+  resolved: false,
+  outdated: false,
+  file: "a.go",
+  side: "new",
+  start_line: 1,
+  end_line: 1,
+  view: { status: "shown", start_line: 12, end_line: 13 },
+  comments: [{ id: 7, author: "octo", body: `thread ${id}`, created_at: "2026-10-01T00:00:00Z", url: `${PR.url}#c7`, pending: false }],
+  ...over,
+})
+const prThreads = (threads: PRThread[]) => ({ threads, pr: PR, unreadIds: new Set<number>() })
+
+describe("DiffBody PR threads", () => {
+  it("places a shown thread as an annotation at its view end line", async () => {
+    await wrap({ prThreads: prThreads([prThread("t1")]) })
+    const a = pierre.annotations["a.go"]!.find((x) => x.lineNumber === 13)
+    expect(a).toMatchObject({ side: "additions", lineNumber: 13 })
+    expect((a!.metadata as { threads: PRThread[] }).threads.map((t) => t.id)).toEqual(["t1"])
+    expect(slot("a.go", "additions", 13)!.querySelector('[data-pr-thread-id="t1"]')).not.toBeNull()
+    expect(slot("a.go", "additions", 13)).toHaveTextContent("@octo on PR #12")
+    expect(pierre.annotations["b.go"]).toEqual([])
+  })
+
+  it("shares a line with a draft", async () => {
+    await wrap({ comments: [item(1, { view: { status: "shown", start_line: 13, end_line: 13 } })], prThreads: prThreads([prThread("t1")]) })
+    const s = slot("a.go", "additions", 13)!
+    expect(s).toHaveTextContent("comment 1")
+    expect(s.querySelector('[data-pr-thread-id="t1"]')).not.toBeNull()
+  })
+
+  it("leaves out threads the view doesn't show", async () => {
+    await wrap({
+      prThreads: prThreads([
+        prThread("t1", { view: { status: "outdated" } }),
+        prThread("t2", { view: { status: "unavailable" } }),
+        prThread("t3", { view: undefined }),
+      ]),
+    })
+    expect(document.querySelector("[data-pr-thread-id]")).toBeNull()
+  })
+
+  it("expands unchanged lines for a thread outside the hunks", async () => {
+    await wrap({ prThreads: prThreads([prThread("t1", { view: { status: "shown", start_line: 40, end_line: 41 } })]) })
+    expect(lastOptions("a.go").expandUnchanged).toBe(true)
+    expect(lastOptions("b.go").expandUnchanged).toBeFalsy()
   })
 })

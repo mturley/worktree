@@ -11,6 +11,7 @@ const api = vi.hoisted(() => ({
   diffCommits: vi.fn(),
   diffFiles: vi.fn(),
   reviewComments: vi.fn(),
+  prComments: vi.fn(),
 }))
 
 vi.mock("../../api/client", async (orig) => {
@@ -22,6 +23,7 @@ vi.mock("../../api/client", async (orig) => {
       diffCommits: api.diffCommits,
       diffFiles: api.diffFiles,
       reviewComments: api.reviewComments,
+      prComments: api.prComments,
       settings: async () => ({ worktree: { editor: "code" } }),
     },
   }
@@ -53,6 +55,7 @@ beforeEach(() => {
   api.diffCommits.mockResolvedValue(commits)
   api.diffFiles.mockResolvedValue(files)
   api.reviewComments.mockResolvedValue({ comments: [] })
+  api.prComments.mockResolvedValue({ state: "no_pr", open_threads: 0, unread_comments: 0, unread_ids: [] })
 })
 afterEach(() => {
   cleanup()
@@ -82,6 +85,23 @@ describe("Review changes button", () => {
     api.reviewComments.mockResolvedValue({ comments: [{ id: 1 }] })
     wrap()
     expect(await screen.findByRole("button", { name: "Review changes (1 pending local comment)" })).toBeInTheDocument()
+  })
+
+  it("adds the PR's open threads and unread comments", async () => {
+    api.reviewComments.mockResolvedValue({ comments: [{ id: 1 }, { id: 2 }] })
+    api.prComments.mockResolvedValue({ state: "ok", open_threads: 5, unread_comments: 3, unread_ids: [] })
+    wrap()
+    const button = await screen.findByRole("button", {
+      name: "Review changes (2 pending local comments, 5 PR comments (3 unread))",
+    })
+    expect(button).toHaveAttribute("data-variant", "filled")
+  })
+
+  it("stays light when PR comments are all read", async () => {
+    api.prComments.mockResolvedValue({ state: "ok", open_threads: 4, unread_comments: 0, unread_ids: [] })
+    wrap()
+    const button = await screen.findByRole("button", { name: "Review changes (4 PR comments)" })
+    expect(button).toHaveAttribute("data-variant", "light")
   })
 
   it("is plain with none", async () => {

@@ -857,7 +857,7 @@ export interface TaskUnread {
 
 // Review comments
 
-export type CommentSource = "draft"
+export type CommentSource = "draft" | "pr"
 export type CommentSide = "old" | "new"
 
 export interface ReviewComment {
@@ -900,4 +900,52 @@ export interface NewReviewComment {
   to?: string
   old_rev: string
   new_rev: string
+}
+
+export interface PRRefDTO {
+  id: string
+  number: number
+  url: string
+}
+
+export interface PRCommentsSummary {
+  state: "ok" | "off" | "no_token" | "no_pr" | "error"
+  branch?: string
+  message?: string
+  pr?: PRRefDTO
+  fingerprint?: string
+  open_threads: number
+  unread_comments: number
+  unread_ids: number[]
+}
+
+export interface PRThreadComment {
+  id: number
+  author: string
+  avatar_url?: string
+  body: string
+  created_at: string
+  url: string
+  pending: boolean
+}
+
+export interface PRThread {
+  id: string
+  resolved: boolean
+  outdated: boolean
+  file: string
+  side: CommentSide
+  start_line: number
+  end_line: number
+  view?: { status: ViewStatus | "unavailable"; start_line?: number; end_line?: number; moved?: boolean }
+  comments: PRThreadComment[]
+}
+
+export interface PRThreads {
+  state: PRCommentsSummary["state"]
+  branch?: string
+  message?: string
+  pr?: PRRefDTO
+  fingerprint?: string
+  threads: PRThread[]
 }

@@ -27,7 +27,7 @@ if (typeof window.matchMedia !== "function") {
 }
 
 function renderWithProvider(ui: React.ReactElement) {
-  return render(<MantineProvider>{ui}</MantineProvider>)
+  return render(<MantineProvider><QueryClientProvider client={new QueryClient()}>{ui}</QueryClientProvider></MantineProvider>)
 }
 
 function makeEvent(overrides: Partial<TimelineEvent>): TimelineEvent {
@@ -549,7 +549,7 @@ describe("a task event row", () => {
         </>
       )
     }
-    render(<MantineProvider><TaskModalProvider><Page /></TaskModalProvider></MantineProvider>)
+    render(<MantineProvider><QueryClientProvider client={new QueryClient()}><TaskModalProvider><Page /></TaskModalProvider></QueryClientProvider></MantineProvider>)
     fireEvent.click(screen.getByRole("button", { name: /write tests/ }))
     await waitFor(() => expect(screen.getByTestId("open-id")).toHaveTextContent("12"))
     window.history.replaceState({}, "", "/")

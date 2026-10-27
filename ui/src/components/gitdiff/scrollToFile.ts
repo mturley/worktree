@@ -81,30 +81,67 @@ const USER_INPUT = ["wheel", "touchstart", "pointerdown", "keydown"] as const
  * the diff body to move. Returns a cancel function.
  */
 export function scrollToComment(file: string, id: number): () => void {
+  return scrollToInline(file, `[data-review-comment-id="${id}"]`)
+}
+
+/** scrollToComment for a PR review thread's inline card. */
+export function scrollToPRThread(file: string, threadId: string): () => void {
+  return scrollToInline(file, `[data-pr-thread-id="${quoteAttr(threadId)}"]`)
+}
+
+/**
+ * Brings a PR thread's card in the review sidebar into view, for a thread
+ * the diff doesn't show. Retried each frame, as the sidebar (or the phone's
+ * drawer) may only just be opening. Returns a cancel function.
+ */
+export function scrollToSidebarThread(threadId: string): () => void {
+  const sel = `[data-pr-thread-id="${quoteAttr(threadId)}"]`
+  return retry(() => {
+    const el = [...document.querySelectorAll(sel)].find((e) => !e.closest(`.${DIFF_SCROLLER_CLASS}`))
+    if (!el) return false
+    el.scrollIntoView({ block: "center" })
+    return true
+  })
+}
+
+// Thread ids are GitHub node ids; quoted, only `"` and `\` need escaping.
+const quoteAttr = (v: string) => v.replace(/["\\]/g, "\\$&")
+
+/** Scrolls to `file`, then centres the element `selector` matches inside the diff body once it renders. */
+function scrollToInline(file: string, selector: string): () => void {
   const cancelFile = scrollToFile(file)
+  const cancel = retry(() => {
+    const el = document.querySelector(`.${DIFF_SCROLLER_CLASS} ${selector}`)
+    if (!el) return false
+    cancelFile()
+    el.scrollIntoView({ block: "center" })
+    return true
+  }, cancelFile)
+  return () => {
+    cancel()
+    cancelFile()
+  }
+}
+
+/** Calls `attempt` each frame until it returns true or the time bound passes, then `onGiveUp`. */
+function retry(attempt: () => boolean, onGiveUp?: () => void): () => void {
   const deadline = performance.now() + MAX_MS
   let frame = 0
   let done = false
-
   const stop = () => {
-    if (done) return
     done = true
     cancelAnimationFrame(frame)
-    cancelFile()
   }
-
   const step = () => {
     if (done) return
-    const el = document.querySelector(`.${DIFF_SCROLLER_CLASS} [data-review-comment-id="${id}"]`)
-    if (el) {
+    if (attempt()) return stop()
+    if (performance.now() >= deadline) {
       stop()
-      el.scrollIntoView({ block: "center" })
+      onGiveUp?.()
       return
     }
-    if (performance.now() >= deadline) return stop()
     frame = requestAnimationFrame(step)
   }
-
   step()
   return stop
 }

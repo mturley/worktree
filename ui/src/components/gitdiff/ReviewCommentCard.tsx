@@ -25,14 +25,25 @@ export const SOURCE_STYLE: Record<CommentSource, { borderColor: string; label?: 
     author: "You (local)",
     authorTip: "Part of your local review, not submitted anywhere.",
   },
+  pr: {
+    borderColor: "var(--mantine-color-grape-6)",
+    author: "",
+    authorTip: "A comment on the PR, from GitHub.",
+  },
 }
 
 const errMessage = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
-function Frame({ comment, children }: { comment?: ReviewComment; children: React.ReactNode }) {
-  const style = SOURCE_STYLE[comment?.source ?? "draft"]
+export function Frame({ comment, source, children, ...rest }: {
+  comment?: ReviewComment
+  /** Overrides the comment's source, for a card that has no ReviewComment (a PR thread). */
+  source?: CommentSource
+  children: React.ReactNode
+} & Record<`data-${string}`, string | undefined>) {
+  const style = SOURCE_STYLE[source ?? comment?.source ?? "draft"]
   return (
     <Box
+      {...rest}
       data-review-comment-id={comment?.id}
       p="xs"
       // Inline, the card sits in pierre's monospace diff; it reads as prose.
@@ -45,9 +56,10 @@ function Frame({ comment, children }: { comment?: ReviewComment; children: React
 }
 
 // A comment's text, as Markdown (raw HTML is never rendered; see NotesMarkdown).
-const Body = ({ text }: { text: string }) => (
+// imagesAsLinks for text written by others: see NotesMarkdown.
+export const Body = ({ text, imagesAsLinks = false }: { text: string; imagesAsLinks?: boolean }) => (
   <Box style={{ overflowWrap: "anywhere" }}>
-    <NotesMarkdown text={text} />
+    <NotesMarkdown text={text} imagesAsLinks={imagesAsLinks} />
   </Box>
 )
 // Typed text kept to copy back: shown as typed.

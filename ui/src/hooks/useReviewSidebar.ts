@@ -33,3 +33,38 @@ function subscribe(onChange: () => void): () => void {
 export function useReviewSidebar(): [boolean, (open: boolean) => void] {
   return [useSyncExternalStore(subscribe, read), setReviewSidebar]
 }
+
+export type ReviewTab = "local" | "pr"
+
+export const REVIEW_SIDEBAR_TAB_KEY = "worktree.reviewSidebarTab"
+
+const tabListeners = new Set<() => void>()
+let tabFallback: ReviewTab = "local"
+
+function readTab(): ReviewTab {
+  try {
+    return window.sessionStorage.getItem(REVIEW_SIDEBAR_TAB_KEY) === "pr" ? "pr" : "local"
+  } catch {
+    return tabFallback
+  }
+}
+
+export function setReviewSidebarTab(tab: ReviewTab): void {
+  tabFallback = tab
+  try {
+    window.sessionStorage.setItem(REVIEW_SIDEBAR_TAB_KEY, tab)
+  } catch {
+    // Storage blocked: the tab lasts for this page view.
+  }
+  tabListeners.forEach((l) => l())
+}
+
+function subscribeTab(onChange: () => void): () => void {
+  tabListeners.add(onChange)
+  return () => { tabListeners.delete(onChange) }
+}
+
+/** Which tab the review sidebar shows, per browser tab. */
+export function useReviewSidebarTab(): [ReviewTab, (t: ReviewTab) => void] {
+  return [useSyncExternalStore(subscribeTab, readTab), setReviewSidebarTab]
+}

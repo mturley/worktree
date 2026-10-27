@@ -1,4 +1,4 @@
-import type { DiffBase, DiffCommits, DiffFiles, DiffPatch, DiffRange, WorktreeGit, AllResourceDTO, CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, CredResult, DefaultBranchResponse, CredService, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, ResourceReadChange, Priority, Task, TaskState, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, UpdateStatus, WatcherHealth, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherAuthSettings, WatcherConfigSettings, WorktreeInfo, WorktreeNotes, WorktreeSettings, WorktreeSummary, TaskActivityFilter, TaskDetail, TaskEventSnapshot, TaskLinkTarget, TimelineEvent, TaskScope, TaskUnread, TaskBlockerTarget, TaskDeleteResult, NewReviewComment, ReviewComment, ReviewCommentItem } from "./types"
+import type { DiffBase, DiffCommits, DiffFiles, DiffPatch, DiffRange, WorktreeGit, AllResourceDTO, CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, CredResult, DefaultBranchResponse, CredService, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, ResourceReadChange, Priority, Task, TaskState, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, UpdateStatus, WatcherHealth, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherAuthSettings, WatcherConfigSettings, WorktreeInfo, WorktreeNotes, WorktreeSettings, WorktreeSummary, TaskActivityFilter, TaskDetail, TaskEventSnapshot, TaskLinkTarget, TimelineEvent, TaskScope, TaskUnread, TaskBlockerTarget, TaskDeleteResult, NewReviewComment, ReviewComment, ReviewCommentItem, PRCommentsSummary, PRThreads } from "./types"
 
 export class HttpError extends Error {
   constructor(message: string, readonly status: number, readonly body?: unknown) {
@@ -377,6 +377,20 @@ export const api = {
       params.set("new_rev", view.newRev)
     }
     return fetchJSON<{ comments: ReviewCommentItem[] }>(`/api/review-comments?${params}`)
+  },
+  prComments: (path: string) => fetchJSON<PRCommentsSummary>(`/api/pr-comments?${new URLSearchParams({ path })}`),
+  prThreads: (path: string, view?: { oldRev: string; newRev: string }) => {
+    const params = new URLSearchParams({ path })
+    if (view) {
+      params.set("old_rev", view.oldRev)
+      params.set("new_rev", view.newRev)
+    }
+    return fetchJSON<PRThreads>(`/api/pr-comments/threads?${params}`)
+  },
+  locatePRComment: (eventId: string, preferPath?: string) => {
+    const params = new URLSearchParams({ event_id: eventId })
+    if (preferPath) params.set("prefer_path", preferPath)
+    return fetchJSON<{ path: string; comment_id: number }>(`/api/pr-comments/locate?${params}`)
   },
   createReviewComment: (req: NewReviewComment) => postJSON<ReviewComment>("/api/review-comments", req),
   updateReviewComment: (req: { path: string; id: number; version: number; body: string }) =>

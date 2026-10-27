@@ -49,4 +49,22 @@ describe("useDiffView", () => {
     expect(params.get("q")).toBe("new query")
     expect(params.get("resource")).toBe("pr:o/r#1")
   })
+
+  it("reads &prcomment and drops it with a replace, keeping the view open", () => {
+    window.history.replaceState({}, "", "/worktree/x?q=oauth&diff&prcomment=11")
+    const before = window.history.length
+    const { result } = renderHook(() => useDiffView())
+    expect(result.current.prComment).toBe(11)
+    act(() => result.current.dropPRComment())
+    expect(window.location.search).toBe("?q=oauth&diff")
+    expect(window.history.length).toBe(before)
+    expect(result.current.open).toBe(true)
+    expect(result.current.prComment).toBeNull()
+  })
+
+  it("ignores a malformed &prcomment", () => {
+    window.history.replaceState({}, "", "/worktree/x?diff&prcomment=abc")
+    const { result } = renderHook(() => useDiffView())
+    expect(result.current.prComment).toBeNull()
+  })
 })

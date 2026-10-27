@@ -1,6 +1,8 @@
 import { Alert, Badge, Button, Divider, Group, Modal, Stack, Text } from "@mantine/core"
 import { IconArchive } from "@tabler/icons-react"
+import { useQuery } from "@tanstack/react-query"
 import { useLocation } from "wouter"
+import { api } from "../api/client"
 import type { ResourceDTO, TimelineEvent } from "../api/types"
 import { eventLabel } from "../lib/eventMeta"
 import { relativeTime as rel } from "../lib/relativeTime"
@@ -36,6 +38,14 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
 }) {
   const actionResource = e?.resource_url ? eventResource(e, resolveResource) : undefined
   const [, navigate] = useLocation()
+  // Where a review comment sits in a diff view; a 404 (no worktree tracks the
+  // PR, or the comment is gone) just means no button.
+  const locate = useQuery({
+    queryKey: ["pr-comment-locate", e?.id, path],
+    queryFn: () => api.locatePRComment(e!.id, path),
+    enabled: e?.type === "pr_review_comment",
+    retry: false,
+  })
 
   /*
    * Re-follow an archived resource: go to the chosen worktree, whose page
@@ -115,18 +125,34 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
             </Text>
           )}
 
-          {onMakeTask && eventTaskKey(e) && (
+          {(locate.data || (onMakeTask && eventTaskKey(e))) && (
             <Group justify="flex-end">
-              <Button
-                size="xs"
-                variant="light"
-                onClick={() => {
-                  onClose()
-                  onMakeTask(e)
-                }}
-              >
-                Make task
-              </Button>
+              {locate.data && (
+                <Button
+                  size="xs"
+                  variant="light"
+                  color="grape"
+                  onClick={() => {
+                    const target = locate.data
+                    onClose()
+                    navigate(`/worktree/${encodeURIComponent(target.path)}?diff&prcomment=${target.comment_id}`)
+                  }}
+                >
+                  Go to comment in diff view
+                </Button>
+              )}
+              {onMakeTask && eventTaskKey(e) && (
+                <Button
+                  size="xs"
+                  variant="light"
+                  onClick={() => {
+                    onClose()
+                    onMakeTask(e)
+                  }}
+                >
+                  Make task
+                </Button>
+              )}
             </Group>
           )}
         </Stack>

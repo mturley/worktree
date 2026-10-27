@@ -173,30 +173,13 @@ func (r *reviewResolver) resolve(dir string, comments []reviewcomments.Comment, 
 			return nil, err
 		}
 	}
-	type allResult struct {
-		files []gitutil.FileChange
-		ok    bool
-	}
 	allByBase := map[string]allResult{}
 
 	items := make([]reviewCommentItem, 0, len(comments))
 	for _, c := range comments {
 		item := reviewCommentItem{reviewCommentDTO: newReviewCommentDTO(c), Prompt: promptPosition(dir, c)}
 		if view != nil {
-			v := r.viewPosition(dir, c, view, viewFiles)
-			if v == nil {
-				res, seen := allByBase[c.Base]
-				if !seen {
-					res.files, res.ok = r.allChanges(dir, c.Base)
-					allByBase[c.Base] = res
-				}
-				status := "outside_changes"
-				if res.ok && fileInChanges(res.files, c.Side, c.File) {
-					status = "not_in_view"
-				}
-				v = &reviewViewDTO{Status: status}
-			}
-			item.View = v
+			item.View = r.placeInView(dir, c, view, viewFiles, allByBase)
 		}
 		items = append(items, item)
 	}
@@ -211,6 +194,33 @@ func (r *reviewResolver) resolve(dir string, comments []reviewcomments.Comment, 
 		return a.ID < b.ID
 	})
 	return items, nil
+}
+
+// allResult is one base's All-changes file set, memoized per request so
+// comments sharing a base compute it once.
+type allResult struct {
+	files []gitutil.FileChange
+	ok    bool
+}
+
+// placeInView places c in view, whose changed files are viewFiles. A comment
+// whose file is not in the view is "not_in_view" when All changes for its
+// base still has it, else "outside_changes". allByBase memoizes allChanges
+// across one request's calls.
+func (r *reviewResolver) placeInView(dir string, c reviewcomments.Comment, view *reviewView, viewFiles []gitutil.FileChange, allByBase map[string]allResult) *reviewViewDTO {
+	if v := r.viewPosition(dir, c, view, viewFiles); v != nil {
+		return v
+	}
+	res, seen := allByBase[c.Base]
+	if !seen {
+		res.files, res.ok = r.allChanges(dir, c.Base)
+		allByBase[c.Base] = res
+	}
+	status := "outside_changes"
+	if res.ok && fileInChanges(res.files, c.Side, c.File) {
+		status = "not_in_view"
+	}
+	return &reviewViewDTO{Status: status}
 }
 
 func sortLine(it reviewCommentItem) int {

@@ -3,15 +3,16 @@ import { ActionIcon, Anchor, Box, Button, Drawer, Group, SegmentedControl, Stack
 import { IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand } from "@tabler/icons-react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { api, HttpError } from "../../api/client"
-import type { Commit, DiffBase, DiffPatch, DiffRange, ReviewCommentItem } from "../../api/types"
+import type { Commit, DiffBase, DiffPatch, DiffRange, PRThread, ReviewCommentItem } from "../../api/types"
 import { useDiffCommits } from "../../hooks/useDiffData"
 import { useDiffSelection } from "../../hooks/useDiffSelection"
 import { useDiffView } from "../../hooks/useDiffView"
 import { useIsWide } from "../../hooks/useIsWide"
 import { useDeletedDrafts, useEditingCommentIds, useReviewComments } from "../../hooks/useReviewComments"
-import { useReviewSidebar } from "../../hooks/useReviewSidebar"
+import { useReviewSidebar, useReviewSidebarTab } from "../../hooks/useReviewSidebar"
 import { useWorktreeGit } from "../../hooks/useWorktreeGit"
 import { diffUnavailable } from "../../lib/diffLabels"
+import { countsAreUnread, toolbarLabel } from "../../lib/reviewCounts"
 import { OpenInEditorButton } from "../OpenInEditorButton"
 import { KeyHint } from "../search/KeyHint"
 import { buildPrompt } from "./buildPrompt"
@@ -22,7 +23,8 @@ import { DiffFileTree } from "./DiffFileTree"
 import { Loading } from "./Loading"
 import { parseDiff } from "./parsedPatch"
 import { ReviewSidebar } from "./ReviewSidebar"
-import { scrollToComment, scrollToFile } from "./scrollToFile"
+import { scrollToComment, scrollToFile, scrollToPRThread } from "./scrollToFile"
+import { usePRCommentsView } from "./usePRCommentsView"
 import { RangePicker } from "./RangePicker"
 
 const MODE_KEY = "worktree.diffMode"
@@ -220,13 +222,7 @@ export default function DiffView({
   // Comments deleted elsewhere while being edited stay in the sidebar until dismissed.
   const deletedDrafts = useDeletedDrafts(path).drafts
   const reviewCount = comments.length + deletedDrafts.filter((d) => !comments.some((c) => c.id === d.comment.id)).length
-  // The tree's blue dots: every file a comment was made on.
-  const commentedFiles = useMemo(() => new Set(comments.map((c) => c.file)), [comments])
   const [reviewOpen, setReviewOpen] = useReviewSidebar()
-  // Nothing left to show: closed, so the next first comment doesn't open it.
-  useEffect(() => {
-    if (review.data && reviewCount === 0 && reviewOpen) setReviewOpen(false)
-  }, [review.data, reviewCount, reviewOpen, setReviewOpen])
 
   const revPair = shown ? `${shown.old_rev}..${shown.new_rev}` : undefined
 
@@ -285,6 +281,82 @@ export default function DiffView({
     showComment(c)
   }, [pendingJump, viewKey, fresh, comments, showComment])
 
+  // A PR thread the view shows, as showComment. Its inline card exists only
+  // while "Show in diff view" is on; scrollToPRThread lands on the file
+  // first and waits for the card, so it does without the switch too.
+  const jumpThread = useCallback(
+    (t: PRThread) => {
+      if (!wide) setReviewOpen(false)
+      if (t.view?.status !== "shown") {
+        scrollTo(t.file)
+        return
+      }
+      setHighlighted(t.file)
+      setOpenFile((o) => ({ file: t.file, n: (o?.n ?? 0) + 1 }))
+      cancelScroll.current?.()
+      cancelScroll.current = scrollToPRThread(t.file, t.id)
+    },
+    [wide, setReviewOpen, scrollTo],
+  )
+  const pr = usePRCommentsView({
+    path,
+    view: shown ? { oldRev: shown.old_rev, newRev: shown.new_rev } : undefined,
+    ready: !patch.isFetching,
+    onJumpShown: jumpThread,
+  })
+  // What the sidebar has to show: local comments, the PINNED threads
+  // (resolved ones too), or threads GitHub counts that the pinned list
+  // doesn't have yet (its PR tab offers their Refresh).
+  const pinnedThreads = pr.threads?.threads.length ?? 0
+  const hasContent = reviewCount > 0 || pinnedThreads > 0 || pr.openThreads > 0
+  // Mounted while open, and once mounted it stays until closed: polls never
+  // mount or unmount it (that would widen or narrow the diff under the
+  // reader), nor does a Refresh's interval with nothing loaded. Only Mike's
+  // click opens it, a `&prcomment` link, or an open state remembered from
+  // earlier in this tab and shown at entry.
+  const [sidebarKept, setSidebarKept] = useState(false)
+  const sidebarMounted = reviewOpen && (sidebarKept || hasContent)
+  if (sidebarMounted !== sidebarKept) setSidebarKept(sidebarMounted)
+  // The toolbar button follows the live counts (a button appearing moves no
+  // code), and stays while the sidebar is open, as its only close.
+  const hasReview = reviewCount > 0 || pr.openThreads > 0 || sidebarMounted
+  const [, setReviewTab] = useReviewSidebarTab()
+  const openReview = () => {
+    // The button counting only PR comments opens where they are, not on an
+    // empty Local tab.
+    if (reviewCount === 0 && pr.openThreads > 0) setReviewTab("pr")
+    setSidebarKept(true)
+    setReviewOpen(true)
+  }
+  // On entry, a remembered-open sidebar with nothing to show closes, once the
+  // view's own lists are in (or the patch failed), so a later poll can't
+  // open it. Never waits on the polled summary.
+  const prSettled = pr.settled
+  const entryChecked = useRef(false)
+  useEffect(() => {
+    if (entryChecked.current || !((review.data && prSettled) || patch.isError)) return
+    entryChecked.current = true
+    if (reviewOpen && !sidebarMounted) setReviewOpen(false)
+  }, [review.data, prSettled, patch.isError, reviewOpen, sidebarMounted, setReviewOpen])
+  // Afterwards it closes only when Mike's own action empties it: the last
+  // local comment deleted or cleared (or a deleted-elsewhere draft
+  // dismissed), with no PR threads pinned or counted, so the next first
+  // comment doesn't open it. Only fresh lists count: a view change's
+  // interval with no list is not a deletion.
+  const lastLocal = useRef<number | null>(null)
+  useEffect(() => {
+    if (!fresh) return
+    const was = lastLocal.current
+    lastLocal.current = reviewCount
+    if (was !== null && was > 0 && reviewCount === 0 && pinnedThreads === 0 && pr.openThreads === 0 && reviewOpen) {
+      setReviewOpen(false)
+    }
+  }, [fresh, reviewCount, pinnedThreads, pr.openThreads, reviewOpen, setReviewOpen])
+  // The tree's blue dots: every file a comment was made on, and those with
+  // PR threads in the diff while they show.
+  const prFiles = pr.files
+  const commentedFiles = useMemo(() => new Set([...comments.map((c) => c.file), ...prFiles]), [comments, prFiles])
+
   const jump = (c: ReviewCommentItem) => {
     // The drawer covers the diff on a phone.
     if (!wide) setReviewOpen(false)
@@ -324,6 +396,7 @@ export default function DiffView({
         viewKey={fresh ? revPair : undefined}
         prompt={prompt}
         onJump={jump}
+        pr={{ summary: pr.summary, threads: pr.threads, prResource: pr.prResource, onJumpThread: jumpThread, onRefresh: pr.refresh }}
       />
     )
 
@@ -415,16 +488,24 @@ export default function DiffView({
           </Text>
         </Group>
       )}
-      {stale && (
+      {(stale || pr.stale) && (
         <Group gap={6} wrap="nowrap" data-testid="diff-stale">
-          <Text size="xs" c="yellow">Files changed on disk ·</Text>
+          <Text size="xs" c="yellow">
+            {stale && pr.stale ? "Files changed on disk, new PR comments ·" : stale ? "Files changed on disk ·" : "New PR comments ·"}
+          </Text>
           <Button
             size="compact-xs"
             variant="light"
             color="yellow"
             onClick={() => {
-              recheckAsked.current = true
-              reload()
+              // New PR comments alone reload only the threads: the code
+              // on screen is still current, so it doesn't move. With the
+              // code, the threads wait for the new patch's revs (`ready`).
+              if (stale) {
+                recheckAsked.current = true
+                reload()
+              }
+              pr.refresh()
             }}
           >
             Refresh
@@ -466,6 +547,8 @@ export default function DiffView({
     </Group>
   )
 
+  const unreadBlue = countsAreUnread(reviewCount, pr.unreadComments)
+
   let body: ReactNode
   if (!git) body = <Box p="xs"><Loading size="sm" /></Box>
   else if (!git.on_disk) body = <Message>This worktree is not on disk.</Message>
@@ -501,6 +584,7 @@ export default function DiffView({
         // A new comment is made against the view on screen.
         view={{ base: shown.request.base, range: shown.request.range, oldRev: shown.old_rev, newRev: shown.new_rev }}
         openFile={openFile}
+        prThreads={pr.inline}
       />
     )
 
@@ -531,21 +615,21 @@ export default function DiffView({
         {/* The branch, when there is one (empty when detached). */}
         <Text size="sm">{git?.branch ? `Changes (${git.branch})` : "Changes"}</Text>
         <OpenInEditorButton path={path} />
-        {reviewCount > 0 && (
-          // Closed, filled in the unread blue (as Mark all read: lighter on
-          // hover), so the review in progress is hard to miss. Open, dimmer:
-          // it is the sidebar's close, with Esc's hint inside when Esc would
-          // do the same.
+        {hasReview && (
+          // Closed, with local comments or unread PR comments, filled in the
+          // unread blue (as Mark all read: lighter on hover), so the review
+          // in progress is hard to miss. Open, dimmer: it is the sidebar's
+          // close, with Esc's hint inside when Esc would do the same.
           <Button
             ml="auto"
             size="xs"
-            variant={reviewOpen ? "light" : "filled"}
-            color={reviewOpen ? undefined : "blue"}
-            vars={reviewOpen ? undefined : () => ({ root: { "--button-hover": "var(--mantine-color-blue-4)" } })}
+            variant={!reviewOpen && unreadBlue ? "filled" : "light"}
+            color={!reviewOpen && unreadBlue ? "blue" : undefined}
+            vars={!reviewOpen && unreadBlue ? () => ({ root: { "--button-hover": "var(--mantine-color-blue-4)" } }) : undefined}
             rightSection={wide && reviewOpen && sidebarEscHint ? <KeyHint decorative>Esc</KeyHint> : undefined}
-            onClick={() => setReviewOpen(!reviewOpen)}
+            onClick={() => (reviewOpen ? setReviewOpen(false) : openReview())}
           >
-            {reviewOpen ? "Close comments sidebar" : `Pending local review comments (${reviewCount})`}
+            {reviewOpen ? "Close comments sidebar" : toolbarLabel(reviewCount, pr.openThreads, pr.unreadComments)}
           </Button>
         )}
       </Group>
@@ -578,7 +662,7 @@ export default function DiffView({
             <Box style={{ position: "absolute", inset: 0, padding: "var(--mantine-spacing-xs)" }}>{body}</Box>
           </Box>
         </Box>
-        {wide && reviewOpen && reviewCount > 0 && (
+        {wide && sidebarMounted && (
           <Box
             style={{
               width: REVIEW_SIDEBAR_WIDTH,
@@ -598,11 +682,11 @@ export default function DiffView({
       )}
       {!wide && (
         <Drawer
-          opened={reviewOpen && reviewCount > 0}
+          opened={sidebarMounted}
           onClose={() => setReviewOpen(false)}
           position="right"
           size="85%"
-          title="Local review comments"
+          title="Review comments"
         >
           {reviewSidebar()}
         </Drawer>
