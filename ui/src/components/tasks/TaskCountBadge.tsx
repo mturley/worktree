@@ -23,9 +23,7 @@ export function TaskCountBadge({ count, ...rest }: {
       className="task-count-badge"
       // Inline too: Mantine's own badge background would otherwise tie with
       // the class on specificity and win by stylesheet order.
-      style={{
-        flex: "none", background: "var(--task-accent)", color: "var(--mantine-color-dark-9)", textTransform: "none",
-      }}
+      style={{ flex: "none", background: "var(--task-accent)", color: "var(--mantine-color-dark-9)" }}
       {...rest}
     >
       {count === 1 ? "1 task" : `${count} tasks`}
