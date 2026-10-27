@@ -3,11 +3,12 @@ import { CloseButton, Group, Kbd, TextInput } from "@mantine/core"
 import { IconSearch } from "@tabler/icons-react"
 import { SearchSuggestions } from "./SearchSuggestions"
 import { isEditable, isHidden } from "../../lib/keyTargets"
-import type { ResourceDTO, TimelineEvent, WorktreeSummary } from "../../api/types"
+import type { ResourceDTO, Task, TimelineEvent, WorktreeSummary } from "../../api/types"
+import type { SearchMatch } from "../../lib/search"
 
 export interface Suggestion {
   key: string
-  /** Group heading: "Worktrees", "Resources" or "Activity". */
+  /** Group heading: "Worktrees", "Resources", "Tasks" or "Activity". */
   group: string
   label: string
   detail?: string
@@ -23,6 +24,7 @@ export type SuggestionItem =
   | { kind: "worktree"; w: WorktreeSummary }
   | { kind: "resource"; r: ResourceDTO }
   | { kind: "event"; e: TimelineEvent }
+  | { kind: "task"; t: Task; match: SearchMatch | null }
 
 /**
  * Whether an Esc belongs to something other than the search: an open

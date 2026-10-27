@@ -362,6 +362,7 @@ export function HomePage() {
       resources: resourcesByPath.get(w.path) ?? w.focus_resources,
     })),
     resources: resourcesView.shown.map((r) => ({ r, worktreePath: r.worktrees[0]?.path })),
+    tasks: tasks.tasks,
     events: tl.events,
     go: {
       worktree: (p) => navigate(`/worktree/${encodeURIComponent(p)}`),

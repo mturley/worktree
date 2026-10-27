@@ -1,5 +1,5 @@
-import type { ResourceDTO, TimelineEvent, WorktreeSummary } from "../../api/types"
-import { matchResource, matchWorktree, rankResource, rankText, resourceLabel } from "../../lib/search"
+import type { ResourceDTO, Task, TimelineEvent, WorktreeSummary } from "../../api/types"
+import { matchResource, matchTask, matchWorktree, rankResource, rankTask, rankText, resourceLabel } from "../../lib/search"
 import { shortResourceRef } from "../../lib/resourceRef"
 import type { Suggestion } from "./SearchBar"
 
@@ -24,7 +24,7 @@ function taskIdOf(e: TimelineEvent): number | null {
   return Number.isInteger(id) && id > 0 ? id : null
 }
 
-export const SUGGESTION_LIMITS = { worktrees: 3, resources: 5, events: 3 } as const
+export const SUGGESTION_LIMITS = { worktrees: 3, resources: 5, tasks: 3, events: 3 } as const
 
 /**
  * The dropdown's rows: the top few matches per kind, ranked (exact key,
@@ -36,6 +36,8 @@ export function buildSuggestions(input: {
   terms: string[]
   worktrees?: { w: WorktreeSummary; workspaceTitles: string[]; resources: ResourceDTO[] }[]
   resources: { r: ResourceDTO; worktreePath?: string }[]
+  /** The tasks the page's task panel lists. */
+  tasks?: Task[]
   events: TimelineEvent[]
   go: {
     worktree: (path: string) => void
@@ -60,6 +62,11 @@ export function buildSuggestions(input: {
   ).slice(0, SUGGESTION_LIMITS.worktrees)
   const rs = byRank(input.resources.filter(({ r }) => matchResource(r, terms)), ({ r }) => rankResource(r, terms))
     .slice(0, SUGGESTION_LIMITS.resources)
+  // Open tasks before done ones, then as resources rank.
+  const ts = byRank(
+    (input.tasks ?? []).map((t) => ({ t, match: matchTask(t, terms) })).filter(({ match }) => match),
+    ({ t }) => rankTask(t, terms) + (t.state === "done" ? 10 : 0),
+  ).slice(0, SUGGESTION_LIMITS.tasks)
   const evs = input.events.slice(0, SUGGESTION_LIMITS.events)
 
   return [
@@ -71,6 +78,10 @@ export function buildSuggestions(input: {
       key: `res:${r.type}:${r.id}`, group: "Resources", label: resourceLabel(r), detail: shortResourceRef(r.type, r.id),
       item: { kind: "resource", r },
       onPick: () => go.resource(r, worktreePath),
+    })),
+    ...ts.map(({ t, match }): Suggestion => ({
+      key: `task:${t.id}`, group: "Tasks", label: t.title, detail: t.ref, item: { kind: "task", t, match },
+      onPick: () => go.task?.(t.id),
     })),
     ...evs.map((e): Suggestion => ({
       key: `ev:${e.id}`, group: "Activity", label: e.title, detail: eventDetail(e), item: { kind: "event", e },

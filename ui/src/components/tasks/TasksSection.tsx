@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react"
 import { Box, Group, Stack, Text, UnstyledButton } from "@mantine/core"
 import { IconChevronDown, IconChevronRight, IconChevronsDown } from "@tabler/icons-react"
 import { useLocation } from "wouter"
+import type { Task } from "../../api/types"
 import { useTasks, type TaskScope } from "../../hooks/useTasks"
 import { useTaskListPrefs } from "../../hooks/useTaskListPrefs"
 import { openSummary } from "../../lib/taskSections"
@@ -60,7 +61,7 @@ export function scopeContext(scope: TaskScope): string {
 export function useTasksPanel(
   scope: TaskScope,
   opts?: { ownResource?: { type: string; id: string }; unread?: number; resetKey?: string },
-): { panel: ReactNode; expanded: boolean } {
+): { panel: ReactNode; expanded: boolean; tasks: Task[] } {
   const [prefs, setPrefs] = useTaskListPrefs()
   const { collapsed } = prefs
   // The same query (and cache entry) the list itself uses.
@@ -153,5 +154,6 @@ export function useTasksPanel(
     </Box>
   )
 
-  return { panel, expanded }
+  // The tasks the panel lists, for the page's search suggestions.
+  return { panel, expanded, tasks: query.data ?? [] }
 }

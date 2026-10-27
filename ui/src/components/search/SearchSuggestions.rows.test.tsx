@@ -3,7 +3,7 @@ import { act, cleanup, render, screen, within } from "@testing-library/react"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { api } from "../../api/client"
-import type { AllResourceDTO, TimelineEvent, WorktreeSummary } from "../../api/types"
+import type { AllResourceDTO, Task, TimelineEvent, WorktreeSummary } from "../../api/types"
 import { SearchSuggestions, fitDropdown } from "./SearchSuggestions"
 import type { Suggestion } from "./SearchBar"
 import { setViewport } from "../../testing/viewport"
@@ -22,10 +22,19 @@ const archived: TimelineEvent = {
   title: "Old remark", body: "", author: "someone", resource_type: "pr", resource_id: "o/r#2",
   resource_url: "https://gh/pr/2", resource_title: "Gone PR", worktrees: [], worktree_paths: [],
 }
+const task: Task = {
+  id: 8, ref: "T8", title: "Ship the proxy", description: "Roll it out behind the proxy flag", state: "in_progress",
+  priority: "high", starred: true, rank: "a", created_at: "", updated_at: "", archived: false, links: [],
+  implicit_worktrees: [], subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, open_blockers: [],
+}
 const items: Suggestion[] = [
   { key: "w", group: "Worktrees", label: wt.branch, onPick: () => {}, item: { kind: "worktree", w: wt } },
   { key: "r", group: "Resources", label: "Migrate the proxy", onPick: () => {}, item: { kind: "resource", r: res } },
   { key: "e", group: "Activity", label: "Old remark", onPick: () => {}, item: { kind: "event", e: archived } },
+  {
+    key: "t", group: "Tasks", label: "Ship the proxy", onPick: () => {},
+    item: { kind: "task", t: task, match: { field: "description", snippet: "…behind the proxy flag…" } },
+  },
 ]
 
 beforeEach(() => {
@@ -52,6 +61,17 @@ describe("dropdown rows", () => {
     expect(await within(row).findByText("Persimmon workspace")).toBeInTheDocument()
     expect(within(row).getByText("foo")).toBeInTheDocument()
     expect(within(row).getByText("odh · foo-branch")).toBeInTheDocument()
+  })
+
+  it("renders a task as its panel row reads, with the description's hit under it", () => {
+    wrap()
+    const row = screen.getAllByRole("option")[3]
+    expect(row.querySelector("[data-state-box]")).toHaveAttribute("data-state", "in_progress")
+    expect(within(row).getByText("★")).toBeInTheDocument()
+    expect(within(row).getByText("!!!")).toBeInTheDocument()
+    expect(within(row).getByText("Ship the proxy")).toBeInTheDocument()
+    expect(within(row).getByText("T8")).toBeInTheDocument()
+    expect(within(row).getByText("…behind the proxy flag…")).toBeInTheDocument()
   })
 
   it("renders a resource with its type/key/status line above its title", () => {
@@ -144,6 +164,6 @@ describe("dropdown rows", () => {
   it("heads each section with its count", () => {
     wrap()
     const headings = screen.getAllByTestId("suggestion-group").map((h) => h.textContent)
-    expect(headings).toEqual(["Worktrees1", "Resources1", "Activity1"])
+    expect(headings).toEqual(["Worktrees1", "Resources1", "Activity1", "Tasks1"])
   })
 })

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import type { ResourceDTO, TimelineEvent, WorktreeSummary } from "../../api/types"
+import type { ResourceDTO, Task, TimelineEvent, WorktreeSummary } from "../../api/types"
 import { buildSuggestions, SUGGESTION_LIMITS } from "./suggestions"
 
 const wt = (branch: string): WorktreeSummary => ({
@@ -12,6 +12,44 @@ const ev = (id: string): TimelineEvent => ({
   body: "", author: "a", resource_type: "pr", resource_id: "o/r#1", resource_url: "", resource_title: "", worktrees: [],
 })
 const go = { worktree: vi.fn(), resource: vi.fn(), event: vi.fn() }
+const task = (id: number, title: string, over: Partial<Task> = {}): Task => ({
+  id, ref: `T${id}`, title, description: "", state: "not_started", priority: "none", starred: false, rank: "a",
+  created_at: "", updated_at: "", archived: false, links: [], implicit_worktrees: [], subtasks_total: 0,
+  subtasks_done: 0, blocked: false, blocker_count: 0, open_blockers: [], ...over,
+})
+
+describe("buildSuggestions tasks", () => {
+  it("lists matching tasks after resources and before activity, open ones first, capped, and opens one on pick", () => {
+    const openTask = vi.fn()
+    const out = buildSuggestions({
+      terms: ["oauth"],
+      resources: [{ r: res("J-1", "oauth res") }],
+      tasks: [
+        task(1, "Finish oauth", { state: "done" }),
+        task(2, "Unrelated"),
+        task(3, "about it", { description: "the oauth bits" }),
+        task(4, "OAuth login"),
+        task(5, "more oauth"),
+      ],
+      events: [ev("e1")],
+      go: { ...go, task: openTask },
+    })
+    expect(out.map((s) => s.group)).toEqual(["Resources", "Tasks", "Tasks", "Tasks", "Activity"])
+    const tasks = out.filter((s) => s.group === "Tasks")
+    // Title prefix, then title contains, then other fields; the done one is last and capped away.
+    expect(tasks.map((s) => s.label)).toEqual(["OAuth login", "more oauth", "about it"])
+    expect(tasks[2].item).toMatchObject({ kind: "task", match: { field: "description" } })
+    tasks[0].onPick()
+    expect(openTask).toHaveBeenCalledWith(4)
+  })
+
+  it("finds a task by its id, first", () => {
+    const out = buildSuggestions({
+      terms: ["t12"], resources: [], tasks: [task(1, "has t12 in the title"), task(12, "Anything")], events: [], go,
+    })
+    expect(out.map((s) => s.label)).toEqual(["Anything", "has t12 in the title"])
+  })
+})
 
 describe("buildSuggestions", () => {
   it("groups, ranks and caps", () => {

@@ -635,6 +635,7 @@ export function WorktreeDetailPage() {
   const suggestions = buildSuggestions({
     terms: search.terms,
     resources: shownItems.map((r) => ({ r })),
+    tasks: tasks.tasks,
     events: timeline.events,
     go: {
       worktree: () => {},

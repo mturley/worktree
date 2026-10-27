@@ -2555,7 +2555,15 @@ filtering is independent.
 
 - Rows render as elsewhere: a worktree under `CmuxWorkspaceLabel`, a resource
   as `ResourceCardBody`, an event as `EventRow` (global form, so archived
-  events are labeled). Display only: no buttons or links inside an option.
+  events are labeled), a task as its panel row reads without the row's
+  controls (state box, star, priority mark, title, `T8` id, plus the
+  description's snippet when that is what matched). Display only: no buttons
+  or links inside an option.
+- The Tasks group (between Resources and Activity) searches the tasks the
+  page's task panel lists (`useTasksPanel`'s `tasks`: its scope and Show
+  completed), with `matchTask` (title, id, description). Open tasks rank
+  before done ones, then by `rankTask` (0 for the exact id, as `rankResource`
+  does for a key). Picking one opens its modal via `go.task`.
 - Picking routes through the page's `go` (`buildSuggestions`). A task
   event's row opens its task (`go.task`, the pages' `useTaskModal().open`,
   as the feeds' rows do through `onOpenTask`), never `go.event`: its

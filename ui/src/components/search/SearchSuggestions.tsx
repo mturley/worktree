@@ -9,7 +9,11 @@ import { CmuxWorkspaceLabel } from "../CmuxWorkspaceSection"
 import { ResourceCardBody } from "../ResourceCard"
 import { EventRow } from "../EventRow"
 import { worktreeName } from "../../lib/homeWorktree"
-import type { WorktreeSummary } from "../../api/types"
+import type { Task, WorktreeSummary } from "../../api/types"
+import type { SearchMatch } from "../../lib/search"
+import { StateBox } from "../tasks/TaskStateCheckbox"
+import { PRIORITY_MARK, PriorityGlyph } from "../tasks/TaskPriorityMenu"
+import { WorktreeGlyph } from "../WorktreeGlyph"
 
 /** The page's side gutter: --mantine-spacing-md, 16px with the theme's default scale. */
 const GUTTER = 16
@@ -218,7 +222,39 @@ function SuggestionBody({ item }: { item: SuggestionItem }) {
     case "event":
       // The global feed's form, which labels archived events.
       return <EventRow e={item.e} showWorktrees unreadBorder={false} />
+    case "task":
+      return <TaskBody t={item.t} match={item.match} />
   }
+}
+
+/**
+ * A task as its row in the task panel reads, without the row's controls
+ * (nothing in a suggestion is clickable but the suggestion): state box,
+ * star, priority mark, title and id; then the description's hit, when that
+ * is what matched.
+ */
+function TaskBody({ t, match }: { t: Task; match: SearchMatch | null }) {
+  return (
+    <Stack gap={2}>
+      <Group gap={8} wrap="nowrap">
+        <StateBox state={t.state} size={14} />
+        {t.starred && <span aria-hidden style={{ color: "var(--task-accent)", flex: "none" }}>★</span>}
+        {PRIORITY_MARK[t.priority] && <PriorityGlyph priority={t.priority} />}
+        <Text
+          size="sm"
+          truncate="end"
+          style={{ flex: 1, minWidth: 0, opacity: t.state === "done" ? 0.6 : 1 }}
+          td={t.state === "done" ? "line-through" : undefined}
+        >
+          <SearchHighlight text={t.title} />
+        </Text>
+        <Text size="xs" c="dimmed" style={{ flex: "none" }}><SearchHighlight text={t.ref} /></Text>
+      </Group>
+      {match?.field === "description" && (
+        <Text size="xs" c="dimmed" lineClamp={1}><SearchHighlight text={match.snippet} /></Text>
+      )}
+    </Stack>
+  )
 }
 
 /** As a worktree card opens: its cmux workspace(s), then name and repo · branch. */
@@ -230,7 +266,8 @@ function WorktreeBody({ w }: { w: WorktreeSummary }) {
       <Group gap="xs" wrap="nowrap">
         <Badge size="xs" color="blue" variant="light" style={{ flex: "none" }}>WORKTREE</Badge>
         <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
-          <SearchHighlight text={worktreeName(w.path)} />
+          <WorktreeGlyph />
+          <span><SearchHighlight text={worktreeName(w.path)} /></span>
         </Text>
       </Group>
       <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>

@@ -105,11 +105,12 @@ export function matchResource(r: ResourceDTO, terms: string[]): SearchMatch | nu
   return firstHit(fields, terms)
 }
 
-/** A task, over its title and description, with matchResource's term rules. */
+/** A task, over its title, id ("T8") and description, with matchResource's term rules. */
 export function matchTask(t: Task, terms: string[]): SearchMatch | null {
   if (terms.length === 0) return null
   const fields: Field[] = [
     { name: "title", text: t.title },
+    { name: "ref", text: t.ref },
     { name: "description", text: t.description ?? "", long: true },
   ]
   if (!allTermsHit(fields.map((f) => f.text.toLowerCase()), terms)) return null
@@ -184,6 +185,12 @@ export function rankResource(r: ResourceDTO, terms: string[]): number {
   const keys = [r.id.toLowerCase(), shortResourceRef(r.type, r.id).toLowerCase()]
   if (terms.some((t) => keys.includes(t))) return 0
   return rankText(resourceLabel(r), terms)
+}
+
+/** rankText over the title, with 0 for a term that IS the task's id ("t8"). */
+export function rankTask(t: Task, terms: string[]): number {
+  if (terms.includes(t.ref.toLowerCase())) return 0
+  return rankText(t.title, terms)
 }
 
 function escapeRegExp(s: string): string {
