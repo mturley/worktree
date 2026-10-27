@@ -11,3 +11,10 @@ export const TASK_BUTTON_STYLE = {
   "--button-hover": "color-mix(in srgb, var(--task-accent) 85%, var(--mantine-color-dark-9))",
   "--button-color": "var(--mantine-color-dark-9)",
 } as CSSProperties
+
+/** The same for a filled Mantine ActionIcon (the Slack message's "make task" icon). */
+export const TASK_ICON_STYLE = {
+  "--ai-bg": "var(--task-accent)",
+  "--ai-hover": "color-mix(in srgb, var(--task-accent) 85%, var(--mantine-color-dark-9))",
+  "--ai-color": "var(--mantine-color-dark-9)",
+} as CSSProperties

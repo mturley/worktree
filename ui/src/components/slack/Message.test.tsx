@@ -233,6 +233,8 @@ describe('Make task', () => {
     )
     const make = getByLabelText('Make task from this message')
     const copy = getByLabelText('Copy link to this message')
+    // Lime, like the tasks view.
+    expect(make.style.getPropertyValue('--ai-bg')).toBe('var(--task-accent)')
     expect(make.style.opacity).toBe('0')
     fireEvent.focus(make)
     expect(make.style.opacity).toBe('1')

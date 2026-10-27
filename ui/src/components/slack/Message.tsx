@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ActionIcon, Avatar, Group, Stack, Text, Tooltip } from '@mantine/core'
+import { TASK_ICON_STYLE } from '../tasks/taskButtonStyle'
 import { avatarProxy } from '../../api/slackApi'
 import type { Message as MessageData, User } from '../../api/slackApi'
 import { Mrkdwn } from '../../lib/mrkdwn'
@@ -125,8 +126,7 @@ export function Message({
           {makeTask && thread && (
             <Tooltip label="Make a task from this message">
               <ActionIcon
-                variant="subtle"
-                color="gray"
+                variant="filled"
                 size="xs"
                 aria-label="Make task from this message"
                 onClick={() =>
@@ -135,7 +135,7 @@ export function Message({
                     slackMessageSnapshot(message, users, thread, permalink),
                   )
                 }
-                style={{ opacity: showActions ? 1 : 0, transition: 'opacity 100ms ease' }}
+                style={{ ...TASK_ICON_STYLE, opacity: showActions ? 1 : 0, transition: 'opacity 100ms ease' }}
               >
                 <IconSquarePlus size={14} />
               </ActionIcon>
