@@ -3,13 +3,16 @@ import { act, cleanup, render, renderHook, screen, waitFor, within } from "@test
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import type { ReviewCommentItem } from "../../api/types"
+import type { PRCommentsSummary, ReviewCommentItem } from "../../api/types"
 
 const apiMock = vi.hoisted(() => ({
   createReviewComment: vi.fn(),
   updateReviewComment: vi.fn(),
   deleteReviewComment: vi.fn(),
   reviewComments: vi.fn(),
+  prComments: vi.fn(),
+  prWriteCheck: vi.fn(),
+  prWriteComment: vi.fn(),
 }))
 vi.mock("../../api/client", async (orig) => {
   const actual = await orig<typeof import("../../api/client")>()
@@ -55,6 +58,18 @@ function wrap(ui: React.ReactNode) {
 beforeEach(() => {
   vi.clearAllMocks()
   apiMock.reviewComments.mockResolvedValue({ comments: [] })
+  apiMock.prComments.mockResolvedValue(summary({ state: "no_pr", pr: undefined }))
+  apiMock.prWriteCheck.mockResolvedValue({ review: { postable: true }, single: { postable: true } })
+})
+
+const summary = (over: Partial<PRCommentsSummary> = {}): PRCommentsSummary => ({
+  state: "ok",
+  pr: { id: "o/r#12", number: 12, url: "https://github.com/o/r/pull/12" },
+  open_threads: 0,
+  unread_comments: 0,
+  unread_ids: [],
+  pending_comments: 0,
+  ...over,
 })
 afterEach(cleanup)
 
@@ -310,11 +325,11 @@ describe("NewCommentCard", () => {
 
   it("starts the review, with a tooltip saying so, when there are no comments", async () => {
     wrap(<NewCommentCard path="/w" target={target} view={view} onDone={() => {}} />)
-    await waitFor(() => expect(apiMock.reviewComments).toHaveBeenCalledWith("/w", { oldRev: "o1", newRev: "n1" }))
+    await waitFor(() => expect(apiMock.reviewComments).toHaveBeenCalledWith("/w", undefined))
     const submit = screen.getByRole("button", { name: "Start local review" })
     expect(submit).toHaveAttribute("aria-disabled", "true")
     await userEvent.hover(submit)
-    expect(await screen.findByText("Start collecting comments locally to hand off to an agent")).toBeInTheDocument()
+    expect(await screen.findByText(LOCAL_TIP)).toBeInTheDocument()
     // Empty, a click does nothing.
     await userEvent.click(submit)
     expect(apiMock.createReviewComment).not.toHaveBeenCalled()
@@ -377,4 +392,125 @@ describe("NewCommentCard", () => {
     expect(screen.getByRole("textbox")).toHaveValue("nice")
     expect(onDone).not.toHaveBeenCalled()
   })
+
+  describe("with a PR", () => {
+    const enabled = async (name: string) => {
+      const b = await screen.findByRole("button", { name })
+      await waitFor(() => expect(b).not.toHaveAttribute("aria-disabled", "true"))
+      return b
+    }
+
+    it("offers local, PR review and comment now, in that order, with no pending review", async () => {
+      apiMock.prComments.mockResolvedValue(summary())
+      wrap(<NewCommentCard path="/w-pr1" target={target} view={view} onDone={() => {}} />)
+      await screen.findByRole("button", { name: "Start a PR review on #12" })
+      const names = screen.getAllByRole("button").map((b) => b.textContent)
+      expect(names).toEqual(["Start local review", "Start a PR review on #12", "Comment on PR #12", "Cancel"])
+      await userEvent.type(screen.getByRole("textbox"), "x")
+      await userEvent.hover(await enabled("Start a PR review on #12"))
+      expect(
+        await screen.findByText(
+          "Add this comment to your pending review on PR #12. Only you can see it until you submit the review.",
+        ),
+      ).toBeInTheDocument()
+      await userEvent.hover(await enabled("Comment on PR #12"))
+      expect(
+        await screen.findByText("Post this comment on PR #12 now, as a single comment everyone can see."),
+      ).toBeInTheDocument()
+      expect(apiMock.prWriteCheck).toHaveBeenCalledWith("/w-pr1", {
+        file: "src/a.ts",
+        side: "new",
+        start_line: 4,
+        end_line: 6,
+        old_rev: "o1",
+        new_rev: "n1",
+      })
+    })
+
+    it("adds to the local review and the pending PR review once each exists", async () => {
+      apiMock.prComments.mockResolvedValue(summary({ pending_comments: 2 }))
+      apiMock.reviewComments.mockResolvedValue({ comments: [item()] })
+      wrap(<NewCommentCard path="/w-pr2" target={target} view={view} onDone={() => {}} />)
+      expect(await screen.findByRole("button", { name: "Add local comment" })).toBeInTheDocument()
+      expect(await screen.findByRole("button", { name: "Add to PR review #12" })).toBeInTheDocument()
+    })
+
+    it("without a PR, offers only the local button", async () => {
+      wrap(<NewCommentCard path="/w-pr3" target={target} view={view} onDone={() => {}} />)
+      await waitFor(() => expect(apiMock.prComments).toHaveBeenCalled())
+      await screen.findByRole("button", { name: "Start local review" })
+      expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual(["Start local review", "Cancel"])
+      expect(apiMock.prWriteCheck).not.toHaveBeenCalled()
+    })
+
+    it("disables both GitHub buttons with the check's reason", async () => {
+      apiMock.prComments.mockResolvedValue(summary())
+      apiMock.prWriteCheck.mockResolvedValue({
+        review: { postable: false, reason: "on uncommitted changes" },
+        single: { postable: false, reason: "on uncommitted changes" },
+      })
+      wrap(<NewCommentCard path="/w-pr4" target={target} view={view} onDone={() => {}} />)
+      await userEvent.type(screen.getByRole("textbox"), "x")
+      for (const name of ["Start a PR review on #12", "Comment on PR #12"]) {
+        const b = await screen.findByRole("button", { name })
+        await waitFor(() => expect(apiMock.prWriteCheck).toHaveBeenCalled())
+        expect(b).toHaveAttribute("aria-disabled", "true")
+        await userEvent.hover(b)
+        expect(await screen.findByText("on uncommitted changes")).toBeInTheDocument()
+        await userEvent.click(b)
+        await userEvent.unhover(b)
+        await waitFor(() => expect(screen.queryByText("on uncommitted changes")).toBeNull())
+      }
+      expect(apiMock.prWriteComment).not.toHaveBeenCalled()
+    })
+
+    it("disables the GitHub buttons when the watcher is off", async () => {
+      apiMock.prComments.mockResolvedValue(summary({ state: "off" }))
+      wrap(<NewCommentCard path="/w-pr5" target={target} view={view} onDone={() => {}} />)
+      await userEvent.type(screen.getByRole("textbox"), "x")
+      const b = await screen.findByRole("button", { name: "Comment on PR #12" })
+      expect(b).toHaveAttribute("aria-disabled", "true")
+      await userEvent.hover(b)
+      expect(await screen.findByText("The GitHub watcher is off")).toBeInTheDocument()
+      expect(apiMock.prWriteCheck).not.toHaveBeenCalled()
+    })
+
+    it("the PR review button adds the comment to the review, then closes", async () => {
+      apiMock.prComments.mockResolvedValue(summary())
+      apiMock.prWriteComment.mockResolvedValue({ comment_id: 99 })
+      const onDone = vi.fn()
+      wrap(<NewCommentCard path="/w-pr6" target={target} view={view} onDone={onDone} />)
+      await userEvent.type(screen.getByRole("textbox"), "nice")
+      await userEvent.click(await enabled("Start a PR review on #12"))
+      await waitFor(() => expect(onDone).toHaveBeenCalled())
+      expect(apiMock.prWriteComment).toHaveBeenCalledWith({
+        path: "/w-pr6",
+        mode: "review",
+        file: "src/a.ts",
+        side: "new",
+        start_line: 4,
+        end_line: 6,
+        body: "nice",
+        old_rev: "o1",
+        new_rev: "n1",
+      })
+      expect(apiMock.createReviewComment).not.toHaveBeenCalled()
+    })
+
+    it("Comment on PR posts a single comment; a refusal shows its reason and keeps the text", async () => {
+      apiMock.prComments.mockResolvedValue(summary())
+      apiMock.prWriteComment.mockRejectedValue(new HttpError("conflict", 409, { reason: "out of date" }))
+      const onDone = vi.fn()
+      wrap(<NewCommentCard path="/w-pr7" target={target} view={view} onDone={onDone} />)
+      await userEvent.type(screen.getByRole("textbox"), "nice")
+      await userEvent.click(await enabled("Comment on PR #12"))
+      expect(await screen.findByText("out of date")).toBeInTheDocument()
+      expect(apiMock.prWriteComment).toHaveBeenCalledWith(expect.objectContaining({ mode: "single" }))
+      expect(screen.getByRole("textbox")).toHaveValue("nice")
+      expect(onDone).not.toHaveBeenCalled()
+    })
+  })
 })
+
+const LOCAL_TIP =
+  "Save this comment only in worktree, as part of your local review. Nothing is posted to GitHub. You can copy your local review for an agent, or include it when you submit a PR review."

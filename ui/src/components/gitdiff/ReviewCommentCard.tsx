@@ -2,7 +2,17 @@ import { useState } from "react"
 import { ActionIcon, Anchor, Badge, Box, Button, Group, Stack, Text, Tooltip } from "@mantine/core"
 import { IconPencil, IconTrash } from "@tabler/icons-react"
 import { HttpError } from "../../api/client"
-import type { CommentSource, DiffBase, DiffRange, ReviewComment, ReviewCommentItem } from "../../api/types"
+import type {
+  CommentSource,
+  DiffBase,
+  DiffRange,
+  PRWriteMode,
+  PRWriteTarget,
+  ReviewComment,
+  ReviewCommentItem,
+} from "../../api/types"
+import { usePRCommentsSummary } from "../../hooks/usePRComments"
+import { prWriteError, summaryPR, usePRWriteCheck, usePRWriteMutations } from "../../hooks/usePRWrite"
 import {
   conflictComment,
   editDraftKey,
@@ -15,9 +25,21 @@ import {
 } from "../../hooks/useReviewComments"
 import { useReviewSidebar } from "../../hooks/useReviewSidebar"
 import { NotesMarkdown } from "../NotesMarkdown"
-import { CommentEditor } from "./CommentEditor"
+import { CommentEditor, type EditorAction } from "./CommentEditor"
 import { DeleteCommentModal } from "./DeleteCommentModal"
 import type { CommentTarget } from "./commentRange"
+import {
+  commentNowLabel,
+  commentNowTooltip,
+  LOCAL_TOOLTIP,
+  localLabel,
+  prReviewLabel,
+  prReviewTooltip,
+  WATCHER_OFF_REASON,
+} from "./prWriteCopy"
+
+/** A GitHub button's reason while its check is still loading. */
+const CHECKING_REASON = "Checking whether these lines can be posted to the PR…"
 
 export const SOURCE_STYLE: Record<CommentSource, { borderColor: string; label?: string; author: string; authorTip: string }> = {
   draft: {
@@ -257,6 +279,7 @@ export function NewCommentCard({ path, target, view, onDone }: {
   onDone: () => void
 }) {
   const { create } = useReviewCommentMutations(path)
+  const { comment } = usePRWriteMutations(path)
   const [error, setError] = useState<string>()
   // The typed text lives in the store, so it survives the card remounting
   // (see EditorDraft); a draft typed for another target is not this one's.
@@ -264,42 +287,95 @@ export function NewCommentCard({ path, target, view, onDone }: {
   const [stored, setDraft] = useEditorDraft(path, NEW_DRAFT_KEY)
   const draft = stored?.target === mine ? stored : undefined
   const drop = () => setDraft((d) => (d?.target === mine ? undefined : d))
-  // The view's own list (DiffView's query, shared): the first comment starts the review.
-  const started = (useReviewComments(path, { oldRev: view.oldRev, newRev: view.newRev }).data?.length ?? 0) > 0
+  const finish = () => {
+    drop()
+    onDone()
+  }
+  // The whole local review, across every view: the first comment starts it.
+  const started = (useReviewComments(path, undefined).data?.length ?? 0) > 0
+
+  // Without a PR, no GitHub buttons; with the watcher off, they say so.
+  const summary = usePRCommentsSummary(path).data
+  const pr = summaryPR(summary)
+  const off = summary?.state === "off"
+  const prTarget: PRWriteTarget = {
+    file: target.file,
+    side: target.side,
+    start_line: target.start,
+    end_line: target.end,
+    old_rev: view.oldRev,
+    new_rev: view.newRev,
+  }
+  const check = usePRWriteCheck(path, prTarget, !!pr && !off)
+  const reasonFor = (verdict: "review" | "single"): string | undefined => {
+    if (off) return WATCHER_OFF_REASON
+    if (check.isPending) return CHECKING_REASON
+    const v = check.data?.[verdict]
+    // A failed check leaves the button on: the write itself is checked again.
+    return v && !v.postable ? (v.reason ?? "Can't be posted to the PR") : undefined
+  }
+  const postToPR = (mode: PRWriteMode) => (body: string) => {
+    setError(undefined)
+    comment.mutateAsync({ ...prTarget, mode, body }).then(finish, (err: unknown) => setError(prWriteError(err)))
+  }
+
+  const actions: EditorAction[] = [
+    {
+      key: "local",
+      label: localLabel(started),
+      tooltip: LOCAL_TOOLTIP,
+      busy: create.isPending,
+      onSubmit: (body) => {
+        setError(undefined)
+        create
+          .mutateAsync({
+            file: target.file,
+            side: target.side,
+            start_line: target.start,
+            end_line: target.end,
+            body,
+            base: view.base,
+            ...(view.range === "all" ? {} : { from: view.range.from, to: view.range.to }),
+            old_rev: view.oldRev,
+            new_rev: view.newRev,
+          })
+          .then(finish, (err: unknown) => setError(errMessage(err)))
+      },
+    },
+  ]
+  if (pr) {
+    actions.push(
+      {
+        key: "review",
+        label: prReviewLabel(pr.number, (summary?.pending_comments ?? 0) > 0),
+        tooltip: prReviewTooltip(pr.number),
+        disabledReason: reasonFor("review"),
+        variant: "light",
+        busy: comment.isPending && comment.variables?.mode === "review",
+        onSubmit: postToPR("review"),
+      },
+      {
+        key: "single",
+        label: commentNowLabel(pr.number),
+        tooltip: commentNowTooltip(pr.number),
+        disabledReason: reasonFor("single"),
+        variant: "light",
+        busy: comment.isPending && comment.variables?.mode === "single",
+        onSubmit: postToPR("single"),
+      },
+    )
+  }
+
   return (
     <Frame>
       <CommentEditor
         initial={draft?.text ?? ""}
         onChange={(text) => setDraft({ text, target: mine })}
-        submitLabel={started ? "Add local comment" : "Start local review"}
-        submitTooltip={started ? undefined : "Start collecting comments locally to hand off to an agent"}
-        busy={create.isPending}
+        actions={actions}
         error={error}
         onCancel={() => {
           drop()
           onDone()
-        }}
-        onSubmit={(body) => {
-          setError(undefined)
-          create
-            .mutateAsync({
-              file: target.file,
-              side: target.side,
-              start_line: target.start,
-              end_line: target.end,
-              body,
-              base: view.base,
-              ...(view.range === "all" ? {} : { from: view.range.from, to: view.range.to }),
-              old_rev: view.oldRev,
-              new_rev: view.newRev,
-            })
-            .then(
-              () => {
-                drop()
-                onDone()
-              },
-              (err: unknown) => setError(errMessage(err)),
-            )
         }}
       />
     </Frame>

@@ -1,27 +1,54 @@
-import { useEffect, useRef, useState } from "react"
+import { type ReactNode, useEffect, useRef, useState } from "react"
 import { Button, Group, Stack, Text, Textarea, Tooltip } from "@mantine/core"
 
 /** How long the editor keeps trying to take focus, in animation frames (about half a second). */
 const FOCUS_FRAMES = 30
 
+/** One of the editor's save buttons. */
+export type EditorAction = {
+  key: string
+  label: string
+  /** Shown on hover while the action is enabled. */
+  tooltip: string
+  /** Set, the button stays but does nothing, and its tooltip says this instead. */
+  disabledReason?: string
+  onSubmit: (text: string) => void
+  variant?: "filled" | "light"
+  /** This action's write is in flight. */
+  busy?: boolean
+}
+
+type Submit =
+  | {
+      submitLabel: string
+      submitTooltip?: string
+      onSubmit: (text: string) => void
+      actions?: undefined
+    }
+  | {
+      /** The save buttons, in order; Cmd/Ctrl+Enter runs the first enabled one. */
+      actions: EditorAction[]
+      submitLabel?: undefined
+      submitTooltip?: undefined
+      onSubmit?: undefined
+    }
+
 /**
  * A comment's text box. Cmd/Ctrl+Enter submits and Escape cancels; Escape is
  * stopped here so it does not also close whatever the editor sits inside.
  */
-export function CommentEditor({ initial, onChange, submitLabel, submitTooltip, onSubmit, onCancel, busy, error }: {
+export function CommentEditor({ initial, onChange, onCancel, busy, error, ...submitProps }: {
   /** The text it opens with; later values are ignored. */
   initial: string
   /** Each change to the text, for whoever keeps it beyond this editor's life. */
   onChange?: (text: string) => void
-  submitLabel: string
-  submitTooltip?: string
-  onSubmit: (text: string) => void
   onCancel: () => void
   busy?: boolean
   error?: string
-}) {
+} & Submit) {
   const [text, setText] = useState(initial)
   const empty = !text.trim()
+  const anyBusy = !!busy || !!submitProps.actions?.some((a) => a.busy)
   // Not autoFocus: in the diff, the editor mounts inside an annotation slot
   // that pierre attaches to the page only after React commits, and focusing
   // a detached element does nothing. So keep trying for a few frames.
@@ -41,8 +68,14 @@ export function CommentEditor({ initial, onChange, submitLabel, submitTooltip, o
     tryFocus()
     return () => cancelAnimationFrame(id)
   }, [])
+  const run = (onSubmit: (text: string) => void) => {
+    if (!empty && !anyBusy) onSubmit(text)
+  }
   const submit = () => {
-    if (!empty && !busy) onSubmit(text)
+    if (submitProps.actions) {
+      const first = submitProps.actions.find((a) => !a.disabledReason)
+      if (first) run(first.onSubmit)
+    } else run(submitProps.onSubmit)
   }
   return (
     <Stack gap={4}>
@@ -70,24 +103,59 @@ export function CommentEditor({ initial, onChange, submitLabel, submitTooltip, o
       />
       {error && <Text size="xs" c="red">{error}</Text>}
       <Group gap="xs">
-        {/* A disabled button gets no hover, so a tooltip keeps it enabled-looking to events (data-disabled). */}
-        {submitTooltip ? (
-          <Tooltip label={submitTooltip} withArrow>
-            <Button
-              size="compact-xs"
-              data-disabled={empty || undefined}
-              aria-disabled={empty}
-              loading={busy}
-              onClick={submit}
-            >
-              {submitLabel}
-            </Button>
-          </Tooltip>
+        {submitProps.actions ? (
+          submitProps.actions.map((a) => {
+            const off = empty || !!a.disabledReason
+            return (
+              <TooltipButton
+                key={a.key}
+                tooltip={a.disabledReason ?? a.tooltip}
+                off={off}
+                busy={a.busy}
+                variant={a.variant}
+                onClick={() => {
+                  if (!a.disabledReason) run(a.onSubmit)
+                }}
+              >
+                {a.label}
+              </TooltipButton>
+            )
+          })
+        ) : submitProps.submitTooltip ? (
+          <TooltipButton tooltip={submitProps.submitTooltip} off={empty} busy={busy} onClick={submit}>
+            {submitProps.submitLabel}
+          </TooltipButton>
         ) : (
-          <Button size="compact-xs" disabled={empty} loading={busy} onClick={submit}>{submitLabel}</Button>
+          <Button size="compact-xs" disabled={empty} loading={busy} onClick={submit}>{submitProps.submitLabel}</Button>
         )}
         <Button size="compact-xs" variant="subtle" color="gray" onClick={onCancel}>Cancel</Button>
       </Group>
     </Stack>
+  )
+}
+
+/** A save button with a tooltip, which it keeps while off. */
+function TooltipButton({ tooltip, off, busy, variant, onClick, children }: {
+  tooltip: string
+  off: boolean
+  busy?: boolean
+  variant?: "filled" | "light"
+  onClick: () => void
+  children: ReactNode
+}) {
+  return (
+    // A disabled button gets no hover, so an off one stays enabled to events (data-disabled).
+    <Tooltip label={tooltip} withArrow multiline maw={320}>
+      <Button
+        size="compact-xs"
+        variant={variant}
+        data-disabled={off || undefined}
+        aria-disabled={off}
+        loading={busy}
+        onClick={onClick}
+      >
+        {children}
+      </Button>
+    </Tooltip>
   )
 }

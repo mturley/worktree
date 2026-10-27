@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import type { PRRefDTO, PRThread, ResourceDTO } from "../../api/types"
+import type { PRCommentsSummary, PRRefDTO, PRThread, ResourceDTO } from "../../api/types"
 
 const markProps = vi.hoisted(() => ({ last: undefined as undefined | { onMarked?: () => void } }))
 vi.mock("../MarkAllReadButton", () => ({
@@ -13,6 +13,16 @@ vi.mock("../MarkAllReadButton", () => ({
   },
 }))
 
+const apiMock = vi.hoisted(() => ({
+  prComments: vi.fn(),
+  prWriteReply: vi.fn(),
+}))
+vi.mock("../../api/client", async (orig) => {
+  const actual = await orig<typeof import("../../api/client")>()
+  return { ...actual, api: { ...actual.api, ...apiMock } }
+})
+
+import { HttpError } from "../../api/client"
 import { REVIEW_SIDEBAR_KEY, REVIEW_SIDEBAR_TAB_KEY } from "../../hooks/useReviewSidebar"
 import { PRThreadCard } from "./PRThreadCard"
 
@@ -45,7 +55,19 @@ function renderCard(props: Partial<React.ComponentProps<typeof PRThreadCard>> = 
   )
 }
 
+const summary = (over: Partial<PRCommentsSummary> = {}): PRCommentsSummary => ({
+  state: "ok",
+  pr,
+  open_threads: 1,
+  unread_comments: 0,
+  unread_ids: [],
+  pending_comments: 0,
+  ...over,
+})
+
 beforeEach(() => {
+  vi.clearAllMocks()
+  apiMock.prComments.mockResolvedValue(summary())
   window.sessionStorage.clear()
   markProps.last = undefined
 })
@@ -164,5 +186,90 @@ describe("PRThreadCard", () => {
     renderCard({ variant: "sidebar", onJump, thread: thread({ view: { status: "shown", start_line: 3, end_line: 3 } }) })
     await userEvent.click(screen.getByRole("button", { name: /Jump to comment/ }))
     expect(onJump).toHaveBeenCalled()
+  })
+
+  describe("Reply", () => {
+    it("opens the editor with the PR review and reply-now choices", async () => {
+      renderCard({ path: "/w-r1" })
+      await userEvent.click(await screen.findByRole("button", { name: "Reply" }))
+      expect(screen.getByRole("textbox")).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "Start a PR review on #12" })).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "Reply on PR #12" })).toBeInTheDocument()
+      expect(screen.queryByRole("button", { name: /local/ })).toBeNull()
+      await userEvent.type(screen.getByRole("textbox"), "x")
+      await userEvent.hover(screen.getByRole("button", { name: "Reply on PR #12" }))
+      expect(await screen.findByText("Post this reply on PR #12 now. Everyone can see it.")).toBeInTheDocument()
+    })
+
+    it("names the pending review once there is one", async () => {
+      apiMock.prComments.mockResolvedValue(summary({ pending_comments: 1 }))
+      renderCard({ path: "/w-r2" })
+      await userEvent.click(await screen.findByRole("button", { name: "Reply" }))
+      expect(await screen.findByRole("button", { name: "Add to PR review #12" })).toBeInTheDocument()
+    })
+
+    it("posts to the first comment, then closes", async () => {
+      apiMock.prWriteReply.mockResolvedValue({ comment_id: 5 })
+      renderCard({ path: "/w-r3" })
+      await userEvent.click(await screen.findByRole("button", { name: "Reply" }))
+      await userEvent.type(screen.getByRole("textbox"), "thanks")
+      await userEvent.click(screen.getByRole("button", { name: "Reply on PR #12" }))
+      await waitFor(() => expect(screen.queryByRole("textbox")).toBeNull())
+      expect(apiMock.prWriteReply).toHaveBeenCalledWith({
+        path: "/w-r3",
+        thread_id: "t1",
+        in_reply_to: 1,
+        mode: "single",
+        body: "thanks",
+      })
+    })
+
+    it("the PR review choice replies in the pending review", async () => {
+      apiMock.prWriteReply.mockResolvedValue({ comment_id: 5 })
+      renderCard({ path: "/w-r4" })
+      await userEvent.click(await screen.findByRole("button", { name: "Reply" }))
+      await userEvent.type(screen.getByRole("textbox"), "later")
+      await userEvent.click(screen.getByRole("button", { name: "Start a PR review on #12" }))
+      await waitFor(() => expect(apiMock.prWriteReply).toHaveBeenCalledWith(expect.objectContaining({ mode: "review" })))
+    })
+
+    it("a failure shows the error and keeps the text", async () => {
+      apiMock.prWriteReply.mockRejectedValue(new HttpError("GitHub said no", 502))
+      renderCard({ path: "/w-r5" })
+      await userEvent.click(await screen.findByRole("button", { name: "Reply" }))
+      await userEvent.type(screen.getByRole("textbox"), "thanks")
+      await userEvent.click(screen.getByRole("button", { name: "Reply on PR #12" }))
+      expect(await screen.findByText("GitHub said no")).toBeInTheDocument()
+      expect(screen.getByRole("textbox")).toHaveValue("thanks")
+    })
+
+    it("keeps the typed reply across a remount", async () => {
+      const first = renderCard({ path: "/w-r6" })
+      await userEvent.click(await screen.findByRole("button", { name: "Reply" }))
+      await userEvent.type(screen.getByRole("textbox"), "half")
+      first.unmount()
+      renderCard({ path: "/w-r6" })
+      expect(await screen.findByRole("textbox")).toHaveValue("half")
+    })
+
+    it("a resolved thread offers Reply once expanded", async () => {
+      renderCard({ path: "/w-r7", thread: thread({ resolved: true }) })
+      await waitFor(() => expect(apiMock.prComments).toHaveBeenCalled())
+      expect(screen.queryByRole("button", { name: "Reply" })).toBeNull()
+      await userEvent.click(screen.getByRole("button", { name: /Resolved ·/ }))
+      expect(await screen.findByRole("button", { name: "Reply" })).toBeInTheDocument()
+    })
+
+    it.each([
+      ["no PR", { state: "no_pr", pr: undefined }],
+      ["the watcher off", { state: "off" }],
+    ] as const)("there's no Reply with %s", async (_, over) => {
+      apiMock.prComments.mockResolvedValue(summary(over))
+      renderCard({ path: "/w-r8" })
+      await waitFor(() => expect(apiMock.prComments).toHaveBeenCalled())
+      // Let the summary land before looking.
+      await new Promise((r) => setTimeout(r, 20))
+      expect(screen.queryByRole("button", { name: "Reply" })).toBeNull()
+    })
   })
 })

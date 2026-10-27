@@ -1,12 +1,17 @@
 import { type ReactNode, useState } from "react"
 import { Anchor, Avatar, Badge, Box, Button, Group, Stack, Text, Tooltip, UnstyledButton } from "@mantine/core"
 import { useQueryClient } from "@tanstack/react-query"
-import type { PRRefDTO, PRThread, ResourceDTO } from "../../api/types"
+import type { PRRefDTO, PRThread, PRWriteMode, ResourceDTO } from "../../api/types"
+import { usePRCommentsSummary } from "../../hooks/usePRComments"
+import { prWriteError, summaryPR, usePRWriteMutations } from "../../hooks/usePRWrite"
+import { useEditorDraft } from "../../hooks/useReviewComments"
 import { useReviewSidebar, useReviewSidebarTab } from "../../hooks/useReviewSidebar"
 import { relativeTime } from "../../lib/relativeTime"
 import { MarkAllReadButton } from "../MarkAllReadButton"
 import { KeyHint } from "../search/KeyHint"
 import { UnreadMarkerDot } from "../UnreadMarkerDot"
+import { CommentEditor } from "./CommentEditor"
+import { prReviewLabel, prReviewTooltip, replyNowLabel, replyNowTooltip } from "./prWriteCopy"
 import { Body, Frame, SOURCE_STYLE } from "./ReviewCommentCard"
 
 const PREVIEW = 40
@@ -47,7 +52,65 @@ function jumpBlockedReason(status: NonNullable<PRThread["view"]>["status"] | und
   }
 }
 
-/** A read-only card for one PR review thread: every comment, the place, and the way to GitHub. */
+/**
+ * Reply, under a thread, and the editor it opens: to the pending review or
+ * straight onto the PR. The typed text is kept per thread in the draft store,
+ * so it survives the card remounting.
+ */
+function ReplyBox({ path, thread, pr, pending }: { path: string; thread: PRThread; pr: PRRefDTO; pending: boolean }) {
+  const { reply } = usePRWriteMutations(path)
+  const [draft, setDraft] = useEditorDraft(path, `reply:${thread.id}`)
+  const [error, setError] = useState<string>()
+  const first = thread.comments[0]
+  if (!first) return null
+  if (!draft) {
+    return (
+      <Group>
+        <Anchor component="button" type="button" size="xs" c="grape" onClick={() => setDraft({ text: "" })}>
+          Reply
+        </Anchor>
+      </Group>
+    )
+  }
+  const post = (mode: PRWriteMode) => (body: string) => {
+    setError(undefined)
+    reply.mutateAsync({ thread_id: thread.id, in_reply_to: first.id, mode, body }).then(
+      () => setDraft(undefined),
+      (err: unknown) => setError(prWriteError(err)),
+    )
+  }
+  const busy = (mode: PRWriteMode) => reply.isPending && reply.variables?.mode === mode
+  return (
+    <CommentEditor
+      initial={draft.text}
+      onChange={(text) => setDraft((d) => d && { ...d, text })}
+      error={error}
+      onCancel={() => {
+        setDraft(undefined)
+        setError(undefined)
+      }}
+      actions={[
+        {
+          key: "review",
+          label: prReviewLabel(pr.number, pending),
+          tooltip: prReviewTooltip(pr.number),
+          busy: busy("review"),
+          onSubmit: post("review"),
+        },
+        {
+          key: "single",
+          label: replyNowLabel(pr.number),
+          tooltip: replyNowTooltip(pr.number),
+          variant: "light",
+          busy: busy("single"),
+          onSubmit: post("single"),
+        },
+      ]}
+    />
+  )
+}
+
+/** A card for one PR review thread: every comment, the place, and the way to GitHub. */
 export function PRThreadCard({ path, thread, pr, variant, unreadIds, prResource, onJump }: {
   path: string
   thread: PRThread
@@ -61,6 +124,9 @@ export function PRThreadCard({ path, thread, pr, variant, unreadIds, prResource,
   const [, setReviewOpen] = useReviewSidebar()
   const [, setTab] = useReviewSidebarTab()
   const [expanded, setExpanded] = useState(false)
+  // Replies need the PR, and the watcher on: otherwise there's no Reply.
+  const summary = usePRCommentsSummary(path).data
+  const canReply = !!summaryPR(summary) && summary?.state !== "off"
 
   const view = thread.view
   const shown = view?.status === "shown"
@@ -170,6 +236,7 @@ export function PRThreadCard({ path, thread, pr, variant, unreadIds, prResource,
             <Body text={c.body} imagesAsLinks />
           </Stack>
         ))}
+        {canReply && <ReplyBox path={path} thread={thread} pr={pr} pending={(summary?.pending_comments ?? 0) > 0} />}
       </Stack>
     </Frame>
   )

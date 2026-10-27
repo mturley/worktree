@@ -78,4 +78,61 @@ describe("CommentEditor", () => {
     expect(onCancel).toHaveBeenCalled()
     expect(seen.mock.calls.filter(([e]) => (e as KeyboardEvent).key === "Escape")).toHaveLength(0)
   })
+
+  describe("actions", () => {
+    function setupActions() {
+      const first = vi.fn()
+      const second = vi.fn()
+      const third = vi.fn()
+      render(
+        <MantineProvider>
+          <CommentEditor
+            initial=""
+            onCancel={vi.fn()}
+            actions={[
+              { key: "a", label: "Alpha", tooltip: "Alpha tip", disabledReason: "alpha is off", onSubmit: first },
+              { key: "b", label: "Beta", tooltip: "Beta tip", onSubmit: second, variant: "light" },
+              { key: "c", label: "Gamma", tooltip: "Gamma tip", onSubmit: third, variant: "light" },
+            ]}
+          />
+        </MantineProvider>,
+      )
+      return { first, second, third }
+    }
+
+    it("renders a button per action", () => {
+      setupActions()
+      for (const name of ["Alpha", "Beta", "Gamma"]) expect(screen.getByRole("button", { name })).toBeInTheDocument()
+    })
+
+    it("a disabled action keeps its button, and its tooltip gives the reason", async () => {
+      const { first } = setupActions()
+      await userEvent.type(screen.getByRole("textbox"), "x")
+      const alpha = screen.getByRole("button", { name: "Alpha" })
+      expect(alpha).toHaveAttribute("aria-disabled", "true")
+      await userEvent.hover(alpha)
+      expect(await screen.findByText("alpha is off")).toBeInTheDocument()
+      expect(screen.queryByText("Alpha tip")).toBeNull()
+      await userEvent.click(alpha)
+      expect(first).not.toHaveBeenCalled()
+    })
+
+    it("an enabled action's tooltip is its own, and a click runs it", async () => {
+      const { second } = setupActions()
+      await userEvent.type(screen.getByRole("textbox"), "x")
+      const gamma = screen.getByRole("button", { name: "Gamma" })
+      await userEvent.hover(gamma)
+      expect(await screen.findByText("Gamma tip")).toBeInTheDocument()
+      await userEvent.click(screen.getByRole("button", { name: "Beta" }))
+      expect(second).toHaveBeenCalledWith("x")
+    })
+
+    it("Ctrl+Enter runs the first enabled action", async () => {
+      const { first, second, third } = setupActions()
+      await userEvent.type(screen.getByRole("textbox"), "hi{Control>}{Enter}{/Control}")
+      expect(first).not.toHaveBeenCalled()
+      expect(second).toHaveBeenCalledWith("hi")
+      expect(third).not.toHaveBeenCalled()
+    })
+  })
 })

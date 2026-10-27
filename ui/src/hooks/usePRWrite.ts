@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { api } from "../api/client"
-import type { PRReviewEvent, PRWriteCheck, PRWriteMode, PRWriteTarget } from "../api/types"
+import { api, HttpError } from "../api/client"
+import type { PRCommentsSummary, PRRefDTO, PRReviewEvent, PRWriteCheck, PRWriteMode, PRWriteTarget } from "../api/types"
 
 /**
  * Whether a new comment on the target can be posted to the PR, per mode.
@@ -51,4 +51,22 @@ export function usePRWriteMutations(path: string) {
       onSettled: onSuccess,
     }),
   }
+}
+
+/**
+ * The worktree's PR, when it has one: the summary found it, or knew it before
+ * the watcher went off or a fetch failed. Undefined hides every GitHub button.
+ */
+export function summaryPR(summary: PRCommentsSummary | undefined): PRRefDTO | undefined {
+  if (!summary?.pr) return undefined
+  return summary.state === "ok" || summary.state === "off" || summary.state === "error" ? summary.pr : undefined
+}
+
+/** A failed write's message: a refusal's (409) reason, else the error's own. */
+export function prWriteError(err: unknown): string {
+  if (err instanceof HttpError && err.status === 409) {
+    const reason = (err.body as { reason?: unknown } | null | undefined)?.reason
+    if (typeof reason === "string" && reason) return reason
+  }
+  return err instanceof Error ? err.message : String(err)
 }
