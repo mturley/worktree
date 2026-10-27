@@ -100,6 +100,7 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
 
   // The anchor is the inner Box, not the Paper, because the cmux section
   // sits above it and must not be nested interactive content inside an <a>.
+  // cards.css stretches the anchor over the whole card, strip included.
   const link = clickable
     ? {
         component: "a" as const,
@@ -136,7 +137,8 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
       // Whole-card cue, from the backend's aggregate rather than the focus
       // lines: related resources are counted but never listed, so reading
       // focus_resources here would leave their unreads invisible.
-      style={cardEdgeStyle(!!w.has_unread)}
+      // position: relative anchors the link's whole-card overlay (cards.css).
+      style={{ ...cardEdgeStyle(!!w.has_unread), ...(clickable ? { position: "relative" as const } : {}) }}
     >
       <CmuxWorkspaceSection path={w.path} branch={w.branch} />
       <Box {...link}>

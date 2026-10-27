@@ -58,9 +58,47 @@
  * focus ring, which belongs to the thing that actually takes focus.
  */
 [data-card-link="true"]:focus-visible {
+  outline: none;
+}
+
+/*
+ * The anchor stretches over the whole card, cmux strip included, through an
+ * overlay the size of the Paper (which WorktreeCard makes position: relative).
+ * Without it, a click on the strip anywhere but its button did nothing, and
+ * the card felt unresponsive. The ring is drawn on the overlay too, so it
+ * goes round the whole card rather than only its lower half.
+ *
+ * Two things sit above the overlay: the strip's buttons, which must stay
+ * their own targets, and the anchor's own content, so its tooltips (the
+ * notify bell) still see the pointer. That content is inside the anchor, so
+ * clicking it still opens the worktree.
+ */
+[data-card-link="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+[data-card-link="true"]:focus-visible::after {
   outline: 2px solid var(--mantine-primary-color-filled);
   outline-offset: 2px;
   border-radius: var(--mantine-radius-sm);
+}
+
+[data-card-link="true"] > *,
+[data-interactive="true"] [data-cmux-section] button {
+  position: relative;
+  z-index: 1;
+}
+
+/*
+ * Mantine's Badge declares cursor: default, so the badges on a clickable card
+ * (unread count, task count, WORKTREE) showed an arrow over what is still
+ * the card's click target.
+ */
+[data-interactive="true"] .mantine-Badge-root {
+  cursor: inherit;
 }
 
 @media (prefers-reduced-motion: reduce) {

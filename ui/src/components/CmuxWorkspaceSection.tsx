@@ -55,9 +55,9 @@ export function ColorBar({ color }: { color?: string }) {
  * itself). The no-match row stays small and dimmed — "No cmux workspace" is
  * not a heading worth shouting.
  *
- * The section sits OUTSIDE the card's anchor, so it sets its own default
- * cursor: the card lights up on hover as one surface, but this strip is not
- * itself a navigation target.
+ * The section sits OUTSIDE the card's anchor in the DOM, but the anchor's
+ * overlay covers it (cards.css), so clicking anywhere but its buttons opens
+ * the worktree like the rest of the card.
  */
 /**
  * A workspace's color bar and title, display only. The section adds its
@@ -105,7 +105,7 @@ export function CmuxWorkspaceSection({ path, branch }: { path: string; branch: s
     // workspace header is the same wherever the section is used. The list
     // card places the section as a bare sibling of its content (no Stack gap
     // to inherit), so without this the header sat flush against the title.
-    <div data-cmux-section style={{ cursor: "default", marginBottom: 8 }}>
+    <div data-cmux-section style={{ marginBottom: 8 }}>
       <Stack gap={4}>
         {matches.length === 0 ? (
           <Group gap={8} wrap="nowrap" justify="space-between">
