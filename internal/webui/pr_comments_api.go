@@ -36,6 +36,9 @@ const (
 	prErrorTTL = 20 * time.Second
 )
 
+// errNoGitHubToken refuses a GitHub call with no token configured.
+var errNoGitHubToken = errors.New("no GitHub token is configured")
+
 // The summary/threads response states.
 const (
 	prStateOK      = "ok"
@@ -54,21 +57,21 @@ func (s *Server) fetchPRSummaries(token string, refs []wgithub.PRRef) (map[wgith
 	if s.FetchPRSummaries != nil {
 		return s.FetchPRSummaries(token, refs)
 	}
-	return wgithub.FetchPRSummaries(token, refs)
+	return ghLib.FetchPRSummaries(token, refs)
 }
 
 func (s *Server) fetchReviewThreads(token string, ref wgithub.PRRef) (*wgithub.PRReviewThreads, error) {
 	if s.FetchReviewThreads != nil {
 		return s.FetchReviewThreads(token, ref)
 	}
-	return wgithub.FetchReviewThreads(token, ref)
+	return ghLib.FetchReviewThreads(token, ref)
 }
 
 func (s *Server) fetchPRWriteContext(token string, ref wgithub.PRRef) (*wgithub.PRWriteContext, error) {
 	if s.FetchPRWriteContext != nil {
 		return s.FetchPRWriteContext(token, ref)
 	}
-	return wgithub.FetchPRWriteContext(token, ref)
+	return ghLib.FetchPRWriteContext(token, ref)
 }
 
 // githubToken is the configured GitHub token, "" when there is none. The
@@ -263,8 +266,13 @@ func (s *Server) loadPRComments(dir string) prComments {
 }
 
 // cachedPRWriteContext is one PR's write context, from the cache when fresh.
-// A failure is remembered for prErrorTTL.
+// A failure is remembered for prErrorTTL. An empty token is refused before
+// anything is fetched (and is not cached): GitHub is never asked
+// unauthenticated.
 func (s *Server) cachedPRWriteContext(token, id string, ref wgithub.PRRef) (*wgithub.PRWriteContext, error) {
+	if token == "" {
+		return nil, errNoGitHubToken
+	}
 	v, err := s.prThreadsCacheOrInit().getErrTTL("prctx|"+id, prWriteContextTTL, prErrorTTL, false, func() (interface{}, error) {
 		c, err := s.fetchPRWriteContext(token, ref)
 		if err == nil && c == nil {

@@ -5,7 +5,6 @@ import (
 	"time"
 
 	wconfig "github.com/mturley/watcher/config"
-	wgithub "github.com/mturley/watcher/github"
 	wjira "github.com/mturley/watcher/jira"
 	"github.com/mturley/worktree/internal/config"
 	"github.com/mturley/worktree/internal/selfid"
@@ -23,7 +22,7 @@ func (s *Server) StartSelfIdentity(retry time.Duration) (stop func()) {
 				if !s.WatcherEnabled(config.ServiceGitHub) {
 					return "", ErrWatcherDisabled
 				}
-				return wgithub.ViewerID(gh.Token)
+				return ghLib.ViewerID(gh.Token)
 			}
 		}
 		if jc, err := cfg.Jira(); err == nil {

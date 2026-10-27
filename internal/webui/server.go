@@ -209,18 +209,20 @@ type Server struct {
 	linkedCache *ttlCache
 
 	// FetchPRSummaries, FetchReviewThreads and FetchPRWriteContext are
-	// seams for tests; nil means the watcher library's calls.
+	// seams for tests; nil means ghLib (gh_lib.go), the watcher library's
+	// calls in production.
 	// prThreadsCache fronts them for /api/pr-comments* (pr_comments_api.go);
 	// lazily built.
 	FetchPRSummaries    func(token string, refs []wgithub.PRRef) (map[wgithub.PRRef]wgithub.PRSummary, error)
 	FetchReviewThreads  func(token string, ref wgithub.PRRef) (*wgithub.PRReviewThreads, error)
 	FetchPRWriteContext func(token string, ref wgithub.PRRef) (*wgithub.PRWriteContext, error)
-	// FetchRefs is a seam for tests; nil means gitfetch.FetchRefs, the
-	// targeted fetch loadPRTarget runs for a PR's missing commits.
+	// FetchRefs is a seam for tests; nil means ghLib.FetchRefs
+	// (gitfetch.FetchRefs in production), the targeted fetch loadPRTarget
+	// runs for a PR's missing commits.
 	FetchRefs func(ctx context.Context, dir, remote string, refspecs ...string) error
 	// StartReview, AddReviewThread, AddReviewReply, PostComment,
-	// PostReply and SubmitReview are seams for tests; nil means the
-	// watcher library's writes (pr_write_api.go).
+	// PostReply and SubmitReview are seams for tests; nil means ghLib, the
+	// watcher library's writes in production (pr_write_api.go).
 	StartReview     func(token, pullRequestID, commitOid string) (string, error)
 	AddReviewThread func(token, reviewID string, c wgithub.NewReviewComment) (int64, error)
 	AddReviewReply  func(token, reviewID, threadID, body string) (int64, error)

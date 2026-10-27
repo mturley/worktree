@@ -35,35 +35,35 @@ func (s *Server) startReview(token, pullRequestID, commitOid string) (string, er
 	if s.StartReview != nil {
 		return s.StartReview(token, pullRequestID, commitOid)
 	}
-	return wgithub.StartReview(token, pullRequestID, commitOid)
+	return ghLib.StartReview(token, pullRequestID, commitOid)
 }
 
 func (s *Server) addReviewThread(token, reviewID string, c wgithub.NewReviewComment) (int64, error) {
 	if s.AddReviewThread != nil {
 		return s.AddReviewThread(token, reviewID, c)
 	}
-	return wgithub.AddReviewThread(token, reviewID, c)
+	return ghLib.AddReviewThread(token, reviewID, c)
 }
 
 func (s *Server) addReviewReply(token, reviewID, threadID, body string) (int64, error) {
 	if s.AddReviewReply != nil {
 		return s.AddReviewReply(token, reviewID, threadID, body)
 	}
-	return wgithub.AddReviewReply(token, reviewID, threadID, body)
+	return ghLib.AddReviewReply(token, reviewID, threadID, body)
 }
 
 func (s *Server) postComment(token string, ref wgithub.PRRef, commitOid string, c wgithub.NewReviewComment) (int64, error) {
 	if s.PostComment != nil {
 		return s.PostComment(token, ref, commitOid, c)
 	}
-	return wgithub.PostComment(token, ref, commitOid, c)
+	return ghLib.PostComment(token, ref, commitOid, c)
 }
 
 func (s *Server) postReply(token string, ref wgithub.PRRef, inReplyTo int64, body string) (int64, error) {
 	if s.PostReply != nil {
 		return s.PostReply(token, ref, inReplyTo, body)
 	}
-	return wgithub.PostReply(token, ref, inReplyTo, body)
+	return ghLib.PostReply(token, ref, inReplyTo, body)
 }
 
 // invalidatePR drops the PR's cached threads and write context, so the next
@@ -84,7 +84,9 @@ func (s *Server) prForWrite(w http.ResponseWriter, dir string) (prComments, bool
 	pc := s.loadPRComments(dir)
 	switch {
 	// Checked before pr: the no-token state still names the PR it can't reach.
-	case pc.state == prStateNoToken:
+	case pc.state == prStateNoToken, pc.pr != nil && pc.token == "":
+		// (A PR with an empty token is refused here too, so no write path
+		// reaches GitHub unauthenticated whatever state found it.)
 		writeJSON(w, http.StatusConflict, map[string]string{"state": prStateNoToken, "error": "no GitHub token is configured"})
 	case pc.pr != nil:
 		return pc, true
@@ -384,7 +386,7 @@ func (s *Server) submitReview(token, reviewID, event, body string) error {
 	if s.SubmitReview != nil {
 		return s.SubmitReview(token, reviewID, event, body)
 	}
-	return wgithub.SubmitReview(token, reviewID, event, body)
+	return ghLib.SubmitReview(token, reviewID, event, body)
 }
 
 // reviewTarget is the commit a review's comments go on, the pending

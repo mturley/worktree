@@ -10,7 +10,6 @@ import (
 	"github.com/mturley/watcher"
 	wconfig "github.com/mturley/watcher/config"
 	watcherdb "github.com/mturley/watcher/db"
-	wgithub "github.com/mturley/watcher/github"
 	wjira "github.com/mturley/watcher/jira"
 	"github.com/mturley/watcher/polllog"
 	wslack "github.com/mturley/watcher/slack"
@@ -156,7 +155,7 @@ func (s *Server) pollAll() error {
 	if prs, _ := watcherdb.ActiveResources(s.DB, "pr"); len(prs) > 0 && s.WatcherEnabled(config.ServiceGitHub) {
 		if gh, err := cfg.GitHub(); err == nil {
 			s.markConfigured("github")
-			if err := wgithub.Poll(s.DB, gh.Token, prs, s.logger()); err != nil {
+			if err := ghLib.Poll(s.DB, gh.Token, prs, s.logger()); err != nil {
 				s.logger().Printf("github poll: %v", err)
 			}
 		} else {
@@ -215,7 +214,7 @@ func (s *Server) pollOne(r watcher.Resource) {
 	switch r.Type {
 	case "pr":
 		if gh, err := cfg.GitHub(); err == nil {
-			if err := wgithub.Poll(s.DB, gh.Token, one, s.logger()); err != nil {
+			if err := ghLib.Poll(s.DB, gh.Token, one, s.logger()); err != nil {
 				s.logger().Printf("pollOne github: %v", err)
 			}
 		} else {

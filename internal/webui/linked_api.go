@@ -186,7 +186,7 @@ func jiraBase(host string) string {
 type prAdapter struct{ token string }
 
 func (a prAdapter) Summaries(_ context.Context, refs []wgithub.PRRef) (map[wgithub.PRRef]wgithub.PRSummary, error) {
-	return wgithub.FetchPRSummaries(a.token, refs)
+	return ghLib.FetchPRSummaries(a.token, refs)
 }
 
 type slackAdapter struct{ s *Server }

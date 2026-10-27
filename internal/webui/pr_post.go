@@ -9,7 +9,6 @@ import (
 
 	wgithub "github.com/mturley/watcher/github"
 	"github.com/mturley/worktree/internal/config"
-	"github.com/mturley/worktree/internal/gitfetch"
 	"github.com/mturley/worktree/internal/gitutil"
 	"github.com/mturley/worktree/internal/reviewcomments"
 )
@@ -145,7 +144,7 @@ func (s *Server) fetchPRCommits(dir string, ref wgithub.PRRef, ctx *wgithub.PRWr
 	}
 	fetch := s.FetchRefs
 	if fetch == nil {
-		fetch = gitfetch.FetchRefs
+		fetch = ghLib.FetchRefs
 	}
 	c, cancel := context.WithTimeout(context.Background(), prFetchTimeout)
 	defer cancel()

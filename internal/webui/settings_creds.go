@@ -34,7 +34,7 @@ func (s *Server) validators() credValidators {
 		return *s.credCheck
 	}
 	return credValidators{
-		github: func(t string) error { return wgithub.Validate(t) },
+		github: ghLib.Validate,
 		jira:   wjira.Validate,
 		slack:  func(t, c string) error { return wslack.Validate(t, c) },
 		slackDomain: func(t, c string) string {
