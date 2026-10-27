@@ -14,6 +14,7 @@ import { useNotificationsEnabled } from "../hooks/useNotifyMode"
 import { NotesMarkdown } from "./NotesMarkdown"
 import { VISIBLE_FIELDS, matchWorktree } from "../lib/search"
 import { worktreeName } from "../lib/homeWorktree"
+import { WorktreeGlyph } from "./WorktreeGlyph"
 import { MatchWhy } from "./search/MatchWhy"
 import { SearchHighlight } from "./search/SearchHighlight"
 import { useSearchContext } from "./search/SearchContext"
@@ -153,7 +154,8 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
               c={hasWorkspace ? "dimmed" : undefined}
               style={{ overflowWrap: "anywhere" }}
             >
-              <SearchHighlight text={name} />
+              <WorktreeGlyph />
+              <span><SearchHighlight text={name} /></span>
             </Text>
             {!w.on_disk && <Badge size="xs" color="red">missing</Badge>}
             {/* Pushed to the right of the title row rather than the card's

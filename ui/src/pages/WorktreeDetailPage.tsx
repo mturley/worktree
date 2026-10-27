@@ -47,6 +47,7 @@ import { ThreadActionsContext } from "../components/slack/ThreadActionsContext"
 import { LinkedActionsContext } from "../components/linked/LinkedActionsContext"
 import { AddResourceModal } from "../components/AddResourceModal"
 import { parseThreadUrl } from "../lib/parseThreadUrl"
+import { WorktreeGlyph } from "../components/WorktreeGlyph"
 import { homeWorktreeHref, useEscHome, worktreeName } from "../lib/homeWorktree"
 import { SearchBar } from "../components/search/SearchBar"
 import { SearchSummary } from "../components/search/SearchSummary"
@@ -797,7 +798,8 @@ export function WorktreeDetailPage() {
                     c={hasWorkspace ? "dimmed" : undefined}
                     style={{ overflowWrap: "anywhere" }}
                   >
-                    {name}
+                    <WorktreeGlyph />
+                    <span>{name}</span>
                   </Title>
                   {!hasWorkspace && summary?.has_unread && <UnreadMarkerDot label="worktree has unreads" />}
                   {summary && !summary.on_disk && <Badge size="xs" color="red">missing</Badge>}

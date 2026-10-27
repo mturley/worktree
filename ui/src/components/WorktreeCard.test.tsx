@@ -223,7 +223,8 @@ describe("WorktreeCard title demotion inside cmux", () => {
   it("keeps the worktree name as the heading when there is no cmux workspace", async () => {
     vi.spyOn(api, "cmux").mockResolvedValue({ available: true, matches: {} })
     wrap(<WorktreeCard w={summary} />)
-    const title = await screen.findByText("foo")
+    // The name's own span sits inside the title text, after the ⎇ glyph.
+    const title = (await screen.findByText("foo")).parentElement!
     expect(getComputedStyle(title).fontWeight).toBe("700")
   })
 
@@ -236,7 +237,7 @@ describe("WorktreeCard title demotion inside cmux", () => {
     })
     wrap(<WorktreeCard w={summary} />)
     await screen.findByText("my workspace")
-    const title = screen.getByText("foo")
+    const title = screen.getByText("foo").parentElement!
     expect(getComputedStyle(title).fontWeight).toBe("600")
   })
 })
