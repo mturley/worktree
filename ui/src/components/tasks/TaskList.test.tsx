@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
@@ -216,6 +216,10 @@ function ToolbarHarness() {
 }
 
 describe("TaskListToolbar", () => {
+  afterAll(() => {
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+  })
+
   it("shows Include archived only with Show completed", async () => {
     const user = userEvent.setup()
     wrap(<ToolbarHarness />)
@@ -223,6 +227,18 @@ describe("TaskListToolbar", () => {
     await user.click(screen.getByRole("switch", { name: "Show completed" }))
     expect(screen.getByRole("switch", { name: "Include archived" })).toBeInTheDocument()
     expect(JSON.parse(window.localStorage.getItem(TASK_LIST_KEY)!).showCompleted).toBe(true)
+  })
+
+  it("offers State after Priority in the sort menu", async () => {
+    // The open dropdown scrolls its selected option into view; jsdom lacks it.
+    Element.prototype.scrollIntoView = () => {}
+    const user = userEvent.setup()
+    wrap(<ToolbarHarness />)
+    await user.click(screen.getByRole("textbox", { name: "Sort tasks" }))
+    const options = (await screen.findAllByRole("option")).map((o) => o.textContent)
+    expect(options).toEqual(["Custom", "Priority", "State", "Due date", "Updated"])
+    await user.click(screen.getByRole("option", { name: "State" }))
+    expect(JSON.parse(window.localStorage.getItem(TASK_LIST_KEY)!).sort).toBe("state")
   })
 
   it("has no pin", () => {
@@ -341,7 +357,7 @@ describe("TaskList expand footer", () => {
 })
 
 describe("TaskList", () => {
-  it("disables drag outside custom/priority with a hint", async () => {
+  it("disables drag outside custom/priority/state with a hint", async () => {
     setPrefs({ sort: "due" })
     const user = userEvent.setup()
     wrap(<TaskList scope={{ kind: "all" }} />)
@@ -349,7 +365,14 @@ describe("TaskList", () => {
     const grip = screen.getByRole("button", { name: "Drag to reorder alpha one" })
     expect(grip).toHaveAttribute("data-disabled")
     await user.hover(grip)
-    expect(await screen.findByText("Drag to reorder works in Custom or Priority order")).toBeInTheDocument()
+    expect(await screen.findByText("Drag to reorder works in Custom, Priority or State order")).toBeInTheDocument()
+  })
+
+  it("enables drag in state order", async () => {
+    setPrefs({ sort: "state" })
+    wrap(<TaskList scope={{ kind: "all" }} />)
+    await screen.findByText("beta two")
+    expect(screen.getByRole("button", { name: "Drag to reorder alpha one" })).not.toHaveAttribute("data-disabled")
   })
 
   it("enables drag in custom order", async () => {
@@ -732,6 +755,62 @@ describe("TaskList keyboard drag", () => {
     await act(async () => { save.resolve(undefined) })
   })
 
+  it("State sort: bands name the states; a drag into the other state sets it through the state API, with an undo", async () => {
+    setPrefs({ sort: "state" })
+    vi.mocked(api.tasks).mockResolvedValue([
+      task(4, { title: "star four", starred: true }),
+      task(1, { title: "alpha one", state: "in_progress" }),
+      task(2, { title: "beta two" }),
+      task(3, { title: "gamma" }),
+    ])
+    const save = deferred<undefined>()
+    vi.mocked(api.moveTask).mockReturnValue(save.promise as never)
+    vi.mocked(api.setTaskState).mockResolvedValue(task(2, { title: "beta two", state: "in_progress", undo_event_id: 77 }))
+    wrap(<TaskList scope={{ kind: "all" }} />)
+    await screen.findByText("gamma")
+    const shownSections = () =>
+      Array.from(document.querySelectorAll<HTMLElement>("[data-task-section]")).map((s) => s.dataset.taskSection)
+    expect(shownSections()).toEqual(["starred", "state:in_progress", "state:not_started"])
+
+    const grip = screen.getByRole("button", { name: "Drag to reorder beta two" })
+    lifted = grip.closest<HTMLElement>("[data-task-sortable]")
+    act(() => grip.focus())
+    fireEvent.keyDown(grip, { code: "Space", key: " " })
+    const overlay = await screen.findByTestId("task-drag-overlay")
+    const tags = Array.from(document.querySelectorAll<HTMLElement>("[data-task-band-tag]")).map((t) => t.textContent)
+    expect(tags).toEqual(["★ Starred", "In progress", "Not started"])
+    // Up onto alpha one: In progress.
+    fireEvent.keyDown(grip, { code: "ArrowUp", key: "ArrowUp" })
+    await waitFor(() => expect(overlay.querySelector("[data-task-drop-hint]")).toHaveTextContent("Set state: In progress"))
+    expect(document.querySelectorAll("[data-task-drop-hint]")).toHaveLength(1)
+
+    fireEvent.keyDown(grip, { code: "Space", key: " " })
+    await waitFor(() => expect(api.setTaskState).toHaveBeenCalledWith(2, "in_progress"))
+    // Already in its new section while the save is in flight.
+    expect(document.querySelector('[data-task-section="state:in_progress"] [data-task-sortable="2"]')).not.toBeNull()
+    expect(api.updateTask).not.toHaveBeenCalled()
+    await waitFor(() => expect(api.moveTask).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(api.moveTask).mock.calls[0][0]).toBe(2)
+    await act(async () => { save.resolve(undefined) })
+    expect(await screen.findByText("Marked “beta two” in progress")).toBeInTheDocument()
+  })
+
+  it("State sort: a starred task dragged into Not started is unstarred, its state unchanged", async () => {
+    setPrefs({ sort: "state" })
+    vi.mocked(api.tasks).mockResolvedValue([
+      task(4, { title: "star four", starred: true }),
+      task(2, { title: "beta two" }),
+    ])
+    vi.mocked(api.moveTask).mockResolvedValue(undefined as never)
+    vi.mocked(api.updateTask).mockResolvedValue(undefined as never)
+    wrap(<TaskList scope={{ kind: "all" }} />)
+    await screen.findByText("beta two")
+    await drag("star four", "ArrowDown")
+    await waitFor(() => expect(api.moveTask).toHaveBeenCalledTimes(1))
+    expect(api.updateTask).toHaveBeenCalledWith(4, { starred: false })
+    expect(api.setTaskState).not.toHaveBeenCalled()
+  })
+
   it("Custom sort: reorders through mutations.move", async () => {
     vi.mocked(api.moveTask).mockResolvedValue(undefined as never)
     wrap(<TaskList scope={{ kind: "all" }} />)
@@ -817,6 +896,26 @@ describe("dropPlanFor", () => {
     expect(plan(1, 5)).toEqual({ place: { before: 5 }, patch: { starred: false, priority: "medium" } })
     expect(dropHint(plan(4, 2).patch)).toBe("Star · Set priority: Medium")
     expect(dropHint(plan(3, 4).patch)).toBe("Unstar")
+  })
+
+  it("State sort: patches star and state by the section it lands in, and dropHint words it", () => {
+    const ss = buildSections([
+      task(1, { starred: true, state: "in_progress" }), task(2, { starred: true }),
+      task(3, { state: "in_progress" }), task(4), task(5),
+    ], { ...prefs, sort: "state" }, [])
+    const plan = (a: number, o: number, below = false) => dropPlanFor(ss, taskDraggableId(a), taskDraggableId(o), below)
+    expect(plan(4, 3, true)).toEqual({ place: { after: 3 }, patch: { state: "in_progress" } })
+    expect(plan(3, 4)).toEqual({ place: { before: 4 }, patch: { state: "not_started" } })
+    // Starred shows in progress first: [1, 2], so over 2 lands after 1.
+    expect(plan(4, 2)).toEqual({ place: { after: 1 }, patch: { starred: true } })
+    expect(plan(1, 4)).toEqual({ place: { before: 4 }, patch: { starred: false, state: "not_started" } })
+    expect(plan(2, 4)).toEqual({ place: { before: 4 }, patch: { starred: false } })
+    expect(dropHint(plan(4, 3, true).patch)).toBe("Set state: In progress")
+    expect(dropHint(plan(4, 2).patch)).toBe("Star")
+    expect(dropHint(plan(1, 4).patch)).toBe("Unstar · Set state: Not started")
+    expect(dropIndicatorFor(ss, taskDraggableId(4), taskDraggableId(3), true)).toMatchObject({
+      section: "state:in_progress", id: 3, edge: "after", patch: { state: "in_progress" },
+    })
   })
 
   it("ignores unknown ids", () => {

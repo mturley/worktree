@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery, useQueryClient, type QueryClient, type QueryKey } from "@tanstack/react-query"
 import { api } from "../api/client"
 import type { Priority, Task, TaskState } from "../api/types"
-import { applyMove } from "../lib/taskSections"
+import { applyMove, type DropPatch } from "../lib/taskSections"
 
 export type TaskScope =
   | { kind: "all" }
@@ -94,14 +94,22 @@ export function useTaskMutations(scope: TaskScope) {
    * Resolves (or rejects) only once the refetch it triggers has landed, so a
    * caller holding its own optimistic copy (TaskList) knows when the cache
    * has caught up with the server.
+   *
+   * A patch's star and priority are an edit; its state goes through the
+   * state-change API, as the row's state picker does, and the task that
+   * answers (with its undo_event_id) is what move resolves to, so the caller
+   * can offer the same undo. Undefined when the state did not change.
    */
-  const move = async (id: number, place: Place, patch?: { starred?: boolean; priority?: Priority }) => {
+  const move = async (id: number, place: Place, patch?: DropPatch): Promise<Task | undefined> => {
     const cancelled = qc.cancelQueries({ queryKey: scopeKey })
     const snapshot = qc.getQueriesData<Task[]>({ queryKey: scopeKey })
     qc.setQueriesData<Task[]>({ queryKey: scopeKey }, (old) => (old ? applyMove(old, id, place, patch) : old))
     await cancelled
+    let changed: Task | undefined
     try {
-      if (patch && (patch.starred !== undefined || patch.priority !== undefined)) await api.updateTask(id, patch)
+      const { state, ...edit } = patch ?? {}
+      if (edit.starred !== undefined || edit.priority !== undefined) await api.updateTask(id, edit)
+      if (state !== undefined) changed = await api.setTaskState(id, state)
       await api.moveTask(id, place)
     } catch (e) {
       restore(qc, snapshot)
@@ -109,6 +117,7 @@ export function useTaskMutations(scope: TaskScope) {
     } finally {
       await settle()
     }
+    return changed
   }
 
   return { create, update, setState, move }

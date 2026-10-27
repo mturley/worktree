@@ -181,8 +181,17 @@ because a view only ever sees a subset.
   starred tasks are sorted by priority too, and a drop into a starred group
   stars the task and sets that priority, while a drop of a starred task into
   an unstarred group unstars it and sets that priority.
+- **Sort: State**: open tasks in two groups, In progress then Not started,
+  each in master order. Starred stays ONE group on top (in progress first,
+  then not started, master order within each). Dragging within a group
+  reorders it; dragging into the other state's group changes the task's
+  state (through the state change, with the same undo as the row's state
+  picker) and places it at the drop point. A drop into Starred stars the
+  task and leaves its state alone; a starred task dropped into a state group
+  is unstarred and takes that state if it differs.
 - **Other sorts** (due date, recently updated **(my call on the list)**):
-  dragging is disabled, with a hint that it works only in Custom or Priority.
+  dragging is disabled, with a hint that it works only in Custom, Priority
+  or State.
 - **Completed group.** With "Show completed" on, completed tasks sit in a
   Completed group at the bottom, newest `completed_at` first, not draggable.
   This group is the "recently completed" view.
@@ -377,7 +386,7 @@ menus, each option's checkbox or mark sits at its left, at the row's size.
 
 ### The list
 
-- Toolbar: "Sort:" (Custom / Priority / Due date / Updated), its closed
+- Toolbar: "Sort:" (Custom / Priority / State / Due date / Updated), its closed
   dropdown just wide enough for the option it shows, and "Show completed" with its "Include
   archived" sub-toggle. There is no priority filter: Priority sort groups the
   list by priority. There is no Pin
@@ -385,18 +394,21 @@ menus, each option's checkbox or mark sits at its left, at the row's size.
   "The task panel").
 - Starred group at the top (in Priority order, one starred group per
   priority), then the rest (in Priority order, one group per
-  priority), then (if shown) Completed. **No section has a header**, in any
+  priority; in State order, In progress then Not started), then (if
+  shown) Completed. **No section has a header**, in any
   sort. A section with no tasks is not rendered at all, so there are **no
-  drop strips**; an empty priority group is hidden. Dropping onto a
+  drop strips**; an empty priority or state group is hidden. Dropping onto a
   non-empty section still works.
 - While a drag is on, each section it can land in shows as a faint band
   with a small tag naming it (`★ Starred`, `Tasks`, `★ High` … `★ No
-  priority`, `!!! High` … `No priority`), drawn without moving any row.
+  priority`, `!!! High` … `No priority`, `In progress`, `Not started`),
+  drawn without moving any row.
   Over a section other than the dragged task's own, the band is outlined
   and a line marks where it lands, and the dragged task itself carries a
   hint just above its top-left corner saying what the drop changes:
-  "Star" / "Unstar", "Set priority: High" / "Remove priority", or both
-  ("Star · Set priority: Medium"). The band tags stay as labels.
+  "Star" / "Unstar", "Set priority: High" / "Remove priority", "Set
+  state: In progress", or a combination ("Star · Set priority: Medium",
+  "Unstar · Set state: Not started"). The band tags stay as labels.
 - The existing search box narrows task lists too, matching title and
   description **(my call; it follows "search is a filter" from the Search
   design)**.

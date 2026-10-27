@@ -23,9 +23,10 @@ const sec = (ss: TaskSection[], key: string) => ss.find((s) => s.key === key)
 const STARRED_KEYS = ["starred:high", "starred:medium", "starred:low", "starred:none"]
 
 describe("canDrag", () => {
-  it("allows custom and priority only", () => {
+  it("allows custom, priority and state only", () => {
     expect(canDrag("custom")).toBe(true)
     expect(canDrag("priority")).toBe(true)
+    expect(canDrag("state")).toBe(true)
     expect(canDrag("due")).toBe(false)
     expect(canDrag("updated")).toBe(false)
   })
@@ -182,6 +183,41 @@ describe("buildSections: priority", () => {
 
 })
 
+describe("buildSections: state", () => {
+  const tasks = [
+    mk(1, "e", { state: "in_progress" }),
+    mk(2, "d"),
+    mk(3, "c", { starred: true }),
+    mk(4, "b", { state: "in_progress" }),
+    mk(5, "a"),
+    mk(6, "f", { starred: true, state: "in_progress" }),
+    mk(7, "g", { state: "done", completed_at: "2026-10-02T00:00:00Z" }),
+  ]
+
+  it("returns one Starred (in progress first), then in progress, then not started, each in master order", () => {
+    const ss = buildSections(tasks, prefs({ sort: "state", showCompleted: true }), [])
+    expect(keys(ss)).toEqual(["starred", "state:in_progress", "state:not_started", "completed"])
+    expect(ids(sec(ss, "starred"))).toEqual([6, 3])
+    expect(ids(sec(ss, "state:in_progress"))).toEqual([4, 1])
+    expect(ids(sec(ss, "state:not_started"))).toEqual([5, 2])
+    expect(ids(sec(ss, "completed"))).toEqual([7])
+  })
+
+  it("marks each section with the star and state dropping into it implies, all draggable", () => {
+    const ss = buildSections(tasks, prefs({ sort: "state" }), [])
+    expect(sec(ss, "starred")).toMatchObject({ starred: true, draggable: true })
+    expect(sec(ss, "starred")?.state).toBeUndefined()
+    expect(sec(ss, "state:in_progress")).toMatchObject({ starred: false, state: "in_progress", draggable: true })
+    expect(sec(ss, "state:not_started")).toMatchObject({ starred: false, state: "not_started", draggable: true })
+  })
+
+  it("returns the state sections even when empty (TaskList hides them)", () => {
+    const ss = buildSections([mk(1, "a")], prefs({ sort: "state" }), [])
+    expect(keys(ss)).toEqual(["starred", "state:in_progress", "state:not_started"])
+    expect(ids(sec(ss, "state:in_progress"))).toEqual([])
+  })
+})
+
 describe("buildSections: filters", () => {
   const tasks = [
     mk(1, "a", { priority: "high", title: "Fix OAuth" }),
@@ -325,6 +361,55 @@ describe("planDrop", () => {
         const plan = planDrop(ss, id, to, i)
         expect(where(applyMove(tasks, id, plan.place!, plan.patch), id)).toBe(to)
       }
+    })
+  })
+
+  describe("State sort", () => {
+    // starred [1 (in progress), 2], in progress [3, 4], not started [5, 6]
+    const tasks = [
+      mk(1, "a", { starred: true, state: "in_progress" }),
+      mk(2, "b", { starred: true }),
+      mk(3, "c", { state: "in_progress" }),
+      mk(4, "d", { state: "in_progress" }),
+      mk(5, "e"),
+      mk(6, "f"),
+    ]
+    const ss = buildSections(tasks, prefs({ sort: "state" }), [])
+
+    it("not started into in progress: sets its state", () => {
+      expect(planDrop(ss, 5, "state:in_progress", 1)).toEqual({ place: { after: 3 }, patch: { state: "in_progress" } })
+    })
+
+    it("in progress into not started: sets its state", () => {
+      expect(planDrop(ss, 3, "state:not_started", 0)).toEqual({ place: { before: 5 }, patch: { state: "not_started" } })
+    })
+
+    it("within a state: a pure reorder", () => {
+      expect(planDrop(ss, 5, "state:not_started", 1)).toEqual({ place: { after: 6 } })
+    })
+
+    it("into Starred: stars it, state unchanged", () => {
+      expect(planDrop(ss, 6, "starred", 0)).toEqual({ place: { before: 1 }, patch: { starred: true } })
+    })
+
+    it("out of Starred: unstars it, and sets the state only where it differs", () => {
+      expect(planDrop(ss, 1, "state:not_started", 0)).toEqual({ place: { before: 5 }, patch: { starred: false, state: "not_started" } })
+      expect(planDrop(ss, 1, "state:in_progress", 0)).toEqual({ place: { before: 3 }, patch: { starred: false } })
+    })
+
+    it("applyMove lands each of those in its new section at once", () => {
+      const where = (list: Task[], id: number) =>
+        buildSections(list, prefs({ sort: "state" }), []).find((s) => s.tasks.some((t) => t.id === id))?.key
+      const cases: [number, string, number][] = [
+        [5, "state:in_progress", 1], [3, "state:not_started", 0], [6, "starred", 0], [1, "state:not_started", 0],
+      ]
+      for (const [id, to, i] of cases) {
+        const plan = planDrop(ss, id, to, i)
+        expect(where(applyMove(tasks, id, plan.place!, plan.patch), id)).toBe(to)
+      }
+      const plan = planDrop(ss, 5, "state:in_progress", 1)
+      const moved = buildSections(applyMove(tasks, 5, plan.place!, plan.patch), prefs({ sort: "state" }), [])
+      expect(ids(sec(moved, "state:in_progress"))).toEqual([3, 5, 4])
     })
   })
 

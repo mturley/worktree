@@ -1417,16 +1417,16 @@ to break.
   section is a band (`data-task-band`: an inset outline and a faint wash)
   with a tag in its top-right corner naming it (`data-task-band-tag`:
   `★ Starred`, `Tasks`, `★ <PRIORITY_LABEL>`/`★ No priority` for Priority
-  sort's starred groups, or the priority's `PRIORITY_MARK` and
-  `PRIORITY_LABEL`). The tag is absolutely placed and the band adds no
+  sort's starred groups, the priority's `PRIORITY_MARK` and
+  `PRIORITY_LABEL`, or State sort's `TASK_STATE_LABEL`). The tag is absolutely placed and the band adds no
   border or margin, so starting a drag moves nothing. The tags stay put
   for the whole drag. What a cross-section drop will change rides on the
   dragged copy instead (`data-task-drop-hint`, `.task-drop-hint`, inside
   the `DragOverlay`'s `.task-drag-overlay`, absolutely placed just above
   its top-left corner so it sits next to the pointer and moves nothing):
   `dropIndicatorFor` carries the plan's `patch`, and `dropHint` words it
-  ("Star"/"Unstar", "Set priority: X"/"Remove priority", joined with
-  ` · ` when both), so the hint can't disagree with the drop. It was first
+  ("Star"/"Unstar", "Set priority: X"/"Remove priority", "Set state: X",
+  joined with ` · `), so the hint can't disagree with the drop. It was first
   drawn on the target section in place of its tag, far from the pointer.
 - **Priority sort splits Starred by priority.** `buildSections` returns
   `starred:high`, `starred:medium`, `starred:low`, `starred:none` (each
@@ -1437,6 +1437,19 @@ to break.
   `planDrop`'s patch falls out of the section: star and/or priority, each
   only when it differs, and `applyMove` applies both, so the row lands in
   its new group at once.
+- **State sort splits the rest by state.** `buildSections` returns one
+  `starred` (ordered by `byState`: in progress first, then master order),
+  then `state:in_progress` and `state:not_started` (each `starred: false`
+  with its `state`, master order within). `canDrag("state")` is true, and
+  `planDrop` adds `state` to the patch when the destination's state
+  differs (`DropPatch`). State is not an edit: `useTaskMutations().move`
+  sends star/priority through `updateTask`, then the state through
+  `setTaskState` (the row's state picker's API), then `moveTask`, and
+  resolves to the task `setTaskState` answered, so `TaskList` offers the
+  same undo toast as the picker (`taskUndoMessage.state`). A failure rolls
+  back like any other move. Starred is one section here, ordered by state,
+  so a reorder within it places by master order but the row still shows
+  in its state's run of the starred block.
 - **Drops are optimistic, twice over.** `applyMove` (`lib/taskSections.ts`)
   computes the list as the server will have it — the patch applied and
   every task re-ranked in its new master order, because display order
@@ -1479,8 +1492,8 @@ to break.
   opens the modal). Quick add's star keeps ONE
   label and lets `aria-pressed` carry the state.
 - **Where quick add puts a task** (`quickAddAnchor` in `lib/taskSections.ts`):
-  after the last visible open task in Custom and Priority sort, where the
-  display is master order; in Due and Updated, after the visible
+  after the last visible open task in Custom, Priority and State sort, where
+  the display is (per section) master order; in Due and Updated, after the visible
   open task last in MASTER order (greatest `rank`), since display order
   means nothing there. Its priority picker starts at the list's priority
   filter when one is on (`defaultPriority`), or a new task would be created

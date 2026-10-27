@@ -116,7 +116,7 @@ describe("useTaskMutations", () => {
     let reject!: (e: Error) => void
     vi.mocked(api.moveTask).mockReturnValue(new Promise<void>((_, rj) => { reject = rj }))
 
-    let p!: Promise<void>
+    let p!: Promise<unknown>
     act(() => { p = result.current.m.move(3, { after: 1 }) })
     // At once, before anything awaits, and in the order the list SHOWS: by rank.
     expect(shown(cached())).toEqual([1, 3, 2])
@@ -148,6 +148,24 @@ describe("useTaskMutations", () => {
     expect(order).toEqual(["update", "move"])
     expect(api.updateTask).toHaveBeenCalledWith(3, { starred: true })
     expect(api.moveTask).toHaveBeenCalledWith(3, { before: 1 })
+  })
+
+  it("move with a state patch changes state through the state API, and answers its task", async () => {
+    const { result } = setup({ kind: "all" })
+    await waitFor(() => expect(result.current.q.data).toBeDefined())
+    const order: string[] = []
+    vi.mocked(api.updateTask).mockImplementation(async () => { order.push("update"); return task(3) })
+    vi.mocked(api.setTaskState).mockImplementation(async () => {
+      order.push("state")
+      return task(3, { state: "in_progress", undo_event_id: 5 })
+    })
+    vi.mocked(api.moveTask).mockImplementation(async () => { order.push("move") })
+    let got: Task | undefined
+    await act(async () => { got = await result.current.m.move(3, { before: 1 }, { starred: false, state: "in_progress" }) })
+    expect(order).toEqual(["update", "state", "move"])
+    expect(api.updateTask).toHaveBeenCalledWith(3, { starred: false })
+    expect(api.setTaskState).toHaveBeenCalledWith(3, "in_progress")
+    expect(got?.undo_event_id).toBe(5)
   })
 
   it("create sends the worktree scope's context", async () => {

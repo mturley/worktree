@@ -20,7 +20,7 @@ export const DEFAULT_TASK_LIST_PREFS: StoredTaskListPrefs = {
   collapsed: false,
 }
 
-const SORTS: readonly TaskSort[] = ["custom", "priority", "due", "updated"]
+const SORTS: readonly TaskSort[] = ["custom", "priority", "state", "due", "updated"]
 
 /** Stored values over the defaults, each field checked on its own: a bad one falls back alone. */
 export function parseTaskListPrefs(raw: string | null): StoredTaskListPrefs {

@@ -1,6 +1,7 @@
 import type { UniqueIdentifier } from "@dnd-kit/core"
 import { planDrop, type DropPlan, type TaskSection } from "../../lib/taskSections"
 import { PRIORITY_LABEL } from "./TaskPriorityMenu"
+import { TASK_STATE_LABEL } from "./TaskStateCheckbox"
 /*
  * dnd-kit ids for the task list. Rows are the only draggables and the only
  * drop targets, and a row is "task:<id>".
@@ -48,8 +49,8 @@ export interface DropIndicator {
 
 /**
  * A drop's patch in words, for the hint on the section it will land in:
- * "Star"/"Unstar", "Set priority: High"/"Remove priority", or both.
- * Undefined when the drop changes neither.
+ * "Star"/"Unstar", "Set priority: High"/"Remove priority", "Set state: In
+ * progress", joined with " · ". Undefined when the drop changes none.
  */
 export function dropHint(patch: DropPlan["patch"]): string | undefined {
   const parts: string[] = []
@@ -57,6 +58,7 @@ export function dropHint(patch: DropPlan["patch"]): string | undefined {
   if (patch?.priority !== undefined) {
     parts.push(patch.priority === "none" ? "Remove priority" : `Set priority: ${PRIORITY_LABEL[patch.priority]}`)
   }
+  if (patch?.state !== undefined) parts.push(`Set state: ${TASK_STATE_LABEL[patch.state]}`)
   return parts.length > 0 ? parts.join(" · ") : undefined
 }
 

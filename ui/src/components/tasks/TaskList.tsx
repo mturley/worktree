@@ -28,6 +28,7 @@ import { useTaskModal } from "./modal/TaskModalProvider"
 import { PRIORITY_LABEL, PRIORITY_MARK } from "./TaskPriorityMenu"
 import { TaskQuickAdd } from "./TaskQuickAdd"
 import { TaskRow } from "./TaskRow"
+import { TASK_STATE_LABEL } from "./TaskStateCheckbox"
 import { taskUndoMessage, useOfferTaskUndo } from "./taskUndo"
 import { dropHint, dropIndicatorFor, dropPlanFor, taskDraggableId, type DropIndicator } from "./taskDrag"
 
@@ -45,7 +46,7 @@ export function cappedMaxHeight(maxRows: number): string {
   return `min(${maxRows * ROW_PX}px, ${VIEWPORT_CAP})`
 }
 
-const DRAG_HINT = "Drag to reorder works in Custom or Priority order"
+const DRAG_HINT = "Drag to reorder works in Custom, Priority or State order"
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
@@ -196,6 +197,8 @@ function bandTag(section: TaskSection): string {
     const mark = PRIORITY_MARK[section.priority]
     return mark ? `${mark.text} ${PRIORITY_LABEL[section.priority]}` : "No priority"
   }
+  // State sort's groups: "In progress", "Not started".
+  if (section.state) return TASK_STATE_LABEL[section.state]
   return section.starred ? "★ Starred" : "Tasks"
 }
 
@@ -262,6 +265,7 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
   const { terms } = useSearchContext()
   const query = useTasks(scope, { completed: prefs.showCompleted, archived: prefs.includeArchived })
   const mutations = useTaskMutations(scope)
+  const offerUndo = useOfferTaskUndo()
   const { open } = useTaskModal()
   const [activeId, setActiveId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -333,8 +337,15 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
     setPending(applyMove(tasks, id, plan.place, plan.patch))
     setError(null)
     saving.current++
+    // A drop that changes state offers the same undo as the row's state
+    // picker; the title as dropped, so a rename meanwhile can't change it.
+    const title = tasks.find((t) => t.id === id)?.title ?? ""
+    const state = plan.patch?.state
     mutations
       .move(id, plan.place, plan.patch)
+      .then((t) => {
+        if (t && state) offerUndo(t.undo_event_id, taskUndoMessage.state(title, state))
+      })
       .catch((e: unknown) => setError(errorText(e)))
       .finally(() => {
         saving.current--

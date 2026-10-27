@@ -37,6 +37,12 @@ describe("taskListPrefs", () => {
     expect(readTaskListPrefs()).toEqual({ ...DEFAULT_TASK_LIST_PREFS, showCompleted: true })
   })
 
+  it("accepts every sort, State included", () => {
+    for (const sort of ["custom", "priority", "state", "due", "updated"]) {
+      expect(parseTaskListPrefs(JSON.stringify({ sort })).sort).toBe(sort)
+    }
+  })
+
   it("ignores unparseable JSON", () => {
     window.localStorage.setItem(TASK_LIST_KEY, "{nope")
     expect(readTaskListPrefs()).toEqual(DEFAULT_TASK_LIST_PREFS)

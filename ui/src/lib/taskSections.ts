@@ -1,4 +1,4 @@
-import type { Priority, Task, TaskLink } from "../api/types"
+import type { Priority, Task, TaskLink, TaskState } from "../api/types"
 import { worktreeName } from "./homeWorktree"
 import { shortResourceRef } from "./resourceRef"
 import { matchTask } from "./search"
@@ -9,7 +9,7 @@ import { matchTask } from "./search"
  * "The task row". (lib/taskList.ts is unrelated: Markdown checkboxes.)
  */
 
-export type TaskSort = "custom" | "priority" | "due" | "updated"
+export type TaskSort = "custom" | "priority" | "state" | "due" | "updated"
 
 export interface TaskListPrefs {
   sort: TaskSort
@@ -20,7 +20,8 @@ export interface TaskListPrefs {
 export interface TaskSection {
   /**
    * Stable: starred, rest, high, medium, low, none, completed; in Priority
-   * sort starred is split into starred:high … starred:none.
+   * sort starred is split into starred:high … starred:none; in State sort
+   * rest is split into state:in_progress and state:not_started.
    */
   key: string
   tasks: Task[]
@@ -29,19 +30,31 @@ export interface TaskSection {
   starred?: boolean
   /** What dropping INTO this section implies for the task's priority. */
   priority?: Priority
+  /** What dropping INTO this section implies for the task's state. */
+  state?: TaskState
 }
+
+/**
+ * What a drop changes besides the order. `state` is not an edit: it goes
+ * through the state-change API (useTaskMutations.move), like the row's own
+ * state picker.
+ */
+export type DropPatch = { starred?: boolean; priority?: Priority; state?: TaskState }
 
 export interface DropPlan {
   place?: { after: number } | { before: number }
-  patch?: { starred?: boolean; priority?: Priority }
+  patch?: DropPatch
 }
 
 /** Priority sort's groups, in display order. */
 const PRIORITY_SECTIONS: Priority[] = ["high", "medium", "low", "none"]
 
+/** State sort's open groups, in display order. */
+const STATE_SECTIONS: TaskState[] = ["in_progress", "not_started"]
+
 /** Dragging rewrites the master order, so it only makes sense where it is shown. */
 export function canDrag(sort: TaskSort): boolean {
-  return sort === "custom" || sort === "priority"
+  return sort === "custom" || sort === "priority" || sort === "state"
 }
 
 /**
@@ -75,6 +88,11 @@ function byDue(a: Task, b: Task): number {
   return byMaster(a, b)
 }
 
+/** In progress above not started, master order within each. */
+function byState(a: Task, b: Task): number {
+  return STATE_SECTIONS.indexOf(a.state) - STATE_SECTIONS.indexOf(b.state) || byMaster(a, b)
+}
+
 function byUpdated(a: Task, b: Task): number {
   return cmpStr(b.updated_at, a.updated_at) || byMaster(a, b)
 }
@@ -84,7 +102,7 @@ function byCompleted(a: Task, b: Task): number {
 }
 
 const SORTS: Record<TaskSort, (a: Task, b: Task) => number> = {
-  custom: byMaster, priority: byMaster, due: byDue, updated: byUpdated,
+  custom: byMaster, priority: byMaster, state: byState, due: byDue, updated: byUpdated,
 }
 
 /**
@@ -92,8 +110,10 @@ const SORTS: Record<TaskSort, (a: Task, b: Task) => number> = {
  * on top and appear only there. In Priority sort Starred is itself split by
  * priority (starred:high … starred:none, ahead of the unstarred groups), and
  * every one of those sections is returned even when empty (TaskList renders
- * only sections that hold tasks). Completed is last, newest first, when
- * shown.
+ * only sections that hold tasks). In State sort Starred stays one section,
+ * in progress first, and the rest splits into state:in_progress then
+ * state:not_started, each in master order. Completed is last, newest first,
+ * when shown.
  */
 export function buildSections(tasks: Task[], prefs: TaskListPrefs, terms: string[]): TaskSection[] {
   // Archived gates only done tasks: an open task whose links are all
@@ -126,6 +146,13 @@ export function buildSections(tasks: Task[], prefs: TaskListPrefs, terms: string
       sections.push({
         key: p, tasks: rest.filter((t) => t.priority === p),
         draggable, starred: false, priority: p,
+      })
+    }
+  } else if (prefs.sort === "state") {
+    for (const st of STATE_SECTIONS) {
+      sections.push({
+        key: `state:${st}`, tasks: rest.filter((t) => t.state === st),
+        draggable, starred: false, state: st,
       })
     }
   } else {
@@ -171,6 +198,7 @@ export function planDrop(sections: TaskSection[], activeId: number, toSection: s
   if (dest !== from) {
     if (dest.starred !== undefined && dest.starred !== active.starred) patch.starred = dest.starred
     if (dest.priority !== undefined && dest.priority !== active.priority) patch.priority = dest.priority
+    if (dest.state !== undefined && dest.state !== active.state) patch.state = dest.state
   }
 
   const others = dest.tasks.filter((t) => t.id !== activeId)
@@ -195,7 +223,7 @@ export function planDrop(sections: TaskSection[], activeId: number, toSection: s
  */
 export function applyMove(
   list: Task[], id: number, place: { after: number } | { before: number },
-  patch?: { starred?: boolean; priority?: Priority },
+  patch?: DropPatch,
 ): Task[] {
   const moving = list.find((t) => t.id === id)
   if (!moving) return list
