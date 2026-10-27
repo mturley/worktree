@@ -84,6 +84,7 @@ vi.mock("../../api/client", async (orig) => {
 
 import { HttpError } from "../../api/client"
 import { editDraftKey, useDeletedDrafts, useEditorDraft } from "../../hooks/useReviewComments"
+import { useShowPRComments } from "../../hooks/usePRComments"
 import { setReviewSidebar } from "../../hooks/useReviewSidebar"
 import DiffView from "./DiffView"
 
@@ -812,5 +813,116 @@ describe("DiffView PR comments", () => {
     prSetup(summary({ open_threads: 1 }), threads([prThread("t1")]))
     await waitFor(() => expect(screen.getByTestId("diff-body").querySelector('[data-pr-thread-id="t1"]')).not.toBeNull())
     expect(screen.getByLabelText("has comments")).toBeInTheDocument()
+  })
+
+  it("keeps the sidebar open when a poll drops the open count to 0", async () => {
+    let open = 1
+    window.sessionStorage.setItem("worktree.reviewSidebar", "true")
+    window.sessionStorage.setItem("worktree.reviewSidebarTab", "pr")
+    apiMock.prComments.mockImplementation(async () => summary({ open_threads: open }))
+    apiMock.prThreads.mockImplementation(async () => threads([prThread("t1")]))
+    setup()
+    await screen.findByRole("tab", { name: "PR comments (1)" })
+    open = 0
+    await act(() => client.invalidateQueries({ queryKey: ["pr-comments"] }))
+    await screen.findByRole("tab", { name: "PR comments (0)" })
+    expect(window.sessionStorage.getItem("worktree.reviewSidebar")).toBe("true")
+    // Still closable.
+    expect(screen.getByRole("button", { name: "Close comments sidebar" })).toBeInTheDocument()
+  })
+
+  it("opens the sidebar for &prcomment on a resolved thread and scrolls to its card", async () => {
+    window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?diff&prcomment=11`)
+    prSetup(summary({ open_threads: 0 }), threads([prThread("t1", { resolved: true, view: { status: "outdated" } })]))
+    await waitFor(() => expect(scrollMock.scrollToSidebarThread).toHaveBeenCalledWith("t1"))
+    expect(await screen.findByRole("tab", { name: "PR comments (0)" })).toHaveAttribute("aria-selected", "true")
+    expect(document.querySelector('[data-pr-thread-id="t1"]')).not.toBeNull()
+    await waitFor(() => expect(window.location.search).toBe("?diff"))
+    expect(window.sessionStorage.getItem("worktree.reviewSidebar")).toBe("true")
+  })
+
+  it("handles a second &prcomment in the same mounted view", async () => {
+    window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?diff&prcomment=11`)
+    prSetup(summary({ open_threads: 1 }), threads([prThread("t1")]))
+    await waitFor(() => expect(window.location.search).toBe("?diff"))
+    expect(scrollMock.scrollToPRThread).toHaveBeenCalledTimes(1)
+    await userEvent.click(screen.getByRole("tab", { name: /^Local comments/ }))
+    const show = renderHook(() => useShowPRComments()).result
+    act(() => show.current[1](false))
+    act(() => window.history.pushState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?diff&prcomment=11`))
+    await waitFor(() => expect(scrollMock.scrollToPRThread).toHaveBeenCalledTimes(2))
+    expect(screen.getByRole("tab", { name: "PR comments (1)" })).toHaveAttribute("aria-selected", "true")
+    expect(window.localStorage.getItem("worktree.showPRComments")).toBe("true")
+    await waitFor(() => expect(window.location.search).toBe("?diff"))
+  })
+
+  it("doesn't refetch threads or the patch when only the summary's fingerprint moves", async () => {
+    let fp = "P1"
+    apiMock.prComments.mockImplementation(async () => summary({ open_threads: 1, fingerprint: fp }))
+    apiMock.prThreads.mockImplementation(async () => threads([prThread("t1")]))
+    setup()
+    await waitFor(() => expect(screen.getByTestId("diff-body").querySelector('[data-pr-thread-id="t1"]')).not.toBeNull())
+    const calls = apiMock.prThreads.mock.calls.length
+    fp = "P2"
+    await act(() => client.invalidateQueries({ queryKey: ["pr-comments"] }))
+    await screen.findByText("New PR comments ·")
+    expect(apiMock.prThreads).toHaveBeenCalledTimes(calls)
+    expect(apiMock.diffPatch).toHaveBeenCalledTimes(1)
+  })
+
+  it("drops the tree's PR thread dots with the switch off", async () => {
+    prSetup(summary({ open_threads: 1 }), threads([prThread("t1")]))
+    await screen.findByLabelText("has comments")
+    const show = renderHook(() => useShowPRComments()).result
+    act(() => show.current[1](false))
+    await waitFor(() => expect(screen.queryByLabelText("has comments")).not.toBeInTheDocument())
+  })
+
+  it("catches the summary up after a threads load, so a newer list doesn't read as stale", async () => {
+    let fp = "P1"
+    apiMock.prComments.mockImplementation(async () => summary({ open_threads: 1, fingerprint: fp === "P3" ? "P3" : "P2" }))
+    apiMock.prThreads.mockImplementation(async () => threads([prThread("t1")], fp))
+    setup()
+    const strip = await screen.findByTestId("diff-stale")
+    // Comments moved on again by the time Refresh fetches.
+    fp = "P3"
+    const summaries = apiMock.prComments.mock.calls.length
+    await userEvent.click(within(strip).getByRole("button", { name: "Refresh" }))
+    await waitFor(() => expect(apiMock.prComments.mock.calls.length).toBeGreaterThan(summaries))
+    await waitFor(() => expect(screen.queryByTestId("diff-stale")).not.toBeInTheDocument())
+  })
+
+  it("keeps the thread cards on screen while a Refresh refetches them", async () => {
+    let answer: (t: PRThreads) => void = () => {}
+    let n = 0
+    apiMock.prComments.mockImplementation(async () => summary({ open_threads: 1, fingerprint: "P2" }))
+    apiMock.prThreads.mockImplementation(() =>
+      n++ === 0 ? Promise.resolve(threads([prThread("t1")], "P1")) : new Promise<PRThreads>((r) => (answer = r)),
+    )
+    setup()
+    const strip = await screen.findByTestId("diff-stale")
+    await userEvent.click(within(strip).getByRole("button", { name: "Refresh" }))
+    await waitFor(() => expect(apiMock.prThreads).toHaveBeenCalledTimes(2))
+    expect(screen.getByTestId("diff-body").querySelector('[data-pr-thread-id="t1"]')).not.toBeNull()
+    await act(async () => answer(threads([prThread("t1"), prThread("t2")], "P2")))
+    await waitFor(() => expect(screen.getByTestId("diff-body").querySelector('[data-pr-thread-id="t2"]')).not.toBeNull())
+  })
+
+  it("fetches the threads once, for the new revs, on a Refresh of code and comments", async () => {
+    apiMock.prComments.mockImplementation(async () => summary({ open_threads: 1, fingerprint: "P2" }))
+    apiMock.prThreads.mockImplementation(async (_p: string, v?: { newRev: string }) =>
+      threads([prThread("t1")], v?.newRev === "snap2" ? "P2" : "P1"),
+    )
+    apiMock.patches = [patch(), patch({ working_fingerprint: "W2", new_rev: "snap2" })]
+    const { rerender } = setup()
+    await screen.findByText("New PR comments ·")
+    gitMock.value = git({ fingerprint: "F2", working_fingerprint: "W2" })
+    rerender(tree())
+    const strip = await screen.findByText("Files changed on disk, new PR comments ·")
+    const before = apiMock.prThreads.mock.calls.length
+    await userEvent.click(within(strip.parentElement!).getByRole("button", { name: "Refresh" }))
+    await waitFor(() => expect(screen.queryByTestId("diff-stale")).not.toBeInTheDocument())
+    const after = apiMock.prThreads.mock.calls.slice(before)
+    expect(after).toEqual([["/wt/foo", { oldRev: "mb", newRev: "snap2" }]])
   })
 })

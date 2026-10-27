@@ -30,6 +30,12 @@ export function usePRThreads(
     queryFn: () => api.prThreads(path, view),
     staleTime: Infinity,
     enabled: opts.enabled ?? true,
+    // A Refresh of the same view keeps the cards on screen until the new
+    // list lands; another view's (or worktree's) positions never carry over.
+    placeholderData: (prev, prevQuery) => {
+      const k = prevQuery?.queryKey
+      return k && k[1] === path && k[2] === view?.oldRev && k[3] === view?.newRev ? prev : undefined
+    },
   })
 }
 

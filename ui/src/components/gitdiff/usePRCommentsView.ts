@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { api } from "../../api/client"
 import type { PRThread, ResourceDTO } from "../../api/types"
 import { useDiffView } from "../../hooks/useDiffView"
@@ -21,27 +21,45 @@ const NO_IDS: number[] = []
  * their own, so code never shifts under the reader: a summary fingerprint
  * that no longer matches the threads' raises Refresh instead. Unread state
  * comes from the summary alone, so it updates live.
+ *
+ * `ready` is false while a patch is loading: the threads wait for its revs,
+ * so a Refresh that reloads the code fetches them once, for the new view.
  */
-export function usePRCommentsView(
-  path: string,
-  view: { oldRev: string; newRev: string } | undefined,
+export function usePRCommentsView({
+  path,
+  view,
+  ready,
+  onJumpShown,
+}: {
+  path: string
+  view: { oldRev: string; newRev: string } | undefined
+  ready: boolean
   /** Goes to a thread the view shows (scrolls the diff to its inline card). */
-  onJumpShown: (t: PRThread) => void,
-) {
+  onJumpShown: (t: PRThread) => void
+}) {
+  const qc = useQueryClient()
   const [refreshKey, setRefreshKey] = useState(0)
   const summaryQ = usePRCommentsSummary(path)
-  const threadsQ = usePRThreads(path, view, refreshKey, { enabled: view !== undefined })
+  const threadsQ = usePRThreads(path, view, refreshKey, { enabled: view !== undefined && ready })
   const summary = summaryQ.data
   const threads = threadsQ.data
+  // A load of its own, not the last one kept on screen meanwhile.
+  const loaded = threads !== undefined && !threadsQ.isPlaceholderData
   const ok = summary?.state === "ok"
   const openThreads = ok ? summary.open_threads : 0
   const unreadComments = ok ? summary.unread_comments : 0
-  // Whether the counts are in, failed or not: until then nothing auto-closes.
-  const known = summary !== undefined || summaryQ.isError
 
+  // A threads load can be newer than the last summary poll: the summary
+  // catches up at once, and until it has, the two aren't compared.
+  const threadsAt = threadsQ.dataUpdatedAt
+  useEffect(() => {
+    if (loaded) void qc.invalidateQueries({ queryKey: ["pr-comments", path] })
+  }, [loaded, threadsAt, qc, path])
   const stale =
+    loaded &&
+    summaryQ.dataUpdatedAt >= threadsAt &&
     summary?.fingerprint !== undefined &&
-    threads?.fingerprint !== undefined &&
+    threads.fingerprint !== undefined &&
     summary.fingerprint !== threads.fingerprint
 
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), [])
@@ -83,10 +101,15 @@ export function usePRCommentsView(
   const { dropPRComment } = diffView
   const [, setReviewOpen] = useReviewSidebar()
   const [, setTab] = useReviewSidebarTab()
-  const opened = useRef(false)
+  // Once per param value: a later `&prcomment` in the same view goes again.
+  const opened = useRef<number | null>(null)
   useEffect(() => {
-    if (target === null || opened.current) return
-    opened.current = true
+    if (target === null) {
+      opened.current = null
+      return
+    }
+    if (opened.current === target) return
+    opened.current = target
     setShow(true)
     setReviewOpen(true)
     setTab("pr")
@@ -100,7 +123,7 @@ export function usePRCommentsView(
   const cancelSidebarScroll = useRef<(() => void) | null>(null)
   useEffect(() => () => cancelSidebarScroll.current?.(), [])
   useEffect(() => {
-    if (target === null || !threads) return
+    if (target === null || !loaded) return
     const t = threads.threads.find((x) => x.comments.some((c) => c.id === target))
     if (t?.view?.status === "shown") jumpRef.current(t)
     else if (t) {
@@ -108,7 +131,7 @@ export function usePRCommentsView(
       cancelSidebarScroll.current = scrollToSidebarThread(t.id)
     }
     dropPRComment()
-  }, [target, threads, dropPRComment])
+  }, [target, loaded, threads, dropPRComment])
 
   return {
     summary,
@@ -116,7 +139,11 @@ export function usePRCommentsView(
     prResource,
     openThreads,
     unreadComments,
-    known,
+    /**
+     * Whether the sidebar may auto-close: the view's own threads are in (or
+     * failed), and no `&prcomment` that opened it is still being handled.
+     */
+    settled: (loaded || threadsQ.isError) && target === null,
     stale,
     refresh,
     inline,

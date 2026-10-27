@@ -9,7 +9,6 @@ import { useDiffSelection } from "../../hooks/useDiffSelection"
 import { useDiffView } from "../../hooks/useDiffView"
 import { useIsWide } from "../../hooks/useIsWide"
 import { useDeletedDrafts, useEditingCommentIds, useReviewComments } from "../../hooks/useReviewComments"
-import { useShowPRComments } from "../../hooks/usePRComments"
 import { useReviewSidebar } from "../../hooks/useReviewSidebar"
 import { useWorktreeGit } from "../../hooks/useWorktreeGit"
 import { diffUnavailable } from "../../lib/diffLabels"
@@ -282,13 +281,13 @@ export default function DiffView({
     showComment(c)
   }, [pendingJump, viewKey, fresh, comments, showComment])
 
-  // A PR thread the view shows, as showComment; its inline card exists only
-  // while "Show in diff view" is on, so otherwise the file is enough.
-  const [showPR] = useShowPRComments()
+  // A PR thread the view shows, as showComment. Its inline card exists only
+  // while "Show in diff view" is on; scrollToPRThread lands on the file
+  // first and waits for the card, so it does without the switch too.
   const jumpThread = useCallback(
     (t: PRThread) => {
       if (!wide) setReviewOpen(false)
-      if (t.view?.status !== "shown" || !showPR) {
+      if (t.view?.status !== "shown") {
         scrollTo(t.file)
         return
       }
@@ -297,15 +296,29 @@ export default function DiffView({
       cancelScroll.current?.()
       cancelScroll.current = scrollToPRThread(t.file, t.id)
     },
-    [wide, setReviewOpen, scrollTo, showPR],
+    [wide, setReviewOpen, scrollTo],
   )
-  const pr = usePRCommentsView(path, shown ? { oldRev: shown.old_rev, newRev: shown.new_rev } : undefined, jumpThread)
-  // The toolbar button and the sidebar: there whenever either count is.
-  const hasReview = reviewCount > 0 || pr.openThreads > 0
+  const pr = usePRCommentsView({
+    path,
+    view: shown ? { oldRev: shown.old_rev, newRev: shown.new_rev } : undefined,
+    ready: !patch.isFetching,
+    onJumpShown: jumpThread,
+  })
+  // The sidebar is there while it has something to show: local comments or
+  // the PINNED threads (resolved ones too), never the polled counts, so a
+  // poll can't close it and widen the diff under the reader.
+  const pinnedThreads = pr.threads?.threads.length ?? 0
+  const hasSidebar = reviewCount > 0 || pinnedThreads > 0
+  // The toolbar button follows the live counts (a button appearing moves no
+  // code), and stays while the sidebar is open, as its only close.
+  const hasReview = reviewCount > 0 || pr.openThreads > 0 || (reviewOpen && hasSidebar)
   // Nothing left to show: closed, so the next first comment doesn't open it.
+  // Only once the view's own threads are in (they may be all it shows),
+  // never waiting on the polled summary.
+  const prSettled = pr.settled
   useEffect(() => {
-    if (review.data && pr.known && !hasReview && reviewOpen) setReviewOpen(false)
-  }, [review.data, pr.known, hasReview, reviewOpen, setReviewOpen])
+    if (review.data && prSettled && !hasSidebar && reviewOpen) setReviewOpen(false)
+  }, [review.data, prSettled, hasSidebar, reviewOpen, setReviewOpen])
   // The tree's blue dots: every file a comment was made on, and those with
   // PR threads in the diff while they show.
   const prFiles = pr.files
@@ -453,7 +466,8 @@ export default function DiffView({
             color="yellow"
             onClick={() => {
               // New PR comments alone reload only the threads: the code
-              // on screen is still current, so it doesn't move.
+              // on screen is still current, so it doesn't move. With the
+              // code, the threads wait for the new patch's revs (`ready`).
               if (stale) {
                 recheckAsked.current = true
                 reload()
@@ -615,7 +629,7 @@ export default function DiffView({
             <Box style={{ position: "absolute", inset: 0, padding: "var(--mantine-spacing-xs)" }}>{body}</Box>
           </Box>
         </Box>
-        {wide && reviewOpen && hasReview && (
+        {wide && reviewOpen && hasSidebar && (
           <Box
             style={{
               width: REVIEW_SIDEBAR_WIDTH,
@@ -635,7 +649,7 @@ export default function DiffView({
       )}
       {!wide && (
         <Drawer
-          opened={reviewOpen && hasReview}
+          opened={reviewOpen && hasSidebar}
           onClose={() => setReviewOpen(false)}
           position="right"
           size="85%"
