@@ -113,10 +113,13 @@ function UndoToastBody({ id, message, undo, onSettled }: {
 
   return (
     <Group justify="space-between" wrap="nowrap" gap="sm">
-      <Text size="sm">{message}</Text>
+      {/* A long message (a long task title) wraps; the button never gives up
+          room, so "Undo" and its Z hint always show whole. */}
+      <Text size="sm" style={{ minWidth: 0, flex: 1, overflowWrap: "anywhere" }}>{message}</Text>
       <Button
         size="compact-sm"
         variant="light"
+        style={{ flex: "none" }}
         loading={pending}
         onClick={() => void run()}
         ref={ref}

@@ -25,6 +25,17 @@ afterEach(() => {
 })
 
 describe("showUndoToast", () => {
+  it("never lets a long message squeeze the Undo button: the message wraps", async () => {
+    wrap()
+    const long = `Marked “${"a very long task title ".repeat(12)}” done`
+    act(() => showUndoToast({ message: long, undo: async () => {} }))
+    const button = await screen.findByRole("button", { name: /Undo/ })
+    expect(button.style.flex).toBe("0 0 auto")
+    const text = screen.getByText(long)
+    expect(parseFloat(text.style.minWidth)).toBe(0)
+    expect(text.style.overflowWrap).toBe("anywhere")
+  })
+
   it("ends at UNDO_WINDOW_MS", async () => {
     vi.useFakeTimers()
     wrap()
