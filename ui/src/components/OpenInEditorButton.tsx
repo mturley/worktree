@@ -13,14 +13,18 @@ import { settingsKey } from "./SettingsModal"
  * Shares the Settings modal's query, so saving an editor there enables the
  * button at once.
  */
-export function OpenInEditorButton({ path }: { path: string }) {
+export function OpenInEditorButton({ path, size = "compact-sm" }: {
+  path: string
+  /** Compact beside the diff view's breadcrumb; full `sm` above the details card's tabs. */
+  size?: "compact-sm" | "sm"
+}) {
   const settings = useQuery({ queryKey: settingsKey, queryFn: api.settings })
   const open = useMutation({ mutationFn: () => api.openInEditor(path) })
   const editor = settings.data?.worktree.editor.trim() ?? ""
 
   const button = (
     <Button
-      size="compact-sm"
+      size={size}
       variant="subtle"
       color={open.isError ? "red" : undefined}
       style={{ flex: "none" }}

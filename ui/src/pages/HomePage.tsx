@@ -173,7 +173,7 @@ export function HomePage() {
     />
   )
   const newWorktreeButton = (
-    <Button size="xs" leftSection={<IconPlus size={14} />} onClick={() => setNewOpen(true)}>
+    <Button size="sm" leftSection={<IconPlus size={14} />} onClick={() => setNewOpen(true)}>
       New worktree
     </Button>
   )

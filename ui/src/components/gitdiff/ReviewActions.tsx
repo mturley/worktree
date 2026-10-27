@@ -44,11 +44,11 @@ export function ReviewActions({ path, git, active }: {
   const filled = countsAreUnread(pending, unread)
   return (
     <Group gap="xs" wrap="wrap">
-      <OpenInEditorButton path={path} />
+      <OpenInEditorButton path={path} size="sm" />
       {/* A review in progress is filled in the unread blue, as the diff view's
           own review button is, so it's hard to miss. */}
       <Button
-        size="xs"
+        size="sm"
         variant={filled ? "filled" : "light"}
         color={filled ? "blue" : undefined}
         vars={filled ? () => ({ root: { "--button-hover": "var(--mantine-color-blue-4)" } }) : undefined}
