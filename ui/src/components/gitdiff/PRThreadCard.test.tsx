@@ -46,13 +46,17 @@ const resource = { type: "pr", id: "o/r#12" } as ResourceDTO
 
 function renderCard(props: Partial<React.ComponentProps<typeof PRThreadCard>> = {}) {
   const qc = new QueryClient()
-  return render(
+  const r = render(
     <MantineProvider>
       <QueryClientProvider client={qc}>
         <PRThreadCard path="/w" thread={thread()} pr={pr} variant="inline" unreadIds={new Set()} {...props} />
       </QueryClientProvider>
     </MantineProvider>,
   )
+  // A positive signal that the PR summary has landed.
+  const summaryLoaded = () =>
+    waitFor(() => expect(qc.getQueryState(["pr-comments", props.path ?? "/w"])?.status).toBe("success"))
+  return { ...r, summaryLoaded }
 }
 
 const summary = (over: Partial<PRCommentsSummary> = {}): PRCommentsSummary => ({
@@ -254,22 +258,49 @@ describe("PRThreadCard", () => {
 
     it("a resolved thread offers Reply once expanded", async () => {
       renderCard({ path: "/w-r7", thread: thread({ resolved: true }) })
-      await waitFor(() => expect(apiMock.prComments).toHaveBeenCalled())
+      const collapsed = screen.getByRole("button", { name: /Resolved ·/ })
       expect(screen.queryByRole("button", { name: "Reply" })).toBeNull()
-      await userEvent.click(screen.getByRole("button", { name: /Resolved ·/ }))
+      await userEvent.click(collapsed)
       expect(await screen.findByRole("button", { name: "Reply" })).toBeInTheDocument()
     })
 
-    it.each([
-      ["no PR", { state: "no_pr", pr: undefined }],
-      ["the watcher off", { state: "off" }],
-    ] as const)("there's no Reply with %s", async (_, over) => {
-      apiMock.prComments.mockResolvedValue(summary(over))
-      renderCard({ path: "/w-r8" })
-      await waitFor(() => expect(apiMock.prComments).toHaveBeenCalled())
-      // Let the summary land before looking.
-      await new Promise((r) => setTimeout(r, 20))
+    it("there's no Reply without a PR", async () => {
+      apiMock.prComments.mockResolvedValue(summary({ state: "no_pr", pr: undefined }))
+      const { summaryLoaded } = renderCard({ path: "/w-r8" })
+      await summaryLoaded()
       expect(screen.queryByRole("button", { name: "Reply" })).toBeNull()
+    })
+
+    it("with the watcher off, Reply is there but both choices say why they're off", async () => {
+      apiMock.prComments.mockResolvedValue(summary({ state: "off" }))
+      renderCard({ path: "/w-r9" })
+      await userEvent.click(await screen.findByRole("button", { name: "Reply" }))
+      await userEvent.type(screen.getByRole("textbox"), "x")
+      for (const name of ["Start a PR review on #12", "Reply on PR #12"]) {
+        const b = screen.getByRole("button", { name })
+        expect(b).toHaveAttribute("aria-disabled", "true")
+        await userEvent.click(b)
+        await userEvent.hover(b)
+        expect(await screen.findByText("The GitHub watcher is off")).toBeInTheDocument()
+        await userEvent.unhover(b)
+        await waitFor(() => expect(screen.queryByText("The GitHub watcher is off")).toBeNull())
+      }
+      expect(apiMock.prWriteReply).not.toHaveBeenCalled()
+    })
+
+    it("an open reply survives the summary turning off, its text kept", async () => {
+      const r = renderCard({ path: "/w-r10" })
+      await userEvent.click(await screen.findByRole("button", { name: "Reply" }))
+      await userEvent.type(screen.getByRole("textbox"), "typing")
+      apiMock.prComments.mockResolvedValue(summary({ state: "error", message: "GitHub is down" }))
+      r.unmount()
+      const again = renderCard({ path: "/w-r10" })
+      await again.summaryLoaded()
+      expect(screen.getByRole("textbox")).toHaveValue("typing")
+      const b = screen.getByRole("button", { name: "Reply on PR #12" })
+      expect(b).toHaveAttribute("aria-disabled", "true")
+      await userEvent.hover(b)
+      expect(await screen.findByText("GitHub is down")).toBeInTheDocument()
     })
   })
 })

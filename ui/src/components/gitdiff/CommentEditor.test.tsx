@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { cleanup, render, screen, waitFor } from "@testing-library/react"
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { CommentEditor } from "./CommentEditor"
@@ -125,6 +125,14 @@ describe("CommentEditor", () => {
       expect(await screen.findByText("Gamma tip")).toBeInTheDocument()
       await userEvent.click(screen.getByRole("button", { name: "Beta" }))
       expect(second).toHaveBeenCalledWith("x")
+    })
+
+    it("a disabled action's reason shows on keyboard focus too", async () => {
+      setupActions()
+      const alpha = screen.getByRole("button", { name: "Alpha" })
+      act(() => alpha.focus())
+      expect(alpha).toHaveFocus()
+      expect(await screen.findByText("alpha is off")).toBeInTheDocument()
     })
 
     it("Ctrl+Enter runs the first enabled action", async () => {

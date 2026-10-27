@@ -29,17 +29,18 @@ import { CommentEditor, type EditorAction } from "./CommentEditor"
 import { DeleteCommentModal } from "./DeleteCommentModal"
 import type { CommentTarget } from "./commentRange"
 import {
+  CHECKING_REASON,
   commentNowLabel,
   commentNowTooltip,
   LOCAL_TOOLTIP,
   localLabel,
   prReviewLabel,
   prReviewTooltip,
-  WATCHER_OFF_REASON,
+  prUnavailableReason,
+  stalePendingNotice,
+  UNPOSTABLE_REASON,
 } from "./prWriteCopy"
 
-/** A GitHub button's reason while its check is still loading. */
-const CHECKING_REASON = "Checking whether these lines can be posted to the PR…"
 
 export const SOURCE_STYLE: Record<CommentSource, { borderColor: string; label?: string; author: string; authorTip: string }> = {
   draft: {
@@ -294,10 +295,11 @@ export function NewCommentCard({ path, target, view, onDone }: {
   // The whole local review, across every view: the first comment starts it.
   const started = (useReviewComments(path, undefined).data?.length ?? 0) > 0
 
-  // Without a PR, no GitHub buttons; with the watcher off, they say so.
+  // Without a PR, no GitHub buttons; with the watcher off (or GitHub out of
+  // reach), they say so.
   const summary = usePRCommentsSummary(path).data
   const pr = summaryPR(summary)
-  const off = summary?.state === "off"
+  const unavailable = prUnavailableReason(summary)
   const prTarget: PRWriteTarget = {
     file: target.file,
     side: target.side,
@@ -306,13 +308,16 @@ export function NewCommentCard({ path, target, view, onDone }: {
     old_rev: view.oldRev,
     new_rev: view.newRev,
   }
-  const check = usePRWriteCheck(path, prTarget, !!pr && !off)
+  const check = usePRWriteCheck(path, prTarget, !!pr && !unavailable)
   const reasonFor = (verdict: "review" | "single"): string | undefined => {
-    if (off) return WATCHER_OFF_REASON
+    if (unavailable) return unavailable
     if (check.isPending) return CHECKING_REASON
     const v = check.data?.[verdict]
     // A failed check leaves the button on: the write itself is checked again.
-    return v && !v.postable ? (v.reason ?? "Can't be posted to the PR") : undefined
+    if (!v || v.postable) return undefined
+    const reason = v.reason ?? UNPOSTABLE_REASON
+    const stale = verdict === "review" ? check.data?.review.stale_pending_commit : undefined
+    return pr && stale ? `${reason} — ${stalePendingNotice(pr.number, stale)}` : reason
   }
   const postToPR = (mode: PRWriteMode) => (body: string) => {
     setError(undefined)

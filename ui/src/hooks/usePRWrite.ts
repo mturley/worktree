@@ -55,11 +55,11 @@ export function usePRWriteMutations(path: string) {
 
 /**
  * The worktree's PR, when it has one: the summary found it, or knew it before
- * the watcher went off or a fetch failed. Undefined hides every GitHub button.
+ * the watcher went off, a fetch failed or the token went. Undefined hides
+ * every GitHub button.
  */
 export function summaryPR(summary: PRCommentsSummary | undefined): PRRefDTO | undefined {
-  if (!summary?.pr) return undefined
-  return summary.state === "ok" || summary.state === "off" || summary.state === "error" ? summary.pr : undefined
+  return summary?.state === "no_pr" ? undefined : summary?.pr
 }
 
 /** A failed write's message: a refusal's (409) reason, else the error's own. */

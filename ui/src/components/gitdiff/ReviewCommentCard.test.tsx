@@ -52,7 +52,7 @@ function wrap(ui: React.ReactNode) {
     </MantineProvider>
   )
   const r = render(tree(ui))
-  return { ...r, rerender: (u: React.ReactNode) => r.rerender(tree(u)) }
+  return { ...r, qc, rerender: (u: React.ReactNode) => r.rerender(tree(u)) }
 }
 
 beforeEach(() => {
@@ -436,9 +436,8 @@ describe("NewCommentCard", () => {
     })
 
     it("without a PR, offers only the local button", async () => {
-      wrap(<NewCommentCard path="/w-pr3" target={target} view={view} onDone={() => {}} />)
-      await waitFor(() => expect(apiMock.prComments).toHaveBeenCalled())
-      await screen.findByRole("button", { name: "Start local review" })
+      const { qc } = wrap(<NewCommentCard path="/w-pr3" target={target} view={view} onDone={() => {}} />)
+      await waitFor(() => expect(qc.getQueryState(["pr-comments", "/w-pr3"])?.status).toBe("success"))
       expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual(["Start local review", "Cancel"])
       expect(apiMock.prWriteCheck).not.toHaveBeenCalled()
     })
@@ -462,6 +461,24 @@ describe("NewCommentCard", () => {
         await waitFor(() => expect(screen.queryByText("on uncommitted changes")).toBeNull())
       }
       expect(apiMock.prWriteComment).not.toHaveBeenCalled()
+    })
+
+    it("the PR review button names a stale pending review when it can't be added to", async () => {
+      apiMock.prComments.mockResolvedValue(summary({ pending_comments: 1 }))
+      apiMock.prWriteCheck.mockResolvedValue({
+        review: { postable: false, reason: "newer than your pending review", stale_pending_commit: "abc1234" },
+        single: { postable: true },
+      })
+      wrap(<NewCommentCard path="/w-pr8" target={target} view={view} onDone={() => {}} />)
+      await userEvent.type(screen.getByRole("textbox"), "x")
+      const b = await screen.findByRole("button", { name: "Add to PR review #12" })
+      await waitFor(() => expect(apiMock.prWriteCheck).toHaveBeenCalled())
+      await userEvent.hover(b)
+      expect(
+        await screen.findByText(
+          "newer than your pending review — Your pending review on PR #12 is on an older commit (abc1234). Comments on newer code can't be added to it; submit it to start a new one.",
+        ),
+      ).toBeInTheDocument()
     })
 
     it("disables the GitHub buttons when the watcher is off", async () => {

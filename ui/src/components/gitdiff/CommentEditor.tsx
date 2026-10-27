@@ -145,7 +145,7 @@ function TooltipButton({ tooltip, off, busy, variant, onClick, children }: {
 }) {
   return (
     // A disabled button gets no hover, so an off one stays enabled to events (data-disabled).
-    <Tooltip label={tooltip} withArrow multiline maw={320}>
+    <Tooltip label={tooltip} withArrow multiline maw={320} events={{ hover: true, focus: true, touch: true }}>
       <Button
         size="compact-xs"
         variant={variant}

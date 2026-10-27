@@ -191,6 +191,52 @@ func TestPRWriteCheck(t *testing.T) {
 	}
 }
 
+// TestPRWriteCheckStalePendingCommit: the review verdict names the pending
+// review's commit (short) while it is older than the PR head, else null.
+func TestPRWriteCheckStalePendingCommit(t *testing.T) {
+	f := newPRWFixture(t)
+	stale := func() any {
+		t.Helper()
+		code, body := f.get(t, "/api/pr-write/check", fmt.Sprintf("&file=long&side=new&start_line=10&end_line=10&old_rev=%s&new_rev=%s",
+			url.QueryEscape(f.base), url.QueryEscape(headSHA(t, f.wt))))
+		if code != 200 {
+			t.Fatalf("check status %d: %s", code, body)
+		}
+		var out struct {
+			Review map[string]any `json:"review"`
+			Single map[string]any `json:"single"`
+		}
+		must(t, json.Unmarshal(body, &out))
+		if _, ok := out.Single["stale_pending_commit"]; ok {
+			t.Fatalf("single verdict carries stale_pending_commit: %v", out.Single)
+		}
+		v, ok := out.Review["stale_pending_commit"]
+		if !ok {
+			t.Fatalf("review verdict has no stale_pending_commit: %v", out.Review)
+		}
+		return v
+	}
+	if v := stale(); v != nil {
+		t.Fatalf("no pending review: stale_pending_commit = %v; want null", v)
+	}
+
+	commitFile(t, f.wt, "long", numbered(30, map[int]string{5: "five", 10: "ten", 25: "twenty-five"}))
+	c2 := headSHA(t, f.wt)
+	f.srv.revSet().add(f.wt, c2)
+	// A pending review on the head is not stale.
+	f.setCtx(&wgithub.PRWriteContext{PullRequestID: "PR_node", BaseRefOid: f.base, HeadRefOid: c2,
+		Pending: &wgithub.PendingReview{ID: "R1", CommitOid: c2}})
+	if v := stale(); v != nil {
+		t.Fatalf("pending on head: stale_pending_commit = %v; want null", v)
+	}
+	// One on an older commit is.
+	f.setCtx(&wgithub.PRWriteContext{PullRequestID: "PR_node", BaseRefOid: f.base, HeadRefOid: c2,
+		Pending: &wgithub.PendingReview{ID: "R1", CommitOid: f.head}})
+	if v := stale(); v != f.head[:7] {
+		t.Fatalf("stale pending: stale_pending_commit = %v; want %s", v, f.head[:7])
+	}
+}
+
 func (f *prwFixture) comment(t *testing.T, mode string, start, end int, body string) (int, map[string]any) {
 	t.Helper()
 	return f.post(t, "/api/pr-write/comment", map[string]any{

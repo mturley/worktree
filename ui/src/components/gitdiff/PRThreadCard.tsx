@@ -11,7 +11,7 @@ import { MarkAllReadButton } from "../MarkAllReadButton"
 import { KeyHint } from "../search/KeyHint"
 import { UnreadMarkerDot } from "../UnreadMarkerDot"
 import { CommentEditor } from "./CommentEditor"
-import { prReviewLabel, prReviewTooltip, replyNowLabel, replyNowTooltip } from "./prWriteCopy"
+import { prReviewLabel, prReviewTooltip, prUnavailableReason, replyNowLabel, replyNowTooltip } from "./prWriteCopy"
 import { Body, Frame, SOURCE_STYLE } from "./ReviewCommentCard"
 
 const PREVIEW = 40
@@ -57,12 +57,17 @@ function jumpBlockedReason(status: NonNullable<PRThread["view"]>["status"] | und
  * straight onto the PR. The typed text is kept per thread in the draft store,
  * so it survives the card remounting.
  */
-function ReplyBox({ path, thread, pr, pending }: { path: string; thread: PRThread; pr: PRRefDTO; pending: boolean }) {
+function ReplyBox({ path, thread, pr }: { path: string; thread: PRThread; pr: PRRefDTO }) {
   const { reply } = usePRWriteMutations(path)
   const [draft, setDraft] = useEditorDraft(path, `reply:${thread.id}`)
   const [error, setError] = useState<string>()
+  const summary = usePRCommentsSummary(path).data
+  // Reply shows whenever the worktree has a PR, disabled (with why) while
+  // GitHub can't be written to; an open editor stays whatever a poll says.
+  const unavailable = prUnavailableReason(summary)
+  const pending = (summary?.pending_comments ?? 0) > 0
   const first = thread.comments[0]
-  if (!first) return null
+  if (!first || (!draft && !summaryPR(summary))) return null
   if (!draft) {
     return (
       <Group>
@@ -94,6 +99,7 @@ function ReplyBox({ path, thread, pr, pending }: { path: string; thread: PRThrea
           key: "review",
           label: prReviewLabel(pr.number, pending),
           tooltip: prReviewTooltip(pr.number),
+          disabledReason: unavailable,
           busy: busy("review"),
           onSubmit: post("review"),
         },
@@ -101,6 +107,7 @@ function ReplyBox({ path, thread, pr, pending }: { path: string; thread: PRThrea
           key: "single",
           label: replyNowLabel(pr.number),
           tooltip: replyNowTooltip(pr.number),
+          disabledReason: unavailable,
           variant: "light",
           busy: busy("single"),
           onSubmit: post("single"),
@@ -124,9 +131,6 @@ export function PRThreadCard({ path, thread, pr, variant, unreadIds, prResource,
   const [, setReviewOpen] = useReviewSidebar()
   const [, setTab] = useReviewSidebarTab()
   const [expanded, setExpanded] = useState(false)
-  // Replies need the PR, and the watcher on: otherwise there's no Reply.
-  const summary = usePRCommentsSummary(path).data
-  const canReply = !!summaryPR(summary) && summary?.state !== "off"
 
   const view = thread.view
   const shown = view?.status === "shown"
@@ -236,7 +240,7 @@ export function PRThreadCard({ path, thread, pr, variant, unreadIds, prResource,
             <Body text={c.body} imagesAsLinks />
           </Stack>
         ))}
-        {canReply && <ReplyBox path={path} thread={thread} pr={pr} pending={(summary?.pending_comments ?? 0) > 0} />}
+        <ReplyBox path={path} thread={thread} pr={pr} />
       </Stack>
     </Frame>
   )

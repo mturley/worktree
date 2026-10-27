@@ -184,8 +184,16 @@ type prVerdict struct {
 // (placed on its commit) and as a single comment (placed on the PR head).
 // They differ when a pending review is on an older commit.
 type prCheckResponse struct {
-	Review prVerdict `json:"review"`
-	Single prVerdict `json:"single"`
+	Review prReviewVerdict `json:"review"`
+	Single prVerdict       `json:"single"`
+}
+
+// prReviewVerdict adds, for the review mode, the pending review's commit
+// (short) while it is older than the PR head, else null: why newer lines
+// can't join it.
+type prReviewVerdict struct {
+	prVerdict
+	StalePendingCommit *string `json:"stale_pending_commit"`
 }
 
 // handlePRWriteCheck: GET /api/pr-write/check?path=&file=&side=&start_line=&end_line=&old_rev=&new_rev=
@@ -219,13 +227,17 @@ func (s *Server) handlePRWriteCheck(w http.ResponseWriter, r *http.Request) {
 	for _, m := range []struct {
 		v        *prVerdict
 		headOnly bool
-	}{{&out.Review, false}, {&out.Single, true}} {
-		_, p, err := s.placeOnPR(dir, pc, c, m.headOnly)
+	}{{&out.Review.prVerdict, false}, {&out.Single, true}} {
+		t, p, err := s.placeOnPR(dir, pc, c, m.headOnly)
 		if err != nil {
 			writeError(w, http.StatusBadGateway, err.Error())
 			return
 		}
 		*m.v = prVerdict{Postable: p.ok, Reason: p.reason}
+		if !m.headOnly && t != nil && t.stale && t.pendingCommit != "" {
+			short := shortSHA(t.pendingCommit)
+			out.Review.StalePendingCommit = &short
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }

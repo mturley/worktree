@@ -948,7 +948,8 @@ export interface PRWriteVerdict {
 
 /** Whether a new comment can be posted to the PR, per mode. */
 export interface PRWriteCheck {
-  review: PRWriteVerdict
+  /** stale_pending_commit: the pending review's commit (short) while it is older than the PR head. */
+  review: PRWriteVerdict & { stale_pending_commit: string | null }
   single: PRWriteVerdict
 }
 
