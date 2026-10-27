@@ -1,16 +1,20 @@
 package webui
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/mturley/watcher"
 	watcherdb "github.com/mturley/watcher/db"
@@ -227,8 +231,10 @@ func TestPRCommentsCachesFetch(t *testing.T) {
 	}
 }
 
-func TestPRCommentsErrorNotCached(t *testing.T) {
+func TestPRCommentsErrorCachedBriefly(t *testing.T) {
 	f := newPRCFixture(t)
+	now := time.Now()
+	f.srv.prThreadsCacheOrInit().now = func() time.Time { return now }
 	f.threadsErr = errors.New("boom")
 	s := f.summary(t)
 	if s.State != "error" || s.Message == "" {
@@ -236,11 +242,95 @@ func TestPRCommentsErrorNotCached(t *testing.T) {
 	}
 	f.threadsErr = nil
 	f.threads = summaryThreads()
+	// Within the error TTL the error is served from the cache.
+	now = now.Add(prErrorTTL - time.Second)
+	if s := f.summary(t); s.State != "error" {
+		t.Fatalf("within error TTL: %+v", s)
+	}
+	if n := f.threadsCalls.Load(); n != 1 {
+		t.Fatalf("threads fetched %d times within the error TTL, want 1", n)
+	}
+	// After it, GitHub is asked again.
+	now = now.Add(2 * time.Second)
 	if s := f.summary(t); s.State != "ok" || s.OpenThreads != 2 {
-		t.Fatalf("second call: %+v", s)
+		t.Fatalf("after error TTL: %+v", s)
 	}
 	if n := f.threadsCalls.Load(); n != 2 {
 		t.Fatalf("threads fetched %d times, want 2", n)
+	}
+}
+
+func TestPRCommentsSummaryErrorCachedBriefly(t *testing.T) {
+	f := newPRCFixture(t)
+	now := time.Now()
+	f.srv.prThreadsCacheOrInit().now = func() time.Time { return now }
+	fail := true
+	inner := f.srv.FetchPRSummaries
+	f.srv.FetchPRSummaries = func(token string, refs []wgithub.PRRef) (map[wgithub.PRRef]wgithub.PRSummary, error) {
+		if fail {
+			f.sumCalls.Add(1)
+			return nil, errors.New("boom")
+		}
+		return inner(token, refs)
+	}
+	f.threads = summaryThreads()
+	if s := f.summary(t); s.State != "error" {
+		t.Fatalf("got %+v", s)
+	}
+	fail = false
+	if s := f.summary(t); s.State != "error" {
+		t.Fatalf("within error TTL: %+v", s)
+	}
+	if n := f.sumCalls.Load(); n != 1 {
+		t.Fatalf("summaries fetched %d times within the error TTL", n)
+	}
+	now = now.Add(prErrorTTL + time.Second)
+	if s := f.summary(t); s.State != "ok" {
+		t.Fatalf("after error TTL: %+v", s)
+	}
+}
+
+func TestPRCommentsNoFingerprintUnlessOK(t *testing.T) {
+	f := newPRCFixture(t)
+	f.threadsErr = errors.New("boom")
+	for _, route := range []string{"/api/pr-comments", "/api/pr-comments/threads"} {
+		_, body := f.get(t, route, "")
+		var raw map[string]json.RawMessage
+		must(t, json.Unmarshal(body, &raw))
+		if string(raw["state"]) != `"error"` {
+			t.Fatalf("%s: state %s", route, raw["state"])
+		}
+		if fp, ok := raw["fingerprint"]; ok {
+			t.Fatalf("%s: fingerprint %s in an error state", route, fp)
+		}
+	}
+}
+
+func TestPRCommentsUnreadableAuthLogged(t *testing.T) {
+	f := newPRCFixture(t)
+	var buf bytes.Buffer
+	f.srv.Logger = log.New(&buf, "", 0)
+	must(t, os.Chmod(f.srv.WatcherAuthPath, 0o644)) // wconfig refuses group/world-readable files
+	for i := 0; i < 3; i++ {
+		if s := f.summary(t); s.State != "no_token" {
+			t.Fatalf("state = %q", s.State)
+		}
+	}
+	if n := strings.Count(buf.String(), "PR comments: reading auth.yaml"); n != 1 {
+		t.Fatalf("logged %d times: %q", n, buf.String())
+	}
+}
+
+func TestPRCommentsMissingAuthNotLogged(t *testing.T) {
+	f := newPRCFixture(t)
+	var buf bytes.Buffer
+	f.srv.Logger = log.New(&buf, "", 0)
+	f.srv.WatcherAuthPath = filepath.Join(t.TempDir(), "missing.yaml")
+	if s := f.summary(t); s.State != "no_token" {
+		t.Fatalf("state = %q", s.State)
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("logged %q", buf.String())
 	}
 }
 

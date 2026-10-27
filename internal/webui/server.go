@@ -213,6 +213,9 @@ type Server struct {
 	FetchReviewThreads func(token string, ref wgithub.PRRef) (*wgithub.PRReviewThreads, error)
 	prThreadsOnce      sync.Once
 	prThreadsCache     *ttlCache
+	// prAuthErrLogged is the last auth.yaml read error logged by githubToken.
+	prAuthErrMu     sync.Mutex
+	prAuthErrLogged string
 
 	// BuildCommit is the full git SHA the binary was built from, compared
 	// against the repo's main branch by the update check (update_check.go).

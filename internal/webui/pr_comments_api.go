@@ -28,6 +28,9 @@ import (
 const (
 	prSummaryTTL = 10 * time.Minute
 	prThreadsTTL = 60 * time.Second
+	// prErrorTTL is how long a failed fetch is remembered, so a failing
+	// GitHub is not asked again on every client's 5s poll.
+	prErrorTTL = 20 * time.Second
 )
 
 // The summary/threads response states.
@@ -59,10 +62,14 @@ func (s *Server) fetchReviewThreads(token string, ref wgithub.PRRef) (*wgithub.P
 }
 
 // githubToken is the configured GitHub token, "" when there is none. The
-// caller has already checked the GitHub watcher is on.
+// caller has already checked the GitHub watcher is on. A missing auth.yaml
+// or one without GitHub is simply no token; an auth.yaml that cannot be
+// read (bad permissions, bad YAML) is no token too, but is logged, once per
+// distinct error, so it is not mistaken for an unconfigured service.
 func (s *Server) githubToken() string {
 	cfg, err := s.loadWatcherAuth()
 	if err != nil {
+		s.logAuthErrorOnce(err)
 		return ""
 	}
 	gh, err := cfg.GitHub()
@@ -70,6 +77,18 @@ func (s *Server) githubToken() string {
 		return ""
 	}
 	return gh.Token
+}
+
+func (s *Server) logAuthErrorOnce(err error) {
+	s.prAuthErrMu.Lock()
+	defer s.prAuthErrMu.Unlock()
+	if s.prAuthErrLogged == err.Error() {
+		return
+	}
+	s.prAuthErrLogged = err.Error()
+	if s.Logger != nil {
+		s.Logger.Printf("PR comments: reading auth.yaml: %v", err)
+	}
 }
 
 type prRefDTO struct {
@@ -139,7 +158,7 @@ func (s *Server) loadPRComments(dir string) prComments {
 	var pick []prcomments.Candidate
 	summaries := map[string]wgithub.PRSummary{}
 	for _, c := range cands {
-		v, err := cache.get("prsum|"+c.res.ID, prSummaryTTL, false, func() (interface{}, error) {
+		v, err := cache.getErrTTL("prsum|"+c.res.ID, prSummaryTTL, prErrorTTL, false, func() (interface{}, error) {
 			batchOnce.Do(func() { batch, batchErr = s.fetchPRSummaries(token, allRefs) })
 			if batchErr != nil {
 				return nil, batchErr
@@ -174,7 +193,7 @@ func (s *Server) loadPRComments(dir string) prComments {
 
 // cachedReviewThreads is one PR's threads, from the cache when fresh.
 func (s *Server) cachedReviewThreads(token, id string, ref wgithub.PRRef) (*wgithub.PRReviewThreads, error) {
-	v, err := s.prThreadsCacheOrInit().get("prthreads|"+id, prThreadsTTL, false, func() (interface{}, error) {
+	v, err := s.prThreadsCacheOrInit().getErrTTL("prthreads|"+id, prThreadsTTL, prErrorTTL, false, func() (interface{}, error) {
 		t, err := s.fetchReviewThreads(token, ref)
 		if err == nil && t == nil {
 			err = errors.New("no review threads returned")
@@ -230,7 +249,7 @@ type prCommentsSummaryDTO struct {
 	Branch         string    `json:"branch,omitempty"`
 	Message        string    `json:"message,omitempty"`
 	PR             *prRefDTO `json:"pr,omitempty"`
-	Fingerprint    string    `json:"fingerprint"`
+	Fingerprint    string    `json:"fingerprint,omitempty"`
 	OpenThreads    int       `json:"open_threads"`
 	UnreadComments int       `json:"unread_comments"`
 	UnreadIDs      []int64   `json:"unread_ids"`
@@ -330,7 +349,7 @@ type prThreadsResponse struct {
 	Branch      string        `json:"branch,omitempty"`
 	Message     string        `json:"message,omitempty"`
 	PR          *prRefDTO     `json:"pr,omitempty"`
-	Fingerprint string        `json:"fingerprint"`
+	Fingerprint string        `json:"fingerprint,omitempty"`
 	Threads     []prThreadDTO `json:"threads"`
 }
 
