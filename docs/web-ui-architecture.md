@@ -742,6 +742,8 @@ stored in the worktree-owned `worktree_notes` table (keyed by registry path).
   request — absent keeps the stored value, so an older client's save cannot
   switch it off. Every save invalidates `["worktrees"]`.
 
+**PR review comment events.** The poller tags `pr_review_comment` events `comment:<id>` so the diff view's PR comments can show per-comment unread dots; see "PR comments" under Code tab and diff view.
+
 ### Unread (`internal/unread`, `internal/webui/unread.go`)
 
 One read cursor per RESOURCE in `resource_read_cursor` (a worktree-owned
@@ -3524,6 +3526,24 @@ annotations.
 - Esc ladder in the diff: a search query, then the review sidebar, then
   leaving the diff. One Esc hint at a time (on `Close comments sidebar`
   while it is open); on narrow screens the Drawer owns Esc.
+
+#### PR comments (`internal/prcomments`, `pr_comments_api.go`, `pr_threads_place.go`)
+
+The open PR's review threads are shown read-only in the diff view and sidebar, beside the drafts.
+
+**Routes.** `GET /api/pr-comments` (summary: counts, fingerprint, unread ids), `GET /api/pr-comments/threads` (threads placed against the diff's revs) and `GET /api/pr-comments/locate` (which worktree and thread holds a comment id; it only considers `worktree:` subscribers). Each answers with a state: `ok`, `off` (GitHub watcher disabled; gated on the toggle), `no_token`, `no_pr` or `error`. The PR is picked by `prcomments.PickPR` (primary first, then most recently updated). Threads come from the watcher library's `github.FetchReviewThreads` (paginated, comment ids are `fullDatabaseId`, needs watcher v0.17.0).
+
+**Caches.** `prsum|` holds the summary for 10 minutes, `prthreads|` the threads for 60 seconds. Errors are never cached.
+
+**Placement** (`pr_threads_place.go`). A thread anchors at its OriginalCommit, falling back to the comment's current Commit with Line/StartLine. LEFT (old-side) threads use `merge-base(commit, baseRefOid)`. A commit that is not local gives `unavailable` (sidebar only). GitHub's own `outdated` is kept even when the lines would still match.
+
+**Fingerprint raises Refresh.** `prcomments.Fingerprint` covers ids, resolved flags and edit times. `usePRCommentsSummary` polls every 5 s (the server cache keeps GitHub calls to the cache cadence); a changed fingerprint raises the Refresh strip ("New PR comments ·"). A PR-only Refresh reloads only the threads, never the patch.
+
+**Threads hook.** `usePRThreads` is pinned per view, with a refresh key. A placeholder is kept only while the revs are unchanged. The sidebar's mount and auto-close follow the PINNED thread list plus local comments, so a GitHub-side resolve never reflows the diff. The toolbar and Code tab labels use the summary counts (open threads), not the pinned list.
+
+**UI.** The sidebar has Local / PR tabs (`worktree.reviewSidebarTab`, sessionStorage). The "Show in diff view" switch is `worktree.showPRComments` (localStorage, default on). `PRThreadCard` is grape. `&prcomment=<id>` on the Code tab URL scrolls to a comment, handled once per value; the activity modal's "Go to comment in diff view" button uses the locate route.
+
+**Events and unread.** The poller tags `pr_review_comment` events `comment:<id>` (`db.EventsForResourceByType` reads them). `prcomments.MatchEvents` matches by tag first, then by the fallback title "Review comment by <author> on <path>" plus `ExternalTS`; `UnreadIDs` yields the unread comment ids. Mark all read uses `MarkAllReadButton`'s single form with `onMarked`, so dots clear without waiting for Refresh.
 
 ### Watcher toggles (`watchers.go`, `config.WatchersConfig`, `WatcherAlert`)
 

@@ -53,7 +53,7 @@ The watcher library's current poll gets only a flattened, last-20 view of review
 
 The server calls it **only when the GitHub watcher is enabled** (`s.WatcherEnabled(config.ServiceGitHub)`). It keeps a short in-memory cache keyed by PR so several open clients don't each hit GitHub. **Library changes are welcome** wherever they're the cleaner fix. There's no back-compat constraint within this unreleased feature.
 
-**Fetched when the diff view opens, re-checked while it stays open.** The server exposes a fingerprint of the thread set (ids, resolved flags, edit times). The client polls it on a slow cadence while the diff view is visible. When it changes, the view is marked stale and the Refresh button appears. Refresh reloads the threads together with the patch. The cadence is the builder's call, with GitHub's rate limit in mind (something like 60s).
+**Fetched when the diff view opens, re-checked while it stays open.** The server exposes a fingerprint of the thread set (ids, resolved flags, edit times). The client polls it on a slow cadence while the diff view is visible. When it changes, the view is marked stale and the Refresh button appears. Refresh reloads the threads together with the patch (a PR-only Refresh, raised by new PR comments alone, reloads only the threads). The cadence is the builder's call, with GitHub's rate limit in mind (something like 60s).
 
 ### Placing PR comments in the view
 
@@ -164,3 +164,4 @@ The event details modal (`EventDetailsModal`), for a `pr_review_comment` event t
 - Old-side comments are placed against `merge-base(originalCommit, baseRefOid)`, falling back to sidebar-only.
 - Unread dots clear right after "Mark all read", without waiting for Refresh.
 - The Code tab re-checks on the same cadence, through the shared server cache.
+- A PR-only Refresh reloads only the threads, not the patch, so less code moves.
