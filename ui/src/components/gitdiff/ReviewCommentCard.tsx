@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { ActionIcon, Anchor, Badge, Box, Button, Group, Stack, Text, Tooltip } from "@mantine/core"
 import { IconPencil, IconTrash } from "@tabler/icons-react"
 import { HttpError } from "../../api/client"
@@ -40,7 +40,6 @@ import {
   stalePendingNotice,
   UNPOSTABLE_REASON,
 } from "./prWriteCopy"
-
 
 export const SOURCE_STYLE: Record<CommentSource, { borderColor: string; label?: string; author: string; authorTip: string }> = {
   draft: {
@@ -296,9 +295,14 @@ export function NewCommentCard({ path, target, view, onDone }: {
   const started = (useReviewComments(path, undefined).data?.length ?? 0) > 0
 
   // Without a PR, no GitHub buttons; with the watcher off (or GitHub out of
-  // reach), they say so.
+  // reach), they say so. Once known, the PR is kept for the editor's
+  // lifetime, so a poll that loses it (an error with no PR) never takes the
+  // buttons away under the cursor; their disabled reasons still follow the
+  // current summary.
   const summary = usePRCommentsSummary(path).data
-  const pr = summaryPR(summary)
+  const lastPR = useRef(summaryPR(summary))
+  const pr = summaryPR(summary) ?? lastPR.current
+  lastPR.current = pr
   const unavailable = prUnavailableReason(summary)
   const prTarget: PRWriteTarget = {
     file: target.file,

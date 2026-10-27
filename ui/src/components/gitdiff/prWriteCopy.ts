@@ -17,6 +17,15 @@ export const commentNowLabel = (n: number) => `Comment on PR #${n}`
 export const commentNowTooltip = (n: number) =>
   `Post this comment on PR #${n} now, as a single comment everyone can see.`
 
+/**
+ * Why a single comment or reply can't be posted while the viewer has a
+ * pending review (GitHub refuses it). The server sends the same text as the
+ * check's single verdict and a write's 409; kept in step with
+ * pendingBlocksSingleReason in internal/webui/pr_write_api.go.
+ */
+export const pendingBlocksSingleReason = (n: number) =>
+  `You have a pending review on PR #${n}; add to it or submit it first`
+
 export const replyNowLabel = (n: number) => `Reply on PR #${n}`
 export const replyNowTooltip = (n: number) => `Post this reply on PR #${n} now. Everyone can see it.`
 

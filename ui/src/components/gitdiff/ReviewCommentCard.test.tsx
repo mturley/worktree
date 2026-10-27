@@ -511,6 +511,25 @@ describe("NewCommentCard", () => {
       expect(apiMock.prWriteCheck).not.toHaveBeenCalled()
     })
 
+    it("keeps the GitHub buttons when a poll errors with no PR, disabled with why", async () => {
+      apiMock.prComments.mockResolvedValue(summary())
+      const { qc } = wrap(<NewCommentCard path="/w-pr9" target={target} view={view} onDone={() => {}} />)
+      await userEvent.type(screen.getByRole("textbox"), "x")
+      await enabled("Comment on PR #12")
+      apiMock.prComments.mockResolvedValue(summary({ state: "error", pr: undefined, message: "GitHub is down" }))
+      await act(() => qc.invalidateQueries({ queryKey: ["pr-comments", "/w-pr9"] }))
+      await waitFor(() => expect(qc.getQueryData<PRCommentsSummary>(["pr-comments", "/w-pr9"])?.state).toBe("error"))
+      for (const name of ["Start a PR review on #12", "Comment on PR #12"]) {
+        const b = screen.getByRole("button", { name })
+        expect(b).toHaveAttribute("aria-disabled", "true")
+        await userEvent.hover(b)
+        expect(await screen.findByText("GitHub is down")).toBeInTheDocument()
+        await userEvent.unhover(b)
+        await waitFor(() => expect(screen.queryByText("GitHub is down")).toBeNull())
+      }
+      expect(screen.getByRole("textbox")).toHaveValue("x")
+    })
+
     it("the PR review button adds the comment to the review, then closes", async () => {
       apiMock.prComments.mockResolvedValue(summary())
       apiMock.prWriteComment.mockResolvedValue({ comment_id: 99 })

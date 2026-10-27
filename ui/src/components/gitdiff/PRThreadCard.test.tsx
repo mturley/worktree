@@ -275,19 +275,57 @@ describe("PRThreadCard", () => {
       expect(await screen.findByRole("button", { name: "Reply" })).toBeInTheDocument()
     })
 
-    it("there's no Reply without a PR", async () => {
-      apiMock.prComments.mockResolvedValue(summary({ state: "no_pr", pr: undefined }))
-      const { summaryLoaded } = renderCard({ path: "/w-r8" })
-      await summaryLoaded()
-      expect(screen.queryByRole("button", { name: "Reply" })).toBeNull()
-    })
+    // Reply follows the card's own PR (from the pinned threads), never the
+    // summary, so a poll can't take it away; its choices say why they're off.
+    for (const [name, s, why] of [
+      ["the summary loses the PR", summary({ state: "no_pr", pr: undefined }), "This worktree has no PR"],
+      ["the watcher is off and the PR unknown", offSummary(), "The GitHub watcher is off"],
+      ["a poll errors with no PR", summary({ state: "error", pr: undefined, message: "GitHub is down" }), "GitHub is down"],
+    ] as const) {
+      it(`Reply stays when ${name}, its choices disabled with why`, async () => {
+        apiMock.prComments.mockResolvedValue(s)
+        const { summaryLoaded } = renderCard({ path: `/w-r8-${name}` })
+        await summaryLoaded()
+        await userEvent.click(screen.getByRole("button", { name: "Reply" }))
+        await userEvent.type(screen.getByRole("textbox"), "x")
+        const b = screen.getByRole("button", { name: "Reply on PR #12" })
+        expect(b).toHaveAttribute("aria-disabled", "true")
+        await userEvent.hover(b)
+        expect(await screen.findByText(why)).toBeInTheDocument()
+      })
+    }
 
-    it("with the watcher off and the PR unknown, there's no Reply", async () => {
-      apiMock.prComments.mockResolvedValue(offSummary())
-      const { summaryLoaded } = renderCard({ path: "/w-r9b" })
-      await summaryLoaded()
-      expect(screen.queryByRole("button", { name: "Reply" })).toBeNull()
-    })
+    // GitHub refuses a single reply while the viewer has a pending review.
+    for (const [name, s, t] of [
+      ["it has pending comments", summary({ pending_comments: 2 }), thread()],
+      ["it is on an older commit", summary({ stale_pending_commit: "abc1234" }), thread()],
+      [
+        "the thread shows a pending comment",
+        summary(),
+        thread({
+          comments: [
+            { id: 1, author: "me", body: "b", created_at: "2026-10-01T00:00:00Z", url: "u", pending: true },
+          ],
+        }),
+      ],
+    ] as const) {
+      it(`Reply on PR is disabled while a pending review is known: ${name}`, async () => {
+        apiMock.prComments.mockResolvedValue(s)
+        const { summaryLoaded } = renderCard({ path: `/w-rp-${name}`, thread: t })
+        await summaryLoaded()
+        await userEvent.click(screen.getByRole("button", { name: "Reply" }))
+        await userEvent.type(screen.getByRole("textbox"), "x")
+        const b = screen.getByRole("button", { name: "Reply on PR #12" })
+        expect(b).toHaveAttribute("aria-disabled", "true")
+        await userEvent.click(b)
+        expect(apiMock.prWriteReply).not.toHaveBeenCalled()
+        await userEvent.hover(b)
+        expect(
+          await screen.findByText("You have a pending review on PR #12; add to it or submit it first"),
+        ).toBeInTheDocument()
+        expect(screen.getByRole("button", { name: "Add to PR review #12" })).not.toHaveAttribute("aria-disabled", "true")
+      })
+    }
 
     it("with the watcher off, Reply is there but both choices say why they're off", async () => {
       apiMock.prComments.mockResolvedValue(offSummary(pr))

@@ -3,7 +3,7 @@ import { Anchor, Avatar, Badge, Box, Button, Group, Stack, Text, Tooltip, Unstyl
 import { useQueryClient } from "@tanstack/react-query"
 import type { PRRefDTO, PRThread, PRWriteMode, ResourceDTO } from "../../api/types"
 import { usePRCommentsSummary } from "../../hooks/usePRComments"
-import { prWriteError, summaryPR, usePRWriteMutations } from "../../hooks/usePRWrite"
+import { prWriteError, usePRWriteMutations } from "../../hooks/usePRWrite"
 import { useEditorDraft } from "../../hooks/useReviewComments"
 import { useReviewSidebar, useReviewSidebarTab } from "../../hooks/useReviewSidebar"
 import { relativeTime } from "../../lib/relativeTime"
@@ -11,7 +11,14 @@ import { MarkAllReadButton } from "../MarkAllReadButton"
 import { KeyHint } from "../search/KeyHint"
 import { UnreadMarkerDot } from "../UnreadMarkerDot"
 import { CommentEditor } from "./CommentEditor"
-import { prReviewLabel, prReviewTooltip, prUnavailableReason, replyNowLabel, replyNowTooltip } from "./prWriteCopy"
+import {
+  pendingBlocksSingleReason,
+  prReviewLabel,
+  prReviewTooltip,
+  prUnavailableReason,
+  replyNowLabel,
+  replyNowTooltip,
+} from "./prWriteCopy"
 import { Body, Frame, SOURCE_STYLE } from "./ReviewCommentCard"
 
 const PREVIEW = 40
@@ -62,12 +69,16 @@ function ReplyBox({ path, thread, pr }: { path: string; thread: PRThread; pr: PR
   const [draft, setDraft] = useEditorDraft(path, `reply:${thread.id}`)
   const [error, setError] = useState<string>()
   const summary = usePRCommentsSummary(path).data
-  // Reply shows whenever the worktree has a PR, disabled (with why) while
-  // GitHub can't be written to; an open editor stays whatever a poll says.
+  // Reply shows whenever the card does: its PR is the card's own, from the
+  // pinned threads, so a poll that loses the PR (an error, the watcher
+  // going off) never takes it away. Its choices are disabled, with why,
+  // while the current summary says GitHub can't be written to.
   const unavailable = prUnavailableReason(summary)
   const pending = (summary?.pending_comments ?? 0) > 0
+  // GitHub refuses a single reply while the viewer has a pending review.
+  const pendingKnown = pending || !!summary?.stale_pending_commit || thread.comments.some((c) => c.pending)
   const first = thread.comments[0]
-  if (!first || (!draft && !summaryPR(summary))) return null
+  if (!first) return null
   if (!draft) {
     return (
       <Group>
@@ -97,7 +108,7 @@ function ReplyBox({ path, thread, pr }: { path: string; thread: PRThread; pr: PR
       actions={[
         {
           key: "review",
-          label: prReviewLabel(pr.number, pending),
+          label: prReviewLabel(pr.number, pendingKnown),
           tooltip: prReviewTooltip(pr.number),
           disabledReason: unavailable,
           busy: busy("review"),
@@ -107,7 +118,7 @@ function ReplyBox({ path, thread, pr }: { path: string; thread: PRThread; pr: PR
           key: "single",
           label: replyNowLabel(pr.number),
           tooltip: replyNowTooltip(pr.number),
-          disabledReason: unavailable,
+          disabledReason: unavailable ?? (pendingKnown ? pendingBlocksSingleReason(pr.number) : undefined),
           variant: "light",
           busy: busy("single"),
           onSubmit: post("single"),

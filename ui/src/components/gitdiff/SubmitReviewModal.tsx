@@ -19,6 +19,8 @@ const EVENTS: { value: PRReviewEvent; label: string; description: string }[] = [
   },
 ]
 
+const LOADING_REASON = "Loading the latest review…"
+
 const OWN_PR_REASON = "You can't approve or request changes on your own PR"
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
@@ -27,6 +29,9 @@ const localPlace = (c: PRLocalComment) =>
   `${c.file}:${c.start_line === c.end_line ? c.start_line : `${c.start_line}-${c.end_line}`}`
 // A pending comment's line is 0 when its thread isn't among the PR's threads.
 const pendingPlace = (c: PRPendingComment) => (c.line > 0 ? `${c.file}:${c.line}` : c.file)
+
+/** The warning toast for a submitted review whose response carried an error. */
+export const submittedWarning = (error: string) => `The review was submitted, but: ${error}`
 
 export const submittedToast = (n: number | undefined) =>
   n === undefined ? "Review submitted" : `Review submitted to PR #${n}`
@@ -134,13 +139,14 @@ export function SubmitReviewModal({ path, opened, onClose }: {
             submit.mutate(
               { head: dialog.data.head, event, body: message, include_local: include },
               {
+                // Any 2xx means the review was submitted. An error alongside
+                // it (listing what stayed local failed) is a warning, never a
+                // reason to keep the dialog open with Submit on again.
                 onSuccess: (res) => {
-                  if (res.error) {
-                    // Some of it may have gone: show what is now pending.
-                    void dialog.refetch()
-                    return
-                  }
                   notifications.show({ color: "green", message: submittedToast(prNumber) })
+                  if (res.error) {
+                    notifications.show({ color: "yellow", message: submittedWarning(res.error) })
+                  }
                   finish()
                 },
                 // A moved head, or a partial failure: show the review as it now is.
@@ -148,7 +154,7 @@ export function SubmitReviewModal({ path, opened, onClose }: {
               },
             )
           }
-          resultError={submit.data?.error}
+          fetching={dialog.isFetching}
         />
       )}
     </Modal>
@@ -165,7 +171,7 @@ function DialogBody({
   includeChoice,
   setIncludeChoice,
   error,
-  resultError,
+  fetching,
   submitting,
   onCancel,
   onSubmit,
@@ -179,7 +185,8 @@ function DialogBody({
   includeChoice: boolean | undefined
   setIncludeChoice: (b: boolean) => void
   error: string | undefined
-  resultError: string | undefined
+  /** The dialog's data is being read again: what is shown may be stale. */
+  fetching: boolean
   submitting: boolean
   onCancel: () => void
   onSubmit: (include: boolean) => void
@@ -197,7 +204,9 @@ function DialogBody({
       ? "Write a message or add comments to submit a Comment review"
       : undefined
   const blockedReason = include && d.blocked_reason ? d.blocked_reason : undefined
-  const disabledReason = blockedReason ?? emptyReason
+  // Never submit against data a refetch is replacing: on reopen the first
+  // paint is the last opening's, whose head may be gone.
+  const disabledReason = (fetching ? LOADING_REASON : undefined) ?? blockedReason ?? emptyReason
 
   return (
     <Stack gap="md">
@@ -273,7 +282,7 @@ function DialogBody({
       )}
 
       {blockedReason && <Text size="sm" c="red">{blockedReason}</Text>}
-      {(error ?? resultError) && <Text size="sm" c="red">{error ?? resultError}</Text>}
+      {error && <Text size="sm" c="red">{error}</Text>}
 
       <Group justify="flex-end" gap="xs">
         <Button variant="default" disabled={submitting} onClick={onCancel}>Cancel</Button>

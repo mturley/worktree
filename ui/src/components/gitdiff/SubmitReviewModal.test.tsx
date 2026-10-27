@@ -49,11 +49,11 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-const wrap = () =>
+const wrap = (qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })) =>
   render(
     <MantineProvider>
       <Notifications />
-      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <QueryClientProvider client={qc}>
         <SubmitReviewModal path="/w/a" opened onClose={onClose} />
       </QueryClientProvider>
     </MantineProvider>,
@@ -175,6 +175,37 @@ describe("SubmitReviewModal", () => {
       include_local: true,
     })
     expect(await screen.findByText("Review submitted to PR #12")).toBeInTheDocument()
+  })
+
+  it("a 200 that carries an error is still a submitted review: toasts, closes, and warns", async () => {
+    api.prSubmit.mockResolvedValue({
+      submitted_review_id: "R1",
+      posted_local_ids: [1],
+      kept_local_ids: [],
+      error: "listing local comments: database is locked",
+    })
+    wrap()
+    await screen.findByText("In this review (2)")
+    fireEvent.click(screen.getByRole("button", { name: "Submit review (2)" }))
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+    expect(await screen.findByText("Review submitted to PR #12")).toBeInTheDocument()
+    expect(await screen.findByText(/listing local comments: database is locked/)).toBeInTheDocument()
+    expect(api.prSubmit).toHaveBeenCalledTimes(1)
+  })
+
+  it("on reopen, Submit waits for the fresh dialog rather than acting on the last one", async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    // The last opening's data, still cached.
+    qc.setQueryData(["pr-review-dialog", "/w/a"], dialog({ head: "0000000000000000000000000000000000000000" }))
+    let resolve: (v: PRReviewDialog) => void = () => {}
+    api.prReviewDialog.mockReturnValue(new Promise((r) => (resolve = r)))
+    wrap(qc)
+    const submit = await screen.findByRole("button", { name: "Submit review (2)" })
+    expect(submit).toBeDisabled()
+    resolve(dialog())
+    await waitFor(() => expect(screen.getByRole("button", { name: "Submit review (2)" })).toBeEnabled())
+    fireEvent.click(screen.getByRole("button", { name: "Submit review (2)" }))
+    await waitFor(() => expect(api.prSubmit).toHaveBeenCalledWith(expect.objectContaining({ head: HEAD })))
   })
 
   it("on a 409, shows the reason and reloads the dialog", async () => {
