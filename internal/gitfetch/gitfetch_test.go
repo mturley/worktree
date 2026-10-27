@@ -326,3 +326,14 @@ func TestMaybeStoresRedactedError(t *testing.T) {
 		t.Errorf("LastError = %q, want credentials redacted", st.LastError)
 	}
 }
+
+func TestRefsCommandNeverPrompts(t *testing.T) {
+	args, env := refsCommand("/repo", "origin", "ssh", []string{"+refs/pull/7/head:refs/pr-review/7"})
+	want := []string{"-C", "/repo", "fetch", "--no-auto-maintenance", "origin", "+refs/pull/7/head:refs/pr-review/7"}
+	if !reflect.DeepEqual(args, want) {
+		t.Errorf("args = %q, want %q", args, want)
+	}
+	if _, base := fetchCommand("/repo", "origin", "ssh"); !reflect.DeepEqual(env, base) {
+		t.Errorf("env = %q, want the background fetch's %q", env, base)
+	}
+}

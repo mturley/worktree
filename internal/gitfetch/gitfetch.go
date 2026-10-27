@@ -196,6 +196,20 @@ func gitFetch(ctx context.Context, dir, remote string) error {
 	ctx, cancel := context.WithTimeout(ctx, fetchTimeout)
 	defer cancel()
 
+	args, env := fetchCommand(dir, remote, sshCommand(dir))
+	return runFetch(ctx, args, env)
+}
+
+// FetchRefs fetches refspecs from remote into dir's repository, without
+// pruning, under the same never-prompt rules as the background fetch. It
+// blocks until the fetch ends or ctx does; the caller bounds it.
+func FetchRefs(ctx context.Context, dir, remote string, refspecs ...string) error {
+	args, env := refsCommand(dir, remote, sshCommand(dir), refspecs)
+	return runFetch(ctx, args, env)
+}
+
+// sshCommand is the ssh command git would use for dir.
+func sshCommand(dir string) string {
 	ssh := os.Getenv("GIT_SSH_COMMAND")
 	if ssh == "" {
 		if out, err := exec.Command("git", "-C", dir, "config", "core.sshCommand").Output(); err == nil {
@@ -205,8 +219,10 @@ func gitFetch(ctx context.Context, dir, remote string) error {
 	if ssh == "" {
 		ssh = "ssh"
 	}
+	return ssh
+}
 
-	args, env := fetchCommand(dir, remote, ssh)
+func runFetch(ctx context.Context, args, env []string) error {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Env = append(os.Environ(), env...)
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -222,14 +238,24 @@ func fetchCommand(dir, remote, ssh string) (args, env []string) {
 	// --no-auto-maintenance: a background fetch must not kick off `git
 	// maintenance`/gc, which takes locks the user's commands would then hit.
 	args = []string{"-C", dir, "fetch", "--prune", "--no-auto-maintenance", remote}
-	env = []string{
+	return args, noPromptEnv(ssh)
+}
+
+// refsCommand is fetchCommand for explicit refspecs, without --prune.
+func refsCommand(dir, remote, ssh string, refspecs []string) (args, env []string) {
+	args = append([]string{"-C", dir, "fetch", "--no-auto-maintenance", remote}, refspecs...)
+	return args, noPromptEnv(ssh)
+}
+
+// noPromptEnv closes every prompt path a fetch could open.
+func noPromptEnv(ssh string) []string {
+	return []string{
 		"GIT_TERMINAL_PROMPT=0", // git's own username/password prompt
 		"GIT_ASKPASS=",          // a configured askpass helper would pop a GUI dialog
 		"SSH_ASKPASS=",
 		"GCM_INTERACTIVE=never", // Git Credential Manager's browser/device flow
 		"GIT_SSH_COMMAND=" + ssh + " -o BatchMode=yes", // ssh passphrase and host-key prompts
 	}
-	return args, env
 }
 
 // maxErrorRunes bounds LastError: git can print pages of output, and the UI

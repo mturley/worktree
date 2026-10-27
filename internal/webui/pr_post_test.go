@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
-	"sync/atomic"
 	"testing"
-	"time"
 
 	wgithub "github.com/mturley/watcher/github"
-	"github.com/mturley/worktree/internal/gitfetch"
 	"github.com/mturley/worktree/internal/gitutil"
 	"github.com/mturley/worktree/internal/reviewcomments"
 )
@@ -228,29 +228,127 @@ func TestPlaceForPRNewerThanPending(t *testing.T) {
 		"on a commit not pushed to the PR")
 }
 
-func TestPRTargetMissingCommitNudgesFetch(t *testing.T) {
+func TestPRTargetMissingCommit(t *testing.T) {
 	wt, base, _ := hunkRepo(t)
-	var fetches atomic.Int32
-	sched := gitfetch.New(context.Background(), time.Hour)
-	sched.Fetch = func(context.Context, string, string) error {
-		fetches.Add(1)
-		return nil
-	}
-	srv, _ := gitTestServer(t, wt, sched)
-	srv.FetchPRWriteContext = func(string, wgithub.PRRef) (*wgithub.PRWriteContext, error) {
-		return &wgithub.PRWriteContext{
-			PullRequestID: "PR1", BaseRefOid: base, HeadRefOid: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
-		}, nil
-	}
-	pc := prComments{pr: &prRefDTO{ID: "PR1", Number: 1}, token: "t", ref: wgithub.PRRef{Owner: "o", Repo: "r", Number: 1}}
-	if _, err := srv.loadPRTarget(wt, pc); !errors.Is(err, errMissingCommit) {
+	srv, calls := prTargetServer(t, wt, &wgithub.PRWriteContext{
+		PullRequestID: "PR1", BaseRefOid: base, HeadRefOid: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+	}, nil)
+	if _, err := srv.loadPRTarget(wt, testPC()); !errors.Is(err, errMissingCommit) {
 		t.Fatalf("err = %v; want errMissingCommit", err)
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for fetches.Load() == 0 && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
+	if want := []string{"gh +refs/pull/1/head:refs/pr-review/1"}; !reflect.DeepEqual(*calls, want) {
+		t.Fatalf("fetches = %q, want %q", *calls, want)
 	}
-	if fetches.Load() == 0 {
-		t.Fatal("no fetch was nudged")
+}
+
+// TestPlaceForPROldSideRenamed: the PR renames "long" to "renamed" and
+// edits it; an old-side comment (stored under the old path) on a removed
+// line posts LEFT on the new path, which is the PR's.
+func TestPlaceForPROldSideRenamed(t *testing.T) {
+	wt := forkRepo(t)
+	commitFile(t, wt, "long", numbered(30, nil))
+	base := headSHA(t, wt)
+	gitIn(t, wt, "mv", "long", "renamed")
+	commitFile(t, wt, "renamed", numbered(30, map[int]string{12: "twelve"}))
+	head := headSHA(t, wt)
+	tg := testTarget(t, wt, base, head, "")
+
+	got := place(wt, tg, testComment(t, wt, base, "long", reviewcomments.SideOld, 12, 12))
+	want := wgithub.NewReviewComment{Path: "renamed", Side: "LEFT", Line: 12, Body: "b"}
+	if !got.ok || got.comment != want {
+		t.Fatalf("placement = %+v", got)
+	}
+}
+
+// prTargetServer serves wt with a PR o/r#1 whose write context is ctx, a
+// "gh" remote matching o/r, and a stubbed targeted fetch that records its
+// calls and runs fetch (when not nil) in their place.
+func prTargetServer(t *testing.T, wt string, ctx *wgithub.PRWriteContext, fetch func() error) (*Server, *[]string) {
+	t.Helper()
+	gitIn(t, wt, "remote", "add", "gh", "https://github.com/o/r.git")
+	srv, _ := gitTestServer(t, wt, nil)
+	srv.FetchPRWriteContext = func(string, wgithub.PRRef) (*wgithub.PRWriteContext, error) { return ctx, nil }
+	var calls []string
+	srv.FetchRefs = func(_ context.Context, dir, remote string, refspecs ...string) error {
+		calls = append(calls, remote+" "+strings.Join(refspecs, " "))
+		if fetch != nil {
+			return fetch()
+		}
+		return nil
+	}
+	return srv, &calls
+}
+
+func testPC() prComments {
+	return prComments{pr: &prRefDTO{ID: "PR1", Number: 1}, token: "t", ref: wgithub.PRRef{Owner: "o", Repo: "r", Number: 1}}
+}
+
+// TestPRTargetFetchesMissingHead: a head only on the remote is fetched,
+// synchronously, by its pull ref, and the target is then built.
+func TestPRTargetFetchesMissingHead(t *testing.T) {
+	wt, base, _ := hunkRepo(t)
+	// A commit pushed to the PR from elsewhere, not yet fetched here.
+	other := filepath.Join(filepath.Dir(wt), "other")
+	gitIn(t, wt, "push", "origin", "HEAD:refs/heads/pr")
+	gitIn(t, other, "fetch", "origin")
+	gitIn(t, other, "checkout", "-b", "pr", "origin/pr")
+	commitFile(t, other, "long", numbered(30, map[int]string{5: "five", 9: "nine", 25: "twenty-five"}))
+	remoteHead := headSHA(t, other)
+	gitIn(t, other, "push", "origin", "pr")
+
+	srv, calls := prTargetServer(t, wt, &wgithub.PRWriteContext{PullRequestID: "PR1", BaseRefOid: base, HeadRefOid: remoteHead},
+		func() error { gitIn(t, wt, "fetch", "origin", "pr:refs/pr-review/1"); return nil })
+	tg, err := srv.loadPRTarget(wt, testPC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tg.commit != remoteHead {
+		t.Fatalf("commit = %s, want %s", tg.commit, remoteHead)
+	}
+	if want := []string{"gh +refs/pull/1/head:refs/pr-review/1"}; !reflect.DeepEqual(*calls, want) {
+		t.Fatalf("fetches = %q, want %q", *calls, want)
+	}
+}
+
+func TestPRTargetNoFetchWhenPresent(t *testing.T) {
+	wt, base, head := hunkRepo(t)
+	srv, calls := prTargetServer(t, wt, &wgithub.PRWriteContext{PullRequestID: "PR1", BaseRefOid: base, HeadRefOid: head}, nil)
+	if _, err := srv.loadPRTarget(wt, testPC()); err != nil {
+		t.Fatal(err)
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("fetches = %q, want none", *calls)
+	}
+}
+
+// With a pending review, the PR head must be local too, or "newer than your
+// pending review" would read as "not pushed".
+func TestPRTargetMissingHeadWithPending(t *testing.T) {
+	wt, base, _, pending, _ := pendingRepo(t)
+	srv, calls := prTargetServer(t, wt, &wgithub.PRWriteContext{
+		PullRequestID: "PR1", BaseRefOid: base, HeadRefOid: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+		Pending: &wgithub.PendingReview{ID: "R1", CommitOid: pending},
+	}, nil)
+	if _, err := srv.loadPRTarget(wt, testPC()); !errors.Is(err, errMissingCommit) {
+		t.Fatalf("err = %v; want errMissingCommit", err)
+	}
+	if len(*calls) != 1 {
+		t.Fatalf("fetches = %q, want one", *calls)
+	}
+}
+
+func TestPRTargetNoFetchWhenSettingOff(t *testing.T) {
+	wt, base, _ := hunkRepo(t)
+	srv, calls := prTargetServer(t, wt, &wgithub.PRWriteContext{
+		PullRequestID: "PR1", BaseRefOid: base, HeadRefOid: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+	}, nil)
+	if err := os.WriteFile(srv.ConfigPath, []byte("git:\n  background_fetch: false\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.loadPRTarget(wt, testPC()); !errors.Is(err, errMissingCommit) {
+		t.Fatalf("err = %v; want errMissingCommit", err)
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("fetches = %q, want none", *calls)
 	}
 }

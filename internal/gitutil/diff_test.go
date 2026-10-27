@@ -223,9 +223,12 @@ func TestDiffHunks(t *testing.T) {
 	run("add", "-A")
 	run("commit", "-m", "edits")
 
-	got, err := DiffHunks(repo, old, "HEAD")
+	got, renames, err := DiffHunks(repo, old, "HEAD")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(renames) != 0 {
+		t.Fatalf("renames = %v", renames)
 	}
 	want := map[string][]Hunk{
 		"f.txt": {
@@ -256,9 +259,9 @@ func TestDiffHunksIgnoresUserConfig(t *testing.T) {
 	run("commit", "-am", "edits")
 	run("config", "diff.interHunkContext", "10")
 	run("config", "diff.algorithm", "patience")
-	run("config", "diff.indentHeuristic", "true")
+	run("config", "diff.indentHeuristic", "false")
 
-	got, err := DiffHunks(repo, old, "HEAD")
+	got, _, err := DiffHunks(repo, old, "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,5 +271,32 @@ func TestDiffHunksIgnoresUserConfig(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got["f.txt"], want) {
 		t.Fatalf("got %+v\nwant %+v", got["f.txt"], want)
+	}
+}
+
+func TestDiffHunksRenames(t *testing.T) {
+	repo, run := newRemoteRepo(t)
+	var lines []string
+	for i := 1; i <= 20; i++ {
+		lines = append(lines, fmt.Sprintf("line %d", i))
+	}
+	commitFile(t, repo, "old.txt", strings.Join(lines, "\n")+"\n")
+	old := run("rev-parse", "HEAD")
+	run("mv", "old.txt", "new.txt")
+	lines[9] = "ten"
+	writeFile(t, repo, "new.txt", strings.Join(lines, "\n")+"\n")
+	run("add", "-A")
+	run("commit", "-m", "rename")
+
+	hunks, renames, err := DiffHunks(repo, old, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(renames, map[string]string{"old.txt": "new.txt"}) {
+		t.Fatalf("renames = %v", renames)
+	}
+	want := []Hunk{{OldStart: 7, OldLines: 7, NewStart: 7, NewLines: 7}}
+	if !reflect.DeepEqual(hunks["new.txt"], want) {
+		t.Fatalf("hunks = %+v", hunks)
 	}
 }

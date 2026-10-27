@@ -1,7 +1,11 @@
 package webui
 
 import (
+	"context"
 	"errors"
+	"fmt"
+	"log"
+	"time"
 
 	wgithub "github.com/mturley/watcher/github"
 	"github.com/mturley/worktree/internal/config"
@@ -32,6 +36,7 @@ type prTarget struct {
 	commit    string                    // ctx.Pending.CommitOid when a pending review exists, else ctx.HeadRefOid
 	mergeBase string                    // merge-base(ctx.BaseRefOid, commit): GitHub's LEFT side
 	hunks     map[string][]gitutil.Hunk // DiffHunks(mergeBase, commit)
+	renames   map[string]string         // old path → new path, from the same diff
 	// stale: the pending review is on an older commit than the PR head.
 	stale bool
 	// pendingCommit is the pending review's commit, "" with none.
@@ -45,10 +50,14 @@ type prPlacement struct {
 	comment wgithub.NewReviewComment // Path, Side, Line, StartLine and Body when ok
 }
 
-// loadPRTarget fetches pc's PR write context and builds its target. When
-// the target commit or merge-base is missing locally it nudges the
-// background fetch once, without waiting for it, and returns
-// errMissingCommit if they are still missing.
+// prFetchTimeout bounds loadPRTarget's targeted fetch, which a request waits on.
+const prFetchTimeout = 30 * time.Second
+
+// loadPRTarget fetches pc's PR write context and builds its target. When a
+// commit it needs is missing locally (the target, the base, or, with a
+// pending review, the PR head), it fetches the PR's head ref once,
+// synchronously, and checks again; errMissingCommit if still missing. The
+// fetch is skipped when the Background fetch setting is off.
 func (s *Server) loadPRTarget(dir string, pc prComments) (*prTarget, error) {
 	if !s.WatcherEnabled(config.ServiceGitHub) {
 		return nil, errors.New("the GitHub watcher is off")
@@ -61,30 +70,39 @@ func (s *Server) loadPRTarget(dir string, pc prComments) (*prTarget, error) {
 		return nil, err
 	}
 	t, err := newPRTarget(dir, pc.ref, ctx)
-	if errors.Is(err, errMissingCommit) {
-		s.nudgeFetch(dir)
+	if errors.Is(err, errMissingCommit) && s.fetchPRCommits(dir, pc.ref, ctx) {
 		t, err = newPRTarget(dir, pc.ref, ctx)
 	}
 	return t, err
 }
 
-// nudgeFetch asks the background fetch scheduler, when the setting is on,
-// to fetch the worktree's remotes. It never waits for the fetch.
-func (s *Server) nudgeFetch(dir string) {
+// fetchPRCommits fetches ref's head into refs/pr-review/<N> from the remote
+// for the PR's repository, plus the base commit by id when it is missing.
+// It reports whether a fetch ran without error.
+func (s *Server) fetchPRCommits(dir string, ref wgithub.PRRef, ctx *wgithub.PRWriteContext) bool {
 	e, _, err := config.ReadEditable(s.configPath())
 	if err != nil || !e.BackgroundFetch {
-		return
+		return false
 	}
-	var refs []string
-	if up, ok := gitutil.MainUpstream(dir); ok {
-		refs = append(refs, up)
+	remote, err := gitutil.FindRemoteForRepo(dir, ref.Owner, ref.Repo)
+	if err != nil {
+		return false
 	}
-	if tr, ok := gitutil.TrackingBranch(dir); ok {
-		refs = append(refs, tr)
+	refspecs := []string{fmt.Sprintf("+refs/pull/%d/head:refs/pr-review/%d", ref.Number, ref.Number)}
+	if ctx.BaseRefOid != "" && !gitutil.IsCommit(dir, ctx.BaseRefOid) {
+		refspecs = append(refspecs, fmt.Sprintf("+%s:refs/pr-review/%d-base", ctx.BaseRefOid, ref.Number))
 	}
-	if remotes := gitfetch.RemotesFor(dir, refs...); len(remotes) > 0 {
-		s.fetchScheduler(config.GitConfig{FetchInterval: e.FetchInterval}.Interval()).Maybe(dir, remotes)
+	fetch := s.FetchRefs
+	if fetch == nil {
+		fetch = gitfetch.FetchRefs
 	}
+	c, cancel := context.WithTimeout(context.Background(), prFetchTimeout)
+	defer cancel()
+	if err := fetch(c, dir, remote, refspecs...); err != nil {
+		log.Printf("fetching PR #%d commits: %v", ref.Number, err)
+		return false
+	}
+	return true
 }
 
 // newPRTarget builds the target from ctx against the local repo, or
@@ -95,6 +113,11 @@ func newPRTarget(dir string, ref wgithub.PRRef, ctx *wgithub.PRWriteContext) (*p
 		t.commit = ctx.Pending.CommitOid
 		t.pendingCommit = ctx.Pending.CommitOid
 		t.stale = ctx.Pending.CommitOid != ctx.HeadRefOid
+		// The head is needed too, to tell "newer than your pending review"
+		// from "not pushed".
+		if !gitutil.IsCommit(dir, ctx.HeadRefOid) {
+			return nil, errMissingCommit
+		}
 	}
 	if t.commit == "" || !gitutil.IsCommit(dir, t.commit) || !gitutil.IsCommit(dir, ctx.BaseRefOid) {
 		return nil, errMissingCommit
@@ -104,11 +127,11 @@ func newPRTarget(dir string, ref wgithub.PRRef, ctx *wgithub.PRWriteContext) (*p
 		return nil, errMissingCommit
 	}
 	t.mergeBase = mb
-	hunks, err := gitutil.DiffHunks(dir, mb, t.commit)
+	hunks, renames, err := gitutil.DiffHunks(dir, mb, t.commit)
 	if err != nil {
 		return nil, err
 	}
-	t.hunks = hunks
+	t.hunks, t.renames = hunks, renames
 	return t, nil
 }
 
@@ -134,10 +157,16 @@ func placeForPR(dir string, t *prTarget, c reviewcomments.Comment, lines func(re
 	if pos.Match == reviewcomments.MatchOutdated {
 		return prPlacement{reason: reasonOutOfDate}
 	}
-	if !inOneHunk(t.hunks[c.File], old, pos.Start, pos.End) {
+	// An old-side comment is stored under the old path; GitHub keys a
+	// comment, LEFT side included, by the PR's (new) path.
+	path := c.File
+	if n, ok := t.renames[c.File]; ok && old {
+		path = n
+	}
+	if !inOneHunk(t.hunks[path], old, pos.Start, pos.End) {
 		return prPlacement{reason: reasonNotInDiff}
 	}
-	nc := wgithub.NewReviewComment{Path: c.File, Side: side, Line: pos.End, Body: c.Body}
+	nc := wgithub.NewReviewComment{Path: path, Side: side, Line: pos.End, Body: c.Body}
 	if pos.Start < pos.End {
 		nc.StartLine = pos.Start
 	}

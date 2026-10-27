@@ -168,18 +168,18 @@ type Hunk struct{ OldStart, OldLines, NewStart, NewLines int }
 
 // DiffHunks lists each file's hunks between oldRev and newRev, with git's
 // default 3 lines of context, keyed by the file's new path (a deleted file
-// by its old path). Files with no textual hunks (binary, pure renames) are
-// absent. Flags pin everything that shapes hunks (context, algorithm, indent
+// by its old path), and maps each renamed file's old path to its new one.
+// Files with no textual hunks (binary, pure renames) are absent from both. Flags pin everything that shapes hunks (context, algorithm, indent
 // heuristic, hunk merging) so the user's config cannot change them: they are
 // checked against the hunks GitHub accepts comments on.
-func DiffHunks(dir, oldRev, newRev string) (map[string][]Hunk, error) {
+func DiffHunks(dir, oldRev, newRev string) (hunks map[string][]Hunk, renames map[string]string, err error) {
 	out, err := gitRaw(dir, nil, "-c", "core.quotePath=false", "diff", "--no-ext-diff", "--no-color", "--no-textconv",
 		"--src-prefix=a/", "--dst-prefix=b/", "-M", "-U3", "--inter-hunk-context=0",
-		"--diff-algorithm=myers", "--no-indent-heuristic", oldRev, newRev)
+		"--diff-algorithm=myers", "--indent-heuristic", oldRev, newRev)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	hunks := map[string][]Hunk{}
+	hunks, renames = map[string][]Hunk{}, map[string]string{}
 	var oldPath, file string
 	for _, line := range strings.Split(out, "\n") {
 		switch {
@@ -191,16 +191,18 @@ func DiffHunks(dir, oldRev, newRev string) (map[string][]Hunk, error) {
 			file = patchPath(line[4:], "b/")
 			if file == "" {
 				file = oldPath // deleted
+			} else if oldPath != "" && oldPath != file {
+				renames[oldPath] = file
 			}
 		case file != "" && strings.HasPrefix(line, "@@ "):
 			h, err := parseHunkHeader(line)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			hunks[file] = append(hunks[file], h)
 		}
 	}
-	return hunks, nil
+	return hunks, renames, nil
 }
 
 // patchPath is the path on a ---/+++ line without its prefix, "" for

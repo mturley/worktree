@@ -215,8 +215,11 @@ type Server struct {
 	FetchPRSummaries    func(token string, refs []wgithub.PRRef) (map[wgithub.PRRef]wgithub.PRSummary, error)
 	FetchReviewThreads  func(token string, ref wgithub.PRRef) (*wgithub.PRReviewThreads, error)
 	FetchPRWriteContext func(token string, ref wgithub.PRRef) (*wgithub.PRWriteContext, error)
-	prThreadsOnce       sync.Once
-	prThreadsCache      *ttlCache
+	// FetchRefs is a seam for tests; nil means gitfetch.FetchRefs, the
+	// targeted fetch loadPRTarget runs for a PR's missing commits.
+	FetchRefs      func(ctx context.Context, dir, remote string, refspecs ...string) error
+	prThreadsOnce  sync.Once
+	prThreadsCache *ttlCache
 	// prAuthErrLogged is the last auth.yaml read error logged by githubToken.
 	prAuthErrMu     sync.Mutex
 	prAuthErrLogged string
