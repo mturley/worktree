@@ -71,6 +71,16 @@ const summary = (over: Partial<PRCommentsSummary> = {}): PRCommentsSummary => ({
   pending_comments: 0,
   ...over,
 })
+// As the server answers with the GitHub watcher off: the PR when it can be
+// told without GitHub, and no counts.
+const offSummary = (pr?: PRCommentsSummary["pr"]): PRCommentsSummary => ({
+  state: "off",
+  pr,
+  open_threads: 0,
+  unread_comments: 0,
+  unread_ids: [],
+  pending_comments: 0,
+})
 afterEach(cleanup)
 
 describe("ReviewCommentCard", () => {
@@ -481,8 +491,17 @@ describe("NewCommentCard", () => {
       ).toBeInTheDocument()
     })
 
+    it("hides the GitHub buttons when the watcher is off and the PR can't be told", async () => {
+      apiMock.prComments.mockResolvedValue(offSummary())
+      wrap(<NewCommentCard path="/w-pr5b" target={target} view={view} onDone={() => {}} />)
+      await userEvent.type(screen.getByRole("textbox"), "x")
+      expect(await screen.findByRole("button", { name: /local/i })).toBeInTheDocument()
+      await waitFor(() => expect(apiMock.prComments).toHaveBeenCalled())
+      expect(screen.queryByRole("button", { name: /PR/ })).toBeNull()
+    })
+
     it("disables the GitHub buttons when the watcher is off", async () => {
-      apiMock.prComments.mockResolvedValue(summary({ state: "off" }))
+      apiMock.prComments.mockResolvedValue(offSummary(summary().pr))
       wrap(<NewCommentCard path="/w-pr5" target={target} view={view} onDone={() => {}} />)
       await userEvent.type(screen.getByRole("textbox"), "x")
       const b = await screen.findByRole("button", { name: "Comment on PR #12" })

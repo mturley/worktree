@@ -228,8 +228,25 @@ describe("ReviewSidebar pending PR review", () => {
     expect(screen.queryByRole("button", { name: /Submit review/ })).not.toBeInTheDocument()
   })
 
+  // As the server answers with the GitHub watcher off: the PR when it can be
+  // told without GitHub, and no counts.
+  const offSummary = (pr?: PRCommentsSummary["pr"]): PRCommentsSummary => ({
+    state: "off",
+    pr,
+    open_threads: 0,
+    unread_comments: 0,
+    unread_ids: [],
+    pending_comments: 0,
+  })
+
+  it("hides Submit while the watcher is off and the PR can't be told", () => {
+    wrap(prSidebar(offSummary()))
+    expect(screen.getByRole("button", { name: "Copy comments for agent" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /Submit review/ })).not.toBeInTheDocument()
+  })
+
   it("disables Submit with the reason while the watcher is off", async () => {
-    wrap(prSidebar(summary({ state: "off" })))
+    wrap(prSidebar(offSummary(summary().pr)))
     const button = screen.getByRole("button", { name: SUBMIT })
     expect(button).toHaveAttribute("aria-disabled", "true")
     await userEvent.hover(button)
@@ -264,12 +281,32 @@ describe("ReviewSidebar pending PR review", () => {
     expect(pending.compareDocumentPosition(stale) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it("a modified click on the PR link is left to the browser", async () => {
+    setReviewSidebarTab("pr")
+    window.history.pushState({}, "", "/worktree/x?diff&file=a.ts")
+    wrap(prSidebar(summary()))
+    const link = screen.getByRole("link", { name: "PR #7" })
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, metaKey: true })
+    act(() => {
+      link.dispatchEvent(click)
+    })
+    expect(click.defaultPrevented).toBe(false)
+    expect(window.location.search).toBe("?diff&file=a.ts")
+  })
+
   it("the PR link leaves the diff view for the PR's resource view in one navigation", async () => {
     setReviewSidebarTab("pr")
     window.history.pushState({}, "", "/worktree/x?diff&file=a.ts&tab=activity")
     const before = window.history.length
     wrap(prSidebar(summary()))
-    await userEvent.click(screen.getByRole("link", { name: "PR #7" }))
+    const link = screen.getByRole("link", { name: "PR #7" })
+    // A real link to the same place, for a middle or modified click.
+    const href = new URL(link.getAttribute("href") ?? "", window.location.origin)
+    expect(href.pathname).toBe("/worktree/x")
+    expect([...href.searchParams.keys()]).toEqual(["resource"])
+    expect(parseResourceKey(href.searchParams.get("resource"))).toEqual({ type: "pr", id: "o/r#7" })
+    await userEvent.click(link)
+    expect(window.location.pathname + window.location.search).toBe(href.pathname + href.search)
     const params = new URLSearchParams(window.location.search)
     expect(params.has("diff")).toBe(false)
     expect(params.has("file")).toBe(false)

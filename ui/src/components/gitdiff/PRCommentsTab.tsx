@@ -9,6 +9,9 @@ import { PRThreadCard } from "./PRThreadCard"
 import { pendingReviewNotice, stalePendingNotice } from "./prWriteCopy"
 import { SubmitReviewButton } from "./SubmitReviewButton"
 
+/** The URL params selecting the PR's resource. */
+const prSelection = (id: string) => ({ resource: serializeResourceKey({ type: "pr", id }) })
+
 /** Why a summary or threads answer has nothing to show; undefined when ok. */
 function notice(r: Pick<PRCommentsSummary, "state" | "branch" | "message">): string | undefined {
   switch (r.state) {
@@ -70,15 +73,18 @@ export function PRCommentsTab({ path, summary, threads, prResource, onJumpThread
             onChange={(e) => setShow(e.currentTarget.checked)}
           />
           {pr && (
-            // The PR's resource view on the worktree page: leaving the diff
-            // and selecting it in one navigation (its default tab).
+            // The PR's resource view on the worktree page: a plain click
+            // leaves the diff and selects it in one navigation (its default
+            // tab); a modified or middle click opens the same URL natively.
             <Anchor
-              component="button"
-              type="button"
-              role="link"
+              href={diffView.leaveHref(prSelection(pr.id), SELECTION_PARAMS)}
               size="sm"
               c="grape"
-              onClick={() => diffView.leave({ resource: serializeResourceKey({ type: "pr", id: pr.id }) }, SELECTION_PARAMS)}
+              onClick={(e) => {
+                if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+                e.preventDefault()
+                diffView.leave(prSelection(pr.id), SELECTION_PARAMS)
+              }}
             >
               {`PR #${pr.number}`}
             </Anchor>

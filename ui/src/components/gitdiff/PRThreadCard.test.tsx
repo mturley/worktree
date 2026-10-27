@@ -69,6 +69,17 @@ const summary = (over: Partial<PRCommentsSummary> = {}): PRCommentsSummary => ({
   ...over,
 })
 
+// As the server answers with the GitHub watcher off: the PR when it can be
+// told without GitHub, and no counts.
+const offSummary = (p?: PRCommentsSummary["pr"]): PRCommentsSummary => ({
+  state: "off",
+  pr: p,
+  open_threads: 0,
+  unread_comments: 0,
+  unread_ids: [],
+  pending_comments: 0,
+})
+
 beforeEach(() => {
   vi.clearAllMocks()
   apiMock.prComments.mockResolvedValue(summary())
@@ -271,8 +282,15 @@ describe("PRThreadCard", () => {
       expect(screen.queryByRole("button", { name: "Reply" })).toBeNull()
     })
 
+    it("with the watcher off and the PR unknown, there's no Reply", async () => {
+      apiMock.prComments.mockResolvedValue(offSummary())
+      const { summaryLoaded } = renderCard({ path: "/w-r9b" })
+      await summaryLoaded()
+      expect(screen.queryByRole("button", { name: "Reply" })).toBeNull()
+    })
+
     it("with the watcher off, Reply is there but both choices say why they're off", async () => {
-      apiMock.prComments.mockResolvedValue(summary({ state: "off" }))
+      apiMock.prComments.mockResolvedValue(offSummary(pr))
       renderCard({ path: "/w-r9" })
       await userEvent.click(await screen.findByRole("button", { name: "Reply" }))
       await userEvent.type(screen.getByRole("textbox"), "x")

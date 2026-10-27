@@ -126,18 +126,68 @@ type prSummaryEntry struct {
 	found bool
 }
 
+// offlinePR is dir's PR as far as it can be known without GitHub, for the
+// off and no-token states, so the UI can still show (disabled) GitHub
+// buttons: first the tracked PR the branch tracks by number (local git and
+// the DB only), else the one whose head is the current branch, judged only
+// from summaries ALREADY in the cache. Nil when neither identifies it. It
+// never fetches anything.
+func (s *Server) offlinePR(dir string) *prRefDTO {
+	branch, onBranch := gitutil.CurrentBranch(dir)
+	if !onBranch {
+		return nil
+	}
+	tracked, err := resources.Load(s.DB, dir)
+	if err != nil {
+		return nil
+	}
+	trackedNumber, _ := gitutil.TrackedPRNumber(dir)
+	cache := s.prThreadsCacheOrInit()
+	var pick []prcomments.Candidate
+	urls := map[string]string{}
+	titles := map[string]string{}
+	for _, r := range resources.OfType(tracked, "pr") {
+		ref, err := wgithub.ParsePRResourceID(r.ID)
+		if err != nil {
+			continue
+		}
+		c := prcomments.Candidate{
+			ID: r.ID, Primary: !r.Related, UpdatedAt: s.prUpdatedAt(r.ID), Number: ref.Number,
+			RepoIsRemote: ref.Number == trackedNumber && gitutil.MatchesRemote(dir, ref.Owner, ref.Repo),
+		}
+		urls[r.ID] = r.URL
+		// An uncached candidate has no head branch, so only the tracked
+		// number can pick it.
+		if v, ok := cache.peek("prsum|" + r.ID); ok {
+			if e, ok := v.(prSummaryEntry); ok && e.found {
+				c.HeadRefName = e.sum.HeadRefName
+				titles[r.ID] = e.sum.Title
+				if urls[r.ID] == "" {
+					urls[r.ID] = e.sum.URL
+				}
+			}
+		}
+		pick = append(pick, c)
+	}
+	chosen, ok := prcomments.PickPR(pick, branch, trackedNumber)
+	if !ok {
+		return nil
+	}
+	return &prRefDTO{ID: chosen.ID, Number: chosen.Number, URL: urls[chosen.ID], Title: titles[chosen.ID]}
+}
+
 // loadPRComments finds dir's PR (the tracked PR the current branch tracks
 // by number via refs/pull/<N>/head, else the one whose head is the current
 // branch; prcomments.PickPR has the rule) and its threads. Nothing contacts
 // GitHub while its watcher is off or no token is configured.
 func (s *Server) loadPRComments(dir string) prComments {
 	if !s.WatcherEnabled(config.ServiceGitHub) {
-		return prComments{state: prStateOff}
+		return prComments{state: prStateOff, pr: s.offlinePR(dir)}
 	}
 	branch, onBranch := gitutil.CurrentBranch(dir)
 	token := s.githubToken()
 	if token == "" {
-		return prComments{state: prStateNoToken, branch: branch}
+		return prComments{state: prStateNoToken, branch: branch, pr: s.offlinePR(dir)}
 	}
 	if !onBranch {
 		return prComments{state: prStateNoPR, branch: branch}

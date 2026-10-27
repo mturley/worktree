@@ -83,10 +83,11 @@ func (s *Server) prForWrite(w http.ResponseWriter, dir string) (prComments, bool
 	}
 	pc := s.loadPRComments(dir)
 	switch {
-	case pc.pr != nil:
-		return pc, true
+	// Checked before pr: the no-token state still names the PR it can't reach.
 	case pc.state == prStateNoToken:
 		writeJSON(w, http.StatusConflict, map[string]string{"state": prStateNoToken, "error": "no GitHub token is configured"})
+	case pc.pr != nil:
+		return pc, true
 	case pc.state == prStateNoPR:
 		writeError(w, http.StatusNotFound, "the worktree has no PR")
 	default:

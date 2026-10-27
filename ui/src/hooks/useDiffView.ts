@@ -12,6 +12,8 @@ export function useDiffView(): {
   enter: (file?: string) => void
   /** Closes the view; `set` params are written in the same navigation (see below). */
   leave: (set?: Record<string, string>, drop?: readonly string[]) => void
+  /** The URL `leave(set, drop)` navigates to, for a real link's href. */
+  leaveHref: (set?: Record<string, string>, drop?: readonly string[]) => string
   /** A PR comment to go to on entry (the activity modal's "Go to comment in diff view"). */
   prComment: number | null
   /** Drops `prcomment` once handled, replacing the history entry; the view stays open. */
@@ -26,13 +28,17 @@ export function useDiffView(): {
   const prNum = rawPR === null ? NaN : Number(rawPR)
   const prComment = Number.isInteger(prNum) && prNum > 0 ? prNum : null
 
-  const go = useCallback(
-    (p: URLSearchParams, replace = false) => {
+  const url = useCallback(
+    (p: URLSearchParams) => {
       // URLSearchParams writes a valueless param as "diff=" and spaces as "+".
       const qs = p.toString().replace(/(^|&)diff=(?=&|$)/, "$1diff").replace(/\+/g, "%20")
-      navigate(qs ? `${location}?${qs}` : location, { replace })
+      return qs ? `${location}?${qs}` : location
     },
-    [location, navigate],
+    [location],
+  )
+  const go = useCallback(
+    (p: URLSearchParams, replace = false) => navigate(url(p), { replace }),
+    [url, navigate],
   )
 
   const enter = useCallback(
@@ -48,7 +54,7 @@ export function useDiffView(): {
   // Each navigation here rebuilds the URL from this render's params, so a
   // second write in the same tick (the search box's setQ after leave) would
   // drop the first: `set` and `drop` let the caller leave and write in one step.
-  const leave = useCallback(
+  const leaveParams = useCallback(
     (set?: Record<string, string>, drop?: readonly string[]) => {
       const p = new URLSearchParams(search)
       p.delete("diff")
@@ -56,9 +62,17 @@ export function useDiffView(): {
       p.delete("prcomment")
       for (const k of drop ?? []) p.delete(k)
       for (const [k, v] of Object.entries(set ?? {})) p.set(k, v)
-      go(p)
+      return p
     },
-    [search, go],
+    [search],
+  )
+  const leave = useCallback(
+    (set?: Record<string, string>, drop?: readonly string[]) => go(leaveParams(set, drop)),
+    [go, leaveParams],
+  )
+  const leaveHref = useCallback(
+    (set?: Record<string, string>, drop?: readonly string[]) => url(leaveParams(set, drop)),
+    [url, leaveParams],
   )
 
   const dropPRComment = useCallback(() => {
@@ -68,5 +82,5 @@ export function useDiffView(): {
     go(p, true)
   }, [search, go])
 
-  return { open, file, enter, leave, prComment, dropPRComment }
+  return { open, file, enter, leave, leaveHref, prComment, dropPRComment }
 }

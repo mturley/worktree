@@ -116,6 +116,18 @@ func (c *ttlCache) getErrTTL(key string, ttl, errTTL time.Duration, bypass bool,
 
 // del drops keys' cached values. A computation already in flight still
 // stores its result when it finishes.
+// peek is key's cached value when it is present, unexpired and not an
+// error. It never fetches.
+func (c *ttlCache) peek(key string) (interface{}, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.entries[key]
+	if !ok || e.err != nil || !c.clock().Before(e.expires) {
+		return nil, false
+	}
+	return e.val, true
+}
+
 func (c *ttlCache) del(keys ...string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

@@ -658,3 +658,103 @@ func TestPRCommentsStalePendingCommit(t *testing.T) {
 		t.Fatalf("failed fetch: stale_pending_commit = %s, want null", got)
 	}
 }
+
+// offlineStates turns GitHub off, or removes the token, for the PR
+// identification tests below.
+var offlineStates = []struct {
+	name, state string
+	apply       func(f *prcFixture, t *testing.T)
+}{
+	{"off", "off", func(f *prcFixture, t *testing.T) {
+		f.srv.SetWatchersDisabled(map[string]bool{config.ServiceGitHub: true})
+	}},
+	{"no_token", "no_token", func(f *prcFixture, t *testing.T) {
+		f.srv.WatcherAuthPath = filepath.Join(t.TempDir(), "missing.yaml")
+	}},
+}
+
+func (f *prcFixture) noFetches(t *testing.T) {
+	t.Helper()
+	if s, th, c := f.sumCalls.Load(), f.threadsCalls.Load(), f.ctxCalls.Load(); s != 0 || th != 0 || c != 0 {
+		t.Fatalf("fetched: %d summaries, %d threads, %d write contexts", s, th, c)
+	}
+}
+
+func TestPRCommentsOfflineByTrackedNumber(t *testing.T) {
+	for _, st := range offlineStates {
+		t.Run(st.name, func(t *testing.T) {
+			f := newPRCFixture(t)
+			f.asReviewWorktree(t)
+			st.apply(f, t)
+			s := f.summary(t)
+			if s.State != st.state || s.PR == nil || s.PR.ID != reviewPRID || s.PR.Number != 7 ||
+				s.PR.URL != "https://github.com/o/r/pull/7" || s.PR.Title != "" {
+				t.Fatalf("got %+v pr=%+v", s, s.PR)
+			}
+			code, body := f.get(t, "/api/pr-comments/threads", "")
+			var th struct {
+				State string `json:"state"`
+				PR    *struct {
+					ID string `json:"id"`
+				} `json:"pr"`
+			}
+			must(t, json.Unmarshal(body, &th))
+			if code != 200 || th.State != st.state || th.PR == nil || th.PR.ID != reviewPRID {
+				t.Fatalf("threads: %d %s", code, body)
+			}
+			f.noFetches(t)
+		})
+	}
+}
+
+func TestPRCommentsOfflineFromCachedSummary(t *testing.T) {
+	for _, st := range offlineStates {
+		t.Run(st.name, func(t *testing.T) {
+			f := newPRCFixture(t)
+			f.threads = summaryThreads()
+			// Online once, so the summary (head branch, title) is cached.
+			if s := f.summary(t); s.State != "ok" {
+				t.Fatalf("online: %+v", s)
+			}
+			f.sumCalls.Store(0)
+			f.threadsCalls.Store(0)
+			f.ctxCalls.Store(0)
+			st.apply(f, t)
+			s := f.summary(t)
+			if s.State != st.state || s.PR == nil || s.PR.ID != prcID || s.PR.Number != 1 ||
+				s.PR.URL != "https://github.com/o/r/pull/1" || s.PR.Title != "PR 1 title" {
+				t.Fatalf("got %+v pr=%+v", s, s.PR)
+			}
+			f.noFetches(t)
+		})
+	}
+}
+
+func TestPRCommentsOfflineUncachedHasNoPR(t *testing.T) {
+	for _, st := range offlineStates {
+		t.Run(st.name, func(t *testing.T) {
+			f := newPRCFixture(t)
+			st.apply(f, t)
+			s := f.summary(t)
+			if s.State != st.state || s.PR != nil {
+				t.Fatalf("got %+v pr=%+v", s, s.PR)
+			}
+			f.noFetches(t)
+		})
+	}
+}
+
+func TestPRCommentsNoTokenWriteRefusedWithPR(t *testing.T) {
+	f := newPRCFixture(t)
+	f.asReviewWorktree(t)
+	f.srv.WatcherAuthPath = filepath.Join(t.TempDir(), "missing.yaml")
+	resp, err := http.Post(f.ts.URL+"/api/pr-write/reply", "application/json",
+		strings.NewReader(fmt.Sprintf(`{"path":%q,"thread_id":"T1","in_reply_to":11,"mode":"single","body":"x"}`, f.wt)))
+	must(t, err)
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusConflict || !strings.Contains(string(body), `"no_token"`) {
+		t.Fatalf("reply: %d %s", resp.StatusCode, body)
+	}
+	f.noFetches(t)
+}
