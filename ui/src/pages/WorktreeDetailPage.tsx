@@ -827,7 +827,7 @@ export function WorktreeDetailPage() {
       {inDiff ? (
         <DiffViewBoundary>
           <Suspense fallback={null}>
-            <DiffView path={path} headerHeight={headerHeight} escHint={escDiff && !sidebarOpen} sidebarEscHint={escDiff && sidebarOpen} />
+            <DiffView path={path} repo={summary?.repo} updated={summary?.latest_event_ts} headerHeight={headerHeight} escHint={escDiff && !sidebarOpen} sidebarEscHint={escDiff && sidebarOpen} />
           </Suspense>
         </DiffViewBoundary>
       ) : (

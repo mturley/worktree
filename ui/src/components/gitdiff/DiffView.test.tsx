@@ -405,6 +405,17 @@ describe("DiffView", () => {
     expect(await screen.findByTestId("diff-body")).toHaveAttribute("data-mode", "unified")
   })
 
+  it("shows the Code tab's git details in the sidebar, between the selectors and the filter", async () => {
+    setup()
+    await screen.findByTestId("diff-body")
+    const mergeBase = screen.getByText("Merge base")
+    const filter = screen.getByPlaceholderText("Filter files")
+    expect(mergeBase.compareDocumentPosition(filter) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByTestId("range-picker-trigger").compareDocumentPosition(mergeBase) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByText("Working tree")).toBeInTheDocument()
+    expect(screen.getByText("Fetched")).toBeInTheDocument()
+  })
+
   it("collapses the sidebar, moving the selectors into the toolbar, and remembers it", async () => {
     setup()
     await screen.findByTestId("diff-body")

@@ -5,12 +5,15 @@ import type { PRCommentsSummary, PRThreads } from "../api/types"
 
 const POLL_MS = 5000
 
-/** Counts and unread state for the worktree's PR; polled so unread updates live. */
-export function usePRCommentsSummary(path: string) {
+/**
+ * Counts and unread state for the worktree's PR; polled so unread updates
+ * live. `pollMs` slows this observer's poll (default 5s).
+ */
+export function usePRCommentsSummary(path: string, opts: { pollMs?: number } = {}) {
   return useQuery<PRCommentsSummary>({
     queryKey: ["pr-comments", path],
     queryFn: () => api.prComments(path),
-    refetchInterval: POLL_MS,
+    refetchInterval: opts.pollMs ?? POLL_MS,
   })
 }
 

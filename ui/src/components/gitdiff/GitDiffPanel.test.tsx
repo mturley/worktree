@@ -10,8 +10,6 @@ const api = vi.hoisted(() => ({
   worktreeGit: vi.fn(),
   diffCommits: vi.fn(),
   diffFiles: vi.fn(),
-  reviewComments: vi.fn(),
-  prComments: vi.fn(),
 }))
 
 vi.mock("../../api/client", async (orig) => {
@@ -22,8 +20,6 @@ vi.mock("../../api/client", async (orig) => {
       worktreeGit: api.worktreeGit,
       diffCommits: api.diffCommits,
       diffFiles: api.diffFiles,
-      reviewComments: api.reviewComments,
-      prComments: api.prComments,
       settings: async () => ({ worktree: { editor: "code" } }),
     },
   }
@@ -54,8 +50,6 @@ beforeEach(() => {
   api.worktreeGit.mockResolvedValue(git)
   api.diffCommits.mockResolvedValue(commits)
   api.diffFiles.mockResolvedValue(files)
-  api.reviewComments.mockResolvedValue({ comments: [] })
-  api.prComments.mockResolvedValue({ state: "no_pr", open_threads: 0, unread_comments: 0, unread_ids: [] })
 })
 afterEach(() => {
   cleanup()
@@ -71,46 +65,6 @@ const wrap = () =>
     </MantineProvider>,
   )
 
-describe("Review changes button", () => {
-  it("counts the worktree's pending local comments, in the unread blue", async () => {
-    api.reviewComments.mockResolvedValue({ comments: [{ id: 1 }, { id: 2 }, { id: 3 }] })
-    wrap()
-    const button = await screen.findByRole("button", { name: "Review changes (3 pending local comments)" })
-    expect(button).toHaveAttribute("data-variant", "filled")
-    // No view: the whole worktree's list.
-    expect(api.reviewComments).toHaveBeenCalledWith("/w/a", undefined)
-  })
-
-  it("says comment for one", async () => {
-    api.reviewComments.mockResolvedValue({ comments: [{ id: 1 }] })
-    wrap()
-    expect(await screen.findByRole("button", { name: "Review changes (1 pending local comment)" })).toBeInTheDocument()
-  })
-
-  it("adds the PR's open threads and unread comments", async () => {
-    api.reviewComments.mockResolvedValue({ comments: [{ id: 1 }, { id: 2 }] })
-    api.prComments.mockResolvedValue({ state: "ok", open_threads: 5, unread_comments: 3, unread_ids: [] })
-    wrap()
-    const button = await screen.findByRole("button", {
-      name: "Review changes (2 pending local comments, 5 PR comments (3 unread))",
-    })
-    expect(button).toHaveAttribute("data-variant", "filled")
-  })
-
-  it("stays light when PR comments are all read", async () => {
-    api.prComments.mockResolvedValue({ state: "ok", open_threads: 4, unread_comments: 0, unread_ids: [] })
-    wrap()
-    const button = await screen.findByRole("button", { name: "Review changes (4 PR comments)" })
-    expect(button).toHaveAttribute("data-variant", "light")
-  })
-
-  it("is plain with none", async () => {
-    wrap()
-    const button = await screen.findByRole("button", { name: "Review changes" })
-    expect(button).toHaveAttribute("data-variant", "light")
-  })
-})
-
 describe("Files changed section", () => {
   it("starts collapsed, with the header's count and totals still shown", async () => {
     wrap()
@@ -118,12 +72,9 @@ describe("Files changed section", () => {
     expect(screen.getByText("+8")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Show files" })).toBeInTheDocument()
     expect(screen.queryByTestId("file-row")).toBeNull()
-    // At the top, above the git summary: Open in editor, then Review changes.
-    const review = screen.getByRole("button", { name: "Review changes" })
-    const editor = screen.getByRole("button", { name: /Open in editor/ })
-    expect(editor.compareDocumentPosition(review) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(review.compareDocumentPosition(screen.getByText(/^upstream\/main @/)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(review.compareDocumentPosition(screen.getByText("Files changed (2)")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // The actions live above the card's tabs now (ReviewActions), not here.
+    expect(screen.queryByRole("button", { name: /Review changes/ })).toBeNull()
+    expect(screen.queryByRole("button", { name: /Open in editor/ })).toBeNull()
   })
 
   it("expands and collapses from the chevron, remembering the choice", async () => {

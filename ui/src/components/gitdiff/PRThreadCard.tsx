@@ -33,6 +33,20 @@ function MarkReadSlot({ children }: { children: ReactNode }) {
   )
 }
 
+/** Why a thread not drawn in the diff has nowhere to jump to. */
+function jumpBlockedReason(status: NonNullable<PRThread["view"]>["status"] | undefined): string {
+  switch (status) {
+    case "unavailable":
+      return "This comment's commit isn't available locally"
+    case "outside_changes":
+      return "Outside the changes"
+    case "not_in_view":
+      return "Not in this view: its file has no changes in the selected commits"
+    default:
+      return "Out of date: its lines aren't in this view"
+  }
+}
+
 /** A read-only card for one PR review thread: every comment, the place, and the way to GitHub. */
 export function PRThreadCard({ path, thread, pr, variant, unreadIds, prResource, onJump }: {
   path: string
@@ -54,12 +68,9 @@ export function PRThreadCard({ path, thread, pr, variant, unreadIds, prResource,
   const last = shown && view.end_line !== undefined ? view.end_line : thread.end_line
   const place = `${thread.file}:${first === last ? first : `${first}-${last}`}`
   const outdated = view?.status === "outdated" || view?.status === "unavailable" || thread.outdated
-  const jumpDisabledReason =
-    view?.status === "unavailable"
-      ? "This comment's commit isn't available locally"
-      : view?.status === "outside_changes"
-        ? "Outside the changes"
-        : undefined
+  // Only a thread drawn in the diff has somewhere to jump to; anything else
+  // says why instead of a link that does nothing.
+  const jumpDisabledReason = shown ? undefined : jumpBlockedReason(view?.status)
   const unread = prResource ? thread.comments.some((c) => unreadIds.has(c.id)) : false
 
   if (thread.resolved && !expanded) {

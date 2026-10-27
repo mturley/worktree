@@ -15,6 +15,8 @@ import { relativeTime as rel } from "../lib/relativeTime"
 import { CmuxPanel } from "./CmuxPanel"
 import { DeleteWorktreeButton } from "./DeleteWorktreeButton"
 import { GitDiffPanel } from "./gitdiff/GitDiffPanel"
+import { DirectoryRow } from "./gitdiff/GitSummary"
+import { ReviewActions } from "./gitdiff/ReviewActions"
 import { NotesMarkdown } from "./NotesMarkdown"
 import { KeyHint } from "./search/KeyHint"
 
@@ -28,9 +30,10 @@ import { KeyHint } from "./search/KeyHint"
  * what branch am I on, is the tree dirty, when did anything last happen, and
  * what was I in the middle of (notes).
  *
- * A single row of tabs — Notes, Code, Environment and, inside cmux, cmux —
- * with the delete control at its right. Off Notes, an X before the delete
- * control (or clicking the active tab again) goes back to Notes.
+ * At the top, on every tab: the directory row, with the delete control at
+ * its right, then Open in editor and Review changes. Then a row of tabs —
+ * Notes, Code, Environment and, inside cmux, cmux. Off Notes, an X before the
+ * delete control (or clicking the active tab again) goes back to Notes.
  * The tab is the page's (useDetailTab), because it also decides where the
  * page puts the card: wide, Notes sits in the resource column and the other
  * tabs span the page under the header. Switching between them moves, and so
@@ -87,40 +90,12 @@ export function WorktreeDetailCard({ w, tab, onTabChange, escHint }: {
 
   return (
     <Paper p="sm" withBorder>
-      <Tabs value={tab} onChange={selectTab} keepMounted={false}>
-        {/* The worktree and cmux workspace names live in the page header.
-            The tab list is sized to its tabs, so the underline stops after
-            the last tab, and the delete control sits at the row's far end. */}
+      {/* On every tab: the directory (with the card's controls at the far
+          end of its row), then what to do with the changes. Uses the card's
+          own polled status; the counts refresh slowly off the Code tab. */}
+      <Stack gap="xs" mb="xs">
         <Group justify="space-between" wrap="nowrap" gap="xs" align="flex-start">
-          <Tabs.List w="fit-content">
-            <Tabs.Tab
-              value="notes"
-              fz="xs"
-              py={6}
-              rightSection={escHint ? <KeyHint decorative>Esc</KeyHint> : undefined}
-            >
-              Notes
-            </Tabs.Tab>
-            <Tabs.Tab
-              value="code"
-              fz="xs"
-              py={6}
-              onClick={backToNotesOn("code")}
-              rightSection={
-                // Badge sets its own default cursor; keep the tab's pointer
-                // all the way across it.
-                badge ? (
-                  <Badge size="xs" variant="light" color={badgeTint} style={{ flex: "none", cursor: "pointer" }}>{badge}</Badge>
-                ) : undefined
-              }
-            >
-              Code
-            </Tabs.Tab>
-            <Tabs.Tab value="env" fz="xs" py={6} onClick={backToNotesOn("env")}>Environment</Tabs.Tab>
-            {hasCmux && (
-              <Tabs.Tab value="cmux" fz="xs" py={6} onClick={backToNotesOn("cmux")}>cmux</Tabs.Tab>
-            )}
-          </Tabs.List>
+          {gitStatus.data ? <DirectoryRow path={w.path} git={gitStatus.data} /> : <span />}
           <Group gap={4} wrap="nowrap">
             {tab !== "notes" && (
               <Tooltip label="Back to notes">
@@ -132,6 +107,37 @@ export function WorktreeDetailCard({ w, tab, onTabChange, escHint }: {
             <DeleteWorktreeButton w={w} />
           </Group>
         </Group>
+        {gitStatus.data?.on_disk && (
+          <ReviewActions path={w.path} git={gitStatus.data} active={tab === "code"} />
+        )}
+      </Stack>
+      <Tabs value={tab} onChange={selectTab} keepMounted={false}>
+        {/* The worktree and cmux workspace names live in the page header. */}
+        <Tabs.List>
+          <Tabs.Tab
+            value="notes"
+            rightSection={escHint ? <KeyHint decorative>Esc</KeyHint> : undefined}
+          >
+            Notes
+          </Tabs.Tab>
+          <Tabs.Tab
+            value="code"
+            onClick={backToNotesOn("code")}
+            rightSection={
+              // Badge sets its own default cursor; keep the tab's pointer
+              // all the way across it.
+              badge ? (
+                <Badge size="xs" variant="light" color={badgeTint} style={{ flex: "none", cursor: "pointer" }}>{badge}</Badge>
+              ) : undefined
+            }
+          >
+            Code
+          </Tabs.Tab>
+          <Tabs.Tab value="env" onClick={backToNotesOn("env")}>Environment</Tabs.Tab>
+          {hasCmux && (
+            <Tabs.Tab value="cmux" onClick={backToNotesOn("cmux")}>cmux</Tabs.Tab>
+          )}
+        </Tabs.List>
 
         <Tabs.Panel value="notes" pt={6} keepMounted>
           <NotesPanel

@@ -3236,7 +3236,7 @@ other open tabs catch up on their next refetch.
 
 ### Open in editor (`editor_api.go`)
 
-The Code tab's top line (above the git summary) holds "Open in editor (`code`)" followed by "Review changes", and the diff view's breadcrumb has the same button after its title (the page header has the cmux button there instead). The server turns its
+The worktree details card's top (above its tabs, on every tab) holds "Open in editor (`code`)" followed by "Review changes", and the diff view's breadcrumb has the same button after its title (the page header has the cmux button there instead). The server turns its
 `POST /api/worktrees/open-editor {path}` into running the config's
 `editor` (read from disk per request, like `GET /api/settings`) with the
 worktree path, as `worktree open` does. The request waits for the command
@@ -3253,14 +3253,18 @@ updates it at once.
 ### Code tab and diff view (`worktree_git_api.go`, `worktree_diff_api.go`, `ui/src/components/gitdiff/`)
 
 The details card's old Environment tab is split: **Environment** keeps the
-env/ports and sits after **Code**, which follows Notes. **Code** (`GitDiffPanel`) shows "Open in editor" then "Review changes" on its top line (while the worktree has local review comments, "Review changes" is filled in the unread blue and reads `Review changes (N pending local comments)`, counted from the view-less `GET /api/review-comments` list), then the git summary (`GitSummary`:
+env/ports and sits after **Code**, which follows Notes. The tabs are Mantine's default size, as elsewhere. Above them, on every tab, the card shows the directory row (`DirectoryRow`, with a copy button; Back to notes and Delete sit at the right end of that row) and then `ReviewActions`: "Open in editor" and "Review changes". While the worktree has local review comments or unread PR comments, "Review changes" is filled in the unread blue, and its label counts both (`codeTabLabel`), from the view-less `GET /api/review-comments` list and the PR comments summary. Its counts poll every 5s on the Code tab and every 60s on the other tabs (a shared query polls at its fastest observer's interval, so an open diff view keeps 5s). **Code** (`GitDiffPanel`) shows the git summary (`GitSummary`:
 merge-base against the main upstream, ahead/behind, tracking branch, working
 counts, background-fetch state) and a "Files changed" list (`FilesChangedList`)
 with two selectors: the **base** (`merge-base` or `tracking`, `CompareSelect`)
 and the **range** (`RangePicker`: All changes, or a run of first-parent commits
 plus an optional Uncommitted entry). The card's tab label carries a badge from
 the same data. `?diff[&file=<path>]` (`useDiffView`) opens the drill-down
-(`DiffView`), which replaces the page body.
+(`DiffView`), which replaces the page body. Its file tree sidebar shows the
+base and range selectors, then the Code tab's git details (`GitSummary` with
+`oneColumn`: repo, branch, working tree, updated, merge base, tracking branch,
+fetched, in one column), then the file filter and the tree. The page passes the
+worktree's `repo` and `latest_event_ts` for those details.
 
 **Endpoints** (all take a registered worktree `path`; an unregistered one is
 refused):
@@ -3557,7 +3561,7 @@ The open PR's review threads are shown read-only in the diff view and sidebar, b
 
 **Threads hook.** `usePRThreads` is pinned per view, with a refresh key. A placeholder is kept only while the revs are unchanged. The sidebar mounts while open when there are local comments, pinned threads, or open threads in the summary counts (or Mike just opened it), and then stays mounted until closed, so a GitHub-side resolve or a poll never reflows the diff. It never auto-closes on a poll result (see the review sidebar above for its one auto-close). When the pinned list is empty but the summary counts open threads (the view opened before the review existed), the PR tab shows "New PR comments" with a Refresh button; that click loads the threads. The toolbar and Code tab labels use the summary counts (open threads), not the pinned list.
 
-**UI.** The sidebar has Local / PR tabs (`worktree.reviewSidebarTab`, sessionStorage). The toolbar button opens it on the PR tab when it counts only PR comments. The "Show in diff view" switch is `worktree.showPRComments` (localStorage, default on). `PRThreadCard` is grape. Its unread dot and Mark all read (on the first comment's header row, beside its links) sit in slots that are always laid out, so unread changes never resize the card. Comment bodies render images as links (`NotesMarkdown`'s `imagesAsLinks`), never loading them. `&prcomment=<id>` on the Code tab URL scrolls to a comment, handled once per value; the activity modal's "Go to comment in diff view" button uses the locate route.
+**UI.** The sidebar has Local / PR tabs (`worktree.reviewSidebarTab`, sessionStorage). The toolbar button opens it on the PR tab when it counts only PR comments. The "Show in diff view" switch is `worktree.showPRComments` (localStorage, default on). `PRThreadCard` is grape. Its sidebar `file:line` jump link works only for a thread drawn in the diff (`shown`); any other thread's link is disabled, with a tooltip saying why (out of date, not in this view, outside the changes, or its commit isn't local). Its unread dot and Mark all read (on the first comment's header row, beside its links) sit in slots that are always laid out, so unread changes never resize the card. Comment bodies render images as links (`NotesMarkdown`'s `imagesAsLinks`), never loading them. `&prcomment=<id>` on the Code tab URL scrolls to a comment, handled once per value; the activity modal's "Go to comment in diff view" button uses the locate route.
 
 **Events and unread.** The poller tags `pr_review_comment` events `comment:<id>` (`db.EventsForResourceByType` reads them). `prcomments.MatchEvents` matches by tag first, then by the fallback title "Review comment by <author> on <path>" plus `ExternalTS`; `UnreadIDs` yields the unread comment ids. Mark all read uses `MarkAllReadButton`'s single form with `onMarked`, so dots clear without waiting for Refresh.
 

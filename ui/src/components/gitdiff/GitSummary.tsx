@@ -43,15 +43,13 @@ function CopyIcon({ value, label, tooltip }: { value: string; label: string; too
 }
 
 /**
- * The Code tab's summary: what this worktree is (left) and where it stands
- * against its merge base and tracking branch (right). Two columns wide,
- * stacked on a phone.
+ * The worktree's directory, with a button that copies it. With ~ for the home
+ * directory, copied as shown, like the Environment tab's paths. Heads the
+ * worktree details card, above its tabs.
  */
-export function GitSummary({ path, git, repo, updated }: { path: string; git: WorktreeGit; repo: string; updated?: string }) {
-  // The working directory heads the summary, across both columns. With ~ for
-  // the home directory, copied as shown, like the Environment tab's paths.
+export function DirectoryRow({ path, git }: { path: string; git: WorktreeGit }) {
   const dir = git.directory ?? path
-  const directory = (
+  return (
     <InfoRow label="Directory">
       <Group gap={4} wrap="nowrap" component="span">
         <span>{dir}</span>
@@ -59,16 +57,29 @@ export function GitSummary({ path, git, repo, updated }: { path: string; git: Wo
       </Group>
     </InfoRow>
   )
+}
+
+/**
+ * The Code tab's summary: what this worktree is (left) and where it stands
+ * against its merge base and tracking branch (right). Two columns wide,
+ * stacked on a phone, or always (`oneColumn`) in a narrow place like the
+ * diff view's file tree sidebar.
+ */
+export function GitSummary({ git, repo, updated, oneColumn = false }: {
+  git: WorktreeGit
+  repo?: string
+  updated?: string
+  oneColumn?: boolean
+}) {
   return (
     <Stack gap={2}>
-      {directory}
-      <Columns git={git} repo={repo} updated={updated} />
+      <Columns git={git} repo={repo} updated={updated} oneColumn={oneColumn} />
     </Stack>
   )
 }
 
-function Columns({ git, repo, updated }: { git: WorktreeGit; repo: string; updated?: string }) {
-  const wide = useIsWide()
+function Columns({ git, repo, updated, oneColumn }: { git: WorktreeGit; repo?: string; updated?: string; oneColumn: boolean }) {
+  const wide = useIsWide() && !oneColumn
   if (!git.on_disk) {
     return <Text size="xs" c="dimmed" fs="italic">Worktree is missing from disk</Text>
   }

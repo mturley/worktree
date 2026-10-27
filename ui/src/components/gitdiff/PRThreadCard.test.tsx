@@ -146,4 +146,23 @@ describe("PRThreadCard", () => {
     expect(screen.getByText("Outdated")).toBeTruthy()
     expect((screen.getByRole("button", { name: /Jump to comment/ }) as HTMLButtonElement).disabled).toBe(true)
   })
+
+  it.each([
+    ["outdated", "Out of date: its lines aren't in this view"],
+    ["not_in_view", "Not in this view: its file has no changes in the selected commits"],
+  ] as const)("a %s thread can't jump, and says why", async (status, why) => {
+    const onJump = vi.fn()
+    renderCard({ variant: "sidebar", onJump, thread: thread({ view: { status } }) })
+    const jumpLink = screen.getByRole("button", { name: /Jump to comment/ }) as HTMLButtonElement
+    expect(jumpLink.disabled).toBe(true)
+    await userEvent.hover(jumpLink.parentElement as HTMLElement)
+    expect(await screen.findByText(why)).toBeInTheDocument()
+  })
+
+  it("a shown thread can jump", async () => {
+    const onJump = vi.fn()
+    renderCard({ variant: "sidebar", onJump, thread: thread({ view: { status: "shown", start_line: 3, end_line: 3 } }) })
+    await userEvent.click(screen.getByRole("button", { name: /Jump to comment/ }))
+    expect(onJump).toHaveBeenCalled()
+  })
 })

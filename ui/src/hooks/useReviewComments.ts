@@ -5,12 +5,19 @@ import type { NewReviewComment, ReviewComment, ReviewCommentItem } from "../api/
 
 const POLL_MS = 5000
 
-/** The path's review comments, positioned for the view (when one is given). */
-export function useReviewComments(path: string, view: { oldRev: string; newRev: string } | undefined) {
+/**
+ * The path's review comments, positioned for the view (when one is given).
+ * `pollMs` slows this observer's poll (default 5s).
+ */
+export function useReviewComments(
+  path: string,
+  view: { oldRev: string; newRev: string } | undefined,
+  opts: { pollMs?: number } = {},
+) {
   return useQuery<ReviewCommentItem[]>({
     queryKey: ["review-comments", path, view?.oldRev, view?.newRev],
     queryFn: async () => (await api.reviewComments(path, view)).comments,
-    refetchInterval: POLL_MS,
+    refetchInterval: opts.pollMs ?? POLL_MS,
     // Keep the list through a view change, but never show another worktree's.
     placeholderData: (prev, prevQuery) => (prevQuery?.queryKey[1] === path ? prev : undefined),
   })

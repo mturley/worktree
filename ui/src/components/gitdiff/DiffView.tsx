@@ -25,6 +25,7 @@ import { parseDiff } from "./parsedPatch"
 import { ReviewSidebar } from "./ReviewSidebar"
 import { scrollToComment, scrollToFile, scrollToPRThread } from "./scrollToFile"
 import { usePRCommentsView } from "./usePRCommentsView"
+import { GitSummary } from "./GitSummary"
 import { RangePicker } from "./RangePicker"
 
 const MODE_KEY = "worktree.diffMode"
@@ -84,11 +85,16 @@ const rangeKey = (r: DiffRange) => (r === "all" ? "all" : `${r.from}..${r.to}`)
  */
 export default function DiffView({
   path,
+  repo,
+  updated,
   headerHeight,
   escHint = true,
   sidebarEscHint = false,
 }: {
   path: string
+  /** The worktree's repo and last activity, for the sidebar's git details. */
+  repo?: string
+  updated?: string
   headerHeight: number
   /** Whether Esc's next step is leaving (the page's: a query in the search bar comes first). */
   escHint?: boolean
@@ -436,6 +442,8 @@ export default function DiffView({
   const sidebar = (
     <Stack gap="sm" p={wide ? "xs" : 0}>
       {selectors("top")}
+      {/* The Code tab's details, in one column to fit the sidebar. */}
+      {git?.on_disk && <GitSummary git={git} repo={repo} updated={updated} oneColumn />}
       <TextInput
         size="xs"
         placeholder="Filter files"

@@ -1,16 +1,12 @@
 import { useState } from "react"
-import { ActionIcon, Box, Button, Group, Stack, Text, UnstyledButton } from "@mantine/core"
+import { ActionIcon, Box, Group, Stack, Text, UnstyledButton } from "@mantine/core"
 import { IconChevronDown, IconChevronRight } from "@tabler/icons-react"
 import type { WorktreeGit } from "../../api/types"
 import { useDiffCommits, useDiffFiles } from "../../hooks/useDiffData"
 import { useDiffSelection } from "../../hooks/useDiffSelection"
 import { useDiffView } from "../../hooks/useDiffView"
-import { usePRCommentsSummary } from "../../hooks/usePRComments"
-import { useReviewComments } from "../../hooks/useReviewComments"
 import { useWorktreeGit } from "../../hooks/useWorktreeGit"
 import { diffUnavailable } from "../../lib/diffLabels"
-import { codeTabLabel, countsAreUnread } from "../../lib/reviewCounts"
-import { OpenInEditorButton } from "../OpenInEditorButton"
 import { CompareSelect } from "./CompareSelect"
 import { FilesChangedList } from "./FilesChangedList"
 import { Loading } from "./Loading"
@@ -18,8 +14,8 @@ import { GitSummary } from "./GitSummary"
 import { RangePicker } from "./RangePicker"
 
 /**
- * The Code tab: Open in editor and Review changes, the git summary, then the
- * Files changed section.
+ * The Code tab: the git summary, then the Files changed section. (Open in
+ * editor and Review changes sit above the card's tabs: ReviewActions.)
  * Mounted only while the tab is selected, so `fetch: true` asks the server to
  * nudge its background fetch exactly while someone is looking.
  */
@@ -31,43 +27,9 @@ export function GitDiffPanel({ path, repo, updated }: { path: string; repo: stri
   if (!git.data) return <Loading />
   return (
     <Stack gap="sm">
-      {git.data.on_disk && <Actions path={path} git={git.data} />}
-      <GitSummary path={path} git={git.data} repo={repo} updated={updated} />
+      <GitSummary git={git.data} repo={repo} updated={updated} />
       {git.data.on_disk && <FilesChanged path={path} git={git.data} />}
     </Stack>
-  )
-}
-
-/** "Open in editor · Review changes": what to do with the changes, on its own line at the top. */
-function Actions({ path, git }: { path: string; git: WorktreeGit }) {
-  const diffView = useDiffView()
-  // The same shared base as Files changed below, so both agree on whether there is a diff.
-  const { base } = useDiffSelection(path, undefined)
-  const unavailable = diffUnavailable(git, base)
-  // With no view, the worktree's whole list: every comment not yet cleared.
-  const pending = useReviewComments(path, undefined).data?.length ?? 0
-  const prSummary = usePRCommentsSummary(path).data
-  const prOk = prSummary?.state === "ok"
-  const openThreads = prOk ? prSummary.open_threads : 0
-  const unread = prOk ? prSummary.unread_comments : 0
-  const filled = countsAreUnread(pending, unread)
-  return (
-    // Spaced from the card's tabs above.
-    <Group gap="xs" wrap="wrap" mt="xs">
-      <OpenInEditorButton path={path} />
-      {/* A review in progress is filled in the unread blue, as the diff view's
-          own "Local review comments" button is, so it's hard to miss. */}
-      <Button
-        size="xs"
-        variant={filled ? "filled" : "light"}
-        color={filled ? "blue" : undefined}
-        vars={filled ? () => ({ root: { "--button-hover": "var(--mantine-color-blue-4)" } }) : undefined}
-        disabled={!!unavailable}
-        onClick={() => diffView.enter()}
-      >
-        {codeTabLabel(pending, openThreads, unread)}
-      </Button>
-    </Group>
   )
 }
 

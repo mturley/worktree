@@ -3,7 +3,7 @@ import { cleanup, render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import type { WorktreeGit } from "../../api/types"
-import { GitSummary } from "./GitSummary"
+import { DirectoryRow, GitSummary } from "./GitSummary"
 
 const base: WorktreeGit = {
   on_disk: true, fingerprint: "f", working_fingerprint: "wf", branch: "my-branch",
@@ -17,13 +17,32 @@ const base: WorktreeGit = {
 const show = (over: Partial<WorktreeGit> = {}) =>
   render(
     <MantineProvider>
-      <GitSummary path="/wt/foo" git={{ ...base, ...over }} repo="r" />
+      <GitSummary git={{ ...base, ...over }} repo="r" />
+    </MantineProvider>,
+  )
+
+const showDir = (over: Partial<WorktreeGit> = {}) =>
+  render(
+    <MantineProvider>
+      <DirectoryRow path="/wt/foo" git={{ ...base, ...over }} />
     </MantineProvider>,
   )
 
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+})
+
+describe("GitSummary oneColumn", () => {
+  it("stacks the columns even when wide", () => {
+    const { container } = render(
+      <MantineProvider>
+        <GitSummary git={base} repo="r" oneColumn />
+      </MantineProvider>,
+    )
+    const columns = container.querySelector<HTMLElement>("[style*='flex-direction']")
+    expect(columns?.style.flexDirection).toBe("column")
+  })
 })
 
 describe("GitSummary working tree line", () => {
@@ -60,13 +79,12 @@ describe("GitSummary labels", () => {
   })
 })
 
-describe("GitSummary directory", () => {
-  it("heads the summary with the working directory and a button that copies it", async () => {
+describe("DirectoryRow", () => {
+  it("shows the working directory and a button that copies it", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true })
-    const { container } = show()
-    // First, ahead of the columns (Mantine's style tag leads the text).
-    expect(container.textContent).toMatch(/\}Directory\/wt\/fooRepo/)
+    showDir()
+    expect(screen.getByText("/wt/foo")).toBeInTheDocument()
     await userEvent.click(screen.getByRole("button", { name: "Copy directory path" }))
     expect(writeText).toHaveBeenCalledWith("/wt/foo")
   })
@@ -74,16 +92,15 @@ describe("GitSummary directory", () => {
   it("shows the server's ~ form of the path, and copies it as shown", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true })
-    show({ directory: "~/wt/foo" })
+    showDir({ directory: "~/wt/foo" })
     expect(screen.getByText("~/wt/foo")).toBeInTheDocument()
     await userEvent.click(screen.getByRole("button", { name: "Copy directory path" }))
     expect(writeText).toHaveBeenCalledWith("~/wt/foo")
   })
 
-  it("still shows it when the worktree is missing from disk", () => {
-    show({ on_disk: false })
-    expect(screen.getByText("/wt/foo")).toBeInTheDocument()
-    expect(screen.getByText("Worktree is missing from disk")).toBeInTheDocument()
+  it("is left out of the Code tab's summary", () => {
+    show()
+    expect(screen.queryByText("Directory")).toBeNull()
   })
 })
 

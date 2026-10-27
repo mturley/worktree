@@ -19,6 +19,8 @@ const worktreeNotes = vi.fn()
 const saveWorktreeNotes = vi.fn()
 const cmux = vi.fn()
 const cmuxTree = vi.fn()
+const reviewComments = vi.fn()
+const prComments = vi.fn()
 vi.mock("../api/client", async (orig) => {
   const actual = await orig<typeof import("../api/client")>()
   return {
@@ -30,6 +32,8 @@ vi.mock("../api/client", async (orig) => {
       saveWorktreeNotes: (...a: unknown[]) => saveWorktreeNotes(...a),
       cmux: (...a: unknown[]) => cmux(...a),
       cmuxTree: (...a: unknown[]) => cmuxTree(...a),
+      reviewComments: (...a: unknown[]) => reviewComments(...a),
+      prComments: (...a: unknown[]) => prComments(...a),
     },
   }
 })
@@ -45,6 +49,8 @@ beforeEach(() => {
   }))
   cmux.mockResolvedValue({ available: true, matches: {} })
   cmuxTree.mockResolvedValue({ available: true, workspaces: [] })
+  reviewComments.mockResolvedValue({ comments: [] })
+  prComments.mockResolvedValue({ state: "no_pr", open_threads: 0, unread_comments: 0, unread_ids: [] })
 })
 
 const gitStatus = (o: Partial<WorktreeGit> = {}): WorktreeGit => ({
@@ -160,6 +166,33 @@ describe("WorktreeDetailCard", () => {
 })
 
 const openCode = async () => userEvent.click(await screen.findByRole("tab", { name: /^Code/ }))
+
+describe("review actions", () => {
+  it("sit above the tab bar on every tab", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    wrap(summary())
+    const review = await screen.findByRole("button", { name: "Review changes" })
+    const editor = screen.getByRole("button", { name: /Open in editor/ })
+    const copyDir = screen.getByRole("button", { name: "Copy directory path" })
+    const firstTab = screen.getAllByRole("tab")[0]
+    // The directory first, then Open in editor, then Review changes.
+    expect(copyDir.compareDocumentPosition(editor) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(editor.compareDocumentPosition(review) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(review.compareDocumentPosition(firstTab) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // Still there on the Code tab, and only once.
+    await openCode()
+    expect(await screen.findAllByRole("button", { name: "Review changes" })).toHaveLength(1)
+    expect(screen.getAllByRole("button", { name: "Copy directory path" })).toHaveLength(1)
+  })
+
+  it("keep only the directory when the worktree is missing from disk", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    worktreeGit.mockResolvedValue(gitStatus({ on_disk: false }))
+    wrap(summary())
+    expect(await screen.findByRole("button", { name: "Copy directory path" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Review changes" })).toBeNull()
+  })
+})
 
 describe("tabs", () => {
   it("orders them Notes, Code, Environment, cmux", async () => {
@@ -277,13 +310,15 @@ describe("Code tab summary", () => {
 })
 
 describe("layout", () => {
-  it("puts the delete control after the tabs, outside the tab list", async () => {
+  it("puts the delete control on the directory row, above the tabs", async () => {
     worktreeInfo.mockResolvedValue(info())
     wrap(summary())
     const tablist = await screen.findByRole("tablist")
     const del = screen.getByRole("button", { name: "Delete worktree" })
+    const copyDir = await screen.findByRole("button", { name: "Copy directory path" })
     expect(tablist).not.toContainElement(del)
-    expect(tablist.compareDocumentPosition(del) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(copyDir.compareDocumentPosition(del) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(del.compareDocumentPosition(tablist) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it("puts the Notes tab before the Environment tab", async () => {
