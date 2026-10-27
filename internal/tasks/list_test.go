@@ -262,6 +262,39 @@ func TestListIgnoresNonWorktreeSubscribers(t *testing.T) {
 	}
 }
 
+func TestListLinkFollowingWorktrees(t *testing.T) {
+	conn := newDB(t)
+	x := mkWorktree(t, conn, "x")
+	y := mkWorktree(t, conn, "y")
+	z := mkWorktree(t, conn, "z")
+	subscribe(t, conn, y, prLink)
+	subscribe(t, conn, x, prLink)
+	subscribe(t, conn, z, prLink)
+	unsubscribe(t, conn, z, prLink) // a tombstone does not follow
+	// A task hold is not a worktree following the resource.
+	if err := watcherdb.Subscribe(conn, "task:9", res(jiraLink), watcherdb.SubscribeOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	tk, err := Create(conn, user, NewTask{Title: "x", Focus: []LinkTarget{prLink, jiraLink, {Kind: LinkWorktree, Worktree: x}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := mustGet(t, conn, tk.ID)
+	wantA, wantB := canon(x), canon(y)
+	if wantB < wantA {
+		wantA, wantB = wantB, wantA
+	}
+	if f := got.Links[0].FollowingWorktrees; len(f) != 2 || f[0] != wantA || f[1] != wantB {
+		t.Fatalf("pr FollowingWorktrees = %v", f)
+	}
+	if f := got.Links[1].FollowingWorktrees; len(f) != 0 || !got.Links[1].Archived {
+		t.Fatalf("jira link %+v", got.Links[1])
+	}
+	if f := got.Links[2].FollowingWorktrees; len(f) != 0 {
+		t.Fatalf("worktree link FollowingWorktrees = %v", f)
+	}
+}
+
 func TestListFiltersAndOrder(t *testing.T) {
 	conn := newDB(t)
 	a, _ := Create(conn, user, NewTask{Title: "a", Priority: PriorityHigh})

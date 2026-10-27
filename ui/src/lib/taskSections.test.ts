@@ -515,6 +515,23 @@ describe("linkChip", () => {
     expect(linkChip(withLinks([pr(true), wt(false)]))?.worktree).toBeUndefined()
   })
 
+  it("targets a followed resource chip at a worktree page: the list's own worktree if it follows, else the first", () => {
+    const followed = (focus: boolean, worktrees: string[]): TaskLink => ({ ...pr(focus), worktrees })
+    const key = { type: "pr", id: "opendatahub-io/odh-dashboard#4521" }
+    expect(linkChip(withLinks([followed(true, ["/w/a", "/w/b"])]))).toEqual({
+      text: "#4521", archived: false, target: { worktree: "/w/a", resource: key },
+    })
+    expect(linkChip(withLinks([followed(true, ["/w/a", "/w/b"])]), undefined, "/w/b")?.target).toEqual({ worktree: "/w/b", resource: key })
+    expect(linkChip(withLinks([followed(true, ["/w/a", "/w/b"])]), undefined, "/w/c")?.target).toEqual({ worktree: "/w/a", resource: key })
+  })
+
+  it("has no target when no worktree follows the resource, or for N linked", () => {
+    expect(linkChip(withLinks([{ ...pr(true, true), worktrees: [] }]))?.target).toBeUndefined()
+    expect(linkChip(withLinks([pr(true)]))?.target).toBeUndefined()
+    expect(linkChip(withLinks([{ ...pr(false), worktrees: ["/w/a"] }, jira(false)]))?.target).toBeUndefined()
+    expect(linkChip(withLinks([wt(true)]))?.target).toBeUndefined()
+  })
+
   it("is null on the list of the worktree its first Focus link names", () => {
     const own = "/Users/m/.worktrees/repo/oauth-fix"
     expect(linkChip(withLinks([wt(true), pr(false)]), undefined, own)).toBeNull()

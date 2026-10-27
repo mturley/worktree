@@ -1168,7 +1168,12 @@ the watcher toggles do not apply.
   with a numeric `id` plus its display `ref` (`"T42"`), the `rank`, and
   `subtasks_total`/`subtasks_done` instead of the subtasks. `links` and
   `implicit_worktrees` are always `[]`, never null. Link `focus` is the
-  library's `Primary`.
+  library's `Primary`. A link's `worktrees` (never null) is, for a resource
+  link, the canonical paths of the worktrees actively following it
+  (`worktree:` subscribers only, so a task's `task:<id>` hold never counts),
+  sorted; `[]` for a worktree link and an archived resource. It comes from
+  `tasks.Link.FollowingWorktrees`, filled in `compute` from the
+  subscriptions it already loads for `Implicit`, not a per-link query.
 - **Errors.** `tasks.ErrInvalid` → 400, `tasks.ErrNotFound` (including
   `ErrLinkNotFound`) → 404, else 500. Bodies are capped at 64 KiB.
 - **The server only scopes.** `GET /api/tasks` returns the scope's tasks in
@@ -1735,6 +1740,15 @@ URL param (`?task=<id>`) through **`TaskModalProvider`**
   `useTaskModal()` (the drag overlay's copy gets none and is inert). The title
   is a real `<button>`. The grip wrapper, star and link chip call
   `stopPropagation` (`keepFromRow`) so they don't open the modal.
+- **Task link chips navigate.** `linkChip` returns `worktree` for a worktree
+  chip and `target` (`{ worktree, resource }`) for a resource chip that some
+  worktree follows (the link's `worktrees`): the list's own worktree when it
+  is one of them, else the first. Either makes the chip a `<button>`
+  (`task-link-chip-nav`, hover style in `styles/theme.css`): a worktree chip
+  opens `/worktree/<path>`, a resource chip opens
+  `/worktree/<path>?resource=<serializeResourceKey>`, the same URL a resource
+  row's worktree button builds, which selects it there. An unfollowed
+  (archived) resource chip and "🔗 N linked" stay inert.
   `TaskStateCheckbox` guards its trigger AND `Menu.Dropdown`: the dropdown is
   portalled out of the row's DOM, but React still bubbles its events through
   the component tree, so a pick would otherwise open the modal. The guard

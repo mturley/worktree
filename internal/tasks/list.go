@@ -3,6 +3,7 @@ package tasks
 import (
 	"database/sql"
 	"fmt"
+	"slices"
 	"sort"
 
 	wdb "github.com/mturley/worktree/internal/db"
@@ -175,7 +176,11 @@ func compute(conn *sql.DB, onlyID *int64) (*computed, error) {
 				l.Archived = len(subs) == 0
 				for _, p := range subs {
 					implicit[p] = true
+					if !slices.Contains(l.FollowingWorktrees, p) {
+						l.FollowingWorktrees = append(l.FollowingWorktrees, p)
+					}
 				}
+				sort.Strings(l.FollowingWorktrees)
 			case LinkWorktree:
 				l.Archived = !registered[l.Worktree]
 			}

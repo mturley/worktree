@@ -2,6 +2,7 @@ import type { Priority, Task, TaskLink, TaskState } from "../api/types"
 import { worktreeName } from "./homeWorktree"
 import { shortResourceRef } from "./resourceRef"
 import { matchTask } from "./search"
+import type { ResourceKey } from "./resourceKey"
 
 /*
  * Tasks: pure list logic shared by every task list. No React here.
@@ -272,18 +273,27 @@ function linkText(l: TaskLink): string {
   return shortResourceRef(type, id) || (type === "slack" ? "Slack thread" : id)
 }
 
+/** Where a resource chip goes: a worktree page with that resource selected. */
+export interface LinkChipTarget {
+  worktree: string
+  resource: ResourceKey
+}
+
 /**
  * The row's link chip: the first Focus link plus "+N" for every other link,
  * or "🔗 N linked" when none is Focus. Null with no links, or on a
  * resource's or worktree's own list when the first Focus link is that
  * resource or worktree. `worktree` is set when the chip names a worktree
- * (its path), so the row can open that worktree's page.
+ * (its path), so the row can open that worktree's page. `target` is set when
+ * the chip names a resource some worktree follows: the list's own worktree
+ * if it is one of them, else the first. An unfollowed (archived) resource
+ * and "🔗 N linked" have nowhere to go.
  */
 export function linkChip(
   t: Task,
   ownResource?: { type: string; id: string },
   ownWorktree?: string,
-): { text: string; archived: boolean; worktree?: string } | null {
+): { text: string; archived: boolean; worktree?: string; target?: LinkChipTarget } | null {
   if (t.links.length === 0) return null
   const focus = t.links.find((l) => l.focus)
   if (!focus) return { text: `🔗 ${t.links.length} linked`, archived: false }
@@ -292,5 +302,9 @@ export function linkChip(
   if (ownWorktree && focus.kind === "worktree" && focus.worktree === ownWorktree) return null
   const more = t.links.length - 1
   const chip = { text: more > 0 ? `${linkText(focus)} +${more}` : linkText(focus), archived: focus.archived }
-  return focus.kind === "worktree" && focus.worktree ? { ...chip, worktree: focus.worktree } : chip
+  if (focus.kind === "worktree") return focus.worktree ? { ...chip, worktree: focus.worktree } : chip
+  const followers = focus.worktrees ?? []
+  if (!focus.resource_type || !focus.resource_id || followers.length === 0) return chip
+  const worktree = ownWorktree && followers.includes(ownWorktree) ? ownWorktree : followers[0]
+  return { ...chip, target: { worktree, resource: { type: focus.resource_type, id: focus.resource_id } } }
 }

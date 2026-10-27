@@ -122,9 +122,11 @@ groups changes a link's group, exactly as resource cards do in a worktree
 link**, plus "+N" counting all other links. A task with links but no Focus
 shows a neutral "🔗 N linked" chip; hovering it lists them **(my call)**. On a
 resource's own task list the chip is omitted when it would just name that
-resource **(my call)**. Clicking a resource chip opens that resource in a
-worktree that follows it, using the existing `ChooseWorktreeModal` when there
-are several; a worktree chip opens the worktree page.
+resource **(my call)**. Clicking a resource chip opens that resource,
+selected, on the page of a worktree that follows it: the list's own worktree
+when it does, else the first of the followers (sorted paths; no chooser). A
+resource no worktree follows (archived) has a chip that does nothing, as does
+"🔗 N linked". A worktree chip opens the worktree page.
 
 ## Where tasks show up
 

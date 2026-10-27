@@ -150,6 +150,28 @@ describe("TaskRow opens the modal", () => {
     expect(onOpen).not.toHaveBeenCalled()
   })
 
+  it("a followed resource chip opens that resource on a worktree page, not the task", async () => {
+    const onOpen = vi.fn()
+    window.history.pushState({}, "", "/")
+    wrap(<TaskRow
+      task={task({ links: [{ kind: "resource", resource_type: "pr", resource_id: "o/r#5", focus: true, archived: false, worktrees: ["/w/a", "/w/b"] }] })}
+      ownWorktree="/w/b"
+      onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} onOpen={onOpen}
+    />)
+    await userEvent.click(screen.getByRole("button", { name: "Open #5" }))
+    expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/w/b")}`)
+    expect(window.location.search).toBe(`?resource=pr:${encodeURIComponent("o/r#5")}`)
+    expect(onOpen).not.toHaveBeenCalled()
+  })
+
+  it("a resource chip no worktree follows is not a button", () => {
+    wrap(<TaskRow
+      task={task({ links: [{ kind: "resource", resource_type: "pr", resource_id: "o/r#5", focus: true, archived: true, worktrees: [] }] })}
+      onState={() => {}} onPriority={() => {}} onToggleStar={() => {}}
+    />)
+    expect(screen.getByTestId("task-link-chip").tagName).not.toBe("BUTTON")
+  })
+
   it("leaves out the chip on its own worktree's list", () => {
     wrap(<TaskRow
       task={task({ links: [{ kind: "worktree", worktree: "/w/repo/fix", focus: true, archived: false }] })}

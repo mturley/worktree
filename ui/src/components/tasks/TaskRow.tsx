@@ -3,6 +3,7 @@ import { useLocation } from "wouter"
 import { ActionIcon, Badge, Group, Text, Tooltip, UnstyledButton } from "@mantine/core"
 import type { Priority, Task, TaskState } from "../../api/types"
 import { dueLabel, linkChip } from "../../lib/taskSections"
+import { serializeResourceKey } from "../../lib/resourceKey"
 import { TaskStateCheckbox } from "./TaskStateCheckbox"
 import { TaskPriorityMenu } from "./TaskPriorityMenu"
 import { UnreadMarkerDot } from "../UnreadMarkerDot"
@@ -165,19 +166,24 @@ export function TaskRow({ task, ownResource, ownWorktree, dragHandle, onState, o
       {link && (
         <Badge
           data-testid="task-link-chip"
-          // A worktree chip opens that worktree's page; any other chip just
-          // keeps its click from the row.
-          {...(link.worktree
+          // A worktree chip opens that worktree's page; a resource chip some
+          // worktree follows opens that page with the resource selected; any
+          // other chip just keeps its click from the row.
+          {...(link.worktree || link.target
             ? {
                 component: "button" as const,
                 type: "button" as const,
                 className: "task-link-chip-nav",
-                "aria-label": `Open worktree ${link.text}`,
+                "aria-label": link.worktree ? `Open worktree ${link.text}` : `Open ${link.text}`,
               }
             : {})}
           onClick={(e: React.MouseEvent) => {
             keepFromRow(e)
             if (link.worktree) navigate(`/worktree/${encodeURIComponent(link.worktree)}`)
+            else if (link.target) {
+              const { worktree, resource } = link.target
+              navigate(`/worktree/${encodeURIComponent(worktree)}?resource=${serializeResourceKey(resource)}`)
+            }
           }}
           size="xs"
           variant="outline"

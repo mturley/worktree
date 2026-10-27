@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	watcher "github.com/mturley/watcher"
+	watcherdb "github.com/mturley/watcher/db"
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/resources"
@@ -261,6 +263,32 @@ func TestStreamEmitsTasksChanged(t *testing.T) {
 	}
 	if s.tasksVersionAdvanced(&last) {
 		t.Fatal("the same version must not fire twice")
+	}
+}
+
+func TestTasksAPILinkWorktrees(t *testing.T) {
+	s, x := tasksServer(t)
+	must(t, resources.Add(s.DB, x, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"}))
+	must(t, watcherdb.Subscribe(s.DB, "task:5", watcher.Resource{Type: "jira", ID: "ABC-1"}, watcherdb.SubscribeOpts{}))
+	pr := tasks.LinkTarget{Kind: tasks.LinkResource, ResourceType: "pr", ResourceID: "o/r#1"}
+	jira := tasks.LinkTarget{Kind: tasks.LinkResource, ResourceType: "jira", ResourceID: "ABC-1"}
+	wtX := tasks.LinkTarget{Kind: tasks.LinkWorktree, Worktree: x}
+	if _, err := tasks.Create(s.DB, webUser, tasks.NewTask{Title: "a", Focus: []tasks.LinkTarget{pr, jira, wtX}}); err != nil {
+		t.Fatal(err)
+	}
+	rec := serveTasks(t, s, http.MethodGet, "/api/tasks?scope=all", nil)
+	raw := rec.Body.String()
+	var ts []taskDTO
+	if err := json.Unmarshal([]byte(raw), &ts); err != nil || len(ts) != 1 || len(ts[0].Links) != 3 {
+		t.Fatalf("list = %s", raw)
+	}
+	l := ts[0].Links
+	if len(l[0].Worktrees) != 1 || l[0].Worktrees[0] != wdbCanon(x) {
+		t.Fatalf("pr worktrees = %v", l[0].Worktrees)
+	}
+	// Followed by no worktree (only a task hold), and a worktree link: [] on the wire, never null.
+	if l[1].Worktrees == nil || len(l[1].Worktrees) != 0 || l[2].Worktrees == nil || len(l[2].Worktrees) != 0 {
+		t.Fatalf("raw %s", raw)
 	}
 }
 

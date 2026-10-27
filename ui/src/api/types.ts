@@ -678,6 +678,12 @@ export interface TaskLink {
   /** The task's Primary flag. */
   focus: boolean
   archived: boolean
+  /**
+   * A resource link's followers: the canonical paths of the worktrees that
+   * actively follow it, sorted. Empty for a worktree link and an archived
+   * resource. Always sent by the server; optional for links built client-side.
+   */
+  worktrees?: string[]
 }
 
 /** GET /api/tasks; mirrors taskDTO in internal/webui/tasks_api.go field for field. */

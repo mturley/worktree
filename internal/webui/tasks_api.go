@@ -27,6 +27,11 @@ type taskLinkDTO struct {
 	Worktree     string `json:"worktree,omitempty"`
 	Focus        bool   `json:"focus"`
 	Archived     bool   `json:"archived"`
+	// Worktrees: for a resource link, the canonical paths of the worktrees
+	// that actively follow it, sorted; what the task row's link chip
+	// navigates to. Empty for a worktree link and an archived resource.
+	// Never null.
+	Worktrees []string `json:"worktrees"`
 }
 
 // taskDTO is a task on the wire; ui/src/api/types.ts mirrors it field for
@@ -88,6 +93,7 @@ func newTaskDTO(t tasks.Task) taskDTO {
 		out.Links = append(out.Links, taskLinkDTO{
 			Kind: string(l.Kind), ResourceType: l.ResourceType, ResourceID: l.ResourceID,
 			Worktree: l.Worktree, Focus: l.Primary, Archived: l.Archived,
+			Worktrees: append(make([]string, 0, len(l.FollowingWorktrees)), l.FollowingWorktrees...),
 		})
 	}
 	for _, s := range t.Subtasks {
