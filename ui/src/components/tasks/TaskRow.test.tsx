@@ -159,6 +159,22 @@ describe("TaskRow opens the modal", () => {
     expect(screen.queryByTestId("task-link-chip")).toBeNull()
   })
 
+  it("shows the full title in a tooltip only when it is cut off", async () => {
+    const user = userEvent.setup()
+    wrap(<TaskRow task={task({ title: "A very long task title" })} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} />)
+    const title = document.querySelector<HTMLElement>("[data-task-title]")!
+    // jsdom has no layout: fits first, then cut off.
+    Object.defineProperty(title, "clientWidth", { configurable: true, value: 100 })
+    Object.defineProperty(title, "scrollWidth", { configurable: true, value: 100 })
+    await user.hover(title)
+    await new Promise((r) => setTimeout(r, 500))
+    expect(screen.queryByRole("tooltip")).toBeNull()
+    await user.unhover(title)
+    Object.defineProperty(title, "scrollWidth", { configurable: true, value: 300 })
+    await user.hover(title)
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("A very long task title")
+  })
+
   it("without onOpen the title is plain text (the drag overlay's copy)", () => {
     wrap(<TaskRow task={task()} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} />)
     expect(screen.queryByRole("button", { name: "Write the thing" })).toBeNull()
@@ -184,9 +200,12 @@ describe("TaskCountBadge", () => {
     const { container } = wrap(<TaskCountBadge count={0} />)
     expect(container.querySelector(".task-count-badge")).toBeNull()
   })
-  it("renders the count", () => {
-    wrap(<TaskCountBadge count={3} />)
-    expect(screen.getByText("3")).toBeInTheDocument()
+  it("renders the count as N tasks, singular for one", () => {
+    const { unmount } = wrap(<TaskCountBadge count={3} />)
+    expect(screen.getByText("3 tasks")).toBeInTheDocument()
+    unmount()
+    wrap(<TaskCountBadge count={1} />)
+    expect(screen.getByText("1 task")).toBeInTheDocument()
   })
 })
 

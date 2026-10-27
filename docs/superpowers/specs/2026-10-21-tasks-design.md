@@ -432,7 +432,8 @@ three levels:
   list, above quick add, where N is the number of tasks the list shows. A
   list that fits offers no Show all.
 - **Collapsed**: the panel shrinks to its one-line summary, which then adds
-  " · N open". The summary itself (a chevron, "Tasks (…)" and the unread
+  " · 2 in progress, 8 not started" (a state with none is left out; "none
+  open" when nothing is). The summary itself (a chevron, "Tasks (…)" and the unread
   dot, at the left of the header, with a generous click area) cycles the
   levels: normal → expanded (as Show all) → collapsed → normal. A list that
   fits skips expanded: normal goes straight to collapsed. The toolbar, list and quick
@@ -452,7 +453,7 @@ and only the tab bar sticks.
 
 ### Badges elsewhere
 
-- Worktree cards (home page) get a lime open-task count next to the blue
+- Worktree cards (home page) get a lime open-task count ("3 tasks", "1 task") next to the blue
   unread badge.
 - Resource cards (worktree page) get a lime open-task count, and "⛔ blocks N
   tasks" when they block any.

@@ -4,7 +4,7 @@ import { IconChevronDown, IconChevronRight, IconChevronsDown } from "@tabler/ico
 import { useLocation } from "wouter"
 import { useTasks, type TaskScope } from "../../hooks/useTasks"
 import { useTaskListPrefs } from "../../hooks/useTaskListPrefs"
-import { openCount } from "../../lib/taskSections"
+import { openSummary } from "../../lib/taskSections"
 import { TaskList } from "./TaskList"
 import { TaskListToolbar } from "./TaskListToolbar"
 import { UnreadMarkerDot } from "../UnreadMarkerDot"
@@ -65,7 +65,7 @@ export function useTasksPanel(
   const { collapsed } = prefs
   // The same query (and cache entry) the list itself uses.
   const query = useTasks(scope, { completed: prefs.showCompleted, archived: prefs.includeArchived })
-  const open = openCount(query.data ?? [])
+  const open = openSummary(query.data ?? [])
   const unread = (opts?.unread ?? 0) > 0
   const [location] = useLocation()
 
@@ -104,7 +104,7 @@ export function useTasksPanel(
     <UnstyledButton
       // Leads with what it does; the count and the dot are in here too, or a
       // screen reader would hear neither.
-      aria-label={`${action} (${open} open${unread ? ", unread activity" : ""})`}
+      aria-label={`${action} (${open}${unread ? ", unread activity" : ""})`}
       aria-expanded={!collapsed}
       onClick={cycle}
       className="task-panel-toggle"
@@ -128,7 +128,7 @@ export function useTasksPanel(
     >
       <Group gap={6} wrap="nowrap">
         {collapsed ? <IconChevronRight size={16} /> : expanded ? <IconChevronsDown size={16} /> : <IconChevronDown size={16} />}
-        <Text size="sm" fw={700}>Tasks ({scopeContext(scope)}){collapsed && ` · ${open} open`}</Text>
+        <Text size="sm" fw={700}>Tasks ({scopeContext(scope)}){collapsed && ` · ${open}`}</Text>
         {unread && <UnreadMarkerDot label="unread task activity" />}
       </Group>
     </UnstyledButton>

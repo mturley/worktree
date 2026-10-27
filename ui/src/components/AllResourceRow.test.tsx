@@ -32,7 +32,7 @@ afterEach(() => {
 describe("AllResourceRow task count", () => {
   it("shows the lime open-task count, named on hover", () => {
     wrap(<AllResourceRow r={pr({ open_task_count: 3 })} />)
-    const badge = within(screen.getByTestId("all-resource-row")).getByText("3").closest(".task-count-badge")
+    const badge = within(screen.getByTestId("all-resource-row")).getByText("3 tasks").closest(".task-count-badge")
     expect(badge).not.toBeNull()
     expect(badge).toHaveAttribute("title", "3 open tasks")
   })
@@ -40,7 +40,7 @@ describe("AllResourceRow task count", () => {
   it("sits beside the unread badge", () => {
     wrap(<AllResourceRow r={pr({ open_task_count: 1, has_unread: true, unread_count: 2 })} />)
     const row = screen.getByTestId("all-resource-row")
-    expect(within(row).getByText("1").closest(".task-count-badge")).toHaveAttribute("title", "1 open task")
+    expect(within(row).getByText("1 task").closest(".task-count-badge")).toHaveAttribute("title", "1 open task")
     expect(within(row).getByText(/2/)).toBeInTheDocument()
   })
 

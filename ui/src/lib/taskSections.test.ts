@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { Task, TaskLink } from "../api/types"
 import {
-  applyMove, buildSections, canDrag, dueLabel, linkChip, openCount, planDrop,
+  applyMove, buildSections, canDrag, dueLabel, linkChip, openSummary, planDrop,
   type TaskListPrefs, type TaskSection,
 } from "./taskSections"
 
@@ -30,12 +30,15 @@ describe("canDrag", () => {
   })
 })
 
-describe("openCount", () => {
-  it("counts tasks that are not done", () => {
-    expect(openCount([
-      mk(1, "a"), mk(2, "b", { state: "in_progress" }), mk(3, "c", { state: "done" }),
-    ])).toBe(2)
-    expect(openCount([])).toBe(0)
+describe("openSummary", () => {
+  it("counts open tasks by state, leaving out a state with none", () => {
+    expect(openSummary([
+      mk(1, "a"), mk(2, "b", { state: "in_progress" }), mk(3, "c", { state: "done" }), mk(4, "d"),
+    ])).toBe("1 in progress, 2 not started")
+    expect(openSummary([mk(1, "a", { state: "in_progress" })])).toBe("1 in progress")
+    expect(openSummary([mk(1, "a")])).toBe("1 not started")
+    expect(openSummary([mk(1, "a", { state: "done" })])).toBe("none open")
+    expect(openSummary([])).toBe("none open")
   })
 })
 

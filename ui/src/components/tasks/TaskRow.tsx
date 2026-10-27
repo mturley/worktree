@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import { useState, type ReactNode } from "react"
 import { useLocation } from "wouter"
 import { ActionIcon, Badge, Group, Text, Tooltip, UnstyledButton } from "@mantine/core"
 import type { Priority, Task, TaskState } from "../../api/types"
@@ -41,16 +41,27 @@ export function TaskRow({ task, ownResource, ownWorktree, dragHandle, onState, o
   const due = task.due ? dueLabel(task.due, new Date()) : null
   const link = linkChip(task, ownResource, ownWorktree)
   const [, navigate] = useLocation()
+  // The full title on hover, only when the ellipsis cut it: measured as the
+  // pointer arrives, so no observer runs per row.
+  const [truncated, setTruncated] = useState(false)
+  const measure = (e: React.SyntheticEvent<HTMLElement>) => {
+    const el = e.currentTarget
+    setTruncated(el.scrollWidth > el.clientWidth)
+  }
   const titleText = (
-    <Text
-      span
-      size="sm"
-      truncate="end"
-      style={{ display: "block", opacity: task.state === "done" ? 0.6 : 1 }}
-      td={task.state === "done" ? "line-through" : undefined}
-    >
-      {task.title}
-    </Text>
+    <Tooltip label={task.title} disabled={!truncated} openDelay={400} multiline maw={420}>
+      <Text
+        span
+        size="sm"
+        truncate="end"
+        data-task-title
+        onMouseEnter={measure}
+        style={{ display: "block", opacity: task.state === "done" ? 0.6 : 1 }}
+        td={task.state === "done" ? "line-through" : undefined}
+      >
+        {task.title}
+      </Text>
+    </Tooltip>
   )
   return (
     <Group

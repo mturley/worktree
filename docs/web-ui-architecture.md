@@ -1324,7 +1324,8 @@ to break.
     down normal, double-down expanded) and the summary "Tasks (<context>)"
     plus the unread dot; it fills the header up to the toolbar and reaches
     into the panel's padding, so it is easy to hit. Only while collapsed
-    does the summary add " · N open". `scopeContext` gives the context:
+    does the summary add " · 2 in progress, 8 not started" (`openSummary`:
+    a state with none is left out, "none open" when nothing is). `scopeContext` gives the context:
     "all", "this worktree", or "this PR / issue / thread / link". Clicking
     it cycles the levels: normal → expanded (as Show all) → collapsed →
     normal; a list that fits (`TaskList`'s `expand.onOverflow` reports false)
@@ -1465,7 +1466,7 @@ to break.
   means nothing there. Its priority picker starts at the list's priority
   filter when one is on (`defaultPriority`), or a new task would be created
   straight into hiding.
-- **Counts.** `TaskCountBadge` is the lime count (dark text, never blue —
+- **Counts.** `TaskCountBadge` is the lime count, reading "N tasks" ("1 task") (dark text, never blue —
   blue is unread). It appears beside `UnreadBadge` on worktree cards,
   list resource cards and the home page's Resources rows (`AllResourceRow`)
   (`open_task_count`, absent = 0, titled "N open tasks"). The selected

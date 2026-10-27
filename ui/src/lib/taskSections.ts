@@ -41,8 +41,18 @@ export function canDrag(sort: TaskSort): boolean {
   return sort === "custom" || sort === "priority"
 }
 
-export function openCount(tasks: Task[]): number {
-  return tasks.filter((t) => t.state !== "done").length
+/**
+ * The open tasks by state, for the collapsed panel's summary: "2 in progress,
+ * 8 not started", leaving out a state with none, or "none open".
+ */
+export function openSummary(tasks: Task[]): string {
+  const inProgress = tasks.filter((t) => t.state === "in_progress").length
+  const notStarted = tasks.filter((t) => t.state === "not_started").length
+  const parts = [
+    inProgress > 0 ? `${inProgress} in progress` : "",
+    notStarted > 0 ? `${notStarted} not started` : "",
+  ].filter(Boolean)
+  return parts.length > 0 ? parts.join(", ") : "none open"
 }
 
 // Plain code-unit comparison: rank is a fractional-index key, so a
