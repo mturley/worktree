@@ -324,7 +324,7 @@ describe("WorktreeDetailPage selection", () => {
     window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?resource=pr:o%2Fr%231`)
     setViewport("wide")
     wrap()
-    const back = await screen.findByRole("button", { name: "← all resources" })
+    const back = await screen.findByRole("button", { name: /^← all resources/ })
     const backHome = () => screen.getByRole("link", { name: "All worktrees" })
     // A selection: the hint is beside "← all resources", not on the logo.
     expect(back.parentElement!.querySelector("kbd")?.textContent).toBe("Esc")
@@ -1306,7 +1306,7 @@ describe("WorktreeDetailPage Esc back to Notes", () => {
     wrap()
     await onTab("Environment")
     const lines = () => screen.queryAllByTestId("search-summary").map((n) => n.textContent)
-    const back = () => screen.getByRole("button", { name: "← all resources" })
+    const back = () => screen.getByRole("button", { name: /^← all resources/ })
     // A query: only the bar hints Esc.
     expect(screen.getByTestId("search-esc-hint")).toBeInTheDocument()
     expect(notesTab().querySelector("kbd")).toBeNull()
@@ -1407,7 +1407,7 @@ describe("WorktreeDetailPage tasks", () => {
     await user.click(screen.getByRole("button", { name: /select resource o\/r#1/i }))
     await screen.findByRole("tab", { name: /Linked Resources/ })
     expect(screen.getByTestId("tasks-panel")).toHaveAttribute("data-level", "normal")
-    await user.click(screen.getByRole("button", { name: "← all resources" }))
+    await user.click(screen.getByRole("button", { name: /^← all resources/ }))
     await waitFor(() => expect(document.querySelector("[data-activity-header]")).not.toBeNull())
     expect(screen.getByTestId("tasks-panel")).toHaveAttribute("data-level", "normal")
     expect(activityHeader().style.position).toBe("sticky")

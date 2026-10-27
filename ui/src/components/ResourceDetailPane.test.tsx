@@ -379,6 +379,19 @@ describe("ResourceDetailPane tasks", () => {
   })
   afterEach(() => vi.restoreAllMocks())
 
+  it("counts the worktree's other tasks inside the back link, ahead of the Esc hint", async () => {
+    useWorktreeTimeline.mockReturnValue({ events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false })
+    const onBack = vi.fn()
+    wrap(<ResourceDetailPane path="/wt/foo" resource={jira} onBack={onBack} escHint />)
+    const back = screen.getByRole("button", { name: /^← all resources/ })
+    const badge = await within(back).findByText("1 other task")
+    const esc = back.parentElement!.querySelector("kbd")!
+    expect(esc.textContent).toBe("Esc")
+    expect(back.compareDocumentPosition(esc) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await userEvent.click(badge)
+    expect(onBack).toHaveBeenCalled()
+  })
+
   it("Activity · Linked Resources, with the resource's own task panel", async () => {
     wrap(<ResourceDetailPane path="/wt/foo" resource={jira} />)
     const tabs = within(screen.getByRole("tablist")).getAllByRole("tab")

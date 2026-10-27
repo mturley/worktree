@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Anchor, Box, Button, Center, Group, Stack, Tabs, Text } from "@mantine/core"
+import { Box, Button, Center, Group, Stack, Tabs, Text } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
 import { useWorktreeTimeline } from "../hooks/useTimeline"
 import { useSearchQuery } from "../hooks/useSearchQuery"
@@ -264,14 +264,20 @@ export function ResourceDetailPane({
   return (
     <Stack gap="sm">
       {onBack && (
-        // Styled as a link to match "← all worktrees", but a <button>
-        // underneath: it deselects rather than navigating somewhere new.
+        // A button, not a link: it deselects rather than navigating somewhere new.
         <Group gap={6} wrap="nowrap" style={{ alignSelf: "flex-start" }}>
-          <Anchor component="button" type="button" size="sm" onClick={onBack}>
+          {/* The other tasks are part of what going back shows, so their
+              count rides inside the button, ahead of the Esc hint. */}
+          <Button
+            variant="subtle"
+            size="compact-sm"
+            onClick={onBack}
+            styles={{ label: { gap: 6 } }}
+          >
             ← all resources
-          </Anchor>
+            <OtherTasksBadge path={path} resource={resource} />
+          </Button>
           {escHint && <KeyHint>Esc</KeyHint>}
-          <OtherTasksBadge path={path} resource={resource} />
         </Group>
       )}
       {/* Its service's watcher is off, or failing: say so, with a way to fix it. */}
