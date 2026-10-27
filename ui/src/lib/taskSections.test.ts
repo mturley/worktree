@@ -20,6 +20,7 @@ const prefs = (over: Partial<TaskListPrefs> = {}): TaskListPrefs => ({
 const ids = (s: TaskSection | undefined) => s?.tasks.map((t) => t.id)
 const keys = (ss: TaskSection[]) => ss.map((s) => s.key)
 const sec = (ss: TaskSection[], key: string) => ss.find((s) => s.key === key)
+const STARRED_KEYS = ["starred:high", "starred:medium", "starred:low", "starred:none"]
 
 describe("canDrag", () => {
   it("allows custom and priority only", () => {
@@ -61,7 +62,7 @@ describe("buildSections: custom", () => {
     const ss = buildSections([mk(1, "a")], prefs(), [])
     expect(keys(ss)).toEqual(["starred", "rest"])
     expect(ids(sec(ss, "starred"))).toEqual([])
-    expect(keys(buildSections([mk(1, "a")], prefs({ sort: "priority" }), []))[0]).toBe("starred")
+    expect(keys(buildSections([mk(1, "a")], prefs({ sort: "priority" }), []))[0]).toBe("starred:high")
   })
 
   it("omits an empty starred section where dragging is off", () => {
@@ -116,7 +117,7 @@ describe("buildSections: completed", () => {
 
   it("comes last in priority sort too", () => {
     const ss = buildSections(tasks, prefs({ sort: "priority", showCompleted: true }), [])
-    expect(keys(ss)).toEqual(["starred", "high", "medium", "low", "none", "completed"])
+    expect(keys(ss)).toEqual([...STARRED_KEYS, "high", "medium", "low", "none", "completed"])
   })
 
   it("shows an open archived task (all links orphaned) without includeArchived", () => {
@@ -135,23 +136,48 @@ describe("buildSections: priority", () => {
     mk(5, "a", { priority: "high" }),
   ]
 
-  it("returns starred, then high/medium/low/none in master order, empty ones included", () => {
+  it("returns starred by priority, then high/medium/low/none in master order, empty ones included", () => {
     const ss = buildSections(tasks, prefs({ sort: "priority" }), [])
-    expect(keys(ss)).toEqual(["starred", "high", "medium", "low", "none"])
-    expect(ids(sec(ss, "starred"))).toEqual([3])
+    expect(keys(ss)).toEqual([...STARRED_KEYS, "high", "medium", "low", "none"])
+    expect(ids(sec(ss, "starred:high"))).toEqual([3])
     expect(ids(sec(ss, "high"))).toEqual([5, 1])
     expect(ids(sec(ss, "medium"))).toEqual([])
     expect(ids(sec(ss, "low"))).toEqual([2])
     expect(ids(sec(ss, "none"))).toEqual([4])
   })
 
-  it("marks each priority section with its priority and starred:false", () => {
+  it("splits starred tasks by priority, high to none, each in master order", () => {
+    const ss = buildSections([
+      mk(1, "e", { starred: true, priority: "low" }),
+      mk(2, "d", { starred: true }),
+      mk(3, "c", { starred: true, priority: "high" }),
+      mk(4, "b", { starred: true, priority: "low" }),
+      mk(5, "a", { starred: true, priority: "high" }),
+      mk(6, "f", { priority: "high" }),
+    ], prefs({ sort: "priority" }), [])
+    expect(ids(sec(ss, "starred:high"))).toEqual([5, 3])
+    expect(ids(sec(ss, "starred:medium"))).toEqual([])
+    expect(ids(sec(ss, "starred:low"))).toEqual([4, 1])
+    expect(ids(sec(ss, "starred:none"))).toEqual([2])
+    expect(ids(sec(ss, "high"))).toEqual([6])
+    // Display order: every starred task first, high to none.
+    expect(ss.flatMap((s) => s.tasks.map((t) => t.id))).toEqual([5, 3, 4, 1, 2, 6])
+    expect(sec(ss, "starred")).toBeUndefined()
+  })
+
+  it("splits starred only in Priority sort", () => {
+    for (const sort of ["custom", "due", "updated"] as const) {
+      const ss = buildSections([mk(1, "a", { starred: true, priority: "high" }), mk(2, "b")], prefs({ sort }), [])
+      expect(keys(ss)).toEqual(["starred", "rest"])
+    }
+  })
+
+  it("marks each section with the star and priority dropping into it implies", () => {
     const ss = buildSections(tasks, prefs({ sort: "priority" }), [])
     for (const p of ["high", "medium", "low", "none"] as const) {
       expect(sec(ss, p)).toMatchObject({ priority: p, starred: false, draggable: true })
+      expect(sec(ss, `starred:${p}`)).toMatchObject({ priority: p, starred: true, draggable: true })
     }
-    expect(sec(ss, "starred")).toMatchObject({ starred: true, draggable: true })
-    expect(sec(ss, "starred")?.priority).toBeUndefined()
   })
 
 })
@@ -257,11 +283,49 @@ describe("planDrop", () => {
     expect(planDrop(ss, 1, "low", 0)).toEqual({ place: { before: 3 }, patch: { starred: false, priority: "low" } })
   })
 
-  it("an unstarred task dropped into starred in priority sort only stars it", () => {
+  it("an unstarred task dropped into its own priority's starred section only stars it", () => {
     const ss = buildSections([
       mk(1, "a", { priority: "high", starred: true }), mk(2, "b", { priority: "high" }),
     ], prefs({ sort: "priority" }), [])
-    expect(planDrop(ss, 2, "starred", 1)).toEqual({ place: { after: 1 }, patch: { starred: true } })
+    expect(planDrop(ss, 2, "starred:high", 1)).toEqual({ place: { after: 1 }, patch: { starred: true } })
+  })
+
+  describe("Priority sort's starred sections", () => {
+    // starred:high [1], starred:medium [2], starred:low [3], low [4], medium [5]
+    const tasks = [
+      mk(1, "a", { priority: "high", starred: true }),
+      mk(2, "b", { priority: "medium", starred: true }),
+      mk(3, "c", { priority: "low", starred: true }),
+      mk(4, "d", { priority: "low" }),
+      mk(5, "e", { priority: "medium" }),
+    ]
+    const ss = buildSections(tasks, prefs({ sort: "priority" }), [])
+
+    it("unstarred into starred:medium: stars it and sets its priority", () => {
+      expect(planDrop(ss, 4, "starred:medium", 0)).toEqual({ place: { before: 2 }, patch: { starred: true, priority: "medium" } })
+    })
+
+    it("starred:high into starred:low: sets its priority only", () => {
+      expect(planDrop(ss, 1, "starred:low", 1)).toEqual({ place: { after: 3 }, patch: { priority: "low" } })
+    })
+
+    it("starred:low into low: unstars it only", () => {
+      expect(planDrop(ss, 3, "low", 0)).toEqual({ place: { before: 4 }, patch: { starred: false } })
+    })
+
+    it("starred into another priority's group: unstars it and sets that priority", () => {
+      expect(planDrop(ss, 1, "medium", 1)).toEqual({ place: { after: 5 }, patch: { starred: false, priority: "medium" } })
+    })
+
+    it("applyMove lands each of those in its new section at once", () => {
+      const where = (list: Task[], id: number) =>
+        buildSections(list, prefs({ sort: "priority" }), []).find((s) => s.tasks.some((t) => t.id === id))?.key
+      const cases: [number, string, number][] = [[4, "starred:medium", 0], [1, "starred:low", 1], [3, "low", 0], [1, "medium", 1]]
+      for (const [id, to, i] of cases) {
+        const plan = planDrop(ss, id, to, i)
+        expect(where(applyMove(tasks, id, plan.place!, plan.patch), id)).toBe(to)
+      }
+    })
   })
 
   it("the only task in its section, dropped back there, changes nothing", () => {

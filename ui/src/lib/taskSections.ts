@@ -18,7 +18,10 @@ export interface TaskListPrefs {
 }
 
 export interface TaskSection {
-  /** Stable: starred, rest, high, medium, low, none, completed. */
+  /**
+   * Stable: starred, rest, high, medium, low, none, completed; in Priority
+   * sort starred is split into starred:high … starred:none.
+   */
   key: string
   tasks: Task[]
   draggable: boolean
@@ -86,9 +89,11 @@ const SORTS: Record<TaskSort, (a: Task, b: Task) => number> = {
 
 /**
  * Groups and orders a task list for display. Starred open tasks are always
- * on top and appear only there. In Priority sort every priority section is
- * returned even when empty (TaskList renders only sections that hold
- * tasks). Completed is last, newest first, when shown.
+ * on top and appear only there. In Priority sort Starred is itself split by
+ * priority (starred:high … starred:none, ahead of the unstarred groups), and
+ * every one of those sections is returned even when empty (TaskList renders
+ * only sections that hold tasks). Completed is last, newest first, when
+ * shown.
  */
 export function buildSections(tasks: Task[], prefs: TaskListPrefs, terms: string[]): TaskSection[] {
   // Archived gates only done tasks: an open task whose links are all
@@ -103,8 +108,16 @@ export function buildSections(tasks: Task[], prefs: TaskListPrefs, terms: string
   const sections: TaskSection[] = []
 
   const starred = open.filter((t) => t.starred)
-  // Returned empty too while dragging is possible; TaskList hides it then.
-  if (starred.length > 0 || draggable) {
+  if (prefs.sort === "priority") {
+    // Starred splits by priority too, so a drop into it can set both.
+    for (const p of PRIORITY_SECTIONS) {
+      sections.push({
+        key: `starred:${p}`, tasks: starred.filter((t) => t.priority === p),
+        draggable, starred: true, priority: p,
+      })
+    }
+  } else if (starred.length > 0 || draggable) {
+    // Returned empty too while dragging is possible; TaskList hides it then.
     sections.push({ key: "starred", tasks: starred, draggable, starred: true })
   }
   const rest = open.filter((t) => !t.starred)

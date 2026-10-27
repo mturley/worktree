@@ -597,8 +597,10 @@ describe("TaskList keyboard drag", () => {
     expect(document.querySelectorAll("[data-task-drop-line]")).toHaveLength(1)
     expect(document.querySelector('[data-task-section="rest"]')).toHaveAttribute("data-drop-target")
     expect(document.querySelectorAll("[data-task-band]")).toHaveLength(2)
-    expect(document.querySelector('[data-task-section="rest"] [data-task-drop-hint]')).toHaveTextContent("Unstar")
+    // The hint rides on the dragged copy, not the section; the bands keep their tags.
+    expect(screen.getByTestId("task-drag-overlay").querySelector("[data-task-drop-hint]")).toHaveTextContent("Unstar")
     expect(document.querySelectorAll("[data-task-drop-hint]")).toHaveLength(1)
+    expect(document.querySelectorAll("[data-task-band-tag]")).toHaveLength(2)
     expect(document.querySelector('[data-task-section="starred"]')).not.toHaveAttribute("data-drop-target")
 
     // And the drop lands exactly there.
@@ -648,10 +650,10 @@ describe("TaskList keyboard drag", () => {
     expect(leaves()).toHaveLength(before)
     const bands = Array.from(document.querySelectorAll<HTMLElement>("[data-task-band]")).map((b) => b.dataset.taskSection)
     // Every shown section; empty groups stay hidden.
-    expect(bands).toEqual(["starred", "high", "medium"])
+    expect(bands).toEqual(["starred:none", "high", "medium"])
     // Each band's tag names it, out of the flow.
     const tags = Array.from(document.querySelectorAll<HTMLElement>("[data-task-band-tag]"))
-    expect(tags.map((t) => t.textContent)).toEqual(["★ Starred", "!!! High", "!! Medium"])
+    expect(tags.map((t) => t.textContent)).toEqual(["★ No priority", "!!! High", "!! Medium"])
     tags.forEach((t) => expect(t.style.position).toBe("absolute"))
     // No set-priority hint over its own group.
     expect(document.querySelector("[data-task-drop-hint]")).toBeNull()
@@ -681,12 +683,53 @@ describe("TaskList keyboard drag", () => {
     expect(document.querySelector("[data-task-drop-hint]")).toBeNull()
     // Down again onto gamma: No priority.
     fireEvent.keyDown(grip, { code: "ArrowDown", key: "ArrowDown" })
-    const none = document.querySelector<HTMLElement>('[data-task-section="none"]')!
-    await waitFor(() => expect(none.querySelector("[data-task-drop-hint]")).toHaveTextContent("Remove priority"))
+    const overlay = screen.getByTestId("task-drag-overlay")
+    await waitFor(() => expect(overlay.querySelector("[data-task-drop-hint]")).toHaveTextContent("Remove priority"))
     expect(document.querySelectorAll("[data-task-drop-hint]")).toHaveLength(1)
     fireEvent.keyDown(grip, { code: "Space", key: " " })
     await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith(1, { priority: "none" }))
     expect(document.querySelector("[data-task-drop-hint]")).toBeNull()
+  })
+
+  it("Priority sort: starred splits by priority, and a drag up into a starred group stars it and sets its priority", async () => {
+    setPrefs({ sort: "priority" })
+    vi.mocked(api.tasks).mockResolvedValue([
+      task(1, { title: "star high", starred: true, priority: "high" }),
+      task(2, { title: "star medium", starred: true, priority: "medium" }),
+      task(3, { title: "beta two" }),
+    ])
+    const save = deferred<undefined>()
+    vi.mocked(api.moveTask).mockReturnValue(save.promise as never)
+    vi.mocked(api.updateTask).mockResolvedValue(undefined as never)
+    wrap(<TaskList scope={{ kind: "all" }} />)
+    await screen.findByText("beta two")
+    const shownSections = () =>
+      Array.from(document.querySelectorAll<HTMLElement>("[data-task-section]")).map((s) => s.dataset.taskSection)
+    // Empty starred groups render nothing.
+    expect(shownSections()).toEqual(["starred:high", "starred:medium", "none"])
+
+    const grip = screen.getByRole("button", { name: "Drag to reorder beta two" })
+    lifted = grip.closest<HTMLElement>("[data-task-sortable]")
+    act(() => grip.focus())
+    fireEvent.keyDown(grip, { code: "Space", key: " " })
+    const overlay = await screen.findByTestId("task-drag-overlay")
+    const tags = Array.from(document.querySelectorAll<HTMLElement>("[data-task-band-tag]")).map((t) => t.textContent)
+    expect(tags).toEqual(["★ High", "★ Medium", "No priority"])
+    // Up onto star medium.
+    fireEvent.keyDown(grip, { code: "ArrowUp", key: "ArrowUp" })
+    await waitFor(() => expect(overlay.querySelector("[data-task-drop-hint]")).toHaveTextContent("Star · Set priority: Medium"))
+    // On the copy, out of the flow; not on any band, whose tags stay.
+    expect(overlay.querySelector<HTMLElement>("[data-task-drop-hint]")!.style.position).toBe("absolute")
+    expect(document.querySelectorAll("[data-task-drop-hint]")).toHaveLength(1)
+    expect(document.querySelectorAll("[data-task-band-tag]")).toHaveLength(3)
+
+    fireEvent.keyDown(grip, { code: "Space", key: " " })
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith(3, { starred: true, priority: "medium" }))
+    // Already in its new group while the save is in flight.
+    expect(document.querySelector('[data-task-section="starred:medium"] [data-task-sortable="3"]')).not.toBeNull()
+    expect(shownSections()).toEqual(["starred:high", "starred:medium"])
+    await waitFor(() => expect(api.moveTask).toHaveBeenCalledWith(3, { before: 2 }))
+    await act(async () => { save.resolve(undefined) })
   })
 
   it("Custom sort: reorders through mutations.move", async () => {
@@ -760,6 +803,20 @@ describe("dropPlanFor", () => {
     expect(dropHint({ starred: false, priority: "low" })).toBe("Unstar · Set priority: Low")
     expect(dropHint(undefined)).toBeUndefined()
     expect(dropHint({})).toBeUndefined()
+  })
+
+  it("Priority sort: patches star and priority by the starred group or priority group it lands in", () => {
+    const ps = buildSections([
+      task(1, { starred: true, priority: "high" }), task(2, { starred: true, priority: "medium" }),
+      task(3, { starred: true, priority: "low" }), task(4, { priority: "low" }), task(5, { priority: "medium" }),
+    ], { ...prefs, sort: "priority" }, [])
+    const plan = (a: number, o: number) => dropPlanFor(ps, taskDraggableId(a), taskDraggableId(o), false)
+    expect(plan(4, 2)).toEqual({ place: { before: 2 }, patch: { starred: true, priority: "medium" } })
+    expect(plan(1, 3)).toEqual({ place: { before: 3 }, patch: { priority: "low" } })
+    expect(plan(3, 4)).toEqual({ place: { before: 4 }, patch: { starred: false } })
+    expect(plan(1, 5)).toEqual({ place: { before: 5 }, patch: { starred: false, priority: "medium" } })
+    expect(dropHint(plan(4, 2).patch)).toBe("Star · Set priority: Medium")
+    expect(dropHint(plan(3, 4).patch)).toBe("Unstar")
   })
 
   it("ignores unknown ids", () => {

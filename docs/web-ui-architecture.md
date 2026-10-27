@@ -1416,14 +1416,27 @@ to break.
 - **Bands and the drop hint.** While a drag is on, every shown draggable
   section is a band (`data-task-band`: an inset outline and a faint wash)
   with a tag in its top-right corner naming it (`data-task-band-tag`:
-  `★ Starred`, `Tasks`, or the priority's `PRIORITY_MARK` and
+  `★ Starred`, `Tasks`, `★ <PRIORITY_LABEL>`/`★ No priority` for Priority
+  sort's starred groups, or the priority's `PRIORITY_MARK` and
   `PRIORITY_LABEL`). The tag is absolutely placed and the band adds no
-  border or margin, so starting a drag moves nothing. The section a
-  cross-section drop will land in swaps its tag for the hint
-  (`data-task-drop-hint`, `.task-drop-hint`): `dropIndicatorFor` carries
-  the plan's `patch`, and `dropHint` words it ("Star"/"Unstar", "Set
-  priority: X"/"Remove priority", joined with ` · ` when both), so the hint
-  can't disagree with the drop.
+  border or margin, so starting a drag moves nothing. The tags stay put
+  for the whole drag. What a cross-section drop will change rides on the
+  dragged copy instead (`data-task-drop-hint`, `.task-drop-hint`, inside
+  the `DragOverlay`'s `.task-drag-overlay`, absolutely placed just above
+  its top-left corner so it sits next to the pointer and moves nothing):
+  `dropIndicatorFor` carries the plan's `patch`, and `dropHint` words it
+  ("Star"/"Unstar", "Set priority: X"/"Remove priority", joined with
+  ` · ` when both), so the hint can't disagree with the drop. It was first
+  drawn on the target section in place of its tag, far from the pointer.
+- **Priority sort splits Starred by priority.** `buildSections` returns
+  `starred:high`, `starred:medium`, `starred:low`, `starred:none` (each
+  `starred: true` with its `priority`, master order within) ahead of the
+  unstarred `high` … `none`; other sorts keep the single `starred`. With one
+  Starred section, a drop there could star a task but say nothing about its
+  priority, and the starred tasks weren't sorted by priority. Now
+  `planDrop`'s patch falls out of the section: star and/or priority, each
+  only when it differs, and `applyMove` applies both, so the row lands in
+  its new group at once.
 - **Drops are optimistic, twice over.** `applyMove` (`lib/taskSections.ts`)
   computes the list as the server will have it — the patch applied and
   every task re-ranked in its new master order, because display order

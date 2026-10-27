@@ -189,6 +189,10 @@ function SortableTaskRow({ task, section, sortDraggable, dropEdge, ownResource, 
 /** A section's name on its band while a drag is on. */
 function bandTag(section: TaskSection): string {
   if (section.priority) {
+    // Priority sort's starred groups: "★ High", "★ No priority".
+    if (section.starred) {
+      return section.priority === "none" ? "★ No priority" : `★ ${PRIORITY_LABEL[section.priority]}`
+    }
     const mark = PRIORITY_MARK[section.priority]
     return mark ? `${mark.text} ${PRIORITY_LABEL[section.priority]}` : "No priority"
   }
@@ -201,18 +205,15 @@ function bandTag(section: TaskSection): string {
  * follows from the row it lands on.
  *
  * While a drag is on, a draggable section is a band (outline and wash, with a
- * tag naming it), so the drop's sections are evident; the section the drop
- * will land in, when it isn't the dragged row's own, says what landing there
- * changes instead (`hint`). Both are drawn out of the flow: nothing moves
- * when a drag starts.
+ * tag naming it), so the drop's sections are evident. What landing changes
+ * is said on the dragged copy instead (the DragOverlay's hint). Both are
+ * drawn out of the flow: nothing moves when a drag starts.
  */
-function SectionBlock({ section, band, dropTarget, hint, children }: {
+function SectionBlock({ section, band, dropTarget, children }: {
   section: TaskSection
   band: boolean
   /** A drag from another section will land here: outlined, as ResourceGroup's isOver. */
   dropTarget: boolean
-  /** What the drop will change, in words (dropHint). */
-  hint?: string
   children: React.ReactNode
 }) {
   return (
@@ -223,15 +224,11 @@ function SectionBlock({ section, band, dropTarget, hint, children }: {
       data-drop-target={dropTarget || undefined}
       style={{ position: "relative" }}
     >
-      {hint ? (
-        <span className="task-band-tag task-drop-hint" data-task-drop-hint style={{ position: "absolute" }}>
-          {hint}
-        </span>
-      ) : band ? (
+      {band && (
         <span className="task-band-tag" data-task-band-tag aria-hidden style={{ position: "absolute" }}>
           {bandTag(section)}
         </span>
-      ) : null}
+      )}
       {children}
     </Stack>
   )
@@ -298,6 +295,8 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
   }, [onOverflow, overflows.value])
   const activeTask = activeId === null ? undefined : sections.flatMap((s) => s.tasks).find((t) => t.id === activeId)
   const anchor = quickAddAnchor(sections, prefs.sort)
+  // What the drop will change, in words, for the dragged copy.
+  const dragHint = dropHint(indicator?.patch)
 
   const sensors = useSensors(
     // Only the grip starts a drag; a few pixels of travel so a press isn't one.
@@ -387,7 +386,6 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
             section={s}
             band={activeId !== null && s.draggable}
             dropTarget={indicator?.section === s.key}
-            hint={indicator?.section === s.key ? dropHint(indicator.patch) : undefined}
           >
             <SortableContext items={s.tasks.map((t) => taskDraggableId(t.id))} strategy={verticalListSortingStrategy}>
               {s.tasks.map((t) => (
@@ -410,10 +408,16 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
         {/* The dragged row follows the pointer here, its own slot left as an
             empty placeholder. On an opaque, lifted surface (theme.css): the
             panel's own wash is translucent, and the rows it passes over showed
-            through it. */}
+            through it. What the drop will change rides on it, just above its
+            top-left corner, out of the flow. */}
         <DragOverlay dropAnimation={null}>
           {activeTask ? (
-            <Box className="task-drag-overlay" data-testid="task-drag-overlay">
+            <Box className="task-drag-overlay" data-testid="task-drag-overlay" style={{ position: "relative" }}>
+              {dragHint && (
+                <span className="task-band-tag task-drop-hint" data-task-drop-hint style={{ position: "absolute" }}>
+                  {dragHint}
+                </span>
+              )}
               <TaskRow task={activeTask} ownResource={ownResource} ownWorktree={ownWorktree} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} />
             </Box>
           ) : null}

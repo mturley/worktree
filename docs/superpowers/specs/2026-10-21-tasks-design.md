@@ -176,7 +176,11 @@ because a view only ever sees a subset.
 - **Sort: Custom** (default): master order.
 - **Sort: Priority**: groups High / Medium / Low / None, each in master order.
   Dragging within a group reorders it. Dragging into another group changes the
-  task's priority and places it at the drop point.
+  task's priority and places it at the drop point. Starred is split the same
+  way (starred High … starred None, all above the unstarred groups), so the
+  starred tasks are sorted by priority too, and a drop into a starred group
+  stars the task and sets that priority, while a drop of a starred task into
+  an unstarred group unstars it and sets that priority.
 - **Other sorts** (due date, recently updated **(my call on the list)**):
   dragging is disabled, with a hint that it works only in Custom or Priority.
 - **Completed group.** With "Show completed" on, completed tasks sit in a
@@ -379,17 +383,20 @@ menus, each option's checkbox or mark sits at its left, at the row's size.
   list by priority. There is no Pin
   button. The toolbar sits right-aligned in the task panel's header (see
   "The task panel").
-- Starred group at the top, then the rest (in Priority order, one group per
+- Starred group at the top (in Priority order, one starred group per
+  priority), then the rest (in Priority order, one group per
   priority), then (if shown) Completed. **No section has a header**, in any
   sort. A section with no tasks is not rendered at all, so there are **no
   drop strips**; an empty priority group is hidden. Dropping onto a
   non-empty section still works.
 - While a drag is on, each section it can land in shows as a faint band
-  with a small tag naming it (`★ Starred`, `Tasks`, `!!! High` … `No
-  priority`), drawn without moving any row. Over a section other than the
-  dragged task's own, the band is outlined, a line marks where it lands, and
-  the tag says what the drop changes: "Star" / "Unstar", "Set priority: High"
-  / "Remove priority", or both.
+  with a small tag naming it (`★ Starred`, `Tasks`, `★ High` … `★ No
+  priority`, `!!! High` … `No priority`), drawn without moving any row.
+  Over a section other than the dragged task's own, the band is outlined
+  and a line marks where it lands, and the dragged task itself carries a
+  hint just above its top-left corner saying what the drop changes:
+  "Star" / "Unstar", "Set priority: High" / "Remove priority", or both
+  ("Star · Set priority: Medium"). The band tags stay as labels.
 - The existing search box narrows task lists too, matching title and
   description **(my call; it follows "search is a filter" from the Search
   design)**.
