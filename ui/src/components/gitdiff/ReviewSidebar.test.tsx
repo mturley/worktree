@@ -123,6 +123,7 @@ const summary = (over: Partial<PRCommentsSummary> = {}): PRCommentsSummary => ({
   open_threads: 3,
   unread_comments: 0,
   unread_ids: [],
+  pending_comments: 0,
   ...over,
 })
 const thread = (id: string, over: Partial<PRThread> = {}): PRThread => ({

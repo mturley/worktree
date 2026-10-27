@@ -553,7 +553,7 @@ export default function DiffView({
     </Group>
   )
 
-  const unreadBlue = countsAreUnread(reviewCount, pr.unreadComments)
+  const unreadBlue = countsAreUnread(reviewCount, pr.unreadComments, pr.pendingComments)
 
   let body: ReactNode
   if (!git) body = <Box p="xs"><Loading size="sm" /></Box>
@@ -635,7 +635,7 @@ export default function DiffView({
             rightSection={wide && reviewOpen && sidebarEscHint ? <KeyHint decorative>Esc</KeyHint> : undefined}
             onClick={() => (reviewOpen ? setReviewOpen(false) : openReview())}
           >
-            {reviewOpen ? "Close comments sidebar" : toolbarLabel(reviewCount, pr.openThreads, pr.unreadComments)}
+            {reviewOpen ? "Close comments sidebar" : toolbarLabel(reviewCount, pr.openThreads, pr.unreadComments, pr.pendingComments)}
           </Button>
         )}
       </Group>

@@ -41,7 +41,8 @@ export function ReviewActions({ path, git, active }: {
   const prOk = prSummary?.state === "ok"
   const openThreads = prOk ? prSummary.open_threads : 0
   const unread = prOk ? prSummary.unread_comments : 0
-  const filled = countsAreUnread(pending, unread)
+  const prPending = prOk ? prSummary.pending_comments : 0
+  const filled = countsAreUnread(pending, unread, prPending)
   return (
     <Group gap="xs" wrap="wrap">
       <OpenInEditorButton path={path} size="sm" />
@@ -55,7 +56,7 @@ export function ReviewActions({ path, git, active }: {
         disabled={!!unavailable}
         onClick={() => diffView.enter()}
       >
-        {codeTabLabel(pending, openThreads, unread)}
+        {codeTabLabel(pending, openThreads, unread, prPending)}
       </Button>
     </Group>
   )

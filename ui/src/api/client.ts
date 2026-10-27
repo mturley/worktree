@@ -1,4 +1,4 @@
-import type { DiffBase, DiffCommits, DiffFiles, DiffPatch, DiffRange, WorktreeGit, AllResourceDTO, CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, CredResult, DefaultBranchResponse, CredService, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, ResourceReadChange, Priority, Task, TaskState, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, UpdateStatus, WatcherHealth, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherAuthSettings, WatcherConfigSettings, WorktreeInfo, WorktreeNotes, WorktreeSettings, WorktreeSummary, TaskActivityFilter, TaskDetail, TaskEventSnapshot, TaskLinkTarget, TimelineEvent, TaskScope, TaskUnread, TaskBlockerTarget, TaskDeleteResult, NewReviewComment, ReviewComment, ReviewCommentItem, PRCommentsSummary, PRThreads } from "./types"
+import type { DiffBase, DiffCommits, DiffFiles, DiffPatch, DiffRange, WorktreeGit, AllResourceDTO, CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, CredResult, DefaultBranchResponse, CredService, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, ResourceReadChange, Priority, Task, TaskState, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, UpdateStatus, WatcherHealth, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherAuthSettings, WatcherConfigSettings, WorktreeInfo, WorktreeNotes, WorktreeSettings, WorktreeSummary, TaskActivityFilter, TaskDetail, TaskEventSnapshot, TaskLinkTarget, TimelineEvent, TaskScope, TaskUnread, TaskBlockerTarget, TaskDeleteResult, NewReviewComment, ReviewComment, ReviewCommentItem, PRCommentsSummary, PRThreads, PRWriteTarget, PRWriteCheck, PRWriteMode, PRReviewDialog, PRReviewEvent, SubmitResult } from "./types"
 
 export class HttpError extends Error {
   constructor(message: string, readonly status: number, readonly body?: unknown) {
@@ -387,6 +387,25 @@ export const api = {
     }
     return fetchJSON<PRThreads>(`/api/pr-comments/threads?${params}`)
   },
+  prWriteCheck: (path: string, t: PRWriteTarget) =>
+    fetchJSON<PRWriteCheck>(
+      `/api/pr-write/check?${new URLSearchParams({
+        path,
+        file: t.file,
+        side: t.side,
+        start_line: String(t.start_line),
+        end_line: String(t.end_line),
+        old_rev: t.old_rev,
+        new_rev: t.new_rev,
+      })}`,
+    ),
+  prWriteComment: (req: PRWriteTarget & { path: string; mode: PRWriteMode; body: string }) =>
+    postJSON<{ comment_id: number }>("/api/pr-write/comment", req),
+  prWriteReply: (req: { path: string; thread_id: string; in_reply_to: number; mode: PRWriteMode; body: string }) =>
+    postJSON<{ comment_id: number }>("/api/pr-write/reply", req),
+  prReviewDialog: (path: string) => fetchJSON<PRReviewDialog>(`/api/pr-write/review?${new URLSearchParams({ path })}`),
+  prSubmit: (req: { path: string; head: string; event: PRReviewEvent; body: string; include_local: boolean }) =>
+    postJSON<SubmitResult>("/api/pr-write/submit", req),
   locatePRComment: (eventId: string, preferPath?: string) => {
     const params = new URLSearchParams({ event_id: eventId })
     if (preferPath) params.set("prefer_path", preferPath)

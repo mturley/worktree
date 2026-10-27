@@ -927,6 +927,69 @@ export interface PRCommentsSummary {
   open_threads: number
   unread_comments: number
   unread_ids: number[]
+  /** Comments in the viewer's pending (unsubmitted) review on the PR. */
+  pending_comments: number
+  viewer_is_author?: boolean
+}
+
+export interface PRWriteTarget {
+  file: string
+  side: string
+  start_line: number
+  end_line: number
+  old_rev: string
+  new_rev: string
+}
+
+export interface PRWriteVerdict {
+  postable: boolean
+  reason?: string
+}
+
+/** Whether a new comment can be posted to the PR, per mode. */
+export interface PRWriteCheck {
+  review: PRWriteVerdict
+  single: PRWriteVerdict
+}
+
+export type PRWriteMode = "review" | "single"
+export type PRReviewEvent = "COMMENT" | "APPROVE" | "REQUEST_CHANGES"
+
+export interface PRPendingComment {
+  id: number
+  file: string
+  /** 0 when the thread is not in the PR's threads. */
+  line: number
+  body: string
+}
+
+export interface PRLocalComment {
+  id: number
+  version: number
+  file: string
+  side: string
+  start_line: number
+  end_line: number
+  body: string
+  postable: boolean
+  reason: string
+}
+
+export interface PRReviewDialog {
+  pr: PRRefDTO | null
+  viewer_is_author: boolean
+  head: string
+  stale_pending_commit: string | null
+  pending: { comments: PRPendingComment[] } | null
+  local: PRLocalComment[]
+  blocked_reason: string | null
+}
+
+export interface SubmitResult {
+  submitted_review_id?: string
+  posted_local_ids: number[]
+  kept_local_ids: number[]
+  error?: string
 }
 
 export interface PRThreadComment {

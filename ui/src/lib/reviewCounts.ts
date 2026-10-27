@@ -11,17 +11,24 @@ function parts(local: number, pr: number, unread: number, localWord: string, prW
 }
 
 /** The Code tab's "Review changes" button label. */
-export function codeTabLabel(local: number, pr: number, unread: number): string {
-  const p = parts(local, pr, unread, "comment", "comment")
+export function codeTabLabel(local: number, pr: number, unread: number, pending: number): string {
+  const p = [parts(local, pr, unread, "comment", "comment"), pending > 0 ? "pending PR review" : ""]
+    .filter(Boolean)
+    .join(", ")
   return p ? `Review changes (${p})` : "Review changes"
 }
 
 /** The diff toolbar's comments button label (without the open-state variant). */
-export function toolbarLabel(local: number, pr: number, unread: number): string {
-  return parts(local, pr, unread, "review comment", "review comment")
+export function toolbarLabel(local: number, pr: number, unread: number, pending: number): string {
+  return [
+    parts(local, pr, unread, "review comment", "review comment"),
+    pending > 0 ? `pending PR review (${plural(pending, "comment", "comments")})` : "",
+  ]
+    .filter(Boolean)
+    .join(", ")
 }
 
 /** Whether the counts deserve the unread-blue treatment. */
-export function countsAreUnread(local: number, unread: number): boolean {
-  return local > 0 || unread > 0
+export function countsAreUnread(local: number, unread: number, pending: number): boolean {
+  return local > 0 || unread > 0 || pending > 0
 }

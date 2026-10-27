@@ -153,7 +153,7 @@ const patch = (over: Partial<DiffPatch> = {}): DiffPatch => ({
   ...over,
 })
 
-const NO_PR: PRCommentsSummary = { state: "no_pr", branch: "feat", open_threads: 0, unread_comments: 0, unread_ids: [] }
+const NO_PR: PRCommentsSummary = { state: "no_pr", branch: "feat", open_threads: 0, unread_comments: 0, unread_ids: [], pending_comments: 0 }
 const PR = { id: "o/r#12", number: 12, url: "https://github.com/o/r/pull/12" }
 const summary = (over: Partial<PRCommentsSummary> = {}): PRCommentsSummary => ({
   state: "ok",
@@ -162,6 +162,7 @@ const summary = (over: Partial<PRCommentsSummary> = {}): PRCommentsSummary => ({
   open_threads: 0,
   unread_comments: 0,
   unread_ids: [],
+  pending_comments: 0,
   ...over,
 })
 const prThread = (id: string, over: Partial<PRThread> = {}): PRThread => ({

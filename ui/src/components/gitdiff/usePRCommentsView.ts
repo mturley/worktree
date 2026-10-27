@@ -48,6 +48,7 @@ export function usePRCommentsView({
   const ok = summary?.state === "ok"
   const openThreads = ok ? summary.open_threads : 0
   const unreadComments = ok ? summary.unread_comments : 0
+  const pendingComments = ok ? summary.pending_comments : 0
 
   // A threads load can be newer than the last summary poll: the summary
   // catches up at once, and until it has, the two aren't compared.
@@ -143,6 +144,7 @@ export function usePRCommentsView({
     prResource,
     openThreads,
     unreadComments,
+    pendingComments,
     /**
      * Whether DiffView's entry check may close a remembered-open sidebar
      * with nothing to show: the view's own threads are in (or failed), and
