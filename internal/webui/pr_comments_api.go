@@ -304,6 +304,10 @@ type prCommentsSummaryDTO struct {
 	// PendingComments counts the viewer's pending review's comments.
 	PendingComments int  `json:"pending_comments"`
 	ViewerIsAuthor  bool `json:"viewer_is_author"`
+	// StalePendingCommit is the short sha of the viewer's pending review's
+	// commit when it isn't the PR's head; null otherwise, or when the write
+	// context couldn't be read.
+	StalePendingCommit *string `json:"stale_pending_commit"`
 }
 
 // handlePRComments: GET /api/pr-comments?path=
@@ -329,8 +333,24 @@ func (s *Server) handlePRComments(w http.ResponseWriter, r *http.Request) {
 		out.UnreadIDs = ids
 		out.PendingComments = prcomments.PendingCount(pc.threads)
 		out.ViewerIsAuthor = s.viewerIsAuthor(pc)
+		out.StalePendingCommit = s.stalePendingCommit(pc)
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// stalePendingCommit is the short sha of the viewer's pending review's
+// commit when it is behind the PR's head, from the same cached write context
+// viewerIsAuthor reads. A failed fetch is nil, as for viewerIsAuthor.
+func (s *Server) stalePendingCommit(pc prComments) *string {
+	if pc.pr == nil || pc.token == "" {
+		return nil
+	}
+	c, err := s.cachedPRWriteContext(pc.token, pc.pr.ID, pc.ref)
+	if err != nil || c.Pending == nil || c.Pending.CommitOid == "" || c.Pending.CommitOid == c.HeadRefOid {
+		return nil
+	}
+	short := shortSHA(c.Pending.CommitOid)
+	return &short
 }
 
 type prCommentDTO struct {

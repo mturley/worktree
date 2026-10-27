@@ -7,6 +7,8 @@ import { useDeletedDrafts } from "../../hooks/useReviewComments"
 import { ClearCommentsModal } from "./ClearCommentsModal"
 import { ReviewCommentCard } from "./ReviewCommentCard"
 import { SendToAgentModal } from "./SendToAgentModal"
+import { SubmitReviewButton } from "./SubmitReviewButton"
+import { PENDING_TAB_SUFFIX } from "./prWriteCopy"
 
 const OUTSIDE_CHANGES = "Outside the changes — this file has no changes to show"
 
@@ -52,6 +54,7 @@ export function ReviewSidebar({ path, comments, viewKey, prompt, onJump, pr }: {
         >
           Copy comments for agent
         </Button>
+        <SubmitReviewButton path={path} summary={pr?.summary} />
         <Button
           size="compact-xs"
           variant="light"
@@ -85,7 +88,9 @@ export function ReviewSidebar({ path, comments, viewKey, prompt, onJump, pr }: {
     <Tabs value={tab} onChange={(v) => setTab(v === "pr" ? "pr" : "local")} keepMounted={false}>
       <Tabs.List grow>
         <Tabs.Tab value="local">{`Local comments (${comments.length})`}</Tabs.Tab>
-        <Tabs.Tab value="pr">{`PR comments (${pr?.summary?.open_threads ?? 0})`}</Tabs.Tab>
+        <Tabs.Tab value="pr">
+          {`PR comments (${pr?.summary?.open_threads ?? 0})${(pr?.summary?.pending_comments ?? 0) > 0 ? PENDING_TAB_SUFFIX : ""}`}
+        </Tabs.Tab>
       </Tabs.List>
       <Tabs.Panel value="local">{local}</Tabs.Panel>
       <Tabs.Panel value="pr">

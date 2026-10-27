@@ -931,6 +931,8 @@ export interface PRCommentsSummary {
   /** Comments in the viewer's pending (unsubmitted) review on the PR. */
   pending_comments: number
   viewer_is_author?: boolean
+  /** The pending review's commit (short sha) when it isn't the PR's head; null otherwise. */
+  stale_pending_commit?: string | null
 }
 
 export interface PRWriteTarget {

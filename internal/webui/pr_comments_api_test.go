@@ -622,3 +622,39 @@ func TestPRCommentsLocateReviewWorktree(t *testing.T) {
 		t.Fatalf("number match on a repo that is not a remote: %d", code)
 	}
 }
+
+func TestPRCommentsStalePendingCommit(t *testing.T) {
+	f := newPRCFixture(t)
+	f.threads = summaryThreads()
+	stale := func() json.RawMessage {
+		t.Helper()
+		f.srv.prThreadsCacheOrInit().entries = map[string]ttlEntry{}
+		code, body := f.get(t, "/api/pr-comments", "")
+		var raw map[string]json.RawMessage
+		must(t, json.Unmarshal(body, &raw))
+		if code != 200 {
+			t.Fatalf("status %d: %s", code, body)
+		}
+		return raw["stale_pending_commit"]
+	}
+	// No pending review: null.
+	f.writeCtx = &wgithub.PRWriteContext{HeadRefOid: "1111111111111111"}
+	if got := string(stale()); got != "null" {
+		t.Fatalf("no pending review: stale_pending_commit = %s, want null", got)
+	}
+	// A pending review on the head: null.
+	f.writeCtx = &wgithub.PRWriteContext{HeadRefOid: "1111111111111111", Pending: &wgithub.PendingReview{CommitOid: "1111111111111111"}}
+	if got := string(stale()); got != "null" {
+		t.Fatalf("pending on head: stale_pending_commit = %s, want null", got)
+	}
+	// A pending review on an older commit: its short sha.
+	f.writeCtx = &wgithub.PRWriteContext{HeadRefOid: "1111111111111111", Pending: &wgithub.PendingReview{CommitOid: "abcdef1234567890"}}
+	if got := string(stale()); got != `"abcdef1"` {
+		t.Fatalf("pending on older commit: stale_pending_commit = %s, want \"abcdef1\"", got)
+	}
+	// A failed write context fetch: null, and the summary still ok.
+	f.writeCtxErr = errors.New("boom")
+	if got := string(stale()); got != "null" {
+		t.Fatalf("failed fetch: stale_pending_commit = %s, want null", got)
+	}
+}

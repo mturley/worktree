@@ -20,6 +20,16 @@ export const commentNowTooltip = (n: number) =>
 export const replyNowLabel = (n: number) => `Reply on PR #${n}`
 export const replyNowTooltip = (n: number) => `Post this reply on PR #${n} now. Everyone can see it.`
 
+export const submitLabel = (n: number) => `Submit review to PR #${n}…`
+export const submitTooltip = (n: number) =>
+  `Submit your pending review on PR #${n}, with a message and Comment, Approve or Request changes.`
+
+/** The PR tab's label suffix while a review is pending. */
+export const PENDING_TAB_SUFFIX = " · pending review"
+/** The PR tab's notice while a review is pending. */
+export const pendingReviewNotice = (n: number, count: number) =>
+  `You have a pending review on PR #${n} (${count} ${count === 1 ? "comment" : "comments"})`
+
 /** A GitHub button's reason while its write check is still loading. */
 export const CHECKING_REASON = "Checking whether these lines can be posted to the PR…"
 /** A refusal the check gave no reason for. */

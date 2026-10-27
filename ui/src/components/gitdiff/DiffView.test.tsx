@@ -727,6 +727,15 @@ describe("DiffView PR comments", () => {
     expect(button).toHaveAttribute("data-variant", "light")
   })
 
+  it("shows the pending PR review alone, filled", async () => {
+    prSetup(summary({ pending_comments: 2 }), threads([]))
+    const button = await screen.findByRole("button", { name: "pending PR review (2 comments)" })
+    expect(button).toHaveAttribute("data-variant", "filled")
+    // It opens where the pending review is, not on an empty Local tab.
+    await userEvent.click(button)
+    expect(await screen.findByText("You have a pending review on PR #12 (2 comments)")).toBeInTheDocument()
+  })
+
   it("names both counts when there are local comments too", async () => {
     listComments(() => [comment(1, "shown")])
     prSetup(summary({ open_threads: 1 }), threads([prThread("t1")]))

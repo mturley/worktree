@@ -312,7 +312,7 @@ export default function DiffView({
   // (resolved ones too), or threads GitHub counts that the pinned list
   // doesn't have yet (its PR tab offers their Refresh).
   const pinnedThreads = pr.threads?.threads.length ?? 0
-  const hasContent = reviewCount > 0 || pinnedThreads > 0 || pr.openThreads > 0
+  const hasContent = reviewCount > 0 || pinnedThreads > 0 || pr.openThreads > 0 || pr.pendingComments > 0
   // Mounted while open, and once mounted it stays until closed: polls never
   // mount or unmount it (that would widen or narrow the diff under the
   // reader), nor does a Refresh's interval with nothing loaded. Only Mike's
@@ -323,12 +323,12 @@ export default function DiffView({
   if (sidebarMounted !== sidebarKept) setSidebarKept(sidebarMounted)
   // The toolbar button follows the live counts (a button appearing moves no
   // code), and stays while the sidebar is open, as its only close.
-  const hasReview = reviewCount > 0 || pr.openThreads > 0 || sidebarMounted
+  const hasReview = reviewCount > 0 || pr.openThreads > 0 || pr.pendingComments > 0 || sidebarMounted
   const [, setReviewTab] = useReviewSidebarTab()
   const openReview = () => {
     // The button counting only PR comments opens where they are, not on an
     // empty Local tab.
-    if (reviewCount === 0 && pr.openThreads > 0) setReviewTab("pr")
+    if (reviewCount === 0 && (pr.openThreads > 0 || pr.pendingComments > 0)) setReviewTab("pr")
     setSidebarKept(true)
     setReviewOpen(true)
   }
@@ -352,10 +352,10 @@ export default function DiffView({
     if (!fresh) return
     const was = lastLocal.current
     lastLocal.current = reviewCount
-    if (was !== null && was > 0 && reviewCount === 0 && pinnedThreads === 0 && pr.openThreads === 0 && reviewOpen) {
+    if (was !== null && was > 0 && reviewCount === 0 && pinnedThreads === 0 && pr.openThreads === 0 && pr.pendingComments === 0 && reviewOpen) {
       setReviewOpen(false)
     }
-  }, [fresh, reviewCount, pinnedThreads, pr.openThreads, reviewOpen, setReviewOpen])
+  }, [fresh, reviewCount, pinnedThreads, pr.openThreads, pr.pendingComments, reviewOpen, setReviewOpen])
   // The tree's blue dots: every file a comment was made on, and those with
   // PR threads in the diff while they show.
   const prFiles = pr.files

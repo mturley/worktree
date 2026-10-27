@@ -83,6 +83,13 @@ describe("ReviewActions", () => {
     expect(button).toHaveAttribute("data-variant", "filled")
   })
 
+  it("names a pending PR review, filled", async () => {
+    api.prComments.mockResolvedValue({ state: "ok", open_threads: 1, unread_comments: 0, unread_ids: [], pending_comments: 2 })
+    wrap()
+    const button = await screen.findByRole("button", { name: "Review changes (1 PR comment, pending PR review)" })
+    expect(button).toHaveAttribute("data-variant", "filled")
+  })
+
   it("stays light when PR comments are all read", async () => {
     api.prComments.mockResolvedValue({ state: "ok", open_threads: 4, unread_comments: 0, unread_ids: [] })
     wrap()

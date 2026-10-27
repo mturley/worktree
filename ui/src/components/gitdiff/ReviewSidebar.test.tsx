@@ -11,6 +11,7 @@ const apiMock = vi.hoisted(() => ({
   clearReviewComments: vi.fn(),
   updateReviewComment: vi.fn(),
   deleteReviewComment: vi.fn(),
+  prReviewDialog: vi.fn(),
 }))
 vi.mock("../../api/client", async (orig) => {
   const actual = await orig<typeof import("../../api/client")>()
@@ -19,6 +20,7 @@ vi.mock("../../api/client", async (orig) => {
 
 import { HttpError } from "../../api/client"
 import { useDeletedDrafts } from "../../hooks/useReviewComments"
+import { parseResourceKey } from "../../lib/resourceKey"
 import { ReviewSidebar } from "./ReviewSidebar"
 
 const item = (id: number, over: Partial<ReviewCommentItem> = {}): ReviewCommentItem => ({
@@ -193,9 +195,86 @@ describe("ReviewSidebar tabs", () => {
     const sw = screen.getByRole("switch", { name: "Show in diff view" })
     await userEvent.click(sw)
     expect(window.localStorage.getItem(SHOW_PR_COMMENTS_KEY)).toBe("false")
-    expect(screen.getByRole("link", { name: "PR #7" })).toHaveAttribute("href", "https://github.com/o/r/pull/7")
+    expect(screen.getByRole("link", { name: "PR #7" })).toBeInTheDocument()
     expect(screen.getByText("text o")).toBeInTheDocument()
     const order = screen.getAllByText(/text o|Resolved/).map((e) => e.textContent)
     expect(order[0]).toBe("text o")
+  })
+})
+
+describe("ReviewSidebar pending PR review", () => {
+  const SUBMIT = "Submit review to PR #7…"
+
+  it("offers Submit beside Copy comments for agent with a PR, with its tooltip", async () => {
+    apiMock.prReviewDialog.mockReturnValue(new Promise(() => {}))
+    wrap(prSidebar(summary()))
+    const button = screen.getByRole("button", { name: SUBMIT })
+    expect(button).not.toHaveAttribute("aria-disabled", "true")
+    await userEvent.hover(button)
+    expect(
+      await screen.findByText("Submit your pending review on PR #7, with a message and Comment, Approve or Request changes."),
+    ).toBeInTheDocument()
+    await userEvent.click(button)
+    expect(await screen.findByRole("dialog")).toBeInTheDocument()
+    expect(apiMock.prReviewDialog).toHaveBeenCalledWith("/w")
+  })
+
+  it("hides Submit without a PR", () => {
+    wrap(prSidebar(summary({ state: "no_pr", branch: "x", pr: undefined })))
+    expect(screen.getByRole("button", { name: "Copy comments for agent" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /Submit review/ })).not.toBeInTheDocument()
+    cleanup()
+    wrap(prSidebar(undefined))
+    expect(screen.queryByRole("button", { name: /Submit review/ })).not.toBeInTheDocument()
+  })
+
+  it("disables Submit with the reason while the watcher is off", async () => {
+    wrap(prSidebar(summary({ state: "off" })))
+    const button = screen.getByRole("button", { name: SUBMIT })
+    expect(button).toHaveAttribute("aria-disabled", "true")
+    await userEvent.hover(button)
+    expect(await screen.findByText("The GitHub watcher is off")).toBeInTheDocument()
+    await userEvent.click(button)
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+  })
+
+  it("labels the PR tab and shows the notice with Submit while a review is pending", () => {
+    setReviewSidebarTab("pr")
+    wrap(prSidebar(summary({ pending_comments: 2 })))
+    expect(screen.getByRole("tab", { name: "PR comments (3) · pending review" })).toBeInTheDocument()
+    expect(screen.getByText("You have a pending review on PR #7 (2 comments)")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: SUBMIT })).toBeInTheDocument()
+    expect(screen.queryByText(/is on an older commit/)).not.toBeInTheDocument()
+  })
+
+  it("has no pending label or notice without a pending review", () => {
+    setReviewSidebarTab("pr")
+    wrap(prSidebar(summary()))
+    expect(screen.getByRole("tab", { name: "PR comments (3)" })).toBeInTheDocument()
+    expect(screen.queryByText(/You have a pending review/)).not.toBeInTheDocument()
+  })
+
+  it("shows the stale pending review notice under the pending notice", () => {
+    setReviewSidebarTab("pr")
+    wrap(prSidebar(summary({ pending_comments: 1, stale_pending_commit: "abc1234" })))
+    const pending = screen.getByText("You have a pending review on PR #7 (1 comment)")
+    const stale = screen.getByText(
+      "Your pending review on PR #7 is on an older commit (abc1234). Comments on newer code can't be added to it; submit it to start a new one.",
+    )
+    expect(pending.compareDocumentPosition(stale) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("the PR link leaves the diff view for the PR's resource view in one navigation", async () => {
+    setReviewSidebarTab("pr")
+    window.history.pushState({}, "", "/worktree/x?diff&file=a.ts&tab=activity")
+    const before = window.history.length
+    wrap(prSidebar(summary()))
+    await userEvent.click(screen.getByRole("link", { name: "PR #7" }))
+    const params = new URLSearchParams(window.location.search)
+    expect(params.has("diff")).toBe(false)
+    expect(params.has("file")).toBe(false)
+    expect(params.has("tab")).toBe(false)
+    expect(parseResourceKey(params.get("resource"))).toEqual({ type: "pr", id: "o/r#7" })
+    expect(window.history.length).toBe(before + 1)
   })
 })
