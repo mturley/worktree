@@ -357,6 +357,33 @@ describe("TaskList expand footer", () => {
 })
 
 describe("TaskList", () => {
+  it("draws one subtle line under the starred tasks when others follow", async () => {
+    setPrefs({ sort: "custom" })
+    vi.mocked(api.tasks).mockResolvedValue([task(1, { title: "starred one", starred: true }), task(2, { title: "plain two" })])
+    const { unmount } = wrap(<TaskList scope={{ kind: "all" }} />)
+    await screen.findByText("plain two")
+    expect(document.querySelectorAll("[data-task-starred-divider]")).toHaveLength(1)
+    unmount()
+
+    // Priority sort splits Starred by priority: still one line, after the last.
+    setPrefs({ sort: "priority" })
+    vi.mocked(api.tasks).mockResolvedValue([
+      task(1, { title: "starred high", starred: true, priority: "high" }),
+      task(2, { title: "starred low", starred: true, priority: "low" }),
+      task(3, { title: "plain high", priority: "high" }),
+    ])
+    const second = wrap(<TaskList scope={{ kind: "all" }} />)
+    await screen.findByText("plain high")
+    expect(document.querySelectorAll("[data-task-starred-divider]")).toHaveLength(1)
+    second.unmount()
+
+    // Nothing but starred tasks: no line.
+    vi.mocked(api.tasks).mockResolvedValue([task(1, { title: "only starred", starred: true })])
+    wrap(<TaskList scope={{ kind: "all" }} />)
+    await screen.findByText("only starred")
+    expect(document.querySelector("[data-task-starred-divider]")).toBeNull()
+  })
+
   it("disables drag outside custom/priority/state with a hint", async () => {
     setPrefs({ sort: "due" })
     const user = userEvent.setup()

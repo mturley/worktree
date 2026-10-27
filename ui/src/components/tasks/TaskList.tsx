@@ -1,5 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
-import { ActionIcon, Alert, Box, Button, Stack, Text, Tooltip } from "@mantine/core"
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { ActionIcon, Alert, Box, Button, Divider, Stack, Text, Tooltip } from "@mantine/core"
 import { IconGripVertical } from "@tabler/icons-react"
 import {
   closestCenter,
@@ -391,9 +391,9 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
-        {shown.map((s) => (
+        {shown.map((s, i) => (
+          <Fragment key={s.key}>
           <SectionBlock
-            key={s.key}
             section={s}
             band={activeId !== null && s.draggable}
             dropTarget={indicator?.section === s.key}
@@ -415,6 +415,12 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
               ))}
             </SortableContext>
           </SectionBlock>
+          {/* A subtle line under the starred tasks, when others follow.
+              Always rendered (not only mid-drag), so a drag shifts nothing. */}
+          {s.starred && shown[i + 1] && !shown[i + 1].starred && (
+            <Divider my={4} data-task-starred-divider />
+          )}
+          </Fragment>
         ))}
         {/* The dragged row follows the pointer here, its own slot left as an
             empty placeholder. On an opaque, lifted surface (theme.css): the
