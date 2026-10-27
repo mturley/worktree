@@ -56,9 +56,10 @@ export function Frame({ comment, source, children, ...rest }: {
 }
 
 // A comment's text, as Markdown (raw HTML is never rendered; see NotesMarkdown).
-export const Body = ({ text }: { text: string }) => (
+// imagesAsLinks for text written by others: see NotesMarkdown.
+export const Body = ({ text, imagesAsLinks = false }: { text: string; imagesAsLinks?: boolean }) => (
   <Box style={{ overflowWrap: "anywhere" }}>
-    <NotesMarkdown text={text} />
+    <NotesMarkdown text={text} imagesAsLinks={imagesAsLinks} />
   </Box>
 )
 // Typed text kept to copy back: shown as typed.

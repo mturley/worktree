@@ -23,12 +23,17 @@ const TaskOffset = createContext<number | undefined>(undefined)
  * a link (the home page's worktree card), where a nested <a> is invalid and
  * would steal the card's click.
  *
+ * With `imagesAsLinks`, images render as links to them instead of loading:
+ * for text written by others (PR review comments), where an image could be
+ * a tracking pixel or an attachment only GitHub's session can fetch.
+ *
  * Styled by styles/notes.css.
  */
-export function NotesMarkdown({ text, onToggleTask, plainLinks = false }: {
+export function NotesMarkdown({ text, onToggleTask, plainLinks = false, imagesAsLinks = false }: {
   text: string
   onToggleTask?: (offset: number) => void
   plainLinks?: boolean
+  imagesAsLinks?: boolean
 }) {
   // Held in a ref so `components` keeps one identity: a new component
   // function per render would remount the whole rendered list.
@@ -42,6 +47,15 @@ export function NotesMarkdown({ text, onToggleTask, plainLinks = false }: {
     a: ({ node: _node, ...props }) => plainLinks
       ? <span>{props.children}</span>
       : <a {...props} target="_blank" rel="noreferrer" />,
+    ...(imagesAsLinks && {
+      img: ({ src, alt }) => {
+        const href = typeof src === "string" ? src : undefined
+        const label = alt || href || "image"
+        return href && !plainLinks
+          ? <a href={href} target="_blank" rel="noreferrer">{label}</a>
+          : <span>{label}</span>
+      },
+    }),
     li: ({ node, children, ...props }) => {
       const cls = node?.properties?.className
       const isTask = Array.isArray(cls) && cls.includes("task-list-item")
@@ -67,7 +81,7 @@ export function NotesMarkdown({ text, onToggleTask, plainLinks = false }: {
         />
       )
     },
-  }), [clickable, plainLinks])
+  }), [clickable, plainLinks, imagesAsLinks])
 
   return (
     <Box className="worktree-notes" fz="xs">

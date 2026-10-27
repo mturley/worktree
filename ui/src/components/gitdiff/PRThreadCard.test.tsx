@@ -98,6 +98,35 @@ describe("PRThreadCard", () => {
     expect(screen.queryByRole("button", { name: "Mark all read" })).toBeNull()
   })
 
+  it("puts Mark all read on the first comment's header row, beside its links", () => {
+    renderCard({ unreadIds: new Set([2]), prResource: resource })
+    const header = screen.getByRole("link", { name: "View on GitHub" }).parentElement!
+    expect(header.contains(screen.getByRole("button", { name: "Mark all read" }))).toBe(true)
+  })
+
+  it("keeps the same header slots whether or not anything is unread, so the card never grows", () => {
+    const slots = () => ({
+      mark: document.querySelectorAll("[data-mark-read-slot]").length,
+      dots: document.querySelectorAll("[data-unread-slot]").length,
+    })
+    const { unmount } = renderCard({ prResource: resource })
+    const read = slots()
+    unmount()
+    renderCard({ unreadIds: new Set([1, 2]), prResource: resource })
+    expect(slots()).toEqual(read)
+    expect(read).toEqual({ mark: 1, dots: 2 })
+  })
+
+  it("shows a comment's images as links, never loading them", () => {
+    const t = thread()
+    t.comments[0].body = "see ![shot](https://example.com/pixel.png)"
+    const { container } = renderCard({ thread: t })
+    expect(container.querySelector("img")).toBeNull()
+    const link = screen.getByRole("link", { name: "shot" })
+    expect(link.getAttribute("href")).toBe("https://example.com/pixel.png")
+    expect(link.getAttribute("target")).toBe("_blank")
+  })
+
   it("resolved starts collapsed and expands", async () => {
     renderCard({ thread: thread({ resolved: true }) })
     const line = screen.getByRole("button", { name: /Resolved · @octo · src\/a\.ts:3 — first body/ })

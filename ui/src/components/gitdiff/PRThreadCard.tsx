@@ -1,14 +1,37 @@
-import { useState } from "react"
-import { Anchor, Avatar, Badge, Group, Stack, Text, Tooltip, UnstyledButton } from "@mantine/core"
+import { type ReactNode, useState } from "react"
+import { Anchor, Avatar, Badge, Box, Button, Group, Stack, Text, Tooltip, UnstyledButton } from "@mantine/core"
 import { useQueryClient } from "@tanstack/react-query"
 import type { PRRefDTO, PRThread, ResourceDTO } from "../../api/types"
 import { useReviewSidebar, useReviewSidebarTab } from "../../hooks/useReviewSidebar"
 import { relativeTime } from "../../lib/relativeTime"
 import { MarkAllReadButton } from "../MarkAllReadButton"
+import { KeyHint } from "../search/KeyHint"
 import { UnreadMarkerDot } from "../UnreadMarkerDot"
 import { Body, Frame, SOURCE_STYLE } from "./ReviewCommentCard"
 
 const PREVIEW = 40
+
+/**
+ * Where Mark all read goes, sized by an invisible copy of the button that is
+ * always there, so the button appearing or going never changes the card's
+ * height (or wraps its header differently) and code never shifts under it.
+ */
+function MarkReadSlot({ children }: { children: ReactNode }) {
+  return (
+    <Box data-mark-read-slot style={{ display: "inline-grid" }}>
+      <Button
+        aria-hidden
+        tabIndex={-1}
+        size="compact-sm"
+        rightSection={<KeyHint decorative>R</KeyHint>}
+        style={{ gridArea: "1 / 1", visibility: "hidden" }}
+      >
+        Mark all read
+      </Button>
+      <Box style={{ gridArea: "1 / 1" }}>{children}</Box>
+    </Box>
+  )
+}
 
 /** A read-only card for one PR review thread: every comment, the place, and the way to GitHub. */
 export function PRThreadCard({ path, thread, pr, variant, unreadIds, prResource, onJump }: {
@@ -104,7 +127,11 @@ export function PRThreadCard({ path, thread, pr, variant, unreadIds, prResource,
               </Tooltip>
               <Text size="xs" c="dimmed">{relativeTime(c.created_at)}</Text>
               {c.pending && <Badge size="xs" color="gray" variant="light">Pending</Badge>}
-              {unreadIds.has(c.id) && <UnreadMarkerDot label="unread comment" />}
+              {/* Unread changes never resize the card: the dot and the
+                  button each keep a slot that is always laid out. */}
+              <span data-unread-slot style={{ display: "inline-flex", width: 7, height: 7, flexShrink: 0 }}>
+                {unreadIds.has(c.id) && <UnreadMarkerDot label="unread comment" />}
+              </span>
               {i === 0 && variant === "inline" && (
                 <Anchor component="button" type="button" size="xs" c="grape" onClick={() => { setReviewOpen(true); setTab("pr") }}>
                   View all
@@ -115,21 +142,23 @@ export function PRThreadCard({ path, thread, pr, variant, unreadIds, prResource,
                   View on GitHub
                 </Anchor>
               )}
+              {i === 0 && prResource && (
+                <MarkReadSlot>
+                  {unread && (
+                    <MarkAllReadButton
+                      single
+                      resources={[prResource]}
+                      feed={{ worktree: path, path, showResource: false }}
+                      taskScope={{ kind: "resource", type: "pr", id: prResource.id }}
+                      onMarked={() => void qc.invalidateQueries({ queryKey: ["pr-comments", path] })}
+                    />
+                  )}
+                </MarkReadSlot>
+              )}
             </Group>
-            <Body text={c.body} />
+            <Body text={c.body} imagesAsLinks />
           </Stack>
         ))}
-        {unread && prResource && (
-          <Group>
-            <MarkAllReadButton
-              single
-              resources={[prResource]}
-              feed={{ worktree: path, path, showResource: false }}
-              taskScope={{ kind: "resource", type: "pr", id: prResource.id }}
-              onMarked={() => void qc.invalidateQueries({ queryKey: ["pr-comments", path] })}
-            />
-          </Group>
-        )}
       </Stack>
     </Frame>
   )
