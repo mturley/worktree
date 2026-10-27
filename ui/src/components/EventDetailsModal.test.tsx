@@ -56,7 +56,10 @@ describe("EventDetailsModal", () => {
     const onMakeTask = vi.fn(() => calls.push("make"))
     const e = ev({ id: "0b7e3c1a-5d2f-4a8b-9c6e-1f2a3b4c5d6e" })
     wrap(<EventDetailsModal e={e} onClose={onClose} onMakeTask={onMakeTask} />)
-    await userEvent.click(screen.getByRole("button", { name: "Make task" }))
+    const button = screen.getByRole("button", { name: "Make task" })
+    // Lime, like the tasks view.
+    expect(button.style.getPropertyValue("--button-bg")).toBe("var(--task-accent)")
+    await userEvent.click(button)
     expect(onMakeTask).toHaveBeenCalledWith(e)
     expect(calls).toEqual(["close", "make"])
   })

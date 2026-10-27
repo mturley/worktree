@@ -598,6 +598,12 @@ describe("＋ task", () => {
     expect(screen.queryByRole("button", { name: /Make task/ })).toBeNull()
   })
 
+  it("is lime, like the tasks view", () => {
+    renderWithProvider(<EventRow e={makeEvent({ id: "0b7e3c1a-5d2f-4a8b-9c6e-1f2a3b4c5d6e" })} onMakeTask={vi.fn()} />)
+    const action = screen.getByRole("button", { name: "Make task from this event" })
+    expect(action.style.getPropertyValue("--button-bg")).toBe("var(--task-accent)")
+  })
+
   it("takes no pointer events while hidden, and does once shown", () => {
     renderWithProvider(<EventRow e={makeEvent({ id: "0b7e3c1a-5d2f-4a8b-9c6e-1f2a3b4c5d6e" })} onMakeTask={vi.fn()} />)
     const action = screen.getByRole("button", { name: "Make task from this event" })

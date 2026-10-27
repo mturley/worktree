@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { TASK_BUTTON_STYLE } from "./tasks/taskButtonStyle"
 import { useMediaQuery } from "@mantine/hooks"
 import { Badge, Box, Button, Group, Stack, Text, Tooltip } from "@mantine/core"
 import { IconArchive } from "@tabler/icons-react"
@@ -255,12 +256,13 @@ export function EventRow({
       <Tooltip label="Make a task from this event" position="top-end">
         <Button
           size="compact-xs"
-          variant="default"
+          variant="filled"
           aria-label="Make task from this event"
           onClick={() => onMakeTask(e)}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           style={{
+            ...TASK_BUTTON_STYLE,
             position: "absolute",
             top: 4,
             right: 4,

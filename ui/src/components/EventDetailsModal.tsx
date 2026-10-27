@@ -1,4 +1,5 @@
 import { Alert, Badge, Button, Divider, Group, Modal, Stack, Text } from "@mantine/core"
+import { TASK_BUTTON_STYLE } from "./tasks/taskButtonStyle"
 import { IconArchive } from "@tabler/icons-react"
 import { useQuery } from "@tanstack/react-query"
 import { useLocation } from "wouter"
@@ -144,7 +145,8 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
               {onMakeTask && eventTaskKey(e) && (
                 <Button
                   size="xs"
-                  variant="light"
+                  variant="filled"
+                  style={TASK_BUTTON_STYLE}
                   onClick={() => {
                     onClose()
                     onMakeTask(e)
