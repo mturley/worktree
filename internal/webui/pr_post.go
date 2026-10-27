@@ -188,7 +188,7 @@ func newPRTarget(dir string, ref wgithub.PRRef, ctx *wgithub.PRWriteContext) (*p
 // placeForPR decides whether GitHub would accept c on t, and where. lines
 // reads a file at a rev; isAncestor(a, b) says whether commit a is an
 // ancestor of commit b. See the spec's "Which comments can be posted".
-func placeForPR(dir string, t *prTarget, c reviewcomments.Comment, lines func(rev, file string) []string, isAncestor func(a, b string) bool) prPlacement {
+func placeForPR(t *prTarget, c reviewcomments.Comment, lines func(rev, file string) []string, isAncestor func(a, b string) bool) prPlacement {
 	if c.Rev == reviewcomments.RevUncommitted {
 		return prPlacement{reason: reasonUncommitted}
 	}

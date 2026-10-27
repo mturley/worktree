@@ -61,7 +61,7 @@ func testComment(t *testing.T, wt, rev, file string, side reviewcomments.Side, s
 
 func place(wt string, tg *prTarget, c reviewcomments.Comment) prPlacement {
 	r := newReviewResolver()
-	return placeForPR(wt, tg, c,
+	return placeForPR(tg, c,
 		func(rev, file string) []string { return r.linesAt(wt, rev, file) },
 		func(a, b string) bool { return gitutil.IsAncestor(wt, a, b) })
 }

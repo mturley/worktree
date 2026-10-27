@@ -232,8 +232,12 @@ type Server struct {
 	prThreadsOnce   sync.Once
 	prThreadsCache  *ttlCache
 	// prSubmitLocks holds one *sync.Mutex per worktree path, serialising
-	// /api/pr-write/submit (pr_write_api.go).
+	// /api/pr-write/submit and the review dialog's reconcile
+	// (pr_write_api.go).
 	prSubmitLocks sync.Map
+	// allowSingleWhilePending lifts the pending-review gate on single
+	// writes (singleBlockedByPending); tests only.
+	allowSingleWhilePending bool
 	// prAuthErrLogged is the last auth.yaml read error logged by githubToken.
 	prAuthErrMu     sync.Mutex
 	prAuthErrLogged string

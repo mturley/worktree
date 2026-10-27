@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -64,6 +65,25 @@ func (s *Server) postReply(token string, ref wgithub.PRRef, inReplyTo int64, bod
 		return s.PostReply(token, ref, inReplyTo, body)
 	}
 	return ghLib.PostReply(token, ref, inReplyTo, body)
+}
+
+// pendingBlocksSingleReason: GitHub refuses a single comment or reply
+// (422, one pending review per pull request) while the viewer has a
+// pending review. Kept in step with prWriteCopy.ts.
+func pendingBlocksSingleReason(number int) string {
+	return fmt.Sprintf("You have a pending review on PR #%d; add to it or submit it first", number)
+}
+
+// singleBlockedByPending is the pending-review gate on single writes: the
+// reason a single comment or reply can't be posted while ctx has a pending
+// review, and true; "", false otherwise. It is the gate's only logic:
+// lifting it means deleting this, refuseSingleWhilePending and their calls
+// in the check, comment and reply handlers.
+func (s *Server) singleBlockedByPending(ctx *wgithub.PRWriteContext, number int) (string, bool) {
+	if s.allowSingleWhilePending || ctx == nil || ctx.Pending == nil {
+		return "", false
+	}
+	return pendingBlocksSingleReason(number), true
 }
 
 // invalidatePR drops the PR's cached threads and write context, so the next
@@ -158,7 +178,7 @@ func (s *Server) placeOnPR(dir string, pc prComments, c reviewcomments.Comment, 
 		return nil, prPlacement{}, err
 	}
 	r := s.reviewResolver()
-	p := placeForPR(dir, t, c,
+	p := placeForPR(t, c,
 		func(rev, file string) []string { return r.linesAt(dir, rev, file) },
 		func(a, b string) bool { return gitutil.IsAncestor(dir, a, b) })
 	return t, p, nil
@@ -226,6 +246,11 @@ func (s *Server) handlePRWriteCheck(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	ctx, err := s.cachedPRWriteContext(pc.token, pc.pr.ID, pc.ref)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
 	var out prCheckResponse
 	for _, m := range []struct {
 		v        *prVerdict
@@ -237,6 +262,9 @@ func (s *Server) handlePRWriteCheck(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		*m.v = prVerdict{Postable: p.ok, Reason: p.reason}
+		if reason, blocked := s.singleBlockedByPending(ctx, pc.pr.Number); m.headOnly && blocked {
+			*m.v = prVerdict{Reason: reason}
+		}
 		if !m.headOnly && t != nil && t.stale && t.pendingCommit != "" {
 			short := shortSHA(t.pendingCommit)
 			out.Review.StalePendingCommit = &short
@@ -283,6 +311,12 @@ func (s *Server) handlePRWriteComment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// A write reads the write context fresh: a pending review started or
+	// submitted elsewhere changes where it goes, or whether it can.
+	s.prThreadsCacheOrInit().del("prctx|" + pc.pr.ID)
+	if req.Mode == prModeSingle && !s.refuseSingleWhilePending(w, pc) {
+		return
+	}
 	// A single comment goes on the PR head; one added to a pending review
 	// goes on the review's commit.
 	t, p, err := s.placeOnPR(dir, pc, c, req.Mode == prModeSingle)
@@ -310,6 +344,22 @@ func (s *Server) handlePRWriteComment(w http.ResponseWriter, r *http.Request) {
 	}
 	s.invalidatePR(pc.pr.ID)
 	writeJSON(w, http.StatusOK, map[string]int64{"comment_id": id})
+}
+
+// refuseSingleWhilePending reads pc's write context and, while it has a
+// pending review, writes the gate's 409 and returns false. A failed read is
+// a 502, also false.
+func (s *Server) refuseSingleWhilePending(w http.ResponseWriter, pc prComments) bool {
+	ctx, err := s.cachedPRWriteContext(pc.token, pc.pr.ID, pc.ref)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return false
+	}
+	if reason, blocked := s.singleBlockedByPending(ctx, pc.pr.Number); blocked {
+		writeJSON(w, http.StatusConflict, map[string]string{"reason": reason, "error": reason})
+		return false
+	}
+	return true
 }
 
 type prReplyRequest struct {
@@ -350,6 +400,11 @@ func (s *Server) handlePRWriteReply(w http.ResponseWriter, r *http.Request) {
 	}
 	pc, ok := s.prForWrite(w, dir)
 	if !ok {
+		return
+	}
+	// Read fresh, as for a comment.
+	s.prThreadsCacheOrInit().del("prctx|" + pc.pr.ID)
+	if req.Mode == prModeSingle && !s.refuseSingleWhilePending(w, pc) {
 		return
 	}
 	var id int64
@@ -450,7 +505,7 @@ func (s *Server) placeLocals(dir string, pc prComments) (ctx *wgithub.PRWriteCon
 			out[i].p = prPlacement{reason: reasonMissingCommit}
 			continue
 		}
-		out[i].p = placeForPR(dir, t, c,
+		out[i].p = placeForPR(t, c,
 			func(rev, file string) []string { return r.linesAt(dir, rev, file) },
 			func(a, b string) bool { return gitutil.IsAncestor(dir, a, b) })
 	}
@@ -519,7 +574,9 @@ func pendingLine(threads *wgithub.PRReviewThreads, id int64) int {
 // commit the review is on ("head", which submit sends back), the viewer's
 // pending review, and every local comment with whether it can be added.
 // The write context is read fresh, so the dialog never shows a head
-// submit would then refuse.
+// submit would then refuse. First, under the submit lock, rows already on
+// GitHub and unedited since they were sent are deleted (reconcileSent's
+// deleting part), so no comment is listed both pending and local.
 func (s *Server) handlePRWriteReview(w http.ResponseWriter, r *http.Request) {
 	dir, ok := s.registeredWorktreePath(w, r)
 	if !ok {
@@ -527,6 +584,15 @@ func (s *Server) handlePRWriteReview(w http.ResponseWriter, r *http.Request) {
 	}
 	pc, ok := s.prForWrite(w, dir)
 	if !ok {
+		return
+	}
+	// Rows already on GitHub and unedited since are deleted first, under
+	// the submit lock, so the dialog never lists a comment twice.
+	lock := s.submitLock(dir)
+	lock.Lock()
+	defer lock.Unlock()
+	if _, _, status, err := s.reconcileSent(dir, pc, false); err != nil {
+		writeError(w, status, err.Error())
 		return
 	}
 	s.prThreadsCacheOrInit().del("prctx|" + pc.pr.ID)
@@ -692,45 +758,15 @@ func (s *Server) handlePRWriteSubmit(w http.ResponseWriter, r *http.Request) {
 	out := prSubmitResponse{PostedLocalIDs: []int64{}, KeptLocalIDs: []int64{}}
 
 	// 2. Reconcile the rows sent by an earlier request.
-	rows, err := reviewcomments.List(s.DB, dir)
+	gone, resent, status, err := s.reconcileSent(dir, pc, true)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, status, err.Error())
 		return
 	}
-	gone, resent := map[int64]bool{}, map[int64]bool{}
-	var earlier []reviewcomments.Comment
-	for _, c := range rows {
-		if c.GitHubCommentID != 0 {
-			earlier = append(earlier, c)
-		}
+	for id := range gone {
+		out.PostedLocalIDs = append(out.PostedLocalIDs, id)
 	}
-	if len(earlier) > 0 {
-		present, err := s.presentOnGitHub(pc)
-		if err != nil {
-			writeError(w, http.StatusBadGateway, fmt.Sprintf("reading the PR's comments: %v", err))
-			return
-		}
-		for _, c := range earlier {
-			deleted := false
-			if present[c.GitHubCommentID] {
-				if deleted, err = reviewcomments.DeleteIfVersion(s.DB, dir, c.ID, c.GitHubSentVersion); err != nil {
-					writeError(w, http.StatusInternalServerError, err.Error())
-					return
-				}
-			}
-			if deleted {
-				gone[c.ID] = true
-				out.PostedLocalIDs = append(out.PostedLocalIDs, c.ID)
-				continue
-			}
-			// Discarded on GitHub, or edited since it was sent: local again.
-			if err := reviewcomments.ClearGitHubCommentID(s.DB, dir, c.ID); err != nil {
-				writeError(w, http.StatusInternalServerError, err.Error())
-				return
-			}
-			resent[c.ID] = true
-		}
-	}
+	sort.Slice(out.PostedLocalIDs, func(i, j int) bool { return out.PostedLocalIDs[i] < out.PostedLocalIDs[j] })
 
 	var postable []placedLocal
 	for _, l := range placed {
@@ -858,6 +894,56 @@ func (s *Server) handlePRWriteSubmit(w http.ResponseWriter, r *http.Request) {
 	// reported in error, but the status stays 200 so it is not retried.
 	keep()
 	writeJSON(w, http.StatusOK, out)
+}
+
+// reconcileSent reconciles the rows sent to GitHub by an earlier request
+// (those carrying a GitHub id). One GitHub has (pending, or in a thread)
+// and unedited since it was sent is deleted, into gone. With clear, every
+// other one (its pending review was discarded, or it was edited since it
+// was sent) loses its id and is local again, into resent; without, they
+// are left alone, as the review dialog does: only a submit clears ids. On
+// error, status is the HTTP status to answer with. The caller holds the
+// worktree's submit lock.
+func (s *Server) reconcileSent(dir string, pc prComments, clear bool) (gone, resent map[int64]bool, status int, err error) {
+	gone, resent = map[int64]bool{}, map[int64]bool{}
+	rows, err := reviewcomments.List(s.DB, dir)
+	if err != nil {
+		return nil, nil, http.StatusInternalServerError, err
+	}
+	var earlier []reviewcomments.Comment
+	for _, c := range rows {
+		if c.GitHubCommentID != 0 {
+			earlier = append(earlier, c)
+		}
+	}
+	if len(earlier) == 0 {
+		return gone, resent, 0, nil
+	}
+	present, err := s.presentOnGitHub(pc)
+	if err != nil {
+		return nil, nil, http.StatusBadGateway, fmt.Errorf("reading the PR's comments: %w", err)
+	}
+	for _, c := range earlier {
+		if present[c.GitHubCommentID] {
+			deleted, err := reviewcomments.DeleteIfVersion(s.DB, dir, c.ID, c.GitHubSentVersion)
+			if err != nil {
+				return nil, nil, http.StatusInternalServerError, err
+			}
+			if deleted {
+				gone[c.ID] = true
+				continue
+			}
+		}
+		if !clear {
+			continue
+		}
+		// Discarded on GitHub, or edited since it was sent: local again.
+		if err := reviewcomments.ClearGitHubCommentID(s.DB, dir, c.ID); err != nil {
+			return nil, nil, http.StatusInternalServerError, err
+		}
+		resent[c.ID] = true
+	}
+	return gone, resent, 0, nil
 }
 
 // allSent reports whether present holds each of the n ids id(i) returns.

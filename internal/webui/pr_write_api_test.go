@@ -162,8 +162,8 @@ func TestPRWriteCheck(t *testing.T) {
 	// c3 pushed, but a pending review sits on c2.
 	f.setCtx(&wgithub.PRWriteContext{PullRequestID: "PR_node", BaseRefOid: f.base, HeadRefOid: c3,
 		Pending: &wgithub.PendingReview{ID: "R1", CommitOid: c2}})
-	// A single comment goes on the head, so it is unaffected.
-	wantModes(t, f.check(t, "new", 10, 10, f.base, c3), "newer than your pending review", "")
+	// GitHub refuses a single comment while a pending review exists.
+	wantModes(t, f.check(t, "new", 10, 10, f.base, c3), "newer than your pending review", "You have a pending review on PR #1; add to it or submit it first")
 
 	// Uncommitted lines, from a working-tree view.
 	f.setCtx(&wgithub.PRWriteContext{PullRequestID: "PR_node", BaseRefOid: f.base, HeadRefOid: c3})
@@ -297,6 +297,8 @@ func TestPRWriteCommentSingle(t *testing.T) {
 // while the same lines in review mode go on the pending review's commit.
 func TestPRWriteCommentSingleStalePending(t *testing.T) {
 	f := newPRWFixture(t)
+	// Covers placement on the head beneath the pending-review gate.
+	f.srv.allowSingleWhilePending = true
 	// c2 inserts two lines on top (line 5 moves to 7) and changes line 10.
 	commitFile(t, f.wt, "long", "top1\ntop2\n"+numbered(30, map[int]string{5: "five", 10: "ten", 25: "twenty-five"}))
 	c2 := headSHA(t, f.wt)
@@ -342,6 +344,59 @@ func TestPRWriteCommentSingleStalePending(t *testing.T) {
 	f.wantCalls(t, "comment tok o/r#1 "+c2+" {Path:long Side:RIGHT Line:12 StartLine:0 Body:x}")
 }
 
+// TestPRWritePendingBlocksSingle: GitHub refuses single comments and
+// replies while the viewer has a pending review, so the server does too,
+// without calling GitHub; review mode is unaffected.
+func TestPRWritePendingBlocksSingle(t *testing.T) {
+	f := newPRWFixture(t)
+	const reason = "You have a pending review on PR #1; add to it or submit it first"
+	f.setCtx(&wgithub.PRWriteContext{PullRequestID: "PR_node", BaseRefOid: f.base, HeadRefOid: f.head,
+		Pending: &wgithub.PendingReview{ID: "R1", CommitOid: f.head}})
+	wantModes(t, f.check(t, "new", 5, 5, f.base, f.head), "", reason)
+	// The gate wins over a placement reason too.
+	wantModes(t, f.check(t, "new", 15, 15, f.base, f.head), "not part of the PR's changes", reason)
+
+	code, out := f.comment(t, "single", 5, 5, "now")
+	if code != 409 || out["reason"] != reason {
+		t.Fatalf("single comment: %d %v", code, out)
+	}
+	code, out = f.post(t, "/api/pr-write/reply", map[string]any{"in_reply_to": 11, "mode": "single", "body": "now"})
+	if code != 409 || out["reason"] != reason {
+		t.Fatalf("single reply: %d %v", code, out)
+	}
+	f.wantCalls(t)
+
+	if code, _ := f.comment(t, "review", 5, 5, "later"); code != 200 {
+		t.Fatalf("review comment: %d", code)
+	}
+	f.wantCalls(t, "thread tok R1 {Path:long Side:RIGHT Line:5 StartLine:0 Body:later}")
+}
+
+// TestPRWriteReviewModeReadsFreshContext: a review-mode write reads the
+// write context fresh, so it never adds to a pending review that is gone
+// or starts a second one beside a new one.
+func TestPRWriteReviewModeReadsFreshContext(t *testing.T) {
+	f := newPRWFixture(t)
+	f.summary(t) // caches the write context: no pending review
+	// The viewer starts a review elsewhere. (A new value: the cache holds
+	// the old pointer.)
+	f.writeCtx = &wgithub.PRWriteContext{PullRequestID: "PR_node", BaseRefOid: f.base, HeadRefOid: f.head,
+		Pending: &wgithub.PendingReview{ID: "R_elsewhere", CommitOid: f.head}}
+	if code, _ := f.comment(t, "review", 5, 5, "x"); code != 200 {
+		t.Fatalf("comment: %d", code)
+	}
+	f.wantCalls(t, "thread tok R_elsewhere {Path:long Side:RIGHT Line:5 StartLine:0 Body:x}")
+
+	f.calls = nil
+	f.summary(t)
+	f.writeCtx = &wgithub.PRWriteContext{PullRequestID: "PR_node", BaseRefOid: f.base, HeadRefOid: f.head,
+		Pending: &wgithub.PendingReview{ID: "R_other", CommitOid: f.head}}
+	if code, _ := f.post(t, "/api/pr-write/reply", map[string]any{"thread_id": "T1", "mode": "review", "body": "y"}); code != 200 {
+		t.Fatalf("reply: %d", code)
+	}
+	f.wantCalls(t, "reply tok R_other T1 y")
+}
+
 func TestPRWriteCommentValidation(t *testing.T) {
 	f := newPRWFixture(t)
 	if code, _ := f.comment(t, "review", 5, 5, strings.Repeat("x", maxReviewCommentBody+1)); code != http.StatusRequestEntityTooLarge {
@@ -383,6 +438,12 @@ func TestPRWriteReplyModes(t *testing.T) {
 	f.wantCalls(t, "reply tok R1 T1 again")
 
 	f.calls = nil
+	code, out = f.post(t, "/api/pr-write/reply", map[string]any{"thread_id": "T1", "in_reply_to": 11, "mode": "single", "body": "now"})
+	if code != 409 || out["reason"] != "You have a pending review on PR #1; add to it or submit it first" {
+		t.Fatalf("single with a pending review: %d %v", code, out)
+	}
+	f.wantCalls(t)
+	f.setCtx(&wgithub.PRWriteContext{PullRequestID: "PR_node", BaseRefOid: f.base, HeadRefOid: f.head})
 	code, out = f.post(t, "/api/pr-write/reply", map[string]any{"thread_id": "T1", "in_reply_to": 11, "mode": "single", "body": "now"})
 	if code != 200 || out["comment_id"] != float64(104) {
 		t.Fatalf("single: %d %v", code, out)
@@ -831,6 +892,40 @@ func TestPRWriteReviewDialog(t *testing.T) {
 	if d = f.dialog(t); d.Pending != nil || d.StalePendingCommit != nil {
 		t.Fatalf("no pending: %+v", d)
 	}
+}
+
+// TestPRWriteReviewDialogReconcilesSent: a row whose comment is already in
+// the pending review, unedited since it was sent, is deleted when the
+// dialog opens rather than listed twice. One edited since stays local (a
+// submit would add it again), and one GitHub does not have keeps its id
+// (only a submit clears ids).
+func TestPRWriteReviewDialogReconcilesSent(t *testing.T) {
+	f := newPRWFixture(t)
+	a := f.local(t, 5, 5, "a")
+	b := f.local(t, 24, 25, "b")
+	c := f.local(t, 4, 5, "c")
+	must(t, reviewcomments.SetGitHubCommentID(f.srv.DB, f.wt, a.ID, 9, a.Version))
+	must(t, reviewcomments.SetGitHubCommentID(f.srv.DB, f.wt, b.ID, 10, b.Version))
+	_, err := reviewcomments.Update(f.srv.DB, f.wt, b.ID, b.Version, "b edited")
+	must(t, err)
+	must(t, reviewcomments.SetGitHubCommentID(f.srv.DB, f.wt, c.ID, 777, c.Version))
+	f.writeCtx.Pending = &wgithub.PendingReview{ID: "R1", CommitOid: f.head, Comments: []wgithub.PendingComment{
+		{DatabaseID: 9, Path: "long", Body: "a"}, {DatabaseID: 10, Path: "long", Body: "b"}}}
+
+	d := f.dialog(t)
+	if d.Pending == nil || len(d.Pending.Comments) != 2 {
+		t.Fatalf("pending: %+v", d.Pending)
+	}
+	var got []int64
+	for _, l := range d.Local {
+		got = append(got, l.ID)
+	}
+	wantIDs(t, "dialog local", got, b.ID, c.ID)
+	wantIDs(t, "rows", f.localIDs(t), b.ID, c.ID)
+	if row := f.row(t, c.ID); row == nil || row.GitHubCommentID != 777 {
+		t.Fatalf("an id GitHub lacks was cleared by the dialog: %+v", row)
+	}
+	f.wantCalls(t)
 }
 
 func TestPRWriteSubmitOffAndNoPR(t *testing.T) {
