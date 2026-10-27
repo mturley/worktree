@@ -113,8 +113,8 @@ func anchorPRThread(m *prGitMemo, t wgithub.ReviewThread, baseOid string, lines 
 }
 
 // placeThreads places each of t's threads in view, in thread order. A thread
-// that cannot be anchored is "unavailable". GitHub's own outdated flag wins
-// over a local match, except where the thread is not in this view at all.
+// that cannot be anchored is "unavailable". GitHub's own outdated flag doesn't
+// change placement: a thread is shown wherever its lines still match.
 //
 // With a nil view (no revs) nothing is placed: each placeable thread gets its
 // anchor and a nil view, and only unplaceable threads get a view, "unavailable".
@@ -144,11 +144,9 @@ func (r *reviewResolver) placeThreads(dir string, t *wgithub.PRReviewThreads, vi
 			out = append(out, prThreadView{anchor: &c})
 			continue
 		}
-		v := r.placeInView(dir, c, view, viewFiles, allByBase)
-		if th.IsOutdated && v.Status != "not_in_view" && v.Status != "outside_changes" {
-			v = &reviewViewDTO{Status: "outdated"}
-		}
-		out = append(out, prThreadView{anchor: &c, view: v})
+		// A thread GitHub calls outdated is still placed where its lines
+		// match; the card shows its Outdated badge from the thread itself.
+		out = append(out, prThreadView{anchor: &c, view: r.placeInView(dir, c, view, viewFiles, allByBase)})
 	}
 	return out, nil
 }

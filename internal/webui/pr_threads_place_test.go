@@ -133,10 +133,12 @@ func TestPlaceThreadsGitHubOutdated(t *testing.T) {
 	_, ts := gitTestServer(t, wt, nil)
 	p := getPatch(t, ts, wt, "")
 
+	// GitHub calls it outdated, but its lines still match here: it is placed
+	// (the card carries the Outdated badge from the thread itself).
 	th := rightThread(c1, 0, 4)
 	th.IsOutdated = true
 	got := placeOne(t, wt, th, p)
-	if got.view == nil || got.view.Status != "outdated" {
+	if got.view == nil || got.view.Status != "shown" || got.view.StartLine != 4 || got.view.EndLine != 4 {
 		t.Fatalf("view = %+v", got.view)
 	}
 }

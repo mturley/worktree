@@ -62,7 +62,7 @@ Each PR comment maps onto the shown view (`old_rev`/`new_rev`) through phase 1's
 - The server reads the file at the comment's **original commit** (or its current `commit`), builds an anchor with `reviewcomments.Capture` over GitHub's lines and side (RIGHT = new, LEFT = old), and resolves it with `reviewcomments.Resolve` against the shown view. It gets the same statuses as drafts: shown, moved, outdated, not in view, outside changes.
 - **Old-side (LEFT) comments** point at the PR's base as it was. The library also returns the PR's `baseRefOid`, and the server reads the file at `merge-base(originalCommit, baseRefOid)` to capture the anchor, then resolves it against the view's old side. When that can't be computed, the comment is sidebar-only, like a missing commit. Stacked PRs whose base isn't upstream main may land as "not in view" more often. That's accepted.
 - **If that commit isn't in the local repo** (never fetched, force-pushed away), the comment can't be placed. It shows in the sidebar only, as out of date, with "View on GitHub".
-- **Where GitHub itself marks a thread outdated, keep that:** the thread shows the Outdated badge even if the lines would still match locally.
+- **Where GitHub itself marks a thread outdated, keep that:** the thread shows the Outdated badge. It is still shown inline, uncollapsed (unless resolved), at the lines that still match locally. When no lines match, it is sidebar-only. (Mike, 2026-10-27.)
 - PR comment positions are computed on request, never stored. **Nothing about PR comments is persisted in worktree's DB.** Read state comes from the existing unread cursor (below).
 
 ### Threads
@@ -154,7 +154,7 @@ The event details modal (`EventDetailsModal`), for a `pr_review_comment` event t
 
 - Violet (`grape`) for the PR accent.
 - Replies stack in the thread's card. Resolved threads collapse inline too, not just in the sidebar.
-- GitHub's own "outdated" is honored even when the lines would still match locally.
+- GitHub's own "outdated" shows as the Outdated badge; the thread is still placed inline wherever its lines match (changed at Mike's request, 2026-10-27).
 - A comment whose commit isn't available locally shows in the sidebar only.
 - The "Show in diff view" switch is remembered per browser and defaults to on.
 - "Go to comment" turns the switch on.
