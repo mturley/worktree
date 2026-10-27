@@ -105,6 +105,7 @@ type prRefDTO struct {
 	ID     string `json:"id"`
 	Number int    `json:"number"`
 	URL    string `json:"url"`
+	Title  string `json:"title"`
 }
 
 // prComments is a worktree's PR and its threads, or the state saying why
@@ -202,7 +203,8 @@ func (s *Server) loadPRComments(dir string) prComments {
 		return prComments{state: prStateNoPR, branch: branch}
 	}
 	ref, _ := wgithub.ParsePRResourceID(chosen.ID)
-	pr := &prRefDTO{ID: chosen.ID, Number: ref.Number, URL: summaries[chosen.ID].URL}
+	sum := summaries[chosen.ID]
+	pr := &prRefDTO{ID: chosen.ID, Number: ref.Number, URL: sum.URL, Title: sum.Title}
 	t, err := s.cachedReviewThreads(token, chosen.ID, ref)
 	if err != nil {
 		return prComments{state: prStateError, branch: branch, pr: pr, message: err.Error(), token: token, ref: ref}

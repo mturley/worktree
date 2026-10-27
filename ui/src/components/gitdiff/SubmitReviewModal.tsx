@@ -53,10 +53,17 @@ export function SubmitReviewModal({ path, opened, onClose }: {
   // Undefined until the box is touched: then it follows the data's default.
   const [includeChoice, setIncludeChoice] = useState<boolean | undefined>(undefined)
 
-  // A failed attempt's error doesn't greet the next opening.
+  const submitting = submit.isPending
+  // A failed attempt's error doesn't greet the next opening. Never while a
+  // submit is in flight: reset() would detach its success handling.
   const close = () => {
+    if (submitting) return
     submit.reset()
     onClose()
+  }
+  // An edit makes the last attempt's error stale.
+  const edited = () => {
+    if (!submitting) submit.reset()
   }
   const finish = () => {
     setMessage("")
@@ -67,10 +74,33 @@ export function SubmitReviewModal({ path, opened, onClose }: {
 
   const d = dialog.data
   const prNumber = d?.pr?.number
-  const title = prNumber === undefined ? "Submit review" : `Submit review to PR #${prNumber}`
+  const prTitle = d?.pr?.title
+  const title = (
+    <Group component="span" gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
+      <span style={{ flex: "none" }}>
+        {prNumber === undefined ? "Submit review" : `Submit review to PR #${prNumber}`}
+      </span>
+      {prTitle && (
+        <Text component="span" c="dimmed" truncate="end" title={prTitle} style={{ minWidth: 0 }}>
+          {prTitle}
+        </Text>
+      )}
+    </Group>
+  )
 
   return (
-    <Modal opened={opened} onClose={close} title={title} size="lg" centered>
+    <Modal
+      opened={opened}
+      onClose={close}
+      title={title}
+      size="lg"
+      centered
+      // No way out while a submit is in flight: its result must land.
+      closeOnEscape={!submitting}
+      closeOnClickOutside={!submitting}
+      closeButtonProps={{ disabled: submitting, "aria-label": "Close" }}
+      styles={{ title: { minWidth: 0 } }}
+    >
       {dialog.isPending ? (
         <Group justify="center" p="md"><Loader size="sm" /></Group>
       ) : dialog.isError ? (
@@ -83,13 +113,22 @@ export function SubmitReviewModal({ path, opened, onClose }: {
           d={dialog.data}
           prNumber={prNumber}
           message={message}
-          setMessage={setMessage}
+          setMessage={(m) => {
+            edited()
+            setMessage(m)
+          }}
           event={event}
-          setEvent={setEvent}
+          setEvent={(e) => {
+            edited()
+            setEvent(e)
+          }}
           includeChoice={includeChoice}
-          setIncludeChoice={setIncludeChoice}
+          setIncludeChoice={(b) => {
+            edited()
+            setIncludeChoice(b)
+          }}
           error={submit.isError ? prWriteError(submit.error) : undefined}
-          submitting={submit.isPending}
+          submitting={submitting}
           onCancel={close}
           onSubmit={(include) =>
             submit.mutate(
@@ -237,7 +276,7 @@ function DialogBody({
       {(error ?? resultError) && <Text size="sm" c="red">{error ?? resultError}</Text>}
 
       <Group justify="flex-end" gap="xs">
-        <Button variant="default" onClick={onCancel}>Cancel</Button>
+        <Button variant="default" disabled={submitting} onClick={onCancel}>Cancel</Button>
         <Tooltip label={disabledReason} disabled={!disabledReason}>
           <span>
             <Button disabled={!!disabledReason} loading={submitting} onClick={() => onSubmit(include)}>

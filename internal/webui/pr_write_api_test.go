@@ -794,7 +794,7 @@ func TestPRWriteReviewDialog(t *testing.T) {
 	f.writeCtx.Pending = &wgithub.PendingReview{ID: "R1", CommitOid: f.head, Comments: []wgithub.PendingComment{{DatabaseID: 9, Path: "long", Body: "p"}}}
 
 	d := f.dialog(t)
-	if d.PR == nil || d.PR.Number != 1 || !d.ViewerIsAuthor || d.Head != f.head || d.StalePendingCommit != nil {
+	if d.PR == nil || d.PR.Number != 1 || d.PR.Title != "PR 1 title" || !d.ViewerIsAuthor || d.Head != f.head || d.StalePendingCommit != nil {
 		t.Fatalf("dialog: %+v", d)
 	}
 	if d.Pending == nil || len(d.Pending.Comments) != 1 || d.Pending.Comments[0].ID != 9 ||

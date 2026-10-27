@@ -119,7 +119,7 @@ describe("ReviewSidebar", () => {
 
 const summary = (over: Partial<PRCommentsSummary> = {}): PRCommentsSummary => ({
   state: "ok",
-  pr: { id: "o/r#7", number: 7, url: "https://github.com/o/r/pull/7" },
+  pr: { id: "o/r#7", number: 7, url: "https://github.com/o/r/pull/7", title: "PR title" },
   open_threads: 3,
   unread_comments: 0,
   unread_ids: [],

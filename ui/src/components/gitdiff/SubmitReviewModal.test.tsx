@@ -23,7 +23,7 @@ vi.mock("../../api/client", async (orig) => {
 const HEAD = "1111111111111111111111111111111111111111"
 
 const dialog = (over: Partial<PRReviewDialog> = {}): PRReviewDialog => ({
-  pr: { id: "PR_1", number: 12, url: "https://github.com/o/r/pull/12" },
+  pr: { id: "PR_1", number: 12, url: "https://github.com/o/r/pull/12", title: "Fix the widget" },
   viewer_is_author: false,
   head: HEAD,
   stale_pending_commit: null,
@@ -198,6 +198,62 @@ describe("SubmitReviewModal", () => {
     expect(await screen.findByText("GitHub said no")).toBeInTheDocument()
     await waitFor(() => expect(api.prReviewDialog).toHaveBeenCalledTimes(2))
     expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it("shows the PR title beside the modal title", async () => {
+    wrap()
+    const t = await screen.findByText("Fix the widget")
+    expect(screen.getByText("Submit review to PR #12")).toBeInTheDocument()
+    expect(t.closest(".mantine-Modal-title")).not.toBeNull()
+  })
+
+  it("closes on Escape when nothing is in flight", async () => {
+    wrap()
+    await screen.findByText("In this review (2)")
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" })
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  it("can't be closed while a submit is in flight", async () => {
+    let resolve: (v: unknown) => void = () => {}
+    api.prSubmit.mockReturnValue(new Promise((r) => (resolve = r)))
+    wrap()
+    await screen.findByText("In this review (2)")
+    fireEvent.click(screen.getByRole("button", { name: "Submit review (2)" }))
+    await waitFor(() => expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled())
+    expect(screen.getByRole("button", { name: "Close" })).toBeDisabled()
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
+    fireEvent.click(screen.getByRole("button", { name: "Close" }))
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" })
+    const overlay = document.querySelector(".mantine-Modal-overlay")
+    if (overlay) {
+      fireEvent.mouseDown(overlay)
+      fireEvent.click(overlay)
+    }
+    expect(onClose).not.toHaveBeenCalled()
+    resolve({ submitted_review_id: "R1", posted_local_ids: [1], kept_local_ids: [2] })
+    // The submit's own success still closes and toasts.
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText("Review submitted to PR #12")).toBeInTheDocument()
+  })
+
+  it("clears a shown error once the review is edited", async () => {
+    api.prSubmit.mockRejectedValue(new HttpError("GitHub said no", 502))
+    wrap()
+    await screen.findByText("In this review (2)")
+    const fail = async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^Submit review/ }))
+      expect(await screen.findByText("GitHub said no")).toBeInTheDocument()
+    }
+    await fail()
+    fireEvent.change(screen.getByRole("textbox", { name: "Review message" }), { target: { value: "x" } })
+    expect(screen.queryByText("GitHub said no")).toBeNull()
+    await fail()
+    fireEvent.click(screen.getByRole("radio", { name: /^Approve/ }))
+    expect(screen.queryByText("GitHub said no")).toBeNull()
+    await fail()
+    fireEvent.click(screen.getByRole("checkbox", { name: "Include my 2 local comments" }))
+    expect(screen.queryByText("GitHub said no")).toBeNull()
   })
 
   it("has no inner scroll container", async () => {

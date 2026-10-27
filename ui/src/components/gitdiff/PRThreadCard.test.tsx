@@ -26,7 +26,7 @@ import { HttpError } from "../../api/client"
 import { REVIEW_SIDEBAR_KEY, REVIEW_SIDEBAR_TAB_KEY } from "../../hooks/useReviewSidebar"
 import { PRThreadCard } from "./PRThreadCard"
 
-const pr: PRRefDTO = { id: "o/r#12", number: 12, url: "https://github.com/o/r/pull/12" }
+const pr: PRRefDTO = { id: "o/r#12", number: 12, url: "https://github.com/o/r/pull/12", title: "PR title" }
 const thread = (over: Partial<PRThread> = {}): PRThread => ({
   id: "t1",
   resolved: false,

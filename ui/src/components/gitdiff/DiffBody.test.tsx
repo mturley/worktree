@@ -413,7 +413,7 @@ describe("DiffBody review comments", () => {
   })
 })
 
-const PR = { id: "o/r#12", number: 12, url: "https://github.com/o/r/pull/12" }
+const PR = { id: "o/r#12", number: 12, url: "https://github.com/o/r/pull/12", title: "PR title" }
 const prThread = (id: string, over: Partial<PRThread> = {}): PRThread => ({
   id,
   resolved: false,

@@ -68,7 +68,7 @@ func newPRCFixture(t *testing.T) *prcFixture {
 		}
 		out := map[wgithub.PRRef]wgithub.PRSummary{}
 		for _, r := range refs {
-			out[r] = wgithub.PRSummary{HeadRefName: f.head, URL: fmt.Sprintf("https://github.com/%s/%s/pull/%d", r.Owner, r.Repo, r.Number)}
+			out[r] = wgithub.PRSummary{HeadRefName: f.head, Title: fmt.Sprintf("PR %d title", r.Number), URL: fmt.Sprintf("https://github.com/%s/%s/pull/%d", r.Owner, r.Repo, r.Number)}
 		}
 		return out, nil
 	}
@@ -109,6 +109,7 @@ type prcSummary struct {
 		ID     string `json:"id"`
 		Number int    `json:"number"`
 		URL    string `json:"url"`
+		Title  string `json:"title"`
 	} `json:"pr"`
 	Fingerprint     string  `json:"fingerprint"`
 	OpenThreads     int     `json:"open_threads"`
@@ -214,7 +215,7 @@ func TestPRCommentsSummary(t *testing.T) {
 	if s.State != "ok" || s.Branch != "pr-branch" {
 		t.Fatalf("got %+v", s)
 	}
-	if s.PR == nil || s.PR.ID != prcID || s.PR.Number != 1 || s.PR.URL != "https://github.com/o/r/pull/1" {
+	if s.PR == nil || s.PR.ID != prcID || s.PR.Number != 1 || s.PR.URL != "https://github.com/o/r/pull/1" || s.PR.Title != "PR 1 title" {
 		t.Fatalf("pr = %+v", s.PR)
 	}
 	if s.OpenThreads != 2 || s.UnreadComments != 1 || len(s.UnreadIDs) != 1 || s.UnreadIDs[0] != 11 {

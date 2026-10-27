@@ -916,6 +916,7 @@ export interface PRRefDTO {
   id: string
   number: number
   url: string
+  title: string
 }
 
 export interface PRCommentsSummary {

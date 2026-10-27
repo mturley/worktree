@@ -64,7 +64,7 @@ beforeEach(() => {
 
 const summary = (over: Partial<PRCommentsSummary> = {}): PRCommentsSummary => ({
   state: "ok",
-  pr: { id: "o/r#12", number: 12, url: "https://github.com/o/r/pull/12" },
+  pr: { id: "o/r#12", number: 12, url: "https://github.com/o/r/pull/12", title: "PR title" },
   open_threads: 0,
   unread_comments: 0,
   unread_ids: [],

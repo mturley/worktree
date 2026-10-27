@@ -154,7 +154,7 @@ const patch = (over: Partial<DiffPatch> = {}): DiffPatch => ({
 })
 
 const NO_PR: PRCommentsSummary = { state: "no_pr", branch: "feat", open_threads: 0, unread_comments: 0, unread_ids: [], pending_comments: 0 }
-const PR = { id: "o/r#12", number: 12, url: "https://github.com/o/r/pull/12" }
+const PR = { id: "o/r#12", number: 12, url: "https://github.com/o/r/pull/12", title: "PR title" }
 const summary = (over: Partial<PRCommentsSummary> = {}): PRCommentsSummary => ({
   state: "ok",
   pr: PR,
