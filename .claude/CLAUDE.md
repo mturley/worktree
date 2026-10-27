@@ -22,6 +22,34 @@ generates one) on every listener, including loopback. It serves plain HTTP
 on `127.0.0.1:8475` and, once setup has configured remote access, HTTPS on
 every interface at `ui.https_port` (8476). There is no `--bind`.
 
+### Writing Go tests: parallel by default, git fixtures from templates
+
+On some machines (e.g. with an endpoint security agent), every process spawn
+costs ~100ms and spawns are throughput-limited machine-wide, so a test's cost
+is mostly how many `git` processes it starts. `internal/webui` once took ~8
+minutes serially; it now runs most tests in parallel.
+
+- **New top-level tests in `internal/webui` call `t.Parallel()` first**,
+  unless they (directly or through a helper) do one of the things below —
+  then they stay serial. Go finishes every serial test in a package before
+  any parallel one resumes, so a serial test may change shared state as long
+  as it restores it in `t.Cleanup`/`defer`.
+  - `t.Setenv`, `os.Setenv`, `t.Chdir` (Go panics if a parallel test calls
+    `t.Setenv`). Helpers that do this include `newTabServer`,
+    `unreadSyncFixture`, and anything setting `CMUX_SOCKET_PATH` or `HOME`.
+  - Assign a package-level variable, in `webui` or any other package
+    (`loginFailDelay`, `editorWaitLimit`, `restorePollInterval`/`Timeout`,
+    `taskUnreadLoadHook`, `gitutil.MaxPatchBytes`, …).
+- **Production code must not write package globals per `Server`**: tests
+  build many `Server`s concurrently. Use a `Server` field, or make the global
+  atomic (as `tasks.SetLogf` is).
+- **Never build a git fixture from scratch per test.** Use
+  `testgit.Worktree`, or `testgit.Template(t, name, build)` for a custom
+  fixture (as `forkRepo` does): it builds once per test binary and gives each
+  caller a copy without running git. A package using it needs a `TestMain`
+  that defers `testgit.RemoveTemplates()`.
+- After making tests parallel, run `go test -race ./internal/webui/`.
+
 ## Project Structure
 
 - `cmd/` — cobra commands (one file per subcommand)
@@ -82,7 +110,7 @@ every interface at `ui.https_port` (8476). There is no `--bind`.
   - `env` — deprecated; superseded by `shellenv`
   - `dotfiles` — gitignored dotfile copying
   - `setup` — shell RC integration (removed `.git/info/exclude` management); also owns the `worktree setup` Slack step (`setup/slack.go`) that walks the user through extracting Slack session token+cookie and writes them to `~/.config/watcher/auth.yaml`
-  - `testgit` — test-only helper building a real repo + linked worktree, for tests whose paths must satisfy the `resources.Add` worktree guard
+  - `testgit` — test-only helpers: `Worktree` (a real repo + linked worktree, for tests whose paths must satisfy the `resources.Add` worktree guard) and `Template` (build a git fixture once per test binary, copy it per test without running git); see "Writing Go tests" above
   - `ui` — terminal output
   - `uisession` — web UI login sessions in the worktree DB (`ui_sessions`).
     The cookie holds a random token; the table holds only its SHA-256, the

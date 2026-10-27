@@ -441,6 +441,7 @@ func TestCmuxWritesWhenUnavailable(t *testing.T) {
 }
 
 func TestNormalizeTitle(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"◐ agent":            "agent",
 		"◑ agent":            "agent",

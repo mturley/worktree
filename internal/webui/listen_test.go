@@ -18,6 +18,7 @@ import (
 )
 
 func TestStartRefusesWithoutAuthentication(t *testing.T) {
+	t.Parallel()
 	for name, sec := range map[string]*Security{
 		"nil":         nil,
 		"no password": {Sessions: &uisession.Store{}},
@@ -71,6 +72,7 @@ func listenLoopback(t *testing.T) net.Listener {
 }
 
 func TestServeSpeaksHTTPOnLoopbackAndTLSOnTheRemotePort(t *testing.T) {
+	t.Parallel()
 	srv, caPEM := securedForListen(t, true)
 	httpLn, httpsLn := listenLoopback(t), listenLoopback(t)
 	done := make(chan error, 1)
@@ -121,6 +123,7 @@ func TestServeSpeaksHTTPOnLoopbackAndTLSOnTheRemotePort(t *testing.T) {
 }
 
 func TestServeWithoutRemoteServesOnlyHTTP(t *testing.T) {
+	t.Parallel()
 	srv, _ := securedForListen(t, false)
 	if srv.Security.Remote() {
 		t.Fatal("Remote() = true with no certificate")
@@ -140,6 +143,7 @@ func TestServeWithoutRemoteServesOnlyHTTP(t *testing.T) {
 }
 
 func TestServeFailsOnAMissingCertificate(t *testing.T) {
+	t.Parallel()
 	srv, _ := securedForListen(t, false)
 	srv.Security.CertFile = filepath.Join(t.TempDir(), "missing-cert.pem")
 	srv.Security.KeyFile = filepath.Join(t.TempDir(), "missing-key.pem")

@@ -21,6 +21,7 @@ func insertSlackReply(t *testing.T, s *Server, id, ts, title, rid, ext, body str
 }
 
 func TestTaskActivitySkipsBookkeeping(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	for i := 1; i <= 5; i++ {
 		insertEvent(t, s.DB, fmt.Sprintf("a%d", i), fmt.Sprintf("2026-01-01T00:00:0%dZ", i), "github", "pr_comment", "a", "pr", "o/r#1", "u")
@@ -47,6 +48,7 @@ func TestTaskActivitySkipsBookkeeping(t *testing.T) {
 }
 
 func TestLinkingSlackEvKeyStoresCanonicalSlackKey(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	insertSlackReply(t, s, "s1", "2026-01-01T00:00:01Z", "New reply", "C1:100.1", "100.5", "hello")
 	tk := mustTask(t, s, tasks.NewTask{Title: "t"})
@@ -84,6 +86,7 @@ func TestLinkingSlackEvKeyStoresCanonicalSlackKey(t *testing.T) {
 }
 
 func TestTaskActivityLinkedRendersEveryLink(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	insertEvent(t, s.DB, "e1", "2026-01-01T00:00:01Z", "github", "pr_comment", "live", "pr", "o/r#1", "u")
 	insertEvent(t, s.DB, "e2", "2026-01-01T00:00:02Z", "github", "pr_comment", "changed", "pr", "o/r#1", "u")
@@ -156,6 +159,7 @@ func TestTaskActivityLinkedRendersEveryLink(t *testing.T) {
 }
 
 func TestSlackSnapshotValidation(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	tk := mustTask(t, s, tasks.NewTask{Title: "t"})
 	valid := func() map[string]any {
@@ -233,6 +237,7 @@ func countRows(t *testing.T, s *Server, table string) int {
 }
 
 func TestFromEventSlackTitleIsPlainText(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	d := decodeDetail(t, serveTasks(t, s, http.MethodPost, "/api/tasks/from-event", map[string]any{
 		"key": "slack:C1:5.5",
@@ -247,6 +252,7 @@ func TestFromEventSlackTitleIsPlainText(t *testing.T) {
 }
 
 func TestSlackPlain(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ in, want string }{
 		{"plain", "plain"},
 		{"<@U123>", "@user"},

@@ -15,6 +15,7 @@ func testServer(t *testing.T, webFS fs.FS) *Server {
 }
 
 func TestServesIndexFallbackForSPARoutes(t *testing.T) {
+	t.Parallel()
 	webFS := fstest.MapFS{
 		"index.html":    {Data: []byte("<!doctype html><title>worktree</title>")},
 		"assets/app.js": {Data: []byte("console.log(1)")},
@@ -58,6 +59,7 @@ func TestServesIndexFallbackForSPARoutes(t *testing.T) {
 }
 
 func TestServesIndexFallbackForDirectoryPath(t *testing.T) {
+	t.Parallel()
 	// A real subdirectory in the embedded FS with no index.html of its own
 	// must NOT fall through to Go's default directory listing; it should
 	// fall back to the SPA index.html, same as any other unknown route.
@@ -90,6 +92,7 @@ func TestServesIndexFallbackForDirectoryPath(t *testing.T) {
 }
 
 func TestIndexIsNeverCached(t *testing.T) {
+	t.Parallel()
 	// A browser that restores a slept tab from cache would otherwise rebuild
 	// the page from an old index.html whose hashed bundle is gone.
 	webFS := fstest.MapFS{
@@ -111,6 +114,7 @@ func TestIndexIsNeverCached(t *testing.T) {
 }
 
 func TestMissingAssetIs404(t *testing.T) {
+	t.Parallel()
 	// A bundle from an older build must fail as a 404, not come back as
 	// index.html, which a browser refuses to run as a module script.
 	webFS := fstest.MapFS{

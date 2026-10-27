@@ -10,6 +10,7 @@ import (
 )
 
 func TestHandleImage_RejectsBadScheme(t *testing.T) {
+	t.Parallel()
 	srv := &Server{}
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
@@ -30,6 +31,7 @@ func TestHandleImage_RejectsBadScheme(t *testing.T) {
 }
 
 func TestHandleImage_RejectsMissingURL(t *testing.T) {
+	t.Parallel()
 	srv := &Server{}
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
@@ -56,6 +58,7 @@ func (s stubRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
 }
 
 func TestHandleImage_PassesThroughImage(t *testing.T) {
+	t.Parallel()
 	body := "\x89PNG\r\n\x1a\n fake png bytes"
 	srv := &Server{imageProxyTransport: stubRoundTripper{resp: &http.Response{
 		StatusCode: 200,
@@ -83,6 +86,7 @@ func TestHandleImage_PassesThroughImage(t *testing.T) {
 }
 
 func TestHandleImage_RejectsNonImage(t *testing.T) {
+	t.Parallel()
 	srv := &Server{imageProxyTransport: stubRoundTripper{resp: &http.Response{
 		StatusCode: 200,
 		Header:     http.Header{"Content-Type": {"text/html"}},

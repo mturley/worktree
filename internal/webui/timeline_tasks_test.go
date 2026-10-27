@@ -83,6 +83,7 @@ func (f *taskFeed) worktree(t *testing.T, query string) timelineResponse {
 func joinIDs(evs []TimelineEvent) string { return strings.Join(eventIDs(evs), ",") }
 
 func TestTimelineTaskEventsHomeMergeOrder(t *testing.T) {
+	t.Parallel()
 	f := taskFeedFixture(t)
 	insertEvent(t, f.s.DB, "e1", tts(10), "github", "pr_comment", "comment", "pr", "o/r#1", "u1")
 	a := insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(20), tasks.EventTaskCreated, tasks.ActorUser, "")
@@ -110,6 +111,7 @@ func TestTimelineTaskEventsHomeMergeOrder(t *testing.T) {
 // following one of its resource links), and is archived only when the task
 // is: a global task (no links) is neither, and has no worktrees.
 func TestTimelineTaskEventsWorktreesAndArchived(t *testing.T) {
+	t.Parallel()
 	f := taskFeedFixture(t)
 	// The fixture worktree followed o/r#9 and stopped: the task linking only
 	// it is archived. A resource no worktree ever followed would not be.
@@ -147,6 +149,7 @@ func TestTimelineTaskEventsWorktreesAndArchived(t *testing.T) {
 // new task starts in, so the feed can draw that checkbox; other task events
 // name none.
 func TestTimelineTaskEventsState(t *testing.T) {
+	t.Parallel()
 	f := taskFeedFixture(t)
 	created := insertTaskEvent(t, f.s.DB, f.gamma.ID, tts(30), tasks.EventTaskCreated, tasks.ActorUser, "")
 	changed := insertTaskEvent(t, f.s.DB, f.gamma.ID, tts(20), tasks.EventTaskStateChanged, tasks.ActorUser,
@@ -178,6 +181,7 @@ func wdbCanonical(t *testing.T, p string) string {
 }
 
 func TestTimelineMergePaging(t *testing.T) {
+	t.Parallel()
 	f := taskFeedFixture(t)
 	var want []string
 	// Watcher events on odd seconds, task events (all in wt's scope) on even
@@ -213,6 +217,7 @@ func TestTimelineMergePaging(t *testing.T) {
 }
 
 func TestTimelineTaskEventsWorktreeAndResourceScope(t *testing.T) {
+	t.Parallel()
 	f := taskFeedFixture(t)
 	insertEvent(t, f.s.DB, "e1", tts(1), "github", "pr_comment", "c", "pr", "o/r#1", "u1")
 	a := insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(4), tasks.EventTaskStateChanged, tasks.ActorUser, "")
@@ -229,6 +234,7 @@ func TestTimelineTaskEventsWorktreeAndResourceScope(t *testing.T) {
 }
 
 func TestTimelineTaskEventsFilters(t *testing.T) {
+	t.Parallel()
 	f := taskFeedFixture(t)
 	insertEvent(t, f.s.DB, "e1", tts(1), "github", "pr_comment", "c", "pr", "o/r#1", "u1")
 	a := insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(2), tasks.EventTaskStateChanged, tasks.ActorUser, "")
@@ -254,6 +260,7 @@ func TestTimelineTaskEventsFilters(t *testing.T) {
 }
 
 func TestTimelineTaskEventsUnread(t *testing.T) {
+	t.Parallel()
 	f := taskFeedFixture(t)
 	// alpha: agent events either side of its cursor.
 	readA := insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(2), tasks.EventTaskStateChanged, tasks.ActorAgent, "")
@@ -284,6 +291,7 @@ func TestTimelineTaskEventsUnread(t *testing.T) {
 }
 
 func TestTimelineTaskEventsSearch(t *testing.T) {
+	t.Parallel()
 	f := taskFeedFixture(t)
 	insertEvent(t, f.s.DB, "e1", tts(1), "github", "pr_comment", "giraffe comment", "pr", "o/r#1", "u1")
 	sub := insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(3), tasks.EventSubtaskChecked, tasks.ActorUser, `{"text":"Giraffe"}`)
@@ -320,6 +328,7 @@ func TestTimelineTaskEventsSearch(t *testing.T) {
 // q also matches a task event's author, as matchEvent does a watcher
 // event's: "agent", the agent's session name, or "you".
 func TestTimelineTaskEventsSearchAuthor(t *testing.T) {
+	t.Parallel()
 	f := taskFeedFixture(t)
 	res, err := f.s.DB.Exec(`INSERT INTO task_events (task_id, ts, type, actor, actor_session, payload)
 		VALUES (?, ?, ?, 'agent', 'otter-session', '{}')`, f.alpha.ID, tts(3), tasks.EventTaskStateChanged)
@@ -395,6 +404,7 @@ func assertSameIDs(t *testing.T, name string, got, want []string) {
 // the rest of the cluster, so the page overfills with every row sharing the
 // last kept row's ts.
 func TestTimelinePagingSameTSTaskCluster(t *testing.T) {
+	t.Parallel()
 	f := taskFeedFixture(t)
 	want := []string{insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(9), tasks.EventTaskStateChanged, tasks.ActorAgent, "")}
 	for i := 0; i < 5; i++ {
@@ -415,6 +425,7 @@ func TestTimelinePagingSameTSTaskCluster(t *testing.T) {
 // A watcher/task tie at the boundary: both sides' rows at that ts land on
 // the same page, and neither side's are lost or repeated.
 func TestTimelinePagingSameTSWatcherTaskTie(t *testing.T) {
+	t.Parallel()
 	f := taskFeedFixture(t)
 	insertEvent(t, f.s.DB, "w9", tts(9), "github", "pr_comment", "c", "pr", "o/r#1", "u1")
 	want := []string{"w9"}

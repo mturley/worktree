@@ -12,6 +12,7 @@ import (
 )
 
 func TestCmuxFocusPublishesMatchingWorktree(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	wt := testgit.Worktree(t)
 	if err := registerWorktreeForTest(t, conn, wt); err != nil {
@@ -63,6 +64,7 @@ func TestCmuxFocusPublishesMatchingWorktree(t *testing.T) {
 }
 
 func TestCmuxFocusWatchSkippedOutsideCmux(t *testing.T) {
+	t.Parallel()
 	called := make(chan struct{}, 1)
 	s := &Server{
 		cmuxAvailable: func() bool { return false },
@@ -81,6 +83,7 @@ func TestCmuxFocusWatchSkippedOutsideCmux(t *testing.T) {
 }
 
 func TestCmuxFocusWatchFeedsHub(t *testing.T) {
+	t.Parallel()
 	s := &Server{
 		cmuxAvailable: func() bool { return true },
 		cmuxList:      func() ([]cmux.Workspace, error) { return nil, nil },
@@ -105,6 +108,7 @@ func TestCmuxFocusWatchFeedsHub(t *testing.T) {
 }
 
 func TestCmuxFocusedReportsSelectedWorkspace(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	wt := testgit.Worktree(t)
 	if err := registerWorktreeForTest(t, conn, wt); err != nil {

@@ -40,6 +40,7 @@ func postNotify(s *Server, body any) *httptest.ResponseRecorder {
 }
 
 func TestNotifyAPIResourceToggleSendsTest(t *testing.T) {
+	t.Parallel()
 	s, wt, ft := notifyAPIServer(t)
 	if rec := postNotify(s, map[string]any{"path": wt, "type": "pr", "id": "o/r#3", "on": true}); rec.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body)
@@ -60,6 +61,7 @@ func TestNotifyAPIResourceToggleSendsTest(t *testing.T) {
 }
 
 func TestNotifyAPIWorktreeWide(t *testing.T) {
+	t.Parallel()
 	s, wt, ft := notifyAPIServer(t)
 	if rec := postNotify(s, map[string]any{"path": wt, "on": true}); rec.Code != http.StatusOK {
 		t.Fatalf("status %d", rec.Code)
@@ -74,6 +76,7 @@ func TestNotifyAPIWorktreeWide(t *testing.T) {
 }
 
 func TestNotifyAPIRejects(t *testing.T) {
+	t.Parallel()
 	s, wt, _ := notifyAPIServer(t)
 	cases := []struct {
 		body map[string]any
@@ -93,6 +96,7 @@ func TestNotifyAPIRejects(t *testing.T) {
 }
 
 func TestDTOsCarryNotifyFlags(t *testing.T) {
+	t.Parallel()
 	s, wt, _ := notifyAPIServer(t)
 	notifyprefs.SetResource(s.DB, wt, "pr", "o/r#3", true)
 	resources.SetPrimary(s.DB, wt, "pr", "o/r#3", true)

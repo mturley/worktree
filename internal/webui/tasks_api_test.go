@@ -92,6 +92,7 @@ func titles(ts []taskDTO) string {
 }
 
 func TestTasksAPICreateListScopes(t *testing.T) {
+	t.Parallel()
 	s, wt := tasksServer(t)
 	a := decodeTask(t, serveTasks(t, s, http.MethodPost, "/api/tasks", map[string]any{"title": "a"}))
 	if a.Ref != "T1" || a.ID != 1 || a.Links == nil || len(a.Links) != 0 || a.Implicit == nil || a.Priority != "none" {
@@ -138,6 +139,7 @@ func wdbCanon(p string) string {
 }
 
 func TestTasksAPICreateAfter(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	a := decodeTask(t, serveTasks(t, s, http.MethodPost, "/api/tasks", map[string]any{"title": "a"}))
 	decodeTask(t, serveTasks(t, s, http.MethodPost, "/api/tasks", map[string]any{"title": "b"}))
@@ -160,6 +162,7 @@ func TestTasksAPICreateAfter(t *testing.T) {
 }
 
 func TestTasksAPIUpdateStateMove(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	a := decodeTask(t, serveTasks(t, s, http.MethodPost, "/api/tasks", map[string]any{"title": "a"}))
 	b := decodeTask(t, serveTasks(t, s, http.MethodPost, "/api/tasks", map[string]any{"title": "b"}))
@@ -213,6 +216,7 @@ func TestTasksAPIUpdateStateMove(t *testing.T) {
 }
 
 func TestTasksAPIErrors(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	a := decodeTask(t, serveTasks(t, s, http.MethodPost, "/api/tasks", map[string]any{"title": "a"}))
 	cases := []struct {
@@ -250,6 +254,7 @@ func TestTasksAPIErrors(t *testing.T) {
 }
 
 func TestStreamEmitsTasksChanged(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	last := s.seedTasksVersion()
 	if s.tasksVersionAdvanced(&last) {
@@ -267,6 +272,7 @@ func TestStreamEmitsTasksChanged(t *testing.T) {
 }
 
 func TestTasksAPILinkWorktrees(t *testing.T) {
+	t.Parallel()
 	s, x := tasksServer(t)
 	must(t, resources.Add(s.DB, x, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"}))
 	must(t, watcherdb.Subscribe(s.DB, "task:5", watcher.Resource{Type: "jira", ID: "ABC-1"}, watcherdb.SubscribeOpts{}))
@@ -293,6 +299,7 @@ func TestTasksAPILinkWorktrees(t *testing.T) {
 }
 
 func TestWorktreeAndResourceDTOsCarryOpenTaskCount(t *testing.T) {
+	t.Parallel()
 	s, x := tasksServer(t)
 	must(t, resources.Add(s.DB, x, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"}))
 	must(t, resources.Add(s.DB, x, resources.Resource{Type: "pr", ID: "o/r#2", URL: "u2", Related: true}))

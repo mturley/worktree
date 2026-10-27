@@ -16,6 +16,7 @@ import (
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/gitfetch"
 	"github.com/mturley/worktree/internal/registry"
+	"github.com/mturley/worktree/internal/testgit"
 )
 
 func gitIn(t *testing.T, dir string, args ...string) string {
@@ -75,10 +76,15 @@ func getWorktreeGit(t *testing.T, ts *httptest.Server, path, query string) (*htt
 
 // forkRepo builds origin (bare) + a clone on branch `feature`, where
 // origin/main has moved one commit past the branch point and the branch has
-// one pushed commit plus one local one.
+// one pushed commit plus one local one. Each call returns a copy of one
+// template, since building it takes ~20 git commands.
 func forkRepo(t *testing.T) string {
 	t.Helper()
-	base := t.TempDir()
+	return filepath.Join(testgit.Template(t, "forkRepo", buildForkRepo), "wt")
+}
+
+func buildForkRepo(t *testing.T, base string) {
+	t.Helper()
 	origin := filepath.Join(base, "origin.git")
 	gitIn(t, base, "init", "--bare", "-b", "main", origin)
 	wt := filepath.Join(base, "wt")
@@ -98,10 +104,10 @@ func forkRepo(t *testing.T) string {
 	commitFile(t, wt, "f1", "1")
 	gitIn(t, wt, "push", "-u", "origin", "feature")
 	commitFile(t, wt, "f2", "2")
-	return wt
 }
 
 func TestWorktreeGitReportsMergeBaseAndTracking(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	// staged, modified, and two untracked files inside a directory.
 	os.WriteFile(filepath.Join(wt, "staged"), []byte("s"), 0o644)
@@ -144,6 +150,7 @@ func TestWorktreeGitReportsMergeBaseAndTracking(t *testing.T) {
 }
 
 func TestWorktreeGitUnregisteredPath404(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	_, ts := gitTestServer(t, wt, nil)
 	resp, _ := getWorktreeGit(t, ts, t.TempDir(), "")
@@ -153,6 +160,7 @@ func TestWorktreeGitUnregisteredPath404(t *testing.T) {
 }
 
 func TestWorktreeGitMissingFromDisk(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	_, ts := gitTestServer(t, wt, nil)
 	if err := os.RemoveAll(wt); err != nil {
@@ -187,6 +195,7 @@ func TestWorktreeGitDirectoryUsesTilde(t *testing.T) {
 }
 
 func TestWorktreeGitNoCommits(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	gitIn(t, dir, "init", "-b", "feature")
 	os.WriteFile(filepath.Join(dir, "u"), []byte("x"), 0o644)
@@ -204,6 +213,7 @@ func TestWorktreeGitNoCommits(t *testing.T) {
 }
 
 func TestWorktreeGitDetachedHEAD(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	gitIn(t, wt, "checkout", "--detach")
 	_, ts := gitTestServer(t, wt, nil)
@@ -223,6 +233,7 @@ func TestWorktreeGitDetachedHEAD(t *testing.T) {
 }
 
 func TestWorktreeGitFetchOnlyWithParam(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	var calls atomic.Int32
 	sched := gitfetch.New(context.Background(), time.Minute)

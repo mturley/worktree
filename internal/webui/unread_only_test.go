@@ -120,6 +120,7 @@ func sameIDs(a, b []string) bool {
 // IsUnread. This pins them together: on the same data, unread_only must
 // return exactly the events the unfiltered feed flags unread, in feed order.
 func TestGlobalTimelineUnreadOnlyMatchesIsUnread(t *testing.T) {
+	t.Parallel()
 	conn, _ := unreadOnlyFixture(t)
 	ts := httptest.NewServer((&Server{DB: conn}).Handler())
 	defer ts.Close()
@@ -142,6 +143,7 @@ func TestGlobalTimelineUnreadOnlyMatchesIsUnread(t *testing.T) {
 }
 
 func TestWorktreeTimelineUnreadOnlyMatchesIsUnread(t *testing.T) {
+	t.Parallel()
 	conn, wt := unreadOnlyFixture(t)
 	ts := httptest.NewServer((&Server{DB: conn}).Handler())
 	defer ts.Close()
@@ -157,6 +159,7 @@ func TestWorktreeTimelineUnreadOnlyMatchesIsUnread(t *testing.T) {
 // Filtering must happen BEFORE the page limit, or a page of read events comes
 // back empty and paging stops early. Walk both feeds one event at a time.
 func TestUnreadOnlyPagesFullyThroughUnreadEvents(t *testing.T) {
+	t.Parallel()
 	conn, wt := unreadOnlyFixture(t)
 	ts := httptest.NewServer((&Server{DB: conn}).Handler())
 	defer ts.Close()
@@ -187,6 +190,7 @@ func TestUnreadOnlyPagesFullyThroughUnreadEvents(t *testing.T) {
 
 // Combines with the source filter rather than replacing it.
 func TestUnreadOnlyCombinesWithResourceTypes(t *testing.T) {
+	t.Parallel()
 	conn, _ := unreadOnlyFixture(t)
 	ts := httptest.NewServer((&Server{DB: conn}).Handler())
 	defer ts.Close()
@@ -200,6 +204,7 @@ func TestUnreadOnlyCombinesWithResourceTypes(t *testing.T) {
 // The user's own events (internal/selfid) are never unread, in either
 // implementation: the unread_only SQL and IsUnread must still agree.
 func TestTimelinesNeverFlagMyOwnEventsUnread(t *testing.T) {
+	t.Parallel()
 	conn, wt := unreadOnlyFixture(t)
 	if err := selfid.Set(conn, "github", "101"); err != nil {
 		t.Fatal(err)
@@ -252,6 +257,7 @@ func TestTimelinesNeverFlagMyOwnEventsUnread(t *testing.T) {
 // CI runs still in progress (unread.NotPendingCISQL) are never unread, in
 // either implementation, while a completed run still is.
 func TestTimelinesNeverFlagPendingCIUnread(t *testing.T) {
+	t.Parallel()
 	conn, wt := unreadOnlyFixture(t)
 	if _, err := conn.Exec(`UPDATE watcher_events SET type = 'ci_pending' WHERE id = 'p3'`); err != nil {
 		t.Fatal(err)

@@ -13,6 +13,7 @@ import (
 )
 
 func TestNotifyCommandGetsPlaceholdersWithoutEvaluatingThem(t *testing.T) {
+	t.Parallel()
 	wt := filepath.Join(t.TempDir(), "my-wt")
 	out := filepath.Join(t.TempDir(), "out")
 	canary := filepath.Join(t.TempDir(), "canary")
@@ -46,6 +47,7 @@ func TestNotifyCommandGetsPlaceholdersWithoutEvaluatingThem(t *testing.T) {
 }
 
 func TestNotifyCommandCmuxTitleEmptyWhenCmuxOff(t *testing.T) {
+	t.Parallel()
 	s := &Server{cmuxAvailable: func() bool { return false }}
 	if got := s.notifyCmuxTitle(t.TempDir()); got != "" {
 		t.Fatalf("got %q", got)
@@ -53,6 +55,7 @@ func TestNotifyCommandCmuxTitleEmptyWhenCmuxOff(t *testing.T) {
 }
 
 func TestDeliverDoesNothingWhileNotificationsDisabled(t *testing.T) {
+	t.Parallel()
 	ft := &fakeTransport{}
 	s := &Server{transport: ft}
 	s.SetNotifications(config.NotificationsConfig{Disabled: true})
@@ -68,6 +71,7 @@ func TestDeliverDoesNothingWhileNotificationsDisabled(t *testing.T) {
 }
 
 func TestNotifyBatchesFillPlaceholders(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	a, _ := twoWorktrees(t, conn)
 	if err := notifyprefs.SetAll(conn, a, true); err != nil {
@@ -91,6 +95,7 @@ func TestNotifyBatchesFillPlaceholders(t *testing.T) {
 }
 
 func TestTruncateRunes(t *testing.T) {
+	t.Parallel()
 	if got := truncateRunes("héllo world", 6); got != "héllo…" {
 		t.Fatalf("got %q", got)
 	}
@@ -100,6 +105,7 @@ func TestTruncateRunes(t *testing.T) {
 }
 
 func TestSettingsNotificationsRoundTripAndApplyLive(t *testing.T) {
+	t.Parallel()
 	s, path := settingsServer(t, "ui:\n    password: pw\n")
 	cur := decodeSettings(t, doReq(s, "GET", "/api/settings", ""))
 	n := cur.Worktree.Notifications

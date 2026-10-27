@@ -101,6 +101,7 @@ func (f *taskUnread) resourceCounts(t *testing.T) map[string]int {
 }
 
 func TestWorktreeUnreadCountsTaskEventsOnce(t *testing.T) {
+	t.Parallel()
 	f := taskUnreadFixture(t)
 	if w := f.worktree(t); w.HasUnread || w.UnreadCount != 0 {
 		t.Fatalf("before any event: has_unread %v, unread_count %d", w.HasUnread, w.UnreadCount)
@@ -118,6 +119,7 @@ func TestWorktreeUnreadCountsTaskEventsOnce(t *testing.T) {
 }
 
 func TestResourceUnreadCountIncludesLinkingTasks(t *testing.T) {
+	t.Parallel()
 	f := taskUnreadFixture(t)
 	f.seed(t)
 	// A watcher event on o/r#1 newer than its cursor adds to the task count.
@@ -133,6 +135,7 @@ func TestResourceUnreadCountIncludesLinkingTasks(t *testing.T) {
 }
 
 func TestTaskReadAndRestore(t *testing.T) {
+	t.Parallel()
 	f := taskUnreadFixture(t)
 	f.seed(t)
 	rec := serveAll(t, f.s, http.MethodPost, "/api/task-read", map[string]any{"id": f.both.ID, "through_ts": tts(1)})
@@ -172,6 +175,7 @@ func TestTaskReadAndRestore(t *testing.T) {
 }
 
 func TestTaskReadErrors(t *testing.T) {
+	t.Parallel()
 	f := taskUnreadFixture(t)
 	for _, c := range []struct {
 		name string
@@ -199,6 +203,7 @@ func TestTaskReadErrors(t *testing.T) {
 }
 
 func TestTaskUnreadListsPerScope(t *testing.T) {
+	t.Parallel()
 	f := taskUnreadFixture(t)
 	get := func(query string) []taskUnreadDTO {
 		t.Helper()
@@ -241,6 +246,7 @@ func TestTaskUnreadListsPerScope(t *testing.T) {
 }
 
 func TestTaskDTOUnreadCount(t *testing.T) {
+	t.Parallel()
 	f := taskUnreadFixture(t)
 	f.seed(t)
 	got := map[int64]int{}
@@ -264,6 +270,7 @@ func TestTaskDTOUnreadCount(t *testing.T) {
 // unread_count — and is absent with nothing unread. A user event newer than
 // it (direct's tts(4)) is not it.
 func TestTaskDTOUnreadThroughTS(t *testing.T) {
+	t.Parallel()
 	f := taskUnreadFixture(t)
 	f.seed(t)
 	got := map[int64]string{}
@@ -333,6 +340,7 @@ func TestWorktreeListComputesTaskScopeOnce(t *testing.T) {
 // has_unread stays Slack's verdict, resourceHasUnread ORs in the task count,
 // and the worktree total counts the task once.
 func TestSlackResourceWithTaskUnread(t *testing.T) {
+	t.Parallel()
 	s, wt := tasksServer(t)
 	must(t, resources.Add(s.DB, wt, resources.Resource{Type: "slack", ID: "C1:1.2", URL: "https://x.slack.com/archives/C1/p12"}))
 	tk := mustTask(t, s, tasks.NewTask{Title: "thread task", Focus: []tasks.LinkTarget{resLink("slack", "C1:1.2")}})
@@ -379,6 +387,7 @@ func TestCmuxMailboxChecksResourceUnreadFirst(t *testing.T) {
 }
 
 func TestCmuxMailboxForTaskOnlyUnread(t *testing.T) {
+	t.Parallel()
 	f := taskUnreadFixture(t)
 	if has, ok := f.s.worktreeHasUnread(f.s.newUnreadIndex(), f.wt); !ok || has {
 		t.Fatalf("before: has %v ok %v", has, ok)

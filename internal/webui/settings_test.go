@@ -52,6 +52,7 @@ func decodeSettings(t *testing.T, rec *httptest.ResponseRecorder) settingsDTO {
 }
 
 func TestSettingsGetWorktreeSection(t *testing.T) {
+	t.Parallel()
 	s, _ := settingsServer(t, "worktrees_base: ~/wt\neditor: zed\njira:\n    projects: [ABC]\nui:\n    password: hunter2\n")
 	got := decodeSettings(t, doReq(s, "GET", "/api/settings", ""))
 	if got.Worktree.WorktreesBase != "~/wt" || got.Worktree.Editor != "zed" || got.Worktree.Jira.Projects[0] != "ABC" {
@@ -80,6 +81,7 @@ func TestSettingsGetReportsEnvOverride(t *testing.T) {
 }
 
 func TestSettingsWorktreePutWritesAndValidates(t *testing.T) {
+	t.Parallel()
 	s, path := settingsServer(t, "# keep\nui:\n    password: pw\n")
 	body := `{"worktrees_base":"~/wt","editor":"zed","cmux_features_enabled":true,
 	  "jira":{"projects":[" ABC ","ABC",""],"alias_hosts":[]},
@@ -99,6 +101,7 @@ func TestSettingsWorktreePutWritesAndValidates(t *testing.T) {
 }
 
 func TestSettingsWorktreePutAppliesAliasHosts(t *testing.T) {
+	t.Parallel()
 	t.Cleanup(func() { jira.SetAliasHosts(nil) })
 	s, _ := settingsServer(t, "ui:\n    password: pw\n")
 	const u = "https://old.example.com/browse/ABC-1"
@@ -115,6 +118,7 @@ func TestSettingsWorktreePutAppliesAliasHosts(t *testing.T) {
 }
 
 func TestSettingsWorktreePutAllowedHostValidation(t *testing.T) {
+	t.Parallel()
 	s, _ := settingsServer(t, "ui:\n    password: pw\n")
 	put := func(host string) int {
 		body := `{"cmux_features_enabled":true,"jira":{"projects":[],"alias_hosts":[]},
@@ -130,6 +134,7 @@ func TestSettingsWorktreePutAllowedHostValidation(t *testing.T) {
 }
 
 func TestSettingsWorktreePutCmuxGate(t *testing.T) {
+	t.Parallel()
 	s, path := settingsServer(t, "ui:\n    password: pw\n")
 	s.DB = unreadTestDB(t)
 	s.cmuxList = func() ([]cmux.Workspace, error) { return nil, nil }
@@ -147,6 +152,7 @@ func TestSettingsWorktreePutCmuxGate(t *testing.T) {
 }
 
 func TestSettingsWorktreePutRemoteAccessToggle(t *testing.T) {
+	t.Parallel()
 	s, path := settingsServer(t, "ui:\n    password: pw\n")
 	cur := decodeSettings(t, doReq(s, "GET", "/api/settings", ""))
 	if on := cur.Worktree.UI.RemoteAccessEnabled; on == nil || !*on {
@@ -175,6 +181,7 @@ func TestSettingsWorktreePutRemoteAccessToggle(t *testing.T) {
 }
 
 func TestSettingsWorktreePutCmuxRefusedOutsideCmux(t *testing.T) {
+	t.Parallel()
 	s, path := settingsServer(t, "ui:\n    password: pw\n")
 	s.cmuxAvailable = func() bool { return false }
 	cur := decodeSettings(t, doReq(s, "GET", "/api/settings", ""))
@@ -222,6 +229,7 @@ func TestDisablingCmuxStripsUnreadPrefixes(t *testing.T) {
 }
 
 func TestCmuxFocusDroppedWhileDisabled(t *testing.T) {
+	t.Parallel()
 	s := &Server{cmuxAvailable: func() bool { return true }}
 	s.SetCmuxFeaturesDisabled(true)
 	ch, cancel := s.focusHub().subscribe()

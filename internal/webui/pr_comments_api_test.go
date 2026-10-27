@@ -120,6 +120,7 @@ func (f *prcFixture) summary(t *testing.T) prcSummary {
 func sptr(s string) *string { return &s }
 
 func TestPRCommentsOffMakesNoCall(t *testing.T) {
+	t.Parallel()
 	f := newPRCFixture(t)
 	f.srv.SetWatchersDisabled(map[string]bool{config.ServiceGitHub: true})
 	if s := f.summary(t); s.State != "off" {
@@ -140,6 +141,7 @@ func TestPRCommentsOffMakesNoCall(t *testing.T) {
 }
 
 func TestPRCommentsNoToken(t *testing.T) {
+	t.Parallel()
 	f := newPRCFixture(t)
 	f.srv.WatcherAuthPath = filepath.Join(t.TempDir(), "missing.yaml")
 	if s := f.summary(t); s.State != "no_token" {
@@ -151,6 +153,7 @@ func TestPRCommentsNoToken(t *testing.T) {
 }
 
 func TestPRCommentsNoPR(t *testing.T) {
+	t.Parallel()
 	f := newPRCFixture(t)
 	f.head = "someone-else"
 	s := f.summary(t)
@@ -185,6 +188,7 @@ func insertPRCEvent(t *testing.T, srv *Server, e watcher.Event) {
 }
 
 func TestPRCommentsSummary(t *testing.T) {
+	t.Parallel()
 	f := newPRCFixture(t)
 	f.threads = summaryThreads()
 	must(t, selfid.Set(f.srv.DB, "github", "101"))
@@ -208,6 +212,7 @@ func TestPRCommentsSummary(t *testing.T) {
 }
 
 func TestPRCommentsUnreadIDsNeverNull(t *testing.T) {
+	t.Parallel()
 	f := newPRCFixture(t)
 	_, body := f.get(t, "/api/pr-comments", "")
 	var raw map[string]json.RawMessage
@@ -218,6 +223,7 @@ func TestPRCommentsUnreadIDsNeverNull(t *testing.T) {
 }
 
 func TestPRCommentsCachesFetch(t *testing.T) {
+	t.Parallel()
 	f := newPRCFixture(t)
 	f.threads = summaryThreads()
 	f.summary(t)
@@ -232,6 +238,7 @@ func TestPRCommentsCachesFetch(t *testing.T) {
 }
 
 func TestPRCommentsErrorCachedBriefly(t *testing.T) {
+	t.Parallel()
 	f := newPRCFixture(t)
 	now := time.Now()
 	f.srv.prThreadsCacheOrInit().now = func() time.Time { return now }
@@ -261,6 +268,7 @@ func TestPRCommentsErrorCachedBriefly(t *testing.T) {
 }
 
 func TestPRCommentsSummaryErrorCachedBriefly(t *testing.T) {
+	t.Parallel()
 	f := newPRCFixture(t)
 	now := time.Now()
 	f.srv.prThreadsCacheOrInit().now = func() time.Time { return now }
@@ -291,6 +299,7 @@ func TestPRCommentsSummaryErrorCachedBriefly(t *testing.T) {
 }
 
 func TestPRCommentsNoFingerprintUnlessOK(t *testing.T) {
+	t.Parallel()
 	f := newPRCFixture(t)
 	f.threadsErr = errors.New("boom")
 	for _, route := range []string{"/api/pr-comments", "/api/pr-comments/threads"} {
@@ -307,6 +316,7 @@ func TestPRCommentsNoFingerprintUnlessOK(t *testing.T) {
 }
 
 func TestPRCommentsUnreadableAuthLogged(t *testing.T) {
+	t.Parallel()
 	f := newPRCFixture(t)
 	var buf bytes.Buffer
 	f.srv.Logger = log.New(&buf, "", 0)
@@ -322,6 +332,7 @@ func TestPRCommentsUnreadableAuthLogged(t *testing.T) {
 }
 
 func TestPRCommentsMissingAuthNotLogged(t *testing.T) {
+	t.Parallel()
 	f := newPRCFixture(t)
 	var buf bytes.Buffer
 	f.srv.Logger = log.New(&buf, "", 0)
@@ -367,6 +378,7 @@ type prcThreadsResp struct {
 }
 
 func TestPRCommentsThreadsView(t *testing.T) {
+	t.Parallel()
 	f := newPRCFixture(t)
 	commitFile(t, f.wt, "multi", rcMulti)
 	head := headSHA(t, f.wt)
@@ -435,6 +447,7 @@ func TestPRCommentsThreadsView(t *testing.T) {
 }
 
 func TestPRCommentsUnregisteredPath(t *testing.T) {
+	t.Parallel()
 	f := newPRCFixture(t)
 	resp, err := http.Get(f.ts.URL + "/api/pr-comments?path=/nope")
 	must(t, err)
@@ -445,6 +458,7 @@ func TestPRCommentsUnregisteredPath(t *testing.T) {
 }
 
 func TestPRCommentsLocate(t *testing.T) {
+	t.Parallel()
 	f := newPRCFixture(t)
 	f.threads = summaryThreads()
 	// Polled before the comment tag existed: matches on title + created time.

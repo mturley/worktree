@@ -3,6 +3,7 @@ package webui
 import "testing"
 
 func TestSlackEventTitle(t *testing.T) {
+	t.Parallel()
 	const raw = "New reply in hey <@U1> can you look"
 	cases := []struct {
 		name, source, typ, title string

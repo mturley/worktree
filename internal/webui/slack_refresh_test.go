@@ -44,6 +44,7 @@ func postJSON(t *testing.T, url, body string) int {
 // thread view itself. A mark that only wrote to Slack left them stale until
 // the next background poll, so the thread is re-polled before responding.
 func TestSlackMarkReadAndUnreadRefreshATrackedThread(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	wt := testgit.Worktree(t)
 	if err := resources.Add(conn, wt, resources.Resource{Type: "slack", ID: "C1:1.0", URL: "https://acme.slack.com/archives/C1/p1"}); err != nil {
@@ -64,6 +65,7 @@ func TestSlackMarkReadAndUnreadRefreshATrackedThread(t *testing.T) {
 }
 
 func TestSlackMarkReadSkipsRefreshForUntrackedThread(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	srv := &Server{DB: conn, SlackClient: newFakeSlack()}
 	refreshed := recordRefresh(srv)
@@ -78,6 +80,7 @@ func TestSlackMarkReadSkipsRefreshForUntrackedThread(t *testing.T) {
 }
 
 func TestSlackMarkReadFailureDoesNotRefresh(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	wt := testgit.Worktree(t)
 	if err := resources.Add(conn, wt, resources.Resource{Type: "slack", ID: "C1:1.0", URL: "u"}); err != nil {
@@ -108,6 +111,7 @@ func fakeThread(lastRead string) slack.Thread {
 // Slack has no "set last_read"; restore marks unread from the first message
 // after the old cursor, which puts last_read just before it.
 func TestSlackRestoreReadMarksUnreadFromTheFirstMessageAfterTheOldCursor(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	wt := testgit.Worktree(t)
 	if err := resources.Add(conn, wt, resources.Resource{Type: "slack", ID: "C1:1.0", URL: "u"}); err != nil {
@@ -137,6 +141,7 @@ func TestSlackRestoreReadMarksUnreadFromTheFirstMessageAfterTheOldCursor(t *test
 }
 
 func TestSlackRestoreReadRefusesWhenReadFurtherSince(t *testing.T) {
+	t.Parallel()
 	fake := newFakeSlack()
 	fake.thread = fakeThread("4.0")
 	srv := &Server{SlackClient: fake}
@@ -152,6 +157,7 @@ func TestSlackRestoreReadRefusesWhenReadFurtherSince(t *testing.T) {
 }
 
 func TestSlackRestoreReadIsANoOpWhenNothingFollowsTheOldCursor(t *testing.T) {
+	t.Parallel()
 	fake := newFakeSlack()
 	fake.thread = fakeThread("3.0")
 	srv := &Server{SlackClient: fake}

@@ -16,6 +16,7 @@ func batchFor(path string) notifyBatch {
 }
 
 func TestCandidateOrder(t *testing.T) {
+	t.Parallel()
 	wt := t.TempDir()
 	r := newTabRegistry()
 	r.register("other", "s1", "/worktree/%2Felsewhere", true)
@@ -49,6 +50,7 @@ func answer(r *tabRegistry, tab, session string, send <-chan notificationMsg, sh
 }
 
 func TestDeliverFallsThroughDeclineAndTimeout(t *testing.T) {
+	t.Parallel()
 	wt := t.TempDir()
 	r := newTabRegistry()
 	r.ackTimeout = 30 * time.Millisecond
@@ -73,6 +75,7 @@ func TestDeliverFallsThroughDeclineAndTimeout(t *testing.T) {
 }
 
 func TestDeliverDropsWhenNobodyShows(t *testing.T) {
+	t.Parallel()
 	r := newTabRegistry()
 	r.ackTimeout = 20 * time.Millisecond
 	send, _ := r.register("a", "s1", "/", true)
@@ -83,6 +86,7 @@ func TestDeliverDropsWhenNobodyShows(t *testing.T) {
 }
 
 func TestReconnectKeepsNewRegistration(t *testing.T) {
+	t.Parallel()
 	r := newTabRegistry()
 	_, doneOld := r.register("a", "s1", "/", true)
 	newSend, _ := r.register("a", "s1", "/", true) // reconnect, same tab id
@@ -97,6 +101,7 @@ func TestReconnectKeepsNewRegistration(t *testing.T) {
 }
 
 func TestPresenceAndAckRefuseOtherSessions(t *testing.T) {
+	t.Parallel()
 	s := &Server{}
 	s.tabRegistry().register("a", "s1", "/", true)
 	post := func(path, body, session string) int {
@@ -123,6 +128,7 @@ func withJSON(r *http.Request) *http.Request {
 }
 
 func TestDeliverWaitsForABusyStreamInsteadOfDropping(t *testing.T) {
+	t.Parallel()
 	r := newTabRegistry()
 	r.ackTimeout = 2 * time.Second
 	send, _ := r.register("a", "s1", "/", true)

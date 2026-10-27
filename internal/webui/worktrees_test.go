@@ -30,6 +30,7 @@ func seededDB(t *testing.T) *sql.DB {
 }
 
 func TestWorktreesEndpoint(t *testing.T) {
+	t.Parallel()
 	conn := seededDB(t)
 	wtPath := testgit.Worktree(t)
 	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
@@ -89,6 +90,7 @@ func TestWorktreesEndpoint(t *testing.T) {
 }
 
 func TestWorktreesEndpointNotesSearch(t *testing.T) {
+	t.Parallel()
 	conn := seededDB(t)
 	wt := testgit.Worktree(t)
 	registry.Register(conn, registry.Entry{Path: wt, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
@@ -120,6 +122,7 @@ func TestWorktreesEndpointNotesSearch(t *testing.T) {
 }
 
 func TestWorktreesEndpointFocusResources(t *testing.T) {
+	t.Parallel()
 	conn := seededDB(t)
 	wtPath := testgit.Worktree(t)
 	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})

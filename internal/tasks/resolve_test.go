@@ -253,9 +253,8 @@ func TestWriteTimeResolutionRecordsSystemEvent(t *testing.T) {
 
 func TestLogfSeam(t *testing.T) {
 	var msgs []string
-	old := Logf
-	Logf = func(format string, args ...any) { msgs = append(msgs, format) }
-	t.Cleanup(func() { Logf = old })
+	SetLogf(func(format string, args ...any) { msgs = append(msgs, format) })
+	t.Cleanup(func() { SetLogf(nil) })
 
 	conn := newDB(t)
 	conn.Close() // every write after commit now fails, and must be logged

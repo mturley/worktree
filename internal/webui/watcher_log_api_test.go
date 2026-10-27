@@ -66,6 +66,7 @@ func getWatched(t *testing.T, base string, q url.Values) []watchedResourceDTO {
 }
 
 func TestWatchedResources_Unscoped(t *testing.T) {
+	t.Parallel()
 	f := newWatcherLogFixture(t)
 	got := getWatched(t, f.url, nil)
 	if len(got) != 2 {
@@ -130,6 +131,7 @@ func entryIDs(r logResp) []int64 {
 }
 
 func TestWatcherLog_UnscopedNewestFirstWithNames(t *testing.T) {
+	t.Parallel()
 	f := newWatcherLogFixture(t)
 	gh, pr, sl, ji := seedLog(t, f)
 	got := getLog(t, f.url, nil, 200)
@@ -142,6 +144,7 @@ func TestWatcherLog_UnscopedNewestFirstWithNames(t *testing.T) {
 }
 
 func TestWatcherLog_FiltersAndCursors(t *testing.T) {
+	t.Parallel()
 	f := newWatcherLogFixture(t)
 	gh, pr, sl, ji := seedLog(t, f)
 	got := getLog(t, f.url, url.Values{"level": {"warn"}}, 200)
@@ -163,6 +166,7 @@ func TestWatcherLog_FiltersAndCursors(t *testing.T) {
 }
 
 func TestWatcherLog_BadParams(t *testing.T) {
+	t.Parallel()
 	f := newWatcherLogFixture(t)
 	for _, q := range []url.Values{
 		{"level": {"loud"}}, {"source": {"bitbucket"}}, {"after_id": {"x"}},
@@ -173,6 +177,7 @@ func TestWatcherLog_BadParams(t *testing.T) {
 }
 
 func TestWatchedResources_ExcludesLinkResources(t *testing.T) {
+	t.Parallel()
 	srv, ts := watchersTestServer(t)
 	wt := t.TempDir()
 	pr := watcher.Resource{Type: "pr", ID: "o/r#1"}

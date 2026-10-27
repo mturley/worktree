@@ -36,6 +36,7 @@ func getUpdateStatus(t *testing.T, s *Server) updateStatus {
 }
 
 func TestUpdateCheck_BehindMain(t *testing.T) {
+	t.Parallel()
 	gh := fakeCompare(t, http.StatusOK, 3)
 	s := &Server{BuildCommit: "abc123", updateAPIBase: gh.URL}
 	s.checkForUpdate(context.Background())
@@ -49,6 +50,7 @@ func TestUpdateCheck_BehindMain(t *testing.T) {
 }
 
 func TestUpdateCheck_UpToDate(t *testing.T) {
+	t.Parallel()
 	gh := fakeCompare(t, http.StatusOK, 0)
 	s := &Server{BuildCommit: "abc123", updateAPIBase: gh.URL}
 	s.checkForUpdate(context.Background())
@@ -58,6 +60,7 @@ func TestUpdateCheck_UpToDate(t *testing.T) {
 }
 
 func TestUpdateCheck_UnknownCommitShowsNothing(t *testing.T) {
+	t.Parallel()
 	gh := fakeCompare(t, http.StatusNotFound, 0)
 	s := &Server{BuildCommit: "abc123", updateAPIBase: gh.URL}
 	s.checkForUpdate(context.Background())
@@ -67,6 +70,7 @@ func TestUpdateCheck_UnknownCommitShowsNothing(t *testing.T) {
 }
 
 func TestUpdateCheck_FailureKeepsLastAnswer(t *testing.T) {
+	t.Parallel()
 	ok := fakeCompare(t, http.StatusOK, 2)
 	s := &Server{BuildCommit: "abc123", updateAPIBase: ok.URL}
 	s.checkForUpdate(context.Background())

@@ -16,6 +16,7 @@ import (
 )
 
 func TestAllResourcesEndpoint(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -81,6 +82,7 @@ func TestAllResourcesEndpoint(t *testing.T) {
 }
 
 func TestEnrichJiraReporter(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	must(t, err)
 	defer conn.Close()

@@ -16,6 +16,7 @@ import (
 )
 
 func TestSetResourceMetaThenLoad(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -62,6 +63,7 @@ func TestSetResourceMetaThenLoad(t *testing.T) {
 }
 
 func TestSetResourceMetaMissingFields(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)

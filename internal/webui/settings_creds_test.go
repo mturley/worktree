@@ -46,6 +46,7 @@ func decodeCredResult(t *testing.T, body string) credResult {
 }
 
 func TestCredTestStored(t *testing.T) {
+	t.Parallel()
 	s, log := credServer(t, nil, nil, nil)
 	rec := doReq(s, "POST", "/api/settings/credentials/github/test", `{}`)
 	if r := decodeCredResult(t, rec.Body.String()); !r.OK || r.Kind != "ok" || log.github[0][0] != "ghp_SECRET1" {
@@ -54,6 +55,7 @@ func TestCredTestStored(t *testing.T) {
 }
 
 func TestCredTestKinds(t *testing.T) {
+	t.Parallel()
 	s, _ := credServer(t, wgithub.ErrAuth, errors.New("dial tcp: timeout"), nil)
 	if r := decodeCredResult(t, doReq(s, "POST", "/api/settings/credentials/github/test", `{}`).Body.String()); r.Kind != "auth" {
 		t.Fatalf("github kind = %q", r.Kind)
@@ -64,6 +66,7 @@ func TestCredTestKinds(t *testing.T) {
 }
 
 func TestCredTestJiraEmailOverrideSameHost(t *testing.T) {
+	t.Parallel()
 	s, log := credServer(t, nil, nil, nil)
 	doReq(s, "POST", "/api/settings/credentials/jira/test", `{"host":"HTTPS://X.atlassian.net/","email":"f@f"}`)
 	if len(log.jira) != 1 {
@@ -75,6 +78,7 @@ func TestCredTestJiraEmailOverrideSameHost(t *testing.T) {
 }
 
 func TestCredTestJiraDifferentHostIsUnsaved(t *testing.T) {
+	t.Parallel()
 	s, _ := credServer(t, nil, nil, nil)
 	s.credCheck.jira = func(h, e, tok string) error {
 		t.Fatal("must not send the stored token to an unsaved host")
@@ -99,6 +103,7 @@ func readAuth(t *testing.T, s *Server) string {
 }
 
 func TestReplaceJiraRefusedWritesNothing(t *testing.T) {
+	t.Parallel()
 	s, _ := credServer(t, nil, wjira.ErrAuth, nil)
 	rec := doReq(s, "PUT", "/api/settings/credentials/jira", `{"token":"J_NEW","host":"https://n.atlassian.net","email":"n@n"}`)
 	if rec.Code != http.StatusUnprocessableEntity {
@@ -110,6 +115,7 @@ func TestReplaceJiraRefusedWritesNothing(t *testing.T) {
 }
 
 func TestReplaceSlackRefusedWritesNothing(t *testing.T) {
+	t.Parallel()
 	s, _ := credServer(t, nil, nil, errors.New("network down"))
 	rec := doReq(s, "PUT", "/api/settings/credentials/slack", `{"token":"xoxc-NEW"}`)
 	if rec.Code != http.StatusUnprocessableEntity {
@@ -121,6 +127,7 @@ func TestReplaceSlackRefusedWritesNothing(t *testing.T) {
 }
 
 func TestReplaceSlackOneHalfStoredOtherMissing(t *testing.T) {
+	t.Parallel()
 	s, log := credServer(t, nil, nil, nil)
 	if err := os.WriteFile(s.WatcherAuthPath, []byte("services:\n    slack:\n        token: xoxc-ONLY\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -135,6 +142,7 @@ func TestReplaceSlackOneHalfStoredOtherMissing(t *testing.T) {
 }
 
 func TestReplaceSlackDomainFallsBack(t *testing.T) {
+	t.Parallel()
 	s, _ := credServer(t, nil, nil, nil)
 	s.credCheck.slackDomain = func(tok, ck string) string { return "" }
 	rec := doReq(s, "PUT", "/api/settings/credentials/slack", `{"cookie":"xoxd-NEW"}`)
@@ -147,6 +155,7 @@ func TestReplaceSlackDomainFallsBack(t *testing.T) {
 }
 
 func TestReplaceSuccessNeverEchoesSecrets(t *testing.T) {
+	t.Parallel()
 	s, _ := credServer(t, nil, nil, nil)
 	for _, c := range []struct{ svc, body, secret string }{
 		{"jira", `{"token":"J_NEW_SECRET","host":"https://n.atlassian.net","email":"n@n"}`, "J_NEW_SECRET"},
@@ -160,6 +169,7 @@ func TestReplaceSuccessNeverEchoesSecrets(t *testing.T) {
 }
 
 func TestCredTestMissing(t *testing.T) {
+	t.Parallel()
 	s, _ := settingsServer(t, "")
 	s.credCheck = &credValidators{github: func(string) error { t.Fatal("must not validate"); return nil }}
 	if r := decodeCredResult(t, doReq(s, "POST", "/api/settings/credentials/github/test", `{}`).Body.String()); r.Kind != "missing" {
@@ -168,6 +178,7 @@ func TestCredTestMissing(t *testing.T) {
 }
 
 func TestReplaceRefusesInvalidAndWritesNothing(t *testing.T) {
+	t.Parallel()
 	for _, verr := range []error{wgithub.ErrAuth, errors.New("network down")} {
 		s, _ := credServer(t, verr, nil, nil)
 		rec := doReq(s, "PUT", "/api/settings/credentials/github", `{"token":"ghp_NEW"}`)
@@ -182,6 +193,7 @@ func TestReplaceRefusesInvalidAndWritesNothing(t *testing.T) {
 }
 
 func TestReplaceGitHubWrites(t *testing.T) {
+	t.Parallel()
 	s, _ := credServer(t, nil, nil, nil)
 	rec := doReq(s, "PUT", "/api/settings/credentials/github", `{"token":" ghp_NEW "}`)
 	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "ghp_NEW") {
@@ -194,6 +206,7 @@ func TestReplaceGitHubWrites(t *testing.T) {
 }
 
 func TestReplaceJiraWritesTriple(t *testing.T) {
+	t.Parallel()
 	s, _ := credServer(t, nil, nil, nil)
 	rec := doReq(s, "PUT", "/api/settings/credentials/jira", `{"token":"J2","host":"https://n.atlassian.net/","email":"n@n"}`)
 	if rec.Code != http.StatusOK {
@@ -208,6 +221,7 @@ func TestReplaceJiraWritesTriple(t *testing.T) {
 }
 
 func TestReplaceSlackCookieOnlyUsesStoredToken(t *testing.T) {
+	t.Parallel()
 	s, log := credServer(t, nil, nil, nil)
 	rec := doReq(s, "PUT", "/api/settings/credentials/slack", `{"cookie":"xoxd-NEW"}`)
 	if rec.Code != http.StatusOK {
@@ -225,6 +239,7 @@ func TestReplaceSlackCookieOnlyUsesStoredToken(t *testing.T) {
 }
 
 func TestReplaceSlackAuthError(t *testing.T) {
+	t.Parallel()
 	s, _ := credServer(t, nil, nil, wslack.ErrAuth)
 	rec := doReq(s, "PUT", "/api/settings/credentials/slack", `{"token":"xoxc-NEW"}`)
 	if rec.Code != http.StatusUnprocessableEntity || decodeCredResult(t, rec.Body.String()).Kind != "auth" {
@@ -233,6 +248,7 @@ func TestReplaceSlackAuthError(t *testing.T) {
 }
 
 func TestReplaceRejectsEmpty(t *testing.T) {
+	t.Parallel()
 	s, _ := credServer(t, nil, nil, nil)
 	for _, c := range []struct {
 		svc, body string
@@ -250,6 +266,7 @@ func TestReplaceRejectsEmpty(t *testing.T) {
 }
 
 func TestPasswordReplaceAppliesLive(t *testing.T) {
+	t.Parallel()
 	s, path := settingsServer(t, "# c\nui:\n    password: old\n")
 	s.Security = &Security{Password: "old", Sessions: &uisession.Store{}}
 	if rec := doPassword(s, `{"password":"new-pw"}`); rec.Code != http.StatusNoContent {
@@ -279,6 +296,7 @@ func doPassword(s *Server, body string) *httptest.ResponseRecorder {
 }
 
 func TestReplaceReloadsAuthAfterValidation(t *testing.T) {
+	t.Parallel()
 	s, _ := credServer(t, nil, nil, nil)
 	s.credCheck.github = func(string) error {
 		// A concurrent edit lands while validation is in flight.
@@ -297,6 +315,7 @@ func TestReplaceReloadsAuthAfterValidation(t *testing.T) {
 }
 
 func TestReplaceSlackConflictWhenStoredHalfChanged(t *testing.T) {
+	t.Parallel()
 	s, _ := credServer(t, nil, nil, nil)
 	s.credCheck.slack = func(tok, ck string) error {
 		data, _ := os.ReadFile(s.WatcherAuthPath)
@@ -315,6 +334,7 @@ func TestReplaceSlackConflictWhenStoredHalfChanged(t *testing.T) {
 // A candidate in the test body is validated in place of the stored value,
 // and nothing is written: Save writes it later through the replace route.
 func TestCredTestCandidateWritesNothing(t *testing.T) {
+	t.Parallel()
 	s, log := credServer(t, nil, nil, nil)
 	before := readAuth(t, s)
 	rec := doReq(s, "POST", "/api/settings/credentials/github/test", `{"token":" ghp_NEW "}`)
@@ -332,6 +352,7 @@ func TestCredTestCandidateWritesNothing(t *testing.T) {
 // A candidate Jira token may go to an unsaved host: it is the user's new
 // token for that host, not the stored one.
 func TestCredTestJiraCandidateUsesFormHost(t *testing.T) {
+	t.Parallel()
 	s, log := credServer(t, nil, nil, nil)
 	rec := doReq(s, "POST", "/api/settings/credentials/jira/test", `{"token":"NEWJ","host":"https://new.example/","email":"n@n"}`)
 	if r := decodeCredResult(t, rec.Body.String()); !r.OK {
@@ -343,6 +364,7 @@ func TestCredTestJiraCandidateUsesFormHost(t *testing.T) {
 }
 
 func TestCredTestJiraCandidateBadHost(t *testing.T) {
+	t.Parallel()
 	s, log := credServer(t, nil, nil, nil)
 	rec := doReq(s, "POST", "/api/settings/credentials/jira/test", `{"token":"NEWJ","host":"ftp://x","email":"n@n"}`)
 	if rec.Code != http.StatusBadRequest || len(log.jira) != 0 {
@@ -352,6 +374,7 @@ func TestCredTestJiraCandidateBadHost(t *testing.T) {
 
 // Slack tests the pair, filling a missing half of the candidate from storage.
 func TestCredTestSlackCandidateHalf(t *testing.T) {
+	t.Parallel()
 	s, log := credServer(t, nil, nil, nil)
 	doReq(s, "POST", "/api/settings/credentials/slack/test", `{"cookie":"xoxd-NEW"}`)
 	if len(log.slack) != 1 || log.slack[0][0] != "xoxc-SECRET3" || log.slack[0][1] != "xoxd-NEW" {

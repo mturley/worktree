@@ -5,13 +5,27 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sync/atomic"
 )
 
 // Logf is where the package logs what it cannot return: failures of the
 // after-commit steps (hold reconciliation, write-time blocker resolution),
 // which never fail the user's committed write. `worktree ui` points it at
-// its own logger at startup; the CLI keeps the standard logger.
-var Logf = log.Printf
+// its own logger at startup (SetLogf); the CLI keeps the standard logger.
+func Logf(format string, args ...any) {
+	if f := logf.Load(); f != nil && *f != nil {
+		(*f)(format, args...)
+		return
+	}
+	log.Printf(format, args...)
+}
+
+// logf is atomic because every webui Server sets it, and tests run many
+// Servers in parallel.
+var logf atomic.Pointer[func(format string, args ...any)]
+
+// SetLogf redirects Logf; nil restores the standard logger.
+func SetLogf(f func(format string, args ...any)) { logf.Store(&f) }
 
 // ResourceStatus is a resource's blocking condition as a StatusLookup sees
 // it. Label is what the UI shows ("merged", "closed", "Done", "In

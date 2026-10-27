@@ -15,6 +15,7 @@ import (
 )
 
 func TestWorktreeInfoReturnsEnvAndGitStatus(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -77,6 +78,7 @@ func TestWorktreeInfoReturnsEnvAndGitStatus(t *testing.T) {
 }
 
 func TestWorktreeInfoOmitsGitForNonRepo(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -109,6 +111,7 @@ func TestWorktreeInfoOmitsGitForNonRepo(t *testing.T) {
 }
 
 func TestWorktreeInfoRequiresPath(t *testing.T) {
+	t.Parallel()
 	conn, _ := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	defer conn.Close()
 	srv := &Server{DB: conn}
@@ -126,6 +129,7 @@ func TestWorktreeInfoRequiresPath(t *testing.T) {
 }
 
 func TestTildify(t *testing.T) {
+	t.Parallel()
 	const home = "/Users/me"
 	for _, tc := range []struct{ in, want string }{
 		{"/Users/me", "~"},

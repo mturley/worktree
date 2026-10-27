@@ -19,6 +19,7 @@ import (
 )
 
 func TestAddResourceFollowsAPlainURL(t *testing.T) {
+	t.Parallel()
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		io.WriteString(w, `<html><head><title>A page</title></head></html>`)
@@ -54,6 +55,7 @@ func TestAddResourceFollowsAPlainURL(t *testing.T) {
 }
 
 func TestAddResourceDoesNotPollALink(t *testing.T) {
+	t.Parallel()
 	// A link has no poller. If one is ever added to pollAll, or pollOne is
 	// called for a link, this fails.
 	conn, _ := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
@@ -72,6 +74,7 @@ func TestAddResourceDoesNotPollALink(t *testing.T) {
 }
 
 func TestResourceTypeEndpointClassifies(t *testing.T) {
+	t.Parallel()
 	srv := &Server{}
 	for _, tc := range []struct{ url, want string }{
 		{"https://github.com/o/r/pull/42", "pr"},
@@ -92,6 +95,7 @@ func TestResourceTypeEndpointClassifies(t *testing.T) {
 }
 
 func TestResourceResolveRefusesNonLinkTypes(t *testing.T) {
+	t.Parallel()
 	conn, _ := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	defer conn.Close()
 	srv := &Server{DB: conn}

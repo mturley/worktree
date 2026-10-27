@@ -211,6 +211,7 @@ func newFakeSlack() *fakeSlack {
 }
 
 func TestSlackThreadEndpoint(t *testing.T) {
+	t.Parallel()
 	fake := newFakeSlack()
 	srv := &Server{SlackClient: fake, SlackDomain: "acme.slack.com"}
 	ts := httptest.NewServer(srv.Handler())
@@ -238,6 +239,7 @@ func TestSlackThreadEndpoint(t *testing.T) {
 }
 
 func TestSlackReplyNoAllowlist(t *testing.T) {
+	t.Parallel()
 	fake := newFakeSlack()
 	srv := &Server{SlackClient: fake, SlackDomain: "acme.slack.com"}
 	ts := httptest.NewServer(srv.Handler())
@@ -262,6 +264,7 @@ func TestSlackReplyNoAllowlist(t *testing.T) {
 // right after PostReply can fail even though the message posted fine. The
 // handler must retry and, on eventual success, must not log a failure.
 func TestSlackReplyMarkReadRetrySucceeds(t *testing.T) {
+	t.Parallel()
 	fake := newFakeSlack()
 	fake.markReadFailN = 1 // fail once, then succeed
 	var logBuf bytes.Buffer
@@ -291,6 +294,7 @@ func TestSlackReplyMarkReadRetrySucceeds(t *testing.T) {
 // 200 (mark-read is best-effort and must never fail the send), and logs the
 // failure exactly once.
 func TestSlackReplyMarkReadRetryExhausted(t *testing.T) {
+	t.Parallel()
 	fake := newFakeSlack()
 	fake.markReadFailN = 1000 // always fail
 	var logBuf bytes.Buffer
@@ -322,6 +326,7 @@ func TestSlackReplyMarkReadRetryExhausted(t *testing.T) {
 // retried — an expired token will not fix itself between attempts, so
 // retrying it only adds latency to a request that is already doomed.
 func TestSlackReplyMarkReadAuthErrorNotRetried(t *testing.T) {
+	t.Parallel()
 	fake := newFakeSlack()
 	fake.markReadFailN = 1000
 	fake.markReadErr = slack.ErrAuth
@@ -348,6 +353,7 @@ func TestSlackReplyMarkReadAuthErrorNotRetried(t *testing.T) {
 // behaviour is unchanged: a single successful MarkRead call after a
 // successful reply.
 func TestSlackReplyMarkReadHappyPath(t *testing.T) {
+	t.Parallel()
 	fake := newFakeSlack()
 	var logBuf bytes.Buffer
 	srv := &Server{SlackClient: fake, SlackDomain: "acme.slack.com", Logger: log.New(&logBuf, "", 0)}
@@ -375,6 +381,7 @@ func TestSlackReplyMarkReadHappyPath(t *testing.T) {
 }
 
 func TestSlackThreadUnconfigured(t *testing.T) {
+	t.Parallel()
 	srv := &Server{SlackClient: nil}
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
@@ -393,6 +400,7 @@ func TestSlackThreadUnconfigured(t *testing.T) {
 // paths — typed usergroup elements and raw mrkdwn — since a thread can arrive
 // either way and a missed id means a mention renders as a placeholder.
 func TestCollectUserGroupIDs(t *testing.T) {
+	t.Parallel()
 	th := slack.Thread{Messages: []slack.Message{
 		{Text: "ping <!subteam^S111> and <!subteam^S222|@handle>"},
 		{Blocks: []slack.Block{{Elements: []slack.Element{
@@ -416,6 +424,7 @@ func TestCollectUserGroupIDs(t *testing.T) {
 // TestCollectUserGroupIDsEmpty ensures a thread with no group mentions asks
 // for nothing, so no lookup request is made at all.
 func TestCollectUserGroupIDsEmpty(t *testing.T) {
+	t.Parallel()
 	th := slack.Thread{Messages: []slack.Message{{Text: "no groups here"}}}
 	if got := collectUserGroupIDs(th); len(got) != 0 {
 		t.Fatalf("want no ids, got %v", got)

@@ -44,6 +44,7 @@ func searchFixture(t *testing.T) (*httptest.Server, string) {
 }
 
 func TestGlobalTimelineSearch(t *testing.T) {
+	t.Parallel()
 	ts, _ := searchFixture(t)
 	get := func(q string, extra string) []TimelineEvent {
 		return getTimeline(t, ts.URL, "/api/timeline?limit=50&q="+url.QueryEscape(q)+extra).Events
@@ -95,6 +96,7 @@ func TestGlobalTimelineSearch(t *testing.T) {
 // A malformed cached state must not fail the whole search: json_extract
 // raises on invalid JSON, so the SQL guards it with json_valid.
 func TestGlobalTimelineSearchMalformedResourceState(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -116,6 +118,7 @@ func TestGlobalTimelineSearchMalformedResourceState(t *testing.T) {
 }
 
 func TestWorktreeTimelineSearch(t *testing.T) {
+	t.Parallel()
 	ts, wt := searchFixture(t)
 	base := "/api/worktree-timeline?limit=50&path=" + url.QueryEscape(wt)
 	get := func(extra string) []string { return eventIDs(getTimeline(t, ts.URL, base+extra).Events) }

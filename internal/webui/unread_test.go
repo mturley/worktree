@@ -42,6 +42,7 @@ func insertUnreadEvent(t *testing.T, conn *sql.DB, id, ts, source, resType, resI
 }
 
 func TestWorktreeResourcesCarriesUnreadCount(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	wt := testgit.Worktree(t)
 	if err := resources.Add(conn, wt, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u"}); err != nil {
@@ -88,6 +89,7 @@ func registerWorktreeForTest(t *testing.T, conn *sql.DB, path string) error {
 }
 
 func TestWorktreesCarriesUnreadCountOnFocusResources(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	wt := testgit.Worktree(t)
 	if err := registerWorktreeForTest(t, conn, wt); err != nil {
@@ -119,6 +121,7 @@ func TestWorktreesCarriesUnreadCountOnFocusResources(t *testing.T) {
 }
 
 func TestTimelineMarksEventsNewerThanTheCursorUnread(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	wt := testgit.Worktree(t)
 	if err := resources.Add(conn, wt, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u"}); err != nil {
@@ -155,6 +158,7 @@ func TestTimelineMarksEventsNewerThanTheCursorUnread(t *testing.T) {
 }
 
 func TestTimelineNeverMarksSlackEventsUnread(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	wt := testgit.Worktree(t)
 	if err := resources.Add(conn, wt, resources.Resource{Type: "slack", ID: "C1:1.2", URL: "u"}); err != nil {
@@ -191,6 +195,7 @@ func postResourceRead(t *testing.T, base, body string) *http.Response {
 }
 
 func TestResourceReadMarksThroughTheClientsTimestamp(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	wt := testgit.Worktree(t)
 	if err := resources.Add(conn, wt, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u"}); err != nil {
@@ -220,6 +225,7 @@ func TestResourceReadMarksThroughTheClientsTimestamp(t *testing.T) {
 }
 
 func TestResourceReadRejectsSlack(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	srv := &Server{DB: conn}
 	ts := httptest.NewServer(srv.Handler())
@@ -236,6 +242,7 @@ func TestResourceReadRejectsSlack(t *testing.T) {
 // else — a Slack ts above all — would silently mark everything read or
 // nothing. It is refused, and no cursor is written.
 func TestResourceReadRejectsNonRFC3339ThroughTS(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	srv := &Server{DB: conn}
 	ts := httptest.NewServer(srv.Handler())
@@ -261,6 +268,7 @@ func TestResourceReadRejectsNonRFC3339ThroughTS(t *testing.T) {
 }
 
 func TestResourceReadRequiresTypeIDAndThroughTS(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	srv := &Server{DB: conn}
 	ts := httptest.NewServer(srv.Handler())
@@ -312,6 +320,7 @@ func insertSlackEvent(t *testing.T, conn *sql.DB, id, ts, externalTS, resID stri
 // Slack reply newer than Slack's read cursor is unread, and one older is not.
 // Before the cursor was cached this was hard-false for every Slack event.
 func TestIsUnreadUsesSlacksOwnCursor(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	const thread = "C1:1000.000100"
 	insertSlackState(t, conn, thread, "2000.000000")
@@ -340,6 +349,7 @@ func TestIsUnreadUsesSlacksOwnCursor(t *testing.T) {
 // gets wrong: "9999999999.x" is lexically above "10000000000.x" but earlier
 // in time.
 func TestSlackTSGreaterIsNumeric(t *testing.T) {
+	t.Parallel()
 	if !slackTSGreater("10000000000.000000", "9999999999.999999") {
 		t.Fatal("a later ts with more digits must compare greater")
 	}
@@ -354,6 +364,7 @@ func TestSlackTSGreaterIsNumeric(t *testing.T) {
 // TestSlackTimelineEventsCarryUnread walks the whole path the UI sees: cached
 // poller state -> SlackCursors -> the timeline DTO's unread flag.
 func TestSlackTimelineEventsCarryUnread(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	wt := testgit.Worktree(t)
 	const thread = "C1:1000.000100"
@@ -396,6 +407,7 @@ func TestSlackTimelineEventsCarryUnread(t *testing.T) {
 // but never listed, so a client folding over focus_resources cannot see their
 // unreads. The card accent would silently miss them.
 func TestWorktreeSummaryHasUnreadIncludesRelated(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	wt := testgit.Worktree(t)
 	if err := registerWorktreeForTest(t, conn, wt); err != nil {
@@ -439,6 +451,7 @@ func TestWorktreeSummaryHasUnreadIncludesRelated(t *testing.T) {
 // accent is a claim, and a card wearing it with nothing new inside teaches
 // the user to ignore it.
 func TestWorktreeSummaryHasUnreadFalseWhenRead(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	wt := testgit.Worktree(t)
 	if err := registerWorktreeForTest(t, conn, wt); err != nil {
@@ -475,6 +488,7 @@ func TestWorktreeSummaryHasUnreadFalseWhenRead(t *testing.T) {
 // short-circuit there would undercount the badge on every worktree with more
 // than one busy resource.
 func TestWorktreeSummaryUnreadCountSumsAllResources(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	wt := testgit.Worktree(t)
 	if err := registerWorktreeForTest(t, conn, wt); err != nil {
@@ -526,6 +540,7 @@ func TestWorktreeSummaryUnreadCountSumsAllResources(t *testing.T) {
 // tally. They do now, and an unread thread counts at least 1 even with no
 // recorded replies behind its cursor — so the badge always has a number.
 func TestWorktreeSummaryCountsASlackOnlyUnread(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	wt := testgit.Worktree(t)
 	if err := registerWorktreeForTest(t, conn, wt); err != nil {
@@ -607,6 +622,7 @@ func getResources(t *testing.T, base, path string) map[string]resourceDTO {
 // recorded as events (an unread root, say) — a dot with no number would read
 // as a bug.
 func TestSlackThreadsCarryUnreadCountTiedToHasUnread(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	wt := testgit.Worktree(t)
 	if err := registerWorktreeForTest(t, conn, wt); err != nil {
@@ -654,6 +670,7 @@ func TestSlackThreadsCarryUnreadCountTiedToHasUnread(t *testing.T) {
 }
 
 func TestIsUnreadIgnoresMyOwnEvents(t *testing.T) {
+	t.Parallel()
 	ix := &unreadIndex{cursors: map[string]string{unread.Key("pr", "o/r#1"): "2026-01-01T00:00:00Z"},
 		mine: map[string]string{"github": "101"}}
 	if ix.IsUnread("pr", "o/r#1", "2026-01-01T00:00:05Z", "", "pr_comment", "github", "101") {
@@ -670,6 +687,7 @@ func TestIsUnreadIgnoresMyOwnEvents(t *testing.T) {
 // The mark's response is exactly what its undo needs: posting it back to
 // /restore puts the cursor where it was.
 func TestResourceReadRestoreUndoesAMark(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	wt := testgit.Worktree(t)
 	if err := resources.Add(conn, wt, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u"}); err != nil {

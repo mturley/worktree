@@ -199,6 +199,7 @@ func TestCmuxGroupsReturnsColorsAndGroups(t *testing.T) {
 }
 
 func TestCmuxSelectRequiresRef(t *testing.T) {
+	t.Parallel()
 	s := &Server{}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/cmux/select", strings.NewReader(`{}`))
@@ -210,6 +211,7 @@ func TestCmuxSelectRequiresRef(t *testing.T) {
 }
 
 func TestCmuxCreateRequiresPath(t *testing.T) {
+	t.Parallel()
 	s := &Server{}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/cmux/create", strings.NewReader(`{"name":"x"}`))
@@ -241,6 +243,7 @@ func TestCmuxCreateUnavailableIsNotAnError(t *testing.T) {
 }
 
 func TestWorktreeDetailURLUsesPathSegmentAndEscapesSpecialChars(t *testing.T) {
+	t.Parallel()
 	got := worktreeDetailURL(8475, "/tmp/my worktree")
 	want := "http://127.0.0.1:8475/worktree/%2Ftmp%2Fmy%20worktree?home=%2Ftmp%2Fmy+worktree"
 	if got != want {
@@ -255,6 +258,7 @@ func TestWorktreeDetailURLUsesPathSegmentAndEscapesSpecialChars(t *testing.T) {
 // above only incidentally covers: a workspace's UI pane is opened FOR one
 // worktree, and the marker is how the tab knows which.
 func TestWorktreeDetailURLCarriesHomeMarker(t *testing.T) {
+	t.Parallel()
 	got := worktreeDetailURL(8475, "/wt/foo")
 	// The PATH, not a flag: once the UI navigates to the listing there is no
 	// pathname left for a flag to refer to.

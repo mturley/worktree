@@ -23,6 +23,7 @@ const watchersBody = `{"worktrees_base":"~/wt","editor":"","cmux_features_enable
   "watchers":{"github":true,"jira":false,"slack":false}}`
 
 func TestSettingsWatchersPutWritesAndGatesLive(t *testing.T) {
+	t.Parallel()
 	s, path := settingsServer(t, "ui:\n    password: pw\n")
 	got := decodeSettings(t, doReq(s, "PUT", "/api/settings/worktree", watchersBody))
 	if !got.Worktree.Watchers["github"] || got.Worktree.Watchers["jira"] || got.Worktree.Watchers["slack"] {
@@ -46,6 +47,7 @@ func TestSettingsWatchersPutWritesAndGatesLive(t *testing.T) {
 }
 
 func TestSettingsWatchersRejectsUnknown(t *testing.T) {
+	t.Parallel()
 	s, _ := settingsServer(t, "")
 	bad := strings.Replace(watchersBody, `"github":true`, `"gitlab":true`, 1)
 	if rec := doReq(s, "PUT", "/api/settings/worktree", bad); rec.Code != http.StatusBadRequest {
@@ -55,6 +57,7 @@ func TestSettingsWatchersRejectsUnknown(t *testing.T) {
 
 // A PUT that omits watchers (an older client) leaves every gate as it was.
 func TestSettingsWatchersOmittedKeepsState(t *testing.T) {
+	t.Parallel()
 	s, _ := settingsServer(t, "")
 	s.SetWatchersDisabled(map[string]bool{"jira": true})
 	body := strings.Replace(watchersBody, `,
@@ -66,6 +69,7 @@ func TestSettingsWatchersOmittedKeepsState(t *testing.T) {
 }
 
 func TestCredRoutesRefuseWhileWatcherOff(t *testing.T) {
+	t.Parallel()
 	s, log := credServer(t, nil, nil, nil)
 	s.SetWatchersDisabled(map[string]bool{"github": true})
 	rec := doReq(s, "POST", "/api/settings/credentials/github/test", `{"token":"ghp_NEW"}`)
@@ -83,6 +87,7 @@ func TestCredRoutesRefuseWhileWatcherOff(t *testing.T) {
 }
 
 func TestGateSlackNeverCallsThroughWhileOff(t *testing.T) {
+	t.Parallel()
 	fake := newFakeSlack()
 	on := false
 	c := GateSlack(fake, func() bool { return on })
@@ -99,6 +104,7 @@ func TestGateSlackNeverCallsThroughWhileOff(t *testing.T) {
 }
 
 func TestSlackRoutesSayWatcherDisabled(t *testing.T) {
+	t.Parallel()
 	s := &Server{SlackClient: newFakeSlack(), SlackDomain: "acme.slack.com"}
 	s.SetWatchersDisabled(map[string]bool{"slack": true})
 	for _, url := range []string{"/api/thread?channel=C1&thread_ts=1.0", "/api/slack-avatar?url=https://avatars.slack-edge.com/x.png"} {
@@ -110,6 +116,7 @@ func TestSlackRoutesSayWatcherDisabled(t *testing.T) {
 }
 
 func TestLinkedResourcesSayWatcherDisabled(t *testing.T) {
+	t.Parallel()
 	s := &Server{}
 	s.SetWatchersDisabled(map[string]bool{"github": true})
 	rec := doReq(s, "GET", "/api/linked-resources?type=pr&id=o/r%231", "")
@@ -144,6 +151,7 @@ func getHealth(t *testing.T, s *Server) map[string]watcherHealth {
 // Failing needs every polled resource of the service to have failed its
 // latest poll, and one success clears it.
 func TestWatcherHealthFailingUntilASuccess(t *testing.T) {
+	t.Parallel()
 	s := healthServer(t)
 	a := watcher.Resource{Type: "pr", ID: "o/r#1"}
 	b := watcher.Resource{Type: "pr", ID: "o/r#2"}

@@ -37,6 +37,7 @@ func rightThread(commit string, start, line int) wgithub.ReviewThread {
 }
 
 func TestPlaceThreadsRight(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	commitFile(t, wt, "multi", rcMulti)
 	c1 := headSHA(t, wt)
@@ -54,6 +55,7 @@ func TestPlaceThreadsRight(t *testing.T) {
 }
 
 func TestPlaceThreadsSingleLine(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	commitFile(t, wt, "multi", rcMulti)
 	c1 := headSHA(t, wt)
@@ -67,6 +69,7 @@ func TestPlaceThreadsSingleLine(t *testing.T) {
 }
 
 func TestPlaceThreadsMoved(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	commitFile(t, wt, "multi", rcMulti)
 	c1 := headSHA(t, wt)
@@ -81,6 +84,7 @@ func TestPlaceThreadsMoved(t *testing.T) {
 }
 
 func TestPlaceThreadsLeft(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	// "base" is "1" at the merge-base; the PR replaces that line.
 	commitFile(t, wt, "base", "2")
@@ -102,6 +106,7 @@ func TestPlaceThreadsLeft(t *testing.T) {
 }
 
 func TestPlaceThreadsMissingCommit(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	commitFile(t, wt, "multi", rcMulti)
 	_, ts := gitTestServer(t, wt, nil)
@@ -114,6 +119,7 @@ func TestPlaceThreadsMissingCommit(t *testing.T) {
 }
 
 func TestPlaceThreadsLineOutOfRange(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	commitFile(t, wt, "multi", rcMulti)
 	c1 := headSHA(t, wt)
@@ -127,6 +133,7 @@ func TestPlaceThreadsLineOutOfRange(t *testing.T) {
 }
 
 func TestPlaceThreadsGitHubOutdated(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	commitFile(t, wt, "multi", rcMulti)
 	c1 := headSHA(t, wt)
@@ -144,6 +151,7 @@ func TestPlaceThreadsGitHubOutdated(t *testing.T) {
 }
 
 func TestPlaceThreadsGitHubOutdatedKeepsNotInView(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	commitFile(t, wt, "multi", rcMulti)
 	c1 := headSHA(t, wt)
@@ -160,6 +168,7 @@ func TestPlaceThreadsGitHubOutdatedKeepsNotInView(t *testing.T) {
 }
 
 func TestPlaceThreadsFallsBackToCurrentCommit(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	commitFile(t, wt, "multi", "new1\nnew2\n"+rcMulti)
 	c2 := headSHA(t, wt)
@@ -181,6 +190,7 @@ func TestPlaceThreadsFallsBackToCurrentCommit(t *testing.T) {
 }
 
 func TestPlaceThreadsNilView(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	commitFile(t, wt, "multi", rcMulti)
 	c1 := headSHA(t, wt)
@@ -208,6 +218,7 @@ func TestPlaceThreadsNilView(t *testing.T) {
 }
 
 func TestPlaceThreadsRejectsNonOidRevs(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	commitFile(t, wt, "multi", rcMulti)
 	c1 := headSHA(t, wt)

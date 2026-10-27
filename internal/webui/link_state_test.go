@@ -10,6 +10,7 @@ import (
 )
 
 func TestEnrichLinkDTO(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -33,6 +34,7 @@ func TestEnrichLinkDTO(t *testing.T) {
 }
 
 func TestEnrichLinkDTOSurvivesMalformedState(t *testing.T) {
+	t.Parallel()
 	conn, _ := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	defer conn.Close()
 	watcherdb.UpsertResourceState(conn, "link", "x", "{not json", "", "")

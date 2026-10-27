@@ -34,6 +34,7 @@ func insertEvent(t *testing.T, db *sql.DB, id, ts, source, typ, title, rtype, ri
 }
 
 func TestGlobalTimelineArchivedToggle(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -95,6 +96,7 @@ func boolStr(b bool) string {
 }
 
 func TestWorktreeScopedTimeline(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -125,6 +127,7 @@ func TestWorktreeScopedTimeline(t *testing.T) {
 }
 
 func TestGlobalTimelineDedupesMultiResourceEvent(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -179,6 +182,7 @@ func TestGlobalTimelineDedupesMultiResourceEvent(t *testing.T) {
 }
 
 func TestGlobalTimelineBeforeCursor(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -228,6 +232,7 @@ var _ = watcher.Resource{}
 var _ = watcherdb.EventsForSubscriberSince
 
 func TestWorktreeTimelineResourceFilter(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -307,6 +312,7 @@ func TestWorktreeTimelineResourceFilter(t *testing.T) {
 }
 
 func TestWorktreeTimelineBeforeCursorPaginates(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -384,6 +390,7 @@ func TestWorktreeTimelineBeforeCursorPaginates(t *testing.T) {
 // server cannot observe — the poller, and `worktree` CLI invocations in other
 // processes. A longer-lived cache would need invalidation hooks it cannot have.
 func TestEnricherIsRequestScoped(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -422,6 +429,7 @@ func TestEnricherIsRequestScoped(t *testing.T) {
 // TestEnricherSeesSubscriptionChangesNextRequest is the same contract for the
 // other memo: worktree attribution.
 func TestEnricherSeesSubscriptionChangesNextRequest(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -450,6 +458,7 @@ func TestEnricherSeesSubscriptionChangesNextRequest(t *testing.T) {
 // routes by path, and branch names are not unique across repos, so it cannot
 // derive one from the other.
 func TestTimelineCarriesWorktreePaths(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -491,6 +500,7 @@ func TestTimelineCarriesWorktreePaths(t *testing.T) {
 // resource chips need. That page has no per-worktree resource list to look
 // anything up in, so without this the chip renders a generic icon.
 func TestTimelineEventCarriesEnrichedResource(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -548,6 +558,7 @@ func TestTimelineEventCarriesEnrichedResource(t *testing.T) {
 // TestTimelineResourceTypeFilter covers the source toggles (GitHub/Jira/Slack)
 // on both timelines.
 func TestTimelineResourceTypeFilter(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -619,6 +630,7 @@ func TestTimelineResourceTypeFilter(t *testing.T) {
 // TestTimelineEventTypeFilter covers the per-source subfilters ("Comments",
 // "CI", …) on both timelines, including the `ci_*` prefix form.
 func TestTimelineEventTypeFilter(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -675,6 +687,7 @@ func TestTimelineEventTypeFilter(t *testing.T) {
 // queries (unread.SlackCursors and friends) then wait on that writer — so all
 // three stalled until busy_timeout and logged "database is locked".
 func TestGlobalTimelineQueriesNothingWhileRowsAreOpen(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)

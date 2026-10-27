@@ -97,6 +97,7 @@ func prLookup(state map[string]tasks.ResourceStatus) tasks.StatusLookup {
 }
 
 func TestUnblockNotifiesWithEveryToggleOff(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	first, _ := orderedWorktrees(t, conn) // no toggle anywhere
 	waiter := newLinkedTask(t, conn, userActor, "Ship it", "o/r#7")
@@ -129,6 +130,7 @@ func TestUnblockNotifiesWithEveryToggleOff(t *testing.T) {
 }
 
 func TestUnblockBodies(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	twoWorktrees(t, conn)
 	pr := mustCreateTask(t, conn, tasks.NewTask{Title: "Wait on PR"})
@@ -164,6 +166,7 @@ func TestUnblockBodies(t *testing.T) {
 }
 
 func TestUnblockGlobalSwitchOffSendsNothing(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	a, _ := twoWorktrees(t, conn)
 	notifyprefs.SetAll(conn, a, true)
@@ -180,6 +183,7 @@ func TestUnblockGlobalSwitchOffSendsNothing(t *testing.T) {
 }
 
 func TestUnblockTargeting(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		// task builds the waiting task; it returns which worktree the
@@ -242,6 +246,7 @@ func TestUnblockTargeting(t *testing.T) {
 }
 
 func TestUnblockNeverNotifiesTwiceThroughTaskPath(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	a, b := twoWorktrees(t, conn)
 	notifyprefs.SetAll(conn, a, true)
@@ -259,6 +264,7 @@ func TestUnblockNeverNotifiesTwiceThroughTaskPath(t *testing.T) {
 }
 
 func TestUnblockUnresolveDoesNotNotify(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	a, _ := twoWorktrees(t, conn)
 	notifyprefs.SetAll(conn, a, true)
@@ -284,6 +290,7 @@ func TestUnblockUnresolveDoesNotNotify(t *testing.T) {
 }
 
 func TestUnblockFromAnotherProcessNotifies(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "w.db")
 	open := func() *sql.DB {
 		conn, err := wdb.OpenAt(path)
@@ -307,6 +314,7 @@ func TestUnblockFromAnotherProcessNotifies(t *testing.T) {
 }
 
 func TestUnblockEventDeletedWithinHoldIsDropped(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	twoWorktrees(t, conn)
 	waiter := newLinkedTask(t, conn, userActor, "Ship it", "o/r#7")
@@ -326,6 +334,7 @@ func TestUnblockEventDeletedWithinHoldIsDropped(t *testing.T) {
 }
 
 func TestUnblockCountsTowardSummary(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	twoWorktrees(t, conn)
 	for i := 0; i <= notifyMaxPerPass; i++ {
@@ -347,6 +356,7 @@ func TestUnblockCountsTowardSummary(t *testing.T) {
 // user's own click is not news: no Unblocked notification. A later
 // resolution of the same blocker still notifies.
 func TestAddingSatisfiedBlockerDoesNotNotify(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	twoWorktrees(t, conn)
 	waiter := newLinkedTask(t, conn, userActor, "Ship it", "o/r#7")
@@ -377,6 +387,7 @@ func TestAddingSatisfiedBlockerDoesNotNotify(t *testing.T) {
 // The task-kind path: a blocking task already done resolves inside
 // AddBlocker, with the same on_add mark.
 func TestAddingDoneTaskBlockerDoesNotNotify(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	twoWorktrees(t, conn)
 	waiter := newLinkedTask(t, conn, userActor, "Ship it", "o/r#7")
@@ -407,6 +418,7 @@ func TestAddingDoneTaskBlockerDoesNotNotify(t *testing.T) {
 // A held Unblocked is dropped when, by the time it is due, its blocker was
 // removed or has been unresolved.
 func TestUnblockDroppedWhenBlockerRemovedOrUnresolvedWithinHold(t *testing.T) {
+	t.Parallel()
 	merged := prLookup(map[string]tasks.ResourceStatus{"pr:o/r#4498": {Done: true, Label: "merged"}})
 	open := prLookup(map[string]tasks.ResourceStatus{"pr:o/r#4498": {Done: false, Label: "open"}})
 	for _, c := range []struct {
@@ -447,6 +459,7 @@ func TestUnblockDroppedWhenBlockerRemovedOrUnresolvedWithinHold(t *testing.T) {
 // still deleted. That undo settles the blocker quietly (on_undo), so no
 // Unblocked goes out, however long the second undo takes.
 func TestUndoingDeletesOutOfOrderDoesNotNotify(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	twoWorktrees(t, conn)
 	waiter := newLinkedTask(t, conn, userActor, "Ship it", "o/r#7")

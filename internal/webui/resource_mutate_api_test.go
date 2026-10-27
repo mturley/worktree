@@ -53,6 +53,7 @@ func TestAddResource_Jira(t *testing.T) {
 }
 
 func TestAddResource_UnrecognizedURL(t *testing.T) {
+	t.Parallel()
 	// Not a URL InferAny can classify as pr/jira/slack, and not an http(s)
 	// URL either, so it falls through the link fallback too.
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
@@ -77,6 +78,7 @@ func TestAddResource_UnrecognizedURL(t *testing.T) {
 }
 
 func TestAddResource_FallsBackToLink(t *testing.T) {
+	t.Parallel()
 	// A URL that isn't a pr/jira/slack URL is followed as a link, per
 	// InferAny's fallback.
 	linkTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -107,6 +109,7 @@ func TestAddResource_FallsBackToLink(t *testing.T) {
 }
 
 func TestAddResource_MissingFields(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -127,6 +130,7 @@ func TestAddResource_MissingFields(t *testing.T) {
 }
 
 func TestRemoveResource(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -162,6 +166,7 @@ func TestRemoveResource(t *testing.T) {
 }
 
 func TestRemoveResource_MissingFields(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -184,6 +189,7 @@ func TestRemoveResource_MissingFields(t *testing.T) {
 // TestSetResourcePrimaryEndpoint pins Phase E's route: reclassifying a
 // resource between focus and related in place, without remove-and-re-add.
 func TestSetResourcePrimaryEndpoint(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -266,6 +272,7 @@ func TestAddResource_NonWorktreePathIsBadRequest(t *testing.T) {
 // stated in full, so one call expresses a within-group drag and a drag across
 // the focus/related boundary alike.
 func TestSetResourceOrderEndpoint(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -309,6 +316,7 @@ func TestSetResourceOrderEndpoint(t *testing.T) {
 }
 
 func TestSetResourceOrderEndpoint_MissingPath(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)

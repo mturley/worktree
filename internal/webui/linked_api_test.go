@@ -47,6 +47,7 @@ func getJSON(t *testing.T, h http.Handler, url string, into interface{}) int {
 }
 
 func TestLinkedResourcesCachesAndRefreshes(t *testing.T) {
+	t.Parallel()
 	pr := &stubPR{}
 	s := &Server{LinkedSources: func() linked.Sources { return linked.Sources{PR: pr} }}
 	h := s.Handler()
@@ -72,6 +73,7 @@ func TestLinkedResourcesCachesAndRefreshes(t *testing.T) {
 }
 
 func TestLinkedResourcesErrors(t *testing.T) {
+	t.Parallel()
 	s := &Server{LinkedSources: func() linked.Sources { return linked.Sources{} }}
 	h := s.Handler()
 	cases := map[string]int{
@@ -94,6 +96,7 @@ func TestLinkedResourcesErrors(t *testing.T) {
 }
 
 func TestLinkedChildren(t *testing.T) {
+	t.Parallel()
 	s := &Server{LinkedSources: func() linked.Sources { return linked.Sources{Jira: stubJira{}} }}
 	var body struct {
 		Items []linked.TreeNode `json:"items"`
@@ -108,6 +111,7 @@ func TestLinkedChildren(t *testing.T) {
 }
 
 func TestJiraStateIndexFindsReferencingIssues(t *testing.T) {
+	t.Parallel()
 	db := unreadTestDB(t)
 	_, err := db.Exec(`INSERT INTO watcher_resource_state (resource_type, resource_id, state_json, resource_updated_at, watcher_updated_at) VALUES
 		('jira','PROJ-1','{"summary":"One","status":"Review","issue_type":"Story","git_pull_request_urls":["https://github.com/example/repo/pull/1/files"]}','x','x'),
@@ -137,6 +141,7 @@ func TestJiraStateIndexFindsReferencingIssues(t *testing.T) {
 }
 
 func TestTTLCachePanicDoesNotWedgeKey(t *testing.T) {
+	t.Parallel()
 	c := newTTLCache()
 	_, err := c.get("k", time.Minute, false, func() (interface{}, error) { panic("boom") })
 	if err == nil {
@@ -165,6 +170,7 @@ func (c *countingMeta) Resolve(context.Context, string) linkmeta.Meta {
 }
 
 func TestCachedLinkResolverDoesNotCacheCancelled(t *testing.T) {
+	t.Parallel()
 	cm := &countingMeta{}
 	r := cachedLinkResolver{r: cm, cache: newTTLCache()}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -180,6 +186,7 @@ func TestCachedLinkResolverDoesNotCacheCancelled(t *testing.T) {
 }
 
 func TestTTLCacheSweepsExpiredOnInsert(t *testing.T) {
+	t.Parallel()
 	c := newTTLCache()
 	for _, k := range []string{"a", "b"} {
 		if _, err := c.get(k, time.Millisecond, false, func() (interface{}, error) { return 1, nil }); err != nil {

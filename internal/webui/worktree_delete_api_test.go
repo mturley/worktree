@@ -63,6 +63,7 @@ func postDelete(t *testing.T, ts *httptest.Server, body map[string]any) (int, ma
 }
 
 func TestDeleteWorktreeReportsEveryStep(t *testing.T) {
+	t.Parallel()
 	srv, wtPath := deleteFixture(t)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
@@ -92,6 +93,7 @@ func TestDeleteWorktreeReportsEveryStep(t *testing.T) {
 // itself succeeded — a failed step is not a completed delete, and the modal
 // must not treat it as one (navigating home as though everything finished).
 func TestDeleteWorktreeOKIsFalseWhenAStepFails(t *testing.T) {
+	t.Parallel()
 	srv, wtPath := deleteFixture(t)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
@@ -126,6 +128,7 @@ func TestDeleteWorktreeOKIsFalseWhenAStepFails(t *testing.T) {
 // The distinction the whole flow rests on: "git wants confirmation" must not
 // look like "the delete broke".
 func TestDeleteWorktreeNeedsForceIsTwoHundred(t *testing.T) {
+	t.Parallel()
 	srv, wtPath := deleteFixture(t)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
@@ -157,6 +160,7 @@ func TestDeleteWorktreeNeedsForceIsTwoHundred(t *testing.T) {
 }
 
 func TestDeleteWorktreeRequiresPath(t *testing.T) {
+	t.Parallel()
 	srv, _ := deleteFixture(t)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
@@ -167,6 +171,7 @@ func TestDeleteWorktreeRequiresPath(t *testing.T) {
 }
 
 func TestDeleteWorktreeUnknownPath(t *testing.T) {
+	t.Parallel()
 	srv, _ := deleteFixture(t)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()

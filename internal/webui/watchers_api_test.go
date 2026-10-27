@@ -58,6 +58,7 @@ func byName(t *testing.T, out watchersResponse, name string) watcherStatusDTO {
 // no rows at all, and a UI that renders only what it receives would show no
 // toggles rather than three unannotated ones.
 func TestWatchersReportsAllThreeEvenWhenNeverRun(t *testing.T) {
+	t.Parallel()
 	_, ts := watchersTestServer(t)
 	out := getWatchers(t, ts)
 	if len(out.Watchers) != 3 {
@@ -75,6 +76,7 @@ func TestWatchersReportsAllThreeEvenWhenNeverRun(t *testing.T) {
 // the poller is named "github", the resources it polls are type "pr". Getting
 // this wrong leaves the GitHub toggle silently statusless.
 func TestWatchersMapsGitHubToPRType(t *testing.T) {
+	t.Parallel()
 	_, ts := watchersTestServer(t)
 	out := getWatchers(t, ts)
 	if got := byName(t, out, "github").Type; got != "pr" {
@@ -86,6 +88,7 @@ func TestWatchersMapsGitHubToPRType(t *testing.T) {
 }
 
 func TestWatchersReportsSuccessAndError(t *testing.T) {
+	t.Parallel()
 	srv, ts := watchersTestServer(t)
 	if err := watcherdb.RecordPollerSuccess(srv.DB, "github"); err != nil {
 		t.Fatal(err)
@@ -112,6 +115,7 @@ func TestWatchersReportsSuccessAndError(t *testing.T) {
 // errored?" check gets wrong: a watcher that failed and then recovered is
 // healthy, and a red X that never clears teaches the user to ignore it.
 func TestWatchersErrorClearsOnLaterSuccess(t *testing.T) {
+	t.Parallel()
 	srv, ts := watchersTestServer(t)
 	if err := watcherdb.RecordPollerError(srv.DB, "slack", "token expired"); err != nil {
 		t.Fatal(err)
@@ -136,6 +140,7 @@ func TestWatchersErrorClearsOnLaterSuccess(t *testing.T) {
 }
 
 func TestWatchersReportsPollingFlag(t *testing.T) {
+	t.Parallel()
 	srv, ts := watchersTestServer(t)
 	if getWatchers(t, ts).Polling {
 		t.Fatal("nothing is polling; flag should be false")
@@ -152,6 +157,7 @@ func TestWatchersReportsPollingFlag(t *testing.T) {
 // length of a real poll, the button would sit there for seconds and the
 // spinner would be driven by the request rather than by actual watcher state.
 func TestWatchersPollReturnsImmediately(t *testing.T) {
+	t.Parallel()
 	_, ts := watchersTestServer(t)
 	done := make(chan int, 1)
 	go func() {

@@ -50,6 +50,7 @@ func readyCursor(t *testing.T, conn *sql.DB) notifyCursor {
 }
 
 func TestSummaryNamesTasks(t *testing.T) {
+	t.Parallel()
 	res := notifyBatch{WorktreePath: "/w/a", ResourceType: "pr"}
 	task := notifyBatch{WorktreePath: "/w/a", ResourceType: "task"}
 	cases := []struct {
@@ -68,6 +69,7 @@ func TestSummaryNamesTasks(t *testing.T) {
 }
 
 func TestTaskNotifyCursorStartsAtMax(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	a, _ := twoWorktrees(t, conn)
 	notifyprefs.SetAll(conn, a, true)
@@ -89,6 +91,7 @@ func TestTaskNotifyCursorStartsAtMax(t *testing.T) {
 }
 
 func TestTaskNotifyUninitialisedCursorNeverReplays(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	a, _ := twoWorktrees(t, conn)
 	notifyprefs.SetAll(conn, a, true)
@@ -108,6 +111,7 @@ func TestTaskNotifyUninitialisedCursorNeverReplays(t *testing.T) {
 }
 
 func TestTaskNotifyLinkedResourceToggleNotifiesThatWorktreeOnce(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	a, _ := twoWorktrees(t, conn) // b has the task in scope too, but no toggle
 	notifyprefs.SetResource(conn, a, "pr", "o/r#7", true)
@@ -146,6 +150,7 @@ func TestTaskNotifyLinkedResourceToggleNotifiesThatWorktreeOnce(t *testing.T) {
 }
 
 func TestTaskNotifyUntoggledResourceDoesNotNotify(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	a, _ := twoWorktrees(t, conn)
 	if err := resources.Add(conn, a, resources.Resource{Type: "pr", ID: "o/r#8", URL: "u"}); err != nil {
@@ -163,6 +168,7 @@ func TestTaskNotifyUntoggledResourceDoesNotNotify(t *testing.T) {
 }
 
 func TestTaskNotifyAllNotifies(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	_, b := twoWorktrees(t, conn)
 	notifyprefs.SetAll(conn, b, true)
@@ -177,6 +183,7 @@ func TestTaskNotifyAllNotifies(t *testing.T) {
 }
 
 func TestTaskNotifyUserEventsNeverNotify(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	a, b := twoWorktrees(t, conn)
 	notifyprefs.SetAll(conn, a, true)
@@ -199,6 +206,7 @@ func TestTaskNotifyUserEventsNeverNotify(t *testing.T) {
 }
 
 func TestTaskNotifyGlobalTaskNotifiesNobody(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	a, b := twoWorktrees(t, conn)
 	notifyprefs.SetAll(conn, a, true)
@@ -216,6 +224,7 @@ func TestTaskNotifyGlobalTaskNotifiesNobody(t *testing.T) {
 }
 
 func TestTaskNotifyDeletedTaskNeverNotifies(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	a, _ := twoWorktrees(t, conn)
 	notifyprefs.SetAll(conn, a, true)
@@ -233,6 +242,7 @@ func TestTaskNotifyDeletedTaskNeverNotifies(t *testing.T) {
 }
 
 func TestTaskNotifyFloodFoldsIntoSummaryWithWatcherBatches(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	a, _ := twoWorktrees(t, conn)
 	notifyprefs.SetAll(conn, a, true)

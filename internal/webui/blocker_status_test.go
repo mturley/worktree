@@ -37,6 +37,7 @@ func setPRState(t *testing.T, s *Server, id, state string) {
 }
 
 func TestBlockerLookupPRState(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	l := s.blockerStatusLookup
 	if _, ok := l("pr", "o/r#1"); ok {
@@ -60,6 +61,7 @@ func TestBlockerLookupPRState(t *testing.T) {
 }
 
 func TestPRBlockerMergedThenReopened(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	tk := mustTask(t, s, tasks.NewTask{Title: "A"})
 	mustBlock(t, s, tk.ID, "pr", "o/r#4498")
@@ -83,6 +85,7 @@ func setJiraState(t *testing.T, s *Server, key, stateJSON string) {
 }
 
 func TestBlockerLookupJiraState(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	if _, ok := s.blockerStatusLookup("jira", "ABC-1"); ok {
 		t.Fatal("never-polled issue is known")
@@ -111,6 +114,7 @@ func TestBlockerLookupJiraState(t *testing.T) {
 }
 
 func TestJiraBlockerResolvesFromCachedState(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	tk := mustTask(t, s, tasks.NewTask{Title: "A"})
 	mustBlock(t, s, tk.ID, "jira", "ABC-1")
@@ -156,6 +160,7 @@ func TestPollResolvesJiraBlockerFromCachedState(t *testing.T) {
 }
 
 func TestTaskWriteUnblocks(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	a, b := mustTask(t, s, tasks.NewTask{Title: "A"}), mustTask(t, s, tasks.NewTask{Title: "B"})
 	if _, err := tasks.AddBlocker(s.DB, webUser, a.ID, tasks.BlockerTarget{Kind: tasks.BlockerTask, BlockingTaskID: b.ID}); err != nil {
@@ -205,6 +210,7 @@ func mustBlockers(t *testing.T, s *Server, taskID int64) []tasks.Blocker {
 // interleave as "stale lookup, then the poll commits, then the stale pass
 // unresolves": resolveMu serialises whole passes.
 func TestConcurrentResolvePassesNeverUnresolveFromAStaleLookup(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	tk := mustTask(t, s, tasks.NewTask{Title: "A"})
 	mustBlock(t, s, tk.ID, "pr", "o/r#1")

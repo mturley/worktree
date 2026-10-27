@@ -145,6 +145,7 @@ func TestCmuxPeekCmuxFailureIs502(t *testing.T) {
 }
 
 func TestReadPeekMarkdownGuards(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	write := func(name string, size int) string {
 		p := filepath.Join(dir, name)
@@ -185,6 +186,7 @@ func TestReadPeekMarkdownGuards(t *testing.T) {
 // The extension check applies to the file actually read, not the link's
 // name: notes.md → a key file must not hand back the key.
 func TestReadPeekMarkdownResolvesSymlinks(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	secret := filepath.Join(dir, "id_ed25519")
 	real := filepath.Join(dir, "real.md")
@@ -211,6 +213,7 @@ func TestReadPeekMarkdownResolvesSymlinks(t *testing.T) {
 
 // A FIFO named .md must be refused, never opened for a blocking read.
 func TestReadPeekMarkdownRefusesFIFO(t *testing.T) {
+	t.Parallel()
 	fifo := filepath.Join(t.TempDir(), "pipe.md")
 	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
 		t.Skipf("mkfifo: %v", err)

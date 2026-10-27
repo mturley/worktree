@@ -47,6 +47,7 @@ func postOpenEditor(s *Server, body string) *httptest.ResponseRecorder {
 }
 
 func TestOpenEditorRunsConfiguredEditorWithPath(t *testing.T) {
+	t.Parallel()
 	s, calls, wt := editorTestServer(t, "code")
 	rec := postOpenEditor(s, `{"path":"`+wt+`"}`)
 	if rec.Code != http.StatusOK {
@@ -58,6 +59,7 @@ func TestOpenEditorRunsConfiguredEditorWithPath(t *testing.T) {
 }
 
 func TestOpenEditorRefusals(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name, editor, body string
 		want               int
@@ -80,6 +82,7 @@ func TestOpenEditorRefusals(t *testing.T) {
 }
 
 func TestOpenEditorReportsStartFailure(t *testing.T) {
+	t.Parallel()
 	s, _, wt := editorTestServer(t, "nope")
 	s.startEditor = func(string, ...string) error { return errors.New("executable file not found") }
 	rec := postOpenEditor(s, `{"path":"`+wt+`"}`)
@@ -114,6 +117,7 @@ func writeTestFile(t *testing.T, path string) {
 }
 
 func TestOpenEditorWithFilePassesWorktreeAndFile(t *testing.T) {
+	t.Parallel()
 	s, calls, wt := fileEditorServer(t)
 	writeTestFile(t, filepath.Join(wt, "pkg", "a.go"))
 	rec := postOpenEditor(s, `{"path":"`+wt+`","file":"pkg/a.go"}`)
@@ -127,6 +131,7 @@ func TestOpenEditorWithFilePassesWorktreeAndFile(t *testing.T) {
 }
 
 func TestOpenEditorFileRejectsEscape(t *testing.T) {
+	t.Parallel()
 	s, calls, wt := fileEditorServer(t)
 	outside := t.TempDir()
 	writeTestFile(t, filepath.Join(outside, "secret"))
@@ -152,6 +157,7 @@ func TestOpenEditorFileRejectsEscape(t *testing.T) {
 }
 
 func TestOpenEditorFileMissing404(t *testing.T) {
+	t.Parallel()
 	s, calls, wt := fileEditorServer(t)
 	rec := postOpenEditor(s, `{"path":"`+wt+`","file":"nope.go"}`)
 	if rec.Code != http.StatusNotFound {
@@ -163,6 +169,7 @@ func TestOpenEditorFileMissing404(t *testing.T) {
 }
 
 func TestOpenEditorFileOddName(t *testing.T) {
+	t.Parallel()
 	s, calls, wt := fileEditorServer(t)
 	writeTestFile(t, filepath.Join(wt, "a b", "naïve.go"))
 	rec := postOpenEditor(s, `{"path":"`+wt+`","file":"a b/naïve.go"}`)
@@ -175,6 +182,7 @@ func TestOpenEditorFileOddName(t *testing.T) {
 }
 
 func TestRunEditorWaitsForTheCommand(t *testing.T) {
+	t.Parallel()
 	if err := runEditor("sh", "-c", "sleep 0.2"); err != nil {
 		t.Fatalf("success: %v", err)
 	}

@@ -11,6 +11,7 @@ import (
 )
 
 func TestCreateWorktreeRequiresInputAndRepo(t *testing.T) {
+	t.Parallel()
 	s := &Server{}
 	for _, body := range []string{`{}`, `{"input":"x"}`, `{"repo_root":"/r"}`} {
 		rec := httptest.NewRecorder()
@@ -23,6 +24,7 @@ func TestCreateWorktreeRequiresInputAndRepo(t *testing.T) {
 }
 
 func TestCreateWorktreeRejectsSlackURL(t *testing.T) {
+	t.Parallel()
 	// The same rejection the CLI makes: never create a branch named after a
 	// URL that was only ever meant to be a resource.
 	s := &Server{}
@@ -40,6 +42,7 @@ func TestCreateWorktreeRejectsSlackURL(t *testing.T) {
 }
 
 func TestCreateWorktreeRejectsExistingWorktreeDir(t *testing.T) {
+	t.Parallel()
 	// Pairs with TestCreateWorktreeRejectsSlackURL: a pasted path to an
 	// existing worktree must never fall through and get created as a branch
 	// named after the path. Both surfaces share addcheck.ExistingWorktreeDir,
@@ -67,6 +70,7 @@ func TestCreateWorktreeRejectsExistingWorktreeDir(t *testing.T) {
 }
 
 func TestCreateWorktreeFailureIs200WithOKFalse(t *testing.T) {
+	t.Parallel()
 	s := &Server{}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/worktrees/create", strings.NewReader(
@@ -86,6 +90,7 @@ func TestCreateWorktreeFailureIs200WithOKFalse(t *testing.T) {
 }
 
 func TestCreateWorktreeRequestDecodesAllFields(t *testing.T) {
+	t.Parallel()
 	var req createWorktreeRequest
 	body := `{"input":"x","repo_root":"/r","decline_reset":true,"reuse_branch":true,"reset_to_pr":true,"pull":true,"copy_dotfiles":true}`
 	if err := json.NewDecoder(strings.NewReader(body)).Decode(&req); err != nil {
@@ -115,6 +120,7 @@ func TestCreateWorktreeRequestDecodesAllFields(t *testing.T) {
 }
 
 func TestCreateWorktreeRequestOptionsCarriesAllFields(t *testing.T) {
+	t.Parallel()
 	req := createWorktreeRequest{
 		Input:        "x",
 		RepoRoot:     "/r",
@@ -149,6 +155,7 @@ func TestCreateWorktreeRequestOptionsCarriesAllFields(t *testing.T) {
 }
 
 func TestDefaultBranchForJiraKey(t *testing.T) {
+	t.Parallel()
 	s := &Server{}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/worktrees/default-branch?input=PROJ-7&repo_root=/r", nil)
@@ -165,6 +172,7 @@ func TestDefaultBranchForJiraKey(t *testing.T) {
 
 // A plain branch name has no default to offer: the modal hides the field.
 func TestDefaultBranchForPlainBranchIsEmpty(t *testing.T) {
+	t.Parallel()
 	s := &Server{}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/worktrees/default-branch?input=my-feature&repo_root=/r", nil)
@@ -180,6 +188,7 @@ func TestDefaultBranchForPlainBranchIsEmpty(t *testing.T) {
 }
 
 func TestDefaultBranchRequiresInput(t *testing.T) {
+	t.Parallel()
 	s := &Server{}
 	rec := httptest.NewRecorder()
 	s.handleDefaultBranch(rec, httptest.NewRequest(http.MethodGet, "/api/worktrees/default-branch", nil))
@@ -189,6 +198,7 @@ func TestDefaultBranchRequiresInput(t *testing.T) {
 }
 
 func TestCreateWorktreeRequestCarriesBranch(t *testing.T) {
+	t.Parallel()
 	var req createWorktreeRequest
 	if err := json.Unmarshal([]byte(`{"input":"PROJ-7","repo_root":"/r","branch":"proj-7-x"}`), &req); err != nil {
 		t.Fatal(err)

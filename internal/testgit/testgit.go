@@ -6,7 +6,6 @@
 package testgit
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,11 +14,15 @@ import (
 
 // Worktree creates a repo with one commit plus a linked worktree of it, and
 // returns the linked worktree's path. Both live under t.TempDir(), so the test
-// framework cleans them up.
+// framework cleans them up. Each call returns a copy of one template (see
+// Template), so it runs no git commands after the first.
 func Worktree(t *testing.T) string {
 	t.Helper()
+	return filepath.Join(Template(t, "worktree", buildWorktree), "wt")
+}
 
-	base := t.TempDir()
+func buildWorktree(t *testing.T, base string) {
+	t.Helper()
 	repo := filepath.Join(base, "repo")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatal(err)
@@ -45,16 +48,5 @@ func Worktree(t *testing.T) string {
 	}
 	run(repo, "add", "f")
 	run(repo, "commit", "-m", "init")
-
-	wt := filepath.Join(base, fmt.Sprintf("wt-%d", worktreeSeq()))
-	run(repo, "worktree", "add", "-b", "feature", wt)
-	return wt
-}
-
-// worktreeSeq keeps repeated calls in one test from colliding on a path.
-var seq int
-
-func worktreeSeq() int {
-	seq++
-	return seq
+	run(repo, "worktree", "add", "-b", "feature", filepath.Join(base, "wt"))
 }

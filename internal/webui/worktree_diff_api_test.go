@@ -49,6 +49,7 @@ func getPatch(t *testing.T, ts *httptest.Server, path, query string) patchResp {
 }
 
 func TestDiffCommitsListsBranchCommits(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	_, ts := gitTestServer(t, wt, nil)
 	code, body := diffGet(t, ts, "commits", wt, "&base=merge-base")
@@ -84,6 +85,7 @@ func TestDiffCommitsListsBranchCommits(t *testing.T) {
 }
 
 func TestDiffCommitsTrackingUnavailable409(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	gitIn(t, wt, "checkout", "-b", "local-only")
 	_, ts := gitTestServer(t, wt, nil)
@@ -99,6 +101,7 @@ func TestDiffCommitsTrackingUnavailable409(t *testing.T) {
 }
 
 func TestDiffUnknownBase400(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	_, ts := gitTestServer(t, wt, nil)
 	if code, _ := diffGet(t, ts, "commits", wt, "&base=bogus"); code != 400 {
@@ -107,6 +110,7 @@ func TestDiffUnknownBase400(t *testing.T) {
 }
 
 func TestDiffFilesAllChangesIncludesUntracked(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	os.WriteFile(filepath.Join(wt, "untracked.txt"), []byte("u\n"), 0o644)
 	_, ts := gitTestServer(t, wt, nil)
@@ -133,6 +137,7 @@ func TestDiffFilesAllChangesIncludesUntracked(t *testing.T) {
 }
 
 func TestDiffPatchReturnsResolvedRevs(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	os.WriteFile(filepath.Join(wt, "untracked.txt"), []byte("u\n"), 0o644)
 	_, ts := gitTestServer(t, wt, nil)
@@ -146,6 +151,7 @@ func TestDiffPatchReturnsResolvedRevs(t *testing.T) {
 }
 
 func TestDiffFileServesHandedOutRev(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	os.WriteFile(filepath.Join(wt, "untracked.txt"), []byte("u\nbytes\n"), 0o644)
 	_, ts := gitTestServer(t, wt, nil)
@@ -180,6 +186,7 @@ func TestDiffFileServesHandedOutRev(t *testing.T) {
 }
 
 func TestDiffFileRejectsUnknownRev(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	_, ts := gitTestServer(t, wt, nil)
 	head := strings.TrimSpace(gitIn(t, wt, "rev-parse", "HEAD"))
@@ -193,6 +200,7 @@ func TestDiffFileRejectsUnknownRev(t *testing.T) {
 }
 
 func TestDiffFileCannotReadIgnoredFile(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	os.WriteFile(filepath.Join(wt, ".gitignore"), []byte(".env.local\n"), 0o644)
 	os.WriteFile(filepath.Join(wt, ".env.local"), []byte("SECRET=1\n"), 0o644)
@@ -210,6 +218,7 @@ func TestDiffFileCannotReadIgnoredFile(t *testing.T) {
 }
 
 func TestDiffRejectsInvalidRange(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	_, ts := gitTestServer(t, wt, nil)
 	head := strings.TrimSpace(gitIn(t, wt, "rev-parse", "HEAD"))
@@ -227,6 +236,7 @@ func TestDiffRejectsInvalidRange(t *testing.T) {
 }
 
 func TestDiffExplicitRange(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	head := strings.TrimSpace(gitIn(t, wt, "rev-parse", "HEAD"))
 	_, ts := gitTestServer(t, wt, nil)
@@ -237,6 +247,7 @@ func TestDiffExplicitRange(t *testing.T) {
 }
 
 func TestDiffUnregisteredPath404(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	_, ts := gitTestServer(t, wt, nil)
 	other := t.TempDir()
@@ -259,6 +270,7 @@ func TestDiffPatchTooLarge413(t *testing.T) {
 }
 
 func TestRevSetExpiresAndEvicts(t *testing.T) {
+	t.Parallel()
 	now := time.Unix(1000, 0)
 	rs := newRevSet()
 	rs.now = func() time.Time { return now }
@@ -284,6 +296,7 @@ func TestRevSetExpiresAndEvicts(t *testing.T) {
 }
 
 func TestRevSetHasSlidesTheExpiry(t *testing.T) {
+	t.Parallel()
 	now := time.Unix(1000, 0)
 	rs := newRevSet()
 	rs.now = func() time.Time { return now }

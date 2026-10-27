@@ -27,6 +27,7 @@ func undoIDOf(t *testing.T, body []byte) (int64, bool) {
 }
 
 func TestUndoStateEndpointOmitsIDWhenNothingChanged(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	tk := mustTask(t, s, tasks.NewTask{Title: "T"})
 
@@ -57,6 +58,7 @@ func TestUndoStateEndpointOmitsIDWhenNothingChanged(t *testing.T) {
 }
 
 func TestUndoEndpointErrorStatuses(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	tk := mustTask(t, s, tasks.NewTask{Title: "T"})
 	if rec := serveTasks(t, s, http.MethodPost, "/api/tasks/undo", map[string]any{"event_id": 99999}); rec.Code != http.StatusNotFound {
@@ -86,6 +88,7 @@ func TestUndoEndpointErrorStatuses(t *testing.T) {
 }
 
 func TestUndoSubtaskCheckEndpoint(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	tk := mustTask(t, s, tasks.NewTask{Title: "T"})
 	sub, err := tasks.AddSubtask(s.DB, webUser, tk.ID, "step")
@@ -115,6 +118,7 @@ func TestUndoSubtaskCheckEndpoint(t *testing.T) {
 }
 
 func TestUndoDeleteEndpoint(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	tk := mustTask(t, s, tasks.NewTask{Title: "T"})
 	rec := serveTasks(t, s, http.MethodPost, "/api/tasks/delete", map[string]any{"id": tk.ID})
@@ -139,6 +143,7 @@ func TestUndoDeleteEndpoint(t *testing.T) {
 // Review focus 1: completing a task auto-resolves a task blocker on it;
 // undoing the completion inside the notifier's hold must not notify.
 func TestUndoCompletionWithCascadeSendsNoUnblocked(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	a, _ := twoWorktrees(t, conn)
 	notifyprefs.SetAll(conn, a, true)
@@ -168,6 +173,7 @@ func TestUndoCompletionWithCascadeSendsNoUnblocked(t *testing.T) {
 // Review focus 4: delete then undo a task with unread agent events: its
 // unread count comes back and nothing new notifies.
 func TestUndoDeleteRestoresUnreadAndNotifiesNothing(t *testing.T) {
+	t.Parallel()
 	f := taskUnreadFixture(t)
 	f.seed(t)
 	notifyprefs.SetAll(f.s.DB, f.wt, true)
@@ -200,6 +206,7 @@ func TestUndoDeleteRestoresUnreadAndNotifiesNothing(t *testing.T) {
 // Subtask check events carry boolean from/to; the timeline still decodes
 // their text and ids.
 func TestTaskEventPayloadDecodesSubtaskBooleans(t *testing.T) {
+	t.Parallel()
 	p := parseTaskPayload(json.RawMessage(`{"subtask_id":7,"text":"step","from":false,"to":true}`))
 	if p.Text != "step" || string(p.To) != "true" {
 		t.Fatalf("payload = %+v", p)

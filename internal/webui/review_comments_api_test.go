@@ -62,6 +62,7 @@ func rcCreate(t *testing.T, ts *httptest.Server, req map[string]any) reviewComme
 }
 
 func TestReviewCommentsCreateCapturesSnippet(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	commitFile(t, wt, "multi", "one\ntwo\nthree\n")
 	_, ts := gitTestServer(t, wt, nil)
@@ -83,6 +84,7 @@ func TestReviewCommentsCreateCapturesSnippet(t *testing.T) {
 }
 
 func TestReviewCommentsCreateUncommitted(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	if err := os.WriteFile(filepath.Join(wt, "f1"), []byte("changed\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -100,6 +102,7 @@ func TestReviewCommentsCreateUncommitted(t *testing.T) {
 }
 
 func TestReviewCommentsCreateRejects(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	_, ts := gitTestServer(t, wt, nil)
 	p := getPatch(t, ts, wt, "")
@@ -130,6 +133,7 @@ func TestReviewCommentsCreateRejects(t *testing.T) {
 }
 
 func TestReviewCommentsUpdateConflict(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	_, ts := gitTestServer(t, wt, nil)
 	p := getPatch(t, ts, wt, "")
@@ -159,6 +163,7 @@ func TestReviewCommentsUpdateConflict(t *testing.T) {
 }
 
 func TestReviewCommentsDeleteAndClear(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	_, ts := gitTestServer(t, wt, nil)
 	p := getPatch(t, ts, wt, "")

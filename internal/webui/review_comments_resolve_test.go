@@ -58,6 +58,7 @@ func writeWT(t *testing.T, wt, name, content string) {
 const rcMulti = "alpha\nbeta\ngamma\ndelta\nepsilon\nzeta\neta\ntheta\n"
 
 func TestReviewCommentsViewShown(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	commitFile(t, wt, "multi", rcMulti)
 	_, ts := gitTestServer(t, wt, nil)
@@ -79,6 +80,7 @@ func TestReviewCommentsViewShown(t *testing.T) {
 }
 
 func TestReviewCommentsPromptMoved(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	commitFile(t, wt, "multi", rcMulti)
 	_, ts := gitTestServer(t, wt, nil)
@@ -96,6 +98,7 @@ func TestReviewCommentsPromptMoved(t *testing.T) {
 }
 
 func TestReviewCommentsPromptCRLFWorkingTree(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	commitFile(t, wt, "multi", rcMulti)
 	_, ts := gitTestServer(t, wt, nil)
@@ -111,6 +114,7 @@ func TestReviewCommentsPromptCRLFWorkingTree(t *testing.T) {
 }
 
 func TestReviewCommentsViewMovedAfterRefresh(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	commitFile(t, wt, "multi", rcMulti)
 	_, ts := gitTestServer(t, wt, nil)
@@ -126,6 +130,7 @@ func TestReviewCommentsViewMovedAfterRefresh(t *testing.T) {
 }
 
 func TestReviewCommentsOutdated(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	commitFile(t, wt, "multi", rcMulti)
 	_, ts := gitTestServer(t, wt, nil)
@@ -144,6 +149,7 @@ func TestReviewCommentsOutdated(t *testing.T) {
 }
 
 func TestReviewCommentsNotInView(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	commitFile(t, wt, "multi", rcMulti)
 	_, ts := gitTestServer(t, wt, nil)
@@ -159,6 +165,7 @@ func TestReviewCommentsNotInView(t *testing.T) {
 }
 
 func TestReviewCommentsOutsideChanges(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	writeWT(t, wt, "base", "1\nextra line\n")
 	_, ts := gitTestServer(t, wt, nil)
@@ -174,6 +181,7 @@ func TestReviewCommentsOutsideChanges(t *testing.T) {
 }
 
 func TestReviewCommentsRemovedSide(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	writeWT(t, wt, "base", "2")
 	_, ts := gitTestServer(t, wt, nil)
@@ -190,6 +198,7 @@ func TestReviewCommentsRemovedSide(t *testing.T) {
 }
 
 func TestReviewCommentsPromptFileGone(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	commitFile(t, wt, "multi", rcMulti)
 	_, ts := gitTestServer(t, wt, nil)
@@ -204,6 +213,7 @@ func TestReviewCommentsPromptFileGone(t *testing.T) {
 }
 
 func TestReviewCommentsViewReadFailureNotCached(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	commitFile(t, wt, "multi", rcMulti)
 	srv, ts := gitTestServer(t, wt, nil)
@@ -230,6 +240,7 @@ func TestReviewCommentsViewReadFailureNotCached(t *testing.T) {
 }
 
 func TestReviewCommentsListUnknownRev(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	_, ts := gitTestServer(t, wt, nil)
 	p := getPatch(t, ts, wt, "")
@@ -242,6 +253,7 @@ func TestReviewCommentsListUnknownRev(t *testing.T) {
 }
 
 func TestReviewCommentsListSorted(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	commitFile(t, wt, "multi", rcMulti)
 	_, ts := gitTestServer(t, wt, nil)
@@ -256,6 +268,7 @@ func TestReviewCommentsListSorted(t *testing.T) {
 }
 
 func TestReviewResolverConcurrentLists(t *testing.T) {
+	t.Parallel()
 	wt := forkRepo(t)
 	commitFile(t, wt, "multi", rcMulti)
 	_, ts := gitTestServer(t, wt, nil)

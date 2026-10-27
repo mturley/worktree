@@ -56,6 +56,7 @@ func postNotes(t *testing.T, s *Server, body any) (*httptest.ResponseRecorder, s
 }
 
 func TestWorktreeNotesRoundTrip(t *testing.T) {
+	t.Parallel()
 	s, wtPath, calls := notesServer(t, nil, nil)
 	rec, got := postNotes(t, s, map[string]any{"path": wtPath, "notes": "waiting on review"})
 	if rec.Code != http.StatusOK || got.Notes != "waiting on review" || got.CmuxSync != cmuxSyncOff || got.UpdatedAt == "" {
@@ -75,6 +76,7 @@ func TestWorktreeNotesRoundTrip(t *testing.T) {
 }
 
 func TestWorktreeNotesGetUnsavedIsEmpty(t *testing.T) {
+	t.Parallel()
 	s, wtPath, _ := notesServer(t, nil, nil)
 	rec := httptest.NewRecorder()
 	s.handleGetWorktreeNotes(rec, httptest.NewRequest(http.MethodGet, "/api/worktree-notes?path="+url.QueryEscape(wtPath), nil))
@@ -84,6 +86,7 @@ func TestWorktreeNotesGetUnsavedIsEmpty(t *testing.T) {
 }
 
 func TestWorktreeNotesRejectsBadRequests(t *testing.T) {
+	t.Parallel()
 	s, wtPath, _ := notesServer(t, nil, nil)
 	for name, tc := range map[string]struct {
 		body any
@@ -161,6 +164,7 @@ func TestWorktreeNotesSavedEvenWhenCmuxFails(t *testing.T) {
 }
 
 func TestWorktreeNotesShowOnHome(t *testing.T) {
+	t.Parallel()
 	s, wtPath, _ := notesServer(t, nil, nil)
 	homeNotes := func() string {
 		t.Helper()

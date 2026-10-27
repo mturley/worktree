@@ -17,6 +17,7 @@ import (
 )
 
 func TestIsWorktreeStale(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -74,6 +75,7 @@ func TestPollOne_NoCredsIsNoOp(t *testing.T) {
 // run pollAll to completion it would clear the flag we set. Asserting the
 // flag is untouched proves the CompareAndSwap guard skipped the run.
 func TestSafePollAllSkipsWhenInFlight(t *testing.T) {
+	t.Parallel()
 	s := &Server{}
 	s.pollInFlight.Store(true)
 	s.safePollAll()

@@ -13,6 +13,7 @@ import (
 )
 
 func TestAutocompleteRejectsUnknownTrigger(t *testing.T) {
+	t.Parallel()
 	s := &Server{SlackClient: &fakeSlack{}}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/api/slack-autocomplete?trigger=%21&q=x", nil)
@@ -23,6 +24,7 @@ func TestAutocompleteRejectsUnknownTrigger(t *testing.T) {
 }
 
 func TestAutocompleteMentionsMergesUsersGroupsAndSpecials(t *testing.T) {
+	t.Parallel()
 	fs := &fakeSlack{
 		searchUsers:      []slack.User{{ID: "U1", Name: "aroberts", DisplayName: "ada", Avatar72: "https://a/72.png"}},
 		searchUserGroups: []slack.UserGroup{{ID: "S1", Handle: "platform", Name: "Platform Team"}},
@@ -56,6 +58,7 @@ func TestAutocompleteMentionsMergesUsersGroupsAndSpecials(t *testing.T) {
 }
 
 func TestAutocompleteBareTriggerMakesNoSlackCall(t *testing.T) {
+	t.Parallel()
 	fs := &fakeSlack{}
 	s := &Server{SlackClient: fs}
 	rec := httptest.NewRecorder()
@@ -74,6 +77,7 @@ func TestAutocompleteBareTriggerMakesNoSlackCall(t *testing.T) {
 }
 
 func TestAutocompleteEmojiFiltersCachedMapWithoutSlackSearch(t *testing.T) {
+	t.Parallel()
 	fs := &fakeSlack{emoji: map[string]string{
 		"tada":     "https://e/tada.png",
 		"tadpole":  "https://e/tadpole.png",
@@ -93,6 +97,7 @@ func TestAutocompleteEmojiFiltersCachedMapWithoutSlackSearch(t *testing.T) {
 }
 
 func TestAutocompleteChannels(t *testing.T) {
+	t.Parallel()
 	fs := &fakeSlack{searchChannels: []slack.Channel{{ID: "C1", Name: "odh-dashboard"}}}
 	s := &Server{SlackClient: fs}
 	rec := httptest.NewRecorder()
@@ -114,6 +119,7 @@ func TestAutocompleteChannels(t *testing.T) {
 // channel="c" and q="a", channel="b\x00c" collided just as badly once "|"
 // was swapped for "\x00". Both shapes are covered here.
 func TestAutocompleteMentionCacheKeyDoesNotCollideAcrossFieldBoundaries(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name          string
 		firstQuery    string // URL-encoded
@@ -165,6 +171,7 @@ func TestAutocompleteMentionCacheKeyDoesNotCollideAcrossFieldBoundaries(t *testi
 }
 
 func TestAutocompleteSurfacesSlackErrors(t *testing.T) {
+	t.Parallel()
 	fs := &fakeSlack{searchErr: errors.New("boom")}
 	s := &Server{SlackClient: fs}
 	rec := httptest.NewRecorder()
@@ -181,6 +188,7 @@ func TestAutocompleteSurfacesSlackErrors(t *testing.T) {
 // STANDARD emoji rather than a custom one — and "<img src=\"alias:thumbsup\">"
 // renders as a broken image.
 func TestAutocompleteEmojiSkipsUnresolvedAliases(t *testing.T) {
+	t.Parallel()
 	fs := &fakeSlack{emoji: map[string]string{
 		"tada":     "https://e/tada.png",
 		"tada-alt": "alias:tada-somewhere-standard",
@@ -210,6 +218,7 @@ func TestAutocompleteEmojiSkipsUnresolvedAliases(t *testing.T) {
 // pattern docs/reverse-engineering/slack-web-api.md blames for two session
 // token revocations.
 func TestAutocompleteEmojiFailureIsNotRetriedPerKeystroke(t *testing.T) {
+	t.Parallel()
 	fs := &fakeSlack{emojiErr: errors.New("boom")}
 	s := &Server{SlackClient: fs}
 	for _, q := range []string{"t", "ta", "tad", "tada", "tadas", "tadase"} {
@@ -230,6 +239,7 @@ func TestAutocompleteEmojiFailureIsNotRetriedPerKeystroke(t *testing.T) {
 // cancellation and get context.Canceled -> 502 -> an empty menu for a
 // perfectly live request.
 func TestAutocompleteLookupSurvivesRequesterCancellation(t *testing.T) {
+	t.Parallel()
 	fs := &fakeSlack{searchUsers: []slack.User{{ID: "U1", Name: "ada", DisplayName: "ada"}}}
 	s := &Server{SlackClient: fs}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -245,6 +255,7 @@ func TestAutocompleteLookupSurvivesRequesterCancellation(t *testing.T) {
 // TestAutocompleteErrorsAreJSON: the handler answered 400 with JSON and
 // 401/502 with plain text, in the same handler. A client cannot parse both.
 func TestAutocompleteErrorsAreJSON(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name, url string
 		server    *Server

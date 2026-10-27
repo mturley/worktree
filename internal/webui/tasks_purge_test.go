@@ -12,6 +12,7 @@ import (
 )
 
 func TestRunEverySweepsOnStartAndOnEachTick(t *testing.T) {
+	t.Parallel()
 	var calls atomic.Int32
 	done := make(chan struct{})
 	finished := make(chan struct{})
@@ -31,6 +32,7 @@ func TestRunEverySweepsOnStartAndOnEachTick(t *testing.T) {
 }
 
 func TestPurgeDeletedTasksSweepAndBlockerLabel(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	gone := mustTask(t, s, tasks.NewTask{Title: "gone"})
 	recent := mustTask(t, s, tasks.NewTask{Title: "recent"})
@@ -91,6 +93,7 @@ func TestStartPollingStartsPurgeSweep(t *testing.T) {
 // status), never "(deleted)". A soft-deleted, not yet purged, blocking task
 // keeps its title, with status "deleted".
 func TestBlockerLabelerHeadsReadFailureAndSoftDeleted(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	dep := mustTask(t, s, tasks.NewTask{Title: "dep"})
 	tk := mustTask(t, s, tasks.NewTask{Title: "main"})

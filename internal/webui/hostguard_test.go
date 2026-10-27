@@ -8,6 +8,7 @@ import (
 )
 
 func TestHostAllowed(t *testing.T) {
+	t.Parallel()
 	extra := []string{"mturley-mac.local", "192.168.86.21"}
 	cases := []struct {
 		host string
@@ -44,6 +45,7 @@ func TestHostAllowed(t *testing.T) {
 }
 
 func TestHostGuardRefusesBeforeRouting(t *testing.T) {
+	t.Parallel()
 	// A route that succeeds for an allowed Host, so a 400 can only have come
 	// from the guard and not from the route. (Static assets need no session,
 	// so this keeps passing once Task 7 adds one.)
@@ -71,6 +73,7 @@ func TestHostGuardRefusesBeforeRouting(t *testing.T) {
 }
 
 func TestHostGuardIsOffWithoutSecurity(t *testing.T) {
+	t.Parallel()
 	// In-process tests build a bare Server; httptest's default Host is
 	// example.com. Start and Serve refuse a nil Security.
 	srv := &Server{WebFS: fstest.MapFS{"index.html": {Data: []byte("x")}}}

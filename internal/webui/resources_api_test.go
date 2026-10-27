@@ -18,6 +18,7 @@ import (
 )
 
 func TestWorktreeResourcesEndpoint(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -55,6 +56,7 @@ func TestWorktreeResourcesEndpoint(t *testing.T) {
 }
 
 func TestWorktreeResourcesEndpointEnrichment(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -131,6 +133,7 @@ func TestWorktreeResourcesEndpointEnrichment(t *testing.T) {
 }
 
 func TestSlackEnrich(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -170,6 +173,7 @@ func TestSlackEnrich(t *testing.T) {
 }
 
 func TestEnrichResourceDTOHandlesMalformedState(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -203,6 +207,7 @@ func TestEnrichResourceDTOHandlesMalformedState(t *testing.T) {
 // remain distinguishable from "never polled" in the logs, even though both
 // cases leave the DTO's enriched fields empty.
 func TestEnrichResourceDTOLogsRealErrors(t *testing.T) {
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)

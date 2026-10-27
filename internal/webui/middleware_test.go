@@ -8,6 +8,7 @@ import (
 )
 
 func TestRejectsBodiedRequestWithoutJSONContentType(t *testing.T) {
+	t.Parallel()
 	// The drive-by shape: a cross-origin fetch with a simple content type
 	// needs no CORS preflight, so the side effect would otherwise land.
 	srv := &Server{}
@@ -21,6 +22,7 @@ func TestRejectsBodiedRequestWithoutJSONContentType(t *testing.T) {
 }
 
 func TestRejectsBodylessRequestWithoutContentType(t *testing.T) {
+	t.Parallel()
 	// The check is unconditional, not "only when there is a body": a
 	// bodyless cross-site POST needs no CORS preflight either, so exempting
 	// bodyless requests would leave exactly those endpoints reachable.
@@ -34,6 +36,7 @@ func TestRejectsBodylessRequestWithoutContentType(t *testing.T) {
 }
 
 func TestRejectsCrossSiteRequest(t *testing.T) {
+	t.Parallel()
 	srv := &Server{}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/api/worktree-resources/add", strings.NewReader("{}"))
@@ -46,6 +49,7 @@ func TestRejectsCrossSiteRequest(t *testing.T) {
 }
 
 func TestRejectsForeignOriginWhenSecFetchSiteAbsent(t *testing.T) {
+	t.Parallel()
 	srv := &Server{Port: 8475}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/api/worktree-resources/add", strings.NewReader("{}"))
@@ -58,6 +62,7 @@ func TestRejectsForeignOriginWhenSecFetchSiteAbsent(t *testing.T) {
 }
 
 func TestAllowsSameOriginJSONRequest(t *testing.T) {
+	t.Parallel()
 	srv := &Server{}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/api/resource-resolve", strings.NewReader(`{"type":"pr","id":"x"}`))
@@ -71,6 +76,7 @@ func TestAllowsSameOriginJSONRequest(t *testing.T) {
 }
 
 func TestGETIsUnaffected(t *testing.T) {
+	t.Parallel()
 	srv := &Server{}
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/resource-type?url=x", nil))
@@ -80,6 +86,7 @@ func TestGETIsUnaffected(t *testing.T) {
 }
 
 func TestSetsXFrameOptions(t *testing.T) {
+	t.Parallel()
 	// Every response sets X-Frame-Options: DENY to prevent a followed page
 	// from redirecting into our own origin and escaping the iframe sandbox.
 	srv := &Server{}

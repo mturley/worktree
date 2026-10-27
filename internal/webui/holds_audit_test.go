@@ -19,6 +19,7 @@ import (
 // holds (subscriber task:<id>) is polled, but nothing that means "followed
 // by a worktree" counts it.
 func TestHoldKeepsResourcePolledButUnfollowed(t *testing.T) {
+	t.Parallel()
 	s, wt := tasksServer(t)
 	conn := s.DB
 	// The worktree follows #2 only. #1 was followed once, by the same

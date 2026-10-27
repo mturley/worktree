@@ -6,6 +6,7 @@ import (
 )
 
 func TestParseSearchTerms(t *testing.T) {
+	t.Parallel()
 	cases := map[string][]string{
 		"":                 nil,
 		"   ":              nil,
@@ -22,12 +23,14 @@ func TestParseSearchTerms(t *testing.T) {
 }
 
 func TestLikeContainsEscapes(t *testing.T) {
+	t.Parallel()
 	if got := likeContains(`ci_x%\`); got != `%ci\_x\%\\%` {
 		t.Fatalf("got %q", got)
 	}
 }
 
 func TestSearchSQLShape(t *testing.T) {
+	t.Parallel()
 	if s, a := searchSQL(nil); s != "" || a != nil {
 		t.Fatalf("empty terms must produce no clause, got %q %v", s, a)
 	}
@@ -44,6 +47,7 @@ func TestSearchSQLShape(t *testing.T) {
 }
 
 func TestMatchEvent(t *testing.T) {
+	t.Parallel()
 	te := &TimelineEvent{
 		Title: "New comment", Body: "the oauth cookie is cleared before redirect", Author: "andrew",
 		ResourceID: "RHOAIENG-1",
@@ -78,6 +82,7 @@ func TestMatchEvent(t *testing.T) {
 }
 
 func TestSnippet(t *testing.T) {
+	t.Parallel()
 	long := strings.Repeat("alpha ", 10) + "the OAuth   cookie\nis cleared " + strings.Repeat("omega ", 10)
 	got := snippet(long, "oauth")
 	if !strings.HasPrefix(got, "…") || !strings.HasSuffix(got, "…") {

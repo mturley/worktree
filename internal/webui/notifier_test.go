@@ -17,6 +17,7 @@ type fakeTransport struct{ got []notifyBatch }
 func (f *fakeTransport) Deliver(b notifyBatch, _ deliverOpts) { f.got = append(f.got, b) }
 
 func TestNotifyModeFollowsCmuxAvailability(t *testing.T) {
+	t.Parallel()
 	on := &Server{cmuxAvailable: func() bool { return true }}
 	off := &Server{cmuxAvailable: func() bool { return false }}
 	if on.notifyMode() != "cmux" || off.notifyMode() != "browser" {
@@ -25,6 +26,7 @@ func TestNotifyModeFollowsCmuxAvailability(t *testing.T) {
 }
 
 func TestCmuxTransportTargetsWorkspace(t *testing.T) {
+	t.Parallel()
 	wt := t.TempDir()
 	var calls []cmux.NotifyOptions
 	s := &Server{
@@ -41,6 +43,7 @@ func TestCmuxTransportTargetsWorkspace(t *testing.T) {
 }
 
 func TestCmuxTransportWithoutWorkspaceIsUntargeted(t *testing.T) {
+	t.Parallel()
 	var calls []cmux.NotifyOptions
 	s := &Server{
 		cmuxAvailable: func() bool { return true },
@@ -54,6 +57,7 @@ func TestCmuxTransportWithoutWorkspaceIsUntargeted(t *testing.T) {
 }
 
 func TestNotifyPassAdvancesEvenWhenDeliveryFails(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	a, _ := twoWorktrees(t, conn)
 	notifyprefs.SetAll(conn, a, true)
@@ -82,6 +86,7 @@ func TestSessionReportsNotifyMode(t *testing.T) {
 }
 
 func TestNotifyPassNeverReplaysHistoryWithoutACursor(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	a, _ := twoWorktrees(t, conn)
 	notifyprefs.SetAll(conn, a, true)
@@ -104,6 +109,7 @@ func TestNotifyPassNeverReplaysHistoryWithoutACursor(t *testing.T) {
 }
 
 func TestNotifyPassCollapsesABurstIntoOneSummary(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	a, _ := twoWorktrees(t, conn)
 	const n = notifyMaxPerPass + 2
@@ -131,6 +137,7 @@ func TestNotifyPassCollapsesABurstIntoOneSummary(t *testing.T) {
 }
 
 func TestCmuxTransportSkipsWorkspaceLookupWithoutAWorktree(t *testing.T) {
+	t.Parallel()
 	listed := false
 	var calls []cmux.NotifyOptions
 	s := &Server{

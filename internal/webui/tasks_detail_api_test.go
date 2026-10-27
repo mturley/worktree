@@ -58,6 +58,7 @@ func resLink(typ, id string) tasks.LinkTarget {
 }
 
 func TestTaskDetailIncludesTitlesImplicitAndSubtasks(t *testing.T) {
+	t.Parallel()
 	s, wt := tasksServer(t)
 	must(t, resources.Add(s.DB, wt, resources.Resource{Type: "pr", ID: "o/r#1", URL: "https://github.com/o/r/pull/1"}))
 	must(t, watcherdb.SetResourceMeta(s.DB, watcher.Resource{Type: "pr", ID: "o/r#1"}, "My PR", ""))
@@ -99,6 +100,7 @@ func TestTaskDetailIncludesTitlesImplicitAndSubtasks(t *testing.T) {
 }
 
 func TestTaskDetailErrors(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	if rec := serveTasks(t, s, http.MethodGet, "/api/tasks/detail?id=42", nil); rec.Code != http.StatusNotFound {
 		t.Errorf("missing = %d", rec.Code)
@@ -138,6 +140,7 @@ func TestTaskDetailErrors(t *testing.T) {
 }
 
 func TestTaskDetailEditRoutes(t *testing.T) {
+	t.Parallel()
 	s, wt := tasksServer(t)
 	tk := mustTask(t, s, tasks.NewTask{Title: "t"})
 	id := tk.ID
@@ -198,6 +201,7 @@ func TestTaskDetailEditRoutes(t *testing.T) {
 }
 
 func TestTaskDetailLinksAddByURL(t *testing.T) {
+	t.Parallel()
 	s, wt := tasksServer(t)
 	tk := mustTask(t, s, tasks.NewTask{Title: "t"})
 	d := decodeDetail(t, serveTasks(t, s, http.MethodPost, "/api/tasks/links/add",
@@ -228,6 +232,7 @@ func TestTaskDetailLinksAddByURL(t *testing.T) {
 }
 
 func TestEventLinkRendersFromSnapshot(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	insertEvent(t, s.DB, "e1", "2026-01-01T00:00:00Z", "github", "pr_comment", "Real title", "pr", "o/r#1", "https://github.com/o/r/pull/1")
 	tk := mustTask(t, s, tasks.NewTask{Title: "t", Focus: []tasks.LinkTarget{resLink("pr", "o/r#1")}})
@@ -281,6 +286,7 @@ func TestEventLinkRendersFromSnapshot(t *testing.T) {
 }
 
 func TestTaskActivityFilters(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	insertEvent(t, s.DB, "e1", "2026-01-01T00:00:01Z", "github", "pr_comment", "pr one", "pr", "o/r#1", "u1")
 	insertEvent(t, s.DB, "e2", "2026-01-01T00:00:02Z", "jira", "jira_comment", "jira one", "jira", "X-1", "u2")
@@ -350,6 +356,7 @@ func TestTaskActivityFilters(t *testing.T) {
 }
 
 func TestTaskActivityLinkedToTaskSlackKey(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	insertEvent(t, s.DB, "s1", "2026-01-01T00:00:01Z", "slack", "slack_reply", "reply", "slack", "C1:100.1", "")
 	if _, err := s.DB.Exec(`UPDATE watcher_events SET external_ts = '100.5' WHERE id = 's1'`); err != nil {
@@ -367,6 +374,7 @@ func TestTaskActivityLinkedToTaskSlackKey(t *testing.T) {
 // bookkeeping event on the thread (watch_started) carries an external_ts too
 // but must keep its ev: key.
 func TestSlackKeyOfOnlyReplies(t *testing.T) {
+	t.Parallel()
 	reply := TimelineEvent{Type: "slack_reply", ResourceType: "slack", ResourceID: "C1:100.1", ExternalTS: "100.5"}
 	if got := slackKeyOf(reply); got != "slack:C1:100.5" {
 		t.Errorf("reply key = %q", got)
@@ -383,6 +391,7 @@ func TestSlackKeyOfOnlyReplies(t *testing.T) {
 // A Slack message is linked only under its slack: key; any other event
 // under its ev: key.
 func TestLinkedKeyOf(t *testing.T) {
+	t.Parallel()
 	reply := TimelineEvent{ID: "s1", Type: "slack_reply", ResourceType: "slack", ResourceID: "C1:100.1", ExternalTS: "100.5"}
 	pr := TimelineEvent{ID: "e1", Type: "pr_comment", ResourceType: "pr", ResourceID: "o/r#1"}
 	linked := map[string]bool{"slack:C1:100.5": true, "ev:e1": true, "ev:s2": true}
@@ -400,6 +409,7 @@ func TestLinkedKeyOf(t *testing.T) {
 }
 
 func TestFromEvent(t *testing.T) {
+	t.Parallel()
 	s, wt := tasksServer(t)
 	insertEvent(t, s.DB, "e1", "2026-01-01T00:00:00Z", "github", "pr_comment", "Review requested", "pr", "o/r#1", "https://github.com/o/r/pull/1")
 
@@ -450,6 +460,7 @@ func TestFromEvent(t *testing.T) {
 }
 
 func TestTaskDetailTimelineTitles(t *testing.T) {
+	t.Parallel()
 	tk := tasks.Task{ID: 3, Title: "Ship it"}
 	cases := []struct {
 		typ, payload, actor, session, want string

@@ -25,6 +25,7 @@ consumers:
 `
 
 func TestWatcherSettingsGetHidesSecrets(t *testing.T) {
+	t.Parallel()
 	s, _ := settingsServer(t, "ui:\n    password: PW_SECRET5\n")
 	if err := os.WriteFile(s.WatcherAuthPath, []byte(authYAML), 0o600); err != nil {
 		t.Fatal(err)
@@ -48,6 +49,7 @@ func TestWatcherSettingsGetHidesSecrets(t *testing.T) {
 }
 
 func TestWatcherSettingsMissingFiles(t *testing.T) {
+	t.Parallel()
 	s, _ := settingsServer(t, "")
 	got := decodeSettings(t, doReq(s, "GET", "/api/settings", ""))
 	if got.WatcherConfig.Jira.BotUsernames == nil || got.WatcherConfig.Jira.CustomFields == nil {
@@ -72,6 +74,7 @@ func TestWatcherSettingsMissingFiles(t *testing.T) {
 }
 
 func TestWatcherAuthPutKeepsSecretsAndConsumers(t *testing.T) {
+	t.Parallel()
 	s, _ := settingsServer(t, "")
 	if err := os.WriteFile(s.WatcherAuthPath, []byte(authYAML), 0o600); err != nil {
 		t.Fatal(err)
@@ -89,6 +92,7 @@ func TestWatcherAuthPutKeepsSecretsAndConsumers(t *testing.T) {
 }
 
 func TestWatcherAuthPutValidatesHost(t *testing.T) {
+	t.Parallel()
 	s, _ := settingsServer(t, "")
 	rec := doReq(s, "PUT", "/api/settings/watcher-auth", `{"jira":{"host":"not a url","email":""},"slack":{"workspace_domain":""}}`)
 	if rec.Code != http.StatusBadRequest {
@@ -97,6 +101,7 @@ func TestWatcherAuthPutValidatesHost(t *testing.T) {
 }
 
 func TestWatcherConfigPutRejectsBlankField(t *testing.T) {
+	t.Parallel()
 	s, _ := settingsServer(t, "")
 	rec := doReq(s, "PUT", "/api/settings/watcher-config", `{"jira":{"bot_usernames":[],"custom_fields":{"epic_key":" "}}}`)
 	if rec.Code != http.StatusBadRequest {
@@ -110,6 +115,7 @@ func putAuth(s *Server, host, email string) *httptest.ResponseRecorder {
 }
 
 func TestWatcherAuthHostChangeWithStoredTokenRefused(t *testing.T) {
+	t.Parallel()
 	s, _ := settingsServer(t, "")
 	if err := os.WriteFile(s.WatcherAuthPath, []byte(authYAML), 0o600); err != nil {
 		t.Fatal(err)
@@ -124,6 +130,7 @@ func TestWatcherAuthHostChangeWithStoredTokenRefused(t *testing.T) {
 }
 
 func TestWatcherAuthEmailOnlyChangeAllowed(t *testing.T) {
+	t.Parallel()
 	s, _ := settingsServer(t, "")
 	if err := os.WriteFile(s.WatcherAuthPath, []byte(authYAML), 0o600); err != nil {
 		t.Fatal(err)
@@ -137,6 +144,7 @@ func TestWatcherAuthEmailOnlyChangeAllowed(t *testing.T) {
 }
 
 func TestWatcherAuthHostChangeWithoutTokenAllowed(t *testing.T) {
+	t.Parallel()
 	s, _ := settingsServer(t, "")
 	if rec := putAuth(s, "https://z.atlassian.net", "z@z"); rec.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body)
@@ -144,6 +152,7 @@ func TestWatcherAuthHostChangeWithoutTokenAllowed(t *testing.T) {
 }
 
 func TestWatcherAuthHostCaseAndSlashNotAChange(t *testing.T) {
+	t.Parallel()
 	s, _ := settingsServer(t, "")
 	if err := os.WriteFile(s.WatcherAuthPath, []byte(authYAML), 0o600); err != nil {
 		t.Fatal(err)
@@ -154,6 +163,7 @@ func TestWatcherAuthHostCaseAndSlashNotAChange(t *testing.T) {
 }
 
 func TestWatcherConfigPutRejectsDuplicateTrimmedNames(t *testing.T) {
+	t.Parallel()
 	s, _ := settingsServer(t, "")
 	rec := doReq(s, "PUT", "/api/settings/watcher-config", `{"jira":{"bot_usernames":[],"custom_fields":{"epic":"a"," epic ":"b"}}}`)
 	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "duplicate custom field name: epic") {

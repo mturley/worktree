@@ -35,6 +35,7 @@ func newEventIDs(evs []newEvent) []string {
 }
 
 func TestCursorStartsAtNewestSoNoBacklog(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	insertTypedEvent(t, conn, "old", "2026-01-01T00:00:00Z", "pr_comment", "x", "pr", "o/r#1")
 	c, err := initNotifyCursor(conn)
@@ -51,6 +52,7 @@ func TestCursorStartsAtNewestSoNoBacklog(t *testing.T) {
 }
 
 func TestCursorCatchesSameSecondEventsExactlyOnce(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	c, _ := initNotifyCursor(conn) // empty DB
 	insertTypedEvent(t, conn, "a", "2026-01-01T00:00:05Z", "pr_comment", "x", "pr", "o/r#1")
@@ -71,6 +73,7 @@ func TestCursorCatchesSameSecondEventsExactlyOnce(t *testing.T) {
 }
 
 func TestReadNewEventsSkipsNoiseTypes(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	c, _ := initNotifyCursor(conn)
 	for i, typ := range []string{"watch_started", "watcher_error", "ci_pending", "ci_workflows_pending", "ci_failed"} {
@@ -98,6 +101,7 @@ func twoWorktrees(t *testing.T, conn *sql.DB) (string, string) {
 }
 
 func TestBatchesOnlyForNotifyingWorktree(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	a, _ := twoWorktrees(t, conn)
 	notifyprefs.SetResource(conn, a, "pr", "o/r#7", true)
@@ -127,6 +131,7 @@ func TestBatchesOnlyForNotifyingWorktree(t *testing.T) {
 }
 
 func TestWorktreeWideToggleCoversEveryTrackedResource(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	_, b := twoWorktrees(t, conn)
 	notifyprefs.SetAll(conn, b, true)
@@ -138,6 +143,7 @@ func TestWorktreeWideToggleCoversEveryTrackedResource(t *testing.T) {
 }
 
 func TestNotifyResourceLabel(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		d    resourceDTO
 		want string
@@ -157,6 +163,7 @@ func TestNotifyResourceLabel(t *testing.T) {
 }
 
 func TestCursorCatchesEventCommittedLateIntoAnEarlierSecond(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	c, _ := initNotifyCursor(conn)
 	insertTypedEvent(t, conn, "b", "2026-01-01T00:00:06Z", "pr_comment", "x", "pr", "o/r#1")
@@ -177,6 +184,7 @@ func TestCursorCatchesEventCommittedLateIntoAnEarlierSecond(t *testing.T) {
 }
 
 func TestCursorRereadsAReusedIDWithANewTS(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	c, _ := initNotifyCursor(conn)
 	insertTypedEvent(t, conn, "ci1", "2026-01-01T00:00:05Z", "ci_failed", "x", "pr", "o/r#1")
@@ -192,6 +200,7 @@ func TestCursorRereadsAReusedIDWithANewTS(t *testing.T) {
 }
 
 func TestReadNewEventsSkipsMyOwnEvents(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	selfid.Set(conn, "github", "101")
 	c, _ := initNotifyCursor(conn)
@@ -211,6 +220,7 @@ func TestReadNewEventsSkipsMyOwnEvents(t *testing.T) {
 }
 
 func TestSlackReplyNotificationUsesCustomName(t *testing.T) {
+	t.Parallel()
 	conn := unreadTestDB(t)
 	a, _ := twoWorktrees(t, conn)
 	if err := resources.Add(conn, a, resources.Resource{Type: "slack", ID: "C1:1.2", URL: "https://x.slack.com/archives/C1/p12"}); err != nil {

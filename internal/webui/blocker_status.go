@@ -10,7 +10,7 @@ import (
 // initTaskHooks points the tasks package's logging at this server's
 // logger. Called from Handler and StartPolling; runs once.
 func (s *Server) initTaskHooks() {
-	s.taskHooksOnce.Do(func() { tasks.Logf = s.logger().Printf })
+	s.taskHooksOnce.Do(func() { tasks.SetLogf(s.logger().Printf) })
 }
 
 // afterTaskWrite is what the web API runs after a task write that can

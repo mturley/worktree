@@ -8,6 +8,7 @@ import (
 )
 
 func TestCacheServesWithinTTLAndReexpires(t *testing.T) {
+	t.Parallel()
 	var calls int32
 	c := newAutocompleteCache(time.Minute)
 	now := time.Unix(1000, 0)
@@ -38,6 +39,7 @@ func TestCacheServesWithinTTLAndReexpires(t *testing.T) {
 }
 
 func TestCacheSingleFlightsConcurrentIdenticalQueries(t *testing.T) {
+	t.Parallel()
 	var calls int32
 	release := make(chan struct{})
 	c := newAutocompleteCache(time.Minute)
@@ -68,6 +70,7 @@ func TestCacheSingleFlightsConcurrentIdenticalQueries(t *testing.T) {
 }
 
 func TestCacheDoesNotCacheErrors(t *testing.T) {
+	t.Parallel()
 	var calls int32
 	c := newAutocompleteCache(time.Minute)
 	fn := func() ([]AutocompleteItem, error) {
@@ -82,6 +85,7 @@ func TestCacheDoesNotCacheErrors(t *testing.T) {
 }
 
 func TestCacheReleasesWaitersAndRecoversAfterPanic(t *testing.T) {
+	t.Parallel()
 	c := newAutocompleteCache(time.Minute)
 	registered := make(chan struct{})
 	proceed := make(chan struct{})

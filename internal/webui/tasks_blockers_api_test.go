@@ -31,6 +31,7 @@ func blockerByKind(t *testing.T, d taskDetailDTO, label string) taskBlockerDTO {
 }
 
 func TestBlockerRoutesAndDetailFields(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	dep := mustTask(t, s, tasks.NewTask{Title: "dep"})
 	tk := mustTask(t, s, tasks.NewTask{Title: "main"})
@@ -106,6 +107,7 @@ func TestBlockerRoutesAndDetailFields(t *testing.T) {
 }
 
 func TestAddBlockerResolvesAtOnceWhenSatisfied(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	tk := mustTask(t, s, tasks.NewTask{Title: "main"})
 	setPRState(t, s, "o/r#1", "MERGED")
@@ -120,6 +122,7 @@ func TestAddBlockerResolvesAtOnceWhenSatisfied(t *testing.T) {
 }
 
 func TestAddBlockerRequestErrors(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	a := mustTask(t, s, tasks.NewTask{Title: "a"})
 	b := mustTask(t, s, tasks.NewTask{Title: "b"})
@@ -149,6 +152,7 @@ func TestAddBlockerRequestErrors(t *testing.T) {
 }
 
 func TestTaskListCarriesBlockedFields(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	dep := mustTask(t, s, tasks.NewTask{Title: "dep"})
 	tk := mustTask(t, s, tasks.NewTask{Title: "main"})
@@ -196,6 +200,7 @@ func TestTaskListCarriesBlockedFields(t *testing.T) {
 }
 
 func TestPastedBlockerURLReachesTheHold(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	tk := mustTask(t, s, tasks.NewTask{Title: "main"})
 	const u = "https://example.atlassian.net/browse/X-9"
@@ -213,6 +218,7 @@ func TestPastedBlockerURLReachesTheHold(t *testing.T) {
 }
 
 func TestDoneTaskDTOIsNeverBlocked(t *testing.T) {
+	t.Parallel()
 	s, _ := tasksServer(t)
 	tk := mustTask(t, s, tasks.NewTask{Title: "main"})
 	addBlockerReq(t, s, map[string]any{"id": tk.ID, "kind": "other", "text": "waiting"})
@@ -238,6 +244,7 @@ func TestDoneTaskDTOIsNeverBlocked(t *testing.T) {
 }
 
 func TestResourceDTOsCarryBlocksCount(t *testing.T) {
+	t.Parallel()
 	s, x := tasksServer(t)
 	must(t, resources.Add(s.DB, x, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"}))
 	must(t, resources.Add(s.DB, x, resources.Resource{Type: "pr", ID: "o/r#2", URL: "u2"}))
@@ -275,6 +282,7 @@ func TestResourceDTOsCarryBlocksCount(t *testing.T) {
 }
 
 func TestBlockerEventTitles(t *testing.T) {
+	t.Parallel()
 	tk := tasks.Task{ID: 1, Title: "main"}
 	for _, c := range []struct {
 		typ, actor, payload, want string

@@ -94,6 +94,7 @@ type Embedded struct {
 }
 
 func TestYamlPathsFollowsYamlV3Rules(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		typ  reflect.Type
@@ -165,6 +166,7 @@ func TestYamlPathsFollowsYamlV3Rules(t *testing.T) {
 }
 
 func TestSettingsModalCoversEveryConfigKey(t *testing.T) {
+	t.Parallel()
 	files := map[string]reflect.Type{
 		"worktree":       reflect.TypeOf(config.Config{}),
 		"watcher_auth":   reflect.TypeOf(wconfig.Config{}),

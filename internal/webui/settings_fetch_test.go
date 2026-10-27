@@ -8,6 +8,7 @@ import (
 )
 
 func TestSettingsPutRejectsShortInterval(t *testing.T) {
+	t.Parallel()
 	s, path := settingsServer(t, "ui:\n    password: pw\n")
 	put := func(interval string) int {
 		body := `{"cmux_features_enabled":true,"jira":{"projects":[],"alias_hosts":[]},

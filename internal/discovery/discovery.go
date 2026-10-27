@@ -7,19 +7,16 @@ import (
 )
 
 func IsInsideWorktree(dir string) (string, bool) {
-	cmd := exec.Command("git", "-C", dir, "rev-parse", "--show-toplevel")
-	out, err := cmd.Output()
+	// One git process for both answers: spawning git is the expensive part.
+	out, err := exec.Command("git", "-C", dir, "rev-parse", "--show-toplevel", "--git-common-dir").Output()
 	if err != nil {
 		return "", false
 	}
-	toplevel := strings.TrimSpace(string(out))
-
-	cmd = exec.Command("git", "-C", dir, "rev-parse", "--git-common-dir")
-	commonOut, err := cmd.Output()
-	if err != nil {
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) != 2 {
 		return "", false
 	}
-	commonDir := strings.TrimSpace(string(commonOut))
+	toplevel, commonDir := lines[0], lines[1]
 
 	gitDir := filepath.Join(toplevel, ".git")
 	if commonDir != ".git" && commonDir != gitDir {
