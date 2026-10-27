@@ -462,7 +462,7 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
         <div ref={overflows.contentRef}>{body}</div>
       </Box>
       {expand && (expand.expanded || overflows.value) && (
-        <Button variant="subtle" size="compact-xs" fullWidth onClick={expand.onToggle}>
+        <Button variant="subtle" size="compact-xs" fullWidth justify="flex-start" onClick={expand.onToggle}>
           {expand.expanded ? "Show less" : `Show all (${shownCount})`}
         </Button>
       )}
