@@ -16,8 +16,9 @@ export function EventDot({ type, size = 22, label: labelOverride, dimmed = false
   type: string
   size?: number
   /**
-   * A task event's resulting state: drawn as that task checkbox instead of
-   * the coloured circle, so a task's activity reads like its row does.
+   * A task event's resulting state: that task checkbox is drawn inside the
+   * coloured circle in place of the type's icon, so a task's activity reads
+   * like its row does.
    */
   taskState?: TaskState
   /**
@@ -39,39 +40,12 @@ export function EventDot({ type, size = 22, label: labelOverride, dimmed = false
   const { cssColor, Icon } = eventMeta(type)
   const label = eventLabel(type, labelOverride)
 
-  if (taskState) {
-    return (
-      <Tooltip label={label} withArrow openDelay={150}>
-        <span
-          role="img"
-          aria-label={label}
-          data-task-state={taskState}
-          style={{
-            width: size,
-            height: size,
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            flexShrink: 0,
-            opacity: dimmed ? 0.5 : 1,
-            // An opaque square over the timeline rail, so the rail doesn't
-            // show through an empty (not started) box.
-            background: "var(--mantine-color-body)",
-            borderRadius: 4,
-            boxShadow: "0 0 0 3px var(--mantine-color-body)",
-          }}
-        >
-          <StateBox state={taskState} size={Math.round(size * 0.75)} />
-        </span>
-      </Tooltip>
-    )
-  }
-
   return (
     <Tooltip label={label} withArrow openDelay={150}>
       <span
         role="img"
         aria-label={label}
+        data-task-state={taskState}
         style={{
           width: size,
           height: size,
@@ -86,7 +60,11 @@ export function EventDot({ type, size = 22, label: labelOverride, dimmed = false
           boxShadow: "0 0 0 3px var(--mantine-color-body)",
         }}
       >
-        <Icon size={size * 0.6} stroke={2.5} color="var(--mantine-color-dark-9)" />
+        {/* A task event shows the checkbox of the state it left the task in,
+            in place of the type's icon. */}
+        {taskState
+          ? <StateBox state={taskState} size={Math.round(size * 0.55)} tone="dark" />
+          : <Icon size={size * 0.6} stroke={2.5} color="var(--mantine-color-dark-9)" />}
       </span>
     </Tooltip>
   )

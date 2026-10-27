@@ -18,12 +18,14 @@ describe("EventDot", () => {
     expect(bg).toContain("var(--mantine-color-")
   })
 
-  it("draws a task event as the checkbox of the state it left the task in, not a circle", () => {
+  it("draws a task event's state checkbox inside the usual circle, in place of the icon", () => {
     render(<MantineProvider><EventDot type="task_state_changed" label="State changed" taskState="done" /></MantineProvider>)
     const dot = screen.getByLabelText("State changed")
     expect(dot).toHaveAttribute("data-task-state", "done")
-    expect(dot.style.borderRadius).not.toBe("50%")
+    expect(dot.style.borderRadius).toBe("50%")
+    expect(dot.style.background || dot.style.backgroundColor).toBe(eventMeta("task_state_changed").cssColor)
     expect(dot.querySelector("[data-state-box]")).toHaveAttribute("data-state", "done")
+    expect(dot.querySelector("svg")).toBeNull()
   })
 
   it("prefers an explicit label over the mapping's generic one", () => {

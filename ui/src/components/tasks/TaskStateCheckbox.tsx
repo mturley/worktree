@@ -23,13 +23,18 @@ const SIZE = 16
 /** Keeps the checkbox's clicks from the row (or other host) around it. */
 const keepFromHost = (e: React.MouseEvent) => e.stopPropagation()
 
-/** The checkbox drawing for a state, at `size` px. */
-export function StateBox({ state, size }: { state: TaskState; size: number }) {
+/**
+ * The checkbox drawing for a state, at `size` px. `tone="dark"` draws it in
+ * dark ink with a lime check, for a lime background (the activity feed's
+ * task event dot) where the lime box would vanish.
+ */
+export function StateBox({ state, size, tone = "accent" }: { state: TaskState; size: number; tone?: "accent" | "dark" }) {
+  const ink = tone === "dark" ? "var(--mantine-color-dark-9)" : "var(--task-accent)"
   const fill =
     state === "done"
-      ? "var(--task-accent)"
+      ? ink
       : state === "in_progress"
-        ? "linear-gradient(135deg, var(--task-accent) 50%, transparent 50%)"
+        ? `linear-gradient(135deg, ${ink} 50%, transparent 50%)`
         : "transparent"
   return (
     <span
@@ -38,9 +43,9 @@ export function StateBox({ state, size }: { state: TaskState; size: number }) {
       aria-hidden
       style={{
         width: size, height: size, flex: "none", borderRadius: 4, boxSizing: "border-box",
-        border: "2px solid var(--task-accent)", background: fill,
+        border: `2px solid ${ink}`, background: fill,
         display: "flex", alignItems: "center", justifyContent: "center",
-        color: "var(--mantine-color-dark-9)", fontSize: Math.max(8, size - 5), lineHeight: 1, fontWeight: 700,
+        color: tone === "dark" ? "var(--task-accent)" : "var(--mantine-color-dark-9)", fontSize: Math.max(8, size - 5), lineHeight: 1, fontWeight: 700,
       }}
     >
       {state === "done" ? "✓" : null}
