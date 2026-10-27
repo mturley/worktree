@@ -10,6 +10,7 @@ import { SlackThreadPane } from "./SlackThreadPane"
 import { LinkPane } from "./LinkPane"
 import { RefreshWatchersButton } from "./RefreshWatchersButton"
 import { WatcherErrorMark } from "./WatcherErrorMark"
+import { OtherTasksBadge } from "./tasks/OtherTasksBadge"
 import { WatcherAlert } from "./WatcherAlert"
 import { useWatcherStatus } from "../hooks/useWatchers"
 import { useNow } from "../hooks/useNow"
@@ -270,6 +271,7 @@ export function ResourceDetailPane({
             ← all resources
           </Anchor>
           {escHint && <KeyHint>Esc</KeyHint>}
+          <OtherTasksBadge path={path} resource={resource} />
         </Group>
       )}
       {/* Its service's watcher is off, or failing: say so, with a way to fix it. */}

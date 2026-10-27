@@ -9,8 +9,10 @@ export function openTasksLabel(count: number): string {
  * The lime count of open tasks, "N tasks". Same shape as UnreadBadge, but in the task
  * accent (never blue: blue means unread). Nothing for zero.
  */
-export function TaskCountBadge({ count, ...rest }: {
+export function TaskCountBadge({ count, qualifier, ...rest }: {
   count: number
+  /** A word before "task(s)": "other" reads "3 other tasks". */
+  qualifier?: string
   ml?: string
   /** Hover text, for a card where a bare number beside "N unreads" needs naming. */
   title?: string
@@ -26,7 +28,7 @@ export function TaskCountBadge({ count, ...rest }: {
       style={{ flex: "none", background: "var(--task-accent)", color: "var(--mantine-color-dark-9)" }}
       {...rest}
     >
-      {count === 1 ? "1 task" : `${count} tasks`}
+      {`${count} ${qualifier ? `${qualifier} ` : ""}${count === 1 ? "task" : "tasks"}`}
     </Badge>
   )
 }
