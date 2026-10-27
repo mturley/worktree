@@ -229,3 +229,23 @@ func TestTrackedPRNumber(t *testing.T) {
 		t.Fatalf("normal upstream: got %d, true", n)
 	}
 }
+
+func TestIsAncestor(t *testing.T) {
+	repo, run := newRemoteRepo(t)
+	m := run("rev-parse", "HEAD")
+	commitFile(t, repo, "b.txt", "b")
+	head := run("rev-parse", "HEAD")
+
+	if !IsAncestor(repo, m, head) {
+		t.Fatal("parent should be an ancestor of HEAD")
+	}
+	if !IsAncestor(repo, head, head) {
+		t.Fatal("a commit should be its own ancestor")
+	}
+	if IsAncestor(repo, head, m) {
+		t.Fatal("HEAD should not be an ancestor of its parent")
+	}
+	if IsAncestor(repo, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", head) || IsAncestor(repo, head, "no-such-rev") {
+		t.Fatal("an unknown rev is never an ancestor")
+	}
+}

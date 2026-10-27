@@ -239,3 +239,34 @@ func TestDiffHunks(t *testing.T) {
 		t.Fatalf("got %+v\nwant %+v", got, want)
 	}
 }
+
+// DiffHunks follows git's defaults, which GitHub compares against, whatever
+// the user's config says.
+func TestDiffHunksIgnoresUserConfig(t *testing.T) {
+	repo, run := newRemoteRepo(t)
+	var lines []string
+	for i := 1; i <= 30; i++ {
+		lines = append(lines, fmt.Sprintf("line %d", i))
+	}
+	commitFile(t, repo, "f.txt", strings.Join(lines, "\n")+"\n")
+	old := run("rev-parse", "HEAD")
+	lines[4] = "five"      // line 5
+	lines[17] = "eighteen" // line 18: hunks 2-8 and 15-21, 6 lines apart
+	writeFile(t, repo, "f.txt", strings.Join(lines, "\n")+"\n")
+	run("commit", "-am", "edits")
+	run("config", "diff.interHunkContext", "10")
+	run("config", "diff.algorithm", "patience")
+	run("config", "diff.indentHeuristic", "true")
+
+	got, err := DiffHunks(repo, old, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Hunk{
+		{OldStart: 2, OldLines: 7, NewStart: 2, NewLines: 7},
+		{OldStart: 15, OldLines: 7, NewStart: 15, NewLines: 7},
+	}
+	if !reflect.DeepEqual(got["f.txt"], want) {
+		t.Fatalf("got %+v\nwant %+v", got["f.txt"], want)
+	}
+}

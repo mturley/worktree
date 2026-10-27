@@ -169,10 +169,13 @@ type Hunk struct{ OldStart, OldLines, NewStart, NewLines int }
 // DiffHunks lists each file's hunks between oldRev and newRev, with git's
 // default 3 lines of context, keyed by the file's new path (a deleted file
 // by its old path). Files with no textual hunks (binary, pure renames) are
-// absent. Flags pin the output against the user's config, as in DiffPatch.
+// absent. Flags pin everything that shapes hunks (context, algorithm, indent
+// heuristic, hunk merging) so the user's config cannot change them: they are
+// checked against the hunks GitHub accepts comments on.
 func DiffHunks(dir, oldRev, newRev string) (map[string][]Hunk, error) {
 	out, err := gitRaw(dir, nil, "-c", "core.quotePath=false", "diff", "--no-ext-diff", "--no-color", "--no-textconv",
-		"--src-prefix=a/", "--dst-prefix=b/", "-M", "-U3", oldRev, newRev)
+		"--src-prefix=a/", "--dst-prefix=b/", "-M", "-U3", "--inter-hunk-context=0",
+		"--diff-algorithm=myers", "--no-indent-heuristic", oldRev, newRev)
 	if err != nil {
 		return nil, err
 	}

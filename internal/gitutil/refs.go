@@ -135,3 +135,10 @@ func TrackedPRNumber(dir string) (int, bool) {
 	}
 	return n, true
 }
+
+// IsAncestor reports whether commit a is an ancestor of commit b (a commit
+// is its own ancestor). An unknown rev is never an ancestor.
+func IsAncestor(dir, a, b string) bool {
+	_, err := git(dir, "merge-base", "--is-ancestor", a, b)
+	return err == nil
+}
