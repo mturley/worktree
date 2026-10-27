@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { ActionIcon, Button, CloseButton, Group, Modal, Text, TextInput, UnstyledButton } from "@mantine/core"
+import { ActionIcon, Button, CloseButton, Group, Modal, TextInput, UnstyledButton } from "@mantine/core"
 import { notifications } from "@mantine/notifications"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { api } from "../../../api/client"
@@ -76,7 +76,6 @@ export function TaskModalHeader({ task, onUpdate, onState, onClose }: {
         {task.starred ? "★" : "☆"}
       </ActionIcon>
       <EditableTitle title={task.title} onSave={(title) => onUpdate({ title })} />
-      <Text size="xs" c="dimmed" style={{ flex: "none" }}>{task.ref}</Text>
       {(task.unread_count ?? 0) > 0 && (
         <Button
           size="compact-xs"
