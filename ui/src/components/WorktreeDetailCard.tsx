@@ -94,7 +94,7 @@ export function WorktreeDetailCard({ w, tab, onTabChange, escHint }: {
           end of its row), then what to do with the changes. Uses the card's
           own polled status; the counts refresh slowly off the Code tab. */}
       <Stack gap="xs" mb="xs">
-        <Group justify="space-between" wrap="nowrap" gap="xs" align="flex-start">
+        <Group justify="space-between" wrap="nowrap" gap="xs" align="center">
           {gitStatus.data ? <DirectoryRow path={w.path} git={gitStatus.data} /> : <span />}
           <Group gap={4} wrap="nowrap">
             {tab !== "notes" && (

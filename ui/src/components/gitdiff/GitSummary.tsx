@@ -49,13 +49,15 @@ function CopyIcon({ value, label, tooltip }: { value: string; label: string; too
  */
 export function DirectoryRow({ path, git }: { path: string; git: WorktreeGit }) {
   const dir = git.directory ?? path
+  // Laid out like an InfoRow, but centred rather than baseline-aligned: a long
+  // path wraps, and the label and copy button stay level with its middle (as
+  // the card's controls beside this row do).
   return (
-    <InfoRow label="Directory">
-      <Group gap={4} wrap="nowrap" component="span">
-        <span>{dir}</span>
-        <CopyIcon value={dir} label="Copy directory path" tooltip="Copy directory path" />
-      </Group>
-    </InfoRow>
+    <Group gap="xs" wrap="nowrap" align="center" style={{ minWidth: 0 }}>
+      <Text size="xs" c="dimmed" miw={80} style={{ flex: "none", whiteSpace: "nowrap" }}>Directory</Text>
+      <Text size="sm" style={{ overflowWrap: "anywhere", minWidth: 0 }}>{dir}</Text>
+      <CopyIcon value={dir} label="Copy directory path" tooltip="Copy directory path" />
+    </Group>
   )
 }
 
