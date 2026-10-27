@@ -194,7 +194,7 @@ func TestPRTargetUsesPendingCommit(t *testing.T) {
 		}, nil
 	}
 	pc := prComments{pr: &prRefDTO{ID: "PR1", Number: 1}, token: "t", ref: wgithub.PRRef{Owner: "o", Repo: "r", Number: 1}}
-	tg, err := srv.loadPRTarget(wt, pc)
+	tg, err := srv.loadPRTarget(wt, pc, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +234,7 @@ func TestPRTargetMissingCommit(t *testing.T) {
 	srv, calls := prTargetServer(t, wt, &wgithub.PRWriteContext{
 		PullRequestID: "PR1", BaseRefOid: base, HeadRefOid: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
 	}, nil)
-	if _, err := srv.loadPRTarget(wt, testPC()); !errors.Is(err, errMissingCommit) {
+	if _, err := srv.loadPRTarget(wt, testPC(), false); !errors.Is(err, errMissingCommit) {
 		t.Fatalf("err = %v; want errMissingCommit", err)
 	}
 	if want := []string{"gh +refs/pull/1/head:refs/pr-review/1"}; !reflect.DeepEqual(*calls, want) {
@@ -299,7 +299,7 @@ func TestPRTargetFetchesMissingHead(t *testing.T) {
 
 	srv, calls := prTargetServer(t, wt, &wgithub.PRWriteContext{PullRequestID: "PR1", BaseRefOid: base, HeadRefOid: remoteHead},
 		func() error { gitIn(t, wt, "fetch", "origin", "pr:refs/pr-review/1"); return nil })
-	tg, err := srv.loadPRTarget(wt, testPC())
+	tg, err := srv.loadPRTarget(wt, testPC(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -314,7 +314,7 @@ func TestPRTargetFetchesMissingHead(t *testing.T) {
 func TestPRTargetNoFetchWhenPresent(t *testing.T) {
 	wt, base, head := hunkRepo(t)
 	srv, calls := prTargetServer(t, wt, &wgithub.PRWriteContext{PullRequestID: "PR1", BaseRefOid: base, HeadRefOid: head}, nil)
-	if _, err := srv.loadPRTarget(wt, testPC()); err != nil {
+	if _, err := srv.loadPRTarget(wt, testPC(), false); err != nil {
 		t.Fatal(err)
 	}
 	if len(*calls) != 0 {
@@ -330,7 +330,7 @@ func TestPRTargetMissingHeadWithPending(t *testing.T) {
 		PullRequestID: "PR1", BaseRefOid: base, HeadRefOid: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
 		Pending: &wgithub.PendingReview{ID: "R1", CommitOid: pending},
 	}, nil)
-	if _, err := srv.loadPRTarget(wt, testPC()); !errors.Is(err, errMissingCommit) {
+	if _, err := srv.loadPRTarget(wt, testPC(), false); !errors.Is(err, errMissingCommit) {
 		t.Fatalf("err = %v; want errMissingCommit", err)
 	}
 	if len(*calls) != 1 {
@@ -346,7 +346,7 @@ func TestPRTargetNoFetchWhenSettingOff(t *testing.T) {
 	if err := os.WriteFile(srv.ConfigPath, []byte("git:\n  background_fetch: false\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := srv.loadPRTarget(wt, testPC()); !errors.Is(err, errMissingCommit) {
+	if _, err := srv.loadPRTarget(wt, testPC(), false); !errors.Is(err, errMissingCommit) {
 		t.Fatalf("err = %v; want errMissingCommit", err)
 	}
 	if len(*calls) != 0 {
@@ -365,7 +365,7 @@ func TestPRTargetMissCachedBriefly(t *testing.T) {
 	now := time.Now()
 	srv.prThreadsCacheOrInit().now = func() time.Time { return now }
 	for i := 0; i < 2; i++ {
-		if _, err := srv.loadPRTarget(wt, testPC()); !errors.Is(err, errMissingCommit) {
+		if _, err := srv.loadPRTarget(wt, testPC(), false); !errors.Is(err, errMissingCommit) {
 			t.Fatalf("call %d: err = %v; want errMissingCommit", i, err)
 		}
 	}
@@ -374,11 +374,61 @@ func TestPRTargetMissCachedBriefly(t *testing.T) {
 	}
 	now = now.Add(prFetchMissTTL + time.Second)
 	srv.prThreadsCacheOrInit().del("prctx|PR1")
-	if _, err := srv.loadPRTarget(wt, testPC()); !errors.Is(err, errMissingCommit) {
+	if _, err := srv.loadPRTarget(wt, testPC(), false); !errors.Is(err, errMissingCommit) {
 		t.Fatalf("err = %v; want errMissingCommit", err)
 	}
 	if len(*calls) != 2 {
 		t.Fatalf("fetches = %q, want two after the TTL", *calls)
+	}
+}
+
+// TestPRTargetMissRetriesMovedHead: the remembered miss is for the commits
+// it was about; a new head is fetched at once.
+func TestPRTargetMissRetriesMovedHead(t *testing.T) {
+	wt, base, _ := hunkRepo(t)
+	ctx := &wgithub.PRWriteContext{PullRequestID: "PR1", BaseRefOid: base, HeadRefOid: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"}
+	srv, calls := prTargetServer(t, wt, ctx, func() error { return errors.New("network down") })
+	if _, err := srv.loadPRTarget(wt, testPC(), false); !errors.Is(err, errMissingCommit) {
+		t.Fatalf("err = %v; want errMissingCommit", err)
+	}
+	ctx.HeadRefOid = "feedfacefeedfacefeedfacefeedfacefeedface"
+	srv.prThreadsCacheOrInit().del("prctx|PR1")
+	if _, err := srv.loadPRTarget(wt, testPC(), false); !errors.Is(err, errMissingCommit) {
+		t.Fatalf("err = %v; want errMissingCommit", err)
+	}
+	if len(*calls) != 2 {
+		t.Fatalf("fetches = %q, want two", *calls)
+	}
+}
+
+// TestPRTargetHeadOnly: the head-only target ignores a pending review, and
+// fetches only what it needs (not the pending review's commit).
+func TestPRTargetHeadOnly(t *testing.T) {
+	wt, base, _, pending, head := pendingRepo(t)
+	ctx := &wgithub.PRWriteContext{
+		PullRequestID: "PR1", BaseRefOid: base, HeadRefOid: head,
+		Pending: &wgithub.PendingReview{ID: "R1", CommitOid: pending},
+	}
+	srv, calls := prTargetServer(t, wt, ctx, nil)
+	tg, err := srv.loadPRTarget(wt, testPC(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tg.commit != head || tg.stale || tg.pendingCommit != "" || tg.mergeBase != base {
+		t.Fatalf("target = %+v", tg)
+	}
+	if tg, err = srv.loadPRTarget(wt, testPC(), false); err != nil || tg.commit != pending || !tg.stale {
+		t.Fatalf("pending-aware target = %+v, %v", tg, err)
+	}
+
+	// A pending review on a commit not here does not matter to it.
+	ctx.Pending.CommitOid = "cafebabecafebabecafebabecafebabecafebabe"
+	srv.prThreadsCacheOrInit().del("prctx|PR1")
+	if _, err := srv.loadPRTarget(wt, testPC(), true); err != nil {
+		t.Fatal(err)
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("fetches = %q, want none", *calls)
 	}
 }
 
@@ -388,12 +438,12 @@ func TestPRTargetMissDoesNotBlockPresent(t *testing.T) {
 	wt, base, head := hunkRepo(t)
 	ctx := &wgithub.PRWriteContext{PullRequestID: "PR1", BaseRefOid: base, HeadRefOid: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"}
 	srv, _ := prTargetServer(t, wt, ctx, func() error { return errors.New("network down") })
-	if _, err := srv.loadPRTarget(wt, testPC()); !errors.Is(err, errMissingCommit) {
+	if _, err := srv.loadPRTarget(wt, testPC(), false); !errors.Is(err, errMissingCommit) {
 		t.Fatalf("err = %v; want errMissingCommit", err)
 	}
 	ctx.HeadRefOid = head
 	srv.prThreadsCacheOrInit().del("prctx|PR1")
-	if _, err := srv.loadPRTarget(wt, testPC()); err != nil {
+	if _, err := srv.loadPRTarget(wt, testPC(), false); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -407,7 +457,7 @@ func TestPRTargetFetchesMissingPending(t *testing.T) {
 		PullRequestID: "PR1", BaseRefOid: base, HeadRefOid: head,
 		Pending: &wgithub.PendingReview{ID: "R1", CommitOid: gone},
 	}, nil)
-	if _, err := srv.loadPRTarget(wt, testPC()); !errors.Is(err, errMissingCommit) {
+	if _, err := srv.loadPRTarget(wt, testPC(), false); !errors.Is(err, errMissingCommit) {
 		t.Fatalf("err = %v; want errMissingCommit", err)
 	}
 	want := []string{"gh +refs/pull/1/head:refs/pr-review/1 +" + gone + ":refs/pr-review/1-pending"}

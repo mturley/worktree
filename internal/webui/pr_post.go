@@ -64,8 +64,13 @@ const prFetchMissTTL = 60 * time.Second
 // synchronously, and checks again; errMissingCommit if still missing. The
 // fetch is skipped when the Background fetch setting is off. A fetch that
 // leaves commits missing is remembered for prFetchMissTTL, per PR and
-// worktree: until then a miss is errMissingCommit without fetching again.
-func (s *Server) loadPRTarget(dir string, pc prComments) (*prTarget, error) {
+// worktree and commits: until then the same miss is errMissingCommit
+// without fetching again, while a moved head or pending review retries.
+//
+// headOnly ignores the viewer's pending review: the target is the PR head,
+// which a single comment is posted against. Otherwise a pending review's
+// commit is the target, which comments added to it must sit on.
+func (s *Server) loadPRTarget(dir string, pc prComments, headOnly bool) (*prTarget, error) {
 	if !s.WatcherEnabled(config.ServiceGitHub) {
 		return nil, errors.New("the GitHub watcher is off")
 	}
@@ -76,14 +81,24 @@ func (s *Server) loadPRTarget(dir string, pc prComments) (*prTarget, error) {
 	if err != nil {
 		return nil, err
 	}
+	if headOnly && ctx.Pending != nil {
+		c := *ctx
+		c.Pending = nil
+		ctx = &c
+	}
 	t, err := newPRTarget(dir, pc.ref, ctx)
 	if !errors.Is(err, errMissingCommit) {
 		return t, err
 	}
+	pending := ""
+	if ctx.Pending != nil {
+		pending = ctx.Pending.CommitOid
+	}
+	key := "prfetch|" + pc.pr.ID + "|" + dir + "|" + ctx.HeadRefOid + "|" + pending
 	// Only errMissingCommit is returned as an error, so only a miss is
 	// remembered; a success is stored with no lifetime, so never reused.
 	// The cache also makes concurrent misses share one fetch.
-	v, err := s.prThreadsCacheOrInit().getErrTTL("prfetch|"+pc.pr.ID+"|"+dir, 0, prFetchMissTTL, false, func() (interface{}, error) {
+	v, err := s.prThreadsCacheOrInit().getErrTTL(key, 0, prFetchMissTTL, false, func() (interface{}, error) {
 		if !s.fetchPRCommits(dir, pc.ref, ctx) {
 			return nil, errMissingCommit
 		}

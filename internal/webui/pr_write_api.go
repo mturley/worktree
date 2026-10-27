@@ -140,10 +140,11 @@ func (s *Server) capturePRLines(w http.ResponseWriter, dir string, req prLinesRe
 	return reviewcomments.Comment{File: req.File, Side: side, Rev: storedRev(dir, rev, req.File), Anchor: anchor}, true
 }
 
-// placeOnPR loads pc's target and places c on it. A missing commit is an
-// unpostable placement with reasonMissingCommit, not an error.
-func (s *Server) placeOnPR(dir string, pc prComments, c reviewcomments.Comment) (*prTarget, prPlacement, error) {
-	t, err := s.loadPRTarget(dir, pc)
+// placeOnPR loads pc's target (the PR head when headOnly, else the pending
+// review's commit when there is one) and places c on it. A missing commit
+// is an unpostable placement with reasonMissingCommit, not an error.
+func (s *Server) placeOnPR(dir string, pc prComments, c reviewcomments.Comment, headOnly bool) (*prTarget, prPlacement, error) {
+	t, err := s.loadPRTarget(dir, pc, headOnly)
 	if errors.Is(err, errMissingCommit) {
 		return nil, prPlacement{reason: reasonMissingCommit}, nil
 	}
@@ -171,15 +172,23 @@ func (s *Server) pendingReviewID(pc prComments, ctx *wgithub.PRWriteContext, com
 	return id, err
 }
 
-type prCheckResponse struct {
+type prVerdict struct {
 	Postable bool   `json:"postable"`
 	Reason   string `json:"reason,omitempty"`
+}
+
+// prCheckResponse: whether the lines can go into the pending review
+// (placed on its commit) and as a single comment (placed on the PR head).
+// They differ when a pending review is on an older commit.
+type prCheckResponse struct {
+	Review prVerdict `json:"review"`
+	Single prVerdict `json:"single"`
 }
 
 // handlePRWriteCheck: GET /api/pr-write/check?path=&file=&side=&start_line=&end_line=&old_rev=&new_rev=
 //
 // Whether a new comment on these lines of the view can be posted to the PR,
-// and if not why.
+// per mode, and if not why.
 func (s *Server) handlePRWriteCheck(w http.ResponseWriter, r *http.Request) {
 	dir, ok := s.registeredWorktreePath(w, r)
 	if !ok {
@@ -203,12 +212,19 @@ func (s *Server) handlePRWriteCheck(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, p, err := s.placeOnPR(dir, pc, c)
-	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
-		return
+	var out prCheckResponse
+	for _, m := range []struct {
+		v        *prVerdict
+		headOnly bool
+	}{{&out.Review, false}, {&out.Single, true}} {
+		_, p, err := s.placeOnPR(dir, pc, c, m.headOnly)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		*m.v = prVerdict{Postable: p.ok, Reason: p.reason}
 	}
-	writeJSON(w, http.StatusOK, prCheckResponse{Postable: p.ok, Reason: p.reason})
+	writeJSON(w, http.StatusOK, out)
 }
 
 type prCommentRequest struct {
@@ -221,8 +237,8 @@ type prCommentRequest struct {
 // handlePRWriteComment: POST /api/pr-write/comment
 //
 // Comments on the view's lines on the PR: added to the pending review
-// (started when there is none) in "review" mode, posted now in "single"
-// mode, both at the target commit. Lines GitHub would refuse are a 409
+// (started when there is none) at its commit in "review" mode, posted now
+// at the PR head in "single" mode. Lines GitHub would refuse are a 409
 // with the reason, and nothing is written.
 func (s *Server) handlePRWriteComment(w http.ResponseWriter, r *http.Request) {
 	var req prCommentRequest
@@ -249,7 +265,9 @@ func (s *Server) handlePRWriteComment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	t, p, err := s.placeOnPR(dir, pc, c)
+	// A single comment goes on the PR head; one added to a pending review
+	// goes on the review's commit.
+	t, p, err := s.placeOnPR(dir, pc, c, req.Mode == prModeSingle)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return

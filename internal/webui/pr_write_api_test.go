@@ -2,6 +2,7 @@ package webui
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,7 +21,9 @@ import (
 
 // prwFixture is a prcFixture whose worktree has a PR: base adds a 30-line
 // file "long"; head changes its lines 5 and 25 (hunks 2-8 and 22-28). Both
-// revs are handed out, and every write seam is stubbed and recorded.
+// revs are handed out, and every write seam and the targeted fetch (via a
+// "gh" remote for o/r) are stubbed and recorded, so nothing reaches GitHub
+// or a real remote.
 type prwFixture struct {
 	*prcFixture
 	base, head string
@@ -38,6 +41,11 @@ func newPRWFixture(t *testing.T) *prwFixture {
 	f.srv.revSet().add(f.wt, f.base, f.head)
 
 	rec := func(format string, a ...any) { f.calls = append(f.calls, fmt.Sprintf(format, a...)) }
+	gitIn(t, f.wt, "remote", "add", "gh", "https://github.com/o/r.git")
+	f.srv.FetchRefs = func(_ context.Context, dir, remote string, refspecs ...string) error {
+		rec("fetch %s %s", remote, strings.Join(refspecs, " "))
+		return nil
+	}
 	f.srv.StartReview = func(token, prID, commit string) (string, error) {
 		rec("start %s %s %s", token, prID, commit)
 		return "R_new", nil
@@ -83,9 +91,14 @@ func (f *prwFixture) post(t *testing.T, route string, body map[string]any) (int,
 	return resp.StatusCode, out
 }
 
-type prwCheck struct {
+type prwVerdict struct {
 	Postable bool   `json:"postable"`
 	Reason   string `json:"reason"`
+}
+
+type prwCheck struct {
+	Review prwVerdict `json:"review"`
+	Single prwVerdict `json:"single"`
 }
 
 func (f *prwFixture) check(t *testing.T, side string, start, end int, oldRev, newRev string) prwCheck {
@@ -100,10 +113,18 @@ func (f *prwFixture) check(t *testing.T, side string, start, end int, oldRev, ne
 	return c
 }
 
-func wantCheck(t *testing.T, got prwCheck, postable bool, reason string) {
+// wantCheck wants both modes' verdict to be reason ("" for postable).
+func wantCheck(t *testing.T, got prwCheck, reason string) {
 	t.Helper()
-	if got.Postable != postable || got.Reason != reason {
-		t.Fatalf("check = %+v; want postable=%v reason=%q", got, postable, reason)
+	wantModes(t, got, reason, reason)
+}
+
+// wantModes wants review's and single's verdicts ("" for postable).
+func wantModes(t *testing.T, got prwCheck, review, single string) {
+	t.Helper()
+	want := prwCheck{Review: prwVerdict{review == "", review}, Single: prwVerdict{single == "", single}}
+	if got != want {
+		t.Fatalf("check = %+v; want %+v", got, want)
 	}
 }
 
@@ -119,38 +140,41 @@ func (f *prwFixture) wantCalls(t *testing.T, want ...string) {
 
 func TestPRWriteCheck(t *testing.T) {
 	f := newPRWFixture(t)
-	wantCheck(t, f.check(t, "new", 5, 5, f.base, f.head), true, "")
-	wantCheck(t, f.check(t, "old", 25, 25, f.base, f.head), true, "")
-	wantCheck(t, f.check(t, "new", 15, 15, f.base, f.head), false, "not part of the PR's changes")
+	wantCheck(t, f.check(t, "new", 5, 5, f.base, f.head), "")
+	wantCheck(t, f.check(t, "old", 25, 25, f.base, f.head), "")
+	wantCheck(t, f.check(t, "new", 15, 15, f.base, f.head), "not part of the PR's changes")
 
 	// The PR moved on and changed line 5 again.
 	commitFile(t, f.wt, "long", numbered(30, map[int]string{5: "FIVE", 25: "twenty-five"}))
 	c2 := headSHA(t, f.wt)
 	f.setCtx(&wgithub.PRWriteContext{PullRequestID: "PR_node", BaseRefOid: f.base, HeadRefOid: c2})
-	wantCheck(t, f.check(t, "new", 5, 5, f.base, f.head), false, "out of date")
+	wantCheck(t, f.check(t, "new", 5, 5, f.base, f.head), "out of date")
 
 	// A local commit the PR does not have.
 	commitFile(t, f.wt, "long", numbered(30, map[int]string{5: "FIVE", 10: "ten", 25: "twenty-five"}))
 	c3 := headSHA(t, f.wt)
 	f.srv.revSet().add(f.wt, c3)
-	wantCheck(t, f.check(t, "new", 10, 10, f.base, c3), false, "on a commit not pushed to the PR")
+	wantCheck(t, f.check(t, "new", 10, 10, f.base, c3), "on a commit not pushed to the PR")
 
 	// c3 pushed, but a pending review sits on c2.
 	f.setCtx(&wgithub.PRWriteContext{PullRequestID: "PR_node", BaseRefOid: f.base, HeadRefOid: c3,
 		Pending: &wgithub.PendingReview{ID: "R1", CommitOid: c2}})
-	wantCheck(t, f.check(t, "new", 10, 10, f.base, c3), false, "newer than your pending review")
+	// A single comment goes on the head, so it is unaffected.
+	wantModes(t, f.check(t, "new", 10, 10, f.base, c3), "newer than your pending review", "")
 
 	// Uncommitted lines, from a working-tree view.
 	f.setCtx(&wgithub.PRWriteContext{PullRequestID: "PR_node", BaseRefOid: f.base, HeadRefOid: c3})
 	must(t, os.WriteFile(filepath.Join(f.wt, "long"), []byte(numbered(30, map[int]string{5: "FIVE", 10: "ten", 12: "dirty", 25: "twenty-five"})), 0o644))
 	p := getPatch(t, f.ts, f.wt, "")
-	wantCheck(t, f.check(t, "new", 12, 12, p.OldRev, p.NewRev), false, "on uncommitted changes")
+	wantCheck(t, f.check(t, "new", 12, 12, p.OldRev, p.NewRev), "on uncommitted changes")
 
 	// The PR head is not in the local repo.
 	f.setCtx(&wgithub.PRWriteContext{PullRequestID: "PR_node", BaseRefOid: f.base, HeadRefOid: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"})
-	wantCheck(t, f.check(t, "new", 5, 5, f.base, f.head), false, "Fetch the PR's latest commits first")
-
-	f.wantCalls(t)
+	wantCheck(t, f.check(t, "new", 5, 5, f.base, f.head), "Fetch the PR's latest commits first")
+	// Both modes' targets are the same with no pending review: one fetch,
+	// whose miss the second reuses.
+	f.wantCalls(t, "fetch gh +refs/pull/1/head:refs/pr-review/1")
+	f.calls = nil
 
 	// Bad requests.
 	if code, _ := f.get(t, "/api/pr-write/check", "&file=long&side=new&start_line=5&end_line=5&old_rev="+f.base+"&new_rev=abc"); code != 404 {
@@ -216,7 +240,57 @@ func TestPRWriteCommentSingle(t *testing.T) {
 	if code != 409 || out["reason"] != "Fetch the PR's latest commits first" {
 		t.Fatalf("missing commit: %d %v", code, out)
 	}
-	f.wantCalls(t)
+	f.wantCalls(t, "fetch gh +refs/pull/1/head:refs/pr-review/1")
+}
+
+// TestPRWriteCommentSingleStalePending: with a pending review on an older
+// commit, a single comment is still placed on and posted at the PR head,
+// while the same lines in review mode go on the pending review's commit.
+func TestPRWriteCommentSingleStalePending(t *testing.T) {
+	f := newPRWFixture(t)
+	// c2 inserts two lines on top (line 5 moves to 7) and changes line 10.
+	commitFile(t, f.wt, "long", "top1\ntop2\n"+numbered(30, map[int]string{5: "five", 10: "ten", 25: "twenty-five"}))
+	c2 := headSHA(t, f.wt)
+	f.srv.revSet().add(f.wt, c2)
+	f.setCtx(&wgithub.PRWriteContext{PullRequestID: "PR_node", BaseRefOid: f.base, HeadRefOid: c2,
+		Pending: &wgithub.PendingReview{ID: "R1", CommitOid: f.head}})
+
+	// Line 12 ("ten") is newer than the pending review, but fine on the head.
+	wantModes(t, f.check(t, "new", 12, 12, f.base, c2), "newer than your pending review", "")
+	wantCheck(t, f.check(t, "new", 5, 5, f.base, f.head), "")
+
+	// Written on line 5 of the pending review's commit: single posts at the
+	// head, where it is line 7.
+	code, out := f.comment(t, "single", 5, 5, "now")
+	if code != 200 || out["comment_id"] != float64(103) {
+		t.Fatalf("single: %d %v", code, out)
+	}
+	f.wantCalls(t, "comment tok o/r#1 "+c2+" {Path:long Side:RIGHT Line:7 StartLine:0 Body:now}")
+
+	// Review mode adds it to the pending review, on its commit's line 5.
+	f.calls = nil
+	if code, _ := f.comment(t, "review", 5, 5, "later"); code != 200 {
+		t.Fatalf("review: %d", code)
+	}
+	f.wantCalls(t, "thread tok R1 {Path:long Side:RIGHT Line:5 StartLine:0 Body:later}")
+
+	// Lines newer than the pending review: single posts, review refuses.
+	f.calls = nil
+	code, out = f.post(t, "/api/pr-write/comment", map[string]any{
+		"mode": "review", "file": "long", "side": "new", "start_line": 12, "end_line": 12,
+		"body": "x", "old_rev": f.base, "new_rev": c2,
+	})
+	if code != 409 || out["reason"] != "newer than your pending review" {
+		t.Fatalf("review newer: %d %v", code, out)
+	}
+	code, _ = f.post(t, "/api/pr-write/comment", map[string]any{
+		"mode": "single", "file": "long", "side": "new", "start_line": 12, "end_line": 12,
+		"body": "x", "old_rev": f.base, "new_rev": c2,
+	})
+	if code != 200 {
+		t.Fatalf("single newer: %d", code)
+	}
+	f.wantCalls(t, "comment tok o/r#1 "+c2+" {Path:long Side:RIGHT Line:12 StartLine:0 Body:x}")
 }
 
 func TestPRWriteCommentValidation(t *testing.T) {
@@ -328,6 +402,27 @@ func TestPRWriteInvalidatesCache(t *testing.T) {
 	f.summary(t)
 	if f.threadsCalls.Load() != threads+1 || f.ctxCalls.Load() != ctxs+1 {
 		t.Fatal("reply did not drop the caches")
+	}
+
+	// Review mode: starting the review and adding to it drops them.
+	if code, _ := f.comment(t, "review", 5, 5, "x"); code != 200 {
+		t.Fatalf("review comment: %d", code)
+	}
+	threads, ctxs = f.threadsCalls.Load(), f.ctxCalls.Load()
+	f.summary(t)
+	if f.threadsCalls.Load() != threads+1 || f.ctxCalls.Load() != ctxs+1 {
+		t.Fatal("review comment did not drop the caches")
+	}
+
+	// A review started whose add then fails is still a write: dropped.
+	f.srv.AddReviewThread = func(string, string, wgithub.NewReviewComment) (int64, error) { return 0, fmt.Errorf("boom") }
+	if code, _ := f.comment(t, "review", 5, 5, "x"); code != http.StatusBadGateway {
+		t.Fatalf("failed add: %d", code)
+	}
+	threads, ctxs = f.threadsCalls.Load(), f.ctxCalls.Load()
+	f.summary(t)
+	if f.threadsCalls.Load() != threads+1 || f.ctxCalls.Load() != ctxs+1 {
+		t.Fatal("started review did not drop the caches")
 	}
 
 	// A failed write keeps them.
