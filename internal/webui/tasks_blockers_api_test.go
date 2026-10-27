@@ -172,18 +172,26 @@ func TestTaskListCarriesBlockedFields(t *testing.T) {
 	}
 	got := byID[tk.ID]
 	want := []string{"T1 dep", "Jira thing", "#4498"}
-	if !got.Blocked || got.BlockerCount != 3 || strings.Join(got.BlockerLabels, "|") != strings.Join(want, "|") {
-		t.Errorf("main = blocked %v count %d labels %q", got.Blocked, got.BlockerCount, got.BlockerLabels)
+	var labels []string
+	for _, o := range got.OpenBlockers {
+		labels = append(labels, o.Label)
 	}
-	if byID[dep.ID].Blocked || byID[dep.ID].BlockerLabels == nil {
+	if !got.Blocked || got.BlockerCount != 3 || strings.Join(labels, "|") != strings.Join(want, "|") {
+		t.Errorf("main = blocked %v count %d open %+v", got.Blocked, got.BlockerCount, got.OpenBlockers)
+	}
+	// Only the resource blocker names its resource.
+	if o := got.OpenBlockers; len(o) == 3 && (o[0].ResourceType != "" || o[2].ResourceType != "pr" || o[2].ResourceID == "") {
+		t.Errorf("open blockers' resources = %+v", o)
+	}
+	if byID[dep.ID].Blocked || byID[dep.ID].OpenBlockers == nil {
 		t.Errorf("dep = %+v", byID[dep.ID])
 	}
-	if !strings.Contains(body, `"blocker_labels":[]`) || !strings.Contains(body, `"blocker_count":0`) {
-		t.Errorf("blocker_labels/blocker_count must always be sent: %s", body)
+	if !strings.Contains(body, `"open_blockers":[]`) || !strings.Contains(body, `"blocker_count":0`) {
+		t.Errorf("open_blockers/blocker_count must always be sent: %s", body)
 	}
 	// The single-task endpoints carry them too.
-	if d := getDetail(t, s, tk.ID); len(d.BlockerLabels) != 3 {
-		t.Errorf("detail labels = %q", d.BlockerLabels)
+	if d := getDetail(t, s, tk.ID); len(d.OpenBlockers) != 3 {
+		t.Errorf("detail open blockers = %+v", d.OpenBlockers)
 	}
 }
 
@@ -216,13 +224,13 @@ func TestDoneTaskDTOIsNeverBlocked(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, d := range out {
-		if d.ID == tk.ID && (d.Blocked || d.BlockerCount != 0 || len(d.BlockerLabels) != 0) {
-			t.Errorf("done task in list = blocked %v count %d labels %q", d.Blocked, d.BlockerCount, d.BlockerLabels)
+		if d.ID == tk.ID && (d.Blocked || d.BlockerCount != 0 || len(d.OpenBlockers) != 0) {
+			t.Errorf("done task in list = blocked %v count %d open %+v", d.Blocked, d.BlockerCount, d.OpenBlockers)
 		}
 	}
 	d := getDetail(t, s, tk.ID)
-	if d.Blocked || d.BlockerCount != 0 || len(d.BlockerLabels) != 0 || d.BlockerLabels == nil {
-		t.Errorf("done task detail = blocked %v count %d labels %#v", d.Blocked, d.BlockerCount, d.BlockerLabels)
+	if d.Blocked || d.BlockerCount != 0 || len(d.OpenBlockers) != 0 || d.OpenBlockers == nil {
+		t.Errorf("done task detail = blocked %v count %d open %#v", d.Blocked, d.BlockerCount, d.OpenBlockers)
 	}
 	if len(d.Blockers) != 1 || d.Blockers[0].Resolved {
 		t.Errorf("its blocker stays listed, unresolved: %+v", d.Blockers)

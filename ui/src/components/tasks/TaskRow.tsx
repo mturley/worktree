@@ -9,6 +9,8 @@ import { TaskPriorityMenu } from "./TaskPriorityMenu"
 import { UnreadMarkerDot } from "../UnreadMarkerDot"
 import { useCrossHover } from "../CrossHoverContext"
 import { type CrossHoverItem, crossResourceRef } from "../../lib/crossHover"
+import { useCmuxMatches } from "../../api/cmux"
+import { BlockersHoverCard, ResourceHoverCard, WorkspaceLabel, WorktreeHoverCard } from "./LinkHoverCards"
 
 const DUE_COLOR = {
   overdue: "red",
@@ -154,18 +156,7 @@ export function TaskRow({ task, ownResource, ownWorktree, dragHandle, onState, o
         // Never red for a resolved blocker: the server sends only the
         // unresolved ones' labels, and blocked only while one is left.
         // A done task is never blocked (the server agrees).
-        <Tooltip
-          multiline
-          maw={320}
-          label={
-            <>
-              <Text size="xs" fw={600}>Blocked by</Text>
-              {task.blocker_labels.map((l, i) => (
-                <Text size="xs" key={i}>{l}</Text>
-              ))}
-            </>
-          }
-        >
+        <BlockersHoverCard blockers={task.open_blockers}>
           <Badge
             data-testid="task-blocked-chip"
             size="xs"
@@ -175,7 +166,7 @@ export function TaskRow({ task, ownResource, ownWorktree, dragHandle, onState, o
           >
             ⛔ blocked
           </Badge>
-        </Tooltip>
+        </BlockersHoverCard>
       )}
       {due && (
         <Tooltip label={due.title}>
@@ -190,20 +181,10 @@ export function TaskRow({ task, ownResource, ownWorktree, dragHandle, onState, o
         </Badge>
       )}
       {link && (
-        <Badge
-          data-testid="task-link-chip"
-          // A worktree chip opens that worktree's page; a resource chip some
-          // worktree follows opens that page with the resource selected; any
-          // other chip just keeps its click from the row.
-          {...(link.worktree || link.target
-            ? {
-                component: "button" as const,
-                type: "button" as const,
-                className: "task-link-chip-nav",
-                "aria-label": link.worktree ? `Open worktree ${link.text}` : `Open ${link.text}`,
-              }
-            : {})}
-          onClick={(e: React.MouseEvent) => {
+        <TaskLinkChip
+          task={task}
+          link={link}
+          onClick={(e) => {
             keepFromRow(e)
             if (link.worktree) navigate(`/worktree/${encodeURIComponent(link.worktree)}`)
             else if (link.target) {
@@ -211,14 +192,57 @@ export function TaskRow({ task, ownResource, ownWorktree, dragHandle, onState, o
               navigate(`/worktree/${encodeURIComponent(worktree)}?resource=${serializeResourceKey(resource)}`)
             }
           }}
-          size="xs"
-          variant="outline"
-          color="gray"
-          style={{ flex: "none", borderStyle: link.archived ? "dashed" : "solid", textTransform: "none" }}
-        >
-          {link.archived ? `${link.text} · archived` : link.text}
-        </Badge>
+        />
       )}
     </Group>
   )
+}
+
+/**
+ * The row's link chip (linkChip). A worktree chip names the worktree's cmux
+ * workspace when it has one, colour bar and all; hovering a worktree or
+ * resource chip previews it. The chip truncates, and the preview has the
+ * full names.
+ */
+function TaskLinkChip({ task, link, onClick }: {
+  task: Task
+  link: NonNullable<ReturnType<typeof linkChip>>
+  onClick: (e: React.MouseEvent) => void
+}) {
+  // The chip names the first Focus link, when there is one.
+  const focus = task.links.find((l) => l.focus)
+  const more = task.links.length - 1
+  // No path asks cmux about nothing: an empty path matches no workspace.
+  const ws = useCmuxMatches(link.worktree ?? "")[0]
+  const workspace = ws ? <WorkspaceLabel ws={ws} suffix={more > 0 ? ` +${more}` : undefined} /> : null
+  const text = link.archived ? `${link.text} · archived` : link.text
+  const chip = (
+    <Badge
+      data-testid="task-link-chip"
+      // A worktree chip opens that worktree's page; a resource chip some
+      // worktree follows opens that page with the resource selected; any
+      // other chip just keeps its click from the row.
+      {...(link.worktree || link.target
+        ? {
+            component: "button" as const,
+            type: "button" as const,
+            className: "task-link-chip-nav",
+            "aria-label": link.worktree ? `Open worktree ${link.text}` : `Open ${link.text}`,
+          }
+        : {})}
+      onClick={onClick}
+      size="xs"
+      variant="outline"
+      color="gray"
+      maw={200}
+      style={{ flex: "none", borderStyle: link.archived ? "dashed" : "solid", textTransform: "none" }}
+    >
+      {workspace ?? text}
+    </Badge>
+  )
+  if (link.worktree) return <WorktreeHoverCard path={link.worktree}>{chip}</WorktreeHoverCard>
+  if (focus?.kind === "resource" && focus.resource_type && focus.resource_id) {
+    return <ResourceHoverCard type={focus.resource_type} id={focus.resource_id}>{chip}</ResourceHoverCard>
+  }
+  return chip
 }

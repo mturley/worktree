@@ -66,9 +66,9 @@ type taskDTO struct {
 	// Blocked: some blocker is unresolved; BlockerCount is how many.
 	Blocked      bool `json:"blocked"`
 	BlockerCount int  `json:"blocker_count"`
-	// BlockerLabels names the unresolved blockers (blockerLabeler), oldest
-	// first, for the row chip's tooltip. Never null.
-	BlockerLabels []string `json:"blocker_labels"`
+	// OpenBlockers are the unresolved blockers (openBlockers), oldest first,
+	// for the row chip's tooltip. Never null.
+	OpenBlockers []openBlockerDTO `json:"open_blockers"`
 	// UndoEventID is set only on the answer to a write that changed
 	// something undoable (a state change, a subtask check): the event id for
 	// POST /api/tasks/undo. Absent when the write changed nothing.
@@ -87,7 +87,7 @@ func newTaskDTO(t tasks.Task) taskDTO {
 		Implicit:      append(make([]string, 0, len(t.Implicit)), t.Implicit...),
 		SubtasksTotal: len(t.Subtasks),
 		Blocked:       t.Blocked, BlockerCount: t.BlockerCount,
-		BlockerLabels: []string{},
+		OpenBlockers:  []openBlockerDTO{},
 	}
 	for _, l := range t.Links {
 		out.Links = append(out.Links, taskLinkDTO{
@@ -154,13 +154,13 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sums := s.taskUnreadSummaries()
-	labels := s.allBlockerLabels()
+	open := s.allOpenBlockers()
 	out := make([]taskDTO, 0, len(ts))
 	for _, t := range ts {
 		d := newTaskDTO(t)
 		d.UnreadCount, d.UnreadThroughTS = sums[t.ID].Count, sums[t.ID].NewestTS
-		if l := labels[t.ID]; l != nil && t.Blocked { // a done task is never blocked
-			d.BlockerLabels = l
+		if o := open[t.ID]; o != nil && t.Blocked { // a done task is never blocked
+			d.OpenBlockers = o
 		}
 		out = append(out, d)
 	}
@@ -202,14 +202,14 @@ func (s *Server) taskUnreadSummaries() map[int64]unread.Summary {
 	return sums
 }
 
-// newTaskDTOWithUnread is newTaskDTO with unread_count and blocker_labels
+// newTaskDTOWithUnread is newTaskDTO with unread_count and open_blockers
 // filled, for the endpoints that return one task.
 func (s *Server) newTaskDTOWithUnread(t tasks.Task) taskDTO {
 	d := newTaskDTO(t)
 	sum := s.taskUnreadSummaries()[t.ID]
 	d.UnreadCount, d.UnreadThroughTS = sum.Count, sum.NewestTS
 	if t.BlockerCount > 0 {
-		d.BlockerLabels = s.taskBlockerLabels(t.ID)
+		d.OpenBlockers = s.taskOpenBlockers(t.ID)
 	}
 	return d
 }

@@ -1207,8 +1207,10 @@ the watcher toggles do not apply.
   `via`, the `"type:id"` resource links it follows), `subtasks`, and
   `event_links`. Every write route answers with the fresh detail.
 - **Blockers** (`tasks_blockers_api.go`). `taskDTO` carries `blocked`,
-  `blocker_count` (unresolved) and `blocker_labels` (the unresolved
-  blockers' labels, oldest first, never null; false, 0 and [] for a done
+  `blocker_count` (unresolved) and `open_blockers` (the unresolved
+  blockers, oldest first, as `{label, resource_type?, resource_id?}` — the
+  resource only on a resource blocker, so the row's "blocked" chip can
+  preview it as the Resources tab shows it; never null; false, 0 and [] for a done
   task, which is never blocked; `GET /api/tasks` builds them
   from one `tasks.UnresolvedBlockers` per request). The detail adds
   `blockers` (unresolved first: `{id, kind, label, url?, status_label,
@@ -1646,8 +1648,8 @@ the new blocker's id (a `--resource` URL is kept for the hold, and a
 `wt:`/`.` ref is refused); `tasks unblock <blocker-id>` removes one; `tasks
 resolve <blocker-id> [--unresolve]` resolves a Slack, link or free-text
 blocker by hand. Each takes `--json`. `list --json` and `show --json` carry
-`blocked`, `blocker_count` and `blocker_labels` (the web DTO's names; labels
-are the event labels, "T4 Ship it" or "pr:o/r#4498", not display titles),
+`blocked`, `blocker_count` and `blocker_labels` (the web DTO sends
+`open_blockers` objects instead; these labels are the event labels, "T4 Ship it" or "pr:o/r#4498", not display titles),
 and `show` adds `blockers` and `blocks`, in JSON and text. A task blocker
 resolves at once from the CLI; PR and Jira blockers wait for `worktree ui`.
 
@@ -1753,6 +1755,18 @@ URL param (`?task=<id>`) through **`TaskModalProvider`**
   `/worktree/<path>?resource=<serializeResourceKey>`, the same URL a resource
   row's worktree button builds, which selects it there. An unfollowed
   (archived) resource chip and "🔗 N linked" stay inert.
+- **Task links name cmux workspaces and preview on hover**
+  (`components/tasks/LinkHoverCards.tsx`). A worktree chip on a task row,
+  and a worktree or implicit-worktree row in the modal's "Linked to", shows
+  the worktree's first cmux workspace (`WorkspaceLabel`: colour bar, then a
+  title that truncates) when it has one. Hovering a worktree link opens
+  `WorktreeHoverCard`, which shows every workspace in full, then the
+  worktree's name and path. Hovering a resource link opens
+  `ResourceHoverCard`: `AllResourceSummary`, the Resources tab row's body,
+  read from the shared `["resources", "__all__"]` query. A resource no
+  worktree follows isn't in that list, so its card just says so. Hover-card
+  dropdowns stop click propagation, because a task row opens its modal on
+  any click that bubbles up to it, including clicks inside portals.
   `TaskStateCheckbox` guards its trigger AND `Menu.Dropdown`: the dropdown is
   portalled out of the row's DOM, but React still bubbles its events through
   the component tree, so a pick would otherwise open the modal. The guard

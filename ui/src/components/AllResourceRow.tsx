@@ -66,6 +66,32 @@ export function AllResourceActions({ r }: { r: AllResourceDTO }) {
 }
 
 /**
+ * A resource as the Resources tab's row shows it: the list card's contents
+ * with its unread and task badges, and the worktrees following it. Also the
+ * hover card on a task's link to the resource.
+ */
+export function AllResourceSummary({ r }: { r: AllResourceDTO }) {
+  const unread = hasUnread(r)
+  const openTasks = r.open_task_count ?? 0
+  const blocks = r.blocks_count ?? 0
+  return (
+    <>
+      <ResourceCardBody
+        r={r}
+        aside={unread || openTasks > 0 || blocks > 0 ? (
+          <>
+            {unread && <UnreadBadge unread count={r.unread_count} />}
+            <TaskCountBadge count={openTasks} title={openTasksLabel(openTasks)} />
+            <BlocksBadge count={blocks} />
+          </>
+        ) : undefined}
+      />
+      <WorktreesLine worktrees={r.worktrees} />
+    </>
+  )
+}
+
+/**
  * One resource on the home page's Resources tab: the list card's contents
  * (type line with status, title, metadata) plus the worktrees following it,
  * with the actions beside it as on a Linked Resources row. Wraps the actions
@@ -85,8 +111,6 @@ export function AllResourceRow({ r }: { r: AllResourceDTO }) {
   const [, navigate] = useLocation()
   const [choosing, setChoosing] = useState(false)
   const unread = hasUnread(r)
-  const openTasks = r.open_task_count ?? 0
-  const blocks = r.blocks_count ?? 0
   const { terms } = useSearchContext()
   const crossHover = useCrossHover({ kind: "resource", type: r.type, id: r.id, paths: r.worktrees.map((w) => w.path) })
 
@@ -128,17 +152,7 @@ export function AllResourceRow({ r }: { r: AllResourceDTO }) {
           aria-label={`view ${r.custom_name || r.title || r.id}`}
           style={{ flex: "1 1 260px", minWidth: 0, textAlign: "left", cursor: "inherit" }}
         >
-          <ResourceCardBody
-            r={r}
-            aside={unread || openTasks > 0 || blocks > 0 ? (
-              <>
-                {unread && <UnreadBadge unread count={r.unread_count} />}
-                <TaskCountBadge count={openTasks} title={openTasksLabel(openTasks)} />
-                <BlocksBadge count={blocks} />
-              </>
-            ) : undefined}
-          />
-          <WorktreesLine worktrees={r.worktrees} />
+          <AllResourceSummary r={r} />
           <MatchWhy match={terms.length ? matchResource(r, terms) : null} />
         </UnstyledButton>
         {/* Stops at the actions, so opening or copying never also navigates.

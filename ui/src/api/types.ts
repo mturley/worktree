@@ -686,6 +686,14 @@ export interface TaskLink {
   worktrees?: string[]
 }
 
+/** An unresolved blocker as a task row names it; mirrors openBlockerDTO. */
+export interface OpenBlocker {
+  label: string
+  /** Set for a resource blocker, so the row can show the resource. */
+  resource_type?: string
+  resource_id?: string
+}
+
 /** GET /api/tasks; mirrors taskDTO in internal/webui/tasks_api.go field for field. */
 export interface Task {
   id: number
@@ -723,8 +731,8 @@ export interface Task {
   blocked: boolean
   /** How many blockers are unresolved. */
   blocker_count: number
-  /** The unresolved blockers' labels, oldest first, for the row chip's tooltip. Never null. */
-  blocker_labels: string[]
+  /** The unresolved blockers, oldest first, for the row chip's tooltip. Never null. */
+  open_blockers: OpenBlocker[]
   /**
    * Only on the answer to an undoable write (a state change, a subtask
    * check) that changed something: the event it recorded, which

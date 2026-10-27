@@ -1355,7 +1355,7 @@ describe("WorktreeDetailPage tasks", () => {
   const task: Task = {
     id: 5, ref: "T5", title: "Tidy the branch", description: "", state: "not_started", priority: "none", starred: false,
     rank: "r1", created_at: "", updated_at: "", archived: false, links: [], implicit_worktrees: [],
-    subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, blocker_labels: [],
+    subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, open_blockers: [],
   }
   const activityHeader = () => document.querySelector<HTMLElement>("[data-activity-header]")!
   /** jsdom has no layout: make the capped list read as overflowing. */

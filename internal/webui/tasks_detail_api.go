@@ -84,7 +84,7 @@ func (s *Server) taskDetail(id int64) (taskDetailDTO, error) {
 	}
 	branches := s.registryBranches()
 	e := s.newEventEnricher()
-	blockers, blocks, labels, err := s.detailBlockers(id, e.resource)
+	blockers, blocks, open, err := s.detailBlockers(id, e.resource)
 	if err != nil {
 		return taskDetailDTO{}, err
 	}
@@ -92,7 +92,7 @@ func (s *Server) taskDetail(id int64) (taskDetailDTO, error) {
 	sum := s.taskUnreadSummaries()[t.ID]
 	td.UnreadCount, td.UnreadThroughTS = sum.Count, sum.NewestTS
 	if t.Blocked { // a done task is never blocked, so names no blockers
-		td.BlockerLabels = labels
+		td.OpenBlockers = open
 	}
 	d := taskDetailDTO{
 		taskDTO:     td,

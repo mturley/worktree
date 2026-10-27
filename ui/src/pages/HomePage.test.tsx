@@ -19,7 +19,7 @@ const summary: WorktreeSummary = {
 const homeTask: Task = {
   id: 1, ref: "T1", title: "Write the docs", description: "", state: "not_started", priority: "none", starred: false,
   rank: "r1", created_at: "", updated_at: "", archived: false, links: [], implicit_worktrees: [],
-  subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, blocker_labels: [],
+  subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, open_blockers: [],
 }
 
 const mocks = vi.hoisted(() => ({

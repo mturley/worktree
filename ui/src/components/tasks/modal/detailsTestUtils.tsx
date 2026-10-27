@@ -12,7 +12,7 @@ import { TaskModalProvider } from "./TaskModalProvider"
 export const detail = (extra: Partial<TaskDetail> = {}): TaskDetail => ({
   id: 1, ref: "T1", title: "task 1", description: "", state: "not_started", priority: "none", starred: false,
   rank: "r", created_at: "2026-10-20T00:00:00Z", updated_at: "2026-10-21T00:00:00Z", archived: false,
-  links: [], implicit_worktrees: [], subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, blocker_labels: [],
+  links: [], implicit_worktrees: [], subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, open_blockers: [],
   detail_links: [], implicit: [], subtasks: [], event_links: [], blockers: [], blocks: [], ...extra,
 })
 

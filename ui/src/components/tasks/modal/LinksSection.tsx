@@ -20,12 +20,14 @@ import {
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import type { TaskDetail, TaskDetailLink, TaskImplicit } from "../../../api/types"
+import { useCmuxMatches } from "../../../api/cmux"
 import { useTaskDetailMutations } from "../../../hooks/useTaskDetail"
 import { resourceCollisions } from "../../../lib/resourceCollision"
 import { shortResourceRef } from "../../../lib/resourceRef"
 import { useHoverMenu, type HoverMenu } from "../../../lib/useHoverMenu"
 import type { GroupId } from "../../../lib/resourceOrder"
 import { LinkPicker } from "./LinkPicker"
+import { ResourceHoverCard, WorkspaceLabel, WorktreeHoverCard } from "../LinkHoverCards"
 import { basename, linkKey, linkTarget, viaRef } from "./linkTargets"
 import { useSectionAction } from "./sectionAction"
 
@@ -218,18 +220,47 @@ function LinkGroup({ group, title, count, dragging, children }: {
   )
 }
 
+/**
+ * A worktree as the modal names it: its cmux workspace (colour bar and
+ * title) ahead of the dimmed `⎇ name` when it has one, else just `⎇ name`.
+ * Hovering shows the full workspace and worktree names.
+ */
+function WorktreeName({ path, name, dimmed }: { path: string; name: string; dimmed?: boolean }) {
+  const ws = useCmuxMatches(path)[0]
+  return (
+    <WorktreeHoverCard path={path} branch={name}>
+      <Group gap={6} wrap="nowrap" style={{ minWidth: 0 }}>
+        {ws && (
+          <Text size="sm" c={dimmed ? "dimmed" : undefined} style={{ minWidth: 0, display: "flex" }}>
+            <WorkspaceLabel ws={ws} />
+          </Text>
+        )}
+        <Text size={ws ? "xs" : "sm"} c={ws || dimmed ? "dimmed" : undefined} truncate style={{ minWidth: 0, flexShrink: ws ? 1 : undefined }}>
+          ⎇ {name}
+        </Text>
+      </Group>
+    </WorktreeHoverCard>
+  )
+}
+
 function LinkLabel({ l }: { l: TaskDetailLink }) {
   const ref = l.kind === "resource" ? shortResourceRef(l.resource_type ?? "", l.resource_id ?? "") : ""
-  const text = l.kind === "worktree" ? `⎇ ${l.title}` : l.title
+  const title = l.url ? (
+    <Anchor href={l.url} target="_blank" rel="noreferrer" size="sm" truncate style={{ minWidth: 0 }}>
+      {l.title}
+    </Anchor>
+  ) : (
+    <Text size="sm" truncate style={{ minWidth: 0 }}>{l.title}</Text>
+  )
   return (
     <Group gap={6} wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
       {ref && ref !== l.title && <Text size="xs" c="dimmed" style={{ flex: "none" }}>{ref}</Text>}
-      {l.url ? (
-        <Anchor href={l.url} target="_blank" rel="noreferrer" size="sm" truncate style={{ minWidth: 0 }}>
-          {text}
-        </Anchor>
+      {l.kind === "worktree" && l.worktree ? (
+        <WorktreeName path={l.worktree} name={l.title} />
+      ) : l.kind === "resource" && l.resource_type && l.resource_id ? (
+        <ResourceHoverCard type={l.resource_type} id={l.resource_id}>{title}</ResourceHoverCard>
       ) : (
-        <Text size="sm" truncate style={{ minWidth: 0 }}>{text}</Text>
+        title
       )}
       {l.archived && <Badge size="xs" color="gray" variant="light" style={{ flex: "none" }}>archived</Badge>}
     </Group>
@@ -308,7 +339,7 @@ function ImplicitRow({ im }: { im: TaskImplicit }) {
       style={{ borderWidth: 1, borderStyle: "dashed", borderColor: "var(--mantine-color-default-border)", borderRadius: 6 }}
     >
       <Group gap={6} wrap="nowrap">
-        <Text size="sm" c="dimmed" truncate style={{ minWidth: 0 }}>⎇ {im.branch || basename(im.worktree)}</Text>
+        <WorktreeName path={im.worktree} name={im.branch || basename(im.worktree)} dimmed />
         <Text size="xs" c="dimmed" style={{ flex: "none" }}>via {im.via.map(viaRef).join(", ")}</Text>
       </Group>
     </Box>

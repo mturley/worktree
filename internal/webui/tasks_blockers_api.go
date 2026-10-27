@@ -174,51 +174,65 @@ func (l *blockerLabeler) dto(b tasks.Blocker) taskBlockerDTO {
 	return d
 }
 
-// unresolvedLabels labels bs's unresolved blockers, in order. Never nil.
-func (l *blockerLabeler) unresolvedLabels(bs []tasks.Blocker) []string {
-	out := []string{}
+// openBlockerDTO is one unresolved blocker as a task row's "blocked" chip
+// names it: its label, and for a resource blocker the resource, so the
+// chip's tooltip can show it as the Resources tab does.
+type openBlockerDTO struct {
+	Label        string `json:"label"`
+	ResourceType string `json:"resource_type,omitempty"`
+	ResourceID   string `json:"resource_id,omitempty"`
+}
+
+// openBlockers describes bs's unresolved blockers, in order. Never nil.
+func (l *blockerLabeler) openBlockers(bs []tasks.Blocker) []openBlockerDTO {
+	out := []openBlockerDTO{}
 	for _, b := range bs {
-		if b.ResolvedAt == "" {
-			out = append(out, l.label(b))
+		if b.ResolvedAt != "" {
+			continue
 		}
+		o := openBlockerDTO{Label: l.label(b)}
+		if b.Kind == tasks.BlockerResource {
+			o.ResourceType, o.ResourceID = b.ResourceType, b.ResourceID
+		}
+		out = append(out, o)
 	}
 	return out
 }
 
-// allBlockerLabels maps every task with unresolved blockers to their
-// labels, read once per listing request. A failure is logged and costs
-// only the labels.
-func (s *Server) allBlockerLabels() map[int64][]string {
+// allOpenBlockers maps every task with unresolved blockers to them (see
+// openBlockers), read once per listing request. A failure is logged and
+// costs only the chip's tooltip.
+func (s *Server) allOpenBlockers() map[int64][]openBlockerDTO {
 	byTask, err := tasks.UnresolvedBlockers(s.DB)
 	if err != nil {
 		s.logger().Printf("tasks.UnresolvedBlockers: %v", err)
-		return map[int64][]string{}
+		return map[int64][]openBlockerDTO{}
 	}
 	var all []tasks.Blocker
 	for _, bs := range byTask {
 		all = append(all, bs...)
 	}
 	l := s.newBlockerLabeler(all, nil)
-	out := make(map[int64][]string, len(byTask))
+	out := make(map[int64][]openBlockerDTO, len(byTask))
 	for id, bs := range byTask {
-		out[id] = l.unresolvedLabels(bs)
+		out[id] = l.openBlockers(bs)
 	}
 	return out
 }
 
-// taskBlockerLabels is one task's unresolved blocker labels. Never nil.
-func (s *Server) taskBlockerLabels(id int64) []string {
+// taskOpenBlockers is one task's unresolved blockers. Never nil.
+func (s *Server) taskOpenBlockers(id int64) []openBlockerDTO {
 	bs, err := tasks.Blockers(s.DB, id)
 	if err != nil {
 		s.logger().Printf("tasks.Blockers(%d): %v", id, err)
-		return []string{}
+		return []openBlockerDTO{}
 	}
-	return s.newBlockerLabeler(bs, nil).unresolvedLabels(bs)
+	return s.newBlockerLabeler(bs, nil).openBlockers(bs)
 }
 
-// detailBlockers builds the detail's blockers, blocks and blocker labels.
+// detailBlockers builds the detail's blockers, blocks and open blockers.
 // resource is the detail's eventEnricher lookup.
-func (s *Server) detailBlockers(id int64, resource func(typ, id string) *resourceDTO) ([]taskBlockerDTO, []taskBlocksDTO, []string, error) {
+func (s *Server) detailBlockers(id int64, resource func(typ, id string) *resourceDTO) ([]taskBlockerDTO, []taskBlocksDTO, []openBlockerDTO, error) {
 	bs, err := tasks.Blockers(s.DB, id)
 	if err != nil {
 		return nil, nil, nil, err
@@ -241,7 +255,7 @@ func (s *Server) detailBlockers(id int64, resource func(typ, id string) *resourc
 		h := heads[bid]
 		blocks = append(blocks, taskBlocksDTO{ID: bid, Ref: fmt.Sprintf("T%d", bid), Title: h.Title, State: string(h.State)})
 	}
-	return blockers, blocks, l.unresolvedLabels(bs), nil
+	return blockers, blocks, l.openBlockers(bs), nil
 }
 
 type addBlockerRequest struct {

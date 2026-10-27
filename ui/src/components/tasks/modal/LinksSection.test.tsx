@@ -91,6 +91,33 @@ describe("LinksSection", () => {
     expect(within(row).queryByRole("button")).toBeNull()
   })
 
+  it("names worktrees by their cmux workspace, and previews links on hover", async () => {
+    const { qc } = show()
+    act(() => {
+      qc.setQueryData(["cmux"], {
+        available: true,
+        matches: {
+          "/w/feat": [{ ref: "workspace:1", title: "Feature work", color: "#00ff00", selected: false }],
+          "/w/impl": [{ ref: "workspace:2", title: "Implicit work", selected: false }],
+        },
+      })
+      qc.setQueryData(["resources", "__all__"], [{
+        type: "pr", id: "o/r#1", url: "https://github.com/o/r/pull/1", primary: true, title: "Fix login",
+        worktrees: [{ path: "/w/feat", repo: "r", branch: "login-branch" }],
+      }])
+    })
+    const feature = await screen.findByText("Feature work")
+    expect(screen.getByText("⎇ feat")).toBeInTheDocument()
+    expect(within(screen.getByTestId("implicit-/w/impl")).getByText("Implicit work")).toBeInTheDocument()
+
+    await userEvent.hover(feature)
+    expect(await screen.findByText("/w/feat")).toBeInTheDocument()
+    await userEvent.unhover(feature)
+
+    await userEvent.hover(screen.getByRole("link", { name: "Fix login" }))
+    expect(await screen.findByText("login-branch")).toBeInTheDocument()
+  })
+
   describe("drag", () => {
     beforeEach(() => {
       vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(

@@ -115,7 +115,7 @@ describe("matchTask", () => {
   const task: Task = {
     id: 1, ref: "T1", title: "Fix OAuth proxy", description: "alpha ".repeat(10) + "remember the sidecar cookie " + "omega ".repeat(10),
     state: "not_started", priority: "none", starred: false, rank: "a", created_at: "", updated_at: "",
-    archived: false, links: [], implicit_worktrees: [], subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, blocker_labels: [],
+    archived: false, links: [], implicit_worktrees: [], subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, open_blockers: [],
   }
 
   it("is null with no terms", () => {
