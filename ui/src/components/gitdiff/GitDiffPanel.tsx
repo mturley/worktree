@@ -19,7 +19,7 @@ import { RangePicker } from "./RangePicker"
  * Mounted only while the tab is selected, so `fetch: true` asks the server to
  * nudge its background fetch exactly while someone is looking.
  */
-export function GitDiffPanel({ path, repo, updated }: { path: string; repo: string; updated?: string }) {
+export function GitDiffPanel({ path, repo }: { path: string; repo: string }) {
   const git = useWorktreeGit(path, { fetch: true })
   if (git.isError && !git.data) {
     return <Text size="xs" c="red">Could not load git status: {git.error.message}</Text>
@@ -27,7 +27,7 @@ export function GitDiffPanel({ path, repo, updated }: { path: string; repo: stri
   if (!git.data) return <Loading />
   return (
     <Stack gap="sm">
-      <GitSummary git={git.data} repo={repo} updated={updated} />
+      <GitSummary git={git.data} repo={repo} />
       {git.data.on_disk && <FilesChanged path={path} git={git.data} />}
     </Stack>
   )

@@ -174,7 +174,7 @@ export function WorktreeDetailCard({ w, tab, onTabChange, escHint }: {
             panel's fetch nudge and resets its state. The badge on the tab
             label comes from the card's own polled status above. */}
         <Tabs.Panel value="code" pt={6}>
-          <GitDiffPanel path={w.path} repo={w.repo} updated={w.latest_event_ts} />
+          <GitDiffPanel path={w.path} repo={w.repo} />
         </Tabs.Panel>
 
         {/*

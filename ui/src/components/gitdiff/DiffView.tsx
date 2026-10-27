@@ -86,15 +86,13 @@ const rangeKey = (r: DiffRange) => (r === "all" ? "all" : `${r.from}..${r.to}`)
 export default function DiffView({
   path,
   repo,
-  updated,
   headerHeight,
   escHint = true,
   sidebarEscHint = false,
 }: {
   path: string
-  /** The worktree's repo and last activity, for the sidebar's git details. */
+  /** The worktree's repo, for the sidebar's git details. */
   repo?: string
-  updated?: string
   headerHeight: number
   /** Whether Esc's next step is leaving (the page's: a query in the search bar comes first). */
   escHint?: boolean
@@ -443,7 +441,7 @@ export default function DiffView({
     <Stack gap="sm" p={wide ? "xs" : 0}>
       {selectors("top")}
       {/* The Code tab's details, in one column to fit the sidebar. */}
-      {git?.on_disk && <GitSummary git={git} repo={repo} updated={updated} oneColumn />}
+      {git?.on_disk && <GitSummary git={git} repo={repo} oneColumn />}
       <TextInput
         size="xs"
         placeholder="Filter files"

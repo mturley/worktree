@@ -69,20 +69,19 @@ export function DirectoryRow({ path, git }: { path: string; git: WorktreeGit }) 
  * stacked on a phone, or always (`oneColumn`) in a narrow place like the
  * diff view's file tree sidebar.
  */
-export function GitSummary({ git, repo, updated, oneColumn = false }: {
+export function GitSummary({ git, repo, oneColumn = false }: {
   git: WorktreeGit
   repo?: string
-  updated?: string
   oneColumn?: boolean
 }) {
   return (
     <Stack gap={2}>
-      <Columns git={git} repo={repo} updated={updated} oneColumn={oneColumn} />
+      <Columns git={git} repo={repo} oneColumn={oneColumn} />
     </Stack>
   )
 }
 
-function Columns({ git, repo, updated, oneColumn }: { git: WorktreeGit; repo?: string; updated?: string; oneColumn: boolean }) {
+function Columns({ git, repo, oneColumn }: { git: WorktreeGit; repo?: string; oneColumn: boolean }) {
   const wide = useIsWide() && !oneColumn
   // One column lines every label up at the left column's width (with the
   // shorter "Tracking" so it fits); two columns give the right one its own.
@@ -126,7 +125,6 @@ function Columns({ git, repo, updated, oneColumn }: { git: WorktreeGit; repo?: s
             )}
           </span>
         </InfoRow>
-        {updated && <InfoRow label="Updated">{relativeTime(updated)}</InfoRow>}
       </Stack>
       <Stack gap={2} style={wide ? { flex: "1 1 0", minWidth: 0 } : undefined}>
         <InfoRow label="Merge base" labelWidth={rightWidth}>

@@ -3262,9 +3262,10 @@ plus an optional Uncommitted entry). The card's tab label carries a badge from
 the same data. `?diff[&file=<path>]` (`useDiffView`) opens the drill-down
 (`DiffView`), which replaces the page body. Its file tree sidebar shows the
 base and range selectors, then the Code tab's git details (`GitSummary` with
-`oneColumn`: repo, branch, working tree, updated, merge base, tracking branch,
-fetched, in one column), then the file filter and the tree. The page passes the
-worktree's `repo` and `latest_event_ts` for those details.
+`oneColumn`: repo, branch, working tree, merge base, tracking ("Tracking",
+shortened to fit), fetched, every label at one width), then the file filter and
+the tree. The page passes the worktree's `repo` for those details. Neither
+summary shows the worktree's last resource activity: it isn't git state.
 
 **Endpoints** (all take a registered worktree `path`; an unregistered one is
 refused):

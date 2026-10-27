@@ -258,7 +258,8 @@ describe("Code tab summary", () => {
     expect(await screen.findByText("2 staged · 3 modified · 1 untracked")).toBeVisible()
     expect(rowValue("Repo")).toBe("odh")
     expect(rowValue("Branch")).toBe("my-branch")
-    expect(rowValue("Updated")).toMatch(/ago$/)
+    // Resource activity isn't git state: no Updated row.
+    expect(screen.queryByText("Updated")).toBeNull()
   })
 
   it("says clean for a clean tree", async () => {
