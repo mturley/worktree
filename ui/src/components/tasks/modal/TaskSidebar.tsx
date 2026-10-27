@@ -1,19 +1,29 @@
-import { useState } from "react"
-import { ActionIcon, Button, Checkbox, Group, NativeSelect, Stack, Text, TextInput } from "@mantine/core"
+import { useState, type ReactNode } from "react"
+import { ActionIcon, Button, Checkbox, Group, Select, Stack, Text, TextInput } from "@mantine/core"
 import type { Priority, TaskDetail, TaskState } from "../../../api/types"
 import { relativeTime } from "../../../lib/relativeTime"
-import { TASK_STATE_LABEL, TASK_STATES } from "../TaskStateCheckbox"
+import { StateBox, TASK_STATE_LABEL, TASK_STATES } from "../TaskStateCheckbox"
+import { PRIORITY_LABEL, PriorityGlyph } from "../TaskPriorityMenu"
 import { BlockersSection } from "./BlockersSection"
 import type { TaskPatch } from "./useOptimisticTask"
 
 const STATES: { value: TaskState; label: string }[] = TASK_STATES.map((value) => ({ value, label: TASK_STATE_LABEL[value] }))
 
-const PRIORITIES: { value: Priority; label: string }[] = [
-  { value: "none", label: "None" },
-  { value: "low", label: "Low" },
-  { value: "medium", label: "Medium" },
-  { value: "high", label: "High" },
-]
+/** The sidebar lists the priorities lowest first, as it always has. */
+const PRIORITIES: { value: Priority; label: string }[] = (["none", "low", "medium", "high"] as const).map((value) => ({
+  value,
+  label: PRIORITY_LABEL[value],
+}))
+
+/** An option with its icon on the left, as the row's menus show them. */
+function option(icon: ReactNode, label: string) {
+  return (
+    <Group gap={8} wrap="nowrap">
+      {icon}
+      <span>{label}</span>
+    </Group>
+  )
+}
 
 /** Visible on both tabs. Every control saves on change. */
 export function TaskSidebar({ task, onUpdate, onState, onDelete }: {
@@ -24,19 +34,25 @@ export function TaskSidebar({ task, onUpdate, onState, onDelete }: {
 }) {
   return (
     <Stack gap="sm">
-      <NativeSelect
+      <Select
         label="State"
         size="xs"
         data={STATES}
         value={task.state}
-        onChange={(e) => onState(e.currentTarget.value as TaskState)}
+        allowDeselect={false}
+        leftSection={<StateBox state={task.state} size={14} />}
+        renderOption={({ option: o }) => option(<StateBox state={o.value as TaskState} size={14} />, o.label)}
+        onChange={(v) => v && onState(v as TaskState)}
       />
-      <NativeSelect
+      <Select
         label="Priority"
         size="xs"
         data={PRIORITIES}
         value={task.priority}
-        onChange={(e) => onUpdate({ priority: e.currentTarget.value as Priority })}
+        allowDeselect={false}
+        leftSection={<PriorityGlyph priority={task.priority} />}
+        renderOption={({ option: o }) => option(<PriorityGlyph priority={o.value as Priority} />, o.label)}
+        onChange={(v) => v && onUpdate({ priority: v as Priority })}
       />
       <Group gap={4} align="flex-end" wrap="nowrap">
         <TextInput

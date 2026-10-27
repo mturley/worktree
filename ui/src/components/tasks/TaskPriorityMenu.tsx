@@ -23,6 +23,12 @@ const MARK_STYLE = {
   width: 22, display: "inline-block", fontWeight: 700, fontSize: "var(--mantine-font-size-sm)",
 } as const
 
+/** A priority's mark at the menu's size, or an empty space of its width for none. */
+export function PriorityGlyph({ priority }: { priority: Priority }) {
+  const mark = PRIORITY_MARK[priority]
+  return <span aria-hidden style={{ ...MARK_STYLE, color: mark?.color }}>{mark?.text ?? ""}</span>
+}
+
 /** Keeps the menu's clicks from the row (or other host) around it. */
 const keepFromHost = (e: React.MouseEvent) => e.stopPropagation()
 
@@ -58,7 +64,7 @@ export function TaskPriorityMenu({ priority, title, onPick }: {
             leftSection={
               <span aria-hidden style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                 <span style={{ width: 12, display: "inline-block" }}>{p === priority ? "✓" : ""}</span>
-                <span style={{ ...MARK_STYLE, color: PRIORITY_MARK[p]?.color }}>{PRIORITY_MARK[p]?.text ?? ""}</span>
+                <PriorityGlyph priority={p} />
               </span>
             }
             onClick={() => onPick(p)}

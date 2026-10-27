@@ -14,7 +14,7 @@ function task(over: Partial<Task> = {}): Task {
     id: 1, ref: "T1", title: "t", description: "", state: "not_started",
     priority: "none", starred: false, rank: "a", created_at: "", updated_at: "",
     archived: false, links: [], implicit_worktrees: [], subtasks_total: 0, subtasks_done: 0,
-    blocked: false, blocker_count: 0, blocker_labels: [], ...over,
+    blocked: false, blocker_count: 0, open_blockers: [], ...over,
   }
 }
 

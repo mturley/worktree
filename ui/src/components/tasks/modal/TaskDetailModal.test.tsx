@@ -10,6 +10,12 @@ import { taskDetailKey } from "../../../hooks/useTaskDetail"
 import { TaskDetailModal } from "./TaskDetailModal"
 import { TaskModalProvider, useTaskModal } from "./TaskModalProvider"
 
+/** Picks `option` from the sidebar's `label` Select. */
+async function pick(user: ReturnType<typeof userEvent.setup>, label: string, option: string) {
+  await user.click(screen.getByRole("textbox", { name: label }))
+  await user.click(await screen.findByRole("option", { name: option }))
+}
+
 vi.mock("../../../api/client", async (orig) => ({
   ...(await orig<typeof import("../../../api/client")>()),
   api: {
@@ -25,7 +31,7 @@ vi.mock("../../../api/client", async (orig) => ({
 const detail = (id: number, extra: Partial<TaskDetail> = {}): TaskDetail => ({
   id, ref: `T${id}`, title: `task ${id}`, description: "", state: "not_started", priority: "none", starred: false,
   rank: "r", created_at: "2026-10-20T00:00:00Z", updated_at: "2026-10-21T00:00:00Z", archived: false,
-  links: [], implicit_worktrees: [], subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, blocker_labels: [],
+  links: [], implicit_worktrees: [], subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, open_blockers: [],
   detail_links: [], implicit: [], subtasks: [], event_links: [], blockers: [], blocks: [], ...extra,
 })
 
@@ -101,7 +107,7 @@ describe("TaskDetailModal", () => {
     await titleButton()
     expect(screen.getByRole("tab", { name: "Details" })).toBeInTheDocument()
     expect(screen.getByRole("tab", { name: "Activity" })).toBeInTheDocument()
-    expect(screen.getByLabelText("Priority")).toBeInTheDocument()
+    expect(screen.getByRole("textbox", { name: "Priority" })).toBeInTheDocument()
     expect(screen.getByText("Created")).toBeInTheDocument()
   })
 
@@ -160,9 +166,9 @@ describe("TaskDetailModal", () => {
     const user = userEvent.setup()
     wrap()
     await titleButton()
-    await user.selectOptions(screen.getByLabelText("Priority"), "high")
+    await pick(user, "Priority", "High")
     expect(api.updateTask).toHaveBeenCalledWith(5, { priority: "high" })
-    expect(screen.getByLabelText("Priority")).toHaveValue("high")
+    expect(screen.getByRole("textbox", { name: "Priority" })).toHaveValue("High")
   })
 
   it("rolls the optimistic change back when the save fails", async () => {
@@ -170,8 +176,8 @@ describe("TaskDetailModal", () => {
     const user = userEvent.setup()
     wrap()
     await titleButton()
-    await user.selectOptions(screen.getByLabelText("Priority"), "low")
-    await waitFor(() => expect(screen.getByLabelText("Priority")).toHaveValue("none"))
+    await pick(user, "Priority", "Low")
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Priority" })).toHaveValue("None"))
   })
 
   it("saves state from the sidebar, and shows it before the server replies", async () => {
@@ -179,9 +185,9 @@ describe("TaskDetailModal", () => {
     const user = userEvent.setup()
     wrap()
     await titleButton()
-    await user.selectOptions(screen.getByLabelText("State"), "in_progress")
+    await pick(user, "State", "In progress")
     expect(api.setTaskState).toHaveBeenCalledWith(5, "in_progress")
-    expect(screen.getByLabelText("State")).toHaveValue("in_progress")
+    expect(screen.getByRole("textbox", { name: "State" })).toHaveValue("In progress")
   })
 
   it("saves starred from the sidebar", async () => {
@@ -281,7 +287,7 @@ describe("TaskDetailModal", () => {
       const user = userEvent.setup()
       wrap()
       await titleButton()
-      await user.selectOptions(screen.getByLabelText("State"), "in_progress")
+      await pick(user, "State", "In progress")
       expect(await screen.findByText("Marked “task 5” in progress")).toBeInTheDocument()
     })
 
@@ -290,7 +296,7 @@ describe("TaskDetailModal", () => {
       const user = userEvent.setup()
       wrap()
       await titleButton()
-      await user.selectOptions(screen.getByLabelText("State"), "in_progress")
+      await pick(user, "State", "In progress")
       await waitFor(() => expect(api.setTaskState).toHaveBeenCalled())
       await new Promise((r) => setTimeout(r, 20))
       expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument()
@@ -303,7 +309,7 @@ describe("TaskDetailModal", () => {
       const user = userEvent.setup()
       wrap()
       await titleButton()
-      await user.selectOptions(screen.getByLabelText("State"), "not_started")
+      await pick(user, "State", "Not started")
       await user.click(await screen.findByRole("button", { name: "Undo" }))
       expect(await screen.findByText("Couldn't undo: The task changed since; nothing was undone.")).toBeInTheDocument()
     })

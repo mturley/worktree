@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { ActionIcon, Button, CloseButton, Group, Modal, TextInput, UnstyledButton } from "@mantine/core"
+import { ActionIcon, Button, CloseButton, Group, Modal, Text, TextInput, UnstyledButton } from "@mantine/core"
 import { notifications } from "@mantine/notifications"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { api } from "../../../api/client"
@@ -88,6 +88,8 @@ export function TaskModalHeader({ task, onUpdate, onState, onClose }: {
           Mark read
         </Button>
       )}
+      {/* The task's id, as links and blockers name it. */}
+      <Text size="xs" c="dimmed" style={{ flex: "none" }}>{task.ref}</Text>
       <CloseButton aria-label="Close task" onClick={onClose} style={{ flex: "none" }} />
     </Group>
   )

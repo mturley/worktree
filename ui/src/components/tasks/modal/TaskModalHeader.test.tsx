@@ -20,7 +20,7 @@ vi.mock("../../../api/client", async (orig) => ({
 const detail = (extra: Partial<TaskDetail> = {}): TaskDetail => ({
   id: 5, ref: "T5", title: "task 5", description: "", state: "not_started", priority: "none", starred: false,
   rank: "r", created_at: "2026-10-20T00:00:00Z", updated_at: "2026-10-21T00:00:00Z", archived: false,
-  links: [], implicit_worktrees: [], subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, blocker_labels: [],
+  links: [], implicit_worktrees: [], subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, open_blockers: [],
   detail_links: [], implicit: [], subtasks: [], event_links: [], blockers: [], blocks: [], ...extra,
 })
 
@@ -117,5 +117,13 @@ describe("TaskModalHeader Mark read", () => {
     wrap(detail({ unread_count: 1, unread_through_ts: "2099-03-02T00:00:00Z" }))
     await user.click(screen.getByRole("button", { name: "Mark read" }))
     expect(await screen.findByText(/Couldn't mark read: task gone/)).toBeInTheDocument()
+  })
+})
+
+describe("TaskModalHeader id", () => {
+  it("shows the task's id beside the close button, as links and blockers name it", () => {
+    wrap(detail())
+    const id = screen.getByText("T5")
+    expect(id.nextElementSibling).toBe(screen.getByRole("button", { name: "Close task" }))
   })
 })
