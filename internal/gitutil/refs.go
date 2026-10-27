@@ -107,3 +107,31 @@ func AheadBehind(dir, ref string) (ahead, behind int, ok bool) {
 	}
 	return ahead, behind, true
 }
+
+// TrackedPRNumber is the PR number the current branch tracks, when its
+// configured merge ref is refs/pull/<N>/head (as a branch made from a PR's
+// head is set up). ok is false for a detached HEAD, a branch with no
+// upstream, and any other upstream.
+func TrackedPRNumber(dir string) (int, bool) {
+	branch, ok := CurrentBranch(dir)
+	if !ok {
+		return 0, false
+	}
+	merge, err := git(dir, "config", "--get", "branch."+branch+".merge")
+	if err != nil {
+		return 0, false
+	}
+	rest, found := strings.CutPrefix(merge, "refs/pull/")
+	if !found {
+		return 0, false
+	}
+	num, found := strings.CutSuffix(rest, "/head")
+	if !found {
+		return 0, false
+	}
+	n, err := strconv.Atoi(num)
+	if err != nil || n <= 0 {
+		return 0, false
+	}
+	return n, true
+}

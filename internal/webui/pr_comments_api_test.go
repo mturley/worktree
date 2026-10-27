@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -37,8 +38,11 @@ type prcFixture struct {
 	head         string // the PR's head branch, as the summaries stub reports
 	threads      *wgithub.PRReviewThreads
 	threadsErr   error
+	writeCtx     *wgithub.PRWriteContext
+	writeCtxErr  error
 	sumCalls     atomic.Int32
 	threadsCalls atomic.Int32
+	ctxCalls     atomic.Int32
 }
 
 func newPRCFixture(t *testing.T) *prcFixture {
@@ -64,7 +68,7 @@ func newPRCFixture(t *testing.T) *prcFixture {
 		}
 		out := map[wgithub.PRRef]wgithub.PRSummary{}
 		for _, r := range refs {
-			out[r] = wgithub.PRSummary{HeadRefName: f.head, URL: "https://github.com/o/r/pull/1"}
+			out[r] = wgithub.PRSummary{HeadRefName: f.head, URL: fmt.Sprintf("https://github.com/%s/%s/pull/%d", r.Owner, r.Repo, r.Number)}
 		}
 		return out, nil
 	}
@@ -74,6 +78,14 @@ func newPRCFixture(t *testing.T) *prcFixture {
 			return nil, f.threadsErr
 		}
 		return f.threads, nil
+	}
+	f.writeCtx = &wgithub.PRWriteContext{PullRequestID: "PR_node"}
+	srv.FetchPRWriteContext = func(token string, ref wgithub.PRRef) (*wgithub.PRWriteContext, error) {
+		f.ctxCalls.Add(1)
+		if f.writeCtxErr != nil {
+			return nil, f.writeCtxErr
+		}
+		return f.writeCtx, nil
 	}
 	return f
 }
@@ -98,10 +110,12 @@ type prcSummary struct {
 		Number int    `json:"number"`
 		URL    string `json:"url"`
 	} `json:"pr"`
-	Fingerprint    string  `json:"fingerprint"`
-	OpenThreads    int     `json:"open_threads"`
-	UnreadComments int     `json:"unread_comments"`
-	UnreadIDs      []int64 `json:"unread_ids"`
+	Fingerprint     string  `json:"fingerprint"`
+	OpenThreads     int     `json:"open_threads"`
+	UnreadComments  int     `json:"unread_comments"`
+	UnreadIDs       []int64 `json:"unread_ids"`
+	PendingComments int     `json:"pending_comments"`
+	ViewerIsAuthor  bool    `json:"viewer_is_author"`
 }
 
 func (f *prcFixture) summary(t *testing.T) prcSummary {
@@ -498,5 +512,112 @@ func TestPRCommentsLocate(t *testing.T) {
 	before := f.threadsCalls.Load()
 	if code, _ := locate("event_id=e1"); code != 404 || f.threadsCalls.Load() != before {
 		t.Fatalf("off: %d, calls %d→%d", code, before, f.threadsCalls.Load())
+	}
+}
+
+const reviewPRID = "o/r#7"
+
+// asReviewWorktree turns the fixture's worktree into one made from PR o/r#7:
+// on branch review/pr-7-x tracking refs/pull/7/head, with a remote whose URL
+// ends o/r, and tracking that PR. The PR's head branch (the author's) is
+// "author-branch", which matches no local branch.
+func (f *prcFixture) asReviewWorktree(t *testing.T) {
+	t.Helper()
+	gitIn(t, f.wt, "checkout", "-q", "-b", "review/pr-7-x")
+	gitIn(t, f.wt, "remote", "add", "gh", "https://github.com/o/r.git")
+	gitIn(t, f.wt, "config", "branch.review/pr-7-x.remote", "gh")
+	gitIn(t, f.wt, "config", "branch.review/pr-7-x.merge", "refs/pull/7/head")
+	must(t, resources.Add(f.srv.DB, f.wt, resources.Resource{Type: "pr", ID: reviewPRID, URL: "https://github.com/o/r/pull/7"}))
+	f.head = "author-branch"
+}
+
+func TestPRCommentsReviewWorktree(t *testing.T) {
+	f := newPRCFixture(t)
+	f.asReviewWorktree(t)
+	th := summaryThreads()
+	th.HeadRefName = "author-branch"
+	th.Threads[0].Comments = append(th.Threads[0].Comments, wgithub.ThreadComment{DatabaseID: 21, Author: "me", Pending: true})
+	th.Threads = append(th.Threads, wgithub.ReviewThread{ID: "T4", Path: "d.go", Comments: []wgithub.ThreadComment{
+		{DatabaseID: 22, Author: "me", Pending: true}}})
+	f.threads = th
+
+	s := f.summary(t)
+	if s.State != "ok" || s.PR == nil || s.PR.Number != 7 || s.PR.ID != reviewPRID {
+		t.Fatalf("got %+v pr=%+v", s, s.PR)
+	}
+	if s.PendingComments != 2 {
+		t.Fatalf("pending_comments = %d, want 2", s.PendingComments)
+	}
+}
+
+func TestPRCommentsPendingZeroAndViewerIsAuthor(t *testing.T) {
+	f := newPRCFixture(t)
+	f.threads = summaryThreads()
+	_, body := f.get(t, "/api/pr-comments", "")
+	var raw map[string]json.RawMessage
+	must(t, json.Unmarshal(body, &raw))
+	if string(raw["pending_comments"]) != "0" || string(raw["viewer_is_author"]) != "false" {
+		t.Fatalf("pending_comments=%s viewer_is_author=%s", raw["pending_comments"], raw["viewer_is_author"])
+	}
+
+	f.writeCtx = &wgithub.PRWriteContext{ViewerDidAuthor: true}
+	f.srv.prThreadsCacheOrInit().entries = map[string]ttlEntry{}
+	if s := f.summary(t); !s.ViewerIsAuthor {
+		t.Fatalf("viewer_is_author false: %+v", s)
+	}
+	code, body := f.get(t, "/api/pr-comments/threads", "")
+	var tr struct {
+		State          string `json:"state"`
+		ViewerIsAuthor bool   `json:"viewer_is_author"`
+	}
+	must(t, json.Unmarshal(body, &tr))
+	if code != 200 || tr.State != "ok" || !tr.ViewerIsAuthor {
+		t.Fatalf("threads: %d %s", code, body)
+	}
+	// Cached: the summary and threads calls above cost one fetch.
+	if n := f.ctxCalls.Load(); n != 2 {
+		t.Fatalf("write context fetched %d times, want 2 (one per cache clear)", n)
+	}
+}
+
+func TestPRCommentsWriteContextErrorIsNotAuthor(t *testing.T) {
+	f := newPRCFixture(t)
+	f.threads = summaryThreads()
+	f.writeCtx = &wgithub.PRWriteContext{ViewerDidAuthor: true}
+	f.writeCtxErr = errors.New("boom")
+	s := f.summary(t)
+	if s.State != "ok" || s.ViewerIsAuthor {
+		t.Fatalf("got %+v", s)
+	}
+	f.summary(t)
+	if n := f.ctxCalls.Load(); n != 1 {
+		t.Fatalf("failed write context fetched %d times, want 1 (error cached)", n)
+	}
+}
+
+func TestPRCommentsLocateReviewWorktree(t *testing.T) {
+	f := newPRCFixture(t)
+	f.asReviewWorktree(t)
+	th := summaryThreads()
+	th.HeadRefName = "author-branch"
+	f.threads = th
+	must(t, watcherdb.InsertEvent(f.srv.DB, watcher.Event{ID: "e7", Source: "github", Type: watcher.EventTypePRReviewComment,
+		TS: "2026-02-01T00:00:00Z", Title: "t", Tags: sptr("comment:11")}, watcher.Resource{Type: "pr", ID: reviewPRID}))
+
+	locate := func() (int, map[string]any) {
+		resp, err := http.Get(f.ts.URL + "/api/pr-comments/locate?event_id=e7")
+		must(t, err)
+		defer resp.Body.Close()
+		var m map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&m)
+		return resp.StatusCode, m
+	}
+	if code, m := locate(); code != 200 || m["path"] != f.wt || m["comment_id"] != float64(11) {
+		t.Fatalf("locate by tracked PR number: %d %+v", code, m)
+	}
+	// The same number on another repo's PR is not this worktree's.
+	gitIn(t, f.wt, "remote", "set-url", "gh", "https://github.com/x/y.git")
+	if code, _ := locate(); code != 404 {
+		t.Fatalf("number match on a repo that is not a remote: %d", code)
 	}
 }

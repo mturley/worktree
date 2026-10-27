@@ -28,6 +28,9 @@ import (
 const (
 	prSummaryTTL = 10 * time.Minute
 	prThreadsTTL = 60 * time.Second
+	// prWriteContextTTL is how long a PR's write context (node id, refs,
+	// viewerDidAuthor, the viewer's pending review) is reused.
+	prWriteContextTTL = 60 * time.Second
 	// prErrorTTL is how long a failed fetch is remembered, so a failing
 	// GitHub is not asked again on every client's 5s poll.
 	prErrorTTL = 20 * time.Second
@@ -59,6 +62,13 @@ func (s *Server) fetchReviewThreads(token string, ref wgithub.PRRef) (*wgithub.P
 		return s.FetchReviewThreads(token, ref)
 	}
 	return wgithub.FetchReviewThreads(token, ref)
+}
+
+func (s *Server) fetchPRWriteContext(token string, ref wgithub.PRRef) (*wgithub.PRWriteContext, error) {
+	if s.FetchPRWriteContext != nil {
+		return s.FetchPRWriteContext(token, ref)
+	}
+	return wgithub.FetchPRWriteContext(token, ref)
 }
 
 // githubToken is the configured GitHub token, "" when there is none. The
@@ -103,6 +113,9 @@ type prComments struct {
 	state, branch, message string
 	pr                     *prRefDTO
 	threads                *wgithub.PRReviewThreads
+	// token and ref are set with pr, for follow-up calls about the PR.
+	token string
+	ref   wgithub.PRRef
 }
 
 // prSummaryEntry is one PR's cached summary; found is false when GitHub
@@ -112,8 +125,9 @@ type prSummaryEntry struct {
 	found bool
 }
 
-// loadPRComments finds dir's PR (the tracked PR whose head is the current
-// branch; prcomments.PickPR breaks ties) and its threads. Nothing contacts
+// loadPRComments finds dir's PR (the tracked PR the current branch tracks
+// by number via refs/pull/<N>/head, else the one whose head is the current
+// branch; prcomments.PickPR has the rule) and its threads. Nothing contacts
 // GitHub while its watcher is off or no token is configured.
 func (s *Server) loadPRComments(dir string) prComments {
 	if !s.WatcherEnabled(config.ServiceGitHub) {
@@ -155,6 +169,9 @@ func (s *Server) loadPRComments(dir string) prComments {
 		allRefs[i] = c.ref
 	}
 	cache := s.prThreadsCacheOrInit()
+	// Only a candidate with the tracked number needs its repo checked
+	// against the remotes (a few git calls each).
+	trackedNumber, _ := gitutil.TrackedPRNumber(dir)
 	var pick []prcomments.Candidate
 	summaries := map[string]wgithub.PRSummary{}
 	for _, c := range cands {
@@ -176,9 +193,11 @@ func (s *Server) loadPRComments(dir string) prComments {
 		summaries[c.res.ID] = e.sum
 		pick = append(pick, prcomments.Candidate{
 			ID: c.res.ID, Primary: !c.res.Related, UpdatedAt: s.prUpdatedAt(c.res.ID), HeadRefName: e.sum.HeadRefName,
+			Number:       c.ref.Number,
+			RepoIsRemote: c.ref.Number == trackedNumber && gitutil.MatchesRemote(dir, c.ref.Owner, c.ref.Repo),
 		})
 	}
-	chosen, ok := prcomments.PickPR(pick, branch)
+	chosen, ok := prcomments.PickPR(pick, branch, trackedNumber)
 	if !ok {
 		return prComments{state: prStateNoPR, branch: branch}
 	}
@@ -186,9 +205,36 @@ func (s *Server) loadPRComments(dir string) prComments {
 	pr := &prRefDTO{ID: chosen.ID, Number: ref.Number, URL: summaries[chosen.ID].URL}
 	t, err := s.cachedReviewThreads(token, chosen.ID, ref)
 	if err != nil {
-		return prComments{state: prStateError, branch: branch, pr: pr, message: err.Error()}
+		return prComments{state: prStateError, branch: branch, pr: pr, message: err.Error(), token: token, ref: ref}
 	}
-	return prComments{state: prStateOK, branch: branch, pr: pr, threads: t}
+	return prComments{state: prStateOK, branch: branch, pr: pr, threads: t, token: token, ref: ref}
+}
+
+// cachedPRWriteContext is one PR's write context, from the cache when fresh.
+// A failure is remembered for prErrorTTL.
+func (s *Server) cachedPRWriteContext(token, id string, ref wgithub.PRRef) (*wgithub.PRWriteContext, error) {
+	v, err := s.prThreadsCacheOrInit().getErrTTL("prctx|"+id, prWriteContextTTL, prErrorTTL, false, func() (interface{}, error) {
+		c, err := s.fetchPRWriteContext(token, ref)
+		if err == nil && c == nil {
+			err = errors.New("no PR write context returned")
+		}
+		return c, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return v.(*wgithub.PRWriteContext), nil
+}
+
+// viewerIsAuthor says whether the viewer opened pc's PR. A failed fetch is
+// false: it only disables Approve / Request changes, and must not fail the
+// response it is part of.
+func (s *Server) viewerIsAuthor(pc prComments) bool {
+	if pc.pr == nil || pc.token == "" {
+		return false
+	}
+	c, err := s.cachedPRWriteContext(pc.token, pc.pr.ID, pc.ref)
+	return err == nil && c.ViewerDidAuthor
 }
 
 // cachedReviewThreads is one PR's threads, from the cache when fresh.
@@ -253,6 +299,9 @@ type prCommentsSummaryDTO struct {
 	OpenThreads    int       `json:"open_threads"`
 	UnreadComments int       `json:"unread_comments"`
 	UnreadIDs      []int64   `json:"unread_ids"`
+	// PendingComments counts the viewer's pending review's comments.
+	PendingComments int  `json:"pending_comments"`
+	ViewerIsAuthor  bool `json:"viewer_is_author"`
 }
 
 // handlePRComments: GET /api/pr-comments?path=
@@ -276,6 +325,8 @@ func (s *Server) handlePRComments(w http.ResponseWriter, r *http.Request) {
 		out.OpenThreads = prcomments.OpenThreads(pc.threads)
 		out.UnreadComments = len(ids)
 		out.UnreadIDs = ids
+		out.PendingComments = prcomments.PendingCount(pc.threads)
+		out.ViewerIsAuthor = s.viewerIsAuthor(pc)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -345,12 +396,13 @@ func sortPRThreads(ts []prThreadDTO) {
 }
 
 type prThreadsResponse struct {
-	State       string        `json:"state"`
-	Branch      string        `json:"branch,omitempty"`
-	Message     string        `json:"message,omitempty"`
-	PR          *prRefDTO     `json:"pr,omitempty"`
-	Fingerprint string        `json:"fingerprint,omitempty"`
-	Threads     []prThreadDTO `json:"threads"`
+	State          string        `json:"state"`
+	Branch         string        `json:"branch,omitempty"`
+	Message        string        `json:"message,omitempty"`
+	PR             *prRefDTO     `json:"pr,omitempty"`
+	Fingerprint    string        `json:"fingerprint,omitempty"`
+	ViewerIsAuthor bool          `json:"viewer_is_author"`
+	Threads        []prThreadDTO `json:"threads"`
 }
 
 // handlePRCommentThreads: GET /api/pr-comments/threads?path=&old_rev=&new_rev=
@@ -389,6 +441,7 @@ func (s *Server) handlePRCommentThreads(w http.ResponseWriter, r *http.Request) 
 		}
 		sortPRThreads(out.Threads)
 		out.Fingerprint = prcomments.Fingerprint(pc.threads)
+		out.ViewerIsAuthor = s.viewerIsAuthor(pc)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -407,10 +460,14 @@ func (s *Server) eventPRResource(eventID string) (string, bool, error) {
 	return id, true, nil
 }
 
-// prWorktreesOnBranch lists the registered worktrees actively tracking PR id
-// whose current branch is head, in registry order. Only worktree:
-// subscribers count; a task's hold subscription is not a worktree.
-func (s *Server) prWorktreesOnBranch(id, head string) ([]string, error) {
+// prWorktreesForPR lists the registered worktrees actively tracking PR id
+// that are on it, in registry order: those whose current branch is head,
+// and those whose branch tracks refs/pull/<number>/head with the PR's
+// owner/repo among their remotes (a worktree made from the PR). Only
+// worktree: subscribers count; a task's hold subscription is not a
+// worktree.
+func (s *Server) prWorktreesForPR(id, head string) ([]string, error) {
+	ref, refErr := wgithub.ParsePRResourceID(id)
 	subs, err := watcherdb.SubscribersOf(s.DB, "pr", id)
 	if err != nil {
 		return nil, err
@@ -435,6 +492,12 @@ func (s *Server) prWorktreesOnBranch(id, head string) ([]string, error) {
 		}
 		if b, ok := gitutil.CurrentBranch(e.Path); ok && b == head {
 			out = append(out, e.Path)
+			continue
+		}
+		if refErr == nil {
+			if n, ok := gitutil.TrackedPRNumber(e.Path); ok && n == ref.Number && gitutil.MatchesRemote(e.Path, ref.Owner, ref.Repo) {
+				out = append(out, e.Path)
+			}
 		}
 	}
 	return out, nil
@@ -443,7 +506,8 @@ func (s *Server) prWorktreesOnBranch(id, head string) ([]string, error) {
 // handlePRCommentLocate: GET /api/pr-comments/locate?event_id=&prefer_path=
 //
 // Where "Go to comment in diff view" goes for a pr_review_comment event: a
-// worktree tracking the event's PR and on its head branch (prefer_path when
+// worktree tracking the event's PR and on it — on its head branch or tracking
+// refs/pull/<number>/head from its repo — (prefer_path when
 // it qualifies, else the first), and the GitHub comment id the event is
 // about. 404 when any part can't be found, so the button is hidden.
 func (s *Server) handlePRCommentLocate(w http.ResponseWriter, r *http.Request) {
@@ -500,7 +564,7 @@ func (s *Server) handlePRCommentLocate(w http.ResponseWriter, r *http.Request) {
 		notFound("comment not found on the PR")
 		return
 	}
-	paths, err := s.prWorktreesOnBranch(id, t.HeadRefName)
+	paths, err := s.prWorktreesForPR(id, t.HeadRefName)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

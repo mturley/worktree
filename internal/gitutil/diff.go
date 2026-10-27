@@ -161,3 +161,93 @@ func ShowFile(dir, rev, file string) ([]byte, error) {
 	}
 	return []byte(out), nil
 }
+
+// Hunk is one hunk header's line ranges. A count of 0 means the side is
+// empty (an added or deleted file), and its start is then the line before.
+type Hunk struct{ OldStart, OldLines, NewStart, NewLines int }
+
+// DiffHunks lists each file's hunks between oldRev and newRev, with git's
+// default 3 lines of context, keyed by the file's new path (a deleted file
+// by its old path). Files with no textual hunks (binary, pure renames) are
+// absent. Flags pin the output against the user's config, as in DiffPatch.
+func DiffHunks(dir, oldRev, newRev string) (map[string][]Hunk, error) {
+	out, err := gitRaw(dir, nil, "-c", "core.quotePath=false", "diff", "--no-ext-diff", "--no-color", "--no-textconv",
+		"--src-prefix=a/", "--dst-prefix=b/", "-M", "-U3", oldRev, newRev)
+	if err != nil {
+		return nil, err
+	}
+	hunks := map[string][]Hunk{}
+	var oldPath, file string
+	for _, line := range strings.Split(out, "\n") {
+		switch {
+		case strings.HasPrefix(line, "diff --git "):
+			oldPath, file = "", ""
+		case file == "" && strings.HasPrefix(line, "--- "):
+			oldPath = patchPath(line[4:], "a/")
+		case file == "" && strings.HasPrefix(line, "+++ "):
+			file = patchPath(line[4:], "b/")
+			if file == "" {
+				file = oldPath // deleted
+			}
+		case file != "" && strings.HasPrefix(line, "@@ "):
+			h, err := parseHunkHeader(line)
+			if err != nil {
+				return nil, err
+			}
+			hunks[file] = append(hunks[file], h)
+		}
+	}
+	return hunks, nil
+}
+
+// patchPath is the path on a ---/+++ line without its prefix, "" for
+// /dev/null. Git quotes a path with unusual bytes C-style, and ends one
+// containing a space with a tab.
+func patchPath(s, prefix string) string {
+	s = strings.TrimSuffix(s, "\t")
+	if s == "/dev/null" {
+		return ""
+	}
+	if strings.HasPrefix(s, `"`) {
+		if u, err := strconv.Unquote(s); err == nil {
+			s = u
+		}
+	}
+	return strings.TrimPrefix(s, prefix)
+}
+
+// parseHunkHeader reads "@@ -a[,b] +c[,d] @@"; an omitted count is 1.
+func parseHunkHeader(line string) (Hunk, error) {
+	fields := strings.Fields(line)
+	if len(fields) < 4 || fields[3] != "@@" {
+		return Hunk{}, fmt.Errorf("bad hunk header %q", line)
+	}
+	rng := func(s, sign string) (int, int, error) {
+		s, ok := strings.CutPrefix(s, sign)
+		if !ok {
+			return 0, 0, fmt.Errorf("bad hunk range %q", s)
+		}
+		start, count, hasCount := strings.Cut(s, ",")
+		a, err := strconv.Atoi(start)
+		if err != nil {
+			return 0, 0, fmt.Errorf("bad hunk range %q: %w", s, err)
+		}
+		if !hasCount {
+			return a, 1, nil
+		}
+		b, err := strconv.Atoi(count)
+		if err != nil {
+			return 0, 0, fmt.Errorf("bad hunk range %q: %w", s, err)
+		}
+		return a, b, nil
+	}
+	var h Hunk
+	var err error
+	if h.OldStart, h.OldLines, err = rng(fields[1], "-"); err != nil {
+		return Hunk{}, err
+	}
+	if h.NewStart, h.NewLines, err = rng(fields[2], "+"); err != nil {
+		return Hunk{}, err
+	}
+	return h, nil
+}

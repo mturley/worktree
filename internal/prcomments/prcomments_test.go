@@ -16,20 +16,64 @@ func TestPickPR(t *testing.T) {
 		{ID: "b", Primary: true, UpdatedAt: "2026-01-01T00:00:00Z", HeadRefName: "feat"},
 		{ID: "c", Primary: true, UpdatedAt: "2026-03-01T00:00:00Z", HeadRefName: "other"},
 	}
-	got, ok := PickPR(cands, "feat")
+	got, ok := PickPR(cands, "feat", 0)
 	if !ok || got.ID != "b" {
 		t.Fatalf("primary should win, got %+v ok=%v", got, ok)
 	}
-	if _, ok := PickPR(cands, "nope"); ok {
+	if _, ok := PickPR(cands, "nope", 0); ok {
 		t.Fatal("no candidate on branch should give ok=false")
 	}
 	related := []Candidate{
 		{ID: "x", UpdatedAt: "2026-01-01T00:00:00Z", HeadRefName: "feat"},
 		{ID: "y", UpdatedAt: "2026-02-01T00:00:00Z", HeadRefName: "feat"},
 	}
-	got, ok = PickPR(related, "feat")
+	got, ok = PickPR(related, "feat", 0)
 	if !ok || got.ID != "y" {
 		t.Fatalf("newer should win, got %+v", got)
+	}
+}
+
+func TestPickPRByNumber(t *testing.T) {
+	cands := []Candidate{
+		{ID: "branch", Primary: true, UpdatedAt: "2026-03-01T00:00:00Z", HeadRefName: "review/pr-7-x", Number: 3, RepoIsRemote: true},
+		{ID: "num", Primary: false, UpdatedAt: "2026-01-01T00:00:00Z", HeadRefName: "author-branch", Number: 7, RepoIsRemote: true},
+		{ID: "fork", Primary: true, UpdatedAt: "2026-04-01T00:00:00Z", HeadRefName: "other", Number: 7, RepoIsRemote: false},
+	}
+	if got, ok := PickPR(cands, "review/pr-7-x", 7); !ok || got.ID != "num" {
+		t.Fatalf("tracked number should win over the head branch, got %+v ok=%v", got, ok)
+	}
+	// Only the remote-less number match: ignored, so the branch match wins.
+	if got, ok := PickPR([]Candidate{cands[0], cands[2]}, "review/pr-7-x", 7); !ok || got.ID != "branch" {
+		t.Fatalf("number match not on a remote should be ignored, got %+v ok=%v", got, ok)
+	}
+	if _, ok := PickPR([]Candidate{cands[2]}, "review/pr-7-x", 7); ok {
+		t.Fatal("number match not on a remote alone should give ok=false")
+	}
+	if got, ok := PickPR(cands, "review/pr-7-x", 0); !ok || got.ID != "branch" {
+		t.Fatalf("no tracked number falls back to the branch, got %+v ok=%v", got, ok)
+	}
+	// Ties among number matches: primary first, then newest.
+	tied := []Candidate{
+		{ID: "old", UpdatedAt: "2026-01-01T00:00:00Z", Number: 7, RepoIsRemote: true},
+		{ID: "new", UpdatedAt: "2026-02-01T00:00:00Z", Number: 7, RepoIsRemote: true},
+		{ID: "prim", Primary: true, UpdatedAt: "2025-01-01T00:00:00Z", Number: 7, RepoIsRemote: true},
+	}
+	if got, _ := PickPR(tied, "x", 7); got.ID != "prim" {
+		t.Fatalf("primary should win a number tie, got %+v", got)
+	}
+	if got, _ := PickPR(tied[:2], "x", 7); got.ID != "new" {
+		t.Fatalf("newest should win a number tie, got %+v", got)
+	}
+}
+
+func TestPendingCount(t *testing.T) {
+	if n := PendingCount(nil); n != 0 {
+		t.Fatalf("nil = %d", n)
+	}
+	s := sample()
+	s.Threads[0].Comments[1].Pending = true
+	if n := PendingCount(s); n != 2 {
+		t.Fatalf("PendingCount = %d, want 2", n)
 	}
 }
 

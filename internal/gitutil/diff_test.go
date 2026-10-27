@@ -2,6 +2,7 @@ package gitutil
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -202,5 +203,39 @@ func TestDiffAndLogIgnoreUserConfig(t *testing.T) {
 	}
 	if len(commits) != 1 || commits[0].Subject != "add b.txt" {
 		t.Errorf("FirstParentCommits = %+v, want one 'add b.txt'", commits)
+	}
+}
+
+func TestDiffHunks(t *testing.T) {
+	repo, run := newRemoteRepo(t)
+	var lines []string
+	for i := 1; i <= 40; i++ {
+		lines = append(lines, fmt.Sprintf("line %d", i))
+	}
+	commitFile(t, repo, "f.txt", strings.Join(lines, "\n")+"\n")
+	commitFile(t, repo, "gone.txt", "a\nb\n")
+	old := run("rev-parse", "HEAD")
+	lines[4] = "five"    // line 5
+	lines[24] = "twenty" // line 25: 20 lines later
+	writeFile(t, repo, "f.txt", strings.Join(lines, "\n")+"\n")
+	writeFile(t, repo, "new file.txt", "n\n")
+	run("rm", "-q", "gone.txt")
+	run("add", "-A")
+	run("commit", "-m", "edits")
+
+	got, err := DiffHunks(repo, old, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string][]Hunk{
+		"f.txt": {
+			{OldStart: 2, OldLines: 7, NewStart: 2, NewLines: 7},
+			{OldStart: 22, OldLines: 7, NewStart: 22, NewLines: 7},
+		},
+		"gone.txt":     {{OldStart: 1, OldLines: 2, NewStart: 0, NewLines: 0}},
+		"new file.txt": {{OldStart: 0, OldLines: 0, NewStart: 1, NewLines: 1}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v\nwant %+v", got, want)
 	}
 }

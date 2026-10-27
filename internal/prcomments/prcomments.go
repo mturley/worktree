@@ -21,21 +21,40 @@ import (
 )
 
 // Candidate is a tracked PR resource that might be the worktree's.
+// RepoIsRemote says the PR's owner/repo is one of the worktree's remotes.
 type Candidate struct {
-	ID          string
-	Primary     bool
-	UpdatedAt   string
-	HeadRefName string
+	ID           string
+	Primary      bool
+	UpdatedAt    string
+	HeadRefName  string
+	Number       int
+	RepoIsRemote bool
 }
 
-// PickPR chooses the PR whose head branch is the given branch. A primary
-// (focus) resource wins over a related one; ties go to the newest UpdatedAt
-// (RFC 3339 strings compare correctly as text).
-func PickPR(cands []Candidate, branch string) (Candidate, bool) {
+// PickPR chooses the worktree's PR. When the current branch tracks
+// refs/pull/<trackedNumber>/head (trackedNumber > 0), a candidate with that
+// number whose repo is one of the worktree's remotes wins, and only those
+// are considered; this is how a worktree made from someone else's PR finds
+// it, since its branch is not the PR's head. Otherwise it is the PR whose
+// head branch is the given branch. Either way a primary (focus) resource
+// wins over a related one; ties go to the newest UpdatedAt (RFC 3339
+// strings compare correctly as text).
+func PickPR(cands []Candidate, branch string, trackedNumber int) (Candidate, bool) {
+	if trackedNumber > 0 {
+		if c, ok := pickBest(cands, func(c Candidate) bool {
+			return c.Number == trackedNumber && c.RepoIsRemote
+		}); ok {
+			return c, true
+		}
+	}
+	return pickBest(cands, func(c Candidate) bool { return c.HeadRefName == branch })
+}
+
+func pickBest(cands []Candidate, match func(Candidate) bool) (Candidate, bool) {
 	var best Candidate
 	found := false
 	for _, c := range cands {
-		if c.HeadRefName != branch {
+		if !match(c) {
 			continue
 		}
 		if !found || better(c, best) {
@@ -82,6 +101,23 @@ func OpenThreads(t *wgithub.PRReviewThreads) int {
 	for _, th := range t.Threads {
 		if !th.IsResolved {
 			n++
+		}
+	}
+	return n
+}
+
+// PendingCount counts the comments in the viewer's pending (unsubmitted)
+// review.
+func PendingCount(t *wgithub.PRReviewThreads) int {
+	if t == nil {
+		return 0
+	}
+	n := 0
+	for _, th := range t.Threads {
+		for _, c := range th.Comments {
+			if c.Pending {
+				n++
+			}
 		}
 	}
 	return n

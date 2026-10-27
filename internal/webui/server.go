@@ -208,13 +208,15 @@ type Server struct {
 	linkedOnce  sync.Once
 	linkedCache *ttlCache
 
-	// FetchPRSummaries and FetchReviewThreads are seams for tests; nil
-	// means the watcher library's calls. prThreadsCache fronts both for
-	// /api/pr-comments* (pr_comments_api.go); lazily built.
-	FetchPRSummaries   func(token string, refs []wgithub.PRRef) (map[wgithub.PRRef]wgithub.PRSummary, error)
-	FetchReviewThreads func(token string, ref wgithub.PRRef) (*wgithub.PRReviewThreads, error)
-	prThreadsOnce      sync.Once
-	prThreadsCache     *ttlCache
+	// FetchPRSummaries, FetchReviewThreads and FetchPRWriteContext are
+	// seams for tests; nil means the watcher library's calls.
+	// prThreadsCache fronts them for /api/pr-comments* (pr_comments_api.go);
+	// lazily built.
+	FetchPRSummaries    func(token string, refs []wgithub.PRRef) (map[wgithub.PRRef]wgithub.PRSummary, error)
+	FetchReviewThreads  func(token string, ref wgithub.PRRef) (*wgithub.PRReviewThreads, error)
+	FetchPRWriteContext func(token string, ref wgithub.PRRef) (*wgithub.PRWriteContext, error)
+	prThreadsOnce       sync.Once
+	prThreadsCache      *ttlCache
 	// prAuthErrLogged is the last auth.yaml read error logged by githubToken.
 	prAuthErrMu     sync.Mutex
 	prAuthErrLogged string
