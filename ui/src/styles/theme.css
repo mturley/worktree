@@ -155,6 +155,37 @@ body,
 .task-drop-line[data-task-drop-line="after"] {
   bottom: -1px;
 }
+/* While a drag is on, each section it can land in is a band: a faint inset
+   outline and wash (no border or margin, so nothing moves when the drag
+   starts), and a tag naming it in its top-right corner. */
+[data-task-section][data-task-band] {
+  border-radius: var(--mantine-radius-sm);
+  outline: 1px solid color-mix(in srgb, var(--task-accent) 22%, transparent);
+  outline-offset: -1px;
+  background: color-mix(in srgb, var(--task-accent) 4%, transparent);
+}
+.task-band-tag {
+  top: 2px;
+  right: 4px;
+  z-index: 3;
+  pointer-events: none;
+  padding: 0 6px;
+  border-radius: var(--mantine-radius-sm);
+  font-size: 10px;
+  line-height: 16px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--mantine-color-dimmed);
+  background: var(--mantine-color-dark-6);
+  border: 1px solid color-mix(in srgb, var(--task-accent) 22%, var(--mantine-color-dark-6));
+}
+/* What the drop will change, on the section it will land in. */
+.task-band-tag.task-drop-hint {
+  color: var(--mantine-color-dark-9);
+  background: var(--task-accent);
+  border-color: var(--task-accent);
+  box-shadow: 0 0 4px var(--task-accent);
+}
 /* The section that drag will land in, outlined as ResourceList's groups are. */
 [data-task-section][data-drop-target] {
   border-radius: var(--mantine-radius-sm);

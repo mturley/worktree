@@ -77,7 +77,6 @@ describe("buildSections: custom", () => {
     expect(sec(ss, "starred")).toMatchObject({ starred: true, draggable: true })
     expect(sec(ss, "rest")).toMatchObject({ starred: false, draggable: true })
     expect(sec(ss, "rest")?.priority).toBeUndefined()
-    expect(sec(ss, "starred")?.label).toBeTruthy()
   })
 
   it("leaves done tasks out unless showCompleted", () => {

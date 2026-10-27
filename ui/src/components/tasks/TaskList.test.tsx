@@ -14,7 +14,7 @@ import { useTaskListPrefs } from "../../hooks/useTaskListPrefs"
 import { TaskList } from "./TaskList"
 import { TaskModalProvider, useTaskModal } from "./modal/TaskModalProvider"
 import { TaskListToolbar } from "./TaskListToolbar"
-import { dropIndicatorFor, dropPlanFor, taskDraggableId } from "./taskDrag"
+import { dropHint, dropIndicatorFor, dropPlanFor, taskDraggableId } from "./taskDrag"
 
 vi.mock("../../api/client", async (orig) => ({
   ...(await orig<typeof import("../../api/client")>()),
@@ -300,25 +300,6 @@ describe("TaskList expand footer", () => {
     expect(document.activeElement).toBe(btn)
   })
 
-  it("re-measures when labels appear with the count unchanged", async () => {
-    // Seven rows fit the 240px cap (210px); a section label pushes it over.
-    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
-      configurable: true,
-      get: () => (document.body.textContent?.includes("No priority") ? 260 : 210),
-    })
-    Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get: () => 240 })
-    vi.mocked(api.tasks).mockResolvedValue(Array.from({ length: 7 }, (_, i) => task(i + 1)))
-    wrap(<TaskList scope={{ kind: "all" }} maxRows={8} expand={{ expanded: false, onToggle: vi.fn() }} />)
-    await screen.findByText("task 7")
-    expect(screen.queryByRole("button", { name: /Show all/ })).toBeNull()
-    // Priority sort labels its lone group: same seven tasks, taller content.
-    act(() => {
-      window.localStorage.setItem(TASK_LIST_KEY, JSON.stringify({ sort: "priority" }))
-      window.dispatchEvent(new StorageEvent("storage", { key: TASK_LIST_KEY }))
-    })
-    expect(await screen.findByRole("button", { name: "Show all (7)" })).toBeInTheDocument()
-  })
-
   it("watches the content under the cap, not only the capped box", async () => {
     // Each observation with the callback that would hear about it.
     const observed: { el: Element; cb: (entries: ResizeObserverEntry[]) => void }[] = []
@@ -393,25 +374,35 @@ describe("TaskList", () => {
     expect(screen.queryByText("Tasks")).toBeNull()
   })
 
-  it("Priority sort labels each group that holds tasks and hides the empty ones", async () => {
+  it("Priority sort labels no group and hides the empty ones", async () => {
     setPrefs({ sort: "priority" })
     vi.mocked(api.tasks).mockResolvedValue([task(1), task(2, { priority: "medium" })])
     wrap(<TaskList scope={{ kind: "all" }} />)
     await screen.findByText("task 2")
-    expect(screen.getByText("Medium")).toBeInTheDocument()
-    expect(screen.getByText("No priority")).toBeInTheDocument()
-    expect(screen.queryByText("High")).toBeNull()
-    expect(screen.queryByText("Low")).toBeNull()
+    expect(document.querySelector('[data-task-section="medium"]')).not.toBeNull()
+    expect(document.querySelector('[data-task-section="none"]')).not.toBeNull()
+    expect(document.querySelector('[data-task-section="high"]')).toBeNull()
+    expect(document.querySelector('[data-task-section="low"]')).toBeNull()
+    expect(document.querySelector("[data-task-section-label]")).toBeNull()
+    expect(screen.queryByText("No priority")).toBeNull()
     expect(screen.queryByText(/Drag here/)).toBeNull()
     expect(document.querySelector("[data-task-strip]")).toBeNull()
   })
 
-  it("Priority sort labels even a lone group", async () => {
-    setPrefs({ sort: "priority" })
-    vi.mocked(api.tasks).mockResolvedValue([task(2, { priority: "medium" })])
-    wrap(<TaskList scope={{ kind: "all" }} />)
-    await screen.findByText("task 2")
-    expect(screen.getByText("Medium")).toBeInTheDocument()
+  it("no sort labels any section: Starred on top, Completed last", async () => {
+    for (const sort of ["custom", "priority", "due"]) {
+      setPrefs({ sort, showCompleted: true })
+      vi.mocked(api.tasks).mockResolvedValue([
+        task(2, { priority: "medium" }), task(3, { state: "done", completed_at: "x" }), task(1, { starred: true }),
+      ])
+      wrap(<TaskList scope={{ kind: "all" }} />)
+      await screen.findByText("task 3")
+      expect(document.querySelector("[data-task-section-label]")).toBeNull()
+      for (const l of ["Starred", "Tasks", "Completed", "Medium"]) expect(screen.queryByText(l)).toBeNull()
+      const order = Array.from(document.querySelectorAll<HTMLElement>("[data-task-sortable]")).map((e) => e.dataset.taskSortable)
+      expect(order).toEqual(["1", "2", "3"])
+      cleanup()
+    }
   })
 
   it("an empty list says so", async () => {
@@ -421,21 +412,18 @@ describe("TaskList", () => {
     expect(screen.queryByText(/Drag here/)).toBeNull()
   })
 
-  it("labels sections when there is more than one", async () => {
-    vi.mocked(api.tasks).mockResolvedValue([task(1, { starred: true }), task(2)])
+  it.each([
+    ["custom, one section", { sort: "custom" }, [task(1), task(2)]],
+    ["custom, two sections", { sort: "custom" }, [task(1, { starred: true }), task(2)]],
+    ["priority", { sort: "priority" }, [task(1, { starred: true }), task(2, { priority: "high" }), task(3)]],
+    ["due", { sort: "due" }, [task(1, { starred: true }), task(2)]],
+  ])("rows are never indented: %s", async (_name, prefs, tasks) => {
+    setPrefs(prefs)
+    vi.mocked(api.tasks).mockResolvedValue(tasks)
     wrap(<TaskList scope={{ kind: "all" }} />)
     await screen.findByText("task 2")
-    expect(screen.getByText("Starred")).toBeInTheDocument()
-    expect(screen.getByText("Tasks")).toBeInTheDocument()
-    document.querySelectorAll<HTMLElement>("[data-task-row]").forEach((r) =>
-      expect(parseFloat(r.style.paddingLeft)).not.toBe(0))
-  })
-
-  it("an unlabelled list's rows are flush", async () => {
-    wrap(<TaskList scope={{ kind: "all" }} />)
-    await screen.findByText("beta two")
     const rows = document.querySelectorAll<HTMLElement>("[data-task-row]")
-    expect(rows.length).toBeGreaterThan(0)
+    expect(rows.length).toBe(tasks.length)
     rows.forEach((r) => expect(parseFloat(r.style.paddingLeft)).toBe(0))
   })
 
@@ -608,6 +596,9 @@ describe("TaskList keyboard drag", () => {
     await waitFor(() => expect(alpha.querySelector("[data-task-drop-line]")).toHaveAttribute("data-task-drop-line", "before"))
     expect(document.querySelectorAll("[data-task-drop-line]")).toHaveLength(1)
     expect(document.querySelector('[data-task-section="rest"]')).toHaveAttribute("data-drop-target")
+    expect(document.querySelectorAll("[data-task-band]")).toHaveLength(2)
+    expect(document.querySelector('[data-task-section="rest"] [data-task-drop-hint]')).toHaveTextContent("Unstar")
+    expect(document.querySelectorAll("[data-task-drop-hint]")).toHaveLength(1)
     expect(document.querySelector('[data-task-section="starred"]')).not.toHaveAttribute("data-drop-target")
 
     // And the drop lands exactly there.
@@ -616,6 +607,7 @@ describe("TaskList keyboard drag", () => {
     expect(api.updateTask).toHaveBeenCalledWith(4, { starred: false })
     expect(document.querySelector("[data-task-drop-line]")).toBeNull()
     expect(document.querySelector("[data-drop-target]")).toBeNull()
+    expect(document.querySelector("[data-task-band]")).toBeNull()
   })
 
   it("a drag within a section marks no line: its open slot already shows where it lands", async () => {
@@ -631,7 +623,70 @@ describe("TaskList keyboard drag", () => {
     await act(() => new Promise((r) => setTimeout(r, 0)))
     expect(document.querySelector("[data-task-drop-line]")).toBeNull()
     expect(document.querySelector("[data-drop-target]")).toBeNull()
+    expect(document.querySelector("[data-task-drop-hint]")).toBeNull()
     fireEvent.keyDown(grip, { code: "Escape", key: "Escape" })
+  })
+
+  it("Priority sort: while dragging, each shown section is a band, with no layout change", async () => {
+    setPrefs({ sort: "priority" })
+    vi.mocked(api.tasks).mockResolvedValue([
+      task(1, { title: "alpha one", priority: "high" }),
+      task(2, { title: "beta two", priority: "high" }),
+      task(3, { title: "gamma", priority: "medium" }),
+      task(4, { title: "star four", starred: true }),
+    ])
+    wrap(<TaskList scope={{ kind: "all" }} />)
+    await screen.findByText("gamma")
+    expect(document.querySelector("[data-task-band]")).toBeNull()
+    expect(document.querySelector("[data-task-band-tag]")).toBeNull()
+    const grip = screen.getByRole("button", { name: "Drag to reorder alpha one" })
+    lifted = grip.closest<HTMLElement>("[data-task-sortable]")
+    const before = leaves().length
+    act(() => grip.focus())
+    fireEvent.keyDown(grip, { code: "Space", key: " " })
+    await screen.findByTestId("task-drag-overlay")
+    expect(leaves()).toHaveLength(before)
+    const bands = Array.from(document.querySelectorAll<HTMLElement>("[data-task-band]")).map((b) => b.dataset.taskSection)
+    // Every shown section; empty groups stay hidden.
+    expect(bands).toEqual(["starred", "high", "medium"])
+    // Each band's tag names it, out of the flow.
+    const tags = Array.from(document.querySelectorAll<HTMLElement>("[data-task-band-tag]"))
+    expect(tags.map((t) => t.textContent)).toEqual(["★ Starred", "!!! High", "!! Medium"])
+    tags.forEach((t) => expect(t.style.position).toBe("absolute"))
+    // No set-priority hint over its own group.
+    expect(document.querySelector("[data-task-drop-hint]")).toBeNull()
+    fireEvent.keyDown(grip, { code: "Escape", key: "Escape" })
+    await waitFor(() => expect(document.querySelector("[data-task-band]")).toBeNull())
+  })
+
+  it("Priority sort: over another group, a hint says the drop sets its priority; within its own, none", async () => {
+    setPrefs({ sort: "priority" })
+    vi.mocked(api.tasks).mockResolvedValue([
+      task(1, { title: "alpha one", priority: "high" }),
+      task(2, { title: "beta two", priority: "high" }),
+      task(3, { title: "gamma" }),
+    ])
+    vi.mocked(api.moveTask).mockResolvedValue(undefined as never)
+    vi.mocked(api.updateTask).mockResolvedValue(undefined as never)
+    wrap(<TaskList scope={{ kind: "all" }} />)
+    await screen.findByText("gamma")
+    const grip = screen.getByRole("button", { name: "Drag to reorder alpha one" })
+    lifted = grip.closest<HTMLElement>("[data-task-sortable]")
+    act(() => grip.focus())
+    fireEvent.keyDown(grip, { code: "Space", key: " " })
+    await screen.findByTestId("task-drag-overlay")
+    // Down onto beta two: its own group.
+    fireEvent.keyDown(grip, { code: "ArrowDown", key: "ArrowDown" })
+    await act(() => new Promise((r) => setTimeout(r, 0)))
+    expect(document.querySelector("[data-task-drop-hint]")).toBeNull()
+    // Down again onto gamma: No priority.
+    fireEvent.keyDown(grip, { code: "ArrowDown", key: "ArrowDown" })
+    const none = document.querySelector<HTMLElement>('[data-task-section="none"]')!
+    await waitFor(() => expect(none.querySelector("[data-task-drop-hint]")).toHaveTextContent("Remove priority"))
+    expect(document.querySelectorAll("[data-task-drop-hint]")).toHaveLength(1)
+    fireEvent.keyDown(grip, { code: "Space", key: " " })
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith(1, { priority: "none" }))
+    expect(document.querySelector("[data-task-drop-hint]")).toBeNull()
   })
 
   it("Custom sort: reorders through mutations.move", async () => {
@@ -687,14 +742,24 @@ describe("dropPlanFor", () => {
   })
 
   it("dropIndicatorFor marks the row the plan places against, on the side it lands", () => {
-    expect(dropIndicatorFor(sections, taskDraggableId(2), taskDraggableId(4), false)).toEqual({ section: "starred", id: 4, edge: "before" })
-    expect(dropIndicatorFor(sections, taskDraggableId(2), taskDraggableId(4), true)).toEqual({ section: "starred", id: 4, edge: "after" })
-    expect(dropIndicatorFor(sections, taskDraggableId(4), taskDraggableId(3), true)).toEqual({ section: "rest", id: 3, edge: "after" })
+    expect(dropIndicatorFor(sections, taskDraggableId(2), taskDraggableId(4), false)).toMatchObject({ section: "starred", id: 4, edge: "before" })
+    expect(dropIndicatorFor(sections, taskDraggableId(2), taskDraggableId(4), true)).toMatchObject({ section: "starred", id: 4, edge: "after" })
+    expect(dropIndicatorFor(sections, taskDraggableId(4), taskDraggableId(3), true)).toMatchObject({ section: "rest", id: 3, edge: "after" })
   })
 
   it("dropIndicatorFor marks nothing within a section, or for a drop that goes nowhere", () => {
     expect(dropIndicatorFor(sections, taskDraggableId(1), taskDraggableId(3), false)).toBeNull()
     expect(dropIndicatorFor(sections, taskDraggableId(1), "nope", false)).toBeNull()
+  })
+
+  it("dropIndicatorFor carries the plan's patch, and dropHint words it", () => {
+    expect(dropIndicatorFor(sections, taskDraggableId(2), taskDraggableId(4), false)?.patch).toEqual({ starred: true })
+    expect(dropHint({ priority: "high" })).toBe("Set priority: High")
+    expect(dropHint({ priority: "none" })).toBe("Remove priority")
+    expect(dropHint({ starred: true })).toBe("Star")
+    expect(dropHint({ starred: false, priority: "low" })).toBe("Unstar · Set priority: Low")
+    expect(dropHint(undefined)).toBeUndefined()
+    expect(dropHint({})).toBeUndefined()
   })
 
   it("ignores unknown ids", () => {

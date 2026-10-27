@@ -25,10 +25,11 @@ import { useTaskListPrefs } from "../../hooks/useTaskListPrefs"
 import { applyMove, buildSections, canDrag, quickAddAnchor, type TaskSection } from "../../lib/taskSections"
 import { useSearchContext } from "../search/SearchContext"
 import { useTaskModal } from "./modal/TaskModalProvider"
+import { PRIORITY_LABEL, PRIORITY_MARK } from "./TaskPriorityMenu"
 import { TaskQuickAdd } from "./TaskQuickAdd"
 import { TaskRow } from "./TaskRow"
 import { taskUndoMessage, useOfferTaskUndo } from "./taskUndo"
-import { dropIndicatorFor, dropPlanFor, taskDraggableId, type DropIndicator } from "./taskDrag"
+import { dropHint, dropIndicatorFor, dropPlanFor, taskDraggableId, type DropIndicator } from "./taskDrag"
 
 /** A compact row's height, for capping a list at `maxRows`. */
 const ROW_PX = 30
@@ -57,7 +58,7 @@ function isBelow(active: Active, over: Over): boolean {
 /**
  * Whether a capped body overflows its cap: measured after layout, and again
  * whenever the capped box or the content inside it resizes, or the list's
- * shape (`shape`: its count, sections and labels) changes. Under a cap that
+ * shape (`shape`: its count and sections) changes. Under a cap that
  * holds, the box keeps its size while its content grows, so the content is
  * observed too (`contentRef`), and `shape` covers environments without
  * ResizeObserver.
@@ -89,9 +90,8 @@ function useOverflow(capped: boolean, shape: string) {
  * grip renders disabled with a hint when the sort can't be reordered, and not
  * at all in Completed, whose order isn't master order.
  */
-function SortableTaskRow({ task, section, sortDraggable, flush, dropEdge, ownResource, ownWorktree, mutations, onError, onOpen }: {
+function SortableTaskRow({ task, section, sortDraggable, dropEdge, ownResource, ownWorktree, mutations, onError, onOpen }: {
   task: Task
-  flush: boolean
   section: TaskSection
   sortDraggable: boolean
   /** A cross-section drag will land on this edge of the row: draw the line. */
@@ -177,7 +177,6 @@ function SortableTaskRow({ task, section, sortDraggable, flush, dropEdge, ownRes
         ownResource={ownResource}
         ownWorktree={ownWorktree}
         dragHandle={grip}
-        flush={flush}
         onState={pickState}
         onPriority={(priority) => run(update(task.id, { priority }))}
         onToggleStar={() => run(update(task.id, { starred: !task.starred }))}
@@ -187,25 +186,52 @@ function SortableTaskRow({ task, section, sortDraggable, flush, dropEdge, ownRes
   )
 }
 
+/** A section's name on its band while a drag is on. */
+function bandTag(section: TaskSection): string {
+  if (section.priority) {
+    const mark = PRIORITY_MARK[section.priority]
+    return mark ? `${mark.text} ${PRIORITY_LABEL[section.priority]}` : "No priority"
+  }
+  return section.starred ? "★ Starred" : "Tasks"
+}
+
 /**
- * A section: its label (when the list is labelled) and its rows. Only
- * sections that hold tasks are rendered, so there is nothing to drop onto but
- * rows: a drop's section follows from the row it lands on.
+ * A section: its rows, under no label. Only sections that hold tasks are
+ * rendered, so there is nothing to drop onto but rows: a drop's section
+ * follows from the row it lands on.
+ *
+ * While a drag is on, a draggable section is a band (outline and wash, with a
+ * tag naming it), so the drop's sections are evident; the section the drop
+ * will land in, when it isn't the dragged row's own, says what landing there
+ * changes instead (`hint`). Both are drawn out of the flow: nothing moves
+ * when a drag starts.
  */
-function SectionBlock({ section, labelled, dropTarget, children }: {
+function SectionBlock({ section, band, dropTarget, hint, children }: {
   section: TaskSection
-  labelled: boolean
+  band: boolean
   /** A drag from another section will land here: outlined, as ResourceGroup's isOver. */
   dropTarget: boolean
+  /** What the drop will change, in words (dropHint). */
+  hint?: string
   children: React.ReactNode
 }) {
   return (
-    <Stack gap={0} data-task-section={section.key} data-drop-target={dropTarget || undefined}>
-      {labelled && (
-        <Text size="xs" fw={700} tt="uppercase" c="dimmed" px="xs" pt={4}>
-          {section.label}
-        </Text>
-      )}
+    <Stack
+      gap={0}
+      data-task-section={section.key}
+      data-task-band={band || undefined}
+      data-drop-target={dropTarget || undefined}
+      style={{ position: "relative" }}
+    >
+      {hint ? (
+        <span className="task-band-tag task-drop-hint" data-task-drop-hint style={{ position: "absolute" }}>
+          {hint}
+        </span>
+      ) : band ? (
+        <span className="task-band-tag" data-task-band-tag aria-hidden style={{ position: "absolute" }}>
+          {bandTag(section)}
+        </span>
+      ) : null}
       {children}
     </Stack>
   )
@@ -264,11 +290,7 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
   // there is no empty target.
   const shown = sections.filter((s) => s.tasks.length > 0)
   const anyTasks = shown.length > 0
-  // Priority order labels every group shown; otherwise labels appear once two
-  // sections hold tasks.
-  const labelled = prefs.sort === "priority" || shown.length > 1
-  // A label adds height without adding a task, so the shape is more than the count.
-  const shape = `${shownCount}|${labelled}|${shown.map((s) => `${s.key}:${s.tasks.length}`).join(",")}`
+  const shape = `${shownCount}|${shown.map((s) => `${s.key}:${s.tasks.length}`).join(",")}`
   const overflows = useOverflow(cap !== undefined, shape)
   const onOverflow = expand?.onOverflow
   useEffect(() => {
@@ -293,7 +315,8 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
   const handleDragMove = ({ active, over }: DragMoveEvent) => {
     const next = over ? dropIndicatorFor(sections, active.id, over.id, isBelow(active, over)) : null
     setIndicator((cur) =>
-      cur?.section === next?.section && cur?.id === next?.id && cur?.edge === next?.edge ? cur : next,
+      cur?.section === next?.section && cur?.id === next?.id && cur?.edge === next?.edge &&
+      dropHint(cur?.patch) === dropHint(next?.patch) ? cur : next,
     )
   }
 
@@ -359,7 +382,13 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
         onDragCancel={handleDragCancel}
       >
         {shown.map((s) => (
-          <SectionBlock key={s.key} section={s} labelled={labelled} dropTarget={indicator?.section === s.key}>
+          <SectionBlock
+            key={s.key}
+            section={s}
+            band={activeId !== null && s.draggable}
+            dropTarget={indicator?.section === s.key}
+            hint={indicator?.section === s.key ? dropHint(indicator.patch) : undefined}
+          >
             <SortableContext items={s.tasks.map((t) => taskDraggableId(t.id))} strategy={verticalListSortingStrategy}>
               {s.tasks.map((t) => (
                 <SortableTaskRow
@@ -367,7 +396,6 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
                   task={t}
                   section={s}
                   sortDraggable={sortDraggable}
-                  flush={!labelled}
                   dropEdge={indicator?.id === t.id ? indicator.edge : undefined}
                   ownResource={ownResource}
                   ownWorktree={ownWorktree}
@@ -386,7 +414,7 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
         <DragOverlay dropAnimation={null}>
           {activeTask ? (
             <Box className="task-drag-overlay" data-testid="task-drag-overlay">
-              <TaskRow task={activeTask} ownResource={ownResource} ownWorktree={ownWorktree} flush={!labelled} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} />
+              <TaskRow task={activeTask} ownResource={ownResource} ownWorktree={ownWorktree} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} />
             </Box>
           ) : null}
         </DragOverlay>

@@ -1373,10 +1373,10 @@ to break.
   no tab bar (there is no Linked tab there, since resolving links contacts
   the services). Tasks contact none, so watcher toggles never hide them.
 - **Nothing moves when a drag starts.** An empty section is not rendered at
-  all (no drop strip, even in Priority order), and whether sections are
-  labelled never depends on a drag being on (Priority order labels every
-  group shown). A drop therefore always lands on a row of a non-empty
-  section. Inserting drop targets at drag start pushed the dragged row
+  all (no drop strip, even in Priority order), and no section has a label,
+  in any sort; rows never have padding before the grip (TaskRow's `pl={0}`).
+  What a drag adds is drawn out of the flow (below). A drop therefore always
+  lands on a row of a non-empty section. Inserting drop targets at drag start pushed the dragged row
   ~70px away from the pointer. `MeasuringStrategy.Always` keeps drop rects
   current. The grip shows on hover, on `:focus-within` (keyboard) and
   always under `@media (hover: none)` (touch), in `styles/theme.css`.
@@ -1406,6 +1406,17 @@ to break.
   recomputed on every `onDragMove`, since the before/after side follows the
   pointer within the hovered row. Within a section there is no line: the
   open slot already shows it.
+- **Bands and the drop hint.** While a drag is on, every shown draggable
+  section is a band (`data-task-band`: an inset outline and a faint wash)
+  with a tag in its top-right corner naming it (`data-task-band-tag`:
+  `★ Starred`, `Tasks`, or the priority's `PRIORITY_MARK` and
+  `PRIORITY_LABEL`). The tag is absolutely placed and the band adds no
+  border or margin, so starting a drag moves nothing. The section a
+  cross-section drop will land in swaps its tag for the hint
+  (`data-task-drop-hint`, `.task-drop-hint`): `dropIndicatorFor` carries
+  the plan's `patch`, and `dropHint` words it ("Star"/"Unstar", "Set
+  priority: X"/"Remove priority", joined with ` · ` when both), so the hint
+  can't disagree with the drop.
 - **Drops are optimistic, twice over.** `applyMove` (`lib/taskSections.ts`)
   computes the list as the server will have it — the patch applied and
   every task re-ranked in its new master order, because display order

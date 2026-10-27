@@ -20,7 +20,6 @@ export interface TaskListPrefs {
 export interface TaskSection {
   /** Stable: starred, rest, high, medium, low, none, completed. */
   key: string
-  label: string
   tasks: Task[]
   draggable: boolean
   /** What dropping INTO this section implies for the task's star. */
@@ -34,12 +33,8 @@ export interface DropPlan {
   patch?: { starred?: boolean; priority?: Priority }
 }
 
-const PRIORITY_SECTIONS: { key: Priority; label: string }[] = [
-  { key: "high", label: "High" },
-  { key: "medium", label: "Medium" },
-  { key: "low", label: "Low" },
-  { key: "none", label: "No priority" },
-]
+/** Priority sort's groups, in display order. */
+const PRIORITY_SECTIONS: Priority[] = ["high", "medium", "low", "none"]
 
 /** Dragging rewrites the master order, so it only makes sense where it is shown. */
 export function canDrag(sort: TaskSort): boolean {
@@ -100,23 +95,23 @@ export function buildSections(tasks: Task[], prefs: TaskListPrefs, terms: string
   const starred = open.filter((t) => t.starred)
   // Returned empty too while dragging is possible; TaskList hides it then.
   if (starred.length > 0 || draggable) {
-    sections.push({ key: "starred", label: "Starred", tasks: starred, draggable, starred: true })
+    sections.push({ key: "starred", tasks: starred, draggable, starred: true })
   }
   const rest = open.filter((t) => !t.starred)
   if (prefs.sort === "priority") {
     for (const p of PRIORITY_SECTIONS) {
       sections.push({
-        key: p.key, label: p.label, tasks: rest.filter((t) => t.priority === p.key),
-        draggable, starred: false, priority: p.key,
+        key: p, tasks: rest.filter((t) => t.priority === p),
+        draggable, starred: false, priority: p,
       })
     }
   } else {
-    sections.push({ key: "rest", label: "Tasks", tasks: rest, draggable, starred: false })
+    sections.push({ key: "rest", tasks: rest, draggable, starred: false })
   }
 
   if (prefs.showCompleted) {
     sections.push({
-      key: "completed", label: "Completed",
+      key: "completed",
       tasks: visible.filter((t) => t.state === "done").sort(byCompleted),
       draggable: false,
     })

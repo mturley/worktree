@@ -26,14 +26,12 @@ const keepFromRow = (e: React.SyntheticEvent) => e.stopPropagation()
  * controls (state checkbox and its portalled menu, star, grip, link chip)
  * keep their clicks to themselves.
  */
-export function TaskRow({ task, ownResource, ownWorktree, dragHandle, flush, onState, onPriority, onToggleStar, onOpen }: {
+export function TaskRow({ task, ownResource, ownWorktree, dragHandle, onState, onPriority, onToggleStar, onOpen }: {
   task: Task
   ownResource?: { type: string; id: string }
   /** The worktree whose list this is: its own link chip is left out. */
   ownWorktree?: string
   dragHandle?: ReactNode
-  /** No padding before the grip: the list has no section labels, so rows sit flush with the panel's edge. */
-  flush?: boolean
   onState: (s: TaskState) => void
   onPriority: (p: Priority) => void
   onToggleStar: () => void
@@ -60,7 +58,8 @@ export function TaskRow({ task, ownResource, ownWorktree, dragHandle, flush, onS
       gap="xs"
       wrap="nowrap"
       py={4}
-      pl={flush ? 0 : "xs"}
+      // No padding before the grip: rows sit at the panel's edge in every sort.
+      pl={0}
       pr="xs"
       onClick={onOpen ? () => onOpen() : undefined}
       style={onOpen ? { cursor: "pointer" } : undefined}

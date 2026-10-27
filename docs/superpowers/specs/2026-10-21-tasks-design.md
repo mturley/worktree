@@ -350,9 +350,8 @@ releases its blocker holds, and does so permanently only on purge.
 Left to right: drag grip (shown on hover) · state checkbox · star · priority
 marker (`!!!` red / `!!` amber / `!` grey / blank) · title (one line,
 ellipsised) · chips: due, blocked, subtask progress (`2/5`), unread dot, link
-chip. When the list shows no section labels, rows have no padding before the
-grip, so it lines up with the panel's edge and the full-width Show all
-button. The checkbox, star and priority mark show a hover background, as
+chip. Rows have no padding before the grip, in every sort, so it lines up
+with the panel's edge and the full-width Show all button. The checkbox, star and priority mark show a hover background, as
 does the panel's summary toggle. In the state and priority
 menus, each option's checkbox or mark sits at its left, at the row's size.
 
@@ -380,10 +379,17 @@ menus, each option's checkbox or mark sits at its left, at the row's size.
   list by priority. There is no Pin
   button. The toolbar sits right-aligned in the task panel's header (see
   "The task panel").
-- Starred group at the top, then the rest, then (if shown) Completed. A
-  section with no tasks is not rendered at all, so there are **no drop
-  strips**; in Priority order every shown group is labelled, and an empty
-  priority group is hidden. Dropping onto a non-empty section still works.
+- Starred group at the top, then the rest (in Priority order, one group per
+  priority), then (if shown) Completed. **No section has a header**, in any
+  sort. A section with no tasks is not rendered at all, so there are **no
+  drop strips**; an empty priority group is hidden. Dropping onto a
+  non-empty section still works.
+- While a drag is on, each section it can land in shows as a faint band
+  with a small tag naming it (`★ Starred`, `Tasks`, `!!! High` … `No
+  priority`), drawn without moving any row. Over a section other than the
+  dragged task's own, the band is outlined, a line marks where it lands, and
+  the tag says what the drop changes: "Star" / "Unstar", "Set priority: High"
+  / "Remove priority", or both.
 - The existing search box narrows task lists too, matching title and
   description **(my call; it follows "search is a filter" from the Search
   design)**.

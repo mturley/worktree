@@ -1,5 +1,6 @@
 import type { UniqueIdentifier } from "@dnd-kit/core"
 import { planDrop, type DropPlan, type TaskSection } from "../../lib/taskSections"
+import { PRIORITY_LABEL } from "./TaskPriorityMenu"
 /*
  * dnd-kit ids for the task list. Rows are the only draggables and the only
  * drop targets, and a row is "task:<id>".
@@ -34,11 +35,29 @@ export function dropPlanFor(
   return planDrop(sections, active, dest.key, below ? i + 1 : i)
 }
 
-/** Where a cross-section drop will land: a line on one edge of a row. */
+/**
+ * Where a cross-section drop will land: a line on one edge of a row, and
+ * what the drop will change about the task (the plan's patch).
+ */
 export interface DropIndicator {
   section: string
   id: number
   edge: "before" | "after"
+  patch?: DropPlan["patch"]
+}
+
+/**
+ * A drop's patch in words, for the hint on the section it will land in:
+ * "Star"/"Unstar", "Set priority: High"/"Remove priority", or both.
+ * Undefined when the drop changes neither.
+ */
+export function dropHint(patch: DropPlan["patch"]): string | undefined {
+  const parts: string[] = []
+  if (patch?.starred !== undefined) parts.push(patch.starred ? "Star" : "Unstar")
+  if (patch?.priority !== undefined) {
+    parts.push(patch.priority === "none" ? "Remove priority" : `Set priority: ${PRIORITY_LABEL[patch.priority]}`)
+  }
+  return parts.length > 0 ? parts.join(" · ") : undefined
 }
 
 /**
@@ -58,9 +77,10 @@ export function dropIndicatorFor(
   if (active === null || over === null) return null
   const dest = sections.find((s) => s.tasks.some((t) => t.id === over))
   if (!dest || dest.tasks.some((t) => t.id === active)) return null
-  const { place } = dropPlanFor(sections, activeId, overId, below)
+  const { place, patch } = dropPlanFor(sections, activeId, overId, below)
   if (!place) return null
-  return "after" in place
+  const at: DropIndicator = "after" in place
     ? { section: dest.key, id: place.after, edge: "after" }
     : { section: dest.key, id: place.before, edge: "before" }
+  return patch ? { ...at, patch } : at
 }
