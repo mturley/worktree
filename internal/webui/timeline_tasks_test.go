@@ -111,6 +111,10 @@ func TestTimelineTaskEventsHomeMergeOrder(t *testing.T) {
 // is: a global task (no links) is neither, and has no worktrees.
 func TestTimelineTaskEventsWorktreesAndArchived(t *testing.T) {
 	f := taskFeedFixture(t)
+	// The fixture worktree followed o/r#9 and stopped: the task linking only
+	// it is archived. A resource no worktree ever followed would not be.
+	must(t, resources.Add(f.s.DB, f.wt, resources.Resource{Type: "pr", ID: "o/r#9", URL: "u9"}))
+	must(t, resources.Remove(f.s.DB, f.wt, "pr", "o/r#9"))
 	orphan := mustTask(t, f.s, tasks.NewTask{Title: "orphan", Focus: []tasks.LinkTarget{resLink("pr", "o/r#9")}})
 	a := insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(40), tasks.EventTaskCreated, tasks.ActorUser, "")
 	b := insertTaskEvent(t, f.s.DB, f.beta.ID, tts(30), tasks.EventTaskCreated, tasks.ActorUser, "")

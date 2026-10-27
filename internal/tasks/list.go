@@ -149,7 +149,7 @@ func compute(conn *sql.DB, onlyID *int64) (*computed, error) {
 	if err != nil {
 		return nil, err
 	}
-	active, tombstoned, err := loadSubscriptions(conn)
+	active, tombstoned, ever, err := loadSubscriptions(conn)
 	if err != nil {
 		return nil, err
 	}
@@ -172,8 +172,12 @@ func compute(conn *sql.DB, onlyID *int64) (*computed, error) {
 			l := &t.Links[i]
 			switch l.Kind {
 			case LinkResource:
-				subs := active[resKey{l.ResourceType, l.ResourceID}]
-				l.Archived = len(subs) == 0
+				k := resKey{l.ResourceType, l.ResourceID}
+				subs := active[k]
+				// Archived only when a worktree used to follow it and none
+				// does now. A resource no worktree ever followed never tied
+				// the task to a worktree, so it is not archived.
+				l.Archived = len(subs) == 0 && ever[k]
 				for _, p := range subs {
 					implicit[p] = true
 					if !slices.Contains(l.FollowingWorktrees, p) {
@@ -325,26 +329,35 @@ func loadBlockerCounts(q dbtx, onlyID *int64) (map[int64]int, error) {
 // into active (resource -> paths) and tombstoned (resource -> path set).
 // A subscription whose lease has expired is neither, as in
 // watcherdb.ActiveResources.
-func loadSubscriptions(q dbtx) (map[resKey][]string, map[resKey]map[string]bool, error) {
-	rows, err := q.QueryContext(bg, `SELECT subscriber, resource_type, resource_id, deleted_at IS NULL FROM watcher_subscriptions
-		  WHERE subscriber LIKE 'worktree:%'
-		    AND (expires_at IS NULL OR expires_at > ?)`, now())
+//
+// ever holds every resource some worktree has followed at all, lapsed leases
+// included: a resource link is archived only when a worktree used to follow
+// it and none does now.
+func loadSubscriptions(q dbtx) (map[resKey][]string, map[resKey]map[string]bool, map[resKey]bool, error) {
+	rows, err := q.QueryContext(bg, `SELECT subscriber, resource_type, resource_id, deleted_at IS NULL,
+		       expires_at IS NULL OR expires_at > ? FROM watcher_subscriptions
+		  WHERE subscriber LIKE 'worktree:%'`, now())
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	defer rows.Close()
 	active := map[resKey][]string{}
 	tombstoned := map[resKey]map[string]bool{}
+	ever := map[resKey]bool{}
 	for rows.Next() {
 		var sub string
 		var k resKey
-		var live bool
-		if err := rows.Scan(&sub, &k.typ, &k.id, &live); err != nil {
-			return nil, nil, err
+		var live, leased bool
+		if err := rows.Scan(&sub, &k.typ, &k.id, &live, &leased); err != nil {
+			return nil, nil, nil, err
 		}
 		p, ok := wdb.WorktreePathFromSubscriber(sub)
 		if !ok {
 			continue
+		}
+		ever[k] = true
+		if !leased {
+			continue // a lapsed lease neither follows nor tombstones
 		}
 		if live {
 			active[k] = append(active[k], p)
@@ -355,7 +368,7 @@ func loadSubscriptions(q dbtx) (map[resKey][]string, map[resKey]map[string]bool,
 			tombstoned[k][p] = true
 		}
 	}
-	return active, tombstoned, rows.Err()
+	return active, tombstoned, ever, rows.Err()
 }
 
 // loadRegistry returns the canonical paths of every registered worktree.

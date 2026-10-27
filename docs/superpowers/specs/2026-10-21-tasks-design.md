@@ -125,7 +125,7 @@ resource's own task list the chip is omitted when it would just name that
 resource **(my call)**. Clicking a resource chip opens that resource,
 selected, on the page of a worktree that follows it: the list's own worktree
 when it does, else the first of the followers (sorted paths; no chooser). A
-resource no worktree follows (archived) has a chip that does nothing, as does
+resource no worktree follows has a chip that does nothing, as does
 "🔗 N linked". A worktree chip opens the worktree page.
 
 ## Where tasks show up
@@ -136,9 +136,12 @@ resource no worktree follows (archived) has a chip that does nothing, as does
 | Worktree page, nothing selected | tasks linked to this worktree directly **or** through any resource it follows |
 | Worktree page, a resource selected | tasks linked to that resource |
 
-**Orphaned links ("archived").** A resource link is archived when no live
-worktree follows that resource; a worktree link is archived when the
-worktree is gone from the registry.
+**Orphaned links ("archived").** A resource link is archived when a worktree
+used to follow that resource (a soft-deleted or lapsed `worktree:`
+subscription) and none follows it now; a resource no worktree has ever
+followed is not archived, since it never tied the task to a worktree. A
+worktree link is archived when the worktree is gone from the registry. A
+task is archived when it has links and every one is archived.
 
 - An **open** task whose resource links are all archived still shows in the
   worktrees that last followed those resources **(my call: "last followed"

@@ -535,13 +535,14 @@ func listIDs(t *testing.T, args ...string) []string {
 
 func TestTasksListStateArchivedAndPriorityFlags(t *testing.T) {
 	t.Setenv("WORKTREE_DB", filepath.Join(t.TempDir(), "w.db"))
-	// T1 open; T2 in progress; T3 done and global; T4 done with only an
-	// unfollowed (so archived) link.
+	// T1 open; T2 in progress; T3 done and global; T4 done with only a
+	// link to a worktree that is not registered (so archived).
+	// (A resource no worktree ever followed is not archived.)
 	steps := [][]string{
 		{"add", "open", "--global", "--priority", "high"},
 		{"add", "doing", "--global"},
 		{"add", "done", "--global"},
-		{"add", "archived", "--focus", "jira:X-1"},
+		{"add", "archived", "--focus", "wt:/nonexistent/gone-worktree"},
 		{"state", "T2", "in_progress"},
 		{"state", "T3", "done"},
 		{"state", "T4", "done"},

@@ -32,7 +32,7 @@ type Link struct {
 	ID int64
 	LinkTarget
 	Primary  bool // Focus; false means Related
-	Archived bool // a resource no live worktree follows, or a worktree gone from the registry
+	Archived bool // a resource a worktree used to follow and none does now, or a worktree gone from the registry
 	// FollowingWorktrees: for a resource link, the canonical paths of the
 	// worktrees that actively follow it (`worktree:` subscribers only),
 	// sorted. Empty for a worktree link and for an archived resource.

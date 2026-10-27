@@ -206,7 +206,8 @@ func TestTaskDetailLinksAddByURL(t *testing.T) {
 		t.Fatalf("links = %+v", d.DetailLinks)
 	}
 	l := d.DetailLinks[0]
-	if l.ResourceType != "pr" || l.ResourceID != "o/r#99" || !l.Archived || l.Title != "#99" || l.URL != "https://github.com/o/r/pull/99" {
+	// No worktree has ever followed the PR, so it is not archived.
+	if l.ResourceType != "pr" || l.ResourceID != "o/r#99" || l.Archived || l.Title != "#99" || l.URL != "https://github.com/o/r/pull/99" {
 		t.Fatalf("link = %+v", l)
 	}
 	for name, body := range map[string]map[string]any{

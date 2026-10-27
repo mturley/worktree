@@ -169,6 +169,22 @@ func TestListArchivedFallback(t *testing.T) {
 	}
 }
 
+// A resource no worktree has EVER followed is not archived: archived means a
+// worktree used to follow it and none does now. A task linking only such
+// resources was never tied to a worktree, so it is not archived either.
+func TestListNeverFollowedResourceNotArchived(t *testing.T) {
+	conn := newDB(t)
+	mkWorktree(t, conn, "x")
+	tk, err := Create(conn, user, NewTask{Title: "x", Focus: []LinkTarget{prLink, jiraLink}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := mustGet(t, conn, tk.ID)
+	if got.Archived || got.Links[0].Archived || got.Links[1].Archived {
+		t.Fatalf("task %+v", got)
+	}
+}
+
 func TestListFallbackNeedsEveryLinkArchived(t *testing.T) {
 	conn := newDB(t)
 	x := mkWorktree(t, conn, "x")
@@ -215,6 +231,9 @@ func TestListCompletedArchivedHidden(t *testing.T) {
 	conn := newDB(t)
 	x := mkWorktree(t, conn, "x")
 	subscribe(t, conn, x, jiraLink)
+	// x used to follow the PR and no longer does: its link is archived.
+	subscribe(t, conn, x, prLink)
+	unsubscribe(t, conn, x, prLink)
 	archived, err := Create(conn, user, NewTask{Title: "archived", Focus: []LinkTarget{prLink}})
 	if err != nil {
 		t.Fatal(err)
@@ -256,8 +275,10 @@ func TestListIgnoresNonWorktreeSubscribers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A hold is not a worktree following it: no implicit worktree, and since
+	// no worktree ever followed the resource, not archived either.
 	got := mustGet(t, conn, tk.ID)
-	if !got.Links[0].Archived || !got.Archived || len(got.Implicit) != 0 {
+	if got.Links[0].Archived || got.Archived || len(got.Implicit) != 0 {
 		t.Fatalf("task %+v", got)
 	}
 }
@@ -287,7 +308,7 @@ func TestListLinkFollowingWorktrees(t *testing.T) {
 	if f := got.Links[0].FollowingWorktrees; len(f) != 2 || f[0] != wantA || f[1] != wantB {
 		t.Fatalf("pr FollowingWorktrees = %v", f)
 	}
-	if f := got.Links[1].FollowingWorktrees; len(f) != 0 || !got.Links[1].Archived {
+	if f := got.Links[1].FollowingWorktrees; len(f) != 0 || got.Links[1].Archived {
 		t.Fatalf("jira link %+v", got.Links[1])
 	}
 	if f := got.Links[2].FollowingWorktrees; len(f) != 0 {
