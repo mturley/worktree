@@ -14,7 +14,7 @@ Line comments in the web UI's diff view. They start as a review Mike hands back 
 |---|---|---|
 | 1 | **Draft review comments for the agent**: comment on lines and ranges, edit/delete inline and in a sidebar, persist in the DB, survive code changes (move / out of date), copy as a prompt ("Copy comments for agent") | Done (branch review-comments, not yet merged): `2026-10-23-review-comments-design.md` |
 | 2 | **PR comments shown inline, read-only**: the open PR's review comments rendered in the diff and listed in the sidebar beside the drafts, visually distinct | Done (branch pr-comments): `2026-10-26-pr-comments-design.md` |
-| 3 | **Submit a review to GitHub**: a "Post review on PR" button beside "Copy comments for agent", opening a GitHub-style dropdown (top-level comment; Approve / Comment / Request changes) that posts the drafts as the review's comments | Future |
+| 3 | **Submit a review to GitHub**: a "Post review on PR" button beside "Copy comments for agent", opening a GitHub-style dropdown (top-level comment; Approve / Comment / Request changes) that posts the drafts as the review's comments | Done (includes phase 2b, replying): `2026-10-27-submit-review-design.md` |
 
 Each phase ships on its own. Phase 1 is useful without the others; phase 3 doesn't require phase 2.
 
@@ -38,7 +38,7 @@ See its design document. What it must leave in place for later phases:
 - **Look:** read-only, visibly not Mike's drafts. Show the author's name and avatar, and a link to the comment on GitHub. Threads and replies are shown, but replying is not phase 2.
 - **Prompt:** decide then whether "Copy comments for agent" can include selected PR comments, which would be useful when an agent is to address a human reviewer's feedback.
 
-## Phase 3 — Submit a review to GitHub (future)
+## Phase 3 — Submit a review to GitHub (done)
 
 - **"Post review on PR"** beside "Copy comments for agent" opens a dropdown like GitHub's "Finish your review": a top-level comment field, then Approve / Comment / Request changes, then Submit.
 - **What gets posted:** the drafts become the review's line comments, using their stored anchors. GitHub's API wants `path`, `side`, `line` / `start_line`, and the `commit_id` the comments are against. It must be the PR's head, or a commit in the PR.

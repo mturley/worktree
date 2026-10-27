@@ -40,7 +40,9 @@
   - Comment now: `Post this comment on PR #1234 now, as a single comment everyone can see.`
   - Reply now: `Post this reply on PR #1234 now. Everyone can see it.`
   - Submit: `Submit your pending review on PR #1234, with a message and Comment, Approve or Request changes.`
-- **Unpostable reasons, exact:** `on uncommitted changes`, `on a commit not pushed to the PR`, `out of date`, `not part of the PR's changes`.
+- **Unpostable reasons, exact:** `on uncommitted changes`, `on a commit not pushed to the PR`, `newer than your pending review`, `out of date`, `not part of the PR's changes`.
+  - `newer than your pending review` applies when a pending review exists on an older commit, and the comment's rev is a commit in the PR (an ancestor of the PR head) that came after the pending review's commit.
+- **Stale pending review notice** (submit dialog, PR tab, and the PR-review button's tooltip while it's disabled): `Your pending review on PR #1234 is on an older commit (abc1234). Comments on newer code can't be added to it; submit it to start a new one.` It's shown whenever the pending review's commit ≠ the PR head.
 - **Review events, with GitHub's wording:**
   - `Comment`: "Submit general feedback without explicit approval."
   - `Approve`: "Give your approval to merge these changes."
@@ -198,7 +200,12 @@ func placeForPR(dir string, t *prTarget, c reviewcomments.Comment, lines func(re
 ```
 The rules are the spec's "Which comments can be posted":
 - Re-check the anchor on the target commit, or on `mergeBase` for old-side comments, with `reviewcomments.Resolve`.
-- Give reasons in this order: `uncommitted` rev, then not an ancestor (new side only), then not resolved (`out of date`), then outside the hunks or crossing two hunks (`not part of the PR's changes`).
+- Give reasons in this order:
+  1. an `uncommitted` rev;
+  2. not an ancestor of the target commit (new side only): `newer than your pending review` if the rev is an ancestor of the PR head and the target is an older pending review's commit, else `on a commit not pushed to the PR`;
+  3. not resolved: `out of date`;
+  4. outside the hunks, or crossing two hunks: `not part of the PR's changes`.
+- `prTarget` also exposes `stale bool` (pending review's commit ≠ `ctx.HeadRefOid`) and `pendingCommit string`, for the notice.
 - New side maps to `RIGHT` and old side to `LEFT`.
 
 - [ ] **Step 1: Failing tests,** using `forkRepo`/`commitFile` helpers like `pr_threads_place_test.go`.
@@ -208,7 +215,8 @@ The rules are the spec's "Which comments can be posted":
   - `TestPlaceForPRContextOnly`: a line outside every hunk gives `not part of the PR's changes`.
   - `TestPlaceForPRCrossesHunks`: a range spanning two hunks gives `not part of the PR's changes`.
   - `TestPlaceForPROldSide`: a removed line resolves at `mergeBase` and gives `LEFT`.
-  - `TestPRTargetUsesPendingCommit`: with `ctx.Pending.CommitOid` older than head, `commit` is the pending review's commit. A line that moved between the two is placed at the pending commit's line.
+  - `TestPRTargetUsesPendingCommit`: with `ctx.Pending.CommitOid` older than head, `commit` is the pending review's commit and `stale` is true. A line that moved between the two is placed at the pending commit's line.
+  - `TestPlaceForPRNewerThanPending`: a comment on a commit made after the pending review's commit (still in the PR) gives `newer than your pending review`.
 - [ ] **Step 2:** Run the tests and confirm they fail. **Step 3:** Implement. Ancestry is `git merge-base --is-ancestor`; add `gitutil.IsAncestor(dir, a, b string) bool`, with its own test. **Step 4:** `go test ./internal/webui -run PlaceForPR` passes.
 - [ ] **Step 5: Commit:** `feat(webui): decide which comments GitHub will accept`.
 
@@ -219,7 +227,7 @@ The rules are the spec's "Which comments can be posted":
 - Modify: `internal/webui/server.go` (routes; seams `StartReview`, `AddReviewThread`, `AddReviewReply`, `PostComment`, `PostReply`, `FetchPRWriteContext`, defaulting to the library)
 
 **Routes:**
-- `GET /api/pr-write/check?path=&file=&side=&start_line=&end_line=&old_rev=&new_rev=` returns `{postable: bool, reason?: string}`.
+- `GET /api/pr-write/check?path=&file=&side=&start_line=&end_line=&old_rev=&new_rev=` returns `{review: {postable, reason?}, single: {postable, reason?}}`. `review` is placed against the pending-aware target, and `single` against the PR head (amended in Task 5's fix round).
   - It captures an anchor from the view's rev (as review-comments create does, requiring the revs in `revSet`), then calls `placeForPR`.
   - It returns `{postable:false, reason:"Fetch the PR's latest commits first"}` on `errMissingCommit`.
 - `POST /api/pr-write/comment {path, mode: "review"|"single", file, side, start_line, end_line, body, old_rev, new_rev}` returns `{comment_id}`.
@@ -254,8 +262,8 @@ The rules are the spec's "Which comments can be posted":
 **Routes:**
 - `GET /api/pr-write/review?path=` returns the dialog's data:
 ```json
-{"pr":{…},"viewer_is_author":bool,"head":"<target commit>",
- "pending":{"comments":[{"id","file","line","body"}]}|null,
+{"pr":{…},"viewer_is_author":bool,"head":"<target commit>","stale_pending_commit":"<short sha>"|null,
+ "pending":{"comments":[{"id","file","line","body"}]}|null,"blocked_reason":"Fetch the PR's latest commits first"|null,
  "local":[{"id","version","file","side","start_line","end_line","body","postable","reason"}]}
 ```
 - `POST /api/pr-write/submit {path, head, event, body, include_local}` returns `{submitted_review_id, posted_local_ids:[…], kept_local_ids:[…]}`.
@@ -293,7 +301,7 @@ The rules are the spec's "Which comments can be posted":
   - `prWriteReply(req)`
   - `prReviewDialog(path)`
   - `prSubmit(req)`
-- `usePRWriteCheck(path, target | undefined)`: react-query `["pr-write-check", path, …target]`, `staleTime: 30_000`, enabled only with a target and a PR.
+- `usePRWriteCheck(path, target | undefined)` (returns `{review, single}` verdicts): react-query `["pr-write-check", path, …target]`, `staleTime: 30_000`, enabled only with a target and a PR.
 - `usePRWriteMutations(path)`: `comment`, `reply` and `submit` mutations. On success they invalidate `["pr-comments", path]`, `["pr-threads", path]` and `["review-comments", path]`.
 - Labels:
   - `toolbarLabel(local, pr, unread, pending)` appends `, pending PR review (N comment[s])`.
@@ -327,7 +335,7 @@ type EditorAction = { key: string; label: string; tooltip: string; disabledReaso
   - The existing `submitLabel` path is unchanged.
 - `NewCommentCard` has three actions when the worktree has a PR, in this order: local, PR review, comment now.
   - Labels and tooltips are the Global Constraints' exact copy. The local label depends on the local comment count. The PR review label depends on `summary.pending_comments > 0`.
-  - The GitHub actions are disabled with the check's `reason` (`usePRWriteCheck`), or with `The GitHub watcher is off` when `summary.state === "off"`.
+  - The PR review action is disabled with the check's `review.reason`, and Comment now with `single.reason` (`usePRWriteCheck`), or with `The GitHub watcher is off` when `summary.state === "off"`.
   - Without a PR there's only the local action (`Start local review`/`Add local comment`), and no GitHub buttons render.
 - `PRThreadCard` gets a `Reply` link under the thread (on resolved threads, once expanded). It opens a `CommentEditor` with two actions: PR review (`mode: "review"`) and `Reply on PR #1234` (`mode: "single"`).
   - Typed reply text uses `useEditorDraft(path, "reply:" + thread.id)`.
@@ -358,7 +366,7 @@ type EditorAction = { key: string; label: string; tooltip: string; disabledReaso
    - pending comments, labelled `Pending on GitHub` with the grape edge;
    - then, when included, the postable local comments, labelled `Local` with the blue edge;
    - each with `file:line` and its body.
-5. The pending notice `Your pending review on PR #1234 (N comments) will be submitted.`
+5. The pending notice `Your pending review on PR #1234 (N comments) will be submitted.` When `stale_pending_commit` is set, the stale pending review notice (Global Constraints) is shown too.
 6. The warning `N of M local comments can't be posted and will stay here`, listing each with its reason. It shows only when included.
 7. `Cancel` and `Submit review`, with the count when there are comments. Submit is disabled for an empty Comment.
 
