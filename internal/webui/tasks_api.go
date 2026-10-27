@@ -87,7 +87,7 @@ func newTaskDTO(t tasks.Task) taskDTO {
 		Implicit:      append(make([]string, 0, len(t.Implicit)), t.Implicit...),
 		SubtasksTotal: len(t.Subtasks),
 		Blocked:       t.Blocked, BlockerCount: t.BlockerCount,
-		OpenBlockers:  []openBlockerDTO{},
+		OpenBlockers: []openBlockerDTO{},
 	}
 	for _, l := range t.Links {
 		out.Links = append(out.Links, taskLinkDTO{

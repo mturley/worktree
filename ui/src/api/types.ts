@@ -359,6 +359,8 @@ export interface SessionInfo {
   notify_mode?: NotifyMode
   /** The Settings "Enable notifications" switch; only on GET /api/session. */
   notifications_enabled?: boolean
+  /** The server's home directory, for showing paths with ~; only on GET /api/session. */
+  home?: string
 }
 
 /** GET /api/update-status: whether the repo's main branch is ahead of this build. */

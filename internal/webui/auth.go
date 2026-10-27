@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -97,6 +98,10 @@ type sessionDTO struct {
 	// set only on GET /api/session. Off, the UI disables every notify toggle
 	// and hides the bells, keeping the stored toggles underneath.
 	NotificationsEnabled *bool `json:"notifications_enabled,omitempty"`
+	// Home is the server's home directory, so the UI can show paths with ~
+	// as the server does (tildify); set only on GET /api/session, and absent
+	// when it cannot be resolved.
+	Home string `json:"home,omitempty"`
 }
 
 func tosessionDTO(sess uisession.Session, current bool) sessionDTO {
@@ -178,6 +183,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	dto.NotifyMode = s.notifyMode()
 	on := s.notificationsEnabled()
 	dto.NotificationsEnabled = &on
+	dto.Home, _ = os.UserHomeDir()
 	writeJSON(w, http.StatusOK, dto)
 }
 

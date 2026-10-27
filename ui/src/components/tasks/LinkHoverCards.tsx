@@ -4,6 +4,7 @@ import { useCmuxMatches } from "../../api/cmux"
 import { useAllResources } from "../../hooks/useAllResources"
 import type { CmuxWorkspace, OpenBlocker } from "../../api/types"
 import { worktreeName } from "../../lib/homeWorktree"
+import { tildify, useHomeDir } from "../../lib/tildify"
 import { shortResourceRef } from "../../lib/resourceRef"
 import { AllResourceSummary } from "../AllResourceRow"
 import { ColorBar } from "../CmuxWorkspaceSection"
@@ -49,6 +50,7 @@ export function WorkspaceLabel({ ws, suffix }: { ws: CmuxWorkspace; suffix?: str
 /** The full names behind a worktree link: its cmux workspaces, then the worktree itself. */
 function WorktreeDetails({ path, branch }: { path: string; branch?: string }) {
   const workspaces = useCmuxMatches(path)
+  const home = useHomeDir()
   const name = worktreeName(path)
   return (
     <Stack gap={4}>
@@ -62,7 +64,7 @@ function WorktreeDetails({ path, branch }: { path: string; branch?: string }) {
       {branch && branch !== name && (
         <Text size="xs" c="dimmed" style={{ wordBreak: "break-word" }}>branch {branch}</Text>
       )}
-      <Text size="xs" c="dimmed" style={{ wordBreak: "break-all" }}>{path}</Text>
+      <Text size="xs" c="dimmed" style={{ wordBreak: "break-all" }}>{tildify(path, home)}</Text>
     </Stack>
   )
 }

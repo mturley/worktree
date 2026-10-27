@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -190,6 +191,9 @@ func TestLoginSetsASessionCookie(t *testing.T) {
 	}
 	if !dto.Current || dto.Label != "Android — Chrome" || dto.Handle != uisession.HandleFor(c.Value) {
 		t.Errorf("session = %+v", dto)
+	}
+	if home, _ := os.UserHomeDir(); dto.Home != home {
+		t.Errorf("session home = %q, want %q", dto.Home, home)
 	}
 }
 

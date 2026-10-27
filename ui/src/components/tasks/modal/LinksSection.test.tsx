@@ -101,6 +101,7 @@ describe("LinksSection", () => {
           "/w/impl": [{ ref: "workspace:2", title: "Implicit work", selected: false }],
         },
       })
+      qc.setQueryData(["session"], { handle: "h", label: "", created_at: "", last_seen_at: "", current: true, home: "/w" })
       qc.setQueryData(["resources", "__all__"], [{
         type: "pr", id: "o/r#1", url: "https://github.com/o/r/pull/1", primary: true, title: "Fix login",
         worktrees: [{ path: "/w/feat", repo: "r", branch: "login-branch" }],
@@ -111,7 +112,8 @@ describe("LinksSection", () => {
     expect(within(screen.getByTestId("implicit-/w/impl")).getByText("Implicit work")).toBeInTheDocument()
 
     await userEvent.hover(feature)
-    expect(await screen.findByText("/w/feat")).toBeInTheDocument()
+    // The path with ~ for the server's home directory.
+    expect(await screen.findByText("~/feat")).toBeInTheDocument()
     await userEvent.unhover(feature)
 
     await userEvent.hover(screen.getByRole("link", { name: "Fix login" }))

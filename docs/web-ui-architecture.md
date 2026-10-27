@@ -1761,7 +1761,9 @@ URL param (`?task=<id>`) through **`TaskModalProvider`**
   the worktree's first cmux workspace (`WorkspaceLabel`: colour bar, then a
   title that truncates) when it has one. Hovering a worktree link opens
   `WorktreeHoverCard`, which shows every workspace in full, then the
-  worktree's name and path. Hovering a resource link opens
+  worktree's name and path. The path shows `~` for the home directory
+  (`lib/tildify.ts`, mirroring the server's `tildify`), using the `home`
+  field that `GET /api/session` now includes. Hovering a resource link opens
   `ResourceHoverCard`: `AllResourceSummary`, the Resources tab row's body,
   read from the shared `["resources", "__all__"]` query. A resource no
   worktree follows isn't in that list, so its card just says so. Hover-card
