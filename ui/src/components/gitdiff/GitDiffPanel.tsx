@@ -5,9 +5,11 @@ import type { WorktreeGit } from "../../api/types"
 import { useDiffCommits, useDiffFiles } from "../../hooks/useDiffData"
 import { useDiffSelection } from "../../hooks/useDiffSelection"
 import { useDiffView } from "../../hooks/useDiffView"
+import { usePRCommentsSummary } from "../../hooks/usePRComments"
 import { useReviewComments } from "../../hooks/useReviewComments"
 import { useWorktreeGit } from "../../hooks/useWorktreeGit"
 import { diffUnavailable } from "../../lib/diffLabels"
+import { codeTabLabel, countsAreUnread } from "../../lib/reviewCounts"
 import { OpenInEditorButton } from "../OpenInEditorButton"
 import { CompareSelect } from "./CompareSelect"
 import { FilesChangedList } from "./FilesChangedList"
@@ -44,6 +46,11 @@ function Actions({ path, git }: { path: string; git: WorktreeGit }) {
   const unavailable = diffUnavailable(git, base)
   // With no view, the worktree's whole list: every comment not yet cleared.
   const pending = useReviewComments(path, undefined).data?.length ?? 0
+  const prSummary = usePRCommentsSummary(path).data
+  const prOk = prSummary?.state === "ok"
+  const openThreads = prOk ? prSummary.open_threads : 0
+  const unread = prOk ? prSummary.unread_comments : 0
+  const filled = countsAreUnread(pending, unread)
   return (
     // Spaced from the card's tabs above.
     <Group gap="xs" wrap="wrap" mt="xs">
@@ -52,15 +59,13 @@ function Actions({ path, git }: { path: string; git: WorktreeGit }) {
           own "Local review comments" button is, so it's hard to miss. */}
       <Button
         size="xs"
-        variant={pending > 0 ? "filled" : "light"}
-        color={pending > 0 ? "blue" : undefined}
-        vars={pending > 0 ? () => ({ root: { "--button-hover": "var(--mantine-color-blue-4)" } }) : undefined}
+        variant={filled ? "filled" : "light"}
+        color={filled ? "blue" : undefined}
+        vars={filled ? () => ({ root: { "--button-hover": "var(--mantine-color-blue-4)" } }) : undefined}
         disabled={!!unavailable}
         onClick={() => diffView.enter()}
       >
-        {pending > 0
-          ? `Review changes (${pending} pending local comment${pending === 1 ? "" : "s"})`
-          : "Review changes"}
+        {codeTabLabel(pending, openThreads, unread)}
       </Button>
     </Group>
   )
