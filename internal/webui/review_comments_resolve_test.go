@@ -278,7 +278,8 @@ func TestReviewResolverConcurrentLists(t *testing.T) {
 	f2 := strings.TrimSpace(gitIn(t, wt, "rev-parse", "HEAD~1"))
 	single := getPatch(t, ts, wt, "&from="+f2+"&to="+f2)
 
-	bodies := make([]string, 8)
+	// Three is enough to overlap requests; each one costs ~10 git commands.
+	bodies := make([]string, 3)
 	var wg sync.WaitGroup
 	for i := range bodies {
 		wg.Add(1)

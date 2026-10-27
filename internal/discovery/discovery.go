@@ -8,7 +8,10 @@ import (
 
 func IsInsideWorktree(dir string) (string, bool) {
 	// One git process for both answers: spawning git is the expensive part.
-	out, err := exec.Command("git", "-C", dir, "rev-parse", "--show-toplevel", "--git-common-dir").Output()
+	// Absolute paths, since --git-common-dir is otherwise relative to dir
+	// ("../.git" from a main worktree's subdirectory).
+	out, err := exec.Command("git", "-C", dir, "rev-parse", "--path-format=absolute",
+		"--show-toplevel", "--git-common-dir").Output()
 	if err != nil {
 		return "", false
 	}
@@ -18,8 +21,7 @@ func IsInsideWorktree(dir string) (string, bool) {
 	}
 	toplevel, commonDir := lines[0], lines[1]
 
-	gitDir := filepath.Join(toplevel, ".git")
-	if commonDir != ".git" && commonDir != gitDir {
+	if commonDir != filepath.Join(toplevel, ".git") {
 		return toplevel, true
 	}
 	return "", false

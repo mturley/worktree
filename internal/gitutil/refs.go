@@ -16,12 +16,11 @@ func RevSHA(dir, ref string) (string, bool) {
 }
 
 // shortRef returns the abbreviated name of ref (e.g. "origin/main"), or false
-// when it does not resolve to a commit.
+// when it does not resolve. One git process: --verify fails for a missing or
+// unconfigured upstream just as a separate ^{commit} check would, and the
+// refs passed here (upstreams, remote-tracking branches) always name commits.
 func shortRef(dir, ref string) (string, bool) {
-	if _, ok := RevSHA(dir, ref); !ok {
-		return "", false
-	}
-	out, err := git(dir, "rev-parse", "--abbrev-ref", ref)
+	out, err := git(dir, "rev-parse", "--verify", "--quiet", "--abbrev-ref", ref)
 	if err != nil || out == "" {
 		return "", false
 	}
@@ -33,10 +32,10 @@ func shortRef(dir, ref string) (string, bool) {
 // track; when there is no local `main` (or it tracks nothing) it follows
 // origin/HEAD, and finally falls back to origin/HEAD itself.
 func MainUpstream(dir string) (string, bool) {
-	if _, err := git(dir, "show-ref", "--verify", "--quiet", "refs/heads/main"); err == nil {
-		if ref, ok := shortRef(dir, "main@{upstream}"); ok {
-			return ref, true
-		}
+	// main@{upstream} fails when there is no local main, so no separate
+	// existence check is needed.
+	if ref, ok := shortRef(dir, "main@{upstream}"); ok {
+		return ref, true
 	}
 
 	head, err := git(dir, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
