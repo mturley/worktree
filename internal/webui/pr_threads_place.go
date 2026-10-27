@@ -1,6 +1,8 @@
 package webui
 
 import (
+	"regexp"
+
 	wgithub "github.com/mturley/watcher/github"
 
 	"github.com/mturley/worktree/internal/gitutil"
@@ -25,12 +27,17 @@ type prGitMemo struct {
 	mergeBase map[string]string // commit\0base → merge-base, "" on failure
 }
 
+// prOidRE is a full object id, as GitHub reports one. GitHub-supplied revs
+// are checked against it before reaching git, so a symbolic ref or an
+// option-shaped string is never interpreted; anything else is "not local".
+var prOidRE = regexp.MustCompile(`^[0-9a-f]{40,64}$`)
+
 func newPRGitMemo(dir string) *prGitMemo {
 	return &prGitMemo{dir: dir, isCommit: map[string]bool{}, mergeBase: map[string]string{}}
 }
 
 func (m *prGitMemo) commitOK(rev string) bool {
-	if rev == "" {
+	if !prOidRE.MatchString(rev) {
 		return false
 	}
 	ok, seen := m.isCommit[rev]
@@ -87,7 +94,7 @@ func anchorPRThread(m *prGitMemo, t wgithub.ReviewThread, baseOid string, lines 
 	switch t.DiffSide {
 	case "RIGHT":
 	case "LEFT":
-		if baseOid == "" {
+		if !prOidRE.MatchString(baseOid) {
 			return reviewcomments.Comment{}, false
 		}
 		mb, ok := m.mergeBaseOf(commit, baseOid)

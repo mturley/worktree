@@ -204,3 +204,41 @@ func TestPlaceThreadsNilView(t *testing.T) {
 		t.Fatalf("unplaceable = anchor %+v view %+v", got[1].anchor, got[1].view)
 	}
 }
+
+func TestPlaceThreadsRejectsNonOidRevs(t *testing.T) {
+	wt := forkRepo(t)
+	commitFile(t, wt, "multi", rcMulti)
+	c1 := headSHA(t, wt)
+	_, ts := gitTestServer(t, wt, nil)
+	p := getPatch(t, ts, wt, "")
+
+	// Option-shaped and symbolic revs are never handed to git, even though
+	// git would resolve "HEAD".
+	for _, rev := range []string{"--output=x", "HEAD", strings.ToUpper(c1)} {
+		got := placeOne(t, wt, rightThread(rev, 0, 4), p)
+		if got.view == nil || got.view.Status != "unavailable" || got.anchor != nil {
+			t.Fatalf("OriginalCommit %q: anchor=%+v view=%+v", rev, got.anchor, got.view)
+		}
+		th := rightThread("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", 0, 4)
+		th.Comments[0].Commit = rev
+		th.Line = 4
+		if got := placeOne(t, wt, th, p); got.view == nil || got.view.Status != "unavailable" {
+			t.Fatalf("Commit %q: view=%+v", rev, got.view)
+		}
+	}
+
+	// A LEFT thread's base oid is checked too.
+	th := wgithub.ReviewThread{
+		ID: "T1", Path: "multi", DiffSide: "LEFT", OriginalLine: 1,
+		Comments: []wgithub.ThreadComment{{DatabaseID: 1, OriginalCommit: c1}},
+	}
+	got, err := newReviewResolver().placeThreads(wt, &wgithub.PRReviewThreads{
+		BaseRefOid: "--output=x", Threads: []wgithub.ReviewThread{th},
+	}, &reviewView{oldRev: p.OldRev, newRev: p.NewRev})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[0].view == nil || got[0].view.Status != "unavailable" {
+		t.Fatalf("base oid: view=%+v", got[0].view)
+	}
+}
