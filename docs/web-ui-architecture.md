@@ -2231,10 +2231,23 @@ way:
   Tooltips are portalled to `<body>` at Mantine's popover z-index, which
   put one left open over the pinned blocks as its anchor scrolled under
   them; the theme's Tooltip zIndex is instead `var(--tooltip-z-index)`,
-  which `useTooltipLayer` sets from what the pointer/focus is on: just under
-  the pinned blocks inside a `data-tooltip-layer="content"` area (the
-  scrolling columns), the usual value inside a nearer `"pinned"` one or
-  anywhere else (header, modals, menus). The worktree page's resource list
+  which `useTooltipLayer` sets from what the pointer/focus is on: inside a
+  `data-tooltip-layer="content"` area (the scrolling columns), just under
+  the pinned blocks while one of that area's `"pinned"` blocks is **stuck**,
+  and level with them (app - 1, so the later-in-the-DOM tooltip paints over
+  them, still under the page header) while none is; the usual value inside
+  a nearer `"pinned"` one or anywhere else (header, modals, menus). Without
+  the stuck check, the first rows' tooltips — which open upwards over a
+  header sitting at its natural place, scrolled to the top — could never be
+  seen. "Stuck" is measured in the hook (`isStuck`), not observed: the
+  pinned block's next laid-out sibling has moved up beneath its bottom
+  edge, which holds whichever element scrolls (a home column, the window)
+  and whatever `top` it pins at, with no sentinel or per-call-site markup.
+  It is re-checked on every scroll (a capture listener on `window`, which
+  sees inner scrollers too), so a tooltip left open changes layer as its
+  header sticks or unsticks. A pinned header's next sibling must therefore
+  start at or below its bottom in natural layout (the sites use gap 0 below
+  a pinned header, with its own padding as the space). The worktree page's resource list
   column cannot work that way: being sticky, it is a stacking context of its
   own (its `zIndex` keeps a dragged card over the activity column's
   controls), so no z-index on a `<body>` tooltip lands between its list cards

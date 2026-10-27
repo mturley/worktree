@@ -66,7 +66,8 @@ function AuthenticatedApp() {
   // Beside useSSE rather than in a page: the tab says the same thing wherever
   // you are in the app, and the stream is what keeps both of them current.
   useUnreadFavicon()
-  // Tooltips in scrolling content open under the pinned headers and cards.
+  // Tooltips in scrolling content open under the pinned headers and cards
+  // while those are stuck over it.
   useTooltipLayer()
   return (
     // The custom hook keeps this tab's home worktree in the URL across every

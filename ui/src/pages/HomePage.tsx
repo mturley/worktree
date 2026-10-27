@@ -464,8 +464,8 @@ export function HomePage() {
     <NarrowingContext.Provider value={narrowing}><SearchContext.Provider value={searchContext}><CrossHoverProvider>
       <Box px="md" pt="md" ref={headerRef}>{header}</Box>
       <Grid px="md" pb="md" pt="sm" gutter="md">
-        {/* Tooltips in both columns open under the pinned headers; see
-            useTooltipLayer. */}
+        {/* Tooltips in both columns open under the pinned headers while
+            those are stuck; see useTooltipLayer. */}
         <Grid.Col span={6} style={columnStyle} data-tooltip-layer="content">
           {/* As the Activity header: pinned, it carries its own opaque room
               below the toolbar in place of the gap, so the cards scrolling
