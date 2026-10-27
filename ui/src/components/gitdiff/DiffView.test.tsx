@@ -925,4 +925,107 @@ describe("DiffView PR comments", () => {
     const after = apiMock.prThreads.mock.calls.slice(before)
     expect(after).toEqual([["/wt/foo", { oldRev: "mb", newRev: "snap2" }]])
   })
+
+  it("keeps the pinned threads and raises no Refresh when the summary fails", async () => {
+    let failing = false
+    window.sessionStorage.setItem("worktree.reviewSidebar", "true")
+    window.sessionStorage.setItem("worktree.reviewSidebarTab", "pr")
+    apiMock.prComments.mockImplementation(async () =>
+      failing
+        ? summary({ state: "error", message: "boom", fingerprint: "", pr: undefined, open_threads: 0 })
+        : summary({ open_threads: 1 }),
+    )
+    apiMock.prThreads.mockImplementation(async () => threads([prThread("t1")]))
+    setup()
+    const panel = await screen.findByRole("tabpanel")
+    await waitFor(() => expect(panel.querySelector('[data-pr-thread-id="t1"]')).not.toBeNull())
+    const calls = apiMock.prThreads.mock.calls.length
+    failing = true
+    await act(() => client.invalidateQueries({ queryKey: ["pr-comments"] }))
+    expect(await within(panel).findByText("Couldn't load PR comments: boom")).toBeInTheDocument()
+    expect(screen.queryByTestId("diff-stale")).not.toBeInTheDocument()
+    expect(panel.querySelector('[data-pr-thread-id="t1"]')).not.toBeNull()
+    expect(screen.getByTestId("diff-body").querySelector('[data-pr-thread-id="t1"]')).not.toBeNull()
+    expect(apiMock.prThreads).toHaveBeenCalledTimes(calls)
+  })
+
+  it("shows the threads' own notice when they failed to load", async () => {
+    window.sessionStorage.setItem("worktree.reviewSidebar", "true")
+    window.sessionStorage.setItem("worktree.reviewSidebarTab", "pr")
+    prSetup(summary({ open_threads: 1 }), { state: "error", message: "threads boom", threads: [] })
+    const panel = await screen.findByRole("tabpanel")
+    expect(await within(panel).findByText("Couldn't load PR comments: threads boom")).toBeInTheDocument()
+    expect(screen.queryByTestId("diff-stale")).not.toBeInTheDocument()
+  })
+
+  it("opens the sidebar from the button when PR comments exist only in the counts", async () => {
+    window.sessionStorage.setItem("worktree.reviewSidebarTab", "pr")
+    let list: PRThread[] = []
+    apiMock.prComments.mockImplementation(async () => summary({ open_threads: 1, fingerprint: "P1" }))
+    apiMock.prThreads.mockImplementation(async () => threads(list, list.length ? "P1" : "P0"))
+    setup()
+    await waitFor(() => expect(apiMock.prThreads).toHaveBeenCalled())
+    await userEvent.click(await screen.findByRole("button", { name: "1 PR review comment" }))
+    const panel = await screen.findByRole("tabpanel")
+    expect(screen.getByRole("tab", { name: "PR comments (1)" })).toHaveAttribute("aria-selected", "true")
+    expect(within(panel).getByText("New PR comments")).toBeInTheDocument()
+    expect(window.sessionStorage.getItem("worktree.reviewSidebar")).toBe("true")
+    // Its Refresh is the user's: it loads the threads.
+    list = [prThread("t1")]
+    await userEvent.click(within(panel).getByRole("button", { name: "Refresh" }))
+    await waitFor(() => expect(panel.querySelector('[data-pr-thread-id="t1"]')).not.toBeNull())
+    expect(within(panel).queryByText("New PR comments")).not.toBeInTheDocument()
+    expect(apiMock.diffPatch).toHaveBeenCalledTimes(1)
+  })
+
+  it("never closes the sidebar on a poll dropping the counts to 0 with nothing pinned", async () => {
+    window.sessionStorage.setItem("worktree.reviewSidebarTab", "pr")
+    let open = 1
+    apiMock.prComments.mockImplementation(async () => summary({ open_threads: open }))
+    apiMock.prThreads.mockImplementation(async () => threads([], "P0"))
+    setup()
+    await waitFor(() => expect(apiMock.prThreads).toHaveBeenCalled())
+    await userEvent.click(await screen.findByRole("button", { name: "1 PR review comment" }))
+    const tab = await screen.findByRole("tab", { name: "PR comments (1)" })
+    open = 0
+    await act(() => client.invalidateQueries({ queryKey: ["pr-comments"] }))
+    await screen.findByRole("tab", { name: "PR comments (0)" })
+    expect(tab.isConnected).toBe(true)
+    expect(window.sessionStorage.getItem("worktree.reviewSidebar")).toBe("true")
+    expect(screen.getByRole("button", { name: "Close comments sidebar" })).toBeInTheDocument()
+  })
+
+  it("keeps the sidebar mounted across a Refresh of code and comments with no local comments", async () => {
+    window.sessionStorage.setItem("worktree.reviewSidebar", "true")
+    window.sessionStorage.setItem("worktree.reviewSidebarTab", "pr")
+    apiMock.prComments.mockImplementation(async () => summary({ open_threads: 1, fingerprint: "P2" }))
+    apiMock.prThreads.mockImplementation(async (_p: string, v?: { newRev: string }) =>
+      threads([prThread("t1")], v?.newRev === "snap2" ? "P2" : "P1"),
+    )
+    apiMock.patches = [patch(), patch({ working_fingerprint: "W2", new_rev: "snap2" })]
+    const { rerender } = setup()
+    const tab = await screen.findByRole("tab", { name: "PR comments (1)" })
+    await screen.findByText("New PR comments ·")
+    gitMock.value = git({ fingerprint: "F2", working_fingerprint: "W2" })
+    rerender(tree())
+    const strip = await screen.findByText("Files changed on disk, new PR comments ·")
+    await userEvent.click(within(strip.parentElement!).getByRole("button", { name: "Refresh" }))
+    await waitFor(() => expect(screen.queryByTestId("diff-stale")).not.toBeInTheDocument())
+    await waitFor(() => expect(apiMock.prThreads).toHaveBeenCalledWith("/wt/foo", { oldRev: "mb", newRev: "snap2" }))
+    expect(tab.isConnected).toBe(true)
+    expect(window.sessionStorage.getItem("worktree.reviewSidebar")).toBe("true")
+  })
+
+  it("closes a remembered-open sidebar with nothing to show on entry, and a later poll doesn't open it", async () => {
+    window.sessionStorage.setItem("worktree.reviewSidebar", "true")
+    let open = 0
+    apiMock.prComments.mockImplementation(async () => summary({ open_threads: open }))
+    apiMock.prThreads.mockImplementation(async () => threads([]))
+    setup()
+    await waitFor(() => expect(window.sessionStorage.getItem("worktree.reviewSidebar")).toBe("false"))
+    open = 1
+    await act(() => client.invalidateQueries({ queryKey: ["pr-comments"] }))
+    await screen.findByRole("button", { name: "1 PR review comment" })
+    expect(screen.queryByRole("tab", { name: /PR comments/ })).not.toBeInTheDocument()
+  })
 })

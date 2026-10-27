@@ -28,6 +28,7 @@ export function ReviewSidebar({ path, comments, viewKey, prompt, onJump, pr }: {
     threads?: PRThreads
     prResource?: ResourceDTO
     onJumpThread: (t: PRThread) => void
+    onRefresh?: () => void
   }
 }) {
   const [tab, setTab] = useReviewSidebarTab()
@@ -94,6 +95,7 @@ export function ReviewSidebar({ path, comments, viewKey, prompt, onJump, pr }: {
           threads={pr?.threads}
           prResource={pr?.prResource}
           onJumpThread={pr?.onJumpThread ?? (() => {})}
+          onRefresh={pr?.onRefresh}
         />
       </Tabs.Panel>
     </Tabs>

@@ -55,10 +55,14 @@ export function usePRCommentsView({
   useEffect(() => {
     if (loaded) void qc.invalidateQueries({ queryKey: ["pr-comments", path] })
   }, [loaded, threadsAt, qc, path])
+  // Only two ok answers are compared: a failed or unavailable summary (a
+  // GitHub blip) says nothing about whether the pinned threads are current.
   const stale =
     loaded &&
     summaryQ.dataUpdatedAt >= threadsAt &&
-    summary?.fingerprint !== undefined &&
+    summary?.state === "ok" &&
+    threads.state === "ok" &&
+    summary.fingerprint !== undefined &&
     threads.fingerprint !== undefined &&
     summary.fingerprint !== threads.fingerprint
 
@@ -140,8 +144,9 @@ export function usePRCommentsView({
     openThreads,
     unreadComments,
     /**
-     * Whether the sidebar may auto-close: the view's own threads are in (or
-     * failed), and no `&prcomment` that opened it is still being handled.
+     * Whether DiffView's entry check may close a remembered-open sidebar
+     * with nothing to show: the view's own threads are in (or failed), and
+     * no `&prcomment` that opened it is still being handled.
      */
     settled: (loaded || threadsQ.isError) && target === null,
     stale,

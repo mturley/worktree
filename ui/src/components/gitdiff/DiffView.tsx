@@ -304,21 +304,50 @@ export default function DiffView({
     ready: !patch.isFetching,
     onJumpShown: jumpThread,
   })
-  // The sidebar is there while it has something to show: local comments or
-  // the PINNED threads (resolved ones too), never the polled counts, so a
-  // poll can't close it and widen the diff under the reader.
+  // What the sidebar has to show: local comments, the PINNED threads
+  // (resolved ones too), or threads GitHub counts that the pinned list
+  // doesn't have yet (its PR tab offers their Refresh).
   const pinnedThreads = pr.threads?.threads.length ?? 0
-  const hasSidebar = reviewCount > 0 || pinnedThreads > 0
+  const hasContent = reviewCount > 0 || pinnedThreads > 0 || pr.openThreads > 0
+  // Mounted while open, and once mounted it stays until closed: polls never
+  // mount or unmount it (that would widen or narrow the diff under the
+  // reader), nor does a Refresh's interval with nothing loaded. Only Mike's
+  // click opens it, a `&prcomment` link, or an open state remembered from
+  // earlier in this tab and shown at entry.
+  const [sidebarKept, setSidebarKept] = useState(false)
+  const sidebarMounted = reviewOpen && (sidebarKept || hasContent)
+  if (sidebarMounted !== sidebarKept) setSidebarKept(sidebarMounted)
   // The toolbar button follows the live counts (a button appearing moves no
   // code), and stays while the sidebar is open, as its only close.
-  const hasReview = reviewCount > 0 || pr.openThreads > 0 || (reviewOpen && hasSidebar)
-  // Nothing left to show: closed, so the next first comment doesn't open it.
-  // Only once the view's own threads are in (they may be all it shows),
-  // never waiting on the polled summary.
+  const hasReview = reviewCount > 0 || pr.openThreads > 0 || sidebarMounted
+  const openReview = () => {
+    setSidebarKept(true)
+    setReviewOpen(true)
+  }
+  // On entry, a remembered-open sidebar with nothing to show closes, once the
+  // view's own lists are in (or the patch failed), so a later poll can't
+  // open it. Never waits on the polled summary.
   const prSettled = pr.settled
+  const entryChecked = useRef(false)
   useEffect(() => {
-    if (review.data && prSettled && !hasSidebar && reviewOpen) setReviewOpen(false)
-  }, [review.data, prSettled, hasSidebar, reviewOpen, setReviewOpen])
+    if (entryChecked.current || !((review.data && prSettled) || patch.isError)) return
+    entryChecked.current = true
+    if (reviewOpen && !sidebarMounted) setReviewOpen(false)
+  }, [review.data, prSettled, patch.isError, reviewOpen, sidebarMounted, setReviewOpen])
+  // Afterwards it closes only when Mike's own action empties it: the last
+  // local comment deleted or cleared (or a deleted-elsewhere draft
+  // dismissed), with no PR threads pinned or counted, so the next first
+  // comment doesn't open it. Only fresh lists count: a view change's
+  // interval with no list is not a deletion.
+  const lastLocal = useRef<number | null>(null)
+  useEffect(() => {
+    if (!fresh) return
+    const was = lastLocal.current
+    lastLocal.current = reviewCount
+    if (was !== null && was > 0 && reviewCount === 0 && pinnedThreads === 0 && pr.openThreads === 0 && reviewOpen) {
+      setReviewOpen(false)
+    }
+  }, [fresh, reviewCount, pinnedThreads, pr.openThreads, reviewOpen, setReviewOpen])
   // The tree's blue dots: every file a comment was made on, and those with
   // PR threads in the diff while they show.
   const prFiles = pr.files
@@ -363,7 +392,7 @@ export default function DiffView({
         viewKey={fresh ? revPair : undefined}
         prompt={prompt}
         onJump={jump}
-        pr={{ summary: pr.summary, threads: pr.threads, prResource: pr.prResource, onJumpThread: jumpThread }}
+        pr={{ summary: pr.summary, threads: pr.threads, prResource: pr.prResource, onJumpThread: jumpThread, onRefresh: pr.refresh }}
       />
     )
 
@@ -594,7 +623,7 @@ export default function DiffView({
             color={!reviewOpen && unreadBlue ? "blue" : undefined}
             vars={!reviewOpen && unreadBlue ? () => ({ root: { "--button-hover": "var(--mantine-color-blue-4)" } }) : undefined}
             rightSection={wide && reviewOpen && sidebarEscHint ? <KeyHint decorative>Esc</KeyHint> : undefined}
-            onClick={() => setReviewOpen(!reviewOpen)}
+            onClick={() => (reviewOpen ? setReviewOpen(false) : openReview())}
           >
             {reviewOpen ? "Close comments sidebar" : toolbarLabel(reviewCount, pr.openThreads, pr.unreadComments)}
           </Button>
@@ -629,7 +658,7 @@ export default function DiffView({
             <Box style={{ position: "absolute", inset: 0, padding: "var(--mantine-spacing-xs)" }}>{body}</Box>
           </Box>
         </Box>
-        {wide && reviewOpen && hasSidebar && (
+        {wide && sidebarMounted && (
           <Box
             style={{
               width: REVIEW_SIDEBAR_WIDTH,
@@ -649,7 +678,7 @@ export default function DiffView({
       )}
       {!wide && (
         <Drawer
-          opened={reviewOpen && hasSidebar}
+          opened={sidebarMounted}
           onClose={() => setReviewOpen(false)}
           position="right"
           size="85%"

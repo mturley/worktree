@@ -1,53 +1,81 @@
-import { Anchor, Group, Stack, Switch, Text } from "@mantine/core"
+import { Anchor, Button, Group, Stack, Switch, Text } from "@mantine/core"
 import type { PRCommentsSummary, PRThread, PRThreads, ResourceDTO } from "../../api/types"
 import { useShowPRComments } from "../../hooks/usePRComments"
 import { Loading } from "./Loading"
 import { PRThreadCard } from "./PRThreadCard"
 
-function notice(summary: PRCommentsSummary): string | undefined {
-  switch (summary.state) {
+/** Why a summary or threads answer has nothing to show; undefined when ok. */
+function notice(r: Pick<PRCommentsSummary, "state" | "branch" | "message">): string | undefined {
+  switch (r.state) {
     case "off":
       return "The GitHub watcher is off, so PR comments aren't shown"
     case "no_token":
       return "No GitHub token is configured, so PR comments aren't shown"
     case "no_pr":
-      return `No tracked PR for branch ${summary.branch ?? ""}`.trimEnd()
+      return `No tracked PR for branch ${r.branch ?? ""}`.trimEnd()
     case "error":
-      return `Couldn't load PR comments: ${summary.message ?? "unknown error"}`
+      return `Couldn't load PR comments: ${r.message ?? "unknown error"}`
     default:
       return undefined
   }
 }
 
-/** The review sidebar's PR tab: the diff-view switch, the PR link, then its threads (open first). */
-export function PRCommentsTab({ path, summary, threads, prResource, onJumpThread }: {
+/**
+ * The review sidebar's PR tab: the diff-view switch, the PR link, then its
+ * PINNED threads (open first). A summary poll never replaces them: a failed
+ * or unavailable summary is a notice above the cards, and new comments
+ * arrive only through `onRefresh`, the user's click.
+ */
+export function PRCommentsTab({ path, summary, threads, prResource, onJumpThread, onRefresh }: {
   path: string
   summary?: PRCommentsSummary
   threads?: PRThreads
   prResource?: ResourceDTO
   onJumpThread: (t: PRThread) => void
+  /** Reloads the threads (the user's own Refresh). */
+  onRefresh?: () => void
 }) {
   const [show, setShow] = useShowPRComments()
-  if (!summary) return <Stack p="xs"><Loading /></Stack>
-  const text = notice(summary)
-  if (text) return <Stack p="xs"><Text size="sm" c="dimmed">{text}</Text></Stack>
+  if (!summary && !threads) return <Stack p="xs"><Loading /></Stack>
 
-  const pr = summary.pr ?? threads?.pr
+  const summaryNotice = summary ? notice(summary) : undefined
+  const threadsNotice = threads ? notice(threads) : undefined
+  const notices = [...new Set([summaryNotice, threadsNotice].filter((n): n is string => n !== undefined))]
+  const pr = threads?.pr ?? summary?.pr
   const all = threads?.threads ?? []
   const ordered = [...all.filter((t) => !t.resolved), ...all.filter((t) => t.resolved)]
-  const unreadIds = new Set(summary.unread_ids)
+  const unreadIds = new Set(summary?.unread_ids)
+  // Comments GitHub counts that the pinned list doesn't have yet (the view
+  // opened before the review existed): the user's Refresh brings them in.
+  const counted = summary?.state === "ok" ? summary.open_threads : 0
+  const newOnGitHub = threads?.state === "ok" && all.length === 0 && counted > 0
+  const showControls = summary?.state === "ok" || all.length > 0
+
   return (
     <Stack gap="xs" p="xs">
-      <Group justify="space-between" wrap="wrap" gap="xs">
-        <Switch
-          size="xs"
-          label="Show in diff view"
-          checked={show}
-          onChange={(e) => setShow(e.currentTarget.checked)}
-        />
-        {pr && <Anchor href={pr.url} target="_blank" rel="noreferrer" size="sm" c="grape">{`PR #${pr.number}`}</Anchor>}
-      </Group>
-      {!threads && <Loading />}
+      {showControls && (
+        <Group justify="space-between" wrap="wrap" gap="xs">
+          <Switch
+            size="xs"
+            label="Show in diff view"
+            checked={show}
+            onChange={(e) => setShow(e.currentTarget.checked)}
+          />
+          {pr && <Anchor href={pr.url} target="_blank" rel="noreferrer" size="sm" c="grape">{`PR #${pr.number}`}</Anchor>}
+        </Group>
+      )}
+      {notices.map((n) => <Text key={n} size={all.length > 0 ? "xs" : "sm"} c="dimmed">{n}</Text>)}
+      {!threads && summary?.state === "ok" && <Loading />}
+      {newOnGitHub && (
+        <Group gap={6} wrap="nowrap">
+          <Text size="xs" c="yellow">New PR comments</Text>
+          {onRefresh && (
+            <Button size="compact-xs" variant="light" color="yellow" onClick={onRefresh}>
+              Refresh
+            </Button>
+          )}
+        </Group>
+      )}
       {pr && ordered.map((t) => (
         <PRThreadCard
           key={t.id}
