@@ -217,9 +217,17 @@ type Server struct {
 	FetchPRWriteContext func(token string, ref wgithub.PRRef) (*wgithub.PRWriteContext, error)
 	// FetchRefs is a seam for tests; nil means gitfetch.FetchRefs, the
 	// targeted fetch loadPRTarget runs for a PR's missing commits.
-	FetchRefs      func(ctx context.Context, dir, remote string, refspecs ...string) error
-	prThreadsOnce  sync.Once
-	prThreadsCache *ttlCache
+	FetchRefs func(ctx context.Context, dir, remote string, refspecs ...string) error
+	// StartReview, AddReviewThread, AddReviewReply, PostComment and
+	// PostReply are seams for tests; nil means the watcher library's
+	// writes (pr_write_api.go).
+	StartReview     func(token, pullRequestID, commitOid string) (string, error)
+	AddReviewThread func(token, reviewID string, c wgithub.NewReviewComment) (int64, error)
+	AddReviewReply  func(token, reviewID, threadID, body string) (int64, error)
+	PostComment     func(token string, ref wgithub.PRRef, commitOid string, c wgithub.NewReviewComment) (int64, error)
+	PostReply       func(token string, ref wgithub.PRRef, inReplyTo int64, body string) (int64, error)
+	prThreadsOnce   sync.Once
+	prThreadsCache  *ttlCache
 	// prAuthErrLogged is the last auth.yaml read error logged by githubToken.
 	prAuthErrMu     sync.Mutex
 	prAuthErrLogged string
@@ -330,6 +338,9 @@ func (s *Server) routes() []route {
 		{"GET /api/pr-comments", s.handlePRComments},
 		{"GET /api/pr-comments/threads", s.handlePRCommentThreads},
 		{"GET /api/pr-comments/locate", s.handlePRCommentLocate},
+		{"GET /api/pr-write/check", s.handlePRWriteCheck},
+		{"POST /api/pr-write/comment", s.handlePRWriteComment},
+		{"POST /api/pr-write/reply", s.handlePRWriteReply},
 		{"POST /api/notify", s.handleSetNotify},
 		{"GET /api/tasks", s.handleListTasks},
 		{"POST /api/tasks", s.handleCreateTask},

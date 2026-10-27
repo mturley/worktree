@@ -114,6 +114,16 @@ func (c *ttlCache) getErrTTL(key string, ttl, errTTL time.Duration, bypass bool,
 	return call.val, call.err
 }
 
+// del drops keys' cached values. A computation already in flight still
+// stores its result when it finishes.
+func (c *ttlCache) del(keys ...string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, k := range keys {
+		delete(c.entries, k)
+	}
+}
+
 // sweepInterval bounds how often inserts scan for expired entries.
 const sweepInterval = time.Minute
 

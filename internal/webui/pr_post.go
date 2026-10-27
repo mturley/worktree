@@ -53,11 +53,18 @@ type prPlacement struct {
 // prFetchTimeout bounds loadPRTarget's targeted fetch, which a request waits on.
 const prFetchTimeout = 30 * time.Second
 
+// prFetchMissTTL is how long a targeted fetch that left commits missing is
+// remembered, per PR and worktree, so a failing remote does not make every
+// request wait on another fetch.
+const prFetchMissTTL = 60 * time.Second
+
 // loadPRTarget fetches pc's PR write context and builds its target. When a
 // commit it needs is missing locally (the target, the base, or, with a
 // pending review, the PR head), it fetches the PR's head ref once,
 // synchronously, and checks again; errMissingCommit if still missing. The
-// fetch is skipped when the Background fetch setting is off.
+// fetch is skipped when the Background fetch setting is off. A fetch that
+// leaves commits missing is remembered for prFetchMissTTL, per PR and
+// worktree: until then a miss is errMissingCommit without fetching again.
 func (s *Server) loadPRTarget(dir string, pc prComments) (*prTarget, error) {
 	if !s.WatcherEnabled(config.ServiceGitHub) {
 		return nil, errors.New("the GitHub watcher is off")
@@ -70,14 +77,40 @@ func (s *Server) loadPRTarget(dir string, pc prComments) (*prTarget, error) {
 		return nil, err
 	}
 	t, err := newPRTarget(dir, pc.ref, ctx)
-	if errors.Is(err, errMissingCommit) && s.fetchPRCommits(dir, pc.ref, ctx) {
-		t, err = newPRTarget(dir, pc.ref, ctx)
+	if !errors.Is(err, errMissingCommit) {
+		return t, err
 	}
-	return t, err
+	// Only errMissingCommit is returned as an error, so only a miss is
+	// remembered; a success is stored with no lifetime, so never reused.
+	// The cache also makes concurrent misses share one fetch.
+	v, err := s.prThreadsCacheOrInit().getErrTTL("prfetch|"+pc.pr.ID+"|"+dir, 0, prFetchMissTTL, false, func() (interface{}, error) {
+		if !s.fetchPRCommits(dir, pc.ref, ctx) {
+			return nil, errMissingCommit
+		}
+		t, err := newPRTarget(dir, pc.ref, ctx)
+		if errors.Is(err, errMissingCommit) {
+			return nil, err
+		}
+		return prTargetResult{t, err}, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	r := v.(prTargetResult)
+	return r.t, r.err
+}
+
+// prTargetResult carries newPRTarget's result through the fetch cache
+// without caching an error other than errMissingCommit.
+type prTargetResult struct {
+	t   *prTarget
+	err error
 }
 
 // fetchPRCommits fetches ref's head into refs/pr-review/<N> from the remote
-// for the PR's repository, plus the base commit by id when it is missing.
+// for the PR's repository, plus by id the base commit and the pending
+// review's commit when they are missing (a pending review on a commit
+// force-pushed away is no longer reachable from the head ref).
 // It reports whether a fetch ran without error.
 func (s *Server) fetchPRCommits(dir string, ref wgithub.PRRef, ctx *wgithub.PRWriteContext) bool {
 	e, _, err := config.ReadEditable(s.configPath())
@@ -91,6 +124,9 @@ func (s *Server) fetchPRCommits(dir string, ref wgithub.PRRef, ctx *wgithub.PRWr
 	refspecs := []string{fmt.Sprintf("+refs/pull/%d/head:refs/pr-review/%d", ref.Number, ref.Number)}
 	if ctx.BaseRefOid != "" && !gitutil.IsCommit(dir, ctx.BaseRefOid) {
 		refspecs = append(refspecs, fmt.Sprintf("+%s:refs/pr-review/%d-base", ctx.BaseRefOid, ref.Number))
+	}
+	if p := ctx.Pending; p != nil && p.CommitOid != "" && p.CommitOid != ctx.HeadRefOid && !gitutil.IsCommit(dir, p.CommitOid) {
+		refspecs = append(refspecs, fmt.Sprintf("+%s:refs/pr-review/%d-pending", p.CommitOid, ref.Number))
 	}
 	fetch := s.FetchRefs
 	if fetch == nil {

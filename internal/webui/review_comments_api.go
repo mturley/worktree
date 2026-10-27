@@ -221,20 +221,8 @@ func (s *Server) handleCreateReviewComment(w http.ResponseWriter, r *http.Reques
 		writeError(w, status, msg)
 		return
 	}
-	stored := reviewcomments.RevUncommitted
-	if gitutil.IsCommit(dir, rev) {
-		stored = rev
-	} else if blob, ok := gitutil.BlobSHA(dir, rev, req.File); ok {
-		// A snapshot tree: if the file is unchanged from HEAD, the content
-		// is committed and HEAD names it.
-		if head, ok := gitutil.BlobSHA(dir, "HEAD", req.File); ok && head == blob {
-			if sha := gitutil.RevParse(dir, "HEAD"); sha != "" {
-				stored = sha
-			}
-		}
-	}
 	c, err := reviewcomments.Create(s.DB, dir, reviewcomments.NewComment{
-		File: req.File, Side: side, Rev: stored, Base: req.Base, BaseRef: baseRef,
+		File: req.File, Side: side, Rev: storedRev(dir, rev, req.File), Base: req.Base, BaseRef: baseRef,
 		RangeFrom: req.From, RangeTo: req.To, Anchor: anchor, Body: req.Body,
 	})
 	if err != nil {
@@ -242,6 +230,23 @@ func (s *Server) handleCreateReviewComment(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusCreated, newReviewCommentDTO(c))
+}
+
+// storedRev is the rev a comment on file at view rev rev is stored under:
+// rev itself when it is a commit; for a working-tree snapshot, HEAD when the
+// file is unchanged from it, else reviewcomments.RevUncommitted.
+func storedRev(dir, rev, file string) string {
+	if gitutil.IsCommit(dir, rev) {
+		return rev
+	}
+	if blob, ok := gitutil.BlobSHA(dir, rev, file); ok {
+		if head, ok := gitutil.BlobSHA(dir, "HEAD", file); ok && head == blob {
+			if sha := gitutil.RevParse(dir, "HEAD"); sha != "" {
+				return sha
+			}
+		}
+	}
+	return reviewcomments.RevUncommitted
 }
 
 type updateReviewCommentRequest struct {
