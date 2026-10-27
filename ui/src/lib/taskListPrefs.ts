@@ -14,7 +14,7 @@ export const TASK_LIST_KEY = "worktree.taskList"
 export type StoredTaskListPrefs = TaskListPrefs & { collapsed: boolean }
 
 export const DEFAULT_TASK_LIST_PREFS: StoredTaskListPrefs = {
-  sort: "custom",
+  sort: "priority",
   showCompleted: false,
   includeArchived: false,
   collapsed: false,

@@ -173,8 +173,8 @@ because a view only ever sees a subset.
 - **Starred tasks are grouped at the top** of every combined list, whatever
   the sort. Dragging a task into the starred group stars it, and dragging it
   out unstars it.
-- **Sort: Custom** (default): master order.
-- **Sort: Priority**: groups High / Medium / Low / None, each in master order.
+- **Sort: Custom** (last in the menu): master order.
+- **Sort: Priority** (the default, first in the menu): groups High / Medium / Low / None, each in master order.
   Dragging within a group reorders it. Dragging into another group changes the
   task's priority and places it at the drop point. Starred is split the same
   way (starred High … starred None, all above the unstarred groups), so the
@@ -386,7 +386,7 @@ menus, each option's checkbox or mark sits at its left, at the row's size.
 
 ### The list
 
-- Toolbar: "Sort:" (Custom / Priority / State / Due date / Updated), its closed
+- Toolbar: "Sort:" (Priority, the default / State / Due date / Updated / Custom), its closed
   dropdown just wide enough for the option it shows, and "Show completed" with its "Include
   archived" sub-toggle. There is no priority filter: Priority sort groups the
   list by priority. There is no Pin

@@ -27,7 +27,7 @@ describe("taskListPrefs", () => {
       throw new Error("blocked")
     })
     expect(readTaskListPrefs()).toEqual({
-      sort: "custom", showCompleted: false, includeArchived: false, collapsed: false,
+      sort: "priority", showCompleted: false, includeArchived: false, collapsed: false,
     })
     expect(writeTaskListPrefs(DEFAULT_TASK_LIST_PREFS)).toBe(false)
   })

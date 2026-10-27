@@ -2,11 +2,11 @@ import { Group, Select, Switch, Text } from "@mantine/core"
 import type { TaskListPrefs, TaskSort } from "../../lib/taskSections"
 
 const SORT_OPTIONS: { value: TaskSort; label: string }[] = [
-  { value: "custom", label: "Custom" },
   { value: "priority", label: "Priority" },
   { value: "state", label: "State" },
   { value: "due", label: "Due date" },
   { value: "updated", label: "Updated" },
+  { value: "custom", label: "Custom" },
 ]
 
 /**

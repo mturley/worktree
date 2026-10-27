@@ -229,14 +229,14 @@ describe("TaskListToolbar", () => {
     expect(JSON.parse(window.localStorage.getItem(TASK_LIST_KEY)!).showCompleted).toBe(true)
   })
 
-  it("offers State after Priority in the sort menu", async () => {
+  it("offers Priority first, State after it and Custom last", async () => {
     // The open dropdown scrolls its selected option into view; jsdom lacks it.
     Element.prototype.scrollIntoView = () => {}
     const user = userEvent.setup()
     wrap(<ToolbarHarness />)
     await user.click(screen.getByRole("textbox", { name: "Sort tasks" }))
     const options = (await screen.findAllByRole("option")).map((o) => o.textContent)
-    expect(options).toEqual(["Custom", "Priority", "State", "Due date", "Updated"])
+    expect(options).toEqual(["Priority", "State", "Due date", "Updated", "Custom"])
     await user.click(screen.getByRole("option", { name: "State" }))
     expect(JSON.parse(window.localStorage.getItem(TASK_LIST_KEY)!).sort).toBe("state")
   })
@@ -600,6 +600,7 @@ describe("TaskList keyboard drag", () => {
   })
 
   it("a drag into another section marks where it will land, before the row it is over", async () => {
+    setPrefs({ sort: "custom" })
     vi.mocked(api.tasks).mockResolvedValue([
       task(4, { title: "star four", starred: true }), task(1, { title: "alpha one" }), task(2, { title: "beta two" }),
     ])
