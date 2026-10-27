@@ -958,6 +958,14 @@ describe("DiffView PR comments", () => {
     expect(screen.queryByTestId("diff-stale")).not.toBeInTheDocument()
   })
 
+  it("opens on the PR tab when the button counts only PR comments", async () => {
+    window.sessionStorage.setItem("worktree.reviewSidebarTab", "local")
+    prSetup(summary({ open_threads: 1 }), threads([prThread("t1")]))
+    await userEvent.click(await screen.findByRole("button", { name: "1 PR review comment" }))
+    expect(await screen.findByRole("tab", { name: "PR comments (1)" })).toHaveAttribute("aria-selected", "true")
+    expect(window.sessionStorage.getItem("worktree.reviewSidebarTab")).toBe("pr")
+  })
+
   it("opens the sidebar from the button when PR comments exist only in the counts", async () => {
     window.sessionStorage.setItem("worktree.reviewSidebarTab", "pr")
     let list: PRThread[] = []

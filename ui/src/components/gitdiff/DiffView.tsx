@@ -9,7 +9,7 @@ import { useDiffSelection } from "../../hooks/useDiffSelection"
 import { useDiffView } from "../../hooks/useDiffView"
 import { useIsWide } from "../../hooks/useIsWide"
 import { useDeletedDrafts, useEditingCommentIds, useReviewComments } from "../../hooks/useReviewComments"
-import { useReviewSidebar } from "../../hooks/useReviewSidebar"
+import { useReviewSidebar, useReviewSidebarTab } from "../../hooks/useReviewSidebar"
 import { useWorktreeGit } from "../../hooks/useWorktreeGit"
 import { diffUnavailable } from "../../lib/diffLabels"
 import { countsAreUnread, toolbarLabel } from "../../lib/reviewCounts"
@@ -320,7 +320,11 @@ export default function DiffView({
   // The toolbar button follows the live counts (a button appearing moves no
   // code), and stays while the sidebar is open, as its only close.
   const hasReview = reviewCount > 0 || pr.openThreads > 0 || sidebarMounted
+  const [, setReviewTab] = useReviewSidebarTab()
   const openReview = () => {
+    // The button counting only PR comments opens where they are, not on an
+    // empty Local tab.
+    if (reviewCount === 0 && pr.openThreads > 0) setReviewTab("pr")
     setSidebarKept(true)
     setReviewOpen(true)
   }
