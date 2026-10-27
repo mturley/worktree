@@ -229,14 +229,22 @@ function linkText(l: TaskLink): string {
 /**
  * The row's link chip: the first Focus link plus "+N" for every other link,
  * or "🔗 N linked" when none is Focus. Null with no links, or on a
- * resource's own list when the first Focus link is that resource.
+ * resource's or worktree's own list when the first Focus link is that
+ * resource or worktree. `worktree` is set when the chip names a worktree
+ * (its path), so the row can open that worktree's page.
  */
-export function linkChip(t: Task, ownResource?: { type: string; id: string }): { text: string; archived: boolean } | null {
+export function linkChip(
+  t: Task,
+  ownResource?: { type: string; id: string },
+  ownWorktree?: string,
+): { text: string; archived: boolean; worktree?: string } | null {
   if (t.links.length === 0) return null
   const focus = t.links.find((l) => l.focus)
   if (!focus) return { text: `🔗 ${t.links.length} linked`, archived: false }
   if (ownResource && focus.kind === "resource" &&
     focus.resource_type === ownResource.type && focus.resource_id === ownResource.id) return null
+  if (ownWorktree && focus.kind === "worktree" && focus.worktree === ownWorktree) return null
   const more = t.links.length - 1
-  return { text: more > 0 ? `${linkText(focus)} +${more}` : linkText(focus), archived: focus.archived }
+  const chip = { text: more > 0 ? `${linkText(focus)} +${more}` : linkText(focus), archived: focus.archived }
+  return focus.kind === "worktree" && focus.worktree ? { ...chip, worktree: focus.worktree } : chip
 }

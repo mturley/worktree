@@ -89,7 +89,7 @@ function useOverflow(capped: boolean, shape: string) {
  * grip renders disabled with a hint when the sort can't be reordered, and not
  * at all in Completed, whose order isn't master order.
  */
-function SortableTaskRow({ task, section, sortDraggable, flush, dropEdge, ownResource, mutations, onError, onOpen }: {
+function SortableTaskRow({ task, section, sortDraggable, flush, dropEdge, ownResource, ownWorktree, mutations, onError, onOpen }: {
   task: Task
   flush: boolean
   section: TaskSection
@@ -97,6 +97,7 @@ function SortableTaskRow({ task, section, sortDraggable, flush, dropEdge, ownRes
   /** A cross-section drag will land on this edge of the row: draw the line. */
   dropEdge?: DropIndicator["edge"]
   ownResource?: { type: string; id: string }
+  ownWorktree?: string
   mutations: Pick<ReturnType<typeof useTaskMutations>, "setState" | "update">
   onError: (msg: string) => void
   onOpen: (id: number) => void
@@ -174,6 +175,7 @@ function SortableTaskRow({ task, section, sortDraggable, flush, dropEdge, ownRes
       <TaskRow
         task={task}
         ownResource={ownResource}
+        ownWorktree={ownWorktree}
         dragHandle={grip}
         flush={flush}
         onState={pickState}
@@ -232,6 +234,8 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
   }
 }) {
   const [prefs] = useTaskListPrefs()
+  // A worktree's own list leaves out chips naming that same worktree.
+  const ownWorktree = scope.kind === "worktree" ? scope.path : undefined
   const { terms } = useSearchContext()
   const query = useTasks(scope, { completed: prefs.showCompleted, archived: prefs.includeArchived })
   const mutations = useTaskMutations(scope)
@@ -366,6 +370,7 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
                   flush={!labelled}
                   dropEdge={indicator?.id === t.id ? indicator.edge : undefined}
                   ownResource={ownResource}
+                  ownWorktree={ownWorktree}
                   mutations={mutations}
                   onError={setError}
                   onOpen={open}
@@ -381,7 +386,7 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
         <DragOverlay dropAnimation={null}>
           {activeTask ? (
             <Box className="task-drag-overlay" data-testid="task-drag-overlay">
-              <TaskRow task={activeTask} ownResource={ownResource} flush={!labelled} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} />
+              <TaskRow task={activeTask} ownResource={ownResource} ownWorktree={ownWorktree} flush={!labelled} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} />
             </Box>
           ) : null}
         </DragOverlay>

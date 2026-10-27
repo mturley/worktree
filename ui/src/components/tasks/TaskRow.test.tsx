@@ -138,6 +138,27 @@ describe("TaskRow opens the modal", () => {
     expect(onOpen).not.toHaveBeenCalled()
   })
 
+  it("a worktree chip opens that worktree's page, not the task", async () => {
+    const onOpen = vi.fn()
+    window.history.pushState({}, "", "/")
+    wrap(<TaskRow
+      task={task({ links: [{ kind: "worktree", worktree: "/w/repo/fix", focus: true, archived: false }] })}
+      onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} onOpen={onOpen}
+    />)
+    await userEvent.click(screen.getByRole("button", { name: "Open worktree ⎇ fix" }))
+    expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/w/repo/fix")}`)
+    expect(onOpen).not.toHaveBeenCalled()
+  })
+
+  it("leaves out the chip on its own worktree's list", () => {
+    wrap(<TaskRow
+      task={task({ links: [{ kind: "worktree", worktree: "/w/repo/fix", focus: true, archived: false }] })}
+      ownWorktree="/w/repo/fix"
+      onState={() => {}} onPriority={() => {}} onToggleStar={() => {}}
+    />)
+    expect(screen.queryByTestId("task-link-chip")).toBeNull()
+  })
+
   it("without onOpen the title is plain text (the drag overlay's copy)", () => {
     wrap(<TaskRow task={task()} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} />)
     expect(screen.queryByRole("button", { name: "Write the thing" })).toBeNull()

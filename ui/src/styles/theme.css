@@ -203,6 +203,16 @@ body,
   text-decoration: underline;
 }
 
+/* A worktree link chip opens that worktree's page. */
+[data-task-row] .task-link-chip-nav {
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+[data-task-row] .task-link-chip-nav:hover {
+  background-color: var(--mantine-color-default-hover);
+  border-color: var(--task-accent);
+}
+
 /* The checkbox is exactly its box: pad the hover area without moving it. */
 [data-task-row] .task-row-control-pad {
   padding: 3px;

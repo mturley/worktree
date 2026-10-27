@@ -336,7 +336,7 @@ describe("linkChip", () => {
   })
 
   it("renders a worktree link as its basename", () => {
-    expect(linkChip(withLinks([wt(true), pr(false)]))).toEqual({ text: "⎇ oauth-fix +1", archived: false })
+    expect(linkChip(withLinks([wt(true), pr(false)]))).toMatchObject({ text: "⎇ oauth-fix +1", archived: false })
   })
 
   it("names a worktree link with no path generically", () => {
@@ -357,6 +357,17 @@ describe("linkChip", () => {
     expect(linkChip(withLinks([pr(true), jira(false)]), own)).toBeNull()
     expect(linkChip(withLinks([jira(true), pr(true)]), own)).toEqual({ text: "RHOAIENG-1 +1", archived: false })
     expect(linkChip(withLinks([pr(false), jira(false)]), own)).toEqual({ text: "🔗 2 linked", archived: false })
+  })
+
+  it("carries a worktree chip's path, so the row can open its page", () => {
+    expect(linkChip(withLinks([wt(true)]))?.worktree).toBe("/Users/m/.worktrees/repo/oauth-fix")
+    expect(linkChip(withLinks([pr(true), wt(false)]))?.worktree).toBeUndefined()
+  })
+
+  it("is null on the list of the worktree its first Focus link names", () => {
+    const own = "/Users/m/.worktrees/repo/oauth-fix"
+    expect(linkChip(withLinks([wt(true), pr(false)]), undefined, own)).toBeNull()
+    expect(linkChip(withLinks([wt(true)]), undefined, "/Users/m/.worktrees/repo/other")?.text).toBe("⎇ oauth-fix")
   })
 
   it("names a Slack thread, which has no short ref", () => {

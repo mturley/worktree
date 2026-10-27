@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { useLocation } from "wouter"
 import { ActionIcon, Badge, Group, Text, Tooltip, UnstyledButton } from "@mantine/core"
 import type { Priority, Task, TaskState } from "../../api/types"
 import { dueLabel, linkChip } from "../../lib/taskSections"
@@ -25,9 +26,11 @@ const keepFromRow = (e: React.SyntheticEvent) => e.stopPropagation()
  * controls (state checkbox and its portalled menu, star, grip, link chip)
  * keep their clicks to themselves.
  */
-export function TaskRow({ task, ownResource, dragHandle, flush, onState, onPriority, onToggleStar, onOpen }: {
+export function TaskRow({ task, ownResource, ownWorktree, dragHandle, flush, onState, onPriority, onToggleStar, onOpen }: {
   task: Task
   ownResource?: { type: string; id: string }
+  /** The worktree whose list this is: its own link chip is left out. */
+  ownWorktree?: string
   dragHandle?: ReactNode
   /** No padding before the grip: the list has no section labels, so rows sit flush with the panel's edge. */
   flush?: boolean
@@ -38,7 +41,8 @@ export function TaskRow({ task, ownResource, dragHandle, flush, onState, onPrior
   onOpen?: () => void
 }) {
   const due = task.due ? dueLabel(task.due, new Date()) : null
-  const link = linkChip(task, ownResource)
+  const link = linkChip(task, ownResource, ownWorktree)
+  const [, navigate] = useLocation()
   const titleText = (
     <Text
       span
@@ -151,7 +155,20 @@ export function TaskRow({ task, ownResource, dragHandle, flush, onState, onPrior
       {link && (
         <Badge
           data-testid="task-link-chip"
-          onClick={keepFromRow}
+          // A worktree chip opens that worktree's page; any other chip just
+          // keeps its click from the row.
+          {...(link.worktree
+            ? {
+                component: "button" as const,
+                type: "button" as const,
+                className: "task-link-chip-nav",
+                "aria-label": `Open worktree ${link.text}`,
+              }
+            : {})}
+          onClick={(e: React.MouseEvent) => {
+            keepFromRow(e)
+            if (link.worktree) navigate(`/worktree/${encodeURIComponent(link.worktree)}`)
+          }}
           size="xs"
           variant="outline"
           color="gray"
