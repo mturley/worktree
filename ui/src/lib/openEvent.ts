@@ -73,6 +73,9 @@ export function clearOpenEvent(): void {
  * follow the resource again.
  */
 export function isArchivedEvent(e: TimelineEvent): boolean {
+  // A task event says so itself: a global task has no worktrees and is not
+  // archived.
+  if (e.resource_type === "task") return !!e.archived
   return !!e.resource_type && !!e.resource_id && (e.worktree_paths ?? e.worktrees).length === 0
 }
 

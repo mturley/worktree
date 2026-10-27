@@ -366,6 +366,12 @@ events (`tasks.FeedEvents`, converted by `taskFeedRow` →
 - Membership: home = every non-deleted task (regardless of `archived`, which
   governs watcher events only); worktree feed = `tasks.ScopeTaskIDs` of the
   worktree scope; resource-filtered feed = tasks linking that resource.
+- Worktrees and archived (`fillTaskWorktrees`): a row names, by branch, the
+  worktrees its task belongs to (live worktree links, then `Implicit`), so
+  the home feed badges it like a watcher event, and carries the task's own
+  `archived` flag. The UI's `isArchivedEvent` reads that flag for
+  `resource_type "task"` rather than "no worktrees", which would wrongly
+  mark a global task (no links) as archived.
 - Filters: `resource_types` accepts `task`, and `event_types` the category
   `task` (every task event type). A non-empty filter excludes task events
   unless it names them (`taskEventsSelected`). `unread_only` and `q` are

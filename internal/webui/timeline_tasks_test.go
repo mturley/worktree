@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/resources"
 	"github.com/mturley/worktree/internal/tasks"
 )
@@ -103,6 +104,49 @@ func TestTimelineTaskEventsHomeMergeOrder(t *testing.T) {
 	if got := getTimeline(t, f.base, "/api/timeline?archived=true&limit=50").Events; len(got) != 4 {
 		t.Fatalf("archived=true = %s", joinIDs(got))
 	}
+}
+
+// A task event names the worktrees its task belongs to (linked directly, or
+// following one of its resource links), and is archived only when the task
+// is: a global task (no links) is neither, and has no worktrees.
+func TestTimelineTaskEventsWorktreesAndArchived(t *testing.T) {
+	f := taskFeedFixture(t)
+	orphan := mustTask(t, f.s, tasks.NewTask{Title: "orphan", Focus: []tasks.LinkTarget{resLink("pr", "o/r#9")}})
+	a := insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(40), tasks.EventTaskCreated, tasks.ActorUser, "")
+	b := insertTaskEvent(t, f.s.DB, f.beta.ID, tts(30), tasks.EventTaskCreated, tasks.ActorUser, "")
+	c := insertTaskEvent(t, f.s.DB, f.gamma.ID, tts(20), tasks.EventTaskCreated, tasks.ActorUser, "")
+	o := insertTaskEvent(t, f.s.DB, orphan.ID, tts(10), tasks.EventTaskCreated, tasks.ActorUser, "")
+
+	byID := map[string]TimelineEvent{}
+	for _, e := range f.home(t, "limit=50").Events {
+		byID[e.ID] = e
+	}
+	wtPath := wdbCanonical(t, f.wt)
+	for _, id := range []string{a, b} {
+		e := byID[id]
+		if len(e.WorktreePaths) != 1 || wdbCanonical(t, e.WorktreePaths[0]) != wtPath || len(e.Worktrees) != 1 || e.Worktrees[0] == "" {
+			t.Fatalf("%s worktrees = %v / %v, want the fixture worktree", id, e.Worktrees, e.WorktreePaths)
+		}
+		if e.Archived {
+			t.Fatalf("%s is archived", id)
+		}
+	}
+	if e := byID[c]; len(e.WorktreePaths) != 0 || e.Archived {
+		t.Fatalf("global task event = %v archived=%v, want no worktrees, not archived", e.WorktreePaths, e.Archived)
+	}
+	if e := byID[o]; len(e.WorktreePaths) != 0 || !e.Archived {
+		t.Fatalf("orphaned task event = %v archived=%v, want no worktrees, archived", e.WorktreePaths, e.Archived)
+	}
+}
+
+// wdbCanonical is a path as worktree subscribers key it (symlinks resolved).
+func wdbCanonical(t *testing.T, p string) string {
+	t.Helper()
+	c, ok := wdb.WorktreePathFromSubscriber(wdb.Subscriber(p))
+	if !ok {
+		t.Fatalf("no canonical path for %s", p)
+	}
+	return c
 }
 
 func TestTimelineMergePaging(t *testing.T) {

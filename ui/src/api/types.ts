@@ -61,6 +61,11 @@ export interface TimelineEvent {
    */
   worktree_paths?: string[];
   /**
+   * A task event whose task is archived (it has links and every one is gone).
+   * Absent for watcher events, whose archived state is "no worktree follows".
+   */
+  archived?: boolean;
+  /**
    * The event's resource, enriched from cached state exactly as the resource
    * cards are. Lets the global timeline — which has no per-worktree resource
    * list — render a real status icon and custom name.

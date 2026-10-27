@@ -37,6 +37,10 @@ type TimelineEvent struct {
 	// branch names are not unique across repos, so it cannot map one to the
 	// other on its own.
 	WorktreePaths []string `json:"worktree_paths"`
+	// Archived marks a task event whose task is archived (it has links and
+	// every one is gone). Watcher events leave it false: theirs is inferred
+	// from having no watching worktree.
+	Archived bool `json:"archived,omitempty"`
 	// The event's resource, enriched from cached state exactly as the
 	// resource cards are. Present so the global timeline — which has no
 	// per-worktree resource list to look anything up in — can render the
@@ -410,6 +414,17 @@ func (s *Server) mergeTaskEvents(rows []TimelineEvent, q taskFeedQuery) ([]Timel
 	if err != nil {
 		return nil, err
 	}
+	// Each task's links, implicit worktrees and archived state, for the
+	// rows' worktree badges (fillTaskWorktrees).
+	all, err := tasks.List(s.DB, tasks.Filter{IncludeCompleted: true, IncludeArchived: true})
+	if err != nil {
+		return nil, err
+	}
+	byTask := make(map[int64]tasks.Task, len(all))
+	for _, t := range all {
+		byTask[t.ID] = t
+	}
+	enr := s.newEventEnricher()
 	taskRows := make([]TimelineEvent, 0, len(evs))
 	for _, fe := range evs {
 		// Past q.limit rows, keep only those tying the last one's ts.
@@ -417,6 +432,9 @@ func (s *Server) mergeTaskEvents(rows []TimelineEvent, q taskFeedQuery) ([]Timel
 			break
 		}
 		te := taskFeedRow(fe, cursors)
+		if t, ok := byTask[fe.TaskID]; ok {
+			enr.fillTaskWorktrees(&te, t)
+		}
 		if q.unreadOnly && !te.Unread {
 			continue
 		}
@@ -754,6 +772,38 @@ func (e *eventEnricher) fillResource(te *TimelineEvent) {
 	}
 	te.Unread = e.unread.IsUnread(te.ResourceType, te.ResourceID, te.TS, te.ExternalTS, te.Type, te.Source, te.authorID)
 	wts := e.worktreesWatching(te.ResourceType, te.ResourceID)
+	te.Worktrees = make([]string, 0, len(wts))
+	te.WorktreePaths = make([]string, 0, len(wts))
+	for _, w := range wts {
+		te.Worktrees = append(te.Worktrees, w.Branch)
+		te.WorktreePaths = append(te.WorktreePaths, w.Path)
+	}
+}
+
+// fillTaskWorktrees names, by branch, the worktrees a task event's task
+// belongs to: its live worktree links and the worktrees following its
+// resource links (Implicit), as fillResource does for a watcher event. It
+// also carries the task's archived state: without it the UI would read "no
+// worktrees" as archived, which is wrong for a global task.
+func (e *eventEnricher) fillTaskWorktrees(te *TimelineEvent, t tasks.Task) {
+	te.Archived = t.Archived
+	seen := map[string]bool{}
+	wts := []watchingWorktree{}
+	add := func(p string) {
+		if w, ok := e.worktreeBySub[wdb.Subscriber(p)]; ok && !seen[w.Path] {
+			seen[w.Path] = true
+			wts = append(wts, w)
+		}
+	}
+	for _, l := range t.Links {
+		if l.Kind == tasks.LinkWorktree && !l.Archived {
+			add(l.Worktree)
+		}
+	}
+	for _, p := range t.Implicit {
+		add(p)
+	}
+	sort.Slice(wts, func(i, j int) bool { return wts[i].Branch < wts[j].Branch })
 	te.Worktrees = make([]string, 0, len(wts))
 	te.WorktreePaths = make([]string, 0, len(wts))
 	for _, w := range wts {

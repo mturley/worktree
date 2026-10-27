@@ -34,6 +34,12 @@ describe("isArchivedEvent", () => {
     expect(isArchivedEvent(ev({ worktrees: ["b"], worktree_paths: ["/wt/b"] }))).toBe(false)
     expect(isArchivedEvent(ev({ resource_type: "", resource_id: "" }))).toBe(false)
   })
+
+  it("for a task event, follows the task's own archived flag, not its worktrees", () => {
+    const task = { resource_type: "task", resource_id: "7", source: "tasks" }
+    expect(isArchivedEvent(ev({ ...task, worktree_paths: [] }))).toBe(false)
+    expect(isArchivedEvent(ev({ ...task, worktree_paths: [], archived: true }))).toBe(true)
+  })
 })
 
 describe("followResource state", () => {
