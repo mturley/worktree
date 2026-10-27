@@ -139,6 +139,30 @@ func TestTimelineTaskEventsWorktreesAndArchived(t *testing.T) {
 	}
 }
 
+// A state change names the state it changed to, and a creation the state a
+// new task starts in, so the feed can draw that checkbox; other task events
+// name none.
+func TestTimelineTaskEventsState(t *testing.T) {
+	f := taskFeedFixture(t)
+	created := insertTaskEvent(t, f.s.DB, f.gamma.ID, tts(30), tasks.EventTaskCreated, tasks.ActorUser, "")
+	changed := insertTaskEvent(t, f.s.DB, f.gamma.ID, tts(20), tasks.EventTaskStateChanged, tasks.ActorUser,
+		`{"from":"not_started","to":"in_progress"}`)
+	blocker := insertTaskEvent(t, f.s.DB, f.gamma.ID, tts(10), tasks.EventTaskBlockerResolved, tasks.ActorSystem, `{}`)
+	byID := map[string]TimelineEvent{}
+	for _, e := range f.home(t, "limit=50").Events {
+		byID[e.ID] = e
+	}
+	if got := byID[created].TaskState; got != "not_started" {
+		t.Fatalf("created task_state = %q, want not_started", got)
+	}
+	if got := byID[changed].TaskState; got != "in_progress" {
+		t.Fatalf("state change task_state = %q, want in_progress", got)
+	}
+	if got := byID[blocker].TaskState; got != "" {
+		t.Fatalf("blocker event task_state = %q, want none", got)
+	}
+}
+
 // wdbCanonical is a path as worktree subscribers key it (symlinks resolved).
 func wdbCanonical(t *testing.T, p string) string {
 	t.Helper()

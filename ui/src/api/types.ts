@@ -66,6 +66,11 @@ export interface TimelineEvent {
    */
   archived?: boolean;
   /**
+   * The state a task event left its task in (a state change's new state, or
+   * not started for a creation): the feed draws that checkbox for it.
+   */
+  task_state?: TaskState;
+  /**
    * The event's resource, enriched from cached state exactly as the resource
    * cards are. Lets the global timeline — which has no per-worktree resource
    * list — render a real status icon and custom name.

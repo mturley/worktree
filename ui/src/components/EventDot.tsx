@@ -1,4 +1,6 @@
 import { Tooltip } from "@mantine/core"
+import type { TaskState } from "../api/types"
+import { StateBox } from "./tasks/TaskStateCheckbox"
 import { eventLabel, eventMeta } from "../lib/eventMeta"
 
 /**
@@ -10,9 +12,14 @@ import { eventLabel, eventMeta } from "../lib/eventMeta"
  * to miss entirely — which is why the first version of this appeared not to
  * work at all. Tooltip also matches the rest of the app's hover affordances.
  */
-export function EventDot({ type, size = 22, label: labelOverride, dimmed = false }: {
+export function EventDot({ type, size = 22, label: labelOverride, dimmed = false, taskState }: {
   type: string
   size?: number
+  /**
+   * A task event's resulting state: drawn as that task checkbox instead of
+   * the coloured circle, so a task's activity reads like its row does.
+   */
+  taskState?: TaskState
   /**
    * Steps the dot back alongside a dimmed title (an archived event). The
    * colour is mixed toward the page background rather than faded with
@@ -31,6 +38,34 @@ export function EventDot({ type, size = 22, label: labelOverride, dimmed = false
   // ("violet", "indigo") would silently paint the wrong shade.
   const { cssColor, Icon } = eventMeta(type)
   const label = eventLabel(type, labelOverride)
+
+  if (taskState) {
+    return (
+      <Tooltip label={label} withArrow openDelay={150}>
+        <span
+          role="img"
+          aria-label={label}
+          data-task-state={taskState}
+          style={{
+            width: size,
+            height: size,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+            opacity: dimmed ? 0.5 : 1,
+            // An opaque square over the timeline rail, so the rail doesn't
+            // show through an empty (not started) box.
+            background: "var(--mantine-color-body)",
+            borderRadius: 4,
+            boxShadow: "0 0 0 3px var(--mantine-color-body)",
+          }}
+        >
+          <StateBox state={taskState} size={Math.round(size * 0.75)} />
+        </span>
+      </Tooltip>
+    )
+  }
 
   return (
     <Tooltip label={label} withArrow openDelay={150}>

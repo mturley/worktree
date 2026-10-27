@@ -37,7 +37,26 @@ func taskEventToTimeline(ev tasks.Event, t tasks.Task) TimelineEvent {
 		ResourceTitle: t.Title,
 		Worktrees:     []string{},
 		WorktreePaths: []string{},
+		TaskState:     taskEventState(ev),
 	}
+}
+
+// taskEventState is the state an event left its task in, for the feed's
+// checkbox icon: a state change's "to", or not started for a creation. ""
+// for any other event, or a payload that doesn't parse.
+func taskEventState(ev tasks.Event) string {
+	switch ev.Type {
+	case tasks.EventTaskCreated:
+		return string(tasks.StateNotStarted)
+	case tasks.EventTaskStateChanged:
+		var p struct {
+			To string `json:"to"`
+		}
+		if json.Unmarshal(ev.Payload, &p) == nil {
+			return p.To
+		}
+	}
+	return ""
 }
 
 // taskFeedRow converts a feed event for the activity feeds: the converted

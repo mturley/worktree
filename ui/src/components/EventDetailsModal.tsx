@@ -58,7 +58,7 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
     <Modal opened={!!e} onClose={onClose} size="lg" title={
       e ? (
         <Group gap={8} wrap="nowrap">
-          <EventDot type={e.type} label={e.type_label} />
+          <EventDot type={e.type} label={e.type_label} taskState={e.task_state} />
           <Text fw={600} size="sm">{eventLabel(e.type, e.type_label)}</Text>
         </Group>
       ) : null

@@ -41,6 +41,10 @@ type TimelineEvent struct {
 	// every one is gone). Watcher events leave it false: theirs is inferred
 	// from having no watching worktree.
 	Archived bool `json:"archived,omitempty"`
+	// TaskState is the state a task event left its task in: a state change's
+	// new state, or "not_started" for a creation. The feed draws that
+	// checkbox for the event. Empty for every other event.
+	TaskState string `json:"task_state,omitempty"`
 	// The event's resource, enriched from cached state exactly as the
 	// resource cards are. Present so the global timeline — which has no
 	// per-worktree resource list to look anything up in — can render the
