@@ -192,6 +192,21 @@ describe("review actions", () => {
     expect(await screen.findByRole("button", { name: "Copy directory path" })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Review changes" })).toBeNull()
   })
+
+  it("show a spinner while the git status loads", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    worktreeGit.mockReturnValue(new Promise(() => {}))
+    wrap(summary())
+    expect(await screen.findByRole("status")).toHaveTextContent("Loading…")
+    expect(screen.getByRole("button", { name: "Delete worktree" })).toBeInTheDocument()
+  })
+
+  it("say so when the git status fails to load", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    worktreeGit.mockRejectedValue(new Error("boom"))
+    wrap(summary())
+    expect(await screen.findByText("Could not load git status: boom")).toBeInTheDocument()
+  })
 })
 
 describe("tabs", () => {

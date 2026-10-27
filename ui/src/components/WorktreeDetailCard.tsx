@@ -16,6 +16,7 @@ import { CmuxPanel } from "./CmuxPanel"
 import { DeleteWorktreeButton } from "./DeleteWorktreeButton"
 import { GitDiffPanel } from "./gitdiff/GitDiffPanel"
 import { DirectoryRow } from "./gitdiff/GitSummary"
+import { Loading } from "./gitdiff/Loading"
 import { ReviewActions } from "./gitdiff/ReviewActions"
 import { NotesMarkdown } from "./NotesMarkdown"
 import { KeyHint } from "./search/KeyHint"
@@ -95,7 +96,13 @@ export function WorktreeDetailCard({ w, tab, onTabChange, escHint }: {
           own polled status; the counts refresh slowly off the Code tab. */}
       <Stack gap="xs" mb="xs">
         <Group justify="space-between" wrap="nowrap" gap="xs" align="center">
-          {gitStatus.data ? <DirectoryRow path={w.path} git={gitStatus.data} /> : <span />}
+          {gitStatus.data ? (
+            <DirectoryRow path={w.path} git={gitStatus.data} />
+          ) : gitStatus.isError ? (
+            <Text size="xs" c="red">Could not load git status: {gitStatus.error.message}</Text>
+          ) : (
+            <Loading />
+          )}
           <Group gap={4} wrap="nowrap">
             {tab !== "notes" && (
               <Tooltip label="Back to notes">

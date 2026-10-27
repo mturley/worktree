@@ -7,6 +7,8 @@ import { relativeTime } from "../../lib/relativeTime"
 import { InfoRow } from "../InfoRow"
 
 const RIGHT_LABEL_WIDTH = 100
+/** InfoRow's default label width: the left column's, and every row's in one column. */
+const LEFT_LABEL_WIDTH = 80
 
 /** "3 modified · 1 untracked", or "clean" when the working tree has nothing outstanding. */
 function workingSummary(w: WorktreeGit["working"]): string {
@@ -18,10 +20,10 @@ function workingSummary(w: WorktreeGit["working"]): string {
 }
 
 /** Ahead/behind on its own line, indented past the value of the ref it counts against. */
-function AheadBehindLine({ ab }: { ab: AheadBehind | undefined }) {
+function AheadBehindLine({ ab, labelWidth }: { ab: AheadBehind | undefined; labelWidth: number }) {
   if (!ab) return null
   return (
-    <Text size="xs" c="dimmed" pl={RIGHT_LABEL_WIDTH + 20}>
+    <Text size="xs" c="dimmed" pl={labelWidth + 20}>
       {`(${ab.ahead} ahead · ${ab.behind} behind)`}
     </Text>
   )
@@ -54,7 +56,7 @@ export function DirectoryRow({ path, git }: { path: string; git: WorktreeGit }) 
   // the card's controls beside this row do).
   return (
     <Group gap="xs" wrap="nowrap" align="center" style={{ minWidth: 0 }}>
-      <Text size="xs" c="dimmed" miw={80} style={{ flex: "none", whiteSpace: "nowrap" }}>Directory</Text>
+      <Text size="xs" c="dimmed" style={{ flex: "none", whiteSpace: "nowrap" }}>Directory</Text>
       <Text size="sm" style={{ overflowWrap: "anywhere", minWidth: 0 }}>{dir}</Text>
       <CopyIcon value={dir} label="Copy directory path" tooltip="Copy directory path" />
     </Group>
@@ -82,6 +84,9 @@ export function GitSummary({ git, repo, updated, oneColumn = false }: {
 
 function Columns({ git, repo, updated, oneColumn }: { git: WorktreeGit; repo?: string; updated?: string; oneColumn: boolean }) {
   const wide = useIsWide() && !oneColumn
+  // One column lines every label up at the left column's width (with the
+  // shorter "Tracking" so it fits); two columns give the right one its own.
+  const rightWidth = oneColumn ? LEFT_LABEL_WIDTH : RIGHT_LABEL_WIDTH
   if (!git.on_disk) {
     return <Text size="xs" c="dimmed" fs="italic">Worktree is missing from disk</Text>
   }
@@ -124,7 +129,7 @@ function Columns({ git, repo, updated, oneColumn }: { git: WorktreeGit; repo?: s
         {updated && <InfoRow label="Updated">{relativeTime(updated)}</InfoRow>}
       </Stack>
       <Stack gap={2} style={wide ? { flex: "1 1 0", minWidth: 0 } : undefined}>
-        <InfoRow label="Merge base" labelWidth={RIGHT_LABEL_WIDTH}>
+        <InfoRow label="Merge base" labelWidth={rightWidth}>
           {git.merge_base && git.main_upstream ? (
             <Group gap={4} wrap="nowrap" component="span">
               <span>{`${git.main_upstream} @ ${short}`}</span>
@@ -134,12 +139,12 @@ function Columns({ git, repo, updated, oneColumn }: { git: WorktreeGit; repo?: s
             <Text span inherit c="dimmed">{git.main_upstream ? "unavailable" : "main has no upstream"}</Text>
           )}
         </InfoRow>
-        <AheadBehindLine ab={git.vs_merge_base} />
-        <InfoRow label="Tracking branch" labelWidth={RIGHT_LABEL_WIDTH}>
+        <AheadBehindLine ab={git.vs_merge_base} labelWidth={rightWidth} />
+        <InfoRow label={oneColumn ? "Tracking" : "Tracking branch"} labelWidth={rightWidth}>
           {git.tracking ?? <Text span inherit c="dimmed">none (not pushed)</Text>}
         </InfoRow>
-        {git.tracking && <AheadBehindLine ab={git.vs_tracking} />}
-        <InfoRow label="Fetched" labelWidth={RIGHT_LABEL_WIDTH}>
+        {git.tracking && <AheadBehindLine ab={git.vs_tracking} labelWidth={rightWidth} />}
+        <InfoRow label="Fetched" labelWidth={rightWidth}>
           <Group gap={4} wrap="nowrap" component="span">
             <span>{git.fetch.last_ok_at ? relativeTime(git.fetch.last_ok_at) : "never"}</span>
             {git.fetch.last_error && (

@@ -43,6 +43,26 @@ describe("GitSummary oneColumn", () => {
     const columns = container.querySelector<HTMLElement>("[style*='flex-direction']")
     expect(columns?.style.flexDirection).toBe("column")
   })
+
+  it("lines every label up at one width, with the shorter Tracking label", () => {
+    render(
+      <MantineProvider>
+        <GitSummary git={base} repo="r" oneColumn />
+      </MantineProvider>,
+    )
+    expect(screen.getByText("Tracking")).toBeInTheDocument()
+    expect(screen.queryByText("Tracking branch")).toBeNull()
+    const widths = ["Repo", "Branch", "Working tree", "Merge base", "Tracking", "Fetched"].map(
+      (l) => screen.getByText(l).style.minWidth,
+    )
+    expect(new Set(widths)).toEqual(new Set([widths[0]]))
+    expect(widths[0]).not.toBe("")
+  })
+
+  it("keeps Tracking branch in two columns", () => {
+    show()
+    expect(screen.getByText("Tracking branch")).toBeInTheDocument()
+  })
 })
 
 describe("GitSummary working tree line", () => {
