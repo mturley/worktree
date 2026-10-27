@@ -254,6 +254,17 @@ func migrate(conn *sql.DB) error {
 		return err
 	}
 
+	// review_comments predates sending comments to a PR. github_comment_id
+	// is the id GitHub returned when the comment was added to a pending
+	// review, and github_sent_version the comment's version when it was
+	// sent; both NULL while it was never sent (or its send was undone).
+	if err := addColumnIfMissing(conn, "review_comments", "github_comment_id", "INTEGER"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(conn, "review_comments", "github_sent_version", "INTEGER"); err != nil {
+		return err
+	}
+
 	// Only state-like task changes are task events: creation, state
 	// changes, deletion, blocker resolution and subtask checks. Edits used
 	// to be recorded too; their rows go. Like the backfill below this runs

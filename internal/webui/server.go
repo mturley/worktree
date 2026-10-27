@@ -229,6 +229,9 @@ type Server struct {
 	SubmitReview    func(token, reviewID, event, body string) error
 	prThreadsOnce   sync.Once
 	prThreadsCache  *ttlCache
+	// prSubmitLocks holds one *sync.Mutex per worktree path, serialising
+	// /api/pr-write/submit (pr_write_api.go).
+	prSubmitLocks sync.Map
 	// prAuthErrLogged is the last auth.yaml read error logged by githubToken.
 	prAuthErrMu     sync.Mutex
 	prAuthErrLogged string

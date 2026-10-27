@@ -388,3 +388,33 @@ func TestMigrateDeletesDroppedTaskEventTypes(t *testing.T) {
 		t.Fatalf("after second migrate, task_events types = %v, want [task_state_changed]", got)
 	}
 }
+
+func TestOpenAtAddsGitHubColumnsToReviewComments(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "worktree.db")
+	// A review_comments table from before comments were sent to GitHub.
+	raw, err := sql.Open("sqlite", p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(`CREATE TABLE review_comments (
+		id INTEGER PRIMARY KEY AUTOINCREMENT, worktree TEXT NOT NULL, file TEXT NOT NULL,
+		side TEXT NOT NULL CHECK (side IN ('old','new')), start_line INTEGER NOT NULL,
+		end_line INTEGER NOT NULL, rev TEXT NOT NULL, base TEXT NOT NULL, base_ref TEXT NOT NULL,
+		range_from TEXT NOT NULL DEFAULT '', range_to TEXT NOT NULL DEFAULT '',
+		snippet TEXT NOT NULL, context_before TEXT NOT NULL, context_after TEXT NOT NULL,
+		body TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'draft',
+		version INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	raw.Close()
+	conn, err := OpenAt(p)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer conn.Close()
+	for _, col := range []string{"github_comment_id", "github_sent_version"} {
+		if !hasColumn(t, conn, "review_comments", col) {
+			t.Fatalf("expected review_comments.%s after migrating", col)
+		}
+	}
+}

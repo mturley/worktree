@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	wgithub "github.com/mturley/watcher/github"
 
@@ -407,20 +408,21 @@ type placedLocal struct {
 
 // placeLocals reads pc's write context and places every local comment on
 // the review's target (the pending review's commit, else the PR head).
-// Missing commits make every comment unpostable with reasonMissingCommit.
-func (s *Server) placeLocals(dir string, pc prComments) (*wgithub.PRWriteContext, []placedLocal, error) {
+// Missing commits make every comment unpostable with reasonMissingCommit,
+// and blocked true.
+func (s *Server) placeLocals(dir string, pc prComments) (ctx *wgithub.PRWriteContext, placed []placedLocal, blocked bool, err error) {
 	locals, err := reviewcomments.List(s.DB, dir)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
-	ctx, err := s.cachedPRWriteContext(pc.token, pc.pr.ID, pc.ref)
+	ctx, err = s.cachedPRWriteContext(pc.token, pc.pr.ID, pc.ref)
 	if err != nil || len(locals) == 0 {
-		return ctx, nil, err
+		return ctx, nil, false, err
 	}
 	t, err := s.loadPRTarget(dir, pc, false)
 	missing := errors.Is(err, errMissingCommit)
 	if err != nil && !missing {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	if t != nil {
 		ctx = t.ctx
@@ -437,7 +439,7 @@ func (s *Server) placeLocals(dir string, pc prComments) (*wgithub.PRWriteContext
 			func(rev, file string) []string { return r.linesAt(dir, rev, file) },
 			func(a, b string) bool { return gitutil.IsAncestor(dir, a, b) })
 	}
-	return ctx, out, nil
+	return ctx, out, missing, nil
 }
 
 type prPendingCommentDTO struct {
@@ -472,6 +474,9 @@ type prReviewDialogResponse struct {
 	StalePendingCommit *string       `json:"stale_pending_commit"`
 	Pending            *prPendingDTO `json:"pending"`
 	Local              []prLocalDTO  `json:"local"`
+	// BlockedReason is reasonMissingCommit when the PR's commits are not
+	// local, so local comments cannot be placed; null otherwise.
+	BlockedReason *string `json:"blocked_reason"`
 }
 
 // pendingLine is a pending comment's line, from the PR's threads: its
@@ -510,13 +515,17 @@ func (s *Server) handlePRWriteReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.prThreadsCacheOrInit().del("prctx|" + pc.pr.ID)
-	ctx, locals, err := s.placeLocals(dir, pc)
+	ctx, locals, blocked, err := s.placeLocals(dir, pc)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
 	head, stale := reviewTarget(ctx)
 	out := prReviewDialogResponse{PR: pc.pr, ViewerIsAuthor: ctx.ViewerDidAuthor, Head: head, Local: []prLocalDTO{}}
+	if blocked {
+		reason := reasonMissingCommit
+		out.BlockedReason = &reason
+	}
 	if stale != "" {
 		short := shortSHA(stale)
 		out.StalePendingCommit = &short
@@ -557,16 +566,57 @@ type prSubmitResponse struct {
 	Error             string  `json:"error,omitempty"`
 }
 
+// submitLock serialises submits per worktree, so a double click or a
+// second tab cannot add the same local comments twice.
+func (s *Server) submitLock(dir string) *sync.Mutex {
+	v, _ := s.prSubmitLocks.LoadOrStore(dir, &sync.Mutex{})
+	return v.(*sync.Mutex)
+}
+
+// presentOnGitHub reads, fresh, the ids of the PR's comments GitHub has:
+// the viewer's pending review's, and every comment in the PR's threads
+// (which include those of submitted reviews).
+func (s *Server) presentOnGitHub(pc prComments) (map[int64]bool, error) {
+	s.invalidatePR(pc.pr.ID)
+	ctx, err := s.cachedPRWriteContext(pc.token, pc.pr.ID, pc.ref)
+	if err != nil {
+		return nil, err
+	}
+	threads, err := s.cachedReviewThreads(pc.token, pc.pr.ID, pc.ref)
+	if err != nil {
+		return nil, err
+	}
+	ids := map[int64]bool{}
+	if ctx.Pending != nil {
+		for _, c := range ctx.Pending.Comments {
+			ids[c.DatabaseID] = true
+		}
+	}
+	for _, th := range threads.Threads {
+		for _, c := range th.Comments {
+			ids[c.DatabaseID] = true
+		}
+	}
+	return ids, nil
+}
+
 // handlePRWriteSubmit: POST /api/pr-write/submit {path, head, event, body, include_local}
 //
 // Submits the viewer's pending review (started when there is none), first
 // adding the postable local comments when include_local. head is the
-// dialog's target commit: a different one now is a 409, with no writes.
-// After adding, the pending review is read back and exactly the local
-// comments it contains are deleted, each only if unedited since it was
-// sent (the spec's "Submitting, and reconciling local comments"). A
-// failed add still reconciles, then is a 502 without submitting, so a
-// retry adds only what is still local.
+// dialog's target commit: a different one now is a 409, with no writes, as
+// are missing commits while local comments are included.
+//
+// A local comment is never posted twice. The GitHub id each add returns is
+// stored on the row at once. Every submit first reconciles rows that carry
+// an id: one GitHub has (pending, or in a thread) is deleted if unedited
+// since it was sent; one GitHub no longer has (its pending review was
+// discarded), or one edited since, loses its id and is local again. After
+// adding, the comments are read back (retried once): the ones GitHub has
+// are reconciled the same way, and one it does not show yet keeps its id
+// and withholds the submit with a 502, as does any failed add, so a retry
+// adds only what is still local. See the spec's "Submitting, and
+// reconciling local comments".
 func (s *Server) handlePRWriteSubmit(w http.ResponseWriter, r *http.Request) {
 	var req prSubmitRequest
 	if !decodeReviewBody(w, r, &req) {
@@ -586,18 +636,22 @@ func (s *Server) handlePRWriteSubmit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusRequestEntityTooLarge, "review message is too long")
 		return
 	}
+	lock := s.submitLock(dir)
+	lock.Lock()
+	defer lock.Unlock()
 	pc, ok := s.prForWrite(w, dir)
 	if !ok {
 		return
 	}
 
 	// 1. The write context, fresh, and the head the dialog was computed on.
-	s.prThreadsCacheOrInit().del("prctx|" + pc.pr.ID)
+	s.invalidatePR(pc.pr.ID)
 	var ctx *wgithub.PRWriteContext
-	var locals []placedLocal
+	var placed []placedLocal
+	var blocked bool
 	var err error
 	if req.IncludeLocal {
-		ctx, locals, err = s.placeLocals(dir, pc)
+		ctx, placed, blocked, err = s.placeLocals(dir, pc)
 	} else {
 		ctx, err = s.cachedPRWriteContext(pc.token, pc.pr.ID, pc.ref)
 	}
@@ -611,13 +665,61 @@ func (s *Server) handlePRWriteSubmit(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]string{"reason": reason, "error": reason})
 		return
 	}
+	if blocked {
+		writeJSON(w, http.StatusConflict, map[string]string{"reason": reasonMissingCommit, "error": reasonMissingCommit})
+		return
+	}
 	if ctx.ViewerDidAuthor && req.Event != reviewEventComment {
 		writeError(w, http.StatusBadRequest, "you can't approve or request changes on your own PR")
 		return
 	}
+
+	out := prSubmitResponse{PostedLocalIDs: []int64{}, KeptLocalIDs: []int64{}}
+
+	// 2. Reconcile the rows sent by an earlier request.
+	rows, err := reviewcomments.List(s.DB, dir)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	gone, resent := map[int64]bool{}, map[int64]bool{}
+	var earlier []reviewcomments.Comment
+	for _, c := range rows {
+		if c.GitHubCommentID != 0 {
+			earlier = append(earlier, c)
+		}
+	}
+	if len(earlier) > 0 {
+		present, err := s.presentOnGitHub(pc)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, fmt.Sprintf("reading the PR's comments: %v", err))
+			return
+		}
+		for _, c := range earlier {
+			deleted := false
+			if present[c.GitHubCommentID] {
+				if deleted, err = reviewcomments.DeleteIfVersion(s.DB, dir, c.ID, c.GitHubSentVersion); err != nil {
+					writeError(w, http.StatusInternalServerError, err.Error())
+					return
+				}
+			}
+			if deleted {
+				gone[c.ID] = true
+				out.PostedLocalIDs = append(out.PostedLocalIDs, c.ID)
+				continue
+			}
+			// Discarded on GitHub, or edited since it was sent: local again.
+			if err := reviewcomments.ClearGitHubCommentID(s.DB, dir, c.ID); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			resent[c.ID] = true
+		}
+	}
+
 	var postable []placedLocal
-	for _, l := range locals {
-		if l.p.ok {
+	for _, l := range placed {
+		if l.p.ok && !gone[l.c.ID] && (l.c.GitHubCommentID == 0 || resent[l.c.ID]) {
 			postable = append(postable, l)
 		}
 	}
@@ -627,62 +729,84 @@ func (s *Server) handlePRWriteSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Add the postable local comments, past individual failures.
+	// 3. Add the postable local comments, past individual failures,
+	// recording each one's GitHub id on its row as soon as it is known.
 	type sentLocal struct {
 		local, comment int64
 		version        int
 	}
 	var sent []sentLocal
 	var firstErr error
+	fail := func(err error) {
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
 	reviewID := ""
+	if ctx.Pending != nil {
+		reviewID = ctx.Pending.ID
+	}
 	for _, l := range postable {
 		if reviewID == "" {
 			if reviewID, err = s.pendingReviewID(pc, ctx, commit); err != nil {
-				firstErr = err
+				fail(err)
 				break
 			}
 		}
 		id, err := s.addReviewThread(pc.token, reviewID, l.p.comment)
 		if err != nil {
-			if firstErr == nil {
-				firstErr = err
-			}
+			fail(err)
 			continue
+		}
+		if err := reviewcomments.SetGitHubCommentID(s.DB, dir, l.c.ID, id, l.c.Version); err != nil {
+			fail(err)
 		}
 		sent = append(sent, sentLocal{local: l.c.ID, comment: id, version: l.c.Version})
 	}
 
-	// 3. Reconcile: delete the local comments the pending review now holds.
-	out := prSubmitResponse{PostedLocalIDs: []int64{}, KeptLocalIDs: []int64{}}
+	// 4. Read them back, retrying once, and reconcile.
 	if len(sent) > 0 {
-		s.invalidatePR(pc.pr.ID)
-		fresh, err := s.cachedPRWriteContext(pc.token, pc.pr.ID, pc.ref)
-		if err != nil {
-			if firstErr == nil {
-				firstErr = fmt.Errorf("reading the pending review back: %w", err)
+		var present map[int64]bool
+		var rerr error
+		for attempt := 0; attempt < 2; attempt++ {
+			present, rerr = s.presentOnGitHub(pc)
+			if rerr == nil && allSent(present, len(sent), func(i int) int64 { return sent[i].comment }) {
+				break
 			}
-		} else if fresh.Pending != nil {
-			onGitHub := map[int64]bool{}
-			for _, c := range fresh.Pending.Comments {
-				onGitHub[c.DatabaseID] = true
-			}
+		}
+		if rerr != nil {
+			fail(fmt.Errorf("reading the pending review back: %w", rerr))
+		} else {
+			unconfirmed := 0
 			for _, sl := range sent {
-				if !onGitHub[sl.comment] {
+				if !present[sl.comment] {
+					unconfirmed++ // keeps its id: the next submit checks again
 					continue
 				}
 				deleted, err := reviewcomments.DeleteIfVersion(s.DB, dir, sl.local, sl.version)
-				if err != nil && firstErr == nil {
-					firstErr = err
+				if err != nil {
+					fail(err)
+					continue
 				}
 				if deleted {
 					out.PostedLocalIDs = append(out.PostedLocalIDs, sl.local)
+				} else if err := reviewcomments.ClearGitHubCommentID(s.DB, dir, sl.local); err != nil {
+					fail(err) // edited since it was sent: local again
 				}
+			}
+			if unconfirmed > 0 {
+				fail(fmt.Errorf("%d of the comments added to your pending review do not show on GitHub yet; submit again to check", unconfirmed))
 			}
 		}
 	}
 	keep := func() {
 		remaining, err := reviewcomments.List(s.DB, dir)
 		if err != nil {
+			msg := "listing local comments: " + err.Error()
+			if out.Error != "" {
+				msg = out.Error + "; " + msg
+			}
+			out.Error = msg
 			return
 		}
 		for _, c := range remaining {
@@ -690,15 +814,15 @@ func (s *Server) handlePRWriteSubmit(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 4. A failed add: the review is not submitted.
+	// 5. A failed add, or one not confirmed: the review is not submitted.
 	if firstErr != nil {
-		keep()
 		out.Error = firstErr.Error()
+		keep()
 		writeJSON(w, http.StatusBadGateway, out)
 		return
 	}
 
-	// 5. Submit: a review that is only a message, or an approval, is
+	// 6. Submit: a review that is only a message, or an approval, is
 	// started first.
 	err = nil
 	if reviewID == "" {
@@ -707,13 +831,26 @@ func (s *Server) handlePRWriteSubmit(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		err = s.submitReview(pc.token, reviewID, req.Event, req.Body)
 	}
-	keep()
 	if err != nil {
 		out.Error = err.Error()
+		keep()
 		writeJSON(w, http.StatusBadGateway, out)
 		return
 	}
 	s.invalidatePR(pc.pr.ID)
 	out.SubmittedReviewID = reviewID
+	// The review is submitted: a failure listing what stays local is
+	// reported in error, but the status stays 200 so it is not retried.
+	keep()
 	writeJSON(w, http.StatusOK, out)
+}
+
+// allSent reports whether present holds each of the n ids id(i) returns.
+func allSent(present map[int64]bool, n int, id func(i int) int64) bool {
+	for i := 0; i < n; i++ {
+		if !present[id(i)] {
+			return false
+		}
+	}
+	return true
 }

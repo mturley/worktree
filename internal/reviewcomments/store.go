@@ -42,6 +42,11 @@ type Comment struct {
 	Body, Source                      string
 	Version                           int
 	CreatedAt, UpdatedAt              string
+	// GitHubCommentID is the id GitHub returned when the comment was added
+	// to a pending review, 0 when it was not; GitHubSentVersion is its
+	// Version then. Internal: never sent to the client.
+	GitHubCommentID   int64
+	GitHubSentVersion int
 }
 
 // NewComment is what a caller supplies to Create.
@@ -55,7 +60,8 @@ type NewComment struct {
 
 const selectCols = `id, file, side, start_line, end_line, rev, base, base_ref,
 	range_from, range_to, snippet, context_before, context_after,
-	body, source, version, created_at, updated_at`
+	body, source, version, created_at, updated_at,
+	COALESCE(github_comment_id, 0), COALESCE(github_sent_version, 0)`
 
 type scanner interface{ Scan(dest ...any) error }
 
@@ -64,7 +70,8 @@ func scan(r scanner) (Comment, error) {
 	var side, snippet, before, after string
 	if err := r.Scan(&c.ID, &c.File, &side, &c.Anchor.Start, &c.Anchor.End, &c.Rev,
 		&c.Base, &c.BaseRef, &c.RangeFrom, &c.RangeTo, &snippet, &before, &after,
-		&c.Body, &c.Source, &c.Version, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		&c.Body, &c.Source, &c.Version, &c.CreatedAt, &c.UpdatedAt,
+		&c.GitHubCommentID, &c.GitHubSentVersion); err != nil {
 		return Comment{}, err
 	}
 	c.Side = Side(side)
@@ -185,6 +192,22 @@ func DeleteIfVersion(conn *sql.DB, path string, id int64, version int) (bool, er
 	}
 	n, err := res.RowsAffected()
 	return n > 0, err
+}
+
+// SetGitHubCommentID records that the comment, at version, was added to a
+// pending review on GitHub as ghID. A missing comment is not an error.
+func SetGitHubCommentID(conn *sql.DB, path string, id, ghID int64, version int) error {
+	_, err := conn.Exec(`UPDATE review_comments SET github_comment_id = ?, github_sent_version = ?
+		WHERE id = ? AND worktree = ?`, ghID, version, id, wdb.Subscriber(path))
+	return err
+}
+
+// ClearGitHubCommentID forgets the comment's GitHub id, so it can be sent
+// again. A missing comment is not an error.
+func ClearGitHubCommentID(conn *sql.DB, path string, id int64) error {
+	_, err := conn.Exec(`UPDATE review_comments SET github_comment_id = NULL, github_sent_version = NULL
+		WHERE id = ? AND worktree = ?`, id, wdb.Subscriber(path))
+	return err
 }
 
 // DeleteAll removes every comment for the worktree.

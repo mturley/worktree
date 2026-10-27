@@ -799,3 +799,182 @@ func TestPRWriteSubmitOffAndNoPR(t *testing.T) {
 	}
 	f.wantCalls(t)
 }
+
+func (f *prwFixture) row(t *testing.T, id int64) *reviewcomments.Comment {
+	t.Helper()
+	cs, err := reviewcomments.List(f.srv.DB, f.wt)
+	must(t, err)
+	for i := range cs {
+		if cs[i].ID == id {
+			return &cs[i]
+		}
+	}
+	return nil
+}
+
+func (f *prwFixture) countCalls(prefix string) int {
+	n := 0
+	for _, c := range f.calls {
+		if strings.HasPrefix(c, prefix) {
+			n++
+		}
+	}
+	return n
+}
+
+// TestSubmitReadBackLacksID: GitHub accepted the add but the read-back
+// (retried once) does not show it: no submit, a 502, and the id is kept on
+// the row. The next submit, with it showing, deletes the row unre-added.
+func TestSubmitReadBackLacksID(t *testing.T) {
+	f := newPRWFixture(t)
+	f.simulateReviews(t, nil)
+	a := f.local(t, 5, 5, "a")
+	var lagging []wgithub.PendingComment
+	add := f.srv.AddReviewThread
+	f.srv.AddReviewThread = func(token, reviewID string, c wgithub.NewReviewComment) (int64, error) {
+		id, err := add(token, reviewID, c)
+		// Not visible yet.
+		p := f.writeCtx.Pending
+		lagging = append(lagging, p.Comments[len(p.Comments)-1])
+		p.Comments = p.Comments[:len(p.Comments)-1]
+		return id, err
+	}
+	before := f.ctxCalls.Load()
+	code, r := f.submit(t, map[string]any{"body": "x", "include_local": true})
+	if code != http.StatusBadGateway || r.Error == "" {
+		t.Fatalf("status %d: %+v", code, r)
+	}
+	if f.countCalls("submit") != 0 {
+		t.Fatalf("submitted: %q", f.calls)
+	}
+	// The fresh read, then the read-back and its one retry.
+	if n := f.ctxCalls.Load() - before; n != 3 {
+		t.Fatalf("context reads = %d; want 3", n)
+	}
+	row := f.row(t, a.ID)
+	if row == nil || row.GitHubCommentID != lagging[0].DatabaseID || row.GitHubSentVersion != a.Version {
+		t.Fatalf("row: %+v", row)
+	}
+	wantIDs(t, "posted", r.PostedLocalIDs)
+	wantIDs(t, "kept", r.KeptLocalIDs, a.ID)
+
+	// GitHub catches up.
+	f.writeCtx.Pending.Comments = append(f.writeCtx.Pending.Comments, lagging...)
+	f.calls = nil
+	code, r = f.submit(t, map[string]any{"body": "x", "include_local": true})
+	if code != 200 {
+		t.Fatalf("second: %d %+v", code, r)
+	}
+	wantIDs(t, "posted", r.PostedLocalIDs, a.ID)
+	wantIDs(t, "local", f.localIDs(t))
+	f.wantCalls(t, "submit R_new COMMENT x")
+}
+
+// TestSubmitReadBackFails: the read-back fails; a retry does not add the
+// comment again.
+func TestSubmitReadBackFails(t *testing.T) {
+	f := newPRWFixture(t)
+	f.simulateReviews(t, nil)
+	a := f.local(t, 5, 5, "a")
+	add := f.srv.AddReviewThread
+	f.srv.AddReviewThread = func(token, reviewID string, c wgithub.NewReviewComment) (int64, error) {
+		id, err := add(token, reviewID, c)
+		f.writeCtxErr = fmt.Errorf("github down")
+		return id, err
+	}
+	code, r := f.submit(t, map[string]any{"body": "x", "include_local": true})
+	if code != http.StatusBadGateway {
+		t.Fatalf("status %d: %+v", code, r)
+	}
+	if f.countCalls("submit") != 0 {
+		t.Fatalf("submitted: %q", f.calls)
+	}
+	if row := f.row(t, a.ID); row == nil || row.GitHubCommentID == 0 {
+		t.Fatalf("id not kept: %+v", row)
+	}
+
+	f.writeCtxErr = nil
+	f.calls = nil
+	code, r = f.submit(t, map[string]any{"body": "x", "include_local": true})
+	if code != 200 {
+		t.Fatalf("retry: %d %+v", code, r)
+	}
+	f.wantCalls(t, "submit R_new COMMENT x")
+	wantIDs(t, "posted", r.PostedLocalIDs, a.ID)
+	wantIDs(t, "local", f.localIDs(t))
+}
+
+// TestSubmitDiscardedReviewReAdds: a row sent in an earlier request whose
+// comment is no longer on GitHub (the pending review was discarded) has
+// its id cleared and is added again.
+func TestSubmitDiscardedReviewReAdds(t *testing.T) {
+	f := newPRWFixture(t)
+	f.simulateReviews(t, nil)
+	a := f.local(t, 5, 5, "a")
+	must(t, reviewcomments.SetGitHubCommentID(f.srv.DB, f.wt, a.ID, 999, a.Version))
+	code, r := f.submit(t, map[string]any{"body": "x", "include_local": true})
+	if code != 200 {
+		t.Fatalf("status %d: %+v", code, r)
+	}
+	f.wantCalls(t, "start PR_node "+f.head, "thread R_new long:5 a", "submit R_new COMMENT x")
+	wantIDs(t, "posted", r.PostedLocalIDs, a.ID)
+	wantIDs(t, "local", f.localIDs(t))
+}
+
+// TestSubmitSubmittedCommentReconciles: a row whose comment shows in the
+// PR's threads (its review already submitted) is deleted, even without
+// include_local.
+func TestSubmitSubmittedCommentReconciles(t *testing.T) {
+	f := newPRWFixture(t)
+	f.simulateReviews(t, nil)
+	a := f.local(t, 5, 5, "a")
+	must(t, reviewcomments.SetGitHubCommentID(f.srv.DB, f.wt, a.ID, 321, a.Version))
+	f.threads = &wgithub.PRReviewThreads{HeadRefName: "pr-branch", Threads: []wgithub.ReviewThread{
+		{ID: "T1", Path: "long", Line: 5, Comments: []wgithub.ThreadComment{{DatabaseID: 321, Body: "a"}}},
+	}}
+	code, r := f.submit(t, map[string]any{"body": "x"})
+	if code != 200 {
+		t.Fatalf("status %d: %+v", code, r)
+	}
+	wantIDs(t, "posted", r.PostedLocalIDs, a.ID)
+	wantIDs(t, "local", f.localIDs(t))
+	f.wantCalls(t, "start PR_node "+f.head, "submit R_new COMMENT x")
+}
+
+// TestSubmitMissingCommitBlocks: with local comments included, a target
+// whose commits are missing is a 409 with the fetch reason, and nothing is
+// written; the dialog says so too.
+func TestSubmitMissingCommitBlocks(t *testing.T) {
+	f := newPRWFixture(t)
+	f.simulateReviews(t, nil)
+	a := f.local(t, 5, 5, "a")
+	missing := "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+	f.setCtx(&wgithub.PRWriteContext{PullRequestID: "PR_node", BaseRefOid: f.base, HeadRefOid: missing})
+
+	code, body := f.get(t, "/api/pr-write/review", "")
+	var d struct {
+		BlockedReason *string `json:"blocked_reason"`
+	}
+	must(t, json.Unmarshal(body, &d))
+	if code != 200 || d.BlockedReason == nil || *d.BlockedReason != "Fetch the PR's latest commits first" {
+		t.Fatalf("dialog: %d %s", code, body)
+	}
+
+	code, r := f.submit(t, map[string]any{"head": missing, "body": "x", "include_local": true})
+	if code != http.StatusConflict || r.Reason != "Fetch the PR's latest commits first" {
+		t.Fatalf("submit: %d %+v", code, r)
+	}
+	if n := f.countCalls("start") + f.countCalls("thread") + f.countCalls("submit"); n != 0 {
+		t.Fatalf("writes: %q", f.calls)
+	}
+	wantIDs(t, "local", f.localIDs(t), a.ID)
+
+	// Not blocked once fetched; and blocked_reason is null.
+	f.setCtx(&wgithub.PRWriteContext{PullRequestID: "PR_node", BaseRefOid: f.base, HeadRefOid: f.head})
+	_, body = f.get(t, "/api/pr-write/review", "")
+	d.BlockedReason = nil
+	must(t, json.Unmarshal(body, &d))
+	if d.BlockedReason != nil {
+		t.Fatalf("blocked with commits present: %s", body)
+	}
+}

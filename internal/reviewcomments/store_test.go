@@ -214,3 +214,35 @@ func TestDeleteIfVersion(t *testing.T) {
 		t.Fatalf("gone: %v %v", ok, err)
 	}
 }
+
+func TestGitHubCommentID(t *testing.T) {
+	conn := testConn(t)
+	wt := t.TempDir()
+	c, err := Create(conn, wt, newComment("a.go", "x"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.GitHubCommentID != 0 || c.GitHubSentVersion != 0 {
+		t.Fatalf("new comment carries an id: %+v", c)
+	}
+	// Another worktree's id is not touched.
+	if err := SetGitHubCommentID(conn, t.TempDir(), c.ID, 77, 1); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := List(conn, wt); got[0].GitHubCommentID != 0 {
+		t.Fatalf("set from another worktree: %+v", got[0])
+	}
+	if err := SetGitHubCommentID(conn, wt, c.ID, 77, 1); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := List(conn, wt)
+	if got[0].GitHubCommentID != 77 || got[0].GitHubSentVersion != 1 || got[0].Version != 1 {
+		t.Fatalf("after set: %+v", got[0])
+	}
+	if err := ClearGitHubCommentID(conn, wt, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := List(conn, wt); got[0].GitHubCommentID != 0 || got[0].GitHubSentVersion != 0 {
+		t.Fatalf("after clear: %+v", got[0])
+	}
+}
