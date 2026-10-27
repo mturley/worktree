@@ -174,6 +174,19 @@ func Delete(conn *sql.DB, path string, id int64) error {
 	return err
 }
 
+// DeleteIfVersion removes a comment only while its version is still
+// version, reporting whether it did. A comment edited since, or already
+// gone, is kept (or stays gone) and is false.
+func DeleteIfVersion(conn *sql.DB, path string, id int64, version int) (bool, error) {
+	res, err := conn.Exec(`DELETE FROM review_comments WHERE id = ? AND worktree = ? AND version = ?`,
+		id, wdb.Subscriber(path), version)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
 // DeleteAll removes every comment for the worktree.
 func DeleteAll(conn *sql.DB, path string) error {
 	_, err := conn.Exec(`DELETE FROM review_comments WHERE worktree = ?`, wdb.Subscriber(path))

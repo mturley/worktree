@@ -181,3 +181,36 @@ func TestDeleteAll(t *testing.T) {
 		t.Fatalf("b: %+v", got)
 	}
 }
+
+func TestDeleteIfVersion(t *testing.T) {
+	conn := testConn(t)
+	wt := t.TempDir()
+	c, err := Create(conn, wt, newComment("a.go", "x"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Update(conn, wt, c.ID, 1, "edited"); err != nil {
+		t.Fatal(err)
+	}
+	// A stale version keeps it.
+	if ok, err := DeleteIfVersion(conn, wt, c.ID, 1); err != nil || ok {
+		t.Fatalf("stale: %v %v", ok, err)
+	}
+	// Another worktree's id does not match.
+	if ok, err := DeleteIfVersion(conn, t.TempDir(), c.ID, 2); err != nil || ok {
+		t.Fatalf("other worktree: %v %v", ok, err)
+	}
+	if got, _ := List(conn, wt); len(got) != 1 {
+		t.Fatalf("deleted early: %+v", got)
+	}
+	if ok, err := DeleteIfVersion(conn, wt, c.ID, 2); err != nil || !ok {
+		t.Fatalf("current: %v %v", ok, err)
+	}
+	if got, _ := List(conn, wt); len(got) != 0 {
+		t.Fatalf("not deleted: %+v", got)
+	}
+	// Already gone.
+	if ok, err := DeleteIfVersion(conn, wt, c.ID, 2); err != nil || ok {
+		t.Fatalf("gone: %v %v", ok, err)
+	}
+}
