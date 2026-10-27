@@ -158,7 +158,7 @@ The event details modal (`EventDetailsModal`), for a `pr_review_comment` event t
 - A comment whose commit isn't available locally shows in the sidebar only.
 - The "Show in diff view" switch is remembered per browser and defaults to on.
 - "Go to comment" turns the switch on.
-- The re-check cadence is around 60s, and the server caches threads per PR.
+- The client polls the summary every 5s; the server caches threads per PR, so GitHub is reached at most once per 60s cache period.
 - Several matching PRs: prefer primary, then most recently updated.
 - The poller records the GitHub comment id on events (a `comment:<id>` tag) to match them, with an author + path + time fallback.
 - Old-side comments are placed against `merge-base(originalCommit, baseRefOid)`, falling back to sidebar-only.

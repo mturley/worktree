@@ -27,7 +27,7 @@ See its design document. What it must leave in place for later phases:
 - **Anchors in GitHub's terms**: path, side (old/new = GitHub LEFT/RIGHT), start line, end line, and the commit the comment was written against (or "uncommitted").
 - **A sidebar action row** at the top that can take another button beside "Copy comments for agent".
 
-## Phase 2 — PR comments shown inline, read-only (future)
+## Phase 2 — PR comments shown inline, read-only (done)
 
 - **Which PR:** the worktree's primary (focus) PR resource, if it has one. The detail page already tracks PR resources per worktree.
 - **Fetching:** PR review comments come from GitHub. Per `.claude/CLAUDE.md`:
