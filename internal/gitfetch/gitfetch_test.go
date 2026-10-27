@@ -252,7 +252,7 @@ func TestRemotesForForkSetup(t *testing.T) {
 
 func TestFetchCommandNeverPrompts(t *testing.T) {
 	args, env := fetchCommand("/repo", "origin", "ssh -i key")
-	want := []string{"-C", "/repo", "fetch", "--prune", "--no-auto-maintenance", "origin"}
+	want := []string{"-C", "/repo", "fetch", "--prune", "--no-auto-maintenance", "--no-write-fetch-head", "origin"}
 	if !reflect.DeepEqual(args, want) {
 		t.Errorf("args = %q, want %q", args, want)
 	}
@@ -329,11 +329,27 @@ func TestMaybeStoresRedactedError(t *testing.T) {
 
 func TestRefsCommandNeverPrompts(t *testing.T) {
 	args, env := refsCommand("/repo", "origin", "ssh", []string{"+refs/pull/7/head:refs/pr-review/7"})
-	want := []string{"-C", "/repo", "fetch", "--no-auto-maintenance", "origin", "+refs/pull/7/head:refs/pr-review/7"}
+	want := []string{"-C", "/repo", "fetch", "--no-auto-maintenance", "--no-write-fetch-head", "origin", "+refs/pull/7/head:refs/pr-review/7"}
 	if !reflect.DeepEqual(args, want) {
 		t.Errorf("args = %q, want %q", args, want)
 	}
 	if _, base := fetchCommand("/repo", "origin", "ssh"); !reflect.DeepEqual(env, base) {
 		t.Errorf("env = %q, want the background fetch's %q", env, base)
+	}
+}
+
+// FetchRefs's error reaches the server log, so it must be redacted like
+// the background fetch's. git redacts remote URLs itself, but echoes a
+// directory it cannot enter verbatim, so a credential-shaped dir shows
+// what comes back unredacted otherwise.
+func TestFetchRefsReturnsRedactedError(t *testing.T) {
+	// Not filepath.Join, which would clean "//" away.
+	dir := t.TempDir() + "/https://me:secret@example.com/r"
+	err := FetchRefs(context.Background(), dir, "origin", "+refs/heads/x:refs/x")
+	if err == nil {
+		t.Fatal("FetchRefs into a missing dir succeeded")
+	}
+	if msg := err.Error(); strings.Contains(msg, "secret") || !strings.Contains(msg, "https://***@") {
+		t.Errorf("FetchRefs error = %q, want credentials redacted", msg)
 	}
 }

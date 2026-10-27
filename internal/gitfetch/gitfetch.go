@@ -8,6 +8,7 @@ package gitfetch
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -202,10 +203,14 @@ func gitFetch(ctx context.Context, dir, remote string) error {
 
 // FetchRefs fetches refspecs from remote into dir's repository, without
 // pruning, under the same never-prompt rules as the background fetch. It
-// blocks until the fetch ends or ctx does; the caller bounds it.
+// blocks until the fetch ends or ctx does; the caller bounds it. Its error
+// is redacted as the background fetch's is, since callers log it.
 func FetchRefs(ctx context.Context, dir, remote string, refspecs ...string) error {
 	args, env := refsCommand(dir, remote, sshCommand(dir), refspecs)
-	return runFetch(ctx, args, env)
+	if err := runFetch(ctx, args, env); err != nil {
+		return errors.New(redactError(err.Error()))
+	}
+	return nil
 }
 
 // sshCommand is the ssh command git would use for dir.
@@ -237,13 +242,15 @@ func runFetch(ctx context.Context, args, env []string) error {
 func fetchCommand(dir, remote, ssh string) (args, env []string) {
 	// --no-auto-maintenance: a background fetch must not kick off `git
 	// maintenance`/gc, which takes locks the user's commands would then hit.
-	args = []string{"-C", dir, "fetch", "--prune", "--no-auto-maintenance", remote}
+	// --no-write-fetch-head: FETCH_HEAD is the user's, for their own `git
+	// fetch` + `git merge FETCH_HEAD`; a background fetch must not replace it.
+	args = []string{"-C", dir, "fetch", "--prune", "--no-auto-maintenance", "--no-write-fetch-head", remote}
 	return args, noPromptEnv(ssh)
 }
 
 // refsCommand is fetchCommand for explicit refspecs, without --prune.
 func refsCommand(dir, remote, ssh string, refspecs []string) (args, env []string) {
-	args = append([]string{"-C", dir, "fetch", "--no-auto-maintenance", remote}, refspecs...)
+	args = append([]string{"-C", dir, "fetch", "--no-auto-maintenance", "--no-write-fetch-head", remote}, refspecs...)
 	return args, noPromptEnv(ssh)
 }
 
