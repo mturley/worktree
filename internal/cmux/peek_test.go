@@ -13,12 +13,17 @@ import (
 
 // stubCmuxScript runs script under sh for every cmux call, with the call's
 // args as $1… so a stub can act on them (e.g. write to the --out path).
+// It records the last call's args, under a lock for tests that call it
+// concurrently.
 func stubCmuxScript(t *testing.T, script string) *[]string {
 	t.Helper()
 	var got []string
+	var mu sync.Mutex
 	orig := cmuxCmd
 	cmuxCmd = func(args ...string) *exec.Cmd {
+		mu.Lock()
 		got = args
+		mu.Unlock()
 		return exec.Command("sh", append([]string{"-c", script, "sh"}, args...)...)
 	}
 	t.Cleanup(func() { cmuxCmd = orig })
