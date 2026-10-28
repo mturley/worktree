@@ -19,6 +19,7 @@ vi.mock("../api/client", async (orig) => {
 import { HttpError } from "../api/client"
 import {
   conflictComment,
+  dropAbandonedNewDraft,
   editDraftKey,
   NEW_DRAFT_KEY,
   useDeletedDrafts,
@@ -142,5 +143,22 @@ describe("editor drafts", () => {
       added.result.current[1](undefined)
     })
     expect(ids.result.current).toEqual([])
+  })
+})
+
+describe("dropAbandonedNewDraft", () => {
+  it("drops the new comment's draft, but not one still saving, nor any edit", () => {
+    const added = renderHook(() => useEditorDraft("/ab", NEW_DRAFT_KEY))
+    const edit = renderHook(() => useEditorDraft("/ab", editDraftKey("inline", 4)))
+    act(() => {
+      added.result.current[1]({ text: "new", target: "t" })
+      edit.result.current[1]({ text: "e", baseVersion: 1 })
+    })
+    act(() => dropAbandonedNewDraft("/ab"))
+    expect(added.result.current[0]).toBeUndefined()
+    expect(edit.result.current[0]).toEqual({ text: "e", baseVersion: 1 })
+    act(() => added.result.current[1]({ text: "new", target: "t", saving: "local" }))
+    act(() => dropAbandonedNewDraft("/ab"))
+    expect(added.result.current[0]).toEqual({ text: "new", target: "t", saving: "local" })
   })
 })

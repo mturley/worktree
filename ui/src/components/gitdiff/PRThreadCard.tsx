@@ -67,7 +67,6 @@ function jumpBlockedReason(status: NonNullable<PRThread["view"]>["status"] | und
 function ReplyBox({ path, thread, pr }: { path: string; thread: PRThread; pr: PRRefDTO }) {
   const { reply } = usePRWriteMutations(path)
   const [draft, setDraft] = useEditorDraft(path, `reply:${thread.id}`)
-  const [error, setError] = useState<string>()
   const summary = usePRCommentsSummary(path).data
   // Reply shows whenever the card does: its PR is the card's own, from the
   // pinned threads, so a poll that loses the PR (an error, the watcher
@@ -88,23 +87,23 @@ function ReplyBox({ path, thread, pr }: { path: string; thread: PRThread; pr: PR
       </Group>
     )
   }
+  // The post's state is kept with the text (see EditorDraft), so a card that
+  // remounts mid-post stays busy and still shows how it ended.
   const post = (mode: PRWriteMode) => (body: string) => {
-    setError(undefined)
+    if (draft.saving) return
+    setDraft((d) => d && { ...d, saving: mode, error: undefined })
     reply.mutateAsync({ thread_id: thread.id, in_reply_to: first.id, mode, body }).then(
       () => setDraft(undefined),
-      (err: unknown) => setError(prWriteError(err)),
+      (err: unknown) => setDraft((d) => d && { ...d, saving: undefined, error: prWriteError(err) }),
     )
   }
-  const busy = (mode: PRWriteMode) => reply.isPending && reply.variables?.mode === mode
+  const busy = (mode: PRWriteMode) => draft.saving === mode
   return (
     <CommentEditor
       initial={draft.text}
       onChange={(text) => setDraft((d) => d && { ...d, text })}
-      error={error}
-      onCancel={() => {
-        setDraft(undefined)
-        setError(undefined)
-      }}
+      error={draft.error}
+      onCancel={() => setDraft(undefined)}
       actions={[
         {
           key: "review",

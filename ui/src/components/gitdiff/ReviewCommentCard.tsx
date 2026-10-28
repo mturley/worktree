@@ -1,4 +1,4 @@
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { ActionIcon, Anchor, Badge, Box, Button, Group, Stack, Text, Tooltip } from "@mantine/core"
 import { IconPencil, IconTrash } from "@tabler/icons-react"
 import { HttpError } from "../../api/client"
@@ -16,6 +16,7 @@ import { prWriteError, summaryPR, usePRWriteCheck, usePRWriteMutations } from ".
 import {
   conflictComment,
   editDraftKey,
+  type EditorDraft,
   NEW_DRAFT_KEY,
   newDraftTarget,
   useDeletedDrafts,
@@ -113,7 +114,6 @@ export function ReviewCommentCard({ path, comment, variant, onJump, jumpDisabled
   // this state survives the list dropping the comment and the card remounting.
   const deleted = useDeletedDrafts(path)
   const tombstone = deleted.drafts.find((d) => d.comment.id === comment.id)
-  const [error, setError] = useState<string>()
 
   const view = comment.view
   const outdated = view?.status === "outdated" || comment.prompt.status === "outdated"
@@ -123,8 +123,8 @@ export function ReviewCommentCard({ path, comment, variant, onJump, jumpDisabled
   const lines = first === last ? `${first}` : `${first}-${last}`
 
   const save = (text: string) => {
-    if (!draft) return
-    setError(undefined)
+    if (!draft || draft.saving) return
+    setDraft((d) => d && { ...d, saving: "save", error: undefined })
     // mutateAsync, not mutate's callbacks: those are dropped if the card
     // remounts before the save answers.
     const version = conflict?.version ?? draft.baseVersion ?? comment.version
@@ -132,11 +132,11 @@ export function ReviewCommentCard({ path, comment, variant, onJump, jumpDisabled
       () => setDraft(undefined),
       (err: unknown) => {
         const newer = conflictComment(err)
-        if (newer) setDraft((d) => d && { ...d, text, conflict: newer })
+        if (newer) setDraft((d) => d && { ...d, saving: undefined, conflict: newer })
         else if (err instanceof HttpError && err.status === 404) {
           deleted.add({ comment, text, view: viewKey })
           setDraft(undefined)
-        } else setError(errMessage(err))
+        } else setDraft((d) => d && { ...d, saving: undefined, error: errMessage(err) })
       },
     )
   }
@@ -248,13 +248,10 @@ export function ReviewCommentCard({ path, comment, variant, onJump, jumpDisabled
               initial={draft.text}
               onChange={(text) => setDraft((d) => d && { ...d, text })}
               submitLabel="Save"
-              busy={update.isPending}
-              error={error}
+              busy={draft.saving === "save"}
+              error={draft.error}
               onSubmit={save}
-              onCancel={() => {
-                setDraft(undefined)
-                setError(undefined)
-              }}
+              onCancel={() => setDraft(undefined)}
             />
           </>
         ) : (
@@ -280,16 +277,29 @@ export function NewCommentCard({ path, target, view, onDone }: {
 }) {
   const { create } = useReviewCommentMutations(path)
   const { comment } = usePRWriteMutations(path)
-  const [error, setError] = useState<string>()
   // The typed text lives in the store, so it survives the card remounting
   // (see EditorDraft); a draft typed for another target is not this one's.
   const mine = newDraftTarget(view, target)
   const [stored, setDraft] = useEditorDraft(path, NEW_DRAFT_KEY)
   const draft = stored?.target === mine ? stored : undefined
+  // Only one new comment is ever open: a draft for other lines was
+  // abandoned when this one started, unless its save is still running.
+  useEffect(() => {
+    setDraft((d) => (d && d.target !== mine && !d.saving ? undefined : d))
+  }, [mine, setDraft])
+  const setMine = (update: (d: EditorDraft) => EditorDraft) =>
+    setDraft((d) => (d?.target === mine ? update(d) : d))
   const drop = () => setDraft((d) => (d?.target === mine ? undefined : d))
   const finish = () => {
     drop()
     onDone()
+  }
+  // The save's state is kept with the text (see EditorDraft); a write runs
+  // only while none is in flight.
+  const write = (key: string, run: () => Promise<unknown>, describe: (err: unknown) => string) => {
+    if (!draft || draft.saving) return
+    setMine((d) => ({ ...d, saving: key, error: undefined }))
+    run().then(finish, (err: unknown) => setMine((d) => ({ ...d, saving: undefined, error: describe(err) })))
   }
   // The whole local review, across every view: the first comment starts it.
   const started = (useReviewComments(path, undefined).data?.length ?? 0) > 0
@@ -323,33 +333,32 @@ export function NewCommentCard({ path, target, view, onDone }: {
     const stale = verdict === "review" ? check.data?.review.stale_pending_commit : undefined
     return pr && stale ? `${reason} — ${stalePendingNotice(pr.number, stale)}` : reason
   }
-  const postToPR = (mode: PRWriteMode) => (body: string) => {
-    setError(undefined)
-    comment.mutateAsync({ ...prTarget, mode, body }).then(finish, (err: unknown) => setError(prWriteError(err)))
-  }
+  const postToPR = (mode: PRWriteMode) => (body: string) =>
+    write(mode, () => comment.mutateAsync({ ...prTarget, mode, body }), prWriteError)
 
   const actions: EditorAction[] = [
     {
       key: "local",
       label: localLabel(started),
       tooltip: LOCAL_TOOLTIP,
-      busy: create.isPending,
-      onSubmit: (body) => {
-        setError(undefined)
-        create
-          .mutateAsync({
-            file: target.file,
-            side: target.side,
-            start_line: target.start,
-            end_line: target.end,
-            body,
-            base: view.base,
-            ...(view.range === "all" ? {} : { from: view.range.from, to: view.range.to }),
-            old_rev: view.oldRev,
-            new_rev: view.newRev,
-          })
-          .then(finish, (err: unknown) => setError(errMessage(err)))
-      },
+      busy: draft?.saving === "local",
+      onSubmit: (body) =>
+        write(
+          "local",
+          () =>
+            create.mutateAsync({
+              file: target.file,
+              side: target.side,
+              start_line: target.start,
+              end_line: target.end,
+              body,
+              base: view.base,
+              ...(view.range === "all" ? {} : { from: view.range.from, to: view.range.to }),
+              old_rev: view.oldRev,
+              new_rev: view.newRev,
+            }),
+          errMessage,
+        ),
     },
   ]
   if (pr) {
@@ -360,7 +369,7 @@ export function NewCommentCard({ path, target, view, onDone }: {
         tooltip: prReviewTooltip(pr.number),
         disabledReason: reasonFor("review"),
         variant: "light",
-        busy: comment.isPending && comment.variables?.mode === "review",
+        busy: draft?.saving === "review",
         onSubmit: postToPR("review"),
       },
       {
@@ -369,7 +378,7 @@ export function NewCommentCard({ path, target, view, onDone }: {
         tooltip: commentNowTooltip(pr.number),
         disabledReason: reasonFor("single"),
         variant: "light",
-        busy: comment.isPending && comment.variables?.mode === "single",
+        busy: draft?.saving === "single",
         onSubmit: postToPR("single"),
       },
     )
@@ -379,9 +388,9 @@ export function NewCommentCard({ path, target, view, onDone }: {
     <Frame>
       <CommentEditor
         initial={draft?.text ?? ""}
-        onChange={(text) => setDraft({ text, target: mine })}
+        onChange={(text) => setDraft((d) => ({ ...(d?.target === mine ? d : {}), text, target: mine }))}
         actions={actions}
-        error={error}
+        error={draft?.error}
         onCancel={() => {
           drop()
           onDone()

@@ -3534,7 +3534,13 @@ start version, any conflict; inline and sidebar cards edit independently),
 and the one new comment under `new` with the target it was typed for
 (`newDraftTarget`: view revs, file, side, lines). Cards restore from it on
 mount and clear it on a successful save or cancel. Saves use `mutateAsync`,
-whose promise settles even if the card remounted meanwhile.
+whose promise settles even if the card remounted meanwhile. The draft also
+holds the save in flight (`saving`, the button's key) and the last save's
+`error`, so a card that remounts mid-save stays busy, can't send it twice,
+and still shows a failure. PR replies (`reply:<thread id>`) work the same
+way. The new comment's draft is dropped once abandoned: on a view change
+(`dropAbandonedNewDraft`) or when a comment starts on other lines, unless
+its save is still running.
 `useEditingCommentIds` tells `DiffView` which comments are being edited.
 
 **No stale positions on a new patch.** While the list is react-query

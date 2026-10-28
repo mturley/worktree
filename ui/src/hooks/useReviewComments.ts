@@ -106,6 +106,13 @@ export interface EditorDraft {
   conflict?: ReviewComment
   /** A new comment's: which target (see newDraftTarget) the text was typed for. */
   target?: string
+  /**
+   * The save in flight, by its button's key, and the last one's error: here,
+   * not in the card, so a card that remounts mid-save stays busy (and can't
+   * send it twice) and still shows how it ended.
+   */
+  saving?: string
+  error?: string
 }
 
 /** The store key of an edit, per card variant: inline and sidebar cards edit independently. */
@@ -141,6 +148,15 @@ function setEditorDraft(path: string, key: string, update: DraftUpdate): void {
 function subscribeEditors(onChange: () => void): () => void {
   editorListeners.add(onChange)
   return () => { editorListeners.delete(onChange) }
+}
+
+/**
+ * Drops the new comment's draft once its editor is gone for good (a view
+ * change), so it can't come back on the same lines. One still saving stays:
+ * its save clears it.
+ */
+export function dropAbandonedNewDraft(path: string): void {
+  setEditorDraft(path, NEW_DRAFT_KEY, (d) => (d?.saving ? d : undefined))
 }
 
 /** One editor's draft, and its setter (undefined clears it). */

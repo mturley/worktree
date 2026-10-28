@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { cleanup, render, screen, waitFor } from "@testing-library/react"
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -246,6 +246,24 @@ describe("PRThreadCard", () => {
       await userEvent.type(screen.getByRole("textbox"), "later")
       await userEvent.click(screen.getByRole("button", { name: "Start a PR review on #12" }))
       await waitFor(() => expect(apiMock.prWriteReply).toHaveBeenCalledWith(expect.objectContaining({ mode: "review" })))
+    })
+
+    it("stays busy across a remount mid-post, and shows the post's error after it", async () => {
+      let fail!: (e: Error) => void
+      apiMock.prWriteReply.mockReturnValue(new Promise((_, rej) => { fail = rej }))
+      const first = renderCard({ path: "/w-r-busy" })
+      await userEvent.click(await screen.findByRole("button", { name: "Reply" }))
+      await userEvent.type(screen.getByRole("textbox"), "thanks")
+      await userEvent.click(screen.getByRole("button", { name: "Reply on PR #12" }))
+      first.unmount()
+      renderCard({ path: "/w-r-busy" })
+      const post = await screen.findByRole("button", { name: "Reply on PR #12" })
+      expect(post).toHaveAttribute("data-loading", "true")
+      await userEvent.click(post)
+      expect(apiMock.prWriteReply).toHaveBeenCalledTimes(1)
+      await act(async () => fail(new HttpError("GitHub said no", 502)))
+      expect(await screen.findByText("GitHub said no")).toBeInTheDocument()
+      expect(screen.getByRole("textbox")).toHaveValue("thanks")
     })
 
     it("a failure shows the error and keeps the text", async () => {

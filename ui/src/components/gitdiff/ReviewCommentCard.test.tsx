@@ -182,6 +182,26 @@ describe("ReviewCommentCard", () => {
     expect(screen.queryByRole("textbox")).toBeNull()
   })
 
+  it("stays busy across a remount mid-save, and shows the save's error after it", async () => {
+    let fail!: (e: Error) => void
+    apiMock.updateReviewComment.mockReturnValue(new Promise((_, rej) => { fail = rej }))
+    const first = wrap(<ReviewCommentCard path="/w-busy" comment={item()} variant="inline" />)
+    await userEvent.click(screen.getByRole("button", { name: "Edit comment" }))
+    await userEvent.type(screen.getByRole("textbox"), " more")
+    await userEvent.click(screen.getByRole("button", { name: "Save" }))
+    first.unmount()
+    wrap(<ReviewCommentCard path="/w-busy" comment={item()} variant="inline" />)
+    const save = screen.getByRole("button", { name: "Save" })
+    expect(save).toHaveAttribute("data-loading", "true")
+    // Still in flight: a second click sends nothing.
+    await userEvent.click(save)
+    expect(apiMock.updateReviewComment).toHaveBeenCalledTimes(1)
+    await act(async () => fail(new Error("boom")))
+    expect(await screen.findByText("boom")).toBeInTheDocument()
+    expect(screen.getByRole("textbox")).toHaveValue("original more")
+    expect(screen.getByRole("button", { name: "Save" })).not.toHaveAttribute("data-loading")
+  })
+
   it("cancel drops the edit draft", async () => {
     const first = wrap(<ReviewCommentCard path="/w-cancel" comment={item()} variant="inline" />)
     await userEvent.click(screen.getByRole("button", { name: "Edit comment" }))
@@ -377,6 +397,35 @@ describe("NewCommentCard", () => {
     await userEvent.click(screen.getByRole("button", { name: "Cancel" }))
     third.unmount()
     wrap(<NewCommentCard path="/w-new" target={target} view={view} onDone={() => {}} />)
+    expect(screen.getByRole("textbox")).toHaveValue("")
+  })
+
+  it("stays busy across a remount mid-save, and shows the save's error after it", async () => {
+    let fail!: (e: Error) => void
+    apiMock.createReviewComment.mockReturnValue(new Promise((_, rej) => { fail = rej }))
+    const onDone = vi.fn()
+    const first = wrap(<NewCommentCard path="/w-new-busy" target={target} view={view} onDone={onDone} />)
+    await userEvent.type(screen.getByRole("textbox"), "nice")
+    await userEvent.click(screen.getByRole("button", { name: "Start local review" }))
+    first.unmount()
+    wrap(<NewCommentCard path="/w-new-busy" target={target} view={view} onDone={onDone} />)
+    const save = screen.getByRole("button", { name: "Start local review" })
+    expect(save).toHaveAttribute("data-loading", "true")
+    await userEvent.click(save)
+    expect(apiMock.createReviewComment).toHaveBeenCalledTimes(1)
+    await act(async () => fail(new Error("boom")))
+    expect(await screen.findByText("boom")).toBeInTheDocument()
+    expect(screen.getByRole("textbox")).toHaveValue("nice")
+    expect(onDone).not.toHaveBeenCalled()
+  })
+
+  it("drops an abandoned draft once a comment is started on other lines", async () => {
+    const first = wrap(<NewCommentCard path="/w-moved" target={target} view={view} onDone={() => {}} />)
+    await userEvent.type(screen.getByRole("textbox"), "half")
+    first.unmount()
+    const other = wrap(<NewCommentCard path="/w-moved" target={{ ...target, start: 1, end: 1 }} view={view} onDone={() => {}} />)
+    other.unmount()
+    wrap(<NewCommentCard path="/w-moved" target={target} view={view} onDone={() => {}} />)
     expect(screen.getByRole("textbox")).toHaveValue("")
   })
 

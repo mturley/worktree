@@ -8,7 +8,7 @@ import { useDiffCommits } from "../../hooks/useDiffData"
 import { useDiffSelection } from "../../hooks/useDiffSelection"
 import { useDiffView } from "../../hooks/useDiffView"
 import { useIsWide } from "../../hooks/useIsWide"
-import { useDeletedDrafts, useEditingCommentIds, useReviewComments } from "../../hooks/useReviewComments"
+import { dropAbandonedNewDraft, useDeletedDrafts, useEditingCommentIds, useReviewComments } from "../../hooks/useReviewComments"
 import { useReviewSidebar, useReviewSidebarTab } from "../../hooks/useReviewSidebar"
 import { useWorktreeGit } from "../../hooks/useWorktreeGit"
 import { diffUnavailable } from "../../lib/diffLabels"
@@ -244,10 +244,12 @@ export default function DiffView({
     if (viewKey === seenViewKey.current) return
     seenViewKey.current = viewKey
     setPendingComment(null)
+    // Its editor is gone with the view, so its text must not come back.
+    dropAbandonedNewDraft(path)
     setRecheckKey(recheckAsked.current ? viewKey : null)
     recheckAsked.current = false
     setPendingJump((j) => (j && j.key === undefined ? { ...j, key: viewKey } : null))
-  }, [viewKey])
+  }, [viewKey, path])
 
   // The server forgets a view's revs once unused for a while; the list then
   // answers 404. A fresh load of the same view (its own request, never a
