@@ -4,6 +4,7 @@ import { IconChevronDown, IconChevronRight, IconChevronsDown } from "@tabler/ico
 import { useLocation } from "wouter"
 import type { Task } from "../../api/types"
 import { useTasks, type TaskScope } from "../../hooks/useTasks"
+import { useIsWide } from "../../hooks/useIsWide"
 import { useTaskListPrefs } from "../../hooks/useTaskListPrefs"
 import { openSummary } from "../../lib/taskSections"
 import { TaskList } from "./TaskList"
@@ -39,7 +40,9 @@ export function scopeContext(scope: TaskScope): string {
  *   when it overflows.
  * - collapsed: one line, the count and a chevron, that expands back to
  *   normal. ONE global saved choice (useTaskListPrefs' `collapsed`).
- * - expanded: "Show all" lifted the cap. Never saved, and only for the path
+ * - expanded: "Show all" lifted the cap, and (wide) the page gives the
+ *   panel's column two thirds of the width; a wide list that fits can be
+ *   expanded from the summary just for that. Never saved, and only for the path
  *   and scope it was set under: navigating to another path or changing scope
  *   (another resource selected on the same page) puts the panel back to
  *   normal. A tab change does not: tabs live in the query string.
@@ -90,16 +93,23 @@ export function useTasksPanel(
   // One toggle on the left, the summary inside it, in both levels: the same
   // element stays mounted, so it keeps the focus across a toggle.
   // The summary cycles the levels: normal → expanded (Show all) → collapsed
-  // → normal. A list that fits has nothing to show all of, so normal goes
-  // straight to collapsed then.
+  // → normal. Wide, expanded also widens the panel's column (the pages
+  // split 4/8), which a list that fits still gains from — long titles — so
+  // it is always offered there ("Widen task list"). Narrow, a list that fits
+  // has nothing to show all of, so normal goes straight to collapsed.
   const [overflows, setOverflows] = useState(false)
-  const toExpanded = !collapsed && !expanded && overflows
+  const wide = useIsWide()
+  const toExpanded = !collapsed && !expanded && (overflows || wide)
   const cycle = () => {
     if (collapsed) toggleCollapsed(false)
     else if (toExpanded) setExpandedKey(key)
     else toggleCollapsed(true)
   }
-  const action = collapsed ? "Expand task list" : toExpanded ? "Show all tasks" : "Collapse task list"
+  const action = collapsed
+    ? "Expand task list"
+    : toExpanded
+      ? (overflows ? "Show all tasks" : "Widen task list")
+      : "Collapse task list"
 
   const toggle = (
     <UnstyledButton

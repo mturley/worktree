@@ -10,6 +10,7 @@ import type { Task } from "../../api/types"
 import type { TaskScope } from "../../hooks/useTasks"
 import { TASK_LIST_KEY } from "../../lib/taskListPrefs"
 import { TaskModalProvider } from "./modal/TaskModalProvider"
+import { setViewport } from "../../testing/viewport"
 import { scopeContext, useTasksPanel } from "./TasksSection"
 
 vi.mock("../../api/client", async (orig) => ({
@@ -254,12 +255,32 @@ describe("useTasksPanel summary toggle", () => {
     }
   })
 
-  it("goes straight from normal to collapsed when the list fits", async () => {
+  it("narrow: goes straight from normal to collapsed when the list fits", async () => {
+    setViewport("narrow")
     const user = userEvent.setup()
     wrap(<Host />)
     await within(panel()).findByText("Tasks (all)")
     await user.click(within(panel()).getByRole("button", { name: /^Collapse task list/ }))
     expect(panel()).toHaveAttribute("data-level", "collapsed")
+  })
+})
+
+describe("useTasksPanel summary toggle, wide", () => {
+  it("offers expanded even when the list fits, to widen its column, with no Show less", async () => {
+    setViewport("wide")
+    const user = userEvent.setup()
+    wrap(<Host />)
+    await within(panel()).findByText("Tasks (all)")
+    const toggle = within(panel()).getByRole("button", { name: /^Widen task list/ })
+    await user.click(toggle)
+    expect(panel()).toHaveAttribute("data-level", "expanded")
+    // It fits: nothing to show less of. The summary is the way on.
+    expect(within(panel()).queryByRole("button", { name: "Show less" })).toBeNull()
+    expect(toggle).toHaveAccessibleName(/^Collapse task list/)
+    await user.click(toggle)
+    expect(panel()).toHaveAttribute("data-level", "collapsed")
+    await user.click(toggle)
+    expect(panel()).toHaveAttribute("data-level", "normal")
   })
 })
 
@@ -277,6 +298,8 @@ describe("scopeContext", () => {
 
 describe("useTasksPanel focus", () => {
   it("one toggle, holding the summary, collapses and expands and keeps the focus", async () => {
+    // Narrow: a list that fits goes straight to collapsed.
+    setViewport("narrow")
     const user = userEvent.setup()
     wrap(<Host />)
     await within(panel()).findByText("Tasks (all)")
@@ -296,6 +319,8 @@ describe("useTasksPanel focus", () => {
   })
 
   it("leaves focus alone when the toggle was not focused", async () => {
+    // Narrow: a list that fits goes straight to collapsed.
+    setViewport("narrow")
     wrap(<Host />)
     await within(panel()).findByText("Tasks (all)")
     act(() => within(panel()).getByRole("button", { name: /^Collapse task list/ }).click())

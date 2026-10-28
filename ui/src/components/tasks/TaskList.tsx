@@ -65,9 +65,9 @@ function isBelow(active: Active, over: Over): boolean {
  * observed too (`contentRef`), and `shape` covers environments without
  * ResizeObserver.
  *
- * Uncapped (expanded), the last answer is kept rather than reset: the footer
- * shows regardless while expanded, and a reset would unmount Show less's
- * button on the way back, taking the keyboard focus with it.
+ * Uncapped (expanded), the last answer is kept rather than reset: it is what
+ * shows the footer (Show less) while expanded, and a reset would unmount
+ * that button on the way back, taking the keyboard focus with it.
  */
 function useOverflow(capped: boolean, shape: string) {
   const ref = useRef<HTMLDivElement>(null)
@@ -461,7 +461,10 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
         {/* Observed for overflow: under a holding cap only this grows. */}
         <div ref={overflows.contentRef}>{body}</div>
       </Box>
-      {expand && (expand.expanded || overflows.value) && (
+      {/* Only for a list that overflows its cap: one expanded only to widen
+          its column (it fits) has nothing to show less of, and leaves by
+          the panel's summary toggle. */}
+      {expand && overflows.value && (
         <Button variant="subtle" size="compact-xs" fullWidth justify="flex-start" onClick={expand.onToggle}>
           {expand.expanded ? "Show less" : `Show all (${shownCount})`}
         </Button>

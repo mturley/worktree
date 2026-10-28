@@ -452,8 +452,12 @@ export function HomePage() {
     )
   }
 
+  const split = tasks.expanded ? [4, 8] : [6, 6]
   return (
-    // The header sits above the columns. Even split below it. The worktree
+    // The header sits above the columns. Even split below it — except while
+    // the task panel, which heads the right-hand column, is fully expanded
+    // (Show all): then 4/8, as the worktree page splits for a selected
+    // resource, so the long list gets the width. The worktree
     // cards carry more per row than they used to — a cmux workspace header,
     // two meta lines, focus resources — so the narrower column was wrapping
     // content that the timeline had width to spare for.
@@ -467,7 +471,7 @@ export function HomePage() {
       <Grid px="md" pb="md" pt="sm" gutter="md">
         {/* Tooltips in both columns open under the pinned headers while
             those are stuck; see useTooltipLayer. */}
-        <Grid.Col span={6} style={columnStyle} data-tooltip-layer="content">
+        <Grid.Col span={split[0]} style={columnStyle} data-tooltip-layer="content">
           {/* As the Activity header: pinned, it carries its own opaque room
               below the toolbar in place of the gap, so the cards scrolling
               under it do not run right up against the buttons. */}
@@ -482,7 +486,7 @@ export function HomePage() {
             {worktrees}
           </Stack>
         </Grid.Col>
-        <Grid.Col span={6} style={columnStyle} data-tooltip-layer="content">
+        <Grid.Col span={split[1]} style={columnStyle} data-tooltip-layer="content">
           {/* The task panel scrolls away with the column; the tab's header
               below it, carrying the tab bar, pins once scrolled to. Its
               cover (the column padding) is less than this gap, so pinning

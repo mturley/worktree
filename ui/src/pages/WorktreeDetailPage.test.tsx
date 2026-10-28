@@ -66,6 +66,7 @@ vi.mock("../components/gitdiff/DiffView", () => ({
 }))
 
 import { setViewport } from "../testing/viewport"
+import { colBasis } from "../testing/gridCol"
 import { WorktreeDetailPage } from "./WorktreeDetailPage"
 
 // The header card (WorktreeDetailCard) fetches /api/worktree-info, so the
@@ -504,20 +505,6 @@ describe("WorktreeDetailPage has no Overview/Slack tabs", () => {
   })
 })
 
-// Mantine writes a Grid.Col's span into a generated <style> rule keyed by a
-// per-instance class, not into the element's inline style, so jsdom only
-// sees it there. Returns that rule's --col-flex-basis.
-function colBasis(col: HTMLElement): string | undefined {
-  const cls = [...col.classList].find((c) => c.startsWith("__m__-"))
-  if (!cls) return undefined
-  for (const style of document.querySelectorAll("style")) {
-    const text = style.textContent ?? ""
-    if (!text.includes(`.${cls}`)) continue
-    const m = text.match(/--col-flex-basis:\s*([^;]+);/)
-    if (m) return m[1].trim()
-  }
-  return undefined
-}
 
 describe("WorktreeDetailPage wide layout", () => {
   it("keeps the resource list mounted across a selection toggle", async () => {
@@ -1397,8 +1384,12 @@ describe("WorktreeDetailPage tasks", () => {
     const user = userEvent.setup()
     wrap()
     const panel = screen.getByTestId("tasks-panel")
+    const taskCol = panel.closest<HTMLElement>(".mantine-Grid-col")!
+    expect(colBasis(taskCol)).toBe("50%")
     await user.click(await within(panel).findByRole("button", { name: /^Show all \(/ }))
     expect(screen.getByTestId("tasks-panel")).toHaveAttribute("data-level", "expanded")
+    // Show all widens the panel's column to two thirds, as a selection does.
+    expect(colBasis(taskCol)).toMatch(/^66\.66/)
     expect(activityHeader().style.position).toBe("sticky")
     expect(activityHeader()).toHaveAttribute("data-tooltip-layer", "pinned")
     expect(activityHeader()).not.toContainElement(screen.getByTestId("tasks-panel"))

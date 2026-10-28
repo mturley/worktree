@@ -5,6 +5,7 @@ import { MantineProvider } from "@mantine/core"
 import { TaskModalProvider } from "../components/tasks/modal/TaskModalProvider"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { setViewport } from "../testing/viewport"
+import { colBasis } from "../testing/gridCol"
 import { baseSettings } from "../components/settings/testSettings"
 import type { Task, TimelineEvent, WorktreeSummary } from "../api/types"
 import { TASK_LIST_KEY } from "../lib/taskListPrefs"
@@ -758,13 +759,19 @@ describe("HomePage tasks", () => {
       expect(panel().compareDocumentPosition(within(header).getByRole("tablist")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     }
     aboveThePinnedHeader("[data-activity-header]", "normal")
+    const col = () => panel().closest<HTMLElement>(".mantine-Grid-col")!
+    expect(colBasis(col())).toBe("50%")
     await userEvent.click(await within(panel()).findByRole("button", { name: /^Show all \(/ }))
     aboveThePinnedHeader("[data-activity-header]", "expanded")
+    // Show all widens the panel's column to two thirds, as the worktree page
+    // does for a selection; collapsing puts the even split back.
+    expect(colBasis(col())).toMatch(/^66\.66/)
     // A tab change keeps it expanded; Resources' header is pinned too.
     await userEvent.click(screen.getByRole("tab", { name: "Resources" }))
     aboveThePinnedHeader("[data-testid=resources-header]", "expanded")
     await userEvent.click(within(panel()).getByRole("button", { name: /^Collapse task list/ }))
     aboveThePinnedHeader("[data-testid=resources-header]", "collapsed")
+    expect(colBasis(col())).toBe("50%")
     await userEvent.click(screen.getByRole("tab", { name: "Activity" }))
     aboveThePinnedHeader("[data-activity-header]", "collapsed")
     // The worktree column scrolls on its own; its header stays pinned.

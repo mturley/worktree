@@ -2,6 +2,7 @@ import { act, renderHook } from "@testing-library/react"
 import { beforeEach, describe, expect, it } from "vitest"
 import { useUnreadOnly } from "./useUnreadOnly"
 import { UNREAD_ONLY_KEY } from "../lib/unreadOnlyPref"
+import { useTaskListPrefs } from "./useTaskListPrefs"
 
 beforeEach(() => window.localStorage.clear())
 
@@ -22,5 +23,22 @@ describe("useUnreadOnly", () => {
       window.dispatchEvent(new StorageEvent("storage", { key: UNREAD_ONLY_KEY, newValue: "true" }))
     })
     expect(result.current[0]).toBe(true)
+  })
+
+  it("collapses the task panel when turned on, and restores it when turned off", () => {
+    const u = renderHook(() => useUnreadOnly())
+    const t = renderHook(() => useTaskListPrefs())
+    act(() => u.result.current[1](true))
+    expect(t.result.current[0].collapsed).toBe(true)
+    act(() => u.result.current[1](false))
+    expect(t.result.current[0].collapsed).toBe(false)
+  })
+
+  it("leaves the task panel alone when set to the value it already has", () => {
+    const u = renderHook(() => useUnreadOnly())
+    const t = renderHook(() => useTaskListPrefs())
+    act(() => t.result.current[1]({ collapsed: true }))
+    act(() => u.result.current[1](false))
+    expect(t.result.current[0].collapsed).toBe(true)
   })
 })

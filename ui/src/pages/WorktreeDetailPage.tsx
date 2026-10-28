@@ -532,7 +532,9 @@ export function WorktreeDetailPage() {
       </Stack>
     )
   } else {
-    const split = selectedResource ? [4, 8] : [6, 6]
+    // 4/8 as well while the task panel is fully expanded (Show all): the
+    // panel heads the right-hand column, and a long list reads better wide.
+    const split = selectedResource || tasks.expanded ? [4, 8] : [6, 6]
     // One Grid in both states, deliberately. Swapping the wide layout
     // between containers would put `list` at a different position in the
     // React tree, remounting it on every selection change — losing its

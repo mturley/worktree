@@ -42,7 +42,8 @@ function getSnapshot(): StoredTaskListPrefs {
   return cached
 }
 
-function setPrefs(p: Partial<StoredTaskListPrefs>): void {
+/** Writes the prefs for every list in every tab, from outside a component too. */
+export function setTaskListPrefs(p: Partial<StoredTaskListPrefs>): void {
   const next = { ...getSnapshot(), ...p }
   if (!writeTaskListPrefs(next)) fallback = JSON.stringify(next)
   listeners.forEach((l) => l())
@@ -54,5 +55,5 @@ function setPrefs(p: Partial<StoredTaskListPrefs>): void {
  * across tabs.
  */
 export function useTaskListPrefs(): [StoredTaskListPrefs, (p: Partial<StoredTaskListPrefs>) => void] {
-  return [useSyncExternalStore(subscribe, getSnapshot), setPrefs]
+  return [useSyncExternalStore(subscribe, getSnapshot), setTaskListPrefs]
 }

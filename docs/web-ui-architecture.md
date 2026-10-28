@@ -1345,17 +1345,23 @@ to break.
     a state with none is left out, "none open" when nothing is). `scopeContext` gives the context:
     "all", "this worktree", or "this PR / issue / thread / link". Clicking
     it cycles the levels: normal → expanded (as Show all) → collapsed →
-    normal; a list that fits (`TaskList`'s `expand.onOverflow` reports false)
-    goes from normal straight to collapsed. Its accessible name leads with
-    the next action, "Show all tasks", "Collapse task list" or "Expand task
-    list", and carries the count and unread state (`Expand task list (3
+    normal. Narrow, a list that fits (`TaskList`'s `expand.onOverflow`
+    reports false) goes from normal straight to collapsed. Wide it still
+    goes through expanded, which there also widens the column ("Widen task
+    list"); the footer's Show all / Show less appears only for a list that
+    overflows, so a widened list that fits has none. Its accessible name
+    leads with the next action, "Show all tasks", "Widen task list",
+    "Collapse task list" or "Expand task list", and carries the count and unread state (`Expand task list (3
     open, unread activity)`), with `aria-expanded`. It is the same mounted
     element in every level, so it keeps the keyboard focus. Collapsed, the
     toolbar, list and quick add are not rendered; otherwise the toolbar
     ("Sort:", a Select whose closed width fits the option it shows, and
     "Show completed") sits right-aligned beside the summary.
   - **expanded**: "Show all" removes the cap and the button reads "Show
-    less". Never saved: it is state keyed by `location | scope | resetKey`,
+    less". Wide, it also widens the panel's (right-hand) column: the home
+    page and the worktree page split 4/8 instead of 6/6 while
+    `useTasksPanel`'s `expanded` is set, as the worktree page does for a
+    selected resource. Never saved: it is state keyed by `location | scope | resetKey`,
     and a stale key is dropped while rendering, so navigating, changing
     scope, or a changed `resetKey` is normal again without an effect (and
     coming back to the old key stays normal). A tab change keeps it, since
@@ -1363,6 +1369,9 @@ to break.
     resource as `resetKey`, because selecting one changes the panel but not
     the path or the worktree's own scope. Collapsing, or a collapse arriving
     from another browser tab, also clears it.
+  - **Unreads only** moves the panel too: turning it on collapses the
+    panel, and turning it off puts it back to normal (`setUnreadOnly` writes
+    `collapsed` through `setTaskListPrefs`, only when the value changes).
 - **The panel scrolls with the content; the tab bar below it sticks.** The
   panel is never inside a sticky block. Where a page pins a header (sticky,
   `data-tooltip-layer="pinned"`) — the home page's right-column headers

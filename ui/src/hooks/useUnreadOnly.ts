@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react"
 import { UNREAD_ONLY_KEY, readUnreadOnly, writeUnreadOnly } from "../lib/unreadOnlyPref"
+import { setTaskListPrefs } from "./useTaskListPrefs"
 
 /**
  * Subscribers in THIS tab. The browser never fires a storage event in the tab
@@ -33,6 +34,10 @@ function getSnapshot(): boolean {
 }
 
 function setUnreadOnly(value: boolean): void {
+  // Narrowing to unread collapses the task panel out of the way; widening
+  // back puts it at its default level. Only on a change, so re-setting the
+  // same value leaves a panel the user has opened since alone.
+  if (value !== getSnapshot()) setTaskListPrefs({ collapsed: value })
   if (!writeUnreadOnly(value)) fallback = value
   listeners.forEach((l) => l())
 }

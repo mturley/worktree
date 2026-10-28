@@ -286,16 +286,25 @@ describe("TaskList expand footer", () => {
     expect(screen.queryByRole("button", { name: "Show less" })).toBeNull()
   })
 
-  it("expanded: Show less, and no cap", async () => {
-    mockOverflow(500, 500)
+  it("expanded from an overflowing list: Show less, and no cap", async () => {
+    mockOverflow(500, 240)
     vi.mocked(api.tasks).mockResolvedValue(twelve())
-    const onToggle = vi.fn()
+    function Harness() {
+      const [expanded, setExpanded] = useState(false)
+      return <TaskList scope={{ kind: "all" }} maxRows={8} expand={{ expanded, onToggle: () => setExpanded((e) => !e) }} />
+    }
     const user = userEvent.setup()
-    wrap(<TaskList scope={{ kind: "all" }} maxRows={8} expand={{ expanded: true, onToggle }} />)
-    await screen.findByText("task 12")
+    wrap(<Harness />)
+    await user.click(await screen.findByRole("button", { name: "Show all (12)" }))
     expect(screen.getByTestId("task-list-body").style.maxHeight).toBe("")
-    await user.click(screen.getByRole("button", { name: "Show less" }))
-    expect(onToggle).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole("button", { name: "Show less" })).toBeInTheDocument()
+  })
+
+  it("expanded while it fits (only widened): no Show less", async () => {
+    vi.mocked(api.tasks).mockResolvedValue(twelve().slice(0, 2))
+    wrap(<TaskList scope={{ kind: "all" }} maxRows={8} expand={{ expanded: true, onToggle: () => {} }} />)
+    await screen.findByText("task 2")
+    expect(screen.queryByRole("button", { name: "Show less" })).toBeNull()
   })
 
   it("Show less keeps the same button, and its focus", async () => {
