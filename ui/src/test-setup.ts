@@ -36,3 +36,10 @@ const jsdomStorage = (globalThis as { jsdom?: { window: Window } }).jsdom?.windo
 if (typeof globalThis.localStorage?.getItem !== "function" && jsdomStorage) {
   Object.defineProperty(globalThis, "localStorage", { value: jsdomStorage, configurable: true })
 }
+
+// jsdom does not implement scrollIntoView, which Mantine's Combobox (under
+// Select) calls on a timer to keep the selected option in view. A no-op, so
+// that timer cannot throw after a test has picked an option.
+if (typeof Element.prototype.scrollIntoView !== "function") {
+  Element.prototype.scrollIntoView = () => {}
+}
