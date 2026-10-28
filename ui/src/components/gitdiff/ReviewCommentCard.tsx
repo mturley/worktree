@@ -273,7 +273,8 @@ export function NewCommentCard({ path, target, view, onDone }: {
   path: string
   target: CommentTarget
   view: { base: DiffBase; range: DiffRange; oldRev: string; newRev: string }
-  onDone: () => void
+  /** Saved or cancelled; names its lines, as a save can end after another comment started. */
+  onDone: (target: CommentTarget) => void
 }) {
   const { create } = useReviewCommentMutations(path)
   const { comment } = usePRWriteMutations(path)
@@ -292,7 +293,7 @@ export function NewCommentCard({ path, target, view, onDone }: {
   const drop = () => setDraft((d) => (d?.target === mine ? undefined : d))
   const finish = () => {
     drop()
-    onDone()
+    onDone(target)
   }
   // The save's state is kept with the text (see EditorDraft); a write runs
   // only while none is in flight.
@@ -393,7 +394,7 @@ export function NewCommentCard({ path, target, view, onDone }: {
         error={draft?.error}
         onCancel={() => {
           drop()
-          onDone()
+          onDone(target)
         }}
       />
     </Frame>

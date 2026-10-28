@@ -339,7 +339,8 @@ describe("NewCommentCard", () => {
     wrap(<NewCommentCard path="/w" target={target} view={view} onDone={onDone} />)
     await userEvent.type(screen.getByRole("textbox"), "nice")
     await userEvent.click(screen.getByRole("button", { name: "Start local review" }))
-    await waitFor(() => expect(onDone).toHaveBeenCalled())
+    // Names its lines: the view closes the editor only if it still shows them.
+    await waitFor(() => expect(onDone).toHaveBeenCalledWith(target))
     expect(apiMock.createReviewComment).toHaveBeenCalledWith({
       path: "/w",
       file: "src/a.ts",

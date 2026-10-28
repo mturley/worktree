@@ -17,7 +17,7 @@ import { OpenInEditorButton } from "../OpenInEditorButton"
 import { KeyHint } from "../search/KeyHint"
 import { buildPrompt } from "./buildPrompt"
 import { CompareSelect } from "./CompareSelect"
-import type { CommentTarget } from "./commentRange"
+import { type CommentTarget, sameTarget } from "./commentRange"
 import { DiffBody, type DiffMode } from "./DiffBody"
 import { DiffFileTree } from "./DiffFileTree"
 import { Loading } from "./Loading"
@@ -588,7 +588,8 @@ export default function DiffView({
         comments={fresh ? comments : NO_COMMENTS}
         pending={pendingComment}
         onStartComment={setPendingComment}
-        onPendingDone={() => setPendingComment(null)}
+        // Only if still open on those lines: a save can end after another comment started.
+        onPendingDone={(t) => setPendingComment((p) => (p && sameTarget(p, t) ? null : p))}
         // A new comment is made against the view on screen.
         view={{ base: shown.request.base, range: shown.request.range, oldRev: shown.old_rev, newRev: shown.new_rev }}
         openFile={openFile}

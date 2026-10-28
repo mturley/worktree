@@ -10,6 +10,10 @@ export interface CommentTarget {
   end: number
 }
 
+/** True when two targets are the same file, side and lines. */
+export const sameTarget = (a: CommentTarget, b: CommentTarget): boolean =>
+  a.file === b.file && a.side === b.side && a.start === b.start && a.end === b.end
+
 export const pierreSide = (s: CommentSide): "deletions" | "additions" => (s === "old" ? "deletions" : "additions")
 
 /** True when `line` lies inside any hunk on the given side. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { lineInHunks, pierreSide, toCommentTarget } from "./commentRange"
+import { lineInHunks, pierreSide, sameTarget, toCommentTarget } from "./commentRange"
 import { parseDiff } from "./parsedPatch"
 
 const PATCH = `diff --git a/x.go b/x.go
@@ -96,5 +96,16 @@ describe("pierreSide", () => {
   it("maps comment sides to pierre sides", () => {
     expect(pierreSide("old")).toBe("deletions")
     expect(pierreSide("new")).toBe("additions")
+  })
+})
+
+describe("sameTarget", () => {
+  const t = { file: "a.ts", side: "new" as const, start: 3, end: 5 }
+  it("matches the same file, side and lines, and nothing else", () => {
+    expect(sameTarget(t, { ...t })).toBe(true)
+    expect(sameTarget(t, { ...t, file: "b.ts" })).toBe(false)
+    expect(sameTarget(t, { ...t, side: "old" })).toBe(false)
+    expect(sameTarget(t, { ...t, start: 4 })).toBe(false)
+    expect(sameTarget(t, { ...t, end: 6 })).toBe(false)
   })
 })

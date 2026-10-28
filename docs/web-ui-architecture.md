@@ -3540,7 +3540,9 @@ holds the save in flight (`saving`, the button's key) and the last save's
 and still shows a failure. PR replies (`reply:<thread id>`) work the same
 way. The new comment's draft is dropped once abandoned: on a view change
 (`dropAbandonedNewDraft`) or when a comment starts on other lines, unless
-its save is still running.
+its save is still running. A finished new comment names its lines to
+`onPendingDone`, and `DiffView` closes the editor only if it still shows
+them (`sameTarget`), since a save can end after another comment started.
 `useEditingCommentIds` tells `DiffView` which comments are being edited.
 
 **No stale positions on a new patch.** While the list is react-query

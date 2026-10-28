@@ -17,7 +17,8 @@ vi.mock("./DiffBody", () => ({
     openFile: { file: string; n: number } | null
     prThreads?: { threads: { id: string }[] }
     onStartComment: (t: { file: string; side: "new"; start: number; end: number }) => void
-    onPendingDone: () => void
+    pending: { start: number } | null
+    onPendingDone: (t: { file: string; side: "new"; start: number; end: number }) => void
   }) => (
     <div
       data-testid="diff-body"
@@ -25,10 +26,12 @@ vi.mock("./DiffBody", () => ({
       data-highlighted={p.highlighted ?? ""}
       data-comments={p.comments.map((c) => c.id).join(",")}
       data-open-file={p.openFile?.file ?? ""}
+      data-pending={p.pending?.start ?? ""}
     >
       {p.files.map((f) => f.path).join(",")}
       <button onClick={() => p.onStartComment({ file: "a.go", side: "new", start: 1, end: 1 })}>start comment</button>
-      <button onClick={p.onPendingDone}>end comment</button>
+      <button onClick={() => p.onStartComment({ file: "a.go", side: "new", start: 2, end: 2 })}>start other comment</button>
+      <button onClick={() => p.onPendingDone({ file: "a.go", side: "new", start: 1, end: 1 })}>end comment</button>
       {p.prThreads?.threads.map((t) => <div key={t.id} data-pr-thread-id={t.id} />)}
     </div>
   ),
@@ -672,6 +675,17 @@ describe("DiffView", () => {
     expect(apiMock.diffPatch).toHaveBeenCalledTimes(1)
     await userEvent.click(screen.getByRole("button", { name: "end comment" }))
     await waitFor(() => expect(apiMock.diffPatch).toHaveBeenCalledTimes(2))
+  })
+
+  it("a comment's save ending after another comment started leaves that one open", async () => {
+    setup()
+    const body = await screen.findByTestId("diff-body")
+    await userEvent.click(screen.getByRole("button", { name: "start comment" }))
+    await userEvent.click(screen.getByRole("button", { name: "start other comment" }))
+    expect(body).toHaveAttribute("data-pending", "2")
+    // The first comment's save ends: the other stays open.
+    await userEvent.click(screen.getByRole("button", { name: "end comment" }))
+    expect(body).toHaveAttribute("data-pending", "2")
   })
 
   it("gives the body no comments until the new view's own list arrives", async () => {

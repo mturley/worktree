@@ -95,7 +95,8 @@ export function DiffBody({
   /** Where a new comment is being written, if anywhere. */
   pending: CommentTarget | null
   onStartComment: (t: CommentTarget) => void
-  onPendingDone: () => void
+  /** The new comment on these lines is saved or cancelled. */
+  onPendingDone: (target: CommentTarget) => void
   view: CommentView
   /** Each new value unfolds that file. */
   openFile: { file: string; n: number } | null
@@ -254,7 +255,8 @@ function CommentableFileDiff({
   pr?: PRInline
   pending: CommentTarget | null
   onStartComment: (t: CommentTarget) => void
-  onPendingDone: () => void
+  /** The new comment on these lines is saved or cancelled. */
+  onPendingDone: (target: CommentTarget) => void
   view: CommentView
 }) {
   const { meta } = f
