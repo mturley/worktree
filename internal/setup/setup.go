@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	wconfig "github.com/mturley/watcher/config"
@@ -338,6 +339,9 @@ func PreviewUninstall(rc ShellRC, configPath string) {
 		fmt.Printf("  • Remove wt symlink: %s\n", wtSymlink)
 	}
 	fmt.Println("  • Remove shell completions (worktree + wt)")
+	if runtime.GOOS == "darwin" {
+		PreviewMacAppUninstall(defaultMacAppDeps().Paths)
+	}
 	fmt.Println("  • Remove the web UI's HTTPS certificate files and remote access settings (the password is kept)")
 	fmt.Println("  • Preserve worktree data (remove manually if desired)")
 	if _, err := os.Stat(configPath); err == nil {
@@ -360,6 +364,12 @@ func ExecuteUninstall(rc ShellRC, configPath string) error {
 	}
 
 	removeAllCompletions()
+
+	if runtime.GOOS == "darwin" {
+		if err := UninstallMacApp(defaultMacAppDeps()); err != nil {
+			fmt.Printf("  %s Removing the menu bar app: %v\n", ui.Yellow("!"), err)
+		}
+	}
 
 	if err := removeRemoteAccess(configPath, defaultUIAccessDeps(configPath)); err != nil {
 		fmt.Printf("  %s Removing web UI remote access: %v\n", ui.Yellow("!"), err)

@@ -77,6 +77,8 @@ func SourceHash(fsys fs.FS) (string, error) {
 // Paths are where the app and its LaunchAgent live.
 type Paths struct {
 	App, LaunchAgent string
+	// WebKitData is the web view's cookie and storage directory.
+	WebKitData string
 }
 
 // DefaultPaths returns the install locations under home.
@@ -84,6 +86,7 @@ func DefaultPaths(home string) Paths {
 	return Paths{
 		App:         filepath.Join(home, "Applications", AppName),
 		LaunchAgent: filepath.Join(home, "Library", "LaunchAgents", BundleID+".plist"),
+		WebKitData:  filepath.Join(home, "Library", "WebKit", BundleID),
 	}
 }
 

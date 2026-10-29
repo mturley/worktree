@@ -227,3 +227,86 @@ func TestRunMacAppRebuildKeepsLoginChoice(t *testing.T) {
 		}
 	})
 }
+
+func writeInstalled(t *testing.T, p macapp.Paths, app, agent, webkit bool) {
+	t.Helper()
+	mk := func(on bool, path string, dir bool) {
+		if !on {
+			return
+		}
+		if dir {
+			if err := os.MkdirAll(path, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			return
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk(app, p.App, true)
+	mk(agent, p.LaunchAgent, false)
+	mk(webkit, p.WebKitData, true)
+}
+
+func TestUninstallMacAppRemovesBoth(t *testing.T) {
+	t.Parallel()
+	f := &macFake{running: true}
+	d, p := newMacDeps(t, f)
+	writeInstalled(t, p, true, true, true)
+	if !PreviewMacAppUninstall(p) {
+		t.Error("preview found nothing")
+	}
+	if err := UninstallMacApp(d); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{p.App, p.LaunchAgent, p.WebKitData} {
+		if _, err := os.Stat(path); err == nil {
+			t.Errorf("%s still exists", path)
+		}
+	}
+	if len(f.ran("osascript")) != 1 {
+		t.Errorf("osascript calls = %v", f.ran("osascript"))
+	}
+	lc := f.ran("launchctl")
+	if len(lc) != 1 || lc[0][1] != "bootout" || !strings.HasSuffix(lc[0][2], "/"+macapp.BundleID) {
+		t.Errorf("launchctl calls = %v", lc)
+	}
+}
+
+func TestUninstallMacAppRemovesStrayPlist(t *testing.T) {
+	t.Parallel()
+	f := &macFake{}
+	d, p := newMacDeps(t, f)
+	writeInstalled(t, p, false, true, false)
+	if !PreviewMacAppUninstall(p) {
+		t.Error("preview found nothing")
+	}
+	if err := UninstallMacApp(d); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(p.LaunchAgent); err == nil {
+		t.Error("plist still exists")
+	}
+	if len(f.ran("osascript")) != 0 {
+		t.Error("quit an app that was not running")
+	}
+}
+
+func TestUninstallMacAppNothingInstalled(t *testing.T) {
+	t.Parallel()
+	f := &macFake{}
+	d, p := newMacDeps(t, f)
+	if PreviewMacAppUninstall(p) {
+		t.Error("preview found something")
+	}
+	if err := UninstallMacApp(d); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.calls) != 0 {
+		t.Errorf("Run called: %v", f.calls)
+	}
+}

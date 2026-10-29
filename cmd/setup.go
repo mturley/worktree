@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"runtime"
 
 	wconfig "github.com/mturley/watcher/config"
 	"github.com/mturley/worktree/internal/config"
@@ -15,7 +16,7 @@ import (
 const consumerName = "worktree"
 
 var setupYes bool
-var setupUninstall bool
+var setupUninstall, setupUninstallMacApp bool
 
 var setupCmd = &cobra.Command{
 	Use:     "setup",
@@ -28,6 +29,8 @@ func init() {
 	setupCmd.Flags().BoolVarP(&setupYes, "yes", "y", false,
 		"Run without asking: skip confirmations and answer every other question with its default")
 	setupCmd.Flags().BoolVar(&setupUninstall, "uninstall", false, "Remove worktree configuration")
+	setupCmd.Flags().BoolVar(&setupUninstallMacApp, "uninstall-mac-app", false, "Remove only the macOS menu bar app")
+	setupCmd.MarkFlagsMutuallyExclusive("uninstall", "uninstall-mac-app")
 	rootCmd.AddCommand(setupCmd)
 	setupSlackCmd.Flags().BoolVar(&setupSlackForce, "force", false,
 		"Skip testing the stored credentials and always capture new ones")
@@ -53,6 +56,10 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	// steps (config, Jira prefixes, credentials, web UI) ask questions of
 	// their own, and each one used to block the install waiting on stdin.
 	ui.SetNonInteractive(setupYes)
+
+	if setupUninstallMacApp {
+		return runUninstallMacApp()
+	}
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -121,4 +128,21 @@ func runUninstall(cfg config.Config) error {
 	}
 
 	return setup.ExecuteUninstall(rc, configPath)
+}
+
+func runUninstallMacApp() error {
+	if runtime.GOOS != "darwin" {
+		fmt.Println("The menu bar app is macOS only.")
+		return nil
+	}
+	if !setup.MacAppUninstallPreview() {
+		fmt.Println("The menu bar app is not installed.")
+		return nil
+	}
+	fmt.Println()
+	if !setupYes && !ui.Confirm("Proceed?") {
+		fmt.Println("Cancelled.")
+		return nil
+	}
+	return setup.MacAppUninstall()
 }

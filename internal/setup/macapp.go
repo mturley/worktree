@@ -131,14 +131,7 @@ func runMacAppStep(a MacAppAction, d macAppDeps) error {
 		}
 	}
 	if running {
-		_, _ = d.Run("osascript", "-e", `quit app id "`+macapp.BundleID+`"`)
-		sleep := d.Sleep
-		if sleep == nil {
-			sleep = time.Sleep
-		}
-		for i := 0; i < 15 && macAppRunning(d); i++ {
-			sleep(200 * time.Millisecond)
-		}
+		quitMacApp(d)
 		if out, err := d.Run("open", app); err != nil {
 			return fmt.Errorf("restarting the app: %w: %s", err, strings.TrimSpace(string(out)))
 		}
@@ -167,3 +160,74 @@ func macAppRunning(d macAppDeps) bool {
 	out, err := d.Run("pgrep", "-x", macapp.ExecName)
 	return err == nil && len(bytes.TrimSpace(out)) > 0
 }
+
+// quitMacApp asks the app to quit and waits briefly for it to go.
+func quitMacApp(d macAppDeps) {
+	_, _ = d.Run("osascript", "-e", `quit app id "`+macapp.BundleID+`"`)
+	sleep := d.Sleep
+	if sleep == nil {
+		sleep = time.Sleep
+	}
+	for i := 0; i < 15 && macAppRunning(d); i++ {
+		sleep(200 * time.Millisecond)
+	}
+}
+
+func pathExists(p string) bool {
+	_, err := os.Lstat(p)
+	return err == nil
+}
+
+// PreviewMacAppUninstall prints what UninstallMacApp would remove and reports
+// whether there is anything.
+func PreviewMacAppUninstall(p macapp.Paths) (any bool) {
+	if pathExists(p.App) {
+		fmt.Printf("  • Remove the menu bar app: %s\n", ui.ShortPath(p.App))
+		any = true
+	}
+	if pathExists(p.LaunchAgent) {
+		fmt.Printf("  • Remove its login item: %s\n", ui.ShortPath(p.LaunchAgent))
+		any = true
+	}
+	return any
+}
+
+// UninstallMacApp quits the app and removes it, its login item and its web
+// view data. Missing pieces are not errors.
+func UninstallMacApp(d macAppDeps) error {
+	app, agent := filepath.Clean(d.Paths.App), filepath.Clean(d.Paths.LaunchAgent)
+	if pathExists(app) || pathExists(agent) {
+		if macAppRunning(d) {
+			quitMacApp(d)
+		}
+		// The agent is usually not loaded, so a failure here is expected.
+		_, _ = d.Run("launchctl", "bootout", fmt.Sprintf("gui/%d/%s", os.Getuid(), macapp.BundleID))
+	}
+	for _, p := range []string{agent, app, filepath.Clean(d.Paths.WebKitData)} {
+		if !pathExists(p) {
+			continue
+		}
+		if err := os.RemoveAll(p); err != nil {
+			return fmt.Errorf("removing %s: %w", p, err)
+		}
+		fmt.Printf("  %s Removed %s\n", ui.Green("✓"), ui.ShortPath(p))
+	}
+	return nil
+}
+
+// MacAppUninstallPreview previews the real machine's menu bar app removal,
+// under its own heading. False on non-macOS or when nothing is installed.
+func MacAppUninstallPreview() bool {
+	if runtime.GOOS != "darwin" {
+		return false
+	}
+	p := defaultMacAppDeps().Paths
+	if !pathExists(p.App) && !pathExists(p.LaunchAgent) {
+		return false
+	}
+	fmt.Println(ui.Bold("worktree setup --uninstall-mac-app will:"))
+	return PreviewMacAppUninstall(p)
+}
+
+// MacAppUninstall removes the real machine's menu bar app.
+func MacAppUninstall() error { return UninstallMacApp(defaultMacAppDeps()) }
