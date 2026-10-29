@@ -3883,6 +3883,74 @@ header.
   `surface-health`) exposes a markdown tab's path: its `url` is null and its
   title is the bare filename.
 
+## Mini view and menu bar app
+
+A macOS menu bar app (`internal/macapp`) hosts the `/mini` page in a popover.
+Design: `docs/superpowers/specs/2026-10-29-mac-menu-bar-design.md`.
+
+**The page.** `/mini` is `MiniApp` (`ui/src/MiniApp.tsx`), chosen in `App.tsx`
+by `isMiniRoute()` instead of the full app. It mounts `useSSE`,
+`useMacUnreadBridge`, `useTooltipLayer`, the providers (settings, task modal)
+and `TaskDetailModal`, and deliberately omits `useTabPresence`,
+`useUnreadFavicon`, `CmuxFollower` and the banners. `MiniPage` is a slim header
+(`UnreadOnlyToggle`, "Open full UI") over Tasks and Activity tabs. Tasks is
+`TaskList`; Activity is `useActivityPanel` (`components/ActivityPanel.tsx`),
+the home page's feed extracted so both pages share it. `select: "route"` (home)
+opens an event's worktree, `"details"` (mini) opens `EventDetailsModal`; mini
+passes no `search`.
+
+**Staying inside /mini.** The router uses `useMiniLocation`
+(`lib/miniMode.ts`): navigation to `/mini` itself (the task modal's `?task=`)
+happens in place, anything else calls `openExternal`, which posts `open` to the
+app (default browser) or, outside the app, `window.open`. So `/mini` also works
+in an ordinary browser tab. The hook's returned tuple and `navigate` are
+referentially stable because the task modal lists `navigate` in effect deps.
+The app additionally sends link-activated navigations away from `/mini` to the
+browser natively.
+
+**The stream omits `tab` on /mini** (`streamUrl` in `hooks/useSSE.ts`). The
+server registers a notification tab whenever `/api/stream` carries `tab`
+(`internal/webui/stream.go`), and the popover's web view has no notification
+API, so skipping `useTabPresence` alone would not be enough.
+
+**Bridge** (`lib/macBridge.ts`, `window.webkit.messageHandlers.worktree`;
+`postToMac` is a no-op without it and never throws):
+
+| Message | Sent by | Effect in the app |
+|---|---|---|
+| `unread {unread, count}` | `useMacUnreadBridge`, from `unreadBadge(useWorktrees().data)` | starts/stops the blinking dot |
+| `open {url}` | `openExternal` | opens the URL in the default browser |
+| `ready` | `MiniPage` on mount | clears the disconnected / needs-login icon |
+| `login` | `LoginPage` | needs-login icon |
+| `unreachable` | `ServerUnreachable` | disconnected icon |
+
+When the server cannot be reached at load time there is no page to count down,
+so the app shows its own native view and reloads after 6s. The web UI's own
+`ServerUnreachable` screen uses the same `RELOAD_AFTER_SECONDS = 6` (`App.tsx`).
+
+**`?settings` deep link.** `SettingsProvider` opens the Settings modal when the
+page loads with `?settings` (optionally `?settings=<tab>`), then strips the
+parameter. The app's "More settings in web UI" opens `/?settings`.
+
+**Switch-cmux buttons.** Hover cards that show a cmux workspace (colour bar and
+name) carry `CmuxSwitchButton` (`components/CmuxSwitchButton.tsx`), which calls
+`api.cmuxSelect` through the shared `useCmuxSelect` hook and invalidates
+`["cmux"]`. This is independent of the app and applies in the full UI too; it
+appears only when cmux is available and enabled.
+
+**The app** (`internal/macapp`, Swift in `app/`, embedded with `go:embed`) is
+an accessory-policy AppKit app: `NSStatusItem` + `NSPopover` + `WKWebView`
+loading `macapp.ServerURL` (`http://127.0.0.1:8475`, fixed). The web view stays
+loaded while the popover is closed so the icon keeps current. `Build` /
+`BuildWithURL` compile the Swift files with `swiftc` into a staging bundle and
+swap it in, so a failed build leaves the old app. `SourceHash` (over the
+embedded files) is stored in the bundle's `Info.plist` as `WorktreeSourceHash`;
+`worktree setup` (`internal/setup/macapp.go`) rebuilds only when it differs.
+`LaunchAgentPlist` and `app/LoginItem.swift` write the same bytes (a test keeps
+them equal); the plist's existence is the only record of "Open at login".
+`make macapp` builds a development bundle into `bin/` (`devbuild`, with `-url`
+and `-out`) pointing at a dev server.
+
 ## Known deferred items / extension notes
 
 These are known limitations, intentionally deferred rather than fixed, from

@@ -58,6 +58,15 @@ the `xoxc-` token + `xoxd-` cookie (a one-time Chromium download cached under
 `~/.cache/worktree`; requires `node`/`npx`). If Node isn't available it falls back
 to a guided manual walkthrough.
 
+#### macOS menu bar app
+
+On macOS with `swiftc` installed (Xcode Command Line Tools), interactive `worktree setup` offers to install a small menu bar app, `~/Applications/Worktree Menu Bar.app`. Its icon blinks a blue dot while anything is unread, and clicking it opens a dropdown with the web UI's Tasks and Activity views (the `/mini` page of `worktree ui`, which must be running). Task and event details open inside the dropdown; anything else opens the full UI in your browser. Right-click the icon for "Open full UI", "Reload", "Open at login", "More settings in web UI" and "Quit". The dropdown is its own login to the web UI (it shows the login page once, then keeps its session).
+
+- The app is compiled locally with `swiftc` (about 16s the first time on a cold module cache, about 3s after). `worktree setup` rebuilds it only when its embedded source changed, restarting it if it was running.
+- Non-interactive runs (`--yes`, as `make install` does) never install it; run `worktree setup` interactively once.
+- "Start it at login?" writes `~/Library/LaunchAgents/me.turley.worktree.menubar.plist`. After that, the right-click "Open at login" item is the switch (it adds or deletes that file).
+- `worktree setup --uninstall-mac-app` removes only the app, its login item and its web view data. `worktree setup --uninstall` removes it along with everything else.
+
 Run `worktree setup --uninstall` to reverse setup changes. The config file is preserved (it contains credentials) — setup tells you how to remove it manually.
 
 ## Quick Start
