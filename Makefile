@@ -5,7 +5,7 @@ INSTALL_DIR := /usr/local/bin
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -ldflags "-X github.com/mturley/worktree/cmd.Version=$(VERSION)"
 
-.PHONY: build build-web build-cli install stop-running test test-web clean clean-web dev
+.PHONY: build build-web build-cli install stop-running test test-web clean clean-web dev macapp
 
 # Subcommands that run as long-lived servers. If any are running against the
 # installed binary when we go to reinstall, they'd keep executing old code, so
@@ -77,6 +77,12 @@ install: build stop-running
 	@ln -sf $(BINARY_NAME) $(INSTALL_DIR)/wt
 	@echo "Installed $(INSTALL_DIR)/$(BINARY_NAME) (also available as wt)"
 	@$(INSTALL_DIR)/$(BINARY_NAME) setup $(if $(NONINTERACTIVE),--yes,)
+
+# Builds the macOS menu bar app into bin/ for development, pointed at the
+# default port. For a dev server: go run ./internal/macapp/devbuild -url URL.
+# `worktree setup` builds the installed copy in ~/Applications.
+macapp:
+	go run ./internal/macapp/devbuild
 
 test:
 	go test ./... -v
