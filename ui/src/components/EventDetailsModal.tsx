@@ -14,6 +14,7 @@ import { FollowInWorktreeMenu } from "./FollowInWorktreeMenu"
 import { WorktreeName, WorktreePreview } from "./WorktreeName"
 import { eventWorktrees, followResourceState, isArchivedEvent } from "../lib/openEvent"
 import { eventTaskKey } from "../lib/taskEventKey"
+import { isMiniRoute } from "../lib/miniMode"
 
 /**
  * Full detail for one timeline event.
@@ -67,7 +68,7 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
   }
 
   return (
-    <Modal opened={!!e} onClose={onClose} size="lg" title={
+    <Modal opened={!!e} onClose={onClose} size="lg" fullScreen={isMiniRoute()} title={
       e ? (
         <Group gap={8} wrap="nowrap">
           <EventDot type={e.type} label={e.type_label} taskState={e.task_state} />

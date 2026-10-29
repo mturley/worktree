@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import type { CredService } from "../../api/types"
 import { SettingsModal } from "../SettingsModal"
 
@@ -7,6 +7,8 @@ export interface SettingsTarget {
   tab: "general" | "connected" | "notifications" | "ui-access" | "devices" | "logs"
   service?: CredService
 }
+
+const SETTINGS_TABS: SettingsTarget["tab"][] = ["general", "connected", "notifications", "ui-access", "devices", "logs"]
 
 const Ctx = createContext<((target?: SettingsTarget) => void) | null>(null)
 
@@ -24,6 +26,17 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, [])
   const close = useCallback(() => setOpened(false), [])
   const value = useMemo(() => open, [open])
+  // A ?settings deep link (from the menu bar app's "More settings in web UI")
+  // opens the modal once, then drops the param so a reload does not reopen it.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (!params.has("settings")) return
+    const tab = params.get("settings") as SettingsTarget["tab"] | ""
+    open(tab && SETTINGS_TABS.includes(tab) ? { tab } : undefined)
+    params.delete("settings")
+    const rest = params.toString()
+    window.history.replaceState(window.history.state, "", window.location.pathname + (rest ? "?" + rest : "") + window.location.hash)
+  }, [open])
   return (
     <Ctx.Provider value={value}>
       {children}

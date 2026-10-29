@@ -12,6 +12,7 @@ import { TaskModalHeader } from "./TaskModalHeader"
 import { useTaskModal } from "./TaskModalProvider"
 import { TaskSidebar } from "./TaskSidebar"
 import { useOptimisticTask } from "./useOptimisticTask"
+import { isMiniRoute } from "../../../lib/miniMode"
 
 /**
  * The single task detail modal, mounted once in App and driven by
@@ -59,6 +60,7 @@ export function TaskDetailModal() {
       onClose={guardedClose}
       closeOnClickOutside={!dirty}
       size="xl"
+      fullScreen={isMiniRoute()}
       withCloseButton={false}
     >
       {id !== null && (
