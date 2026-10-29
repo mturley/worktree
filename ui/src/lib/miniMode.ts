@@ -1,3 +1,4 @@
+import { useCallback, useMemo } from "react"
 import { useBrowserLocation } from "wouter/use-browser-location"
 import { hasMacBridge, postToMac } from "./macBridge"
 
@@ -28,13 +29,14 @@ export function openExternal(url: string): void {
  */
 export function useMiniLocation(): ReturnType<typeof useBrowserLocation> {
   const [location, navigate] = useBrowserLocation()
-  const navigateMini: typeof navigate = (to, options) => {
+  // Stable identity: consumers (the task modal) list navigate in hook deps.
+  const navigateMini: typeof navigate = useCallback((to, options) => {
     const target = new URL(typeof to === "string" ? to : String(to), window.location.origin)
     if (target.pathname === MINI_PATH) {
       navigate(to, options)
       return
     }
     openExternal(target.href)
-  }
-  return [location, navigateMini]
+  }, [navigate])
+  return useMemo(() => [location, navigateMini], [location, navigateMini])
 }

@@ -29,6 +29,14 @@ describe("useMiniLocation", () => {
     expect(post).not.toHaveBeenCalled()
   })
 
+  it("returns a stable navigate and tuple across rerenders", () => {
+    const { result, rerender } = renderHook(() => useMiniLocation())
+    const first = result.current
+    rerender()
+    expect(result.current[1]).toBe(first[1])
+    expect(result.current).toBe(first)
+  })
+
   it("opens other routes externally and stays on /mini", () => {
     const { result } = renderHook(() => useMiniLocation())
     result.current[1]("/worktree/%2Fx?resource=pr:1")
