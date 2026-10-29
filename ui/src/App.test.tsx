@@ -10,9 +10,14 @@ vi.mock("./components/HomeWorktreeBanner", () => ({ HomeWorktreeBanner: () => nu
 // vi.mock factories are hoisted above this file's declarations, so the spy
 // must be hoisted with them.
 const { sse } = vi.hoisted(() => ({ sse: vi.fn() }))
-vi.mock("./hooks/useSSE", () => ({ useSSE: () => sse() }))
+vi.mock("./hooks/useSSE", async (orig) => ({
+  ...(await orig<typeof import("./hooks/useSSE")>()),
+  useSSE: () => sse(),
+}))
+vi.mock("./pages/MiniPage", () => ({ MiniPage: () => <div>mini page</div> }))
 
 import { App } from "./App"
+import { streamUrl } from "./hooks/useSSE"
 import { LOGIN_REQUIRED_EVENT } from "./api/client"
 
 type Reply = { status: number; body: unknown }
@@ -127,5 +132,64 @@ describe("App task modal", () => {
     // The detail route is unmocked here, so it answers 404.
     expect(await screen.findByText("Task not found")).toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledWith("/api/tasks/detail?id=7", undefined)
+  })
+})
+
+describe("App mini mode", () => {
+  it("runs the stream, shows MiniPage and registers no tab presence at /mini", async () => {
+    window.history.replaceState({}, "", "/mini")
+    const fetchMock = mockServer({ "GET /api/session": () => ({ status: 200, body: session }) })
+    renderApp()
+    expect(await screen.findByText("mini page")).toBeInTheDocument()
+    expect(sse).toHaveBeenCalled()
+    expect(fetchMock.mock.calls.some(([u]) => String(u).includes("/api/tabs/presence"))).toBe(false)
+  })
+
+  it("leaves the tab off the stream URL at /mini only", () => {
+    window.history.replaceState({}, "", "/mini")
+    expect(new URL(streamUrl(), window.location.origin).searchParams.has("tab")).toBe(false)
+    window.history.replaceState({}, "", "/")
+    expect(new URL(streamUrl(), window.location.origin).searchParams.has("tab")).toBe(true)
+  })
+})
+
+describe("macOS bridge messages", () => {
+  const post = vi.fn()
+  beforeEach(() => {
+    post.mockClear()
+    vi.stubGlobal("webkit", { messageHandlers: { worktree: { postMessage: post } } })
+  })
+
+  it("LoginPage posts login", async () => {
+    mockServer({ "GET /api/session": () => ({ status: 401, body: { error: "login required" } }) })
+    renderApp()
+    await screen.findByRole("button", { name: "Log in" })
+    expect(post).toHaveBeenCalledWith({ type: "login" })
+  })
+
+  it("ServerUnreachable posts unreachable", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("Failed to fetch") }))
+    renderApp()
+    await screen.findByRole("button", { name: "Retry" })
+    expect(post).toHaveBeenCalledWith({ type: "unreachable" })
+  })
+
+  it("ServerUnreachable reloads after 6 seconds", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("Failed to fetch") }))
+    const reload = vi.fn()
+    vi.stubGlobal("location", { ...window.location, reload })
+    // Only the countdown's interval is faked, so findBy* still polls for real.
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] })
+    try {
+      renderApp()
+      await screen.findByRole("button", { name: "Retry" })
+      expect(screen.getByText("Reloading the page in 6s…")).toBeInTheDocument()
+      act(() => { vi.advanceTimersByTime(5000) })
+      expect(reload).not.toHaveBeenCalled()
+      act(() => { vi.advanceTimersByTime(1000) })
+      expect(reload).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

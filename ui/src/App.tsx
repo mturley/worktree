@@ -9,6 +9,9 @@ import { useTooltipLayer } from "./hooks/useTooltipLayer"
 import { CmuxFollower } from "./components/CmuxFollower"
 import { HomeWorktreeBanner } from "./components/HomeWorktreeBanner"
 import { UpdateBanner } from "./components/UpdateBanner"
+import { MiniApp } from "./MiniApp"
+import { isMiniRoute } from "./lib/miniMode"
+import { postToMac } from "./lib/macBridge"
 import { useHomeLocation } from "./lib/useHomeLocation"
 import { HomePage } from "./pages/HomePage"
 import { LoginPage } from "./pages/LoginPage"
@@ -27,7 +30,7 @@ export function App() {
   return <AuthenticatedApp />
 }
 
-const RELOAD_AFTER_SECONDS = 10
+const RELOAD_AFTER_SECONDS = 6
 
 // A full reload rather than a retry: the usual cause is the server restarting
 // after a reinstall, and reloading picks up the new build's assets too.
@@ -37,6 +40,9 @@ function ServerUnreachable({ error, onRetry }: { error: unknown; onRetry: () => 
     const id = window.setInterval(() => setSecondsLeft((s) => s - 1), 1000)
     return () => window.clearInterval(id)
   }, [])
+  // Lets the macOS app show its disconnected icon; the countdown below does
+  // the reload.
+  useEffect(() => postToMac({ type: "unreachable" }), [])
   useEffect(() => {
     if (secondsLeft <= 0) window.location.reload()
   }, [secondsLeft])
@@ -59,6 +65,10 @@ function ServerUnreachable({ error, onRetry }: { error: unknown; onRetry: () => 
 // out. The login screen leaves the URL untouched, so a deep link from a cmux
 // pane lands on its page once logged in.
 function AuthenticatedApp() {
+  return isMiniRoute() ? <MiniApp /> : <FullApp />
+}
+
+function FullApp() {
   useSSE()
   // Tells the server where this tab is, so a browser notification comes out
   // of the tab that best matches it (see internal/webui/tabs.go).

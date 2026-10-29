@@ -2,6 +2,7 @@ import { useEffect } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { api } from "../api/client"
 import type { CmuxFocusMsg, NotificationMsg } from "../api/types"
+import { isMiniRoute } from "../lib/miniMode"
 import { TAB_ID } from "../lib/tabId"
 import { emitCmuxFocus } from "../lib/cmuxFocusBus"
 import { openNotificationTarget, showBrowserNotification } from "../lib/browserNotify"
@@ -13,6 +14,9 @@ import { TASK_ACTIVITY_STALE_MS } from "./useTaskDetail"
  * it for notifications in the same request that opens the stream.
  */
 export function streamUrl(): string {
+  // The menu bar view is not a browser tab: without `tab` the server never
+  // registers it for notifications (internal/webui/stream.go).
+  if (isMiniRoute()) return "/api/stream"
   const params = new URLSearchParams({
     tab: TAB_ID,
     route: window.location.pathname,

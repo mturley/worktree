@@ -1,13 +1,16 @@
-import { useState, type FormEvent } from "react"
+import { useEffect, useState, type FormEvent } from "react"
 import { Alert, Button, Center, Paper, PasswordInput, Stack, Title } from "@mantine/core"
 import { useQueryClient } from "@tanstack/react-query"
 import { api } from "../api/client"
+import { postToMac } from "../lib/macBridge"
 
 export function LoginPage() {
   const qc = useQueryClient()
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  // Lets the macOS app show its logged-out state.
+  useEffect(() => postToMac({ type: "login" }), [])
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
