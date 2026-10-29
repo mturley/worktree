@@ -80,7 +80,9 @@ install: build stop-running
 
 # Builds the macOS menu bar app into bin/ for development, pointed at the
 # default port. For a dev server: go run ./internal/macapp/devbuild -url URL.
-# `worktree setup` builds the installed copy in ~/Applications.
+# `worktree setup` builds the installed copy in ~/Applications. The dev bundle
+# shares the installed app's bundle ID and executable name, so setup's
+# rebuild and --uninstall-mac-app will also quit a running dev copy.
 macapp:
 	go run ./internal/macapp/devbuild
 

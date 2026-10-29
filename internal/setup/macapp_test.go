@@ -41,7 +41,8 @@ func TestDecideMacApp(t *testing.T) {
 type macFake struct {
 	mu       sync.Mutex
 	calls    [][]string
-	running  bool // answers pgrep until osascript quits it
+	running  bool // answers pgrep until kill stops it
+	stuck    bool // kill does not stop it
 	answers  []bool
 	prompts  []string
 	buildErr error
@@ -67,8 +68,10 @@ func (f *macFake) run(name string, args ...string) ([]byte, error) {
 			return []byte("123\n"), nil
 		}
 		return nil, errors.New("exit 1")
-	case "osascript":
-		f.running = false
+	case "kill":
+		if !f.stuck {
+			f.running = false
+		}
 	}
 	return nil, nil
 }
@@ -88,6 +91,103 @@ func (f *macFake) ran(name string) [][]string {
 		}
 	}
 	return out
+}
+
+func callIndex(f *macFake, name string) int {
+	for i, c := range f.calls {
+		if c[0] == name {
+			return i
+		}
+	}
+	return -1
+}
+
+// captureStdout swaps os.Stdout, so its callers must stay serial.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stdout
+	os.Stdout = w
+	defer func() { os.Stdout = old }()
+	done := make(chan string)
+	go func() {
+		var b bytes.Buffer
+		_, _ = b.ReadFrom(r)
+		done <- b.String()
+	}()
+	fn()
+	w.Close()
+	return <-done
+}
+
+// Serial: captureStdout swaps os.Stdout.
+func TestRunMacAppRebuildRestartMessage(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		stuck bool
+		want  string
+		not   string
+	}{
+		{"quit", false, "Restarted the menu bar app", "still running"},
+		{"stuck", true, "old build of the menu bar app is still running", "Restarted"},
+	} {
+		f := &macFake{running: true, stuck: c.stuck}
+		d, _ := newMacDeps(t, f)
+		var err error
+		out := captureStdout(t, func() { err = runMacAppStep(MacAppRebuild, d) })
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		if !strings.Contains(out, c.want) || strings.Contains(out, c.not) {
+			t.Errorf("%s: output = %q", c.name, out)
+		}
+	}
+}
+
+func TestSwiftToolchainUsable(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		out  string
+		err  error
+		want bool
+	}{
+		{"developer dir set", "/Library/Developer/CommandLineTools\n", nil, true},
+		{"no developer dir", "xcode-select: error: unable to get active developer directory", errors.New("exit 2"), false},
+		{"empty output", "", nil, false},
+	}
+	for _, c := range cases {
+		var calls [][]string
+		run := func(name string, args ...string) ([]byte, error) {
+			calls = append(calls, append([]string{name}, args...))
+			return []byte(c.out), c.err
+		}
+		if got := swiftToolchainUsable(run); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
+		if len(calls) != 1 || strings.Join(calls[0], " ") != "xcode-select -p" {
+			t.Errorf("%s: calls = %v", c.name, calls)
+		}
+	}
+}
+
+func TestQuitMacAppSkipsNonPIDs(t *testing.T) {
+	t.Parallel()
+	var calls [][]string
+	run := func(name string, args ...string) ([]byte, error) {
+		calls = append(calls, append([]string{name}, args...))
+		if name == "pgrep" {
+			return []byte("12 -9 abc\n34\n"), nil
+		}
+		return nil, nil
+	}
+	quitMacApp(macAppDeps{Run: run, Sleep: func(time.Duration) {}})
+	if len(calls) < 2 || strings.Join(calls[1], " ") != "kill -TERM 12 34" {
+		t.Errorf("calls = %v", calls)
+	}
 }
 
 func newMacDeps(t *testing.T, f *macFake) (macAppDeps, macapp.Paths) {
@@ -205,15 +305,34 @@ func TestRunMacAppRebuildKeepsLoginChoice(t *testing.T) {
 		if err := runMacAppStep(MacAppRebuild, d); err != nil {
 			t.Fatal(err)
 		}
-		q := f.ran("osascript")
-		if len(q) != 1 || strings.Join(q[0][1:], " ") != `-e quit app id "me.turley.worktree.menubar"` {
-			t.Errorf("osascript = %v", q)
+		if len(f.ran("osascript")) != 0 {
+			t.Errorf("sent an Apple Event: %v", f.ran("osascript"))
+		}
+		k := f.ran("kill")
+		if len(k) != 1 || strings.Join(k[0][1:], " ") != "-TERM 123" {
+			t.Errorf("kill = %v", k)
 		}
 		if g := f.ran("pgrep"); len(g) == 0 || strings.Join(g[0][1:], " ") != "-x WorktreeMenuBar" {
 			t.Errorf("pgrep = %v", g)
 		}
 		if o := f.ran("open"); len(o) != 1 || o[0][1] != p.App {
 			t.Errorf("open = %v", o)
+		}
+		if ki, oi := callIndex(f, "kill"), callIndex(f, "open"); ki < 0 || oi < ki {
+			t.Errorf("kill (#%d) must come before open (#%d): %v", ki, oi, f.calls)
+		}
+	})
+	t.Run("app that will not quit is reported, not called restarted", func(t *testing.T) {
+		f := &macFake{running: true, stuck: true}
+		d, _ := newMacDeps(t, f)
+		if err := runMacAppStep(MacAppRebuild, d); err != nil {
+			t.Fatal(err)
+		}
+		if len(f.ran("kill")) != 1 {
+			t.Errorf("kill = %v", f.ran("kill"))
+		}
+		if got := quitMacApp(d); got {
+			t.Error("quitMacApp reported a stuck app as gone")
 		}
 	})
 	t.Run("not running is not opened", func(t *testing.T) {
@@ -222,7 +341,7 @@ func TestRunMacAppRebuildKeepsLoginChoice(t *testing.T) {
 		if err := runMacAppStep(MacAppRebuild, d); err != nil {
 			t.Fatal(err)
 		}
-		if len(f.ran("open")) != 0 || len(f.ran("osascript")) != 0 {
+		if len(f.ran("open")) != 0 || len(f.ran("kill")) != 0 {
 			t.Errorf("calls = %v", f.calls)
 		}
 	})
@@ -268,8 +387,11 @@ func TestUninstallMacAppRemovesBoth(t *testing.T) {
 			t.Errorf("%s still exists", path)
 		}
 	}
-	if len(f.ran("osascript")) != 1 {
-		t.Errorf("osascript calls = %v", f.ran("osascript"))
+	if k := f.ran("kill"); len(k) != 1 || strings.Join(k[0][1:], " ") != "-TERM 123" {
+		t.Errorf("kill calls = %v", k)
+	}
+	if len(f.ran("osascript")) != 0 {
+		t.Errorf("sent an Apple Event: %v", f.ran("osascript"))
 	}
 	lc := f.ran("launchctl")
 	if len(lc) != 1 || lc[0][1] != "bootout" || !strings.HasSuffix(lc[0][2], "/"+macapp.BundleID) {
@@ -291,7 +413,7 @@ func TestUninstallMacAppRemovesStrayPlist(t *testing.T) {
 	if _, err := os.Stat(p.LaunchAgent); err == nil {
 		t.Error("plist still exists")
 	}
-	if len(f.ran("osascript")) != 0 {
+	if len(f.ran("kill")) != 0 {
 		t.Error("quit an app that was not running")
 	}
 }

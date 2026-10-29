@@ -126,7 +126,8 @@ func copySwift(fsys fs.FS, dir string) ([]string, error) {
 
 // swapIn replaces appPath with staging: the old bundle is renamed aside, the
 // new one renamed in, and only then is the old one removed. If the second
-// rename fails the old bundle is put back.
+// rename fails the old bundle is put back. Once the new bundle is in place
+// the build has succeeded, so failing to delete the old one is only a warning.
 func swapIn(staging, appPath string) error {
 	old := ""
 	if _, err := os.Lstat(appPath); err == nil {
@@ -142,7 +143,9 @@ func swapIn(staging, appPath string) error {
 		return fmt.Errorf("installing the new app: %w", err)
 	}
 	if old != "" {
-		return os.RemoveAll(old)
+		if err := os.RemoveAll(old); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: the new app is installed, but the old one could not be removed (%s): %v\n", old, err)
+		}
 	}
 	return nil
 }

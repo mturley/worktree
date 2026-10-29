@@ -218,6 +218,40 @@ func TestBuildReplacesExistingApp(t *testing.T) {
 	}
 }
 
+func TestSwapInIgnoresFailedCleanup(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	app := filepath.Join(dir, "X.app")
+	staging := filepath.Join(dir, "staging")
+	// A read-only directory inside the old bundle makes RemoveAll fail.
+	locked := filepath.Join(app, "locked")
+	if err := os.MkdirAll(locked, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(locked, "f"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(filepath.Join(staging+"-old", "locked"), 0o755) })
+	if err := os.MkdirAll(staging, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(staging, "new"), []byte("new"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := swapIn(staging, app); err != nil {
+		t.Fatalf("swapIn = %v, want nil once the new bundle is in place", err)
+	}
+	if _, err := os.Stat(filepath.Join(app, "new")); err != nil {
+		t.Errorf("new bundle not in place: %v", err)
+	}
+	if _, err := os.Stat(staging + "-old"); err != nil {
+		t.Skipf("old bundle was removed anyway (running as root?): %v", err)
+	}
+}
+
 func TestBuildFailureKeepsOldApp(t *testing.T) {
 	t.Parallel()
 	app := filepath.Join(t.TempDir(), AppName)

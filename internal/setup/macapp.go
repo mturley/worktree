@@ -19,14 +19,16 @@ type MacAppAction int
 
 const (
 	MacAppNone           MacAppAction = iota // not macOS, or installed and current
-	MacAppNoSwiftc                           // macOS, swiftc missing: preview a hint only
+	MacAppNoSwiftc                           // macOS, no developer tools: preview a hint only
 	MacAppOfferInstall                       // interactive, not installed
 	MacAppSkipUnattended                     // non-interactive, not installed
 	MacAppRebuild                            // installed, hash differs
 )
 
 type macAppState struct {
-	GOOS                       string
+	GOOS string
+	// HaveSwiftc means a usable Swift toolchain (see swiftToolchainUsable),
+	// not merely a swiftc on PATH.
 	HaveSwiftc, NonInteractive bool
 	Installed                  bool
 	InstalledHash, SourceHash  string
@@ -57,8 +59,7 @@ func detectMacApp() MacAppAction {
 	if s.GOOS != "darwin" {
 		return MacAppNone
 	}
-	_, err := exec.LookPath("swiftc")
-	s.HaveSwiftc = err == nil
+	s.HaveSwiftc = swiftToolchainUsable(defaultMacAppDeps().Run)
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return MacAppNone
@@ -68,6 +69,16 @@ func detectMacApp() MacAppAction {
 		return MacAppNone
 	}
 	return decideMacApp(s)
+}
+
+// swiftToolchainUsable reports whether the developer tools are installed.
+// It cannot just look for swiftc: /usr/bin/swiftc is an xcrun shim present
+// on every Mac, and running it without the tools pops Apple's "install
+// developer tools" dialog and fails. `xcode-select -p` shows no dialog; it
+// exits non-zero when no developer directory is set.
+func swiftToolchainUsable(run macapp.Runner) bool {
+	out, err := run("xcode-select", "-p")
+	return err == nil && len(bytes.TrimSpace(out)) > 0
 }
 
 type macAppDeps struct {
@@ -131,11 +142,16 @@ func runMacAppStep(a MacAppAction, d macAppDeps) error {
 		}
 	}
 	if running {
-		quitMacApp(d)
+		gone := quitMacApp(d)
 		if out, err := d.Run("open", app); err != nil {
 			return fmt.Errorf("restarting the app: %w: %s", err, strings.TrimSpace(string(out)))
 		}
-		fmt.Printf("  %s Restarted the menu bar app\n", ui.Green("✓"))
+		if gone {
+			fmt.Printf("  %s Restarted the menu bar app\n", ui.Green("✓"))
+		} else {
+			fmt.Printf("  %s The old build of the menu bar app is still running; quit it and reopen %s\n",
+				ui.Yellow("!"), ui.ShortPath(app))
+		}
 	}
 	return nil
 }
@@ -161,16 +177,48 @@ func macAppRunning(d macAppDeps) bool {
 	return err == nil && len(bytes.TrimSpace(out)) > 0
 }
 
-// quitMacApp asks the app to quit and waits briefly for it to go.
-func quitMacApp(d macAppDeps) {
-	_, _ = d.Run("osascript", "-e", `quit app id "`+macapp.BundleID+`"`)
+// quitMacApp sends SIGTERM to the app's processes and waits briefly for them
+// to go, reporting whether they did. It signals directly rather than sending
+// an Apple Event (`osascript -e 'quit app ...'`), which can raise the macOS
+// Automation consent prompt.
+func quitMacApp(d macAppDeps) (gone bool) {
+	out, err := d.Run("pgrep", "-x", macapp.ExecName)
+	if err != nil {
+		return true
+	}
+	var pids []string
+	for _, f := range strings.Fields(string(out)) {
+		if isPID(f) {
+			pids = append(pids, f)
+		}
+	}
+	if len(pids) == 0 {
+		return true
+	}
+	_, _ = d.Run("kill", append([]string{"-TERM"}, pids...)...)
 	sleep := d.Sleep
 	if sleep == nil {
 		sleep = time.Sleep
 	}
-	for i := 0; i < 15 && macAppRunning(d); i++ {
+	for i := 0; i < 15; i++ {
+		if !macAppRunning(d) {
+			return true
+		}
 		sleep(200 * time.Millisecond)
 	}
+	return !macAppRunning(d)
+}
+
+func isPID(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func pathExists(p string) bool {
@@ -198,7 +246,9 @@ func UninstallMacApp(d macAppDeps) error {
 	app, agent := filepath.Clean(d.Paths.App), filepath.Clean(d.Paths.LaunchAgent)
 	if pathExists(app) || pathExists(agent) {
 		if macAppRunning(d) {
-			quitMacApp(d)
+			if !quitMacApp(d) {
+				fmt.Printf("  %s The menu bar app is still running; quit it yourself\n", ui.Yellow("!"))
+			}
 		}
 		// The agent is usually not loaded, so a failure here is expected.
 		_, _ = d.Run("launchctl", "bootout", fmt.Sprintf("gui/%d/%s", os.Getuid(), macapp.BundleID))

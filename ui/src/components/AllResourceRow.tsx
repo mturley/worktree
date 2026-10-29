@@ -26,11 +26,6 @@ function worktreeHref(wt: ResourceWorktree, r: AllResourceDTO): string {
 }
 
 /**
- * The worktrees, each named by its cmux workspace or ⎇ name as a task's link
- * chip names it. Hovering one shows its full names and directory, unless
- * `preview` is off (the line is already inside a hover card).
- */
-/**
  * One worktree on the line. Inside a hover card (`preview` off) it also
  * carries a button to switch cmux to its workspace, when it has one.
  */
@@ -46,6 +41,11 @@ function WorktreeLineItem({ w, preview }: { w: ResourceWorktree; preview: boolea
   )
 }
 
+/**
+ * The worktrees, each named by its cmux workspace or ⎇ name as a task's link
+ * chip names it. Hovering one shows its full names and directory, unless
+ * `preview` is off (the line is already inside a hover card).
+ */
 function WorktreesLine({ worktrees, preview }: { worktrees: ResourceWorktree[]; preview: boolean }) {
   return (
     <Text size="xs" c="dimmed" truncate="end" mt={2} style={{ minWidth: 0 }}>

@@ -16,6 +16,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     private let popover = NSPopover()
     private var webView: WKWebView!
     private let offlineView = OfflineView(frame: .zero)
+    /// The page's last unread report, nil until it has sent one. Survives
+    /// reloads, so `ready` can restore it rather than guess.
+    private var lastUnread: Bool?
 
     /// WorktreeServerURL from Info.plist, written at build time.
     private let serverURL: URL = {
@@ -147,11 +150,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         }
     }
 
-    /// Whether url is the server's /mini page (any query or fragment).
+    /// Whether url is the server's /mini page (any query or fragment). Exactly
+    /// the path /mini, as the page's own isMiniRoute accepts.
     private func isMini(_ url: URL) -> Bool {
         guard url.scheme == serverURL.scheme, url.host == serverURL.host,
               url.port == serverURL.port else { return false }
-        return url.path == "/mini" || url.path.hasPrefix("/mini/")
+        return url.path == "/mini"
+    }
+
+    /// The schemes the app hands to the system: everything else is dropped.
+    private func opensExternally(_ url: URL) -> Bool {
+        url.scheme == "http" || url.scheme == "https" || url.scheme == "mailto"
     }
 
     private func showOffline() {
@@ -176,9 +185,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         }
         switch type {
         case "unread":
-            icon.state = (body["unread"] as? Bool ?? false) ? .unread : .resting
+            guard let unread = body["unread"] as? Bool else { return }
+            lastUnread = unread
+            icon.state = unread ? .unread : .resting
         case "ready":
-            icon.state = .resting
+            // Restore what the page last said; with nothing said yet, leave
+            // the icon alone until its first unread report arrives.
+            if let unread = lastUnread { icon.state = unread ? .unread : .resting }
         case "login":
             icon.state = .needsLogin
         case "open":
@@ -203,7 +216,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         guard let url = action.request.url else { return decisionHandler(.allow) }
         let mainFrame = action.targetFrame?.isMainFrame ?? true // nil: a new window
         let leaves = (action.navigationType == .linkActivated || mainFrame) && !isMini(url)
-        if leaves && (url.scheme == "http" || url.scheme == "https" || url.scheme == "mailto") {
+        if leaves && opensExternally(url) {
             NSWorkspace.shared.open(url)
             decisionHandler(.cancel)
         } else if leaves && url.scheme != "about" {
@@ -215,7 +228,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
 
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        if let url = action.request.url { NSWorkspace.shared.open(url) }
+        if let url = action.request.url, opensExternally(url) { NSWorkspace.shared.open(url) }
         return nil
     }
 

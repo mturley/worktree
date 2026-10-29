@@ -37,4 +37,19 @@ describe("useMacUnreadBridge", () => {
     // react-query notifies observers on a timer.
     await waitFor(() => expect(post).toHaveBeenLastCalledWith({ type: "unread", unread: false, count: 0 }))
   })
+
+  it("posts nothing until the worktree list has loaded", async () => {
+    const post = vi.fn()
+    vi.stubGlobal("webkit", { messageHandlers: { worktree: { postMessage: post } } })
+    // No cached data and a fetch that never answers: the list stays unknown.
+    vi.stubGlobal("fetch", () => new Promise(() => {}))
+    const qc = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } })
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    )
+    renderHook(() => useMacUnreadBridge(), { wrapper })
+    expect(post).not.toHaveBeenCalled()
+    act(() => { qc.setQueryData(["worktrees"], []) })
+    await waitFor(() => expect(post).toHaveBeenLastCalledWith({ type: "unread", unread: false, count: 0 }))
+  })
 })

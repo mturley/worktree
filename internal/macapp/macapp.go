@@ -48,6 +48,11 @@ const (
 // SourceHash is a SHA-256 over every file in fsys, sorted by path, each
 // contributing path, NUL, contents, NUL. It is stored in the built bundle's
 // Info.plist so setup can tell whether the installed app is out of date.
+//
+// It covers only the embedded app/ files (Source). A change to the build
+// recipe alone — build.go's swiftc flags, the template variables it fills in
+// — does not change the hash and so does not trigger a rebuild by itself;
+// touch a file under app/ when such a change needs to reach installed apps.
 func SourceHash(fsys fs.FS) (string, error) {
 	var paths []string
 	err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
