@@ -67,9 +67,20 @@ type PRWorktreeResult struct {
 	FetchRef   string // the ref name used for the PR
 }
 
-// PRBranchName is the branch a PR worktree gets unless the user picks another.
-func PRBranchName(prNumber int, slug string) string {
-	return fmt.Sprintf("review/pr-%d-%s", prNumber, slug)
+// PRBranchName is the branch a PR worktree gets unless the user picks another:
+// the PR's head branch, as `gh pr checkout` names it, so the branch and the one
+// SetPRTracking makes it track share a name and a plain `git push` updates the
+// PR. A head branch named main or master (a PR from a fork's default branch)
+// gets the head repo's owner as a prefix, or pr-<N> when that is unknown, so it
+// can't collide with the local default branch.
+func PRBranchName(prNumber int, headOwner, headRef string) string {
+	if headRef != "main" && headRef != "master" {
+		return headRef
+	}
+	if headOwner == "" {
+		headOwner = fmt.Sprintf("pr-%d", prNumber)
+	}
+	return headOwner + "/" + headRef
 }
 
 // ValidBranchName reports whether git would accept name as a new branch.
@@ -77,16 +88,14 @@ func ValidBranchName(name string) bool {
 	return exec.Command("git", "check-ref-format", "--branch", name).Run() == nil
 }
 
-// CreatePRWorktree creates the worktree for a PR. An empty branchName means
-// PRBranchName's default. The directory is always pr-<N>-<slug>, whatever the
-// branch is called, so a re-run on the same PR finds the existing worktree.
-func CreatePRWorktree(repoRoot, worktreesBase, remote string, prNumber int, headRef, slug, branchName string) (PRWorktreeResult, error) {
+// CreatePRWorktree creates the worktree for a PR on branchName (see
+// PRBranchName for the default). The directory is always pr-<N>-<slug>,
+// whatever the branch is called, so a re-run on the same PR finds the existing
+// worktree.
+func CreatePRWorktree(repoRoot, worktreesBase, remote string, prNumber int, slug, branchName string) (PRWorktreeResult, error) {
 	repoName := repoDirName(repoRoot)
 	dirName := fmt.Sprintf("pr-%d-%s", prNumber, slug)
 	wtPath := filepath.Join(worktreesBase, repoName, dirName)
-	if branchName == "" {
-		branchName = PRBranchName(prNumber, slug)
-	}
 
 	fetchRef := fmt.Sprintf("refs/pr-review/%d", prNumber)
 	err := Fetch(repoRoot, remote, fmt.Sprintf("+pull/%d/head:%s", prNumber, fetchRef))

@@ -112,13 +112,14 @@ func stubPRInfo(t *testing.T, info *github.PRInfo, res gitutil.PRWorktreeResult)
 		out.Number = number
 		return &out, nil
 	}
-	createPRWorktree = func(repoRoot, base, remote string, n int, headRef, slug, branch string) (gitutil.PRWorktreeResult, error) {
+	createPRWorktree = func(repoRoot, base, remote string, n int, slug, branch string) (gitutil.PRWorktreeResult, error) {
 		return res, nil
 	}
 	t.Cleanup(func() { fetchPRInfo, createPRWorktree = origFetch, origCreate })
 }
 
-const testPRBranch = "review/pr-1-some-title"
+// testPRBranch is stubPR's head branch, which is also its default branch name.
+const testPRBranch = "feature"
 
 func TestRunPRAsksBeforeReusingABranch(t *testing.T) {
 	repo := prRepo(t, testPRBranch)

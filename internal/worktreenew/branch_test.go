@@ -82,9 +82,9 @@ func TestRunPRPassesChosenBranch(t *testing.T) {
 	stubPR(t, gitutil.PRWorktreeResult{})
 	var gotBranch string
 	inner := createPRWorktree
-	createPRWorktree = func(repoRoot, b, remote string, n int, headRef, slug, branch string) (gitutil.PRWorktreeResult, error) {
+	createPRWorktree = func(repoRoot, b, remote string, n int, slug, branch string) (gitutil.PRWorktreeResult, error) {
 		gotBranch = branch
-		return inner(repoRoot, b, remote, n, headRef, slug, branch)
+		return inner(repoRoot, b, remote, n, slug, branch)
 	}
 
 	Run(nil, config.Config{WorktreesBase: base},
@@ -92,6 +92,14 @@ func TestRunPRPassesChosenBranch(t *testing.T) {
 
 	if gotBranch != "mine/pr-1" {
 		t.Fatalf("branch passed to git = %q, want mine/pr-1", gotBranch)
+	}
+
+	// With no choice made, the branch is named after the PR's head branch.
+	Run(nil, config.Config{WorktreesBase: base},
+		Options{Input: "https://github.com/owner/repo/pull/1", RepoRoot: repo}, nil)
+
+	if gotBranch != testPRBranch {
+		t.Fatalf("default branch passed to git = %q, want %q", gotBranch, testPRBranch)
 	}
 }
 

@@ -124,3 +124,20 @@ func TestSiblingRepoURL(t *testing.T) {
 		}
 	}
 }
+
+func TestPRBranchName(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		owner, ref, want string
+	}{
+		{"someone", "fix-it", "fix-it"},
+		{"", "fix-it", "fix-it"},
+		{"someone", "main", "someone/main"},
+		{"someone", "master", "someone/master"},
+		{"", "main", "pr-7/main"},
+	} {
+		if got := PRBranchName(7, tc.owner, tc.ref); got != tc.want {
+			t.Errorf("PRBranchName(7, %q, %q) = %q; want %q", tc.owner, tc.ref, got, tc.want)
+		}
+	}
+}

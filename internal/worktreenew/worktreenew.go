@@ -357,9 +357,13 @@ func (r *runner) runPR(pr *PRInput) (prOutcome, error) {
 		return prOutcome{}, err
 	}
 
+	branch := r.opts.Branch
+	if branch == "" {
+		branch = gitutil.PRBranchName(pr.Number, info.HeadOwner, info.HeadRef)
+	}
 	res, err := createPRWorktree(
-		r.opts.RepoRoot, r.cfg.WorktreesBase, remote, pr.Number, info.HeadRef,
-		github.Slugify(info.Title), r.opts.Branch)
+		r.opts.RepoRoot, r.cfg.WorktreesBase, remote, pr.Number,
+		github.Slugify(info.Title), branch)
 	if err != nil {
 		return prOutcome{}, err
 	}
@@ -438,8 +442,8 @@ func namesResource(input string) bool {
 
 // DefaultBranch is the branch Run gives input when Options.Branch is empty, so
 // a caller can offer it for editing. It is empty for a plain branch name,
-// which is already the branch. A PR's default needs its title, so this reads
-// the PR from GitHub, under the same watcher gate as Run.
+// which is already the branch. A PR's default is its head branch, so this
+// reads the PR from GitHub, under the same watcher gate as Run.
 func DefaultBranch(cfg config.Config, input, repoRoot string) (string, error) {
 	pr, err := parsePRInput(input, repoRoot)
 	if err != nil {
@@ -459,7 +463,7 @@ func DefaultBranch(cfg config.Config, input, repoRoot string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return gitutil.PRBranchName(pr.Number, github.Slugify(info.Title)), nil
+	return gitutil.PRBranchName(pr.Number, info.HeadOwner, info.HeadRef), nil
 }
 
 // resolveInput turns the polymorphic input into a branch name and, for a Jira
