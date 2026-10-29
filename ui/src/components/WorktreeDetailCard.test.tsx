@@ -267,13 +267,17 @@ describe("Code tab summary", () => {
     expect(await screen.findByText("clean")).toBeVisible()
   })
 
+  // The behind count is its own (coloured) span, so match the whole line.
+  const aheadBehindLine = (re: RegExp) => (_: string, el: Element | null) =>
+    el?.tagName === "P" && re.test(el.textContent ?? "")
+
   it("puts ahead/behind on its own line under the merge base", async () => {
     worktreeInfo.mockResolvedValue(info())
     worktreeGit.mockResolvedValue(gitStatus({ vs_merge_base: { ahead: 8, behind: 12 } }))
     wrap(summary())
     await openCode()
     expect(await screen.findByText("upstream/main @ 76ef50c")).toBeVisible()
-    const line = screen.getByText("(8 ahead · 12 behind)")
+    const line = screen.getByText(aheadBehindLine(/^\(8 ahead · 12 behind\)$/))
     expect(line.textContent).toBe("(8 ahead · 12 behind)")
     const mergeBaseRow = screen.getByText("Merge base").parentElement!
     expect(mergeBaseRow.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -295,7 +299,7 @@ describe("Code tab summary", () => {
     await openCode()
     expect(await screen.findByText("none (not pushed)")).toBeVisible()
     // Only the merge base's line remains.
-    expect(screen.getAllByText(/ahead · .* behind/)).toHaveLength(1)
+    expect(screen.getAllByText(aheadBehindLine(/ahead · .* behind/))).toHaveLength(1)
   })
 
   it("flags a failed fetch with a warning icon", async () => {
