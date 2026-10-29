@@ -69,8 +69,9 @@ func TestConfirmKeysAreDistinct(t *testing.T) {
 //
 // fetchPRInfo reads GitHub with the stored token and CreatePRWorktree fetches from a
 // real remote, so both are replaced here. Everything downstream of them — the
-// confirmation state machine, the fallthrough, SetPRTracking, finalize — is
-// the real code.
+// confirmation state machine, the fallthrough, finalize — is the real code,
+// except SetPRTracking, which fetches the PR's head branch and so is recorded
+// instead (gitutil's own tests run it against local remotes).
 
 // prRepo makes a temp repo with a remote pointing at owner/repo and a branch
 // named branchName that already exists (simulating a leftover review branch).
@@ -104,6 +105,7 @@ func stubPR(t *testing.T, res gitutil.PRWorktreeResult) {
 // cases that care what the title and body say.
 func stubPRInfo(t *testing.T, info *github.PRInfo, res gitutil.PRWorktreeResult) {
 	t.Helper()
+	stubTracking(t, nil)
 	origFetch, origCreate := fetchPRInfo, createPRWorktree
 	fetchPRInfo = func(owner, repo string, number int) (*github.PRInfo, error) {
 		out := *info
@@ -268,16 +270,55 @@ func TestRunPRRejectsAMismatchedRepo(t *testing.T) {
 	}
 }
 
+// stubTracking replaces SetPRTracking for the duration of a test, returning
+// err, and returns the PR heads it was called with.
+func stubTracking(t *testing.T, err error) *[]gitutil.PRHead {
+	t.Helper()
+	var calls []gitutil.PRHead
+	orig := setPRTracking
+	setPRTracking = func(repoRoot, branch string, head gitutil.PRHead) error {
+		calls = append(calls, head)
+		return err
+	}
+	t.Cleanup(func() { setPRTracking = orig })
+	return &calls
+}
+
 // failTracking makes SetPRTracking fail for the duration of a test. Tracking
 // is the one non-fatal failure on the PR path, so it is the only way to reach
 // the warning-detail branch.
 func failTracking(t *testing.T) {
 	t.Helper()
-	orig := setPRTracking
-	setPRTracking = func(repoRoot, branch, remote string, n int) error {
-		return errors.New("git config: permission denied")
+	stubTracking(t, errors.New("git config: permission denied"))
+}
+
+func TestRunPRTracksThePRsHeadBranch(t *testing.T) {
+	repo := prRepo(t, "")
+	base := t.TempDir()
+	wtPath := filepath.Join(base, "pr-1")
+	if err := os.MkdirAll(wtPath, 0o755); err != nil {
+		t.Fatal(err)
 	}
-	t.Cleanup(func() { setPRTracking = orig })
+	stubPRInfo(t, &github.PRInfo{
+		Title: "Some Title", HeadRef: "feature", HeadOwner: "someone", HeadRepo: "repo",
+		URL: "https://github.com/owner/repo/pull/1",
+	}, gitutil.PRWorktreeResult{
+		CreateResult: gitutil.CreateResult{Path: wtPath, Branch: testPRBranch, Created: true},
+		Status:       gitutil.PRWorktreeCreated,
+		RemoteHead:   "bbb", FetchRef: "refs/pr-review/1",
+	})
+	calls := stubTracking(t, nil)
+
+	res := Run(nil, config.Config{WorktreesBase: base},
+		Options{Input: "https://github.com/owner/repo/pull/1", RepoRoot: repo}, nil)
+
+	if res.Err != nil {
+		t.Fatalf("unexpected error: %v", res.Err)
+	}
+	want := gitutil.PRHead{Number: 1, BaseRemote: "origin", Owner: "someone", Repo: "repo", Ref: "feature"}
+	if len(*calls) != 1 || (*calls)[0] != want {
+		t.Fatalf("SetPRTracking calls = %+v; want [%+v]", *calls, want)
+	}
 }
 
 // TestRunPRTrackingFailureRecordsOneStep is the guard for a bug that was both

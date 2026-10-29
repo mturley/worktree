@@ -49,7 +49,7 @@ func checkGitHubWatcher(cfg config.Config) error {
 	return nil
 }
 
-// fetchPRWithToken reads a PR's title, head branch and body with the
+// fetchPRWithToken reads a PR's title, head branch and repo, and body with the
 // watcher's GitHub token.
 func fetchPRWithToken(owner, repo string, number int) (*github.PRInfo, error) {
 	token, err := githubToken()
@@ -73,11 +73,13 @@ func fetchPRWithToken(owner, repo string, number int) (*github.PRInfo, error) {
 		return nil, fmt.Errorf("GitHub returned no head branch for %s/%s#%d", owner, repo, number)
 	}
 	return &github.PRInfo{
-		Number:  number,
-		Title:   s.Title,
-		URL:     s.URL,
-		HeadRef: s.HeadRefName,
-		State:   s.State,
-		Body:    s.Body,
+		Number:    number,
+		Title:     s.Title,
+		URL:       s.URL,
+		HeadRef:   s.HeadRefName,
+		HeadOwner: s.HeadRepoOwner,
+		HeadRepo:  s.HeadRepoName,
+		State:     s.State,
+		Body:      s.Body,
 	}, nil
 }

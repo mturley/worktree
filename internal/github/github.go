@@ -14,8 +14,12 @@ type PRInfo struct {
 	Title   string
 	URL     string
 	HeadRef string
-	State   string
-	Body    string
+	// HeadOwner and HeadRepo name the repository HeadRef lives in (a fork,
+	// for a cross-repo PR); empty when GitHub no longer has it.
+	HeadOwner string
+	HeadRepo  string
+	State     string
+	Body      string
 }
 
 var prURLPattern = regexp.MustCompile(`github\.com/([^/]+)/([^/]+)/pull/(\d+)`)

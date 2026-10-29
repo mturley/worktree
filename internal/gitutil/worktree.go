@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -53,17 +54,17 @@ func repoDirName(repoRoot string) string {
 type PRWorktreeStatus int
 
 const (
-	PRWorktreeCreated          PRWorktreeStatus = iota // new branch + new worktree
-	PRWorktreeExistingDir                              // worktree directory already exists
-	PRWorktreeBranchExists                             // branch exists but no worktree dir
+	PRWorktreeCreated      PRWorktreeStatus = iota // new branch + new worktree
+	PRWorktreeExistingDir                          // worktree directory already exists
+	PRWorktreeBranchExists                         // branch exists but no worktree dir
 )
 
 type PRWorktreeResult struct {
 	CreateResult
-	Status      PRWorktreeStatus
-	LocalHead   string // current HEAD of existing branch
-	RemoteHead  string // latest PR commit (refs/pr-review/N)
-	FetchRef    string // the ref name used for the PR
+	Status     PRWorktreeStatus
+	LocalHead  string // current HEAD of existing branch
+	RemoteHead string // latest PR commit (refs/pr-review/N)
+	FetchRef   string // the ref name used for the PR
 }
 
 // PRBranchName is the branch a PR worktree gets unless the user picks another.
@@ -139,25 +140,91 @@ func CreateWorktreeFromExistingBranch(repoRoot, wtPath, branchName string) error
 	return nil
 }
 
-// SetPRTracking configures branchName so `git pull` fetches the PR's head ref
-// from the given remote and merges it. This lets a reviewer pull new commits
-// pushed to the PR — even from a fork whose head branch isn't a local remote —
-// by pointing branch.<name>.merge at refs/pull/<N>/head.
-func SetPRTracking(repoRoot, branchName, remote string, prNumber int) error {
+// PRHead locates a pull request's head branch, for SetPRTracking.
+type PRHead struct {
+	Number     int
+	BaseRemote string // the remote for the PR's base repository
+	// Owner and Repo name the repository the head branch lives in: the base
+	// repo for a same-repo PR, the fork otherwise. Both are empty when GitHub
+	// no longer has it (a deleted fork).
+	Owner, Repo string
+	Ref         string // the head branch's name
+}
+
+// prNumberKey is the branch config variable SetPRTracking records the PR
+// number in, since the upstream (the PR's head branch) doesn't carry it.
+const prNumberKey = "worktree-pr"
+
+// SetPRTracking makes branchName track the PR's head branch as a real
+// remote-tracking branch, <remote>/<head>, so git reports ahead/behind and
+// `git pull` follows new commits pushed to the PR. A head repo that isn't one
+// of repoRoot's remotes yet (someone else's fork) is added as one, named after
+// its owner. When the head repo is gone, the branch tracks the base repo's
+// refs/pull/<N>/head instead: the only place the PR's commits still live.
+// Either way the PR number is recorded for TrackedPRNumber.
+func SetPRTracking(repoRoot, branchName string, head PRHead) error {
 	setConfig := func(key, val string) error {
-		cmd := exec.Command("git", "-C", repoRoot, "config", key, val)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("git config %s: %s", key, strings.TrimSpace(string(out)))
+		_, err := git(repoRoot, "config", key, val)
+		return err
+	}
+	if err := setConfig("branch."+branchName+"."+prNumberKey, strconv.Itoa(head.Number)); err != nil {
+		return err
+	}
+	remote, merge := head.BaseRemote, fmt.Sprintf("refs/pull/%d/head", head.Number)
+	if head.Owner != "" && head.Repo != "" {
+		var err error
+		if remote, err = EnsureRemoteForRepo(repoRoot, head.Owner, head.Repo, head.BaseRemote); err != nil {
+			return err
 		}
-		return nil
+		// An explicit refspec, so the remote-tracking branch exists even when
+		// the remote's own fetch refspec is narrower than refs/heads/*.
+		refspec := fmt.Sprintf("+refs/heads/%s:refs/remotes/%s/%s", head.Ref, remote, head.Ref)
+		if err := Fetch(repoRoot, remote, refspec); err != nil {
+			return fmt.Errorf("fetching %s from %s: %w", head.Ref, remote, err)
+		}
+		merge = "refs/heads/" + head.Ref
 	}
-	if err := setConfig(fmt.Sprintf("branch.%s.remote", branchName), remote); err != nil {
+	if err := setConfig("branch."+branchName+".remote", remote); err != nil {
 		return err
 	}
-	if err := setConfig(fmt.Sprintf("branch.%s.merge", branchName), fmt.Sprintf("refs/pull/%d/head", prNumber)); err != nil {
-		return err
+	return setConfig("branch."+branchName+".merge", merge)
+}
+
+// EnsureRemoteForRepo returns the remote for owner/repo, adding one named
+// owner when there is none. The new remote's URL is likeRemote's with the
+// owner/repo swapped, so it uses the same host and protocol (ssh or https).
+func EnsureRemoteForRepo(repoRoot, owner, repo, likeRemote string) (string, error) {
+	if remote, err := FindRemoteForRepo(repoRoot, owner, repo); err == nil {
+		return remote, nil
 	}
-	return nil
+	if url := RemoteURL(repoRoot, owner); url != "" {
+		return "", fmt.Errorf("remote %q already exists and points at %s, not %s/%s", owner, url, owner, repo)
+	}
+	url := siblingRepoURL(RemoteURL(repoRoot, likeRemote), owner, repo)
+	if url == "" {
+		return "", fmt.Errorf("can't derive a URL for %s/%s from remote %q", owner, repo, likeRemote)
+	}
+	if _, err := git(repoRoot, "remote", "add", owner, url); err != nil {
+		return "", err
+	}
+	return owner, nil
+}
+
+// siblingRepoURL replaces the owner/repo at the end of a repository URL,
+// keeping everything before it (scheme, host, ssh user) and any .git suffix.
+// It handles both "https://host/o/r.git" and scp-like "git@host:o/r.git".
+func siblingRepoURL(url, owner, repo string) string {
+	trimmed := strings.TrimSuffix(url, ".git")
+	suffix := url[len(trimmed):]
+	i := strings.LastIndexAny(trimmed, "/:") // before the repo
+	if i <= 0 {
+		return ""
+	}
+	j := strings.LastIndexAny(trimmed[:i], "/:") // before the owner
+	if j < 0 {
+		return ""
+	}
+	return trimmed[:j+1] + owner + "/" + repo + suffix
 }
 
 func RevParse(dir, ref string) string {

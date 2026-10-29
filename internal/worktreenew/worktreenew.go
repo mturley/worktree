@@ -34,9 +34,9 @@ import (
 	"github.com/mturley/worktree/internal/resourceurl"
 )
 
-// The two calls on the PR path that reach the network — the GitHub GraphQL PR
-// read (with the watcher token; see prfetch.go) and the
-// `git fetch` inside CreatePRWorktree. They are vars so tests can exercise the
+// The calls on the PR path that reach the network — the GitHub GraphQL PR
+// read (with the watcher token; see prfetch.go), the `git fetch` inside
+// CreatePRWorktree, and SetPRTracking's fetch of the PR's head branch. They are vars so tests can exercise the
 // confirmation state machine without a network or a GitHub account;
 // production never reassigns them.
 var (
@@ -398,7 +398,10 @@ func (r *runner) runPR(pr *PRInput) (prOutcome, error) {
 	}
 
 	var warn string
-	if err := setPRTracking(r.opts.RepoRoot, res.Branch, remote, pr.Number); err != nil {
+	if err := setPRTracking(r.opts.RepoRoot, res.Branch, gitutil.PRHead{
+		Number: pr.Number, BaseRemote: remote,
+		Owner: info.HeadOwner, Repo: info.HeadRepo, Ref: info.HeadRef,
+	}); err != nil {
 		// Tracking is a convenience (it makes `git pull` follow the PR head),
 		// not the deliverable — the worktree is fully usable without it, so
 		// the step stays `done` and the failure surfaces as a detail rather

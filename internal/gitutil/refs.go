@@ -108,14 +108,18 @@ func AheadBehind(dir, ref string) (ahead, behind int, ok bool) {
 	return ahead, behind, true
 }
 
-// TrackedPRNumber is the PR number the current branch tracks, when its
-// configured merge ref is refs/pull/<N>/head (as a branch made from a PR's
-// head is set up). ok is false for a detached HEAD, a branch with no
-// upstream, and any other upstream.
+// TrackedPRNumber is the PR number the current branch was made from: the one
+// SetPRTracking recorded, or else N when the branch's configured merge ref is
+// refs/pull/<N>/head (how branches made from a PR used to be set up, and still
+// are when the PR's fork is gone). ok is false for a detached HEAD and for any
+// other branch.
 func TrackedPRNumber(dir string) (int, bool) {
 	branch, ok := CurrentBranch(dir)
 	if !ok {
 		return 0, false
+	}
+	if num, err := git(dir, "config", "--get", "branch."+branch+"."+prNumberKey); err == nil {
+		return positiveInt(num)
 	}
 	merge, err := git(dir, "config", "--get", "branch."+branch+".merge")
 	if err != nil {
@@ -129,7 +133,11 @@ func TrackedPRNumber(dir string) (int, bool) {
 	if !found {
 		return 0, false
 	}
-	n, err := strconv.Atoi(num)
+	return positiveInt(num)
+}
+
+func positiveInt(s string) (int, bool) {
+	n, err := strconv.Atoi(s)
 	if err != nil || n <= 0 {
 		return 0, false
 	}

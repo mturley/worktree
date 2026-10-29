@@ -36,13 +36,15 @@ func TestFetchPRWithTokenMapsTheSummary(t *testing.T) {
 		if token != "ghp_x" || ref != (wgithub.PRRef{Owner: "o", Repo: "r", Number: 7}) {
 			t.Fatalf("token=%q ref=%+v", token, ref)
 		}
-		return map[wgithub.PRRef]wgithub.PRSummary{ref: {Title: "Fix it", HeadRefName: "fix-it", Body: "RHOAIENG-1", URL: "u", State: "OPEN"}}, nil
+		return map[wgithub.PRRef]wgithub.PRSummary{ref: {Title: "Fix it", HeadRefName: "fix-it", HeadRepoOwner: "fork", HeadRepoName: "r2",
+			Body: "RHOAIENG-1", URL: "u", State: "OPEN"}}, nil
 	})
 	got, err := fetchPRWithToken("o", "r", 7)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if *got != (github.PRInfo{Number: 7, Title: "Fix it", HeadRef: "fix-it", Body: "RHOAIENG-1", URL: "u", State: "OPEN"}) {
+	if *got != (github.PRInfo{Number: 7, Title: "Fix it", HeadRef: "fix-it", HeadOwner: "fork", HeadRepo: "r2",
+		Body: "RHOAIENG-1", URL: "u", State: "OPEN"}) {
 		t.Fatalf("%+v", got)
 	}
 }
