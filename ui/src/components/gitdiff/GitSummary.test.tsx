@@ -90,6 +90,28 @@ describe("GitSummary working tree line", () => {
   })
 })
 
+describe("GitSummary ahead/behind lines", () => {
+  it("shows a non-zero behind in orange, against either ref", () => {
+    show({ vs_merge_base: { ahead: 4, behind: 2 }, vs_tracking: { ahead: 0, behind: 5 } })
+    expect(screen.getByText("2 behind").getAttribute("style")).toContain("orange")
+    expect(screen.getByText("5 behind").getAttribute("style")).toContain("orange")
+  })
+
+  it("leaves a zero behind dimmed", () => {
+    show()
+    const zeros = screen.getAllByText("0 behind")
+    expect(zeros).toHaveLength(2)
+    for (const el of zeros) {
+      expect(el.getAttribute("style") ?? "").not.toContain("orange")
+    }
+  })
+
+  it("keeps the line's text intact", () => {
+    show({ vs_merge_base: { ahead: 4, behind: 2 } })
+    expect(screen.getByText("2 behind").parentElement?.textContent).toBe("(4 ahead · 2 behind)")
+  })
+})
+
 describe("GitSummary labels", () => {
   it("never wrap", () => {
     show()

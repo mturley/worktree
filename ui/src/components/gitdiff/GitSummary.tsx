@@ -19,12 +19,17 @@ function workingSummary(w: WorktreeGit["working"]): string {
   return parts.length === 0 ? "clean" : parts.join(" · ")
 }
 
-/** Ahead/behind on its own line, indented past the value of the ref it counts against. */
+/**
+ * Ahead/behind on its own line, indented past the value of the ref it counts
+ * against. A non-zero behind is orange, like unpushed commits.
+ */
 function AheadBehindLine({ ab, labelWidth }: { ab: AheadBehind | undefined; labelWidth: number }) {
   if (!ab) return null
   return (
     <Text size="xs" c="dimmed" pl={labelWidth + 20}>
-      {`(${ab.ahead} ahead · ${ab.behind} behind)`}
+      {`(${ab.ahead} ahead · `}
+      <Text span inherit c={ab.behind ? "orange" : undefined}>{`${ab.behind} behind`}</Text>
+      {")"}
     </Text>
   )
 }
