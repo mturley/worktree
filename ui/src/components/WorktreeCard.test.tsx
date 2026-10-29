@@ -249,7 +249,7 @@ describe("WorktreeCard meta line", () => {
     // thing this line still carries.
     wrap(<WorktreeCard w={{ ...summary, latest_event_ts: "2026-08-31T10:00:00Z" }} />)
 
-    expect(screen.getByText(/^odh · my-branch$/)).toBeInTheDocument()
+    expect(screen.getByText(/^Repo: odh · Branch: my-branch$/)).toBeInTheDocument()
     // No "1 PR, 1 issue" style roll-up anywhere on the card.
     expect(screen.queryByText(/\d+ PR/)).toBeNull()
     // And no worktree-level relative time.

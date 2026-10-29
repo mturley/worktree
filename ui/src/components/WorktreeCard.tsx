@@ -179,7 +179,11 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
             that no longer shows per-resource ones either.
           */}
           <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-            <SearchHighlight text={[w.repo, w.branch].filter(Boolean).join(" · ")} />
+            {/* The labels stay outside the highlight: a search for "branch"
+                is about the branch's name, not this line's wording. */}
+            {w.repo && <>Repo: <SearchHighlight text={w.repo} /></>}
+            {w.repo && w.branch && " · "}
+            {w.branch && <>Branch: <SearchHighlight text={w.branch} /></>}
           </Text>
           <MatchWhy match={suppressVia ? null : match} />
           {w.notes && (
