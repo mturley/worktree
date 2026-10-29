@@ -8,6 +8,7 @@ import { tildify, useHomeDir } from "../../lib/tildify"
 import { shortResourceRef } from "../../lib/resourceRef"
 import { AllResourceSummary } from "../AllResourceRow"
 import { ColorBar } from "../CmuxWorkspaceSection"
+import { CmuxSwitchButton } from "../CmuxSwitchButton"
 
 /**
  * Keeps a click inside a hover card from reaching what holds its target (a
@@ -16,7 +17,11 @@ import { ColorBar } from "../CmuxWorkspaceSection"
  */
 const keepInside = (e: React.SyntheticEvent) => e.stopPropagation()
 
-/** A hover preview: opens after a pause, and is something to read, not use. */
+/**
+ * A hover preview: opens after a pause. Mostly something to read; the one
+ * action it carries is a workspace's switch button (CmuxSwitchButton), whose
+ * click stays inside the card (see keepInside).
+ */
 function Preview({ target, width, children }: { target: ReactElement; width: number; children: React.ReactNode }) {
   return (
     <HoverCard openDelay={0} closeDelay={100} position="bottom-start" shadow="md" withinPortal>
@@ -58,6 +63,7 @@ function WorktreeDetails({ path, branch }: { path: string; branch?: string }) {
         <Group key={ws.ref} gap={8} wrap="nowrap">
           <ColorBar color={ws.color} />
           <Text size="sm" fw={600} style={{ wordBreak: "break-word" }}>{ws.title}</Text>
+          <CmuxSwitchButton wsRef={ws.ref} title={ws.title} />
         </Group>
       ))}
       <Text size="sm" style={{ wordBreak: "break-word" }}>⎇ {name}</Text>

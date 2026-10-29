@@ -1,10 +1,9 @@
 import { Button, Group, Stack, Text } from "@mantine/core"
 import { IconPrompt } from "@tabler/icons-react"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useState } from "react"
-import { api } from "../api/client"
 import { useCmux } from "../api/cmux"
 import type { CmuxWorkspace } from "../api/types"
+import { useCmuxSelect } from "./CmuxSwitchButton"
 import { CreateWorkspaceModal } from "./CreateWorkspaceModal"
 import { SearchHighlight } from "./search/SearchHighlight"
 
@@ -84,13 +83,9 @@ export function CmuxWorkspaceLabel({ ws, size = "md" }: { ws: CmuxWorkspace; siz
 
 export function CmuxWorkspaceSection({ path, branch }: { path: string; branch: string }) {
   const cmux = useCmux()
-  const qc = useQueryClient()
   const [createOpen, setCreateOpen] = useState(false)
 
-  const select = useMutation({
-    mutationFn: (ref: string) => api.cmuxSelect(ref),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["cmux"] }),
-  })
+  const select = useCmuxSelect()
 
   if (!cmux.data?.available) return null
 

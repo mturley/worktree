@@ -1,10 +1,11 @@
 import { Box, Button, Group, Text, Tooltip, UnstyledButton } from "@mantine/core"
 import { useState } from "react"
 import { useLocation } from "wouter"
-import { useResourceCmuxTab } from "../api/cmux"
+import { useCmuxMatches, useResourceCmuxTab } from "../api/cmux"
 import type { AllResourceDTO, ResourceWorktree } from "../api/types"
 import { serializeResourceKey } from "../lib/resourceKey"
 import { READ_BOX_BORDER, UNREAD_BG, UNREAD_BOX_BORDER, hasUnread } from "../lib/unread"
+import { CmuxSwitchButton } from "./CmuxSwitchButton"
 import { CopyLinkIcon } from "./CopyLinkIcon"
 import { ResourceCardBody } from "./ResourceCard"
 import { ExistingTabButtons, openLabel } from "./ResourceActions"
@@ -29,15 +30,29 @@ function worktreeHref(wt: ResourceWorktree, r: AllResourceDTO): string {
  * chip names it. Hovering one shows its full names and directory, unless
  * `preview` is off (the line is already inside a hover card).
  */
+/**
+ * One worktree on the line. Inside a hover card (`preview` off) it also
+ * carries a button to switch cmux to its workspace, when it has one.
+ */
+function WorktreeLineItem({ w, preview }: { w: ResourceWorktree; preview: boolean }) {
+  const ws = useCmuxMatches(w.path)[0]
+  return (
+    <>
+      <WorktreePreview path={preview ? w.path : undefined}>
+        <span><WorktreeName path={w.path} /></span>
+      </WorktreePreview>
+      {!preview && ws && <CmuxSwitchButton wsRef={ws.ref} title={ws.title} />}
+    </>
+  )
+}
+
 function WorktreesLine({ worktrees, preview }: { worktrees: ResourceWorktree[]; preview: boolean }) {
   return (
     <Text size="xs" c="dimmed" truncate="end" mt={2} style={{ minWidth: 0 }}>
       {worktrees.map((w, i) => (
         <span key={w.path}>
           {i > 0 && ", "}
-          <WorktreePreview path={preview ? w.path : undefined}>
-            <span><WorktreeName path={w.path} /></span>
-          </WorktreePreview>
+          <WorktreeLineItem w={w} preview={preview} />
         </span>
       ))}
     </Text>

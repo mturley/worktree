@@ -1,11 +1,10 @@
 import { Button, Group, Title } from "@mantine/core"
 import { IconPrompt } from "@tabler/icons-react"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useState } from "react"
-import { api } from "../api/client"
 import { useCmux } from "../api/cmux"
 import type { CmuxWorkspace } from "../api/types"
 import { ACTION_MIN_WIDTH, ColorBar } from "./CmuxWorkspaceSection"
+import { useCmuxSelect } from "./CmuxSwitchButton"
 import { CreateWorkspaceModal } from "./CreateWorkspaceModal"
 import { UnreadMarkerDot } from "./UnreadMarkerDot"
 
@@ -43,12 +42,8 @@ export function CmuxWorkspaceTitles({ path, unread = false }: { path: string; un
 
 export function CmuxWorkspaceActions({ path, branch }: { path: string; branch: string }) {
   const matches = useMatches(path)
-  const qc = useQueryClient()
   const [createOpen, setCreateOpen] = useState(false)
-  const select = useMutation({
-    mutationFn: (ref: string) => api.cmuxSelect(ref),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["cmux"] }),
-  })
+  const select = useCmuxSelect()
 
   if (!matches) return null
 
