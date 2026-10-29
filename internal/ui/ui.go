@@ -41,6 +41,9 @@ var nonInteractive bool
 // default (no for plain yes/no questions, empty for free text) and say so.
 func SetNonInteractive(v bool) { nonInteractive = v }
 
+// NonInteractive reports whether prompts answer themselves with their defaults.
+func NonInteractive() bool { return nonInteractive }
+
 // autoAnswer prints the question and the answer it took on the user's behalf,
 // so a log of a non-interactive run still shows what was decided.
 func autoAnswer(question, answer string) {

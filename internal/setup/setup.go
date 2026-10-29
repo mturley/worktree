@@ -29,6 +29,7 @@ type Plan struct {
 	TestSlackCreds        bool
 	TestJiraCreds         bool
 	ConfigureUI           bool
+	MacApp                MacAppAction
 	Cfg                   config.Config
 }
 
@@ -61,6 +62,8 @@ func BuildPlan(cfg config.Config) Plan {
 	plan.TestSlackCreds = true
 	plan.TestJiraCreds = true
 	plan.ConfigureUI = true
+
+	plan.MacApp = detectMacApp()
 
 	plan.InstallCompletions = true
 	dir := completionDir(rc.Shell)
@@ -142,13 +145,24 @@ func (p Plan) Preview() {
 	if p.ConfigureUI {
 		fmt.Println("  • Configure the web UI password and HTTPS access from other devices")
 	}
+	switch p.MacApp {
+	case MacAppOfferInstall:
+		fmt.Println("  • Offer to install the menu bar app (~/Applications/Worktree Menu Bar.app)")
+	case MacAppRebuild:
+		fmt.Println("  • Rebuild the menu bar app (its source changed)")
+	case MacAppNoSwiftc:
+		fmt.Println(ui.Dim("  — Install the Xcode Command Line Tools (xcode-select --install) to add the menu bar app"))
+	case MacAppSkipUnattended:
+		fmt.Println(ui.Dim("  — Menu bar app not installed; run worktree setup interactively to install it"))
+	}
 	if !hasWork {
 		fmt.Println("Nothing to do — already set up.")
 	}
 }
 
 func (p Plan) HasWork() bool {
-	return p.CreateWorktreesBase || p.InstallShellRC || p.CreateConfig || p.InstallCompletions || p.ConfigureJiraProjects || p.TestGitHubCreds || p.TestSlackCreds || p.TestJiraCreds || p.ConfigureUI
+	return p.CreateWorktreesBase || p.InstallShellRC || p.CreateConfig || p.InstallCompletions || p.ConfigureJiraProjects || p.TestGitHubCreds || p.TestSlackCreds || p.TestJiraCreds || p.ConfigureUI ||
+		p.MacApp == MacAppOfferInstall || p.MacApp == MacAppRebuild
 }
 
 func (p Plan) Execute() error {
@@ -197,6 +211,12 @@ func (p Plan) Execute() error {
 	if p.ConfigureUI {
 		if err := configureUI(p.ConfigPath, defaultUIAccessDeps(p.ConfigPath)); err != nil {
 			return fmt.Errorf("configuring the web UI: %w", err)
+		}
+	}
+
+	if p.MacApp == MacAppOfferInstall || p.MacApp == MacAppRebuild {
+		if err := runMacAppStep(p.MacApp, defaultMacAppDeps()); err != nil {
+			fmt.Printf("  %s Menu bar app: %v\n", ui.Yellow("!"), err)
 		}
 	}
 
