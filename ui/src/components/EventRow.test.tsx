@@ -70,14 +70,14 @@ describe("EventRow", () => {
     expect(screen.getByLabelText("Merged")).toBeInTheDocument()
   })
 
-  it("renders worktree badges when showWorktrees is true and worktrees are present", () => {
+  it("renders worktree names when showWorktrees is true and worktrees are present", () => {
     const e = makeEvent({ worktrees: ["feature-a", "feature-b"] })
     const { container } = renderWithProvider(<EventRow e={e} showWorktrees />)
     expect(container.textContent).toContain("feature-a")
     expect(container.textContent).toContain("feature-b")
   })
 
-  it("names a worktree badge by its cmux workspace, and previews the worktree on hover", async () => {
+  it("names a worktree by its cmux workspace, and previews the worktree on hover", async () => {
     const qc = new QueryClient()
     qc.setQueryData(["cmux"], {
       available: true,
@@ -96,7 +96,7 @@ describe("EventRow", () => {
     expect(screen.getByText("~/feat")).toBeInTheDocument()
   })
 
-  it("does not render worktree badges when showWorktrees is false, even if worktrees are present", () => {
+  it("does not render worktree names when showWorktrees is false, even if worktrees are present", () => {
     const e = makeEvent({ worktrees: ["feature-a"] })
     const { container } = renderWithProvider(<EventRow e={e} />)
     expect(container.textContent).not.toContain("feature-a")
@@ -153,27 +153,18 @@ describe("global timeline affordances", () => {
     worktrees: ["branch-a", "branch-b"], worktree_paths: ["/wt/wt-a", "/wt/wt-b"],
   })
 
-  it("draws worktree badges as read-only labels", () => {
+  it("lists the worktrees inline as read-only text", () => {
     const { container } = renderWithProvider(
       <EventRow e={withWorktrees()} showWorktrees onOpen={vi.fn()} />,
     )
     // The ⎇ glyph marks a worktree name as one at a glance on the global
-    // timeline, where badges sit beside resource chips.
-    expect(screen.getByText("wt-a").closest("[data-variant]")).toHaveTextContent("⎇wt-a")
+    // timeline, and the names run on one line as the All Resources rows do.
+    expect(screen.getByText("wt-a").closest("p")).toHaveTextContent("⎇wt-a, ⎇wt-b")
+    expect(screen.getByText("wt-a").closest("[data-variant]")).toBeNull()
     expect(screen.getByText("wt-a")).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /open worktree/i })).not.toBeInTheDocument()
     // The row is the only button: nothing inside it competes for the click.
     expect(container.querySelectorAll("button")).toHaveLength(1)
-  })
-
-  it("draws worktree badges in the same light blue as the worktree cards", () => {
-    // Same thing named in two places should look the same in both.
-    renderWithProvider(<EventRow e={withWorktrees()} showWorktrees />)
-    // getByText lands on the label span; the variant and colour live on the
-    // Badge root above it.
-    const badge = screen.getByText("wt-a").closest("[data-variant]") as HTMLElement
-    expect(badge).toHaveAttribute("data-variant", "light")
-    expect(badge.style.getPropertyValue("--badge-bg")).toContain("blue")
   })
 
   it("still names the resource when the event has nowhere to go", () => {
@@ -372,7 +363,7 @@ describe("the row's tooltip names its destination", () => {
 })
 
 describe("the context lines below the event", () => {
-  it("puts the worktree badges on a line of their own, below the resource", () => {
+  it("puts the worktree names on a line of their own, below the resource", () => {
     // A resource title can be long enough that a badge trailing it lands
     // anywhere, and the worktree is what you scan the global feed by.
     const { container } = renderWithProvider(

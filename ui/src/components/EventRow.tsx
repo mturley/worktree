@@ -22,7 +22,7 @@ import { WorktreeName, WorktreePreview } from "./WorktreeName"
  * One entry on the timeline rail: a dot on the line, then the event's text.
  *
  * The WHOLE row is one button. Everything inside it — the resource chip, the
- * worktree badges — is read-only text, which is what makes that possible: a
+ * worktree names — is read-only text, which is what makes that possible: a
  * button nested inside a button is invalid markup with an ambiguous click
  * target, so the row can only be a single surface if nothing inside it is
  * interactive too.
@@ -215,18 +215,21 @@ export function EventRow({
 
         {/*
           The worktrees following this event, on a line of their own: on the
-          global timeline a resource title can be long enough that a badge
+          global timeline a resource title can be long enough that a name
           trailing it lands anywhere, and the worktree is what you scan the
-          feed by.
+          feed by. Inline and dimmed, as the All Resources rows list them.
         */}
         {showWorktrees && e.worktrees.length > 0 && (
-          <Group gap={6} wrap="wrap">
+          <Text size="xs" c="dimmed" truncate="end" style={{ minWidth: 0 }}>
             {eventWorktrees(e).map((w, i) => (
-              <WorktreePreview key={`${i}:${w.path ?? w.name}`} path={w.path}>
-                <Badge size="xs" color="blue" variant="light" maw={200}><WorktreeName path={w.path} name={w.name} /></Badge>
-              </WorktreePreview>
+              <span key={`${i}:${w.path ?? w.name}`}>
+                {i > 0 && ", "}
+                <WorktreePreview path={w.path}>
+                  <span><WorktreeName path={w.path} name={w.name} /></span>
+                </WorktreePreview>
+              </span>
             ))}
-          </Group>
+          </Text>
         )}
       </Stack>
     </Box>
