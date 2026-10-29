@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { cleanup, render, screen, within } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { AllResourceDTO } from "../api/types"
@@ -61,5 +62,21 @@ describe("AllResourceRow blocks badge", () => {
   it("shows none at zero or absent", () => {
     wrap(<AllResourceRow r={pr({ blocks_count: 0 })} />)
     expect(screen.queryByTestId("blocks-badge")).toBeNull()
+  })
+})
+
+describe("AllResourceRow worktrees line", () => {
+  it("names a worktree by its cmux workspace, and previews it on hover", async () => {
+    vi.mocked(api.cmux).mockResolvedValue({
+      available: true,
+      matches: { "/wt/a": [{ ref: "workspace:1", title: "Feature work", color: "#00ff00", selected: false }] },
+    } as never)
+    wrap(<AllResourceRow r={pr({ worktrees: [{ path: "/wt/a", repo: "r", branch: "a" }, { path: "/wt/b", repo: "r", branch: "b" }] })} />)
+    const ws = await screen.findByText("Feature work")
+    // A worktree with no workspace keeps its ⎇ name.
+    expect(screen.getByText("b")).toBeInTheDocument()
+
+    await userEvent.hover(ws)
+    expect(await screen.findByText("⎇ a")).toBeInTheDocument()
   })
 })

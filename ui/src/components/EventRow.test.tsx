@@ -77,6 +77,25 @@ describe("EventRow", () => {
     expect(container.textContent).toContain("feature-b")
   })
 
+  it("names a worktree badge by its cmux workspace, and previews the worktree on hover", async () => {
+    const qc = new QueryClient()
+    qc.setQueryData(["cmux"], {
+      available: true,
+      matches: { "/w/feat": [{ ref: "workspace:1", title: "Feature work", color: "#00ff00", selected: false }] },
+    })
+    qc.setQueryData(["session"], { handle: "h", label: "", created_at: "", last_seen_at: "", current: true, home: "/w" })
+    const e = makeEvent({ worktrees: ["login-branch", "other"], worktree_paths: ["/w/feat", "/w/plain"] })
+    render(<MantineProvider><QueryClientProvider client={qc}><EventRow e={e} showWorktrees /></QueryClientProvider></MantineProvider>)
+    const badge = screen.getByText("Feature work")
+    expect(screen.queryByText("feat")).toBeNull()
+    // A worktree with no workspace keeps its ⎇ name.
+    expect(screen.getByText("plain")).toBeInTheDocument()
+
+    await userEvent.hover(badge)
+    expect(await screen.findByText("⎇ feat")).toBeInTheDocument()
+    expect(screen.getByText("~/feat")).toBeInTheDocument()
+  })
+
   it("does not render worktree badges when showWorktrees is false, even if worktrees are present", () => {
     const e = makeEvent({ worktrees: ["feature-a"] })
     const { container } = renderWithProvider(<EventRow e={e} />)
@@ -465,13 +484,15 @@ describe("the resource line matches the resource cards", () => {
 
   it("marks an event whose resource no worktree follows as archived, and dims its title, on the global feed only", () => {
     const e = makeEvent({ resource_type: "pr", resource_id: "o/r#42", worktrees: [], worktree_paths: [] })
-    const { rerender } = renderWithProvider(<EventRow e={e} showWorktrees />)
+    const qc = new QueryClient()
+    const wrap = (ui: React.ReactElement) => <MantineProvider><QueryClientProvider client={qc}>{ui}</QueryClientProvider></MantineProvider>
+    const { rerender } = render(wrap(<EventRow e={e} showWorktrees />))
     expect(screen.getByText("Archived")).toBeInTheDocument()
     expect(screen.getByText("Add feature X").style.color).toContain("dimmed")
     expect(screen.getByLabelText("PR Opened").style.background).toContain("color-mix")
-    rerender(<MantineProvider><EventRow e={e} /></MantineProvider>)
+    rerender(wrap(<EventRow e={e} />))
     expect(screen.queryByText("Archived")).toBeNull()
-    rerender(<MantineProvider><EventRow e={{ ...e, worktrees: ["b"], worktree_paths: ["/wt/b"] }} showWorktrees /></MantineProvider>)
+    rerender(wrap(<EventRow e={{ ...e, worktrees: ["b"], worktree_paths: ["/wt/b"] }} showWorktrees />))
     expect(screen.queryByText("Archived")).toBeNull()
   })
 })

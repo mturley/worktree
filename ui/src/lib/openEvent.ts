@@ -81,12 +81,12 @@ export function isArchivedEvent(e: TimelineEvent): boolean {
 }
 
 /**
- * The names of the worktrees following an event, as the worktree cards title
- * them. `worktrees` holds their branches, so this reads the paths and falls
- * back to the branches only for an event without them.
+ * The worktrees following an event: by path, which names them as the
+ * worktree cards title them. `worktrees` holds their branches, so an event
+ * without paths falls back to those, as names only.
  */
-export function eventWorktreeNames(e: TimelineEvent): string[] {
-  return e.worktree_paths?.map(worktreeName) ?? e.worktrees
+export function eventWorktrees(e: TimelineEvent): { path?: string; name: string }[] {
+  return e.worktree_paths?.map((path) => ({ path, name: worktreeName(path) })) ?? e.worktrees.map((name) => ({ name }))
 }
 
 /**

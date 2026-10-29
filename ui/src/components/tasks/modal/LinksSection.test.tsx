@@ -116,8 +116,10 @@ describe("LinksSection", () => {
     expect(await screen.findByText("~/feat")).toBeInTheDocument()
     await userEvent.unhover(feature)
 
+    // The resource's preview names its worktree by the workspace too.
+    const named = screen.getAllByText("Feature work").length
     await userEvent.hover(screen.getByRole("link", { name: "Fix login" }))
-    expect(await screen.findByText("feat")).toBeInTheDocument()
+    await waitFor(() => expect(screen.getAllByText("Feature work")).toHaveLength(named + 1))
   })
 
   describe("drag", () => {

@@ -16,8 +16,7 @@ import { MatchWhy } from "./search/MatchWhy"
 import { useSearchContext } from "./search/SearchContext"
 import { ChooseWorktreeModal } from "./ChooseWorktreeModal"
 import { useCrossHover } from "./CrossHoverContext"
-import { WorktreeGlyph } from "./WorktreeGlyph"
-import { worktreeName } from "../lib/homeWorktree"
+import { WorktreeName, WorktreePreview } from "./WorktreeName"
 
 const btn = { root: { flexShrink: 0 }, label: { whiteSpace: "nowrap" as const } }
 
@@ -25,15 +24,20 @@ function worktreeHref(wt: ResourceWorktree, r: AllResourceDTO): string {
   return `/worktree/${encodeURIComponent(wt.path)}?resource=${serializeResourceKey({ type: r.type, id: r.id })}`
 }
 
-/** Worktree names, each marked ⎇ as the worktree cards title them. */
-function WorktreesLine({ worktrees }: { worktrees: ResourceWorktree[] }) {
+/**
+ * The worktrees, each named by its cmux workspace or ⎇ name as a task's link
+ * chip names it. Hovering one shows its full names and directory, unless
+ * `preview` is off (the line is already inside a hover card).
+ */
+function WorktreesLine({ worktrees, preview }: { worktrees: ResourceWorktree[]; preview: boolean }) {
   return (
     <Text size="xs" c="dimmed" truncate="end" mt={2} style={{ minWidth: 0 }}>
       {worktrees.map((w, i) => (
         <span key={w.path}>
           {i > 0 && ", "}
-          <WorktreeGlyph />
-          <span>{worktreeName(w.path)}</span>
+          <WorktreePreview path={preview ? w.path : undefined}>
+            <span><WorktreeName path={w.path} /></span>
+          </WorktreePreview>
         </span>
       ))}
     </Text>
@@ -74,7 +78,7 @@ export function AllResourceActions({ r }: { r: AllResourceDTO }) {
  * with its unread and task badges, and the worktrees following it. Also the
  * hover card on a task's link to the resource.
  */
-export function AllResourceSummary({ r }: { r: AllResourceDTO }) {
+export function AllResourceSummary({ r, preview = true }: { r: AllResourceDTO; preview?: boolean }) {
   const unread = hasUnread(r)
   const openTasks = r.open_task_count ?? 0
   const blocks = r.blocks_count ?? 0
@@ -90,7 +94,7 @@ export function AllResourceSummary({ r }: { r: AllResourceDTO }) {
           </>
         ) : undefined}
       />
-      <WorktreesLine worktrees={r.worktrees} />
+      <WorktreesLine worktrees={r.worktrees} preview={preview} />
     </>
   )
 }

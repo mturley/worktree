@@ -95,7 +95,8 @@ function ResourceDetails({ type, id, label }: { type: string; id: string; label?
       </Text>
     )
   }
-  return <AllResourceSummary r={r} />
+  // No worktree previews: a hover card inside this one would close it.
+  return <AllResourceSummary r={r} preview={false} />
 }
 
 /**
