@@ -21,7 +21,7 @@ The menu bar app is a **supplement** to the web UI, not a replacement for it. It
 - **"Switch cmux" buttons in hover cards, everywhere (not just the mini view).** Wherever a hover card shows a cmux workspace's colour bar and name, a small button beside the name switches cmux to that workspace, so Mike can move the mouse into the card and switch instead of opening a browser tab.
 - **Modals stay inside the dropdown:** the task detail modal and the event details modal.
 - **Everything else opens in the browser:** any navigation to another route (a worktree page, a resource, settings) opens the full web UI at that URL in the default browser. External links (GitHub, Jira, Slack) also open in the browser.
-- **Graceful failure when the server is not running:** the dropdown shows "The worktree UI isn't running. Start it with `worktree ui`." It retries every few seconds and loads `/mini` on its own once the server answers. The icon shows the disconnected state meanwhile.
+- **Graceful failure when the server is not running:** the dropdown shows "The worktree UI isn't running. Start it with `worktree ui`." It reloads itself every 6 seconds, like the web UI does, and shows `/mini` once the server answers. The icon shows the disconnected state meanwhile. The web UI's own reload countdown drops from 10 to 6 seconds too.
 - **`worktree setup` offers to install it on macOS**, **`worktree setup --uninstall` removes it** along with the rest of setup, and **`worktree setup --uninstall-mac-app` removes only the app**. (There is no separate `worktree uninstall` command; uninstall is the `--uninstall` flag on setup.)
 - **No interference with existing notifications.** The app must not change who receives cmux or browser notifications, or how they are delivered.
 
@@ -59,7 +59,7 @@ menu bar icon ──click──► dropdown (NSPopover) ──► WKWebView ─�
 - **The app is a dock-less accessory app** (`setActivationPolicy(.accessory)`): no Dock icon, no app menu.
 - **The web view stays loaded while the dropdown is closed**, so its event stream keeps running and the icon stays current. Closing the dropdown hides it; it does not unload the page.
 - **The URL is built in.** The port is fixed (see Non-goals), so the app's `Info.plist` template carries `http://127.0.0.1:8475` (from `config.DefaultHTTPPort`, substituted at build time). The app works the same however it was launched: at login, from `~/Applications`, or from Spotlight. It does not read worktree's config itself.
-- **Right-clicking the icon** shows a small menu: "Open full UI", "Reload", "Open at login" (a checkmark item), "Quit". *My call, except "Open at login", which Mike asked for.*
+- **Right-clicking the icon** shows a small menu: "Open full UI", "Reload", "Open at login" (a checkmark item), "More settings in web UI", "Quit". *My call, except "Open at login" and "More settings in web UI", which Mike asked for.* "More settings in web UI" opens `http://127.0.0.1:8475/?settings` in the browser: the full UI's home page with the Settings modal open. This needs a small web UI addition: `SettingsProvider` opens the modal when the page loads with a `settings` query parameter (optionally `settings=<tab>`, one of `SettingsTarget["tab"]`), then removes the parameter from the URL so a reload doesn't reopen it.
 - **Starting at login is optional.** It is a LaunchAgent at `~/Library/LaunchAgents/<label>.plist` with `RunAtLoad`. The plist existing is the only record of the choice. There is no config key and no separate preference. "Open at login" in the right-click menu shows a checkmark when the plist exists. Clicking it writes or deletes the plist (no `launchctl` needed: deleting it just stops the next login start, and the running app keeps running). That needs no permission, since the folder is the user's own. macOS may also list the item under System Settings → General → Login Items; turning it off there is honoured by macOS but does not delete the plist, so the checkmark can disagree. That is acceptable for this pass.
 
 ### Frontend: the `/mini` route
@@ -121,12 +121,15 @@ The glyph itself is the builder's call. A simplified version of the worktree log
 ### Login and the server not running
 
 - **Login:** the dropdown shows the existing `LoginPage` when there is no session, because `App.tsx` already does that for any route. The web view keeps its cookies across launches (default `WKWebsiteDataStore`). The session is a separate login from the browser's and shows up as its own entry under Settings → Devices. Sessions expire a fixed 30 days after login (`internal/uisession`), so this recurs about monthly; that is accepted. `LoginPage` posts `{ type: "login" }` through the bridge (a no-op outside the app), and the icon shows the needs-login state until `ready` arrives.
-- **Server not running:** when the load fails at the network level (connection refused, or the server's `ServerUnreachable` screen), the app shows its own native "The worktree UI isn't running. Start it with `worktree ui`." view in the dropdown instead of the web view, retries every 5 seconds, and swaps the web view back in once the server answers. The icon shows the disconnected state. If the page later loses the server (for example during `make install`'s restart), the existing `ServerUnreachable` screen reloads the page on its own; the app should also notice the failed reload and fall back to its native view.
+- **Server not running, and auto-reload:** the dropdown behaves like the full web UI, which reloads itself when it can't reach the server, because that happens on every reinstall while Mike develops. The countdown is **6 seconds in both places** (today the web UI's `RELOAD_AFTER_SECONDS` in `ui/src/App.tsx` is 10; change it to 6).
+  - When the page has loaded and then loses the server (for example during `make install`'s restart), the page's own `ServerUnreachable` screen shows in the dropdown and reloads after 6s, exactly as in the browser. It also tells the app (`unreachable`), which shows the disconnected icon.
+  - When a load fails at the network level (connection refused, so there is no page to show a countdown), the app shows its own native view: "The worktree UI isn't running. Start it with `worktree ui`." with "Reloading in Ns…", counting down from 6. At zero it reloads the web view. Success swaps the web view back in; another failure restarts the countdown.
+  - The icon stays disconnected until the page sends `ready` or `login`.
 - **Security checks:** the request-forgery guard (`internal/webui/middleware.go`) compares `Origin` against the request's host. The web view loads the page from the same origin, so this should pass as is, but test that writes (mark read, task edits) work from the dropdown. Loopback HTTP is allowed in a web view; the app may need `NSAllowsLocalNetworking` in its `Info.plist` for App Transport Security.
 
 ### Notifications
 
-Out of scope, with one requirement. The server sends a browser notification to **one tab per login session** (`internal/webui/tabs.go`, `Deliver`), and the dropdown is a separate session. If it registered tab presence, the server would offer it every notification. The web view has no notification API, so it would decline each one: no duplicates, but extra round trips and a misleading Devices/tabs picture. So `/mini` does not call `useTabPresence` at all.
+Out of scope, with one requirement. The server sends a browser notification to **one tab per login session** (`internal/webui/tabs.go`, `Deliver`), and the dropdown is a separate session. If it registered tab presence, the server would offer it every notification. The web view has no notification API, so it would decline each one: no duplicates, but extra round trips and a misleading Devices/tabs picture. So `/mini` does not call `useTabPresence` at all, **and its event stream URL omits the `tab` parameter**: the stream itself registers a tab when that parameter is present (`internal/webui/stream.go`, `streamUrl` in `ui/src/hooks/useSSE.ts`), so skipping the presence hook alone would not be enough.
 
 If native notifications are wanted later, the bridge is the path: the page hands the notification to the app, and the server ranks the app below any browser tab. That is not designed here.
 
@@ -178,7 +181,7 @@ In the dropdown, following a worktree link means opening a browser tab, and ofte
 - The glyph design, exact sizes, and the blink implementation in Swift.
 - The bundle ID, LaunchAgent label and app name (suggestions above).
 - Whether the Tasks tab needs its own extracted component or just reuses `useTasksPanel` and `TaskList` directly.
-- How the event details modal is driven on `/mini` (local state as on the home page is fine; it does not need a URL param).
+- How the event details modal is driven on `/mini` (local state as on the home page is fine; it does not need a URL param). Decided in the plan: on the home page an event row opens its worktree; on `/mini` it opens the event details modal in the dropdown instead, and the modal's own buttons go to the browser.
 - Commit boundaries, other than the `ActivityPanel` extraction landing on its own.
 
 ## Decisions marked as my calls
@@ -205,3 +208,5 @@ In the dropdown, following a worktree link means opening a browser tab, and ofte
 - Add "switch cmux" buttons to hover cards that show a workspace, in all views.
 - AppKit, not SwiftUI (after discussing why).
 - Starting at login is optional, with an easy way to turn it off.
+- "More settings in web UI" opens the full UI's Settings modal in the browser.
+- The dropdown auto-reloads when it can't reach the server, like the web UI; both countdowns are 6 seconds.
