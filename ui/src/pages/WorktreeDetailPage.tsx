@@ -659,7 +659,9 @@ export function WorktreeDetailPage() {
     navigate(escHome ? homeWorktreeHref(escHome) : "/")
   }
   const searchBar = (
-    <div style={wide ? { flex: "1 1 160px", minWidth: 0 } : { flex: "1 1 160px", marginRight: "auto" }}>
+    // The bar caps its own width (SearchBar's maxWidth), so this wrapper takes
+    // the rest of the row and right-aligns it.
+    <div style={{ flex: "1 1 160px", minWidth: 0, display: "flex", justifyContent: "flex-end" }}>
       {/* Esc backs out a level at a time: a query first, then out of the
           diff drill-down, the card back to Notes, then it sees everything
           (clears Unreads only and filters), then deselects, then leaves. */}

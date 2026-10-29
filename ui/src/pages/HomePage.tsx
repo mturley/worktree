@@ -3,7 +3,7 @@ import { useLocation } from "wouter"
 import { serializeResourceKey } from "../lib/resourceKey"
 import { isArchivedEvent, openEventState } from "../lib/openEvent"
 import type { ResourceDTO, TimelineEvent } from "../api/types"
-import { Badge, Box, Button, Grid, Group, Stack, Tabs } from "@mantine/core"
+import { Badge, Box, Button, Grid, Group, Stack, Tabs, Title } from "@mantine/core"
 import { useElementSize } from "@mantine/hooks"
 import { IconPlus } from "@tabler/icons-react"
 import { useWorktrees } from "../hooks/useWorktrees"
@@ -178,10 +178,14 @@ export function HomePage() {
     </Button>
   )
 
-  // Above the worktree list on wide, inside the Worktrees tab on narrow.
-  const listToolbar = (
+  // Above the worktree list on wide, inside the Worktrees tab on narrow. The
+  // heading is wide only: narrow, the Worktrees tab already names the list.
+  const listToolbar = (withHeading: boolean) => (
     <Group justify="space-between" gap="xs" data-testid="worktrees-toolbar">
-      {sortControl}
+      <Group gap="md" wrap="nowrap">
+        {withHeading && <Title order={4}>Worktrees</Title>}
+        {sortControl}
+      </Group>
       {newWorktreeButton}
     </Group>
   )
@@ -434,7 +438,7 @@ export function HomePage() {
             </Tabs.List>
             <Tabs.Panel value="worktrees" pt="md">
               <Stack gap="xs">
-                {listToolbar}
+                {listToolbar(false)}
                 {worktrees}
               </Stack>
             </Tabs.Panel>
@@ -481,7 +485,7 @@ export function HomePage() {
               data-worktrees-header
               data-tooltip-layer={headerStyle ? "pinned" : undefined}
             >
-              {listToolbar}
+              {listToolbar(true)}
             </Box>
             {worktrees}
           </Stack>
