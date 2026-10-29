@@ -1,36 +1,26 @@
 import { useMemo, useState } from "react"
 import { useLocation } from "wouter"
 import { serializeResourceKey } from "../lib/resourceKey"
-import { isArchivedEvent, openEventState } from "../lib/openEvent"
-import type { ResourceDTO, TimelineEvent } from "../api/types"
+import type { ResourceDTO } from "../api/types"
 import { Badge, Box, Button, Grid, Group, Stack, Tabs, Title } from "@mantine/core"
 import { useElementSize } from "@mantine/hooks"
 import { IconPlus } from "@tabler/icons-react"
 import { useWorktrees } from "../hooks/useWorktrees"
-import { useGlobalTimeline } from "../hooks/useTimeline"
 import { useIsWide } from "../hooks/useIsWide"
 import { useIsTall } from "../hooks/useIsTall"
 import { pinnedStyle } from "../lib/stickyList"
 import { WorktreeList } from "../components/WorktreeList"
-import { TimelineFeed } from "../components/TimelineFeed"
-import { MarkAllReadButton } from "../components/MarkAllReadButton"
-import { ArchivedToggle } from "../components/ArchivedToggle"
 import { useUnreadOnly } from "../hooks/useUnreadOnly"
 import { useUnreadOnlyHotkey } from "../hooks/useUnreadOnlyHotkey"
 import { usePublishEscLeaves } from "../lib/escapeHint"
 import { homeWorktreeHref, useEscHome } from "../lib/homeWorktree"
 import { unreadBadge } from "../lib/unreadBadge"
-import { SourceFilter } from "../components/SourceFilter"
-import { EventTypeFilter } from "../components/EventTypeFilter"
-import { useActivityFilter } from "../hooks/useActivityFilter"
-import { RefreshWatchersButton } from "../components/RefreshWatchersButton"
 import { NewWorktreeModal } from "../components/NewWorktreeModal"
 import { SearchSummary } from "../components/search/SearchSummary"
 import { useSeeEverything } from "../hooks/useSeeEverything"
 import { NarrowingContext } from "../components/search/NarrowingContext"
 import { EMPTY_FILTER } from "../lib/resourceListFilter"
 import { HomeHeader } from "../components/HomeHeader"
-import { EventDetailsModal } from "../components/EventDetailsModal"
 import { SearchBar } from "../components/search/SearchBar"
 import { SearchContext } from "../components/search/SearchContext"
 import { buildSuggestions } from "../components/search/suggestions"
@@ -48,8 +38,8 @@ import { useResourcesView } from "../hooks/useResourcesView"
 import { ChooseWorktreeModal } from "../components/ChooseWorktreeModal"
 import { CrossHoverProvider } from "../components/CrossHoverContext"
 import { useTasksPanel } from "../components/tasks/TasksSection"
-import { useMakeTaskFromEvent } from "../components/tasks/useMakeTask"
 import { useTaskModal } from "../components/tasks/modal/TaskModalProvider"
+import { useActivityPanel } from "../components/ActivityPanel"
 
 type RightTab = "timeline" | "resources"
 type NarrowTab = "worktrees" | RightTab
@@ -57,23 +47,10 @@ type NarrowTab = "worktrees" | RightTab
 /** Every task, with no context to link a new one to. */
 const HOME_TASKS = { kind: "all" } as const
 
-/**
- * The event's resource as its row shows it, for the worktree picker's
- * heading — or the bare shape the event itself names, when it carries no
- * enriched one.
- */
-function chosenResource(e: TimelineEvent): ResourceDTO {
-  return e.resource ?? { type: e.resource_type, id: e.resource_id, url: e.resource_url, primary: false, title: e.resource_title }
-}
-
 export function HomePage() {
   const [, navigate] = useLocation()
-  // "Make task" from an event: the global feed has no worktree to act in.
-  const makeTaskFromEvent = useMakeTaskFromEvent()
-  // A task event's row opens its task, over this page.
+  // A task picked in the search dropdown opens its task, over this page.
   const { open: openTask } = useTaskModal()
-  const [archived, setArchived] = useState(false)
-  const { sources, setSources, categories, setCategories, eventTypes } = useActivityFilter()
   // Shared with every worktree page and every other tab; narrows both the
   // worktree list and the activity feed.
   const [unreadOnly, setUnreadOnly] = useUnreadOnly()
@@ -89,9 +66,14 @@ export function HomePage() {
   const resourcesView = useResourcesView(unreadOnly, search.terms)
   // The same cached query the Resources tab uses.
   const allResources = useAllResources()
-  // An archived event has no worktree to route to; picking one in the search
-  // dropdown opens its details here instead.
-  const [pickedEvent, setPickedEvent] = useState<TimelineEvent | null>(null)
+  // The Activity feed, its controls, filters and modals; see useActivityPanel.
+  const activity = useActivityPanel({
+    unreadOnly,
+    search: { terms: search.terms, debouncedQ: search.debouncedQ, queryText },
+    select: "route",
+  })
+  // The Activity source toggles narrow the worktree cards too.
+  const sources = activity.sources
   // Wide: the header sits above the columns, which shrink by its height.
   const { ref: headerRef, height: headerH } = useElementSize()
   // Each column is its own scroller. The page is the header (measured as its
@@ -117,7 +99,6 @@ export function HomePage() {
     ? pinnedStyle("calc(-1 * var(--grid-col-padding))", "var(--grid-col-padding)")
     : undefined
   const wts = useWorktrees()
-  const tl = useGlobalTimeline(archived, sources, unreadOnly, eventTypes, search.debouncedQ)
   const sort = useWorktreeSort()
   // Same shared query the cards use, so this costs no extra request.
   const cmux = useCmux()
@@ -190,46 +171,21 @@ export function HomePage() {
     </Group>
   )
 
-  /**
-   * Opens an event's resource from the global timeline, then its details.
-   *
-   * A resource has no meaning without a worktree here — the feed spans all of
-   * them — so this routes to a worktree following it, which the event names
-   * in worktree_paths. Rows are only clickable this way for events that have
-   * one (canSelectResource), so there is always a destination.
-   *
-   * The event rides along in history state, and the worktree page opens its
-   * details modal over the selected resource: clicking an entry is asking
-   * about THAT entry, and landing on the resource alone left you to find it
-   * again in the resource's feed.
-   */
-  const openEventIn = (path: string, e: TimelineEvent) => {
-    navigate(`/worktree/${encodeURIComponent(path)}?resource=${serializeResourceKey({ type: e.resource_type, id: e.resource_id })}`, {
-      state: openEventState(e),
-    })
-  }
-  // An event or resource several worktrees follow asks which one
-  // (ChooseWorktreeModal) — from the feed, as a Resources row does, and from
-  // the search dropdown. An event's choice also carries the event along.
-  const [choosing, setChoosing] = useState<{ r: ResourceDTO; worktrees: { path: string; branch: string }[]; e?: TimelineEvent } | null>(null)
-  const selectEventResource = (_key: { type: string; id: string }, e: TimelineEvent) => {
-    const paths = e.worktree_paths ?? []
-    if (paths.length > 1) {
-      setChoosing({ r: chosenResource(e), worktrees: paths.map((path, i) => ({ path, branch: e.worktrees[i] ?? "" })), e })
-    } else if (paths[0]) openEventIn(paths[0], e)
-  }
+  // A resource several worktrees follow, picked in the search dropdown, asks
+  // which one (ChooseWorktreeModal), as a Resources row does. (An event's
+  // chooser is useActivityPanel's.)
+  const [choosing, setChoosing] = useState<{ r: ResourceDTO; worktrees: { path: string; branch: string }[] } | null>(null)
   const openResourceIn = (path: string, r: { type: string; id: string }) =>
     navigate(`/worktree/${encodeURIComponent(path)}?resource=${serializeResourceKey({ type: r.type, id: r.id })}`)
 
   const everything = useSeeEverything()
   // Unreads only narrows every pane here, so their match lines say so.
   const withUnread = unreadOnly ? "with unread events" : undefined
-  const eventNoun: [string, string] = unreadOnly ? ["unread event", "unread events"] : ["event", "events"]
   // Which filters reach which pane: the source toggles narrow the worktree
   // cards and the feed, the event types only the feed, and the Resources
   // tab has its own.
   const sourcesOn = sources.length > 0
-  const activityFiltered = sourcesOn || categories.length > 0
+  const activityFiltered = activity.filtered
   const resourcesFiltered = resourcesView.filter.type !== null
   // Everything that narrows the page, and the one way back (Esc, and every
   // narrowing line's link): see NarrowingContext.
@@ -239,10 +195,10 @@ export function HomePage() {
     filters: activityFiltered || resourcesFiltered,
     clearAll: () => {
       everything.seeEverything()
-      setSources([]) // clears the event types with it (useActivityFilter)
+      activity.clearFilters() // clears the event types with it (useActivityFilter)
       resourcesView.setFilter(EMPTY_FILTER)
     },
-  }), [search.terms, unreadOnly, activityFiltered, resourcesFiltered, everything, setSources, resourcesView])
+  }), [search.terms, unreadOnly, activityFiltered, resourcesFiltered, everything, activity.clearFilters, resourcesView])
   const searchOrUnread = narrowing.search || unreadOnly
   // Each pane heads its results with how many are left, while anything
   // narrows it; the line says it, so the lists show no empty text then.
@@ -272,25 +228,6 @@ export function HomePage() {
       filtered={resourcesFiltered}
     />
   )
-  // The Activity tab's own controls: refresh and archived.
-  const activityControls = (
-    <Group gap="sm" wrap="nowrap" align="center" data-testid="activity-controls">
-      <Group gap={6} wrap="nowrap" align="center">
-        <RefreshWatchersButton />
-        {/* Only over the whole feed, as on the worktree page. "Show
-            archived" only adds to the feed, so it does not hide it. */}
-        {!narrowing.search && !activityFiltered && (
-          <MarkAllReadButton
-            resources={allResources.data ?? []}
-            feed={{ showWorktrees: true }}
-            taskScope={{ kind: "all" }}
-          />
-        )}
-      </Group>
-      <ArchivedToggle value={archived} onChange={setArchived} />
-    </Group>
-  )
-
   // While searching, each tab shows how many results it holds ("N+" when
   // the feed has more pages).
   const counting = search.terms.length > 0
@@ -305,58 +242,13 @@ export function HomePage() {
   const rightTabBar = (
     <Tabs value={rightTab} onChange={(v) => v && setRightTab(v as RightTab)}>
       <Tabs.List>
-        <Tabs.Tab value="timeline">Activity{countBadge(tl.events.length, tl.hasMore)}</Tabs.Tab>
+        <Tabs.Tab value="timeline">Activity{countBadge(activity.events.length, activity.hasMore)}</Tabs.Tab>
         <Tabs.Tab value="resources">Resources{countBadge(resourcesView.shown.length)}</Tabs.Tab>
         <Group ml="auto" align="center" gap="md" wrap="nowrap" pb={4}>
-          {rightTab === "timeline" ? activityControls : <ResourcesTabControls view={resourcesView} />}
+          {rightTab === "timeline" ? activity.controls : <ResourcesTabControls view={resourcesView} />}
         </Group>
       </Tabs.List>
     </Tabs>
-  )
-
-  const timeline = (top?: React.ReactNode) => (
-    // No gap below the header when pinned: its own padding is that space.
-    <Stack gap={headerStyle ? 0 : "sm"}>
-      {/* Opaque room below the filters when pinned, so the feed passing
-          under them does not run right up against the buttons. */}
-      <Stack
-        gap="sm"
-        style={headerStyle && { ...headerStyle, paddingBottom: "var(--mantine-spacing-xs)" }}
-        data-activity-header
-        data-tooltip-layer={headerStyle ? "pinned" : undefined}
-      >
-        {/* Wide, the tab bar, which carries this tab's controls; narrow,
-            where the tab bar has no room for them, the controls alone. */}
-        {top ?? activityControls}
-        <Group>
-          <SourceFilter value={sources} onChange={setSources} />
-        </Group>
-        {/* Narrows only the feed, not the worktree cards: a card follows
-            resources, and every resource has every kind of event. */}
-        <EventTypeFilter sources={sources} value={categories} onChange={setCategories} />
-        {/* Directly above the results it counts. Only once the feed holds
-            the results for what is typed: during the debounce and the first
-            fetch it would count the old ones. */}
-        {(searchOrUnread || activityFiltered) && search.debouncedQ === queryText && !tl.isLoading && (
-          <SearchSummary count={tl.events.length} more={tl.hasMore} noun={eventNoun} filtered={activityFiltered} />
-        )}
-      </Stack>
-      <TimelineFeed
-        events={tl.events}
-        loading={tl.isLoading}
-        error={tl.error}
-        showWorktrees
-        // Narrowed, the "0 … events" line above says it.
-        emptyText={searchOrUnread || activityFiltered ? null : undefined}
-        hasMore={tl.hasMore}
-        onLoadMore={tl.loadMore}
-        loadingMore={tl.loadingMore}
-        onSelectResource={selectEventResource}
-        canSelectResource={(e) => Boolean(e.worktree_paths?.length)}
-        onMakeTask={makeTaskFromEvent}
-        onOpenTask={openTask}
-      />
-    </Stack>
   )
 
   const suggestions = buildSuggestions({
@@ -367,7 +259,7 @@ export function HomePage() {
     })),
     resources: resourcesView.shown.map((r) => ({ r, worktreePath: r.worktrees[0]?.path })),
     tasks: tasks.tasks,
-    events: tl.events,
+    events: activity.events,
     go: {
       worktree: (p) => navigate(`/worktree/${encodeURIComponent(p)}`),
       resource: (r, p) => {
@@ -375,12 +267,8 @@ export function HomePage() {
         if (followers.length > 1) setChoosing({ r, worktrees: followers })
         else if (p) openResourceIn(p, r)
       },
-      // An archived event (only with "Show archived" on) has no worktree to
-      // route to; like its row, it opens the details modal, which offers to
-      // follow the resource again.
-      event: (e) => (isArchivedEvent(e) || !e.worktree_paths?.length
-        ? setPickedEvent(e)
-        : selectEventResource({ type: e.resource_type, id: e.resource_id }, e)),
+      // An archived or worktree-less event opens its details; see pickEvent.
+      event: activity.pickEvent,
       task: openTask,
     },
   })
@@ -405,15 +293,14 @@ export function HomePage() {
   const header = <HomeHeader search={searchBar} unreadOnly={unreadOnly} onUnreadOnlyChange={setUnreadOnly} hasUnread={unreadBadge(wts.data).unread} />
   const detailsModal = (
     <>
-      <EventDetailsModal e={pickedEvent} onClose={() => setPickedEvent(null)} onMakeTask={makeTaskFromEvent} />
+      {activity.modals}
       <ChooseWorktreeModal
         r={choosing?.r ?? null}
         worktrees={choosing?.worktrees ?? []}
         onPick={(path) => {
           const c = choosing
           setChoosing(null)
-          if (c?.e) openEventIn(path, c.e)
-          else if (c) openResourceIn(path, c.r)
+          if (c) openResourceIn(path, c.r)
         }}
         onClose={() => setChoosing(null)}
       />
@@ -433,7 +320,7 @@ export function HomePage() {
           <Tabs value={narrowTab} onChange={(v) => v && setNarrowTab(v as NarrowTab)}>
             <Tabs.List>
               <Tabs.Tab value="worktrees">Worktrees{countBadge(shownWorktrees.length)}</Tabs.Tab>
-              <Tabs.Tab value="timeline">Activity{countBadge(tl.events.length, tl.hasMore)}</Tabs.Tab>
+              <Tabs.Tab value="timeline">Activity{countBadge(activity.events.length, activity.hasMore)}</Tabs.Tab>
               <Tabs.Tab value="resources">Resources{countBadge(resourcesView.shown.length)}</Tabs.Tab>
             </Tabs.List>
             <Tabs.Panel value="worktrees" pt="md">
@@ -442,7 +329,7 @@ export function HomePage() {
                 {worktrees}
               </Stack>
             </Tabs.Panel>
-            <Tabs.Panel value="timeline" pt="md">{timeline()}</Tabs.Panel>
+            <Tabs.Panel value="timeline" pt="md">{activity.render(undefined, headerStyle)}</Tabs.Panel>
             <Tabs.Panel value="resources" pt="md">
               <ResourcesPanel
                 view={resourcesView}
@@ -497,7 +384,7 @@ export function HomePage() {
               never paints over the panel's bottom edge. */}
           <Stack gap="sm">
             {tasks.panel}
-            {rightTab === "timeline" && timeline(rightTabBar)}
+            {rightTab === "timeline" && activity.render(rightTabBar, headerStyle)}
             {rightTab === "resources" && (
               <ResourcesPanel view={resourcesView} headerStyle={headerStyle} top={rightTabBar} searchSummary={resourcesSummary} />
             )}
