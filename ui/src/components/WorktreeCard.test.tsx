@@ -287,15 +287,6 @@ describe("WorktreeCard related resources", () => {
   })
 })
 
-describe("WorktreeCard WT badge", () => {
-  it("labels the worktree name with a WORKTREE badge", () => {
-    // The badge keeps the worktree's own name identifiable once the cmux
-    // workspace name takes over as the card's headline.
-    wrap(<WorktreeCard w={summary} />)
-    expect(screen.getByText("WORKTREE")).toBeInTheDocument()
-  })
-})
-
 describe("WorktreeCard unread dot", () => {
   it("shows an unread dot on a focus resource with unread events", () => {
     wrap(<WorktreeCard w={{

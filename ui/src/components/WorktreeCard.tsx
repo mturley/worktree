@@ -145,9 +145,6 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
       <Box {...link}>
         <Stack gap={6}>
           <Group gap="xs" wrap="wrap">
-            {/* Marks the worktree's own name, so it stays identifiable once
-                the cmux workspace takes over as the card's headline. */}
-            <Badge size="xs" color="blue" variant="light" style={{ flex: "none" }}>WORKTREE</Badge>
             <Text
               fw={hasWorkspace ? 600 : 700}
               size={hasWorkspace ? "sm" : "md"}

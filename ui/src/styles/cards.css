@@ -94,7 +94,7 @@
 
 /*
  * Mantine's Badge declares cursor: default, so the badges on a clickable card
- * (unread count, task count, WORKTREE) showed an arrow over what is still
+ * (unread count, task count, missing) showed an arrow over what is still
  * the card's click target.
  */
 [data-interactive="true"] .mantine-Badge-root {

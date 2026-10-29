@@ -117,7 +117,7 @@ describe("LinksSection", () => {
     await userEvent.unhover(feature)
 
     await userEvent.hover(screen.getByRole("link", { name: "Fix login" }))
-    expect(await screen.findByText("login-branch")).toBeInTheDocument()
+    expect(await screen.findByText("feat")).toBeInTheDocument()
   })
 
   describe("drag", () => {

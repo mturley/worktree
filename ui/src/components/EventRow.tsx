@@ -11,11 +11,12 @@ import { EventResourceChip } from "./EventResourceChip"
 import { UnreadMarkerDot } from "./UnreadMarkerDot"
 import { READ_BOX_BORDER, UNREAD_BG, UNREAD_BOX_BORDER } from "../lib/unread"
 import { ROW_PAD_X } from "./timelineRail"
-import { isArchivedEvent } from "../lib/openEvent"
+import { eventWorktreeNames, isArchivedEvent } from "../lib/openEvent"
 import { MatchWhy } from "./search/MatchWhy"
 import { SearchHighlight } from "./search/SearchHighlight"
 import { useCrossHover } from "./CrossHoverContext"
 import { eventTaskKey } from "../lib/taskEventKey"
+import { WorktreeGlyph } from "./WorktreeGlyph"
 
 /**
  * One entry on the timeline rail: a dot on the line, then the event's text.
@@ -220,10 +221,8 @@ export function EventRow({
         */}
         {showWorktrees && e.worktrees.length > 0 && (
           <Group gap={6} wrap="wrap">
-            {e.worktrees.map((w) => (
-              // Light blue, matching the WORKTREE badge on the worktree
-              // cards, so the same thing looks the same wherever it is named.
-              <Badge key={w} size="xs" color="blue" variant="light">Worktree: {w}</Badge>
+            {eventWorktreeNames(e).map((w, i) => (
+              <Badge key={`${i}:${w}`} size="xs" color="blue" variant="light"><WorktreeGlyph /><span>{w}</span></Badge>
             ))}
           </Group>
         )}

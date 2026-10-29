@@ -123,7 +123,7 @@ describe("ResourcesPanel", () => {
     const dialog = await screen.findByRole("dialog")
     expect(within(dialog).getByText("My open PR")).toBeInTheDocument()
     expect(within(dialog).getByText(/followed by 2 worktrees/)).toBeInTheDocument()
-    await user.click(within(dialog).getByRole("button", { name: "view in branch-a" }))
+    await user.click(within(dialog).getByRole("button", { name: "view in a" }))
     expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/a")}`)
     expect(new URLSearchParams(window.location.search).get("resource")).toContain("o/r#1")
   })

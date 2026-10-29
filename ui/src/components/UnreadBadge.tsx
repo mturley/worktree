@@ -10,9 +10,8 @@ import { Badge } from "@mantine/core"
  * carry a count of at least 1 while unread — see the server's
  * unreadIndex.fill.)
  *
- * Filled rather than light, unlike the WORKTREE badge beside it on the
- * worktree card: this one is a notification, and a second pale-blue pill
- * would read as another label.
+ * Filled rather than light: this one is a notification, and a pale pill
+ * would read as a label.
  */
 export function UnreadBadge({ unread, count = 0, ...rest }: {
   unread: boolean

@@ -208,17 +208,18 @@ describe("TaskRow opens the modal", () => {
     const onOpen = vi.fn()
     const r: AllResourceDTO = {
       type: "pr", id: "o/r#5", url: "https://github.com/o/r/pull/5", primary: true, title: "Make login faster",
-      worktrees: [{ path: "/w/a", repo: "r", branch: "login-branch" }],
+      worktrees: [{ path: "/w/login-wt", repo: "r", branch: "login-branch" }],
     }
     wrap(<TaskRow
-      task={task({ links: [{ kind: "resource", resource_type: "pr", resource_id: "o/r#5", focus: true, archived: false, worktrees: ["/w/a"] }] })}
+      task={task({ links: [{ kind: "resource", resource_type: "pr", resource_id: "o/r#5", focus: true, archived: false, worktrees: ["/w/login-wt"] }] })}
       onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} onOpen={onOpen}
     />, [[["resources", "__all__"], [r]]])
     await userEvent.hover(screen.getByTestId("task-link-chip"))
     expect(await screen.findByText("Make login faster")).toBeInTheDocument()
-    expect(screen.getByText("login-branch")).toBeInTheDocument()
+    // Named by the worktree, not its branch.
+    expect(screen.getByText("login-wt")).toBeInTheDocument()
     // The card is portalled, but React bubbles its clicks to the row.
-    await userEvent.click(screen.getByText("login-branch"))
+    await userEvent.click(screen.getByText("login-wt"))
     expect(onOpen).not.toHaveBeenCalled()
   })
 
@@ -299,7 +300,7 @@ describe("TaskRow blocked chip", () => {
     expect(await screen.findByText("Blocked by")).toBeInTheDocument()
     expect(screen.getByText("T4 Ship the API")).toBeInTheDocument()
     expect(screen.getByText("Land the API")).toBeInTheDocument()
-    expect(screen.getByText("api-branch")).toBeInTheDocument()
+    expect(screen.getByText("api")).toBeInTheDocument()
   })
 
   it("shows no chip for an unblocked task", () => {

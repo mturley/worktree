@@ -149,12 +149,12 @@ describe("the modal's context row is read-only", () => {
   it("names the worktrees without offering buttons", async () => {
     wrap(
       <EventDetailsModal
-        e={ev({ worktrees: ["wt-a", "wt-b"], worktree_paths: ["/wt/a", "/wt/b"] })}
+        e={ev({ worktrees: ["branch-a", "branch-b"], worktree_paths: ["/wt/wt-a", "/wt/wt-b"] })}
         onClose={vi.fn()}
       />,
     )
-    await screen.findByText("Worktree: wt-a")
-    expect(screen.getByText("Worktree: wt-b")).toBeInTheDocument()
+    await screen.findByText("wt-a")
+    expect(screen.getByText("wt-b")).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /open worktree/i })).not.toBeInTheDocument()
   })
 
@@ -190,7 +190,7 @@ describe("EventDetailsModal for an archived resource", () => {
     expect(screen.getByText("This resource is no longer followed by a worktree.")).toBeInTheDocument()
     await userEvent.click(screen.getByRole("button", { name: "Follow" }))
     const items = await screen.findAllByRole("menuitem")
-    expect(items.map((i) => i.textContent)).toEqual(["alpha", "Zeta workzeta"])
+    expect(items.map((i) => i.textContent)).toEqual(["⎇alpha", "Zeta work⎇zeta"])
   })
 
   it("routes to the chosen worktree carrying the URL and custom name", async () => {

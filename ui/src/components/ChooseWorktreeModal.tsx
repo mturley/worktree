@@ -2,6 +2,7 @@ import { Modal, Paper, Stack, Text } from "@mantine/core"
 import type { ResourceDTO, ResourceWorktree } from "../api/types"
 import { ResourceCardBody } from "./ResourceCard"
 import { WorktreeWorkspaceName } from "./WorktreeWorkspaceName"
+import { worktreeName } from "../lib/homeWorktree"
 
 /**
  * Asks which worktree to view a resource in, when more than one follows it.
@@ -37,11 +38,11 @@ export function ChooseWorktreeModal({ r, worktrees, onPick, onClose }: {
                 p="sm"
                 withBorder
                 data-interactive="true"
-                aria-label={`view in ${w.branch || w.path}`}
+                aria-label={`view in ${worktreeName(w.path)}`}
                 onClick={() => onPick(w.path)}
                 style={{ display: "block", width: "100%", textAlign: "left", font: "inherit", color: "inherit" }}
               >
-                <WorktreeWorkspaceName path={w.path} branch={w.branch || w.path} />
+                <WorktreeWorkspaceName path={w.path} />
               </Paper>
             ))}
           </Stack>

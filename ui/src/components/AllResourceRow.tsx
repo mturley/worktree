@@ -1,5 +1,4 @@
 import { Box, Button, Group, Text, Tooltip, UnstyledButton } from "@mantine/core"
-import { IconGitBranch } from "@tabler/icons-react"
 import { useState } from "react"
 import { useLocation } from "wouter"
 import { useResourceCmuxTab } from "../api/cmux"
@@ -17,6 +16,8 @@ import { MatchWhy } from "./search/MatchWhy"
 import { useSearchContext } from "./search/SearchContext"
 import { ChooseWorktreeModal } from "./ChooseWorktreeModal"
 import { useCrossHover } from "./CrossHoverContext"
+import { WorktreeGlyph } from "./WorktreeGlyph"
+import { worktreeName } from "../lib/homeWorktree"
 
 const btn = { root: { flexShrink: 0 }, label: { whiteSpace: "nowrap" as const } }
 
@@ -24,15 +25,18 @@ function worktreeHref(wt: ResourceWorktree, r: AllResourceDTO): string {
   return `/worktree/${encodeURIComponent(wt.path)}?resource=${serializeResourceKey({ type: r.type, id: r.id })}`
 }
 
-/** Branch names, which is how the worktree cards are titled. */
+/** Worktree names, each marked ⎇ as the worktree cards title them. */
 function WorktreesLine({ worktrees }: { worktrees: ResourceWorktree[] }) {
   return (
-    <Group gap={4} wrap="nowrap" mt={2} style={{ minWidth: 0 }}>
-      <IconGitBranch size={12} aria-hidden style={{ flexShrink: 0, color: "var(--mantine-color-dimmed)" }} />
-      <Text size="xs" c="dimmed" truncate="end" style={{ minWidth: 0 }}>
-        {worktrees.map((w) => w.branch || w.path).join(", ")}
-      </Text>
-    </Group>
+    <Text size="xs" c="dimmed" truncate="end" mt={2} style={{ minWidth: 0 }}>
+      {worktrees.map((w, i) => (
+        <span key={w.path}>
+          {i > 0 && ", "}
+          <WorktreeGlyph />
+          <span>{worktreeName(w.path)}</span>
+        </span>
+      ))}
+    </Text>
   )
 }
 

@@ -11,7 +11,8 @@ import { EventDot } from "./EventDot"
 import { EventResourceChip } from "./EventResourceChip"
 import { ResourceActions } from "./ResourceActions"
 import { FollowInWorktreeMenu } from "./FollowInWorktreeMenu"
-import { followResourceState, isArchivedEvent } from "../lib/openEvent"
+import { WorktreeGlyph } from "./WorktreeGlyph"
+import { eventWorktreeNames, followResourceState, isArchivedEvent } from "../lib/openEvent"
 import { eventTaskKey } from "../lib/taskEventKey"
 
 /**
@@ -104,9 +105,9 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
 
           {e.worktrees.length > 0 && (
             <Group gap={6} wrap="wrap">
-              {e.worktrees.map((w) => (
+              {eventWorktreeNames(e).map((w, i) => (
                 // Worded as on the activity feed's rows.
-                <Badge key={w} size="sm" color="blue" variant="light">Worktree: {w}</Badge>
+                <Badge key={`${i}:${w}`} size="sm" color="blue" variant="light"><WorktreeGlyph /><span>{w}</span></Badge>
               ))}
             </Group>
           )}

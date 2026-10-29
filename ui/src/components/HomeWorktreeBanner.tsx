@@ -6,6 +6,7 @@ import { KeyHint } from "./search/KeyHint"
 import { useCmux } from "../api/cmux"
 import { dismissBanner, useBannerDismissed, type BannerVariant } from "../lib/bannerDismiss"
 import { useEscLeaves, usePublishBannerShown } from "../lib/escapeHint"
+import { WorktreeGlyph } from "./WorktreeGlyph"
 import {
   getHomeWorktree,
   homeWorktreeHref,
@@ -68,7 +69,7 @@ export function HomeWorktreeBanner() {
   if (variant === "home" && home) {
     return (
       <NavBanner
-        label={`Back to current worktree: ${worktreeName(home)}`}
+        label={<>Back to current worktree: <WorktreeGlyph /><span>{worktreeName(home)}</span></>}
         onBack={() => navigate(homeWorktreeHref(home))}
         onDismiss={dismiss("home")}
         escHint={escLeaves}
@@ -86,7 +87,7 @@ export function HomeWorktreeBanner() {
 }
 
 interface NavBannerProps {
-  label: string
+  label: React.ReactNode
   onBack: () => void
   onDismiss: () => void
   /** Show the Esc hint: Esc's next step is this banner's way back. */

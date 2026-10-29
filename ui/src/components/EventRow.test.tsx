@@ -128,18 +128,20 @@ describe("EventRow", () => {
 })
 
 describe("global timeline affordances", () => {
+  // Badges name each worktree by its path, not its branch.
   const withWorktrees = () => makeEvent({
     resource_type: "pr", resource_id: "o/r#42", resource_title: "Fix the widget",
-    worktrees: ["wt-a", "wt-b"], worktree_paths: ["/wt/a", "/wt/b"],
+    worktrees: ["branch-a", "branch-b"], worktree_paths: ["/wt/wt-a", "/wt/wt-b"],
   })
 
   it("draws worktree badges as read-only labels", () => {
     const { container } = renderWithProvider(
       <EventRow e={withWorktrees()} showWorktrees onOpen={vi.fn()} />,
     )
-    // The badge is prefixed so a worktree name is identifiable as one at a
-    // glance on the global timeline, where badges sit beside resource chips.
-    expect(screen.getByText("Worktree: wt-a")).toBeInTheDocument()
+    // The ⎇ glyph marks a worktree name as one at a glance on the global
+    // timeline, where badges sit beside resource chips.
+    expect(screen.getByText("wt-a").closest("[data-variant]")).toHaveTextContent("⎇wt-a")
+    expect(screen.getByText("wt-a")).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /open worktree/i })).not.toBeInTheDocument()
     // The row is the only button: nothing inside it competes for the click.
     expect(container.querySelectorAll("button")).toHaveLength(1)
@@ -150,7 +152,7 @@ describe("global timeline affordances", () => {
     renderWithProvider(<EventRow e={withWorktrees()} showWorktrees />)
     // getByText lands on the label span; the variant and colour live on the
     // Badge root above it.
-    const badge = screen.getByText("Worktree: wt-a").closest("[data-variant]") as HTMLElement
+    const badge = screen.getByText("wt-a").closest("[data-variant]") as HTMLElement
     expect(badge).toHaveAttribute("data-variant", "light")
     expect(badge.style.getPropertyValue("--badge-bg")).toContain("blue")
   })
@@ -360,7 +362,7 @@ describe("the context lines below the event", () => {
         showWorktrees
       />,
     )
-    const badge = screen.getByText("Worktree: wt-a")
+    const badge = screen.getByText("wt-a")
     const chip = screen.getByText("Fix the widget")
     // Different parents means different flex lines, not two items wrapping.
     expect(badge.closest("[data-event-row] > * > *")).not.toBe(chip.closest("[data-event-row] > * > *"))
@@ -369,7 +371,7 @@ describe("the context lines below the event", () => {
 
   it("draws no worktree line at all when there are no worktrees", () => {
     renderWithProvider(<EventRow e={makeEvent({ worktrees: [] })} showWorktrees />)
-    expect(screen.queryByText(/^Worktree:/)).toBeNull()
+    expect(screen.queryByText("⎇")).toBeNull()
   })
 })
 

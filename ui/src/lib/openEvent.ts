@@ -1,4 +1,5 @@
 import type { TimelineEvent } from "../api/types"
+import { worktreeName } from "./homeWorktree"
 
 /**
  * Carries a timeline event from the home page's activity feed to the worktree
@@ -77,6 +78,15 @@ export function isArchivedEvent(e: TimelineEvent): boolean {
   // archived.
   if (e.resource_type === "task") return !!e.archived
   return !!e.resource_type && !!e.resource_id && (e.worktree_paths ?? e.worktrees).length === 0
+}
+
+/**
+ * The names of the worktrees following an event, as the worktree cards title
+ * them. `worktrees` holds their branches, so this reads the paths and falls
+ * back to the branches only for an event without them.
+ */
+export function eventWorktreeNames(e: TimelineEvent): string[] {
+  return e.worktree_paths?.map(worktreeName) ?? e.worktrees
 }
 
 /**

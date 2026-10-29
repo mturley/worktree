@@ -4,6 +4,7 @@ import { useLocation } from "wouter"
 import { onCmuxFocus } from "../lib/cmuxFocusBus"
 import { hasUnsavedChanges } from "../lib/unsavedChanges"
 import { worktreeName } from "../lib/homeWorktree"
+import { WorktreeGlyph } from "./WorktreeGlyph"
 import { useFollowCmux } from "../hooks/useFollowCmux"
 
 const PREFIX = "/worktree/"
@@ -104,7 +105,7 @@ export function CmuxFollower() {
     >
       <Stack gap="md">
         <Text size="sm">
-          cmux switched to <b>{pending ? worktreeName(pending) : ""}</b>, but this page has unsaved
+          cmux switched to <b>{pending && <><WorktreeGlyph /><span>{worktreeName(pending)}</span></>}</b>, but this page has unsaved
           changes. Following cmux will discard them.
         </Text>
         <Group justify="flex-end" gap="xs">
