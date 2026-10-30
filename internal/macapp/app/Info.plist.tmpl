@@ -24,6 +24,11 @@
 	<true/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<!-- No App Nap: with nothing on screen most of the time, the app would
+	     otherwise be napped, stretching the timers and event stream that keep
+	     the unread icon current. -->
+	<key>NSAppSleepDisabled</key>
+	<true/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

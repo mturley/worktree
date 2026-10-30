@@ -151,7 +151,7 @@ minutes serially; it now runs most tests in parallel.
     `peek.go` reads a tab for the cmux tab's hover peek (`ReadScreen`,
     `Screenshot`, `MarkdownPath`); screenshots are temp files that never
     outlive their request — see `docs/web-ui-architecture.md` "Tab peek".
-  - `macapp` — the macOS menu bar app: embedded Swift source (`app/`, built with plain `swiftc`, no Xcode project) hosting the web UI's `/mini` page in an `NSPopover` web view. `Build`/`BuildWithURL` stage a bundle and swap it in; `SourceHash` is recorded in `Info.plist` so `worktree setup` (`internal/setup/macapp.go`) rebuilds only when the source changed; `LaunchAgentPlist` must match `app/LoginItem.swift` (a test compares them). `devbuild` backs `make macapp`. See `docs/web-ui-architecture.md` "Mini view and menu bar app".
+  - `macapp` — the macOS menu bar app: embedded Swift source (`app/`, built with plain `swiftc`, no Xcode project) hosting the web UI's `/mini` page in an `NSPopover` web view. `Build`/`BuildWithURL` stage a bundle and swap it in; `SourceHash` is recorded in `Info.plist` so `worktree setup` (`internal/setup/macapp.go`) rebuilds only when the source changed; `LaunchAgentPlist` must match `app/LoginItem.swift` (a test compares them). `devbuild` backs `make macapp`. The app's unread icon has a backstop besides the page: it runs `worktree unread --json` (`webui.Server.AppUnread`, sharing `worktreeUnreadTotals` with `/api/worktrees`) every 15s. See `docs/web-ui-architecture.md` "Mini view and menu bar app".
   - `resourceurl` — the single URL→(type, id) detector, shared by `cmd`,
     `webui`, and `worktreenew`. Replaces webui's `inferResource`, which
     hand-copied `cmd/root.go`'s PR pattern with a "kept in sync" comment.

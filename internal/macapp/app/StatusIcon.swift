@@ -12,7 +12,7 @@ import AppKit
 /// template image would turn them monochrome); the dimmed offline and login
 /// outlines are template images.
 ///
-/// With "Flash icon for unread activity" off, there is no blink: the resting
+/// With "Flash icon on unread activity" off, there is no blink: the resting
 /// tile just carries the dot.
 ///
 /// While unread, a blue dot also sits steady on the top-right corner through
@@ -84,7 +84,7 @@ final class StatusIcon {
 
     private static let flashKey = "flashUnread"
 
-    /// "Flash icon for unread activity": blink the tile while unread rather
+    /// "Flash icon on unread activity": blink the tile while unread rather
     /// than only showing the dot. On unless turned off; kept in the app's
     /// defaults.
     var flash: Bool = UserDefaults.standard.object(forKey: StatusIcon.flashKey) as? Bool ?? true {

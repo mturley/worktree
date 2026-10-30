@@ -104,8 +104,8 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 		relatedByType := make(map[string]int)
 		// Sized for the common case; make(...) (not nil) so it marshals as [].
 		focus := make([]resourceDTO, 0, len(rs))
-		hasUnread := false
-		unreadCount := 0
+		// Every resource's filled DTO, focus and related, for the totals.
+		filled := make([]resourceDTO, 0, len(rs))
 		prefs := allPrefs[wdb.Subscriber(e.Path)]
 		for _, res := range rs {
 			if !res.Related {
@@ -116,26 +116,18 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 				dto.Notify = prefs.Resources[notifyprefs.Key{Type: dto.Type, ID: dto.ID}]
 				dto.OpenTaskCount = resourceTaskCount(taskCounts, dto.Type, dto.ID)
 				focus = append(focus, dto)
-				hasUnread = hasUnread || resourceHasUnread(dto)
-				unreadCount += dto.UnreadCount - dto.TaskUnreadCount
+				filled = append(filled, dto)
 			} else {
 				relatedCount++
 				relatedByType[res.Type]++
 				// Related resources get no DTO of their own in the response,
 				// so one is built here purely to answer the unread questions.
-				// Unlike HasUnread, the COUNT cannot short-circuit — every
-				// related resource has to be asked, or the badge undercounts.
 				dto := s.newResourceDTO(res)
 				ix.fill(&dto)
-				hasUnread = hasUnread || resourceHasUnread(dto)
-				unreadCount += dto.UnreadCount - dto.TaskUnreadCount
+				filled = append(filled, dto)
 			}
 		}
-		// Task events count once per task, not once per resource linking it.
-		if n := ix.worktreeTaskUnread(e.Path); n > 0 {
-			hasUnread = true
-			unreadCount += n
-		}
+		hasUnread, unreadCount := worktreeUnreadTotals(ix, e.Path, filled)
 		_, statErr := os.Stat(e.Path)
 		out = append(out, worktreeSummary{
 			Path:           e.Path,

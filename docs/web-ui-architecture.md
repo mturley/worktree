@@ -3915,6 +3915,17 @@ The web view counts as hidden whenever the popover is closed, so
 has its own connections, so the browser's six-per-host limit the pause
 protects does not apply.
 
+**Unread backstop.** The page's stream is the instant path to the icon. As a
+backstop for a stream that stalls while hidden, `UnreadWatch.swift` runs
+`worktree unread --json` every 15s (10s timeout; the CLI is found by path,
+`/usr/local/bin` first, since launchd gives the app a bare PATH). The command
+is `Server.AppUnread` (`unread_summary.go`): `unreadBadge`'s fold over
+`/api/worktrees`, through the same `worktreeUnreadTotals` the handler uses,
+read straight from the DB with no session. Whichever source reported last
+sets the icon (`lastUnread`); a CLI report moves it only while it shows a
+connected state. The app sets `NSAppSleepDisabled`, so App Nap does not
+stretch either path while nothing of it is on screen.
+
 **Staying inside /mini.** The router uses `useMiniLocation`
 (`lib/miniMode.ts`): navigation to `/mini` itself (the task modal's `?task=`)
 happens in place, anything else calls `openExternal`, which posts `open` to the

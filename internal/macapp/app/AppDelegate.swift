@@ -16,9 +16,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     private let popover = NSPopover()
     private var webView: WKWebView!
     private let offlineView = OfflineView(frame: .zero)
-    /// The page's last unread report, nil until it has sent one. Survives
-    /// reloads, so `ready` can restore it rather than guess.
+    /// The last unread report, from the page or the CLI (whichever spoke
+    /// last), nil until one has. Survives reloads, so `ready` can restore it
+    /// rather than guess.
     private var lastUnread: Bool?
+    private let unreadWatch = UnreadWatch()
     /// The last /mini URL that loaded (with its ?task= and such), so coming
     /// back from offline returns to it rather than to plain /mini.
     private var lastMiniURL: URL?
@@ -55,6 +57,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         }
         offlineView.isHidden = true
         serverWatch.onUp = { [weak self] in self?.loadMini() }
+        unreadWatch.onResult = { [weak self] unread, _ in self?.cliUnread(unread) }
+        unreadWatch.start()
 
         // Added last so it sits above the web view and takes its own clicks.
         let grip = ResizeGrip(frame: NSRect(x: size.width - ResizeGrip.side, y: 0,
@@ -109,7 +113,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         let purple = item("Use purple wt icon", #selector(togglePurpleIcon))
         purple.state = icon.purple ? .on : .off
         menu.addItem(purple)
-        let flash = item("Flash icon for unread activity", #selector(toggleFlash))
+        let flash = item("Flash icon on unread activity", #selector(toggleFlash))
         flash.state = icon.flash ? .on : .off
         menu.addItem(flash)
         menu.addItem(item("More settings in web UI", #selector(openSettings)))
@@ -213,6 +217,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         serverWatch.stop()
         offlineView.isHidden = true
         webView.isHidden = false
+    }
+
+    /// UnreadWatch's backstop report. It moves the icon only while the icon
+    /// shows the connected states: offline and needs-login keep their look,
+    /// and the next `ready` restores from lastUnread.
+    private func cliUnread(_ unread: Bool) {
+        lastUnread = unread
+        if icon.state == .resting || icon.state == .unread {
+            icon.state = unread ? .unread : .resting
+        }
     }
 
     // MARK: - Bridge
