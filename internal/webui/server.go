@@ -22,6 +22,7 @@ import (
 	"github.com/mturley/worktree/internal/gitfetch"
 	"github.com/mturley/worktree/internal/linked"
 	"github.com/mturley/worktree/internal/linkmeta"
+	"github.com/mturley/worktree/internal/listeners"
 	"github.com/mturley/worktree/internal/slackpoller"
 	"github.com/mturley/worktree/internal/tasks"
 )
@@ -137,6 +138,17 @@ type Server struct {
 	focusOnce      sync.Once
 	focus          *cmuxFocusHub
 	cmuxWatchFocus func(ctx context.Context, onFocus func(workspaceID string)) error
+
+	// listeners fans listening-port snapshots out to the event streams and
+	// runs the scanner while any stream wants them; see listeners.go.
+	// listenersScan and listenersInterval are seams (nil → scanListeners,
+	// 0 → 10s). portScanDisabled is the Settings toggle
+	// (ui.port_scan_disabled).
+	listenersOnce     sync.Once
+	listeners         *listenersHub
+	listenersScan     func(ctx context.Context) (listeners.Snapshot, error)
+	listenersInterval time.Duration
+	portScanDisabled  atomic.Bool
 
 	// tabs is the browser notification registry; see tabs.go. Lazily built
 	// by tabRegistry(), since Server is a bare struct literal everywhere.

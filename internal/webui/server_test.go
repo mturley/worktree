@@ -1,17 +1,23 @@
 package webui
 
 import (
+	"context"
 	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"testing/fstest"
+
+	"github.com/mturley/worktree/internal/listeners"
 )
 
 func testServer(t *testing.T, webFS fs.FS) *Server {
 	t.Helper()
-	return &Server{WebFS: webFS}
+	// Never spawn lsof: an empty enabled snapshot stands in for a scan.
+	return &Server{WebFS: webFS, listenersScan: func(context.Context) (listeners.Snapshot, error) {
+		return listeners.Snapshot{Enabled: true, Ports: map[string][]listeners.Port{}, Ranges: map[string]string{}}, nil
+	}}
 }
 
 func TestServesIndexFallbackForSPARoutes(t *testing.T) {

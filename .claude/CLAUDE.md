@@ -71,6 +71,11 @@ minutes serially; it now runs most tests in parallel.
     links, Slack thread links) from watcher-library sources behind
     interfaces. Pure; the webui adapters and 2-minute cache live in
     `internal/webui/linked_api.go`. Fetched on demand, never polled.
+  - `listeners` — parses `lsof`/`ps` output and attributes listening TCP
+    ports to worktrees by process cwd (or an ancestor's); `Scan` batches
+    `lsof` calls. Served live over `/api/stream` (`listeners_changed`) by
+    `webui/listeners.go`, scanning only while a tab wants it. See
+    `docs/web-ui-architecture.md` "Listening ports".
   - `linkmeta` — resolves a followed page's title, description, favicon,
     preview image and whether it permits being framed. Used only at add time
     and on explicit refresh: link resources are NEVER polled.

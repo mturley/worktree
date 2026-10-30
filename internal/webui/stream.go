@@ -34,6 +34,16 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	focus, unsubscribe := s.focusHub().subscribe()
 	defer unsubscribe()
 
+	// Listening ports, unless the stream opts out: the mini view keeps its
+	// stream open for good and shows no ports, so it must not keep the
+	// scanner running (see listeners.go).
+	var ports <-chan []byte
+	if r.URL.Query().Get("listeners") != "0" {
+		ch, unsubscribe := s.listenersHub().subscribe()
+		defer unsubscribe()
+		ports = ch
+	}
+
 	var last string
 	s.DB.QueryRow(`SELECT COALESCE(MAX(ts),'') FROM watcher_events`).Scan(&last)
 	lastTasks := s.seedTasksVersion()
@@ -51,6 +61,9 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		case msg := <-focus:
 			b, _ := json.Marshal(msg)
 			fmt.Fprintf(w, "event: cmux_focus\ndata: %s\n\n", b)
+			flusher.Flush()
+		case b := <-ports:
+			fmt.Fprintf(w, "event: listeners_changed\ndata: %s\n\n", b)
 			flusher.Flush()
 		case <-ticker.C:
 			var cur string

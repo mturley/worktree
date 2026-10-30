@@ -213,7 +213,7 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | GET | `/api/worktrees/default-branch` | `input` (required), `repo_root` | `{branch, error?}` — `worktreenew.DefaultBranch`; empty `branch` for a plain branch name. The modal shows its editable "Branch name" field only when it is non-empty |
 | GET | `/api/repos` | — | registry repos, newest worktree first |
 | GET | `/api/repo-dotfiles` | `repo` (required) | gitignored dotfiles that repo would copy into a new worktree |
-| GET | `/api/stream` | `tab`, `route`, `visible` (all optional; see "Notifications") | SSE stream (`text/event-stream`) |
+| GET | `/api/stream` | `tab`, `route`, `visible` (all optional; see "Notifications"); `listeners=0` opts out of listening ports | SSE stream (`text/event-stream`) |
 | POST | `/api/notify` | body: `{path, type?, id?, on, tab?}` (no type/id = the worktree-wide toggle) | `{ok, mode}`; turning ON sends a test notification. 400 for a link or a half-given resource, 404 for an unregistered worktree or untracked resource |
 | GET | `/api/tasks` | `scope` (`all` default, `worktree`, `resource`), `path` (worktree scope), `type` + `id` (resource scope), `completed=1`, `archived=1` | `[]taskDTO` in master order; see "Tasks" |
 | POST | `/api/tasks` | body: `{title, priority?, starred?, path?, type?, id?, after?, before?}`; `path` → Focus worktree link, `type`+`id` → Focus resource link, neither → global | `taskDTO` |
@@ -1129,7 +1129,7 @@ either and you must change the other.
 
 ### SSE (`/api/stream`)
 
-No params. On connect, sends nothing but flushes headers. Every 5s, checks
+On connect, sends nothing but flushes headers. Every 5s, checks
 `MAX(ts)` on `watcher_events`; if it advanced since the last tick (or since
 connect), emits `event: events_new\ndata: {}\n\n`, then always emits `event:
 heartbeat\ndata: {}\n\n`. The frontend treats `events_new` purely as a
@@ -1144,6 +1144,50 @@ addressed to it; see "Notifications" below.
 Every stream also carries `event: cmux_focus` (`{"workspace_id","path"}`)
 whenever cmux focuses a different workspace; see "Follow cmux" under
 "cmux integration".
+
+Every stream also carries `event: listeners_changed` with the whole
+listening-ports snapshot as its data (`{"enabled","ports","ranges"}`; see
+"Listening ports" below): once on connect when the server has a snapshot,
+then whenever a scan's result changes. A stream opened with `?listeners=0`
+opts out — it gets no `listeners_changed` and does not keep the scanner
+running. The mini view uses it, since its stream stays open for good.
+
+### Listening ports (`listeners.go`, `internal/listeners`)
+
+Which TCP ports each registered worktree's processes listen on. Live
+process state, held in memory only, never in the DB.
+
+- **Scanning.** `internal/listeners.Scan` lists listeners with batched
+  `lsof` calls (about three spawns per scan) and attributes each to the
+  worktree containing its process's cwd, else its nearest ancestor's; the
+  deepest worktree wins. `Server.scanListeners` feeds it every registered
+  worktree with its reserved range (`ports.Lookup(conn,
+  filepath.Base(path))`), canonicalized with `listeners.Canonical`.
+- **Only while someone is looking.** `listenersHub` (mirrors
+  `cmuxFocusHub`) owns the scan loop: the first subscriber — a
+  `/api/stream` without `listeners=0` — starts it, the last to unsubscribe
+  cancels it. It scans at once on start, then every 10s
+  (`listenersInterval`) or on `kick()`. A new loop waits for the previous
+  one to exit, and a cancelled loop publishes nothing, so a tab reopening
+  while a scan is in flight never runs two scans at once or publishes a
+  stale result.
+- **Publishing.** The hub keeps the last published JSON and publishes only
+  when a scan's JSON differs (map keys marshal sorted, so equal snapshots
+  compare equal). New subscribers get the last snapshot immediately, which
+  is what makes a reshown hidden tab correct without a refetch. Sends are
+  buffered and non-blocking. A failed scan is logged via `s.logger()` and
+  keeps the last snapshot.
+- **Payload.** `{"enabled":true,"ports":{"<worktree path>":[{"port",
+  "addresses","pid","process","in_range"}]},"ranges":{"<path>":"4090-4099"}}`.
+  Worktrees with nothing listening are absent from `ports`; `ranges` has
+  every worktree with an allocation. A worktree without one has no range to
+  violate, so its ports are all `in_range: true`.
+- **Disabled.** While `portScanDisabled` (`SetPortScanDisabled`, the
+  Settings toggle) is set, the loop does not scan and publishes exactly
+  `{"enabled":false,"ports":{},"ranges":{}}` (once, through the same change
+  check); turning it back on should `kick()` for an immediate scan.
+- **Tests** never spawn `lsof`: `listenersScan` is a `Server` seam, and
+  `testServer` stubs it with an empty enabled snapshot.
 
 **Hidden tabs over plain HTTP close their streams** — this one and a Slack
 thread's `/api/thread-events` (`lib/backgroundStreams.ts`). The loopback
