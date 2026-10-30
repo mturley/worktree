@@ -26,7 +26,7 @@ const [A, B, C] = [task(1), task(2), task(3)]
 const ids = (ts?: Task[]) => ts?.map((t) => t.id)
 /** Ids in display order: the list sorts by rank, not by array position. */
 const shown = (ts?: Task[]) =>
-  buildSections(ts ?? [], { sort: "custom", showCompleted: false, includeArchived: false }, []).flatMap((s) => s.tasks.map((t) => t.id))
+  buildSections(ts ?? [], { sort: "custom", showCompleted: false, includeArchived: false, pinInProgress: false, pinStarred: true }, []).flatMap((s) => s.tasks.map((t) => t.id))
 
 function setup(scope: TaskScope) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })

@@ -175,9 +175,13 @@ because a view only ever sees a subset.
 
 **Grouping and sorting.**
 
-- **Starred tasks are grouped at the top** of every combined list, whatever
-  the sort. Dragging a task into the starred group stars it, and dragging it
-  out unstars it.
+- **Pinned groups.** With "Pin in-progress tasks to top" (on by default),
+  in-progress tasks are grouped at the very top of every combined list,
+  whatever the sort, a starred one included; dropping a task there starts
+  it, and dropping one out sets it to not started. With "Pin starred tasks
+  to top" (on by default), the other starred tasks are grouped next.
+  Dragging a task into the starred group stars it, and dragging it out
+  unstars it. With a pin off, its tasks sit in the ordinary groups.
 - **Sort: Custom** (last in the menu): master order.
 - **Sort: Priority** (the default, first in the menu): groups High / Medium / Low / None, each in master order.
   Dragging within a group reorders it. Dragging into another group changes the
@@ -392,8 +396,9 @@ menus, each option's checkbox or mark sits at its left, at the row's size.
 ### The list
 
 - Toolbar: "Sort:" (Priority, the default / State / Due date / Updated / Custom), its closed
-  dropdown just wide enough for the option it shows, and "Show completed" with its "Include
-  archived" sub-toggle. There is no priority filter: Priority sort groups the
+  dropdown just wide enough for the option it shows, and a "View options" dropdown holding
+  "Pin in-progress tasks to top", "Pin starred tasks to top", "Show
+  completed" and "Include archived" (disabled while Show completed is off). There is no priority filter: Priority sort groups the
   list by priority. There is no Pin
   button. The toolbar sits right-aligned in the task panel's header (see
   "The task panel").

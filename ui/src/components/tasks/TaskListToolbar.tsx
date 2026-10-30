@@ -1,4 +1,5 @@
-import { Group, Select, Switch, Text } from "@mantine/core"
+import { Button, Group, Popover, Select, Stack, Switch, Text } from "@mantine/core"
+import { IconChevronDown } from "@tabler/icons-react"
 import type { TaskListPrefs, TaskSort } from "../../lib/taskSections"
 
 const SORT_OPTIONS: { value: TaskSort; label: string }[] = [
@@ -17,7 +18,10 @@ const SORT_OPTIONS: { value: TaskSort; label: string }[] = [
 const fitWidth = (options: { value: string; label: string }[], value: string) =>
   `calc(${(options.find((o) => o.value === value) ?? options[0]).label.length}ch + 40px)`
 
-/** Sort and show completed (+ include archived), for every task list at once. */
+/**
+ * Sort, and a View options dropdown (show completed + include archived, and
+ * the In progress / Starred pins), for every task list at once.
+ */
 export function TaskListToolbar({ prefs, onChange }: {
   prefs: TaskListPrefs
   onChange(p: Partial<TaskListPrefs>): void
@@ -37,20 +41,44 @@ export function TaskListToolbar({ prefs, onChange }: {
           onChange={(v) => v && onChange({ sort: v as TaskSort })}
         />
       </Group>
-      <Switch
-        size="xs"
-        label="Show completed"
-        checked={prefs.showCompleted}
-        onChange={(e) => onChange({ showCompleted: e.currentTarget.checked })}
-      />
-      {prefs.showCompleted && (
-        <Switch
-          size="xs"
-          label="Include archived"
-          checked={prefs.includeArchived}
-          onChange={(e) => onChange({ includeArchived: e.currentTarget.checked })}
-        />
-      )}
+      <Popover position="bottom-end" shadow="md" withinPortal>
+        <Popover.Target>
+          <Button size="compact-xs" variant="default" rightSection={<IconChevronDown size={12} />}>
+            View options
+          </Button>
+        </Popover.Target>
+        <Popover.Dropdown>
+          <Stack gap="xs">
+            <Switch
+              size="xs"
+              label="Pin in-progress tasks to top"
+              checked={prefs.pinInProgress}
+              onChange={(e) => onChange({ pinInProgress: e.currentTarget.checked })}
+            />
+            <Switch
+              size="xs"
+              label="Pin starred tasks to top"
+              checked={prefs.pinStarred}
+              onChange={(e) => onChange({ pinStarred: e.currentTarget.checked })}
+            />
+            <Switch
+              size="xs"
+              label="Show completed"
+              checked={prefs.showCompleted}
+              onChange={(e) => onChange({ showCompleted: e.currentTarget.checked })}
+            />
+            {/* Archived gates only done tasks, so it means nothing until
+                completed ones show: disabled, not hidden, so it stays findable. */}
+            <Switch
+              size="xs"
+              label="Include archived"
+              disabled={!prefs.showCompleted}
+              checked={prefs.includeArchived}
+              onChange={(e) => onChange({ includeArchived: e.currentTarget.checked })}
+            />
+          </Stack>
+        </Popover.Dropdown>
+      </Popover>
     </Group>
   )
 }

@@ -16,17 +16,24 @@ export interface TaskListPrefs {
   sort: TaskSort
   showCompleted: boolean
   includeArchived: boolean
+  /** In-progress open tasks get their own section, on top of everything. */
+  pinInProgress: boolean
+  /** Starred open tasks get their own section, below In progress if pinned. */
+  pinStarred: boolean
 }
 
 export interface TaskSection {
   /**
-   * Stable: starred, rest, high, medium, low, none, completed; in Priority
-   * sort starred is split into starred:high … starred:none; in State sort
-   * rest is split into state:in_progress and state:not_started.
+   * Stable: in_progress, starred, rest, high, medium, low, none, completed;
+   * in Priority sort in_progress and starred are split into
+   * in_progress:high … in_progress:none and starred:high … starred:none; in
+   * State sort rest is split into state:in_progress and state:not_started.
    */
   key: string
   tasks: Task[]
   draggable: boolean
+  /** Which pinned group the section belongs to, if any. */
+  pin?: TaskPin
   /** What dropping INTO this section implies for the task's star. */
   starred?: boolean
   /** What dropping INTO this section implies for the task's priority. */
@@ -40,6 +47,8 @@ export interface TaskSection {
  * through the state-change API (useTaskMutations.move), like the row's own
  * state picker.
  */
+export type TaskPin = "in_progress" | "starred"
+
 export type DropPatch = { starred?: boolean; priority?: Priority; state?: TaskState }
 
 export interface DropPlan {
@@ -107,14 +116,21 @@ const SORTS: Record<TaskSort, (a: Task, b: Task) => number> = {
 }
 
 /**
- * Groups and orders a task list for display. Starred open tasks are always
- * on top and appear only there. In Priority sort Starred is itself split by
- * priority (starred:high … starred:none, ahead of the unstarred groups), and
- * every one of those sections is returned even when empty (TaskList renders
- * only sections that hold tasks). In State sort Starred stays one section,
- * in progress first, and the rest splits into state:in_progress then
- * state:not_started, each in master order. Completed is last, newest first,
+ * Groups and orders a task list for display. With pinInProgress, in-progress
+ * open tasks are on top and appear only there (starred or not); with
+ * pinStarred, the remaining starred open tasks come next and appear only
+ * there. In Priority sort each pinned group is itself split by priority
+ * (in_progress:high … in_progress:none, starred:high … starred:none, ahead
+ * of the unpinned groups), and every one of those sections is returned even
+ * when empty (TaskList renders only sections that hold tasks). In State sort
+ * a pinned group stays one section, and the rest splits into
+ * state:in_progress then state:not_started, each in master order (with In
+ * progress pinned, only state:not_started). Completed is last, newest first,
  * when shown.
+ *
+ * A pin also says what a drop implies: below a pinned In progress every open
+ * section holds only not-started tasks, so dropping into one sets that
+ * state; with Starred unpinned the other sections leave the star alone.
  */
 export function buildSections(tasks: Task[], prefs: TaskListPrefs, terms: string[]): TaskSection[] {
   // Archived gates only done tasks: an open task whose links are all
@@ -128,36 +144,52 @@ export function buildSections(tasks: Task[], prefs: TaskListPrefs, terms: string
   const draggable = canDrag(prefs.sort)
   const sections: TaskSection[] = []
 
-  const starred = open.filter((t) => t.starred)
-  if (prefs.sort === "priority") {
-    // Starred splits by priority too, so a drop into it can set both.
-    for (const p of PRIORITY_SECTIONS) {
-      sections.push({
-        key: `starred:${p}`, tasks: starred.filter((t) => t.priority === p),
-        draggable, starred: true, priority: p,
-      })
+  // Below a pinned In progress, what remains open is not started.
+  const restState: TaskState | undefined = prefs.pinInProgress ? "not_started" : undefined
+  // A pinned group: split by priority in Priority sort, else one section.
+  const pinned = (pin: TaskPin, ts: Task[], implies: Pick<TaskSection, "starred" | "state">) => {
+    if (prefs.sort === "priority") {
+      // Split by priority too, so a drop into it can set both.
+      for (const p of PRIORITY_SECTIONS) {
+        sections.push({
+          key: `${pin}:${p}`, tasks: ts.filter((t) => t.priority === p),
+          draggable, pin, ...implies, priority: p,
+        })
+      }
+    } else if (ts.length > 0 || draggable) {
+      // Returned empty too while dragging is possible; TaskList hides it then.
+      sections.push({ key: pin, tasks: ts, draggable, pin, ...implies })
     }
-  } else if (starred.length > 0 || draggable) {
-    // Returned empty too while dragging is possible; TaskList hides it then.
-    sections.push({ key: "starred", tasks: starred, draggable, starred: true })
   }
-  const rest = open.filter((t) => !t.starred)
+
+  let rest = open
+  if (prefs.pinInProgress) {
+    pinned("in_progress", rest.filter((t) => t.state === "in_progress"), { state: "in_progress" })
+    rest = rest.filter((t) => t.state !== "in_progress")
+  }
+  if (prefs.pinStarred) {
+    pinned("starred", rest.filter((t) => t.starred), { starred: true, state: restState })
+    rest = rest.filter((t) => !t.starred)
+  }
+  const restStarred = prefs.pinStarred ? false : undefined
   if (prefs.sort === "priority") {
     for (const p of PRIORITY_SECTIONS) {
       sections.push({
         key: p, tasks: rest.filter((t) => t.priority === p),
-        draggable, starred: false, priority: p,
+        draggable, starred: restStarred, priority: p, state: restState,
       })
     }
   } else if (prefs.sort === "state") {
     for (const st of STATE_SECTIONS) {
+      // Under a pinned In progress it would always be empty.
+      if (prefs.pinInProgress && st === "in_progress") continue
       sections.push({
         key: `state:${st}`, tasks: rest.filter((t) => t.state === st),
-        draggable, starred: false, state: st,
+        draggable, starred: restStarred, state: st,
       })
     }
   } else {
-    sections.push({ key: "rest", tasks: rest, draggable, starred: false })
+    sections.push({ key: "rest", tasks: rest, draggable, starred: restStarred, state: restState })
   }
 
   if (prefs.showCompleted) {

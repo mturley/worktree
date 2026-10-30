@@ -33,7 +33,7 @@ function task(over: Partial<Task> = {}): Task {
 describe("TaskStateCheckbox", () => {
   it("opens the state menu and changes nothing until a pick", async () => {
     const onPick = vi.fn()
-    wrap(<TaskStateCheckbox state="in_progress" title="Write the thing" onPick={onPick} />)
+    wrap(<TaskStateCheckbox state="in_progress" priority="none" title="Write the thing" onPick={onPick} />)
     await userEvent.click(screen.getByRole("button", { name: "State of “Write the thing”: In progress" }))
     // The current state is marked; the others are not.
     expect(await screen.findByRole("menuitem", { name: /In progress/ })).toHaveAttribute("aria-current", "true")

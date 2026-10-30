@@ -1,5 +1,6 @@
 import { Menu, UnstyledButton } from "@mantine/core"
-import type { TaskState } from "../../api/types"
+import type { Priority, TaskState } from "../../api/types"
+import { priorityInk } from "./TaskPriorityMenu"
 
 /** Every task state's display name: the one place a state is spelled out. */
 export const TASK_STATE_LABEL: Record<TaskState, string> = {
@@ -24,12 +25,21 @@ const SIZE = 16
 const keepFromHost = (e: React.MouseEvent) => e.stopPropagation()
 
 /**
- * The checkbox drawing for a state, at `size` px. `tone="dark"` draws it in
+ * The checkbox drawing for a state, at `size` px, in its task's `priority`
+ * colour (priorityInk). Without one it is lime. `tone="dark"` draws it in
  * dark ink with a lime check, for a lime background (the activity feed's
  * task event dot) where the lime box would vanish.
  */
-export function StateBox({ state, size, tone = "accent" }: { state: TaskState; size: number; tone?: "accent" | "dark" }) {
-  const ink = tone === "dark" ? "var(--mantine-color-dark-9)" : "var(--task-accent)"
+export function StateBox({ state, size, tone = "accent", priority }: {
+  state: TaskState
+  size: number
+  tone?: "accent" | "dark"
+  priority?: Priority
+}) {
+  const colors = tone === "dark"
+    ? { box: "var(--mantine-color-dark-9)", check: "var(--task-accent)" }
+    : priority ? priorityInk(priority) : { box: "var(--task-accent)", check: "var(--mantine-color-dark-9)" }
+  const ink = colors.box
   const fill =
     state === "done"
       ? ink
@@ -45,7 +55,7 @@ export function StateBox({ state, size, tone = "accent" }: { state: TaskState; s
         width: size, height: size, flex: "none", borderRadius: 4, boxSizing: "border-box",
         border: `2px solid ${ink}`, background: fill,
         display: "flex", alignItems: "center", justifyContent: "center",
-        color: tone === "dark" ? "var(--task-accent)" : "var(--mantine-color-dark-9)", fontSize: Math.max(8, size - 5), lineHeight: 1, fontWeight: 700,
+        color: colors.check, fontSize: Math.max(8, size - 5), lineHeight: 1, fontWeight: 700,
       }}
     >
       {state === "done" ? "✓" : null}
@@ -57,8 +67,10 @@ export function StateBox({ state, size, tone = "accent" }: { state: TaskState; s
  * Empty = not started, diagonally half-filled = in progress, filled with a
  * check = done. A click only opens the menu; nothing changes until a pick.
  */
-export function TaskStateCheckbox({ state, title, onPick }: {
+export function TaskStateCheckbox({ state, priority, title, onPick }: {
   state: TaskState
+  /** The task's priority, which colours the box. */
+  priority: Priority
   /** The task's title, so the control's name says which task it is. */
   title: string
   onPick: (s: TaskState) => void
@@ -73,7 +85,7 @@ export function TaskStateCheckbox({ state, title, onPick }: {
           className="task-row-control task-row-control-pad"
           style={{ flex: "none", display: "flex" }}
         >
-          <StateBox state={state} size={SIZE} />
+          <StateBox state={state} size={SIZE} priority={priority} />
         </UnstyledButton>
       </Menu.Target>
       {/* A portal in the DOM, but React bubbles its events up the component
@@ -88,7 +100,7 @@ export function TaskStateCheckbox({ state, title, onPick }: {
             leftSection={
               <span aria-hidden style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                 <span style={{ width: 12, display: "inline-block" }}>{s.state === state ? "✓" : ""}</span>
-                <StateBox state={s.state} size={SIZE} />
+                <StateBox state={s.state} size={SIZE} priority={priority} />
               </span>
             }
             onClick={() => onPick(s.state)}

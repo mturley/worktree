@@ -40,8 +40,8 @@ export function TaskSidebar({ task, onUpdate, onState, onDelete }: {
         data={STATES}
         value={task.state}
         allowDeselect={false}
-        leftSection={<StateBox state={task.state} size={14} />}
-        renderOption={({ option: o }) => option(<StateBox state={o.value as TaskState} size={14} />, o.label)}
+        leftSection={<StateBox state={task.state} size={14} priority={task.priority} />}
+        renderOption={({ option: o }) => option(<StateBox state={o.value as TaskState} size={14} priority={task.priority} />, o.label)}
         onChange={(v) => v && onState(v as TaskState)}
       />
       <Select

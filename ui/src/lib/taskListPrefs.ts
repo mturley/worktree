@@ -1,9 +1,9 @@
 import type { TaskListPrefs, TaskSort } from "./taskSections"
 
 /**
- * The task lists' view choices, remembered per browser: sort, priority
- * filter, show completed, include archived, and whether the task panel is
- * collapsed.
+ * The task lists' view choices, remembered per browser: sort, show
+ * completed, include archived, the In progress and Starred pins, and whether
+ * the task panel is collapsed.
  *
  * ONE value for every task list on every page (collapsed is a single global
  * preference), so one JSON key. localStorage, like unreadOnlyPref.ts: a new
@@ -17,6 +17,8 @@ export const DEFAULT_TASK_LIST_PREFS: StoredTaskListPrefs = {
   sort: "priority",
   showCompleted: false,
   includeArchived: false,
+  pinInProgress: true,
+  pinStarred: true,
   collapsed: false,
 }
 
@@ -37,6 +39,8 @@ export function parseTaskListPrefs(raw: string | null): StoredTaskListPrefs {
   if (SORTS.includes(o.sort as TaskSort)) out.sort = o.sort as TaskSort
   if (typeof o.showCompleted === "boolean") out.showCompleted = o.showCompleted
   if (typeof o.includeArchived === "boolean") out.includeArchived = o.includeArchived
+  if (typeof o.pinInProgress === "boolean") out.pinInProgress = o.pinInProgress
+  if (typeof o.pinStarred === "boolean") out.pinStarred = o.pinStarred
   if (typeof o.collapsed === "boolean") out.collapsed = o.collapsed
   return out
 }

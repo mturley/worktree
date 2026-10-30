@@ -64,7 +64,7 @@ export function TaskModalHeader({ task, onUpdate, onState, onClose }: {
   const markRead = useMarkTaskRead(task)
   return (
     <Group gap="xs" wrap="nowrap" align="center">
-      <TaskStateCheckbox state={task.state} title={task.title} onPick={onState} />
+      <TaskStateCheckbox state={task.state} priority={task.priority} title={task.title} onPick={onState} />
       <ActionIcon
         variant="transparent"
         size="md"

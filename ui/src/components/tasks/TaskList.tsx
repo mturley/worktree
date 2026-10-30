@@ -188,19 +188,25 @@ function SortableTaskRow({ task, section, sortDraggable, dropEdge, ownResource, 
   )
 }
 
+/** A pinned group's prefix on its band tags. */
+const PIN_TAG = { in_progress: "▶", starred: "★" } as const
+
 /** A section's name on its band while a drag is on. */
 function bandTag(section: TaskSection): string {
   if (section.priority) {
-    // Priority sort's starred groups: "★ High", "★ No priority".
-    if (section.starred) {
-      return section.priority === "none" ? "★ No priority" : `★ ${PRIORITY_LABEL[section.priority]}`
+    // Priority sort's pinned groups: "★ High", "▶ No priority".
+    if (section.pin) {
+      const tag = PIN_TAG[section.pin]
+      return section.priority === "none" ? `${tag} No priority` : `${tag} ${PRIORITY_LABEL[section.priority]}`
     }
     const mark = PRIORITY_MARK[section.priority]
     return mark ? `${mark.text} ${PRIORITY_LABEL[section.priority]}` : "No priority"
   }
+  if (section.pin === "in_progress") return "▶ In progress"
+  if (section.pin === "starred") return "★ Starred"
   // State sort's groups: "In progress", "Not started".
-  if (section.state) return TASK_STATE_LABEL[section.state]
-  return section.starred ? "★ Starred" : "Tasks"
+  if (section.key.startsWith("state:") && section.state) return TASK_STATE_LABEL[section.state]
+  return "Tasks"
 }
 
 /**
@@ -239,8 +245,8 @@ function SectionBlock({ section, band, dropTarget, children }: {
 }
 
 /**
- * One task list, used everywhere: sections (starred on top, priority groups,
- * completed last), drag reordering across sections, and quick add at the
+ * One task list, used everywhere: sections (pinned in progress and starred
+ * on top, priority groups, completed last), drag reordering across sections, and quick add at the
  * bottom. View prefs are global (useTaskListPrefs); the toolbar that edits
  * them is rendered by whoever hosts the list.
  *
@@ -418,10 +424,10 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
               ))}
             </SortableContext>
           </SectionBlock>
-          {/* A subtle line under the starred tasks, when others follow.
+          {/* A subtle line under a pinned group, when others follow.
               Always rendered (not only mid-drag), so a drag shifts nothing. */}
-          {s.starred && shown[i + 1] && !shown[i + 1].starred && (
-            <Divider my={4} data-task-starred-divider />
+          {s.pin && shown[i + 1] && shown[i + 1].pin !== s.pin && (
+            <Divider my={4} data-task-pin-divider={s.pin} />
           )}
           </Fragment>
         ))}

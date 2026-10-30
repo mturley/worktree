@@ -4,8 +4,18 @@ import type { Priority } from "../../api/types"
 export const PRIORITY_MARK: Record<Priority, { text: string; color: string } | null> = {
   high: { text: "!!!", color: "var(--mantine-color-red-4)" },
   medium: { text: "!!", color: "var(--mantine-color-amber-4, var(--mantine-color-yellow-4))" },
-  low: { text: "!", color: "var(--mantine-color-gray-5)" },
+  low: { text: "!", color: "var(--mantine-color-blue-8)" },
   none: null,
+}
+
+/**
+ * A task checkbox's colours for its priority: the box in the priority mark's
+ * colour, or the text colour with none, and a check that stays legible on
+ * the filled box (white on low's dark blue).
+ */
+export function priorityInk(priority: Priority): { box: string; check: string } {
+  const box = PRIORITY_MARK[priority]?.color ?? "var(--mantine-color-text)"
+  return { box, check: priority === "low" ? "var(--mantine-color-white)" : "var(--mantine-color-dark-9)" }
 }
 
 export const PRIORITY_LABEL: Record<Priority, string> = {

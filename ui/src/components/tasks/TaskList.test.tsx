@@ -220,13 +220,28 @@ describe("TaskListToolbar", () => {
     delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
   })
 
-  it("shows Include archived only with Show completed", async () => {
+  it("keeps the view options in a dropdown, Include archived disabled until Show completed", async () => {
     const user = userEvent.setup()
     wrap(<ToolbarHarness />)
-    expect(screen.queryByRole("switch", { name: "Include archived" })).toBeNull()
+    expect(screen.queryByRole("switch", { name: "Show completed" })).toBeNull()
+    await user.click(screen.getByRole("button", { name: "View options" }))
+    expect(await screen.findByRole("switch", { name: "Include archived" })).toBeDisabled()
     await user.click(screen.getByRole("switch", { name: "Show completed" }))
-    expect(screen.getByRole("switch", { name: "Include archived" })).toBeInTheDocument()
+    expect(screen.getByRole("switch", { name: "Include archived" })).toBeEnabled()
     expect(JSON.parse(window.localStorage.getItem(TASK_LIST_KEY)!).showCompleted).toBe(true)
+  })
+
+  it("pins in-progress and starred tasks by default, and each toggle saves", async () => {
+    const user = userEvent.setup()
+    wrap(<ToolbarHarness />)
+    await user.click(screen.getByRole("button", { name: "View options" }))
+    const inProgress = await screen.findByRole("switch", { name: "Pin in-progress tasks to top" })
+    const starred = screen.getByRole("switch", { name: "Pin starred tasks to top" })
+    expect(inProgress).toBeChecked()
+    expect(starred).toBeChecked()
+    await user.click(inProgress)
+    await user.click(starred)
+    expect(JSON.parse(window.localStorage.getItem(TASK_LIST_KEY)!)).toMatchObject({ pinInProgress: false, pinStarred: false })
   })
 
   it("offers Priority first, State after it and Custom last", async () => {
@@ -371,7 +386,7 @@ describe("TaskList", () => {
     vi.mocked(api.tasks).mockResolvedValue([task(1, { title: "starred one", starred: true }), task(2, { title: "plain two" })])
     const { unmount } = wrap(<TaskList scope={{ kind: "all" }} />)
     await screen.findByText("plain two")
-    expect(document.querySelectorAll("[data-task-starred-divider]")).toHaveLength(1)
+    expect(document.querySelectorAll("[data-task-pin-divider]")).toHaveLength(1)
     unmount()
 
     // Priority sort splits Starred by priority: still one line, after the last.
@@ -383,14 +398,27 @@ describe("TaskList", () => {
     ])
     const second = wrap(<TaskList scope={{ kind: "all" }} />)
     await screen.findByText("plain high")
-    expect(document.querySelectorAll("[data-task-starred-divider]")).toHaveLength(1)
+    expect(document.querySelectorAll("[data-task-pin-divider]")).toHaveLength(1)
     second.unmount()
+
+    // Pinned In progress above Starred: a line under each pinned group.
+    setPrefs({ sort: "custom", pinInProgress: true })
+    vi.mocked(api.tasks).mockResolvedValue([
+      task(1, { title: "working one", state: "in_progress" }),
+      task(2, { title: "starred two", starred: true }),
+      task(3, { title: "plain three" }),
+    ])
+    const third = wrap(<TaskList scope={{ kind: "all" }} />)
+    await screen.findByText("plain three")
+    expect(Array.from(document.querySelectorAll<HTMLElement>("[data-task-pin-divider]")).map((d) => d.dataset.taskPinDivider))
+      .toEqual(["in_progress", "starred"])
+    third.unmount()
 
     // Nothing but starred tasks: no line.
     vi.mocked(api.tasks).mockResolvedValue([task(1, { title: "only starred", starred: true })])
     wrap(<TaskList scope={{ kind: "all" }} />)
     await screen.findByText("only starred")
-    expect(document.querySelector("[data-task-starred-divider]")).toBeNull()
+    expect(document.querySelector("[data-task-pin-divider]")).toBeNull()
   })
 
   it("disables drag outside custom/priority/state with a hint", async () => {
@@ -793,7 +821,7 @@ describe("TaskList keyboard drag", () => {
   })
 
   it("State sort: bands name the states; a drag into the other state sets it through the state API, with an undo", async () => {
-    setPrefs({ sort: "state" })
+    setPrefs({ sort: "state", pinInProgress: false })
     vi.mocked(api.tasks).mockResolvedValue([
       task(4, { title: "star four", starred: true }),
       task(1, { title: "alpha one", state: "in_progress" }),
@@ -875,7 +903,7 @@ describe("TaskList keyboard drag", () => {
 })
 
 describe("dropPlanFor", () => {
-  const prefs = { sort: "custom", showCompleted: false, includeArchived: false } as const
+  const prefs = { sort: "custom", showCompleted: false, includeArchived: false, pinInProgress: false, pinStarred: true } as const
   const sections = buildSections([task(1), task(2), task(3), task(4, { starred: true })], prefs, [])
 
   it("moves down within a section: lands where the item it is over was", () => {

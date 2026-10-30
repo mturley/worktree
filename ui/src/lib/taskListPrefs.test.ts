@@ -14,7 +14,7 @@ afterEach(() => {
 
 describe("taskListPrefs", () => {
   it("round-trips", () => {
-    const p = { sort: "priority", showCompleted: true, includeArchived: true, collapsed: true } as const
+    const p = { sort: "priority", showCompleted: true, includeArchived: true, pinInProgress: false, pinStarred: false, collapsed: true } as const
     expect(writeTaskListPrefs(p)).toBe(true)
     expect(readTaskListPrefs()).toEqual(p)
   })
@@ -27,14 +27,14 @@ describe("taskListPrefs", () => {
       throw new Error("blocked")
     })
     expect(readTaskListPrefs()).toEqual({
-      sort: "priority", showCompleted: false, includeArchived: false, collapsed: false,
+      sort: "priority", showCompleted: false, includeArchived: false, pinInProgress: true, pinStarred: true, collapsed: false,
     })
     expect(writeTaskListPrefs(DEFAULT_TASK_LIST_PREFS)).toBe(false)
   })
 
   it("merges stored values over the defaults and drops invalid fields", () => {
-    window.localStorage.setItem(TASK_LIST_KEY, JSON.stringify({ sort: "bogus", priority: "low", collapsed: "yes", showCompleted: true }))
-    expect(readTaskListPrefs()).toEqual({ ...DEFAULT_TASK_LIST_PREFS, showCompleted: true })
+    window.localStorage.setItem(TASK_LIST_KEY, JSON.stringify({ sort: "bogus", priority: "low", collapsed: "yes", showCompleted: true, pinStarred: false, pinInProgress: "no" }))
+    expect(readTaskListPrefs()).toEqual({ ...DEFAULT_TASK_LIST_PREFS, showCompleted: true, pinStarred: false })
   })
 
   it("accepts every sort, State included", () => {

@@ -117,7 +117,7 @@ export function TaskRow({ task, ownResource, ownWorktree, dragHandle, onState, o
       >
         {dragHandle}
       </span>
-      <TaskStateCheckbox state={task.state} title={task.title} onPick={onState} />
+      <TaskStateCheckbox state={task.state} priority={task.priority} title={task.title} onPick={onState} />
       <ActionIcon
         className="task-row-control"
         variant="transparent"

@@ -262,7 +262,7 @@ function TaskBody({ t, match }: { t: Task; match: SearchMatch | null }) {
   return (
     <Stack gap={2}>
       <Group gap={8} wrap="nowrap">
-        <StateBox state={t.state} size={14} />
+        <StateBox state={t.state} size={14} priority={t.priority} />
         {t.starred && <span aria-hidden style={{ color: "var(--task-accent)", flex: "none" }}>★</span>}
         {PRIORITY_MARK[t.priority] && <PriorityGlyph priority={t.priority} />}
         <Text

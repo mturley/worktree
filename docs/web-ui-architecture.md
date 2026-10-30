@@ -1298,7 +1298,9 @@ to break.
 
 - **Files.** `components/tasks/` holds `TaskList` (sections, drag and drop,
   quick add at the bottom), `TaskRow`, `TaskStateCheckbox`,
-  `TaskListToolbar` (sort, show completed / include archived; there is no
+  `TaskListToolbar` (sort, and a "View options" popover with the In
+  progress / Starred pins, show completed and include archived, the last
+  disabled, not hidden, while completed tasks are off; there is no
   priority filter: Priority sort groups by priority), `TaskPriorityMenu` (the row's priority mark as a menu),
   `TaskQuickAdd`, `TaskCountBadge` (plus `openTasksLabel`) and
   `TasksSection.tsx` (the panel, below). `taskDrag.ts` holds the row's
@@ -1307,8 +1309,9 @@ to break.
   `openCount`, `planDrop` (what a drop does: reorder, star/unstar, change
   priority), `dueLabel`, `linkChip` — is in **`lib/taskSections.ts`**.
   `lib/taskList.ts` is unrelated: it toggles Markdown checkboxes in notes.
-- **One pref, one key.** `lib/taskListPrefs.ts` stores sort, priority
-  filter, show completed, include archived AND `collapsed` (default `false`)
+- **One pref, one key.** `lib/taskListPrefs.ts` stores sort, show
+  completed, include archived, `pinInProgress` and `pinStarred` (both
+  default `true`) AND `collapsed` (default `false`)
   as one JSON value under `worktree.taskList` in localStorage, each field
   validated on its own (a bad one falls back alone). The old `pinned` field
   is gone outright, with no migration: a stored `{"pinned":true}` parses to
@@ -1448,6 +1451,17 @@ to break.
   ("Star"/"Unstar", "Set priority: X"/"Remove priority", "Set state: X",
   joined with ` · `), so the hint can't disagree with the drop. It was first
   drawn on the target section in place of its tag, far from the pointer.
+- **Pins.** `pinInProgress` puts every open in-progress task (starred or
+  not) in a top `in_progress` section; `pinStarred` puts the remaining
+  starred open tasks in `starred` below it. Each section carries `pin`, and
+  `TaskList` draws a divider (`data-task-pin-divider`) under a pinned group
+  when a different group follows. With a pin off its tasks stay in the
+  ordinary sections, which then imply nothing about it: rest sections get
+  `starred: false` only while Starred is pinned, and `state: "not_started"`
+  only while In progress is pinned (everything left is not started, so a
+  drop out of In progress sets that state). Priority sort splits each
+  pinned group by priority (`in_progress:high` …); State sort drops its own
+  `state:in_progress` while In progress is pinned.
 - **Priority sort splits Starred by priority.** `buildSections` returns
   `starred:high`, `starred:medium`, `starred:low`, `starred:none` (each
   `starred: true` with its `priority`, master order within) ahead of the

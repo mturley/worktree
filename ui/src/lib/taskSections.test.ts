@@ -14,7 +14,7 @@ function mk(id: number, rank: string, over: Partial<Task> = {}): Task {
 }
 
 const prefs = (over: Partial<TaskListPrefs> = {}): TaskListPrefs => ({
-  sort: "custom", showCompleted: false, includeArchived: false, ...over,
+  sort: "custom", showCompleted: false, includeArchived: false, pinInProgress: false, pinStarred: true, ...over,
 })
 
 const ids = (s: TaskSection | undefined) => s?.tasks.map((t) => t.id)
@@ -41,6 +41,63 @@ describe("openSummary", () => {
     expect(openSummary([mk(1, "a")])).toBe("1 not started")
     expect(openSummary([mk(1, "a", { state: "done" })])).toBe("none open")
     expect(openSummary([])).toBe("none open")
+  })
+})
+
+describe("buildSections: pins", () => {
+  const tasks = [
+    mk(1, "a", { state: "in_progress" }), mk(2, "b", { starred: true }), mk(3, "c"),
+    mk(4, "d", { starred: true, state: "in_progress" }),
+  ]
+
+  it("puts in progress above starred, a starred in-progress task in In progress only", () => {
+    const ss = buildSections(tasks, prefs({ pinInProgress: true }), [])
+    expect(keys(ss)).toEqual(["in_progress", "starred", "rest"])
+    expect(ids(sec(ss, "in_progress"))).toEqual([1, 4])
+    expect(ids(sec(ss, "starred"))).toEqual([2])
+    expect(ids(sec(ss, "rest"))).toEqual([3])
+  })
+
+  it("says what a drop implies under the pins", () => {
+    const ss = buildSections(tasks, prefs({ pinInProgress: true }), [])
+    expect(sec(ss, "in_progress")).toMatchObject({ pin: "in_progress", state: "in_progress" })
+    expect(sec(ss, "in_progress")?.starred).toBeUndefined()
+    expect(sec(ss, "starred")).toMatchObject({ pin: "starred", starred: true, state: "not_started" })
+    expect(sec(ss, "rest")).toMatchObject({ starred: false, state: "not_started" })
+    expect(planDrop(ss, 3, "in_progress", 0)).toEqual({ place: { before: 1 }, patch: { state: "in_progress" } })
+    expect(planDrop(ss, 4, "rest", 0)).toEqual({ place: { before: 3 }, patch: { starred: false, state: "not_started" } })
+  })
+
+  it("with neither pin, leaves every open task in rest and implies nothing", () => {
+    const ss = buildSections(tasks, prefs({ pinStarred: false }), [])
+    expect(keys(ss)).toEqual(["rest"])
+    expect(ids(sec(ss, "rest"))).toEqual([1, 2, 3, 4])
+    expect(sec(ss, "rest")?.starred).toBeUndefined()
+    expect(sec(ss, "rest")?.state).toBeUndefined()
+  })
+
+  it("pins in progress alone, starred tasks staying in rest", () => {
+    const ss = buildSections(tasks, prefs({ pinInProgress: true, pinStarred: false }), [])
+    expect(keys(ss)).toEqual(["in_progress", "rest"])
+    expect(ids(sec(ss, "rest"))).toEqual([2, 3])
+  })
+
+  it("splits each pinned group by priority in Priority sort", () => {
+    const ss = buildSections([
+      mk(1, "a", { state: "in_progress", priority: "high" }), mk(2, "b", { starred: true, priority: "low" }), mk(3, "c"),
+    ], prefs({ sort: "priority", pinInProgress: true }), [])
+    expect(keys(ss)).toEqual([
+      "in_progress:high", "in_progress:medium", "in_progress:low", "in_progress:none",
+      ...STARRED_KEYS, "high", "medium", "low", "none",
+    ])
+    expect(ids(sec(ss, "in_progress:high"))).toEqual([1])
+    expect(sec(ss, "in_progress:high")).toMatchObject({ state: "in_progress", priority: "high" })
+    expect(ids(sec(ss, "starred:low"))).toEqual([2])
+  })
+
+  it("drops State sort's own In progress group while In progress is pinned", () => {
+    const ss = buildSections(tasks, prefs({ sort: "state", pinInProgress: true }), [])
+    expect(keys(ss)).toEqual(["in_progress", "starred", "state:not_started"])
   })
 })
 
