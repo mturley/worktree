@@ -151,7 +151,7 @@ export function WorktreeDetailCard({ w, tab, onTabChange, escHint }: {
             rightSection={
               listening ? (
                 <Badge size="xs" variant="light" color="grape" style={{ flex: "none", cursor: "pointer", textTransform: "none" }}>
-                  <ListeningPorts ports={listening.ports} />
+                  <ListeningPorts ports={listening.ports} range={listening.range} />
                 </Badge>
               ) : undefined
             }

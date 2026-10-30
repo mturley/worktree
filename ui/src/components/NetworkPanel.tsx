@@ -1,6 +1,7 @@
 import { ActionIcon, Anchor, CopyButton, Group, Stack, Text, Tooltip } from "@mantine/core"
 import { IconCheck, IconCopy, IconWorld } from "@tabler/icons-react"
 import { useListeners } from "../lib/listenersStore"
+import { PortNumber } from "./ListeningPorts"
 import { useOpenSettings } from "./settings/SettingsContext"
 
 /** The Environment tab's Network column: the TCP ports this worktree's processes listen on. */
@@ -31,7 +32,7 @@ export function NetworkPanel({ path }: { path: string }) {
       ) : (
         ports.map((p) => (
           <Group key={p.port} gap="xs" wrap="wrap">
-            <Text size="xs" ff="monospace" fw={600} c={p.in_range ? undefined : "red"}>{p.port}</Text>
+            <PortNumber port={p} range={listeners?.range ?? null} size="xs" ff="monospace" fw={600} c="grape" />
             <Text size="xs" c="dimmed">{p.addresses.join(", ")}</Text>
             <Text size="xs">{p.process} (PID {p.pid})</Text>
             <CopyButton value={String(p.pid)}>
