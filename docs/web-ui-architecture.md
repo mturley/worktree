@@ -3892,12 +3892,21 @@ Design: `docs/superpowers/specs/2026-10-29-mac-menu-bar-design.md`.
 by `isMiniRoute()` instead of the full app. It mounts `useSSE`,
 `useMacUnreadBridge`, `useTooltipLayer`, the providers (settings, task modal)
 and `TaskDetailModal`, and deliberately omits `useTabPresence`,
-`useUnreadFavicon`, `CmuxFollower` and the banners. `MiniPage` is a slim header
-(`UnreadOnlyToggle`, "Open full UI") over Tasks and Activity tabs. Tasks is
-`TaskList`; Activity is `useActivityPanel` (`components/ActivityPanel.tsx`),
-the home page's feed extracted so both pages share it. `select: "route"` (home)
-opens an event's worktree, `"details"` (mini) opens `EventDetailsModal`; mini
-passes no `search`.
+`useUnreadFavicon`, `CmuxFollower` and the banners. `MiniPage` is a header
+(the home page's `SearchBar`, `UnreadOnlyToggle`, "Open full UI") over Activity
+and Tasks tabs, whose bar carries the active tab's controls (the feed's
+`activity.controls`; `TaskListToolbar`), as the home page's does. Tasks is
+`TaskList`; Activity is `useActivityPanel`
+(`components/ActivityPanel.tsx`), the home page's feed extracted so both pages
+share it. `select: "route"` (home) opens an event's worktree, `"details"`
+(mini) opens `EventDetailsModal`. The search is the home page's too:
+`useSearchQuery`'s `?q=` (which stays on /mini), `buildSuggestions`, `/` to
+focus, and `SearchContext` so `TaskList` filters by it. A worktree or resource
+suggestion navigates to the full UI, which `useMiniLocation` opens outside; an
+event or task opens in place. Esc runs the page's `clearAll` (search, Unreads
+only, feed filters) and has no idle step, since there is nowhere to back out
+to. `MiniPage` mounts `useUnreadOnlyHotkey`, and the app makes the web view
+first responder when the popover opens, so U, R and / work without a click.
 
 **Staying inside /mini.** The router uses `useMiniLocation`
 (`lib/miniMode.ts`): navigation to `/mini` itself (the task modal's `?task=`)

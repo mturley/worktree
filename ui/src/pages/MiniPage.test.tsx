@@ -7,7 +7,7 @@ import { Router } from "wouter"
 import { TaskModalProvider } from "../components/tasks/modal/TaskModalProvider"
 import { setTaskListPrefs } from "../hooks/useTaskListPrefs"
 import { useMiniLocation } from "../lib/miniMode"
-import type { Task, TimelineEvent, WorktreeSummary } from "../api/types"
+import type { AllResourceDTO, Task, TimelineEvent, WorktreeSummary } from "../api/types"
 
 const summary: WorktreeSummary = {
   path: "/wt/foo", repo: "odh", branch: "my-branch",
@@ -85,6 +85,49 @@ describe("MiniPage", () => {
     expect(mocks.timelineArgs.at(-1)?.[2]).toBe(false)
     await userEvent.click(screen.getByRole("switch", { name: "Unreads only" }))
     expect(mocks.timelineArgs.at(-1)?.[2]).toBe(true)
+  })
+
+  it("U toggles unreads only", async () => {
+    wrap()
+    const toggle = screen.getByRole("switch", { name: "Unreads only" })
+    expect(toggle).not.toBeChecked()
+    await userEvent.keyboard("u")
+    expect(toggle).toBeChecked()
+    expect(mocks.timelineArgs.at(-1)?.[2]).toBe(true)
+  })
+
+  it("R opens the Mark all read preview", async () => {
+    vi.spyOn(api, "allResources").mockResolvedValue([
+      { type: "pr", id: "o/r#1", url: "u", primary: true, unread_count: 2, unread_through_ts: "2099-01-01T00:00:00Z", worktrees: [] } as AllResourceDTO,
+    ])
+    vi.spyOn(api, "taskUnread").mockResolvedValue([])
+    wrap()
+    await screen.findByRole("button", { name: /Mark all read/ })
+    await userEvent.keyboard("r")
+    expect(await screen.findByRole("dialog")).toBeInTheDocument()
+  })
+
+  it("/ focuses the search, typing narrows the feed, and Esc clears it", async () => {
+    wrap()
+    const input = screen.getByRole("searchbox")
+    await userEvent.keyboard("/")
+    expect(input).toHaveFocus()
+    await userEvent.keyboard("widget")
+    await waitFor(() => expect(mocks.timelineArgs.at(-1)?.[4]).toBe("widget"))
+    expect(window.location.pathname).toBe("/mini")
+    await userEvent.keyboard("{Escape}")
+    expect(input).toHaveValue("")
+  })
+
+  it("a worktree suggestion opens the full UI outside", async () => {
+    stubBridge()
+    wrap()
+    await userEvent.type(screen.getByRole("searchbox"), "my-branch")
+    await userEvent.keyboard("{ArrowDown}{Enter}")
+    await waitFor(() => expect(post).toHaveBeenCalledWith({
+      type: "open", url: `${window.location.origin}/worktree/${encodeURIComponent("/wt/foo")}`,
+    }))
+    expect(window.location.pathname).toBe("/mini")
   })
 
   it("tasks tab ignores collapsed", async () => {

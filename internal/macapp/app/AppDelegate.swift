@@ -88,7 +88,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         // popover can't take key focus and the login form can't be typed in.
         NSApp.activate(ignoringOtherApps: true)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        popover.contentViewController?.view.window?.makeKey()
+        let window = popover.contentViewController?.view.window
+        window?.makeKey()
+        // So keys reach the page (U for Unreads only) without a click first.
+        window?.makeFirstResponder(webView)
     }
 
     private func showMenu() {
