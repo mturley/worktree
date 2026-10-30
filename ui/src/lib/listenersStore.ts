@@ -46,8 +46,3 @@ export function useListeners(path: string): PathListeners | null {
   }, [path])
   return useSyncExternalStore(subscribe, get)
 }
-
-/** "4090-4099" → "4090–4099" */
-export function formatRange(range: string): string {
-  return range.replace("-", "–")
-}

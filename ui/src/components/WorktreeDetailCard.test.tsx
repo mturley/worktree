@@ -543,7 +543,7 @@ describe("notes", () => {
     worktreeInfo.mockResolvedValue(info())
     worktreeNotes.mockResolvedValue({ notes: "<img src=x onerror=alert(1)> hi", sync_cmux: false })
     const { container } = wrap(summary())
-    await screen.findByText(/hi/)
+    await screen.findByText(/\bhi$/)
     expect(container.querySelector("img")).toBeNull()
   })
 

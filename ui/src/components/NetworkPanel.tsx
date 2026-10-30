@@ -1,6 +1,6 @@
 import { ActionIcon, Anchor, CopyButton, Group, Stack, Text, Tooltip } from "@mantine/core"
-import { IconCheck, IconCopy, IconExternalLink } from "@tabler/icons-react"
-import { formatRange, useListeners } from "../lib/listenersStore"
+import { IconCheck, IconCopy, IconWorld } from "@tabler/icons-react"
+import { useListeners } from "../lib/listenersStore"
 import { useOpenSettings } from "./settings/SettingsContext"
 
 /** The Environment tab's Network column: the TCP ports this worktree's processes listen on. */
@@ -14,9 +14,7 @@ export function NetworkPanel({ path }: { path: string }) {
       <Group gap="xs" wrap="wrap">
         <Text size="sm" fw={600}>Network</Text>
         {enabled && (
-          <Text size="xs" c="dimmed">
-            {listeners?.range ? `Reserved ${formatRange(listeners.range)}` : "No reserved range"}
-          </Text>
+          <Text size="xs" c="dimmed">Ports in use by processes in this worktree</Text>
         )}
       </Group>
       {!enabled ? (
@@ -35,7 +33,7 @@ export function NetworkPanel({ path }: { path: string }) {
           <Group key={p.port} gap="xs" wrap="wrap">
             <Text size="xs" ff="monospace" fw={600} c={p.in_range ? undefined : "red"}>{p.port}</Text>
             <Text size="xs" c="dimmed">{p.addresses.join(", ")}</Text>
-            <Text size="xs">{p.process} ({p.pid})</Text>
+            <Text size="xs">{p.process} (PID {p.pid})</Text>
             <CopyButton value={String(p.pid)}>
               {({ copied, copy }) => (
                 <Tooltip label={copied ? "Copied" : "Copy PID"}>
@@ -45,12 +43,14 @@ export function NetworkPanel({ path }: { path: string }) {
                 </Tooltip>
               )}
             </CopyButton>
-            <ActionIcon
-              component="a" href={`http://localhost:${p.port}`} target="_blank" rel="noreferrer"
-              variant="subtle" color="gray" size="xs" aria-label={`Open localhost:${p.port}`}
-            >
-              <IconExternalLink size={12} />
-            </ActionIcon>
+            <Tooltip label={`Open http://localhost:${p.port} in browser`}>
+              <ActionIcon
+                component="a" href={`http://localhost:${p.port}`} target="_blank" rel="noreferrer"
+                variant="subtle" color="gray" size="sm" aria-label={`Open http://localhost:${p.port} in browser`}
+              >
+                <IconWorld size={14} stroke={1.5} />
+              </ActionIcon>
+            </Tooltip>
           </Group>
         ))
       )}

@@ -150,7 +150,7 @@ export function WorktreeDetailCard({ w, tab, onTabChange, escHint }: {
             onClick={backToNotesOn("env")}
             rightSection={
               listening ? (
-                <Badge size="xs" variant="light" style={{ flex: "none", cursor: "pointer", textTransform: "none" }}>
+                <Badge size="xs" variant="light" color="grape" style={{ flex: "none", cursor: "pointer", textTransform: "none" }}>
                   <ListeningPorts ports={listening.ports} />
                 </Badge>
               ) : undefined

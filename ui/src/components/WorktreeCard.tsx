@@ -190,7 +190,7 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
             {w.branch && <>Branch: <SearchHighlight text={w.branch} /></>}
           </Text>
           {listening && (
-            <Text size="xs" c="dimmed">Listening on <ListeningPorts ports={listening.ports} /></Text>
+            <Text size="xs" c="grape">Listening on <ListeningPorts ports={listening.ports} /></Text>
           )}
           <MatchWhy match={suppressVia ? null : match} />
           {w.notes && (

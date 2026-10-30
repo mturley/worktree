@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { renderHook, act } from "@testing-library/react"
-import { formatRange, setListeners, useListeners } from "./listenersStore"
+import { setListeners, useListeners } from "./listenersStore"
 
 describe("listenersStore", () => {
   it("is null before a snapshot, then reads the path's ports and range", () => {
@@ -19,9 +19,5 @@ describe("listenersStore", () => {
     rerender()
     expect(again.current).toBe(before)
     expect(result.current).toBe(first)
-  })
-
-  it("formats a range with an en dash", () => {
-    expect(formatRange("4090-4099")).toBe("4090–4099")
   })
 })
