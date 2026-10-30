@@ -111,7 +111,7 @@ func printGettingStarted() {
 		return
 	}
 	fmt.Println()
-	fmt.Print(setup.GettingStarted(ui.ShortPath(config.ConfigPath()), cfg.UI))
+	fmt.Print(setup.GettingStarted(ui.ShortPath(config.ConfigPath()), cfg.UI, true))
 }
 
 // registerWatcherConsumer records worktree's DB in the shared watcher

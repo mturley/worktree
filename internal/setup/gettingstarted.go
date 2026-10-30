@@ -13,12 +13,16 @@ import (
 // interactive run: start the web UI (and reach it from a phone), create a
 // worktree, look worktrees up. configPath is shown as given, so callers pass
 // it through ui.ShortPath; the CA certificate is named beside it, where setup
-// writes it.
-func GettingStarted(configPath string, uiCfg config.UIConfig) string {
-	cmd := func(s string) string { return ui.Cyan(s) }
+// writes it. `worktree --help` prints them too, uncoloured when piped.
+func GettingStarted(configPath string, uiCfg config.UIConfig, color bool) string {
+	cmd, bold := ui.Cyan, ui.Bold
+	if !color {
+		cmd = func(s string) string { return s }
+		bold = cmd
+	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n\n", ui.Bold("Getting started"))
-	fmt.Fprintf(&b, "  1. Start the web UI in a terminal:\n")
+	fmt.Fprintf(&b, "%s\n\n", bold("Getting started"))
+	fmt.Fprintf(&b, "  1. Start the web UI server in a terminal:\n")
 	fmt.Fprintf(&b, "       %s\n", cmd("worktree ui"))
 	fmt.Fprintf(&b, "     It opens your browser at http://127.0.0.1:%d (open it yourself if\n", config.DefaultHTTPPort)
 	fmt.Fprintf(&b, "     not). Log in with your web UI password: it's ui.password in\n")
@@ -43,6 +47,7 @@ func GettingStarted(configPath string, uiCfg config.UIConfig) string {
 	fmt.Fprintf(&b, "       %s           every worktree\n", cmd("worktree list"))
 	fmt.Fprintf(&b, "       %s    a worktree's branch, ports, PR and Jira issue\n", cmd("worktree info [path]"))
 	fmt.Fprintf(&b, "                               (the current one when you leave out the path)\n\n")
-	fmt.Fprintf(&b, "  %s is short for %s, so %s works too.\n", cmd("wt"), cmd("worktree"), cmd("wt add my-feature"))
+	fmt.Fprintf(&b, "  %s lists every command; %s tells you\n", cmd("worktree --help"), cmd("worktree <command> --help"))
+	fmt.Fprintf(&b, "  more about one. %s is short for %s, so %s works too.\n", cmd("wt"), cmd("worktree"), cmd("wt add my-feature"))
 	return b.String()
 }

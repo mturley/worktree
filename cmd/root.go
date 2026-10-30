@@ -18,16 +18,18 @@ import (
 	"github.com/mturley/worktree/internal/jira"
 	"github.com/mturley/worktree/internal/ports"
 	"github.com/mturley/worktree/internal/resources"
+	"github.com/mturley/worktree/internal/setup"
 	"github.com/mturley/worktree/internal/ui"
 	"github.com/mturley/worktree/internal/worktreedel"
 	"github.com/mturley/worktree/internal/worktreenew"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 var rootCmd = &cobra.Command{
 	Use:   "worktree",
 	Short: "CLI and web UI for managing git worktrees",
-	Long:  "CLI and web UI for managing git worktrees with GitHub/Jira/Slack integration and optional cmux support.\n\nRun `worktree ui` for the web UI.",
+	Long:  "CLI and web UI for managing git worktrees with GitHub/Jira/Slack integration and optional cmux support.",
 	Args:  cobra.NoArgs,
 	RunE:  runRoot,
 	// URL classification is a pure function used all over (resourceurl,
@@ -54,7 +56,26 @@ func init() {
 		&cobra.Group{ID: "integration", Title: "Integrations:"},
 		&cobra.Group{ID: "admin", Title: "Admin:"},
 	)
+
+	// `worktree --help` ends with setup's getting-started tips. Root only:
+	// subcommands inherit this help func and keep cobra's help as is.
+	defaultHelp = rootCmd.HelpFunc()
+	rootCmd.SetHelpFunc(func(c *cobra.Command, args []string) {
+		defaultHelp(c, args)
+		if c != rootCmd {
+			return
+		}
+		// A config that fails to load still gets the tips, minus the phone
+		// address; the command the user runs next reports the error.
+		cfg, _ := config.Load()
+		color := term.IsTerminal(int(os.Stdout.Fd()))
+		fmt.Fprint(c.OutOrStdout(), "\n"+setup.GettingStarted(ui.ShortPath(config.ConfigPath()), cfg.UI, color))
+	})
 }
+
+// defaultHelp is cobra's own help, without the tips: bare `worktree` shows it
+// above the current worktree's info, where the tips would be noise.
+var defaultHelp func(*cobra.Command, []string)
 
 var globalWebFS embed.FS
 
@@ -62,7 +83,7 @@ var globalWebFS embed.FS
 func SetWebFS(f embed.FS) { globalWebFS = f }
 
 func runRoot(cmd *cobra.Command, args []string) error {
-	cmd.Help()
+	defaultHelp(cmd, args)
 	fmt.Println()
 	fmt.Println(ui.Dim("─────────────────────────────────────────"))
 	fmt.Println()
