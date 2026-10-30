@@ -22,3 +22,11 @@ describe("tabDirty", () => {
     expect(dirty["ui-access"]).toBe(false)
   })
 })
+
+describe("tabDirty port scan", () => {
+  it("lights the General dot when port_scan_enabled changes", () => {
+    const d = drafts()
+    d.worktree = { ...d.worktree, port_scan_enabled: false }
+    expect(tabDirty(baseSettings(), d, {}).general).toBe(true)
+  })
+})

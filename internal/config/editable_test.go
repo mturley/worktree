@@ -105,6 +105,7 @@ func TestWriteEditableDefaultsDeleteKeys(t *testing.T) {
 	cur.AllowedHosts = nil
 	cur.HTTPSPort = DefaultHTTPSPort
 	cur.CmuxFeaturesDisabled = true
+	cur.PortScanDisabled = true
 	cur.RemoteAccessDisabled = true
 	if _, err := WriteEditable(p, cur); err != nil {
 		t.Fatal(err)
@@ -112,14 +113,21 @@ func TestWriteEditableDefaultsDeleteKeys(t *testing.T) {
 	if got, _, _ := ReadEditable(p); !got.RemoteAccessDisabled {
 		t.Fatal("remote_access_disabled not written")
 	}
+	if got, _, _ := ReadEditable(p); !got.PortScanDisabled {
+		t.Fatal("port_scan_disabled not written")
+	}
+	if d, _ := os.ReadFile(p); !strings.Contains(string(d), "port_scan_disabled: true") {
+		t.Fatalf("file:\n%s", d)
+	}
 	cur.CmuxFeaturesDisabled = false
+	cur.PortScanDisabled = false
 	cur.RemoteAccessDisabled = false
 	if _, err := WriteEditable(p, cur); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(p)
 	s := string(data)
-	for _, gone := range []string{"projects", "allowed_hosts", "https_port", "cmux_features_disabled", "remote_access_disabled"} {
+	for _, gone := range []string{"projects", "allowed_hosts", "https_port", "cmux_features_disabled", "port_scan_disabled", "remote_access_disabled"} {
 		if strings.Contains(s, gone) {
 			t.Errorf("%s should be removed:\n%s", gone, s)
 		}

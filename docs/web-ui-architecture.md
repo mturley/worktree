@@ -3332,6 +3332,12 @@ that omits it keeps the file's value rather than reading as off. It only
 takes effect on restart; while it is off the UI greys out the rest of the
 Remote access section.
 
+**The port scan toggle** ("Scan for listening ports", `ui.port_scan_disabled`,
+absent = enabled) is `port_scan_enabled` in the worktree DTO and part of the
+worktree save. A PUT that changes it stores the flag on the server
+(`SetPortScanDisabled`) and kicks the listeners hub so subscribers see the
+new state at once; `cmd/ui.go` sets the initial state from config.
+
 **The cmux toggle** ("Enable cmux features", `ui.cmux_features_disabled`,
 absent = enabled) is part of the worktree save. It is refused (409) when the
 server cannot reach cmux, and the UI greys the switch out with a tooltip

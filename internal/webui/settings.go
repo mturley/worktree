@@ -99,6 +99,7 @@ type worktreeSettings struct {
 	WorktreesBase       string `json:"worktrees_base"`
 	Editor              string `json:"editor"`
 	CmuxFeaturesEnabled bool   `json:"cmux_features_enabled"`
+	PortScanEnabled     bool   `json:"port_scan_enabled"`
 	Jira                struct {
 		Projects   []string `json:"projects"`
 		AliasHosts []string `json:"alias_hosts"`
@@ -158,6 +159,7 @@ func toWorktreeSettings(e config.Editable) worktreeSettings {
 	w.WorktreesBase = e.WorktreesBase
 	w.Editor = e.Editor
 	w.CmuxFeaturesEnabled = !e.CmuxFeaturesDisabled
+	w.PortScanEnabled = !e.PortScanDisabled
 	w.Jira.Projects = nonNil(e.JiraProjects)
 	w.Jira.AliasHosts = nonNil(e.JiraAliasHosts)
 	remote := !e.RemoteAccessDisabled
@@ -252,6 +254,7 @@ func (s *Server) settings() (settingsDTO, error) {
 	dto.Secrets.UIPassword = pwSet
 	// The live gate, not the file, is what the server is doing right now.
 	dto.Worktree.CmuxFeaturesEnabled = !s.cmuxDisabled.Load()
+	dto.Worktree.PortScanEnabled = !s.portScanDisabled.Load()
 	dto.Worktree.Watchers = s.watcherStates()
 	return dto, nil
 }
@@ -294,6 +297,7 @@ func (s *Server) handleSettingsWorktree(w http.ResponseWriter, r *http.Request) 
 		TLSCertFile:          strings.TrimSpace(req.UI.TLS.CertFile),
 		TLSKeyFile:           strings.TrimSpace(req.UI.TLS.KeyFile),
 		CmuxFeaturesDisabled: !req.CmuxFeaturesEnabled,
+		PortScanDisabled:     !req.PortScanEnabled,
 		WatchersDisabled:     map[string]bool{},
 	}
 	for svc, on := range req.Watchers {
@@ -375,6 +379,10 @@ func (s *Server) handleSettingsWorktree(w http.ResponseWriter, r *http.Request) 
 		CommandEnabled: next.NotifyCommandEnabled,
 		Command:        next.NotifyCommand,
 	})
+	if scanOff := next.PortScanDisabled; scanOff != s.portScanDisabled.Load() {
+		s.SetPortScanDisabled(scanOff)
+		s.listenersHub().kick()
+	}
 	if cmuxChanging {
 		s.cmuxDisabled.Store(disabled)
 		if disabled {

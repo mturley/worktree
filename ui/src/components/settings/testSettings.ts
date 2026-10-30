@@ -6,7 +6,7 @@ export const baseSettings = (): Settings => ({
   environment: { in_cmux: true, worktrees_base_env: false, cert_names: ["a.local"], default_notify_command: DEFAULT_CMD },
   paths: { worktree: "~/.config/worktree/config.yaml", watcher_auth: "~/.config/watcher/auth.yaml", watcher_config: "~/.config/watcher/config.yaml" },
   secrets: { ui_password: true, github_token: true, jira_token: true, slack_token: true, slack_cookie: true },
-  worktree: { worktrees_base: "~/.worktrees", editor: "", cmux_features_enabled: true,
+  worktree: { worktrees_base: "~/.worktrees", editor: "", cmux_features_enabled: true, port_scan_enabled: true,
     watchers: { github: true, jira: true, slack: true },
     jira: { projects: ["ABC"], alias_hosts: [] },
     ui: { remote_access_enabled: true, https_port: 8476, allowed_hosts: ["a.local"], tls: { cert_file: "~/c.pem", key_file: "~/k.pem" } },

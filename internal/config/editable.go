@@ -23,6 +23,7 @@ type Editable struct {
 	TLSCertFile          string
 	TLSKeyFile           string
 	CmuxFeaturesDisabled bool
+	PortScanDisabled     bool
 	RemoteAccessDisabled bool
 	// WatchersDisabled holds the services (config.Services) whose watcher
 	// is off; absent from the map means on.
@@ -69,6 +70,7 @@ func editableFromDoc(doc *yaml.Node) (Editable, bool, error) {
 		TLSCertFile:           raw.UI.TLS.CertFile,
 		TLSKeyFile:            raw.UI.TLS.KeyFile,
 		CmuxFeaturesDisabled:  raw.UI.CmuxFeaturesDisabled,
+		PortScanDisabled:      raw.UI.PortScanDisabled,
 		RemoteAccessDisabled:  raw.UI.RemoteAccessDisabled,
 		WatchersDisabled:      map[string]bool{},
 		NotificationsDisabled: raw.Notifications.Disabled,
@@ -159,6 +161,17 @@ func WriteEditable(path string, next Editable) (bool, error) {
 				return nil
 			}
 			return setPath(root, boolNode(true), "ui", "cmux_features_disabled")
+		},
+		func() error {
+			if cur.PortScanDisabled == next.PortScanDisabled {
+				return nil
+			}
+			changed = true
+			if !next.PortScanDisabled {
+				deletePath(root, "ui", "port_scan_disabled")
+				return nil
+			}
+			return setPath(root, boolNode(true), "ui", "port_scan_disabled")
 		},
 		func() error {
 			if cur.RemoteAccessDisabled == next.RemoteAccessDisabled {

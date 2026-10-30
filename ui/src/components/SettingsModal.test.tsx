@@ -76,6 +76,19 @@ describe("SettingsModal", () => {
     expect(predicate!({ queryKey: ["worktrees"] } as never)).toBe(false)
   })
 
+  it("saves the port scan toggle", async () => {
+    vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
+    const save = vi.spyOn(api, "saveWorktreeSettings").mockResolvedValue(baseSettings())
+    renderModal()
+    const sw = await screen.findByLabelText(/^Scan for listening ports/)
+    expect(sw).toBeChecked()
+    await userEvent.click(sw)
+    expect(sw).not.toBeChecked()
+    await userEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() => expect(save).toHaveBeenCalledOnce())
+    expect(save.mock.calls[0][0].port_scan_enabled).toBe(false)
+  })
+
   it("greys the cmux toggle out when the server is not in cmux", async () => {
     const s = baseSettings()
     s.environment.in_cmux = false

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mturley/worktree/internal/cmux"
 	"github.com/mturley/worktree/internal/jira"
@@ -148,6 +149,38 @@ func TestSettingsWorktreePutCmuxGate(t *testing.T) {
 	data, _ := os.ReadFile(path)
 	if !strings.Contains(string(data), "cmux_features_disabled: true") {
 		t.Fatalf("file:\n%s", data)
+	}
+}
+
+func TestSettingsWorktreePutPortScanToggle(t *testing.T) {
+	t.Parallel()
+	s, path := settingsServer(t, "ui:\n    password: pw\n")
+	cur := decodeSettings(t, doReq(s, "GET", "/api/settings", ""))
+	if !cur.Worktree.PortScanEnabled {
+		t.Fatal("port_scan_enabled should default to true")
+	}
+	ch, unsub := s.listenersHub().subscribe()
+	defer unsub()
+	cur.Worktree.PortScanEnabled = false
+	b, _ := json.Marshal(cur.Worktree)
+	got := decodeSettings(t, doReq(s, "PUT", "/api/settings/worktree", string(b)))
+	if got.Worktree.PortScanEnabled || !s.portScanDisabled.Load() {
+		t.Fatal("scan should be off")
+	}
+	data, _ := os.ReadFile(path)
+	if !strings.Contains(string(data), "port_scan_disabled: true") {
+		t.Fatalf("file:\n%s", data)
+	}
+	deadline := time.After(10 * time.Second)
+	for {
+		select {
+		case m := <-ch:
+			if strings.Contains(string(m), `"enabled":false`) {
+				return
+			}
+		case <-deadline:
+			t.Fatal("subscriber never saw enabled:false")
+		}
 	}
 }
 

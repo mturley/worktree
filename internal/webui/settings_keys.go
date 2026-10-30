@@ -16,6 +16,7 @@ var settingsKeyPaths = map[string][]string{
 		"ui.tls.cert_file",
 		"ui.tls.key_file",
 		"ui.cmux_features_disabled",
+		"ui.port_scan_disabled",     // General tab toggle, inverted
 		"ui.remote_access_disabled", // UI Access tab toggle, inverted
 		"watchers.github",           // Connected Services sub-tab toggles
 		"watchers.jira",

@@ -377,6 +377,8 @@ export interface WorktreeSettings {
   worktrees_base: string
   editor: string
   cmux_features_enabled: boolean
+  /** Scan for the TCP ports each worktree's processes listen on (ui.port_scan_disabled, inverted). */
+  port_scan_enabled: boolean
   /** Per service, whether worktree's watcher may connect to it (watchers.*; absent in the file = on). */
   watchers: Record<CredService, boolean>
   jira: {

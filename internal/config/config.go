@@ -172,6 +172,10 @@ type UIConfig struct {
 	// even when the server can reach it. Set from the UI's Settings modal via
 	// SetCmuxFeaturesDisabled; absent means enabled.
 	CmuxFeaturesDisabled bool `yaml:"cmux_features_disabled,omitempty"`
+	// PortScanDisabled turns off the scan for the TCP ports each worktree's
+	// processes listen on (lsof, every 10s while the UI is open). Set from the
+	// Settings modal; absent means enabled.
+	PortScanDisabled bool `yaml:"port_scan_disabled,omitempty"`
 	// RemoteAccessDisabled keeps `worktree ui` from serving HTTPS even
 	// when a certificate is configured, without discarding it. Set from the
 	// Settings modal or `worktree setup`; absent means enabled.

@@ -426,6 +426,7 @@ func writeConfig(path string, cfg config.Config) error {
 		TLS          *uiTLSYaml `yaml:"tls,omitempty"`
 		// Set from the web UI's Settings modal (config.SetCmuxFeaturesDisabled).
 		CmuxFeaturesDisabled bool `yaml:"cmux_features_disabled,omitempty"`
+		PortScanDisabled     bool `yaml:"port_scan_disabled,omitempty"`
 		RemoteAccessDisabled bool `yaml:"remote_access_disabled,omitempty"`
 	}
 
@@ -452,7 +453,7 @@ func writeConfig(path string, cfg config.Config) error {
 	// Every ui field must be carried here: a field left out is silently
 	// dropped from the file the next time setup writes it.
 	u := uiYaml{Password: cfg.UI.Password, AllowedHosts: cfg.UI.AllowedHosts,
-		CmuxFeaturesDisabled: cfg.UI.CmuxFeaturesDisabled, RemoteAccessDisabled: cfg.UI.RemoteAccessDisabled}
+		CmuxFeaturesDisabled: cfg.UI.CmuxFeaturesDisabled, PortScanDisabled: cfg.UI.PortScanDisabled, RemoteAccessDisabled: cfg.UI.RemoteAccessDisabled}
 	if cfg.UI.HTTPSPort != 0 && cfg.UI.HTTPSPort != config.DefaultHTTPSPort {
 		u.HTTPSPort = cfg.UI.HTTPSPort
 	}
@@ -463,7 +464,7 @@ func writeConfig(path string, cfg config.Config) error {
 		}
 	}
 	if u.Password != "" || u.HTTPSPort != 0 || len(u.AllowedHosts) > 0 || u.TLS != nil || u.CmuxFeaturesDisabled ||
-		u.RemoteAccessDisabled {
+		u.PortScanDisabled || u.RemoteAccessDisabled {
 		yc.UI = &u
 	}
 	if w := cfg.Watchers; w.GitHub != nil || w.Jira != nil || w.Slack != nil {

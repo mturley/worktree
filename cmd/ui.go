@@ -159,6 +159,7 @@ func runUI(cmd *cobra.Command, args []string) error {
 	// The Settings modal's "Enable cmux features" toggle; it writes the
 	// config itself, so this is only the starting state.
 	srv.SetCmuxFeaturesDisabled(cfg.UI.CmuxFeaturesDisabled)
+	srv.SetPortScanDisabled(cfg.UI.PortScanDisabled)
 	// The Notifications tab's switch and custom command; Settings moves
 	// them live.
 	srv.SetNotifications(cfg.Notifications)

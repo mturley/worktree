@@ -125,6 +125,7 @@ func TestWriteConfigPreservesUIToggles(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	cfg := config.DefaultConfig()
 	cfg.UI.CmuxFeaturesDisabled = true
+	cfg.UI.PortScanDisabled = true
 	cfg.UI.RemoteAccessDisabled = true
 	if err := writeConfig(config.ConfigPath(), cfg); err != nil {
 		t.Fatal(err)
@@ -135,6 +136,9 @@ func TestWriteConfigPreservesUIToggles(t *testing.T) {
 	}
 	if !got.UI.CmuxFeaturesDisabled {
 		t.Fatal("setup dropped ui.cmux_features_disabled")
+	}
+	if !got.UI.PortScanDisabled {
+		t.Fatal("setup dropped ui.port_scan_disabled")
 	}
 	if !got.UI.RemoteAccessDisabled {
 		t.Fatal("setup dropped ui.remote_access_disabled")

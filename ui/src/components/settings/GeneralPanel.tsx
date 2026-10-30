@@ -27,6 +27,12 @@ export function GeneralPanel({ settings, draft, update, error }: Props) {
           onChange={(e) => { const on = e.currentTarget.checked; update((d) => ({ ...d, cmux_features_enabled: on })) }}
           tooltip={env.in_cmux ? undefined : "The worktree UI server is not running inside cmux, so there are no cmux features to turn on or off."}
         />
+        <Toggle
+          label="Scan for listening ports"
+          description="Show which ports each worktree's processes are listening on. Runs lsof every 10 seconds while the UI is open."
+          checked={draft.port_scan_enabled}
+          onChange={(e) => { const on = e.currentTarget.checked; update((d) => ({ ...d, port_scan_enabled: on })) }}
+        />
         <TextInput
           label="Editor"
           description={<>Command used by <Code>worktree open</Code> to open a worktree. <KeyPath path="editor" /></>}
