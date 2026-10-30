@@ -1,486 +1,273 @@
 # <img src="ui/public/favicon.svg" width="36" height="36" align="top" /> worktree
 
-CLI and web UI for managing git worktrees with GitHub/Jira/Slack integration and optional cmux support. Also available as `wt`.
+**worktree** puts your work and its context in the same place. It gives each thing you're working on an isolated, complete home: a git worktree with its own port range and kubeconfig, plus the GitHub PRs, Jira issues and Slack threads it's about.
 
-Create, discover, and manage git worktrees with automatic port allocation, isolated kubeconfigs, and one-command PR review workflows — from the terminal, or from a web UI that keeps every worktree and the activity on its PRs, Jira issues, and Slack threads on one page.
+The **CLI** lets you and your AI agents create worktrees and manage everything attached to them. The **web UI** gives you:
 
-## Install
+- a live inbox of the outside activity on each worktree
+- a code view where you can send review comments to an agent or to a PR
+- a task list that sits right next to the work it's about
 
-### From source
+![The worktree web UI: worktree cards with their PRs, Jira issues and Slack threads, beside a live activity feed](docs/images/hero.png)
+<!-- SCREENSHOT TODO: hero.png — dark mode, wide. Home page with 3–4 worktrees carrying mixed PR/Jira/Slack resources, some unread, and the Activity feed beside them. Demo or sanitized data only. -->
+
+**[Quick start](#quick-start)** · **[CLI reference](docs/cli.md)** · **[Setup guide](docs/setup.md)** · **[Configuration](docs/configuration.md)**
+
+## Highlights
+
+- **Live GitHub, Jira and Slack activity, grouped by the work it's about.** Every worktree collects the activity on its own resources, so you never have to work out which PR comment or Slack reply belongs to what.
+- **An isolated environment per worktree.** Each one has its own port range and kubeconfig, so you can run several dev servers and stay logged in to different clusters at the same time.
+- **Slack threads, read and answered inline**, next to the PRs and issues they're about.
+- **Notifications and unread tracking** for each resource, so you know exactly what's new since you last looked.
+- **Tasks that live with their context**, with blockers that clear themselves when a PR merges or an issue is done.
+- **One review view for your changes and for PRs**: send comments to an AI agent or to GitHub, and open your editor on the file you're looking at.
+- **One-command worktrees** from a branch name, a PR number or URL, or a Jira issue.
+- **A macOS menu bar app** that keeps your tasks and activity one click away, and blinks when something's unread.
+- **Deep [cmux](https://cmux.com/) integration**, and a UI that works from your phone.
+
+## Quick start
+
+You need `git`, [Go](https://go.dev/dl/) (1.26+) and Node.js with `npm` (to build the web UI).
+
+**1. Install**
 
 ```bash
 git clone https://github.com/mturley/worktree.git
 cd worktree
-make build
-make install    # installs worktree + wt symlink to /usr/local/bin, runs setup
+make install    # builds the UI and the binary, installs to /usr/local/bin, then runs setup
 ```
 
-To update, `git pull` and run `make install` again. The web UI shows a banner when `main` has commits newer than your installed build.
+**2. Set up.** `make install` runs `worktree setup` for you. It's a re-runnable wizard that sets up your directories and shell hook, generates the web UI password, connects GitHub, Jira and Slack, and on macOS offers to install the [menu bar app](#in-your-menu-bar-macos). Each service is optional. Run `worktree setup` again any time to fix or add something. See the [setup guide](docs/setup.md) for details.
 
-### Via `go install`
+**3. Start the web UI**
 
 ```bash
-go install github.com/mturley/worktree@latest
-worktree setup
+worktree ui     # http://127.0.0.1:8475, opens in your browser
 ```
 
-### Setup
+Log in with the password setup printed. If you lost it, the login page tells you where to find it.
 
-`worktree setup` is an interactive setup wizard that configures your environment. It runs automatically after `make install`, or you can run it manually. It is safe to re-run — it shows what is already configured and only prompts for what is missing.
-
-Setup will:
-- Prompt for your git project root directory (where you clone repos)
-- Prompt for your worktrees directory (default: `~/.worktrees`)
-- Create a config file at `~/.config/worktree/config.yaml`
-- Create a SQLite database at `${XDG_DATA_HOME:-~/.local/share}/worktree/worktree.db` if needed
-- Add a shell hook (`chpwd`) that runs `eval "$(worktree env)"` on directory change (zsh, bash, or fish)
-- Install shell completions for `worktree` and `wt` (zsh, bash, fish)
-- Ask whether each service's watcher (GitHub, Jira, Slack) should be on; a
-  service turned off is never contacted, and its credentials are skipped
-- Test and repair credentials for **GitHub, Slack, and Jira** — the shared watcher
-  credential flow (`credsetup`) validates each service's credentials in
-  `~/.config/watcher/auth.yaml` and, if a credential is missing or invalid, walks
-  you through configuring and re-validating a new one. Each service is optional
-  (setup asks before configuring one that isn't set up yet). For the GitHub
-  token, if the GitHub CLI (`gh`) is installed and logged in, setup offers to
-  use its token (`gh auth token`) instead of having you paste one.
-- Optionally configure Jira project prefixes (used for issue-key detection),
-  stored in `~/.config/worktree/config.yaml`
-
-On every run (not just the first), setup re-tests the existing GitHub, Slack, and
-Jira credentials and offers to replace any that fail — so an expired token is
-caught early. Credentials live in the shared `~/.config/watcher/auth.yaml`
-(all three written here), not in worktree's own config.
-
-Slack credential setup can extract your browser session token and cookie
-**automatically** — it drives a headed Chromium via Playwright to log in and pull
-the `xoxc-` token + `xoxd-` cookie (a one-time Chromium download cached under
-`~/.cache/worktree`; requires `node`/`npx`). If Node isn't available it falls back
-to a guided manual walkthrough.
-
-#### macOS menu bar app
-
-On macOS with `swiftc` installed (Xcode Command Line Tools), interactive `worktree setup` offers to install a small menu bar app, `~/Applications/Worktree Menu Bar.app`. Its icon blinks blue while anything is unread (the page tells it at once; as a backstop the app also runs `worktree unread --json` every 15s), and clicking it opens a dropdown with the web UI's Tasks and Activity views (the `/mini` page of `worktree ui`, which must be running). Task and event details open inside the dropdown; anything else opens the full UI in your browser. Drag the dropdown's bottom-right corner to resize it (double-click the corner to reset); it remembers the size. Right-click the icon for "Open full UI", "Reload", "Reset dropdown to default size", "Open at login", "Use purple wt icon", "Flash icon on unread activity", "More settings in web UI" and "Quit". The dropdown is its own login to the web UI (it shows the login page once, then keeps its session).
-
-- The app is compiled locally with `swiftc` (about 16s the first time on a cold module cache, about 3s after). `worktree setup` rebuilds it only when its embedded source changed, restarting it if it was running.
-- Non-interactive runs (`--yes`, as `make install` does) never install it; run `worktree setup` interactively once.
-- "Start it at login?" writes `~/Library/LaunchAgents/me.turley.worktree.menubar.plist`. After that, the right-click "Open at login" item is the switch (it adds or deletes that file).
-- `worktree setup --uninstall-mac-app` removes only the app, its login item and its web view data. `worktree setup --uninstall` removes it along with everything else.
-
-Run `worktree setup --uninstall` to reverse setup changes. The config file is preserved (it contains credentials) — setup tells you how to remove it manually.
-
-## Quick Start
+**4. Create a worktree.** From the UI's **New worktree** button, or from inside a git repo:
 
 ```bash
-# Create a worktree for a new branch
-worktree add my-feature-branch
-
-# Create a worktree for a PR (by number or URL)
-worktree add 1234
-worktree add https://github.com/org/repo/pull/1234
-
-# Create a worktree for a Jira issue
-worktree add https://your-org.atlassian.net/browse/PROJ-5678
-
-# List all discovered worktrees
-worktree list
-
-# Show info about the current worktree
-worktree info
+worktree add my-feature                                  # a new branch
+worktree add 1234                                        # PR #1234 in this repo
+worktree add https://github.com/org/repo/pull/1234       # any PR, by URL
+worktree add https://your-org.atlassian.net/browse/PROJ-56   # a Jira issue
 ```
 
-## Usage
+The command is also installed as `wt`.¹ To update, `git pull` and run `make install` again. The web UI shows a banner when there's a newer version on `main`.
 
-Running `worktree` with no arguments shows help followed by info about the current directory.
+Next: the [CLI reference](docs/cli.md) lists every command, and the [configuration reference](docs/configuration.md) covers every setting.
 
-### Creating Worktrees — `worktree add`
+## Every worktree is its own environment
 
-`worktree add <arg>` detects what you're passing and does the right thing:
+Working on several things at once usually means your work trips over itself: two dev servers both want port 3000, and an `oc login` for one task quietly switches the cluster under another. worktree gives every worktree its own environment, so you don't have to work that way.
 
-| Argument | Action |
-|----------|--------|
-| `1234` | Create/open a worktree for PR #1234 (from the current repo) |
-| `https://github.com/.../pull/1234` | Create/open a worktree for the linked PR |
-| `https://...atlassian.net/browse/KEY-123` | Create a worktree with the Jira key as the branch name |
-| `my-feature` | Create a worktree for a new branch from the current HEAD |
+- **A reserved port range.** Each worktree gets 10 ports of its own, such as `4020-4029`, in `$WORKTREE_PORTS`. Point your dev servers at them and you can run the app from three branches side by side.
+- **Its own kubeconfig.** Each worktree gets its own `$KUBECONFIG`, which starts as a copy of your current one. Logging in from one worktree logs in *that* worktree only, so one PR can be on a dev cluster while another is on staging.
+- **Set automatically.** The shell hook installed by `worktree setup` exports both whenever you `cd` into a worktree. The web UI shows them on each worktree's Environment tab.
 
-`worktree add` only ever creates a worktree. Two inputs it used to accept are
-now redirected to the commands that own them, rather than silently doing
-something else: a **Slack thread URL** goes to `worktree resources add <url>`,
-and an **existing worktree path** goes to `worktree info <path>`. A bare number
-is always read as a PR, so a numeric branch name has to be created another way.
+```console
+$ cd ~/.worktrees/my-app/feature-a && echo $WORKTREE_PORTS $KUBECONFIG
+4020-4029 /Users/you/.kube/config-my-app-feature-a
 
-When creating a PR worktree, the tool automatically finds the local clone matching the PR's repository. It resolves the correct remote by URL (not by name), so fork workflows with `origin`/`upstream` work correctly.
+$ cd ~/.worktrees/my-app/pr-1234 && echo $WORKTREE_PORTS $KUBECONFIG
+4030-4039 /Users/you/.kube/config-my-app-pr-1234
+```
 
-New branch worktrees branch from the current HEAD. Before creating one, the tool offers to `git pull` first.
-
-### Commands
-
-#### Worktree Management
+To start a dev server on the first port in the range:
 
 ```bash
-worktree list                    # List worktrees from the database (--json, --git)
-worktree info [path]             # Show worktree info (env vars, resources with cached state; --json)
-worktree delete [path]           # Remove a worktree and clean up
-worktree cleanup                 # Interactively reconcile disk vs database (prompts before removing)
-worktree dotfiles [path]         # Copy gitignored dotfiles from main worktree
-worktree ports                   # Show allocated port ranges (database-backed; --json)
-worktree unread [--json] [--by worktree|resource]  # Whether anything is unread, and how much
+PORT=${WORKTREE_PORTS%-*} npm run dev
 ```
 
-`delete` removes a worktree and cleans up its port allocation, kubeconfig, and git state. `cleanup` reconciles the database with the filesystem, removing worktree entries whose directories no longer exist.
-
-#### Status, Attention and Activity (for people and AI agents)
-
-These read the worktree database directly: no server or login. New activity
-only arrives while `worktree ui` is running and polling, so start with
-`worktree status`. None of them writes anything: they open the database
-read-only, and exit 2 rather than create or upgrade it (run `worktree setup` or
-`worktree ui`, or start `worktree ui` to upgrade).
-
-`status --json` gives `stale` and `stale_reason`, and each service its `reason`
-when stale: `ui_not_running`, `no_success_yet`, `poll_old` or `poll_failing`. A
-service with nothing to poll is never stale. Start `worktree ui` if it isn't
-running; if it is, read the service's `error`, which often means credentials to
-renew with `worktree setup`.
-
-```bash
-worktree status [--json]         # Is the UI running, and when did each watcher last poll?
-worktree attention [--worktree .] [--json]  # What deserves attention, most important first (exit 1: nothing)
-worktree activity [--since 24h] [--unread] [--source github|jira|slack|tasks] [--resource <ref>] [--worktree .] [--limit n] [--json]  # The timeline (exit 1 with --unread and none)
-worktree notes show [--worktree .]          # A worktree's notes (set replaces them)
-worktree review-comments list [--worktree .]  # Draft review comments and where they sit now
-worktree ports --listening       # Allocated ranges plus what is actually listening, per worktree
-worktree pr-threads list [--worktree .]     # The PR's review threads (contacts GitHub; exit 1: no PR)
-worktree linked <url|type:id> [--resolve-links]  # What a PR, Jira issue or Slack thread links to (contacts the service)
-```
-
-`attention` lists each resource with unread events or a named signal
-(`review_requested`, `changes_requested`, `ci_failing`, `assigned_to_you`,
-`mentioned`, `stale_draft`), and each task due soon or newly unblocked
-(`task_due_soon`, `blocker_resolved`), in a fixed order: Jira priority, then number of signals, then newest activity. It
-produces facts; an agent or you decides what needs a reply. `pr-threads` and
-`linked` contact GitHub, Jira or Slack and refuse (exit 2) while that service's
-watcher is off.
-
-Every read command takes `--json`, which prints an object with
-`"schema_version": 1` and snake_case fields, never a bare array. Exit codes: 0
-success; 1 nothing found (`attention`, `activity --unread`, `pr-threads list`
-with no PR); 2 an error. `unread` always exits 0. Nothing prints ANSI colors when
-piped or when `NO_COLOR` is set. `--worktree` takes `.` or a registered worktree
-path.
-
-`worktree resources mark-read` also takes `--worktree <path>` and `--all`; the read
-cursor is per resource, so it clears a resource everywhere. Slack threads are
-skipped. `worktree activity mark-read <event-id>` marks a single event read without
-moving the cursor (`--undo` takes it back); it refuses Slack events.
-
-##### The agent skill
-
-`worktree setup` offers to install a skill (`~/.agents/skills/worktree/`, which
-Codex and pi read, plus a symlink into Claude Code's skills directory) that teaches an
-AI agent to answer "what needs my attention?" from these commands, and to make no
-change without your say-so. `worktree agent-help` prints the same text for an agent
-without it installed. Setup updates the copy when the embedded text changes, leaves a
-directory it did not create alone, and `worktree setup --uninstall` removes the
-copy and the links it made.
-
-#### Open in Editor or Browser
-
-```bash
-worktree open [path]             # Open in editor ($EDITOR or configured)
-worktree open --github           # Open the associated PR in browser
-worktree open --jira             # Open the associated Jira issue in browser
-```
-
-#### Jira Integration
-
-```bash
-worktree jira [path]             # Show associated Jira issues from cached watcher state (--json)
-worktree jira add KEY-123        # Associate a Jira issue (primary)
-worktree jira add KEY-456 --related  # Associate as context-watching
-worktree jira remove KEY-123     # Remove an association
-```
-
-Jira issues are automatically detected from the PR title, PR body, and branch name when creating a PR worktree. Detected issues are stored in the database.
-
-#### Environment & Resources
-
-```bash
-worktree env                     # Print shell environment variables (use: eval "$(worktree env)")
-worktree resources list          # List tracked resources (database-backed)
-worktree resources list --json   # JSON format for agent-handler integration
-worktree resources list --all --json  # every followed resource once, with the worktrees following it
-worktree resources add <url>     # Add a resource, inferring its type and id
-worktree resources add <type> <id> [--url <url>] [--related]  # ...or state them explicitly
-worktree resources unwatch <type> <id>  # Soft-remove a resource (mark inactive)
-worktree resources remove <type> <id>   # Hard-remove a resource from database
-```
-
-Resource types are `pr`, `jira`, and `slack`. The `--json` output
-(`{"schema_version": 1, "resources": [{type,id,url,primary,...}]}`, where `primary = !related`;
-`updated_at` is when the custom name was set and `resource_updated_at` is the resource's own time)
-is a stable contract:
-[agent-handler](https://github.com/mturley/agent-handler) reads it to auto-watch
-a worktree's **primary** resources when a session registers, and propagates its
-own `/watch` back via `worktree resources add`. worktree works fine without
-agent-handler; the integration is best-effort on both sides.
-
-#### Tasks
-
-```bash
-worktree tasks add <title> [--description ...] [--priority high|medium|low|none] [--star] [--due YYYY-MM-DD] [--focus <ref>] [--related <ref>] [--global]  # In a registered worktree, links it as Focus unless --global
-worktree tasks list [--all | --worktree <path> | --resource <ref>] [--completed] [--archived] [--priority <p>]... [--state <s>]... [--starred]  # Default: the current worktree's open tasks, else all
-worktree tasks show <id>         # Links, subtasks (with their ids), blockers, what it blocks and recent history
-worktree tasks edit <id> [--title ...] [--description ...] [--priority ...] [--due ...]
-worktree tasks state <id> <not_started|in_progress|done>
-worktree tasks star <id>         # or: unstar
-worktree tasks delete <id>
-worktree tasks undo <event-id>   # Undo a state change, subtask check or delete; <event-id> is the undo_event_id its --json answered. Exits 2 if it changed since, or if an agent tries to undo the user's change
-worktree tasks link <id> <ref> [--focus]  # Related unless --focus; also: unlink, focus, unfocus
-worktree tasks move <id> (--after <id> | --before <id> | --top | --bottom)
-worktree tasks subtask add <id> <text>    # Also: edit, check, uncheck, remove <subtask-id>; order <id> <subtask-id>...
-worktree tasks block <id> (--task <id> | --resource <ref> | --other <text>)  # Prints the blocker's id
-worktree tasks unblock <blocker-id>      # Remove a blocker
-worktree tasks resolve <blocker-id> [--unresolve]  # Slack, link and free-text blockers only
-```
-
-A `<ref>` is a URL, `<type>:<id>`, `wt:<path>`, or `.` (the current worktree). Task ids are `T<n>`
-(`t<n>` and `<n>` also work). `--priority` and `--state` repeat to match any of several values;
-`--archived` (done tasks whose links are all archived) and `--state done` imply `--completed`.
-A task is blocked while any of its blockers is unresolved, and a done task is never blocked. A
-task blocker resolves when its task is done (at once, from the CLI too); a PR or Jira blocker
-resolves when `worktree ui` sees the PR merged or closed or the issue Done, so it waits for the UI
-server's next pass. `list --json` and `show --json` carry `blocked`, `blocker_count` and
-`blocker_labels`; `show --json` adds `blockers` and `blocks`.
-Every command takes `--json` (the bare `subtask` group, which only holds subcommands, does not);
-pass `--as-agent` (implied under Claude Code or agent-handler) to record a change as made by an
-agent.
+<!-- SCREENSHOT TODO (optional): environment.png — dark mode. Two terminals side by side in different worktrees, or a worktree's Environment tab. -->
 
-#### Watcher (Timeline Integration)
+## The web UI
 
-```bash
-worktree watcher run [pr|jira|all]  # One-shot poller for PR/Jira timeline events
-```
+`worktree ui` serves the web UI from the same single binary. There's nothing else to install. It shows the same data the CLI works with, and stays live: a background loop polls every followed PR, Jira issue and Slack thread and pushes updates to the browser as they happen.
 
-This is a one-shot poll of tracked PR and Jira resources, writing timeline
-events to the database. It exists for manual/scripted refreshes — during normal
-use the `worktree ui` server runs its own background poll loop (every ~2 min,
-plus on-view-if-stale) covering PRs, Jira issues, **and** Slack threads, so you
-rarely need to run this by hand. (Slack is polled by the UI server's loop, not
-by this standalone command.)
+### Everything at a glance
 
-#### Admin
+![Home page](docs/images/home.png)
+<!-- SCREENSHOT TODO: home.png — dark mode. Home page: worktree cards on the left, Activity feed on the right; the Resources tab could be shown instead if the hero already covers this. -->
 
-```bash
-worktree setup                   # Interactive setup wizard
-worktree setup --uninstall       # Reverse setup changes
-worktree setup --yes             # Non-interactive setup (for CI)
-worktree update                  # Self-update (if installed via go install)
-worktree version                 # Print version
-```
+The home page lists every worktree as a card. Each card shows its repo and branch, its cmux workspace if it has one, and the resources it's about, each with a status icon, a reference like `#1234` or `PROJ-56`, and who owns it.
 
-## What Happens When You Create a Worktree
+Beside the cards, the **Activity** feed merges events from every followed PR, Jira issue and Slack thread, newest first. Each event is tagged with the worktrees it belongs to, and you can filter by source, event type or unread. The **Resources** tab lists everything you follow across all worktrees. Hover a resource and the worktrees that follow it light up, and the other way around.
 
-When you run `worktree add <arg>`, the tool:
+### One worktree, one page
 
-1. Creates the git worktree under `~/.worktrees/<repo>/<name>`
-2. Allocates a unique port range in the database (10 ports starting at 4020, e.g. `4020-4029`)
-3. Seeds an isolated kubeconfig at `~/.kube/config-<repo>-<name>`
-4. Registers the worktree in the database
-5. Detects Jira issues from branch name and PR metadata
-6. Stores PR and Jira associations in the database
-7. Offers to copy gitignored dotfiles from the main worktree
-8. From a cmux pane, offers to open a cmux workspace for it (see [cmux Integration](#cmux-integration)); otherwise prints the `cd` command to enter it
+![Worktree detail page with a PR selected](docs/images/worktree-detail.png)
+<!-- SCREENSHOT TODO: worktree-detail.png — dark mode. Worktree page with a PR selected: its activity and its Linked Resources tab. -->
 
-When an existing review branch is found (e.g. the worktree was previously deleted), the tool shows whether it is up to date with the PR and asks for confirmation before reusing it.
+Open a worktree to see only its world: its resources, their activity, its notes, its tasks and its environment.
 
-### Persistence (Database-Backed)
+- **Focus on one resource.** Select a PR or Jira issue to narrow the activity to it. You can rename resources, reorder them, and mark each one *Focus* (what this worktree is for) or *Related* (followed for context).
+- **Slack threads render inline.** Read a thread, reply (with @-mention, channel and emoji autocomplete), react, and mark it read when you choose. Looking at a thread never marks it read.
+- **Linked Resources.** Shows what a PR, issue or thread links to, including the Jira issue hierarchy, so you can follow it with one click.
+- **Any web page can be a resource.** Follow a design doc or dashboard alongside your PRs, and it opens in place.
+- **Notes.** Free text that saves as you type and can be mirrored to the cmux workspace's description.
 
-Worktree state is stored in a SQLite database at `${XDG_DATA_HOME:-~/.local/share}/worktree/worktree.db` (overridable via `WORKTREE_DB`).
+![A Slack thread rendered inline](docs/images/slack-thread.png)
+<!-- SCREENSHOT TODO: slack-thread.png — dark mode. A Slack thread selected on a worktree page, composer visible. Synthetic content only. -->
 
-**Environment variables** are generated on-demand by `worktree env`:
+### Never miss an update
 
-```bash
-$ eval "$(worktree env)"
-$ echo $WORKTREE_PORTS
-4020-4029
-$ echo $KUBECONFIG
-~/.kube/config-repo-my-branch
-```
+- **Unread is tracked per resource**, so a reply to a PR shows up as unread on every worktree that follows it, and clears everywhere once you've read it. Use the unread-only filter, or mark everything read at once.
+- **Desktop notifications** are opt-in, for a whole worktree or for individual resources. They're delivered through cmux when it's available, or by the browser otherwise. You can also set a command of your own to run for each notification.
+- **Your own activity is never news.** Your comments, edits and messages don't count as unread or notify you.
+- **The browser tab shows unread too.** The title carries a count and the icon shows a dot, so a background tab still tells you something arrived. In cmux, a 📬 appears in front of the title of any workspace with unread activity.
 
-Your shell RC hook (installed by `worktree setup`) automatically runs `eval "$(worktree env)"` when you `cd` into a worktree.
+<!-- SCREENSHOT TODO: notifications.png — dark mode. A worktree card or resource with unread badges and the notify toggles open. -->
 
-**Resource tracking** (PR/Jira associations) is stored in the database. Use `worktree resources list --json` to get a machine-readable format:
+### Tasks: what to do next, next to what it's about
 
-```json
-{"schema_version":1,"resources":[
-  {"type":"pr","id":"owner/repo#123","url":"https://github.com/owner/repo/pull/123","primary":true},
-  {"type":"jira","id":"PROJ-456","url":"https://your-org.atlassian.net/browse/PROJ-456","primary":true},
-  {"type":"jira","id":"PROJ-400","url":"https://your-org.atlassian.net/browse/PROJ-400","primary":false}
-]}
-```
+![Task list](docs/images/tasks.png)
+<!-- SCREENSHOT TODO: tasks.png — dark mode. A task list with a starred group, a blocked task and priority marks. -->
 
-Every `--json` output is an object carrying `"schema_version": 1`. Exit codes: 0 success, 1 nothing found (only commands documented to say so), 2 any error. `--as-agent` is accepted by every command.
+Tasks are to-dos that live with the context they're about. Link a task to a worktree, a PR, a Jira issue or a Slack thread. Then, whenever you're looking at that worktree or resource, its tasks are right beside its activity. The home page lists every task in one hand-ordered list, and each task's links take you straight to the worktree or resource it's about.
 
-Each entry also carries the watchers' cached state (title, state, status, priority, unread counts, ...). `updated_at` is when the resource's custom name was last written (absent if never), and `resource_updated_at` is the resource's own last-update time.
+- **Quick add** from any task list, or turn an event or a Slack message into a task with **＋ task**.
+- **Drag to reorder.** Dragging also stars a task or changes its priority, depending on where you drop it.
+- **The detail view** holds a description, subtasks, links, the events the task came from, and its full history.
+- **Blockers** can be another task, a PR, a Jira issue or anything you type. A task blocker clears when that task is done, and a PR or Jira blocker clears when the PR merges or closes or the issue reaches Done. You get an *Unblocked* notification when that happens.
+- **Undo** is offered for every state change, checked subtask, delete and mark-read.
+- **Built for agents too.** `worktree tasks … --json` lets AI agents read and update the same list. Their changes are recorded as an agent's and can notify you, and an agent can't undo something you did.
 
-Unmarked entries (or `"primary":true`) are the reason this worktree exists. Entries with `"primary":false` are **related** (watching for context).
+![Task detail](docs/images/task-modal.png)
+<!-- SCREENSHOT TODO: task-modal.png — dark mode. Task detail with subtasks, links and a PR blocker. -->
 
-## Web UI
+### Find anything
 
-```bash
-worktree ui                     # start the web UI on http://127.0.0.1:8475 and open it in a browser
-worktree ui --port 9000         # use a different port
-worktree ui --no-open           # don't auto-open a browser
-worktree ui --api-only          # serve only the JSON API (used with the Vite dev server, see `make dev`)
-worktree ui --local-only        # skip the HTTPS listener for other devices
-worktree ui --revoke-all-sessions  # log out every device, then exit
-```
+Search filters the page you're on as you type. On the home page it narrows worktrees, activity, resources and tasks together. On a worktree page it stays within that worktree. Suggestions show what each match is and why it matched, and the query lives in the URL, so Back and reload keep it.
 
-The web UI is a single embedded binary — no separate frontend install required. It is the same data the CLI works with, laid out so you can see every worktree and everything happening on it at once.
+<!-- SCREENSHOT TODO: search.png — dark mode. Home page narrowed by a search, suggestions open. -->
 
-### Authentication
+### Review code, yours or theirs
 
-`worktree ui` requires `ui.password` in `~/.config/worktree/config.yaml` on every listener, including loopback. Run `worktree setup` to generate one. It prints the password when it generates it, and the login screen says where to find it again. An interactive `worktree setup` ends with getting-started tips (starting the web UI server, opening it on a phone, `worktree add`, `worktree list` and `worktree info`), and `worktree --help` ends with them too. If you're upgrading from a version without this, run `worktree setup` (or set `ui.password` yourself) before `worktree ui` will start. The home page header has a **Devices** panel for logging out individual browsers.
+![Diff view with a local review comment and a PR review thread](docs/images/diff-view.png)
+<!-- SCREENSHOT TODO: diff-view.png — dark mode. Diff view showing a local review comment and a PR review thread inline. -->
 
-### Remote access
+Each worktree's **Code** tab shows its git state (merge base, ahead/behind, tracking branch, uncommitted changes) and the files changed. **Review changes** opens a full diff view with a file tree. You can compare against the merge base or the tracking branch, and pick any range of commits, with or without uncommitted changes. The same view serves two purposes:
 
-By default the UI only serves plain HTTP on `127.0.0.1:8475`. `worktree setup` can also enable HTTPS access from other devices, such as your phone: it offers the Mac's `.local` name and LAN IP, issues a certificate from a single-use CA (install `ui-ca.pem` on the phone), and the UI then also listens on `https://<name>:8476` (`ui.https_port`).
+- **Review your own changes, or an agent's.** Leave comments on any line of your local diff. They stay attached to the code they're about as it changes, and are flagged when it's gone. **Copy comments for agent** turns them all into one prompt to hand to a coding agent.
+- **Review a PR.** The PR's review threads appear inline in the same diff, with unread markers on new replies. Reply, comment on a line, and start and submit a review on GitHub without leaving the page.
 
-### Home
+**Open in editor** opens the worktree, or the file you're looking at in the diff, in your editor.
 
-Every managed worktree as a card: its repo and branch, the resources that are the point of it (each with a status icon, a `#1234` / `PROJ-56` reference, and who owns it), a count of any related resources being watched for context, and a marker when the directory has gone missing from disk.
+<!-- SCREENSHOT TODO: code-tab.png — dark mode. The Code tab: git summary and files changed. -->
 
-Beside it, a **global timeline** of events across every watched PR, Jira issue, and Slack thread — newest first, each attributed to the worktree(s) watching it, colour-coded by event type, filterable to one source, with a "Show archived" toggle for resources no longer actively watched. Clicking an event opens its details; clicking a resource or worktree badge jumps straight there.
+### Works with cmux
 
-**New worktree** creates one without leaving the page, taking the same inputs `worktree add` does — a branch name, a PR number or URL, or a Jira issue URL — and reporting each step as it runs.
+When `worktree ui` runs inside [cmux](https://cmux.com/), the two work together:
 
-### Worktree detail
+- **Workspaces on every card.** Each worktree card is headed by its cmux workspace's name and color, with a button to jump to its terminals, or to create a workspace if it has none.
+- **Follow cmux.** Turn this on and the browser tab follows along, showing whichever worktree you switch to in cmux.
+- **The cmux tab** on a worktree's page draws its workspace's pane layout. You can focus, close, move and rename tabs from there, and hover a tab to peek at its screen.
 
-The worktree's environment (`WORKTREE_PORTS`, `KUBECONFIG`) and a short git status, its resources, and a timeline scoped to just this worktree. Opening it triggers a fresh poll if the data is stale.
+![cmux tab](docs/images/cmux.png)
+<!-- SCREENSHOT TODO: cmux.png — dark mode. A worktree's cmux tab: pane diagram with a tab peek open. -->
 
-**Notes** are free text for whatever the worktree is about — what you were in the middle of, what to pick up next. They autosave, and survive unregistering the worktree. A per-worktree toggle also syncs them to the cmux workspace's description, so the note shows up in cmux's workspace list.
+### In your menu bar (macOS)
 
-With nothing selected, the resources take the full width with the timeline beneath. Selecting one narrows the view to that resource: a PR or Jira issue shows its own filtered activity, and a **Slack thread renders inline** — read it, reply, react, mark it read. Slack threads are selected like any other resource; there is no separate tab.
+![The menu bar app's dropdown showing Activity and Tasks](docs/images/menubar.png)
+<!-- SCREENSHOT TODO: menubar.png — dark mode. The menu bar icon with its dropdown open on the Activity tab (or Tasks). -->
 
-### What you can do from it
+On a Mac, setup can install a small menu bar app. It keeps your activity feed and task list one click away, without a browser tab.
 
-Beyond reading: create and delete worktrees, follow and unfollow resources, mark them primary or related, give them custom names and descriptions, act on Slack threads, and — inside cmux — jump to a worktree's terminals or create a workspace for it.
+- **Unread at a glance.** The icon blinks blue while anything is unread.
+- **Activity and Tasks in a dropdown.** Click the icon for both, with search. Task and event details open right in the dropdown, and anything else opens the full UI in your browser.
+- **Fits your screen.** Drag the dropdown's corner to resize it, and it remembers the size.
+- **Optionally starts at login.** Right-click the icon for that and its other options.
 
-Deleting a worktree asks you to type its name, then shows each cleanup step as it runs (directory, ports, registry, kubeconfig, prune) and escalates to a forced removal only if git refuses. Deleting the branch too is a separate, unchecked opt-in.
+The app is built on your machine from source embedded in worktree, so it needs `swiftc` (Xcode Command Line Tools), and `worktree ui` must be running. Run `worktree setup` interactively to install it, and setup rebuilds it whenever an update changes it. See the [setup guide](docs/setup.md#macos-menu-bar-app) for details.
 
-### Staying current
+### From your phone
 
-While running, the server polls every active PR, Jira, and Slack resource in the background (roughly every 2 minutes, plus on-view-if-stale) and pushes updates to the browser over Server-Sent Events, so the timeline stays close to live without a manual refresh.
+`worktree setup` can turn on HTTPS access from your other devices. It finds this machine's `.local` name and LAN address and issues a certificate from a CA that can't sign anything else. Install that CA on your phone and you can reach the UI at `https://<your-mac>.local:8476`. The layout adapts to narrow screens. Every browser has to log in with the UI password, and **Settings → Devices** lets you log out any of them.
 
-The browser tab is an unread surface too: while anything is unread, the title carries a count and the favicon blinks a blue dot, so a backgrounded tab still tells you something arrived.
+<!-- SCREENSHOT TODO: mobile.png — dark mode. The home page at phone width. -->
 
-### Slack
+### Settings
 
-`worktree add <slack-thread-url>` links a Slack thread to a worktree as a resource; it then appears in that worktree's resource list, and selecting it renders the thread inline. Run `worktree setup` to acquire Slack credentials — it walks you through extracting your browser session token and cookie and stores them (plus your workspace domain) in the shared watcher config at `~/.config/watcher/auth.yaml`.
+Every setting can be edited in the UI's **Settings** window, including the GitHub, Jira and Slack credentials, notifications, remote access and devices. Each service can be switched off, and a service that's off is never contacted. A **Logs** tab shows what the background polling has been doing.
 
-Threads are never marked read just because you looked at one — only the explicit "Mark thread read" action does that.
+## Creating worktrees
 
-**Security note:** the Slack token and cookie are your own Slack session credentials (not an app token) — treat them like a password. They're stored in `~/.config/watcher/auth.yaml` (mode `0600`) and are never committed to any repo.
+`worktree add` (or **New worktree** in the UI) works out what you passed:
 
-## cmux Integration
+| Argument | Creates |
+|---|---|
+| `my-feature` | A worktree on a new branch from the current HEAD (offering to `git pull` first) |
+| `1234` | A worktree for PR #1234 in the current repo |
+| `https://github.com/org/repo/pull/1234` | A worktree for that PR, from your local clone of that repo |
+| `https://your-org.atlassian.net/browse/PROJ-56` | A worktree whose branch is named after the issue key |
 
-When you create a worktree **from a cmux pane**, `worktree add` offers to open a cmux workspace for it (default yes), with a split layout:
+For a PR, worktree finds your local clone of the PR's repo and checks out the PR's branch. It picks the right remote by URL, not by name, so fork setups with `origin` and `upstream` work. Every new worktree:
 
-- **Left:** Browser tabs — the PR, then detected Jira issues
-- **Top-right:** A shell terminal, with the worktree's UI page pinned as a tab ahead of it
-- **Bottom-right:** A smaller terminal showing `worktree info`
+1. lives under `~/.worktrees/<repo>/<name>`
+2. gets its own port range and kubeconfig (see [above](#every-worktree-is-its-own-environment))
+3. follows its PR and any Jira issues detected from the PR title, body and branch name
+4. can copy your gitignored dotfiles (`.env.local` and the like) from the main checkout
+5. opens in a new cmux workspace, if you ran the command from a cmux pane. That workspace has the PR, its Jira issues and the worktree's UI page as browser tabs, plus terminals for working and for `worktree info`. Outside cmux, worktree prints the `cd` command for the new worktree instead.
 
-Those browser tabs are **pinned**, so cmux's close-others / close-right tab
-actions leave them alone (unpin a tab to close it). The first one is focused on
-creation.
+`worktree delete` removes the worktree and its port range, kubeconfig and records. In the UI, you confirm by typing the worktree's name and watch each cleanup step as it runs.
 
-The worktree UI tab appears only when a `worktree ui` server is already running
-on its default port (8475); it opens that worktree's detail page. If no UI is
-running, the tabs are just the PR and Jira ones — and if there are none of
-those either, the workspace gets a single empty browser tab as before. A UI
-started on a custom `--port` isn't detected, since the port isn't recorded
-anywhere.
+## The CLI
 
-On creation, the tool prompts for:
-- **Workspace name** (default: `wt <branch>`)
-- **Workspace group** (from existing groups, or none)
-- **Workspace color** (from cmux's named colors, or none)
+The CLI covers everything the UI does with worktrees, resources and tasks, and every data command has `--json` output for scripts and AI agents.
 
-If a cmux workspace already exists for the worktree's directory, the tool switches to it instead of creating a duplicate.
+| Command | What it does |
+|---|---|
+| `worktree add <branch \| PR \| URL>` | Create a worktree |
+| `worktree list` | List worktrees (marking any open in cmux) |
+| `worktree info [path]` | Show a worktree's environment and resources |
+| `worktree open [--github \| --jira]` | Open the worktree in your editor, or its PR or Jira issue in the browser |
+| `worktree delete [path]` | Remove a worktree and clean up after it |
+| `worktree resources add <url>` | Follow a PR, Jira issue, Slack thread or web page from the current worktree |
+| `worktree tasks add <title>` | Add a task, linked to the current worktree |
+| `worktree tasks list` | List the current worktree's open tasks |
+| `worktree ui` | Start the web UI |
+| `worktree setup` | Configure (or re-check) everything |
 
-The offer is made only from a cmux pane, not merely from a shell that inherited
-cmux's environment. A tmux server first started under cmux passes
-`CMUX_SOCKET_PATH` to every pane it opens afterwards, so `worktree add` inside
-plain tmux used to offer a workspace for a pane cmux does not own.
+**→ [Full CLI reference](docs/cli.md)**, including every `tasks` and `resources` subcommand, the JSON output formats and agent usage.
 
-Whenever no workspace is opened — outside cmux, in tmux, after declining, or if
-cmux fails — `worktree add` prints the command to enter the new worktree
-instead:
+## Integrations
 
-```
-  To enter it:
-    cd ~/.worktrees/myrepo/my-branch
-```
+| Service | What it enables |
+|---|---|
+| **GitHub** | PR status and activity, review threads in the diff view, writing to PRs, creating a worktree from a PR |
+| **Jira** | Issue status and activity, detecting issue keys, the issue hierarchy in Linked Resources |
+| **Slack** | Threads as resources, read and answered inline, with unread mirrored from Slack |
+| **[cmux](https://cmux.com/)** | Workspaces for worktrees, follow cmux, the cmux tab, notifications, 📬 on workspace titles |
 
-A binary cannot change its parent shell's directory, so the line is there to run
-or copy.
+All of them are optional, and `worktree setup` connects each one. The GitHub token can be taken from the GitHub CLI if you're logged in to it. The Slack session is captured by logging in through a browser that setup opens. Credentials live in `~/.config/watcher/auth.yaml` (mode `0600`).
 
-`worktree list` marks worktrees that have open cmux workspaces with `[open]`.
+> **Slack security note:** worktree uses your own Slack session (token and cookie), not an app token. Treat it like a password.
 
-The web UI works in the other direction as well: when the server is running
-inside cmux, each worktree card is headed by its cmux workspace — name and
-colour — with a button to switch straight to those terminals, or to create a
-workspace for a worktree that has none. Cards look exactly as they do outside
-cmux when it isn't running. Matching is by directory and resolves symlinks, so
-a worktree reached through a symlinked path still finds its workspace.
+worktree also works with [agent-handler](https://github.com/mturley/agent-handler), which follows a worktree's resources when an AI agent session starts in it. Neither tool needs the other.
 
 ## Configuration
 
-Config file at `~/.config/worktree/config.yaml` (created by `worktree setup`):
+`worktree setup` writes `~/.config/worktree/config.yaml`, and the UI's Settings window edits it. You rarely need to touch the file directly. **→ [Configuration reference](docs/configuration.md)**
 
-```yaml
-# Where worktrees are created
-worktrees_base: ~/.worktrees
+## Development
 
-# Editor for `worktree open`
-editor: cursor
-
-# Jira integration (configured by setup wizard)
-jira:
-  host: your-org.atlassian.net
-  email: you@example.com
-  token: your-jira-api-token
-  projects:
-    - MYPROJECT
-    - OTHERPROJECT
-  # Extra hosts whose /browse/KEY links are Jira issues, e.g. an old
-  # Jira Server address that now redirects to your atlassian.net site
-  alias_hosts:
-    - issues.your-org.com
+```bash
+make build    # build the UI (ui/) and the Go binary (bin/worktree), with the UI embedded
+make dev      # Go API + Vite dev server with hot reload (uses mprocs if installed)
+make test     # go test ./...
+make macapp   # build the macOS menu bar app into bin/
 ```
 
-### Environment Variable Overrides
-
-These env vars override config file values:
-
-| Variable | Overrides |
-|----------|-----------|
-| `WORKTREES_BASE` | `worktrees_base` |
-| `WORKTREE_DB` | Database path (default: `${XDG_DATA_HOME:-~/.local/share}/worktree/worktree.db`) |
-
-## Dependencies
-
-**Required:** `git`
-
-**Optional:**
-- A GitHub token — for PR activity, linked resources and creating a worktree
-  from a PR URL. Setup configures this, and can take it from the GitHub CLI
-  (`gh auth token`) if you have it; `gh` itself is not needed.
-- Jira API token — for issue detection and enrichment. Setup configures this.
-- [cmux](https://cmux.com/) — for workspace integration with split layouts and browser tabs.
+The frontend is React with [Mantine](https://mantine.dev/), built with Vite. The backend is Go with SQLite. The menu bar app is a small Swift app, built with plain `swiftc`, that hosts the UI's `/mini` page. GitHub, Jira and Slack polling comes from the [watcher](https://github.com/mturley/watcher) library. [`docs/web-ui-architecture.md`](docs/web-ui-architecture.md) maps the web UI's backend, API and frontend.
 
 ## License
 
 CC0 1.0 Universal — public domain dedication.
+
+---
+
+¹ `wt` is a symlink to `worktree`, so every command in this README works as `wt <command>` too.
