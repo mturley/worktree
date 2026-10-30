@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from "react"
 import { useLocation } from "wouter"
-import { Badge, Box, Button, Group, Stack, Tabs } from "@mantine/core"
+import { Box, Button, Group, Stack, Tabs } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
 import { useCmux } from "../api/cmux"
 import { useActivityPanel } from "../components/ActivityPanel"
 import { ChooseWorktreeModal } from "../components/ChooseWorktreeModal"
 import { Logo } from "../components/Logo"
+import { UnreadBadge } from "../components/UnreadBadge"
 import { UnreadOnlyToggle } from "../components/UnreadOnlyToggle"
 import { NarrowingContext } from "../components/search/NarrowingContext"
 import { SearchBar } from "../components/search/SearchBar"
+import { KeyHint } from "../components/search/KeyHint"
 import { SearchContext } from "../components/search/SearchContext"
 import { buildSuggestions } from "../components/search/suggestions"
 import { TaskList } from "../components/tasks/TaskList"
@@ -43,8 +45,10 @@ const ALL_TASKS = { kind: "all" } as const
  * or resource opens the full UI, outside (see useMiniLocation). Esc closes
  * whatever is open (a modal, a menu, the suggestions), else clears the
  * search, Unreads only and the feed's filters; with none of that left it
- * closes the dropdown itself (the app's `close`), the only step back out of
- * here. The app never closes the dropdown on Esc by itself.
+ * goes back to the Activity tab, the main view (as the detail page's Notes
+ * tab is), and only from there closes the dropdown itself (the app's
+ * `close`), the only step back out of here. The app never closes the
+ * dropdown on Esc by itself.
  *
  * Sized by the popover, so no fixed width.
  */
@@ -122,6 +126,11 @@ export function MiniPage() {
   })
 
   const escClears = narrowing.search || narrowing.unread || narrowing.filters
+  const escActivity = !escClears && tab !== "activity"
+  const escapeIdle = () => {
+    if (tab !== "activity") setTab("activity")
+    else if (hasMacBridge()) postToMac({ type: "close" })
+  }
 
   return (
     <NarrowingContext.Provider value={narrowing}><SearchContext.Provider value={searchContext}>
@@ -136,7 +145,7 @@ export function MiniPage() {
               suggestions={suggestions}
               onEscape={narrowing.clearAll}
               escapeActive={escClears}
-              onEscapeIdle={hasMacBridge() ? () => postToMac({ type: "close" }) : undefined}
+              onEscapeIdle={escapeIdle}
               fillWindow
             />
           </Box>
@@ -149,9 +158,13 @@ export function MiniPage() {
         </Group>
         <Tabs value={tab} onChange={(v) => v && setTab(v as MiniTab)}>
           <Tabs.List>
-            <Tabs.Tab value="activity">
+            <Tabs.Tab
+              value="activity"
+              rightSection={escActivity ? <KeyHint decorative>Esc</KeyHint> : undefined}
+            >
               Activity
-              {count > 0 && <Badge size="xs" variant="light" color="blue" ml={6}>{count}</Badge>}
+              {/* The home page's worktree card badge. */}
+              <UnreadBadge unread={unread} count={count} ml="6px" />
             </Tabs.Tab>
             <Tabs.Tab value="tasks">Tasks</Tabs.Tab>
             {/* The active tab's controls at the bar's far end, as on the

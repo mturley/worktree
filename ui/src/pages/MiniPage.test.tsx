@@ -80,6 +80,12 @@ describe("MiniPage", () => {
     expect(screen.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true")
   })
 
+  it("the Activity tab wears the worktree cards' unread badge", () => {
+    mocks.worktrees = [{ ...summary, has_unread: true, unread_count: 3 }]
+    wrap()
+    expect(within(screen.getByRole("tab", { name: /Activity/ })).getByText("3 unreads")).toBeInTheDocument()
+  })
+
   it("unreads only narrows the activity feed", async () => {
     wrap()
     expect(mocks.timelineArgs.at(-1)?.[2]).toBe(false)
@@ -165,6 +171,30 @@ describe("MiniPage", () => {
     expect(screen.getByRole("switch", { name: "Unreads only" })).not.toBeChecked()
 
     // With nothing left, the dropdown.
+    await userEvent.keyboard("{Escape}")
+    expect(closes()).toBe(1)
+  })
+
+  it("Esc on the Tasks tab goes back to Activity before closing the dropdown", async () => {
+    stubBridge()
+    wrap()
+    const closes = () => post.mock.calls.filter(([m]) => m.type === "close").length
+    const activityTab = () => screen.getByRole("tab", { name: /Activity/ })
+
+    await userEvent.click(screen.getByRole("tab", { name: "Tasks" }))
+    expect(within(activityTab()).getByText("Esc")).toBeInTheDocument()
+
+    // Clearing comes first; the hint waits for it.
+    await userEvent.keyboard("u")
+    expect(within(activityTab()).queryByText("Esc")).not.toBeInTheDocument()
+    await userEvent.keyboard("{Escape}")
+    expect(screen.getByRole("tab", { name: "Tasks" })).toHaveAttribute("aria-selected", "true")
+
+    await userEvent.keyboard("{Escape}")
+    expect(closes()).toBe(0)
+    expect(activityTab()).toHaveAttribute("aria-selected", "true")
+    expect(within(activityTab()).queryByText("Esc")).not.toBeInTheDocument()
+
     await userEvent.keyboard("{Escape}")
     expect(closes()).toBe(1)
   })
