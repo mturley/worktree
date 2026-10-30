@@ -1,3 +1,5 @@
+import { hasMacBridge } from "./macBridge"
+
 /**
  * Whether a hidden tab should close its long-lived streams (the app's
  * /api/stream and a Slack thread's /api/thread-events) and reopen them when
@@ -14,6 +16,11 @@
  * only a connected tab can deliver.
  */
 export function streamsPauseWhenHidden(): boolean {
+  // The macOS menu bar app's web view is hidden whenever its dropdown is
+  // closed, which is most of the time, and its icon must still blink. It
+  // has its own connections, not the browser's, so the six-per-host limit
+  // these pauses protect is not at stake there.
+  if (hasMacBridge()) return false
   return window.location.protocol === "http:"
 }
 

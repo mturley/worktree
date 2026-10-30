@@ -3909,6 +3909,11 @@ event or task opens in place. Esc runs the page's `clearAll` (search, Unreads
 only, feed filters) and has no idle step, since there is nowhere to back out
 to. `MiniPage` mounts `useUnreadOnlyHotkey`, and the app makes the web view
 first responder when the popover opens, so U, R and / work without a click.
+The web view counts as hidden whenever the popover is closed, so
+`streamsPauseWhenHidden` is false under the mac bridge: the page keeps
+`/api/stream` open, and with it the icon's unread state. The app's web view
+has its own connections, so the browser's six-per-host limit the pause
+protects does not apply.
 
 **Staying inside /mini.** The router uses `useMiniLocation`
 (`lib/miniMode.ts`): navigation to `/mini` itself (the task modal's `?task=`)
