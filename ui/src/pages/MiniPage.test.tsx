@@ -156,6 +156,14 @@ describe("MiniPage", () => {
     expect(post).not.toHaveBeenCalled()
   })
 
+  it("an event row's tooltip says it opens details here, not in a worktree", async () => {
+    mocks.events = [event]
+    wrap()
+    await userEvent.hover(screen.getByText("Looks good to me"))
+    expect(await screen.findByText("View event details")).toBeInTheDocument()
+    expect(screen.queryByText("View event details in worktree")).not.toBeInTheDocument()
+  })
+
   it("event details buttons open the browser", async () => {
     stubBridge()
     mocks.events = [event]

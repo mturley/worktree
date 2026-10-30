@@ -167,10 +167,11 @@ export function useActivityPanel(opts: {
         hasMore={tl.hasMore}
         onLoadMore={tl.loadMore}
         loadingMore={tl.loadingMore}
-        // In details mode every row opens its details, so every row is
-        // selectable, worktree or not.
-        onSelectResource={select === "details" ? (_key, e) => setPickedEvent(e) : selectEventResource}
-        canSelectResource={select === "details" ? () => true : (e) => Boolean(e.worktree_paths?.length)}
+        // In details mode no row selects its resource: every row falls back
+        // to the feed's own details modal, and says "View event details",
+        // not "… in worktree", since there is no worktree page to go to.
+        onSelectResource={select === "details" ? undefined : selectEventResource}
+        canSelectResource={select === "details" ? undefined : (e) => Boolean(e.worktree_paths?.length)}
         onMakeTask={makeTaskFromEvent}
         onOpenTask={openTask}
       />
