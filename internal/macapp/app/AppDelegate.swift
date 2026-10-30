@@ -19,6 +19,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     /// The page's last unread report, nil until it has sent one. Survives
     /// reloads, so `ready` can restore it rather than guess.
     private var lastUnread: Bool?
+    /// The last /mini URL that loaded (with its ?task= and such), so coming
+    /// back from offline returns to it rather than to plain /mini.
+    private var lastMiniURL: URL?
+    private lazy var serverWatch = ServerWatch(url: serverURL)
 
     /// WorktreeServerURL from Info.plist, written at build time.
     private let serverURL: URL = {
@@ -50,7 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             container.addSubview(view)
         }
         offlineView.isHidden = true
-        offlineView.onReload = { [weak self] in self?.loadMini() }
+        serverWatch.onUp = { [weak self] in self?.loadMini() }
 
         // Added last so it sits above the web view and takes its own clicks.
         let grip = ResizeGrip(frame: NSRect(x: size.width - ResizeGrip.side, y: 0,
@@ -168,13 +172,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
 
     // MARK: - Loading
 
-    /// Loads /mini, keeping the current /mini URL (such as ?task=…) when there
-    /// is one, so Reload and the offline countdown don't lose the user's place.
+    /// Loads /mini, keeping the current /mini URL (such as ?task=…), or the
+    /// last one while offline, so Reload and coming back don't lose the
+    /// user's place.
     private func loadMini() {
         if let current = webView.url, isMini(current) {
             webView.load(URLRequest(url: current))
         } else {
-            webView.load(URLRequest(url: miniURL))
+            webView.load(URLRequest(url: lastMiniURL ?? miniURL))
         }
     }
 
@@ -195,11 +200,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         icon.state = .disconnected
         webView.isHidden = true
         offlineView.isHidden = false
-        offlineView.startCountdown()
+        // A failed load leaves the previous page in place, scripts still
+        // running: its own retries would keep failing behind this view.
+        // Blank it, and watch for the server instead.
+        if webView.url.map(isMini) ?? false { lastMiniURL = webView.url }
+        webView.stopLoading()
+        webView.loadHTMLString("", baseURL: nil)
+        serverWatch.start()
     }
 
     private func hideOffline() {
-        offlineView.stopCountdown()
+        serverWatch.stop()
         offlineView.isHidden = true
         webView.isHidden = false
     }
@@ -270,6 +281,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // Only the page itself ends offline: the blank page showOffline loads
+        // finishes too.
+        guard let url = webView.url, isMini(url) else { return }
+        lastMiniURL = url
         hideOffline()
     }
 

@@ -3935,9 +3935,14 @@ API, so skipping `useTabPresence` alone would not be enough.
 | `login` | `LoginPage` | needs-login icon |
 | `unreachable` | `ServerUnreachable` | disconnected icon |
 
-When the server cannot be reached at load time there is no page to count down,
-so the app shows its own native view and reloads after 6s. The web UI's own
-`ServerUnreachable` screen uses the same `RELOAD_AFTER_SECONDS = 6` (`App.tsx`).
+When a load fails at the network level there is no page to count down, so
+the app shows its own native view (`OfflineView`), with no countdown. It loads
+a blank page first: a failed load leaves the previous page in place with its
+scripts running, and their retries would keep failing behind the view. Then
+`ServerWatch` asks the server directly every 2s, and its first HTTP answer of
+any kind reloads the last /mini URL. The countdown belongs to the web UI's own
+`ServerUnreachable` screen (`RELOAD_AFTER_SECONDS = 6`, `App.tsx`), which
+shows first when a loaded page loses the server.
 
 **`?settings` deep link.** `SettingsProvider` opens the Settings modal when the
 page loads with `?settings` (optionally `?settings=<tab>`), then strips the
