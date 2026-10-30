@@ -119,6 +119,13 @@ describe("MiniPage", () => {
     expect(input).toHaveValue("")
   })
 
+  it("search suggestions fill the window", async () => {
+    wrap()
+    await userEvent.type(screen.getByRole("searchbox"), "my")
+    const box = await screen.findByTestId("search-suggestions")
+    expect(box).toHaveStyle({ position: "fixed", bottom: "var(--mantine-spacing-xs)" })
+  })
+
   it("a worktree suggestion opens the full UI outside", async () => {
     stubBridge()
     wrap()

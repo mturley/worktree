@@ -134,6 +134,7 @@ export function MiniPage() {
               suggestions={suggestions}
               onEscape={narrowing.clearAll}
               escapeActive={escClears}
+              fillWindow
             />
           </Box>
           <Group gap="sm" wrap="nowrap">

@@ -3901,7 +3901,9 @@ and Tasks tabs, whose bar carries the active tab's controls (the feed's
 share it. `select: "route"` (home) opens an event's worktree, `"details"`
 (mini) opens `EventDetailsModal`. The search is the home page's too:
 `useSearchQuery`'s `?q=` (which stays on /mini), `buildSuggestions`, `/` to
-focus, and `SearchContext` so `TaskList` filters by it. A worktree or resource
+focus, and `SearchContext` so `TaskList` filters by it. Its suggestions use
+`SearchBar`'s `fillWindow`: fixed below the bar, out to the window's edges and
+bottom, since the dropdown is too small for the usual box. A worktree or resource
 suggestion navigates to the full UI, which `useMiniLocation` opens outside; an
 event or task opens in place. Esc runs the page's `clearAll` (search, Unreads
 only, feed filters) and has no idle step, since there is nowhere to back out

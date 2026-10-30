@@ -48,6 +48,7 @@ export function SearchBar({
   escapeActive,
   onEscapeIdle,
   onEscapeFirst,
+  fillWindow,
 }: {
   value: string
   onChange: (q: string) => void
@@ -72,6 +73,8 @@ export function SearchBar({
    * where Esc stays the search's.
    */
   onEscapeFirst?: () => void
+  /** The suggestions fill the window below the bar (the mini view); see SearchSuggestions. */
+  fillWindow?: boolean
 }) {
   const ref = useRef<HTMLInputElement>(null)
   const canEscape = escapeActive ?? Boolean(value)
@@ -175,6 +178,7 @@ export function SearchBar({
           onHover={setActive}
           onPick={pick}
           onViewAll={() => setOpen(false)}
+          fillWindow={fillWindow}
         />
       )}
     </div>

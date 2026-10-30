@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react"
 import { useIsWide } from "../../hooks/useIsWide"
 import { Anchor, Badge, Box, Group, Kbd, Paper, Stack, Text } from "@mantine/core"
 import { SearchHighlight } from "./SearchHighlight"
@@ -51,7 +51,7 @@ export function fitDropdown({ barLeft, viewport, wide }: { barLeft: number; view
  * nothing inside it may be a button or link of its own.
  */
 export function SearchSuggestions({
-  items, active, onHover, onPick, onViewAll,
+  items, active, onHover, onPick, onViewAll, fillWindow = false,
 }: {
   items: Suggestion[]
   active: number
@@ -59,6 +59,12 @@ export function SearchSuggestions({
   onPick: (s: Suggestion) => void
   /** Closes the dropdown, leaving the filtered page. */
   onViewAll: () => void
+  /**
+   * Fill the window below the bar, edge to edge and down to the bottom,
+   * rather than hanging off the bar at its own size: the menu bar app's
+   * dropdown is too small for the list to be any less.
+   */
+  fillWindow?: boolean
 }) {
   const ref = useRef<HTMLDivElement>(null)
   // Keeps the keyboard's row in view as ↑/↓ walk a list taller than the box.
@@ -72,12 +78,14 @@ export function SearchSuggestions({
   // sits and how wide the window is: both measured, and again on resize.
   const wide = useIsWide()
   const boxRef = useRef<HTMLDivElement>(null)
-  const [place, setPlace] = useState({ barLeft: 0, viewport: 0 })
+  const [place, setPlace] = useState({ barLeft: 0, barBottom: 0, viewport: 0 })
   useLayoutEffect(() => {
     const measure = () => {
       const root = boxRef.current?.closest("[data-search-root]")
+      const bar = root?.getBoundingClientRect()
       setPlace({
-        barLeft: root ? root.getBoundingClientRect().left : 0,
+        barLeft: bar ? bar.left : 0,
+        barBottom: bar ? bar.bottom : 0,
         // clientWidth, not innerWidth: the box must clear a scrollbar too.
         viewport: document.documentElement.clientWidth,
       })
@@ -87,6 +95,12 @@ export function SearchSuggestions({
     return () => window.removeEventListener("resize", measure)
   }, [])
   const fit = fitDropdown({ ...place, wide })
+  // Fixed, so it measures from the window; the bar's bottom is read in
+  // window coordinates for the same reason.
+  const edge = "var(--mantine-spacing-xs)"
+  const placement: CSSProperties = fillWindow
+    ? { position: "fixed", top: place.barBottom + 4, left: edge, right: edge, bottom: edge }
+    : { position: "absolute", top: "100%", marginTop: 4, left: fit.left, width: fit.width, maxHeight: "70vh" }
 
   const counts = new Map<string, number>()
   for (const s of items) counts.set(s.group, (counts.get(s.group) ?? 0) + 1)
@@ -98,9 +112,8 @@ export function SearchSuggestions({
       withBorder
       shadow="md"
       style={{
-        position: "absolute", top: "100%", marginTop: 4,
-        left: fit.left, width: fit.width,
-        maxHeight: "70vh", display: "flex", flexDirection: "column", overflow: "hidden",
+        ...placement,
+        display: "flex", flexDirection: "column", overflow: "hidden",
         zIndex: "var(--mantine-z-index-popover)",
       }}
     >
