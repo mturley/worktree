@@ -143,6 +143,32 @@ describe("MiniPage", () => {
     expect(window.location.pathname).toBe("/mini")
   })
 
+  it("Esc closes the dropdown only when it has nothing else to do", async () => {
+    stubBridge()
+    mocks.events = [event]
+    vi.spyOn(api, "locatePRComment").mockRejectedValue(new Error("404"))
+    wrap()
+    const closes = () => post.mock.calls.filter(([m]) => m.type === "close").length
+
+    // An open modal takes Esc first.
+    await userEvent.click(screen.getByText("Looks good to me"))
+    await screen.findByRole("dialog")
+    await userEvent.keyboard("{Escape}")
+    expect(closes()).toBe(0)
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
+
+    // Then the search and Unreads only, cleared together.
+    await userEvent.keyboard("u")
+    expect(screen.getByRole("switch", { name: "Unreads only" })).toBeChecked()
+    await userEvent.keyboard("{Escape}")
+    expect(closes()).toBe(0)
+    expect(screen.getByRole("switch", { name: "Unreads only" })).not.toBeChecked()
+
+    // With nothing left, the dropdown.
+    await userEvent.keyboard("{Escape}")
+    expect(closes()).toBe(1)
+  })
+
   it("tasks tab ignores collapsed", async () => {
     setTaskListPrefs({ collapsed: true })
     wrap()

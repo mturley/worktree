@@ -3951,6 +3951,7 @@ API, so skipping `useTabPresence` alone would not be enough.
 | `login` | `LoginPage` | needs-login icon |
 | `unreachable` | `ServerUnreachable` | disconnected icon |
 | `minWidth {width}` | `useMacTaskModalWidth`: the wide breakpoint (`wideMinPx`, 48em) while a task modal is open, `null` once closed | widens the popover if narrower, without saving it; `null` restores the user's size, unless they resized (grip or reset) meanwhile, which makes that their size |
+| `close` | `MiniPage`'s `SearchBar` `onEscapeIdle`: Esc with no modal, menu or suggestions open and nothing to clear | `popover.close()`; the popover's delegate refuses to close on a raw Esc while the page shows, so Esc reaches the dropdown only through this |
 
 When a load fails at the network level there is no page to count down, so
 the app shows its own native view (`OfflineView`), with no countdown. It loads

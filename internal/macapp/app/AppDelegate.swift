@@ -9,7 +9,7 @@ import WebKit
 /// message handler (ui/src/lib/macBridge.ts).
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler,
-    WKNavigationDelegate, WKUIDelegate
+    WKNavigationDelegate, WKUIDelegate, NSPopoverDelegate
 {
     private var statusItem: NSStatusItem!
     private var icon: StatusIcon!
@@ -78,6 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         popover.contentViewController = controller
         popover.contentSize = size
         popover.behavior = .transient
+        popover.delegate = self
 
         loadMini()
     }
@@ -254,6 +255,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         }
     }
 
+    /// Esc is the page's to spend: it closes a modal, menu or the search's
+    /// suggestions first, then clears the search and filters, and only with
+    /// nothing left asks for the dropdown to close (`close`). So the popover
+    /// never closes on Esc by itself while the page shows. The offline view
+    /// has nothing of its own to close, so there Esc still closes it.
+    func popoverShouldClose(_ popover: NSPopover) -> Bool {
+        guard let e = NSApp.currentEvent, e.type == .keyDown, e.keyCode == 53 else { return true }
+        return !offlineView.isHidden
+    }
+
     // MARK: - Bridge
 
     func userContentController(_ controller: WKUserContentController,
@@ -270,6 +281,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             // Restore what the page last said; with nothing said yet, leave
             // the icon alone until its first unread report arrives.
             if let unread = lastUnread { icon.state = unread ? .unread : .resting }
+        case "close":
+            // close(), not performClose(_:): this must not ask the delegate,
+            // which would see the Esc that led here and refuse.
+            popover.close()
         case "minWidth":
             // A number to widen for, or null (NSNull) to let go.
             setMinWidth((body["width"] as? NSNumber).map { CGFloat($0.doubleValue) })

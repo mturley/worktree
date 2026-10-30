@@ -7,6 +7,8 @@ export type MacMessage =
   // The width the page needs for now, or null when it needs nothing more
   // than the user's own (see useMacTaskModalWidth).
   | { type: "minWidth"; width: number | null }
+  // Esc with nothing else to do: close the dropdown (see MiniPage).
+  | { type: "close" }
 
 interface MacHandler {
   postMessage: (m: unknown) => void

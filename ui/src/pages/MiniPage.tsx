@@ -22,7 +22,7 @@ import { useTasks } from "../hooks/useTasks"
 import { useUnreadOnly } from "../hooks/useUnreadOnly"
 import { useUnreadOnlyHotkey } from "../hooks/useUnreadOnlyHotkey"
 import { useWorktrees } from "../hooks/useWorktrees"
-import { postToMac } from "../lib/macBridge"
+import { hasMacBridge, postToMac } from "../lib/macBridge"
 import { openExternal } from "../lib/miniMode"
 import { serializeResourceKey } from "../lib/resourceKey"
 import { unreadBadge } from "../lib/unreadBadge"
@@ -40,9 +40,11 @@ const ALL_TASKS = { kind: "all" } as const
  * The search is the home page's: the same `?q=` query (useSearchQuery), the
  * same suggestions, `/` to focus it. It narrows both tabs. Rows and
  * suggestions for an event or task open their details in place; a worktree
- * or resource opens the full UI, outside (see useMiniLocation). Esc clears
- * the search, Unreads only and the feed's filters, and does nothing else:
- * there is no page to step back out to here.
+ * or resource opens the full UI, outside (see useMiniLocation). Esc closes
+ * whatever is open (a modal, a menu, the suggestions), else clears the
+ * search, Unreads only and the feed's filters; with none of that left it
+ * closes the dropdown itself (the app's `close`), the only step back out of
+ * here. The app never closes the dropdown on Esc by itself.
  *
  * Sized by the popover, so no fixed width.
  */
@@ -134,6 +136,7 @@ export function MiniPage() {
               suggestions={suggestions}
               onEscape={narrowing.clearAll}
               escapeActive={escClears}
+              onEscapeIdle={hasMacBridge() ? () => postToMac({ type: "close" }) : undefined}
               fillWindow
             />
           </Box>
