@@ -314,3 +314,24 @@ func TestLoginItemSwiftMatchesLaunchAgentPlist(t *testing.T) {
 		t.Errorf("LoginItem.swift and LaunchAgentPlist differ:\nswift:\n%s\ngo:\n%s", swift, got)
 	}
 }
+
+// The menu bar icon draws favicon.svg's monogram from a copy of its path
+// data, so the two stay identical.
+func TestMonogramMatchesFavicon(t *testing.T) {
+	t.Parallel()
+	svg, err := os.ReadFile(filepath.Join("..", "..", "ui", "public", "favicon.svg"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`<path [^>]*\bd="([^"]+)"`).FindSubmatch(svg)
+	if m == nil {
+		t.Fatal("favicon.svg has no path data")
+	}
+	swift, err := fs.ReadFile(Source, "StatusIcon.swift")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(swift), `"`+string(m[1])+`"`) {
+		t.Error("StatusIcon.swift's monogramPath differs from ui/public/favicon.svg's path; copy it across")
+	}
+}

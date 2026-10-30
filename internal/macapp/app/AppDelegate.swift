@@ -42,7 +42,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         webView.navigationDelegate = self
         webView.uiDelegate = self
 
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 420, height: 640))
+        let size = PopoverSize.saved
+        let container = NSView(frame: NSRect(origin: .zero, size: size))
         for view in [webView!, offlineView] as [NSView] {
             view.frame = container.bounds
             view.autoresizingMask = [.width, .height]
@@ -51,10 +52,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         offlineView.isHidden = true
         offlineView.onReload = { [weak self] in self?.loadMini() }
 
+        // Added last so it sits above the web view and takes its own clicks.
+        let grip = ResizeGrip(frame: NSRect(x: size.width - ResizeGrip.side, y: 0,
+                                            width: ResizeGrip.side, height: ResizeGrip.side))
+        grip.autoresizingMask = [.minXMargin, .maxYMargin]
+        grip.popover = popover
+        container.addSubview(grip)
+
         let controller = NSViewController()
         controller.view = container
         popover.contentViewController = controller
-        popover.contentSize = NSSize(width: 420, height: 640)
+        popover.contentSize = size
         popover.behavior = .transient
 
         loadMini()

@@ -8,7 +8,7 @@ Mike keeps a pinned browser tab on the worktree home page so he can stay aware o
 
 The menu bar app is a **supplement** to the web UI, not a replacement for it. It does two things:
 
-1. A menu bar icon that **blinks a blue dot while anything is unread**, the same signal as the favicon, but somewhere that is never buried.
+1. A menu bar icon that **blinks blue while anything is unread**, the same signal as the favicon, but somewhere that is never buried.
 2. A **dropdown** with two tabs, Tasks and Activity, that shows the same views the home page shows. Task details and event details open as modals inside the dropdown. Anything else opens the full web UI in the default browser.
 
 **Success:** Mike can see whether anything is unread from any app, and check his tasks or recent activity in one click, without finding the pinned tab.
@@ -16,8 +16,8 @@ The menu bar app is a **supplement** to the web UI, not a replacement for it. It
 ## Goals
 
 - **One source of truth for the views.** The dropdown renders the web UI's own Tasks and Activity components, served by the running `worktree ui`, at a new route `/mini`. A future change to the tasks view or the activity list shows up in both places with no extra work. This is the core requirement.
-- **Unread icon** in the menu bar: plain when nothing is unread, a blinking blue dot when anything is unread (same definition and same rhythm as the favicon), a dimmed "disconnected" look when the server is not reachable, and a dimmed "needs login" look when the dropdown has no session.
-- **Dropdown layout A** (chosen from mockups): a slim header with the "Unreads only" toggle and "Open full UI ↗", then a tab bar with Tasks and Activity, then the tab's content. About 420×640.
+- **Unread icon** in the menu bar: a solid tile when nothing is unread, blinking to the web UI's unread blue when anything is unread (same definition and same rhythm as the favicon), a dimmed "disconnected" look when the server is not reachable, and a dimmed "needs login" look when the dropdown has no session.
+- **Dropdown layout A** (chosen from mockups): a slim header with the "Unreads only" toggle and "Open full UI ↗", then a tab bar with Tasks and Activity, then the tab's content. About 600×640.
 - **"Switch cmux" buttons in hover cards, everywhere (not just the mini view).** Wherever a hover card shows a cmux workspace's colour bar and name, a small button beside the name switches cmux to that workspace, so Mike can move the mouse into the card and switch instead of opening a browser tab.
 - **Modals stay inside the dropdown:** the task detail modal and the event details modal.
 - **Everything else opens in the browser:** any navigation to another route (a worktree page, a resource, settings) opens the full web UI at that URL in the default browser. External links (GitHub, Jira, Slack) also open in the browser.
@@ -90,7 +90,7 @@ The home page's search box narrows the feed today. The mini view has no search b
 
 The deep-link targets used by notifications (`notificationHref` in `ui/src/lib/browserNotify.ts`) show the URL shapes that matter: `/worktree/<path>`, `?resource=…`, `?task=…`. A task link inside the dropdown opens the task modal in place. A resource or worktree link opens the browser.
 
-**Narrow layout.** The dropdown is about 420px wide. The task and event modals render full-screen inside it (Mantine `fullScreen` when on `/mini`, or below a width breakpoint). Hover cards and tooltips must not overflow the web view; check the ones in `TimelineFeed` rows and task rows.
+**Narrow layout.** The dropdown is about 600px wide. The task and event modals render full-screen inside it (Mantine `fullScreen` when on `/mini`, or below a width breakpoint). Hover cards and tooltips must not overflow the web view; check the ones in `TimelineFeed` rows and task rows.
 
 ### The native bridge
 
@@ -112,7 +112,7 @@ The unread hook reuses `unreadBadge` from `ui/src/lib/unreadBadge.ts`, and it is
 ### Icon
 
 - **Resting:** a template (monochrome) glyph, so it follows the light and dark menu bar.
-- **Unread:** the glyph plus a blue dot, alternating with the plain glyph on the favicon's rhythm. The dot is not a template image, so it stays blue.
+- **Unread:** the tile filled with the web UI's unread blue (Mantine blue-5, #339af0) with a white monogram, alternating with the resting tile on the favicon's rhythm. At rest the tile is solid with the monogram cut out (a template image), so the blink is a whole tile changing colour and stays visible on a tinted menu bar. A steady blue dot sits on the tile's top-right corner through both frames, in a notch cut from each so it reads apart from the blue tile; like the blue frame, it is not a template image, so it stays blue.
 - **Disconnected:** the glyph dimmed with a slash.
 - **Needs login:** the glyph dimmed, distinct from disconnected (for example a small lock or person badge instead of the slash). It must never look like the resting state, because "plain" would falsely say nothing is unread.
 
