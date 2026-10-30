@@ -95,9 +95,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         let menu = NSMenu()
         menu.addItem(item("Open full UI", #selector(openFullUI)))
         menu.addItem(item("Reload", #selector(reloadPage)))
+        menu.addItem(item("Reset dropdown to default size", #selector(resetSize)))
         let login = item("Open at login", #selector(toggleLoginItem))
         login.state = LoginItem.isEnabled ? .on : .off
         menu.addItem(login)
+        let purple = item("Use purple wt icon", #selector(togglePurpleIcon))
+        purple.state = icon.purple ? .on : .off
+        menu.addItem(purple)
+        let flash = item("Flash icon for unread activity", #selector(toggleFlash))
+        flash.state = icon.flash ? .on : .off
+        menu.addItem(flash)
         menu.addItem(item("More settings in web UI", #selector(openSettings)))
         menu.addItem(.separator())
         menu.addItem(item("Quit", #selector(quit)))
@@ -127,6 +134,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     }
 
     @objc private func reloadPage() { loadMini() }
+
+    /// The same as double-clicking the resize grip.
+    @objc private func resetSize() {
+        PopoverSize.reset()
+        popover.contentSize = PopoverSize.standard
+    }
+
+    @objc private func togglePurpleIcon() { icon.purple.toggle() }
+
+    @objc private func toggleFlash() { icon.flash.toggle() }
 
     @objc private func toggleLoginItem() {
         do {

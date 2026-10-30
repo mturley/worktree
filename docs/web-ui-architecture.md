@@ -3944,7 +3944,8 @@ loading `macapp.ServerURL` (`http://127.0.0.1:8475`, fixed). The web view stays
 loaded while the popover is closed so the icon keeps current. The popover has
 no resize handle of its own, so `ResizeGrip.swift` draws one in its
 bottom-right corner; the size (default 600×640, minimum 420×480) is kept in
-the app's `UserDefaults`, and double-clicking the grip resets it. `Build` /
+the app's `UserDefaults`, and double-clicking the grip (or the right-click
+menu's "Reset dropdown to default size") resets it. `Build` /
 `BuildWithURL` compile the Swift files with `swiftc` into a staging bundle and
 swap it in, so a failed build leaves the old app. `SourceHash` (over the
 embedded files) is stored in the bundle's `Info.plist` as `WorktreeSourceHash`;

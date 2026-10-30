@@ -3,25 +3,29 @@ import AppKit
 /// The menu bar icon: favicon.svg's "wt" monogram in a rounded square, in one
 /// of four states.
 ///
-/// Every image but the unread one is a template image, so the glyph follows
-/// the light and dark menu bar. At rest the tile is solid with the monogram
-/// cut out, so the blink is a whole tile changing colour rather than an
-/// outline that gets lost on a tinted menu bar. The unread frame is a full
-/// colour image (a template image would turn it monochrome): the tile filled
-/// with the web UI's unread blue, the monogram in white.
+/// At rest the tile is solid, so the blink is a whole tile changing colour
+/// rather than an outline that gets lost on a tinted menu bar. By default it
+/// is the favicon's purple with a white monogram; with "Use purple wt icon"
+/// off it is a template image with the monogram cut out, white or black to
+/// follow the menu bar. While anything is unread it alternates with the tile
+/// in the web UI's unread blue. The coloured tiles are full colour images (a
+/// template image would turn them monochrome); the dimmed offline and login
+/// outlines are template images.
+///
+/// With "Flash icon for unread activity" off, there is no blink: the resting
+/// tile just carries the dot.
 ///
 /// While unread, a blue dot also sits steady on the top-right corner through
 /// both blink frames. It is a small layer-backed view over the button, not
-/// part of any image, so it stays blue over the template frame; both unread
-/// frames have a notch cut where it sits, so it reads apart from the blue
-/// tile.
+/// part of any image; both unread frames have a notch cut where it sits, so
+/// it reads apart from the blue tile.
 @MainActor
 final class StatusIcon {
     enum State {
         /// Solid tile: connected, nothing unread.
         case resting
         /// The tile filled blue, alternating with resting every 0.6s, under a
-        /// steady blue dot.
+        /// steady blue dot (or just the dot, when flash is off).
         case unread
         /// Dimmed outline with a slash: the server can't be reached.
         case disconnected
@@ -38,7 +42,13 @@ final class StatusIcon {
     static let unreadBlue = NSColor(srgbRed: 0x33 / 255.0, green: 0x9a / 255.0,
                                     blue: 0xf0 / 255.0, alpha: 1)
 
-    private static let size = NSSize(width: 18, height: 18)
+    /// favicon.svg's tile colour (#5b21b6).
+    static let faviconPurple = NSColor(srgbRed: 0x5b / 255.0, green: 0x21 / 255.0,
+                                       blue: 0xb6 / 255.0, alpha: 1)
+
+    /// An 18pt tile inside a 1pt margin that leaves the dot room to hang past
+    /// the corner. The status item slot is 22pt high.
+    private static let size = NSSize(width: 20, height: 20)
     private static let dotDiameter: CGFloat = 6
     /// The clear gap the frames leave around the dot.
     private static let notchGap: CGFloat = 1.5
@@ -48,8 +58,10 @@ final class StatusIcon {
     private var blinkTimer: Timer?
     private var blinkOn = false
 
-    private let restingImage = StatusIcon.glyph(.solid)
-    private let unreadOffImage = StatusIcon.glyph(.solid, notched: true)
+    private let purpleImage = StatusIcon.glyph(.purple)
+    private let purpleNotchedImage = StatusIcon.glyph(.purple, notched: true)
+    private let cutoutImage = StatusIcon.glyph(.cutout)
+    private let cutoutNotchedImage = StatusIcon.glyph(.cutout, notched: true)
     private let unreadImage = StatusIcon.glyph(.unread, notched: true)
     private let disconnectedImage = StatusIcon.glyph(.outline, alpha: 0.4, badge: .slash)
     private let needsLoginImage = StatusIcon.glyph(.outline, alpha: 0.4, badge: .lock)
@@ -57,6 +69,33 @@ final class StatusIcon {
     var state: State = .disconnected {
         didSet { if state != oldValue { apply() } }
     }
+
+    private static let purpleKey = "purpleIcon"
+
+    /// "Use purple wt icon": the resting tile in the favicon's purple rather
+    /// than following the menu bar. On unless turned off; kept in the app's
+    /// defaults.
+    var purple: Bool = UserDefaults.standard.object(forKey: StatusIcon.purpleKey) as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(purple, forKey: StatusIcon.purpleKey)
+            apply()
+        }
+    }
+
+    private static let flashKey = "flashUnread"
+
+    /// "Flash icon for unread activity": blink the tile while unread rather
+    /// than only showing the dot. On unless turned off; kept in the app's
+    /// defaults.
+    var flash: Bool = UserDefaults.standard.object(forKey: StatusIcon.flashKey) as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(flash, forKey: StatusIcon.flashKey)
+            apply()
+        }
+    }
+
+    private var restingImage: NSImage { purple ? purpleImage : cutoutImage }
+    private var unreadOffImage: NSImage { purple ? purpleNotchedImage : cutoutNotchedImage }
 
     init(button: NSStatusBarButton) {
         self.button = button
@@ -77,11 +116,12 @@ final class StatusIcon {
             button.image = restingImage
             button.setAccessibilityLabel("Worktree")
         case .unread:
-            blinkOn = true
-            button.image = unreadImage
+            blinkOn = flash
+            button.image = flash ? unreadImage : unreadOffImage
             button.setAccessibilityLabel("Worktree: unread activity")
             placeDot()
             dot.isHidden = false
+            guard flash else { break }
             // .common so the blink keeps going while the right-click menu is
             // tracking (the default mode pauses during menu tracking).
             let timer = Timer(timeInterval: StatusIcon.blinkInterval, target: self,
@@ -181,8 +221,10 @@ final class StatusIcon {
     private enum Tile {
         /// A stroked frame around the monogram.
         case outline
+        /// Solid favicon purple with a white monogram (not a template).
+        case purple
         /// Solid, with the monogram cut out of it (a template image).
-        case solid
+        case cutout
         /// Solid unread blue with a white monogram (not a template).
         case unread
     }
@@ -195,19 +237,24 @@ final class StatusIcon {
             if tile != .outline {
                 // Out to the stroked frame's outer edge, so the tile is the
                 // same size in every state.
-                (tile == .unread ? unreadBlue : ink).setFill()
-                NSBezierPath(roundedRect: rect.insetBy(dx: 1, dy: 1), xRadius: 4.75, yRadius: 4.75).fill()
-                if tile == .unread { ink = .white }
+                let fill: NSColor = switch tile {
+                case .unread: unreadBlue
+                case .purple: faviconPurple
+                default: ink
+                }
+                fill.setFill()
+                NSBezierPath(roundedRect: rect.insetBy(dx: 1, dy: 1), xRadius: 5.25, yRadius: 5.25).fill()
+                ink = .white
             } else {
                 let frame = NSBezierPath(roundedRect: rect.insetBy(dx: 1.75, dy: 1.75),
-                                         xRadius: 4, yRadius: 4)
+                                         xRadius: 4.5, yRadius: 4.5)
                 frame.lineWidth = 1.5
                 ink.setStroke()
                 frame.stroke()
             }
 
-            // On the solid tile, the monogram erases what it covers.
-            if tile == .solid { NSGraphicsContext.current?.cgContext.setBlendMode(.destinationOut) }
+            // On the cut-out tile, the monogram erases what it covers.
+            if tile == .cutout { NSGraphicsContext.current?.cgContext.setBlendMode(.destinationOut) }
             ink.setFill()
             // Inside the outline's stroke the full-size monogram would touch
             // the frame, so it is drawn smaller there.
@@ -255,7 +302,7 @@ final class StatusIcon {
             }
             return true
         }
-        image.isTemplate = tile != .unread
+        image.isTemplate = tile == .outline || tile == .cutout
         return image
     }
 }
