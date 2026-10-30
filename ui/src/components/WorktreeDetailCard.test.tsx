@@ -5,6 +5,7 @@ import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { WorktreeDetailCard } from "./WorktreeDetailCard"
 import { useDetailTab } from "../hooks/useDetailTab"
+import { setListeners } from "../lib/listenersStore"
 import type { WorktreeGit, WorktreeInfo, WorktreeSummary } from "../api/types"
 
 /** The card with its tab state wired up the way the page does it. */
@@ -881,5 +882,25 @@ describe("Code tab badge color", () => {
     worktreeGit.mockResolvedValue(gitStatus({ vs_merge_base: { ahead: 2, behind: 0 } }))
     wrap(summary())
     expect(await badgeStyle("↑2 ↓0")).toMatch(/gray/)
+  })
+})
+
+describe("WorktreeDetailCard Environment badge", () => {
+  const l = { port: 4091, addresses: ["*"], pid: 1, process: "x", in_range: true }
+  const w = summary()
+  const tabText = async () => (await screen.findByRole("tab", { name: /Environment/ })).textContent
+  it("shows listening ports on the tab when there are some", async () => {
+    setListeners({ enabled: true, ports: { "/wt/foo": [l] }, ranges: {} })
+    wrap(w)
+    expect(await tabText()).toBe("Environment4091")
+  })
+  it("shows no badge when nothing listens or scanning is off", async () => {
+    setListeners({ enabled: true, ports: {}, ranges: {} })
+    const { unmount } = wrap(w)
+    expect(await tabText()).toBe("Environment")
+    unmount()
+    setListeners({ enabled: false, ports: { "/wt/foo": [l] }, ranges: {} })
+    wrap(w)
+    expect(await tabText()).toBe("Environment")
   })
 })

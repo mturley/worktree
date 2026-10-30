@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ResourceDTO, WorktreeSummary } from "../api/types"
 import { WorktreeCard } from "./WorktreeCard"
 import { api } from "../api/client"
+import { setListeners } from "../lib/listenersStore"
 import { SearchContext } from "./search/SearchContext"
 
 const summary: WorktreeSummary = {
@@ -31,6 +32,17 @@ beforeEach(() => window.history.replaceState({}, "", "/"))
 afterEach(cleanup)
 
 describe("WorktreeCard", () => {
+  it("shows the listening ports after Repo/Branch, only when there are some", () => {
+    const l = (port: number, in_range: boolean) => ({ port, addresses: ["*"], pid: 1, process: "x", in_range })
+    setListeners({ enabled: true, ports: { "/wt/foo": [l(4091, true), l(9000, false)] }, ranges: {} })
+    const { unmount } = wrap(<WorktreeCard w={summary} />)
+    expect(screen.getByText(/Listening on/).textContent).toBe("Listening on 4091, 9000")
+    unmount()
+    setListeners({ enabled: true, ports: {}, ranges: {} })
+    wrap(<WorktreeCard w={summary} />)
+    expect(screen.queryByText(/Listening on/)).not.toBeInTheDocument()
+  })
+
   it("shows the notes as Markdown above the resources, links as plain text", () => {
     wrap(<WorktreeCard w={{ ...summary, notes: "**blocked** on [PR](https://example.com/pr)\n\n- [ ] rebase" }} />)
     const label = screen.getByText("Notes:")

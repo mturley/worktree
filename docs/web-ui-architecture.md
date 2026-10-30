@@ -2312,6 +2312,9 @@ way:
   since you're already on that page). One component, one rendering of a
   worktree's identity, used in both places rather than two ad hoc renders
   drifting apart.
+  Under the Repo/Branch line it adds "Listening on 4091, 9000" (`ListeningPorts`,
+  ports outside the reserved range in red) when the stream's listeners snapshot
+  (`useListeners`) is enabled and the worktree has ports; hidden otherwise.
 - **`useSelectedResource()`** (above) owns *what* is selected, independent
   of viewport.
 - **`useIsWide()`** (above) owns *how wide* the viewport is, independent of
@@ -3378,7 +3381,7 @@ updates it at once.
 ### Code tab and diff view (`worktree_git_api.go`, `worktree_diff_api.go`, `ui/src/components/gitdiff/`)
 
 The details card's old Environment tab is split: **Environment** keeps the
-env/ports and sits after **Code**, which follows Notes. The tabs are Mantine's default size, as elsewhere. Above them, on every tab, the card shows the directory row (`DirectoryRow`, with a copy button; Back to notes and Delete sit at the right end of that row) and then `ReviewActions`: "Open in editor" and "Review changes". While the worktree has local review comments or unread PR comments, "Review changes" is filled in the unread blue, and its label counts both (`codeTabLabel`), from the view-less `GET /api/review-comments` list and the PR comments summary. Its counts poll every 5s on the Code tab and every 60s on the other tabs (a shared query polls at its fastest observer's interval, so an open diff view keeps 5s). **Code** (`GitDiffPanel`) shows the git summary (`GitSummary`:
+env/ports (env vars left, `NetworkPanel` right in a `Grid`, stacked below `sm`; the panel lists listening ports from `useListeners` with copy-PID and open-in-browser buttons, and links to Settings when scanning is off; the tab carries a ports badge while something listens) and sits after **Code**, which follows Notes. The tabs are Mantine's default size, as elsewhere. Above them, on every tab, the card shows the directory row (`DirectoryRow`, with a copy button; Back to notes and Delete sit at the right end of that row) and then `ReviewActions`: "Open in editor" and "Review changes". While the worktree has local review comments or unread PR comments, "Review changes" is filled in the unread blue, and its label counts both (`codeTabLabel`), from the view-less `GET /api/review-comments` list and the PR comments summary. Its counts poll every 5s on the Code tab and every 60s on the other tabs (a shared query polls at its fastest observer's interval, so an open diff view keeps 5s). **Code** (`GitDiffPanel`) shows the git summary (`GitSummary`:
 merge-base against the main upstream, ahead/behind, tracking branch, working
 counts, background-fetch state) and a "Files changed" list (`FilesChangedList`)
 with two selectors: the **base** (`merge-base` or `tracking`, `CompareSelect`)

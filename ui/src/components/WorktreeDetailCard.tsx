@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { ActionIcon, Badge, Button, Checkbox, Code, Group, Paper, Stack, Tabs, Text, Textarea, Tooltip } from "@mantine/core"
+import { ActionIcon, Badge, Button, Checkbox, Code, Grid, Group, Paper, Stack, Tabs, Text, Textarea, Tooltip } from "@mantine/core"
 import { IconCheck, IconCopy, IconPencil, IconX } from "@tabler/icons-react"
 import { useQuery } from "@tanstack/react-query"
 import { api } from "../api/client"
@@ -9,6 +9,9 @@ import { isDetailTab, type DetailTab } from "../hooks/useDetailTab"
 import { useDiffSelection } from "../hooks/useDiffSelection"
 import { useWorktreeGit } from "../hooks/useWorktreeGit"
 import { useWorktreeNotes } from "../hooks/useWorktreeNotes"
+import { useListeners } from "../lib/listenersStore"
+import { ListeningPorts } from "./ListeningPorts"
+import { NetworkPanel } from "./NetworkPanel"
 import { badgeColor, formatBadge } from "../lib/diffLabels"
 import { toggleTaskAt } from "../lib/taskList"
 import { relativeTime as rel } from "../lib/relativeTime"
@@ -64,6 +67,8 @@ export function WorktreeDetailCard({ w, tab, onTabChange, escHint }: {
   // looking at the fetch state and wants it fresh.
   const gitStatus = useWorktreeGit(w.path, { fetch: tab === "code" })
   const { base } = useDiffSelection(w.path, undefined)
+  const l = useListeners(w.path)
+  const listening = l?.enabled && l.ports.length > 0 ? l : null
   const badge = gitStatus.data?.on_disk ? formatBadge(gitStatus.data, base) : null
   // Yellow for uncommitted changes, orange for unpushed commits, else gray.
   const badgeTint = gitStatus.data?.on_disk ? badgeColor(gitStatus.data) : "gray"
@@ -140,7 +145,19 @@ export function WorktreeDetailCard({ w, tab, onTabChange, escHint }: {
           >
             Code
           </Tabs.Tab>
-          <Tabs.Tab value="env" onClick={backToNotesOn("env")}>Environment</Tabs.Tab>
+          <Tabs.Tab
+            value="env"
+            onClick={backToNotesOn("env")}
+            rightSection={
+              listening ? (
+                <Badge size="xs" variant="light" style={{ flex: "none", cursor: "pointer", textTransform: "none" }}>
+                  <ListeningPorts ports={listening.ports} />
+                </Badge>
+              ) : undefined
+            }
+          >
+            Environment
+          </Tabs.Tab>
           {hasCmux && (
             <Tabs.Tab value="cmux" onClick={backToNotesOn("cmux")}>cmux</Tabs.Tab>
           )}
@@ -161,13 +178,20 @@ export function WorktreeDetailCard({ w, tab, onTabChange, escHint }: {
             you open a terminal in this worktree, previously only reachable
             from the CLI. */}
         <Tabs.Panel value="env" pt={6} keepMounted>
-          <Stack gap={2}>
-            {hasEnv ? (
-              info.data!.env.map((kv) => <EnvVarRow key={kv.key} name={kv.key} value={kv.value} />)
-            ) : (
-              <Text size="xs" c="dimmed" fs="italic">None</Text>
-            )}
-          </Stack>
+          <Grid gutter="md">
+            <Grid.Col span={{ base: 12, sm: 6 }}>
+              <Stack gap={2}>
+                {hasEnv ? (
+                  info.data!.env.map((kv) => <EnvVarRow key={kv.key} name={kv.key} value={kv.value} />)
+                ) : (
+                  <Text size="xs" c="dimmed" fs="italic">None</Text>
+                )}
+              </Stack>
+            </Grid.Col>
+            <Grid.Col span={{ base: 12, sm: 6 }}>
+              <NetworkPanel path={w.path} />
+            </Grid.Col>
+          </Grid>
         </Tabs.Panel>
 
         {/* Unmounted when not selected (the Tabs default): that stops the

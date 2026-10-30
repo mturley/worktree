@@ -4,6 +4,8 @@ import { useCmuxMatches } from "../api/cmux"
 import type { ResourceDTO, WorktreeSummary } from "../api/types"
 import { relatedSummary } from "../lib/resourceSummary"
 import { CmuxWorkspaceSection } from "./CmuxWorkspaceSection"
+import { useListeners } from "../lib/listenersStore"
+import { ListeningPorts } from "./ListeningPorts"
 import { UnreadDot } from "./ResourceStatusIcon"
 import { ResourceTypeLine } from "./ResourceTypeLine"
 import { cardEdgeStyle } from "../lib/unread"
@@ -73,6 +75,8 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
   const href = `/worktree/${encodeURIComponent(w.path)}`
   const name = worktreeName(w.path)
   const related = relatedSummary(w.related_by_type)
+  const l = useListeners(w.path)
+  const listening = l?.enabled && l.ports.length > 0 ? l : null
   // Settings' "Enable notifications" off hides the bell (the toggle is kept).
   const notificationsEnabled = useNotificationsEnabled()
   const allBell = Boolean(w.notify_all) && notificationsEnabled
@@ -185,6 +189,9 @@ export function WorktreeCard({ w, clickable = true }: WorktreeCardProps) {
             {w.repo && w.branch && " · "}
             {w.branch && <>Branch: <SearchHighlight text={w.branch} /></>}
           </Text>
+          {listening && (
+            <Text size="xs" c="dimmed">Listening on <ListeningPorts ports={listening.ports} /></Text>
+          )}
           <MatchWhy match={suppressVia ? null : match} />
           {w.notes && (
             // Present only when the worktree opted in on its Notes tab. Read
