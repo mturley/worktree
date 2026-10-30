@@ -202,6 +202,41 @@ export function buildSections(tasks: Task[], prefs: TaskListPrefs, terms: string
   return sections
 }
 
+/** The headed groups a list's sections fall into, in display order. */
+export type TaskGroup = TaskPin | "rest" | "completed"
+
+export const TASK_GROUP_LABEL: Record<TaskGroup, string> = {
+  in_progress: "In progress",
+  starred: "Starred",
+  rest: "Other tasks",
+  completed: "Completed",
+}
+
+function sectionGroup(s: TaskSection): TaskGroup {
+  return s.pin ?? (s.key === "completed" ? "completed" : "rest")
+}
+
+/**
+ * Where a list's group headers go: for each section that starts a group, the
+ * group and how many tasks it holds. `sections` are the ones shown (holding
+ * tasks), in order. None at all unless a pinned group is shown: a list with
+ * nothing pinned is one plain list.
+ */
+export function groupHeaders(sections: TaskSection[]): Map<string, { group: TaskGroup; count: number }> {
+  const out = new Map<string, { group: TaskGroup; count: number }>()
+  if (!sections.some((s) => s.pin)) return out
+  let current: { group: TaskGroup; count: number } | undefined
+  for (const s of sections) {
+    const group = sectionGroup(s)
+    if (current?.group !== group) {
+      current = { group, count: 0 }
+      out.set(s.key, current)
+    }
+    current.count += s.tasks.length
+  }
+  return out
+}
+
 /**
  * The task quick add places a new task after. In the draggable sorts the
  * display IS master order, so it is the last visible open task. In Due and

@@ -68,7 +68,7 @@ export function TaskListToolbar({ prefs, onChange }: {
               onChange={(e) => onChange({ showCompleted: e.currentTarget.checked })}
             />
             {/* Archived gates only done tasks, so it means nothing until
-                completed ones show: disabled, not hidden, so it stays findable. */}
+                completed ones show: disabled until then. */}
             <Switch
               size="xs"
               label="Include archived"

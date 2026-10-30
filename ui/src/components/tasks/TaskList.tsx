@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react"
-import { ActionIcon, Alert, Box, Button, Divider, Stack, Text, Tooltip } from "@mantine/core"
+import { ActionIcon, Alert, Box, Button, Stack, Text, Tooltip } from "@mantine/core"
 import { IconGripVertical } from "@tabler/icons-react"
 import {
   closestCenter,
@@ -19,7 +19,9 @@ import { CSS } from "@dnd-kit/utilities"
 import type { Task, TaskState } from "../../api/types"
 import { useTaskMutations, useTasks, type TaskScope } from "../../hooks/useTasks"
 import { useTaskListPrefs } from "../../hooks/useTaskListPrefs"
-import { applyMove, buildSections, canDrag, quickAddAnchor, type TaskSection } from "../../lib/taskSections"
+import {
+  applyMove, buildSections, canDrag, groupHeaders, quickAddAnchor, TASK_GROUP_LABEL, type TaskGroup, type TaskSection,
+} from "../../lib/taskSections"
 import { useSearchContext } from "../search/SearchContext"
 import { useTaskModal } from "./modal/TaskModalProvider"
 import { PRIORITY_LABEL, PRIORITY_MARK } from "./TaskPriorityMenu"
@@ -213,7 +215,30 @@ function bandTag(section: TaskSection): string {
 }
 
 /**
- * A section: its rows, under no label. Only sections that hold tasks are
+ * A group's header: In progress, Starred, Other tasks or Completed, with its
+ * count. Always rendered (not only mid-drag), so a drag shifts nothing.
+ */
+function GroupHeader({ group, count, first }: { group: TaskGroup; count: number; first: boolean }) {
+  return (
+    <Text
+      size="xs"
+      fw={700}
+      c="dimmed"
+      tt="uppercase"
+      px="xs"
+      pt={first ? 0 : 8}
+      pb={2}
+      data-task-group-header={group}
+      style={{ letterSpacing: "0.04em", fontSize: 10 }}
+    >
+      {TASK_GROUP_LABEL[group]} <Text span inherit fw={400}>· {count}</Text>
+    </Text>
+  )
+}
+
+/**
+ * A section: its rows, under no label of its own (a group header may sit
+ * above the first section of its group). Only sections that hold tasks are
  * rendered, so there is nothing to drop onto but rows: a drop's section
  * follows from the row it lands on.
  *
@@ -303,6 +328,7 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
   // there is no empty target.
   const shown = sections.filter((s) => s.tasks.length > 0)
   const anyTasks = shown.length > 0
+  const headers = groupHeaders(shown)
   const shape = `${shownCount}|${shown.map((s) => `${s.key}:${s.tasks.length}`).join(",")}`
   const overflows = useOverflow(cap !== undefined, shape)
   const onOverflow = expand?.onOverflow
@@ -405,6 +431,7 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
       >
         {shown.map((s, i) => (
           <Fragment key={s.key}>
+          {headers.has(s.key) && <GroupHeader {...headers.get(s.key)!} first={i === 0} />}
           <SectionBlock
             section={s}
             band={activeId !== null && s.draggable}
@@ -427,11 +454,6 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
               ))}
             </SortableContext>
           </SectionBlock>
-          {/* A subtle line under a pinned group, when others follow.
-              Always rendered (not only mid-drag), so a drag shifts nothing. */}
-          {s.pin && shown[i + 1] && shown[i + 1].pin !== s.pin && (
-            <Divider my={4} data-task-pin-divider={s.pin} />
-          )}
           </Fragment>
         ))}
         {/* The dragged row follows the pointer here, its own slot left as an

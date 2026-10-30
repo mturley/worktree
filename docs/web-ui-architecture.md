@@ -1300,7 +1300,7 @@ to break.
   quick add at the bottom), `TaskRow`, `TaskStateCheckbox`,
   `TaskListToolbar` (sort, and a "View options" popover with the In
   progress / Starred pins, show completed and include archived, the last
-  disabled, not hidden, while completed tasks are off; there is no
+  disabled while completed tasks are off; there is no
   priority filter: Priority sort groups by priority), `TaskPriorityMenu` (the row's priority mark as a menu),
   `TaskQuickAdd`, `TaskCountBadge` (plus `openTasksLabel`) and
   `TasksSection.tsx` (the panel, below). `taskDrag.ts` holds the row's
@@ -1403,8 +1403,8 @@ to break.
   no tab bar (there is no Linked tab there, since resolving links contacts
   the services). Tasks contact none, so watcher toggles never hide them.
 - **Nothing moves when a drag starts.** An empty section is not rendered at
-  all (no drop strip, even in Priority order), and no section has a label,
-  in any sort; rows never have padding before the grip (TaskRow's `pl={0}`).
+  all (no drop strip, even in Priority order), and group headers
+  (below) are always rendered, not only mid-drag; rows never have padding before the grip (TaskRow's `pl={0}`).
   What a drag adds is drawn out of the flow (below). A drop therefore always
   lands on a row of a non-empty section. Inserting drop targets at drag start pushed the dragged row
   ~70px away from the pointer. `MeasuringStrategy.Always` keeps drop rects
@@ -1465,10 +1465,13 @@ to break.
   drawn on the target section in place of its tag, far from the pointer.
 - **Pins.** `pinInProgress` puts every open in-progress task (starred or
   not) in a top `in_progress` section; `pinStarred` puts the remaining
-  starred open tasks in `starred` below it. Each section carries `pin`, and
-  `TaskList` draws a divider (`data-task-pin-divider`) under a pinned group
-  when a different group follows. With a pin off its tasks stay in the
-  ordinary sections, which then imply nothing about it: rest sections get
+  starred open tasks in `starred` below it. Each section carries `pin`.
+  Once any pinned section is shown, `groupHeaders` (`lib/taskSections.ts`)
+  heads each group, In progress / Starred / Other tasks / Completed, with
+  its count (`data-task-group-header`), above the group's first shown
+  section, so Priority sort's split groups get one header each. With
+  nothing pinned on screen there are no headers: one plain list. With a
+  pin off its tasks stay in the ordinary sections, which then imply nothing about it: rest sections get
   `starred: false` only while Starred is pinned, and `state: "not_started"`
   only while In progress is pinned (everything left is not started, so a
   drop out of In progress sets that state). Priority sort splits each

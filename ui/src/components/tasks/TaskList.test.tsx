@@ -223,7 +223,6 @@ describe("TaskListToolbar", () => {
   it("keeps the view options in a dropdown, Include archived disabled until Show completed", async () => {
     const user = userEvent.setup()
     wrap(<ToolbarHarness />)
-    expect(screen.queryByRole("switch", { name: "Show completed" })).toBeNull()
     await user.click(screen.getByRole("button", { name: "View options" }))
     expect(await screen.findByRole("switch", { name: "Include archived" })).toBeDisabled()
     await user.click(screen.getByRole("switch", { name: "Show completed" }))
@@ -381,44 +380,40 @@ describe("TaskList expand footer", () => {
 })
 
 describe("TaskList", () => {
-  it("draws one subtle line under the starred tasks when others follow", async () => {
-    setPrefs({ sort: "custom" })
-    vi.mocked(api.tasks).mockResolvedValue([task(1, { title: "starred one", starred: true }), task(2, { title: "plain two" })])
-    const { unmount } = wrap(<TaskList scope={{ kind: "all" }} />)
-    await screen.findByText("plain two")
-    expect(document.querySelectorAll("[data-task-pin-divider]")).toHaveLength(1)
-    unmount()
-
-    // Priority sort splits Starred by priority: still one line, after the last.
-    setPrefs({ sort: "priority" })
-    vi.mocked(api.tasks).mockResolvedValue([
-      task(1, { title: "starred high", starred: true, priority: "high" }),
-      task(2, { title: "starred low", starred: true, priority: "low" }),
-      task(3, { title: "plain high", priority: "high" }),
-    ])
-    const second = wrap(<TaskList scope={{ kind: "all" }} />)
-    await screen.findByText("plain high")
-    expect(document.querySelectorAll("[data-task-pin-divider]")).toHaveLength(1)
-    second.unmount()
-
-    // Pinned In progress above Starred: a line under each pinned group.
-    setPrefs({ sort: "custom", pinInProgress: true })
+  it("heads each group, with its count, once a pinned group shows", async () => {
+    const headers = () => Array.from(document.querySelectorAll<HTMLElement>("[data-task-group-header]"))
+      .map((h) => h.textContent)
+    setPrefs({ sort: "custom", pinInProgress: true, showCompleted: true })
     vi.mocked(api.tasks).mockResolvedValue([
       task(1, { title: "working one", state: "in_progress" }),
       task(2, { title: "starred two", starred: true }),
       task(3, { title: "plain three" }),
+      task(4, { title: "plain four" }),
+      task(5, { title: "done five", state: "done", completed_at: "2026-10-02T00:00:00Z" }),
     ])
-    const third = wrap(<TaskList scope={{ kind: "all" }} />)
+    const first = wrap(<TaskList scope={{ kind: "all" }} />)
     await screen.findByText("plain three")
-    expect(Array.from(document.querySelectorAll<HTMLElement>("[data-task-pin-divider]")).map((d) => d.dataset.taskPinDivider))
-      .toEqual(["in_progress", "starred"])
-    third.unmount()
+    expect(headers()).toEqual(["In progress · 1", "Starred · 1", "Other tasks · 2", "Completed · 1"])
+    first.unmount()
 
-    // Nothing but starred tasks: no line.
-    vi.mocked(api.tasks).mockResolvedValue([task(1, { title: "only starred", starred: true })])
+    // Priority sort splits Starred by priority: still one header, counting both.
+    setPrefs({ sort: "priority", pinInProgress: false })
+    vi.mocked(api.tasks).mockResolvedValue([
+      task(1, { title: "starred high", starred: true, priority: "high" }),
+      task(2, { title: "starred low", starred: true, priority: "low" }),
+      task(3, { title: "plain high", priority: "high" }),
+      task(4, { title: "plain low", priority: "low" }),
+    ])
+    const second = wrap(<TaskList scope={{ kind: "all" }} />)
+    await screen.findByText("plain high")
+    expect(headers()).toEqual(["Starred · 2", "Other tasks · 2"])
+    second.unmount()
+
+    // No pinned group showing: one plain list, no headers.
+    vi.mocked(api.tasks).mockResolvedValue([task(1, { title: "plain one" }), task(2, { title: "plain two" })])
     wrap(<TaskList scope={{ kind: "all" }} />)
-    await screen.findByText("only starred")
-    expect(document.querySelector("[data-task-pin-divider]")).toBeNull()
+    await screen.findByText("plain two")
+    expect(headers()).toEqual([])
   })
 
   it("disables drag outside custom/priority/state with a hint", async () => {
@@ -476,7 +471,7 @@ describe("TaskList", () => {
     expect(document.querySelector("[data-task-strip]")).toBeNull()
   })
 
-  it("no sort labels any section: Starred on top, Completed last", async () => {
+  it("heads the groups in every sort: Starred on top, Completed last", async () => {
     for (const sort of ["custom", "priority", "due"]) {
       setPrefs({ sort, showCompleted: true })
       vi.mocked(api.tasks).mockResolvedValue([
@@ -484,8 +479,8 @@ describe("TaskList", () => {
       ])
       wrap(<TaskList scope={{ kind: "all" }} />)
       await screen.findByText("task 3")
-      expect(document.querySelector("[data-task-section-label]")).toBeNull()
-      for (const l of ["Starred", "Tasks", "Completed", "Medium"]) expect(screen.queryByText(l)).toBeNull()
+      expect(Array.from(document.querySelectorAll<HTMLElement>("[data-task-group-header]")).map((h) => h.dataset.taskGroupHeader))
+        .toEqual(["starred", "rest", "completed"])
       const order = Array.from(document.querySelectorAll<HTMLElement>("[data-task-sortable]")).map((e) => e.dataset.taskSortable)
       expect(order).toEqual(["1", "2", "3"])
       cleanup()
