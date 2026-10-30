@@ -119,11 +119,17 @@ describe("MiniPage", () => {
     expect(input).toHaveValue("")
   })
 
-  it("search suggestions fill the window", async () => {
+  it("search suggestions fill the window, and the page behind holds still", async () => {
     wrap()
-    await userEvent.type(screen.getByRole("searchbox"), "my")
+    const input = screen.getByRole("searchbox")
+    await userEvent.type(input, "my")
     const box = await screen.findByTestId("search-suggestions")
     expect(box).toHaveStyle({ position: "fixed", bottom: "var(--mantine-spacing-xs)" })
+    expect(within(box).getByRole("listbox")).toHaveStyle({ overscrollBehavior: "contain" })
+    expect(document.documentElement.style.overflow).toBe("hidden")
+    await userEvent.keyboard("{Escape}")
+    await waitFor(() => expect(screen.queryByTestId("search-suggestions")).not.toBeInTheDocument())
+    expect(document.documentElement.style.overflow).toBe("")
   })
 
   it("a worktree suggestion opens the full UI outside", async () => {

@@ -98,6 +98,18 @@ export function SearchSuggestions({
   // Fixed, so it measures from the window; the bar's bottom is read in
   // window coordinates for the same reason.
   const edge = "var(--mantine-spacing-xs)"
+  // Filling the window, the box stands in for the page, so the page behind
+  // must not move: scrolling past either end of the list would otherwise
+  // scroll it, and so would a wheel over the box's header row, which is no
+  // scroller of its own. The list keeps its overscroll, and the page is
+  // held still while the box is open.
+  useEffect(() => {
+    if (!fillWindow) return
+    const root = document.documentElement
+    const prev = root.style.overflow
+    root.style.overflow = "hidden"
+    return () => { root.style.overflow = prev }
+  }, [fillWindow])
   const placement: CSSProperties = fillWindow
     ? { position: "fixed", top: place.barBottom + 4, left: edge, right: edge, bottom: edge }
     : { position: "absolute", top: "100%", marginTop: 4, left: fit.left, width: fit.width, maxHeight: "70vh" }
@@ -154,7 +166,7 @@ export function SearchSuggestions({
       {items.length === 0 && (
         <Text size="sm" c="dimmed" px="sm" py="sm">Nothing matches your search</Text>
       )}
-      <Box ref={ref} role="listbox" aria-label="Search suggestions" style={{ overflowY: "auto", minHeight: 0 }}>
+      <Box ref={ref} role="listbox" aria-label="Search suggestions" style={{ overflowY: "auto", minHeight: 0, overscrollBehavior: fillWindow ? "contain" : undefined }}>
       {items.map((s, i) => (
         <Box key={s.key}>
           {(i === 0 || items[i - 1].group !== s.group) && (
