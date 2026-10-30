@@ -7,6 +7,7 @@ import { MiniPage } from "./pages/MiniPage"
 import { SettingsProvider } from "./components/settings/SettingsContext"
 import { TaskModalProvider } from "./components/tasks/modal/TaskModalProvider"
 import { TaskDetailModal } from "./components/tasks/modal/TaskDetailModal"
+import { useMacTaskModalWidth } from "./hooks/useMacTaskModalWidth"
 
 // The menu bar app's view. Deliberately without useTabPresence (this is not a
 // browser tab, so it must never be picked to show a notification),
@@ -23,8 +24,15 @@ export function MiniApp() {
             <Route path="/mini" component={MiniPage} />
           </Switch>
           <TaskDetailModal />
+          <MacTaskModalWidth />
         </TaskModalProvider>
       </SettingsProvider>
     </Router>
   )
+}
+
+/** Inside TaskModalProvider, which useMacTaskModalWidth reads. */
+function MacTaskModalWidth() {
+  useMacTaskModalWidth()
+  return null
 }

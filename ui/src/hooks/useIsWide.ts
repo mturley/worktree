@@ -1,7 +1,14 @@
 import { useMediaQuery } from "@mantine/hooks"
 
 /** 48em is Mantine's `sm`, matching the existing Grid `sm` breakpoints. */
-const WIDE_QUERY = "(min-width: 48em)"
+export const WIDE_MIN_EM = 48
+const WIDE_QUERY = `(min-width: ${WIDE_MIN_EM}em)`
+
+/** WIDE_MIN_EM in CSS pixels, as media queries count em: the root font size. */
+export function wideMinPx(): number {
+  const root = parseFloat(getComputedStyle(document.documentElement).fontSize)
+  return WIDE_MIN_EM * (Number.isFinite(root) && root > 0 ? root : 16)
+}
 
 /**
  * The single responsive predicate for the app. Components must use this

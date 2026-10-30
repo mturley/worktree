@@ -4,6 +4,9 @@ export type MacMessage =
   | { type: "ready" }
   | { type: "login" }
   | { type: "unreachable" }
+  // The width the page needs for now, or null when it needs nothing more
+  // than the user's own (see useMacTaskModalWidth).
+  | { type: "minWidth"; width: number | null }
 
 interface MacHandler {
   postMessage: (m: unknown) => void

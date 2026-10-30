@@ -3950,6 +3950,7 @@ API, so skipping `useTabPresence` alone would not be enough.
 | `ready` | `MiniPage` on mount | clears the disconnected / needs-login icon |
 | `login` | `LoginPage` | needs-login icon |
 | `unreachable` | `ServerUnreachable` | disconnected icon |
+| `minWidth {width}` | `useMacTaskModalWidth`: the wide breakpoint (`wideMinPx`, 48em) while a task modal is open, `null` once closed | widens the popover if narrower, without saving it; `null` restores the user's size, unless they resized (grip or reset) meanwhile, which makes that their size |
 
 When a load fails at the network level there is no page to count down, so
 the app shows its own native view (`OfflineView`), with no countdown. It loads

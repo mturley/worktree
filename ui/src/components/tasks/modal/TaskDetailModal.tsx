@@ -13,6 +13,7 @@ import { useTaskModal } from "./TaskModalProvider"
 import { TaskSidebar } from "./TaskSidebar"
 import { useOptimisticTask } from "./useOptimisticTask"
 import { isMiniRoute } from "../../../lib/miniMode"
+import { macWidensForTaskModal } from "../../../hooks/useMacTaskModalWidth"
 
 /**
  * The single task detail modal, mounted once in App and driven by
@@ -36,6 +37,18 @@ export function TaskDetailModal() {
     if (openId !== null) setShownId(openId)
   }, [openId])
   const id = openId ?? shownId
+  // In the menu bar app, a modal opened in a dropdown narrower than its wide
+  // layout makes the app widen the dropdown, and narrow it again on close.
+  // A transition on top of that resize looks bad, so that open and its
+  // close are instant. Decided as it opens, while rendering (so the opening
+  // render already has it): by the close, the window is wide.
+  const opened = openId !== null
+  const [wasOpened, setWasOpened] = useState(opened)
+  const [instant, setInstant] = useState(() => opened && macWidensForTaskModal())
+  if (opened !== wasOpened) {
+    setWasOpened(opened)
+    if (opened) setInstant(macWidensForTaskModal())
+  }
   // Which task's description is dirty. Keyed by task so switching tasks
   // can't carry it over; each task's DescriptionSection reports on mount.
   const [dirtyId, setDirtyId] = useState<number | null>(null)
@@ -61,6 +74,7 @@ export function TaskDetailModal() {
       closeOnClickOutside={!dirty}
       size="xl"
       fullScreen={isMiniRoute()}
+      transitionProps={instant ? { duration: 0 } : undefined}
       withCloseButton={false}
     >
       {id !== null && (

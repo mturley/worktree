@@ -21,6 +21,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     /// rather than guess.
     private var lastUnread: Bool?
     private let unreadWatch = UnreadWatch()
+    /// The user's own size while the page has widened the popover past it
+    /// (`minWidth`, for the task modal's wide layout), so it can go back
+    /// when the page lets go; nil when not widened. A size the user picks
+    /// meanwhile becomes theirs, and clears this.
+    private var widenedFrom: NSSize?
     /// The last /mini URL that loaded (with its ?task= and such), so coming
     /// back from offline returns to it rather than to plain /mini.
     private var lastMiniURL: URL?
@@ -65,6 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
                                             width: ResizeGrip.side, height: ResizeGrip.side))
         grip.autoresizingMask = [.minXMargin, .maxYMargin]
         grip.popover = popover
+        grip.onUserResize = { [weak self] in self?.widenedFrom = nil }
         container.addSubview(grip)
 
         let controller = NSViewController()
@@ -149,7 +155,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     /// The same as double-clicking the resize grip.
     @objc private func resetSize() {
         PopoverSize.reset()
+        widenedFrom = nil
         popover.contentSize = PopoverSize.standard
+    }
+
+    /// The page's `minWidth`: widen to width if narrower, without saving it
+    /// as the user's size; nil puts the user's size back, unless they picked
+    /// one while widened.
+    private func setMinWidth(_ width: CGFloat?) {
+        let current = popover.contentSize
+        if let width {
+            guard width > current.width else { return }
+            if widenedFrom == nil { widenedFrom = current }
+            let screen = popover.contentViewController?.view.window?.screen ?? NSScreen.main
+            popover.contentSize = PopoverSize.clamped(NSSize(width: width, height: current.height), on: screen)
+        } else if let from = widenedFrom {
+            widenedFrom = nil
+            popover.contentSize = from
+        }
     }
 
     @objc private func togglePurpleIcon() { icon.purple.toggle() }
@@ -202,6 +225,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
 
     private func showOffline() {
         icon.state = .disconnected
+        // The page that asked to be wide is gone.
+        setMinWidth(nil)
         webView.isHidden = true
         offlineView.isHidden = false
         // A failed load leaves the previous page in place, scripts still
@@ -245,6 +270,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             // Restore what the page last said; with nothing said yet, leave
             // the icon alone until its first unread report arrives.
             if let unread = lastUnread { icon.state = unread ? .unread : .resting }
+        case "minWidth":
+            // A number to widen for, or null (NSNull) to let go.
+            setMinWidth((body["width"] as? NSNumber).map { CGFloat($0.doubleValue) })
         case "login":
             icon.state = .needsLogin
         case "open":

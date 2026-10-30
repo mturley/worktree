@@ -26,6 +26,16 @@ enum PopoverSize {
         UserDefaults.standard.removeObject(forKey: widthKey)
         UserDefaults.standard.removeObject(forKey: heightKey)
     }
+
+    /// Between the minimum and what fits on screen below the menu bar.
+    static func clamped(_ size: NSSize, on screen: NSScreen?) -> NSSize {
+        let visible = screen?.visibleFrame.size ?? size
+        let margin: CGFloat = 20
+        let maxW = max(minimum.width, visible.width - margin)
+        let maxH = max(minimum.height, visible.height - margin)
+        return NSSize(width: min(max(size.width, minimum.width), maxW),
+                      height: min(max(size.height, minimum.height), maxH))
+    }
 }
 
 /// A resize corner for the popover, which has none of its own. It sits over
@@ -36,6 +46,9 @@ final class ResizeGrip: NSView {
     static let side: CGFloat = 16
 
     weak var popover: NSPopover?
+    /// Called once the user has chosen a size here: a drag ended, or a
+    /// double-click reset it.
+    var onUserResize: (() -> Void)?
 
     /// From the mouse to the popover window's right edge, at mouse down.
     private var rightOffset: CGFloat = 0
@@ -69,6 +82,7 @@ final class ResizeGrip: NSView {
         if event.clickCount == 2 {
             PopoverSize.reset()
             resize(popover, to: PopoverSize.standard)
+            onUserResize?()
             return
         }
         let mouse = NSEvent.mouseLocation
@@ -95,19 +109,10 @@ final class ResizeGrip: NSView {
         guard let popover, event.clickCount < 2 else { return }
         popover.animates = true
         PopoverSize.save(popover.contentSize)
+        onUserResize?()
     }
 
     private func resize(_ popover: NSPopover, to size: NSSize) {
-        popover.contentSize = clamped(size)
-    }
-
-    /// Between the minimum and what fits on this screen below the menu bar.
-    private func clamped(_ size: NSSize) -> NSSize {
-        let visible = window?.screen?.visibleFrame.size ?? size
-        let margin: CGFloat = 20
-        let maxW = max(PopoverSize.minimum.width, visible.width - margin)
-        let maxH = max(PopoverSize.minimum.height, visible.height - margin)
-        return NSSize(width: min(max(size.width, PopoverSize.minimum.width), maxW),
-                      height: min(max(size.height, PopoverSize.minimum.height), maxH))
+        popover.contentSize = PopoverSize.clamped(size, on: window?.screen)
     }
 }
