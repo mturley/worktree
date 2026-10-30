@@ -75,6 +75,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	if !plan.HasWork() {
+		printGettingStarted()
 		return nil
 	}
 
@@ -93,7 +94,24 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "Note: could not register worktree in watcher consumer registry: %v\n", err)
 	}
 
+	printGettingStarted()
 	return nil
+}
+
+// printGettingStarted ends an interactive setup with tips for what to do
+// next. Not with --yes: `make install` runs setup that way on every
+// rebuild, and the tips would be noise there.
+func printGettingStarted() {
+	if ui.NonInteractive() {
+		return
+	}
+	// Reloaded: the run may have just turned remote access on or off.
+	cfg, err := config.Load()
+	if err != nil {
+		return
+	}
+	fmt.Println()
+	fmt.Print(setup.GettingStarted(ui.ShortPath(config.ConfigPath()), cfg.UI))
 }
 
 // registerWatcherConsumer records worktree's DB in the shared watcher

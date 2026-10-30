@@ -280,7 +280,7 @@ The web UI is a single embedded binary — no separate frontend install required
 
 ### Authentication
 
-`worktree ui` requires `ui.password` in `~/.config/worktree/config.yaml` on every listener, including loopback. Run `worktree setup` to generate one — it's printed once, so save it. If you're upgrading from a version without this, run `worktree setup` (or set `ui.password` yourself) before `worktree ui` will start. The home page header has a **Devices** panel for logging out individual browsers.
+`worktree ui` requires `ui.password` in `~/.config/worktree/config.yaml` on every listener, including loopback. Run `worktree setup` to generate one. It prints the password when it generates it, and the login screen says where to find it again. An interactive `worktree setup` ends with getting-started tips: starting the web UI, `worktree add`, `worktree list` and `worktree info`. If you're upgrading from a version without this, run `worktree setup` (or set `ui.password` yourself) before `worktree ui` will start. The home page header has a **Devices** panel for logging out individual browsers.
 
 ### Remote access
 

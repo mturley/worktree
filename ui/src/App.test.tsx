@@ -62,6 +62,9 @@ describe("App authentication gate", () => {
     mockServer({ "GET /api/session": () => ({ status: 401, body: { error: "login required" } }) })
     renderApp()
     expect(await screen.findByRole("button", { name: "Log in" })).toBeInTheDocument()
+    // It says where the password lives.
+    expect(screen.getByText("ui.password")).toBeInTheDocument()
+    expect(screen.getByText("~/.config/worktree/config.yaml")).toBeInTheDocument()
     expect(screen.queryByText("home page")).not.toBeInTheDocument()
     expect(sse).not.toHaveBeenCalled()
   })

@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react"
-import { Alert, Button, Center, Paper, PasswordInput, Stack, Title } from "@mantine/core"
+import { Alert, Button, Center, Code, Paper, PasswordInput, Stack, Title } from "@mantine/core"
 import { useQueryClient } from "@tanstack/react-query"
 import { api } from "../api/client"
 import { postToMac } from "../lib/macBridge"
@@ -36,6 +36,13 @@ export function LoginPage() {
             <Title order={3}>worktree</Title>
             <PasswordInput
               label="Password"
+              // Where to find it: setup prints it only once, when it generates it.
+              description={
+                <>
+                  It&apos;s <Code>ui.password</Code> in <Code>~/.config/worktree/config.yaml</Code> on
+                  the machine running <Code>worktree ui</Code>.
+                </>
+              }
               value={password}
               onChange={(e) => setPassword(e.currentTarget.value)}
               autoFocus
