@@ -130,6 +130,23 @@ Ports are sorted numerically everywhere.
 - Worktrees with nothing listening are omitted from the map (or empty);
   the frontend treats absent and empty the same.
 
+### Settings toggle (added by Mike after approval)
+
+- New config key **`ui.port_scan_disabled`** in worktree's `config.yaml`
+  (bool, `omitempty`; absent means enabled — same pattern as
+  `ui.cmux_features_disabled`). Default: scanning **enabled**.
+- Settings modal, **General** tab: a switch **"Scan for listening ports"**
+  (checked = enabled), following the "Enable cmux features" switch.
+- Takes effect live, without restarting `worktree ui`: turning it off stops
+  scanning at once and publishes a snapshot with `enabled: false`; turning
+  it on scans immediately.
+- While off: the badge and card line are hidden, and the Network column
+  says "Port scanning is off." with an "Enable it in Settings" link that
+  opens the Settings modal on the General tab (Mike's request)
+- Follows CLAUDE.md "Config files ↔ Settings modal" (editable.go, DTO/PUT,
+  `settingsKeyPaths`, types.ts, `tabDirty.ts`, tests) and must be carried by
+  `internal/setup`'s `uiYaml` copy so `worktree setup` doesn't drop it.
+
 ### Frontend
 
 - `useSSE` handles `listeners_changed` by writing the payload into a
@@ -141,6 +158,8 @@ Ports are sorted numerically everywhere.
   Network column collapses below the env vars (follow the project's
   existing responsive approach; see `docs/web-ui-architecture.md`
   "Responsiveness").
+- The pushed payload carries `enabled` (the toggle's state) alongside
+  `ports` and `ranges`.
 - **Network column**:
   - Header with the reserved range ("Reserved 4090–4099", or "No reserved
     range").
