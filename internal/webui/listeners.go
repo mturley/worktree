@@ -18,6 +18,9 @@ import (
 // that consumes listeners is open.
 const listenersIntervalDefault = 10 * time.Second
 
+// listenersScanTimeoutDefault bounds a single scan.
+const listenersScanTimeoutDefault = 30 * time.Second
+
 // listenersDisabledJSON is the snapshot published while port scanning is
 // off in Settings (ui.port_scan_disabled).
 var listenersDisabledJSON = []byte(`{"enabled":false,"ports":{},"ranges":{}}`)
@@ -61,14 +64,16 @@ func (s *Server) SetPortScanDisabled(disabled bool) {
 
 // subscribe registers a stream. The channel holds the current snapshot
 // already, when there is one, so a reconnecting tab is correct at once.
-// Sends never block: a stalled stream misses an update that a later one
-// supersedes.
+// Delivery is latest-wins: each channel holds one snapshot, and a send
+// first discards a pending one the stream hasn't read. The hub publishes
+// only on change, so dropping the newest instead would leave a slow stream
+// stale until the next change.
 func (h *listenersHub) subscribe() (<-chan []byte, func()) {
-	ch := make(chan []byte, 4)
+	ch := make(chan []byte, 1)
 	h.mu.Lock()
 	h.subs[ch] = struct{}{}
 	if h.last != nil {
-		ch <- h.last
+		sendLatest(ch, h.last)
 	}
 	if h.stop == nil {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -139,9 +144,17 @@ func (h *listenersHub) tick(ctx context.Context) {
 	if scan == nil {
 		scan = h.s.scanListeners
 	}
-	snap, err := scan(ctx)
+	timeout := h.s.listenersScanTimeout
+	if timeout <= 0 {
+		timeout = listenersScanTimeoutDefault
+	}
+	// A hung lsof/ps must not stall the loop: a timed-out scan is a failed
+	// one (logged below; the last snapshot stays).
+	scanCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	snap, err := scan(scanCtx)
 	if err != nil {
-		if ctx.Err() == nil {
+		if ctx.Err() == nil { // not just a stopped loop; a timeout is logged
 			h.s.logger().Printf("listening ports: scan failed: %v", err)
 		}
 		return
@@ -165,11 +178,18 @@ func (h *listenersHub) offer(ctx context.Context, b []byte) {
 	}
 	h.last = b
 	for ch := range h.subs {
-		select {
-		case ch <- b:
-		default:
-		}
+		sendLatest(ch, b)
 	}
+}
+
+// sendLatest replaces whatever is pending on ch with b. Callers hold h.mu,
+// the only sender, so the send can't block after the drain.
+func sendLatest(ch chan []byte, b []byte) {
+	select {
+	case <-ch:
+	default:
+	}
+	ch <- b
 }
 
 // scanListeners is the production listenersScan: every registered worktree

@@ -81,6 +81,19 @@ describe("useSSE listeners", () => {
     act(() => setListeners({ enabled: false, ports: {}, ranges: {} }))
   })
 
+  it("ignores payloads of the wrong shape", () => {
+    renderSSE()
+    const { result } = renderHook(() => useListeners("/wt/x"))
+    const es = FakeEventSource.last!
+    act(() => setListeners({ enabled: true, ports: {}, ranges: { "/wt/x": "1-2" } }))
+    const before = result.current
+    for (const bad of ["null", "[1]", '{"enabled":"yes","ports":{},"ranges":{}}', '{"enabled":true,"ports":[],"ranges":{}}', '{"enabled":true,"ports":{},"ranges":null}']) {
+      act(() => es.emit("listeners_changed", bad))
+    }
+    expect(result.current).toEqual(before)
+    act(() => setListeners({ enabled: false, ports: {}, ranges: {} }))
+  })
+
   it("opens the mini stream without listeners", () => {
     window.history.replaceState({}, "", "/mini")
     expect(streamUrl()).toBe("/api/stream?listeners=0")

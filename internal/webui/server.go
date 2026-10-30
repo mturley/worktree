@@ -141,14 +141,16 @@ type Server struct {
 
 	// listeners fans listening-port snapshots out to the event streams and
 	// runs the scanner while any stream wants them; see listeners.go.
-	// listenersScan and listenersInterval are seams (nil → scanListeners,
+	// listenersScan, listenersInterval and listenersScanTimeout are seams (nil → scanListeners,
 	// 0 → 10s). portScanDisabled is the Settings toggle
 	// (ui.port_scan_disabled).
 	listenersOnce     sync.Once
 	listeners         *listenersHub
 	listenersScan     func(ctx context.Context) (listeners.Snapshot, error)
 	listenersInterval time.Duration
-	portScanDisabled  atomic.Bool
+	// listenersScanTimeout bounds one scan (0 → 30s).
+	listenersScanTimeout time.Duration
+	portScanDisabled     atomic.Bool
 
 	// tabs is the browser notification registry; see tabs.go. Lazily built
 	// by tabRegistry(), since Server is a bare struct literal everywhere.

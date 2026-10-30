@@ -31,6 +31,8 @@ describe("NetworkPanel", () => {
     setListeners({ enabled: false, ports: {}, ranges: {} })
     wrap(<NetworkPanel path="/wt" />)
     expect(screen.getByText(/Port scanning is off\./)).toBeInTheDocument()
+    expect(screen.queryByText("No reserved range")).not.toBeInTheDocument()
+    expect(screen.queryByText(/Reserved/)).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole("button", { name: "Enable it in Settings" }))
     expect(open).toHaveBeenCalledWith({ tab: "general" })
   })

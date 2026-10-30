@@ -13,9 +13,11 @@ export function NetworkPanel({ path }: { path: string }) {
     <Stack gap={2}>
       <Group gap="xs" wrap="wrap">
         <Text size="sm" fw={600}>Network</Text>
-        <Text size="xs" c="dimmed">
-          {listeners?.range ? `Reserved ${formatRange(listeners.range)}` : "No reserved range"}
-        </Text>
+        {enabled && (
+          <Text size="xs" c="dimmed">
+            {listeners?.range ? `Reserved ${formatRange(listeners.range)}` : "No reserved range"}
+          </Text>
+        )}
       </Group>
       {!enabled ? (
         <Text size="xs" c="dimmed">

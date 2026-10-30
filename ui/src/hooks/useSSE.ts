@@ -27,6 +27,14 @@ export function streamUrl(): string {
   return `/api/stream?${params.toString()}`
 }
 
+const isPlainObject = (v: unknown): boolean => typeof v === "object" && v !== null && !Array.isArray(v)
+
+function isListenersSnapshot(v: unknown): v is ListenersSnapshot {
+  if (!isPlainObject(v)) return false
+  const o = v as Record<string, unknown>
+  return typeof o.enabled === "boolean" && isPlainObject(o.ports) && isPlainObject(o.ranges)
+}
+
 export function useSSE() {
   const qc = useQueryClient()
   useEffect(() => {
@@ -117,13 +125,13 @@ export function useSSE() {
         emitCmuxFocus(msg)
       })
       es.addEventListener("listeners_changed", (e) => {
-        let snap: ListenersSnapshot
+        let snap: unknown
         try {
           snap = JSON.parse((e as MessageEvent).data)
         } catch {
           return
         }
-        setListeners(snap)
+        if (isListenersSnapshot(snap)) setListeners(snap)
       })
       es.onerror = () => {
         es?.close()

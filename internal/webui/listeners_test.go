@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -331,5 +332,51 @@ func TestMiniStreamSkipsListeners(t *testing.T) {
 			}
 			return
 		}
+	}
+}
+
+func TestListenersLatestSnapshotWins(t *testing.T) {
+	t.Parallel()
+	f := &fakeScan{}
+	f.set(listeners.Snapshot{}, errors.New("no scan results")) // the loop publishes nothing
+	s := listenersTestServer(f)
+	hub := s.listenersHub()
+	ch, unsubscribe := hub.subscribe()
+	defer unsubscribe()
+
+	for _, p := range []int{4001, 4002, 4003, 4004} {
+		hub.offer(context.Background(), []byte(`{"p":`+strconv.Itoa(p)+`}`))
+	}
+	b, ok := recv(ch, time.Second)
+	if !ok || string(b) != `{"p":4004}` {
+		t.Fatalf("got %q (ok=%v), want the latest snapshot", b, ok)
+	}
+	if extra := drain(ch, 50*time.Millisecond); len(extra) != 0 {
+		t.Fatalf("%d stale snapshots still queued", len(extra))
+	}
+}
+
+func TestListenersHungScanTimesOut(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int64
+	s := &Server{
+		listenersInterval:    10 * time.Millisecond,
+		listenersScanTimeout: 50 * time.Millisecond,
+		listenersScan: func(ctx context.Context) (listeners.Snapshot, error) {
+			if calls.Add(1) == 1 {
+				<-ctx.Done() // a hung lsof: only the timeout frees it
+				return listeners.Snapshot{}, ctx.Err()
+			}
+			return snapWith("/a", 4000), nil
+		},
+		Logger: log.New(io.Discard, "", 0),
+	}
+	ch, unsubscribe := s.listenersHub().subscribe()
+	defer unsubscribe()
+	if _, ok := recv(ch, 2*time.Second); !ok {
+		t.Fatal("loop never moved past the hung scan")
+	}
+	if calls.Load() < 2 {
+		t.Fatalf("%d scans, want at least 2", calls.Load())
 	}
 }
