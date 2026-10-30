@@ -1,9 +1,10 @@
 import { afterEach, describe, it, expect, vi } from "vitest"
-import { renderHook, cleanup } from "@testing-library/react"
+import { renderHook, cleanup, act } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { useSSE } from "./useSSE"
+import { streamUrl, useSSE } from "./useSSE"
 import { TASK_ACTIVITY_STALE_MS } from "./useTaskDetail"
 import { api } from "../api/client"
+import { setListeners, useListeners } from "../lib/listenersStore"
 
 const streams = vi.hoisted(() => ({ pause: true }))
 vi.mock("../lib/backgroundStreams", async (orig) => ({
@@ -63,6 +64,29 @@ function renderSSE() {
 
 const invalidatedKeys = (invalidate: ReturnType<typeof renderSSE>) =>
   invalidate.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey))
+
+describe("useSSE listeners", () => {
+  it("feeds listeners_changed into the store and ignores bad JSON", () => {
+    renderSSE()
+    const { result } = renderHook(() => useListeners("/wt/x"))
+    const es = FakeEventSource.last!
+    act(() => es.emit("listeners_changed", "not json"))
+    act(() =>
+      es.emit(
+        "listeners_changed",
+        JSON.stringify({ enabled: true, ports: { "/wt/x": [{ port: 5, addresses: [], pid: 1, process: "p", in_range: false }] }, ranges: {} }),
+      ),
+    )
+    expect(result.current?.ports.map((p) => p.port)).toEqual([5])
+    act(() => setListeners({ enabled: false, ports: {}, ranges: {} }))
+  })
+
+  it("opens the mini stream without listeners", () => {
+    window.history.replaceState({}, "", "/mini")
+    expect(streamUrl()).toBe("/api/stream?listeners=0")
+    window.history.replaceState({}, "", "/")
+  })
+})
 
 describe("useSSE", () => {
   it("invalidates resources as well as timeline and worktrees on events_new", () => {

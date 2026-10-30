@@ -1028,3 +1028,18 @@ export interface PRThreads {
   fingerprint?: string
   threads: PRThread[]
 }
+
+export interface ListenerPort {
+  port: number
+  addresses: string[]
+  pid: number
+  process: string
+  in_range: boolean
+}
+
+/** The `listeners_changed` stream event: every worktree's listening ports. */
+export interface ListenersSnapshot {
+  enabled: boolean
+  ports: Record<string, ListenerPort[]>
+  ranges: Record<string, string>
+}

@@ -1,10 +1,11 @@
 import { useEffect } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { api } from "../api/client"
-import type { CmuxFocusMsg, NotificationMsg } from "../api/types"
+import type { CmuxFocusMsg, ListenersSnapshot, NotificationMsg } from "../api/types"
 import { isMiniRoute } from "../lib/miniMode"
 import { TAB_ID } from "../lib/tabId"
 import { emitCmuxFocus } from "../lib/cmuxFocusBus"
+import { setListeners } from "../lib/listenersStore"
 import { openNotificationTarget, showBrowserNotification } from "../lib/browserNotify"
 import { pageHidden, streamsPauseWhenHidden } from "../lib/backgroundStreams"
 import { TASK_ACTIVITY_STALE_MS } from "./useTaskDetail"
@@ -16,7 +17,8 @@ import { TASK_ACTIVITY_STALE_MS } from "./useTaskDetail"
 export function streamUrl(): string {
   // The menu bar view is not a browser tab: without `tab` the server never
   // registers it for notifications (internal/webui/stream.go).
-  if (isMiniRoute()) return "/api/stream"
+  // It also shows no listening ports, so it opts out of that event.
+  if (isMiniRoute()) return "/api/stream?listeners=0"
   const params = new URLSearchParams({
     tab: TAB_ID,
     route: window.location.pathname,
@@ -113,6 +115,15 @@ export function useSSE() {
         // The Switch cmux button reads "Current" from this listing.
         qc.invalidateQueries({ queryKey: ["cmux"] })
         emitCmuxFocus(msg)
+      })
+      es.addEventListener("listeners_changed", (e) => {
+        let snap: ListenersSnapshot
+        try {
+          snap = JSON.parse((e as MessageEvent).data)
+        } catch {
+          return
+        }
+        setListeners(snap)
       })
       es.onerror = () => {
         es?.close()
