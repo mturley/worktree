@@ -105,9 +105,9 @@ export function TaskRow({ task, ownResource, ownWorktree, dragHandle, onState, o
       onClick={onOpen ? () => onOpen() : undefined}
       style={onOpen ? { cursor: "pointer" } : undefined}
     >
-      {/* The grip is dnd-kit's activator. Its press must not reach the row
-          (a plain click on it would open the modal); dnd-kit's own listeners
-          sit on the grip itself, below this, so they still run. The click
+      {/* A plain click on the grip must not reach the row (it would open
+          the modal). dnd-kit listens for mousedown, touchstart and keydown
+          on the whole row (TaskList), which this leaves alone. The click
           after a real drag is swallowed by dnd-kit at the document. */}
       <span
         className="task-grip"

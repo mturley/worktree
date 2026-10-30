@@ -595,6 +595,28 @@ describe("TaskList keyboard drag", () => {
     expect(openId()).toBe("2")
   })
 
+  it("a mouse drag starts anywhere on the row, the title included, but not on its controls", async () => {
+    wrap(<TaskList scope={{ kind: "all" }} />)
+    const title = await screen.findByText("beta two")
+    lifted = title.closest<HTMLElement>("[data-task-sortable]")
+    // From the checkbox: no drag.
+    const checkbox = screen.getByRole("button", { name: /^State of “beta two”/ })
+    fireEvent.mouseDown(checkbox, { button: 0, clientX: 5, clientY: 5 })
+    fireEvent.mouseMove(document, { clientX: 5, clientY: 20 })
+    fireEvent.mouseUp(document, { clientX: 5, clientY: 20 })
+    expect(screen.queryByTestId("task-drag-overlay")).toBeNull()
+    // A touch on the title: no drag either, so a swipe still scrolls.
+    fireEvent.touchStart(title, { touches: [{ clientX: 5, clientY: 5 }] })
+    fireEvent.touchMove(document, { touches: [{ clientX: 5, clientY: 20 }] })
+    fireEvent.touchEnd(document, { changedTouches: [{ clientX: 5, clientY: 20 }] })
+    expect(screen.queryByTestId("task-drag-overlay")).toBeNull()
+    // The mouse from the title: a drag.
+    fireEvent.mouseDown(title, { button: 0, clientX: 5, clientY: 5 })
+    fireEvent.mouseMove(document, { clientX: 5, clientY: 20 })
+    expect(await screen.findByTestId("task-drag-overlay")).toHaveTextContent("beta two")
+    fireEvent.mouseUp(document, { clientX: 5, clientY: 20 })
+  })
+
   const order = () => leaves().map((el) => Number(el.dataset.taskSortable))
   /** A promise and the handles to settle it, for an API call held in flight. */
   function deferred<T>() {

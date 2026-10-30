@@ -5,10 +5,7 @@ import {
   closestCenter,
   DndContext,
   DragOverlay,
-  KeyboardSensor,
   MeasuringStrategy,
-  MouseSensor,
-  TouchSensor,
   useSensor,
   useSensors,
   type Active,
@@ -30,7 +27,10 @@ import { TaskQuickAdd } from "./TaskQuickAdd"
 import { TaskRow } from "./TaskRow"
 import { TASK_STATE_LABEL } from "./TaskStateCheckbox"
 import { taskUndoMessage, useOfferTaskUndo } from "./taskUndo"
-import { dropHint, dropIndicatorFor, dropPlanFor, taskDraggableId, type DropIndicator } from "./taskDrag"
+import {
+  dropHint, dropIndicatorFor, dropPlanFor, GripKeyboardSensor, GripTouchSensor, RowMouseSensor, taskDraggableId,
+  type DropIndicator,
+} from "./taskDrag"
 import { useSuspendCrossHover } from "../CrossHoverContext"
 
 /** A compact row's height, for capping a list at `maxRows`. */
@@ -88,9 +88,11 @@ function useOverflow(capped: boolean, shape: string) {
 }
 
 /**
- * A TaskRow that drags by its grip only, as SortableResourceCard does. The
- * grip renders disabled with a hint when the sort can't be reordered, and not
- * at all in Completed, whose order isn't master order.
+ * A TaskRow that drags by the mouse from anywhere on it but its controls, and
+ * by touch or keyboard from its grip (taskDrag's sensors). dnd-kit's
+ * listeners sit on the whole row; its attributes (focus, role, name) on the
+ * grip. The grip renders disabled with a hint when the sort can't be
+ * reordered, and not at all in Completed, whose order isn't master order.
  */
 function SortableTaskRow({ task, section, sortDraggable, dropEdge, ownResource, ownWorktree, mutations, onError, onOpen }: {
   task: Task
@@ -120,8 +122,8 @@ function SortableTaskRow({ task, section, sortDraggable, dropEdge, ownResource, 
         // touchAction: none on the grip only, so a touch drag starts there
         // and a swipe anywhere else still scrolls.
         style={{ cursor: isDragging ? "grabbing" : "grab", touchAction: "none" }}
+        data-task-grip
         {...attributes}
-        {...listeners}
       >
         <IconGripVertical size={14} />
       </ActionIcon>
@@ -165,6 +167,7 @@ function SortableTaskRow({ task, section, sortDraggable, dropEdge, ownResource, 
       // text would show through the copy passing over it.
       className={isDragging ? "task-drag-placeholder" : undefined}
       data-dragging={isDragging || undefined}
+      {...(section.draggable ? listeners : undefined)}
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
@@ -312,10 +315,10 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
   const dragHint = dropHint(indicator?.patch)
 
   const sensors = useSensors(
-    // Only the grip starts a drag; a few pixels of travel so a press isn't one.
-    useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(TouchSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+    // A few pixels of travel, so a press (a click opening the task) isn't one.
+    useSensor(RowMouseSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(GripTouchSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(GripKeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
   const handleDragStart = ({ active }: DragStartEvent) => {

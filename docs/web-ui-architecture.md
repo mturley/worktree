@@ -1410,7 +1410,19 @@ to break.
   ~70px away from the pointer. `MeasuringStrategy.Always` keeps drop rects
   current. The grip shows on hover, on `:focus-within` (keyboard) and
   always under `@media (hover: none)` (touch), in `styles/theme.css`.
-  `TaskList.test.tsx` drives real drags through the `KeyboardSensor`
+- **Where a drag starts.** dnd-kit's listeners sit on the whole sortable
+  row; its attributes (focus, role, name) stay on the grip
+  (`data-task-grip`). `taskDrag.ts`'s sensors gate each activator on
+  `startsRowDrag`: the mouse (`RowMouseSensor`) starts anywhere in the row's
+  own DOM, the title button included, except on `.task-row-control` (state
+  checkbox, star, priority mark) or `.task-link-chip-nav`; touch
+  (`GripTouchSensor`) and keyboard (`GripKeyboardSensor`) only on the grip,
+  so a swipe still scrolls and Space/Enter still press the focused control.
+  The "inside the row's DOM" check matters: React bubbles a portalled
+  menu's or hover card's events to the row too. A click is not a drag
+  (4px of travel first), and the click after a real drag is swallowed by
+  dnd-kit, so the row and title still open the task.
+- `TaskList.test.tsx` drives real drags through the `KeyboardSensor`
   (Space, arrow, Space) with a stubbed `getBoundingClientRect` that lays
   rows out 30px apart.
 - **What a drag looks like** (classes in `styles/theme.css`). The row that

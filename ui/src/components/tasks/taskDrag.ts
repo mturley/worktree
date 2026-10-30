@@ -1,4 +1,4 @@
-import type { UniqueIdentifier } from "@dnd-kit/core"
+import { KeyboardSensor, MouseSensor, TouchSensor, type UniqueIdentifier } from "@dnd-kit/core"
 import { planDrop, type DropPlan, type TaskSection } from "../../lib/taskSections"
 import { PRIORITY_LABEL } from "./TaskPriorityMenu"
 import { TASK_STATE_LABEL } from "./TaskStateCheckbox"
@@ -7,6 +7,60 @@ import { TASK_STATE_LABEL } from "./TaskStateCheckbox"
  * drop targets, and a row is "task:<id>".
  */
 export const taskDraggableId = (id: number) => `task:${id}`
+
+/**
+ * A row's own controls, which keep their presses: a mouse drag never starts
+ * on the state checkbox, star or priority mark (.task-row-control) or a link
+ * chip that navigates. Everything else drags, the title included: it is a
+ * button too, but it only opens the task, as the row itself does.
+ */
+const ROW_CONTROLS = ".task-row-control, .task-link-chip-nav"
+
+/**
+ * Whether a press at `target` may start a drag of `row` (the element the
+ * listeners sit on). Only from inside the row's own DOM: React bubbles a
+ * portalled menu's or hover card's events up to the row as well. `anywhere`
+ * allows the whole row bar its controls; otherwise only the grip.
+ */
+export function startsRowDrag(target: EventTarget | null, row: EventTarget | null, anywhere: boolean): boolean {
+  if (!(target instanceof Element) || !(row instanceof Element) || !row.contains(target)) return false
+  if (target.closest("[data-task-grip]")) return true
+  return anywhere && !target.closest(ROW_CONTROLS)
+}
+
+type Activator<E> = {
+  eventName: string
+  handler: (event: E, ...rest: never[]) => boolean | undefined
+}
+
+/** A sensor's activators, each gated on startsRowDrag. */
+function gated<E extends { target: EventTarget | null; currentTarget: EventTarget | null }>(
+  activators: readonly Activator<E>[], anywhere: boolean,
+) {
+  return activators.map((a) => ({
+    ...a,
+    // Every argument passed on: the keyboard's takes a third (the active drag).
+    handler: (event: E, ...rest: never[]) =>
+      startsRowDrag(event.target, event.currentTarget, anywhere) && a.handler(event, ...rest),
+  }))
+}
+
+/**
+ * The task list's sensors, whose listeners sit on the whole row. A mouse drag
+ * starts anywhere on the row but its controls (past the list's few pixels of
+ * travel, so a click still opens the task). Touch and keyboard drags start on
+ * the grip only: a swipe across a row must still scroll, and Space or Enter
+ * on the star or checkbox must still press it.
+ */
+export class RowMouseSensor extends MouseSensor {
+  static activators = gated(MouseSensor.activators as never, true) as never
+}
+export class GripTouchSensor extends TouchSensor {
+  static activators = gated(TouchSensor.activators as never, false) as never
+}
+export class GripKeyboardSensor extends KeyboardSensor {
+  static activators = gated(KeyboardSensor.activators as never, false) as never
+}
 
 function parseTaskId(id: UniqueIdentifier): number | null {
   const m = /^task:(\d+)$/.exec(String(id))
