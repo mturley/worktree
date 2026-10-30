@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider, Modal } from "@mantine/core"
 import { useState } from "react"
+import { flushSync } from "react-dom"
 import { SearchBar } from "./SearchBar"
 
 function Harness({ initial = "", extra }: { initial?: string; extra?: React.ReactNode }) {
@@ -51,6 +52,35 @@ describe("SearchBar escape hatch", () => {
     fireEvent.keyDown(document.body, { key: "Escape" })
     expect(onEscapeIdle).toHaveBeenCalledTimes(1)
     expect(onEscape).not.toHaveBeenCalled()
+  })
+  it("leaves Esc to a modal that closes at once, without a transition", async () => {
+    // Mantine closes a modal from a window keydown listener of its own. A
+    // browser runs React's resulting render before the next listener (jsdom
+    // doesn't, so flushSync stands in), and with no exit transition the
+    // modal is gone from the DOM by the time the page's listener hears the
+    // key. Whether Esc was the modal's is read as the key goes down.
+    const onEscapeIdle = vi.fn()
+    function InstantModal() {
+      const [opened, setOpened] = useState(true)
+      return (
+        <Modal opened={opened} onClose={() => flushSync(() => setOpened(false))} transitionProps={{ duration: 0 }} title="Task">
+          <button>inside</button>
+        </Modal>
+      )
+    }
+    render(
+      <MantineProvider>
+        <SearchBar value="" onChange={() => {}} escapeActive={false} onEscapeIdle={onEscapeIdle} />
+        <InstantModal />
+      </MantineProvider>,
+    )
+    await screen.findByRole("dialog")
+    await userEvent.keyboard("{Escape}")
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    expect(onEscapeIdle).not.toHaveBeenCalled()
+    // Nothing is left to close now, so the next Esc is idle.
+    await userEvent.keyboard("{Escape}")
+    expect(onEscapeIdle).toHaveBeenCalledTimes(1)
   })
   it("never calls onEscapeIdle from inside the bar, where Esc only leaves it", () => {
     const onEscapeIdle = vi.fn()

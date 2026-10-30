@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { CloseButton, Group, Kbd, TextInput } from "@mantine/core"
 import { IconSearch } from "@tabler/icons-react"
 import { SearchSuggestions } from "./SearchSuggestions"
-import { isEditable, isHidden } from "../../lib/keyTargets"
+import { isEditable, isHidden, overlaysAtEscape } from "../../lib/keyTargets"
 import type { ResourceDTO, Task, TimelineEvent, WorktreeSummary } from "../../api/types"
 import type { SearchMatch } from "../../lib/search"
 
@@ -33,6 +33,9 @@ export type SuggestionItem =
  */
 function escOwnedElsewhere(input: HTMLInputElement | null): boolean {
   const own = input?.closest("[data-search-root]")
+  // Those open now, and those that were as the key went down: a modal that
+  // closes without a transition is gone before this runs (overlaysAtEscape).
+  for (const el of overlaysAtEscape()) if (!own || !own.contains(el)) return true
   const open = document.querySelectorAll('[role="dialog"], [role="menu"], [role="listbox"]')
   for (const el of open) if ((!own || !own.contains(el)) && !isHidden(el)) return true
   const active = document.activeElement
