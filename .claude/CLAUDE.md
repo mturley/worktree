@@ -71,6 +71,10 @@ minutes serially; it now runs most tests in parallel.
     links, Slack thread links) from watcher-library sources behind
     interfaces. Pure; the webui adapters and 2-minute cache live in
     `internal/webui/linked_api.go`. Fetched on demand, never polled.
+  - `kubeconfig` — reads a kubeconfig file's current context (cluster
+    server URL, user, namespace) for the Environment tab's Kubeconfig
+    section. File only: never contacts a cluster, never returns
+    credentials. See `docs/web-ui-architecture.md` "Kubeconfig section".
   - `listeners` — parses `lsof`/`ps` output and attributes listening TCP
     ports to worktrees by process cwd (or an ancestor's); `Scan` batches
     `lsof` calls. Served live over `/api/stream` (`listeners_changed`) by

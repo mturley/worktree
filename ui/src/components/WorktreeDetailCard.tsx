@@ -11,6 +11,7 @@ import { useWorktreeGit } from "../hooks/useWorktreeGit"
 import { useWorktreeNotes } from "../hooks/useWorktreeNotes"
 import { useListeners } from "../lib/listenersStore"
 import { ListeningPorts } from "./ListeningPorts"
+import { KubeconfigPanel } from "./KubeconfigPanel"
 import { NetworkPanel } from "./NetworkPanel"
 import { badgeColor, formatBadge } from "../lib/diffLabels"
 import { toggleTaskAt } from "../lib/taskList"
@@ -189,7 +190,10 @@ export function WorktreeDetailCard({ w, tab, onTabChange, escHint }: {
               </Stack>
             </Grid.Col>
             <Grid.Col span={{ base: 12, sm: 6 }}>
-              <NetworkPanel path={w.path} />
+              <Stack gap="md">
+                <NetworkPanel path={w.path} />
+                <KubeconfigPanel kubeconfig={info.data?.kubeconfig} />
+              </Stack>
             </Grid.Col>
           </Grid>
         </Tabs.Panel>

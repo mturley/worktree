@@ -98,6 +98,11 @@ export function useSSE() {
       es = new EventSource(streamUrl())
       es.addEventListener("events_new", refreshEvents)
       es.addEventListener("tasks_changed", refreshTasks)
+      // A worktree's kubeconfig changed on disk: its detail card's
+      // Kubeconfig section reads it from worktree-info.
+      es.addEventListener("kubeconfig_changed", () => {
+        qc.invalidateQueries({ queryKey: ["worktree-info"] })
+      })
       // The server picked this tab to show a notification. Ack either way:
       // shown:false (no permission, no API) sends it on to the next tab at
       // once instead of after the server's timeout.

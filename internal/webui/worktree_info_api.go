@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/mturley/worktree/internal/gitutil"
+	"github.com/mturley/worktree/internal/kubeconfig"
 	"github.com/mturley/worktree/internal/shellenv"
 )
 
@@ -17,6 +18,9 @@ type envVarDTO struct {
 type worktreeInfoDTO struct {
 	Env []envVarDTO     `json:"env"`
 	Git *gitutil.Status `json:"git,omitempty"`
+	// Kubeconfig is the current context of the file KUBECONFIG names: which
+	// cluster, user and namespace. Read from the file only, never a cluster.
+	Kubeconfig kubeconfig.Info `json:"kubeconfig"`
 }
 
 // handleWorktreeInfo: GET /api/worktree-info?path=<path>
@@ -33,7 +37,7 @@ func (s *Server) handleWorktreeInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out := worktreeInfoDTO{Env: []envVarDTO{}}
+	out := worktreeInfoDTO{Env: []envVarDTO{}, Kubeconfig: kubeconfig.Info{State: kubeconfig.StateMissing}}
 
 	lines, err := shellenv.Lines(s.DB, path)
 	if err != nil {
@@ -45,6 +49,9 @@ func (s *Server) handleWorktreeInfo(w http.ResponseWriter, r *http.Request) {
 	home, _ := os.UserHomeDir()
 	for _, line := range lines {
 		if kv, ok := parseExportLine(line); ok {
+			if kv.Key == "KUBECONFIG" {
+				out.Kubeconfig = kubeconfig.Read(kv.Value)
+			}
 			kv.Value = tildify(kv.Value, home)
 			out.Env = append(out.Env, kv)
 		}

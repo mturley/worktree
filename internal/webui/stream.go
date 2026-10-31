@@ -16,6 +16,9 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+	// Taken before the headers go out, so a kubeconfig change made as soon
+	// as the client sees the stream open is still caught by the first tick.
+	lastKube := s.kubeconfigFingerprint()
 	flusher.Flush()
 
 	// A tab that names itself can be chosen to show a browser notification.
@@ -74,6 +77,12 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 			}
 			if s.tasksVersionAdvanced(&lastTasks) {
 				fmt.Fprintf(w, "event: tasks_changed\ndata: {}\n\n")
+			}
+			// A worktree's kubeconfig changed: the detail page refetches its
+			// worktree-info for the Kubeconfig section.
+			if kube := s.kubeconfigFingerprint(); kube != lastKube {
+				lastKube = kube
+				fmt.Fprintf(w, "event: kubeconfig_changed\ndata: {}\n\n")
 			}
 			fmt.Fprintf(w, "event: heartbeat\ndata: {}\n\n")
 			flusher.Flush()

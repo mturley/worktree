@@ -65,6 +65,14 @@ function renderSSE() {
 const invalidatedKeys = (invalidate: ReturnType<typeof renderSSE>) =>
   invalidate.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey))
 
+describe("useSSE kubeconfig", () => {
+  it("refetches worktree-info when a kubeconfig changes", () => {
+    const invalidate = renderSSE()
+    act(() => FakeEventSource.last!.emit("kubeconfig_changed", "{}"))
+    expect(invalidatedKeys(invalidate)).toEqual([JSON.stringify(["worktree-info"])])
+  })
+})
+
 describe("useSSE listeners", () => {
   it("feeds listeners_changed into the store and ignores bad JSON", () => {
     renderSSE()

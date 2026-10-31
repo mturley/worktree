@@ -1145,6 +1145,9 @@ Every stream also carries `event: cmux_focus` (`{"workspace_id","path"}`)
 whenever cmux focuses a different workspace; see "Follow cmux" under
 "cmux integration".
 
+Every stream also carries `event: kubeconfig_changed` (`{}`) when any
+worktree's kubeconfig file changed; see "Kubeconfig section".
+
 Every stream also carries `event: listeners_changed` with the whole
 listening-ports snapshot as its data (`{"enabled","ports","ranges"}`; see
 "Listening ports" below): once on connect when the server has a snapshot,
@@ -1204,6 +1207,30 @@ aren't on screen as `hidden`. The cost: a hidden HTTP tab is not in the tab
 registry, so it gets no browser notifications and its unread favicon doesn't
 update. HTTPS (`ui.https_port`) is HTTP/2, which multiplexes everything on
 one connection, so tabs there keep their streams while hidden.
+
+### Kubeconfig section (`internal/kubeconfig`, `kubeconfig.go`, `KubeconfigPanel`)
+
+The Environment tab's right column shows, below Network, the current
+context of the file the worktree's `KUBECONFIG` names: cluster API server
+URL, user, and namespace when the context sets one. `kubeconfig.Read`
+decodes only those fields (never tokens or certificates, which never leave
+the server) and reports `state`: `ok`, `missing` (no file), or
+`no_context` (unparseable, empty `current-context`, or a name no context
+has). A cluster or user the context names but the file doesn't define is
+omitted, and the panel says "not found". `oc login` names user entries
+`<user>/<cluster>`; the cluster suffix is trimmed for display.
+
+It rides `/api/worktree-info` as the `kubeconfig` field: no endpoint of its
+own, and **no cluster is ever contacted** — it shows what you're
+configured for, not whether the token still works.
+
+Live updates: every stream's 5s tick stats each registered worktree's
+kubeconfig (`kubeconfigFingerprint`: path, mtime, size; no reads, no
+processes) and sends `event: kubeconfig_changed` (no payload) when it
+changed; `useSSE` invalidates `["worktree-info"]`. The fingerprint is
+taken before the stream's headers are flushed, so a change made the moment
+a client connects is still seen. This is independent of the port scanner
+and its Settings switch: turning port scanning off doesn't stop it.
 
 ## Tasks
 

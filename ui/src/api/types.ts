@@ -179,7 +179,18 @@ export interface GitStatus {
 }
 export interface EnvVar { key: string; value: string }
 /** GET /api/worktree-info — detail-page-only; git status costs a subprocess. */
-export interface WorktreeInfo { env: EnvVar[]; git?: GitStatus }
+/**
+ * The current context of a worktree's kubeconfig (internal/kubeconfig).
+ * `cluster`/`user` are absent when the context names one the file doesn't
+ * define. Never carries credentials.
+ */
+export interface KubeconfigInfo {
+  state: "ok" | "missing" | "no_context"
+  cluster?: string
+  user?: string
+  namespace?: string
+}
+export interface WorktreeInfo { env: EnvVar[]; git?: GitStatus; kubeconfig?: KubeconfigInfo }
 
 export interface WorktreeNotes {
   notes: string; sync_cmux: boolean; updated_at?: string
