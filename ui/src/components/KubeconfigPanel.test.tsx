@@ -1,5 +1,6 @@
-import { afterEach, describe, it, expect } from "vitest"
+import { afterEach, describe, it, expect, vi } from "vitest"
 import { render, cleanup, screen } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import type { KubeconfigInfo } from "../api/types"
 import { KubeconfigPanel } from "./KubeconfigPanel"
@@ -15,6 +16,13 @@ describe("KubeconfigPanel", () => {
     expect(screen.getByText("https://api.c:6443")).toBeInTheDocument()
     expect(screen.getByText("me")).toBeInTheDocument()
     expect(screen.getByText("ns")).toBeInTheDocument()
+  })
+  it("copies the cluster's API URL", async () => {
+    const user = userEvent.setup()
+    const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue()
+    wrap({ state: "ok", cluster: "https://api.c:6443", user: "me" })
+    await user.click(screen.getByRole("button", { name: "Copy cluster URL" }))
+    expect(writeText).toHaveBeenCalledWith("https://api.c:6443")
   })
   it("omits the namespace when the context sets none, and flags an undefined cluster or user", () => {
     wrap({ state: "ok" })
