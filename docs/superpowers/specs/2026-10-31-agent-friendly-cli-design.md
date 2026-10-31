@@ -258,10 +258,10 @@ Installation (decided with Mike: it's a skill to install, not an
   the shared location.
 - It then offers to symlink it into the skill directory of each agent that
   doesn't read `~/.agents/skills` itself and whose config directory exists.
-  Claude Code (`~/.claude/skills/`) is the known one. **Builder: confirm
-  current paths for Claude Code, Codex and pi before building.** On this
-  machine `~/.agents/skills` and `~/.codex/skills` exist and
-  `~/.pi/agent/skills` does not.
+  Verified 2026-10-31: Codex and pi (≥ 1.3.0) read `~/.agents/skills`
+  directly; Claude Code reads only `~/.claude/skills` or
+  `$CLAUDE_CONFIG_DIR/skills`, so it gets a symlink (deduplicated when those
+  two resolve to the same directory).
 - On `worktree update` or setup re-runs, it updates the installed copy only
   when the embedded content changed (same hash approach as the menu bar
   app), and never overwrites a copy the user edited without asking.
