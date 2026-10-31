@@ -113,8 +113,6 @@ Each item includes:
     body keeps `<@USERID>`, matched against the Slack self ID). GitHub and
     Jira mentions are left out: selfid stores account IDs, not logins, and
     their event bodies don't carry IDs. *(My call.)*
-  - `blocker_resolved`: a task blocker on this resource resolved
-  - `task_due_soon`: a linked open task due within N days
   - `stale_draft`: your draft review comments are waiting on this PR
 - the newest few unread events (up to 5), with author, time, type and
   short text, so the agent can judge without a second call
@@ -123,17 +121,24 @@ Fixed order: Jira priority, then number of signals, then newest activity.
 A PR takes the highest priority of its linked Jira issues; an item with no
 priority sorts after every prioritised one.
 
-Priority names differ between Jira instances (Red Hat's is Blocker /
-Critical / Major / Normal / Minor / Undefined), so ranking by hard-coded
-names is wrong. *My call:* the watcher library fetches the instance's own
-priority order once (`GET /rest/api/2/priority` returns them highest
-first), caches each issue's priority rank next to its name in
-`watcher_resource_state`, and `attention` sorts by that rank. Names Jira
-calls "Undefined" or similar still get a rank from the list; that's fine,
-because it's Jira's order. This is library work (cross-repo).
+Priority names differ between Jira instances, so ranking by hard-coded
+names is wrong. The instance-wide list (`/rest/api/3/priority`) mixes every
+priority scheme on Red Hat's Jira ("Highest (migrated)" comes before
+"Blocker"), so it can't be the rank either. *My call (verified read-only
+2026-10-31):* the watcher library reads each project's scheme order from an
+issue's `editmeta` (RHOAIENG: Blocker, Critical, Major, Normal, Minor,
+Undefined), once per project per poll, falls back to the global list's order
+when editmeta has no priority field, and caches the rank next to the
+priority name. This is library work (cross-repo).
 
 Items with no unread events and no signals are left out. Exit code 1 when
 the list is empty.
+
+Open tasks are items too (`kind: "task"`), so a task with no linked resource
+still surfaces. Signals: `task_due_soon` (due within 3 days, or overdue) and
+`blocker_resolved` (an unread automatic blocker resolution). Task priority
+ranks alongside Jira: high = 1, medium = 2, low = 3, none = unranked.
+*(My call.)*
 
 **Library work:** some signals may not be derivable from the current cache
 (review requested from you, mentions). Where a signal needs data the watcher
@@ -170,6 +175,8 @@ server.
   and the time of the latest activity. Git ahead/behind/dirty comes with
   `--git`, since it costs several git processes per worktree. *(My call.)*
   That makes hygiene questions a single filter.
+- `jira` today fetches each issue live from Jira, without checking the
+  watcher toggle. It switches to cached state like `info`. *(My call.)*
 - `info` (text and `--json`) shows the cached resource state from the DB.
   It never contacts a service. Today's `--local` flag is declared but never
   read, so it is removed. There is no `--refresh`: polling from the CLI would
@@ -202,8 +209,8 @@ Applies to every command, through `internal/ui`.
   see "Writes").
 - `worktree review-comments list [--worktree]`: your draft comments on the
   diff, with their resolved position (`current` / `moved` / `outdated`).
-- `worktree pr-threads list [--worktree | --resource]`: the open PR's
-  review threads. This contacts GitHub live (the web UI doesn't cache
+- `worktree pr-threads list [--worktree]`: the worktree's PR's review
+  threads, the same ones the diff view shows. This contacts GitHub live (the web UI doesn't cache
   them), so it is refused when the GitHub watcher is off and says why.
 - `worktree linked <resource>`: the linked resources. Also contacts
   services live; each source is skipped when its watcher is off.
