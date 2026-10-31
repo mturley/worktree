@@ -84,8 +84,8 @@ Answers "how fresh is the data?" without the server.
 The skill runs this first. If the UI isn't running, or the last successful
 poll is old, the agent says so ("this is from 3 hours ago; start `worktree
 ui` so the watchers poll") **and still answers from the cached data**.
-Builder's call: the threshold for "old" (I'd suggest 3× the poll interval,
-or 15 minutes).
+"Old" means more than 15 minutes since a service's last successful poll
+(the UI polls every 2 minutes). *(My call.)*
 
 ### `worktree attention`
 
@@ -109,7 +109,10 @@ Each item includes:
   - `ci_failing`: on your PR
   - `assigned_to_you`: Jira, newly assigned or currently assigned and
     unread
-  - `mentioned`: you're mentioned in an unread event
+  - `mentioned`: you're mentioned in an unread Slack event (the stored
+    body keeps `<@USERID>`, matched against the Slack self ID). GitHub and
+    Jira mentions are left out: selfid stores account IDs, not logins, and
+    their event bodies don't carry IDs. *(My call.)*
   - `blocker_resolved`: a task blocker on this resource resolved
   - `task_due_soon`: a linked open task due within N days
   - `stale_draft`: your draft review comments are waiting on this PR
@@ -163,9 +166,10 @@ server.
   the same piece of work. No backward compatibility is needed (see the
   "library changes welcome" preference).
 - `list --json` includes, per worktree: name, path, repo, branch, open in
-  cmux or not, unread count, primary resources with their cached state, git
-  ahead/behind/dirty, and the time of the latest activity. That makes
-  hygiene questions a single filter.
+  cmux or not, unread count, primary resources with their cached state,
+  and the time of the latest activity. Git ahead/behind/dirty comes with
+  `--git`, since it costs several git processes per worktree. *(My call.)*
+  That makes hygiene questions a single filter.
 - `info` (text and `--json`) shows the cached resource state from the DB.
   It never contacts a service. Today's `--local` flag is declared but never
   read, so it is removed. There is no `--refresh`: polling from the CLI would
@@ -276,6 +280,17 @@ Content (short, aimed at an agent):
 
 `worktree agent-help` prints the same text, for an agent without the skill
 installed.
+
+**Uninstall** (Mike: anything setup offers to set up, `setup --uninstall`
+removes): `--uninstall` previews and removes the installed skill and every
+symlink setup made to it, but only when the symlink still points at the
+installed copy. An edited copy is still removed, because the user asked to
+uninstall; the preview says it was edited. The same audit covers the setup
+steps that already exist: the watcher consumer registration
+(`registerWatcherConsumer`) is not undone today, so `--uninstall` also
+unregisters it (needs `UnregisterConsumer` in the watcher library). The
+worktrees directory, the config file and the credentials are deliberately
+kept, as now.
 
 ## Constraints
 
