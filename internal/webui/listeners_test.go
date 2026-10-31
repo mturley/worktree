@@ -298,9 +298,6 @@ func TestStreamSendsCurrentListeners(t *testing.T) {
 			if !ok {
 				t.Fatal("stream ended")
 			}
-			if strings.HasPrefix(l, "event: heartbeat") {
-				t.Fatal("heartbeat before listeners_changed")
-			}
 			if l != "event: listeners_changed" {
 				continue
 			}

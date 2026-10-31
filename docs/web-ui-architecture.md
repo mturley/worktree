@@ -1129,10 +1129,15 @@ either and you must change the other.
 
 ### SSE (`/api/stream`)
 
-On connect, sends nothing but flushes headers. Every 5s, checks
+On connect, flushes headers and sends one heartbeat at once. Every 5s, checks
 `MAX(ts)` on `watcher_events`; if it advanced since the last tick (or since
 connect), emits `event: events_new\ndata: {}\n\n`, then always emits `event:
-heartbeat\ndata: {}\n\n`. The frontend treats `events_new` purely as a
+heartbeat`. The heartbeat's data (`heartbeatMsg`) is
+`{"kubeconfig_checked_at","listeners_checked_at"?}` (RFC 3339): when the
+server last checked the kubeconfigs (every tick) and last scanned ports
+(omitted while scanning is off, before the first scan, and on a
+`listeners=0` stream). `useSSE` puts them in `lib/checksStore.ts` for the
+Network and Kubeconfig sections' "· checked … ago" (`CheckedAgo`). The frontend treats `events_new` purely as a
 cache-invalidation signal (no payload). In the same tick it compares
 `tasks.Version` with the value seen at connect (or last tick) and emits
 `event: tasks_changed\ndata: {}\n\n` when it advanced; see "Tasks".

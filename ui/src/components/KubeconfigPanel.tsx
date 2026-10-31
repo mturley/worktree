@@ -1,5 +1,7 @@
 import { Group, Stack, Text } from "@mantine/core"
 import type { KubeconfigInfo } from "../api/types"
+import { useChecks } from "../lib/checksStore"
+import { CheckedAgo } from "./CheckedAgo"
 
 /** One labelled value; a value the kubeconfig doesn't define says so. */
 function Row({ label, value }: { label: string; value: string | null | undefined }) {
@@ -22,11 +24,12 @@ function Row({ label, value }: { label: string; value: string | null | undefined
  * login is still valid.
  */
 export function KubeconfigPanel({ kubeconfig }: { kubeconfig: KubeconfigInfo | undefined }) {
+  const checks = useChecks()
   return (
     <Stack gap={2}>
       <Group gap="xs" wrap="wrap">
         <Text size="sm" fw={600}>Kubeconfig</Text>
-        <Text size="xs" c="dimmed">Current cluster context</Text>
+        <Text size="xs" c="dimmed">Current cluster context<CheckedAgo at={checks.kubeconfig} /></Text>
       </Group>
       {!kubeconfig || kubeconfig.state === "missing" ? (
         <Text size="xs" c="dimmed" fs="italic">No kubeconfig</Text>

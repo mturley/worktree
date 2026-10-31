@@ -5,6 +5,7 @@ import { streamUrl, useSSE } from "./useSSE"
 import { TASK_ACTIVITY_STALE_MS } from "./useTaskDetail"
 import { api } from "../api/client"
 import { setListeners, useListeners } from "../lib/listenersStore"
+import { setChecks, useChecks } from "../lib/checksStore"
 
 const streams = vi.hoisted(() => ({ pause: true }))
 vi.mock("../lib/backgroundStreams", async (orig) => ({
@@ -64,6 +65,22 @@ function renderSSE() {
 
 const invalidatedKeys = (invalidate: ReturnType<typeof renderSSE>) =>
   invalidate.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey))
+
+describe("useSSE heartbeat", () => {
+  it("records the server's check times, ignoring bad payloads", () => {
+    renderSSE()
+    const { result } = renderHook(() => useChecks())
+    const es = FakeEventSource.last!
+    act(() => es.emit("heartbeat", JSON.stringify({ listeners_checked_at: "2026-10-31T10:00:00Z", kubeconfig_checked_at: "2026-10-31T10:00:05Z" })))
+    expect(result.current).toEqual({ listeners: "2026-10-31T10:00:00Z", kubeconfig: "2026-10-31T10:00:05Z" })
+    act(() => es.emit("heartbeat", "not json"))
+    act(() => es.emit("heartbeat", "null"))
+    expect(result.current.kubeconfig).toBe("2026-10-31T10:00:05Z")
+    act(() => es.emit("heartbeat", JSON.stringify({ kubeconfig_checked_at: "2026-10-31T10:00:10Z" })))
+    expect(result.current).toEqual({ listeners: undefined, kubeconfig: "2026-10-31T10:00:10Z" })
+    act(() => setChecks({}))
+  })
+})
 
 describe("useSSE kubeconfig", () => {
   it("refetches worktree-info when a kubeconfig changes", () => {

@@ -36,6 +36,10 @@ type listenersHub struct {
 	mu   sync.Mutex
 	subs map[chan []byte]struct{}
 	last []byte
+	// checked is when a scan last succeeded, for the Network section's
+	// "checked … ago"; zero before the first. Unlike last it advances on
+	// every scan, changed or not, and rides the stream's heartbeat.
+	checked time.Time
 	// stop cancels the running loop; nil while none runs. done is closed
 	// when the most recently started loop has exited, so the next one can
 	// wait for it and two loops never scan at once.
@@ -165,6 +169,18 @@ func (h *listenersHub) tick(ctx context.Context) {
 		return
 	}
 	h.offer(ctx, b)
+	h.mu.Lock()
+	if ctx.Err() == nil {
+		h.checked = time.Now()
+	}
+	h.mu.Unlock()
+}
+
+// checkedAt is when a scan last succeeded; zero before the first.
+func (h *listenersHub) checkedAt() time.Time {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.checked
 }
 
 // offer publishes b when it differs from the last snapshot. A loop that has

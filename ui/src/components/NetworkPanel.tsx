@@ -1,6 +1,8 @@
 import { ActionIcon, Anchor, CopyButton, Group, Stack, Text, Tooltip } from "@mantine/core"
 import { IconCheck, IconCopy, IconWorld } from "@tabler/icons-react"
 import { useListeners } from "../lib/listenersStore"
+import { useChecks } from "../lib/checksStore"
+import { CheckedAgo } from "./CheckedAgo"
 import { PortNumber } from "./ListeningPorts"
 import { useOpenSettings } from "./settings/SettingsContext"
 
@@ -8,6 +10,7 @@ import { useOpenSettings } from "./settings/SettingsContext"
 export function NetworkPanel({ path }: { path: string }) {
   const listeners = useListeners(path)
   const openSettings = useOpenSettings()
+  const checks = useChecks()
   const enabled = listeners?.enabled ?? true
   const ports = listeners?.ports ?? []
   return (
@@ -15,7 +18,7 @@ export function NetworkPanel({ path }: { path: string }) {
       <Group gap="xs" wrap="wrap">
         <Text size="sm" fw={600}>Network</Text>
         {enabled && (
-          <Text size="xs" c="dimmed">Ports in use by processes in this worktree</Text>
+          <Text size="xs" c="dimmed">Ports in use by processes in this worktree<CheckedAgo at={checks.listeners} /></Text>
         )}
       </Group>
       {!enabled ? (

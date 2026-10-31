@@ -3,6 +3,7 @@ package webui
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 )
@@ -51,6 +52,10 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	s.DB.QueryRow(`SELECT COALESCE(MAX(ts),'') FROM watcher_events`).Scan(&last)
 	lastTasks := s.seedTasksVersion()
 
+	// One now, so the sections' "checked … ago" needn't wait a tick.
+	s.writeHeartbeat(w, ports != nil)
+	flusher.Flush()
+
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -84,8 +89,29 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 				lastKube = kube
 				fmt.Fprintf(w, "event: kubeconfig_changed\ndata: {}\n\n")
 			}
-			fmt.Fprintf(w, "event: heartbeat\ndata: {}\n\n")
+			s.writeHeartbeat(w, ports != nil)
 			flusher.Flush()
 		}
 	}
+}
+
+// heartbeatMsg is the heartbeat's payload: when this server last checked
+// what the Environment tab's sections show, for their "checked … ago".
+// Every tick re-checks the kubeconfigs (the fingerprint above), so its time
+// is the tick's. The ports time is the last successful scan, and is left
+// out for a stream that doesn't take ports or while scanning is off.
+type heartbeatMsg struct {
+	ListenersCheckedAt  string `json:"listeners_checked_at,omitempty"`
+	KubeconfigCheckedAt string `json:"kubeconfig_checked_at"`
+}
+
+func (s *Server) writeHeartbeat(w io.Writer, withPorts bool) {
+	msg := heartbeatMsg{KubeconfigCheckedAt: time.Now().UTC().Format(time.RFC3339)}
+	if withPorts && !s.portScanDisabled.Load() {
+		if at := s.listenersHub().checkedAt(); !at.IsZero() {
+			msg.ListenersCheckedAt = at.UTC().Format(time.RFC3339)
+		}
+	}
+	b, _ := json.Marshal(msg)
+	fmt.Fprintf(w, "event: heartbeat\ndata: %s\n\n", b)
 }

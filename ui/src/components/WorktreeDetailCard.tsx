@@ -182,6 +182,10 @@ export function WorktreeDetailCard({ w, tab, onTabChange, escHint }: {
           <Grid gutter="md">
             <Grid.Col span={{ base: 12, sm: 6 }}>
               <Stack gap={2}>
+                <Group gap="xs" wrap="wrap">
+                  <Text size="sm" fw={600}>Variables</Text>
+                  <Text size="xs" c="dimmed">Sourced on cd into worktree</Text>
+                </Group>
                 {hasEnv ? (
                   info.data!.env.map((kv) => <EnvVarRow key={kv.key} name={kv.key} value={kv.value} />)
                 ) : (

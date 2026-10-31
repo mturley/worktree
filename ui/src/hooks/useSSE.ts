@@ -6,6 +6,7 @@ import { isMiniRoute } from "../lib/miniMode"
 import { TAB_ID } from "../lib/tabId"
 import { emitCmuxFocus } from "../lib/cmuxFocusBus"
 import { setListeners } from "../lib/listenersStore"
+import { setChecks } from "../lib/checksStore"
 import { openNotificationTarget, showBrowserNotification } from "../lib/browserNotify"
 import { pageHidden, streamsPauseWhenHidden } from "../lib/backgroundStreams"
 import { TASK_ACTIVITY_STALE_MS } from "./useTaskDetail"
@@ -100,6 +101,22 @@ export function useSSE() {
       es.addEventListener("tasks_changed", refreshTasks)
       // A worktree's kubeconfig changed on disk: its detail card's
       // Kubeconfig section reads it from worktree-info.
+      // The heartbeat says when the server last checked ports and
+      // kubeconfigs, for those sections' "checked … ago".
+      es.addEventListener("heartbeat", (e) => {
+        let msg: unknown
+        try {
+          msg = JSON.parse((e as MessageEvent).data)
+        } catch {
+          return
+        }
+        if (typeof msg !== "object" || msg === null) return
+        const m = msg as Record<string, unknown>
+        setChecks({
+          listeners: typeof m.listeners_checked_at === "string" ? m.listeners_checked_at : undefined,
+          kubeconfig: typeof m.kubeconfig_checked_at === "string" ? m.kubeconfig_checked_at : undefined,
+        })
+      })
       es.addEventListener("kubeconfig_changed", () => {
         qc.invalidateQueries({ queryKey: ["worktree-info"] })
       })

@@ -132,6 +132,14 @@ describe("WorktreeDetailCard", () => {
     expect(screen.getByText("/home/u/.kube/config-foo")).toBeVisible()
   })
 
+  it("heads the variables with where they come from", async () => {
+    worktreeInfo.mockResolvedValue(info())
+    wrap(summary())
+    await userEvent.click(await screen.findByRole("tab", { name: /environment/i }))
+    expect(screen.getByText("Variables")).toBeVisible()
+    expect(screen.getByText("Sourced on cd into worktree")).toBeVisible()
+  })
+
   it("copies a variable's value, without its name", async () => {
     worktreeInfo.mockResolvedValue(info())
     const user = userEvent.setup()

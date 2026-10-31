@@ -138,3 +138,69 @@ func TestStreamSendsKubeconfigChangedWithPortScanningOff(t *testing.T) {
 		}
 	}
 }
+
+// heartbeatData reads stream lines until the next heartbeat and returns its payload.
+func heartbeatData(t *testing.T, lines <-chan string) heartbeatMsg {
+	t.Helper()
+	timeout := time.After(8 * time.Second)
+	for {
+		select {
+		case l, ok := <-lines:
+			if !ok {
+				t.Fatal("stream ended")
+			}
+			if l != "event: heartbeat" {
+				continue
+			}
+			var msg heartbeatMsg
+			if err := json.Unmarshal([]byte(strings.TrimPrefix(<-lines, "data: ")), &msg); err != nil {
+				t.Fatal(err)
+			}
+			return msg
+		case <-timeout:
+			t.Fatal("no heartbeat")
+		}
+	}
+}
+
+func TestHeartbeatCarriesCheckTimes(t *testing.T) {
+	t.Parallel()
+	s, _, _ := kubeTestServer(t)
+	f := &fakeScan{}
+	f.set(snapWith("/a", 4000), nil)
+	s.listenersScan = f.scan
+	s.listenersInterval = 20 * time.Millisecond
+	ts := httptest.NewServer(http.HandlerFunc(s.handleStream))
+	t.Cleanup(ts.Close)
+	lines := streamLines(t, ts, "")
+	// The first heartbeat comes at once; the kubeconfig time is always set.
+	if first := heartbeatData(t, lines); first.KubeconfigCheckedAt == "" {
+		t.Fatalf("first heartbeat %+v has no kubeconfig time", first)
+	}
+	// By the next one a scan has run, so the ports time is set too.
+	if next := heartbeatData(t, lines); next.ListenersCheckedAt == "" {
+		t.Fatalf("heartbeat %+v has no ports time after a scan", next)
+	}
+}
+
+func TestHeartbeatOmitsPortsTimeWhenOffOrOptedOut(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, query string
+		disabled    bool
+	}{{"scanning off", "", true}, {"mini stream", "?listeners=0", false}} {
+		s, _, _ := kubeTestServer(t)
+		f := &fakeScan{}
+		f.set(snapWith("/a", 4000), nil)
+		s.listenersScan = f.scan
+		s.listenersInterval = 20 * time.Millisecond
+		s.SetPortScanDisabled(tc.disabled)
+		ts := httptest.NewServer(http.HandlerFunc(s.handleStream))
+		t.Cleanup(ts.Close)
+		lines := streamLines(t, ts, tc.query)
+		heartbeatData(t, lines)
+		if hb := heartbeatData(t, lines); hb.ListenersCheckedAt != "" || hb.KubeconfigCheckedAt == "" {
+			t.Errorf("%s: heartbeat %+v, want a kubeconfig time and no ports time", tc.name, hb)
+		}
+	}
+}
