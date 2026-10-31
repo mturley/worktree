@@ -1137,7 +1137,7 @@ heartbeat`. The heartbeat's data (`heartbeatMsg`) is
 server last checked the kubeconfigs (every tick) and last scanned ports
 (omitted while scanning is off, before the first scan, and on a
 `listeners=0` stream). `useSSE` puts them in `lib/checksStore.ts` for the
-Network and Kubeconfig sections' "· checked … ago" (`CheckedAgo`). The frontend treats `events_new` purely as a
+Network and Kubeconfig sections' "· checked … ago" (`CheckedAgo`), shown only once a check is over a minute old (updates have stopped). The frontend treats `events_new` purely as a
 cache-invalidation signal (no payload). In the same tick it compares
 `tasks.Version` with the value seen at connect (or last tick) and emits
 `event: tasks_changed\ndata: {}\n\n` when it advanced; see "Tasks".
