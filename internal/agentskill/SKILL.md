@@ -29,9 +29,9 @@ resources to poll can be stale; one with none is fine even if it never polled. I
   (`worktree setup`). `poll_old` means polling stopped; suggest the Logs tab in Settings.
 
 Read commands never create or upgrade the database, so `status` can exit 2. Tell the
-user what the error says and stop: with `no worktree database yet`, they need to run
-`worktree setup` or `worktree ui`; with `worktree database needs upgrading`, they need
-to start `worktree ui`. Both are theirs to run, and there is no cache to answer from
+user what the error says and stop: with "no worktree database yet", they need to run
+`worktree setup` or `worktree ui`; with "database needs upgrading", they need to start
+`worktree ui`. Both are theirs to run, and there is no cache to answer from
 until then.
 
 ## Reading output
