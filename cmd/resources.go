@@ -1,8 +1,8 @@
 package cmd
 
 import (
+	"bytes"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -37,7 +37,11 @@ func resourcesJSON(rs []resources.Resource, counts map[string]int) ([]byte, erro
 			UnreadCount: counts[unread.Key(r.Type, r.ID)],
 		})
 	}
-	return json.Marshal(out)
+	var b bytes.Buffer
+	if err := printJSON(&b, map[string]any{"resources": out}); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(b.Bytes(), []byte("\n")), nil
 }
 
 // writeResourceLines renders the human-readable listing. Split out from

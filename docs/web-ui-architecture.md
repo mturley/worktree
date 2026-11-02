@@ -1025,7 +1025,7 @@ nothing and a restored blocker never sends a second "Unblocked" notification.
 It runs `afterTaskWrite()` afterwards, like the writes it reverses. The CLI is
 `worktree tasks undo <event-id>`; its `state`, `delete` and `subtask
 check`/`uncheck` `--json` carry the same `undo_event_id`. A failed `tasks
-undo` prints just its error, once, with no usage block, and exits 1
+undo` prints just its error, once, with no usage block, and exits 2
 (`SilenceUsage`/`SilenceErrors` on that command only).
 
 Details, as built (`internal/tasks/undo.go`, `purge.go`):
@@ -1046,7 +1046,7 @@ Details, as built (`internal/tasks/undo.go`, `purge.go`):
 - **Who may undo.** The user may undo any undoable event. An agent (the CLI
   under Claude Code or a handler session, or `--as-agent`) may undo only an
   event whose actor is `agent`; anything else is `ErrUndoForbidden` ("only
-  the user can undo the user's changes") -> 409 on the web and exit 1 in the
+  the user can undo the user's changes") -> 409 on the web and exit 2 in the
   CLI. An undo writes no event, so this is what keeps an agent from changing
   the user's work invisibly. The web always acts as the user.
 - **Missing event.** `task_events` is AUTOINCREMENT, so a missing id at or

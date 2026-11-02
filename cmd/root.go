@@ -3,7 +3,9 @@ package cmd
 import (
 	"database/sql"
 	"embed"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -44,14 +46,31 @@ var rootCmd = &cobra.Command{
 	},
 }
 
-func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+// asAgent is the root --as-agent flag: the caller is an agent. Only tasks
+// record it (as the actor); every other write accepts it and ignores it.
+var asAgent bool
+
+// Execute runs the CLI and returns the process exit code: 0 on success, 1
+// when a command returned ErrNothingFound (nothing is printed), 2 for any
+// other error (printed to stderr).
+func Execute() int {
+	return exitCode(rootCmd.Execute(), os.Stderr)
+}
+
+func exitCode(err error, stderr io.Writer) int {
+	switch {
+	case err == nil:
+		return 0
+	case errors.Is(err, ErrNothingFound):
+		return 1
+	default:
+		fmt.Fprintln(stderr, err)
+		return 2
 	}
 }
 
 func init() {
+	rootCmd.PersistentFlags().BoolVar(&asAgent, "as-agent", false, "mark this call as made by an agent (tasks record it as the actor)")
 	rootCmd.AddGroup(
 		&cobra.Group{ID: "worktree", Title: "Worktree commands:"},
 		&cobra.Group{ID: "integration", Title: "Integrations:"},

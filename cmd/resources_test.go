@@ -3,7 +3,6 @@ package cmd
 import (
 	"bytes"
 	"database/sql"
-	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -24,9 +23,7 @@ func TestResourcesJSONContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got []map[string]any
-	if err := json.Unmarshal(b, &got); err != nil {
-		t.Fatal(err)
-	}
+	decodeEnvelope(t, string(b), "resources", &got)
 	if len(got) != 2 {
 		t.Fatalf("got %d", len(got))
 	}
@@ -54,9 +51,7 @@ func TestResourcesJSONIncludesMetaFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got []map[string]any
-	if err := json.Unmarshal(b, &got); err != nil {
-		t.Fatal(err)
-	}
+	decodeEnvelope(t, string(b), "resources", &got)
 	if got[0]["custom_name"] != "Release blocker" ||
 		got[0]["custom_description"] != "e2e regression" ||
 		got[0]["updated_at"] != "2030-01-02T03:04:05Z" {
@@ -70,9 +65,7 @@ func TestResourcesJSONOmitsEmptyMeta(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got []map[string]any
-	if err := json.Unmarshal(b, &got); err != nil {
-		t.Fatal(err)
-	}
+	decodeEnvelope(t, string(b), "resources", &got)
 	for _, k := range []string{"custom_name", "custom_description", "updated_at"} {
 		if _, ok := got[0][k]; ok {
 			t.Fatalf("empty meta field %q should be omitted, got %+v", k, got[0])
@@ -85,8 +78,8 @@ func TestResourcesJSONEmptyIsArray(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(b) != "[]" {
-		t.Fatalf("empty must serialize to [], got %s", b)
+	if string(b) != `{"resources":[],"schema_version":1}` {
+		t.Fatalf("empty must serialize to an empty resources array, got %s", b)
 	}
 }
 
@@ -182,9 +175,7 @@ func TestResourcesJSONCarriesUnreadCount(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got []map[string]any
-	if err := json.Unmarshal(b, &got); err != nil {
-		t.Fatal(err)
-	}
+	decodeEnvelope(t, string(b), "resources", &got)
 	if got[0]["unread_count"] != float64(3) {
 		t.Fatalf("unread_count = %v, want 3", got[0]["unread_count"])
 	}

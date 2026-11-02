@@ -1,9 +1,7 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/webui"
@@ -41,7 +39,7 @@ func runUnread(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if unreadJSON {
-		return json.NewEncoder(os.Stdout).Encode(sum)
+		return printJSON(cmd.OutOrStdout(), map[string]any{"unread": sum.Unread, "count": sum.Count})
 	}
 	switch {
 	case !sum.Unread:

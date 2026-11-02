@@ -104,13 +104,13 @@ func toEventsJSON(es []tasks.Event) []eventJSON {
 	return out
 }
 
-func writeJSON(w io.Writer, v any) error {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
+// writeJSON prints v inside the schema_version envelope. A map's entries are
+// merged at the top level (key is ""); anything else goes under key.
+func writeJSON(w io.Writer, key string, v any) error {
+	if m, ok := v.(map[string]any); ok {
+		return printJSON(w, m)
 	}
-	_, err = fmt.Fprintln(w, string(b))
-	return err
+	return printJSON(w, map[string]any{key: v})
 }
 
 var stateGlyphs = map[tasks.State]string{

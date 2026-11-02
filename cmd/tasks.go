@@ -109,7 +109,6 @@ func registeredWorktree(conn *sql.DB, p string) (string, bool, error) {
 
 var (
 	tasksJSON        bool
-	tasksAsAgent     bool
 	tasksAll         bool
 	tasksWorktree    string
 	tasksResource    string
@@ -206,7 +205,6 @@ var tasksUndoCmd = &cobra.Command{
 }
 
 func init() {
-	tasksCmd.PersistentFlags().BoolVar(&tasksAsAgent, "as-agent", false, "record changes as made by an agent")
 	for _, c := range []*cobra.Command{tasksListCmd, tasksShowCmd, tasksAddCmd, tasksEditCmd,
 		tasksStateCmd, tasksStarCmd, tasksUnstarCmd, tasksDeleteCmd} {
 		c.Flags().BoolVar(&tasksJSON, "json", false, "machine-readable JSON output")
@@ -242,7 +240,7 @@ func init() {
 	rootCmd.AddCommand(tasksCmd)
 }
 
-func tasksActor() tasks.Actor { return actorFromEnv(tasksAsAgent, os.Getenv) }
+func tasksActor() tasks.Actor { return actorFromEnv(asAgent, os.Getenv) }
 
 // taskErr turns the tasks package's sentinel errors into CLI messages.
 func taskErr(id int64, err error) error {
@@ -259,7 +257,7 @@ func printTask(cmd *cobra.Command, conn *sql.DB, t tasks.Task) error {
 		if err != nil {
 			return err
 		}
-		return writeJSON(cmd.OutOrStdout(), j)
+		return writeJSON(cmd.OutOrStdout(), "task", j)
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), taskLine(t))
 	return nil
@@ -348,7 +346,7 @@ func runTasksList(cmd *cobra.Command, args []string) error {
 		for _, t := range ts {
 			rows = append(rows, withBlockerLabels(t, labels))
 		}
-		return writeJSON(out, rows)
+		return writeJSON(out, "tasks", rows)
 	}
 	for _, t := range ts {
 		fmt.Fprintln(out, taskLine(t))
@@ -391,7 +389,7 @@ func runTasksShow(cmd *cobra.Command, args []string) error {
 		blockers, blocks := sb.json(), sb.blocks
 		j.Blockers, j.Blocks = &blockers, &blocks
 		j.Events = toEventsJSON(events)
-		return writeJSON(cmd.OutOrStdout(), j)
+		return writeJSON(cmd.OutOrStdout(), "task", j)
 	}
 	writeTaskDetail(cmd.OutOrStdout(), t, sb, events)
 	return nil
@@ -454,7 +452,7 @@ func runTasksAdd(cmd *cobra.Command, args []string) error {
 		}
 	}
 	if tasksJSON {
-		return writeJSON(cmd.OutOrStdout(), toTaskJSON(t))
+		return writeJSON(cmd.OutOrStdout(), "task", toTaskJSON(t))
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), formatTaskID(t.ID))
 	return nil
@@ -519,7 +517,7 @@ func runTasksState(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		j.UndoEventID = sc.EventID
-		return writeJSON(cmd.OutOrStdout(), j)
+		return writeJSON(cmd.OutOrStdout(), "task", j)
 	}
 	return printTask(cmd, conn, t)
 }
@@ -575,7 +573,7 @@ func runTasksDelete(cmd *cobra.Command, args []string) error {
 		return taskErr(id, err)
 	}
 	if tasksJSON {
-		return writeJSON(cmd.OutOrStdout(), map[string]any{"id": formatTaskID(id), "deleted": true, "undo_event_id": eventID})
+		return writeJSON(cmd.OutOrStdout(), "", map[string]any{"id": formatTaskID(id), "deleted": true, "undo_event_id": eventID})
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "deleted %s\n", formatTaskID(id))
 	return nil
@@ -839,7 +837,7 @@ func runSubtaskAdd(cmd *cobra.Command, args []string) error {
 		return taskErr(id, err)
 	}
 	if tasksJSON {
-		return writeJSON(cmd.OutOrStdout(), subtaskJSON{ID: s.ID, Text: s.Text, Checked: s.Checked})
+		return writeJSON(cmd.OutOrStdout(), "subtask", subtaskJSON{ID: s.ID, Text: s.Text, Checked: s.Checked})
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), s.ID)
 	return nil
@@ -907,7 +905,7 @@ func printSubtaskResult(cmd *cobra.Command, sid int64, what string, undoEventID 
 		if undoEventID != 0 {
 			out["undo_event_id"] = undoEventID
 		}
-		return writeJSON(cmd.OutOrStdout(), out)
+		return writeJSON(cmd.OutOrStdout(), "", out)
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s subtask %d\n", what, sid)
 	return nil

@@ -179,7 +179,7 @@ worktree tasks edit <id> [--title ...] [--description ...] [--priority ...] [--d
 worktree tasks state <id> <not_started|in_progress|done>
 worktree tasks star <id>         # or: unstar
 worktree tasks delete <id>
-worktree tasks undo <event-id>   # Undo a state change, subtask check or delete; <event-id> is the undo_event_id its --json answered. Exits 1 if it changed since, or if an agent tries to undo the user's change
+worktree tasks undo <event-id>   # Undo a state change, subtask check or delete; <event-id> is the undo_event_id its --json answered. Exits 2 if it changed since, or if an agent tries to undo the user's change
 worktree tasks link <id> <ref> [--focus]  # Related unless --focus; also: unlink, focus, unfocus
 worktree tasks move <id> (--after <id> | --before <id> | --top | --bottom)
 worktree tasks subtask add <id> <text>    # Also: edit, check, uncheck, remove <subtask-id>; order <id> <subtask-id>...
@@ -257,12 +257,14 @@ Your shell RC hook (installed by `worktree setup`) automatically runs `eval "$(w
 **Resource tracking** (PR/Jira associations) is stored in the database. Use `worktree resources list --json` to get a machine-readable format:
 
 ```json
-[
+{"schema_version":1,"resources":[
   {"type":"pr","id":"owner/repo#123","url":"https://github.com/owner/repo/pull/123","primary":true},
   {"type":"jira","id":"PROJ-456","url":"https://your-org.atlassian.net/browse/PROJ-456","primary":true},
   {"type":"jira","id":"PROJ-400","url":"https://your-org.atlassian.net/browse/PROJ-400","primary":false}
-]
+]}
 ```
+
+Every `--json` output is an object carrying `"schema_version": 1`. Exit codes: 0 success, 1 nothing found (only commands documented to say so), 2 any error. `--as-agent` is accepted by every command.
 
 Unmarked entries (or `"primary":true`) are the reason this worktree exists. Entries with `"primary":false` are **related** (watching for context).
 

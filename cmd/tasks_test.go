@@ -189,7 +189,7 @@ func TestTaskLine(t *testing.T) {
 // rootCmd run cannot leak a flag into the next.
 func resetTasksFlags(t *testing.T) {
 	t.Helper()
-	for _, c := range append([]*cobra.Command{tasksCmd}, tasksCmd.Commands()...) {
+	for _, c := range append([]*cobra.Command{rootCmd, tasksCmd}, tasksCmd.Commands()...) {
 		for _, fs := range []*pflag.FlagSet{c.Flags(), c.PersistentFlags()} {
 			fs.VisitAll(func(f *pflag.Flag) {
 				if sv, ok := f.Value.(pflag.SliceValue); ok {
@@ -225,9 +225,7 @@ func TestTasksAddListShowRoundTrip(t *testing.T) {
 		t.Fatalf("add: %v\n%s", err, out)
 	}
 	var added map[string]any
-	if err := json.Unmarshal([]byte(out), &added); err != nil {
-		t.Fatalf("add json: %v\n%s", err, out)
-	}
+	decodeEnvelope(t, out, "task", &added)
 	if added["id"] != "T1" {
 		t.Fatalf("added id = %v", added["id"])
 	}
@@ -237,9 +235,7 @@ func TestTasksAddListShowRoundTrip(t *testing.T) {
 		t.Fatalf("list: %v\n%s", err, out)
 	}
 	var list []map[string]any
-	if err := json.Unmarshal([]byte(out), &list); err != nil {
-		t.Fatalf("list json: %v\n%s", err, out)
-	}
+	decodeEnvelope(t, out, "tasks", &list)
 	if len(list) != 1 || list[0]["priority"] != "high" || list[0]["starred"] != true || list[0]["title"] != "Write repro" {
 		t.Fatalf("list = %v", list)
 	}
@@ -249,9 +245,7 @@ func TestTasksAddListShowRoundTrip(t *testing.T) {
 		t.Fatalf("show: %v\n%s", err, out)
 	}
 	var shown map[string]any
-	if err := json.Unmarshal([]byte(out), &shown); err != nil {
-		t.Fatalf("show json: %v\n%s", err, out)
-	}
+	decodeEnvelope(t, out, "task", &shown)
 	events, ok := shown["events"].([]any)
 	if !ok || len(events) == 0 || events[0].(map[string]any)["type"] != "task_created" {
 		t.Fatalf("events = %v", shown["events"])
@@ -278,7 +272,7 @@ func TestTasksEditStateStarDelete(t *testing.T) {
 		t.Fatalf("show: %v", err)
 	}
 	var got map[string]any
-	_ = json.Unmarshal([]byte(out), &got)
+	decodeEnvelope(t, out, "task", &got)
 	if got["title"] != "B" || got["state"] != "in_progress" || got["starred"] != true || got["priority"] != "none" {
 		t.Fatalf("after edits: %v", got)
 	}
@@ -312,9 +306,7 @@ func showJSON(t *testing.T, id string) map[string]any {
 		t.Fatalf("show %s: %v\n%s", id, err, out)
 	}
 	var got map[string]any
-	if err := json.Unmarshal([]byte(out), &got); err != nil {
-		t.Fatalf("show json: %v\n%s", err, out)
-	}
+	decodeEnvelope(t, out, "task", &got)
 	return got
 }
 
@@ -358,7 +350,7 @@ func TestTasksLinkFocusMoveCLI(t *testing.T) {
 	}
 	out, _ := runTasks(t, "list", "--all", "--json")
 	var list []map[string]any
-	_ = json.Unmarshal([]byte(out), &list)
+	decodeEnvelope(t, out, "tasks", &list)
 	if len(list) != 2 || list[0]["id"] != "T2" || list[1]["id"] != "T1" {
 		t.Fatalf("order = %v", list)
 	}
@@ -397,7 +389,7 @@ func TestTasksSubtaskCLI(t *testing.T) {
 		t.Fatalf("subtask add: %v\n%s", err, out)
 	}
 	var added map[string]any
-	_ = json.Unmarshal([]byte(out), &added)
+	decodeEnvelope(t, out, "subtask", &added)
 	f, _ := added["id"].(float64)
 	bID := strconv.FormatInt(int64(f), 10)
 	if _, err := runTasks(t, "subtask", "check", aID); err != nil {
@@ -503,12 +495,12 @@ func TestTasksDefaultContextInRegisteredWorktree(t *testing.T) {
 		t.Fatalf("list: %v\n%s", err, out)
 	}
 	var list []map[string]any
-	_ = json.Unmarshal([]byte(out), &list)
+	decodeEnvelope(t, out, "tasks", &list)
 	if len(list) != 1 || list[0]["id"] != "T1" {
 		t.Fatalf("default list should be scoped to the worktree: %v", list)
 	}
 	out, _ = runTasks(t, "list", "--all", "--json")
-	_ = json.Unmarshal([]byte(out), &list)
+	decodeEnvelope(t, out, "tasks", &list)
 	if len(list) != 2 {
 		t.Fatalf("--all list = %v", list)
 	}
@@ -523,9 +515,7 @@ func listIDs(t *testing.T, args ...string) []string {
 		t.Fatalf("list %v: %v\n%s", args, err, out)
 	}
 	var list []map[string]any
-	if err := json.Unmarshal([]byte(out), &list); err != nil {
-		t.Fatalf("list json: %v\n%s", err, out)
-	}
+	decodeEnvelope(t, out, "tasks", &list)
 	ids := []string{}
 	for _, r := range list {
 		ids = append(ids, r["id"].(string))
