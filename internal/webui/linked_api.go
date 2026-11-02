@@ -280,6 +280,10 @@ func samePRID(a, b string) bool {
 	return oka && okb && na == nb && strings.EqualFold(ra, rb)
 }
 
+// loadLinkedCreds reads auth.yaml for linkedSources; a package var so a test
+// can see that it is not called while GitHub and Jira are both off.
+var loadLinkedCreds = wconfig.Load
+
 // linkedSources builds Sources from the watcher config. Unconfigured
 // services, and services whose watcher is off, are left nil, which the
 // builder treats as "not configured": their links still list, unenriched,
@@ -293,14 +297,23 @@ func (s *Server) linkedSources() linked.Sources {
 	if s.slackOn() {
 		src.Slack = slackAdapter{s}
 	}
-	cfg, err := wconfig.Load(wconfig.DefaultPath())
+	ghOn, jiraOn := s.WatcherEnabled(config.ServiceGitHub), s.WatcherEnabled(config.ServiceJira)
+	if !ghOn && !jiraOn {
+		return src
+	}
+	cfg, err := loadLinkedCreds(wconfig.DefaultPath())
 	if err != nil {
 		return src
 	}
-	if gh, err := cfg.GitHub(); err == nil && s.WatcherEnabled(config.ServiceGitHub) {
-		src.PR = prAdapter{token: gh.Token}
+	if ghOn {
+		if gh, err := cfg.GitHub(); err == nil {
+			src.PR = prAdapter{token: gh.Token}
+		}
 	}
-	if jc, err := cfg.Jira(); err == nil && s.WatcherEnabled(config.ServiceJira) {
+	if !jiraOn {
+		return src
+	}
+	if jc, err := cfg.Jira(); err == nil {
 		fields := wtjira.ConfiguredCustomFields(jc.CustomFields)
 		ja := jiraAdapter{
 			c:       &wjira.Client{BaseURL: jc.Host, Email: jc.Email, Token: jc.Token},

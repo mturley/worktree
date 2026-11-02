@@ -41,7 +41,7 @@ func TestLinkedRefusedWhenJiraOff(t *testing.T) {
 	}
 }
 
-func TestLinkedRefusedWhenSlackOffNeverReadsCredentials(t *testing.T) {
+func TestLinkedRefusedWhenSlackOff(t *testing.T) {
 	isolateLive(t, "watchers:\n  slack: false\n", "")
 	seedReadFixture(t)
 	stubServer(t, func(*webui.Server) {})
