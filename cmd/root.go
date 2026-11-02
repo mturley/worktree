@@ -34,6 +34,11 @@ var rootCmd = &cobra.Command{
 	Long:  "CLI and web UI for managing git worktrees with GitHub/Jira/Slack integration and optional cmux support.",
 	Args:  cobra.NoArgs,
 	RunE:  runRoot,
+	// exitCode prints every error once, and a failing command's usage is noise
+	// around it. A subcommand inherits neither: cobra checks each flag on the
+	// command that ran and on the root.
+	SilenceErrors: true,
+	SilenceUsage:  true,
 	// URL classification is a pure function used all over (resourceurl,
 	// add, the web UI), so the config it depends on is installed once here
 	// rather than read on every call. A missing or unreadable config just

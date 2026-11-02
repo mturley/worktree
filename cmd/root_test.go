@@ -185,3 +185,41 @@ func TestHelpHasNoEscapesWhenPiped(t *testing.T) {
 		})
 	}
 }
+
+// Each error reaches stderr exactly once, from exitCode: no "Error:" copy from
+// cobra and no usage dump.
+func TestErrorsPrintOnce(t *testing.T) {
+	t.Setenv("WORKTREE_DB", filepath.Join(t.TempDir(), "absent.db"))
+	for _, tt := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"status", []string{"status"}, wdb.ErrNoDatabase.Error()},
+		{"list", []string{"list"}, wdb.ErrNoDatabase.Error()},
+		{"info", []string{"info", "/nope"}, wdb.ErrNoDatabase.Error()},
+		{"jira", []string{"jira", "/nope"}, wdb.ErrNoDatabase.Error()},
+		{"ports", []string{"ports"}, wdb.ErrNoDatabase.Error()},
+		{"unread", []string{"unread"}, wdb.ErrNoDatabase.Error()},
+		{"unread bad by", []string{"unread", "--by", "x"}, `unknown --by "x"`},
+		{"notes", []string{"notes", "show"}, wdb.ErrNoDatabase.Error()},
+		{"review-comments", []string{"review-comments", "list"}, wdb.ErrNoDatabase.Error()},
+		{"resources", []string{"resources", "list", "--all"}, "--all requires --json"},
+		{"unknown flag", []string{"status", "--nope"}, "unknown flag: --nope"},
+		{"unknown command", []string{"nope"}, `unknown command "nope"`},
+		{"bad args", []string{"status", "extra"}, "unknown command"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			r := runCLIProcess(t, t.TempDir(), nil, tt.args...)
+			if r.code != 2 {
+				t.Errorf("exit %d, want 2", r.code)
+			}
+			if n := strings.Count(r.stderr, tt.want); n != 1 {
+				t.Errorf("%q appears %d times, want once in:\n%s", tt.want, n, r.stderr)
+			}
+			if strings.Contains(r.stderr, "Usage:") || strings.Contains(r.stderr, "Error:") {
+				t.Errorf("noise in stderr:\n%s", r.stderr)
+			}
+		})
+	}
+}
