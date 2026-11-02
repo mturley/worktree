@@ -49,10 +49,16 @@ type watchersResponse struct {
 // UI renders as no annotation at all. That is the honest answer for a fresh
 // install or an unconfigured source: "never" would imply something is wrong.
 func (s *Server) handleWatchers(w http.ResponseWriter, r *http.Request) {
-	out := watchersResponse{
-		Watchers: make([]watcherStatusDTO, 0, len(watcherSources)),
+	writeJSON(w, http.StatusOK, watchersResponse{
+		Watchers: s.WatcherStatuses(),
 		Polling:  s.pollInFlight.Load(),
-	}
+	})
+}
+
+// WatcherStatuses reports each poller's last success and current error, in
+// watcherSources order. Read-only, and usable on a Server that has only a DB.
+func (s *Server) WatcherStatuses() []WatcherStatus {
+	out := make([]WatcherStatus, 0, len(watcherSources))
 	for _, src := range watcherSources {
 		dto := watcherStatusDTO{Name: src.Name, Type: src.Type}
 		st, err := watcherdb.GetPollerStatus(s.DB, src.Name)
@@ -62,7 +68,7 @@ func (s *Server) handleWatchers(w http.ResponseWriter, r *http.Request) {
 			}
 			// Degrade to "nothing known" rather than failing the whole
 			// response: two working watchers should still report.
-			out.Watchers = append(out.Watchers, dto)
+			out = append(out, dto)
 			continue
 		}
 		if st != nil {
@@ -72,9 +78,9 @@ func (s *Server) handleWatchers(w http.ResponseWriter, r *http.Request) {
 				dto.ErrorMessage = st.LastErrorMessage
 			}
 		}
-		out.Watchers = append(out.Watchers, dto)
+		out = append(out, dto)
 	}
-	writeJSON(w, http.StatusOK, out)
+	return out
 }
 
 // handleWatchersPoll: POST /api/watchers/poll — refresh all three now.

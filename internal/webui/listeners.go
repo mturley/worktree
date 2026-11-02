@@ -146,7 +146,9 @@ func (h *listenersHub) tick(ctx context.Context) {
 	}
 	scan := h.s.listenersScan
 	if scan == nil {
-		scan = h.s.scanListeners
+		scan = func(ctx context.Context) (listeners.Snapshot, error) {
+			return h.s.ScanListeners(ctx, listeners.ExecRunner)
+		}
 	}
 	timeout := h.s.listenersScanTimeout
 	if timeout <= 0 {
@@ -208,9 +210,10 @@ func sendLatest(ch chan []byte, b []byte) {
 	ch <- b
 }
 
-// scanListeners is the production listenersScan: every registered worktree
-// with its reserved port range, scanned with lsof.
-func (s *Server) scanListeners(ctx context.Context) (listeners.Snapshot, error) {
+// ScanListeners is the production listenersScan: every registered worktree
+// with its reserved port range, scanned with lsof through run (production
+// passes listeners.ExecRunner; tests and the CLI can stub it).
+func (s *Server) ScanListeners(ctx context.Context, run listeners.Runner) (listeners.Snapshot, error) {
 	if s.DB == nil {
 		return listeners.Snapshot{}, errors.New("no database")
 	}
@@ -230,5 +233,5 @@ func (s *Server) scanListeners(ctx context.Context) (listeners.Snapshot, error) 
 		}
 		wts = append(wts, wt)
 	}
-	return listeners.Scan(ctx, listeners.ExecRunner, wts)
+	return listeners.Scan(ctx, run, wts)
 }

@@ -141,7 +141,7 @@ type Server struct {
 
 	// listeners fans listening-port snapshots out to the event streams and
 	// runs the scanner while any stream wants them; see listeners.go.
-	// listenersScan, listenersInterval and listenersScanTimeout are seams (nil → scanListeners,
+	// listenersScan, listenersInterval and listenersScanTimeout are seams (nil → ScanListeners,
 	// 0 → 10s). portScanDisabled is the Settings toggle
 	// (ui.port_scan_disabled).
 	listenersOnce     sync.Once

@@ -37,9 +37,12 @@ type resourceDTO struct {
 	Assignee              string   `json:"assignee,omitempty"`                 // Jira
 	Reporter              string   `json:"reporter,omitempty"`                 // Jira reporter name (search only)
 	Labels                []string `json:"labels,omitempty"`                   // Jira
-	UpdatedAt             string   `json:"updated_at,omitempty"`               // resource_updated_at (RFC3339)
-	CreatedAt             string   `json:"created_at,omitempty"`               // PR/Jira creation time (watcher >= v0.15.0)
-	UnreadCount           int      `json:"unread_count,omitempty"`             // events newer than the read cursor, plus TaskUnreadCount; see unreadIndex.fill
+	// PriorityRank is the Jira priority's position, 0 the highest. A pointer
+	// because 0 is a real value that omitempty would otherwise drop.
+	PriorityRank *int   `json:"priority_rank,omitempty"`
+	UpdatedAt    string `json:"updated_at,omitempty"`   // resource_updated_at (RFC3339)
+	CreatedAt    string `json:"created_at,omitempty"`   // PR/Jira creation time (watcher >= v0.15.0)
+	UnreadCount  int    `json:"unread_count,omitempty"` // events newer than the read cursor, plus TaskUnreadCount; see unreadIndex.fill
 	// TaskUnreadCount is the part of UnreadCount that is unread task events
 	// of the tasks linking this resource. Those clear through each task's
 	// own cursor (POST /api/task-read), not this resource's.
@@ -72,6 +75,9 @@ type resourceDTO struct {
 	authorID   string // PR: GitHub databaseId
 	assigneeID string // Jira accountId
 	reporterID string // Jira accountId
+	// RequestedReviewerIDs: PR, GitHub databaseIds of the requested
+	// reviewers. Exported for the CLI; never sent over HTTP.
+	RequestedReviewerIDs []string `json:"-"`
 }
 
 func (s *Server) handleWorktreeResources(w http.ResponseWriter, r *http.Request) {
@@ -80,16 +86,26 @@ func (s *Server) handleWorktreeResources(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "missing path")
 		return
 	}
-	rs, err := resources.Load(s.DB, path)
+	out, err := s.WorktreeResources(path)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// WorktreeResources is the body of GET /api/resources: path's resources,
+// filled with unread counts, task counts and notification toggles.
+// Read-only, and usable on a Server that has only a DB.
+func (s *Server) WorktreeResources(path string) ([]ResourceDTO, error) {
+	rs, err := resources.Load(s.DB, path)
+	if err != nil {
+		return nil, err
+	}
 	ix := s.newUnreadIndex()
 	prefs, err := notifyprefs.Get(s.DB, path)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+		return nil, err
 	}
 	counts := s.openTaskCountsPriming(ix)
 	blocks := s.resourceBlockCounts()
@@ -102,7 +118,7 @@ func (s *Server) handleWorktreeResources(w http.ResponseWriter, r *http.Request)
 		dto.Notify = prefs.Resources[notifyprefs.Key{Type: dto.Type, ID: dto.ID}]
 		out = append(out, dto)
 	}
-	writeJSON(w, http.StatusOK, out)
+	return out, nil
 }
 
 // newResourceDTO builds a resourceDTO from a resources.Resource, enriching it
@@ -167,6 +183,13 @@ func (s *Server) enrichResourceDTO(dto *resourceDTO) {
 		if v, ok := m["created_at"].(string); ok {
 			dto.CreatedAt = v
 		}
+		if raw, ok := m["requested_reviewer_ids"].([]interface{}); ok {
+			for _, item := range raw {
+				if id, ok := item.(string); ok {
+					dto.RequestedReviewerIDs = append(dto.RequestedReviewerIDs, id)
+				}
+			}
+		}
 	case "jira":
 		if v, ok := m["summary"].(string); ok {
 			dto.Title = v
@@ -176,6 +199,10 @@ func (s *Server) enrichResourceDTO(dto *resourceDTO) {
 		}
 		if v, ok := m["priority"].(string); ok {
 			dto.Priority = v
+		}
+		if v, ok := m["priority_rank"].(float64); ok {
+			rank := int(v)
+			dto.PriorityRank = &rank
 		}
 		if v, ok := m["priority_icon_url"].(string); ok {
 			dto.PriorityIconURL = v
