@@ -8,8 +8,8 @@ import (
 
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/jira"
-	"github.com/mturley/worktree/internal/resourceurl"
 	"github.com/mturley/worktree/internal/resources"
+	"github.com/mturley/worktree/internal/resourceurl"
 	"github.com/mturley/worktree/internal/unread"
 	"github.com/spf13/cobra"
 )
@@ -81,15 +81,18 @@ func writeResourceLines(out io.Writer, rs []resources.Resource, counts map[strin
 }
 
 var (
-	resWorktree    string
-	resJSON        bool
-	resAll         bool
-	resURL         string
-	resRelated     bool
-	resName        string
-	resDescription string
-	resUpdatedAt   string
-	resThrough     string
+	resWorktree     string
+	resJSON         bool
+	resAll          bool
+	resURL          string
+	resRelated      bool
+	resName         string
+	resDescription  string
+	resUpdatedAt    string
+	resThrough      string
+	resMarkWorktree string
+	resMarkAll      bool
+	resMarkJSON     bool
 )
 
 var resourcesCmd = &cobra.Command{
@@ -142,8 +145,17 @@ var resourcesMarkReadCmd = &cobra.Command{
 	Long: "Moves the resource's read cursor. With no --through, marks read through " +
 		"the resource's newest event.\n\n" +
 		"The cursor is per RESOURCE, not per worktree: marking a PR read clears it " +
-		"for every worktree tracking it.",
-	Args: cobra.ExactArgs(2),
+		"for every worktree tracking it.\n\n" +
+		"With --worktree <path>, marks every non-Slack resource that worktree follows read, " +
+		"each through its own newest unread event; --all does the same for every followed " +
+		"resource. Because the cursor is per resource and shared, a resource another worktree " +
+		"also follows is cleared there too. Slack threads are skipped (their read state is " +
+		"Slack's), and so are unread task events, which clear through each task's own cursor. " +
+		"--worktree, --all and the positional resource are mutually exclusive.",
+	Example: "  worktree resources mark-read pr opendatahub-io/odh-dashboard#123\n" +
+		"  worktree resources mark-read --worktree .\n" +
+		"  worktree resources mark-read --all --json",
+	Args: cobra.MaximumNArgs(2),
 	RunE: runResourcesMarkRead,
 }
 
@@ -160,6 +172,9 @@ func init() {
 	resourcesSetNameCmd.Flags().StringVar(&resName, "name", "", "custom name (empty clears it)")
 	resourcesSetNameCmd.Flags().StringVar(&resDescription, "description", "", "custom description")
 	resourcesSetNameCmd.Flags().StringVar(&resUpdatedAt, "updated-at", "", "explicit RFC3339 timestamp for replication (default: now)")
+	resourcesMarkReadCmd.Flags().StringVar(&resMarkWorktree, "worktree", "", `mark every non-Slack resource this worktree follows ("." for the current one)`)
+	resourcesMarkReadCmd.Flags().BoolVar(&resMarkAll, "all", false, "mark every followed non-Slack resource")
+	resourcesMarkReadCmd.Flags().BoolVar(&resMarkJSON, "json", false, `with --worktree/--all, print {"schema_version": 1, "marked": n, "skipped_slack": n, "task_events_remaining": n}`)
 	resourcesMarkReadCmd.Flags().StringVar(&resThrough, "through", "", "RFC3339 timestamp to mark read through (default: the resource's newest event)")
 
 	resourcesCmd.AddCommand(resourcesListCmd, resourcesAddCmd, resourcesUnwatchCmd, resourcesRemoveCmd, resourcesSetNameCmd, resourcesMarkReadCmd)
@@ -268,12 +283,99 @@ func runResourcesSetName(cmd *cobra.Command, args []string) error {
 }
 
 func runResourcesMarkRead(cmd *cobra.Command, args []string) error {
+	bulk := resMarkAll || resMarkWorktree != ""
+	switch {
+	case resMarkAll && resMarkWorktree != "":
+		return fmt.Errorf("--all and --worktree are mutually exclusive")
+	case bulk && len(args) > 0:
+		return fmt.Errorf("--all and --worktree take no resource argument")
+	case bulk && resThrough != "":
+		return fmt.Errorf("--through applies to a single resource, not --all or --worktree")
+	case !bulk && len(args) != 2:
+		return fmt.Errorf("give <type> <id>, or --worktree <path>, or --all")
+	}
 	conn, err := wdb.Open()
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
+	if bulk {
+		return markManyRead(conn, cmd.OutOrStdout())
+	}
 	return markResourceRead(conn, cmd.OutOrStdout(), args[0], args[1], resThrough)
+}
+
+// unreadItem is the part of a resource DTO bulk mark-read needs.
+type unreadItem struct {
+	typ, id                string
+	unreadCount, taskCount int
+	throughTS              string
+}
+
+// markManyRead is `resources mark-read --worktree/--all`. Each resource is
+// cleared through its own UnreadThroughTS (the newest of its own unread
+// events), so nothing newer than the snapshot is swallowed. Slack threads
+// are only counted: their read state is Slack's and the CLI never writes it.
+// Unread task events are left alone; they clear through each task's cursor.
+func markManyRead(conn *sql.DB, out io.Writer) error {
+	srv, err := headlessServer(conn)
+	if err != nil {
+		return err
+	}
+	var items []unreadItem
+	if resMarkAll {
+		rs, err := srv.AllResources()
+		if err != nil {
+			return err
+		}
+		for _, r := range rs {
+			items = append(items, unreadItem{r.Type, r.ID, r.UnreadCount, r.TaskUnreadCount, r.UnreadThroughTS})
+		}
+	} else {
+		path, err := resolveWorktreeFlag(conn, resMarkWorktree)
+		if err != nil {
+			return err
+		}
+		rs, err := srv.WorktreeResources(path)
+		if err != nil {
+			return err
+		}
+		for _, r := range rs {
+			items = append(items, unreadItem{r.Type, r.ID, r.UnreadCount, r.TaskUnreadCount, r.UnreadThroughTS})
+		}
+	}
+	var marked, skipped, remaining int
+	for _, it := range items {
+		if it.typ == "slack" {
+			if it.unreadCount > 0 {
+				skipped++
+			}
+			continue
+		}
+		remaining += it.taskCount
+		if it.throughTS == "" {
+			continue // nothing of its own unread
+		}
+		if err := unread.MarkRead(conn, it.typ, it.id, it.throughTS); err != nil {
+			return fmt.Errorf("mark %s:%s read: %w", it.typ, it.id, err)
+		}
+		marked++
+	}
+	if resMarkJSON {
+		return printJSON(out, map[string]any{"marked": marked, "skipped_slack": skipped, "task_events_remaining": remaining})
+	}
+	noun := "resources"
+	if marked == 1 {
+		noun = "resource"
+	}
+	fmt.Fprintf(out, "marked %d %s read\n", marked, noun)
+	if skipped > 0 {
+		fmt.Fprintf(out, "skipped %d Slack thread(s): their read state is Slack's\n", skipped)
+	}
+	if remaining > 0 {
+		fmt.Fprintf(out, "%d unread task event(s) remain: they clear through each task's own cursor\n", remaining)
+	}
+	return nil
 }
 
 // markResourceRead moves a resource's read cursor, defaulting `through` to the
