@@ -3,6 +3,8 @@ package cmd
 import (
 	"bytes"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -10,9 +12,11 @@ import (
 	watcherdb "github.com/mturley/watcher/db"
 	"github.com/mturley/worktree/internal/attention"
 	wdb "github.com/mturley/worktree/internal/db"
+	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/resources"
 	"github.com/mturley/worktree/internal/selfid"
 	"github.com/mturley/worktree/internal/tasks"
+	"github.com/mturley/worktree/internal/testgit"
 )
 
 const nothingLine = "Nothing needs your attention."
@@ -190,5 +194,93 @@ func TestAttentionTextShowsThreeEventsAndHeaderForms(t *testing.T) {
 	}
 	if strings.Contains(out, "four") {
 		t.Errorf("more than three events:\n%s", out)
+	}
+}
+
+// unknownWorktreeErr asserts a command rejects a --worktree path no one
+// registered, as an error rather than an empty result.
+func unknownWorktreeErr(t *testing.T, args ...string) {
+	t.Helper()
+	bogus := filepath.Join(t.TempDir(), "no-such-worktree")
+	out, err := runCLI(t, append(args, "--worktree", bogus)...)
+	if err == nil || errors.Is(err, ErrNothingFound) {
+		t.Fatalf("err = %v, want an error (exit 2)\n%s", err, out)
+	}
+	if want := "not a registered worktree: " + bogus; err.Error() != want {
+		t.Fatalf("err = %q, want %q", err, want)
+	}
+	if strings.Contains(out, nothingLine) {
+		t.Fatalf("printed an empty result: %q", out)
+	}
+}
+
+func TestAttentionUnknownWorktreeExit2(t *testing.T) {
+	stubUIProbe(t, false)
+	seedReadFixture(t)
+	unknownWorktreeErr(t, "attention")
+	unknownWorktreeErr(t, "attention", "--json")
+}
+
+func TestActivityUnknownWorktreeExit2(t *testing.T) {
+	seedReadFixture(t)
+	unknownWorktreeErr(t, "activity")
+	unknownWorktreeErr(t, "activity", "--unread")
+}
+
+// The check is the registry, not the filesystem. The path is canonical, as a
+// real worktree's is, because a deleted path's symlinks can't be resolved.
+func TestAttentionDeletedWorktreeStillWorks(t *testing.T) {
+	stubUIProbe(t, false)
+	seedReadFixture(t)
+	conn, err := wdb.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	wt, err := filepath.EvalSymlinks(testgit.Worktree(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Register(conn, registry.Entry{Path: wt, Repo: "odh", RepoRoot: "/r", Branch: "del", CreatedAt: "2026-08-14T00:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := resources.Add(conn, wt, resources.Resource{Type: "pr", ID: "o/r#9", URL: "u"}); err != nil {
+		t.Fatal(err)
+	}
+	ts := time.Now().UTC().Add(time.Hour).Format(time.RFC3339)
+	if _, err := conn.Exec(`INSERT INTO watcher_events (id, ts, source, type, title) VALUES ('e9',?,'github','pr_comment','c')`, ts); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(`INSERT INTO watcher_event_resources (event_id, resource_type, resource_id, resource_url) VALUES ('e9','pr','o/r#9','u')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(wt); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runCLI(t, "attention", "--json", "--worktree", wt)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	var items []attention.Item
+	decodeEnvelope(t, out, "items", &items)
+	if len(items) != 1 || items[0].Resource == nil || items[0].Resource.ID != "o/r#9" {
+		t.Fatalf("items: %s", out)
+	}
+}
+
+// A registered path reached through a symlink is the same worktree.
+func TestWorktreeFlagComparesCanonically(t *testing.T) {
+	live, _ := seedReadFixture(t)
+	conn, err := wdb.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(live, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := resolveWorktreeFlag(conn, link); err != nil {
+		t.Fatal(err)
 	}
 }

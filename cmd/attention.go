@@ -54,13 +54,6 @@ func init() {
 }
 
 func runAttention(cmd *cobra.Command, args []string) error {
-	var path string
-	if attentionWorktree != "" {
-		var err error
-		if path, err = resolveWorktreeFlag(attentionWorktree); err != nil {
-			return err
-		}
-	}
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -70,6 +63,12 @@ func runAttention(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer conn.Close()
+	var path string
+	if attentionWorktree != "" {
+		if path, err = resolveWorktreeFlag(conn, attentionWorktree); err != nil {
+			return err
+		}
+	}
 	srv, err := headlessServer(conn)
 	if err != nil {
 		return err

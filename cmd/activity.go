@@ -1,12 +1,14 @@
 package cmd
 
 import (
+	"database/sql"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
 	wdb "github.com/mturley/worktree/internal/db"
+	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/resourceurl"
 	"github.com/mturley/worktree/internal/webui"
 	"github.com/spf13/cobra"
@@ -55,12 +57,29 @@ func init() {
 }
 
 // resolveWorktreeFlag reads a --worktree value: "." is the current worktree,
-// anything else a path.
-func resolveWorktreeFlag(v string) (string, error) {
-	if v == "." {
-		return resolveWorktreePath(nil)
+// anything else a path. It must be registered, or a mistyped path would read
+// as an empty result. The check is the registry, not the filesystem: a
+// worktree deleted from disk still passes.
+func resolveWorktreeFlag(conn *sql.DB, v string) (string, error) {
+	var args []string
+	if v != "." {
+		args = []string{v}
 	}
-	return resolveWorktreePath([]string{v})
+	path, err := resolveWorktreePath(args)
+	if err != nil {
+		return "", err
+	}
+	entries, err := registry.List(conn)
+	if err != nil {
+		return "", err
+	}
+	want := wdb.Subscriber(path)
+	for _, e := range entries {
+		if wdb.Subscriber(e.Path) == want {
+			return path, nil
+		}
+	}
+	return "", fmt.Errorf("not a registered worktree: %s", path)
 }
 
 // parseSince turns a --since value into an RFC 3339 UTC time: a duration
@@ -144,17 +163,17 @@ func runActivity(cmd *cobra.Command, args []string) error {
 			return err
 		}
 	}
-	if activityWorktree != "" {
-		if q.WorktreePath, err = resolveWorktreeFlag(activityWorktree); err != nil {
-			return err
-		}
-	}
 
 	conn, err := wdb.Open()
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
+	if activityWorktree != "" {
+		if q.WorktreePath, err = resolveWorktreeFlag(conn, activityWorktree); err != nil {
+			return err
+		}
+	}
 	srv, err := headlessServer(conn)
 	if err != nil {
 		return err
