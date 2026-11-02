@@ -90,8 +90,14 @@ func runInfo(cmd *cobra.Command, args []string) error {
 	}
 
 	git, gitOK := readGitState(wtPath)
-	envLines, _ := shellenv.Lines(conn, wtPath)
-	dtos, _ := srv.WorktreeResources(wtPath)
+	envLines, err := shellenv.Lines(conn, wtPath)
+	if err != nil {
+		return err
+	}
+	dtos, err := srv.WorktreeResources(wtPath)
+	if err != nil {
+		return err
+	}
 
 	if infoJSON {
 		meta := metaTimes(conn, wtPath)

@@ -125,3 +125,39 @@ func TestJiraJSONUsesCachedStateOnly(t *testing.T) {
 		t.Fatalf("text = %q", text)
 	}
 }
+
+// A DB failure is not "no resources": info reports it.
+func TestInfoReportsDBFailures(t *testing.T) {
+	for _, table := range []string{"watcher_subscriptions", "worktrees"} {
+		t.Run(table, func(t *testing.T) {
+			live, _ := seedReadFixture(t)
+			conn, err := wdb.Open()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := conn.Exec(`DROP TABLE ` + table); err != nil {
+				t.Fatal(err)
+			}
+			conn.Close()
+			for _, args := range [][]string{{"info", live, "--json"}, {"info", live}} {
+				out, err := runCLI(t, args...)
+				if err == nil || !strings.Contains(err.Error(), "no such table") {
+					t.Errorf("%v: err = %v, want the DB failure\n%s", args, err, out)
+				}
+			}
+		})
+	}
+}
+
+// Bare `worktree` shows help above the info, and help still has to work
+// with no DB at all.
+func TestBareWorktreeSurvivesAnInfoFailure(t *testing.T) {
+	t.Setenv("WORKTREE_DB", filepath.Join(t.TempDir(), "absent.db"))
+	r := runCLIProcess(t, t.TempDir(), nil)
+	if r.code != 0 {
+		t.Fatalf("exit %d, stderr: %s", r.code, r.stderr)
+	}
+	if !strings.Contains(r.stdout, "Usage:") {
+		t.Errorf("no help in: %s", r.stdout)
+	}
+}
