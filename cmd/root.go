@@ -37,6 +37,7 @@ var rootCmd = &cobra.Command{
 	// rather than read on every call. A missing or unreadable config just
 	// means no aliases.
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		ui.SetColor(ui.ColorWanted(term.IsTerminal(int(os.Stdout.Fd())), os.Getenv))
 		if cfg, err := config.Load(); err == nil {
 			jira.SetAliasHosts(cfg.Jira.AliasHosts)
 		}
@@ -68,8 +69,7 @@ func init() {
 		// A config that fails to load still gets the tips, minus the phone
 		// address; the command the user runs next reports the error.
 		cfg, _ := config.Load()
-		color := term.IsTerminal(int(os.Stdout.Fd()))
-		fmt.Fprint(c.OutOrStdout(), "\n"+setup.GettingStarted(ui.ShortPath(config.ConfigPath()), cfg.UI, color))
+		fmt.Fprint(c.OutOrStdout(), "\n"+setup.GettingStarted(ui.ShortPath(config.ConfigPath()), cfg.UI, ui.ColorEnabled()))
 	})
 }
 

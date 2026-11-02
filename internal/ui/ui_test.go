@@ -50,3 +50,41 @@ func TestNonInteractivePromptsTakeDefaults(t *testing.T) {
 		t.Errorf("PromptSecret = %q, want empty", got)
 	}
 }
+
+func TestColorWanted(t *testing.T) {
+	env := func(v string) func(string) string {
+		return func(k string) string {
+			if k == "NO_COLOR" {
+				return v
+			}
+			return ""
+		}
+	}
+	if !ColorWanted(true, env("")) {
+		t.Error("TTY with NO_COLOR unset should want color")
+	}
+	if ColorWanted(true, env("1")) {
+		t.Error("NO_COLOR=1 should disable color")
+	}
+	if ColorWanted(false, env("")) {
+		t.Error("non-TTY should not want color")
+	}
+}
+
+// Not parallel: SetColor changes package-level state.
+func TestHelpersPlainWhenColorOff(t *testing.T) {
+	t.Cleanup(func() { SetColor(true) })
+	SetColor(false)
+	for name, f := range map[string]func(string) string{
+		"Bold": Bold, "Dim": Dim, "Red": Red, "Green": Green,
+		"Yellow": Yellow, "Blue": Blue, "Cyan": Cyan,
+	} {
+		if got := f("x"); got != "x" {
+			t.Errorf("%s(\"x\") = %q with color off, want plain", name, got)
+		}
+	}
+	SetColor(true)
+	if got := Bold("x"); got != ColorBold+"x"+ColorReset {
+		t.Errorf("Bold with color on = %q", got)
+	}
+}

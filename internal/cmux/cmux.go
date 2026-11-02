@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/mturley/worktree/internal/ui"
 )
 
 type Workspace struct {
@@ -329,6 +331,9 @@ var NamedColors = []NamedColor{
 }
 
 func ColorDot(hex string) string {
+	if !ui.ColorEnabled() {
+		return "●"
+	}
 	r, g, b := hexToRGB(hex)
 	return fmt.Sprintf("\033[38;2;%d;%d;%dm●\033[0m", r, g, b)
 }

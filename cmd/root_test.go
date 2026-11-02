@@ -1,12 +1,17 @@
 package cmd
 
 import (
+	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	wdb "github.com/mturley/worktree/internal/db"
+	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/resources"
+	"github.com/mturley/worktree/internal/ui"
 	"github.com/mturley/worktree/internal/worktreenew"
 )
 
@@ -114,5 +119,45 @@ func TestCdHintKeepsPathsOutsideHomeAbsolute(t *testing.T) {
 	got := cdHint("/srv/worktrees/my-branch")
 	if !strings.Contains(got, "cd /srv/worktrees/my-branch") {
 		t.Fatalf("cdHint() = %q, want it to contain cd /srv/worktrees/my-branch", got)
+	}
+}
+
+// Not parallel: swaps os.Stdout and the ui color switch.
+func TestListOutputHasNoEscapesWhenPiped(t *testing.T) {
+	t.Setenv("WORKTREE_DB", filepath.Join(t.TempDir(), "w.db"))
+	t.Setenv("NO_COLOR", "")
+	conn, err := wdb.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = registry.Register(conn, registry.Entry{
+		Path: filepath.Join(t.TempDir(), "gone"), Repo: "repo", RepoRoot: "/r", Branch: "b", CreatedAt: "2026-01-01T00:00:00Z",
+	})
+	conn.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldStdout := os.Stdout
+	os.Stdout = w
+	t.Cleanup(func() { os.Stdout = oldStdout; ui.SetColor(true) })
+
+	rootCmd.PersistentPreRun(rootCmd, nil)
+	runErr := runList(listCmd, nil)
+	w.Close()
+	os.Stdout = oldStdout
+	out, _ := io.ReadAll(r)
+	if runErr != nil {
+		t.Fatal(runErr)
+	}
+	if !bytes.Contains(out, []byte("repo")) {
+		t.Fatalf("list printed no entries: %q", out)
+	}
+	if bytes.Contains(out, []byte("\x1b[")) {
+		t.Fatalf("piped list output has ANSI escapes: %q", out)
 	}
 }
