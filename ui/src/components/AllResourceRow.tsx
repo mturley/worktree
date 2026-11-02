@@ -21,7 +21,7 @@ import { WorktreeName, WorktreePreview } from "./WorktreeName"
 
 const btn = { root: { flexShrink: 0 }, label: { whiteSpace: "nowrap" as const } }
 
-function worktreeHref(wt: ResourceWorktree, r: AllResourceDTO): string {
+export function worktreeHref(wt: Pick<ResourceWorktree, "path">, r: Pick<AllResourceDTO, "type" | "id">): string {
   return `/worktree/${encodeURIComponent(wt.path)}?resource=${serializeResourceKey({ type: r.type, id: r.id })}`
 }
 

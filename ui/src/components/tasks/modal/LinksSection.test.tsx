@@ -41,6 +41,8 @@ beforeEach(() => {
   vi.mocked(api.taskDetail).mockResolvedValue(base)
   vi.mocked(api.worktrees).mockResolvedValue([])
   vi.mocked(api.worktreeResources).mockResolvedValue([])
+  vi.mocked(api.allResources).mockResolvedValue([])
+  window.history.replaceState({}, "", "/?task=1")
   for (const fn of [api.addTaskLink, api.removeTaskLink, api.setTaskLinkFocus, api.orderTaskLinks]) {
     vi.mocked(fn).mockResolvedValue(base)
   }
@@ -52,17 +54,75 @@ afterEach(() => {
 
 const show = () => renderDetail(base, (d) => <LinksSection task={d} />)
 
+/** `pr` as the Resources list reports it, followed by `paths`. */
+const followedBy = (...paths: string[]) => {
+  vi.mocked(api.allResources).mockResolvedValue([
+    { type: "pr", id: "o/r#1", title: "Fix login", url: pr.url, worktrees: paths.map((path) => ({ path, branch: "b" })) },
+  ] as unknown as Awaited<ReturnType<typeof api.allResources>>)
+}
+const prHref = "/worktree/%2Fw%2Ffeat?resource=pr:o%2Fr%231"
+const followedLink = () =>
+  waitFor(() => {
+    const a = screen.getByRole("link", { name: /Fix login/ })
+    expect(a).not.toHaveAttribute("target")
+    return a
+  })
+
 describe("LinksSection", () => {
-  it("groups links into Focus and Related, resource titles opening in a new tab", () => {
+  it("groups links into Focus and Related", () => {
     show()
     const focus = screen.getByTestId("links-focus")
     const related = screen.getByTestId("links-related")
     expect(within(focus).getByText("Fix login")).toBeInTheDocument()
     expect(within(related).getByText("Login epic")).toBeInTheDocument()
     expect(within(related).getByText("⎇ feat")).toBeInTheDocument()
+  })
+
+  it("links a resource no worktree follows externally", async () => {
+    show()
+    await waitFor(() => expect(api.allResources).toHaveBeenCalled())
+    await act(async () => {})
     const a = screen.getByRole("link", { name: /Fix login/ })
     expect(a).toHaveAttribute("href", pr.url)
     expect(a).toHaveAttribute("target", "_blank")
+  })
+
+  it("opens a followed resource in its worktree, with a tooltip", async () => {
+    followedBy("/w/feat")
+    const user = userEvent.setup()
+    show()
+    const a = await followedLink()
+    expect(a.getAttribute("href")).toBe(prHref)
+    await user.hover(a)
+    expect(await screen.findByText("View resource in worktree")).toBeInTheDocument()
+    await user.click(a)
+    expect(window.location.pathname + window.location.search).toBe(prHref)
+  })
+
+  it("asks which worktree when several follow the resource", async () => {
+    followedBy("/w/feat", "/w/other")
+    const user = userEvent.setup()
+    show()
+    await user.click(await followedLink())
+    expect(window.location.search).toBe("?task=1")
+    await user.click(await screen.findByRole("button", { name: "view in other" }))
+    expect(window.location.pathname).toBe("/worktree/%2Fw%2Fother")
+  })
+
+  it("Escape in the worktree chooser dismisses only the chooser", async () => {
+    followedBy("/w/feat", "/w/other")
+    const onWindow = vi.fn()
+    window.addEventListener("keydown", onWindow)
+    const user = userEvent.setup()
+    show()
+    await user.click(await followedLink())
+    const choice = await screen.findByRole("button", { name: "view in other" })
+    choice.focus()
+    fireEvent.keyDown(choice, { key: "Escape" })
+    window.removeEventListener("keydown", onWindow)
+    expect(onWindow).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.queryByRole("button", { name: "view in other" })).not.toBeInTheDocument())
+    expect(window.location.search).toBe("?task=1")
   })
 
   it("removes a link without asking", async () => {
@@ -92,6 +152,7 @@ describe("LinksSection", () => {
   })
 
   it("names worktrees by their cmux workspace, and previews links on hover", async () => {
+    followedBy("/w/feat")
     const { qc } = show()
     act(() => {
       qc.setQueryData(["cmux"], {
@@ -102,10 +163,6 @@ describe("LinksSection", () => {
         },
       })
       qc.setQueryData(["session"], { handle: "h", label: "", created_at: "", last_seen_at: "", current: true, home: "/w" })
-      qc.setQueryData(["resources", "__all__"], [{
-        type: "pr", id: "o/r#1", url: "https://github.com/o/r/pull/1", primary: true, title: "Fix login",
-        worktrees: [{ path: "/w/feat", repo: "r", branch: "login-branch" }],
-      }])
     })
     const feature = await screen.findByText("Feature work")
     expect(screen.getByText("⎇ feat")).toBeInTheDocument()

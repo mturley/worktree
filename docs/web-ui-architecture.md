@@ -1781,11 +1781,14 @@ URL param (`?task=<id>`) through **`TaskModalProvider`**
   replacing the URL without the param instead. `open()` while a modal is
   already open replaces, so one close still returns to the page underneath.
   Because `back()` is async, `close()` also records the search it is leaving
-  and `openId` reads null while the URL still equals it. Consequence: **do not
-  navigate in-app from inside the modal** — a push would make `close()`'s
-  `back()` land on the wrong entry. Resource titles and event "Open" links
-  open in a new tab, worktree titles are plain text, and linked-event rows are
-  inert. A failed delete reopens the task through `open(id, { error })`; the
+  and `openId` reads null while the URL still equals it. Consequence: **an
+  in-app navigation from inside the modal must drop `?task=`**, which closes
+  the modal and clears the pushed flag; a push that kept the param would make
+  `close()`'s `back()` land on the wrong entry. A "Linked to" resource title
+  opens that resource in the worktree following it (asking which when several
+  do, `ChooseWorktreeModal`), and links externally when none does. Blocker
+  labels and event "Open" links open in a new tab, worktree titles are plain
+  text, and linked-event rows are inert. A failed delete reopens the task through `open(id, { error })`; the
   provider exposes it as `notice` and the modal's red Alert shows it.
 - **Files.** `TaskDetailModal` (shell; keeps the last id mounted through the
   close transition), `TaskModalHeader` (state menu, star, editable title),
