@@ -4,18 +4,17 @@ import (
 	"fmt"
 	"strings"
 
-	wconfig "github.com/mturley/watcher/config"
-	"github.com/mturley/worktree/internal/config"
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/jira"
 	"github.com/mturley/worktree/internal/resources"
 	"github.com/mturley/worktree/internal/ui"
+	"github.com/mturley/worktree/internal/webui"
 	"github.com/spf13/cobra"
 )
 
 var jiraCmd = &cobra.Command{
 	Use:     "jira [path]",
-	Short:   "Show Jira issues associated with a worktree",
+	Short:   "Show Jira issues associated with a worktree (cached state; never contacts Jira)",
 	GroupID: "integration",
 	RunE:    runJira,
 }
@@ -34,9 +33,13 @@ var jiraRemoveCmd = &cobra.Command{
 	RunE:  runJiraRemove,
 }
 
-var jiraRelated bool
+var (
+	jiraRelated bool
+	jiraJSON    bool
+)
 
 func init() {
+	jiraCmd.Flags().BoolVar(&jiraJSON, "json", false, "machine-readable JSON output")
 	jiraAddCmd.Flags().BoolVar(&jiraRelated, "related", false, "Add as a related (context) issue instead of primary")
 	jiraCmd.AddCommand(jiraAddCmd)
 	jiraCmd.AddCommand(jiraRemoveCmd)
@@ -44,6 +47,7 @@ func init() {
 }
 
 func runJira(cmd *cobra.Command, args []string) error {
+	w := cmd.OutOrStdout()
 	wtPath, err := resolveWorktreePath(args)
 	if err != nil {
 		return err
@@ -54,51 +58,59 @@ func runJira(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer conn.Close()
+	srv, err := headlessServer(conn)
+	if err != nil {
+		return err
+	}
 
-	res, _ := resources.Load(conn, wtPath)
-	jiraResources := resources.OfType(res, "jira")
+	// Cached watcher state only: this never contacts Jira.
+	dtos, err := srv.WorktreeResources(wtPath)
+	if err != nil {
+		return err
+	}
+	var issues []webui.ResourceDTO
+	for _, d := range dtos {
+		if d.Type == "jira" {
+			issues = append(issues, d)
+		}
+	}
 
-	if len(jiraResources) == 0 {
-		fmt.Println("No Jira issues associated with this worktree.")
-		fmt.Println("Use 'worktree jira add <key>' to associate one.")
+	if jiraJSON {
+		meta := metaTimes(conn, wtPath)
+		items := make([]map[string]any, 0, len(issues))
+		for _, d := range issues {
+			item, err := resourceItem(d, meta[[2]string{d.Type, d.ID}])
+			if err != nil {
+				return err
+			}
+			items = append(items, item)
+		}
+		return printJSON(cmd.OutOrStdout(), map[string]any{"issues": items})
+	}
+
+	if len(issues) == 0 {
+		fmt.Fprintln(w, "No Jira issues associated with this worktree.")
+		fmt.Fprintln(w, "Use 'worktree jira add <key>' to associate one.")
 		return nil
 	}
 
-	var client *jira.Client
-	var clientErr error
-	wcfg, wcfgErr := wconfig.Load(wconfig.DefaultPath())
-	if cfg, err := config.Load(); err == nil && !cfg.Watchers.Enabled(config.ServiceJira) {
-		// Watcher off: never contact Jira; list the keys and URLs only.
-		clientErr = fmt.Errorf("the Jira watcher is disabled")
-	} else if wcfgErr != nil {
-		clientErr = wcfgErr
-	} else if creds, err := wcfg.Jira(); err != nil {
-		clientErr = err
-	} else {
-		client, clientErr = jira.NewClient(creds.Host, creds.Email, creds.Token)
-	}
-
-	for _, r := range jiraResources {
+	for _, r := range issues {
 		prefix := " "
-		if r.Related {
+		if !r.Primary {
 			prefix = "~"
 		}
-
-		if clientErr == nil {
-			issue, err := client.FetchIssue(r.ID)
-			if err == nil {
-				typeIcon := issueTypeIcon(issue.Type)
-				fmt.Printf("%s %s %s — %s\n", ui.Dim(prefix), typeIcon, ui.Cyan(issue.Key), issue.Summary)
-				fmt.Printf("    Type: %s · Priority: %s · Status: %s", issue.Type, issue.Priority, issue.Status)
-				if issue.Assignee != "" {
-					fmt.Printf(" · Assignee: %s", issue.Assignee)
-				}
-				fmt.Println()
-				continue
+		if r.Title == "" && r.Status == "" && r.Priority == "" {
+			// Never polled: all there is to show is the key and link.
+			fmt.Fprintf(w, "%s %s %s\n", ui.Dim(prefix), ui.Cyan(r.ID), ui.Dim(r.URL))
+			continue
+		}
+		fmt.Fprintf(w, "%s %s", ui.Dim(prefix), ui.Cyan(r.ID))
+		for _, f := range []string{r.Status, r.Priority, r.Title} {
+			if f != "" {
+				fmt.Fprintf(w, "  %s", f)
 			}
 		}
-
-		fmt.Printf("%s %s %s\n", ui.Dim(prefix), ui.Cyan(r.ID), ui.Dim(r.URL))
+		fmt.Fprintln(w)
 	}
 	return nil
 }
@@ -155,21 +167,4 @@ func runJiraRemove(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Printf("%s Removed %s\n", ui.Green("✓"), key)
 	return nil
-}
-
-func issueTypeIcon(t string) string {
-	switch strings.ToLower(t) {
-	case "bug":
-		return "Bug"
-	case "story":
-		return "Story"
-	case "task":
-		return "Task"
-	case "epic":
-		return "Epic"
-	case "sub-task":
-		return "Sub-task"
-	default:
-		return t
-	}
 }

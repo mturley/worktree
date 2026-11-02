@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bytes"
 	"database/sql"
 	"fmt"
 	"io"
@@ -15,33 +14,51 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type resourceJSON struct {
-	Type              string `json:"type"`
-	ID                string `json:"id"`
-	URL               string `json:"url"`
-	Primary           bool   `json:"primary"`
-	CustomName        string `json:"custom_name,omitempty"`
-	CustomDescription string `json:"custom_description,omitempty"`
-	UpdatedAt         string `json:"updated_at,omitempty"`
-	UnreadCount       int    `json:"unread_count,omitempty"`
-}
-
-func resourcesJSON(rs []resources.Resource, counts map[string]int) ([]byte, error) {
-	out := make([]resourceJSON, 0, len(rs)) // ensures [] not null when empty
-	for _, r := range rs {
-		out = append(out, resourceJSON{
-			Type: r.Type, ID: r.ID, URL: r.URL, Primary: !r.Related,
-			CustomName: r.CustomName, CustomDescription: r.CustomDescription,
-			UpdatedAt: r.UpdatedAt,
-			// A nil map reads as zero, which is what "no cursor" means.
-			UnreadCount: counts[unread.Key(r.Type, r.ID)],
-		})
+// listResourcesJSON prints `resources list --json`. Items are the web UI's
+// resource DTO (cached watcher state included); see resourceItem for how
+// updated_at keeps its custom-name meaning for agent-handler.
+func listResourcesJSON(w io.Writer, conn *sql.DB, wt string, all bool) error {
+	srv, err := headlessServer(conn)
+	if err != nil {
+		return err
 	}
-	var b bytes.Buffer
-	if err := printJSON(&b, map[string]any{"resources": out}); err != nil {
-		return nil, err
+	items := []map[string]any{} // [] not null when empty
+	if all {
+		rs, err := srv.AllResources()
+		if err != nil {
+			return err
+		}
+		meta := map[string]map[[2]string]string{} // by worktree path
+		for _, r := range rs {
+			var at string
+			if len(r.Worktrees) > 0 {
+				p := r.Worktrees[0].Path
+				if meta[p] == nil {
+					meta[p] = metaTimes(conn, p)
+				}
+				at = meta[p][[2]string{r.Type, r.ID}]
+			}
+			item, err := resourceItem(r, at)
+			if err != nil {
+				return err
+			}
+			items = append(items, item)
+		}
+		return printJSON(w, map[string]any{"resources": items})
 	}
-	return bytes.TrimSuffix(b.Bytes(), []byte("\n")), nil
+	dtos, err := srv.WorktreeResources(wt)
+	if err != nil {
+		return err
+	}
+	meta := metaTimes(conn, wt)
+	for _, d := range dtos {
+		item, err := resourceItem(d, meta[[2]string{d.Type, d.ID}])
+		if err != nil {
+			return err
+		}
+		items = append(items, item)
+	}
+	return printJSON(w, map[string]any{"resources": items})
 }
 
 // writeResourceLines renders the human-readable listing. Split out from
@@ -66,6 +83,7 @@ func writeResourceLines(out io.Writer, rs []resources.Resource, counts map[strin
 var (
 	resWorktree    string
 	resJSON        bool
+	resAll         bool
 	resURL         string
 	resRelated     bool
 	resName        string
@@ -132,6 +150,7 @@ var resourcesMarkReadCmd = &cobra.Command{
 func init() {
 	resourcesListCmd.Flags().StringVar(&resWorktree, "worktree", "", "worktree path (default: cwd)")
 	resourcesListCmd.Flags().BoolVar(&resJSON, "json", false, "machine-readable JSON output")
+	resourcesListCmd.Flags().BoolVar(&resAll, "all", false, "list every resource followed by any worktree, once each, with the worktrees following it (JSON only)")
 	resourcesAddCmd.Flags().StringVar(&resWorktree, "worktree", "", "worktree path (default: cwd)")
 	resourcesAddCmd.Flags().StringVar(&resURL, "url", "", "resource URL")
 	resourcesAddCmd.Flags().BoolVar(&resRelated, "related", false, "mark as related (not primary)")
@@ -155,6 +174,12 @@ func resourceWorktreePath() (string, error) {
 }
 
 func runResourcesList(cmd *cobra.Command, args []string) error {
+	if resAll && resWorktree != "" {
+		return fmt.Errorf("--all and --worktree are mutually exclusive")
+	}
+	if resAll && !resJSON {
+		return fmt.Errorf("--all requires --json")
+	}
 	wt, err := resourceWorktreePath()
 	if err != nil {
 		return err
@@ -164,6 +189,9 @@ func runResourcesList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer conn.Close()
+	if resJSON {
+		return listResourcesJSON(cmd.OutOrStdout(), conn, wt, resAll)
+	}
 	rs, err := resources.Load(conn, wt)
 	if err != nil {
 		return err
@@ -171,14 +199,6 @@ func runResourcesList(cmd *cobra.Command, args []string) error {
 	counts, err := unread.Counts(conn)
 	if err != nil {
 		return err
-	}
-	if resJSON {
-		b, err := resourcesJSON(rs, counts)
-		if err != nil {
-			return err
-		}
-		fmt.Fprintln(cmd.OutOrStdout(), string(b))
-		return nil
 	}
 	writeResourceLines(cmd.OutOrStdout(), rs, counts)
 	return nil

@@ -16,7 +16,10 @@ var portsCmd = &cobra.Command{
 	RunE:    runPorts,
 }
 
+var portsJSON bool
+
 func init() {
+	portsCmd.Flags().BoolVar(&portsJSON, "json", false, "machine-readable JSON output")
 	rootCmd.AddCommand(portsCmd)
 }
 
@@ -30,6 +33,19 @@ func runPorts(cmd *cobra.Command, args []string) error {
 	allocs, err := ports.LoadAllocations(conn)
 	if err != nil {
 		return err
+	}
+
+	if portsJSON {
+		type allocJSON struct {
+			Name  string `json:"name"`
+			Start int    `json:"start"`
+			End   int    `json:"end"`
+		}
+		out := make([]allocJSON, 0, len(allocs))
+		for _, a := range allocs {
+			out = append(out, allocJSON{Name: a.Name, Start: a.Start(), End: a.End()})
+		}
+		return printJSON(cmd.OutOrStdout(), map[string]any{"allocations": out})
 	}
 
 	if len(allocs) == 0 {

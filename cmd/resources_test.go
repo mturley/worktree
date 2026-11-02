@@ -7,81 +7,14 @@ import (
 	"strings"
 	"testing"
 
+	watcherdb "github.com/mturley/watcher/db"
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/jira/jiratest"
+	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/resources"
+	"github.com/mturley/worktree/internal/testgit"
 	"github.com/mturley/worktree/internal/unread"
 )
-
-func TestResourcesJSONContract(t *testing.T) {
-	rs := []resources.Resource{
-		{Type: "pr", ID: "o/r#1", URL: "http://x/1", Related: false},
-		{Type: "jira", ID: "RH-2", URL: "http://x/2", Related: true},
-	}
-	b, err := resourcesJSON(rs, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var got []map[string]any
-	decodeEnvelope(t, string(b), "resources", &got)
-	if len(got) != 2 {
-		t.Fatalf("got %d", len(got))
-	}
-	if got[0]["type"] != "pr" || got[0]["id"] != "o/r#1" || got[0]["primary"] != true {
-		t.Fatalf("row0: %+v", got[0])
-	}
-	if got[1]["primary"] != false {
-		t.Fatalf("related resource must be primary=false: %+v", got[1])
-	}
-	// exact field set — the contract handler binds to
-	for _, k := range []string{"type", "id", "url", "primary"} {
-		if _, ok := got[0][k]; !ok {
-			t.Fatalf("missing field %q", k)
-		}
-	}
-}
-
-func TestResourcesJSONIncludesMetaFields(t *testing.T) {
-	rs := []resources.Resource{
-		{Type: "slack", ID: "C1:1.2", URL: "http://x", CustomName: "Release blocker",
-			CustomDescription: "e2e regression", UpdatedAt: "2030-01-02T03:04:05Z"},
-	}
-	b, err := resourcesJSON(rs, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var got []map[string]any
-	decodeEnvelope(t, string(b), "resources", &got)
-	if got[0]["custom_name"] != "Release blocker" ||
-		got[0]["custom_description"] != "e2e regression" ||
-		got[0]["updated_at"] != "2030-01-02T03:04:05Z" {
-		t.Fatalf("meta fields missing/wrong: %+v", got[0])
-	}
-}
-
-func TestResourcesJSONOmitsEmptyMeta(t *testing.T) {
-	b, err := resourcesJSON([]resources.Resource{{Type: "pr", ID: "o/r#1", URL: "u"}}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var got []map[string]any
-	decodeEnvelope(t, string(b), "resources", &got)
-	for _, k := range []string{"custom_name", "custom_description", "updated_at"} {
-		if _, ok := got[0][k]; ok {
-			t.Fatalf("empty meta field %q should be omitted, got %+v", k, got[0])
-		}
-	}
-}
-
-func TestResourcesJSONEmptyIsArray(t *testing.T) {
-	b, err := resourcesJSON(nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(b) != `{"resources":[],"schema_version":1}` {
-		t.Fatalf("empty must serialize to an empty resources array, got %s", b)
-	}
-}
 
 func TestResolveResourceArgs(t *testing.T) {
 	cases := []struct {
@@ -161,29 +94,6 @@ func TestResolveResourceArgs(t *testing.T) {
 					gt, gi, gu, tc.wantType, tc.wantID, tc.wantURL)
 			}
 		})
-	}
-}
-
-func TestResourcesJSONCarriesUnreadCount(t *testing.T) {
-	rs := []resources.Resource{
-		{Type: "pr", ID: "o/r#1", URL: "http://x/1"},
-		{Type: "jira", ID: "RH-2", URL: "http://x/2"},
-	}
-	counts := map[string]int{unread.Key("pr", "o/r#1"): 3}
-	b, err := resourcesJSON(rs, counts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var got []map[string]any
-	decodeEnvelope(t, string(b), "resources", &got)
-	if got[0]["unread_count"] != float64(3) {
-		t.Fatalf("unread_count = %v, want 3", got[0]["unread_count"])
-	}
-	// omitempty: a fully read resource's object must stay byte-identical to
-	// what this command emitted before the field existed, because
-	// agent-handler parses it.
-	if _, present := got[1]["unread_count"]; present {
-		t.Fatalf("a read resource must omit unread_count entirely: %+v", got[1])
 	}
 }
 
@@ -361,5 +271,82 @@ func seedTypedEvent(t *testing.T, conn *sql.DB, id, ts, evType, resType, resID s
 		`INSERT INTO watcher_event_resources (event_id, resource_type, resource_id) VALUES (?, ?, ?)`,
 		id, resType, resID); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestResourcesListAll(t *testing.T) {
+	live, gone := seedReadFixture(t)
+	conn, err := wdb.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// resources.Add refuses a path that is not a linked worktree, so the
+	// second follower is another real one.
+	other := testgit.Worktree(t)
+	if err := registry.Register(conn, registry.Entry{Path: other, Repo: "odh", RepoRoot: "/r", Branch: "b2", CreatedAt: "2026-08-14T00:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{live, other} {
+		if err := resources.Add(conn, p, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := resources.SetMetaAt(conn, "pr", "o/r#1", "Name", "", "2030-01-02T03:04:05Z"); err != nil {
+		t.Fatal(err)
+	}
+	conn.Close()
+	_ = gone
+
+	out, err := runCLI(t, "resources", "list", "--all", "--json")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	var got []struct {
+		ID        string           `json:"id"`
+		Worktrees []map[string]any `json:"worktrees"`
+	}
+	decodeEnvelope(t, out, "resources", &got)
+	if len(got) != 1 || got[0].ID != "o/r#1" || len(got[0].Worktrees) != 2 {
+		t.Fatalf("resources = %+v", got)
+	}
+
+	if out, err := runCLI(t, "resources", "list", "--all", "--worktree", live); err == nil {
+		t.Fatalf("--all with --worktree must fail, got %q", out)
+	}
+}
+
+// agent-handler mirrors custom names newest-wins on updated_at, so that key
+// keeps meaning "when the custom name was written"; the resource's own time
+// is resource_updated_at.
+func TestResourcesListJSONUpdatedAtIsMetaTime(t *testing.T) {
+	live, _ := seedReadFixture(t)
+	conn, err := wdb.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := resources.Add(conn, live, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := resources.SetMetaAt(conn, "pr", "o/r#1", "Name", "Desc", "2030-01-02T03:04:05Z"); err != nil {
+		t.Fatal(err)
+	}
+	if err := watcherdb.UpsertResourceState(conn, "pr", "o/r#1", `{"title":"T","state":"open"}`, "2026-08-13T00:00:00Z", "2026-08-13T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	conn.Close()
+
+	out, err := runCLI(t, "resources", "list", "--worktree", live, "--json")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	var got []map[string]any
+	decodeEnvelope(t, out, "resources", &got)
+	if len(got) != 1 {
+		t.Fatalf("got %v", got)
+	}
+	r := got[0]
+	if r["updated_at"] != "2030-01-02T03:04:05Z" || r["resource_updated_at"] != "2026-08-13T00:00:00Z" ||
+		r["custom_name"] != "Name" || r["custom_description"] != "Desc" || r["state"] != "open" {
+		t.Fatalf("resource = %v", r)
 	}
 }

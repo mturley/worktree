@@ -119,13 +119,12 @@ New branch worktrees branch from the current HEAD. Before creating one, the tool
 #### Worktree Management
 
 ```bash
-worktree list                    # List worktrees from the database
-worktree info [path]             # Show worktree info (env vars, resources)
-worktree info --local            # Skip API calls (fast)
+worktree list                    # List worktrees from the database (--json, --git)
+worktree info [path]             # Show worktree info (env vars, resources with cached state; --json)
 worktree delete [path]           # Remove a worktree and clean up
 worktree cleanup                 # Interactively reconcile disk vs database (prompts before removing)
 worktree dotfiles [path]         # Copy gitignored dotfiles from main worktree
-worktree ports                   # Show allocated port ranges (database-backed)
+worktree ports                   # Show allocated port ranges (database-backed; --json)
 worktree unread [--json]         # Whether any worktree has unread activity, and how much
 ```
 
@@ -142,7 +141,7 @@ worktree open --jira             # Open the associated Jira issue in browser
 #### Jira Integration
 
 ```bash
-worktree jira [path]             # Show associated Jira issues (with API enrichment)
+worktree jira [path]             # Show associated Jira issues from cached watcher state (--json)
 worktree jira add KEY-123        # Associate a Jira issue (primary)
 worktree jira add KEY-456 --related  # Associate as context-watching
 worktree jira remove KEY-123     # Remove an association
@@ -156,6 +155,7 @@ Jira issues are automatically detected from the PR title, PR body, and branch na
 worktree env                     # Print shell environment variables (use: eval "$(worktree env)")
 worktree resources list          # List tracked resources (database-backed)
 worktree resources list --json   # JSON format for agent-handler integration
+worktree resources list --all --json  # every followed resource once, with the worktrees following it
 worktree resources add <url>     # Add a resource, inferring its type and id
 worktree resources add <type> <id> [--url <url>] [--related]  # ...or state them explicitly
 worktree resources unwatch <type> <id>  # Soft-remove a resource (mark inactive)
@@ -265,6 +265,8 @@ Your shell RC hook (installed by `worktree setup`) automatically runs `eval "$(w
 ```
 
 Every `--json` output is an object carrying `"schema_version": 1`. Exit codes: 0 success, 1 nothing found (only commands documented to say so), 2 any error. `--as-agent` is accepted by every command.
+
+Each entry also carries the watchers' cached state (title, state, status, priority, unread counts, ...). `updated_at` is when the resource's custom name was last written (absent if never), and `resource_updated_at` is the resource's own last-update time.
 
 Unmarked entries (or `"primary":true`) are the reason this worktree exists. Entries with `"primary":false` are **related** (watching for context).
 
