@@ -72,9 +72,21 @@ Narrow with `--unread`, `--source github` (or `jira`, `slack`, `tasks`),
 **Where is X?** `worktree resources list --all --json` lists every followed
 resource once, with the worktrees following it.
 
-**Which worktrees can go?** `worktree list --json --git`. A worktree whose
-`focus_resources` are all `merged` or `closed`, and whose `git.dirty` is false, is
-a candidate. Show the user the list; don't delete anything.
+**Which worktrees can go?** `worktree list --json --git`. A worktree is a candidate
+only when all of these hold:
+
+- `focus_resources` has at least one entry. A worktree with none has nothing to say
+  it's finished, so it isn't a candidate.
+- Every focus resource is done: a PR's `state` is `MERGED` or `CLOSED` (`OPEN` is not),
+  and a Jira issue's `status` means finished, such as `Closed`, `Resolved` or `Done`
+  (the names vary by project). A Slack thread has no done state, so leave that call to
+  the user.
+- `git.dirty` is false and `git.ahead` is 0, with `git.upstream` present. `ahead` means
+  commits not pushed, and it says nothing when there is no upstream.
+
+A worktree with no `git` field (`on_disk` is false, or git couldn't read it) can't be
+judged from this output, so say it needs a look. All of this is a suggestion to the
+user. Show them the list with your reasons; never delete anything yourself.
 
 **Where did I leave off?** For a worktree (the current one by default):
 
