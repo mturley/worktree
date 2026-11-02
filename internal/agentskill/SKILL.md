@@ -42,8 +42,11 @@ until then.
   failure: `attention` with nothing to show, `activity --unread` with no unread
   events, `pr-threads list` when the branch has no open PR. Exit 2 is an error.
 - `unread` always exits 0.
-- In `resources list` output, `updated_at` is when the custom name was set;
-  `resource_updated_at` is the resource's own time.
+- In any output carrying resources, `updated_at` is when the custom name was set
+  (absent if never), and `resource_updated_at` is the resource's own time. Its format
+  depends on the source: RFC 3339 for PRs, `2026-10-21T14:12:17.410+0000` for Jira,
+  and a Slack timestamp (`1787257539.775119`) for Slack. Parse by resource type, and
+  don't compare it across types.
 
 ## "What's going on?" and "what needs me?"
 
@@ -115,8 +118,8 @@ user asks about something the cache doesn't hold:
 
 Do not change anything unless the user has plainly asked for that change. Finding
 something that looks stale, read or finished is not permission. When you think a
-write would help, say so and ask. Always pass `--as-agent` on a write, so it is
-recorded as made by an agent.
+write would help, say so and ask. Always pass `--as-agent` on a write. `tasks` commands
+record it as made by an agent; other commands accept the flag and record nothing.
 
 These are the writes:
 
