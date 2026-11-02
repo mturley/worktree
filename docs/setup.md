@@ -15,6 +15,7 @@
 7. **Jira projects.** Optionally records your Jira project keys, which are used to spot issue keys in branch names and PR titles.
 8. **Web UI.** Generates the UI password, and optionally sets up access from other devices (see below).
 9. **Menu bar app.** On macOS, offers to install the [menu bar app](#macos-menu-bar-app).
+10. **Agent skill.** Offers to install the [worktree agent skill](#agent-skill).
 
 An interactive run ends with getting-started tips, which `worktree --help` also shows.
 
@@ -66,9 +67,15 @@ On macOS with `swiftc` installed (Xcode Command Line Tools), an interactive `wor
 - **Interactive only.** `worktree setup --yes` never installs the app. Run `worktree setup` interactively once.
 - **Logging in.** The dropdown is its own browser, so it shows the login page once and then keeps its session.
 - **Start at login.** Answering yes to "Start it at login?" writes `~/Library/LaunchAgents/me.turley.worktree.menubar.plist`. After that, the right-click menu's "Open at login" item turns it on and off.
-- **Right-click menu.** Open full UI, Reload, Reset dropdown to default size, Open at login, Use purple wt icon, Flash icon for unread activity, More settings in web UI, and Quit.
+- **Right-click menu.** Open full UI, Reload, Reset dropdown to default size, Open at login, Use purple wt icon, Flash icon on unread activity, More settings in web UI, and Quit.
 - **Removing it.** `worktree setup --uninstall-mac-app` removes only the app, its login item and its web view data.
+
+## Agent skill
+
+Setup can install a skill that teaches AI agents to use the worktree CLI: answering "what needs my attention?" from your local data, and changing nothing without your say-so. It goes in `~/.agents/skills/worktree/`, which Codex and pi read, and setup links it into Claude Code's skills directory.
+
+When an update changes the skill's text, setup updates the installed copy. It never touches a `worktree` skill directory it didn't create. For an agent without the skill, `worktree agent-help` prints the same text.
 
 ## Uninstalling
 
-`worktree setup --uninstall` removes the shell hook, the completions and the menu bar app. It keeps `~/.config/worktree/config.yaml`, because that holds your settings, and tells you how to delete it yourself.
+`worktree setup --uninstall` removes the shell hook, the completions, the menu bar app, and the agent skill along with the links setup made to it. It keeps `~/.config/worktree/config.yaml`, because that holds your settings, and tells you how to delete it yourself.

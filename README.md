@@ -21,6 +21,7 @@ The **CLI** lets you and your AI agents create worktrees and manage everything a
 - **Notifications and unread tracking** for each resource, so you know exactly what's new since you last looked.
 - **Tasks that live with their context**, with blockers that clear themselves when a PR merges or an issue is done.
 - **One review view for your changes and for PRs**: send comments to an AI agent or to GitHub, and open your editor on the file you're looking at.
+- **Built for AI agents**: an installable agent skill and a scriptable CLI, so an agent can tell you what needs your attention.
 - **One-command worktrees** from a branch name, a PR number or URL, or a Jira issue.
 - **A macOS menu bar app** that keeps your tasks and activity one click away, and blinks when something's unread.
 - **Deep [cmux](https://cmux.com/) integration**, and a UI that works from your phone.
@@ -66,7 +67,8 @@ Working on several things at once usually means your work trips over itself: two
 
 - **A reserved port range.** Each worktree gets 10 ports of its own, such as `4020-4029`, in `$WORKTREE_PORTS`. Point your dev servers at them and you can run the app from three branches side by side.
 - **Its own kubeconfig.** Each worktree gets its own `$KUBECONFIG`, which starts as a copy of your current one. Logging in from one worktree logs in *that* worktree only, so one PR can be on a dev cluster while another is on staging.
-- **Set automatically.** The shell hook installed by `worktree setup` exports both whenever you `cd` into a worktree. The web UI shows them on each worktree's Environment tab.
+- **Set automatically.** The shell hook installed by `worktree setup` exports both whenever you `cd` into a worktree.
+- **See what's running where.** The web UI shows, live, which ports each worktree's processes are listening on. That shows up on its card on the home page and on its Environment tab. A port outside the worktree's range is flagged in red, since that's where conflicts come from. The Environment tab also shows which cluster, user and namespace the worktree's kubeconfig points at.
 
 ```console
 $ cd ~/.worktrees/my-app/feature-a && echo $WORKTREE_PORTS $KUBECONFIG
@@ -82,7 +84,10 @@ To start a dev server on the first port in the range:
 PORT=${WORKTREE_PORTS%-*} npm run dev
 ```
 
-<!-- SCREENSHOT TODO (optional): environment.png — dark mode. Two terminals side by side in different worktrees, or a worktree's Environment tab. -->
+![A worktree's Environment tab: variables, listening ports and kubeconfig](docs/images/environment.png)
+<!-- SCREENSHOT TODO: environment.png — dark mode. A worktree's Environment tab: variables, the Network column with a listening port (ideally one red, out-of-range), and the Kubeconfig section. -->
+
+`worktree ports --listening` shows the same thing in the terminal.
 
 ## The web UI
 
@@ -130,7 +135,7 @@ Open a worktree to see only its world: its resources, their activity, its notes,
 Tasks are to-dos that live with the context they're about. Link a task to a worktree, a PR, a Jira issue or a Slack thread. Then, whenever you're looking at that worktree or resource, its tasks are right beside its activity. The home page lists every task in one hand-ordered list, and each task's links take you straight to the worktree or resource it's about.
 
 - **Quick add** from any task list, or turn an event or a Slack message into a task with **＋ task**.
-- **Drag to reorder.** Dragging also stars a task or changes its priority, depending on where you drop it.
+- **Drag to reorder.** Dragging also stars a task or changes its priority, depending on where you drop it. In-progress and starred tasks can be pinned to the top.
 - **The detail view** holds a description, subtasks, links, the events the task came from, and its full history.
 - **Blockers** can be another task, a PR, a Jira issue or anything you type. A task blocker clears when that task is done, and a PR or Jira blocker clears when the PR merges or closes or the issue reaches Done. You get an *Unblocked* notification when that happens.
 - **Undo** is offered for every state change, checked subtask, delete and mark-read.
@@ -194,6 +199,26 @@ The app is built on your machine from source embedded in worktree, so it needs `
 
 Every setting can be edited in the UI's **Settings** window, including the GitHub, Jira and Slack credentials, notifications, remote access and devices. Each service can be switched off, and a service that's off is never contacted. A **Logs** tab shows what the background polling has been doing.
 
+## Built for AI agents
+
+The CLI is designed for AI coding agents as much as for you.
+
+- **An agent skill.** `worktree setup` offers to install a skill that teaches an agent to use worktree. It goes in `~/.agents/skills/worktree/` (read by Codex and pi), with a link into Claude Code's skills directory. With it installed, an agent can answer *"what needs my attention?"*, *"what happened on my PRs today?"* or *"which worktrees can I clean up?"* from your local data. It doesn't make changes without your say-so. For an agent without the skill, `worktree agent-help` prints the same text.
+- **`worktree attention`** lists what deserves a look, most important first:
+  - resources with unread activity
+  - PRs where your review is requested, changes are requested or CI is failing
+  - Jira issues assigned to you
+  - unread Slack messages that mention you
+  - PRs with your draft review comments still waiting
+  - tasks that are due soon or were just unblocked
+
+  It reports facts, and you or the agent decide what needs a reply.
+- **Fast, safe reads.** `status`, `attention`, `activity`, `unread`, `list`, `info` and the other read commands read the local database directly. They need no server and no login, never write anything, and never contact GitHub, Jira or Slack (the few that do say so). `worktree status` shows whether the data is fresh and why it isn't.
+- **Predictable output.** Every `--json` output is an object with a `schema_version`. Exit codes are consistent: 0 for success, 1 for nothing found, 2 for an error. Nothing prints ANSI colors when piped.
+- **Agent changes are labelled.** Agent changes to tasks are recorded as the agent's, and can notify you. The agent sees your notes, your draft review comments and the PR's review threads, so it can pick up where you left off.
+
+**→ [CLI reference: for scripts and AI agents](docs/cli.md#for-scripts-and-ai-agents)**
+
 ## Creating worktrees
 
 `worktree add` (or **New worktree** in the UI) works out what you passed:
@@ -217,7 +242,7 @@ For a PR, worktree finds your local clone of the PR's repo and checks out the PR
 
 ## The CLI
 
-The CLI covers everything the UI does with worktrees, resources and tasks, and every data command has `--json` output for scripts and AI agents.
+The CLI covers everything the UI does with worktrees, resources and tasks, and every read command has `--json` output for scripts and [AI agents](#built-for-ai-agents).
 
 | Command | What it does |
 |---|---|
@@ -229,6 +254,9 @@ The CLI covers everything the UI does with worktrees, resources and tasks, and e
 | `worktree resources add <url>` | Follow a PR, Jira issue, Slack thread or web page from the current worktree |
 | `worktree tasks add <title>` | Add a task, linked to the current worktree |
 | `worktree tasks list` | List the current worktree's open tasks |
+| `worktree attention` | What deserves your attention, most important first |
+| `worktree activity [--since 24h]` | Recent activity across your worktrees |
+| `worktree status` | Whether the UI is running and the data is fresh |
 | `worktree ui` | Start the web UI |
 | `worktree setup` | Configure (or re-check) everything |
 

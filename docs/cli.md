@@ -5,6 +5,7 @@
 Every command is available as `worktree <command>` or `wt <command>`. Run `worktree <command> --help` for the authoritative flag list. Running `worktree` with no arguments shows help followed by info about the current directory.
 
 - [Worktrees](#worktrees)
+- [Status, attention and activity](#status-attention-and-activity)
 - [Resources](#resources)
 - [Tasks](#tasks)
 - [Web UI](#web-ui)
@@ -18,9 +19,8 @@ Every command is available as `worktree <command>` or `wt <command>`. Run `workt
 
 ```bash
 worktree add <arg>               # Create a worktree (see below)
-worktree list                    # List worktrees; [open] marks those with a cmux workspace
-worktree info [path]             # Branch, environment and resources
-worktree info --local            # The same, without any API calls (fast)
+worktree list [--json [--git]]   # List worktrees; [open] marks those with a cmux workspace; --git adds git state
+worktree info [path] [--json]    # Branch, environment, and resources with their cached state
 worktree open [path]             # Open the worktree in your editor
 worktree open --github           # Open its PR in the browser
 worktree open --jira             # Open its Jira issue in the browser
@@ -67,21 +67,49 @@ When `worktree add` runs from a [cmux](https://cmux.com/) pane, it offers to ope
 
 If a workspace already exists for that directory, worktree switches to it instead of creating another.
 
+## Status, attention and activity
+
+These read the local database directly. They need no server and no login, and never write anything. New activity only arrives while `worktree ui` is running and polling, so check `worktree status` first.
+
+```bash
+worktree status [--json]                       # Is the UI running, and when did each service last poll?
+worktree attention [--worktree .] [--json]     # What deserves attention, most important first (exit 1: nothing)
+worktree activity [--since 24h|7d|<RFC3339>] [--unread] [--source github|jira|slack|tasks]... [--resource <ref>] [--worktree .] [--limit n] [--json]
+worktree unread [--by worktree|resource] [--json]   # Whether anything is unread, and how much (always exits 0)
+worktree notes show [--worktree .]             # A worktree's notes
+worktree notes set <text|-> [--worktree .]     # Replace them (- reads stdin)
+worktree review-comments list [--worktree .]   # Draft review comments, and where each sits in the code now
+worktree pr-threads list [--worktree .]        # The worktree's PR's review threads (contacts GitHub; exit 1: no PR)
+worktree linked <url|type:id> [--resolve-links] [--json]   # What a PR, Jira issue or Slack thread links to (contacts the service)
+```
+
+- **`status`:** `--json` gives `stale` and `stale_reason`, and for each stale service a `reason`: `ui_not_running`, `no_success_yet`, `poll_old` or `poll_failing`. A service with nothing to poll is never stale. When the UI is running but a service is still stale, its `error` usually means credentials to renew with `worktree setup`.
+- **`attention`:** lists each resource with unread events or a signal, and each task that's due soon or was just unblocked. It's ordered by Jira priority, then by number of signals, then by newest activity. The signals are:
+  - `review_requested`, `changes_requested` and `ci_failing` (PRs)
+  - `assigned_to_you` (Jira)
+  - `mentioned` (an unread Slack message mentions you)
+  - `stale_draft` (your draft review comments are waiting on the PR)
+  - `task_due_soon` and `blocker_resolved` (tasks)
+- **Services that are off:** `pr-threads` and `linked` exit 2 while that service is turned off.
+- **No database yet:** read commands never create or upgrade the database. They exit 2 if it's missing (run `worktree setup` or `worktree ui`) or needs upgrading (start `worktree ui`).
+
 ## Resources
 
 A resource is something a worktree follows. There are four types: `pr`, `jira`, `slack` (a thread) and `link` (any web page). A resource is either **Focus** (`primary`: what the worktree is for) or **Related** (followed for context).
 
 ```bash
-worktree resources list [--json]                   # This worktree's resources
+worktree resources list [--json]                   # This worktree's resources, with their cached state
+worktree resources list --all --json               # Every followed resource once, with the worktrees following it
 worktree resources add <url> [--related]           # Follow a resource; type and id are inferred from the URL
 worktree resources add <type> <id> [--url <url>]   # ...or state them explicitly
 worktree resources set-name <type> <id> --name <name> [--description <text>]   # Custom name; empty --name clears it
 worktree resources mark-read <type> <id> [--through <RFC3339>]                 # Mark read (for every worktree that follows it)
+worktree resources mark-read (--worktree . | --all) [--json]                   # Mark every non-Slack resource of a worktree, or everywhere, read
 worktree resources unwatch <type> <id>             # Stop following (kept in history)
 worktree resources remove <type> <id>              # Delete the resource outright
 ```
 
-Every `resources` subcommand except `mark-read` takes `--worktree <path>` to act on a worktree other than the current one.
+Every `resources` subcommand except `mark-read` takes `--worktree <path>` to act on a worktree other than the current one. Slack threads' read state comes from Slack itself, so `mark-read` skips them.
 
 ## Tasks
 
@@ -119,7 +147,7 @@ worktree tasks resolve <blocker-id> [--unresolve]   # Slack, link and free-text 
   - A task blocker resolves as soon as its task is done.
   - A PR or Jira blocker resolves when `worktree ui` sees the PR merged or closed, or the issue reach Done, so it waits for the UI server's next poll.
   - Slack, link and free-text blockers are resolved by hand with `tasks resolve`.
-- **Undo:** `tasks undo` takes the `undo_event_id` that the original command returned with `--json`. It exits 1 if the task has changed since then, or if an agent tries to undo a change you made.
+- **Undo:** `tasks undo` takes the `undo_event_id` that the original command returned with `--json`. It exits 2 if the task has changed since then, or if an agent tries to undo a change you made.
 
 ## Web UI
 
@@ -138,7 +166,8 @@ The UI needs `ui.password` to be set, which `worktree setup` does. See the [setu
 
 ```bash
 worktree env [path]      # Print export lines for a worktree: eval "$(worktree env)"
-worktree ports           # Show every allocated port range
+worktree ports [--json]  # Show every allocated port range
+worktree ports --listening   # ...plus what each worktree's processes are actually listening on
 ```
 
 `worktree env` prints `WORKTREE_PATH`, `WORKTREE_TITLE`, `WORKTREE_PORTS` and `KUBECONFIG`, and nothing at all outside a worktree. The shell hook installed by `worktree setup` runs it each time you change directory.
@@ -146,7 +175,7 @@ worktree ports           # Show every allocated port range
 ## Jira
 
 ```bash
-worktree jira [path]                # Show the worktree's Jira issues, with details from Jira
+worktree jira [path] [--json]       # Show the worktree's Jira issues, from cached state (never contacts Jira)
 worktree jira add KEY-123           # Follow an issue as Focus
 worktree jira add KEY-456 --related # ...or as Related
 worktree jira remove KEY-123
@@ -170,22 +199,27 @@ worktree setup --uninstall   # Undo setup's changes (keeps the config file)
 worktree setup --uninstall-mac-app  # Remove only the macOS menu bar app
 worktree update              # Self-update (only when installed with go install)
 worktree version
+worktree agent-help          # Print the agent skill's text, for an agent without it installed
 worktree completion <shell>  # Shell completions (setup installs these for you)
 ```
 
 ## For scripts and AI agents
 
-- **`--json`:** every `tasks` command and `resources list` take `--json`.
-- **`--as-agent`:** on `tasks`, this records a change as made by an AI agent. It's implied when running under Claude Code or agent-handler. Agent changes can notify you in the UI, and an agent can't undo a change you made.
+- **Agent skill:** `worktree setup` offers to install a skill that teaches AI agents these commands (see the [setup guide](setup.md#agent-skill)). `worktree agent-help` prints its text.
+- **JSON:** every read command takes `--json`, which prints an object with `"schema_version": 1` and snake_case fields, never a bare array.
+- **Exit codes:** 0 for success; 1 for nothing found (only where a command says so: `attention`, `activity --unread`, `pr-threads list` with no PR); 2 for any error.
+- **Colors:** nothing prints ANSI colors when piped or when `NO_COLOR` is set.
+- **`--worktree`:** takes `.` or a registered worktree path.
+- **`--as-agent`:** every command accepts it, and it's implied when running under Claude Code or agent-handler. On `tasks`, it records the change as made by an AI agent. Agent changes can notify you in the UI, and an agent can't undo a change you made.
 - **Resource JSON:** `resources list --json` is a stable contract, used by [agent-handler](https://github.com/mturley/agent-handler):
 
   ```json
-  [
+  {"schema_version": 1, "resources": [
     {"type":"pr","id":"owner/repo#123","url":"https://github.com/owner/repo/pull/123","primary":true},
     {"type":"jira","id":"PROJ-456","url":"https://your-org.atlassian.net/browse/PROJ-456","primary":true},
     {"type":"jira","id":"PROJ-400","url":"https://your-org.atlassian.net/browse/PROJ-400","primary":false}
-  ]
+  ]}
   ```
 
-  `primary: true` means Focus and `false` means Related. Entries can also carry `custom_name`, `custom_description` and `updated_at`.
+  `primary: true` means Focus and `false` means Related. Each entry also carries the watchers' cached state: title, state, status, priority, unread counts and so on. `updated_at` is when its custom name was last set, and `resource_updated_at` is when the resource itself last changed.
 - **Task JSON:** `tasks list --json` and `tasks show --json` include `blocked`, `blocker_count` and `blocker_labels`. `show` adds `blockers` and `blocks`.

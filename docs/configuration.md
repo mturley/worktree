@@ -54,6 +54,7 @@ ui:
     key_file: ...
   remote_access_disabled: false  # Keep the certificate, but don't serve HTTPS
   cmux_features_disabled: false  # Ignore cmux even when it's available
+  port_scan_disabled: false      # Don't scan for the ports each worktree is listening on
 ```
 
 `editor` is the only way to choose the editor for the web UI. The CLI's `worktree open` falls back to `$EDITOR` when it isn't set, but the UI server has no terminal for a terminal editor to run in.
