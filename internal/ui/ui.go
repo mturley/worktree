@@ -212,6 +212,11 @@ func StartSpinner(message string) *Spinner {
 		message: message,
 		stop:    make(chan struct{}),
 	}
+	if !ColorEnabled() {
+		// Piped or NO_COLOR: no animation, no cursor control. Stop still
+		// prints the result line.
+		return s
+	}
 	s.done.Add(1)
 	go func() {
 		defer s.done.Done()

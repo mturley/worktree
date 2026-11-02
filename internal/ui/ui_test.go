@@ -1,8 +1,11 @@
 package ui
 
 import (
+	"bytes"
+	"io"
 	"os"
 	"testing"
+	"time"
 )
 
 // In non-interactive mode no prompt may read stdin: `make install` runs setup
@@ -86,5 +89,30 @@ func TestHelpersPlainWhenColorOff(t *testing.T) {
 	SetColor(true)
 	if got := Bold("x"); got != ColorBold+"x"+ColorReset {
 		t.Errorf("Bold with color on = %q", got)
+	}
+}
+
+// Not parallel: swaps os.Stdout and the color switch.
+func TestSpinnerPlainWhenColorOff(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldStdout := os.Stdout
+	t.Cleanup(func() { os.Stdout = oldStdout; SetColor(true) })
+	SetColor(false)
+	os.Stdout = w
+
+	s := StartSpinner("working")
+	time.Sleep(200 * time.Millisecond)
+	s.Stop("done")
+	w.Close()
+	os.Stdout = oldStdout
+	out, _ := io.ReadAll(r)
+	if bytes.Contains(out, []byte("\x1b[")) || bytes.Contains(out, []byte("\r")) {
+		t.Fatalf("spinner output has escapes or CR: %q", out)
+	}
+	if string(out) != "done\n" {
+		t.Fatalf("output = %q, want result line only", out)
 	}
 }
