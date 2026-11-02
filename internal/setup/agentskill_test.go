@@ -4,9 +4,11 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
+	wconfig "github.com/mturley/watcher/config"
 	"github.com/mturley/worktree/internal/agentskill"
 	"github.com/mturley/worktree/internal/ui"
 )
@@ -594,17 +596,14 @@ func TestPreviewUninstallListsEverything(t *testing.T) {
 	t.Setenv("HOME", f.home)
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	t.Setenv("WATCHER_HOME", filepath.Join(f.home, "watcher"))
-	mustWrite(t, filepath.Join(f.home, "watcher", "auth.yaml"), "")
 	configPath := filepath.Join(f.home, "config.yaml")
 	mustWrite(t, configPath, "")
 	if err := runAgentSkillStep(AgentSkillOfferInstall, f.deps); err != nil {
 		t.Fatal(err)
 	}
 
-	preview := func(registered bool) string {
-		return captureStdout(t, func() { PreviewUninstall(DetectShellRC(), configPath, registered) })
-	}
-	out := preview(true)
+	writeWatcherConfig(t, filepath.Join(f.home, "watcher", "auth.yaml"), "worktree")
+	out := captureStdout(t, func() { PreviewUninstall(DetectShellRC(), configPath, "worktree") })
 	for _, want := range []string{
 		"Remove the worktree skill: ~/.agents/skills/worktree",
 		"Remove its symlink: ~/.claude/skills/worktree",
@@ -617,7 +616,317 @@ func TestPreviewUninstallListsEverything(t *testing.T) {
 			t.Errorf("preview lacks %q:\n%s", want, out)
 		}
 	}
-	if out := preview(false); strings.Contains(out, "Unregister") {
+	out = captureStdout(t, func() { PreviewUninstall(DetectShellRC(), configPath, "not-registered") })
+	if strings.Contains(out, "Unregister") {
 		t.Errorf("preview offers to unregister a consumer that isn't registered:\n%s", out)
+	}
+}
+
+// twoConfigDirs is a fixture whose CLAUDE_CONFIG_DIR differs between runs, as
+// it does for someone running two Claude environments. /a and /b are both
+// under the temp HOME, and each already holds a sibling skill.
+func twoConfigDirs(t *testing.T) (f skillFixture, a, b agentSkillDeps, linkA string) {
+	t.Helper()
+	f = newSkillFixture(t)
+	withConfigDir := func(name string) agentSkillDeps {
+		dir := filepath.Join(f.home, name)
+		mustWrite(t, filepath.Join(dir, "skills", "other-skill", "SKILL.md"), "someone else's skill")
+		d := f.deps
+		d.Getenv = func(k string) string {
+			if k == "CLAUDE_CONFIG_DIR" {
+				return dir
+			}
+			return ""
+		}
+		return d
+	}
+	return f, withConfigDir("a"), withConfigDir("b"), filepath.Join(f.home, "a", "skills", "worktree")
+}
+
+func TestUninstallRemovesLinksFromAnotherConfigDir(t *testing.T) {
+	f, a, b, linkA := twoConfigDirs(t)
+	if err := runAgentSkillStep(AgentSkillOfferInstall, a); err != nil {
+		t.Fatal(err)
+	}
+	if got := readlink(t, linkA); got != f.canonical {
+		t.Fatalf("link -> %s", got)
+	}
+
+	preview := captureStdout(t, func() { PreviewAgentSkillUninstall(b) })
+	if !strings.Contains(preview, ui.ShortPath(linkA)) {
+		t.Errorf("preview does not list %s:\n%s", linkA, preview)
+	}
+	if err := UninstallAgentSkill(b); err != nil {
+		t.Fatal(err)
+	}
+	if lexists(linkA) {
+		t.Error("the link in the other config dir survived")
+	}
+	if lexists(f.canonical) {
+		t.Error("the canonical dir survived")
+	}
+	data, err := os.ReadFile(filepath.Join(f.home, "a", "skills", "other-skill", "SKILL.md"))
+	if err != nil || string(data) != "someone else's skill" {
+		t.Errorf("sibling skill in /a/skills: %q, %v", data, err)
+	}
+}
+
+func TestUninstallLeavesForeignSymlinkAtRecordedPath(t *testing.T) {
+	f, a, b, linkA := twoConfigDirs(t)
+	if err := runAgentSkillStep(AgentSkillOfferInstall, a); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(linkA); err != nil {
+		t.Fatal(err)
+	}
+	mustSymlink(t, "/somewhere/else", linkA)
+	if err := UninstallAgentSkill(b); err != nil {
+		t.Fatal(err)
+	}
+	if got := readlink(t, linkA); got != "/somewhere/else" {
+		t.Errorf("foreign link -> %s", got)
+	}
+	if lexists(f.canonical) {
+		t.Error("the canonical dir survived")
+	}
+}
+
+func TestManifestRecordsEachLinkOnceAndIsNotHashed(t *testing.T) {
+	t.Parallel()
+	f, a, b, linkA := twoConfigDirs(t)
+	for _, d := range []agentSkillDeps{a, a, b} {
+		if err := runAgentSkillStep(AgentSkillOfferInstall, d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, err := os.ReadFile(filepath.Join(f.canonical, agentSkillLinksFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Join([]string{linkA, f.homeLink, filepath.Join(f.home, "b", "skills", "worktree")}, "\n") + "\n"
+	if string(data) != want {
+		t.Errorf("manifest:\n%s\nwant:\n%s", data, want)
+	}
+	if got := a.action(false); got != AgentSkillNone {
+		t.Errorf("the manifest changed the action: %v", got)
+	}
+}
+
+func TestUpdateKeepsManifest(t *testing.T) {
+	t.Parallel()
+	f, a, b, linkA := twoConfigDirs(t)
+	if err := runAgentSkillStep(AgentSkillOfferInstall, a); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(f.canonical, "SKILL.md"), "old")
+	mustWrite(t, filepath.Join(f.canonical, agentSkillHashFile), hashBytes([]byte("old")))
+	if err := runAgentSkillStep(AgentSkillUpdate, b); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(readAgentSkillLinks(f.canonical), linkA) {
+		t.Error("the update lost the recorded link")
+	}
+}
+
+// A bad manifest falls back to Targets, and must not fail uninstall.
+func TestUninstallSurvivesBadManifest(t *testing.T) {
+	cases := []struct {
+		name  string
+		spoil func(t *testing.T, manifest string)
+	}{
+		{"missing", func(t *testing.T, m string) {
+			if err := os.Remove(m); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"malformed", func(t *testing.T, m string) { mustWrite(t, m, "relative/path\n\n\x00\xff garbage\n") }},
+		{"a directory", func(t *testing.T, m string) {
+			if err := os.Remove(m); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(m, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := newSkillFixture(t)
+			if err := runAgentSkillStep(AgentSkillOfferInstall, f.deps); err != nil {
+				t.Fatal(err)
+			}
+			c.spoil(t, filepath.Join(f.canonical, agentSkillLinksFile))
+			if err := UninstallAgentSkill(f.deps); err != nil {
+				t.Fatal(err)
+			}
+			for _, p := range []string{f.canonical, f.homeLink, f.cfgLink} {
+				if lexists(p) {
+					t.Errorf("%s survived", p)
+				}
+			}
+			f.assertSiblingsSurvive(t)
+		})
+	}
+}
+
+// Two recorded paths to one link, through a shared skills directory: the
+// second removal must not fail on a link the first already removed.
+func TestUninstallRemovesSharedLinkOnce(t *testing.T) {
+	t.Parallel()
+	f := newSkillFixture(t)
+	if err := runAgentSkillStep(AgentSkillOfferInstall, f.deps); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(f.home, "alias-skills")
+	mustSymlink(t, filepath.Dir(f.homeLink), alias)
+	if err := recordAgentSkillLink(f.canonical, filepath.Join(alias, "worktree")); err != nil {
+		t.Fatal(err)
+	}
+	if err := UninstallAgentSkill(f.deps); err != nil {
+		t.Fatal(err)
+	}
+	if lexists(f.homeLink) {
+		t.Error("link survived")
+	}
+}
+
+func writeWatcherConfig(t *testing.T, path string, consumers ...string) {
+	t.Helper()
+	cfg := &wconfig.Config{}
+	for _, c := range consumers {
+		cfg.RegisterConsumer(c, "/some/"+c+".db")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Save(path); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func consumersIn(t *testing.T, path string) map[string]string {
+	t.Helper()
+	cfg, err := wconfig.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg.Consumers()
+}
+
+func TestAgentUninstallEndToEnd(t *testing.T) {
+	f, a, b, linkA := twoConfigDirs(t)
+	if err := runAgentSkillStep(AgentSkillOfferInstall, a); err != nil {
+		t.Fatal(err)
+	}
+	watcher := filepath.Join(f.home, "watcher", "auth.yaml")
+	writeWatcherConfig(t, watcher, "worktree", "agent-handler")
+	u := agentUninstall{Skill: b, WatcherPath: watcher, Consumer: "worktree"}
+
+	preview := captureStdout(t, func() { previewAgentUninstall(u) })
+	for _, want := range []string{"Remove the worktree skill", ui.ShortPath(linkA), "Unregister worktree's database"} {
+		if !strings.Contains(preview, want) {
+			t.Errorf("preview lacks %q:\n%s", want, preview)
+		}
+	}
+
+	out := captureStdout(t, func() { runAgentUninstall(u) })
+	if !strings.Contains(out, "Unregistered worktree's database") {
+		t.Errorf("output: %q", out)
+	}
+	for _, p := range []string{f.canonical, linkA, f.homeLink} {
+		if lexists(p) {
+			t.Errorf("%s survived", p)
+		}
+	}
+	consumers := consumersIn(t, watcher)
+	if _, ok := consumers["worktree"]; ok {
+		t.Error("worktree is still registered")
+	}
+	if consumers["agent-handler"] != "/some/agent-handler.db" {
+		t.Errorf("the other consumer was lost: %v", consumers)
+	}
+	f.assertSiblingsSurvive(t)
+
+	// Running it again finds nothing and changes nothing.
+	again := captureStdout(t, func() { runAgentUninstall(u) })
+	if strings.Contains(again, "✓") || strings.Contains(again, "!") {
+		t.Errorf("second run: %q", again)
+	}
+}
+
+func TestAgentUninstallWatcherFailureStillRemovesSkill(t *testing.T) {
+	f := newSkillFixture(t)
+	if err := runAgentSkillStep(AgentSkillOfferInstall, f.deps); err != nil {
+		t.Fatal(err)
+	}
+	watcher := filepath.Join(f.home, "auth.yaml")
+	if err := os.WriteFile(watcher, []byte("{not yaml"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	u := agentUninstall{Skill: f.deps, WatcherPath: watcher, Consumer: "worktree"}
+	if preview := captureStdout(t, func() { previewAgentUninstall(u) }); !strings.Contains(preview, "Unregister") {
+		t.Errorf("preview hides the unreadable config: %q", preview)
+	}
+	out := captureStdout(t, func() { runAgentUninstall(u) })
+	if !strings.Contains(out, "Unregistering from the watcher config") {
+		t.Errorf("no warning: %q", out)
+	}
+	if lexists(f.canonical) {
+		t.Error("the skill survived a watcher failure")
+	}
+}
+
+func TestAgentUninstallSkillFailureStillUnregisters(t *testing.T) {
+	f := newSkillFixture(t)
+	if err := runAgentSkillStep(AgentSkillOfferInstall, f.deps); err != nil {
+		t.Fatal(err)
+	}
+	// A read-only parent makes removing the link fail.
+	parent := filepath.Dir(f.homeLink)
+	if err := os.Chmod(parent, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(parent, 0o755) })
+	watcher := filepath.Join(f.home, "auth.yaml")
+	writeWatcherConfig(t, watcher, "worktree")
+	out := captureStdout(t, func() {
+		runAgentUninstall(agentUninstall{Skill: f.deps, WatcherPath: watcher, Consumer: "worktree"})
+	})
+	if !strings.Contains(out, "Removing the worktree skill") {
+		t.Errorf("no warning: %q", out)
+	}
+	if _, ok := consumersIn(t, watcher)["worktree"]; ok {
+		t.Error("a skill failure stopped the unregister")
+	}
+}
+
+// Uninstall must not create a credentials file that wasn't there.
+func TestUnregisterWatcherConsumerNoFile(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "sub", "auth.yaml")
+	if reg, err := watcherConsumerRegistered(path, "worktree"); err != nil || reg {
+		t.Errorf("registered = %v, %v", reg, err)
+	}
+	if removed, err := unregisterWatcherConsumer(path, "worktree"); err != nil || removed {
+		t.Fatalf("removed = %v, %v", removed, err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("created a file: %v", err)
+	}
+}
+
+// Nothing registered means nothing to change, so the file isn't rewritten.
+func TestUnregisterWatcherConsumerNotRegisteredLeavesFile(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "auth.yaml")
+	const original = "# a comment Save would drop\n"
+	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := unregisterWatcherConsumer(path, "worktree"); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(path); string(data) != original {
+		t.Errorf("file rewritten: %q", data)
 	}
 }

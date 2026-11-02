@@ -2,13 +2,10 @@ package cmd
 
 import (
 	"bytes"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 
-	wconfig "github.com/mturley/watcher/config"
 	"github.com/mturley/worktree/internal/agentskill"
 	"github.com/spf13/cobra"
 )
@@ -101,85 +98,5 @@ func TestSkillNamesEveryWrite(t *testing.T) {
 		if !strings.Contains(writes, w) {
 			t.Errorf("the writes section does not name %q", w)
 		}
-	}
-}
-
-func writeWatcherConfig(t *testing.T, cfg *wconfig.Config) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "auth.yaml")
-	if err := cfg.Save(path); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
-func TestUnregisterWatcherConsumer(t *testing.T) {
-	t.Parallel()
-	cfg := &wconfig.Config{}
-	cfg.RegisterConsumer(consumerName, "/some/worktree.db")
-	cfg.RegisterConsumer("agent-handler", "/some/handler.db")
-	path := writeWatcherConfig(t, cfg)
-
-	if reg, err := watcherConsumerRegistered(path); err != nil || !reg {
-		t.Fatalf("registered = %v, %v", reg, err)
-	}
-	if err := unregisterWatcherConsumer(path); err != nil {
-		t.Fatal(err)
-	}
-	got, err := wconfig.Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	consumers := got.Consumers()
-	if _, ok := consumers[consumerName]; ok {
-		t.Error("worktree is still registered")
-	}
-	if consumers["agent-handler"] != "/some/handler.db" {
-		t.Errorf("the other consumer was lost: %v", consumers)
-	}
-	if reg, err := watcherConsumerRegistered(path); err != nil || reg {
-		t.Errorf("after: registered = %v, %v", reg, err)
-	}
-}
-
-// Uninstall must not create a credentials file that wasn't there.
-func TestUnregisterWatcherConsumerNoFile(t *testing.T) {
-	t.Parallel()
-	path := filepath.Join(t.TempDir(), "sub", "auth.yaml")
-	if reg, err := watcherConsumerRegistered(path); err != nil || reg {
-		t.Errorf("registered = %v, %v", reg, err)
-	}
-	if err := unregisterWatcherConsumer(path); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Errorf("created a file: %v", err)
-	}
-}
-
-// Nothing registered means nothing to change, so the file isn't rewritten.
-func TestUnregisterWatcherConsumerNotRegisteredLeavesFile(t *testing.T) {
-	t.Parallel()
-	path := filepath.Join(t.TempDir(), "auth.yaml")
-	const original = "# a comment Save would drop\n"
-	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := unregisterWatcherConsumer(path); err != nil {
-		t.Fatal(err)
-	}
-	if data, _ := os.ReadFile(path); string(data) != original {
-		t.Errorf("file rewritten: %q", data)
-	}
-}
-
-func TestUnregisterWatcherConsumerReportsLoadFailure(t *testing.T) {
-	t.Parallel()
-	path := filepath.Join(t.TempDir(), "auth.yaml")
-	if err := os.WriteFile(path, []byte("{not yaml"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := unregisterWatcherConsumer(path); err == nil {
-		t.Error("no error for an unreadable config")
 	}
 }

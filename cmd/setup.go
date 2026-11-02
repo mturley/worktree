@@ -135,11 +135,7 @@ func runUninstall(cfg config.Config) error {
 	rc := setup.DetectShellRC()
 	configPath := config.ConfigPath()
 
-	watcherPath := wconfig.DefaultPath()
-	// A config that can't be read may still register worktree, and unregistering
-	// is what reports the failure, so it stays in the preview.
-	registered, err := watcherConsumerRegistered(watcherPath)
-	setup.PreviewUninstall(rc, configPath, registered || err != nil)
+	setup.PreviewUninstall(rc, configPath, consumerName)
 	fmt.Println()
 
 	if !setupYes {
@@ -149,39 +145,7 @@ func runUninstall(cfg config.Config) error {
 		}
 	}
 
-	uninstallErr := setup.ExecuteUninstall(rc, configPath)
-	if err := unregisterWatcherConsumer(watcherPath); err != nil {
-		fmt.Printf("  %s Unregistering from the watcher config: %v\n", ui.Yellow("!"), err)
-	} else if registered {
-		fmt.Printf("  %s Unregistered worktree's database from the watcher config\n", ui.Green("✓"))
-	}
-	return uninstallErr
-}
-
-// watcherConsumerRegistered reports whether the watcher config at path lists
-// worktree. A missing file is simply not registered: Load returns it as empty.
-func watcherConsumerRegistered(path string) (bool, error) {
-	cfg, err := wconfig.Load(path)
-	if err != nil {
-		return false, err
-	}
-	_, ok := cfg.Consumers()[consumerName]
-	return ok, nil
-}
-
-// unregisterWatcherConsumer undoes registerWatcherConsumer. It saves only when
-// there is something to remove, so it never creates or rewrites the
-// credentials file otherwise.
-func unregisterWatcherConsumer(path string) error {
-	cfg, err := wconfig.Load(path)
-	if err != nil {
-		return err
-	}
-	if _, ok := cfg.Consumers()[consumerName]; !ok {
-		return nil
-	}
-	cfg.UnregisterConsumer(consumerName)
-	return cfg.Save(path)
+	return setup.ExecuteUninstall(rc, configPath, consumerName)
 }
 
 func runUninstallMacApp() error {

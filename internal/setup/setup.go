@@ -347,10 +347,10 @@ func promptAndSaveJiraProjects(configPath string, cfg config.Config) error {
 	return nil
 }
 
-// PreviewUninstall prints what ExecuteUninstall, and the caller's unregistering
-// of a registered watcher consumer, will do. Every Plan step is undone or has a
-// Preserve line here; TestUninstallCoversEverySetupStep keeps that true.
-func PreviewUninstall(rc ShellRC, configPath string, consumerRegistered bool) {
+// PreviewUninstall prints what ExecuteUninstall will do. Every Plan step is
+// undone or has a Preserve line here; TestUninstallCoversEverySetupStep keeps
+// that true. consumer is the name registered in the watcher config.
+func PreviewUninstall(rc ShellRC, configPath, consumer string) {
 	fmt.Println(ui.Bold("worktree setup --uninstall will:"))
 	if rc.IsInstalled() {
 		fmt.Printf("  • Remove auto-source from %s\n", rc.Path)
@@ -362,10 +362,7 @@ func PreviewUninstall(rc ShellRC, configPath string, consumerRegistered bool) {
 	if runtime.GOOS == "darwin" {
 		PreviewMacAppUninstall(defaultMacAppDeps().Paths)
 	}
-	PreviewAgentSkillUninstall(defaultAgentSkillDeps())
-	if consumerRegistered {
-		fmt.Println("  • Unregister worktree's database from the watcher config")
-	}
+	previewAgentUninstall(defaultAgentUninstall(consumer))
 	fmt.Println("  • Remove the web UI's HTTPS certificate files and remote access settings (the password is kept)")
 	fmt.Println("  • Preserve worktree data (remove manually if desired)")
 	if _, err := os.Stat(configPath); err == nil {
@@ -376,7 +373,13 @@ func PreviewUninstall(rc ShellRC, configPath string, consumerRegistered bool) {
 	}
 }
 
-func ExecuteUninstall(rc ShellRC, configPath string) error {
+// ExecuteUninstall undoes setup. It acts on this machine's real brew
+// completions and menu bar app whatever HOME says, so tests must not call it;
+// they call runAgentUninstall and the other steps' own functions.
+func ExecuteUninstall(rc ShellRC, configPath, consumer string) error {
+	// First, because a shell RC failure below returns early.
+	runAgentUninstall(defaultAgentUninstall(consumer))
+
 	if rc.IsInstalled() {
 		if err := rc.Uninstall(); err != nil {
 			return fmt.Errorf("removing shell RC: %w", err)
@@ -396,10 +399,6 @@ func ExecuteUninstall(rc ShellRC, configPath string) error {
 		if err := UninstallMacApp(defaultMacAppDeps()); err != nil {
 			fmt.Printf("  %s Removing the menu bar app: %v\n", ui.Yellow("!"), err)
 		}
-	}
-
-	if err := UninstallAgentSkill(defaultAgentSkillDeps()); err != nil {
-		fmt.Printf("  %s Removing the worktree skill: %v\n", ui.Yellow("!"), err)
 	}
 
 	if err := removeRemoteAccess(configPath, defaultUIAccessDeps(configPath)); err != nil {
