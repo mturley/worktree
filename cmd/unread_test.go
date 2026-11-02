@@ -163,3 +163,15 @@ func TestMarkReadFlagsAreExclusive(t *testing.T) {
 		}
 	}
 }
+
+// The menu bar app parses this output (internal/macapp/app/UnreadWatch.swift).
+func TestUnreadJSONShape(t *testing.T) {
+	seedUnreadPRAndSlack(t)
+	out, err := runCLI(t, "unread", "--json")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if want := `{"count":3,"schema_version":1,"unread":true}` + "\n"; out != want {
+		t.Fatalf("output = %q, want %q", out, want)
+	}
+}
