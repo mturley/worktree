@@ -101,8 +101,9 @@ func TestSettingsWorktreePutWritesAndValidates(t *testing.T) {
 	}
 }
 
+// Not parallel: every worktree settings PUT writes jira's package-level alias
+// hosts, so a parallel test's PUT could clear them before this one's check.
 func TestSettingsWorktreePutAppliesAliasHosts(t *testing.T) {
-	t.Parallel()
 	t.Cleanup(func() { jira.SetAliasHosts(nil) })
 	s, _ := settingsServer(t, "ui:\n    password: pw\n")
 	const u = "https://old.example.com/browse/ABC-1"
