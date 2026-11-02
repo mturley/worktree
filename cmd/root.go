@@ -39,7 +39,7 @@ var rootCmd = &cobra.Command{
 	// rather than read on every call. A missing or unreadable config just
 	// means no aliases.
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		ui.SetColor(ui.ColorWanted(term.IsTerminal(int(os.Stdout.Fd())), os.Getenv))
+		applyColor()
 		if cfg, err := config.Load(); err == nil {
 			jira.SetAliasHosts(cfg.Jira.AliasHosts)
 		}
@@ -54,7 +54,15 @@ var asAgent bool
 // when a command returned ErrNothingFound (nothing is printed), 2 for any
 // other error (printed to stderr).
 func Execute() int {
+	// Here as well as in PersistentPreRun, which cobra skips for --help and
+	// for flag errors.
+	applyColor()
 	return exitCode(rootCmd.Execute(), os.Stderr)
+}
+
+// applyColor decides whether output may carry ANSI codes.
+func applyColor() {
+	ui.SetColor(ui.ColorWanted(term.IsTerminal(int(os.Stdout.Fd())), os.Getenv))
 }
 
 func exitCode(err error, stderr io.Writer) int {

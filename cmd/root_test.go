@@ -161,3 +161,27 @@ func TestListOutputHasNoEscapesWhenPiped(t *testing.T) {
 		t.Fatalf("piped list output has ANSI escapes: %q", out)
 	}
 }
+
+// Cobra skips PersistentPreRun for --help, so color has to be decided before
+// it runs. A subprocess, because only Execute does that and stdout must really
+// be a pipe.
+func TestHelpHasNoEscapesWhenPiped(t *testing.T) {
+	t.Setenv("WORKTREE_DB", filepath.Join(t.TempDir(), "w.db"))
+	for _, tt := range []struct {
+		name string
+		env  []string
+		args []string
+	}{
+		{"piped", nil, []string{"--help"}},
+		{"NO_COLOR", []string{"NO_COLOR=1"}, []string{"--help"}},
+		{"subcommand", nil, []string{"list", "--help"}},
+		{"bad flag", nil, []string{"--nope"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			r := runCLIProcess(t, t.TempDir(), tt.env, tt.args...)
+			if strings.Contains(r.stdout+r.stderr, "\x1b[") {
+				t.Errorf("output has ANSI escapes: %q", r.stdout+r.stderr)
+			}
+		})
+	}
+}
