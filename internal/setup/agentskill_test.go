@@ -483,6 +483,9 @@ func TestUserManagedDirIsLeftAlone(t *testing.T) {
 			if !lexists(f.canonical) || !lexists(f.homeLink) {
 				t.Error("user-managed skill or its link was removed")
 			}
+			if lexists(f.cfgLink) {
+				t.Error("linked a user-managed skill")
+			}
 		})
 	}
 }
@@ -561,6 +564,7 @@ var planStepUninstall = map[string]string{
 	"ConfigureUI":           "removed", // certificates and remote access; the password stays in the config
 	"MacApp":                "removed",
 	"AgentSkill":            "removed",
+	"AgentSkillLinks":       "removed",
 }
 
 func TestUninstallCoversEverySetupStep(t *testing.T) {
@@ -691,14 +695,20 @@ func TestUninstallLeavesForeignSymlinkAtRecordedPath(t *testing.T) {
 	}
 }
 
+// setupRun is what a setup run does: decide the action, then run the step.
+func setupRun(t *testing.T, d agentSkillDeps, nonInteractive bool) {
+	t.Helper()
+	if err := runAgentSkillStep(d.action(nonInteractive), d); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestManifestRecordsEachLinkOnceAndIsNotHashed(t *testing.T) {
 	t.Parallel()
 	f, a, b, linkA := twoConfigDirs(t)
-	for _, d := range []agentSkillDeps{a, a, b} {
-		if err := runAgentSkillStep(AgentSkillOfferInstall, d); err != nil {
-			t.Fatal(err)
-		}
-	}
+	setupRun(t, a, false)
+	setupRun(t, a, false)
+	setupRun(t, b, false)
 	data, err := os.ReadFile(filepath.Join(f.canonical, agentSkillLinksFile))
 	if err != nil {
 		t.Fatal(err)
@@ -709,6 +719,141 @@ func TestManifestRecordsEachLinkOnceAndIsNotHashed(t *testing.T) {
 	}
 	if got := a.action(false); got != AgentSkillNone {
 		t.Errorf("the manifest changed the action: %v", got)
+	}
+}
+
+// A second config dir gets its link on the next setup run, whatever else that
+// run does. A link the user then deletes is gone on purpose, and stays gone.
+func TestSetupLinksNewConfigDirOnceOnly(t *testing.T) {
+	cases := []struct {
+		name           string
+		nonInteractive bool
+		prepare        func(t *testing.T, f skillFixture)
+		wantAction     AgentSkillAction
+	}{
+		{"current, interactive", false, func(*testing.T, skillFixture) {}, AgentSkillNone},
+		{"current, non-interactive", true, func(*testing.T, skillFixture) {}, AgentSkillNone},
+		{"stale", true, func(t *testing.T, f skillFixture) {
+			mustWrite(t, filepath.Join(f.canonical, "SKILL.md"), "old")
+			mustWrite(t, filepath.Join(f.canonical, agentSkillHashFile), hashBytes([]byte("old")))
+		}, AgentSkillUpdate},
+		{"edited", false, func(t *testing.T, f skillFixture) {
+			mustWrite(t, filepath.Join(f.canonical, "SKILL.md"), "my edits")
+		}, AgentSkillEditedSkip},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f, a, b, _ := twoConfigDirs(t)
+			linkB := filepath.Join(f.home, "b", "skills", "worktree")
+			setupRun(t, a, false)
+			c.prepare(t, f)
+			b.Confirm = func(string, bool) bool { t.Error("linking must not ask"); return false }
+
+			if got := b.action(c.nonInteractive); got != c.wantAction {
+				t.Fatalf("action = %v, want %v", got, c.wantAction)
+			}
+			if got := missingAgentSkillLinks(b); !slices.Equal(got, []string{linkB}) {
+				t.Errorf("missing = %v", got)
+			}
+			out := captureStdout(t, func() { setupRun(t, b, c.nonInteractive) })
+			if got := readlink(t, linkB); got != f.canonical {
+				t.Errorf("link -> %s", got)
+			}
+			if !strings.Contains(out, "Linked "+ui.ShortPath(linkB)) {
+				t.Errorf("no check-mark line: %q", out)
+			}
+
+			if err := os.Remove(linkB); err != nil {
+				t.Fatal(err)
+			}
+			if got := missingAgentSkillLinks(b); len(got) != 0 {
+				t.Errorf("after deleting: missing = %v", got)
+			}
+			setupRun(t, b, c.nonInteractive)
+			if lexists(linkB) {
+				t.Error("a link the user deleted came back")
+			}
+		})
+	}
+}
+
+// A link the user deleted stays gone when reached by another path to the same
+// skills directory.
+func TestDeletedLinkStaysGoneThroughSharedDir(t *testing.T) {
+	t.Parallel()
+	f := newSkillFixture(t)
+	setupRun(t, f.deps, false)
+	if err := os.Remove(f.cfgLink); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(f.home, "alias-config")
+	mustSymlink(t, filepath.Dir(filepath.Dir(f.cfgLink)), alias)
+	d := f.deps
+	d.Getenv = func(k string) string {
+		if k == "CLAUDE_CONFIG_DIR" {
+			return alias
+		}
+		return ""
+	}
+	setupRun(t, d, false)
+	if lexists(f.cfgLink) {
+		t.Error("the deleted link came back through the alias")
+	}
+}
+
+// Setup keeps away from a copy that isn't ours, and from no copy at all.
+func TestNoLinksWithoutOurCopy(t *testing.T) {
+	t.Parallel()
+	f := newSkillFixture(t)
+	setupRun(t, f.deps, true) // not installed, nobody to ask
+	if lexists(f.canonical) || lexists(f.homeLink) || lexists(f.cfgLink) {
+		t.Error("non-interactive setup installed something")
+	}
+	mustWrite(t, filepath.Join(f.canonical, "SKILL.md"), "mine") // no hash file
+	if got := missingAgentSkillLinks(f.deps); len(got) != 0 {
+		t.Errorf("missing = %v", got)
+	}
+	setupRun(t, f.deps, false)
+	if lexists(f.homeLink) || lexists(f.cfgLink) {
+		t.Error("linked a copy that isn't ours")
+	}
+}
+
+// A link that exists but isn't recorded is adopted, so deleting it later sticks.
+func TestExistingLinkIsRecorded(t *testing.T) {
+	t.Parallel()
+	f := newSkillFixture(t)
+	mustSymlink(t, f.canonical, f.homeLink)
+	setupRun(t, f.deps, false)
+	if !slices.Contains(readAgentSkillLinks(f.canonical), f.homeLink) {
+		t.Error("not recorded")
+	}
+}
+
+// The foreign notice still applies on a run with nothing else to do.
+func TestForeignNoticeWhenCurrent(t *testing.T) {
+	f := newSkillFixture(t)
+	setupRun(t, f.deps, false)
+	if err := os.Remove(f.homeLink); err != nil {
+		t.Fatal(err)
+	}
+	mustSymlink(t, "/somewhere/else", f.homeLink)
+	out := captureStdout(t, func() { setupRun(t, f.deps, true) })
+	if !strings.Contains(out, "exists and isn't worktree's; leaving it") {
+		t.Errorf("no notice: %q", out)
+	}
+	if got := readlink(t, f.homeLink); got != "/somewhere/else" {
+		t.Errorf("foreign link -> %s", got)
+	}
+}
+
+func TestPlanPreviewsMissingLinks(t *testing.T) {
+	p := Plan{AgentSkillLinks: []string{"/x/skills/worktree"}}
+	if !p.HasWork() {
+		t.Error("HasWork = false")
+	}
+	if out := captureStdout(t, p.Preview); !strings.Contains(out, "Link the worktree skill into /x/skills/worktree") {
+		t.Errorf("preview: %q", out)
 	}
 }
 
@@ -730,24 +875,40 @@ func TestUpdateKeepsManifest(t *testing.T) {
 
 // A bad manifest falls back to Targets, and must not fail uninstall.
 func TestUninstallSurvivesBadManifest(t *testing.T) {
+	remove := func(t *testing.T, m string) {
+		if err := os.Remove(m); err != nil {
+			t.Fatal(err)
+		}
+	}
 	cases := []struct {
 		name  string
-		spoil func(t *testing.T, manifest string)
+		spoil func(t *testing.T, f skillFixture, manifest string)
+		check func(t *testing.T, f skillFixture)
 	}{
-		{"missing", func(t *testing.T, m string) {
-			if err := os.Remove(m); err != nil {
-				t.Fatal(err)
-			}
+		{name: "missing", spoil: func(t *testing.T, _ skillFixture, m string) { remove(t, m) }},
+		{name: "malformed", spoil: func(t *testing.T, _ skillFixture, m string) {
+			mustWrite(t, m, "relative/path\n\n\x00\xff garbage\n")
 		}},
-		{"malformed", func(t *testing.T, m string) { mustWrite(t, m, "relative/path\n\n\x00\xff garbage\n") }},
-		{"a directory", func(t *testing.T, m string) {
-			if err := os.Remove(m); err != nil {
-				t.Fatal(err)
-			}
+		{name: "a directory", spoil: func(t *testing.T, _ skillFixture, m string) {
+			remove(t, m)
 			if err := os.Mkdir(m, 0o755); err != nil {
 				t.Fatal(err)
 			}
 		}},
+		{
+			name: "a path not named worktree, linked to the copy",
+			spoil: func(t *testing.T, f skillFixture, m string) {
+				alias := filepath.Join(filepath.Dir(f.homeLink), "not-worktree")
+				mustSymlink(t, f.canonical, alias)
+				mustWrite(t, m, alias+"\n")
+			},
+			check: func(t *testing.T, f skillFixture) {
+				alias := filepath.Join(filepath.Dir(f.homeLink), "not-worktree")
+				if got := readlink(t, alias); got != f.canonical {
+					t.Errorf("honoured the recorded path: -> %s", got)
+				}
+			},
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -755,7 +916,7 @@ func TestUninstallSurvivesBadManifest(t *testing.T) {
 			if err := runAgentSkillStep(AgentSkillOfferInstall, f.deps); err != nil {
 				t.Fatal(err)
 			}
-			c.spoil(t, filepath.Join(f.canonical, agentSkillLinksFile))
+			c.spoil(t, f, filepath.Join(f.canonical, agentSkillLinksFile))
 			if err := UninstallAgentSkill(f.deps); err != nil {
 				t.Fatal(err)
 			}
@@ -765,6 +926,9 @@ func TestUninstallSurvivesBadManifest(t *testing.T) {
 				}
 			}
 			f.assertSiblingsSurvive(t)
+			if c.check != nil {
+				c.check(t, f)
+			}
 		})
 	}
 }

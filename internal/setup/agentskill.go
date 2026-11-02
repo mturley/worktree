@@ -34,6 +34,7 @@ const (
 	// CLAUDE_CONFIG_DIR, which can differ from the run that made the link.
 	agentSkillLinksFile = ".worktree-skill-links"
 	agentSkillFile      = "SKILL.md"
+	agentSkillLinkName  = "worktree"
 )
 
 // decideAgentSkill picks the step's action. installedHash is the content of
@@ -136,33 +137,85 @@ func hashBytes(b []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// runAgentSkillStep installs or updates the skill. Both make any missing
-// symlinks, which picks up an agent installed since the last run.
+// runAgentSkillStep installs or updates the skill, then links it, whatever the
+// action was as long as the copy is ours. The user agreed to the skill for their
+// agents when they installed it, so linking one that turned up since never asks.
 func runAgentSkillStep(a AgentSkillAction, d agentSkillDeps) error {
-	if a != AgentSkillOfferInstall && a != AgentSkillUpdate {
-		return nil
-	}
 	canonical, links, ok := d.paths()
 	if !ok {
 		return nil
 	}
-	if a == AgentSkillOfferInstall && !d.Confirm("Install the worktree skill for AI agents (Claude Code, Codex, pi…)?", true) {
-		return nil
-	}
-	if err := writeAgentSkill(canonical); err != nil {
-		return err
-	}
-	if a == AgentSkillOfferInstall {
+	switch a {
+	case AgentSkillOfferInstall:
+		if !d.Confirm("Install the worktree skill for AI agents (Claude Code, Codex, pi…)?", true) {
+			return nil
+		}
+		if err := writeAgentSkill(canonical); err != nil {
+			return err
+		}
 		fmt.Printf("  %s Installed the worktree skill: %s\n", ui.Green("✓"), ui.ShortPath(canonical))
-	} else {
+	case AgentSkillUpdate:
+		if err := writeAgentSkill(canonical); err != nil {
+			return err
+		}
 		fmt.Printf("  %s Updated the worktree skill\n", ui.Green("✓"))
 	}
+	if !agentSkillIsOurs(canonical) {
+		return nil
+	}
+	recorded := d.recordedLinkKeys(canonical)
 	for _, link := range links {
-		if err := linkAgentSkill(canonical, link); err != nil {
+		if err := linkAgentSkill(canonical, link, recorded[d.linkKey(link)]); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func agentSkillIsOurs(canonical string) bool {
+	installed, installedHash, _ := readAgentSkillState(canonical)
+	return installed && installedHash != ""
+}
+
+// linkKey identifies a link's location however it is reached: skills
+// directories can share a real one through symlinks.
+func (d agentSkillDeps) linkKey(link string) string {
+	parent := filepath.Dir(link)
+	if real, err := d.Realpath(parent); err == nil {
+		parent = real
+	}
+	return filepath.Join(parent, filepath.Base(link))
+}
+
+func (d agentSkillDeps) recordedLinkKeys(canonical string) map[string]bool {
+	keys := map[string]bool{}
+	for _, link := range readAgentSkillLinks(canonical) {
+		keys[d.linkKey(link)] = true
+	}
+	return keys
+}
+
+// missingAgentSkillLinks is what a setup run will link: Targets with nothing
+// there, on a copy that is ours. A recorded path with nothing there is not
+// missing: setup made that link and the user deleted it on purpose.
+func missingAgentSkillLinks(d agentSkillDeps) []string {
+	canonical, links, ok := d.paths()
+	if !ok || !agentSkillIsOurs(canonical) {
+		return nil
+	}
+	recorded := d.recordedLinkKeys(canonical)
+	var missing []string
+	for _, link := range links {
+		if _, err := os.Lstat(link); errors.Is(err, fs.ErrNotExist) && !recorded[d.linkKey(link)] {
+			missing = append(missing, link)
+		}
+	}
+	return missing
+}
+
+// detectAgentSkillLinks is missingAgentSkillLinks on the real machine.
+func detectAgentSkillLinks() []string {
+	return missingAgentSkillLinks(defaultAgentSkillDeps())
 }
 
 func writeAgentSkill(canonical string) error {
@@ -175,18 +228,23 @@ func writeAgentSkill(canonical string) error {
 	return os.WriteFile(filepath.Join(canonical, agentSkillHashFile), []byte(agentskill.Hash()), 0o644)
 }
 
-// linkAgentSkill symlinks link to the canonical copy, and never replaces
-// anything already at link. Lstat, so a dangling symlink counts as there.
-func linkAgentSkill(canonical, link string) error {
+// linkAgentSkill symlinks link to the canonical copy unless it was recorded
+// earlier and has since been deleted, and never replaces anything already at
+// link. Lstat, so a dangling symlink counts as there.
+func linkAgentSkill(canonical, link string, recorded bool) error {
 	if _, err := os.Lstat(link); err == nil {
 		if !linksTo(link, canonical) {
 			fmt.Printf("  %s %s exists and isn't worktree's; leaving it\n", ui.Dim("—"), ui.ShortPath(link))
 			return nil
 		}
-		// Reinstalling drops the old manifest, so a surviving link is re-recorded.
+		// Recording a link setup didn't make here is what lets a later delete
+		// stick, for example one that outlived a reinstall's new manifest.
 		return recordAgentSkillLink(canonical, link)
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return err
+	}
+	if recorded {
+		return nil
 	}
 	if err := os.Symlink(canonical, link); err != nil {
 		return err
@@ -210,8 +268,9 @@ func recordAgentSkillLink(canonical, link string) error {
 }
 
 // readAgentSkillLinks returns the manifest's paths. It is only ever a hint, so
-// a missing or unreadable file is empty and a line that isn't an absolute path
-// is skipped: uninstall still has Targets, and checks each link before removing.
+// a missing or unreadable file is empty, and a line that isn't an absolute path
+// to a "worktree" entry is skipped: setup never records anything else. Uninstall
+// still has Targets, and checks each link before removing it.
 func readAgentSkillLinks(canonical string) []string {
 	data, err := os.ReadFile(filepath.Join(canonical, agentSkillLinksFile))
 	if err != nil {
@@ -219,7 +278,7 @@ func readAgentSkillLinks(canonical string) []string {
 	}
 	var links []string
 	for _, line := range strings.Split(string(data), "\n") {
-		if filepath.IsAbs(line) {
+		if filepath.IsAbs(line) && filepath.Base(line) == agentSkillLinkName {
 			links = append(links, filepath.Clean(line))
 		}
 	}
@@ -264,12 +323,8 @@ func planAgentSkillRemoval(d agentSkillDeps) agentSkillRemoval {
 		if !linksTo(link, canonical) {
 			continue
 		}
-		parent := filepath.Dir(link)
-		if real, err := d.Realpath(parent); err == nil {
-			parent = real
-		}
-		if !seen[parent] {
-			seen[parent] = true
+		if key := d.linkKey(link); !seen[key] {
+			seen[key] = true
 			r.links = append(r.links, link)
 		}
 	}

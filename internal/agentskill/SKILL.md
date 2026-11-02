@@ -99,14 +99,20 @@ These are the writes:
   `worktree tasks star`, `worktree tasks unstar`, `worktree tasks block`,
   `worktree tasks unblock`, `worktree tasks resolve`, `worktree tasks link`,
   `worktree tasks unlink`, `worktree tasks focus`, `worktree tasks unfocus`,
-  `worktree tasks move`, `worktree tasks subtask`, `worktree tasks delete`,
-  `worktree tasks undo`
+  `worktree tasks move`, `worktree tasks delete`, `worktree tasks undo`
+- `worktree tasks subtask add`, `worktree tasks subtask check`,
+  `worktree tasks subtask uncheck`, `worktree tasks subtask edit`,
+  `worktree tasks subtask order`, `worktree tasks subtask remove`
+- `worktree jira add`, `worktree jira remove`
 - `worktree add`, `worktree delete`, `worktree cleanup`, `worktree dotfiles`
 - `worktree watcher run`
+- `worktree open` and `worktree ui` act on the user's machine: they open an editor
+  or browser, or start a server.
 
 Read state is shared with the web UI: marking something read changes what the user
 sees there, for every worktree following it. Slack read state is Slack's. `mark-read`
 skips Slack threads, so nothing here can mark one read.
 
-Never install or uninstall anything: no `worktree setup`, no `worktree update`.
+Never install or uninstall anything: no `worktree setup`, no `worktree setup slack`,
+no `worktree update`.
 Those are the user's to run.

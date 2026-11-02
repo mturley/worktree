@@ -66,37 +66,67 @@ func TestSkillCommandsAreReal(t *testing.T) {
 	}
 }
 
-// subcommand returns the named child of rootCmd.
-func subcommand(t *testing.T, name string) *cobra.Command {
-	t.Helper()
-	c, _, err := rootCmd.Find([]string{name})
-	if err != nil || c == rootCmd {
-		t.Fatalf("no command %s", name)
+// skillReadCommands are the commands that change nothing. Every other command
+// must be named in the skill's writes section, so a new command fails
+// TestSkillNamesEveryWrite until someone decides which it is.
+var skillReadCommands = map[string]bool{
+	"worktree activity":             true,
+	"worktree agent-help":           true,
+	"worktree attention":            true,
+	"worktree env":                  true,
+	"worktree info":                 true,
+	"worktree jira":                 true,
+	"worktree linked":               true,
+	"worktree list":                 true,
+	"worktree notes show":           true,
+	"worktree ports":                true,
+	"worktree pr-threads list":      true,
+	"worktree resources list":       true,
+	"worktree review-comments list": true,
+	"worktree status":               true,
+	"worktree tasks list":           true,
+	"worktree tasks show":           true,
+	"worktree unread":               true,
+	"worktree version":              true,
+}
+
+// runnableCommands walks the tree below c. help and completion are cobra's own,
+// and only exist here once something has executed rootCmd.
+func runnableCommands(c *cobra.Command) []*cobra.Command {
+	var out []*cobra.Command
+	for _, sub := range c.Commands() {
+		if sub.Name() == "help" || sub.Name() == "completion" {
+			continue
+		}
+		if sub.Runnable() {
+			out = append(out, sub)
+		}
+		out = append(out, runnableCommands(sub)...)
 	}
-	return c
+	return out
 }
 
 // The writes section must name every write, including ones added later.
 func TestSkillNamesEveryWrite(t *testing.T) {
-	content := string(agentskill.Content)
-	_, writes, ok := strings.Cut(content, "## Never write without")
+	_, writes, ok := strings.Cut(string(agentskill.Content), "## Never write without")
 	if !ok {
 		t.Fatal("no writes section")
 	}
-	want := []string{"worktree notes set", "worktree add", "worktree delete", "worktree cleanup"}
-	for _, c := range subcommand(t, "resources").Commands() {
-		if c.Name() != "list" {
-			want = append(want, "worktree resources "+c.Name())
+	seen := map[string]bool{}
+	for _, c := range runnableCommands(rootCmd) {
+		path := c.CommandPath()
+		seen[path] = true
+		named := strings.Contains(writes, "`"+path+"`")
+		switch {
+		case skillReadCommands[path] && named:
+			t.Errorf("%q is both on the read-only allowlist and in the writes section", path)
+		case !skillReadCommands[path] && !named:
+			t.Errorf("%q is neither on the read-only allowlist nor in the writes section", path)
 		}
 	}
-	for _, c := range subcommand(t, "tasks").Commands() {
-		if c.Name() != "list" && c.Name() != "show" {
-			want = append(want, "worktree tasks "+c.Name())
-		}
-	}
-	for _, w := range want {
-		if !strings.Contains(writes, w) {
-			t.Errorf("the writes section does not name %q", w)
+	for path := range skillReadCommands {
+		if !seen[path] {
+			t.Errorf("the read-only allowlist names %q, which doesn't exist", path)
 		}
 	}
 }

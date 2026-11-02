@@ -32,6 +32,7 @@ type Plan struct {
 	ConfigureUI           bool
 	MacApp                MacAppAction
 	AgentSkill            AgentSkillAction
+	AgentSkillLinks       []string
 	Cfg                   config.Config
 }
 
@@ -67,6 +68,7 @@ func BuildPlan(cfg config.Config) Plan {
 
 	plan.MacApp = detectMacApp()
 	plan.AgentSkill = detectAgentSkill()
+	plan.AgentSkillLinks = detectAgentSkillLinks()
 
 	plan.InstallCompletions = true
 	dir := completionDir(rc.Shell)
@@ -168,6 +170,9 @@ func (p Plan) Preview() {
 	case AgentSkillUserManaged:
 		fmt.Println(ui.Dim("  — ~/.agents/skills/worktree isn't worktree's; leaving it"))
 	}
+	for _, link := range p.AgentSkillLinks {
+		fmt.Printf("  • Link the worktree skill into %s\n", ui.ShortPath(link))
+	}
 	if !hasWork {
 		fmt.Println("Nothing to do — already set up.")
 	}
@@ -176,7 +181,7 @@ func (p Plan) Preview() {
 func (p Plan) HasWork() bool {
 	return p.CreateWorktreesBase || p.InstallShellRC || p.CreateConfig || p.InstallCompletions || p.ConfigureJiraProjects || p.TestGitHubCreds || p.TestSlackCreds || p.TestJiraCreds || p.ConfigureUI ||
 		p.MacApp == MacAppOfferInstall || p.MacApp == MacAppRebuild ||
-		p.AgentSkill == AgentSkillOfferInstall || p.AgentSkill == AgentSkillUpdate
+		p.AgentSkill == AgentSkillOfferInstall || p.AgentSkill == AgentSkillUpdate || len(p.AgentSkillLinks) > 0
 }
 
 func (p Plan) Execute() error {
