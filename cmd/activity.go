@@ -54,6 +54,15 @@ func init() {
 	rootCmd.AddCommand(activityCmd)
 }
 
+// resolveWorktreeFlag reads a --worktree value: "." is the current worktree,
+// anything else a path.
+func resolveWorktreeFlag(v string) (string, error) {
+	if v == "." {
+		return resolveWorktreePath(nil)
+	}
+	return resolveWorktreePath([]string{v})
+}
+
 // parseSince turns a --since value into an RFC 3339 UTC time: a duration
 // ("24h", "7d") means now minus it; an RFC 3339 time passes through.
 func parseSince(now time.Time, v string) (string, error) {
@@ -136,11 +145,7 @@ func runActivity(cmd *cobra.Command, args []string) error {
 		}
 	}
 	if activityWorktree != "" {
-		var wargs []string
-		if activityWorktree != "." {
-			wargs = []string{activityWorktree}
-		}
-		if q.WorktreePath, err = resolveWorktreePath(wargs); err != nil {
+		if q.WorktreePath, err = resolveWorktreeFlag(activityWorktree); err != nil {
 			return err
 		}
 	}

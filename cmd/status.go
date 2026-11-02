@@ -16,6 +16,9 @@ import (
 // data counts as out of date. The UI polls every few minutes while running.
 const staleAfter = 15 * time.Minute
 
+// staleHint is what text output says when buildStatus reports stale data.
+const staleHint = "Start `worktree ui` so the watchers poll; activity below may be out of date."
+
 // uiProbe reports whether a worktree UI is listening on port. A variable so
 // tests do not depend on what runs on the machine.
 var uiProbe = serverAlreadyListening
@@ -142,7 +145,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		}
 	}
 	if rep.Stale {
-		fmt.Fprintln(out, "Start `worktree ui` so the watchers poll; activity below may be out of date.")
+		fmt.Fprintln(out, staleHint)
 	}
 	return nil
 }
