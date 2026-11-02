@@ -39,7 +39,7 @@ func runUnread(cmd *cobra.Command, args []string) error {
 	if unreadBy != "" && unreadBy != "worktree" && unreadBy != "resource" {
 		return fmt.Errorf("unknown --by %q (want worktree or resource)", unreadBy)
 	}
-	conn, err := wdb.Open()
+	conn, err := wdb.OpenRead()
 	if err != nil {
 		return err
 	}

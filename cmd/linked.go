@@ -70,7 +70,7 @@ func runLinked(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("invalid resource %q: want a URL or <type>:<id> (pr, jira or slack)", args[0])
 	}
-	conn, err := wdb.Open()
+	conn, err := wdb.OpenRead()
 	if err != nil {
 		return err
 	}

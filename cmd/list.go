@@ -83,9 +83,9 @@ func runListJSON(cmd *cobra.Command, conn *sql.DB) error {
 }
 
 func runList(cmd *cobra.Command, args []string) error {
-	conn, err := wdb.Open()
+	conn, err := wdb.OpenRead()
 	if err != nil {
-		return fmt.Errorf("opening db: %w", err)
+		return err
 	}
 	defer conn.Close()
 

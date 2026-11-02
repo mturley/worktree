@@ -18,6 +18,12 @@ New activity only arrives while `worktree ui` is running. If `stale` is true, te
 the user to start `worktree ui` so the watchers poll, then answer from the cache
 anyway and say how old it is. Never start it yourself.
 
+Read commands never create or upgrade the database, so `status` can exit 2. Tell the
+user what the error says and stop: with `no worktree database yet`, they need to run
+`worktree setup` or `worktree ui`; with `worktree database needs upgrading`, they need
+to start `worktree ui`. Both are theirs to run, and there is no cache to answer from
+until then.
+
 ## Reading output
 
 - Always pass `--json`. Every JSON output is an object with `schema_version` and

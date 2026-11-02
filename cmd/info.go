@@ -79,7 +79,7 @@ func runInfo(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	conn, err := wdb.Open()
+	conn, err := wdb.OpenRead()
 	if err != nil {
 		return err
 	}

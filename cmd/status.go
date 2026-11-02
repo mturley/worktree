@@ -112,7 +112,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	conn, err := wdb.Open()
+	conn, err := wdb.OpenRead()
 	if err != nil {
 		return err
 	}

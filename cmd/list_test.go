@@ -125,6 +125,11 @@ func TestListJSONGitFlag(t *testing.T) {
 func TestListJSONEmptyIsArray(t *testing.T) {
 	t.Setenv("CMUX_SOCKET_PATH", "")
 	t.Setenv("WORKTREE_DB", filepath.Join(t.TempDir(), "w.db"))
+	conn, err := wdb.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.Close()
 	out, err := runCLI(t, "list", "--json")
 	if err != nil {
 		t.Fatal(err)

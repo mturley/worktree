@@ -76,7 +76,9 @@ func resolveWorktreeFlag(conn *sql.DB, v string) (string, error) {
 	want := wdb.Subscriber(path)
 	for _, e := range entries {
 		if wdb.Subscriber(e.Path) == want {
-			return path, nil
+			// The registered spelling: a cwd reached through a symlink
+			// canonicalizes the same but would miss registry.Get.
+			return e.Path, nil
 		}
 	}
 	return "", fmt.Errorf("not a registered worktree: %s", path)
@@ -164,7 +166,7 @@ func runActivity(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	conn, err := wdb.Open()
+	conn, err := wdb.OpenRead()
 	if err != nil {
 		return err
 	}

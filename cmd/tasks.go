@@ -45,8 +45,14 @@ func formatTaskID(id int64) string { return "T" + strconv.FormatInt(id, 10) }
 // the FIRST ':' only, because Slack ids contain ':'), "wt:<path>", or "."
 // for the current worktree.
 func parseLinkRef(s string) (tasks.LinkTarget, error) {
+	return parseLinkRefIn(s, currentWorktree)
+}
+
+// parseLinkRefIn is parseLinkRef with "." resolved by current, so a read
+// command can answer it through the handle it already holds.
+func parseLinkRefIn(s string, current func() (string, bool, error)) (tasks.LinkTarget, error) {
 	if s == "." {
-		p, ok, err := currentWorktree()
+		p, ok, err := current()
 		if err != nil {
 			return tasks.LinkTarget{}, err
 		}
@@ -81,15 +87,19 @@ func canonicalWorktree(p string) string {
 // currentWorktree returns the canonical path of the registered worktree
 // containing the cwd, or ok=false when the cwd is not in one.
 func currentWorktree() (string, bool, error) {
-	p, err := resolveWorktreePath(nil)
-	if err != nil {
-		return "", false, err
-	}
 	conn, err := wdb.Open()
 	if err != nil {
 		return "", false, err
 	}
 	defer conn.Close()
+	return currentWorktreeIn(conn)
+}
+
+func currentWorktreeIn(conn *sql.DB) (string, bool, error) {
+	p, err := resolveWorktreePath(nil)
+	if err != nil {
+		return "", false, err
+	}
 	return registeredWorktree(conn, p)
 }
 
@@ -281,7 +291,7 @@ func listScope(conn *sql.DB) (tasks.Scope, error) {
 	case tasksWorktree != "":
 		return tasks.Scope{Kind: tasks.ScopeWorktree, Worktree: tasksWorktree}, nil
 	case tasksResource != "":
-		t, err := parseLinkRef(tasksResource)
+		t, err := parseLinkRefIn(tasksResource, func() (string, bool, error) { return currentWorktreeIn(conn) })
 		if err != nil {
 			return tasks.Scope{}, err
 		}
@@ -290,11 +300,7 @@ func listScope(conn *sql.DB) (tasks.Scope, error) {
 		}
 		return tasks.Scope{Kind: tasks.ScopeResource, ResourceType: t.ResourceType, ResourceID: t.ResourceID}, nil
 	}
-	p, err := resolveWorktreePath(nil)
-	if err != nil {
-		return tasks.Scope{}, err
-	}
-	wt, ok, err := registeredWorktree(conn, p)
+	wt, ok, err := currentWorktreeIn(conn)
 	if err != nil {
 		return tasks.Scope{}, err
 	}
@@ -305,7 +311,7 @@ func listScope(conn *sql.DB) (tasks.Scope, error) {
 }
 
 func runTasksList(cmd *cobra.Command, args []string) error {
-	conn, err := wdb.Open()
+	conn, err := wdb.OpenRead()
 	if err != nil {
 		return err
 	}
@@ -361,7 +367,7 @@ func runTasksShow(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	conn, err := wdb.Open()
+	conn, err := wdb.OpenRead()
 	if err != nil {
 		return err
 	}

@@ -75,6 +75,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	if !plan.HasWork() {
+		ensureDatabase()
 		printGettingStarted()
 		return nil
 	}
@@ -94,8 +95,21 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "Note: could not register worktree in watcher consumer registry: %v\n", err)
 	}
 
+	ensureDatabase()
 	printGettingStarted()
 	return nil
+}
+
+// ensureDatabase creates or migrates the DB. Read commands never do, and their
+// errors tell the user to run setup, which also covers a rebuild, since `make
+// install` runs setup. Best-effort: the UI and every write command migrate too.
+func ensureDatabase() {
+	conn, err := wdb.Open()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Note: could not prepare the worktree database: %v\n", err)
+		return
+	}
+	conn.Close()
 }
 
 // printGettingStarted ends an interactive setup with tips for what to do

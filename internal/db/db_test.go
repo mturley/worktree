@@ -1,10 +1,17 @@
 package db
 
 import (
+	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestOpenAtCreatesTables(t *testing.T) {
@@ -416,5 +423,247 @@ func TestOpenAtAddsGitHubColumnsToReviewComments(t *testing.T) {
 		if !hasColumn(t, conn, "review_comments", col) {
 			t.Fatalf("expected review_comments.%s after migrating", col)
 		}
+	}
+}
+
+func TestOpenAtRecordsSchemaVersion(t *testing.T) {
+	conn, err := OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	var v int
+	if err := conn.QueryRow(`PRAGMA user_version`).Scan(&v); err != nil {
+		t.Fatal(err)
+	}
+	if v != schemaVersion {
+		t.Errorf("user_version = %d, want %d", v, schemaVersion)
+	}
+}
+
+// An older binary opening the DB must not lower a newer binary's version.
+func TestOpenAtNeverLowersSchemaVersion(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "w.db")
+	conn, err := OpenAt(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion+5)); err != nil {
+		t.Fatal(err)
+	}
+	conn.Close()
+	conn, err = OpenAt(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	var v int
+	if err := conn.QueryRow(`PRAGMA user_version`).Scan(&v); err != nil {
+		t.Fatal(err)
+	}
+	if v != schemaVersion+5 {
+		t.Errorf("user_version = %d, want it kept at %d", v, schemaVersion+5)
+	}
+}
+
+// schemaFingerprint pins worktree's own tables to schemaVersion. OpenRead
+// trusts that version instead of inspecting tables, so a schema change that
+// forgot the bump would let read commands query a column an old DB lacks.
+//
+// If this fails: you changed migrate. Bump schemaVersion, then paste the new
+// fingerprint here.
+const schemaFingerprint = "90e9ecf7c42fdf3bc01ca7cf49881b6724d416827d7c96abb8acd30d9f20e560"
+
+func TestSchemaVersionCoversSchema(t *testing.T) {
+	conn, err := OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	rows, err := conn.Query(`SELECT sql FROM sqlite_master
+		WHERE sql IS NOT NULL AND name NOT LIKE 'watcher\_%' ESCAPE '\' AND name NOT LIKE 'sqlite\_%' ESCAPE '\'
+		ORDER BY type, name`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	h := sha256.New()
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			t.Fatal(err)
+		}
+		fmt.Fprintln(h, s)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if got := hex.EncodeToString(h.Sum(nil)); got != schemaFingerprint {
+		t.Errorf("worktree schema changed: bump schemaVersion and set schemaFingerprint to %q", got)
+	}
+}
+
+func TestOpenReadAtMissingFileCreatesNothing(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "absent")
+	_, err := OpenReadAt(filepath.Join(dir, "w.db"))
+	if !errors.Is(err, ErrNoDatabase) {
+		t.Fatalf("err = %v, want ErrNoDatabase", err)
+	}
+	if _, statErr := os.Stat(dir); !os.IsNotExist(statErr) {
+		t.Errorf("OpenReadAt created the directory (stat err %v)", statErr)
+	}
+}
+
+func TestOpenReadAtBehindWorktreeSchema(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "w.db")
+	conn, err := OpenAt(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion-1)); err != nil {
+		t.Fatal(err)
+	}
+	conn.Close()
+	if _, err := OpenReadAt(p); !errors.Is(err, ErrSchemaBehind) {
+		t.Fatalf("err = %v, want ErrSchemaBehind", err)
+	}
+	// No migration ran: the version is still behind.
+	conn, err = sql.Open("sqlite", "file:"+p+"?mode=ro")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	var v int
+	if err := conn.QueryRow(`PRAGMA user_version`).Scan(&v); err != nil {
+		t.Fatal(err)
+	}
+	if v != schemaVersion-1 {
+		t.Errorf("user_version = %d: OpenReadAt migrated", v)
+	}
+}
+
+func TestOpenReadAtBehindWatcherSchema(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "w.db")
+	conn, err := OpenAt(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(`UPDATE watcher_schema_version SET version = version - 1`); err != nil {
+		t.Fatal(err)
+	}
+	conn.Close()
+	if _, err := OpenReadAt(p); !errors.Is(err, ErrSchemaBehind) {
+		t.Fatalf("err = %v, want ErrSchemaBehind", err)
+	}
+}
+
+func TestOpenReadAtEmptyFileIsBehind(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "w.db")
+	if err := os.WriteFile(p, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenReadAt(p); !errors.Is(err, ErrSchemaBehind) {
+		t.Fatalf("err = %v, want ErrSchemaBehind", err)
+	}
+}
+
+// A newer binary already migrated this DB: every schema change is additive,
+// so an older binary reads it, as watcherdb.Migrate allows.
+func TestOpenReadAtNewerSchemaOpens(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "w.db")
+	conn, err := OpenAt(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion+1)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(`UPDATE watcher_schema_version SET version = version + 1`); err != nil {
+		t.Fatal(err)
+	}
+	conn.Close()
+	ro, err := OpenReadAt(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ro.Close()
+}
+
+func TestOpenReadAtRejectsWrites(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "w.db")
+	conn, err := OpenAt(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.Close()
+	ro, err := OpenReadAt(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ro.Close()
+	_, err = ro.Exec(`INSERT INTO port_allocations (name, slot) VALUES ('x', 1)`)
+	if err == nil || !strings.Contains(err.Error(), "readonly") {
+		t.Fatalf("write through OpenReadAt: err = %v, want a readonly error", err)
+	}
+}
+
+func TestOpenReadAtReadOnlyFile(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "w.db")
+	conn, err := OpenAt(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.Close()
+	if err := os.Chmod(p, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	ro, err := OpenReadAt(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ro.Close()
+	var n int
+	if err := ro.QueryRow(`SELECT COUNT(*) FROM worktrees`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A writer holding the write lock (the UI mid-poll) must not stall a read.
+func TestOpenReadAtWhileWriteLockHeld(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "w.db")
+	conn, err := OpenAt(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	held, err := conn.Conn(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	if _, err := held.ExecContext(context.Background(), `BEGIN IMMEDIATE`); err != nil {
+		t.Fatal(err)
+	}
+	defer held.ExecContext(context.Background(), `ROLLBACK`)
+
+	start := time.Now()
+	ro, err := OpenReadAt(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ro.Close()
+	var n int
+	if err := ro.QueryRow(`SELECT COUNT(*) FROM worktrees`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Errorf("read took %v: it waited on the write lock", d)
+	}
+}
+
+func TestOpenReadUsesPath(t *testing.T) {
+	t.Setenv("WORKTREE_DB", filepath.Join(t.TempDir(), "absent.db"))
+	if _, err := OpenRead(); !errors.Is(err, ErrNoDatabase) {
+		t.Fatalf("err = %v, want ErrNoDatabase", err)
 	}
 }

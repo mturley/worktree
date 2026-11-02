@@ -55,7 +55,7 @@ func init() {
 }
 
 func runPRThreadsList(cmd *cobra.Command, args []string) error {
-	conn, err := wdb.Open()
+	conn, err := wdb.OpenRead()
 	if err != nil {
 		return err
 	}

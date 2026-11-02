@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -59,4 +60,65 @@ func OpenAt(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("worktree migrate: %w", err)
 	}
 	return conn, nil
+}
+
+// ErrNoDatabase is OpenRead's error when the DB file does not exist.
+var ErrNoDatabase = errors.New("no worktree database yet; run worktree setup or worktree ui")
+
+// ErrSchemaBehind is OpenRead's error when the DB was last migrated by an
+// older binary.
+var ErrSchemaBehind = errors.New("worktree database needs upgrading; start worktree ui or run any write command")
+
+// OpenRead opens the worktree DB at the standard path for reading only. Read
+// commands use it, never Open: Open migrates, and migrating writes.
+func OpenRead() (*sql.DB, error) {
+	path, err := Path()
+	if err != nil {
+		return nil, fmt.Errorf("resolving worktree db path: %w", err)
+	}
+	return OpenReadAt(path)
+}
+
+// OpenReadAt opens the DB at path with SQLite's mode=ro, so a write through
+// the returned handle fails rather than happening. It creates nothing and
+// migrates nothing: a missing file is ErrNoDatabase and a schema older than
+// this binary's is ErrSchemaBehind. A newer schema opens, because every schema
+// change is additive (the same reasoning as watcherdb.Migrate).
+func OpenReadAt(path string) (*sql.DB, error) {
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return nil, ErrNoDatabase
+		}
+		return nil, fmt.Errorf("opening db: %w", err)
+	}
+	dsn := fmt.Sprintf("file:%s?mode=ro&_pragma=busy_timeout(5000)", path)
+	conn, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("opening db: %w", err)
+	}
+	if err := checkSchemaCurrent(conn); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return conn, nil
+}
+
+// checkSchemaCurrent compares both schema versions in the file, the watcher
+// library's and worktree's own, against what this binary expects.
+func checkSchemaCurrent(conn *sql.DB) error {
+	watcher, err := watcherdb.SchemaVersion(conn)
+	if err != nil {
+		return fmt.Errorf("opening db: %w", err)
+	}
+	if watcher < watcherdb.CurrentSchemaVersion {
+		return ErrSchemaBehind
+	}
+	own, err := userVersion(conn)
+	if err != nil {
+		return fmt.Errorf("opening db: %w", err)
+	}
+	if own < schemaVersion {
+		return ErrSchemaBehind
+	}
+	return nil
 }
