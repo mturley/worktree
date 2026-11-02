@@ -171,6 +171,55 @@ describe("SubtasksSection", () => {
     expect(api.removeSubtask).toHaveBeenCalledWith(12)
   })
 
+  describe("show completed", () => {
+    const rows = () => screen.getAllByRole("button", { name: /^Edit subtask: / }).map((b) => b.textContent)
+    const toggle = () => screen.getByRole("switch", { name: "Show completed" })
+
+    it("is on by default and shows every subtask", () => {
+      show()
+      expect(toggle()).toBeChecked()
+      expect(rows()).toEqual(["first", "second", "third"])
+    })
+
+    it("off hides completed subtasks but still counts them", async () => {
+      const user = userEvent.setup()
+      show()
+      await user.click(toggle())
+      expect(rows()).toEqual(["second", "third"])
+      expect(screen.getByText("1/3")).toBeInTheDocument()
+      await user.click(toggle())
+      expect(rows()).toEqual(["first", "second", "third"])
+    })
+
+    it("off, a subtask leaves the list as it is checked", async () => {
+      vi.mocked(api.checkSubtask).mockReturnValue(new Promise(() => {}))
+      const user = userEvent.setup()
+      show()
+      await user.click(toggle())
+      await user.click(screen.getByRole("checkbox", { name: "Subtask done: second" }))
+      expect(rows()).toEqual(["third"])
+      expect(screen.getByText("2/3")).toBeInTheDocument()
+    })
+
+    it("stays reachable when every subtask is hidden", async () => {
+      const allDone = detail({ subtasks: [{ id: 10, text: "first", checked: true }] })
+      serve(allDone)
+      const user = userEvent.setup()
+      show(allDone)
+      await user.click(toggle())
+      expect(screen.queryByRole("button", { name: /^Edit subtask: / })).toBeNull()
+      await user.click(toggle())
+      expect(rows()).toEqual(["first"])
+    })
+
+    it("is absent when there are no subtasks", () => {
+      const none = detail()
+      serve(none)
+      show(none)
+      expect(screen.queryByRole("switch", { name: "Show completed" })).toBeNull()
+    })
+  })
+
   describe("drag", () => {
     beforeEach(() => {
       vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(
@@ -178,6 +227,20 @@ describe("SubtasksSection", () => {
       )
     })
     afterEach(() => vi.mocked(Element.prototype.getBoundingClientRect).mockRestore())
+
+    it("a reorder with completed hidden still sends every subtask", async () => {
+      const user = userEvent.setup()
+      show()
+      await user.click(screen.getByRole("switch", { name: "Show completed" }))
+      const grip = screen.getByRole("button", { name: "Drag to reorder second" })
+      act(() => grip.focus())
+      fireEvent.keyDown(grip, { code: "Space", key: " " })
+      await waitFor(() => expect(grip).toHaveAttribute("aria-pressed", "true"))
+      fireEvent.keyDown(grip, { code: "ArrowDown", key: "ArrowDown" })
+      fireEvent.keyDown(grip, { code: "Space", key: " " })
+      await waitFor(() => expect(api.orderSubtasks).toHaveBeenCalled())
+      expect(api.orderSubtasks).toHaveBeenCalledWith(1, [10, 12, 11])
+    })
 
     it("keyboard reorder sends the full new order", async () => {
       show()

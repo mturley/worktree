@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { ActionIcon, Box, Checkbox, Group, Stack, Text, TextInput, Title, UnstyledButton } from "@mantine/core"
+import { ActionIcon, Box, Checkbox, Group, Stack, Switch, Text, TextInput, Title, UnstyledButton } from "@mantine/core"
 import { IconGripVertical, IconX } from "@tabler/icons-react"
 import {
   closestCenter,
@@ -30,7 +30,8 @@ const sortableId = (id: number) => `subtask:${id}`
 /**
  * The task's checklist: "done/total", add on Enter (focus stays for the
  * next), check to write at once, click the text to edit in place, ✕ to
- * remove, and drag the grip to reorder.
+ * remove, and drag the grip to reorder. "Show completed" only narrows the
+ * list: the count and the order sent on a reorder still cover every subtask.
  */
 export function SubtasksSection({ task }: { task: TaskDetail }) {
   const m = useTaskDetailMutations(task.id)
@@ -39,6 +40,7 @@ export function SubtasksSection({ task }: { task: TaskDetail }) {
   const offerUndo = useOfferTaskUndo()
   const [text, setText] = useState("")
   const [adding, setAdding] = useState(false)
+  const [showCompleted, setShowCompleted] = useState(true)
   // The optimistic order while a reorder saves, as ResourceList's `pending`.
   const [pending, setPending] = useState<number[] | null>(null)
   const saving = useRef(0)
@@ -62,6 +64,7 @@ export function SubtasksSection({ task }: { task: TaskDetail }) {
       ]
     : task.subtasks
   const done = shown.filter((s) => s.checked).length
+  const visible = showCompleted ? shown : shown.filter((s) => !s.checked)
 
   const patchSubtask = (id: number, fields: Partial<TaskSubtask>) =>
     qc.setQueryData<TaskDetail>(taskDetailKey(task.id), (cur) =>
@@ -106,15 +109,25 @@ export function SubtasksSection({ task }: { task: TaskDetail }) {
 
   return (
     <Stack gap={6}>
-      <Group gap="xs">
-        <Title order={6}>Subtasks</Title>
-        {shown.length > 0 && <Text size="xs" c="dimmed">{done}/{shown.length}</Text>}
+      <Group justify="space-between" wrap="nowrap">
+        <Group gap="xs">
+          <Title order={6}>Subtasks</Title>
+          {shown.length > 0 && <Text size="xs" c="dimmed">{done}/{shown.length}</Text>}
+        </Group>
+        {shown.length > 0 && (
+          <Switch
+            size="xs"
+            label="Show completed"
+            checked={showCompleted}
+            onChange={(e) => setShowCompleted(e.currentTarget.checked)}
+          />
+        )}
       </Group>
       {alert}
       <DndContext sensors={sensors} collisionDetection={closestCenter} autoScroll={false} onDragEnd={onDragEnd}>
-        <SortableContext items={shown.map((s) => sortableId(s.id))} strategy={verticalListSortingStrategy}>
+        <SortableContext items={visible.map((s) => sortableId(s.id))} strategy={verticalListSortingStrategy}>
           <Stack gap={2} data-subtask-list>
-            {shown.map((s) => (
+            {visible.map((s) => (
               <SubtaskRow
                 key={s.id}
                 s={s}
