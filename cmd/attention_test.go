@@ -284,3 +284,54 @@ func TestWorktreeFlagComparesCanonically(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A watcher turned off keeps what it cached: attention still ranks and shows
+// it, and status neither counts the service stale nor contacts it.
+func TestAttentionUsesCachedStateWithWatcherOff(t *testing.T) {
+	isolateLive(t, "watchers:\n  jira: false\n", "")
+	stubUIProbe(t, true)
+	live, _ := seedReadFixture(t)
+	conn, err := wdb.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if err := resources.Add(conn, live, resources.Resource{Type: "jira", ID: "J-1", URL: "https://jira/J-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := watcherdb.UpsertResourceState(conn, "jira", "J-1",
+		`{"summary":"Old news","status":"In Progress","priority":"Critical","priority_rank":2}`, "x", "x"); err != nil {
+		t.Fatal(err)
+	}
+	ts := time.Now().UTC().Add(time.Hour).Format(time.RFC3339)
+	if _, err := conn.Exec(`INSERT INTO watcher_events (id, ts, source, type, title) VALUES ('j1',?,'jira','jira_comment','c')`, ts); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(`INSERT INTO watcher_event_resources (event_id, resource_type, resource_id, resource_url) VALUES ('j1','jira','J-1','u')`); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runCLI(t, "attention", "--json")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	var items []attention.Item
+	decodeEnvelope(t, out, "items", &items)
+	if len(items) != 1 || items[0].Resource == nil {
+		t.Fatalf("items: %s", out)
+	}
+	r := items[0].Resource
+	if r.ID != "J-1" || r.Priority != "Critical" || r.Status != "In Progress" || r.Title != "Old news" {
+		t.Errorf("resource = %+v, want its cached state", r)
+	}
+	if items[0].Rank == nil || *items[0].Rank != 2 {
+		t.Errorf("rank = %v, want the cached 2", items[0].Rank)
+	}
+	var status statusReport
+	decodeEnvelope(t, out, "status", &status)
+	for _, s := range status.Services {
+		if s.Name == "jira" && (s.Enabled || s.Stale) {
+			t.Errorf("jira = %+v, want disabled and not stale", s)
+		}
+	}
+}
