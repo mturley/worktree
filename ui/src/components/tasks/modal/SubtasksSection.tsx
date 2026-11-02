@@ -22,6 +22,7 @@ import { CSS } from "@dnd-kit/utilities"
 import type { TaskDetail, TaskSubtask } from "../../../api/types"
 import { taskDetailKey, useTaskDetailMutations } from "../../../hooks/useTaskDetail"
 import { useQueryClient } from "@tanstack/react-query"
+import { readSubtasksShowCompleted, writeSubtasksShowCompleted } from "../../../lib/subtasksShowCompletedPref"
 import { taskUndoMessage, useOfferTaskUndo } from "../taskUndo"
 import { errorText, useSectionAction } from "./sectionAction"
 
@@ -40,7 +41,7 @@ export function SubtasksSection({ task }: { task: TaskDetail }) {
   const offerUndo = useOfferTaskUndo()
   const [text, setText] = useState("")
   const [adding, setAdding] = useState(false)
-  const [showCompleted, setShowCompleted] = useState(true)
+  const [showCompleted, setShowCompleted] = useState(readSubtasksShowCompleted)
   // The optimistic order while a reorder saves, as ResourceList's `pending`.
   const [pending, setPending] = useState<number[] | null>(null)
   const saving = useRef(0)
@@ -119,7 +120,10 @@ export function SubtasksSection({ task }: { task: TaskDetail }) {
             size="xs"
             label="Show completed"
             checked={showCompleted}
-            onChange={(e) => setShowCompleted(e.currentTarget.checked)}
+            onChange={(e) => {
+              setShowCompleted(e.currentTarget.checked)
+              writeSubtasksShowCompleted(e.currentTarget.checked)
+            }}
           />
         )}
       </Group>

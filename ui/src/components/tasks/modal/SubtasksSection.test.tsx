@@ -45,6 +45,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   notifications.clean()
+  window.localStorage.clear()
   vi.clearAllMocks()
 })
 
@@ -199,6 +200,16 @@ describe("SubtasksSection", () => {
       await user.click(screen.getByRole("checkbox", { name: "Subtask done: second" }))
       expect(rows()).toEqual(["third"])
       expect(screen.getByText("2/3")).toBeInTheDocument()
+    })
+
+    it("remembers being turned off, for this task and others", async () => {
+      const user = userEvent.setup()
+      const { unmount } = show()
+      await user.click(toggle())
+      unmount()
+      show()
+      expect(toggle()).not.toBeChecked()
+      expect(rows()).toEqual(["second", "third"])
     })
 
     it("stays reachable when every subtask is hidden", async () => {

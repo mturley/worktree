@@ -1395,7 +1395,9 @@ to break.
   `useSyncExternalStore` and tells its own tab's other lists on write (the
   browser fires `storage` only in other tabs). Every list on every page
   shares it, so collapsing is global: collapse on home and a selected PR's
-  panel is collapsed too.
+  panel is collapsed too. The task modal's subtasks "Show completed" switch
+  is its own value, `worktree.subtasksShowCompleted`
+  (`lib/subtasksShowCompletedPref.ts`, default on), shared by every task.
 - **The panel lives in one hook.** There is no Tasks tab and no Pin.
   `useTasksPanel(scope, { ownResource?, unread?, resetKey? })` returns
   `{ panel, expanded }` for every page. `panel` is the always-shown task
