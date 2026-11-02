@@ -134,7 +134,15 @@ worktree unread [--json] [--by worktree|resource]  # Whether anything is unread,
 
 These read the worktree database directly: no server or login. New activity
 only arrives while `worktree ui` is running and polling, so start with
-`worktree status`. None of them writes anything.
+`worktree status`. None of them writes anything: they open the database
+read-only, and exit 2 rather than create or upgrade it (run `worktree setup` or
+`worktree ui`, or start `worktree ui` to upgrade).
+
+`status --json` gives `stale` and `stale_reason`, and each service its `reason`
+when stale: `ui_not_running`, `no_success_yet`, `poll_old` or `poll_failing`. A
+service with nothing to poll is never stale. Start `worktree ui` if it isn't
+running; if it is, read the service's `error`, which often means credentials to
+renew with `worktree setup`.
 
 ```bash
 worktree status [--json]         # Is the UI running, and when did each watcher last poll?
@@ -149,8 +157,8 @@ worktree linked <url|type:id> [--resolve-links]  # What a PR, Jira issue or Slac
 
 `attention` lists each resource with unread events or a named signal
 (`review_requested`, `changes_requested`, `ci_failing`, `assigned_to_you`,
-`mentioned`, `stale_draft`), and each task due soon or newly unblocked, in a
-fixed order: Jira priority, then number of signals, then newest activity. It
+`mentioned`, `stale_draft`), and each task due soon or newly unblocked
+(`task_due_soon`, `blocker_resolved`), in a fixed order: Jira priority, then number of signals, then newest activity. It
 produces facts; an agent or you decides what needs a reply. `pr-threads` and
 `linked` contact GitHub, Jira or Slack and refuse (exit 2) while that service's
 watcher is off.

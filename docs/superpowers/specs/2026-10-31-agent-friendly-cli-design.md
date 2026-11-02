@@ -87,6 +87,18 @@ ui` so the watchers poll") **and still answers from the cached data**.
 "Old" means more than 15 minutes since a service's last successful poll
 (the UI polls every 2 minutes). *(My call.)*
 
+A service counts as stale only if it is enabled and has active resources of
+its type: the UI doesn't poll a service with nothing to poll, so it never
+records a success. A stale service has a `reason`: `no_success_yet`,
+`poll_old`, or `poll_failing` when it has an error. The top-level `stale_reason`
+lists every reason, plus `ui_not_running`. The advice to start `worktree ui`
+applies only when `ui_running` is false; otherwise it points at the service's
+`error`.
+
+Every read command opens the database with `wdb.OpenRead` (`mode=ro`). It never
+creates or migrates: a missing file or a schema behind the binary's is an error,
+exit 2.
+
 ### `worktree attention`
 
 The main command. Returns one item per resource that has unread events or
@@ -275,9 +287,10 @@ Installation (decided with Mike: it's a skill to install, not an
 
 Content (short, aimed at an agent):
 
-1. Run `worktree status --json` first. If the UI isn't running or the data
-   is stale, tell the user to start `worktree ui`, then answer from the
-   cache anyway.
+1. Run `worktree status --json` first. If the UI isn't running, tell the
+   user to start `worktree ui`; if it is and a service is stale, report why
+   from its `reason` and `error`. Then answer from the cache anyway. If the
+   database is missing or behind, say so and what to run.
 2. For "what's going on / what needs me": `worktree attention --json`.
    Read the events it includes, judge which actually need a response,
    group related items, lead with critical priority, and keep it short.

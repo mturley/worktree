@@ -69,7 +69,7 @@ minutes serially; it now runs most tests in parallel.
 - `cmd/` — cobra commands (one file per subcommand)
 - `internal/` — packages:
   - `config` — YAML config + env var overrides
-  - `db` — SQLite DB lifecycle + schema migrations (Phase 1)
+  - `db` — SQLite DB lifecycle + schema migrations (Phase 1). Read commands use `OpenRead` (`mode=ro`, never creates or migrates), never `Open`, which migrates and therefore writes. A change to `migrate` must bump `schemaVersion` (recorded in `PRAGMA user_version`); `TestSchemaVersionCoversSchema` fails until it does.
   - `registry` — worktree registry (CRUD ops on `worktrees` table)
   - `discovery` — only `IsInsideWorktree` now; worktree discovery moved to DB via `registry.List`
   - `gitutil` — git operations, including the Code tab's read side: main upstream / tracking branch / merge base and ahead-behind, `FirstParentCommits` + `ResolveRange` (a run including the list's oldest commit takes its old side from `merge-base(run's newest end, base-ref)`), `SnapshotWorkingTree` (working tree as a tree object via a scratch `GIT_INDEX_FILE`, never touching the real index), `ComputeFingerprint`, and numstat/patch/file contents between revs (`DiffFiles`, `DiffPatch`, `ShowFile`)
