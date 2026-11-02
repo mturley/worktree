@@ -31,6 +31,8 @@ type Plan struct {
 	TestJiraCreds         bool
 	ConfigureUI           bool
 	MacApp                MacAppAction
+	AgentSkill            AgentSkillAction
+	AgentSkillLinks       []string
 	Cfg                   config.Config
 }
 
@@ -65,6 +67,8 @@ func BuildPlan(cfg config.Config) Plan {
 	plan.ConfigureUI = true
 
 	plan.MacApp = detectMacApp()
+	plan.AgentSkill = detectAgentSkill()
+	plan.AgentSkillLinks = detectAgentSkillLinks()
 
 	plan.InstallCompletions = true
 	dir := completionDir(rc.Shell)
@@ -156,6 +160,19 @@ func (p Plan) Preview() {
 	case MacAppSkipUnattended:
 		fmt.Println(ui.Dim("  — Menu bar app not installed; run worktree setup interactively to install it"))
 	}
+	switch p.AgentSkill {
+	case AgentSkillOfferInstall:
+		fmt.Println("  • Offer to install the worktree skill for AI agents (~/.agents/skills/worktree)")
+	case AgentSkillUpdate:
+		fmt.Println("  • Update the worktree skill (its content changed)")
+	case AgentSkillEditedSkip:
+		fmt.Println(ui.Dim("  — Worktree skill edited; not updating (delete it to get the new version)"))
+	case AgentSkillUserManaged:
+		fmt.Println(ui.Dim("  — ~/.agents/skills/worktree isn't worktree's; leaving it"))
+	}
+	for _, link := range p.AgentSkillLinks {
+		fmt.Printf("  • Link the worktree skill into %s\n", ui.ShortPath(link))
+	}
 	if !hasWork {
 		fmt.Println("Nothing to do — already set up.")
 	}
@@ -163,7 +180,8 @@ func (p Plan) Preview() {
 
 func (p Plan) HasWork() bool {
 	return p.CreateWorktreesBase || p.InstallShellRC || p.CreateConfig || p.InstallCompletions || p.ConfigureJiraProjects || p.TestGitHubCreds || p.TestSlackCreds || p.TestJiraCreds || p.ConfigureUI ||
-		p.MacApp == MacAppOfferInstall || p.MacApp == MacAppRebuild
+		p.MacApp == MacAppOfferInstall || p.MacApp == MacAppRebuild ||
+		p.AgentSkill == AgentSkillOfferInstall || p.AgentSkill == AgentSkillUpdate || len(p.AgentSkillLinks) > 0
 }
 
 func (p Plan) Execute() error {
@@ -219,6 +237,10 @@ func (p Plan) Execute() error {
 		if err := runMacAppStep(p.MacApp, defaultMacAppDeps()); err != nil {
 			fmt.Printf("  %s Menu bar app: %v\n", ui.Yellow("!"), err)
 		}
+	}
+
+	if err := runAgentSkillStep(p.AgentSkill, defaultAgentSkillDeps()); err != nil {
+		fmt.Printf("  %s Worktree skill: %v\n", ui.Yellow("!"), err)
 	}
 
 	return nil
@@ -330,7 +352,10 @@ func promptAndSaveJiraProjects(configPath string, cfg config.Config) error {
 	return nil
 }
 
-func PreviewUninstall(rc ShellRC, configPath string) {
+// PreviewUninstall prints what ExecuteUninstall will do. Every Plan step is
+// undone or has a Preserve line here; TestUninstallCoversEverySetupStep keeps
+// that true. consumer is the name registered in the watcher config.
+func PreviewUninstall(rc ShellRC, configPath, consumer string) {
 	fmt.Println(ui.Bold("worktree setup --uninstall will:"))
 	if rc.IsInstalled() {
 		fmt.Printf("  • Remove auto-source from %s\n", rc.Path)
@@ -342,14 +367,24 @@ func PreviewUninstall(rc ShellRC, configPath string) {
 	if runtime.GOOS == "darwin" {
 		PreviewMacAppUninstall(defaultMacAppDeps().Paths)
 	}
+	previewAgentUninstall(defaultAgentUninstall(consumer))
 	fmt.Println("  • Remove the web UI's HTTPS certificate files and remote access settings (the password is kept)")
 	fmt.Println("  • Preserve worktree data (remove manually if desired)")
 	if _, err := os.Stat(configPath); err == nil {
 		fmt.Printf("  • Preserve config at %s (contains credentials)\n", ui.ShortPath(configPath))
 	}
+	if watcherPath := wconfig.DefaultPath(); pathExists(watcherPath) {
+		fmt.Printf("  • Preserve credentials in the watcher config at %s\n", ui.ShortPath(watcherPath))
+	}
 }
 
-func ExecuteUninstall(rc ShellRC, configPath string) error {
+// ExecuteUninstall undoes setup. It acts on this machine's real brew
+// completions and menu bar app whatever HOME says, so tests must not call it;
+// they call runAgentUninstall and the other steps' own functions.
+func ExecuteUninstall(rc ShellRC, configPath, consumer string) error {
+	// First, because a shell RC failure below returns early.
+	runAgentUninstall(defaultAgentUninstall(consumer))
+
 	if rc.IsInstalled() {
 		if err := rc.Uninstall(); err != nil {
 			return fmt.Errorf("removing shell RC: %w", err)
@@ -378,6 +413,9 @@ func ExecuteUninstall(rc ShellRC, configPath string) error {
 	if _, err := os.Stat(configPath); err == nil {
 		fmt.Printf("  %s Config preserved at %s\n", ui.Dim("—"), ui.ShortPath(configPath))
 		fmt.Printf("    Remove manually: rm %s\n", ui.ShortPath(configPath))
+	}
+	if watcherPath := wconfig.DefaultPath(); pathExists(watcherPath) {
+		fmt.Printf("  %s Watcher credentials preserved at %s\n", ui.Dim("—"), ui.ShortPath(watcherPath))
 	}
 
 	return nil

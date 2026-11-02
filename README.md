@@ -119,17 +119,70 @@ New branch worktrees branch from the current HEAD. Before creating one, the tool
 #### Worktree Management
 
 ```bash
-worktree list                    # List worktrees from the database
-worktree info [path]             # Show worktree info (env vars, resources)
-worktree info --local            # Skip API calls (fast)
+worktree list                    # List worktrees from the database (--json, --git)
+worktree info [path]             # Show worktree info (env vars, resources with cached state; --json)
 worktree delete [path]           # Remove a worktree and clean up
 worktree cleanup                 # Interactively reconcile disk vs database (prompts before removing)
 worktree dotfiles [path]         # Copy gitignored dotfiles from main worktree
-worktree ports                   # Show allocated port ranges (database-backed)
-worktree unread [--json]         # Whether any worktree has unread activity, and how much
+worktree ports                   # Show allocated port ranges (database-backed; --json)
+worktree unread [--json] [--by worktree|resource]  # Whether anything is unread, and how much
 ```
 
 `delete` removes a worktree and cleans up its port allocation, kubeconfig, and git state. `cleanup` reconciles the database with the filesystem, removing worktree entries whose directories no longer exist.
+
+#### Status, Attention and Activity (for people and AI agents)
+
+These read the worktree database directly: no server or login. New activity
+only arrives while `worktree ui` is running and polling, so start with
+`worktree status`. None of them writes anything: they open the database
+read-only, and exit 2 rather than create or upgrade it (run `worktree setup` or
+`worktree ui`, or start `worktree ui` to upgrade).
+
+`status --json` gives `stale` and `stale_reason`, and each service its `reason`
+when stale: `ui_not_running`, `no_success_yet`, `poll_old` or `poll_failing`. A
+service with nothing to poll is never stale. Start `worktree ui` if it isn't
+running; if it is, read the service's `error`, which often means credentials to
+renew with `worktree setup`.
+
+```bash
+worktree status [--json]         # Is the UI running, and when did each watcher last poll?
+worktree attention [--worktree .] [--json]  # What deserves attention, most important first (exit 1: nothing)
+worktree activity [--since 24h] [--unread] [--source github|jira|slack|tasks] [--resource <ref>] [--worktree .] [--limit n] [--json]  # The timeline (exit 1 with --unread and none)
+worktree notes show [--worktree .]          # A worktree's notes (set replaces them)
+worktree review-comments list [--worktree .]  # Draft review comments and where they sit now
+worktree ports --listening       # Allocated ranges plus what is actually listening, per worktree
+worktree pr-threads list [--worktree .]     # The PR's review threads (contacts GitHub; exit 1: no PR)
+worktree linked <url|type:id> [--resolve-links]  # What a PR, Jira issue or Slack thread links to (contacts the service)
+```
+
+`attention` lists each resource with unread events or a named signal
+(`review_requested`, `changes_requested`, `ci_failing`, `assigned_to_you`,
+`mentioned`, `stale_draft`), and each task due soon or newly unblocked
+(`task_due_soon`, `blocker_resolved`), in a fixed order: Jira priority, then number of signals, then newest activity. It
+produces facts; an agent or you decides what needs a reply. `pr-threads` and
+`linked` contact GitHub, Jira or Slack and refuse (exit 2) while that service's
+watcher is off.
+
+Every read command takes `--json`, which prints an object with
+`"schema_version": 1` and snake_case fields, never a bare array. Exit codes: 0
+success; 1 nothing found (`attention`, `activity --unread`, `pr-threads list`
+with no PR); 2 an error. `unread` always exits 0. Nothing prints ANSI colors when
+piped or when `NO_COLOR` is set. `--worktree` takes `.` or a registered worktree
+path.
+
+`worktree resources mark-read` also takes `--worktree <path>` and `--all`; the read
+cursor is per resource, so it clears a resource everywhere. Slack threads are
+skipped.
+
+##### The agent skill
+
+`worktree setup` offers to install a skill (`~/.agents/skills/worktree/`, which
+Codex and pi read, plus a symlink into Claude Code's skills directory) that teaches an
+AI agent to answer "what needs my attention?" from these commands, and to make no
+change without your say-so. `worktree agent-help` prints the same text for an agent
+without it installed. Setup updates the copy when the embedded text changes, leaves a
+directory it did not create alone, and `worktree setup --uninstall` removes the
+copy and the links it made.
 
 #### Open in Editor or Browser
 
@@ -142,7 +195,7 @@ worktree open --jira             # Open the associated Jira issue in browser
 #### Jira Integration
 
 ```bash
-worktree jira [path]             # Show associated Jira issues (with API enrichment)
+worktree jira [path]             # Show associated Jira issues from cached watcher state (--json)
 worktree jira add KEY-123        # Associate a Jira issue (primary)
 worktree jira add KEY-456 --related  # Associate as context-watching
 worktree jira remove KEY-123     # Remove an association
@@ -156,6 +209,7 @@ Jira issues are automatically detected from the PR title, PR body, and branch na
 worktree env                     # Print shell environment variables (use: eval "$(worktree env)")
 worktree resources list          # List tracked resources (database-backed)
 worktree resources list --json   # JSON format for agent-handler integration
+worktree resources list --all --json  # every followed resource once, with the worktrees following it
 worktree resources add <url>     # Add a resource, inferring its type and id
 worktree resources add <type> <id> [--url <url>] [--related]  # ...or state them explicitly
 worktree resources unwatch <type> <id>  # Soft-remove a resource (mark inactive)
@@ -163,7 +217,9 @@ worktree resources remove <type> <id>   # Hard-remove a resource from database
 ```
 
 Resource types are `pr`, `jira`, and `slack`. The `--json` output
-(`[{type,id,url,primary}]`, where `primary = !related`) is a stable contract:
+(`{"schema_version": 1, "resources": [{type,id,url,primary,...}]}`, where `primary = !related`;
+`updated_at` is when the custom name was set and `resource_updated_at` is the resource's own time)
+is a stable contract:
 [agent-handler](https://github.com/mturley/agent-handler) reads it to auto-watch
 a worktree's **primary** resources when a session registers, and propagates its
 own `/watch` back via `worktree resources add`. worktree works fine without
@@ -179,7 +235,7 @@ worktree tasks edit <id> [--title ...] [--description ...] [--priority ...] [--d
 worktree tasks state <id> <not_started|in_progress|done>
 worktree tasks star <id>         # or: unstar
 worktree tasks delete <id>
-worktree tasks undo <event-id>   # Undo a state change, subtask check or delete; <event-id> is the undo_event_id its --json answered. Exits 1 if it changed since, or if an agent tries to undo the user's change
+worktree tasks undo <event-id>   # Undo a state change, subtask check or delete; <event-id> is the undo_event_id its --json answered. Exits 2 if it changed since, or if an agent tries to undo the user's change
 worktree tasks link <id> <ref> [--focus]  # Related unless --focus; also: unlink, focus, unfocus
 worktree tasks move <id> (--after <id> | --before <id> | --top | --bottom)
 worktree tasks subtask add <id> <text>    # Also: edit, check, uncheck, remove <subtask-id>; order <id> <subtask-id>...
@@ -257,12 +313,16 @@ Your shell RC hook (installed by `worktree setup`) automatically runs `eval "$(w
 **Resource tracking** (PR/Jira associations) is stored in the database. Use `worktree resources list --json` to get a machine-readable format:
 
 ```json
-[
+{"schema_version":1,"resources":[
   {"type":"pr","id":"owner/repo#123","url":"https://github.com/owner/repo/pull/123","primary":true},
   {"type":"jira","id":"PROJ-456","url":"https://your-org.atlassian.net/browse/PROJ-456","primary":true},
   {"type":"jira","id":"PROJ-400","url":"https://your-org.atlassian.net/browse/PROJ-400","primary":false}
-]
+]}
 ```
+
+Every `--json` output is an object carrying `"schema_version": 1`. Exit codes: 0 success, 1 nothing found (only commands documented to say so), 2 any error. `--as-agent` is accepted by every command.
+
+Each entry also carries the watchers' cached state (title, state, status, priority, unread counts, ...). `updated_at` is when the resource's custom name was last written (absent if never), and `resource_updated_at` is the resource's own last-update time.
 
 Unmarked entries (or `"primary":true`) are the reason this worktree exists. Entries with `"primary":false` are **related** (watching for context).
 

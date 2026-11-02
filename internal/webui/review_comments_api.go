@@ -115,6 +115,28 @@ func checkReviewCommentBody(w http.ResponseWriter, body string) bool {
 	return true
 }
 
+// ReviewCommentItem is one comment as `worktree review-comments list` prints it.
+type ReviewCommentItem = reviewCommentItem
+
+// ReviewComments lists a registered worktree's review comments with their
+// working-tree (prompt) positions, sorted by file then line. It reads the DB
+// and the worktree's files and writes nothing. A worktree whose directory is
+// gone still lists, its comments reading as outdated.
+func (s *Server) ReviewComments(path string) ([]ReviewCommentItem, error) {
+	entry, err := registry.Get(s.DB, path)
+	if err != nil {
+		return nil, err
+	}
+	if entry == nil {
+		return nil, errors.New("not a registered worktree")
+	}
+	comments, err := reviewcomments.List(s.DB, entry.Path)
+	if err != nil {
+		return nil, err
+	}
+	return s.reviewResolver().resolve(entry.Path, comments, nil)
+}
+
 // handleListReviewComments: GET /api/review-comments?path=&old_rev=&new_rev=
 //
 // Every comment carries its prompt position (in the working tree). With both

@@ -2,6 +2,7 @@ package webui
 
 import (
 	"database/sql"
+	"errors"
 	"net/http"
 	"regexp"
 	"slices"
@@ -229,20 +230,63 @@ const unreadOnlyClause = `AND (
 
 // handleGlobalTimeline: GET /api/timeline?archived=&limit=&before=&resource_types=&event_types=&unread_only=&q=
 func (s *Server) handleGlobalTimeline(w http.ResponseWriter, r *http.Request) {
-	archived := r.URL.Query().Get("archived") == "true"
-	unreadOnly := r.URL.Query().Get("unread_only") == "true"
-	limit := parseLimit(r)
-	before := r.URL.Query().Get("before") // RFC3339 ts; "" = newest
-	types := parseResourceTypes(r)
-	eventTypes := parseEventTypes(r)
-	eventTypeClause, eventTypeArgs := eventTypes.sql()
-	terms := parseSearchTerms(r.URL.Query().Get("q"))
-	searchClause, searchArgs := searchSQL(terms)
+	out, err := s.Timeline(TimelineQuery{
+		ResourceTypes: parseResourceTypes(r),
+		Before:        r.URL.Query().Get("before"), // RFC3339 ts; "" = newest
+		UnreadOnly:    r.URL.Query().Get("unread_only") == "true",
+		Limit:         parseLimit(r),
+		archived:      r.URL.Query().Get("archived") == "true",
+		terms:         parseSearchTerms(r.URL.Query().Get("q")),
+		eventTypes:    parseEventTypes(r),
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeTimeline(w, out)
+}
 
-	var (
-		rows *sql.Rows
-		err  error
-	)
+// TimelineQuery selects a page of the activity timeline. The zero value is
+// the newest defaultTimelineLimit events across every worktree. The
+// unexported fields are filters only the HTTP handlers set (archived view,
+// search, event-type subfilters); the CLI cannot.
+type TimelineQuery struct {
+	WorktreePath  string // "" = every worktree (global timeline)
+	ResourceType  string // with ResourceID; both or neither
+	ResourceID    string
+	ResourceTypes []string // "pr","jira","slack","link","task"; empty = all
+	Since         string   // RFC 3339, inclusive; "" = no floor
+	Before        string   // RFC 3339, exclusive cursor
+	UnreadOnly    bool
+	Limit         int // 0 = defaultTimelineLimit
+
+	archived   bool // global only: include events of resources no worktree follows
+	terms      []string
+	eventTypes eventTypeFilter
+}
+
+// Timeline returns one page of the activity timeline, newest first, exactly
+// as the matching endpoint serves it (GET /api/timeline for a global query,
+// GET /api/worktree-timeline with WorktreePath). Read-only.
+func (s *Server) Timeline(q TimelineQuery) ([]TimelineEvent, error) {
+	if (q.ResourceType == "") != (q.ResourceID == "") {
+		return nil, errors.New("resource type and id must be supplied together")
+	}
+	if q.Limit <= 0 {
+		q.Limit = defaultTimelineLimit
+	}
+	if q.WorktreePath != "" {
+		return s.worktreeTimeline(q)
+	}
+	return s.globalTimeline(q)
+}
+
+func (s *Server) globalTimeline(q TimelineQuery) ([]TimelineEvent, error) {
+	eventTypeClause, eventTypeArgs := q.eventTypes.sql()
+	searchClause, searchArgs := searchSQL(q.terms)
+	types := q.ResourceTypes
+	limit := q.Limit
+
 	base := `
 SELECT DISTINCT e.id, e.ts, COALESCE(e.external_ts,''), e.source, e.type,
        COALESCE(e.title,''), COALESCE(e.body,''), COALESCE(e.author,''), COALESCE(e.author_id,''),
@@ -258,7 +302,7 @@ JOIN watcher_event_resources er ON er.event_id = e.id `
 	order := `ORDER BY e.ts DESC LIMIT ?`
 
 	beforeClause := ""
-	if before != "" {
+	if q.Before != "" {
 		beforeClause = "AND e.ts < ? "
 	}
 	// Placeholders are generated from the count of ALREADY-VALIDATED values,
@@ -267,42 +311,52 @@ JOIN watcher_event_resources er ON er.event_id = e.id `
 	if len(types) > 0 {
 		typeClause = "AND er.resource_type IN (" + strings.TrimSuffix(strings.Repeat("?,", len(types)), ",") + ") "
 	}
-
+	sinceClause := ""
+	if q.Since != "" {
+		sinceClause = "AND e.ts >= ? "
+	}
+	resourceClause := ""
+	if q.ResourceType != "" {
+		resourceClause = "AND er.resource_type = ? AND er.resource_id = ? "
+	}
 	unreadClause := ""
-	if unreadOnly {
+	if q.UnreadOnly {
 		unreadClause = unreadOnlyClause
 	}
 
 	// restArgs are the args of every clause after the cursor's.
 	restArgs := []any{}
+	if q.Since != "" {
+		restArgs = append(restArgs, q.Since)
+	}
+	if q.ResourceType != "" {
+		restArgs = append(restArgs, q.ResourceType, q.ResourceID)
+	}
 	for _, t := range types {
 		restArgs = append(restArgs, t)
 	}
 	restArgs = append(restArgs, eventTypeArgs...)
 	restArgs = append(restArgs, searchArgs...)
 	args := []any{}
-	if before != "" {
-		args = append(args, before)
+	if q.Before != "" {
+		args = append(args, q.Before)
 	}
 	args = append(args, restArgs...)
 	args = append(args, limit)
 
 	from := base
-	if !archived {
+	if !q.archived {
 		from = base + watchedJoin
 	}
-	rest := typeClause + eventTypeClause + searchClause + unreadClause
-	q := from + filter + beforeClause + rest + order
-	rows, err = s.DB.Query(q, args...)
+	rest := sinceClause + resourceClause + typeClause + eventTypeClause + searchClause + unreadClause
+	rows, err := s.DB.Query(from+filter+beforeClause+rest+order, args...)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+		return nil, err
 	}
 	defer rows.Close()
-	out, err := s.collectTimelineRows(rows, limit, terms)
+	out, err := s.collectTimelineRows(rows, limit, q.terms)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+		return nil, err
 	}
 	// A full page may have cut through a same-second cluster: read the rest
 	// of it with the same filters, `e.ts = <boundary>` in place of the cursor
@@ -311,31 +365,32 @@ JOIN watcher_event_resources er ON er.event_id = e.id `
 		tieArgs := append([]any{out[len(out)-1].TS}, restArgs...)
 		tieRows, err := s.DB.Query(from+filter+"AND e.ts = ? "+rest+"ORDER BY e.ts DESC", tieArgs...)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
+			return nil, err
 		}
-		ties, err := s.collectTimelineRows(tieRows, 0, terms)
+		ties, err := s.collectTimelineRows(tieRows, 0, q.terms)
 		tieRows.Close()
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
+			return nil, err
 		}
 		out = appendUnseen(out, ties)
 	}
+	tq := taskFeedQuery{
+		include:    taskEventsSelected(types, q.eventTypes),
+		since:      q.Since,
+		before:     q.Before,
+		limit:      limit,
+		unreadOnly: q.UnreadOnly,
+		terms:      q.terms,
+	}
+	// A resource filter narrows task events to the tasks linking it.
+	if tq.include && q.ResourceType != "" {
+		if tq.taskIDs, err = tasks.ScopeTaskIDs(s.DB, tasks.Scope{Kind: tasks.ScopeResource, ResourceType: q.ResourceType, ResourceID: q.ResourceID}); err != nil {
+			return nil, err
+		}
+	}
 	// Every non-deleted task's events, whatever `archived` says: archived
 	// only governs watcher events.
-	out, err = s.mergeTaskEvents(out, taskFeedQuery{
-		include:    taskEventsSelected(types, eventTypes),
-		before:     before,
-		limit:      limit,
-		unreadOnly: unreadOnly,
-		terms:      terms,
-	})
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeTimeline(w, out)
+	return s.mergeTaskEvents(out, tq)
 }
 
 // taskResourceType is the pseudo-resource type task events are attributed
@@ -357,6 +412,7 @@ func taskEventsSelected(types []string, eventTypes eventTypeFilter) bool {
 type taskFeedQuery struct {
 	include    bool    // false = the filters exclude task events
 	taskIDs    []int64 // nil = every non-deleted task (see tasks.FeedQuery)
+	since      string  // inclusive ts floor; "" = none
 	before     string  // exclusive ts cursor, as the watcher side's
 	limit      int
 	unreadOnly bool
@@ -435,6 +491,10 @@ func (s *Server) mergeTaskEvents(rows []TimelineEvent, q taskFeedQuery) ([]Timel
 		if len(taskRows) >= q.limit && fe.TS < taskRows[len(taskRows)-1].TS {
 			break
 		}
+		// Newest first, so nothing older than the floor can follow.
+		if q.since != "" && fe.TS < q.since {
+			break
+		}
 		te := taskFeedRow(fe, cursors)
 		if t, ok := byTask[fe.TaskID]; ok {
 			enr.fillTaskWorktrees(&te, t)
@@ -501,10 +561,10 @@ func (s *Server) eventIDsForResource(rtype, rid string) (map[string]struct{}, er
 // slashes, which the Go 1.22 mux {wildcard} would split awkwardly.
 //
 // `before` is an exclusive RFC3339 cursor ("" = newest), matching
-// handleGlobalTimeline. It is applied inside the reverse scan below rather
-// than as a SQL clause, because this handler filters in memory — the
-// resource filter and the cursor have to agree on which events they skip,
-// or paging a filtered feed silently repeats rows.
+// handleGlobalTimeline. It is applied inside the reverse scan in
+// worktreeTimeline rather than as a SQL clause, because that scan filters in
+// memory — the resource filter and the cursor have to agree on which events
+// they skip, or paging a filtered feed silently repeats rows.
 func (s *Server) handleWorktreeTimeline(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Query().Get("path")
 	if path == "" {
@@ -517,13 +577,32 @@ func (s *Server) handleWorktreeTimeline(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "resource_type and resource_id must be supplied together")
 		return
 	}
+	out, err := s.Timeline(TimelineQuery{
+		WorktreePath:  path,
+		ResourceType:  rtype,
+		ResourceID:    rid,
+		ResourceTypes: parseResourceTypes(r),
+		Before:        r.URL.Query().Get("before"), // exclusive RFC3339 cursor; "" = newest
+		UnreadOnly:    r.URL.Query().Get("unread_only") == "true",
+		Limit:         parseLimit(r),
+		terms:         parseSearchTerms(r.URL.Query().Get("q")),
+		eventTypes:    parseEventTypes(r),
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeTimeline(w, out)
+}
+
+func (s *Server) worktreeTimeline(q TimelineQuery) ([]TimelineEvent, error) {
+	path, rtype, rid := q.WorktreePath, q.ResourceType, q.ResourceID
 	var only map[string]struct{}
 	if rtype != "" {
 		var err error
 		only, err = s.eventIDsForResource(rtype, rid)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
+			return nil, err
 		}
 	}
 	// Use the canonical subscriber key (Abs -> EvalSymlinks -> Clean) so this
@@ -533,15 +612,10 @@ func (s *Server) handleWorktreeTimeline(w http.ResponseWriter, r *http.Request) 
 	// Full history reverse-chron: read ascending from epoch, reverse.
 	evs, err := watcherdb.EventsForSubscriberSince(s.DB, subscriber, "1970-01-01T00:00:00Z")
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+		return nil, err
 	}
-	limit := parseLimit(r)
-	before := r.URL.Query().Get("before") // exclusive RFC3339 cursor; "" = newest
-	types := parseResourceTypes(r)
-	eventTypes := parseEventTypes(r)
-	unreadOnly := r.URL.Query().Get("unread_only") == "true"
-	terms := parseSearchTerms(r.URL.Query().Get("q"))
+	limit, before, since := q.Limit, q.Before, q.Since
+	types, eventTypes, unreadOnly, terms := q.ResourceTypes, q.eventTypes, q.UnreadOnly, q.terms
 	typeAllowed := map[string]bool{}
 	for _, t := range types {
 		typeAllowed[t] = true
@@ -558,6 +632,11 @@ func (s *Server) handleWorktreeTimeline(w http.ResponseWriter, r *http.Request) 
 		// the page overfills with the rest of a same-second cluster and the
 		// strict cursor below cannot skip it (see mergeTaskEvents).
 		if len(out) >= limit && evs[i].TS < out[len(out)-1].TS {
+			break
+		}
+		// The floor is inclusive; the scan is newest first, so nothing older
+		// can follow.
+		if since != "" && evs[i].TS < since {
 			break
 		}
 		// Strictly less-than, so the event the cursor names is not repeated
@@ -603,24 +682,20 @@ func (s *Server) handleWorktreeTimeline(w http.ResponseWriter, r *http.Request) 
 	if rtype != "" {
 		scope = tasks.Scope{Kind: tasks.ScopeResource, ResourceType: rtype, ResourceID: rid}
 	}
-	q := taskFeedQuery{
+	tq := taskFeedQuery{
 		include:    taskEventsSelected(types, eventTypes),
+		since:      since,
 		before:     before,
 		limit:      limit,
 		unreadOnly: unreadOnly,
 		terms:      terms,
 	}
-	if q.include {
-		if q.taskIDs, err = tasks.ScopeTaskIDs(s.DB, scope); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
+	if tq.include {
+		if tq.taskIDs, err = tasks.ScopeTaskIDs(s.DB, scope); err != nil {
+			return nil, err
 		}
 	}
-	if out, err = s.mergeTaskEvents(out, q); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeTimeline(w, out)
+	return s.mergeTaskEvents(out, tq)
 }
 
 // writeTimeline writes a timeline page, its cursor the last row's ts.

@@ -142,6 +142,10 @@ discovery.
 - **`timeline.go`** — `GET /api/timeline` (global) and `GET
   /api/worktree-timeline` (scoped). Also owns `eventEnricher` (see below) and
   `latestEventTSForSubscriber` (used by both `worktrees.go` and `poller.go`).
+  Both handlers call `Server.Timeline(TimelineQuery)`, the same method
+  `worktree activity` calls from the CLI through a headless `Server`
+  (`cmd/headless.go`), so the CLI and the UI share one query, one set of
+  filters and the same unread rule.
 
   **`eventEnricher` is request-scoped by design.** Both timeline handlers
   build one (`newEventEnricher`) and drop it with the response. It holds the
@@ -748,6 +752,14 @@ One read cursor per RESOURCE in `resource_read_cursor` (a worktree-owned
 table), compared against `watcher_events.ts`. Unread is `ts > last_read_ts`,
 strictly greater.
 
+The CLI reads unread through the same code: `worktree unread` calls
+`Server.AppUnread` (also the menu bar app's backstop) and `--by` calls
+`Server.UnreadBy`; `worktree attention` and `worktree activity --unread` use
+the same `unreadIndex` and `selfid.NotMineSQL`. `worktree resources mark-read`
+moves the same `resource_read_cursor`, so marking read from the CLI clears it
+in the UI for every worktree following the resource, and it skips Slack
+threads, whose read state is Slack's.
+
 **PR review comment events.** The poller tags `pr_review_comment` events
 `comment:<id>` so the diff view's PR comments can show per-comment unread
 dots under the PR's cursor; see "PR comments" under Code tab and diff view.
@@ -1025,7 +1037,7 @@ nothing and a restored blocker never sends a second "Unblocked" notification.
 It runs `afterTaskWrite()` afterwards, like the writes it reverses. The CLI is
 `worktree tasks undo <event-id>`; its `state`, `delete` and `subtask
 check`/`uncheck` `--json` carry the same `undo_event_id`. A failed `tasks
-undo` prints just its error, once, with no usage block, and exits 1
+undo` prints just its error, once, with no usage block, and exits 2
 (`SilenceUsage`/`SilenceErrors` on that command only).
 
 Details, as built (`internal/tasks/undo.go`, `purge.go`):
@@ -1046,7 +1058,7 @@ Details, as built (`internal/tasks/undo.go`, `purge.go`):
 - **Who may undo.** The user may undo any undoable event. An agent (the CLI
   under Claude Code or a handler session, or `--as-agent`) may undo only an
   event whose actor is `agent`; anything else is `ErrUndoForbidden` ("only
-  the user can undo the user's changes") -> 409 on the web and exit 1 in the
+  the user can undo the user's changes") -> 409 on the web and exit 2 in the
   CLI. An undo writes no event, so this is what keeps an agent from changing
   the user's work invisibly. The web always acts as the user.
 - **Missing event.** `task_events` is AUTOINCREMENT, so a missing id at or

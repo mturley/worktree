@@ -280,6 +280,10 @@ func samePRID(a, b string) bool {
 	return oka && okb && na == nb && strings.EqualFold(ra, rb)
 }
 
+// loadLinkedCreds reads auth.yaml for linkedSources; a package var so a test
+// can see that it is not called while GitHub and Jira are both off.
+var loadLinkedCreds = wconfig.Load
+
 // linkedSources builds Sources from the watcher config. Unconfigured
 // services, and services whose watcher is off, are left nil, which the
 // builder treats as "not configured": their links still list, unenriched,
@@ -293,14 +297,23 @@ func (s *Server) linkedSources() linked.Sources {
 	if s.slackOn() {
 		src.Slack = slackAdapter{s}
 	}
-	cfg, err := wconfig.Load(wconfig.DefaultPath())
+	ghOn, jiraOn := s.WatcherEnabled(config.ServiceGitHub), s.WatcherEnabled(config.ServiceJira)
+	if !ghOn && !jiraOn {
+		return src
+	}
+	cfg, err := loadLinkedCreds(wconfig.DefaultPath())
 	if err != nil {
 		return src
 	}
-	if gh, err := cfg.GitHub(); err == nil && s.WatcherEnabled(config.ServiceGitHub) {
-		src.PR = prAdapter{token: gh.Token}
+	if ghOn {
+		if gh, err := cfg.GitHub(); err == nil {
+			src.PR = prAdapter{token: gh.Token}
+		}
 	}
-	if jc, err := cfg.Jira(); err == nil && s.WatcherEnabled(config.ServiceJira) {
+	if !jiraOn {
+		return src
+	}
+	if jc, err := cfg.Jira(); err == nil {
 		fields := wtjira.ConfiguredCustomFields(jc.CustomFields)
 		ja := jiraAdapter{
 			c:       &wjira.Client{BaseURL: jc.Host, Email: jc.Email, Token: jc.Token},
@@ -343,6 +356,52 @@ func validLinkedID(resType, id string) bool {
 	return false
 }
 
+// ErrWatcherOff is Linked's refusal when the type's service has its watcher
+// turned off. Service is the config service name (config.ServiceGitHub...).
+type ErrWatcherOff struct{ Service string }
+
+func (e ErrWatcherOff) Error() string {
+	return "The " + serviceName(e.Service) + " watcher is disabled in Settings"
+}
+
+// InvalidLinkedIDError is Linked's refusal of a malformed id for its type.
+type InvalidLinkedIDError struct{ Type string }
+
+func (e InvalidLinkedIDError) Error() string { return "invalid id for type " + e.Type }
+
+// Linked builds the linked resources of one PR, Jira issue or Slack thread,
+// as GET /api/linked-resources does (including its 2-minute cache). A type
+// whose service is off is ErrWatcherOff, checked before any credential is
+// read; an unsupported type is linked.ErrUnsupportedType.
+func (s *Server) Linked(ctx context.Context, resType, id string, resolveLinks bool) (any, error) {
+	return s.linkedResources(ctx, resType, id, resolveLinks, false)
+}
+
+func (s *Server) linkedResources(ctx context.Context, resType, id string, resolveLinks, refresh bool) (any, error) {
+	if resType != "pr" && resType != "jira" && resType != "slack" {
+		return nil, linked.ErrUnsupportedType
+	}
+	if !validLinkedID(resType, id) {
+		return nil, InvalidLinkedIDError{Type: resType}
+	}
+	if svc := serviceForType(resType); !s.WatcherEnabled(svc) {
+		return nil, ErrWatcherOff{Service: svc}
+	}
+	rl := "0"
+	if resolveLinks {
+		rl = "1"
+	}
+	key := "linked|" + resType + "|" + id + "|" + rl
+	return s.linkedCacheOrInit().get(key, linkedTTL, refresh, func() (interface{}, error) {
+		b := &linked.Builder{Src: s.linkedSources()}
+		res, err := b.Build(ctx, resType, id, resolveLinks)
+		if err == nil && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return res, err
+	})
+}
+
 func (s *Server) handleLinkedResources(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	resType, id := q.Get("type"), q.Get("id")
@@ -350,33 +409,19 @@ func (s *Server) handleLinkedResources(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing id")
 		return
 	}
-	if resType != "pr" && resType != "jira" && resType != "slack" {
-		writeError(w, http.StatusBadRequest, linked.ErrUnsupportedType.Error())
-		return
-	}
-	if !validLinkedID(resType, id) {
-		writeError(w, http.StatusBadRequest, "invalid id for type "+resType)
-		return
-	}
-	if svc := serviceForType(resType); !s.WatcherEnabled(svc) {
-		watcherOffError(w, serviceName(svc))
-		return
-	}
-	resolveLinks := q.Get("resolve_links") == "1"
-	key := "linked|" + resType + "|" + id + "|" + q.Get("resolve_links")
-	v, err := s.linkedCacheOrInit().get(key, linkedTTL, q.Get("refresh") == "1", func() (interface{}, error) {
-		b := &linked.Builder{Src: s.linkedSources()}
-		res, err := b.Build(r.Context(), resType, id, resolveLinks)
-		if err == nil && r.Context().Err() != nil {
-			return nil, r.Context().Err()
-		}
-		return res, err
-	})
-	if err != nil {
+	v, err := s.linkedResources(r.Context(), resType, id, q.Get("resolve_links") == "1", q.Get("refresh") == "1")
+	var off ErrWatcherOff
+	var bad InvalidLinkedIDError
+	switch {
+	case errors.As(err, &off):
+		watcherOffError(w, serviceName(off.Service))
+	case errors.As(err, &bad), errors.Is(err, linked.ErrUnsupportedType):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case err != nil:
 		writeError(w, linkedErrorStatus(err), err.Error())
-		return
+	default:
+		writeJSON(w, http.StatusOK, v)
 	}
-	writeJSON(w, http.StatusOK, v)
 }
 
 func (s *Server) handleLinkedChildren(w http.ResponseWriter, r *http.Request) {

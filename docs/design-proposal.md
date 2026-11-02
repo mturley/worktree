@@ -73,7 +73,7 @@ worktree <path>                             # open existing worktree
 
 ```
 worktree info [<path>]                      # show worktree info (default: current dir)
-worktree info --local                       # skip API calls (fast)
+worktree info [<path>] --json              # machine-readable, includes cached resource state
 worktree list                               # list worktrees from DB
 worktree cleanup                            # reconcile disk vs DB (remove orphans, stale entries)
 worktree delete [<path>]                    # remove worktree + cleanup
@@ -284,7 +284,7 @@ my-branch (review/pr-1234-fix-pagination)
     ~ RHOAIENG-5600 — List view performance improvements
 ```
 
-`worktree info --local` skips the PR and Jira API calls (shows only path, repo, tracking, ports, kube, and cached resource keys without enrichment).
+`worktree info` never contacts GitHub or Jira: it shows path, branch, tracking, environment, and each resource with the state the watchers last cached.
 
 When entering a worktree directory, the shell runs `eval "$(worktree env)"` to set environment variables from the database:
 ```

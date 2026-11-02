@@ -3,7 +3,9 @@ package cmd
 import (
 	"database/sql"
 	"embed"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -32,25 +34,56 @@ var rootCmd = &cobra.Command{
 	Long:  "CLI and web UI for managing git worktrees with GitHub/Jira/Slack integration and optional cmux support.",
 	Args:  cobra.NoArgs,
 	RunE:  runRoot,
+	// exitCode prints every error once, and a failing command's usage is noise
+	// around it. A subcommand inherits neither: cobra checks each flag on the
+	// command that ran and on the root.
+	SilenceErrors: true,
+	SilenceUsage:  true,
 	// URL classification is a pure function used all over (resourceurl,
 	// add, the web UI), so the config it depends on is installed once here
 	// rather than read on every call. A missing or unreadable config just
 	// means no aliases.
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		applyColor()
 		if cfg, err := config.Load(); err == nil {
 			jira.SetAliasHosts(cfg.Jira.AliasHosts)
 		}
 	},
 }
 
-func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+// asAgent is the root --as-agent flag: the caller is an agent. Only tasks
+// record it (as the actor); every other write accepts it and ignores it.
+var asAgent bool
+
+// Execute runs the CLI and returns the process exit code: 0 on success, 1
+// when a command returned ErrNothingFound (nothing is printed), 2 for any
+// other error (printed to stderr).
+func Execute() int {
+	// Here as well as in PersistentPreRun, which cobra skips for --help and
+	// for flag errors.
+	applyColor()
+	return exitCode(rootCmd.Execute(), os.Stderr)
+}
+
+// applyColor decides whether output may carry ANSI codes.
+func applyColor() {
+	ui.SetColor(ui.ColorWanted(term.IsTerminal(int(os.Stdout.Fd())), os.Getenv))
+}
+
+func exitCode(err error, stderr io.Writer) int {
+	switch {
+	case err == nil:
+		return 0
+	case errors.Is(err, ErrNothingFound):
+		return 1
+	default:
+		fmt.Fprintln(stderr, err)
+		return 2
 	}
 }
 
 func init() {
+	rootCmd.PersistentFlags().BoolVar(&asAgent, "as-agent", false, "mark this call as made by an agent (tasks record it as the actor)")
 	rootCmd.AddGroup(
 		&cobra.Group{ID: "worktree", Title: "Worktree commands:"},
 		&cobra.Group{ID: "integration", Title: "Integrations:"},
@@ -68,8 +101,7 @@ func init() {
 		// A config that fails to load still gets the tips, minus the phone
 		// address; the command the user runs next reports the error.
 		cfg, _ := config.Load()
-		color := term.IsTerminal(int(os.Stdout.Fd()))
-		fmt.Fprint(c.OutOrStdout(), "\n"+setup.GettingStarted(ui.ShortPath(config.ConfigPath()), cfg.UI, color))
+		fmt.Fprint(c.OutOrStdout(), "\n"+setup.GettingStarted(ui.ShortPath(config.ConfigPath()), cfg.UI, ui.ColorEnabled()))
 	})
 }
 

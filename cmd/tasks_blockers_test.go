@@ -23,9 +23,7 @@ func listJSON(t *testing.T, args ...string) map[string]map[string]any {
 	t.Helper()
 	out := mustRunTasks(t, append([]string{"list", "--json"}, args...)...)
 	var rows []map[string]any
-	if err := json.Unmarshal([]byte(out), &rows); err != nil {
-		t.Fatalf("list json: %v\n%s", err, out)
-	}
+	decodeEnvelope(t, out, "tasks", &rows)
 	byID := map[string]map[string]any{}
 	for _, r := range rows {
 		byID[r["id"].(string)] = r
@@ -55,9 +53,7 @@ func TestTasksBlockEachKindAndShow(t *testing.T) {
 	}
 	out := mustRunTasks(t, "block", "T1", "--other", "legal sign-off", "--json")
 	var b map[string]any
-	if err := json.Unmarshal([]byte(out), &b); err != nil {
-		t.Fatalf("block --json: %v\n%s", err, out)
-	}
+	decodeEnvelope(t, out, "blocker", &b)
 	if b["id"] != float64(3) || b["kind"] != "other" || b["label"] != "legal sign-off" || b["resolved"] != false {
 		t.Fatalf("block --json = %v", b)
 	}

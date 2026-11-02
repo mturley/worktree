@@ -509,12 +509,32 @@ func (s *Server) handlePRCommentThreads(w http.ResponseWriter, r *http.Request) 
 		view = &reviewView{oldRev: oldRev, newRev: newRev}
 	}
 	pc := s.loadPRComments(dir)
+	out, err := s.threadsResponse(dir, pc, view)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// PRThreadsResponse is the PR threads response, for the CLI.
+type PRThreadsResponse = prThreadsResponse
+
+// PRThreads is dir's PR and its review threads, each placed with no diff
+// view (the anchor's own lines), as GET /api/pr-comments/threads without
+// revs. The State says why there is nothing to show: off, no_token, no_pr or
+// error (with Message). Only the DB and in-memory caches are touched; nothing
+// is marked read and no event is recorded.
+func (s *Server) PRThreads(dir string) (PRThreadsResponse, error) {
+	return s.threadsResponse(dir, s.loadPRComments(dir), nil)
+}
+
+func (s *Server) threadsResponse(dir string, pc prComments, view *reviewView) (prThreadsResponse, error) {
 	out := prThreadsResponse{State: pc.state, Branch: pc.branch, Message: pc.message, PR: pc.pr, Threads: []prThreadDTO{}}
 	if pc.state == prStateOK {
 		placed, err := s.reviewResolver().placeThreads(dir, pc.threads, view)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
+			return out, err
 		}
 		for i, th := range pc.threads.Threads {
 			out.Threads = append(out.Threads, newPRThreadDTO(th, placed[i]))
@@ -523,7 +543,7 @@ func (s *Server) handlePRCommentThreads(w http.ResponseWriter, r *http.Request) 
 		out.Fingerprint = prcomments.Fingerprint(pc.threads)
 		out.ViewerIsAuthor = s.viewerIsAuthor(pc)
 	}
-	writeJSON(w, http.StatusOK, out)
+	return out, nil
 }
 
 // eventPRResource is the PR an event was recorded against.
@@ -664,3 +684,6 @@ func (s *Server) handlePRCommentLocate(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"path": path, "comment_id": commentID})
 }
+
+// PRThread is one review thread as the CLI prints it.
+type PRThread = prThreadDTO

@@ -1,6 +1,8 @@
 package webui
 
 import (
+	"fmt"
+
 	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/resources"
 )
@@ -61,6 +63,39 @@ func (s *Server) AppUnread() (UnreadSummary, error) {
 			out.Unread = true
 			out.Count += n
 		}
+	}
+	return out, nil
+}
+
+// UnreadBy breaks the unread count down for `worktree unread --by`. by is
+// "worktree" (key = worktree path, value = the count WorktreeSummaries
+// reports) or "resource" (key = "type:id", value = the resource's
+// UnreadCount). Only non-zero entries appear. Read-only.
+func (s *Server) UnreadBy(by string) (map[string]int, error) {
+	out := map[string]int{}
+	switch by {
+	case "worktree":
+		sums, err := s.WorktreeSummaries()
+		if err != nil {
+			return nil, err
+		}
+		for _, w := range sums {
+			if w.UnreadCount > 0 {
+				out[w.Path] = w.UnreadCount
+			}
+		}
+	case "resource":
+		rs, err := s.AllResources()
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range rs {
+			if r.UnreadCount > 0 {
+				out[r.Type+":"+r.ID] = r.UnreadCount
+			}
+		}
+	default:
+		return nil, fmt.Errorf("unknown --by %q (want worktree or resource)", by)
 	}
 	return out, nil
 }

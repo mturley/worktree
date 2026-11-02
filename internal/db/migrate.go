@@ -2,8 +2,15 @@ package db
 
 import (
 	"database/sql"
+	"fmt"
 	"time"
 )
+
+// schemaVersion is the version of worktree's own tables, recorded in the DB's
+// PRAGMA user_version when migrate finishes. OpenRead compares against it, and
+// refuses a DB behind it rather than migrating. Bump it whenever migrate
+// changes the schema; TestSchemaVersionCoversSchema fails until you do.
+const schemaVersion = 1
 
 // migrate creates the worktree-owned tables. It is idempotent and disjoint
 // from the watcher library's Migrate (which owns all watcher_* tables). None
@@ -308,7 +315,26 @@ func migrate(conn *sql.DB) error {
 		 GROUP BY s.resource_type, s.resource_id`, now, now); err != nil {
 		return err
 	}
+
+	// Last, so a migrate that failed part way leaves the DB reading as
+	// behind. Never lowered: an older binary may open a newer DB.
+	v, err := userVersion(conn)
+	if err != nil {
+		return err
+	}
+	if v < schemaVersion {
+		// PRAGMA takes no bound parameters; schemaVersion is a constant.
+		if _, err := conn.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion)); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func userVersion(conn *sql.DB) (int, error) {
+	var v int
+	err := conn.QueryRow(`PRAGMA user_version`).Scan(&v)
+	return v, err
 }
 
 // addColumnIfMissing adds col to tbl unless it is already there. SQLite has no

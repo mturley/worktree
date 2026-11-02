@@ -45,8 +45,14 @@ func formatTaskID(id int64) string { return "T" + strconv.FormatInt(id, 10) }
 // the FIRST ':' only, because Slack ids contain ':'), "wt:<path>", or "."
 // for the current worktree.
 func parseLinkRef(s string) (tasks.LinkTarget, error) {
+	return parseLinkRefIn(s, currentWorktree)
+}
+
+// parseLinkRefIn is parseLinkRef with "." resolved by current, so a read
+// command can answer it through the handle it already holds.
+func parseLinkRefIn(s string, current func() (string, bool, error)) (tasks.LinkTarget, error) {
 	if s == "." {
-		p, ok, err := currentWorktree()
+		p, ok, err := current()
 		if err != nil {
 			return tasks.LinkTarget{}, err
 		}
@@ -81,15 +87,19 @@ func canonicalWorktree(p string) string {
 // currentWorktree returns the canonical path of the registered worktree
 // containing the cwd, or ok=false when the cwd is not in one.
 func currentWorktree() (string, bool, error) {
-	p, err := resolveWorktreePath(nil)
-	if err != nil {
-		return "", false, err
-	}
 	conn, err := wdb.Open()
 	if err != nil {
 		return "", false, err
 	}
 	defer conn.Close()
+	return currentWorktreeIn(conn)
+}
+
+func currentWorktreeIn(conn *sql.DB) (string, bool, error) {
+	p, err := resolveWorktreePath(nil)
+	if err != nil {
+		return "", false, err
+	}
 	return registeredWorktree(conn, p)
 }
 
@@ -109,7 +119,6 @@ func registeredWorktree(conn *sql.DB, p string) (string, bool, error) {
 
 var (
 	tasksJSON        bool
-	tasksAsAgent     bool
 	tasksAll         bool
 	tasksWorktree    string
 	tasksResource    string
@@ -206,7 +215,6 @@ var tasksUndoCmd = &cobra.Command{
 }
 
 func init() {
-	tasksCmd.PersistentFlags().BoolVar(&tasksAsAgent, "as-agent", false, "record changes as made by an agent")
 	for _, c := range []*cobra.Command{tasksListCmd, tasksShowCmd, tasksAddCmd, tasksEditCmd,
 		tasksStateCmd, tasksStarCmd, tasksUnstarCmd, tasksDeleteCmd} {
 		c.Flags().BoolVar(&tasksJSON, "json", false, "machine-readable JSON output")
@@ -242,7 +250,7 @@ func init() {
 	rootCmd.AddCommand(tasksCmd)
 }
 
-func tasksActor() tasks.Actor { return actorFromEnv(tasksAsAgent, os.Getenv) }
+func tasksActor() tasks.Actor { return actorFromEnv(asAgent, os.Getenv) }
 
 // taskErr turns the tasks package's sentinel errors into CLI messages.
 func taskErr(id int64, err error) error {
@@ -259,7 +267,7 @@ func printTask(cmd *cobra.Command, conn *sql.DB, t tasks.Task) error {
 		if err != nil {
 			return err
 		}
-		return writeJSON(cmd.OutOrStdout(), j)
+		return writeJSON(cmd.OutOrStdout(), "task", j)
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), taskLine(t))
 	return nil
@@ -283,7 +291,7 @@ func listScope(conn *sql.DB) (tasks.Scope, error) {
 	case tasksWorktree != "":
 		return tasks.Scope{Kind: tasks.ScopeWorktree, Worktree: tasksWorktree}, nil
 	case tasksResource != "":
-		t, err := parseLinkRef(tasksResource)
+		t, err := parseLinkRefIn(tasksResource, func() (string, bool, error) { return currentWorktreeIn(conn) })
 		if err != nil {
 			return tasks.Scope{}, err
 		}
@@ -292,11 +300,7 @@ func listScope(conn *sql.DB) (tasks.Scope, error) {
 		}
 		return tasks.Scope{Kind: tasks.ScopeResource, ResourceType: t.ResourceType, ResourceID: t.ResourceID}, nil
 	}
-	p, err := resolveWorktreePath(nil)
-	if err != nil {
-		return tasks.Scope{}, err
-	}
-	wt, ok, err := registeredWorktree(conn, p)
+	wt, ok, err := currentWorktreeIn(conn)
 	if err != nil {
 		return tasks.Scope{}, err
 	}
@@ -307,7 +311,7 @@ func listScope(conn *sql.DB) (tasks.Scope, error) {
 }
 
 func runTasksList(cmd *cobra.Command, args []string) error {
-	conn, err := wdb.Open()
+	conn, err := wdb.OpenRead()
 	if err != nil {
 		return err
 	}
@@ -348,7 +352,7 @@ func runTasksList(cmd *cobra.Command, args []string) error {
 		for _, t := range ts {
 			rows = append(rows, withBlockerLabels(t, labels))
 		}
-		return writeJSON(out, rows)
+		return writeJSON(out, "tasks", rows)
 	}
 	for _, t := range ts {
 		fmt.Fprintln(out, taskLine(t))
@@ -363,7 +367,7 @@ func runTasksShow(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	conn, err := wdb.Open()
+	conn, err := wdb.OpenRead()
 	if err != nil {
 		return err
 	}
@@ -391,7 +395,7 @@ func runTasksShow(cmd *cobra.Command, args []string) error {
 		blockers, blocks := sb.json(), sb.blocks
 		j.Blockers, j.Blocks = &blockers, &blocks
 		j.Events = toEventsJSON(events)
-		return writeJSON(cmd.OutOrStdout(), j)
+		return writeJSON(cmd.OutOrStdout(), "task", j)
 	}
 	writeTaskDetail(cmd.OutOrStdout(), t, sb, events)
 	return nil
@@ -454,7 +458,7 @@ func runTasksAdd(cmd *cobra.Command, args []string) error {
 		}
 	}
 	if tasksJSON {
-		return writeJSON(cmd.OutOrStdout(), toTaskJSON(t))
+		return writeJSON(cmd.OutOrStdout(), "task", toTaskJSON(t))
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), formatTaskID(t.ID))
 	return nil
@@ -519,7 +523,7 @@ func runTasksState(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		j.UndoEventID = sc.EventID
-		return writeJSON(cmd.OutOrStdout(), j)
+		return writeJSON(cmd.OutOrStdout(), "task", j)
 	}
 	return printTask(cmd, conn, t)
 }
@@ -575,7 +579,7 @@ func runTasksDelete(cmd *cobra.Command, args []string) error {
 		return taskErr(id, err)
 	}
 	if tasksJSON {
-		return writeJSON(cmd.OutOrStdout(), map[string]any{"id": formatTaskID(id), "deleted": true, "undo_event_id": eventID})
+		return writeJSON(cmd.OutOrStdout(), "", map[string]any{"id": formatTaskID(id), "deleted": true, "undo_event_id": eventID})
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "deleted %s\n", formatTaskID(id))
 	return nil
@@ -839,7 +843,7 @@ func runSubtaskAdd(cmd *cobra.Command, args []string) error {
 		return taskErr(id, err)
 	}
 	if tasksJSON {
-		return writeJSON(cmd.OutOrStdout(), subtaskJSON{ID: s.ID, Text: s.Text, Checked: s.Checked})
+		return writeJSON(cmd.OutOrStdout(), "subtask", subtaskJSON{ID: s.ID, Text: s.Text, Checked: s.Checked})
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), s.ID)
 	return nil
@@ -907,7 +911,7 @@ func printSubtaskResult(cmd *cobra.Command, sid int64, what string, undoEventID 
 		if undoEventID != 0 {
 			out["undo_event_id"] = undoEventID
 		}
-		return writeJSON(cmd.OutOrStdout(), out)
+		return writeJSON(cmd.OutOrStdout(), "", out)
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s subtask %d\n", what, sid)
 	return nil

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/term"
@@ -23,13 +24,34 @@ const (
 	ColorCyan   = "\033[36m"
 )
 
-func Bold(s string) string   { return ColorBold + s + ColorReset }
-func Dim(s string) string    { return ColorDim + s + ColorReset }
-func Red(s string) string    { return ColorRed + s + ColorReset }
-func Green(s string) string  { return ColorGreen + s + ColorReset }
-func Yellow(s string) string { return ColorYellow + s + ColorReset }
-func Blue(s string) string   { return ColorBlue + s + ColorReset }
-func Cyan(s string) string   { return ColorCyan + s + ColorReset }
+var colorOff atomic.Bool
+
+// SetColor turns ANSI styling on or off for every helper below.
+func SetColor(on bool) { colorOff.Store(!on) }
+
+// ColorEnabled reports whether styling helpers currently emit escapes.
+func ColorEnabled() bool { return !colorOff.Load() }
+
+// ColorWanted decides whether output should be colored: only on a terminal,
+// and never when NO_COLOR is set to a non-empty value (https://no-color.org).
+func ColorWanted(isTTY bool, getenv func(string) string) bool {
+	return isTTY && getenv("NO_COLOR") == ""
+}
+
+func style(code, s string) string {
+	if colorOff.Load() {
+		return s
+	}
+	return code + s + ColorReset
+}
+
+func Bold(s string) string   { return style(ColorBold, s) }
+func Dim(s string) string    { return style(ColorDim, s) }
+func Red(s string) string    { return style(ColorRed, s) }
+func Green(s string) string  { return style(ColorGreen, s) }
+func Yellow(s string) string { return style(ColorYellow, s) }
+func Blue(s string) string   { return style(ColorBlue, s) }
+func Cyan(s string) string   { return style(ColorCyan, s) }
 
 // nonInteractive makes every prompt answer itself with its default instead of
 // reading stdin. `worktree setup --yes` runs from `make install`, often with
@@ -189,6 +211,11 @@ func StartSpinner(message string) *Spinner {
 	s := &Spinner{
 		message: message,
 		stop:    make(chan struct{}),
+	}
+	if !ColorEnabled() {
+		// Piped or NO_COLOR: no animation, no cursor control. Stop still
+		// prints the result line.
+		return s
 	}
 	s.done.Add(1)
 	go func() {

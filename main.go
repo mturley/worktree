@@ -1,8 +1,12 @@
 package main
 
-import "github.com/mturley/worktree/cmd"
+import (
+	"os"
+
+	"github.com/mturley/worktree/cmd"
+)
 
 func main() {
 	cmd.SetWebFS(EmbeddedWeb)
-	cmd.Execute()
+	os.Exit(cmd.Execute())
 }

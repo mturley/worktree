@@ -31,10 +31,20 @@ type allResourceDTO struct {
 // worktree. Primary is the per-worktree Focus flag and means nothing across
 // worktrees, so it is true when ANY follower has the resource in focus.
 func (s *Server) handleAllResources(w http.ResponseWriter, r *http.Request) {
-	entries, err := registry.List(s.DB)
+	out, err := s.AllResources()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// AllResources is the body of GET /api/all-resources. Read-only, and usable
+// on a Server that has only a DB.
+func (s *Server) AllResources() ([]AllResource, error) {
+	entries, err := registry.List(s.DB)
+	if err != nil {
+		return nil, err
 	}
 	self, err := selfid.Load(s.DB)
 	if err != nil && s.Logger != nil {
@@ -74,7 +84,7 @@ func (s *Server) handleAllResources(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
-	writeJSON(w, http.StatusOK, out)
+	return out, nil
 }
 
 func isMine(dto resourceDTO, self map[string]string) bool {

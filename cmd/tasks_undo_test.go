@@ -69,14 +69,13 @@ func TestTasksSubtaskCheckJSONCarriesUndoEventID(t *testing.T) {
 	}
 }
 
-// A failing undo prints its error once, with no usage block, and exits 1.
+// A failing undo prints its error once, with no usage block, and exits 2.
 // The process is re-run as a child so Execute's own printing and exit are
 // what is checked.
 func TestTasksUndoConflictPrintsOnce(t *testing.T) {
 	if args := os.Getenv("WORKTREE_TEST_EXECUTE_ARGS"); args != "" {
 		rootCmd.SetArgs(strings.Fields(args))
-		Execute()
-		os.Exit(0)
+		os.Exit(Execute())
 	}
 	t.Setenv("WORKTREE_DB", filepath.Join(t.TempDir(), "w.db"))
 	if out, err := runTasks(t, "add", "A", "--global"); err != nil {
@@ -93,8 +92,8 @@ func TestTasksUndoConflictPrintsOnce(t *testing.T) {
 	child.Stdout, child.Stderr = &stdout, &stderr
 	err := child.Run()
 	var exit *exec.ExitError
-	if !errors.As(err, &exit) || exit.ExitCode() != 1 {
-		t.Fatalf("second undo: err %v, want exit 1\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
+	if !errors.As(err, &exit) || exit.ExitCode() != 2 {
+		t.Fatalf("second undo: err %v, want exit 2\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
 	}
 	if got := stderr.String(); got != "changed since; nothing was undone\n" {
 		t.Fatalf("stderr = %q, want the error once", got)
@@ -114,6 +113,11 @@ func undoIDFrom(t *testing.T, args ...string) int64 {
 	var m map[string]any
 	if err := json.Unmarshal([]byte(out), &m); err != nil {
 		t.Fatalf("%v json: %v\n%s", args, err, out)
+	}
+	// A state change answers with the task (undo_event_id inside it); a
+	// subtask check or a delete merges it at the top level.
+	if task, ok := m["task"].(map[string]any); ok {
+		m = task
 	}
 	id, _ := m["undo_event_id"].(float64)
 	return int64(id)
@@ -139,8 +143,9 @@ func TestTasksUndoCLI(t *testing.T) {
 	}
 	out, _ := runTasks(t, "show", "T1", "--json")
 	var shown map[string]any
-	if err := json.Unmarshal([]byte(out), &shown); err != nil || shown["state"] != "not_started" {
-		t.Fatalf("state not restored: %v\n%s", err, out)
+	decodeEnvelope(t, out, "task", &shown)
+	if shown["state"] != "not_started" {
+		t.Fatalf("state not restored\n%s", out)
 	}
 	// Already undone: a conflict, with an error exit.
 	if out, err := runTasks(t, "undo", arg); err == nil || !strings.Contains(err.Error(), "nothing was undone") {

@@ -142,7 +142,7 @@ func runTasksBlock(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		return writeJSON(cmd.OutOrStdout(), toBlockerJSON(b, heads))
+		return writeJSON(cmd.OutOrStdout(), "blocker", toBlockerJSON(b, heads))
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), b.ID)
 	return nil
@@ -162,7 +162,7 @@ func runTasksUnblock(cmd *cobra.Command, args []string) error {
 		return blockerErr(bid, err)
 	}
 	if tasksJSON {
-		return writeJSON(cmd.OutOrStdout(), map[string]any{"id": bid, "removed": true})
+		return writeJSON(cmd.OutOrStdout(), "", map[string]any{"id": bid, "removed": true})
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "removed blocker %d\n", bid)
 	return nil
@@ -183,7 +183,7 @@ func runTasksResolve(cmd *cobra.Command, args []string) error {
 		return blockerErr(bid, err)
 	}
 	if tasksJSON {
-		return writeJSON(cmd.OutOrStdout(), map[string]any{"id": bid, "resolved": resolved})
+		return writeJSON(cmd.OutOrStdout(), "", map[string]any{"id": bid, "resolved": resolved})
 	}
 	if resolved {
 		fmt.Fprintf(cmd.OutOrStdout(), "resolved blocker %d\n", bid)

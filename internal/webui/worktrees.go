@@ -63,10 +63,21 @@ type worktreeSummary struct {
 }
 
 func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
-	entries, err := registry.List(s.DB)
+	out, err := s.WorktreeSummaries()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// WorktreeSummaries is the body of GET /api/worktrees: every registered
+// worktree with its focus resources and unread totals. Read-only, and usable
+// on a Server that has only a DB.
+func (s *Server) WorktreeSummaries() ([]WorktreeSummary, error) {
+	entries, err := registry.List(s.DB)
+	if err != nil {
+		return nil, err
 	}
 	out := make([]worktreeSummary, 0, len(entries))
 	// One index for the whole response: the alternative is a count query per
@@ -150,5 +161,5 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 			OpenTaskCount:  worktreeTaskCount(taskCounts, e.Path),
 		})
 	}
-	writeJSON(w, http.StatusOK, out)
+	return out, nil
 }
