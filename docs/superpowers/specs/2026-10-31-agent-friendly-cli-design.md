@@ -132,7 +132,9 @@ when editmeta has no priority field, and caches the rank next to the
 priority name. This is library work (cross-repo).
 
 Items with no unread events and no signals are left out. Exit code 1 when
-the list is empty.
+the list is empty. `--worktree` (on `attention` and `activity`) rejects a
+path that is not a registered worktree, exit 2, so a typo never reads as
+"nothing needs attention".
 
 Open tasks are items too (`kind: "task"`), so a task with no linked resource
 still surfaces. Signals: `task_due_soon` (due within 3 days, or overdue) and
@@ -165,23 +167,21 @@ server.
 
 - Every JSON output is an object with `schema_version` (an integer,
   starting at 1) and named fields. Never a bare array.
-- `resources list --json` and `tasks list --json` currently return bare
-  arrays, so they change shape. agent-handler's
-  `worktreeinterop/cli.go` parses `resources list --json`; update it in
-  the same piece of work. No backward compatibility is needed (see the
-  "library changes welcome" preference).
+- `resources list --json` and `tasks list --json` are envelopes too.
+  agent-handler's `worktreeinterop/cli.go` parses `resources list --json`
+  and accepts the envelope.
+- In every output that carries resources, `updated_at` is the custom-name
+  timestamp (agent-handler uses it for newest-wins name mirroring) and
+  `resource_updated_at` is the resource's own time.
 - `list --json` includes, per worktree: name, path, repo, branch, open in
   cmux or not, unread count, primary resources with their cached state,
   and the time of the latest activity. Git ahead/behind/dirty comes with
   `--git`, since it costs several git processes per worktree. *(My call.)*
   That makes hygiene questions a single filter.
-- `jira` today fetches each issue live from Jira, without checking the
-  watcher toggle. It switches to cached state like `info`. *(My call.)*
-- `info` (text and `--json`) shows the cached resource state from the DB.
-  It never contacts a service. Today's `--local` flag is declared but never
-  read, so it is removed. There is no `--refresh`: polling from the CLI would
-  write watcher tables (breaking "no read has a write side effect") and race
-  `worktree ui`'s poll loop. *(Builder check; my call.)*
+- `jira` and `info` (text and `--json`) show the cached resource state from
+  the DB and never contact a service. There is no `--refresh`: polling from
+  the CLI would write watcher tables (breaking "no read has a write side
+  effect") and race `worktree ui`'s poll loop. *(My call.)*
 - `resources list` gains `--all`, covering resources across all worktrees
   (the CLI version of `/api/all-resources`), and includes cached state and
   unread count.
@@ -225,8 +225,9 @@ can use it, not copied.
 ### Exit codes
 
 - 0: success.
-- 1: "nothing found", for `attention` and `activity --unread` when the
-  result is empty.
+- 1: "nothing found", for `attention`, `activity --unread` and
+  `pr-threads list` (a branch with no PR is an empty result, not a failure)
+  when the result is empty.
 - `unread` keeps exiting 0 when nothing is unread: the menu bar app
   (`internal/macapp/app/UnreadWatch.swift`) treats any non-zero exit as a
   failure, and the JSON already says `"unread": false`. *(Builder check;
@@ -264,7 +265,13 @@ Installation (decided with Mike: it's a skill to install, not an
   two resolve to the same directory).
 - On `worktree update` or setup re-runs, it updates the installed copy only
   when the embedded content changed (same hash approach as the menu bar
-  app), and never overwrites a copy the user edited without asking.
+  app). The canonical directory carries a hash file; a directory without
+  one is user-managed, and setup and uninstall leave it alone.
+- Setup records the symlinks it made in a manifest (`.worktree-skill-links`
+  in the skill directory). While our copy is installed, setup creates any
+  missing link for a current target without asking, unless the path is
+  already in the manifest (so a link the user deleted stays deleted). This
+  covers a second config directory.
 
 Content (short, aimed at an agent):
 
@@ -290,9 +297,9 @@ installed.
 
 **Uninstall** (Mike: anything setup offers to set up, `setup --uninstall`
 removes): `--uninstall` previews and removes the installed skill and every
-symlink setup made to it, but only when the symlink still points at the
-installed copy. An edited copy is still removed, because the user asked to
-uninstall; the preview says it was edited. The same audit covers the setup
+symlink setup made to it (the manifest plus the current targets), but only
+when the symlink still points at the installed copy. A user-managed
+directory is left alone. The same audit covers the setup
 steps that already exist: the watcher consumer registration
 (`registerWatcherConsumer`) is not undone today, so `--uninstall` also
 unregisters it (needs `UnregisterConsumer` in the watcher library). The

@@ -142,6 +142,10 @@ discovery.
 - **`timeline.go`** — `GET /api/timeline` (global) and `GET
   /api/worktree-timeline` (scoped). Also owns `eventEnricher` (see below) and
   `latestEventTSForSubscriber` (used by both `worktrees.go` and `poller.go`).
+  Both handlers call `Server.Timeline(TimelineQuery)`, the same method
+  `worktree activity` calls from the CLI through a headless `Server`
+  (`cmd/headless.go`), so the CLI and the UI share one query, one set of
+  filters and the same unread rule.
 
   **`eventEnricher` is request-scoped by design.** Both timeline handlers
   build one (`newEventEnricher`) and drop it with the response. It holds the
@@ -747,6 +751,14 @@ stored in the worktree-owned `worktree_notes` table (keyed by registry path).
 One read cursor per RESOURCE in `resource_read_cursor` (a worktree-owned
 table), compared against `watcher_events.ts`. Unread is `ts > last_read_ts`,
 strictly greater.
+
+The CLI reads unread through the same code: `worktree unread` calls
+`Server.AppUnread` (also the menu bar app's backstop) and `--by` calls
+`Server.UnreadBy`; `worktree attention` and `worktree activity --unread` use
+the same `unreadIndex` and `selfid.NotMineSQL`. `worktree resources mark-read`
+moves the same `resource_read_cursor`, so marking read from the CLI clears it
+in the UI for every worktree following the resource, and it skips Slack
+threads, whose read state is Slack's.
 
 **PR review comment events.** The poller tags `pr_review_comment` events
 `comment:<id>` so the diff view's PR comments can show per-comment unread
