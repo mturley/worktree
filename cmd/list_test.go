@@ -215,3 +215,22 @@ func TestPortsJSON(t *testing.T) {
 		t.Fatalf("allocations = %v", got)
 	}
 }
+
+func TestListJSONHasName(t *testing.T) {
+	live, gone := seedReadFixture(t)
+	out, err := runCLI(t, "list", "--json")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	var got []map[string]any
+	decodeEnvelope(t, out, "worktrees", &got)
+	for _, w := range got {
+		want := filepath.Base(live)
+		if w["path"] == gone {
+			want = filepath.Base(gone)
+		}
+		if w["name"] != want {
+			t.Errorf("name = %v, want %q", w["name"], want)
+		}
+	}
+}

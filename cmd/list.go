@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/mturley/worktree/internal/cmux"
 	wdb "github.com/mturley/worktree/internal/db"
@@ -51,6 +52,7 @@ func openInCmux(paths []string) map[string]bool {
 // listWorktreeJSON is one worktrees[] entry of `list --json`.
 type listWorktreeJSON struct {
 	webui.WorktreeSummary
+	Name string `json:"name"` // the directory's base name
 	// Shadows the summary's own: mapped through resourceItem so updated_at
 	// means what it means in every other output.
 	FocusResources []map[string]any `json:"focus_resources"`
@@ -83,7 +85,7 @@ func runListJSON(cmd *cobra.Command, conn *sql.DB) error {
 			}
 			focus = append(focus, fi)
 		}
-		item := listWorktreeJSON{WorktreeSummary: s, FocusResources: focus, OpenInCmux: open[s.Path]}
+		item := listWorktreeJSON{WorktreeSummary: s, Name: filepath.Base(s.Path), FocusResources: focus, OpenInCmux: open[s.Path]}
 		if worktreeListGit && s.OnDisk {
 			if g, ok := readGitState(s.Path); ok {
 				item.Git = &g
