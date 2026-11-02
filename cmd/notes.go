@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/notes"
@@ -84,7 +85,8 @@ func runNotesSet(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		text = string(b)
+		// The newline `echo` or a heredoc ends with is not part of the note.
+		text = strings.TrimSuffix(strings.TrimSuffix(string(b), "\n"), "\r")
 	}
 	conn, err := wdb.Open()
 	if err != nil {

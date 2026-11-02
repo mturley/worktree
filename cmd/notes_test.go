@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -94,5 +95,38 @@ func TestNotesErrors(t *testing.T) {
 	_, err := runCLI(t, "notes", "show", "--worktree", t.TempDir())
 	if err == nil || !strings.Contains(err.Error(), "not a registered worktree") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// `echo text | notes set -` must store "text": the shell's newline is not
+// part of the note, while the note's own blank lines are.
+func TestNotesSetStdinTrimsOneNewline(t *testing.T) {
+	for _, tt := range []struct{ in, want string }{
+		{"text\n", "text"},
+		{"text\r\n", "text"},
+		{"text", "text"},
+		{"text\n\n", "text\n"},
+		{"a\nb\n", "a\nb"},
+	} {
+		t.Run(fmt.Sprintf("%q", tt.in), func(t *testing.T) {
+			live, _ := seedReadFixture(t)
+			rootCmd.SetIn(strings.NewReader(tt.in))
+			defer rootCmd.SetIn(nil)
+			if out, err := runCLI(t, "notes", "set", "--worktree", live, "-"); err != nil {
+				t.Fatalf("%v\n%s", err, out)
+			}
+			conn, err := wdb.Open()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			n, err := notes.Get(conn, live)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if n.Text != tt.want {
+				t.Errorf("text = %q, want %q", n.Text, tt.want)
+			}
+		})
 	}
 }
