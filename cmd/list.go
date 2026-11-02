@@ -51,8 +51,11 @@ func openInCmux(paths []string) map[string]bool {
 // listWorktreeJSON is one worktrees[] entry of `list --json`.
 type listWorktreeJSON struct {
 	webui.WorktreeSummary
-	OpenInCmux bool      `json:"open_in_cmux"`
-	Git        *gitState `json:"git,omitempty"`
+	// Shadows the summary's own: mapped through resourceItem so updated_at
+	// means what it means in every other output.
+	FocusResources []map[string]any `json:"focus_resources"`
+	OpenInCmux     bool             `json:"open_in_cmux"`
+	Git            *gitState        `json:"git,omitempty"`
 }
 
 func runListJSON(cmd *cobra.Command, conn *sql.DB) error {
@@ -71,7 +74,16 @@ func runListJSON(cmd *cobra.Command, conn *sql.DB) error {
 	open := openInCmux(paths)
 	out := make([]listWorktreeJSON, 0, len(summaries))
 	for _, s := range summaries {
-		item := listWorktreeJSON{WorktreeSummary: s, OpenInCmux: open[s.Path]}
+		meta := metaTimes(conn, s.Path)
+		focus := make([]map[string]any, 0, len(s.FocusResources))
+		for _, d := range s.FocusResources {
+			fi, err := resourceItem(d, meta[[2]string{d.Type, d.ID}])
+			if err != nil {
+				return err
+			}
+			focus = append(focus, fi)
+		}
+		item := listWorktreeJSON{WorktreeSummary: s, FocusResources: focus, OpenInCmux: open[s.Path]}
 		if worktreeListGit && s.OnDisk {
 			if g, ok := readGitState(s.Path); ok {
 				item.Git = &g

@@ -7,6 +7,7 @@ import (
 
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/registry"
+	"github.com/mturley/worktree/internal/resources"
 	"github.com/mturley/worktree/internal/testgit"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -90,9 +91,64 @@ func TestListJSONShape(t *testing.T) {
 		if w["open_in_cmux"] != false {
 			t.Fatalf("open_in_cmux = %v, want false", w["open_in_cmux"])
 		}
+		if _, ok := w["focus_resources"].([]any); !ok {
+			t.Fatalf("focus_resources = %#v, want an array", w["focus_resources"])
+		}
 		if _, ok := w["git"]; ok {
 			t.Fatalf("git present without --git: %v", w)
 		}
+	}
+}
+
+// updated_at is the custom-name time and resource_updated_at the resource's
+// own, as in every other output carrying resources.
+func TestListJSONFocusResourcesTimes(t *testing.T) {
+	live, _ := seedReadFixture(t)
+	conn, err := wdb.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	for _, r := range []resources.Resource{
+		{Type: "pr", ID: "o/r#1", URL: "https://pr/1"},
+		{Type: "pr", ID: "o/r#2", URL: "https://pr/2"},
+	} {
+		if err := resources.Add(conn, live, r); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := conn.Exec(`INSERT INTO watcher_resource_state (resource_type, resource_id, state_json, resource_updated_at, watcher_updated_at)
+			VALUES ('pr', ?, '{"title":"t"}', '2026-09-01T00:00:00Z', 'x')`, r.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := resources.SetMetaAt(conn, "pr", "o/r#1", "named", "", "2026-10-01T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runCLI(t, "list", "--json")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	var got []map[string]any
+	decodeEnvelope(t, out, "worktrees", &got)
+	focus := map[string]map[string]any{}
+	for _, w := range got {
+		if w["path"] != live {
+			continue
+		}
+		for _, f := range w["focus_resources"].([]any) {
+			m := f.(map[string]any)
+			focus[m["id"].(string)] = m
+		}
+	}
+	named, plain := focus["o/r#1"], focus["o/r#2"]
+	if named == nil || plain == nil {
+		t.Fatalf("focus resources missing: %s", out)
+	}
+	if named["updated_at"] != "2026-10-01T00:00:00Z" || named["resource_updated_at"] != "2026-09-01T00:00:00Z" {
+		t.Errorf("named = %v", named)
+	}
+	if _, ok := plain["updated_at"]; ok || plain["resource_updated_at"] != "2026-09-01T00:00:00Z" {
+		t.Errorf("plain = %v", plain)
 	}
 }
 
