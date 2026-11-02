@@ -11,12 +11,22 @@ database, and these commands read that database. They need no server or login.
 
 ## Start here
 
-Run `worktree status --json` first. It gives `ui_running`, `ui_url`, `stale` and
-`services[]` (each with `name`, `enabled`, `last_success`, `error`, `stale`).
+Run `worktree status --json` first. It gives `ui_running`, `ui_url`, `stale`,
+`stale_reason[]` and `services[]` (each with `name`, `enabled`, `stale`, and when they
+apply `last_success`, `error` and `reason`; absent means none).
 
-New activity only arrives while `worktree ui` is running. If `stale` is true, tell
-the user to start `worktree ui` so the watchers poll, then answer from the cache
-anyway and say how old it is. Never start it yourself.
+New activity only arrives while `worktree ui` is running. Only a service with
+resources to poll can be stale; one with none is fine even if it never polled. If
+`stale` is true, say why and how old the data is, then answer from the cache anyway:
+
+- `ui_running` is false (`ui_not_running`): tell the user to start `worktree ui` so
+  the watchers poll. Never start it yourself.
+- `ui_running` is true: starting it won't help, so look at the stale service.
+  `poll_failing` means its poll is erroring: quote its `error`, and if that looks like
+  expired or rejected credentials, tell the user to re-run `worktree setup`.
+  `no_success_yet` means it has not polled successfully, which is normal for a couple
+  of minutes after the UI starts and otherwise usually means missing credentials
+  (`worktree setup`). `poll_old` means polling stopped; suggest the Logs tab in Settings.
 
 Read commands never create or upgrade the database, so `status` can exit 2. Tell the
 user what the error says and stop: with `no worktree database yet`, they need to run

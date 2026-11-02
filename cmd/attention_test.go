@@ -182,7 +182,7 @@ func TestAttentionTextShowsThreeEventsAndHeaderForms(t *testing.T) {
 		Events:   []attention.Event{},
 	}
 	var b bytes.Buffer
-	printAttention(&b, []attention.Item{ranked, named, unranked}, false)
+	printAttention(&b, []attention.Item{ranked, named, unranked}, nil)
 	out := b.String()
 	if strings.Contains(out, staleHint) {
 		t.Fatalf("hint on fresh data: %q", out)

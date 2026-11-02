@@ -4,8 +4,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"time"
 
+	watcherdb "github.com/mturley/watcher/db"
 	"github.com/mturley/worktree/internal/config"
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/webui"
@@ -16,7 +18,17 @@ import (
 // data counts as out of date. The UI polls every few minutes while running.
 const staleAfter = 15 * time.Minute
 
-// staleHint is what text output says when buildStatus reports stale data.
+// Why data counts as stale, as status reports it: per service in "reason",
+// and all of them, with staleUINotRunning, in the top-level "stale_reason".
+const (
+	staleUINotRunning = "ui_not_running"
+	staleNoSuccessYet = "no_success_yet"
+	stalePollOld      = "poll_old"
+	stalePollFailing  = "poll_failing"
+)
+
+// staleHint is what text output says when the UI is not running, which is the
+// one case where starting it is the fix.
 const staleHint = "Start `worktree ui` so the watchers poll; activity below may be out of date."
 
 // uiProbe reports whether a worktree UI is listening on port. A variable so
@@ -48,28 +60,43 @@ type serviceStatus struct {
 	LastSuccess string `json:"last_success,omitempty"`
 	Error       string `json:"error,omitempty"`
 	Stale       bool   `json:"stale"`
+	Reason      string `json:"reason,omitempty"`
 }
 
 // statusReport is the body of `worktree status --json` (without the
 // schema_version envelope, which printJSON adds).
 type statusReport struct {
-	UIRunning bool            `json:"ui_running"`
-	UIURL     string          `json:"ui_url"`
-	Stale     bool            `json:"stale"`
-	Services  []serviceStatus `json:"services"`
+	UIRunning bool   `json:"ui_running"`
+	UIURL     string `json:"ui_url"`
+	Stale     bool   `json:"stale"`
+	// StaleReason is never null: empty when Stale is false.
+	StaleReason []string        `json:"stale_reason"`
+	Services    []serviceStatus `json:"services"`
 }
 
-// staleness reports whether a service's data is out of date: it is enabled
-// and has no parseable last success within staleAfter of now.
-func staleness(now time.Time, lastSuccess string, enabled bool) bool {
-	if !enabled {
-		return false
+// staleReason says why a service's data is out of date, or "" when it isn't.
+//
+// A service only polls while it has active resources and working credentials,
+// so one with nothing to poll never records a success and its last success
+// stops moving: neither says the data is old, because there is no data to be
+// old. Only an enabled service with active resources can be stale, and then
+// only with no parseable last success within staleAfter of now.
+func staleReason(now time.Time, lastSuccess, errMsg string, enabled, active bool) string {
+	if !enabled || !active {
+		return ""
 	}
-	t, err := time.Parse(time.RFC3339, lastSuccess)
-	if err != nil {
-		return true
+	reason := stalePollOld
+	if t, err := time.Parse(time.RFC3339, lastSuccess); err == nil {
+		if now.Sub(t) <= staleAfter {
+			return ""
+		}
+	} else if lastSuccess == "" {
+		reason = staleNoSuccessYet
 	}
-	return now.Sub(t) > staleAfter
+	if errMsg != "" {
+		return stalePollFailing
+	}
+	return reason
 }
 
 // buildStatus gathers the report. It only reads the DB and probes the
@@ -77,26 +104,56 @@ func staleness(now time.Time, lastSuccess string, enabled bool) bool {
 func buildStatus(conn *sql.DB, cfg config.Config, now time.Time) (statusReport, error) {
 	srv := &webui.Server{DB: conn}
 	rep := statusReport{
-		UIRunning: uiProbe(defaultUIPort),
-		UIURL:     fmt.Sprintf("http://127.0.0.1:%d", defaultUIPort),
-		Services:  []serviceStatus{},
+		UIRunning:   uiProbe(defaultUIPort),
+		UIURL:       fmt.Sprintf("http://127.0.0.1:%d", defaultUIPort),
+		StaleReason: []string{},
+		Services:    []serviceStatus{},
 	}
-	rep.Stale = !rep.UIRunning
+	if !rep.UIRunning {
+		rep.StaleReason = append(rep.StaleReason, staleUINotRunning)
+	}
 	for _, w := range srv.WatcherStatuses() {
+		active, err := watcherdb.ActiveResources(conn, w.Type)
+		if err != nil {
+			return statusReport{}, err
+		}
 		enabled := cfg.Watchers.Enabled(w.Name)
-		s := serviceStatus{
+		reason := staleReason(now, w.LastSuccess, w.ErrorMessage, enabled, len(active) > 0)
+		rep.Services = append(rep.Services, serviceStatus{
 			Name:        w.Name,
 			Enabled:     enabled,
 			LastSuccess: w.LastSuccess,
 			Error:       w.ErrorMessage,
-			Stale:       staleness(now, w.LastSuccess, enabled),
+			Stale:       reason != "",
+			Reason:      reason,
+		})
+		if reason != "" && !slices.Contains(rep.StaleReason, reason) {
+			rep.StaleReason = append(rep.StaleReason, reason)
 		}
-		if s.Stale {
-			rep.Stale = true
-		}
-		rep.Services = append(rep.Services, s)
 	}
+	rep.Stale = len(rep.StaleReason) > 0
 	return rep, nil
+}
+
+// statusHints is the advice text output gives for a stale report. With the UI
+// down, starting it is the only advice that helps. With it up, starting it
+// would do nothing, so each stale service gets its own.
+func statusHints(rep statusReport) []string {
+	if !rep.UIRunning {
+		return []string{staleHint}
+	}
+	var hints []string
+	for _, s := range rep.Services {
+		switch s.Reason {
+		case stalePollFailing:
+			hints = append(hints, fmt.Sprintf("%s: polling is failing: %s. If its credentials expired, re-run `worktree setup`; activity below may be out of date.", s.Name, s.Error))
+		case staleNoSuccessYet:
+			hints = append(hints, fmt.Sprintf("%s: has not polled successfully yet. If that lasts more than a few minutes, check its credentials with `worktree setup`.", s.Name))
+		case stalePollOld:
+			hints = append(hints, fmt.Sprintf("%s: last successful poll is old though the UI is running. Check the Logs tab in Settings; activity below may be out of date.", s.Name))
+		}
+	}
+	return hints
 }
 
 // fields converts the report to printJSON's field map.
@@ -135,6 +192,8 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		switch {
 		case !s.Enabled:
 			fmt.Fprintf(out, "%s: disabled\n", s.Name)
+		case s.LastSuccess == "" && !s.Stale:
+			fmt.Fprintf(out, "%s: nothing to poll\n", s.Name)
 		case s.LastSuccess == "":
 			fmt.Fprintf(out, "%s: never polled\n", s.Name)
 		default:
@@ -144,8 +203,8 @@ func runStatus(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(out, "  error: %s\n", s.Error)
 		}
 	}
-	if rep.Stale {
-		fmt.Fprintln(out, staleHint)
+	for _, h := range statusHints(rep) {
+		fmt.Fprintln(out, h)
 	}
 	return nil
 }

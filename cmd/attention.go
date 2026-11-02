@@ -90,7 +90,7 @@ func runAttention(cmd *cobra.Command, args []string) error {
 			return err
 		}
 	} else {
-		printAttention(out, items, status.Stale)
+		printAttention(out, items, statusHints(status))
 	}
 	if len(items) == 0 {
 		return ErrNothingFound
@@ -98,11 +98,11 @@ func runAttention(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// printAttention renders the text output: the stale hint when it applies,
+// printAttention renders the text output: any staleness hints first,
 // then for each item a header line and up to attentionTextEvents event lines.
-func printAttention(w io.Writer, items []attention.Item, stale bool) {
-	if stale {
-		fmt.Fprintln(w, staleHint)
+func printAttention(w io.Writer, items []attention.Item, hints []string) {
+	for _, h := range hints {
+		fmt.Fprintln(w, h)
 	}
 	if len(items) == 0 {
 		fmt.Fprintln(w, "Nothing needs your attention.")
