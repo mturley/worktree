@@ -300,6 +300,7 @@ describe("EventDetailsModal unread", () => {
     expect(outlined()).toBe(false)
     expect(markButton()).toBeNull()
 
+    expect(await screen.findByText("Marked read: Fix the widget")).toBeInTheDocument()
     await userEvent.click(await screen.findByRole("button", { name: /^Undo/ }))
     expect(restore).toHaveBeenCalledWith({ id: "e1", ts: "2026-08-25T00:00:00Z" })
     expect(await screen.findByRole("button", { name: "Mark read" })).toBeInTheDocument()

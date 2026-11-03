@@ -38,7 +38,7 @@ export function useMarkEventRead() {
       opts.onRead?.()
       if (change.changed) {
         showUndoToast({
-          message: "Marked event read",
+          message: `Marked read: ${e.title}`,
           undo: async () => {
             await api.restoreEventRead({ id: change.id, ts: change.ts })
             opts.onUndone?.()
