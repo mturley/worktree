@@ -4,9 +4,8 @@ export type MacMessage =
   | { type: "ready" }
   | { type: "login" }
   | { type: "unreachable" }
-  // The width the page needs for now, or null when it needs nothing more
-  // than the user's own (see useMacTaskModalWidth).
-  | { type: "minWidth"; width: number | null }
+  // Which view is showing, each with its own dropdown size (see useMacDropdownView).
+  | { type: "view"; view: "collapsed" | "expanded" | "task" | "event" }
   // Esc with nothing else to do: close the dropdown (see MiniPage).
   | { type: "close" }
 

@@ -55,6 +55,7 @@ import { useSeeEverything } from "../hooks/useSeeEverything"
 import { NarrowingContext } from "../components/search/NarrowingContext"
 import { SearchContext } from "../components/search/SearchContext"
 import { buildSuggestions } from "../components/search/suggestions"
+import { useEventFromUrl } from "../hooks/useEventFromUrl"
 import { useSearchQuery } from "../hooks/useSearchQuery"
 import { matchResource } from "../lib/search"
 import { CrossHoverProvider } from "../components/CrossHoverContext"
@@ -217,6 +218,12 @@ export function WorktreeDetailPage() {
   )
   const [focus, setFocus] = useState<MessageFocus | null>(() => (arrival ? messageFocus(arrival) : null))
   useEffect(() => clearOpenEvent(), [])
+  // The same arrival from outside this browser, by URL (see useEventFromUrl).
+  useEventFromUrl((e) => {
+    const f = messageFocus(e)
+    if (f) setFocus(f)
+    else setOpenedEvent(e)
+  })
   // Arriving from an archived event's "Follow" menu on the home page: open
   // the follow modal prefilled, leaving Focus/Related and position to choose.
   const [arrivalFollow, setArrivalFollow] = useState<FollowResource | null>(readFollowResource)

@@ -9,7 +9,7 @@ import { UnreadDivider } from "./UnreadDivider"
 
 export function TimelineFeed({
   events, loading, error, showWorktrees, showResource, hasMore, onLoadMore, loadingMore,
-  onSelectResource, resolveResource, canSelectResource,
+  onSelectResource, onOpenEvent, resolveResource, canSelectResource,
   showUnreadDivider, emptyText = "No events yet.", path, onMakeTask, onOpenTask,
 }: {
   events: TimelineEvent[]; loading: boolean; error: unknown; showWorktrees?: boolean
@@ -28,6 +28,8 @@ export function TimelineFeed({
    * worktree whose selection could change.
    */
   onSelectResource?: (key: { type: string; id: string }, e: TimelineEvent) => void
+  /** Takes over a row's details, from this feed's own modal. */
+  onOpenEvent?: (e: TimelineEvent) => void
   resolveResource?: (type: string, id: string) => ResourceDTO | undefined
   /**
    * Whether an event's resource can be opened. Rows that fail it fall back to
@@ -101,7 +103,7 @@ export function TimelineFeed({
                 e={e}
                 showWorktrees={showWorktrees}
                 showResource={showResource}
-                onOpen={setDetail}
+                onOpen={onOpenEvent ?? setDetail}
                 onSelectResource={onSelectResource}
                 resolveResource={resolveResource}
                 canSelectResource={canSelectResource}

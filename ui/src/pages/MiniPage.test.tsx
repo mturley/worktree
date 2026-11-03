@@ -215,7 +215,7 @@ describe("MiniPage", () => {
     await userEvent.click(screen.getByText("Looks good to me"))
     const dialog = await screen.findByRole("dialog")
     expect(within(dialog).getByText("Ship the gizmo")).toBeInTheDocument()
-    expect(post).not.toHaveBeenCalled()
+    expect(post).not.toHaveBeenCalledWith(expect.objectContaining({ type: "open" }))
   })
 
   it("an event row's tooltip says it opens details here, not in a worktree", async () => {
@@ -239,6 +239,20 @@ describe("MiniPage", () => {
     expect(window.location.pathname).toBe("/mini")
   })
 
+  it("an event's details offer to open it in the full UI", async () => {
+    stubBridge()
+    mocks.events = [event]
+    vi.spyOn(api, "locatePRComment").mockRejectedValue(new Error("404"))
+    wrap()
+    await userEvent.click(screen.getByText("Looks good to me"))
+    const dialog = await screen.findByRole("dialog")
+    await userEvent.click(within(dialog).getByRole("button", { name: /Open in full UI/ }))
+    expect(post).toHaveBeenCalledWith({
+      type: "open",
+      url: `${window.location.origin}/worktree/%2Fwt%2Ffoo?resource=pr:o%2Fr%231&event=${event.id}`,
+    })
+  })
+
   it("open full UI posts open", async () => {
     stubBridge()
     wrap()
@@ -250,5 +264,76 @@ describe("MiniPage", () => {
     stubBridge()
     wrap()
     await waitFor(() => expect(post).toHaveBeenCalledWith({ type: "ready" }))
+  })
+
+  describe("expanded", () => {
+    const expand = () => userEvent.click(screen.getByRole("button", { name: "Show Activity and Tasks side by side" }))
+
+    it("shows Activity and Tasks as columns in place of tabs", async () => {
+      mocks.events = [event]
+      wrap()
+      expect(screen.getByRole("tab", { name: "Tasks" })).toBeInTheDocument()
+      await expand()
+      expect(screen.queryByRole("tab")).not.toBeInTheDocument()
+      expect(screen.getByText("Looks good to me")).toBeVisible()
+      expect(await screen.findByText(task.title)).toBeVisible()
+    })
+
+    it("keeps its toggle in the header, ahead of the search, in both modes", async () => {
+      wrap()
+      const search = screen.getByPlaceholderText("Search…")
+      const before = (el: Element) => Boolean(el.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING)
+      expect(before(screen.getByRole("button", { name: "Show Activity and Tasks side by side" }))).toBe(true)
+      await expand()
+      expect(before(screen.getByRole("button", { name: "Show Activity and Tasks as tabs" }))).toBe(true)
+    })
+
+    it("collapses back to the tabs", async () => {
+      wrap()
+      await expand()
+      await userEvent.click(screen.getByRole("button", { name: "Show Activity and Tasks as tabs" }))
+      expect(screen.getByRole("tab", { name: "Tasks" })).toBeInTheDocument()
+    })
+
+    it("is remembered the next time the page loads", async () => {
+      const first = wrap()
+      await expand()
+      first.unmount()
+      wrap()
+      expect(screen.queryByRole("tab")).not.toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "Show Activity and Tasks as tabs" })).toBeInTheDocument()
+    })
+
+    it("tells the app which view it is showing", async () => {
+      stubBridge()
+      wrap()
+      expect(post).toHaveBeenCalledWith({ type: "view", view: "collapsed" })
+      await expand()
+      expect(post).toHaveBeenCalledWith({ type: "view", view: "expanded" })
+    })
+
+    it("Esc closes the dropdown with nothing left to clear, having no tab to go back to", async () => {
+      stubBridge()
+      wrap()
+      await userEvent.click(screen.getByRole("tab", { name: "Tasks" }))
+      await expand()
+      // Off the toggle: an open tooltip's dismissal takes the Esc first.
+      await userEvent.unhover(screen.getByRole("button", { name: "Show Activity and Tasks as tabs" }))
+      await waitFor(() => expect(screen.queryByRole("tooltip")).not.toBeInTheDocument())
+      await userEvent.keyboard("{Escape}")
+      expect(post).toHaveBeenCalledWith({ type: "close" })
+    })
+  })
+
+  it("tells the app when an event's details open and close", async () => {
+    stubBridge()
+    mocks.events = [event]
+    vi.spyOn(api, "locatePRComment").mockRejectedValue(new Error("404"))
+    wrap()
+    await userEvent.click(screen.getByText("Looks good to me"))
+    await screen.findByRole("dialog")
+    expect(post).toHaveBeenCalledWith({ type: "view", view: "event" })
+    await userEvent.keyboard("{Escape}")
+    await waitFor(() => expect(post).toHaveBeenLastCalledWith({ type: "view", view: "collapsed" }))
   })
 })

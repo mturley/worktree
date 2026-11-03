@@ -1,59 +1,94 @@
 import AppKit
 
-/// The popover's size, remembered across launches in the app's defaults.
+/// The page's views (its `view` message), each with its own popover size.
+enum DropdownView: String {
+    case collapsed, expanded, task, event
+
+    /// The task and event details use the page's wide layout (48em).
+    var standard: NSSize {
+        switch self {
+        case .collapsed: return NSSize(width: 600, height: 800)
+        case .expanded: return NSSize(width: 1200, height: 800)
+        case .task, .event: return NSSize(width: 768, height: 800)
+        }
+    }
+
+    /// Expanded fits two columns of the others' minimum width.
+    var minimum: NSSize {
+        switch self {
+        case .expanded: return NSSize(width: 840, height: 480)
+        case .collapsed, .task, .event: return NSSize(width: 420, height: 480)
+        }
+    }
+
+    /// Collapsed keeps the keys from when there was one size, so that size
+    /// carries over as the collapsed one.
+    fileprivate var keys: (width: String, height: String) {
+        switch self {
+        case .collapsed: return ("popoverWidth", "popoverHeight")
+        case .expanded: return ("popoverExpandedWidth", "popoverExpandedHeight")
+        case .task: return ("popoverTaskWidth", "popoverTaskHeight")
+        case .event: return ("popoverEventWidth", "popoverEventHeight")
+        }
+    }
+}
+
+/// Each view's popover size, remembered across launches in the app's defaults.
 enum PopoverSize {
-    static let standard = NSSize(width: 600, height: 640)
-    static let minimum = NSSize(width: 420, height: 480)
-
-    private static let widthKey = "popoverWidth"
-    private static let heightKey = "popoverHeight"
-
-    /// The saved size, or the standard one when nothing (or nothing usable)
-    /// was saved.
-    static var saved: NSSize {
+    /// The view's saved size, or its standard one when nothing (or nothing
+    /// usable) was saved.
+    static func saved(_ view: DropdownView) -> NSSize {
         let d = UserDefaults.standard
-        let w = d.double(forKey: widthKey), h = d.double(forKey: heightKey)
-        guard w >= minimum.width, h >= minimum.height else { return standard }
+        let w = d.double(forKey: view.keys.width), h = d.double(forKey: view.keys.height)
+        guard w >= view.minimum.width, h >= view.minimum.height else { return view.standard }
         return NSSize(width: w, height: h)
     }
 
-    static func save(_ size: NSSize) {
-        UserDefaults.standard.set(Double(size.width), forKey: widthKey)
-        UserDefaults.standard.set(Double(size.height), forKey: heightKey)
+    static func save(_ size: NSSize, for view: DropdownView) {
+        UserDefaults.standard.set(Double(size.width), forKey: view.keys.width)
+        UserDefaults.standard.set(Double(size.height), forKey: view.keys.height)
     }
 
-    static func reset() {
-        UserDefaults.standard.removeObject(forKey: widthKey)
-        UserDefaults.standard.removeObject(forKey: heightKey)
+    static func reset(_ view: DropdownView) {
+        UserDefaults.standard.removeObject(forKey: view.keys.width)
+        UserDefaults.standard.removeObject(forKey: view.keys.height)
     }
 
-    /// Between the minimum and what fits on screen below the menu bar.
-    static func clamped(_ size: NSSize, on screen: NSScreen?) -> NSSize {
+    static func resetAll() {
+        for view in [DropdownView.collapsed, .expanded, .task, .event] { reset(view) }
+    }
+
+    /// Between the view's minimum and what fits on screen below the menu bar.
+    static func clamped(_ size: NSSize, for view: DropdownView, on screen: NSScreen?) -> NSSize {
         let visible = screen?.visibleFrame.size ?? size
         let margin: CGFloat = 20
-        let maxW = max(minimum.width, visible.width - margin)
-        let maxH = max(minimum.height, visible.height - margin)
-        return NSSize(width: min(max(size.width, minimum.width), maxW),
-                      height: min(max(size.height, minimum.height), maxH))
+        let maxW = max(view.minimum.width, visible.width - margin)
+        let maxH = max(view.minimum.height, visible.height - margin)
+        return NSSize(width: min(max(size.width, view.minimum.width), maxW),
+                      height: min(max(size.height, view.minimum.height), maxH))
     }
 }
 
 /// A resize corner for the popover, which has none of its own. It sits over
 /// the bottom-right corner of the content; dragging it resizes the popover and
-/// double-clicking it restores the standard size.
+/// double-clicking it restores the standard size. Either applies only to the
+/// view showing.
 @MainActor
 final class ResizeGrip: NSView {
     static let side: CGFloat = 16
 
     weak var popover: NSPopover?
-    /// Called once the user has chosen a size here: a drag ended, or a
-    /// double-click reset it.
-    var onUserResize: (() -> Void)?
+    /// The view showing, whose size this changes.
+    var currentView: () -> DropdownView = { .collapsed }
 
     /// From the mouse to the popover window's right edge, at mouse down.
     private var rightOffset: CGFloat = 0
     private var startY: CGFloat = 0
     private var startHeight: CGFloat = 0
+    /// Whether the mouse moved since mouse down. A click alone saves nothing,
+    /// so it can't turn a default, or a size shrunk to fit this screen, into
+    /// the view's own.
+    private var dragged = false
 
     override func draw(_ dirtyRect: NSRect) {
         NSColor.tertiaryLabelColor.setStroke()
@@ -80,20 +115,22 @@ final class ResizeGrip: NSView {
     override func mouseDown(with event: NSEvent) {
         guard let popover, let frame = window?.frame else { return }
         if event.clickCount == 2 {
-            PopoverSize.reset()
-            resize(popover, to: PopoverSize.standard)
-            onUserResize?()
+            let view = currentView()
+            PopoverSize.reset(view)
+            resize(popover, to: view.standard)
             return
         }
         let mouse = NSEvent.mouseLocation
         rightOffset = frame.maxX - mouse.x
         startY = mouse.y
         startHeight = popover.contentSize.height
+        dragged = false
         popover.animates = false
     }
 
     override func mouseDragged(with event: NSEvent) {
         guard let popover, let frame = window?.frame else { return }
+        dragged = true
         let mouse = NSEvent.mouseLocation
         // The popover stays centred on its icon unless the screen edge stops
         // it, so the right edge moves by somewhere between half and all of a
@@ -108,11 +145,10 @@ final class ResizeGrip: NSView {
     override func mouseUp(with event: NSEvent) {
         guard let popover, event.clickCount < 2 else { return }
         popover.animates = true
-        PopoverSize.save(popover.contentSize)
-        onUserResize?()
+        if dragged { PopoverSize.save(popover.contentSize, for: currentView()) }
     }
 
     private func resize(_ popover: NSPopover, to size: NSSize) {
-        popover.contentSize = PopoverSize.clamped(size, on: window?.screen)
+        popover.contentSize = PopoverSize.clamped(size, for: currentView(), on: window?.screen)
     }
 }

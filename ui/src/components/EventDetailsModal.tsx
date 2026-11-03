@@ -15,6 +15,9 @@ import { FollowInWorktreeMenu } from "./FollowInWorktreeMenu"
 import { WorktreeName, WorktreePreview } from "./WorktreeName"
 import { eventWorktrees, followResourceState, isArchivedEvent } from "../lib/openEvent"
 import { eventTaskKey } from "../lib/taskEventKey"
+import { OpenInFullUiButton } from "./OpenInFullUiButton"
+import { eventFullUiHref } from "../lib/fullUiLink"
+import { hasMacBridge } from "../lib/macBridge"
 import { isMiniRoute } from "../lib/miniMode"
 import { MARK_READ_BUTTON_PROPS, READ_BOX_BORDER, UNREAD_BOX_BORDER } from "../lib/unread"
 import { canMarkEventRead, useMarkEventRead } from "../hooks/useMarkEventRead"
@@ -94,14 +97,21 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
 
   return (
     <Modal opened={!!e} onClose={onClose} size="lg" fullScreen={isMiniRoute()}
+      // In the menu bar app, opening and closing resize the dropdown (the event
+      // view has its own size), and a transition on top of that looks bad.
+      transitionProps={hasMacBridge() ? { duration: 0 } : undefined}
       // A border, not an inset outline, which the sticky header paints over.
       // Always the same width, so clearing it does not shift the content.
-      styles={{ content: { border: unread ? UNREAD_BOX_BORDER : READ_BOX_BORDER } }}
+      // The title fills the header, to put its button beside the close button.
+      styles={{ content: { border: unread ? UNREAD_BOX_BORDER : READ_BOX_BORDER }, title: { flex: 1, minWidth: 0 } }}
       title={
       e ? (
-        <Group gap={8} wrap="nowrap">
-          <EventDot type={e.type} label={e.type_label} taskState={e.task_state} />
-          <Text fw={600} size="sm">{eventLabel(e.type, e.type_label)}</Text>
+        <Group gap={8} wrap="nowrap" justify="space-between" pe="xs">
+          <Group gap={8} wrap="nowrap" style={{ minWidth: 0 }}>
+            <EventDot type={e.type} label={e.type_label} taskState={e.task_state} />
+            <Text fw={600} size="sm">{eventLabel(e.type, e.type_label)}</Text>
+          </Group>
+          <OpenInFullUiButton href={eventFullUiHref(e)} />
         </Group>
       ) : null
     }>

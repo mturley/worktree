@@ -42,6 +42,11 @@ afterEach(() => {
 })
 
 describe("EventDetailsModal", () => {
+  it("doesn't offer the full UI when already in it", () => {
+    wrap(<EventDetailsModal e={ev({})} onClose={vi.fn()} />)
+    expect(screen.queryByRole("button", { name: /Open in full UI/ })).not.toBeInTheDocument()
+  })
+
   it("shows the body in full, and preserves its line breaks", () => {
     const body = "line one\nline two\n" + "x".repeat(400)
     wrap(<EventDetailsModal e={ev({ body })} onClose={vi.fn()} />)

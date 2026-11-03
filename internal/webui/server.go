@@ -326,6 +326,7 @@ func (s *Server) routes() []route {
 		{"POST /api/resource-meta", s.handleSetResourceMeta},
 		{"POST /api/resource-read", s.handleResourceRead},
 		{"POST /api/resource-read/restore", s.handleResourceReadRestore},
+		{"GET /api/event", s.handleEvent},
 		{"POST /api/event-read", s.handleEventRead},
 		{"POST /api/event-read/restore", s.handleEventReadRestore},
 		{"POST /api/worktree-resources/add", s.handleAddResource},

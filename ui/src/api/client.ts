@@ -406,6 +406,7 @@ export const api = {
   prReviewDialog: (path: string) => fetchJSON<PRReviewDialog>(`/api/pr-write/review?${new URLSearchParams({ path })}`),
   prSubmit: (req: { path: string; head: string; event: PRReviewEvent; body: string; include_local: boolean }) =>
     postJSON<SubmitResult>("/api/pr-write/submit", req),
+  event: (id: string) => fetchJSON<TimelineEvent>(`/api/event?id=${encodeURIComponent(id)}`),
   locatePRComment: (eventId: string, preferPath?: string) => {
     const params = new URLSearchParams({ event_id: eventId })
     if (preferPath) params.set("prefer_path", preferPath)

@@ -21,11 +21,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     /// rather than guess.
     private var lastUnread: Bool?
     private let unreadWatch = UnreadWatch()
-    /// The user's own size while the page has widened the popover past it
-    /// (`minWidth`, for the task modal's wide layout), so it can go back
-    /// when the page lets go; nil when not widened. A size the user picks
-    /// meanwhile becomes theirs, and clears this.
-    private var widenedFrom: NSSize?
+    /// The view the page last said it shows, whose size the popover has.
+    private var currentView = DropdownView.collapsed
+    /// The last of collapsed or expanded, what's left when details go away
+    /// with the page.
+    private var modeView = DropdownView.collapsed
     /// The last /mini URL that loaded (with its ?task= and such), so coming
     /// back from offline returns to it rather than to plain /mini.
     private var lastMiniURL: URL?
@@ -53,7 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         webView.navigationDelegate = self
         webView.uiDelegate = self
 
-        let size = PopoverSize.saved
+        let size = PopoverSize.saved(currentView)
         let container = NSView(frame: NSRect(origin: .zero, size: size))
         for view in [webView!, offlineView] as [NSView] {
             view.frame = container.bounds
@@ -70,7 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
                                             width: ResizeGrip.side, height: ResizeGrip.side))
         grip.autoresizingMask = [.minXMargin, .maxYMargin]
         grip.popover = popover
-        grip.onUserResize = { [weak self] in self?.widenedFrom = nil }
+        grip.currentView = { [weak self] in self?.currentView ?? .collapsed }
         container.addSubview(grip)
 
         let controller = NSViewController()
@@ -102,6 +102,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         // An accessory app is never frontmost on its own; without this the
         // popover can't take key focus and the login form can't be typed in.
         NSApp.activate(ignoringOtherApps: true)
+        // The screen may have changed since: a size shrunk to fit a smaller
+        // one comes back here, as only the fit was shrunk, not the saved size.
+        applySize()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         let window = popover.contentViewController?.view.window
         window?.makeKey()
@@ -153,27 +156,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
 
     @objc private func reloadPage() { loadMini() }
 
-    /// The same as double-clicking the resize grip.
+    /// Every view's size, unlike double-clicking the grip, which resets the
+    /// one showing.
     @objc private func resetSize() {
-        PopoverSize.reset()
-        widenedFrom = nil
-        popover.contentSize = PopoverSize.standard
+        PopoverSize.resetAll()
+        applySize()
     }
 
-    /// The page's `minWidth`: widen to width if narrower, without saving it
-    /// as the user's size; nil puts the user's size back, unless they picked
-    /// one while widened.
-    private func setMinWidth(_ width: CGFloat?) {
-        let current = popover.contentSize
-        if let width {
-            guard width > current.width else { return }
-            if widenedFrom == nil { widenedFrom = current }
-            let screen = popover.contentViewController?.view.window?.screen ?? NSScreen.main
-            popover.contentSize = PopoverSize.clamped(NSSize(width: width, height: current.height), on: screen)
-        } else if let from = widenedFrom {
-            widenedFrom = nil
-            popover.contentSize = from
-        }
+    /// The page's `view`: moves to that view's size.
+    private func setView(_ view: DropdownView) {
+        currentView = view
+        if view == .collapsed || view == .expanded { modeView = view }
+        applySize()
+    }
+
+    /// The current view's saved size, as far as it fits the screen holding
+    /// the icon the popover hangs from. Saves nothing.
+    private func applySize() {
+        let screen = statusItem.button?.window?.screen ?? NSScreen.main
+        popover.contentSize = PopoverSize.clamped(PopoverSize.saved(currentView), for: currentView, on: screen)
     }
 
     @objc private func togglePurpleIcon() { icon.purple.toggle() }
@@ -226,8 +227,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
 
     private func showOffline() {
         icon.state = .disconnected
-        // The page that asked to be wide is gone.
-        setMinWidth(nil)
+        // The page showing any details is gone.
+        setView(modeView)
         webView.isHidden = true
         offlineView.isHidden = false
         // A failed load leaves the previous page in place, scripts still
@@ -285,9 +286,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             // close(), not performClose(_:): this must not ask the delegate,
             // which would see the Esc that led here and refuse.
             popover.close()
-        case "minWidth":
-            // A number to widen for, or null (NSNull) to let go.
-            setMinWidth((body["width"] as? NSNumber).map { CGFloat($0.doubleValue) })
+        case "view":
+            guard let name = body["view"] as? String, let view = DropdownView(rawValue: name) else { return }
+            setView(view)
         case "login":
             icon.state = .needsLogin
         case "open":

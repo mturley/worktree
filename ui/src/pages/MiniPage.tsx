@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { useLocation } from "wouter"
-import { Box, Button, Group, Stack, Tabs } from "@mantine/core"
+import { ActionIcon, Box, Button, Group, Stack, Tabs, Text, Tooltip } from "@mantine/core"
+import { IconViewportNarrow, IconViewportWide } from "@tabler/icons-react"
 import type { ResourceDTO } from "../api/types"
 import { useCmux } from "../api/cmux"
 import { useActivityPanel } from "../components/ActivityPanel"
@@ -15,6 +16,7 @@ import { SearchContext } from "../components/search/SearchContext"
 import { buildSuggestions } from "../components/search/suggestions"
 import { TaskList } from "../components/tasks/TaskList"
 import { TaskListToolbar } from "../components/tasks/TaskListToolbar"
+import { useMacDropdownView } from "../hooks/useMacDropdownView"
 import { useResourcesView } from "../hooks/useResourcesView"
 import { useSearchQuery } from "../hooks/useSearchQuery"
 import { useSeeEverything } from "../hooks/useSeeEverything"
@@ -24,6 +26,7 @@ import { useUnreadOnly } from "../hooks/useUnreadOnly"
 import { useUnreadOnlyHotkey } from "../hooks/useUnreadOnlyHotkey"
 import { useWorktrees } from "../hooks/useWorktrees"
 import { hasMacBridge, postToMac } from "../lib/macBridge"
+import { readMiniExpanded, writeMiniExpanded } from "../lib/miniExpandedPref"
 import { openExternal } from "../lib/miniMode"
 import { serializeResourceKey } from "../lib/resourceKey"
 import { unreadBadge } from "../lib/unreadBadge"
@@ -32,6 +35,44 @@ type MiniTab = "tasks" | "activity"
 
 /** Every task, with no context to link a new one to. */
 const ALL_TASKS = { kind: "all" } as const
+
+/** Keeps the expanded columns' headers level, whatever controls each one has. */
+const COLUMN_HEADER_MIN_HEIGHT = 38
+
+/** Switches between the tabs and the side-by-side columns. */
+function ExpandToggle({ expanded, onChange }: { expanded: boolean; onChange: (expanded: boolean) => void }) {
+  const label = expanded ? "Show Activity and Tasks as tabs" : "Show Activity and Tasks side by side"
+  return (
+    <Tooltip label={label}>
+      <ActionIcon
+        variant="subtle"
+        color="gray"
+        size="sm"
+        aria-label={label}
+        onClick={() => onChange(!expanded)}
+      >
+        {expanded ? <IconViewportNarrow size={16} /> : <IconViewportWide size={16} />}
+      </ActionIcon>
+    </Tooltip>
+  )
+}
+
+/** One expanded column: a header like the tab bar over its own scrolling body. */
+function MiniColumn({ header, controls, children }: { header: ReactNode; controls: ReactNode; children: ReactNode }) {
+  return (
+    <Stack gap="xs" style={{ flex: "1 1 0", minWidth: 0, minHeight: 0 }}>
+      <Group
+        gap="xs"
+        wrap="nowrap"
+        style={{ minHeight: COLUMN_HEADER_MIN_HEIGHT, borderBottom: "1px solid var(--mantine-color-default-border)" }}
+      >
+        {header}
+        <Group ml="auto" align="center" gap="sm" wrap="nowrap">{controls}</Group>
+      </Group>
+      <Box style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>{children}</Box>
+    </Stack>
+  )
+}
 
 /**
  * The macOS menu bar app's view: a header with the search bar, then the
@@ -49,11 +90,20 @@ const ALL_TASKS = { kind: "all" } as const
  * `close`), the only step back out of here. The app never closes the
  * dropdown on Esc by itself.
  *
+ * The toggle beside the logo swaps the tabs for columns showing both
+ * at once, remembered per browser. The app gives each of its views (these two,
+ * and a task's or an event's details) its own dropdown size.
+ *
  * Sized by the popover, so no fixed width.
  */
 export function MiniPage() {
   const [, navigate] = useLocation()
   const [tab, setTab] = useState<MiniTab>("activity")
+  const [expanded, setExpandedState] = useState(readMiniExpanded)
+  const setExpanded = (value: boolean) => {
+    writeMiniExpanded(value)
+    setExpandedState(value)
+  }
   const [unreadOnly, setUnreadOnly] = useUnreadOnly()
   useUnreadOnlyHotkey(unreadOnly, setUnreadOnly)
   const [prefs, setPrefs] = useTaskListPrefs()
@@ -71,6 +121,7 @@ export function MiniPage() {
   // The same query (and cache entry) the Tasks tab's list uses.
   const tasks = useTasks(ALL_TASKS, { completed: prefs.showCompleted, archived: prefs.includeArchived })
   const { unread, count } = unreadBadge(wts.data)
+  useMacDropdownView(expanded, activity.eventOpen)
 
   useEffect(() => postToMac({ type: "ready" }), [])
 
@@ -124,17 +175,19 @@ export function MiniPage() {
   })
 
   const escClears = narrowing.search || narrowing.unread || narrowing.filters
-  const escActivity = !escClears && tab !== "activity"
+  const onTasksTab = !expanded && tab !== "activity"
+  const escActivity = !escClears && onTasksTab
   const escapeIdle = () => {
-    if (tab !== "activity") setTab("activity")
+    if (onTasksTab) setTab("activity")
     else if (hasMacBridge()) postToMac({ type: "close" })
   }
 
   return (
     <NarrowingContext.Provider value={narrowing}><SearchContext.Provider value={searchContext}>
-      <Stack p="xs" gap="xs" data-testid="mini-page">
+      <Stack p="xs" gap="xs" data-testid="mini-page" h={expanded ? "100dvh" : undefined}>
         <Group justify="space-between" wrap="nowrap" gap="xs">
           <Logo size={24} />
+          <ExpandToggle expanded={expanded} onChange={setExpanded} />
           <Box style={{ flex: 1, minWidth: 0 }}>
             <SearchBar
               value={search.q}
@@ -154,6 +207,27 @@ export function MiniPage() {
             </Button>
           </Group>
         </Group>
+        {expanded ? (
+          <Group gap="md" wrap="nowrap" align="stretch" style={{ flex: 1, minHeight: 0 }}>
+            <MiniColumn
+              header={(
+                <>
+                  <Text size="sm" fw={600}>Activity</Text>
+                  <UnreadBadge unread={unread} count={count} />
+                </>
+              )}
+              controls={activity.controls}
+            >
+              {activity.render(<></>)}
+            </MiniColumn>
+            <MiniColumn
+              header={<Text size="sm" fw={600}>Tasks</Text>}
+              controls={<TaskListToolbar prefs={prefs} onChange={setPrefs} />}
+            >
+              <TaskList scope={ALL_TASKS} />
+            </MiniColumn>
+          </Group>
+        ) : (
         <Tabs value={tab} onChange={(v) => v && setTab(v as MiniTab)}>
           <Tabs.List>
             <Tabs.Tab
@@ -175,6 +249,7 @@ export function MiniPage() {
           <Tabs.Panel value="activity" pt="xs">{activity.render(<></>)}</Tabs.Panel>
           <Tabs.Panel value="tasks" pt="xs"><TaskList scope={ALL_TASKS} /></Tabs.Panel>
         </Tabs>
+        )}
         {activity.modals}
         <ChooseWorktreeModal
           r={choosing?.r ?? null}

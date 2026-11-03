@@ -120,6 +120,30 @@ describe("TaskModalHeader Mark read", () => {
   })
 })
 
+describe("TaskModalHeader Open in full UI", () => {
+  const post = vi.fn()
+  afterEach(() => {
+    delete window.webkit
+    post.mockReset()
+    window.history.replaceState({}, "", "/")
+  })
+
+  it("sits beside the close button in the mini view, and opens the task in its worktree", async () => {
+    window.webkit = { messageHandlers: { worktree: { postMessage: post } } }
+    window.history.replaceState({}, "", "/mini")
+    wrap(detail({ implicit_worktrees: ["/wt/a"] }))
+    const button = screen.getByRole("button", { name: /Open in full UI/ })
+    expect(button.nextElementSibling).toBe(screen.getByRole("button", { name: "Close task" }))
+    await userEvent.click(button)
+    expect(post).toHaveBeenCalledWith({ type: "open", url: `${window.location.origin}/worktree/%2Fwt%2Fa?task=5` })
+  })
+
+  it("isn't offered in the full UI", () => {
+    wrap(detail())
+    expect(screen.queryByRole("button", { name: /Open in full UI/ })).not.toBeInTheDocument()
+  })
+})
+
 describe("TaskModalHeader id", () => {
   it("shows the task's id beside the close button, as links and blockers name it", () => {
     wrap(detail())

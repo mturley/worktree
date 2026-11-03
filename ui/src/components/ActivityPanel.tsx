@@ -15,6 +15,7 @@ import { EventTypeFilter } from "./EventTypeFilter"
 import { RefreshWatchersButton } from "./RefreshWatchersButton"
 import { SearchSummary } from "./search/SearchSummary"
 import { EventDetailsModal } from "./EventDetailsModal"
+import { useEventFromUrl } from "../hooks/useEventFromUrl"
 import { ChooseWorktreeModal } from "./ChooseWorktreeModal"
 import { useMakeTaskFromEvent } from "./tasks/useMakeTask"
 import { useTaskModal } from "./tasks/modal/TaskModalProvider"
@@ -52,6 +53,8 @@ export function useActivityPanel(opts: {
   controls: ReactNode
   render: (top?: ReactNode, headerStyle?: CSSProperties) => ReactNode
   modals: ReactNode
+  /** Whether an event's details modal is open. */
+  eventOpen: boolean
   events: TimelineEvent[]
   hasMore: boolean
   sources: string[]
@@ -74,6 +77,9 @@ export function useActivityPanel(opts: {
   // An archived event has no worktree to route to; picking one in the search
   // dropdown opens its details here instead.
   const [pickedEvent, setPickedEvent] = useState<TimelineEvent | null>(null)
+  // A link's event, here only with no worktree to open it over. Not in the
+  // mini view, whose links lead out of it.
+  useEventFromUrl(setPickedEvent, select === "route")
 
   /**
    * Opens an event's resource from the global timeline, then its details.
@@ -195,9 +201,11 @@ export function useActivityPanel(opts: {
         hasMore={tl.hasMore}
         onLoadMore={tl.loadMore}
         loadingMore={tl.loadingMore}
-        // In details mode no row selects its resource: every row falls back
-        // to the feed's own details modal, and says "View event details",
-        // not "… in worktree", since there is no worktree page to go to.
+        // In details mode no row selects its resource: every row opens this
+        // panel's details modal (so the page can tell it is open), and says
+        // "View event details", not "… in worktree", since there is no
+        // worktree page to go to.
+        onOpenEvent={select === "details" ? setPickedEvent : undefined}
         onSelectResource={select === "details" ? undefined : selectEventResource}
         canSelectResource={select === "details" ? undefined : (e) => Boolean(e.worktree_paths?.length)}
         onMakeTask={makeTaskFromEvent}
@@ -231,7 +239,7 @@ export function useActivityPanel(opts: {
   )
 
   return {
-    controls, render, modals, events: tl.events, hasMore: tl.hasMore,
+    controls, render, modals, eventOpen: pickedEvent !== null, events: tl.events, hasMore: tl.hasMore,
     sources, filtered, clearFilters, pickEvent, pickTask,
   }
 }

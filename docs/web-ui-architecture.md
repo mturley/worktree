@@ -4054,7 +4054,10 @@ and `TaskDetailModal`, and deliberately omits `useTabPresence`,
 `useUnreadFavicon`, `CmuxFollower` and the banners. `MiniPage` is a header
 (the home page's `SearchBar`, `UnreadOnlyToggle`, "Open full UI") over Activity
 and Tasks tabs, whose bar carries the active tab's controls (the feed's
-`activity.controls`; `TaskListToolbar`), as the home page's does. Tasks is
+`activity.controls`; `TaskListToolbar`), as the home page's does. The toggle
+beside the logo swaps the tabs for two independently scrolling columns,
+each with its own controls, remembered in `localStorage`
+(`lib/miniExpandedPref.ts`). Tasks is
 `TaskList`; Activity is `useActivityPanel`
 (`components/ActivityPanel.tsx`), the home page's feed extracted so both pages
 share it. `select: "route"` (home) opens an event's worktree (and a task
@@ -4087,6 +4090,25 @@ sets the icon (`lastUnread`); a CLI report moves it only while it shows a
 connected state. The app sets `NSAppSleepDisabled`, so App Nap does not
 stretch either path while nothing of it is on screen.
 
+**Dropdown sizes.** Each of the page's four views has its own size in the app's
+defaults (`DropdownView`, `PopoverSize` in `ResizeGrip.swift`), its default until
+the grip is dragged there; a drag saves only the view showing. The defaults are
+600×800 collapsed, 1200×800 expanded and 768×800 for a task or event; the minimum
+is 420×480, or 840×480 expanded. Collapsed keeps the
+keys from when there was one size. Double-clicking the grip resets the view
+showing, and the menu's "Reset dropdown to default size" resets all four. A size
+too big for the screen is shrunk to fit without touching what is saved, and is
+re-applied each time the popover opens, so it comes back on a bigger screen. Both
+modals skip their transition under the bridge, since they open during a resize.
+
+**Open in full UI.** Both details modals show `OpenInFullUiButton` beside their
+close button on `/mini` only, linking to the full UI (`lib/fullUiLink.ts`): over
+the first worktree's page, or the home page with none. A task uses `?task=`. An
+event uses `?event=<id>`, which `useEventFromUrl` resolves through `GET /api/event`
+and drops at once; history state (`lib/openEvent.ts`) can't cross from the app's
+web view to the browser. A Slack message goes to its place in the thread, as
+arriving from the home page does.
+
 **Staying inside /mini.** The router uses `useMiniLocation`
 (`lib/miniMode.ts`): navigation to `/mini` itself (the task modal's `?task=`)
 happens in place, anything else calls `openExternal`, which posts `open` to the
@@ -4111,7 +4133,7 @@ API, so skipping `useTabPresence` alone would not be enough.
 | `ready` | `MiniPage` on mount | clears the disconnected / needs-login icon |
 | `login` | `LoginPage` | needs-login icon |
 | `unreachable` | `ServerUnreachable` | disconnected icon |
-| `minWidth {width}` | `useMacTaskModalWidth`: the wide breakpoint (`wideMinPx`, 48em) while a task modal is open, `null` once closed | widens the popover if narrower, without saving it; `null` restores the user's size, unless they resized (grip or reset) meanwhile, which makes that their size |
+| `view {view}` | `useMacDropdownView`: `collapsed`, `expanded`, `event` or `task`, the topmost showing | moves the popover to that view's size (see "Dropdown sizes") |
 | `close` | `MiniPage`'s `SearchBar` `onEscapeIdle`: Esc with no modal, menu or suggestions open and nothing to clear | `popover.close()`; the popover's delegate refuses to close on a raw Esc while the page shows, so Esc reaches the dropdown only through this |
 
 When a load fails at the network level there is no page to count down, so
@@ -4138,9 +4160,8 @@ an accessory-policy AppKit app: `NSStatusItem` + `NSPopover` + `WKWebView`
 loading `macapp.ServerURL` (`http://127.0.0.1:8475`, fixed). The web view stays
 loaded while the popover is closed so the icon keeps current. The popover has
 no resize handle of its own, so `ResizeGrip.swift` draws one in its
-bottom-right corner; the size (default 600×640, minimum 420×480) is kept in
-the app's `UserDefaults`, and double-clicking the grip (or the right-click
-menu's "Reset dropdown to default size") resets it. `Build` /
+bottom-right corner; each view's size is kept in the app's `UserDefaults`
+(see "Dropdown sizes"). `Build` /
 `BuildWithURL` compile the Swift files with `swiftc` into a staging bundle and
 swap it in, so a failed build leaves the old app. `SourceHash` (over the
 embedded files) is stored in the bundle's `Info.plist` as `WorktreeSourceHash`;
