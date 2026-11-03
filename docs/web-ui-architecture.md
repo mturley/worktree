@@ -782,7 +782,7 @@ added `watcher_events.author_id`.
 
 **Single events marked read.** `event_read` holds marks on individual events,
 keyed by the id the feeds carry (a watcher id, or `task:<id>`) and written by
-`Server.MarkEventRead`, which `POST /api/event-read`, the rows' Mark Read, the
+`Server.MarkEventRead`, which `POST /api/event-read`, the rows' Mark read, the
 details modal and `worktree activity mark-read` all reach. The cursor does not
 move, so Mark all read still covers everything else. Like the user's own events,
 a mark is a query-time filter: `unread.NotMarkedReadSQL` (`Summaries`, the
@@ -797,7 +797,7 @@ them. Marking an event that already reads as read writes nothing and answers
 `changed: false`. Slack events are refused, since Slack keeps one cursor per
 thread: the UI offers no button on them, though an unread Slack event's details
 modal still has the blue outline, which `TimelineEvent.unread` alone drives. On a
-touch screen (`(hover: none)`) a row shows neither Mark Read nor ＋ Task, too easy
+touch screen (`(hover: none)`) a row shows neither Mark read nor ＋ Task, too easy
 to press while scrolling; the details modal has both.
 
 **CI runs still in progress are never unread.** `ci_pending` ("CI running")

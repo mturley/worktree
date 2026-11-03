@@ -655,7 +655,7 @@ describe("＋ Task", () => {
   })
 })
 
-describe("Mark Read", () => {
+describe("Mark read", () => {
   const unread = makeEvent({ id: "0b7e3c1a", unread: true })
   const markButton = () => screen.queryByRole("button", { name: "Mark this event read" })
 
@@ -663,10 +663,16 @@ describe("Mark Read", () => {
     const onMarkRead = vi.fn()
     const onOpen = vi.fn()
     renderWithProvider(<EventRow e={unread} onMarkRead={onMarkRead} onOpen={onOpen} />)
-    expect(markButton()).toHaveTextContent("Mark Read")
+    expect(markButton()).toHaveTextContent("Mark read")
     fireEvent.click(markButton()!)
     expect(onMarkRead).toHaveBeenCalledWith(unread)
     expect(onOpen).not.toHaveBeenCalled()
+  })
+
+  it("is the blue of Mark all read", () => {
+    renderWithProvider(<EventRow e={unread} onMarkRead={vi.fn()} />)
+    expect(markButton()!.style.getPropertyValue("--button-bg")).toBe("var(--mantine-color-blue-filled)")
+    expect(markButton()!.style.getPropertyValue("--button-hover")).toBe("var(--mantine-color-blue-4)")
   })
 
   it("shows beside ＋ Task when the feed offers both", () => {

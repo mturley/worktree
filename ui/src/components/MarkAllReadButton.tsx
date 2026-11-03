@@ -11,6 +11,7 @@ import { KeyHint } from "./search/KeyHint"
 import { slackTabFromResource } from "./SlackThreadPane"
 import { TimelineFeed } from "./TimelineFeed"
 import { showUndoToast, undoAll } from "./UndoToast"
+import { MARK_READ_BUTTON_PROPS } from "../lib/unread"
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 
@@ -319,17 +320,7 @@ export function MarkAllReadButton({ resources, feed, taskScope, single = false, 
       {anything && (
         <Button
           size="compact-sm"
-          // Filled blue, not the theme's primary: primaryColor is "accent"
-          // (purple), and this button clears the very blue the unread boxes
-          // and bars are drawn in. Same treatment as UnreadBadge, so every
-          // unread affordance reads as one colour.
-          variant="filled"
-          color="blue"
-          // `vars`, not `styles`: Mantine sets --button-hover itself from the
-          // color prop, and a styles.root value loses to it. Lighter rather
-          // than Mantine's darker default — on a dark background, darkening
-          // reads as the button dimming rather than responding.
-          vars={() => ({ root: { "--button-hover": "var(--mantine-color-blue-4)" } })}
+          {...MARK_READ_BUTTON_PROPS}
           onClick={openModal}
           ref={openRef}
           rightSection={<KeyHint decorative>R</KeyHint>}

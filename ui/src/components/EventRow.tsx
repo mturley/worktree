@@ -9,7 +9,7 @@ import { eventLabel } from "../lib/eventMeta"
 import { EventDot } from "./EventDot"
 import { EventResourceChip } from "./EventResourceChip"
 import { UnreadMarkerDot } from "./UnreadMarkerDot"
-import { READ_BOX_BORDER, UNREAD_BG, UNREAD_BOX_BORDER } from "../lib/unread"
+import { MARK_READ_BUTTON_PROPS, READ_BOX_BORDER, UNREAD_BG, UNREAD_BOX_BORDER } from "../lib/unread"
 import { ROW_PAD_X } from "./timelineRail"
 import { eventWorktrees, isArchivedEvent } from "../lib/openEvent"
 import { MatchWhy } from "./search/MatchWhy"
@@ -29,7 +29,7 @@ import { WorktreeName, WorktreePreview } from "./WorktreeName"
  * interactive too.
  *
  * The exceptions are the opt-in hover actions, "＋ Task" (`onMakeTask`) and
- * "Mark Read" (`onMarkRead`), which are therefore NOT inside the row: the row
+ * "Mark read" (`onMarkRead`), which are therefore NOT inside the row: the row
  * and the actions are siblings in a positioned wrapper, the actions floating over the row's
  * top-right corner, so their clicks never reach the row.
  */
@@ -73,7 +73,7 @@ export function EventRow({
    */
   onMakeTask?: (e: TimelineEvent) => void
   /**
-   * Offers "Mark Read" on hover, on an event that can be marked on its own
+   * Offers "Mark read" on hover, on an event that can be marked on its own
    * (canMarkEventRead). Opt-in per feed, like onMakeTask.
    */
   onMarkRead?: (e: TimelineEvent) => void
@@ -280,14 +280,14 @@ export function EventRow({
             <Tooltip label="Mark this event read" position="top-end">
               <Button
                 size="compact-xs"
-                variant="filled"
+                {...MARK_READ_BUTTON_PROPS}
                 aria-label="Mark this event read"
                 onClick={() => markRead(e)}
                 onFocus={() => setFocused(true)}
                 onBlur={() => setFocused(false)}
                 style={actionStyle}
               >
-                Mark Read
+                Mark read
               </Button>
             </Tooltip>
           )}

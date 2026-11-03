@@ -16,7 +16,7 @@ import { WorktreeName, WorktreePreview } from "./WorktreeName"
 import { eventWorktrees, followResourceState, isArchivedEvent } from "../lib/openEvent"
 import { eventTaskKey } from "../lib/taskEventKey"
 import { isMiniRoute } from "../lib/miniMode"
-import { UNREAD_BOX_BORDER } from "../lib/unread"
+import { MARK_READ_BUTTON_PROPS, READ_BOX_BORDER, UNREAD_BOX_BORDER } from "../lib/unread"
 import { canMarkEventRead, useMarkEventRead } from "../hooks/useMarkEventRead"
 
 /**
@@ -89,9 +89,9 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
 
   return (
     <Modal opened={!!e} onClose={onClose} size="lg" fullScreen={isMiniRoute()}
-      // An outline, not a border: clearing it must not shift the content. Drawn
-      // inside the edge so a full-screen modal does not clip it.
-      styles={unread ? { content: { outline: UNREAD_BOX_BORDER, outlineOffset: -2 } } : undefined}
+      // A border, not an inset outline, which the sticky header paints over.
+      // Always the same width, so clearing it does not shift the content.
+      styles={{ content: { border: unread ? UNREAD_BOX_BORDER : READ_BOX_BORDER } }}
       title={
       e ? (
         <Group gap={8} wrap="nowrap">
@@ -171,7 +171,7 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
                 </Button>
               )}
               {offerMarkRead && (
-                <Button size="xs" variant="light" loading={marking} onClick={() => void markRead()}>
+                <Button size="xs" {...MARK_READ_BUTTON_PROPS} loading={marking} onClick={() => void markRead()}>
                   Mark read
                 </Button>
               )}

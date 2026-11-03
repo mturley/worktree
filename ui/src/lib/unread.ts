@@ -1,3 +1,4 @@
+import type { ButtonProps } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
 
 /**
@@ -20,6 +21,23 @@ export function hasUnread(r: ResourceDTO): boolean {
   if (r.type === "slack") return !!r.has_unread || (r.task_unread_count ?? 0) > 0
   return (r.unread_count ?? 0) > 0
 }
+
+/**
+ * The look of a button that clears unread: filled blue, not the theme's
+ * primary. primaryColor is "accent" (purple), and these buttons clear the very
+ * blue the unread boxes and bars are drawn in. Same treatment as UnreadBadge,
+ * so every unread affordance reads as one colour.
+ *
+ * `vars`, not `styles`: Mantine sets --button-hover itself from the color prop,
+ * and a styles.root value loses to it. Lighter rather than Mantine's darker
+ * default: on a dark background, darkening reads as the button dimming rather
+ * than responding.
+ */
+export const MARK_READ_BUTTON_PROPS = {
+  variant: "filled",
+  color: "blue",
+  vars: () => ({ root: { "--button-hover": "var(--mantine-color-blue-4)" } }),
+} satisfies Pick<ButtonProps, "variant" | "color" | "vars">
 
 /**
  * The wash behind an unread timeline event.

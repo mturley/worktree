@@ -261,7 +261,7 @@ describe("EventDetailsModal unread", () => {
     )
   const content = () => document.querySelector<HTMLElement>(".mantine-Modal-content")!
   const markButton = () => screen.queryByRole("button", { name: "Mark read" })
-  const outlined = () => content().style.outlineOffset !== ""
+  const outlined = () => content().style.border.includes("blue")
 
   it("outlines an unread event's modal, and only an unread one's", () => {
     const { unmount } = wrapWithToasts(<EventDetailsModal e={ev({ unread: true })} onClose={vi.fn()} />)
@@ -269,7 +269,17 @@ describe("EventDetailsModal unread", () => {
     unmount()
     wrapWithToasts(<EventDetailsModal e={ev({ unread: false })} onClose={vi.fn()} />)
     expect(outlined()).toBe(false)
+    // The same width either way, so clearing it shifts nothing. A border and
+    // not an outline: the sticky header paints over anything inside the box.
+    expect(content().style.border).toContain("2px solid")
+    expect(content().style.outline).toBe("")
     expect(markButton()).toBeNull()
+  })
+
+  it("offers Mark read in the blue of Mark all read", () => {
+    wrapWithToasts(<EventDetailsModal e={ev({ unread: true })} onClose={vi.fn()} />)
+    expect(markButton()!.style.getPropertyValue("--button-bg")).toBe("var(--mantine-color-blue-filled)")
+    expect(markButton()!.style.getPropertyValue("--button-hover")).toBe("var(--mantine-color-blue-4)")
   })
 
   it("outlines an unread Slack event but offers no Mark read", () => {
