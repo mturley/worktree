@@ -25,7 +25,7 @@ func taskEventToTimeline(ev tasks.Event, t tasks.Task) TimelineEvent {
 		}
 	}
 	return TimelineEvent{
-		ID:            "task:" + strconv.FormatInt(ev.ID, 10),
+		ID:            unread.TaskEventID(ev.ID),
 		TS:            ev.TS,
 		Source:        "tasks",
 		Type:          ev.Type,
@@ -62,11 +62,13 @@ func taskEventState(ev tasks.Event) string {
 // taskFeedRow converts a feed event for the activity feeds: the converted
 // row, with Unread set by the unread rule — an event whose actor counts as
 // unread (tasks.CountsAsUnread) newer than its task's cursor (cursors is
-// unread.Cursors; a missing cursor reads as "", so every such event counts).
+// unread.Cursors; a missing cursor reads as "", so every such event counts)
+// and not marked read one by one (marks is unread.EventMarks).
 // The user's own events are never unread.
-func taskFeedRow(fe tasks.FeedEvent, cursors map[string]string) TimelineEvent {
+func taskFeedRow(fe tasks.FeedEvent, cursors, marks map[string]string) TimelineEvent {
 	te := taskEventToTimeline(fe.Event, tasks.Task{ID: fe.TaskID, Title: fe.TaskTitle})
-	te.Unread = tasks.CountsAsUnread(fe.Actor) && fe.TS > cursors[unread.Key("task", te.ResourceID)]
+	te.Unread = tasks.CountsAsUnread(fe.Actor) && fe.TS > cursors[unread.Key("task", te.ResourceID)] &&
+		!unread.IsMarked(marks, te.ID, fe.TS)
 	return te
 }
 

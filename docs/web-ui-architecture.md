@@ -193,6 +193,8 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | POST | `/api/resource-meta` | body: `{type, id, name, description}` | — |
 | POST | `/api/resource-read` | body: `{type, id, through_ts}` | `{previous_ts, last_read_ts}` — the cursor before (null if none) and after, for an undo; 400 unless `through_ts` is RFC3339 (`validThroughTS`: a Slack ts never belongs here) |
 | POST | `/api/resource-read/restore` | body: `{type, id, last_read_ts, previous_ts}` (what `/api/resource-read` answered) | 204; 409 if the cursor has moved since (see "Undo") |
+| POST | `/api/event-read` | body: `{id, ts?}` (`ts` is the row as shown) | `{id, ts, changed}`; `changed` false when it already read as read. 400 for a Slack event, 404 for an unknown one, 409 when the row was rewritten since `ts`. See "Unread" |
+| POST | `/api/event-read/restore` | body: `{id, ts}` (what `/api/event-read` answered) | 204 |
 | POST | `/api/resource-resolve` | body: `{url}` | resolved link metadata |
 | GET | `/api/resource-type` | `url` (required) | `{type, id}` or error if unrecognized |
 | POST | `/api/worktree-resources/add` | body: `{path, url, related?}` | `resourceDTO` |
@@ -778,6 +780,26 @@ Events without an `author_id` (recorded before watcher v0.10.0, or
 authorless, such as CI) always count. Requires watcher ≥ v0.10.0, which
 added `watcher_events.author_id`.
 
+**Single events marked read.** `event_read` holds marks on individual events,
+keyed by the id the feeds carry (a watcher id, or `task:<id>`) and written by
+`Server.MarkEventRead`, which `POST /api/event-read`, the rows' Mark Read, the
+details modal and `worktree activity mark-read` all reach. The cursor does not
+move, so Mark all read still covers everything else. Like the user's own events,
+a mark is a query-time filter: `unread.NotMarkedReadSQL` (`Summaries`, the
+unread-only clause, the notifier), `unread.TaskNotMarkedReadSQL` (`TaskSummaries`,
+the task notifier) and `unread.IsMarked` (`IsUnread`, `taskFeedRow`, attention's
+`blocker_resolved`). `unread_through_ts` therefore skips marked events.
+
+A mark stores the event's `ts` too and only matches at that `ts`: the watcher
+rewrites a commit's CI row in place, so a new result reads as unread again. Rows
+are never pruned, because undoing a Mark all read moves the cursor back behind
+them. Marking an event that already reads as read writes nothing and answers
+`changed: false`. Slack events are refused, since Slack keeps one cursor per
+thread: the UI offers no button on them, though an unread Slack event's details
+modal still has the blue outline, which `TimelineEvent.unread` alone drives. On a
+touch screen (`(hover: none)`) a row shows neither Mark Read nor ＋ Task, too easy
+to press while scrolling; the details modal has both.
+
 **CI runs still in progress are never unread.** `ci_pending` ("CI running")
 and `ci_workflows_pending` ("workflows running") are dropped the same way as
 the user's own events: `unread.NotPendingCISQL` in `Summaries`/`Counts` and
@@ -1023,6 +1045,9 @@ delete show the same toast (see "Undo for tasks"):
 
 - Tasks: `/api/task-read` and `/api/task-read/restore`, exactly as
   GitHub/Jira, over the task's cursor.
+- A single event: `/api/event-read/restore` deletes the mark, only at the `ts`
+  it was made, so there is no conflict to report: the cursor still covers
+  whatever it has passed. An undone Mark all read leaves marks in place.
 
 **Undo for tasks.** A state change, a subtask check or uncheck, and a delete
 answer with `undo_event_id` (omitted when nothing changed, so there is
@@ -1864,7 +1889,7 @@ URL param (`?task=<id>`) through **`TaskModalProvider`**
   unlinks by the row's `linked_key` (the key the server says it is stored
   under: a live Slack row's `slack:` key), which also lets snapshot rows in
   "Linked events" be unlinked.
-- **"＋ task".** `components/tasks/useMakeTask.ts` (`useMakeTask`,
+- **"＋ Task".** `components/tasks/useMakeTask.ts` (`useMakeTask`,
   `useMakeTaskFromEvent`) calls `useTaskFromEvent`, then `open(d.id)`; a
   failure is a toast. `EventRow` and `TimelineFeed` take an `onMakeTask`
   prop (pages supply it; they don't use the modal provider themselves, so

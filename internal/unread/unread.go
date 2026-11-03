@@ -130,6 +130,7 @@ func Summaries(conn *sql.DB) (map[string]Summary, error) {
 		   AND e.type NOT IN ('watch_started','watcher_error')
 		   AND ` + selfid.NotMineSQL + `
 		   AND ` + NotPendingCISQL + `
+		   AND ` + NotMarkedReadSQL + `
 		 GROUP BY er.resource_type, er.resource_id`)
 	if err != nil {
 		return nil, err
@@ -165,6 +166,7 @@ func TaskSummaries(conn *sql.DB) (map[int64]Summary, error) {
 		    ON c.resource_type = 'task' AND c.resource_id = CAST(e.task_id AS TEXT)
 		 WHERE `+actorClause+`
 		   AND e.ts > COALESCE(c.last_read_ts, '')
+		   AND `+TaskNotMarkedReadSQL+`
 		 GROUP BY e.task_id`, args...)
 	if err != nil {
 		return nil, err

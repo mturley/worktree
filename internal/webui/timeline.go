@@ -226,7 +226,8 @@ const unreadOnlyClause = `AND (
          WHERE rs.resource_type = 'slack' AND rs.resource_id = er.resource_id
            AND ` + unread.SlackNewerSQL + `))
 ) AND ` + selfid.NotMineSQL + `
-  AND ` + unread.NotPendingCISQL + ` `
+  AND ` + unread.NotPendingCISQL + `
+  AND ` + unread.NotMarkedReadSQL + ` `
 
 // handleGlobalTimeline: GET /api/timeline?archived=&limit=&before=&resource_types=&event_types=&unread_only=&q=
 func (s *Server) handleGlobalTimeline(w http.ResponseWriter, r *http.Request) {
@@ -474,6 +475,10 @@ func (s *Server) mergeTaskEvents(rows []TimelineEvent, q taskFeedQuery) ([]Timel
 	if err != nil {
 		return nil, err
 	}
+	marks, err := unread.EventMarks(s.DB)
+	if err != nil {
+		return nil, err
+	}
 	// Each task's links, implicit worktrees and archived state, for the
 	// rows' worktree badges (fillTaskWorktrees).
 	all, err := tasks.List(s.DB, tasks.Filter{IncludeCompleted: true, IncludeArchived: true})
@@ -495,7 +500,7 @@ func (s *Server) mergeTaskEvents(rows []TimelineEvent, q taskFeedQuery) ([]Timel
 		if q.since != "" && fe.TS < q.since {
 			break
 		}
-		te := taskFeedRow(fe, cursors)
+		te := taskFeedRow(fe, cursors, marks)
 		if t, ok := byTask[fe.TaskID]; ok {
 			enr.fillTaskWorktrees(&te, t)
 		}
@@ -849,7 +854,7 @@ func (e *eventEnricher) fillResource(te *TimelineEvent) {
 		te.ResourceTitle = dto.Title
 		te.Title = slackEventTitle(te.Source, te.Type, te.Title, dto)
 	}
-	te.Unread = e.unread.IsUnread(te.ResourceType, te.ResourceID, te.TS, te.ExternalTS, te.Type, te.Source, te.authorID)
+	te.Unread = e.unread.IsUnread(te.ID, te.ResourceType, te.ResourceID, te.TS, te.ExternalTS, te.Type, te.Source, te.authorID)
 	wts := e.worktreesWatching(te.ResourceType, te.ResourceID)
 	te.Worktrees = make([]string, 0, len(wts))
 	te.WorktreePaths = make([]string, 0, len(wts))

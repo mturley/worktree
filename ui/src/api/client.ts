@@ -1,4 +1,4 @@
-import type { DiffBase, DiffCommits, DiffFiles, DiffPatch, DiffRange, WorktreeGit, AllResourceDTO, CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, CredResult, DefaultBranchResponse, CredService, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, ResourceReadChange, Priority, Task, TaskState, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, UpdateStatus, WatcherHealth, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherAuthSettings, WatcherConfigSettings, WorktreeInfo, WorktreeNotes, WorktreeSettings, WorktreeSummary, TaskActivityFilter, TaskDetail, TaskEventSnapshot, TaskLinkTarget, TimelineEvent, TaskScope, TaskUnread, TaskBlockerTarget, TaskDeleteResult, NewReviewComment, ReviewComment, ReviewCommentItem, PRCommentsSummary, PRThreads, PRWriteTarget, PRWriteCheck, PRWriteMode, PRReviewDialog, PRReviewEvent, SubmitResult } from "./types"
+import type { DiffBase, DiffCommits, DiffFiles, DiffPatch, DiffRange, WorktreeGit, AllResourceDTO, CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, CredResult, DefaultBranchResponse, CredService, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, EventReadChange, ResourceReadChange, Priority, Task, TaskState, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, UpdateStatus, WatcherHealth, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherAuthSettings, WatcherConfigSettings, WorktreeInfo, WorktreeNotes, WorktreeSettings, WorktreeSummary, TaskActivityFilter, TaskDetail, TaskEventSnapshot, TaskLinkTarget, TimelineEvent, TaskScope, TaskUnread, TaskBlockerTarget, TaskDeleteResult, NewReviewComment, ReviewComment, ReviewCommentItem, PRCommentsSummary, PRThreads, PRWriteTarget, PRWriteCheck, PRWriteMode, PRReviewDialog, PRReviewEvent, SubmitResult } from "./types"
 
 export class HttpError extends Error {
   constructor(message: string, readonly status: number, readonly body?: unknown) {
@@ -464,6 +464,14 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(args),
     }),
+  /**
+   * Marks one event read without moving its resource's cursor. `ts` is the row
+   * as shown: 409 when it has been rewritten since. `changed` is false when it
+   * already read as read, so there is nothing to undo.
+   */
+  markEventRead: (args: { id: string; ts: string }) => postJSON<EventReadChange>("/api/event-read", args),
+  /** Undoes a markEventRead, given what it answered. */
+  restoreEventRead: (args: { id: string; ts: string }) => postJSON<null>("/api/event-read/restore", args),
   /** Moves a cursor forward, answering where it was so the move can be undone. */
   markResourceRead: (args: { type: string; id: string; through_ts: string }) =>
     fetchJSON<ResourceReadChange>("/api/resource-read", {

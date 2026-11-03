@@ -472,7 +472,7 @@ func TestOpenAtNeverLowersSchemaVersion(t *testing.T) {
 //
 // If this fails: you changed migrate. Bump schemaVersion, then paste the new
 // fingerprint here.
-const schemaFingerprint = "90e9ecf7c42fdf3bc01ca7cf49881b6724d416827d7c96abb8acd30d9f20e560"
+const schemaFingerprint = "3d81aed96a8e9506900cb95ba8896eb54ee488b59836dadac741b253edda011a"
 
 func TestSchemaVersionCoversSchema(t *testing.T) {
 	conn, err := OpenAt(filepath.Join(t.TempDir(), "w.db"))

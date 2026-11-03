@@ -125,6 +125,7 @@ These are the writes:
 
 - `worktree resources mark-read`, `worktree resources add`, `worktree resources remove`,
   `worktree resources unwatch`, `worktree resources set-name`
+- `worktree activity mark-read`, which marks one event read (`--undo` takes it back)
 - `worktree notes set`
 - `worktree tasks add`, `worktree tasks edit`, `worktree tasks state`,
   `worktree tasks star`, `worktree tasks unstar`, `worktree tasks block`,
@@ -142,7 +143,8 @@ These are the writes:
 
 Read state is shared with the web UI: marking something read changes what the user
 sees there, for every worktree following it. Slack read state is Slack's. `mark-read`
-skips Slack threads, so nothing here can mark one read.
+skips Slack threads and `activity mark-read` refuses Slack events, so nothing here can
+mark one read.
 
 Never install or uninstall anything: no `worktree setup`, no `worktree setup slack`,
 no `worktree update`.

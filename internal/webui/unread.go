@@ -40,6 +40,8 @@ type unreadIndex struct {
 	// mine is the user's own ID per source (internal/selfid); their events
 	// are never unread.
 	mine map[string]string
+	// marks are the events marked read one by one (unread.EventMarks).
+	marks map[string]string
 
 	// Task unread, loaded on first use (see loadTasks): most requests that
 	// build an index never ask about tasks.
@@ -148,6 +150,7 @@ func (s *Server) newUnreadIndex() *unreadIndex {
 		cursors:     map[string]string{},
 		slack:       map[string]string{},
 		mine:        map[string]string{},
+		marks:       map[string]string{},
 		db:          s.DB,
 		logger:      s.Logger,
 	}
@@ -155,6 +158,11 @@ func (s *Server) newUnreadIndex() *unreadIndex {
 		ix.mine = m
 	} else if s.Logger != nil {
 		s.Logger.Printf("selfid.Load: %v", err)
+	}
+	if m, err := unread.EventMarks(s.DB); err == nil {
+		ix.marks = m
+	} else if s.Logger != nil {
+		s.Logger.Printf("unread.EventMarks: %v", err)
 	}
 	if c, err := unread.Summaries(s.DB); err == nil {
 		ix.counts = c
@@ -243,14 +251,15 @@ func (ix *unreadIndex) fillOwn(dto *resourceDTO) {
 // A resource with no cursor on either path is read: a missing cursor is
 // absence of evidence, and a dot that cannot be explained is worse than no
 // dot at all.
-func (ix *unreadIndex) IsUnread(resType, id, ts, externalTS, eventType, source, authorID string) bool {
+func (ix *unreadIndex) IsUnread(eventID, resType, id, ts, externalTS, eventType, source, authorID string) bool {
 	if ix == nil {
 		return false
 	}
-	// The user's own events and CI runs still in progress are never unread:
-	// the Go twins of selfid.NotMineSQL and unread.NotPendingCISQL, so the
-	// unread-only SQL and this flag agree.
-	if selfid.IsMine(ix.mine, source, authorID) || unread.IsPendingCI(eventType) {
+	// The user's own events, CI runs still in progress and events marked read
+	// one by one are never unread: the Go twins of selfid.NotMineSQL,
+	// unread.NotPendingCISQL and unread.NotMarkedReadSQL, so the unread-only
+	// SQL and this flag agree.
+	if selfid.IsMine(ix.mine, source, authorID) || unread.IsPendingCI(eventType) || unread.IsMarked(ix.marks, eventID, ts) {
 		return false
 	}
 	if resType == "slack" {

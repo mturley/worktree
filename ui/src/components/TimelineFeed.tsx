@@ -3,6 +3,7 @@ import { Alert, Box, Button, Center, Loader, Stack, Text } from "@mantine/core"
 import type { ResourceDTO, TimelineEvent } from "../api/types"
 import { EventRow } from "./EventRow"
 import { EventDetailsModal } from "./EventDetailsModal"
+import { useMarkEventRead } from "../hooks/useMarkEventRead"
 import { DOT_CENTER, RAIL_WIDTH } from "./timelineRail"
 import { UnreadDivider } from "./UnreadDivider"
 
@@ -53,6 +54,8 @@ export function TimelineFeed({
   onOpenTask?: (id: number) => void
 }) {
   const [detail, setDetail] = useState<TimelineEvent | null>(null)
+  const markEventRead = useMarkEventRead()
+  const markRead = (e: TimelineEvent) => void markEventRead(e)
 
   if (loading) return <Loader />
   if (error) return <Alert color="red">{String((error as Error).message || error)}</Alert>
@@ -103,6 +106,7 @@ export function TimelineFeed({
                 resolveResource={resolveResource}
                 canSelectResource={canSelectResource}
                 onMakeTask={onMakeTask}
+                onMarkRead={markRead}
                 onOpenTask={onOpenTask}
               />
               {/*

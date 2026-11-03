@@ -10,7 +10,7 @@ import (
 // PRAGMA user_version when migrate finishes. OpenRead compares against it, and
 // refuses a DB behind it rather than migrating. Bump it whenever migrate
 // changes the schema; TestSchemaVersionCoversSchema fails until you do.
-const schemaVersion = 1
+const schemaVersion = 2
 
 // migrate creates the worktree-owned tables. It is idempotent and disjoint
 // from the watcher library's Migrate (which owns all watcher_* tables). None
@@ -51,6 +51,16 @@ func migrate(conn *sql.DB) error {
 			last_read_ts  TEXT NOT NULL,
 			updated_at    TEXT NOT NULL,
 			PRIMARY KEY (resource_type, resource_id)
+		)`,
+		// Single events marked read, on top of the per-resource cursor. Holds
+		// the event's ts as well as its id: the watcher rewrites a commit's CI
+		// row in place, id unchanged and ts moved, and that new result must
+		// read as unread again. Worktree-owned for the cursor's reason.
+		// event_id is a watcher event id or "task:<id>" (unread.TaskEventID).
+		`CREATE TABLE IF NOT EXISTS event_read (
+			event_id TEXT PRIMARY KEY,
+			event_ts TEXT NOT NULL,
+			read_at  TEXT NOT NULL
 		)`,
 		// Web UI login sessions. token_hash is the SHA-256 of the cookie
 		// value, never the value itself, so reading this table never yields

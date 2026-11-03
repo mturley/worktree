@@ -548,7 +548,7 @@ describe("a task event row", () => {
     expect(screen.getByText("Ship it")).toBeInTheDocument()
   })
 
-  it("offers no ＋ task", () => {
+  it("offers no ＋ Task", () => {
     renderWithProvider(<EventRow e={taskEvent()} onMakeTask={vi.fn()} onOpenTask={vi.fn()} />)
     expect(screen.queryByRole("button", { name: /Make task/ })).toBeNull()
   })
@@ -570,7 +570,7 @@ describe("a task event row", () => {
   })
 })
 
-describe("＋ task", () => {
+describe("＋ Task", () => {
   afterEach(() => {
     cleanup()
     vi.restoreAllMocks()
@@ -628,28 +628,6 @@ describe("＋ task", () => {
     expect(action.style.opacity).toBe("1")
   })
 
-  it("is always shown and tappable where nothing can hover", () => {
-    const real = window.matchMedia
-    window.matchMedia = ((query: string) => ({
-      matches: query === "(hover: none)",
-      media: query,
-      onchange: null,
-      addListener: () => {},
-      removeListener: () => {},
-      addEventListener: () => {},
-      removeEventListener: () => {},
-      dispatchEvent: () => false,
-    })) as unknown as typeof window.matchMedia
-    try {
-      renderWithProvider(<EventRow e={makeEvent({ id: "0b7e3c1a-5d2f-4a8b-9c6e-1f2a3b4c5d6e" })} onMakeTask={vi.fn()} />)
-      const action = screen.getByRole("button", { name: "Make task from this event" })
-      expect(action.style.pointerEvents).toBe("auto")
-      expect(action.style.opacity).toBe("1")
-    } finally {
-      window.matchMedia = real
-    }
-  })
-
   it("sits outside the row's button, never inside it", () => {
     renderWithProvider(<EventRow e={makeEvent({ id: "0b7e3c1a-5d2f-4a8b-9c6e-1f2a3b4c5d6e" })} onOpen={vi.fn()} onMakeTask={vi.fn()} />)
     const action = screen.getByRole("button", { name: "Make task from this event" })
@@ -674,5 +652,54 @@ describe("＋ task", () => {
     await waitFor(() => expect(screen.getByTestId("open-id").textContent).toBe("7"))
     expect(onOpen).not.toHaveBeenCalled()
     expect(onSelect).not.toHaveBeenCalled()
+  })
+})
+
+describe("Mark Read", () => {
+  const unread = makeEvent({ id: "0b7e3c1a", unread: true })
+  const markButton = () => screen.queryByRole("button", { name: "Mark this event read" })
+
+  it("marks the event without activating the row", async () => {
+    const onMarkRead = vi.fn()
+    const onOpen = vi.fn()
+    renderWithProvider(<EventRow e={unread} onMarkRead={onMarkRead} onOpen={onOpen} />)
+    expect(markButton()).toHaveTextContent("Mark Read")
+    fireEvent.click(markButton()!)
+    expect(onMarkRead).toHaveBeenCalledWith(unread)
+    expect(onOpen).not.toHaveBeenCalled()
+  })
+
+  it("shows beside ＋ Task when the feed offers both", () => {
+    renderWithProvider(<EventRow e={unread} onMarkRead={vi.fn()} onMakeTask={vi.fn()} />)
+    expect(markButton()).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Make task from this event" })).toHaveTextContent("＋ Task")
+  })
+
+  it("is not offered for an event the server calls read, or for a Slack event", () => {
+    const { rerender } = renderWithProvider(<EventRow e={makeEvent({ unread: false })} onMarkRead={vi.fn()} />)
+    expect(markButton()).toBeNull()
+    rerender(
+      <MantineProvider><QueryClientProvider client={new QueryClient()}>
+        <EventRow e={makeEvent({ unread: true, source: "slack", resource_type: "slack" })} onMarkRead={vi.fn()} />
+      </QueryClientProvider></MantineProvider>,
+    )
+    expect(markButton()).toBeNull()
+  })
+
+  it("offers neither hover action on a touch screen", () => {
+    const original = window.matchMedia
+    window.matchMedia = ((query: string) => ({
+      matches: query === "(hover: none)", media: query, onchange: null,
+      addListener: () => {}, removeListener: () => {},
+      addEventListener: () => {}, removeEventListener: () => {},
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia
+    try {
+      renderWithProvider(<EventRow e={unread} onMarkRead={vi.fn()} onMakeTask={vi.fn()} />)
+      expect(markButton()).toBeNull()
+      expect(screen.queryByRole("button", { name: "Make task from this event" })).toBeNull()
+    } finally {
+      window.matchMedia = original
+    }
   })
 })

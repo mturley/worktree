@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/resourceurl"
+	"github.com/mturley/worktree/internal/unread"
 	"github.com/mturley/worktree/internal/webui"
 	"github.com/spf13/cobra"
 )
@@ -44,6 +46,72 @@ var activityCmd = &cobra.Command{
 	SilenceErrors: true,
 }
 
+var (
+	activityMarkUndo bool
+	activityMarkJSON bool
+)
+
+var activityMarkReadCmd = &cobra.Command{
+	Use:   "mark-read <event-id>",
+	Short: "Mark one event read, leaving the rest of its resource unread",
+	Long: "Marks a single event read without moving its resource's read cursor. The id is the\n" +
+		"one `worktree activity` prints in brackets (`id` with --json).\n\n" +
+		"Read state is shared: the event clears for every worktree following its resource.\n" +
+		"An event that already reads as read changes nothing. If the event is later rewritten\n" +
+		"with a new result, as a commit's CI event is, it reads as unread again.\n\n" +
+		"Slack events are refused: their read state is Slack's, one cursor per thread.",
+	Example: "  worktree activity mark-read 0b7e3c1a-5d2f-4a8b-9c6e-1f2a3b4c5d6e\n" +
+		"  worktree activity mark-read task:42 --json\n" +
+		"  worktree activity mark-read task:42 --undo",
+	Args: cobra.ExactArgs(1),
+	RunE: runActivityMarkRead,
+	// As activityCmd.
+	SilenceUsage:  true,
+	SilenceErrors: true,
+}
+
+func runActivityMarkRead(cmd *cobra.Command, args []string) error {
+	conn, err := wdb.Open()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	srv, err := headlessServer(conn)
+	if err != nil {
+		return err
+	}
+	id := args[0]
+	var ch webui.EventReadChange
+	if activityMarkUndo {
+		ch, err = srv.RestoreEventRead(id, "")
+	} else {
+		ch, err = srv.MarkEventRead(id, "")
+	}
+	switch {
+	case errors.Is(err, unread.ErrEventNotFound):
+		return fmt.Errorf("no such event: %s", id)
+	case errors.Is(err, unread.ErrSlackNotSupported):
+		return fmt.Errorf("%s is a Slack event: its read state is Slack's, one cursor per thread", id)
+	case err != nil:
+		return err
+	}
+	out := cmd.OutOrStdout()
+	if activityMarkJSON {
+		return printJSON(out, map[string]any{"id": ch.ID, "ts": ch.TS, "changed": ch.Changed})
+	}
+	switch {
+	case activityMarkUndo && ch.Changed:
+		fmt.Fprintf(out, "took back the mark on %s\n", id)
+	case activityMarkUndo:
+		fmt.Fprintf(out, "%s has no mark\n", id)
+	case ch.Changed:
+		fmt.Fprintf(out, "marked %s read\n", id)
+	default:
+		fmt.Fprintf(out, "%s already reads as read\n", id)
+	}
+	return nil
+}
+
 func init() {
 	f := activityCmd.Flags()
 	f.StringVar(&activityWorktree, "worktree", "", `only this worktree's activity ("." for the current one)`)
@@ -53,6 +121,9 @@ func init() {
 	f.StringArrayVar(&activitySources, "source", nil, "only this source: github, jira, slack or tasks (repeatable)")
 	f.IntVar(&activityLimit, "limit", 50, "maximum number of events")
 	f.BoolVar(&activityJSON, "json", false, `print {"schema_version": 1, "events": [...]}`)
+	activityMarkReadCmd.Flags().BoolVar(&activityMarkUndo, "undo", false, "take the mark back: the event reads as it would without it")
+	activityMarkReadCmd.Flags().BoolVar(&activityMarkJSON, "json", false, `print {"schema_version": 1, "id": ..., "ts": ..., "changed": bool}`)
+	activityCmd.AddCommand(activityMarkReadCmd)
 	rootCmd.AddCommand(activityCmd)
 }
 
@@ -229,5 +300,5 @@ func activityLine(e webui.TimelineEvent) string {
 	if e.Unread {
 		prefix = "• "
 	}
-	return fmt.Sprintf("%s%s  %s  %s  %s", prefix, when, e.Source, label, text)
+	return fmt.Sprintf("%s%s  %s  %s  %s  [%s]", prefix, when, e.Source, label, text, e.ID)
 }

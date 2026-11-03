@@ -606,6 +606,12 @@ export type WatcherHealth = Record<CredService, { enabled: boolean; failing: boo
  * What POST /api/resource-read did to a cursor. previous_ts is null when the
  * resource had none (restoring removes it again).
  */
+export interface EventReadChange {
+  id: string
+  ts: string
+  changed: boolean
+}
+
 export interface ResourceReadChange {
   previous_ts: string | null
   last_read_ts: string
