@@ -213,7 +213,7 @@ function TimelineBody({
             showUnreadDivider
             path={path}
             onMakeTask={makeTaskFromEvent}
-            onOpenTask={openTask}
+            onOpenTask={(id) => openTask(id)}
           />
           {/*
             The feed only holds what the poller captured for this worktree, which

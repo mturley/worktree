@@ -87,6 +87,11 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
     })
   }
 
+  const openWorktree = (worktreePath: string) => {
+    onClose()
+    navigate(`/worktree/${encodeURIComponent(worktreePath)}`)
+  }
+
   return (
     <Modal opened={!!e} onClose={onClose} size="lg" fullScreen={isMiniRoute()}
       // A border, not an inset outline, which the sticky header paints over.
@@ -112,10 +117,11 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
           )}
           {/*
             Context first: which resource this event is about, and which
-            worktrees follow it. Both are read-only labels — the row that
-            opened this modal is itself the way to the resource — but they
-            still sit ahead of the content, so you do not have to scroll past
-            a long comment to find out what you are reading about.
+            worktrees follow it. The resource is a read-only label — the row
+            that opened this modal is itself the way to it — and each worktree
+            opens its page, the way out of the mini view, whose rows go nowhere
+            else. They sit ahead of the content, so you do not have to scroll
+            past a long comment to find out what you are reading about.
           */}
           {(e.resource_type || actionResource) && (
             <Group justify="space-between" wrap="nowrap" align="flex-start" gap="xs">
@@ -133,7 +139,25 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
               {eventWorktrees(e).map((w, i) => (
                 // Worded as on the activity feed's rows.
                 <WorktreePreview key={`${i}:${w.path ?? w.name}`} path={w.path}>
-                  <Badge size="sm" color="blue" variant="light" maw={240}><WorktreeName path={w.path} name={w.name} /></Badge>
+                  <Badge
+                    // Only a path can be navigated to; a bare name stays a label.
+                    {...(w.path
+                      ? {
+                          component: "button" as const,
+                          type: "button" as const,
+                          className: "worktree-chip-nav",
+                          "aria-label": `Open worktree ${w.name}`,
+                          onClick: () => openWorktree(w.path!),
+                        }
+                      : {})}
+                    size="sm"
+                    color="gray"
+                    variant="outline"
+                    maw={240}
+                    style={{ textTransform: "none" }}
+                  >
+                    <WorktreeName path={w.path} name={w.name} />
+                  </Badge>
                 </WorktreePreview>
               ))}
             </Group>

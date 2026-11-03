@@ -617,6 +617,20 @@ describe("HomePage search", () => {
     expect(new URLSearchParams(window.location.search).get("resource")).toBe("pr:o/r#3")
   })
 
+  it("a task picked from the dropdown goes to its worktree and opens there", async () => {
+    setViewport("wide")
+    vi.spyOn(api, "tasks").mockResolvedValue([{ ...homeTask, id: 77, title: "Tangerine chore", implicit_worktrees: ["/wt/foo"] }])
+    window.history.replaceState({}, "", "/?q=tangerine")
+    const user = userEvent.setup()
+    wrap()
+    await user.click(screen.getByRole("searchbox"))
+    const option = () => within(screen.getByRole("listbox")).getAllByRole("option").find((o) => o.textContent?.includes("Tangerine chore"))
+    await waitFor(() => expect(option()).toBeTruthy())
+    await user.click(option()!)
+    expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/foo")}`)
+    expect(new URLSearchParams(window.location.search).get("task")).toBe("77")
+  })
+
   it("asks which worktree for a picked event several worktrees follow", async () => {
     setViewport("wide")
     const shared: TimelineEvent = {

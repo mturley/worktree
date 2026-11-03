@@ -453,7 +453,7 @@ export function WorktreeDetailPage() {
         resolveResource={resolveResource}
         path={path}
         onMakeTask={makeTaskFromEvent}
-        onOpenTask={openTask}
+        onOpenTask={(id) => openTask(id)}
       />
     </Stack>
   )
@@ -643,7 +643,8 @@ export function WorktreeDetailPage() {
       worktree: () => {},
       resource: (r) => select({ type: r.type, id: r.id }),
       event: (e) => selectFromEvent({ type: e.resource_type, id: e.resource_id }, e),
-      task: openTask,
+      // Already in a worktree: the task opens over this page.
+      task: ({ id }) => openTask(id),
     },
   })
   // Wide, it takes the width the titles leave free; narrow, it sits right

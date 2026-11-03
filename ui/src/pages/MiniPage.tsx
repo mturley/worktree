@@ -15,7 +15,6 @@ import { SearchContext } from "../components/search/SearchContext"
 import { buildSuggestions } from "../components/search/suggestions"
 import { TaskList } from "../components/tasks/TaskList"
 import { TaskListToolbar } from "../components/tasks/TaskListToolbar"
-import { useTaskModal } from "../components/tasks/modal/TaskModalProvider"
 import { useResourcesView } from "../hooks/useResourcesView"
 import { useSearchQuery } from "../hooks/useSearchQuery"
 import { useSeeEverything } from "../hooks/useSeeEverything"
@@ -58,7 +57,6 @@ export function MiniPage() {
   const [unreadOnly, setUnreadOnly] = useUnreadOnly()
   useUnreadOnlyHotkey(unreadOnly, setUnreadOnly)
   const [prefs, setPrefs] = useTaskListPrefs()
-  const { open: openTask } = useTaskModal()
   const search = useSearchQuery()
   const queryText = search.q.trim()
   const wts = useWorktrees()
@@ -121,7 +119,7 @@ export function MiniPage() {
         else if (p) openResourceIn(p, r)
       },
       event: activity.pickEvent,
-      task: openTask,
+      task: activity.pickTask,
     },
   })
 

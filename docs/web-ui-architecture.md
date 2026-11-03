@@ -2724,10 +2724,13 @@ filtering is independent.
   page's task panel lists (`useTasksPanel`'s `tasks`: its scope and Show
   completed), with `matchTask` (title, id, description). Open tasks rank
   before done ones, then by `rankTask` (0 for the exact id, as `rankResource`
-  does for a key). Picking one opens its modal via `go.task`.
+  does for a key). Picking one goes through `go.task`, which on the home page
+  routes as a task event's row does (`useActivityPanel`'s `pickTask`: its one
+  worktree, a choice of several, or over the page with none) and elsewhere
+  opens its modal in place.
 - Picking routes through the page's `go` (`buildSuggestions`). A task
-  event's row opens its task (`go.task`, the pages' `useTaskModal().open`,
-  as the feeds' rows do through `onOpenTask`), never `go.event`: its
+  event's row opens its task (`go.task`, as the feeds' rows do through
+  `onOpenTask`), never `go.event`: its
   pseudo-resource is nothing to select. The routing lives in
   `suggestions.ts`, not on the row, so Enter and a click agree and the row
   stays display-only.
@@ -4054,8 +4057,10 @@ and Tasks tabs, whose bar carries the active tab's controls (the feed's
 `activity.controls`; `TaskListToolbar`), as the home page's does. Tasks is
 `TaskList`; Activity is `useActivityPanel`
 (`components/ActivityPanel.tsx`), the home page's feed extracted so both pages
-share it. `select: "route"` (home) opens an event's worktree, `"details"`
-(mini) opens `EventDetailsModal`. The search is the home page's too:
+share it. `select: "route"` (home) opens an event's worktree (and a task
+event's task over it, `?task=`, or over the page when the task has no worktree),
+`"details"` (mini) opens `EventDetailsModal` (or the task modal, in place), whose
+worktree chips leave for the full UI. The search is the home page's too:
 `useSearchQuery`'s `?q=` (which stays on /mini), `buildSuggestions`, `/` to
 focus, and `SearchContext` so `TaskList` filters by it. Its suggestions use
 `SearchBar`'s `fillWindow`: fixed below the bar, out to the window's edges and

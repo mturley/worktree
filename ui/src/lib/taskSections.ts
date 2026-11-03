@@ -4,6 +4,16 @@ import { shortResourceRef } from "./resourceRef"
 import { matchTask } from "./search"
 import type { ResourceKey } from "./resourceKey"
 
+/**
+ * The worktrees a task belongs to now: its live worktree links, then those
+ * following its resource links. Mirrors fillTaskWorktrees on the server, which
+ * gives a task event its worktree_paths.
+ */
+export function taskWorktreePaths(task: Task): string[] {
+  const linked = task.links.filter((l) => l.kind === "worktree" && !l.archived && l.worktree).map((l) => l.worktree!)
+  return [...new Set([...linked, ...task.implicit_worktrees])]
+}
+
 /*
  * Tasks: pure list logic shared by every task list. No React here.
  * See docs/superpowers/specs/2026-10-21-tasks-design.md, "Ordering" and

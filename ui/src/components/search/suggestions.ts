@@ -1,3 +1,4 @@
+import { taskWorktreePaths } from "../../lib/taskSections"
 import type { ResourceDTO, Task, TimelineEvent, WorktreeSummary } from "../../api/types"
 import { matchResource, matchTask, matchWorktree, rankResource, rankTask, rankText, resourceLabel } from "../../lib/search"
 import { shortResourceRef } from "../../lib/resourceRef"
@@ -16,6 +17,9 @@ function eventDetail(e: TimelineEvent): string | undefined {
       return e.author
   }
 }
+
+/** A task picked in the dropdown, with what a page needs to go to its worktree. */
+export interface TaskPick { id: number; title: string; paths: string[] }
 
 /** The task a task event belongs to, or null for any other event. */
 function taskIdOf(e: TimelineEvent): number | null {
@@ -44,11 +48,11 @@ export function buildSuggestions(input: {
     resource: (r: ResourceDTO, path?: string) => void
     event: (e: TimelineEvent) => void
     /**
-     * Opens a task: a task event's row picks this, as its row in the feeds
-     * does (EventRow's onOpenTask), never go.event — its pseudo-resource
-     * ("task", "<id>") is nothing to select.
+     * Opens a task: a task's row and a task event's row pick this, as the
+     * latter's row in the feeds does (EventRow's onOpenTask), never go.event —
+     * its pseudo-resource ("task", "<id>") is nothing to select.
      */
-    task?: (id: number) => void
+    task?: (pick: TaskPick) => void
   }
 }): Suggestion[] {
   const { terms, go } = input
@@ -81,13 +85,13 @@ export function buildSuggestions(input: {
     })),
     ...ts.map(({ t, match }): Suggestion => ({
       key: `task:${t.id}`, group: "Tasks", label: t.title, detail: t.ref, item: { kind: "task", t, match },
-      onPick: () => go.task?.(t.id),
+      onPick: () => go.task?.({ id: t.id, title: t.title, paths: taskWorktreePaths(t) }),
     })),
     ...evs.map((e): Suggestion => ({
       key: `ev:${e.id}`, group: "Activity", label: e.title, detail: eventDetail(e), item: { kind: "event", e },
       onPick: () => {
         const taskId = taskIdOf(e)
-        if (taskId !== null && go.task) go.task(taskId)
+        if (taskId !== null && go.task) go.task({ id: taskId, title: e.resource_title, paths: e.worktree_paths ?? [] })
         else go.event(e)
       },
     })),

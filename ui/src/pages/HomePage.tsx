@@ -38,7 +38,6 @@ import { useResourcesView } from "../hooks/useResourcesView"
 import { ChooseWorktreeModal } from "../components/ChooseWorktreeModal"
 import { CrossHoverProvider } from "../components/CrossHoverContext"
 import { useTasksPanel } from "../components/tasks/TasksSection"
-import { useTaskModal } from "../components/tasks/modal/TaskModalProvider"
 import { useActivityPanel } from "../components/ActivityPanel"
 
 type RightTab = "timeline" | "resources"
@@ -49,8 +48,6 @@ const HOME_TASKS = { kind: "all" } as const
 
 export function HomePage() {
   const [, navigate] = useLocation()
-  // A task picked in the search dropdown opens its task, over this page.
-  const { open: openTask } = useTaskModal()
   // Shared with every worktree page and every other tab; narrows both the
   // worktree list and the activity feed.
   const [unreadOnly, setUnreadOnly] = useUnreadOnly()
@@ -269,7 +266,8 @@ export function HomePage() {
       },
       // An archived or worktree-less event opens its details; see pickEvent.
       event: activity.pickEvent,
-      task: openTask,
+      // Goes to the task's worktree, as a picked event does; see pickTask.
+      task: activity.pickTask,
     },
   })
   // Esc sees everything: clears the search and turns Unreads only off. With

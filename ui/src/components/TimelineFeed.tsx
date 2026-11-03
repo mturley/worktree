@@ -51,7 +51,7 @@ export function TimelineFeed({
   /** Offers "Make task" on each row and in the details modal; see EventRow. */
   onMakeTask?: (e: TimelineEvent) => void
   /** Opens the task modal from a task event's row; see EventRow. */
-  onOpenTask?: (id: number) => void
+  onOpenTask?: (id: number, e: TimelineEvent) => void
 }) {
   const [detail, setDetail] = useState<TimelineEvent | null>(null)
   const markEventRead = useMarkEventRead()

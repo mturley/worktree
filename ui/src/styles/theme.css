@@ -256,6 +256,17 @@ body,
   border-color: var(--task-accent);
 }
 
+/* An event's worktree chip opens that worktree's page. The accent, not the
+   task chip's lime: it is no task control. */
+.worktree-chip-nav {
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+.worktree-chip-nav:hover {
+  background-color: var(--mantine-primary-color-light-hover);
+  border-color: var(--mantine-primary-color-filled);
+}
+
 /* The checkbox is exactly its box: pad the hover area without moving it. */
 [data-task-row] .task-row-control-pad {
   padding: 3px;

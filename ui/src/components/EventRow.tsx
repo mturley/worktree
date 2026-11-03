@@ -82,7 +82,7 @@ export function EventRow({
    * Wired by the page, as onMakeTask is. Without it a task event row opens
    * its details; it never selects its pseudo-resource either way.
    */
-  onOpenTask?: (id: number) => void
+  onOpenTask?: (id: number, e: TimelineEvent) => void
 }) {
   const [hovered, setHovered] = useState(false)
   const [focused, setFocused] = useState(false)
@@ -103,7 +103,7 @@ export function EventRow({
   // A task's own event is attributed to a pseudo-resource ("task", "<id>")
   // that no worktree follows: it opens the task, never a resource selection.
   const taskId = e.resource_type === "task" ? Number(e.resource_id) : NaN
-  const openTask = onOpenTask && Number.isInteger(taskId) && taskId > 0 ? () => onOpenTask(taskId) : null
+  const openTask = onOpenTask && Number.isInteger(taskId) && taskId > 0 ? () => onOpenTask(taskId, e) : null
   const resourceKey = onSelectResource && e.resource_type && e.resource_id && e.resource_type !== "task"
     && (canSelectResource?.(e) ?? true)
     ? { type: e.resource_type, id: e.resource_id }

@@ -517,7 +517,7 @@ describe("a task event row", () => {
       <EventRow e={taskEvent()} onOpen={onOpen} onSelectResource={onSelectResource} onOpenTask={onOpenTask} />,
     )
     fireEvent.click(screen.getByRole("button"))
-    expect(onOpenTask).toHaveBeenCalledWith(12)
+    expect(onOpenTask).toHaveBeenCalledWith(12, taskEvent())
     expect(onSelectResource).not.toHaveBeenCalled()
     expect(onOpen).not.toHaveBeenCalled()
   })
@@ -558,7 +558,7 @@ describe("a task event row", () => {
       const { open, openId } = useTaskModal()
       return (
         <>
-          <TimelineFeed events={[taskEvent()]} loading={false} error={null} onOpenTask={open} onSelectResource={vi.fn()} />
+          <TimelineFeed events={[taskEvent()]} loading={false} error={null} onOpenTask={(id) => open(id)} onSelectResource={vi.fn()} />
           <span data-testid="open-id">{openId ?? "none"}</span>
         </>
       )

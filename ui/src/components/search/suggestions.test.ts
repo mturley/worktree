@@ -40,7 +40,7 @@ describe("buildSuggestions tasks", () => {
     expect(tasks.map((s) => s.label)).toEqual(["OAuth login", "more oauth", "about it"])
     expect(tasks[2].item).toMatchObject({ kind: "task", match: { field: "description" } })
     tasks[0].onPick()
-    expect(openTask).toHaveBeenCalledWith(4)
+    expect(openTask).toHaveBeenCalledWith({ id: 4, title: "OAuth login", paths: [] })
   })
 
   it("finds a task by its id, first", () => {
@@ -88,13 +88,32 @@ describe("buildSuggestions", () => {
     expect(go.event).toHaveBeenCalled()
     expect(out.some((s) => s.group === "Worktrees")).toBe(false)
   })
+  it("hands a picked task its live worktrees, so the page can go to one", () => {
+    const pick = vi.fn()
+    const out = buildSuggestions({
+      terms: ["oauth"],
+      resources: [],
+      tasks: [task(9, "OAuth login", {
+        implicit_worktrees: ["/w/follows"],
+        links: [
+          { kind: "worktree", worktree: "/w/linked", focus: true, archived: false },
+          { kind: "worktree", worktree: "/w/gone", focus: false, archived: true },
+          { kind: "worktree", worktree: "/w/follows", focus: false, archived: false },
+        ],
+      })],
+      events: [],
+      go: { ...go, task: pick },
+    })
+    out[0].onPick()
+    expect(pick).toHaveBeenCalledWith({ id: 9, title: "OAuth login", paths: ["/w/linked", "/w/follows"] })
+  })
   it("opens the task for a task event's row, as the feeds' rows do", () => {
     const task = vi.fn()
     const event = vi.fn()
     const te: TimelineEvent = { ...ev("task:7"), source: "tasks", type: "task_state_changed", resource_type: "task", resource_id: "42", resource_title: "oauth task" }
     const out = buildSuggestions({ terms: ["oauth"], resources: [], events: [te, ev("e1")], go: { ...go, event, task } })
     out[0].onPick()
-    expect(task).toHaveBeenCalledWith(42)
+    expect(task).toHaveBeenCalledWith({ id: 42, title: "oauth task", paths: [] })
     expect(event).not.toHaveBeenCalled()
     // A watcher event still routes through go.event.
     out[1].onPick()

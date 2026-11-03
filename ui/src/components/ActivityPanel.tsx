@@ -18,6 +18,7 @@ import { EventDetailsModal } from "./EventDetailsModal"
 import { ChooseWorktreeModal } from "./ChooseWorktreeModal"
 import { useMakeTaskFromEvent } from "./tasks/useMakeTask"
 import { useTaskModal } from "./tasks/modal/TaskModalProvider"
+import type { TaskPick } from "./search/suggestions"
 
 /**
  * What clicking a feed row does. "route" (the home page): open the event's
@@ -57,6 +58,7 @@ export function useActivityPanel(opts: {
   filtered: boolean
   clearFilters: () => void
   pickEvent: (e: TimelineEvent) => void
+  pickTask: (pick: TaskPick) => void
 } {
   const { unreadOnly, search, select } = opts
   const [, navigate] = useLocation()
@@ -95,12 +97,38 @@ export function useActivityPanel(opts: {
   // from the feed, as a Resources row does, and from the search dropdown. The
   // choice carries the event along. (The home page keeps its own chooser for
   // resources picked in the search dropdown.)
-  const [choosing, setChoosing] = useState<{ r: ResourceDTO; worktrees: { path: string; branch: string }[]; e: TimelineEvent } | null>(null)
+  const [choosing, setChoosing] = useState<{
+    r: ResourceDTO
+    taskTitle?: string
+    worktrees: { path: string; branch: string }[]
+    open: (path: string) => void
+  } | null>(null)
   const selectEventResource = (_key: { type: string; id: string }, e: TimelineEvent) => {
     const paths = e.worktree_paths ?? []
     if (paths.length > 1) {
-      setChoosing({ r: chosenResource(e), worktrees: paths.map((path, i) => ({ path, branch: e.worktrees[i] ?? "" })), e })
+      setChoosing({
+        r: chosenResource(e),
+        worktrees: paths.map((path, i) => ({ path, branch: e.worktrees[i] ?? "" })),
+        open: (path) => openEventIn(path, e),
+      })
     } else if (paths[0]) openEventIn(paths[0], e)
+  }
+  // A task goes to its worktree as an event does, and opens there: its modal
+  // lives in the URL, so there is nothing to carry along. One with no worktree
+  // (a global or archived one) has nowhere to go, so it opens over this page.
+  // So does every task in details mode.
+  const pickTask = ({ id, title, paths }: TaskPick) => {
+    const openIn = (path: string) => navigate(`/worktree/${encodeURIComponent(path)}?task=${id}`)
+    if (select === "details" || paths.length === 0) openTask(id)
+    else if (paths.length === 1) openIn(paths[0])
+    else {
+      setChoosing({
+        r: { type: "task", id: String(id), primary: false, title } as ResourceDTO,
+        taskTitle: title,
+        worktrees: paths.map((path) => ({ path, branch: "" })),
+        open: openIn,
+      })
+    }
   }
 
   const searching = (search?.terms.length ?? 0) > 0
@@ -173,7 +201,7 @@ export function useActivityPanel(opts: {
         onSelectResource={select === "details" ? undefined : selectEventResource}
         canSelectResource={select === "details" ? undefined : (e) => Boolean(e.worktree_paths?.length)}
         onMakeTask={makeTaskFromEvent}
-        onOpenTask={openTask}
+        onOpenTask={(id, e) => pickTask({ id, title: e.resource_title, paths: e.worktree_paths ?? [] })}
       />
     </Stack>
   )
@@ -190,11 +218,12 @@ export function useActivityPanel(opts: {
       <EventDetailsModal e={pickedEvent} onClose={() => setPickedEvent(null)} onMakeTask={makeTaskFromEvent} />
       <ChooseWorktreeModal
         r={choosing?.r ?? null}
+        taskTitle={choosing?.taskTitle}
         worktrees={choosing?.worktrees ?? []}
         onPick={(path) => {
           const c = choosing
           setChoosing(null)
-          if (c) openEventIn(path, c.e)
+          c?.open(path)
         }}
         onClose={() => setChoosing(null)}
       />
@@ -203,6 +232,6 @@ export function useActivityPanel(opts: {
 
   return {
     controls, render, modals, events: tl.events, hasMore: tl.hasMore,
-    sources, filtered, clearFilters, pickEvent,
+    sources, filtered, clearFilters, pickEvent, pickTask,
   }
 }

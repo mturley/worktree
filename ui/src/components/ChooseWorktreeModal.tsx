@@ -10,11 +10,13 @@ import { worktreeName } from "../lib/homeWorktree"
  * every worktree, so a click on either has no single destination.
  *
  * The resource heads the modal as its row shows it, so you can see what you
- * clicked; each choice below is a card named as the worktree cards are.
+ * clicked; each choice below is a card named as the worktree cards are. A task
+ * event's task is no resource, so `taskTitle` heads the modal in its place.
  */
-export function ChooseWorktreeModal({ r, worktrees, onPick, onClose }: {
+export function ChooseWorktreeModal({ r, taskTitle, worktrees, onPick, onClose }: {
   /** The resource to view; the modal is closed while this is null. */
   r: ResourceDTO | null
+  taskTitle?: string
   worktrees: Pick<ResourceWorktree, "path" | "branch">[]
   onPick: (path: string) => void
   onClose: () => void
@@ -24,10 +26,12 @@ export function ChooseWorktreeModal({ r, worktrees, onPick, onClose }: {
       {r && (
         <Stack gap="sm">
           <Paper p="xs" withBorder>
-            <ResourceCardBody r={r} />
+            {taskTitle ? <Text size="sm" fw={600}>{taskTitle}</Text> : <ResourceCardBody r={r} />}
           </Paper>
           <Text size="sm">
-            This resource is followed by {worktrees.length} worktrees. Which one do you want to view it in?
+            {taskTitle
+              ? `This task belongs to ${worktrees.length} worktrees. Which one do you want to open it in?`
+              : `This resource is followed by ${worktrees.length} worktrees. Which one do you want to view it in?`}
           </Text>
           <Stack gap="xs">
             {worktrees.map((w) => (

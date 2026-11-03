@@ -138,7 +138,7 @@ describe("TimelineFeed row -> modal wiring", () => {
   })
 })
 
-describe("the modal's context row is read-only", () => {
+describe("the modal's context row", () => {
   // The row that opened the modal is itself the way to the resource, so
   // repeating that navigation here only offered a second, redundant path —
   // one that had to close the modal behind itself to be useful.
@@ -148,15 +148,25 @@ describe("the modal's context row is read-only", () => {
     expect(screen.queryByRole("button", { name: /select resource/i })).not.toBeInTheDocument()
   })
 
-  it("names the worktrees without offering buttons", async () => {
+  it("a worktree chip closes the modal and opens that worktree's page", async () => {
+    window.history.pushState({}, "", "/")
+    const onClose = vi.fn()
     wrap(
       <EventDetailsModal
         e={ev({ worktrees: ["branch-a", "branch-b"], worktree_paths: ["/wt/wt-a", "/wt/wt-b"] })}
-        onClose={vi.fn()}
+        onClose={onClose}
       />,
     )
-    await screen.findByText("wt-a")
-    expect(screen.getByText("wt-b")).toBeInTheDocument()
+    expect(await screen.findByRole("button", { name: "Open worktree wt-a" })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole("button", { name: "Open worktree wt-b" }))
+    expect(onClose).toHaveBeenCalled()
+    expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/wt-b")}`)
+    expect(window.location.search).toBe("")
+  })
+
+  it("a worktree known only by name is a label, with nowhere to go", async () => {
+    wrap(<EventDetailsModal e={ev({ worktrees: ["branch-a"] })} onClose={vi.fn()} />)
+    await screen.findByText("branch-a")
     expect(screen.queryByRole("button", { name: /open worktree/i })).not.toBeInTheDocument()
   })
 
