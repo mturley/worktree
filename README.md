@@ -1,12 +1,16 @@
 # <img src="ui/public/favicon.svg" width="36" height="36" align="top" /> worktree
 
-**worktree** puts your work and its context in the same place. It gives each thing you're working on an isolated, complete home: a git worktree with its own port range and kubeconfig, plus the GitHub PRs, Jira issues and Slack threads it's about.
+**worktree** brings your work and its context together in one place. It gives each thing you're working on an isolated, complete home: a git worktree with its own reserved port range and kubeconfig, a unified feed of activity from external resources associated with that worktree (PRs, Jira issues and Slack threads), and a to-do list coupled with the resources, activity and code related to each task. This reduces the context switching necessary to complete each task and streamlines context switching between tasks, allowing you to multitask more effectively and reducing the overall mental load of your job.
 
-The **CLI** lets you and your AI agents create worktrees and manage everything attached to them. The **web UI** gives you:
+The **CLI** lets you and your AI agents create worktrees and manage everything attached to them, and sources managed environment variables when you `cd` into each worktree.
 
-- a live inbox of the outside activity on each worktree
-- a code view where you can send review comments to an agent or to a PR
-- a task list that sits right next to the work it's about
+The **web UI** gives you:
+
+- A live inbox of the outside activity related to each worktree
+- An environment view showing you those env vars, ports actively being listened on by processes in the worktree, and its current kubeconfig context
+- A code view where you can send review comments to an agent or to a PR
+- A task list that sits right next to the work it's about
+- A place to write notes next to each thing you're keeping track of
 
 ![The worktree web UI: worktree cards with their PRs, Jira issues and Slack threads, beside a live activity feed](docs/images/hero.png)
 <!-- SCREENSHOT TODO: hero.png — dark mode, wide. Home page with 3–4 worktrees carrying mixed PR/Jira/Slack resources, some unread, and the Activity feed beside them. Demo or sanitized data only. -->
@@ -15,13 +19,13 @@ The **CLI** lets you and your AI agents create worktrees and manage everything a
 
 ## Highlights
 
-- **Live GitHub, Jira and Slack activity, grouped by the work it's about.** Every worktree collects the activity on its own resources, so you never have to work out which PR comment or Slack reply belongs to what.
-- **An isolated environment per worktree.** Each one has its own port range and kubeconfig, so you can run several dev servers and stay logged in to different clusters at the same time.
-- **Slack threads, read and answered inline**, next to the PRs and issues they're about.
+- **Live GitHub, Jira and Slack activity, grouped by the work it's about.** Every worktree collects the activity on its own resources, so you never miss a PR comment or Slack reply related to the work you're looking at.
+- **An isolated environment per worktree.** Each one has its own reserved port range and kubeconfig, so you can run several dev servers on different branches and stay logged in to different clusters at the same time.
+- **Slack threads, read and answered inline**, next to the PRs, issues and tasks they're about.
 - **Notifications and unread tracking** for each resource, so you know exactly what's new since you last looked.
 - **Tasks that live with their context**, with blockers that clear themselves when a PR merges or an issue is done.
-- **One review view for your changes and for PRs**: send comments to an AI agent or to GitHub, and open your editor on the file you're looking at.
-- **Built for AI agents**: an installable agent skill and a scriptable CLI, so an agent can tell you what needs your attention.
+- **One review view for your changes and for PRs**: send comments to an AI agent or to GitHub, and open your preferred editor on the file you're looking at.
+- **Built for AI agents**: an installable agent skill and a scriptable CLI, so an agent can answer questions about your worktrees and tell you what needs your attention without having to go fetch the activity itself.
 - **One-command worktrees** from a branch name, a PR number or URL, or a Jira issue.
 - **A macOS menu bar app** that keeps your tasks and activity one click away, and blinks when something's unread.
 - **Deep [cmux](https://cmux.com/) integration**, and a UI that works from your phone.
