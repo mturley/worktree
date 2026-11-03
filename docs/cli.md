@@ -69,12 +69,13 @@ If a workspace already exists for that directory, worktree switches to it instea
 
 ## Status, attention and activity
 
-These read the local database directly. They need no server and no login, and never write anything. New activity only arrives while `worktree ui` is running and polling, so check `worktree status` first.
+These read the local database directly and need no server or login. Apart from `activity mark-read` and `notes set`, they never write anything. New activity only arrives while `worktree ui` is running and polling, so check `worktree status` first.
 
 ```bash
 worktree status [--json]                       # Is the UI running, and when did each service last poll?
 worktree attention [--worktree .] [--json]     # What deserves attention, most important first (exit 1: nothing)
 worktree activity [--since 24h|7d|<RFC3339>] [--unread] [--source github|jira|slack|tasks]... [--resource <ref>] [--worktree .] [--limit n] [--json]
+worktree activity mark-read <event-id> [--undo] [--json]   # Mark one event read, leaving the rest of its resource unread (not Slack)
 worktree unread [--by worktree|resource] [--json]   # Whether anything is unread, and how much (always exits 0)
 worktree notes show [--worktree .]             # A worktree's notes
 worktree notes set <text|-> [--worktree .]     # Replace them (- reads stdin)

@@ -120,7 +120,7 @@ Open a worktree to see only its world: its resources, their activity, its notes,
 
 ### Never miss an update
 
-- **Unread is tracked per resource**, so a reply to a PR shows up as unread on every worktree that follows it, and clears everywhere once you've read it. Use the unread-only filter, or mark everything read at once.
+- **Unread is tracked per resource**, so a reply to a PR shows up as unread on every worktree that follows it, and clears everywhere once you've read it. Mark a single event read, or everything at once, and undo either. Or filter down to just what's unread.
 - **Desktop notifications** are opt-in, for a whole worktree or for individual resources. They're delivered through cmux when it's available, or by the browser otherwise. You can also set a command of your own to run for each notification.
 - **Your own activity is never news.** Your comments, edits and messages don't count as unread or notify you.
 - **The browser tab shows unread too.** The title carries a count and the icon shows a dot, so a background tab still tells you something arrived. In cmux, a 📬 appears in front of the title of any workspace with unread activity.
