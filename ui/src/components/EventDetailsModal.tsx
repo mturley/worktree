@@ -1,3 +1,4 @@
+import { useState } from "react"
 import { Alert, Badge, Button, Divider, Group, Modal, Stack, Text } from "@mantine/core"
 import { TASK_BUTTON_STYLE } from "./tasks/taskButtonStyle"
 import { IconArchive } from "@tabler/icons-react"
@@ -15,6 +16,8 @@ import { WorktreeName, WorktreePreview } from "./WorktreeName"
 import { eventWorktrees, followResourceState, isArchivedEvent } from "../lib/openEvent"
 import { eventTaskKey } from "../lib/taskEventKey"
 import { isMiniRoute } from "../lib/miniMode"
+import { UNREAD_BOX_BORDER } from "../lib/unread"
+import { canMarkEventRead, useMarkEventRead } from "../hooks/useMarkEventRead"
 
 /**
  * Full detail for one timeline event.
@@ -41,6 +44,23 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
 }) {
   const actionResource = e?.resource_url ? eventResource(e, resolveResource) : undefined
   const [, navigate] = useLocation()
+  const markEventRead = useMarkEventRead()
+  const [marking, setMarking] = useState(false)
+  // This modal holds its own copy of the event, and a feed filtered to unread
+  // drops the row, so a mark made here has to be remembered here.
+  const [markedId, setMarkedId] = useState<string | null>(null)
+  const unread = !!e?.unread && e.id !== markedId
+  const offerMarkRead = !!e && unread && canMarkEventRead(e)
+
+  const markRead = async () => {
+    if (!e) return
+    setMarking(true)
+    await markEventRead(e, {
+      onRead: () => setMarkedId(e.id),
+      onUndone: () => setMarkedId(null),
+    })
+    setMarking(false)
+  }
   // Where a review comment sits in a diff view; a 404 (no worktree tracks the
   // PR, or the comment is gone) just means no button.
   const locate = useQuery({
@@ -68,7 +88,11 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
   }
 
   return (
-    <Modal opened={!!e} onClose={onClose} size="lg" fullScreen={isMiniRoute()} title={
+    <Modal opened={!!e} onClose={onClose} size="lg" fullScreen={isMiniRoute()}
+      // An outline, not a border: clearing it must not shift the content. Drawn
+      // inside the edge so a full-screen modal does not clip it.
+      styles={unread ? { content: { outline: UNREAD_BOX_BORDER, outlineOffset: -2 } } : undefined}
+      title={
       e ? (
         <Group gap={8} wrap="nowrap">
           <EventDot type={e.type} label={e.type_label} taskState={e.task_state} />
@@ -130,7 +154,7 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
             </Text>
           )}
 
-          {(locate.data || (onMakeTask && eventTaskKey(e))) && (
+          {(locate.data || offerMarkRead || (onMakeTask && eventTaskKey(e))) && (
             <Group justify="flex-end">
               {locate.data && (
                 <Button
@@ -144,6 +168,11 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
                   }}
                 >
                   Go to comment in diff view
+                </Button>
+              )}
+              {offerMarkRead && (
+                <Button size="xs" variant="light" loading={marking} onClick={() => void markRead()}>
+                  Mark read
                 </Button>
               )}
               {onMakeTask && eventTaskKey(e) && (

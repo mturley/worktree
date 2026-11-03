@@ -15,6 +15,7 @@ import { eventWorktrees, isArchivedEvent } from "../lib/openEvent"
 import { MatchWhy } from "./search/MatchWhy"
 import { SearchHighlight } from "./search/SearchHighlight"
 import { useCrossHover } from "./CrossHoverContext"
+import { canMarkEventRead } from "../hooks/useMarkEventRead"
 import { eventTaskKey } from "../lib/taskEventKey"
 import { WorktreeName, WorktreePreview } from "./WorktreeName"
 
@@ -27,14 +28,14 @@ import { WorktreeName, WorktreePreview } from "./WorktreeName"
  * target, so the row can only be a single surface if nothing inside it is
  * interactive too.
  *
- * The one exception is the opt-in "＋ task" hover action (`onMakeTask`),
- * which is therefore NOT inside the row: the row and the action are
- * siblings in a positioned wrapper, the action floating over the row's
- * top-right corner, so its click never reaches the row.
+ * The exceptions are the opt-in hover actions, "＋ Task" (`onMakeTask`) and
+ * "Mark Read" (`onMarkRead`), which are therefore NOT inside the row: the row
+ * and the actions are siblings in a positioned wrapper, the actions floating over the row's
+ * top-right corner, so their clicks never reach the row.
  */
 export function EventRow({
   e, showWorktrees, showResource = true, onOpen, onSelectResource, resolveResource, canSelectResource,
-  unreadBorder = true, onMakeTask, onOpenTask,
+  unreadBorder = true, onMakeTask, onMarkRead, onOpenTask,
 }: {
   e: TimelineEvent
   showWorktrees?: boolean
@@ -67,10 +68,15 @@ export function EventRow({
    */
   canSelectResource?: (e: TimelineEvent) => boolean
   /**
-   * Offers "＋ task" on hover: makes a task from this event. Opt-in per feed,
+   * Offers "＋ Task" on hover: makes a task from this event. Opt-in per feed,
    * and shown only on watcher events (a task's own events can't be linked).
    */
   onMakeTask?: (e: TimelineEvent) => void
+  /**
+   * Offers "Mark Read" on hover, on an event that can be marked on its own
+   * (canMarkEventRead). Opt-in per feed, like onMakeTask.
+   */
+  onMarkRead?: (e: TimelineEvent) => void
   /**
    * Opens a task's modal, for a task's own events (resource_type "task").
    * Wired by the page, as onMakeTask is. Without it a task event row opens
@@ -80,9 +86,10 @@ export function EventRow({
 }) {
   const [hovered, setHovered] = useState(false)
   const [focused, setFocused] = useState(false)
-  // A touch screen has no hover to reveal "＋ task", so there it always shows.
+  // A touch screen gets no hover actions: always showing them made them too
+  // easy to press while scrolling, and the details modal offers the same.
   const noHover = useMediaQuery("(hover: none)")
-  const actionShown = hovered || focused || noHover
+  const actionShown = hovered || focused
   // Only the dot shows the type now — as its tooltip.
   const label = eventLabel(e.type, e.type_label)
 
@@ -248,7 +255,17 @@ export function EventRow({
    * above's text, which is the lesser of the two.
    */
   const surface = activate ? <Tooltip label={tip} position="top-start">{row}</Tooltip> : row
-  if (!onMakeTask || !eventTaskKey(e)) return surface
+  const makeTask = onMakeTask && eventTaskKey(e) ? onMakeTask : null
+  const markRead = onMarkRead && canMarkEventRead(e) ? onMarkRead : null
+  if (!makeTask && !markRead) return surface
+
+  // Shown on hover, and to the keyboard when tabbed to. While hidden they take
+  // no taps or clicks (focus still reaches them).
+  const actionStyle = {
+    opacity: actionShown ? 1 : 0,
+    pointerEvents: actionShown ? "auto" : "none",
+    transition: "opacity 100ms ease",
+  } as const
 
   return (
     <Box
@@ -257,29 +274,40 @@ export function EventRow({
       onMouseLeave={() => setHovered(false)}
     >
       {surface}
-      <Tooltip label="Make a task from this event" position="top-end">
-        <Button
-          size="compact-xs"
-          variant="filled"
-          aria-label="Make task from this event"
-          onClick={() => onMakeTask(e)}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-          style={{
-            ...TASK_BUTTON_STYLE,
-            position: "absolute",
-            top: 4,
-            right: 4,
-            // Shown on hover, and to the keyboard when tabbed to. While
-            // hidden it takes no taps or clicks (focus still reaches it).
-            opacity: actionShown ? 1 : 0,
-            pointerEvents: actionShown ? "auto" : "none",
-            transition: "opacity 100ms ease",
-          }}
-        >
-          ＋ task
-        </Button>
-      </Tooltip>
+      {!noHover && (
+        <Group gap={4} wrap="nowrap" style={{ position: "absolute", top: 4, right: 4 }}>
+          {markRead && (
+            <Tooltip label="Mark this event read" position="top-end">
+              <Button
+                size="compact-xs"
+                variant="filled"
+                aria-label="Mark this event read"
+                onClick={() => markRead(e)}
+                onFocus={() => setFocused(true)}
+                onBlur={() => setFocused(false)}
+                style={actionStyle}
+              >
+                Mark Read
+              </Button>
+            </Tooltip>
+          )}
+          {makeTask && (
+            <Tooltip label="Make a task from this event" position="top-end">
+              <Button
+                size="compact-xs"
+                variant="filled"
+                aria-label="Make task from this event"
+                onClick={() => makeTask(e)}
+                onFocus={() => setFocused(true)}
+                onBlur={() => setFocused(false)}
+                style={{ ...TASK_BUTTON_STYLE, ...actionStyle }}
+              >
+                ＋ Task
+              </Button>
+            </Tooltip>
+          )}
+        </Group>
+      )}
     </Box>
   )
 }

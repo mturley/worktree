@@ -331,16 +331,16 @@ func TestIsUnreadUsesSlacksOwnCursor(t *testing.T) {
 	// The event row's own ts is deliberately the SAME on both, so a passing
 	// test can only be reading external_ts — the Slack clock.
 	const rowTS = "2099-01-01T00:00:00Z"
-	if !ix.IsUnread("slack", thread, rowTS, "3000.000000", "slack_reply", "slack", "") {
+	if !ix.IsUnread("", "slack", thread, rowTS, "3000.000000", "slack_reply", "slack", "") {
 		t.Fatal("reply newer than Slack's cursor should be unread")
 	}
-	if ix.IsUnread("slack", thread, rowTS, "1500.000000", "slack_reply", "slack", "") {
+	if ix.IsUnread("", "slack", thread, rowTS, "1500.000000", "slack_reply", "slack", "") {
 		t.Fatal("reply older than Slack's cursor should be read")
 	}
-	if ix.IsUnread("slack", thread, rowTS, "", "slack_reply", "slack", "") {
+	if ix.IsUnread("", "slack", thread, rowTS, "", "slack_reply", "slack", "") {
 		t.Fatal("event with no external ts has nothing to compare; should be read")
 	}
-	if ix.IsUnread("slack", "C1:9999.000000", rowTS, "3000.000000", "slack_reply", "slack", "") {
+	if ix.IsUnread("", "slack", "C1:9999.000000", rowTS, "3000.000000", "slack_reply", "slack", "") {
 		t.Fatal("thread with no cached cursor should be read, not unread")
 	}
 }
@@ -673,13 +673,13 @@ func TestIsUnreadIgnoresMyOwnEvents(t *testing.T) {
 	t.Parallel()
 	ix := &unreadIndex{cursors: map[string]string{unread.Key("pr", "o/r#1"): "2026-01-01T00:00:00Z"},
 		mine: map[string]string{"github": "101"}}
-	if ix.IsUnread("pr", "o/r#1", "2026-01-01T00:00:05Z", "", "pr_comment", "github", "101") {
+	if ix.IsUnread("", "pr", "o/r#1", "2026-01-01T00:00:05Z", "", "pr_comment", "github", "101") {
 		t.Fatal("the user's own event must not be unread")
 	}
-	if !ix.IsUnread("pr", "o/r#1", "2026-01-01T00:00:05Z", "", "pr_comment", "github", "202") {
+	if !ix.IsUnread("", "pr", "o/r#1", "2026-01-01T00:00:05Z", "", "pr_comment", "github", "202") {
 		t.Fatal("another person's newer event must be unread")
 	}
-	if !ix.IsUnread("pr", "o/r#1", "2026-01-01T00:00:05Z", "", "pr_comment", "jira", "101") {
+	if !ix.IsUnread("", "pr", "o/r#1", "2026-01-01T00:00:05Z", "", "pr_comment", "jira", "101") {
 		t.Fatal("the same id under another source is someone else")
 	}
 }

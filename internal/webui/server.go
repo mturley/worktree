@@ -326,6 +326,8 @@ func (s *Server) routes() []route {
 		{"POST /api/resource-meta", s.handleSetResourceMeta},
 		{"POST /api/resource-read", s.handleResourceRead},
 		{"POST /api/resource-read/restore", s.handleResourceReadRestore},
+		{"POST /api/event-read", s.handleEventRead},
+		{"POST /api/event-read/restore", s.handleEventReadRestore},
 		{"POST /api/worktree-resources/add", s.handleAddResource},
 		{"POST /api/worktrees/delete", s.handleDeleteWorktree},
 		{"POST /api/worktrees/open-editor", s.handleOpenEditor},

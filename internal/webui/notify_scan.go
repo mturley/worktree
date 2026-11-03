@@ -15,6 +15,7 @@ import (
 	"github.com/mturley/worktree/internal/resources"
 	"github.com/mturley/worktree/internal/selfid"
 	"github.com/mturley/worktree/internal/tasks"
+	"github.com/mturley/worktree/internal/unread"
 )
 
 // notifySkipTypes never notify: the two the unread/timeline filter already
@@ -102,6 +103,7 @@ func readNewEvents(conn *sql.DB, c notifyCursor) ([]newEvent, notifyCursor, erro
 	      FROM watcher_events e JOIN watcher_event_resources er ON er.event_id = e.id
 	      WHERE e.ts >= ? AND e.type NOT IN (?` + strings.Repeat(",?", len(notifySkipTypes)-1) + `)
 	        AND ` + selfid.NotMineSQL + `
+	        AND ` + unread.NotMarkedReadSQL + `
 	      ORDER BY e.ts, e.id`
 	args := []any{lookbackFrom(c.ts)}
 	for _, t := range notifySkipTypes {
@@ -284,6 +286,7 @@ func readNewTaskEvents(conn *sql.DB, c notifyCursor) (events, unblocks []tasks.F
 		        COALESCE(t.title,''), (t.id IS NOT NULL AND t.deleted_at IS NULL)
 		   FROM task_events e LEFT JOIN tasks t ON t.id = e.task_id
 		  WHERE e.id > ?
+		    AND `+unread.TaskNotMarkedReadSQL+`
 		  ORDER BY e.id`, c.taskID)
 	if err != nil {
 		return nil, nil, c.taskID, err

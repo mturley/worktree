@@ -136,6 +136,10 @@ func (s *Server) attentionTasks(open []tasks.Task, worktreePath string) ([]atten
 	if err != nil {
 		return nil, err
 	}
+	marks, err := unread.EventMarks(s.DB)
+	if err != nil {
+		return nil, err
+	}
 	var scope string
 	if worktreePath != "" {
 		scope, _ = wdb.WorktreePathFromSubscriber(wdb.Subscriber(worktreePath))
@@ -154,7 +158,7 @@ func (s *Server) attentionTasks(open []tasks.Task, worktreePath string) ([]atten
 			continue
 		}
 		cursor := cursors[unread.Key(taskResourceType, strconv.FormatInt(t.ID, 10))]
-		unblocked, err := s.taskUnblockedSince(t.ID, cursor)
+		unblocked, err := s.taskUnblockedSince(t.ID, cursor, marks)
 		if err != nil {
 			return nil, err
 		}
@@ -171,7 +175,7 @@ func (s *Server) attentionTasks(open []tasks.Task, worktreePath string) ([]atten
 // taskUnblockedSince reports whether the task has an automatic blocker
 // resolution newer than cursor. FeedQuery's SinceTS is inclusive, a cursor is
 // not; no cursor means every event counts, as in unread.TaskSummaries.
-func (s *Server) taskUnblockedSince(id int64, cursor string) (bool, error) {
+func (s *Server) taskUnblockedSince(id int64, cursor string, marks map[string]string) (bool, error) {
 	events, err := tasks.FeedEvents(s.DB, tasks.FeedQuery{
 		TaskIDs:          []int64{id},
 		UnreadActorsOnly: true,
@@ -181,7 +185,7 @@ func (s *Server) taskUnblockedSince(id int64, cursor string) (bool, error) {
 		return false, err
 	}
 	return slices.ContainsFunc(events, func(e tasks.FeedEvent) bool {
-		return e.TS > cursor && isUnblockEvent(e)
+		return e.TS > cursor && isUnblockEvent(e) && !unread.IsMarked(marks, unread.TaskEventID(e.ID), e.TS)
 	}), nil
 }
 

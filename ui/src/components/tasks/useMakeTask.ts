@@ -6,7 +6,7 @@ import { eventTaskKey } from "../../lib/taskEventKey"
 import { useTaskModal } from "./modal/TaskModalProvider"
 
 /**
- * "＋ task": creates a task from an event, then opens its modal. `path` is
+ * "＋ Task": creates a task from an event, then opens its modal. `path` is
  * the worktree the user acted in (see /api/tasks/from-event). A failure is a
  * toast, since the action's surface (a hover button, a message) has nowhere
  * to say it.

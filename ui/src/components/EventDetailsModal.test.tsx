@@ -2,6 +2,7 @@ import { afterEach, describe, it, expect, vi } from "vitest"
 import userEvent from "@testing-library/user-event"
 import { render, cleanup, screen, fireEvent } from "@testing-library/react"
 import { MantineProvider } from "@mantine/core"
+import { Notifications, notifications } from "@mantine/notifications"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { api } from "../api/client"
 import { EventDetailsModal } from "./EventDetailsModal"
@@ -35,6 +36,7 @@ const wrap = (ui: React.ReactNode) =>
   )
 
 afterEach(() => {
+  notifications.clean()
   cleanup()
   vi.restoreAllMocks()
 })
@@ -246,5 +248,67 @@ describe("EventDetailsModal go to comment", () => {
     await new Promise((r) => setTimeout(r, 20))
     expect(spy).not.toHaveBeenCalled()
     expect(screen.queryByRole("button", { name: "Go to comment in diff view" })).toBeNull()
+  })
+})
+
+describe("EventDetailsModal unread", () => {
+  const wrapWithToasts = (ui: React.ReactNode) =>
+    render(
+      <MantineProvider>
+        <Notifications />
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{ui}</QueryClientProvider>
+      </MantineProvider>,
+    )
+  const content = () => document.querySelector<HTMLElement>(".mantine-Modal-content")!
+  const markButton = () => screen.queryByRole("button", { name: "Mark read" })
+  const outlined = () => content().style.outlineOffset !== ""
+
+  it("outlines an unread event's modal, and only an unread one's", () => {
+    const { unmount } = wrapWithToasts(<EventDetailsModal e={ev({ unread: true })} onClose={vi.fn()} />)
+    expect(outlined()).toBe(true)
+    unmount()
+    wrapWithToasts(<EventDetailsModal e={ev({ unread: false })} onClose={vi.fn()} />)
+    expect(outlined()).toBe(false)
+    expect(markButton()).toBeNull()
+  })
+
+  it("outlines an unread Slack event but offers no Mark read", () => {
+    wrapWithToasts(<EventDetailsModal e={ev({ unread: true, source: "slack", resource_type: "slack" })} onClose={vi.fn()} />)
+    expect(outlined()).toBe(true)
+    expect(markButton()).toBeNull()
+  })
+
+  it("marks read in place, and Undo brings the outline and the button back", async () => {
+    const mark = vi.spyOn(api, "markEventRead").mockResolvedValue({ id: "e1", ts: "2026-08-25T00:00:00Z", changed: true })
+    const restore = vi.spyOn(api, "restoreEventRead").mockResolvedValue(null)
+    const onClose = vi.fn()
+    wrapWithToasts(<EventDetailsModal e={ev({ unread: true })} onClose={onClose} />)
+
+    await userEvent.click(markButton()!)
+    expect(mark).toHaveBeenCalledWith({ id: "e1", ts: "2026-08-25T00:00:00Z" })
+    expect(onClose).not.toHaveBeenCalled()
+    expect(outlined()).toBe(false)
+    expect(markButton()).toBeNull()
+
+    await userEvent.click(await screen.findByRole("button", { name: /^Undo/ }))
+    expect(restore).toHaveBeenCalledWith({ id: "e1", ts: "2026-08-25T00:00:00Z" })
+    expect(await screen.findByRole("button", { name: "Mark read" })).toBeInTheDocument()
+    expect(outlined()).toBe(true)
+  })
+
+  it("offers no undo when the mark changed nothing", async () => {
+    vi.spyOn(api, "markEventRead").mockResolvedValue({ id: "e1", ts: "2026-08-25T00:00:00Z", changed: false })
+    wrapWithToasts(<EventDetailsModal e={ev({ unread: true })} onClose={vi.fn()} />)
+    await userEvent.click(markButton()!)
+    expect(outlined()).toBe(false)
+    expect(screen.queryByRole("button", { name: /^Undo/ })).toBeNull()
+  })
+
+  it("stays unread and says so when the mark fails", async () => {
+    vi.spyOn(api, "markEventRead").mockRejectedValue(new Error("event changed since it was shown"))
+    wrapWithToasts(<EventDetailsModal e={ev({ unread: true })} onClose={vi.fn()} />)
+    await userEvent.click(markButton()!)
+    expect(await screen.findByText(/event changed since it was shown/)).toBeInTheDocument()
+    expect(outlined()).toBe(true)
   })
 })

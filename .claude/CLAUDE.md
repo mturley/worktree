@@ -135,7 +135,9 @@ minutes serially; it now runs most tests in parallel.
   - `tasks` — to-do items attached to worktrees and resources; one master order (fractional keys); membership and archived computed in Go; actor-stamped `task_events`. Spec: `docs/superpowers/specs/2026-10-21-tasks-design.md`.
   - `unread` — per-resource read cursor (`resource_read_cursor`). One cursor
     per RESOURCE, not per subscriber — deliberately unlike agent-handler's
-    model, and shared across every worktree tracking the resource. Slack
+    model, and shared across every worktree tracking the resource. On top of it,
+    `event_read` marks single events read (`event_read.go`), matched by id and
+    `ts` so a rewritten CI row reads as unread again. Slack
     threads get no cursor row — worktree never WRITES their read state — but
     it MIRRORS Slack's: the poller caches `last_read` in
     `watcher_resource_state`, and `SlackCursors` compares it against
