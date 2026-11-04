@@ -1,5 +1,5 @@
 import type { ButtonProps } from "@mantine/core"
-import type { ResourceDTO } from "../api/types"
+import type { ResourceDTO, ResourceReadChange } from "../api/types"
 
 /**
  * Whether a resource has activity the user has not seen.
@@ -20,6 +20,15 @@ import type { ResourceDTO } from "../api/types"
 export function hasUnread(r: ResourceDTO): boolean {
   if (r.type === "slack") return !!r.has_unread || (r.task_unread_count ?? 0) > 0
   return (r.unread_count ?? 0) > 0
+}
+
+/**
+ * Whether a mark-read did anything, and so has anything to undo. Not just "the
+ * cursor moved": when the only unread event is an old one marked unread, the
+ * cursor stays where it is and clearing that mark is the whole write.
+ */
+export function readChangeDidSomething(change: ResourceReadChange): boolean {
+  return change.previous_ts !== change.last_read_ts || (change.cleared_unread?.length ?? 0) > 0
 }
 
 /**

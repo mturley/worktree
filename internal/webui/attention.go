@@ -173,19 +173,19 @@ func (s *Server) attentionTasks(open []tasks.Task, worktreePath string) ([]atten
 }
 
 // taskUnblockedSince reports whether the task has an automatic blocker
-// resolution newer than cursor. FeedQuery's SinceTS is inclusive, a cursor is
-// not; no cursor means every event counts, as in unread.TaskSummaries.
-func (s *Server) taskUnblockedSince(id int64, cursor string, marks map[string]string) (bool, error) {
+// resolution that reads as unread: newer than cursor (no cursor means every
+// event counts, as in unread.TaskSummaries), or marked unread. It reads the
+// task's whole history, since a mark can sit behind the cursor.
+func (s *Server) taskUnblockedSince(id int64, cursor string, marks map[string]unread.EventMark) (bool, error) {
 	events, err := tasks.FeedEvents(s.DB, tasks.FeedQuery{
 		TaskIDs:          []int64{id},
 		UnreadActorsOnly: true,
-		SinceTS:          cursor,
 	})
 	if err != nil {
 		return false, err
 	}
 	return slices.ContainsFunc(events, func(e tasks.FeedEvent) bool {
-		return e.TS > cursor && isUnblockEvent(e) && !unread.IsMarked(marks, unread.TaskEventID(e.ID), e.TS)
+		return isUnblockEvent(e) && unread.EventUnread(marks, unread.TaskEventID(e.ID), e.TS, e.TS > cursor)
 	}), nil
 }
 

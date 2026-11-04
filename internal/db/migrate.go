@@ -10,7 +10,7 @@ import (
 // PRAGMA user_version when migrate finishes. OpenRead compares against it, and
 // refuses a DB behind it rather than migrating. Bump it whenever migrate
 // changes the schema; TestSchemaVersionCoversSchema fails until you do.
-const schemaVersion = 2
+const schemaVersion = 3
 
 // migrate creates the worktree-owned tables. It is idempotent and disjoint
 // from the watcher library's Migrate (which owns all watcher_* tables). None
@@ -52,15 +52,17 @@ func migrate(conn *sql.DB) error {
 			updated_at    TEXT NOT NULL,
 			PRIMARY KEY (resource_type, resource_id)
 		)`,
-		// Single events marked read, on top of the per-resource cursor. Holds
-		// the event's ts as well as its id: the watcher rewrites a commit's CI
-		// row in place, id unchanged and ts moved, and that new result must
-		// read as unread again. Worktree-owned for the cursor's reason.
-		// event_id is a watcher event id or "task:<id>" (unread.TaskEventID).
+		// Single events marked read or unread, overriding the per-resource
+		// cursor. Holds the event's ts as well as its id: the watcher rewrites
+		// a commit's CI row in place, id unchanged and ts moved, and a mark
+		// made on the old result says nothing about the new one.
+		// Worktree-owned for the cursor's reason. event_id is a watcher event
+		// id or "task:<id>" (unread.TaskEventID).
 		`CREATE TABLE IF NOT EXISTS event_read (
 			event_id TEXT PRIMARY KEY,
 			event_ts TEXT NOT NULL,
-			read_at  TEXT NOT NULL
+			read_at  TEXT NOT NULL,
+			state    TEXT NOT NULL DEFAULT 'read'
 		)`,
 		// Web UI login sessions. token_hash is the SHA-256 of the cookie
 		// value, never the value itself, so reading this table never yields
@@ -323,6 +325,11 @@ func migrate(conn *sql.DB) error {
 		 WHERE s.resource_type <> 'slack'
 		   AND s.deleted_at IS NULL
 		 GROUP BY s.resource_type, s.resource_id`, now, now); err != nil {
+		return err
+	}
+
+	// event_read predates its state column; every older row is a read mark.
+	if err := addColumnIfMissing(conn, "event_read", "state", "TEXT NOT NULL DEFAULT 'read'"); err != nil {
 		return err
 	}
 

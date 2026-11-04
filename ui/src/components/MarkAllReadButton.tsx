@@ -11,7 +11,7 @@ import { KeyHint } from "./search/KeyHint"
 import { slackTabFromResource } from "./SlackThreadPane"
 import { TimelineFeed } from "./TimelineFeed"
 import { showUndoToast, undoAll } from "./UndoToast"
-import { MARK_READ_BUTTON_PROPS } from "../lib/unread"
+import { MARK_READ_BUTTON_PROPS, readChangeDidSomething } from "../lib/unread"
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 
@@ -96,7 +96,7 @@ function toTarget(r: ResourceDTO): Target | null {
     label: resourceLabel(r),
     mark: async () => {
       const change = await api.markResourceRead({ type, id, through_ts: through })
-      if (change.previous_ts === change.last_read_ts) return null
+      if (!readChangeDidSomething(change)) return null
       return () => api.restoreResourceRead({ type, id, ...change })
     },
   }
@@ -113,7 +113,7 @@ function taskTarget(t: TaskUnread): Target {
     label: `T${t.id}`,
     mark: async () => {
       const change = await api.taskRead({ id: t.id, through_ts: t.newest_ts })
-      if (change.previous_ts === change.last_read_ts) return null
+      if (!readChangeDidSomething(change)) return null
       return () => api.taskReadRestore({ id: t.id, ...change })
     },
   }

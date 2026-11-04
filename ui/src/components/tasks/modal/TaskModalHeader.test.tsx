@@ -103,6 +103,18 @@ describe("TaskModalHeader Mark read", () => {
     expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument()
   })
 
+  it("offers undo when the cursor stayed but an event marked unread was cleared", async () => {
+    const cleared_unread = [{ id: "task:9", ts: "2099-03-02T00:00:00Z" }]
+    vi.mocked(api.taskRead).mockResolvedValue({ previous_ts: "2099-03-09T00:00:00Z", last_read_ts: "2099-03-09T00:00:00Z", cleared_unread })
+    const user = userEvent.setup()
+    wrap(detail({ unread_count: 1, unread_through_ts: "2099-03-02T00:00:00Z" }))
+    await user.click(screen.getByRole("button", { name: "Mark read" }))
+    await user.click(await screen.findByRole("button", { name: "Undo" }))
+    await waitFor(() => expect(api.taskReadRestore).toHaveBeenCalledWith({
+      id: 5, previous_ts: "2099-03-09T00:00:00Z", last_read_ts: "2099-03-09T00:00:00Z", cleared_unread,
+    }))
+  })
+
   it("says Already read, writing nothing, without an unread_through_ts", async () => {
     const user = userEvent.setup()
     wrap(detail({ unread_count: 1 }))

@@ -191,10 +191,11 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | GET | `/api/all-resources` | — | `[]allResourceDTO` (every followed resource once, with its worktrees; see "Home page Resources tab") |
 | POST | `/api/worktrees/poll` | `path` (required) | `{"polled": bool}` |
 | POST | `/api/resource-meta` | body: `{type, id, name, description}` | — |
-| POST | `/api/resource-read` | body: `{type, id, through_ts}` | `{previous_ts, last_read_ts}` — the cursor before (null if none) and after, for an undo; 400 unless `through_ts` is RFC3339 (`validThroughTS`: a Slack ts never belongs here) |
-| POST | `/api/resource-read/restore` | body: `{type, id, last_read_ts, previous_ts}` (what `/api/resource-read` answered) | 204; 409 if the cursor has moved since (see "Undo") |
+| POST | `/api/resource-read` | body: `{type, id, through_ts}` | `{previous_ts, last_read_ts, cleared_unread?}` — the cursor before (null if none) and after, and any single-event unread marks it cleared, for an undo; 400 unless `through_ts` is RFC3339 (`validThroughTS`: a Slack ts never belongs here) |
+| POST | `/api/resource-read/restore` | body: `{type, id, last_read_ts, previous_ts, cleared_unread?}` (what `/api/resource-read` answered) | 204; 409 if the cursor has moved since (see "Undo") |
 | POST | `/api/event-read` | body: `{id, ts?}` (`ts` is the row as shown) | `{id, ts, changed}`; `changed` false when it already read as read. 400 for a Slack event, 404 for an unknown one, 409 when the row was rewritten since `ts`. See "Unread" |
-| POST | `/api/event-read/restore` | body: `{id, ts}` (what `/api/event-read` answered) | 204 |
+| POST | `/api/event-unread` | body: `{id, ts?}` | As `/api/event-read`, in reverse, even behind the cursor; also 400 for an event that can never be unread or that no worktree follows. See "Unread" |
+| POST | `/api/event-read/restore` | body: `{id, ts, previous}` (what `/api/event-read` or `/api/event-unread` answered) | 204 |
 | POST | `/api/resource-resolve` | body: `{url}` | resolved link metadata |
 | GET | `/api/resource-type` | `url` (required) | `{type, id}` or error if unrecognized |
 | POST | `/api/worktree-resources/add` | body: `{path, url, related?}` | `resourceDTO` |
@@ -780,25 +781,50 @@ Events without an `author_id` (recorded before watcher v0.10.0, or
 authorless, such as CI) always count. Requires watcher ≥ v0.10.0, which
 added `watcher_events.author_id`.
 
-**Single events marked read.** `event_read` holds marks on individual events,
-keyed by the id the feeds carry (a watcher id, or `task:<id>`) and written by
-`Server.MarkEventRead`, which `POST /api/event-read`, the rows' Mark read, the
-details modal and `worktree activity mark-read` all reach. The cursor does not
-move, so Mark all read still covers everything else. Like the user's own events,
-a mark is a query-time filter: `unread.NotMarkedReadSQL` (`Summaries`, the
-unread-only clause, the notifier), `unread.TaskNotMarkedReadSQL` (`TaskSummaries`,
-the task notifier) and `unread.IsMarked` (`IsUnread`, `taskFeedRow`, attention's
-`blocker_resolved`). `unread_through_ts` therefore skips marked events.
+**Single events marked read or unread.** `event_read` overrides the cursor for
+individual events, keyed by the id the feeds carry (a watcher id, or `task:<id>`)
+with a `state` of `read` or `unread`. With no mark an event is unread when past its
+cursor; `read` means never; `unread` means always, even behind the cursor or with no
+cursor row. Written by `Server.MarkEventRead` and `MarkEventUnread`, which
+`POST /api/event-read`, `POST /api/event-unread`, the rows' Mark read, the details
+modal and `worktree activity mark-read`/`mark-unread` all reach. The cursor does not
+move, and a mark that would only repeat the cursor's verdict is deleted rather than
+stored, so a later cursor rewind cannot leave one overriding it. Like the user's own
+events, a mark is a query-time rule: `unread.NotMarkedReadSQL` and `MarkedUnreadSQL`
+(`Summaries`, the unread-only clause), their `Task…` twins (`TaskSummaries`) and
+`unread.EventUnread` (`IsUnread`, `taskFeedRow`, attention's `blocker_resolved`). The
+notifier skips read-marked events but still adds them to its `seen` set, so taking a
+mark back within the lookback window does not notify again; marking an old event
+unread never notifies, since the notifier only looks at new rows.
 
 A mark stores the event's `ts` too and only matches at that `ts`: the watcher
-rewrites a commit's CI row in place, so a new result reads as unread again. Rows
-are never pruned, because undoing a Mark all read moves the cursor back behind
-them. Marking an event that already reads as read writes nothing and answers
-`changed: false`. Slack events are refused, since Slack keeps one cursor per
-thread: the UI offers no button on them, though an unread Slack event's details
-modal still has the blue outline, which `TimelineEvent.unread` alone drives. On a
-touch screen (`(hover: none)`) a row shows neither Mark read nor ＋ Task, too easy
-to press while scrolling; the details modal has both.
+rewrites a commit's CI row in place, so a mark says nothing about the new result. Read
+marks are never pruned, because undoing a Mark all read moves the cursor back behind
+them. A write that changes nothing answers `changed: false`. The answer's `previous`
+is the mark it replaced or deleted, which its undo puts back.
+
+**Moving a cursor clears unread marks.** When the only unread event is an old marked
+one, `unread_through_ts` is behind the cursor and the cursor cannot move, so
+`unread.Mark` also deletes the resource's or task's unread marks at or before
+`through_ts`, in the same transaction, and answers them as `cleared_unread`.
+`unread.Restore` puts them back with the cursor, or not at all on a 409. "Did this
+mark do anything?" is therefore not "did the cursor move": every client asks
+`readChangeDidSomething` (`ui/src/lib/unread.ts`). A mark made after the page rendered
+on an event at or before `through_ts` is cleared too, a small exception to Mark all
+read clearing only what was shown.
+
+Who can be marked: `TimelineEvent.can_mark_unread` is false for the user's own events,
+running CI, the bookkeeping events no feed renders and Slack, and the server refuses
+those (400), along with a resource no worktree follows, whose unread would have no
+card to clear it from. The client hides the button for that last case through
+`isArchivedEvent`. Slack events are refused either way, since Slack keeps one cursor per
+thread: the UI offers no button on them, though an unread Slack event's details modal
+still has the blue outline, which `TimelineEvent.unread` alone drives. Mark unread is
+only in the details modal and the CLI, since on hover it would sit on nearly every
+row. On a touch screen (`(hover: none)`) a row shows neither Mark read nor ＋ Task, too
+easy to press while scrolling; the details modal has both. An old event marked unread
+stays where its `ts` puts it in the feed, so a badge can point at something further
+down; Unreads only finds it.
 
 **CI runs still in progress are never unread.** `ci_pending` ("CI running")
 and `ci_workflows_pending` ("workflows running") are dropped the same way as
@@ -1045,9 +1071,10 @@ delete show the same toast (see "Undo for tasks"):
 
 - Tasks: `/api/task-read` and `/api/task-read/restore`, exactly as
   GitHub/Jira, over the task's cursor.
-- A single event: `/api/event-read/restore` deletes the mark, only at the `ts`
-  it was made, so there is no conflict to report: the cursor still covers
-  whatever it has passed. An undone Mark all read leaves marks in place.
+- A single event, read or unread: `/api/event-read/restore` puts back the mark the
+  write replaced (`previous`, none when empty), only at the `ts` it was made, so
+  there is no conflict to report. An undone Mark all read leaves read marks in place
+  and restores the unread marks it cleared.
 
 **Undo for tasks.** A state change, a subtask check or uncheck, and a delete
 answer with `undo_event_id` (omitted when nothing changed, so there is

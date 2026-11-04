@@ -136,8 +136,9 @@ minutes serially; it now runs most tests in parallel.
   - `unread` — per-resource read cursor (`resource_read_cursor`). One cursor
     per RESOURCE, not per subscriber — deliberately unlike agent-handler's
     model, and shared across every worktree tracking the resource. On top of it,
-    `event_read` marks single events read (`event_read.go`), matched by id and
-    `ts` so a rewritten CI row reads as unread again. Slack
+    `event_read` marks single events read or unread (`event_read.go`), overriding
+    the cursor either way, matched by id and `ts` so a mark never outlives a
+    rewritten CI row. Moving a cursor clears unread marks at or before it. Slack
     threads get no cursor row — worktree never WRITES their read state — but
     it MIRRORS Slack's: the poller caches `last_read` in
     `watcher_resource_state`, and `SlackCursors` compares it against

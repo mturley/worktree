@@ -62,13 +62,13 @@ func taskEventState(ev tasks.Event) string {
 // taskFeedRow converts a feed event for the activity feeds: the converted
 // row, with Unread set by the unread rule — an event whose actor counts as
 // unread (tasks.CountsAsUnread) newer than its task's cursor (cursors is
-// unread.Cursors; a missing cursor reads as "", so every such event counts)
-// and not marked read one by one (marks is unread.EventMarks).
+// unread.Cursors; a missing cursor reads as "", so every such event counts),
+// unless a mark says otherwise (marks is unread.EventMarks).
 // The user's own events are never unread.
-func taskFeedRow(fe tasks.FeedEvent, cursors, marks map[string]string) TimelineEvent {
+func taskFeedRow(fe tasks.FeedEvent, cursors map[string]string, marks map[string]unread.EventMark) TimelineEvent {
 	te := taskEventToTimeline(fe.Event, tasks.Task{ID: fe.TaskID, Title: fe.TaskTitle})
-	te.Unread = tasks.CountsAsUnread(fe.Actor) && fe.TS > cursors[unread.Key("task", te.ResourceID)] &&
-		!unread.IsMarked(marks, te.ID, fe.TS)
+	te.CanMarkUnread = tasks.CountsAsUnread(fe.Actor)
+	te.Unread = te.CanMarkUnread && unread.EventUnread(marks, te.ID, fe.TS, fe.TS > cursors[unread.Key("task", te.ResourceID)])
 	return te
 }
 

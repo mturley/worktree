@@ -304,6 +304,19 @@ describe("MarkAllReadButton", () => {
       expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument()
     })
 
+    it("offers undo when no cursor moved but an event marked unread was cleared", async () => {
+      const cleared_unread = [{ id: "e1", ts: "2099-01-05T00:00:00Z" }]
+      markResourceRead.mockResolvedValue({ previous_ts: "2099-01-09T00:00:00Z", last_read_ts: "2099-01-09T00:00:00Z", cleared_unread })
+      const user = userEvent.setup()
+      wrap([jira("J-1", 1, "2099-01-05T00:00:00Z")])
+      await open(user)
+      await user.click(screen.getByRole("button", { name: "Mark read" }))
+      await user.click(await screen.findByRole("button", { name: "Undo" }))
+      await waitFor(() => expect(restoreResourceRead).toHaveBeenCalledWith({
+        type: "jira", id: "J-1", previous_ts: "2099-01-09T00:00:00Z", last_read_ts: "2099-01-09T00:00:00Z", cleared_unread,
+      }))
+    })
+
     it("says so when the undo is refused", async () => {
       restoreResourceRead.mockRejectedValue(new Error("read state changed since it was marked read"))
       const user = userEvent.setup()

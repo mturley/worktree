@@ -99,11 +99,11 @@ type newEvent struct{ id, ts, source, typ, title, body, resType, resID string }
 // and the advanced cursor. The cursor advances whatever the caller then does
 // with the events: delivery is fire-and-forget, never retried.
 func readNewEvents(conn *sql.DB, c notifyCursor) ([]newEvent, notifyCursor, error) {
-	q := `SELECT e.id, e.ts, e.source, e.type, e.title, COALESCE(e.body,''), er.resource_type, er.resource_id
+	q := `SELECT e.id, e.ts, e.source, e.type, e.title, COALESCE(e.body,''), er.resource_type, er.resource_id,
+	             ` + unread.NotMarkedReadSQL + `
 	      FROM watcher_events e JOIN watcher_event_resources er ON er.event_id = e.id
 	      WHERE e.ts >= ? AND e.type NOT IN (?` + strings.Repeat(",?", len(notifySkipTypes)-1) + `)
 	        AND ` + selfid.NotMineSQL + `
-	        AND ` + unread.NotMarkedReadSQL + `
 	      ORDER BY e.ts, e.id`
 	args := []any{lookbackFrom(c.ts)}
 	for _, t := range notifySkipTypes {
@@ -120,7 +120,8 @@ func readNewEvents(conn *sql.DB, c notifyCursor) ([]newEvent, notifyCursor, erro
 	var out []newEvent
 	for rows.Next() {
 		var e newEvent
-		if err := rows.Scan(&e.id, &e.ts, &e.source, &e.typ, &e.title, &e.body, &e.resType, &e.resID); err != nil {
+		var notMarkedRead bool
+		if err := rows.Scan(&e.id, &e.ts, &e.source, &e.typ, &e.title, &e.body, &e.resType, &e.resID, &notMarkedRead); err != nil {
 			return nil, c, err
 		}
 		if e.ts > next.ts {
@@ -128,7 +129,9 @@ func readNewEvents(conn *sql.DB, c notifyCursor) ([]newEvent, notifyCursor, erro
 		}
 		k := seenKey(e.id, e.ts)
 		next.seen[k] = true
-		if c.seen[k] {
+		// In seen whether marked or not: taking a mark back must not make an
+		// event already read here look new to the next pass.
+		if c.seen[k] || !notMarkedRead {
 			continue
 		}
 		out = append(out, e)
@@ -283,10 +286,10 @@ func (s *Server) notifyBatches(events []newEvent) ([]notifyBatch, error) {
 func readNewTaskEvents(conn *sql.DB, c notifyCursor) (events, unblocks []tasks.FeedEvent, next int64, err error) {
 	rows, err := conn.Query(
 		`SELECT e.id, e.task_id, e.ts, e.type, e.actor, e.actor_session, e.payload,
-		        COALESCE(t.title,''), (t.id IS NOT NULL AND t.deleted_at IS NULL)
+		        COALESCE(t.title,''), (t.id IS NOT NULL AND t.deleted_at IS NULL),
+		        `+unread.TaskNotMarkedReadSQL+`
 		   FROM task_events e LEFT JOIN tasks t ON t.id = e.task_id
 		  WHERE e.id > ?
-		    AND `+unread.TaskNotMarkedReadSQL+`
 		  ORDER BY e.id`, c.taskID)
 	if err != nil {
 		return nil, nil, c.taskID, err
@@ -296,14 +299,14 @@ func readNewTaskEvents(conn *sql.DB, c notifyCursor) (events, unblocks []tasks.F
 	for rows.Next() {
 		var e tasks.FeedEvent
 		var payload string
-		var live bool
-		if err := rows.Scan(&e.ID, &e.TaskID, &e.TS, &e.Type, &e.Actor, &e.ActorSession, &payload, &e.TaskTitle, &live); err != nil {
+		var live, notMarkedRead bool
+		if err := rows.Scan(&e.ID, &e.TaskID, &e.TS, &e.Type, &e.Actor, &e.ActorSession, &payload, &e.TaskTitle, &live, &notMarkedRead); err != nil {
 			return nil, nil, c.taskID, err
 		}
 		if e.ID > next {
 			next = e.ID
 		}
-		if !live || !tasks.CountsAsUnread(e.Actor) {
+		if !live || !notMarkedRead || !tasks.CountsAsUnread(e.Actor) {
 			continue
 		}
 		e.Payload = []byte(payload)

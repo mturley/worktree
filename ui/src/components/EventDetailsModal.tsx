@@ -20,7 +20,7 @@ import { eventFullUiHref } from "../lib/fullUiLink"
 import { hasMacBridge } from "../lib/macBridge"
 import { isMiniRoute } from "../lib/miniMode"
 import { MARK_READ_BUTTON_PROPS, READ_BOX_BORDER, UNREAD_BOX_BORDER } from "../lib/unread"
-import { canMarkEventRead, useMarkEventRead } from "../hooks/useMarkEventRead"
+import { canMarkEventRead, canMarkEventUnread, useMarkEventRead, useMarkEventUnread } from "../hooks/useMarkEventRead"
 
 /**
  * Full detail for one timeline event.
@@ -48,22 +48,26 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
   const actionResource = e?.resource_url ? eventResource(e, resolveResource) : undefined
   const [, navigate] = useLocation()
   const markEventRead = useMarkEventRead()
+  const markEventUnread = useMarkEventUnread()
   const [marking, setMarking] = useState(false)
   // This modal holds its own copy of the event, and a feed filtered to unread
   // drops the row, so a mark made here has to be remembered here.
-  const [markedId, setMarkedId] = useState<string | null>(null)
-  const unread = !!e?.unread && e.id !== markedId
-  const offerMarkRead = !!e && unread && canMarkEventRead(e)
+  const [marked, setMarked] = useState<{ id: string; unread: boolean } | null>(null)
+  const unread = marked && marked.id === e?.id ? marked.unread : !!e?.unread
+  const offerMarkRead = !!e && unread && canMarkEventRead({ ...e, unread })
+  const offerMarkUnread = !!e && !unread && canMarkEventUnread(e)
 
-  const markRead = async () => {
+  const mark = async (toUnread: boolean) => {
     if (!e) return
+    const wasUnread = unread
     setMarking(true)
-    await markEventRead(e, {
-      onRead: () => setMarkedId(e.id),
-      onUndone: () => setMarkedId(null),
+    await (toUnread ? markEventUnread : markEventRead)(e, {
+      onDone: () => setMarked({ id: e.id, unread: toUnread }),
+      onUndone: () => setMarked({ id: e.id, unread: wasUnread }),
     })
     setMarking(false)
   }
+
   // Where a review comment sits in a diff view; a 404 (no worktree tracks the
   // PR, or the comment is gone) just means no button.
   const locate = useQuery({
@@ -188,7 +192,7 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
             </Text>
           )}
 
-          {(locate.data || offerMarkRead || (onMakeTask && eventTaskKey(e))) && (
+          {(locate.data || offerMarkRead || offerMarkUnread || (onMakeTask && eventTaskKey(e))) && (
             <Group justify="flex-end">
               {locate.data && (
                 <Button
@@ -205,8 +209,13 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
                 </Button>
               )}
               {offerMarkRead && (
-                <Button size="xs" {...MARK_READ_BUTTON_PROPS} loading={marking} onClick={() => void markRead()}>
+                <Button size="xs" {...MARK_READ_BUTTON_PROPS} loading={marking} onClick={() => void mark(false)}>
                   Mark read
+                </Button>
+              )}
+              {offerMarkUnread && (
+                <Button size="xs" {...MARK_READ_BUTTON_PROPS} loading={marking} onClick={() => void mark(true)}>
+                  Mark unread
                 </Button>
               )}
               {onMakeTask && eventTaskKey(e) && (

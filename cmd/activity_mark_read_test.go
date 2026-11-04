@@ -84,3 +84,59 @@ func TestActivityShowsEventIDs(t *testing.T) {
 		t.Fatalf("output = %q, want the event id", out)
 	}
 }
+
+func TestActivityMarkUnread(t *testing.T) {
+	seedUnreadPRAndSlack(t)
+	conn, err := wdb.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var newest string
+	if err := conn.QueryRow(`SELECT MAX(ts) FROM watcher_events WHERE id IN ('e1','e2')`).Scan(&newest); err != nil {
+		t.Fatal(err)
+	}
+	if err := unread.MarkRead(conn, "pr", "o/r#1", newest); err != nil {
+		t.Fatal(err)
+	}
+	conn.Close()
+	if n := prUnread(t); n != 0 {
+		t.Fatalf("unread before = %d", n)
+	}
+
+	out, err := runCLI(t, "activity", "mark-unread", "e1")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if !strings.Contains(out, "marked e1 unread") {
+		t.Fatalf("output = %q", out)
+	}
+	if n := prUnread(t); n != 1 {
+		t.Fatalf("unread after = %d", n)
+	}
+	out, err = runCLI(t, "activity", "mark-unread", "e1", "--json")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	var changed bool
+	decodeEnvelope(t, out, "changed", &changed)
+	if changed {
+		t.Fatal("a second mark changed something")
+	}
+	// mark-read takes it off again.
+	if out, err := runCLI(t, "activity", "mark-read", "e1"); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if n := prUnread(t); n != 0 {
+		t.Fatalf("unread after mark-read = %d", n)
+	}
+}
+
+func TestActivityMarkUnreadRefusals(t *testing.T) {
+	seedUnreadPRAndSlack(t)
+	if _, err := runCLI(t, "activity", "mark-unread", "s1"); err == nil || !strings.Contains(err.Error(), "Slack") {
+		t.Fatalf("slack event: err = %v", err)
+	}
+	if _, err := runCLI(t, "activity", "mark-unread", "nope"); err == nil || !strings.Contains(err.Error(), "no such event") {
+		t.Fatalf("unknown event: err = %v", err)
+	}
+}

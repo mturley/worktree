@@ -471,8 +471,11 @@ export const api = {
    * already read as read, so there is nothing to undo.
    */
   markEventRead: (args: { id: string; ts: string }) => postJSON<EventReadChange>("/api/event-read", args),
-  /** Undoes a markEventRead, given what it answered. */
-  restoreEventRead: (args: { id: string; ts: string }) => postJSON<null>("/api/event-read/restore", args),
+  /** As markEventRead, in reverse, even behind the cursor. 400 for an event that can never be unread. */
+  markEventUnread: (args: { id: string; ts: string }) => postJSON<EventReadChange>("/api/event-unread", args),
+  /** Undoes a markEventRead or markEventUnread, given what it answered. */
+  restoreEventRead: (args: { id: string; ts: string; previous: EventReadChange["previous"] }) =>
+    postJSON<null>("/api/event-read/restore", args),
   /** Moves a cursor forward, answering where it was so the move can be undone. */
   markResourceRead: (args: { type: string; id: string; through_ts: string }) =>
     fetchJSON<ResourceReadChange>("/api/resource-read", {

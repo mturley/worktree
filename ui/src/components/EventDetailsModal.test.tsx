@@ -304,7 +304,7 @@ describe("EventDetailsModal unread", () => {
   })
 
   it("marks read in place, and Undo brings the outline and the button back", async () => {
-    const mark = vi.spyOn(api, "markEventRead").mockResolvedValue({ id: "e1", ts: "2026-08-25T00:00:00Z", changed: true })
+    const mark = vi.spyOn(api, "markEventRead").mockResolvedValue({ id: "e1", ts: "2026-08-25T00:00:00Z", previous: "", changed: true })
     const restore = vi.spyOn(api, "restoreEventRead").mockResolvedValue(null)
     const onClose = vi.fn()
     wrapWithToasts(<EventDetailsModal e={ev({ unread: true })} onClose={onClose} />)
@@ -317,13 +317,51 @@ describe("EventDetailsModal unread", () => {
 
     expect(await screen.findByText("Marked read: Fix the widget")).toBeInTheDocument()
     await userEvent.click(await screen.findByRole("button", { name: /^Undo/ }))
-    expect(restore).toHaveBeenCalledWith({ id: "e1", ts: "2026-08-25T00:00:00Z" })
+    expect(restore).toHaveBeenCalledWith({ id: "e1", ts: "2026-08-25T00:00:00Z", previous: "" })
     expect(await screen.findByRole("button", { name: "Mark read" })).toBeInTheDocument()
     expect(outlined()).toBe(true)
   })
 
+  const unreadButton = () => screen.queryByRole("button", { name: "Mark unread" })
+  const followed = { worktrees: ["a"], worktree_paths: ["/wt/a"] }
+
+  it("marks a read event unread in place, and Undo takes it back", async () => {
+    const mark = vi.spyOn(api, "markEventUnread").mockResolvedValue({ id: "e1", ts: "2026-08-25T00:00:00Z", previous: "read", changed: true })
+    const restore = vi.spyOn(api, "restoreEventRead").mockResolvedValue(null)
+    wrapWithToasts(<EventDetailsModal e={ev({ unread: false, can_mark_unread: true, ...followed })} onClose={vi.fn()} />)
+    expect(outlined()).toBe(false)
+
+    await userEvent.click(unreadButton()!)
+    expect(mark).toHaveBeenCalledWith({ id: "e1", ts: "2026-08-25T00:00:00Z" })
+    expect(outlined()).toBe(true)
+    expect(unreadButton()).toBeNull()
+    expect(markButton()).toBeInTheDocument()
+    expect(await screen.findByText("Marked unread: Fix the widget")).toBeInTheDocument()
+
+    await userEvent.click(await screen.findByRole("button", { name: /^Undo/ }))
+    expect(restore).toHaveBeenCalledWith({ id: "e1", ts: "2026-08-25T00:00:00Z", previous: "read" })
+    expect(await screen.findByRole("button", { name: "Mark unread" })).toBeInTheDocument()
+    expect(outlined()).toBe(false)
+  })
+
+  it("offers Mark unread straight after Mark read", async () => {
+    vi.spyOn(api, "markEventRead").mockResolvedValue({ id: "e1", ts: "2026-08-25T00:00:00Z", previous: "", changed: true })
+    wrapWithToasts(<EventDetailsModal e={ev({ unread: true, can_mark_unread: true, ...followed })} onClose={vi.fn()} />)
+    await userEvent.click(markButton()!)
+    expect(unreadButton()).toBeInTheDocument()
+  })
+
+  it("does not offer Mark unread where the server says never, or on an archived event", () => {
+    const { unmount } = wrapWithToasts(<EventDetailsModal e={ev({ unread: false, ...followed })} onClose={vi.fn()} />)
+    expect(unreadButton()).toBeNull()
+    unmount()
+    // The fixture's default has a resource and no worktrees: archived.
+    wrapWithToasts(<EventDetailsModal e={ev({ unread: false, can_mark_unread: true })} onClose={vi.fn()} />)
+    expect(unreadButton()).toBeNull()
+  })
+
   it("offers no undo when the mark changed nothing", async () => {
-    vi.spyOn(api, "markEventRead").mockResolvedValue({ id: "e1", ts: "2026-08-25T00:00:00Z", changed: false })
+    vi.spyOn(api, "markEventRead").mockResolvedValue({ id: "e1", ts: "2026-08-25T00:00:00Z", previous: "", changed: false })
     wrapWithToasts(<EventDetailsModal e={ev({ unread: true })} onClose={vi.fn()} />)
     await userEvent.click(markButton()!)
     expect(outlined()).toBe(false)

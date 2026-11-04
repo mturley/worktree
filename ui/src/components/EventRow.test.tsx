@@ -675,6 +675,11 @@ describe("Mark read", () => {
     expect(markButton()!.style.getPropertyValue("--button-hover")).toBe("var(--mantine-color-blue-4)")
   })
 
+  it("has no hover counterpart for marking unread", () => {
+    renderWithProvider(<EventRow e={makeEvent({ unread: false, can_mark_unread: true })} onMarkRead={vi.fn()} />)
+    expect(screen.queryByRole("button", { name: /unread/i })).toBeNull()
+  })
+
   it("shows beside ＋ Task when the feed offers both", () => {
     renderWithProvider(<EventRow e={unread} onMarkRead={vi.fn()} onMakeTask={vi.fn()} />)
     expect(markButton()).toBeInTheDocument()
