@@ -1,6 +1,6 @@
 # <img src="ui/public/favicon.svg" width="36" height="36" align="top" /> worktree
 
-**worktree** brings your work and its context together in one place. It gives each thing you're working on an isolated, complete home: a git worktree with its own reserved port range and kubeconfig, a unified feed of activity from external resources associated with that worktree (PRs, Jira issues and Slack threads), and a to-do list coupled with the resources, activity and code related to each task. This reduces the context switching necessary to complete each task and streamlines context switching between tasks, allowing you to multitask more effectively and reducing the overall mental load of your job.
+**worktree** brings your work and its context together in one place. It gives each thing you're working on an isolated, complete home: a git worktree with its own reserved port range and kubeconfig, a unified feed of activity from external resources associated with that worktree (PRs, Jira issues and Slack threads), and a to-do list coupled with the resources, activity and code related to each task. This reduces the context switching necessary to complete each task and streamlines context switching between tasks, allowing you to multitask more effectively and reduce the overall mental load of your job.
 
 The **CLI** lets you and your AI agents create worktrees and manage everything attached to them, and sources managed environment variables when you `cd` into each worktree.
 
@@ -13,7 +13,6 @@ The **web UI** gives you:
 - A place to write notes next to each thing you're keeping track of
 
 ![The worktree web UI: worktree cards with their PRs, Jira issues and Slack threads, beside a live activity feed](docs/images/hero.png)
-<!-- SCREENSHOT TODO: hero.png — dark mode, wide. Home page with 3–4 worktrees carrying mixed PR/Jira/Slack resources, some unread, and the Activity feed beside them. Demo or sanitized data only. -->
 
 **[Quick start](#quick-start)** · **[CLI reference](docs/cli.md)** · **[Setup guide](docs/setup.md)** · **[Configuration](docs/configuration.md)**
 
