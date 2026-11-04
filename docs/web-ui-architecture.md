@@ -4102,8 +4102,9 @@ focus, and `SearchContext` so `TaskList` filters by it. Its suggestions use
 bottom, since the dropdown is too small for the usual box. A worktree or resource
 suggestion navigates to the full UI, which `useMiniLocation` opens outside; an
 event or task opens in place. Esc runs the page's `clearAll` (search, Unreads
-only, feed filters) and has no idle step, since there is nowhere to back out
-to. `MiniPage` mounts `useUnreadOnlyHotkey`, and the app makes the web view
+only, feed filters); with nothing to clear it goes from the Tasks tab back to
+Activity. It never closes the dropdown: `popoverShouldClose` refuses a key-down
+Esc, and a click away or the menu bar icon closes it. `MiniPage` mounts `useUnreadOnlyHotkey`, and the app makes the web view
 first responder when the popover opens, so U, R and / work without a click.
 The web view counts as hidden whenever the popover is closed, so
 `streamsPauseWhenHidden` is false under the mac bridge: the page keeps
@@ -4166,7 +4167,6 @@ API, so skipping `useTabPresence` alone would not be enough.
 | `login` | `LoginPage` | needs-login icon |
 | `unreachable` | `ServerUnreachable` | disconnected icon |
 | `view {view}` | `useMacDropdownView`: `collapsed`, `expanded`, `event` or `task`, the topmost showing | moves the popover to that view's size (see "Dropdown sizes") |
-| `close` | `MiniPage`'s `SearchBar` `onEscapeIdle`: Esc with no modal, menu or suggestions open and nothing to clear | `popover.close()`; the popover's delegate refuses to close on a raw Esc while the page shows, so Esc reaches the dropdown only through this |
 
 When a load fails at the network level there is no page to count down, so
 the app shows its own native view (`OfflineView`), with no countdown. It loads

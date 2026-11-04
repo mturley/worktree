@@ -256,14 +256,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         }
     }
 
-    /// Esc is the page's to spend: it closes a modal, menu or the search's
-    /// suggestions first, then clears the search and filters, and only with
-    /// nothing left asks for the dropdown to close (`close`). So the popover
-    /// never closes on Esc by itself while the page shows. The offline view
-    /// has nothing of its own to close, so there Esc still closes it.
+    /// Esc is the page's: it closes a modal, menu or the search's suggestions
+    /// and clears the search and filters. The dropdown closes on a click
+    /// away or on the menu bar icon, never on Esc.
     func popoverShouldClose(_ popover: NSPopover) -> Bool {
-        guard let e = NSApp.currentEvent, e.type == .keyDown, e.keyCode == 53 else { return true }
-        return !offlineView.isHidden
+        guard let e = NSApp.currentEvent else { return true }
+        return !(e.type == .keyDown && e.keyCode == 53)
     }
 
     // MARK: - Bridge
@@ -282,10 +280,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             // Restore what the page last said; with nothing said yet, leave
             // the icon alone until its first unread report arrives.
             if let unread = lastUnread { icon.state = unread ? .unread : .resting }
-        case "close":
-            // close(), not performClose(_:): this must not ask the delegate,
-            // which would see the Esc that led here and refuse.
-            popover.close()
         case "view":
             guard let name = body["view"] as? String, let view = DropdownView(rawValue: name) else { return }
             setView(view)
