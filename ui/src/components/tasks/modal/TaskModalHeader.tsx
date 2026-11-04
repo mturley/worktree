@@ -1,4 +1,5 @@
 import { useRef, useState } from "react"
+import { escCloseButtonProps } from "../../escCloseButton"
 import { OpenInFullUiButton } from "../../OpenInFullUiButton"
 import { taskFullUiHref } from "../../../lib/fullUiLink"
 import { ActionIcon, Button, CloseButton, Group, Modal, Text, TextInput, UnstyledButton } from "@mantine/core"
@@ -93,7 +94,7 @@ export function TaskModalHeader({ task, onUpdate, onState, onClose }: {
       {/* The task's id, as links and blockers name it. */}
       <Text size="xs" c="dimmed" style={{ flex: "none" }}>{task.ref}</Text>
       <OpenInFullUiButton href={taskFullUiHref(task)} />
-      <CloseButton aria-label="Close task" onClick={onClose} style={{ flex: "none" }} />
+      <CloseButton aria-label="Close task" onClick={onClose} style={{ flex: "none" }} {...escCloseButtonProps} />
     </Group>
   )
 }

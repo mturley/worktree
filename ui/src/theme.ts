@@ -1,4 +1,5 @@
-import { createTheme, Select, Tooltip, type MantineColorsTuple } from "@mantine/core"
+import { createTheme, Drawer, Modal, Select, Tooltip, type MantineColorsTuple } from "@mantine/core"
+import { escCloseButtonProps } from "./components/escCloseButton"
 
 /**
  * Dark-only theme.
@@ -102,6 +103,13 @@ export const theme = createTheme({
         },
       }),
     }),
+    /*
+     * Esc closes every modal and drawer, so every X says so. On the close
+     * button rather than the Modal, so a closeButtonProps at the call site
+     * adds to these instead of replacing them.
+     */
+    ModalCloseButton: Modal.CloseButton.extend({ defaultProps: escCloseButtonProps }),
+    DrawerCloseButton: Drawer.CloseButton.extend({ defaultProps: escCloseButtonProps }),
     /*
      * A non-searchable Select still renders a text input, so a click showed a
      * blinking caret in what is really a button. Hide it; a searchable Select

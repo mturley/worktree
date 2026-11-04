@@ -2708,6 +2708,11 @@ until the feed holds the results for the typed query (not mid-debounce).
 Inline keys use `KeyHint`, a plain `Kbd` for now: aligning it to the line's
 text (middle sat low, text-top high) is left to revisit.
 
+Every modal and drawer's X carries an Esc hint, set in `theme.ts` from
+`escCloseButtonProps`. A hand-placed `CloseButton` in a modal, like the task
+modal's, spreads those props itself. The hint hides on a disabled X, on
+devices without hover, and below 500px wide.
+
 ### The dropdown is removable
 
 `SearchSuggestions` (with `suggestions.ts` and their tests) is mounted only by

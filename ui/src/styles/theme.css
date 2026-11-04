@@ -290,3 +290,26 @@ body,
     opacity: 0.35;
   }
 }
+
+/*
+ * A close button holding an Esc hint (components/escCloseButton.tsx). No hint
+ * on a disabled button, which Esc doesn't close either, without a keyboard to
+ * press it on, or where a modal's header can't spare the room (the task modal's
+ * title gets what's left of its row). All of these leave the plain 28px X.
+ */
+.esc-close {
+  width: auto;
+  gap: 6px;
+  padding-inline: 4px;
+}
+.esc-close-hint {
+  display: inline-flex;
+}
+.esc-close:disabled .esc-close-hint {
+  display: none;
+}
+@media (hover: none), (max-width: 499px) {
+  .esc-close-hint {
+    display: none;
+  }
+}

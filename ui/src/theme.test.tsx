@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest"
-import { render, screen, cleanup } from "@testing-library/react"
+import { render, screen, cleanup, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { MantineProvider, Select, Tooltip } from "@mantine/core"
+import { Drawer, MantineProvider, Modal, Select, Tooltip } from "@mantine/core"
 import { theme } from "./theme"
 
 afterEach(cleanup)
@@ -59,5 +59,45 @@ describe("tooltips in a dark-only app", () => {
     const tip = await screen.findByText("hello")
     expect(tip.style.getPropertyValue("--tooltip-bg")).toBe("var(--mantine-color-dark-5)")
     expect(tip.style.getPropertyValue("--tooltip-color")).toBe("var(--mantine-color-gray-0)")
+  })
+})
+
+describe("close buttons on modals and drawers", () => {
+  it("hints that Esc closes a Modal", () => {
+    render(
+      <MantineProvider theme={theme} forceColorScheme="dark">
+        <Modal opened onClose={() => {}} title="Thing" transitionProps={{ duration: 0 }}>body</Modal>
+      </MantineProvider>,
+    )
+    expect(screen.getByText("Esc")).toBeInTheDocument()
+  })
+
+  it("puts the hint to the right of the X", () => {
+    render(
+      <MantineProvider theme={theme} forceColorScheme="dark">
+        <Modal opened onClose={() => {}} title="Thing" closeButtonProps={{ "aria-label": "Close" }} transitionProps={{ duration: 0 }}>body</Modal>
+      </MantineProvider>,
+    )
+    const close = screen.getByRole("button", { name: "Close" })
+    const x = close.querySelector("svg")!
+    expect(x.compareDocumentPosition(within(close).getByText("Esc")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("keeps the hint when a Modal sets its own closeButtonProps", () => {
+    render(
+      <MantineProvider theme={theme} forceColorScheme="dark">
+        <Modal opened onClose={() => {}} title="Thing" closeButtonProps={{ "aria-label": "Close" }} transitionProps={{ duration: 0 }}>body</Modal>
+      </MantineProvider>,
+    )
+    expect(within(screen.getByRole("button", { name: "Close" })).getByText("Esc")).toBeInTheDocument()
+  })
+
+  it("hints that Esc closes a Drawer", () => {
+    render(
+      <MantineProvider theme={theme} forceColorScheme="dark">
+        <Drawer opened onClose={() => {}} title="Thing" transitionProps={{ duration: 0 }}>body</Drawer>
+      </MantineProvider>,
+    )
+    expect(screen.getByText("Esc")).toBeInTheDocument()
   })
 })

@@ -128,6 +128,12 @@ describe("TaskModalHeader Open in full UI", () => {
     window.history.replaceState({}, "", "/")
   })
 
+  it("hints that Esc closes the task", () => {
+    wrap(detail())
+    const close = screen.getByRole("button", { name: "Close task" })
+    expect(close).toHaveTextContent("Esc")
+  })
+
   it("sits beside the close button in the mini view, and opens the task in its worktree", async () => {
     window.webkit = { messageHandlers: { worktree: { postMessage: post } } }
     window.history.replaceState({}, "", "/mini")
