@@ -1,3 +1,4 @@
+import { readChangeDidSomething } from '../../lib/unread'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Alert, Button, Group, Paper, Skeleton, Stack, Text } from '@mantine/core'
 import { useQueryClient } from '@tanstack/react-query'
@@ -267,7 +268,7 @@ export function ThreadView({ tab, thread, onOpenThread, topInset = 0, onComposer
         for (const t of unreadTasks) {
           const change = await api.taskRead({ id: t.id, through_ts: t.newest_ts })
           markedTasks++
-          if (change.previous_ts !== change.last_read_ts) {
+          if (readChangeDidSomething(change)) {
             undos.push(() => api.taskReadRestore({ id: t.id, ...change }))
           }
         }

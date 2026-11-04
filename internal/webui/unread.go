@@ -41,7 +41,7 @@ type unreadIndex struct {
 	// are never unread.
 	mine map[string]string
 	// marks are the events marked read one by one (unread.EventMarks).
-	marks map[string]string
+	marks map[string]unread.EventMark
 
 	// Task unread, loaded on first use (see loadTasks): most requests that
 	// build an index never ask about tasks.
@@ -150,7 +150,7 @@ func (s *Server) newUnreadIndex() *unreadIndex {
 		cursors:     map[string]string{},
 		slack:       map[string]string{},
 		mine:        map[string]string{},
-		marks:       map[string]string{},
+		marks:       map[string]unread.EventMark{},
 		db:          s.DB,
 		logger:      s.Logger,
 	}
@@ -255,11 +255,10 @@ func (ix *unreadIndex) IsUnread(eventID, resType, id, ts, externalTS, eventType,
 	if ix == nil {
 		return false
 	}
-	// The user's own events, CI runs still in progress and events marked read
-	// one by one are never unread: the Go twins of selfid.NotMineSQL,
-	// unread.NotPendingCISQL and unread.NotMarkedReadSQL, so the unread-only
-	// SQL and this flag agree.
-	if selfid.IsMine(ix.mine, source, authorID) || unread.IsPendingCI(eventType) || unread.IsMarked(ix.marks, eventID, ts) {
+	// The user's own events and CI runs still in progress are never unread:
+	// the Go twins of selfid.NotMineSQL and unread.NotPendingCISQL, so the
+	// unread-only SQL and this flag agree.
+	if selfid.IsMine(ix.mine, source, authorID) || unread.IsPendingCI(eventType) {
 		return false
 	}
 	if resType == "slack" {
@@ -269,11 +268,20 @@ func (ix *unreadIndex) IsUnread(eventID, resType, id, ts, externalTS, eventType,
 		}
 		return slackTSGreater(externalTS, cursor)
 	}
+	// A missing cursor reads as not past it, but a mark still decides.
 	cursor, ok := ix.cursors[unread.Key(resType, id)]
-	if !ok {
+	return unread.EventUnread(ix.marks, eventID, ts, ok && ts > cursor)
+}
+
+// canMarkUnread reports whether an event can be marked unread: not one of the
+// events IsUnread never counts, and not Slack's. The client adds "and a worktree
+// follows it" itself, from the row's worktrees.
+func (ix *unreadIndex) canMarkUnread(resType, eventType, source, authorID string) bool {
+	if ix == nil || resType == "slack" || source == "slack" {
 		return false
 	}
-	return ts > cursor
+	return !selfid.IsMine(ix.mine, source, authorID) && !unread.IsPendingCI(eventType) &&
+		eventType != "watch_started" && eventType != "watcher_error"
 }
 
 // slackTSGreater compares two Slack timestamps ("1788464505.422459").
@@ -330,6 +338,9 @@ func validThroughTS(w http.ResponseWriter, ts string) bool {
 type resourceReadResponse struct {
 	PreviousTS *string `json:"previous_ts"`
 	LastReadTS string  `json:"last_read_ts"`
+	// ClearedUnread are single-event unread marks the write removed. The
+	// cursor can stay put and still have cleared these.
+	ClearedUnread []unread.ClearedMark `json:"cleared_unread,omitempty"`
 }
 
 // handleResourceRead: POST /api/resource-read, body
@@ -367,7 +378,7 @@ func (s *Server) handleResourceRead(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, resourceReadResponse{PreviousTS: ch.Previous, LastReadTS: ch.Current})
+	writeJSON(w, http.StatusOK, resourceReadResponse{PreviousTS: ch.Previous, LastReadTS: ch.Current, ClearedUnread: ch.ClearedUnread})
 }
 
 // handleResourceReadRestore: POST /api/resource-read/restore, body
@@ -378,10 +389,11 @@ func (s *Server) handleResourceRead(w http.ResponseWriter, r *http.Request) {
 // after the one being undone is never rewound past.
 func (s *Server) handleResourceReadRestore(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Type       string  `json:"type"`
-		ID         string  `json:"id"`
-		LastReadTS string  `json:"last_read_ts"`
-		PreviousTS *string `json:"previous_ts"`
+		Type          string               `json:"type"`
+		ID            string               `json:"id"`
+		LastReadTS    string               `json:"last_read_ts"`
+		PreviousTS    *string              `json:"previous_ts"`
+		ClearedUnread []unread.ClearedMark `json:"cleared_unread"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
@@ -391,7 +403,7 @@ func (s *Server) handleResourceReadRestore(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "type, id and last_read_ts are required")
 		return
 	}
-	err := unread.Restore(s.DB, req.Type, req.ID, req.LastReadTS, req.PreviousTS)
+	err := unread.Restore(s.DB, req.Type, req.ID, req.LastReadTS, req.PreviousTS, req.ClearedUnread...)
 	switch {
 	case err == nil:
 		w.WriteHeader(http.StatusNoContent)

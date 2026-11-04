@@ -8,17 +8,38 @@ import (
 	"time"
 )
 
-// Single events marked read, on top of the per-resource cursor: an event is
-// unread only if it is past the cursor AND has no mark here. The cursor never
-// moves for a mark, so Mark all read still covers everything else, and
-// restoring a cursor (its undo) leaves marks alone.
+// Single events marked read or unread, overriding the per-resource cursor in
+// either direction:
 //
-// A mark holds for the event's ts as well as its id. The watcher rewrites a
-// commit's CI row in place, id unchanged and ts moved, and that new result is
-// news: the stale mark stops matching and the row reads as unread again.
+//	no mark          unread when past the cursor
+//	StateRead        never unread
+//	StateUnread      always unread, even behind the cursor or with no cursor
 //
-// Rows are never pruned once a cursor passes them. Undoing a Mark all read
-// moves the cursor back, and the marks behind it must still hold.
+// The cursor never moves for a mark, and a mark that would only repeat the
+// cursor's verdict is not stored. A mark holds for the event's ts as well as
+// its id: the watcher rewrites a commit's CI row in place, id unchanged and ts
+// moved, and a mark on the old result says nothing about the new one.
+//
+// Moving a cursor (Mark) clears the unread marks at or before its through_ts,
+// because Mark all read has to clear them: when the only unread event is an old
+// marked one, its through_ts is behind the cursor and the cursor cannot move.
+// Read marks are never cleared. Undoing a Mark all read moves the cursor back,
+// and the marks behind it must still hold.
+
+// The states a mark can hold.
+const (
+	StateRead   = "read"
+	StateUnread = "unread"
+)
+
+// EventMark is one event's mark: the ts it was made at, and its state.
+type EventMark struct{ TS, State string }
+
+// ClearedMark is an unread mark a cursor move removed, for its undo.
+type ClearedMark struct {
+	ID string `json:"id"`
+	TS string `json:"ts"`
+}
 
 // ErrEventNotFound: no watcher event, or no task event of a live task, by
 // that id.
@@ -28,13 +49,28 @@ var ErrEventNotFound = errors.New("no such event")
 // so what they read is no longer what is there.
 var ErrEventChanged = errors.New("event changed since it was shown")
 
-// NotMarkedReadSQL is the condition "this event has no read mark", over a
-// watcher_events row aliased e. Left out exactly like selfid.NotMineSQL:
-// still rendered in the feeds, never counted or flagged unread.
-const NotMarkedReadSQL = `NOT EXISTS (SELECT 1 FROM event_read m WHERE m.event_id = e.id AND m.event_ts = e.ts)`
+// ErrNeverUnread: the event can never read as unread, so marking it so would
+// promise something no count or feed will show. The user's own events, CI runs
+// in progress and the bookkeeping events no feed renders.
+var ErrNeverUnread = errors.New("this event can never be unread")
 
-// TaskNotMarkedReadSQL is NotMarkedReadSQL over a task_events row aliased e.
-const TaskNotMarkedReadSQL = `NOT EXISTS (SELECT 1 FROM event_read m WHERE m.event_id = 'task:' || e.id AND m.event_ts = e.ts)`
+// ErrNotFollowed: no worktree follows the event's resource, so there is no card
+// to show the unread on or clear it from.
+var ErrNotFollowed = errors.New("no worktree follows this event's resource")
+
+// The conditions over a watcher_events row aliased e. A read-marked event is
+// left out exactly like selfid.NotMineSQL: still rendered in the feeds, never
+// counted or flagged unread.
+const (
+	NotMarkedReadSQL = `NOT EXISTS (SELECT 1 FROM event_read m WHERE m.event_id = e.id AND m.event_ts = e.ts AND m.state = 'read')`
+	MarkedUnreadSQL  = `EXISTS (SELECT 1 FROM event_read m WHERE m.event_id = e.id AND m.event_ts = e.ts AND m.state = 'unread')`
+)
+
+// The same over a task_events row aliased e.
+const (
+	TaskNotMarkedReadSQL = `NOT EXISTS (SELECT 1 FROM event_read m WHERE m.event_id = 'task:' || e.id AND m.event_ts = e.ts AND m.state = 'read')`
+	TaskMarkedUnreadSQL  = `EXISTS (SELECT 1 FROM event_read m WHERE m.event_id = 'task:' || e.id AND m.event_ts = e.ts AND m.state = 'unread')`
+)
 
 const taskEventPrefix = "task:"
 
@@ -43,38 +79,118 @@ func TaskEventID(id int64) string {
 	return taskEventPrefix + strconv.FormatInt(id, 10)
 }
 
-// EventMarks returns every mark: event id to the ts it was marked at.
-func EventMarks(conn *sql.DB) (map[string]string, error) {
-	rows, err := conn.Query(`SELECT event_id, event_ts FROM event_read`)
+// EventMarks returns every mark, by event id.
+func EventMarks(conn *sql.DB) (map[string]EventMark, error) {
+	rows, err := conn.Query(`SELECT event_id, event_ts, state FROM event_read`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := map[string]string{}
+	out := map[string]EventMark{}
 	for rows.Next() {
-		var id, ts string
-		if err := rows.Scan(&id, &ts); err != nil {
+		var id string
+		var m EventMark
+		if err := rows.Scan(&id, &m.TS, &m.State); err != nil {
 			return nil, err
 		}
-		out[id] = ts
+		out[id] = m
 	}
 	return out, rows.Err()
 }
 
-// IsMarked is NotMarkedReadSQL's Go twin, negated, over EventMarks' result.
-func IsMarked(marks map[string]string, eventID, ts string) bool {
-	marked, ok := marks[eventID]
-	return ok && marked == ts
+// EventUnread is the rule, in Go: a mark at the event's current ts decides, and
+// otherwise pastCursor does. The SQL twins are NotMarkedReadSQL and
+// MarkedUnreadSQL, combined as (past cursor AND not marked read) OR marked
+// unread.
+func EventUnread(marks map[string]EventMark, eventID, ts string, pastCursor bool) bool {
+	if m, ok := marks[eventID]; ok && m.TS == ts {
+		return m.State == StateUnread
+	}
+	return pastCursor
 }
 
-// MarkEvent records that the event, as it stands at ts, has been read. A mark
+// SetEventMark records the event, as it stands at ts, as read or unread. A mark
 // left from an older version of the row is replaced.
-func MarkEvent(conn *sql.DB, eventID, ts string) error {
+func SetEventMark(conn *sql.DB, eventID, ts, state string) error {
 	_, err := conn.Exec(`
-		INSERT INTO event_read (event_id, event_ts, read_at) VALUES (?, ?, ?)
-		ON CONFLICT(event_id) DO UPDATE SET event_ts = excluded.event_ts, read_at = excluded.read_at`,
-		eventID, ts, time.Now().UTC().Format(time.RFC3339))
+		INSERT INTO event_read (event_id, event_ts, read_at, state) VALUES (?, ?, ?, ?)
+		ON CONFLICT(event_id) DO UPDATE SET
+			event_ts = excluded.event_ts, read_at = excluded.read_at, state = excluded.state`,
+		eventID, ts, time.Now().UTC().Format(time.RFC3339), state)
 	return err
+}
+
+// RestoreEventMark undoes a mark write, given the row version it was made at
+// and the state it replaced ("" for no mark). Aimed at an older version of the
+// row it changes nothing, so it cannot clear or overwrite a newer mark.
+func RestoreEventMark(conn *sql.DB, eventID, ts, previous string) error {
+	if previous == "" {
+		_, err := UnmarkEvent(conn, eventID, ts)
+		return err
+	}
+	_, err := conn.Exec(`
+		INSERT INTO event_read (event_id, event_ts, read_at, state) VALUES (?, ?, ?, ?)
+		ON CONFLICT(event_id) DO UPDATE SET read_at = excluded.read_at, state = excluded.state
+		 WHERE event_read.event_ts = excluded.event_ts`,
+		eventID, ts, time.Now().UTC().Format(time.RFC3339), previous)
+	return err
+}
+
+// clearUnreadMarks removes the resource's unread marks at or before throughTS,
+// answering them for an undo. Marks newer than it stay, under the same rule as
+// the cursor: what the client was not shown stays unread.
+func clearUnreadMarks(tx *sql.Tx, resType, id, throughTS string) ([]ClearedMark, error) {
+	query := `
+		SELECT m.event_id, m.event_ts FROM event_read m
+		  JOIN watcher_event_resources er ON er.event_id = m.event_id
+		 WHERE m.state = 'unread' AND m.event_ts <= ?
+		   AND er.resource_type = ? AND er.resource_id = ?`
+	args := []any{throughTS, resType, id}
+	if resType == "task" {
+		query = `
+			SELECT m.event_id, m.event_ts FROM event_read m
+			  JOIN task_events e ON m.event_id = 'task:' || e.id
+			 WHERE m.state = 'unread' AND m.event_ts <= ?
+			   AND e.task_id = ?`
+		args = []any{throughTS, id}
+	}
+	rows, err := tx.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	var out []ClearedMark
+	for rows.Next() {
+		var c ClearedMark
+		if err := rows.Scan(&c.ID, &c.TS); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for _, c := range out {
+		if _, err := tx.Exec(`DELETE FROM event_read WHERE event_id = ?`, c.ID); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// restoreUnreadMarks puts back what clearUnreadMarks removed. A mark made on the
+// event since then stays: it is newer than the one being restored.
+func restoreUnreadMarks(tx *sql.Tx, cleared []ClearedMark) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	for _, c := range cleared {
+		if _, err := tx.Exec(`
+			INSERT INTO event_read (event_id, event_ts, read_at, state) VALUES (?, ?, ?, 'unread')
+			ON CONFLICT(event_id) DO NOTHING`, c.ID, c.TS, now); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // UnmarkEvent takes a mark back, reporting whether there was one to remove.
@@ -93,6 +209,24 @@ func UnmarkEvent(conn *sql.DB, eventID, ts string) (bool, error) {
 	}
 	n, err := res.RowsAffected()
 	return n > 0, err
+}
+
+// IsFollowed reports whether a live worktree follows any of the event's
+// resources. Holds a task keeps on a resource do not count, nor do tombstones.
+func IsFollowed(conn *sql.DB, ev Event) (bool, error) {
+	for _, r := range ev.Resources {
+		var n int
+		if err := conn.QueryRow(`
+			SELECT COUNT(*) FROM watcher_subscriptions
+			 WHERE resource_type = ? AND resource_id = ?
+			   AND subscriber LIKE 'worktree:%' AND deleted_at IS NULL`, r.Type, r.ID).Scan(&n); err != nil {
+			return false, err
+		}
+		if n > 0 {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // ResourceRef is one resource an event belongs to.

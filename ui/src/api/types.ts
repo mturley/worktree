@@ -81,6 +81,8 @@ export interface TimelineEvent {
    * the thread owns that state, and it shows on the resource chip instead.
    */
   unread?: boolean;
+  /** The event can be marked unread: not the user's own, a running CI event or a Slack message. */
+  can_mark_unread?: boolean
   /** Why the event matched the search (`q`); absent without one. */
   match?: { field: string; snippet: string };
   /** Task activity feed only: this event is linked to the task. */
@@ -609,12 +611,19 @@ export type WatcherHealth = Record<CredService, { enabled: boolean; failing: boo
 export interface EventReadChange {
   id: string
   ts: string
+  /** The mark this write replaced or deleted, "" for none: what its undo puts back. */
+  previous: "" | "read" | "unread"
   changed: boolean
 }
 
 export interface ResourceReadChange {
   previous_ts: string | null
   last_read_ts: string
+  /**
+   * Single-event unread marks the write cleared. The cursor can stay put and
+   * still have cleared these; see readChangeDidSomething.
+   */
+  cleared_unread?: { id: string; ts: string }[]
 }
 
 // --- Code tab: git status and diff (mirror internal/webui/worktree_git_api.go,

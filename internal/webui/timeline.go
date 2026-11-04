@@ -55,6 +55,10 @@ type TimelineEvent struct {
 	// cursor — Slack's own cursor for a thread, worktree's for everything
 	// else. See unreadIndex.IsUnread.
 	Unread bool `json:"unread,omitempty"`
+	// CanMarkUnread says the event can be marked unread: not the user's own, a
+	// running CI event or a Slack message. True whatever it reads as now, so a
+	// view can offer it straight after Mark read.
+	CanMarkUnread bool `json:"can_mark_unread,omitempty"`
 	// Match says why the event matched the `q` search; absent without q.
 	Match *searchMatch `json:"match,omitempty"`
 	// LinkedToTask is set only by the task activity feed: the event is
@@ -217,7 +221,7 @@ func (f eventTypeFilter) sql() (string, []any) {
 //     unread.SlackNewerSQL — shared with unread.SlackCounts, so a thread's
 //     count and this filter cannot disagree.
 const unreadOnlyClause = `AND (
-    (er.resource_type <> 'slack' AND EXISTS (
+    (er.resource_type <> 'slack' AND ` + unread.NotMarkedReadSQL + ` AND EXISTS (
         SELECT 1 FROM resource_read_cursor c
          WHERE c.resource_type = er.resource_type AND c.resource_id = er.resource_id
            AND e.ts > c.last_read_ts))
@@ -225,9 +229,9 @@ const unreadOnlyClause = `AND (
         SELECT 1 FROM watcher_resource_state rs
          WHERE rs.resource_type = 'slack' AND rs.resource_id = er.resource_id
            AND ` + unread.SlackNewerSQL + `))
+ OR ` + unread.MarkedUnreadSQL + `
 ) AND ` + selfid.NotMineSQL + `
-  AND ` + unread.NotPendingCISQL + `
-  AND ` + unread.NotMarkedReadSQL + ` `
+  AND ` + unread.NotPendingCISQL + ` `
 
 // handleGlobalTimeline: GET /api/timeline?archived=&limit=&before=&resource_types=&event_types=&unread_only=&q=
 func (s *Server) handleGlobalTimeline(w http.ResponseWriter, r *http.Request) {
@@ -855,6 +859,7 @@ func (e *eventEnricher) fillResource(te *TimelineEvent) {
 		te.Title = slackEventTitle(te.Source, te.Type, te.Title, dto)
 	}
 	te.Unread = e.unread.IsUnread(te.ID, te.ResourceType, te.ResourceID, te.TS, te.ExternalTS, te.Type, te.Source, te.authorID)
+	te.CanMarkUnread = e.unread.canMarkUnread(te.ResourceType, te.Type, te.Source, te.authorID)
 	wts := e.worktreesWatching(te.ResourceType, te.ResourceID)
 	te.Worktrees = make([]string, 0, len(wts))
 	te.WorktreePaths = make([]string, 0, len(wts))

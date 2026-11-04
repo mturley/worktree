@@ -455,7 +455,7 @@ func (s *Server) handleTaskRead(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, resourceReadResponse{PreviousTS: ch.Previous, LastReadTS: ch.Current})
+	writeJSON(w, http.StatusOK, resourceReadResponse{PreviousTS: ch.Previous, LastReadTS: ch.Current, ClearedUnread: ch.ClearedUnread})
 }
 
 // handleTaskReadRestore: POST /api/task-read/restore, body
@@ -464,9 +464,10 @@ func (s *Server) handleTaskRead(w http.ResponseWriter, r *http.Request) {
 // has moved on since (unread.Restore's compare-and-swap).
 func (s *Server) handleTaskReadRestore(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		ID         int64   `json:"id"`
-		LastReadTS string  `json:"last_read_ts"`
-		PreviousTS *string `json:"previous_ts"`
+		ID            int64                `json:"id"`
+		LastReadTS    string               `json:"last_read_ts"`
+		PreviousTS    *string              `json:"previous_ts"`
+		ClearedUnread []unread.ClearedMark `json:"cleared_unread"`
 	}
 	if !decodeTaskBody(w, r, &req) {
 		return
@@ -475,7 +476,7 @@ func (s *Server) handleTaskReadRestore(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "id and last_read_ts are required")
 		return
 	}
-	err := unread.Restore(s.DB, taskResourceType, strconv.FormatInt(req.ID, 10), req.LastReadTS, req.PreviousTS)
+	err := unread.Restore(s.DB, taskResourceType, strconv.FormatInt(req.ID, 10), req.LastReadTS, req.PreviousTS, req.ClearedUnread...)
 	switch {
 	case err == nil:
 		w.WriteHeader(http.StatusNoContent)

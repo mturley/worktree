@@ -123,14 +123,13 @@ func Summaries(conn *sql.DB) (map[string]Summary, error) {
 		SELECT er.resource_type, er.resource_id, COUNT(*), MAX(e.ts)
 		  FROM watcher_event_resources er
 		  JOIN watcher_events e ON e.id = er.event_id
-		  JOIN resource_read_cursor c
+		  LEFT JOIN resource_read_cursor c
 		    ON c.resource_type = er.resource_type
 		   AND c.resource_id   = er.resource_id
-		 WHERE e.ts > c.last_read_ts
+		 WHERE ((e.ts > c.last_read_ts AND ` + NotMarkedReadSQL + `) OR ` + MarkedUnreadSQL + `)
 		   AND e.type NOT IN ('watch_started','watcher_error')
 		   AND ` + selfid.NotMineSQL + `
 		   AND ` + NotPendingCISQL + `
-		   AND ` + NotMarkedReadSQL + `
 		 GROUP BY er.resource_type, er.resource_id`)
 	if err != nil {
 		return nil, err
@@ -165,8 +164,7 @@ func TaskSummaries(conn *sql.DB) (map[int64]Summary, error) {
 		  LEFT JOIN resource_read_cursor c
 		    ON c.resource_type = 'task' AND c.resource_id = CAST(e.task_id AS TEXT)
 		 WHERE `+actorClause+`
-		   AND e.ts > COALESCE(c.last_read_ts, '')
-		   AND `+TaskNotMarkedReadSQL+`
+		   AND ((e.ts > COALESCE(c.last_read_ts, '') AND `+TaskNotMarkedReadSQL+`) OR `+TaskMarkedUnreadSQL+`)
 		 GROUP BY e.task_id`, args...)
 	if err != nil {
 		return nil, err
@@ -223,9 +221,13 @@ type Change struct {
 	// Previous is the cursor before the write, nil when the resource had no
 	// cursor row at all (which reads as nothing unread, not everything).
 	Previous *string
-	// Current is the cursor after it. Equal to *Previous when the write was a
-	// no-op because the cursor was already past throughTS.
+	// Current is the cursor after it. Equal to *Previous when the cursor was
+	// already past throughTS.
 	Current string
+	// ClearedUnread are the single-event unread marks this write removed. The
+	// cursor can stay put and still have cleared something, so a caller
+	// deciding "did this do anything?" must look here too.
+	ClearedUnread []ClearedMark
 }
 
 // Mark is MarkRead reporting the cursor it moved, for an undo. The read and
@@ -271,6 +273,9 @@ func Mark(conn *sql.DB, resType, id, throughTS string) (Change, error) {
 		 WHERE resource_type = ? AND resource_id = ?`, resType, id).Scan(&ch.Current); err != nil {
 		return Change{}, err
 	}
+	if ch.ClearedUnread, err = clearUnreadMarks(tx, resType, id, throughTS); err != nil {
+		return Change{}, err
+	}
 	return ch, tx.Commit()
 }
 
@@ -288,22 +293,29 @@ var ErrCursorMoved = errors.New("read state changed since it was marked read")
 // after the one being undone, and silently rewinding past it would resurrect
 // events they have since read. That case is ErrCursorMoved, not a partial
 // restore.
-func Restore(conn *sql.DB, resType, id, current string, previous *string) error {
+//
+// cleared are the unread marks that Mark removed, put back with the cursor or
+// not at all.
+func Restore(conn *sql.DB, resType, id, current string, previous *string, cleared ...ClearedMark) error {
 	if resType == "slack" {
 		return ErrSlackNotSupported
 	}
 	if current == "" {
 		return errors.New("current is required")
 	}
+	tx, err := conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
 	var res sql.Result
-	var err error
 	if previous == nil {
-		res, err = conn.Exec(`
+		res, err = tx.Exec(`
 			DELETE FROM resource_read_cursor
 			 WHERE resource_type = ? AND resource_id = ? AND last_read_ts = ?`,
 			resType, id, current)
 	} else {
-		res, err = conn.Exec(`
+		res, err = tx.Exec(`
 			UPDATE resource_read_cursor
 			   SET last_read_ts = ?, updated_at = ?
 			 WHERE resource_type = ? AND resource_id = ? AND last_read_ts = ?`,
@@ -319,7 +331,10 @@ func Restore(conn *sql.DB, resType, id, current string, previous *string) error 
 	if n == 0 {
 		return ErrCursorMoved
 	}
-	return nil
+	if err := restoreUnreadMarks(tx, cleared); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // SlackCursors returns the read cursor per Slack thread, keyed by Key.

@@ -472,7 +472,7 @@ func TestOpenAtNeverLowersSchemaVersion(t *testing.T) {
 //
 // If this fails: you changed migrate. Bump schemaVersion, then paste the new
 // fingerprint here.
-const schemaFingerprint = "3d81aed96a8e9506900cb95ba8896eb54ee488b59836dadac741b253edda011a"
+const schemaFingerprint = "1d8431ee108780c228b6cf2763b2c7545a74008ed663dd2cef24e57c24649112"
 
 func TestSchemaVersionCoversSchema(t *testing.T) {
 	conn, err := OpenAt(filepath.Join(t.TempDir(), "w.db"))
@@ -665,5 +665,38 @@ func TestOpenReadUsesPath(t *testing.T) {
 	t.Setenv("WORKTREE_DB", filepath.Join(t.TempDir(), "absent.db"))
 	if _, err := OpenRead(); !errors.Is(err, ErrNoDatabase) {
 		t.Fatalf("err = %v, want ErrNoDatabase", err)
+	}
+}
+
+// A database from before event_read had a state column keeps its marks, as
+// read marks.
+func TestMigrateAddsEventReadState(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "w.db")
+	conn, err := OpenAt(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`DROP TABLE event_read`,
+		`CREATE TABLE event_read (event_id TEXT PRIMARY KEY, event_ts TEXT NOT NULL, read_at TEXT NOT NULL)`,
+		`INSERT INTO event_read VALUES ('e1', 't', 'r')`,
+		`PRAGMA user_version = 2`,
+	} {
+		if _, err := conn.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	conn.Close()
+	conn, err = OpenAt(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	var state string
+	if err := conn.QueryRow(`SELECT state FROM event_read WHERE event_id = 'e1'`).Scan(&state); err != nil {
+		t.Fatal(err)
+	}
+	if state != "read" {
+		t.Fatalf("state = %q", state)
 	}
 }

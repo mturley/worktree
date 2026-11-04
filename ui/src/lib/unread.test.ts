@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { hasUnread } from "./unread"
+import { hasUnread, readChangeDidSomething } from "./unread"
 import type { ResourceDTO } from "../api/types"
 
 const base = (over: Partial<ResourceDTO>): ResourceDTO =>
@@ -32,5 +32,19 @@ describe("hasUnread", () => {
 
   it("already counts task events for other types, through unread_count", () => {
     expect(hasUnread(base({ unread_count: 1, task_unread_count: 1 }))).toBe(true)
+  })
+})
+
+describe("readChangeDidSomething", () => {
+  it("is true when the cursor moved", () => {
+    expect(readChangeDidSomething({ previous_ts: "a", last_read_ts: "b" })).toBe(true)
+    expect(readChangeDidSomething({ previous_ts: null, last_read_ts: "b" })).toBe(true)
+  })
+  it("is false when the cursor stayed and no mark was cleared", () => {
+    expect(readChangeDidSomething({ previous_ts: "a", last_read_ts: "a" })).toBe(false)
+    expect(readChangeDidSomething({ previous_ts: "a", last_read_ts: "a", cleared_unread: [] })).toBe(false)
+  })
+  it("is true when the cursor stayed but an unread mark was cleared", () => {
+    expect(readChangeDidSomething({ previous_ts: "a", last_read_ts: "a", cleared_unread: [{ id: "e1", ts: "t" }] })).toBe(true)
   })
 })

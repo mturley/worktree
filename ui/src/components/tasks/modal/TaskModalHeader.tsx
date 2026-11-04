@@ -1,3 +1,4 @@
+import { readChangeDidSomething } from "../../../lib/unread"
 import { useRef, useState } from "react"
 import { escCloseButtonProps } from "../../escCloseButton"
 import { OpenInFullUiButton } from "../../OpenInFullUiButton"
@@ -38,7 +39,7 @@ function useMarkTaskRead(task: TaskDetail) {
       const count = task.unread_count ?? 0
       if (!through) return alreadyRead()
       const change = await api.taskRead({ id, through_ts: through })
-      if (change.previous_ts === change.last_read_ts) return alreadyRead()
+      if (!readChangeDidSomething(change)) return alreadyRead()
       showUndoToast({
         message: `Marked ${count} task ${count === 1 ? "event" : "events"} read`,
         undo: () => api.taskReadRestore({ id, ...change }),

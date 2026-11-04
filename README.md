@@ -173,7 +173,9 @@ path.
 `worktree resources mark-read` also takes `--worktree <path>` and `--all`; the read
 cursor is per resource, so it clears a resource everywhere. Slack threads are
 skipped. `worktree activity mark-read <event-id>` marks a single event read without
-moving the cursor (`--undo` takes it back); it refuses Slack events.
+moving the cursor (`--undo` takes it back), and `mark-unread` marks one unread, even if
+it's older than the cursor. Both refuse Slack events, and your own events and running CI
+can't be marked unread.
 
 ##### The agent skill
 
