@@ -1,6 +1,15 @@
 import AppKit
 import WebKit
 
+/// Keeps an Esc the page didn't preventDefault from closing the popover.
+/// WebKit hands the unhandled key back as `cancelOperation:` asynchronously,
+/// once the page is done with it, and from there it reaches NSPopover's
+/// performClose. By then the current event may be the key-up or something
+/// else, so popoverShouldClose can't recognise it as Esc: stop it here.
+private final class DropdownWebView: WKWebView {
+    override func cancelOperation(_ sender: Any?) {}
+}
+
 /// The status item, its popover, and the web view inside it.
 ///
 /// The web view loads the web UI's /mini page once at launch and stays alive
@@ -49,7 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
 
         let config = WKWebViewConfiguration()
         config.userContentController.add(self, name: "worktree")
-        webView = WKWebView(frame: .zero, configuration: config)
+        webView = DropdownWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = self
         webView.uiDelegate = self
 
@@ -258,7 +267,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
 
     /// Esc is the page's: it closes a modal, menu or the search's suggestions
     /// and clears the search and filters. The dropdown closes on a click
-    /// away or on the menu bar icon, never on Esc.
+    /// away or on the menu bar icon, never on Esc. This covers an Esc while
+    /// the web view doesn't have focus; DropdownWebView covers one it does.
     func popoverShouldClose(_ popover: NSPopover) -> Bool {
         guard let e = NSApp.currentEvent else { return true }
         return !(e.type == .keyDown && e.keyCode == 53)

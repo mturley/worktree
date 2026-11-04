@@ -4103,8 +4103,12 @@ bottom, since the dropdown is too small for the usual box. A worktree or resourc
 suggestion navigates to the full UI, which `useMiniLocation` opens outside; an
 event or task opens in place. Esc runs the page's `clearAll` (search, Unreads
 only, feed filters); with nothing to clear it goes from the Tasks tab back to
-Activity. It never closes the dropdown: `popoverShouldClose` refuses a key-down
-Esc, and a click away or the menu bar icon closes it. `MiniPage` mounts `useUnreadOnlyHotkey`, and the app makes the web view
+Activity. It never closes the dropdown; a click away or the menu bar icon does.
+That takes two guards in the app. `popoverShouldClose` refuses a key-down Esc
+outside the web view. An Esc the page doesn't `preventDefault` comes back from
+WebKit as `cancelOperation:` after the page is done with it, and by then the
+current event may be the key-up, so the delegate can't recognise it:
+`DropdownWebView` swallows that command. `MiniPage` mounts `useUnreadOnlyHotkey`, and the app makes the web view
 first responder when the popover opens, so U, R and / work without a click.
 The web view counts as hidden whenever the popover is closed, so
 `streamsPauseWhenHidden` is false under the mac bridge: the page keeps
