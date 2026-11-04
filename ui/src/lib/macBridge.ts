@@ -6,6 +6,8 @@ export type MacMessage =
   | { type: "unreachable" }
   // Which view is showing, each with its own dropdown size (see useMacDropdownView).
   | { type: "view"; view: "collapsed" | "expanded" | "task" | "event" }
+  // Esc with nothing else to do: close the dropdown, if the app's setting allows (see MiniPage).
+  | { type: "close" }
 
 interface MacHandler {
   postMessage: (m: unknown) => void

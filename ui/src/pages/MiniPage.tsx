@@ -25,7 +25,7 @@ import { useTasks } from "../hooks/useTasks"
 import { useUnreadOnly } from "../hooks/useUnreadOnly"
 import { useUnreadOnlyHotkey } from "../hooks/useUnreadOnlyHotkey"
 import { useWorktrees } from "../hooks/useWorktrees"
-import { postToMac } from "../lib/macBridge"
+import { hasMacBridge, postToMac } from "../lib/macBridge"
 import { readMiniExpanded, writeMiniExpanded } from "../lib/miniExpandedPref"
 import { openExternal } from "../lib/miniMode"
 import { serializeResourceKey } from "../lib/resourceKey"
@@ -86,7 +86,10 @@ function MiniColumn({ header, controls, children }: { header: ReactNode; control
  * whatever is open (a modal, a menu, the suggestions), else clears the
  * search, Unreads only and the feed's filters; with none of that left it
  * goes back to the Activity tab, the main view (as the detail page's Notes
- * tab is). The app's dropdown never closes on Esc: a click away closes it.
+ * tab is), and only from there closes the dropdown itself (the app's
+ * `close`, which its "Close dropdown on Esc" menu item can turn off), the
+ * only step back out of here. The app never closes the dropdown on Esc by
+ * itself.
  *
  * The toggle beside the logo swaps the tabs for columns showing both
  * at once, remembered per browser. The app gives each of its views (these two,
@@ -175,6 +178,10 @@ export function MiniPage() {
   const escClears = narrowing.search || narrowing.unread || narrowing.filters
   const onTasksTab = !expanded && tab !== "activity"
   const escActivity = !escClears && onTasksTab
+  const escapeIdle = () => {
+    if (onTasksTab) setTab("activity")
+    else if (hasMacBridge()) postToMac({ type: "close" })
+  }
 
   return (
     <NarrowingContext.Provider value={narrowing}><SearchContext.Provider value={searchContext}>
@@ -190,7 +197,7 @@ export function MiniPage() {
               suggestions={suggestions}
               onEscape={narrowing.clearAll}
               escapeActive={escClears}
-              onEscapeIdle={onTasksTab ? () => setTab("activity") : undefined}
+              onEscapeIdle={escapeIdle}
               fillWindow
             />
           </Box>

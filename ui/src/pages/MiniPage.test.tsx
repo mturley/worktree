@@ -149,26 +149,36 @@ describe("MiniPage", () => {
     expect(window.location.pathname).toBe("/mini")
   })
 
-  it("Esc closes a modal, then clears the search and Unreads only", async () => {
+  it("Esc closes the dropdown only when it has nothing else to do", async () => {
+    stubBridge()
     mocks.events = [event]
     vi.spyOn(api, "locatePRComment").mockRejectedValue(new Error("404"))
     wrap()
+    const closes = () => post.mock.calls.filter(([m]) => m.type === "close").length
 
     // An open modal takes Esc first.
     await userEvent.click(screen.getByText("Looks good to me"))
     await screen.findByRole("dialog")
     await userEvent.keyboard("{Escape}")
+    expect(closes()).toBe(0)
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
 
     // Then the search and Unreads only, cleared together.
     await userEvent.keyboard("u")
     expect(screen.getByRole("switch", { name: "Unreads only" })).toBeChecked()
     await userEvent.keyboard("{Escape}")
+    expect(closes()).toBe(0)
     expect(screen.getByRole("switch", { name: "Unreads only" })).not.toBeChecked()
+
+    // With nothing left, the dropdown.
+    await userEvent.keyboard("{Escape}")
+    expect(closes()).toBe(1)
   })
 
-  it("Esc on the Tasks tab goes back to Activity once nothing is left to clear", async () => {
+  it("Esc on the Tasks tab goes back to Activity before closing the dropdown", async () => {
+    stubBridge()
     wrap()
+    const closes = () => post.mock.calls.filter(([m]) => m.type === "close").length
     const activityTab = () => screen.getByRole("tab", { name: /Activity/ })
 
     await userEvent.click(screen.getByRole("tab", { name: "Tasks" }))
@@ -181,8 +191,12 @@ describe("MiniPage", () => {
     expect(screen.getByRole("tab", { name: "Tasks" })).toHaveAttribute("aria-selected", "true")
 
     await userEvent.keyboard("{Escape}")
+    expect(closes()).toBe(0)
     expect(activityTab()).toHaveAttribute("aria-selected", "true")
     expect(within(activityTab()).queryByText("Esc")).not.toBeInTheDocument()
+
+    await userEvent.keyboard("{Escape}")
+    expect(closes()).toBe(1)
   })
 
   it("tasks tab ignores collapsed", async () => {
@@ -296,6 +310,18 @@ describe("MiniPage", () => {
       expect(post).toHaveBeenCalledWith({ type: "view", view: "collapsed" })
       await expand()
       expect(post).toHaveBeenCalledWith({ type: "view", view: "expanded" })
+    })
+
+    it("Esc closes the dropdown with nothing left to clear, having no tab to go back to", async () => {
+      stubBridge()
+      wrap()
+      await userEvent.click(screen.getByRole("tab", { name: "Tasks" }))
+      await expand()
+      // Off the toggle: an open tooltip's dismissal takes the Esc first.
+      await userEvent.unhover(screen.getByRole("button", { name: "Show Activity and Tasks as tabs" }))
+      await waitFor(() => expect(screen.queryByRole("tooltip")).not.toBeInTheDocument())
+      await userEvent.keyboard("{Escape}")
+      expect(post).toHaveBeenCalledWith({ type: "close" })
     })
   })
 

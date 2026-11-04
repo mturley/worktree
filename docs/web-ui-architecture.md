@@ -4103,9 +4103,13 @@ bottom, since the dropdown is too small for the usual box. A worktree or resourc
 suggestion navigates to the full UI, which `useMiniLocation` opens outside; an
 event or task opens in place. Esc runs the page's `clearAll` (search, Unreads
 only, feed filters); with nothing to clear it goes from the Tasks tab back to
-Activity. It never closes the dropdown; a click away or the menu bar icon does.
-That takes two guards in the app. `popoverShouldClose` refuses a key-down Esc
-outside the web view. An Esc the page doesn't `preventDefault` comes back from
+Activity, and from there it asks the app to close the dropdown (`close`). The
+status item's right-click menu has "Close dropdown on Esc" (on by default,
+`closeDropdownOnEsc` in the app's `UserDefaults`); off, the app ignores `close`
+and only a click away or the menu bar icon closes the dropdown.
+Nothing else lets Esc close it, which takes two guards in the app.
+`popoverShouldClose` refuses a key-down Esc outside the web view, except on the
+offline view while the setting is on. An Esc the page doesn't `preventDefault` comes back from
 WebKit as `cancelOperation:` after the page is done with it, and by then the
 current event may be the key-up, so the delegate can't recognise it:
 `DropdownWebView` swallows that command. `MiniPage` mounts `useUnreadOnlyHotkey`, and the app makes the web view
@@ -4171,6 +4175,7 @@ API, so skipping `useTabPresence` alone would not be enough.
 | `login` | `LoginPage` | needs-login icon |
 | `unreachable` | `ServerUnreachable` | disconnected icon |
 | `view {view}` | `useMacDropdownView`: `collapsed`, `expanded`, `event` or `task`, the topmost showing | moves the popover to that view's size (see "Dropdown sizes") |
+| `close` | `MiniPage`'s `SearchBar` `onEscapeIdle`: Esc with no modal, menu or suggestions open and nothing to clear | `popover.close()`, unless "Close dropdown on Esc" is off |
 
 When a load fails at the network level there is no page to count down, so
 the app shows its own native view (`OfflineView`), with no countdown. It loads

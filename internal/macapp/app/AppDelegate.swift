@@ -40,6 +40,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     private var lastMiniURL: URL?
     private lazy var serverWatch = ServerWatch(url: serverURL)
 
+    private static let closeOnEscKey = "closeDropdownOnEsc"
+
+    /// "Close dropdown on Esc": whether an Esc with nothing left for the page
+    /// to do closes the dropdown. Off, only a click away or the icon does.
+    private var closeOnEsc: Bool = UserDefaults.standard.object(forKey: AppDelegate.closeOnEscKey) as? Bool ?? true {
+        didSet { UserDefaults.standard.set(closeOnEsc, forKey: AppDelegate.closeOnEscKey) }
+    }
+
     /// WorktreeServerURL from Info.plist, written at build time.
     private let serverURL: URL = {
         let s = Bundle.main.object(forInfoDictionaryKey: "WorktreeServerURL") as? String
@@ -135,6 +143,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         let flash = item("Flash icon on unread activity", #selector(toggleFlash))
         flash.state = icon.flash ? .on : .off
         menu.addItem(flash)
+        let closeEsc = item("Close dropdown on Esc", #selector(toggleCloseOnEsc))
+        closeEsc.state = closeOnEsc ? .on : .off
+        menu.addItem(closeEsc)
         menu.addItem(item("More settings in web UI", #selector(openSettings)))
         menu.addItem(.separator())
         menu.addItem(item("Quit", #selector(quit)))
@@ -189,6 +200,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     @objc private func togglePurpleIcon() { icon.purple.toggle() }
 
     @objc private func toggleFlash() { icon.flash.toggle() }
+
+    @objc private func toggleCloseOnEsc() { closeOnEsc.toggle() }
 
     @objc private func toggleLoginItem() {
         do {
@@ -265,13 +278,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         }
     }
 
-    /// Esc is the page's: it closes a modal, menu or the search's suggestions
-    /// and clears the search and filters. The dropdown closes on a click
-    /// away or on the menu bar icon, never on Esc. This covers an Esc while
-    /// the web view doesn't have focus; DropdownWebView covers one it does.
+    /// Esc is the page's to spend: it closes a modal, menu or the search's
+    /// suggestions first, then clears the search and filters, and only with
+    /// nothing left asks for the dropdown to close (`close`). So the popover
+    /// never closes on Esc by itself while the page shows. The offline view
+    /// has nothing of its own to close, so there Esc closes it directly, if
+    /// the setting allows. This covers an Esc while the web view doesn't have
+    /// focus; DropdownWebView covers one it does.
     func popoverShouldClose(_ popover: NSPopover) -> Bool {
-        guard let e = NSApp.currentEvent else { return true }
-        return !(e.type == .keyDown && e.keyCode == 53)
+        guard let e = NSApp.currentEvent, e.type == .keyDown, e.keyCode == 53 else { return true }
+        return closeOnEsc && !offlineView.isHidden
     }
 
     // MARK: - Bridge
@@ -290,6 +306,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             // Restore what the page last said; with nothing said yet, leave
             // the icon alone until its first unread report arrives.
             if let unread = lastUnread { icon.state = unread ? .unread : .resting }
+        case "close":
+            guard closeOnEsc else { return }
+            // close(), not performClose(_:): this must not ask the delegate,
+            // which would see the Esc that led here and refuse.
+            popover.close()
         case "view":
             guard let name = body["view"] as? String, let view = DropdownView(rawValue: name) else { return }
             setView(view)
