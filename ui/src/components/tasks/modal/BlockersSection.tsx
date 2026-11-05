@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react"
-import { ActionIcon, Anchor, Button, Checkbox, Group, Menu, Stack, Text, UnstyledButton } from "@mantine/core"
+import { ActionIcon, Button, Checkbox, Group, Menu, Stack, Text, UnstyledButton } from "@mantine/core"
 import { IconChecklist, IconNote, IconWorld, IconX } from "@tabler/icons-react"
 import type { TaskBlocker, TaskBlockerKind, TaskDetail } from "../../../api/types"
 import { useTaskDetailMutations } from "../../../hooks/useTaskDetail"
@@ -8,6 +8,7 @@ import { JiraMark } from "../../icons/JiraMark"
 import { SlackMark } from "../../icons/SlackMark"
 import { taskStateLabel } from "../TaskStateCheckbox"
 import { BlockerPicker } from "./BlockerPicker"
+import { ExternalTitle, ResourceLink } from "./ResourceLink"
 import { useSectionAction } from "./sectionAction"
 import { useTaskModal } from "./TaskModalProvider"
 
@@ -42,10 +43,9 @@ function kindIcon(b: TaskBlocker): ReactNode {
  * checkbox; every blocker can be removed. "+ Add" picks a Task, a Resource
  * or Other.
  *
- * Nothing here navigates inside the app: a resource blocker's label opens its
- * page in a new tab, and a task blocker opens that task in this modal, in
- * place of this one (open() replaces the history entry while the modal is
- * open).
+ * A resource blocker's label opens it as a linked resource's does (see
+ * ResourceLink), and a task blocker opens that task in this modal, in place of
+ * this one (open() replaces the history entry while the modal is open).
  */
 export function BlockersSection({ task }: { task: TaskDetail }) {
   const m = useTaskDetailMutations(task.id)
@@ -122,14 +122,10 @@ function BlockerRow({ b, onRemove, onResolve }: {
         <Text size="xs" truncate="end">{b.label}</Text>
       </UnstyledButton>
     )
-  } else if (b.url) {
-    label = (
-      <Anchor href={b.url} target="_blank" rel="noreferrer" size="xs" truncate="end" display="block" onClick={keepFromRow}>
-        {b.label}
-      </Anchor>
-    )
+  } else if (b.resource_type && b.resource_id) {
+    label = <ResourceLink type={b.resource_type} id={b.resource_id} title={b.label} url={b.url} size="xs" />
   } else {
-    label = <Text size="xs" truncate="end">{b.label}</Text>
+    label = <ExternalTitle title={b.label} url={b.url} size="xs" />
   }
 
   return (

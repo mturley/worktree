@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { cleanup, screen, waitFor, within } from "@testing-library/react"
+import { act, cleanup, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { api, HttpError } from "../../../api/client"
 import type { ResourceDTO, Task, TaskBlocker, TaskDetailLink } from "../../../api/types"
@@ -127,11 +127,45 @@ describe("BlockersSection", () => {
     expect(finished).toHaveTextContent("Done")
   })
 
-  it("opens a resource blocker's URL in a new tab", () => {
+  it("opens a resource blocker's URL in a new tab when no worktree follows it", async () => {
     renderDetail(base, (d) => <BlockersSection task={d} />)
+    await waitFor(() => expect(api.allResources).toHaveBeenCalled())
+    await act(async () => {})
     const link = screen.getByRole("link", { name: "Fix login" })
     expect(link).toHaveAttribute("href", "https://github.com/o/r/pull/9")
     expect(link).toHaveAttribute("target", "_blank")
+  })
+
+  describe("a resource blocker a worktree follows", () => {
+    const followedBy = (...paths: string[]) =>
+      vi.mocked(api.allResources).mockResolvedValue([
+        { type: "pr", id: "o/r#9", title: "Fix login", url: prBlocker.url, worktrees: paths.map((path) => ({ path, branch: "b" })) },
+      ] as unknown as Awaited<ReturnType<typeof api.allResources>>)
+    const inWorktree = "/worktree/%2Fw%2Ffeat?resource=pr:o%2Fr%239"
+    const followedLink = () =>
+      waitFor(() => {
+        const a = screen.getByRole("link", { name: "Fix login" })
+        expect(a).not.toHaveAttribute("target")
+        return a
+      })
+
+    it("opens in its worktree's details view", async () => {
+      followedBy("/w/feat")
+      const user = userEvent.setup()
+      renderDetail(base, (d) => <BlockersSection task={d} />)
+      await user.click(await followedLink())
+      expect(window.location.pathname + window.location.search).toBe(inWorktree)
+    })
+
+    it("asks which worktree when several follow it", async () => {
+      followedBy("/w/feat", "/w/other")
+      const user = userEvent.setup()
+      renderDetail(base, (d) => <BlockersSection task={d} />)
+      await user.click(await followedLink())
+      expect(window.location.search).toBe("?task=1")
+      await user.click(await screen.findByRole("button", { name: "view in other" }))
+      expect(window.location.pathname).toBe("/worktree/%2Fw%2Fother")
+    })
   })
 
   it("opens a task blocker's task in the modal, replacing the history entry", async () => {

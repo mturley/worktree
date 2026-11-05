@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
-import { ActionIcon, Anchor, Badge, Box, Button, Group, Popover, Stack, Text, Title, Tooltip } from "@mantine/core"
+import { ActionIcon, Badge, Box, Button, Group, Popover, Stack, Text, Title } from "@mantine/core"
 import { IconGripVertical, IconX } from "@tabler/icons-react"
 import {
   DndContext,
@@ -19,20 +19,17 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { useLocation } from "wouter"
 import type { TaskDetail, TaskDetailLink, TaskImplicit } from "../../../api/types"
 import { useCmuxMatches } from "../../../api/cmux"
-import { useAllResources } from "../../../hooks/useAllResources"
 import { useTaskDetailMutations } from "../../../hooks/useTaskDetail"
 import { resourceCollisions } from "../../../lib/resourceCollision"
 import { shortResourceRef } from "../../../lib/resourceRef"
 import { useHoverMenu, type HoverMenu } from "../../../lib/useHoverMenu"
 import type { GroupId } from "../../../lib/resourceOrder"
-import { worktreeHref } from "../../AllResourceRow"
-import { ChooseWorktreeModal } from "../../ChooseWorktreeModal"
 import { LinkPicker } from "./LinkPicker"
-import { ResourceHoverCard, WorkspaceLabel, WorktreeHoverCard } from "../LinkHoverCards"
+import { WorkspaceLabel, WorktreeHoverCard } from "../LinkHoverCards"
 import { basename, linkKey, linkTarget, viaRef } from "./linkTargets"
+import { ExternalTitle, ResourceLink } from "./ResourceLink"
 import { useSectionAction } from "./sectionAction"
 
 /** The two groups' link keys, in order. */
@@ -246,88 +243,6 @@ function WorktreeName({ path, name, dimmed }: { path: string; name: string; dimm
   )
 }
 
-/** The link's page in a new tab; plain text when it has no URL. */
-function ExternalTitle({ l }: { l: TaskDetailLink }) {
-  return l.url ? (
-    <Anchor href={l.url} target="_blank" rel="noreferrer" size="sm" truncate style={{ minWidth: 0 }}>
-      {l.title}
-    </Anchor>
-  ) : (
-    <Text size="sm" truncate style={{ minWidth: 0 }}>{l.title}</Text>
-  )
-}
-
-/**
- * A resource link's title, previewing the resource on hover. It opens the
- * resource in the worktree following it, or asks which when several do. A
- * resource no worktree follows has no such page, so it links externally, as
- * it does until the list of followed resources has loaded.
- *
- * The navigation's URL has no ?task=, which closes the modal and leaves it in
- * history: Back returns to it. A modified click is left to the browser, on
- * the first follower's page.
- */
-function ResourceLink({ l, type, id }: { l: TaskDetailLink; type: string; id: string }) {
-  const all = useAllResources()
-  const [, navigate] = useLocation()
-  const [choosing, setChoosing] = useState(false)
-  const r = all.data?.find((x) => x.type === type && x.id === id)
-  const followers = r?.worktrees ?? []
-
-  if (!r || followers.length === 0) {
-    return (
-      <ResourceHoverCard type={type} id={id}>
-        <Box style={{ minWidth: 0, display: "flex" }}><ExternalTitle l={l} /></Box>
-      </ResourceHoverCard>
-    )
-  }
-
-  const onClick = (e: React.MouseEvent) => {
-    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
-    e.preventDefault()
-    if (followers.length > 1) setChoosing(true)
-    else navigate(worktreeHref(followers[0], r))
-  }
-
-  return (
-    <>
-      {/* The Box takes the hover card's ref and handlers: a Tooltip would hand them to its label. */}
-      <ResourceHoverCard type={type} id={id}>
-        <Box style={{ minWidth: 0, display: "flex" }}>
-          <Tooltip label="View resource in worktree">
-            <Anchor href={worktreeHref(followers[0], r)} onClick={onClick} size="sm" truncate style={{ minWidth: 0 }}>
-              {l.title}
-            </Anchor>
-          </Tooltip>
-        </Box>
-      </ResourceHoverCard>
-      {/*
-        Mantine closes every open modal on Escape, from a window listener, so
-        the key stops here: it should only dismiss the chooser, not the task
-        modal under it. React bubbles it here through the chooser's portal.
-      */}
-      <div
-        style={{ display: "contents" }}
-        onKeyDown={(e) => {
-          if (e.key !== "Escape") return
-          e.stopPropagation()
-          setChoosing(false)
-        }}
-      >
-        <ChooseWorktreeModal
-          r={choosing ? r : null}
-          worktrees={followers}
-          onPick={(path) => {
-            setChoosing(false)
-            navigate(worktreeHref({ path }, r))
-          }}
-          onClose={() => setChoosing(false)}
-        />
-      </div>
-    </>
-  )
-}
-
 function LinkLabel({ l }: { l: TaskDetailLink }) {
   const ref = l.kind === "resource" ? shortResourceRef(l.resource_type ?? "", l.resource_id ?? "") : ""
   return (
@@ -336,9 +251,9 @@ function LinkLabel({ l }: { l: TaskDetailLink }) {
       {l.kind === "worktree" && l.worktree ? (
         <WorktreeName path={l.worktree} name={l.title} />
       ) : l.kind === "resource" && l.resource_type && l.resource_id ? (
-        <ResourceLink l={l} type={l.resource_type} id={l.resource_id} />
+        <ResourceLink type={l.resource_type} id={l.resource_id} title={l.title} url={l.url} />
       ) : (
-        <ExternalTitle l={l} />
+        <ExternalTitle title={l.title} url={l.url} />
       )}
       {l.archived && <Badge size="xs" color="gray" variant="light" style={{ flex: "none" }}>archived</Badge>}
     </Group>
