@@ -18,6 +18,8 @@ import { useCrossHover } from "./CrossHoverContext"
 import { canMarkEventRead } from "../hooks/useMarkEventRead"
 import { eventTaskKey } from "../lib/taskEventKey"
 import { WorktreeName, WorktreePreview } from "./WorktreeName"
+import { TooltipWithHints, useModifierOpen } from "../hooks/useModifierOpen"
+import { eventFullUiHref } from "../lib/fullUiLink"
 
 /**
  * One entry on the timeline rail: a dot on the line, then the event's text.
@@ -115,6 +117,14 @@ export function EventRow({
         ? () => onOpen(e)
         : undefined)
   const tip = openTask ? "Open task" : resourceKey ? "View event details in worktree" : "View event details"
+  // Cmd+click (mini view) opens it in the full UI; Shift+click switches cmux
+  // to its worktree's workspace. Only on a row that responds to clicks.
+  const modifier = useModifierOpen(e.worktree_paths ?? [], () => eventFullUiHref(e))
+  const onRowClick = activate
+    ? (ev: React.MouseEvent) => {
+        if (!modifier.handle(ev)) activate()
+      }
+    : undefined
 
   // Only a row that goes to its resource (or, for a task's event, opens its
   // task) takes part in cross-hover: one that opens its details (archived,
@@ -143,7 +153,8 @@ export function EventRow({
     <Box
       component={activate ? "button" : "div"}
       type={activate ? "button" : undefined}
-      onClick={activate}
+      onClick={onRowClick}
+      onMouseDown={activate ? modifier.onMouseDown : undefined}
       data-event-row="true"
       data-unread={e.unread ? "true" : undefined}
       data-clickable={activate ? "true" : undefined}
@@ -254,7 +265,7 @@ export function EventRow({
    * it for a tooltip to occupy — it ran off the page. Above costs it the row
    * above's text, which is the lesser of the two.
    */
-  const surface = activate ? <Tooltip label={tip} position="top-start">{row}</Tooltip> : row
+  const surface = activate ? <Tooltip label={<TooltipWithHints main={tip} hints={modifier.hints} />} position="top-start">{row}</Tooltip> : row
   const makeTask = onMakeTask && eventTaskKey(e) ? onMakeTask : null
   const markRead = onMarkRead && canMarkEventRead(e) ? onMarkRead : null
   if (!makeTask && !markRead) return surface

@@ -4150,6 +4150,16 @@ and drops at once; history state (`lib/openEvent.ts`) can't cross from the app's
 web view to the browser. A Slack message goes to its place in the thread, as
 arriving from the home page does.
 
+**Modifier clicks on rows.** `useModifierOpen` (`hooks/useModifierOpen.tsx`)
+gives clickable `EventRow`s and `TaskRow`s two extra clicks. Cmd+click, on
+`/mini` only, goes straight to the same `fullUiLink` URL via `openExternal`
+without opening the modal. Shift+click, in both UIs, switches cmux
+(`api.cmuxSelect`) to the first workspace matching the event's `worktree_paths`
+or the task's `taskWorktreePaths`, in order; with cmux unavailable or no
+match, it is a plain click. The row's tooltip lists whichever apply beneath its
+main line; a task's tooltip sits on its title and is shown only when it has
+something to say (a cut-off title, or a modifier hint).
+
 **Staying inside /mini.** The router uses `useMiniLocation`
 (`lib/miniMode.ts`): navigation to `/mini` itself (the task modal's `?task=`)
 happens in place, anything else calls `openExternal`, which posts `open` to the

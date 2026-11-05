@@ -2,7 +2,9 @@ import { useMemo, useState, type ReactNode } from "react"
 import { useLocation } from "wouter"
 import { ActionIcon, Badge, Group, Text, Tooltip, UnstyledButton } from "@mantine/core"
 import type { Priority, Task, TaskState } from "../../api/types"
-import { dueLabel, linkChip } from "../../lib/taskSections"
+import { dueLabel, linkChip, taskWorktreePaths } from "../../lib/taskSections"
+import { taskFullUiHref } from "../../lib/fullUiLink"
+import { TooltipWithHints, useModifierOpen } from "../../hooks/useModifierOpen"
 import { serializeResourceKey } from "../../lib/resourceKey"
 import { TaskStateCheckbox } from "./TaskStateCheckbox"
 import { TaskPriorityMenu } from "./TaskPriorityMenu"
@@ -76,8 +78,24 @@ export function TaskRow({ task, ownResource, ownWorktree, dragHandle, onState, o
     const el = e.currentTarget
     setTruncated(el.scrollWidth > el.clientWidth)
   }
+  // Cmd+click (mini view) opens the task in the full UI; Shift+click switches
+  // cmux to its first worktree's workspace. Only on a row that opens.
+  const paths = useMemo(() => taskWorktreePaths(task), [task])
+  const modifier = useModifierOpen(paths, () => taskFullUiHref(task))
+  const hints = opens ? modifier.hints : []
+  const open = (e: React.MouseEvent) => {
+    if (!modifier.handle(e)) onOpen?.()
+  }
+  // One tooltip on the title: the full title when the ellipsis cut it, and
+  // "Open task" with the modifier clicks when any apply.
+  const tipLabel = (
+    <>
+      {truncated && <div>{task.title}</div>}
+      {hints.length > 0 && <TooltipWithHints main="Open task" hints={hints} />}
+    </>
+  )
   const titleText = (
-    <Tooltip label={task.title} disabled={!truncated} openDelay={400} multiline maw={420}>
+    <Tooltip label={tipLabel} disabled={!truncated && hints.length === 0} openDelay={400} multiline maw={420}>
       <Text
         span
         size="sm"
@@ -102,7 +120,8 @@ export function TaskRow({ task, ownResource, ownWorktree, dragHandle, onState, o
       // No padding before the grip: rows sit at the panel's edge in every sort.
       pl={0}
       pr="xs"
-      onClick={onOpen ? () => onOpen() : undefined}
+      onClick={onOpen ? open : undefined}
+      onMouseDown={onOpen ? modifier.onMouseDown : undefined}
       style={onOpen ? { cursor: "pointer" } : undefined}
     >
       {/* A plain click on the grip must not reach the row (it would open
@@ -139,7 +158,7 @@ export function TaskRow({ task, ownResource, ownWorktree, dragHandle, onState, o
           onClick={(e) => {
             // The row would open it too; once is enough.
             keepFromRow(e)
-            onOpen()
+            open(e)
           }}
         >
           {titleText}

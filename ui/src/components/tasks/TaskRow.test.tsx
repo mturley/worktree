@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { act, cleanup, render, screen } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -314,5 +314,56 @@ describe("TaskRow blocked chip", () => {
       onState={() => {}} onPriority={() => {}} onToggleStar={() => {}}
     />)
     expect(screen.queryByTestId("task-blocked-chip")).toBeNull()
+  })
+})
+
+describe("TaskRow modifier clicks", () => {
+  const post = vi.fn()
+  afterEach(() => {
+    post.mockReset()
+    delete window.webkit
+    window.history.replaceState({}, "", "/")
+    vi.restoreAllMocks()
+  })
+  const linked = task({ id: 4, links: [{ kind: "worktree", worktree: "/wt/a", focus: false, archived: false }] })
+  const cmux: CmuxResponse = { available: true, matches: { "/wt/a": [{ ref: "workspace:3", title: "feat", selected: false }] } }
+  const row = (onOpen = vi.fn()) => (
+    <TaskRow task={linked} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} onOpen={onOpen} />
+  )
+
+  it("Cmd+click in the mini view opens the task in the full UI", async () => {
+    window.webkit = { messageHandlers: { worktree: { postMessage: post } } }
+    window.history.replaceState({}, "", "/mini")
+    const onOpen = vi.fn()
+    wrap(row(onOpen))
+    fireEvent.click(screen.getByText("Write the thing"), { metaKey: true })
+    expect(onOpen).not.toHaveBeenCalled()
+    expect(post).toHaveBeenCalledWith({ type: "open", url: `${window.location.origin}/worktree/${encodeURIComponent("/wt/a")}?task=4` })
+  })
+
+  it("Shift+click switches cmux to the task's worktree workspace", async () => {
+    const { api } = await import("../../api/client")
+    const select = vi.spyOn(api, "cmuxSelect").mockResolvedValue({ ok: true })
+    const onOpen = vi.fn()
+    wrap(row(onOpen), [[["cmux"], cmux]])
+    fireEvent.click(screen.getByText("Write the thing"), { shiftKey: true })
+    expect(onOpen).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(select).toHaveBeenCalledWith("workspace:3"))
+  })
+
+  it("a plain click still opens the task", async () => {
+    const onOpen = vi.fn()
+    wrap(row(onOpen), [[["cmux"], cmux]])
+    await userEvent.click(screen.getByText("Write the thing"))
+    expect(onOpen).toHaveBeenCalledTimes(1)
+  })
+
+  it("has an Open task tooltip naming the modifiers that apply", async () => {
+    window.history.replaceState({}, "", "/mini")
+    wrap(row(), [[["cmux"], cmux]])
+    await userEvent.hover(screen.getByText("Write the thing"))
+    expect(await screen.findByText("Open task")).toBeInTheDocument()
+    expect(screen.getByText("Cmd+click to open in full UI")).toBeInTheDocument()
+    expect(screen.getByText("Shift+click to switch cmux")).toBeInTheDocument()
   })
 })

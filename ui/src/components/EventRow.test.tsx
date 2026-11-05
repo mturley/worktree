@@ -221,10 +221,14 @@ describe("unread event highlight", () => {
     // borderColor. Clearing the colour dropped the shorthand from the CSSOM,
     // leaving width and style behind with border-color falling back to
     // currentColor — a white box that survived until the page was reloaded.
-    const { container, rerender } = renderWithProvider(<EventRow e={makeEvent({ unread: true })} />)
+    const qc = new QueryClient()
+    const wrapRow = (unread: boolean) => (
+      <MantineProvider><QueryClientProvider client={qc}><EventRow e={makeEvent({ unread })} /></QueryClientProvider></MantineProvider>
+    )
+    const { container, rerender } = render(wrapRow(true))
     expect(row(container)).toHaveStyle({ border: UNREAD_BORDER })
 
-    rerender(<MantineProvider><EventRow e={makeEvent({ unread: false })} /></MantineProvider>)
+    rerender(wrapRow(false))
     const after = row(container)
     expect(after).toHaveStyle({ border: READ_BORDER })
     expect(after.style.borderColor).toBe("transparent")
@@ -712,5 +716,77 @@ describe("Mark read", () => {
     } finally {
       window.matchMedia = original
     }
+  })
+})
+
+describe("modifier clicks on a row", () => {
+  const post = vi.fn()
+  afterEach(() => {
+    cleanup()
+    post.mockReset()
+    delete window.webkit
+    window.history.replaceState({}, "", "/")
+    vi.restoreAllMocks()
+  })
+  const cmuxWith = (path: string) => ({ available: true, matches: { [path]: [{ ref: "workspace:7", title: "feat", selected: false }] } })
+  function renderSeeded(ui: React.ReactElement, cmux: unknown = { available: false }) {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+    qc.setQueryData(["cmux"], cmux)
+    return render(<MantineProvider><QueryClientProvider client={qc}>{ui}</QueryClientProvider></MantineProvider>)
+  }
+
+  it("Cmd+click in the mini view opens the event in the full UI instead of its details", async () => {
+    window.webkit = { messageHandlers: { worktree: { postMessage: post } } }
+    window.history.replaceState({}, "", "/mini")
+    const onOpen = vi.fn()
+    renderSeeded(<EventRow e={makeEvent({ id: "evt-9" })} onOpen={onOpen} />)
+    fireEvent.click(screen.getByRole("button"), { metaKey: true })
+    expect(onOpen).not.toHaveBeenCalled()
+    expect(post).toHaveBeenCalledWith({ type: "open", url: `${window.location.origin}/?event=evt-9` })
+  })
+
+  it("Cmd+click outside the mini view is a plain click", () => {
+    const onOpen = vi.fn()
+    renderSeeded(<EventRow e={makeEvent({})} onOpen={onOpen} />)
+    fireEvent.click(screen.getByRole("button"), { metaKey: true })
+    expect(onOpen).toHaveBeenCalledTimes(1)
+  })
+
+  it("Shift+click switches cmux to the first worktree with a workspace", async () => {
+    const select = vi.spyOn(api, "cmuxSelect").mockResolvedValue({ ok: true })
+    const onOpen = vi.fn()
+    renderSeeded(
+      <EventRow e={makeEvent({ worktree_paths: ["/wt/none", "/wt/a"] })} onOpen={onOpen} />,
+      cmuxWith("/wt/a"),
+    )
+    fireEvent.click(screen.getByRole("button"), { shiftKey: true })
+    expect(onOpen).not.toHaveBeenCalled()
+    await waitFor(() => expect(select).toHaveBeenCalledWith("workspace:7"))
+  })
+
+  it("Shift+click with no matching workspace is a plain click", () => {
+    const select = vi.spyOn(api, "cmuxSelect")
+    const onOpen = vi.fn()
+    renderSeeded(<EventRow e={makeEvent({ worktree_paths: ["/wt/a"] })} onOpen={onOpen} />)
+    fireEvent.click(screen.getByRole("button"), { shiftKey: true })
+    expect(onOpen).toHaveBeenCalledTimes(1)
+    expect(select).not.toHaveBeenCalled()
+  })
+
+  it("names the modifiers that apply in the tooltip", async () => {
+    window.history.replaceState({}, "", "/mini")
+    renderSeeded(<EventRow e={makeEvent({ worktree_paths: ["/wt/a"] })} onOpen={vi.fn()} />, cmuxWith("/wt/a"))
+    await userEvent.hover(screen.getByRole("button"))
+    expect(await screen.findByText("View event details")).toBeInTheDocument()
+    expect(screen.getByText("Cmd+click to open in full UI")).toBeInTheDocument()
+    expect(screen.getByText("Shift+click to switch cmux")).toBeInTheDocument()
+  })
+
+  it("names no modifiers outside the mini view without cmux", async () => {
+    renderSeeded(<EventRow e={makeEvent({})} onOpen={vi.fn()} />)
+    await userEvent.hover(screen.getByRole("button"))
+    expect(await screen.findByText("View event details")).toBeInTheDocument()
+    expect(screen.queryByText("Cmd+click to open in full UI")).not.toBeInTheDocument()
+    expect(screen.queryByText("Shift+click to switch cmux")).not.toBeInTheDocument()
   })
 })

@@ -2,12 +2,15 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { cleanup, render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { Task } from "../../api/types"
 import { TaskRow } from "./TaskRow"
 import { TaskPriorityMenu } from "./TaskPriorityMenu"
 
 afterEach(cleanup)
-const wrap = (ui: React.ReactNode) => render(<MantineProvider>{ui}</MantineProvider>)
+const wrap = (ui: React.ReactNode) => render(
+  <MantineProvider><QueryClientProvider client={new QueryClient()}>{ui}</QueryClientProvider></MantineProvider>,
+)
 
 function task(over: Partial<Task> = {}): Task {
   return {

@@ -158,7 +158,9 @@ describe("cross-hover", () => {
   it("does nothing outside a provider", () => {
     render(
       <MantineProvider>
-        <EventRow e={event()} onSelectResource={() => {}} />
+        <QueryClientProvider client={new QueryClient()}>
+          <EventRow e={event()} onSelectResource={() => {}} />
+        </QueryClientProvider>
       </MantineProvider>,
     )
     const row = document.querySelector("[data-event-row]")!
