@@ -782,6 +782,31 @@ describe("modifier clicks on a row", () => {
     expect(screen.getByText("Shift+click to switch cmux")).toBeInTheDocument()
   })
 
+  it("in the full UI, offers no Shift+click when the workspace is already current", async () => {
+    const select = vi.spyOn(api, "cmuxSelect")
+    const onOpen = vi.fn()
+    renderSeeded(
+      <EventRow e={makeEvent({ worktree_paths: ["/wt/a"] })} onOpen={onOpen} />,
+      { available: true, matches: { "/wt/a": [{ ref: "workspace:7", title: "feat", selected: true }] } },
+    )
+    await userEvent.hover(screen.getByRole("button"))
+    expect(await screen.findByText("View event details")).toBeInTheDocument()
+    expect(screen.queryByText("Shift+click to switch cmux")).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button"), { shiftKey: true })
+    expect(onOpen).toHaveBeenCalledTimes(1)
+    expect(select).not.toHaveBeenCalled()
+  })
+
+  it("in the mini view, still offers Shift+click to the current workspace", async () => {
+    window.history.replaceState({}, "", "/mini")
+    renderSeeded(
+      <EventRow e={makeEvent({ worktree_paths: ["/wt/a"] })} onOpen={vi.fn()} />,
+      { available: true, matches: { "/wt/a": [{ ref: "workspace:7", title: "feat", selected: true }] } },
+    )
+    await userEvent.hover(screen.getByRole("button"))
+    expect(await screen.findByText("Shift+click to switch cmux")).toBeInTheDocument()
+  })
+
   it("names no modifiers outside the mini view without cmux", async () => {
     renderSeeded(<EventRow e={makeEvent({})} onOpen={vi.fn()} />)
     await userEvent.hover(screen.getByRole("button"))

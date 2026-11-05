@@ -1,5 +1,6 @@
 import type { MouseEvent, ReactNode } from "react"
 import { useCmux } from "../api/cmux"
+import type { CmuxWorkspace } from "../api/types"
 import { useCmuxSelect } from "../components/CmuxSwitchButton"
 import { isMiniRoute, openExternal } from "../lib/miniMode"
 
@@ -14,6 +15,10 @@ export const SHIFT_CLICK_HINT = "Shift+click to switch cmux"
  *   modal.
  * - Shift+click switches cmux to the first workspace matching one of its
  *   worktrees (in `paths` order), when cmux is available and one matches.
+ *   Not in the full UI when that workspace is already cmux's current one:
+ *   the full UI is most likely being viewed inside it, so there is nothing
+ *   to switch to. The mini view keeps it, since switching also brings cmux
+ *   to the front.
  *
  * `handle` returns true when it took the click, so the row skips its own.
  * `hints` names the modifiers that apply, for the row's tooltip.
@@ -24,11 +29,12 @@ export function useModifierOpen(paths: readonly string[], fullUiHref: () => stri
   const select = useCmuxSelect()
   const mini = isMiniRoute()
   const matches = cmux.data?.available ? cmux.data.matches : undefined
-  let wsRef: string | undefined
+  let ws: CmuxWorkspace | undefined
   for (const p of paths) {
-    wsRef = matches?.[p]?.[0]?.ref
-    if (wsRef) break
+    ws = matches?.[p]?.[0]
+    if (ws) break
   }
+  const wsRef = ws && (mini || !ws.selected) ? ws.ref : undefined
   const hints: string[] = []
   if (mini) hints.push(CMD_CLICK_HINT)
   if (wsRef) hints.push(SHIFT_CLICK_HINT)

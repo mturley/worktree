@@ -4156,9 +4156,12 @@ gives clickable `EventRow`s and `TaskRow`s two extra clicks. Cmd+click, on
 without opening the modal. Shift+click, in both UIs, switches cmux
 (`api.cmuxSelect`) to the first workspace matching the event's `worktree_paths`
 or the task's `taskWorktreePaths`, in order; with cmux unavailable or no
-match, it is a plain click. The row's tooltip lists whichever apply beneath its
-main line; a task's tooltip sits on its title and is shown only when it has
-something to say (a cut-off title, or a modifier hint).
+match, it is a plain click. The full UI also skips it when that workspace is
+already cmux's selected one, since the full UI is most likely open inside it;
+`/mini` keeps it, because switching brings cmux to the front. The row's tooltip lists whichever apply beneath its
+main line. A task row's tooltip covers the whole row, placed like an event
+row's (above, left-aligned, no delay), and is shown only when it has something
+to say (a cut-off title, or a modifier hint).
 
 **Staying inside /mini.** The router uses `useMiniLocation`
 (`lib/miniMode.ts`): navigation to `/mini` itself (the task modal's `?task=`)

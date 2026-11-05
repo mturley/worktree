@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react"
+import { useMemo, useRef, useState, type ReactNode } from "react"
 import { useLocation } from "wouter"
 import { ActionIcon, Badge, Group, Text, Tooltip, UnstyledButton } from "@mantine/core"
 import type { Priority, Task, TaskState } from "../../api/types"
@@ -72,11 +72,12 @@ export function TaskRow({ task, ownResource, ownWorktree, dragHandle, onState, o
   const crossItem = useMemo(() => (opens ? taskCrossHoverItem(task) : null), [task, opens])
   const crossHover = useCrossHover(crossItem)
   // The full title on hover, only when the ellipsis cut it: measured as the
-  // pointer arrives, so no observer runs per row.
+  // pointer enters the row, so no observer runs per row.
   const [truncated, setTruncated] = useState(false)
-  const measure = (e: React.SyntheticEvent<HTMLElement>) => {
-    const el = e.currentTarget
-    setTruncated(el.scrollWidth > el.clientWidth)
+  const titleRef = useRef<HTMLParagraphElement>(null)
+  const measure = () => {
+    const el = titleRef.current
+    if (el) setTruncated(el.scrollWidth > el.clientWidth)
   }
   // Cmd+click (mini view) opens the task in the full UI; Shift+click switches
   // cmux to its first worktree's workspace. Only on a row that opens.
@@ -86,8 +87,12 @@ export function TaskRow({ task, ownResource, ownWorktree, dragHandle, onState, o
   const open = (e: React.MouseEvent) => {
     if (!modifier.handle(e)) onOpen?.()
   }
-  // One tooltip on the title: the full title when the ellipsis cut it, and
-  // "Open task" with the modifier clicks when any apply.
+  /*
+   * One tooltip for the whole row: the full title when the ellipsis cut it,
+   * and "Open task" with the modifier clicks when any apply. Placed as an
+   * event row's is — above, left-aligned, no delay — since the whole row is
+   * the target.
+   */
   const tipLabel = (
     <>
       {truncated && <div>{task.title}</div>}
@@ -95,125 +100,132 @@ export function TaskRow({ task, ownResource, ownWorktree, dragHandle, onState, o
     </>
   )
   const titleText = (
-    <Tooltip label={tipLabel} disabled={!truncated && hints.length === 0} openDelay={400} multiline maw={420}>
-      <Text
-        span
-        size="sm"
-        truncate="end"
-        data-task-title
-        onMouseEnter={measure}
-        style={{ display: "block", opacity: task.state === "done" ? 0.6 : 1 }}
-        td={task.state === "done" ? "line-through" : undefined}
-      >
-        {task.title}
-      </Text>
-    </Tooltip>
+    <Text
+      ref={titleRef}
+      span
+      size="sm"
+      truncate="end"
+      data-task-title
+      style={{ display: "block", opacity: task.state === "done" ? 0.6 : 1 }}
+      td={task.state === "done" ? "line-through" : undefined}
+    >
+      {task.title}
+    </Text>
   )
   return (
-    <Group
-      data-task-row
-      data-clickable={onOpen ? "true" : undefined}
-      {...crossHover}
-      gap="xs"
-      wrap="nowrap"
-      py={4}
-      // No padding before the grip: rows sit at the panel's edge in every sort.
-      pl={0}
-      pr="xs"
-      onClick={onOpen ? open : undefined}
-      onMouseDown={onOpen ? modifier.onMouseDown : undefined}
-      style={onOpen ? { cursor: "pointer" } : undefined}
+    <Tooltip
+      label={tipLabel}
+      disabled={!truncated && hints.length === 0}
+      position="top-start"
+      multiline
+      maw={420}
     >
-      {/* A plain click on the grip must not reach the row (it would open
-          the modal). dnd-kit listens for mousedown, touchstart and keydown
-          on the whole row (TaskList), which this leaves alone. The click
-          after a real drag is swallowed by dnd-kit at the document. */}
-      <span
-        className="task-grip"
-        style={{ width: 14, flex: "none" }}
-        onClick={keepFromRow}
-        onPointerDown={keepFromRow}
+      <Group
+        data-task-row
+        data-clickable={onOpen ? "true" : undefined}
+        {...crossHover}
+        gap="xs"
+        wrap="nowrap"
+        py={4}
+        // No padding before the grip: rows sit at the panel's edge in every sort.
+        pl={0}
+        pr="xs"
+        onClick={onOpen ? open : undefined}
+        onMouseDown={onOpen ? modifier.onMouseDown : undefined}
+        onMouseEnter={measure}
+        style={onOpen ? { cursor: "pointer" } : undefined}
       >
-        {dragHandle}
-      </span>
-      <TaskStateCheckbox state={task.state} priority={task.priority} title={task.title} onPick={onState} />
-      <ActionIcon
-        className="task-row-control"
-        variant="transparent"
-        size="sm"
-        aria-label={task.starred ? `Unstar “${task.title}”` : `Star “${task.title}”`}
-        aria-pressed={task.starred}
-        onClick={(e) => {
-          keepFromRow(e)
-          onToggleStar()
-        }}
-        style={{ color: task.starred ? "var(--task-accent)" : "var(--mantine-color-dark-3)", flex: "none" }}
-      >
-        {task.starred ? "★" : "☆"}
-      </ActionIcon>
-      <TaskPriorityMenu priority={task.priority} title={task.title} onPick={onPriority} />
-      {onOpen ? (
-        <UnstyledButton
-          style={{ flex: 1, minWidth: 0, display: "block" }}
-          onClick={(e) => {
-            // The row would open it too; once is enough.
-            keepFromRow(e)
-            open(e)
-          }}
+        {/* A plain click on the grip must not reach the row (it would open
+            the modal). dnd-kit listens for mousedown, touchstart and keydown
+            on the whole row (TaskList), which this leaves alone. The click
+            after a real drag is swallowed by dnd-kit at the document. */}
+        <span
+          className="task-grip"
+          style={{ width: 14, flex: "none" }}
+          onClick={keepFromRow}
+          onPointerDown={keepFromRow}
         >
-          {titleText}
-        </UnstyledButton>
-      ) : (
-        <div style={{ flex: 1, minWidth: 0 }}>{titleText}</div>
-      )}
-      {(task.unread_count ?? 0) > 0 && (
-        // An agent's events newer than the task's read cursor. Opening the
-        // modal does not clear it; only a mark read does.
-        <UnreadMarkerDot label="unread task activity" />
-      )}
-      {task.blocked && task.state !== "done" && (
-        // Never red for a resolved blocker: the server sends only the
-        // unresolved ones' labels, and blocked only while one is left.
-        // A done task is never blocked (the server agrees).
-        <BlockersHoverCard blockers={task.open_blockers}>
-          <Badge
-            data-testid="task-blocked-chip"
-            size="xs"
-            variant="light"
-            color="red"
-            style={{ flex: "none", textTransform: "none" }}
-          >
-            ⛔ blocked
-          </Badge>
-        </BlockersHoverCard>
-      )}
-      {due && (
-        <Tooltip label={due.title}>
-          <Badge size="xs" variant="light" color={DUE_COLOR[due.tone]} style={{ flex: "none" }}>
-            {due.text}
-          </Badge>
-        </Tooltip>
-      )}
-      {task.subtasks_total > 0 && (
-        <Badge size="xs" variant="light" color="gray" style={{ flex: "none" }}>
-          {task.subtasks_done}/{task.subtasks_total}
-        </Badge>
-      )}
-      {link && (
-        <TaskLinkChip
-          task={task}
-          link={link}
+          {dragHandle}
+        </span>
+        <TaskStateCheckbox state={task.state} priority={task.priority} title={task.title} onPick={onState} />
+        <ActionIcon
+          className="task-row-control"
+          variant="transparent"
+          size="sm"
+          aria-label={task.starred ? `Unstar “${task.title}”` : `Star “${task.title}”`}
+          aria-pressed={task.starred}
           onClick={(e) => {
             keepFromRow(e)
-            if (link.worktree) navigate(`/worktree/${encodeURIComponent(link.worktree)}`)
-            else if (link.target) {
-              const { worktree, resource } = link.target
-              navigate(`/worktree/${encodeURIComponent(worktree)}?resource=${serializeResourceKey(resource)}`)
-            }
+            onToggleStar()
           }}
-        />
-      )}
-    </Group>
+          style={{ color: task.starred ? "var(--task-accent)" : "var(--mantine-color-dark-3)", flex: "none" }}
+        >
+          {task.starred ? "★" : "☆"}
+        </ActionIcon>
+        <TaskPriorityMenu priority={task.priority} title={task.title} onPick={onPriority} />
+        {onOpen ? (
+          <UnstyledButton
+            style={{ flex: 1, minWidth: 0, display: "block" }}
+            onClick={(e) => {
+              // The row would open it too; once is enough.
+              keepFromRow(e)
+              open(e)
+            }}
+          >
+            {titleText}
+          </UnstyledButton>
+        ) : (
+          <div style={{ flex: 1, minWidth: 0 }}>{titleText}</div>
+        )}
+        {(task.unread_count ?? 0) > 0 && (
+          // An agent's events newer than the task's read cursor. Opening the
+          // modal does not clear it; only a mark read does.
+          <UnreadMarkerDot label="unread task activity" />
+        )}
+        {task.blocked && task.state !== "done" && (
+          // Never red for a resolved blocker: the server sends only the
+          // unresolved ones' labels, and blocked only while one is left.
+          // A done task is never blocked (the server agrees).
+          <BlockersHoverCard blockers={task.open_blockers}>
+            <Badge
+              data-testid="task-blocked-chip"
+              size="xs"
+              variant="light"
+              color="red"
+              style={{ flex: "none", textTransform: "none" }}
+            >
+              ⛔ blocked
+            </Badge>
+          </BlockersHoverCard>
+        )}
+        {due && (
+          <Tooltip label={due.title}>
+            <Badge size="xs" variant="light" color={DUE_COLOR[due.tone]} style={{ flex: "none" }}>
+              {due.text}
+            </Badge>
+          </Tooltip>
+        )}
+        {task.subtasks_total > 0 && (
+          <Badge size="xs" variant="light" color="gray" style={{ flex: "none" }}>
+            {task.subtasks_done}/{task.subtasks_total}
+          </Badge>
+        )}
+        {link && (
+          <TaskLinkChip
+            task={task}
+            link={link}
+            onClick={(e) => {
+              keepFromRow(e)
+              if (link.worktree) navigate(`/worktree/${encodeURIComponent(link.worktree)}`)
+              else if (link.target) {
+                const { worktree, resource } = link.target
+                navigate(`/worktree/${encodeURIComponent(worktree)}?resource=${serializeResourceKey(resource)}`)
+              }
+            }}
+          />
+        )}
+      </Group>
+    </Tooltip>
   )
 }
 
