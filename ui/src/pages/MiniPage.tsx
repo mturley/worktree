@@ -92,8 +92,10 @@ function MiniColumn({ header, controls, children }: { header: ReactNode; control
  * itself.
  *
  * The toggle beside the logo swaps the tabs for columns showing both
- * at once, remembered per browser. The app gives each of its views (these two,
- * and a task's or an event's details) its own dropdown size.
+ * at once, remembered per browser. The app remembers a dropdown size for each
+ * of the two, widening it while a task is open (see useMacDropdownView). A
+ * task's or an event's details fill a narrow dropdown and open windowed in a
+ * wide one (see useMiniModalFullScreen).
  *
  * Sized by the popover, so no fixed width.
  */
@@ -122,7 +124,7 @@ export function MiniPage() {
   // The same query (and cache entry) the Tasks tab's list uses.
   const tasks = useTasks(ALL_TASKS, { completed: prefs.showCompleted, archived: prefs.includeArchived })
   const { unread, count } = unreadBadge(wts.data)
-  useMacDropdownView(expanded, activity.eventOpen)
+  useMacDropdownView(expanded)
 
   useEffect(() => postToMac({ type: "ready" }), [])
 

@@ -1,23 +1,23 @@
 import AppKit
 
-/// The page's views (its `view` message), each with its own popover size.
+/// The page's modes (its `view` message), each with its own popover size.
 enum DropdownView: String {
-    case collapsed, expanded, task, event
+    case collapsed, expanded
 
-    /// The task and event details use the page's wide layout (48em).
     var standard: NSSize {
         switch self {
         case .collapsed: return NSSize(width: 600, height: 800)
         case .expanded: return NSSize(width: 1200, height: 800)
-        case .task, .event: return NSSize(width: 768, height: 800)
         }
     }
 
-    /// Expanded fits two columns of the others' minimum width.
+    /// Expanded fits two columns of collapsed's minimum width. The page opens
+    /// its task and event details windowed from expanded's minimum width up
+    /// (MINI_WINDOWED_MODAL_MIN_WIDTH in ui/src/hooks/useMiniModalFullScreen.ts).
     var minimum: NSSize {
         switch self {
         case .expanded: return NSSize(width: 840, height: 480)
-        case .collapsed, .task, .event: return NSSize(width: 420, height: 480)
+        case .collapsed: return NSSize(width: 420, height: 480)
         }
     }
 
@@ -27,15 +27,17 @@ enum DropdownView: String {
         switch self {
         case .collapsed: return ("popoverWidth", "popoverHeight")
         case .expanded: return ("popoverExpandedWidth", "popoverExpandedHeight")
-        case .task: return ("popoverTaskWidth", "popoverTaskHeight")
-        case .event: return ("popoverEventWidth", "popoverEventHeight")
         }
     }
 }
 
-/// Each view's popover size, remembered across launches in the app's defaults.
+/// The narrowest the popover gets while a task is open: the page's `sm`
+/// breakpoint (48em), from which the task's sidebar sits beside its content.
+let taskMinWidth: CGFloat = 768
+
+/// Each mode's popover size, remembered across launches in the app's defaults.
 enum PopoverSize {
-    /// The view's saved size, or its standard one when nothing (or nothing
+    /// The mode's saved size, or its standard one when nothing (or nothing
     /// usable) was saved.
     static func saved(_ view: DropdownView) -> NSSize {
         let d = UserDefaults.standard
@@ -55,31 +57,50 @@ enum PopoverSize {
     }
 
     static func resetAll() {
-        for view in [DropdownView.collapsed, .expanded, .task, .event] { reset(view) }
+        for view in [DropdownView.collapsed, .expanded] { reset(view) }
     }
 
-    /// Between the view's minimum and what fits on screen below the menu bar.
-    static func clamped(_ size: NSSize, for view: DropdownView, on screen: NSScreen?) -> NSSize {
+    /// Drops the sizes once kept for a task's and an event's details, which
+    /// now take the mode's size.
+    static func dropRetiredKeys() {
+        for key in ["popoverTaskWidth", "popoverTaskHeight", "popoverEventWidth", "popoverEventHeight"] {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
+
+    /// The mode's minimum, no narrower than taskMinWidth while a task is open.
+    static func minimum(_ view: DropdownView, taskOpen: Bool) -> NSSize {
+        var m = view.minimum
+        if taskOpen { m.width = max(m.width, taskMinWidth) }
+        return m
+    }
+
+    /// Between the minimum and what fits on screen below the menu bar.
+    static func clamped(_ size: NSSize, for view: DropdownView, taskOpen: Bool, on screen: NSScreen?) -> NSSize {
+        let minimum = minimum(view, taskOpen: taskOpen)
         let visible = screen?.visibleFrame.size ?? size
         let margin: CGFloat = 20
-        let maxW = max(view.minimum.width, visible.width - margin)
-        let maxH = max(view.minimum.height, visible.height - margin)
-        return NSSize(width: min(max(size.width, view.minimum.width), maxW),
-                      height: min(max(size.height, view.minimum.height), maxH))
+        let maxW = max(minimum.width, visible.width - margin)
+        let maxH = max(minimum.height, visible.height - margin)
+        return NSSize(width: min(max(size.width, minimum.width), maxW),
+                      height: min(max(size.height, minimum.height), maxH))
     }
 }
 
 /// A resize corner for the popover, which has none of its own. It sits over
 /// the bottom-right corner of the content; dragging it resizes the popover and
 /// double-clicking it restores the standard size. Either applies only to the
-/// view showing.
+/// mode showing, including while a task is open (which keeps the popover no
+/// narrower than taskMinWidth).
 @MainActor
 final class ResizeGrip: NSView {
     static let side: CGFloat = 16
 
     weak var popover: NSPopover?
-    /// The view showing, whose size this changes.
+    /// The mode showing, whose size this changes.
     var currentView: () -> DropdownView = { .collapsed }
+    /// Whether a task is open, which sets a wider minimum.
+    var taskOpen: () -> Bool = { false }
 
     /// From the mouse to the popover window's right edge, at mouse down.
     private var rightOffset: CGFloat = 0
@@ -149,6 +170,6 @@ final class ResizeGrip: NSView {
     }
 
     private func resize(_ popover: NSPopover, to size: NSSize) {
-        popover.contentSize = PopoverSize.clamped(size, for: currentView(), on: window?.screen)
+        popover.contentSize = PopoverSize.clamped(size, for: currentView(), taskOpen: taskOpen(), on: window?.screen)
     }
 }

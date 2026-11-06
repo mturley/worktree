@@ -17,8 +17,7 @@ import { eventWorktrees, followResourceState, isArchivedEvent } from "../lib/ope
 import { eventTaskKey } from "../lib/taskEventKey"
 import { OpenInFullUiButton } from "./OpenInFullUiButton"
 import { eventFullUiHref } from "../lib/fullUiLink"
-import { hasMacBridge } from "../lib/macBridge"
-import { isMiniRoute } from "../lib/miniMode"
+import { useMiniModalFullScreen } from "../hooks/useMiniModalFullScreen"
 import { MARK_READ_BUTTON_PROPS, READ_BOX_BORDER, UNREAD_BOX_BORDER } from "../lib/unread"
 import { canMarkEventRead, canMarkEventUnread, useMarkEventRead, useMarkEventUnread } from "../hooks/useMarkEventRead"
 
@@ -47,6 +46,7 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
 }) {
   const actionResource = e?.resource_url ? eventResource(e, resolveResource) : undefined
   const [, navigate] = useLocation()
+  const fullScreen = useMiniModalFullScreen()
   const markEventRead = useMarkEventRead()
   const markEventUnread = useMarkEventUnread()
   const [marking, setMarking] = useState(false)
@@ -100,10 +100,7 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
   }
 
   return (
-    <Modal opened={!!e} onClose={onClose} size="lg" fullScreen={isMiniRoute()}
-      // In the menu bar app, opening and closing resize the dropdown (the event
-      // view has its own size), and a transition on top of that looks bad.
-      transitionProps={hasMacBridge() ? { duration: 0 } : undefined}
+    <Modal opened={!!e} onClose={onClose} size="lg" fullScreen={fullScreen}
       // A border, not an inset outline, which the sticky header paints over.
       // Always the same width, so clearing it does not shift the content.
       // The title fills the header, to put its button beside the close button.

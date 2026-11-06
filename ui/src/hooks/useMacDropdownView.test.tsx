@@ -15,44 +15,30 @@ afterEach(() => {
 })
 
 let modal: TaskModal | null = null
-const Probe = ({ expanded = false, eventOpen = false }: { expanded?: boolean; eventOpen?: boolean }) => {
-  useMacDropdownView(expanded, eventOpen)
+const Probe = ({ expanded = false }: { expanded?: boolean }) => {
+  useMacDropdownView(expanded)
   modal = useTaskModal()
   return null
 }
-const wrap = (expanded = false, eventOpen = false) => (
-  <TaskModalProvider><Probe expanded={expanded} eventOpen={eventOpen} /></TaskModalProvider>
+const wrap = (expanded = false) => (
+  <TaskModalProvider><Probe expanded={expanded} /></TaskModalProvider>
 )
 
 describe("useMacDropdownView", () => {
-  it("names the collapsed or expanded view while no modal is open", () => {
+  it("names the collapsed or expanded mode while no task is open", () => {
     window.history.replaceState({}, "", "/mini")
     const { rerender } = render(wrap())
-    expect(post).toHaveBeenLastCalledWith({ type: "view", view: "collapsed" })
+    expect(post).toHaveBeenLastCalledWith({ type: "view", view: "collapsed", taskOpen: false })
     rerender(wrap(true))
-    expect(post).toHaveBeenLastCalledWith({ type: "view", view: "expanded" })
+    expect(post).toHaveBeenLastCalledWith({ type: "view", view: "expanded", taskOpen: false })
   })
 
-  it("names the event view while an event's details are open", () => {
-    window.history.replaceState({}, "", "/mini")
-    const { rerender } = render(wrap(true, true))
-    expect(post).toHaveBeenLastCalledWith({ type: "view", view: "event" })
-    rerender(wrap(true, false))
-    expect(post).toHaveBeenLastCalledWith({ type: "view", view: "expanded" })
-  })
-
-  it("names the task view while a task is open, and returns to the mode on close", () => {
+  it("says a task is open, keeping the mode, and when it closes", () => {
     // Opened from the URL, so close replaces it at once.
     window.history.replaceState({}, "", "/mini?task=7")
     render(wrap(true))
-    expect(post).toHaveBeenLastCalledWith({ type: "view", view: "task" })
+    expect(post).toHaveBeenLastCalledWith({ type: "view", view: "expanded", taskOpen: true })
     act(() => modal!.close())
-    expect(post).toHaveBeenLastCalledWith({ type: "view", view: "expanded" })
-  })
-
-  it("prefers the task view when a task opens over an event's details", () => {
-    window.history.replaceState({}, "", "/mini?task=7")
-    render(wrap(false, true))
-    expect(post).toHaveBeenLastCalledWith({ type: "view", view: "task" })
+    expect(post).toHaveBeenLastCalledWith({ type: "view", view: "expanded", taskOpen: false })
   })
 })

@@ -307,9 +307,9 @@ describe("MiniPage", () => {
     it("tells the app which view it is showing", async () => {
       stubBridge()
       wrap()
-      expect(post).toHaveBeenCalledWith({ type: "view", view: "collapsed" })
+      expect(post).toHaveBeenCalledWith({ type: "view", view: "collapsed", taskOpen: false })
       await expand()
-      expect(post).toHaveBeenCalledWith({ type: "view", view: "expanded" })
+      expect(post).toHaveBeenCalledWith({ type: "view", view: "expanded", taskOpen: false })
     })
 
     it("Esc closes the dropdown with nothing left to clear, having no tab to go back to", async () => {
@@ -325,15 +325,14 @@ describe("MiniPage", () => {
     })
   })
 
-  it("tells the app when an event's details open and close", async () => {
+  it("an event's details leave the dropdown's size alone", async () => {
     stubBridge()
     mocks.events = [event]
     vi.spyOn(api, "locatePRComment").mockRejectedValue(new Error("404"))
     wrap()
+    const before = post.mock.calls.length
     await userEvent.click(screen.getByText("Looks good to me"))
     await screen.findByRole("dialog")
-    expect(post).toHaveBeenCalledWith({ type: "view", view: "event" })
-    await userEvent.keyboard("{Escape}")
-    await waitFor(() => expect(post).toHaveBeenLastCalledWith({ type: "view", view: "collapsed" }))
+    expect(post.mock.calls.slice(before).filter(([m]) => m.type === "view")).toEqual([])
   })
 })

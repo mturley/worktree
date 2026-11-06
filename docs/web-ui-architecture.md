@@ -4132,16 +4132,28 @@ sets the icon (`lastUnread`); a CLI report moves it only while it shows a
 connected state. The app sets `NSAppSleepDisabled`, so App Nap does not
 stretch either path while nothing of it is on screen.
 
-**Dropdown sizes.** Each of the page's four views has its own size in the app's
-defaults (`DropdownView`, `PopoverSize` in `ResizeGrip.swift`), its default until
-the grip is dragged there; a drag saves only the view showing. The defaults are
-600×800 collapsed, 1200×800 expanded and 768×800 for a task or event; the minimum
-is 420×480, or 840×480 expanded. Collapsed keeps the
-keys from when there was one size. Double-clicking the grip resets the view
-showing, and the menu's "Reset dropdown to default size" resets all four. A size
-too big for the screen is shrunk to fit without touching what is saved, and is
-re-applied each time the popover opens, so it comes back on a bigger screen. Both
-modals skip their transition under the bridge, since they open during a resize.
+**Dropdown sizes.** The app remembers one size per mode, collapsed and
+expanded, in its defaults (`DropdownView`, `PopoverSize` in `ResizeGrip.swift`),
+each its default until the grip is dragged there; a drag saves only the mode
+showing. The defaults are 600×800 collapsed and 1200×800 expanded; the minimum
+is 420×480, or 840×480 expanded. Collapsed keeps the keys from when there was
+one size, and the app drops the task and event keys it once kept. While a task
+is open (the `view` message's `taskOpen`), the popover is no narrower than
+`taskMinWidth` (768, the page's `sm` breakpoint), so the task's sidebar sits
+beside its content; closing the task returns to the saved size, and a drag
+while it is open saves to the mode (the grip's minimum then being 768 wide).
+An event's details never resize the dropdown. Double-clicking the grip resets
+the mode showing, and the menu's "Reset dropdown to default size" resets both.
+A size too big for the screen is shrunk to fit without touching what is saved,
+and is re-applied each time the popover opens, so it comes back on a bigger
+screen. The task modal skips its transition under the bridge, since it may
+open during a resize.
+
+**Windowed details.** On `/mini`, the task and event modals fill the viewport
+only below `MINI_WINDOWED_MODAL_MIN_WIDTH` (840, expanded's minimum, and room
+for the task's `xl` modal with margins; `useMiniModalFullScreen`). From there
+up, so always in expanded and in a widened collapsed dropdown, they open as
+ordinary centred modals.
 
 **Open in full UI.** Both details modals show `OpenInFullUiButton` beside their
 close button on `/mini` only, linking to the full UI (`lib/fullUiLink.ts`): over
@@ -4188,7 +4200,7 @@ API, so skipping `useTabPresence` alone would not be enough.
 | `ready` | `MiniPage` on mount | clears the disconnected / needs-login icon |
 | `login` | `LoginPage` | needs-login icon |
 | `unreachable` | `ServerUnreachable` | disconnected icon |
-| `view {view}` | `useMacDropdownView`: `collapsed`, `expanded`, `event` or `task`, the topmost showing | moves the popover to that view's size (see "Dropdown sizes") |
+| `view {view, taskOpen}` | `useMacDropdownView`: `collapsed` or `expanded`, and whether a task is open | moves the popover to that mode's size, at least 768 wide while a task is open (see "Dropdown sizes") |
 | `close` | `MiniPage`'s `SearchBar` `onEscapeIdle`: Esc with no modal, menu or suggestions open and nothing to clear | `popover.close()`, unless "Close dropdown on Esc" is off |
 
 When a load fails at the network level there is no page to count down, so
@@ -4215,7 +4227,7 @@ an accessory-policy AppKit app: `NSStatusItem` + `NSPopover` + `WKWebView`
 loading `macapp.ServerURL` (`http://127.0.0.1:8475`, fixed). The web view stays
 loaded while the popover is closed so the icon keeps current. The popover has
 no resize handle of its own, so `ResizeGrip.swift` draws one in its
-bottom-right corner; each view's size is kept in the app's `UserDefaults`
+bottom-right corner; each mode's size is kept in the app's `UserDefaults`
 (see "Dropdown sizes"). `Build` /
 `BuildWithURL` compile the Swift files with `swiftc` into a staging bundle and
 swap it in, so a failed build leaves the old app. `SourceHash` (over the

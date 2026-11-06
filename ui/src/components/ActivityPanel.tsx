@@ -53,8 +53,6 @@ export function useActivityPanel(opts: {
   controls: ReactNode
   render: (top?: ReactNode, headerStyle?: CSSProperties) => ReactNode
   modals: ReactNode
-  /** Whether an event's details modal is open. */
-  eventOpen: boolean
   events: TimelineEvent[]
   hasMore: boolean
   sources: string[]
@@ -239,7 +237,7 @@ export function useActivityPanel(opts: {
   )
 
   return {
-    controls, render, modals, eventOpen: pickedEvent !== null, events: tl.events, hasMore: tl.hasMore,
+    controls, render, modals, events: tl.events, hasMore: tl.hasMore,
     sources, filtered, clearFilters, pickEvent, pickTask,
   }
 }

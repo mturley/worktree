@@ -30,11 +30,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     /// rather than guess.
     private var lastUnread: Bool?
     private let unreadWatch = UnreadWatch()
-    /// The view the page last said it shows, whose size the popover has.
+    /// The mode the page last said it shows, whose size the popover has.
     private var currentView = DropdownView.collapsed
-    /// The last of collapsed or expanded, what's left when details go away
-    /// with the page.
-    private var modeView = DropdownView.collapsed
+    /// Whether the page last said a task is open, which widens the popover
+    /// to at least taskMinWidth until it closes.
+    private var taskOpen = false
     /// The last /mini URL that loaded (with its ?task= and such), so coming
     /// back from offline returns to it rather than to plain /mini.
     private var lastMiniURL: URL?
@@ -70,6 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         webView.navigationDelegate = self
         webView.uiDelegate = self
 
+        PopoverSize.dropRetiredKeys()
         let size = PopoverSize.saved(currentView)
         let container = NSView(frame: NSRect(origin: .zero, size: size))
         for view in [webView!, offlineView] as [NSView] {
@@ -88,6 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         grip.autoresizingMask = [.minXMargin, .maxYMargin]
         grip.popover = popover
         grip.currentView = { [weak self] in self?.currentView ?? .collapsed }
+        grip.taskOpen = { [weak self] in self?.taskOpen ?? false }
         container.addSubview(grip)
 
         let controller = NSViewController()
@@ -176,25 +178,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
 
     @objc private func reloadPage() { loadMini() }
 
-    /// Every view's size, unlike double-clicking the grip, which resets the
+    /// Both modes' sizes, unlike double-clicking the grip, which resets the
     /// one showing.
     @objc private func resetSize() {
         PopoverSize.resetAll()
         applySize()
     }
 
-    /// The page's `view`: moves to that view's size.
-    private func setView(_ view: DropdownView) {
+    /// The page's `view`: moves to that mode's size, widened while a task is open.
+    private func setView(_ view: DropdownView, taskOpen: Bool) {
         currentView = view
-        if view == .collapsed || view == .expanded { modeView = view }
+        self.taskOpen = taskOpen
         applySize()
     }
 
-    /// The current view's saved size, as far as it fits the screen holding
-    /// the icon the popover hangs from. Saves nothing.
+    /// The current mode's saved size, no narrower than taskMinWidth while a
+    /// task is open, as far as it fits the screen holding the icon the
+    /// popover hangs from. Saves nothing: closing the task returns to the
+    /// saved width.
     private func applySize() {
         let screen = statusItem.button?.window?.screen ?? NSScreen.main
-        popover.contentSize = PopoverSize.clamped(PopoverSize.saved(currentView), for: currentView, on: screen)
+        popover.contentSize = PopoverSize.clamped(PopoverSize.saved(currentView), for: currentView,
+                                                  taskOpen: taskOpen, on: screen)
     }
 
     @objc private func togglePurpleIcon() { icon.purple.toggle() }
@@ -249,8 +254,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
 
     private func showOffline() {
         icon.state = .disconnected
-        // The page showing any details is gone.
-        setView(modeView)
+        // The page showing any task is gone.
+        setView(currentView, taskOpen: false)
         webView.isHidden = true
         offlineView.isHidden = false
         // A failed load leaves the previous page in place, scripts still
@@ -313,7 +318,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             popover.close()
         case "view":
             guard let name = body["view"] as? String, let view = DropdownView(rawValue: name) else { return }
-            setView(view)
+            setView(view, taskOpen: body["taskOpen"] as? Bool ?? false)
         case "login":
             icon.state = .needsLogin
         case "open":

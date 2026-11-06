@@ -4,8 +4,9 @@ export type MacMessage =
   | { type: "ready" }
   | { type: "login" }
   | { type: "unreachable" }
-  // Which view is showing, each with its own dropdown size (see useMacDropdownView).
-  | { type: "view"; view: "collapsed" | "expanded" | "task" | "event" }
+  // Which mode is showing, each with its own dropdown size, and whether a task
+  // is open, which widens the dropdown (see useMacDropdownView).
+  | { type: "view"; view: "collapsed" | "expanded"; taskOpen: boolean }
   // Esc with nothing else to do: close the dropdown, if the app's setting allows (see MiniPage).
   | { type: "close" }
 
