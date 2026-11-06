@@ -50,6 +50,11 @@ export interface WorktreeSummary {
   /** The notes as the search index sees them; absent when there are none. */
   notes_search?: string;
 }
+/** GET /api/event-text-change: a description edit's text, exactly as stored. */
+export interface EventTextChange {
+  old_text: string;
+  new_text: string;
+}
 export interface TimelineEvent {
   id: string; ts: string; external_ts: string; source: string;
   type: string; type_label: string; title: string; body: string; author: string;
