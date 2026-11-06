@@ -20,6 +20,7 @@ import { eventFullUiHref } from "../lib/fullUiLink"
 import { useMiniModalFullScreen } from "../hooks/useMiniModalFullScreen"
 import { MARK_READ_BUTTON_PROPS, READ_BOX_BORDER, UNREAD_BOX_BORDER } from "../lib/unread"
 import { canMarkEventRead, canMarkEventUnread, useMarkEventRead, useMarkEventUnread } from "../hooks/useMarkEventRead"
+import { BotMark } from "./BotMark"
 
 /**
  * Full detail for one timeline event.
@@ -176,7 +177,10 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
 
           <Divider />
 
-          <Text fw={600} style={{ overflowWrap: "anywhere" }}>{e.title}</Text>
+          <Group gap={4} wrap="nowrap" align="flex-start">
+            <BotMark authorType={e.author_type} author={e.author} />
+            <Text fw={600} style={{ overflowWrap: "anywhere" }}>{e.title}</Text>
+          </Group>
           <Text size="xs" c="dimmed">
             {e.author && `${e.author} · `}
             {rel(e.external_ts || e.ts)}

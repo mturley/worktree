@@ -47,3 +47,10 @@ describe("the PR Commits category", () => {
     expect(EVENT_CATEGORIES.pr.find((c) => c.key === "commits")?.types).toContain("pr_needs_rebase")
   })
 })
+
+describe("Edits category", () => {
+  it("includes PR description changes", () => {
+    expect(EVENT_CATEGORIES.pr.find((c) => c.key === "edits")?.types).toContain("pr_description_changed")
+    expect(eventTypesFor(["pr"], ["edits"])).toContain("pr_description_changed")
+  })
+})

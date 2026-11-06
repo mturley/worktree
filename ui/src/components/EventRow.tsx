@@ -20,6 +20,7 @@ import { eventTaskKey } from "../lib/taskEventKey"
 import { WorktreeName, WorktreePreview } from "./WorktreeName"
 import { TooltipWithHints, useModifierOpen } from "../hooks/useModifierOpen"
 import { eventFullUiHref } from "../lib/fullUiLink"
+import { BotMark } from "./BotMark"
 
 /**
  * One entry on the timeline rail: a dot on the line, then the event's text.
@@ -196,6 +197,7 @@ export function EventRow({
                 Archived
               </Badge>
             )}
+            <BotMark authorType={e.author_type} author={e.author} />
             <Text size="sm" fw={600} c={archived ? "dimmed" : undefined} style={{ overflowWrap: "anywhere", minWidth: 0 }}>
               <SearchHighlight text={e.title} />
             </Text>
