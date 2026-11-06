@@ -4146,8 +4146,11 @@ An event's details never resize the dropdown. Double-clicking the grip resets
 the mode showing, and the menu's "Reset dropdown to default size" resets both.
 A size too big for the screen is shrunk to fit without touching what is saved,
 and is re-applied each time the popover opens, so it comes back on a bigger
-screen. The task modal skips its transition under the bridge, since it may
-open during a resize.
+screen. The task modal skips its transition when its open widens the
+dropdown (`useTaskOpenResizesDropdown`: under the bridge, narrower than 768
+at the open), and the close that ends that open, since a transition on top
+of a resize looks bad; opened in a dropdown already wide enough, as expanded
+always is, it keeps its transition.
 
 **Windowed details.** On `/mini`, the task and event modals fill the viewport
 only below `MINI_WINDOWED_MODAL_MIN_WIDTH` (840, expanded's minimum, and room

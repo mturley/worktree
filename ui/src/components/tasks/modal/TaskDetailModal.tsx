@@ -13,7 +13,7 @@ import { useTaskModal } from "./TaskModalProvider"
 import { TaskSidebar } from "./TaskSidebar"
 import { useOptimisticTask } from "./useOptimisticTask"
 import { useMiniModalFullScreen } from "../../../hooks/useMiniModalFullScreen"
-import { hasMacBridge } from "../../../lib/macBridge"
+import { useTaskOpenResizesDropdown } from "../../../hooks/useMacDropdownView"
 
 /**
  * The single task detail modal, mounted once in App and driven by
@@ -31,6 +31,7 @@ import { hasMacBridge } from "../../../lib/macBridge"
 export function TaskDetailModal() {
   const { openId, close } = useTaskModal()
   const fullScreen = useMiniModalFullScreen()
+  const resizesDropdown = useTaskOpenResizesDropdown(openId !== null)
   // The last opened id outlives the param by the close transition, so the
   // content fades out instead of blanking first.
   const [shownId, setShownId] = useState<number | null>(openId)
@@ -63,9 +64,10 @@ export function TaskDetailModal() {
       closeOnClickOutside={!dirty}
       size="xl"
       fullScreen={fullScreen}
-      // In the menu bar app, opening and closing may widen the dropdown (see
-      // useMacDropdownView), and a transition on top of that looks bad.
-      transitionProps={hasMacBridge() ? { duration: 0 } : undefined}
+      // In the menu bar app, opening and closing may widen the dropdown and
+      // back (see useMacDropdownView), and a transition on top of that looks
+      // bad. Opened in a dropdown already wide enough, it keeps its transition.
+      transitionProps={resizesDropdown ? { duration: 0 } : undefined}
       withCloseButton={false}
     >
       {id !== null && (

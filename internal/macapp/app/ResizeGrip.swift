@@ -33,6 +33,7 @@ enum DropdownView: String {
 
 /// The narrowest the popover gets while a task is open: the page's `sm`
 /// breakpoint (48em), from which the task's sidebar sits beside its content.
+/// The page's twin is TASK_MIN_WIDTH in ui/src/hooks/useMacDropdownView.ts.
 let taskMinWidth: CGFloat = 768
 
 /// Each mode's popover size, remembered across launches in the app's defaults.
