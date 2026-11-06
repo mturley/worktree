@@ -251,7 +251,11 @@ func (ix *unreadIndex) fillOwn(dto *resourceDTO) {
 // A resource with no cursor on either path is read: a missing cursor is
 // absence of evidence, and a dot that cannot be explained is worse than no
 // dot at all.
-func (ix *unreadIndex) IsUnread(eventID, resType, id, ts, externalTS, eventType, source, authorID string) bool {
+//
+// A bot's description edit is never past the cursor (the Go twin of
+// unread.NotBotDescriptionEditSQL, which sits in the cursor branch only), so
+// it is unread only when marked so.
+func (ix *unreadIndex) IsUnread(eventID, resType, id, ts, externalTS, eventType, source, authorID, authorType string) bool {
 	if ix == nil {
 		return false
 	}
@@ -270,7 +274,8 @@ func (ix *unreadIndex) IsUnread(eventID, resType, id, ts, externalTS, eventType,
 	}
 	// A missing cursor reads as not past it, but a mark still decides.
 	cursor, ok := ix.cursors[unread.Key(resType, id)]
-	return unread.EventUnread(ix.marks, eventID, ts, ok && ts > cursor)
+	pastCursor := ok && ts > cursor && !unread.IsBotDescriptionEdit(eventType, authorType)
+	return unread.EventUnread(ix.marks, eventID, ts, pastCursor)
 }
 
 // canMarkUnread reports whether an event can be marked unread: not one of the

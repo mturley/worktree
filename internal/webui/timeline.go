@@ -222,7 +222,8 @@ func (f eventTypeFilter) sql() (string, []any) {
 //     unread.SlackNewerSQL — shared with unread.SlackCounts, so a thread's
 //     count and this filter cannot disagree.
 const unreadOnlyClause = `AND (
-    (er.resource_type <> 'slack' AND ` + unread.NotMarkedReadSQL + ` AND EXISTS (
+    (er.resource_type <> 'slack' AND ` + unread.NotMarkedReadSQL + `
+        AND ` + unread.NotBotDescriptionEditSQL + ` AND EXISTS (
         SELECT 1 FROM resource_read_cursor c
          WHERE c.resource_type = er.resource_type AND c.resource_id = er.resource_id
            AND e.ts > c.last_read_ts))
@@ -862,7 +863,7 @@ func (e *eventEnricher) fillResource(te *TimelineEvent) {
 		te.ResourceTitle = dto.Title
 		te.Title = slackEventTitle(te.Source, te.Type, te.Title, dto)
 	}
-	te.Unread = e.unread.IsUnread(te.ID, te.ResourceType, te.ResourceID, te.TS, te.ExternalTS, te.Type, te.Source, te.authorID)
+	te.Unread = e.unread.IsUnread(te.ID, te.ResourceType, te.ResourceID, te.TS, te.ExternalTS, te.Type, te.Source, te.authorID, te.AuthorType)
 	te.CanMarkUnread = e.unread.canMarkUnread(te.ResourceType, te.Type, te.Source, te.authorID)
 	wts := e.worktreesWatching(te.ResourceType, te.ResourceID)
 	te.Worktrees = make([]string, 0, len(wts))

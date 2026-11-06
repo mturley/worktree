@@ -93,17 +93,26 @@ func initNotifyCursor(conn *sql.DB) (notifyCursor, error) {
 // newEvent is one (event, resource) pair past the cursor.
 type newEvent struct{ id, ts, source, typ, title, body, resType, resID string }
 
+// botTitlePrefix marks a bot's event in notification text. Notifications are
+// plain text (cmux, macOS, Telegram), so the marker is an emoji here where the
+// web UI uses an icon.
+const botTitlePrefix = "🤖 "
+
 // The user's own events (internal/selfid) are never read, so a mixed
-// batch's count and newest title cover only other people's events.
+// batch's count and newest title cover only other people's events. A bot's
+// description edit (unread.NotBotDescriptionEditSQL) is never read either,
+// even when marked unread: it is churn, never worth an interruption. A bot's
+// other events are, titled with botTitlePrefix.
 // readNewEvents returns the notify-worthy events not yet seen, oldest first,
 // and the advanced cursor. The cursor advances whatever the caller then does
 // with the events: delivery is fire-and-forget, never retried.
 func readNewEvents(conn *sql.DB, c notifyCursor) ([]newEvent, notifyCursor, error) {
 	q := `SELECT e.id, e.ts, e.source, e.type, e.title, COALESCE(e.body,''), er.resource_type, er.resource_id,
-	             ` + unread.NotMarkedReadSQL + `
+	             COALESCE(e.author_type,''), ` + unread.NotMarkedReadSQL + `
 	      FROM watcher_events e JOIN watcher_event_resources er ON er.event_id = e.id
 	      WHERE e.ts >= ? AND e.type NOT IN (?` + strings.Repeat(",?", len(notifySkipTypes)-1) + `)
 	        AND ` + selfid.NotMineSQL + `
+	        AND ` + unread.NotBotDescriptionEditSQL + `
 	      ORDER BY e.ts, e.id`
 	args := []any{lookbackFrom(c.ts)}
 	for _, t := range notifySkipTypes {
@@ -120,8 +129,9 @@ func readNewEvents(conn *sql.DB, c notifyCursor) ([]newEvent, notifyCursor, erro
 	var out []newEvent
 	for rows.Next() {
 		var e newEvent
+		var authorType string
 		var notMarkedRead bool
-		if err := rows.Scan(&e.id, &e.ts, &e.source, &e.typ, &e.title, &e.body, &e.resType, &e.resID, &notMarkedRead); err != nil {
+		if err := rows.Scan(&e.id, &e.ts, &e.source, &e.typ, &e.title, &e.body, &e.resType, &e.resID, &authorType, &notMarkedRead); err != nil {
 			return nil, c, err
 		}
 		if e.ts > next.ts {
@@ -133,6 +143,9 @@ func readNewEvents(conn *sql.DB, c notifyCursor) ([]newEvent, notifyCursor, erro
 		// event already read here look new to the next pass.
 		if c.seen[k] || !notMarkedRead {
 			continue
+		}
+		if authorType == "bot" {
+			e.title = botTitlePrefix + e.title
 		}
 		out = append(out, e)
 	}

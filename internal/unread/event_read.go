@@ -235,10 +235,10 @@ type ResourceRef struct{ Type, ID string }
 // Event is what deciding an event's read state needs. A task event has Source
 // "tasks", its TaskID and Actor, and no Resources.
 type Event struct {
-	ID, TS, ExternalTS, Type, Source, AuthorID string
-	Resources                                  []ResourceRef
-	TaskID                                     int64
-	Actor                                      string
+	ID, TS, ExternalTS, Type, Source, AuthorID, AuthorType string
+	Resources                                              []ResourceRef
+	TaskID                                                 int64
+	Actor                                                  string
 }
 
 // IsSlack reports whether the event's read state is Slack's.
@@ -262,9 +262,9 @@ func LoadEvent(conn *sql.DB, id string) (Event, error) {
 	}
 	ev := Event{ID: id}
 	err := conn.QueryRow(`
-		SELECT ts, COALESCE(external_ts,''), type, source, COALESCE(author_id,'')
+		SELECT ts, COALESCE(external_ts,''), type, source, COALESCE(author_id,''), COALESCE(author_type,'')
 		  FROM watcher_events WHERE id = ?`, id).
-		Scan(&ev.TS, &ev.ExternalTS, &ev.Type, &ev.Source, &ev.AuthorID)
+		Scan(&ev.TS, &ev.ExternalTS, &ev.Type, &ev.Source, &ev.AuthorID, &ev.AuthorType)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Event{}, ErrEventNotFound
 	}

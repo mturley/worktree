@@ -493,3 +493,100 @@ func TestRestoreRefusesWhenTheCursorMovedOn(t *testing.T) {
 		t.Fatalf("cursor = %q, want the later read kept", got)
 	}
 }
+
+// setAuthorType stamps an event's watcher author_type ("bot", "user").
+func setAuthorType(t *testing.T, conn *sql.DB, id, authorType string) {
+	t.Helper()
+	if _, err := conn.Exec(`UPDATE watcher_events SET author_type = ? WHERE id = ?`, authorType, id); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A bot's description edit past the cursor is not unread; a person's is, and
+// a bot's other events still are.
+func TestSummaries_BotDescriptionEditNotCounted(t *testing.T) {
+	conn := openDB(t)
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, r := range []string{"o/r#1", "o/r#2", "o/r#3"} {
+		must(unread.MarkRead(conn, "pr", r, "2026-01-01T00:00:00Z"))
+	}
+	addTypedEvent(t, conn, "bot-desc", "2026-01-02T00:00:00Z", "pr_description_changed", "pr", "o/r#1")
+	setAuthorType(t, conn, "bot-desc", "bot")
+	addTypedEvent(t, conn, "human-desc", "2026-01-02T00:00:00Z", "pr_description_changed", "pr", "o/r#2")
+	setAuthorType(t, conn, "human-desc", "user")
+	addTypedEvent(t, conn, "bot-review", "2026-01-02T00:00:00Z", "pr_review", "pr", "o/r#3")
+	setAuthorType(t, conn, "bot-review", "bot")
+
+	sums, err := unread.Summaries(conn)
+	must(err)
+	for id, want := range map[string]int{"o/r#1": 0, "o/r#2": 1, "o/r#3": 1} {
+		if got := sums[unread.Key("pr", id)].Count; got != want {
+			t.Errorf("%s: count = %d, want %d", id, got, want)
+		}
+	}
+}
+
+func TestSummaries_BotDescriptionEditMarkedUnread(t *testing.T) {
+	conn := openDB(t)
+	if err := unread.MarkRead(conn, "jira", "J-1", "2026-01-01T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	addTypedEvent(t, conn, "bot-desc", "2026-01-02T00:00:00Z", "jira_description_changed", "jira", "J-1")
+	setAuthorType(t, conn, "bot-desc", "bot")
+	if err := unread.SetEventMark(conn, "bot-desc", "2026-01-02T00:00:00Z", unread.StateUnread); err != nil {
+		t.Fatal(err)
+	}
+	sums, err := unread.Summaries(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := sums[unread.Key("jira", "J-1")]; got.Count != 1 || got.NewestTS != "2026-01-02T00:00:00Z" {
+		t.Fatalf("summary = %+v, want 1 unread through the marked edit", got)
+	}
+}
+
+// Mark all read clears an unread mark on a bot edit like any other.
+func TestBotDescriptionEdit_MarkUnreadThenMarkAllRead(t *testing.T) {
+	conn := openDB(t)
+	if err := unread.MarkRead(conn, "pr", "o/r#1", "2026-01-01T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	addTypedEvent(t, conn, "bot-desc", "2026-01-02T00:00:00Z", "pr_description_changed", "pr", "o/r#1")
+	setAuthorType(t, conn, "bot-desc", "bot")
+	if err := unread.SetEventMark(conn, "bot-desc", "2026-01-02T00:00:00Z", unread.StateUnread); err != nil {
+		t.Fatal(err)
+	}
+	if err := unread.MarkRead(conn, "pr", "o/r#1", "2026-01-02T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	sums, err := unread.Summaries(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := sums[unread.Key("pr", "o/r#1")].Count; got != 0 {
+		t.Fatalf("count = %d, want 0 after mark all read", got)
+	}
+}
+
+func TestIsBotDescriptionEdit(t *testing.T) {
+	cases := []struct {
+		typ, author string
+		want        bool
+	}{
+		{"pr_description_changed", "bot", true},
+		{"jira_description_changed", "bot", true},
+		{"pr_description_changed", "user", false},
+		{"pr_description_changed", "", false},
+		{"pr_review", "bot", false},
+	}
+	for _, c := range cases {
+		if got := unread.IsBotDescriptionEdit(c.typ, c.author); got != c.want {
+			t.Errorf("IsBotDescriptionEdit(%q, %q) = %v, want %v", c.typ, c.author, got, c.want)
+		}
+	}
+}
