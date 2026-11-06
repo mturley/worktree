@@ -73,7 +73,7 @@ func (s *Server) AttentionInput(worktreePath string) ([]attention.Resource, []at
 			Type: r.Type, ID: r.ID, URL: r.URL,
 			Title: r.Title, CustomName: r.CustomName,
 			Worktrees: paths,
-			State:     r.State, ReviewDecision: r.ReviewDecision, CIStatus: r.CIStatus,
+			State:     r.State, ReviewDecision: r.ReviewDecision, CIStatus: r.CIStatus, Mergeable: r.Mergeable,
 			Assignee: r.Assignee, Status: r.Status, Priority: r.Priority, PriorityRank: r.PriorityRank,
 			// UnreadCount also counts the unread events of tasks linking the
 			// resource, which clear through each task's own cursor.

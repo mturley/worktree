@@ -158,7 +158,7 @@ func TestAttentionInputFacts(t *testing.T) {
 		must(t, resources.Add(s.DB, a, r))
 	}
 	must(t, watcherdb.SetResourceMeta(s.DB, watcher.Resource{Type: "pr", ID: "o/r#mine"}, "My name", ""))
-	state("pr", "o/r#mine", `{"title":"Mine","state":"OPEN","author_id":"101","review_decision":"CHANGES_REQUESTED","ci_status":"FAILURE"}`)
+	state("pr", "o/r#mine", `{"title":"Mine","state":"OPEN","author_id":"101","review_decision":"CHANGES_REQUESTED","ci_status":"FAILURE","mergeable":"CONFLICTING"}`)
 	state("pr", "o/r#review", `{"title":"Theirs","state":"OPEN","author_id":"202","requested_reviewer_ids":["9","101"]}`)
 	state("jira", "J-assigned", `{"summary":"A","status":"New","priority":"Major","priority_rank":2,"assignee":"Me","assignee_id":"acct-me","reporter_id":"other"}`)
 	state("jira", "J-reported", `{"summary":"R","priority":"Minor","priority_rank":4,"assignee_id":"other","reporter_id":"acct-me"}`)
@@ -192,7 +192,7 @@ func TestAttentionInputFacts(t *testing.T) {
 		t.Errorf("mine flags: %+v", mine)
 	}
 	if mine.Title != "Mine" || mine.CustomName != "My name" || mine.URL != "https://pr/mine" || mine.State != "OPEN" ||
-		mine.ReviewDecision != "CHANGES_REQUESTED" || mine.CIStatus != "FAILURE" {
+		mine.ReviewDecision != "CHANGES_REQUESTED" || mine.CIStatus != "FAILURE" || mine.Mergeable != "CONFLICTING" {
 		t.Errorf("mine fields: %+v", mine)
 	}
 	if mine.UnreadCount != 2 || mine.NewestUnreadTS != "2026-02-03T00:00:00Z" {

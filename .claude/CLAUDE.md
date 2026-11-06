@@ -85,10 +85,10 @@ minutes serially; it now runs most tests in parallel.
     interfaces. Pure; the webui adapters and 2-minute cache live in
     `internal/webui/linked_api.go`. Fetched on demand, never polled.
   - `attention` — pure: computes `worktree attention`'s named signals
-    (`review_requested`, `changes_requested`, `ci_failing`, `assigned_to_you`,
+    (`review_requested`, `changes_requested`, `ci_failing`, `needs_rebase`, `assigned_to_you`,
     `mentioned`, `stale_draft`, `task_due_soon`, `blocker_resolved`) and its
     fixed order (priority rank, signal count, newest activity) from facts the
-    caller gathers (`webui.Server.AttentionInput`). Needs watcher >= v0.21.0
+    caller gathers (`webui.Server.AttentionInput`). Needs watcher >= v0.22.0
     for `priority_rank` and `requested_reviewer_ids`.
   - `agentskill` — the embedded `SKILL.md` for AI agents (`worktree
     agent-help` prints it) and `Targets`, where agents look for it

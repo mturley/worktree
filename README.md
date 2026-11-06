@@ -156,7 +156,7 @@ worktree linked <url|type:id> [--resolve-links]  # What a PR, Jira issue or Slac
 ```
 
 `attention` lists each resource with unread events or a named signal
-(`review_requested`, `changes_requested`, `ci_failing`, `assigned_to_you`,
+(`review_requested`, `changes_requested`, `ci_failing`, `needs_rebase`, `assigned_to_you`,
 `mentioned`, `stale_draft`), and each task due soon or newly unblocked
 (`task_due_soon`, `blocker_resolved`), in a fixed order: Jira priority, then number of signals, then newest activity. It
 produces facts; an agent or you decides what needs a reply. `pr-threads` and

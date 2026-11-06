@@ -25,6 +25,7 @@ type Resource struct {
 	State                 string `json:"state,omitempty"`
 	ReviewDecision        string `json:"review_decision,omitempty"`
 	CIStatus              string `json:"ci_status,omitempty"`
+	Mergeable             string `json:"mergeable,omitempty"`      // CONFLICTING | MERGEABLE, empty when unknown
 	Mine                  bool   `json:"mine"`                     // the user opened this PR
 	ReviewRequestedFromMe bool   `json:"review_requested_from_me"` // from the PR's requested reviewers
 
@@ -178,6 +179,9 @@ func resourceSignals(self Self, r Resource) []string {
 	}
 	if r.Mine && open && r.CIStatus == "FAILURE" {
 		signals = append(signals, "ci_failing")
+	}
+	if r.Mine && open && r.Mergeable == "CONFLICTING" {
+		signals = append(signals, "needs_rebase")
 	}
 	if r.AssignedToMe && r.UnreadCount > 0 {
 		signals = append(signals, "assigned_to_you")

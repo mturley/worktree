@@ -68,7 +68,7 @@ func TestWorktreeResourcesEndpointEnrichment(t *testing.T) {
 	// A never-polled resource, added so we can assert graceful degrade.
 	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#2", URL: "u3", Related: true})
 
-	prState := `{"title":"Fix the widget","state":"OPEN","review_decision":"CHANGES_REQUESTED","has_new_commits_since_review":true,"ci_status":"failure","author":"octocat","latest_commit_sha":"abc123"}`
+	prState := `{"title":"Fix the widget","state":"OPEN","review_decision":"CHANGES_REQUESTED","has_new_commits_since_review":true,"ci_status":"failure","mergeable":"CONFLICTING","author":"octocat","latest_commit_sha":"abc123"}`
 	if err := watcherdb.UpsertResourceState(conn, "pr", "o/r#1", prState, "2026-08-01T00:00:00Z", "2026-08-01T00:05:00Z"); err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestWorktreeResourcesEndpointEnrichment(t *testing.T) {
 		t.Fatalf("missing pr o/r#1 in %+v", got)
 	}
 	if pr.Title != "Fix the widget" || pr.State != "OPEN" || pr.ReviewDecision != "CHANGES_REQUESTED" ||
-		pr.CIStatus != "failure" || !pr.NewCommitsSinceReview || pr.Author != "octocat" || pr.UpdatedAt != "2026-08-01T00:00:00Z" {
+		pr.CIStatus != "failure" || pr.Mergeable != "CONFLICTING" || !pr.NewCommitsSinceReview || pr.Author != "octocat" || pr.UpdatedAt != "2026-08-01T00:00:00Z" {
 		t.Fatalf("pr enrichment mismatch: %+v", pr)
 	}
 
