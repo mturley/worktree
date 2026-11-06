@@ -54,6 +54,11 @@ func TestSignals(t *testing.T) {
 		{"ci failing", Resource{Type: "pr", ID: "1", State: "OPEN", Mine: true, CIStatus: "FAILURE"}, "ci_failing", true},
 		{"ci failing, not mine", Resource{Type: "pr", ID: "1", State: "OPEN", CIStatus: "FAILURE", UnreadCount: 1}, "ci_failing", false},
 		{"ci failing, merged", Resource{Type: "pr", ID: "1", State: "MERGED", Mine: true, CIStatus: "FAILURE", UnreadCount: 1}, "ci_failing", false},
+		{"needs rebase", Resource{Type: "pr", ID: "1", State: "OPEN", Mine: true, Mergeable: "CONFLICTING"}, "needs_rebase", true},
+		{"needs rebase, not mine", Resource{Type: "pr", ID: "1", State: "OPEN", Mergeable: "CONFLICTING", UnreadCount: 1}, "needs_rebase", false},
+		{"needs rebase, merged", Resource{Type: "pr", ID: "1", State: "MERGED", Mine: true, Mergeable: "CONFLICTING", UnreadCount: 1}, "needs_rebase", false},
+		{"mergeable", Resource{Type: "pr", ID: "1", State: "OPEN", Mine: true, Mergeable: "MERGEABLE", UnreadCount: 1}, "needs_rebase", false},
+		{"mergeable unknown", Resource{Type: "pr", ID: "1", State: "OPEN", Mine: true, Mergeable: "", UnreadCount: 1}, "needs_rebase", false},
 		{"ci passing", Resource{Type: "pr", ID: "1", State: "OPEN", Mine: true, CIStatus: "SUCCESS", UnreadCount: 1}, "ci_failing", false},
 
 		{"assigned with unread", Resource{Type: "jira", ID: "J-1", AssignedToMe: true, UnreadCount: 1}, "assigned_to_you", true},
@@ -363,10 +368,10 @@ func TestPRInheritsLinkedJiraRank(t *testing.T) {
 
 func TestSignalsInFixedOrder(t *testing.T) {
 	r := Resource{Type: "pr", ID: "1", State: "OPEN", Mine: true, ReviewRequestedFromMe: true,
-		ReviewDecision: "CHANGES_REQUESTED", CIStatus: "FAILURE", AssignedToMe: true, UnreadCount: 1,
+		ReviewDecision: "CHANGES_REQUESTED", CIStatus: "FAILURE", Mergeable: "CONFLICTING", AssignedToMe: true, UnreadCount: 1,
 		DraftComments: 1, Unread: []Event{{Source: "slack", Body: "<@U1>"}}}
 	got := signalsOf(t, Self{SlackID: "U1"}, r)
-	want := []string{"review_requested", "changes_requested", "ci_failing", "assigned_to_you", "mentioned", "stale_draft"}
+	want := []string{"review_requested", "changes_requested", "ci_failing", "needs_rebase", "assigned_to_you", "mentioned", "stale_draft"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("signals = %v, want %v", got, want)
 	}

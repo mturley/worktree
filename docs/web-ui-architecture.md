@@ -430,6 +430,7 @@ state                     string    // PR: open/closed/merged
 review_decision           string    // PR
 ci_status                 string    // PR
 new_commits_since_review  bool      // PR
+mergeable                 string    // PR: CONFLICTING | MERGEABLE; absent when unknown
 author                    string    // PR author
 reporter                  string    // Jira reporter name; omitempty (search only)
 status                    string    // Jira status

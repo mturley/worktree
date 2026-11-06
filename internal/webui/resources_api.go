@@ -27,6 +27,7 @@ type resourceDTO struct {
 	State                 string   `json:"state,omitempty"`                    // PR state (open/closed/merged)
 	ReviewDecision        string   `json:"review_decision,omitempty"`          // PR
 	CIStatus              string   `json:"ci_status,omitempty"`                // PR
+	Mergeable             string   `json:"mergeable,omitempty"`                // PR: CONFLICTING | MERGEABLE
 	NewCommitsSinceReview bool     `json:"new_commits_since_review,omitempty"` // PR
 	Author                string   `json:"author,omitempty"`                   // PR author
 	Status                string   `json:"status,omitempty"`                   // Jira status
@@ -170,6 +171,9 @@ func (s *Server) enrichResourceDTO(dto *resourceDTO) {
 		}
 		if v, ok := m["ci_status"].(string); ok {
 			dto.CIStatus = v
+		}
+		if v, ok := m["mergeable"].(string); ok {
+			dto.Mergeable = v
 		}
 		if v, ok := m["has_new_commits_since_review"].(bool); ok {
 			dto.NewCommitsSinceReview = v

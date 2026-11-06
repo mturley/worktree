@@ -672,6 +672,36 @@ describe("status badge placement", () => {
     expect(screen.getByText("new commits")).toBeInTheDocument()
   })
 
+  it("shows a conflicts badge on a list card, in the type line", () => {
+    wrap(<ResourceCard r={{ ...pr, mergeable: "CONFLICTING" }} onSelect={vi.fn()} />)
+    expect(typeLine()).toContainElement(screen.getByText("conflicts"))
+  })
+
+  it("shows a conflicts badge on the detail card, after the CI badge", () => {
+    wrap(<ResourceCard r={{ ...pr, mergeable: "CONFLICTING" }} variant="detail" path="/wt" />)
+    const badge = screen.getByText("conflicts")
+    expect(screen.getByText("ci: success").compareDocumentPosition(badge) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("explains the conflicts badge in a tooltip", async () => {
+    wrap(<ResourceCard r={{ ...pr, mergeable: "CONFLICTING" }} onSelect={vi.fn()} />)
+    await userEvent.hover(screen.getByText("conflicts"))
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Merge conflicts with the base branch: needs a rebase")
+  })
+
+  it("shows no conflicts badge when mergeable or unknown", () => {
+    for (const mergeable of ["MERGEABLE", undefined]) {
+      const { unmount } = wrap(<ResourceCard r={{ ...pr, mergeable }} onSelect={vi.fn()} />)
+      expect(screen.queryByText("conflicts")).toBeNull()
+      unmount()
+    }
+  })
+
+  it("shows no conflicts badge on a merged PR", () => {
+    wrap(<ResourceCard r={{ ...pr, state: "MERGED", mergeable: "CONFLICTING" }} onSelect={vi.fn()} />)
+    expect(screen.queryByText("conflicts")).toBeNull()
+  })
+
   it("shows no review badge when the decision is NONE", () => {
     wrap(<ResourceCard r={{ ...pr, review_decision: "NONE" }} variant="detail" path="/wt" />)
     expect(screen.queryByText("NONE")).toBeNull()

@@ -80,6 +80,7 @@ const TYPES: Record<string, Entry> = {
   pr_merged: { color: "violet", Icon: IconGitMerge, label: "merged" },
   pr_closed: { color: "red", Icon: IconGitPullRequestClosed, label: "closed" },
   pr_reopened: { color: "teal", Icon: IconGitCommit, label: "reopened" },
+  pr_needs_rebase: { color: "orange", Icon: IconAlertTriangle, label: "needs rebase" },
   pr_new_commits: { color: "indigo", Icon: IconGitCommit, label: "new commits" },
 
   // Jira

@@ -41,3 +41,9 @@ describe("eventTypesFor", () => {
     expect(eventTypesFor(["jira"], ["ci"])).toEqual([])
   })
 })
+
+describe("the PR Commits category", () => {
+  it("includes needs-rebase events", () => {
+    expect(EVENT_CATEGORIES.pr.find((c) => c.key === "commits")?.types).toContain("pr_needs_rebase")
+  })
+})

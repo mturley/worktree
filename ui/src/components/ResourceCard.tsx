@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { ActionIcon, Alert, Badge, Button, Group, Paper, Popover, SegmentedControl, Stack, Text, UnstyledButton } from "@mantine/core"
+import { ActionIcon, Alert, Badge, Button, Group, Paper, Popover, SegmentedControl, Stack, Text, Tooltip, UnstyledButton } from "@mantine/core"
 import { IconPencil, IconTrash } from "@tabler/icons-react"
 import type { NotifyMode, ResourceDTO } from "../api/types"
 import { relativeTime, relativeFromNow } from "../lib/relativeTime"
@@ -129,12 +129,20 @@ function badgesInTypeLine(variant: ResourceCardVariant): boolean {
 function PRCardBody({ r, variant, aside }: CardBodyProps) {
   const inline = badgesInTypeLine(variant)
   // A list card shows only the PR's state, to stay scannable; review, CI and
-  // new-commit badges wait for the detail card, once the PR is selected.
+  // new-commit badges wait for the detail card, once the PR is selected. The
+  // exception is conflicts: rare, and actionable, so worth the room in a list.
+  const conflicts = r.state?.toUpperCase() === "OPEN" && r.mergeable === "CONFLICTING" && (
+    <Tooltip label="Merge conflicts with the base branch: needs a rebase">
+      <Badge size="xs" variant="light" color="orange">conflicts</Badge>
+    </Tooltip>
+  )
   const badges = (
     <>
       {r.state && <Badge size="xs" variant="light" color={prStateColor(r.state)}>{r.state.toLowerCase()}</Badge>}
+      {inline && conflicts}
       {!inline && hasReviewDecision(r.review_decision) && <Badge size="xs" variant="light" color={reviewColor(r.review_decision)}>{reviewLabel(r.review_decision)}</Badge>}
       {!inline && r.ci_status && <Badge size="xs" variant="light" color={ciColor(r.ci_status)}>ci: {r.ci_status}</Badge>}
+      {!inline && conflicts}
       {!inline && r.new_commits_since_review && <Badge size="xs" variant="light" color="blue">new commits</Badge>}
     </>
   )

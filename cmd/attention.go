@@ -29,8 +29,8 @@ var attentionCmd = &cobra.Command{
 		"soon or newly unblocked, in a fixed order: priority, then number of signals,\n" +
 		"then newest activity. Read straight from the database: no server or login\n" +
 		"needed, but new activity only arrives while `worktree ui` is running and polling.\n\n" +
-		"Signals: review_requested, changes_requested, ci_failing, assigned_to_you,\n" +
-		"mentioned, stale_draft, task_due_soon, blocker_resolved.\n\n" +
+		"Signals: review_requested, changes_requested, ci_failing, needs_rebase,\n" +
+		"assigned_to_you, mentioned, stale_draft, task_due_soon, blocker_resolved.\n\n" +
 		"With no --worktree it covers every worktree, even when run inside one.\n" +
 		"--worktree . narrows it to the current worktree.\n\n" +
 		"Exits 1 when nothing needs attention.",

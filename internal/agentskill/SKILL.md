@@ -53,8 +53,9 @@ until then.
 Run `worktree attention --json`. It returns `items[]`, in a fixed order, plus
 `status`. Each item has `kind` (`resource` or `task`), `signals`, `priority_rank`,
 `events`, and a `resource` or `task` object. Signals are `review_requested`,
-`changes_requested`, `ci_failing`, `assigned_to_you`, `mentioned`, `stale_draft`,
-`task_due_soon` and `blocker_resolved`. Event bodies are cut to 500 characters.
+`changes_requested`, `ci_failing`, `needs_rebase`, `assigned_to_you`,
+`mentioned`, `stale_draft`, `task_due_soon` and `blocker_resolved`. Event
+bodies are cut to 500 characters.
 
 The list is a starting point, not the answer:
 

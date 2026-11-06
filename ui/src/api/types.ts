@@ -131,6 +131,8 @@ export interface ResourceDTO {
   state?: string
   review_decision?: string
   ci_status?: string
+  /** pr: GitHub's mergeable state for the head ("CONFLICTING" | "MERGEABLE"); absent when unknown. */
+  mergeable?: string
   new_commits_since_review?: boolean
   author?: string
   status?: string

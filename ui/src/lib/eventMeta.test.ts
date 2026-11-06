@@ -82,3 +82,10 @@ describe("eventMeta", () => {
     expect(m.Icon).toBeTruthy()
   })
 })
+
+describe("pr_needs_rebase", () => {
+  it("is an orange \"needs rebase\" event", () => {
+    expect(eventMeta("pr_needs_rebase").label).toBe("needs rebase")
+    expect(eventMeta("pr_needs_rebase").color).toBe("orange")
+  })
+})
