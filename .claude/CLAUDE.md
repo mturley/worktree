@@ -91,7 +91,8 @@ minutes serially; it now runs most tests in parallel.
     newest activity) from facts the caller gathers
     (`webui.Server.AttentionInput`). Needs watcher >= v0.22.0 (`mergeable`,
     for `needs_rebase`; v0.21.0 added `priority_rank` and
-    `requested_reviewer_ids`).
+    `requested_reviewer_ids`); v0.23.0 is needed for description text (event
+    text change, `pr_description_changed`).
   - `agentskill` — the embedded `SKILL.md` for AI agents (`worktree
     agent-help` prints it) and `Targets`, where agents look for it
     (`~/.agents/skills/worktree`, plus symlinks into Claude Code's skills dir).

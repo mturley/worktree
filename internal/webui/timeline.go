@@ -29,6 +29,7 @@ type TimelineEvent struct {
 	Title         string   `json:"title"`
 	Body          string   `json:"body"`
 	Author        string   `json:"author"`
+	AuthorType    string   `json:"author_type,omitempty"`
 	ResourceType  string   `json:"resource_type"`
 	ResourceID    string   `json:"resource_id"`
 	ResourceURL   string   `json:"resource_url"`
@@ -294,7 +295,7 @@ func (s *Server) globalTimeline(q TimelineQuery) ([]TimelineEvent, error) {
 
 	base := `
 SELECT DISTINCT e.id, e.ts, COALESCE(e.external_ts,''), e.source, e.type,
-       COALESCE(e.title,''), COALESCE(e.body,''), COALESCE(e.author,''), COALESCE(e.author_id,''),
+       COALESCE(e.title,''), COALESCE(e.body,''), COALESCE(e.author,''), COALESCE(e.author_type,''), COALESCE(e.author_id,''),
        er.resource_type, er.resource_id, COALESCE(er.resource_url,'')
 FROM watcher_events e
 JOIN watcher_event_resources er ON er.event_id = e.id `
@@ -741,7 +742,7 @@ func (s *Server) collectTimelineRows(rows *sql.Rows, limit int, terms []string) 
 	for rows.Next() {
 		var te TimelineEvent
 		if err := rows.Scan(&te.ID, &te.TS, &te.ExternalTS, &te.Source, &te.Type,
-			&te.Title, &te.Body, &te.Author, &te.authorID, &te.ResourceType, &te.ResourceID, &te.ResourceURL); err != nil {
+			&te.Title, &te.Body, &te.Author, &te.AuthorType, &te.authorID, &te.ResourceType, &te.ResourceID, &te.ResourceURL); err != nil {
 			return nil, err
 		}
 		if seen[te.ID] {
@@ -836,6 +837,9 @@ func (e *eventEnricher) enrich(ev watcher.Event) TimelineEvent {
 	}
 	if ev.Author != nil {
 		te.Author = *ev.Author
+	}
+	if ev.AuthorType != nil {
+		te.AuthorType = *ev.AuthorType
 	}
 	if ev.AuthorID != nil {
 		te.authorID = *ev.AuthorID

@@ -722,3 +722,43 @@ func TestGlobalTimelineQueriesNothingWhileRowsAreOpen(t *testing.T) {
 		t.Fatalf("expected one enriched event, got %+v", body.Events)
 	}
 }
+
+func TestTimeline_AuthorType(t *testing.T) {
+	t.Parallel()
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	wtPath := testgit.Worktree(t)
+	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
+	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
+	now := time.Now().UTC().Format(time.RFC3339)
+	insertEvent(t, conn, "bot1", now, "github", "pr_comment", "from a bot", "pr", "o/r#1", "u1")
+	insertEvent(t, conn, "none1", now, "github", "pr_comment", "no type", "pr", "o/r#1", "u1")
+	if _, err := conn.Exec(`UPDATE watcher_events SET author_type = 'bot' WHERE id = 'bot1'`); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := &Server{DB: conn}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/timeline?archived=false&limit=10")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var body struct {
+		Events []TimelineEvent `json:"events"`
+	}
+	json.NewDecoder(resp.Body).Decode(&body)
+	got := map[string]string{}
+	for _, e := range body.Events {
+		got[e.ID] = e.AuthorType
+	}
+	if len(got) != 2 || got["bot1"] != "bot" || got["none1"] != "" {
+		t.Fatalf("author types = %v, want bot1=bot none1=empty", got)
+	}
+}
