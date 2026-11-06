@@ -46,7 +46,12 @@ func OpenAt(path string) (*sql.DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("creating db dir: %w", err)
 	}
-	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)", path)
+	// _txlock=immediate: every transaction takes the write lock at BEGIN.
+	// A DEFERRED one that reads before it writes (unread.Mark, Restore, …)
+	// deadlocks with another doing the same on the SHARED→RESERVED upgrade,
+	// and SQLite fails one with SQLITE_BUSY at once, ignoring busy_timeout.
+	// Begun IMMEDIATE, the second simply waits its turn.
+	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)&_txlock=immediate", path)
 	conn, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("opening db: %w", err)
