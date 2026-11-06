@@ -196,6 +196,7 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | POST | `/api/event-read` | body: `{id, ts?}` (`ts` is the row as shown) | `{id, ts, changed}`; `changed` false when it already read as read. 400 for a Slack event, 404 for an unknown one, 409 when the row was rewritten since `ts`. See "Unread" |
 | POST | `/api/event-unread` | body: `{id, ts?}` | As `/api/event-read`, in reverse, even behind the cursor; also 400 for an event that can never be unread or that no worktree follows. See "Unread" |
 | POST | `/api/event-read/restore` | body: `{id, ts, previous}` (what `/api/event-read` or `/api/event-unread` answered) | 204 |
+| GET | `/api/event-text-change` | query: `id` (event id) | `{old_text, new_text}` of a `jira_description_changed` / `pr_description_changed` edit, exactly as stored; 404 when no text was stored for the event. Reads the DB only (`event_text_api.go`), so no watcher-toggle gate. See "Event details modal" |
 | POST | `/api/resource-resolve` | body: `{url}` | resolved link metadata |
 | GET | `/api/resource-type` | `url` (required) | `{type, id}` or error if unrecognized |
 | POST | `/api/worktree-resources/add` | body: `{path, url, related?}` | `resourceDTO` |
@@ -327,6 +328,7 @@ TimelineEvent {
   title          string
   body           string
   author         string
+  author_type    string    // "user" | "bot" | "" (watcher_events.author_type); omitempty
   resource_type  string    // "pr" | "jira" | ...
   resource_id    string
   resource_url   string
@@ -826,6 +828,15 @@ row. On a touch screen (`(hover: none)`) a row shows neither Mark read nor ＋ T
 easy to press while scrolling; the details modal has both. An old event marked unread
 stays where its `ts` puts it in the feed, so a badge can point at something further
 down; Unreads only finds it.
+
+**Bot description edits are unread only when marked.** An event with
+`author_type = 'bot'` and type `jira_description_changed` or
+`pr_description_changed` never reads as past the cursor
+(`unread.NotBotDescriptionEditSQL` in the cursor branch of `Summaries`, `Counts`
+and the timeline's unread-only clause; `IsBotDescriptionEdit` in `IsUnread`). The
+rule is in the cursor branch only, so an explicit "Mark unread" still works, and
+`ErrNeverUnread` does not refuse these events. They never notify, marked or not
+(`notify_scan.go`).
 
 **CI runs still in progress are never unread.** `ci_pending` ("CI running")
 and `ci_workflows_pending` ("workflows running") are dropped the same way as
@@ -4074,6 +4085,30 @@ header.
   than an error. Nothing else (`tree`, `list-pane-surfaces`,
   `surface-health`) exposes a markdown tab's path: its `url` is null and its
   title is the bare filename.
+
+### Event details modal (`EventDetailsModal.tsx`)
+
+**Action placement.** "Go to comment in diff view", "Mark read" / "Mark unread" and
+"Make task" sit on the worktree-chip row, right-aligned (`ml="auto"`), directly under
+the resource row's own buttons; chips stay left and the buttons wrap below them on a
+narrow modal. An event with no worktrees (an archived resource) gets the buttons on a
+row of their own, right-aligned. Nothing follows the body. The row is `data-testid="worktree-row"`.
+
+**Description diff.** `jira_description_changed` and `pr_description_changed`
+(`DESCRIPTION_DIFF_TYPES`) show a diff in place of the body. `DescriptionChange` fetches
+`GET /api/event-text-change?id=` (react-query, `staleTime: Infinity`, no retry on 404) and
+renders the lazily loaded `DescriptionDiff` (its own chunk, so `@pierre/diffs` is
+fetched only on first open) behind `DiffViewBoundary`. `DescriptionChange` is keyed by
+event id so one event's render failure, which the boundary never resets, does not stick
+to the next. Unified view, word-level highlights, no syntax highlighting (a name with no
+extension keeps pierre on plain text), `maxLineDiffLength` 20000, `\r\n` normalized to
+`\n` first. A 404 reads "Diff not available for this edit."; other errors show inline.
+The header and actions render while the text loads.
+
+**Bot marker.** `BotMark` (Tabler `IconRobot` in a `Tooltip`) precedes the title when
+`author_type === "bot"`, here, in `EventRow` and in the task modal's event lists. Never
+an emoji in the UI; notifications delivered outside it prefix a bot event's title
+with "🤖 ".
 
 ## Mini view and menu bar app
 

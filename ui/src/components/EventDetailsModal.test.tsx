@@ -190,6 +190,34 @@ describe("the modal's context row", () => {
   })
 })
 
+describe("the modal's action placement", () => {
+  const buttons = () => ["Mark read", "Make task"].map((n) => screen.getByRole("button", { name: n }))
+
+  it("places actions on the worktree row", () => {
+    wrap(<EventDetailsModal e={ev({ worktrees: ["wt-a"], unread: true })} onClose={vi.fn()} onMakeTask={vi.fn()} />)
+    const row = screen.getByTestId("worktree-row")
+    const [read, task] = buttons()
+    expect(row).toContainElement(screen.getByText("wt-a"))
+    expect(row).toContainElement(read)
+    expect(row).toContainElement(task)
+    // Nothing follows the body any more.
+    const body = screen.getByText("Fix the widget")
+    for (const b of [read, task]) {
+      expect(body.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING).toBeFalsy()
+    }
+  })
+
+  it("places actions on their own row without worktrees", () => {
+    wrap(<EventDetailsModal e={ev({ worktrees: [], unread: true })} onClose={vi.fn()} onMakeTask={vi.fn()} />)
+    const [read, task] = buttons()
+    const row = screen.getByTestId("worktree-row")
+    expect(row).toContainElement(read)
+    expect(row).toContainElement(task)
+    const body = screen.getByText("Fix the widget")
+    expect(body.compareDocumentPosition(read) & Node.DOCUMENT_POSITION_FOLLOWING).toBeFalsy()
+  })
+})
+
 describe("EventDetailsModal for an archived resource", () => {
   const worktrees = [
     { path: "/wt/zeta", repo: "r", branch: "zeta" },
@@ -379,9 +407,10 @@ describe("EventDetailsModal unread", () => {
 
 // The diff itself is DescriptionDiff's to test; here it only shows what it got.
 vi.mock("./DescriptionDiff", () => ({
-  default: ({ oldText, newText, cacheKey }: { oldText: string; newText: string; cacheKey: string }) => (
-    <div data-testid="description-diff" data-cache-key={cacheKey}>{`${oldText}→${newText}`}</div>
-  ),
+  default: ({ oldText, newText, cacheKey }: { oldText: string; newText: string; cacheKey: string }) => {
+    if (oldText === "explode") throw new Error("render failed")
+    return <div data-testid="description-diff" data-cache-key={cacheKey}>{`${oldText}→${newText}`}</div>
+  },
 }))
 
 describe("EventDetailsModal description diffs", () => {
@@ -443,6 +472,25 @@ describe("EventDetailsModal description diffs", () => {
     expect(screen.getByRole("button", { name: "Make task" })).toBeInTheDocument()
     expect(screen.getByText("Loading diff…")).toBeInTheDocument()
     expect(screen.queryByTestId("description-diff")).toBeNull()
+  })
+
+  it("a render failure on one event doesn't carry to the next", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    stubFetch(() => json(200, { old_text: "explode", new_text: "x" }))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const ui = (e: TimelineEvent) => (
+      <MantineProvider>
+        <QueryClientProvider client={client}><EventDetailsModal e={e} onClose={vi.fn()} /></QueryClientProvider>
+      </MantineProvider>
+    )
+    const { rerender } = render(ui(descEvent()))
+    expect(await screen.findByText(/Couldn't load the diff view/)).toBeInTheDocument()
+    // Already cached, so the next event renders at once, with no pending state
+    // to unmount the boundary on the way.
+    client.setQueryData(["event-text-change", "another-event-id"], { old_text: "before", new_text: "after" })
+    rerender(ui(descEvent({ id: "another-event-id" })))
+    expect(await screen.findByTestId("description-diff")).toHaveTextContent("before→after")
+    expect(screen.queryByText(/Couldn't load the diff view/)).toBeNull()
   })
 
   it("leaves other events' bodies alone, and never asks for text", () => {

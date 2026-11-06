@@ -110,6 +110,49 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
     navigate(`/worktree/${encodeURIComponent(worktreePath)}`)
   }
 
+  const hasActions = !!e && !!(locate.data || offerMarkRead || offerMarkUnread || (onMakeTask && eventTaskKey(e)))
+  const actions = e && hasActions ? (
+    <>
+      {locate.data && (
+        <Button
+          size="xs"
+          variant="light"
+          color="grape"
+          onClick={() => {
+            const target = locate.data
+            onClose()
+            navigate(`/worktree/${encodeURIComponent(target.path)}?diff&prcomment=${target.comment_id}`)
+          }}
+        >
+          Go to comment in diff view
+        </Button>
+      )}
+      {offerMarkRead && (
+        <Button size="xs" {...MARK_READ_BUTTON_PROPS} loading={marking} onClick={() => void mark(false)}>
+          Mark read
+        </Button>
+      )}
+      {offerMarkUnread && (
+        <Button size="xs" {...MARK_READ_BUTTON_PROPS} loading={marking} onClick={() => void mark(true)}>
+          Mark unread
+        </Button>
+      )}
+      {onMakeTask && eventTaskKey(e) && (
+        <Button
+          size="xs"
+          variant="filled"
+          style={TASK_BUTTON_STYLE}
+          onClick={() => {
+            onClose()
+            onMakeTask(e)
+          }}
+        >
+          Make task
+        </Button>
+      )}
+    </>
+  ) : null
+
   return (
     <Modal opened={!!e} onClose={onClose} size="lg" fullScreen={fullScreen}
       // A border, not an inset outline, which the sticky header paints over.
@@ -156,32 +199,47 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
             </Group>
           )}
 
-          {e.worktrees.length > 0 && (
-            <Group gap={6} wrap="wrap">
-              {eventWorktrees(e).map((w, i) => (
-                // Worded as on the activity feed's rows.
-                <WorktreePreview key={`${i}:${w.path ?? w.name}`} path={w.path}>
-                  <Badge
-                    // Only a path can be navigated to; a bare name stays a label.
-                    {...(w.path
-                      ? {
-                          component: "button" as const,
-                          type: "button" as const,
-                          className: "worktree-chip-nav",
-                          "aria-label": `Open worktree ${w.name}`,
-                          onClick: () => openWorktree(w.path!),
-                        }
-                      : {})}
-                    size="sm"
-                    color="gray"
-                    variant="outline"
-                    maw={240}
-                    style={{ textTransform: "none" }}
-                  >
-                    <WorktreeName path={w.path} name={w.name} />
-                  </Badge>
-                </WorktreePreview>
-              ))}
+          {(e.worktrees.length > 0 || hasActions) && (
+            <Group
+              data-testid="worktree-row"
+              justify={e.worktrees.length > 0 ? "space-between" : "flex-end"}
+              wrap="wrap"
+              align="flex-start"
+              gap={6}
+            >
+              {e.worktrees.length > 0 && (
+                <Group gap={6} wrap="wrap" style={{ minWidth: 0 }}>
+                  {eventWorktrees(e).map((w, i) => (
+                    // Worded as on the activity feed's rows.
+                    <WorktreePreview key={`${i}:${w.path ?? w.name}`} path={w.path}>
+                      <Badge
+                        // Only a path can be navigated to; a bare name stays a label.
+                        {...(w.path
+                          ? {
+                              component: "button" as const,
+                              type: "button" as const,
+                              className: "worktree-chip-nav",
+                              "aria-label": `Open worktree ${w.name}`,
+                              onClick: () => openWorktree(w.path!),
+                            }
+                          : {})}
+                        size="sm"
+                        color="gray"
+                        variant="outline"
+                        maw={240}
+                        style={{ textTransform: "none" }}
+                      >
+                        <WorktreeName path={w.path} name={w.name} />
+                      </Badge>
+                    </WorktreePreview>
+                  ))}
+                </Group>
+              )}
+              {hasActions && (
+                <Group justify="flex-end" ml="auto" gap={6}>
+                  {actions}
+                </Group>
+              )}
             </Group>
           )}
 
@@ -197,7 +255,7 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
           </Text>
 
           {DESCRIPTION_DIFF_TYPES.includes(e.type) ? (
-            <DescriptionChange id={e.id} />
+            <DescriptionChange key={e.id} id={e.id} />
           ) : e.body && (
             // Preserve the author's line breaks; this is comment text, not prose.
             <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
@@ -205,47 +263,6 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
             </Text>
           )}
 
-          {(locate.data || offerMarkRead || offerMarkUnread || (onMakeTask && eventTaskKey(e))) && (
-            <Group justify="flex-end">
-              {locate.data && (
-                <Button
-                  size="xs"
-                  variant="light"
-                  color="grape"
-                  onClick={() => {
-                    const target = locate.data
-                    onClose()
-                    navigate(`/worktree/${encodeURIComponent(target.path)}?diff&prcomment=${target.comment_id}`)
-                  }}
-                >
-                  Go to comment in diff view
-                </Button>
-              )}
-              {offerMarkRead && (
-                <Button size="xs" {...MARK_READ_BUTTON_PROPS} loading={marking} onClick={() => void mark(false)}>
-                  Mark read
-                </Button>
-              )}
-              {offerMarkUnread && (
-                <Button size="xs" {...MARK_READ_BUTTON_PROPS} loading={marking} onClick={() => void mark(true)}>
-                  Mark unread
-                </Button>
-              )}
-              {onMakeTask && eventTaskKey(e) && (
-                <Button
-                  size="xs"
-                  variant="filled"
-                  style={TASK_BUTTON_STYLE}
-                  onClick={() => {
-                    onClose()
-                    onMakeTask(e)
-                  }}
-                >
-                  Make task
-                </Button>
-              )}
-            </Group>
-          )}
         </Stack>
       )}
     </Modal>
