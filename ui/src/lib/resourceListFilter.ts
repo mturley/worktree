@@ -71,7 +71,7 @@ function prCondition(r: AllResourceDTO, c: string): boolean {
     case "review_required": return (r.review_decision ?? "").toUpperCase() === "REVIEW_REQUIRED"
     case "approved": return (r.review_decision ?? "").toUpperCase() === "APPROVED"
     case "new_commits": return Boolean(r.new_commits_since_review)
-    case "conflicts": return (r.mergeable ?? "").toUpperCase() === "CONFLICTING"
+    case "conflicts": return (r.state ?? "").toUpperCase() === "OPEN" && (r.mergeable ?? "").toUpperCase() === "CONFLICTING"
     default: return false
   }
 }

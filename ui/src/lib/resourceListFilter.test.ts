@@ -40,6 +40,7 @@ describe("matchesFilter", () => {
     expect(matchesFilter({ ...openPR, mergeable: "CONFLICTING" }, f, false)).toBe(true)
     expect(matchesFilter({ ...openPR, mergeable: "MERGEABLE" }, f, false)).toBe(false)
     expect(matchesFilter({ ...openPR, mergeable: undefined }, f, false)).toBe(false)
+    expect(matchesFilter({ ...mergedPR, mergeable: "CONFLICTING" }, f, false)).toBe(false)
   })
 
   it("filters to my PRs and my issues", () => {
