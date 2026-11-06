@@ -18,6 +18,7 @@ type EventSnapshot struct {
 	Type         string `json:"type"`
 	Title        string `json:"title"`
 	Author       string `json:"author"`
+	AuthorType   string `json:"author_type,omitempty"`
 	Body         string `json:"body"` // truncated to 500 runes on write
 	URL          string `json:"url"`
 	TS           string `json:"ts"`

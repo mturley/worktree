@@ -47,6 +47,12 @@ describe("LinkedEventsSection", () => {
     expect(row).toHaveTextContent("alice")
   })
 
+  it("marks a snapshot-rendered bot event", () => {
+    const botLinks: TaskEventLink[] = [{ key: "ev:8", snapshot: { ...snap, author: "dep-bot", author_type: "bot" } }]
+    renderDetail(detail({ event_links: botLinks }), (d) => <LinkedEventsSection task={d} />)
+    expect(screen.getByLabelText("Bot")).toBeInTheDocument()
+  })
+
   it("prefers the live event when there is one", () => {
     show()
     expect(screen.getByText("Live title")).toBeInTheDocument()

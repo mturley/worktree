@@ -10,7 +10,7 @@ export function BotMark({ authorType, author }: { authorType?: string; author?: 
   return (
     <Tooltip label={author ? `From a bot: ${author}` : "From a bot"}>
       <IconRobot
-        size={16}
+        size="1.1em"
         aria-label="Bot"
         role="img"
         style={{ flex: "none", verticalAlign: "text-bottom", marginRight: 4 }}

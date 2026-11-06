@@ -852,6 +852,8 @@ export interface TaskEventSnapshot {
   type: string
   title: string
   author: string
+  /** "user" or "bot"; absent for older snapshots and Slack. */
+  author_type?: string
   body: string
   url: string
   ts: string
