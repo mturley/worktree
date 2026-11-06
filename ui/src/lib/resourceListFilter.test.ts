@@ -35,6 +35,13 @@ describe("matchesFilter", () => {
     expect([openPR, mergedPR].filter((r) => matchesFilter(r, approvedOrFailing, false))).toEqual([openPR, mergedPR])
   })
 
+  it("matches the conflicts condition on CONFLICTING only", () => {
+    const f = { ...EMPTY_FILTER, type: "pr", prConditions: ["conflicts"] }
+    expect(matchesFilter({ ...openPR, mergeable: "CONFLICTING" }, f, false)).toBe(true)
+    expect(matchesFilter({ ...openPR, mergeable: "MERGEABLE" }, f, false)).toBe(false)
+    expect(matchesFilter({ ...openPR, mergeable: undefined }, f, false)).toBe(false)
+  })
+
   it("filters to my PRs and my issues", () => {
     expect([openPR, mergedPR].filter((r) => matchesFilter(r, { ...EMPTY_FILTER, type: "pr", mine: true }, false))).toEqual([openPR])
     expect([issue, blocked].filter((r) => matchesFilter(r, { ...EMPTY_FILTER, type: "jira", mine: true }, false))).toEqual([issue])

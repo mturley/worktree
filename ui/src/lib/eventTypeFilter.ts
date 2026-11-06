@@ -18,7 +18,7 @@ export const EVENT_CATEGORIES: Record<string, EventCategory[]> = {
   pr: [
     { key: "comments", label: "Comments", types: ["pr_comment", "pr_review_comment"] },
     { key: "reviews", label: "Reviews", types: ["pr_review_requested", "pr_approved"] },
-    { key: "commits", label: "Commits", types: ["pr_new_commits"] },
+    { key: "commits", label: "Commits", types: ["pr_new_commits", "pr_needs_rebase"] },
     { key: "ci", label: "CI", types: ["ci_*"] },
     { key: "state", label: "Merged / closed", types: ["pr_merged", "pr_closed", "pr_reopened"] },
   ],
