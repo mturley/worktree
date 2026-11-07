@@ -665,10 +665,17 @@ func TestMarkEventUnread_BotDescriptionEditAllowed(t *testing.T) {
 
 	events, err := s.Timeline(TimelineQuery{Limit: 100})
 	must(t, err)
+	found := false
 	for _, e := range events {
-		if e.ID == "botdesc" && (e.Unread || !e.CanMarkUnread) {
-			t.Fatalf("before: unread=%v can_mark_unread=%v, want false/true", e.Unread, e.CanMarkUnread)
+		if e.ID == "botdesc" {
+			found = true
+			if e.Unread || !e.CanMarkUnread {
+				t.Fatalf("before: unread=%v can_mark_unread=%v, want false/true", e.Unread, e.CanMarkUnread)
+			}
 		}
+	}
+	if !found {
+		t.Fatalf("before: botdesc missing from timeline %v", eventIDs(events))
 	}
 	got, err := s.MarkEventUnread("botdesc", "2099-01-09T00:00:00Z")
 	if err != nil || !got.Changed {

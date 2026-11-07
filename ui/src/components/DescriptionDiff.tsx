@@ -10,7 +10,7 @@ import { FileDiff } from "@pierre/diffs/react"
  * modal. Wrapped, because prose scrolled sideways is unreadable. No file
  * header: there is no file, and the modal's title says what changed.
  */
-const OPTIONS = {
+export const DESCRIPTION_DIFF_OPTIONS = {
   diffStyle: "unified",
   themeType: "dark",
   lineDiffType: "word",
@@ -44,7 +44,7 @@ export default function DescriptionDiff({ oldText, newText, cacheKey }: {
       ),
     [oldText, newText, cacheKey],
   )
-  return <FileDiff fileDiff={meta} options={OPTIONS} />
+  return <FileDiff fileDiff={meta} options={DESCRIPTION_DIFF_OPTIONS} />
 }
 
 function normalize(text: string): string {

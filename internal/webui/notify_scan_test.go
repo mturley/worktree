@@ -245,12 +245,19 @@ func TestSlackReplyNotificationUsesCustomName(t *testing.T) {
 func TestReadNewEvents_SkipsBotDescriptionEdits(t *testing.T) {
 	t.Parallel()
 	conn := unreadTestDB(t)
-	c, _ := initNotifyCursor(conn)
+	c, err := initNotifyCursor(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
 	insertTypedEvent(t, conn, "botdesc", "2026-01-01T00:00:01Z", "pr_description_changed", "x", "pr", "o/r#1")
 	insertTypedEvent(t, conn, "botjira", "2026-01-01T00:00:02Z", "jira_description_changed", "x", "jira", "J-1")
 	insertTypedEvent(t, conn, "humandesc", "2026-01-01T00:00:03Z", "pr_description_changed", "x", "pr", "o/r#1")
-	conn.Exec(`UPDATE watcher_events SET author_type = 'bot' WHERE id IN ('botdesc','botjira')`)
-	conn.Exec(`UPDATE watcher_events SET author_type = 'user' WHERE id = 'humandesc'`)
+	if _, err := conn.Exec(`UPDATE watcher_events SET author_type = 'bot' WHERE id IN ('botdesc','botjira')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(`UPDATE watcher_events SET author_type = 'user' WHERE id = 'humandesc'`); err != nil {
+		t.Fatal(err)
+	}
 	// Marked unread still never notifies.
 	if err := unread.SetEventMark(conn, "botdesc", "2026-01-01T00:00:01Z", unread.StateUnread); err != nil {
 		t.Fatal(err)
@@ -267,11 +274,18 @@ func TestReadNewEvents_SkipsBotDescriptionEdits(t *testing.T) {
 func TestReadNewEvents_BotTitlePrefixed(t *testing.T) {
 	t.Parallel()
 	conn := unreadTestDB(t)
-	c, _ := initNotifyCursor(conn)
+	c, err := initNotifyCursor(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
 	insertTypedEvent(t, conn, "bot", "2026-01-01T00:00:01Z", "pr_review", "Review by ci-bot", "pr", "o/r#1")
 	insertTypedEvent(t, conn, "human", "2026-01-01T00:00:02Z", "pr_review", "Review by someone", "pr", "o/r#1")
-	conn.Exec(`UPDATE watcher_events SET author_type = 'bot' WHERE id = 'bot'`)
-	conn.Exec(`UPDATE watcher_events SET author_type = 'user' WHERE id = 'human'`)
+	if _, err := conn.Exec(`UPDATE watcher_events SET author_type = 'bot' WHERE id = 'bot'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(`UPDATE watcher_events SET author_type = 'user' WHERE id = 'human'`); err != nil {
+		t.Fatal(err)
+	}
 	evs, _, err := readNewEvents(conn, c)
 	if err != nil {
 		t.Fatal(err)
