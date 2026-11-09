@@ -314,6 +314,7 @@ func (s *Server) routes() []route {
 		{"GET /api/linked-resources", s.handleLinkedResources},
 		{"GET /api/linked-resources/children", s.handleLinkedChildren},
 		{"GET /api/timeline", s.handleGlobalTimeline},
+		{"GET /api/event-text-change", s.handleEventTextChange},
 		{"GET /api/worktree-timeline", s.handleWorktreeTimeline},
 		{"POST /api/worktrees/poll", s.handlePollWorktree},
 		{"GET /api/watchers", s.handleWatchers},

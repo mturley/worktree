@@ -21,6 +21,7 @@ export const EVENT_CATEGORIES: Record<string, EventCategory[]> = {
     { key: "commits", label: "Commits", types: ["pr_new_commits", "pr_needs_rebase"] },
     { key: "ci", label: "CI", types: ["ci_*"] },
     { key: "state", label: "Merged / closed", types: ["pr_merged", "pr_closed", "pr_reopened"] },
+    { key: "edits", label: "Edits", types: ["pr_description_changed"] },
   ],
   jira: [
     { key: "comments", label: "Comments", types: ["jira_comment"] },

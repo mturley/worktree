@@ -239,7 +239,7 @@ func (s *Server) loadWatcherEvent(id string) (*watcher.Event, error) {
 // snapshotOf is what an event link remembers of a watcher event.
 func snapshotOf(te TimelineEvent) tasks.EventSnapshot {
 	return tasks.EventSnapshot{
-		Source: te.Source, Type: te.Type, Title: te.Title, Author: te.Author, Body: te.Body,
+		Source: te.Source, Type: te.Type, Title: te.Title, Author: te.Author, AuthorType: te.AuthorType, Body: te.Body,
 		URL: te.ResourceURL, TS: te.TS, ResourceType: te.ResourceType, ResourceID: te.ResourceID,
 	}
 }
@@ -380,7 +380,7 @@ func snapshotEvent(l tasks.EventLink) TimelineEvent {
 	return TimelineEvent{
 		ID: l.Key, TS: sn.TS, Source: sn.Source, Type: sn.Type,
 		TypeLabel: watcher.EventType(sn.Type).DisplayName(),
-		Title:     sn.Title, Body: sn.Body, Author: sn.Author,
+		Title:     sn.Title, Body: sn.Body, Author: sn.Author, AuthorType: sn.AuthorType,
 		ResourceType: sn.ResourceType, ResourceID: sn.ResourceID, ResourceURL: sn.URL,
 		Worktrees: []string{}, WorktreePaths: []string{},
 		LinkedToTask: true, LinkedKey: l.Key,

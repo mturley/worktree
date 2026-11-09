@@ -815,3 +815,15 @@ describe("modifier clicks on a row", () => {
     expect(screen.queryByText("Shift+click to switch cmux")).not.toBeInTheDocument()
   })
 })
+
+describe("EventRow bot mark", () => {
+  afterEach(cleanup)
+
+  it("shows the bot mark for a bot event and not for a user event", () => {
+    renderWithProvider(<EventRow e={makeEvent({ author: "dep-bot", author_type: "bot" })} />)
+    expect(screen.getByLabelText("Bot")).toBeTruthy()
+    cleanup()
+    renderWithProvider(<EventRow e={makeEvent({ author: "alice", author_type: "user" })} />)
+    expect(screen.queryByLabelText("Bot")).toBeNull()
+  })
+})

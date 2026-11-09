@@ -1,10 +1,12 @@
 package webui
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -640,5 +642,70 @@ func TestMarkedUnreadEventIsNotNotified(t *testing.T) {
 	must(t, unread.SetEventMark(conn, "e1", "2099-01-01T00:00:00Z", unread.StateUnread))
 	if got, _, err := readNewEvents(conn, c); err != nil || len(got) != 0 {
 		t.Fatalf("%+v %v", got, err)
+	}
+}
+
+// insertBotDescriptionEdit adds a bot's PR description edit to o/r#1, past
+// unreadOnlyFixture's cursor.
+func insertBotDescriptionEdit(t *testing.T, conn *sql.DB, id, ts string) {
+	t.Helper()
+	insertTypedEvent(t, conn, id, ts, "pr_description_changed", "x", "pr", "o/r#1")
+	if _, err := conn.Exec(`UPDATE watcher_events SET author_type = 'bot' WHERE id = ?`, id); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A bot's description edit is never unread on its own, but it can still be
+// marked so.
+func TestMarkEventUnread_BotDescriptionEditAllowed(t *testing.T) {
+	t.Parallel()
+	conn, _ := unreadOnlyFixture(t)
+	insertBotDescriptionEdit(t, conn, "botdesc", "2099-01-09T00:00:00Z")
+	s := &Server{DB: conn}
+
+	events, err := s.Timeline(TimelineQuery{Limit: 100})
+	must(t, err)
+	found := false
+	for _, e := range events {
+		if e.ID == "botdesc" {
+			found = true
+			if e.Unread || !e.CanMarkUnread {
+				t.Fatalf("before: unread=%v can_mark_unread=%v, want false/true", e.Unread, e.CanMarkUnread)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("before: botdesc missing from timeline %v", eventIDs(events))
+	}
+	got, err := s.MarkEventUnread("botdesc", "2099-01-09T00:00:00Z")
+	if err != nil || !got.Changed {
+		t.Fatalf("mark unread: %+v, %v", got, err)
+	}
+	events, err = s.Timeline(TimelineQuery{UnreadOnly: true, Limit: 100})
+	must(t, err)
+	if !sameIDs(eventIDs(events), []string{"botdesc", "p3", "s1", "p2"}) {
+		t.Fatalf("unread after mark = %v", eventIDs(events))
+	}
+}
+
+func TestTimeline_UnreadOnlyExcludesBotDescriptionEdit(t *testing.T) {
+	t.Parallel()
+	conn, wt := unreadOnlyFixture(t)
+	insertBotDescriptionEdit(t, conn, "botdesc", "2099-01-09T00:00:00Z")
+	s := &Server{DB: conn}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+
+	want := []string{"p3", "s1", "p2"}
+	for _, path := range []string{
+		"/api/timeline?limit=100&unread_only=true",
+		"/api/worktree-timeline?limit=100&unread_only=true&path=" + url.QueryEscape(wt),
+	} {
+		if got := eventIDs(getTimeline(t, ts.URL, path).Events); !sameIDs(got, want) {
+			t.Errorf("%s = %v, want %v", path, got, want)
+		}
+	}
+	if got := unreadIDs(getTimeline(t, ts.URL, "/api/timeline?limit=100").Events); !sameIDs(got, want) {
+		t.Errorf("unread flags = %v, want %v", got, want)
 	}
 }

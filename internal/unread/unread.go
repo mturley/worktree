@@ -43,6 +43,24 @@ func IsPendingCI(eventType string) bool {
 	return eventType == "ci_pending" || eventType == "ci_workflows_pending"
 }
 
+// NotBotDescriptionEditSQL is the condition "this event is not a bot's edit
+// to a Jira or PR description", over a watcher_events row aliased e. A bot
+// rewriting a description (a CI summary, a release checklist) is churn, so it
+// never reads as unread on its own — but unlike NotPendingCISQL it belongs
+// ONLY in the cursor branch: the user can still mark such an edit unread, and
+// that mark must count. Combined as
+//
+//	((past cursor AND not marked read AND not bot description edit) OR marked unread)
+//	AND not mine AND not pending CI
+const NotBotDescriptionEditSQL = "NOT (COALESCE(e.author_type,'') = 'bot' AND e.type IN ('jira_description_changed','pr_description_changed'))"
+
+// IsBotDescriptionEdit is NotBotDescriptionEditSQL's Go twin (negated), for
+// code that already holds an event.
+func IsBotDescriptionEdit(eventType, authorType string) bool {
+	return authorType == "bot" &&
+		(eventType == "jira_description_changed" || eventType == "pr_description_changed")
+}
+
 // Key is the map key used by Counts and Cursors. The separator is a NUL so it
 // cannot collide with a resource id (Slack ids contain ':', Jira ids '-',
 // PR ids '/' and '#').
@@ -117,7 +135,8 @@ type Summary struct {
 // Summaries is Counts with each resource's newest unread ts alongside. Same
 // rules as Counts, including the event types it excludes. The user's own
 // events (internal/selfid) and CI runs still in progress (NotPendingCISQL)
-// never count, so NewestTS is the newest event worth reading.
+// never count, so NewestTS is the newest event worth reading. A bot's
+// description edit (NotBotDescriptionEditSQL) counts only when marked unread.
 func Summaries(conn *sql.DB) (map[string]Summary, error) {
 	rows, err := conn.Query(`
 		SELECT er.resource_type, er.resource_id, COUNT(*), MAX(e.ts)
@@ -126,7 +145,7 @@ func Summaries(conn *sql.DB) (map[string]Summary, error) {
 		  LEFT JOIN resource_read_cursor c
 		    ON c.resource_type = er.resource_type
 		   AND c.resource_id   = er.resource_id
-		 WHERE ((e.ts > c.last_read_ts AND ` + NotMarkedReadSQL + `) OR ` + MarkedUnreadSQL + `)
+		 WHERE ((e.ts > c.last_read_ts AND ` + NotMarkedReadSQL + ` AND ` + NotBotDescriptionEditSQL + `) OR ` + MarkedUnreadSQL + `)
 		   AND e.type NOT IN ('watch_started','watcher_error')
 		   AND ` + selfid.NotMineSQL + `
 		   AND ` + NotPendingCISQL + `

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -331,16 +332,16 @@ func TestIsUnreadUsesSlacksOwnCursor(t *testing.T) {
 	// The event row's own ts is deliberately the SAME on both, so a passing
 	// test can only be reading external_ts — the Slack clock.
 	const rowTS = "2099-01-01T00:00:00Z"
-	if !ix.IsUnread("", "slack", thread, rowTS, "3000.000000", "slack_reply", "slack", "") {
+	if !ix.IsUnread("", "slack", thread, rowTS, "3000.000000", "slack_reply", "slack", "", "") {
 		t.Fatal("reply newer than Slack's cursor should be unread")
 	}
-	if ix.IsUnread("", "slack", thread, rowTS, "1500.000000", "slack_reply", "slack", "") {
+	if ix.IsUnread("", "slack", thread, rowTS, "1500.000000", "slack_reply", "slack", "", "") {
 		t.Fatal("reply older than Slack's cursor should be read")
 	}
-	if ix.IsUnread("", "slack", thread, rowTS, "", "slack_reply", "slack", "") {
+	if ix.IsUnread("", "slack", thread, rowTS, "", "slack_reply", "slack", "", "") {
 		t.Fatal("event with no external ts has nothing to compare; should be read")
 	}
-	if ix.IsUnread("", "slack", "C1:9999.000000", rowTS, "3000.000000", "slack_reply", "slack", "") {
+	if ix.IsUnread("", "slack", "C1:9999.000000", rowTS, "3000.000000", "slack_reply", "slack", "", "") {
 		t.Fatal("thread with no cached cursor should be read, not unread")
 	}
 }
@@ -673,13 +674,13 @@ func TestIsUnreadIgnoresMyOwnEvents(t *testing.T) {
 	t.Parallel()
 	ix := &unreadIndex{cursors: map[string]string{unread.Key("pr", "o/r#1"): "2026-01-01T00:00:00Z"},
 		mine: map[string]string{"github": "101"}}
-	if ix.IsUnread("", "pr", "o/r#1", "2026-01-01T00:00:05Z", "", "pr_comment", "github", "101") {
+	if ix.IsUnread("", "pr", "o/r#1", "2026-01-01T00:00:05Z", "", "pr_comment", "github", "101", "") {
 		t.Fatal("the user's own event must not be unread")
 	}
-	if !ix.IsUnread("", "pr", "o/r#1", "2026-01-01T00:00:05Z", "", "pr_comment", "github", "202") {
+	if !ix.IsUnread("", "pr", "o/r#1", "2026-01-01T00:00:05Z", "", "pr_comment", "github", "202", "") {
 		t.Fatal("another person's newer event must be unread")
 	}
-	if !ix.IsUnread("", "pr", "o/r#1", "2026-01-01T00:00:05Z", "", "pr_comment", "jira", "101") {
+	if !ix.IsUnread("", "pr", "o/r#1", "2026-01-01T00:00:05Z", "", "pr_comment", "jira", "101", "") {
 		t.Fatal("the same id under another source is someone else")
 	}
 }
@@ -726,5 +727,49 @@ func TestResourceReadRestoreUndoesAMark(t *testing.T) {
 	// The cursor is no longer at last_read_ts, so a second undo conflicts.
 	if code := postJSON(t, ts.URL+"/api/resource-read/restore", string(body)); code != http.StatusConflict {
 		t.Fatalf("repeat restore status = %d, want 409", code)
+	}
+}
+
+// The Go twin agrees with Summaries' SQL on bot description edits: past the
+// cursor a bot's edit is read unless marked unread; a person's is unread
+// unless marked read.
+func TestIsUnread_BotDescriptionEdit(t *testing.T) {
+	t.Parallel()
+	conn := unreadTestDB(t)
+	must(t, unread.MarkRead(conn, "pr", "o/r#1", "2026-01-01T00:00:00Z"))
+	cases := []struct {
+		id, author, mark string
+		want             bool
+	}{
+		{"bot-plain", "bot", "", false},
+		{"bot-marked", "bot", unread.StateUnread, true},
+		{"human-plain", "user", "", true},
+		{"human-marked", "user", unread.StateRead, false},
+	}
+	for i, c := range cases {
+		ts := "2026-01-02T00:00:0" + strconv.Itoa(i) + "Z"
+		insertTypedEvent(t, conn, c.id, ts, "pr_description_changed", "x", "pr", "o/r#1")
+		if _, err := conn.Exec(`UPDATE watcher_events SET author_type = ? WHERE id = ?`, c.author, c.id); err != nil {
+			t.Fatal(err)
+		}
+		if c.mark != "" {
+			must(t, unread.SetEventMark(conn, c.id, ts, c.mark))
+		}
+	}
+	ix := (&Server{DB: conn}).newUnreadIndex()
+	sums, err := unread.Summaries(conn)
+	must(t, err)
+	wantCount := 0
+	for i, c := range cases {
+		ts := "2026-01-02T00:00:0" + strconv.Itoa(i) + "Z"
+		if got := ix.IsUnread(c.id, "pr", "o/r#1", ts, "", "pr_description_changed", "github", "", c.author); got != c.want {
+			t.Errorf("%s: IsUnread = %v, want %v", c.id, got, c.want)
+		}
+		if c.want {
+			wantCount++
+		}
+	}
+	if got := sums[unread.Key("pr", "o/r#1")].Count; got != wantCount {
+		t.Errorf("Summaries count = %d, want %d (the Go twin's verdict)", got, wantCount)
 	}
 }

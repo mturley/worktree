@@ -190,6 +190,34 @@ describe("the modal's context row", () => {
   })
 })
 
+describe("the modal's action placement", () => {
+  const buttons = () => ["Mark read", "Make task"].map((n) => screen.getByRole("button", { name: n }))
+
+  it("places actions on the worktree row", () => {
+    wrap(<EventDetailsModal e={ev({ worktrees: ["wt-a"], unread: true })} onClose={vi.fn()} onMakeTask={vi.fn()} />)
+    const row = screen.getByTestId("worktree-row")
+    const [read, task] = buttons()
+    expect(row).toContainElement(screen.getByText("wt-a"))
+    expect(row).toContainElement(read)
+    expect(row).toContainElement(task)
+    // Nothing follows the body any more.
+    const body = screen.getByText("Fix the widget")
+    for (const b of [read, task]) {
+      expect(body.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING).toBeFalsy()
+    }
+  })
+
+  it("places actions on their own row without worktrees", () => {
+    wrap(<EventDetailsModal e={ev({ worktrees: [], unread: true })} onClose={vi.fn()} onMakeTask={vi.fn()} />)
+    const [read, task] = buttons()
+    const row = screen.getByTestId("worktree-row")
+    expect(row).toContainElement(read)
+    expect(row).toContainElement(task)
+    const body = screen.getByText("Fix the widget")
+    expect(body.compareDocumentPosition(read) & Node.DOCUMENT_POSITION_FOLLOWING).toBeFalsy()
+  })
+})
+
 describe("EventDetailsModal for an archived resource", () => {
   const worktrees = [
     { path: "/wt/zeta", repo: "r", branch: "zeta" },
@@ -374,5 +402,102 @@ describe("EventDetailsModal unread", () => {
     await userEvent.click(markButton()!)
     expect(await screen.findByText(/event changed since it was shown/)).toBeInTheDocument()
     expect(outlined()).toBe(true)
+  })
+})
+
+// The diff itself is DescriptionDiff's to test; here it only shows what it got.
+vi.mock("./DescriptionDiff", () => ({
+  default: ({ oldText, newText, cacheKey }: { oldText: string; newText: string; cacheKey: string }) => {
+    if (oldText === "explode") throw new Error("render failed")
+    return <div data-testid="description-diff" data-cache-key={cacheKey}>{`${oldText}→${newText}`}</div>
+  },
+}))
+
+describe("EventDetailsModal description diffs", () => {
+  const DESC_ID = "4f1d2c3b-6a5e-4d7c-8b9a-0e1f2a3b4c5d"
+  const descEvent = (o: Partial<TimelineEvent> = {}) =>
+    ev({ id: DESC_ID, type: "jira_description_changed", type_label: "description changes", source: "jira",
+      title: "PROJ-1 description changed", body: "a summary line", unread: true, ...o })
+  // Answers the text endpoint as given; anything else fails, as with no server.
+  const stubFetch = (answer: () => Response | Promise<Response>) =>
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.startsWith("/api/event-text-change")) return answer()
+      throw new TypeError("no server")
+    })
+  const json = (status: number, body: unknown) =>
+    new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })
+  const textCalls = (spy: ReturnType<typeof stubFetch>) =>
+    spy.mock.calls.map(([u]) => String(u)).filter((u) => u.startsWith("/api/event-text-change"))
+
+  it.each(["jira_description_changed", "pr_description_changed"])("shows the diff for %s, in place of the body", async (type) => {
+    const spy = stubFetch(() => json(200, { old_text: "before", new_text: "after" }))
+    wrap(<EventDetailsModal e={descEvent({ type })} onClose={vi.fn()} />)
+    const diff = await screen.findByTestId("description-diff")
+    expect(diff).toHaveTextContent("before→after")
+    expect(diff).toHaveAttribute("data-cache-key", DESC_ID)
+    expect(textCalls(spy)).toEqual([`/api/event-text-change?id=${DESC_ID}`])
+    expect(screen.queryByText("a summary line")).toBeNull()
+  })
+
+  it("says so when the edit has no stored text", async () => {
+    const spy = stubFetch(() => json(404, { error: "no text stored for this event" }))
+    wrap(<EventDetailsModal e={descEvent()} onClose={vi.fn()} />)
+    expect(await screen.findByText("Diff not available for this edit.")).toBeInTheDocument()
+    // A 404 is an answer, not a failure: asked once.
+    expect(textCalls(spy)).toHaveLength(1)
+    expect(screen.queryByTestId("description-diff")).toBeNull()
+  })
+
+  it("retries any other failure, then shows it inline", async () => {
+    const spy = stubFetch(() => json(500, { error: "database is locked" }))
+    // The query's own retry policy, without waiting out its backoff.
+    render(
+      <MantineProvider>
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retryDelay: 0 } } })}>
+          <EventDetailsModal e={descEvent()} onClose={vi.fn()} />
+        </QueryClientProvider>
+      </MantineProvider>,
+    )
+    expect(await screen.findByText(/database is locked/)).toBeInTheDocument()
+    expect(textCalls(spy)).toHaveLength(4)
+    expect(screen.queryByText("Diff not available for this edit.")).toBeNull()
+  })
+
+  it("shows the header and actions while the text loads", () => {
+    stubFetch(() => new Promise<Response>(() => {}))
+    wrap(<EventDetailsModal e={descEvent()} onClose={vi.fn()} onMakeTask={vi.fn()} />)
+    expect(screen.getByText("PROJ-1 description changed")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Mark read" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Make task" })).toBeInTheDocument()
+    expect(screen.getByText("Loading diff…")).toBeInTheDocument()
+    expect(screen.queryByTestId("description-diff")).toBeNull()
+  })
+
+  it("a render failure on one event doesn't carry to the next", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    stubFetch(() => json(200, { old_text: "explode", new_text: "x" }))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const ui = (e: TimelineEvent) => (
+      <MantineProvider>
+        <QueryClientProvider client={client}><EventDetailsModal e={e} onClose={vi.fn()} /></QueryClientProvider>
+      </MantineProvider>
+    )
+    const { rerender } = render(ui(descEvent()))
+    expect(await screen.findByText(/Couldn't load the diff view/)).toBeInTheDocument()
+    // Already cached, so the next event renders at once, with no pending state
+    // to unmount the boundary on the way.
+    client.setQueryData(["event-text-change", "another-event-id"], { old_text: "before", new_text: "after" })
+    rerender(ui(descEvent({ id: "another-event-id" })))
+    expect(await screen.findByTestId("description-diff")).toHaveTextContent("before→after")
+    expect(screen.queryByText(/Couldn't load the diff view/)).toBeNull()
+  })
+
+  it("leaves other events' bodies alone, and never asks for text", () => {
+    const spy = stubFetch(() => json(200, { old_text: "x", new_text: "y" }))
+    wrap(<EventDetailsModal e={ev({ body: "a plain comment" })} onClose={vi.fn()} />)
+    expect(screen.getByText("a plain comment")).toBeInTheDocument()
+    expect(textCalls(spy)).toEqual([])
+    expect(screen.queryByTestId("description-diff")).toBeNull()
   })
 })

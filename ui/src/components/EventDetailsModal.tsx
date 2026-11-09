@@ -1,10 +1,10 @@
-import { useState } from "react"
-import { Alert, Badge, Button, Divider, Group, Modal, Stack, Text } from "@mantine/core"
+import { lazy, Suspense, useState } from "react"
+import { Alert, Badge, Button, Divider, Group, Loader, Modal, Stack, Text } from "@mantine/core"
 import { TASK_BUTTON_STYLE } from "./tasks/taskButtonStyle"
 import { IconArchive } from "@tabler/icons-react"
 import { useQuery } from "@tanstack/react-query"
 import { useLocation } from "wouter"
-import { api } from "../api/client"
+import { api, HttpError } from "../api/client"
 import type { ResourceDTO, TimelineEvent } from "../api/types"
 import { eventLabel } from "../lib/eventMeta"
 import { relativeTime as rel } from "../lib/relativeTime"
@@ -20,6 +20,17 @@ import { eventFullUiHref } from "../lib/fullUiLink"
 import { useMiniModalFullScreen } from "../hooks/useMiniModalFullScreen"
 import { MARK_READ_BUTTON_PROPS, READ_BOX_BORDER, UNREAD_BOX_BORDER } from "../lib/unread"
 import { canMarkEventRead, canMarkEventUnread, useMarkEventRead, useMarkEventUnread } from "../hooks/useMarkEventRead"
+import { BotMark } from "./BotMark"
+import { DiffViewBoundary, installPreloadReload } from "./gitdiff/DiffViewBoundary"
+
+/** Event types whose modal shows a diff of the description in place of the body. */
+export const DESCRIPTION_DIFF_TYPES = ["jira_description_changed", "pr_description_changed"]
+
+// The diff, and with it @pierre/diffs, is its own chunk: fetched the first
+// time someone opens a description edit, never on a plain page load.
+const DescriptionDiff = lazy(() => import("./DescriptionDiff"))
+// A chunk missing after an upgrade reloads the page (once) instead of failing.
+installPreloadReload()
 
 /**
  * Full detail for one timeline event.
@@ -99,6 +110,49 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
     navigate(`/worktree/${encodeURIComponent(worktreePath)}`)
   }
 
+  const hasActions = !!e && !!(locate.data || offerMarkRead || offerMarkUnread || (onMakeTask && eventTaskKey(e)))
+  const actions = e && hasActions ? (
+    <>
+      {locate.data && (
+        <Button
+          size="xs"
+          variant="light"
+          color="grape"
+          onClick={() => {
+            const target = locate.data
+            onClose()
+            navigate(`/worktree/${encodeURIComponent(target.path)}?diff&prcomment=${target.comment_id}`)
+          }}
+        >
+          Go to comment in diff view
+        </Button>
+      )}
+      {offerMarkRead && (
+        <Button size="xs" {...MARK_READ_BUTTON_PROPS} loading={marking} onClick={() => void mark(false)}>
+          Mark read
+        </Button>
+      )}
+      {offerMarkUnread && (
+        <Button size="xs" {...MARK_READ_BUTTON_PROPS} loading={marking} onClick={() => void mark(true)}>
+          Mark unread
+        </Button>
+      )}
+      {onMakeTask && eventTaskKey(e) && (
+        <Button
+          size="xs"
+          variant="filled"
+          style={TASK_BUTTON_STYLE}
+          onClick={() => {
+            onClose()
+            onMakeTask(e)
+          }}
+        >
+          Make task
+        </Button>
+      )}
+    </>
+  ) : null
+
   return (
     <Modal opened={!!e} onClose={onClose} size="lg" fullScreen={fullScreen}
       // A border, not an inset outline, which the sticky header paints over.
@@ -145,94 +199,111 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
             </Group>
           )}
 
-          {e.worktrees.length > 0 && (
-            <Group gap={6} wrap="wrap">
-              {eventWorktrees(e).map((w, i) => (
-                // Worded as on the activity feed's rows.
-                <WorktreePreview key={`${i}:${w.path ?? w.name}`} path={w.path}>
-                  <Badge
-                    // Only a path can be navigated to; a bare name stays a label.
-                    {...(w.path
-                      ? {
-                          component: "button" as const,
-                          type: "button" as const,
-                          className: "worktree-chip-nav",
-                          "aria-label": `Open worktree ${w.name}`,
-                          onClick: () => openWorktree(w.path!),
-                        }
-                      : {})}
-                    size="sm"
-                    color="gray"
-                    variant="outline"
-                    maw={240}
-                    style={{ textTransform: "none" }}
-                  >
-                    <WorktreeName path={w.path} name={w.name} />
-                  </Badge>
-                </WorktreePreview>
-              ))}
+          {(e.worktrees.length > 0 || hasActions) && (
+            <Group
+              data-testid="worktree-row"
+              justify={e.worktrees.length > 0 ? "space-between" : "flex-end"}
+              wrap="wrap"
+              align="flex-start"
+              gap={6}
+            >
+              {e.worktrees.length > 0 && (
+                <Group gap={6} wrap="wrap" style={{ minWidth: 0 }}>
+                  {eventWorktrees(e).map((w, i) => (
+                    // Worded as on the activity feed's rows.
+                    <WorktreePreview key={`${i}:${w.path ?? w.name}`} path={w.path}>
+                      <Badge
+                        // Only a path can be navigated to; a bare name stays a label.
+                        {...(w.path
+                          ? {
+                              component: "button" as const,
+                              type: "button" as const,
+                              className: "worktree-chip-nav",
+                              "aria-label": `Open worktree ${w.name}`,
+                              onClick: () => openWorktree(w.path!),
+                            }
+                          : {})}
+                        size="sm"
+                        color="gray"
+                        variant="outline"
+                        maw={240}
+                        style={{ textTransform: "none" }}
+                      >
+                        <WorktreeName path={w.path} name={w.name} />
+                      </Badge>
+                    </WorktreePreview>
+                  ))}
+                </Group>
+              )}
+              {hasActions && (
+                <Group justify="flex-end" ml="auto" gap={6}>
+                  {actions}
+                </Group>
+              )}
             </Group>
           )}
 
           <Divider />
 
-          <Text fw={600} style={{ overflowWrap: "anywhere" }}>{e.title}</Text>
+          <Group gap={4} wrap="nowrap" align="flex-start">
+            <BotMark authorType={e.author_type} author={e.author} />
+            <Text fw={600} style={{ overflowWrap: "anywhere" }}>{e.title}</Text>
+          </Group>
           <Text size="xs" c="dimmed">
             {e.author && `${e.author} · `}
             {rel(e.external_ts || e.ts)}
           </Text>
 
-          {e.body && (
+          {DESCRIPTION_DIFF_TYPES.includes(e.type) ? (
+            <DescriptionChange key={e.id} id={e.id} />
+          ) : e.body && (
             // Preserve the author's line breaks; this is comment text, not prose.
             <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
               {e.body}
             </Text>
           )}
 
-          {(locate.data || offerMarkRead || offerMarkUnread || (onMakeTask && eventTaskKey(e))) && (
-            <Group justify="flex-end">
-              {locate.data && (
-                <Button
-                  size="xs"
-                  variant="light"
-                  color="grape"
-                  onClick={() => {
-                    const target = locate.data
-                    onClose()
-                    navigate(`/worktree/${encodeURIComponent(target.path)}?diff&prcomment=${target.comment_id}`)
-                  }}
-                >
-                  Go to comment in diff view
-                </Button>
-              )}
-              {offerMarkRead && (
-                <Button size="xs" {...MARK_READ_BUTTON_PROPS} loading={marking} onClick={() => void mark(false)}>
-                  Mark read
-                </Button>
-              )}
-              {offerMarkUnread && (
-                <Button size="xs" {...MARK_READ_BUTTON_PROPS} loading={marking} onClick={() => void mark(true)}>
-                  Mark unread
-                </Button>
-              )}
-              {onMakeTask && eventTaskKey(e) && (
-                <Button
-                  size="xs"
-                  variant="filled"
-                  style={TASK_BUTTON_STYLE}
-                  onClick={() => {
-                    onClose()
-                    onMakeTask(e)
-                  }}
-                >
-                  Make task
-                </Button>
-              )}
-            </Group>
-          )}
         </Stack>
       )}
     </Modal>
+  )
+}
+
+/**
+ * A description edit's diff, fetched when the modal opens. Everything else in
+ * the modal is already there while it loads.
+ */
+function DescriptionChange({ id }: { id: string }) {
+  const text = useQuery({
+    queryKey: ["event-text-change", id],
+    queryFn: () => api.eventTextChange(id),
+    // An event's text never changes once stored.
+    staleTime: Infinity,
+    // A 404 means the text was never stored for this edit: asking again won't help.
+    retry: (failures, err) => !(err instanceof HttpError && err.status === 404) && failures < 3,
+  })
+  if (text.isPending) return <Loading />
+  if (text.isError) {
+    if (text.error instanceof HttpError && text.error.status === 404) {
+      return <Text size="sm" c="dimmed">Diff not available for this edit.</Text>
+    }
+    return <Text size="sm" c="red">Couldn't load the diff: {text.error.message}</Text>
+  }
+  return (
+    <DiffViewBoundary>
+      <Suspense fallback={<Loading />}>
+        <DescriptionDiff oldText={text.data.old_text} newText={text.data.new_text} cacheKey={id} />
+      </Suspense>
+    </DiffViewBoundary>
+  )
+}
+
+function Loading() {
+  return (
+    <Group gap="xs">
+      <Loader size="xs" />
+      <Text size="sm" c="dimmed">Loading diff…</Text>
+    </Group>
   )
 }
 

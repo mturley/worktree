@@ -23,6 +23,7 @@ export function eventFromLink(link: TaskEventLink): TimelineEvent {
     title: s.title,
     body: s.body,
     author: s.author,
+    author_type: s.author_type,
     resource_type: s.resource_type,
     resource_id: s.resource_id,
     resource_url: "",

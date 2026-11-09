@@ -272,3 +272,21 @@ func TestSlackPlain(t *testing.T) {
 		}
 	}
 }
+
+func TestEventLinkSnapshotCarriesAuthorType(t *testing.T) {
+	t.Parallel()
+	s, _ := tasksServer(t)
+	insertEvent(t, s.DB, "b1", "2026-01-01T00:00:01Z", "github", "pr_comment", "from a bot", "pr", "o/r#1", "u")
+	if _, err := s.DB.Exec(`UPDATE watcher_events SET author_type = 'bot' WHERE id = 'b1'`); err != nil {
+		t.Fatal(err)
+	}
+	tk := mustTask(t, s, tasks.NewTask{Title: "t"})
+	decodeDetail(t, serveTasks(t, s, http.MethodPost, "/api/tasks/events/link", map[string]any{"id": tk.ID, "key": "ev:b1"}))
+	d := getDetail(t, s, tk.ID)
+	if len(d.EventLinks) != 1 || d.EventLinks[0].Snapshot.AuthorType != "bot" {
+		t.Fatalf("event links = %+v", d.EventLinks)
+	}
+	if e := snapshotEvent(tasks.EventLink{Key: "ev:b1", Snapshot: d.EventLinks[0].Snapshot}); e.AuthorType != "bot" {
+		t.Errorf("snapshot event author_type = %q", e.AuthorType)
+	}
+}

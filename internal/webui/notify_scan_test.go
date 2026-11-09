@@ -10,6 +10,7 @@ import (
 	"github.com/mturley/worktree/internal/resources"
 	"github.com/mturley/worktree/internal/selfid"
 	"github.com/mturley/worktree/internal/testgit"
+	"github.com/mturley/worktree/internal/unread"
 )
 
 func insertTypedEvent(t *testing.T, conn *sql.DB, id, ts, typ, title, resType, resID string) {
@@ -238,5 +239,62 @@ func TestSlackReplyNotificationUsesCustomName(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].Body != "New reply in Rollout" {
 		t.Fatalf("got %+v, want body %q", got, "New reply in Rollout")
+	}
+}
+
+func TestReadNewEvents_SkipsBotDescriptionEdits(t *testing.T) {
+	t.Parallel()
+	conn := unreadTestDB(t)
+	c, err := initNotifyCursor(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	insertTypedEvent(t, conn, "botdesc", "2026-01-01T00:00:01Z", "pr_description_changed", "x", "pr", "o/r#1")
+	insertTypedEvent(t, conn, "botjira", "2026-01-01T00:00:02Z", "jira_description_changed", "x", "jira", "J-1")
+	insertTypedEvent(t, conn, "humandesc", "2026-01-01T00:00:03Z", "pr_description_changed", "x", "pr", "o/r#1")
+	if _, err := conn.Exec(`UPDATE watcher_events SET author_type = 'bot' WHERE id IN ('botdesc','botjira')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(`UPDATE watcher_events SET author_type = 'user' WHERE id = 'humandesc'`); err != nil {
+		t.Fatal(err)
+	}
+	// Marked unread still never notifies.
+	if err := unread.SetEventMark(conn, "botdesc", "2026-01-01T00:00:01Z", unread.StateUnread); err != nil {
+		t.Fatal(err)
+	}
+	evs, _, err := readNewEvents(conn, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := newEventIDs(evs); len(got) != 1 || got[0] != "humandesc" {
+		t.Fatalf("got %v, want [humandesc]", got)
+	}
+}
+
+func TestReadNewEvents_BotTitlePrefixed(t *testing.T) {
+	t.Parallel()
+	conn := unreadTestDB(t)
+	c, err := initNotifyCursor(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	insertTypedEvent(t, conn, "bot", "2026-01-01T00:00:01Z", "pr_review", "Review by ci-bot", "pr", "o/r#1")
+	insertTypedEvent(t, conn, "human", "2026-01-01T00:00:02Z", "pr_review", "Review by someone", "pr", "o/r#1")
+	if _, err := conn.Exec(`UPDATE watcher_events SET author_type = 'bot' WHERE id = 'bot'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(`UPDATE watcher_events SET author_type = 'user' WHERE id = 'human'`); err != nil {
+		t.Fatal(err)
+	}
+	evs, _, err := readNewEvents(conn, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, e := range evs {
+		got[e.id] = e.title
+	}
+	if got["bot"] != "🤖 Review by ci-bot" || got["human"] != "Review by someone" {
+		t.Fatalf("titles = %v", got)
 	}
 }
