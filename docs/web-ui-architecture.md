@@ -200,7 +200,8 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | POST | `/api/resource-resolve` | body: `{url}` | resolved link metadata |
 | GET | `/api/resource-type` | `url` (required) | `{type, id}` or error if unrecognized |
 | POST | `/api/worktree-resources/add` | body: `{path, url, related?}` | `resourceDTO` |
-| POST | `/api/worktree-resources/remove` | body: `{path, type, id}` | 204 No Content |
+| POST | `/api/worktree-resources/remove` | body: `{path, type, id}` | `{removed}` (snapshot for undo, or null) |
+| POST | `/api/worktree-resources/restore` | body: `{path, removed}` | 204 No Content |
 | POST | `/api/worktree-resources/primary` | body: `{path, type, id, primary}` | 204 No Content |
 | POST | `/api/worktree-resources/order` | body: `{path, focus: [{type,id}], related: [{type,id}]}` | 204 No Content |
 | POST | `/api/worktrees/delete` | body: `{path, delete_branch, force_directory, force_branch}` | `{ok, needs_force, steps[]}` |
@@ -483,12 +484,29 @@ missing `path`/`url` or an unrecognized URL (`inferResource` returns
 `ok=false`); 500 if `resources.Add` fails.
 
 `POST /api/worktree-resources/remove` — body `{path, type, id}`. Hard-deletes
-the resource via `resources.Remove` (removes the `watcher_subscriptions` row
-and clears the `worktree_primary` flag if set) and returns `204 No Content`.
-400s on any missing field; 500 on a `resources.Remove` error. There is no
+the resource via `resources.RemoveWithSnapshot` (removes the
+`watcher_subscriptions` row, clears the `worktree_primary` flag and the
+resource's notify toggle) and returns `{removed}`: a `resources.Removed`
+snapshot of what it took (type, id, URL, group, 0-based index in that group,
+and the resource's own notify toggle), or `null` when the worktree wasn't
+following it. 400s on any missing field; 500 on a remove error. There is no
 soft "Unwatch" (keep history, stop polling) in this UI yet — Phase-5 soft-stop
 semantics are still unsettled, so remove is intentionally the only control
 exposed.
+
+`POST /api/worktree-resources/restore` — body `{path, removed}`, the snapshot
+remove returned. The undo for an unfollow: `resources.Restore` follows the
+resource again (`resources.Add`), places it at its old index in its old
+group (clamped to the group's end if the group has shrunk; the other cards
+keep their relative order), and turns its notify toggle back on if it was on.
+Custom name/description and the read cursor are per resource and survive the
+unfollow untouched, so they need no restoring. Safe to repeat. 204 on
+success; 400 on a missing path/type/id or a path that isn't a worktree.
+
+The UI unfollows from two places — the detail card's red trash icon and the
+Unfollow button in a list card's drag-handle hover menu, which confirms in
+place — both through `useUnfollowResource`, which shows an undo toast
+(`showUndoToast`) whose Undo posts the snapshot to restore.
 
 ## Resource card ordering
 

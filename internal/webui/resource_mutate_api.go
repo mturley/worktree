@@ -90,8 +90,49 @@ func (s *Server) handleRemoveResource(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing path, type, or id")
 		return
 	}
-	if err := resources.Remove(s.DB, req.Path, req.Type, req.ID); err != nil {
+	snap, ok, err := resources.RemoveWithSnapshot(s.DB, req.Path, req.Type, req.ID)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// What was removed, for the UI's Undo to hand back to
+	// /api/worktree-resources/restore; null when the worktree was not
+	// following the resource, so there is nothing to undo.
+	var removed *resources.Removed
+	if ok {
+		removed = &snap
+	}
+	writeJSON(w, http.StatusOK, removeResourceResponse{Removed: removed})
+}
+
+type removeResourceResponse struct {
+	Removed *resources.Removed `json:"removed"`
+}
+
+type restoreResourceRequest struct {
+	Path    string            `json:"path"`
+	Removed resources.Removed `json:"removed"`
+}
+
+// handleRestoreResource undoes an unfollow: it follows the resource again in
+// the group and place, and with the notify toggle, that
+// /api/worktree-resources/remove reported removing. Repeating it is harmless.
+func (s *Server) handleRestoreResource(w http.ResponseWriter, r *http.Request) {
+	var req restoreResourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if req.Path == "" || req.Removed.Type == "" || req.Removed.ID == "" {
+		writeError(w, http.StatusBadRequest, "missing path, type, or id")
+		return
+	}
+	if err := resources.Restore(s.DB, req.Path, req.Removed); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, resources.ErrNotAWorktree) {
+			status = http.StatusBadRequest
+		}
+		writeError(w, status, err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

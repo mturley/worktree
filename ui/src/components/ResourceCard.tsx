@@ -18,6 +18,7 @@ import { TAB_ID } from "../lib/tabId"
 import { NotifySwitch } from "./NotifySwitch"
 import { NotifyBell } from "./NotifyBell"
 import { useCrossHover } from "./CrossHoverContext"
+import { useUnfollowResource } from "../hooks/useUnfollowResource"
 
 function reviewColor(decision?: string): string {
   switch ((decision || "").toUpperCase()) {
@@ -260,21 +261,10 @@ export function editDetailsLabel(r: ResourceDTO): string {
 
 export function RemoveControl({ r, path, onRemoved }: { r: ResourceDTO; path: string; onRemoved: () => void }) {
   const [opened, setOpened] = useState(false)
-  const [removing, setRemoving] = useState(false)
-  const [removeError, setRemoveError] = useState<string | null>(null)
+  const { unfollow, removing, error: removeError, clearError } = useUnfollowResource({ r, path, onRemoved })
 
   const handleRemove = async () => {
-    setRemoving(true)
-    try {
-      await api.removeResource({ path, type: r.type, id: r.id })
-      setRemoveError(null)
-      setOpened(false)
-      onRemoved()
-    } catch (err) {
-      setRemoveError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setRemoving(false)
-    }
+    if (await unfollow()) setOpened(false)
   }
 
   return (
@@ -282,7 +272,7 @@ export function RemoveControl({ r, path, onRemoved }: { r: ResourceDTO; path: st
       opened={opened}
       onChange={(v) => {
         setOpened(v)
-        if (v) setRemoveError(null)
+        if (v) clearError()
       }}
       withArrow
       position="bottom-end"
@@ -291,7 +281,7 @@ export function RemoveControl({ r, path, onRemoved }: { r: ResourceDTO; path: st
         <ActionIcon
           size="sm"
           variant="subtle"
-          color="gray"
+          color="red"
           aria-label="Unfollow resource"
           onClick={(e) => {
             e.stopPropagation()

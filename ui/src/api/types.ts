@@ -101,6 +101,18 @@ export interface TimelineEvent {
   linked_key?: string;
 }
 export interface TimelineResponse { events: TimelineEvent[]; next_cursor: string }
+/**
+ * What unfollowing a resource took from its worktree (resources.Removed):
+ * opaque to the UI, which only hands it back to restoreResource to undo.
+ */
+export interface RemovedResource {
+  type: string
+  id: string
+  url: string
+  primary: boolean
+  index: number
+  notify: boolean
+}
 export interface ResourceDTO {
   /** Open tasks linked to this resource. */
   open_task_count?: number

@@ -2,6 +2,7 @@ package webui
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -150,18 +151,87 @@ func TestRemoveResource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("remove: got %d, want 204", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("remove: got %d, want 200", resp.StatusCode)
+	}
+	var removed struct {
+		Removed *resources.Removed `json:"removed"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&removed); err != nil {
+		t.Fatal(err)
+	}
+	if removed.Removed == nil || removed.Removed.ID != "C1:1700000000.000100" || removed.Removed.URL != "https://x" {
+		t.Fatalf("removed = %+v, want the slack thread's snapshot", removed.Removed)
 	}
 
-	r2, err := http.Get(ts.URL + "/api/worktree-resources?path=" + url.QueryEscape(wtPath))
+	listed := func() string {
+		r2, err := http.Get(ts.URL + "/api/worktree-resources?path=" + url.QueryEscape(wtPath))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer r2.Body.Close()
+		buf := new(bytes.Buffer)
+		buf.ReadFrom(r2.Body)
+		return buf.String()
+	}
+	if got := listed(); strings.Contains(got, "C1:1700000000.000100") {
+		t.Fatalf("resource still present after remove: %s", got)
+	}
+
+	// Undo: the snapshot goes back as it came.
+	restoreBody, _ := json.Marshal(map[string]any{"path": wtPath, "removed": removed.Removed})
+	r3, err := http.Post(ts.URL+"/api/worktree-resources/restore", "application/json", bytes.NewReader(restoreBody))
 	if err != nil {
 		t.Fatal(err)
 	}
+	if r3.StatusCode != http.StatusNoContent {
+		t.Fatalf("restore: got %d, want 204", r3.StatusCode)
+	}
+	if got := listed(); !strings.Contains(got, "C1:1700000000.000100") {
+		t.Fatalf("resource missing after restore: %s", got)
+	}
+}
+
+func TestRemoveResource_NotFollowedHasNothingToUndo(t *testing.T) {
+	t.Parallel()
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	ts := httptest.NewServer((&Server{DB: conn}).Handler())
+	defer ts.Close()
+
+	resp, err := http.Post(ts.URL+"/api/worktree-resources/remove", "application/json",
+		strings.NewReader(`{"path":"/x","type":"pr","id":"o/r#1"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
 	buf := new(bytes.Buffer)
-	buf.ReadFrom(r2.Body)
-	if strings.Contains(buf.String(), "C1:1700000000.000100") {
-		t.Fatalf("resource still present after remove: %s", buf.String())
+	buf.ReadFrom(resp.Body)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(buf.String(), `"removed":null`) {
+		t.Fatalf("got %d %s, want 200 with removed null", resp.StatusCode, buf.String())
+	}
+}
+
+func TestRestoreResource_MissingFields(t *testing.T) {
+	t.Parallel()
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	ts := httptest.NewServer((&Server{DB: conn}).Handler())
+	defer ts.Close()
+
+	resp, err := http.Post(ts.URL+"/api/worktree-resources/restore", "application/json",
+		strings.NewReader(`{"path":"/x","removed":{"type":"pr"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("got %d, want 400", resp.StatusCode)
 	}
 }
 

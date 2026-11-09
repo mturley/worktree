@@ -2,6 +2,7 @@ import { afterEach, describe, it, expect, vi } from "vitest"
 import { act, render, cleanup, fireEvent } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
+import { Notifications, notifications } from "@mantine/notifications"
 import { ResourceList } from "./ResourceList"
 
 if (typeof window.matchMedia !== "function") {
@@ -20,6 +21,8 @@ if (typeof window.matchMedia !== "function") {
 const addResource = vi.fn()
 const setResourceOrder = vi.fn()
 const setResourcePrimary = vi.fn()
+const removeResource = vi.fn()
+const restoreResource = vi.fn()
 vi.mock("../api/client", async (orig) => {
   const actual = await orig<typeof import("../api/client")>()
   return {
@@ -28,6 +31,8 @@ vi.mock("../api/client", async (orig) => {
       addResource: (...args: unknown[]) => addResource(...args),
       setResourceOrder: (...args: unknown[]) => setResourceOrder(...args),
       setResourcePrimary: (...args: unknown[]) => setResourcePrimary(...args),
+      removeResource: (...args: unknown[]) => removeResource(...args),
+      restoreResource: (...args: unknown[]) => restoreResource(...args),
     },
   }
 })
@@ -39,6 +44,9 @@ afterEach(() => {
   addResource.mockReset()
   setResourceOrder.mockReset()
   setResourcePrimary.mockReset()
+  removeResource.mockReset()
+  restoreResource.mockReset()
+  act(() => notifications.clean())
 })
 
 describe("ResourceList", () => {
@@ -353,5 +361,63 @@ describe("ResourceList handle hover menu", () => {
     await user.hover(handle(getByRole, "o/r#1"))
     await user.click(await findByRole("radio", { name: "Related" }))
     expect(setResourcePrimary).toHaveBeenCalledWith({ path: "/w", type: "pr", id: "o/r#1", primary: false })
+  })
+})
+
+describe("ResourceList handle hover menu: Unfollow", () => {
+  const items = [
+    { type: "pr", id: "o/r#1", url: "u", primary: true, title: "First PR" },
+    { type: "pr", id: "o/r#2", url: "u", primary: true, title: "Second PR" },
+  ]
+  const snapshot = { type: "pr", id: "o/r#2", url: "u", primary: true, index: 1, notify: false }
+  const open = async (user: ReturnType<typeof userEvent.setup>, onChanged = vi.fn()) => {
+    const utils = wrap(
+      <>
+        <Notifications />
+        <ResourceList items={items} path="/w" onChanged={onChanged} />
+      </>,
+    )
+    await user.hover(utils.getByRole("button", { name: "drag to reorder o/r#2" }))
+    await user.click(await utils.findByRole("button", { name: "Unfollow" }))
+    return utils
+  }
+
+  it("asks in place, and Cancel unfollows nothing", async () => {
+    const user = userEvent.setup()
+    const { findByText, getByRole, findByRole } = await open(user)
+    expect(await findByText("Unfollow this resource?")).toBeInTheDocument()
+    await user.click(getByRole("button", { name: "Cancel" }))
+    expect(removeResource).not.toHaveBeenCalled()
+    // Back to the plain button.
+    expect(await findByRole("button", { name: "Unfollow" })).toBeInTheDocument()
+  })
+
+  it("unfollows on confirm and offers an undo that restores it", async () => {
+    removeResource.mockResolvedValue({ removed: snapshot })
+    restoreResource.mockResolvedValue(null)
+    const onChanged = vi.fn()
+    const user = userEvent.setup()
+    const { findByText, findByRole } = await open(user, onChanged)
+    await findByText("Unfollow this resource?")
+    await user.click(await findByRole("button", { name: "Unfollow" }))
+
+    expect(removeResource).toHaveBeenCalledWith({ path: "/w", type: "pr", id: "o/r#2" })
+    await vi.waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
+    expect(await findByText("Unfollowed “Second PR”")).toBeInTheDocument()
+
+    await user.click(await findByRole("button", { name: "Undo" }))
+    expect(restoreResource).toHaveBeenCalledWith({ path: "/w", removed: snapshot })
+    await vi.waitFor(() => expect(onChanged).toHaveBeenCalledTimes(2))
+  })
+
+  it("keeps the prompt open with the error when the unfollow fails", async () => {
+    removeResource.mockRejectedValue(new Error("boom"))
+    const user = userEvent.setup()
+    const { findByText, findByRole, getByText, queryByText } = await open(user)
+    await findByText("Unfollow this resource?")
+    await user.click(await findByRole("button", { name: "Unfollow" }))
+    expect(await findByText("boom")).toBeInTheDocument()
+    expect(getByText("Unfollow this resource?")).toBeInTheDocument()
+    expect(queryByText(/Unfollowed/)).not.toBeInTheDocument()
   })
 })

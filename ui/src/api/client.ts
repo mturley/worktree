@@ -1,4 +1,4 @@
-import type { DiffBase, DiffCommits, DiffFiles, DiffPatch, DiffRange, WorktreeGit, AllResourceDTO, CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, CredResult, DefaultBranchResponse, CredService, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, EventReadChange, ResourceReadChange, Priority, Task, TaskState, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, EventTextChange, UpdateStatus, WatcherHealth, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherAuthSettings, WatcherConfigSettings, WorktreeInfo, WorktreeNotes, WorktreeSettings, WorktreeSummary, TaskActivityFilter, TaskDetail, TaskEventSnapshot, TaskLinkTarget, TimelineEvent, TaskScope, TaskUnread, TaskBlockerTarget, TaskDeleteResult, NewReviewComment, ReviewComment, ReviewCommentItem, PRCommentsSummary, PRThreads, PRWriteTarget, PRWriteCheck, PRWriteMode, PRReviewDialog, PRReviewEvent, SubmitResult } from "./types"
+import type { DiffBase, DiffCommits, DiffFiles, DiffPatch, DiffRange, WorktreeGit, AllResourceDTO, CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, CredResult, DefaultBranchResponse, CredService, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, RemovedResource, EventReadChange, ResourceReadChange, Priority, Task, TaskState, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, EventTextChange, UpdateStatus, WatcherHealth, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherAuthSettings, WatcherConfigSettings, WorktreeInfo, WorktreeNotes, WorktreeSettings, WorktreeSummary, TaskActivityFilter, TaskDetail, TaskEventSnapshot, TaskLinkTarget, TimelineEvent, TaskScope, TaskUnread, TaskBlockerTarget, TaskDeleteResult, NewReviewComment, ReviewComment, ReviewCommentItem, PRCommentsSummary, PRThreads, PRWriteTarget, PRWriteCheck, PRWriteMode, PRReviewDialog, PRReviewEvent, SubmitResult } from "./types"
 
 export class HttpError extends Error {
   constructor(message: string, readonly status: number, readonly body?: unknown) {
@@ -339,8 +339,16 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(args),
     }),
+  /** Unfollows; `removed` is what to hand restoreResource to undo it (null: it wasn't followed). */
   removeResource: (args: { path: string; type: string; id: string }) =>
-    fetchJSON<null>("/api/worktree-resources/remove", {
+    fetchJSON<{ removed: RemovedResource | null }>("/api/worktree-resources/remove", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(args),
+    }),
+  /** Undoes an unfollow: follows again in the same group, place and notify state. */
+  restoreResource: (args: { path: string; removed: RemovedResource }) =>
+    fetchJSON<null>("/api/worktree-resources/restore", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(args),

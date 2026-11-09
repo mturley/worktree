@@ -1,13 +1,15 @@
 import { afterEach, describe, it, expect, vi } from "vitest"
-import { cleanup, render, screen, waitFor } from "@testing-library/react"
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
+import { Notifications, notifications } from "@mantine/notifications"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { ResourceCard, editDetailsLabel } from "./ResourceCard"
 import type { ResourceDTO } from "../api/types"
 
 const removeResource = vi.fn()
 const setResourcePrimary = vi.fn()
+const restoreResource = vi.fn()
 vi.mock("../api/client", async (orig) => {
   const actual = await orig<typeof import("../api/client")>()
   return {
@@ -15,6 +17,7 @@ vi.mock("../api/client", async (orig) => {
       ...actual.api,
       removeResource: (...args: unknown[]) => removeResource(...args),
       setResourcePrimary: (...args: unknown[]) => setResourcePrimary(...args),
+      restoreResource: (...args: unknown[]) => restoreResource(...args),
       // The detail card's open button asks cmux for an existing tab.
       cmux: () => Promise.resolve({ available: false }),
       cmuxBrowserTabs: () => Promise.resolve({ available: false, tabs: [] }),
@@ -25,6 +28,8 @@ vi.mock("../api/client", async (orig) => {
 afterEach(() => {
   removeResource.mockReset()
   setResourcePrimary.mockReset()
+  restoreResource.mockReset()
+  act(() => notifications.clean())
 })
 
 if (typeof window.matchMedia !== "function") {
@@ -217,6 +222,46 @@ describe("ResourceCard remove control", () => {
 
     expect(removeResource).toHaveBeenCalledWith({ path: "/some/worktree", type: "pr", id: "org/repo#1" })
     await vi.waitFor(() => expect(onRemoved).toHaveBeenCalled())
+  })
+
+  it("offers an undo that follows it again as it was", async () => {
+    const removed = { type: "pr", id: "org/repo#1", url: "https://x", primary: false, index: 0, notify: true }
+    removeResource.mockResolvedValueOnce({ removed })
+    restoreResource.mockResolvedValueOnce(null)
+    const onRemoved = vi.fn()
+    const user = userEvent.setup()
+    wrap(
+      <>
+        <Notifications />
+        <ResourceCard r={r} path="/some/worktree" onRemoved={onRemoved} variant="detail" />
+      </>,
+    )
+
+    await user.click(screen.getByRole("button", { name: "Unfollow resource" }))
+    await screen.findByText("Unfollow this resource?")
+    await user.click(screen.getByRole("button", { name: "Unfollow" }))
+    expect(await screen.findByText("Unfollowed “org/repo#1”")).toBeInTheDocument()
+
+    await user.click(screen.getByRole("button", { name: "Undo" }))
+    expect(restoreResource).toHaveBeenCalledWith({ path: "/some/worktree", removed })
+    await vi.waitFor(() => expect(onRemoved).toHaveBeenCalledTimes(2))
+  })
+
+  it("offers no undo when there was nothing to unfollow", async () => {
+    removeResource.mockResolvedValueOnce({ removed: null })
+    const onRemoved = vi.fn()
+    const user = userEvent.setup()
+    wrap(
+      <>
+        <Notifications />
+        <ResourceCard r={r} path="/some/worktree" onRemoved={onRemoved} variant="detail" />
+      </>,
+    )
+    await user.click(screen.getByRole("button", { name: "Unfollow resource" }))
+    await screen.findByText("Unfollow this resource?")
+    await user.click(screen.getByRole("button", { name: "Unfollow" }))
+    await vi.waitFor(() => expect(onRemoved).toHaveBeenCalled())
+    expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument()
   })
 
   it("shows an error and keeps the popover open when removeResource fails", async () => {

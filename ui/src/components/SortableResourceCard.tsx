@@ -1,11 +1,13 @@
-import { ActionIcon, Button, Group, Popover, SegmentedControl, Stack, Text } from "@mantine/core"
-import { IconArrowBarToDown, IconArrowBarToUp, IconGripVertical } from "@tabler/icons-react"
+import { useEffect, useState } from "react"
+import { ActionIcon, Alert, Button, Divider, Group, Popover, SegmentedControl, Stack, Text } from "@mantine/core"
+import { IconArrowBarToDown, IconArrowBarToUp, IconGripVertical, IconTrash } from "@tabler/icons-react"
 import { useSortable } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import type { ResourceDTO } from "../api/types"
 import type { HoverMenu } from "../lib/useHoverMenu"
 import { serializeResourceKey } from "../lib/resourceKey"
 import { ResourceCard, type ResourceNotifyContext } from "./ResourceCard"
+import { useUnfollowResource } from "../hooks/useUnfollowResource"
 
 /**
  * A ResourceCard that can be dragged by its grip handle.
@@ -19,7 +21,8 @@ import { ResourceCard, type ResourceNotifyContext } from "./ResourceCard"
  *
  * Hovering the handle opens a small menu: the "Drag to reorder" hint, plus
  * Move to top / Move to bottom (within the card's own group) and the same
- * Focus/Related switch as the detail card. Not a Tooltip, which is never
+ * Focus/Related switch as the detail card, and Unfollow, which asks to be
+ * confirmed in place (and offers an undo once done). Not a Tooltip, which is never
  * interactive: a Popover driven by ResourceList's useHoverMenu, which keeps
  * it open while the pointer travels from the handle into it and allows only
  * one card's menu open at a time.
@@ -52,6 +55,24 @@ export function SortableResourceCard({
   const id = serializeResourceKey({ type: r.type, id: r.id })
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
     useSortable({ id })
+  const { unfollow, removing, error: unfollowError, clearError } = useUnfollowResource({ r, path, onRemoved })
+  const [confirming, setConfirming] = useState(false)
+  // A confirm prompt (or an unfollow in flight) holds the menu open when the
+  // pointer drifts off it; Cancel, Escape or a click outside still close it.
+  const holdOpen = confirming || removing
+  // However the menu closed — including another card's menu taking over —
+  // it reopens on its usual buttons, not a stale prompt.
+  useEffect(() => {
+    if (!menu.opened) {
+      setConfirming(false)
+      clearError()
+    }
+  }, [menu.opened])
+  const closeMenu = () => {
+    setConfirming(false)
+    clearError()
+    menu.close()
+  }
 
   return (
     <div
@@ -76,7 +97,7 @@ export function SortableResourceCard({
         dragHandle={
           <Popover
             opened={menu.opened}
-            onClose={menu.close}
+            onClose={closeMenu}
             position="right"
             withArrow
             shadow="md"
@@ -105,7 +126,11 @@ export function SortableResourceCard({
                 <IconGripVertical size={16} />
               </ActionIcon>
             </Popover.Target>
-            <Popover.Dropdown p="xs" onMouseEnter={menu.onDropdownEnter} onMouseLeave={menu.onLeave}>
+            <Popover.Dropdown
+              p="xs"
+              onMouseEnter={menu.onDropdownEnter}
+              onMouseLeave={holdOpen ? undefined : menu.onLeave}
+            >
               <Stack gap={6}>
                 <Text size="xs" c="dimmed">Drag to reorder</Text>
                 <Group gap={4} wrap="nowrap">
@@ -145,6 +170,46 @@ export function SortableResourceCard({
                     { value: "related", label: "Related" },
                   ]}
                 />
+                <Divider />
+                {confirming ? (
+                  <Stack gap={6}>
+                    <Text size="xs">Unfollow this resource?</Text>
+                    {unfollowError && (
+                      <Alert color="red" variant="light" p="xs">
+                        <Text size="xs">{unfollowError}</Text>
+                      </Alert>
+                    )}
+                    <Group gap={6} justify="flex-end" wrap="nowrap">
+                      <Button size="compact-xs" variant="default" disabled={removing} onClick={() => {
+                        setConfirming(false)
+                        clearError()
+                      }}>
+                        Cancel
+                      </Button>
+                      <Button
+                        size="compact-xs"
+                        color="red"
+                        loading={removing}
+                        onClick={() => void unfollow().then((ok) => ok && closeMenu())}
+                      >
+                        Unfollow
+                      </Button>
+                    </Group>
+                  </Stack>
+                ) : (
+                  // Subtle, like the move buttons above, but red: it is the
+                  // one thing here that takes something away.
+                  <Button
+                    size="compact-xs"
+                    variant="subtle"
+                    color="red"
+                    leftSection={<IconTrash size={14} />}
+                    onClick={() => setConfirming(true)}
+                    style={{ alignSelf: "flex-start" }}
+                  >
+                    Unfollow
+                  </Button>
+                )}
               </Stack>
             </Popover.Dropdown>
           </Popover>
