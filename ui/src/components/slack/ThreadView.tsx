@@ -234,14 +234,11 @@ export function ThreadView({ tab, thread, onOpenThread, topInset = 0, onComposer
     threadEndRef.current?.scrollIntoView?.({ block: 'end' })
   }
 
-  // The first message, just below the sticky page header.
+  // The top of the page, not just the first message: the resource card and
+  // everything else above the thread come back into view. The page is what
+  // scrolls (see above), so the window does.
   function scrollToTop() {
-    const listStart = listStartRef.current
-    if (!listStart) {
-      return
-    }
-    listStart.style.scrollMarginTop = `${topInset + 8}px`
-    listStart.scrollIntoView?.({ block: 'start' })
+    window.scrollTo({ top: 0 })
   }
 
   const qc = useQueryClient()

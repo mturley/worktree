@@ -614,14 +614,15 @@ describe('ThreadView following the end of the thread', () => {
     expect(queryByRole('button', { name: 'Scroll to top ↑' })).not.toBeNull()
   })
 
-  it('scrolls to the start of the thread when clicked', () => {
+  it('scrolls to the top of the page when clicked, not just the first message', () => {
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
     const { getByRole } = render(wrap(thread(2), new QueryClient()))
     setListStartVisible(false)
     scrolled = []
     fireEvent.click(getByRole('button', { name: 'Scroll to top ↑' }))
-    expect(scrolled).toHaveLength(1)
-    expect(scrolled[0].opts).toEqual({ block: 'start' })
-    expect(scrolled[0].el.hasAttribute('data-list-start')).toBe(true)
+    expect(scrollTo).toHaveBeenCalledWith({ top: 0 })
+    expect(scrolled).toHaveLength(0)
+    scrollTo.mockRestore()
   })
 
   it('follows new messages when the reader is at the end', () => {
