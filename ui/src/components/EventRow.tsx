@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { TASK_BUTTON_STYLE } from "./tasks/taskButtonStyle"
 import { useMediaQuery } from "@mantine/hooks"
 import { Badge, Box, Button, Group, Stack, Text, Tooltip } from "@mantine/core"
@@ -14,6 +14,9 @@ import { ROW_PAD_X } from "./timelineRail"
 import { eventWorktrees, isArchivedEvent } from "../lib/openEvent"
 import { MatchWhy } from "./search/MatchWhy"
 import { SearchHighlight } from "./search/SearchHighlight"
+import { useSearchContext } from "./search/SearchContext"
+import { snippet } from "../lib/search"
+import { githubBodyToPlain, isGitHubMarkdownBody } from "../lib/githubBody"
 import { useCrossHover } from "./CrossHoverContext"
 import { canMarkEventRead } from "../hooks/useMarkEventRead"
 import { eventTaskKey } from "../lib/taskEventKey"
@@ -21,6 +24,30 @@ import { WorktreeName, WorktreePreview } from "./WorktreeName"
 import { TooltipWithHints, useModifierOpen } from "../hooks/useModifierOpen"
 import { eventFullUiHref } from "../lib/fullUiLink"
 import { BotMark } from "./BotMark"
+
+/**
+ * The text of the row's clamped body line: the body, or the server's snippet
+ * around a search hit in it, which is centred on the hit that the clamped
+ * first lines may not contain.
+ *
+ * A GitHub comment's body is Markdown and HTML, shown here as plain text
+ * (`plain`, parsed once per body, not per keystroke of a search). The server
+ * cuts its snippet from the raw body, so one is cut again here, by the same
+ * rule, from the plain text: the first term that occurs in it wins, and a hit
+ * only in the markup (a URL, a tag name) falls back to the text itself.
+ */
+function bodyPreview(body: string | undefined, plain: string | null, match: TimelineEvent["match"], terms: string[]): string {
+  if (!body) return ""
+  const inBody = match?.field === "body"
+  if (plain === null) return inBody ? match.snippet : body
+  if (inBody) {
+    for (const t of terms) {
+      const s = snippet(plain, t)
+      if (s) return s
+    }
+  }
+  return plain
+}
 
 /**
  * One entry on the timeline rail: a dot on the line, then the event's text.
@@ -142,7 +169,13 @@ export function EventRow({
    * title that already summarises it ("CI failed … (2 failed, 35 passed)").
    * The details modal still shows the list in full.
    */
-  const showBody = !!e.body && !e.type.startsWith("ci_")
+  const { terms } = useSearchContext()
+  const plain = useMemo(
+    () => (e.body && isGitHubMarkdownBody(e.type) ? githubBodyToPlain(e.body) : null),
+    [e.type, e.body],
+  )
+  const preview = bodyPreview(e.body, plain, e.match, terms)
+  const showBody = !!preview && !e.type.startsWith("ci_")
   const bodyMatch = e.match?.field === "body" && showBody
 
   // Only on the global feed: nothing follows this resource any more, which
@@ -230,7 +263,7 @@ export function EventRow({
             <Text size="xs" c="dimmed" lineClamp={2} style={{ overflowWrap: "anywhere" }}>
               {/* The snippet is centred on the hit, which the clamped first
                   lines of the body may not contain. */}
-              <SearchHighlight text={e.match?.field === "body" ? e.match.snippet : e.body ?? ""} />
+              <SearchHighlight text={preview} />
             </Text>
           )}
         </Stack>

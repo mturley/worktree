@@ -18,6 +18,7 @@ import { eventTaskKey } from "../lib/taskEventKey"
 import { OpenInFullUiButton } from "./OpenInFullUiButton"
 import { eventFullUiHref } from "../lib/fullUiLink"
 import { useMiniModalFullScreen } from "../hooks/useMiniModalFullScreen"
+import { isGitHubMarkdownBody } from "../lib/githubBody"
 import { MARK_READ_BUTTON_PROPS, READ_BOX_BORDER, UNREAD_BOX_BORDER } from "../lib/unread"
 import { canMarkEventRead, canMarkEventUnread, useMarkEventRead, useMarkEventUnread } from "../hooks/useMarkEventRead"
 import { canMarkSlackEventRead, type SlackMarkPlan, useMarkSlackEventRead } from "../hooks/useMarkSlackEventRead"
@@ -30,6 +31,8 @@ export const DESCRIPTION_DIFF_TYPES = ["jira_description_changed", "pr_descripti
 // The diff, and with it @pierre/diffs, is its own chunk: fetched the first
 // time someone opens a description edit, never on a plain page load.
 const DescriptionDiff = lazy(() => import("./DescriptionDiff"))
+// Likewise the HTML parser a GitHub comment's rendering needs.
+const GitHubCommentMarkdown = lazy(() => import("./GitHubCommentMarkdown"))
 // A chunk missing after an upgrade reloads the page (once) instead of failing.
 installPreloadReload()
 
@@ -313,6 +316,12 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
 
           {DESCRIPTION_DIFF_TYPES.includes(e.type) ? (
             <DescriptionChange key={e.id} id={e.id} />
+          ) : e.body && isGitHubMarkdownBody(e.type) ? (
+            // Images as links: one could be a tracking pixel, or an
+            // attachment only GitHub's session can fetch.
+            <Suspense fallback={<Loader size="xs" />}>
+              <GitHubCommentMarkdown text={e.body} imagesAsLinks />
+            </Suspense>
           ) : e.body && (
             // Preserve the author's line breaks; this is comment text, not prose.
             <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>

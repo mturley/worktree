@@ -1,6 +1,6 @@
 import { afterEach, describe, it, expect, vi } from "vitest"
 import userEvent from "@testing-library/user-event"
-import { render, cleanup, screen, fireEvent } from "@testing-library/react"
+import { render, cleanup, screen, fireEvent, waitFor } from "@testing-library/react"
 import { MantineProvider } from "@mantine/core"
 import { Notifications, notifications } from "@mantine/notifications"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -58,9 +58,27 @@ describe("EventDetailsModal", () => {
     expect(screen.queryByRole("button", { name: /Open in full UI/ })).not.toBeInTheDocument()
   })
 
-  it("shows the body in full, and preserves its line breaks", () => {
-    const body = "line one\nline two\n" + "x".repeat(400)
+  it("renders a GitHub comment body as GitHub would, sanitized", async () => {
+    const body = "<!-- bot marker -->\n<details>\n<summary>Walkthrough</summary>\n\nThe **retry** loop\n</details>\n\n<script>alert(1)</script>"
     wrap(<EventDetailsModal e={ev({ body })} onClose={vi.fn()} />)
+    const dialog = screen.getByRole("dialog")
+    // The renderer is its own lazily loaded chunk.
+    await waitFor(() => expect(dialog.querySelector("details summary")?.textContent).toBe("Walkthrough"))
+    expect(dialog.querySelector("details strong")?.textContent).toBe("retry")
+    expect(dialog.querySelector("script")).toBeNull()
+    expect(dialog.textContent).not.toContain("bot marker")
+    expect(dialog.textContent).not.toContain("<details>")
+  })
+
+  it("shows a GitHub comment's images as links", async () => {
+    wrap(<EventDetailsModal e={ev({ body: "![shot](https://example.com/pixel.png)" })} onClose={vi.fn()} />)
+    expect(await screen.findByRole("link", { name: "shot" })).toBeInTheDocument()
+    expect(screen.getByRole("dialog").querySelector("img")).toBeNull()
+  })
+
+  it("shows any other body in full, and preserves its line breaks", () => {
+    const body = "line one\nline two <b>\n" + "x".repeat(400)
+    wrap(<EventDetailsModal e={ev({ type: "jira_comment", source: "jira", body })} onClose={vi.fn()} />)
     // getByText normalises whitespace, so match on the node's raw textContent:
     // the point of the modal is that nothing is truncated.
     const node = screen.getByText((_, el) => el?.textContent === body)

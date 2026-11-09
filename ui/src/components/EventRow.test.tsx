@@ -492,6 +492,41 @@ describe("the resource line matches the resource cards", () => {
   })
 })
 
+describe("a GitHub comment body's preview", () => {
+  const body = "<!-- auto-generated -->\n## Walkthrough\n\nThe **retry** loop now <sub>backs off</sub>, see [docs](https://x.io)."
+  const plain = "Walkthrough\nThe retry loop now backs off, see docs."
+
+  it("is plain text: no tags, comments or Markdown syntax", () => {
+    renderWithProvider(<EventRow e={makeEvent({ type: "pr_comment", body })} />)
+    expect(screen.getByText(/Walkthrough/).textContent).toBe(plain)
+  })
+
+  it("leaves a body that is not GitHub Markdown as it is", () => {
+    renderWithProvider(<EventRow e={makeEvent({ type: "jira_comment", source: "jira", body: "use *bold* <here>" })} />)
+    expect(screen.getByText("use *bold* <here>")).toBeTruthy()
+  })
+
+  it("rebuilds a body search snippet from the plain text", () => {
+    // The server cuts its snippet from the raw body, markup and all.
+    const e = makeEvent({ type: "pr_comment", body, match: { field: "body", snippet: "…<sub>backs off</sub>…" } })
+    const { container } = renderWithProvider(
+      <SearchContext.Provider value={{ terms: ["backs"] }}><EventRow e={e} /></SearchContext.Provider>,
+    )
+    expect(container.querySelector("mark")?.parentElement?.textContent)
+      .toBe("…The retry loop now backs off, see docs.")
+    expect(container.textContent).not.toContain("<sub>")
+  })
+
+  it("falls back to the plain text when the term only matched markup", () => {
+    const e = makeEvent({ type: "pr_comment", body, match: { field: "body", snippet: "<sub>backs off</sub>" } })
+    const { container } = renderWithProvider(
+      <SearchContext.Provider value={{ terms: ["sub"] }}><EventRow e={e} /></SearchContext.Provider>,
+    )
+    expect(container.textContent).toContain(plain)
+    expect(container.textContent).not.toContain("<sub>")
+  })
+})
+
 describe("a resource search match", () => {
   it("is explained by the marked chip title, not a via line", () => {
     const resource = { type: "pr", id: "o/r#42", url: "u", primary: true, title: "Fix OAuth proxy" } as ResourceDTO

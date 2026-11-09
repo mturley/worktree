@@ -61,7 +61,8 @@ describe("useActivityPanel select: details", () => {
     wrap("details")
     await userEvent.click(screen.getByText("Looks good to me"))
     const dialog = await screen.findByRole("dialog")
-    expect(within(dialog).getByText("Ship the gizmo")).toBeInTheDocument()
+    // The body renders from a lazily loaded chunk.
+    expect(await within(dialog).findByText("Ship the gizmo")).toBeInTheDocument()
     expect(window.location.pathname).toBe("/mini")
   })
 })

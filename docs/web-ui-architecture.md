@@ -713,7 +713,8 @@ stored in the worktree-owned `worktree_notes` table (keyed by registry path).
 
 - **Read-only by default.** Notes render as GitHub-flavoured Markdown
   (`NotesMarkdown.tsx`: react-markdown + remark-gfm, raw HTML ignored — never
-  add rehype-raw) until "Edit notes" swaps in the textarea; "Done editing",
+  add rehype-raw to its default; GitHub comments get sanitized HTML through
+  `GitHubCommentMarkdown`, see "Event details modal") until "Edit notes" swaps in the textarea; "Done editing",
   Esc, or collapsing the section flushes pending edits and returns to the
   rendered view. The "Show notes on home page" and cmux sync checkboxes show
   only while editing.
@@ -2708,7 +2709,11 @@ Worktrees matching through their resources is the single switch
   available) and **before** `limit`, so a page is full of matches.
 - `TimelineEvent.match` (`{field, snippet}`): highest-priority field
   containing ANY term, with a ~60 rune `snippet` cut at word boundaries
-  (`…`, U+2026, marks cuts). Computed in Go; absent without `q`.
+  (`…`, U+2026, marks cuts). Computed in Go; absent without `q`. Cut from the
+  raw body, so for a GitHub comment (markup and all) `EventRow` cuts it again
+  from the body's plain text with `lib/search.ts`'s `snippet` (first term
+  found wins; a hit only in markup shows the plain text). Matching itself
+  still sees the markup.
 - `worktreeSummary.notes_search` (via `notes.AllNonBlank`) carries note text
   even when "Show notes on home page" is off; `resourceDTO.reporter` exposes
   the cached Jira reporter name.
@@ -4127,6 +4132,20 @@ to the next. Unified view, word-level highlights, no syntax highlighting (a name
 extension keeps pierre on plain text), `maxLineDiffLength` 20000, `\r\n` normalized to
 `\n` first. A 404 reads "Diff not available for this edit."; other errors show inline.
 The header and actions render while the text loads.
+
+**GitHub comment bodies.** `pr_comment`, `pr_review_comment` and `pr_approved`
+(`isGitHubMarkdownBody`, `lib/githubBody.ts`) carry the comment as written: GitHub
+Markdown with raw HTML (`<details>`, `<!-- -->`, `<sub>`, tables). The modal renders it
+with the lazily loaded `GitHubCommentMarkdown` (its own chunk: rehype-raw brings parse5,
+~50 KB gzipped): remark-gfm and remark-breaks (a single newline is a line break, as on
+GitHub), then rehype-raw. `NotesMarkdown` always appends rehype-sanitize (default schema,
+GitHub's allowlist; ids get `user-content-`) after any rehype plugins it is given, so no
+caller can render unsanitized HTML. Images are links (`imagesAsLinks`), except inside a
+link (a badge), which keeps the outer link. Every other body stays `pre-wrap` text.
+`EventRow`'s clamped preview uses `githubBodyToPlain`: the Markdown is parsed (not
+pattern-stripped), raw HTML reduced to its text via an inert `DOMParser` document with
+block elements and `<br>` on their own lines, one block per line. Memoized per body, not
+per search keystroke.
 
 **Bot marker.** `BotMark` (Tabler `IconRobot` in a `Tooltip`) precedes the title when
 `author_type === "bot"`, here, in `EventRow` and in the task modal's event lists. Never
