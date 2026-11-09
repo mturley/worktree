@@ -2,6 +2,12 @@ import { useEffect, useState } from "react"
 import { Box, Button, Center, Group, Stack, Tabs, Text } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
 import { useWorktreeTimeline } from "../hooks/useTimeline"
+import { useHumansOnly } from "../hooks/useHumansOnly"
+import { useUnreadOnly } from "../hooks/useUnreadOnly"
+import { hasUnread } from "../lib/unread"
+import { UnreadOnlyToggle } from "./UnreadOnlyToggle"
+import { HumansOnlyToggle } from "./HumansOnlyToggle"
+import { ActivityToggles } from "./ActivityToggles"
 import { useSearchQuery } from "../hooks/useSearchQuery"
 import { SearchSummary } from "./search/SearchSummary"
 import { filterLinkedSections } from "../lib/linkedSearch"
@@ -82,7 +88,11 @@ function TimelineBody({
 }) {
   const search = useSearchQuery()
   const { debouncedQ } = search
-  const timeline = useWorktreeTimeline(path, { type: resource.type, id: resource.id }, [], false, [], debouncedQ)
+  // The worktree feed's toggles, both UI-wide: they narrow this feed too.
+  const [unreadOnly, setUnreadOnly] = useUnreadOnly()
+  const [humansOnly, setHumansOnly] = useHumansOnly()
+  const narrowed = search.terms.length > 0 || unreadOnly || humansOnly
+  const timeline = useWorktreeTimeline(path, { type: resource.type, id: resource.id }, [], unreadOnly, [], debouncedQ, humansOnly)
   const makeTaskFromEvent = useMakeTaskFromEvent(path)
   // The tasks linking this resource put their events in its feed; a row of
   // one opens the task.
@@ -172,9 +182,9 @@ function TimelineBody({
                 )}
                 <WatcherErrorMark status={watcher} />
                 <RefreshWatchersButton />
-                {/* Only over the whole feed, as on the worktree's: searching,
-                    it would clear events the search hides. */}
-                {search.terms.length === 0 && (
+                {/* Only over the whole feed, as on the worktree's: searching
+                    or with Humans only, it would clear events they hide. */}
+                {search.terms.length === 0 && !humansOnly && (
                   <MarkAllReadButton
                     single
                     resources={[resource]}
@@ -191,13 +201,18 @@ function TimelineBody({
       </Box>
       <Tabs.Panel value="activity" pt="sm" keepMounted>
         <Stack gap="sm">
+          <ActivityToggles>
+            <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} hasUnread={hasUnread(resource)} />
+            <HumansOnlyToggle value={humansOnly} onChange={setHumansOnly} />
+          </ActivityToggles>
           {/* Directly above the results it counts, once the feed holds the
               results for what is typed (not mid-debounce). */}
-          {search.terms.length > 0 && debouncedQ === search.q.trim() && !timeline.isLoading && (
+          {narrowed && debouncedQ === search.q.trim() && !timeline.isLoading && (
             <SearchSummary
               count={timeline.events.length}
               more={timeline.hasMore}
-              noun={["event", "events"]}
+              noun={unreadOnly ? ["unread event", "unread events"] : ["event", "events"]}
+              filtered={humansOnly}
             />
           )}
           <TimelineFeed
@@ -211,6 +226,8 @@ function TimelineBody({
             // so naming it again on each row says nothing.
             showResource={false}
             showUnreadDivider
+            // Narrowed, the "0 … events" line above says it.
+            emptyText={narrowed ? null : undefined}
             path={path}
             onMakeTask={makeTaskFromEvent}
             onOpenTask={(id) => openTask(id)}

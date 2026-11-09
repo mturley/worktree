@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
 import { Anchor, Badge, Box, Grid, Group, MantineThemeProvider, Stack, Tabs, Title } from "@mantine/core"
 import { Link, useLocation, useRoute } from "wouter"
 import { useQueryClient } from "@tanstack/react-query"
@@ -37,6 +37,11 @@ import { useActivityFilter } from "../hooks/useActivityFilter"
 import { RefreshWatchersButton } from "../components/RefreshWatchersButton"
 import { MarkAllReadButton } from "../components/MarkAllReadButton"
 import { UnreadOnlyToggle } from "../components/UnreadOnlyToggle"
+import { HumansOnlyToggle } from "../components/HumansOnlyToggle"
+import { ActivityToggles } from "../components/ActivityToggles"
+import { FilterHint } from "../components/FilterHint"
+import { isStuck } from "../hooks/useTooltipLayer"
+import { useHumansOnly } from "../hooks/useHumansOnly"
 import { useUnreadOnly } from "../hooks/useUnreadOnly"
 import { useUnreadOnlyHotkey } from "../hooks/useUnreadOnlyHotkey"
 import { useBannerShown, usePublishEscLeaves } from "../lib/escapeHint"
@@ -87,18 +92,20 @@ export function WorktreeDetailPage() {
   // resource already narrows the timeline to that one resource, so the
   // toggles are hidden there rather than left as dead controls.
   const { sources, setSources, categories, setCategories, eventTypes } = useActivityFilter()
-  // Shared with the home page and every other tab. Narrows the resource list
-  // and the worktree's unified feed; a selected resource's own feed is left
-  // whole, its unread events already together at the top under the divider.
+  // Shared with the home page and every other tab. Narrows the resource list,
+  // the worktree's unified feed and a selected resource's own feed.
   const [unreadOnly, setUnreadOnly] = useUnreadOnly()
   useUnreadOnlyHotkey(unreadOnly, setUnreadOnly)
+  // Shared with every activity feed; narrows the unified feed here and a
+  // selected resource's own (ResourceDetailPane), never the resource list.
+  const [humansOnly, setHumansOnly] = useHumansOnly()
   // Narrows only this worktree's resources and activity; the query lives in
   // the URL, shared with the resource's own feed (ResourceDetailPane).
   const search = useSearchQuery()
   const everything = useSeeEverything()
   const sourcesOn = sources.length > 0
   const searchContext = useMemo(() => ({ terms: search.terms }), [search.terms])
-  const { resources, timeline, refreshResources } = useWorktreeDetail(path, sources, unreadOnly, eventTypes, search.debouncedQ)
+  const { resources, timeline, refreshResources } = useWorktreeDetail(path, sources, unreadOnly, eventTypes, search.debouncedQ, humansOnly)
   const { selected, select, toggle, clear } = useSelectedResource()
   // `?diff`: the Code tab's drill-down replaces the page body (the details
   // card and the resources) under the same header.
@@ -127,7 +134,7 @@ export function WorktreeDetailPage() {
   const queryOn = search.q.length > 0
   const escDiff = inDiff && !queryOn
   const escNotes = !inDiff && !queryOn && detailTab.tab !== "notes"
-  const filtersOn = sourcesOn || categories.length > 0
+  const filtersOn = sourcesOn || categories.length > 0 || humansOnly
   const barClears = queryOn || (!inDiff && (unreadOnly || filtersOn))
   const escClears = !escNotes && barClears
   const escDeselects = !inDiff && !escNotes && !escClears && Boolean(selected)
@@ -145,8 +152,9 @@ export function WorktreeDetailPage() {
     clearAll: () => {
       everything.seeEverything()
       setSources([]) // clears the event types with it (useActivityFilter)
+      setHumansOnly(false)
     },
-  }), [search.terms, unreadOnly, filtersOn, escClears, queryOn, everything, setSources])
+  }), [search.terms, unreadOnly, filtersOn, escClears, queryOn, everything, setSources, setHumansOnly])
   const bannerShown = useBannerShown()
   const wide = useIsWide()
   // The details card and a selected resource's tab bar are pinned while
@@ -346,7 +354,14 @@ export function WorktreeDetailPage() {
       )}
       toolbar={
         <Group gap="lg" align="center">
-          <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} hasUnread={!!summary?.has_unread} />
+          {/* Unreads only narrows this list too, but sits with the feed's
+              toggles (the worktree's, or a selected resource's); here only
+              narrow, where the feed is on the other tab. */}
+          {!wide && (
+            <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} hasUnread={!!summary?.has_unread} />
+          )}
+          {/* Wide only: narrow, the activity list isn't on the right. */}
+          {wide && <FilterHint what="resources" />}
           <NotifySwitch
             label="Notify on all"
             tooltip="Notify on new events for all resources in this worktree"
@@ -422,17 +437,14 @@ export function WorktreeDetailPage() {
         {/* Wide, the tab bar, which carries the controls; narrow, where the
             page's tab bar is above, the controls alone. */}
         {top ?? activityControls}
-        <Group justify={wide ? "flex-end" : "flex-start"}>
+        <ActivityToggles>
+          <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} hasUnread={!!summary?.has_unread} />
+          <HumansOnlyToggle value={humansOnly} onChange={setHumansOnly} />
+        </ActivityToggles>
+        <Group>
           <SourceFilter value={sources} onChange={setSources} />
         </Group>
-        {/* Right-aligned under the source toggles when they sit at the right
-            of the header; narrow, the header wraps them to the left. */}
-        <EventTypeFilter
-          sources={sources}
-          value={categories}
-          onChange={setCategories}
-          justify={wide ? "flex-end" : "flex-start"}
-        />
+        <EventTypeFilter sources={sources} value={categories} onChange={setCategories} />
         {/* Directly above the results it counts. Only once the feed holds
             the results for what is typed: during the debounce it would count
             the old ones. */}
@@ -472,12 +484,21 @@ export function WorktreeDetailPage() {
 
   // Where the resource list's tooltips open: inside the sticky column's
   // stacking context (outside its scroller, so they are not clipped), layered
-  // above the list's cards and below the pinned notes card — so a tooltip
-  // left open as its card scrolls up goes under the notes card. Portalled to
+  // above the list's cards — and, while the notes card is stuck over the
+  // list (cardStuck), below it, so a tooltip left open as its card scrolls up
+  // goes under the notes card. Portalled to
   // <body>, as tooltips otherwise are, it could only be above or below the
   // whole column. Scoped to the list alone, so the notes card's own tooltips
   // still open above everything.
   const [listTooltipTarget, setListTooltipTarget] = useState<HTMLDivElement | null>(null)
+  // Whether the pinned notes card is stuck over the list (the list has
+  // scrolled up under it). Only then do the list's tooltips go under the
+  // card; at the top, the first rows' tooltips open upwards over the card
+  // and must show — as the right column does it (useTooltipLayer).
+  const [cardBox, setCardBox] = useState<HTMLDivElement | null>(null)
+  const [cardStuck, setCardStuck] = useState(false)
+  const onListScroll = useCallback(() => setCardStuck(cardBox ? isStuck(cardBox) : false), [cardBox])
+  useEffect(onListScroll, [onListScroll])
   const listTooltipTheme = useMemo(
     () => ({
       components: {
@@ -565,14 +586,15 @@ export function WorktreeDetailPage() {
               list. */}
           <div
             ref={setListTooltipTarget}
+            data-testid="list-tooltip-layer"
             style={{
               position: "absolute",
               inset: 0,
               pointerEvents: "none",
-              zIndex: "calc(var(--mantine-z-index-app) - 2)",
+              zIndex: cardStuck ? "calc(var(--mantine-z-index-app) - 2)" : "var(--mantine-z-index-app)",
             }}
           />
-          <Box style={STICKY_LIST_SCROLLER}>
+          <Box style={STICKY_LIST_SCROLLER} onScroll={onListScroll} data-testid="list-scroller">
             {/* Always this Stack, with the card's slot first even when empty:
                 wrapping `list` only while collapsed would move it in the tree
                 and remount it, for the reason above. */}
@@ -587,6 +609,8 @@ export function WorktreeDetailPage() {
                 // card rather than crowding out the list. The scroller has no
                 // padding, so there is no strip above the card to cover.
                 <Box
+                  ref={setCardBox}
+                  data-testid="column-card"
                   style={
                     pinCards
                       ? { ...pinnedStyle(0, "0px"), marginBottom: "var(--mantine-spacing-md)" }

@@ -679,6 +679,64 @@ func TestTimelineEventTypeFilter(t *testing.T) {
 	}
 }
 
+// TestTimelineHumansOnly covers the "Humans only" toggle on both timelines:
+// bots' events and CI events are left out, everything else (including an
+// event with no author type, and a type that merely starts with "ci") stays.
+func TestTimelineHumansOnly(t *testing.T) {
+	t.Parallel()
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	wtPath := testgit.Worktree(t)
+	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
+	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
+	resources.Add(conn, wtPath, resources.Resource{Type: "jira", ID: "J-1", URL: "u2"})
+
+	base := time.Now().UTC()
+	at := func(m int) string { return base.Add(time.Duration(-m) * time.Minute).Format(time.RFC3339) }
+	insertEvent(t, conn, "human", at(6), "github", "pr_comment", "comment", "pr", "o/r#1", "u1")
+	insertEvent(t, conn, "bot", at(5), "github", "pr_comment", "bot comment", "pr", "o/r#1", "u1")
+	insertEvent(t, conn, "ci", at(4), "github", "ci_check_failed", "ci", "pr", "o/r#1", "u1")
+	// Would match an unescaped LIKE 'ci_%' (the `_` matching "x").
+	insertEvent(t, conn, "cx", at(3), "github", "cix_other", "not ci", "pr", "o/r#1", "u1")
+	insertEvent(t, conn, "unknown", at(2), "jira", "jira_comment", "no author type", "jira", "J-1", "u2")
+	insertEvent(t, conn, "jirabot", at(1), "jira", "jira_comment", "bot comment", "jira", "J-1", "u2")
+	if _, err := conn.Exec(`UPDATE watcher_events SET author_type = 'bot' WHERE id IN ('bot','jirabot')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(`UPDATE watcher_events SET author_type = 'user' WHERE id IN ('human','ci')`); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := &Server{DB: conn}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	wtQ := "/api/worktree-timeline?path=" + url.QueryEscape(wtPath) + "&limit=50"
+	gQ := "/api/timeline?archived=false&limit=50"
+	for _, tc := range []struct {
+		name, query string
+		want        []string
+	}{
+		{"off", "", []string{"jirabot", "unknown", "cx", "ci", "bot", "human"}},
+		{"on", "&humans_only=true", []string{"unknown", "cx", "human"}},
+		{"with a resource filter", "&humans_only=true&resource_types=pr", []string{"cx", "human"}},
+		{"with the CI subfilter", "&humans_only=true&event_types=ci_*", []string{}},
+	} {
+		for _, scope := range []struct{ name, base string }{{"global", gQ}, {"worktree", wtQ}} {
+			t.Run(scope.name+": "+tc.name, func(t *testing.T) {
+				got := eventIDs(getTimeline(t, ts.URL, scope.base+tc.query).Events)
+				if !slices.Equal(got, tc.want) {
+					t.Fatalf("got %v, want %v", got, tc.want)
+				}
+			})
+		}
+	}
+}
+
 // TestGlobalTimelineQueriesNothingWhileRowsAreOpen pins the pool to ONE
 // connection, so any query issued while the timeline's rows are still open
 // waits for a connection that never frees up. That nesting is what deadlocked

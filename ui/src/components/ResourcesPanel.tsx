@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useMemo, type ReactNode } from "react"
 import { ActionIcon, Alert, Button, Center, Divider, Group, Loader, NativeSelect, Stack, Text, Tooltip } from "@mantine/core"
 import { IconSortAscending, IconSortDescending, IconUser, IconWorld } from "@tabler/icons-react"
 import type { AllResourceDTO } from "../api/types"
@@ -123,35 +123,45 @@ function SubFilters({ all, filter, onChange }: {
  * right column's tab bar while this tab is active, as the worktree page does
  * with its tabs' controls; narrow, at the top of the panel.
  */
-export function ResourcesTabControls({ view }: { view: ResourcesView }) {
+export function ResourcesTabControls({ view, unreadToggle }: {
+  view: ResourcesView
+  /**
+   * The page's Unreads only switch: it narrows this list, and the Activity
+   * tab's toggle row, where it otherwise lives, is out of sight here.
+   */
+  unreadToggle?: ReactNode
+}) {
   const { mode, setMode, dir, setDir, query, all, shown, filtered } = view
   return (
-    <Group gap={6} wrap="nowrap" align="center">
-      <NativeSelect
-        size="xs"
-        aria-label="Sort resources"
-        value={mode}
-        data={(Object.keys(SORT_LABELS) as ResourceSortMode[]).map((m) => ({ value: m, label: SORT_LABELS[m] }))}
-        onChange={(e) => {
-          const v = e.currentTarget.value
-          if (!isResourceSortMode(v)) return
-          setMode(v)
-          setDir(DEFAULT_DIR[v])
-        }}
-      />
-      {hasResourceSortDirection(mode) && (
-        <Tooltip label={DIR_LABELS[mode as "updated" | "created" | "name"][dir]}>
-          <ActionIcon variant="subtle" size="sm" aria-label="Toggle sort direction"
-            onClick={() => setDir(dir === "asc" ? "desc" : "asc")}>
-            {dir === "asc" ? <IconSortAscending size={16} /> : <IconSortDescending size={16} />}
-          </ActionIcon>
-        </Tooltip>
-      )}
-      {query.data && (
-        <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
-          {filtered ? `${shown.length} of ${all.length}` : `${all.length}`} {all.length === 1 ? "resource" : "resources"}
-        </Text>
-      )}
+    <Group gap="md" wrap="nowrap" align="center">
+      {unreadToggle}
+      <Group gap={6} wrap="nowrap" align="center">
+        <NativeSelect
+          size="xs"
+          aria-label="Sort resources"
+          value={mode}
+          data={(Object.keys(SORT_LABELS) as ResourceSortMode[]).map((m) => ({ value: m, label: SORT_LABELS[m] }))}
+          onChange={(e) => {
+            const v = e.currentTarget.value
+            if (!isResourceSortMode(v)) return
+            setMode(v)
+            setDir(DEFAULT_DIR[v])
+          }}
+        />
+        {hasResourceSortDirection(mode) && (
+          <Tooltip label={DIR_LABELS[mode as "updated" | "created" | "name"][dir]}>
+            <ActionIcon variant="subtle" size="sm" aria-label="Toggle sort direction"
+              onClick={() => setDir(dir === "asc" ? "desc" : "asc")}>
+              {dir === "asc" ? <IconSortAscending size={16} /> : <IconSortDescending size={16} />}
+            </ActionIcon>
+          </Tooltip>
+        )}
+        {query.data && (
+          <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
+            {filtered ? `${shown.length} of ${all.length}` : `${all.length}`} {all.length === 1 ? "resource" : "resources"}
+          </Text>
+        )}
+      </Group>
     </Group>
   )
 }

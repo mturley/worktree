@@ -136,7 +136,9 @@ describe("HomePage tab bar controls", () => {
     setViewport("wide")
     wrap()
     const tablist = screen.getByRole("tablist")
-    within(tablist).getByRole("switch", { name: "Show archived" })
+    within(tablist).getByRole("button", { name: "Refresh watchers" })
+    // The feed's switches sit in their own row under the filters.
+    expect(within(tablist).queryByRole("switch", { name: "Include archived" })).toBeNull()
     // Settings lives in the page header now, not the tab bar.
     expect(within(tablist).queryByRole("button", { name: "Settings" })).toBeNull()
     expect(within(tablist).queryByRole("combobox", { name: "Sort resources" })).toBeNull()
@@ -144,15 +146,17 @@ describe("HomePage tab bar controls", () => {
     await userEvent.click(screen.getByRole("tab", { name: "Resources" }))
     const bar = screen.getByRole("tablist")
     expect(within(bar).getByRole("combobox", { name: "Sort resources" })).toBeInTheDocument()
+    // Unreads only narrows the resources, and the activity row is out of sight.
+    expect(within(bar).getByRole("switch", { name: "Unreads only" })).toBeInTheDocument()
     expect(await within(bar).findByText("1 resource")).toBeInTheDocument()
-    expect(within(bar).queryByRole("switch", { name: "Show archived" })).toBeNull()
+    expect(within(bar).queryByRole("button", { name: "Refresh watchers" })).toBeNull()
   })
 
   it("keeps them out of the crowded tab bar when narrow", () => {
     setViewport("narrow")
     wrap()
     const tablist = screen.getByRole("tablist")
-    expect(within(tablist).queryByRole("switch", { name: "Show archived", hidden: true })).toBeNull()
+    expect(within(tablist).queryByRole("switch", { name: "Include archived", hidden: true })).toBeNull()
     expect(within(tablist).queryByRole("combobox", { name: "Sort resources", hidden: true })).toBeNull()
     expect(screen.getByRole("combobox", { name: "Sort resources", hidden: true })).toBeInTheDocument()
   })
@@ -275,6 +279,46 @@ describe("HomePage Esc", () => {
   })
 })
 
+describe("HomePage humans-only toggle", () => {
+  it("narrows the feed on the server, counts as a filter, and clears with the filters", async () => {
+    setViewport("wide")
+    const user = userEvent.setup()
+    wrap()
+    const toggle = screen.getByRole("switch", { name: "Humans only" })
+    expect(toggle).not.toBeChecked()
+    expect(mocks.timelineArgs.at(-1)?.[5]).toBe(false)
+    await user.click(toggle)
+    expect(mocks.timelineArgs.at(-1)?.[5]).toBe(true)
+    expect(window.localStorage.getItem("worktree.humansOnly")).toBe("true")
+    const line = await screen.findByTestId("search-summary")
+    expect(line.textContent).toBe("0 events match your filters. Clear filters Esc")
+    await user.click(within(line).getByRole("button", { name: "Clear filters" }))
+    expect(screen.getByRole("switch", { name: "Humans only" })).not.toBeChecked()
+    expect(mocks.timelineArgs.at(-1)?.[5]).toBe(false)
+  })
+
+  it("with Unreads only, hides worktrees whose unread activity is all bots and CI", () => {
+    window.localStorage.setItem("worktree.unreadOnly", "true")
+    window.localStorage.setItem("worktree.humansOnly", "true")
+    mocks.worktrees = [
+      { ...summary, has_unread: true, unread_count: 1 },
+      { ...summary, path: "/wt/bar", branch: "bar-branch", has_unread: true, has_human_unread: true, unread_count: 1 },
+    ]
+    setViewport("wide")
+    wrap()
+    expect(screen.getByText(/bar-branch/)).toBeInTheDocument()
+    expect(screen.queryByText(/my-branch/)).not.toBeInTheDocument()
+  })
+
+  it("alone hides no worktree", () => {
+    window.localStorage.setItem("worktree.humansOnly", "true")
+    mocks.worktrees = [summary]
+    setViewport("wide")
+    wrap()
+    expect(screen.getByText(/my-branch/)).toBeInTheDocument()
+  })
+})
+
 describe("HomePage unread-only toggle", () => {
   it("is off by default and narrows the feed to unread events when switched on", async () => {
     setViewport("wide")
@@ -288,16 +332,28 @@ describe("HomePage unread-only toggle", () => {
     expect(window.localStorage.getItem("worktree.unreadOnly")).toBe("true")
   })
 
-  it("sits in the page header, not the worktree list's or activity feed's controls, in both layouts", () => {
-    for (const width of ["narrow", "wide"] as const) {
-      setViewport(width)
-      wrap()
-      const header = screen.getByTestId("home-header")
-      expect(within(header).getByRole("heading", { name: "Worktrees" })).toBeInTheDocument()
-      expect(within(header).getByRole("switch", { name: "Unreads only" })).toBeInTheDocument()
-      expect(screen.getAllByRole("switch", { name: "Unreads only", hidden: true })).toHaveLength(1)
-      cleanup()
-    }
+  it("sits in the activity feed's toggle row, before Humans only and Include archived, when wide", () => {
+    setViewport("wide")
+    wrap()
+    const row = screen.getByTestId("activity-toggles")
+    const names = within(row).getAllByRole("switch").map((s) => s.getAttribute("aria-label") ?? s.closest("label")?.textContent ?? "")
+    expect(within(row).getAllByRole("switch")).toHaveLength(3)
+    expect(names.join("|")).toMatch(/Unreads only.*\|.*Humans only.*\|.*Include archived/)
+    // Above the filter buttons.
+    const filter = within(row.closest<HTMLElement>("[data-activity-header]")!).getByRole("button", { name: /GitHub/ })
+    expect(row.compareDocumentPosition(filter) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(within(screen.getByTestId("home-header")).queryByRole("switch", { name: "Unreads only" })).toBeNull()
+    expect(screen.getAllByRole("switch", { name: "Unreads only", hidden: true })).toHaveLength(1)
+  })
+
+  it("narrow, also sits after the sort control on the Worktrees tab", async () => {
+    setViewport("narrow")
+    wrap()
+    const toolbar = screen.getByTestId("worktrees-toolbar")
+    // The sort control waits for the cmux answer before it renders.
+    const sort = await within(toolbar).findByLabelText("Sort worktrees")
+    const toggle = within(toolbar).getByRole("switch", { name: "Unreads only" })
+    expect(sort.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it("hides worktrees without unread events", () => {
@@ -580,6 +636,19 @@ describe("HomePage search", () => {
     expect(within(screen.getByTestId("worktrees-toolbar")).queryByText(/unread/i)).toBeNull()
   })
 
+  it("says, wide only, that the activity filters also filter worktrees", async () => {
+    setViewport("wide")
+    wrap()
+    const hint = within(screen.getByTestId("worktrees-toolbar")).getByTestId("worktrees-filter-hint")
+    expect(hint).toHaveTextContent("Filter")
+    await userEvent.hover(hint)
+    expect(await screen.findByText("Filters in the activity list on the right also filter worktrees")).toBeInTheDocument()
+    cleanup()
+    setViewport("narrow")
+    wrap()
+    expect(screen.queryByTestId("worktrees-filter-hint")).toBeNull()
+  })
+
   it("opens the details dialog for a picked archived event", async () => {
     setViewport("wide")
     mocks.events = [{
@@ -711,12 +780,12 @@ describe("HomePage mark all read", () => {
     expect(button()).toBeNull()
   })
 
-  it("stays with Show archived on, which only adds to the feed", async () => {
+  it("stays with Include archived on, which only adds to the feed", async () => {
     setViewport("wide")
     const user = userEvent.setup()
     wrap()
     await screen.findByRole("button", { name: "Mark all read" })
-    await user.click(screen.getByLabelText("Show archived"))
+    await user.click(screen.getByLabelText("Include archived"))
     expect(button()).not.toBeNull()
   })
 

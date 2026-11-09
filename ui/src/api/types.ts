@@ -32,6 +32,12 @@ export interface WorktreeSummary {
    */
   has_unread?: boolean;
   /**
+   * Whether some of that unread activity is a person's: not a bot's, not CI.
+   * With Unreads only and Humans only both on, the home page lists only
+   * these. Absent when false.
+   */
+  has_human_unread?: boolean;
+  /**
    * Sum of `unread_count` across the worktree's resources, Slack threads
    * included. Non-zero whenever `has_unread` is (an unread thread counts at
    * least 1); absent on an older cached response.

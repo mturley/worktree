@@ -1,23 +1,20 @@
 import { Group, Title } from "@mantine/core"
 import { Logo } from "./Logo"
-import { UnreadOnlyToggle } from "./UnreadOnlyToggle"
 import { FollowCmuxToggle } from "./FollowCmuxToggle"
 import { SettingsButton } from "./SettingsButton"
 import { useIsWide } from "../hooks/useIsWide"
 
 /**
  * The home page's header: what applies to the whole page — the logo, search,
- * the unread-only and follow-cmux toggles, Settings. Home page only; the
- * worktree page keeps its own header. Narrow, the toggles wrap to a second
- * row so the search keeps its width.
+ * the follow-cmux toggle, Settings. Home page only; the worktree page keeps
+ * its own header. Narrow, the toggle wraps to a second row so the search
+ * keeps its width. (Unreads only sits with the activity feed's toggles, and
+ * narrow, on the Worktrees tab too.)
  */
-export function HomeHeader({
-  search, unreadOnly, onUnreadOnlyChange, hasUnread,
-}: { search: React.ReactNode; unreadOnly: boolean; onUnreadOnlyChange: (v: boolean) => void; hasUnread: boolean }) {
+export function HomeHeader({ search }: { search: React.ReactNode }) {
   const wide = useIsWide()
   const toggles = (
     <Group gap="lg" wrap="nowrap">
-      <UnreadOnlyToggle value={unreadOnly} onChange={onUnreadOnlyChange} hasUnread={hasUnread} />
       <FollowCmuxToggle />
     </Group>
   )

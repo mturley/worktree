@@ -14,7 +14,7 @@ const wrap = () => {
   return render(
     <QueryClientProvider client={new QueryClient()}>
       <MantineProvider>
-        <HomeHeader search={<input aria-label="Search" />} unreadOnly={false} onUnreadOnlyChange={() => {}} hasUnread={false} />
+        <HomeHeader search={<input aria-label="Search" />} />
       </MantineProvider>
     </QueryClientProvider>,
   )
@@ -32,15 +32,16 @@ describe("HomeHeader layering", () => {
 })
 
 describe("HomeHeader", () => {
-  it("holds the logo, search, global toggles and settings", async () => {
+  it("holds the logo, search, the follow-cmux toggle and settings", async () => {
     setViewport("wide")
     wrap()
     const h = screen.getByTestId("home-header")
     expect(within(h).getByRole("heading", { name: "Worktrees" })).toBeInTheDocument()
     expect(within(h).getByLabelText("Search")).toBeInTheDocument()
-    expect(within(h).getByRole("switch", { name: "Unreads only" })).toBeInTheDocument()
     expect(await within(h).findByRole("switch", { name: "Follow cmux" })).toBeInTheDocument()
     expect(within(h).getByRole("button", { name: "Settings" })).toBeInTheDocument()
+    // Unreads only lives with the activity feed's toggles now.
+    expect(within(h).queryByRole("switch", { name: "Unreads only" })).toBeNull()
   })
 
   it("puts the toggles on a second, full-width row when narrow", async () => {
@@ -48,13 +49,12 @@ describe("HomeHeader", () => {
     wrap()
     const h = screen.getByTestId("home-header")
     const settings = within(h).getByRole("button", { name: "Settings" })
-    const unread = within(h).getByRole("switch", { name: "Unreads only" })
-    expect(settings.compareDocumentPosition(unread) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const follow = await within(h).findByRole("switch", { name: "Follow cmux" })
+    expect(settings.compareDocumentPosition(follow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     // The toggles' row is its own direct child of the header, not the search row.
-    const row = Array.from(h.children).find((c) => c.contains(unread)) as HTMLElement
+    const row = Array.from(h.children).find((c) => c.contains(follow)) as HTMLElement
     expect(row.contains(settings)).toBe(false)
     expect(row.contains(within(h).getByLabelText("Search"))).toBe(false)
     expect(row.style.width).toBe("100%")
-    expect(await within(h).findByRole("switch", { name: "Follow cmux" })).toBeInTheDocument()
   })
 })

@@ -8,7 +8,6 @@ import { useActivityPanel } from "../components/ActivityPanel"
 import { ChooseWorktreeModal } from "../components/ChooseWorktreeModal"
 import { Logo } from "../components/Logo"
 import { UnreadBadge } from "../components/UnreadBadge"
-import { UnreadOnlyToggle } from "../components/UnreadOnlyToggle"
 import { NarrowingContext } from "../components/search/NarrowingContext"
 import { SearchBar } from "../components/search/SearchBar"
 import { KeyHint } from "../components/search/KeyHint"
@@ -114,8 +113,11 @@ export function MiniPage() {
   const queryText = search.q.trim()
   const wts = useWorktrees()
   const cmux = useCmux()
+  const { unread, count } = unreadBadge(wts.data)
   const activity = useActivityPanel({
     unreadOnly,
+    setUnreadOnly,
+    hasUnread: unread,
     search: { terms: search.terms, debouncedQ: search.debouncedQ, queryText },
     select: "details",
   })
@@ -123,7 +125,6 @@ export function MiniPage() {
   const resourcesView = useResourcesView(unreadOnly, search.terms)
   // The same query (and cache entry) the Tasks tab's list uses.
   const tasks = useTasks(ALL_TASKS, { completed: prefs.showCompleted, archived: prefs.includeArchived })
-  const { unread, count } = unreadBadge(wts.data)
   useMacDropdownView(expanded)
 
   useEffect(() => postToMac({ type: "ready" }), [])
@@ -204,7 +205,7 @@ export function MiniPage() {
             />
           </Box>
           <Group gap="sm" wrap="nowrap">
-            <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} hasUnread={unread} />
+            {/* Unreads only is with the activity feed's other toggles. */}
             <Button size="compact-xs" variant="default" onClick={() => openExternal("/")}>
               Open full UI ↗
             </Button>

@@ -39,9 +39,9 @@ vi.mock("../hooks/useWorktrees", () => ({
 }))
 // The worktree's own feed comes from useWorktreeDetail above; this one only
 // backs a selected resource's feed and the mark-all-read preview.
-const timelineMock = vi.hoisted(() => ({ events: [] as unknown[] }))
+const timelineMock = vi.hoisted(() => ({ events: [] as unknown[], args: [] as unknown[][] }))
 vi.mock("../hooks/useTimeline", () => ({
-  useWorktreeTimeline: () => ({ events: timelineMock.events, isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false }),
+  useWorktreeTimeline: (...args: unknown[]) => (timelineMock.args.push(args), { events: timelineMock.events, isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false }),
 }))
 
 // Stood in so the Slack event tests can see what the thread was asked to
@@ -674,6 +674,24 @@ describe("WorktreeDetailPage scroll model", () => {
   })
 })
 
+describe("WorktreeDetailPage activity toggles", () => {
+  it("puts Unreads only and Humans only above the feed's filters, not in the resource list, when wide", async () => {
+    setViewport("wide")
+    const user = userEvent.setup()
+    wrap()
+    const row = await screen.findByTestId("activity-toggles")
+    within(row).getByRole("switch", { name: "Unreads only" })
+    const humans = within(row).getByRole("switch", { name: "Humans only" })
+    expect(screen.getAllByRole("switch", { name: "Unreads only" })).toHaveLength(1)
+    // Above the filter buttons.
+    const filter = within(row.closest<HTMLElement>("[data-activity-header]")!).getByRole("button", { name: /GitHub/ })
+    expect(row.compareDocumentPosition(filter) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(detailArgs.at(-1)?.[5]).toBe(false)
+    await user.click(humans)
+    expect(detailArgs.at(-1)?.[5]).toBe(true)
+  })
+})
+
 describe("WorktreeDetailPage unread-only toggle", () => {
   it("narrows the worktree's activity feed to unread events, and remembers it", async () => {
     setViewport("wide")
@@ -687,15 +705,60 @@ describe("WorktreeDetailPage unread-only toggle", () => {
     expect(window.localStorage.getItem("worktree.unreadOnly")).toBe("true")
   })
 
-  it("sits beside Follow resource, so it stays offered beside a selected resource", async () => {
+  it("moves to a selected resource's activity row, and narrows that feed", async () => {
     window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?resource=pr:o%2Fr%231`)
     resources = [{ ...baseResources[0], unread_count: 1 }, baseResources[1]]
     setViewport("wide")
+    const user = userEvent.setup()
     wrap()
     await screen.findByRole("button", { name: /all resources/i })
-    const toggle = screen.getByRole("switch", { name: "Unreads only" })
-    const follow = screen.getByRole("button", { name: /Follow resource/ })
-    expect(follow.parentElement).toContainElement(toggle)
+    const row = screen.getByTestId("activity-toggles")
+    const toggle = within(row).getByRole("switch", { name: "Unreads only" })
+    within(row).getByRole("switch", { name: "Humans only" })
+    // Once only: not beside Follow resource any more.
+    expect(screen.getAllByRole("switch", { name: "Unreads only" })).toHaveLength(1)
+    // The resource's own feed: (path, resource, types, unreadOnly, …).
+    const resourceFeed = () => timelineMock.args.filter((a) => (a[1] as { id?: string } | undefined)?.id === "o/r#1").at(-1)
+    expect(resourceFeed()?.[3]).toBe(false)
+    await user.click(toggle)
+    expect(resourceFeed()?.[3]).toBe(true)
+  })
+
+  it("wide, the resource list says the activity filters narrow it too", async () => {
+    setViewport("wide")
+    wrap()
+    const hint = await screen.findByTestId("resources-filter-hint")
+    expect(hint).toHaveTextContent("Filter")
+    await userEvent.hover(hint)
+    expect(await screen.findByText("Filters in the activity list on the right also filter resources")).toBeInTheDocument()
+  })
+
+  it("opens the list's tooltips over the notes card at the top, and under it once the list scrolls beneath", async () => {
+    setViewport("wide")
+    wrap()
+    await screen.findByTestId("resources-filter-hint")
+    const layer = screen.getByTestId("list-tooltip-layer")
+    expect(layer.style.zIndex).toBe("var(--mantine-z-index-app)")
+    const card = screen.getByTestId("column-card")
+    const list = card.nextElementSibling as HTMLElement
+    const rect = (top: number, bottom: number) => ({ top, bottom, left: 0, right: 100, width: 100, height: bottom - top, x: 0, y: top, toJSON: () => ({}) })
+    vi.spyOn(card, "getBoundingClientRect").mockReturnValue(rect(0, 200) as DOMRect)
+    // Scrolled: the list's top has moved up under the card's bottom.
+    vi.spyOn(list, "getBoundingClientRect").mockReturnValue(rect(50, 900) as DOMRect)
+    fireEvent.scroll(screen.getByTestId("list-scroller"))
+    expect(layer.style.zIndex).toBe("calc(var(--mantine-z-index-app) - 2)")
+    // Back at the top: the list starts below the card again.
+    vi.spyOn(list, "getBoundingClientRect").mockReturnValue(rect(216, 900) as DOMRect)
+    fireEvent.scroll(screen.getByTestId("list-scroller"))
+    expect(layer.style.zIndex).toBe("var(--mantine-z-index-app)")
+  })
+
+  it("narrow, also sits above the resource list, without the Filter hint", async () => {
+    setViewport("narrow")
+    wrap()
+    const follow = await screen.findByRole("button", { name: /Follow resource/ })
+    expect(follow.parentElement).toContainElement(screen.getByRole("switch", { name: "Unreads only" }))
+    expect(screen.queryByTestId("resources-filter-hint")).toBeNull()
   })
 
   it("hides resources without unread events", async () => {

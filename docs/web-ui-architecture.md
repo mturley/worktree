@@ -1033,9 +1033,10 @@ specific number. The cursor only moves forward, so a stale replay is a no-op.
 **Mark all read** (`ui/src/components/MarkAllReadButton.tsx`, on the worktree
 page's unified Activity header and the home page's Activity controls, over
 `/api/all-resources`) keeps that promise across resources. It is hidden while
-a search, source toggle or event-type filter narrows the feed: cursors are
-per resource, so it can only clear everything, and beside a narrowed feed it
-would clear what is not shown. Unreads only and Show archived do not hide it.
+a search, source toggle, event-type filter or Humans only narrows the feed:
+cursors are per resource, so it can only clear everything, and beside a
+narrowed feed it would clear what is not shown. Unreads only and Include
+archived do not hide it.
 Beside the checkboxes, the modal previews what will be cleared: the page's
 own feed (global, never archived; or the worktree's), unread only, narrowed
 to the checked types. A preview row behaves as in the page's feed; one that
@@ -2610,7 +2611,7 @@ you want to show it later, it's already in the cached state JSON).
 The home page's right column is tabbed **Activity | Resources** when wide.
 As on the worktree page's resource tabs, the active tab's controls sit at
 the tab bar's far end, before the Settings cog: refresh, watcher log and
-"Show archived" for Activity; the sort picker and count
+Mark all read for Activity; the sort picker and count
 (`ResourcesTabControls`) for Resources. The bar rides inside each tab's
 pinned header. Narrow, the page's tabs are **Worktrees | Activity |
 Resources** and those controls stay at the top of their panels instead —
@@ -2758,7 +2759,25 @@ is no separate "Clear filters" control.
 Which filters reach which pane (the `filtered` prop): the source toggles
 narrow the worktree cards, the feeds and the worktree page's resource list;
 the event types only the feeds; the Resources tab has its own type/subfilters.
-"Show archived" and sort are not filters.
+Humans only (`useHumansOnly`, UI-wide and remembered like Unreads only) is a
+filter of the feeds: the server drops bots' events (`author_type = 'bot'`)
+and every `ci_*` event (`humans_only=true` on both timeline endpoints). It
+reaches the home page's worktree cards only together with Unreads only, via
+`has_human_unread` on `/api/worktrees` (an unread event the same two clauses
+let through); it never narrows them alone. "Include archived" and sort are
+not filters.
+
+**Activity toggles.** Every activity feed has a row of switches
+(`ActivityToggles`) above its filter buttons, left-aligned with them:
+the home page and /mini have Unreads only, Humans only and Include archived;
+the worktree page's unified feed and a selected resource's feed Unreads only
+and Humans only (both narrow the resource's feed too). Unreads only also
+narrows the worktree and resource lists, so wherever the feed's row is out of
+sight it is offered there too: on the home page's narrow Worktrees tab (after
+the sort picker) and in its Resources tab's controls, and on the worktree
+page's resource list while narrow. Wide, the home page's worktree list and
+the worktree page's resource list each carry a "Filter" hint (`FilterHint`)
+saying the activity filters narrow them.
 
 Each page provides `NarrowingContext` (`components/search/NarrowingContext`):
 whether the search, Unreads only and any of its filters are on, and
