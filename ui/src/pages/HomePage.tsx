@@ -10,8 +10,10 @@ import { useIsWide } from "../hooks/useIsWide"
 import { useIsTall } from "../hooks/useIsTall"
 import { pinnedStyle } from "../lib/stickyList"
 import { WorktreeList } from "../components/WorktreeList"
+import { UnreadOnlyToggle } from "../components/UnreadOnlyToggle"
 import { useUnreadOnly } from "../hooks/useUnreadOnly"
 import { useUnreadOnlyHotkey } from "../hooks/useUnreadOnlyHotkey"
+import { useHumansOnly } from "../hooks/useHumansOnly"
 import { usePublishEscLeaves } from "../lib/escapeHint"
 import { homeWorktreeHref, useEscHome } from "../lib/homeWorktree"
 import { unreadBadge } from "../lib/unreadBadge"
@@ -39,6 +41,7 @@ import { ChooseWorktreeModal } from "../components/ChooseWorktreeModal"
 import { CrossHoverProvider } from "../components/CrossHoverContext"
 import { useTasksPanel } from "../components/tasks/TasksSection"
 import { useActivityPanel } from "../components/ActivityPanel"
+import { FilterHint } from "../components/FilterHint"
 
 type RightTab = "timeline" | "resources"
 type NarrowTab = "worktrees" | RightTab
@@ -52,6 +55,8 @@ export function HomePage() {
   // worktree list and the activity feed.
   const [unreadOnly, setUnreadOnly] = useUnreadOnly()
   useUnreadOnlyHotkey(unreadOnly, setUnreadOnly)
+  // The activity feed's; with Unreads only, it narrows the worktrees too.
+  const [humansOnly] = useHumansOnly()
   const [newOpen, setNewOpen] = useState(false)
   // Wide only: which of Activity and Resources fills the right column.
   const [rightTab, setRightTab] = useState<RightTab>("timeline")
@@ -63,9 +68,12 @@ export function HomePage() {
   const resourcesView = useResourcesView(unreadOnly, search.terms)
   // The same cached query the Resources tab uses.
   const allResources = useAllResources()
+  const wts = useWorktrees()
   // The Activity feed, its controls, filters and modals; see useActivityPanel.
   const activity = useActivityPanel({
     unreadOnly,
+    setUnreadOnly,
+    hasUnread: unreadBadge(wts.data).unread,
     search: { terms: search.terms, debouncedQ: search.debouncedQ, queryText },
     select: "route",
   })
@@ -95,7 +103,6 @@ export function HomePage() {
   const headerStyle = wide && tall
     ? pinnedStyle("calc(-1 * var(--grid-col-padding))", "var(--grid-col-padding)")
     : undefined
-  const wts = useWorktrees()
   const sort = useWorktreeSort()
   // Same shared query the cards use, so this costs no extra request.
   const cmux = useCmux()
@@ -127,10 +134,16 @@ export function HomePage() {
   // resources of that source, and a card with none of them drops out. Then
   // the search narrows what is left to the worktrees that match it.
   // Unreads only also narrows each card's list to its unread resources,
-  // related ones included (filterWorktreeByUnread).
+  // related ones included (filterWorktreeByUnread). With Humans only too, a
+  // worktree whose unread activity is all bots and CI drops out: the feed
+  // would show nothing of it. (Humans only alone hides no worktree — telling
+  // which have human activity matching the other filters isn't worth it.)
+  const worktreeHumansOnly = unreadOnly && humansOnly
   const shownWorktrees = useMemo(
     () =>
-      (unreadOnly ? sortedWorktrees.filter((w) => w.has_unread) : sortedWorktrees)
+      (unreadOnly
+        ? sortedWorktrees.filter((w) => w.has_unread && (!humansOnly || w.has_human_unread))
+        : sortedWorktrees)
         .map((w) => filterWorktreeBySources(w, sources))
         .filter((w): w is NonNullable<typeof w> => w !== null)
         .map((w) => (unreadOnly ? filterWorktreeByUnread(w, allResources.data && (resourcesByPath.get(w.path) ?? [])) : w))
@@ -138,7 +151,7 @@ export function HomePage() {
           w, (cmux.data?.available ? cmux.data.matches?.[w.path] ?? [] : []).map((m) => m.title),
           resourcesByPath.get(w.path) ?? w.focus_resources, search.terms,
         ) !== null),
-    [sortedWorktrees, unreadOnly, sources, search.terms, resourcesByPath, allResources.data, cmux.data],
+    [sortedWorktrees, unreadOnly, humansOnly, sources, search.terms, resourcesByPath, allResources.data, cmux.data],
   )
 
   const sortControl = (
@@ -158,11 +171,21 @@ export function HomePage() {
 
   // Above the worktree list on wide, inside the Worktrees tab on narrow. The
   // heading is wide only: narrow, the Worktrees tab already names the list.
+  // Unreads only, wherever the Activity tab's toggle row is out of sight:
+  // the narrow Worktrees tab and the Resources tab, both lists it narrows.
+  const unreadToggle = (
+    <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} hasUnread={unreadBadge(wts.data).unread} />
+  )
   const listToolbar = (withHeading: boolean) => (
     <Group justify="space-between" gap="xs" data-testid="worktrees-toolbar">
       <Group gap="md" wrap="nowrap">
         {withHeading && <Title order={4}>Worktrees</Title>}
         {sortControl}
+        {/* Wide only: narrow, the activity list isn't on the right. */}
+        {withHeading && <FilterHint what="worktrees" />}
+        {/* Narrow, the Activity tab's toggles are out of sight from here,
+            and Unreads only narrows this list too. */}
+        {!withHeading && unreadToggle}
       </Group>
       {newWorktreeButton}
     </Group>
@@ -205,7 +228,7 @@ export function HomePage() {
         <SearchSummary
           count={shownWorktrees.length}
           noun={["worktree", "worktrees"]}
-          qualifier={withUnread}
+          qualifier={worktreeHumansOnly ? "with unread events from people" : withUnread}
           filtered={sourcesOn}
         />
       )}
@@ -242,7 +265,7 @@ export function HomePage() {
         <Tabs.Tab value="timeline">Activity{countBadge(activity.events.length, activity.hasMore)}</Tabs.Tab>
         <Tabs.Tab value="resources">Resources{countBadge(resourcesView.shown.length)}</Tabs.Tab>
         <Group ml="auto" align="center" gap="md" wrap="nowrap" pb={4}>
-          {rightTab === "timeline" ? activity.controls : <ResourcesTabControls view={resourcesView} />}
+          {rightTab === "timeline" ? activity.controls : <ResourcesTabControls view={resourcesView} unreadToggle={unreadToggle} />}
         </Group>
       </Tabs.List>
     </Tabs>
@@ -288,7 +311,7 @@ export function HomePage() {
       onEscapeIdle={home ? () => navigate(homeWorktreeHref(home)) : undefined}
     />
   )
-  const header = <HomeHeader search={searchBar} unreadOnly={unreadOnly} onUnreadOnlyChange={setUnreadOnly} hasUnread={unreadBadge(wts.data).unread} />
+  const header = <HomeHeader search={searchBar} />
   const detailsModal = (
     <>
       {activity.modals}
@@ -331,7 +354,7 @@ export function HomePage() {
             <Tabs.Panel value="resources" pt="md">
               <ResourcesPanel
                 view={resourcesView}
-                top={<ResourcesTabControls view={resourcesView} />}
+                top={<ResourcesTabControls view={resourcesView} unreadToggle={unreadToggle} />}
                 searchSummary={resourcesSummary}
               />
             </Tabs.Panel>

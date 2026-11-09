@@ -37,6 +37,10 @@ import { useActivityFilter } from "../hooks/useActivityFilter"
 import { RefreshWatchersButton } from "../components/RefreshWatchersButton"
 import { MarkAllReadButton } from "../components/MarkAllReadButton"
 import { UnreadOnlyToggle } from "../components/UnreadOnlyToggle"
+import { HumansOnlyToggle } from "../components/HumansOnlyToggle"
+import { ActivityToggles } from "../components/ActivityToggles"
+import { FilterHint } from "../components/FilterHint"
+import { useHumansOnly } from "../hooks/useHumansOnly"
 import { useUnreadOnly } from "../hooks/useUnreadOnly"
 import { useUnreadOnlyHotkey } from "../hooks/useUnreadOnlyHotkey"
 import { useBannerShown, usePublishEscLeaves } from "../lib/escapeHint"
@@ -87,18 +91,20 @@ export function WorktreeDetailPage() {
   // resource already narrows the timeline to that one resource, so the
   // toggles are hidden there rather than left as dead controls.
   const { sources, setSources, categories, setCategories, eventTypes } = useActivityFilter()
-  // Shared with the home page and every other tab. Narrows the resource list
-  // and the worktree's unified feed; a selected resource's own feed is left
-  // whole, its unread events already together at the top under the divider.
+  // Shared with the home page and every other tab. Narrows the resource list,
+  // the worktree's unified feed and a selected resource's own feed.
   const [unreadOnly, setUnreadOnly] = useUnreadOnly()
   useUnreadOnlyHotkey(unreadOnly, setUnreadOnly)
+  // Shared with every activity feed; narrows the unified feed here and a
+  // selected resource's own (ResourceDetailPane), never the resource list.
+  const [humansOnly, setHumansOnly] = useHumansOnly()
   // Narrows only this worktree's resources and activity; the query lives in
   // the URL, shared with the resource's own feed (ResourceDetailPane).
   const search = useSearchQuery()
   const everything = useSeeEverything()
   const sourcesOn = sources.length > 0
   const searchContext = useMemo(() => ({ terms: search.terms }), [search.terms])
-  const { resources, timeline, refreshResources } = useWorktreeDetail(path, sources, unreadOnly, eventTypes, search.debouncedQ)
+  const { resources, timeline, refreshResources } = useWorktreeDetail(path, sources, unreadOnly, eventTypes, search.debouncedQ, humansOnly)
   const { selected, select, toggle, clear } = useSelectedResource()
   // `?diff`: the Code tab's drill-down replaces the page body (the details
   // card and the resources) under the same header.
@@ -127,7 +133,7 @@ export function WorktreeDetailPage() {
   const queryOn = search.q.length > 0
   const escDiff = inDiff && !queryOn
   const escNotes = !inDiff && !queryOn && detailTab.tab !== "notes"
-  const filtersOn = sourcesOn || categories.length > 0
+  const filtersOn = sourcesOn || categories.length > 0 || humansOnly
   const barClears = queryOn || (!inDiff && (unreadOnly || filtersOn))
   const escClears = !escNotes && barClears
   const escDeselects = !inDiff && !escNotes && !escClears && Boolean(selected)
@@ -145,8 +151,9 @@ export function WorktreeDetailPage() {
     clearAll: () => {
       everything.seeEverything()
       setSources([]) // clears the event types with it (useActivityFilter)
+      setHumansOnly(false)
     },
-  }), [search.terms, unreadOnly, filtersOn, escClears, queryOn, everything, setSources])
+  }), [search.terms, unreadOnly, filtersOn, escClears, queryOn, everything, setSources, setHumansOnly])
   const bannerShown = useBannerShown()
   const wide = useIsWide()
   // The details card and a selected resource's tab bar are pinned while
@@ -346,7 +353,14 @@ export function WorktreeDetailPage() {
       )}
       toolbar={
         <Group gap="lg" align="center">
-          <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} hasUnread={!!summary?.has_unread} />
+          {/* Unreads only narrows this list too, but sits with the feed's
+              toggles (the worktree's, or a selected resource's); here only
+              narrow, where the feed is on the other tab. */}
+          {!wide && (
+            <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} hasUnread={!!summary?.has_unread} />
+          )}
+          {/* Wide only: narrow, the activity list isn't on the right. */}
+          {wide && <FilterHint what="resources" />}
           <NotifySwitch
             label="Notify on all"
             tooltip="Notify on new events for all resources in this worktree"
@@ -433,6 +447,10 @@ export function WorktreeDetailPage() {
           onChange={setCategories}
           justify={wide ? "flex-end" : "flex-start"}
         />
+        <ActivityToggles justify={wide ? "flex-end" : "flex-start"}>
+          <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} hasUnread={!!summary?.has_unread} />
+          <HumansOnlyToggle value={humansOnly} onChange={setHumansOnly} />
+        </ActivityToggles>
         {/* Directly above the results it counts. Only once the feed holds
             the results for what is typed: during the debounce it would count
             the old ones. */}

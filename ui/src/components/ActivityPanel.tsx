@@ -10,6 +10,10 @@ import { useAllResources } from "../hooks/useAllResources"
 import { TimelineFeed } from "./TimelineFeed"
 import { MarkAllReadButton } from "./MarkAllReadButton"
 import { ArchivedToggle } from "./ArchivedToggle"
+import { UnreadOnlyToggle } from "./UnreadOnlyToggle"
+import { HumansOnlyToggle } from "./HumansOnlyToggle"
+import { ActivityToggles } from "./ActivityToggles"
+import { useHumansOnly } from "../hooks/useHumansOnly"
 import { SourceFilter } from "./SourceFilter"
 import { EventTypeFilter } from "./EventTypeFilter"
 import { RefreshWatchersButton } from "./RefreshWatchersButton"
@@ -45,6 +49,9 @@ function chosenResource(e: TimelineEvent): ResourceDTO {
  */
 export function useActivityPanel(opts: {
   unreadOnly: boolean
+  setUnreadOnly: (v: boolean) => void
+  /** Whether anything is unread, for the Unreads only switch's thumb. */
+  hasUnread: boolean
   /** Home page search; omitted on /mini. */
   search?: { terms: string[]; debouncedQ: string; queryText: string }
   /** "route" (home): a row opens its worktree, asking which when several follow it. "details" (mini): a row opens EventDetailsModal. */
@@ -61,17 +68,18 @@ export function useActivityPanel(opts: {
   pickEvent: (e: TimelineEvent) => void
   pickTask: (pick: TaskPick) => void
 } {
-  const { unreadOnly, search, select } = opts
+  const { unreadOnly, setUnreadOnly, hasUnread, search, select } = opts
   const [, navigate] = useLocation()
   // "Make task" from an event: the global feed has no worktree to act in.
   const makeTaskFromEvent = useMakeTaskFromEvent()
   // A task event's row opens its task, over this page.
   const { open: openTask } = useTaskModal()
   const [archived, setArchived] = useState(false)
+  const [humansOnly, setHumansOnly] = useHumansOnly()
   const { sources, setSources, categories, setCategories, eventTypes } = useActivityFilter()
   // The same cached query the Resources tab uses.
   const allResources = useAllResources()
-  const tl = useGlobalTimeline(archived, sources, unreadOnly, eventTypes, search?.debouncedQ ?? "")
+  const tl = useGlobalTimeline(archived, sources, unreadOnly, eventTypes, search?.debouncedQ ?? "", humansOnly)
   // An archived event has no worktree to route to; picking one in the search
   // dropdown opens its details here instead.
   const [pickedEvent, setPickedEvent] = useState<TimelineEvent | null>(null)
@@ -138,17 +146,20 @@ export function useActivityPanel(opts: {
   const searching = (search?.terms.length ?? 0) > 0
   const searchOrUnread = searching || unreadOnly
   const eventNoun: [string, string] = unreadOnly ? ["unread event", "unread events"] : ["event", "events"]
-  // The source toggles and the event types both narrow the feed.
-  const filtered = sources.length > 0 || categories.length > 0
+  // The source toggles, the event types and Humans only all narrow the feed.
+  const filtered = sources.length > 0 || categories.length > 0 || humansOnly
   // Clears the event types with it (useActivityFilter).
-  const clearFilters = useCallback(() => setSources([]), [setSources])
+  const clearFilters = useCallback(() => {
+    setSources([])
+    setHumansOnly(false)
+  }, [setSources, setHumansOnly])
 
-  // The Activity tab's own controls: refresh and archived.
+  // The Activity tab's own controls: refresh and mark all read.
   const controls = (
     <Group gap="sm" wrap="nowrap" align="center" data-testid="activity-controls">
       <Group gap={6} wrap="nowrap" align="center">
         <RefreshWatchersButton />
-        {/* Only over the whole feed, as on the worktree page. "Show
+        {/* Only over the whole feed, as on the worktree page. "Include
             archived" only adds to the feed, so it does not hide it. */}
         {!searching && !filtered && (
           <MarkAllReadButton
@@ -158,7 +169,6 @@ export function useActivityPanel(opts: {
           />
         )}
       </Group>
-      <ArchivedToggle value={archived} onChange={setArchived} />
     </Group>
   )
 
@@ -182,6 +192,11 @@ export function useActivityPanel(opts: {
         {/* Narrows only the feed, not the worktree cards: a card follows
             resources, and every resource has every kind of event. */}
         <EventTypeFilter sources={sources} value={categories} onChange={setCategories} />
+        <ActivityToggles>
+          <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} hasUnread={hasUnread} />
+          <HumansOnlyToggle value={humansOnly} onChange={setHumansOnly} />
+          <ArchivedToggle value={archived} onChange={setArchived} />
+        </ActivityToggles>
         {/* Directly above the results it counts. Only once the feed holds
             the results for what is typed: during the debounce and the first
             fetch it would count the old ones. */}
@@ -212,7 +227,7 @@ export function useActivityPanel(opts: {
     </Stack>
   )
 
-  // An archived event (only with "Show archived" on) has no worktree to
+  // An archived event (only with "Include archived" on) has no worktree to
   // route to; like its row, it opens the details modal, which offers to
   // follow the resource again. In details mode, every event does.
   const pickEvent = (e: TimelineEvent) => (select === "details" || isArchivedEvent(e) || !e.worktree_paths?.length

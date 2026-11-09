@@ -235,13 +235,29 @@ const unreadOnlyClause = `AND (
 ) AND ` + selfid.NotMineSQL + `
   AND ` + unread.NotPendingCISQL + ` `
 
-// handleGlobalTimeline: GET /api/timeline?archived=&limit=&before=&resource_types=&event_types=&unread_only=&q=
+// humansOnlyClause narrows the global timeline to what people did: no bot's
+// events (author_type "bot", what the feed's bot mark shows) and no CI
+// events (every ci_* type, as the "CI" subfilter selects them). Its Go twin
+// is humanEvent, for the worktree timeline's in-memory scan. Task events
+// carry no author type, so the filter never reaches them.
+const humansOnlyClause = `AND COALESCE(e.author_type,'') <> 'bot' AND e.type NOT LIKE 'ci\_%' ESCAPE '\' `
+
+// humanEvent is humansOnlyClause's Go twin.
+func humanEvent(ev watcher.Event) bool {
+	if ev.AuthorType != nil && *ev.AuthorType == "bot" {
+		return false
+	}
+	return !strings.HasPrefix(string(ev.Type), "ci_")
+}
+
+// handleGlobalTimeline: GET /api/timeline?archived=&limit=&before=&resource_types=&event_types=&unread_only=&humans_only=&q=
 func (s *Server) handleGlobalTimeline(w http.ResponseWriter, r *http.Request) {
 	out, err := s.Timeline(TimelineQuery{
 		ResourceTypes: parseResourceTypes(r),
 		Before:        r.URL.Query().Get("before"), // RFC3339 ts; "" = newest
 		UnreadOnly:    r.URL.Query().Get("unread_only") == "true",
 		Limit:         parseLimit(r),
+		humansOnly:    r.URL.Query().Get("humans_only") == "true",
 		archived:      r.URL.Query().Get("archived") == "true",
 		terms:         parseSearchTerms(r.URL.Query().Get("q")),
 		eventTypes:    parseEventTypes(r),
@@ -268,6 +284,7 @@ type TimelineQuery struct {
 	Limit         int // 0 = defaultTimelineLimit
 
 	archived   bool // global only: include events of resources no worktree follows
+	humansOnly bool // leave out bots' events and CI events (humansOnlyClause)
 	terms      []string
 	eventTypes eventTypeFilter
 }
@@ -329,6 +346,9 @@ JOIN watcher_event_resources er ON er.event_id = e.id `
 	unreadClause := ""
 	if q.UnreadOnly {
 		unreadClause = unreadOnlyClause
+	}
+	if q.humansOnly {
+		unreadClause += humansOnlyClause
 	}
 
 	// restArgs are the args of every clause after the cursor's.
@@ -567,7 +587,7 @@ func (s *Server) eventIDsForResource(rtype, rid string) (map[string]struct{}, er
 	return ids, rows.Err()
 }
 
-// handleWorktreeTimeline: GET /api/worktree-timeline?path=<path>&limit=&before=&resource_type=&resource_id=&resource_types=&event_types=&unread_only=&q=
+// handleWorktreeTimeline: GET /api/worktree-timeline?path=<path>&limit=&before=&resource_type=&resource_id=&resource_types=&event_types=&unread_only=&humans_only=&q=
 // A query param (not a path segment) is used because worktree paths contain
 // slashes, which the Go 1.22 mux {wildcard} would split awkwardly.
 //
@@ -596,6 +616,7 @@ func (s *Server) handleWorktreeTimeline(w http.ResponseWriter, r *http.Request) 
 		Before:        r.URL.Query().Get("before"), // exclusive RFC3339 cursor; "" = newest
 		UnreadOnly:    r.URL.Query().Get("unread_only") == "true",
 		Limit:         parseLimit(r),
+		humansOnly:    r.URL.Query().Get("humans_only") == "true",
 		terms:         parseSearchTerms(r.URL.Query().Get("q")),
 		eventTypes:    parseEventTypes(r),
 	})
@@ -663,6 +684,9 @@ func (s *Server) worktreeTimeline(q TimelineQuery) ([]TimelineEvent, error) {
 		// Before enrichment: the type is on the raw event, so a filtered-out
 		// row costs nothing.
 		if !eventTypes.matches(string(evs[i].Type)) {
+			continue
+		}
+		if q.humansOnly && !humanEvent(evs[i]) {
 			continue
 		}
 		te := enricher.enrich(evs[i])

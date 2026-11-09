@@ -773,3 +773,49 @@ func TestIsUnread_BotDescriptionEdit(t *testing.T) {
 		t.Errorf("Summaries count = %d, want %d (the Go twin's verdict)", got, wantCount)
 	}
 }
+
+// TestWorktreeSummaryHasHumanUnread: a worktree whose only unread events are
+// a bot's and CI's has unread but no human unread; one person's unread
+// comment turns it on. The home page hides the first with Unreads only and
+// Humans only both on.
+func TestWorktreeSummaryHasHumanUnread(t *testing.T) {
+	t.Parallel()
+	conn := unreadTestDB(t)
+	wt := testgit.Worktree(t)
+	if err := registerWorktreeForTest(t, conn, wt); err != nil {
+		t.Fatal(err)
+	}
+	if err := resources.Add(conn, wt, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u"}); err != nil {
+		t.Fatal(err)
+	}
+	insertUnreadEvent(t, conn, "bot", "2099-01-01T00:00:00Z", "github", "pr", "o/r#1")
+	insertUnreadEvent(t, conn, "ci", "2099-01-01T00:00:01Z", "github", "pr", "o/r#1")
+	if _, err := conn.Exec(`UPDATE watcher_events SET author_type = 'bot' WHERE id = 'bot'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(`UPDATE watcher_events SET type = 'ci_check_failed', author_type = 'user' WHERE id = 'ci'`); err != nil {
+		t.Fatal(err)
+	}
+	srv := &Server{DB: conn}
+	summary := func() worktreeSummary {
+		t.Helper()
+		sums, err := srv.WorktreeSummaries()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, w := range sums {
+			if w.Path == wt {
+				return w
+			}
+		}
+		t.Fatalf("worktree %s absent from the summary", wt)
+		return worktreeSummary{}
+	}
+	if w := summary(); !w.HasUnread || w.HasHumanUnread {
+		t.Fatalf("bot + CI unread only: has_unread=%v has_human_unread=%v, want true/false", w.HasUnread, w.HasHumanUnread)
+	}
+	insertUnreadEvent(t, conn, "human", "2099-01-01T00:00:02Z", "github", "pr", "o/r#1")
+	if w := summary(); !w.HasHumanUnread {
+		t.Fatal("a person's unread comment must set has_human_unread")
+	}
+}

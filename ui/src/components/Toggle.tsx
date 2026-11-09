@@ -2,7 +2,7 @@ import { forwardRef, type ReactNode } from "react"
 import { Switch, Tooltip, rem, type SwitchProps } from "@mantine/core"
 
 /**
- * Every on/off switch in the UI ("Unreads only", "Show archived",
+ * Every on/off switch in the UI ("Unreads only", "Humans only", "Include archived",
  * "Notify", "Follow cmux"), so their look is set in one place. Smaller
  * than Mantine's default: these sit in toolbars beside compact buttons, where
  * a full-size switch and label outweigh the controls around them.

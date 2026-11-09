@@ -24,7 +24,7 @@ function renderWithProvider(ui: React.ReactElement) {
 describe("ArchivedToggle", () => {
   it("renders the switch with its label and reflects the checked value", () => {
     const { container } = renderWithProvider(<ArchivedToggle value={false} onChange={() => {}} />)
-    expect(container.textContent).toContain("Show archived")
+    expect(container.textContent).toContain("Include archived")
     const input = container.querySelector('input[type="checkbox"]') as HTMLInputElement
     expect(input).not.toBeNull()
     expect(input.checked).toBe(false)
@@ -44,7 +44,7 @@ describe("ArchivedToggle", () => {
     // element is hovered. Hover the visible label, as a user does: a Tooltip
     // that listened on Switch's hidden <input> passed a test hovering the
     // input but never opened in a browser.
-    await userEvent.hover(screen.getByText("Show archived"))
+    await userEvent.hover(screen.getByText("Include archived"))
 
     await waitFor(() => {
       expect(document.body.textContent).toContain(

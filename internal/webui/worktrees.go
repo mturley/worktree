@@ -40,6 +40,10 @@ type worktreeSummary struct {
 	// FocusResources: related resources are counted but never listed, so a
 	// client folding over that list alone would miss their unreads.
 	HasUnread bool `json:"has_unread"`
+	// HasHumanUnread is true when some of that unread activity is a person's:
+	// not a bot's and not CI (worktreeHasHumanUnread). With Unreads only and
+	// Humans only both on, the home page lists only these worktrees.
+	HasHumanUnread bool `json:"has_human_unread,omitempty"`
 	// UnreadCount totals unread_count across those same resources — Slack
 	// threads included, each counting at least 1 while unread (see
 	// unreadIndex.fill), so it is non-zero whenever HasUnread is — minus
@@ -101,6 +105,7 @@ func (s *Server) WorktreeSummaries() ([]WorktreeSummary, error) {
 	// One load for every worktree's and resource's open-task count, which
 	// also gives the unread index its task membership (no second compute).
 	taskCounts := s.openTaskCountsPriming(ix)
+	humanMemo := map[string]bool{}
 	for _, e := range entries {
 		rs, err := resources.Load(s.DB, e.Path)
 		if err != nil {
@@ -139,6 +144,7 @@ func (s *Server) WorktreeSummaries() ([]WorktreeSummary, error) {
 			}
 		}
 		hasUnread, unreadCount := worktreeUnreadTotals(ix, e.Path, filled)
+		hasHumanUnread := hasUnread && s.worktreeHasHumanUnread(ix, e.Path, filled, humanMemo)
 		_, statErr := os.Stat(e.Path)
 		out = append(out, worktreeSummary{
 			Path:           e.Path,
@@ -154,6 +160,7 @@ func (s *Server) WorktreeSummaries() ([]WorktreeSummary, error) {
 			CreatedAt:      e.CreatedAt,
 			FocusResources: focus,
 			HasUnread:      hasUnread,
+			HasHumanUnread: hasHumanUnread,
 			UnreadCount:    unreadCount,
 			NotifyAll:      prefs.All,
 			Notes:          homeNotes[e.Path],

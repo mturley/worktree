@@ -1,6 +1,8 @@
 package webui
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/mturley/worktree/internal/registry"
@@ -23,6 +25,51 @@ func worktreeUnreadTotals(ix *unreadIndex, path string, filled []resourceDTO) (h
 		count += n
 	}
 	return has, count
+}
+
+// humanUnreadSQL finds one unread event of a resource that a person wrote:
+// the global timeline's unread_only and humans_only clauses together, so a
+// worktree's has_human_unread can never disagree with what the Activity feed
+// shows with Unreads only and Humans only both on.
+const humanUnreadSQL = `SELECT 1 FROM watcher_events e
+JOIN watcher_event_resources er ON er.event_id = e.id
+WHERE er.resource_type = ? AND er.resource_id = ?
+  AND e.type NOT IN ('watch_started','watcher_error') ` + unreadOnlyClause + humansOnlyClause + `LIMIT 1`
+
+// worktreeHasHumanUnread is a worktree's has_human_unread: whether any of its
+// unread activity is a person's. Unread task events count (a task event has
+// no bot author), as does the worktree's own task activity; a watcher
+// resource is asked only once it has unread at all, so a quiet worktree costs
+// no query. memo caches each resource's answer across worktrees following it.
+// An error counts as human: the UI then keeps the worktree listed rather than
+// hiding activity it could not rule out.
+func (s *Server) worktreeHasHumanUnread(ix *unreadIndex, path string, filled []resourceDTO, memo map[string]bool) bool {
+	if ix.worktreeTaskUnread(path) > 0 {
+		return true
+	}
+	for _, dto := range filled {
+		if dto.TaskUnreadCount > 0 {
+			return true
+		}
+		if !resourceHasUnread(dto) {
+			continue
+		}
+		key := dto.Type + ":" + dto.ID
+		human, ok := memo[key]
+		if !ok {
+			var one int
+			err := s.DB.QueryRow(humanUnreadSQL, dto.Type, dto.ID).Scan(&one)
+			human = err == nil || !errors.Is(err, sql.ErrNoRows)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) && s.Logger != nil {
+				s.Logger.Printf("human unread (%s): %v", key, err)
+			}
+			memo[key] = human
+		}
+		if human {
+			return true
+		}
+	}
+	return false
 }
 
 // UnreadSummary is the app-wide unread state: whether any worktree has

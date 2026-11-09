@@ -20,7 +20,7 @@ import { useActivityPanel, type EventSelectMode } from "./ActivityPanel"
 import { api } from "../api/client"
 
 function Host({ select }: { select: EventSelectMode }) {
-  const activity = useActivityPanel({ unreadOnly: false, select })
+  const activity = useActivityPanel({ unreadOnly: false, setUnreadOnly: () => {}, hasUnread: false, select })
   return (
     <>
       {activity.render()}

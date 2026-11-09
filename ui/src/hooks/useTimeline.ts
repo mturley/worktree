@@ -48,7 +48,8 @@ function flatten(q: ReturnType<typeof useInfiniteQuery<{ events: TimelineEvent[]
 /**
  * `unreadOnly` filters on the SERVER, like the source filter: the feed is
  * paginated, so dropping read events from a fetched page would leave it short
- * or empty while unread ones sat further back.
+ * or empty while unread ones sat further back. So does `humansOnly` (no bots'
+ * events, no CI events), for the same reason.
  */
 export function useGlobalTimeline(
   archived: boolean,
@@ -56,6 +57,7 @@ export function useGlobalTimeline(
   unreadOnly = false,
   eventTypes: string[] = [],
   q = "",
+  humansOnly = false,
 ): TimelineResult {
   return flatten(
     useInfiniteQuery({
@@ -66,10 +68,10 @@ export function useGlobalTimeline(
       // unfiltered feed.
       queryKey: [
         "timeline", "global", archived, [...resourceTypes].sort().join(","), unreadOnly,
-        [...eventTypes].sort().join(","), ...(q ? [q] : []),
+        [...eventTypes].sort().join(","), ...(q ? [q] : []), ...(humansOnly ? ["humans-only"] : []),
       ],
       queryFn: ({ pageParam }) =>
-        api.globalTimeline(archived, TIMELINE_PAGE_SIZE, pageParam, resourceTypes, unreadOnly, eventTypes, q || undefined),
+        api.globalTimeline(archived, TIMELINE_PAGE_SIZE, pageParam, resourceTypes, unreadOnly, eventTypes, q || undefined, humansOnly),
       initialPageParam: undefined as string | undefined,
       getNextPageParam: nextCursor,
     }),
@@ -83,6 +85,7 @@ export function useWorktreeTimeline(
   unreadOnly = false,
   eventTypes: string[] = [],
   q = "",
+  humansOnly = false,
 ): TimelineResult {
   return flatten(
     // The resource is part of the key so switching selection is a normal
@@ -93,10 +96,10 @@ export function useWorktreeTimeline(
       queryKey: [
         "timeline", "worktree", path, resource?.type ?? "", resource?.id ?? "",
         [...resourceTypes].sort().join(","), unreadOnly, [...eventTypes].sort().join(","),
-        ...(q ? [q] : []),
+        ...(q ? [q] : []), ...(humansOnly ? ["humans-only"] : []),
       ],
       queryFn: ({ pageParam }) =>
-        api.worktreeTimeline(path, TIMELINE_PAGE_SIZE, resource, pageParam, resourceTypes, unreadOnly, eventTypes, q || undefined),
+        api.worktreeTimeline(path, TIMELINE_PAGE_SIZE, resource, pageParam, resourceTypes, unreadOnly, eventTypes, q || undefined, humansOnly),
       initialPageParam: undefined as string | undefined,
       getNextPageParam: nextCursor,
       enabled: !!path,

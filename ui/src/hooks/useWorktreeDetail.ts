@@ -9,6 +9,7 @@ export function useWorktreeDetail(
   unreadOnly = false,
   eventTypes: string[] = [],
   q = "",
+  humansOnly = false,
 ) {
   const qc = useQueryClient()
   useEffect(() => {
@@ -23,7 +24,7 @@ export function useWorktreeDetail(
   }, [path, qc])
 
   const resources = useQuery({ queryKey: ["resources", path], queryFn: () => api.worktreeResources(path), enabled: !!path })
-  const timeline = useWorktreeTimeline(path, undefined, resourceTypes, unreadOnly, eventTypes, q)
+  const timeline = useWorktreeTimeline(path, undefined, resourceTypes, unreadOnly, eventTypes, q, humansOnly)
   // For changes to which resources are followed or how they are grouped.
   // Those also change which tasks belong to the worktree and to each
   // resource, so the task lists refetch along with the resources.
