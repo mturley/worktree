@@ -737,7 +737,8 @@ describe("WorktreeDetailPage event opened from the home page", () => {
     window.history.replaceState({ openEvent: event }, "", url)
     wrap()
     const dialog = await screen.findByRole("dialog")
-    expect(dialog).toHaveTextContent("The whole comment body")
+    // The body renders from a lazily loaded chunk.
+    expect(await within(dialog).findByText("The whole comment body")).toBeInTheDocument()
     expect(new URLSearchParams(window.location.search).get("resource")).toBe("pr:o/r#1")
   })
 

@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest"
 import { cleanup, render, screen } from "@testing-library/react"
 import { MantineProvider } from "@mantine/core"
+import remarkGfm from "remark-gfm"
+import rehypeRaw from "rehype-raw"
 import { NotesMarkdown } from "./NotesMarkdown"
 
 const md = "![shot](https://example.com/pixel.png)"
@@ -26,5 +28,30 @@ describe("NotesMarkdown", () => {
   it("names an image link by its URL when it has no alt text", () => {
     render(<MantineProvider><NotesMarkdown text="![](https://example.com/a.png)" imagesAsLinks /></MantineProvider>)
     expect(screen.getByRole("link", { name: "https://example.com/a.png" })).toBeTruthy()
+  })
+
+  it("keeps a linked image's own link, not a link inside a link", () => {
+    const { container } = render(
+      <MantineProvider><NotesMarkdown text="[![build](https://ci.io/badge.svg)](https://ci.io/run/1)" imagesAsLinks /></MantineProvider>,
+    )
+    const links = container.querySelectorAll("a")
+    expect(links).toHaveLength(1)
+    expect(links[0].getAttribute("href")).toBe("https://ci.io/run/1")
+    expect(links[0].textContent).toBe("build")
+  })
+
+  it("shows raw HTML as text by default", () => {
+    const { container } = render(<MantineProvider><NotesMarkdown text="a <b>bold</b> b" /></MantineProvider>)
+    expect(container.querySelector("b")).toBeNull()
+  })
+
+  it("sanitizes whatever rehype plugins it is given", () => {
+    const { container } = render(
+      <MantineProvider>
+        <NotesMarkdown text={"<iframe src=\"https://x.io\"></iframe><b>kept</b>"} plugins={{ remark: [remarkGfm], rehype: [rehypeRaw] }} />
+      </MantineProvider>,
+    )
+    expect(container.querySelector("b")?.textContent).toBe("kept")
+    expect(container.querySelector("iframe")).toBeNull()
   })
 })
