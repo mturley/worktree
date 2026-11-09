@@ -11,12 +11,10 @@ import { eventMeta } from "../lib/eventMeta"
  * want, whereas a feed of two sources was judged not worth the extra state.
  * Nothing selected means every kind.
  */
-export function EventTypeFilter({ sources, value, onChange, justify }: {
+export function EventTypeFilter({ sources, value, onChange }: {
   sources: string[]
   value: string[]
   onChange: (next: string[]) => void
-  /** Line the bar up with the source toggles above it. */
-  justify?: "flex-start" | "flex-end"
 }) {
   const cats = categoriesFor(sources)
   if (cats.length === 0) return null
@@ -24,7 +22,7 @@ export function EventTypeFilter({ sources, value, onChange, justify }: {
     onChange(value.includes(key) ? value.filter((k) => k !== key) : [...value, key])
 
   return (
-    <Group gap={4} wrap="wrap" justify={justify} data-testid="event-type-filter">
+    <Group gap={4} wrap="wrap" data-testid="event-type-filter">
       {cats.map((c) => {
         const active = value.includes(c.key)
         // The category's icon and colour come from its first event type, so a

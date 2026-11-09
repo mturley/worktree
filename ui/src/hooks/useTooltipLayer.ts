@@ -27,7 +27,7 @@ const OVER_PINNED_Z = "calc(var(--mantine-z-index-app) - 1)"
  * the block stayed put. Measured, not observed, so it holds whichever
  * element scrolls (a home column, the window) and whatever `top` it pins at.
  */
-function isStuck(pinned: Element): boolean {
+export function isStuck(pinned: Element): boolean {
   const bottom = pinned.getBoundingClientRect().bottom
   for (let next = pinned.nextElementSibling; next; next = next.nextElementSibling) {
     const r = next.getBoundingClientRect()

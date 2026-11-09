@@ -2768,7 +2768,7 @@ let through); it never narrows them alone. "Include archived" and sort are
 not filters.
 
 **Activity toggles.** Every activity feed has a row of switches
-(`ActivityToggles`) under its filter buttons, directly above the events:
+(`ActivityToggles`) above its filter buttons, left-aligned with them:
 the home page and /mini have Unreads only, Humans only and Include archived;
 the worktree page's unified feed and a selected resource's feed Unreads only
 and Humans only (both narrow the resource's feed too). Unreads only also

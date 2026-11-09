@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
 import { Anchor, Badge, Box, Grid, Group, MantineThemeProvider, Stack, Tabs, Title } from "@mantine/core"
 import { Link, useLocation, useRoute } from "wouter"
 import { useQueryClient } from "@tanstack/react-query"
@@ -40,6 +40,7 @@ import { UnreadOnlyToggle } from "../components/UnreadOnlyToggle"
 import { HumansOnlyToggle } from "../components/HumansOnlyToggle"
 import { ActivityToggles } from "../components/ActivityToggles"
 import { FilterHint } from "../components/FilterHint"
+import { isStuck } from "../hooks/useTooltipLayer"
 import { useHumansOnly } from "../hooks/useHumansOnly"
 import { useUnreadOnly } from "../hooks/useUnreadOnly"
 import { useUnreadOnlyHotkey } from "../hooks/useUnreadOnlyHotkey"
@@ -436,21 +437,14 @@ export function WorktreeDetailPage() {
         {/* Wide, the tab bar, which carries the controls; narrow, where the
             page's tab bar is above, the controls alone. */}
         {top ?? activityControls}
-        <Group justify={wide ? "flex-end" : "flex-start"}>
-          <SourceFilter value={sources} onChange={setSources} />
-        </Group>
-        {/* Right-aligned under the source toggles when they sit at the right
-            of the header; narrow, the header wraps them to the left. */}
-        <EventTypeFilter
-          sources={sources}
-          value={categories}
-          onChange={setCategories}
-          justify={wide ? "flex-end" : "flex-start"}
-        />
-        <ActivityToggles justify={wide ? "flex-end" : "flex-start"}>
+        <ActivityToggles>
           <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} hasUnread={!!summary?.has_unread} />
           <HumansOnlyToggle value={humansOnly} onChange={setHumansOnly} />
         </ActivityToggles>
+        <Group>
+          <SourceFilter value={sources} onChange={setSources} />
+        </Group>
+        <EventTypeFilter sources={sources} value={categories} onChange={setCategories} />
         {/* Directly above the results it counts. Only once the feed holds
             the results for what is typed: during the debounce it would count
             the old ones. */}
@@ -490,12 +484,21 @@ export function WorktreeDetailPage() {
 
   // Where the resource list's tooltips open: inside the sticky column's
   // stacking context (outside its scroller, so they are not clipped), layered
-  // above the list's cards and below the pinned notes card — so a tooltip
-  // left open as its card scrolls up goes under the notes card. Portalled to
+  // above the list's cards — and, while the notes card is stuck over the
+  // list (cardStuck), below it, so a tooltip left open as its card scrolls up
+  // goes under the notes card. Portalled to
   // <body>, as tooltips otherwise are, it could only be above or below the
   // whole column. Scoped to the list alone, so the notes card's own tooltips
   // still open above everything.
   const [listTooltipTarget, setListTooltipTarget] = useState<HTMLDivElement | null>(null)
+  // Whether the pinned notes card is stuck over the list (the list has
+  // scrolled up under it). Only then do the list's tooltips go under the
+  // card; at the top, the first rows' tooltips open upwards over the card
+  // and must show — as the right column does it (useTooltipLayer).
+  const [cardBox, setCardBox] = useState<HTMLDivElement | null>(null)
+  const [cardStuck, setCardStuck] = useState(false)
+  const onListScroll = useCallback(() => setCardStuck(cardBox ? isStuck(cardBox) : false), [cardBox])
+  useEffect(onListScroll, [onListScroll])
   const listTooltipTheme = useMemo(
     () => ({
       components: {
@@ -583,14 +586,15 @@ export function WorktreeDetailPage() {
               list. */}
           <div
             ref={setListTooltipTarget}
+            data-testid="list-tooltip-layer"
             style={{
               position: "absolute",
               inset: 0,
               pointerEvents: "none",
-              zIndex: "calc(var(--mantine-z-index-app) - 2)",
+              zIndex: cardStuck ? "calc(var(--mantine-z-index-app) - 2)" : "var(--mantine-z-index-app)",
             }}
           />
-          <Box style={STICKY_LIST_SCROLLER}>
+          <Box style={STICKY_LIST_SCROLLER} onScroll={onListScroll} data-testid="list-scroller">
             {/* Always this Stack, with the card's slot first even when empty:
                 wrapping `list` only while collapsed would move it in the tree
                 and remount it, for the reason above. */}
@@ -605,6 +609,8 @@ export function WorktreeDetailPage() {
                 // card rather than crowding out the list. The scroller has no
                 // padding, so there is no strip above the card to cover.
                 <Box
+                  ref={setCardBox}
+                  data-testid="column-card"
                   style={
                     pinCards
                       ? { ...pinnedStyle(0, "0px"), marginBottom: "var(--mantine-spacing-md)" }

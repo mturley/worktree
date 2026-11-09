@@ -339,6 +339,9 @@ describe("HomePage unread-only toggle", () => {
     const names = within(row).getAllByRole("switch").map((s) => s.getAttribute("aria-label") ?? s.closest("label")?.textContent ?? "")
     expect(within(row).getAllByRole("switch")).toHaveLength(3)
     expect(names.join("|")).toMatch(/Unreads only.*\|.*Humans only.*\|.*Include archived/)
+    // Above the filter buttons.
+    const filter = within(row.closest<HTMLElement>("[data-activity-header]")!).getByRole("button", { name: /GitHub/ })
+    expect(row.compareDocumentPosition(filter) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(within(screen.getByTestId("home-header")).queryByRole("switch", { name: "Unreads only" })).toBeNull()
     expect(screen.getAllByRole("switch", { name: "Unreads only", hidden: true })).toHaveLength(1)
   })

@@ -675,7 +675,7 @@ describe("WorktreeDetailPage scroll model", () => {
 })
 
 describe("WorktreeDetailPage activity toggles", () => {
-  it("puts Unreads only and Humans only under the feed's filters, not in the resource list, when wide", async () => {
+  it("puts Unreads only and Humans only above the feed's filters, not in the resource list, when wide", async () => {
     setViewport("wide")
     const user = userEvent.setup()
     wrap()
@@ -683,6 +683,9 @@ describe("WorktreeDetailPage activity toggles", () => {
     within(row).getByRole("switch", { name: "Unreads only" })
     const humans = within(row).getByRole("switch", { name: "Humans only" })
     expect(screen.getAllByRole("switch", { name: "Unreads only" })).toHaveLength(1)
+    // Above the filter buttons.
+    const filter = within(row.closest<HTMLElement>("[data-activity-header]")!).getByRole("button", { name: /GitHub/ })
+    expect(row.compareDocumentPosition(filter) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(detailArgs.at(-1)?.[5]).toBe(false)
     await user.click(humans)
     expect(detailArgs.at(-1)?.[5]).toBe(true)
@@ -728,6 +731,26 @@ describe("WorktreeDetailPage unread-only toggle", () => {
     expect(hint).toHaveTextContent("Filter")
     await userEvent.hover(hint)
     expect(await screen.findByText("Filters in the activity list on the right also filter resources")).toBeInTheDocument()
+  })
+
+  it("opens the list's tooltips over the notes card at the top, and under it once the list scrolls beneath", async () => {
+    setViewport("wide")
+    wrap()
+    await screen.findByTestId("resources-filter-hint")
+    const layer = screen.getByTestId("list-tooltip-layer")
+    expect(layer.style.zIndex).toBe("var(--mantine-z-index-app)")
+    const card = screen.getByTestId("column-card")
+    const list = card.nextElementSibling as HTMLElement
+    const rect = (top: number, bottom: number) => ({ top, bottom, left: 0, right: 100, width: 100, height: bottom - top, x: 0, y: top, toJSON: () => ({}) })
+    vi.spyOn(card, "getBoundingClientRect").mockReturnValue(rect(0, 200) as DOMRect)
+    // Scrolled: the list's top has moved up under the card's bottom.
+    vi.spyOn(list, "getBoundingClientRect").mockReturnValue(rect(50, 900) as DOMRect)
+    fireEvent.scroll(screen.getByTestId("list-scroller"))
+    expect(layer.style.zIndex).toBe("calc(var(--mantine-z-index-app) - 2)")
+    // Back at the top: the list starts below the card again.
+    vi.spyOn(list, "getBoundingClientRect").mockReturnValue(rect(216, 900) as DOMRect)
+    fireEvent.scroll(screen.getByTestId("list-scroller"))
+    expect(layer.style.zIndex).toBe("var(--mantine-z-index-app)")
   })
 
   it("narrow, also sits above the resource list, without the Filter hint", async () => {

@@ -186,17 +186,17 @@ export function useActivityPanel(opts: {
         {/* Wide, the tab bar, which carries this tab's controls; narrow,
             where the tab bar has no room for them, the controls alone. */}
         {top ?? controls}
+        <ActivityToggles>
+          <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} hasUnread={hasUnread} />
+          <HumansOnlyToggle value={humansOnly} onChange={setHumansOnly} />
+          <ArchivedToggle value={archived} onChange={setArchived} />
+        </ActivityToggles>
         <Group>
           <SourceFilter value={sources} onChange={setSources} />
         </Group>
         {/* Narrows only the feed, not the worktree cards: a card follows
             resources, and every resource has every kind of event. */}
         <EventTypeFilter sources={sources} value={categories} onChange={setCategories} />
-        <ActivityToggles>
-          <UnreadOnlyToggle value={unreadOnly} onChange={setUnreadOnly} hasUnread={hasUnread} />
-          <HumansOnlyToggle value={humansOnly} onChange={setHumansOnly} />
-          <ArchivedToggle value={archived} onChange={setArchived} />
-        </ActivityToggles>
         {/* Directly above the results it counts. Only once the feed holds
             the results for what is typed: during the debounce and the first
             fetch it would count the old ones. */}
