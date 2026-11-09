@@ -281,6 +281,25 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
             </Group>
           )}
 
+          {pendingSlack && unread && (
+            <Alert color="yellow" variant="light" p="xs" data-testid="slack-mark-warning">
+              <Stack gap={6}>
+                <Text size="sm">
+                  Marking this message as read also marks {pendingSlack.older} older{" "}
+                  {pendingSlack.older === 1 ? "message" : "messages"} in the thread as read.
+                </Text>
+                <Group gap={6} justify="flex-end">
+                  <Button size="xs" variant="default" onClick={() => setSlackConfirm(null)}>
+                    Cancel
+                  </Button>
+                  <Button size="xs" {...MARK_READ_BUTTON_PROPS} onClick={() => void commitSlack(pendingSlack)}>
+                    Mark read
+                  </Button>
+                </Group>
+              </Stack>
+            </Alert>
+          )}
+
           <Divider />
 
           <Text fw={600} style={{ display: "flex", gap: 4 }}>
