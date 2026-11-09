@@ -87,9 +87,11 @@ export function ThreadView({ tab, thread, onOpenThread, topInset = 0, onComposer
   const [marking, setMarking] = useState(false)
   const [markError, setMarkError] = useState<string | undefined>(undefined)
   const [isAtBottom, setIsAtBottom] = useState(true)
+  const [isAtTop, setIsAtTop] = useState(true)
   const [pending, setPending] = useState<PendingReply[]>([])
   const unreadDividerRef = useRef<HTMLDivElement>(null)
   const listEndRef = useRef<HTMLDivElement>(null)
+  const listStartRef = useRef<HTMLDivElement>(null)
   const threadEndRef = useRef<HTMLDivElement>(null)
   // isAtBottom as of the last observer report, readable from the follow
   // effect without re-running it whenever the reader scrolls.
@@ -200,6 +202,22 @@ export function ThreadView({ tab, thread, onOpenThread, topInset = 0, onComposer
     return () => observer.disconnect()
   }, [threadKey, hasMessages])
 
+  // The mirror image, for the "Scroll to top" button: whether the start of
+  // the list is on screen. The top margin takes the sticky page header off
+  // the viewport, so a list start hidden under the header counts as scrolled
+  // past.
+  useEffect(() => {
+    const listStart = listStartRef.current
+    if (!hasMessages || !listStart || typeof IntersectionObserver === 'undefined') {
+      return
+    }
+    const observer = new IntersectionObserver(([entry]) => setIsAtTop(entry.isIntersecting), {
+      rootMargin: `${-topInset}px 0px 0px 0px`,
+    })
+    observer.observe(listStart)
+    return () => observer.disconnect()
+  }, [threadKey, hasMessages, topInset])
+
   // When a new message arrives while the reader was at the end, keep
   // following the conversation instead of leaving them stranded above it.
   // Not on a thread's first render (prevMessageCount 0): the initial
@@ -214,6 +232,16 @@ export function ThreadView({ tab, thread, onOpenThread, topInset = 0, onComposer
 
   function scrollToBottom() {
     threadEndRef.current?.scrollIntoView?.({ block: 'end' })
+  }
+
+  // The first message, just below the sticky page header.
+  function scrollToTop() {
+    const listStart = listStartRef.current
+    if (!listStart) {
+      return
+    }
+    listStart.style.scrollMarginTop = `${topInset + 8}px`
+    listStart.scrollIntoView?.({ block: 'start' })
   }
 
   const qc = useQueryClient()
@@ -503,6 +531,29 @@ export function ThreadView({ tab, thread, onOpenThread, topInset = 0, onComposer
 
       {status === 'ready' && data && data.messages.length > 0 && (
         <div ref={listRef}>
+          {/*
+            The "Scroll to top" button floats just below the sticky page
+            header while the start of the thread is scrolled past, as the
+            jump button below floats at the bottom. Zero height and its button
+            out of flow, so showing it never shifts the messages.
+          */}
+          <div
+            style={{
+              position: 'sticky',
+              top: topInset + 8,
+              zIndex: 2,
+              height: 0,
+              display: 'flex',
+              justifyContent: 'center',
+            }}
+          >
+            {!isAtTop && (
+              <Button size="xs" variant="default" onClick={scrollToTop} style={{ position: 'absolute', top: 0 }}>
+                Scroll to top ↑
+              </Button>
+            )}
+          </div>
+          <div ref={listStartRef} data-list-start />
           <Stack gap="md" style={{ paddingRight: 4 }}>
             {data.messages.map((message, index) => (
               <div key={message.TS}>

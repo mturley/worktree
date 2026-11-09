@@ -547,13 +547,16 @@ describe('ThreadView following the end of the thread', () => {
     window.IntersectionObserver = originalIO
   })
 
-  function setListEndVisible(visible: boolean) {
+  function setVisible(start: boolean, visible: boolean) {
     act(() => {
       for (const o of observed) {
+        if (o.el.hasAttribute('data-list-start') !== start) continue
         o.cb([{ isIntersecting: visible, target: o.el } as IntersectionObserverEntry], {} as IntersectionObserver)
       }
     })
   }
+  const setListEndVisible = (visible: boolean) => setVisible(false, visible)
+  const setListStartVisible = (visible: boolean) => setVisible(true, visible)
 
   function wrap(thread: UseThreadResult, qc: QueryClient) {
     return (
@@ -597,6 +600,28 @@ describe('ThreadView following the end of the thread', () => {
     expect(scrolled).toHaveLength(1)
     expect(scrolled[0].opts).toEqual({ block: 'end' })
     expect(scrolled[0].el.nextElementSibling).toBeNull()
+  })
+
+  it('offers a scroll to the top only when the start of the thread is off screen', () => {
+    const { queryByRole } = render(wrap(thread(2), new QueryClient()))
+    setListStartVisible(true)
+    expect(queryByRole('button', { name: 'Scroll to top ↑' })).toBeNull()
+    setListStartVisible(false)
+    expect(queryByRole('button', { name: 'Scroll to top ↑' })).not.toBeNull()
+    // Independent of the end: both can show at once, mid-thread.
+    setListEndVisible(false)
+    expect(queryByRole('button', { name: 'More messages ↓' })).not.toBeNull()
+    expect(queryByRole('button', { name: 'Scroll to top ↑' })).not.toBeNull()
+  })
+
+  it('scrolls to the start of the thread when clicked', () => {
+    const { getByRole } = render(wrap(thread(2), new QueryClient()))
+    setListStartVisible(false)
+    scrolled = []
+    fireEvent.click(getByRole('button', { name: 'Scroll to top ↑' }))
+    expect(scrolled).toHaveLength(1)
+    expect(scrolled[0].opts).toEqual({ block: 'start' })
+    expect(scrolled[0].el.hasAttribute('data-list-start')).toBe(true)
   })
 
   it('follows new messages when the reader is at the end', () => {

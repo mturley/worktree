@@ -8,6 +8,17 @@ import { api } from "../api/client"
 import { EventDetailsModal } from "./EventDetailsModal"
 import { TimelineFeed } from "./TimelineFeed"
 import type { CmuxResponse, ResourceDTO, TimelineEvent, WorktreeSummary } from "../api/types"
+import type { ThreadResponse } from "../api/slackApi"
+
+const getThread = vi.fn()
+const markThreadRead = vi.fn()
+const restoreThreadRead = vi.fn()
+vi.mock("../api/slackApi", async (orig) => ({
+  ...(await orig<typeof import("../api/slackApi")>()),
+  getThread: (...args: unknown[]) => getThread(...args),
+  markRead: (...args: unknown[]) => markThreadRead(...args),
+  restoreRead: (...args: unknown[]) => restoreThreadRead(...args),
+}))
 
 if (typeof window.matchMedia !== "function") {
   window.matchMedia = ((query: string) => ({
@@ -325,10 +336,98 @@ describe("EventDetailsModal unread", () => {
     expect(markButton()!.style.getPropertyValue("--button-hover")).toBe("var(--mantine-color-blue-4)")
   })
 
-  it("outlines an unread Slack event but offers no Mark read", () => {
-    wrapWithToasts(<EventDetailsModal e={ev({ unread: true, source: "slack", resource_type: "slack" })} onClose={vi.fn()} />)
-    expect(outlined()).toBe(true)
-    expect(markButton()).toBeNull()
+  describe("a Slack message", () => {
+    const slackEv = (o: Partial<TimelineEvent> = {}) => ev({
+      unread: true, source: "slack", type: "slack_reply", resource_type: "slack",
+      resource_id: "C1:100.000001", external_ts: "300.000001", title: "Ship it", ...o,
+    })
+    const thread = (lastRead: string): ThreadResponse => ({
+      channel: "C1", channelName: "", threadTs: "100.000001", lastRead, latestReply: "400.000001",
+      rootTs: "100.000001", unreadIndex: 0, currentUserId: "UME", users: {}, emoji: {},
+      messages: ["100.000001", "150.000001", "200.000001", "250.000001", "300.000001", "400.000001"].map((TS) => ({
+        TS, UserID: TS === "250.000001" ? "UME" : "U2", Text: "", Blocks: null, Reactions: null,
+        Edited: false, Files: null, Attachments: null,
+      })),
+    })
+    const warning = () => screen.queryByTestId("slack-mark-warning")
+
+    afterEach(() => {
+      getThread.mockReset()
+      markThreadRead.mockReset()
+      restoreThreadRead.mockReset()
+    })
+
+    it("offers Mark read, and marks through the message at once when nothing older is unread", async () => {
+      getThread.mockResolvedValue(thread("250.000001"))
+      markThreadRead.mockResolvedValue(undefined)
+      wrapWithToasts(<EventDetailsModal e={slackEv()} onClose={vi.fn()} />)
+      expect(outlined()).toBe(true)
+      await userEvent.click(markButton()!)
+      expect(getThread).toHaveBeenCalledWith("C1", "100.000001")
+      expect(markThreadRead).toHaveBeenCalledWith("C1", "100.000001", "300.000001")
+      expect(warning()).toBeNull()
+      expect(outlined()).toBe(false)
+    })
+
+    it("warns how many older messages go with it, not counting the user's own, and marks only on confirm", async () => {
+      // After 150: 200 (U2) and 250 (the user's own) are older than 300.
+      getThread.mockResolvedValue(thread("150.000001"))
+      markThreadRead.mockResolvedValue(undefined)
+      wrapWithToasts(<EventDetailsModal e={slackEv()} onClose={vi.fn()} />)
+      await userEvent.click(markButton()!)
+      expect(warning()).toHaveTextContent("Marking this message as read also marks 1 older message in the thread as read.")
+      expect(markThreadRead).not.toHaveBeenCalled()
+
+      await userEvent.click(screen.getByRole("button", { name: "Cancel" }))
+      expect(warning()).toBeNull()
+      expect(outlined()).toBe(true)
+
+      getThread.mockResolvedValue(thread(""))
+      await userEvent.click(markButton()!)
+      // Never read: the root and 150, 200 count; 250 is the user's own.
+      expect(warning()).toHaveTextContent("also marks 3 older messages")
+      const confirm = screen.getAllByRole("button", { name: "Mark read" }).find((b) => warning()!.contains(b))!
+      await userEvent.click(confirm)
+      expect(markThreadRead).toHaveBeenCalledWith("C1", "100.000001", "300.000001")
+      expect(warning()).toBeNull()
+      expect(outlined()).toBe(false)
+    })
+
+    it("Undo puts Slack's cursor back where it was", async () => {
+      getThread.mockResolvedValue(thread("250.000001"))
+      markThreadRead.mockResolvedValue(undefined)
+      restoreThreadRead.mockResolvedValue(undefined)
+      wrapWithToasts(<EventDetailsModal e={slackEv()} onClose={vi.fn()} />)
+      await userEvent.click(markButton()!)
+      expect(await screen.findByText("Marked read: Ship it")).toBeInTheDocument()
+      await userEvent.click(await screen.findByRole("button", { name: /^Undo/ }))
+      expect(restoreThreadRead).toHaveBeenCalledWith("C1", "100.000001", "250.000001", "300.000001")
+      expect(await screen.findByRole("button", { name: "Mark read" })).toBeInTheDocument()
+      expect(outlined()).toBe(true)
+    })
+
+    it("writes nothing when Slack already reads the message as read", async () => {
+      getThread.mockResolvedValue(thread("300.000001"))
+      wrapWithToasts(<EventDetailsModal e={slackEv()} onClose={vi.fn()} />)
+      await userEvent.click(markButton()!)
+      expect(markThreadRead).not.toHaveBeenCalled()
+      expect(outlined()).toBe(false)
+    })
+
+    it("stays unread and says so when the thread can't be fetched", async () => {
+      getThread.mockRejectedValue(new Error("boom"))
+      wrapWithToasts(<EventDetailsModal e={slackEv()} onClose={vi.fn()} />)
+      await userEvent.click(markButton()!)
+      expect(await screen.findByText("Couldn't mark read: boom")).toBeInTheDocument()
+      expect(markThreadRead).not.toHaveBeenCalled()
+      expect(outlined()).toBe(true)
+    })
+
+    it("offers no Mark read on a read Slack message, nor Mark unread", () => {
+      wrapWithToasts(<EventDetailsModal e={slackEv({ unread: false })} onClose={vi.fn()} />)
+      expect(markButton()).toBeNull()
+      expect(screen.queryByRole("button", { name: "Mark unread" })).toBeNull()
+    })
   })
 
   it("marks read in place, and Undo brings the outline and the button back", async () => {

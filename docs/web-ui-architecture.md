@@ -821,8 +821,13 @@ running CI, the bookkeeping events no feed renders and Slack, and the server ref
 those (400), along with a resource no worktree follows, whose unread would have no
 card to clear it from. The client hides the button for that last case through
 `isArchivedEvent`. Slack events are refused either way, since Slack keeps one cursor per
-thread: the UI offers no button on them, though an unread Slack event's details modal
-still has the blue outline, which `TimelineEvent.unread` alone drives. Mark unread is
+thread, and rows offer no button on them. An unread Slack event's details modal does
+offer Mark read (`useMarkSlackEventRead`), which writes to Slack itself: it fetches the
+live thread (`/api/thread`) for Slack's cursor, then marks the thread read through the
+message (`/api/thread/mark-read`, `external_ts`). If that also clears older unread
+messages (after the cursor, not the user's own), the modal first warns how many and
+waits for a confirm. The undo is `/api/thread/restore-read` with the fetched cursor,
+as Mark all read's. The modal's blue outline is driven by `TimelineEvent.unread`. Mark unread is
 only in the details modal and the CLI, since on hover it would sit on nearly every
 row. On a touch screen (`(hover: none)`) a row shows neither Mark read nor ＋ Task, too
 easy to press while scrolling; the details modal has both. An old event marked unread

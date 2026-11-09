@@ -84,8 +84,8 @@ export interface TimelineEvent {
    */
   resource?: ResourceDTO;
   /**
-   * Newer than this event's resource read cursor. Always false for Slack —
-   * the thread owns that state, and it shows on the resource chip instead.
+   * Newer than this event's resource read cursor. For Slack, newer than
+   * Slack's own cursor for the thread (its cached `last_read`).
    */
   unread?: boolean;
   /** The event can be marked unread: not the user's own, a running CI event or a Slack message. */

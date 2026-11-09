@@ -20,6 +20,7 @@ import { eventFullUiHref } from "../lib/fullUiLink"
 import { useMiniModalFullScreen } from "../hooks/useMiniModalFullScreen"
 import { MARK_READ_BUTTON_PROPS, READ_BOX_BORDER, UNREAD_BOX_BORDER } from "../lib/unread"
 import { canMarkEventRead, canMarkEventUnread, useMarkEventRead, useMarkEventUnread } from "../hooks/useMarkEventRead"
+import { canMarkSlackEventRead, type SlackMarkPlan, useMarkSlackEventRead } from "../hooks/useMarkSlackEventRead"
 import { BotMark } from "./BotMark"
 import { DiffViewBoundary, installPreloadReload } from "./gitdiff/DiffViewBoundary"
 
@@ -65,11 +66,48 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
   // drops the row, so a mark made here has to be remembered here.
   const [marked, setMarked] = useState<{ id: string; unread: boolean } | null>(null)
   const unread = marked && marked.id === e?.id ? marked.unread : !!e?.unread
-  const offerMarkRead = !!e && unread && canMarkEventRead({ ...e, unread })
+  const isSlack = !!e && canMarkSlackEventRead({ ...e, unread: true })
+  const offerMarkRead = !!e && unread && (isSlack || canMarkEventRead({ ...e, unread }))
   const offerMarkUnread = !!e && !unread && canMarkEventUnread(e)
+  const slackMark = useMarkSlackEventRead()
+  // A Slack mark that would also mark older messages read, awaiting the
+  // user's go-ahead: Slack has one cursor per thread, not one per message.
+  const [slackConfirm, setSlackConfirm] = useState<{ id: string; plan: SlackMarkPlan } | null>(null)
+  const pendingSlack = slackConfirm && slackConfirm.id === e?.id ? slackConfirm.plan : null
+
+  const commitSlack = async (plan: SlackMarkPlan) => {
+    if (!e) return
+    setSlackConfirm(null)
+    setMarking(true)
+    await slackMark.mark(e, plan, {
+      onDone: () => setMarked({ id: e.id, unread: false }),
+      onUndone: () => setMarked({ id: e.id, unread: true }),
+    })
+    setMarking(false)
+  }
+
+  // Asks Slack where its cursor is first: the warning needs the count, and
+  // the undo needs the cursor this mark replaces.
+  const markSlackRead = async () => {
+    if (!e) return
+    setMarking(true)
+    const plan = await slackMark.plan(e)
+    setMarking(false)
+    if (!plan) return
+    if (plan.alreadyRead) {
+      // Read in Slack since this was fetched: nothing to write.
+      setMarked({ id: e.id, unread: false })
+      slackMark.refresh()
+    } else if (plan.older > 0) {
+      setSlackConfirm({ id: e.id, plan })
+    } else {
+      await commitSlack(plan)
+    }
+  }
 
   const mark = async (toUnread: boolean) => {
     if (!e) return
+    if (!toUnread && isSlack) return markSlackRead()
     const wasUnread = unread
     setMarking(true)
     await (toUnread ? markEventUnread : markEventRead)(e, {
@@ -128,7 +166,7 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
         </Button>
       )}
       {offerMarkRead && (
-        <Button size="xs" {...MARK_READ_BUTTON_PROPS} loading={marking} onClick={() => void mark(false)}>
+        <Button size="xs" {...MARK_READ_BUTTON_PROPS} loading={marking} disabled={!!pendingSlack} onClick={() => void mark(false)}>
           Mark read
         </Button>
       )}
