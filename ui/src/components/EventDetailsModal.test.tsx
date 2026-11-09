@@ -94,7 +94,7 @@ describe("EventDetailsModal", () => {
     wrap(<EventDetailsModal e={e} onClose={onClose} onMakeTask={onMakeTask} />)
     const button = screen.getByRole("button", { name: "Make task" })
     // Lime, like the tasks view.
-    expect(button.style.getPropertyValue("--button-bg")).toBe("var(--task-accent)")
+    expect(button.style.getPropertyValue("--button-color")).toBe("var(--task-accent)")
     await userEvent.click(button)
     expect(onMakeTask).toHaveBeenCalledWith(e)
     expect(calls).toEqual(["close", "make"])

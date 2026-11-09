@@ -126,7 +126,7 @@ export function Message({
           {makeTask && thread && (
             <Tooltip label="Make a task from this message">
               <ActionIcon
-                variant="filled"
+                variant="light"
                 size="xs"
                 aria-label="Make task from this message"
                 onClick={() =>

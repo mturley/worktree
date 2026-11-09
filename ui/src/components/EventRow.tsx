@@ -343,7 +343,7 @@ export function EventRow({
             <Tooltip label="Make a task from this event" position="top-end">
               <Button
                 size="compact-xs"
-                variant="filled"
+                variant="light"
                 aria-label="Make task from this event"
                 onClick={() => makeTask(e)}
                 onFocus={() => setFocused(true)}

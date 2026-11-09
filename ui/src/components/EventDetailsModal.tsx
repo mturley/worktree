@@ -174,14 +174,14 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
         </Button>
       )}
       {offerMarkUnread && (
-        <Button size="xs" {...MARK_READ_BUTTON_PROPS} loading={marking} onClick={() => void mark(true)}>
+        <Button size="xs" variant="light" loading={marking} onClick={() => void mark(true)}>
           Mark unread
         </Button>
       )}
       {onMakeTask && eventTaskKey(e) && (
         <Button
           size="xs"
-          variant="filled"
+          variant="light"
           style={TASK_BUTTON_STYLE}
           onClick={() => {
             onClose()
