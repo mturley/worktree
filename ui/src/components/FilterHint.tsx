@@ -12,7 +12,7 @@ export function FilterHint({ what }: { what: "worktrees" | "resources" }) {
     <Tooltip label={`Filters in the activity list on the right also filter ${what}`} multiline w={260}>
       <Group gap={4} wrap="nowrap" c="dimmed" style={{ cursor: "help", flex: "none" }} data-testid={`${what}-filter-hint`}>
         <Text size="sm" c="dimmed">Filter</Text>
-        <IconHelpCircle size={14} aria-hidden />
+        <IconHelpCircle size={18} aria-hidden />
       </Group>
     </Tooltip>
   )
