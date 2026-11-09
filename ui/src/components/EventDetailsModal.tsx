@@ -283,10 +283,10 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
 
           <Divider />
 
-          <Group gap={4} wrap="nowrap" align="flex-start">
+          <Text fw={600} style={{ display: "flex", gap: 4 }}>
             <BotMark authorType={e.author_type} author={e.author} />
-            <Text fw={600} style={{ overflowWrap: "anywhere" }}>{e.title}</Text>
-          </Group>
+            <span style={{ overflowWrap: "anywhere", minWidth: 0 }}>{e.title}</span>
+          </Text>
           <Text size="xs" c="dimmed">
             {e.author && `${e.author} · `}
             {rel(e.external_ts || e.ts)}

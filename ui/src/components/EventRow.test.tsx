@@ -483,7 +483,7 @@ describe("the resource line matches the resource cards", () => {
     const wrap = (ui: React.ReactElement) => <MantineProvider><QueryClientProvider client={qc}>{ui}</QueryClientProvider></MantineProvider>
     const { rerender } = render(wrap(<EventRow e={e} showWorktrees />))
     expect(screen.getByText("Archived")).toBeInTheDocument()
-    expect(screen.getByText("Add feature X").style.color).toContain("dimmed")
+    expect(screen.getByText("Add feature X").closest("p")!.style.color).toContain("dimmed")
     expect(screen.getByLabelText("PR Opened").style.background).toContain("color-mix")
     rerender(wrap(<EventRow e={e} />))
     expect(screen.queryByText("Archived")).toBeNull()
@@ -825,5 +825,14 @@ describe("EventRow bot mark", () => {
     cleanup()
     renderWithProvider(<EventRow e={makeEvent({ author: "alice", author_type: "user" })} />)
     expect(screen.queryByLabelText("Bot")).toBeNull()
+  })
+
+  // The mark lives inside the title element, so a long title wraps beside it
+  // instead of pushing it onto a line of its own.
+  it("keeps the bot mark inside the title element", () => {
+    renderWithProvider(<EventRow e={makeEvent({ title: "a long bot title", author: "dep-bot", author_type: "bot" })} />)
+    const title = screen.getByText("a long bot title").closest("p")
+    expect(title).not.toBeNull()
+    expect(title!.contains(screen.getByLabelText("Bot"))).toBe(true)
   })
 })

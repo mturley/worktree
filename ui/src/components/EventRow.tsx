@@ -197,9 +197,11 @@ export function EventRow({
                 Archived
               </Badge>
             )}
-            <BotMark authorType={e.author_type} author={e.author} />
-            <Text size="sm" fw={600} c={archived ? "dimmed" : undefined} style={{ overflowWrap: "anywhere", minWidth: 0 }}>
-              <SearchHighlight text={e.title} />
+            <Text size="sm" fw={600} c={archived ? "dimmed" : undefined} style={{ display: "flex", gap: 4, minWidth: 0 }}>
+              <BotMark authorType={e.author_type} author={e.author} />
+              <span style={{ overflowWrap: "anywhere", minWidth: 0 }}>
+                <SearchHighlight text={e.title} />
+              </span>
             </Text>
             <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
               {e.author && `${e.author} · `}{rel(e.external_ts || e.ts)}
