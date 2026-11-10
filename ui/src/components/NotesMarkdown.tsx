@@ -3,6 +3,7 @@ import Markdown, { type Components, type Options } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import rehypeSanitize from "rehype-sanitize"
 import { Box } from "@mantine/core"
+import { hasConflictMarkers, literalConflictMarkers } from "../lib/conflictMarkers"
 
 const NOTES_REMARK = [remarkGfm]
 
@@ -47,6 +48,9 @@ const InLink = createContext(false)
  * for text written by others (PR review comments), where an image could be
  * a tracking pixel or an attachment only GitHub's session can fetch.
  *
+ * While the text holds git-style conflict markers they render literally and
+ * the checkboxes are inert: a toggle would edit the unresolved text.
+ *
  * Styled by styles/notes.css.
  */
 export function NotesMarkdown({ text, onToggleTask, plainLinks = false, imagesAsLinks = false, plugins, size = "xs" }: {
@@ -62,7 +66,8 @@ export function NotesMarkdown({ text, onToggleTask, plainLinks = false, imagesAs
   // function per render would remount the whole rendered list.
   const toggleRef = useRef(onToggleTask)
   toggleRef.current = onToggleTask
-  const clickable = !!onToggleTask
+  const conflicted = hasConflictMarkers(text)
+  const clickable = !!onToggleTask && !conflicted
 
   const components = useMemo<Components>(() => ({
     // Links leave the app: the notes are the user's own text, but the UI
@@ -119,7 +124,7 @@ export function NotesMarkdown({ text, onToggleTask, plainLinks = false, imagesAs
         rehypePlugins={rehype}
         components={components}
       >
-        {text}
+        {conflicted ? literalConflictMarkers(text) : text}
       </Markdown>
     </Box>
   )
