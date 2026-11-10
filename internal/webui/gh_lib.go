@@ -23,7 +23,7 @@ type ghLibFuncs struct {
 	PostReply           func(token string, ref wgithub.PRRef, inReplyTo int64, body string) (int64, error)
 	SubmitReview        func(token, reviewID, event, body string) error
 	FetchRefs           func(ctx context.Context, dir, remote string, refspecs ...string) error
-	Poll                func(conn *sql.DB, token string, resources []watcher.Resource, logger *log.Logger) error
+	Poll                func(conn *sql.DB, token string, resources []watcher.Resource, logger *log.Logger, opts wgithub.PollOptions) error
 	ViewerID            func(token string) (string, error)
 	Validate            func(token string) error
 }
@@ -66,7 +66,7 @@ func realGHLib() ghLibFuncs {
 			return wgithub.SubmitReview(token, reviewID, event, body)
 		},
 		FetchRefs: gitfetch.FetchRefs,
-		Poll:      wgithub.Poll,
+		Poll:      wgithub.PollWithOptions,
 		ViewerID: func(token string) (string, error) {
 			return wgithub.ViewerID(token)
 		},

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"slices"
 	"strings"
 
 	wconfig "github.com/mturley/watcher/config"
@@ -26,10 +27,20 @@ type watcherAuthSettings struct {
 }
 
 type watcherConfigSettings struct {
-	Jira struct {
+	// GitHub is always present in what the server sends. In a PUT, absent
+	// means "leave the github block as it is", so a client that predates it
+	// cannot clear it.
+	GitHub *watcherGitHubSettings `json:"github,omitempty"`
+	Jira   struct {
 		BotUsernames []string          `json:"bot_usernames"`
 		CustomFields map[string]string `json:"custom_fields"`
 	} `json:"jira"`
+}
+
+type watcherGitHubSettings struct {
+	// BotUsernames are glob patterns (watcher's botmatch) for logins to
+	// treat as bots, e.g. "*ci-bot*".
+	BotUsernames []string `json:"bot_usernames"`
 }
 
 func (s *Server) loadWatcherAuth() (*wconfig.Config, error) {
@@ -59,12 +70,14 @@ func (s *Server) readWatcherAuth() (watcherAuthSettings, settingsSecrets, error)
 
 func (s *Server) readWatcherConfig() (watcherConfigSettings, error) {
 	var out watcherConfigSettings
+	out.GitHub = &watcherGitHubSettings{BotUsernames: []string{}}
 	out.Jira.BotUsernames = []string{}
 	out.Jira.CustomFields = map[string]string{}
 	cfg, err := wconfig.LoadConfig(s.watcherConfigPath())
 	if err != nil {
 		return out, err
 	}
+	out.GitHub.BotUsernames = nonNil(cfg.GitHubBotUsernames())
 	if cfg.Jira != nil {
 		out.Jira.BotUsernames = nonNil(cfg.Jira.BotUsernames)
 		if cfg.Jira.CustomFields != nil {
@@ -167,9 +180,22 @@ func (s *Server) handleSettingsWatcherConfig(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	// Start from what the pinned watcher ConfigFile struct loaded; only the
-	// Jira block is replaced. Keys that struct doesn't know about, and
-	// comments, do not survive: the typed marshal drops them.
+	// Jira block, and the GitHub block when sent, are replaced. Keys that
+	// struct doesn't know about, and comments, do not survive: the typed
+	// marshal drops them.
 	next := *cfg
+	// An emptied list stays as `github: {}`, not absent: `worktree setup`
+	// seeds the default only into a config that has never had the block,
+	// so a list the user cleared is not refilled on the next install.
+	// (An empty list for a config that never had the block leaves it absent:
+	// saving another setting is not a choice about this one.)
+	if req.GitHub != nil {
+		if ghBots := cleanList(req.GitHub.BotUsernames); len(ghBots) > 0 {
+			next.GitHub = &wconfig.GitHubBehavior{BotUsernames: ghBots}
+		} else if cfg.GitHub != nil {
+			next.GitHub = &wconfig.GitHubBehavior{}
+		}
+	}
 	next.Jira = nil
 	if len(bots) > 0 || len(fields) > 0 {
 		next.Jira = &wconfig.JiraBehavior{}
@@ -184,6 +210,12 @@ func (s *Server) handleSettingsWatcherConfig(w http.ResponseWriter, r *http.Requ
 		if err := wconfig.SaveConfig(path, &next); err != nil {
 			writeError(w, http.StatusInternalServerError, "saving watcher config.yaml: "+err.Error())
 			return
+		}
+		// A changed bot list applies to stored events too, not only to
+		// what the next poll brings.
+		if !slices.Equal(cfg.GitHubBotUsernames(), next.GitHubBotUsernames()) ||
+			!slices.Equal(cfg.JiraBotUsernames(), next.JiraBotUsernames()) {
+			s.markBotAuthors()
 		}
 	}
 	s.writeSettings(w)

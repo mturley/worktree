@@ -170,3 +170,80 @@ func TestWatcherConfigPutRejectsDuplicateTrimmedNames(t *testing.T) {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body)
 	}
 }
+
+func TestWatcherConfigGitHubBotUsernames(t *testing.T) {
+	t.Parallel()
+	s, _ := settingsServer(t, "")
+	s.DB = unreadTestDB(t)
+	insertUnreadEvent(t, s.DB, "ci", "2026-01-01T00:00:00Z", "github", "pr", "o/r#1")
+	insertUnreadEvent(t, s.DB, "human", "2026-01-01T00:00:01Z", "github", "pr", "o/r#1")
+	if _, err := s.DB.Exec(`UPDATE watcher_events SET author = CASE id WHEN 'ci' THEN 'rhods-ci-bot' ELSE 'alice' END, author_type = 'user'`); err != nil {
+		t.Fatal(err)
+	}
+	authorType := func(id string) string {
+		t.Helper()
+		var at string
+		if err := s.DB.QueryRow(`SELECT author_type FROM watcher_events WHERE id = ?`, id).Scan(&at); err != nil {
+			t.Fatal(err)
+		}
+		return at
+	}
+
+	got := decodeSettings(t, doReq(s, "GET", "/api/settings", ""))
+	if got.WatcherConfig.GitHub == nil || got.WatcherConfig.GitHub.BotUsernames == nil {
+		t.Fatal("an empty github block must still be sent, as []")
+	}
+	rec := doReq(s, "PUT", "/api/settings/watcher-config", `{"github":{"bot_usernames":[" *ci-bot* ",""]},"jira":{"bot_usernames":[],"custom_fields":{}}}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+	if got := decodeSettings(t, rec).WatcherConfig.GitHub.BotUsernames; len(got) != 1 || got[0] != "*ci-bot*" {
+		t.Fatalf("saved %v, want [*ci-bot*]", got)
+	}
+	// The save re-marks events already stored.
+	if authorType("ci") != "bot" || authorType("human") != "user" {
+		t.Fatalf("after save: ci=%s human=%s, want bot/user", authorType("ci"), authorType("human"))
+	}
+	// A PUT without the github block (an older client) leaves it alone.
+	rec = doReq(s, "PUT", "/api/settings/watcher-config", `{"jira":{"bot_usernames":["jbot"],"custom_fields":{}}}`)
+	if got := decodeSettings(t, rec).WatcherConfig.GitHub.BotUsernames; len(got) != 1 || got[0] != "*ci-bot*" {
+		t.Fatalf("absent github block changed the list to %v", got)
+	}
+	// An empty list clears it.
+	rec = doReq(s, "PUT", "/api/settings/watcher-config", `{"github":{"bot_usernames":[]},"jira":{"bot_usernames":[],"custom_fields":{}}}`)
+	if got := decodeSettings(t, rec).WatcherConfig.GitHub.BotUsernames; len(got) != 0 {
+		t.Fatalf("cleared list is %v", got)
+	}
+	// Kept as an empty block, so `worktree setup` does not reseed it.
+	data, _ := os.ReadFile(s.WatcherConfigPath)
+	if !strings.Contains(string(data), "github: {}") {
+		t.Fatalf("a cleared list must stay as github: {}:\n%s", data)
+	}
+}
+
+func TestWatcherConfigPutLeavesUnsetGitHubBlockAbsent(t *testing.T) {
+	t.Parallel()
+	s, _ := settingsServer(t, "")
+	rec := doReq(s, "PUT", "/api/settings/watcher-config", `{"github":{"bot_usernames":[]},"jira":{"bot_usernames":["jbot"],"custom_fields":{}}}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+	data, _ := os.ReadFile(s.WatcherConfigPath)
+	if strings.Contains(string(data), "github") {
+		t.Fatalf("saving another setting must not create a github block (setup seeds only an absent one):\n%s", data)
+	}
+}
+
+func TestGitHubPollOptionsReadBotUsernames(t *testing.T) {
+	t.Parallel()
+	s, _ := settingsServer(t, "")
+	if got := s.githubPollOptions().BotUsernames; len(got) != 0 {
+		t.Fatalf("no config: %v", got)
+	}
+	if err := os.WriteFile(s.WatcherConfigPath, []byte("github:\n  bot_usernames:\n    - \"*ci-bot*\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.githubPollOptions().BotUsernames; len(got) != 1 || got[0] != "*ci-bot*" {
+		t.Fatalf("got %v", got)
+	}
+}

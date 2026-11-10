@@ -116,7 +116,7 @@ func unstubbedGHLib() ghLibFuncs {
 		FetchRefs: func(context.Context, string, string, ...string) error {
 			return errUnstubbed("FetchRefs")
 		},
-		Poll: func(*sql.DB, string, []watcher.Resource, *log.Logger) error {
+		Poll: func(*sql.DB, string, []watcher.Resource, *log.Logger, wgithub.PollOptions) error {
 			return errUnstubbed("Poll")
 		},
 		ViewerID: func(string) (string, error) {

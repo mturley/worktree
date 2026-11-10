@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Input, TagsInput } from "@mantine/core"
+import { Code, Input, TagsInput } from "@mantine/core"
 import type { WatcherConfigSettings } from "../../api/types"
 import { KeyValueTable } from "./KeyValueTable"
 import { KeyPath, SettingsSection } from "./parts"
@@ -17,7 +17,8 @@ function fieldErrors(rows: [string, string][]): (string | undefined)[] {
 }
 
 /**
- * Every key of the watcher library's config.yaml (all Jira). Custom fields
+ * The Jira keys of the watcher library's config.yaml (GitHub's are on the
+ * GitHub tab). Custom fields
  * are edited as local rows (see KeyValueTable); the modal remounts this
  * section (via key) on Discard and Save so the rows re-read the draft.
  */
@@ -35,16 +36,16 @@ export function JiraPollingSection({ file, draft, update, setInvalid }: {
     setRows(next)
     setInvalid(fieldErrors(next).find(Boolean) ?? null)
     const map = Object.fromEntries(next.filter(([k]) => k.trim()).map(([k, v]) => [k.trim(), v.trim()]))
-    update((d) => ({ jira: { ...d.jira, custom_fields: map } }))
+    update((d) => ({ ...d, jira: { ...d.jira, custom_fields: map } }))
   }
   return (
     <SettingsSection title="Polling" file={file}>
       <TagsInput
         label="Bot usernames"
-        description={<>Comment and changelog authors to treat as bots. <KeyPath path="jira.bot_usernames" /></>}
-        placeholder="Add username…"
+        description={<>Comment and changelog authors to treat as bots. <Code>*</Code> matches anything, so <Code>*automation*</Code> matches any name containing it. <KeyPath path="jira.bot_usernames" /></>}
+        placeholder="Add username or pattern…"
         value={draft.jira.bot_usernames}
-        onChange={(v) => update((d) => ({ jira: { ...d.jira, bot_usernames: v } }))}
+        onChange={(v) => update((d) => ({ ...d, jira: { ...d.jira, bot_usernames: v } }))}
       />
       <Input.Wrapper
         label="Custom fields"

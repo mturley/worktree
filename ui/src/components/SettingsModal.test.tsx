@@ -337,6 +337,34 @@ describe("SettingsModal", () => {
     expect(save.mock.calls[0][0].jira.custom_fields).toEqual({ b: "customfield_2" })
   })
 
+  it("Connected Services → GitHub: adds a bot username pattern and saves it with the Jira keys intact", async () => {
+    vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
+    const save = vi.spyOn(api, "saveWatcherConfigSettings").mockResolvedValue(baseSettings())
+    renderModal()
+    await openService("GitHub")
+    const input = await screen.findByRole("textbox", { name: "Bot usernames" })
+    await userEvent.type(input, "*ci-bot*{Enter}")
+    expect(screen.getByRole("tab", { name: /GitHub/ })).toHaveTextContent("●")
+    expect(screen.getByRole("tab", { name: /Jira/ })).not.toHaveTextContent("●")
+    await userEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() => expect(save).toHaveBeenCalledOnce())
+    expect(save.mock.calls[0][0].github.bot_usernames).toEqual(["*ci-bot*"])
+    expect(save.mock.calls[0][0].jira.custom_fields).toEqual({ a: "customfield_1", b: "customfield_2" })
+  })
+
+  it("Connected Services → Jira: editing a field keeps the GitHub bot list in the save", async () => {
+    const s = baseSettings()
+    s.watcher_config = { ...s.watcher_config, github: { bot_usernames: ["*ci-bot*"] } }
+    vi.spyOn(api, "settings").mockResolvedValue(s)
+    const save = vi.spyOn(api, "saveWatcherConfigSettings").mockResolvedValue(s)
+    renderModal()
+    await openService("Jira")
+    await userEvent.click(await screen.findByRole("button", { name: "Remove field 1" }))
+    await userEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() => expect(save).toHaveBeenCalledOnce())
+    expect(save.mock.calls[0][0].github.bot_usernames).toEqual(["*ci-bot*"])
+  })
+
   it("Escape in an editing secret cancels the edit without closing; idle Escape closes", async () => {
     vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
     const onClose = vi.fn()
@@ -448,7 +476,8 @@ describe("SettingsModal", () => {
     await userEvent.type(screen.getByLabelText("Field 2 ID"), "x")
     await userEvent.click(screen.getByRole("button", { name: "Save" }))
     expect(save).not.toHaveBeenCalled()
-    expect(await screen.findByText(/Couldn't save watcher config.yaml/)).toBeInTheDocument()
+    // On every tab that saves to that file: Jira's and GitHub's.
+    expect(await screen.findAllByText(/Couldn't save watcher config.yaml/)).toHaveLength(2)
   })
 
   it("General: clearing the HTTPS port maps to the default 8476", async () => {

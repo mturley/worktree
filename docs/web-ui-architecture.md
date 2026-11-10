@@ -2767,6 +2767,16 @@ reaches the home page's worktree cards only together with Unreads only, via
 let through); it never narrows them alone. "Include archived" and sort are
 not filters.
 
+**Bot accounts.** An event is a bot's when its `author_type` is `bot`: GitHub
+says so for its `Bot` accounts, and the watcher library adds any login
+matching the watcher `config.yaml` patterns (`github.bot_usernames`,
+`jira.bot_usernames`; globs, case-insensitive, e.g. `*ci-bot*`) as it polls.
+Stored events are brought into line by `markBotAuthors` (`bot_authors.go`,
+over `watcherdb.MarkBotAuthors`) as polling starts and whenever a Settings
+save changes a list. It only marks: removing a pattern does not un-mark.
+`worktree setup` seeds `github.bot_usernames: ["*ci-bot*"]` into a config
+that has never had a `github` block.
+
 **Activity toggles.** Every activity feed has a row of switches
 (`ActivityToggles`) above its filter buttons, left-aligned with them:
 the home page and /mini have Unreads only, Humans only and Include archived;
@@ -3382,7 +3392,8 @@ by what they configure rather than by file:
   `notifications.*`.
 - **Connected Services** (`ConnectedServicesPanel`) — sub-tabs GitHub, Jira
   and Slack, each gathering every key for that service across files.
-  GitHub and Slack are watcher `auth.yaml`. Jira spans all three files:
+  Slack is watcher `auth.yaml`. GitHub is `auth.yaml` (token) plus Polling
+  (watcher `config.yaml` `github.bot_usernames`). Jira spans all three files:
   Connection (`auth.yaml` host, email, token), Issue detection (worktree
   `config.yaml` `jira.projects`/`alias_hosts`) and Polling (watcher
   `config.yaml`, `JiraPollingSection`); each section names its file.
@@ -3406,7 +3417,7 @@ file it writes.
 | `GET /api/settings` | Everything: environment (`in_cmux`, `worktrees_base_env`, `cert_names`), paths, `secrets` (`*_set` booleans only), and the worktree / watcher_auth / watcher_config sections read from disk. |
 | `PUT /api/settings/worktree` | The whole worktree section (`settings.go`). |
 | `PUT /api/settings/watcher-auth` | Non-secret auth.yaml fields: Jira host and email, Slack workspace domain. |
-| `PUT /api/settings/watcher-config` | Watcher config.yaml: Jira bot usernames and custom fields. |
+| `PUT /api/settings/watcher-config` | Watcher config.yaml: GitHub bot usernames, Jira bot usernames and custom fields. An absent `github` leaves that block alone; an emptied list is kept as `github: {}` once the block exists (so `worktree setup` does not reseed it). A changed bot list re-marks stored events (`markBotAuthors`). |
 | `PUT /api/settings/credentials/{service}` | Replace a credential (`github`, `jira`, `slack`): validate, then write. |
 | `POST /api/settings/credentials/{service}/test` | Test a credential without writing anything: a `token`/`cookie` in the body is a candidate tested in place of the stored value (Slack fills the other half from storage); without one, the stored value is tested. |
 | `PUT /api/settings/password` | Replace `ui.password`. |

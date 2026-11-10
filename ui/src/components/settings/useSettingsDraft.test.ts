@@ -18,7 +18,7 @@ describe("useSettingsDraft", () => {
 
   it("ignores map key order when comparing", () => {
     const { result } = renderHook(() => useSettingsDraft(baseSettings()))
-    act(() => result.current.update("watcher_config", (d) => ({ jira: { ...d.jira, custom_fields: { b: "customfield_2", a: "customfield_1" } } })))
+    act(() => result.current.update("watcher_config", (d) => ({ ...d, jira: { ...d.jira, custom_fields: { b: "customfield_2", a: "customfield_1" } } })))
     expect(result.current.dirty.watcher_config).toBe(false)
   })
 

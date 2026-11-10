@@ -457,6 +457,10 @@ export interface WatcherAuthSettings {
 
 /** The editable keys of watcher's config.yaml. */
 export interface WatcherConfigSettings {
+  github: {
+    /** Glob patterns (`*`, `?`; case-insensitive) for logins to treat as bots. */
+    bot_usernames: string[]
+  }
   jira: {
     bot_usernames: string[]
     custom_fields: Record<string, string>
