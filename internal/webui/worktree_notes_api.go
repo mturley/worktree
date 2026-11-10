@@ -81,7 +81,10 @@ func (s *Server) handleGetWorktreeNotes(w http.ResponseWriter, r *http.Request) 
 // loaded. Syncing in both directions is syncNotesLocked's job.
 func (s *Server) handleSetWorktreeNotes(w http.ResponseWriter, r *http.Request) {
 	var req setWorktreeNotesRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2*maxNotesBytes)).Decode(&req); err != nil {
+	// Notes and base_notes are each up to maxNotesBytes of text, which JSON
+	// escaping can expand several times over (quotes and newlines double,
+	// control characters sextuple). The text itself is checked below.
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8*maxNotesBytes)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
@@ -91,6 +94,10 @@ func (s *Server) handleSetWorktreeNotes(w http.ResponseWriter, r *http.Request) 
 	}
 	if len(req.Notes) > maxNotesBytes {
 		writeError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("notes exceed %d KB", maxNotesBytes>>10))
+		return
+	}
+	if req.BaseNotes != nil && len(*req.BaseNotes) > maxNotesBytes {
+		writeError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("base_notes exceed %d KB", maxNotesBytes>>10))
 		return
 	}
 	entry, err := registry.Get(s.DB, req.Path)

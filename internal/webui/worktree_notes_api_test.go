@@ -283,3 +283,23 @@ func TestWorktreeNotesResyncKeepsBoth(t *testing.T) {
 		t.Fatalf("calls = %v, want the merged text pushed", *calls)
 	}
 }
+
+func TestWorktreeNotesSaveLargeNotesWithBase(t *testing.T) {
+	t.Parallel()
+	s, wtPath, _ := notesServer(t, nil, nil)
+	// Just under the cap, and dense in characters JSON escapes.
+	big := strings.Repeat("\"q\"\n", (maxNotesBytes-1)/5)
+	if len(big) >= maxNotesBytes {
+		t.Fatalf("fixture too large: %d", len(big))
+	}
+	if _, err := notes.Set(s.DB, wtPath, big, false, true); err != nil {
+		t.Fatal(err)
+	}
+	rec, got := postNotes(t, s, map[string]any{"path": wtPath, "notes": big, "base_notes": big})
+	if rec.Code != http.StatusOK || got.Notes != big {
+		t.Fatalf("POST = %d, notes len %d", rec.Code, len(got.Notes))
+	}
+	if rec, _ := postNotes(t, s, map[string]any{"path": wtPath, "notes": "x", "base_notes": strings.Repeat("x", maxNotesBytes+1)}); rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized base_notes = %d, want 413", rec.Code)
+	}
+}
