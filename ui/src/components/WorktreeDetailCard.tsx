@@ -353,7 +353,7 @@ function NotesPanel({ notes, workspaceCount, hasCmux, editing, onEdit, onDone }:
             {showSync && (
               <Checkbox
                 size="xs"
-                label="Sync to cmux workspace description"
+                label="Sync with cmux workspace description"
                 checked={notes.syncCmux}
                 disabled={!notes.loaded}
                 onChange={(e) => notes.setSyncCmux(e.currentTarget.checked)}

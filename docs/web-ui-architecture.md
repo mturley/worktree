@@ -753,13 +753,75 @@ stored in the worktree-owned `worktree_notes` table (keyed by registry path).
   section collapses and on unmount/`beforeunload` (a `keepalive` fetch). The
   card is keyed by path in `WorktreeDetailPage` so a draft never leaks to
   another worktree.
-- **cmux description sync** (opt-in, per worktree, stored as `sync_cmux`): on
-  every save with sync on, the server lists cmux workspaces, matches the path
-  with `cmux.Match`, and — only when exactly ONE matches — sets that
-  workspace's description by its UUID `id` (refs are index-based and shift).
-  Empty notes clear the description. The notes are committed BEFORE cmux is
-  touched, so a cmux failure is reported in `cmux_sync`, never as a failed
-  save. The sync is one-way; unchecking it leaves the description as it is.
+- **cmux description sync** (opt-in, per worktree, stored as `sync_cmux`; the
+  checkbox reads "Sync with cmux workspace description") is two-way. The
+  server matches the worktree's path to cmux workspaces with `cmux.Match` and
+  syncs only when exactly ONE matches, addressing it by its UUID `id` (refs
+  are index-based and shift; a cmux restart renumbers them, UUIDs survive).
+  `worktree_notes` keeps the last text both sides agreed on (`cmux_base`) and
+  the workspace UUID it was agreed with (`cmux_base_workspace`), plus a
+  `version` that every write checks (`UPDATE ... WHERE version = ?`, so the
+  CLI, a UI save and the cmux pass cannot overwrite each other). cmux reports
+  no timestamp, so direction is decided by comparing each side to the base
+  (`notes.Decide`, all texts `notes.Normalize`d: CRLF to LF, trailing
+  whitespace stripped, ends trimmed, exactly what cmux does itself):
+
+  | notes vs base | cmux vs base | action                    |
+  |---------------|--------------|---------------------------|
+  | same          | same         | nothing                   |
+  | changed       | same         | push notes to cmux        |
+  | same          | changed      | pull cmux into the notes  |
+  | changed       | changed      | merge, write both         |
+
+  No base, or a base recorded for a different workspace UUID, goes straight
+  to the merge (an empty side takes the other). An empty description is never
+  pulled: with notes present it is refilled from them, so clearing it in cmux
+  does not wipe the notes; clearing the notes (UI or CLI) clears cmux.
+  Unchecking sync stops syncing and clears the base, so re-checking is a
+  first sync that keeps text that diverged meanwhile.
+- **Merge** (`notes.Merge`) is a line-based three-way merge. Edits to
+  different lines combine; a region both sides changed differently becomes a
+  conflict block (`<<<<<<< notes` ... `=======` ... `>>>>>>> cmux`, or
+  `other edit` when the other side is a concurrent notes write rather than
+  cmux). With no base, the lines the two texts share stand in for it. With a
+  real base, two different pure insertions at the same spot are both kept,
+  ours first, with no markers (nothing existing was changed). The result is
+  written to both sides and becomes the base, so a conflict is never re-merged
+  into nested markers; resolving one is an ordinary edit.
+- **Sync runs in two places.** Every notes save runs it at once, and the 5 s
+  cmux pass (`cmux_unread.go`, the same listing as the unread-prefix step)
+  runs it for each worktree with sync on, which also catches edits made while
+  `worktree ui` was down and `worktree notes set` (the CLI only writes the
+  DB). Editing a description in the cmux app emits no `cmux events`, hence
+  the polling. A settled pass makes no extra cmux call. Under the
+  per-worktree in-memory mutex (`notesLock`, never a DB lock; no transaction
+  spans a cmux call), a pull or merge decided from the pass's earlier listing
+  is re-decided against a fresh listing, so a save landing in between is not
+  undone. Notes are committed BEFORE cmux is touched, so a cmux failure is
+  reported in `cmux_sync`, never as a failed save. A pull or merge written
+  into the notes records the incorporated cmux text as the base in the same
+  write, so if the push that follows fails, the next pass retries the push
+  rather than re-merging against an older base. The base otherwise advances
+  only once both sides hold the same text. Version races retry up to three
+  times (`notesSyncTries`); a save that loses all three gets 409.
+- **Saves carry `base_notes`**, the server text the client's draft started
+  from. If the stored notes have moved on (a pull, another tab, the CLI), the
+  server merges the draft with them using `base_notes` as the base and returns
+  the merged text, which the notes card adopts. Without `base_notes` (an old
+  tab) a save overwrites. `notes` and `base_notes` are each capped at 64 KB
+  (413 beyond that); the body limit is 8x that, since JSON escaping inflates
+  text.
+- **Live update.** The stream's 5 s tick compares a notes fingerprint
+  (`notes.Fingerprint`) and sends `notes_changed` on `/api/stream`, catching
+  writes from the cmux pass and other processes; the notes card refetches.
+  With no unsaved edits `useWorktreeNotes` adopts the new text at once; with
+  unsaved edits it saves them (with their `base_notes`) and adopts the merged
+  result. Keystrokes typed during that save go out in the follow-up save.
+- **Conflict markers render literally** (`ui/src/lib/conflictMarkers.ts`):
+  in the read-only view each marker line of an in-order start / middle / end
+  triple outside fenced code becomes inline code on its own paragraph, so
+  `=======` is not a heading. The stored text, cmux and the editor keep plain
+  markers. While markers are present, task checkboxes are inert.
 - **Show on home page** (per worktree, stored as `show_on_home`, defaults ON
   — including for notes saved before the column existed): a checkbox beside
   the save status, visible in both modes, saved at once like the cmux one.

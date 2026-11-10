@@ -608,7 +608,7 @@ describe("notes", () => {
 
 describe("cmux description sync", () => {
   const oneWorkspace = { available: true, matches: { "/wt/foo": [{ ref: "workspace:1", title: "foo", selected: false }] } }
-  const syncBox = () => screen.queryByRole("checkbox", { name: /sync to cmux workspace description/i })
+  const syncBox = () => screen.queryByRole("checkbox", { name: /sync with cmux workspace description/i })
 
   it("is offered, unchecked, when exactly one workspace matches", async () => {
     worktreeInfo.mockResolvedValue(info())
@@ -691,7 +691,7 @@ describe("cmux description sync", () => {
     wrap(summary())
     await startEditing(user)
     await waitFor(() => expect(cmux).toHaveBeenCalled())
-    expect(screen.queryByLabelText(/sync to cmux/i)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/sync with cmux/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/not syncing/i)).not.toBeInTheDocument()
   })
 })
