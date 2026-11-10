@@ -45,6 +45,7 @@ export function useWorktreeNotes(path: string) {
 
   const latest = useRef<Snapshot | null>(null)
   const saved = useRef<Snapshot | null>(null)
+  const base = useRef("") // the server text the draft descends from; sent so the server can merge
   const savedAt = useRef("") // updated_at of what `saved` holds; RFC3339 UTC, so strings order
   const inFlight = useRef(false)
   const again = useRef(false)
@@ -60,6 +61,7 @@ export function useWorktreeNotes(path: string) {
     const s = { notes: data.notes, sync: data.sync_cmux, home: data.show_on_home ?? true }
     latest.current = s
     saved.current = s
+    base.current = data.notes
     savedAt.current = data.updated_at ?? ""
     setDraft(s)
   }, [query.data])
@@ -80,8 +82,22 @@ export function useWorktreeNotes(path: string) {
     again.current = false
     setStatus("saving")
     try {
-      const res = await api.saveWorktreeNotes({ path, notes: snap.notes, sync_cmux: snap.sync, show_on_home: snap.home })
-      saved.current = snap
+      const res = await api.saveWorktreeNotes({
+        path, notes: snap.notes, sync_cmux: snap.sync, show_on_home: snap.home, base_notes: base.current,
+      })
+      // The server may have merged edits made elsewhere (cmux) into what we
+      // sent. Show the merged text unless the user typed since; in that case
+      // the follow-up save merges it, with this save's text as its base.
+      if (res.notes !== snap.notes && same(latest.current, snap)) {
+        const adopted = { ...snap, notes: res.notes }
+        latest.current = adopted
+        saved.current = adopted
+        base.current = res.notes
+        setDraft(adopted)
+      } else {
+        saved.current = snap
+        base.current = snap.notes
+      }
       savedAt.current = res.updated_at ?? savedAt.current
       qc.setQueryData<WorktreeNotes>(["worktree-notes", path], {
         notes: res.notes, sync_cmux: res.sync_cmux, show_on_home: res.show_on_home, updated_at: res.updated_at,
@@ -160,7 +176,10 @@ export function useWorktreeNotes(path: string) {
       qc.setQueryData<WorktreeNotes>(["worktree-notes", path], (old) => ({
         ...old, notes: snap.notes, sync_cmux: snap.sync, show_on_home: snap.home,
       }))
-      api.saveWorktreeNotes({ path, notes: snap.notes, sync_cmux: snap.sync, show_on_home: snap.home }, { keepalive: true })
+      api.saveWorktreeNotes(
+        { path, notes: snap.notes, sync_cmux: snap.sync, show_on_home: snap.home, base_notes: base.current },
+        { keepalive: true },
+      )
         .then(() => qc.invalidateQueries({ queryKey: ["worktrees"] }))
         .catch(() => {})
     }
