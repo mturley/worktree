@@ -45,7 +45,7 @@ func Merge(base *string, ours, theirs, theirsLabel string) string {
 			}
 			bEnd, oEnd, tEnd = i, mo[i], mt[i]
 		}
-		out = append(out, resolve(b[bi:bEnd], o[oi:oEnd], t[ti:tEnd], theirsLabel)...)
+		out = append(out, resolve(b[bi:bEnd], o[oi:oEnd], t[ti:tEnd], theirsLabel, base != nil)...)
 		if i < len(b) {
 			out = append(out, b[i])
 			bi, oi, ti = i+1, oEnd+1, tEnd+1
@@ -54,12 +54,18 @@ func Merge(base *string, ours, theirs, theirsLabel string) string {
 	return strings.Join(out, "\n")
 }
 
-func resolve(base, ours, theirs []string, theirsLabel string) []string {
+// resolve settles one region. With a real base (realBase), two different pure
+// insertions at the same spot are both kept, ours first: neither changed
+// existing text, so nothing is lost.
+func resolve(base, ours, theirs []string, theirsLabel string, realBase bool) []string {
 	switch {
 	case equalLines(ours, base):
 		return theirs
 	case equalLines(theirs, base), equalLines(ours, theirs):
 		return ours
+	}
+	if realBase && len(base) == 0 {
+		return append(append([]string{}, ours...), theirs...)
 	}
 	out := []string{"<<<<<<< notes"}
 	out = append(out, ours...)

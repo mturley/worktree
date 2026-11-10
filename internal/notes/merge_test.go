@@ -26,6 +26,8 @@ func TestMerge(t *testing.T) {
 		want         string
 	}{
 		{"disjoint edits merge cleanly", ptr("a\nb\nc"), "a\nX\nb\nc", "a\nb\nc\nY", "a\nX\nb\nc\nY"},
+		{"different insertions at one spot keep both", ptr("a"), "a\nb", "a\nc", "a\nb\nc"},
+		{"nil base, different insertions conflict", nil, "a\nb", "a\nc", "a\n<<<<<<< notes\nb\n=======\nc\n>>>>>>> cmux"},
 		{"same-line edits conflict", ptr("a\nb\nc"), "a\nB1\nc", "a\nB2\nc", conflict},
 		{"identical change on both sides", ptr("a\nb\nc"), "a\nS\nc", "a\nS\nc", "a\nS\nc"},
 		{"only ours changed", ptr("a\nb"), "a\nX", "a\nb", "a\nX"},

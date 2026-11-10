@@ -220,6 +220,19 @@ func TestWorktreeNotesSaveMergesConcurrentEdit(t *testing.T) {
 	}
 }
 
+func TestWorktreeNotesSaveMergesSameSpotInsertions(t *testing.T) {
+	t.Parallel()
+	s, wtPath, _ := notesServer(t, nil, nil)
+	if _, err := notes.Set(s.DB, wtPath, "a\nb", false, true); err != nil {
+		t.Fatal(err)
+	}
+	postNotes(t, s, map[string]any{"path": wtPath, "notes": "a\nc", "base_notes": "a"})
+	stored, _ := notes.Get(s.DB, wtPath)
+	if strings.Contains(stored.Text, "<<<<<<<") || !strings.Contains(stored.Text, "b") || !strings.Contains(stored.Text, "c") {
+		t.Fatalf("stored = %q, want b and c with no markers", stored.Text)
+	}
+}
+
 func TestWorktreeNotesSaveWithoutBaseOverwrites(t *testing.T) {
 	t.Parallel()
 	s, wtPath, _ := notesServer(t, nil, nil)
