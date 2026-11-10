@@ -27,7 +27,7 @@ export function GitDiffPanel({ path, repo }: { path: string; repo: string }) {
   if (!git.data) return <Loading />
   return (
     <Stack gap="sm">
-      <GitSummary git={git.data} repo={repo} />
+      <GitSummary path={path} git={git.data} repo={repo} />
       {git.data.on_disk && <FilesChanged path={path} git={git.data} />}
     </Stack>
   )

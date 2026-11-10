@@ -443,7 +443,7 @@ export default function DiffView({
     <Stack gap="sm" p={wide ? "xs" : 0}>
       {selectors("top")}
       {/* The Code tab's details, in one column to fit the sidebar. */}
-      {git?.on_disk && <GitSummary git={git} repo={repo} oneColumn />}
+      {git?.on_disk && <GitSummary path={path} git={git} repo={repo} oneColumn />}
       <TextInput
         size="xs"
         placeholder="Filter files"
