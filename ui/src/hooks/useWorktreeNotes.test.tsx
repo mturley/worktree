@@ -91,17 +91,22 @@ describe("useWorktreeNotes base text", () => {
       expect(apiMock.saveWorktreeNotes.mock.calls[0][1]).toEqual({ keepalive: true })
     })
 
-    it("skips the keepalive when the in-flight save already holds the latest text", async () => {
+    // The in-flight save is not keepalive: closing the tab aborts it. So the
+    // keepalive always goes out, based on what the in-flight save was based
+    // on, which is right whether or not that save reached the server.
+    it("still sends while a save is in flight, with the pre-flight base", async () => {
       apiMock.saveWorktreeNotes.mockImplementationOnce(() => new Promise(() => {}))
       const { result } = await mount("loaded")
       act(() => result.current.setNotes("mine"))
       act(() => { void result.current.flush() })
       await waitFor(() => expect(apiMock.saveWorktreeNotes).toHaveBeenCalledTimes(1))
       act(() => { window.dispatchEvent(new Event("beforeunload")) })
-      expect(apiMock.saveWorktreeNotes).toHaveBeenCalledTimes(1)
+      expect(apiMock.saveWorktreeNotes).toHaveBeenCalledTimes(2)
+      expect(apiMock.saveWorktreeNotes.mock.calls[1][0]).toMatchObject({ notes: "mine", base_notes: "loaded" })
+      expect(apiMock.saveWorktreeNotes.mock.calls[1][1]).toEqual({ keepalive: true })
     })
 
-    it("uses the in-flight save's text as base when typed past it", async () => {
+    it("uses the pre-flight base when typed past the in-flight save", async () => {
       apiMock.saveWorktreeNotes.mockImplementationOnce(() => new Promise(() => {}))
       apiMock.saveWorktreeNotes.mockResolvedValue(saveResponse("mine more"))
       const { result } = await mount("loaded")
@@ -111,7 +116,7 @@ describe("useWorktreeNotes base text", () => {
       act(() => result.current.setNotes("mine more"))
       act(() => { window.dispatchEvent(new Event("beforeunload")) })
       expect(apiMock.saveWorktreeNotes).toHaveBeenCalledTimes(2)
-      expect(apiMock.saveWorktreeNotes.mock.calls[1][0]).toMatchObject({ notes: "mine more", base_notes: "mine" })
+      expect(apiMock.saveWorktreeNotes.mock.calls[1][0]).toMatchObject({ notes: "mine more", base_notes: "loaded" })
     })
   })
 })

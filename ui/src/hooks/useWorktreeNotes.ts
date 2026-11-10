@@ -48,7 +48,6 @@ export function useWorktreeNotes(path: string) {
   const base = useRef("") // the server text the draft descends from; sent so the server can merge
   const savedAt = useRef("") // updated_at of what `saved` holds; RFC3339 UTC, so strings order
   const inFlight = useRef(false)
-  const sending = useRef<Snapshot | null>(null) // what the in-flight save is sending
   const again = useRef(false)
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
@@ -80,7 +79,6 @@ export function useWorktreeNotes(path: string) {
       return
     }
     inFlight.current = true
-    sending.current = snap
     again.current = false
     setStatus("saving")
     try {
@@ -109,7 +107,6 @@ export function useWorktreeNotes(path: string) {
       // The home page's worktree cards show the notes.
       void qc.invalidateQueries({ queryKey: ["worktrees"] })
       inFlight.current = false
-      sending.current = null
       setError(undefined)
       setCmux({ outcome: res.cmux_sync, error: res.cmux_error })
       if (again.current || !same(latest.current, sent)) {
@@ -119,7 +116,6 @@ export function useWorktreeNotes(path: string) {
       }
     } catch (e) {
       inFlight.current = false
-      sending.current = null
       setError(e instanceof Error ? e.message : String(e))
       setStatus("error")
     }
@@ -176,11 +172,12 @@ export function useWorktreeNotes(path: string) {
     const sendPending = () => {
       const snap = latest.current
       if (!snap || same(snap, saved.current)) return
-      // While a save is in flight, `saved`/`base` still hold pre-save values:
-      // that save's text is what the server will have, so it is the base.
-      const flying = sending.current
-      if (flying && same(snap, flying)) return
-      const baseNotes = flying ? flying.notes : base.current
+      // A save still in flight is not keepalive, so leaving may abort it: send
+      // even when it already holds this text. While it is in flight `base`
+      // still holds the base it was sent with, which stays correct whether or
+      // not it reached the server (if it did, the server merges this text
+      // with what it stored).
+      const baseNotes = base.current
       clearTimeout(timer.current)
       // The response may arrive after this card is gone, so the cache is
       // updated up front: the next visit must start from these edits.
