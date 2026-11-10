@@ -67,6 +67,7 @@ const apiMock = vi.hoisted(() => ({
   prComments: vi.fn(),
   prThreads: vi.fn(),
   worktreeResources: vi.fn(),
+  allResources: vi.fn(),
 }))
 vi.mock("../../api/client", async (orig) => {
   const actual = await orig<typeof import("../../api/client")>()
@@ -81,6 +82,7 @@ vi.mock("../../api/client", async (orig) => {
       prComments: apiMock.prComments,
       prThreads: apiMock.prThreads,
       worktreeResources: apiMock.worktreeResources,
+      allResources: apiMock.allResources,
     },
   }
 })
@@ -220,6 +222,8 @@ beforeEach(() => {
   apiMock.prThreads.mockImplementation(async (): Promise<PRThreads> => ({ state: "no_pr", threads: [] }))
   apiMock.worktreeResources.mockReset()
   apiMock.worktreeResources.mockImplementation(async () => [{ type: "pr", id: "o/r#12", url: PR.url, primary: true }])
+  apiMock.allResources.mockReset()
+  apiMock.allResources.mockImplementation(async () => [])
   window.sessionStorage.clear()
 })
 afterEach(cleanup)
@@ -374,6 +378,17 @@ describe("DiffView", () => {
     await waitFor(() => expect(screen.getByTestId("diff-body")).toHaveAttribute("data-highlighted", "a.go"))
     expect(scrollMock.scrollToFile).toHaveBeenCalledTimes(1)
     expect(scrollMock.scrollToFile).toHaveBeenCalledWith("a.go")
+  })
+
+  it("leaves the diff view and selects the PR when the PR row's number is clicked", async () => {
+    window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?diff&file=a.go`)
+    gitMock.value = git({ pr: "o/r#12" })
+    setup()
+    await userEvent.click(await screen.findByRole("button", { name: "#12" }))
+    const params = new URLSearchParams(window.location.search)
+    expect(params.has("diff")).toBe(false)
+    expect(params.has("file")).toBe(false)
+    expect(params.get("resource")).toBe("pr:o%2Fr%2312")
   })
 
   it("highlights a file picked in the tree", async () => {

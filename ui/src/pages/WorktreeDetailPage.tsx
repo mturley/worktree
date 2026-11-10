@@ -211,9 +211,28 @@ export function WorktreeDetailPage() {
   // The same goes for a resource "Unreads only" hides, including one the
   // user just marked read: there is no back to return to it while the filter
   // stands, so a push would only add a dead entry.
+  //
+  // A resource the worktree does have but "Unreads only" or a source filter
+  // hides is different when it was REQUESTED that way (the Code tab's PR row
+  // selects one that may be read): the selection stands and the filters come
+  // off. One that was listed and then dropped out (just marked read) is still
+  // deselected, as above, so marking read never flips the user's filters.
+  const selectedHidden = Boolean(
+    selected && !selectedResource && items.some((r) => r.type === selected.type && r.id === selected.id),
+  )
+  const listedKey = useRef<string | null>(null)
+  const selectedKey = selected ? serializeResourceKey(selected) : null
   useEffect(() => {
-    if (selected && resources.data && !selectedResource) clear({ replace: true })
-  }, [selected, resources.data, selectedResource, clear])
+    if (!selected || !resources.data) return
+    if (selectedResource) {
+      listedKey.current = selectedKey
+    } else if (selectedHidden && listedKey.current !== selectedKey) {
+      setSources([])
+      setUnreadOnly(false)
+    } else {
+      clear({ replace: true })
+    }
+  }, [selected, resources.data, selectedResource, selectedHidden, selectedKey, clear, setSources, setUnreadOnly])
 
   // An event the home page's activity feed was clicked on to get here: its
   // details open over the resource it navigated to. Read once, at mount — the

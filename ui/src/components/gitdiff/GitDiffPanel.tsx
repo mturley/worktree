@@ -5,6 +5,7 @@ import type { WorktreeGit } from "../../api/types"
 import { useDiffCommits, useDiffFiles } from "../../hooks/useDiffData"
 import { useDiffSelection } from "../../hooks/useDiffSelection"
 import { useDiffView } from "../../hooks/useDiffView"
+import { useSelectedResource } from "../../hooks/useSelectedResource"
 import { useWorktreeGit } from "../../hooks/useWorktreeGit"
 import { diffUnavailable } from "../../lib/diffLabels"
 import { CompareSelect } from "./CompareSelect"
@@ -21,14 +22,30 @@ import { RangePicker } from "./RangePicker"
  */
 export function GitDiffPanel({ path, repo }: { path: string; repo: string }) {
   const git = useWorktreeGit(path, { fetch: true })
+  const { select } = useSelectedResource()
+  const [open, setOpen] = useState(readFilesOpen)
+  const setFilesOpen = (next: boolean) => {
+    setOpen(next)
+    writeFilesOpen(next)
+  }
   if (git.isError && !git.data) {
     return <Text size="xs" c="red">Could not load git status: {git.error.message}</Text>
   }
   if (!git.data) return <Loading />
   return (
     <Stack gap="sm">
-      <GitSummary path={path} git={git.data} repo={repo} />
-      {git.data.on_disk && <FilesChanged path={path} git={git.data} />}
+      <GitSummary
+        path={path}
+        git={git.data}
+        repo={repo}
+        // Selecting the PR fills the pane below the card, so fold the file
+        // list away to leave the PR in view.
+        onOpenPR={(key) => {
+          select(key)
+          setFilesOpen(false)
+        }}
+      />
+      {git.data.on_disk && <FilesChanged path={path} git={git.data} open={open} setOpen={setFilesOpen} />}
     </Stack>
   )
 }
@@ -61,13 +78,14 @@ function writeFilesOpen(open: boolean): void {
  * the list while expanded. The selection is the worktree's shared one, so the
  * diff view and the tab badge follow it.
  */
-function FilesChanged({ path, git }: { path: string; git: WorktreeGit }) {
+function FilesChanged({ path, git, open, setOpen }: {
+  path: string
+  git: WorktreeGit
+  open: boolean
+  setOpen: (open: boolean) => void
+}) {
   const diffView = useDiffView()
-  const [open, setOpen] = useState(readFilesOpen)
-  const toggle = () => {
-    setOpen(!open)
-    writeFilesOpen(!open)
-  }
+  const toggle = () => setOpen(!open)
   // The base picks which commit list to load, and the list's id decides
   // whether the stored range still applies — so read the base first, then
   // the selection against the loaded list. Both instances share one store.

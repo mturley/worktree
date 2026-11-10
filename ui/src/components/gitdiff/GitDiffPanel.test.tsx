@@ -10,6 +10,8 @@ const api = vi.hoisted(() => ({
   worktreeGit: vi.fn(),
   diffCommits: vi.fn(),
   diffFiles: vi.fn(),
+  worktreeResources: vi.fn(),
+  allResources: vi.fn(),
 }))
 
 vi.mock("../../api/client", async (orig) => {
@@ -20,6 +22,8 @@ vi.mock("../../api/client", async (orig) => {
       worktreeGit: api.worktreeGit,
       diffCommits: api.diffCommits,
       diffFiles: api.diffFiles,
+      worktreeResources: api.worktreeResources,
+      allResources: api.allResources,
       settings: async () => ({ worktree: { editor: "code" } }),
     },
   }
@@ -50,6 +54,9 @@ beforeEach(() => {
   api.worktreeGit.mockResolvedValue(git)
   api.diffCommits.mockResolvedValue(commits)
   api.diffFiles.mockResolvedValue(files)
+  api.worktreeResources.mockResolvedValue([])
+  api.allResources.mockResolvedValue([])
+  window.history.replaceState({}, "", "/worktree/%2Fw%2Fa")
 })
 afterEach(() => {
   cleanup()
@@ -118,5 +125,23 @@ describe("Files changed section", () => {
     expect(screen.getAllByTestId("file-row")).toHaveLength(2)
     get.mockRestore()
     set.mockRestore()
+  })
+})
+
+describe("PR row", () => {
+  it("selects the PR and collapses Files changed", async () => {
+    const user = userEvent.setup()
+    api.worktreeGit.mockResolvedValue({ ...git, pr: "o/r#7" })
+    api.worktreeResources.mockResolvedValue([
+      { type: "pr", id: "o/r#7", url: "https://github.com/o/r/pull/7", primary: true, title: "Add linting" },
+    ])
+    wrap()
+    await screen.findByText("Files changed (2)")
+    await user.click(screen.getByRole("button", { name: "Show files" }))
+    expect(screen.getAllByTestId("file-row")).toHaveLength(2)
+    await user.click(await screen.findByRole("button", { name: "#7" }))
+    expect(new URLSearchParams(window.location.search).get("resource")).toBe("pr:o%2Fr%237")
+    expect(screen.queryByTestId("file-row")).toBeNull()
+    expect(window.localStorage.getItem(OPEN_KEY)).toBe("false")
   })
 })

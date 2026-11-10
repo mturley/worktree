@@ -693,6 +693,18 @@ describe("WorktreeDetailPage activity toggles", () => {
 })
 
 describe("WorktreeDetailPage unread-only toggle", () => {
+  it("turns Unreads only off, keeping the selection, when ?resource= names a read resource it hides", async () => {
+    window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?resource=pr:o%2Fr%231`)
+    window.localStorage.setItem("worktree.unreadOnly", "true")
+    resources = [baseResources[0], { ...baseResources[1], unread_count: 1 }]
+    setViewport("wide")
+    wrap()
+    const toggle = await screen.findByRole("switch", { name: "Unreads only" })
+    await waitFor(() => expect(toggle).not.toBeChecked())
+    expect(window.location.search).toContain("resource=pr:o%2Fr%231")
+    expect(await screen.findByRole("button", { name: /all resources/i })).toBeInTheDocument()
+  })
+
   it("narrows the worktree's activity feed to unread events, and remembers it", async () => {
     setViewport("wide")
     const user = userEvent.setup()
@@ -778,12 +790,23 @@ describe("WorktreeDetailPage unread-only toggle", () => {
       .toContain("0 resources with unread events. See everything Esc"))
   })
 
-  it("deselects a selected resource once it has nothing unread", async () => {
+  it("deselects a selected resource once marking it read drops it from the list", async () => {
     window.localStorage.setItem("worktree.unreadOnly", "true")
     window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?resource=pr:o%2Fr%231`)
+    resources = [{ ...baseResources[0], unread_count: 1 }, baseResources[1]]
     setViewport("wide")
-    wrap()
+    const view = wrap()
+    await screen.findByRole("button", { name: /all resources/i })
+    resources = baseResources
+    view.rerender(
+      <MantineProvider>
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <TaskModalProvider><WorktreeDetailPage /></TaskModalProvider>
+        </QueryClientProvider>
+      </MantineProvider>,
+    )
     await waitFor(() => expect(window.location.search).toBe(""))
+    expect(window.localStorage.getItem("worktree.unreadOnly")).toBe("true")
   })
 })
 
