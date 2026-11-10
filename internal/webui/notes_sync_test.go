@@ -302,3 +302,22 @@ func TestSyncNotesWriteDuringPushIsPushedNotMerged(t *testing.T) {
 		t.Fatalf("notes = %q base = %v", n.Text, n.CmuxBase)
 	}
 }
+
+func TestSyncNotesSkipsWorkspaceWithoutID(t *testing.T) {
+	t.Parallel()
+	f := newSyncFixture(t, cmux.Workspace{Ref: "workspace:2", Description: strp("c")})
+	f.seed(t, "n", strp("b"), "")
+	if got := f.sync(t, nil); got != cmuxSyncSkipped {
+		t.Fatalf("listed by sync: outcome = %q", got)
+	}
+	listed := cmux.Workspace{Ref: "workspace:2", CurrentDirectory: f.path, Description: strp("c")}
+	if got := f.sync(t, &listed); got != cmuxSyncSkipped {
+		t.Fatalf("listed by the pass: outcome = %q", got)
+	}
+	if p := f.pushed(); len(p) != 0 {
+		t.Fatalf("pushes = %v", p)
+	}
+	if n := f.notes(t); n.Text != "n" || n.Version != 1 || !baseIs(n, "b", "") {
+		t.Fatalf("notes = %q v%d base = %v/%q", n.Text, n.Version, n.CmuxBase, n.CmuxBaseWorkspace)
+	}
+}

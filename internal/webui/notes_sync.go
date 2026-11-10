@@ -73,6 +73,12 @@ func (s *Server) syncNotesLocked(path string, listed *cmux.Workspace) (outcome, 
 				}
 				fresh = true
 			}
+			// The base is keyed by the workspace ID and the relist and the
+			// push find the workspace by it, so one without an ID cannot be
+			// synced safely.
+			if ws.ID == "" {
+				return cmuxSyncSkipped, "cmux workspace has no id"
+			}
 		}
 
 		base, baseWS := n.CmuxBase, n.CmuxBaseWorkspace
@@ -118,11 +124,7 @@ func (s *Server) syncNotesLocked(path string, listed *cmux.Workspace) (outcome, 
 		}
 
 		if desc != a.Text {
-			target := ws.ID
-			if target == "" {
-				target = ws.Ref
-			}
-			if err := s.setCmuxDescription(target, a.Text); err != nil {
+			if err := s.setCmuxDescription(ws.ID, a.Text); err != nil {
 				return cmuxSyncFailed, err.Error()
 			}
 			pushed := a.Text
