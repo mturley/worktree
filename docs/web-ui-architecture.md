@@ -230,7 +230,7 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | POST | `/api/tasks/state` | body: `{id, state}` | `taskDTO`, plus `undo_event_id` when the state changed (see "Undo for tasks") |
 | POST | `/api/tasks/move` | body: `{id, after}` or `{id, before}`, exactly one | 204 No Content |
 | GET | `/api/tasks/detail` | `id` | `taskDetailDTO`; 404 if missing or deleted. See "Task detail API" |
-| GET | `/api/tasks/activity` | `id`, `filter` (`all` default, `task`, `linked`, `resource`), `type` + `rid` (with `filter=resource`; must be a linked resource, else 404) | `[]TimelineEvent`, newest first, at most 200; resource events carry `linked_to_task` |
+| GET | `/api/tasks/activity` | `id`, `filter` (`all` default, `task`, `linked`, `resource`), `type` + `rid` (with `filter=resource`; must be a linked resource, else 404), `before` (exclusive ts cursor), `limit` (default and maximum 200) | `{events, next_cursor}` as the timelines: newest first, one page (overfilled with its boundary ts's ties); resource events carry `linked_to_task` |
 | POST | `/api/tasks/delete` | body: `{id}` | `{undo_event_id}` |
 | POST | `/api/tasks/undo` | body: `{event_id}` | 204; 409 if the change is no longer the current one (including an event already undone or purged, and a task deleted or subtask removed since); 404 only for an event id never issued; 400 for an event that is not undoable |
 | POST | `/api/tasks/links/add` | body: `{id, url?, type?, rid?, path?, focus?}`, exactly one of `url`, `type`+`rid`, `path`; a URL resolves with `resourceurl.InferAny` (unrecognised → 400) | `taskDetailDTO` |
@@ -1456,14 +1456,19 @@ the watcher toggles do not apply.
 - **Activity merge.** `/api/tasks/activity` merges the task's own events
   (`taskEventToTimeline`: id `task:<event id>`, source `tasks`, resource
   `task:<task id>`, a human-readable title per event type, author `you` or
-  `agent (<session>)`) with the events of the task's linked resources. Each
-  resource is read by `watcherdb.RecentEventsForResource` (watcher
-  v0.16.0): newest first, at most 200, bookkeeping types left out as the
-  timeline does — not `watcherdb.EventsForResource`, which loads a
-  resource's whole history unpaged, on a route every SSE refresh re-runs.
-  The merge is
-  deduplicated by id, sorted newest first by `ts`, cut to 200, and only then
-  are the surviving watcher events enriched. `filter=linked` renders EVERY
+  `agent (<session>)`) with the events of the task's linked resources. It
+  is paged as the timelines are (`before`, `limit` ≤ 200, `next_cursor` the
+  last row's ts, a short page the end). Every source is read before the
+  cursor, at most `limit` rows plus every row tying its last one's ts: the
+  task's events by `tasks.FeedEvents` (`feedEventsWithTies`, shared with
+  `mergeTaskEvents`), each resource by the global timeline's query
+  (`globalTimeline` with the resource filter, `archived` so an unfollowed
+  resource still reads, and its own type as the source filter so no task
+  events come in) — bookkeeping types left out as the timeline does. The
+  merge is deduplicated by id, sorted newest first by `ts`, cut to `limit`
+  and overfilled with every row tying the last kept one's ts, so the strict
+  cursor never skips the rest of a same-second cluster; links' live events
+  are enriched only after the cut. `filter=linked` renders EVERY
   event link: its live event, else a row built from its snapshot
   (`snapshotEvent`, whose id is the link key). A row is `linked_to_task`
   when its key is linked (`linkedKeyOf`: a Slack message's `slack:` key,
@@ -1911,7 +1916,11 @@ URL param (`?task=<id>`) through **`TaskModalProvider`**
   "Delete? Yes / No" first and whose undo toast reopens the modal; the delete, its undo and its failure logic
   are in `TaskDetailModal`, the undo toasts in `tasks/taskUndo.ts`), and two tabs. `DetailsTab` stacks `DescriptionSection`, `SubtasksSection`,
   `LinksSection` (with `LinkPicker` and the pure `linkTargets.ts`) and
-  `LinkedEventsSection`; `ActivityTab` shows the merged feed.
+  `LinkedEventsSection`; `ActivityTab` shows the merged feed, with the
+  feeds' `LoadMoreButton` (exported from `TimelineFeed`) after a full page.
+  `useTaskActivity` is an infinite query under `["tasks", "activity", id, …]`
+  returning a `TimelineResult`, built from `useTimeline`'s `flatten` and
+  `pageCursor(TASK_ACTIVITY_PAGE_SIZE)`.
   `sectionAction.tsx` (`useSectionAction`) gives each section its own inline
   error alert. Data hooks are in `ui/src/hooks/useTaskDetail.ts` (`useTaskDetail`,
   `useTaskActivity`, `useTaskDetailMutations`, `useTaskFromEvent`).

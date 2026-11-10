@@ -492,27 +492,9 @@ func (s *Server) mergeTaskEvents(rows []TimelineEvent, q taskFeedQuery) ([]Timel
 	if q.unreadOnly || len(q.terms) > 0 {
 		fq.Limit = 0
 	}
-	evs, err := tasks.FeedEvents(s.DB, fq)
+	evs, err := s.feedEventsWithTies(fq)
 	if err != nil {
 		return nil, err
-	}
-	// A LIMIT can cut through a same-second cluster; read the rest of it, so
-	// the page can overfill with every row at its boundary ts. FeedEvents
-	// orders ties by id DESC, so the rows the cut left out are those with a
-	// smaller id than the last one read.
-	if fq.Limit > 0 && len(evs) == fq.Limit {
-		last := evs[len(evs)-1]
-		tq := fq
-		tq.Before, tq.Limit, tq.AtTS = "", 0, last.TS
-		ties, err := tasks.FeedEvents(s.DB, tq)
-		if err != nil {
-			return nil, err
-		}
-		for _, fe := range ties {
-			if fe.ID < last.ID {
-				evs = append(evs, fe)
-			}
-		}
 	}
 	if len(evs) == 0 {
 		return rows, nil
@@ -582,6 +564,33 @@ func (s *Server) mergeTaskEvents(rows []TimelineEvent, q taskFeedQuery) ([]Timel
 		}
 	}
 	return out, nil
+}
+
+// feedEventsWithTies is tasks.FeedEvents, plus, when fq.Limit cut the
+// read, every remaining event at the last one's ts, so a page can overfill
+// with its whole boundary cluster (see mergeTaskEvents). FeedEvents orders
+// ties by id DESC, so the rows the cut left out are those with a smaller id
+// than the last one read.
+func (s *Server) feedEventsWithTies(fq tasks.FeedQuery) ([]tasks.FeedEvent, error) {
+	evs, err := tasks.FeedEvents(s.DB, fq)
+	if err != nil {
+		return nil, err
+	}
+	if fq.Limit > 0 && len(evs) == fq.Limit {
+		last := evs[len(evs)-1]
+		tq := fq
+		tq.Before, tq.Limit, tq.AtTS = "", 0, last.TS
+		ties, err := tasks.FeedEvents(s.DB, tq)
+		if err != nil {
+			return nil, err
+		}
+		for _, fe := range ties {
+			if fe.ID < last.ID {
+				evs = append(evs, fe)
+			}
+		}
+	}
+	return evs, nil
 }
 
 // eventIDsForResource returns the set of event ids linked to one resource.

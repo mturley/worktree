@@ -1,6 +1,6 @@
 import { useInfiniteQuery } from "@tanstack/react-query"
 import { api } from "../api/client"
-import type { TimelineEvent } from "../api/types"
+import type { TimelineEvent, TimelineResponse } from "../api/types"
 
 /**
  * Events per request. Smaller than the old fixed 100 because pages are now
@@ -23,16 +23,22 @@ export interface TimelineResult {
 }
 
 /**
- * A short page means the server ran out of events, so there is nothing more
- * to ask for. The cursor alone cannot tell us this: next_cursor is just the
- * last event's timestamp, and is non-empty even on the final page.
+ * The getNextPageParam of a feed paged `pageSize` rows at a time. A short page
+ * means the server ran out of events, so there is nothing more to ask for.
+ * The cursor alone cannot tell us this: next_cursor is just the last event's
+ * timestamp, and is non-empty even on the final page.
  */
-function nextCursor(last: { events: TimelineEvent[]; next_cursor: string }): string | undefined {
-  if (last.events.length < TIMELINE_PAGE_SIZE) return undefined
-  return last.next_cursor || undefined
+export function pageCursor(pageSize: number) {
+  return (last: TimelineResponse): string | undefined => {
+    if (last.events.length < pageSize) return undefined
+    return last.next_cursor || undefined
+  }
 }
 
-function flatten(q: ReturnType<typeof useInfiniteQuery<{ events: TimelineEvent[]; next_cursor: string }>>): TimelineResult {
+const nextCursor = pageCursor(TIMELINE_PAGE_SIZE)
+
+/** A paged feed's react-query pages, as the one list every consumer renders. */
+export function flatten(q: ReturnType<typeof useInfiniteQuery<TimelineResponse>>): TimelineResult {
   return {
     events: q.data?.pages.flatMap((p) => p.events) ?? [],
     // Only the first page counts as "loading"; later pages have content on

@@ -49,10 +49,10 @@ function wrap(task: TaskDetail) {
 
 beforeEach(() => {
   // A newer event than any test's unread_through_ts: Mark read must not use it.
-  vi.mocked(api.taskActivity).mockResolvedValue([
-    taskEv("task:3", "2099-03-03T00:00:00Z"),
-    taskEv("task:2", "2099-03-02T00:00:00Z"),
-  ])
+  vi.mocked(api.taskActivity).mockResolvedValue({
+    events: [taskEv("task:3", "2099-03-03T00:00:00Z"), taskEv("task:2", "2099-03-02T00:00:00Z")],
+    next_cursor: "2099-03-02T00:00:00Z",
+  })
   vi.mocked(api.taskRead).mockImplementation(async (a) => ({ previous_ts: "2099-01-01T00:00:00Z", last_read_ts: a.through_ts }))
   vi.mocked(api.taskReadRestore).mockResolvedValue(null)
 })

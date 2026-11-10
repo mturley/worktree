@@ -7,6 +7,21 @@ import { useMarkEventRead } from "../hooks/useMarkEventRead"
 import { DOT_CENTER, RAIL_WIDTH } from "./timelineRail"
 import { UnreadDivider } from "./UnreadDivider"
 
+/**
+ * A paged feed's "Load more". A button rather than scroll-triggered loading:
+ * these feeds sit in side-by-side panes that scroll independently, and an
+ * infinite scroller in one pane makes the other jump.
+ */
+export function LoadMoreButton({ onLoadMore, loadingMore }: { onLoadMore: () => void; loadingMore?: boolean }) {
+  return (
+    <Center>
+      <Button size="xs" variant="subtle" onClick={onLoadMore} loading={loadingMore}>
+        Load more
+      </Button>
+    </Center>
+  )
+}
+
 export function TimelineFeed({
   events, loading, error, showWorktrees, showResource, hasMore, onLoadMore, loadingMore,
   onSelectResource, onOpenEvent, resolveResource, canSelectResource,
@@ -119,16 +134,7 @@ export function TimelineFeed({
               {i === dividerIndex && <UnreadDivider />}
             </Fragment>
           ))}
-          {hasMore && onLoadMore && (
-            // A button rather than scroll-triggered loading: these feeds sit
-            // in side-by-side panes that scroll independently, and an
-            // infinite scroller in one pane makes the other jump.
-            <Center>
-              <Button size="xs" variant="subtle" onClick={onLoadMore} loading={loadingMore}>
-                Load more
-              </Button>
-            </Center>
-          )}
+          {hasMore && onLoadMore && <LoadMoreButton onLoadMore={onLoadMore} loadingMore={loadingMore} />}
         </Stack>
       </Box>
       <EventDetailsModal

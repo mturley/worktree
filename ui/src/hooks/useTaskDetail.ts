@@ -1,6 +1,7 @@
 import { useCallback } from "react"
-import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query"
+import { type QueryClient, useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query"
 import { api, HttpError } from "../api/client"
+import { flatten, pageCursor, type TimelineResult } from "./useTimeline"
 import type {
   Priority,
   TaskActivityFilter,
@@ -41,15 +42,22 @@ export function useTaskDetail(id: number | undefined) {
  */
 export const TASK_ACTIVITY_STALE_MS = 5000
 
-/** The task's merged activity feed, newest first. */
-export function useTaskActivity(id: number | undefined, q: ActivityQuery) {
-  return useQuery({
-    queryKey: taskActivityKey(id ?? 0, q),
-    queryFn: () =>
-      api.taskActivity(id as number, q.filter, q.filter === "resource" ? { type: q.type, rid: q.rid } : undefined),
-    enabled: id !== undefined,
-    staleTime: TASK_ACTIVITY_STALE_MS,
-  })
+/** Rows per activity page: the server's default (and largest) page. */
+export const TASK_ACTIVITY_PAGE_SIZE = 200
+
+/** The task's merged activity feed, newest first, paged as the timelines are. */
+export function useTaskActivity(id: number | undefined, q: ActivityQuery): TimelineResult {
+  return flatten(
+    useInfiniteQuery({
+      queryKey: taskActivityKey(id ?? 0, q),
+      queryFn: ({ pageParam }) =>
+        api.taskActivity(id as number, q.filter, q.filter === "resource" ? { type: q.type, rid: q.rid } : undefined, pageParam),
+      initialPageParam: undefined as string | undefined,
+      getNextPageParam: pageCursor(TASK_ACTIVITY_PAGE_SIZE),
+      enabled: id !== undefined,
+      staleTime: TASK_ACTIVITY_STALE_MS,
+    }),
+  )
 }
 
 type Patch = { title?: string; description?: string; priority?: Priority; starred?: boolean; due?: string }

@@ -186,13 +186,15 @@ export const api = {
   moveTask: (id: number, place: { after: number } | { before: number }) =>
     postJSON<null>("/api/tasks/move", { id, ...place }).then((): void => {}),
   taskDetail: (id: number) => fetchJSON<TaskDetail>(`/api/tasks/detail?id=${id}`),
-  taskActivity: (id: number, filter: TaskActivityFilter, resource?: { type: string; rid: string }) => {
+  /** One page of a task's activity, newest first; `before` is the previous page's next_cursor. */
+  taskActivity: (id: number, filter: TaskActivityFilter, resource?: { type: string; rid: string }, before?: string) => {
     const params = new URLSearchParams({ id: String(id), filter })
     if (filter === "resource" && resource) {
       params.set("type", resource.type)
       params.set("rid", resource.rid)
     }
-    return fetchJSON<TimelineEvent[]>(`/api/tasks/activity?${params}`)
+    if (before) params.set("before", before)
+    return fetchJSON<TimelineResponse>(`/api/tasks/activity?${params}`)
   },
   /** Resolves once deleted, with the undo_event_id that undoTask takes to restore the task. */
   deleteTask: (id: number) => postJSON<TaskDeleteResult>("/api/tasks/delete", { id }),

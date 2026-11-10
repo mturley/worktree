@@ -52,7 +52,7 @@ const events = [
 
 beforeEach(() => {
   vi.mocked(api.taskDetail).mockResolvedValue(base)
-  vi.mocked(api.taskActivity).mockResolvedValue(events)
+  vi.mocked(api.taskActivity).mockResolvedValue({ events, next_cursor: "2026-10-20T00:00:00Z" })
   vi.mocked(api.linkTaskEvent).mockResolvedValue(base)
   vi.mocked(api.unlinkTaskEvent).mockResolvedValue(base)
 })
@@ -68,7 +68,7 @@ describe("ActivityTab", () => {
     show()
     expect(await screen.findByText("Comment one")).toBeInTheDocument()
     expect(screen.getByText("Task created")).toBeInTheDocument()
-    expect(api.taskActivity).toHaveBeenCalledWith(1, "all", undefined)
+    expect(api.taskActivity).toHaveBeenCalledWith(1, "all", undefined, undefined)
     expect(document.querySelector("[data-event-row][data-clickable]")).toBeNull()
   })
 
@@ -78,13 +78,13 @@ describe("ActivityTab", () => {
     await screen.findByText("Comment one")
     expect(screen.getByRole("button", { name: "Everything" })).toHaveAttribute("aria-pressed", "true")
     await user.click(screen.getByRole("button", { name: "This task only" }))
-    await waitFor(() => expect(api.taskActivity).toHaveBeenCalledWith(1, "task", undefined))
+    await waitFor(() => expect(api.taskActivity).toHaveBeenCalledWith(1, "task", undefined, undefined))
     expect(screen.getByRole("button", { name: "This task only" })).toHaveAttribute("aria-pressed", "true")
     await user.click(screen.getByRole("button", { name: "Linked events" }))
-    await waitFor(() => expect(api.taskActivity).toHaveBeenCalledWith(1, "linked", undefined))
+    await waitFor(() => expect(api.taskActivity).toHaveBeenCalledWith(1, "linked", undefined, undefined))
     await user.click(screen.getByRole("button", { name: "A thread" }))
     await waitFor(() =>
-      expect(api.taskActivity).toHaveBeenCalledWith(1, "resource", { type: "slack", rid: "C1:100.000" }),
+      expect(api.taskActivity).toHaveBeenCalledWith(1, "resource", { type: "slack", rid: "C1:100.000" }, undefined),
     )
     // Worktrees are not resources: no pill.
     expect(screen.queryByRole("button", { name: "feat" })).toBeNull()
@@ -122,6 +122,29 @@ describe("ActivityTab", () => {
     show()
     await screen.findByText("Task created")
     expect(screen.queryByRole("button", { name: /event: Task created/ })).toBeNull()
+  })
+
+  it("a full page offers the feeds' Load more, which asks for the rows before its cursor and appends them", async () => {
+    const full = Array.from({ length: 200 }, (_, i) =>
+      ev({ id: `full-${i}`, title: `Row ${i}`, ts: "2026-10-20T00:00:00Z" }))
+    vi.mocked(api.taskActivity)
+      .mockResolvedValueOnce({ events: full, next_cursor: "2026-10-20T00:00:00Z" })
+      .mockResolvedValueOnce({ events: [ev({ id: "older", title: "Older row", ts: "2026-10-19T00:00:00Z" })], next_cursor: "2026-10-19T00:00:00Z" })
+    const user = userEvent.setup()
+    show()
+    await screen.findByText("Row 199")
+    await user.click(screen.getByRole("button", { name: "Load more" }))
+    await waitFor(() => expect(api.taskActivity).toHaveBeenLastCalledWith(1, "all", undefined, "2026-10-20T00:00:00Z"))
+    expect(await screen.findByText("Older row")).toBeInTheDocument()
+    expect(screen.getByText("Row 0")).toBeInTheDocument()
+    // A short page is the end.
+    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull()
+  })
+
+  it("a short page offers no Load more", async () => {
+    show()
+    await screen.findByText("Comment one")
+    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull()
   })
 
   it("a failed link says why", async () => {

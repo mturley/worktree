@@ -5,6 +5,7 @@ import type { TaskDetail, TimelineEvent } from "../../../api/types"
 import { type ActivityQuery, useTaskActivity, useTaskDetailMutations } from "../../../hooks/useTaskDetail"
 import { eventTaskKey } from "../../../lib/taskEventKey"
 import { EventRow } from "../../EventRow"
+import { LoadMoreButton } from "../../TimelineFeed"
 import { useSectionAction } from "./sectionAction"
 
 interface Pill {
@@ -83,17 +84,17 @@ export function ActivityTab({ task }: { task: TaskDetail }) {
         ))}
       </Group>
       {alert}
-      {activity.isPending ? (
+      {activity.isLoading ? (
         <Center py="md"><Loader size="sm" /></Center>
-      ) : activity.isError ? (
+      ) : activity.error ? (
         <Alert color="red" variant="light" py={6}>
           <Text size="xs">Couldn't load activity: {activity.error instanceof Error ? activity.error.message : "the request failed"}</Text>
         </Alert>
-      ) : activity.data.length === 0 ? (
+      ) : activity.events.length === 0 ? (
         <Text size="sm" c="dimmed">No activity.</Text>
       ) : (
         <Stack gap={2}>
-          {activity.data.map((e) => {
+          {activity.events.map((e) => {
             const linkable = toggleKey(e) !== null
             const linked = !!e.linked_to_task
             const label = `${linked ? "Unlink" : "Link"} event: ${e.title}`
@@ -120,6 +121,7 @@ export function ActivityTab({ task }: { task: TaskDetail }) {
               </Group>
             )
           })}
+          {activity.hasMore && <LoadMoreButton onLoadMore={activity.loadMore} loadingMore={activity.loadingMore} />}
         </Stack>
       )}
     </Stack>
