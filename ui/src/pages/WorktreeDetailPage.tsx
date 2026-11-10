@@ -16,6 +16,7 @@ import { useIsTall } from "../hooks/useIsTall"
 import { useDetailTab } from "../hooks/useDetailTab"
 import { useDiffView } from "../hooks/useDiffView"
 import { useReviewSidebar } from "../hooks/useReviewSidebar"
+import { useWorktreeGit } from "../hooks/useWorktreeGit"
 import { useWorktrees } from "../hooks/useWorktrees"
 import { UnreadMarkerDot } from "../components/UnreadMarkerDot"
 import { useCmuxMatches } from "../api/cmux"
@@ -117,6 +118,9 @@ export function WorktreeDetailPage() {
   // The details card's tab is the page's: it decides where the card sits
   // (see inColumn below), and Esc returns it to Notes.
   const detailTab = useDetailTab(path, inDiff)
+  // The same query (and key) the worktree card makes, so it costs no extra
+  // poll: it tells the resource list and pane which PR is checked out here.
+  const checkedOutPR = useWorktreeGit(path, { fetch: detailTab.tab === "code" }).data?.pr
   // What Esc does next, so its hint sits on the control that does the same:
   // the Notes tab, the narrowing lines' links (their own hint), "← all
   // resources", then the way out — the banner's, when it is up (see
@@ -336,6 +340,7 @@ export function WorktreeDetailPage() {
   const list = (
     <ResourceList
       items={shownItems}
+      checkedOutPR={checkedOutPR}
       allItems={filtered ? items : undefined}
       // With none followed at all, the list's own hint; narrowed, the
       // "0 resources …" line above says it.
@@ -519,6 +524,7 @@ export function WorktreeDetailPage() {
     <ResourceDetailPane
       path={path}
       resource={selectedResource}
+      checkedOutPR={checkedOutPR}
       // Also on wide: deselecting is how you get the worktree's activity feed
       // back, and it was previously only reachable by clicking the selected
       // card again.

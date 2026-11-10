@@ -678,6 +678,8 @@ export interface WorktreeGit {
   main_upstream?: string
   merge_base?: string
   vs_merge_base?: AheadBehind
+  /** Resource ID (`owner/repo#N`) of the followed PR the current branch tracks. Absent when none. */
+  pr?: string
   tracking?: string
   vs_tracking?: AheadBehind
   working: { staged: number; modified: number; untracked: number; files: number }

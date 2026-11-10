@@ -7,7 +7,7 @@ import { relativeTime, relativeFromNow } from "../lib/relativeTime"
 import { api } from "../api/client"
 import { ResourceActions } from "./ResourceActions"
 import { ResourceTitle } from "./ResourceStatusIcon"
-import { ResourceTypeLine, awaitsFetch } from "./ResourceTypeLine"
+import { CheckedOutMarker, ResourceTypeLine, awaitsFetch } from "./ResourceTypeLine"
 import { cardEdgeStyle, hasUnread } from "../lib/unread"
 import { UnreadBadge } from "./UnreadBadge"
 import { BlocksBadge, TaskCountBadge, openTasksLabel } from "./tasks/TaskCountBadge"
@@ -102,6 +102,8 @@ interface CardBodyProps {
   variant: ResourceCardVariant
   /** The bell and unread badge, pinned to the right of the type line. */
   aside?: React.ReactNode
+  /** This PR's branch is checked out in the worktree (PR cards only). */
+  checkedOut?: boolean
 }
 
 /**
@@ -127,7 +129,7 @@ function badgesInTypeLine(variant: ResourceCardVariant): boolean {
   return variant !== "detail"
 }
 
-function PRCardBody({ r, variant, aside }: CardBodyProps) {
+function PRCardBody({ r, variant, aside, checkedOut }: CardBodyProps) {
   const inline = badgesInTypeLine(variant)
   // A list card shows only the PR's state, to stay scannable; review, CI and
   // new-commit badges wait for the detail card, once the PR is selected. The
@@ -149,7 +151,18 @@ function PRCardBody({ r, variant, aside }: CardBodyProps) {
   )
   return (
     <Stack gap={4}>
-      <ResourceTypeLine r={r} aside={aside} trailing={inline ? badges : undefined} />
+      <ResourceTypeLine
+        r={r}
+        aside={aside}
+        trailing={
+          checkedOut || inline ? (
+            <>
+              {checkedOut && <CheckedOutMarker />}
+              {inline ? badges : undefined}
+            </>
+          ) : undefined
+        }
+      />
       <ResourceTitle r={r} label={r.title || r.id} showUnread={showsUnread(variant)} icon={null} {...titleProps(variant)} />
       <CustomDescription r={r} />
       {!inline && <Group gap={4} wrap="wrap">{badges}</Group>}
@@ -222,14 +235,14 @@ function LinkCardBody({ r, variant, aside }: CardBodyProps) {
  * card of that variant shows them. Exported for lists that format resources
  * like the cards but lay them out as rows (the home page's Resources tab).
  */
-export function ResourceCardBody({ r, variant = "compact", aside }: { r: ResourceDTO; variant?: ResourceCardVariant; aside?: React.ReactNode }) {
+export function ResourceCardBody({ r, variant = "compact", aside, checkedOut }: { r: ResourceDTO; variant?: ResourceCardVariant; aside?: React.ReactNode; checkedOut?: boolean }) {
   // Slack and links never take the not-yet-fetched path: a thread's card is
   // useful from its id alone, and a link is resolved once when added and
   // never polled, so a spinner on it would never stop.
   if (r.type === "slack") return <SlackCardBody r={r} variant={variant} aside={aside} />
   if (r.type === "link") return <LinkCardBody r={r} variant={variant} aside={aside} />
   if (awaitsFetch(r)) return <MinimalRow r={r} variant={variant} aside={aside} />
-  if (r.type === "pr") return <PRCardBody r={r} variant={variant} aside={aside} />
+  if (r.type === "pr") return <PRCardBody r={r} variant={variant} aside={aside} checkedOut={checkedOut} />
   if (r.type === "jira") return <JiraCardBody r={r} variant={variant} aside={aside} />
   return <MinimalRow r={r} variant={variant} aside={aside} />
 }
@@ -364,6 +377,8 @@ interface ResourceCardProps {
   dragHandle?: React.ReactNode
   /** Notification state; when absent, no notification switch or bell renders. */
   notify?: ResourceNotifyContext
+  /** Marks a PR card whose branch the worktree has checked out. */
+  checkedOut?: boolean
 }
 
 export function ResourceCard({
@@ -376,6 +391,7 @@ export function ResourceCard({
   onMetaChanged = () => {},
   dragHandle,
   notify,
+  checkedOut,
 }: ResourceCardProps) {
   const [editOpen, setEditOpen] = useState(false)
   // Focus/Related is written straight through on change — no confirm step for
@@ -446,7 +462,7 @@ export function ResourceCard({
     </>
   ) : undefined
 
-  const body = <ResourceCardBody r={r} variant={variant} aside={aside} />
+  const body = <ResourceCardBody r={r} variant={variant} aside={aside} checkedOut={checkedOut} />
   // A worktree page's list card answers that resource's activity events —
   // lit while you hover one, lighting them while you hover it. Only where it
   // is a select target: the detail card heads its own pane.

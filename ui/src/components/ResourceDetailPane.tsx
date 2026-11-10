@@ -61,6 +61,8 @@ interface ResourceDetailPaneProps {
   stickyTop?: number
   /** Slack only: a message to bring into view; see ThreadView. */
   focus?: { ts: string; key: number }
+  /** Resource ID of the PR the worktree has checked out; marked when this is that PR. */
+  checkedOutPR?: string
 }
 
 /**
@@ -78,6 +80,7 @@ function TimelineBody({
   onResourceChanged,
   notify,
   stickyTop,
+  checkedOut,
 }: {
   path: string
   resource: ResourceDTO
@@ -85,6 +88,7 @@ function TimelineBody({
   onResourceChanged?: () => void
   notify?: ResourceNotifyContext
   stickyTop?: number
+  checkedOut?: boolean
 }) {
   const search = useSearchQuery()
   const { debouncedQ } = search
@@ -134,6 +138,7 @@ function TimelineBody({
         onMetaChanged={onResourceChanged}
         variant="detail"
         notify={notify}
+        checkedOut={checkedOut}
       />
       <Box mt="sm">{tasks.panel}</Box>
       {/*
@@ -277,6 +282,7 @@ export function ResourceDetailPane({
   notify,
   stickyTop,
   focus,
+  checkedOutPR,
 }: ResourceDetailPaneProps) {
   return (
     <Stack gap="sm">
@@ -326,6 +332,7 @@ export function ResourceDetailPane({
           onResourceChanged={onResourceChanged}
           notify={notify}
           stickyTop={stickyTop}
+          checkedOut={resource.type === "pr" && resource.id === checkedOutPR}
         />
       )}
     </Stack>

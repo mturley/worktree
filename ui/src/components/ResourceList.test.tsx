@@ -421,3 +421,28 @@ describe("ResourceList handle hover menu: Unfollow", () => {
     expect(queryByText(/Unfollowed/)).not.toBeInTheDocument()
   })
 })
+
+describe("ResourceList checked-out marker", () => {
+  const items = [
+    { type: "pr", id: "o/r#1", url: "u", primary: true, title: "one", state: "OPEN" },
+    { type: "pr", id: "o/r#2", url: "u", primary: true, title: "two", state: "OPEN" },
+  ]
+
+  it("marks only the PR the worktree has checked out, with a tooltip", async () => {
+    const user = userEvent.setup()
+    const { getAllByLabelText, getByRole, findByText } = wrap(
+      <ResourceList items={items} path="/w" onChanged={vi.fn()} checkedOutPR="o/r#2" />,
+    )
+    const markers = getAllByLabelText("Checked out in this worktree")
+    expect(markers).toHaveLength(1)
+    const card = getByRole("button", { name: "drag to reorder o/r#2" }).closest("div[style]")!.parentElement!
+    expect(card.contains(markers[0])).toBe(true)
+    await user.hover(markers[0])
+    expect(await findByText("Checked out in this worktree")).toBeInTheDocument()
+  })
+
+  it("marks nothing without a checked-out PR", () => {
+    const { queryByLabelText } = wrap(<ResourceList items={items} path="/w" onChanged={vi.fn()} />)
+    expect(queryByLabelText("Checked out in this worktree")).toBeNull()
+  })
+})

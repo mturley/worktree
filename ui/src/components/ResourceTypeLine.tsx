@@ -1,5 +1,5 @@
-import { Badge, Group, Loader, Text } from "@mantine/core"
-import { IconMessage, IconWorld } from "@tabler/icons-react"
+import { Badge, Group, Loader, Text, Tooltip } from "@mantine/core"
+import { IconDeviceLaptop, IconMessage, IconWorld } from "@tabler/icons-react"
 import type { ResourceDTO } from "../api/types"
 import { shortResourceRef } from "../lib/resourceRef"
 import { LinkFavicon, ResourceStatusIcon } from "./ResourceStatusIcon"
@@ -21,6 +21,24 @@ const RESOURCE_TYPES: Record<string, { label: string; color: string; icon: React
   jira: { label: "Jira", color: "blue", icon: <JiraMark size={14} aria-hidden /> },
   slack: { label: "Slack", color: "grape", icon: <SlackMark size={14} aria-hidden /> },
   link: { label: "Link", color: "teal", icon: <IconWorld size={14} aria-hidden style={{ flexShrink: 0 }} /> },
+}
+
+/**
+ * Marks the PR whose branch this worktree has checked out. Teal, which no PR
+ * status icon uses (those are green, violet, red and gray).
+ */
+export function CheckedOutMarker() {
+  const label = "Checked out in this worktree"
+  return (
+    <Tooltip label={label}>
+      <IconDeviceLaptop
+        size={14}
+        aria-label={label}
+        role="img"
+        style={{ color: "var(--mantine-color-teal-6)", flexShrink: 0 }}
+      />
+    </Tooltip>
+  )
 }
 
 /**

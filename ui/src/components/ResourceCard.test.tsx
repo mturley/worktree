@@ -961,3 +961,25 @@ describe("blocks badge", () => {
     expect(badge()).toBeNull()
   })
 })
+
+describe("checked-out marker", () => {
+  const label = "Checked out in this worktree"
+  const pr = { type: "pr", id: "o/r#1", url: "u", primary: true, title: "t", state: "OPEN" } as ResourceDTO
+
+  it("marks a PR card that is checked out, on its type line after the key", () => {
+    wrap(<ResourceCard r={pr} checkedOut />)
+    const marker = screen.getByLabelText(label)
+    expect(typeLine().contains(marker)).toBe(true)
+    expect(screen.getByText("PR #1").compareDocumentPosition(marker) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("shows no marker unless checked out", () => {
+    wrap(<ResourceCard r={pr} />)
+    expect(screen.queryByLabelText(label)).toBeNull()
+  })
+
+  it("shows none on a Jira card", () => {
+    wrap(<ResourceCard r={{ type: "jira", id: "X-1", url: "u", primary: true, title: "t" } as ResourceDTO} checkedOut />)
+    expect(screen.queryByLabelText(label)).toBeNull()
+  })
+})
