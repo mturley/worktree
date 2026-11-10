@@ -200,3 +200,123 @@ func TestWorktreeNotesShowOnHome(t *testing.T) {
 		t.Fatalf("blank notes shown on home: %q", n)
 	}
 }
+
+func TestWorktreeNotesSaveMergesConcurrentEdit(t *testing.T) {
+	t.Parallel()
+	s, wtPath, _ := notesServer(t, nil, nil)
+	// Another writer inserted b after this client loaded "a\n\nz" and
+	// appended c elsewhere. (Two edits at the same spot would conflict.)
+	if _, err := notes.Set(s.DB, wtPath, "a\nb\n\nz", false, true); err != nil {
+		t.Fatal(err)
+	}
+	rec, got := postNotes(t, s, map[string]any{"path": wtPath, "notes": "a\n\nz\nc", "base_notes": "a\n\nz"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST = %d", rec.Code)
+	}
+	stored, _ := notes.Get(s.DB, wtPath)
+	if stored.Text != got.Notes || strings.Contains(stored.Text, "<<<<<<<") ||
+		!strings.Contains(stored.Text, "b") || !strings.Contains(stored.Text, "c") {
+		t.Fatalf("stored = %q, response = %q; want a clean merge of b and c", stored.Text, got.Notes)
+	}
+}
+
+func TestWorktreeNotesSaveMergesSameSpotInsertions(t *testing.T) {
+	t.Parallel()
+	s, wtPath, _ := notesServer(t, nil, nil)
+	if _, err := notes.Set(s.DB, wtPath, "a\nb", false, true); err != nil {
+		t.Fatal(err)
+	}
+	postNotes(t, s, map[string]any{"path": wtPath, "notes": "a\nc", "base_notes": "a"})
+	stored, _ := notes.Get(s.DB, wtPath)
+	if strings.Contains(stored.Text, "<<<<<<<") || !strings.Contains(stored.Text, "b") || !strings.Contains(stored.Text, "c") {
+		t.Fatalf("stored = %q, want b and c with no markers", stored.Text)
+	}
+}
+
+// Leaving the page mid-save: the UI lets the in-flight save land, then sends
+// the edits typed since with that save's text as base. On the same line as
+// the in-flight edit, this must store the newer text without markers.
+func TestWorktreeNotesFollowUpAfterInFlightSaveMergesCleanly(t *testing.T) {
+	t.Parallel()
+	s, wtPath, _ := notesServer(t, nil, nil)
+	if _, err := notes.Set(s.DB, wtPath, "top\nloaded\nbottom", false, true); err != nil {
+		t.Fatal(err)
+	}
+	postNotes(t, s, map[string]any{"path": wtPath, "notes": "top\nmine\nbottom", "base_notes": "top\nloaded\nbottom"})
+	_, got := postNotes(t, s, map[string]any{"path": wtPath, "notes": "top\nmine more\nbottom", "base_notes": "top\nmine\nbottom"})
+	stored, _ := notes.Get(s.DB, wtPath)
+	if stored.Text != "top\nmine more\nbottom" || got.Notes != stored.Text {
+		t.Fatalf("stored = %q, response = %q; want the follow-up's text", stored.Text, got.Notes)
+	}
+}
+
+func TestWorktreeNotesSaveWithoutBaseOverwrites(t *testing.T) {
+	t.Parallel()
+	s, wtPath, _ := notesServer(t, nil, nil)
+	if _, err := notes.Set(s.DB, wtPath, "x", false, true); err != nil {
+		t.Fatal(err)
+	}
+	postNotes(t, s, map[string]any{"path": wtPath, "notes": "y"})
+	if stored, _ := notes.Get(s.DB, wtPath); stored.Text != "y" {
+		t.Fatalf("stored = %q, want y", stored.Text)
+	}
+}
+
+func TestWorktreeNotesSyncOffClearsBase(t *testing.T) {
+	t.Parallel()
+	s, wtPath, calls := notesServer(t, nil, nil)
+	base := "old"
+	if _, ok, err := notes.CompareAndSet(s.DB, wtPath, 0, "old", true, true, &base, "UUID-A"); err != nil || !ok {
+		t.Fatalf("seed: %v %v", ok, err)
+	}
+	_, got := postNotes(t, s, map[string]any{"path": wtPath, "notes": "old", "sync_cmux": false})
+	if got.CmuxSync != cmuxSyncOff {
+		t.Fatalf("response = %+v", got)
+	}
+	if stored, _ := notes.Get(s.DB, wtPath); stored.CmuxBase != nil {
+		t.Fatalf("CmuxBase = %q, want nil", *stored.CmuxBase)
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("calls = %v, want none", *calls)
+	}
+}
+
+func TestWorktreeNotesResyncKeepsBoth(t *testing.T) {
+	t.Setenv("CMUX_SOCKET_PATH", "/stub")
+	desc := "c"
+	s, wtPath, calls := notesServer(t, []cmux.Workspace{{ID: "UUID-A", Description: &desc}}, nil)
+	if _, err := notes.Set(s.DB, wtPath, "n", false, true); err != nil {
+		t.Fatal(err)
+	}
+	_, got := postNotes(t, s, map[string]any{"path": wtPath, "notes": "n", "sync_cmux": true})
+	if got.CmuxSync != cmuxSyncOK {
+		t.Fatalf("response = %+v", got)
+	}
+	stored, _ := notes.Get(s.DB, wtPath)
+	if !strings.Contains(stored.Text, "<<<<<<<") || !strings.Contains(stored.Text, "n") || !strings.Contains(stored.Text, "c") {
+		t.Fatalf("stored = %q, want a conflict block holding both", stored.Text)
+	}
+	if len(*calls) != 1 || (*calls)[0][1] != stored.Text {
+		t.Fatalf("calls = %v, want the merged text pushed", *calls)
+	}
+}
+
+func TestWorktreeNotesSaveLargeNotesWithBase(t *testing.T) {
+	t.Parallel()
+	s, wtPath, _ := notesServer(t, nil, nil)
+	// Just under the cap, and dense in characters JSON escapes.
+	big := strings.Repeat("\"q\"\n", (maxNotesBytes-1)/5)
+	if len(big) >= maxNotesBytes {
+		t.Fatalf("fixture too large: %d", len(big))
+	}
+	if _, err := notes.Set(s.DB, wtPath, big, false, true); err != nil {
+		t.Fatal(err)
+	}
+	rec, got := postNotes(t, s, map[string]any{"path": wtPath, "notes": big, "base_notes": big})
+	if rec.Code != http.StatusOK || got.Notes != big {
+		t.Fatalf("POST = %d, notes len %d", rec.Code, len(got.Notes))
+	}
+	if rec, _ := postNotes(t, s, map[string]any{"path": wtPath, "notes": "x", "base_notes": strings.Repeat("x", maxNotesBytes+1)}); rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized base_notes = %d, want 413", rec.Code)
+	}
+}

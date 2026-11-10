@@ -49,9 +49,12 @@ func (s *Server) cmuxUnreadPass() {
 		return
 	}
 	ix := s.newUnreadIndex()
-	s.syncUnreadPrefixes(func(path string) (bool, bool) {
+	matches := s.syncUnreadPrefixes(func(path string) (bool, bool) {
 		return s.worktreeHasUnread(ix, path)
 	}, true)
+	// After the title lock is released: the description step calls cmux and
+	// must not hold up a rename typed in the UI.
+	s.syncDescriptions(matches)
 }
 
 // cmuxUnreadStrip takes cmux.UnreadPrefix off every registered worktree's
@@ -64,37 +67,42 @@ func (s *Server) cmuxUnreadStrip() {
 	s.syncUnreadPrefixes(func(string) (bool, bool) { return false, true }, false)
 }
 
-// syncUnreadPrefixes renames each workspace on a registered worktree whose
-// prefix disagrees with want(path). want's ok=false leaves that worktree
-// alone. gated re-checks cmuxEnabled under the title lock, so a pass that was
-// waiting on it cannot re-add prefixes a strip just removed.
-func (s *Server) syncUnreadPrefixes(want func(path string) (has, ok bool), gated bool) {
+// syncUnreadPrefixes lists cmux once, renames each workspace on a registered
+// worktree whose prefix disagrees with want(path), and returns the listing's
+// workspaces per registered path (nil when nothing was listed). want's
+// ok=false leaves that worktree alone. gated re-checks cmuxEnabled under the
+// title lock, so a pass that was waiting on it cannot re-add prefixes a strip
+// just removed.
+func (s *Server) syncUnreadPrefixes(want func(path string) (has, ok bool), gated bool) map[string][]cmux.Workspace {
 	// Held from list to rename so a rename typed in the UI cannot land in
 	// between and be overwritten with the title read here.
 	s.cmuxTitleMu.Lock()
 	defer s.cmuxTitleMu.Unlock()
 	if gated && !s.cmuxEnabled() {
-		return
+		return nil
 	}
 
 	workspaces, err := s.listCmuxWorkspaces()
 	if err != nil {
-		return // cmux is reachable but failing; the next pass retries
+		return nil // cmux is reachable but failing; the next pass retries
 	}
 	entries, err := registry.List(s.DB)
 	if err != nil {
 		s.logger().Printf("cmux unread sync: registry.List: %v", err)
-		return
+		return nil
 	}
 	paths := make([]string, 0, len(entries))
 	for _, e := range entries {
 		paths = append(paths, e.Path)
 	}
 	matches := cmux.Match(workspaces, paths)
-	if len(matches) == 0 {
-		return
-	}
+	s.applyUnreadPrefixes(matches, want)
+	return matches
+}
 
+// applyUnreadPrefixes renames the matched workspaces whose unread prefix
+// disagrees with want(path). The caller holds cmuxTitleMu.
+func (s *Server) applyUnreadPrefixes(matches map[string][]cmux.Workspace, want func(path string) (has, ok bool)) {
 	rename := s.tabOps().rename
 	for path, hits := range matches {
 		has, ok := want(path)
@@ -108,6 +116,24 @@ func (s *Server) syncUnreadPrefixes(want func(path string) (has, ok bool), gated
 			if err := rename(ws.ID, cmux.WithUnreadPrefix(ws.CustomTitle, has)); err != nil {
 				s.logger().Printf("cmux unread sync: %v", err)
 			}
+		}
+	}
+}
+
+// syncDescriptions runs the notes/description sync for every path with
+// exactly one matching workspace, on the pass's listing. syncNotesLocked
+// re-lists before acting on a listing that may have gone stale.
+func (s *Server) syncDescriptions(matches map[string][]cmux.Workspace) {
+	for path, hits := range matches {
+		if len(hits) != 1 {
+			continue
+		}
+		ws := hits[0]
+		unlock := s.notesLock(path)
+		outcome, msg := s.syncNotesLocked(path, &ws)
+		unlock()
+		if outcome == cmuxSyncFailed {
+			s.logger().Printf("cmux notes sync: %s: %s", path, msg)
 		}
 	}
 }

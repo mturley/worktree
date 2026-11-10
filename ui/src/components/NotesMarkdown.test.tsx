@@ -55,3 +55,24 @@ describe("NotesMarkdown", () => {
     expect(container.querySelector("iframe")).toBeNull()
   })
 })
+
+describe("NotesMarkdown conflict markers", () => {
+  const conflict = "- [ ] task\n<<<<<<< notes\nx\n=======\ny\n>>>>>>> cmux"
+
+  it("shows markers as text and makes checkboxes inert", () => {
+    const { container } = render(
+      <MantineProvider><NotesMarkdown text={conflict} onToggleTask={() => {}} /></MantineProvider>,
+    )
+    expect(container.querySelector("h1, h2")).toBeNull()
+    expect(container.textContent).toContain("=======")
+    expect(container.querySelector("code")?.textContent).toBe("<<<<<<< notes")
+    expect((container.querySelector("input[type=checkbox]") as HTMLInputElement).disabled).toBe(true)
+  })
+
+  it("keeps checkboxes clickable for a setext-style =======", () => {
+    const { container } = render(
+      <MantineProvider><NotesMarkdown text={"Title\n=======\n- [ ] t"} onToggleTask={() => {}} /></MantineProvider>,
+    )
+    expect((container.querySelector("input[type=checkbox]") as HTMLInputElement).disabled).toBe(false)
+  })
+})

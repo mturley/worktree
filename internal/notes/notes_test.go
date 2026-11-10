@@ -1,6 +1,7 @@
 package notes
 
 import (
+	"database/sql"
 	"path/filepath"
 	"testing"
 
@@ -103,5 +104,124 @@ func TestHomeNotesOnlyShownAndNonEmpty(t *testing.T) {
 	}
 	if len(got) != 1 || got["/wt/shown"] != "**hi**" {
 		t.Fatalf("HomeNotes = %v, want only /wt/shown", got)
+	}
+}
+
+func ptr(s string) *string { return &s }
+
+func newConn(t *testing.T) *sql.DB {
+	t.Helper()
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	return conn
+}
+
+func TestCompareAndSetInsertsAtVersionZero(t *testing.T) {
+	conn := newConn(t)
+	n, ok, err := CompareAndSet(conn, "/a", 0, "hello", true, true, ptr("b"), "WS")
+	if err != nil || !ok {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+	if n.Version != 1 {
+		t.Fatalf("version %d", n.Version)
+	}
+	got, err := Get(conn, "/a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Text != "hello" || got.Version != 1 || got.CmuxBase == nil || *got.CmuxBase != "b" || got.CmuxBaseWorkspace != "WS" {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestCompareAndSetRejectsStaleVersion(t *testing.T) {
+	conn := newConn(t)
+	if _, ok, err := CompareAndSet(conn, "/a", 0, "first", false, true, nil, ""); err != nil || !ok {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+	_, ok, err := CompareAndSet(conn, "/a", 0, "stale", false, true, nil, "")
+	if err != nil || ok {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+	got, _ := Get(conn, "/a")
+	if got.Text != "first" {
+		t.Fatalf("text %q", got.Text)
+	}
+}
+
+func TestSetBaseDoesNotBumpVersion(t *testing.T) {
+	conn := newConn(t)
+	if _, ok, err := CompareAndSet(conn, "/a", 0, "t", false, true, nil, ""); err != nil || !ok {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+	if ok, err := SetBase(conn, "/a", 1, ptr("b"), "WS"); err != nil || !ok {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+	got, _ := Get(conn, "/a")
+	if got.Version != 1 || got.CmuxBase == nil || *got.CmuxBase != "b" || got.CmuxBaseWorkspace != "WS" {
+		t.Fatalf("got %+v", got)
+	}
+	if ok, err := SetBase(conn, "/a", 0, ptr("x"), "Y"); err != nil || ok {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+}
+
+func TestSetBumpsVersionAndKeepsBase(t *testing.T) {
+	conn := newConn(t)
+	if _, ok, err := CompareAndSet(conn, "/a", 0, "t", true, true, ptr("b"), "WS"); err != nil || !ok {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+	if _, err := Set(conn, "/a", "new", true, true); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := Get(conn, "/a")
+	if got.Version != 2 || got.Text != "new" || got.CmuxBase == nil || *got.CmuxBase != "b" {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestFingerprintChangesOnEveryWrite(t *testing.T) {
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	fp := func() string {
+		t.Helper()
+		f, err := Fingerprint(conn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return f
+	}
+	empty := fp()
+	n, err := Set(conn, "/a", "one", false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterSet := fp()
+	if afterSet == empty {
+		t.Fatal("Set must change the fingerprint")
+	}
+	if _, ok, err := CompareAndSet(conn, "/a", n.Version, "two", false, true, nil, ""); err != nil || !ok {
+		t.Fatalf("CompareAndSet ok=%v err=%v", ok, err)
+	}
+	afterCAS := fp()
+	if afterCAS == afterSet {
+		t.Fatal("CompareAndSet must change the fingerprint")
+	}
+	cur, err := Get(conn, "/a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := "x"
+	if ok, err := SetBase(conn, "/a", cur.Version, &base, "ws"); err != nil || !ok {
+		t.Fatalf("SetBase ok=%v err=%v", ok, err)
+	}
+	if fp() != afterCAS {
+		t.Fatal("SetBase must not change the fingerprint")
 	}
 }

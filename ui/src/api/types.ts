@@ -226,6 +226,12 @@ export interface WorktreeNotes {
   /** Show these notes on the home page's worktree card. Absent from an older server: treat as on. */
   show_on_home?: boolean
 }
+/** A notes save. */
+export interface SaveWorktreeNotesRequest {
+  path: string; notes: string; sync_cmux: boolean; show_on_home: boolean
+  /** The notes text this client last loaded; the server merges edits made since. Absent overwrites. */
+  base_notes?: string
+}
 /** How a notes save's mirror to the cmux workspace description went. */
 export type CmuxSyncOutcome = "off" | "ok" | "skipped" | "failed"
 export interface SaveWorktreeNotesResponse extends WorktreeNotes {

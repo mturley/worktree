@@ -249,6 +249,9 @@ type Server struct {
 	// /api/pr-write/submit and the review dialog's reconcile
 	// (pr_write_api.go).
 	prSubmitLocks sync.Map
+	// notesMu holds one *sync.Mutex per worktree path, serialising the
+	// two-way notes sync (notes_sync.go) for that worktree.
+	notesMu sync.Map
 	// allowSingleWhilePending lifts the pending-review gate on single
 	// writes (singleBlockedByPending); tests only.
 	allowSingleWhilePending bool

@@ -401,7 +401,7 @@ describe("notes", () => {
     // One save for the whole burst, not one per keystroke.
     await screen.findByText("Saving…", {}, { timeout: 2000 })
     expect(saveWorktreeNotes).toHaveBeenCalledTimes(1)
-    expect(saveWorktreeNotes.mock.calls[0][0]).toEqual({ path: "/wt/foo", notes: "hi", sync_cmux: false, show_on_home: true })
+    expect(saveWorktreeNotes.mock.calls[0][0]).toEqual({ path: "/wt/foo", notes: "hi", sync_cmux: false, show_on_home: true, base_notes: expect.any(String) })
     resolve()
     expect(await screen.findByText("Saved")).toBeInTheDocument()
   })
@@ -500,7 +500,7 @@ describe("notes", () => {
     await waitFor(() => expect(box).toBeEnabled())
     expect(box).toBeChecked()
     await user.click(box)
-    await waitFor(() => expect(saveWorktreeNotes).toHaveBeenCalledWith({ path: "/wt/foo", notes: "existing", sync_cmux: false, show_on_home: false }))
+    await waitFor(() => expect(saveWorktreeNotes).toHaveBeenCalledWith({ path: "/wt/foo", notes: "existing", sync_cmux: false, show_on_home: false, base_notes: "existing" }))
     expect(box).not.toBeChecked()
   })
 
@@ -530,7 +530,7 @@ describe("notes", () => {
     // Immediately, not after the typing debounce.
     expect(saveWorktreeNotes).toHaveBeenCalledTimes(1)
     expect(saveWorktreeNotes).toHaveBeenLastCalledWith({
-      path: "/wt/foo", notes: notes.replace("- [ ] rebase", "- [x] rebase"), sync_cmux: false, show_on_home: true,
+      path: "/wt/foo", notes: notes.replace("- [ ] rebase", "- [x] rebase"), sync_cmux: false, show_on_home: true, base_notes: notes,
     })
     await waitFor(() => expect(taskBoxes()[0]).toBeChecked())
     expect(await screen.findByText("Saved")).toBeInTheDocument()
@@ -539,7 +539,7 @@ describe("notes", () => {
     await waitFor(() => expect(saveWorktreeNotes).toHaveBeenLastCalledWith({
       path: "/wt/foo",
       notes: notes.replace("- [ ] rebase", "- [x] rebase").replace("- [x] nested", "- [ ] nested"),
-      sync_cmux: false, show_on_home: true,
+      sync_cmux: false, show_on_home: true, base_notes: expect.any(String),
     }))
     await user.click(quoted)
     await waitFor(() => expect(saveWorktreeNotes.mock.lastCall?.[0].notes).toContain("> 1. [x] quoted"))
@@ -570,7 +570,7 @@ describe("notes", () => {
     await user.type(box, "*done*")
     await user.click(screen.getByRole("button", { name: /done editing/i }))
     // Sent now, not after the debounce.
-    expect(saveWorktreeNotes).toHaveBeenCalledWith({ path: "/wt/foo", notes: "*done*", sync_cmux: false, show_on_home: true })
+    expect(saveWorktreeNotes).toHaveBeenCalledWith({ path: "/wt/foo", notes: "*done*", sync_cmux: false, show_on_home: true, base_notes: expect.any(String) })
     expect(screen.queryByRole("textbox", { name: /worktree notes/i })).not.toBeInTheDocument()
     expect(screen.getByText("done").tagName).toBe("EM")
   })
@@ -608,7 +608,7 @@ describe("notes", () => {
 
 describe("cmux description sync", () => {
   const oneWorkspace = { available: true, matches: { "/wt/foo": [{ ref: "workspace:1", title: "foo", selected: false }] } }
-  const syncBox = () => screen.queryByRole("checkbox", { name: /sync to cmux workspace description/i })
+  const syncBox = () => screen.queryByRole("checkbox", { name: /sync with cmux workspace description/i })
 
   it("is offered, unchecked, when exactly one workspace matches", async () => {
     worktreeInfo.mockResolvedValue(info())
@@ -655,7 +655,7 @@ describe("cmux description sync", () => {
     await startEditing(user)
     await waitFor(() => expect(syncBox()).toBeEnabled())
     await user.click(syncBox()!)
-    await waitFor(() => expect(saveWorktreeNotes).toHaveBeenCalledWith({ path: "/wt/foo", notes: "existing", sync_cmux: true, show_on_home: true }))
+    await waitFor(() => expect(saveWorktreeNotes).toHaveBeenCalledWith({ path: "/wt/foo", notes: "existing", sync_cmux: true, show_on_home: true, base_notes: "existing" }))
     expect(await screen.findByText("Saved · synced to cmux")).toBeInTheDocument()
   })
 
@@ -691,7 +691,7 @@ describe("cmux description sync", () => {
     wrap(summary())
     await startEditing(user)
     await waitFor(() => expect(cmux).toHaveBeenCalled())
-    expect(screen.queryByLabelText(/sync to cmux/i)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/sync with cmux/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/not syncing/i)).not.toBeInTheDocument()
   })
 })

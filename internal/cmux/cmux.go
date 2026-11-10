@@ -20,6 +20,15 @@ type Workspace struct {
 	CustomColor      *string `json:"custom_color"` // hex like "#AD1457", or nil
 	CurrentDirectory string  `json:"current_directory"`
 	Selected         bool    `json:"selected"`
+	Description      *string `json:"description"` // nil when unset
+}
+
+// DescriptionText is the workspace description, "" when unset.
+func (w Workspace) DescriptionText() string {
+	if w.Description == nil {
+		return ""
+	}
+	return *w.Description
 }
 
 // DisplayTitle is the workspace's human name. cmux leaves custom_title null on

@@ -35,10 +35,10 @@ var notesSetCmd = &cobra.Command{
 	Use:   "set <text|->",
 	Short: "Replace a worktree's notes",
 	Long: "Replace a worktree's notes with <text>; \"-\" reads the text from stdin and an\n" +
-		"empty string clears the notes. The \"sync to cmux\" and \"show on home\" settings\n" +
+		"empty string clears the notes. The \"sync with cmux\" and \"show on home\" settings\n" +
 		"are kept.\n\n" +
 		"This only writes the database. It never talks to cmux: a worktree with cmux\n" +
-		"sync on has its workspace description updated by the web UI on its next save.\n\n" +
+		"sync on has its workspace description updated by the web UI on its next sync pass.\n\n" +
 		"--worktree defaults to the current worktree.",
 	Example: "  worktree notes set \"waiting on review\"\n" +
 		"  echo \"multi-line\" | worktree notes set - --worktree .",
