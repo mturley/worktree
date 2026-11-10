@@ -7,6 +7,7 @@ import type { AllResourceDTO } from "../api/types"
 import { api } from "../api/client"
 import { useResourcesView } from "../hooks/useResourcesView"
 import { ResourcesPanel, ResourcesTabControls } from "./ResourcesPanel"
+import { parseResourceKey } from "../lib/resourceKey"
 
 function Harness({ unreadOnly }: { unreadOnly: boolean }) {
   const view = useResourcesView(unreadOnly)
@@ -111,7 +112,7 @@ describe("ResourcesPanel", () => {
     expect(within(row).queryByRole("button", { name: "Details" })).toBeNull()
     await user.click(within(row).getByText("Merged PR"))
     expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/a")}`)
-    expect(new URLSearchParams(window.location.search).get("resource")).toContain("o/r#2")
+    expect(parseResourceKey(new URLSearchParams(window.location.search).get("resource"))?.id).toBe("o/r#2")
   })
 
   it("asks which worktree when several follow the resource", async () => {
@@ -125,7 +126,7 @@ describe("ResourcesPanel", () => {
     expect(within(dialog).getByText(/followed by 2 worktrees/)).toBeInTheDocument()
     await user.click(within(dialog).getByRole("button", { name: "view in a" }))
     expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/a")}`)
-    expect(new URLSearchParams(window.location.search).get("resource")).toContain("o/r#1")
+    expect(parseResourceKey(new URLSearchParams(window.location.search).get("resource"))?.id).toBe("o/r#1")
   })
 
   it("names the open buttons for their service, and they do not navigate", async () => {

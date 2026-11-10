@@ -21,6 +21,12 @@ describe("useDiffView", () => {
     expect(result.current.file).toBe("a b.go")
   })
 
+  it("keeps a percent sign in the file path intact", () => {
+    const { result } = renderHook(() => useDiffView())
+    act(() => result.current.enter("docs/100%20done.md"))
+    expect(result.current.file).toBe("docs/100%20done.md")
+  })
+
   it("enter() opens without a file", () => {
     const { result } = renderHook(() => useDiffView())
     act(() => result.current.enter())

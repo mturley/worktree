@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { Task, TimelineEvent } from "../api/types"
 import { eventFullUiHref, taskFullUiHref } from "./fullUiLink"
+import { resourceParam } from "./resourceKey"
 
 const task = (over: Partial<Task>) => ({ id: 7, links: [], implicit_worktrees: [], ...over }) as unknown as Task
 const event = (over: Partial<TimelineEvent>) =>
@@ -17,7 +18,7 @@ describe("taskFullUiHref", () => {
 
 describe("eventFullUiHref", () => {
   it("opens the event over its resource in its first worktree", () => {
-    expect(eventFullUiHref(event({}))).toBe("/worktree/%2Fwt%2Fa?resource=pr:o%2Fr%231&event=ev%2F1")
+    expect(eventFullUiHref(event({}))).toBe(`/worktree/%2Fwt%2Fa?${resourceParam({ type: "pr", id: "o/r#1" })}&event=ev%2F1`)
   })
   it("opens over the home page with no worktree", () => {
     expect(eventFullUiHref(event({ worktree_paths: [] }))).toBe("/?event=ev%2F1")

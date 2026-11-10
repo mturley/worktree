@@ -27,7 +27,7 @@ import { useWorktrees } from "../hooks/useWorktrees"
 import { hasMacBridge, postToMac } from "../lib/macBridge"
 import { readMiniExpanded, writeMiniExpanded } from "../lib/miniExpandedPref"
 import { openExternal } from "../lib/miniMode"
-import { serializeResourceKey } from "../lib/resourceKey"
+import { resourceParam } from "../lib/resourceKey"
 import { unreadBadge } from "../lib/unreadBadge"
 
 type MiniTab = "tasks" | "activity"
@@ -155,7 +155,7 @@ export function MiniPage() {
   // then opens in the full UI.
   const [choosing, setChoosing] = useState<{ r: ResourceDTO; worktrees: { path: string; branch: string }[] } | null>(null)
   const openResourceIn = (path: string, r: { type: string; id: string }) =>
-    navigate(`/worktree/${encodeURIComponent(path)}?resource=${serializeResourceKey({ type: r.type, id: r.id })}`)
+    navigate(`/worktree/${encodeURIComponent(path)}?${resourceParam({ type: r.type, id: r.id })}`)
 
   const suggestions = buildSuggestions({
     terms: search.terms,

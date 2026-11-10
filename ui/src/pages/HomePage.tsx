@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
 import { useLocation } from "wouter"
-import { serializeResourceKey } from "../lib/resourceKey"
+import { resourceParam } from "../lib/resourceKey"
 import type { ResourceDTO } from "../api/types"
 import { Badge, Box, Button, Grid, Group, Stack, Tabs, Title } from "@mantine/core"
 import { useElementSize } from "@mantine/hooks"
@@ -196,7 +196,7 @@ export function HomePage() {
   // chooser is useActivityPanel's.)
   const [choosing, setChoosing] = useState<{ r: ResourceDTO; worktrees: { path: string; branch: string }[] } | null>(null)
   const openResourceIn = (path: string, r: { type: string; id: string }) =>
-    navigate(`/worktree/${encodeURIComponent(path)}?resource=${serializeResourceKey({ type: r.type, id: r.id })}`)
+    navigate(`/worktree/${encodeURIComponent(path)}?${resourceParam({ type: r.type, id: r.id })}`)
 
   const everything = useSeeEverything()
   // Unreads only narrows every pane here, so their match lines say so.

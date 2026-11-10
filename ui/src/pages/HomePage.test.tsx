@@ -36,6 +36,7 @@ vi.mock("../hooks/useTimeline", () => ({
 
 import { HomePage } from "./HomePage"
 import { api } from "../api/client"
+import { parseResourceKey } from "../lib/resourceKey"
 
 const wrap = () => {
   const qc = new QueryClient()
@@ -462,7 +463,7 @@ describe("HomePage activity entry click", () => {
     wrap()
     await userEvent.click(screen.getByText("Looks good to me"))
     expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/foo")}`)
-    expect(new URLSearchParams(window.location.search).get("resource")).toBe("pr:o/r#1")
+    expect(parseResourceKey(new URLSearchParams(window.location.search).get("resource"))).toEqual({ type: "pr", id: "o/r#1" })
     expect(window.history.state).toEqual({ openEvent: event })
   })
 
@@ -683,7 +684,7 @@ describe("HomePage search", () => {
     const dialog = await screen.findByRole("dialog")
     await user.click(within(dialog).getByRole("button", { name: "view in bar" }))
     expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/bar")}`)
-    expect(new URLSearchParams(window.location.search).get("resource")).toBe("pr:o/r#3")
+    expect(parseResourceKey(new URLSearchParams(window.location.search).get("resource"))).toEqual({ type: "pr", id: "o/r#3" })
   })
 
   it("a task picked from the dropdown goes to its worktree and opens there", async () => {

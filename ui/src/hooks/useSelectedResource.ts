@@ -1,5 +1,6 @@
 import { useCallback } from "react"
-import { useLocation, useSearch } from "wouter"
+import { useLocation } from "wouter"
+import { useRawSearch } from "./useRawSearch"
 import {
   parseResourceKey,
   serializeResourceKey,
@@ -28,7 +29,7 @@ export function useSelectedResource(): {
   clear: (opts?: { replace?: boolean }) => void
   toggle: (key: ResourceKey) => void
 } {
-  const search = useSearch()
+  const search = useRawSearch()
   const [location, navigate] = useLocation()
   const selected = parseResourceKey(new URLSearchParams(search).get(PARAM))
 
@@ -71,7 +72,7 @@ export function useSelectedResource(): {
  * thread forward to show a focused message) that shouldn't add a step.
  */
 export function useResourceTab(tabs: readonly string[]): [string, (tab: string, opts?: { replace?: boolean }) => void] {
-  const search = useSearch()
+  const search = useRawSearch()
   const [location, navigate] = useLocation()
   const raw = new URLSearchParams(search).get(TAB_PARAM)
   const current = raw && tabs.includes(raw) ? raw : tabs[0]

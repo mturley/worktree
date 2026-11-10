@@ -21,6 +21,12 @@ describe("useSearchQuery", () => {
     expect(params.get("resource")).toBe("pr:o/r#1")
     expect(window.history.length).toBe(len)
   })
+  it("keeps a percent sign in the query intact", () => {
+    const { result } = renderHook(() => useSearchQuery())
+    act(() => result.current.setQ("50%25 done"))
+    expect(result.current.q).toBe("50%25 done")
+    expect(new URLSearchParams(window.location.search).get("q")).toBe("50%25 done")
+  })
   it("removes the param when cleared", () => {
     const { result } = renderHook(() => useSearchQuery())
     act(() => result.current.setQ("x"))

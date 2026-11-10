@@ -1972,7 +1972,7 @@ URL param (`?task=<id>`) through **`TaskModalProvider`**
   is one of them, else the first. Either makes the chip a `<button>`
   (`task-link-chip-nav`, hover style in `styles/theme.css`): a worktree chip
   opens `/worktree/<path>`, a resource chip opens
-  `/worktree/<path>?resource=<serializeResourceKey>`, the same URL a resource
+  `/worktree/<path>?<resourceParam>`, the same URL a resource
   row's worktree button builds, which selects it there. An unfollowed
   (archived) resource chip and "🔗 N linked" stay inert.
 - **Task links name cmux workspaces and preview on hover**
@@ -2336,7 +2336,12 @@ states. Frontend: `ui/src/components/settings/LogsPanel.tsx`,
     (`lib/resourceKey.ts`) do the encode/decode: the id is
     percent-encoded, and parsing splits on the **first** colon only,
     because a Slack resource id is itself `channel:threadTs` — everything
-    after the first colon belongs to the id. A malformed or stale
+    after the first colon belongs to the id. A link built by hand uses
+    `resourceParam(key)` (`resource=<encodeURIComponent(serialized)>`), never
+    `serializeResourceKey` interpolated directly: it must match what
+    `URLSearchParams.set` writes, or an id holding a literal percent-escape
+    (a link URL with `%20` in it) reads back decoded and selects nothing.
+    A malformed or stale
     `?resource=` value degrades to "nothing selected" rather than
     throwing.
   - `useResourceTab(tabs)` (same file) — the selected resource's active
@@ -2393,7 +2398,11 @@ states. Frontend: `ui/src/components/settings/LogsPanel.tsx`,
   single `decodeURIComponent(rawPath)` on the detail page — do not
   double-encode/decode. `useSelectedResource` (above) manages the separate
   `?resource=` query param on top of this route via `wouter`'s
-  `useLocation`/`useSearch`.
+  `useLocation` and our `useRawSearch` (`hooks/useRawSearch.ts`). Never read
+  the query with `useSearch` from `"wouter"`: wouter 3.10 runs `decodeURI`
+  over it, so `URLSearchParams` decodes a second time and any value holding a
+  literal percent-escape comes back wrong. `useRawSearch` reads
+  `location.search` untouched, through the same history subscription.
 
 ### Worktree list sorting
 

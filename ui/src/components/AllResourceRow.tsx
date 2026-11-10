@@ -3,7 +3,7 @@ import { useState } from "react"
 import { useLocation } from "wouter"
 import { useCmuxMatches, useResourceCmuxTab } from "../api/cmux"
 import type { AllResourceDTO, ResourceWorktree } from "../api/types"
-import { serializeResourceKey } from "../lib/resourceKey"
+import { resourceParam } from "../lib/resourceKey"
 import { READ_BOX_BORDER, UNREAD_BG, UNREAD_BOX_BORDER, hasUnread } from "../lib/unread"
 import { CmuxSwitchButton } from "./CmuxSwitchButton"
 import { CopyLinkIcon } from "./CopyLinkIcon"
@@ -22,7 +22,7 @@ import { WorktreeName, WorktreePreview } from "./WorktreeName"
 const btn = { root: { flexShrink: 0 }, label: { whiteSpace: "nowrap" as const } }
 
 export function worktreeHref(wt: Pick<ResourceWorktree, "path">, r: Pick<AllResourceDTO, "type" | "id">): string {
-  return `/worktree/${encodeURIComponent(wt.path)}?resource=${serializeResourceKey({ type: r.type, id: r.id })}`
+  return `/worktree/${encodeURIComponent(wt.path)}?${resourceParam({ type: r.type, id: r.id })}`
 }
 
 /**

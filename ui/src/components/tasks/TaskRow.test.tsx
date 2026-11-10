@@ -7,6 +7,7 @@ import type { AllResourceDTO, CmuxResponse, Task } from "../../api/types"
 import { TaskRow } from "./TaskRow"
 import { TaskStateCheckbox } from "./TaskStateCheckbox"
 import { TaskCountBadge } from "./TaskCountBadge"
+import { resourceParam } from "../../lib/resourceKey"
 
 afterEach(cleanup)
 /** Renders `ui` with a query cache, seeded with `seed` (query key → data) so nothing fetches. */
@@ -171,7 +172,7 @@ describe("TaskRow opens the modal", () => {
     />)
     await userEvent.click(screen.getByRole("button", { name: "Open #5" }))
     expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/w/b")}`)
-    expect(window.location.search).toBe(`?resource=pr:${encodeURIComponent("o/r#5")}`)
+    expect(window.location.search).toBe(`?${resourceParam({ type: "pr", id: "o/r#5" })}`)
     expect(onOpen).not.toHaveBeenCalled()
   })
 

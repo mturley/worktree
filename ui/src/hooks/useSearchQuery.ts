@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from "react"
-import { useLocation, useSearch } from "wouter"
+import { useLocation } from "wouter"
+import { useRawSearch } from "./useRawSearch"
 import { useDebouncedValue } from "@mantine/hooks"
 import { parseQuery } from "../lib/search"
 
@@ -17,7 +18,7 @@ export const SEARCH_DEBOUNCE_MS = 250
  * `debouncedQ` (trimmed) is for server requests.
  */
 export function useSearchQuery() {
-  const search = useSearch()
+  const search = useRawSearch()
   const [location, navigate] = useLocation()
   const q = new URLSearchParams(search).get(PARAM) ?? ""
   const setQ = useCallback(

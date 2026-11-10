@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { serializeResourceKey, parseResourceKey, resourceKeyEquals } from "./resourceKey"
+import { serializeResourceKey, parseResourceKey, resourceKeyEquals, resourceParam } from "./resourceKey"
 
 describe("resourceKey", () => {
   it("round-trips a PR id containing / and #", () => {
@@ -11,6 +11,15 @@ describe("resourceKey", () => {
     const key = { type: "slack", id: "C123:1700000000.000100" }
     const raw = serializeResourceKey(key)
     expect(parseResourceKey(raw)).toEqual(key)
+  })
+
+  it("resourceParam encodes the same way URLSearchParams.set does", () => {
+    const key = { type: "link", id: "https://ci.example/a%20b/c?x=1&y=2" }
+    const p = new URLSearchParams(resourceParam(key))
+    expect(parseResourceKey(p.get("resource"))).toEqual(key)
+    const viaSet = new URLSearchParams()
+    viaSet.set("resource", serializeResourceKey(key))
+    expect(parseResourceKey(new URLSearchParams(viaSet.toString()).get("resource"))).toEqual(key)
   })
 
   it("splits on the first colon only", () => {

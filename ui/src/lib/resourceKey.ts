@@ -14,6 +14,17 @@ export function serializeResourceKey(key: ResourceKey): string {
 }
 
 /**
+ * The `resource=<value>` query fragment for a link built by hand, encoded the
+ * way `URLSearchParams.set` (useSelectedResource) encodes it, so both kinds
+ * of link read back the same. Never interpolate serializeResourceKey into a
+ * query string directly: that drops a layer of encoding, and an id holding a
+ * literal percent-escape (`a%20b`) would read back decoded (`a b`).
+ */
+export function resourceParam(key: ResourceKey): string {
+  return `resource=${encodeURIComponent(serializeResourceKey(key))}`
+}
+
+/**
  * Parses a `?resource=` value. Splits on the FIRST colon only: a Slack
  * resource id is itself `channel:threadTs`, so everything after the first
  * colon belongs to the id. Returns null for anything malformed rather than

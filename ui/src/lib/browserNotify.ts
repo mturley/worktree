@@ -1,6 +1,6 @@
 import { navigate } from "wouter/use-browser-location"
 import type { NotificationMsg } from "../api/types"
-import { serializeResourceKey } from "./resourceKey"
+import { resourceParam } from "./resourceKey"
 import { withHomeParam } from "./homeWorktree"
 
 /** Where clicking a notification goes: the worktree, with the resource selected. */
@@ -13,7 +13,7 @@ export function notificationHref(msg: NotificationMsg): string {
   if (!msg.resource_type) return base
   // A task notification opens the task modal over its worktree.
   if (msg.resource_type === "task") return `${base}?task=${encodeURIComponent(msg.resource_id)}`
-  return `${base}?resource=${serializeResourceKey({ type: msg.resource_type, id: msg.resource_id })}`
+  return `${base}?${resourceParam({ type: msg.resource_type, id: msg.resource_id })}`
 }
 
 /**

@@ -1,5 +1,5 @@
 import type { Task, TimelineEvent } from "../api/types"
-import { serializeResourceKey } from "./resourceKey"
+import { resourceParam } from "./resourceKey"
 import { taskWorktreePaths } from "./taskSections"
 
 /*
@@ -21,5 +21,5 @@ export function eventFullUiHref(e: TimelineEvent): string {
   if (e.resource_type === "task") return `${worktreeBase(path)}?task=${encodeURIComponent(e.resource_id)}`
   const eventParam = `event=${encodeURIComponent(e.id)}`
   if (!path) return `/?${eventParam}`
-  return `${worktreeBase(path)}?resource=${serializeResourceKey({ type: e.resource_type, id: e.resource_id })}&${eventParam}`
+  return `${worktreeBase(path)}?${resourceParam({ type: e.resource_type, id: e.resource_id })}&${eventParam}`
 }

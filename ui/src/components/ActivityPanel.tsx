@@ -2,7 +2,7 @@ import { useCallback, useState, type CSSProperties, type ReactNode } from "react
 import { useLocation } from "wouter"
 import { Group, Stack } from "@mantine/core"
 import type { ResourceDTO, TimelineEvent } from "../api/types"
-import { serializeResourceKey } from "../lib/resourceKey"
+import { resourceParam } from "../lib/resourceKey"
 import { isArchivedEvent, openEventState } from "../lib/openEvent"
 import { useGlobalTimeline } from "../hooks/useTimeline"
 import { useActivityFilter } from "../hooks/useActivityFilter"
@@ -101,7 +101,7 @@ export function useActivityPanel(opts: {
    * again in the resource's feed.
    */
   const openEventIn = (path: string, e: TimelineEvent) => {
-    navigate(`/worktree/${encodeURIComponent(path)}?resource=${serializeResourceKey({ type: e.resource_type, id: e.resource_id })}`, {
+    navigate(`/worktree/${encodeURIComponent(path)}?${resourceParam({ type: e.resource_type, id: e.resource_id })}`, {
       state: openEventState(e),
     })
   }

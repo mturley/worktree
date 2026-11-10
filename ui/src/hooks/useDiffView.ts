@@ -1,5 +1,6 @@
 import { useCallback } from "react"
-import { useLocation, useSearch } from "wouter"
+import { useLocation } from "wouter"
+import { useRawSearch } from "./useRawSearch"
 
 /**
  * Whether the diff view is open, in the URL as `?diff` (and `&file=<path>`,
@@ -19,7 +20,7 @@ export function useDiffView(): {
   /** Drops `prcomment` once handled, replacing the history entry; the view stays open. */
   dropPRComment: () => void
 } {
-  const search = useSearch()
+  const search = useRawSearch()
   const [location, navigate] = useLocation()
   const params = new URLSearchParams(search)
   const open = params.has("diff")

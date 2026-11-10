@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { notificationHref, openNotificationTarget, showBrowserNotification } from "./browserNotify"
 import type { NotificationMsg } from "../api/types"
+import { parseResourceKey, resourceParam } from "./resourceKey"
+
+/** The resource fragment for msg's PR, as the app writes it. */
+const PR3 = resourceParam({ type: "pr", id: "o/r#3" })
 
 const msg: NotificationMsg = {
   id: "n1", title: "PR #3: Fix", subtitle: "wt-a", body: "approved", worktree_path: "/w/wt-a",
@@ -24,7 +28,7 @@ afterEach(() => {
 
 describe("notificationHref", () => {
   it("targets the worktree page with the resource selected", () => {
-    expect(notificationHref(msg)).toBe("/worktree/%2Fw%2Fwt-a?resource=pr:o%2Fr%233")
+    expect(notificationHref(msg)).toBe(`/worktree/%2Fw%2Fwt-a?${PR3}`)
   })
   it("targets the home page for a summary spanning worktrees", () => {
     expect(notificationHref({ ...msg, worktree_path: "", resource_type: "", resource_id: "" })).toBe("/")
@@ -47,24 +51,24 @@ describe("openNotificationTarget", () => {
   afterEach(() => go("/"))
 
   it("opens a task over the selected resource, keeping the selection", () => {
-    go("/worktree/%2Fw%2Fwt-a?resource=pr:o%2Fr%233")
+    go(`/worktree/%2Fw%2Fwt-a?${PR3}`)
     openNotificationTarget(taskMsg)
     const url = new URL(window.location.href)
     expect(url.pathname).toBe("/worktree/%2Fw%2Fwt-a")
     expect(url.searchParams.get("task")).toBe("12")
-    expect(url.searchParams.get("resource")).toBe("pr:o/r#3")
+    expect(parseResourceKey(url.searchParams.get("resource"))).toEqual({ type: "pr", id: "o/r#3" })
   })
 
   it("selects a resource without closing the task modal that is open", () => {
     go("/worktree/%2Fw%2Fwt-a?task=12")
     openNotificationTarget(msg)
     const url = new URL(window.location.href)
-    expect(url.searchParams.get("resource")).toBe("pr:o/r#3")
+    expect(parseResourceKey(url.searchParams.get("resource"))).toEqual({ type: "pr", id: "o/r#3" })
     expect(url.searchParams.get("task")).toBe("12")
   })
 
   it("stays put when the target is already showing, whatever else is", () => {
-    go("/worktree/%2Fw%2Fwt-a?resource=pr:o%2Fr%233&task=4")
+    go(`/worktree/%2Fw%2Fwt-a?${PR3}&task=4`)
     const before = here()
     const len = window.history.length
     openNotificationTarget(msg)
@@ -81,7 +85,7 @@ describe("openNotificationTarget", () => {
   const wide = { ...msg, resource_type: "", resource_id: "" }
 
   it("shows the bare worktree for a worktree-wide notification, clearing the selection", () => {
-    go("/worktree/%2Fw%2Fwt-a?resource=pr:o%2Fr%233")
+    go(`/worktree/%2Fw%2Fwt-a?${PR3}`)
     openNotificationTarget(wide)
     expect(here()).toBe("/worktree/%2Fw%2Fwt-a")
   })

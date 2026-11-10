@@ -5,7 +5,7 @@ import type { Priority, Task, TaskState } from "../../api/types"
 import { dueLabel, linkChip, taskWorktreePaths } from "../../lib/taskSections"
 import { taskFullUiHref } from "../../lib/fullUiLink"
 import { TooltipWithHints, useModifierOpen } from "../../hooks/useModifierOpen"
-import { serializeResourceKey } from "../../lib/resourceKey"
+import { resourceParam } from "../../lib/resourceKey"
 import { TaskStateCheckbox } from "./TaskStateCheckbox"
 import { TaskPriorityMenu } from "./TaskPriorityMenu"
 import { UnreadMarkerDot } from "../UnreadMarkerDot"
@@ -219,7 +219,7 @@ export function TaskRow({ task, ownResource, ownWorktree, dragHandle, onState, o
               if (link.worktree) navigate(`/worktree/${encodeURIComponent(link.worktree)}`)
               else if (link.target) {
                 const { worktree, resource } = link.target
-                navigate(`/worktree/${encodeURIComponent(worktree)}?resource=${serializeResourceKey(resource)}`)
+                navigate(`/worktree/${encodeURIComponent(worktree)}?${resourceParam(resource)}`)
               }
             }}
           />

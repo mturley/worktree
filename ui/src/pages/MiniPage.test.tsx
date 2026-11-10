@@ -41,6 +41,7 @@ vi.mock("../hooks/useTimeline", () => ({
 
 import { MiniPage } from "./MiniPage"
 import { api } from "../api/client"
+import { resourceParam } from "../lib/resourceKey"
 
 const wrap = () => render(
   <QueryClientProvider client={new QueryClient()}>
@@ -249,7 +250,7 @@ describe("MiniPage", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: /Open in full UI/ }))
     expect(post).toHaveBeenCalledWith({
       type: "open",
-      url: `${window.location.origin}/worktree/%2Fwt%2Ffoo?resource=pr:o%2Fr%231&event=${event.id}`,
+      url: `${window.location.origin}/worktree/%2Fwt%2Ffoo?${resourceParam({ type: "pr", id: "o/r#1" })}&event=${event.id}`,
     })
   })
 

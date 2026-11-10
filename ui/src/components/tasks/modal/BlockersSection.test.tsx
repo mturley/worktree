@@ -5,6 +5,7 @@ import { api, HttpError } from "../../../api/client"
 import type { ResourceDTO, Task, TaskBlocker, TaskDetailLink } from "../../../api/types"
 import { BlockersSection } from "./BlockersSection"
 import { detail, renderDetail } from "./detailsTestUtils"
+import { resourceParam } from "../../../lib/resourceKey"
 
 vi.mock("../../../api/client", async (orig) => ({
   ...(await orig<typeof import("../../../api/client")>()),
@@ -141,7 +142,7 @@ describe("BlockersSection", () => {
       vi.mocked(api.allResources).mockResolvedValue([
         { type: "pr", id: "o/r#9", title: "Fix login", url: prBlocker.url, worktrees: paths.map((path) => ({ path, branch: "b" })) },
       ] as unknown as Awaited<ReturnType<typeof api.allResources>>)
-    const inWorktree = "/worktree/%2Fw%2Ffeat?resource=pr:o%2Fr%239"
+    const inWorktree = `/worktree/%2Fw%2Ffeat?${resourceParam({ type: "pr", id: "o/r#9" })}`
     const followedLink = () =>
       waitFor(() => {
         const a = screen.getByRole("link", { name: "Fix login" })

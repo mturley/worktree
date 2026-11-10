@@ -5,6 +5,7 @@ import { api } from "../../../api/client"
 import type { TaskDetailLink } from "../../../api/types"
 import { LinksSection } from "./LinksSection"
 import { detail, renderDetail, stubRowLayout } from "./detailsTestUtils"
+import { resourceParam } from "../../../lib/resourceKey"
 
 vi.mock("../../../api/client", async (orig) => ({
   ...(await orig<typeof import("../../../api/client")>()),
@@ -60,7 +61,7 @@ const followedBy = (...paths: string[]) => {
     { type: "pr", id: "o/r#1", title: "Fix login", url: pr.url, worktrees: paths.map((path) => ({ path, branch: "b" })) },
   ] as unknown as Awaited<ReturnType<typeof api.allResources>>)
 }
-const prHref = "/worktree/%2Fw%2Ffeat?resource=pr:o%2Fr%231"
+const prHref = `/worktree/%2Fw%2Ffeat?${resourceParam({ type: "pr", id: "o/r#1" })}`
 const followedLink = () =>
   waitFor(() => {
     const a = screen.getByRole("link", { name: /Fix login/ })

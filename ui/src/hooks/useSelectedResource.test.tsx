@@ -2,6 +2,11 @@ import { afterEach, beforeEach, describe, it, expect } from "vitest"
 import { render, cleanup, screen, act, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { useResourceTab, useSelectedResource } from "./useSelectedResource"
+import { resourceParam } from "../lib/resourceKey"
+
+// A link id with a literal percent-escape in it, as when a pasted URL had
+// spaces in it: it must come back with "%20" intact, never as spaces.
+const PCT_ID = "https://ci.example/job/components%20%20/job/e2e/4026/"
 
 function Probe() {
   const { selected, select, clear, toggle } = useSelectedResource()
@@ -11,6 +16,7 @@ function Probe() {
       <button onClick={() => select({ type: "pr", id: "org/repo#1" })}>select pr</button>
       <button onClick={() => toggle({ type: "pr", id: "org/repo#1" })}>toggle pr</button>
       <button onClick={() => toggle({ type: "jira", id: "J-1" })}>toggle jira</button>
+      <button onClick={() => select({ type: "link", id: PCT_ID })}>select pct</button>
       <button onClick={() => clear()}>clear</button>
       <button onClick={() => clear({ replace: true })}>clear replace</button>
     </div>
@@ -44,6 +50,19 @@ describe("useSelectedResource", () => {
     await user.click(screen.getByRole("button", { name: "select pr" }))
     expect(screen.getByTestId("selected")).toHaveTextContent("pr|org/repo#1")
     expect(window.location.search).toContain("resource=pr%3Aorg%252Frepo%25231")
+  })
+
+  it("round-trips an id containing a percent-escape through select", async () => {
+    const user = userEvent.setup()
+    render(<Probe />)
+    await user.click(screen.getByRole("button", { name: "select pct" }))
+    expect(screen.getByTestId("selected")).toHaveTextContent(`link|${PCT_ID}`, { normalizeWhitespace: false })
+  })
+
+  it("reads an id containing a percent-escape from a resourceParam link", () => {
+    window.history.replaceState({}, "", `/worktree/wt?${resourceParam({ type: "link", id: PCT_ID })}`)
+    render(<Probe />)
+    expect(screen.getByTestId("selected")).toHaveTextContent(`link|${PCT_ID}`, { normalizeWhitespace: false })
   })
 
   it("removes the param on clear", async () => {

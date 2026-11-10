@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { useLocation, useSearch } from "wouter"
+import { useLocation } from "wouter"
+import { useRawSearch } from "../../../hooks/useRawSearch"
 
 const PARAM = "task"
 
@@ -37,7 +38,7 @@ function parseId(raw: string | null): number | null {
  * to go back to (it could leave the app), so close replaces the URL.
  */
 export function TaskModalProvider({ children }: { children: ReactNode }) {
-  const search = useSearch()
+  const search = useRawSearch()
   const [, navigate] = useLocation()
   // Set while a close is waiting on history.back(), whose popstate arrives
   // later: the modal reads as closed at once, until the URL changes.
