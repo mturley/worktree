@@ -62,7 +62,7 @@ export interface EventTextChange {
   new_text: string;
 }
 export interface TimelineEvent {
-  id: string; ts: string; external_ts: string; source: string;
+  id: string; ts: string; external_ts: string; edited_at?: string; source: string;
   type: string; type_label: string; title: string; body: string; author: string;
   /** "user" or "bot"; absent when unknown. */
   author_type?: string;

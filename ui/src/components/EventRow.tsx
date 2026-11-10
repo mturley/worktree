@@ -237,7 +237,7 @@ export function EventRow({
               </span>
             </Text>
             <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
-              {e.author && `${e.author} · `}{rel(e.external_ts || e.ts)}
+              {e.author && `${e.author} · `}{rel(e.external_ts || e.ts)}{e.edited_at && " (edited)"}
             </Text>
           </Group>
           {/* A resource match is not explained here: the server's snippet is the

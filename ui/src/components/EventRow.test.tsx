@@ -60,6 +60,14 @@ describe("EventRow", () => {
     expect(screen.getByLabelText("PR Opened")).toBeInTheDocument()
   })
 
+  it("marks an edited event with (edited), and only then", () => {
+    const { unmount } = renderWithProvider(<EventRow e={makeEvent({ edited_at: "2026-08-18T01:00:00Z" })} />)
+    expect(screen.getByText(/\(edited\)/)).toBeInTheDocument()
+    unmount()
+    renderWithProvider(<EventRow e={makeEvent({})} />)
+    expect(screen.queryByText(/\(edited\)/)).toBeNull()
+  })
+
   it("falls back to the mapping's readable label when type_label is empty", () => {
     // The type is carried by the dot alone now (label + tooltip), so assert
     // on its accessible name; eventMeta's human label ("merged") beats

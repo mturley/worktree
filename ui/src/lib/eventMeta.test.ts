@@ -6,6 +6,7 @@ describe("task events", () => {
   const TASK_TYPES = [
     "task_created", "task_state_changed", "task_deleted", "subtask_checked",
     "subtask_unchecked", "task_blocker_resolved", "task_blocker_unresolved",
+    "task_work_logged",
   ]
   // Edits are no longer task events: their rows are deleted, so they need
   // no entry of their own.
@@ -87,5 +88,13 @@ describe("pr_needs_rebase", () => {
   it("is an orange \"needs rebase\" event", () => {
     expect(eventMeta("pr_needs_rebase").label).toBe("needs rebase")
     expect(eventMeta("pr_needs_rebase").color).toBe("orange")
+  })
+})
+
+describe("task_work_logged", () => {
+  it("is a task event labelled work logged", () => {
+    const m = eventMeta("task_work_logged")
+    expect(m.label).toBe("work logged")
+    expect(m.cssColor).toBe("var(--task-accent)")
   })
 })
