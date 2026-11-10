@@ -119,6 +119,111 @@ describe("useWorktreeNotes base text", () => {
       expect(apiMock.saveWorktreeNotes.mock.calls[1][0]).toMatchObject({ notes: "mine more", base_notes: "loaded" })
     })
 
+    // The keepalive carries the edits now; a follow-up from the in-flight
+    // save would resend them with that save's text as base, and against
+    // whatever the keepalive stored that nests conflict markers.
+    it("sends no follow-up save once beforeunload has handed the edits off", async () => {
+      let resolveFirst: (v: ReturnType<typeof saveResponse>) => void = () => {}
+      apiMock.saveWorktreeNotes
+        .mockImplementationOnce(() => new Promise((r) => { resolveFirst = r }))
+        .mockResolvedValue(saveResponse("mine more"))
+      const { result } = await mount("loaded")
+      act(() => result.current.setNotes("mine"))
+      act(() => { void result.current.flush() })
+      await waitFor(() => expect(apiMock.saveWorktreeNotes).toHaveBeenCalledTimes(1))
+      act(() => result.current.setNotes("mine more"))
+      act(() => { window.dispatchEvent(new Event("beforeunload")) })
+      expect(apiMock.saveWorktreeNotes).toHaveBeenCalledTimes(2)
+      await act(async () => { resolveFirst(saveResponse("mine")) })
+      await act(async () => { await Promise.resolve() })
+      expect(apiMock.saveWorktreeNotes).toHaveBeenCalledTimes(2)
+    })
+
+    // Leaving within the app does not abort the in-flight save, so its own
+    // follow-up sends the rest once it returns, based on what it stored: a
+    // clean merge. A keepalive racing it with the pre-flight base would
+    // conflict whichever request landed second.
+    describe("unmounting while a save is in flight", () => {
+      async function unmountMidSave() {
+        let resolveFirst: (v: ReturnType<typeof saveResponse>) => void = () => {}
+        let rejectFirst: (e: Error) => void = () => {}
+        apiMock.saveWorktreeNotes
+          .mockImplementationOnce(() => new Promise((res, rej) => { resolveFirst = res; rejectFirst = rej }))
+          .mockResolvedValue(saveResponse("mine more", "2026-01-01T00:00:09Z"))
+        const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        apiMock.worktreeNotes.mockResolvedValue(loaded("loaded"))
+        const hook = renderHook(() => useWorktreeNotes("/wt"), {
+          wrapper: ({ children }: { children: ReactNode }) => (
+            <QueryClientProvider client={client}>{children}</QueryClientProvider>
+          ),
+        })
+        await waitFor(() => expect(hook.result.current.loaded).toBe(true))
+        act(() => hook.result.current.setNotes("mine"))
+        act(() => { void hook.result.current.flush() })
+        await waitFor(() => expect(apiMock.saveWorktreeNotes).toHaveBeenCalledTimes(1))
+        act(() => hook.result.current.setNotes("mine more"))
+        hook.unmount()
+        return { client, resolveFirst: (v: ReturnType<typeof saveResponse>) => resolveFirst(v), rejectFirst: (e: Error) => rejectFirst(e) }
+      }
+
+      it("sends no keepalive, but puts the edits in the cache for the next visit", async () => {
+        const { client, resolveFirst } = await unmountMidSave()
+        expect(apiMock.saveWorktreeNotes).toHaveBeenCalledTimes(1)
+        expect(client.getQueryData<{ notes: string }>(["worktree-notes", "/wt"])?.notes).toBe("mine more")
+        // Settle the save so its beforeunload listener does not outlive the test.
+        await act(async () => { resolveFirst(saveResponse("mine")) })
+        await waitFor(() => expect(apiMock.saveWorktreeNotes).toHaveBeenCalledTimes(2))
+      })
+
+      it("follows up with the in-flight save's text as base when it returns", async () => {
+        const { client, resolveFirst } = await unmountMidSave()
+        await act(async () => { resolveFirst(saveResponse("mine")) })
+        await waitFor(() => expect(apiMock.saveWorktreeNotes).toHaveBeenCalledTimes(2))
+        expect(apiMock.saveWorktreeNotes.mock.calls[1][0]).toMatchObject({ notes: "mine more", base_notes: "mine" })
+        expect(client.getQueryData<{ notes: string }>(["worktree-notes", "/wt"])?.notes).toBe("mine more")
+        await waitFor(() => expect(client.getQueryData<{ updated_at: string }>(["worktree-notes", "/wt"])?.updated_at)
+          .toBe("2026-01-01T00:00:09Z"))
+      })
+
+      it("hands off to a keepalive if the tab closes before the save returns", async () => {
+        const { resolveFirst } = await unmountMidSave()
+        act(() => { window.dispatchEvent(new Event("beforeunload")) })
+        expect(apiMock.saveWorktreeNotes).toHaveBeenCalledTimes(2)
+        expect(apiMock.saveWorktreeNotes.mock.calls[1][0]).toMatchObject({ notes: "mine more", base_notes: "loaded" })
+        expect(apiMock.saveWorktreeNotes.mock.calls[1][1]).toEqual({ keepalive: true })
+        await act(async () => { resolveFirst(saveResponse("mine")) })
+        await act(async () => { await Promise.resolve() })
+        expect(apiMock.saveWorktreeNotes).toHaveBeenCalledTimes(2)
+      })
+
+      it("stops listening for beforeunload once the follow-up has landed", async () => {
+        const { resolveFirst } = await unmountMidSave()
+        await act(async () => { resolveFirst(saveResponse("mine")) })
+        await waitFor(() => expect(apiMock.saveWorktreeNotes).toHaveBeenCalledTimes(2))
+        await act(async () => { await Promise.resolve() })
+        act(() => { window.dispatchEvent(new Event("beforeunload")) })
+        expect(apiMock.saveWorktreeNotes).toHaveBeenCalledTimes(2)
+      })
+
+      it("sends the edits by keepalive if the in-flight save fails", async () => {
+        const { rejectFirst } = await unmountMidSave()
+        await act(async () => { rejectFirst(new Error("boom")) })
+        await waitFor(() => expect(apiMock.saveWorktreeNotes).toHaveBeenCalledTimes(2))
+        expect(apiMock.saveWorktreeNotes.mock.calls[1][0]).toMatchObject({ notes: "mine more", base_notes: "loaded" })
+        expect(apiMock.saveWorktreeNotes.mock.calls[1][1]).toEqual({ keepalive: true })
+      })
+    })
+
+    it("sends the keepalive on unmount when no save is in flight", async () => {
+      apiMock.saveWorktreeNotes.mockResolvedValue(saveResponse("mine"))
+      const { result, unmount } = await mount("loaded")
+      act(() => result.current.setNotes("mine"))
+      unmount()
+      expect(apiMock.saveWorktreeNotes).toHaveBeenCalledTimes(1)
+      expect(apiMock.saveWorktreeNotes.mock.calls[0][0]).toMatchObject({ notes: "mine", base_notes: "loaded" })
+      expect(apiMock.saveWorktreeNotes.mock.calls[0][1]).toEqual({ keepalive: true })
+    })
+
     // Browsers cap a keepalive body at 64 KiB; past that the fetch fails.
     it("omits base_notes when the body would be too large for keepalive", async () => {
       apiMock.saveWorktreeNotes.mockResolvedValue(saveResponse("x"))

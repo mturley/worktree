@@ -36,6 +36,13 @@ const same = (a: Snapshot | null, b: Snapshot | null) =>
  *
  * At most one save is in flight. Edits made during a save are sent by a
  * follow-up save when it returns, so the last keystroke always lands.
+ *
+ * Leaving must not drop edits either. Closing the tab may abort the save in
+ * flight, so `beforeunload` hands the edits to a keepalive request. Leaving
+ * within the app does not abort it, so an unmount mid-save lets that save's
+ * follow-up send the rest (based on what it stored, so it merges cleanly) and
+ * keeps listening for `beforeunload` until it lands; an unmount with no save
+ * in flight sends the keepalive itself.
  */
 export function useWorktreeNotes(path: string) {
   const qc = useQueryClient()
@@ -57,6 +64,37 @@ export function useWorktreeNotes(path: string) {
   const inFlight = useRef(false)
   const again = useRef(false)
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const unmounted = useRef(false)
+  const handedOff = useRef<Snapshot | null>(null) // what the last keepalive sent
+  const stopListening = useRef<() => void>(() => {})
+
+  /**
+   * Sends the pending edits as a keepalive request, which outlives the page.
+   * A save still in flight may be aborted by the tab closing, so this sends
+   * even when it already holds this text. While it is in flight `base` still
+   * holds the base it was sent with, which stays correct whether or not it
+   * reached the server.
+   */
+  const sendKeepalive = useCallback(() => {
+    const snap = latest.current
+    if (!snap || same(snap, saved.current) || same(snap, handedOff.current)) return
+    clearTimeout(timer.current)
+    handedOff.current = snap
+    // The response may arrive after this card is gone, so the cache is
+    // updated up front: the next visit must start from these edits.
+    qc.setQueryData<WorktreeNotes>(["worktree-notes", path], (old) => ({
+      ...old, notes: snap.notes, sync_cmux: snap.sync, show_on_home: snap.home,
+    }))
+    const req: SaveWorktreeNotesRequest = {
+      path, notes: snap.notes, sync_cmux: snap.sync, show_on_home: snap.home, base_notes: base.current,
+    }
+    if (new TextEncoder().encode(JSON.stringify(req)).length > KEEPALIVE_BODY_LIMIT) {
+      delete req.base_notes
+    }
+    api.saveWorktreeNotes(req, { keepalive: true })
+      .then(() => qc.invalidateQueries({ queryKey: ["worktrees"] }))
+      .catch(() => {})
+  }, [path, qc])
 
   useEffect(() => {
     const data = query.data
@@ -108,25 +146,39 @@ export function useWorktreeNotes(path: string) {
         base.current = snap.notes
       }
       savedAt.current = res.updated_at ?? savedAt.current
-      qc.setQueryData<WorktreeNotes>(["worktree-notes", path], {
-        notes: res.notes, sync_cmux: res.sync_cmux, show_on_home: res.show_on_home, updated_at: res.updated_at,
-      })
+      inFlight.current = false
+      // A keepalive already carries the newer edits: sending them again,
+      // based on this save's text, would merge against whatever it stored.
+      const followUp = (again.current || !same(latest.current, sent)) &&
+        !same(latest.current, handedOff.current)
+      // After an unmount the cache holds newer edits than this save for the
+      // next visit (put there on unmount or by the keepalive); keep them.
+      if (!unmounted.current || same(latest.current, sent)) {
+        qc.setQueryData<WorktreeNotes>(["worktree-notes", path], {
+          notes: res.notes, sync_cmux: res.sync_cmux, show_on_home: res.show_on_home, updated_at: res.updated_at,
+        })
+      }
       // The home page's worktree cards show the notes.
       void qc.invalidateQueries({ queryKey: ["worktrees"] })
-      inFlight.current = false
       setError(undefined)
       setCmux({ outcome: res.cmux_sync, error: res.cmux_error })
-      if (again.current || !same(latest.current, sent)) {
+      if (followUp) {
         void save()
       } else {
         setStatus("saved")
+        if (unmounted.current) stopListening.current()
       }
     } catch (e) {
       inFlight.current = false
       setError(e instanceof Error ? e.message : String(e))
       setStatus("error")
+      // Nobody is left to retry: hand the edits to a keepalive.
+      if (unmounted.current) {
+        stopListening.current()
+        sendKeepalive()
+      }
     }
-  }, [path, qc])
+  }, [path, qc, sendKeepalive])
 
   const setNotes = useCallback((notes: string) => {
     if (!latest.current) return
@@ -174,39 +226,30 @@ export function useWorktreeNotes(path: string) {
   }, [save])
 
   // Leaving the page (SPA navigation or closing the tab) must not drop the
-  // last edits. keepalive lets the request outlive the page.
+  // last edits; see the doc comment above.
   useEffect(() => {
-    const sendPending = () => {
-      const snap = latest.current
-      if (!snap || same(snap, saved.current)) return
-      // A save still in flight is not keepalive, so leaving may abort it: send
-      // even when it already holds this text. While it is in flight `base`
-      // still holds the base it was sent with, which stays correct whether or
-      // not it reached the server (if it did, the server merges this text
-      // with what it stored).
-      const baseNotes = base.current
-      clearTimeout(timer.current)
-      // The response may arrive after this card is gone, so the cache is
-      // updated up front: the next visit must start from these edits.
-      qc.setQueryData<WorktreeNotes>(["worktree-notes", path], (old) => ({
-        ...old, notes: snap.notes, sync_cmux: snap.sync, show_on_home: snap.home,
-      }))
-      const req: SaveWorktreeNotesRequest = {
-        path, notes: snap.notes, sync_cmux: snap.sync, show_on_home: snap.home, base_notes: baseNotes,
-      }
-      if (new TextEncoder().encode(JSON.stringify(req)).length > KEEPALIVE_BODY_LIMIT) {
-        delete req.base_notes
-      }
-      api.saveWorktreeNotes(req, { keepalive: true })
-        .then(() => qc.invalidateQueries({ queryKey: ["worktrees"] }))
-        .catch(() => {})
-    }
-    window.addEventListener("beforeunload", sendPending)
+    unmounted.current = false
+    const onUnload = () => sendKeepalive()
+    window.addEventListener("beforeunload", onUnload)
+    stopListening.current = () => window.removeEventListener("beforeunload", onUnload)
     return () => {
-      window.removeEventListener("beforeunload", sendPending)
-      sendPending()
+      unmounted.current = true
+      clearTimeout(timer.current)
+      const snap = latest.current
+      if (inFlight.current) {
+        // The in-flight save's follow-up sends the rest; the next visit must
+        // start from these edits meanwhile.
+        if (snap && !same(snap, saved.current)) {
+          qc.setQueryData<WorktreeNotes>(["worktree-notes", path], (old) => ({
+            ...old, notes: snap.notes, sync_cmux: snap.sync, show_on_home: snap.home,
+          }))
+        }
+        return
+      }
+      stopListening.current()
+      sendKeepalive()
     }
-  }, [path, qc])
+  }, [path, qc, sendKeepalive])
 
   return {
     loaded: draft !== null,

@@ -233,6 +233,23 @@ func TestWorktreeNotesSaveMergesSameSpotInsertions(t *testing.T) {
 	}
 }
 
+// Leaving the page mid-save: the UI lets the in-flight save land, then sends
+// the edits typed since with that save's text as base. On the same line as
+// the in-flight edit, this must store the newer text without markers.
+func TestWorktreeNotesFollowUpAfterInFlightSaveMergesCleanly(t *testing.T) {
+	t.Parallel()
+	s, wtPath, _ := notesServer(t, nil, nil)
+	if _, err := notes.Set(s.DB, wtPath, "top\nloaded\nbottom", false, true); err != nil {
+		t.Fatal(err)
+	}
+	postNotes(t, s, map[string]any{"path": wtPath, "notes": "top\nmine\nbottom", "base_notes": "top\nloaded\nbottom"})
+	_, got := postNotes(t, s, map[string]any{"path": wtPath, "notes": "top\nmine more\nbottom", "base_notes": "top\nmine\nbottom"})
+	stored, _ := notes.Get(s.DB, wtPath)
+	if stored.Text != "top\nmine more\nbottom" || got.Notes != stored.Text {
+		t.Fatalf("stored = %q, response = %q; want the follow-up's text", stored.Text, got.Notes)
+	}
+}
+
 func TestWorktreeNotesSaveWithoutBaseOverwrites(t *testing.T) {
 	t.Parallel()
 	s, wtPath, _ := notesServer(t, nil, nil)
