@@ -158,8 +158,10 @@ func (p Plan) Preview() {
 	switch p.MacApp {
 	case MacAppOfferInstall:
 		fmt.Println("  • Offer to install the menu bar app (~/Applications/Worktree Menu Bar.app)")
+	case MacAppKeep:
+		fmt.Println("  • Ask whether to keep the menu bar app (removes it if not)")
 	case MacAppRebuild:
-		fmt.Println("  • Rebuild the menu bar app (its source changed)")
+		fmt.Println("  • Ask whether to keep the menu bar app, then rebuild it (its source changed)")
 	case MacAppNoSwiftc:
 		fmt.Println(ui.Dim("  — Install the Xcode Command Line Tools (xcode-select --install) to add the menu bar app"))
 	case MacAppSkipUnattended:
@@ -173,7 +175,7 @@ func (p Plan) Preview() {
 
 func (p Plan) HasWork() bool {
 	return p.CreateWorktreesBase || p.InstallShellRC || p.CreateConfig || p.InstallCompletions || p.ConfigureJiraProjects || p.TestGitHubCreds || p.TestSlackCreds || p.TestJiraCreds || p.ConfigureUI || p.SeedGitHubBotUsernames ||
-		p.MacApp == MacAppOfferInstall || p.MacApp == MacAppRebuild ||
+		p.MacApp == MacAppOfferInstall || p.MacApp == MacAppRebuild || p.MacApp == MacAppKeep ||
 		p.AgentSkills.HasWork()
 }
 
@@ -232,7 +234,7 @@ func (p Plan) Execute() error {
 		}
 	}
 
-	if p.MacApp == MacAppOfferInstall || p.MacApp == MacAppRebuild {
+	if p.MacApp == MacAppOfferInstall || p.MacApp == MacAppRebuild || p.MacApp == MacAppKeep {
 		if err := runMacAppStep(p.MacApp, defaultMacAppDeps()); err != nil {
 			fmt.Printf("  %s Menu bar app: %v\n", ui.Yellow("!"), err)
 		}

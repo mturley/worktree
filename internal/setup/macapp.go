@@ -18,12 +18,15 @@ import (
 type MacAppAction int
 
 const (
-	MacAppNone           MacAppAction = iota // not macOS, or installed and current
-	MacAppNoSwiftc                           // macOS, no developer tools: preview a hint only
+	MacAppNone           MacAppAction = iota // not macOS
+	MacAppNoSwiftc                           // macOS, not installed, no developer tools: preview a hint only
 	MacAppOfferInstall                       // interactive, not installed
 	MacAppSkipUnattended                     // non-interactive, not installed
-	MacAppRebuild                            // installed, hash differs
+	MacAppRebuild                            // installed, hash differs: ask to keep, then rebuild
+	MacAppKeep                               // installed, nothing to rebuild (or no tools to): ask to keep
 )
+
+const macAppKeepPrompt = "The worktree menu bar app is installed. Keep it?"
 
 type macAppState struct {
 	GOOS string
@@ -38,19 +41,19 @@ func decideMacApp(s macAppState) MacAppAction {
 	if s.GOOS != "darwin" {
 		return MacAppNone
 	}
+	if s.Installed {
+		if s.HaveSwiftc && s.InstalledHash != s.SourceHash {
+			return MacAppRebuild
+		}
+		return MacAppKeep
+	}
 	if !s.HaveSwiftc {
 		return MacAppNoSwiftc
 	}
-	if !s.Installed {
-		if s.NonInteractive {
-			return MacAppSkipUnattended
-		}
-		return MacAppOfferInstall
+	if s.NonInteractive {
+		return MacAppSkipUnattended
 	}
-	if s.InstalledHash != s.SourceHash {
-		return MacAppRebuild
-	}
-	return MacAppNone
+	return MacAppOfferInstall
 }
 
 // detectMacApp gathers the real machine state for decideMacApp.
@@ -103,8 +106,18 @@ func defaultMacAppDeps() macAppDeps {
 }
 
 func runMacAppStep(a MacAppAction, d macAppDeps) error {
-	if a != MacAppOfferInstall && a != MacAppRebuild {
+	if a != MacAppOfferInstall && a != MacAppRebuild && a != MacAppKeep {
 		return nil
+	}
+	// The question defaults to yes, so --yes (how `make install` runs setup)
+	// keeps the app.
+	if a == MacAppKeep || a == MacAppRebuild {
+		if !d.Confirm(macAppKeepPrompt, true) {
+			return UninstallMacApp(d)
+		}
+		if a == MacAppKeep {
+			return nil
+		}
 	}
 	app := filepath.Clean(d.Paths.App)
 	agent := filepath.Clean(d.Paths.LaunchAgent)
