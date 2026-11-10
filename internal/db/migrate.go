@@ -10,7 +10,7 @@ import (
 // PRAGMA user_version when migrate finishes. OpenRead compares against it, and
 // refuses a DB behind it rather than migrating. Bump it whenever migrate
 // changes the schema; TestSchemaVersionCoversSchema fails until you do.
-const schemaVersion = 3
+const schemaVersion = 4
 
 // migrate creates the worktree-owned tables. It is idempotent and disjoint
 // from the watcher library's Migrate (which owns all watcher_* tables). None
@@ -260,6 +260,18 @@ func migrate(conn *sql.DB) error {
 	// existing notes start showing on the home page.
 	if err := addColumnIfMissing(conn, "worktree_notes", "show_on_home", "INTEGER NOT NULL DEFAULT 1"); err != nil {
 		return err
+	}
+	// Two-way cmux sync: version guards compare-and-set writes; cmux_base is
+	// the last description both sides agreed on (NULL = none) and
+	// cmux_base_workspace the workspace it was read from.
+	for _, c := range [][2]string{
+		{"version", "INTEGER NOT NULL DEFAULT 0"},
+		{"cmux_base", "TEXT"},
+		{"cmux_base_workspace", "TEXT NOT NULL DEFAULT ''"},
+	} {
+		if err := addColumnIfMissing(conn, "worktree_notes", c[0], c[1]); err != nil {
+			return err
+		}
 	}
 
 	// task_blockers predates resource_url (a pre-release Tasks database).
