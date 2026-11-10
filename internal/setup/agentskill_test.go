@@ -552,19 +552,20 @@ var planDataFields = map[string]bool{"WorktreesBase": true, "ShellRC": true, "Co
 // Plan field fails TestUninstallCoversEverySetupStep until it gets an entry
 // here, and "preserved" means PreviewUninstall has a Preserve line for it.
 var planStepUninstall = map[string]string{
-	"CreateWorktreesBase":   "preserved: worktree data",
-	"InstallShellRC":        "removed",
-	"CreateConfig":          "preserved: the config holds credentials",
-	"InstallCompletions":    "removed",
-	"CompletionsExist":      "removed", // only rewords InstallCompletions' preview
-	"ConfigureJiraProjects": "preserved: kept in the config",
-	"TestGitHubCreds":       "preserved: credentials in the watcher config",
-	"TestSlackCreds":        "preserved: credentials in the watcher config",
-	"TestJiraCreds":         "preserved: credentials in the watcher config",
-	"ConfigureUI":           "removed", // certificates and remote access; the password stays in the config
-	"MacApp":                "removed",
-	"AgentSkill":            "removed",
-	"AgentSkillLinks":       "removed",
+	"CreateWorktreesBase":    "preserved: worktree data",
+	"InstallShellRC":         "removed",
+	"CreateConfig":           "preserved: the config holds credentials",
+	"InstallCompletions":     "removed",
+	"CompletionsExist":       "removed", // only rewords InstallCompletions' preview
+	"ConfigureJiraProjects":  "preserved: kept in the config",
+	"TestGitHubCreds":        "preserved: credentials in the watcher config",
+	"TestSlackCreds":         "preserved: credentials in the watcher config",
+	"TestJiraCreds":          "preserved: credentials in the watcher config",
+	"ConfigureUI":            "removed", // certificates and remote access; the password stays in the config
+	"SeedGitHubBotUsernames": "preserved: a setting in the watcher's config.yaml",
+	"MacApp":                 "removed",
+	"AgentSkill":             "removed",
+	"AgentSkillLinks":        "removed",
 }
 
 func TestUninstallCoversEverySetupStep(t *testing.T) {
@@ -607,6 +608,7 @@ func TestPreviewUninstallListsEverything(t *testing.T) {
 	}
 
 	writeWatcherConfig(t, filepath.Join(f.home, "watcher", "auth.yaml"), "worktree")
+	mustWrite(t, filepath.Join(f.home, "watcher", "config.yaml"), "github:\n  bot_usernames: [\"*ci-bot*\"]\n")
 	out := captureStdout(t, func() { PreviewUninstall(DetectShellRC(), configPath, "worktree") })
 	for _, want := range []string{
 		"Remove the worktree skill: ~/.agents/skills/worktree",
@@ -615,6 +617,7 @@ func TestPreviewUninstallListsEverything(t *testing.T) {
 		"Preserve worktree data",
 		"Preserve config at",
 		"Preserve credentials in the watcher config at",
+		"Preserve watcher settings (such as GitHub bot usernames) at",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("preview lacks %q:\n%s", want, out)

@@ -30,10 +30,13 @@ type Plan struct {
 	TestSlackCreds        bool
 	TestJiraCreds         bool
 	ConfigureUI           bool
-	MacApp                MacAppAction
-	AgentSkill            AgentSkillAction
-	AgentSkillLinks       []string
-	Cfg                   config.Config
+	// SeedGitHubBotUsernames writes DefaultGitHubBotUsernames to the
+	// watcher's config.yaml, which has never had a github block.
+	SeedGitHubBotUsernames bool
+	MacApp                 MacAppAction
+	AgentSkill             AgentSkillAction
+	AgentSkillLinks        []string
+	Cfg                    config.Config
 }
 
 func BuildPlan(cfg config.Config) Plan {
@@ -65,6 +68,7 @@ func BuildPlan(cfg config.Config) Plan {
 	plan.TestSlackCreds = true
 	plan.TestJiraCreds = true
 	plan.ConfigureUI = true
+	plan.SeedGitHubBotUsernames = needsGitHubBotSeed(wconfig.ConfigDefaultPath())
 
 	plan.MacApp = detectMacApp()
 	plan.AgentSkill = detectAgentSkill()
@@ -150,6 +154,9 @@ func (p Plan) Preview() {
 	if p.ConfigureUI {
 		fmt.Println("  • Configure the web UI password and HTTPS access from other devices")
 	}
+	if p.SeedGitHubBotUsernames {
+		fmt.Printf("  • Treat GitHub accounts matching %v as bots (editable in Settings)\n", DefaultGitHubBotUsernames)
+	}
 	switch p.MacApp {
 	case MacAppOfferInstall:
 		fmt.Println("  • Offer to install the menu bar app (~/Applications/Worktree Menu Bar.app)")
@@ -179,7 +186,7 @@ func (p Plan) Preview() {
 }
 
 func (p Plan) HasWork() bool {
-	return p.CreateWorktreesBase || p.InstallShellRC || p.CreateConfig || p.InstallCompletions || p.ConfigureJiraProjects || p.TestGitHubCreds || p.TestSlackCreds || p.TestJiraCreds || p.ConfigureUI ||
+	return p.CreateWorktreesBase || p.InstallShellRC || p.CreateConfig || p.InstallCompletions || p.ConfigureJiraProjects || p.TestGitHubCreds || p.TestSlackCreds || p.TestJiraCreds || p.ConfigureUI || p.SeedGitHubBotUsernames ||
 		p.MacApp == MacAppOfferInstall || p.MacApp == MacAppRebuild ||
 		p.AgentSkill == AgentSkillOfferInstall || p.AgentSkill == AgentSkillUpdate || len(p.AgentSkillLinks) > 0
 }
@@ -230,6 +237,12 @@ func (p Plan) Execute() error {
 	if p.ConfigureUI {
 		if err := configureUI(p.ConfigPath, defaultUIAccessDeps(p.ConfigPath)); err != nil {
 			return fmt.Errorf("configuring the web UI: %w", err)
+		}
+	}
+
+	if p.SeedGitHubBotUsernames {
+		if err := seedGitHubBotUsernames(wconfig.ConfigDefaultPath()); err != nil {
+			fmt.Printf("  %s GitHub bot usernames: %v\n", ui.Yellow("!"), err)
 		}
 	}
 
@@ -375,6 +388,9 @@ func PreviewUninstall(rc ShellRC, configPath, consumer string) {
 	}
 	if watcherPath := wconfig.DefaultPath(); pathExists(watcherPath) {
 		fmt.Printf("  • Preserve credentials in the watcher config at %s\n", ui.ShortPath(watcherPath))
+	}
+	if behaviorPath := wconfig.ConfigDefaultPath(); pathExists(behaviorPath) {
+		fmt.Printf("  • Preserve watcher settings (such as GitHub bot usernames) at %s\n", ui.ShortPath(behaviorPath))
 	}
 }
 

@@ -134,8 +134,8 @@ export function ConnectedServicesPanel({ settings, drafts, update, errors, activ
 
       <Tabs.Panel value="github" pt="md">
         <Stack gap="lg">
-          <PersistedTo paths={[paths.worktree, paths.watcher_auth]} />
-          {fileErrors(["worktree", "watcher_auth"])}
+          <PersistedTo paths={[paths.worktree, paths.watcher_auth, paths.watcher_config]} />
+          {fileErrors(["worktree", "watcher_auth", "watcher_config"])}
           {watcherToggle("github")}
           <SettingsSection title="Authentication" file={paths.watcher_auth}>
             <SecretField
@@ -148,6 +148,15 @@ export function ConnectedServicesPanel({ settings, drafts, update, errors, activ
               onTest={() => void runTest("github")}
               test={tests.github}
               disabled={!watching.github && offNote}
+            />
+          </SettingsSection>
+          <SettingsSection title="Polling" file={paths.watcher_config}>
+            <TagsInput
+              label="Bot usernames"
+              description={<>Accounts to treat as bots although GitHub calls them users, such as CI accounts: their activity gets the bot mark and is hidden by Humans only. <Code>*</Code> matches anything, so <Code>*ci-bot*</Code> matches rhods-ci-bot. Saving also re-marks past activity. <KeyPath path="github.bot_usernames" /></>}
+              placeholder="Add username or pattern…"
+              value={drafts.watcher_config.github.bot_usernames}
+              onChange={(v) => update("watcher_config", (d) => ({ ...d, github: { ...d.github, bot_usernames: v } }))}
             />
           </SettingsSection>
         </Stack>

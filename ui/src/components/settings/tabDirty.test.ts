@@ -30,3 +30,22 @@ describe("tabDirty port scan", () => {
     expect(tabDirty(baseSettings(), d, {}).general).toBe(true)
   })
 })
+
+describe("tabDirty bot usernames", () => {
+  it("lights GitHub, not Jira, when the GitHub bot list changes", () => {
+    const d = drafts()
+    d.watcher_config = { ...d.watcher_config, github: { bot_usernames: ["*ci-bot*"] } }
+    const dirty = tabDirty(baseSettings(), d, {})
+    expect(dirty.github).toBe(true)
+    expect(dirty.jira).toBe(false)
+    expect(dirty.connected).toBe(true)
+  })
+
+  it("lights Jira, not GitHub, when the Jira bot list changes", () => {
+    const d = drafts()
+    d.watcher_config = { ...d.watcher_config, jira: { ...d.watcher_config.jira, bot_usernames: ["jbot"] } }
+    const dirty = tabDirty(baseSettings(), d, {})
+    expect(dirty.jira).toBe(true)
+    expect(dirty.github).toBe(false)
+  })
+})

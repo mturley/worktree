@@ -13,5 +13,5 @@ export const baseSettings = (): Settings => ({
     notifications: { enabled: true, command_enabled: false, command: DEFAULT_CMD },
     git: { background_fetch: true, fetch_interval: "3m" } },
   watcher_auth: { jira: { host: "https://x.atlassian.net", email: "me@x" }, slack: { workspace_domain: "x.slack.com" } },
-  watcher_config: { jira: { bot_usernames: [], custom_fields: { a: "customfield_1", b: "customfield_2" } } },
+  watcher_config: { github: { bot_usernames: [] }, jira: { bot_usernames: [], custom_fields: { a: "customfield_1", b: "customfield_2" } } },
 })

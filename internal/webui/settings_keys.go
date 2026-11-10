@@ -37,6 +37,7 @@ var settingsKeyPaths = map[string][]string{
 		"services.slack.workspace_domain",
 	},
 	"watcher_config": {
+		"github.bot_usernames", // GitHub tab
 		"jira.bot_usernames",
 		"jira.custom_fields",
 	},

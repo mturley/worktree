@@ -10,6 +10,7 @@ import (
 	"github.com/mturley/watcher"
 	wconfig "github.com/mturley/watcher/config"
 	watcherdb "github.com/mturley/watcher/db"
+	wgithub "github.com/mturley/watcher/github"
 	wjira "github.com/mturley/watcher/jira"
 	"github.com/mturley/watcher/polllog"
 	wslack "github.com/mturley/watcher/slack"
@@ -34,6 +35,9 @@ func (s *Server) StartPolling(interval time.Duration) (stop func()) {
 	s.initTaskHooks()
 	done := make(chan struct{})
 	go func() {
+		// Before the first poll: events stored while the bot lists were
+		// different (or before they existed) read as the lists say now.
+		s.markBotAuthors()
 		s.safePollAll()
 		t := time.NewTicker(interval)
 		defer t.Stop()
@@ -143,6 +147,18 @@ func (s *Server) markConfigured(source string) {
 	s.unconfiguredMu.Unlock()
 }
 
+// githubPollOptions are the GitHub poller's options from the watcher's
+// config.yaml: the bot username patterns (github.bot_usernames). Read per
+// poll, like Jira's, so a Settings change applies on the next one. A config
+// that can't be read polls with none.
+func (s *Server) githubPollOptions() wgithub.PollOptions {
+	var opts wgithub.PollOptions
+	if bcfg, err := wconfig.LoadConfig(s.watcherConfigPath()); err == nil {
+		opts.BotUsernames = bcfg.GitHubBotUsernames()
+	}
+	return opts
+}
+
 // pollAll polls every active pr + jira resource once. Missing creds -> skip
 // that source (logged), not an error.
 func (s *Server) pollAll() error {
@@ -155,7 +171,7 @@ func (s *Server) pollAll() error {
 	if prs, _ := watcherdb.ActiveResources(s.DB, "pr"); len(prs) > 0 && s.WatcherEnabled(config.ServiceGitHub) {
 		if gh, err := cfg.GitHub(); err == nil {
 			s.markConfigured("github")
-			if err := ghLib.Poll(s.DB, gh.Token, prs, s.logger()); err != nil {
+			if err := ghLib.Poll(s.DB, gh.Token, prs, s.logger(), s.githubPollOptions()); err != nil {
 				s.logger().Printf("github poll: %v", err)
 			}
 		} else {
@@ -214,7 +230,7 @@ func (s *Server) pollOne(r watcher.Resource) {
 	switch r.Type {
 	case "pr":
 		if gh, err := cfg.GitHub(); err == nil {
-			if err := ghLib.Poll(s.DB, gh.Token, one, s.logger()); err != nil {
+			if err := ghLib.Poll(s.DB, gh.Token, one, s.logger(), s.githubPollOptions()); err != nil {
 				s.logger().Printf("pollOne github: %v", err)
 			}
 		} else {
