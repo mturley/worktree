@@ -90,7 +90,8 @@ func RemoteURL(repoRoot, remote string) string {
 
 func slugFromURL(url string) string {
 	url = strings.TrimSuffix(url, ".git")
-	if idx := strings.LastIndex(url, ":"); idx >= 0 && !strings.Contains(url[idx:], "/") {
+	// scp-style (git@host:owner/repo): everything after the colon.
+	if idx := strings.Index(url, ":"); idx >= 0 && !strings.Contains(url, "://") {
 		return url[idx+1:]
 	}
 	parts := strings.Split(url, "/")
@@ -98,6 +99,16 @@ func slugFromURL(url string) string {
 		return parts[len(parts)-2] + "/" + parts[len(parts)-1]
 	}
 	return ""
+}
+
+// RemoteSlug returns the lowercased owner/repo of a remote's URL, or "" when
+// the remote is unknown.
+func RemoteSlug(repoRoot, remote string) string {
+	url := RemoteURL(repoRoot, remote)
+	if url == "" {
+		return ""
+	}
+	return strings.ToLower(slugFromURL(url))
 }
 
 func remoteMatchesSlug(repoRoot, remote, owner, repo string) bool {

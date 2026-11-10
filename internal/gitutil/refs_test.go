@@ -249,3 +249,27 @@ func TestIsAncestor(t *testing.T) {
 		t.Fatal("an unknown rev is never an ancestor")
 	}
 }
+
+func TestBranchUpstream(t *testing.T) {
+	t.Parallel()
+	wt := testgit.Worktree(t) // on branch "feature"
+
+	if _, _, ok := BranchUpstream(wt); ok {
+		t.Fatal("branch with no tracking config reported ok")
+	}
+
+	runIn(t, wt, "config", "branch.feature.remote", "sridarna")
+	if _, _, ok := BranchUpstream(wt); ok {
+		t.Fatal("branch with only a remote reported ok")
+	}
+	runIn(t, wt, "config", "branch.feature.merge", "refs/heads/feat")
+	remote, merge, ok := BranchUpstream(wt)
+	if !ok || remote != "sridarna" || merge != "refs/heads/feat" {
+		t.Fatalf("BranchUpstream = %q, %q, %v", remote, merge, ok)
+	}
+
+	runIn(t, wt, "checkout", "--detach")
+	if _, _, ok := BranchUpstream(wt); ok {
+		t.Fatal("detached HEAD reported ok")
+	}
+}

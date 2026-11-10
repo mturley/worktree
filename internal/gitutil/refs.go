@@ -1,6 +1,7 @@
 package gitutil
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -61,6 +62,31 @@ func CurrentBranch(dir string) (string, bool) {
 		return "", false
 	}
 	return out, true
+}
+
+// BranchUpstream returns the current branch's configured upstream: the
+// branch.<b>.remote and branch.<b>.merge values (e.g. "origin",
+// "refs/heads/feat"). ok is false for a detached HEAD or when either is unset.
+func BranchUpstream(dir string) (remote, merge string, ok bool) {
+	branch, found := CurrentBranch(dir)
+	if !found {
+		return "", "", false
+	}
+	prefix := "branch." + branch + "."
+	out, err := git(dir, "config", "--get-regexp", "^"+regexp.QuoteMeta(prefix)+"(remote|merge)$")
+	if err != nil {
+		return "", "", false
+	}
+	for _, line := range strings.Split(out, "\n") {
+		key, value, _ := strings.Cut(strings.TrimSpace(line), " ")
+		switch strings.ToLower(strings.TrimPrefix(key, prefix)) {
+		case "remote":
+			remote = value
+		case "merge":
+			merge = value
+		}
+	}
+	return remote, merge, remote != "" && merge != ""
 }
 
 // TrackingBranch names the current branch's upstream (HEAD@{upstream}). It is
