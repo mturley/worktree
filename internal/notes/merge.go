@@ -130,21 +130,40 @@ func lcsTable(a, b []string) [][]int {
 }
 
 // lcsPairs returns the index pairs (i in a, j in b) of a longest common
-// subsequence of a and b, in order.
+// subsequence of a and b, in order. Leading and trailing lines the two share
+// are matched directly, so the O(len(a)·len(b)) table covers only the part
+// between them: typical edits of large notes stay cheap.
 func lcsPairs(a, b []string) [][2]int {
-	t := lcsTable(a, b)
-	var out [][2]int
-	for i, j := 0, 0; i < len(a) && j < len(b); {
-		switch {
-		case a[i] == b[j]:
-			out = append(out, [2]int{i, j})
-			i++
-			j++
-		case t[i+1][j] >= t[i][j+1]:
-			i++
-		default:
-			j++
+	pre := 0
+	for pre < len(a) && pre < len(b) && a[pre] == b[pre] {
+		pre++
+	}
+	suf := 0
+	for suf < len(a)-pre && suf < len(b)-pre && a[len(a)-1-suf] == b[len(b)-1-suf] {
+		suf++
+	}
+	out := make([][2]int, 0, pre+suf)
+	for k := range pre {
+		out = append(out, [2]int{k, k})
+	}
+	ma, mb := a[pre:len(a)-suf], b[pre:len(b)-suf]
+	if len(ma) > 0 && len(mb) > 0 {
+		t := lcsTable(ma, mb)
+		for i, j := 0, 0; i < len(ma) && j < len(mb); {
+			switch {
+			case ma[i] == mb[j]:
+				out = append(out, [2]int{pre + i, pre + j})
+				i++
+				j++
+			case t[i+1][j] >= t[i][j+1]:
+				i++
+			default:
+				j++
+			}
 		}
+	}
+	for k := suf; k > 0; k-- {
+		out = append(out, [2]int{len(a) - k, len(b) - k})
 	}
 	return out
 }

@@ -1,6 +1,11 @@
 package notes
 
-import "testing"
+import (
+	"fmt"
+	"runtime"
+	"strings"
+	"testing"
+)
 
 func TestNormalize(t *testing.T) {
 	tests := []struct{ name, in, want string }{
@@ -72,4 +77,29 @@ func TestMerge(t *testing.T) {
 			t.Fatalf("Merge(m, edited, m) = %q, want %q", got, edited)
 		}
 	})
+}
+
+// Large notes with a small edit on each side must not build LCS tables the
+// size of the whole text: shared leading and trailing lines are matched
+// before the tables are built.
+func TestMergeLargeNotesStaysSmall(t *testing.T) {
+	lines := make([]string, 3000)
+	for i := range lines {
+		lines[i] = fmt.Sprintf("line %d", i)
+	}
+	base := strings.Join(lines, "\n")
+	ours := "ours\n" + base
+	theirs := base + "\ntheirs"
+
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	got := Merge(&base, ours, theirs, "cmux")
+	runtime.ReadMemStats(&after)
+
+	if want := "ours\n" + base + "\ntheirs"; got != want {
+		t.Fatalf("Merge produced %d bytes, want %d", len(got), len(want))
+	}
+	if alloc := after.TotalAlloc - before.TotalAlloc; alloc > 8<<20 {
+		t.Fatalf("Merge allocated %d MiB, want under 8 MiB", alloc>>20)
+	}
 }
