@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { api } from "../api/client"
-import type { CmuxSyncOutcome, WorktreeNotes } from "../api/types"
+import type { CmuxSyncOutcome, SaveWorktreeNotesRequest, WorktreeNotes } from "../api/types"
 
 /** How long typing must pause before a save is sent. */
 export const NOTES_SAVE_DEBOUNCE_MS = 800
+
+/**
+ * Browsers cap a keepalive request body at 64 KiB and fail the fetch beyond
+ * it. Past this size the leave-page save drops `base_notes`, so the server
+ * overwrites instead of merging rather than the save being lost.
+ */
+const KEEPALIVE_BODY_LIMIT = 60 * 1024
 
 export type NotesSaveStatus = "idle" | "unsaved" | "saving" | "saved" | "error"
 
@@ -184,10 +191,13 @@ export function useWorktreeNotes(path: string) {
       qc.setQueryData<WorktreeNotes>(["worktree-notes", path], (old) => ({
         ...old, notes: snap.notes, sync_cmux: snap.sync, show_on_home: snap.home,
       }))
-      api.saveWorktreeNotes(
-        { path, notes: snap.notes, sync_cmux: snap.sync, show_on_home: snap.home, base_notes: baseNotes },
-        { keepalive: true },
-      )
+      const req: SaveWorktreeNotesRequest = {
+        path, notes: snap.notes, sync_cmux: snap.sync, show_on_home: snap.home, base_notes: baseNotes,
+      }
+      if (new TextEncoder().encode(JSON.stringify(req)).length > KEEPALIVE_BODY_LIMIT) {
+        delete req.base_notes
+      }
+      api.saveWorktreeNotes(req, { keepalive: true })
         .then(() => qc.invalidateQueries({ queryKey: ["worktrees"] }))
         .catch(() => {})
     }

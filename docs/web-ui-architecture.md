@@ -750,7 +750,10 @@ stored in the worktree-owned `worktree_notes` table (keyed by registry path).
   visit, and would otherwise start from the first load's cached copy. Saves are debounced
   (`NOTES_SAVE_DEBOUNCE_MS`), at most one is in flight, and edits made during
   a save go out in a follow-up save. Pending edits are also sent when the
-  section collapses and on unmount/`beforeunload` (a `keepalive` fetch). The
+  section collapses and on unmount/`beforeunload` (a `keepalive` fetch),
+  even while a save is in flight (leaving may abort it), with that save's
+  base as `base_notes`. Browsers cap a keepalive body at 64 KiB, so past
+  60 KiB it omits `base_notes` and overwrites rather than fail. The
   card is keyed by path in `WorktreeDetailPage` so a draft never leaks to
   another worktree.
 - **cmux description sync** (opt-in, per worktree, stored as `sync_cmux`; the

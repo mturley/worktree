@@ -118,5 +118,19 @@ describe("useWorktreeNotes base text", () => {
       expect(apiMock.saveWorktreeNotes).toHaveBeenCalledTimes(2)
       expect(apiMock.saveWorktreeNotes.mock.calls[1][0]).toMatchObject({ notes: "mine more", base_notes: "loaded" })
     })
+
+    // Browsers cap a keepalive body at 64 KiB; past that the fetch fails.
+    it("omits base_notes when the body would be too large for keepalive", async () => {
+      apiMock.saveWorktreeNotes.mockResolvedValue(saveResponse("x"))
+      const big = "a".repeat(35_000)
+      const { result } = await mount(big)
+      act(() => result.current.setNotes(big + "b"))
+      act(() => { window.dispatchEvent(new Event("beforeunload")) })
+      expect(apiMock.saveWorktreeNotes).toHaveBeenCalledTimes(1)
+      const sent = apiMock.saveWorktreeNotes.mock.calls[0][0]
+      expect(sent.notes).toBe(big + "b")
+      expect(sent).not.toHaveProperty("base_notes")
+      expect(apiMock.saveWorktreeNotes.mock.calls[0][1]).toEqual({ keepalive: true })
+    })
   })
 })
