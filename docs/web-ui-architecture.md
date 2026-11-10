@@ -1383,6 +1383,16 @@ the watcher toggles do not apply.
   for PRs and links), `implicit` (each implicit worktree with its branch and
   `via`, the `"type:id"` resource links it follows), `subtasks`, and
   `event_links`. Every write route answers with the fresh detail.
+- **Work log** (`tasks_worklog_api.go`). `POST /api/tasks/worklog/add`
+  `{id, text}`, `.../edit` `{event_id, text}` and `.../delete`
+  `{event_id}` write `task_work_logged` events (`tasks.LogWork`,
+  `EditWorkLog`, `DeleteWorkLog`) as `webActor`, run `s.afterTaskWrite()`
+  and answer with the task detail. Only a work log entry is editable or
+  deletable: any other event id is a 400 (`tasks.ErrNotWorkLog` wraps
+  `ErrInvalid`), an unknown one a 404. Text is trimmed, non-empty, at most
+  4000 runes. The feed row is titled `Worked on “<task title>”`, labelled
+  "work logged", with `body` = the entry text and `edited_at` (omitted
+  until edited) from the payload.
 - **Blockers** (`tasks_blockers_api.go`). `taskDTO` carries `blocked`,
   `blocker_count` (unresolved) and `open_blockers` (the unresolved
   blockers, oldest first, as `{label, resource_type?, resource_id?}` — the

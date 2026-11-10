@@ -24,7 +24,7 @@ func taskEventToTimeline(ev tasks.Event, t tasks.Task) TimelineEvent {
 			title = s
 		}
 	}
-	return TimelineEvent{
+	te := TimelineEvent{
 		ID:            unread.TaskEventID(ev.ID),
 		TS:            ev.TS,
 		Source:        "tasks",
@@ -39,6 +39,13 @@ func taskEventToTimeline(ev tasks.Event, t tasks.Task) TimelineEvent {
 		WorktreePaths: []string{},
 		TaskState:     taskEventState(ev),
 	}
+	if ev.Type == tasks.EventTaskWorkLogged {
+		var p tasks.WorkLogPayload
+		_ = json.Unmarshal(ev.Payload, &p) // a malformed payload renders an empty entry
+		te.Body = p.Text
+		te.EditedAt = p.EditedAt
+	}
+	return te
 }
 
 // taskEventState is the state an event left its task in, for the feed's
@@ -174,6 +181,7 @@ var taskEventTitles = map[string]taskTitleFunc{
 		}
 		return ""
 	},
+	tasks.EventTaskWorkLogged:   func(_ json.RawMessage, t tasks.Task) string { return "Worked on " + quote(t.Title) },
 	tasks.EventSubtaskChecked:   subtaskTitle("Checked "),
 	tasks.EventSubtaskUnchecked: subtaskTitle("Unchecked "),
 	tasks.EventTaskBlockerResolved: func(raw json.RawMessage, _ tasks.Task) string {
@@ -192,6 +200,7 @@ var taskEventLabels = map[string]string{
 	tasks.EventTaskCreated:           "Created",
 	tasks.EventTaskStateChanged:      "State",
 	tasks.EventTaskDeleted:           "Deleted",
+	tasks.EventTaskWorkLogged:        "work logged",
 	tasks.EventSubtaskChecked:        "Subtask",
 	tasks.EventSubtaskUnchecked:      "Subtask",
 	tasks.EventTaskBlockerResolved:   "Unblocked",

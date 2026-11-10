@@ -450,3 +450,20 @@ func TestTimelinePagingSameTSWatcherTaskTie(t *testing.T) {
 			[]string{"w9", "w5a", "w5b", "w5c", "w1"})
 	}
 }
+
+func TestGlobalTimelineShowsWorkLog(t *testing.T) {
+	t.Parallel()
+	f := taskFeedFixture(t)
+	if _, err := tasks.LogWork(f.s.DB, webActor, f.gamma.ID, "wrote the thing"); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range f.home(t, "limit=50").Events {
+		if e.Type == tasks.EventTaskWorkLogged {
+			if e.Title != "Worked on “gamma”" || e.Body != "wrote the thing" {
+				t.Fatalf("row = %+v", e)
+			}
+			return
+		}
+	}
+	t.Fatal("work log missing from global timeline")
+}

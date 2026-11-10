@@ -20,14 +20,16 @@ import (
 )
 
 type TimelineEvent struct {
-	ID            string   `json:"id"`
-	TS            string   `json:"ts"`
-	ExternalTS    string   `json:"external_ts"`
-	Source        string   `json:"source"`
-	Type          string   `json:"type"`
-	TypeLabel     string   `json:"type_label"`
-	Title         string   `json:"title"`
-	Body          string   `json:"body"`
+	ID         string `json:"id"`
+	TS         string `json:"ts"`
+	ExternalTS string `json:"external_ts"`
+	Source     string `json:"source"`
+	Type       string `json:"type"`
+	TypeLabel  string `json:"type_label"`
+	Title      string `json:"title"`
+	Body       string `json:"body"`
+	// EditedAt is when a work log entry was last edited; empty otherwise.
+	EditedAt      string   `json:"edited_at,omitempty"`
 	Author        string   `json:"author"`
 	AuthorType    string   `json:"author_type,omitempty"`
 	ResourceType  string   `json:"resource_type"`
