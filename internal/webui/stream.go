@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/mturley/worktree/internal/notes"
 )
 
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
@@ -51,6 +53,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	var last string
 	s.DB.QueryRow(`SELECT COALESCE(MAX(ts),'') FROM watcher_events`).Scan(&last)
 	lastTasks := s.seedTasksVersion()
+	lastNotes := s.seedNotesFingerprint()
 
 	// One now, so the sections' "checked … ago" needn't wait a tick.
 	s.writeHeartbeat(w, ports != nil)
@@ -83,6 +86,11 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 			if s.tasksVersionAdvanced(&lastTasks) {
 				fmt.Fprintf(w, "event: tasks_changed\ndata: {}\n\n")
 			}
+			// Notes written by another process or the cmux pass: open tabs
+			// refetch them.
+			if s.notesFingerprintChanged(&lastNotes) {
+				fmt.Fprintf(w, "event: notes_changed\ndata: {}\n\n")
+			}
 			// A worktree's kubeconfig changed: the detail page refetches its
 			// worktree-info for the Kubeconfig section.
 			if kube := s.kubeconfigFingerprint(); kube != lastKube {
@@ -114,4 +122,25 @@ func (s *Server) writeHeartbeat(w io.Writer, withPorts bool) {
 	}
 	b, _ := json.Marshal(msg)
 	fmt.Fprintf(w, "event: heartbeat\ndata: %s\n\n", b)
+}
+
+// seedNotesFingerprint is the notes fingerprint a new stream starts from, so
+// it reports only changes made after it connected. Empty when unreadable.
+func (s *Server) seedNotesFingerprint() string {
+	f, err := notes.Fingerprint(s.DB)
+	if err != nil {
+		return ""
+	}
+	return f
+}
+
+// notesFingerprintChanged reports whether the notes fingerprint has moved
+// past *last, recording the new value. A read error reports no change.
+func (s *Server) notesFingerprintChanged(last *string) bool {
+	f, err := notes.Fingerprint(s.DB)
+	if err != nil || f == *last {
+		return false
+	}
+	*last = f
+	return true
 }

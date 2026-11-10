@@ -182,3 +182,46 @@ func TestSetBumpsVersionAndKeepsBase(t *testing.T) {
 		t.Fatalf("got %+v", got)
 	}
 }
+
+func TestFingerprintChangesOnEveryWrite(t *testing.T) {
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	fp := func() string {
+		t.Helper()
+		f, err := Fingerprint(conn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return f
+	}
+	empty := fp()
+	n, err := Set(conn, "/a", "one", false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterSet := fp()
+	if afterSet == empty {
+		t.Fatal("Set must change the fingerprint")
+	}
+	if _, ok, err := CompareAndSet(conn, "/a", n.Version, "two", false, true, nil, ""); err != nil || !ok {
+		t.Fatalf("CompareAndSet ok=%v err=%v", ok, err)
+	}
+	afterCAS := fp()
+	if afterCAS == afterSet {
+		t.Fatal("CompareAndSet must change the fingerprint")
+	}
+	cur, err := Get(conn, "/a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := "x"
+	if ok, err := SetBase(conn, "/a", cur.Version, &base, "ws"); err != nil || !ok {
+		t.Fatalf("SetBase ok=%v err=%v", ok, err)
+	}
+	if fp() != afterCAS {
+		t.Fatal("SetBase must not change the fingerprint")
+	}
+}

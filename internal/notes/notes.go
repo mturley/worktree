@@ -7,6 +7,7 @@ package notes
 import (
 	"database/sql"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -142,6 +143,18 @@ func Set(conn *sql.DB, path, text string, syncCmux, showOnHome bool) (Notes, err
 		return Notes{}, err
 	}
 	return Get(conn, path)
+}
+
+// Fingerprint summarises every worktree's notes writes: it changes whenever
+// a notes row is added, removed, or written through Set or CompareAndSet
+// (each bumps version), and not for SetBase, which only moves the cmux base.
+// The live stream compares it to tell open tabs to refetch.
+func Fingerprint(conn *sql.DB) (string, error) {
+	var count, sum int64
+	if err := conn.QueryRow(`SELECT COUNT(*), COALESCE(SUM(version), 0) FROM worktree_notes`).Scan(&count, &sum); err != nil {
+		return "", err
+	}
+	return strconv.FormatInt(count, 10) + ":" + strconv.FormatInt(sum, 10), nil
 }
 
 // AllNonBlank returns every worktree's non-blank notes, regardless of its

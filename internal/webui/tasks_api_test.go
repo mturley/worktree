@@ -13,6 +13,7 @@ import (
 	watcher "github.com/mturley/watcher"
 	watcherdb "github.com/mturley/watcher/db"
 	wdb "github.com/mturley/worktree/internal/db"
+	"github.com/mturley/worktree/internal/notes"
 	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/resources"
 	"github.com/mturley/worktree/internal/tasks"
@@ -368,4 +369,22 @@ func mustJSON(t *testing.T, v any) string {
 		t.Fatal(err)
 	}
 	return string(b)
+}
+
+func TestStreamEmitsNotesChanged(t *testing.T) {
+	t.Parallel()
+	s, x := tasksServer(t)
+	last := s.seedNotesFingerprint()
+	if s.notesFingerprintChanged(&last) {
+		t.Fatal("nothing changed yet")
+	}
+	if _, err := notes.Set(s.DB, x, "hello", false, true); err != nil {
+		t.Fatal(err)
+	}
+	if !s.notesFingerprintChanged(&last) {
+		t.Fatal("a notes write must change the fingerprint")
+	}
+	if s.notesFingerprintChanged(&last) {
+		t.Fatal("the same fingerprint must not fire twice")
+	}
 }

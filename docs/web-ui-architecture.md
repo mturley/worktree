@@ -1241,7 +1241,13 @@ server last checked the kubeconfigs (every tick) and last scanned ports
 Network and Kubeconfig sections' "· checked … ago" (`CheckedAgo`), shown only once a check is over a minute old (updates have stopped). The frontend treats `events_new` purely as a
 cache-invalidation signal (no payload). In the same tick it compares
 `tasks.Version` with the value seen at connect (or last tick) and emits
-`event: tasks_changed\ndata: {}\n\n` when it advanced; see "Tasks".
+`event: tasks_changed\ndata: {}\n\n` when it advanced; see "Tasks". Likewise it
+compares `notes.Fingerprint` (`COUNT(*)` and `SUM(version)` over
+`worktree_notes`, so every `Set`/`CompareAndSet` moves it and `SetBase` does
+not) and emits `event: notes_changed\ndata: {}\n\n`, which `useSSE` answers by
+invalidating `["worktree-notes"]` and `["worktrees"]`
+(`seedNotesFingerprint` / `notesFingerprintChanged`; a read error reports no
+change).
 
 A stream opened with `?tab=<id>&route=<path>&visible=1|0` also registers that
 tab for browser notifications, and may carry `event: notification` messages

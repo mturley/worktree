@@ -156,6 +156,13 @@ describe("useSSE", () => {
     for (const k of [["tasks"], ["timeline"], ["worktrees"], ["resources"]]) expect(keys).toContain(JSON.stringify(k))
   })
 
+  it("invalidates the notes and the worktree list on notes_changed", () => {
+    const invalidate = renderSSE()
+    FakeEventSource.last!.emit("notes_changed", "{}")
+    const keys = invalidatedKeys(invalidate)
+    for (const k of [["worktree-notes"], ["worktrees"]]) expect(keys).toContain(JSON.stringify(k))
+  })
+
   it("collapses a burst of task events into one activity refresh, after the fresh window", () => {
     vi.useFakeTimers()
     vi.stubGlobal("EventSource", FakeEventSource)

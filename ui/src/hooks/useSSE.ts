@@ -99,6 +99,12 @@ export function useSSE() {
       es = new EventSource(streamUrl())
       es.addEventListener("events_new", refreshEvents)
       es.addEventListener("tasks_changed", refreshTasks)
+      // Notes written elsewhere (the cmux description pass, the CLI): the
+      // notes editor and the home cards refetch.
+      es.addEventListener("notes_changed", () => {
+        qc.invalidateQueries({ queryKey: ["worktree-notes"] })
+        qc.invalidateQueries({ queryKey: ["worktrees"] })
+      })
       // A worktree's kubeconfig changed on disk: its detail card's
       // Kubeconfig section reads it from worktree-info.
       // The heartbeat says when the server last checked ports and
