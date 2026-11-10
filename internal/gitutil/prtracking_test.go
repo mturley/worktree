@@ -47,9 +47,6 @@ func TestSetPRTrackingSameRepoTracksTheHeadBranch(t *testing.T) {
 	if remotes := runIn(t, clone, "remote"); remotes != "origin" {
 		t.Fatalf("remotes = %q; want only origin", remotes)
 	}
-	if n, ok := TrackedPRNumber(clone); !ok || n != 7 {
-		t.Fatalf("TrackedPRNumber = %d, %v; want 7, true", n, ok)
-	}
 }
 
 func TestSetPRTrackingForkAddsARemoteForIt(t *testing.T) {
@@ -67,9 +64,6 @@ func TestSetPRTrackingForkAddsARemoteForIt(t *testing.T) {
 	}
 	if got, want := RemoteURL(clone, "someone"), filepath.Join(base, "someone", "repo.git"); got != want {
 		t.Fatalf("remote someone = %q; want %q", got, want)
-	}
-	if n, ok := TrackedPRNumber(clone); !ok || n != 7 {
-		t.Fatalf("TrackedPRNumber = %d, %v; want 7, true", n, ok)
 	}
 
 	// A second run (re-creating the same PR's worktree) reuses the remote.
@@ -92,9 +86,6 @@ func TestSetPRTrackingDeletedForkFallsBackToThePullRef(t *testing.T) {
 	}
 	if got := runIn(t, clone, "config", "branch.review/pr-7.remote"); got != "origin" {
 		t.Fatalf("remote = %q; want origin", got)
-	}
-	if n, ok := TrackedPRNumber(clone); !ok || n != 7 {
-		t.Fatalf("TrackedPRNumber = %d, %v; want 7, true", n, ok)
 	}
 }
 

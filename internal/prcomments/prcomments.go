@@ -1,5 +1,7 @@
 // Package prcomments holds the pure logic behind the Code tab's PR comments:
-// which tracked PR belongs to a worktree, how many threads are open, a
+// which followed PR belongs to a worktree (the one its branch tracks, judged
+// from the PR's cached head and the branch's upstream; see PickPR), how many
+// threads are open, a
 // fingerprint that says when the threads changed, and which comments are
 // unread.
 //
@@ -20,34 +22,67 @@ import (
 	wgithub "github.com/mturley/watcher/github"
 )
 
-// Candidate is a tracked PR resource that might be the worktree's.
-// RepoIsRemote says the PR's owner/repo is one of the worktree's remotes.
+// Candidate is a followed PR resource that might be the worktree's. The
+// head fields come from the poller's cached state; they are empty when the
+// state predates them, and HeadSlug is empty for a deleted fork.
 type Candidate struct {
-	ID           string
-	Primary      bool
-	UpdatedAt    string
-	HeadRefName  string
-	Number       int
-	RepoIsRemote bool
+	ID        string // resource ID, "owner/repo#N"
+	Primary   bool
+	UpdatedAt string
+	Number    int
+	BaseSlug  string // lowercased owner/repo from the resource ID
+	HeadSlug  string // lowercased head_repo_owner/head_repo_name; "" for a deleted fork
+	HeadRef   string // head_ref_name
+	BaseRef   string // base_ref_name
 }
 
-// PickPR chooses the worktree's PR. When the current branch tracks
-// refs/pull/<trackedNumber>/head (trackedNumber > 0), a candidate with that
-// number whose repo is one of the worktree's remotes wins, and only those
-// are considered; this is how a worktree made from someone else's PR finds
-// it, since its branch is not the PR's head. Otherwise it is the PR whose
-// head branch is the given branch. Either way a primary (focus) resource
-// wins over a related one; ties go to the newest UpdatedAt (RFC 3339
-// strings compare correctly as text).
-func PickPR(cands []Candidate, branch string, trackedNumber int) (Candidate, bool) {
-	if trackedNumber > 0 {
-		if c, ok := pickBest(cands, func(c Candidate) bool {
-			return c.Number == trackedNumber && c.RepoIsRemote
-		}); ok {
-			return c, true
-		}
+// Upstream is what the current branch tracks: the remote's slug
+// (gitutil.RemoteSlug) and the merge ref (branch.<b>.merge).
+type Upstream struct{ Slug, Merge string }
+
+// PickPR chooses the worktree's PR: the one its branch tracks. A merge ref
+// refs/heads/<h> matches the PR whose head repo is the upstream's and whose
+// head branch is h, whatever the local branch is called. A merge ref
+// refs/pull/<N>/head (a PR whose fork is gone) matches PR N of the
+// upstream's repo. Any other merge ref, or an upstream with no slug (a local
+// branch, an unknown remote), matches nothing. Slugs compare ignoring case.
+// Among matches a primary (focus) resource wins over a related one; ties go
+// to the newest UpdatedAt (RFC 3339 strings compare correctly as text).
+func PickPR(cands []Candidate, up Upstream) (Candidate, bool) {
+	if up.Slug == "" {
+		return Candidate{}, false
 	}
-	return pickBest(cands, func(c Candidate) bool { return c.HeadRefName == branch })
+	if head, ok := strings.CutPrefix(up.Merge, "refs/heads/"); ok {
+		if head == "" {
+			return Candidate{}, false
+		}
+		return pickBest(cands, func(c Candidate) bool {
+			return c.HeadSlug != "" && strings.EqualFold(c.HeadSlug, up.Slug) && c.HeadRef == head
+		})
+	}
+	if n, ok := pullNumber(up.Merge); ok {
+		return pickBest(cands, func(c Candidate) bool {
+			return strings.EqualFold(c.BaseSlug, up.Slug) && c.Number == n
+		})
+	}
+	return Candidate{}, false
+}
+
+// pullNumber is N from refs/pull/<N>/head.
+func pullNumber(merge string) (int, bool) {
+	rest, ok := strings.CutPrefix(merge, "refs/pull/")
+	if !ok {
+		return 0, false
+	}
+	num, ok := strings.CutSuffix(rest, "/head")
+	if !ok {
+		return 0, false
+	}
+	n, err := strconv.Atoi(num)
+	if err != nil || n <= 0 {
+		return 0, false
+	}
+	return n, true
 }
 
 func pickBest(cands []Candidate, match func(Candidate) bool) (Candidate, bool) {

@@ -134,42 +134,6 @@ func AheadBehind(dir, ref string) (ahead, behind int, ok bool) {
 	return ahead, behind, true
 }
 
-// TrackedPRNumber is the PR number the current branch was made from: the one
-// SetPRTracking recorded, or else N when the branch's configured merge ref is
-// refs/pull/<N>/head (how branches made from a PR used to be set up, and still
-// are when the PR's fork is gone). ok is false for a detached HEAD and for any
-// other branch.
-func TrackedPRNumber(dir string) (int, bool) {
-	branch, ok := CurrentBranch(dir)
-	if !ok {
-		return 0, false
-	}
-	if num, err := git(dir, "config", "--get", "branch."+branch+"."+prNumberKey); err == nil {
-		return positiveInt(num)
-	}
-	merge, err := git(dir, "config", "--get", "branch."+branch+".merge")
-	if err != nil {
-		return 0, false
-	}
-	rest, found := strings.CutPrefix(merge, "refs/pull/")
-	if !found {
-		return 0, false
-	}
-	num, found := strings.CutSuffix(rest, "/head")
-	if !found {
-		return 0, false
-	}
-	return positiveInt(num)
-}
-
-func positiveInt(s string) (int, bool) {
-	n, err := strconv.Atoi(s)
-	if err != nil || n <= 0 {
-		return 0, false
-	}
-	return n, true
-}
-
 // IsAncestor reports whether commit a is an ancestor of commit b (a commit
 // is its own ancestor). An unknown rev is never an ancestor.
 func IsAncestor(dir, a, b string) bool {

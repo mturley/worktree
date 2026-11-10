@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 )
 
@@ -160,23 +159,15 @@ type PRHead struct {
 	Ref         string // the head branch's name
 }
 
-// prNumberKey is the branch config variable SetPRTracking records the PR
-// number in, since the upstream (the PR's head branch) doesn't carry it.
-const prNumberKey = "worktree-pr"
-
 // SetPRTracking makes branchName track the PR's head branch as a real
 // remote-tracking branch, <remote>/<head>, so git reports ahead/behind and
 // `git pull` follows new commits pushed to the PR. A head repo that isn't one
 // of repoRoot's remotes yet (someone else's fork) is added as one, named after
 // its owner. When the head repo is gone, the branch tracks the base repo's
 // refs/pull/<N>/head instead: the only place the PR's commits still live.
-// Either way the PR number is recorded for TrackedPRNumber.
 func SetPRTracking(repoRoot, branchName string, head PRHead) error {
 	setConfig := func(key, val string) error {
 		_, err := git(repoRoot, "config", key, val)
-		return err
-	}
-	if err := setConfig("branch."+branchName+"."+prNumberKey, strconv.Itoa(head.Number)); err != nil {
 		return err
 	}
 	remote, merge := head.BaseRemote, fmt.Sprintf("refs/pull/%d/head", head.Number)

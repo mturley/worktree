@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/mturley/watcher"
@@ -131,133 +130,80 @@ type prSummaryEntry struct {
 
 // offlinePR is dir's PR as far as it can be known without GitHub, for the
 // off and no-token states, so the UI can still show (disabled) GitHub
-// buttons: first the tracked PR the branch tracks by number (local git and
-// the DB only), else the one whose head is the current branch, judged only
-// from summaries ALREADY in the cache. Nil when neither identifies it. It
+// buttons: the PR its branch tracks (worktreePR: local git and the DB only),
+// with its title and URL from a summary ALREADY in the cache when there is
+// one, else the resource's URL and no title. Nil when no PR matches. It
 // never fetches anything.
 func (s *Server) offlinePR(dir string) *prRefDTO {
-	branch, onBranch := gitutil.CurrentBranch(dir)
-	if !onBranch {
-		return nil
-	}
-	tracked, err := resources.Load(s.DB, dir)
-	if err != nil {
-		return nil
-	}
-	trackedNumber, _ := gitutil.TrackedPRNumber(dir)
-	cache := s.prThreadsCacheOrInit()
-	var pick []prcomments.Candidate
-	urls := map[string]string{}
-	titles := map[string]string{}
-	for _, r := range resources.OfType(tracked, "pr") {
-		ref, err := wgithub.ParsePRResourceID(r.ID)
-		if err != nil {
-			continue
-		}
-		c := prcomments.Candidate{
-			ID: r.ID, Primary: !r.Related, UpdatedAt: s.prUpdatedAt(r.ID), Number: ref.Number,
-			RepoIsRemote: ref.Number == trackedNumber && gitutil.MatchesRemote(dir, ref.Owner, ref.Repo),
-		}
-		urls[r.ID] = r.URL
-		// An uncached candidate has no head branch, so only the tracked
-		// number can pick it.
-		if v, ok := cache.peek("prsum|" + r.ID); ok {
-			if e, ok := v.(prSummaryEntry); ok && e.found {
-				c.HeadRefName = e.sum.HeadRefName
-				titles[r.ID] = e.sum.Title
-				if urls[r.ID] == "" {
-					urls[r.ID] = e.sum.URL
-				}
-			}
-		}
-		pick = append(pick, c)
-	}
-	chosen, ok := prcomments.PickPR(pick, branch, trackedNumber)
+	chosen, ok := s.worktreePR(dir)
 	if !ok {
 		return nil
 	}
-	return &prRefDTO{ID: chosen.ID, Number: chosen.Number, URL: urls[chosen.ID], Title: titles[chosen.ID]}
+	pr := &prRefDTO{ID: chosen.ID, Number: chosen.Number}
+	if v, ok := s.prThreadsCacheOrInit().peek("prsum|" + chosen.ID); ok {
+		if e, ok := v.(prSummaryEntry); ok && e.found {
+			pr.Title, pr.URL = e.sum.Title, e.sum.URL
+		}
+	}
+	if pr.URL == "" {
+		if r, ok := s.prResource(dir, chosen.ID); ok {
+			pr.URL = r.URL
+		}
+	}
+	return pr
 }
 
-// loadPRComments finds dir's PR (the tracked PR the current branch tracks
-// by number via refs/pull/<N>/head, else the one whose head is the current
-// branch; prcomments.PickPR has the rule) and its threads. Nothing contacts
-// GitHub while its watcher is off or no token is configured.
+// prResource is dir's followed resource for PR id.
+func (s *Server) prResource(dir, id string) (resources.Resource, bool) {
+	tracked, err := resources.Load(s.DB, dir)
+	if err != nil {
+		return resources.Resource{}, false
+	}
+	for _, r := range resources.OfType(tracked, "pr") {
+		if r.ID == id {
+			return r, true
+		}
+	}
+	return resources.Resource{}, false
+}
+
+// loadPRComments finds dir's PR (the one its branch tracks; worktreePR has
+// the rule) and fetches that PR's summary and threads only. Nothing contacts
+// GitHub while its watcher is off or no token is configured, or when no PR
+// matches.
 func (s *Server) loadPRComments(dir string) prComments {
 	if !s.WatcherEnabled(config.ServiceGitHub) {
 		return prComments{state: prStateOff, pr: s.offlinePR(dir)}
 	}
-	branch, onBranch := gitutil.CurrentBranch(dir)
+	branch, _ := gitutil.CurrentBranch(dir)
 	token := s.githubToken()
 	if token == "" {
 		return prComments{state: prStateNoToken, branch: branch, pr: s.offlinePR(dir)}
 	}
-	if !onBranch {
-		return prComments{state: prStateNoPR, branch: branch}
-	}
-	tracked, err := resources.Load(s.DB, dir)
-	if err != nil {
-		return prComments{state: prStateError, branch: branch, message: err.Error()}
-	}
-	type candRef struct {
-		res resources.Resource
-		ref wgithub.PRRef
-	}
-	var cands []candRef
-	for _, r := range resources.OfType(tracked, "pr") {
-		if ref, err := wgithub.ParsePRResourceID(r.ID); err == nil {
-			cands = append(cands, candRef{r, ref})
-		}
-	}
-	if len(cands) == 0 {
-		return prComments{state: prStateNoPR, branch: branch}
-	}
-
-	// A miss on any candidate fetches every candidate's summary in one
-	// request; the other candidates' misses in this call reuse it.
-	var batchOnce sync.Once
-	var batch map[wgithub.PRRef]wgithub.PRSummary
-	var batchErr error
-	allRefs := make([]wgithub.PRRef, len(cands))
-	for i, c := range cands {
-		allRefs[i] = c.ref
-	}
-	cache := s.prThreadsCacheOrInit()
-	// Only a candidate with the tracked number needs its repo checked
-	// against the remotes (a few git calls each).
-	trackedNumber, _ := gitutil.TrackedPRNumber(dir)
-	var pick []prcomments.Candidate
-	summaries := map[string]wgithub.PRSummary{}
-	for _, c := range cands {
-		v, err := cache.getErrTTL("prsum|"+c.res.ID, prSummaryTTL, prErrorTTL, false, func() (interface{}, error) {
-			batchOnce.Do(func() { batch, batchErr = s.fetchPRSummaries(token, allRefs) })
-			if batchErr != nil {
-				return nil, batchErr
-			}
-			sum, ok := batch[c.ref]
-			return prSummaryEntry{sum: sum, found: ok}, nil
-		})
-		if err != nil {
-			return prComments{state: prStateError, branch: branch, message: err.Error()}
-		}
-		e := v.(prSummaryEntry)
-		if !e.found {
-			continue
-		}
-		summaries[c.res.ID] = e.sum
-		pick = append(pick, prcomments.Candidate{
-			ID: c.res.ID, Primary: !c.res.Related, UpdatedAt: s.prUpdatedAt(c.res.ID), HeadRefName: e.sum.HeadRefName,
-			Number:       c.ref.Number,
-			RepoIsRemote: c.ref.Number == trackedNumber && gitutil.MatchesRemote(dir, c.ref.Owner, c.ref.Repo),
-		})
-	}
-	chosen, ok := prcomments.PickPR(pick, branch, trackedNumber)
+	chosen, ok := s.worktreePR(dir)
 	if !ok {
 		return prComments{state: prStateNoPR, branch: branch}
 	}
-	ref, _ := wgithub.ParsePRResourceID(chosen.ID)
-	sum := summaries[chosen.ID]
-	pr := &prRefDTO{ID: chosen.ID, Number: ref.Number, URL: sum.URL, Title: sum.Title}
+	ref, err := wgithub.ParsePRResourceID(chosen.ID)
+	if err != nil {
+		return prComments{state: prStateNoPR, branch: branch}
+	}
+	v, err := s.prThreadsCacheOrInit().getErrTTL("prsum|"+chosen.ID, prSummaryTTL, prErrorTTL, false, func() (interface{}, error) {
+		batch, err := s.fetchPRSummaries(token, []wgithub.PRRef{ref})
+		if err != nil {
+			return nil, err
+		}
+		sum, ok := batch[ref]
+		return prSummaryEntry{sum: sum, found: ok}, nil
+	})
+	if err != nil {
+		return prComments{state: prStateError, branch: branch, message: err.Error()}
+	}
+	e := v.(prSummaryEntry)
+	if !e.found {
+		return prComments{state: prStateNoPR, branch: branch}
+	}
+	pr := &prRefDTO{ID: chosen.ID, Number: ref.Number, URL: e.sum.URL, Title: e.sum.Title}
 	t, err := s.cachedReviewThreads(token, chosen.ID, ref)
 	if err != nil {
 		return prComments{state: prStateError, branch: branch, pr: pr, message: err.Error(), token: token, ref: ref}
@@ -310,20 +256,6 @@ func (s *Server) cachedReviewThreads(token, id string, ref wgithub.PRRef) (*wgit
 		return nil, err
 	}
 	return v.(*wgithub.PRReviewThreads), nil
-}
-
-// prUpdatedAt is when the PR last changed on GitHub, from the poller's
-// cached state ("" when never polled), falling back to the row's own write
-// time.
-func (s *Server) prUpdatedAt(id string) string {
-	st, err := watcherdb.GetResourceState(s.DB, "pr", id)
-	if err != nil || st == nil {
-		return ""
-	}
-	if st.ResourceUpdatedAt != "" {
-		return st.ResourceUpdatedAt
-	}
-	return st.WatcherUpdatedAt
 }
 
 func derefStr(p *string) string {
@@ -561,13 +493,9 @@ func (s *Server) eventPRResource(eventID string) (string, bool, error) {
 }
 
 // prWorktreesForPR lists the registered worktrees actively tracking PR id
-// that are on it, in registry order: those whose current branch is head,
-// and those whose branch tracks refs/pull/<number>/head with the PR's
-// owner/repo among their remotes (a worktree made from the PR). Only
-// worktree: subscribers count; a task's hold subscription is not a
-// worktree.
-func (s *Server) prWorktreesForPR(id, head string) ([]string, error) {
-	ref, refErr := wgithub.ParsePRResourceID(id)
+// whose branch tracks it (worktreePR), in registry order. Only worktree:
+// subscribers count; a task's hold subscription is not a worktree.
+func (s *Server) prWorktreesForPR(id string) ([]string, error) {
 	subs, err := watcherdb.SubscribersOf(s.DB, "pr", id)
 	if err != nil {
 		return nil, err
@@ -590,14 +518,8 @@ func (s *Server) prWorktreesForPR(id, head string) ([]string, error) {
 		if !active[wdb.Subscriber(e.Path)] {
 			continue
 		}
-		if b, ok := gitutil.CurrentBranch(e.Path); ok && b == head {
+		if c, ok := s.worktreePR(e.Path); ok && c.ID == id {
 			out = append(out, e.Path)
-			continue
-		}
-		if refErr == nil {
-			if n, ok := gitutil.TrackedPRNumber(e.Path); ok && n == ref.Number && gitutil.MatchesRemote(e.Path, ref.Owner, ref.Repo) {
-				out = append(out, e.Path)
-			}
 		}
 	}
 	return out, nil
@@ -606,8 +528,7 @@ func (s *Server) prWorktreesForPR(id, head string) ([]string, error) {
 // handlePRCommentLocate: GET /api/pr-comments/locate?event_id=&prefer_path=
 //
 // Where "Go to comment in diff view" goes for a pr_review_comment event: a
-// worktree tracking the event's PR and on it — on its head branch or tracking
-// refs/pull/<number>/head from its repo — (prefer_path when
+// worktree tracking the event's PR whose branch tracks it (prefer_path when
 // it qualifies, else the first), and the GitHub comment id the event is
 // about. 404 when any part can't be found, so the button is hidden.
 func (s *Server) handlePRCommentLocate(w http.ResponseWriter, r *http.Request) {
@@ -664,7 +585,7 @@ func (s *Server) handlePRCommentLocate(w http.ResponseWriter, r *http.Request) {
 		notFound("comment not found on the PR")
 		return
 	}
-	paths, err := s.prWorktreesForPR(id, t.HeadRefName)
+	paths, err := s.prWorktreesForPR(id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

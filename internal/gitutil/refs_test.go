@@ -211,25 +211,6 @@ func TestMergeBaseOf(t *testing.T) {
 	}
 }
 
-func TestTrackedPRNumber(t *testing.T) {
-	wt := testgit.Worktree(t) // on branch "feature"
-	runIn(t, wt, "config", "branch.feature.remote", "origin")
-	runIn(t, wt, "config", "branch.feature.merge", "refs/pull/42/head")
-	if n, ok := TrackedPRNumber(wt); !ok || n != 42 {
-		t.Fatalf("TrackedPRNumber = %d, %v; want 42, true", n, ok)
-	}
-
-	runIn(t, wt, "config", "branch.feature.merge", "refs/pull/x/head")
-	if n, ok := TrackedPRNumber(wt); ok {
-		t.Fatalf("non-numeric PR ref: got %d, true", n)
-	}
-
-	repo, _ := newRemoteRepo(t) // main tracks refs/heads/main
-	if n, ok := TrackedPRNumber(repo); ok {
-		t.Fatalf("normal upstream: got %d, true", n)
-	}
-}
-
 func TestIsAncestor(t *testing.T) {
 	repo, run := newRemoteRepo(t)
 	m := run("rev-parse", "HEAD")

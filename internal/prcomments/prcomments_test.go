@@ -10,59 +10,87 @@ import (
 
 func sp(s string) *string { return &s }
 
-func TestPickPR(t *testing.T) {
+func TestPickPROwnPR(t *testing.T) {
 	cands := []Candidate{
-		{ID: "a", Primary: false, UpdatedAt: "2026-02-01T00:00:00Z", HeadRefName: "feat"},
-		{ID: "b", Primary: true, UpdatedAt: "2026-01-01T00:00:00Z", HeadRefName: "feat"},
-		{ID: "c", Primary: true, UpdatedAt: "2026-03-01T00:00:00Z", HeadRefName: "other"},
+		{ID: "opendatahub-io/odh-dashboard#1", BaseSlug: "opendatahub-io/odh-dashboard", HeadSlug: "mturley/odh-dashboard", HeadRef: "other", Number: 1},
+		{ID: "opendatahub-io/odh-dashboard#2", BaseSlug: "opendatahub-io/odh-dashboard", HeadSlug: "mturley/odh-dashboard", HeadRef: "feat", Number: 2},
 	}
-	got, ok := PickPR(cands, "feat", 0)
-	if !ok || got.ID != "b" {
-		t.Fatalf("primary should win, got %+v ok=%v", got, ok)
-	}
-	if _, ok := PickPR(cands, "nope", 0); ok {
-		t.Fatal("no candidate on branch should give ok=false")
-	}
-	related := []Candidate{
-		{ID: "x", UpdatedAt: "2026-01-01T00:00:00Z", HeadRefName: "feat"},
-		{ID: "y", UpdatedAt: "2026-02-01T00:00:00Z", HeadRefName: "feat"},
-	}
-	got, ok = PickPR(related, "feat", 0)
-	if !ok || got.ID != "y" {
-		t.Fatalf("newer should win, got %+v", got)
+	got, ok := PickPR(cands, Upstream{Slug: "mturley/odh-dashboard", Merge: "refs/heads/feat"})
+	if !ok || got.ID != "opendatahub-io/odh-dashboard#2" {
+		t.Fatalf("got %+v ok=%v; want #2", got, ok)
 	}
 }
 
-func TestPickPRByNumber(t *testing.T) {
+func TestPickPRForkRenamedBranch(t *testing.T) {
 	cands := []Candidate{
-		{ID: "branch", Primary: true, UpdatedAt: "2026-03-01T00:00:00Z", HeadRefName: "review/pr-7-x", Number: 3, RepoIsRemote: true},
-		{ID: "num", Primary: false, UpdatedAt: "2026-01-01T00:00:00Z", HeadRefName: "author-branch", Number: 7, RepoIsRemote: true},
-		{ID: "fork", Primary: true, UpdatedAt: "2026-04-01T00:00:00Z", HeadRefName: "other", Number: 7, RepoIsRemote: false},
+		{ID: "opendatahub-io/odh-dashboard#5", BaseSlug: "opendatahub-io/odh-dashboard", HeadSlug: "sridarna/odh-dashboard", HeadRef: "main", Number: 5},
 	}
-	if got, ok := PickPR(cands, "review/pr-7-x", 7); !ok || got.ID != "num" {
-		t.Fatalf("tracked number should win over the head branch, got %+v ok=%v", got, ok)
+	got, ok := PickPR(cands, Upstream{Slug: "sridarna/odh-dashboard", Merge: "refs/heads/main"})
+	if !ok || got.ID != "opendatahub-io/odh-dashboard#5" {
+		t.Fatalf("got %+v ok=%v; want #5", got, ok)
 	}
-	// Only the remote-less number match: ignored, so the branch match wins.
-	if got, ok := PickPR([]Candidate{cands[0], cands[2]}, "review/pr-7-x", 7); !ok || got.ID != "branch" {
-		t.Fatalf("number match not on a remote should be ignored, got %+v ok=%v", got, ok)
+}
+
+func TestPickPRDeletedFork(t *testing.T) {
+	cands := []Candidate{
+		{ID: "opendatahub-io/odh-dashboard#10598", BaseSlug: "opendatahub-io/odh-dashboard", HeadRef: "gone", Number: 10598},
 	}
-	if _, ok := PickPR([]Candidate{cands[2]}, "review/pr-7-x", 7); ok {
-		t.Fatal("number match not on a remote alone should give ok=false")
+	got, ok := PickPR(cands, Upstream{Slug: "opendatahub-io/odh-dashboard", Merge: "refs/pull/10598/head"})
+	if !ok || got.Number != 10598 {
+		t.Fatalf("got %+v ok=%v; want #10598", got, ok)
 	}
-	if got, ok := PickPR(cands, "review/pr-7-x", 0); !ok || got.ID != "branch" {
-		t.Fatalf("no tracked number falls back to the branch, got %+v ok=%v", got, ok)
+}
+
+func TestPickPRIgnoresUnrelated(t *testing.T) {
+	match := Candidate{ID: "o/r#1", BaseSlug: "o/r", HeadSlug: "me/r", HeadRef: "feat", Number: 1}
+	other := Candidate{ID: "o/r#2", Primary: true, UpdatedAt: "2026-12-01T00:00:00Z", BaseSlug: "o/r", HeadSlug: "me/r", HeadRef: "other", Number: 2}
+	up := Upstream{Slug: "me/r", Merge: "refs/heads/feat"}
+	if got, ok := PickPR([]Candidate{other, match}, up); !ok || got.ID != match.ID {
+		t.Fatalf("got %+v ok=%v; want the matching candidate", got, ok)
 	}
-	// Ties among number matches: primary first, then newest.
-	tied := []Candidate{
-		{ID: "old", UpdatedAt: "2026-01-01T00:00:00Z", Number: 7, RepoIsRemote: true},
-		{ID: "new", UpdatedAt: "2026-02-01T00:00:00Z", Number: 7, RepoIsRemote: true},
-		{ID: "prim", Primary: true, UpdatedAt: "2025-01-01T00:00:00Z", Number: 7, RepoIsRemote: true},
+	if got, ok := PickPR([]Candidate{other}, up); ok {
+		t.Fatalf("got %+v; want no match", got)
 	}
-	if got, _ := PickPR(tied, "x", 7); got.ID != "prim" {
-		t.Fatalf("primary should win a number tie, got %+v", got)
+}
+
+func TestPickPRNoMatchShapes(t *testing.T) {
+	c := Candidate{ID: "o/r#1", BaseSlug: "o/r", HeadSlug: "o/r", HeadRef: "feat", Number: 1}
+	for _, tc := range []struct {
+		name string
+		c    Candidate
+		up   Upstream
+	}{
+		{"local remote", c, Upstream{Slug: "", Merge: "refs/heads/feat"}},
+		{"local remote, pull ref", c, Upstream{Slug: "", Merge: "refs/pull/1/head"}},
+		{"tag", c, Upstream{Slug: "o/r", Merge: "refs/tags/x"}},
+		{"empty head ref", Candidate{ID: "o/r#1", BaseSlug: "o/r", HeadSlug: "o/r", Number: 1}, Upstream{Slug: "o/r", Merge: "refs/heads/feat"}},
+		{"empty head ref, empty merge branch", Candidate{ID: "o/r#1", BaseSlug: "o/r", HeadSlug: "o/r", Number: 1}, Upstream{Slug: "o/r", Merge: "refs/heads/"}},
+	} {
+		if got, ok := PickPR([]Candidate{tc.c}, tc.up); ok {
+			t.Errorf("%s: got %+v; want no match", tc.name, got)
+		}
 	}
-	if got, _ := PickPR(tied[:2], "x", 7); got.ID != "new" {
-		t.Fatalf("newest should win a number tie, got %+v", got)
+}
+
+func TestPickPRCaseInsensitive(t *testing.T) {
+	cands := []Candidate{{ID: "o/r#1", BaseSlug: "o/r", HeadSlug: "SriDarna/ODH-Dashboard", HeadRef: "main", Number: 1}}
+	if _, ok := PickPR(cands, Upstream{Slug: "sridarna/odh-dashboard", Merge: "refs/heads/main"}); !ok {
+		t.Fatal("slug comparison should ignore case")
+	}
+}
+
+func TestPickPRTieBreak(t *testing.T) {
+	up := Upstream{Slug: "me/r", Merge: "refs/heads/feat"}
+	mk := func(id string, primary bool, updated string) Candidate {
+		return Candidate{ID: id, Primary: primary, UpdatedAt: updated, BaseSlug: "o/r", HeadSlug: "me/r", HeadRef: "feat"}
+	}
+	got, _ := PickPR([]Candidate{mk("related", false, "2026-03-01T00:00:00Z"), mk("primary", true, "2026-01-01T00:00:00Z")}, up)
+	if got.ID != "primary" {
+		t.Fatalf("primary should win, got %+v", got)
+	}
+	got, _ = PickPR([]Candidate{mk("old", false, "2026-01-01T00:00:00Z"), mk("new", false, "2026-02-01T00:00:00Z")}, up)
+	if got.ID != "new" {
+		t.Fatalf("newer should win, got %+v", got)
 	}
 }
 

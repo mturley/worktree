@@ -46,6 +46,11 @@ func unseamedPRServer(t *testing.T) (*Server, string, string) {
 	gitIn(t, repo, "worktree", "add", "-b", "pr-branch", wt)
 	srv, ts := gitTestServer(t, wt, nil)
 	must(t, resources.Add(srv.DB, wt, resources.Resource{Type: "pr", ID: prcID, URL: "https://github.com/o/r/pull/1"}))
+	// The branch tracks the PR's head, so the PR routes go on to fetch it.
+	gitIn(t, wt, "remote", "add", "gh", "https://github.com/o/r.git")
+	gitIn(t, wt, "config", "branch.pr-branch.remote", "gh")
+	gitIn(t, wt, "config", "branch.pr-branch.merge", "refs/heads/pr-branch")
+	seedPRHead(t, srv, prcID, "o", "r", "pr-branch")
 	return srv, ts.URL, wt
 }
 
