@@ -54,9 +54,10 @@ func Merge(base *string, ours, theirs, theirsLabel string) string {
 	return strings.Join(out, "\n")
 }
 
-// resolve settles one region. With a real base (realBase), two different pure
-// insertions at the same spot are both kept, ours first: neither changed
-// existing text, so nothing is lost.
+// resolve settles one region. With a real base (realBase), two pure
+// insertions at the same spot are both kept, unioned line by line (see
+// union): neither changed existing text, so nothing is lost, and a line both
+// inserted appears once.
 func resolve(base, ours, theirs []string, theirsLabel string, realBase bool) []string {
 	switch {
 	case equalLines(ours, base):
@@ -65,13 +66,30 @@ func resolve(base, ours, theirs []string, theirsLabel string, realBase bool) []s
 		return ours
 	}
 	if realBase && len(base) == 0 {
-		return append(append([]string{}, ours...), theirs...)
+		return union(ours, theirs)
 	}
 	out := []string{"<<<<<<< notes"}
 	out = append(out, ours...)
 	out = append(out, "=======")
 	out = append(out, theirs...)
 	return append(out, ">>>>>>> "+theirsLabel)
+}
+
+// union merges two insertions at one spot: lines both hold (their longest
+// common subsequence) appear once, and before each shared line, and at the
+// end, the lines only ours holds come first, then those only theirs holds.
+// So when one run extends the other the result is the longer run.
+func union(ours, theirs []string) []string {
+	var out []string
+	oi, ti := 0, 0
+	for _, p := range lcsPairs(ours, theirs) {
+		out = append(out, ours[oi:p[0]]...)
+		out = append(out, theirs[ti:p[1]]...)
+		out = append(out, ours[p[0]])
+		oi, ti = p[0]+1, p[1]+1
+	}
+	out = append(out, ours[oi:]...)
+	return append(out, theirs[ti:]...)
 }
 
 func splitLines(s string) []string {
@@ -111,13 +129,15 @@ func lcsTable(a, b []string) [][]int {
 	return t
 }
 
-func lcs(a, b []string) []string {
+// lcsPairs returns the index pairs (i in a, j in b) of a longest common
+// subsequence of a and b, in order.
+func lcsPairs(a, b []string) [][2]int {
 	t := lcsTable(a, b)
-	var out []string
+	var out [][2]int
 	for i, j := 0, 0; i < len(a) && j < len(b); {
 		switch {
 		case a[i] == b[j]:
-			out = append(out, a[i])
+			out = append(out, [2]int{i, j})
 			i++
 			j++
 		case t[i+1][j] >= t[i][j+1]:
@@ -129,6 +149,14 @@ func lcs(a, b []string) []string {
 	return out
 }
 
+func lcs(a, b []string) []string {
+	var out []string
+	for _, p := range lcsPairs(a, b) {
+		out = append(out, a[p[0]])
+	}
+	return out
+}
+
 // matchLines maps each index of base to the index of its LCS partner in side,
 // or -1 when the line was changed or removed.
 func matchLines(base, side []string) []int {
@@ -136,18 +164,8 @@ func matchLines(base, side []string) []int {
 	for i := range m {
 		m[i] = -1
 	}
-	t := lcsTable(base, side)
-	for i, j := 0, 0; i < len(base) && j < len(side); {
-		switch {
-		case base[i] == side[j]:
-			m[i] = j
-			i++
-			j++
-		case t[i+1][j] >= t[i][j+1]:
-			i++
-		default:
-			j++
-		}
+	for _, p := range lcsPairs(base, side) {
+		m[p[0]] = p[1]
 	}
 	return m
 }

@@ -19,6 +19,7 @@ func TestNormalize(t *testing.T) {
 
 func TestMerge(t *testing.T) {
 	conflict := "a\n<<<<<<< notes\nB1\n=======\nB2\n>>>>>>> cmux\nc"
+	block := "<<<<<<< notes\nB1\n=======\nB2\n>>>>>>> cmux"
 	tests := []struct {
 		name         string
 		base         *string
@@ -39,6 +40,12 @@ func TestMerge(t *testing.T) {
 		{"no base, ours empty", nil, "", "x\ny", "x\ny"},
 		{"no base, theirs empty", nil, "x\ny", "", "x\ny"},
 		{"inputs are normalised", ptr("a"), "a  \n\n", "a", "a"},
+		{"same-spot insertion, ours extends theirs", ptr("a"), "a\nc\nd", "a\nc", "a\nc\nd"},
+		{"same-spot insertion, theirs is a prefix of ours", ptr("a"), "a\nF1\nF2\nx", "a\nF1\nF2", "a\nF1\nF2\nx"},
+		{"same-spot insertion, theirs extends ours", ptr("a"), "a\nc", "a\nc\nd", "a\nc\nd"},
+		{"same-spot insertions share a line", ptr("a"), "a\np\ns\nq", "a\nr\ns\nt", "a\np\nr\ns\nq\nt"},
+		{"both hold a conflict block, one adds a line before it", ptr("a"), "a\ny\n" + block, "a\n" + block, "a\ny\n" + block},
+		{"both hold a conflict block, each adds a different line after it", ptr("a"), "a\n" + block + "\ny", "a\n" + block + "\nz", "a\n" + block + "\ny\nz"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -52,6 +59,17 @@ func TestMerge(t *testing.T) {
 		m := conflict
 		if got := Merge(&m, m, m, "cmux"); got != m {
 			t.Fatalf("Merge(m,m,m) = %q, want %q", got, m)
+		}
+	})
+
+	t.Run("a base with markers and one side unchanged takes the other side", func(t *testing.T) {
+		m := conflict
+		edited := "top\n" + conflict + "\nz"
+		if got := Merge(&m, m, edited, "cmux"); got != edited {
+			t.Fatalf("Merge(m, m, edited) = %q, want %q", got, edited)
+		}
+		if got := Merge(&m, edited, m, "cmux"); got != edited {
+			t.Fatalf("Merge(m, edited, m) = %q, want %q", got, edited)
 		}
 	})
 }
