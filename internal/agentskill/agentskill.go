@@ -1,18 +1,81 @@
-// Package agentskill holds the worktree skill for AI agents: the embedded
-// SKILL.md, and where agents look for it. Installing it is internal/setup's job.
+// Package agentskill holds worktree's skills for AI agents: the embedded
+// skills/ directory (one subdirectory per skill), where setup keeps their
+// copies, and where agents look for them. Installing them is internal/setup's
+// job.
 package agentskill
 
 import (
 	"bytes"
 	"crypto/sha256"
-	_ "embed"
+	"embed"
 	"encoding/hex"
+	"io/fs"
+	"path"
 	"path/filepath"
+	"sort"
+	"strings"
 )
+
+//go:embed skills
+var skillsFS embed.FS
+
+// Skill is one embedded skill: its directory name and every file in it.
+type Skill struct {
+	Name string
+	// Files maps slash-separated paths relative to the skill's directory to
+	// their content.
+	Files map[string][]byte
+}
+
+// Skills returns every skill under the embedded skills/ directory, sorted by
+// name.
+func Skills() []Skill {
+	entries, err := fs.ReadDir(skillsFS, "skills")
+	if err != nil {
+		panic(err) // the directory is embedded: it always exists
+	}
+	var skills []Skill
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		root := path.Join("skills", e.Name())
+		s := Skill{Name: e.Name(), Files: map[string][]byte{}}
+		err := fs.WalkDir(skillsFS, root, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			data, err := skillsFS.ReadFile(p)
+			if err != nil {
+				return err
+			}
+			s.Files[strings.TrimPrefix(p, root+"/")] = data
+			return nil
+		})
+		if err != nil {
+			panic(err)
+		}
+		skills = append(skills, s)
+	}
+	sort.Slice(skills, func(i, j int) bool { return skills[i].Name < skills[j].Name })
+	return skills
+}
+
+// StoreDir is where setup keeps the skills' real copies, beside worktree's
+// database: $XDG_DATA_HOME/worktree/skills, or ~/.local/share/worktree/skills.
+// A relative XDG_DATA_HOME is ignored, as the XDG spec says: links into it
+// would resolve against whatever directory an agent runs in.
+func StoreDir(home string, getenv func(string) string) string {
+	base := getenv("XDG_DATA_HOME")
+	if !filepath.IsAbs(base) {
+		base = filepath.Join(home, ".local", "share")
+	}
+	return filepath.Join(base, "worktree", "skills")
+}
 
 // Content is SKILL.md, frontmatter included.
 //
-//go:embed SKILL.md
+//go:embed skills/worktree/SKILL.md
 var Content []byte
 
 // Hash identifies this version of Content.
@@ -44,24 +107,36 @@ type Target struct {
 	Symlink bool
 }
 
-// Targets lists where the skill belongs, the canonical copy first. Verified
-// 2026-10-31:
+// Targets lists where the worktree skill belongs, the canonical copy in
+// ~/.agents/skills first, then a symlink in each other SkillDirs entry.
+func Targets(home string, getenv func(string) string, exists func(string) bool, realpath func(string) (string, error)) []Target {
+	dirs := SkillDirs(home, getenv, exists, realpath)
+	targets := []Target{{Dir: filepath.Join(dirs[0], "worktree")}}
+	for _, d := range dirs[1:] {
+		targets = append(targets, Target{Dir: filepath.Join(d, "worktree"), Symlink: true})
+	}
+	return targets
+}
+
+// SkillDirs lists the skills directories agents read, ~/.agents/skills first
+// and always (setup creates it). Verified:
 //
 //   - Codex reads $HOME/.agents/skills at user scope and follows symlinked
 //     skill folders (developers.openai.com/codex/skills →
-//     learn.chatgpt.com/docs/build-skills).
+//     learn.chatgpt.com/docs/build-skills), 2026-10-31.
 //   - pi (≥ 1.3.0) reads ~/.agents/skills/ (@earendil-works/pi-coding-agent
-//     docs/skills.md).
+//     docs/skills.md), 2026-10-31; pi 1.5.0 follows symlinked skill folders
+//     (dist/core/skills.js stats through symlink entries), 2026-11-10.
 //   - Claude Code reads only ~/.claude/skills (or $CLAUDE_CONFIG_DIR/skills)
-//     at user scope, hence the symlinks.
+//     at user scope, 2026-10-31.
 //
-// A skills directory that doesn't exist gets no link. Directories are
-// deduplicated by realpath, starting from the canonical copy's own parent: two
-// config directories can share one skills directory through symlinks, and one
-// could even be ~/.agents/skills itself, where a link would be the copy's path.
-func Targets(home string, getenv func(string) string, exists func(string) bool, realpath func(string) (string, error)) []Target {
-	canonical := filepath.Join(home, ".agents", "skills")
-	targets := []Target{{Dir: filepath.Join(canonical, "worktree")}}
+// A Claude skills directory that doesn't exist is left out. Directories are
+// deduplicated by realpath, starting from ~/.agents/skills: two config
+// directories can share one skills directory through symlinks, and one could
+// even be ~/.agents/skills itself.
+func SkillDirs(home string, getenv func(string) string, exists func(string) bool, realpath func(string) (string, error)) []string {
+	agents := filepath.Join(home, ".agents", "skills")
+	dirs := []string{agents}
 
 	real := func(d string) string {
 		if r, err := realpath(d); err == nil {
@@ -69,14 +144,14 @@ func Targets(home string, getenv func(string) string, exists func(string) bool, 
 		}
 		return d
 	}
-	seen := map[string]bool{real(canonical): true}
+	seen := map[string]bool{real(agents): true}
 
-	var dirs []string
+	var claude []string
 	if cfg := getenv("CLAUDE_CONFIG_DIR"); cfg != "" {
-		dirs = append(dirs, filepath.Join(cfg, "skills"))
+		claude = append(claude, filepath.Join(cfg, "skills"))
 	}
-	dirs = append(dirs, filepath.Join(home, ".claude", "skills"))
-	for _, d := range dirs {
+	claude = append(claude, filepath.Join(home, ".claude", "skills"))
+	for _, d := range claude {
 		if !exists(d) {
 			continue
 		}
@@ -85,7 +160,7 @@ func Targets(home string, getenv func(string) string, exists func(string) bool, 
 			continue
 		}
 		seen[r] = true
-		targets = append(targets, Target{Dir: filepath.Join(d, "worktree"), Symlink: true})
+		dirs = append(dirs, d)
 	}
-	return targets
+	return dirs
 }
