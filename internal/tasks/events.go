@@ -9,12 +9,16 @@ import (
 // edits (title, links, subtask text, event links, adding or removing a
 // blocker) still save and bump updated_at, but record nothing; reorders
 // record no event either.
+//
+// Every new task event type must be placed in a Tasks subfilter category in
+// ui/src/lib/eventTypeFilter.ts.
 const (
 	EventTaskCreated      = "task_created"
 	EventTaskStateChanged = "task_state_changed" // {"from","to","prev_started_at","prev_completed_at","cascade"}
 	EventTaskDeleted      = "task_deleted"       // {"cascade"}
 	EventSubtaskChecked   = "subtask_checked"    // {"subtask_id","text","from","to"}
 	EventSubtaskUnchecked = "subtask_unchecked"  // likewise
+	EventTaskWorkLogged   = "task_work_logged"   // {"text","edited_at"?}
 	// Blocker resolution events. Every payload has {"blocker_id","kind",
 	// "label"}; resolved adds "auto" and "reason". Automatic ones use
 	// ActorSystem.

@@ -137,3 +137,29 @@ func TestScopeTaskIDs(t *testing.T) {
 		t.Fatalf("scope ids %v", ids)
 	}
 }
+
+func TestFeedEventsTypes(t *testing.T) {
+	conn := newDB(t)
+	tk := mustCreate(t, conn, "alpha")
+	wl, err := LogWork(conn, user, tk.ID, "did a thing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SetState(conn, user, tk.ID, StateInProgress); err != nil {
+		t.Fatal(err)
+	}
+	all, err := FeedEvents(conn, FeedQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("Types nil = %d events, want 3", len(all))
+	}
+	got, err := FeedEvents(conn, FeedQuery{Types: []string{EventTaskWorkLogged}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ids := feedIDs(got); len(ids) != 1 || ids[0] != wl.ID {
+		t.Fatalf("Types filter = %v, want [%d]", ids, wl.ID)
+	}
+}

@@ -18,6 +18,8 @@ type FeedQuery struct {
 	// AtTS selects only events at exactly this ts; "" = any. The feeds use
 	// it to fetch the rest of a same-second cluster a LIMIT cut through.
 	AtTS string
+	// Types keeps only events of these types; nil/empty = every type.
+	Types []string
 }
 
 // FeedEvent is a task event with its task's current title.
@@ -61,6 +63,14 @@ func FeedEvents(conn *sql.DB, q FeedQuery) ([]FeedEvent, error) {
 		clause, a := UnreadActorSQL("e.actor")
 		query += ` AND ` + clause
 		args = append(args, a...)
+	}
+	if len(q.Types) > 0 {
+		marks := make([]string, len(q.Types))
+		for i, typ := range q.Types {
+			marks[i] = "?"
+			args = append(args, typ)
+		}
+		query += ` AND e.type IN (` + strings.Join(marks, ",") + `)`
 	}
 	query += ` ORDER BY e.ts DESC, e.id DESC`
 	if q.Limit > 0 {
