@@ -200,3 +200,73 @@ func TestWorktreeNotesShowOnHome(t *testing.T) {
 		t.Fatalf("blank notes shown on home: %q", n)
 	}
 }
+
+func TestWorktreeNotesSaveMergesConcurrentEdit(t *testing.T) {
+	t.Parallel()
+	s, wtPath, _ := notesServer(t, nil, nil)
+	// Another writer inserted b after this client loaded "a\n\nz" and
+	// appended c elsewhere. (Two edits at the same spot would conflict.)
+	if _, err := notes.Set(s.DB, wtPath, "a\nb\n\nz", false, true); err != nil {
+		t.Fatal(err)
+	}
+	rec, got := postNotes(t, s, map[string]any{"path": wtPath, "notes": "a\n\nz\nc", "base_notes": "a\n\nz"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST = %d", rec.Code)
+	}
+	stored, _ := notes.Get(s.DB, wtPath)
+	if stored.Text != got.Notes || strings.Contains(stored.Text, "<<<<<<<") ||
+		!strings.Contains(stored.Text, "b") || !strings.Contains(stored.Text, "c") {
+		t.Fatalf("stored = %q, response = %q; want a clean merge of b and c", stored.Text, got.Notes)
+	}
+}
+
+func TestWorktreeNotesSaveWithoutBaseOverwrites(t *testing.T) {
+	t.Parallel()
+	s, wtPath, _ := notesServer(t, nil, nil)
+	if _, err := notes.Set(s.DB, wtPath, "x", false, true); err != nil {
+		t.Fatal(err)
+	}
+	postNotes(t, s, map[string]any{"path": wtPath, "notes": "y"})
+	if stored, _ := notes.Get(s.DB, wtPath); stored.Text != "y" {
+		t.Fatalf("stored = %q, want y", stored.Text)
+	}
+}
+
+func TestWorktreeNotesSyncOffClearsBase(t *testing.T) {
+	t.Parallel()
+	s, wtPath, calls := notesServer(t, nil, nil)
+	base := "old"
+	if _, ok, err := notes.CompareAndSet(s.DB, wtPath, 0, "old", true, true, &base, "UUID-A"); err != nil || !ok {
+		t.Fatalf("seed: %v %v", ok, err)
+	}
+	_, got := postNotes(t, s, map[string]any{"path": wtPath, "notes": "old", "sync_cmux": false})
+	if got.CmuxSync != cmuxSyncOff {
+		t.Fatalf("response = %+v", got)
+	}
+	if stored, _ := notes.Get(s.DB, wtPath); stored.CmuxBase != nil {
+		t.Fatalf("CmuxBase = %q, want nil", *stored.CmuxBase)
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("calls = %v, want none", *calls)
+	}
+}
+
+func TestWorktreeNotesResyncKeepsBoth(t *testing.T) {
+	t.Setenv("CMUX_SOCKET_PATH", "/stub")
+	desc := "c"
+	s, wtPath, calls := notesServer(t, []cmux.Workspace{{ID: "UUID-A", Description: &desc}}, nil)
+	if _, err := notes.Set(s.DB, wtPath, "n", false, true); err != nil {
+		t.Fatal(err)
+	}
+	_, got := postNotes(t, s, map[string]any{"path": wtPath, "notes": "n", "sync_cmux": true})
+	if got.CmuxSync != cmuxSyncOK {
+		t.Fatalf("response = %+v", got)
+	}
+	stored, _ := notes.Get(s.DB, wtPath)
+	if !strings.Contains(stored.Text, "<<<<<<<") || !strings.Contains(stored.Text, "n") || !strings.Contains(stored.Text, "c") {
+		t.Fatalf("stored = %q, want a conflict block holding both", stored.Text)
+	}
+	if len(*calls) != 1 || (*calls)[0][1] != stored.Text {
+		t.Fatalf("calls = %v, want the merged text pushed", *calls)
+	}
+}

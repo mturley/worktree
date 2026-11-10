@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/mturley/worktree/internal/cmux"
 	"github.com/mturley/worktree/internal/notes"
 	"github.com/mturley/worktree/internal/registry"
 )
@@ -40,6 +39,10 @@ type setWorktreeNotesRequest struct {
 	// ShowOnHome is optional: absent keeps the stored setting, so a client
 	// that predates it (say, an old tab's keepalive save) cannot turn it off.
 	ShowOnHome *bool `json:"show_on_home,omitempty"`
+	// BaseNotes is the text the client last loaded. When the stored notes
+	// have moved on since, the save is merged with them rather than
+	// overwriting. Absent (an older tab) overwrites.
+	BaseNotes *string `json:"base_notes,omitempty"`
 }
 
 type setWorktreeNotesResponse struct {
@@ -74,10 +77,8 @@ func (s *Server) handleGetWorktreeNotes(w http.ResponseWriter, r *http.Request) 
 // committed FIRST: a cmux failure is reported in cmux_sync, never as a failed
 // save, because the notes themselves are safe.
 //
-// The workspace is re-resolved from the path on every save rather than taken
-// from the client. Refs are index-based and shift; the UUID from a fresh list
-// is what is targeted, and only when exactly one workspace matches — with two
-// there is no right answer.
+// A save carrying base_notes is merged with any edit made since the client
+// loaded. Syncing in both directions is syncNotesLocked's job.
 func (s *Server) handleSetWorktreeNotes(w http.ResponseWriter, r *http.Request) {
 	var req setWorktreeNotesRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2*maxNotesBytes)).Decode(&req); err != nil {
@@ -102,53 +103,59 @@ func (s *Server) handleSetWorktreeNotes(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	var showOnHome bool
-	if req.ShowOnHome != nil {
-		showOnHome = *req.ShowOnHome
-	} else {
-		prev, err := notes.Get(s.DB, req.Path)
+	// Lock on the registry path: the periodic cmux pass keys on it too.
+	path := entry.Path
+	unlock := s.notesLock(path)
+	defer unlock()
+
+	var stored notes.Notes
+	saved := false
+	for range notesSyncTries {
+		prev, err := notes.Get(s.DB, path)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		showOnHome = prev.ShowOnHome
+		text := req.Notes
+		// A save from an older tab sends no base and overwrites. With one,
+		// edits made elsewhere since the client loaded are merged in.
+		if req.BaseNotes != nil && notes.Normalize(prev.Text) != notes.Normalize(*req.BaseNotes) {
+			text = notes.Merge(req.BaseNotes, req.Notes, prev.Text, "other edit")
+		}
+		showOnHome := prev.ShowOnHome
+		if req.ShowOnHome != nil {
+			showOnHome = *req.ShowOnHome
+		}
+		// The base is only meaningful while sync is on; syncNotesLocked
+		// decides push, pull or merge from it.
+		var base *string
+		baseWorkspace := ""
+		if req.SyncCmux {
+			base, baseWorkspace = prev.CmuxBase, prev.CmuxBaseWorkspace
+		}
+		n, ok, err := notes.CompareAndSet(s.DB, path, prev.Version, text, req.SyncCmux, showOnHome, base, baseWorkspace)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if ok {
+			stored, saved = n, true
+			break
+		}
 	}
-
-	n, err := notes.Set(s.DB, req.Path, req.Notes, req.SyncCmux, showOnHome)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+	if !saved {
+		writeError(w, http.StatusConflict, "notes changed while saving; try again")
 		return
 	}
-	resp := setWorktreeNotesResponse{
-		worktreeNotesDTO: newWorktreeNotesDTO(n),
-		CmuxSync:         cmuxSyncOff,
-	}
-	if n.SyncCmux {
-		resp.CmuxSync, resp.CmuxError = s.syncNotesToCmux(req.Path, n.Text)
-	}
-	writeJSON(w, http.StatusOK, resp)
-}
 
-// syncNotesToCmux mirrors text to the description of path's one cmux
-// workspace, returning the outcome and, when not ok, why.
-func (s *Server) syncNotesToCmux(path, text string) (string, string) {
-	if !s.cmuxEnabled() {
-		return cmuxSyncSkipped, "cmux is not available"
+	resp := setWorktreeNotesResponse{CmuxSync: cmuxSyncOff}
+	if stored.SyncCmux {
+		resp.CmuxSync, resp.CmuxError = s.syncNotesLocked(path, nil)
+		// The sync may have pulled or merged cmux's text into the notes.
+		if n, err := notes.Get(s.DB, path); err == nil {
+			stored = n
+		}
 	}
-	workspaces, err := s.listCmuxWorkspaces()
-	if err != nil {
-		return cmuxSyncFailed, err.Error()
-	}
-	hits := cmux.Match(workspaces, []string{path})[path]
-	if len(hits) != 1 {
-		return cmuxSyncSkipped, fmt.Sprintf("expected exactly one cmux workspace, found %d", len(hits))
-	}
-	target := hits[0].ID
-	if target == "" {
-		target = hits[0].Ref
-	}
-	if err := s.setCmuxDescription(target, text); err != nil {
-		return cmuxSyncFailed, err.Error()
-	}
-	return cmuxSyncOK, ""
+	resp.worktreeNotesDTO = newWorktreeNotesDTO(stored)
+	writeJSON(w, http.StatusOK, resp)
 }
