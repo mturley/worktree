@@ -760,8 +760,11 @@ stored in the worktree-owned `worktree_notes` table (keyed by registry path).
   are index-based and shift; a cmux restart renumbers them, UUIDs survive).
   `worktree_notes` keeps the last text both sides agreed on (`cmux_base`) and
   the workspace UUID it was agreed with (`cmux_base_workspace`), plus a
-  `version` that every write checks (`UPDATE ... WHERE version = ?`, so the
-  CLI, a UI save and the cmux pass cannot overwrite each other). cmux reports
+  `version` that every write bumps. UI saves and the cmux pass write only if
+  the version is the one they read (`UPDATE ... WHERE version = ?`), so they
+  cannot overwrite each other; `worktree notes set` replaces the notes
+  unconditionally by design, and its version bump makes the next pass push
+  it. A matched workspace with no UUID is skipped. cmux reports
   no timestamp, so direction is decided by comparing each side to the base
   (`notes.Decide`, all texts `notes.Normalize`d: CRLF to LF, trailing
   whitespace stripped, ends trimmed, exactly what cmux does itself):
@@ -784,8 +787,11 @@ stored in the worktree-owned `worktree_notes` table (keyed by registry path).
   conflict block (`<<<<<<< notes` ... `=======` ... `>>>>>>> cmux`, or
   `other edit` when the other side is a concurrent notes write rather than
   cmux). With no base, the lines the two texts share stand in for it. With a
-  real base, two different pure insertions at the same spot are both kept,
-  ours first, with no markers (nothing existing was changed). The result is
+  real base, two pure insertions at the same spot are both kept with no
+  markers (nothing existing was changed): lines both inserted appear once,
+  and otherwise ours come first, so an insertion that extends the other
+  collapses to the longer one. Shared leading and trailing lines are matched
+  before the LCS tables are built, so large notes merge cheaply. The result is
   written to both sides and becomes the base, so a conflict is never re-merged
   into nested markers; resolving one is an ordinary edit.
 - **Sync runs in two places.** Every notes save runs it at once, and the 5 s
