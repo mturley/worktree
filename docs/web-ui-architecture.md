@@ -224,7 +224,7 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | GET | `/api/repo-dotfiles` | `repo` (required) | gitignored dotfiles that repo would copy into a new worktree |
 | GET | `/api/stream` | `tab`, `route`, `visible` (all optional; see "Notifications"); `listeners=0` opts out of listening ports | SSE stream (`text/event-stream`) |
 | POST | `/api/notify` | body: `{path, type?, id?, on, tab?}` (no type/id = the worktree-wide toggle) | `{ok, mode}`; turning ON sends a test notification. 400 for a link or a half-given resource, 404 for an unregistered worktree or untracked resource |
-| GET | `/api/tasks` | `scope` (`all` default, `worktree`, `resource`), `path` (worktree scope), `type` + `id` (resource scope), `completed=1`, `archived=1` | `[]taskDTO` in master order; see "Tasks" |
+| GET | `/api/tasks` | `scope` (`all` default, `worktree`, `resource`, `task`), `path` (worktree scope), `type` + `id` (resource scope), `id` (task scope: the one task), `completed=1`, `archived=1` | `[]taskDTO` in master order; see "Tasks" |
 | POST | `/api/tasks` | body: `{title, priority?, starred?, path?, type?, id?, after?, before?}`; `path` → Focus worktree link, `type`+`id` → Focus resource link, neither → global | `taskDTO` |
 | POST | `/api/tasks/update` | body: `{id, title?, description?, priority?, starred?, due?}` (absent = unchanged; `due: ""` clears) | `taskDTO` |
 | POST | `/api/tasks/state` | body: `{id, state}` | `taskDTO`, plus `undo_event_id` when the state changed (see "Undo for tasks") |
@@ -250,7 +250,7 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | POST | `/api/tasks/from-event` | body: `{key, snapshot?, path?}`; creates a task from the event | `taskDetailDTO` |
 | POST | `/api/task-read` | body: `{id, through_ts}` | `{previous_ts, last_read_ts}` (as `/api/resource-read`); 400 unless `through_ts` is RFC3339; 404 for a missing or deleted task. See "Unread" |
 | POST | `/api/task-read/restore` | body: `{id, last_read_ts, previous_ts}` (what `/api/task-read` answered) | 204; 409 if the task's cursor has moved since |
-| GET | `/api/task-unread` | `scope` (`all` default, `worktree`, `resource`), `path` / `type` + `id` as `/api/tasks` | `[{id, title, count, newest_ts}]`, never null: tasks in the scope (completed and archived included) with unread events, newest unread first |
+| GET | `/api/task-unread` | `scope` (`all` default, `worktree`, `resource`, `task`), `path` / `type` + `id` / `id` as `/api/tasks` | `[{id, title, count, newest_ts}]`, never null: tasks in the scope (completed and archived included) with unread events, newest unread first; `scope=task&id=` is that task alone, while it has unread events |
 | POST | `/api/tabs/presence` | body: `{tab, route, visible}` | 204; 404 for an unknown tab or another session's |
 | POST | `/api/tabs/ack` | body: `{tab, notification_id, shown}` | 204; 404 for an unknown tab, another session's, or a notification nobody awaits |
 | GET | `/api/update-status` | — | `{available, behind_by, details_url}`; see "Update check" |
@@ -992,6 +992,19 @@ load task unread (`TestTimelinesDoNotLoadTaskUnread`).
   (`TestCmuxMailboxChecksResourceUnreadFirst`).
 - `taskDTO.unread_count` is the task's own count, and `unread_through_ts`
   (absent at 0) the newest of those events, from the same summary.
+- `taskDTO.combined_unread_count` (always sent) is `unread_count` plus the
+  OWN unread (`unread_count − task_unread_count` after `fill`) of each
+  distinct resource link a live worktree follows: what the task's Activity
+  tab, Everything view, holds unread. Own, so a PR two tasks link never
+  counts one task's events in the other's total. A link only a task's
+  `task:<id>` hold subscribes, or no one, adds 0: what isn't followed isn't
+  unread. Individually linked events (`event_links`) are not added.
+  `task_linked_unread.go`: `followedResources` reads the followed set in one
+  query (`subscriber LIKE 'worktree:%' AND deleted_at IS NULL`, the set
+  `unread.IsFollowed` checks per event), and `taskUnreadReader` holds one
+  `unreadIndex`, that set and a per-resource DTO memo for the request, so
+  `GET /api/tasks` and each single-task answer (create, update, state,
+  detail) read them once, however many tasks they fill.
 
 **`unreadIndex` is request-scoped**, for the same reason `eventEnricher` is:
 cursors move from other processes (`worktree resources mark-read`,
@@ -1383,8 +1396,15 @@ the watcher toggles do not apply.
   else short ref like `#123`; a worktree's branch, else basename — and the
   resource `url`, found from any subscription, else any event, else derived
   for PRs and links), `implicit` (each implicit worktree with its branch and
-  `via`, the `"type:id"` resource links it follows), `subtasks`, and
-  `event_links`. Every write route answers with the fresh detail.
+  `via`, the `"type:id"` resource links it follows), `subtasks`,
+  `event_links`, and `linked_resources` (never null): the task's resource
+  links, in link order, as `resourceDTO`s carrying the unread fields
+  `MarkAllReadButton` needs (`unread_count` with `task_unread_count` inside
+  it, as on a resource card, `unread_through_ts`, and Slack's `has_unread`,
+  `updated_ts`, `last_read`; `primary` is the link's focus flag). A link no
+  worktree follows is listed with its unread fields cleared. See "Unread"
+  for `combined_unread_count`. Every write route answers with the fresh
+  detail.
 - **Work log** (`tasks_worklog_api.go`). `POST /api/tasks/worklog/add`
   `{id, text}`, `.../edit` `{event_id, text}` and `.../delete`
   `{event_id}` write `task_work_logged` events (`tasks.LogWork`,

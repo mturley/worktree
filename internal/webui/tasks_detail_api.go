@@ -70,6 +70,10 @@ type taskDetailDTO struct {
 	// one blocks, in master order. Both never null.
 	Blockers []taskBlockerDTO `json:"blockers"`
 	Blocks   []taskBlocksDTO  `json:"blocks"`
+	// LinkedResources are the task's resource links as resource DTOs
+	// carrying their unread fields (see taskLinkedUnread), in link order,
+	// for the modal's mark all read. Never null.
+	LinkedResources []resourceDTO `json:"linked_resources"`
 }
 
 // taskDetail loads task id and builds its detail DTO.
@@ -89,19 +93,21 @@ func (s *Server) taskDetail(id int64) (taskDetailDTO, error) {
 		return taskDetailDTO{}, err
 	}
 	td := newTaskDTO(t)
-	sum := s.taskUnreadSummaries()[t.ID]
-	td.UnreadCount, td.UnreadThroughTS = sum.Count, sum.NewestTS
+	// The enricher's unread index serves the task's counts too: one per
+	// request.
+	linked := s.newTaskUnreadReader(e.unread).fill(&td, t)
 	if t.Blocked { // a done task is never blocked, so names no blockers
 		td.OpenBlockers = open
 	}
 	d := taskDetailDTO{
-		taskDTO:     td,
-		Blockers:    blockers,
-		Blocks:      blocks,
-		DetailLinks: make([]taskDetailLinkDTO, 0, len(t.Links)),
-		ImplicitVia: make([]taskImplicitDTO, 0, len(t.Implicit)),
-		Subtasks:    make([]taskSubtaskDTO, 0, len(t.Subtasks)),
-		EventLinks:  make([]taskEventLinkDTO, 0, len(links)),
+		taskDTO:         td,
+		Blockers:        blockers,
+		Blocks:          blocks,
+		DetailLinks:     make([]taskDetailLinkDTO, 0, len(t.Links)),
+		ImplicitVia:     make([]taskImplicitDTO, 0, len(t.Implicit)),
+		Subtasks:        make([]taskSubtaskDTO, 0, len(t.Subtasks)),
+		EventLinks:      make([]taskEventLinkDTO, 0, len(links)),
+		LinkedResources: linked,
 	}
 	for i, l := range t.Links {
 		dl := taskDetailLinkDTO{taskLinkDTO: d.Links[i]}
