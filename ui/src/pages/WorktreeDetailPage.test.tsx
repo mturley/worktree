@@ -810,6 +810,50 @@ describe("WorktreeDetailPage unread-only toggle", () => {
   })
 })
 
+describe("WorktreeDetailPage re-requested selection", () => {
+  const prUrl = `/worktree/${encodeURIComponent("/wt/foo")}?resource=pr:o%2Fr%231`
+  const goTo = (url: string) => act(() => { window.history.pushState({}, "", url) })
+  const tree = () => (
+    <MantineProvider>
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <TaskModalProvider><WorktreeDetailPage /></TaskModalProvider>
+      </QueryClientProvider>
+    </MantineProvider>
+  )
+
+  it("keeps a resource that was listed, dropped out and is then requested again, and turns Unreads only off", async () => {
+    window.localStorage.setItem("worktree.unreadOnly", "true")
+    window.history.replaceState({}, "", prUrl)
+    resources = [{ ...baseResources[0], unread_count: 1 }, baseResources[1]]
+    setViewport("wide")
+    const view = wrap()
+    await screen.findByRole("button", { name: /all resources/i })
+    // Marked read: dropped from the filtered list and deselected.
+    resources = baseResources
+    view.rerender(tree())
+    await waitFor(() => expect(window.location.search).toBe(""))
+    // Requested again (the Code tab's PR row): shown, filter off.
+    goTo(prUrl)
+    const toggle = await screen.findByRole("switch", { name: "Unreads only" })
+    await waitFor(() => expect(toggle).not.toBeChecked())
+    expect(window.location.search).toContain("resource=pr:o%2Fr%231")
+  })
+
+  it("also turns a source filter off when the requested resource is hidden by it", async () => {
+    setViewport("wide")
+    const user = userEvent.setup()
+    wrap()
+    const jira = await screen.findByRole("button", { name: /Jira/ })
+    await user.click(jira)
+    expect(jira).toHaveAttribute("aria-pressed", "true")
+    expect(screen.queryByRole("button", { name: /select resource o\/r#1/i })).not.toBeInTheDocument()
+    goTo(prUrl)
+    await screen.findByRole("button", { name: /all resources/i })
+    expect(await screen.findByRole("button", { name: /select resource o\/r#1/i })).toBeInTheDocument()
+    expect(window.location.search).toContain("resource=pr:o%2Fr%231")
+  })
+})
+
 describe("WorktreeDetailPage event opened from the home page", () => {
   const event = {
     id: "evt-7", ts: "2026-10-01T00:00:00Z", external_ts: "", source: "github",

@@ -221,9 +221,15 @@ export function WorktreeDetailPage() {
     selected && !selectedResource && items.some((r) => r.type === selected.type && r.id === selected.id),
   )
   const listedKey = useRef<string | null>(null)
-  const selectedKey = selected ? serializeResourceKey(selected) : null
+  const selectedKey = selected ? `${path}|${serializeResourceKey(selected)}` : null
   useEffect(() => {
-    if (!selected || !resources.data) return
+    // The ref describes one selection in one worktree: it must not outlive
+    // it, or re-requesting that resource later would read as "just dropped".
+    if (!selected) {
+      listedKey.current = null
+      return
+    }
+    if (!resources.data) return
     if (selectedResource) {
       listedKey.current = selectedKey
     } else if (selectedHidden && listedKey.current !== selectedKey) {
