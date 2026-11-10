@@ -688,3 +688,38 @@ func readlink(t *testing.T, p string) string {
 	}
 	return got
 }
+
+// A link that can't be removed must stay findable: the store, and with it
+// .linked-dirs, outlives a failed unlink so a re-run can finish the job.
+func TestUninstallKeepsStoreWhenUnlinkFails(t *testing.T) {
+	t.Parallel()
+	f := newSkillsFixture(t)
+	f.install(t, f.deps)
+	parent := filepath.Join(f.cfgDir, "skills")
+	if err := os.Chmod(parent, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(parent, 0o755) })
+	// Uninstall from a run that doesn't see CLAUDE_CONFIG_DIR: only
+	// .linked-dirs knows about parent.
+	other := f.deps
+	other.Getenv = func(string) string { return "" }
+	if err := applySkills(other, planSkillsUninstall(other)); err == nil {
+		t.Fatal("want the unlink error")
+	}
+	if !slices.Contains(readLinkedDirs(f.store()), parent) {
+		t.Fatal("the store's record of the failed directory is gone")
+	}
+	if err := os.Chmod(parent, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	uninstallSkills(t, other)
+	if lexists(f.store()) {
+		t.Error("store survived the re-run")
+	}
+	for _, l := range f.links("alpha") {
+		if lexists(l) {
+			t.Errorf("%s survived the re-run", l)
+		}
+	}
+}

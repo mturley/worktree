@@ -337,8 +337,10 @@ func applySkills(d skillDeps, p skillPlan) error {
 		}
 		ok("Removed the %s skill", n)
 	}
+	unlinkFailed := false
 	for _, l := range p.Unlink {
 		if err := os.Remove(l); err != nil {
+			unlinkFailed = true
 			fail(fmt.Errorf("removing %s: %w", l, err))
 			continue
 		}
@@ -378,7 +380,11 @@ func applySkills(d skillDeps, p skillPlan) error {
 			fail(recordLinkedDirs(p.Store, dirs))
 		}
 	}
-	if p.RemoveStore {
+	// A link left behind is found again through the store's .linked-dirs, so
+	// the store stays until every link is gone.
+	if p.RemoveStore && unlinkFailed {
+		fail(fmt.Errorf("kept %s so a re-run can remove the remaining links", p.Store))
+	} else if p.RemoveStore {
 		if err := os.RemoveAll(p.Store); err != nil {
 			fail(fmt.Errorf("removing %s: %w", p.Store, err))
 		} else {
