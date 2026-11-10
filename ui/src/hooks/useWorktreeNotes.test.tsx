@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { ReactNode } from "react"
-import { act, renderHook, waitFor } from "@testing-library/react"
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 
 const apiMock = vi.hoisted(() => ({
@@ -32,6 +32,7 @@ const saveResponse = (notes: string, at = "2026-01-01T00:00:05Z") => ({
 })
 
 afterEach(() => {
+  cleanup() // unmounting sends pending edits; let that happen before the mocks reset
   vi.useRealTimers()
   vi.clearAllMocks()
 })
@@ -60,6 +61,7 @@ describe("useWorktreeNotes base text", () => {
     await act(async () => { await result.current.flush() })
     await waitFor(() => expect(result.current.notes).toBe("mine + cmux"))
     expect(apiMock.saveWorktreeNotes).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(result.current.status).toBe("saved"))
   })
 
   it("keeps newer keystrokes and follows up with the first save's text as base", async () => {
@@ -76,5 +78,40 @@ describe("useWorktreeNotes base text", () => {
     await waitFor(() => expect(apiMock.saveWorktreeNotes).toHaveBeenCalledTimes(2))
     expect(apiMock.saveWorktreeNotes.mock.calls[1][0]).toMatchObject({ notes: "mine more", base_notes: "mine" })
     expect(result.current.notes).toBe("mine more")
+  })
+
+  describe("keepalive on leaving", () => {
+    it("sends the loaded text as base when idle", async () => {
+      apiMock.saveWorktreeNotes.mockResolvedValue(saveResponse("mine"))
+      const { result } = await mount("loaded")
+      act(() => result.current.setNotes("mine"))
+      act(() => { window.dispatchEvent(new Event("beforeunload")) })
+      expect(apiMock.saveWorktreeNotes).toHaveBeenCalledTimes(1)
+      expect(apiMock.saveWorktreeNotes.mock.calls[0][0]).toMatchObject({ notes: "mine", base_notes: "loaded" })
+      expect(apiMock.saveWorktreeNotes.mock.calls[0][1]).toEqual({ keepalive: true })
+    })
+
+    it("skips the keepalive when the in-flight save already holds the latest text", async () => {
+      apiMock.saveWorktreeNotes.mockImplementationOnce(() => new Promise(() => {}))
+      const { result } = await mount("loaded")
+      act(() => result.current.setNotes("mine"))
+      act(() => { void result.current.flush() })
+      await waitFor(() => expect(apiMock.saveWorktreeNotes).toHaveBeenCalledTimes(1))
+      act(() => { window.dispatchEvent(new Event("beforeunload")) })
+      expect(apiMock.saveWorktreeNotes).toHaveBeenCalledTimes(1)
+    })
+
+    it("uses the in-flight save's text as base when typed past it", async () => {
+      apiMock.saveWorktreeNotes.mockImplementationOnce(() => new Promise(() => {}))
+      apiMock.saveWorktreeNotes.mockResolvedValue(saveResponse("mine more"))
+      const { result } = await mount("loaded")
+      act(() => result.current.setNotes("mine"))
+      act(() => { void result.current.flush() })
+      await waitFor(() => expect(apiMock.saveWorktreeNotes).toHaveBeenCalledTimes(1))
+      act(() => result.current.setNotes("mine more"))
+      act(() => { window.dispatchEvent(new Event("beforeunload")) })
+      expect(apiMock.saveWorktreeNotes).toHaveBeenCalledTimes(2)
+      expect(apiMock.saveWorktreeNotes.mock.calls[1][0]).toMatchObject({ notes: "mine more", base_notes: "mine" })
+    })
   })
 })

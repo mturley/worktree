@@ -48,6 +48,7 @@ export function useWorktreeNotes(path: string) {
   const base = useRef("") // the server text the draft descends from; sent so the server can merge
   const savedAt = useRef("") // updated_at of what `saved` holds; RFC3339 UTC, so strings order
   const inFlight = useRef(false)
+  const sending = useRef<Snapshot | null>(null) // what the in-flight save is sending
   const again = useRef(false)
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
@@ -79,6 +80,7 @@ export function useWorktreeNotes(path: string) {
       return
     }
     inFlight.current = true
+    sending.current = snap
     again.current = false
     setStatus("saving")
     try {
@@ -88,12 +90,14 @@ export function useWorktreeNotes(path: string) {
       // The server may have merged edits made elsewhere (cmux) into what we
       // sent. Show the merged text unless the user typed since; in that case
       // the follow-up save merges it, with this save's text as its base.
+      let sent = snap
       if (res.notes !== snap.notes && same(latest.current, snap)) {
         const adopted = { ...snap, notes: res.notes }
         latest.current = adopted
         saved.current = adopted
         base.current = res.notes
         setDraft(adopted)
+        sent = adopted
       } else {
         saved.current = snap
         base.current = snap.notes
@@ -105,15 +109,17 @@ export function useWorktreeNotes(path: string) {
       // The home page's worktree cards show the notes.
       void qc.invalidateQueries({ queryKey: ["worktrees"] })
       inFlight.current = false
+      sending.current = null
       setError(undefined)
       setCmux({ outcome: res.cmux_sync, error: res.cmux_error })
-      if (again.current || !same(latest.current, snap)) {
+      if (again.current || !same(latest.current, sent)) {
         void save()
       } else {
         setStatus("saved")
       }
     } catch (e) {
       inFlight.current = false
+      sending.current = null
       setError(e instanceof Error ? e.message : String(e))
       setStatus("error")
     }
@@ -170,6 +176,11 @@ export function useWorktreeNotes(path: string) {
     const sendPending = () => {
       const snap = latest.current
       if (!snap || same(snap, saved.current)) return
+      // While a save is in flight, `saved`/`base` still hold pre-save values:
+      // that save's text is what the server will have, so it is the base.
+      const flying = sending.current
+      if (flying && same(snap, flying)) return
+      const baseNotes = flying ? flying.notes : base.current
       clearTimeout(timer.current)
       // The response may arrive after this card is gone, so the cache is
       // updated up front: the next visit must start from these edits.
@@ -177,7 +188,7 @@ export function useWorktreeNotes(path: string) {
         ...old, notes: snap.notes, sync_cmux: snap.sync, show_on_home: snap.home,
       }))
       api.saveWorktreeNotes(
-        { path, notes: snap.notes, sync_cmux: snap.sync, show_on_home: snap.home, base_notes: base.current },
+        { path, notes: snap.notes, sync_cmux: snap.sync, show_on_home: snap.home, base_notes: baseNotes },
         { keepalive: true },
       )
         .then(() => qc.invalidateQueries({ queryKey: ["worktrees"] }))
