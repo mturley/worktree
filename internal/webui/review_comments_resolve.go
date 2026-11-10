@@ -31,6 +31,10 @@ type reviewResolver struct {
 
 	// showFile reads a file at a rev; a field so tests can make it fail.
 	showFile func(dir, rev, file string) ([]byte, error)
+
+	// baseRefFor maps a base value to its ref; the server's (which knows the
+	// worktree's PR) once built by Server.reviewResolver.
+	baseRefFor func(dir, base string) (ref string, status int, msg string)
 }
 
 func newReviewResolver() *reviewResolver {
@@ -40,6 +44,9 @@ func newReviewResolver() *reviewResolver {
 		changed:  map[string][]gitutil.FileChange{},
 		all:      map[string][]gitutil.FileChange{},
 		showFile: gitutil.ShowFile,
+		baseRefFor: func(dir, base string) (string, int, string) {
+			return resolveBaseRef(dir, base, gitutil.MainUpstream)
+		},
 	}
 }
 
@@ -108,7 +115,7 @@ func (r *reviewResolver) changedFiles(dir, oldRev, newRev string) ([]gitutil.Fil
 // tracking), as the diff view would list them now. ok is false when base
 // cannot be resolved or the diff fails.
 func (r *reviewResolver) allChanges(dir, base string) (files []gitutil.FileChange, ok bool) {
-	baseRef, status, _ := baseRefFor(dir, base)
+	baseRef, status, _ := r.baseRefFor(dir, base)
 	if status != 0 {
 		return nil, false
 	}
@@ -308,6 +315,7 @@ func (s *Server) reviewResolver() *reviewResolver {
 	defer s.reviewMu.Unlock()
 	if s.review == nil {
 		s.review = newReviewResolver()
+		s.review.baseRefFor = s.baseRefFor
 	}
 	return s.review
 }

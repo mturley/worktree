@@ -317,3 +317,25 @@ func TestRevSetHasSlidesTheExpiry(t *testing.T) {
 		t.Fatal("an entry left idle past the TTL should expire")
 	}
 }
+
+func TestWorktreeDiffMergeBaseUsesPRBase(t *testing.T) {
+	t.Parallel()
+	wt := twoRemoteWorktree(t)
+	srv, ts := gitTestServer(t, wt, nil)
+	followPR(t, srv, wt, "org/repo#7", "main")
+	code, body := diffGet(t, ts, "commits", wt, "&base=merge-base")
+	if code != 200 {
+		t.Fatalf("status %d: %s", code, body)
+	}
+	var got struct {
+		BaseRef string           `json:"base_ref"`
+		Commits []gitutil.Commit `json:"commits"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.BaseRef != "upstream/main" || len(got.Commits) != 1 || got.Commits[0].Subject != "add f1" {
+		t.Fatalf("got %+v", got)
+	}
+	_ = srv
+}
