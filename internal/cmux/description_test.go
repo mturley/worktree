@@ -1,6 +1,7 @@
 package cmux
 
 import (
+	"encoding/json"
 	"os/exec"
 	"reflect"
 	"testing"
@@ -44,5 +45,17 @@ func TestSetWorkspaceDescriptionReportsFailure(t *testing.T) {
 	stubCmux(t, "false")
 	if err := SetWorkspaceDescription("UUID-1", "x"); err == nil {
 		t.Fatal("want error when cmux fails")
+	}
+}
+
+func TestWorkspaceDescriptionText(t *testing.T) {
+	var got []Workspace
+	if err := json.Unmarshal([]byte(`[{"id":"A","description":null},{"id":"B","description":"notes"},{"id":"C"}]`), &got); err != nil {
+		t.Fatal(err)
+	}
+	for i, want := range []string{"", "notes", ""} {
+		if d := got[i].DescriptionText(); d != want {
+			t.Errorf("%s: DescriptionText = %q, want %q", got[i].ID, d, want)
+		}
 	}
 }

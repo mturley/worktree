@@ -147,11 +147,7 @@ func (s *Server) syncNotesToCmux(path, text string) (string, string) {
 	if target == "" {
 		target = hits[0].Ref
 	}
-	set := cmux.SetWorkspaceDescription
-	if s.cmuxSetDescription != nil {
-		set = s.cmuxSetDescription
-	}
-	if err := set(target, text); err != nil {
+	if err := s.setCmuxDescription(target, text); err != nil {
 		return cmuxSyncFailed, err.Error()
 	}
 	return cmuxSyncOK, ""
