@@ -189,8 +189,11 @@ reported in `cmux_sync`, never as a failed save.
 
 ### Live update to the open notes card
 
-When the pass changes a worktree's notes, the server sends a `notes_changed`
-event (`{path}`) on `/api/stream`, and the notes card refetches. Mike is fine
+When a worktree's notes change in the DB (a pull, a merge, or
+`worktree notes set`), the server sends a `notes_changed` event on
+`/api/stream`, and the notes card refetches. It is detected the way
+`tasks_changed` is: the stream's existing 5 s tick compares a notes version
+fingerprint, so CLI writes from another process are caught too. Mike is fine
 with the field changing while he types; the edit-mode toggle only prevents
 stray edits. So the hook's rule "the local draft is the truth while it has
 unsaved edits" changes: with no unsaved edits it adopts the new server text at
