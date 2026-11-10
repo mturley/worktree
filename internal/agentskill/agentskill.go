@@ -6,9 +6,7 @@ package agentskill
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"embed"
-	"encoding/hex"
 	"io/fs"
 	"path"
 	"path/filepath"
@@ -78,12 +76,6 @@ func StoreDir(home string, getenv func(string) string) string {
 //go:embed skills/worktree/SKILL.md
 var Content []byte
 
-// Hash identifies this version of Content.
-func Hash() string {
-	sum := sha256.Sum256(Content)
-	return hex.EncodeToString(sum[:])
-}
-
 // Body is Content without its frontmatter: what `worktree agent-help` prints.
 func Body() []byte { return StripFrontmatter(Content) }
 
@@ -99,23 +91,6 @@ func StripFrontmatter(b []byte) []byte {
 		return b
 	}
 	return bytes.TrimLeft(b[len(fence)+end+1+len(fence):], "\n")
-}
-
-// Target is one place the skill goes: the canonical copy, or a symlink to it.
-type Target struct {
-	Dir     string
-	Symlink bool
-}
-
-// Targets lists where the worktree skill belongs, the canonical copy in
-// ~/.agents/skills first, then a symlink in each other SkillDirs entry.
-func Targets(home string, getenv func(string) string, exists func(string) bool, realpath func(string) (string, error)) []Target {
-	dirs := SkillDirs(home, getenv, exists, realpath)
-	targets := []Target{{Dir: filepath.Join(dirs[0], "worktree")}}
-	for _, d := range dirs[1:] {
-		targets = append(targets, Target{Dir: filepath.Join(d, "worktree"), Symlink: true})
-	}
-	return targets
 }
 
 // SkillDirs lists the skills directories agents read, ~/.agents/skills first

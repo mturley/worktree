@@ -30,7 +30,7 @@ every interface at `ui.https_port` (8476). There is no `--bind`.
   through `internal/ui`, so nothing prints ANSI when piped.
 - Every new CLI command must be classified for the agent skill: add it to
   `skillReadCommands` (`cmd/agent_help_test.go`) if it changes nothing, or name
-  it in the writes section of `internal/agentskill/SKILL.md`.
+  it in the writes section of `internal/agentskill/skills/worktree/SKILL.md`.
   `TestSkillNamesEveryWrite` fails until you do.
 - Every new field on `setup.Plan` needs an uninstall decision: undo it in
   `--uninstall` or give it a `Preserve` line. `TestUninstallCoversEverySetupStep`
@@ -93,12 +93,17 @@ minutes serially; it now runs most tests in parallel.
     for `needs_rebase`; v0.21.0 added `priority_rank` and
     `requested_reviewer_ids`); v0.23.0 is needed for description text (event
     text change, `pr_description_changed`).
-  - `agentskill` — the embedded `SKILL.md` for AI agents (`worktree
-    agent-help` prints it) and `Targets`, where agents look for it
-    (`~/.agents/skills/worktree`, plus symlinks into Claude Code's skills dir).
-    Installing and uninstalling is `internal/setup/agentskill.go`: a
-    canonical dir without our `.worktree-skill-hash` is user-managed and left
-    alone, and `.worktree-skill-links` records the links setup made.
+  - `agentskill` — worktree's skills for AI agents, embedded from
+    `skills/<name>/` (`worktree agent-help` prints `skills/worktree/SKILL.md`),
+    plus `StoreDir` and `SkillDirs`. Adding a skill is a new directory there;
+    removing or renaming one needs no other code. Installing is
+    `internal/setup/skills.go`: real copies in the store
+    (`${XDG_DATA_HOME:-~/.local/share}/worktree/skills/`, rewritten each run,
+    edits overwritten) and a symlink per skill in `~/.agents/skills` and
+    Claude Code's skills dirs. A link is worktree's only if its target sits
+    directly in the store, so setup finds stale links by scanning and never
+    touches another entry; `.linked-dirs` in the store records every skills dir
+    linked into. Setup asks whether to keep installed skills every run.
   - `kubeconfig` — reads a kubeconfig file's current context (cluster
     server URL, user, namespace) for the Environment tab's Kubeconfig
     section. File only: never contacts a cluster, never returns

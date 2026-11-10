@@ -34,8 +34,7 @@ type Plan struct {
 	// watcher's config.yaml, which has never had a github block.
 	SeedGitHubBotUsernames bool
 	MacApp                 MacAppAction
-	AgentSkill             AgentSkillAction
-	AgentSkillLinks        []string
+	AgentSkills            skillPlan
 	Cfg                    config.Config
 }
 
@@ -71,8 +70,7 @@ func BuildPlan(cfg config.Config) Plan {
 	plan.SeedGitHubBotUsernames = needsGitHubBotSeed(wconfig.ConfigDefaultPath())
 
 	plan.MacApp = detectMacApp()
-	plan.AgentSkill = detectAgentSkill()
-	plan.AgentSkillLinks = detectAgentSkillLinks()
+	plan.AgentSkills = detectSkills(defaultSkillDeps(), ui.NonInteractive())
 
 	plan.InstallCompletions = true
 	dir := completionDir(rc.Shell)
@@ -167,19 +165,7 @@ func (p Plan) Preview() {
 	case MacAppSkipUnattended:
 		fmt.Println(ui.Dim("  — Menu bar app not installed; run worktree setup interactively to install it"))
 	}
-	switch p.AgentSkill {
-	case AgentSkillOfferInstall:
-		fmt.Println("  • Offer to install the worktree skill for AI agents (~/.agents/skills/worktree)")
-	case AgentSkillUpdate:
-		fmt.Println("  • Update the worktree skill (its content changed)")
-	case AgentSkillEditedSkip:
-		fmt.Println(ui.Dim("  — Worktree skill edited; not updating (delete it to get the new version)"))
-	case AgentSkillUserManaged:
-		fmt.Println(ui.Dim("  — ~/.agents/skills/worktree isn't worktree's; leaving it"))
-	}
-	for _, link := range p.AgentSkillLinks {
-		fmt.Printf("  • Link the worktree skill into %s\n", ui.ShortPath(link))
-	}
+	p.AgentSkills.Preview()
 	if !hasWork {
 		fmt.Println("Nothing to do — already set up.")
 	}
@@ -188,7 +174,7 @@ func (p Plan) Preview() {
 func (p Plan) HasWork() bool {
 	return p.CreateWorktreesBase || p.InstallShellRC || p.CreateConfig || p.InstallCompletions || p.ConfigureJiraProjects || p.TestGitHubCreds || p.TestSlackCreds || p.TestJiraCreds || p.ConfigureUI || p.SeedGitHubBotUsernames ||
 		p.MacApp == MacAppOfferInstall || p.MacApp == MacAppRebuild ||
-		p.AgentSkill == AgentSkillOfferInstall || p.AgentSkill == AgentSkillUpdate || len(p.AgentSkillLinks) > 0
+		p.AgentSkills.HasWork()
 }
 
 func (p Plan) Execute() error {
@@ -252,8 +238,8 @@ func (p Plan) Execute() error {
 		}
 	}
 
-	if err := runAgentSkillStep(p.AgentSkill, defaultAgentSkillDeps()); err != nil {
-		fmt.Printf("  %s Worktree skill: %v\n", ui.Yellow("!"), err)
+	if err := runSkillsStep(defaultSkillDeps(), p.AgentSkills); err != nil {
+		fmt.Printf("  %s Worktree skills: %v\n", ui.Yellow("!"), err)
 	}
 
 	return nil
@@ -382,7 +368,7 @@ func PreviewUninstall(rc ShellRC, configPath, consumer string) {
 	}
 	previewAgentUninstall(defaultAgentUninstall(consumer))
 	fmt.Println("  • Remove the web UI's HTTPS certificate files and remote access settings (the password is kept)")
-	fmt.Println("  • Preserve worktree data (remove manually if desired)")
+	fmt.Println("  • Preserve worktree data (except its agent skills; remove manually if desired)")
 	if _, err := os.Stat(configPath); err == nil {
 		fmt.Printf("  • Preserve config at %s (contains credentials)\n", ui.ShortPath(configPath))
 	}

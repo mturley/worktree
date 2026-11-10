@@ -654,3 +654,37 @@ func TestSkillsPreviewLines(t *testing.T) {
 		}
 	}
 }
+
+func mustWrite(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func mustSymlink(t *testing.T, target, link string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func lexists(p string) bool {
+	_, err := os.Lstat(p)
+	return err == nil
+}
+
+func readlink(t *testing.T, p string) string {
+	t.Helper()
+	got, err := os.Readlink(p)
+	if err != nil {
+		t.Fatalf("%s is not a symlink: %v", p, err)
+	}
+	return got
+}
