@@ -164,10 +164,26 @@ func (f eventTypeFilter) empty() bool { return len(f.exact) == 0 && len(f.prefix
 // watcher event has this type, so it matches nothing on the watcher side.
 const taskEventCategory = "task"
 
-// includesTasks reports whether task events pass the filter: always when it
-// is empty, else only when the task category is selected.
+// includesTasks reports whether task events pass the filter: when it is
+// empty, names the task category, or names a specific task event type.
 func (f eventTypeFilter) includesTasks() bool {
-	return f.empty() || slices.Contains(f.exact, taskEventCategory)
+	return f.empty() || slices.Contains(f.exact, taskEventCategory) || len(f.taskTypes()) > 0
+}
+
+// taskTypes is the task event types the filter names exactly (task_* and
+// subtask_*), for narrowing the task side of a page. nil means every task
+// event: the filter is empty or names the whole task category.
+func (f eventTypeFilter) taskTypes() []string {
+	if f.empty() || slices.Contains(f.exact, taskEventCategory) {
+		return nil
+	}
+	var out []string
+	for _, v := range f.exact {
+		if strings.HasPrefix(v, "task_") || strings.HasPrefix(v, "subtask_") {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // matches is the Go twin of sql, for the worktree timeline's in-memory scan.
@@ -405,6 +421,7 @@ JOIN watcher_event_resources er ON er.event_id = e.id `
 	}
 	tq := taskFeedQuery{
 		include:    taskEventsSelected(types, q.eventTypes),
+		types:      q.eventTypes.taskTypes(),
 		since:      q.Since,
 		before:     q.Before,
 		limit:      limit,
@@ -439,10 +456,11 @@ func taskEventsSelected(types []string, eventTypes eventTypeFilter) bool {
 // taskFeedQuery is the task side of a timeline page, mirroring the filters
 // the watcher side was read with.
 type taskFeedQuery struct {
-	include    bool    // false = the filters exclude task events
-	taskIDs    []int64 // nil = every non-deleted task (see tasks.FeedQuery)
-	since      string  // inclusive ts floor; "" = none
-	before     string  // exclusive ts cursor, as the watcher side's
+	include    bool     // false = the filters exclude task events
+	taskIDs    []int64  // nil = every non-deleted task (see tasks.FeedQuery)
+	types      []string // task event types to keep; nil = all
+	since      string   // inclusive ts floor; "" = none
+	before     string   // exclusive ts cursor, as the watcher side's
 	limit      int
 	unreadOnly bool
 	terms      []string
@@ -470,7 +488,7 @@ func (s *Server) mergeTaskEvents(rows []TimelineEvent, q taskFeedQuery) ([]Timel
 	if !q.include {
 		return rows, nil
 	}
-	fq := tasks.FeedQuery{TaskIDs: q.taskIDs, Before: q.before, Limit: q.limit, UnreadActorsOnly: q.unreadOnly}
+	fq := tasks.FeedQuery{TaskIDs: q.taskIDs, Types: q.types, Before: q.before, Limit: q.limit, UnreadActorsOnly: q.unreadOnly}
 	if q.unreadOnly || len(q.terms) > 0 {
 		fq.Limit = 0
 	}
@@ -721,6 +739,7 @@ func (s *Server) worktreeTimeline(q TimelineQuery) ([]TimelineEvent, error) {
 	}
 	tq := taskFeedQuery{
 		include:    taskEventsSelected(types, eventTypes),
+		types:      eventTypes.taskTypes(),
 		since:      since,
 		before:     before,
 		limit:      limit,

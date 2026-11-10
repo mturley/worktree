@@ -383,8 +383,10 @@ events (`tasks.FeedEvents`, converted by `taskFeedRow` →
   `resource_type "task"` rather than "no worktrees", which would wrongly
   mark a global task (no links) as archived.
 - Filters: `resource_types` accepts `task`, and `event_types` the category
-  `task` (every task event type). A non-empty filter excludes task events
-  unless it names them (`taskEventsSelected`). `unread_only` and `q` are
+  `task` (every task event type), or exact task event types (`task_*`,
+  `subtask_*`, e.g. `task_work_logged`), which narrow the task side via
+  `tasks.FeedQuery.Types` (`eventTypeFilter.taskTypes`). A non-empty filter
+  excludes task events unless it names them (`taskEventsSelected`). `unread_only` and `q` are
   applied in Go (`matchTaskEvent`: converted title, author — "agent",
   "agent (<session>)" or "you" — and task title), so with
   either set every candidate task event is read rather than `limit`.
