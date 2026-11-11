@@ -68,6 +68,7 @@ function taskScopeParams(scope: TaskScope): URLSearchParams {
     params.set("type", scope.type)
     params.set("id", scope.id)
   }
+  if (scope.kind === "task") params.set("id", String(scope.id))
   return params
 }
 

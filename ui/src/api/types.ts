@@ -783,6 +783,12 @@ export interface Task {
    */
   unread_count?: number
   /**
+   * unread_count plus the own unread of the followed resources the task links.
+   * Drives the row highlight and the Activity tab badge; absent from an older
+   * server, where unread_count stands in.
+   */
+  combined_unread_count?: number
+  /**
    * The newest of those unread events, from the same server snapshot; absent
    * with nothing unread. Sent as through_ts by the task modal's Mark read, so
    * it clears only what was counted, never an event that arrived after.
@@ -906,6 +912,8 @@ export interface TaskDetail extends Task {
   blockers: TaskBlocker[]
   /** The tasks this one blocks, in master order. Never null. */
   blocks: TaskBlocks[]
+  /** The followed resources the task links. Never null. */
+  linked_resources: ResourceDTO[]
 }
 
 export type TaskActivityFilter = "all" | "task" | "linked" | "resource"
@@ -915,6 +923,7 @@ export type TaskScope =
   | { kind: "all" }
   | { kind: "worktree"; path: string }
   | { kind: "resource"; type: string; id: string }
+  | { kind: "task"; id: number }
 
 /** GET /api/task-unread; mirrors taskUnreadDTO in internal/webui/tasks_api.go. */
 export interface TaskUnread {

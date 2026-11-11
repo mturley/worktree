@@ -9,6 +9,7 @@ import { serializeResourceKey } from "../../lib/resourceKey"
 import { TaskStateCheckbox } from "./TaskStateCheckbox"
 import { TaskPriorityMenu } from "./TaskPriorityMenu"
 import { UnreadMarkerDot } from "../UnreadMarkerDot"
+import { READ_BOX_BORDER, UNREAD_BG, UNREAD_BOX_BORDER } from "../../lib/unread"
 import { useCrossHover } from "../CrossHoverContext"
 import { type CrossHoverItem, crossResourceRef } from "../../lib/crossHover"
 import { useCmuxMatches } from "../../api/cmux"
@@ -112,6 +113,10 @@ export function TaskRow({ task, ownResource, ownWorktree, dragHandle, onState, o
       {task.title}
     </Text>
   )
+  // The task's own unread plus its followed linked resources'. An older
+  // server sends only unread_count, which then stands in.
+  const unread = (task.combined_unread_count ?? task.unread_count ?? 0) > 0
+  const edge = unread ? UNREAD_BOX_BORDER : READ_BOX_BORDER
   return (
     <Tooltip
       label={tipLabel}
@@ -133,7 +138,15 @@ export function TaskRow({ task, ownResource, ownWorktree, dragHandle, onState, o
         onClick={onOpen ? open : undefined}
         onMouseDown={onOpen ? modifier.onMouseDown : undefined}
         onMouseEnter={measure}
-        style={onOpen ? { cursor: "pointer" } : undefined}
+        style={{
+          ...(onOpen ? { cursor: "pointer" } : {}),
+          borderTop: edge,
+          borderRight: edge,
+          borderBottom: edge,
+          borderLeft: edge,
+          borderRadius: 4,
+          ...(unread ? { background: UNREAD_BG } : {}),
+        }}
       >
         {/* A plain click on the grip must not reach the row (it would open
             the modal). dnd-kit listens for mousedown, touchstart and keydown
@@ -177,10 +190,9 @@ export function TaskRow({ task, ownResource, ownWorktree, dragHandle, onState, o
         ) : (
           <div style={{ flex: 1, minWidth: 0 }}>{titleText}</div>
         )}
-        {(task.unread_count ?? 0) > 0 && (
-          // An agent's events newer than the task's read cursor. Opening the
-          // modal does not clear it; only a mark read does.
-          <UnreadMarkerDot label="unread task activity" />
+        {unread && (
+          // Opening the modal does not clear it; only a mark read does.
+          <UnreadMarkerDot label="unread activity" />
         )}
         {task.blocked && task.state !== "done" && (
           // Never red for a resolved blocker: the server sends only the

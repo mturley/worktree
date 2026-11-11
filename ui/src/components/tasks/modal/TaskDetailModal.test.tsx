@@ -32,7 +32,7 @@ const detail = (id: number, extra: Partial<TaskDetail> = {}): TaskDetail => ({
   id, ref: `T${id}`, title: `task ${id}`, description: "", state: "not_started", priority: "none", starred: false,
   rank: "r", created_at: "2026-10-20T00:00:00Z", updated_at: "2026-10-21T00:00:00Z", archived: false,
   links: [], implicit_worktrees: [], subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, open_blockers: [],
-  detail_links: [], implicit: [], subtasks: [], event_links: [], blockers: [], blocks: [], ...extra,
+  detail_links: [], implicit: [], subtasks: [], event_links: [], blockers: [], blocks: [], linked_resources: [], ...extra,
 })
 
 /** A work log of task `id`, as a feed row hands it to open(). */
@@ -118,6 +118,20 @@ describe("TaskDetailModal", () => {
     expect(screen.getByRole("tab", { name: "Activity" })).toBeInTheDocument()
     expect(screen.getByRole("textbox", { name: "Priority" })).toBeInTheDocument()
     expect(screen.getByText("Created")).toBeInTheDocument()
+  })
+
+  it("badges the Activity tab with the combined unread count", async () => {
+    vi.mocked(api.taskDetail).mockResolvedValue(detail(9, { combined_unread_count: 3 }))
+    wrap()
+    await titleButton()
+    expect(within(screen.getByRole("tab", { name: /Activity/ })).getByText("3 unreads")).toBeInTheDocument()
+  })
+
+  it("puts no badge on Activity at 0 or when the count is absent", async () => {
+    vi.mocked(api.taskDetail).mockResolvedValue(detail(9, { combined_unread_count: 0 }))
+    wrap()
+    await titleButton()
+    expect(within(screen.getByRole("tab", { name: "Activity" })).queryByText(/unread/)).toBeNull()
   })
 
   it("saves the title on Enter and shows it at once", async () => {

@@ -254,17 +254,26 @@ describe("TaskRow opens the modal", () => {
     expect(screen.getByText("Write the thing")).toBeInTheDocument()
   })
 
-  it("shows the blue unread dot while the task has unread events", () => {
-    wrap(<TaskRow task={task({ unread_count: 2 })} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} />)
-    expect(screen.getByLabelText("unread task activity")).toBeInTheDocument()
+  it("shows the dot and the unread border while the task has combined unread activity", () => {
+    wrap(<TaskRow task={task({ unread_count: 0, combined_unread_count: 3 })} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} />)
+    expect(screen.getByLabelText("unread activity")).toBeInTheDocument()
+    expect(document.querySelector<HTMLElement>("[data-task-row]")!.style.borderLeft).toContain("blue-5")
   })
 
-  it("shows no unread dot when the task is read, or the count is absent", () => {
-    const { unmount } = wrap(<TaskRow task={task({ unread_count: 0 })} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} />)
-    expect(screen.queryByLabelText("unread task activity")).toBeNull()
-    unmount()
+  it("falls back to its own count from an older server", () => {
+    wrap(<TaskRow task={task({ unread_count: 2 })} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} />)
+    expect(screen.getByLabelText("unread activity")).toBeInTheDocument()
+  })
+
+  it("shows neither dot nor border when combined is 0, even with an own count", () => {
+    wrap(<TaskRow task={task({ unread_count: 2, combined_unread_count: 0 })} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} />)
+    expect(screen.queryByLabelText("unread activity")).toBeNull()
+    expect(document.querySelector<HTMLElement>("[data-task-row]")!.style.borderLeft).not.toContain("blue-5")
+  })
+
+  it("shows no unread dot when the counts are absent", () => {
     wrap(<TaskRow task={task()} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} />)
-    expect(screen.queryByLabelText("unread task activity")).toBeNull()
+    expect(screen.queryByLabelText("unread activity")).toBeNull()
   })
 })
 

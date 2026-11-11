@@ -1510,6 +1510,12 @@ The spec (`docs/superpowers/specs/2026-10-21-tasks-design.md`) owns what a
 list looks like; this is where its pieces live and the rules that are easy
 to break.
 
+- **Row unread highlight.** `TaskRow` reads `combined_unread_count ?? unread_count ?? 0`
+  (the task's own unread plus its followed linked resources'; an older server
+  sends only the own count). Above zero the row gets the worktree cards'
+  `UNREAD_BOX_BORDER` and `UNREAD_BG` tint plus the "unread activity" dot;
+  at zero it keeps a transparent `READ_BOX_BORDER` so rows don't shift. The
+  list-level `/api/task-unread` feed still counts own task events only.
 - **Files.** `components/tasks/` holds `TaskList` (sections, drag and drop,
   quick add at the bottom), `TaskRow`, `TaskStateCheckbox`,
   `TaskListToolbar` (sort, and a "View options" popover with the In
@@ -1915,6 +1921,10 @@ URL param (`?task=<id>`) through **`TaskModalProvider`**
 `notice`, `clearNotice()`, `focusEvent`, `clearFocusEvent()`). It throws outside the provider, so any test that renders a
 `TaskList` (which calls it) wraps in one.
 
+- **Activity tab badge.** The Activity tab wears an `UnreadBadge` (right
+  section) reading `combined_unread_count ?? unread_count ?? 0`, absent at
+  zero. `TaskDetail.linked_resources` is always an array; `TaskScope` has a
+  `{ kind: "task"; id }` form (`GET /api/task-unread?scope=task&id=`).
 - **History.** `open()` pushes a history entry and remembers that it did
   (`pushed`); `close()` then calls `history.back()`, so Back after close does
   not reopen the modal. A deep link or refresh (nothing pushed) is closed by

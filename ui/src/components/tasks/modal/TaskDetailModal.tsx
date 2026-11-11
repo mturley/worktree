@@ -10,6 +10,7 @@ import { ActivityTab } from "./ActivityTab"
 import { discardDescriptionDraft } from "./DescriptionSection"
 import { DetailsTab } from "./DetailsTab"
 import { ModalLayerProvider, useModalLayer } from "./modalLayer"
+import { UnreadBadge } from "../../UnreadBadge"
 import { TaskModalHeader } from "./TaskModalHeader"
 import { useTaskModal } from "./TaskModalProvider"
 import { TaskSidebar } from "./TaskSidebar"
@@ -136,6 +137,7 @@ function TaskView({ task, onClose, onDirtyChange }: {
 }) {
   const { close, open, notice, clearNotice, focusEvent, clearFocusEvent } = useTaskModal()
   const qc = useQueryClient()
+  const activityUnread = task.combined_unread_count ?? task.unread_count ?? 0
   const edits = useOptimisticTask(task.id)
   // A feed row's event opens on the Activity tab with its details on top.
   // It is taken from the provider once, and dropped on leaving the tab, so
@@ -201,7 +203,12 @@ function TaskView({ task, onClose, onDirtyChange }: {
         <Tabs value={tab} onChange={changeTab} style={{ flex: 1, minWidth: 0, width: "100%" }}>
           <Tabs.List>
             <Tabs.Tab value="details">Details</Tabs.Tab>
-            <Tabs.Tab value="activity">Activity</Tabs.Tab>
+            <Tabs.Tab
+              value="activity"
+              rightSection={<UnreadBadge unread={activityUnread > 0} count={activityUnread} />}
+            >
+              Activity
+            </Tabs.Tab>
           </Tabs.List>
           {/* Only the active tab mounts, so Activity fetches only when shown. */}
           <Tabs.Panel value="details" pt="sm">{tab === "details" && <DetailsTab task={task} onDescriptionDirty={onDirtyChange} />}</Tabs.Panel>
