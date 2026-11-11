@@ -95,6 +95,23 @@ describe("LogWorkButton", () => {
     expect(api.logWork).not.toHaveBeenCalled()
   })
 
+  it("closes on Escape with the dropdown itself focused, without closing an enclosing modal", async () => {
+    const onClose = vi.fn()
+    renderDetail(base, (t) => (
+      <Modal opened onClose={onClose}>
+        <LogWorkButton taskId={t.id} />
+      </Modal>
+    ))
+    const { user, box } = await open()
+    const dropdown = box.closest<HTMLElement>(".mantine-Popover-dropdown")
+    expect(dropdown).not.toBeNull()
+    dropdown?.focus()
+    expect(dropdown).toHaveFocus()
+    await user.keyboard("{Escape}")
+    await waitFor(() => expect(screen.queryByRole("textbox")).toBeNull())
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
   it("keeps the text and shows the error when saving fails", async () => {
     vi.mocked(api.logWork).mockRejectedValue(new Error("boom"))
     renderDetail(base, (t) => <LogWorkButton taskId={t.id} />)

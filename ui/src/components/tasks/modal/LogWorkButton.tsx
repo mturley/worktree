@@ -56,6 +56,7 @@ export function LogWorkButton({ taskId }: { taskId: number }) {
         dropdown (React bubbles through the portal) then closes just the popover.
       */}
       <Popover.Dropdown
+        data-mantine-stop-propagation="true"
         onKeyDown={(e) => {
           if (e.key !== "Escape") return
           e.preventDefault()
