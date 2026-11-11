@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { cleanup, screen, waitFor } from "@testing-library/react"
+import { cleanup, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { api } from "../../../api/client"
 import type { TaskDetailLink, TaskEventLink, TimelineEvent } from "../../../api/types"
@@ -64,12 +64,48 @@ afterEach(() => {
 const show = () => renderDetail(base, (d) => <ActivityTab task={d} />)
 
 describe("ActivityTab", () => {
-  it("shows everything by default, as inert rows", async () => {
+  it("shows everything by default", async () => {
     show()
     expect(await screen.findByText("Comment one")).toBeInTheDocument()
     expect(screen.getByText("Task created")).toBeInTheDocument()
     expect(api.taskActivity).toHaveBeenCalledWith(1, "all", undefined, undefined)
-    expect(document.querySelector("[data-event-row][data-clickable]")).toBeNull()
+  })
+
+  it("a row click opens its details over the task, without Make task", async () => {
+    const user = userEvent.setup()
+    show()
+    await user.click(await screen.findByText("Comment one"))
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText("Comment one")).toBeInTheDocument()
+    expect(within(dialog).queryByRole("button", { name: "Make task" })).toBeNull()
+  })
+
+  it("a link toggle click does not open details", async () => {
+    const user = userEvent.setup()
+    show()
+    await user.click(await screen.findByRole("button", { name: "Link event: Comment one" }))
+    await waitFor(() => expect(api.linkTaskEvent).toHaveBeenCalled())
+    expect(screen.queryByRole("dialog")).toBeNull()
+  })
+
+  it("this task's own event row opens its details, not the task again", async () => {
+    window.history.replaceState({}, "", "/")
+    vi.mocked(api.taskActivity).mockResolvedValue({
+      events: [ev({ id: "task:9", source: "tasks", type: "task_renamed", title: "Renamed it", resource_type: "task", resource_id: "1" })],
+      next_cursor: "",
+    })
+    const user = userEvent.setup()
+    show()
+    await user.click(await screen.findByText("Renamed it"))
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText("Renamed it")).toBeInTheDocument()
+    expect(window.location.search).toBe("")
+  })
+
+  it("opens with initialEvent's details shown", async () => {
+    renderDetail(base, (d) => <ActivityTab task={d} initialEvent={events[1]} />)
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText("Comment one")).toBeInTheDocument()
   })
 
   it("the pills change the activity filter, one per linked resource", async () => {

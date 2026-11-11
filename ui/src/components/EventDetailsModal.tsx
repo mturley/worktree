@@ -24,6 +24,7 @@ import { MARK_READ_BUTTON_PROPS, READ_BOX_BORDER, UNREAD_BOX_BORDER } from "../l
 import { canMarkEventRead, canMarkEventUnread, useMarkEventRead, useMarkEventUnread } from "../hooks/useMarkEventRead"
 import { canMarkSlackEventRead, type SlackMarkPlan, useMarkSlackEventRead } from "../hooks/useMarkSlackEventRead"
 import { BotMark } from "./BotMark"
+import { ModalLayerProvider, useModalLayer } from "./tasks/modal/modalLayer"
 import { DiffViewBoundary, installPreloadReload } from "./gitdiff/DiffViewBoundary"
 
 /** Event types whose modal shows a diff of the description in place of the body. */
@@ -82,6 +83,8 @@ export function EventDetailsModal({ e: shown, onClose, resolveResource, path, on
   const actionResource = e?.resource_url ? eventResource(e, resolveResource) : undefined
   const [, navigate] = useLocation()
   const fullScreen = useMiniModalFullScreen()
+  // Over the task modal (or any other layer), Esc closes this one only.
+  const { topmost, zIndex, layer } = useModalLayer(!!e)
   const markEventRead = useMarkEventRead()
   const markEventUnread = useMarkEventUnread()
   const [marking, setMarking] = useState(false)
@@ -221,6 +224,7 @@ export function EventDetailsModal({ e: shown, onClose, resolveResource, path, on
 
   return (
     <Modal opened={!!e} onClose={onClose} size="lg" fullScreen={fullScreen}
+      closeOnEscape={topmost} zIndex={zIndex}
       // A border, not an inset outline, which the sticky header paints over.
       // Always the same width, so clearing it does not shift the content.
       // The title fills the header, to put its button beside the close button.
@@ -236,139 +240,141 @@ export function EventDetailsModal({ e: shown, onClose, resolveResource, path, on
         </Group>
       ) : null
     }>
-      {e && (
-        <Stack gap="sm">
-          {isArchivedEvent(e) && (
-            <Alert color="gray" variant="light" p="xs" icon={<IconArchive size={16} />}>
-              <Group justify="space-between" wrap="nowrap" gap="sm">
-                <Text size="sm">This resource is no longer followed by a worktree.</Text>
-                {e.resource_url && <FollowInWorktreeMenu onPick={(w) => followIn(w.path)} />}
+      <ModalLayerProvider layer={layer}>
+        {e && (
+          <Stack gap="sm">
+            {isArchivedEvent(e) && (
+              <Alert color="gray" variant="light" p="xs" icon={<IconArchive size={16} />}>
+                <Group justify="space-between" wrap="nowrap" gap="sm">
+                  <Text size="sm">This resource is no longer followed by a worktree.</Text>
+                  {e.resource_url && <FollowInWorktreeMenu onPick={(w) => followIn(w.path)} />}
+                </Group>
+              </Alert>
+            )}
+            {/*
+              Context first: which resource this event is about, and which
+              worktrees follow it. The resource is a read-only label — the row
+              that opened this modal is itself the way to it — and each worktree
+              opens its page, the way out of the mini view, whose rows go nowhere
+              else. They sit ahead of the content, so you do not have to scroll
+              past a long comment to find out what you are reading about.
+            */}
+            {(e.resource_type || actionResource) && (
+              <Group justify="space-between" wrap="nowrap" align="flex-start" gap="xs">
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <EventResourceChip e={e} resolveResource={resolveResource} />
+                </div>
+                {/* The resource card's own control, so an already-open cmux tab
+                    is offered here exactly as it is there. */}
+                {actionResource && <ResourceActions r={actionResource} path={path ?? e.worktree_paths?.[0]} />}
               </Group>
-            </Alert>
-          )}
-          {/*
-            Context first: which resource this event is about, and which
-            worktrees follow it. The resource is a read-only label — the row
-            that opened this modal is itself the way to it — and each worktree
-            opens its page, the way out of the mini view, whose rows go nowhere
-            else. They sit ahead of the content, so you do not have to scroll
-            past a long comment to find out what you are reading about.
-          */}
-          {(e.resource_type || actionResource) && (
-            <Group justify="space-between" wrap="nowrap" align="flex-start" gap="xs">
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <EventResourceChip e={e} resolveResource={resolveResource} />
-              </div>
-              {/* The resource card's own control, so an already-open cmux tab
-                  is offered here exactly as it is there. */}
-              {actionResource && <ResourceActions r={actionResource} path={path ?? e.worktree_paths?.[0]} />}
-            </Group>
-          )}
+            )}
 
-          {(e.worktrees.length > 0 || hasActions) && (
-            <Group
-              data-testid="worktree-row"
-              justify={e.worktrees.length > 0 ? "space-between" : "flex-end"}
-              wrap="wrap"
-              align="flex-start"
-              gap={6}
-            >
-              {e.worktrees.length > 0 && (
-                <Group gap={6} wrap="wrap" style={{ minWidth: 0 }}>
-                  {eventWorktrees(e).map((w, i) => (
-                    // Worded as on the activity feed's rows.
-                    <WorktreePreview key={`${i}:${w.path ?? w.name}`} path={w.path}>
-                      <Badge
-                        // Only a path can be navigated to; a bare name stays a label.
-                        {...(w.path
-                          ? {
-                              component: "button" as const,
-                              type: "button" as const,
-                              className: "worktree-chip-nav",
-                              "aria-label": `Open worktree ${w.name}`,
-                              onClick: () => openWorktree(w.path!),
-                            }
-                          : {})}
-                        size="sm"
-                        color="gray"
-                        variant="outline"
-                        maw={240}
-                        style={{ textTransform: "none" }}
-                      >
-                        <WorktreeName path={w.path} name={w.name} />
-                      </Badge>
-                    </WorktreePreview>
-                  ))}
-                </Group>
-              )}
-              {hasActions && (
-                <Group justify="flex-end" ml="auto" gap={6}>
-                  {actions}
-                </Group>
-              )}
-            </Group>
-          )}
+            {(e.worktrees.length > 0 || hasActions) && (
+              <Group
+                data-testid="worktree-row"
+                justify={e.worktrees.length > 0 ? "space-between" : "flex-end"}
+                wrap="wrap"
+                align="flex-start"
+                gap={6}
+              >
+                {e.worktrees.length > 0 && (
+                  <Group gap={6} wrap="wrap" style={{ minWidth: 0 }}>
+                    {eventWorktrees(e).map((w, i) => (
+                      // Worded as on the activity feed's rows.
+                      <WorktreePreview key={`${i}:${w.path ?? w.name}`} path={w.path}>
+                        <Badge
+                          // Only a path can be navigated to; a bare name stays a label.
+                          {...(w.path
+                            ? {
+                                component: "button" as const,
+                                type: "button" as const,
+                                className: "worktree-chip-nav",
+                                "aria-label": `Open worktree ${w.name}`,
+                                onClick: () => openWorktree(w.path!),
+                              }
+                            : {})}
+                          size="sm"
+                          color="gray"
+                          variant="outline"
+                          maw={240}
+                          style={{ textTransform: "none" }}
+                        >
+                          <WorktreeName path={w.path} name={w.name} />
+                        </Badge>
+                      </WorktreePreview>
+                    ))}
+                  </Group>
+                )}
+                {hasActions && (
+                  <Group justify="flex-end" ml="auto" gap={6}>
+                    {actions}
+                  </Group>
+                )}
+              </Group>
+            )}
 
-          {pendingSlack && unread && (
-            <Alert color="yellow" variant="light" p="xs" data-testid="slack-mark-warning">
-              <Stack gap={6}>
-                <Text size="sm">
-                  Marking this message as read also marks {pendingSlack.older} older{" "}
-                  {pendingSlack.older === 1 ? "message" : "messages"} in the thread as read.
-                </Text>
-                <Group gap={6} justify="flex-end">
-                  <Button size="xs" variant="default" onClick={() => setSlackConfirm(null)}>
-                    Cancel
-                  </Button>
-                  <Button size="xs" {...MARK_READ_BUTTON_PROPS} onClick={() => void commitSlack(pendingSlack)}>
-                    Mark read
-                  </Button>
-                </Group>
-              </Stack>
-            </Alert>
-          )}
+            {pendingSlack && unread && (
+              <Alert color="yellow" variant="light" p="xs" data-testid="slack-mark-warning">
+                <Stack gap={6}>
+                  <Text size="sm">
+                    Marking this message as read also marks {pendingSlack.older} older{" "}
+                    {pendingSlack.older === 1 ? "message" : "messages"} in the thread as read.
+                  </Text>
+                  <Group gap={6} justify="flex-end">
+                    <Button size="xs" variant="default" onClick={() => setSlackConfirm(null)}>
+                      Cancel
+                    </Button>
+                    <Button size="xs" {...MARK_READ_BUTTON_PROPS} onClick={() => void commitSlack(pendingSlack)}>
+                      Mark read
+                    </Button>
+                  </Group>
+                </Stack>
+              </Alert>
+            )}
 
-          <Divider />
+            <Divider />
 
-          <Text fw={600} style={{ display: "flex", gap: 4 }}>
-            <BotMark authorType={e.author_type} author={e.author} />
-            <span style={{ overflowWrap: "anywhere", minWidth: 0 }}>{e.title}</span>
-          </Text>
-          <Text size="xs" c="dimmed">
-            {e.author && `${e.author} · `}
-            {rel(e.external_ts || e.ts)}{e.edited_at && " (edited)"}
-          </Text>
-
-          {editing ? (
-            <WorkLogEditor
-              event={e}
-              onSaved={(next) => {
-                setPatched(next)
-                setEditingId(null)
-              }}
-              onDeleted={() => {
-                setEditingId(null)
-                onClose()
-              }}
-              onCancel={() => setEditingId(null)}
-            />
-          ) : DESCRIPTION_DIFF_TYPES.includes(e.type) ? (
-            <DescriptionChange key={e.id} id={e.id} />
-          ) : e.body && isGitHubMarkdownBody(e.type) ? (
-            // Images as links: one could be a tracking pixel, or an
-            // attachment only GitHub's session can fetch.
-            <Suspense fallback={<Loader size="xs" />}>
-              <GitHubCommentMarkdown text={e.body} imagesAsLinks />
-            </Suspense>
-          ) : e.body && (
-            // Preserve the author's line breaks; this is comment text, not prose.
-            <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-              {e.body}
+            <Text fw={600} style={{ display: "flex", gap: 4 }}>
+              <BotMark authorType={e.author_type} author={e.author} />
+              <span style={{ overflowWrap: "anywhere", minWidth: 0 }}>{e.title}</span>
             </Text>
-          )}
+            <Text size="xs" c="dimmed">
+              {e.author && `${e.author} · `}
+              {rel(e.external_ts || e.ts)}{e.edited_at && " (edited)"}
+            </Text>
 
-        </Stack>
-      )}
+            {editing ? (
+              <WorkLogEditor
+                event={e}
+                onSaved={(next) => {
+                  setPatched(next)
+                  setEditingId(null)
+                }}
+                onDeleted={() => {
+                  setEditingId(null)
+                  onClose()
+                }}
+                onCancel={() => setEditingId(null)}
+              />
+            ) : DESCRIPTION_DIFF_TYPES.includes(e.type) ? (
+              <DescriptionChange key={e.id} id={e.id} />
+            ) : e.body && isGitHubMarkdownBody(e.type) ? (
+              // Images as links: one could be a tracking pixel, or an
+              // attachment only GitHub's session can fetch.
+              <Suspense fallback={<Loader size="xs" />}>
+                <GitHubCommentMarkdown text={e.body} imagesAsLinks />
+              </Suspense>
+            ) : e.body && (
+              // Preserve the author's line breaks; this is comment text, not prose.
+              <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+                {e.body}
+              </Text>
+            )}
+
+          </Stack>
+        )}
+      </ModalLayerProvider>
     </Modal>
   )
 }

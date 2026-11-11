@@ -1911,8 +1911,8 @@ resolves at once from the CLI; PR and Jira blockers wait for `worktree ui`.
 
 One modal, mounted once in `App` as `TaskDetailModal`, driven by the `task`
 URL param (`?task=<id>`) through **`TaskModalProvider`**
-(`useTaskModal()` → `openId`, `open(id, { error? })`, `close()`, `notice`,
-`clearNotice()`). It throws outside the provider, so any test that renders a
+(`useTaskModal()` → `openId`, `open(id, { error?, event? })`, `close()`,
+`notice`, `clearNotice()`, `focusEvent`, `clearFocusEvent()`). It throws outside the provider, so any test that renders a
 `TaskList` (which calls it) wraps in one.
 
 - **History.** `open()` pushes a history entry and remembers that it did
@@ -1928,16 +1928,51 @@ URL param (`?task=<id>`) through **`TaskModalProvider`**
   opens that resource in the worktree following it (asking which when several
   do, `ChooseWorktreeModal`), and links externally when none does. Blocker
   labels and event "Open" links open in a new tab, worktree titles are plain
-  text, and linked-event rows are inert. A failed delete reopens the task through `open(id, { error })`; the
+  text, and linked-event rows on the Details tab are inert. A failed delete reopens the task through `open(id, { error })`; the
   provider exposes it as `notice` and the modal's red Alert shows it.
+- **Opened with an event.** Every feed row of a task event (home, mini,
+  worktree page, a resource pane) calls `open(id, { event })` through
+  `onOpenTask`; the home page opens it in place, never routing to the task's
+  worktree or asking which (a task picked in search still routes,
+  `useActivityPanel`'s `pickTask`). The event is held in provider state,
+  keyed by task id (`focusEvent` is null for any other open task), and is
+  never put in the URL: a refresh or a shared link reopens the task alone,
+  and `close()` drops it. `TaskView` takes it once, opening on the Activity
+  tab with it as `ActivityTab`'s `initialEvent`, then clears it; leaving the
+  Activity tab drops it, so coming back doesn't reopen the details. If the
+  task's detail 404s while `focusEvent` is set (deleted between render and
+  click), `TaskDetailModal` keeps the task modal closed and shows the event's
+  `EventDetailsModal` on its own, `editable={false}` (no Edit on a work log).
+- **Activity rows open details, stacked.** A row on the Activity tab opens
+  `EventDetailsModal` with `inTask` (no Make task; every other action stays)
+  over the task modal; this task's own events open their details too, never
+  the task again. The link toggles are siblings of the row, not inside it,
+  so they never open details. A details action that navigates (go to
+  worktree, open in diff) changes the path and drops `?task=`, which closes
+  the task modal under the history contract above; Back returns to the page
+  with the task open.
+- **Stacking and Esc** (`modalLayer.tsx`). Every open Mantine `Modal` closes
+  on Escape from its own capture-phase window listener (it skips only a
+  target marked `data-mantine-stop-propagation`), so with two modals open
+  one Esc would close both. `useModalLayer(opened)` returns `topmost`,
+  `zIndex` and a `layer`: a modal passes `closeOnEscape={topmost}` and
+  `zIndex`, and wraps its children in `ModalLayerProvider`. A modal opened
+  inside another's provider registers with it while open, which makes the
+  one beneath not `topmost`, and takes a z-index one above it (Mantine's
+  modal default, 200, plus its depth), so it paints on top whatever the
+  order of their portals. A modal opened under no provider is a bottom layer
+  and behaves as before. `TaskDetailModal` and `EventDetailsModal` both use
+  it, so a confirm opened over either stacks the same way. (Mantine's own
+  `Modal.Stack` needs the modals as siblings in one place, which these are
+  not.)
 - **Files.** `TaskDetailModal` (shell; keeps the last id mounted through the
   close transition), `TaskModalHeader` (state menu, star, editable title),
   `TaskSidebar` (state, priority, due, starred, and a Delete that asks inline
   "Delete? Yes / No" first and whose undo toast reopens the modal; the delete, its undo and its failure logic
   are in `TaskDetailModal`, the undo toasts in `tasks/taskUndo.ts`), and two tabs. `DetailsTab` stacks `DescriptionSection`, `SubtasksSection`,
   `LinksSection` (with `LinkPicker` and the pure `linkTargets.ts`) and
-  `LinkedEventsSection`; `ActivityTab` shows the merged feed, with the
-  feeds' `LoadMoreButton` (exported from `TimelineFeed`) after a full page.
+  `LinkedEventsSection`; `ActivityTab` shows the merged feed, whose rows open
+  their details (above), with the feeds' `LoadMoreButton` (exported from `TimelineFeed`) after a full page.
   `useTaskActivity` is an infinite query under `["tasks", "activity", id, …]`
   returning a `TimelineResult`, built from `useTimeline`'s `flatten` and
   `pageCursor(TASK_ACTIVITY_PAGE_SIZE)`.
@@ -2867,12 +2902,12 @@ filtering is independent.
   completed), with `matchTask` (title, id, description). Open tasks rank
   before done ones, then by `rankTask` (0 for the exact id, as `rankResource`
   does for a key). Picking one goes through `go.task`, which on the home page
-  routes as a task event's row does (`useActivityPanel`'s `pickTask`: its one
-  worktree, a choice of several, or over the page with none) and elsewhere
-  opens its modal in place.
+  routes to it (`useActivityPanel`'s `pickTask`: its one worktree, a choice of
+  several, or over the page with none) and elsewhere opens its modal in
+  place. A task event's row in the feed opens in place instead.
 - Picking routes through the page's `go` (`buildSuggestions`). A task
-  event's row opens its task (`go.task`, as the feeds' rows do through
-  `onOpenTask`), never `go.event`: its
+  event's row opens its task (`go.task`; the feeds' rows open it through
+  `onOpenTask`, with the event's details on top), never `go.event`: its
   pseudo-resource is nothing to select. The routing lives in
   `suggestions.ts`, not on the row, so Enter and a click agree and the row
   stays display-only.
@@ -4253,9 +4288,10 @@ each with its own controls, remembered in `localStorage`
 (`lib/miniExpandedPref.ts`). Tasks is
 `TaskList`; Activity is `useActivityPanel`
 (`components/ActivityPanel.tsx`), the home page's feed extracted so both pages
-share it. `select: "route"` (home) opens an event's worktree (and a task
-event's task over it, `?task=`, or over the page when the task has no worktree),
-`"details"` (mini) opens `EventDetailsModal` (or the task modal, in place), whose
+share it. `select: "route"` (home) opens an event's worktree, `"details"`
+(mini) opens `EventDetailsModal`; in both a task event's row opens its task in
+place, on its Activity tab with the event's details on top (`open(id, { event
+})`; see "Task detail modal"). The details modal's
 worktree chips leave for the full UI. The search is the home page's too:
 `useSearchQuery`'s `?q=` (which stays on /mini), `buildSuggestions`, `/` to
 focus, and `SearchContext` so `TaskList` filters by it. Its suggestions use

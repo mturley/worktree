@@ -230,7 +230,7 @@ function TimelineBody({
             emptyText={narrowed ? null : undefined}
             path={path}
             onMakeTask={makeTaskFromEvent}
-            onOpenTask={(id) => openTask(id)}
+            onOpenTask={(id, e) => openTask(id, { event: e })}
           />
           {/*
             The feed only holds what the poller captured for this worktree, which

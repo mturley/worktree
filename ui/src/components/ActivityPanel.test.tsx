@@ -3,7 +3,7 @@ import { render, cleanup, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { TaskModalProvider } from "./tasks/modal/TaskModalProvider"
+import { TaskModalProvider, useTaskModal } from "./tasks/modal/TaskModalProvider"
 import type { TimelineEvent } from "../api/types"
 
 const mocks = vi.hoisted(() => ({
@@ -21,8 +21,10 @@ import { api } from "../api/client"
 
 function Host({ select }: { select: EventSelectMode }) {
   const activity = useActivityPanel({ unreadOnly: false, setUnreadOnly: () => {}, hasUnread: false, select })
+  const { focusEvent } = useTaskModal()
   return (
     <>
+      <span data-testid="focus-event">{focusEvent?.title ?? "none"}</span>
       {activity.render()}
       {activity.modals}
       <button type="button" onClick={() => activity.pickTask(mocks.pick!)}>pick task</button>
@@ -79,31 +81,18 @@ describe("useActivityPanel: a task event's row", () => {
     wrap("route")
   }
 
-  it("goes to the task's worktree and opens the task there", async () => {
-    home(["/wt/foo"])
-    await userEvent.click(screen.getByText("Created the task"))
-    expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/foo")}`)
-    expect(window.location.search).toBe("?task=12")
-  })
-
-  it("asks which worktree when the task has several, then opens the task there", async () => {
-    home(["/wt/foo", "/wt/bar"])
-    await userEvent.click(screen.getByText("Created the task"))
-    expect(window.location.pathname).toBe("/")
-    const dialog = await screen.findByRole("dialog")
-    expect(within(dialog).getByText("Write the docs")).toBeInTheDocument()
-    expect(within(dialog).getByText(/This task belongs to 2 worktrees/)).toBeInTheDocument()
-    await userEvent.click(within(dialog).getByRole("button", { name: "view in bar" }))
-    expect(window.location.pathname).toBe(`/worktree/${encodeURIComponent("/wt/bar")}`)
-    expect(window.location.search).toBe("?task=12")
-  })
-
-  it("opens a task with no worktree over the home page", async () => {
-    home([])
-    await userEvent.click(screen.getByText("Created the task"))
-    expect(window.location.pathname).toBe("/")
-    expect(window.location.search).toBe("?task=12")
-  })
+  // Opened in place (spec §4): the task modal over the home page, on its
+  // Activity tab with the clicked event's details on top.
+  for (const paths of [[], ["/wt/foo"], ["/wt/foo", "/wt/bar"]]) {
+    it(`opens the task with the event over the home page (${paths.length} worktrees)`, async () => {
+      home(paths)
+      await userEvent.click(screen.getByText("Created the task"))
+      expect(window.location.pathname).toBe("/")
+      expect(window.location.search).toBe("?task=12")
+      expect(screen.getByTestId("focus-event")).toHaveTextContent("Created the task")
+      expect(screen.queryByText(/This task belongs to/)).not.toBeInTheDocument()
+    })
+  }
 
   it("stays on the page in details mode", async () => {
     mocks.events = [taskEvent(["/wt/foo"])]
@@ -111,6 +100,7 @@ describe("useActivityPanel: a task event's row", () => {
     await userEvent.click(screen.getByText("Created the task"))
     expect(window.location.pathname).toBe("/mini")
     expect(window.location.search).toBe("?task=12")
+    expect(screen.getByTestId("focus-event")).toHaveTextContent("Created the task")
   })
 })
 

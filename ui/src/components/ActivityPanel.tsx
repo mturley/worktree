@@ -72,7 +72,9 @@ export function useActivityPanel(opts: {
   const [, navigate] = useLocation()
   // "Make task" from an event: the global feed has no worktree to act in.
   const makeTaskFromEvent = useMakeTaskFromEvent()
-  // A task event's row opens its task, over this page.
+  // A task event's row opens its task over this page, on its Activity tab
+  // with the event's details on top. Picking a task in search routes instead
+  // (pickTask).
   const { open: openTask } = useTaskModal()
   const [archived, setArchived] = useState(false)
   const [humansOnly, setHumansOnly] = useHumansOnly()
@@ -125,9 +127,10 @@ export function useActivityPanel(opts: {
       })
     } else if (paths[0]) openEventIn(paths[0], e)
   }
-  // A task goes to its worktree as an event does, and opens there: its modal
-  // lives in the URL, so there is nothing to carry along. One with no worktree
-  // (a global or archived one) has nowhere to go, so it opens over this page.
+  // A task picked in search goes to its worktree as an event does, and opens
+  // there: its modal lives in the URL, so there is nothing to carry along. One
+  // with no worktree (a global or archived one) has nowhere to go, so it opens
+  // over this page.
   // So does every task in details mode.
   const pickTask = ({ id, title, paths }: TaskPick) => {
     const openIn = (path: string) => navigate(`/worktree/${encodeURIComponent(path)}?task=${id}`)
@@ -222,7 +225,7 @@ export function useActivityPanel(opts: {
         onSelectResource={select === "details" ? undefined : selectEventResource}
         canSelectResource={select === "details" ? undefined : (e) => Boolean(e.worktree_paths?.length)}
         onMakeTask={makeTaskFromEvent}
-        onOpenTask={(id, e) => pickTask({ id, title: e.resource_title, paths: e.worktree_paths ?? [] })}
+        onOpenTask={(id, e) => openTask(id, { event: e })}
       />
     </Stack>
   )

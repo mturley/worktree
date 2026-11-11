@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { useLocation, useSearch } from "wouter"
+import type { TimelineEvent } from "../../../api/types"
 
 const PARAM = "task"
 
@@ -9,12 +10,18 @@ export interface TaskModal {
   /**
    * Opens a task. `error` is shown in the modal when it opens, for a caller
    * that reopens a task after a failed action (a delete that didn't happen).
+   * `event`, a feed row's event of this task, opens the modal on its Activity
+   * tab with that event's details stacked on top. It is held here, not in the
+   * URL: a refresh or a link reopens the task alone.
    */
-  open(id: number, opts?: { error?: string }): void
+  open(id: number, opts?: { error?: string; event?: TimelineEvent }): void
   close(): void
   /** The error handed to `open` for the task that is open now, if any. */
   notice: string | null
   clearNotice(): void
+  /** The event handed to `open` for the task that is open now, until the modal takes it. */
+  focusEvent: TimelineEvent | null
+  clearFocusEvent(): void
 }
 
 const Ctx = createContext<TaskModal | null>(null)
@@ -47,6 +54,7 @@ export function TaskModalProvider({ children }: { children: ReactNode }) {
   // Whether the current open came from our own push (so close can go back).
   const pushed = useRef(false)
   const [pending, setPending] = useState<{ id: number; error: string } | null>(null)
+  const [pendingEvent, setPendingEvent] = useState<{ id: number; event: TimelineEvent } | null>(null)
 
   useEffect(() => {
     if (closingSearch !== null && closingSearch !== search) setClosingSearch(null)
@@ -72,8 +80,9 @@ export function TaskModalProvider({ children }: { children: ReactNode }) {
   )
 
   const open = useCallback(
-    (id: number, opts?: { error?: string }) => {
+    (id: number, opts?: { error?: string; event?: TimelineEvent }) => {
       setPending(opts?.error ? { id, error: opts.error } : null)
+      setPendingEvent(opts?.event ? { id, event: opts.event } : null)
       setClosingSearch(null)
       const alreadyOpen = parseId(new URLSearchParams(window.location.search).get(PARAM)) !== null
       // Switching tasks inside an open modal replaces, so a single close
@@ -90,6 +99,7 @@ export function TaskModalProvider({ children }: { children: ReactNode }) {
 
   const close = useCallback(() => {
     setPending(null)
+    setPendingEvent(null)
     if (pushed.current) {
       pushed.current = false
       setClosingSearch(window.location.search.replace(/^\?/, ""))
@@ -101,9 +111,11 @@ export function TaskModalProvider({ children }: { children: ReactNode }) {
 
   const notice = pending && pending.id === openId ? pending.error : null
   const clearNotice = useCallback(() => setPending(null), [])
+  const focusEvent = pendingEvent && pendingEvent.id === openId ? pendingEvent.event : null
+  const clearFocusEvent = useCallback(() => setPendingEvent(null), [])
   const value = useMemo(
-    () => ({ openId, open, close, notice, clearNotice }),
-    [openId, open, close, notice, clearNotice],
+    () => ({ openId, open, close, notice, clearNotice, focusEvent, clearFocusEvent }),
+    [openId, open, close, notice, clearNotice, focusEvent, clearFocusEvent],
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

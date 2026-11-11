@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { Notifications, notifications } from "@mantine/notifications"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { api, HttpError } from "../../../api/client"
-import type { TaskDetail } from "../../../api/types"
+import type { TaskDetail, TimelineEvent } from "../../../api/types"
 import { taskDetailKey } from "../../../hooks/useTaskDetail"
 import { TaskDetailModal } from "./TaskDetailModal"
 import { TaskModalProvider, useTaskModal } from "./TaskModalProvider"
@@ -35,12 +35,21 @@ const detail = (id: number, extra: Partial<TaskDetail> = {}): TaskDetail => ({
   detail_links: [], implicit: [], subtasks: [], event_links: [], blockers: [], blocks: [], ...extra,
 })
 
+/** A work log of task `id`, as a feed row hands it to open(). */
+const workLog = (id: number): TimelineEvent => ({
+  id: "task:42", ts: "2026-10-20T00:00:00Z", external_ts: "", source: "tasks", type: "task_work_logged",
+  type_label: "work logged", title: "Worked on the thing", body: "a note", author: "me", resource_type: "task",
+  resource_id: String(id), resource_url: "", resource_title: `task ${id}`, worktrees: [],
+})
+
 function Opener() {
   const { open, openId } = useTaskModal()
   return (
     <>
       <span data-testid="open-id">{openId ?? "none"}</span>
       <button onClick={() => open(9)}>open nine</button>
+      <button onClick={() => open(7, { event: workLog(7) })}>open seven with event</button>
+      <button onClick={() => open(99, { event: workLog(99) })}>open ninety-nine with event</button>
     </>
   )
 }
@@ -466,6 +475,78 @@ describe("TaskDetailModal", () => {
       })
       expect(await screen.findByRole("textbox", { name: "Description" })).toHaveValue("draft")
       expect(screen.getByText("Unsaved draft restored")).toBeInTheDocument()
+    })
+  })
+
+  describe("opened with an event", () => {
+    beforeEach(() => {
+      window.history.replaceState({}, "", "/")
+      vi.mocked(api.taskActivity).mockResolvedValue({ events: [], next_cursor: "" })
+    })
+    const dialogs = () => screen.queryAllByRole("dialog")
+    const detailsDialog = () => dialogs().find((d) => within(d).queryByText("Worked on the thing"))
+    const openSeven = async (user: ReturnType<typeof userEvent.setup>) => {
+      await user.click(screen.getByRole("button", { name: "open seven with event" }))
+      await waitFor(() => expect(detailsDialog()).toBeDefined())
+      return detailsDialog()!
+    }
+
+    it("shows the Activity tab with the event's details stacked on top, kept out of the URL", async () => {
+      const user = userEvent.setup()
+      wrap()
+      const details = await openSeven(user)
+      expect(param()).toBe("7")
+      expect(window.location.search).toBe("?task=7")
+      expect(await titleButton()).toHaveTextContent("task 7")
+      expect(screen.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true")
+      expect(within(details).queryByRole("button", { name: "Make task" })).toBeNull()
+      // Closing the details leaves the task modal open on Activity.
+      await user.click(details.querySelector<HTMLElement>(".mantine-Modal-close")!)
+      await waitFor(() => expect(detailsDialog()).toBeUndefined())
+      expect(screen.getByTestId("open-id")).toHaveTextContent("7")
+      expect(screen.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true")
+      // Closing again closes the task modal.
+      await user.click(screen.getByRole("button", { name: "Close task" }))
+      await waitFor(() => expect(param()).toBeNull())
+    })
+
+    it("renders the details above the task modal", async () => {
+      const user = userEvent.setup()
+      wrap()
+      await openSeven(user)
+      await titleButton()
+      const z = (el: Element) => Number(getComputedStyle(el.closest("[style*='--mb-z-index']")!).getPropertyValue("--mb-z-index"))
+      const task = screen.getByRole("button", { name: /^Edit title/ })
+      expect(z(detailsDialog()!)).toBeGreaterThan(z(task))
+    })
+
+    it("Esc closes only the details; a second Esc closes the task modal", async () => {
+      const user = userEvent.setup()
+      wrap()
+      const details = await openSeven(user)
+      await titleButton()
+      // Real focus inside the top modal: its focus trap puts it there.
+      await waitFor(() => expect(details.contains(document.activeElement)).toBe(true))
+      fireEvent.keyDown(document.activeElement!, { key: "Escape" })
+      await waitFor(() => expect(detailsDialog()).toBeUndefined())
+      // openId drops at once on close, ahead of history.back()'s popstate.
+      expect(screen.getByTestId("open-id")).toHaveTextContent("7")
+      expect(param()).toBe("7")
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" })
+      expect(screen.getByTestId("open-id")).toHaveTextContent("none")
+      await waitFor(() => expect(param()).toBeNull())
+    })
+
+    it("a task that is gone shows the event's details on their own, without Edit", async () => {
+      vi.mocked(api.taskDetail).mockRejectedValue(new HttpError("task not found", 404))
+      const user = userEvent.setup()
+      wrap()
+      await user.click(screen.getByRole("button", { name: "open ninety-nine with event" }))
+      await waitFor(() => expect(detailsDialog()).toBeDefined())
+      expect(screen.queryByText("Task not found")).toBeNull()
+      expect(within(detailsDialog()!).queryByRole("button", { name: "Edit" })).toBeNull()
+      await user.click(detailsDialog()!.querySelector<HTMLElement>(".mantine-Modal-close")!)
+      await waitFor(() => expect(param()).toBeNull())
     })
   })
 
