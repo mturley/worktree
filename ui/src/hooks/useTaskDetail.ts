@@ -107,6 +107,16 @@ export function useTaskDetailMutations(id: number) {
     }
   }
 
+  /** A work log write also changes the task's activity feed and the timelines that carry its events. */
+  const runLog = async (call: () => Promise<TaskDetail>) => {
+    try {
+      return await run(call)
+    } finally {
+      void qc.invalidateQueries({ queryKey: ["tasks", "activity"] })
+      void qc.invalidateQueries({ queryKey: ["timeline"] })
+    }
+  }
+
   const plain = async <T,>(call: () => Promise<T>) => {
     try {
       return await call()
@@ -132,6 +142,9 @@ export function useTaskDetailMutations(id: number) {
     checkSubtask: (subtaskId: number, checked: boolean) => run(() => api.checkSubtask(subtaskId, checked)),
     removeSubtask: (subtaskId: number) => run(() => api.removeSubtask(subtaskId)),
     orderSubtasks: (ids: number[]) => run(() => api.orderSubtasks(id, ids)),
+    logWork: (text: string) => runLog(() => api.logWork(id, text)),
+    editWorkLog: (eventId: number, text: string) => runLog(() => api.editWorkLog(eventId, text)),
+    deleteWorkLog: (eventId: number) => runLog(() => api.deleteWorkLog(eventId)),
     linkEvent: (key: string, snapshot?: TaskEventSnapshot) => run(() => api.linkTaskEvent(id, key, snapshot)),
     unlinkEvent: (key: string) => run(() => api.unlinkTaskEvent(id, key)),
     addBlocker: (target: TaskBlockerTarget) => run(() => api.addTaskBlocker(id, target)),

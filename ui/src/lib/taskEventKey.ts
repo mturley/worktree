@@ -22,6 +22,12 @@ export function eventTaskKey(e: TimelineEvent): string | null {
   return `ev:${e.id}`
 }
 
+/** The numeric id of a task's own event (`task:<n>`), as the work log routes take it; null for any other event. */
+export function taskEventNumericId(e: TimelineEvent): number | null {
+  const m = /^task:(\d+)$/.exec(e.id ?? "")
+  return m ? Number(m[1]) : null
+}
+
 /**
  * A Slack message's identity key. Linking a Slack message's watcher event by
  * its ev: key stores it under this one too (the server canonicalises it), so

@@ -4,6 +4,7 @@ import type { Priority, TaskDetail, TaskState } from "../../../api/types"
 import { relativeTime } from "../../../lib/relativeTime"
 import { StateBox, TASK_STATE_LABEL, TASK_STATES } from "../TaskStateCheckbox"
 import { PRIORITY_LABEL, PriorityGlyph } from "../TaskPriorityMenu"
+import { LogWorkButton } from "./LogWorkButton"
 import { BlockersSection } from "./BlockersSection"
 import type { TaskPatch } from "./useOptimisticTask"
 
@@ -44,6 +45,7 @@ export function TaskSidebar({ task, onUpdate, onState, onDelete }: {
         renderOption={({ option: o }) => option(<StateBox state={o.value as TaskState} size={14} priority={task.priority} />, o.label)}
         onChange={(v) => v && onState(v as TaskState)}
       />
+      <LogWorkButton taskId={task.id} />
       <Select
         label="Priority"
         size="xs"

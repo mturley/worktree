@@ -222,6 +222,10 @@ export const api = {
     postJSON<TaskDetail>("/api/tasks/subtasks/edit", { subtask_id: subtaskId, text }),
   checkSubtask: (subtaskId: number, checked: boolean) =>
     postJSON<TaskDetail>("/api/tasks/subtasks/check", { subtask_id: subtaskId, checked }),
+  logWork: (id: number, text: string) => postJSON<TaskDetail>("/api/tasks/worklog/add", { id, text }),
+  editWorkLog: (eventId: number, text: string) =>
+    postJSON<TaskDetail>("/api/tasks/worklog/edit", { event_id: eventId, text }),
+  deleteWorkLog: (eventId: number) => postJSON<TaskDetail>("/api/tasks/worklog/delete", { event_id: eventId }),
   removeSubtask: (subtaskId: number) => postJSON<TaskDetail>("/api/tasks/subtasks/remove", { subtask_id: subtaskId }),
   orderSubtasks: (id: number, ids: number[]) => postJSON<TaskDetail>("/api/tasks/subtasks/order", { id, ids }),
   linkTaskEvent: (id: number, key: string, snapshot?: TaskEventSnapshot) =>
