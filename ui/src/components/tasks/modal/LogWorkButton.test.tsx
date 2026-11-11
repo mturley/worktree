@@ -70,6 +70,31 @@ describe("LogWorkButton", () => {
     expect(api.logWork).not.toHaveBeenCalled()
   })
 
+  it("closes on Escape from Cancel and Save without closing an enclosing modal", async () => {
+    const onClose = vi.fn()
+    renderDetail(base, (t) => (
+      <Modal opened onClose={onClose}>
+        <LogWorkButton taskId={t.id} />
+      </Modal>
+    ))
+    const { user, box } = await open()
+    await user.type(box, "x")
+    const save = screen.getByRole("button", { name: "Save" })
+    save.focus()
+    expect(save).toHaveFocus()
+    await user.keyboard("{Escape}")
+    await waitFor(() => expect(screen.queryByRole("textbox")).toBeNull())
+    await user.click(screen.getByRole("button", { name: "Log work" }))
+    await screen.findByRole("textbox")
+    const cancel = screen.getByRole("button", { name: "Cancel" })
+    cancel.focus()
+    expect(cancel).toHaveFocus()
+    await user.keyboard("{Escape}")
+    await waitFor(() => expect(screen.queryByRole("textbox")).toBeNull())
+    expect(onClose).not.toHaveBeenCalled()
+    expect(api.logWork).not.toHaveBeenCalled()
+  })
+
   it("keeps the text and shows the error when saving fails", async () => {
     vi.mocked(api.logWork).mockRejectedValue(new Error("boom"))
     renderDetail(base, (t) => <LogWorkButton taskId={t.id} />)

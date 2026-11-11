@@ -49,7 +49,20 @@ export function LogWorkButton({ taskId }: { taskId: number }) {
           Log work
         </Button>
       </Popover.Target>
-      <Popover.Dropdown>
+      {/*
+        Mantine's Modal closes on Escape from a capture-phase window listener
+        that checks only event.target for data-mantine-stop-propagation, so
+        every focusable control in here carries it; the handler on the
+        dropdown (React bubbles through the portal) then closes just the popover.
+      */}
+      <Popover.Dropdown
+        onKeyDown={(e) => {
+          if (e.key !== "Escape") return
+          e.preventDefault()
+          e.stopPropagation()
+          close()
+        }}
+      >
         <Stack gap="xs">
           <Textarea
             aria-label="Work log note"
@@ -61,17 +74,11 @@ export function LogWorkButton({ taskId }: { taskId: number }) {
             value={text}
             onChange={(e) => setText(e.currentTarget.value)}
             onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                e.preventDefault()
-                e.stopPropagation()
-                close()
-              } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault()
                 void save()
               }
             }}
-            // Mantine's Modal closes on Escape from a capture-phase window
-            // listener; this attribute is what it checks to leave the key alone.
             data-mantine-stop-propagation="true"
           />
           {error && (
@@ -80,8 +87,8 @@ export function LogWorkButton({ taskId }: { taskId: number }) {
             </Alert>
           )}
           <Group justify="flex-end" gap="xs">
-            <Button size="xs" variant="default" onClick={close}>Cancel</Button>
-            <Button size="xs" disabled={!canSave} loading={saving} onClick={() => void save()}>Save</Button>
+            <Button size="xs" variant="default" data-mantine-stop-propagation="true" onClick={close}>Cancel</Button>
+            <Button size="xs" data-mantine-stop-propagation="true" disabled={!canSave} loading={saving} onClick={() => void save()}>Save</Button>
           </Group>
         </Stack>
       </Popover.Dropdown>
