@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { useTaskActivity, useTaskDetail, useTaskDetailMutations } from "./useTaskDetail"
+import { TASK_ACTIVITY_PAGE_SIZE, useTaskActivity, useTaskDetail, useTaskDetailMutations } from "./useTaskDetail"
 import type { TaskDetail, TaskEventSnapshot, TaskLinkTarget, TimelineEvent } from "../api/types"
 
 const detail = (extra: Partial<TaskDetail> = {}): TaskDetail => ({
   id: 7, ref: "T7", title: "t", description: "", state: "not_started", priority: "none", starred: false,
   rank: "r", created_at: "", updated_at: "", archived: false, links: [], implicit_worktrees: [],
-  subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, open_blockers: [], detail_links: [], implicit: [], subtasks: [], event_links: [], blockers: [], blocks: [], ...extra,
+  subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, open_blockers: [], detail_links: [], implicit: [], subtasks: [], event_links: [], blockers: [], blocks: [], linked_resources: [], ...extra,
 })
 
 let fetchMock: ReturnType<typeof vi.fn>
@@ -53,22 +53,40 @@ describe("useTaskDetail", () => {
 
 describe("useTaskActivity", () => {
   it("keys on the filter and queries it", async () => {
-    mockFetch(() => [])
-    const { qc } = setup(() => useTaskActivity(7, { filter: "linked" }))
-    await waitFor(() => expect(qc.getQueryData(["tasks", "activity", 7, "linked"])).toEqual([]))
+    mockFetch(() => ({ events: [], next_cursor: "" }))
+    const { result, qc } = setup(() => useTaskActivity(7, { filter: "linked" }))
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    expect(result.current.events).toEqual([])
+    expect(result.current.hasMore).toBe(false)
+    expect(qc.getQueryData(["tasks", "activity", 7, "linked"])).toBeTruthy()
     expect(String(fetchMock.mock.calls[0][0])).toBe("/api/tasks/activity?id=7&filter=linked")
   })
 
   it("adds type and rid to the key and query for the resource filter", async () => {
     const ev = { id: "e1" } as TimelineEvent
-    mockFetch(() => [ev])
+    mockFetch(() => ({ events: [ev], next_cursor: "t" }))
     const { result, qc } = setup(() => useTaskActivity(7, { filter: "resource", type: "pr", rid: "o/r#1" }))
-    await waitFor(() => expect(result.current.data).toEqual([ev]))
-    expect(qc.getQueryData(["tasks", "activity", 7, "resource", "pr", "o/r#1"])).toEqual([ev])
+    await waitFor(() => expect(result.current.events).toEqual([ev]))
+    expect(qc.getQueryData(["tasks", "activity", 7, "resource", "pr", "o/r#1"])).toBeTruthy()
     const u = new URL(String(fetchMock.mock.calls[0][0]), "http://x")
     expect(u.searchParams.get("filter")).toBe("resource")
     expect(u.searchParams.get("type")).toBe("pr")
     expect(u.searchParams.get("rid")).toBe("o/r#1")
+  })
+
+  it("pages a full page from its cursor", async () => {
+    const page = (n: number, ts: string) => Array.from({ length: n }, (_, i) => ({ id: `${ts}-${i}`, ts }) as TimelineEvent)
+    mockFetch((url) =>
+      new URL(url, "http://x").searchParams.get("before") === "t1"
+        ? { events: page(1, "t0"), next_cursor: "t0" }
+        : { events: page(TASK_ACTIVITY_PAGE_SIZE, "t1"), next_cursor: "t1" },
+    )
+    const { result } = setup(() => useTaskActivity(7, { filter: "all" }))
+    await waitFor(() => expect(result.current.hasMore).toBe(true))
+    act(() => result.current.loadMore())
+    await waitFor(() => expect(result.current.events).toHaveLength(TASK_ACTIVITY_PAGE_SIZE + 1))
+    expect(result.current.hasMore).toBe(false)
+    expect(new URL(String(fetchMock.mock.calls[1][0]), "http://x").searchParams.get("before")).toBe("t1")
   })
 })
 

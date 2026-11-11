@@ -245,8 +245,11 @@ export function ThreadView({ tab, thread, onOpenThread, topInset = 0, onComposer
   // Every unread surface outside this view — resource cards, timeline dots,
   // the worktree badge and favicon — reads the poller's cached thread state.
   // The server re-polls the thread before answering a read-state write, so
-  // once one lands those only need to refetch to show it.
+  // once one lands those only need to refetch to show it. So do the task
+  // lists: a linking task's combined unread count includes the thread, and
+  // the tasks this view marks read change their own.
   function refreshUnreadSurfaces() {
+    void qc.invalidateQueries({ queryKey: ['tasks'] })
     void qc.invalidateQueries({ queryKey: ['worktrees'] })
     void qc.invalidateQueries({ queryKey: ['resources'] })
     void qc.invalidateQueries({ queryKey: ['timeline'] })
@@ -308,9 +311,6 @@ export function ThreadView({ tab, thread, onOpenThread, topInset = 0, onComposer
       return
     }
     refreshUnreadSurfaces()
-    if (markedTasks > 0) {
-      void qc.invalidateQueries({ queryKey: ['tasks'] })
-    }
     if (undos.length === 0) {
       return
     }
@@ -332,9 +332,6 @@ export function ThreadView({ tab, thread, onOpenThread, topInset = 0, onComposer
       onSettled: () => {
         refresh()
         refreshUnreadSurfaces()
-        if (markedTasks > 0) {
-          void qc.invalidateQueries({ queryKey: ['tasks'] })
-        }
       },
     })
   }

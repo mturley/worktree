@@ -17,12 +17,13 @@ import (
 	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/resourceurl"
 	"github.com/mturley/worktree/internal/tasks"
+	"github.com/mturley/worktree/internal/unread"
 )
 
 // The task detail modal's API. See docs/web-ui-architecture.md "Task detail
 // API" for how event-link snapshots and the merged activity feed work.
 
-// taskActivityLimit caps the merged activity feed.
+// taskActivityLimit is the task activity feed's default and largest page.
 const taskActivityLimit = 200
 
 // maxFromEventTitle is the most runes of a Slack message's first line a task
@@ -70,6 +71,10 @@ type taskDetailDTO struct {
 	// one blocks, in master order. Both never null.
 	Blockers []taskBlockerDTO `json:"blockers"`
 	Blocks   []taskBlocksDTO  `json:"blocks"`
+	// LinkedResources are the task's resource links as resource DTOs
+	// carrying their unread fields (see taskLinkedUnread), in link order,
+	// for the modal's mark all read. Never null.
+	LinkedResources []resourceDTO `json:"linked_resources"`
 }
 
 // taskDetail loads task id and builds its detail DTO.
@@ -89,19 +94,21 @@ func (s *Server) taskDetail(id int64) (taskDetailDTO, error) {
 		return taskDetailDTO{}, err
 	}
 	td := newTaskDTO(t)
-	sum := s.taskUnreadSummaries()[t.ID]
-	td.UnreadCount, td.UnreadThroughTS = sum.Count, sum.NewestTS
+	// The enricher's unread index serves the task's counts too: one per
+	// request.
+	linked := s.newTaskUnreadReader(e.unread).fill(&td, t)
 	if t.Blocked { // a done task is never blocked, so names no blockers
 		td.OpenBlockers = open
 	}
 	d := taskDetailDTO{
-		taskDTO:     td,
-		Blockers:    blockers,
-		Blocks:      blocks,
-		DetailLinks: make([]taskDetailLinkDTO, 0, len(t.Links)),
-		ImplicitVia: make([]taskImplicitDTO, 0, len(t.Implicit)),
-		Subtasks:    make([]taskSubtaskDTO, 0, len(t.Subtasks)),
-		EventLinks:  make([]taskEventLinkDTO, 0, len(links)),
+		taskDTO:         td,
+		Blockers:        blockers,
+		Blocks:          blocks,
+		DetailLinks:     make([]taskDetailLinkDTO, 0, len(t.Links)),
+		ImplicitVia:     make([]taskImplicitDTO, 0, len(t.Implicit)),
+		Subtasks:        make([]taskSubtaskDTO, 0, len(t.Subtasks)),
+		EventLinks:      make([]taskEventLinkDTO, 0, len(links)),
+		LinkedResources: linked,
 	}
 	for i, l := range t.Links {
 		dl := taskDetailLinkDTO{taskLinkDTO: d.Links[i]}
@@ -406,8 +413,9 @@ func (s *Server) handleTaskDetail(w http.ResponseWriter, r *http.Request) {
 }
 
 // activityItem is one feed row before enrichment: a row already built (a
-// converted task event, or an event link's snapshot), or a raw watcher event
-// (enriched only if it survives the limit).
+// converted task event, a resource's timeline row, or an event link's
+// snapshot), or a raw watcher event (a link's live event, enriched only if
+// it survives the page cut).
 type activityItem struct {
 	ts    time.Time
 	built *TimelineEvent
@@ -422,14 +430,33 @@ func parseTS(s string) time.Time {
 	return t
 }
 
-// handleTaskActivity: GET /api/tasks/activity?id=&filter=all|task|linked|resource&type=&rid=
+// parseActivityLimit reads `limit`, clamped to [1, taskActivityLimit];
+// absent or unparseable means taskActivityLimit.
+func parseActivityLimit(r *http.Request) int {
+	n, err := strconv.Atoi(r.URL.Query().Get("limit"))
+	if err != nil {
+		return taskActivityLimit
+	}
+	return max(1, min(n, taskActivityLimit))
+}
+
+// handleTaskActivity: GET /api/tasks/activity?id=&filter=all|task|linked|resource&type=&rid=&before=&limit=
+// → timelineResponse.
 //
 // all: the task's own events plus its linked resources' events. task: its
 // own events. linked: every event link, as its live event or else as a row
-// built from its snapshot. resource: one linked resource's events. Each
-// resource contributes at most its newest taskActivityLimit events (one
-// limited query each), and the merged feed is newest first, at most
-// taskActivityLimit rows.
+// built from its snapshot. resource: one linked resource's events.
+//
+// Paged like the timelines: `before` is an exclusive ts cursor, `limit`
+// (default and maximum taskActivityLimit) the page size, and next_cursor the
+// last row's ts. Each source is read before the cursor, at most limit rows
+// plus every row tying its last one's ts (task events via
+// feedEventsWithTies, a resource via the global timeline's query, links
+// filtered here). The merged page is newest first, cut at limit and
+// OVERFILLED with every row tying the last kept row's ts, so the strict
+// cursor never skips the rest of a same-second cluster; each source's own
+// boundary cluster being complete is what makes that overfill complete (see
+// mergeTaskEvents).
 func (s *Server) handleTaskActivity(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseTaskIDParam(w, r)
 	if !ok {
@@ -446,6 +473,7 @@ func (s *Server) handleTaskActivity(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "filter must be all, task, linked or resource")
 		return
 	}
+	before, limit := q.Get("before"), parseActivityLimit(r)
 	t, err := tasks.Get(s.DB, id)
 	if err != nil {
 		writeTaskError(w, err)
@@ -463,33 +491,55 @@ func (s *Server) handleTaskActivity(w http.ResponseWriter, r *http.Request) {
 
 	var items []activityItem
 	if filter == "all" || filter == "task" {
-		evs, err := tasks.Events(s.DB, id)
+		evs, err := s.feedEventsWithTies(tasks.FeedQuery{TaskIDs: []int64{id}, Before: before, Limit: limit})
 		if err != nil {
 			writeTaskError(w, err)
 			return
 		}
-		for _, ev := range evs {
-			te := taskEventToTimeline(ev, t)
+		cursors, err := unread.Cursors(s.DB)
+		if err != nil {
+			writeTaskError(w, err)
+			return
+		}
+		marks, err := unread.EventMarks(s.DB)
+		if err != nil {
+			writeTaskError(w, err)
+			return
+		}
+		for _, fe := range evs {
+			// The task's own rows carry the same unread state the feeds
+			// give them (taskUnreadRow; its cursor test relies on RFC3339
+			// UTC timestamps from both the tasks and unread stores).
+			te := taskUnreadRow(fe.Event, t, cursors, marks)
 			items = append(items, activityItem{ts: parseTS(te.TS), built: &te})
 		}
 	}
+	// An event linked to two of the task's resources (or a link's live
+	// event) appears once.
 	seen := map[string]bool{}
-	addEvents := func(evs []watcher.Event) {
-		for i := range evs {
-			if seen[evs[i].ID] {
-				continue
-			}
-			seen[evs[i].ID] = true
-			items = append(items, activityItem{ts: parseTS(evs[i].TS), ev: &evs[i]})
-		}
-	}
 	addResource := func(typ, rid string) bool {
-		evs, err := watcherdb.RecentEventsForResource(s.DB, typ, rid, taskActivityLimit)
+		rows, err := s.globalTimeline(TimelineQuery{
+			ResourceType: typ, ResourceID: rid,
+			// Names the resource's own type, which leaves task events out.
+			ResourceTypes: []string{typ},
+			Before:        before, Limit: limit,
+			// Whether or not any worktree follows it.
+			archived: true,
+		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return false
 		}
-		addEvents(evs)
+		for i := range rows {
+			if seen[rows[i].ID] {
+				continue
+			}
+			seen[rows[i].ID] = true
+			if k := linkedKeyOf(rows[i], linked); k != "" {
+				rows[i].LinkedToTask, rows[i].LinkedKey = true, k
+			}
+			items = append(items, activityItem{ts: parseTS(rows[i].TS), built: &rows[i]})
+		}
 		return true
 	}
 	switch filter {
@@ -517,6 +567,8 @@ func (s *Server) handleTaskActivity(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "linked":
+		// Every link is read (they are few); the cursor applies here, as
+		// the SQL sources apply it, by string comparison.
 		for _, l := range links {
 			ev, err := s.liveEvent(l)
 			if err != nil {
@@ -524,17 +576,26 @@ func (s *Server) handleTaskActivity(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if ev != nil {
-				addEvents([]watcher.Event{*ev})
+				if !seen[ev.ID] && (before == "" || ev.TS < before) {
+					seen[ev.ID] = true
+					items = append(items, activityItem{ts: parseTS(ev.TS), ev: ev})
+				}
 				continue
 			}
 			te := snapshotEvent(l)
-			items = append(items, activityItem{ts: parseTS(te.TS), built: &te})
+			if before == "" || te.TS < before {
+				items = append(items, activityItem{ts: parseTS(te.TS), built: &te})
+			}
 		}
 	}
 
 	sort.SliceStable(items, func(i, j int) bool { return items[i].ts.After(items[j].ts) })
-	if len(items) > taskActivityLimit {
-		items = items[:taskActivityLimit]
+	if len(items) > limit {
+		cut := limit
+		for cut < len(items) && items[cut].ts.Equal(items[limit-1].ts) {
+			cut++
+		}
+		items = items[:cut]
 	}
 	e := s.newEventEnricher()
 	out := make([]TimelineEvent, 0, len(items))
@@ -549,7 +610,7 @@ func (s *Server) handleTaskActivity(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, te)
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeTimeline(w, out)
 }
 
 type taskIDRequest struct {

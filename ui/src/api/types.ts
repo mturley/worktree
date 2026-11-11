@@ -62,7 +62,7 @@ export interface EventTextChange {
   new_text: string;
 }
 export interface TimelineEvent {
-  id: string; ts: string; external_ts: string; source: string;
+  id: string; ts: string; external_ts: string; edited_at?: string; source: string;
   type: string; type_label: string; title: string; body: string; author: string;
   /** "user" or "bot"; absent when unknown. */
   author_type?: string;
@@ -789,9 +789,16 @@ export interface Task {
    */
   unread_count?: number
   /**
+   * unread_count plus the own unread of the followed resources the task links.
+   * Drives the row highlight and the Activity tab badge; absent from an older
+   * server, where unread_count stands in.
+   */
+  combined_unread_count?: number
+  /**
    * The newest of those unread events, from the same server snapshot; absent
-   * with nothing unread. Sent as through_ts by the task modal's Mark read, so
-   * it clears only what was counted, never an event that arrived after.
+   * with nothing unread. GET /api/task-unread answers it, from the same
+   * summary, as newest_ts, which Mark all read sends as through_ts, so it
+   * clears only what was counted, never an event that arrived after.
    */
   unread_through_ts?: string
   /** Some blocker is unresolved. */
@@ -912,6 +919,11 @@ export interface TaskDetail extends Task {
   blockers: TaskBlocker[]
   /** The tasks this one blocks, in master order. Never null. */
   blocks: TaskBlocks[]
+  /**
+   * The resources the task links. Never null. One no worktree follows is
+   * included too, with its unread fields zeroed: its unread counts nowhere.
+   */
+  linked_resources: ResourceDTO[]
 }
 
 export type TaskActivityFilter = "all" | "task" | "linked" | "resource"
@@ -921,6 +933,7 @@ export type TaskScope =
   | { kind: "all" }
   | { kind: "worktree"; path: string }
   | { kind: "resource"; type: string; id: string }
+  | { kind: "task"; id: number }
 
 /** GET /api/task-unread; mirrors taskUnreadDTO in internal/webui/tasks_api.go. */
 export interface TaskUnread {

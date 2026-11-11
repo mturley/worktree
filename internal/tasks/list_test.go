@@ -432,3 +432,23 @@ func TestListIgnoresExpiredLease(t *testing.T) {
 		t.Fatalf("future lease: %+v", got)
 	}
 }
+
+func TestListTaskScope(t *testing.T) {
+	conn := newDB(t)
+	a := mustCreate(t, conn, "a")
+	mustCreate(t, conn, "b")
+	got := mustList(t, conn, Filter{Scope: Scope{Kind: ScopeTask, TaskID: a.ID}})
+	if !sameIDs(got, a.ID) {
+		t.Fatalf("List(task a) = %v", ids(got))
+	}
+	ids2, err := ScopeTaskIDs(conn, Scope{Kind: ScopeTask, TaskID: a.ID})
+	if err != nil || len(ids2) != 1 || ids2[0] != a.ID {
+		t.Fatalf("ScopeTaskIDs(task a) = %v, %v", ids2, err)
+	}
+	if got := mustList(t, conn, Filter{Scope: Scope{Kind: ScopeTask, TaskID: 9999}}); len(got) != 0 {
+		t.Fatalf("List(missing task) = %v", ids(got))
+	}
+	if _, err := List(conn, Filter{Scope: Scope{Kind: ScopeTask}}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("List(task, no id) err = %v, want ErrInvalid", err)
+	}
+}

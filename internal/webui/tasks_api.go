@@ -63,6 +63,10 @@ type taskDTO struct {
 	// what the task modal's Mark read sends as through_ts, so it clears only
 	// what was counted, never an event that arrived after. Absent at 0.
 	UnreadThroughTS string `json:"unread_through_ts,omitempty"`
+	// CombinedUnreadCount is UnreadCount plus the OWN unread of each of the
+	// task's followed resource links (see taskLinkedUnread): what the task's
+	// Activity tab, Everything view, holds unread. Always sent, 0 included.
+	CombinedUnreadCount int `json:"combined_unread_count"`
 	// Blocked: some blocker is unresolved; BlockerCount is how many.
 	Blocked      bool `json:"blocked"`
 	BlockerCount int  `json:"blocker_count"`
@@ -153,12 +157,12 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 		writeTaskError(w, err)
 		return
 	}
-	sums := s.taskUnreadSummaries()
+	ur := s.newTaskUnreadReader(s.newUnreadIndex())
 	open := s.allOpenBlockers()
 	out := make([]taskDTO, 0, len(ts))
 	for _, t := range ts {
 		d := newTaskDTO(t)
-		d.UnreadCount, d.UnreadThroughTS = sums[t.ID].Count, sums[t.ID].NewestTS
+		ur.fill(&d, t)
 		if o := open[t.ID]; o != nil && t.Blocked { // a done task is never blocked
 			d.OpenBlockers = o
 		}
@@ -167,8 +171,9 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// parseTaskScope reads ?scope=all|worktree|resource with its path or
-// type+id. It writes the 400 itself and reports false on bad input.
+// parseTaskScope reads ?scope=all|worktree|resource|task with its path,
+// type+id or (task) id. It writes the 400 itself and reports false on bad
+// input.
 func parseTaskScope(w http.ResponseWriter, q url.Values) (tasks.Scope, bool) {
 	switch q.Get("scope") {
 	case "", "all":
@@ -185,29 +190,24 @@ func parseTaskScope(w http.ResponseWriter, q url.Values) (tasks.Scope, bool) {
 			return tasks.Scope{}, false
 		}
 		return tasks.Scope{Kind: tasks.ScopeResource, ResourceType: q.Get("type"), ResourceID: q.Get("id")}, true
+	case "task":
+		id, err := strconv.ParseInt(q.Get("id"), 10, 64)
+		if err != nil || id <= 0 {
+			writeError(w, http.StatusBadRequest, "missing or invalid id")
+			return tasks.Scope{}, false
+		}
+		return tasks.Scope{Kind: tasks.ScopeTask, TaskID: id}, true
 	default:
-		writeError(w, http.StatusBadRequest, "scope must be all, worktree or resource")
+		writeError(w, http.StatusBadRequest, "scope must be all, worktree, resource or task")
 		return tasks.Scope{}, false
 	}
 }
 
-// taskUnreadSummaries is every task's unread summary, read once per
-// request. A failure is logged and costs only the counts (all 0).
-func (s *Server) taskUnreadSummaries() map[int64]unread.Summary {
-	sums, err := unread.TaskSummaries(s.DB)
-	if err != nil {
-		s.logger().Printf("unread.TaskSummaries: %v", err)
-		return map[int64]unread.Summary{}
-	}
-	return sums
-}
-
-// newTaskDTOWithUnread is newTaskDTO with unread_count and open_blockers
-// filled, for the endpoints that return one task.
+// newTaskDTOWithUnread is newTaskDTO with its unread counts (combined
+// included) and open_blockers filled, for the endpoints that return one task.
 func (s *Server) newTaskDTOWithUnread(t tasks.Task) taskDTO {
 	d := newTaskDTO(t)
-	sum := s.taskUnreadSummaries()[t.ID]
-	d.UnreadCount, d.UnreadThroughTS = sum.Count, sum.NewestTS
+	s.newTaskUnreadReader(s.newUnreadIndex()).fill(&d, t)
 	if t.BlockerCount > 0 {
 		d.OpenBlockers = s.taskOpenBlockers(t.ID)
 	}
@@ -495,8 +495,9 @@ type taskUnreadDTO struct {
 	NewestTS string `json:"newest_ts"`
 }
 
-// handleTaskUnread: GET /api/task-unread?scope=all|worktree|resource
-// (&path= | &type=&id=, as GET /api/tasks) -> []taskUnreadDTO, never null.
+// handleTaskUnread: GET /api/task-unread?scope=all|worktree|resource|task
+// (&path= | &type=&id= | &id=, as GET /api/tasks) -> []taskUnreadDTO, never
+// null. scope=task is the one task, listed only while it has unread events.
 //
 // Every task in the scope's FEED membership (completed and archived tasks
 // included, as tasks.ScopeTaskIDs) with unread events, newest unread first.

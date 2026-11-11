@@ -25,6 +25,13 @@ describe("EventTypeFilter", () => {
     expect(screen.queryByRole("button", { name: "CI" })).toBeNull()
   })
 
+  it("offers three subfilters under Tasks", () => {
+    wrap(<EventTypeFilter sources={["task"]} value={[]} onChange={vi.fn()} />)
+    for (const name of ["Progress", "Blockers", "Created / deleted"]) {
+      expect(screen.getByRole("button", { name })).toBeInTheDocument()
+    }
+  })
+
   it("adds to the selection rather than replacing it", () => {
     const onChange = vi.fn()
     wrap(<EventTypeFilter sources={["pr"]} value={["comments"]} onChange={onChange} />)

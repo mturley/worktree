@@ -450,3 +450,48 @@ func TestTimelinePagingSameTSWatcherTaskTie(t *testing.T) {
 			[]string{"w9", "w5a", "w5b", "w5c", "w1"})
 	}
 }
+
+func TestGlobalTimelineShowsWorkLog(t *testing.T) {
+	t.Parallel()
+	f := taskFeedFixture(t)
+	if _, err := tasks.LogWork(f.s.DB, webActor, f.gamma.ID, "wrote the thing"); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range f.home(t, "limit=50").Events {
+		if e.Type == tasks.EventTaskWorkLogged {
+			if e.Title != "Worked on “gamma”" || e.Body != "wrote the thing" {
+				t.Fatalf("row = %+v", e)
+			}
+			return
+		}
+	}
+	t.Fatal("work log missing from global timeline")
+}
+
+func TestTimelineTaskEventTypes(t *testing.T) {
+	t.Parallel()
+	f := taskFeedFixture(t)
+	insertEvent(t, f.s.DB, "e1", tts(1), "github", "pr_comment", "c", "pr", "o/r#1", "u1")
+	created := insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(2), tasks.EventTaskCreated, tasks.ActorUser, "")
+	logged := insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(3), tasks.EventTaskWorkLogged, tasks.ActorUser, "")
+	checked := insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(4), tasks.EventSubtaskChecked, tasks.ActorUser, "")
+	state := insertTaskEvent(t, f.s.DB, f.alpha.ID, tts(5), tasks.EventTaskStateChanged, tasks.ActorUser, "")
+	for _, feed := range []struct {
+		name string
+		get  func(*testing.T, string) timelineResponse
+	}{{"home", f.home}, {"worktree", f.worktree}} {
+		cases := map[string]string{
+			"event_types=task_work_logged,task_state_changed,subtask_checked,subtask_unchecked": state + "," + checked + "," + logged,
+			"event_types=task_created,task_deleted":                                             created,
+			"event_types=task":                                                                  state + "," + checked + "," + logged + "," + created,
+			"event_types=pr_comment":                                                            "e1",
+			"event_types=pr_comment,task_work_logged":                                           logged + ",e1",
+			"resource_types=task&event_types=task_work_logged&unread_only=true":                 "",
+		}
+		for q, want := range cases {
+			if got := joinIDs(feed.get(t, q).Events); got != want {
+				t.Errorf("%s %s = %s, want %s", feed.name, q, got, want)
+			}
+		}
+	}
+}

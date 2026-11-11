@@ -1,10 +1,12 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { ActionIcon, Alert, Button, Center, Group, Loader, Stack, Text, Tooltip } from "@mantine/core"
 import { IconLink, IconLinkOff } from "@tabler/icons-react"
 import type { TaskDetail, TimelineEvent } from "../../../api/types"
 import { type ActivityQuery, useTaskActivity, useTaskDetailMutations } from "../../../hooks/useTaskDetail"
 import { eventTaskKey } from "../../../lib/taskEventKey"
+import { EventDetailsModal } from "../../EventDetailsModal"
 import { EventRow } from "../../EventRow"
+import { LoadMoreButton } from "../../TimelineFeed"
 import { useSectionAction } from "./sectionAction"
 
 interface Pill {
@@ -35,11 +37,16 @@ function resourcePills(task: TaskDetail): Pill[] {
 /**
  * The Activity tab: the task's own events merged with its linked resources'
  * events, newest first, narrowed by the filter pills. Each resource event
- * has a link toggle. The rows are inert, as on the Details tab: navigating
- * in the app from inside the modal would have to close it first (its
- * close() undoes the open with history.back()).
+ * has a link toggle. A row opens the event's details stacked over the task
+ * modal (Esc closes only them; see useModalLayer), with every action but
+ * Make task. One that navigates leaves the page, which drops `?task=` and so
+ * closes the task modal; Back returns to it. This task's own events open
+ * their details too, never the task again.
+ *
+ * `initialEvent` is shown in details on mount: the event a feed row opened
+ * the task with.
  */
-export function ActivityTab({ task }: { task: TaskDetail }) {
+export function ActivityTab({ task, initialEvent }: { task: TaskDetail; initialEvent?: TimelineEvent | null }) {
   const pills = [...FIXED, ...resourcePills(task)]
   const [picked, setPicked] = useState("all")
   // A resource unlinked while its pill is picked falls back to Everything,
@@ -48,6 +55,11 @@ export function ActivityTab({ task }: { task: TaskDetail }) {
   const activity = useTaskActivity(task.id, active.query)
   const m = useTaskDetailMutations(task.id)
   const { run, alert } = useSectionAction()
+  const [details, setDetails] = useState<TimelineEvent | null>(initialEvent ?? null)
+  // The task reopened with another event while this tab is showing.
+  useEffect(() => {
+    if (initialEvent) setDetails(initialEvent)
+  }, [initialEvent])
 
   /**
    * The key a toggle acts on. A linked row unlinks by the key the server says
@@ -83,24 +95,24 @@ export function ActivityTab({ task }: { task: TaskDetail }) {
         ))}
       </Group>
       {alert}
-      {activity.isPending ? (
+      {activity.isLoading ? (
         <Center py="md"><Loader size="sm" /></Center>
-      ) : activity.isError ? (
+      ) : activity.error ? (
         <Alert color="red" variant="light" py={6}>
           <Text size="xs">Couldn't load activity: {activity.error instanceof Error ? activity.error.message : "the request failed"}</Text>
         </Alert>
-      ) : activity.data.length === 0 ? (
+      ) : activity.events.length === 0 ? (
         <Text size="sm" c="dimmed">No activity.</Text>
       ) : (
         <Stack gap={2}>
-          {activity.data.map((e) => {
+          {activity.events.map((e) => {
             const linkable = toggleKey(e) !== null
             const linked = !!e.linked_to_task
             const label = `${linked ? "Unlink" : "Link"} event: ${e.title}`
             return (
               <Group key={e.id} gap={4} wrap="nowrap" align="flex-start">
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <EventRow e={e} showResource={active.query.filter !== "resource"} />
+                  <EventRow e={e} showResource={active.query.filter !== "resource"} onOpen={setDetails} />
                 </div>
                 {linkable && (
                   <Tooltip label={linked ? "Unlink from this task" : "Link to this task"}>
@@ -120,8 +132,10 @@ export function ActivityTab({ task }: { task: TaskDetail }) {
               </Group>
             )
           })}
+          {activity.hasMore && <LoadMoreButton onLoadMore={activity.loadMore} loadingMore={activity.loadingMore} />}
         </Stack>
       )}
+      <EventDetailsModal e={details} inTask onClose={() => setDetails(null)} />
     </Stack>
   )
 }

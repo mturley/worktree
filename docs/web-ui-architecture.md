@@ -224,13 +224,13 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | GET | `/api/repo-dotfiles` | `repo` (required) | gitignored dotfiles that repo would copy into a new worktree |
 | GET | `/api/stream` | `tab`, `route`, `visible` (all optional; see "Notifications"); `listeners=0` opts out of listening ports | SSE stream (`text/event-stream`) |
 | POST | `/api/notify` | body: `{path, type?, id?, on, tab?}` (no type/id = the worktree-wide toggle) | `{ok, mode}`; turning ON sends a test notification. 400 for a link or a half-given resource, 404 for an unregistered worktree or untracked resource |
-| GET | `/api/tasks` | `scope` (`all` default, `worktree`, `resource`), `path` (worktree scope), `type` + `id` (resource scope), `completed=1`, `archived=1` | `[]taskDTO` in master order; see "Tasks" |
+| GET | `/api/tasks` | `scope` (`all` default, `worktree`, `resource`, `task`), `path` (worktree scope), `type` + `id` (resource scope), `id` (task scope: the one task), `completed=1`, `archived=1` | `[]taskDTO` in master order; see "Tasks" |
 | POST | `/api/tasks` | body: `{title, priority?, starred?, path?, type?, id?, after?, before?}`; `path` → Focus worktree link, `type`+`id` → Focus resource link, neither → global | `taskDTO` |
 | POST | `/api/tasks/update` | body: `{id, title?, description?, priority?, starred?, due?}` (absent = unchanged; `due: ""` clears) | `taskDTO` |
 | POST | `/api/tasks/state` | body: `{id, state}` | `taskDTO`, plus `undo_event_id` when the state changed (see "Undo for tasks") |
 | POST | `/api/tasks/move` | body: `{id, after}` or `{id, before}`, exactly one | 204 No Content |
 | GET | `/api/tasks/detail` | `id` | `taskDetailDTO`; 404 if missing or deleted. See "Task detail API" |
-| GET | `/api/tasks/activity` | `id`, `filter` (`all` default, `task`, `linked`, `resource`), `type` + `rid` (with `filter=resource`; must be a linked resource, else 404) | `[]TimelineEvent`, newest first, at most 200; resource events carry `linked_to_task` |
+| GET | `/api/tasks/activity` | `id`, `filter` (`all` default, `task`, `linked`, `resource`), `type` + `rid` (with `filter=resource`; must be a linked resource, else 404), `before` (exclusive ts cursor), `limit` (default and maximum 200) | `{events, next_cursor}` as the timelines: newest first, one page (overfilled with its boundary ts's ties); resource events carry `linked_to_task` |
 | POST | `/api/tasks/delete` | body: `{id}` | `{undo_event_id}` |
 | POST | `/api/tasks/undo` | body: `{event_id}` | 204; 409 if the change is no longer the current one (including an event already undone or purged, and a task deleted or subtask removed since); 404 only for an event id never issued; 400 for an event that is not undoable |
 | POST | `/api/tasks/links/add` | body: `{id, url?, type?, rid?, path?, focus?}`, exactly one of `url`, `type`+`rid`, `path`; a URL resolves with `resourceurl.InferAny` (unrecognised → 400) | `taskDetailDTO` |
@@ -250,7 +250,7 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | POST | `/api/tasks/from-event` | body: `{key, snapshot?, path?}`; creates a task from the event | `taskDetailDTO` |
 | POST | `/api/task-read` | body: `{id, through_ts}` | `{previous_ts, last_read_ts}` (as `/api/resource-read`); 400 unless `through_ts` is RFC3339; 404 for a missing or deleted task. See "Unread" |
 | POST | `/api/task-read/restore` | body: `{id, last_read_ts, previous_ts}` (what `/api/task-read` answered) | 204; 409 if the task's cursor has moved since |
-| GET | `/api/task-unread` | `scope` (`all` default, `worktree`, `resource`), `path` / `type` + `id` as `/api/tasks` | `[{id, title, count, newest_ts}]`, never null: tasks in the scope (completed and archived included) with unread events, newest unread first |
+| GET | `/api/task-unread` | `scope` (`all` default, `worktree`, `resource`, `task`), `path` / `type` + `id` / `id` as `/api/tasks` | `[{id, title, count, newest_ts}]`, never null: tasks in the scope (completed and archived included) with unread events, newest unread first; `scope=task&id=` is that task alone, while it has unread events |
 | POST | `/api/tabs/presence` | body: `{tab, route, visible}` | 204; 404 for an unknown tab or another session's |
 | POST | `/api/tabs/ack` | body: `{tab, notification_id, shown}` | 204; 404 for an unknown tab, another session's, or a notification nobody awaits |
 | GET | `/api/update-status` | — | `{available, behind_by, details_url}`; see "Update check" |
@@ -383,8 +383,10 @@ events (`tasks.FeedEvents`, converted by `taskFeedRow` →
   `resource_type "task"` rather than "no worktrees", which would wrongly
   mark a global task (no links) as archived.
 - Filters: `resource_types` accepts `task`, and `event_types` the category
-  `task` (every task event type). A non-empty filter excludes task events
-  unless it names them (`taskEventsSelected`). `unread_only` and `q` are
+  `task` (every task event type), or exact task event types (`task_*`,
+  `subtask_*`, e.g. `task_work_logged`), which narrow the task side via
+  `tasks.FeedQuery.Types` (`eventTypeFilter.taskTypes`). A non-empty filter
+  excludes task events unless it names them (`taskEventsSelected`). `unread_only` and `q` are
   applied in Go (`matchTaskEvent`: converted title, author — "agent",
   "agent (<session>)" or "you" — and task title), so with
   either set every candidate task event is read rather than `limit`.
@@ -1068,6 +1070,21 @@ load task unread (`TestTimelinesDoNotLoadTaskUnread`).
   (`TestCmuxMailboxChecksResourceUnreadFirst`).
 - `taskDTO.unread_count` is the task's own count, and `unread_through_ts`
   (absent at 0) the newest of those events, from the same summary.
+- `taskDTO.combined_unread_count` (always sent) is `unread_count` plus the
+  OWN unread (`unread_count − task_unread_count` after `fill`) of each
+  distinct resource link a live worktree follows: what the task's Activity
+  tab, Everything view, holds unread. Own, so a PR two tasks link never
+  counts one task's events in the other's total. A link only a task's
+  `task:<id>` hold subscribes, or no one, adds 0: what isn't followed isn't
+  unread. Individually linked events (`event_links`) are not added. Each
+  linked resource is counted on its own, so a watcher event tied to two of
+  the task's linked resources counts once per resource.
+  `task_linked_unread.go`: `followedResources` reads the followed set in one
+  query (`subscriber LIKE 'worktree:%' AND deleted_at IS NULL`, the set
+  `unread.IsFollowed` checks per event), and `taskUnreadReader` holds one
+  `unreadIndex`, that set and a per-resource DTO memo for the request, so
+  `GET /api/tasks` and each single-task answer (create, update, state,
+  detail) read them once, however many tasks they fill.
 
 **`unreadIndex` is request-scoped**, for the same reason `eventEnricher` is:
 cursors move from other processes (`worktree resources mark-read`,
@@ -1142,17 +1159,35 @@ cursors. So a Slack thread whose only unread is task activity (`has_unread`
 false) is not marked in Slack at all; its tasks are. The button shows while
 either kind has anything unread.
 
-The task modal's header has its own **Mark read**, shown while
-`unread_count > 0`. It marks through the task's `unread_through_ts`
-(`taskDTO`, the `NewestTS` of the same `unread.TaskSummaries` row that fills
-`unread_count`), so it clears exactly the events the header counted. An agent
-event arriving after render stays unread, the same `through_ts` contract as
-resources. Without one, or when the mark moves nothing, it says "Already
-read" and offers no undo. Opening the modal marks nothing.
+The task modal's header has its own **Mark all read**, the same
+`MarkAllReadButton`, always mounted and rendering nothing while nothing is
+markable (so a refetch never unmounts an open confirm). Its
+`resources` are `TaskDetail.linked_resources` (the task's resource links,
+unread fields filled for followed ones, zeroed for the rest so they are no
+targets), its `taskScope` is `{ kind: "task", id }` and its `feed` is
+`{ task: id, showResource: true }`. So its rows are the linked resources by
+source plus the task's own unread as one task row — exactly the set
+`combined_unread_count` counts, so the count and the clear agree. A linked
+resource's cursor is shared by every worktree following it, so it moves only
+through a checkbox in this modal, never silently. The preview (`feed.task`)
+reads the task's activity (`useTaskActivity(id, { filter: "all" })`, the
+Activity tab's Everything view), which has no unread-only filter, and narrows
+it client-side to unread rows whose source is checked: a watcher row only
+when its resource (`type:id`) is a checked target, a task row only when its
+task is checked. Since that narrowing is per page, it offers Load more while
+the feed has more, even when a page held no unread row. Opening the task
+marks nothing.
+
+Every mark-read path refreshes `["tasks"]` as well as the worktrees,
+resources and timelines, because a linking task's `combined_unread_count`
+includes the resource: Mark all read, the per-event marks
+(`useMarkEventRead`), the Slack details mark (`useMarkSlackEventRead`) and
+the Slack thread view's read, unread and send (`ThreadView`'s
+`refreshUnreadSurfaces`).
 
 **Undo** (`ui/src/components/UndoToast.tsx`, `@mantine/notifications`). Every
-mark-read made from the UI — Mark all read, in either form, the Slack
-thread view's Mark read and the task modal's — shows a toast for 10 seconds with an Undo button
+mark-read made from the UI — Mark all read, in any form (the task modal's
+included), and the Slack thread view's Mark read — shows a toast for 10 seconds with an Undo button
 (also Z; U is taken by Show unread only) that puts the cursors back. Z works
 with a modal open too: the toast lives in the notifications portal, outside
 any modal, so it passes `aboveOverlays` to `useButtonHotkey`, which otherwise
@@ -1465,8 +1500,29 @@ the watcher toggles do not apply.
   else short ref like `#123`; a worktree's branch, else basename — and the
   resource `url`, found from any subscription, else any event, else derived
   for PRs and links), `implicit` (each implicit worktree with its branch and
-  `via`, the `"type:id"` resource links it follows), `subtasks`, and
-  `event_links`. Every write route answers with the fresh detail.
+  `via`, the `"type:id"` resource links it follows), `subtasks`,
+  `event_links`, and `linked_resources` (never null): the task's resource
+  links, in link order, as `resourceDTO`s carrying the unread fields
+  `MarkAllReadButton` needs (`unread_count` with `task_unread_count` inside
+  it, as on a resource card, `unread_through_ts`, and Slack's `has_unread`,
+  `updated_ts`, `last_read`; `primary` is the link's focus flag). A link no
+  worktree follows is listed with its unread fields cleared. See "Unread"
+  for `combined_unread_count`. Every write route answers with the fresh
+  detail.
+- **Work log** (`tasks_worklog_api.go`). `POST /api/tasks/worklog/add`
+  `{id, text}`, `.../edit` `{event_id, text}` and `.../delete`
+  `{event_id}` write `task_work_logged` events (`tasks.LogWork`,
+  `EditWorkLog`, `DeleteWorkLog`) as `webActor`, run `s.afterTaskWrite()`
+  and answer with the task detail. Only a work log entry is editable or
+  deletable: any other event id is a 400 (`tasks.ErrNotWorkLog` wraps
+  `ErrInvalid`), an unknown one a 404. Text is trimmed, non-empty, at most
+  4000 runes. The feed row is titled `Worked on “<task title>”`, labelled
+  "work logged", with `body` = the entry text and `edited_at` (omitted
+  until edited) from the payload. Every feed renders task events through
+  `taskEventToTimeline`, so `edited_at` is on a work log row in the global
+  and worktree timelines too, not only the task's Activity tab. Editing or
+  deleting a work log of a soft-deleted task is a 404 before anything is
+  written (`loadWorkLog` requires a live task).
 - **Blockers** (`tasks_blockers_api.go`). `taskDTO` carries `blocked`,
   `blocker_count` (unresolved) and `open_blockers` (the unresolved
   blockers, oldest first, as `{label, resource_type?, resource_id?}` — the
@@ -1528,14 +1584,20 @@ the watcher toggles do not apply.
 - **Activity merge.** `/api/tasks/activity` merges the task's own events
   (`taskEventToTimeline`: id `task:<event id>`, source `tasks`, resource
   `task:<task id>`, a human-readable title per event type, author `you` or
-  `agent (<session>)`) with the events of the task's linked resources. Each
-  resource is read by `watcherdb.RecentEventsForResource` (watcher
-  v0.16.0): newest first, at most 200, bookkeeping types left out as the
-  timeline does — not `watcherdb.EventsForResource`, which loads a
-  resource's whole history unpaged, on a route every SSE refresh re-runs.
-  The merge is
-  deduplicated by id, sorted newest first by `ts`, cut to 200, and only then
-  are the surviving watcher events enriched. `filter=linked` renders EVERY
+  `agent (<session>)`; `unread` and `can_mark_unread` by the feeds' rule,
+  via `taskUnreadRow`) with the events of the task's linked resources. It
+  is paged as the timelines are (`before`, `limit` ≤ 200, `next_cursor` the
+  last row's ts, a short page the end). Every source is read before the
+  cursor, at most `limit` rows plus every row tying its last one's ts: the
+  task's events by `tasks.FeedEvents` (`feedEventsWithTies`, shared with
+  `mergeTaskEvents`), each resource by the global timeline's query
+  (`globalTimeline` with the resource filter, `archived` so an unfollowed
+  resource still reads, and its own type as the source filter so no task
+  events come in) — bookkeeping types left out as the timeline does. The
+  merge is deduplicated by id, sorted newest first by `ts`, cut to `limit`
+  and overfilled with every row tying the last kept one's ts, so the strict
+  cursor never skips the rest of a same-second cluster; links' live events
+  are enriched only after the cut. `filter=linked` renders EVERY
   event link: its live event, else a row built from its snapshot
   (`snapshotEvent`, whose id is the link key). A row is `linked_to_task`
   when its key is linked (`linkedKeyOf`: a Slack message's `slack:` key,
@@ -1557,6 +1619,12 @@ The spec (`docs/superpowers/specs/2026-10-21-tasks-design.md`) owns what a
 list looks like; this is where its pieces live and the rules that are easy
 to break.
 
+- **Row unread highlight.** `TaskRow` reads `combined_unread_count ?? unread_count ?? 0`
+  (the task's own unread plus its followed linked resources'; an older server
+  sends only the own count). Above zero the row gets the worktree cards'
+  `UNREAD_BOX_BORDER` and `UNREAD_BG` tint plus the "unread activity" dot;
+  at zero it keeps a transparent `READ_BOX_BORDER` so rows don't shift. The
+  list-level `/api/task-unread` feed still counts own task events only.
 - **Files.** `components/tasks/` holds `TaskList` (sections, drag and drop,
   quick add at the bottom), `TaskRow`, `TaskStateCheckbox`,
   `TaskListToolbar` (sort, and a "View options" popover with the In
@@ -1958,10 +2026,14 @@ resolves at once from the CLI; PR and Jira blockers wait for `worktree ui`.
 
 One modal, mounted once in `App` as `TaskDetailModal`, driven by the `task`
 URL param (`?task=<id>`) through **`TaskModalProvider`**
-(`useTaskModal()` → `openId`, `open(id, { error? })`, `close()`, `notice`,
-`clearNotice()`). It throws outside the provider, so any test that renders a
+(`useTaskModal()` → `openId`, `open(id, { error?, event? })`, `close()`,
+`notice`, `clearNotice()`, `focusEvent`, `clearFocusEvent()`). It throws outside the provider, so any test that renders a
 `TaskList` (which calls it) wraps in one.
 
+- **Activity tab badge.** The Activity tab wears an `UnreadBadge` (right
+  section) reading `combined_unread_count ?? unread_count ?? 0`, absent at
+  zero. `TaskDetail.linked_resources` is always an array; `TaskScope` has a
+  `{ kind: "task"; id }` form (`GET /api/task-unread?scope=task&id=`).
 - **History.** `open()` pushes a history entry and remembers that it did
   (`pushed`); `close()` then calls `history.back()`, so Back after close does
   not reopen the modal. A deep link or refresh (nothing pushed) is closed by
@@ -1975,15 +2047,70 @@ URL param (`?task=<id>`) through **`TaskModalProvider`**
   opens that resource in the worktree following it (asking which when several
   do, `ChooseWorktreeModal`), and links externally when none does. Blocker
   labels and event "Open" links open in a new tab, worktree titles are plain
-  text, and linked-event rows are inert. A failed delete reopens the task through `open(id, { error })`; the
+  text, and linked-event rows on the Details tab are inert. A failed delete reopens the task through `open(id, { error })`; the
   provider exposes it as `notice` and the modal's red Alert shows it.
+- **Opened with an event.** Every feed row of a task event (home, mini,
+  worktree page, a resource pane) calls `open(id, { event })` through
+  `onOpenTask`; the home page opens it in place, never routing to the task's
+  worktree or asking which (a task picked in search still routes,
+  `useActivityPanel`'s `pickTask`). The event is held in provider state,
+  keyed by task id (`focusEvent` is null for any other open task), and is
+  never put in the URL: a refresh or a shared link reopens the task alone,
+  and `close()` drops it. `TaskView` takes it once, opening on the Activity
+  tab with it as `ActivityTab`'s `initialEvent`, then clears it; leaving the
+  Activity tab drops it, so coming back doesn't reopen the details. If the
+  task's detail 404s while `focusEvent` is set (deleted between render and
+  click), `TaskDetailModal` keeps the task modal closed and shows the event's
+  `EventDetailsModal` on its own, `editable={false}` (no Edit on a work log).
+- **Activity rows open details, stacked.** A row on the Activity tab opens
+  `EventDetailsModal` with `inTask` (no Make task; every other action stays)
+  over the task modal; this task's own events open their details too, never
+  the task again. The link toggles are siblings of the row, not inside it,
+  so they never open details. A details action that navigates (go to
+  worktree, open in diff) changes the path and drops `?task=`, which closes
+  the task modal under the history contract above; Back returns to the page
+  with the task open.
+- **Mark all read** in the header (rendered while anything is markable) is
+  `MarkAllReadButton` over the task's linked resources and the task itself;
+  see "Unread". Its confirm modal is a layer over the task modal, and a
+  preview row's details a layer over the confirm (`TimelineFeed`'s
+  `EventDetailsModal` sits inside its provider), so Esc closes details, then
+  the confirm, then the task. Its preview passes no `onOpenTask`, so this
+  task's own event rows open their details there, never the task again.
+- **Stacking and Esc** (`modalLayer.tsx`). Every open Mantine `Modal` closes
+  on Escape from its own capture-phase window listener (it skips only a
+  target marked `data-mantine-stop-propagation`), so with two modals open
+  one Esc would close both. `useModalLayer(opened)` returns `topmost`,
+  `zIndex` and a `layer`: a modal passes `closeOnEscape={topmost}` and
+  `zIndex`, and wraps its children in `ModalLayerProvider`. A modal opened
+  under no provider is a bottom layer and behaves as before. A modal opened
+  inside a provider, at any depth, registers while open with its bottom
+  layer's one stack, in opening order: the newest open layer is the only
+  `topmost` one (the bottom layer is topmost only while its stack is
+  empty), and each takes a z-index of Mantine's modal default (200) plus 1
+  plus its place in the stack, so a later one paints over an earlier one
+  whatever the order of their portals. So two siblings (event details and
+  the Mark all read confirm, both over the task modal) still have one top,
+  and one Esc closes exactly one modal. `useLayerTopmost()` tells a
+  component whether the modal it sits in is on top; hotkeys gate on it
+  (Mark all read's R on its owning modal, its confirm's Enter on the
+  confirm itself), so a key pressed under a stacked modal does nothing
+  behind it. The modals that use it are `TaskDetailModal`,
+  `EventDetailsModal` and `MarkAllReadButton`'s confirm;
+  `ChooseWorktreeModal` is not layered. (Mantine's own
+  `Modal.Stack` needs the modals as siblings in one place, which these are
+  not.)
 - **Files.** `TaskDetailModal` (shell; keeps the last id mounted through the
-  close transition), `TaskModalHeader` (state menu, star, editable title),
+  close transition), `TaskModalHeader` (state menu, star, editable title, Mark all read),
   `TaskSidebar` (state, priority, due, starred, and a Delete that asks inline
   "Delete? Yes / No" first and whose undo toast reopens the modal; the delete, its undo and its failure logic
   are in `TaskDetailModal`, the undo toasts in `tasks/taskUndo.ts`), and two tabs. `DetailsTab` stacks `DescriptionSection`, `SubtasksSection`,
   `LinksSection` (with `LinkPicker` and the pure `linkTargets.ts`) and
-  `LinkedEventsSection`; `ActivityTab` shows the merged feed.
+  `LinkedEventsSection`; `ActivityTab` shows the merged feed, whose rows open
+  their details (above), with the feeds' `LoadMoreButton` (exported from `TimelineFeed`) after a full page.
+  `useTaskActivity` is an infinite query under `["tasks", "activity", id, …]`
+  returning a `TimelineResult`, built from `useTimeline`'s `flatten` and
+  `pageCursor(TASK_ACTIVITY_PAGE_SIZE)`.
   `sectionAction.tsx` (`useSectionAction`) gives each section its own inline
   error alert. Data hooks are in `ui/src/hooks/useTaskDetail.ts` (`useTaskDetail`,
   `useTaskActivity`, `useTaskDetailMutations`, `useTaskFromEvent`).
@@ -2919,12 +3046,12 @@ filtering is independent.
   completed), with `matchTask` (title, id, description). Open tasks rank
   before done ones, then by `rankTask` (0 for the exact id, as `rankResource`
   does for a key). Picking one goes through `go.task`, which on the home page
-  routes as a task event's row does (`useActivityPanel`'s `pickTask`: its one
-  worktree, a choice of several, or over the page with none) and elsewhere
-  opens its modal in place.
+  routes to it (`useActivityPanel`'s `pickTask`: its one worktree, a choice of
+  several, or over the page with none) and elsewhere opens its modal in
+  place. A task event's row in the feed opens in place instead.
 - Picking routes through the page's `go` (`buildSuggestions`). A task
-  event's row opens its task (`go.task`, as the feeds' rows do through
-  `onOpenTask`), never `go.event`: its
+  event's row opens its task (`go.task`; the feeds' rows open it through
+  `onOpenTask`, with the event's details on top), never `go.event`: its
   pseudo-resource is nothing to select. The routing lives in
   `suggestions.ts`, not on the row, so Enter and a click agree and the row
   stays display-only.
@@ -4245,6 +4372,18 @@ the resource row's own buttons; chips stay left and the buttons wrap below them 
 narrow modal. An event with no worktrees (an archived resource) gets the buttons on a
 row of their own, right-aligned. Nothing follows the body. The row is `data-testid="worktree-row"`.
 
+**Work log editing.** A `task_work_logged` event shows "Edit" among the actions (hidden
+when the `editable` prop is false, which the deleted-task fallback uses). It swaps the body
+for `WorkLogEditor`: a textarea (4000 max) with Save (Cmd/Ctrl+Enter too), Cancel and
+Delete (inline "Delete? Yes / No"). Save calls `editWorkLog(<numeric id from taskEventNumericId>, text)`;
+the task detail response carries no event, so the modal patches its own copy (trimmed body,
+`edited_at = now`) and shows "(edited)" after the time, as `EventRow` does; the mutation's
+invalidation corrects the feeds. Delete closes the modal. Esc cancels the edit only: Mantine's
+Modal closes on Escape from a capture-phase window listener that checks `event.target` for
+`data-mantine-stop-propagation`, so every focusable control in the editor carries it and the
+editor focuses its textarea on mount. The `inTask` prop (modal shown over a task's own modal)
+hides "Make task"; every other action stays.
+
 **Description diff.** `jira_description_changed` and `pr_description_changed`
 (`DESCRIPTION_DIFF_TYPES`) show a diff in place of the body. `DescriptionChange` fetches
 `GET /api/event-text-change?id=` (react-query, `staleTime: Infinity`, no retry on 404) and
@@ -4293,9 +4432,10 @@ each with its own controls, remembered in `localStorage`
 (`lib/miniExpandedPref.ts`). Tasks is
 `TaskList`; Activity is `useActivityPanel`
 (`components/ActivityPanel.tsx`), the home page's feed extracted so both pages
-share it. `select: "route"` (home) opens an event's worktree (and a task
-event's task over it, `?task=`, or over the page when the task has no worktree),
-`"details"` (mini) opens `EventDetailsModal` (or the task modal, in place), whose
+share it. `select: "route"` (home) opens an event's worktree, `"details"`
+(mini) opens `EventDetailsModal`; in both a task event's row opens its task in
+place, on its Activity tab with the event's details on top (`open(id, { event
+})`; see "Task detail modal"). The details modal's
 worktree chips leave for the full UI. The search is the home page's too:
 `useSearchQuery`'s `?q=` (which stays on /mini), `buildSuggestions`, `/` to
 focus, and `SearchContext` so `TaskList` filters by it. Its suggestions use

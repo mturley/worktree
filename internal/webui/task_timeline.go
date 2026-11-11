@@ -24,7 +24,7 @@ func taskEventToTimeline(ev tasks.Event, t tasks.Task) TimelineEvent {
 			title = s
 		}
 	}
-	return TimelineEvent{
+	te := TimelineEvent{
 		ID:            unread.TaskEventID(ev.ID),
 		TS:            ev.TS,
 		Source:        "tasks",
@@ -39,6 +39,13 @@ func taskEventToTimeline(ev tasks.Event, t tasks.Task) TimelineEvent {
 		WorktreePaths: []string{},
 		TaskState:     taskEventState(ev),
 	}
+	if ev.Type == tasks.EventTaskWorkLogged {
+		var p tasks.WorkLogPayload
+		_ = json.Unmarshal(ev.Payload, &p) // a malformed payload renders an empty entry
+		te.Body = p.Text
+		te.EditedAt = p.EditedAt
+	}
+	return te
 }
 
 // taskEventState is the state an event left its task in, for the feed's
@@ -66,9 +73,19 @@ func taskEventState(ev tasks.Event) string {
 // unless a mark says otherwise (marks is unread.EventMarks).
 // The user's own events are never unread.
 func taskFeedRow(fe tasks.FeedEvent, cursors map[string]string, marks map[string]unread.EventMark) TimelineEvent {
-	te := taskEventToTimeline(fe.Event, tasks.Task{ID: fe.TaskID, Title: fe.TaskTitle})
-	te.CanMarkUnread = tasks.CountsAsUnread(fe.Actor)
-	te.Unread = te.CanMarkUnread && unread.EventUnread(marks, te.ID, fe.TS, fe.TS > cursors[unread.Key("task", te.ResourceID)])
+	return taskUnreadRow(fe.Event, tasks.Task{ID: fe.TaskID, Title: fe.TaskTitle}, cursors, marks)
+}
+
+// taskUnreadRow is taskEventToTimeline plus taskFeedRow's unread rule, for a
+// caller that already holds the event's task.
+//
+// The cursor test compares strings: task event ts and the read cursor are
+// both RFC3339 UTC, written by tasks and unread alike, so lexical order is
+// time order.
+func taskUnreadRow(ev tasks.Event, t tasks.Task, cursors map[string]string, marks map[string]unread.EventMark) TimelineEvent {
+	te := taskEventToTimeline(ev, t)
+	te.CanMarkUnread = tasks.CountsAsUnread(ev.Actor)
+	te.Unread = te.CanMarkUnread && unread.EventUnread(marks, te.ID, ev.TS, ev.TS > cursors[unread.Key("task", te.ResourceID)])
 	return te
 }
 
@@ -174,6 +191,7 @@ var taskEventTitles = map[string]taskTitleFunc{
 		}
 		return ""
 	},
+	tasks.EventTaskWorkLogged:   func(_ json.RawMessage, t tasks.Task) string { return "Worked on " + quote(t.Title) },
 	tasks.EventSubtaskChecked:   subtaskTitle("Checked "),
 	tasks.EventSubtaskUnchecked: subtaskTitle("Unchecked "),
 	tasks.EventTaskBlockerResolved: func(raw json.RawMessage, _ tasks.Task) string {
@@ -192,6 +210,7 @@ var taskEventLabels = map[string]string{
 	tasks.EventTaskCreated:           "Created",
 	tasks.EventTaskStateChanged:      "State",
 	tasks.EventTaskDeleted:           "Deleted",
+	tasks.EventTaskWorkLogged:        "work logged",
 	tasks.EventSubtaskChecked:        "Subtask",
 	tasks.EventSubtaskUnchecked:      "Subtask",
 	tasks.EventTaskBlockerResolved:   "Unblocked",

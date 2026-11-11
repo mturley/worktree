@@ -1,4 +1,5 @@
 import {
+  IconNotes,
   IconAlertTriangle,
   IconBell,
   IconCheck,
@@ -98,6 +99,7 @@ const TYPES: Record<string, Entry> = {
   // labels are fallbacks: the server sends its own type_label. Only
   // state-like changes are task events; edits record nothing.
   task_created: task(IconChecklist, "created"),
+  task_work_logged: task(IconNotes, "work logged"),
   task_state_changed: task(IconProgress, "state changed"),
   task_deleted: task(IconTrash, "deleted"),
   task_blocker_resolved: task(IconCircleCheck, "blocker resolved"),

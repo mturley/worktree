@@ -1,15 +1,17 @@
 import { type ComponentProps, useState } from "react"
 import { Alert, Box, Button, Checkbox, Flex, Group, Modal, ScrollArea, Stack, Text } from "@mantine/core"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import type { ResourceDTO, TaskScope, TaskUnread } from "../api/types"
+import type { ResourceDTO, TaskScope, TaskUnread, TimelineEvent } from "../api/types"
 import { api } from "../api/client"
 import { markRead as markThreadRead, restoreRead as restoreThreadRead } from "../api/slackApi"
 import { useGlobalTimeline, useWorktreeTimeline } from "../hooks/useTimeline"
+import { useTaskActivity } from "../hooks/useTaskDetail"
 import { useIsWide } from "../hooks/useIsWide"
 import { useButtonHotkey } from "../hooks/useButtonHotkey"
 import { KeyHint } from "./search/KeyHint"
 import { slackTabFromResource } from "./SlackThreadPane"
-import { TimelineFeed } from "./TimelineFeed"
+import { LoadMoreButton, TimelineFeed } from "./TimelineFeed"
+import { ModalLayerProvider, useLayerTopmost, useModalLayer } from "./tasks/modal/modalLayer"
 import { showUndoToast, undoAll } from "./UndoToast"
 import { MARK_READ_BUTTON_PROPS, readChangeDidSomething } from "../lib/unread"
 
@@ -32,6 +34,8 @@ type Undo = () => Promise<unknown>
  * with its undo, or null when it moved nothing (a cursor already past it).
  */
 interface Target {
+  /** The resource's key, "type:id", as its events name it. */
+  key: string
   count: number
   /** How a failed undo names it: "#4521", "PROJ-1", "T12", a thread's name. */
   label: string
@@ -44,6 +48,8 @@ function resourceLabel(r: ResourceDTO): string {
   if (r.type === "slack") return r.custom_name || r.title || "Slack thread"
   return r.id
 }
+
+const resourceKey = (type: string, id: string) => `${type}:${id}`
 
 /**
  * The resource as a mark-read target, or null when it has nothing unread or
@@ -80,6 +86,7 @@ function toTarget(r: ResourceDTO): Target | null {
     // unread_count is at least 1 while has_unread (the server guarantees it);
     // the floor only guards an older cached response that predates it.
     return {
+      key: resourceKey(r.type, r.id),
       count: Math.max(count, 1),
       label: resourceLabel(r),
       mark: async () => {
@@ -92,6 +99,7 @@ function toTarget(r: ResourceDTO): Target | null {
   const through = r.unread_through_ts
   const { type, id } = r
   return {
+    key: resourceKey(type, id),
     count,
     label: resourceLabel(r),
     mark: async () => {
@@ -109,6 +117,7 @@ function toTarget(r: ResourceDTO): Target | null {
  */
 function taskTarget(t: TaskUnread): Target {
   return {
+    key: resourceKey("task", String(t.id)),
     count: t.count,
     label: `T${t.id}`,
     mark: async () => {
@@ -124,7 +133,8 @@ const taskUnreadKey = (scope: TaskScope) => ["tasks", "unread", scope] as const
 
 /**
  * Where the preview column's events come from, and how its rows look. A
- * `worktree` previews that worktree's own feed; without one, the global feed
+ * `task` previews that task's activity (its modal's Everything view); a
+ * `worktree` previews that worktree's own feed; with neither, the global feed
  * (never archived: the button marks only resources a worktree follows). The
  * rest is passed through to the TimelineFeed, as the page's own feed sets it.
  *
@@ -132,7 +142,7 @@ const taskUnreadKey = (scope: TaskScope) => ["tasks", "unread", scope] as const
  * details over the modal, leaving the modal open beneath, rather than
  * navigating away from the decision the modal is asking for.
  */
-export type MarkAllReadFeed = { worktree?: string } & Pick<
+export type MarkAllReadFeed = { worktree?: string; task?: number } & Pick<
   ComponentProps<typeof TimelineFeed>,
   "showWorktrees" | "resolveResource" | "path" | "showResource"
 >
@@ -146,7 +156,7 @@ type PreviewProps = { types: string[]; feed: MarkAllReadFeed; hiddenTasks?: Read
 /** One resource's unread events, from its worktree's feed. */
 function ResourcePreview(props: { worktree: string; resource: ResourceDTO; feed: MarkAllReadFeed }) {
   const { type, id } = props.resource
-  return <PreviewFeed types={[]} feed={props.feed} tl={useWorktreeTimeline(props.worktree, { type, id }, [], true)} />
+  return <PreviewFeed feed={props.feed} tl={useWorktreeTimeline(props.worktree, { type, id }, [], true)} />
 }
 
 /** The global feed's unread events of `types`. */
@@ -159,10 +169,38 @@ function WorktreePreview(props: PreviewProps & { worktree: string }) {
   return <PreviewFeed {...props} tl={useWorktreeTimeline(props.worktree, undefined, props.types, true)} />
 }
 
-function PreviewFeed({ tl, feed, hiddenTasks }: PreviewProps & {
+/**
+ * A task's unread activity from the checked sources. The task's feed has no
+ * unread-only or type filter, so it is narrowed here, to the rows the confirm
+ * would clear: unread events of a checked resource target, and of a checked
+ * task. Anything else (a read row, an event of a resource no worktree
+ * follows) is left out, so the preview never promises more than the mark.
+ *
+ * The narrowing is per page, so a page may hold no unread row while older
+ * ones do: Load more stays offered while the feed has more.
+ */
+function TaskPreview({ task, feed, shows }: {
+  task: number
+  feed: MarkAllReadFeed
+  shows: (e: TimelineEvent) => boolean
+}) {
+  const tl = useTaskActivity(task, { filter: "all" })
+  const events = tl.events.filter((e) => e.unread && shows(e))
+  if (!tl.isLoading && !tl.error && events.length === 0 && tl.hasMore) {
+    return (
+      <Stack gap="xs">
+        <Text c="dimmed" size="sm">No unread activity in the newest events.</Text>
+        <LoadMoreButton onLoadMore={tl.loadMore} loadingMore={tl.loadingMore} />
+      </Stack>
+    )
+  }
+  return <PreviewFeed feed={feed} tl={{ ...tl, events }} />
+}
+
+function PreviewFeed({ tl, feed, hiddenTasks }: Omit<PreviewProps, "types"> & {
   tl: ReturnType<typeof useGlobalTimeline>
 }) {
-  const { worktree: _, ...rest } = feed
+  const { worktree: _, task: __, ...rest } = feed
   const events = hiddenTasks?.size
     ? tl.events.filter((e) => !(e.resource_type === "task" && hiddenTasks.has(Number(e.resource_id))))
     : tl.events
@@ -203,6 +241,13 @@ function PreviewFeed({ tl, feed, hiddenTasks }: PreviewProps & {
  * (taskTarget). The multi-resource form lists them as rows beside the
  * resource types, each checked by default and remembered as an exclusion
  * like the types; the single form marks them along with the resource.
+ *
+ * In the task modal (`feed.task`), `resources` are the task's resource links
+ * and `taskScope` the task alone, so the rows are its linked resources by
+ * source and the task's own unread as one task row — the same set its
+ * combined_unread_count counts. A linked resource's cursor is shared by every
+ * worktree following it, which is why it is only ever moved from here, by a
+ * checkbox the user can see and uncheck.
  */
 export function MarkAllReadButton({ resources, feed, taskScope, single = false, onMarked }: {
   resources: ResourceDTO[]
@@ -213,6 +258,12 @@ export function MarkAllReadButton({ resources, feed, taskScope, single = false, 
   onMarked?: () => void
 }) {
   const [opened, setOpened] = useState(false)
+  // Opened from the task modal it stacks over it: Esc closes only the top
+  // modal (event details over this, then this), and it paints above.
+  const { topmost, zIndex, layer } = useModalLayer(opened)
+  // Whether the modal this button sits in (if any) is on top: R must not
+  // open the confirm behind event details stacked over the task modal.
+  const ownerTopmost = useLayerTopmost()
   const wide = useIsWide()
   const [unchecked, setUnchecked] = useState<ReadonlySet<Kind>>(new Set())
   const [uncheckedTasks, setUncheckedTasks] = useState<ReadonlySet<number>>(new Set())
@@ -238,6 +289,12 @@ export function MarkAllReadButton({ resources, feed, taskScope, single = false, 
   // The preview's types: "task" while any task is checked (the unchecked
   // ones are dropped from its rows, as hiddenTasks).
   const previewTypes: string[] = selectedTasks.length > 0 ? [...selectedTypes, "task"] : selectedTypes
+  // The task preview's rows: those of a checked resource or task.
+  const selectedKeys = new Set(selected.flatMap((g) => g.targets.map((t) => t.key)))
+  const selectedTaskIds = new Set(selectedTasks.map((t) => t.id))
+  const taskPreviewShows = (e: TimelineEvent) => e.resource_type === "task"
+    ? selectedTaskIds.has(Number(e.resource_id))
+    : selectedKeys.has(resourceKey(e.resource_type, e.resource_id))
   const anything = groups.length > 0 || tasks.length > 0
   const anySelected = selected.length > 0 || selectedTasks.length > 0
 
@@ -284,9 +341,11 @@ export function MarkAllReadButton({ resources, feed, taskScope, single = false, 
     onSettled: refreshUnreadSurfaces,
   })
 
-  // R opens the preview, and Enter in it confirms (see useButtonHotkey).
-  const openRef = useButtonHotkey("r", () => openModal(), anything && !opened)
-  const confirmRef = useButtonHotkey("Enter", () => markAll.mutate(), opened && anySelected && !markAll.isPending)
+  // R opens the preview, and Enter in it confirms (see useButtonHotkey) —
+  // each only while its own modal is the top one, so neither reaches behind
+  // a modal stacked over it.
+  const openRef = useButtonHotkey("r", () => openModal(), anything && !opened && ownerTopmost)
+  const confirmRef = useButtonHotkey("Enter", () => markAll.mutate(), opened && topmost && anySelected && !markAll.isPending)
 
   if (!anything && !opened) return null
 
@@ -328,87 +387,99 @@ export function MarkAllReadButton({ resources, feed, taskScope, single = false, 
           Mark all read
         </Button>
       )}
-      <Modal opened={opened} onClose={() => setOpened(false)} title="Mark all read" centered size={singleResource ? "lg" : "xl"}>
-        <Stack gap="sm">
-          {singleResource && feed.worktree ? (
-            <Box>
-              <Text size="sm" c="dimmed" mb="xs">
-                {/* Its tasks' events are in the preview too (a resource's
-                    feed carries the tasks linking it), and are no "messages". */}
-                {singleGroup && taskCount === 0
-                  ? `The following ${plural(singleGroup.count, singleGroup.kind.item[0], singleGroup.kind.item[1])} will be marked as read`
-                  : "The following activity will be marked as read"}
-              </Text>
-              <ScrollArea.Autosize mah={wide ? "55vh" : "35vh"} type="auto" offsetScrollbars>
-                <ResourcePreview worktree={feed.worktree} resource={singleResource} feed={feed} />
-              </ScrollArea.Autosize>
-            </Box>
-          ) : (
-            // Side by side when wide; on a phone the preview stacks below.
-            <Flex direction={wide ? "row" : "column"} gap="md">
-              <Stack gap="sm" style={wide ? { flex: "0 0 240px" } : undefined}>
-                {groups.map(({ kind, targets, count }) => (
-                  <Checkbox
-                    key={kind.type}
-                    checked={!unchecked.has(kind.type)}
-                    onChange={(e) => toggle(kind.type, e.currentTarget.checked)}
-                    label={`Mark ${plural(count, `${kind.source} ${kind.item[0]}`, `${kind.source} ${kind.item[1]}`)}`
-                      + ` in ${plural(targets.length, kind.container[0], kind.container[1])} as read`}
-                  />
-                ))}
-                {tasks.length > 0 && (
-                  <Stack gap={6}>
-                    <Text size="xs" c="dimmed" fw={600}>Tasks</Text>
-                    {tasks.map((t) => (
-                      <Checkbox
-                        key={t.id}
-                        checked={!uncheckedTasks.has(t.id)}
-                        onChange={(e) => toggleTask(t.id, e.currentTarget.checked)}
-                        label={
-                          <>
-                            <Text span fw={600} style={{ color: "var(--task-accent)" }}>{`T${t.id}`}</Text>
-                            {` ${t.title}`}
-                          </>
-                        }
-                        description={plural(t.count, "unread event", "unread events")}
-                        styles={{ label: { overflowWrap: "anywhere" } }}
-                      />
-                    ))}
-                  </Stack>
-                )}
-              </Stack>
-              <Box style={{ flex: 1, minWidth: 0 }}>
-                <Text size="sm" c="dimmed" mb="xs">The following activity will be marked as read</Text>
+      <Modal
+        opened={opened}
+        onClose={() => setOpened(false)}
+        closeOnEscape={topmost}
+        zIndex={zIndex}
+        title="Mark all read"
+        centered
+        size={singleResource ? "lg" : "xl"}
+      >
+        <ModalLayerProvider layer={layer}>
+          <Stack gap="sm">
+            {singleResource && feed.worktree ? (
+              <Box>
+                <Text size="sm" c="dimmed" mb="xs">
+                  {/* Its tasks' events are in the preview too (a resource's
+                      feed carries the tasks linking it), and are no "messages". */}
+                  {singleGroup && taskCount === 0
+                    ? `The following ${plural(singleGroup.count, singleGroup.kind.item[0], singleGroup.kind.item[1])} will be marked as read`
+                    : "The following activity will be marked as read"}
+                </Text>
                 <ScrollArea.Autosize mah={wide ? "55vh" : "35vh"} type="auto" offsetScrollbars>
-                  {/* Nothing checked lists nothing — and asks for nothing: an
-                      empty resource_types means every type to the server. */}
-                  {previewTypes.length === 0 ? null : feed.worktree
-                    ? <WorktreePreview worktree={feed.worktree} types={previewTypes} feed={feed} hiddenTasks={uncheckedTasks} />
-                    : <GlobalPreview types={previewTypes} feed={feed} hiddenTasks={uncheckedTasks} />}
+                  <ResourcePreview worktree={feed.worktree} resource={singleResource} feed={feed} />
                 </ScrollArea.Autosize>
               </Box>
-            </Flex>
-          )}
-          {markAll.isError && (
-            <Alert color="red">{String((markAll.error as Error)?.message || markAll.error)}</Alert>
-          )}
-          <Group justify="flex-end" gap="xs">
-            <Button variant="default" onClick={() => setOpened(false)}>Cancel</Button>
-            <Button
-              color="blue"
-              loading={markAll.isPending}
-              disabled={!anySelected}
-              onClick={() => markAll.mutate()}
-              ref={confirmRef}
-              // Focus lands here on open, not on the close button, which
-              // Enter would otherwise belong to.
-              data-autofocus
-              rightSection={<KeyHint decorative>↵</KeyHint>}
-            >
-              Mark read
-            </Button>
-          </Group>
-        </Stack>
+            ) : (
+              // Side by side when wide; on a phone the preview stacks below.
+              <Flex direction={wide ? "row" : "column"} gap="md">
+                <Stack gap="sm" style={wide ? { flex: "0 0 240px" } : undefined}>
+                  {groups.map(({ kind, targets, count }) => (
+                    <Checkbox
+                      key={kind.type}
+                      checked={!unchecked.has(kind.type)}
+                      onChange={(e) => toggle(kind.type, e.currentTarget.checked)}
+                      label={`Mark ${plural(count, `${kind.source} ${kind.item[0]}`, `${kind.source} ${kind.item[1]}`)}`
+                        + ` in ${plural(targets.length, kind.container[0], kind.container[1])} as read`}
+                    />
+                  ))}
+                  {tasks.length > 0 && (
+                    <Stack gap={6}>
+                      <Text size="xs" c="dimmed" fw={600}>Tasks</Text>
+                      {tasks.map((t) => (
+                        <Checkbox
+                          key={t.id}
+                          checked={!uncheckedTasks.has(t.id)}
+                          onChange={(e) => toggleTask(t.id, e.currentTarget.checked)}
+                          label={
+                            <>
+                              <Text span fw={600} style={{ color: "var(--task-accent)" }}>{`T${t.id}`}</Text>
+                              {` ${t.title}`}
+                            </>
+                          }
+                          description={plural(t.count, "unread event", "unread events")}
+                          styles={{ label: { overflowWrap: "anywhere" } }}
+                        />
+                      ))}
+                    </Stack>
+                  )}
+                </Stack>
+                <Box style={{ flex: 1, minWidth: 0 }}>
+                  <Text size="sm" c="dimmed" mb="xs">The following activity will be marked as read</Text>
+                  <ScrollArea.Autosize mah={wide ? "55vh" : "35vh"} type="auto" offsetScrollbars>
+                    {/* Nothing checked lists nothing — and asks for nothing: an
+                        empty resource_types means every type to the server. */}
+                    {previewTypes.length === 0 ? null : feed.task !== undefined
+                      ? <TaskPreview task={feed.task} feed={feed} shows={taskPreviewShows} />
+                      : feed.worktree
+                      ? <WorktreePreview worktree={feed.worktree} types={previewTypes} feed={feed} hiddenTasks={uncheckedTasks} />
+                      : <GlobalPreview types={previewTypes} feed={feed} hiddenTasks={uncheckedTasks} />}
+                  </ScrollArea.Autosize>
+                </Box>
+              </Flex>
+            )}
+            {markAll.isError && (
+              <Alert color="red">{String((markAll.error as Error)?.message || markAll.error)}</Alert>
+            )}
+            <Group justify="flex-end" gap="xs">
+              <Button variant="default" onClick={() => setOpened(false)}>Cancel</Button>
+              <Button
+                color="blue"
+                loading={markAll.isPending}
+                disabled={!anySelected}
+                onClick={() => markAll.mutate()}
+                ref={confirmRef}
+                // Focus lands here on open, not on the close button, which
+                // Enter would otherwise belong to.
+                data-autofocus
+                rightSection={<KeyHint decorative>↵</KeyHint>}
+              >
+                Mark read
+              </Button>
+            </Group>
+          </Stack>
+        </ModalLayerProvider>
       </Modal>
     </>
   )

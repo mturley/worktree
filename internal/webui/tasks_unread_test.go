@@ -6,10 +6,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"testing"
 
 	"github.com/mturley/worktree/internal/resources"
 	"github.com/mturley/worktree/internal/tasks"
+	"github.com/mturley/worktree/internal/unread"
 )
 
 // taskUnreadFixture: worktree wt focuses pr o/r#1 and relates pr o/r#2.
@@ -395,5 +397,187 @@ func TestCmuxMailboxForTaskOnlyUnread(t *testing.T) {
 	insertTaskEvent(t, f.s.DB, f.direct.ID, tts(3), "task_updated", "agent", "")
 	if has, ok := f.s.worktreeHasUnread(f.s.newUnreadIndex(), f.wt); !ok || !has {
 		t.Fatalf("after: has %v ok %v", has, ok)
+	}
+}
+
+// combinedFixture: worktree wt follows pr o/r#1, which has two unread watcher
+// events. Every task event the setup wrote is cleared.
+func combinedFixture(t *testing.T) (*Server, string) {
+	t.Helper()
+	s, wt := tasksServer(t)
+	must(t, resources.Add(s.DB, wt, resources.Resource{Type: "pr", ID: "o/r#1", URL: "https://github.com/o/r/pull/1"}))
+	insertUnreadEvent(t, s.DB, "e1", "2099-01-01T00:00:00Z", "github", "pr", "o/r#1")
+	insertUnreadEvent(t, s.DB, "e2", "2099-01-02T00:00:00Z", "github", "pr", "o/r#1")
+	return s, wt
+}
+
+func clearAllTaskEvents(t *testing.T, s *Server) {
+	t.Helper()
+	if _, err := s.DB.Exec(`DELETE FROM task_events`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func listedTask(t *testing.T, s *Server, id int64) taskDTO {
+	t.Helper()
+	for _, tk := range listTasks(t, s, "scope=all") {
+		if tk.ID == id {
+			return tk
+		}
+	}
+	t.Fatalf("task %d not listed", id)
+	return taskDTO{}
+}
+
+func TestCombinedUnreadCountsLinkedResources(t *testing.T) {
+	t.Parallel()
+	s, _ := combinedFixture(t)
+	tk := mustTask(t, s, tasks.NewTask{Title: "t", Focus: []tasks.LinkTarget{resLink("pr", "o/r#1")}})
+	clearAllTaskEvents(t, s)
+	insertTaskEvent(t, s.DB, tk.ID, tts(1), "task_updated", "agent", "")
+
+	if d := listedTask(t, s, tk.ID); d.UnreadCount != 1 || d.CombinedUnreadCount != 3 {
+		t.Fatalf("list: unread %d combined %d; want 1, 3", d.UnreadCount, d.CombinedUnreadCount)
+	}
+	d := decodeTask(t, serveTasks(t, s, http.MethodPost, "/api/tasks/update", map[string]any{"id": tk.ID, "title": "t!"}))
+	if d.UnreadCount != 1 || d.CombinedUnreadCount != 3 {
+		t.Fatalf("update: unread %d combined %d; want 1, 3", d.UnreadCount, d.CombinedUnreadCount)
+	}
+	if det := getDetail(t, s, tk.ID); det.UnreadCount != 1 || det.CombinedUnreadCount != 3 {
+		t.Fatalf("detail: unread %d combined %d; want 1, 3", det.UnreadCount, det.CombinedUnreadCount)
+	}
+}
+
+// A resource only a task's hold subscribes is not followed: its unread
+// events, cursor or not, add nothing. It is still listed for the modal.
+func TestCombinedUnreadSkipsUnfollowed(t *testing.T) {
+	t.Parallel()
+	s, _ := tasksServer(t)
+	tk := mustTask(t, s, tasks.NewTask{Title: "t", Focus: []tasks.LinkTarget{resLink("pr", "o/r#9")}})
+	clearAllTaskEvents(t, s)
+	must(t, unread.EnsureCursor(s.DB, "pr", "o/r#9"))
+	if _, err := s.DB.Exec(`INSERT INTO watcher_subscriptions (id, subscriber, resource_type, resource_id, created_at)
+		VALUES ('h1', ?, 'pr', 'o/r#9', '2026-01-01T00:00:00Z')`, tasks.HoldSubscriber(tk.ID)); err != nil {
+		t.Fatal(err)
+	}
+	insertUnreadEvent(t, s.DB, "e1", "2099-01-01T00:00:00Z", "github", "pr", "o/r#9")
+	insertTaskEvent(t, s.DB, tk.ID, tts(1), "task_updated", "agent", "")
+
+	if d := listedTask(t, s, tk.ID); d.UnreadCount != 1 || d.CombinedUnreadCount != 1 {
+		t.Fatalf("list: unread %d combined %d; want 1, 1", d.UnreadCount, d.CombinedUnreadCount)
+	}
+	det := getDetail(t, s, tk.ID)
+	if det.CombinedUnreadCount != 1 {
+		t.Fatalf("detail combined %d, want 1", det.CombinedUnreadCount)
+	}
+	if len(det.LinkedResources) != 1 || det.LinkedResources[0].ID != "o/r#9" ||
+		det.LinkedResources[0].UnreadCount != 0 || det.LinkedResources[0].UnreadThroughTS != "" {
+		t.Fatalf("linked_resources = %+v", det.LinkedResources)
+	}
+}
+
+// Two tasks link the same PR; only A has unread events of its own. B counts
+// the PR's own unread, not A's events (which the PR's card would include).
+func TestCombinedUnreadNoDoubleCountAcrossTasks(t *testing.T) {
+	t.Parallel()
+	s, _ := combinedFixture(t)
+	a := mustTask(t, s, tasks.NewTask{Title: "a", Focus: []tasks.LinkTarget{resLink("pr", "o/r#1")}})
+	b := mustTask(t, s, tasks.NewTask{Title: "b", Focus: []tasks.LinkTarget{resLink("pr", "o/r#1")}})
+	clearAllTaskEvents(t, s)
+	insertTaskEvent(t, s.DB, a.ID, tts(1), "task_updated", "agent", "")
+
+	if d := listedTask(t, s, a.ID); d.CombinedUnreadCount != 3 {
+		t.Fatalf("A combined %d, want 3", d.CombinedUnreadCount)
+	}
+	if d := listedTask(t, s, b.ID); d.UnreadCount != 0 || d.CombinedUnreadCount != 2 {
+		t.Fatalf("B: unread %d combined %d; want 0, 2", d.UnreadCount, d.CombinedUnreadCount)
+	}
+	if det := getDetail(t, s, b.ID); det.CombinedUnreadCount != 2 {
+		t.Fatalf("B detail combined %d, want 2", det.CombinedUnreadCount)
+	}
+}
+
+func TestTaskUnreadScopeTask(t *testing.T) {
+	t.Parallel()
+	f := taskUnreadFixture(t)
+	get := func(id int64) []taskUnreadDTO {
+		t.Helper()
+		rec := serveAll(t, f.s, http.MethodGet, "/api/task-unread?scope=task&id="+strconv.FormatInt(id, 10), nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET task %d = %d: %s", id, rec.Code, rec.Body.String())
+		}
+		var out []taskUnreadDTO
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		if out == nil {
+			t.Fatalf("task %d: null, want []", id)
+		}
+		return out
+	}
+	if got := get(f.both.ID); len(got) != 0 {
+		t.Fatalf("before events = %+v", got)
+	}
+	f.seed(t)
+	if got := get(f.both.ID); len(got) != 1 || got[0].ID != f.both.ID || got[0].Count != 2 || got[0].NewestTS != tts(5) {
+		t.Fatalf("both = %+v", got)
+	}
+	if got := get(f.direct.ID); len(got) != 1 || got[0].ID != f.direct.ID {
+		t.Fatalf("direct = %+v", got)
+	}
+	for _, q := range []string{"scope=task", "scope=task&id=x", "scope=task&id=0"} {
+		if rec := serveAll(t, f.s, http.MethodGet, "/api/task-unread?"+q, nil); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s = %d, want 400", q, rec.Code)
+		}
+	}
+}
+
+func TestTaskDetailLinkedResources(t *testing.T) {
+	t.Parallel()
+	s, wt := combinedFixture(t)
+	tk := mustTask(t, s, tasks.NewTask{Title: "t", Focus: []tasks.LinkTarget{
+		resLink("pr", "o/r#1"), {Kind: tasks.LinkWorktree, Worktree: wt},
+	}})
+	clearAllTaskEvents(t, s)
+	det := getDetail(t, s, tk.ID)
+	if len(det.LinkedResources) != 1 {
+		t.Fatalf("linked_resources = %+v", det.LinkedResources)
+	}
+	r := det.LinkedResources[0]
+	if r.Type != "pr" || r.ID != "o/r#1" || r.UnreadCount != 2 || r.UnreadThroughTS != "2099-01-02T00:00:00Z" ||
+		r.URL != "https://github.com/o/r/pull/1" {
+		t.Fatalf("linked resource = %+v", r)
+	}
+
+	// A task with no resource links sends [], never null.
+	bare := mustTask(t, s, tasks.NewTask{Title: "bare"})
+	rec := serveTasks(t, s, http.MethodGet, "/api/tasks/detail?id="+strconv.FormatInt(bare.ID, 10), nil)
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatal(err)
+	}
+	if string(raw["linked_resources"]) != "[]" {
+		t.Fatalf("bare linked_resources = %s, want []", raw["linked_resources"])
+	}
+}
+
+// A linked resource whose only worktree subscription is a tombstone is no
+// longer followed: its unread events add nothing to the combined count.
+func TestCombinedUnreadSkipsTombstonedFollow(t *testing.T) {
+	t.Parallel()
+	s, _ := combinedFixture(t)
+	tk := mustTask(t, s, tasks.NewTask{Title: "t", Focus: []tasks.LinkTarget{resLink("pr", "o/r#1")}})
+	clearAllTaskEvents(t, s)
+	insertTaskEvent(t, s.DB, tk.ID, tts(1), "task_updated", "agent", "")
+	if _, err := s.DB.Exec(`UPDATE watcher_subscriptions SET deleted_at = '2026-01-02T00:00:00Z'
+		WHERE subscriber LIKE 'worktree:%' AND resource_type = 'pr' AND resource_id = 'o/r#1'`); err != nil {
+		t.Fatal(err)
+	}
+
+	if d := listedTask(t, s, tk.ID); d.UnreadCount != 1 || d.CombinedUnreadCount != 1 {
+		t.Fatalf("list: unread %d combined %d; want 1, 1", d.UnreadCount, d.CombinedUnreadCount)
+	}
+	if det := getDetail(t, s, tk.ID); det.CombinedUnreadCount != 1 {
+		t.Fatalf("detail combined %d, want 1", det.CombinedUnreadCount)
 	}
 }

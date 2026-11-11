@@ -20,14 +20,16 @@ import (
 )
 
 type TimelineEvent struct {
-	ID            string   `json:"id"`
-	TS            string   `json:"ts"`
-	ExternalTS    string   `json:"external_ts"`
-	Source        string   `json:"source"`
-	Type          string   `json:"type"`
-	TypeLabel     string   `json:"type_label"`
-	Title         string   `json:"title"`
-	Body          string   `json:"body"`
+	ID         string `json:"id"`
+	TS         string `json:"ts"`
+	ExternalTS string `json:"external_ts"`
+	Source     string `json:"source"`
+	Type       string `json:"type"`
+	TypeLabel  string `json:"type_label"`
+	Title      string `json:"title"`
+	Body       string `json:"body"`
+	// EditedAt is when a work log entry was last edited; empty otherwise.
+	EditedAt      string   `json:"edited_at,omitempty"`
 	Author        string   `json:"author"`
 	AuthorType    string   `json:"author_type,omitempty"`
 	ResourceType  string   `json:"resource_type"`
@@ -162,10 +164,26 @@ func (f eventTypeFilter) empty() bool { return len(f.exact) == 0 && len(f.prefix
 // watcher event has this type, so it matches nothing on the watcher side.
 const taskEventCategory = "task"
 
-// includesTasks reports whether task events pass the filter: always when it
-// is empty, else only when the task category is selected.
+// includesTasks reports whether task events pass the filter: when it is
+// empty, names the task category, or names a specific task event type.
 func (f eventTypeFilter) includesTasks() bool {
-	return f.empty() || slices.Contains(f.exact, taskEventCategory)
+	return f.empty() || slices.Contains(f.exact, taskEventCategory) || len(f.taskTypes()) > 0
+}
+
+// taskTypes is the task event types the filter names exactly (task_* and
+// subtask_*), for narrowing the task side of a page. nil means every task
+// event: the filter is empty or names the whole task category.
+func (f eventTypeFilter) taskTypes() []string {
+	if f.empty() || slices.Contains(f.exact, taskEventCategory) {
+		return nil
+	}
+	var out []string
+	for _, v := range f.exact {
+		if strings.HasPrefix(v, "task_") || strings.HasPrefix(v, "subtask_") {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // matches is the Go twin of sql, for the worktree timeline's in-memory scan.
@@ -403,6 +421,7 @@ JOIN watcher_event_resources er ON er.event_id = e.id `
 	}
 	tq := taskFeedQuery{
 		include:    taskEventsSelected(types, q.eventTypes),
+		types:      q.eventTypes.taskTypes(),
 		since:      q.Since,
 		before:     q.Before,
 		limit:      limit,
@@ -437,10 +456,11 @@ func taskEventsSelected(types []string, eventTypes eventTypeFilter) bool {
 // taskFeedQuery is the task side of a timeline page, mirroring the filters
 // the watcher side was read with.
 type taskFeedQuery struct {
-	include    bool    // false = the filters exclude task events
-	taskIDs    []int64 // nil = every non-deleted task (see tasks.FeedQuery)
-	since      string  // inclusive ts floor; "" = none
-	before     string  // exclusive ts cursor, as the watcher side's
+	include    bool     // false = the filters exclude task events
+	taskIDs    []int64  // nil = every non-deleted task (see tasks.FeedQuery)
+	types      []string // task event types to keep; nil = all
+	since      string   // inclusive ts floor; "" = none
+	before     string   // exclusive ts cursor, as the watcher side's
 	limit      int
 	unreadOnly bool
 	terms      []string
@@ -468,31 +488,13 @@ func (s *Server) mergeTaskEvents(rows []TimelineEvent, q taskFeedQuery) ([]Timel
 	if !q.include {
 		return rows, nil
 	}
-	fq := tasks.FeedQuery{TaskIDs: q.taskIDs, Before: q.before, Limit: q.limit, UnreadActorsOnly: q.unreadOnly}
+	fq := tasks.FeedQuery{TaskIDs: q.taskIDs, Types: q.types, Before: q.before, Limit: q.limit, UnreadActorsOnly: q.unreadOnly}
 	if q.unreadOnly || len(q.terms) > 0 {
 		fq.Limit = 0
 	}
-	evs, err := tasks.FeedEvents(s.DB, fq)
+	evs, err := s.feedEventsWithTies(fq)
 	if err != nil {
 		return nil, err
-	}
-	// A LIMIT can cut through a same-second cluster; read the rest of it, so
-	// the page can overfill with every row at its boundary ts. FeedEvents
-	// orders ties by id DESC, so the rows the cut left out are those with a
-	// smaller id than the last one read.
-	if fq.Limit > 0 && len(evs) == fq.Limit {
-		last := evs[len(evs)-1]
-		tq := fq
-		tq.Before, tq.Limit, tq.AtTS = "", 0, last.TS
-		ties, err := tasks.FeedEvents(s.DB, tq)
-		if err != nil {
-			return nil, err
-		}
-		for _, fe := range ties {
-			if fe.ID < last.ID {
-				evs = append(evs, fe)
-			}
-		}
 	}
 	if len(evs) == 0 {
 		return rows, nil
@@ -562,6 +564,33 @@ func (s *Server) mergeTaskEvents(rows []TimelineEvent, q taskFeedQuery) ([]Timel
 		}
 	}
 	return out, nil
+}
+
+// feedEventsWithTies is tasks.FeedEvents, plus, when fq.Limit cut the
+// read, every remaining event at the last one's ts, so a page can overfill
+// with its whole boundary cluster (see mergeTaskEvents). FeedEvents orders
+// ties by id DESC, so the rows the cut left out are those with a smaller id
+// than the last one read.
+func (s *Server) feedEventsWithTies(fq tasks.FeedQuery) ([]tasks.FeedEvent, error) {
+	evs, err := tasks.FeedEvents(s.DB, fq)
+	if err != nil {
+		return nil, err
+	}
+	if fq.Limit > 0 && len(evs) == fq.Limit {
+		last := evs[len(evs)-1]
+		tq := fq
+		tq.Before, tq.Limit, tq.AtTS = "", 0, last.TS
+		ties, err := tasks.FeedEvents(s.DB, tq)
+		if err != nil {
+			return nil, err
+		}
+		for _, fe := range ties {
+			if fe.ID < last.ID {
+				evs = append(evs, fe)
+			}
+		}
+	}
+	return evs, nil
 }
 
 // eventIDsForResource returns the set of event ids linked to one resource.
@@ -719,6 +748,7 @@ func (s *Server) worktreeTimeline(q TimelineQuery) ([]TimelineEvent, error) {
 	}
 	tq := taskFeedQuery{
 		include:    taskEventsSelected(types, eventTypes),
+		types:      eventTypes.taskTypes(),
 		since:      since,
 		before:     before,
 		limit:      limit,

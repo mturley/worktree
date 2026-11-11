@@ -1,6 +1,7 @@
 import { useCallback } from "react"
-import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query"
+import { type QueryClient, useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query"
 import { api, HttpError } from "../api/client"
+import { flatten, pageCursor, type TimelineResult } from "./useTimeline"
 import type {
   Priority,
   TaskActivityFilter,
@@ -41,15 +42,22 @@ export function useTaskDetail(id: number | undefined) {
  */
 export const TASK_ACTIVITY_STALE_MS = 5000
 
-/** The task's merged activity feed, newest first. */
-export function useTaskActivity(id: number | undefined, q: ActivityQuery) {
-  return useQuery({
-    queryKey: taskActivityKey(id ?? 0, q),
-    queryFn: () =>
-      api.taskActivity(id as number, q.filter, q.filter === "resource" ? { type: q.type, rid: q.rid } : undefined),
-    enabled: id !== undefined,
-    staleTime: TASK_ACTIVITY_STALE_MS,
-  })
+/** Rows per activity page: the server's default (and largest) page. */
+export const TASK_ACTIVITY_PAGE_SIZE = 200
+
+/** The task's merged activity feed, newest first, paged as the timelines are. */
+export function useTaskActivity(id: number | undefined, q: ActivityQuery): TimelineResult {
+  return flatten(
+    useInfiniteQuery({
+      queryKey: taskActivityKey(id ?? 0, q),
+      queryFn: ({ pageParam }) =>
+        api.taskActivity(id as number, q.filter, q.filter === "resource" ? { type: q.type, rid: q.rid } : undefined, pageParam),
+      initialPageParam: undefined as string | undefined,
+      getNextPageParam: pageCursor(TASK_ACTIVITY_PAGE_SIZE),
+      enabled: id !== undefined,
+      staleTime: TASK_ACTIVITY_STALE_MS,
+    }),
+  )
 }
 
 type Patch = { title?: string; description?: string; priority?: Priority; starred?: boolean; due?: string }
@@ -99,6 +107,16 @@ export function useTaskDetailMutations(id: number) {
     }
   }
 
+  /** A work log write also changes the task's activity feed and the timelines that carry its events. */
+  const runLog = async (call: () => Promise<TaskDetail>) => {
+    try {
+      return await run(call)
+    } finally {
+      void qc.invalidateQueries({ queryKey: ["tasks", "activity"] })
+      void qc.invalidateQueries({ queryKey: ["timeline"] })
+    }
+  }
+
   const plain = async <T,>(call: () => Promise<T>) => {
     try {
       return await call()
@@ -124,6 +142,9 @@ export function useTaskDetailMutations(id: number) {
     checkSubtask: (subtaskId: number, checked: boolean) => run(() => api.checkSubtask(subtaskId, checked)),
     removeSubtask: (subtaskId: number) => run(() => api.removeSubtask(subtaskId)),
     orderSubtasks: (ids: number[]) => run(() => api.orderSubtasks(id, ids)),
+    logWork: (text: string) => runLog(() => api.logWork(id, text)),
+    editWorkLog: (eventId: number, text: string) => runLog(() => api.editWorkLog(eventId, text)),
+    deleteWorkLog: (eventId: number) => runLog(() => api.deleteWorkLog(eventId)),
     linkEvent: (key: string, snapshot?: TaskEventSnapshot) => run(() => api.linkTaskEvent(id, key, snapshot)),
     unlinkEvent: (key: string) => run(() => api.unlinkTaskEvent(id, key)),
     addBlocker: (target: TaskBlockerTarget) => run(() => api.addTaskBlocker(id, target)),

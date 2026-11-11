@@ -472,7 +472,7 @@ export function WorktreeDetailPage() {
         resolveResource={resolveResource}
         path={path}
         onMakeTask={makeTaskFromEvent}
-        onOpenTask={(id) => openTask(id)}
+        onOpenTask={(id, e) => openTask(id, { event: e })}
       />
     </Stack>
   )

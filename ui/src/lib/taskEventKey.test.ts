@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { TimelineEvent } from "../api/types"
 import type { Message, User } from "../api/slackApi"
-import { eventTaskKey, slackMessageSnapshot } from "./taskEventKey"
+import { eventTaskKey, slackMessageSnapshot, taskEventNumericId } from "./taskEventKey"
 
 const UUID = "3f1c2a9e-8b7d-4e6f-9a01-2b3c4d5e6f70"
 
@@ -43,5 +43,14 @@ describe("slackMessageSnapshot", () => {
 
   it("names a message with no text by its author", () => {
     expect(slackMessageSnapshot(msg(""), users, thread).title).toBe("Message from Ann")
+  })
+})
+
+describe("taskEventNumericId", () => {
+  it("parses a task event id and rejects any other", () => {
+    expect(taskEventNumericId(ev({ id: "task:42" }))).toBe(42)
+    expect(taskEventNumericId(ev({ id: UUID }))).toBeNull()
+    expect(taskEventNumericId(ev({ id: "task:x" }))).toBeNull()
+    expect(taskEventNumericId(ev({ id: "ev:task:4" }))).toBeNull()
   })
 })

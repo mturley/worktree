@@ -17,14 +17,16 @@ const (
 	ScopeAll      ScopeKind = "all"
 	ScopeWorktree ScopeKind = "worktree"
 	ScopeResource ScopeKind = "resource"
+	ScopeTask     ScopeKind = "task"
 )
 
 // Scope narrows a List. The zero Scope is ScopeAll. Worktree may be any
-// path; it is canonicalised.
+// path; it is canonicalised. ScopeTask is the one task TaskID.
 type Scope struct {
 	Kind                     ScopeKind
 	Worktree                 string
 	ResourceType, ResourceID string
+	TaskID                   int64
 }
 
 // Filter selects tasks for List. The zero Filter is every open task.
@@ -67,8 +69,15 @@ func list(conn *sql.DB, f Filter, onlyID *int64) ([]Task, error) {
 		if sc.ResourceType == "" || sc.ResourceID == "" {
 			return nil, fmt.Errorf("%w: a resource scope needs a type and an id", ErrInvalid)
 		}
+	case ScopeTask:
+		if sc.TaskID <= 0 {
+			return nil, fmt.Errorf("%w: a task scope needs a task id", ErrInvalid)
+		}
+		if onlyID == nil {
+			onlyID = &sc.TaskID // load just the one task
+		}
 	default:
-		return nil, fmt.Errorf("%w: scope kind %q is not all, worktree or resource", ErrInvalid, sc.Kind)
+		return nil, fmt.Errorf("%w: scope kind %q is not all, worktree, resource or task", ErrInvalid, sc.Kind)
 	}
 	var prio map[Priority]bool
 	if len(f.Priorities) > 0 {
@@ -230,6 +239,8 @@ func inScope(t Task, sc Scope, tombstoned map[resKey]map[string]bool, registered
 			}
 		}
 		return false
+	case ScopeTask:
+		return t.ID == sc.TaskID
 	default:
 		return true
 	}

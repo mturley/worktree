@@ -1,71 +1,27 @@
-import { readChangeDidSomething } from "../../../lib/unread"
 import { useRef, useState } from "react"
 import { escCloseButtonProps } from "../../escCloseButton"
+import { MarkAllReadButton } from "../../MarkAllReadButton"
 import { OpenInFullUiButton } from "../../OpenInFullUiButton"
 import { taskFullUiHref } from "../../../lib/fullUiLink"
-import { ActionIcon, Button, CloseButton, Group, Modal, Text, TextInput, UnstyledButton } from "@mantine/core"
-import { notifications } from "@mantine/notifications"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { api } from "../../../api/client"
+import { ActionIcon, Box, CloseButton, Group, Modal, Text, TextInput, UnstyledButton } from "@mantine/core"
 import type { TaskDetail, TaskState } from "../../../api/types"
-import { showUndoToast, UNDO_WINDOW_MS } from "../../UndoToast"
 import { TaskStateCheckbox } from "../TaskStateCheckbox"
 import type { TaskPatch } from "./useOptimisticTask"
 
 /**
- * Marks one task's activity read, offering an undo, as Mark all read does
- * for a feed.
+ * State checkbox · star · title (editable in place) · Mark all read (while
+ * the task or its linked resources have unread it can mark) · id · close.
  *
- * It marks through the task's unread_through_ts: the newest of the unread
- * events its unread_count counted, from the same server snapshot. So it
- * clears exactly what the header promised, and an agent event that arrived
- * after render stays unread (the through_ts contract; see "Unread" in
- * docs/web-ui-architecture.md). A task without one, or a mark that moved
- * nothing (read further elsewhere since), says "Already read" rather than
- * offering an undo of nothing. Opening the modal marks nothing.
+ * Mark all read covers what the combined_unread_count counts: the task's own
+ * unread events and its resource links' own unread, each a checkbox in its
+ * confirm modal, which stacks over this one. Opening the task marks nothing.
  */
-function useMarkTaskRead(task: TaskDetail) {
-  const qc = useQueryClient()
-  const refresh = () => {
-    void qc.invalidateQueries({ queryKey: ["tasks"] })
-    void qc.invalidateQueries({ queryKey: ["worktrees"] })
-    void qc.invalidateQueries({ queryKey: ["resources"] })
-    void qc.invalidateQueries({ queryKey: ["timeline"] })
-  }
-  const alreadyRead = () => notifications.show({ message: "Already read", autoClose: 3000 })
-  return useMutation({
-    mutationFn: async () => {
-      const { id, unread_through_ts: through } = task
-      const count = task.unread_count ?? 0
-      if (!through) return alreadyRead()
-      const change = await api.taskRead({ id, through_ts: through })
-      if (!readChangeDidSomething(change)) return alreadyRead()
-      showUndoToast({
-        message: `Marked ${count} task ${count === 1 ? "event" : "events"} read`,
-        undo: () => api.taskReadRestore({ id, ...change }),
-        onSettled: refresh,
-      })
-    },
-    onError: (err) =>
-      notifications.show({
-        color: "red",
-        autoClose: UNDO_WINDOW_MS,
-        message: `Couldn't mark read: ${err instanceof Error ? err.message : String(err)}`,
-      }),
-    onSettled: refresh,
-  })
-}
-
-/** State checkbox · star · title (editable in place) · Mark read (while unread) · close. */
 export function TaskModalHeader({ task, onUpdate, onState, onClose }: {
   task: TaskDetail
   onUpdate: (patch: TaskPatch) => void
   onState: (s: TaskState) => void
   onClose: () => void
 }) {
-  // Here, not in a child that renders only while unread: the mark's own
-  // refetch removes the button, and the mutation must outlive it.
-  const markRead = useMarkTaskRead(task)
   return (
     <Group gap="xs" wrap="nowrap" align="center">
       <TaskStateCheckbox state={task.state} priority={task.priority} title={task.title} onPick={onState} />
@@ -80,18 +36,16 @@ export function TaskModalHeader({ task, onUpdate, onState, onClose }: {
         {task.starred ? "★" : "☆"}
       </ActionIcon>
       <EditableTitle title={task.title} onSave={(title) => onUpdate({ title })} />
-      {(task.unread_count ?? 0) > 0 && (
-        <Button
-          size="compact-xs"
-          variant="filled"
-          color="blue"
-          loading={markRead.isPending}
-          onClick={() => markRead.mutate()}
-          style={{ flex: "none" }}
-        >
-          Mark read
-        </Button>
-      )}
+      {/* Always mounted: it renders nothing while nothing is markable, and
+          a refetch dropping the count must not unmount an open confirm.
+          display: contents, so it takes no gap in the row while empty. */}
+      <Box style={{ display: "contents" }}>
+        <MarkAllReadButton
+          resources={task.linked_resources}
+          feed={{ task: task.id, showResource: true }}
+          taskScope={{ kind: "task", id: task.id }}
+        />
+      </Box>
       {/* The task's id, as links and blockers name it. */}
       <Text size="xs" c="dimmed" style={{ flex: "none" }}>{task.ref}</Text>
       <OpenInFullUiButton href={taskFullUiHref(task)} />

@@ -180,10 +180,11 @@ describe('ThreadView refreshes unread surfaces after a read-state change', () =>
 
   // The server re-polls the thread before answering, so by the time the
   // write resolves the cached has_unread/last_read are fresh — the resource
-  // cards, timeline dots and worktree badge only need to refetch.
-  const surfaces = [['worktrees'], ['resources'], ['timeline']]
+  // cards, timeline dots and worktree badge only need to refetch. So do the
+  // task lists: a linking task's combined unread count includes the thread.
+  const surfaces = [['tasks'], ['worktrees'], ['resources'], ['timeline']]
 
-  it('invalidates worktrees, resources and timelines once mark-read lands', async () => {
+  it('invalidates tasks, worktrees, resources and timelines once mark-read lands', async () => {
     mockMarkRead.mockResolvedValue(undefined)
     const qc = new QueryClient()
     const spy = vi.spyOn(qc, 'invalidateQueries')

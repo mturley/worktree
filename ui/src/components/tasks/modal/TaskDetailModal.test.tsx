@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { Notifications, notifications } from "@mantine/notifications"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { api, HttpError } from "../../../api/client"
-import type { TaskDetail } from "../../../api/types"
+import type { ResourceDTO, TaskDetail, TimelineEvent } from "../../../api/types"
 import { taskDetailKey } from "../../../hooks/useTaskDetail"
 import { TaskDetailModal } from "./TaskDetailModal"
 import { TaskModalProvider, useTaskModal } from "./TaskModalProvider"
@@ -25,6 +25,8 @@ vi.mock("../../../api/client", async (orig) => ({
     setTaskState: vi.fn(),
     deleteTask: vi.fn(),
     undoTask: vi.fn(),
+    taskUnread: vi.fn(),
+    markResourceRead: vi.fn(),
   },
 }))
 
@@ -32,7 +34,14 @@ const detail = (id: number, extra: Partial<TaskDetail> = {}): TaskDetail => ({
   id, ref: `T${id}`, title: `task ${id}`, description: "", state: "not_started", priority: "none", starred: false,
   rank: "r", created_at: "2026-10-20T00:00:00Z", updated_at: "2026-10-21T00:00:00Z", archived: false,
   links: [], implicit_worktrees: [], subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, open_blockers: [],
-  detail_links: [], implicit: [], subtasks: [], event_links: [], blockers: [], blocks: [], ...extra,
+  detail_links: [], implicit: [], subtasks: [], event_links: [], blockers: [], blocks: [], linked_resources: [], ...extra,
+})
+
+/** A work log of task `id`, as a feed row hands it to open(). */
+const workLog = (id: number): TimelineEvent => ({
+  id: "task:42", ts: "2026-10-20T00:00:00Z", external_ts: "", source: "tasks", type: "task_work_logged",
+  type_label: "work logged", title: "Worked on the thing", body: "a note", author: "me", resource_type: "task",
+  resource_id: String(id), resource_url: "", resource_title: `task ${id}`, worktrees: [],
 })
 
 function Opener() {
@@ -41,6 +50,8 @@ function Opener() {
     <>
       <span data-testid="open-id">{openId ?? "none"}</span>
       <button onClick={() => open(9)}>open nine</button>
+      <button onClick={() => open(7, { event: workLog(7) })}>open seven with event</button>
+      <button onClick={() => open(99, { event: workLog(99) })}>open ninety-nine with event</button>
     </>
   )
 }
@@ -70,6 +81,7 @@ beforeEach(() => {
   vi.mocked(api.setTaskState).mockResolvedValue(detail(5))
   vi.mocked(api.deleteTask).mockResolvedValue({ undo_event_id: 61 })
   vi.mocked(api.undoTask).mockResolvedValue(undefined)
+  vi.mocked(api.taskUnread).mockResolvedValue([])
 })
 afterEach(() => {
   cleanup()
@@ -109,6 +121,20 @@ describe("TaskDetailModal", () => {
     expect(screen.getByRole("tab", { name: "Activity" })).toBeInTheDocument()
     expect(screen.getByRole("textbox", { name: "Priority" })).toBeInTheDocument()
     expect(screen.getByText("Created")).toBeInTheDocument()
+  })
+
+  it("badges the Activity tab with the combined unread count", async () => {
+    vi.mocked(api.taskDetail).mockResolvedValue(detail(9, { combined_unread_count: 3 }))
+    wrap()
+    await titleButton()
+    expect(within(screen.getByRole("tab", { name: /Activity/ })).getByText("3 unreads")).toBeInTheDocument()
+  })
+
+  it("puts no badge on Activity at 0 or when the count is absent", async () => {
+    vi.mocked(api.taskDetail).mockResolvedValue(detail(9, { combined_unread_count: 0 }))
+    wrap()
+    await titleButton()
+    expect(within(screen.getByRole("tab", { name: "Activity" })).queryByText(/unread/)).toBeNull()
   })
 
   it("saves the title on Enter and shows it at once", async () => {
@@ -466,6 +492,164 @@ describe("TaskDetailModal", () => {
       })
       expect(await screen.findByRole("textbox", { name: "Description" })).toHaveValue("draft")
       expect(screen.getByText("Unsaved draft restored")).toBeInTheDocument()
+    })
+  })
+
+  describe("opened with an event", () => {
+    beforeEach(() => {
+      window.history.replaceState({}, "", "/")
+      vi.mocked(api.taskActivity).mockResolvedValue({ events: [], next_cursor: "" })
+    })
+    const dialogs = () => screen.queryAllByRole("dialog")
+    const detailsDialog = () => dialogs().find((d) => within(d).queryByText("Worked on the thing"))
+    const openSeven = async (user: ReturnType<typeof userEvent.setup>) => {
+      await user.click(screen.getByRole("button", { name: "open seven with event" }))
+      await waitFor(() => expect(detailsDialog()).toBeDefined())
+      return detailsDialog()!
+    }
+
+    it("shows the Activity tab with the event's details stacked on top, kept out of the URL", async () => {
+      const user = userEvent.setup()
+      wrap()
+      const details = await openSeven(user)
+      expect(param()).toBe("7")
+      expect(window.location.search).toBe("?task=7")
+      expect(await titleButton()).toHaveTextContent("task 7")
+      expect(screen.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true")
+      expect(within(details).queryByRole("button", { name: "Make task" })).toBeNull()
+      // Closing the details leaves the task modal open on Activity.
+      await user.click(details.querySelector<HTMLElement>(".mantine-Modal-close")!)
+      await waitFor(() => expect(detailsDialog()).toBeUndefined())
+      expect(screen.getByTestId("open-id")).toHaveTextContent("7")
+      expect(screen.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true")
+      // Closing again closes the task modal.
+      await user.click(screen.getByRole("button", { name: "Close task" }))
+      await waitFor(() => expect(param()).toBeNull())
+    })
+
+    it("renders the details above the task modal", async () => {
+      const user = userEvent.setup()
+      wrap()
+      await openSeven(user)
+      await titleButton()
+      const z = (el: Element) => Number(getComputedStyle(el.closest("[style*='--mb-z-index']")!).getPropertyValue("--mb-z-index"))
+      const task = screen.getByRole("button", { name: /^Edit title/ })
+      expect(z(detailsDialog()!)).toBeGreaterThan(z(task))
+    })
+
+    it("Esc closes only the details; a second Esc closes the task modal", async () => {
+      const user = userEvent.setup()
+      wrap()
+      const details = await openSeven(user)
+      await titleButton()
+      // Real focus inside the top modal: its focus trap puts it there.
+      await waitFor(() => expect(details.contains(document.activeElement)).toBe(true))
+      fireEvent.keyDown(document.activeElement!, { key: "Escape" })
+      await waitFor(() => expect(detailsDialog()).toBeUndefined())
+      // openId drops at once on close, ahead of history.back()'s popstate.
+      expect(screen.getByTestId("open-id")).toHaveTextContent("7")
+      expect(param()).toBe("7")
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" })
+      expect(screen.getByTestId("open-id")).toHaveTextContent("none")
+      await waitFor(() => expect(param()).toBeNull())
+    })
+
+    it("a task that is gone shows the event's details on their own, without Edit", async () => {
+      vi.mocked(api.taskDetail).mockRejectedValue(new HttpError("task not found", 404))
+      const user = userEvent.setup()
+      wrap()
+      await user.click(screen.getByRole("button", { name: "open ninety-nine with event" }))
+      await waitFor(() => expect(detailsDialog()).toBeDefined())
+      expect(screen.queryByText("Task not found")).toBeNull()
+      expect(within(detailsDialog()!).queryByRole("button", { name: "Edit" })).toBeNull()
+      await user.click(detailsDialog()!.querySelector<HTMLElement>(".mantine-Modal-close")!)
+      await waitFor(() => expect(param()).toBeNull())
+    })
+  })
+
+  describe("Mark all read", () => {
+    const prEvent = {
+      id: "ev:1", ts: "2099-03-01T00:00:00Z", external_ts: "", source: "github", type: "pr_comment",
+      type_label: "comment", title: "an unread PR comment", body: "", author: "", resource_type: "pr",
+      resource_id: "o/r#1", resource_url: "", resource_title: "", worktrees: [], unread: true,
+    } as unknown as TimelineEvent
+    const dialogs = () => screen.queryAllByRole("dialog")
+    const confirmDialog = () => dialogs().find((d) => d.getAttribute("aria-labelledby") &&
+      within(d).queryByRole("button", { name: "Mark read" }))
+    const esc = () => fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" })
+
+    beforeEach(() => {
+      vi.mocked(api.taskDetail).mockImplementation(async (id: number) => detail(id, {
+        combined_unread_count: 1,
+        linked_resources: [{ type: "pr", id: "o/r#1", url: "u", primary: true, unread_count: 1,
+          unread_through_ts: "2099-03-01T00:00:00Z" } as ResourceDTO],
+      }))
+      vi.mocked(api.taskActivity).mockResolvedValue({ events: [prEvent], next_cursor: "" })
+    })
+
+    it("opens over the task modal, and Esc closes one layer at a time: details, the confirm, the task", async () => {
+      const user = userEvent.setup()
+      wrap()
+      await titleButton()
+      await user.click(await screen.findByRole("button", { name: /Mark all read/ }))
+      await waitFor(() => expect(confirmDialog()).toBeDefined())
+      const confirm = confirmDialog()!
+      await user.click(await within(confirm).findByText("an unread PR comment"))
+      await waitFor(() => expect(dialogs()).toHaveLength(3))
+      const taskDialog = screen.getByRole("button", { name: /^Edit title/ }).closest("[role=dialog]")
+      const details = dialogs().find((d) => d !== confirm && d !== taskDialog)!
+      expect(details).toBeDefined()
+      // Real focus inside the top modal: its focus trap puts it there.
+      await waitFor(() => expect(details.contains(document.activeElement)).toBe(true))
+
+      esc()
+      await waitFor(() => expect(dialogs()).toHaveLength(2))
+      expect(confirmDialog()).toBeDefined()
+      expect(param()).toBe("5")
+
+      await waitFor(() => expect(confirmDialog()!.contains(document.activeElement)).toBe(true))
+      esc()
+      await waitFor(() => expect(confirmDialog()).toBeUndefined())
+      expect(screen.getByTestId("open-id")).toHaveTextContent("5")
+      expect(param()).toBe("5")
+
+      esc()
+      await waitFor(() => expect(param()).toBeNull())
+    })
+
+    it("R does nothing while event details are stacked over the task modal", async () => {
+      window.history.replaceState({}, "", "/")
+      const user = userEvent.setup()
+      wrap()
+      await user.click(screen.getByRole("button", { name: "open seven with event" }))
+      await screen.findByRole("button", { name: /Mark all read/ })
+      await waitFor(() => expect(dialogs()).toHaveLength(2))
+      ;(document.activeElement as HTMLElement | null)?.blur()
+      fireEvent.keyDown(document.body, { key: "r" })
+      // Long enough for an opening confirm to show (it does below).
+      await expect(waitFor(() => expect(confirmDialog()).toBeDefined(), { timeout: 300 })).rejects.toThrow()
+      expect(dialogs()).toHaveLength(2)
+      // With the details closed, the task modal is on top and R opens the confirm.
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" })
+      await waitFor(() => expect(dialogs()).toHaveLength(1))
+      ;(document.activeElement as HTMLElement | null)?.blur()
+      fireEvent.keyDown(document.body, { key: "r" })
+      await waitFor(() => expect(confirmDialog()).toBeDefined())
+    })
+
+    it("Enter in event details stacked over the confirm does not mark", async () => {
+      const user = userEvent.setup()
+      wrap()
+      await titleButton()
+      await user.click(await screen.findByRole("button", { name: /Mark all read/ }))
+      await waitFor(() => expect(confirmDialog()).toBeDefined())
+      await user.click(await within(confirmDialog()!).findByText("an unread PR comment"))
+      await waitFor(() => expect(dialogs()).toHaveLength(3))
+      // Focus off any control, so Enter is the hotkey's to take.
+      ;(document.activeElement as HTMLElement | null)?.blur()
+      fireEvent.keyDown(document.body, { key: "Enter" })
+      await expect(waitFor(() => expect(api.markResourceRead).toHaveBeenCalled(), { timeout: 300 })).rejects.toThrow()
+      expect(dialogs()).toHaveLength(3)
     })
   })
 

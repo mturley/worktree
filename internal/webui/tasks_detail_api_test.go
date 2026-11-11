@@ -12,6 +12,7 @@ import (
 	watcherdb "github.com/mturley/watcher/db"
 	"github.com/mturley/worktree/internal/resources"
 	"github.com/mturley/worktree/internal/tasks"
+	"github.com/mturley/worktree/internal/unread"
 )
 
 func decodeDetail(t *testing.T, rec *httptest.ResponseRecorder) taskDetailDTO {
@@ -33,11 +34,17 @@ func getDetail(t *testing.T, s *Server, id int64) taskDetailDTO {
 
 func getActivity(t *testing.T, s *Server, id int64, query string) []TimelineEvent {
 	t.Helper()
+	return getActivityPage(t, s, id, query).Events
+}
+
+// getActivityPage reads one page of a task's activity feed.
+func getActivityPage(t *testing.T, s *Server, id int64, query string) timelineResponse {
+	t.Helper()
 	rec := serveTasks(t, s, http.MethodGet, "/api/tasks/activity?id="+strconv.FormatInt(id, 10)+"&"+query, nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("activity %s = %d: %s", query, rec.Code, rec.Body.String())
 	}
-	var out []TimelineEvent
+	var out timelineResponse
 	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil {
 		t.Fatal(err)
 	}
@@ -497,5 +504,139 @@ func TestTaskDetailTimelineTitles(t *testing.T) {
 	}
 	if a := taskEventToTimeline(tasks.Event{Type: tasks.EventTaskCreated, Actor: tasks.ActorAgent, Payload: json.RawMessage(`{}`)}, tk).Author; a != "agent" {
 		t.Errorf("sessionless agent = %q", a)
+	}
+}
+
+// activityIDs joins a feed's ids, in order.
+func activityIDs(evs []TimelineEvent) string {
+	out := make([]string, 0, len(evs))
+	for _, e := range evs {
+		out = append(out, e.ID)
+	}
+	return strings.Join(out, ",")
+}
+
+// clearTaskEvents drops a task's events (its creation), so a test controls
+// every row of its own feed.
+func clearTaskEvents(t *testing.T, s *Server, id int64) {
+	t.Helper()
+	if _, err := s.DB.Exec(`DELETE FROM task_events WHERE task_id = ?`, id); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTaskActivityPaging(t *testing.T) {
+	t.Parallel()
+	s, _ := tasksServer(t)
+	tk := mustTask(t, s, tasks.NewTask{Title: "t"})
+	clearTaskEvents(t, s, tk.ID)
+	for sec := 1; sec <= 5; sec++ {
+		insertTaskEvent(t, s.DB, tk.ID, tts(sec), tasks.EventTaskCreated, "user", "")
+	}
+	unpaged := getActivityPage(t, s, tk.ID, "filter=task")
+	if len(unpaged.Events) != 5 {
+		t.Fatalf("unpaged = %s", activityIDs(unpaged.Events))
+	}
+
+	var paged []TimelineEvent
+	before := ""
+	for _, want := range []int{2, 2, 1} {
+		q := "filter=task&limit=2"
+		if before != "" {
+			q += "&before=" + before
+		}
+		page := getActivityPage(t, s, tk.ID, q)
+		if len(page.Events) != want {
+			t.Fatalf("page before %q = %s, want %d rows", before, activityIDs(page.Events), want)
+		}
+		if page.NextCursor != page.Events[len(page.Events)-1].TS {
+			t.Fatalf("next_cursor = %q, last ts %q", page.NextCursor, page.Events[len(page.Events)-1].TS)
+		}
+		paged = append(paged, page.Events...)
+		before = page.NextCursor
+	}
+	if got, want := activityIDs(paged), activityIDs(unpaged.Events); got != want {
+		t.Fatalf("paged = %s, unpaged = %s", got, want)
+	}
+	if rest := getActivityPage(t, s, tk.ID, "filter=task&limit=2&before="+before); len(rest.Events) != 0 {
+		t.Fatalf("past the end = %s", activityIDs(rest.Events))
+	}
+}
+
+// A page cut inside a same-second cluster overfills with the rest of it,
+// from every source, so the strict cursor cannot skip a tied row.
+func TestTaskActivityPagingSameSecondCluster(t *testing.T) {
+	t.Parallel()
+	s, _ := tasksServer(t)
+	tk := mustTask(t, s, tasks.NewTask{Title: "t", Focus: []tasks.LinkTarget{resLink("pr", "o/r#1")}})
+	clearTaskEvents(t, s, tk.ID)
+	older := insertTaskEvent(t, s.DB, tk.ID, tts(1), tasks.EventTaskCreated, "user", "")
+	a := insertTaskEvent(t, s.DB, tk.ID, tts(5), tasks.EventTaskCreated, "user", "")
+	b := insertTaskEvent(t, s.DB, tk.ID, tts(5), tasks.EventTaskCreated, "user", "")
+	insertEvent(t, s.DB, "e1", tts(5), "github", "pr_comment", "pr one", "pr", "o/r#1", "u1")
+
+	first := getActivityPage(t, s, tk.ID, "filter=all&limit=2")
+	got := map[string]bool{}
+	for _, e := range first.Events {
+		got[e.ID] = true
+	}
+	if len(first.Events) != 3 || !got[a] || !got[b] || !got["e1"] {
+		t.Fatalf("first page = %s, want the whole cluster %s,%s,e1", activityIDs(first.Events), a, b)
+	}
+	if first.NextCursor != tts(5) {
+		t.Fatalf("next_cursor = %q", first.NextCursor)
+	}
+	second := getActivityPage(t, s, tk.ID, "filter=all&limit=2&before="+first.NextCursor)
+	if activityIDs(second.Events) != older {
+		t.Fatalf("second page = %s, want %s", activityIDs(second.Events), older)
+	}
+}
+
+func TestTaskActivityLimitClamps(t *testing.T) {
+	t.Parallel()
+	s, _ := tasksServer(t)
+	tk := mustTask(t, s, tasks.NewTask{Title: "t"})
+	clearTaskEvents(t, s, tk.ID)
+	for sec := 1; sec <= 3; sec++ {
+		insertTaskEvent(t, s.DB, tk.ID, tts(sec), tasks.EventTaskCreated, "user", "")
+	}
+	if n := len(getActivity(t, s, tk.ID, "filter=task&limit=0")); n != 1 {
+		t.Errorf("limit=0 gave %d rows, want 1", n)
+	}
+	if n := len(getActivity(t, s, tk.ID, "filter=task&limit=5000")); n != 3 {
+		t.Errorf("limit=5000 gave %d rows, want 3", n)
+	}
+}
+
+// The task's own rows in its activity feed carry the feeds' unread rule: an
+// agent event after the task's cursor is unread (and can be marked unread);
+// the user's own event never is; marking read clears it.
+func TestTaskActivityOwnEventsUnread(t *testing.T) {
+	t.Parallel()
+	s, _ := tasksServer(t)
+	tk := mustTask(t, s, tasks.NewTask{Title: "t"})
+	clearAllTaskEvents(t, s)
+	agent := insertTaskEvent(t, s.DB, tk.ID, tts(2), "task_updated", "agent", "")
+	user := insertTaskEvent(t, s.DB, tk.ID, tts(3), "task_updated", "user", "")
+	must(t, unread.MarkRead(s.DB, "task", strconv.FormatInt(tk.ID, 10), tts(1)))
+
+	byID := func() map[string]TimelineEvent {
+		out := map[string]TimelineEvent{}
+		for _, e := range getActivity(t, s, tk.ID, "filter=task") {
+			out[e.ID] = e
+		}
+		return out
+	}
+	got := byID()
+	if e := got[agent]; !e.Unread || !e.CanMarkUnread {
+		t.Errorf("agent event = unread %v can_mark_unread %v; want true, true", e.Unread, e.CanMarkUnread)
+	}
+	if e := got[user]; e.Unread || e.CanMarkUnread {
+		t.Errorf("user event = unread %v can_mark_unread %v; want false, false", e.Unread, e.CanMarkUnread)
+	}
+
+	must(t, unread.MarkRead(s.DB, "task", strconv.FormatInt(tk.ID, 10), tts(3)))
+	if e := byID()[agent]; e.Unread {
+		t.Error("agent event still unread after mark read")
 	}
 }
