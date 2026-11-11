@@ -686,6 +686,37 @@ describe("EventDetailsModal work logs", () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 
+  it("Esc after Delete or after No cancels the edit without closing the modal", async () => {
+    const onClose = vi.fn()
+    wrap(<EventDetailsModal e={log()} onClose={onClose} />)
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }))
+    await userEvent.click(screen.getByRole("button", { name: "Delete" }))
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Yes" }))
+    await userEvent.keyboard("{Escape}")
+    expect(screen.queryByLabelText("Work log note")).not.toBeInTheDocument()
+    expect(onClose).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }))
+    await userEvent.click(screen.getByRole("button", { name: "Delete" }))
+    await userEvent.click(screen.getByRole("button", { name: "No" }))
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Delete" }))
+    await userEvent.keyboard("{Escape}")
+    expect(screen.queryByLabelText("Work log note")).not.toBeInTheDocument()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it("a failed delete says so and keeps focus in the editor", async () => {
+    vi.spyOn(api, "deleteWorkLog").mockRejectedValue(new Error("nope"))
+    const onClose = vi.fn()
+    wrap(<EventDetailsModal e={log()} onClose={onClose} />)
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }))
+    await userEvent.click(screen.getByRole("button", { name: "Delete" }))
+    await userEvent.click(screen.getByRole("button", { name: "Yes" }))
+    expect(await screen.findByText(/Couldn't delete: nope/)).toBeInTheDocument()
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Delete" })))
+    await userEvent.keyboard("{Escape}")
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
   it("inTask hides Make task even with onMakeTask", () => {
     wrap(<EventDetailsModal e={ev({})} onClose={vi.fn()} onMakeTask={vi.fn()} />)
     expect(screen.getByRole("button", { name: "Make task" })).toBeInTheDocument()

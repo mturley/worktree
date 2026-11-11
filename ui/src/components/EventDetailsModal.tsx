@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from "react"
+import { lazy, Suspense, useEffect, useState } from "react"
 import { Alert, Badge, Button, Divider, Group, Loader, Modal, Stack, Text } from "@mantine/core"
 import { TASK_BUTTON_STYLE } from "./tasks/taskButtonStyle"
 import { IconArchive } from "@tabler/icons-react"
@@ -70,6 +70,11 @@ export function EventDetailsModal({ e: shown, onClose, resolveResource, path, on
   // This modal holds its own copy of an edited work log: the feed it was
   // opened from refetches, but this event prop does not change under us.
   const [patched, setPatched] = useState<TimelineEvent | null>(null)
+  // A patch outlives neither the event it was made for nor the modal being closed.
+  useEffect(() => {
+    setPatched(null)
+    setEditingId(null)
+  }, [shown?.id])
   const e = patched && patched.id === shown?.id ? patched : shown
   const [editingId, setEditingId] = useState<string | null>(null)
   const editing = !!e && editingId === e.id

@@ -31,6 +31,19 @@ export function WorkLogEditor({ event, onSaved, onDeleted, onCancel }: {
   useEffect(() => {
     box.current?.focus()
   }, [])
+  // Delete / Yes / No swap in place of each other, unmounting the focused
+  // button; move focus explicitly so Esc keeps landing on a control that
+  // carries the stop attribute instead of falling to the page (and the modal).
+  const yesRef = useRef<HTMLButtonElement>(null)
+  const deleteRef = useRef<HTMLButtonElement>(null)
+  const firstRun = useRef(true)
+  useEffect(() => {
+    if (firstRun.current) {
+      firstRun.current = false
+      return
+    }
+    ;(confirmDelete ? yesRef : deleteRef).current?.focus()
+  }, [confirmDelete])
   const trimmed = text.trim()
   const canSave = eventId !== null && trimmed !== "" && !busy
 
@@ -45,7 +58,7 @@ export function WorkLogEditor({ event, onSaved, onDeleted, onCancel }: {
       // way); the invalidation the mutation does corrects the feeds.
       onSaved({ ...event, body: trimmed, edited_at: new Date().toISOString() })
     } catch (e) {
-      setError(errorText(e))
+      setError(`Couldn't save: ${errorText(e)}`)
     } finally {
       setBusy(false)
     }
@@ -59,7 +72,7 @@ export function WorkLogEditor({ event, onSaved, onDeleted, onCancel }: {
       await deleteWorkLog(eventId)
       onDeleted()
     } catch (e) {
-      setError(errorText(e))
+      setError(`Couldn't delete: ${errorText(e)}`)
       setConfirmDelete(false)
     } finally {
       setBusy(false)
@@ -96,18 +109,18 @@ export function WorkLogEditor({ event, onSaved, onDeleted, onCancel }: {
       />
       {error && (
         <Alert color="red" variant="light" py={4}>
-          <Text size="xs">Couldn't save: {error}</Text>
+          <Text size="xs">{error}</Text>
         </Alert>
       )}
       <Group justify="space-between" gap="xs">
         {confirmDelete ? (
           <Group gap={6}>
             <Text size="sm">Delete?</Text>
-            <Button size="xs" color="red" loading={busy} {...stop} onClick={() => void remove()}>Yes</Button>
+            <Button ref={yesRef} size="xs" color="red" loading={busy} {...stop} onClick={() => void remove()}>Yes</Button>
             <Button size="xs" variant="default" disabled={busy} {...stop} onClick={() => setConfirmDelete(false)}>No</Button>
           </Group>
         ) : (
-          <Button size="xs" variant="subtle" color="red" disabled={busy} {...stop} onClick={() => setConfirmDelete(true)}>Delete</Button>
+          <Button ref={deleteRef} size="xs" variant="subtle" color="red" disabled={busy} {...stop} onClick={() => setConfirmDelete(true)}>Delete</Button>
         )}
         <Group gap="xs">
           <Button size="xs" variant="default" disabled={busy} {...stop} onClick={onCancel}>Cancel</Button>
