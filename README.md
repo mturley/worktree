@@ -179,13 +179,16 @@ can't be marked unread.
 
 ##### The agent skill
 
-`worktree setup` offers to install a skill (`~/.agents/skills/worktree/`, which
-Codex and pi read, plus a symlink into Claude Code's skills directory) that teaches an
-AI agent to answer "what needs my attention?" from these commands, and to make no
-change without your say-so. `worktree agent-help` prints the same text for an agent
-without it installed. Setup updates the copy when the embedded text changes, leaves a
-directory it did not create alone, and `worktree setup --uninstall` removes the
-copy and the links it made.
+`worktree setup` offers to install worktree's skills for AI agents. The skills live
+in `~/.local/share/worktree/skills/` and are symlinked into `~/.agents/skills` (which
+Codex and pi read) and Claude Code's skills directory. One teaches an AI agent to answer
+"what needs my attention?" from these commands, and to make no change without your
+say-so; `worktree agent-help` prints the same text for an agent without it installed.
+Each setup run asks whether to keep them, then brings them in step with the installed
+version, removing any skill it no longer ships. Edits to the installed copies are
+overwritten; to use your own version of a skill, put your own directory at its path,
+and setup will leave it alone. `worktree setup --uninstall` removes the links and the
+store, and nothing else in your skills directories.
 
 #### Open in Editor or Browser
 

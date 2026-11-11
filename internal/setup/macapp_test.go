@@ -3,6 +3,7 @@ package setup
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,7 +28,9 @@ func TestDecideMacApp(t *testing.T) {
 		{"not installed, interactive", base, MacAppOfferInstall},
 		{"not installed, non-interactive", with(func(s *macAppState) { s.NonInteractive = true }), MacAppSkipUnattended},
 		{"missing bundle is not installed", with(func(s *macAppState) { s.Installed = false; s.InstalledHash = "new" }), MacAppOfferInstall},
-		{"installed, current", with(func(s *macAppState) { s.Installed = true; s.InstalledHash = "new" }), MacAppNone},
+		{"installed, current", with(func(s *macAppState) { s.Installed = true; s.InstalledHash = "new" }), MacAppKeep},
+		{"installed, current, no swiftc", with(func(s *macAppState) { s.Installed = true; s.InstalledHash = "new"; s.HaveSwiftc = false }), MacAppKeep},
+		{"installed, stale, no swiftc", with(func(s *macAppState) { s.Installed = true; s.InstalledHash = "old"; s.HaveSwiftc = false }), MacAppKeep},
 		{"installed, stale", with(func(s *macAppState) { s.Installed = true; s.InstalledHash = "old" }), MacAppRebuild},
 		{"installed, stale, non-interactive", with(func(s *macAppState) { s.Installed = true; s.InstalledHash = "old"; s.NonInteractive = true }), MacAppRebuild},
 	}
@@ -134,7 +137,7 @@ func TestRunMacAppRebuildRestartMessage(t *testing.T) {
 		{"quit", false, "Restarted the menu bar app", "still running"},
 		{"stuck", true, "old build of the menu bar app is still running", "Restarted"},
 	} {
-		f := &macFake{running: true, stuck: c.stuck}
+		f := &macFake{running: true, stuck: c.stuck, answers: []bool{true}}
 		d, _ := newMacDeps(t, f)
 		var err error
 		out := captureStdout(t, func() { err = runMacAppStep(MacAppRebuild, d) })
@@ -260,7 +263,7 @@ func TestRunMacAppInstallAsksLogin(t *testing.T) {
 func TestRunMacAppRebuildKeepsLoginChoice(t *testing.T) {
 	t.Parallel()
 	t.Run("no plist stays absent", func(t *testing.T) {
-		f := &macFake{}
+		f := &macFake{answers: []bool{true}}
 		d, p := newMacDeps(t, f)
 		if err := runMacAppStep(MacAppRebuild, d); err != nil {
 			t.Fatal(err)
@@ -268,12 +271,12 @@ func TestRunMacAppRebuildKeepsLoginChoice(t *testing.T) {
 		if _, err := os.Stat(p.LaunchAgent); err == nil {
 			t.Error("plist created")
 		}
-		if len(f.ran("swiftc")) != 1 || len(f.ran("open")) != 0 || len(f.prompts) != 0 {
+		if len(f.ran("swiftc")) != 1 || len(f.ran("open")) != 0 || len(f.prompts) != 1 || f.prompts[0] != macAppKeepPrompt {
 			t.Errorf("calls = %v prompts = %v", f.calls, f.prompts)
 		}
 	})
 	t.Run("stale plist rewritten", func(t *testing.T) {
-		f := &macFake{}
+		f := &macFake{answers: []bool{true}}
 		d, p := newMacDeps(t, f)
 		os.MkdirAll(filepath.Dir(p.LaunchAgent), 0o755)
 		os.WriteFile(p.LaunchAgent, []byte("stale"), 0o644)
@@ -286,7 +289,7 @@ func TestRunMacAppRebuildKeepsLoginChoice(t *testing.T) {
 		}
 	})
 	t.Run("current plist unchanged", func(t *testing.T) {
-		f := &macFake{}
+		f := &macFake{answers: []bool{true}}
 		d, p := newMacDeps(t, f)
 		os.MkdirAll(filepath.Dir(p.LaunchAgent), 0o755)
 		os.WriteFile(p.LaunchAgent, macapp.LaunchAgentPlist(filepath.Clean(p.App)), 0o444)
@@ -300,7 +303,7 @@ func TestRunMacAppRebuildKeepsLoginChoice(t *testing.T) {
 		}
 	})
 	t.Run("running app is quit and reopened", func(t *testing.T) {
-		f := &macFake{running: true}
+		f := &macFake{running: true, answers: []bool{true}}
 		d, p := newMacDeps(t, f)
 		if err := runMacAppStep(MacAppRebuild, d); err != nil {
 			t.Fatal(err)
@@ -323,7 +326,7 @@ func TestRunMacAppRebuildKeepsLoginChoice(t *testing.T) {
 		}
 	})
 	t.Run("app that will not quit is reported, not called restarted", func(t *testing.T) {
-		f := &macFake{running: true, stuck: true}
+		f := &macFake{running: true, stuck: true, answers: []bool{true}}
 		d, _ := newMacDeps(t, f)
 		if err := runMacAppStep(MacAppRebuild, d); err != nil {
 			t.Fatal(err)
@@ -336,7 +339,7 @@ func TestRunMacAppRebuildKeepsLoginChoice(t *testing.T) {
 		}
 	})
 	t.Run("not running is not opened", func(t *testing.T) {
-		f := &macFake{}
+		f := &macFake{answers: []bool{true}}
 		d, _ := newMacDeps(t, f)
 		if err := runMacAppStep(MacAppRebuild, d); err != nil {
 			t.Fatal(err)
@@ -430,5 +433,74 @@ func TestUninstallMacAppNothingInstalled(t *testing.T) {
 	}
 	if len(f.calls) != 0 {
 		t.Errorf("Run called: %v", f.calls)
+	}
+}
+
+func TestRunMacAppKeepAsks(t *testing.T) {
+	t.Parallel()
+	const prompt = "The worktree menu bar app is installed. Keep it?"
+	for _, a := range []MacAppAction{MacAppKeep, MacAppRebuild} {
+		t.Run(fmt.Sprintf("action %d, yes", a), func(t *testing.T) {
+			t.Parallel()
+			f := &macFake{answers: []bool{true}}
+			var defaults []bool
+			d, p := newMacDeps(t, f)
+			d.Confirm = func(q string, def bool) bool { defaults = append(defaults, def); return f.confirm(q, def) }
+			writeInstalled(t, p, true, true, true)
+			if err := runMacAppStep(a, d); err != nil {
+				t.Fatal(err)
+			}
+			if len(f.prompts) != 1 || f.prompts[0] != prompt || !defaults[0] {
+				t.Errorf("prompts = %q, defaults = %v", f.prompts, defaults)
+			}
+			builds := len(f.ran("swiftc"))
+			if a == MacAppKeep && builds != 0 {
+				t.Error("kept app was rebuilt")
+			}
+			if a == MacAppRebuild && builds != 1 {
+				t.Error("stale app not rebuilt")
+			}
+			for _, path := range []string{p.App, p.LaunchAgent, p.WebKitData} {
+				if !pathExists(path) {
+					t.Errorf("%s removed", path)
+				}
+			}
+		})
+		t.Run(fmt.Sprintf("action %d, no", a), func(t *testing.T) {
+			t.Parallel()
+			f := &macFake{answers: []bool{false}}
+			d, p := newMacDeps(t, f)
+			writeInstalled(t, p, true, true, true)
+			if err := runMacAppStep(a, d); err != nil {
+				t.Fatal(err)
+			}
+			if len(f.ran("swiftc")) != 0 {
+				t.Error("built an app being removed")
+			}
+			for _, path := range []string{p.App, p.LaunchAgent, p.WebKitData} {
+				if pathExists(path) {
+					t.Errorf("%s survived", path)
+				}
+			}
+		})
+	}
+}
+
+func TestHasWorkForMacAppKeep(t *testing.T) {
+	t.Parallel()
+	if !(Plan{MacApp: MacAppKeep}).HasWork() {
+		t.Error("MacAppKeep is not work")
+	}
+}
+
+// Serial: captureStdout.
+func TestMacAppPreviewAsksToKeep(t *testing.T) {
+	for a, want := range map[MacAppAction]string{
+		MacAppKeep:    "• Ask whether to keep the menu bar app (removes it if not)",
+		MacAppRebuild: "• Ask whether to keep the menu bar app, then rebuild it (its source changed)",
+	} {
+		if out := captureStdout(t, func() { Plan{MacApp: a}.Preview() }); !strings.Contains(out, want) {
+			t.Errorf("action %d: preview lacks %q:\n%s", a, want, out)
+		}
 	}
 }
