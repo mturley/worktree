@@ -998,7 +998,9 @@ load task unread (`TestTimelinesDoNotLoadTaskUnread`).
   tab, Everything view, holds unread. Own, so a PR two tasks link never
   counts one task's events in the other's total. A link only a task's
   `task:<id>` hold subscribes, or no one, adds 0: what isn't followed isn't
-  unread. Individually linked events (`event_links`) are not added.
+  unread. Individually linked events (`event_links`) are not added. Each
+  linked resource is counted on its own, so a watcher event tied to two of
+  the task's linked resources counts once per resource.
   `task_linked_unread.go`: `followedResources` reads the followed set in one
   query (`subscriber LIKE 'worktree:%' AND deleted_at IS NULL`, the set
   `unread.IsFollowed` checks per event), and `taskUnreadReader` holds one
@@ -1080,7 +1082,8 @@ false) is not marked in Slack at all; its tasks are. The button shows while
 either kind has anything unread.
 
 The task modal's header has its own **Mark all read**, the same
-`MarkAllReadButton`, shown while `combined_unread_count > 0`. Its
+`MarkAllReadButton`, always mounted and rendering nothing while nothing is
+markable (so a refetch never unmounts an open confirm). Its
 `resources` are `TaskDetail.linked_resources` (the task's resource links,
 unread fields filled for followed ones, zeroed for the rest so they are no
 targets), its `taskScope` is `{ kind: "task", id }` and its `feed` is
@@ -1431,7 +1434,11 @@ the watcher toggles do not apply.
   `ErrInvalid`), an unknown one a 404. Text is trimmed, non-empty, at most
   4000 runes. The feed row is titled `Worked on “<task title>”`, labelled
   "work logged", with `body` = the entry text and `edited_at` (omitted
-  until edited) from the payload.
+  until edited) from the payload. Every feed renders task events through
+  `taskEventToTimeline`, so `edited_at` is on a work log row in the global
+  and worktree timelines too, not only the task's Activity tab. Editing or
+  deleting a work log of a soft-deleted task is a 404 before anything is
+  written (`loadWorkLog` requires a live task).
 - **Blockers** (`tasks_blockers_api.go`). `taskDTO` carries `blocked`,
   `blocker_count` (unresolved) and `open_blockers` (the unresolved
   blockers, oldest first, as `{label, resource_type?, resource_id?}` — the
@@ -1493,7 +1500,8 @@ the watcher toggles do not apply.
 - **Activity merge.** `/api/tasks/activity` merges the task's own events
   (`taskEventToTimeline`: id `task:<event id>`, source `tasks`, resource
   `task:<task id>`, a human-readable title per event type, author `you` or
-  `agent (<session>)`) with the events of the task's linked resources. It
+  `agent (<session>)`; `unread` and `can_mark_unread` by the feeds' rule,
+  via `taskUnreadRow`) with the events of the task's linked resources. It
   is paged as the timelines are (`before`, `limit` ≤ 200, `next_cursor` the
   last row's ts, a short page the end). Every source is read before the
   cursor, at most `limit` rows plus every row tying its last one's ts: the
@@ -1978,7 +1986,7 @@ URL param (`?task=<id>`) through **`TaskModalProvider`**
   worktree, open in diff) changes the path and drops `?task=`, which closes
   the task modal under the history contract above; Back returns to the page
   with the task open.
-- **Mark all read** in the header (while `combined_unread_count > 0`) is
+- **Mark all read** in the header (rendered while anything is markable) is
   `MarkAllReadButton` over the task's linked resources and the task itself;
   see "Unread". Its confirm modal is a layer over the task modal, and a
   preview row's details a layer over the confirm (`TimelineFeed`'s
@@ -1991,13 +1999,21 @@ URL param (`?task=<id>`) through **`TaskModalProvider`**
   one Esc would close both. `useModalLayer(opened)` returns `topmost`,
   `zIndex` and a `layer`: a modal passes `closeOnEscape={topmost}` and
   `zIndex`, and wraps its children in `ModalLayerProvider`. A modal opened
-  inside another's provider registers with it while open, which makes the
-  one beneath not `topmost`, and takes a z-index one above it (Mantine's
-  modal default, 200, plus its depth), so it paints on top whatever the
-  order of their portals. A modal opened under no provider is a bottom layer
-  and behaves as before. `TaskDetailModal`, `EventDetailsModal` and
-  `MarkAllReadButton`'s confirm all use it, so a confirm opened over either
-  stacks the same way. (Mantine's own
+  under no provider is a bottom layer and behaves as before. A modal opened
+  inside a provider, at any depth, registers while open with its bottom
+  layer's one stack, in opening order: the newest open layer is the only
+  `topmost` one (the bottom layer is topmost only while its stack is
+  empty), and each takes a z-index of Mantine's modal default (200) plus 1
+  plus its place in the stack, so a later one paints over an earlier one
+  whatever the order of their portals. So two siblings (event details and
+  the Mark all read confirm, both over the task modal) still have one top,
+  and one Esc closes exactly one modal. `useLayerTopmost()` tells a
+  component whether the modal it sits in is on top; hotkeys gate on it
+  (Mark all read's R on its owning modal, its confirm's Enter on the
+  confirm itself), so a key pressed under a stacked modal does nothing
+  behind it. The modals that use it are `TaskDetailModal`,
+  `EventDetailsModal` and `MarkAllReadButton`'s confirm;
+  `ChooseWorktreeModal` is not layered. (Mantine's own
   `Modal.Stack` needs the modals as siblings in one place, which these are
   not.)
 - **Files.** `TaskDetailModal` (shell; keeps the last id mounted through the

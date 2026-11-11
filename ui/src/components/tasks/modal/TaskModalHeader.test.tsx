@@ -60,7 +60,9 @@ beforeEach(() => {
     events: [
       row("pr unread", { unread: true }),
       row("pr read", { unread: false }),
-      row("task unread", { unread: true, source: "tasks", type: "task_comment", resource_type: "task", resource_id: "5" }),
+      // As the server sends a task's own unread row: an agent's event, which can be marked unread again.
+      row("task unread", { unread: true, can_mark_unread: true, author: "agent", source: "tasks", type: "task_updated",
+        resource_type: "task", resource_id: "5" }),
     ],
     next_cursor: "",
   })
@@ -83,9 +85,12 @@ describe("TaskModalHeader Mark all read", () => {
     return screen.findByRole("dialog", { name: "Mark all read" })
   }
 
-  it("is absent while the combined count is 0", async () => {
+  it("is absent while nothing is markable", async () => {
+    vi.mocked(api.taskUnread).mockResolvedValue([])
     wrap(detail({ unread_count: 0, combined_unread_count: 0 }))
-    await new Promise((r) => setTimeout(r, 20))
+    // Absent once the task's unread has loaded, not just before.
+    await waitFor(() => expect(api.taskUnread).toHaveBeenCalled())
+    await act(async () => {})
     expect(screen.queryByRole("button", { name: /Mark all read/ })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Mark read" })).not.toBeInTheDocument()
   })
@@ -94,7 +99,8 @@ describe("TaskModalHeader Mark all read", () => {
     wrap(detail({ unread_count: 0, combined_unread_count: 2, linked_resources: [unreadPR] }))
     expect(await screen.findByRole("button", { name: /Mark all read/ })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Mark read" })).not.toBeInTheDocument()
-    await act(() => new Promise((r) => setTimeout(r, 20)))
+    await waitFor(() => expect(api.taskUnread).toHaveBeenCalled())
+    await act(async () => {})
     expect(api.taskRead).not.toHaveBeenCalled()
     expect(api.markResourceRead).not.toHaveBeenCalled()
   })
@@ -124,6 +130,32 @@ describe("TaskModalHeader Mark all read", () => {
     await user.click(within(dialog).getByRole("button", { name: "Mark read" }))
     await waitFor(() => expect(api.taskRead).toHaveBeenCalledTimes(1))
     expect(api.markResourceRead).not.toHaveBeenCalled()
+  })
+
+  it("stays shown when the count is 0 but something is markable", async () => {
+    wrap(detail({ unread_count: 0, combined_unread_count: 0 }))
+    expect(await screen.findByRole("button", { name: /Mark all read/ })).toBeInTheDocument()
+  })
+
+  it("keeps an open confirm open when a refetch drops the count to 0", async () => {
+    const user = userEvent.setup()
+    const view = wrap(unread())
+    const dialog = await openIt(user)
+    view.rerender(
+      <MantineProvider>
+        <Notifications />
+        <QueryClientProvider client={qc}>
+          <Modal.Root opened onClose={() => {}}>
+            <Modal.Content>
+              <TaskModalHeader task={detail({ unread_count: 0, combined_unread_count: 0, linked_resources: [unreadPR] })}
+                onUpdate={() => {}} onState={() => {}} onClose={() => {}} />
+            </Modal.Content>
+          </Modal.Root>
+        </QueryClientProvider>
+      </MantineProvider>,
+    )
+    expect(dialog).toBeInTheDocument()
+    expect(screen.getByRole("dialog", { name: "Mark all read" })).toBe(dialog)
   })
 
   it("previews the task's unread activity only, from its own feed", async () => {

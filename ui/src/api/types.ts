@@ -913,7 +913,10 @@ export interface TaskDetail extends Task {
   blockers: TaskBlocker[]
   /** The tasks this one blocks, in master order. Never null. */
   blocks: TaskBlocks[]
-  /** The followed resources the task links. Never null. */
+  /**
+   * The resources the task links. Never null. One no worktree follows is
+   * included too, with its unread fields zeroed: its unread counts nowhere.
+   */
   linked_resources: ResourceDTO[]
 }
 

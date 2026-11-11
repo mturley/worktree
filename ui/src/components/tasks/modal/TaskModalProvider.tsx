@@ -61,7 +61,11 @@ export function TaskModalProvider({ children }: { children: ReactNode }) {
   }, [search, closingSearch])
   useEffect(() => {
     // Closed by any route — our close, the Back button, a link elsewhere.
-    if (parsed === null) pushed.current = false
+    // A held event goes too, or ?task= coming back (Forward, a link) would
+    // stack its details again.
+    if (parsed !== null) return
+    pushed.current = false
+    setPendingEvent(null)
   }, [parsed])
 
   // Reads the URL as it is NOW, not as of the last render: a delete's failure

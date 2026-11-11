@@ -71,13 +71,14 @@ export function EventDetailsModal({ e: shown, onClose, resolveResource, path, on
   // This modal holds its own copy of an edited work log: the feed it was
   // opened from refetches, but this event prop does not change under us.
   const [patched, setPatched] = useState<TimelineEvent | null>(null)
-  // A patch outlives neither the event it was made for nor the modal being closed.
+  const [editingId, setEditingId] = useState<string | null>(null)
+  // A patch outlives neither the event it was made for nor the modal being
+  // closed, and neither does an open editor.
   useEffect(() => {
     setPatched(null)
     setEditingId(null)
   }, [shown?.id])
   const e = patched && patched.id === shown?.id ? patched : shown
-  const [editingId, setEditingId] = useState<string | null>(null)
   const editing = !!e && editingId === e.id
   const canEdit = !!e && editable && e.type === "task_work_logged" && taskEventNumericId(e) !== null
   const actionResource = e?.resource_url ? eventResource(e, resolveResource) : undefined

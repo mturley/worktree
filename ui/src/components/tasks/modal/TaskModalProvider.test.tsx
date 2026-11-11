@@ -49,4 +49,19 @@ describe("TaskModalProvider focusEvent", () => {
     act(() => modal.close())
     expect(screen.getByTestId("focus")).toHaveTextContent("none")
   })
+
+  it("the URL losing ?task (Back, a link) drops it, so the task reappearing doesn't restack it", () => {
+    act(() => modal.open(7, { event: event("Made it") }))
+    act(() => {
+      window.history.pushState({}, "", "/?resource=pr:x")
+      window.dispatchEvent(new PopStateEvent("popstate"))
+    })
+    expect(modal.openId).toBeNull()
+    act(() => {
+      window.history.pushState({}, "", "/?resource=pr:x&task=7")
+      window.dispatchEvent(new PopStateEvent("popstate"))
+    })
+    expect(modal.openId).toBe(7)
+    expect(screen.getByTestId("focus")).toHaveTextContent("none")
+  })
 })

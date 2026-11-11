@@ -1,4 +1,5 @@
 import { afterEach, describe, it, expect, vi } from "vitest"
+import { StrictMode } from "react"
 import userEvent from "@testing-library/user-event"
 import { render, cleanup, screen, waitFor, fireEvent } from "@testing-library/react"
 import { MantineProvider } from "@mantine/core"
@@ -55,6 +56,29 @@ describe("WorkLogEditor", () => {
     expect(p.onSaved.mock.calls[0][0].edited_at).toBeTruthy()
   })
 
+  it("saving unchanged text (after trimming) writes nothing and just closes", async () => {
+    const edit = vi.spyOn(api, "editWorkLog")
+    const p = setup()
+    await userEvent.type(screen.getByLabelText("Work log note"), "  ")
+    await userEvent.click(screen.getByRole("button", { name: "Save" }))
+    expect(p.onCancel).toHaveBeenCalledTimes(1)
+    expect(edit).not.toHaveBeenCalled()
+    expect(p.onSaved).not.toHaveBeenCalled()
+  })
+
+  it("opens with the textarea focused, under StrictMode too", () => {
+    render(
+      <StrictMode>
+        <MantineProvider>
+          <QueryClientProvider client={new QueryClient()}>
+            <WorkLogEditor event={event} onSaved={vi.fn()} onDeleted={vi.fn()} onCancel={vi.fn()} />
+          </QueryClientProvider>
+        </MantineProvider>
+      </StrictMode>,
+    )
+    expect(screen.getByLabelText("Work log note")).toHaveFocus()
+  })
+
   it("cannot save an empty note", async () => {
     setup()
     await userEvent.clear(screen.getByLabelText("Work log note"))
@@ -64,6 +88,7 @@ describe("WorkLogEditor", () => {
   it("shows a failed save and stays open", async () => {
     vi.spyOn(api, "editWorkLog").mockRejectedValue(new Error("boom"))
     const p = setup()
+    await userEvent.type(screen.getByLabelText("Work log note"), "!")
     await userEvent.click(screen.getByRole("button", { name: "Save" }))
     expect(await screen.findByText(/Couldn't save: boom/)).toBeInTheDocument()
     expect(p.onSaved).not.toHaveBeenCalled()

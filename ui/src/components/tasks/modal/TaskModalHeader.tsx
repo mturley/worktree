@@ -10,7 +10,7 @@ import type { TaskPatch } from "./useOptimisticTask"
 
 /**
  * State checkbox · star · title (editable in place) · Mark all read (while
- * the task or its linked resources have unread) · id · close.
+ * the task or its linked resources have unread it can mark) · id · close.
  *
  * Mark all read covers what the combined_unread_count counts: the task's own
  * unread events and its resource links' own unread, each a checkbox in its
@@ -36,15 +36,16 @@ export function TaskModalHeader({ task, onUpdate, onState, onClose }: {
         {task.starred ? "★" : "☆"}
       </ActionIcon>
       <EditableTitle title={task.title} onSave={(title) => onUpdate({ title })} />
-      {(task.combined_unread_count ?? 0) > 0 && (
-        <Box style={{ flex: "none" }}>
-          <MarkAllReadButton
-            resources={task.linked_resources}
-            feed={{ task: task.id, showResource: true }}
-            taskScope={{ kind: "task", id: task.id }}
-          />
-        </Box>
-      )}
+      {/* Always mounted: it renders nothing while nothing is markable, and
+          a refetch dropping the count must not unmount an open confirm.
+          display: contents, so it takes no gap in the row while empty. */}
+      <Box style={{ display: "contents" }}>
+        <MarkAllReadButton
+          resources={task.linked_resources}
+          feed={{ task: task.id, showResource: true }}
+          taskScope={{ kind: "task", id: task.id }}
+        />
+      </Box>
       {/* The task's id, as links and blockers name it. */}
       <Text size="xs" c="dimmed" style={{ flex: "none" }}>{task.ref}</Text>
       <OpenInFullUiButton href={taskFullUiHref(task)} />

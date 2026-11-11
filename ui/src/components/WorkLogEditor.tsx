@@ -36,12 +36,12 @@ export function WorkLogEditor({ event, onSaved, onDeleted, onCancel }: {
   // carries the stop attribute instead of falling to the page (and the modal).
   const yesRef = useRef<HTMLButtonElement>(null)
   const deleteRef = useRef<HTMLButtonElement>(null)
-  const firstRun = useRef(true)
+  // Only on a change: not on mount (the textarea has focus then), however
+  // many times the effect runs for it (StrictMode runs it twice).
+  const prevConfirm = useRef(confirmDelete)
   useEffect(() => {
-    if (firstRun.current) {
-      firstRun.current = false
-      return
-    }
+    if (prevConfirm.current === confirmDelete) return
+    prevConfirm.current = confirmDelete
     ;(confirmDelete ? yesRef : deleteRef).current?.focus()
   }, [confirmDelete])
   const trimmed = text.trim()
@@ -49,6 +49,12 @@ export function WorkLogEditor({ event, onSaved, onDeleted, onCancel }: {
 
   const save = async () => {
     if (!canSave || eventId === null) return
+    // The server would write nothing (and stamp no edited_at), so neither
+    // does this: an unchanged save just closes the editor.
+    if (trimmed === (event.body ?? "")) {
+      onCancel()
+      return
+    }
     setBusy(true)
     setError(null)
     try {

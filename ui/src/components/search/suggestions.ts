@@ -48,9 +48,11 @@ export function buildSuggestions(input: {
     resource: (r: ResourceDTO, path?: string) => void
     event: (e: TimelineEvent) => void
     /**
-     * Opens a task: a task's row and a task event's row pick this, as the
-     * latter's row in the feeds does (EventRow's onOpenTask), never go.event —
-     * its pseudo-resource ("task", "<id>") is nothing to select.
+     * Opens a task: a task's row and a task event's row pick this, never
+     * go.event — its pseudo-resource ("task", "<id>") is nothing to select.
+     * Search opens the task alone; a task event's row in the feeds
+     * (EventRow's onOpenTask) opens it with that event's details stacked on
+     * top.
      */
     task?: (pick: TaskPick) => void
   }
