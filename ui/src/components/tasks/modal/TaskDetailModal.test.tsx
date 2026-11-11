@@ -26,6 +26,7 @@ vi.mock("../../../api/client", async (orig) => ({
     deleteTask: vi.fn(),
     undoTask: vi.fn(),
     taskUnread: vi.fn(),
+    markResourceRead: vi.fn(),
   },
 }))
 
@@ -614,6 +615,41 @@ describe("TaskDetailModal", () => {
 
       esc()
       await waitFor(() => expect(param()).toBeNull())
+    })
+
+    it("R does nothing while event details are stacked over the task modal", async () => {
+      window.history.replaceState({}, "", "/")
+      const user = userEvent.setup()
+      wrap()
+      await user.click(screen.getByRole("button", { name: "open seven with event" }))
+      await screen.findByRole("button", { name: /Mark all read/ })
+      await waitFor(() => expect(dialogs()).toHaveLength(2))
+      ;(document.activeElement as HTMLElement | null)?.blur()
+      fireEvent.keyDown(document.body, { key: "r" })
+      // Long enough for an opening confirm to show (it does below).
+      await expect(waitFor(() => expect(confirmDialog()).toBeDefined(), { timeout: 300 })).rejects.toThrow()
+      expect(dialogs()).toHaveLength(2)
+      // With the details closed, the task modal is on top and R opens the confirm.
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" })
+      await waitFor(() => expect(dialogs()).toHaveLength(1))
+      ;(document.activeElement as HTMLElement | null)?.blur()
+      fireEvent.keyDown(document.body, { key: "r" })
+      await waitFor(() => expect(confirmDialog()).toBeDefined())
+    })
+
+    it("Enter in event details stacked over the confirm does not mark", async () => {
+      const user = userEvent.setup()
+      wrap()
+      await titleButton()
+      await user.click(await screen.findByRole("button", { name: /Mark all read/ }))
+      await waitFor(() => expect(confirmDialog()).toBeDefined())
+      await user.click(await within(confirmDialog()!).findByText("an unread PR comment"))
+      await waitFor(() => expect(dialogs()).toHaveLength(3))
+      // Focus off any control, so Enter is the hotkey's to take.
+      ;(document.activeElement as HTMLElement | null)?.blur()
+      fireEvent.keyDown(document.body, { key: "Enter" })
+      await expect(waitFor(() => expect(api.markResourceRead).toHaveBeenCalled(), { timeout: 300 })).rejects.toThrow()
+      expect(dialogs()).toHaveLength(3)
     })
   })
 

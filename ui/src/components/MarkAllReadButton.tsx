@@ -11,7 +11,7 @@ import { useButtonHotkey } from "../hooks/useButtonHotkey"
 import { KeyHint } from "./search/KeyHint"
 import { slackTabFromResource } from "./SlackThreadPane"
 import { LoadMoreButton, TimelineFeed } from "./TimelineFeed"
-import { ModalLayerProvider, useModalLayer } from "./tasks/modal/modalLayer"
+import { ModalLayerProvider, useLayerTopmost, useModalLayer } from "./tasks/modal/modalLayer"
 import { showUndoToast, undoAll } from "./UndoToast"
 import { MARK_READ_BUTTON_PROPS, readChangeDidSomething } from "../lib/unread"
 
@@ -156,7 +156,7 @@ type PreviewProps = { types: string[]; feed: MarkAllReadFeed; hiddenTasks?: Read
 /** One resource's unread events, from its worktree's feed. */
 function ResourcePreview(props: { worktree: string; resource: ResourceDTO; feed: MarkAllReadFeed }) {
   const { type, id } = props.resource
-  return <PreviewFeed types={[]} feed={props.feed} tl={useWorktreeTimeline(props.worktree, { type, id }, [], true)} />
+  return <PreviewFeed feed={props.feed} tl={useWorktreeTimeline(props.worktree, { type, id }, [], true)} />
 }
 
 /** The global feed's unread events of `types`. */
@@ -194,10 +194,10 @@ function TaskPreview({ task, feed, shows }: {
       </Stack>
     )
   }
-  return <PreviewFeed types={[]} feed={feed} tl={{ ...tl, events }} />
+  return <PreviewFeed feed={feed} tl={{ ...tl, events }} />
 }
 
-function PreviewFeed({ tl, feed, hiddenTasks }: PreviewProps & {
+function PreviewFeed({ tl, feed, hiddenTasks }: Omit<PreviewProps, "types"> & {
   tl: ReturnType<typeof useGlobalTimeline>
 }) {
   const { worktree: _, task: __, ...rest } = feed
@@ -261,6 +261,9 @@ export function MarkAllReadButton({ resources, feed, taskScope, single = false, 
   // Opened from the task modal it stacks over it: Esc closes only the top
   // modal (event details over this, then this), and it paints above.
   const { topmost, zIndex, layer } = useModalLayer(opened)
+  // Whether the modal this button sits in (if any) is on top: R must not
+  // open the confirm behind event details stacked over the task modal.
+  const ownerTopmost = useLayerTopmost()
   const wide = useIsWide()
   const [unchecked, setUnchecked] = useState<ReadonlySet<Kind>>(new Set())
   const [uncheckedTasks, setUncheckedTasks] = useState<ReadonlySet<number>>(new Set())
@@ -338,9 +341,11 @@ export function MarkAllReadButton({ resources, feed, taskScope, single = false, 
     onSettled: refreshUnreadSurfaces,
   })
 
-  // R opens the preview, and Enter in it confirms (see useButtonHotkey).
-  const openRef = useButtonHotkey("r", () => openModal(), anything && !opened)
-  const confirmRef = useButtonHotkey("Enter", () => markAll.mutate(), opened && anySelected && !markAll.isPending)
+  // R opens the preview, and Enter in it confirms (see useButtonHotkey) —
+  // each only while its own modal is the top one, so neither reaches behind
+  // a modal stacked over it.
+  const openRef = useButtonHotkey("r", () => openModal(), anything && !opened && ownerTopmost)
+  const confirmRef = useButtonHotkey("Enter", () => markAll.mutate(), opened && topmost && anySelected && !markAll.isPending)
 
   if (!anything && !opened) return null
 

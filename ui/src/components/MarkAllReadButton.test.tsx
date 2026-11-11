@@ -39,6 +39,7 @@ vi.mock("../api/slackApi", async (orig) => ({
 }))
 
 import { MarkAllReadButton, type MarkAllReadFeed } from "./MarkAllReadButton"
+import { ModalLayerProvider } from "./tasks/modal/modalLayer"
 import type { TaskScope } from "../api/types"
 
 const ev = (id: string, resource_type: string, title: string): TimelineEvent =>
@@ -202,6 +203,24 @@ describe("MarkAllReadButton", () => {
     fireEvent.keyDown(document, { key: "Enter" })
     await waitFor(() => expect(markResourceRead).toHaveBeenCalledTimes(4))
     expect(markThreadRead).toHaveBeenCalledTimes(2)
+  })
+
+  it("R stays quiet while another modal is stacked over the one holding the button", async () => {
+    // The button's modal is a bottom layer with one layer (say event details) open over it.
+    const covered = { register: () => () => {}, stack: [1], self: null }
+    render(
+      <MantineProvider>
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <ModalLayerProvider layer={covered}>
+            <MarkAllReadButton resources={everything()} feed={{}} taskScope={{ kind: "all" }} />
+          </ModalLayerProvider>
+        </QueryClientProvider>
+      </MantineProvider>,
+    )
+    await screen.findByRole("button", { name: /mark all read/i })
+    fireEvent.keyDown(document.body, { key: "r" })
+    // Long enough for an opening modal to show (the R test above finds it).
+    await expect(screen.findByRole("dialog", {}, { timeout: 300 })).rejects.toThrow()
   })
 
   it("leaves Enter to Cancel when Cancel has focus", async () => {
