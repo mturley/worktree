@@ -1327,9 +1327,10 @@ tabs by the `storage` event. The home page's toggle sits beside the worktree
 sort control; the worktree page's beside Follow resource. When on it hides
 worktrees without `has_unread` and resources without `hasUnread` (empty states
 "No worktrees with unread events" / "No resources with unread events"), and
-narrows the two unified feeds to unread events. A selected resource that the
-filter hides — typically one just marked read — is deselected by the
-stale-selection effect, with `replace`. The single-resource feed is never
+narrows the two unified feeds to unread events. A selection that arrives
+hidden by the filter (never listed) turns "Unreads only" and the source filters
+off so it shows; one that was listed and then drops out — typically one just
+marked read — is deselected by the stale-selection effect, with `replace`. The single-resource feed is never
 narrowed: one cursor keeps its unread events together at the top under the
 divider. Reordering a filtered resource list saves the FULL order
 (`mergeVisibleOrder`), because the server appends any card an order omits to
@@ -3781,7 +3782,7 @@ updates it at once.
 
 The details card's old Environment tab is split: **Environment** keeps the
 env/ports (env vars left, `NetworkPanel` right in a `Grid`, stacked below `sm`; the panel lists listening ports from `useListeners` with copy-PID and open-in-browser buttons, and links to Settings when scanning is off; the tab carries a ports badge while something listens) and sits after **Code**, which follows Notes. The tabs are Mantine's default size, as elsewhere. Above them, on every tab, the card shows the directory row (`DirectoryRow`, with a copy button; Back to notes and Delete sit at the right end of that row) and then `ReviewActions`: "Open in editor" and "Review changes". While the worktree has local review comments or unread PR comments, "Review changes" is filled in the unread blue, and its label counts both (`codeTabLabel`), from the view-less `GET /api/review-comments` list and the PR comments summary. Its counts poll every 5s on the Code tab and every 60s on the other tabs (a shared query polls at its fastest observer's interval, so an open diff view keeps 5s). **Code** (`GitDiffPanel`) shows the git summary (`GitSummary`:
-merge-base against the main upstream, ahead/behind, tracking branch, working
+merge-base against the base ref, ahead/behind, tracking branch, working
 counts, background-fetch state) and a "Files changed" list (`FilesChangedList`)
 with two selectors: the **base** (`merge-base` or `tracking`, `CompareSelect`)
 and the **range** (`RangePicker`: All changes, or a run of first-parent commits
@@ -3815,6 +3816,25 @@ refused):
   `gitutil.MaxPatchBytes`.
 - `GET /api/worktree-diff/file?path&rev=&file=` returns `text/plain` contents
   at `rev`, so the view can expand unchanged lines.
+
+**The merge-base ref** (`mergeBaseRef`, `base_ref.go`) is the worktree PR's base
+branch on the remote whose URL is the PR's base repo (`upstream/main`,
+`upstream/feature/x`) when that ref is fetched; otherwise `gitutil.MainUpstream`.
+`GET /api/worktree-git` reports it as `main_upstream` and the PR's resource ID
+as `pr`, set even when the ref falls back, so the UI can show the PR row.
+Background fetch: `gitfetch.RemotesFor` maps each ref the handler uses to its
+remote, whose default refspec covers every branch. When the PR's base remote is
+known but does not have the base branch yet, `mergeBaseRefFetch` also reports
+that remote and the handler adds it to what the fetcher gets, so the fallback
+lasts only until a fetch brings the ref in. Review comments and the
+diff endpoints resolve `merge-base` the same way (`Server.baseRefFor`).
+
+**PR row.** The Git summary shows a `PR` row under Branch when the worktree has
+a PR (the `pr` field): status icon, `#N` and title, with a `ResourceHoverCard`
+on hover. The diff view sidebar shows the same row. Clicking it in the Code tab
+selects the PR resource and collapses "Files changed"; in the diff view it
+leaves the diff view and selects the PR. The PR's card (resource list and
+detail pane) carries a "Checked out in this worktree" laptop marker.
 
 A `base` other than `merge-base`/`tracking` is 400; a valid one the repo cannot
 supply (no upstream, no tracking branch) is 409, which the UI shows as an
@@ -4088,7 +4108,7 @@ annotations.
 
 The open PR's review threads are shown read-only in the diff view and sidebar, beside the drafts.
 
-**Routes.** `GET /api/pr-comments` (summary: counts, fingerprint, unread ids), `GET /api/pr-comments/threads` (threads placed against the diff's revs) and `GET /api/pr-comments/locate?event_id=&prefer_path=` (for a `pr_review_comment` event: answers `{path, comment_id}`, a registered worktree tracking the event's PR and on its head branch, `prefer_path` when it qualifies, else the first, and the GitHub comment id the event is about; 404 when any part can't be found; it only considers `worktree:` subscribers). Each answers with a state: `ok`, `off` (GitHub watcher disabled; gated on the toggle), `no_token` (also when `auth.yaml` can't be read, which is logged once per distinct error), `no_pr` or `error`. The summary and threads carry a `fingerprint` only when `ok`. The PR is picked by `prcomments.PickPR` (primary first, then most recently updated). Threads come from the watcher library's `github.FetchReviewThreads` (paginated, comment ids are `fullDatabaseId`, needs watcher v0.17.0).
+**Routes.** `GET /api/pr-comments` (summary: counts, fingerprint, unread ids), `GET /api/pr-comments/threads` (threads placed against the diff's revs) and `GET /api/pr-comments/locate?event_id=&prefer_path=` (for a `pr_review_comment` event: answers `{path, comment_id}`, a registered worktree whose `worktreePR` is the event's PR (its current branch tracks that PR), `prefer_path` when it qualifies, else the first, and the GitHub comment id the event is about; 404 when any part can't be found; it only considers `worktree:` subscribers). Each answers with a state: `ok`, `off` (GitHub watcher disabled; gated on the toggle), `no_token` (also when `auth.yaml` can't be read, which is logged once per distinct error), `no_pr` or `error`. The summary and threads carry a `fingerprint` only when `ok`. The PR is the worktree's PR (see "PR matching" below); among several matches a primary resource wins, then the most recently updated. Threads come from the watcher library's `github.FetchReviewThreads` (paginated, comment ids are `fullDatabaseId`, needs watcher v0.17.0).
 
 **Caches.** `prsum|` holds the summary for 10 minutes, `prthreads|` the threads for 60 seconds. A failed fetch is cached for 20 seconds (`prErrorTTL`, through `ttlCache.getErrTTL`), so a failing GitHub is asked at most once per 20 s however many clients poll; the linked-resources callers keep `get`, which never caches errors.
 
@@ -4104,7 +4124,7 @@ The open PR's review threads are shown read-only in the diff view and sidebar, b
 
 **Writing to the PR** (`pr_write_api.go`, `pr_post.go`; watcher >= v0.19.0). The one place worktree writes to GitHub, always from an explicit click. Routes: `GET /api/pr-write/check` (`{review:{postable,reason,stale_pending_commit}, single:{postable,reason}}`), `POST /api/pr-write/comment` and `/reply` (each with mode `review|single`), `GET /api/pr-write/review` (the Submit dialog's data, with `stale_pending_commit` and `blocked_reason`) and `POST /api/pr-write/submit`. Every route needs a PR and the GitHub watcher on, and refuses an empty token. The summary gains `pending_comments`, `viewer_is_author`, `stale_pending_commit` and `pr.title`.
 
-- **PR matching** is by number: `gitutil.TrackedPRNumber` (`branch.<b>.worktree-pr = N`, which worktree records when it creates a worktree from a PR, or else the older `branch.<b>.merge = refs/pull/N/head`) plus `MatchesRemote`, with the head branch as the fallback. The locate route matches the same way. With the watcher off or no token the server still names the PR without contacting GitHub (`offlinePR`: the tracked number, or a summary already cached, read with `ttlCache.peek`).
+- **PR matching** (`worktreePR`, `worktree_pr.go`; rule in `prcomments.PickPR`). A followed PR is the worktree's PR when the current branch's upstream is its head branch on a remote whose URL is the head repo, or `refs/pull/<N>/head` on the base repo's remote. It reads the cached poller state (`head_ref_name`, `base_ref_name`, `head_repo_owner`, `head_repo_name`; needs watcher >= v0.25.0) and local git only, never GitHub, so it works with the watcher off or no token. The locate route matches the same way.
 - **Postability** (`pr_post.go`). The target commit is the pending review's commit for PR-review writes, and the PR head for single comments and the "single" verdict. Reasons: `on uncommitted changes`, `on a commit not pushed to the PR`, `newer than your pending review`, `out of date`, `not part of the PR's changes`. Hunks come from `gitutil.DiffHunks`, pinned with `--inter-hunk-context=0 --diff-algorithm=myers --indent-heuristic`, which also returns a rename map. The old side is checked at `merge-base` and posted as LEFT under the new path.
 - **Missing commits** trigger one synchronous targeted fetch (`+refs/pull/N/head:refs/pr-review/N`, plus the base and pending commits by id, 30 s timeout), so the GET check may block for up to 30 s. It is skipped when Background fetch is off. A failure is negatively cached for 60 s, keyed by head and pending commit. The fetch is `gitfetch.FetchRefs`: the background fetch's never-prompt rules and `--no-write-fetch-head`, and its error is redacted with `redactError` before it is returned (the caller logs it), so remote URL credentials never reach the log.
 - **Pending review gate on single writes.** GitHub refuses a REST single comment or reply (422, one pending review per pull request) while the viewer has a pending review. So while the write context has one, the check's `single` verdict is unpostable with `You have a pending review on PR #N; add to it or submit it first`, and `POST /comment` and `/reply` in `single` mode answer 409 with that reason before any write. The gate is one function, `singleBlockedByPending` (plus `refuseSingleWhilePending`), easy to lift if GitHub turns out to accept them; the copy is mirrored as `pendingBlocksSingleReason` in `prWriteCopy.ts`. In the UI, "Comment on PR" takes the check's reason; "Reply on PR" is disabled with it whenever a pending review is known (`pending_comments > 0`, a `stale_pending_commit`, or a pending comment in the thread).

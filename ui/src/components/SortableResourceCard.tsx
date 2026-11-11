@@ -39,6 +39,7 @@ export function SortableResourceCard({
   onSetPrimary,
   menu,
   notify,
+  checkedOut,
 }: {
   r: ResourceDTO
   path: string
@@ -51,6 +52,7 @@ export function SortableResourceCard({
   onSetPrimary: (primary: boolean) => void
   menu: HoverMenu
   notify?: ResourceNotifyContext
+  checkedOut?: boolean
 }) {
   const id = serializeResourceKey({ type: r.type, id: r.id })
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
@@ -94,6 +96,7 @@ export function SortableResourceCard({
         selected={selected}
         onSelect={onSelect}
         notify={notify}
+        checkedOut={checkedOut}
         dragHandle={
           <Popover
             opened={menu.opened}

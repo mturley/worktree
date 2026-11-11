@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/mturley/worktree/internal/config"
@@ -31,16 +32,19 @@ type worktreeGitDTO struct {
 	// Fingerprint moves on commits, fetches, branch switches and working-tree
 	// edits; WorkingFingerprint only on the latter. The Code tab polls this
 	// endpoint and refetches the diff when one of them changes.
-	Fingerprint        string          `json:"fingerprint"`
-	WorkingFingerprint string          `json:"working_fingerprint"`
-	Branch             string          `json:"branch"` // empty when detached
-	MainUpstream       *string         `json:"main_upstream,omitempty"`
-	MergeBase          *string         `json:"merge_base,omitempty"`
-	VsMergeBase        *aheadBehindDTO `json:"vs_merge_base,omitempty"`
-	Tracking           *string         `json:"tracking,omitempty"`
-	VsTracking         *aheadBehindDTO `json:"vs_tracking,omitempty"`
-	Working            workingDTO      `json:"working"`
-	Fetch              gitfetch.State  `json:"fetch"`
+	Fingerprint        string  `json:"fingerprint"`
+	WorkingFingerprint string  `json:"working_fingerprint"`
+	Branch             string  `json:"branch"` // empty when detached
+	MainUpstream       *string `json:"main_upstream,omitempty"`
+	// PR is the resource ID of the followed PR this worktree's branch is the
+	// head of; when its base branch is fetched, MainUpstream is that base.
+	PR          *string         `json:"pr,omitempty"`
+	MergeBase   *string         `json:"merge_base,omitempty"`
+	VsMergeBase *aheadBehindDTO `json:"vs_merge_base,omitempty"`
+	Tracking    *string         `json:"tracking,omitempty"`
+	VsTracking  *aheadBehindDTO `json:"vs_tracking,omitempty"`
+	Working     workingDTO      `json:"working"`
+	Fetch       gitfetch.State  `json:"fetch"`
 }
 
 // handleWorktreeGit: GET /api/worktree-git?path=<path>[&fetch=1]
@@ -83,7 +87,12 @@ func (s *Server) handleWorktreeGit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var refs []string
-	if up, ok := gitutil.MainUpstream(path); ok {
+	up, pr, ok, baseRemote := s.mergeBaseRefFetch(path)
+	if pr != nil {
+		id := pr.ID
+		out.PR = &id
+	}
+	if ok {
 		out.MainUpstream = &up
 		refs = append(refs, up)
 		if mb, ok := gitutil.MergeBase(path, up); ok {
@@ -107,7 +116,11 @@ func (s *Server) handleWorktreeGit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.URL.Query().Get("fetch") == "1" && e.BackgroundFetch {
-		if remotes := gitfetch.RemotesFor(path, refs...); len(remotes) > 0 {
+		remotes := gitfetch.RemotesFor(path, refs...)
+		if baseRemote != "" && !slices.Contains(remotes, baseRemote) {
+			remotes = append(remotes, baseRemote)
+		}
+		if len(remotes) > 0 {
 			fetcher.Maybe(path, remotes)
 		}
 	}

@@ -4,7 +4,9 @@ import type { AheadBehind, WorktreeGit } from "../../api/types"
 import { useIsWide } from "../../hooks/useIsWide"
 import { unpushedLabel } from "../../lib/diffLabels"
 import { relativeTime } from "../../lib/relativeTime"
+import type { ResourceKey } from "../../lib/resourceKey"
 import { InfoRow } from "../InfoRow"
+import { PRRow } from "./PRRow"
 
 const RIGHT_LABEL_WIDTH = 100
 /** InfoRow's default label width: the left column's, and every row's in one column. */
@@ -74,19 +76,27 @@ export function DirectoryRow({ path, git }: { path: string; git: WorktreeGit }) 
  * stacked on a phone, or always (`oneColumn`) in a narrow place like the
  * diff view's file tree sidebar.
  */
-export function GitSummary({ git, repo, oneColumn = false }: {
+export function GitSummary({ path, git, repo, oneColumn = false, onOpenPR }: {
+  path: string
   git: WorktreeGit
   repo?: string
   oneColumn?: boolean
+  onOpenPR?: (key: ResourceKey) => void
 }) {
   return (
     <Stack gap={2}>
-      <Columns git={git} repo={repo} oneColumn={oneColumn} />
+      <Columns path={path} git={git} repo={repo} oneColumn={oneColumn} onOpenPR={onOpenPR} />
     </Stack>
   )
 }
 
-function Columns({ git, repo, oneColumn }: { git: WorktreeGit; repo?: string; oneColumn: boolean }) {
+function Columns({ path, git, repo, oneColumn, onOpenPR }: {
+  path: string
+  git: WorktreeGit
+  repo?: string
+  oneColumn: boolean
+  onOpenPR?: (key: ResourceKey) => void
+}) {
   const wide = useIsWide() && !oneColumn
   // One column lines every label up at the left column's width (with the
   // shorter "Tracking" so it fits); two columns give the right one its own.
@@ -115,6 +125,9 @@ function Columns({ git, repo, oneColumn }: { git: WorktreeGit; repo?: string; on
               <CopyIcon value={git.branch} label="Copy branch name" tooltip="Copy branch name" />
             </Group>
           </InfoRow>
+        )}
+        {git.pr && (
+          <PRRow path={path} prId={git.pr} onOpen={onOpenPR && (() => onOpenPR({ type: "pr", id: git.pr as string }))} />
         )}
         <InfoRow label="Working tree">
           <span data-testid="working-tree">

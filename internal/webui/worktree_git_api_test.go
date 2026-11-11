@@ -271,3 +271,20 @@ func TestWorktreeGitFetchOnlyWithParam(t *testing.T) {
 	getWorktreeGit(t, ts, wt, "&fetch=1")
 	wait(1)
 }
+
+func TestWorktreeGitReportsPR(t *testing.T) {
+	t.Parallel()
+	wt := twoRemoteWorktree(t)
+	srv, ts := gitTestServer(t, wt, nil)
+	followPR(t, srv, wt, "org/repo#7", "main")
+	resp, got := getWorktreeGit(t, ts, wt, "")
+	if resp.StatusCode != 200 {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	if got.PR == nil || *got.PR != "org/repo#7" {
+		t.Fatalf("pr = %v", got.PR)
+	}
+	if got.MainUpstream == nil || *got.MainUpstream != "upstream/main" {
+		t.Fatalf("main_upstream = %v", got.MainUpstream)
+	}
+}

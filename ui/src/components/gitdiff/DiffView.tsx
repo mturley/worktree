@@ -12,6 +12,7 @@ import { dropAbandonedNewDraft, useDeletedDrafts, useEditingCommentIds, useRevie
 import { useReviewSidebar, useReviewSidebarTab } from "../../hooks/useReviewSidebar"
 import { useWorktreeGit } from "../../hooks/useWorktreeGit"
 import { diffUnavailable } from "../../lib/diffLabels"
+import { serializeResourceKey } from "../../lib/resourceKey"
 import { countsAreUnread, toolbarLabel } from "../../lib/reviewCounts"
 import { OpenInEditorButton } from "../OpenInEditorButton"
 import { KeyHint } from "../search/KeyHint"
@@ -443,7 +444,14 @@ export default function DiffView({
     <Stack gap="sm" p={wide ? "xs" : 0}>
       {selectors("top")}
       {/* The Code tab's details, in one column to fit the sidebar. */}
-      {git?.on_disk && <GitSummary git={git} repo={repo} oneColumn />}
+      {git?.on_disk && <GitSummary
+          path={path}
+          git={git}
+          repo={repo}
+          oneColumn
+          // One navigation: closes the view and selects the PR.
+          onOpenPR={(key) => view.leave({ resource: serializeResourceKey(key) }, ["tab"])}
+        />}
       <TextInput
         size="xs"
         placeholder="Filter files"

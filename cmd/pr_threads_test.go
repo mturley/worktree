@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	watcherdb "github.com/mturley/watcher/db"
 	wgithub "github.com/mturley/watcher/github"
 
 	wdb "github.com/mturley/worktree/internal/db"
@@ -63,8 +65,10 @@ func stubServer(t *testing.T, set func(*webui.Server)) {
 	}
 }
 
-// prFixture registers the live worktree (branch "feature"), tracks PR
-// o/r#1 on it, and returns the worktree's path.
+// prFixture registers the live worktree (branch "feature"), follows PR
+// o/r#1 on it with the PR's head cached as o/r's "feature", makes the branch
+// track that through a "gh" remote for github.com/o/r, and returns the
+// worktree's path.
 func prFixture(t *testing.T) string {
 	t.Helper()
 	live, _ := seedReadFixture(t)
@@ -75,6 +79,19 @@ func prFixture(t *testing.T) string {
 	defer conn.Close()
 	if err := resources.Add(conn, live, resources.Resource{Type: "pr", ID: "o/r#1", URL: "https://github.com/o/r/pull/1"}); err != nil {
 		t.Fatal(err)
+	}
+	state := `{"head_ref_name":"feature","base_ref_name":"main","head_repo_owner":"o","head_repo_name":"r"}`
+	if err := watcherdb.UpsertResourceState(conn, "pr", "o/r#1", state, "2026-01-01T00:00:00Z", "x"); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"remote", "add", "gh", "https://github.com/o/r.git"},
+		{"config", "branch.feature.remote", "gh"},
+		{"config", "branch.feature.merge", "refs/heads/feature"},
+	} {
+		if out, err := exec.Command("git", append([]string{"-C", live}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
 	}
 	return live
 }

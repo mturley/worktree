@@ -44,6 +44,8 @@ interface ResourceListProps {
   aboveList?: React.ReactNode
   /** Notification state for the cards' bells; see ResourceNotifyContext. */
   notify?: ResourceNotifyContext
+  /** Resource ID of the PR the worktree has checked out; that PR's card is marked. */
+  checkedOutPR?: string
 }
 
 /** Whether two lists hold the same cards, in the same groups and order. */
@@ -106,7 +108,7 @@ function ResourceGroup({
 }
 
 export function ResourceList({
-  items, path, onChanged, selectedKey, onSelectResource, allItems, emptyText = "No resources tracked.", toolbar, aboveList, notify,
+  items, path, onChanged, selectedKey, onSelectResource, allItems, emptyText = "No resources tracked.", toolbar, aboveList, notify, checkedOutPR,
 }: ResourceListProps) {
   const [addOpen, setAddOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
@@ -306,6 +308,7 @@ export function ResourceList({
         onSetPrimary={(primary) => setGroup(r, primary)}
         menu={menuFor(serializeResourceKey({ type: r.type, id: r.id }))}
         notify={notify}
+        checkedOut={r.type === "pr" && r.id === checkedOutPR}
       />
     ))
 

@@ -1,6 +1,7 @@
 package gitutil
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -63,6 +64,31 @@ func CurrentBranch(dir string) (string, bool) {
 	return out, true
 }
 
+// BranchUpstream returns the current branch's configured upstream: the
+// branch.<b>.remote and branch.<b>.merge values (e.g. "origin",
+// "refs/heads/feat"). ok is false for a detached HEAD or when either is unset.
+func BranchUpstream(dir string) (remote, merge string, ok bool) {
+	branch, found := CurrentBranch(dir)
+	if !found {
+		return "", "", false
+	}
+	prefix := "branch." + branch + "."
+	out, err := git(dir, "config", "--get-regexp", "^"+regexp.QuoteMeta(prefix)+"(remote|merge)$")
+	if err != nil {
+		return "", "", false
+	}
+	for _, line := range strings.Split(out, "\n") {
+		key, value, _ := strings.Cut(strings.TrimSpace(line), " ")
+		switch strings.ToLower(strings.TrimPrefix(key, prefix)) {
+		case "remote":
+			remote = value
+		case "merge":
+			merge = value
+		}
+	}
+	return remote, merge, remote != "" && merge != ""
+}
+
 // TrackingBranch names the current branch's upstream (HEAD@{upstream}). It is
 // absent for an unpushed branch and for a detached HEAD.
 func TrackingBranch(dir string) (string, bool) {
@@ -106,42 +132,6 @@ func AheadBehind(dir, ref string) (ahead, behind int, ok bool) {
 		return 0, 0, false
 	}
 	return ahead, behind, true
-}
-
-// TrackedPRNumber is the PR number the current branch was made from: the one
-// SetPRTracking recorded, or else N when the branch's configured merge ref is
-// refs/pull/<N>/head (how branches made from a PR used to be set up, and still
-// are when the PR's fork is gone). ok is false for a detached HEAD and for any
-// other branch.
-func TrackedPRNumber(dir string) (int, bool) {
-	branch, ok := CurrentBranch(dir)
-	if !ok {
-		return 0, false
-	}
-	if num, err := git(dir, "config", "--get", "branch."+branch+"."+prNumberKey); err == nil {
-		return positiveInt(num)
-	}
-	merge, err := git(dir, "config", "--get", "branch."+branch+".merge")
-	if err != nil {
-		return 0, false
-	}
-	rest, found := strings.CutPrefix(merge, "refs/pull/")
-	if !found {
-		return 0, false
-	}
-	num, found := strings.CutSuffix(rest, "/head")
-	if !found {
-		return 0, false
-	}
-	return positiveInt(num)
-}
-
-func positiveInt(s string) (int, bool) {
-	n, err := strconv.Atoi(s)
-	if err != nil || n <= 0 {
-		return 0, false
-	}
-	return n, true
 }
 
 // IsAncestor reports whether commit a is an ancestor of commit b (a commit

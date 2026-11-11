@@ -16,6 +16,7 @@ import { useIsTall } from "../hooks/useIsTall"
 import { useDetailTab } from "../hooks/useDetailTab"
 import { useDiffView } from "../hooks/useDiffView"
 import { useReviewSidebar } from "../hooks/useReviewSidebar"
+import { useWorktreeGit } from "../hooks/useWorktreeGit"
 import { useWorktrees } from "../hooks/useWorktrees"
 import { UnreadMarkerDot } from "../components/UnreadMarkerDot"
 import { useCmuxMatches } from "../api/cmux"
@@ -117,6 +118,10 @@ export function WorktreeDetailPage() {
   // The details card's tab is the page's: it decides where the card sits
   // (see inColumn below), and Esc returns it to Notes.
   const detailTab = useDetailTab(path, inDiff)
+  // The same query (and key) as the Code tab and the diff view make, so it
+  // costs no extra poll: it tells the resource list and pane which PR is
+  // checked out here. The diff view is opened from any tab, so it counts too.
+  const checkedOutPR = useWorktreeGit(path, { fetch: inDiff || detailTab.tab === "code" }).data?.pr
   // What Esc does next, so its hint sits on the control that does the same:
   // the Notes tab, the narrowing lines' links (their own hint), "← all
   // resources", then the way out — the banner's, when it is up (see
@@ -207,9 +212,34 @@ export function WorktreeDetailPage() {
   // The same goes for a resource "Unreads only" hides, including one the
   // user just marked read: there is no back to return to it while the filter
   // stands, so a push would only add a dead entry.
+  //
+  // A resource the worktree does have but "Unreads only" or a source filter
+  // hides is different when it was REQUESTED that way (the Code tab's PR row
+  // selects one that may be read): the selection stands and the filters come
+  // off. One that was listed and then dropped out (just marked read) is still
+  // deselected, as above, so marking read never flips the user's filters.
+  const selectedHidden = Boolean(
+    selected && !selectedResource && items.some((r) => r.type === selected.type && r.id === selected.id),
+  )
+  const listedKey = useRef<string | null>(null)
+  const selectedKey = selected ? `${path}|${serializeResourceKey(selected)}` : null
   useEffect(() => {
-    if (selected && resources.data && !selectedResource) clear({ replace: true })
-  }, [selected, resources.data, selectedResource, clear])
+    // The ref describes one selection in one worktree: it must not outlive
+    // it, or re-requesting that resource later would read as "just dropped".
+    if (!selected) {
+      listedKey.current = null
+      return
+    }
+    if (!resources.data) return
+    if (selectedResource) {
+      listedKey.current = selectedKey
+    } else if (selectedHidden && listedKey.current !== selectedKey) {
+      setSources([])
+      setUnreadOnly(false)
+    } else {
+      clear({ replace: true })
+    }
+  }, [selected, resources.data, selectedResource, selectedHidden, selectedKey, clear, setSources, setUnreadOnly])
 
   // An event the home page's activity feed was clicked on to get here: its
   // details open over the resource it navigated to. Read once, at mount — the
@@ -336,6 +366,7 @@ export function WorktreeDetailPage() {
   const list = (
     <ResourceList
       items={shownItems}
+      checkedOutPR={checkedOutPR}
       allItems={filtered ? items : undefined}
       // With none followed at all, the list's own hint; narrowed, the
       // "0 resources …" line above says it.
@@ -519,6 +550,7 @@ export function WorktreeDetailPage() {
     <ResourceDetailPane
       path={path}
       resource={selectedResource}
+      checkedOutPR={checkedOutPR}
       // Also on wide: deselecting is how you get the worktree's activity feed
       // back, and it was previously only reachable by clicking the selected
       // card again.

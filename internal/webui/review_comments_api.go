@@ -238,7 +238,7 @@ func (s *Server) handleCreateReviewComment(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	baseRef, status, msg := baseRefFor(dir, req.Base)
+	baseRef, status, msg := s.baseRefFor(dir, req.Base)
 	if status != 0 {
 		writeError(w, status, msg)
 		return

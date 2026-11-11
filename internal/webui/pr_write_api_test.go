@@ -44,7 +44,6 @@ func newPRWFixture(t *testing.T) *prwFixture {
 	f.srv.revSet().add(f.wt, f.base, f.head)
 
 	rec := func(format string, a ...any) { f.calls = append(f.calls, fmt.Sprintf(format, a...)) }
-	gitIn(t, f.wt, "remote", "add", "gh", "https://github.com/o/r.git")
 	f.srv.FetchRefs = func(_ context.Context, dir, remote string, refspecs ...string) error {
 		rec("fetch %s %s", remote, strings.Join(refspecs, " "))
 		return nil
@@ -474,7 +473,7 @@ func TestPRWriteOffMakesNoCall(t *testing.T) {
 
 func TestPRWriteNoPR404(t *testing.T) {
 	f := newPRWFixture(t)
-	f.prcFixture.head = "someone-elses-branch"
+	seedPRHead(t, f.srv, prcID, "o", "r", "someone-elses-branch")
 	if code, _ := f.get(t, "/api/pr-write/check", "&file=long&side=new&start_line=5&end_line=5&old_rev="+f.base+"&new_rev="+f.head); code != 404 {
 		t.Fatalf("check: %d", code)
 	}
@@ -931,7 +930,7 @@ func TestPRWriteReviewDialogReconcilesSent(t *testing.T) {
 func TestPRWriteSubmitOffAndNoPR(t *testing.T) {
 	f := newPRWFixture(t)
 	f.simulateReviews(t, nil)
-	f.prcFixture.head = "someone-elses-branch"
+	seedPRHead(t, f.srv, prcID, "o", "r", "someone-elses-branch")
 	if code, _ := f.get(t, "/api/pr-write/review", ""); code != 404 {
 		t.Fatalf("review no PR: %d", code)
 	}

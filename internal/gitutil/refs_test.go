@@ -211,25 +211,6 @@ func TestMergeBaseOf(t *testing.T) {
 	}
 }
 
-func TestTrackedPRNumber(t *testing.T) {
-	wt := testgit.Worktree(t) // on branch "feature"
-	runIn(t, wt, "config", "branch.feature.remote", "origin")
-	runIn(t, wt, "config", "branch.feature.merge", "refs/pull/42/head")
-	if n, ok := TrackedPRNumber(wt); !ok || n != 42 {
-		t.Fatalf("TrackedPRNumber = %d, %v; want 42, true", n, ok)
-	}
-
-	runIn(t, wt, "config", "branch.feature.merge", "refs/pull/x/head")
-	if n, ok := TrackedPRNumber(wt); ok {
-		t.Fatalf("non-numeric PR ref: got %d, true", n)
-	}
-
-	repo, _ := newRemoteRepo(t) // main tracks refs/heads/main
-	if n, ok := TrackedPRNumber(repo); ok {
-		t.Fatalf("normal upstream: got %d, true", n)
-	}
-}
-
 func TestIsAncestor(t *testing.T) {
 	repo, run := newRemoteRepo(t)
 	m := run("rev-parse", "HEAD")
@@ -247,5 +228,29 @@ func TestIsAncestor(t *testing.T) {
 	}
 	if IsAncestor(repo, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", head) || IsAncestor(repo, head, "no-such-rev") {
 		t.Fatal("an unknown rev is never an ancestor")
+	}
+}
+
+func TestBranchUpstream(t *testing.T) {
+	t.Parallel()
+	wt := testgit.Worktree(t) // on branch "feature"
+
+	if _, _, ok := BranchUpstream(wt); ok {
+		t.Fatal("branch with no tracking config reported ok")
+	}
+
+	runIn(t, wt, "config", "branch.feature.remote", "sridarna")
+	if _, _, ok := BranchUpstream(wt); ok {
+		t.Fatal("branch with only a remote reported ok")
+	}
+	runIn(t, wt, "config", "branch.feature.merge", "refs/heads/feat")
+	remote, merge, ok := BranchUpstream(wt)
+	if !ok || remote != "sridarna" || merge != "refs/heads/feat" {
+		t.Fatalf("BranchUpstream = %q, %q, %v", remote, merge, ok)
+	}
+
+	runIn(t, wt, "checkout", "--detach")
+	if _, _, ok := BranchUpstream(wt); ok {
+		t.Fatal("detached HEAD reported ok")
 	}
 }

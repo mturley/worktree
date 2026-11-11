@@ -124,7 +124,7 @@ func (s *Server) diffTargetFor(w http.ResponseWriter, r *http.Request) (diffTarg
 		writeError(w, http.StatusConflict, "worktree is missing from disk")
 		return diffTarget{}, false
 	}
-	ref, status, msg := baseRefFor(dir, r.URL.Query().Get("base"))
+	ref, status, msg := s.baseRefFor(dir, r.URL.Query().Get("base"))
 	if status != 0 {
 		writeError(w, status, msg)
 		return diffTarget{}, false
@@ -133,12 +133,21 @@ func (s *Server) diffTargetFor(w http.ResponseWriter, r *http.Request) (diffTarg
 }
 
 // baseRefFor maps a base value to the ref it compares against. status is 0 on
-// success, else the HTTP status and message to answer with.
-func baseRefFor(dir, base string) (ref string, status int, msg string) {
+// success, else the HTTP status and message to answer with. merge-base is the
+// worktree PR's base branch when there is one (see mergeBaseRef).
+func (s *Server) baseRefFor(dir, base string) (ref string, status int, msg string) {
+	return resolveBaseRef(dir, base, func(dir string) (string, bool) {
+		ref, _, ok := s.mergeBaseRef(dir)
+		return ref, ok
+	})
+}
+
+// resolveBaseRef is baseRefFor with the merge-base choice supplied.
+func resolveBaseRef(dir, base string, mergeBase func(dir string) (string, bool)) (ref string, status int, msg string) {
 	var ok bool
 	switch base {
 	case "merge-base":
-		if ref, ok = gitutil.MainUpstream(dir); !ok {
+		if ref, ok = mergeBase(dir); !ok {
 			return "", http.StatusConflict, "no upstream main branch to compare against"
 		}
 	case "tracking":

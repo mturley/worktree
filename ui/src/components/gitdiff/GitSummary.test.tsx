@@ -1,9 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, render, screen, within } from "@testing-library/react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
-import type { WorktreeGit } from "../../api/types"
+import { api } from "../../api/client"
+import type { ResourceDTO, WorktreeGit } from "../../api/types"
 import { DirectoryRow, GitSummary } from "./GitSummary"
+
+vi.mock("../../api/client", async (orig) => ({
+  ...(await orig<typeof import("../../api/client")>()),
+  api: { worktreeResources: vi.fn(), allResources: vi.fn() },
+}))
 
 const base: WorktreeGit = {
   on_disk: true, fingerprint: "f", working_fingerprint: "wf", branch: "my-branch",
@@ -17,7 +24,7 @@ const base: WorktreeGit = {
 const show = (over: Partial<WorktreeGit> = {}) =>
   render(
     <MantineProvider>
-      <GitSummary git={{ ...base, ...over }} repo="r" />
+      <GitSummary path="/wt/foo" git={{ ...base, ...over }} repo="r" />
     </MantineProvider>,
   )
 
@@ -37,7 +44,7 @@ describe("GitSummary oneColumn", () => {
   it("stacks the columns even when wide", () => {
     const { container } = render(
       <MantineProvider>
-        <GitSummary git={base} repo="r" oneColumn />
+        <GitSummary path="/wt/foo" git={base} repo="r" oneColumn />
       </MantineProvider>,
     )
     const columns = container.querySelector<HTMLElement>("[style*='flex-direction']")
@@ -47,7 +54,7 @@ describe("GitSummary oneColumn", () => {
   it("lines every label up at one width, with the shorter Tracking label", () => {
     render(
       <MantineProvider>
-        <GitSummary git={base} repo="r" oneColumn />
+        <GitSummary path="/wt/foo" git={base} repo="r" oneColumn />
       </MantineProvider>,
     )
     expect(screen.getByText("Tracking")).toBeInTheDocument()
@@ -153,5 +160,64 @@ describe("GitSummary branch", () => {
     show()
     await userEvent.click(screen.getByRole("button", { name: "Copy branch name" }))
     expect(writeText).toHaveBeenCalledWith("my-branch")
+  })
+})
+
+describe("GitSummary PR row", () => {
+  const prResource: ResourceDTO = {
+    type: "pr", id: "o/r#7", url: "https://github.com/o/r/pull/7", primary: true, title: "Add linting",
+  }
+  const showPR = (opts: { over?: Partial<WorktreeGit>; oneColumn?: boolean; onOpenPR?: () => void; resources?: ResourceDTO[] } = {}) => {
+    vi.mocked(api.worktreeResources).mockResolvedValue(opts.resources ?? [prResource])
+    vi.mocked(api.allResources).mockResolvedValue([])
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(
+      <QueryClientProvider client={qc}>
+        <MantineProvider>
+          <GitSummary
+            path="/wt/foo"
+            git={{ ...base, pr: "o/r#7", ...opts.over }}
+            repo="r"
+            oneColumn={opts.oneColumn}
+            onOpenPR={opts.onOpenPR}
+          />
+        </MantineProvider>
+      </QueryClientProvider>,
+    )
+  }
+
+  it("shows a PR row between Branch and Working tree, with the number and title", async () => {
+    showPR()
+    expect(await screen.findByText("Add linting")).toBeInTheDocument()
+    const label = screen.getByText("PR")
+    const row = label.parentElement as HTMLElement
+    expect(within(row).getByText("#7")).toBeInTheDocument()
+    expect(screen.getByText("Branch").parentElement?.nextElementSibling).toBe(row)
+    expect(row.nextElementSibling).toBe(screen.getByText("Working tree").parentElement)
+  })
+
+  it("has no PR row without a tracked PR", () => {
+    showPR({ over: { pr: undefined } })
+    expect(screen.queryByText("PR")).toBeNull()
+  })
+
+  it("shows just the number while the resource is not loaded", async () => {
+    showPR({ resources: [] })
+    expect(await screen.findByText("#7")).toBeInTheDocument()
+    expect(vi.mocked(api.worktreeResources)).toHaveBeenCalled()
+    expect(screen.queryByText("Add linting")).toBeNull()
+  })
+
+  it("calls onOpenPR with the PR's key when #N is clicked", async () => {
+    const onOpenPR = vi.fn()
+    showPR({ onOpenPR })
+    await userEvent.click(await screen.findByText("#7"))
+    expect(onOpenPR).toHaveBeenCalledWith({ type: "pr", id: "o/r#7" })
+  })
+
+  it("still renders in one column", async () => {
+    showPR({ oneColumn: true })
+    expect(await screen.findByText("Add linting")).toBeInTheDocument()
+    expect(screen.getByText("PR")).toBeInTheDocument()
   })
 })

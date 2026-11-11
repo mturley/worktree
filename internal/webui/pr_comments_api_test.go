@@ -29,13 +29,14 @@ import (
 
 const prcID = "o/r#1"
 
-// prcFixture is a linked worktree on branch "pr-branch" tracking PR o/r#1,
-// with a GitHub token configured and both fetch seams stubbed and counted.
+// prcFixture is a linked worktree on branch "pr-branch" following PR o/r#1,
+// whose head (in the poller's cached state) is o/r's pr-branch, which the
+// branch tracks through a "gh" remote for github.com/o/r. A GitHub token is
+// configured and the fetch seams are stubbed and counted.
 type prcFixture struct {
 	srv          *Server
 	ts           *httptest.Server
 	wt           string
-	head         string // the PR's head branch, as the summaries stub reports
 	threads      *wgithub.PRReviewThreads
 	threadsErr   error
 	writeCtx     *wgithub.PRWriteContext
@@ -59,8 +60,12 @@ func newPRCFixture(t *testing.T) *prcFixture {
 	_, err := srv.DB.Exec(`UPDATE resource_read_cursor SET last_read_ts = ? WHERE resource_type = 'pr' AND resource_id = ?`,
 		"2026-01-01T00:00:00Z", prcID)
 	must(t, err)
+	gitIn(t, wt, "remote", "add", "gh", "https://github.com/o/r.git")
+	gitIn(t, wt, "config", "branch.pr-branch.remote", "gh")
+	gitIn(t, wt, "config", "branch.pr-branch.merge", "refs/heads/pr-branch")
+	seedPRHead(t, srv, prcID, "o", "r", "pr-branch")
 
-	f := &prcFixture{srv: srv, ts: ts, wt: wt, head: "pr-branch", threads: &wgithub.PRReviewThreads{HeadRefName: "pr-branch"}}
+	f := &prcFixture{srv: srv, ts: ts, wt: wt, threads: &wgithub.PRReviewThreads{HeadRefName: "pr-branch"}}
 	srv.FetchPRSummaries = func(token string, refs []wgithub.PRRef) (map[wgithub.PRRef]wgithub.PRSummary, error) {
 		f.sumCalls.Add(1)
 		if token != "tok" {
@@ -68,7 +73,7 @@ func newPRCFixture(t *testing.T) *prcFixture {
 		}
 		out := map[wgithub.PRRef]wgithub.PRSummary{}
 		for _, r := range refs {
-			out[r] = wgithub.PRSummary{HeadRefName: f.head, Title: fmt.Sprintf("PR %d title", r.Number), URL: fmt.Sprintf("https://github.com/%s/%s/pull/%d", r.Owner, r.Repo, r.Number)}
+			out[r] = wgithub.PRSummary{HeadRefName: "pr-branch", Title: fmt.Sprintf("PR %d title", r.Number), URL: fmt.Sprintf("https://github.com/%s/%s/pull/%d", r.Owner, r.Repo, r.Number)}
 		}
 		return out, nil
 	}
@@ -170,13 +175,13 @@ func TestPRCommentsNoToken(t *testing.T) {
 func TestPRCommentsNoPR(t *testing.T) {
 	t.Parallel()
 	f := newPRCFixture(t)
-	f.head = "someone-else"
+	seedPRHead(t, f.srv, prcID, "o", "r", "someone-else")
 	s := f.summary(t)
 	if s.State != "no_pr" || s.Branch != "pr-branch" {
 		t.Fatalf("got %+v", s)
 	}
-	if f.threadsCalls.Load() != 0 {
-		t.Fatal("threads fetched with no PR")
+	if f.sumCalls.Load() != 0 || f.threadsCalls.Load() != 0 {
+		t.Fatalf("fetched with no PR: %d summaries, %d threads", f.sumCalls.Load(), f.threadsCalls.Load())
 	}
 }
 
@@ -504,10 +509,9 @@ func TestPRCommentsLocate(t *testing.T) {
 	if code, _ := locate("event_id=nope"); code != 404 {
 		t.Fatalf("missing event: %d", code)
 	}
-	f.threads = &wgithub.PRReviewThreads{HeadRefName: "elsewhere", Threads: summaryThreads().Threads}
-	f.srv.prThreadsCacheOrInit().entries = map[string]ttlEntry{}
+	seedPRHead(t, f.srv, prcID, "o", "r", "elsewhere")
 	if code, _ := locate("event_id=e1"); code != 404 {
-		t.Fatalf("no worktree on the PR's branch: %d", code)
+		t.Fatalf("no worktree whose branch tracks the PR: %d", code)
 	}
 	f.srv.SetWatchersDisabled(map[string]bool{config.ServiceGitHub: true})
 	before := f.threadsCalls.Load()
@@ -518,18 +522,17 @@ func TestPRCommentsLocate(t *testing.T) {
 
 const reviewPRID = "o/r#7"
 
-// asReviewWorktree turns the fixture's worktree into one made from PR o/r#7:
-// on branch review/pr-7-x tracking refs/pull/7/head, with a remote whose URL
-// ends o/r, and tracking that PR. The PR's head branch (the author's) is
-// "author-branch", which matches no local branch.
+// asReviewWorktree turns the fixture's worktree into one made from PR o/r#7
+// after its fork was deleted: on branch review/pr-7-x tracking o/r's
+// refs/pull/7/head through the "gh" remote, and following that PR, whose
+// cached head is "author-branch" in no repo.
 func (f *prcFixture) asReviewWorktree(t *testing.T) {
 	t.Helper()
 	gitIn(t, f.wt, "checkout", "-q", "-b", "review/pr-7-x")
-	gitIn(t, f.wt, "remote", "add", "gh", "https://github.com/o/r.git")
 	gitIn(t, f.wt, "config", "branch.review/pr-7-x.remote", "gh")
 	gitIn(t, f.wt, "config", "branch.review/pr-7-x.merge", "refs/pull/7/head")
 	must(t, resources.Add(f.srv.DB, f.wt, resources.Resource{Type: "pr", ID: reviewPRID, URL: "https://github.com/o/r/pull/7"}))
-	f.head = "author-branch"
+	seedPRHead(t, f.srv, reviewPRID, "", "", "author-branch")
 }
 
 func TestPRCommentsReviewWorktree(t *testing.T) {
@@ -614,12 +617,12 @@ func TestPRCommentsLocateReviewWorktree(t *testing.T) {
 		return resp.StatusCode, m
 	}
 	if code, m := locate(); code != 200 || m["path"] != f.wt || m["comment_id"] != float64(11) {
-		t.Fatalf("locate by tracked PR number: %d %+v", code, m)
+		t.Fatalf("locate by tracked pull ref: %d %+v", code, m)
 	}
 	// The same number on another repo's PR is not this worktree's.
 	gitIn(t, f.wt, "remote", "set-url", "gh", "https://github.com/x/y.git")
 	if code, _ := locate(); code != 404 {
-		t.Fatalf("number match on a repo that is not a remote: %d", code)
+		t.Fatalf("pull ref on a repo that is not the PR's: %d", code)
 	}
 }
 
@@ -680,7 +683,7 @@ func (f *prcFixture) noFetches(t *testing.T) {
 	}
 }
 
-func TestPRCommentsOfflineByTrackedNumber(t *testing.T) {
+func TestPRCommentsOfflineByPullRef(t *testing.T) {
 	for _, st := range offlineStates {
 		t.Run(st.name, func(t *testing.T) {
 			f := newPRCFixture(t)
@@ -730,10 +733,26 @@ func TestPRCommentsOfflineFromCachedSummary(t *testing.T) {
 	}
 }
 
-func TestPRCommentsOfflineUncachedHasNoPR(t *testing.T) {
+func TestPRCommentsOfflineWithoutCachedSummary(t *testing.T) {
 	for _, st := range offlineStates {
 		t.Run(st.name, func(t *testing.T) {
 			f := newPRCFixture(t)
+			st.apply(f, t)
+			s := f.summary(t)
+			if s.State != st.state || s.PR == nil || s.PR.ID != prcID ||
+				s.PR.URL != "https://github.com/o/r/pull/1" || s.PR.Title != "" {
+				t.Fatalf("got %+v pr=%+v", s, s.PR)
+			}
+			f.noFetches(t)
+		})
+	}
+}
+
+func TestPRCommentsOfflineNoMatchHasNoPR(t *testing.T) {
+	for _, st := range offlineStates {
+		t.Run(st.name, func(t *testing.T) {
+			f := newPRCFixture(t)
+			seedPRHead(t, f.srv, prcID, "o", "r", "someone-else")
 			st.apply(f, t)
 			s := f.summary(t)
 			if s.State != st.state || s.PR != nil {
