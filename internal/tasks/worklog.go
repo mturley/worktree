@@ -33,7 +33,8 @@ func cleanWorkLogText(s string) (string, error) {
 	return s, nil
 }
 
-// loadWorkLog reads event id, requiring it to be a work log entry.
+// loadWorkLog reads event id, requiring it to be a work log entry of a live
+// task: a soft-deleted task's entries answer ErrNotFound, as the task does.
 func loadWorkLog(q dbtx, id int64) (Event, error) {
 	var e Event
 	var payload string
@@ -48,6 +49,9 @@ func loadWorkLog(q dbtx, id int64) (Event, error) {
 	}
 	if e.Type != EventTaskWorkLogged {
 		return Event{}, ErrNotWorkLog
+	}
+	if _, err := load(q, e.TaskID); err != nil {
+		return Event{}, err
 	}
 	e.Payload = json.RawMessage(payload)
 	return e, nil
@@ -150,7 +154,8 @@ func DeleteWorkLog(conn *sql.DB, a Actor, eventID int64) (int64, error) {
 }
 
 // WorkLogTaskID returns the task a work log entry belongs to: ErrNotFound
-// when there is no such event, ErrNotWorkLog when it is another type.
+// when there is no such event or its task is deleted, ErrNotWorkLog when it
+// is another type.
 func WorkLogTaskID(conn *sql.DB, eventID int64) (int64, error) {
 	e, err := loadWorkLog(conn, eventID)
 	if err != nil {

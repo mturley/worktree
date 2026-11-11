@@ -12,6 +12,7 @@ import (
 	watcherdb "github.com/mturley/watcher/db"
 	"github.com/mturley/worktree/internal/resources"
 	"github.com/mturley/worktree/internal/tasks"
+	"github.com/mturley/worktree/internal/unread"
 )
 
 func decodeDetail(t *testing.T, rec *httptest.ResponseRecorder) taskDetailDTO {
@@ -604,5 +605,38 @@ func TestTaskActivityLimitClamps(t *testing.T) {
 	}
 	if n := len(getActivity(t, s, tk.ID, "filter=task&limit=5000")); n != 3 {
 		t.Errorf("limit=5000 gave %d rows, want 3", n)
+	}
+}
+
+// The task's own rows in its activity feed carry the feeds' unread rule: an
+// agent event after the task's cursor is unread (and can be marked unread);
+// the user's own event never is; marking read clears it.
+func TestTaskActivityOwnEventsUnread(t *testing.T) {
+	t.Parallel()
+	s, _ := tasksServer(t)
+	tk := mustTask(t, s, tasks.NewTask{Title: "t"})
+	clearAllTaskEvents(t, s)
+	agent := insertTaskEvent(t, s.DB, tk.ID, tts(2), "task_updated", "agent", "")
+	user := insertTaskEvent(t, s.DB, tk.ID, tts(3), "task_updated", "user", "")
+	must(t, unread.MarkRead(s.DB, "task", strconv.FormatInt(tk.ID, 10), tts(1)))
+
+	byID := func() map[string]TimelineEvent {
+		out := map[string]TimelineEvent{}
+		for _, e := range getActivity(t, s, tk.ID, "filter=task") {
+			out[e.ID] = e
+		}
+		return out
+	}
+	got := byID()
+	if e := got[agent]; !e.Unread || !e.CanMarkUnread {
+		t.Errorf("agent event = unread %v can_mark_unread %v; want true, true", e.Unread, e.CanMarkUnread)
+	}
+	if e := got[user]; e.Unread || e.CanMarkUnread {
+		t.Errorf("user event = unread %v can_mark_unread %v; want false, false", e.Unread, e.CanMarkUnread)
+	}
+
+	must(t, unread.MarkRead(s.DB, "task", strconv.FormatInt(tk.ID, 10), tts(3)))
+	if e := byID()[agent]; e.Unread {
+		t.Error("agent event still unread after mark read")
 	}
 }

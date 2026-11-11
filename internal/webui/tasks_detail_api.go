@@ -17,6 +17,7 @@ import (
 	"github.com/mturley/worktree/internal/registry"
 	"github.com/mturley/worktree/internal/resourceurl"
 	"github.com/mturley/worktree/internal/tasks"
+	"github.com/mturley/worktree/internal/unread"
 )
 
 // The task detail modal's API. See docs/web-ui-architecture.md "Task detail
@@ -495,8 +496,21 @@ func (s *Server) handleTaskActivity(w http.ResponseWriter, r *http.Request) {
 			writeTaskError(w, err)
 			return
 		}
+		cursors, err := unread.Cursors(s.DB)
+		if err != nil {
+			writeTaskError(w, err)
+			return
+		}
+		marks, err := unread.EventMarks(s.DB)
+		if err != nil {
+			writeTaskError(w, err)
+			return
+		}
 		for _, fe := range evs {
-			te := taskEventToTimeline(fe.Event, t)
+			// The task's own rows carry the same unread state the feeds
+			// give them (taskUnreadRow; its cursor test relies on RFC3339
+			// UTC timestamps from both the tasks and unread stores).
+			te := taskUnreadRow(fe.Event, t, cursors, marks)
 			items = append(items, activityItem{ts: parseTS(te.TS), built: &te})
 		}
 	}

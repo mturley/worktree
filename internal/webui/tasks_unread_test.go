@@ -560,3 +560,24 @@ func TestTaskDetailLinkedResources(t *testing.T) {
 		t.Fatalf("bare linked_resources = %s, want []", raw["linked_resources"])
 	}
 }
+
+// A linked resource whose only worktree subscription is a tombstone is no
+// longer followed: its unread events add nothing to the combined count.
+func TestCombinedUnreadSkipsTombstonedFollow(t *testing.T) {
+	t.Parallel()
+	s, _ := combinedFixture(t)
+	tk := mustTask(t, s, tasks.NewTask{Title: "t", Focus: []tasks.LinkTarget{resLink("pr", "o/r#1")}})
+	clearAllTaskEvents(t, s)
+	insertTaskEvent(t, s.DB, tk.ID, tts(1), "task_updated", "agent", "")
+	if _, err := s.DB.Exec(`UPDATE watcher_subscriptions SET deleted_at = '2026-01-02T00:00:00Z'
+		WHERE subscriber LIKE 'worktree:%' AND resource_type = 'pr' AND resource_id = 'o/r#1'`); err != nil {
+		t.Fatal(err)
+	}
+
+	if d := listedTask(t, s, tk.ID); d.UnreadCount != 1 || d.CombinedUnreadCount != 1 {
+		t.Fatalf("list: unread %d combined %d; want 1, 1", d.UnreadCount, d.CombinedUnreadCount)
+	}
+	if det := getDetail(t, s, tk.ID); det.CombinedUnreadCount != 1 {
+		t.Fatalf("detail combined %d, want 1", det.CombinedUnreadCount)
+	}
+}

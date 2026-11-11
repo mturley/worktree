@@ -73,3 +73,31 @@ func TestWorkLogAPIRefusesOtherEvents(t *testing.T) {
 		t.Errorf("empty text = %d, want 400", rec.Code)
 	}
 }
+
+// Editing or deleting a work log of a deleted task answers 404 before
+// anything is written.
+func TestWorkLogAPIRefusesDeletedTask(t *testing.T) {
+	t.Parallel()
+	s, _ := tasksServer(t)
+	tk := mustTask(t, s, tasks.NewTask{Title: "T title"})
+	ev, err := tasks.LogWork(s.DB, webActor, tk.ID, "did a thing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tasks.Delete(s.DB, webActor, tk.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, route := range []string{"edit", "delete"} {
+		rec := serveTasks(t, s, http.MethodPost, "/api/tasks/worklog/"+route, map[string]any{"event_id": ev.ID, "text": "changed"})
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s on deleted task = %d, want 404", route, rec.Code)
+		}
+	}
+	var payload string
+	if err := s.DB.QueryRow(`SELECT payload FROM task_events WHERE id = ?`, ev.ID).Scan(&payload); err != nil {
+		t.Fatalf("work log row gone: %v", err)
+	}
+	if payload != string(ev.Payload) {
+		t.Errorf("payload = %s, want unchanged %s", payload, ev.Payload)
+	}
+}

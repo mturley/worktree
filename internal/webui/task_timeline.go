@@ -73,9 +73,19 @@ func taskEventState(ev tasks.Event) string {
 // unless a mark says otherwise (marks is unread.EventMarks).
 // The user's own events are never unread.
 func taskFeedRow(fe tasks.FeedEvent, cursors map[string]string, marks map[string]unread.EventMark) TimelineEvent {
-	te := taskEventToTimeline(fe.Event, tasks.Task{ID: fe.TaskID, Title: fe.TaskTitle})
-	te.CanMarkUnread = tasks.CountsAsUnread(fe.Actor)
-	te.Unread = te.CanMarkUnread && unread.EventUnread(marks, te.ID, fe.TS, fe.TS > cursors[unread.Key("task", te.ResourceID)])
+	return taskUnreadRow(fe.Event, tasks.Task{ID: fe.TaskID, Title: fe.TaskTitle}, cursors, marks)
+}
+
+// taskUnreadRow is taskEventToTimeline plus taskFeedRow's unread rule, for a
+// caller that already holds the event's task.
+//
+// The cursor test compares strings: task event ts and the read cursor are
+// both RFC3339 UTC, written by tasks and unread alike, so lexical order is
+// time order.
+func taskUnreadRow(ev tasks.Event, t tasks.Task, cursors map[string]string, marks map[string]unread.EventMark) TimelineEvent {
+	te := taskEventToTimeline(ev, t)
+	te.CanMarkUnread = tasks.CountsAsUnread(ev.Actor)
+	te.Unread = te.CanMarkUnread && unread.EventUnread(marks, te.ID, ev.TS, ev.TS > cursors[unread.Key("task", te.ResourceID)])
 	return te
 }
 

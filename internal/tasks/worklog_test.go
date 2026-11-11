@@ -177,3 +177,32 @@ func TestWorkLogAgentActorAllowed(t *testing.T) {
 		t.Fatalf("event = %+v", ev)
 	}
 }
+
+// A soft-deleted task's work log entries are not found, and nothing writes.
+func TestWorkLogOfDeletedTask(t *testing.T) {
+	conn := newDB(t)
+	tk := mustCreate(t, conn, "alpha")
+	ev, err := LogWork(conn, user, tk.ID, "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Delete(conn, user, tk.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := WorkLogTaskID(conn, ev.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("WorkLogTaskID = %v, want ErrNotFound", err)
+	}
+	if _, err := EditWorkLog(conn, user, ev.ID, "y"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Edit = %v, want ErrNotFound", err)
+	}
+	if _, err := DeleteWorkLog(conn, user, ev.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Delete = %v, want ErrNotFound", err)
+	}
+	var payload string
+	if err := conn.QueryRow(`SELECT payload FROM task_events WHERE id = ?`, ev.ID).Scan(&payload); err != nil {
+		t.Fatalf("row gone: %v", err)
+	}
+	if payload != string(ev.Payload) {
+		t.Errorf("payload = %s, want %s", payload, ev.Payload)
+	}
+}
