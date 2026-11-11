@@ -1079,17 +1079,34 @@ cursors. So a Slack thread whose only unread is task activity (`has_unread`
 false) is not marked in Slack at all; its tasks are. The button shows while
 either kind has anything unread.
 
-The task modal's header has its own **Mark read**, shown while
-`unread_count > 0`. It marks through the task's `unread_through_ts`
-(`taskDTO`, the `NewestTS` of the same `unread.TaskSummaries` row that fills
-`unread_count`), so it clears exactly the events the header counted. An agent
-event arriving after render stays unread, the same `through_ts` contract as
-resources. Without one, or when the mark moves nothing, it says "Already
-read" and offers no undo. Opening the modal marks nothing.
+The task modal's header has its own **Mark all read**, the same
+`MarkAllReadButton`, shown while `combined_unread_count > 0`. Its
+`resources` are `TaskDetail.linked_resources` (the task's resource links,
+unread fields filled for followed ones, zeroed for the rest so they are no
+targets), its `taskScope` is `{ kind: "task", id }` and its `feed` is
+`{ task: id, showResource: true }`. So its rows are the linked resources by
+source plus the task's own unread as one task row — exactly the set
+`combined_unread_count` counts, so the count and the clear agree. A linked
+resource's cursor is shared by every worktree following it, so it moves only
+through a checkbox in this modal, never silently. The preview (`feed.task`)
+reads the task's activity (`useTaskActivity(id, { filter: "all" })`, the
+Activity tab's Everything view), which has no unread-only filter, and narrows
+it client-side to unread rows whose source is checked: a watcher row only
+when its resource (`type:id`) is a checked target, a task row only when its
+task is checked. Since that narrowing is per page, it offers Load more while
+the feed has more, even when a page held no unread row. Opening the task
+marks nothing.
+
+Every mark-read path refreshes `["tasks"]` as well as the worktrees,
+resources and timelines, because a linking task's `combined_unread_count`
+includes the resource: Mark all read, the per-event marks
+(`useMarkEventRead`), the Slack details mark (`useMarkSlackEventRead`) and
+the Slack thread view's read, unread and send (`ThreadView`'s
+`refreshUnreadSurfaces`).
 
 **Undo** (`ui/src/components/UndoToast.tsx`, `@mantine/notifications`). Every
-mark-read made from the UI — Mark all read, in either form, the Slack
-thread view's Mark read and the task modal's — shows a toast for 10 seconds with an Undo button
+mark-read made from the UI — Mark all read, in any form (the task modal's
+included), and the Slack thread view's Mark read — shows a toast for 10 seconds with an Undo button
 (also Z; U is taken by Show unread only) that puts the cursors back. Z works
 with a modal open too: the toast lives in the notifications portal, outside
 any modal, so it passes `aboveOverlays` to `useButtonHotkey`, which otherwise
@@ -1961,6 +1978,13 @@ URL param (`?task=<id>`) through **`TaskModalProvider`**
   worktree, open in diff) changes the path and drops `?task=`, which closes
   the task modal under the history contract above; Back returns to the page
   with the task open.
+- **Mark all read** in the header (while `combined_unread_count > 0`) is
+  `MarkAllReadButton` over the task's linked resources and the task itself;
+  see "Unread". Its confirm modal is a layer over the task modal, and a
+  preview row's details a layer over the confirm (`TimelineFeed`'s
+  `EventDetailsModal` sits inside its provider), so Esc closes details, then
+  the confirm, then the task. Its preview passes no `onOpenTask`, so this
+  task's own event rows open their details there, never the task again.
 - **Stacking and Esc** (`modalLayer.tsx`). Every open Mantine `Modal` closes
   on Escape from its own capture-phase window listener (it skips only a
   target marked `data-mantine-stop-propagation`), so with two modals open
@@ -1971,12 +1995,13 @@ URL param (`?task=<id>`) through **`TaskModalProvider`**
   one beneath not `topmost`, and takes a z-index one above it (Mantine's
   modal default, 200, plus its depth), so it paints on top whatever the
   order of their portals. A modal opened under no provider is a bottom layer
-  and behaves as before. `TaskDetailModal` and `EventDetailsModal` both use
-  it, so a confirm opened over either stacks the same way. (Mantine's own
+  and behaves as before. `TaskDetailModal`, `EventDetailsModal` and
+  `MarkAllReadButton`'s confirm all use it, so a confirm opened over either
+  stacks the same way. (Mantine's own
   `Modal.Stack` needs the modals as siblings in one place, which these are
   not.)
 - **Files.** `TaskDetailModal` (shell; keeps the last id mounted through the
-  close transition), `TaskModalHeader` (state menu, star, editable title),
+  close transition), `TaskModalHeader` (state menu, star, editable title, Mark all read),
   `TaskSidebar` (state, priority, due, starred, and a Delete that asks inline
   "Delete? Yes / No" first and whose undo toast reopens the modal; the delete, its undo and its failure logic
   are in `TaskDetailModal`, the undo toasts in `tasks/taskUndo.ts`), and two tabs. `DetailsTab` stacks `DescriptionSection`, `SubtasksSection`,

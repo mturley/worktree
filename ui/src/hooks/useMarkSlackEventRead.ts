@@ -64,7 +64,9 @@ type MarkOptions = { onDone?: () => void; onUndone?: () => void }
  */
 export function useMarkSlackEventRead() {
   const qc = useQueryClient()
+  // "tasks" too: a linking task's combined unread count includes the thread.
   const refresh = useCallback(() => {
+    void qc.invalidateQueries({ queryKey: ["tasks"] })
     void qc.invalidateQueries({ queryKey: ["worktrees"] })
     void qc.invalidateQueries({ queryKey: ["resources"] })
     void qc.invalidateQueries({ queryKey: ["timeline"] })

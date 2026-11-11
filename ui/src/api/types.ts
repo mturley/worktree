@@ -790,8 +790,9 @@ export interface Task {
   combined_unread_count?: number
   /**
    * The newest of those unread events, from the same server snapshot; absent
-   * with nothing unread. Sent as through_ts by the task modal's Mark read, so
-   * it clears only what was counted, never an event that arrived after.
+   * with nothing unread. GET /api/task-unread answers it, from the same
+   * summary, as newest_ts, which Mark all read sends as through_ts, so it
+   * clears only what was counted, never an event that arrived after.
    */
   unread_through_ts?: string
   /** Some blocker is unresolved. */

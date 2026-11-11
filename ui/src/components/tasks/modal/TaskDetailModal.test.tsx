@@ -5,7 +5,7 @@ import { MantineProvider } from "@mantine/core"
 import { Notifications, notifications } from "@mantine/notifications"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { api, HttpError } from "../../../api/client"
-import type { TaskDetail, TimelineEvent } from "../../../api/types"
+import type { ResourceDTO, TaskDetail, TimelineEvent } from "../../../api/types"
 import { taskDetailKey } from "../../../hooks/useTaskDetail"
 import { TaskDetailModal } from "./TaskDetailModal"
 import { TaskModalProvider, useTaskModal } from "./TaskModalProvider"
@@ -25,6 +25,7 @@ vi.mock("../../../api/client", async (orig) => ({
     setTaskState: vi.fn(),
     deleteTask: vi.fn(),
     undoTask: vi.fn(),
+    taskUnread: vi.fn(),
   },
 }))
 
@@ -79,6 +80,7 @@ beforeEach(() => {
   vi.mocked(api.setTaskState).mockResolvedValue(detail(5))
   vi.mocked(api.deleteTask).mockResolvedValue({ undo_event_id: 61 })
   vi.mocked(api.undoTask).mockResolvedValue(undefined)
+  vi.mocked(api.taskUnread).mockResolvedValue([])
 })
 afterEach(() => {
   cleanup()
@@ -560,6 +562,57 @@ describe("TaskDetailModal", () => {
       expect(screen.queryByText("Task not found")).toBeNull()
       expect(within(detailsDialog()!).queryByRole("button", { name: "Edit" })).toBeNull()
       await user.click(detailsDialog()!.querySelector<HTMLElement>(".mantine-Modal-close")!)
+      await waitFor(() => expect(param()).toBeNull())
+    })
+  })
+
+  describe("Mark all read", () => {
+    const prEvent = {
+      id: "ev:1", ts: "2099-03-01T00:00:00Z", external_ts: "", source: "github", type: "pr_comment",
+      type_label: "comment", title: "an unread PR comment", body: "", author: "", resource_type: "pr",
+      resource_id: "o/r#1", resource_url: "", resource_title: "", worktrees: [], unread: true,
+    } as unknown as TimelineEvent
+    const dialogs = () => screen.queryAllByRole("dialog")
+    const confirmDialog = () => dialogs().find((d) => d.getAttribute("aria-labelledby") &&
+      within(d).queryByRole("button", { name: "Mark read" }))
+    const esc = () => fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" })
+
+    beforeEach(() => {
+      vi.mocked(api.taskDetail).mockImplementation(async (id: number) => detail(id, {
+        combined_unread_count: 1,
+        linked_resources: [{ type: "pr", id: "o/r#1", url: "u", primary: true, unread_count: 1,
+          unread_through_ts: "2099-03-01T00:00:00Z" } as ResourceDTO],
+      }))
+      vi.mocked(api.taskActivity).mockResolvedValue({ events: [prEvent], next_cursor: "" })
+    })
+
+    it("opens over the task modal, and Esc closes one layer at a time: details, the confirm, the task", async () => {
+      const user = userEvent.setup()
+      wrap()
+      await titleButton()
+      await user.click(await screen.findByRole("button", { name: /Mark all read/ }))
+      await waitFor(() => expect(confirmDialog()).toBeDefined())
+      const confirm = confirmDialog()!
+      await user.click(await within(confirm).findByText("an unread PR comment"))
+      await waitFor(() => expect(dialogs()).toHaveLength(3))
+      const taskDialog = screen.getByRole("button", { name: /^Edit title/ }).closest("[role=dialog]")
+      const details = dialogs().find((d) => d !== confirm && d !== taskDialog)!
+      expect(details).toBeDefined()
+      // Real focus inside the top modal: its focus trap puts it there.
+      await waitFor(() => expect(details.contains(document.activeElement)).toBe(true))
+
+      esc()
+      await waitFor(() => expect(dialogs()).toHaveLength(2))
+      expect(confirmDialog()).toBeDefined()
+      expect(param()).toBe("5")
+
+      await waitFor(() => expect(confirmDialog()!.contains(document.activeElement)).toBe(true))
+      esc()
+      await waitFor(() => expect(confirmDialog()).toBeUndefined())
+      expect(screen.getByTestId("open-id")).toHaveTextContent("5")
+      expect(param()).toBe("5")
+
+      esc()
       await waitFor(() => expect(param()).toBeNull())
     })
   })

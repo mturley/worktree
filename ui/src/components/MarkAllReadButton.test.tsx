@@ -13,6 +13,7 @@ const worktreeTimeline = vi.fn()
 const taskUnread = vi.fn()
 const taskRead = vi.fn()
 const taskReadRestore = vi.fn()
+const taskActivity = vi.fn()
 vi.mock("../api/client", async (orig) => {
   const actual = await orig<typeof import("../api/client")>()
   return {
@@ -25,6 +26,7 @@ vi.mock("../api/client", async (orig) => {
       taskUnread: (...args: unknown[]) => taskUnread(...args),
       taskRead: (...args: unknown[]) => taskRead(...args),
       taskReadRestore: (...args: unknown[]) => taskReadRestore(...args),
+      taskActivity: (...args: unknown[]) => taskActivity(...args),
     },
   }
 })
@@ -107,6 +109,7 @@ beforeEach(() => {
     Promise.resolve({ previous_ts: "2099-01-01T00:00:00Z", last_read_ts: a.through_ts }))
   taskReadRestore.mockReset()
   taskReadRestore.mockResolvedValue(null)
+  taskActivity.mockReset()
 })
 afterEach(() => {
   cleanup()
@@ -555,6 +558,66 @@ describe("MarkAllReadButton", () => {
       await user.click(screen.getByRole("button", { name: "Mark read" }))
       await waitFor(() => expect(taskRead).toHaveBeenCalledTimes(1))
       expect(markThreadRead).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("a task's own feed", () => {
+    const taskEv = (id: string, task: string, title: string, unread = true) =>
+      ({ ...ev(id, "task", title), source: "tasks", resource_id: task, unread }) as TimelineEvent
+    const prEv = (id: string, rid: string, title: string, unread = true) =>
+      ({ ...ev(id, "pr", title), resource_id: rid, unread }) as TimelineEvent
+    const self = { id: 5, title: "Five", count: 1, newest_ts: "2099-02-01T00:00:00Z" }
+    const page = (events: TimelineEvent[], next_cursor = "") => Promise.resolve({ events, next_cursor })
+    const wrapTask = () =>
+      wrap([pr("o/r#1", 1, "2099-01-02T00:00:00Z"), jira("J-1", 1, "2099-01-05T00:00:00Z")],
+        { task: 5, showResource: true }, { taskScope: { kind: "task", id: 5 } })
+
+    beforeEach(() => {
+      taskUnread.mockResolvedValue([self])
+      taskActivity.mockImplementation(() => page([
+        prEv("e1", "o/r#1", "linked PR unread"),
+        prEv("e2", "o/r#1", "linked PR read", false),
+        { ...ev("e3", "jira", "linked Jira unread"), resource_id: "J-1" } as TimelineEvent,
+        taskEv("t1", "5", "own unread"),
+        // Not a target: no checkbox would clear it, so it isn't previewed.
+        prEv("e4", "o/r#9", "some other PR unread"),
+      ]))
+    })
+
+    it("previews the task's activity, unread rows of checked sources only", async () => {
+      const user = userEvent.setup()
+      wrapTask()
+      await screen.findByRole("button", { name: /mark all read/i })
+      await open(user)
+      expect(await screen.findByText("linked PR unread")).toBeInTheDocument()
+      expect(screen.getByText("linked Jira unread")).toBeInTheDocument()
+      expect(screen.getByText("own unread")).toBeInTheDocument()
+      expect(screen.queryByText("linked PR read")).toBeNull()
+      expect(screen.queryByText("some other PR unread")).toBeNull()
+      expect(taskActivity).toHaveBeenCalledWith(5, "all", undefined, undefined)
+      expect(globalTimeline).not.toHaveBeenCalled()
+      expect(worktreeTimeline).not.toHaveBeenCalled()
+
+      await user.click(screen.getByRole("checkbox", { name: /GitHub/ }))
+      await waitFor(() => expect(screen.queryByText("linked PR unread")).toBeNull())
+      expect(screen.getByText("linked Jira unread")).toBeInTheDocument()
+      await user.click(screen.getByRole("checkbox", { name: "T5 Five" }))
+      await waitFor(() => expect(screen.queryByText("own unread")).toBeNull())
+      expect(screen.getByText("linked Jira unread")).toBeInTheDocument()
+    })
+
+    it("loads more of the feed while it has more, even with no unread row on the first page", async () => {
+      const full = Array.from({ length: 200 }, (_, i) =>
+        prEv(`r${i}`, "o/r#1", `read ${i}`, false))
+      taskActivity.mockImplementation((_id, _f, _r, before?: string) =>
+        before ? page([taskEv("t-old", "5", "older own unread")]) : page(full, full[199].ts))
+      const user = userEvent.setup()
+      wrapTask()
+      await screen.findByRole("button", { name: /mark all read/i })
+      await open(user)
+      await user.click(await screen.findByRole("button", { name: "Load more" }))
+      expect(await screen.findByText("older own unread")).toBeInTheDocument()
+      expect(taskActivity).toHaveBeenLastCalledWith(5, "all", undefined, full[199].ts)
     })
   })
 })
