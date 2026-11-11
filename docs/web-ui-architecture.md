@@ -4193,6 +4193,18 @@ the resource row's own buttons; chips stay left and the buttons wrap below them 
 narrow modal. An event with no worktrees (an archived resource) gets the buttons on a
 row of their own, right-aligned. Nothing follows the body. The row is `data-testid="worktree-row"`.
 
+**Work log editing.** A `task_work_logged` event shows "Edit" among the actions (hidden
+when the `editable` prop is false, which the deleted-task fallback uses). It swaps the body
+for `WorkLogEditor`: a textarea (4000 max) with Save (Cmd/Ctrl+Enter too), Cancel and
+Delete (inline "Delete? Yes / No"). Save calls `editWorkLog(<numeric id from taskEventNumericId>, text)`;
+the task detail response carries no event, so the modal patches its own copy (trimmed body,
+`edited_at = now`) and shows "(edited)" after the time, as `EventRow` does; the mutation's
+invalidation corrects the feeds. Delete closes the modal. Esc cancels the edit only: Mantine's
+Modal closes on Escape from a capture-phase window listener that checks `event.target` for
+`data-mantine-stop-propagation`, so every focusable control in the editor carries it and the
+editor focuses its textarea on mount. The `inTask` prop (modal shown over a task's own modal)
+hides "Make task"; every other action stays.
+
 **Description diff.** `jira_description_changed` and `pr_description_changed`
 (`DESCRIPTION_DIFF_TYPES`) show a diff in place of the body. `DescriptionChange` fetches
 `GET /api/event-text-change?id=` (react-query, `staleTime: Infinity`, no retry on 404) and

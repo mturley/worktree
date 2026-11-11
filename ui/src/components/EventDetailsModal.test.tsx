@@ -618,3 +618,79 @@ describe("EventDetailsModal description diffs", () => {
     expect(screen.queryByTestId("description-diff")).toBeNull()
   })
 })
+
+describe("EventDetailsModal work logs", () => {
+  const log = (o: Partial<TimelineEvent> = {}) =>
+    ev({
+      id: "task:42", source: "tasks", type: "task_work_logged", type_label: "work logged",
+      title: "Worked on “t”", body: "old note", resource_type: "task", resource_id: "7",
+      resource_url: "", ...o,
+    })
+
+  it("offers Edit only on a work log, and not when editable is false", () => {
+    wrap(<EventDetailsModal e={ev({})} onClose={vi.fn()} />)
+    expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument()
+    cleanup()
+    wrap(<EventDetailsModal e={log()} onClose={vi.fn()} editable={false} />)
+    expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument()
+    cleanup()
+    wrap(<EventDetailsModal e={log()} onClose={vi.fn()} />)
+    expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument()
+  })
+
+  it("saves an edit and shows the new body with (edited)", async () => {
+    const edit = vi.spyOn(api, "editWorkLog").mockResolvedValue({ id: 7 } as never)
+    wrap(<EventDetailsModal e={log()} onClose={vi.fn()} />)
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }))
+    const box = screen.getByLabelText("Work log note")
+    await userEvent.clear(box)
+    await userEvent.type(box, "new note")
+    await userEvent.click(screen.getByRole("button", { name: "Save" }))
+    expect(await screen.findByText("new note")).toBeInTheDocument()
+    expect(edit).toHaveBeenCalledWith(42, "new note")
+    expect(screen.getByText(/\(edited\)/)).toBeInTheDocument()
+    expect(screen.queryByLabelText("Work log note")).not.toBeInTheDocument()
+  })
+
+  it("shows (edited) for an already edited entry", () => {
+    wrap(<EventDetailsModal e={log({ edited_at: "2026-08-26T00:00:00Z" })} onClose={vi.fn()} />)
+    expect(screen.getByText(/\(edited\)/)).toBeInTheDocument()
+  })
+
+  it("deletes after Yes and closes; No keeps it", async () => {
+    const del = vi.spyOn(api, "deleteWorkLog").mockResolvedValue({ id: 7 } as never)
+    const onClose = vi.fn()
+    wrap(<EventDetailsModal e={log()} onClose={onClose} />)
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }))
+    await userEvent.click(screen.getByRole("button", { name: "Delete" }))
+    await userEvent.click(screen.getByRole("button", { name: "No" }))
+    expect(del).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole("button", { name: "Delete" }))
+    await userEvent.click(screen.getByRole("button", { name: "Yes" }))
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+    expect(del).toHaveBeenCalledWith(42)
+  })
+
+  it("Esc in the editor cancels the edit without closing the modal", async () => {
+    const onClose = vi.fn()
+    wrap(<EventDetailsModal e={log()} onClose={onClose} />)
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }))
+    await userEvent.keyboard("{Escape}")
+    expect(screen.queryByLabelText("Work log note")).not.toBeInTheDocument()
+    expect(onClose).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }))
+    screen.getByRole("button", { name: "Save" }).focus()
+    await userEvent.keyboard("{Escape}")
+    expect(screen.queryByLabelText("Work log note")).not.toBeInTheDocument()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it("inTask hides Make task even with onMakeTask", () => {
+    wrap(<EventDetailsModal e={ev({})} onClose={vi.fn()} onMakeTask={vi.fn()} />)
+    expect(screen.getByRole("button", { name: "Make task" })).toBeInTheDocument()
+    cleanup()
+    wrap(<EventDetailsModal e={ev({})} onClose={vi.fn()} onMakeTask={vi.fn()} inTask />)
+    expect(screen.queryByRole("button", { name: "Make task" })).not.toBeInTheDocument()
+  })
+})

@@ -14,7 +14,8 @@ import { ResourceActions } from "./ResourceActions"
 import { FollowInWorktreeMenu } from "./FollowInWorktreeMenu"
 import { WorktreeName, WorktreePreview } from "./WorktreeName"
 import { eventWorktrees, followResourceState, isArchivedEvent } from "../lib/openEvent"
-import { eventTaskKey } from "../lib/taskEventKey"
+import { eventTaskKey, taskEventNumericId } from "../lib/taskEventKey"
+import { WorkLogEditor } from "./WorkLogEditor"
 import { OpenInFullUiButton } from "./OpenInFullUiButton"
 import { eventFullUiHref } from "../lib/fullUiLink"
 import { useMiniModalFullScreen } from "../hooks/useMiniModalFullScreen"
@@ -43,7 +44,7 @@ installPreloadReload()
  * scannable, which left long comments unreadable in the UI — the text was
  * fetched and then thrown away. Here it is shown in full.
  */
-export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTask }: {
+export function EventDetailsModal({ e: shown, onClose, resolveResource, path, onMakeTask, inTask, editable = true }: {
   e: TimelineEvent | null
   onClose: () => void
   resolveResource?: (type: string, id: string) => ResourceDTO | undefined
@@ -58,7 +59,21 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
    * the page, and two modals stacked would leave this one behind it.
    */
   onMakeTask?: (e: TimelineEvent) => void
+  /**
+   * Shown over a task's own modal: no "Make task", since the task modal
+   * would stack under a second one. Every other action stays.
+   */
+  inTask?: boolean
+  /** False hides "Edit" on a work log (the deleted-task fallback has no task to write to). */
+  editable?: boolean
 }) {
+  // This modal holds its own copy of an edited work log: the feed it was
+  // opened from refetches, but this event prop does not change under us.
+  const [patched, setPatched] = useState<TimelineEvent | null>(null)
+  const e = patched && patched.id === shown?.id ? patched : shown
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const editing = !!e && editingId === e.id
+  const canEdit = !!e && editable && e.type === "task_work_logged" && taskEventNumericId(e) !== null
   const actionResource = e?.resource_url ? eventResource(e, resolveResource) : undefined
   const [, navigate] = useLocation()
   const fullScreen = useMiniModalFullScreen()
@@ -151,7 +166,7 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
     navigate(`/worktree/${encodeURIComponent(worktreePath)}`)
   }
 
-  const hasActions = !!e && !!(locate.data || offerMarkRead || offerMarkUnread || (onMakeTask && eventTaskKey(e)))
+  const hasActions = !!e && !!(locate.data || offerMarkRead || offerMarkUnread || canEdit || (onMakeTask && !inTask && eventTaskKey(e)))
   const actions = e && hasActions ? (
     <>
       {locate.data && (
@@ -178,7 +193,12 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
           Mark unread
         </Button>
       )}
-      {onMakeTask && eventTaskKey(e) && (
+      {canEdit && !editing && (
+        <Button size="xs" variant="light" onClick={() => setEditingId(e.id)}>
+          Edit
+        </Button>
+      )}
+      {onMakeTask && !inTask && eventTaskKey(e) && (
         <Button
           size="xs"
           variant="light"
@@ -311,10 +331,23 @@ export function EventDetailsModal({ e, onClose, resolveResource, path, onMakeTas
           </Text>
           <Text size="xs" c="dimmed">
             {e.author && `${e.author} · `}
-            {rel(e.external_ts || e.ts)}
+            {rel(e.external_ts || e.ts)}{e.edited_at && " (edited)"}
           </Text>
 
-          {DESCRIPTION_DIFF_TYPES.includes(e.type) ? (
+          {editing ? (
+            <WorkLogEditor
+              event={e}
+              onSaved={(next) => {
+                setPatched(next)
+                setEditingId(null)
+              }}
+              onDeleted={() => {
+                setEditingId(null)
+                onClose()
+              }}
+              onCancel={() => setEditingId(null)}
+            />
+          ) : DESCRIPTION_DIFF_TYPES.includes(e.type) ? (
             <DescriptionChange key={e.id} id={e.id} />
           ) : e.body && isGitHubMarkdownBody(e.type) ? (
             // Images as links: one could be a tracking pixel, or an
