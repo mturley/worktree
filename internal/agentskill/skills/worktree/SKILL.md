@@ -26,7 +26,7 @@ resources to poll can be stale; one with none is fine even if it never polled. I
   expired or rejected credentials, tell the user to re-run `worktree setup`.
   `no_success_yet` means it has not polled successfully, which is normal for a couple
   of minutes after the UI starts and otherwise usually means missing credentials
-  (`worktree setup`). `poll_old` means polling stopped; suggest the Logs tab in Settings.
+  (`worktree setup`). `poll_old` means polling stopped; suggest the Watcher logs button at the top right of the web UI.
 
 Read commands never create or upgrade the database, so `status` can exit 2. Tell the
 user what the error says and stop: with "no worktree database yet", they need to run
