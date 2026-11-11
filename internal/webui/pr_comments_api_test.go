@@ -511,7 +511,7 @@ func TestPRCommentsLocate(t *testing.T) {
 	}
 	seedPRHead(t, f.srv, prcID, "o", "r", "elsewhere")
 	if code, _ := locate("event_id=e1"); code != 404 {
-		t.Fatalf("no worktree on the PR's branch: %d", code)
+		t.Fatalf("no worktree whose branch tracks the PR: %d", code)
 	}
 	f.srv.SetWatchersDisabled(map[string]bool{config.ServiceGitHub: true})
 	before := f.threadsCalls.Load()

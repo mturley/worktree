@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/mturley/worktree/internal/config"
@@ -86,7 +87,7 @@ func (s *Server) handleWorktreeGit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var refs []string
-	up, pr, ok := s.mergeBaseRef(path)
+	up, pr, ok, baseRemote := s.mergeBaseRefFetch(path)
 	if pr != nil {
 		id := pr.ID
 		out.PR = &id
@@ -115,7 +116,11 @@ func (s *Server) handleWorktreeGit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.URL.Query().Get("fetch") == "1" && e.BackgroundFetch {
-		if remotes := gitfetch.RemotesFor(path, refs...); len(remotes) > 0 {
+		remotes := gitfetch.RemotesFor(path, refs...)
+		if baseRemote != "" && !slices.Contains(remotes, baseRemote) {
+			remotes = append(remotes, baseRemote)
+		}
+		if len(remotes) > 0 {
 			fetcher.Maybe(path, remotes)
 		}
 	}

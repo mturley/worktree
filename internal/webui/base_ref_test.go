@@ -1,12 +1,18 @@
 package webui
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
+	"sort"
+	"sync"
 	"testing"
+	"time"
 
 	watcherdb "github.com/mturley/watcher/db"
 
+	"github.com/mturley/worktree/internal/gitfetch"
 	"github.com/mturley/worktree/internal/resources"
 	"github.com/mturley/worktree/internal/testgit"
 )
@@ -106,5 +112,69 @@ func TestMergeBaseRefNoPR(t *testing.T) {
 	ref, pr, ok := srv.mergeBaseRef(wt)
 	if !ok || ref != "origin/main" || pr != nil {
 		t.Fatalf("mergeBaseRef = %q, %+v, %v", ref, pr, ok)
+	}
+}
+
+func TestMergeBaseRefFetchRemote(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ name, id, base, want string }{
+		{"unfetched base branch", "org/repo#7", "gone", "upstream"},
+		{"base resolves", "org/repo#7", "main", ""},
+		{"no remote matches", "someone/else#7", "main", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			wt := twoRemoteWorktree(t)
+			srv, _ := gitTestServer(t, wt, nil)
+			followPR(t, srv, wt, tc.id, tc.base)
+			if _, _, _, got := srv.mergeBaseRefFetch(wt); got != tc.want {
+				t.Fatalf("fetchRemote = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// The PR's base remote is fetched when it lacks the base branch, though the
+// comparison falls back to origin/main meanwhile.
+func TestWorktreeGitFetchesUnfetchedBaseRemote(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, id, base string
+		want           []string
+	}{
+		{"unfetched", "org/repo#7", "gone", []string{"origin", "upstream"}},
+		{"no remote matches", "someone/else#7", "main", []string{"origin"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			wt := twoRemoteWorktree(t)
+			var mu sync.Mutex
+			var got []string
+			sched := gitfetch.New(context.Background(), time.Minute)
+			sched.Fetch = func(ctx context.Context, dir, remote string) error {
+				mu.Lock()
+				defer mu.Unlock()
+				got = append(got, remote)
+				return nil
+			}
+			srv, ts := gitTestServer(t, wt, sched)
+			followPR(t, srv, wt, tc.id, tc.base)
+			getWorktreeGit(t, ts, wt, "&fetch=1")
+			deadline := time.Now().Add(3 * time.Second)
+			for time.Now().Before(deadline) {
+				mu.Lock()
+				n := len(got)
+				mu.Unlock()
+				if n >= len(tc.want) {
+					break
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			time.Sleep(100 * time.Millisecond)
+			mu.Lock()
+			defer mu.Unlock()
+			sort.Strings(got)
+			if !slices.Equal(got, tc.want) {
+				t.Fatalf("fetched %v, want %v", got, tc.want)
+			}
+		})
 	}
 }

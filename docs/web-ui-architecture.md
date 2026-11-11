@@ -1214,9 +1214,10 @@ tabs by the `storage` event. The home page's toggle sits beside the worktree
 sort control; the worktree page's beside Follow resource. When on it hides
 worktrees without `has_unread` and resources without `hasUnread` (empty states
 "No worktrees with unread events" / "No resources with unread events"), and
-narrows the two unified feeds to unread events. A selected resource that the
-filter hides — typically one just marked read — is deselected by the
-stale-selection effect, with `replace`. The single-resource feed is never
+narrows the two unified feeds to unread events. A selection that arrives
+hidden by the filter (never listed) turns "Unreads only" and the source filters
+off so it shows; one that was listed and then drops out — typically one just
+marked read — is deselected by the stale-selection effect, with `replace`. The single-resource feed is never
 narrowed: one cursor keeps its unread events together at the top under the
 divider. Reordering a filtered resource list saves the FULL order
 (`mergeVisibleOrder`), because the server appends any card an order omits to
@@ -3601,9 +3602,19 @@ branch on the remote whose URL is the PR's base repo (`upstream/main`,
 `upstream/feature/x`) when that ref is fetched; otherwise `gitutil.MainUpstream`.
 `GET /api/worktree-git` reports it as `main_upstream` and the PR's resource ID
 as `pr`, set even when the ref falls back, so the UI can show the PR row.
-Background fetch needs nothing extra: `gitfetch.RemotesFor` maps the ref to its
-remote, whose default refspec covers every branch. Review comments and the
+Background fetch: `gitfetch.RemotesFor` maps each ref the handler uses to its
+remote, whose default refspec covers every branch. When the PR's base remote is
+known but does not have the base branch yet, `mergeBaseRefFetch` also reports
+that remote and the handler adds it to what the fetcher gets, so the fallback
+lasts only until a fetch brings the ref in. Review comments and the
 diff endpoints resolve `merge-base` the same way (`Server.baseRefFor`).
+
+**PR row.** The Git summary shows a `PR` row under Branch when the worktree has
+a PR (the `pr` field): status icon, `#N` and title, with a `ResourceHoverCard`
+on hover. The diff view sidebar shows the same row. Clicking it in the Code tab
+selects the PR resource and collapses "Files changed"; in the diff view it
+leaves the diff view and selects the PR. The PR's card (resource list and
+detail pane) carries a "Checked out in this worktree" laptop marker.
 
 A `base` other than `merge-base`/`tracking` is 400; a valid one the repo cannot
 supply (no upstream, no tracking branch) is 409, which the UI shows as an
@@ -3877,7 +3888,7 @@ annotations.
 
 The open PR's review threads are shown read-only in the diff view and sidebar, beside the drafts.
 
-**Routes.** `GET /api/pr-comments` (summary: counts, fingerprint, unread ids), `GET /api/pr-comments/threads` (threads placed against the diff's revs) and `GET /api/pr-comments/locate?event_id=&prefer_path=` (for a `pr_review_comment` event: answers `{path, comment_id}`, a registered worktree tracking the event's PR and on its head branch, `prefer_path` when it qualifies, else the first, and the GitHub comment id the event is about; 404 when any part can't be found; it only considers `worktree:` subscribers). Each answers with a state: `ok`, `off` (GitHub watcher disabled; gated on the toggle), `no_token` (also when `auth.yaml` can't be read, which is logged once per distinct error), `no_pr` or `error`. The summary and threads carry a `fingerprint` only when `ok`. The PR is the worktree's PR (see "PR matching" below); among several matches a primary resource wins, then the most recently updated. Threads come from the watcher library's `github.FetchReviewThreads` (paginated, comment ids are `fullDatabaseId`, needs watcher v0.17.0).
+**Routes.** `GET /api/pr-comments` (summary: counts, fingerprint, unread ids), `GET /api/pr-comments/threads` (threads placed against the diff's revs) and `GET /api/pr-comments/locate?event_id=&prefer_path=` (for a `pr_review_comment` event: answers `{path, comment_id}`, a registered worktree whose `worktreePR` is the event's PR (its current branch tracks that PR), `prefer_path` when it qualifies, else the first, and the GitHub comment id the event is about; 404 when any part can't be found; it only considers `worktree:` subscribers). Each answers with a state: `ok`, `off` (GitHub watcher disabled; gated on the toggle), `no_token` (also when `auth.yaml` can't be read, which is logged once per distinct error), `no_pr` or `error`. The summary and threads carry a `fingerprint` only when `ok`. The PR is the worktree's PR (see "PR matching" below); among several matches a primary resource wins, then the most recently updated. Threads come from the watcher library's `github.FetchReviewThreads` (paginated, comment ids are `fullDatabaseId`, needs watcher v0.17.0).
 
 **Caches.** `prsum|` holds the summary for 10 minutes, `prthreads|` the threads for 60 seconds. A failed fetch is cached for 20 seconds (`prErrorTTL`, through `ttlCache.getErrTTL`), so a failing GitHub is asked at most once per 20 s however many clients poll; the linked-resources callers keep `get`, which never caches errors.
 

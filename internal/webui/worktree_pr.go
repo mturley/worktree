@@ -27,16 +27,20 @@ type prHeadState struct {
 // cached state alone: it never contacts GitHub, so it is not gated on the
 // GitHub watcher.
 func (s *Server) worktreePR(dir string) (prcomments.Candidate, bool) {
-	remote, merge, ok := gitutil.BranchUpstream(dir)
-	if !ok {
-		return prcomments.Candidate{}, false
-	}
 	tracked, err := resources.Load(s.DB, dir)
 	if err != nil {
 		return prcomments.Candidate{}, false
 	}
+	prs := resources.OfType(tracked, "pr")
+	if len(prs) == 0 {
+		return prcomments.Candidate{}, false
+	}
+	remote, merge, ok := gitutil.BranchUpstream(dir)
+	if !ok {
+		return prcomments.Candidate{}, false
+	}
 	var cands []prcomments.Candidate
-	for _, r := range resources.OfType(tracked, "pr") {
+	for _, r := range prs {
 		ref, err := wgithub.ParsePRResourceID(r.ID)
 		if err != nil {
 			continue

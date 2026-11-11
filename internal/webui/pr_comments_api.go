@@ -591,7 +591,7 @@ func (s *Server) handlePRCommentLocate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(paths) == 0 {
-		notFound("no worktree on the PR's branch")
+		notFound("no worktree whose branch tracks the PR")
 		return
 	}
 	path := paths[0]

@@ -118,9 +118,10 @@ export function WorktreeDetailPage() {
   // The details card's tab is the page's: it decides where the card sits
   // (see inColumn below), and Esc returns it to Notes.
   const detailTab = useDetailTab(path, inDiff)
-  // The same query (and key) the worktree card makes, so it costs no extra
-  // poll: it tells the resource list and pane which PR is checked out here.
-  const checkedOutPR = useWorktreeGit(path, { fetch: detailTab.tab === "code" }).data?.pr
+  // The same query (and key) as the Code tab and the diff view make, so it
+  // costs no extra poll: it tells the resource list and pane which PR is
+  // checked out here. The diff view is opened from any tab, so it counts too.
+  const checkedOutPR = useWorktreeGit(path, { fetch: inDiff || detailTab.tab === "code" }).data?.pr
   // What Esc does next, so its hint sits on the control that does the same:
   // the Notes tab, the narrowing lines' links (their own hint), "← all
   // resources", then the way out — the banner's, when it is up (see
