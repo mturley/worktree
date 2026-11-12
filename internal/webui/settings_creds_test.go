@@ -110,7 +110,7 @@ func TestReplaceJiraRefusedWritesNothing(t *testing.T) {
 		t.Fatalf("status %d", rec.Code)
 	}
 	if got := readAuth(t, s); got != authYAML {
-		t.Fatalf("auth.yaml changed:\n%s", got)
+		t.Fatalf("watcher-auth.yaml changed:\n%s", got)
 	}
 }
 
@@ -122,7 +122,7 @@ func TestReplaceSlackRefusedWritesNothing(t *testing.T) {
 		t.Fatalf("status %d", rec.Code)
 	}
 	if got := readAuth(t, s); got != authYAML {
-		t.Fatalf("auth.yaml changed:\n%s", got)
+		t.Fatalf("watcher-auth.yaml changed:\n%s", got)
 	}
 }
 
@@ -150,7 +150,7 @@ func TestReplaceSlackDomainFallsBack(t *testing.T) {
 		t.Fatalf("status %d %s", rec.Code, rec.Body)
 	}
 	if got := readAuth(t, s); !strings.Contains(got, "workspace_domain: x.slack.com") {
-		t.Fatalf("auth.yaml:\n%s", got)
+		t.Fatalf("watcher-auth.yaml:\n%s", got)
 	}
 }
 
@@ -187,7 +187,7 @@ func TestReplaceRefusesInvalidAndWritesNothing(t *testing.T) {
 		}
 		data, _ := os.ReadFile(s.WatcherAuthPath)
 		if strings.Contains(string(data), "ghp_NEW") || !strings.Contains(string(data), "ghp_SECRET1") {
-			t.Fatalf("auth.yaml changed:\n%s", data)
+			t.Fatalf("watcher-auth.yaml changed:\n%s", data)
 		}
 	}
 }
@@ -200,8 +200,8 @@ func TestReplaceGitHubWrites(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body)
 	}
 	data, _ := os.ReadFile(s.WatcherAuthPath)
-	if !strings.Contains(string(data), "token: ghp_NEW") || !strings.Contains(string(data), "/tmp/w.db") {
-		t.Fatalf("auth.yaml:\n%s", data)
+	if !strings.Contains(string(data), "token: ghp_NEW") || !strings.Contains(string(data), "JIRA_SECRET2") {
+		t.Fatalf("watcher-auth.yaml:\n%s", data)
 	}
 }
 
@@ -323,7 +323,7 @@ func TestReplaceSlackConflictWhenStoredHalfChanged(t *testing.T) {
 		return os.WriteFile(s.WatcherAuthPath, []byte(changed), 0o600)
 	}
 	rec := doReq(s, "PUT", "/api/settings/credentials/slack", `{"cookie":"xoxd-NEW"}`)
-	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "auth.yaml changed during validation; try again") {
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "watcher-auth.yaml changed during validation; try again") {
 		t.Fatalf("status %d %s", rec.Code, rec.Body)
 	}
 	if got := readAuth(t, s); strings.Contains(got, "xoxd-NEW") {
@@ -342,7 +342,7 @@ func TestCredTestCandidateWritesNothing(t *testing.T) {
 		t.Fatalf("rec=%s log=%v", rec.Body, log.github)
 	}
 	if readAuth(t, s) != before {
-		t.Fatal("testing a candidate wrote auth.yaml")
+		t.Fatal("testing a candidate wrote watcher-auth.yaml")
 	}
 	if strings.Contains(rec.Body.String(), "ghp_NEW") {
 		t.Fatal("response echoed the candidate")

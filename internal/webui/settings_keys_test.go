@@ -168,9 +168,8 @@ func TestYamlPathsFollowsYamlV3Rules(t *testing.T) {
 func TestSettingsModalCoversEveryConfigKey(t *testing.T) {
 	t.Parallel()
 	files := map[string]reflect.Type{
-		"worktree":       reflect.TypeOf(config.Config{}),
-		"watcher_auth":   reflect.TypeOf(wconfig.Config{}),
-		"watcher_config": reflect.TypeOf(wconfig.ConfigFile{}),
+		"worktree":     reflect.TypeOf(config.Config{}),
+		"watcher_auth": reflect.TypeOf(wconfig.Config{}),
 	}
 	for file, typ := range files {
 		var want []string

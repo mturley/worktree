@@ -32,7 +32,7 @@ func runCLIProcess(t *testing.T, dir string, env []string, args ...string) procR
 	home := t.TempDir()
 	cmd.Env = append(os.Environ(),
 		cliChildEnv+"=1",
-		"HOME="+home, "WATCHER_HOME="+home,
+		"HOME="+home,
 		"XDG_CONFIG_HOME=", "XDG_DATA_HOME=", "CMUX_SOCKET_PATH=",
 		"WORKTREE_DB="+os.Getenv("WORKTREE_DB"),
 	)

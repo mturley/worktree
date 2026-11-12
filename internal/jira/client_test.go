@@ -1,8 +1,11 @@
 package jira
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/mturley/worktree/internal/config"
 	"github.com/mturley/worktree/internal/jira/jiratest"
 )
 
@@ -62,24 +65,27 @@ func TestClientBaseURLNormalizesScheme(t *testing.T) {
 	}
 }
 
-func TestEffectiveCustomFields(t *testing.T) {
-	got := EffectiveCustomFields(
-		map[string]string{"epic_key": "customfield_1"},
-		map[string]string{"epic_key": "customfield_X", "git_pull_request": "customfield_2"},
-	)
-	if got["epic_key"] != "customfield_1" {
-		t.Errorf("auth.yaml must win on conflict: %v", got)
+func TestConfiguredCustomFields(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if got := ConfiguredCustomFields(); got == nil || len(got) != 0 {
+		t.Fatalf("no config.yaml: got %v, want an empty non-nil map", got)
 	}
-	if got["git_pull_request"] != "customfield_2" {
-		t.Errorf("config.yaml fields must be merged in: %v", got)
+
+	path := config.ConfigPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
 	}
-	if EffectiveCustomFields(nil, nil) == nil {
-		t.Error("must return a non-nil map")
+	body := "jira:\n  projects: [PROJ]\n  custom_fields:\n    git_pull_request: customfield_2\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := ConfiguredCustomFields(); len(got) != 1 || got["git_pull_request"] != "customfield_2" {
+		t.Fatalf("got %v, want git_pull_request from worktree's config.yaml", got)
 	}
 }
 
 func TestConfiguredIssueURL(t *testing.T) {
-	t.Setenv("WATCHER_HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	if got := ConfiguredIssueURL("ABC-1"); got != "" {
 		t.Fatalf("no Jira configured: got %q, want empty", got)
 	}

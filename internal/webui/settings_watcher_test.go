@@ -19,9 +19,6 @@ const authYAML = `services:
         token: xoxc-SECRET3
         cookie: xoxd-SECRET4
         workspace_domain: x.slack.com
-consumers:
-    worktree:
-        db: /tmp/w.db
 `
 
 func TestWatcherSettingsGetHidesSecrets(t *testing.T) {
@@ -43,9 +40,6 @@ func TestWatcherSettingsGetHidesSecrets(t *testing.T) {
 	if got.WatcherAuth.Jira.Host != "https://x.atlassian.net" || got.WatcherAuth.Slack.WorkspaceDomain != "x.slack.com" {
 		t.Fatalf("auth = %+v", got.WatcherAuth)
 	}
-	if strings.Contains(rec.Body.String(), "consumers") || strings.Contains(rec.Body.String(), "/tmp/w.db") {
-		t.Fatal("consumers must not be exposed")
-	}
 }
 
 func TestWatcherSettingsMissingFiles(t *testing.T) {
@@ -53,7 +47,7 @@ func TestWatcherSettingsMissingFiles(t *testing.T) {
 	s, _ := settingsServer(t, "")
 	got := decodeSettings(t, doReq(s, "GET", "/api/settings", ""))
 	if got.WatcherConfig.Jira.BotUsernames == nil || got.WatcherConfig.Jira.CustomFields == nil {
-		t.Fatal("empty watcher config must be [] / {}")
+		t.Fatal("empty watcher preferences must be [] / {}")
 	}
 	rec := doReq(s, "PUT", "/api/settings/watcher-auth", `{"jira":{"host":"https://y.atlassian.net","email":"a@b"},"slack":{"workspace_domain":""}}`)
 	if rec.Code != http.StatusOK {
@@ -61,7 +55,7 @@ func TestWatcherSettingsMissingFiles(t *testing.T) {
 	}
 	info, err := os.Stat(s.WatcherAuthPath)
 	if err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("auth.yaml: %v %v", info, err)
+		t.Fatalf("watcher-auth.yaml: %v %v", info, err)
 	}
 	rec = doReq(s, "PUT", "/api/settings/watcher-config", `{"jira":{"bot_usernames":["bot"],"custom_fields":{"epic_key":"customfield_1"}}}`)
 	if rec.Code != http.StatusOK {
@@ -73,7 +67,7 @@ func TestWatcherSettingsMissingFiles(t *testing.T) {
 	}
 }
 
-func TestWatcherAuthPutKeepsSecretsAndConsumers(t *testing.T) {
+func TestWatcherAuthPutKeepsSecrets(t *testing.T) {
 	t.Parallel()
 	s, _ := settingsServer(t, "")
 	if err := os.WriteFile(s.WatcherAuthPath, []byte(authYAML), 0o600); err != nil {
@@ -84,9 +78,9 @@ func TestWatcherAuthPutKeepsSecretsAndConsumers(t *testing.T) {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body)
 	}
 	data, _ := os.ReadFile(s.WatcherAuthPath)
-	for _, want := range []string{"JIRA_SECRET2", "xoxd-SECRET4", "/tmp/w.db", "email: z@z", "z.slack.com"} {
+	for _, want := range []string{"JIRA_SECRET2", "xoxd-SECRET4", "email: z@z", "z.slack.com"} {
 		if !strings.Contains(string(data), want) {
-			t.Errorf("auth.yaml lost %q:\n%s", want, data)
+			t.Errorf("watcher-auth.yaml lost %q:\n%s", want, data)
 		}
 	}
 }
@@ -125,7 +119,7 @@ func TestWatcherAuthHostChangeWithStoredTokenRefused(t *testing.T) {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body)
 	}
 	if got, _ := os.ReadFile(s.WatcherAuthPath); string(got) != authYAML {
-		t.Fatalf("auth.yaml changed:\n%s", got)
+		t.Fatalf("watcher-auth.yaml changed:\n%s", got)
 	}
 }
 
@@ -214,10 +208,10 @@ func TestWatcherConfigGitHubBotUsernames(t *testing.T) {
 	if got := decodeSettings(t, rec).WatcherConfig.GitHub.BotUsernames; len(got) != 0 {
 		t.Fatalf("cleared list is %v", got)
 	}
-	// Kept as an empty block, so `worktree setup` does not reseed it.
-	data, _ := os.ReadFile(s.WatcherConfigPath)
-	if !strings.Contains(string(data), "github: {}") {
-		t.Fatalf("a cleared list must stay as github: {}:\n%s", data)
+	// Kept as an empty list, so `worktree setup` does not reseed it.
+	data, _ := os.ReadFile(s.ConfigPath)
+	if !strings.Contains(string(data), "bot_usernames: []") {
+		t.Fatalf("a cleared list must stay as bot_usernames: []:\n%s", data)
 	}
 }
 
@@ -228,7 +222,7 @@ func TestWatcherConfigPutLeavesUnsetGitHubBlockAbsent(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body)
 	}
-	data, _ := os.ReadFile(s.WatcherConfigPath)
+	data, _ := os.ReadFile(s.ConfigPath)
 	if strings.Contains(string(data), "github") {
 		t.Fatalf("saving another setting must not create a github block (setup seeds only an absent one):\n%s", data)
 	}
@@ -240,10 +234,78 @@ func TestGitHubPollOptionsReadBotUsernames(t *testing.T) {
 	if got := s.githubPollOptions().BotUsernames; len(got) != 0 {
 		t.Fatalf("no config: %v", got)
 	}
-	if err := os.WriteFile(s.WatcherConfigPath, []byte("github:\n  bot_usernames:\n    - \"*ci-bot*\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(s.ConfigPath, []byte("github:\n  bot_usernames:\n    - \"*ci-bot*\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if got := s.githubPollOptions().BotUsernames; len(got) != 1 || got[0] != "*ci-bot*" {
 		t.Fatalf("got %v", got)
+	}
+}
+
+func TestWatcherConfigPutWritesWorktreeConfigKeepingComments(t *testing.T) {
+	t.Parallel()
+	s, path := settingsServer(t, "# keep me\njira:\n    projects: [ABC]\n")
+	rec := doReq(s, "PUT", "/api/settings/watcher-config",
+		`{"github":{"bot_usernames":["*ci-bot*"]},"jira":{"bot_usernames":["jbot"],"custom_fields":{"git_pull_request":"customfield_2"}}}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+	data, _ := os.ReadFile(path)
+	for _, want := range []string{"# keep me", "projects: [ABC]", "*ci-bot*", "jbot", "git_pull_request: customfield_2"} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("config.yaml lacks %q:\n%s", want, data)
+		}
+	}
+	got := decodeSettings(t, rec).WatcherConfig
+	if got.Jira.CustomFields["git_pull_request"] != "customfield_2" || len(got.Jira.BotUsernames) != 1 || got.GitHub.BotUsernames[0] != "*ci-bot*" {
+		t.Fatalf("read back %+v", got)
+	}
+}
+
+func TestSettingsWorktreePutKeepsWatcherPreferences(t *testing.T) {
+	t.Parallel()
+	s, path := settingsServer(t, "github:\n    bot_usernames: [\"*ci-bot*\"]\njira:\n    bot_usernames: [jbot]\n    custom_fields:\n        epic_key: customfield_1\n")
+	body := `{"worktrees_base":"","editor":"zed","cmux_features_enabled":true,
+	  "jira":{"projects":[],"alias_hosts":[]},
+	  "ui":{"https_port":8476,"allowed_hosts":[],"tls":{"cert_file":"","key_file":""}}}`
+	decodeSettings(t, doReq(s, "PUT", "/api/settings/worktree", body))
+	data, _ := os.ReadFile(path)
+	for _, want := range []string{"editor: zed", "*ci-bot*", "jbot", "epic_key: customfield_1"} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("config.yaml lacks %q:\n%s", want, data)
+		}
+	}
+}
+
+func TestSettingsPathsNameWorktreeFiles(t *testing.T) {
+	t.Parallel()
+	// The default paths, under TestMain's isolated HOME.
+	s := &Server{cmuxAvailable: func() bool { return true }}
+	got := decodeSettings(t, doReq(s, "GET", "/api/settings", "")).Paths
+	if !strings.HasSuffix(got.WatcherAuth, "worktree/watcher-auth.yaml") {
+		t.Errorf("paths.watcher_auth = %q, want worktree/watcher-auth.yaml", got.WatcherAuth)
+	}
+	if got.WatcherConfig != got.Worktree {
+		t.Errorf("paths.watcher_config = %q, want worktree's config.yaml %q", got.WatcherConfig, got.Worktree)
+	}
+}
+
+func TestWatcherAuthWorldReadableNamesFile(t *testing.T) {
+	t.Parallel()
+	s, _ := settingsServer(t, "")
+	if err := os.WriteFile(s.WatcherAuthPath, []byte(authYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(s.WatcherAuthPath, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rec := doReq(s, "GET", "/api/settings", "")
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status %d, want 500", rec.Code)
+	}
+	for _, want := range []string{"watcher-auth.yaml", "chmod 600"} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("error %q does not mention %q", rec.Body, want)
+		}
 	}
 }

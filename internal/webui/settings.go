@@ -9,17 +9,17 @@ import (
 	"strings"
 	"time"
 
-	wconfig "github.com/mturley/watcher/config"
 	"github.com/mturley/worktree/internal/cmux"
 	"github.com/mturley/worktree/internal/config"
 	"github.com/mturley/worktree/internal/jira"
 	"github.com/mturley/worktree/internal/uitls"
 )
 
-// The Settings modal edits three files — worktree's config.yaml and the
-// watcher library's auth.yaml and config.yaml — through one GET and one PUT
-// per file. Secrets are never returned, only whether each is set; they are
-// replaced through settings_creds.go. See docs/web-ui-architecture.md
+// The Settings modal edits worktree's two files — config.yaml (its own
+// settings and the watcher preferences) and watcher-auth.yaml (the
+// watcher's credentials) — through one GET and a PUT per section. Secrets
+// are never returned, only whether each is set; they are replaced through
+// settings_creds.go. See docs/web-ui-architecture.md
 // "Settings modal". A new config key must be added here AND to
 // settingsKeyPaths (settings_keys_test.go enforces it).
 
@@ -58,14 +58,7 @@ func (s *Server) watcherAuthPath() string {
 	if s.WatcherAuthPath != "" {
 		return s.WatcherAuthPath
 	}
-	return wconfig.DefaultPath()
-}
-
-func (s *Server) watcherConfigPath() string {
-	if s.WatcherConfigPath != "" {
-		return s.WatcherConfigPath
-	}
-	return wconfig.ConfigDefaultPath()
+	return config.WatcherAuthPath()
 }
 
 type settingsEnvironment struct {
@@ -229,10 +222,7 @@ func (s *Server) settings() (settingsDTO, error) {
 	if err != nil {
 		return settingsDTO{}, err
 	}
-	wcfg, err := s.readWatcherConfig()
-	if err != nil {
-		return settingsDTO{}, err
-	}
+	wcfg := watcherConfigFromEditable(e)
 	dto := settingsDTO{
 		Environment: settingsEnvironment{
 			InCmux:           s.cmuxReachable(),
@@ -241,10 +231,12 @@ func (s *Server) settings() (settingsDTO, error) {
 
 			DefaultNotifyCommand: config.DefaultNotifyCommand,
 		},
+		// The watcher preferences live in worktree's config.yaml, so
+		// watcher_config names that file too.
 		Paths: settingsPaths{
 			Worktree:      homeRelative(s.configPath()),
 			WatcherAuth:   homeRelative(s.watcherAuthPath()),
-			WatcherConfig: homeRelative(s.watcherConfigPath()),
+			WatcherConfig: homeRelative(s.configPath()),
 		},
 		Secrets:       authSecrets,
 		Worktree:      toWorktreeSettings(e),
@@ -327,6 +319,13 @@ func (s *Server) handleSettingsWorktree(w http.ResponseWriter, r *http.Request) 
 	}
 
 	cur, _, curErr := config.ReadEditable(s.configPath())
+	// The watcher preferences share this file but have their own PUT
+	// (settings_watcher.go): this one keeps them as they are.
+	if curErr == nil {
+		next.GitHubBotUsernames = cur.GitHubBotUsernames
+		next.JiraBotUsernames = cur.JiraBotUsernames
+		next.JiraCustomFields = cur.JiraCustomFields
+	}
 	if req.UI.RemoteAccessEnabled != nil {
 		next.RemoteAccessDisabled = !*req.UI.RemoteAccessEnabled
 	} else if curErr == nil {

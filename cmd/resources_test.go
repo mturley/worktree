@@ -75,7 +75,7 @@ func TestResolveResourceArgs(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			// No Jira configured unless the case says so.
-			t.Setenv("WATCHER_HOME", t.TempDir())
+			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 			if tc.setup != nil {
 				tc.setup(t)
 			}

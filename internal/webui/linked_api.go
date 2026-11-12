@@ -280,11 +280,12 @@ func samePRID(a, b string) bool {
 	return oka && okb && na == nb && strings.EqualFold(ra, rb)
 }
 
-// loadLinkedCreds reads auth.yaml for linkedSources; a package var so a test
-// can see that it is not called while GitHub and Jira are both off.
+// loadLinkedCreds reads watcher-auth.yaml for linkedSources; a package var
+// so a test can see that it is not called while GitHub and Jira are both
+// off.
 var loadLinkedCreds = wconfig.Load
 
-// linkedSources builds Sources from the watcher config. Unconfigured
+// linkedSources builds Sources from the watcher credentials. Unconfigured
 // services, and services whose watcher is off, are left nil, which the
 // builder treats as "not configured": their links still list, unenriched,
 // and their credentials are never read.
@@ -301,7 +302,7 @@ func (s *Server) linkedSources() linked.Sources {
 	if !ghOn && !jiraOn {
 		return src
 	}
-	cfg, err := loadLinkedCreds(wconfig.DefaultPath())
+	cfg, err := loadLinkedCreds(s.watcherAuthPath())
 	if err != nil {
 		return src
 	}
@@ -314,11 +315,14 @@ func (s *Server) linkedSources() linked.Sources {
 		return src
 	}
 	if jc, err := cfg.Jira(); err == nil {
-		fields := wtjira.ConfiguredCustomFields(jc.CustomFields)
+		var gitPRID string
+		if e, _, err := config.ReadEditable(s.configPath()); err == nil {
+			gitPRID = e.JiraCustomFields["git_pull_request"]
+		}
 		ja := jiraAdapter{
 			c:       &wjira.Client{BaseURL: jc.Host, Email: jc.Email, Token: jc.Token},
 			host:    jc.Host,
-			gitPRID: fields["git_pull_request"],
+			gitPRID: gitPRID,
 		}
 		src.Jira = ja
 		if s.DB != nil {

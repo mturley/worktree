@@ -146,10 +146,10 @@ func TestJiraBlockerResolvesFromCachedState(t *testing.T) {
 }
 
 func TestPollResolvesJiraBlockerFromCachedState(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("WATCHER_HOME", home)
-	must(t, os.WriteFile(filepath.Join(home, "auth.yaml"), []byte(":\tnot yaml: ["), 0o600))
+	t.Parallel()
 	s, _ := tasksServer(t)
+	s.WatcherAuthPath = filepath.Join(t.TempDir(), "watcher-auth.yaml")
+	must(t, os.WriteFile(s.WatcherAuthPath, []byte(":\tnot yaml: ["), 0o600))
 	tk := mustTask(t, s, tasks.NewTask{Title: "A"})
 	mustBlock(t, s, tk.ID, "jira", "ABC-1")
 	setJiraState(t, s, "ABC-1", `{"status":"Done","status_category":"done"}`)
@@ -180,11 +180,11 @@ func TestTaskWriteUnblocks(t *testing.T) {
 }
 
 func TestPollRunsResolverEvenWhenPollFails(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("WATCHER_HOME", home)
-	// An unreadable auth.yaml makes pollAll fail before any source runs.
-	must(t, os.WriteFile(filepath.Join(home, "auth.yaml"), []byte(":\tnot yaml: ["), 0o600))
+	t.Parallel()
 	s, _ := tasksServer(t)
+	// An unreadable watcher-auth.yaml makes pollAll fail before any source runs.
+	s.WatcherAuthPath = filepath.Join(t.TempDir(), "watcher-auth.yaml")
+	must(t, os.WriteFile(s.WatcherAuthPath, []byte(":\tnot yaml: ["), 0o600))
 	tk := mustTask(t, s, tasks.NewTask{Title: "A"})
 	mustBlock(t, s, tk.ID, "pr", "o/r#1")
 	setPRState(t, s, "o/r#1", "MERGED")

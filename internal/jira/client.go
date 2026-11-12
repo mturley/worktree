@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	wconfig "github.com/mturley/watcher/config"
+	"github.com/mturley/worktree/internal/config"
 )
 
 type Issue struct {
@@ -139,13 +140,12 @@ func IssueURL(host, key string) string {
 	return fmt.Sprintf("%s/browse/%s", normalizeHost(host), key)
 }
 
-// HostFromWatcherConfig returns the Jira host configured in the shared
-// watcher auth.yaml (wcfg.Services.Jira), or "" if Jira isn't configured
-// there. worktree's own config.yaml no longer stores Jira credentials —
-// only Projects (see internal/config.JiraConfig) — so building a Jira issue
-// URL requires reading the host from the watcher config.
-func HostFromWatcherConfig() string {
-	wcfg, err := wconfig.Load(wconfig.DefaultPath())
+// ConfiguredHost returns the Jira host configured in worktree's
+// watcher-auth.yaml (Services.Jira), or "" if Jira isn't configured there.
+// worktree's config.yaml holds no Jira credentials, so building an issue
+// URL reads the host from the credentials file.
+func ConfiguredHost() string {
+	wcfg, err := wconfig.Load(config.WatcherAuthPath())
 	if err != nil {
 		return ""
 	}
@@ -156,38 +156,25 @@ func HostFromWatcherConfig() string {
 	return creds.Host
 }
 
-// EffectiveCustomFields merges the custom-field maps from the watcher's two
-// config files. auth.yaml's (jira_custom_fields) wins on conflict;
-// config.yaml's jira.custom_fields fills the rest. worktree used to pass
-// only the auth.yaml map, which is usually empty, so fields like
-// git_pull_request configured in config.yaml were never fetched.
-func EffectiveCustomFields(authFields, configFields map[string]string) map[string]string {
+// ConfiguredCustomFields returns the Jira custom-field IDs to fetch
+// (jira.custom_fields in worktree's config.yaml). A missing or unreadable
+// file gives an empty map.
+func ConfiguredCustomFields() map[string]string {
 	out := map[string]string{}
-	for k, v := range configFields {
-		out[k] = v
-	}
-	for k, v := range authFields {
-		out[k] = v
+	if e, _, err := config.ReadEditable(config.ConfigPath()); err == nil {
+		for k, v := range e.JiraCustomFields {
+			out[k] = v
+		}
 	}
 	return out
 }
 
-// ConfiguredCustomFields is EffectiveCustomFields with config.yaml loaded
-// from its default path. A missing or unreadable config.yaml contributes
-// nothing.
-func ConfiguredCustomFields(authFields map[string]string) map[string]string {
-	var cfgFields map[string]string
-	if bcfg, err := wconfig.LoadConfig(wconfig.ConfigDefaultPath()); err == nil {
-		cfgFields = bcfg.JiraCustomFields()
-	}
-	return EffectiveCustomFields(authFields, cfgFields)
-}
-
 // ConfiguredIssueURL returns key's browse URL on the Jira host configured in
-// the watcher auth.yaml, or "" when no host is configured — never a hostless
-// "https:///browse/KEY", which IssueURL would build from an empty host.
+// worktree's watcher-auth.yaml, or "" when no host is configured — never a
+// hostless "https:///browse/KEY", which IssueURL would build from an empty
+// host.
 func ConfiguredIssueURL(key string) string {
-	host := HostFromWatcherConfig()
+	host := ConfiguredHost()
 	if host == "" {
 		return ""
 	}

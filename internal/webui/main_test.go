@@ -15,12 +15,12 @@ import (
 )
 
 // isolatedEnv is every variable that locates the user's real config, auth
-// or data: TestMain points HOME and WATCHER_HOME at a fresh temp dir and
-// clears the rest (so they derive from that HOME). No test can then read
-// the real watcher auth.yaml, a real GitHub token, or the real worktree DB
-// by leaving a path unset. A test that needs its own still uses t.Setenv,
+// or data: TestMain points HOME at a fresh temp dir and clears the rest (so
+// they derive from that HOME). No test can then read the real
+// watcher-auth.yaml, a real GitHub token, or the real worktree DB by
+// leaving a path unset. A test that needs its own still uses t.Setenv,
 // which restores these values afterwards.
-var isolatedEnv = []string{"HOME", "WATCHER_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "WORKTREE_DB"}
+var isolatedEnv = []string{"HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "WORKTREE_DB"}
 
 func TestMain(m *testing.M) {
 	defer testgit.RemoveTemplates()
@@ -64,7 +64,7 @@ func isolateEnv() (func(), error) {
 	}
 	for _, k := range isolatedEnv {
 		var err error
-		if k == "HOME" || k == "WATCHER_HOME" {
+		if k == "HOME" {
 			err = os.Setenv(k, dir)
 		} else {
 			err = os.Unsetenv(k)

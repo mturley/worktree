@@ -11,7 +11,7 @@ import (
 )
 
 // Creating a worktree from a pull request reads the PR with the GitHub token
-// the watcher uses (watcher auth.yaml) — the gh CLI is not needed. It is
+// the watcher uses (worktree's watcher-auth.yaml) — the gh CLI is not needed. It is
 // refused, before anything is fetched, while the GitHub watcher is off.
 
 // ErrGitHubWatcherDisabled refuses PR-based creation while the GitHub
@@ -26,7 +26,7 @@ var ErrNoGitHubToken = errors.New("no GitHub token is configured, so worktree ca
 // Seams for tests: the stored token, and the library's GraphQL fetch.
 var (
 	githubToken = func() (string, error) {
-		wcfg, err := wconfig.Load(wconfig.DefaultPath())
+		wcfg, err := wconfig.Load(config.WatcherAuthPath())
 		if err != nil {
 			return "", err
 		}

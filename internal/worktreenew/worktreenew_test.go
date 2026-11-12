@@ -267,7 +267,7 @@ func TestRunFromBareJiraKeyStoresIssueURL(t *testing.T) {
 }
 
 func TestRunWithoutJiraHostStoresNoHostlessURL(t *testing.T) {
-	t.Setenv("WATCHER_HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	repo := newRepo(t)
 	base := t.TempDir()
 	conn, err := wdb.OpenAt(filepath.Join(base, "w.db"))

@@ -30,7 +30,7 @@ import (
 // a constant: it is deployment-specific, and pinning to it means a state row
 // carrying some other host's URL cannot make us fetch it.
 func (s *Server) handleJiraIcon(w http.ResponseWriter, r *http.Request) {
-	cfg, err := wconfig.Load(wconfig.DefaultPath())
+	cfg, err := wconfig.Load(s.watcherAuthPath())
 	if err != nil {
 		http.Error(w, "jira not configured", http.StatusServiceUnavailable)
 		return

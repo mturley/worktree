@@ -11,6 +11,7 @@ import (
 	"github.com/mturley/worktree/internal/config"
 	wdb "github.com/mturley/worktree/internal/db"
 	wtjira "github.com/mturley/worktree/internal/jira"
+	"github.com/mturley/worktree/internal/ui"
 
 	wconfig "github.com/mturley/watcher/config"
 
@@ -48,12 +49,13 @@ func runWatcherRun(cmd *cobra.Command, args []string) error {
 
 	logger := log.New(os.Stderr, "watcher: ", 0)
 
-	cfg, err := wconfig.Load(wconfig.DefaultPath())
+	authPath := ui.ShortPath(config.WatcherAuthPath())
+	cfg, err := wconfig.Load(config.WatcherAuthPath())
 	if err != nil {
-		return fmt.Errorf("loading ~/.config/watcher/auth.yaml: %w (run watcher auth setup)", err)
+		return fmt.Errorf("loading %s: %w (run worktree setup)", authPath, err)
 	}
 
-	notConfigured := fmt.Errorf("no credentials configured in ~/.config/watcher/auth.yaml (run watcher auth setup)")
+	notConfigured := fmt.Errorf("no credentials configured in %s (run worktree setup)", authPath)
 	// A service whose watcher is off (worktree's config.yaml) is never polled.
 	wtcfg, _ := config.Load()
 	off := func(svc, name string) bool {
@@ -75,7 +77,7 @@ func runWatcherRun(cmd *cobra.Command, args []string) error {
 			polledAny = true
 			ghCreds, err := cfg.GitHub()
 			if err != nil {
-				fmt.Fprintln(cmd.ErrOrStderr(), "GitHub not configured in ~/.config/watcher/auth.yaml (run watcher auth setup)")
+				fmt.Fprintf(cmd.ErrOrStderr(), "GitHub not configured in %s (run worktree setup)\n", authPath)
 			} else {
 				configuredAny = true
 				if err := wgithub.Poll(conn, ghCreds.Token, prs, logger); err != nil {
@@ -93,15 +95,15 @@ func runWatcherRun(cmd *cobra.Command, args []string) error {
 			polledAny = true
 			jc, err := cfg.Jira()
 			if err != nil {
-				fmt.Fprintln(cmd.ErrOrStderr(), "Jira not configured in ~/.config/watcher/auth.yaml (run watcher auth setup)")
+				fmt.Fprintf(cmd.ErrOrStderr(), "Jira not configured in %s (run worktree setup)\n", authPath)
 			} else {
 				configuredAny = true
 				auth := wjira.JiraAuth{
 					URL:          jc.Host,
 					Email:        jc.Email,
 					Token:        jc.Token,
-					CustomFields: wtjira.ConfiguredCustomFields(jc.CustomFields),
-					BotUsernames: nil,
+					CustomFields: wtjira.ConfiguredCustomFields(),
+					BotUsernames: wtcfg.Jira.BotUsernames,
 				}
 				if err := wjira.Poll(conn, auth, issues, logger); err != nil {
 					logger.Printf("jira poll: %v", err)

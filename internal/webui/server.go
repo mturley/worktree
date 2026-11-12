@@ -58,7 +58,7 @@ type Server struct {
 	Security *Security
 
 	// Slack integration. These are nil/empty when Slack is unconfigured
-	// (no credentials in the shared watcher auth.yaml); the Slack handlers
+	// (no credentials in watcher-auth.yaml); the Slack handlers
 	// guard on SlackClient == nil and return 503 rather than nil-panicking.
 	SlackClient slack.Client
 	SlackPoller *slackpoller.Poller
@@ -169,12 +169,11 @@ type Server struct {
 	notifyCommand atomic.Pointer[string]
 
 	// cmuxDisabled is the Settings toggle (ui.cmux_features_disabled); see
-	// settings.go. ConfigPath, WatcherAuthPath and WatcherConfigPath are the
-	// files the Settings modal edits; "" means each one's default.
-	cmuxDisabled      atomic.Bool
-	ConfigPath        string
-	WatcherAuthPath   string
-	WatcherConfigPath string
+	// settings.go. ConfigPath and WatcherAuthPath are the files the Settings
+	// modal edits; "" means each one's default.
+	cmuxDisabled    atomic.Bool
+	ConfigPath      string
+	WatcherAuthPath string
 	// startEditor is the exec seam for "Open in editor" (editor_api.go); nil
 	// means runEditor.
 	startEditor func(name string, args ...string) error
@@ -215,7 +214,7 @@ type Server struct {
 	LinkResolver *linkmeta.Resolver
 
 	// LinkedSources is a seam for tests; nil means real sources built from
-	// the watcher config on each request (see linked_api.go).
+	// watcher-auth.yaml on each request (see linked_api.go).
 	LinkedSources func() linked.Sources
 
 	// linkedCache fronts /api/linked-resources; lazily built.
@@ -255,7 +254,7 @@ type Server struct {
 	// allowSingleWhilePending lifts the pending-review gate on single
 	// writes (singleBlockedByPending); tests only.
 	allowSingleWhilePending bool
-	// prAuthErrLogged is the last auth.yaml read error logged by githubToken.
+	// prAuthErrLogged is the last watcher-auth.yaml read error logged by githubToken.
 	prAuthErrMu     sync.Mutex
 	prAuthErrLogged string
 

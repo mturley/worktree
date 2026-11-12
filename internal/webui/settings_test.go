@@ -25,10 +25,9 @@ func settingsServer(t *testing.T, worktreeYAML string) (*Server, string) {
 		}
 	}
 	return &Server{
-		cmuxAvailable:     func() bool { return true },
-		ConfigPath:        path,
-		WatcherAuthPath:   filepath.Join(dir, "auth.yaml"),
-		WatcherConfigPath: filepath.Join(dir, "wconfig.yaml"),
+		cmuxAvailable:   func() bool { return true },
+		ConfigPath:      path,
+		WatcherAuthPath: filepath.Join(dir, "watcher-auth.yaml"),
 	}, path
 }
 
@@ -233,8 +232,7 @@ func TestSettingsWorktreePutCmuxRefusedOutsideCmux(t *testing.T) {
 func TestDisablingCmuxStripsUnreadPrefixes(t *testing.T) {
 	s, f, unreadWT, readWT := unreadSyncFixture(t)
 	s.ConfigPath = filepath.Join(t.TempDir(), "config.yaml")
-	s.WatcherAuthPath = filepath.Join(t.TempDir(), "auth.yaml")
-	s.WatcherConfigPath = filepath.Join(t.TempDir(), "wconfig.yaml")
+	s.WatcherAuthPath = filepath.Join(t.TempDir(), "watcher-auth.yaml")
 	f.workspaces = []cmux.Workspace{
 		{ID: "W1", CustomTitle: "📬 Unread", CurrentDirectory: unreadWT},
 		{ID: "W2", CustomTitle: "📬 Read", CurrentDirectory: readWT},

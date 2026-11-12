@@ -12,14 +12,15 @@ import (
 	"strings"
 	"testing"
 
-	wconfig "github.com/mturley/watcher/config"
 	wgithub "github.com/mturley/watcher/github"
 
+	"github.com/mturley/worktree/internal/config"
 	"github.com/mturley/worktree/internal/resources"
 )
 
-// TestMainIsolatesGitHub: TestMain has replaced ghLib, and the default
-// watcher paths lead into its temp HOME, not the user's real config.
+// TestMainIsolatesGitHub: TestMain has replaced ghLib, and worktree's
+// default config and credential paths lead into its temp HOME, not the
+// user's real config.
 func TestMainIsolatesGitHub(t *testing.T) {
 	t.Parallel()
 	if _, err := ghLib.FetchPRSummaries("tok", nil); err == nil || !strings.Contains(err.Error(), "unstubbed GitHub seam") {
@@ -28,12 +29,12 @@ func TestMainIsolatesGitHub(t *testing.T) {
 	if err := ghLib.FetchRefs(t.Context(), t.TempDir(), "origin"); err == nil {
 		t.Fatal("ghLib.FetchRefs ran a real fetch")
 	}
-	home := os.Getenv("WATCHER_HOME")
-	if home == "" || !strings.HasPrefix(wconfig.DefaultPath(), home) || !strings.HasPrefix(wconfig.ConfigDefaultPath(), home) {
-		t.Fatalf("watcher paths %q, %q not under WATCHER_HOME %q", wconfig.DefaultPath(), wconfig.ConfigDefaultPath(), home)
+	home := os.Getenv("HOME")
+	if home == "" || !strings.HasPrefix(home, os.TempDir()) {
+		t.Fatalf("HOME = %q, want TestMain's isolated temp dir", home)
 	}
-	if os.Getenv("HOME") != home {
-		t.Fatalf("HOME = %q, want the isolated %q", os.Getenv("HOME"), home)
+	if !strings.HasPrefix(config.WatcherAuthPath(), home) || !strings.HasPrefix(config.ConfigPath(), home) {
+		t.Fatalf("paths %q, %q not under the isolated HOME %q", config.WatcherAuthPath(), config.ConfigPath(), home)
 	}
 }
 
@@ -79,7 +80,7 @@ func guardPost(t *testing.T, base, route string, body map[string]any) (int, map[
 }
 
 // TestPRRoutesUnseamedNoAuth: with no auth path set, the server reads the
-// isolated default (no auth.yaml), so it has no token and never calls out.
+// isolated default (no watcher-auth.yaml), so it has no token and never calls out.
 func TestPRRoutesUnseamedNoAuth(t *testing.T) {
 	t.Parallel()
 	_, base, wt := unseamedPRServer(t)
@@ -102,7 +103,7 @@ func TestPRRoutesUnseamedNoAuth(t *testing.T) {
 func TestPRRoutesUnseamedWithToken(t *testing.T) {
 	t.Parallel()
 	srv, base, wt := unseamedPRServer(t)
-	auth := filepath.Join(t.TempDir(), "auth.yaml")
+	auth := filepath.Join(t.TempDir(), "watcher-auth.yaml")
 	must(t, os.WriteFile(auth, []byte("services:\n  github:\n    token: tok\n"), 0o600))
 	srv.WatcherAuthPath = auth
 

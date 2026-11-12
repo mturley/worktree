@@ -27,20 +27,19 @@ func isolateLive(t *testing.T, worktreeConfig string, githubToken string) {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("WATCHER_HOME", home)
 	xdg := filepath.Join(home, "xdg")
 	t.Setenv("XDG_CONFIG_HOME", xdg)
+	if err := os.MkdirAll(filepath.Join(xdg, "worktree"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if worktreeConfig != "" {
-		if err := os.MkdirAll(filepath.Join(xdg, "worktree"), 0o755); err != nil {
-			t.Fatal(err)
-		}
 		if err := os.WriteFile(filepath.Join(xdg, "worktree", "config.yaml"), []byte(worktreeConfig), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if githubToken != "" {
 		auth := "services:\n  github:\n    token: " + githubToken + "\n"
-		if err := os.WriteFile(filepath.Join(home, "auth.yaml"), []byte(auth), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(xdg, "worktree", "watcher-auth.yaml"), []byte(auth), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}

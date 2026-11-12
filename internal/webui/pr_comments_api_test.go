@@ -52,7 +52,7 @@ func newPRCFixture(t *testing.T) *prcFixture {
 	wt := filepath.Join(t.TempDir(), "lw")
 	gitIn(t, repo, "worktree", "add", "-b", "pr-branch", wt)
 	srv, ts := gitTestServer(t, wt, nil)
-	auth := filepath.Join(t.TempDir(), "auth.yaml")
+	auth := filepath.Join(t.TempDir(), "watcher-auth.yaml")
 	must(t, os.WriteFile(auth, []byte("services:\n  github:\n    token: tok\n"), 0o600))
 	srv.WatcherAuthPath = auth
 	must(t, resources.Add(srv.DB, wt, resources.Resource{Type: "pr", ID: prcID, URL: "https://github.com/o/r/pull/1"}))
@@ -346,7 +346,7 @@ func TestPRCommentsUnreadableAuthLogged(t *testing.T) {
 			t.Fatalf("state = %q", s.State)
 		}
 	}
-	if n := strings.Count(buf.String(), "PR comments: reading auth.yaml"); n != 1 {
+	if n := strings.Count(buf.String(), "PR comments: reading watcher-auth.yaml"); n != 1 {
 		t.Fatalf("logged %d times: %q", n, buf.String())
 	}
 }

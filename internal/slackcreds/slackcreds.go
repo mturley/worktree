@@ -5,6 +5,7 @@ import (
 
 	wconfig "github.com/mturley/watcher/config"
 	"github.com/mturley/watcher/slack"
+	"github.com/mturley/worktree/internal/config"
 )
 
 func fromConfig(cfg *wconfig.Config) (token, cookie, domain string, err error) {
@@ -15,11 +16,11 @@ func fromConfig(cfg *wconfig.Config) (token, cookie, domain string, err error) {
 	return creds.Token, creds.Cookie, creds.WorkspaceDomain, nil
 }
 
-// Load reads Slack credentials from the shared watcher auth.yaml.
+// Load reads Slack credentials from worktree's watcher-auth.yaml.
 func Load() (token, cookie, domain string, err error) {
-	cfg, err := wconfig.Load(wconfig.DefaultPath())
+	cfg, err := wconfig.Load(config.WatcherAuthPath())
 	if err != nil {
-		return "", "", "", fmt.Errorf("loading watcher config: %w", err)
+		return "", "", "", fmt.Errorf("loading watcher credentials: %w", err)
 	}
 	return fromConfig(cfg)
 }

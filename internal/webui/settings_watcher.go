@@ -2,19 +2,22 @@ package webui
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/url"
-	"reflect"
 	"slices"
 	"strings"
 
 	wconfig "github.com/mturley/watcher/config"
+	"github.com/mturley/worktree/internal/config"
 )
 
-// The watcher library's two files, as the Settings modal edits them.
-// auth.yaml goes through the library's Load/Save (as `worktree setup`
-// does), which keeps every key it knows — including consumers and the
-// legacy jira_custom_fields, which the modal deliberately never shows.
+// The watcher's settings, as the Settings modal edits them. Its credentials
+// are in worktree's watcher-auth.yaml, read and written through the
+// library's Load/Save (as `worktree setup` does). Its preferences (bot
+// usernames, Jira custom fields) are keys of worktree's own config.yaml,
+// read and written through config.ReadEditable/WriteEditable, which keep
+// every other key and the file's comments.
 
 type watcherAuthSettings struct {
 	Jira struct {
@@ -68,23 +71,16 @@ func (s *Server) readWatcherAuth() (watcherAuthSettings, settingsSecrets, error)
 	return out, sec, nil
 }
 
-func (s *Server) readWatcherConfig() (watcherConfigSettings, error) {
+// watcherConfigFromEditable is the watcher preferences section of the
+// settings DTO, from worktree's config.yaml. Absent lists and maps are sent
+// as [] and {}.
+func watcherConfigFromEditable(e config.Editable) watcherConfigSettings {
 	var out watcherConfigSettings
-	out.GitHub = &watcherGitHubSettings{BotUsernames: []string{}}
-	out.Jira.BotUsernames = []string{}
+	out.GitHub = &watcherGitHubSettings{BotUsernames: nonNil(e.GitHubBotUsernames)}
+	out.Jira.BotUsernames = nonNil(e.JiraBotUsernames)
 	out.Jira.CustomFields = map[string]string{}
-	cfg, err := wconfig.LoadConfig(s.watcherConfigPath())
-	if err != nil {
-		return out, err
-	}
-	out.GitHub.BotUsernames = nonNil(cfg.GitHubBotUsernames())
-	if cfg.Jira != nil {
-		out.Jira.BotUsernames = nonNil(cfg.Jira.BotUsernames)
-		if cfg.Jira.CustomFields != nil {
-			out.Jira.CustomFields = cfg.Jira.CustomFields
-		}
-	}
-	return out, nil
+	maps.Copy(out.Jira.CustomFields, e.JiraCustomFields)
+	return out
 }
 
 // validJiraHost accepts "" (not configured) or an http(s) URL with a host.
@@ -97,7 +93,7 @@ func validJiraHost(h string) bool {
 }
 
 // handleSettingsWatcherAuth: PUT /api/settings/watcher-auth — non-secret
-// auth.yaml fields only. Tokens go through the credential endpoints.
+// watcher-auth.yaml fields only. Tokens go through the credential endpoints.
 func (s *Server) handleSettingsWatcherAuth(w http.ResponseWriter, r *http.Request) {
 	var req watcherAuthSettings
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -116,7 +112,7 @@ func (s *Server) handleSettingsWatcherAuth(w http.ResponseWriter, r *http.Reques
 	defer s.settingsMu.Unlock()
 	cfg, err := s.loadWatcherAuth()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "reading auth.yaml: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "reading watcher-auth.yaml: "+err.Error())
 		return
 	}
 	// The poller sends the stored Jira token to whatever host is saved, so
@@ -142,14 +138,16 @@ func (s *Server) handleSettingsWatcherAuth(w http.ResponseWriter, r *http.Reques
 	}
 	if changed {
 		if err := cfg.Save(s.watcherAuthPath()); err != nil {
-			writeError(w, http.StatusInternalServerError, "saving auth.yaml: "+err.Error())
+			writeError(w, http.StatusInternalServerError, "saving watcher-auth.yaml: "+err.Error())
 			return
 		}
 	}
 	s.writeSettings(w)
 }
 
-// handleSettingsWatcherConfig: PUT /api/settings/watcher-config
+// handleSettingsWatcherConfig: PUT /api/settings/watcher-config — the
+// watcher preferences in worktree's config.yaml (github.bot_usernames,
+// jira.bot_usernames, jira.custom_fields). Every other key is left as it is.
 func (s *Server) handleSettingsWatcherConfig(w http.ResponseWriter, r *http.Request) {
 	var req watcherConfigSettings
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -173,50 +171,35 @@ func (s *Server) handleSettingsWatcherConfig(w http.ResponseWriter, r *http.Requ
 
 	s.settingsMu.Lock()
 	defer s.settingsMu.Unlock()
-	path := s.watcherConfigPath()
-	cfg, err := wconfig.LoadConfig(path)
+	path := s.configPath()
+	cur, _, err := config.ReadEditable(path)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "reading watcher config.yaml: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "reading config.yaml: "+err.Error())
 		return
 	}
-	// Start from what the pinned watcher ConfigFile struct loaded; only the
-	// Jira block, and the GitHub block when sent, are replaced. Keys that
-	// struct doesn't know about, and comments, do not survive: the typed
-	// marshal drops them.
-	next := *cfg
-	// An emptied list stays as `github: {}`, not absent: `worktree setup`
-	// seeds the default only into a config that has never had the block,
-	// so a list the user cleared is not refilled on the next install.
-	// (An empty list for a config that never had the block leaves it absent:
-	// saving another setting is not a choice about this one.)
+	next := cur
+	// A cleared list with the github block present is written as
+	// `bot_usernames: []`, not deleted: `worktree setup` seeds the default
+	// only into a config that has never had the block, so a list the user
+	// cleared is not refilled on the next install. (Clearing it in a config
+	// that never had the block leaves it absent: saving another setting is
+	// not a choice about this one.) An absent github block in the request
+	// leaves the list as it is.
 	if req.GitHub != nil {
-		if ghBots := cleanList(req.GitHub.BotUsernames); len(ghBots) > 0 {
-			next.GitHub = &wconfig.GitHubBehavior{BotUsernames: ghBots}
-		} else if cfg.GitHub != nil {
-			next.GitHub = &wconfig.GitHubBehavior{}
-		}
+		next.GitHubBotUsernames = cleanList(req.GitHub.BotUsernames)
 	}
-	next.Jira = nil
-	if len(bots) > 0 || len(fields) > 0 {
-		next.Jira = &wconfig.JiraBehavior{}
-		if len(bots) > 0 {
-			next.Jira.BotUsernames = bots
-		}
-		if len(fields) > 0 {
-			next.Jira.CustomFields = fields
-		}
+	next.JiraBotUsernames = bots
+	next.JiraCustomFields = fields
+	changed, err := config.WriteEditable(path, next)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "saving config.yaml: "+err.Error())
+		return
 	}
-	if !reflect.DeepEqual(*cfg, next) {
-		if err := wconfig.SaveConfig(path, &next); err != nil {
-			writeError(w, http.StatusInternalServerError, "saving watcher config.yaml: "+err.Error())
-			return
-		}
-		// A changed bot list applies to stored events too, not only to
-		// what the next poll brings.
-		if !slices.Equal(cfg.GitHubBotUsernames(), next.GitHubBotUsernames()) ||
-			!slices.Equal(cfg.JiraBotUsernames(), next.JiraBotUsernames()) {
-			s.markBotAuthors()
-		}
+	// A changed bot list applies to stored events too, not only to what the
+	// next poll brings.
+	if changed && (!slices.Equal(cur.GitHubBotUsernames, next.GitHubBotUsernames) ||
+		!slices.Equal(cur.JiraBotUsernames, next.JiraBotUsernames)) {
+		s.markBotAuthors()
 	}
 	s.writeSettings(w)
 }

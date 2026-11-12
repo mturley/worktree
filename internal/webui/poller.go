@@ -3,6 +3,7 @@ package webui
 import (
 	"fmt"
 	"log"
+	"maps"
 	"net/http"
 	"sync"
 	"time"
@@ -16,7 +17,6 @@ import (
 	wslack "github.com/mturley/watcher/slack"
 	"github.com/mturley/worktree/internal/config"
 	wdb "github.com/mturley/worktree/internal/db"
-	wtjira "github.com/mturley/worktree/internal/jira"
 	"github.com/mturley/worktree/internal/tasks"
 )
 
@@ -147,22 +147,35 @@ func (s *Server) markConfigured(source string) {
 	s.unconfiguredMu.Unlock()
 }
 
-// githubPollOptions are the GitHub poller's options from the watcher's
+// githubPollOptions are the GitHub poller's options from worktree's
 // config.yaml: the bot username patterns (github.bot_usernames). Read per
 // poll, like Jira's, so a Settings change applies on the next one. A config
 // that can't be read polls with none.
 func (s *Server) githubPollOptions() wgithub.PollOptions {
 	var opts wgithub.PollOptions
-	if bcfg, err := wconfig.LoadConfig(s.watcherConfigPath()); err == nil {
-		opts.BotUsernames = bcfg.GitHubBotUsernames()
+	if e, _, err := config.ReadEditable(s.configPath()); err == nil {
+		opts.BotUsernames = e.GitHubBotUsernames
 	}
 	return opts
+}
+
+// jiraAuth is the Jira poller's auth from jc and worktree's config.yaml
+// (jira.custom_fields, jira.bot_usernames). Read per poll, so a Settings
+// change applies on the next one. A config that can't be read polls with
+// neither.
+func (s *Server) jiraAuth(jc wconfig.JiraCreds) wjira.JiraAuth {
+	auth := wjira.JiraAuth{URL: jc.Host, Email: jc.Email, Token: jc.Token, CustomFields: map[string]string{}}
+	if e, _, err := config.ReadEditable(s.configPath()); err == nil {
+		maps.Copy(auth.CustomFields, e.JiraCustomFields)
+		auth.BotUsernames = e.JiraBotUsernames
+	}
+	return auth
 }
 
 // pollAll polls every active pr + jira resource once. Missing creds -> skip
 // that source (logged), not an error.
 func (s *Server) pollAll() error {
-	cfg, err := wconfig.Load(wconfig.DefaultPath())
+	cfg, err := wconfig.Load(s.watcherAuthPath())
 	if err != nil {
 		return err
 	}
@@ -182,11 +195,7 @@ func (s *Server) pollAll() error {
 	if issues, _ := watcherdb.ActiveResources(s.DB, "jira"); len(issues) > 0 && s.WatcherEnabled(config.ServiceJira) {
 		if jc, err := cfg.Jira(); err == nil {
 			s.markConfigured("jira")
-			auth := wjira.JiraAuth{URL: jc.Host, Email: jc.Email, Token: jc.Token, CustomFields: wtjira.ConfiguredCustomFields(jc.CustomFields)}
-			if bcfg, err := wconfig.LoadConfig(wconfig.ConfigDefaultPath()); err == nil {
-				auth.BotUsernames = bcfg.JiraBotUsernames()
-			}
-			if err := wjira.Poll(s.DB, auth, issues, s.logger()); err != nil {
+			if err := wjira.Poll(s.DB, s.jiraAuth(jc), issues, s.logger()); err != nil {
 				s.logger().Printf("jira poll: %v", err)
 			}
 		} else {
@@ -221,9 +230,9 @@ func (s *Server) pollOne(r watcher.Resource) {
 	if svc := serviceForType(r.Type); svc != "" && !s.WatcherEnabled(svc) {
 		return // its watcher is off: never contact the service
 	}
-	cfg, err := wconfig.Load(wconfig.DefaultPath())
+	cfg, err := wconfig.Load(s.watcherAuthPath())
 	if err != nil {
-		s.logger().Printf("pollOne: load config: %v", err)
+		s.logger().Printf("pollOne: load credentials: %v", err)
 		return
 	}
 	one := []watcher.Resource{r}
@@ -238,11 +247,7 @@ func (s *Server) pollOne(r watcher.Resource) {
 		}
 	case "jira":
 		if jc, err := cfg.Jira(); err == nil {
-			auth := wjira.JiraAuth{URL: jc.Host, Email: jc.Email, Token: jc.Token, CustomFields: wtjira.ConfiguredCustomFields(jc.CustomFields)}
-			if bcfg, err := wconfig.LoadConfig(wconfig.ConfigDefaultPath()); err == nil {
-				auth.BotUsernames = bcfg.JiraBotUsernames()
-			}
-			if err := wjira.Poll(s.DB, auth, one, s.logger()); err != nil {
+			if err := wjira.Poll(s.DB, s.jiraAuth(jc), one, s.logger()); err != nil {
 				s.logger().Printf("pollOne jira: %v", err)
 			}
 		} else {

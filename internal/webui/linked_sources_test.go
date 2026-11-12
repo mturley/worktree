@@ -10,12 +10,11 @@ import (
 	"github.com/mturley/worktree/internal/config"
 )
 
-// Serial: sets env and the loadLinkedCreds package var.
+// Serial: sets the loadLinkedCreds package var.
 func TestLinkedSourcesNeverReadsDisabledServicesCredentials(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("WATCHER_HOME", home)
+	authPath := filepath.Join(t.TempDir(), "watcher-auth.yaml")
 	auth := "services:\n  github:\n    token: ghtok\n  jira:\n    host: example.atlassian.net\n    email: a@b.c\n    token: jtok\n"
-	if err := os.WriteFile(filepath.Join(home, "auth.yaml"), []byte(auth), 0o600); err != nil {
+	if err := os.WriteFile(authPath, []byte(auth), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	calls := 0
@@ -24,7 +23,7 @@ func TestLinkedSourcesNeverReadsDisabledServicesCredentials(t *testing.T) {
 	t.Cleanup(func() { loadLinkedCreds = orig })
 
 	srv := func(off ...string) *Server {
-		s := &Server{}
+		s := &Server{WatcherAuthPath: authPath}
 		m := map[string]bool{}
 		for _, svc := range off {
 			m[svc] = true
@@ -48,6 +47,6 @@ func TestLinkedSourcesNeverReadsDisabledServicesCredentials(t *testing.T) {
 	calls = 0
 	src = srv(config.ServiceGitHub, config.ServiceJira).linkedSources()
 	if src.PR != nil || src.Jira != nil || calls != 0 {
-		t.Fatalf("both off: PR=%v Jira=%v, auth.yaml loaded %d times", src.PR, src.Jira, calls)
+		t.Fatalf("both off: PR=%v Jira=%v, watcher-auth.yaml loaded %d times", src.PR, src.Jira, calls)
 	}
 }

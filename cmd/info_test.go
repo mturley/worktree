@@ -89,7 +89,7 @@ func TestInfoJSONMissingWorktree(t *testing.T) {
 func TestJiraJSONUsesCachedStateOnly(t *testing.T) {
 	live, _ := seedReadFixture(t)
 	// No Jira credentials anywhere: the command must still work.
-	t.Setenv("WATCHER_HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	conn, err := wdb.Open()
 	if err != nil {
 		t.Fatal(err)

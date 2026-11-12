@@ -62,7 +62,7 @@ func TestPurgeDeletedTasksSweepAndBlockerLabel(t *testing.T) {
 
 // StartPolling starts the deleted-task purge: its first sweep runs at once.
 func TestStartPollingStartsPurgeSweep(t *testing.T) {
-	t.Setenv("HOME", t.TempDir()) // the poll reads no real watcher config
+	t.Setenv("HOME", t.TempDir()) // the poll reads no real watcher-auth.yaml
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	s, _ := tasksServer(t)
 	s.githubOff.Store(true)

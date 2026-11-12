@@ -118,7 +118,7 @@ func (s *Server) handleCredTest(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg, err := s.loadWatcherAuth()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "reading auth.yaml: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "reading watcher-auth.yaml: "+err.Error())
 		return
 	}
 	v := s.validators()
@@ -200,8 +200,9 @@ func (s *Server) handleCredTest(w http.ResponseWriter, r *http.Request) {
 //
 // Order matters: read what is needed, validate (a network call that can take
 // many seconds) WITHOUT holding settingsMu, then take the lock, reload
-// auth.yaml and apply the change to that fresh copy — so a concurrent save
-// made during validation is never overwritten with a stale copy.
+// watcher-auth.yaml and apply the change to that fresh copy — so a
+// concurrent save made during validation is never overwritten with a stale
+// copy.
 func (s *Server) handleCredReplace(w http.ResponseWriter, r *http.Request) {
 	req, err := decodeCred(w, r)
 	if err != nil {
@@ -246,7 +247,7 @@ func (s *Server) handleCredReplace(w http.ResponseWriter, r *http.Request) {
 		// Read-only load for the stored other half; no lock held.
 		stored, err := s.loadWatcherAuth()
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "reading auth.yaml: "+err.Error())
+			writeError(w, http.StatusInternalServerError, "reading watcher-auth.yaml: "+err.Error())
 			return
 		}
 		var storedTok, storedCk, storedDomain string
@@ -297,16 +298,16 @@ func (s *Server) handleCredReplace(w http.ResponseWriter, r *http.Request) {
 	defer s.settingsMu.Unlock()
 	cfg, err := s.loadWatcherAuth()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "reading auth.yaml: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "reading watcher-auth.yaml: "+err.Error())
 		return
 	}
 	if check != nil && !check(cfg) {
-		writeError(w, http.StatusConflict, "auth.yaml changed during validation; try again")
+		writeError(w, http.StatusConflict, "watcher-auth.yaml changed during validation; try again")
 		return
 	}
 	apply(cfg)
 	if err := cfg.Save(s.watcherAuthPath()); err != nil {
-		writeError(w, http.StatusInternalServerError, "saving auth.yaml: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "saving watcher-auth.yaml: "+err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, credResult{OK: true, Kind: "ok"})

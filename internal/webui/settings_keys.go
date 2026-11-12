@@ -2,7 +2,7 @@ package webui
 
 // settingsKeyPaths lists, per file, every YAML key path the Settings modal
 // reads and writes. settings_keys_test.go compares it with the config
-// structs' yaml tags, so adding a key to any of the three files fails the
+// structs' yaml tags, so adding a key to either file fails the
 // build's tests until the modal handles it (see CLAUDE.md "Settings modal").
 var settingsKeyPaths = map[string][]string{
 	"worktree": {
@@ -10,7 +10,7 @@ var settingsKeyPaths = map[string][]string{
 		"editor",
 		"jira.projects",
 		"jira.alias_hosts",
-		"github.bot_usernames", // Connected Services sub-tabs
+		"github.bot_usernames", // Connected Services sub-tabs (watcher-config PUT)
 		"jira.bot_usernames",
 		"jira.custom_fields",
 		"ui.password", // write-only: PUT /api/settings/password
@@ -39,17 +39,7 @@ var settingsKeyPaths = map[string][]string{
 		"services.slack.cookie", // write-only
 		"services.slack.workspace_domain",
 	},
-	"watcher_config": {
-		"github.bot_usernames", // GitHub tab
-		"jira.bot_usernames",
-		"jira.custom_fields",
-	},
 }
 
 // settingsKeyExclusions are keys the modal deliberately never shows.
-var settingsKeyExclusions = map[string]map[string]bool{
-	"watcher_auth": {
-		"consumers":          true, // owned by `worktree setup`; a DB path is not a user setting
-		"jira_custom_fields": true, // legacy; custom fields belong in watcher config.yaml
-	},
-}
+var settingsKeyExclusions = map[string]map[string]bool{}

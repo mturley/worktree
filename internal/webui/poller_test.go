@@ -50,11 +50,7 @@ func TestIsWorktreeStale(t *testing.T) {
 // (the add-resource endpoint calls this inline). We can't assert enrichment
 // without live creds; this guards the degenerate path.
 func TestPollOne_NoCredsIsNoOp(t *testing.T) {
-	// Isolate watcher config to an empty dir so pollOne finds no creds and
-	// truly no-ops — without this, on a machine that has github/jira/slack
-	// creds configured, pollOne would make a live network call (the test
-	// would then exercise the poll-error branch, not the no-op it claims).
-	t.Setenv("WATCHER_HOME", t.TempDir())
+	t.Parallel()
 
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
@@ -62,7 +58,9 @@ func TestPollOne_NoCredsIsNoOp(t *testing.T) {
 	}
 	defer conn.Close()
 
-	s := &Server{DB: conn}
+	// An empty credentials path, so pollOne finds no creds and truly no-ops
+	// rather than exercising the poll-error branch.
+	s := &Server{DB: conn, WatcherAuthPath: filepath.Join(t.TempDir(), "watcher-auth.yaml")}
 	s.pollOne(watcher.Resource{Type: "pr", ID: "o/r#1", URL: "https://github.com/o/r/pull/1"})
 	// no panic, no assertion beyond reaching here
 }
@@ -85,7 +83,7 @@ func TestSafePollAllSkipsWhenInFlight(t *testing.T) {
 }
 
 func TestPollAll_UnconfiguredSourceWritesWarnRow(t *testing.T) {
-	t.Setenv("WATCHER_HOME", t.TempDir()) // no auth.yaml → nothing configured
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -94,7 +92,7 @@ func TestPollAll_UnconfiguredSourceWritesWarnRow(t *testing.T) {
 	if err := watcherdb.Subscribe(conn, "worktree:/x", watcher.Resource{Type: "pr", ID: "o/r#1"}, watcherdb.SubscribeOpts{}); err != nil {
 		t.Fatal(err)
 	}
-	srv := &Server{DB: conn, Logger: log.New(io.Discard, "", 0)}
+	srv := &Server{DB: conn, Logger: log.New(io.Discard, "", 0), WatcherAuthPath: filepath.Join(t.TempDir(), "watcher-auth.yaml")} // nothing configured
 	if err := srv.pollAll(); err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +106,7 @@ func TestPollAll_UnconfiguredSourceWritesWarnRow(t *testing.T) {
 }
 
 func TestPollAll_UnconfiguredWarnsOncePerTransition(t *testing.T) {
-	t.Setenv("WATCHER_HOME", t.TempDir())
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -117,7 +115,7 @@ func TestPollAll_UnconfiguredWarnsOncePerTransition(t *testing.T) {
 	if err := watcherdb.Subscribe(conn, "worktree:/x", watcher.Resource{Type: "pr", ID: "o/r#1"}, watcherdb.SubscribeOpts{}); err != nil {
 		t.Fatal(err)
 	}
-	srv := &Server{DB: conn, Logger: log.New(io.Discard, "", 0)}
+	srv := &Server{DB: conn, Logger: log.New(io.Discard, "", 0), WatcherAuthPath: filepath.Join(t.TempDir(), "watcher-auth.yaml")} // nothing configured
 	for i := 0; i < 2; i++ {
 		if err := srv.pollAll(); err != nil {
 			t.Fatal(err)

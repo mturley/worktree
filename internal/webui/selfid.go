@@ -14,7 +14,7 @@ import (
 // internal/selfid) and retries failures every retry interval.
 func (s *Server) StartSelfIdentity(retry time.Duration) (stop func()) {
 	lookups := map[string]selfid.Lookup{}
-	if cfg, err := wconfig.Load(wconfig.DefaultPath()); err == nil {
+	if cfg, err := wconfig.Load(s.watcherAuthPath()); err == nil {
 		// Gated per call, not here: a lookup refused while its watcher is
 		// off is retried (every retry interval) and succeeds once it's on.
 		if gh, err := cfg.GitHub(); err == nil {

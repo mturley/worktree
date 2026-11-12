@@ -18,10 +18,7 @@ import (
 )
 
 func TestAddResource_Jira(t *testing.T) {
-	// Isolate watcher config so the add endpoint's inline pollOne finds no
-	// creds (fails closed to a no-op) instead of hitting the live network on
-	// machines that happen to have real creds configured.
-	t.Setenv("WATCHER_HOME", t.TempDir())
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -29,7 +26,7 @@ func TestAddResource_Jira(t *testing.T) {
 	defer conn.Close()
 	wtPath := testgit.Worktree(t)
 
-	srv := &Server{DB: conn}
+	srv := &Server{DB: conn, WatcherAuthPath: filepath.Join(t.TempDir(), "watcher-auth.yaml")} // no creds: the inline pollOne is a no-op
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -310,14 +307,14 @@ func TestSetResourcePrimaryEndpoint(t *testing.T) {
 // A path that is not a worktree is bad input, not a server fault — the UI
 // needs a 400 with the reason to show, not a generic 500.
 func TestAddResource_NonWorktreePathIsBadRequest(t *testing.T) {
-	t.Setenv("WATCHER_HOME", t.TempDir())
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer conn.Close()
 
-	srv := &Server{DB: conn}
+	srv := &Server{DB: conn, WatcherAuthPath: filepath.Join(t.TempDir(), "watcher-auth.yaml")} // no creds: the inline pollOne is a no-op
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -407,7 +404,7 @@ func TestSetResourceOrderEndpoint_MissingPath(t *testing.T) {
 }
 
 func TestAddResource_PositionTopPutsItFirstInItsGroup(t *testing.T) {
-	t.Setenv("WATCHER_HOME", t.TempDir())
+	t.Parallel()
 	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -415,7 +412,7 @@ func TestAddResource_PositionTopPutsItFirstInItsGroup(t *testing.T) {
 	defer conn.Close()
 	wtPath := testgit.Worktree(t)
 
-	srv := &Server{DB: conn}
+	srv := &Server{DB: conn, WatcherAuthPath: filepath.Join(t.TempDir(), "watcher-auth.yaml")} // no creds: the inline pollOne is a no-op
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 

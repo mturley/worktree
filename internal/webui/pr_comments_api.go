@@ -74,10 +74,11 @@ func (s *Server) fetchPRWriteContext(token string, ref wgithub.PRRef) (*wgithub.
 }
 
 // githubToken is the configured GitHub token, "" when there is none. The
-// caller has already checked the GitHub watcher is on. A missing auth.yaml
-// or one without GitHub is simply no token; an auth.yaml that cannot be
-// read (bad permissions, bad YAML) is no token too, but is logged, once per
-// distinct error, so it is not mistaken for an unconfigured service.
+// caller has already checked the GitHub watcher is on. A missing
+// watcher-auth.yaml or one without GitHub is simply no token; a
+// watcher-auth.yaml that cannot be read (bad permissions, bad YAML) is no
+// token too, but is logged, once per distinct error, so it is not mistaken
+// for an unconfigured service.
 func (s *Server) githubToken() string {
 	cfg, err := s.loadWatcherAuth()
 	if err != nil {
@@ -99,7 +100,7 @@ func (s *Server) logAuthErrorOnce(err error) {
 	}
 	s.prAuthErrLogged = err.Error()
 	if s.Logger != nil {
-		s.Logger.Printf("PR comments: reading auth.yaml: %v", err)
+		s.Logger.Printf("PR comments: reading watcher-auth.yaml: %v", err)
 	}
 }
 
