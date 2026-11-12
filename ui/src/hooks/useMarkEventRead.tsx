@@ -2,7 +2,7 @@ import { useCallback } from "react"
 import { notifications } from "@mantine/notifications"
 import { useQueryClient } from "@tanstack/react-query"
 import { api } from "../api/client"
-import type { EventReadChange, TimelineEvent } from "../api/types"
+import type { EventReadChange, MarkUnreadBlocked, TimelineEvent } from "../api/types"
 import { showUndoToast, UNDO_WINDOW_MS } from "../components/UndoToast"
 import { isArchivedEvent } from "../lib/openEvent"
 
@@ -22,6 +22,32 @@ export function canMarkEventRead(e: TimelineEvent): boolean {
  */
 export function canMarkEventUnread(e: TimelineEvent): boolean {
   return !!e.can_mark_unread && !isArchivedEvent(e)
+}
+
+const MARK_UNREAD_BLOCKED_TOOLTIPS: Record<MarkUnreadBlocked, string> = {
+  own: "This is your own activity, so it never shows as unread.",
+  ci_running: "CI is still running. The result will show as unread when it finishes.",
+  out_of_date: "This is for an older commit, so it no longer reflects the PR.",
+  slack: "Slack tracks read state for the whole thread, not single messages. Use Mark unread from here in the thread view.",
+  bookkeeping: "This is a bookkeeping event, so it never shows as unread.",
+  own_task: "This is your own change to the task, so it never shows as unread.",
+}
+
+const ARCHIVED_TOOLTIP = "No worktree follows this resource any more, so there's nowhere to show it as unread."
+
+/**
+ * Why an event can't be marked unread, as the disabled Mark unread button's
+ * tooltip, or null when it can be or there is no reason to give (then the
+ * button is left out, as before). The server's reason comes first; archived
+ * is the client's own rule (see canMarkEventUnread).
+ */
+export function markUnreadBlockedReason(e: TimelineEvent): string | null {
+  if (canMarkEventUnread(e)) return null
+  // An unknown code (a newer server) gives no tooltip rather than a wrong one.
+  const server = e.mark_unread_blocked ? (MARK_UNREAD_BLOCKED_TOOLTIPS as Record<string, string | undefined>)[e.mark_unread_blocked] : undefined
+  if (server) return server
+  if (e.can_mark_unread && isArchivedEvent(e)) return ARCHIVED_TOOLTIP
+  return null
 }
 
 type MarkOptions = { onDone?: () => void; onUndone?: () => void }

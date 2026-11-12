@@ -63,6 +63,10 @@ type TimelineEvent struct {
 	// Slack message. True whatever it reads as now, so a
 	// view can offer it straight after Mark read.
 	CanMarkUnread bool `json:"can_mark_unread,omitempty"`
+	// MarkUnreadBlocked says why CanMarkUnread is false, as one of the
+	// blocked* codes (unread.go), for the disabled button's tooltip. Empty
+	// when it can be marked unread, or when there is no reason to give.
+	MarkUnreadBlocked string `json:"mark_unread_blocked,omitempty"`
 	// Match says why the event matched the `q` search; absent without q.
 	Match *searchMatch `json:"match,omitempty"`
 	// LinkedToTask is set only by the task activity feed: the event is
@@ -924,6 +928,7 @@ func (e *eventEnricher) fillResource(te *TimelineEvent) {
 	}
 	te.Unread = e.unread.IsUnread(te.ID, te.ResourceType, te.ResourceID, te.TS, te.ExternalTS, te.Type, te.Source, te.authorID, te.AuthorType, te.outOfDate)
 	te.CanMarkUnread = e.unread.canMarkUnread(te.ResourceType, te.Type, te.Source, te.authorID, te.outOfDate)
+	te.MarkUnreadBlocked = e.unread.markUnreadBlocked(te.ResourceType, te.Type, te.Source, te.authorID, te.outOfDate)
 	wts := e.worktreesWatching(te.ResourceType, te.ResourceID)
 	te.Worktrees = make([]string, 0, len(wts))
 	te.WorktreePaths = make([]string, 0, len(wts))

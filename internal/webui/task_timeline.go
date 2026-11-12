@@ -85,6 +85,9 @@ func taskFeedRow(fe tasks.FeedEvent, cursors map[string]string, marks map[string
 func taskUnreadRow(ev tasks.Event, t tasks.Task, cursors map[string]string, marks map[string]unread.EventMark) TimelineEvent {
 	te := taskEventToTimeline(ev, t)
 	te.CanMarkUnread = tasks.CountsAsUnread(ev.Actor)
+	if !te.CanMarkUnread {
+		te.MarkUnreadBlocked = blockedOwnTask
+	}
 	te.Unread = te.CanMarkUnread && unread.EventUnread(marks, te.ID, ev.TS, ev.TS > cursors[unread.Key("task", te.ResourceID)])
 	return te
 }

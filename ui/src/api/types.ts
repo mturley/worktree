@@ -94,8 +94,16 @@ export interface TimelineEvent {
    * Slack's own cursor for the thread (its cached `last_read`).
    */
   unread?: boolean;
-  /** The event can be marked unread: not the user's own, a running CI event or a Slack message. */
+  /**
+   * The event can be marked unread: not the user's own, a running or
+   * out-of-date event, a bookkeeping event or a Slack message.
+   */
   can_mark_unread?: boolean
+  /**
+   * Why `can_mark_unread` is false (the server's blocked* codes in
+   * internal/webui/unread.go); absent when it can be, or with no reason to give.
+   */
+  mark_unread_blocked?: MarkUnreadBlocked
   /** Why the event matched the search (`q`); absent without one. */
   match?: { field: string; snippet: string };
   /** Task activity feed only: this event is linked to the task. */
@@ -1123,3 +1131,6 @@ export interface ListenersSnapshot {
   ports: Record<string, ListenerPort[]>
   ranges: Record<string, string>
 }
+
+/** Why an event can never be marked unread; see TimelineEvent.mark_unread_blocked. */
+export type MarkUnreadBlocked = "slack" | "bookkeeping" | "own" | "ci_running" | "out_of_date" | "own_task"

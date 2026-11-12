@@ -451,17 +451,33 @@ func TestTimelineSaysWhichEventsCanBeMarkedUnread(t *testing.T) {
 	if _, err := conn.Exec(`UPDATE watcher_events SET type='ci_pending' WHERE id='running'`); err != nil {
 		t.Fatal(err)
 	}
+	insertUnreadEvent(t, conn, "stale", "2098-01-01T00:00:02Z", "github", "pr", "o/r#1")
+	if _, err := conn.Exec(`UPDATE watcher_events SET type='ci_failed', out_of_date=1 WHERE id='stale'`); err != nil {
+		t.Fatal(err)
+	}
 	events, err := (&Server{DB: conn}).Timeline(TimelineQuery{Limit: 100})
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := map[string]bool{}
-	for _, e := range events {
-		got[e.ID] = e.CanMarkUnread
+	type verdict struct {
+		can     bool
+		blocked string
 	}
-	for id, want := range map[string]bool{"p1": true, "p3": true, "j1": true, "s1": false, "mine": false, "running": false} {
+	got := map[string]verdict{}
+	for _, e := range events {
+		got[e.ID] = verdict{e.CanMarkUnread, e.MarkUnreadBlocked}
+	}
+	for id, want := range map[string]verdict{
+		"p1":      {true, ""},
+		"p3":      {true, ""},
+		"j1":      {true, ""},
+		"s1":      {false, blockedSlack},
+		"mine":    {false, blockedOwn},
+		"running": {false, blockedCIRunning},
+		"stale":   {false, blockedOutOfDate},
+	} {
 		if got[id] != want {
-			t.Errorf("%s: can_mark_unread = %v, want %v", id, got[id], want)
+			t.Errorf("%s: (can_mark_unread, mark_unread_blocked) = %+v, want %+v", id, got[id], want)
 		}
 	}
 }

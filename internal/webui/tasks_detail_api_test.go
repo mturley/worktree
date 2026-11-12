@@ -631,8 +631,8 @@ func TestTaskActivityOwnEventsUnread(t *testing.T) {
 	if e := got[agent]; !e.Unread || !e.CanMarkUnread {
 		t.Errorf("agent event = unread %v can_mark_unread %v; want true, true", e.Unread, e.CanMarkUnread)
 	}
-	if e := got[user]; e.Unread || e.CanMarkUnread {
-		t.Errorf("user event = unread %v can_mark_unread %v; want false, false", e.Unread, e.CanMarkUnread)
+	if e := got[user]; e.Unread || e.CanMarkUnread || e.MarkUnreadBlocked != blockedOwnTask {
+		t.Errorf("user event = unread %v can_mark_unread %v blocked %q; want false, false, %q", e.Unread, e.CanMarkUnread, e.MarkUnreadBlocked, blockedOwnTask)
 	}
 
 	must(t, unread.MarkRead(s.DB, "task", strconv.FormatInt(tk.ID, 10), tts(3)))

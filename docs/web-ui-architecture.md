@@ -916,10 +916,15 @@ on an event at or before `through_ts` is cleared too, a small exception to Mark 
 read clearing only what was shown.
 
 Who can be marked: `TimelineEvent.can_mark_unread` is false for the user's own events,
-running CI, the bookkeeping events no feed renders and Slack, and the server refuses
-those (400), along with a resource no worktree follows, whose unread would have no
-card to clear it from. The client hides the button for that last case through
-`isArchivedEvent`. Slack events are refused either way, since Slack keeps one cursor per
+running or out-of-date CI, out-of-date needs-rebase events, the bookkeeping events no
+feed renders, Slack, and the user's own task events, and the server refuses those (400),
+along with a resource no worktree follows, whose unread would have no card to clear it
+from. The client checks that last case itself, through `isArchivedEvent`. Each refusal
+has a reason code in `mark_unread_blocked` (the `blocked*` constants in
+`internal/webui/unread.go`); the details modal shows Mark unread disabled, with a
+tooltip per code (`markUnreadBlockedReason` in `ui/src/hooks/useMarkEventRead.tsx`,
+which adds the archived case), and leaves it out when there is no code it knows. A new
+code needs a tooltip there; `MarkUnreadBlocked` in `types.ts` makes that a type error. Slack events are refused either way, since Slack keeps one cursor per
 thread, and rows offer no button on them. An unread Slack event's details modal does
 offer Mark read (`useMarkSlackEventRead`), which writes to Slack itself: it fetches the
 live thread (`/api/thread`) for Slack's cursor, then marks the thread read through the

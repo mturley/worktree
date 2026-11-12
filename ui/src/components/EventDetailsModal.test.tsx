@@ -441,10 +441,13 @@ describe("EventDetailsModal unread", () => {
       expect(outlined()).toBe(true)
     })
 
-    it("offers no Mark read on a read Slack message, nor Mark unread", () => {
-      wrapWithToasts(<EventDetailsModal e={slackEv({ unread: false })} onClose={vi.fn()} />)
+    it("offers no Mark read on a read Slack message, and Mark unread only disabled", async () => {
+      wrapWithToasts(<EventDetailsModal e={slackEv({ unread: false, mark_unread_blocked: "slack" })} onClose={vi.fn()} />)
       expect(markButton()).toBeNull()
-      expect(screen.queryByRole("button", { name: "Mark unread" })).toBeNull()
+      const button = screen.getByRole("button", { name: "Mark unread" })
+      expect(button).toHaveAttribute("data-disabled")
+      await userEvent.hover(button)
+      expect(await screen.findByText(/Slack tracks read state for the whole thread/)).toBeInTheDocument()
     })
   })
 
@@ -496,12 +499,40 @@ describe("EventDetailsModal unread", () => {
     expect(unreadButton()).toBeInTheDocument()
   })
 
-  it("does not offer Mark unread where the server says never, or on an archived event", () => {
-    const { unmount } = wrapWithToasts(<EventDetailsModal e={ev({ unread: false, ...followed })} onClose={vi.fn()} />)
+  it("leaves Mark unread out where the server says never and gives no reason", () => {
+    wrapWithToasts(<EventDetailsModal e={ev({ unread: false, ...followed })} onClose={vi.fn()} />)
     expect(unreadButton()).toBeNull()
-    unmount()
+  })
+
+  it.each([
+    ["own", "This is your own activity, so it never shows as unread."],
+    ["ci_running", "CI is still running. The result will show as unread when it finishes."],
+    ["out_of_date", "This is for an older commit, so it no longer reflects the PR."],
+    ["bookkeeping", "This is a bookkeeping event, so it never shows as unread."],
+    ["own_task", "This is your own change to the task, so it never shows as unread."],
+  ] as const)("shows Mark unread disabled, saying why, for a %s event", async (code, tooltip) => {
+    const mark = vi.spyOn(api, "markEventUnread")
+    wrapWithToasts(<EventDetailsModal e={ev({ unread: false, mark_unread_blocked: code, ...followed })} onClose={vi.fn()} />)
+    const button = unreadButton()!
+    expect(button).toHaveAttribute("data-disabled")
+    expect(button).toHaveAttribute("aria-disabled", "true")
+    await userEvent.hover(button)
+    expect(await screen.findByText(tooltip)).toBeInTheDocument()
+    await userEvent.click(button)
+    expect(mark).not.toHaveBeenCalled()
+  })
+
+  it("shows Mark unread disabled on an archived event, saying why", async () => {
     // The fixture's default has a resource and no worktrees: archived.
     wrapWithToasts(<EventDetailsModal e={ev({ unread: false, can_mark_unread: true })} onClose={vi.fn()} />)
+    const button = unreadButton()!
+    expect(button).toHaveAttribute("data-disabled")
+    await userEvent.hover(button)
+    expect(await screen.findByText("No worktree follows this resource any more, so there's nowhere to show it as unread.")).toBeInTheDocument()
+  })
+
+  it("leaves Mark unread out for a reason code it doesn't know", () => {
+    wrapWithToasts(<EventDetailsModal e={ev({ unread: false, ...followed, mark_unread_blocked: "newer" as never })} onClose={vi.fn()} />)
     expect(unreadButton()).toBeNull()
   })
 

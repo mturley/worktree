@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react"
-import { Alert, Badge, Button, Divider, Group, Loader, Modal, Stack, Text } from "@mantine/core"
+import { Alert, Badge, Button, Divider, Group, Loader, Modal, Stack, Text, Tooltip } from "@mantine/core"
 import { TASK_BUTTON_STYLE } from "./tasks/taskButtonStyle"
 import { IconArchive } from "@tabler/icons-react"
 import { useQuery } from "@tanstack/react-query"
@@ -21,7 +21,7 @@ import { eventFullUiHref } from "../lib/fullUiLink"
 import { useMiniModalFullScreen } from "../hooks/useMiniModalFullScreen"
 import { isGitHubMarkdownBody } from "../lib/githubBody"
 import { MARK_READ_BUTTON_PROPS, READ_BOX_BORDER, UNREAD_BOX_BORDER } from "../lib/unread"
-import { canMarkEventRead, canMarkEventUnread, useMarkEventRead, useMarkEventUnread } from "../hooks/useMarkEventRead"
+import { canMarkEventRead, canMarkEventUnread, markUnreadBlockedReason, useMarkEventRead, useMarkEventUnread } from "../hooks/useMarkEventRead"
 import { canMarkSlackEventRead, type SlackMarkPlan, useMarkSlackEventRead } from "../hooks/useMarkSlackEventRead"
 import { BotMark } from "./BotMark"
 import { ModalLayerProvider, useModalLayer } from "./tasks/modal/modalLayer"
@@ -96,6 +96,8 @@ export function EventDetailsModal({ e: shown, onClose, resolveResource, path, on
   const isSlack = !!e && canMarkSlackEventRead({ ...e, unread: true })
   const offerMarkRead = !!e && unread && (isSlack || canMarkEventRead({ ...e, unread }))
   const offerMarkUnread = !!e && !unread && canMarkEventUnread(e)
+  // Shown disabled, with why, where it can never be offered.
+  const markUnreadBlocked = !!e && !unread && !offerMarkUnread ? markUnreadBlockedReason(e) : null
   const slackMark = useMarkSlackEventRead()
   // A Slack mark that would also mark older messages read, awaiting the
   // user's go-ahead: Slack has one cursor per thread, not one per message.
@@ -175,7 +177,7 @@ export function EventDetailsModal({ e: shown, onClose, resolveResource, path, on
     navigate(`/worktree/${encodeURIComponent(worktreePath)}`)
   }
 
-  const hasActions = !!e && !!(locate.data || offerMarkRead || offerMarkUnread || canEdit || (onMakeTask && !inTask && eventTaskKey(e)))
+  const hasActions = !!e && !!(locate.data || offerMarkRead || offerMarkUnread || markUnreadBlocked || canEdit || (onMakeTask && !inTask && eventTaskKey(e)))
   const actions = e && hasActions ? (
     <>
       {locate.data && (
@@ -201,6 +203,15 @@ export function EventDetailsModal({ e: shown, onClose, resolveResource, path, on
         <Button size="xs" variant="light" loading={marking} onClick={() => void mark(true)}>
           Mark unread
         </Button>
+      )}
+      {markUnreadBlocked && (
+        // data-disabled rather than disabled: a disabled button gets no hover,
+        // so its tooltip would never show.
+        <Tooltip label={markUnreadBlocked} withArrow multiline maw={320} events={{ hover: true, focus: true, touch: true }}>
+          <Button size="xs" variant="light" data-disabled aria-disabled onClick={(ev) => ev.preventDefault()}>
+            Mark unread
+          </Button>
+        </Tooltip>
       )}
       {canEdit && !editing && (
         <Button size="xs" variant="light" onClick={() => setEditingId(e.id)}>

@@ -279,15 +279,45 @@ func (ix *unreadIndex) IsUnread(eventID, resType, id, ts, externalTS, eventType,
 	return unread.EventUnread(ix.marks, eventID, ts, pastCursor)
 }
 
-// canMarkUnread reports whether an event can be marked unread: not one of the
-// events IsUnread never counts, and not Slack's. The client adds "and a worktree
-// follows it" itself, from the row's worktrees.
-func (ix *unreadIndex) canMarkUnread(resType, eventType, source, authorID string, outOfDate bool) bool {
-	if ix == nil || resType == "slack" || source == "slack" {
-		return false
+// Why an event can never be marked unread, as TimelineEvent.MarkUnreadBlocked
+// sends it. The client maps each to the disabled Mark unread button's tooltip
+// (ui/src/hooks/useMarkEventRead.tsx), so a new code needs a tooltip there.
+const (
+	blockedSlack       = "slack"       // Slack keeps one read cursor per thread
+	blockedBookkeeping = "bookkeeping" // watch_started, watcher_error
+	blockedOwn         = "own"         // the user's own event (selfid)
+	blockedCIRunning   = "ci_running"  // unread.IsPendingCI
+	blockedOutOfDate   = "out_of_date" // unread.NotOutOfDateSQL
+	blockedOwnTask     = "own_task"    // a task event by the user (tasks.CountsAsUnread)
+)
+
+// markUnreadBlocked says why an event can never be marked unread, or "" when
+// nothing does: the events IsUnread never counts, and Slack's. The client adds
+// "and a worktree follows it" itself, from the row's worktrees.
+func (ix *unreadIndex) markUnreadBlocked(resType, eventType, source, authorID string, outOfDate bool) string {
+	var mine map[string]string
+	if ix != nil {
+		mine = ix.mine
 	}
-	return !selfid.IsMine(ix.mine, source, authorID) && !unread.IsPendingCI(eventType) && !outOfDate &&
-		eventType != "watch_started" && eventType != "watcher_error"
+	switch {
+	case resType == "slack" || source == "slack":
+		return blockedSlack
+	case eventType == "watch_started" || eventType == "watcher_error":
+		return blockedBookkeeping
+	case selfid.IsMine(mine, source, authorID):
+		return blockedOwn
+	case unread.IsPendingCI(eventType):
+		return blockedCIRunning
+	case outOfDate:
+		return blockedOutOfDate
+	}
+	return ""
+}
+
+// canMarkUnread reports whether an event can be marked unread: nothing in
+// markUnreadBlocked rules it out.
+func (ix *unreadIndex) canMarkUnread(resType, eventType, source, authorID string, outOfDate bool) bool {
+	return ix != nil && ix.markUnreadBlocked(resType, eventType, source, authorID, outOfDate) == ""
 }
 
 // slackTSGreater compares two Slack timestamps ("1788464505.422459").
