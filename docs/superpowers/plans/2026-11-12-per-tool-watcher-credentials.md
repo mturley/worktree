@@ -247,6 +247,29 @@ Tasks 3–5 compile against the currently pinned v0.26.0. They only stop
   - Add `TestWatcherAuthWorldReadableNamesFile`: a 0644 auth file makes the
     settings GET or the poller error mention `watcher-auth.yaml` and
     `chmod 600`. The library's message already does this; assert it surfaces.
+  - **Modal file-name text (Mike's requirement).** Every place the Settings
+    modal or its API names a file must name the real one:
+    - `settingsPaths` in `internal/webui/settings.go` (the `paths` DTO
+      behind the modal's "persisted to" lines): `watcher_auth` is
+      `ShortPath(s.watcherAuthPath())`. `watcher_config` is now worktree's
+      `config.yaml` path, since those keys live there. Keep the JSON keys so
+      the draft structure is unchanged.
+    - Add or extend a settings GET test asserting `paths.watcher_auth` ends
+      in `worktree/watcher-auth.yaml` and `paths.watcher_config` equals
+      `paths.worktree`.
+    - `ui/src/components/settings/ConnectedServicesPanel.tsx`: the
+      `fileTitle` labels become `watcher_auth: "watcher-auth.yaml"` and
+      `watcher_config: "config.yaml"`.
+    - Fix stale doc comments in `ConnectedServicesPanel.tsx`,
+      `JiraPollingSection.tsx`, `tabDirty.ts`, `useSettingsDraft.ts` and
+      `ui/src/api/types.ts`.
+    - Server error strings in `settings_creds.go`, `settings_watcher.go` and
+      `pr_comments_api.go`: "auth.yaml" becomes "watcher-auth.yaml", and
+      "watcher config.yaml" becomes "config.yaml".
+    - Verify with `cd ui && npm run build` (or the repo's typecheck/lint
+      script), plus
+      `grep -rn 'auth\.yaml\|watcher config' ui/src internal/webui --include='*.ts' --include='*.tsx' --include='*.go' | grep -v 'watcher-auth\.yaml'`,
+      which should show nothing stale.
 - [ ] **Step 2:** `go test ./internal/... ./cmd/...`. Expected: FAIL where
   code still reads the old paths.
 - [ ] **Step 3: Switch every reader.**
