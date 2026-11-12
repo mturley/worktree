@@ -10,6 +10,9 @@ var settingsKeyPaths = map[string][]string{
 		"editor",
 		"jira.projects",
 		"jira.alias_hosts",
+		"github.bot_usernames", // Connected Services sub-tabs
+		"jira.bot_usernames",
+		"jira.custom_fields",
 		"ui.password", // write-only: PUT /api/settings/password
 		"ui.https_port",
 		"ui.allowed_hosts",

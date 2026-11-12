@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	wconfig "github.com/mturley/watcher/config"
 	"gopkg.in/yaml.v3"
 )
 
@@ -22,6 +23,8 @@ type Config struct {
 	Watchers      WatchersConfig      `yaml:"watchers,omitempty"`
 	Notifications NotificationsConfig `yaml:"notifications,omitempty"`
 	Git           GitConfig           `yaml:"git,omitempty"`
+	// GitHub holds the watcher's GitHub preferences (bot usernames).
+	GitHub *wconfig.GitHubBehavior `yaml:"github,omitempty"`
 }
 
 // Defaults and floor for the background git fetch. DefaultFetchInterval is
@@ -148,6 +151,9 @@ type JiraConfig struct {
 	// e.g. an instance's pre-migration address (issues.example.com) that now
 	// redirects to its atlassian.net site — so old links are still recognised.
 	AliasHosts []string `yaml:"alias_hosts,omitempty"`
+	// JiraBehavior is the watcher's Jira preferences (bot usernames,
+	// custom field IDs), written beside Projects under `jira:`.
+	wconfig.JiraBehavior `yaml:",inline"`
 }
 
 // DefaultHTTPPort is the port the web UI's loopback HTTP listener binds
@@ -219,6 +225,11 @@ func configPath() string {
 	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".config", "worktree", "config.yaml")
+}
+
+// WatcherAuthPath is worktree's watcher credentials file, next to config.yaml.
+func WatcherAuthPath() string {
+	return filepath.Join(filepath.Dir(configPath()), "watcher-auth.yaml")
 }
 
 func ConfigPath() string {

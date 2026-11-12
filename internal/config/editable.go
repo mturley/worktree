@@ -1,7 +1,9 @@
 package config
 
 import (
+	"maps"
 	"slices"
+	"sort"
 
 	"gopkg.in/yaml.v3"
 )
@@ -39,6 +41,13 @@ type Editable struct {
 	// the keys.
 	BackgroundFetch bool
 	FetchInterval   string
+	// Watcher preferences. HasGitHubBlock is read-only: true when the
+	// `github` key exists, so clearing its bot list keeps the block (an
+	// absent block means the watcher's defaults; an empty list means none).
+	GitHubBotUsernames []string
+	HasGitHubBlock     bool
+	JiraBotUsernames   []string
+	JiraCustomFields   map[string]string
 }
 
 // WatcherEnabled reports whether svc's watcher is on.
@@ -77,6 +86,12 @@ func editableFromDoc(doc *yaml.Node) (Editable, bool, error) {
 		NotifyCommandEnabled:  raw.Notifications.CommandEnabled,
 		NotifyCommand:         raw.Notifications.Command,
 	}
+	if raw.GitHub != nil {
+		e.GitHubBotUsernames = raw.GitHub.BotUsernames
+	}
+	e.HasGitHubBlock = lookup(doc.Content[0], "github") != nil
+	e.JiraBotUsernames = raw.Jira.BotUsernames
+	e.JiraCustomFields = raw.Jira.CustomFields
 	e.BackgroundFetch = raw.Git.FetchEnabled()
 	e.FetchInterval = raw.Git.FetchInterval
 	if e.FetchInterval == "" {
@@ -133,6 +148,33 @@ func WriteEditable(path string, next Editable) (bool, error) {
 		return setPath(root, seqNode(val), keys...)
 	}
 	steps := []func() error{
+		func() error {
+			if slices.Equal(cur.GitHubBotUsernames, next.GitHubBotUsernames) {
+				return nil
+			}
+			changed = true
+			if len(next.GitHubBotUsernames) == 0 && !cur.HasGitHubBlock {
+				deletePath(root, "github", "bot_usernames")
+				return nil
+			}
+			n := seqNode(next.GitHubBotUsernames)
+			if len(next.GitHubBotUsernames) == 0 {
+				n.Style = yaml.FlowStyle
+			}
+			return setPath(root, n, "github", "bot_usernames")
+		},
+		func() error { return list(cur.JiraBotUsernames, next.JiraBotUsernames, "jira", "bot_usernames") },
+		func() error {
+			if maps.Equal(cur.JiraCustomFields, next.JiraCustomFields) {
+				return nil
+			}
+			changed = true
+			if len(next.JiraCustomFields) == 0 {
+				deletePath(root, "jira", "custom_fields")
+				return nil
+			}
+			return setPath(root, mapNode(next.JiraCustomFields), "jira", "custom_fields")
+		},
 		func() error { return str(cur.WorktreesBase, next.WorktreesBase, "worktrees_base") },
 		func() error { return str(cur.Editor, next.Editor, "editor") },
 		func() error { return list(cur.JiraProjects, next.JiraProjects, "jira", "projects") },
@@ -276,4 +318,18 @@ func SetPassword(path, password string) error {
 		return err
 	}
 	return writeDoc(path, doc)
+}
+
+// mapNode is a string mapping with keys sorted, so writes are stable.
+func mapNode(m map[string]string) *yaml.Node {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	n := &yaml.Node{Kind: yaml.MappingNode}
+	for _, k := range keys {
+		n.Content = append(n.Content, scalar(k), scalar(m[k]))
+	}
+	return n
 }

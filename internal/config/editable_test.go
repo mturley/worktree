@@ -279,3 +279,98 @@ func TestNotificationsEffectiveCommand(t *testing.T) {
 		}
 	}
 }
+
+func TestWatcherAuthPathFollowsXDG(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	if got, want := WatcherAuthPath(), filepath.Join(dir, "worktree", "watcher-auth.yaml"); got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+const watcherPrefsSample = `# my config
+custom_key: keep-me
+github:
+    bot_usernames: ["*ci-bot*"]
+jira:
+    projects: [A]
+    bot_usernames: [Automation for Jira]
+    custom_fields: {epic_key: customfield_10014}
+`
+
+func writeFile(t *testing.T, content string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestEditableReadsWatcherPrefs(t *testing.T) {
+	got, _, err := ReadEditable(writeFile(t, watcherPrefsSample))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.GitHubBotUsernames, []string{"*ci-bot*"}) || !got.HasGitHubBlock ||
+		!reflect.DeepEqual(got.JiraBotUsernames, []string{"Automation for Jira"}) ||
+		!reflect.DeepEqual(got.JiraCustomFields, map[string]string{"epic_key": "customfield_10014"}) {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestWriteEditableWatcherPrefsKeepsComments(t *testing.T) {
+	p := writeFile(t, watcherPrefsSample)
+	e, _, _ := ReadEditable(p)
+	e.JiraCustomFields = map[string]string{"sprint": "customfield_1", "epic_key": "customfield_10014"}
+	if changed, err := WriteEditable(p, e); err != nil || !changed {
+		t.Fatalf("changed=%v err=%v", changed, err)
+	}
+	b, _ := os.ReadFile(p)
+	s := string(b)
+	if !strings.Contains(s, "# my config") || !strings.Contains(s, "custom_key: keep-me") ||
+		!strings.Contains(s, "sprint: customfield_1") {
+		t.Fatalf("lost content:\n%s", s)
+	}
+	back, _, _ := ReadEditable(p)
+	if !reflect.DeepEqual(back.JiraCustomFields, e.JiraCustomFields) {
+		t.Fatalf("got %+v", back.JiraCustomFields)
+	}
+	e.JiraCustomFields = nil
+	WriteEditable(p, e)
+	b, _ = os.ReadFile(p)
+	if strings.Contains(string(b), "custom_fields") {
+		t.Fatalf("custom_fields not deleted:\n%s", b)
+	}
+}
+
+func TestWriteEditableClearedGitHubBotsKeepsBlock(t *testing.T) {
+	p := writeFile(t, watcherPrefsSample)
+	e, _, _ := ReadEditable(p)
+	e.GitHubBotUsernames = nil
+	if _, err := WriteEditable(p, e); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(p)
+	if !strings.Contains(string(b), "bot_usernames: []") {
+		t.Fatalf("want empty list kept:\n%s", b)
+	}
+	back, _, _ := ReadEditable(p)
+	if !back.HasGitHubBlock || len(back.GitHubBotUsernames) != 0 {
+		t.Fatalf("got %+v", back)
+	}
+}
+
+func TestWriteEditableEmptyGitHubBotsNoBlock(t *testing.T) {
+	p := writeFile(t, "custom_key: x\n")
+	e, _, _ := ReadEditable(p)
+	e.GitHubBotUsernames = []string{}
+	e.JiraCustomFields = map[string]string{"a": "b"}
+	if _, err := WriteEditable(p, e); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(p)
+	if strings.Contains(string(b), "github") {
+		t.Fatalf("unexpected github key:\n%s", b)
+	}
+}
