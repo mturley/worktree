@@ -305,3 +305,57 @@ func TestTimelinesNeverFlagPendingCIUnread(t *testing.T) {
 	}
 	t.Fatal("pr resource missing")
 }
+
+// Out-of-date events (unread.NotOutOfDateSQL: a superseded commit's CI bundle
+// or needs-rebase event) are never unread, in either implementation, nor
+// counted on the resource card.
+func TestTimelinesNeverFlagOutOfDateUnread(t *testing.T) {
+	t.Parallel()
+	conn, wt := unreadOnlyFixture(t)
+	if _, err := conn.Exec(`UPDATE watcher_events SET type = 'ci_failed', out_of_date = 1 WHERE id = 'p3'`); err != nil {
+		t.Fatal(err)
+	}
+	insertUnreadEvent(t, conn, "p4", "2099-01-09T00:00:00Z", "github", "pr", "o/r#1")
+	if _, err := conn.Exec(`UPDATE watcher_events SET type = 'pr_needs_rebase', out_of_date = 1 WHERE id = 'p4'`); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer((&Server{DB: conn}).Handler())
+	defer ts.Close()
+
+	want := []string{"s1", "p2"}
+	for name, base := range map[string]string{
+		"global":   "/api/timeline?limit=100",
+		"worktree": "/api/worktree-timeline?limit=100&path=" + url.QueryEscape(wt),
+	} {
+		all := getTimeline(t, ts.URL, base)
+		only := getTimeline(t, ts.URL, base+"&unread_only=true")
+		if got := unreadIDs(all.Events); !sameIDs(got, want) {
+			t.Fatalf("%s unread flags = %v, want %v", name, got, want)
+		}
+		if got := eventIDs(only.Events); !sameIDs(got, want) {
+			t.Fatalf("%s unread_only = %v, want %v", name, got, want)
+		}
+		for _, e := range all.Events {
+			if (e.ID == "p3" || e.ID == "p4") && e.CanMarkUnread {
+				t.Fatalf("%s: out-of-date %s can_mark_unread = true", name, e.ID)
+			}
+		}
+	}
+
+	resp, err := http.Get(ts.URL + "/api/worktree-resources?path=" + url.QueryEscape(wt))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var rs []resourceDTO
+	json.NewDecoder(resp.Body).Decode(&rs)
+	for _, r := range rs {
+		if r.Type == "pr" {
+			if r.UnreadCount != 1 || r.UnreadThroughTS != "2099-01-03T00:00:00Z" {
+				t.Fatalf("pr unread = %d through %q, want 1 through p2", r.UnreadCount, r.UnreadThroughTS)
+			}
+			return
+		}
+	}
+	t.Fatal("pr resource missing")
+}

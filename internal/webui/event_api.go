@@ -11,7 +11,7 @@ import (
 func (s *Server) EventByID(id string) (*TimelineEvent, error) {
 	rows, err := s.DB.Query(`
 SELECT e.id, e.ts, COALESCE(e.external_ts,''), e.source, e.type,
-       COALESCE(e.title,''), COALESCE(e.body,''), COALESCE(e.author,''), COALESCE(e.author_type,''), COALESCE(e.author_id,''),
+       COALESCE(e.title,''), COALESCE(e.body,''), COALESCE(e.author,''), COALESCE(e.author_type,''), COALESCE(e.author_id,''), e.out_of_date,
        er.resource_type, er.resource_id, COALESCE(er.resource_url,'')
 FROM watcher_events e
 JOIN watcher_event_resources er ON er.event_id = e.id

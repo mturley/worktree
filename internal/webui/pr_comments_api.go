@@ -274,7 +274,7 @@ func (s *Server) prUnreadIDs(id string, t *wgithub.PRReviewThreads) ([]int64, er
 	}
 	ix := s.newUnreadIndex()
 	ids := prcomments.UnreadIDs(t, prcomments.MatchEvents(t, events), func(e watcher.Event) bool {
-		return ix.IsUnread(e.ID, "pr", id, e.TS, derefStr(e.ExternalTS), string(e.Type), e.Source, derefStr(e.AuthorID), derefStr(e.AuthorType))
+		return ix.IsUnread(e.ID, "pr", id, e.TS, derefStr(e.ExternalTS), string(e.Type), e.Source, derefStr(e.AuthorID), derefStr(e.AuthorType), e.OutOfDate)
 	})
 	if ids == nil {
 		ids = []int64{}

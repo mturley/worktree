@@ -59,7 +59,8 @@ type TimelineEvent struct {
 	// else. See unreadIndex.IsUnread.
 	Unread bool `json:"unread,omitempty"`
 	// CanMarkUnread says the event can be marked unread: not the user's own, a
-	// running CI event or a Slack message. True whatever it reads as now, so a
+	// running or out-of-date CI event, an out-of-date needs-rebase event or a
+	// Slack message. True whatever it reads as now, so a
 	// view can offer it straight after Mark read.
 	CanMarkUnread bool `json:"can_mark_unread,omitempty"`
 	// Match says why the event matched the `q` search; absent without q.
@@ -74,6 +75,9 @@ type TimelineEvent struct {
 	// authorID is the event's watcher author_id, used only to leave the
 	// user's own events out of unread (internal/selfid). Not sent.
 	authorID string `json:"-"`
+	// outOfDate is the event's watcher out_of_date flag, used only to leave
+	// superseded CI and needs-rebase events out of unread. Not sent.
+	outOfDate bool `json:"-"`
 }
 
 type timelineResponse struct {
@@ -251,7 +255,8 @@ const unreadOnlyClause = `AND (
            AND ` + unread.SlackNewerSQL + `))
  OR ` + unread.MarkedUnreadSQL + `
 ) AND ` + selfid.NotMineSQL + `
-  AND ` + unread.NotPendingCISQL + ` `
+  AND ` + unread.NotPendingCISQL + `
+  AND ` + unread.NotOutOfDateSQL + ` `
 
 // humansOnlyClause narrows the global timeline to what people did: no bot's
 // events (author_type "bot", what the feed's bot mark shows) and no CI
@@ -331,7 +336,7 @@ func (s *Server) globalTimeline(q TimelineQuery) ([]TimelineEvent, error) {
 
 	base := `
 SELECT DISTINCT e.id, e.ts, COALESCE(e.external_ts,''), e.source, e.type,
-       COALESCE(e.title,''), COALESCE(e.body,''), COALESCE(e.author,''), COALESCE(e.author_type,''), COALESCE(e.author_id,''),
+       COALESCE(e.title,''), COALESCE(e.body,''), COALESCE(e.author,''), COALESCE(e.author_type,''), COALESCE(e.author_id,''), e.out_of_date,
        er.resource_type, er.resource_id, COALESCE(er.resource_url,'')
 FROM watcher_events e
 JOIN watcher_event_resources er ON er.event_id = e.id `
@@ -797,7 +802,7 @@ func (s *Server) collectTimelineRows(rows *sql.Rows, limit int, terms []string) 
 	for rows.Next() {
 		var te TimelineEvent
 		if err := rows.Scan(&te.ID, &te.TS, &te.ExternalTS, &te.Source, &te.Type,
-			&te.Title, &te.Body, &te.Author, &te.AuthorType, &te.authorID, &te.ResourceType, &te.ResourceID, &te.ResourceURL); err != nil {
+			&te.Title, &te.Body, &te.Author, &te.AuthorType, &te.authorID, &te.outOfDate, &te.ResourceType, &te.ResourceID, &te.ResourceURL); err != nil {
 			return nil, err
 		}
 		if seen[te.ID] {
@@ -882,7 +887,7 @@ func (s *Server) newEventEnricher() *eventEnricher {
 func (e *eventEnricher) enrich(ev watcher.Event) TimelineEvent {
 	te := TimelineEvent{
 		ID: ev.ID, TS: ev.TS, Source: ev.Source, Type: string(ev.Type),
-		TypeLabel: ev.Type.DisplayName(), Title: ev.Title,
+		TypeLabel: ev.Type.DisplayName(), Title: ev.Title, outOfDate: ev.OutOfDate,
 	}
 	if ev.ExternalTS != nil {
 		te.ExternalTS = *ev.ExternalTS
@@ -917,8 +922,8 @@ func (e *eventEnricher) fillResource(te *TimelineEvent) {
 		te.ResourceTitle = dto.Title
 		te.Title = slackEventTitle(te.Source, te.Type, te.Title, dto)
 	}
-	te.Unread = e.unread.IsUnread(te.ID, te.ResourceType, te.ResourceID, te.TS, te.ExternalTS, te.Type, te.Source, te.authorID, te.AuthorType)
-	te.CanMarkUnread = e.unread.canMarkUnread(te.ResourceType, te.Type, te.Source, te.authorID)
+	te.Unread = e.unread.IsUnread(te.ID, te.ResourceType, te.ResourceID, te.TS, te.ExternalTS, te.Type, te.Source, te.authorID, te.AuthorType, te.outOfDate)
+	te.CanMarkUnread = e.unread.canMarkUnread(te.ResourceType, te.Type, te.Source, te.authorID, te.outOfDate)
 	wts := e.worktreesWatching(te.ResourceType, te.ResourceID)
 	te.Worktrees = make([]string, 0, len(wts))
 	te.WorktreePaths = make([]string, 0, len(wts))

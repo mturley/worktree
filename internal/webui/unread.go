@@ -255,14 +255,15 @@ func (ix *unreadIndex) fillOwn(dto *resourceDTO) {
 // A bot's description edit is never past the cursor (the Go twin of
 // unread.NotBotDescriptionEditSQL, which sits in the cursor branch only), so
 // it is unread only when marked so.
-func (ix *unreadIndex) IsUnread(eventID, resType, id, ts, externalTS, eventType, source, authorID, authorType string) bool {
+func (ix *unreadIndex) IsUnread(eventID, resType, id, ts, externalTS, eventType, source, authorID, authorType string, outOfDate bool) bool {
 	if ix == nil {
 		return false
 	}
-	// The user's own events and CI runs still in progress are never unread:
-	// the Go twins of selfid.NotMineSQL and unread.NotPendingCISQL, so the
-	// unread-only SQL and this flag agree.
-	if selfid.IsMine(ix.mine, source, authorID) || unread.IsPendingCI(eventType) {
+	// The user's own events, CI runs still in progress and out-of-date events
+	// are never unread: the Go twins of selfid.NotMineSQL,
+	// unread.NotPendingCISQL and unread.NotOutOfDateSQL, so the unread-only
+	// SQL and this flag agree.
+	if selfid.IsMine(ix.mine, source, authorID) || unread.IsPendingCI(eventType) || outOfDate {
 		return false
 	}
 	if resType == "slack" {
@@ -281,11 +282,11 @@ func (ix *unreadIndex) IsUnread(eventID, resType, id, ts, externalTS, eventType,
 // canMarkUnread reports whether an event can be marked unread: not one of the
 // events IsUnread never counts, and not Slack's. The client adds "and a worktree
 // follows it" itself, from the row's worktrees.
-func (ix *unreadIndex) canMarkUnread(resType, eventType, source, authorID string) bool {
+func (ix *unreadIndex) canMarkUnread(resType, eventType, source, authorID string, outOfDate bool) bool {
 	if ix == nil || resType == "slack" || source == "slack" {
 		return false
 	}
-	return !selfid.IsMine(ix.mine, source, authorID) && !unread.IsPendingCI(eventType) &&
+	return !selfid.IsMine(ix.mine, source, authorID) && !unread.IsPendingCI(eventType) && !outOfDate &&
 		eventType != "watch_started" && eventType != "watcher_error"
 }
 

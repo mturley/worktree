@@ -136,9 +136,9 @@ func (s *Server) eventVerdict(ev unread.Event) (eventVerdict, error) {
 	noMarks := *ix
 	noMarks.marks = nil
 	for _, r := range ev.Resources {
-		v.canBeUnread = v.canBeUnread || ix.canMarkUnread(r.Type, ev.Type, ev.Source, ev.AuthorID)
-		v.unread = v.unread || ix.IsUnread(ev.ID, r.Type, r.ID, ev.TS, ev.ExternalTS, ev.Type, ev.Source, ev.AuthorID, ev.AuthorType)
-		v.pastCursor = v.pastCursor || noMarks.IsUnread(ev.ID, r.Type, r.ID, ev.TS, ev.ExternalTS, ev.Type, ev.Source, ev.AuthorID, ev.AuthorType)
+		v.canBeUnread = v.canBeUnread || ix.canMarkUnread(r.Type, ev.Type, ev.Source, ev.AuthorID, ev.OutOfDate)
+		v.unread = v.unread || ix.IsUnread(ev.ID, r.Type, r.ID, ev.TS, ev.ExternalTS, ev.Type, ev.Source, ev.AuthorID, ev.AuthorType, ev.OutOfDate)
+		v.pastCursor = v.pastCursor || noMarks.IsUnread(ev.ID, r.Type, r.ID, ev.TS, ev.ExternalTS, ev.Type, ev.Source, ev.AuthorID, ev.AuthorType, ev.OutOfDate)
 	}
 	return v, nil
 }

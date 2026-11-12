@@ -410,6 +410,10 @@ func TestMarkEventUnreadRefusals(t *testing.T) {
 		t.Fatal(err)
 	}
 	insertUnreadEvent(t, conn, "gone", "2098-01-01T00:00:02Z", "github", "pr", "o/r#99")
+	insertUnreadEvent(t, conn, "stale", "2098-01-01T00:00:03Z", "github", "pr", "o/r#1")
+	if _, err := conn.Exec(`UPDATE watcher_events SET type='ci_failed', out_of_date=1 WHERE id='stale'`); err != nil {
+		t.Fatal(err)
+	}
 
 	ts := httptest.NewServer((&Server{DB: conn}).Handler())
 	defer ts.Close()
@@ -422,6 +426,7 @@ func TestMarkEventUnreadRefusals(t *testing.T) {
 		{"slack", `{"id":"s2"}`, http.StatusBadRequest},
 		{"own event", `{"id":"mine"}`, http.StatusBadRequest},
 		{"running CI", `{"id":"running"}`, http.StatusBadRequest},
+		{"out of date", `{"id":"stale"}`, http.StatusBadRequest},
 		{"no worktree follows it", `{"id":"gone"}`, http.StatusBadRequest},
 		{"rewritten", `{"id":"p1","ts":"2098-06-01T00:00:00Z"}`, http.StatusConflict},
 	} {

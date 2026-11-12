@@ -43,6 +43,14 @@ func IsPendingCI(eventType string) bool {
 	return eventType == "ci_pending" || eventType == "ci_workflows_pending"
 }
 
+// NotOutOfDateSQL is the condition "this event is not out of date", over a
+// watcher_events row aliased e. The watcher flags a CI bundle or needs-rebase
+// event out of date once the commit it covers is no longer the PR's latest
+// (watcher's MarkOutOfDate); what it reported no longer holds, so it is never
+// counted or flagged unread, and cannot be marked unread — like
+// NotPendingCISQL. It is still rendered in the feeds.
+const NotOutOfDateSQL = `e.out_of_date = 0`
+
 // NotBotDescriptionEditSQL is the condition "this event is not a bot's edit
 // to a Jira or PR description", over a watcher_events row aliased e. A bot
 // rewriting a description (a CI summary, a release checklist) is churn, so it
@@ -51,7 +59,7 @@ func IsPendingCI(eventType string) bool {
 // that mark must count. Combined as
 //
 //	((past cursor AND not marked read AND not bot description edit) OR marked unread)
-//	AND not mine AND not pending CI
+//	AND not mine AND not pending CI AND not out of date
 const NotBotDescriptionEditSQL = "NOT (COALESCE(e.author_type,'') = 'bot' AND e.type IN ('jira_description_changed','pr_description_changed'))"
 
 // IsBotDescriptionEdit is NotBotDescriptionEditSQL's Go twin (negated), for
@@ -134,8 +142,8 @@ type Summary struct {
 
 // Summaries is Counts with each resource's newest unread ts alongside. Same
 // rules as Counts, including the event types it excludes. The user's own
-// events (internal/selfid) and CI runs still in progress (NotPendingCISQL)
-// never count, so NewestTS is the newest event worth reading. A bot's
+// events (internal/selfid), CI runs still in progress (NotPendingCISQL) and
+// out-of-date events (NotOutOfDateSQL) never count, so NewestTS is the newest event worth reading. A bot's
 // description edit (NotBotDescriptionEditSQL) counts only when marked unread.
 func Summaries(conn *sql.DB) (map[string]Summary, error) {
 	rows, err := conn.Query(`
@@ -149,6 +157,7 @@ func Summaries(conn *sql.DB) (map[string]Summary, error) {
 		   AND e.type NOT IN ('watch_started','watcher_error')
 		   AND ` + selfid.NotMineSQL + `
 		   AND ` + NotPendingCISQL + `
+		   AND ` + NotOutOfDateSQL + `
 		 GROUP BY er.resource_type, er.resource_id`)
 	if err != nil {
 		return nil, err

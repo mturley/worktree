@@ -951,6 +951,15 @@ arrive as unread: the watcher rewrites the commit's CI bundle row in place,
 `type` and `ts` both, so the completed run lands past the cursor.
 Notifications already skip the same two types (`notifySkipTypes`).
 
+**Out-of-date events are never unread either.** When a PR's head moves on, the
+watcher sets `watcher_events.out_of_date` (and prefixes the title "[out of
+date] ") on the superseded commit's CI bundles and needs-rebase event, and on a
+head's needs-rebase event once its conflicts clear (watcher v0.26.0,
+`MarkOutOfDate`). What they reported no longer holds, so they are dropped
+exactly like running CI: `unread.NotOutOfDateSQL` in `Summaries` and the
+unread-only clause, the `outOfDate` argument to `IsUnread`, and
+`canMarkUnread` refuses them. Marking never moves `ts`, so it notifies nothing.
+
 **Not the same model as agent-handler's.** Handler tracks unread per
 *subscriber*, so each session has its own read state. This is per *resource*
 and shared: marking a PR read in one worktree clears its dot in every worktree

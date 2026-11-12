@@ -51,7 +51,7 @@ var ErrEventChanged = errors.New("event changed since it was shown")
 
 // ErrNeverUnread: the event can never read as unread, so marking it so would
 // promise something no count or feed will show. The user's own events, CI runs
-// in progress and the bookkeeping events no feed renders.
+// in progress, out-of-date events and the bookkeeping events no feed renders.
 var ErrNeverUnread = errors.New("this event can never be unread")
 
 // ErrNotFollowed: no worktree follows the event's resource, so there is no card
@@ -236,6 +236,7 @@ type ResourceRef struct{ Type, ID string }
 // "tasks", its TaskID and Actor, and no Resources.
 type Event struct {
 	ID, TS, ExternalTS, Type, Source, AuthorID, AuthorType string
+	OutOfDate                                              bool
 	Resources                                              []ResourceRef
 	TaskID                                                 int64
 	Actor                                                  string
@@ -262,9 +263,9 @@ func LoadEvent(conn *sql.DB, id string) (Event, error) {
 	}
 	ev := Event{ID: id}
 	err := conn.QueryRow(`
-		SELECT ts, COALESCE(external_ts,''), type, source, COALESCE(author_id,''), COALESCE(author_type,'')
+		SELECT ts, COALESCE(external_ts,''), type, source, COALESCE(author_id,''), COALESCE(author_type,''), out_of_date
 		  FROM watcher_events WHERE id = ?`, id).
-		Scan(&ev.TS, &ev.ExternalTS, &ev.Type, &ev.Source, &ev.AuthorID, &ev.AuthorType)
+		Scan(&ev.TS, &ev.ExternalTS, &ev.Type, &ev.Source, &ev.AuthorID, &ev.AuthorType, &ev.OutOfDate)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Event{}, ErrEventNotFound
 	}
