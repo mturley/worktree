@@ -17,13 +17,13 @@ function fieldErrors(rows: [string, string][]): (string | undefined)[] {
 }
 
 /**
- * The Jira keys of the watcher library's config.yaml (GitHub's are on the
- * GitHub tab). Custom fields
+ * The Jira watcher preferences in worktree's config.yaml (GitHub's are on
+ * the GitHub tab). Custom fields
  * are edited as local rows (see KeyValueTable); the modal remounts this
  * section (via key) on Discard and Save so the rows re-read the draft.
  */
 export function JiraPollingSection({ file, draft, update, setInvalid }: {
-  /** The watcher config.yaml path, shown on the section. */
+  /** The config.yaml path, shown on the section. */
   file: string
   draft: WatcherConfigSettings
   update: (fn: (d: WatcherConfigSettings) => WatcherConfigSettings) => void

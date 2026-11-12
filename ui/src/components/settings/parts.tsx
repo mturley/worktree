@@ -3,7 +3,8 @@ import { Badge, Code, Group, Stack, Text, Title } from "@mantine/core"
 
 /** "These settings are persisted to <path>": the first line of every config tab. */
 export function PersistedTo({ path, paths }: { path?: string; paths?: string[] }) {
-  const all = paths ?? (path ? [path] : [])
+  // Distinct: two sections of a tab can save to the same file.
+  const all = [...new Set(paths ?? (path ? [path] : []))]
   return (
     <Text size="xs" c="dimmed" bg="var(--mantine-color-default-hover)" px="sm" py={6} style={{ borderRadius: 4 }}>
       These settings are persisted to{" "}

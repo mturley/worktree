@@ -187,7 +187,7 @@ export function useSettingsDraft(server: Settings | undefined) {
         const next = { ...secretsRef.current }
         for (const [k, v] of secretsOut.written) if (next[k] === v) delete next[k]
         setSecrets(next)
-        // The replaces changed auth.yaml (Jira host/email, Slack's domain):
+        // The replaces changed watcher-auth.yaml (Jira host/email, Slack's domain):
         // adopt those, keeping any field the user has edited since loading.
         try {
           latest = await api.settings()

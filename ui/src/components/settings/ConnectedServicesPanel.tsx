@@ -12,15 +12,15 @@ import { Toggle } from "../Toggle"
 
 const fileTitle: Record<SettingsFile, string> = {
   worktree: "config.yaml",
-  watcher_auth: "auth.yaml",
-  watcher_config: "watcher config.yaml",
+  watcher_auth: "watcher-auth.yaml",
+  watcher_config: "config.yaml",
 }
 
 /**
  * GitHub, Jira and Slack, one sub-tab each, gathering every key for that
- * service across the three files: watcher auth.yaml (all three), worktree's
- * config.yaml (Jira project detection) and watcher config.yaml (Jira
- * polling). Excludes auth.yaml's consumers and legacy jira_custom_fields.
+ * service across worktree's two files: watcher-auth.yaml (credentials, all
+ * three) and config.yaml (the watcher toggles, Jira project detection, and
+ * the watcher preferences: bot usernames and Jira custom fields).
  */
 export function ConnectedServicesPanel({ settings, drafts, update, errors, active, secrets, setSecret, setInvalid, resetToken, dirty, service, onServiceChange }: {
   settings: Settings
@@ -32,7 +32,7 @@ export function ConnectedServicesPanel({ settings, drafts, update, errors, activ
   /** Replaced values waiting for Save; tests use them in place of the stored ones. */
   secrets: PendingSecrets
   setSecret: (key: SecretKey, value: string | null) => void
-  /** Mark watcher config.yaml's draft invalid (Save then skips it) or valid again. */
+  /** Mark the watcher preferences draft invalid (Save then skips it) or valid again. */
   setInvalid: (message: string | null) => void
   /** Bumped on Discard and Save, to remount the custom-field rows. */
   resetToken: number

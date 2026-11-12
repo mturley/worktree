@@ -4,7 +4,7 @@ export const DEFAULT_CMD = 'telert send "$event ($resource) - $description - $wo
 
 export const baseSettings = (): Settings => ({
   environment: { in_cmux: true, worktrees_base_env: false, cert_names: ["a.local"], default_notify_command: DEFAULT_CMD },
-  paths: { worktree: "~/.config/worktree/config.yaml", watcher_auth: "~/.config/watcher/auth.yaml", watcher_config: "~/.config/watcher/config.yaml" },
+  paths: { worktree: "~/.config/worktree/config.yaml", watcher_auth: "~/.config/worktree/watcher-auth.yaml", watcher_config: "~/.config/worktree/config.yaml" },
   secrets: { ui_password: true, github_token: true, jira_token: true, slack_token: true, slack_cookie: true },
   worktree: { worktrees_base: "~/.worktrees", editor: "", cmux_features_enabled: true, port_scan_enabled: true,
     watchers: { github: true, jira: true, slack: true },

@@ -6,8 +6,8 @@ export type SettingsTab = "general" | "connected" | "github" | "jira" | "slack" 
 /**
  * Which tabs (and Connected Services sub-tabs) hold unsaved changes. A tab
  * can span files and a file can span tabs — config.yaml backs General, UI
- * Access and Jira, and watcher's config.yaml GitHub and Jira — so each tab
- * compares only its own keys.
+ * Access, Notifications, GitHub and Jira, and watcher-auth.yaml all three
+ * services — so each tab compares only its own keys.
  */
 export function tabDirty(base: Settings, d: Drafts, p: PendingSecrets): Record<SettingsTab, boolean> {
   const differs = (a: unknown, b: unknown) => canonical(a) !== canonical(b)

@@ -321,7 +321,7 @@ describe("SettingsModal", () => {
     await userEvent.type(await screen.findByLabelText("Token"), "ghp_new{Enter}")
     expect(await screen.findByText("Unsaved")).toBeInTheDocument()
     await userEvent.click(screen.getByRole("button", { name: "Save" }))
-    // auth.yaml backs all three sub-tabs, so each shows its error.
+    // watcher-auth.yaml backs all three sub-tabs, so each shows its error.
     expect(await screen.findAllByText(/GitHub token: token revoked. It was not saved./)).toHaveLength(3)
     expect(screen.getByText("Unsaved")).toBeInTheDocument()
   })
@@ -477,7 +477,7 @@ describe("SettingsModal", () => {
     await userEvent.click(screen.getByRole("button", { name: "Save" }))
     expect(save).not.toHaveBeenCalled()
     // On every tab that saves to that file: Jira's and GitHub's.
-    expect(await screen.findAllByText(/Couldn't save watcher config.yaml/)).toHaveLength(2)
+    expect(await screen.findAllByText(/Couldn't save config.yaml/)).toHaveLength(2)
   })
 
   it("General: clearing the HTTPS port maps to the default 8476", async () => {
@@ -524,11 +524,11 @@ describe("SettingsModal tab dots", () => {
     expect(screen.getByRole("tab", { name: /General/ })).not.toHaveTextContent("●")
   })
 
-  it("the Jira sub-tab names all three files it saves to", async () => {
+  it("the Jira sub-tab names both files it saves to, once each", async () => {
     vi.spyOn(api, "settings").mockResolvedValue(baseSettings())
     renderModal()
     await openService("Jira")
-    const line = screen.getAllByText(/These settings are persisted to/).find((el) => el.textContent?.includes("watcher/config.yaml"))
-    expect(line).toHaveTextContent("~/.config/worktree/config.yaml, ~/.config/watcher/auth.yaml and ~/.config/watcher/config.yaml")
+    const line = screen.getAllByText(/These settings are persisted to/).find((el) => el.textContent?.includes("watcher-auth.yaml"))
+    expect(line?.textContent).toBe("These settings are persisted to ~/.config/worktree/config.yaml and ~/.config/worktree/watcher-auth.yaml")
   })
 })

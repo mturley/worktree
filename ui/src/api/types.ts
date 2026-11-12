@@ -463,13 +463,13 @@ export interface WorktreeSettings {
   }
 }
 
-/** The non-secret keys of watcher's auth.yaml. */
+/** The non-secret keys of worktree's watcher-auth.yaml. */
 export interface WatcherAuthSettings {
   jira: { host: string; email: string }
   slack: { workspace_domain: string }
 }
 
-/** The editable keys of watcher's config.yaml. */
+/** The watcher preferences in worktree's config.yaml. */
 export interface WatcherConfigSettings {
   github: {
     /** Glob patterns (`*`, `?`; case-insensitive) for logins to treat as bots. */
