@@ -141,7 +141,7 @@ func (w *WatchersConfig) SetEnabled(svc string, on bool) {
 }
 
 // JiraConfig holds worktree-only Jira settings. Credentials (host, email,
-// API token) live in the shared watcher auth.yaml (wcfg.Services.Jira,
+// API token) live in worktree's watcher-auth.yaml (wcfg.Services.Jira,
 // via credsetup) — see internal/setup/setup.go. Projects has no watcher
 // equivalent (it drives worktree's own branch/PR project-prefix detection
 // in jira.DetectKeys) and stays here.

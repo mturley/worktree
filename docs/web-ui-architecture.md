@@ -3004,7 +3004,7 @@ not filters.
 
 **Bot accounts.** An event is a bot's when its `author_type` is `bot`: GitHub
 says so for its `Bot` accounts, and the watcher library adds any login
-matching the watcher `config.yaml` patterns (`github.bot_usernames`,
+matching the patterns in worktree's `config.yaml` (`github.bot_usernames`,
 `jira.bot_usernames`; globs, case-insensitive, e.g. `*ci-bot*`) as it polls.
 Stored events are brought into line by `markBotAuthors` (`bot_authors.go`,
 over `watcherdb.MarkBotAuthors`) as polling starts and whenever a Settings
@@ -3279,7 +3279,7 @@ it before touching `github.com/mturley/watcher/slack` or Slack rendering.
   `github.com/mturley/watcher`). It now consumes the library's `slack.Client`
   / `slack.Thread` types.
 - **`internal/slackcreds`** — loads Slack token/cookie/workspace domain from
-  the shared watcher config (`wconfig.Load` → `cfg.Slack()`) and builds a
+  worktree's `watcher-auth.yaml` (`wconfig.Load` → `cfg.Slack()`) and builds a
   `github.com/mturley/watcher/slack.Client` (`slackcreds.Client()`).
 - **`internal/slackurl`** — parses a Slack thread URL
   (`https://<workspace>.slack.com/archives/<channel>/p<ts>...`) into
@@ -3288,15 +3288,17 @@ it before touching `github.com/mturley/watcher/slack` or Slack rendering.
 - **`internal/setup/slack.go`** — the `worktree setup` step that walks the
   user through extracting their browser session token (`xoxc-...`) + cookie
   (`xoxd-...`) from Slack's web app dev tools, and writes them (+ workspace
-  domain) to `~/.config/watcher/auth.yaml` via the watcher library's config
-  package. `setup.BuildPlan` sets `ConfigureSlack` when Slack isn't yet
+  domain) to worktree's `watcher-auth.yaml` (`config.WatcherAuthPath()`) via
+  the watcher library's config package. `setup.BuildPlan` sets `ConfigureSlack` when Slack isn't yet
   configured or `wcfg.Slack()` errors.
 
-### Slack creds (watcher `auth.yaml`)
+### Slack creds (`watcher-auth.yaml`)
 
-Slack credentials are **not** a worktree-specific config file — they live
-alongside Jira/GitHub creds in the shared watcher config at
-`~/.config/watcher/auth.yaml` (`wconfig.DefaultPath()`), under a `slack:` key.
+Slack credentials live alongside Jira/GitHub creds in worktree's own
+`watcher-auth.yaml` (`config.WatcherAuthPath()`:
+`$XDG_CONFIG_HOME/worktree/watcher-auth.yaml` or
+`~/.config/worktree/watcher-auth.yaml`, mode 0600), under `services.slack`.
+No other tool reads or writes this file.
 `SlackConfig` (added in watcher **v0.2.7**, pinned in `go.mod`) has three
 fields: `token` (`xoxc-...`), `cookie` (the `d=` cookie, `xoxd-...`), and
 `workspace_domain` (optional, e.g. `myworkspace` for
@@ -3627,11 +3629,12 @@ by what they configure rather than by file:
   `notifications.*`.
 - **Connected Services** (`ConnectedServicesPanel`) — sub-tabs GitHub, Jira
   and Slack, each gathering every key for that service across files.
-  Slack is watcher `auth.yaml`. GitHub is `auth.yaml` (token) plus Polling
-  (watcher `config.yaml` `github.bot_usernames`). Jira spans all three files:
-  Connection (`auth.yaml` host, email, token), Issue detection (worktree
-  `config.yaml` `jira.projects`/`alias_hosts`) and Polling (watcher
-  `config.yaml`, `JiraPollingSection`); each section names its file.
+  Slack is `watcher-auth.yaml`. GitHub is `watcher-auth.yaml` (token) plus
+  Polling (`config.yaml` `github.bot_usernames`). Jira spans both files:
+  Connection (`watcher-auth.yaml` host, email, token), Issue detection
+  (`config.yaml` `jira.projects`/`alias_hosts`) and Polling (`config.yaml`
+  `jira.bot_usernames`/`custom_fields`, `JiraPollingSection`); each section
+  names its file.
 - **Notifications** — `notifications.*` (`NotificationsPanel`): "Enable
   notifications" and the custom command; see "Notifications".
 - **UI Access** — the `ui.*` keys of worktree's `config.yaml`: password and
@@ -3651,8 +3654,8 @@ file it writes.
 |---|---|
 | `GET /api/settings` | Everything: environment (`in_cmux`, `worktrees_base_env`, `cert_names`), paths, `secrets` (`*_set` booleans only), and the worktree / watcher_auth / watcher_config sections read from disk. |
 | `PUT /api/settings/worktree` | The whole worktree section (`settings.go`). |
-| `PUT /api/settings/watcher-auth` | Non-secret auth.yaml fields: Jira host and email, Slack workspace domain. |
-| `PUT /api/settings/watcher-config` | Watcher config.yaml: GitHub bot usernames, Jira bot usernames and custom fields. An absent `github` leaves that block alone; an emptied list is kept as `github: {}` once the block exists (so `worktree setup` does not reseed it). A changed bot list re-marks stored events (`markBotAuthors`). |
+| `PUT /api/settings/watcher-auth` | Non-secret `watcher-auth.yaml` fields: Jira host and email, Slack workspace domain. |
+| `PUT /api/settings/watcher-config` | The watcher preferences in worktree's `config.yaml`: GitHub bot usernames, Jira bot usernames and custom fields. An absent `github` leaves that block alone; an emptied list is kept as `github: {}` once the block exists (so `worktree setup` does not reseed it). A changed bot list re-marks stored events (`markBotAuthors`). |
 | `PUT /api/settings/credentials/{service}` | Replace a credential (`github`, `jira`, `slack`): validate, then write. |
 | `POST /api/settings/credentials/{service}/test` | Test a credential without writing anything: a `token`/`cookie` in the body is a candidate tested in place of the stored value (Slack fills the other half from storage); without one, the stored value is tested. |
 | `PUT /api/settings/password` | Replace `ui.password`. |
@@ -3676,7 +3679,7 @@ partner is neither stored nor pending is held untested, and the replace at
 Save checks the pair. Save writes pending secrets FIRST, each through the
 validate-then-write replace route (Jira with the form's host and email, so
 a host change plus a new token goes through together), then refetches and
-adopts what those replaces changed in auth.yaml (Jira host/email, the
+adopts what those replaces changed in `watcher-auth.yaml` (Jira host/email, the
 Slack domain) for any field the user hasn't edited, and only then saves
 the files. A secret refused at Save stays pending with its error, and its
 file's other edits are not saved. Revert drops one pending secret; Discard
@@ -3691,10 +3694,10 @@ host, email and token together. A Slack half-replace (only token or only
 cookie) validates against the stored other half and keeps it; if the other
 half isn't stored the replace is refused. The Slack workspace domain is
 re-derived best-effort. Validation (up to ~20s) runs WITHOUT `settingsMu`;
-only afterwards is the lock taken, auth.yaml reloaded, the change applied to
+only afterwards is the lock taken, `watcher-auth.yaml` reloaded, the change applied to
 that fresh copy and saved, so a concurrent save is never overwritten. For a
 Slack half-replace the stored other half is re-checked after the reload and
-the request is refused with 409 "auth.yaml changed during validation; try
+the request is refused with 409 "watcher-auth.yaml changed during validation; try
 again" if it moved. The Test endpoint never sends the stored Jira
 token to a host other than the saved one: a differing form host returns
 kind `unsaved` ("Replace the token to test it with the new host."); an email
@@ -3711,15 +3714,12 @@ live password (`Security.SetPassword`); existing sessions stay valid.
 (`internal/config/yamledit.go`, `editable.go`): comments, key order and
 unknown keys survive, `~` and `$WORKTREES_BASE` are not expanded into the
 file, a save with no change does not rewrite it, and writes are atomic
-(temp file + rename, mode 0600) and parse the file once. Watcher
-`auth.yaml` and `config.yaml` are written through the library's typed
-`Save` / `SaveConfig`, which **drops YAML comments and unknown keys**
-(unlike worktree's file), and which use a non-atomic `os.WriteFile`
-(auth.yaml 0600, config.yaml 0644) rather than worktree's temp-file +
-rename, so a crash mid-write could truncate auth.yaml. The config.yaml handler starts from the loaded
-struct and replaces only the Jira block. auth.yaml's `consumers` and
-`jira_custom_fields` are never shown. Missing files read as empty
-sections, and a PUT creates them.
+(temp file + rename, mode 0600) and parse the file once. `watcher-auth.yaml` is written through the library's typed
+`(*Config).Save` (0600), which **drops YAML comments and unknown keys**
+(unlike worktree's file) and uses a non-atomic write rather than
+worktree's temp-file + rename, so a crash mid-write could truncate it. The
+watcher-config handler edits only the watcher keys of `config.yaml`. Missing
+files read as empty sections, and a PUT creates them.
 
 **Live vs restart.** Live on save: the cmux gate, Jira alias hosts
 (`jira.SetAliasHosts`) and the UI password. Read per request or per poll,
@@ -3733,15 +3733,13 @@ server disagreeing with the file.
 
 **The guard test** (`settings_keys_test.go`). `settingsKeyPaths`
 (`settings_keys.go`) lists every YAML key path the modal handles. The test
-derives the key paths of three hard-coded root structs (worktree
-`config.Config`, `wconfig.Config`, `wconfig.ConfigFile`) the way yaml.v3
+derives the key paths of two hard-coded root structs (worktree
+`config.Config`, `wconfig.Config`) the way yaml.v3
 does (untagged fields lowercased, `,inline` flattened, `Unmarshaler` and
 `time.Time` treated as leaves) and fails on any key that is in neither
 `settingsKeyPaths` nor `settingsKeyExclusions`, or that is listed but gone.
 It cannot see the frontend, and a new config file or root struct must be
-added to its roots by hand. Exclusions: auth.yaml `consumers` (owned by
-`worktree setup`; a DB path is not a user setting) and `jira_custom_fields`
-(legacy; custom fields belong in watcher config.yaml).
+added to its roots by hand. There are currently no exclusions.
 
 **The remote access toggle** ("Enable remote access", `ui.remote_access_disabled`,
 absent = enabled) is `ui.remote_access_enabled` in the worktree DTO. A PUT
@@ -4122,7 +4120,7 @@ annotations.
 
 The open PR's review threads are shown read-only in the diff view and sidebar, beside the drafts.
 
-**Routes.** `GET /api/pr-comments` (summary: counts, fingerprint, unread ids), `GET /api/pr-comments/threads` (threads placed against the diff's revs) and `GET /api/pr-comments/locate?event_id=&prefer_path=` (for a `pr_review_comment` event: answers `{path, comment_id}`, a registered worktree whose `worktreePR` is the event's PR (its current branch tracks that PR), `prefer_path` when it qualifies, else the first, and the GitHub comment id the event is about; 404 when any part can't be found; it only considers `worktree:` subscribers). Each answers with a state: `ok`, `off` (GitHub watcher disabled; gated on the toggle), `no_token` (also when `auth.yaml` can't be read, which is logged once per distinct error), `no_pr` or `error`. The summary and threads carry a `fingerprint` only when `ok`. The PR is the worktree's PR (see "PR matching" below); among several matches a primary resource wins, then the most recently updated. Threads come from the watcher library's `github.FetchReviewThreads` (paginated, comment ids are `fullDatabaseId`, needs watcher v0.17.0).
+**Routes.** `GET /api/pr-comments` (summary: counts, fingerprint, unread ids), `GET /api/pr-comments/threads` (threads placed against the diff's revs) and `GET /api/pr-comments/locate?event_id=&prefer_path=` (for a `pr_review_comment` event: answers `{path, comment_id}`, a registered worktree whose `worktreePR` is the event's PR (its current branch tracks that PR), `prefer_path` when it qualifies, else the first, and the GitHub comment id the event is about; 404 when any part can't be found; it only considers `worktree:` subscribers). Each answers with a state: `ok`, `off` (GitHub watcher disabled; gated on the toggle), `no_token` (also when `watcher-auth.yaml` can't be read, which is logged once per distinct error), `no_pr` or `error`. The summary and threads carry a `fingerprint` only when `ok`. The PR is the worktree's PR (see "PR matching" below); among several matches a primary resource wins, then the most recently updated. Threads come from the watcher library's `github.FetchReviewThreads` (paginated, comment ids are `fullDatabaseId`, needs watcher v0.17.0).
 
 **Caches.** `prsum|` holds the summary for 10 minutes, `prthreads|` the threads for 60 seconds. A failed fetch is cached for 20 seconds (`prErrorTTL`, through `ttlCache.getErrTTL`), so a failing GitHub is asked at most once per 20 s however many clients poll; the linked-resources callers keep `get`, which never caches errors.
 
@@ -4146,7 +4144,7 @@ The open PR's review threads are shown read-only in the diff view and sidebar, b
 - **Submit** runs under a per-worktree lock. It answers 409 when the head moved, and when commits are missing with local comments included.
 - **Reconciliation.** `review_comments` gains `github_comment_id` and `github_sent_version` (migration). Ids are saved as each add returns. Reconcile (`reconcileSent`) runs at the start and end of a submit, against the pending ids plus the threads' comment ids. A present comment is deleted at the version it was sent at. One still unconfirmed in the same request withholds the submit (502). One absent in a later request, or one edited since it was sent, has its id cleared, so it is local again and can be re-added. The read-back is retried once. Opening the Submit dialog (`GET /api/pr-write/review`) runs the deleting part only, under the same per-worktree lock, so a comment already in the pending review is never listed both pending and local; it clears no ids. A row edited since it was sent stays listed as local, since a submit would add it again.
 - **UI.** The new-comment editor has three buttons and Reply has two (labels and tooltips in `prWriteCopy.ts`); the GitHub buttons are hidden without a PR and disabled with a reason when GitHub can't be written to. A poll never takes them away: Reply follows the thread card's own `pr` (from the pinned threads), the new-comment editor keeps the last known PR for its lifetime, and `SubmitReviewButton` keeps an open dialog mounted when the summary loses the PR; disabled reasons follow the current summary. The dialog's Submit is disabled while its data is refetching (a reopen's first paint is the last opening's), and a 200 submit carrying `error` (submitted, but listing local rows failed) is a success: toast, close, and a warning toast. `SubmitReviewModal`; `SubmitReviewButton` sits on the Local tab and in the PR tab's pending notice. The PR tab is labelled `· pending review` and shows the stale notice; the toolbar and Code tab labels include `pending PR review`. The PR tab's `PR #N` link is a real `<a href>` (`useDiffView().leaveHref`) that opens the PR's resource view.
-- **Tests** in `internal/webui` can't reach GitHub: `ghLib` (`gh_lib.go`) is swapped for erroring functions in `TestMain`, and `HOME` / `WATCHER_HOME` point at a temp dir.
+- **Tests** in `internal/webui` can't reach GitHub: `ghLib` (`gh_lib.go`) is swapped for erroring functions in `TestMain`, and `HOME` points at a temp dir (`XDG_CONFIG_HOME` and the other config variables are cleared).
 
 ### Watcher toggles (`watchers.go`, `config.WatchersConfig`, `WatcherAlert`)
 

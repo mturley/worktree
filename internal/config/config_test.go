@@ -17,7 +17,7 @@ func TestDefaultConfigHasNoSearchSection(t *testing.T) {
 
 // TestJiraConfigOnlyHasProjects is a compile-time guarantee that
 // JiraConfig no longer carries Host/Email/Token — those credentials now
-// live in the shared watcher auth.yaml (wcfg.Services.Jira), tested via
+// live in worktree's watcher-auth.yaml (wcfg.Services.Jira), tested via
 // credsetup. Only Projects (worktree-only project-prefix detection) stays
 // here. If Host/Email/Token are reintroduced, this documents that they
 // must not be written to worktree's own config.

@@ -155,7 +155,7 @@ minutes serially; it now runs most tests in parallel.
   - `shellenv` — shell environment variable generation from DB (worktree env)
   - `env` — deprecated; superseded by `shellenv`
   - `dotfiles` — gitignored dotfile copying
-  - `setup` — shell RC integration (removed `.git/info/exclude` management); also owns the `worktree setup` Slack step (`setup/slack.go`) that walks the user through extracting Slack session token+cookie and writes them to `~/.config/watcher/auth.yaml`
+  - `setup` — shell RC integration (removed `.git/info/exclude` management); also owns the `worktree setup` Slack step (`setup/slack.go`) that walks the user through extracting Slack session token+cookie and writes them to worktree's `watcher-auth.yaml` (`config.WatcherAuthPath()`)
   - `testgit` — test-only helpers: `Worktree` (a real repo + linked worktree, for tests whose paths must satisfy the `resources.Add` worktree guard) and `Template` (build a git fixture once per test binary, copy it per test without running git); see "Writing Go tests" above
   - `ui` — terminal output
   - `uisession` — web UI login sessions in the worktree DB (`ui_sessions`).
@@ -167,9 +167,9 @@ minutes serially; it now runs most tests in parallel.
     serialised, so the CA installed on a phone can sign nothing else.
     Changing addresses or renewing therefore means reinstalling the CA on
     the phone.
-  - `webui` — HTTP server + API for `worktree ui` (worktree list, timeline, resources, SSE stream, poll loop); also serves the Slack thread view's routes (`/api/thread*`, `/api/slack-*`) from the same binary/port, including the composer autocomplete endpoint (`GET /api/slack-autocomplete`). Every `/api/` request except `POST /api/login` requires a session (`auth.go`), behind a Host allowlist (`hostguard.go`) and the request-forgery guard (`middleware.go`); see `docs/web-ui-architecture.md` "Authentication and remote access". It also serves the Settings modal Logs tab's read-only `/api/watchers/resources` and `/api/watchers/log` (see `docs/web-ui-architecture.md` "Watcher log"; requires watcher >= v0.13.0). It serves the Code tab's `GET /api/worktree-git` (status, fingerprints, fetch state; it sits beside `/api/worktree-info`, which keeps its `git` field) and `GET /api/worktree-diff/{commits,files,patch,file}` (`/file` only serves revs `/patch` handed out); see `docs/web-ui-architecture.md` "Code tab and diff view". It also serves the review comments routes (`/api/review-comments*`: list, create, update, delete, clear; the server captures anchors and positions come from `review_comments_resolve.go`); see "Review comments" in the same doc. It also serves `/api/pr-comments*` (summary, `threads`, `locate`; read-only PR review threads, gated on the GitHub watcher toggle); see "PR comments" there. It also serves `/api/pr-write/*` (check, comment, reply, review, submit: the only writes to GitHub, always from an explicit click; see "Writing to the PR" there). Every GitHub call in `internal/webui` goes through the `ghLib` seam (`gh_lib.go`); `TestMain` swaps it for erroring functions and points `HOME`/`WATCHER_HOME` at a temp dir, so tests can never reach GitHub. The CLI's read commands call the same methods the handlers do, on a `Server` built by `cmd/headless.go` (DB and watcher toggles only; it never listens): `Timeline`, `WorktreeSummaries`, `WorktreeResources`, `AllResources`, `AppUnread`/`UnreadBy`, `AttentionInput`, `ReviewComments`, `PRThreads`, `Linked`, `ScanListeners`. A read command writes nothing and contacts no service, except `pr-threads` and `linked`, which respect the watcher toggles. New read logic goes in a method both the handler and the CLI call, never copied into `cmd/`. See `docs/web-ui-architecture.md` "Timeline" and "Unread".
+  - `webui` — HTTP server + API for `worktree ui` (worktree list, timeline, resources, SSE stream, poll loop); also serves the Slack thread view's routes (`/api/thread*`, `/api/slack-*`) from the same binary/port, including the composer autocomplete endpoint (`GET /api/slack-autocomplete`). Every `/api/` request except `POST /api/login` requires a session (`auth.go`), behind a Host allowlist (`hostguard.go`) and the request-forgery guard (`middleware.go`); see `docs/web-ui-architecture.md` "Authentication and remote access". It also serves the Settings modal Logs tab's read-only `/api/watchers/resources` and `/api/watchers/log` (see `docs/web-ui-architecture.md` "Watcher log"; requires watcher >= v0.13.0). It serves the Code tab's `GET /api/worktree-git` (status, fingerprints, fetch state; it sits beside `/api/worktree-info`, which keeps its `git` field) and `GET /api/worktree-diff/{commits,files,patch,file}` (`/file` only serves revs `/patch` handed out); see `docs/web-ui-architecture.md` "Code tab and diff view". It also serves the review comments routes (`/api/review-comments*`: list, create, update, delete, clear; the server captures anchors and positions come from `review_comments_resolve.go`); see "Review comments" in the same doc. It also serves `/api/pr-comments*` (summary, `threads`, `locate`; read-only PR review threads, gated on the GitHub watcher toggle); see "PR comments" there. It also serves `/api/pr-write/*` (check, comment, reply, review, submit: the only writes to GitHub, always from an explicit click; see "Writing to the PR" there). Every GitHub call in `internal/webui` goes through the `ghLib` seam (`gh_lib.go`); `TestMain` swaps it for erroring functions and points `HOME` at a temp dir, so tests can never reach GitHub. The CLI's read commands call the same methods the handlers do, on a `Server` built by `cmd/headless.go` (DB and watcher toggles only; it never listens): `Timeline`, `WorktreeSummaries`, `WorktreeResources`, `AllResources`, `AppUnread`/`UnreadBy`, `AttentionInput`, `ReviewComments`, `PRThreads`, `Linked`, `ScanListeners`. A read command writes nothing and contacts no service, except `pr-threads` and `linked`, which respect the watcher toggles. New read logic goes in a method both the handler and the CLI call, never copied into `cmd/`. See `docs/web-ui-architecture.md` "Timeline" and "Unread".
   - `slackpoller` — polls Slack threads for changes and fans out updates to subscribers (live-tab SSE, in-memory, only while a thread is open in the UI); folded in from slack-mini's `internal/watcher` package (renamed to avoid collision); consumes `github.com/mturley/watcher/slack`'s `Client`/`Thread` types rather than a local `slackapi` package — there is no `internal/slackapi` anymore, it moved to the watcher library (see "Watcher library" below)
-  - `slackcreds` — loads Slack token/cookie/workspace domain from the shared watcher `auth.yaml` and builds a `github.com/mturley/watcher/slack.Client`
+  - `slackcreds` — loads Slack token/cookie/workspace domain from worktree's `watcher-auth.yaml` and builds a `github.com/mturley/watcher/slack.Client`
   - `slackurl` — parses Slack thread URLs into `(channel, threadTS)` and builds the resource ID used to store them as worktree resources
   - `cmux` — cmux CLI wrapper: workspace list/create/select, layout building,
     and `Match` (path→workspace, canonicalizing `Abs → EvalSymlinks → Clean`
@@ -229,16 +229,19 @@ in-memory SSE poller that only runs while a Slack thread is open in the UI,
 for near-real-time updates to that one thread. Slack used to only have (2);
 now it has both.
 
-Slack threads are worktree resources (`worktree add <slack-thread-url>`). In the web UI they are **selected like any other resource** on the worktree detail page: selecting one renders the thread in `ResourceDetailPane` where a PR/Jira resource would show its filtered activity feed. There is no separate "Slack" tab (removed in Phase B, along with the old thread rail) — see `docs/web-ui-architecture.md` "Slack thread view" for the full map (routes, DTOs, frontend structure). Slack credentials live in the shared watcher config at `~/.config/watcher/auth.yaml` (not a worktree-specific file), acquired via the `worktree setup` Slack step.
+Slack threads are worktree resources (`worktree add <slack-thread-url>`). In the web UI they are **selected like any other resource** on the worktree detail page: selecting one renders the thread in `ResourceDetailPane` where a PR/Jira resource would show its filtered activity feed. There is no separate "Slack" tab (removed in Phase B, along with the old thread rail) — see `docs/web-ui-architecture.md` "Slack thread view" for the full map (routes, DTOs, frontend structure). Slack credentials live in worktree's own `watcher-auth.yaml` (`config.WatcherAuthPath()`: `$XDG_CONFIG_HOME/worktree/watcher-auth.yaml` or `~/.config/worktree/watcher-auth.yaml`, 0600), set via the `worktree setup` Slack step or Settings → Connected Services → Slack.
 - `ui/` — Mantine + React frontend for `worktree ui` (Vite build; output embedded into the Go binary via `ui/dist`)
 - `docs/` — design documents and feature catalog; see `docs/web-ui-architecture.md` for the web UI (backend routes, DTOs, frontend structure, gotchas)
 
 ## Config files ↔ Settings modal — keep them in sync
 
-The web UI's Settings modal edits every user-facing key of three files:
-worktree's `config.yaml` (`internal/config.Config`), and the watcher
-library's `auth.yaml` (`wconfig.Config`) and `config.yaml`
-(`wconfig.ConfigFile`). Tabs are organised by what they configure, not by
+The web UI's Settings modal edits every user-facing key of two files:
+worktree's `config.yaml` (`internal/config.Config`, which also holds the
+watcher preferences `github.bot_usernames`, `jira.bot_usernames` and
+`jira.custom_fields` through the embedded `wconfig.GitHubBehavior` /
+`wconfig.JiraBehavior`) and worktree's `watcher-auth.yaml`
+(`config.WatcherAuthPath()`, library format `wconfig.Config`, credentials
+only). worktree shares no credential file with any other tool. Tabs are organised by what they configure, not by
 file: General, Connected Services (GitHub / Jira / Slack sub-tabs, each
 gathering that service's keys from every file), Notifications
 (`notifications.*`), UI Access (`ui.*`) and Devices. Put a new key on the tab for what it configures, and update
@@ -259,8 +262,8 @@ change:**
 5. Tests on both sides.
 
 `settings_keys_test.go` fails until steps 1-3 are done; it cannot check the
-frontend, so step 4 is on you. The test's three roots (worktree
-`config.Config`, `wconfig.Config`, `wconfig.ConfigFile`) are hard-coded: a
+frontend, so step 4 is on you. The test's two roots (worktree
+`config.Config`, `wconfig.Config`) are hard-coded: a
 **new config file or root struct** must also be added to the `files` map in
 `TestSettingsModalCoversEveryConfigKey` (`internal/webui/settings_keys_test.go`),
 with the matching key (the same file key) in `settingsKeyPaths` (and in
@@ -322,8 +325,8 @@ types, cached-state fields, or DB APIs is **cross-repo work**:
 2. Commit, then cut a new library release tag (e.g. `vX.Y.Z`) and **push
    both**: `git push origin main` and `git push origin vX.Y.Z`.
 3. In this repo, re-pin: `go get github.com/mturley/watcher@vX.Y.Z && go mod
-   tidy`, then rebuild/re-test. If the re-pin changes `wconfig.Config` or
-   `wconfig.ConfigFile`, follow "Config files ↔ Settings modal" —
+   tidy`, then rebuild/re-test. If the re-pin changes `wconfig.Config`,
+   `wconfig.GitHubBehavior` or `wconfig.JiraBehavior`, follow "Config files ↔ Settings modal" —
    `settings_keys_test.go` fails until you do.
 4. Rebuild worktree (`make build`).
 
@@ -396,7 +399,7 @@ rather than silently working around it. Treat the doc as part of the deliverable
   structure, but NO real Slack content (names, message text, links) and NO
   secrets. Never commit captured real payloads.
 - **Slack creds are the user's own session credentials** (xoxc- token + xoxd-
-  cookie), stored in `~/.config/watcher/auth.yaml` (0600). Treat like a password;
+  cookie), stored in worktree's `watcher-auth.yaml` (0600). Treat like a password;
   never commit. Tokens expire every 1-2 weeks → re-run `worktree setup`.
 - **ThreadResponse wire quirk:** top-level keys are camelCase, but the embedded
   `slack.Message` (from `github.com/mturley/watcher/slack`) + nested structs

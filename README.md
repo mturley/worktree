@@ -37,9 +37,9 @@ Setup will:
 - Install shell completions for `worktree` and `wt` (zsh, bash, fish)
 - Ask whether each service's watcher (GitHub, Jira, Slack) should be on; a
   service turned off is never contacted, and its credentials are skipped
-- Test and repair credentials for **GitHub, Slack, and Jira** — the shared watcher
+- Test and repair credentials for **GitHub, Slack, and Jira** — the
   credential flow (`credsetup`) validates each service's credentials in
-  `~/.config/watcher/auth.yaml` and, if a credential is missing or invalid, walks
+  worktree's `watcher-auth.yaml` (next to `config.yaml`) and, if a credential is missing or invalid, walks
   you through configuring and re-validating a new one. Each service is optional
   (setup asks before configuring one that isn't set up yet). For the GitHub
   token, if the GitHub CLI (`gh`) is installed and logged in, setup offers to
@@ -49,8 +49,9 @@ Setup will:
 
 On every run (not just the first), setup re-tests the existing GitHub, Slack, and
 Jira credentials and offers to replace any that fail — so an expired token is
-caught early. Credentials live in the shared `~/.config/watcher/auth.yaml`
-(all three written here), not in worktree's own config.
+caught early. Credentials live in worktree's own
+`~/.config/worktree/watcher-auth.yaml` (all three written here, mode `0600`),
+not in `config.yaml`.
 
 Slack credential setup can extract your browser session token and cookie
 **automatically** — it drives a headed Chromium via Playwright to log in and pull
@@ -383,11 +384,11 @@ The browser tab is an unread surface too: while anything is unread, the title ca
 
 ### Slack
 
-`worktree add <slack-thread-url>` links a Slack thread to a worktree as a resource; it then appears in that worktree's resource list, and selecting it renders the thread inline. Run `worktree setup` to acquire Slack credentials — it walks you through extracting your browser session token and cookie and stores them (plus your workspace domain) in the shared watcher config at `~/.config/watcher/auth.yaml`.
+`worktree add <slack-thread-url>` links a Slack thread to a worktree as a resource; it then appears in that worktree's resource list, and selecting it renders the thread inline. Run `worktree setup` to acquire Slack credentials — it walks you through extracting your browser session token and cookie and stores them (plus your workspace domain) in worktree's `watcher-auth.yaml` (`~/.config/worktree/watcher-auth.yaml`). You can also set them in Settings → Connected Services → Slack.
 
 Threads are never marked read just because you looked at one — only the explicit "Mark thread read" action does that.
 
-**Security note:** the Slack token and cookie are your own Slack session credentials (not an app token) — treat them like a password. They're stored in `~/.config/watcher/auth.yaml` (mode `0600`) and are never committed to any repo.
+**Security note:** the Slack token and cookie are your own Slack session credentials (not an app token) — treat them like a password. They're stored in `~/.config/worktree/watcher-auth.yaml` (mode `0600`) and are never committed to any repo.
 
 ## cmux Integration
 

@@ -20,7 +20,7 @@ var (
 
 // RunSlackSetup is `worktree setup slack`: only setup's Slack step, plus a
 // way to recapture credentials that still work. It loads and, if anything
-// changed, saves the watcher auth.yaml.
+// changed, saves watcher-auth.yaml.
 func RunSlackSetup(force bool) error {
 	path := config.WatcherAuthPath()
 	cfg, err := wconfig.Load(path)

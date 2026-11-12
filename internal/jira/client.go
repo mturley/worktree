@@ -39,7 +39,7 @@ func NewClient(host, email, token string) (*Client, error) {
 
 // baseURL returns the client's host as a scheme-qualified origin. The host
 // may be configured either bare ("example.atlassian.net") or as a full URL
-// ("https://example.atlassian.net") — the shared watcher auth.yaml stores the
+// ("https://example.atlassian.net") — worktree's watcher-auth.yaml stores the
 // latter — so normalize before building request URLs.
 func (c *Client) baseURL() string {
 	return normalizeHost(c.host)

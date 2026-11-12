@@ -68,7 +68,7 @@ func TestBuildPlanConfigureJiraProjects(t *testing.T) {
 
 // TestWriteConfigOnlyWritesJiraProjects verifies writeConfig never persists
 // Jira credentials to worktree's own config.yaml — only Projects. Jira
-// host/email/token are the shared watcher auth.yaml's responsibility
+// host/email/token are watcher-auth.yaml's responsibility
 // (wcfg.Services.Jira via credsetup), so worktree's config.yaml must not
 // duplicate them.
 func TestWriteConfigOnlyWritesJiraProjects(t *testing.T) {
