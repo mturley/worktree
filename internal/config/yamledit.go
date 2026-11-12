@@ -37,9 +37,8 @@ func readDoc(path string) (*yaml.Node, error) {
 	return &doc, nil
 }
 
-// writeDoc encodes doc with yaml.v3's default 4-space indent (what setup's
-// writeConfig produces) and writes it owner-only: the file holds the UI
-// password.
+// writeDoc encodes doc with yaml.v3's default 4-space indent and writes it
+// owner-only: the file holds the UI password.
 func writeDoc(path string, doc *yaml.Node) error {
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)
@@ -98,6 +97,11 @@ func setPath(root *yaml.Node, val *yaml.Node, keys ...string) error {
 			next = &yaml.Node{Kind: yaml.MappingNode}
 			m.Content = append(m.Content, scalar(k), next)
 		}
+		if isNull(next) {
+			// A bare `key:` is an empty mapping waiting to be filled.
+			// Converted in place, so its comments stay attached.
+			next.Kind, next.Tag, next.Value, next.Style = yaml.MappingNode, "", "", 0
+		}
 		if next.Kind != yaml.MappingNode {
 			return fmt.Errorf("config: %s is not a mapping", k)
 		}
@@ -135,6 +139,9 @@ func deletePath(root *yaml.Node, keys ...string) {
 		deletePath(root, keys[:len(keys)-1]...)
 	}
 }
+
+// isNull reports whether n is a null scalar (`key:`, `key: ~`, `key: null`).
+func isNull(n *yaml.Node) bool { return n.Kind == yaml.ScalarNode && n.Tag == "!!null" }
 
 func scalar(s string) *yaml.Node { return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: s} }
 func intNode(i int) *yaml.Node {

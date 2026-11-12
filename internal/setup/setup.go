@@ -13,7 +13,6 @@ import (
 	"github.com/mturley/watcher/credsetup"
 	"github.com/mturley/worktree/internal/config"
 	"github.com/mturley/worktree/internal/ui"
-	"gopkg.in/yaml.v3"
 )
 
 // watcherTestAndRepair is a seam for tests.
@@ -315,7 +314,13 @@ func promptAndSaveConfig(configPath string, cfg config.Config) error {
 		cfg.Editor = defaultEditor
 	}
 
-	if err := writeConfig(configPath, cfg); err != nil {
+	e, _, err := config.ReadEditable(configPath)
+	if err != nil {
+		return err
+	}
+	e.WorktreesBase = shortenHome(cfg.WorktreesBase, home)
+	e.Editor = cfg.Editor
+	if _, err := config.WriteEditable(configPath, e); err != nil {
 		return err
 	}
 	fmt.Printf("  %s Created %s\n", ui.Green("✓"), ui.ShortPath(configPath))
@@ -347,8 +352,12 @@ func promptAndSaveJiraProjects(configPath string, cfg config.Config) error {
 		return nil
 	}
 
-	cfg.Jira.Projects = projects
-	if err := writeConfig(configPath, cfg); err != nil {
+	e, _, err := config.ReadEditable(configPath)
+	if err != nil {
+		return err
+	}
+	e.JiraProjects = projects
+	if _, err := config.WriteEditable(configPath, e); err != nil {
 		return err
 	}
 	fmt.Printf("  %s Configured Jira projects: %s\n", ui.Green("✓"), strings.Join(projects, ", "))
@@ -439,90 +448,6 @@ func wtSymlinkPath() string {
 		return wtPath
 	}
 	return ""
-}
-
-func writeDefaultConfig(path string) error {
-	return writeConfig(path, config.DefaultConfig())
-}
-
-func writeConfig(path string, cfg config.Config) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return err
-	}
-
-	home, _ := os.UserHomeDir()
-
-	type jiraYaml struct {
-		Projects []string `yaml:"projects,omitempty"`
-	}
-
-	type uiTLSYaml struct {
-		CertFile string `yaml:"cert_file,omitempty"`
-		KeyFile  string `yaml:"key_file,omitempty"`
-	}
-
-	type uiYaml struct {
-		Password     string     `yaml:"password,omitempty"`
-		HTTPSPort    int        `yaml:"https_port,omitempty"`
-		AllowedHosts []string   `yaml:"allowed_hosts,omitempty"`
-		TLS          *uiTLSYaml `yaml:"tls,omitempty"`
-		// Set from the web UI's Settings modal (config.SetCmuxFeaturesDisabled).
-		CmuxFeaturesDisabled bool `yaml:"cmux_features_disabled,omitempty"`
-		PortScanDisabled     bool `yaml:"port_scan_disabled,omitempty"`
-		RemoteAccessDisabled bool `yaml:"remote_access_disabled,omitempty"`
-	}
-
-	type yamlConfig struct {
-		WorktreesBase string   `yaml:"worktrees_base"`
-		Editor        string   `yaml:"editor,omitempty"`
-		Jira          jiraYaml `yaml:"jira,omitempty"`
-		UI            *uiYaml  `yaml:"ui,omitempty"`
-		// Only off watchers are written; all on leaves the key out.
-		Watchers *config.WatchersConfig `yaml:"watchers,omitempty"`
-	}
-
-	yc := yamlConfig{
-		WorktreesBase: shortenHome(cfg.WorktreesBase, home),
-		Editor:        cfg.Editor,
-	}
-
-	if len(cfg.Jira.Projects) > 0 {
-		yc.Jira = jiraYaml{
-			Projects: cfg.Jira.Projects,
-		}
-	}
-
-	// Every ui field must be carried here: a field left out is silently
-	// dropped from the file the next time setup writes it.
-	u := uiYaml{Password: cfg.UI.Password, AllowedHosts: cfg.UI.AllowedHosts,
-		CmuxFeaturesDisabled: cfg.UI.CmuxFeaturesDisabled, PortScanDisabled: cfg.UI.PortScanDisabled, RemoteAccessDisabled: cfg.UI.RemoteAccessDisabled}
-	if cfg.UI.HTTPSPort != 0 && cfg.UI.HTTPSPort != config.DefaultHTTPSPort {
-		u.HTTPSPort = cfg.UI.HTTPSPort
-	}
-	if cfg.UI.TLS.CertFile != "" || cfg.UI.TLS.KeyFile != "" {
-		u.TLS = &uiTLSYaml{
-			CertFile: shortenHome(cfg.UI.TLS.CertFile, home),
-			KeyFile:  shortenHome(cfg.UI.TLS.KeyFile, home),
-		}
-	}
-	if u.Password != "" || u.HTTPSPort != 0 || len(u.AllowedHosts) > 0 || u.TLS != nil || u.CmuxFeaturesDisabled ||
-		u.PortScanDisabled || u.RemoteAccessDisabled {
-		yc.UI = &u
-	}
-	if w := cfg.Watchers; w.GitHub != nil || w.Jira != nil || w.Slack != nil {
-		yc.Watchers = &w
-	}
-
-	data, err := yaml.Marshal(yc)
-	if err != nil {
-		return err
-	}
-	// Owner-only: the file holds the web UI password. WriteFile keeps an
-	// existing file's mode, so tighten it explicitly as well.
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		return err
-	}
-	return os.Chmod(path, 0o600)
 }
 
 func shortenHome(path, home string) string {

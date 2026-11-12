@@ -493,7 +493,11 @@ export interface Settings {
     /** What notifications.command falls back to, for the Notifications tab's reset. */
     default_notify_command: string
   }
-  /** Home-relative paths of the three files these settings are persisted to. */
+  /**
+   * Home-relative paths of the files these settings are persisted to. The
+   * watcher preferences live in worktree's config.yaml, so watcher_config
+   * equals worktree.
+   */
   paths: { worktree: string; watcher_auth: string; watcher_config: string }
   /** Whether each secret is set. The values themselves are never sent. */
   secrets: {

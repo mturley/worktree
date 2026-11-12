@@ -477,15 +477,125 @@ func TestConfigureUIWritesAnOwnerOnlyConfig(t *testing.T) {
 	}
 }
 
+// writeRemoteConfig writes preservedConfig plus a ui block for cfg's
+// remote access, as an existing user's config would hold it.
+func writeRemoteConfig(t *testing.T, path string, u config.UIConfig, mode os.FileMode) {
+	t.Helper()
+	body := preservedConfig + "ui:\n    password: keep-me\n"
+	if u.RemoteEnabled() {
+		body += fmt.Sprintf("    allowed_hosts:\n        - %s\n    tls:\n        cert_file: %s\n        key_file: %s\n",
+			strings.Join(u.AllowedHosts, "\n        - "), u.TLS.CertFile, u.TLS.KeyFile)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), mode); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, mode); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestConfigureUIPasswordKeepsOtherKeys(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if err := os.MkdirAll(filepath.Dir(config.ConfigPath()), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(config.ConfigPath(), []byte(preservedConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	io := &scriptedIO{t: t, confirms: []bool{false}}
+	if err := configureUI(config.ConfigPath(), testDeps(t, io)); err != nil {
+		t.Fatal(err)
+	}
+	io.done()
+	assertPreserved(t, config.ConfigPath())
+	if cfg, _ := config.Load(); cfg.UI.Password == "" {
+		t.Fatal("password not saved")
+	}
+}
+
+func TestConfigureUIEnablingRemoteAccessKeepsOtherKeys(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	io := &scriptedIO{t: t, confirms: []bool{true, true}}
+	d := testDeps(t, io, "mturley-mac.local")
+	writeRemoteConfig(t, config.ConfigPath(), config.UIConfig{}, 0o600)
+	if err := configureUI(config.ConfigPath(), d); err != nil {
+		t.Fatal(err)
+	}
+	io.done()
+	assertPreserved(t, config.ConfigPath())
+	got, _ := config.Load()
+	if !got.UI.RemoteEnabled() || got.UI.TLS.CertFile != d.paths.Cert ||
+		!slices.Equal(got.UI.AllowedHosts, []string{"mturley-mac.local"}) || got.UI.Password != "keep-me" {
+		t.Fatalf("UI = %+v", got.UI)
+	}
+}
+
+func TestConfigureUIDisablingRemoteAccessKeepsOtherKeys(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	io := &scriptedIO{t: t, confirms: []bool{false}}
+	d := testDeps(t, io, "mturley-mac.local")
+	writeRemoteConfig(t, config.ConfigPath(), configured(t, d).UI, 0o600)
+	if err := configureUI(config.ConfigPath(), d); err != nil {
+		t.Fatal(err)
+	}
+	io.done()
+	assertPreserved(t, config.ConfigPath())
+	got, _ := config.Load()
+	if !got.UI.RemoteAccessDisabled || !got.UI.RemoteEnabled() {
+		t.Fatalf("UI = %+v; want disabled with the certificate kept", got.UI)
+	}
+}
+
+func TestConfigureUIReissuingKeepsOtherKeys(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	// Keep it enabled, change the addresses, use the detected ones.
+	io := &scriptedIO{t: t, confirms: []bool{true, false, true}}
+	d := testDeps(t, io, "mturley-mac.local")
+	u := configured(t, d).UI
+	u.AllowedHosts = []string{"192.168.1.2"}
+	writeRemoteConfig(t, config.ConfigPath(), u, 0o600)
+	if err := configureUI(config.ConfigPath(), d); err != nil {
+		t.Fatal(err)
+	}
+	io.done()
+	assertPreserved(t, config.ConfigPath())
+	got, _ := config.Load()
+	if !slices.Equal(got.UI.AllowedHosts, []string{"mturley-mac.local"}) {
+		t.Fatalf("allowed_hosts = %v, want the reissued address", got.UI.AllowedHosts)
+	}
+}
+
+// With nothing to change, configureUI only tightens a loose file's mode.
+func TestConfigureUITightensALooseConfigWithoutRewritingIt(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	writeRemoteConfig(t, config.ConfigPath(), config.UIConfig{}, 0o644)
+	before, _ := os.ReadFile(config.ConfigPath())
+	io := &scriptedIO{t: t, confirms: []bool{false}}
+	if err := configureUI(config.ConfigPath(), testDeps(t, io)); err != nil {
+		t.Fatal(err)
+	}
+	io.done()
+	after, _ := os.ReadFile(config.ConfigPath())
+	if !bytes.Equal(before, after) {
+		t.Fatalf("content changed:\n%s", after)
+	}
+	info, err := os.Stat(config.ConfigPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("config mode %v, want 0600", info.Mode().Perm())
+	}
+}
+
 func TestRemoveRemoteAccess(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	io := &scriptedIO{t: t}
 	d := testDeps(t, io, "mturley-mac.local")
-	cfg := configured(t, d)
-	cfg.UI.Password = "keep-me"
-	if err := writeConfig(config.ConfigPath(), cfg); err != nil {
-		t.Fatal(err)
-	}
+	writeRemoteConfig(t, config.ConfigPath(), configured(t, d).UI, 0o600)
 
 	if err := removeRemoteAccess(config.ConfigPath(), d); err != nil {
 		t.Fatal(err)
@@ -499,6 +609,7 @@ func TestRemoveRemoteAccess(t *testing.T) {
 	if got.UI.RemoteEnabled() || len(got.UI.AllowedHosts) != 0 || got.UI.Password != "keep-me" {
 		t.Fatalf("UI after uninstall = %+v; want TLS and hosts cleared, password kept", got.UI)
 	}
+	assertPreserved(t, config.ConfigPath())
 	if !strings.Contains(io.out.String(), "Trusted credentials") {
 		t.Errorf("no phone removal steps:\n%s", io.out.String())
 	}

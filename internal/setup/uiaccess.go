@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -53,12 +55,15 @@ func defaultUIAccessDeps(configPath string) uiAccessDeps {
 
 // configureUI runs the web UI steps and saves the config if either changed
 // it. It reloads the config first: earlier steps in this run may have
-// written it, and saving a stale copy would undo them.
+// written it, and saving a stale copy would undo them. Only the ui keys the
+// steps changed are written; every other key and comment survives.
 func configureUI(configPath string, d uiAccessDeps) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
 	}
+	before := cfg.UI
+	before.AllowedHosts = slices.Clone(cfg.UI.AllowedHosts)
 	d.io.Printf("\n%s\n", ui.Bold("Web UI:"))
 	pw, err := ensurePassword(&cfg, d)
 	if err != nil {
@@ -69,23 +74,53 @@ func configureUI(configPath string, d uiAccessDeps) error {
 		return err
 	}
 	if !pw && !remote {
-		return writeConfigIfLoose(configPath, cfg)
+		return tightenConfigIfLoose(configPath, cfg)
 	}
-	if err := writeConfig(configPath, cfg); err != nil {
+	if err := saveUIChanges(configPath, before, cfg.UI); err != nil {
 		return err
 	}
 	d.io.Printf("  %s Updated %s\n", ui.Green("✓"), ui.ShortPath(configPath))
 	return nil
 }
 
-// writeConfigIfLoose rewrites an existing config only to tighten its mode:
-// it may hold a password from before setup wrote configs owner-only.
-func writeConfigIfLoose(configPath string, cfg config.Config) error {
+// saveUIChanges writes the ui keys that differ between before and after,
+// editing the file's node tree. Certificate paths under the home directory
+// are written with ~, as the rest of the file is.
+func saveUIChanges(configPath string, before, after config.UIConfig) error {
+	if after.Password != before.Password && after.Password != "" {
+		if err := config.SetPassword(configPath, after.Password); err != nil {
+			return err
+		}
+	}
+	e, _, err := config.ReadEditable(configPath)
+	if err != nil {
+		return err
+	}
+	if !slices.Equal(before.AllowedHosts, after.AllowedHosts) {
+		e.AllowedHosts = after.AllowedHosts
+	}
+	if before.TLS != after.TLS {
+		home, _ := os.UserHomeDir()
+		e.TLSCertFile = shortenHome(after.TLS.CertFile, home)
+		e.TLSKeyFile = shortenHome(after.TLS.KeyFile, home)
+	}
+	if before.HTTPSPort != after.HTTPSPort {
+		e.HTTPSPort = after.HTTPSPort
+	}
+	e.RemoteAccessDisabled = after.RemoteAccessDisabled
+	_, err = config.WriteEditable(configPath, e)
+	return err
+}
+
+// tightenConfigIfLoose makes an existing config owner-only when it holds a
+// password: it may date from before setup wrote configs owner-only. Only the
+// mode changes, never the content.
+func tightenConfigIfLoose(configPath string, cfg config.Config) error {
 	open, err := config.PermissionsTooOpen(configPath)
 	if err != nil || !open || cfg.UI.Password == "" {
 		return err
 	}
-	return writeConfig(configPath, cfg)
+	return os.Chmod(configPath, 0o600)
 }
 
 // ensurePassword generates a password when none is configured, and prints it
@@ -287,15 +322,14 @@ func removeRemoteAccess(configPath string, d uiAccessDeps) error {
 	if err != nil {
 		return err
 	}
-	cfg, err := config.Load()
+	e, _, err := config.ReadEditable(configPath)
 	if err != nil {
 		return err
 	}
-	cleared := cfg.UI.TLS != (config.UITLSConfig{}) || len(cfg.UI.AllowedHosts) > 0
+	cleared := e.TLSCertFile != "" || e.TLSKeyFile != "" || len(e.AllowedHosts) > 0
 	if cleared {
-		cfg.UI.TLS = config.UITLSConfig{}
-		cfg.UI.AllowedHosts = nil
-		if err := writeConfig(configPath, cfg); err != nil {
+		e.TLSCertFile, e.TLSKeyFile, e.AllowedHosts = "", "", nil
+		if _, err := config.WriteEditable(configPath, e); err != nil {
 			return err
 		}
 		d.io.Printf("  %s Cleared remote access from %s\n", ui.Green("✓"), ui.ShortPath(configPath))

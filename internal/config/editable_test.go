@@ -374,3 +374,35 @@ func TestWriteEditableEmptyGitHubBotsNoBlock(t *testing.T) {
 		t.Fatalf("unexpected github key:\n%s", b)
 	}
 }
+
+// A bare `github:` or `jira:` (a null value) is filled like an empty block,
+// keeping its comment, rather than failing as "not a mapping".
+func TestWriteEditableFillsNullBlocks(t *testing.T) {
+	t.Parallel()
+	p := writeFile(t, "custom_key: x\ngithub: # bots\njira:\n")
+	e, _, err := ReadEditable(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.GitHubBotUsernames = []string{"bot-a"}
+	e.JiraBotUsernames = []string{"bot-b"}
+	e.JiraCustomFields = map[string]string{"story_points": "customfield_1"}
+	e.JiraProjects = []string{"ABC"}
+	if _, err := WriteEditable(p, e); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(p)
+	if !strings.Contains(string(b), "# bots") || !strings.Contains(string(b), "custom_key: x") {
+		t.Fatalf("comment or unknown key lost:\n%s", b)
+	}
+	back, _, err := ReadEditable(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(back.GitHubBotUsernames, []string{"bot-a"}) ||
+		!reflect.DeepEqual(back.JiraBotUsernames, []string{"bot-b"}) ||
+		back.JiraCustomFields["story_points"] != "customfield_1" ||
+		!reflect.DeepEqual(back.JiraProjects, []string{"ABC"}) {
+		t.Fatalf("round trip = %+v\n%s", back, b)
+	}
+}

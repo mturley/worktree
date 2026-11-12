@@ -3,6 +3,7 @@ package setup
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -66,115 +67,70 @@ func TestBuildPlanConfigureJiraProjects(t *testing.T) {
 	}
 }
 
-// TestWriteConfigOnlyWritesJiraProjects verifies writeConfig never persists
-// Jira credentials to worktree's own config.yaml — only Projects. Jira
-// host/email/token are watcher-auth.yaml's responsibility
-// (wcfg.Services.Jira via credsetup), so worktree's config.yaml must not
-// duplicate them.
-func TestWriteConfigOnlyWritesJiraProjects(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
+// preservedConfig holds every kind of key a setup write must leave alone.
+const preservedConfig = `# keep this comment
+worktrees_base: ~/wt
+custom_key: keep-me
+github:
+    bot_usernames:
+        - gh-bot
+jira:
+    bot_usernames:
+        - jira-bot
+    custom_fields:
+        story_points: customfield_1
+    alias_hosts:
+        - issues.example.com
+notifications:
+    disabled: true
+git:
+    fetch_interval: 10m
+`
 
-	cfg := config.DefaultConfig()
-	cfg.Jira.Projects = []string{"RHOAIENG", "ODH"}
-
-	if err := writeConfig(path, cfg); err != nil {
-		t.Fatalf("writeConfig: %v", err)
-	}
-
+// assertPreserved fails unless every key of preservedConfig survived.
+func assertPreserved(t *testing.T, path string) {
+	t.Helper()
 	data, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("reading written config: %v", err)
-	}
-	written := string(data)
-
-	if strings.Contains(written, "host:") || strings.Contains(written, "email:") || strings.Contains(written, "token:") {
-		t.Fatalf("written config must not contain Jira credentials, got:\n%s", written)
-	}
-	if !strings.Contains(written, "RHOAIENG") || !strings.Contains(written, "ODH") {
-		t.Fatalf("written config must contain configured Jira projects, got:\n%s", written)
-	}
-}
-
-func TestWriteConfigPreservesUISection(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	path := config.ConfigPath()
-
-	cfg := config.DefaultConfig()
-	cfg.UI.Password = "s3cret"
-	cfg.UI.AllowedHosts = []string{"mturley-mac.local", "192.168.86.21"}
-	cfg.UI.HTTPSPort = 9443
-	cfg.UI.TLS = config.UITLSConfig{
-		CertFile: filepath.Join(dir, "ui-cert.pem"),
-		KeyFile:  filepath.Join(dir, "ui-key.pem"),
-	}
-	if err := writeConfig(path, cfg); err != nil {
 		t.Fatal(err)
 	}
-	got, err := config.Load()
+	for _, want := range []string{"# keep this comment", "custom_key: keep-me", "worktrees_base: ~/wt"} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("lost %q:\n%s", want, data)
+		}
+	}
+	e, _, err := config.ReadEditable(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.UI.Password != "s3cret" || got.UI.HTTPSPort != 9443 ||
-		strings.Join(got.UI.AllowedHosts, ",") != "mturley-mac.local,192.168.86.21" ||
-		got.UI.TLS != cfg.UI.TLS {
-		t.Fatalf("round-tripped UI = %+v, want %+v", got.UI, cfg.UI)
+	if !slices.Equal(e.GitHubBotUsernames, []string{"gh-bot"}) ||
+		!slices.Equal(e.JiraBotUsernames, []string{"jira-bot"}) ||
+		e.JiraCustomFields["story_points"] != "customfield_1" ||
+		!slices.Equal(e.JiraAliasHosts, []string{"issues.example.com"}) ||
+		!e.NotificationsDisabled || e.FetchInterval != "10m" {
+		t.Errorf("watcher preferences or other keys lost:\n%s", data)
 	}
 }
 
-func TestWriteConfigPreservesUIToggles(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	cfg := config.DefaultConfig()
-	cfg.UI.CmuxFeaturesDisabled = true
-	cfg.UI.PortScanDisabled = true
-	cfg.UI.RemoteAccessDisabled = true
-	if err := writeConfig(config.ConfigPath(), cfg); err != nil {
-		t.Fatal(err)
-	}
-	got, err := config.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !got.UI.CmuxFeaturesDisabled {
-		t.Fatal("setup dropped ui.cmux_features_disabled")
-	}
-	if !got.UI.PortScanDisabled {
-		t.Fatal("setup dropped ui.port_scan_disabled")
-	}
-	if !got.UI.RemoteAccessDisabled {
-		t.Fatal("setup dropped ui.remote_access_disabled")
-	}
-}
-
-func TestWriteConfigOmitsEmptyUISection(t *testing.T) {
+// Serial: ui.SetNonInteractive is package-level state.
+func TestPromptAndSaveJiraProjectsKeepsOtherKeys(t *testing.T) {
+	ui.SetNonInteractive(true)
+	t.Cleanup(func() { ui.SetNonInteractive(false) })
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	if err := writeConfig(path, config.DefaultConfig()); err != nil {
-		t.Fatal(err)
-	}
-	data, _ := os.ReadFile(path)
-	if strings.Contains(string(data), "ui:") {
-		t.Fatalf("default config should not write a ui section, got:\n%s", data)
-	}
-}
-
-func TestWriteConfigIsOwnerOnly(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.yaml")
-	// An existing, looser file: os.WriteFile alone would keep its mode.
-	if err := os.WriteFile(path, []byte("worktrees_base: /x\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(preservedConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	cfg := config.DefaultConfig()
-	cfg.UI.Password = "s3cret"
-	if err := writeConfig(path, cfg); err != nil {
-		t.Fatal(err)
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Fatalf("config mode = %v, want 0600", perm)
+	cfg.Jira.Projects = []string{"NEW"} // the non-interactive answer
+	captureStdout(t, func() {
+		if err := promptAndSaveJiraProjects(path, cfg); err != nil {
+			t.Fatal(err)
+		}
+	})
+	assertPreserved(t, path)
+	e, _, _ := config.ReadEditable(path)
+	if !slices.Equal(e.JiraProjects, []string{"NEW"}) {
+		t.Fatalf("jira.projects = %v, want [NEW]", e.JiraProjects)
 	}
 }
 

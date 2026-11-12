@@ -46,7 +46,7 @@ func TestSetCmuxFeaturesDisabledPreservesOtherKeysAndComments(t *testing.T) {
 }
 
 func TestSetCmuxFeaturesDisabledKeepsSetupFormatting(t *testing.T) {
-	// The layout setup's writeConfig (yaml.Marshal) produces.
+	// yaml.v3's default 4-space layout, as earlier setup versions wrote it.
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	orig := "worktrees_base: ~/.worktrees\njira:\n    projects:\n        - ABC\nui:\n    password: pw\n"
 	if err := os.WriteFile(path, []byte(orig), 0o600); err != nil {
