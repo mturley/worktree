@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	wconfig "github.com/mturley/watcher/config"
+	"github.com/mturley/worktree/internal/config"
 )
 
-func TestSeedGitHubBotUsernames(t *testing.T) {
+func TestSeedGitHubBotsIntoWorktreeConfig(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 
@@ -21,8 +21,11 @@ func TestSeedGitHubBotUsernames(t *testing.T) {
 	if err := seedGitHubBotUsernames(missing); err != nil {
 		t.Fatal(err)
 	}
-	cfg, _ := wconfig.LoadConfig(missing)
-	if got := cfg.GitHubBotUsernames(); len(got) != 1 || got[0] != "*ci-bot*" {
+	cur, _, err := config.ReadEditable(missing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cur.GitHubBotUsernames; len(got) != 1 || got[0] != "*ci-bot*" {
 		t.Fatalf("seeded %v", got)
 	}
 	if needsGitHubBotSeed(missing) {
@@ -37,14 +40,23 @@ func TestSeedGitHubBotUsernames(t *testing.T) {
 	if err := seedGitHubBotUsernames(withJira); err != nil {
 		t.Fatal(err)
 	}
-	cfg, _ = wconfig.LoadConfig(withJira)
-	if got := cfg.JiraBotUsernames(); len(got) != 1 || got[0] != "jbot" {
+	cur, _, err = config.ReadEditable(withJira)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cur.JiraBotUsernames; len(got) != 1 || got[0] != "jbot" {
 		t.Fatalf("jira list lost: %v", got)
 	}
+	if got := cur.GitHubBotUsernames; len(got) != 1 || got[0] != "*ci-bot*" {
+		t.Fatalf("not seeded: %v", got)
+	}
+}
 
-	// A list the user cleared (github: {}) or chose stays as it is.
+func TestSeedSkipsClearedGitHubBots(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
 	for name, body := range map[string]string{
-		"cleared.yaml": "github: {}\n",
+		"cleared.yaml": "github:\n  bot_usernames: []\n",
 		"chosen.yaml":  "github:\n  bot_usernames: [mybot]\n",
 	} {
 		p := filepath.Join(dir, name)
@@ -58,8 +70,8 @@ func TestSeedGitHubBotUsernames(t *testing.T) {
 			t.Fatal(err)
 		}
 		data, _ := os.ReadFile(p)
-		if strings.Contains(string(data), "ci-bot") {
-			t.Errorf("%s: reseeded:\n%s", name, data)
+		if string(data) != body || strings.Contains(string(data), "ci-bot") {
+			t.Errorf("%s: changed:\n%s", name, data)
 		}
 	}
 }

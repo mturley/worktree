@@ -5,6 +5,7 @@ import (
 
 	wconfig "github.com/mturley/watcher/config"
 	"github.com/mturley/watcher/credsetup"
+	"github.com/mturley/worktree/internal/config"
 	"github.com/mturley/worktree/internal/ui"
 )
 
@@ -21,7 +22,7 @@ var (
 // way to recapture credentials that still work. It loads and, if anything
 // changed, saves the watcher auth.yaml.
 func RunSlackSetup(force bool) error {
-	path := wconfig.DefaultPath()
+	path := config.WatcherAuthPath()
 	cfg, err := wconfig.Load(path)
 	if err != nil {
 		return fmt.Errorf("loading watcher config: %w", err)

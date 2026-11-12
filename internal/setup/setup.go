@@ -16,6 +16,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// watcherTestAndRepair is a seam for tests.
+var watcherTestAndRepair = credsetup.TestAndRepair
+
 type Plan struct {
 	CreateWorktreesBase   bool
 	WorktreesBase         string
@@ -31,7 +34,7 @@ type Plan struct {
 	TestJiraCreds         bool
 	ConfigureUI           bool
 	// SeedGitHubBotUsernames writes DefaultGitHubBotUsernames to the
-	// watcher's config.yaml, which has never had a github block.
+	// config.yaml, which has never had a github block.
 	SeedGitHubBotUsernames bool
 	MacApp                 MacAppAction
 	AgentSkills            skillPlan
@@ -67,7 +70,7 @@ func BuildPlan(cfg config.Config) Plan {
 	plan.TestSlackCreds = true
 	plan.TestJiraCreds = true
 	plan.ConfigureUI = true
-	plan.SeedGitHubBotUsernames = needsGitHubBotSeed(wconfig.ConfigDefaultPath())
+	plan.SeedGitHubBotUsernames = needsGitHubBotSeed(plan.ConfigPath)
 
 	plan.MacApp = detectMacApp()
 	plan.AgentSkills = detectSkills(defaultSkillDeps(), ui.NonInteractive())
@@ -210,7 +213,7 @@ func (p Plan) Execute() error {
 		if err != nil {
 			return fmt.Errorf("configuring watchers: %w", err)
 		}
-		if err := testAndRepairSharedCreds(p.TestGitHubCreds && on[config.ServiceGitHub],
+		if err := testAndRepairWatcherCreds(p.TestGitHubCreds && on[config.ServiceGitHub],
 			p.TestSlackCreds && on[config.ServiceSlack], p.TestJiraCreds && on[config.ServiceJira]); err != nil {
 			fmt.Printf("  %s Credential setup failed: %v\n", ui.Yellow("!"), err)
 		}
@@ -229,7 +232,7 @@ func (p Plan) Execute() error {
 	}
 
 	if p.SeedGitHubBotUsernames {
-		if err := seedGitHubBotUsernames(wconfig.ConfigDefaultPath()); err != nil {
+		if err := seedGitHubBotUsernames(p.ConfigPath); err != nil {
 			fmt.Printf("  %s GitHub bot usernames: %v\n", ui.Yellow("!"), err)
 		}
 	}
@@ -247,15 +250,15 @@ func (p Plan) Execute() error {
 	return nil
 }
 
-// testAndRepairSharedCreds runs the shared watcher credsetup.TestAndRepair
+// testAndRepairWatcherCreds runs the shared watcher credsetup.TestAndRepair
 // flow for GitHub, Slack, and/or Jira, loading and (if anything changed)
 // saving the watcher config exactly once. Jira credentials (host, email,
 // token) live in the watcher config (wcfg.Services.Jira) — worktree's own
 // config.yaml only keeps Jira project prefixes (config.JiraConfig.Projects),
 // which have no watcher equivalent and are handled separately by
 // promptAndSaveJiraProjects.
-func testAndRepairSharedCreds(testGitHub, testSlack, testJira bool) error {
-	wcfg, err := wconfig.Load(wconfig.DefaultPath())
+func testAndRepairWatcherCreds(testGitHub, testSlack, testJira bool) error {
+	wcfg, err := wconfig.Load(config.WatcherAuthPath())
 	if err != nil {
 		return fmt.Errorf("loading watcher config: %w", err)
 	}
@@ -264,7 +267,7 @@ func testAndRepairSharedCreds(testGitHub, testSlack, testJira bool) error {
 	changed := false
 
 	if testGitHub {
-		c, err := credsetup.TestAndRepair(wcfg, credsetup.GitHub, prompter)
+		c, err := watcherTestAndRepair(wcfg, credsetup.GitHub, prompter)
 		if err != nil {
 			fmt.Printf("  %s GitHub credential test failed: %v\n", ui.Yellow("!"), err)
 		}
@@ -272,7 +275,7 @@ func testAndRepairSharedCreds(testGitHub, testSlack, testJira bool) error {
 	}
 
 	if testSlack {
-		c, err := credsetup.TestAndRepair(wcfg, credsetup.Slack, prompter)
+		c, err := watcherTestAndRepair(wcfg, credsetup.Slack, prompter)
 		if err != nil {
 			fmt.Printf("  %s Slack credential test failed: %v\n", ui.Yellow("!"), err)
 		}
@@ -280,7 +283,7 @@ func testAndRepairSharedCreds(testGitHub, testSlack, testJira bool) error {
 	}
 
 	if testJira {
-		c, err := credsetup.TestAndRepair(wcfg, credsetup.Jira, prompter)
+		c, err := watcherTestAndRepair(wcfg, credsetup.Jira, prompter)
 		if err != nil {
 			fmt.Printf("  %s Jira credential test failed: %v\n", ui.Yellow("!"), err)
 		}
@@ -288,10 +291,10 @@ func testAndRepairSharedCreds(testGitHub, testSlack, testJira bool) error {
 	}
 
 	if changed {
-		if err := wcfg.Save(wconfig.DefaultPath()); err != nil {
+		if err := wcfg.Save(config.WatcherAuthPath()); err != nil {
 			return fmt.Errorf("saving watcher config: %w", err)
 		}
-		fmt.Printf("  %s Updated %s\n", ui.Green("✓"), ui.ShortPath(wconfig.DefaultPath()))
+		fmt.Printf("  %s Updated %s\n", ui.Green("✓"), ui.ShortPath(config.WatcherAuthPath()))
 	}
 
 	return nil
@@ -322,7 +325,7 @@ func promptAndSaveConfig(configPath string, cfg config.Config) error {
 // promptAndSaveJiraProjects prompts for the Jira project prefixes that
 // drive worktree's own branch/PR project detection (jira.DetectKeys) and
 // persists them to worktree's config.yaml. Jira credentials (host, email,
-// token) are handled separately via testAndRepairSharedCreds — this step
+// token) are handled separately via testAndRepairWatcherCreds — this step
 // is worktree-local and independent of whether Jira credentials are
 // configured.
 func promptAndSaveJiraProjects(configPath string, cfg config.Config) error {
@@ -355,8 +358,8 @@ func promptAndSaveJiraProjects(configPath string, cfg config.Config) error {
 
 // PreviewUninstall prints what ExecuteUninstall will do. Every Plan step is
 // undone or has a Preserve line here; TestUninstallCoversEverySetupStep keeps
-// that true. consumer is the name registered in the watcher config.
-func PreviewUninstall(rc ShellRC, configPath, consumer string) {
+// that true.
+func PreviewUninstall(rc ShellRC, configPath string) {
 	fmt.Println(ui.Bold("worktree setup --uninstall will:"))
 	if rc.IsInstalled() {
 		fmt.Printf("  • Remove auto-source from %s\n", rc.Path)
@@ -368,26 +371,23 @@ func PreviewUninstall(rc ShellRC, configPath, consumer string) {
 	if runtime.GOOS == "darwin" {
 		PreviewMacAppUninstall(defaultMacAppDeps().Paths)
 	}
-	previewAgentUninstall(defaultAgentUninstall(consumer))
+	previewAgentUninstall(defaultAgentUninstall())
 	fmt.Println("  • Remove the web UI's HTTPS certificate files and remote access settings (the password is kept)")
 	fmt.Println("  • Preserve worktree data (except its agent skills; remove manually if desired)")
 	if _, err := os.Stat(configPath); err == nil {
 		fmt.Printf("  • Preserve config at %s (contains credentials)\n", ui.ShortPath(configPath))
 	}
-	if watcherPath := wconfig.DefaultPath(); pathExists(watcherPath) {
-		fmt.Printf("  • Preserve credentials in the watcher config at %s\n", ui.ShortPath(watcherPath))
-	}
-	if behaviorPath := wconfig.ConfigDefaultPath(); pathExists(behaviorPath) {
-		fmt.Printf("  • Preserve watcher settings (such as GitHub bot usernames) at %s\n", ui.ShortPath(behaviorPath))
+	if watcherPath := config.WatcherAuthPath(); pathExists(watcherPath) {
+		fmt.Printf("  • Preserve credentials at %s\n", ui.ShortPath(watcherPath))
 	}
 }
 
 // ExecuteUninstall undoes setup. It acts on this machine's real brew
 // completions and menu bar app whatever HOME says, so tests must not call it;
 // they call runAgentUninstall and the other steps' own functions.
-func ExecuteUninstall(rc ShellRC, configPath, consumer string) error {
+func ExecuteUninstall(rc ShellRC, configPath string) error {
 	// First, because a shell RC failure below returns early.
-	runAgentUninstall(defaultAgentUninstall(consumer))
+	runAgentUninstall(defaultAgentUninstall())
 
 	if rc.IsInstalled() {
 		if err := rc.Uninstall(); err != nil {
@@ -418,7 +418,7 @@ func ExecuteUninstall(rc ShellRC, configPath, consumer string) error {
 		fmt.Printf("  %s Config preserved at %s\n", ui.Dim("—"), ui.ShortPath(configPath))
 		fmt.Printf("    Remove manually: rm %s\n", ui.ShortPath(configPath))
 	}
-	if watcherPath := wconfig.DefaultPath(); pathExists(watcherPath) {
+	if watcherPath := config.WatcherAuthPath(); pathExists(watcherPath) {
 		fmt.Printf("  %s Watcher credentials preserved at %s\n", ui.Dim("—"), ui.ShortPath(watcherPath))
 	}
 

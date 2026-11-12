@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	wconfig "github.com/mturley/watcher/config"
+	"github.com/mturley/watcher/credsetup"
 	"github.com/mturley/worktree/internal/config"
 	"github.com/mturley/worktree/internal/ui"
 )
@@ -35,7 +37,7 @@ func TestPromptAndSaveConfigDefaultsEditor(t *testing.T) {
 
 // TestBuildPlanJiraCredsAlwaysTested verifies Jira credentials are tested
 // (and repaired if needed) via the shared credsetup flow every run, exactly
-// like GitHub and Slack — see testAndRepairSharedCreds.
+// like GitHub and Slack — see testAndRepairWatcherCreds.
 func TestBuildPlanJiraCredsAlwaysTested(t *testing.T) {
 	for _, projects := range [][]string{nil, {"RHOAIENG"}} {
 		cfg := config.DefaultConfig()
@@ -173,5 +175,39 @@ func TestWriteConfigIsOwnerOnly(t *testing.T) {
 	}
 	if perm := info.Mode().Perm(); perm != 0o600 {
 		t.Fatalf("config mode = %v, want 0600", perm)
+	}
+}
+
+// Serial: t.Setenv and a package-level seam.
+func TestTestAndRepairSavesToWatcherAuth(t *testing.T) {
+	xdg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	orig := watcherTestAndRepair
+	t.Cleanup(func() { watcherTestAndRepair = orig })
+	watcherTestAndRepair = func(cfg *wconfig.Config, _ credsetup.Service, _ credsetup.Prompter) (bool, error) {
+		cfg.Services.Slack = &wconfig.SlackConfig{Token: "t", Cookie: "c"}
+		return true, nil
+	}
+
+	captureStdout(t, func() {
+		if err := testAndRepairWatcherCreds(false, true, false); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	path := filepath.Join(xdg, "worktree", "watcher-auth.yaml")
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("mode = %v, want 0600", info.Mode().Perm())
+	}
+	saved, err := wconfig.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Services.Slack == nil || saved.Services.Slack.Token != "t" {
+		t.Errorf("saved config lacks the credentials: %+v", saved.Services)
 	}
 }

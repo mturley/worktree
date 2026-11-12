@@ -5,15 +5,12 @@ import (
 	"os"
 	"runtime"
 
-	wconfig "github.com/mturley/watcher/config"
 	"github.com/mturley/worktree/internal/config"
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/setup"
 	"github.com/mturley/worktree/internal/ui"
 	"github.com/spf13/cobra"
 )
-
-const consumerName = "worktree"
 
 var setupYes bool
 var setupUninstall, setupUninstallMacApp bool
@@ -91,10 +88,6 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err := registerWatcherConsumer(); err != nil {
-		fmt.Fprintf(os.Stderr, "Note: could not register worktree in watcher consumer registry: %v\n", err)
-	}
-
 	ensureDatabase()
 	printGettingStarted()
 	return nil
@@ -128,28 +121,11 @@ func printGettingStarted() {
 	fmt.Print(setup.GettingStarted(ui.ShortPath(config.ConfigPath()), cfg.UI, true))
 }
 
-// registerWatcherConsumer records worktree's DB in the shared watcher
-// ConsumerRegistry (~/.config/watcher/auth.yaml). Best-effort: forward-looking
-// per CC-1, not required by any Phase 1 feature.
-func registerWatcherConsumer() error {
-	dbPath, err := wdb.Path()
-	if err != nil {
-		return err
-	}
-	cfgPath := wconfig.DefaultPath()
-	cfg, err := wconfig.Load(cfgPath) // returns &Config{} if the file is absent
-	if err != nil {
-		return err
-	}
-	cfg.RegisterConsumer(consumerName, dbPath)
-	return cfg.Save(cfgPath)
-}
-
 func runUninstall(cfg config.Config) error {
 	rc := setup.DetectShellRC()
 	configPath := config.ConfigPath()
 
-	setup.PreviewUninstall(rc, configPath, consumerName)
+	setup.PreviewUninstall(rc, configPath)
 	fmt.Println()
 
 	if !setupYes {
@@ -159,7 +135,7 @@ func runUninstall(cfg config.Config) error {
 		}
 	}
 
-	return setup.ExecuteUninstall(rc, configPath, consumerName)
+	return setup.ExecuteUninstall(rc, configPath)
 }
 
 func runUninstallMacApp() error {
