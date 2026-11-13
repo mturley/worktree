@@ -152,7 +152,8 @@ func (s *Server) handleCredTest(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusBadRequest, "host and email are required")
 				return
 			}
-			if !validJiraHost(host) {
+			host, ok := normalizeJiraHost(host)
+			if !ok {
 				writeError(w, http.StatusBadRequest, "Jira host must be an http(s) URL")
 				return
 			}
@@ -231,10 +232,12 @@ func (s *Server) handleCredReplace(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "token, host and email are required")
 			return
 		}
-		if !validJiraHost(req.Host) {
+		host, ok := normalizeJiraHost(req.Host)
+		if !ok {
 			writeError(w, http.StatusBadRequest, "Jira host must be an http(s) URL")
 			return
 		}
+		req.Host = host
 		verr = v.jira(req.Host, req.Email, req.Token)
 		apply = func(cfg *wconfig.Config) {
 			cfg.Services.Jira = &wconfig.JiraConfig{Host: req.Host, Email: req.Email, Token: req.Token}

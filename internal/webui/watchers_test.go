@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -190,5 +191,18 @@ func TestWatcherHealthFailingUntilASuccess(t *testing.T) {
 	s.SetWatchersDisabled(map[string]bool{"github": true})
 	if h := getHealth(t, s)["github"]; h.Enabled || h.Failing {
 		t.Fatalf("disabled: %+v", h)
+	}
+}
+
+func TestJiraIconRefusesWhileWatcherOff(t *testing.T) {
+	t.Parallel()
+	s, _ := settingsServer(t, "")
+	if err := os.WriteFile(s.WatcherAuthPath, []byte(authYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s.SetWatchersDisabled(map[string]bool{"jira": true})
+	rec := doReq(s, "GET", "/api/jira-icon?url="+url.QueryEscape("https://x.atlassian.net/icon.png"), "")
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "disabled") {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
 	}
 }

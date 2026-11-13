@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"maps"
 	"net/http"
-	"net/url"
 	"slices"
 	"strings"
 
 	wconfig "github.com/mturley/watcher/config"
+	wjira "github.com/mturley/watcher/jira"
 	"github.com/mturley/worktree/internal/config"
 )
 
@@ -83,13 +83,15 @@ func watcherConfigFromEditable(e config.Editable) watcherConfigSettings {
 	return out
 }
 
-// validJiraHost accepts "" (not configured) or an http(s) URL with a host.
-func validJiraHost(h string) bool {
-	if h == "" {
-		return true
+// normalizeJiraHost returns h as a Jira base URL (a bare host gets https://;
+// see wjira.NormalizeHost), and false when it isn't an http(s) URL with a
+// host. "" (not configured) stays "".
+func normalizeJiraHost(h string) (string, bool) {
+	if strings.TrimSpace(h) == "" {
+		return "", true
 	}
-	u, err := url.Parse(h)
-	return err == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Host != ""
+	n, err := wjira.NormalizeHost(h)
+	return n, err == nil
 }
 
 // handleSettingsWatcherAuth: PUT /api/settings/watcher-auth — non-secret
@@ -100,10 +102,10 @@ func (s *Server) handleSettingsWatcherAuth(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	host := strings.TrimRight(strings.TrimSpace(req.Jira.Host), "/")
+	host, ok := normalizeJiraHost(req.Jira.Host)
 	email := strings.TrimSpace(req.Jira.Email)
 	domain := strings.TrimSpace(req.Slack.WorkspaceDomain)
-	if !validJiraHost(host) {
+	if !ok {
 		writeError(w, http.StatusBadRequest, "Jira host must be an http(s) URL, like https://yourorg.atlassian.net")
 		return
 	}

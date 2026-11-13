@@ -5,6 +5,7 @@ import (
 	"net/url"
 
 	wconfig "github.com/mturley/watcher/config"
+	"github.com/mturley/worktree/internal/config"
 )
 
 // handleJiraIcon proxies an issue-type or priority icon from the configured
@@ -30,6 +31,12 @@ import (
 // a constant: it is deployment-specific, and pinning to it means a state row
 // carrying some other host's URL cannot make us fetch it.
 func (s *Server) handleJiraIcon(w http.ResponseWriter, r *http.Request) {
+	// A service whose watcher is off is never contacted, and its
+	// credentials are never read.
+	if !s.WatcherEnabled(config.ServiceJira) {
+		http.Error(w, "jira watcher is disabled", http.StatusServiceUnavailable)
+		return
+	}
 	cfg, err := wconfig.Load(s.watcherAuthPath())
 	if err != nil {
 		http.Error(w, "jira not configured", http.StatusServiceUnavailable)

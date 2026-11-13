@@ -81,7 +81,7 @@ func (Prompter) PromptSlack(_ string) (token, cookie string) {
 // Returning an empty host or email signals credsetup to abort/skip.
 func (Prompter) PromptJira(instructions string) (host, email string) {
 	fmt.Printf("  %s\n", instructions)
-	host = ui.PromptLine("  Jira site URL (e.g. your-org.atlassian.net)")
+	host = ui.PromptLine("  Jira site URL (e.g. https://your-org.atlassian.net)")
 	if host == "" {
 		return "", ""
 	}

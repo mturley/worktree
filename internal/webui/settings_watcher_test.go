@@ -309,3 +309,19 @@ func TestWatcherAuthWorldReadableNamesFile(t *testing.T) {
 		}
 	}
 }
+
+func TestWatcherAuthPutNormalizesJiraHost(t *testing.T) {
+	t.Parallel()
+	s, _ := settingsServer(t, "")
+	rec := doReq(s, "PUT", "/api/settings/watcher-auth", `{"jira":{"host":"y.atlassian.net/","email":"a@b"},"slack":{"workspace_domain":""}}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+	if got := decodeSettings(t, rec).WatcherAuth.Jira.Host; got != "https://y.atlassian.net" {
+		t.Fatalf("host = %q, want https://y.atlassian.net", got)
+	}
+	rec = doReq(s, "PUT", "/api/settings/watcher-auth", `{"jira":{"host":"ftp://y.atlassian.net","email":"a@b"},"slack":{"workspace_domain":""}}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("ftp host: status %d: %s", rec.Code, rec.Body)
+	}
+}
