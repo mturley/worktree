@@ -122,6 +122,15 @@ func TestCdHintKeepsPathsOutsideHomeAbsolute(t *testing.T) {
 	}
 }
 
+func TestCdHintOffersWtCd(t *testing.T) {
+	got := cdHint("/srv/worktrees/my-branch")
+	for _, want := range []string{"cd /srv/worktrees/my-branch", "wt cd my-branch"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("cdHint() = %q, want it to contain %q", got, want)
+		}
+	}
+}
+
 // Not parallel: swaps os.Stdout and the ui color switch.
 func TestListOutputHasNoEscapesWhenPiped(t *testing.T) {
 	t.Setenv("WORKTREE_DB", filepath.Join(t.TempDir(), "w.db"))

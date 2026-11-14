@@ -409,12 +409,15 @@ func offerCmuxAfterCreate(conn *sql.DB, cfg config.Config, res worktreenew.Resul
 	return openCmuxWorkspace(conn, cfg, res.Path, res.Branch)
 }
 
-// cdHint renders the command that moves the user into the new worktree.
+// cdHint renders the commands that move the user into the new worktree:
+// a plain cd, and the shorter `wt cd <dir name>` (which needs the shell
+// function from `worktree setup`).
 //
 // ShortPath keeps it readable without making it unusable: the "~" it
 // substitutes is expanded by every shell that would run the line.
 func cdHint(path string) string {
-	return fmt.Sprintf("\n  To enter it:\n    %s\n", ui.Bold("cd "+ui.ShortPath(path)))
+	return fmt.Sprintf("\n  To enter it:\n    %s\n  or:\n    %s\n",
+		ui.Bold("cd "+ui.ShortPath(path)), ui.Bold("wt cd "+filepath.Base(path)))
 }
 
 func shortSHA(sha string) string {
