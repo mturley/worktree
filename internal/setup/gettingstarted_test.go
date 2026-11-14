@@ -14,7 +14,8 @@ func TestGettingStartedNamesTheCommandsAndPassword(t *testing.T) {
 	got := GettingStarted(tipsConfigPath, config.UIConfig{}, true)
 	for _, want := range []string{
 		"worktree ui", "http://127.0.0.1:8475", "ui.password", tipsConfigPath,
-		"worktree add my-feature", "worktree add 1234", "worktree list", "worktree info [path]",
+		"worktree add my-feature", "worktree add 1234", "wt list", "wt info [path]",
+		"wt cd [name]", "main checkout",
 		"worktree --help",
 	} {
 		if !strings.Contains(got, want) {
@@ -61,5 +62,15 @@ func TestGettingStartedUncoloured(t *testing.T) {
 	t.Parallel()
 	if got := GettingStarted(tipsConfigPath, config.UIConfig{}, false); strings.Contains(got, "\033[") {
 		t.Errorf("uncoloured tips carry escape codes:\n%q", got)
+	}
+}
+
+func TestGettingStartedIntroducesWtBeforeUsingIt(t *testing.T) {
+	t.Parallel()
+	got := GettingStarted(tipsConfigPath, config.UIConfig{}, false)
+	intro := strings.Index(got, "wt is short for worktree")
+	first := strings.Index(got, "wt list")
+	if intro < 0 || first < 0 || intro > first {
+		t.Fatalf("the wt alias must be explained before wt list:\n%s", got)
 	}
 }
