@@ -73,6 +73,7 @@ var skillReadCommands = map[string]bool{
 	"worktree activity":             true,
 	"worktree agent-help":           true,
 	"worktree attention":            true,
+	"worktree cd":                   true,
 	"worktree env":                  true,
 	"worktree info":                 true,
 	"worktree jira":                 true,
