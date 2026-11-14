@@ -14,7 +14,7 @@ func TestZshSnippetUsesWorktreeEnv(t *testing.T) {
 	if strings.Contains(s, ".worktree-env") || strings.Contains(s, "source ") {
 		t.Fatalf("snippet must not source a file:\n%s", s)
 	}
-	if !strings.Contains(s, `eval "$(worktree env)"`) {
+	if !strings.Contains(s, `eval "$(command worktree env)"`) {
 		t.Fatalf("snippet must eval worktree env:\n%s", s)
 	}
 }
@@ -56,7 +56,7 @@ func TestSnippetsCarryVersionLine(t *testing.T) {
 func TestSnippetsDefineWorktreeAndWtFunctions(t *testing.T) {
 	for _, sh := range []string{"zsh", "bash"} {
 		s := ShellRC{Shell: sh}.snippet()
-		for _, want := range []string{"worktree() {", "wt()", "WORKTREE_SHELL_FN=1 command"} {
+		for _, want := range []string{"function worktree {", "function wt {", "WORKTREE_SHELL_FN=1 command"} {
 			if !strings.Contains(s, want) {
 				t.Errorf("%s snippet missing %q", sh, want)
 			}
@@ -184,7 +184,7 @@ func TestShellFunctionCdAndPassthrough(t *testing.T) {
 			}
 			bin := fakeWorktreeBin(t, target)
 			script := ShellRC{Shell: sh}.snippet() + "\nworktree cd x; pwd; worktree list; wt cd --help; wt status\n"
-			c := exec.Command(shPath, "-c", script)
+			c := exec.Command(shPath, append(hermeticShellArgs(sh), script)...)
 			c.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"), "_WORKTREE_CHPWD_REGISTERED=")
 			out, err := c.CombinedOutput()
 			if err != nil {
@@ -214,4 +214,44 @@ func TestDescriptionSaysUpdateForOldBlock(t *testing.T) {
 	if d := writeRC(t, "").Description(); !strings.HasPrefix(d, "Add ") {
 		t.Errorf("no block: %q", d)
 	}
+}
+
+// A user's existing `alias wt=…` must not break the block (or the rest of
+// the rc file after it).
+func TestShellFunctionSurvivesExistingAliases(t *testing.T) {
+	for _, sh := range []string{"bash", "zsh"} {
+		t.Run(sh, func(t *testing.T) {
+			shPath, err := exec.LookPath(sh)
+			if err != nil {
+				t.Skipf("%s not installed", sh)
+			}
+			target, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			bin := fakeWorktreeBin(t, target)
+			script := "shopt -s expand_aliases 2>/dev/null\nalias wt='echo ALIAS'\nalias worktree='echo ALIAS'\n" +
+				ShellRC{Shell: sh}.snippet() + "\necho AFTER\nunalias wt worktree\nwt cd x; pwd\n"
+			c := exec.Command(shPath, append(hermeticShellArgs(sh), script)...)
+			c.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"), "_WORKTREE_CHPWD_REGISTERED=")
+			out, err := c.CombinedOutput()
+			if err != nil {
+				t.Fatalf("%v\n%s", err, out)
+			}
+			if want := "AFTER\nINFO\n" + target + "\n"; string(out) != want {
+				t.Fatalf("got:\n%s\nwant:\n%s", out, want)
+			}
+		})
+	}
+}
+
+// hermeticShellArgs runs sh -c without the user's startup files.
+func hermeticShellArgs(sh string) []string {
+	switch sh {
+	case "zsh":
+		return []string{"-f", "-c"}
+	case "bash":
+		return []string{"--norc", "--noprofile", "-c"}
+	}
+	return []string{"--no-config", "-c"}
 }

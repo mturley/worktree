@@ -19,7 +19,7 @@ import (
 // cdShellFnHint is printed (to stderr) when `worktree cd` runs without the
 // shell function from `worktree setup`, which is what actually changes the
 // shell's directory: a program cannot change its parent shell's cwd.
-const cdShellFnHint = "worktree cd needs the shell function to change directory: re-run `worktree setup`"
+const cdShellFnHint = "worktree cd needs its shell function to change directory: open a new shell, or run `worktree setup` if you haven't since updating"
 
 var cdCmd = &cobra.Command{
 	Use:   "cd <name>",
@@ -75,6 +75,12 @@ func resolveCd(entries []registry.Entry, name string, in io.Reader, errw io.Writ
 	e, err := chooseWorktree(matches, in, errw, interactive)
 	if err != nil {
 		return "", err
+	}
+	// The registry doesn't stat paths, so a directory removed outside
+	// worktree still has a row. Say so rather than print a path the shell
+	// function can't enter.
+	if fi, err := os.Stat(e.Path); err != nil || !fi.IsDir() {
+		return "", fmt.Errorf("worktree directory %s no longer exists; run `worktree cleanup` to reconcile", e.Path)
 	}
 	return e.Path, nil
 }

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -116,7 +117,32 @@ func TestCdHintWithoutShellFn(t *testing.T) {
 	if cdHintNeeded(env("1")) {
 		t.Error("shell function present: no hint")
 	}
+	if !strings.Contains(cdShellFnHint, "new shell") {
+		t.Errorf("hint %q must say a new shell picks up the function (setup may have just run)", cdShellFnHint)
+	}
 	if !strings.Contains(cdShellFnHint, "worktree setup") {
 		t.Errorf("hint %q must mention worktree setup", cdShellFnHint)
+	}
+}
+
+func TestCdMissingDirectoryErrors(t *testing.T) {
+	t.Parallel()
+	gone := filepath.Join(t.TempDir(), "gone")
+	es := []registry.Entry{{Path: gone, Repo: "a", Branch: "gone"}}
+	var errw bytes.Buffer
+	_, err := resolveCd(es, "gone", strings.NewReader(""), &errw, true)
+	if err == nil || !strings.Contains(err.Error(), "worktree cleanup") {
+		t.Fatalf("want an error pointing at worktree cleanup, got %v", err)
+	}
+}
+
+func TestCdExistingDirectoryResolves(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	es := []registry.Entry{{Path: dir, Repo: "a", Branch: filepath.Base(dir)}}
+	var errw bytes.Buffer
+	got, err := resolveCd(es, filepath.Base(dir), strings.NewReader(""), &errw, true)
+	if err != nil || got != dir {
+		t.Fatalf("got %q, %v", got, err)
 	}
 }

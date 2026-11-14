@@ -28,7 +28,7 @@ const shFunctions = `# Shell function for ` + "`worktree cd <name>`" + ` (and ` 
 # subcommand passes straight through to the binary. WORKTREE_SHELL_FN=1
 # tells the binary this function is present, so it doesn't print the
 # "re-run worktree setup" hint.
-_worktree_dispatch() {
+function _worktree_dispatch {
   local bin=$1; shift
   if [ "$1" = cd ]; then
     shift
@@ -41,13 +41,15 @@ _worktree_dispatch() {
     command "$bin" "$@"
   fi
 }
-worktree() { _worktree_dispatch worktree "$@"; }
-wt()       { _worktree_dispatch wt "$@"; }`
+# The "function name {" form, unlike "name() {", is not alias-expanded,
+# so an existing alias named wt or worktree can't break this block.
+function worktree { _worktree_dispatch worktree "$@"; }
+function wt { _worktree_dispatch wt "$@"; }`
 
 var zshSnippet = markerBegin + "\n" + versionLine + `
 # Load worktree environment when entering a worktree directory
 _worktree_env_hook() {
-  eval "$(worktree env)"
+  eval "$(command worktree env)"
 }
 if [[ -z "$_WORKTREE_CHPWD_REGISTERED" ]]; then
   autoload -Uz add-zsh-hook
@@ -60,7 +62,7 @@ fi
 var bashSnippet = markerBegin + "\n" + versionLine + `
 # Load worktree environment on each prompt
 _worktree_env_hook() {
-  eval "$(worktree env)"
+  eval "$(command worktree env)"
 }
 case "$PROMPT_COMMAND" in
   *_worktree_env_hook*) ;;
@@ -71,7 +73,7 @@ esac
 var fishSnippet = markerBegin + "\n" + versionLine + `
 # Load worktree environment when the directory changes
 function _worktree_env_hook --on-variable PWD
-  eval (worktree env)
+  eval (command worktree env)
 end
 _worktree_env_hook
 # Shell function for ` + "`worktree cd <name>`" + ` (and ` + "`wt cd`" + `).
