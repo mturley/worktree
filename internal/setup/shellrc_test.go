@@ -255,3 +255,14 @@ func hermeticShellArgs(sh string) []string {
 	}
 	return []string{"--no-config", "-c"}
 }
+
+func TestUninstallRemovesOldBlock(t *testing.T) {
+	// As Install wrote it: a blank line, then the block.
+	rc := writeRC(t, "before\n\n"+v1ZshBlock+"\n")
+	if err := rc.Uninstall(); err != nil {
+		t.Fatal(err)
+	}
+	if got := readRC(t, rc); got != "before\n" {
+		t.Fatalf("got %q", got)
+	}
+}

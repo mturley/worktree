@@ -146,3 +146,41 @@ func TestCdExistingDirectoryResolves(t *testing.T) {
 		t.Fatalf("got %q, %v", got, err)
 	}
 }
+
+func TestMainCheckoutForReturnsRepoRoot(t *testing.T) {
+	t.Parallel()
+	wt, root := t.TempDir(), t.TempDir()
+	got, err := mainCheckoutFor([]registry.Entry{{Path: wt, RepoRoot: root}}, wt)
+	if err != nil || got != root {
+		t.Fatalf("got %q, %v; want %q", got, err, root)
+	}
+}
+
+func TestMainCheckoutForNotAWorktreeErrors(t *testing.T) {
+	t.Parallel()
+	wt, root := t.TempDir(), t.TempDir()
+	_, err := mainCheckoutFor([]registry.Entry{{Path: wt, RepoRoot: root}}, root)
+	if err == nil || err.Error() != "not inside a registered worktree; pass a worktree name" {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestMainCheckoutForMissingRootErrors(t *testing.T) {
+	t.Parallel()
+	wt := t.TempDir()
+	root := filepath.Join(t.TempDir(), "gone")
+	_, err := mainCheckoutFor([]registry.Entry{{Path: wt, RepoRoot: root}}, wt)
+	if err == nil || !strings.Contains(err.Error(), root) {
+		t.Fatalf("want an error naming %s, got %v", root, err)
+	}
+}
+
+func TestCdAcceptsZeroArgs(t *testing.T) {
+	t.Parallel()
+	if err := cdCmd.Args(cdCmd, nil); err != nil {
+		t.Errorf("zero args rejected: %v", err)
+	}
+	if err := cdCmd.Args(cdCmd, []string{"a", "b"}); err == nil {
+		t.Error("two args accepted")
+	}
+}

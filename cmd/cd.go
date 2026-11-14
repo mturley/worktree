@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -22,13 +23,14 @@ import (
 const cdShellFnHint = "worktree cd needs its shell function to change directory: open a new shell, or run `worktree setup` if you haven't since updating"
 
 var cdCmd = &cobra.Command{
-	Use:   "cd <name>",
-	Short: "Change into a worktree by directory name or branch (needs the shell function from setup)",
+	Use:   "cd [name]",
+	Short: "Change into a worktree by directory name or branch, or with no name to its repo's main checkout",
 	Long: "Resolve a worktree by its directory name or branch and change the shell into it, then show `worktree info`.\n\n" +
 		"The binary prints only the chosen path on stdout; the shell function `worktree setup` adds to your rc file " +
-		"does the cd. When the name matches several worktrees it asks which one (on stderr).",
+		"does the cd. When the name matches several worktrees it asks which one (on stderr).\n\n" +
+		"With no name, inside a registered worktree, it goes to that worktree's repo's main checkout.",
 	GroupID:           "worktree",
-	Args:              cobra.ExactArgs(1),
+	Args:              cobra.MaximumNArgs(1),
 	RunE:              runCd,
 	ValidArgsFunction: completeWorktreeNames,
 }
@@ -48,10 +50,22 @@ func runCd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("listing worktrees: %w", err)
 	}
 	errw := cmd.ErrOrStderr()
-	interactive := ui.StdinIsTerminal() && !ui.NonInteractive()
-	path, err := resolveCd(entries, args[0], cmd.InOrStdin(), errw, interactive)
-	if err != nil {
-		return err
+	var path string
+	if len(args) == 0 {
+		wtPath, err := resolveWorktreePath(nil)
+		if err != nil {
+			return err
+		}
+		path, err = mainCheckoutFor(entries, wtPath)
+		if err != nil {
+			return err
+		}
+	} else {
+		interactive := ui.StdinIsTerminal() && !ui.NonInteractive()
+		path, err = resolveCd(entries, args[0], cmd.InOrStdin(), errw, interactive)
+		if err != nil {
+			return err
+		}
 	}
 	if cdHintNeeded(os.Getenv) {
 		fmt.Fprintln(errw, ui.Dim(cdShellFnHint))
@@ -83,6 +97,22 @@ func resolveCd(entries []registry.Entry, name string, in io.Reader, errw io.Writ
 		return "", fmt.Errorf("worktree directory %s no longer exists; run `worktree cleanup` to reconcile", e.Path)
 	}
 	return e.Path, nil
+}
+
+// mainCheckoutFor returns the main checkout (RepoRoot) of the registered
+// worktree at wtPath, which must exist on disk.
+func mainCheckoutFor(entries []registry.Entry, wtPath string) (string, error) {
+	want := wdb.Subscriber(wtPath)
+	for _, e := range entries {
+		if wdb.Subscriber(e.Path) != want {
+			continue
+		}
+		if fi, err := os.Stat(e.RepoRoot); err != nil || !fi.IsDir() {
+			return "", fmt.Errorf("main checkout %s no longer exists", e.RepoRoot)
+		}
+		return e.RepoRoot, nil
+	}
+	return "", errors.New("not inside a registered worktree; pass a worktree name")
 }
 
 // matchWorktrees returns the entries whose directory basename or branch is

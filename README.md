@@ -122,7 +122,7 @@ New branch worktrees branch from the current HEAD. Before creating one, the tool
 ```bash
 worktree list                    # List worktrees from the database (--json, --git)
 worktree info [path]             # Show worktree info (env vars, resources with cached state; --json)
-worktree cd <name>               # cd into a worktree by directory name or branch, then show info (alias: wt cd)
+worktree cd [name]               # cd into a worktree by directory name or branch (no name: its repo's main checkout), then show info; alias wt cd
 worktree delete [path]           # Remove a worktree and clean up
 worktree cleanup                 # Interactively reconcile disk vs database (prompts before removing)
 worktree dotfiles [path]         # Copy gitignored dotfiles from main worktree
@@ -130,7 +130,7 @@ worktree ports                   # Show allocated port ranges (database-backed; 
 worktree unread [--json] [--by worktree|resource]  # Whether anything is unread, and how much
 ```
 
-`cd` changes the current shell into the worktree whose directory name or branch is `<name>`, asking which one if several match, then runs `worktree info`. It works through the shell function `worktree setup` adds to your rc file (a program can't change its parent shell's directory); without it, `worktree cd` only prints the path.
+`cd` changes the current shell into the worktree whose directory name or branch is `<name>`, asking which one if several match, then runs `worktree info`. With no name, inside a worktree, it goes to that worktree's repo's main checkout. It works through the shell function `worktree setup` adds to your rc file (a program can't change its parent shell's directory); without it, `worktree cd` only prints the path.
 
 `delete` removes a worktree and cleans up its port allocation, kubeconfig, and git state. `cleanup` reconciles the database with the filesystem, removing worktree entries whose directories no longer exist.
 
