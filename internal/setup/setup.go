@@ -99,7 +99,7 @@ func (p Plan) Preview() {
 			fmt.Println(ui.Dim("Already set up:"))
 			hasExisting = true
 		}
-		fmt.Printf("  %s Shell auto-source (%s)\n", ui.Green("✓"), p.ShellRC.Shell)
+		fmt.Printf("  %s Shell integration (%s)\n", ui.Green("✓"), p.ShellRC.Shell)
 	}
 	if !p.CreateConfig {
 		if !hasExisting {
@@ -370,7 +370,7 @@ func promptAndSaveJiraProjects(configPath string, cfg config.Config) error {
 // that true.
 func PreviewUninstall(rc ShellRC, configPath string) {
 	fmt.Println(ui.Bold("worktree setup --uninstall will:"))
-	if rc.IsInstalled() {
+	if rc.hasBlock() {
 		fmt.Printf("  • Remove auto-source from %s\n", rc.Path)
 	}
 	if wtSymlink := wtSymlinkPath(); wtSymlink != "" {
@@ -398,7 +398,7 @@ func ExecuteUninstall(rc ShellRC, configPath string) error {
 	// First, because a shell RC failure below returns early.
 	runAgentUninstall(defaultAgentUninstall())
 
-	if rc.IsInstalled() {
+	if rc.hasBlock() {
 		if err := rc.Uninstall(); err != nil {
 			return fmt.Errorf("removing shell RC: %w", err)
 		}

@@ -33,7 +33,7 @@ Setup will:
 - Prompt for your worktrees directory (default: `~/.worktrees`)
 - Create a config file at `~/.config/worktree/config.yaml`
 - Create a SQLite database at `${XDG_DATA_HOME:-~/.local/share}/worktree/worktree.db` if needed
-- Add a shell hook (`chpwd`) that runs `eval "$(worktree env)"` on directory change (zsh, bash, or fish)
+- Add a shell hook (`chpwd`) that runs `eval "$(worktree env)"` on directory change (zsh, bash, or fish), and a `worktree`/`wt` shell function that makes `worktree cd <name>` change your shell's directory. Re-running setup updates an older block in place
 - Install shell completions for `worktree` and `wt` (zsh, bash, fish)
 - Ask whether each service's watcher (GitHub, Jira, Slack) should be on; a
   service turned off is never contacted, and its credentials are skipped
