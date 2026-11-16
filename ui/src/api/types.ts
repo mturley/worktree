@@ -247,20 +247,29 @@ export interface SaveWorktreeNotesResponse extends WorktreeNotes {
   cmux_error?: string
 }
 
-export type DeleteStepStatus = "done" | "skipped" | "failed" | "needs_force" | "pending"
-export interface DeleteStep {
-  key: string
-  label: string
-  status: DeleteStepStatus
-  detail?: string
-}
-export interface DeleteWorktreeResponse {
-  ok: boolean
-  /** "" when nothing is waiting; otherwise the step key needing a force. */
-  needs_force: string
-  steps: DeleteStep[]
+export type JobState = "running" | "needs_answer" | "succeeded" | "failed" | "interrupted"
+export type JobStepStatus = "pending" | "running" | "done" | "skipped" | "failed" | "needs_force"
+export interface JobStep { key: string; label: string; status: JobStepStatus; detail?: string }
+/** key is reuse_branch | reset_to_pr | remove_directory | delete_branch. */
+export interface JobQuestion { key: string; branch?: string; local_head?: string; remote_head?: string }
+export interface Job {
+  id: string
+  /** "worktree_create" | "worktree_delete"; any other is a kind this build
+   *  has no modal for, which the toast still shows. */
+  kind: string
+  title: string
+  target: string
+  state: JobState
+  steps: JobStep[]
+  question: JobQuestion | null
+  result: { path?: string; branch?: string } | null
   error?: string
+  created_at: string
+  updated_at: string
+  finished_at?: string
+  dismissed?: boolean
 }
+export interface StartJobResponse { job: Job; attached: boolean }
 
 export interface CmuxGroup { ref: string; name: string }
 export interface CmuxColor { name: string; hex: string }
@@ -268,32 +277,9 @@ export interface CmuxGroupsResponse { groups: CmuxGroup[]; colors: CmuxColor[] }
 
 export interface Repo { name: string; repo_root: string }
 
-export interface CreateConfirm {
-  key: "reuse_branch" | "reset_to_pr"
-  branch: string
-  local_head?: string
-  remote_head?: string
-}
-
-export interface CreateStep {
-  key: string
-  label: string
-  status: "done" | "skipped" | "failed" | "pending"
-  detail?: string
-}
-
 /** The branch a PR or Jira input would get; empty for a plain branch name. */
 export interface DefaultBranchResponse {
   branch: string
-  error?: string
-}
-
-export interface CreateWorktreeResponse {
-  ok: boolean
-  confirm: CreateConfirm | null
-  steps: CreateStep[]
-  path?: string
-  branch?: string
   error?: string
 }
 

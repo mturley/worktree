@@ -1,14 +1,26 @@
 import { afterEach, describe, it, expect, vi } from "vitest"
-import { render, cleanup, screen, waitFor } from "@testing-library/react"
+import { render, cleanup, screen, waitFor, act } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { DeleteWorktreeModal } from "./DeleteWorktreeModal"
-import type { DeleteWorktreeResponse } from "../api/types"
+import { applyJob, setJobs, useAttachedJobIds } from "../lib/jobsStore"
+import type { Job, JobStep } from "../api/types"
 
 const deleteWorktree = vi.fn()
+const jobAnswer = vi.fn()
+const jobRetry = vi.fn()
+const jobDismiss = vi.fn()
 vi.mock("../api/client", async (orig) => {
   const actual = await orig<typeof import("../api/client")>()
-  return { api: { ...actual.api, deleteWorktree: (...a: unknown[]) => deleteWorktree(...a) } }
+  return {
+    api: {
+      ...actual.api,
+      deleteWorktree: (...a: unknown[]) => deleteWorktree(...a),
+      jobAnswer: (...a: unknown[]) => jobAnswer(...a),
+      jobRetry: (...a: unknown[]) => jobRetry(...a),
+      jobDismiss: (...a: unknown[]) => jobDismiss(...a),
+    },
+  }
 })
 
 if (typeof window.matchMedia !== "function") {
@@ -21,7 +33,11 @@ if (typeof window.matchMedia !== "function") {
 }
 
 const wrap = (ui: React.ReactNode) => render(<MantineProvider>{ui}</MantineProvider>)
-afterEach(() => { cleanup(); deleteWorktree.mockReset() })
+afterEach(() => {
+  cleanup()
+  act(() => setJobs([]))
+  for (const m of [deleteWorktree, jobAnswer, jobRetry, jobDismiss]) m.mockReset()
+})
 
 const modal = (over: Partial<React.ComponentProps<typeof DeleteWorktreeModal>> = {}) => (
   <DeleteWorktreeModal
@@ -35,15 +51,42 @@ const modal = (over: Partial<React.ComponentProps<typeof DeleteWorktreeModal>> =
   />
 )
 
-const ok = (over: Partial<DeleteWorktreeResponse> = {}): DeleteWorktreeResponse => ({
-  ok: true,
-  needs_force: "",
-  steps: [
-    { key: "remove_directory", label: "Remove worktree directory", status: "done" },
-    { key: "release_ports", label: "Release port range", status: "done" },
-  ],
+const steps: JobStep[] = [
+  { key: "remove_directory", label: "Remove worktree directory", status: "running" },
+  { key: "release_ports", label: "Release port range", status: "pending" },
+]
+
+const job = (over: Partial<Job> = {}): Job => ({
+  id: "j1",
+  kind: "worktree_delete",
+  title: "Deleting foo",
+  target: "/wt/foo",
+  state: "running",
+  steps,
+  question: null,
+  result: null,
+  created_at: "2026-11-16T10:00:00Z",
+  updated_at: "2026-11-16T10:00:00Z",
   ...over,
 })
+
+const parked = (key: string): Job => job({
+  state: "needs_answer",
+  question: { key },
+  steps: [{ key, label: "Remove worktree directory", status: "needs_force", detail: "fatal: could not remove" }],
+})
+
+const succeeded = (): Job => job({
+  state: "succeeded",
+  steps: steps.map((s) => ({ ...s, status: "done" })),
+})
+
+const startJob = async (user: ReturnType<typeof userEvent.setup>) => {
+  deleteWorktree.mockResolvedValue({ job: job(), attached: false })
+  await user.type(screen.getByLabelText(/type the worktree name/i), "foo")
+  await user.click(screen.getByRole("button", { name: /^delete$/i }))
+  await waitFor(() => expect(deleteWorktree).toHaveBeenCalled())
+}
 
 describe("DeleteWorktreeModal", () => {
   it("keeps Delete disabled until the worktree name is typed exactly", async () => {
@@ -51,187 +94,212 @@ describe("DeleteWorktreeModal", () => {
     wrap(modal())
     const button = screen.getByRole("button", { name: /^delete$/i })
     expect(button).toBeDisabled()
-
     await user.type(screen.getByLabelText(/type the worktree name/i), "fo")
     expect(button).toBeDisabled()
     await user.type(screen.getByLabelText(/type the worktree name/i), "o")
     expect(button).toBeEnabled()
   })
 
-  it("leaves the branch checkbox unchecked, and only sends delete_branch when ticked", async () => {
+  it("starts a job and shows its steps as they arrive", async () => {
     const user = userEvent.setup()
-    deleteWorktree.mockResolvedValue(ok())
     wrap(modal())
+    await startJob(user)
+    expect(deleteWorktree).toHaveBeenCalledWith({ path: "/wt/foo", delete_branch: false })
 
-    const checkbox = screen.getByRole("checkbox", { name: /delete the branch/i })
-    expect(checkbox).not.toBeChecked()
+    act(() => applyJob(job()))
+    expect(await screen.findByLabelText("In progress")).toBeInTheDocument()
+    expect(screen.getByText("Deleting foo")).toBeInTheDocument()
 
-    await user.type(screen.getByLabelText(/type the worktree name/i), "foo")
-    await user.click(screen.getByRole("button", { name: /^delete$/i }))
-    await waitFor(() => expect(deleteWorktree).toHaveBeenCalled())
-    expect(deleteWorktree.mock.calls[0][0]).toMatchObject({ path: "/wt/foo", delete_branch: false })
-  })
-
-  it("renders a stage per step once the run reports", async () => {
-    const user = userEvent.setup()
-    deleteWorktree.mockResolvedValue(ok())
-    wrap(modal())
-    await user.type(screen.getByLabelText(/type the worktree name/i), "foo")
-    await user.click(screen.getByRole("button", { name: /^delete$/i }))
-
-    expect(await screen.findByText("Remove worktree directory")).toBeInTheDocument()
+    act(() => applyJob(job({
+      steps: [
+        { key: "remove_directory", label: "Remove worktree directory", status: "done" },
+        { key: "release_ports", label: "Release port range", status: "running" },
+      ],
+    })))
+    expect(screen.getAllByLabelText("In progress")).toHaveLength(1)
     expect(screen.getByText("Release port range")).toBeInTheDocument()
   })
 
-  it("offers Force under the failed stage, and re-posts with the matching flag", async () => {
+  it("shows a request error in the alert", async () => {
     const user = userEvent.setup()
-    deleteWorktree
-      .mockResolvedValueOnce({
-        ok: false,
-        needs_force: "remove_directory",
-        steps: [{
-          key: "remove_directory", label: "Remove worktree directory",
-          status: "needs_force", detail: "fatal: could not remove",
-        }],
-      } as DeleteWorktreeResponse)
-      .mockResolvedValueOnce(ok())
+    deleteWorktree.mockRejectedValue(new Error("boom"))
     wrap(modal())
     await user.type(screen.getByLabelText(/type the worktree name/i), "foo")
     await user.click(screen.getByRole("button", { name: /^delete$/i }))
-
-    // git's own words are shown, not a generic message.
-    expect(await screen.findByText(/could not remove/)).toBeInTheDocument()
-    await user.click(screen.getByRole("button", { name: /force/i }))
-
-    await waitFor(() => expect(deleteWorktree).toHaveBeenCalledTimes(2))
-    expect(deleteWorktree.mock.calls[1][0]).toMatchObject({ force_directory: true })
+    expect(await screen.findByText("boom")).toBeInTheDocument()
   })
 
-  it("re-posts with delete_branch:false on Cancel when the branch needs force, instead of closing", async () => {
+  it("closing while running leaves the job alone", async () => {
     const user = userEvent.setup()
     const onClose = vi.fn()
-    deleteWorktree
-      .mockResolvedValueOnce({
-        ok: false,
-        needs_force: "delete_branch",
-        steps: [
-          { key: "remove_directory", label: "Remove worktree directory", status: "done" },
-          { key: "delete_branch", label: "Delete branch", status: "needs_force", detail: "not fully merged" },
-        ],
-      } as DeleteWorktreeResponse)
-      .mockResolvedValueOnce(ok())
     wrap(modal({ onClose }))
-    await user.type(screen.getByLabelText(/type the worktree name/i), "foo")
-    const checkbox = screen.getByRole("checkbox", { name: /delete the branch/i })
-    await user.click(checkbox)
-    await user.click(screen.getByRole("button", { name: /^delete$/i }))
+    await startJob(user)
+    act(() => applyJob(job()))
+    expect(await screen.findByText(/keeps running if you close this window/i)).toBeInTheDocument()
 
-    await screen.findByText(/not fully merged/)
-    await user.click(screen.getByRole("button", { name: /^cancel$/i }))
+    await user.click(screen.getByRole("button", { name: /^close$/i }))
+    expect(jobDismiss).not.toHaveBeenCalled()
+    expect(onClose).toHaveBeenCalled()
+  })
 
-    // Declining must finish cleanup, not just close: remove_directory has
-    // already run by the time the branch escalates, so closing here would
-    // strand the port range, registry row, resources and kubeconfig.
-    await waitFor(() => expect(deleteWorktree).toHaveBeenCalledTimes(2))
-    expect(deleteWorktree.mock.calls[1][0]).toMatchObject({ path: "/wt/foo", delete_branch: false })
-    expect(deleteWorktree.mock.calls[1][0]).not.toHaveProperty("force_branch")
+  it("a force question answers yes", async () => {
+    const user = userEvent.setup()
+    jobAnswer.mockResolvedValue(job())
+    act(() => applyJob(parked("remove_directory")))
+    wrap(modal({ jobId: "j1" }))
+    await user.click(await screen.findByRole("button", { name: "Force-remove the directory" }))
+    expect(jobAnswer).toHaveBeenCalledWith("j1", "yes")
+  })
+
+  it("offers to force-delete the branch for that question", async () => {
+    const user = userEvent.setup()
+    jobAnswer.mockResolvedValue(job())
+    act(() => applyJob(parked("delete_branch")))
+    wrap(modal({ jobId: "j1" }))
+    await user.click(await screen.findByRole("button", { name: "Force-delete the branch" }))
+    expect(jobAnswer).toHaveBeenCalledWith("j1", "yes")
+  })
+
+  it("declining the branch force answers no and stays open", async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    jobAnswer.mockResolvedValue(job())
+    act(() => applyJob(parked("delete_branch")))
+    wrap(modal({ jobId: "j1", onClose }))
+    await user.click(await screen.findByRole("button", { name: /^cancel$/i }))
+    await waitFor(() => expect(jobAnswer).toHaveBeenCalledWith("j1", "no"))
     expect(onClose).not.toHaveBeenCalled()
   })
 
-  it("still closes on Cancel when the DIRECTORY needs force, since nothing has been deleted yet", async () => {
+  it("declining the directory force answers no and closes", async () => {
     const user = userEvent.setup()
     const onClose = vi.fn()
-    deleteWorktree.mockResolvedValueOnce({
-      ok: false,
-      needs_force: "remove_directory",
-      steps: [{
-        key: "remove_directory", label: "Remove worktree directory",
-        status: "needs_force", detail: "fatal: could not remove",
-      }],
-    } as DeleteWorktreeResponse)
-    wrap(modal({ onClose }))
-    await user.type(screen.getByLabelText(/type the worktree name/i), "foo")
-    await user.click(screen.getByRole("button", { name: /^delete$/i }))
-
-    await screen.findByText(/could not remove/)
-    await user.click(screen.getByRole("button", { name: /^cancel$/i }))
-
-    expect(onClose).toHaveBeenCalled()
-    expect(deleteWorktree).toHaveBeenCalledTimes(1)
+    jobAnswer.mockResolvedValue(job())
+    act(() => applyJob(parked("remove_directory")))
+    wrap(modal({ jobId: "j1", onClose }))
+    await user.click(await screen.findByRole("button", { name: /^cancel$/i }))
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+    expect(jobAnswer).toHaveBeenCalledWith("j1", "no")
   })
 
-  it("stays open on success and only navigates when OK is clicked", async () => {
+  it("OK on success dismisses and reports deleted", async () => {
     const user = userEvent.setup()
     const onDeleted = vi.fn()
-    deleteWorktree.mockResolvedValue(ok())
+    jobDismiss.mockResolvedValue(undefined)
     wrap(modal({ onDeleted }))
-    await user.type(screen.getByLabelText(/type the worktree name/i), "foo")
-    await user.click(screen.getByRole("button", { name: /^delete$/i }))
-
-    // The summary is the only report the user gets — it must not vanish.
-    expect(await screen.findByRole("button", { name: /^ok$/i })).toBeInTheDocument()
-    expect(onDeleted).not.toHaveBeenCalled()
-
-    await user.click(screen.getByRole("button", { name: /^ok$/i }))
+    await startJob(user)
+    act(() => applyJob(succeeded()))
+    await user.click(await screen.findByRole("button", { name: /^ok$/i }))
+    expect(jobDismiss).toHaveBeenCalledWith("j1")
     expect(onDeleted).toHaveBeenCalled()
   })
 
-  it("keeps the step list visible when the run fails outright", async () => {
+  it("still reports deleted when the job is already gone on dismiss", async () => {
     const user = userEvent.setup()
-    deleteWorktree.mockResolvedValue({
-      ok: false, needs_force: "", error: "not a worktree",
-      steps: [{ key: "remove_directory", label: "Remove worktree directory", status: "failed", detail: "not a worktree" }],
-    } as DeleteWorktreeResponse)
-    wrap(modal())
-    await user.type(screen.getByLabelText(/type the worktree name/i), "foo")
-    await user.click(screen.getByRole("button", { name: /^delete$/i }))
-
-    expect(await screen.findByText("Remove worktree directory")).toBeInTheDocument()
-    expect(screen.getByText(/not a worktree/)).toBeInTheDocument()
+    const onDeleted = vi.fn()
+    jobDismiss.mockRejectedValue(new Error("404"))
+    wrap(modal({ onDeleted }))
+    await startJob(user)
+    act(() => applyJob(succeeded()))
+    await user.click(await screen.findByRole("button", { name: /^ok$/i }))
+    expect(onDeleted).toHaveBeenCalled()
   })
 
-  it("still shows a top-level error that differs from every step's detail", async () => {
+  it("keeps showing a job that left the store", async () => {
     const user = userEvent.setup()
-    deleteWorktree.mockResolvedValue({
-      ok: false, needs_force: "", error: "delete run aborted unexpectedly",
-      steps: [{ key: "remove_directory", label: "Remove worktree directory", status: "failed", detail: "fatal: could not remove" }],
-    } as DeleteWorktreeResponse)
     wrap(modal())
-    await user.type(screen.getByLabelText(/type the worktree name/i), "foo")
-    await user.click(screen.getByRole("button", { name: /^delete$/i }))
-
-    expect(await screen.findByText(/could not remove/)).toBeInTheDocument()
-    expect(screen.getByText(/aborted unexpectedly/)).toBeInTheDocument()
+    await startJob(user)
+    act(() => applyJob(succeeded()))
+    await screen.findByRole("button", { name: /^ok$/i })
+    act(() => applyJob({ ...succeeded(), dismissed: true }))
+    expect(screen.getByText("Remove worktree directory")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /^ok$/i })).toBeInTheDocument()
   })
 
-  it("resets to a fresh confirmation form when reopened", async () => {
+  // Over plain HTTP a hidden tab gives up its stream, so a job can finish and
+  // expire with this tab hearing none of it. What is left must not be a
+  // spinner that never resolves.
+  it("says so when the job ended while the tab was away", async () => {
     const user = userEvent.setup()
-    deleteWorktree.mockResolvedValue(ok())
-    const { rerender } = wrap(modal({ opened: false }))
-    rerender(
-      <MantineProvider>
-        {modal()}
-      </MantineProvider>,
-    )
-    await user.type(await screen.findByLabelText(/type the worktree name/i), "foo")
-    await user.click(screen.getByRole("button", { name: /^delete$/i }))
+    wrap(modal())
+    await startJob(user)
+    act(() => applyJob(job()))
+    expect(await screen.findByLabelText("In progress")).toBeInTheDocument()
+
+    act(() => setJobs([]))
+    expect(await screen.findByText("This finished while this tab was away.")).toBeInTheDocument()
+    expect(screen.queryByLabelText("In progress")).not.toBeInTheDocument()
+    expect(screen.queryByText(/keeps running if you close this window/i)).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /^close$/i })).toBeInTheDocument()
+  })
+
+  it("says so when it is opened on a job it has never seen", () => {
+    wrap(modal({ jobId: "nosuchjob", path: undefined, name: undefined, branch: undefined }))
+    expect(screen.getByText("This job is no longer running.")).toBeInTheDocument()
+    expect(screen.queryByLabelText(/type the worktree name/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /^delete$/i })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /^close$/i })).toBeInTheDocument()
+  })
+
+  // A destructive dialog must never open on a previous run's results.
+  it("reopening after a finished job shows a fresh confirmation form", async () => {
+    const user = userEvent.setup()
+    const { rerender } = wrap(modal())
+    await startJob(user)
+    act(() => applyJob(succeeded()))
     await screen.findByRole("button", { name: /^ok$/i })
 
-    // Close and reopen: the previous run's results must not still be showing.
-    rerender(
-      <MantineProvider>
-        {modal({ opened: false })}
-      </MantineProvider>,
-    )
-    rerender(
-      <MantineProvider>
-        {modal()}
-      </MantineProvider>,
-    )
+    rerender(<MantineProvider>{modal({ opened: false })}</MantineProvider>)
+    rerender(<MantineProvider>{modal()}</MantineProvider>)
+    expect(await screen.findByLabelText(/type the worktree name/i)).toHaveValue("")
+    expect(screen.queryByText("Remove worktree directory")).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /^delete$/i })).toBeDisabled()
+  })
 
-    const nameInput = await screen.findByLabelText(/type the worktree name/i) as HTMLInputElement
-    expect(nameInput.value).toBe("")
-    expect(screen.getByRole("checkbox", { name: /delete the branch/i })).not.toBeChecked()
-    expect(screen.queryByRole("button", { name: /^ok$/i })).not.toBeInTheDocument()
+  it("retargeting at another worktree shows a fresh confirmation form", async () => {
+    const user = userEvent.setup()
+    const { rerender } = wrap(modal())
+    await startJob(user)
+    act(() => applyJob(succeeded()))
+    await screen.findByRole("button", { name: /^ok$/i })
+
+    rerender(<MantineProvider>{modal({ path: "/wt/bar", name: "bar" })}</MantineProvider>)
+    expect(await screen.findByLabelText(/type the worktree name/i)).toHaveValue("")
+    expect(screen.queryByText("Remove worktree directory")).not.toBeInTheDocument()
+  })
+
+  it("a failed job offers Run again", async () => {
+    const user = userEvent.setup()
+    jobRetry.mockResolvedValue(job())
+    act(() => applyJob(job({
+      state: "failed",
+      error: "delete run aborted",
+      steps: [{ key: "remove_directory", label: "Remove worktree directory", status: "failed", detail: "fatal: x" }],
+    })))
+    wrap(modal({ jobId: "j1" }))
+    expect(await screen.findByText("delete run aborted")).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: /run again/i }))
+    expect(jobRetry).toHaveBeenCalledWith("j1")
+  })
+
+  it("opens straight on an existing job", async () => {
+    act(() => applyJob(parked("remove_directory")))
+    wrap(modal({ jobId: "j1", path: undefined, name: undefined, branch: undefined }))
+    expect(await screen.findByRole("button", { name: "Force-remove the directory" })).toBeInTheDocument()
+    expect(screen.queryByLabelText(/type the worktree name/i)).not.toBeInTheDocument()
+  })
+
+  it("hides its job's toast while open", async () => {
+    let seen: ReadonlySet<string> = new Set()
+    const Probe = () => {
+      seen = useAttachedJobIds()
+      return null
+    }
+    act(() => applyJob(job()))
+    const { rerender } = wrap(<>{modal({ jobId: "j1" })}<Probe /></>)
+    await waitFor(() => expect(seen.has("j1")).toBe(true))
+
+    rerender(<MantineProvider>{modal({ jobId: "j1", opened: false })}<Probe /></MantineProvider>)
+    await waitFor(() => expect(seen.has("j1")).toBe(false))
   })
 })

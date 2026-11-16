@@ -1,31 +1,36 @@
 import {
-  Alert, Button, Checkbox, Divider, Group, Modal, Select, Stack, Text, TextInput, Timeline, Tooltip,
+  Alert, Button, Checkbox, Divider, Group, Modal, Select, Stack, Text, TextInput, Tooltip,
 } from "@mantine/core"
-import { IconCheck, IconX, IconMinus, IconPoint } from "@tabler/icons-react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useDebouncedValue } from "@mantine/hooks"
 import { useEffect, useState } from "react"
 import { useUnsavedChanges } from "../lib/unsavedChanges"
 import { useLocation } from "wouter"
 import { api } from "../api/client"
+import type { Job } from "../api/types"
 import { useCmux } from "../api/cmux"
-import type { CreateConfirm, CreateStep } from "../api/types"
-
-function StepIcon({ status }: { status: CreateStep["status"] }) {
-  if (status === "done") return <IconCheck size={12} />
-  if (status === "failed") return <IconX size={12} />
-  if (status === "skipped") return <IconMinus size={12} />
-  return <IconPoint size={12} />
-}
+import { isFinished } from "../lib/jobsStore"
+import { jobErrorToShow } from "./jobs/jobError"
+import { JOB_GONE_TEXT, JOB_UNKNOWN_TEXT } from "./jobs/jobMessages"
+import { JobStepper } from "./jobs/JobStepper"
+import { useModalJob } from "./jobs/useModalJob"
 
 /**
  * Create a worktree, taking the same inputs as `worktree add`.
  *
- * Confirmations replay: when the server returns a pending `confirm`, the whole
- * request is re-posted with the matching flag set. There is no session to
- * orphan, which is why every step tolerates having already run.
+ * The create runs as a background job on the server, which also opens the cmux
+ * workspace as its last step; this modal renders the job from the jobs store,
+ * so closing it stops nothing. A confirmation parks the job with a question
+ * that is answered in place.
  */
-export function NewWorktreeModal({ opened, onClose }: { opened: boolean; onClose: () => void }) {
+export function NewWorktreeModal({ opened, jobId: initialJobId, initialJob, onClose }: {
+  opened: boolean
+  /** Open on this existing job, skipping the form. */
+  jobId?: string
+  /** That job as the caller last saw it, until the stream says otherwise. */
+  initialJob?: Job
+  onClose: () => void
+}) {
   const qc = useQueryClient()
   const [, navigate] = useLocation()
   const cmux = useCmux()
@@ -40,11 +45,14 @@ export function NewWorktreeModal({ opened, onClose }: { opened: boolean; onClose
   const [wsName, setWsName] = useState("")
   const [wsGroup, setWsGroup] = useState<string | null>(null)
   const [wsColor, setWsColor] = useState<string | null>(null)
-  const [steps, setSteps] = useState<CreateStep[]>([])
-  const [confirm, setConfirm] = useState<CreateConfirm | null>(null)
-  const [error, setError] = useState("")
-  const [donePath, setDonePath] = useState("")
-  useUnsavedChanges(opened && (input.trim() !== "" || wsName.trim() !== "" || branchEdit !== null))
+  const [starting, setStarting] = useState(false)
+  const { jobId, job, gone, unknown, busy, error, setError, track, act, dismissFinished } =
+    useModalJob(opened, initialJobId, undefined, initialJob)
+  // Once a job exists the form is moot: the work carries on server-side.
+  useUnsavedChanges(
+    opened && jobId === undefined
+      && (input.trim() !== "" || wsName.trim() !== "" || branchEdit !== null),
+  )
   const [debouncedInput] = useDebouncedValue(input.trim(), 300)
 
   const repos = useQuery({ queryKey: ["repos"], queryFn: () => api.repos(), enabled: opened })
@@ -78,7 +86,7 @@ export function NewWorktreeModal({ opened, onClose }: { opened: boolean; onClose
   useEffect(() => {
     if (!opened) return
     setInput(""); setPull(true); setCopyDotfiles(false)
-    setSteps([]); setConfirm(null); setError(""); setDonePath("")
+    setStarting(false)
     setWsName(""); setWsGroup(null); setWsColor(null)
   }, [opened])
 
@@ -86,66 +94,97 @@ export function NewWorktreeModal({ opened, onClose }: { opened: boolean; onClose
     if (opened && repos.data?.length && !repoRoot) setRepoRoot(repos.data[0].repo_root)
   }, [opened, repos.data, repoRoot])
 
-  const create = useMutation({
-    mutationFn: (answers: { reuse_branch?: boolean; reset_to_pr?: boolean; decline_reset?: boolean }) =>
-      api.createWorktree({
+  const start = async () => {
+    if (!repoRoot) return
+    const workspaceName = cmux.data?.available ? wsName.trim() : ""
+    setStarting(true)
+    setError(null)
+    try {
+      const res = await api.createWorktree({
         input: input.trim(),
-        repo_root: repoRoot!,
+        repo_root: repoRoot,
         pull,
         copy_dotfiles: copyDotfiles,
         branch: asksBranch && branch.trim() ? branch.trim() : undefined,
-        ...answers,
-      }),
-    onSuccess: async (res) => {
-      setSteps(res.steps)
-      setConfirm(res.confirm)
-      setError(res.error ?? "")
-      if (res.confirm || !res.ok || !res.path) return
+        workspace_name: workspaceName || undefined,
+        workspace_group_ref: workspaceName ? wsGroup ?? undefined : undefined,
+        workspace_color: workspaceName ? wsColor ?? undefined : undefined,
+      })
+      track(res.job)
+      void qc.invalidateQueries({ queryKey: ["worktrees"] })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setStarting(false)
+    }
+  }
 
-      if (cmux.data?.available && wsName.trim()) {
-        // A workspace failure never invalidates the worktree that was created.
-        await api.cmuxCreate({
-          path: res.path, name: wsName.trim(), group_ref: wsGroup ?? undefined, color: wsColor ?? undefined,
-        }).catch(() => {})
-      }
-      setDonePath(res.path)
-      qc.invalidateQueries({ queryKey: ["worktrees"] })
-      qc.invalidateQueries({ queryKey: ["cmux"] })
-    },
-  })
+  const close = () => {
+    if (job && isFinished(job)) void dismissFinished()
+    onClose()
+  }
 
-  const answers = { reuse_branch: false, reset_to_pr: false }
+  // OK on a success: acknowledge, close and open the new worktree.
+  const ok = async () => {
+    const path = job?.result?.path
+    await dismissFinished()
+    void qc.invalidateQueries({ queryKey: ["worktrees"] })
+    void qc.invalidateQueries({ queryKey: ["cmux"] })
+    onClose()
+    if (job?.state === "succeeded" && path !== undefined) {
+      navigate(`/worktree/${encodeURIComponent(path)}`)
+    }
+  }
+
+  // Declining the branch reuse ends (and dismisses) the job on the server, so
+  // the modal closes. Declining the PR reset keeps the current commit and the
+  // job carries on to completion, so the modal stays to show that.
+  const decline = async () => {
+    const reuse = job?.question?.key === "reuse_branch"
+    if (!(await act((id) => api.jobAnswer(id, "no")))) return
+    if (reuse) onClose()
+  }
+
+  // A job that ended out of sight is over, whatever its last state said.
+  const question = job?.state === "needs_answer" && !gone ? job.question : null
+  const failed = !gone && (job?.state === "failed" || job?.state === "interrupted")
+  const showError = job !== undefined && !gone ? jobErrorToShow(job) : undefined
+  const running = job?.state === "running" && !gone
+  const locked = starting
+  const showForm = !job && !unknown
 
   return (
-    <Modal opened={opened} onClose={onClose} title="New worktree" centered>
+    <Modal opened={opened} onClose={close} title={job ? job.title : "New worktree"} centered>
       <Stack gap="sm">
+        {unknown && <Text size="sm">{JOB_UNKNOWN_TEXT}</Text>}
+        {showForm && (<>
         <TextInput
           label="Branch, PR, or issue"
           description="A branch name, PR number or URL, or a Jira issue URL"
           value={input}
           onChange={(e) => setInput(e.currentTarget.value)}
-          disabled={create.isPending || !!donePath}
+          disabled={locked}
         />
         {asksBranch && (
           <TextInput
             label="Branch name"
             value={branch}
             onChange={(e) => setBranchEdit(e.currentTarget.value)}
-            disabled={create.isPending || !!donePath}
+            disabled={locked}
           />
         )}
         <Select
           label="Repo"
           value={repoRoot}
           onChange={setRepoRoot}
-          disabled={create.isPending || !!donePath}
+          disabled={locked}
           data={(repos.data ?? []).map((r) => ({ value: r.repo_root, label: r.name }))}
         />
         <Checkbox
           label="git pull first"
           checked={pull}
           onChange={(e) => setPull(e.currentTarget.checked)}
-          disabled={create.isPending || !!donePath}
+          disabled={locked}
         />
         {(dotfiles.data?.length ?? 0) > 0 && (
           <Checkbox
@@ -153,7 +192,7 @@ export function NewWorktreeModal({ opened, onClose }: { opened: boolean; onClose
             description={dotfiles.data!.join(", ")}
             checked={copyDotfiles}
             onChange={(e) => setCopyDotfiles(e.currentTarget.checked)}
-            disabled={create.isPending || !!donePath}
+            disabled={locked}
           />
         )}
 
@@ -165,7 +204,7 @@ export function NewWorktreeModal({ opened, onClose }: { opened: boolean; onClose
               placeholder="leave empty to skip creating a workspace"
               value={wsName}
               onChange={(e) => setWsName(e.currentTarget.value)}
-              disabled={create.isPending || !!donePath}
+              disabled={locked}
             />
             <Select
               label="Group"
@@ -173,7 +212,7 @@ export function NewWorktreeModal({ opened, onClose }: { opened: boolean; onClose
               clearable
               value={wsGroup}
               onChange={setWsGroup}
-              disabled={create.isPending || !!donePath}
+              disabled={locked}
               data={(cmuxMeta.data?.groups ?? []).map((g) => ({ value: g.ref, label: g.name }))}
             />
             <Stack gap={4}>
@@ -184,7 +223,7 @@ export function NewWorktreeModal({ opened, onClose }: { opened: boolean; onClose
                       type="button"
                       aria-label={c.name}
                       onClick={() => setWsColor(wsColor === c.name ? null : c.name)}
-                      disabled={create.isPending || !!donePath}
+                      disabled={locked}
                       style={{
                         width: 20,
                         height: 20,
@@ -202,94 +241,63 @@ export function NewWorktreeModal({ opened, onClose }: { opened: boolean; onClose
             </Stack>
           </>
         )}
+        </>)}
 
-        {steps.length > 0 && (
-          // `pending` is overloaded: it means both "this step is running right
-          // now" and "this step was never reached" (finish() pads unreached
-          // steps as pending too). The first pending step in the list is the
-          // one currently in flight; every pending step after it is genuinely
-          // unreached. Render only the first one as in-progress.
-          <Timeline active={steps.filter((s) => s.status !== "pending").length - 1} bulletSize={20}>
-            {steps.map((s, i) => {
-              const firstPendingIdx = steps.findIndex((x) => x.status === "pending")
-              const inFlight = s.status === "pending" && i === firstPendingIdx
-              return (
-                <Timeline.Item
-                  key={s.key}
-                  bullet={<StepIcon status={s.status} />}
-                  title={inFlight ? `${s.label} (in progress)` : s.label}
-                >
-                  {s.detail && <Text size="xs" c="dimmed">{s.detail}</Text>}
-                </Timeline.Item>
-              )
-            })}
-          </Timeline>
-        )}
+        {job && <JobStepper steps={job.steps} quiet={gone} />}
 
-        {confirm && (
-          <Alert color="yellow" title={confirm.key === "reuse_branch" ? "Branch already exists" : "Local differs from the PR"}>
-            <Stack gap="xs">
-              <Text size="sm">
-                {confirm.key === "reuse_branch"
-                  ? `Branch ${confirm.branch} is already checked out elsewhere.`
-                  : `Local (${confirm.local_head?.slice(0, 8)}) differs from the PR's latest (${confirm.remote_head?.slice(0, 8)}).`}
-              </Text>
-              <Group justify="flex-end">
-                {/* Declining the RESET is not a cancel. By this point git has
-                    already created the worktree, so closing the modal would
-                    strand it — on disk, unregistered, holding no ports. Re-post
-                    with decline_reset so the runner skips the reset and
-                    finishes. Declining the BRANCH REUSE is a genuine cancel:
-                    nothing has been created yet. */}
-                {confirm.key === "reset_to_pr" ? (
-                  <Button
-                    size="xs"
-                    variant="subtle"
-                    onClick={() => create.mutate({ ...answers, reuse_branch: true, decline_reset: true })}
-                  >
-                    Keep current commit
-                  </Button>
-                ) : (
-                  <Button size="xs" variant="subtle" onClick={() => { setConfirm(null); onClose() }}>
-                    Cancel
-                  </Button>
-                )}
-                <Button
-                  size="xs"
-                  onClick={() =>
-                    create.mutate(
-                      confirm.key === "reuse_branch"
-                        ? { ...answers, reuse_branch: true }
-                        : { ...answers, reuse_branch: true, reset_to_pr: true },
-                    )
-                  }
-                >
-                  {confirm.key === "reuse_branch" ? "Reuse branch" : "Reset to PR"}
-                </Button>
-              </Group>
-            </Stack>
+        {question && (
+          <Alert color="yellow" title={question.key === "reuse_branch" ? "Branch already exists" : "Local differs from the PR"}>
+            <Text size="sm">
+              {question.key === "reuse_branch"
+                ? `Branch ${question.branch} is already checked out elsewhere.`
+                : `Local (${question.local_head?.slice(0, 8)}) differs from the PR's latest (${question.remote_head?.slice(0, 8)}).`}
+            </Text>
           </Alert>
         )}
 
         {error && <Alert color="red">{error}</Alert>}
+        {showError && <Alert color="red">{showError}</Alert>}
+
+        {gone && <Text size="xs" c="dimmed">{JOB_GONE_TEXT}</Text>}
+
+        {running && (
+          <Text size="xs" c="dimmed">This keeps running if you close this window.</Text>
+        )}
 
         <Group justify="flex-end">
-          {donePath ? (
-            <Button onClick={() => { onClose(); navigate(`/worktree/${encodeURIComponent(donePath)}`) }}>
-              OK
-            </Button>
-          ) : (
+          {showForm && (
             <>
               <Button variant="subtle" onClick={onClose}>Cancel</Button>
               <Button
-                onClick={() => create.mutate(answers)}
-                loading={create.isPending}
-                disabled={!input.trim() || !repoRoot || !!confirm}
+                onClick={() => void start()}
+                loading={starting}
+                disabled={!input.trim() || !repoRoot}
               >
                 Create
               </Button>
             </>
           )}
+          {question && (
+            <>
+              <Button size="xs" variant="subtle" onClick={() => void decline()} disabled={busy}>
+                {question.key === "reset_to_pr" ? "Keep current commit" : "Cancel"}
+              </Button>
+              <Button size="xs" loading={busy} onClick={() => void act((id) => api.jobAnswer(id, "yes"))}>
+                {question.key === "reuse_branch" ? "Reuse branch" : "Reset to PR"}
+              </Button>
+            </>
+          )}
+          {failed && (
+            <>
+              <Button variant="default" loading={busy} onClick={() => void act((id) => api.jobRetry(id))}>
+                Run again
+              </Button>
+              <Button onClick={close}>Close</Button>
+            </>
+          )}
+          {job?.state === "succeeded" && !gone && <Button onClick={() => void ok()}>OK</Button>}
+          {running && <Button variant="default" onClick={close}>Close</Button>}
+          {(gone || unknown) && <Button onClick={close}>Close</Button>}
         </Group>
       </Stack>
     </Modal>

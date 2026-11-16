@@ -1,4 +1,4 @@
-import type { DiffBase, DiffCommits, DiffFiles, DiffPatch, DiffRange, WorktreeGit, AllResourceDTO, CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, CreateWorktreeResponse, CredResult, DefaultBranchResponse, CredService, DeleteWorktreeResponse, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, RemovedResource, EventReadChange, ResourceReadChange, Priority, Task, TaskState, SaveWorktreeNotesRequest, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, EventTextChange, UpdateStatus, WatcherHealth, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherAuthSettings, WatcherConfigSettings, WorktreeInfo, WorktreeNotes, WorktreeSettings, WorktreeSummary, TaskActivityFilter, TaskDetail, TaskEventSnapshot, TaskLinkTarget, TimelineEvent, TaskScope, TaskUnread, TaskBlockerTarget, TaskDeleteResult, NewReviewComment, ReviewComment, ReviewCommentItem, PRCommentsSummary, PRThreads, PRWriteTarget, PRWriteCheck, PRWriteMode, PRReviewDialog, PRReviewEvent, SubmitResult } from "./types"
+import type { DiffBase, DiffCommits, DiffFiles, DiffPatch, DiffRange, WorktreeGit, AllResourceDTO, CmuxActionResult, CmuxBrowserTabsResponse, CmuxFocusMsg, CmuxGroupsResponse, CmuxMove, CmuxPeek, CmuxResponse, CmuxTabRef, CmuxTreeResponse, Job, StartJobResponse, CredResult, DefaultBranchResponse, CredService, LinkedResourcesDTO, LinkedTreeNode, NotifyMode, PollLogResponse, Repo, ResourceDTO, RemovedResource, EventReadChange, ResourceReadChange, Priority, Task, TaskState, SaveWorktreeNotesRequest, SaveWorktreeNotesResponse, SessionInfo, Settings, TimelineResponse, EventTextChange, UpdateStatus, WatcherHealth, WatchersResponse, WatchedResourceStatus, WatcherLogQuery, WatcherAuthSettings, WatcherConfigSettings, WorktreeInfo, WorktreeNotes, WorktreeSettings, WorktreeSummary, TaskActivityFilter, TaskDetail, TaskEventSnapshot, TaskLinkTarget, TimelineEvent, TaskScope, TaskUnread, TaskBlockerTarget, TaskDeleteResult, NewReviewComment, ReviewComment, ReviewCommentItem, PRCommentsSummary, PRThreads, PRWriteTarget, PRWriteCheck, PRWriteMode, PRReviewDialog, PRReviewEvent, SubmitResult } from "./types"
 
 export class HttpError extends Error {
   constructor(message: string, readonly status: number, readonly body?: unknown) {
@@ -367,10 +367,8 @@ export const api = {
   deleteWorktree: (args: {
     path: string
     delete_branch?: boolean
-    force_directory?: boolean
-    force_branch?: boolean
   }) =>
-    fetchJSON<DeleteWorktreeResponse>("/api/worktrees/delete", {
+    fetchJSON<StartJobResponse>("/api/worktrees/delete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(args),
@@ -478,15 +476,14 @@ export const api = {
     pull: boolean
     copy_dotfiles: boolean
     branch?: string
-    reuse_branch?: boolean
-    reset_to_pr?: boolean
-    decline_reset?: boolean
-  }) =>
-    fetchJSON<CreateWorktreeResponse>("/api/worktrees/create", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(args),
-    }),
+    workspace_name?: string
+    workspace_group_ref?: string
+    workspace_color?: string
+  }) => postJSON<StartJobResponse>("/api/worktrees/create", args),
+  jobAnswer: (id: string, answer: "yes" | "no") => postJSON<Job>("/api/jobs/answer", { id, answer }),
+  jobRetry: (id: string) => postJSON<Job>("/api/jobs/retry", { id }),
+  /** Resolves on the server's 204. */
+  jobDismiss: (id: string) => postJSON<void>("/api/jobs/dismiss", { id }),
   /**
    * Marks one event read without moving its resource's cursor. `ts` is the row
    * as shown: 409 when it has been rewritten since. `changed` is false when it

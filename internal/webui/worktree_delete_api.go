@@ -3,8 +3,8 @@ package webui
 import (
 	"encoding/json"
 	"net/http"
+	"path/filepath"
 
-	"github.com/mturley/worktree/internal/config"
 	"github.com/mturley/worktree/internal/worktreedel"
 )
 
@@ -15,20 +15,12 @@ type deleteWorktreeRequest struct {
 	ForceBranch    bool   `json:"force_branch"`
 }
 
-type deleteWorktreeResponse struct {
-	OK         bool                `json:"ok"`
-	NeedsForce worktreedel.StepKey `json:"needs_force"`
-	Steps      []worktreedel.Step  `json:"steps"`
-	Error      string              `json:"error,omitempty"`
-}
-
 // handleDeleteWorktree: POST /api/worktrees/delete
 //
-// needs_force comes back as 200 with a marker, never an error status: "git
-// wants confirmation" and "the delete broke" are the one distinction the whole
-// flow rests on, and an error status would collapse them. A hard failure is
-// also 200 with ok:false, so the modal can render the partial step list rather
-// than replacing it with an error page.
+// The delete runs as a background job: this route only validates the request
+// and starts one, so a tab closed mid-delete cannot leave a worktree half
+// removed with nobody watching. Progress, the force questions and the final
+// outcome all arrive through /api/jobs and the `job` stream events.
 func (s *Server) handleDeleteWorktree(w http.ResponseWriter, r *http.Request) {
 	var req deleteWorktreeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -39,38 +31,16 @@ func (s *Server) handleDeleteWorktree(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing path")
 		return
 	}
-	cfg, err := config.Load()
-	if err != nil {
-		writeJSON(w, http.StatusOK, deleteWorktreeResponse{
-			OK:    false,
-			Steps: []worktreedel.Step{},
-			Error: err.Error(),
-		})
-		return
-	}
+	// The path is the target: a second request for the same worktree attaches
+	// to the delete already running.
+	s.startJob(w, jobKindDelete, "Delete worktree "+filepath.Base(req.Path), req.Path, req)
+}
 
-	res := worktreedel.Run(s.DB, cfg, worktreedel.Options{
+func (req deleteWorktreeRequest) options() worktreedel.Options {
+	return worktreedel.Options{
 		Path:           req.Path,
 		DeleteBranch:   req.DeleteBranch,
 		ForceDirectory: req.ForceDirectory,
 		ForceBranch:    req.ForceBranch,
-	}, nil)
-
-	anyFailed := false
-	for _, s := range res.Steps {
-		if s.Status == worktreedel.StatusFailed {
-			anyFailed = true
-			break
-		}
 	}
-
-	out := deleteWorktreeResponse{
-		OK:         res.Err == nil && res.NeedsForce == "" && !anyFailed,
-		NeedsForce: res.NeedsForce,
-		Steps:      res.Steps,
-	}
-	if res.Err != nil {
-		out.Error = res.Err.Error()
-	}
-	writeJSON(w, http.StatusOK, out)
 }

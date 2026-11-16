@@ -90,6 +90,34 @@ func OpenRead() (*sql.DB, error) {
 // this binary's is ErrSchemaBehind. A newer schema opens, because every schema
 // change is additive (the same reasoning as watcherdb.Migrate).
 func OpenReadAt(path string) (*sql.DB, error) {
+	conn, err := OpenReadAnyVersionAt(path)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkSchemaCurrent(conn); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return conn, nil
+}
+
+// OpenReadAnyVersion opens the worktree DB at the standard path for reading
+// only, whatever schema it was last migrated to. See OpenReadAnyVersionAt.
+func OpenReadAnyVersion() (*sql.DB, error) {
+	path, err := Path()
+	if err != nil {
+		return nil, fmt.Errorf("resolving worktree db path: %w", err)
+	}
+	return OpenReadAnyVersionAt(path)
+}
+
+// OpenReadAnyVersionAt is OpenReadAt without the schema check: a missing file
+// is still ErrNoDatabase, but a file last migrated by an older binary opens
+// instead of being refused. It is for the few readers that tolerate an older
+// schema themselves — a table that may not be there yet, a column that may be
+// missing — and would rather read what is in the file than nothing at all.
+// Everything else uses OpenReadAt, which refuses what it cannot fully read.
+func OpenReadAnyVersionAt(path string) (*sql.DB, error) {
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
 			return nil, ErrNoDatabase
@@ -100,10 +128,6 @@ func OpenReadAt(path string) (*sql.DB, error) {
 	conn, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("opening db: %w", err)
-	}
-	if err := checkSchemaCurrent(conn); err != nil {
-		conn.Close()
-		return nil, err
 	}
 	return conn, nil
 }

@@ -7,10 +7,16 @@ Go CLI for managing git worktrees. See `docs/design-proposal.md` for architectur
 ```bash
 make build     # builds the ui/ frontend then the Go binary (bin/worktree, embeds ui/dist)
 make build-web # builds only the ui/ frontend into ui/dist
-make test      # runs go test ./...
+make test      # runs go test ./..., scripts/stop-running_test.sh, then the ui/ tests
 make install   # installs to /usr/local/bin + runs setup
                # Use NONINTERACTIVE=1 make install when running it yourself:
                # the setup step prompts for confirmation and otherwise cancels.
+               # It builds first, then asks the new binary (`worktree jobs --running`)
+               # whether a server has a background job in flight. If so it prompts
+               # [A]bort/[R]etry/[F]orce (scripts/stop-running.sh); NONINTERACTIVE=1
+               # aborts instead of asking. A checker that cannot run counts as busy,
+               # and so does a server still alive after its SIGTERM: SIGKILL is only
+               # ever sent because somebody chose Force.
 make dev       # runs the Go API + Vite dev server concurrently (needs mprocs, else prints manual instructions)
 make macapp     # builds the macOS menu bar app into bin/ (go run ./internal/macapp/devbuild; -url/-out flags)
 make clean     # removes bin/, ui/dist contents (keeps ui/dist/.gitkeep), ui/node_modules
@@ -69,7 +75,7 @@ minutes serially; it now runs most tests in parallel.
 - `cmd/` — cobra commands (one file per subcommand)
 - `internal/` — packages:
   - `config` — YAML config + env var overrides
-  - `db` — SQLite DB lifecycle + schema migrations (Phase 1). Read commands use `OpenRead` (`mode=ro`, never creates or migrates), never `Open`, which migrates and therefore writes. A change to `migrate` must bump `schemaVersion` (recorded in `PRAGMA user_version`); `TestSchemaVersionCoversSchema` fails until it does.
+  - `db` — SQLite DB lifecycle + schema migrations (Phase 1). Read commands use `OpenRead` (`mode=ro`, never creates or migrates), never `Open`, which migrates and therefore writes. `OpenReadAnyVersion` is the same handle without the schema check, for the few readers that tolerate an older schema themselves (`worktree jobs`, which must not report "no jobs" merely because a migration is pending). A change to `migrate` must bump `schemaVersion` (recorded in `PRAGMA user_version`); `TestSchemaVersionCoversSchema` fails until it does.
   - `registry` — worktree registry (CRUD ops on `worktrees` table)
   - `discovery` — only `IsInsideWorktree` now; worktree discovery moved to DB via `registry.List`
   - `gitutil` — git operations, including the Code tab's read side: main upstream / tracking branch / merge base and ahead-behind (the web layer's `mergeBaseRef` swaps main upstream for the worktree PR's base branch on the remote matching the PR's base repo), `FirstParentCommits` + `ResolveRange` (a run including the list's oldest commit takes its old side from `merge-base(run's newest end, base-ref)`), `SnapshotWorkingTree` (working tree as a tree object via a scratch `GIT_INDEX_FILE`, never touching the real index), `ComputeFingerprint`, and numstat/patch/file contents between revs (`DiffFiles`, `DiffPatch`, `ShowFile`)
@@ -79,6 +85,21 @@ minutes serially; it now runs most tests in parallel.
     with the watcher's GitHub token (`worktreenew/prfetch.go`, the library's
     `FetchPRSummaries`), refused while the GitHub watcher is off.
   - `jira` — Jira REST API client
+  - `jobs` — the web UI's background jobs (worktree create and delete): the
+    `Job` model and states, the `jobs` table store, and `Manager`, which runs
+    each job in its own goroutine, persists every change, and fans it out.
+    The manager is per-`Server` (`Server.jobs()` builds it lazily), at most one
+    unfinished job exists per (kind, target), `Subscribe` returns the visible
+    jobs and the change channel under one lock so nothing falls between them,
+    and `Recover` marks a dead server's `running` rows `interrupted` at start.
+    An outcome's save is retried, and a `running` row with this process's pid
+    and no goroutine behind it is healed to `interrupted` wherever it is met,
+    so a job can never be stranded with nothing able to dismiss or retry it.
+    A job kind is one `jobs.Kind` (`Plan`/`Run`/`Answer`) in
+    `internal/webui/jobs_kinds.go`, registered in `Server.jobs()`, plus a start
+    route calling `startJob` and some frontend wiring; the architecture doc's
+    "Adding a kind" lists all of it. Never writes anything but its own table. See
+    `docs/web-ui-architecture.md` "Background jobs".
   - `linked` — assembles the detail pane's "Linked Resources" tab (PR
     description links, Jira Git PR field / description / hierarchy / issue
     links, Slack thread links) from watcher-library sources behind
@@ -167,7 +188,7 @@ minutes serially; it now runs most tests in parallel.
     serialised, so the CA installed on a phone can sign nothing else.
     Changing addresses or renewing therefore means reinstalling the CA on
     the phone.
-  - `webui` — HTTP server + API for `worktree ui` (worktree list, timeline, resources, SSE stream, poll loop); also serves the Slack thread view's routes (`/api/thread*`, `/api/slack-*`) from the same binary/port, including the composer autocomplete endpoint (`GET /api/slack-autocomplete`). Every `/api/` request except `POST /api/login` requires a session (`auth.go`), behind a Host allowlist (`hostguard.go`) and the request-forgery guard (`middleware.go`); see `docs/web-ui-architecture.md` "Authentication and remote access". It also serves the Watcher logs modal's read-only `/api/watchers/resources` and `/api/watchers/log` (see `docs/web-ui-architecture.md` "Watcher log"; requires watcher >= v0.13.0). It serves the Code tab's `GET /api/worktree-git` (status, fingerprints, fetch state; it sits beside `/api/worktree-info`, which keeps its `git` field) and `GET /api/worktree-diff/{commits,files,patch,file}` (`/file` only serves revs `/patch` handed out); see `docs/web-ui-architecture.md` "Code tab and diff view". It also serves the review comments routes (`/api/review-comments*`: list, create, update, delete, clear; the server captures anchors and positions come from `review_comments_resolve.go`); see "Review comments" in the same doc. It also serves `/api/pr-comments*` (summary, `threads`, `locate`; read-only PR review threads, gated on the GitHub watcher toggle); see "PR comments" there. It also serves `/api/pr-write/*` (check, comment, reply, review, submit: the only writes to GitHub, always from an explicit click; see "Writing to the PR" there). Every GitHub call in `internal/webui` goes through the `ghLib` seam (`gh_lib.go`); `TestMain` swaps it for erroring functions and points `HOME` at a temp dir, so tests can never reach GitHub. The CLI's read commands call the same methods the handlers do, on a `Server` built by `cmd/headless.go` (DB and watcher toggles only; it never listens): `Timeline`, `WorktreeSummaries`, `WorktreeResources`, `AllResources`, `AppUnread`/`UnreadBy`, `AttentionInput`, `ReviewComments`, `PRThreads`, `Linked`, `ScanListeners`. A read command writes nothing and contacts no service, except `pr-threads` and `linked`, which respect the watcher toggles. New read logic goes in a method both the handler and the CLI call, never copied into `cmd/`. See `docs/web-ui-architecture.md` "Timeline" and "Unread".
+  - `webui` — HTTP server + API for `worktree ui` (worktree list, timeline, resources, SSE stream, poll loop); also serves the Slack thread view's routes (`/api/thread*`, `/api/slack-*`) from the same binary/port, including the composer autocomplete endpoint (`GET /api/slack-autocomplete`). Every `/api/` request except `POST /api/login` requires a session (`auth.go`), behind a Host allowlist (`hostguard.go`) and the request-forgery guard (`middleware.go`); see `docs/web-ui-architecture.md` "Authentication and remote access". It also serves the Watcher logs modal's read-only `/api/watchers/resources` and `/api/watchers/log` (see `docs/web-ui-architecture.md` "Watcher log"; requires watcher >= v0.13.0). It serves the Code tab's `GET /api/worktree-git` (status, fingerprints, fetch state; it sits beside `/api/worktree-info`, which keeps its `git` field) and `GET /api/worktree-diff/{commits,files,patch,file}` (`/file` only serves revs `/patch` handed out); see `docs/web-ui-architecture.md` "Code tab and diff view". It also serves the review comments routes (`/api/review-comments*`: list, create, update, delete, clear; the server captures anchors and positions come from `review_comments_resolve.go`); see "Review comments" in the same doc. It also serves `/api/pr-comments*` (summary, `threads`, `locate`; read-only PR review threads, gated on the GitHub watcher toggle); see "PR comments" there. It also serves `/api/pr-write/*` (check, comment, reply, review, submit: the only writes to GitHub, always from an explicit click; see "Writing to the PR" there). It also serves the background jobs routes (`GET /api/jobs`, `POST /api/jobs/{answer,retry,dismiss}`; `POST /api/worktrees/create` and `/delete` only validate and start a job) and streams them on `/api/stream` as one `jobs` snapshot per connect plus a `job` event per change (`jobs_api.go`, `jobs_kinds.go`, `stream.go`); `GuardStop` (`stop.go`) makes the server refuse SIGTERM/SIGINT while a job runs unless a second signal arrives within 5s, and ends the process through an injected `die(sig)` that re-sends the signal to itself (`dieBySignal` in `cmd/ui.go`, so no test here can send a real one) rather than choosing an exit status; see "Background jobs" there. Every GitHub call in `internal/webui` goes through the `ghLib` seam (`gh_lib.go`); `TestMain` swaps it for erroring functions and points `HOME` at a temp dir, so tests can never reach GitHub. The CLI's read commands call the same methods the handlers do, on a `Server` built by `cmd/headless.go` (DB and watcher toggles only; it never listens): `Timeline`, `WorktreeSummaries`, `WorktreeResources`, `AllResources`, `AppUnread`/`UnreadBy`, `AttentionInput`, `ReviewComments`, `PRThreads`, `Linked`, `ScanListeners`. `worktree jobs [--running] [--json]` is a read command too, but reads `internal/jobs` straight from the DB. A read command writes nothing and contacts no service, except `pr-threads` and `linked`, which respect the watcher toggles. New read logic goes in a method both the handler and the CLI call, never copied into `cmd/`. See `docs/web-ui-architecture.md` "Timeline" and "Unread".
   - `slackpoller` — polls Slack threads for changes and fans out updates to subscribers (live-tab SSE, in-memory, only while a thread is open in the UI); folded in from slack-mini's `internal/watcher` package (renamed to avoid collision); consumes `github.com/mturley/watcher/slack`'s `Client`/`Thread` types rather than a local `slackapi` package — there is no `internal/slackapi` anymore, it moved to the watcher library (see "Watcher library" below)
   - `slackcreds` — loads Slack token/cookie/workspace domain from worktree's `watcher-auth.yaml` and builds a `github.com/mturley/watcher/slack.Client`
   - `slackurl` — parses Slack thread URLs into `(channel, threadTS)` and builds the resource ID used to store them as worktree resources

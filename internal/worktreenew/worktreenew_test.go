@@ -287,3 +287,22 @@ func TestRunWithoutJiraHostStoresNoHostlessURL(t *testing.T) {
 		t.Fatalf("PROJ-9 tracked=%v url=%q, want tracked with no url", ok, u)
 	}
 }
+
+func TestPlannedMatchesOrder(t *testing.T) {
+	want := []StepKey{StepPull, StepCreateWorktree, StepAllocatePorts, StepRegister, StepKubeconfig, StepResources, StepDotfiles}
+	got := Planned()
+	if len(got) != len(want) {
+		t.Fatalf("got %d steps, want %d: %+v", len(got), len(want), got)
+	}
+	for i, s := range got {
+		if s.Key != want[i] {
+			t.Errorf("step %d key = %q, want %q", i, s.Key, want[i])
+		}
+		if s.Label == "" {
+			t.Errorf("step %q has an empty label", s.Key)
+		}
+		if s.Status != StatusPending {
+			t.Errorf("step %q status = %q, want pending", s.Key, s.Status)
+		}
+	}
+}

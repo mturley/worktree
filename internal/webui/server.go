@@ -20,6 +20,7 @@ import (
 	"github.com/mturley/watcher/slack"
 	"github.com/mturley/worktree/internal/cmux"
 	"github.com/mturley/worktree/internal/gitfetch"
+	"github.com/mturley/worktree/internal/jobs"
 	"github.com/mturley/worktree/internal/linked"
 	"github.com/mturley/worktree/internal/linkmeta"
 	"github.com/mturley/worktree/internal/listeners"
@@ -151,6 +152,12 @@ type Server struct {
 	// listenersScanTimeout bounds one scan (0 → 30s).
 	listenersScanTimeout time.Duration
 	portScanDisabled     atomic.Bool
+
+	// jobsMgr runs the background jobs (worktree create and delete) and fans
+	// each change out to the event streams; see jobs_api.go. Lazily built by
+	// jobs(), since Server is a bare struct literal everywhere.
+	jobsOnce sync.Once
+	jobsMgr  *jobs.Manager
 
 	// tabs is the browser notification registry; see tabs.go. Lazily built
 	// by tabRegistry(), since Server is a bare struct literal everywhere.
@@ -341,6 +348,10 @@ func (s *Server) routes() []route {
 		{"POST /api/worktree-resources/primary", s.handleSetResourcePrimary},
 		{"POST /api/worktree-resources/order", s.handleSetResourceOrder},
 		{"GET /api/stream", s.handleStream},
+		{"GET /api/jobs", s.handleJobs},
+		{"POST /api/jobs/answer", s.handleJobAnswer},
+		{"POST /api/jobs/retry", s.handleJobRetry},
+		{"POST /api/jobs/dismiss", s.handleJobDismiss},
 		{"POST /api/tabs/presence", s.handleTabPresence},
 		{"POST /api/tabs/ack", s.handleTabAck},
 

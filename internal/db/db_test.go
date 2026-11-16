@@ -472,7 +472,7 @@ func TestOpenAtNeverLowersSchemaVersion(t *testing.T) {
 //
 // If this fails: you changed migrate. Bump schemaVersion, then paste the new
 // fingerprint here.
-const schemaFingerprint = "9637cc9b9e5e00f9e69c5620a3b043943b51bc08058fdb53434ddc2f18ac4d28"
+const schemaFingerprint = "328f2779b4c85e3703eb19dd331c98d085b3883770dabcb7c0c50acfc6e8bf1e"
 
 func TestSchemaVersionCoversSchema(t *testing.T) {
 	conn, err := OpenAt(filepath.Join(t.TempDir(), "w.db"))
@@ -539,6 +539,45 @@ func TestOpenReadAtBehindWorktreeSchema(t *testing.T) {
 	}
 	if v != schemaVersion-1 {
 		t.Errorf("user_version = %d: OpenReadAt migrated", v)
+	}
+}
+
+func TestOpenReadAnyVersionAtOpensAnOlderSchema(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "w.db")
+	conn, err := OpenAt(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion-1)); err != nil {
+		t.Fatal(err)
+	}
+	conn.Close()
+
+	ro, err := OpenReadAnyVersionAt(p)
+	if err != nil {
+		t.Fatalf("OpenReadAnyVersionAt on an older schema: %v", err)
+	}
+	defer ro.Close()
+	var v int
+	if err := ro.QueryRow(`PRAGMA user_version`).Scan(&v); err != nil {
+		t.Fatal(err)
+	}
+	if v != schemaVersion-1 {
+		t.Errorf("user_version = %d: it migrated", v)
+	}
+	// Read-only, like every other read handle.
+	if _, err := ro.Exec(`PRAGMA user_version = 1`); err == nil {
+		t.Error("write through OpenReadAnyVersionAt succeeded")
+	}
+}
+
+func TestOpenReadAnyVersionAtMissingFile(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "absent")
+	if _, err := OpenReadAnyVersionAt(filepath.Join(dir, "w.db")); !errors.Is(err, ErrNoDatabase) {
+		t.Fatalf("err = %v, want ErrNoDatabase", err)
+	}
+	if _, statErr := os.Stat(dir); !os.IsNotExist(statErr) {
+		t.Errorf("OpenReadAnyVersionAt created the directory (stat err %v)", statErr)
 	}
 }
 

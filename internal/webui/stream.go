@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/mturley/worktree/internal/jobs"
 	"github.com/mturley/worktree/internal/notes"
 )
 
@@ -50,6 +51,11 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		ports = ch
 	}
 
+	// Background jobs. The subscription is taken before the snapshot goes
+	// out, under the manager's lock, so no change can fall between the two.
+	jobSnapshot, jobChanges, unsubscribeJobs := s.jobs().Subscribe()
+	defer unsubscribeJobs()
+
 	var last string
 	s.DB.QueryRow(`SELECT COALESCE(MAX(ts),'') FROM watcher_events`).Scan(&last)
 	lastTasks := s.seedTasksVersion()
@@ -57,6 +63,13 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 
 	// One now, so the sections' "checked … ago" needn't wait a tick.
 	s.writeHeartbeat(w, ports != nil)
+	// Then every visible job, so a tab that was asleep while one ran shows
+	// it the moment it reconnects, without waiting for a change.
+	if jobSnapshot == nil {
+		jobSnapshot = []jobs.Job{}
+	}
+	jobsJSON, _ := json.Marshal(jobsResponse{Jobs: jobSnapshot})
+	fmt.Fprintf(w, "event: jobs\ndata: %s\n\n", jobsJSON)
 	flusher.Flush()
 
 	ticker := time.NewTicker(5 * time.Second)
@@ -72,6 +85,17 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		case msg := <-focus:
 			b, _ := json.Marshal(msg)
 			fmt.Fprintf(w, "event: cmux_focus\ndata: %s\n\n", b)
+			flusher.Flush()
+		case job, ok := <-jobChanges:
+			if !ok {
+				// This stream fell too far behind the job changes and the
+				// manager dropped it. Returning closes the stream, and the
+				// tab reconnects onto a fresh snapshot — the only way back
+				// to a state it can trust.
+				return
+			}
+			b, _ := json.Marshal(job)
+			fmt.Fprintf(w, "event: job\ndata: %s\n\n", b)
 			flusher.Flush()
 		case b := <-ports:
 			fmt.Fprintf(w, "event: listeners_changed\ndata: %s\n\n", b)

@@ -1,12 +1,15 @@
 import { useEffect } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { api } from "../api/client"
-import type { CmuxFocusMsg, ListenersSnapshot, NotificationMsg } from "../api/types"
+import type {
+  CmuxFocusMsg, Job, JobState, JobStep, JobStepStatus, ListenersSnapshot, NotificationMsg,
+} from "../api/types"
 import { isMiniRoute } from "../lib/miniMode"
 import { TAB_ID } from "../lib/tabId"
 import { emitCmuxFocus } from "../lib/cmuxFocusBus"
 import { setListeners } from "../lib/listenersStore"
 import { setChecks } from "../lib/checksStore"
+import { applyJob, isFinished, setJobs } from "../lib/jobsStore"
 import { openNotificationTarget, showBrowserNotification } from "../lib/browserNotify"
 import { pageHidden, streamsPauseWhenHidden } from "../lib/backgroundStreams"
 import { TASK_ACTIVITY_STALE_MS } from "./useTaskDetail"
@@ -34,6 +37,40 @@ function isListenersSnapshot(v: unknown): v is ListenersSnapshot {
   if (!isPlainObject(v)) return false
   const o = v as Record<string, unknown>
   return typeof o.enabled === "boolean" && isPlainObject(o.ports) && isPlainObject(o.ranges)
+}
+
+const JOB_STATES: readonly JobState[] = ["running", "needs_answer", "succeeded", "failed", "interrupted"]
+const STEP_STATUSES: readonly JobStepStatus[] =
+  ["pending", "running", "done", "skipped", "failed", "needs_force"]
+
+function isJobStep(v: unknown): v is JobStep {
+  if (!isPlainObject(v)) return false
+  const o = v as Record<string, unknown>
+  return (
+    typeof o.key === "string" &&
+    typeof o.label === "string" &&
+    typeof o.status === "string" &&
+    (STEP_STATUSES as readonly string[]).includes(o.status)
+  )
+}
+
+// A kind this build has no name for is still a valid job: its toast renders
+// it, and the modal host simply opens nothing for it. Rejecting it would mean
+// a newer server's jobs vanishing from an older tab altogether.
+function isJob(v: unknown): v is Job {
+  if (!isPlainObject(v)) return false
+  const o = v as Record<string, unknown>
+  return (
+    typeof o.id === "string" &&
+    typeof o.kind === "string" &&
+    typeof o.title === "string" &&
+    typeof o.target === "string" &&
+    typeof o.state === "string" &&
+    (JOB_STATES as readonly string[]).includes(o.state) &&
+    Array.isArray(o.steps) &&
+    o.steps.every(isJobStep) &&
+    typeof o.created_at === "string"
+  )
 }
 
 export function useSSE() {
@@ -160,6 +197,43 @@ export function useSSE() {
           return
         }
         if (isListenersSnapshot(snap)) setListeners(snap)
+      })
+      // Everything the server holds, once per (re)connect: replaces what
+      // this tab has. One job it cannot read is dropped on its own — losing
+      // the whole snapshot over it would hide every other job too.
+      es.addEventListener("jobs", (e) => {
+        let msg: unknown
+        try {
+          msg = JSON.parse((e as MessageEvent).data)
+        } catch {
+          return
+        }
+        if (!isPlainObject(msg)) return
+        const list = (msg as Record<string, unknown>).jobs
+        if (!Array.isArray(list)) return
+        setJobs(list.filter(isJob))
+      })
+      es.addEventListener("job", (e) => {
+        let msg: unknown
+        try {
+          msg = JSON.parse((e as MessageEvent).data)
+        } catch {
+          return
+        }
+        if (!isJob(msg)) return
+        applyJob(msg)
+        if (isFinished(msg)) {
+          // A finished create or delete has changed the worktree list and,
+          // through its cmux workspace, what cmux shows. A delete also takes
+          // the worktree's resources, its timeline entries and its tasks'
+          // link to it with it — all of which some other tab, or a toast on
+          // this one, may be looking at right now.
+          qc.invalidateQueries({ queryKey: ["worktrees"] })
+          qc.invalidateQueries({ queryKey: ["cmux"] })
+          qc.invalidateQueries({ queryKey: ["tasks"], predicate: (q) => q.queryKey[1] !== "activity" })
+          qc.invalidateQueries({ queryKey: ["resources"] })
+          qc.invalidateQueries({ queryKey: ["timeline"] })
+        }
       })
       es.onerror = () => {
         es?.close()

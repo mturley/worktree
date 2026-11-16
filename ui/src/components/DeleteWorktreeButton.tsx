@@ -1,15 +1,22 @@
 import { useState } from "react"
 import { ActionIcon, Tooltip } from "@mantine/core"
 import { IconTrash } from "@tabler/icons-react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { useLocation } from "wouter"
+import { useQuery } from "@tanstack/react-query"
 import { api } from "../api/client"
 import type { WorktreeSummary } from "../api/types"
+import { openJobModal } from "../lib/jobsStore"
 import { DeleteWorktreeModal } from "./DeleteWorktreeModal"
 
 /**
  * The worktree details card's delete control: a trash icon that opens
- * DeleteWorktreeModal, then returns to the list once the worktree is gone.
+ * DeleteWorktreeModal for the confirmation, and hands the started job to
+ * JobModalHost.
+ *
+ * The hand-off is the point. This button lives on the card, and the card
+ * lives on the worktree's own page — both of which go the moment the delete
+ * succeeds and the worktree leaves the list. A modal mounted here would be
+ * unmounted exactly when it had the delete's report to show, so it is only
+ * ever the confirmation; the root-mounted host shows the rest.
  */
 export function DeleteWorktreeButton({ w }: { w: WorktreeSummary }) {
   // Same query key as the details card, so this shares its fetch rather than
@@ -19,8 +26,6 @@ export function DeleteWorktreeButton({ w }: { w: WorktreeSummary }) {
     queryFn: () => api.worktreeInfo(w.path),
     enabled: !!w.path,
   })
-  const [, navigate] = useLocation()
-  const qc = useQueryClient()
   const [open, setOpen] = useState(false)
   const name = w.path.split("/").filter(Boolean).pop() || w.path
 
@@ -38,13 +43,10 @@ export function DeleteWorktreeButton({ w }: { w: WorktreeSummary }) {
           name={name}
           branch={info.data?.git?.branch || w.branch}
           onClose={() => setOpen(false)}
-          onDeleted={() => {
+          onDeleted={() => setOpen(false)}
+          onStarted={(job) => {
             setOpen(false)
-            // The worktree is gone; the list is the only place left to be.
-            void qc.invalidateQueries({ queryKey: ["worktrees"] })
-            // Its tasks lose their worktree link.
-            void qc.invalidateQueries({ queryKey: ["tasks"] })
-            navigate("/")
+            openJobModal(job)
           }}
         />
       )}
