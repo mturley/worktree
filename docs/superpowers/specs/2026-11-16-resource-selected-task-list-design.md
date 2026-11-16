@@ -45,10 +45,14 @@ icon and tint together were overkill.
 **Placement.** The worktree page's own `useTasksPanel` (worktree scope) keeps
 rendering where it does with nothing selected: wide, at the top of the right
 column; narrow, above the content. With a resource selected the order is
-"← all resources", task panel, resource card, the card's tabs. The resource
+task panel, "← all resources", resource card, the card's tabs. The panel
+heads the column in both states, so it never moves, not even by the back
+button's height. This was decided at planning time, refining the
+"← all resources" first order agreed in conversation. The resource
 panes (`ResourceDetailPane`, `SlackThreadPane`, `LinkPane`) no longer render
 their own resource-scoped task panel. `OtherTasksBadge` is removed from the
-back button.
+back button. The Slack pane's panel-level unread dot (`task_unread_count`) goes
+with its panel. Each unread task row still shows its own unread styling.
 
 **Marking the selected resource's rows.** A row is marked when the task has
 any resource link to the selected resource, not only a focus link (my call).
