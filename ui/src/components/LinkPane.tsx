@@ -6,7 +6,6 @@ import { ResourceCard } from "./ResourceCard"
 import { canEmbed } from "../lib/linkEmbed"
 import { shortResourceRef } from "../lib/resourceRef"
 import { useResourceTab } from "../hooks/useSelectedResource"
-import { useTasksPanel } from "./tasks/TasksSection"
 
 export const EMBED_SANDBOX = "allow-scripts allow-same-origin allow-forms allow-popups"
 
@@ -14,8 +13,7 @@ export const EMBED_SANDBOX = "allow-scripts allow-same-origin allow-forms allow-
 const LINK_TABS = ["details"] as const
 
 /**
- * The body of a selected link resource: its card, the link's task panel,
- * then the page itself under Details.
+ * The body of a selected link resource: its card, then the page itself under Details.
  *
  * Where a PR or Jira issue shows a filtered activity feed, a link shows the
  * page — it has no events, is never polled, and has no unread state, so there
@@ -37,15 +35,11 @@ export function LinkPane({ resource, path, onRemoved, onResourceChanged }: {
   })
   const embed = canEmbed(resource.url, resource.embeddable, window.location.origin)
   const [tab, setTab] = useResourceTab(LINK_TABS)
-  const { type, id } = resource
-  const tasks = useTasksPanel({ kind: "resource", type, id }, { selectedResource: { type, id } })
 
   return (
     <>
       <ResourceCard r={resource} path={path} onRemoved={onRemoved}
         onMetaChanged={onResourceChanged} variant="detail" />
-      {/* The task panel sits between the card and the tab bar. */}
-      {tasks.panel}
       <Tabs value={tab} onChange={(v) => v && setTab(v)}>
         <Tabs.List>
           <Tabs.Tab value="details">Details</Tabs.Tab>

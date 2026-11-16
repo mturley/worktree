@@ -29,10 +29,10 @@ export type TasksPanelLevel = "collapsed" | "normal" | "expanded"
  *   normal. ONE global saved choice (useTaskListPrefs' `collapsed`).
  * - expanded: "Show all" lifted the cap, and (wide) the page gives the
  *   panel's column two thirds of the width; a wide list that fits can be
- *   expanded from the summary just for that. Never saved, and only for the path
- *   and scope it was set under: navigating to another path or changing scope
- *   puts the panel back to
- *   normal. A tab change does not: tabs live in the query string.
+ *   expanded from the summary just for that. Never saved, and only for the
+ *   path and scope it was set under: navigating to another path or changing
+ *   scope puts the panel back to normal. A tab change does not: tabs live in
+ *   the query string.
  *
  * `opts.unread` is the unread task events behind the list, for a page whose
  * other tabs cannot show them (a Slack thread's pane); above 0 an unread dot

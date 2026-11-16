@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useState } from "react"
 import { Alert, Code, Group, Stack, Tabs, Text } from "@mantine/core"
 import type { ResourceDTO } from "../api/types"
 import { useThread } from "../hooks/useThread"
@@ -10,7 +10,6 @@ import { useLinkedResources } from "../hooks/useLinkedResources"
 import { useResourceTab } from "../hooks/useSelectedResource"
 import { LinkedResourcesPanel, LinkedTabControls, linkedTabLabel } from "./linked/LinkedResourcesPanel"
 import { UnreadMarkerDot } from "./UnreadMarkerDot"
-import { useTasksPanel } from "./tasks/TasksSection"
 
 interface SlackThreadPaneProps {
   resource: ResourceDTO
@@ -80,11 +79,6 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, 
   const slackOff = useWatcherHealth().data?.slack.enabled === false
   const thread = useThread(slackOff ? null : tab)
   const [paneTab, setPaneTab] = useResourceTab(THREAD_TABS)
-  // The thread's task panel, between the card and the tab bar. The thread's
-  // card counts its linking tasks' unread events, which no tab here can
-  // show, so the panel carries the dot.
-  const { type, id } = resource
-  const tasks = useTasksPanel({ kind: "resource", type, id }, { selectedResource: { type, id }, unread: resource.task_unread_count })
   // See ResourceDetailPane: link titles wait until the Linked tab is shown.
   const [linkedOpened, setLinkedOpened] = useState(paneTab === "linked")
   useEffect(() => {
@@ -98,19 +92,6 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, 
   }, [focus?.key])
   const linked = useLinkedResources(resource.type, resource.id, linkedOpened)
 
-  /*
-   * When the thread can't be shown, its notice stands where the thread
-   * would, but the task panel stays: tasks contact no external service. The
-   * panel comes first, as it sits above the tab bar elsewhere, and there is
-   * no tab bar (no Linked tab: resolving links contacts the services).
-   */
-  const withTasks = (notice: ReactNode) => (
-    <>
-      {tasks.panel}
-      {notice}
-    </>
-  )
-
   // Watcher off: the resource still shows, but the thread can't be loaded
   // (worktree doesn't contact Slack). ResourceDetailPane's WatcherAlert says
   // why, with a link to turn it back on.
@@ -118,7 +99,7 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, 
     return (
       <Stack gap="sm">
         <ResourceCard r={resource} path={path} onRemoved={onRemoved} variant="detail" onMetaChanged={() => onResourceChanged?.()} notify={notify} />
-        {withTasks(<Text size="sm" c="dimmed">The thread can't be shown while the Slack watcher is disabled.</Text>)}
+        <Text size="sm" c="dimmed">The thread can't be shown while the Slack watcher is disabled.</Text>
       </Stack>
     )
   }
@@ -126,13 +107,11 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, 
   if (isNotConfigured(thread.error)) {
     return (
       <Stack gap="sm">
-        {withTasks(
-          <Alert color="yellow" variant="light" title="Slack not configured">
-            <Text size="sm">
-              Run <Code>worktree setup</Code> to enable Slack.
-            </Text>
-          </Alert>,
-        )}
+        <Alert color="yellow" variant="light" title="Slack not configured">
+          <Text size="sm">
+            Run <Code>worktree setup</Code> to enable Slack.
+          </Text>
+        </Alert>
       </Stack>
     )
   }
@@ -163,8 +142,6 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, 
         onMetaChanged={() => onResourceChanged?.()}
         notify={notify}
       />
-      {/* The task panel sits between the card and the tab bar. */}
-      {tasks.panel}
       <Tabs
         value={paneTab}
         // Only the Thread panel stays mounted while hidden (its keepMounted

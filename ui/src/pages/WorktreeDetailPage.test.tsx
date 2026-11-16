@@ -1524,8 +1524,6 @@ describe("WorktreeDetailPage tasks", () => {
     expect(activityHeader().style.position).toBe("sticky")
     expect(activityHeader()).toHaveAttribute("data-tooltip-layer", "pinned")
     expect(activityHeader()).not.toContainElement(screen.getByTestId("tasks-panel"))
-
-    expect(activityHeader().style.position).toBe("sticky")
   })
 
   it("narrow: the panel sits above Resources · Activity", async () => {
@@ -1539,12 +1537,49 @@ describe("WorktreeDetailPage tasks", () => {
     expect(panel.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it("a selected resource's pane shows that resource's tasks, not the worktree's tab bar", async () => {
+  it("wide: an expanded panel stays expanded, and in place, through a selection and back", async () => {
+    setViewport("wide")
+    mockOverflow()
+    const user = userEvent.setup()
+    wrap()
+    const panel = screen.getByTestId("tasks-panel")
+    await user.click(await within(panel).findByRole("button", { name: /^Show all \(/ }))
+    await user.click(screen.getByRole("button", { name: /select resource o\/r#1/i }))
+    await screen.findByRole("tab", { name: /Linked Resources/ })
+    // The same element: never remounted by the selection.
+    expect(screen.getByTestId("tasks-panel")).toBe(panel)
+    expect(panel).toHaveAttribute("data-level", "expanded")
+    const back = screen.getByRole("button", { name: /^← all resources/ })
+    expect(panel.compareDocumentPosition(back) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await user.click(back)
+    await waitFor(() => expect(document.querySelector("[data-activity-header]")).not.toBeNull())
+    expect(screen.getByTestId("tasks-panel")).toBe(panel)
+    expect(panel).toHaveAttribute("data-level", "expanded")
+  })
+
+  it("a selected resource keeps the worktree's list, marking that resource's tasks", async () => {
+    vi.mocked(api.tasks).mockResolvedValue([
+      { ...task, id: 2, title: "Chase the reviewer", links: [{ kind: "resource", resource_type: "pr", resource_id: "o/r#1", focus: true, archived: false }] },
+      task,
+    ])
     window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?resource=pr:o%2Fr%231`)
     setViewport("wide")
     wrap()
     await screen.findByRole("tab", { name: /Linked Resources/ })
-    expect(document.querySelector("[data-activity-header]")).toBeNull()
-    await waitFor(() => expect(api.tasks).toHaveBeenCalledWith({ kind: "resource", type: "pr", id: "o/r#1" }, expect.anything()))
+    const panel = screen.getByTestId("tasks-panel")
+    expect(await within(panel).findByText("Tidy the branch")).toBeInTheDocument()
+    const marked = within(panel).getByText("Chase the reviewer").closest("[data-task-row]")!
+    expect(marked).toHaveAttribute("data-selected-resource", "true")
+    expect(api.tasks).not.toHaveBeenCalledWith({ kind: "resource", type: "pr", id: "o/r#1" }, expect.anything())
+  })
+
+  it("narrow: the panel heads a selected resource's drill-down", async () => {
+    window.history.replaceState({}, "", `/worktree/${encodeURIComponent("/wt/foo")}?resource=pr:o%2Fr%231`)
+    setViewport("narrow")
+    wrap()
+    const back = await screen.findByRole("button", { name: /^← all resources/ })
+    const panel = screen.getByTestId("tasks-panel")
+    expect(await within(panel).findByText("Tidy the branch")).toBeInTheDocument()
+    expect(panel.compareDocumentPosition(back) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })
