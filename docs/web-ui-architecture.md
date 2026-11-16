@@ -2460,8 +2460,9 @@ single in-process loop for as long as the server is up:
 
 ## Watcher log
 
-A read-only diagnostic view on the Settings modal's **Logs** tab
-(`SettingsModal` -> `settings/LogsPanel`) showing what the watcher library's
+A read-only diagnostic view in its own **Watcher logs** modal
+(`watcherlog/WatcherLogsModal`, opened by `WatcherLogsButton` in every page
+header and the mini view; see "Header actions") showing what the watcher library's
 pollers have been doing, across every watched resource. Two sub-tabs: **Watcher
 log** (poll lifecycle rows and HTTP request rows, narrowed by the same
 single-select `SourceFilter` toggles as the activity feeds — none on shows every
@@ -2494,16 +2495,16 @@ the **oldest** rows after the cursor and `has_more` means more *newer* rows
 exist; otherwise the page is newest first and `has_more` means older rows
 exist.
 
-### Only while the tab is showing
+### Only while the modal is open
 
-`LogsPanel` renders nothing unless the modal is open on the Logs tab, and its
+`WatcherLogsModal` renders its body only while open, and its
 sub-tabs use `keepMounted={false}`, so only the visible one polls. The Watcher
 log polls every **3 s** using `after_id` (new rows surface as an "N new" pill
 when scrolled away from the top); Resource status refetches every **10 s**.
 Nothing is fetched on page load, and `/api/stream`, `/api/watchers` and
 existing page queries are unchanged. Fetch failures render inline error
-states. Frontend: `ui/src/components/settings/LogsPanel.tsx`,
-`ui/src/components/watcherlog/{LogTab,ResourceStatusTab}.tsx`,
+states. Frontend:
+`ui/src/components/watcherlog/{WatcherLogsButton,WatcherLogsModal,LogTab,ResourceStatusTab}.tsx`,
 `ui/src/lib/watcherLog.ts`.
 
 ## Frontend structure (`ui/src/`)
@@ -2845,8 +2846,8 @@ you want to show it later, it's already in the cached state JSON).
 
 The home page's right column is tabbed **Activity | Resources** when wide.
 As on the worktree page's resource tabs, the active tab's controls sit at
-the tab bar's far end, before the Settings cog: refresh, watcher log and
-Mark all read for Activity; the sort picker and count
+the tab bar's far end: Mark all read for Activity (refresh and the watcher
+logs are in the page header; see "Header actions"); the sort picker and count
 (`ResourcesTabControls`) for Resources. The bar rides inside each tab's
 pinned header. Narrow, the page's tabs are **Worktrees | Activity |
 Resources** and those controls stay at the top of their panels instead —
@@ -3619,11 +3620,30 @@ things constrain any change here:
 - Every server-side workspace lookup goes through `Server.listCmuxWorkspaces`,
   which honors the `cmuxList` test seam.
 
+### Header actions (`ui/src/components/HeaderActions.tsx`)
+
+Every page header (home and worktree, at both widths) ends at the top right
+with three icon buttons, left to right:
+
+- **Refresh watchers** (`RefreshWatchersButton`) — `POST /api/watchers/poll`;
+  spins while any poll runs, the background loop's included. It is the only
+  refresh button: the activity feeds have none of their own.
+- **Watcher logs** (`watcherlog/WatcherLogsButton`) — opens the Watcher logs
+  modal (see "Watcher log"). While any watcher in `GET /api/watchers` has
+  `has_error` (its last error is newer than its last success) the icon is a
+  red warning whose tooltip names the failing watchers. A watcher turned off
+  in Settings is not failing.
+- **Settings** (`SettingsButton`) — the Settings modal below.
+
+The mini view (`MiniPage`) shows refresh and logs before "Open full UI ↗",
+but not Settings (the menu bar app has its own), and opens the logs modal
+full-screen, since its popover is too small for a modal.
+
 ### Settings modal (`settings*.go`, `ui/src/components/settings/`)
 
-The home page's Settings modal (cog in the Activity header when wide, at the
-right of the Worktrees/Activity tab bar when narrow) has four tabs, organised
-by what they configure rather than by file:
+The Settings modal (the cog at the top right of every page header; see
+"Header actions") has five tabs, organised by what they configure rather than
+by file:
 
 - **General** — worktree's `config.yaml` except `ui.*`, `jira.*` and
   `notifications.*`.
