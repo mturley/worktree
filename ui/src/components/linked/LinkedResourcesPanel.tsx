@@ -119,8 +119,8 @@ export function LinkedResourcesPanel({ query, path }: { query: LinkedQuery; path
 /**
  * The Linked tab's freshness and refresh, for the far end of the tab bar:
  * when the view was fetched, and a refresh that bypasses the server's cache.
- * Ordered and styled like the Activity tab's ("Updated …" then
- * RefreshWatchersButton) so the two read as one control.
+ * Ordered and styled like the Activity tab's "Updated …" line so the two
+ * read as one control.
  */
 export function LinkedTabControls({ query }: { query: LinkedQuery }) {
   const busy = query.refreshing

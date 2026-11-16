@@ -127,6 +127,20 @@ describe("WorktreeDetailPage header", () => {
     vi.restoreAllMocks()
   })
 
+  for (const viewport of ["wide", "narrow"] as const) {
+    it(`puts refresh, logs and settings in the header's title row (${viewport})`, async () => {
+      setViewport(viewport)
+      wrap()
+      await screen.findByRole("heading", { name: "foo", level: 4 })
+      const header = document.querySelector("[data-detail-header]") as HTMLElement
+      const actions = within(header).getByTestId("header-actions")
+      expect(within(actions).getAllByRole("button").map((b) => b.getAttribute("aria-label")))
+        .toEqual(["Refresh watchers", "Watcher logs", "Settings"])
+      // Only the header refreshes now, not the activity controls.
+      expect(screen.getAllByRole("button", { name: "Refresh watchers", hidden: true })).toHaveLength(1)
+    })
+  }
+
   it("marks the title with a static dot only while this worktree has unreads", async () => {
     setViewport("wide")
     const view = wrap()

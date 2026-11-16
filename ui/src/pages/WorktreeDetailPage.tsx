@@ -35,7 +35,7 @@ import { CmuxWorkspaceActions, CmuxWorkspaceTitles } from "../components/CmuxWor
 import { SourceFilter } from "../components/SourceFilter"
 import { EventTypeFilter } from "../components/EventTypeFilter"
 import { useActivityFilter } from "../hooks/useActivityFilter"
-import { RefreshWatchersButton } from "../components/RefreshWatchersButton"
+import { HeaderActions } from "../components/HeaderActions"
 import { MarkAllReadButton } from "../components/MarkAllReadButton"
 import { UnreadOnlyToggle } from "../components/UnreadOnlyToggle"
 import { HumansOnlyToggle } from "../components/HumansOnlyToggle"
@@ -416,11 +416,11 @@ export function WorktreeDetailPage() {
     />
   )
 
-  // The Activity tab's own controls: refresh, the watcher log and mark all
-  // read. Wide, at the tab bar's far end; narrow, heading the feed.
+  // The Activity tab's own controls: mark all read (refresh and the watcher
+  // logs are in the page header). Wide, at the tab bar's far end; narrow,
+  // heading the feed.
   const activityControls = (
     <Group gap={6} wrap="nowrap" align="center" data-testid="activity-controls">
-      <RefreshWatchersButton />
       {/* Only over the whole feed: it marks every unread event, so
           beside a narrowed feed it would clear what is not shown. */}
       {!narrowing.search && !narrowing.filters && (
@@ -877,6 +877,7 @@ export function WorktreeDetailPage() {
               {wide && cmuxButton}
               {wide && searchBar}
             </Group>
+            <HeaderActions />
           </Group>
           {!wide && toolbar}
           {/* Pinned with the header only with room to spare; otherwise

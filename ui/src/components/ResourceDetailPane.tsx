@@ -14,7 +14,6 @@ import { filterLinkedSections } from "../lib/linkedSearch"
 import { ResourceCard, type ResourceNotifyContext } from "./ResourceCard"
 import { SlackThreadPane } from "./SlackThreadPane"
 import { LinkPane } from "./LinkPane"
-import { RefreshWatchersButton } from "./RefreshWatchersButton"
 import { WatcherErrorMark } from "./WatcherErrorMark"
 import { OtherTasksBadge } from "./tasks/OtherTasksBadge"
 import { WatcherAlert } from "./WatcherAlert"
@@ -186,7 +185,6 @@ function TimelineBody({
                   </Text>
                 )}
                 <WatcherErrorMark status={watcher} />
-                <RefreshWatchersButton />
                 {/* Only over the whole feed, as on the worktree's: searching
                     or with Humans only, it would clear events they hide. */}
                 {search.terms.length === 0 && !humansOnly && (
