@@ -16,7 +16,6 @@ import { SlackThreadPane } from "./SlackThreadPane"
 import { LinkPane } from "./LinkPane"
 import { RefreshWatchersButton } from "./RefreshWatchersButton"
 import { WatcherErrorMark } from "./WatcherErrorMark"
-import { OtherTasksBadge } from "./tasks/OtherTasksBadge"
 import { WatcherAlert } from "./WatcherAlert"
 import { useWatcherStatus } from "../hooks/useWatchers"
 import { useNow } from "../hooks/useNow"
@@ -30,7 +29,6 @@ import { useResourceTab } from "../hooks/useSelectedResource"
 import { UnreadMarkerDot } from "./UnreadMarkerDot"
 import { pinnedStyle } from "../lib/stickyList"
 import { LinkedResourcesPanel, LinkedTabControls, linkedTabLabel } from "./linked/LinkedResourcesPanel"
-import { useTasksPanel } from "./tasks/TasksSection"
 import { useMakeTaskFromEvent } from "./tasks/useMakeTask"
 import { useTaskModal } from "./tasks/modal/TaskModalProvider"
 
@@ -55,8 +53,7 @@ interface ResourceDetailPaneProps {
   /**
    * PR/Jira only: pin the tab bar this far (px) from the top of the
    * viewport — the page header's height — so the activity or linked
-   * resources scroll beneath it. The card and the task panel above it scroll
-   * away. Omitted, nothing is pinned.
+   * resources scroll beneath it. The card above it scrolls away. Omitted, nothing is pinned.
    */
   stickyTop?: number
   /** Slack only: a message to bring into view; see ThreadView. */
@@ -102,10 +99,6 @@ function TimelineBody({
   // one opens the task.
   const { open: openTask } = useTaskModal()
   const [tab, setTab] = useResourceTab(DETAIL_TABS)
-  // The resource's own task panel, between the card and the tab bar; its
-  // rows don't chip the resource they are already under.
-  const { type, id } = resource
-  const tasks = useTasksPanel({ kind: "resource", type, id }, { ownResource: { type, id } })
   // Link titles are only fetched once the Linked tab has been shown — by a
   // click, or by arriving on it through the URL (back/forward, a refresh).
   const [linkedOpened, setLinkedOpened] = useState(tab === "linked")
@@ -130,7 +123,7 @@ function TimelineBody({
       // back from the query cache, so that costs no refetch.
       keepMounted={false}
     >
-      {/* The card and the task panel scroll away with the pane. */}
+      {/* The card scrolls away with the pane. */}
       <ResourceCard
         r={resource}
         path={path}
@@ -140,14 +133,13 @@ function TimelineBody({
         notify={notify}
         checkedOut={checkedOut}
       />
-      <Box mt="sm">{tasks.panel}</Box>
       {/*
         The tab bar pins once scrolled to, inside Tabs so its sticky range is
         the whole pane. Pinned, it sits stickyTop down with an opaque md of
         padding above the bar, so the content scrolling beneath does not show
         through that strip (see pinnedStyle). That padding IS the gap to the
-        panel here (no pulled-up margin), so the opaque strip never paints
-        over the panel's bottom edge.
+        card here (no pulled-up margin), so the opaque strip never paints
+        over the card's bottom edge.
       */}
       <Box
         data-resource-tab-bar
@@ -289,8 +281,6 @@ export function ResourceDetailPane({
       {onBack && (
         // A button, not a link: it deselects rather than navigating somewhere new.
         <Group gap={6} wrap="nowrap" style={{ alignSelf: "flex-start" }}>
-          {/* The other tasks are part of what going back shows, so their
-              count rides inside the button, ahead of the Esc hint. */}
           <Button
             variant="subtle"
             size="compact-sm"
@@ -298,7 +288,6 @@ export function ResourceDetailPane({
             styles={{ label: { gap: 6 } }}
           >
             ← all resources
-            <OtherTasksBadge path={path} resource={resource} />
           </Button>
           {escHint && <KeyHint>Esc</KeyHint>}
         </Group>

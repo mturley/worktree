@@ -2,10 +2,11 @@ import { useMemo, useRef, useState, type ReactNode } from "react"
 import { useLocation } from "wouter"
 import { ActionIcon, Badge, Group, Text, Tooltip, UnstyledButton } from "@mantine/core"
 import type { Priority, Task, TaskState } from "../../api/types"
-import { dueLabel, linkChip, taskWorktreePaths } from "../../lib/taskSections"
+import { dueLabel, linkChip, linksResource, taskWorktreePaths } from "../../lib/taskSections"
 import { taskFullUiHref } from "../../lib/fullUiLink"
 import { TooltipWithHints, useModifierOpen } from "../../hooks/useModifierOpen"
-import { resourceParam } from "../../lib/resourceKey"
+import { resourceParam, type ResourceKey } from "../../lib/resourceKey"
+import { scopeContext } from "../../lib/taskScope"
 import { TaskStateCheckbox } from "./TaskStateCheckbox"
 import { TaskPriorityMenu } from "./TaskPriorityMenu"
 import { UnreadMarkerDot } from "../UnreadMarkerDot"
@@ -52,9 +53,14 @@ export function taskCrossHoverItem(task: Task): CrossHoverItem {
  * controls (state checkbox and its portalled menu, star, grip, link chip)
  * keep their clicks to themselves.
  */
-export function TaskRow({ task, ownResource, ownWorktree, dragHandle, onState, onPriority, onToggleStar, onOpen }: {
+export function TaskRow({ task, selectedResource, ownWorktree, dragHandle, onState, onPriority, onToggleStar, onOpen }: {
   task: Task
-  ownResource?: { type: string; id: string }
+  /**
+   * The resource selected on the page. Its own link chip is left out (a "+N"
+   * for the task's other links stands in), and a task linking it, focus or
+   * not, is marked: a violet bar, tint and tag.
+   */
+  selectedResource?: ResourceKey
   /** The worktree whose list this is: its own link chip is left out. */
   ownWorktree?: string
   dragHandle?: ReactNode
@@ -65,7 +71,8 @@ export function TaskRow({ task, ownResource, ownWorktree, dragHandle, onState, o
   onOpen?: () => void
 }) {
   const due = task.due ? dueLabel(task.due, new Date()) : null
-  const link = linkChip(task, ownResource, ownWorktree)
+  const link = linkChip(task, selectedResource, ownWorktree)
+  const marked = selectedResource ? linksResource(task, selectedResource) : false
   const [, navigate] = useLocation()
   // Only a row that opens takes part in cross-hover: the drag overlay's copy
   // has no partners. Built once per task, so a hover elsewhere only tests it.
@@ -128,6 +135,7 @@ export function TaskRow({ task, ownResource, ownWorktree, dragHandle, onState, o
       <Group
         data-task-row
         data-clickable={onOpen ? "true" : undefined}
+        data-selected-resource={marked ? "true" : undefined}
         {...crossHover}
         gap="xs"
         wrap="nowrap"
@@ -140,12 +148,20 @@ export function TaskRow({ task, ownResource, ownWorktree, dragHandle, onState, o
         onMouseEnter={measure}
         style={{
           ...(onOpen ? { cursor: "pointer" } : {}),
+          // The marking bar (theme.css) hangs off the row's edge.
+          position: "relative",
           borderTop: edge,
           borderRight: edge,
           borderBottom: edge,
           borderLeft: edge,
           borderRadius: 4,
-          ...(unread ? { background: UNREAD_BG } : {}),
+          // Unread keeps its blue: blue is only ever "unread", violet only
+          // ever "this resource's task".
+          ...(unread
+            ? { background: UNREAD_BG }
+            : marked
+              ? { background: "var(--mantine-color-violet-light)" }
+              : {}),
         }}
       >
         {/* A plain click on the grip must not reach the row (it would open
@@ -222,10 +238,23 @@ export function TaskRow({ task, ownResource, ownWorktree, dragHandle, onState, o
             {task.subtasks_done}/{task.subtasks_total}
           </Badge>
         )}
+        {marked && selectedResource && (
+          <Badge
+            data-testid="task-this-resource-tag"
+            size="xs"
+            variant="outline"
+            color="violet"
+            // Mantine's Badge uppercases by default; the tag keeps that.
+            style={{ flex: "none" }}
+          >
+            {scopeContext({ kind: "resource", ...selectedResource })}
+          </Badge>
+        )}
         {link && (
           <TaskLinkChip
             task={task}
             link={link}
+            selectedResource={selectedResource}
             onClick={(e) => {
               keepFromRow(e)
               if (link.worktree) navigate(`/worktree/${encodeURIComponent(link.worktree)}`)
@@ -247,8 +276,9 @@ export function TaskRow({ task, ownResource, ownWorktree, dragHandle, onState, o
  * resource chip previews it. The chip truncates, and the preview has the
  * full names.
  */
-function TaskLinkChip({ task, link, onClick }: {
+function TaskLinkChip({ task, link, selectedResource, onClick }: {
   task: Task
+  selectedResource?: ResourceKey
   link: NonNullable<ReturnType<typeof linkChip>>
   onClick: (e: React.MouseEvent) => void
 }) {
@@ -284,7 +314,11 @@ function TaskLinkChip({ task, link, onClick }: {
     </Badge>
   )
   if (link.worktree) return <WorktreeHoverCard path={link.worktree}>{chip}</WorktreeHoverCard>
-  if (focus?.kind === "resource" && focus.resource_type && focus.resource_id) {
+  // The "+N" chip beside the selected resource's own tasks stands for the
+  // OTHER links, so a preview of the selected resource would be the wrong one.
+  const isOwn = selectedResource && focus?.kind === "resource" &&
+    focus.resource_type === selectedResource.type && focus.resource_id === selectedResource.id
+  if (!isOwn && focus?.kind === "resource" && focus.resource_type && focus.resource_id) {
     return <ResourceHoverCard type={focus.resource_type} id={focus.resource_id}>{chip}</ResourceHoverCard>
   }
   return chip

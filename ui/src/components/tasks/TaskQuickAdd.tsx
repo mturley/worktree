@@ -1,6 +1,8 @@
 import { useRef, useState } from "react"
-import { ActionIcon, Button, Group, Select, TextInput } from "@mantine/core"
+import { ActionIcon, Button, Group, Select, TextInput, Tooltip } from "@mantine/core"
 import type { Priority } from "../../api/types"
+import { iconOption } from "./iconOption"
+import { PriorityGlyph } from "./TaskPriorityMenu"
 
 /**
  * WebKit (Safari, the cmux browser pane) does not focus a button on click, so
@@ -28,7 +30,7 @@ const PRIORITY_OPTIONS: { value: Priority; label: string }[] = [
  * While a create is in flight the controls are disabled, but the input is
  * only read-only: disabling it would drop focus, and Enter must keep it.
  */
-export function TaskQuickAdd({ onAdd, onOpen }: {
+export function TaskQuickAdd({ onAdd, onOpen, target }: {
   /** Creates the task; resolves to it (its id is what "Add & open" opens). */
   onAdd(input: { title: string; priority: Priority; starred: boolean }): Promise<{ id: number } | void>
   /**
@@ -36,6 +38,12 @@ export function TaskQuickAdd({ onAdd, onOpen }: {
    * creates the task, then opens it. Enter still adds and stays.
    */
   onOpen?: (id: number) => void
+  /**
+   * Where a new task goes, as the list's summary words it ("this PR"). When
+   * given, the placeholder and the Add buttons' tooltips name it, for a list
+   * that creates somewhere other than what it shows.
+   */
+  target?: string
 }) {
   const [title, setTitle] = useState("")
   const [starred, setStarred] = useState(false)
@@ -94,12 +102,14 @@ export function TaskQuickAdd({ onAdd, onOpen }: {
           </ActionIcon>
           <Select
             size="xs"
-            w={95}
+            w={115}
             aria-label="New task priority"
             data={PRIORITY_OPTIONS}
             value={priority}
             allowDeselect={false}
             disabled={busy}
+            leftSection={<PriorityGlyph priority={priority} />}
+            renderOption={({ option: o }) => iconOption(<PriorityGlyph priority={o.value as Priority} />, o.label)}
             // In place, so picking an option never moves focus out of this group.
             comboboxProps={{ withinPortal: false }}
             onChange={(v) => v && setPriority(v as Priority)}
@@ -111,7 +121,7 @@ export function TaskQuickAdd({ onAdd, onOpen }: {
         size="xs"
         style={{ flex: 1 }}
         aria-label="New task"
-        placeholder="Add a task…"
+        placeholder={target ? `Add a task to ${target}…` : "Add a task…"}
         value={title}
         readOnly={busy}
         aria-busy={busy}
@@ -124,21 +134,25 @@ export function TaskQuickAdd({ onAdd, onOpen }: {
         }}
       />
       {expanded && (
-        <Button size="xs" variant="light" disabled={busy || title.trim() === ""} loading={busy} onMouseDown={keepInputFocus} onClick={() => void submit()}>
-          Add
-        </Button>
+        <Tooltip label={`Add to ${target}`} disabled={!target}>
+          <Button size="xs" variant="light" disabled={busy || title.trim() === ""} loading={busy} onMouseDown={keepInputFocus} onClick={() => void submit()}>
+            Add
+          </Button>
+        </Tooltip>
       )}
       {expanded && onOpen && (
-        <Button
-          size="xs"
-          variant="subtle"
-          style={{ flex: "none" }}
-          disabled={busy || title.trim() === ""}
-          onMouseDown={keepInputFocus}
-          onClick={() => void submit(true)}
-        >
-          Add &amp; open
-        </Button>
+        <Tooltip label={`Add to ${target} and open it`} disabled={!target}>
+          <Button
+            size="xs"
+            variant="subtle"
+            style={{ flex: "none" }}
+            disabled={busy || title.trim() === ""}
+            onMouseDown={keepInputFocus}
+            onClick={() => void submit(true)}
+          >
+            Add &amp; open
+          </Button>
+        </Tooltip>
       )}
     </Group>
   )

@@ -93,3 +93,37 @@ describe("TaskQuickAdd under WebKit focus rules", () => {
     expect(screen.queryByRole("button", { name: "Add & open" })).toBeNull()
   })
 })
+
+describe("TaskQuickAdd priority", () => {
+  it("shows each priority's glyph in the options and beside the chosen value", async () => {
+    render(<MantineProvider><TaskQuickAdd onAdd={vi.fn().mockResolvedValue(undefined)} /></MantineProvider>)
+    act(() => screen.getByRole("textbox", { name: "New task" }).focus())
+    const select = screen.getByRole("textbox", { name: "New task priority" })
+    fireEvent.click(select)
+    expect(await screen.findByRole("option", { name: /High/ })).toHaveTextContent("!!!")
+    expect(screen.getByRole("option", { name: /Medium/ })).toHaveTextContent("!!")
+    fireEvent.click(screen.getByRole("option", { name: /High/ }))
+    // The chosen value's glyph sits in the input's left section.
+    const left = select.closest(".mantine-Select-root, .mantine-InputWrapper-root")!.querySelector("[data-position=left]")
+    expect(left).toHaveTextContent("!!!")
+  })
+})
+
+describe("TaskQuickAdd target", () => {
+  it("names where the task goes: placeholder, and tooltips on Add and Add & open", async () => {
+    render(<MantineProvider><TaskQuickAdd onAdd={vi.fn().mockResolvedValue(undefined)} onOpen={vi.fn()} target="this PR" /></MantineProvider>)
+    const input = screen.getByRole("textbox", { name: "New task" })
+    expect(input).toHaveAttribute("placeholder", "Add a task to this PR…")
+    act(() => input.focus())
+    fireEvent.change(input, { target: { value: "x" } })
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "Add" }))
+    expect(await screen.findByText("Add to this PR")).toBeInTheDocument()
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "Add & open" }))
+    expect(await screen.findByText("Add to this PR and open it")).toBeInTheDocument()
+  })
+
+  it("without a target keeps the plain placeholder", () => {
+    render(<MantineProvider><TaskQuickAdd onAdd={vi.fn().mockResolvedValue(undefined)} /></MantineProvider>)
+    expect(screen.getByRole("textbox", { name: "New task" })).toHaveAttribute("placeholder", "Add a task…")
+  })
+})

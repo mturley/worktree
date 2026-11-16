@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { TaskModalProvider } from "./tasks/modal/TaskModalProvider"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import type { ResourceDTO, Task, TimelineEvent } from "../api/types"
+import type { ResourceDTO, TimelineEvent } from "../api/types"
 import { api as realApi } from "../api/client"
 
 const useWorktreeTimeline = vi.fn()
@@ -366,78 +366,32 @@ describe("the selected resource's feed", () => {
   })
 })
 
-describe("ResourceDetailPane tasks", () => {
-  const task: Task = {
-    id: 3, ref: "T3", title: "Chase the reviewer", description: "", state: "not_started", priority: "none", starred: false,
-    rank: "r1", created_at: "", updated_at: "", archived: false, links: [], implicit_worktrees: [],
-    subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, open_blockers: [],
-  }
+describe("ResourceDetailPane tabs", () => {
   beforeEach(() => {
     window.localStorage.clear()
-    vi.spyOn(realApi, "tasks").mockResolvedValue([task])
     vi.spyOn(realApi, "linkedResources").mockResolvedValue({ fetched_at: "", count: 0, sections: [] })
   })
   afterEach(() => vi.restoreAllMocks())
 
-  it("counts the worktree's other tasks inside the back link, ahead of the Esc hint", async () => {
-    useWorktreeTimeline.mockReturnValue({ events: [], isLoading: false, error: null, hasMore: false, loadMore: () => {}, loadingMore: false })
-    const onBack = vi.fn()
-    wrap(<ResourceDetailPane path="/wt/foo" resource={jira} onBack={onBack} escHint />)
-    const back = screen.getByRole("button", { name: /^← all resources/ })
-    // The resource has no tasks of its own, so not "other".
-    const badge = await within(back).findByText("1 task")
-    const esc = back.parentElement!.querySelector("kbd")!
-    expect(esc.textContent).toBe("Esc")
-    expect(back.compareDocumentPosition(esc) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    await userEvent.click(badge)
-    expect(onBack).toHaveBeenCalled()
-  })
-
-  it("Activity · Linked Resources, with the resource's own task panel", async () => {
+  it("Activity · Linked Resources", () => {
     wrap(<ResourceDetailPane path="/wt/foo" resource={jira} />)
     const tabs = within(screen.getByRole("tablist")).getAllByRole("tab")
     expect(tabs.map((t) => t.textContent?.replace(/\d+$/, "").replace(/ \(\d+\)$/, ""))).toEqual(["Activity", "Linked Resources"])
-    const panel = screen.getByTestId("tasks-panel")
-    expect(await within(panel).findByText("Chase the reviewer")).toBeInTheDocument()
-    expect(realApi.tasks).toHaveBeenCalledWith({ kind: "resource", type: "jira", id: "J-1" }, expect.anything())
   })
 
-  it("the card and the panel scroll away; only the tab bar sticks, in every level", async () => {
-    // jsdom has no layout: make the capped list read as overflowing.
-    Object.defineProperty(HTMLElement.prototype, "scrollHeight", { configurable: true, get: () => 500 })
-    Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get: () => 240 })
-    try {
-      wrap(<ResourceDetailPane path="/wt/foo" resource={jira} stickyTop={60} />)
-      const panel = () => screen.getByTestId("tasks-panel")
-      expect(await within(panel()).findByText("Chase the reviewer")).toBeInTheDocument()
-      const title = screen.getByText("Investigate flux")
-      expect(title.compareDocumentPosition(panel()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-      const check = (level: string) => {
-        expect(panel()).toHaveAttribute("data-level", level)
-        const bar = screen.getByRole("tablist")
-        expect(panel().compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-        const sticky = bar.closest<HTMLElement>("[data-tooltip-layer=pinned]")!
-        expect(sticky).toHaveAttribute("data-resource-tab-bar")
-        expect(sticky.style.position).toBe("sticky")
-        expect(sticky.style.top).toBe("60px")
-        expect(sticky).not.toContainElement(panel())
-        expect(sticky).not.toContainElement(title)
-        expect(panel().closest("[style*=sticky]")).toBeNull()
-      }
-      check("normal")
-      await userEvent.click(within(panel()).getByRole("button", { name: /^Show all \(/ }))
-      check("expanded")
-      await userEvent.click(within(panel()).getByRole("button", { name: /^Collapse task list/ }))
-      check("collapsed")
-    } finally {
-      delete (HTMLElement.prototype as { scrollHeight?: number }).scrollHeight
-      delete (HTMLElement.prototype as { clientHeight?: number }).clientHeight
-    }
+  it("the card scrolls away; only the tab bar sticks", () => {
+    wrap(<ResourceDetailPane path="/wt/foo" resource={jira} stickyTop={60} />)
+    const title = screen.getByText("Investigate flux")
+    const bar = screen.getByRole("tablist")
+    const sticky = bar.closest<HTMLElement>("[data-tooltip-layer=pinned]")!
+    expect(sticky).toHaveAttribute("data-resource-tab-bar")
+    expect(sticky.style.position).toBe("sticky")
+    expect(sticky.style.top).toBe("60px")
+    expect(sticky).not.toContainElement(title)
   })
 
-  it("without stickyTop, nothing is pinned", async () => {
+  it("without stickyTop, nothing is pinned", () => {
     wrap(<ResourceDetailPane path="/wt/foo" resource={jira} />)
-    await within(screen.getByTestId("tasks-panel")).findByText("Chase the reviewer")
     expect(screen.getByRole("tablist").closest("[style*=sticky]")).toBeNull()
   })
 

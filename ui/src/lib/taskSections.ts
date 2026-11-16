@@ -356,11 +356,18 @@ export interface LinkChipTarget {
   resource: ResourceKey
 }
 
+/** Whether the task links the resource, as a Focus link or not, archived or not. */
+export function linksResource(t: Task, r: ResourceKey): boolean {
+  return t.links.some((l) => l.kind === "resource" && l.resource_type === r.type && l.resource_id === r.id)
+}
+
 /**
  * The row's link chip: the first Focus link plus "+N" for every other link,
  * or "🔗 N linked" when none is Focus. Null with no links, or on a
- * resource's or worktree's own list when the first Focus link is that
- * resource or worktree. `worktree` is set when the chip names a worktree
+ * worktree's own list when the first Focus link is that worktree. On a
+ * resource's own list, when the first Focus link is that resource, the chip
+ * is null if it is the task's only link, else just "+N" for the others
+ * (nothing to open). `worktree` is set when the chip names a worktree
  * (its path), so the row can open that worktree's page. `target` is set when
  * the chip names a resource some worktree follows: the list's own worktree
  * if it is one of them, else the first. An unfollowed (archived) resource
@@ -375,7 +382,10 @@ export function linkChip(
   const focus = t.links.find((l) => l.focus)
   if (!focus) return { text: `🔗 ${t.links.length} linked`, archived: false }
   if (ownResource && focus.kind === "resource" &&
-    focus.resource_type === ownResource.type && focus.resource_id === ownResource.id) return null
+    focus.resource_type === ownResource.type && focus.resource_id === ownResource.id) {
+    const others = t.links.length - 1
+    return others > 0 ? { text: `+${others}`, archived: false } : null
+  }
   if (ownWorktree && focus.kind === "worktree" && focus.worktree === ownWorktree) return null
   const more = t.links.length - 1
   const chip = { text: more > 0 ? `${linkText(focus)} +${more}` : linkText(focus), archived: focus.archived }

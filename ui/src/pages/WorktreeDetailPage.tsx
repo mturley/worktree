@@ -296,15 +296,15 @@ export function WorktreeDetailPage() {
   const inColumn = wide && detailTab.tab === "notes"
   // Narrow only: which of Resources / Activity is showing.
   const [narrowTab, setNarrowTab] = useState<NarrowTab>("resources")
-  // The worktree's task panel, above the tab bar. A selected resource's pane
-  // shows its own (see ResourceDetailPane). This hook outlives the panel
-  // while a resource is selected, so the selection resets an expanded panel:
-  // coming back from a resource shows it normal.
+  // The worktree's one task panel, above the tab bar. It stays where it is,
+  // never remounting, whether or not a resource is selected: a selection only
+  // marks that resource's tasks in the list (and sends new tasks to it), so an
+  // expanded panel stays expanded through it and back.
   const taskScope = useMemo(() => ({ kind: "worktree" as const, path }), [path])
   // The page header's measured height (see the ResizeObserver below).
   const headerRef = useRef<HTMLDivElement>(null)
   const [headerHeight, setHeaderHeight] = useState(0)
-  const tasks = useTasksPanel(taskScope, { resetKey: selected ? serializeResourceKey(selected) : "" })
+  const tasks = useTasksPanel(taskScope, { selectedResource: selectedResource ? { type: selectedResource.type, id: selectedResource.id } : undefined })
 
   // The sticky resource list has to start below the header, and the header's
   // height is not a constant: the worktree and cmux workspace names wrap, and
@@ -577,18 +577,21 @@ export function WorktreeDetailPage() {
     // resources, so they are tabs instead, as on the home page. The tab is
     // page state rather than the Tabs' own, so backing out of a drill-down
     // lands on the tab you left.
-    // The task panel sits above the tabs, as on the home page.
-    overview = detail || (
+    // The task panel heads the page, drill-down or not (always the Stack's
+    // first child, so a selection never remounts it).
+    overview = (
       <Stack gap="sm">
         {tasks.panel}
-        <Tabs value={narrowTab} onChange={(v) => setNarrowTab((v as NarrowTab | null) ?? "resources")}>
-          <Tabs.List>
-            <Tabs.Tab value="resources">Resources</Tabs.Tab>
-            <Tabs.Tab value="activity">Activity</Tabs.Tab>
-          </Tabs.List>
-          <Tabs.Panel value="resources" pt="md">{list}</Tabs.Panel>
-          <Tabs.Panel value="activity" pt="md">{unfiltered()}</Tabs.Panel>
-        </Tabs>
+        {detail || (
+          <Tabs value={narrowTab} onChange={(v) => setNarrowTab((v as NarrowTab | null) ?? "resources")}>
+            <Tabs.List>
+              <Tabs.Tab value="resources">Resources</Tabs.Tab>
+              <Tabs.Tab value="activity">Activity</Tabs.Tab>
+            </Tabs.List>
+            <Tabs.Panel value="resources" pt="md">{list}</Tabs.Panel>
+            <Tabs.Panel value="activity" pt="md">{unfiltered()}</Tabs.Panel>
+          </Tabs>
+        )}
       </Stack>
     )
   } else {
@@ -659,15 +662,14 @@ export function WorktreeDetailPage() {
         {/* No scroller: this column's content is what the PAGE scrolls.
             Its tooltips open under the pinned blocks; see useTooltipLayer. */}
         <Grid.Col span={split[1]} data-tooltip-layer="content">
-          {detail || (
-            // The task panel scrolls away with the page; the activity header
-            // below it pins once scrolled to. The gap is the header's cover
-            // (md; see pinnedStyle), so pinning never paints over the panel.
-            <Stack gap={headerStyle ? "md" : "sm"}>
-              {tasks.panel}
-              {unfiltered(rightTabBar)}
-            </Stack>
-          )}
+          {/* The task panel scrolls away with the page; the activity header
+              below it pins once scrolled to. The gap is the header's cover
+              (md; see pinnedStyle), so pinning never paints over the panel.
+              The panel is always the first child, so a selection keeps it. */}
+          <Stack gap={detail ? "sm" : headerStyle ? "md" : "sm"}>
+            {tasks.panel}
+            {detail || unfiltered(rightTabBar)}
+          </Stack>
         </Grid.Col>
       </Grid>
     )

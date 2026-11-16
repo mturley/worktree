@@ -1,9 +1,10 @@
-import { useState, type ReactNode } from "react"
+import { useState } from "react"
 import { ActionIcon, Button, Checkbox, Group, Select, Stack, Text, TextInput } from "@mantine/core"
 import type { Priority, TaskDetail, TaskState } from "../../../api/types"
 import { relativeTime } from "../../../lib/relativeTime"
 import { StateBox, TASK_STATE_LABEL, TASK_STATES } from "../TaskStateCheckbox"
 import { PRIORITY_LABEL, PriorityGlyph } from "../TaskPriorityMenu"
+import { iconOption } from "../iconOption"
 import { LogWorkButton } from "./LogWorkButton"
 import { BlockersSection } from "./BlockersSection"
 import type { TaskPatch } from "./useOptimisticTask"
@@ -15,16 +16,6 @@ const PRIORITIES: { value: Priority; label: string }[] = (["none", "low", "mediu
   value,
   label: PRIORITY_LABEL[value],
 }))
-
-/** An option with its icon on the left, as the row's menus show them. */
-function option(icon: ReactNode, label: string) {
-  return (
-    <Group gap={8} wrap="nowrap">
-      {icon}
-      <span>{label}</span>
-    </Group>
-  )
-}
 
 /** Visible on both tabs. Every control saves on change. */
 export function TaskSidebar({ task, onUpdate, onState, onDelete }: {
@@ -42,7 +33,7 @@ export function TaskSidebar({ task, onUpdate, onState, onDelete }: {
         value={task.state}
         allowDeselect={false}
         leftSection={<StateBox state={task.state} size={14} priority={task.priority} />}
-        renderOption={({ option: o }) => option(<StateBox state={o.value as TaskState} size={14} priority={task.priority} />, o.label)}
+        renderOption={({ option: o }) => iconOption(<StateBox state={o.value as TaskState} size={14} priority={task.priority} />, o.label)}
         onChange={(v) => v && onState(v as TaskState)}
       />
       <LogWorkButton taskId={task.id} />
@@ -53,7 +44,7 @@ export function TaskSidebar({ task, onUpdate, onState, onDelete }: {
         value={task.priority}
         allowDeselect={false}
         leftSection={<PriorityGlyph priority={task.priority} />}
-        renderOption={({ option: o }) => option(<PriorityGlyph priority={o.value as Priority} />, o.label)}
+        renderOption={({ option: o }) => iconOption(<PriorityGlyph priority={o.value as Priority} />, o.label)}
         onChange={(v) => v && onUpdate({ priority: v as Priority })}
       />
       <Group gap={4} align="flex-end" wrap="nowrap">

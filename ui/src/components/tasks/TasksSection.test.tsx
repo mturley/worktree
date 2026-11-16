@@ -11,7 +11,8 @@ import type { TaskScope } from "../../hooks/useTasks"
 import { TASK_LIST_KEY } from "../../lib/taskListPrefs"
 import { TaskModalProvider } from "./modal/TaskModalProvider"
 import { setViewport } from "../../testing/viewport"
-import { scopeContext, useTasksPanel } from "./TasksSection"
+import { useTasksPanel } from "./TasksSection"
+import { scopeContext } from "../../lib/taskScope"
 
 vi.mock("../../api/client", async (orig) => ({
   ...(await orig<typeof import("../../api/client")>()),
@@ -27,13 +28,11 @@ const task = (id: number, extra: Partial<Task> = {}): Task => ({
 const ALL: TaskScope = { kind: "all" }
 
 /** A page's shape: the panel above its tab bar. */
-function Host({ scope = ALL, unread, resetKey, testId = "host" }: {
+function Host({ scope = ALL, testId = "host" }: {
   scope?: TaskScope
-  unread?: number
-  resetKey?: string
   testId?: string
 }) {
-  const t = useTasksPanel(scope, { unread, resetKey })
+  const t = useTasksPanel(scope)
   return (
     <div data-testid={testId} data-expanded={t.expanded}>
       {t.panel}
@@ -182,19 +181,6 @@ describe("useTasksPanel", () => {
     expect(panel()).toHaveAttribute("data-level", "normal")
   })
 
-  it("a change of resetKey resets expanded, and changing it back stays normal", async () => {
-    mockOverflow()
-    const { rerender } = wrap(<Host resetKey="" />)
-    await within(panel()).findByText("task 1")
-    await expand()
-    rerender(<Host resetKey="" />)
-    expect(panel()).toHaveAttribute("data-level", "expanded")
-    rerender(<Host resetKey="pr:o/r#1" />)
-    expect(panel()).toHaveAttribute("data-level", "normal")
-    rerender(<Host resetKey="" />)
-    expect(panel()).toHaveAttribute("data-level", "normal")
-  })
-
   it("a collapse from another browser tab clears expanded: un-collapsing gives normal", async () => {
     mockOverflow()
     wrap(<Host />)
@@ -211,25 +197,10 @@ describe("useTasksPanel", () => {
     expect(panel()).toHaveAttribute("data-level", "normal")
   })
 
-  it("unread task events: a dot in the normal header and on the collapsed line", async () => {
-    wrap(<Host unread={2} />)
-    expect(within(panel()).getByRole("img", { name: "unread task activity" })).toBeInTheDocument()
-    await userEvent.click(within(panel()).getByRole("button", { name: /^Collapse task list/ }))
-    const line = within(panel()).getByRole("button", { name: /^Expand task list/ })
-    expect(within(line).getByRole("img", { name: "unread task activity" })).toBeInTheDocument()
-  })
-
-  it("no unread task events: no dot", () => {
-    wrap(<Host unread={0} />)
-    expect(screen.queryByRole("img", { name: "unread task activity" })).toBeNull()
-  })
-
-  it("the collapsed line's name carries the count and the unread state", async () => {
-    const { rerender } = wrap(<Host unread={2} />)
+  it("the collapsed line's name carries the count", async () => {
+    wrap(<Host />)
     await within(panel()).findByText("Tasks (all)")
     await userEvent.click(within(panel()).getByRole("button", { name: /^Collapse task list/ }))
-    expect(within(panel()).getByRole("button", { name: "Expand task list (2 not started, unread activity)" })).toBeInTheDocument()
-    rerender(<Host unread={0} />)
     expect(within(panel()).getByRole("button", { name: "Expand task list (2 not started)" })).toBeInTheDocument()
   })
 })

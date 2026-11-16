@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { TaskModalProvider } from "./tasks/modal/TaskModalProvider"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import type { ResourceDTO, Task } from "../api/types"
+import type { ResourceDTO } from "../api/types"
 
 const resolveResource = vi.fn()
 vi.mock("../api/client", async (orig) => {
@@ -16,7 +16,6 @@ vi.mock("../api/client", async (orig) => {
 })
 
 import { LinkPane } from "./LinkPane"
-import { api } from "../api/client"
 
 const link = (overrides: Partial<ResourceDTO> = {}): ResourceDTO => ({
   type: "link", id: "https://ex.com/a", url: "https://ex.com/a", primary: true,
@@ -103,20 +102,13 @@ describe("LinkPane", () => {
   })
 })
 
-describe("LinkPane tasks", () => {
-  const task: Task = {
-    id: 7, ref: "T7", title: "Read the page", description: "", state: "not_started", priority: "none", starred: false,
-    rank: "r1", created_at: "", updated_at: "", archived: false, links: [], implicit_worktrees: [],
-    subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, open_blockers: [],
-  }
+describe("LinkPane tabs", () => {
   beforeEach(() => {
     window.history.replaceState({}, "", "/worktree/wt")
-    window.localStorage.clear()
-    vi.spyOn(api, "tasks").mockResolvedValue([task])
   })
   afterEach(() => vi.restoreAllMocks())
 
-  it("has a lone Details tab, with the link's task panel between the card and the tab bar", async () => {
+  it("has a lone Details tab", () => {
     wrap(<LinkPane resource={link({ embeddable: false })} path="/wt" />)
     const bar = screen.getByRole("tablist")
     const tabs = within(bar).getAllByRole("tab")
@@ -125,13 +117,6 @@ describe("LinkPane tasks", () => {
     const details = screen.getByRole("tabpanel")
     expect(within(details).getByText("Can't embed page")).toBeInTheDocument()
     expect(within(details).getByRole("button", { name: "Refresh page details" })).toBeInTheDocument()
-
-    const panel = screen.getByTestId("tasks-panel")
-    expect(await within(panel).findByText("Read the page")).toBeInTheDocument()
-    expect(panel.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    const title = screen.getAllByText("Example page")[0]!
-    expect(title.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(api.tasks).toHaveBeenCalledWith({ kind: "resource", type: "link", id: "https://ex.com/a" }, expect.anything())
   })
 
   it("an old ?tab=tasks falls back to Details", () => {

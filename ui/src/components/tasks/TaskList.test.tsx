@@ -516,6 +516,14 @@ describe("TaskList", () => {
     expect(body.style.maxHeight).toBe("min(240px, 25dvh)")
     expect(body).toHaveStyle({ overflowY: "auto" })
   })
+
+  it("capped, the scroll box bleeds into the panel's left padding so a marked row's bar is not clipped", async () => {
+    wrap(<TaskList scope={{ kind: "all" }} maxRows={8} />)
+    await screen.findByText("beta two")
+    const body = screen.getByTestId("task-list-body")
+    expect(body.style.marginLeft).toBe("calc(-1 * var(--mantine-spacing-xs))")
+    expect(body.style.paddingLeft).toBe("var(--mantine-spacing-xs)")
+  })
 })
 
 /*
@@ -1003,5 +1011,28 @@ describe("dropPlanFor", () => {
   it("ignores unknown ids", () => {
     expect(dropPlanFor(sections, taskDraggableId(1), "nope", false)).toEqual({})
     expect(dropPlanFor(sections, "nope", taskDraggableId(1), false)).toEqual({})
+  })
+})
+
+describe("TaskList create target", () => {
+  it("with a selected resource, lists the worktree's tasks but creates new ones in the resource", async () => {
+    vi.mocked(api.tasks).mockResolvedValue([])
+    const create = vi.mocked(api.createTask).mockResolvedValue({ id: 9 } as never)
+    wrap(<TaskList scope={{ kind: "worktree", path: "/wt" }} selectedResource={{ type: "pr", id: "o/r#1" }} />)
+    expect(api.tasks).toHaveBeenCalledWith({ kind: "worktree", path: "/wt" }, expect.anything())
+    const input = screen.getByRole("textbox", { name: "New task" })
+    expect(input).toHaveAttribute("placeholder", "Add a task to this PR…")
+    await userEvent.type(input, "Chase review{Enter}")
+    await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({ title: "Chase review", type: "pr", id: "o/r#1" })))
+    expect(create.mock.calls[0][0]).not.toHaveProperty("path")
+  })
+
+  it("without a selection creates in the list's own scope", async () => {
+    vi.mocked(api.tasks).mockResolvedValue([])
+    const create = vi.mocked(api.createTask).mockResolvedValue({ id: 9 } as never)
+    wrap(<TaskList scope={{ kind: "worktree", path: "/wt" }} />)
+    expect(screen.getByRole("textbox", { name: "New task" })).toHaveAttribute("placeholder", "Add a task to this worktree…")
+    await userEvent.type(screen.getByRole("textbox", { name: "New task" }), "Tidy{Enter}")
+    await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({ path: "/wt" })))
   })
 })

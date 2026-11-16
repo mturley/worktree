@@ -4,7 +4,7 @@ import { MantineProvider } from "@mantine/core"
 import { TaskModalProvider } from "./tasks/modal/TaskModalProvider"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import userEvent from "@testing-library/user-event"
-import type { ResourceDTO, Task } from "../api/types"
+import type { ResourceDTO } from "../api/types"
 import { api } from "../api/client"
 
 if (typeof (globalThis as { EventSource?: unknown }).EventSource !== "function") {
@@ -149,41 +149,15 @@ describe("ResourceDetailPane slack remove control", () => {
   })
 })
 
-describe("ResourceDetailPane slack tasks", () => {
-  const task: Task = {
-    id: 4, ref: "T4", title: "Answer the thread", description: "", state: "not_started", priority: "none", starred: false,
-    rank: "r1", created_at: "", updated_at: "", archived: false, links: [], implicit_worktrees: [],
-    subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, open_blockers: [],
-  }
+describe("ResourceDetailPane slack tabs", () => {
   beforeEach(() => {
-    window.localStorage.clear()
-    vi.spyOn(api, "tasks").mockResolvedValue([task])
     vi.spyOn(api, "linkedResources").mockResolvedValue({ fetched_at: "", count: 0, sections: [] })
   })
 
-  it("Thread · Linked Resources, with the thread's own task panel", async () => {
+  it("Thread · Linked Resources", () => {
     wrap(<ResourceDetailPane path="/wt/foo" resource={slack} />)
     const tabs = within(screen.getByRole("tablist")).getAllByRole("tab")
     expect(tabs.map((t) => t.textContent?.replace(/\d+$/, "").replace(/ \(\d+\)$/, ""))).toEqual(["Thread", "Linked Resources"])
-    expect(api.tasks).toHaveBeenCalledWith({ kind: "resource", type: "slack", id: slack.id }, expect.anything())
-    const panel = screen.getByTestId("tasks-panel")
-    expect(await within(panel).findByText("Answer the thread")).toBeInTheDocument()
-  })
-
-  it("the panel sits between the card and the tab bar", async () => {
-    wrap(<ResourceDetailPane path="/wt/foo" resource={slack} />)
-    const panel = screen.getByTestId("tasks-panel")
-    expect(await within(panel).findByText("Answer the thread")).toBeInTheDocument()
-    const bar = screen.getByRole("tablist")
-    expect(panel.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    const title = screen.getAllByText("Deploy thread")[0]!
-    expect(title.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-  })
-
-  it("the thread's unread task events put a dot on the panel", async () => {
-    wrap(<ResourceDetailPane path="/wt/foo" resource={{ ...slack, task_unread_count: 2 }} />)
-    const panel = screen.getByTestId("tasks-panel")
-    expect(within(panel).getByRole("img", { name: "unread task activity" })).toBeInTheDocument()
   })
 
   it("an old ?tab=tasks falls back to Thread", async () => {
@@ -197,20 +171,10 @@ describe("ResourceDetailPane slack tasks", () => {
   })
 })
 
-/*
- * Tasks contact no external service, so a thread that can't be shown (the
- * Slack watcher off, or Slack not configured) still has its task list.
- */
-describe("ResourceDetailPane slack tasks without a thread", () => {
-  const task: Task = {
-    id: 5, ref: "T5", title: "Follow up on the thread", description: "", state: "not_started", priority: "none",
-    starred: false, rank: "r1", created_at: "", updated_at: "", archived: false, links: [], implicit_worktrees: [],
-    subtasks_total: 0, subtasks_done: 0, blocked: false, blocker_count: 0, open_blockers: [],
-  }
+/* A thread that can't be shown (the Slack watcher off, or Slack not configured) shows a notice instead. */
+describe("ResourceDetailPane slack without a thread", () => {
   const off = { github: { enabled: true, failing: false }, jira: { enabled: true, failing: false }, slack: { enabled: false, failing: false } }
   beforeEach(() => {
-    window.localStorage.clear()
-    vi.spyOn(api, "tasks").mockResolvedValue([task])
     vi.spyOn(api, "linkedResources").mockResolvedValue({ fetched_at: "", count: 0, sections: [] })
   })
   afterEach(() => {
@@ -233,14 +197,11 @@ describe("ResourceDetailPane slack tasks without a thread", () => {
   }
 
   for (const [name, { setup, notice }] of Object.entries(cases)) {
-    it(`${name}: keeps the notice, with the task panel above it and no tab bar`, async () => {
+    it(`${name}: shows the notice and no tab bar`, async () => {
       setup()
       wrap(<ResourceDetailPane path="/wt/foo" resource={slack} />)
-      const shown = await screen.findByText(notice)
+      expect(await screen.findByText(notice)).toBeInTheDocument()
       expect(screen.queryByRole("tablist")).toBeNull()
-      const panel = screen.getByTestId("tasks-panel")
-      expect(await within(panel).findByText("Follow up on the thread")).toBeInTheDocument()
-      expect(panel.compareDocumentPosition(shown) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     })
   }
 })
