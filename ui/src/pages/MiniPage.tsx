@@ -6,6 +6,7 @@ import type { ResourceDTO } from "../api/types"
 import { useCmux } from "../api/cmux"
 import { useActivityPanel } from "../components/ActivityPanel"
 import { ChooseWorktreeModal } from "../components/ChooseWorktreeModal"
+import { HeaderActions } from "../components/HeaderActions"
 import { Logo } from "../components/Logo"
 import { UnreadBadge } from "../components/UnreadBadge"
 import { NarrowingContext } from "../components/search/NarrowingContext"
@@ -205,7 +206,9 @@ export function MiniPage() {
             />
           </Box>
           <Group gap="sm" wrap="nowrap">
-            {/* Unreads only is with the activity feed's other toggles. */}
+            {/* Unreads only is with the activity feed's other toggles. Settings
+                stays out: the menu bar app has its own. */}
+            <HeaderActions settings={false} fullScreenLogs />
             <Button size="compact-xs" variant="default" onClick={() => openExternal("/")}>
               Open full UI ↗
             </Button>

@@ -10,7 +10,7 @@ import { ResourceStatusTab } from "./ResourceStatusTab"
  */
 export function WatcherLogsModal({ opened, onClose, fullScreen }: { opened: boolean; onClose: () => void; fullScreen?: boolean }) {
   return (
-    <Modal opened={opened} onClose={onClose} title="Watcher logs" size="xl" fullScreen={fullScreen}>
+    <Modal opened={opened} onClose={onClose} title="Watcher logs" size="xl" fullScreen={fullScreen} closeButtonProps={{ "aria-label": "Close" }}>
       {opened && (
         <Tabs defaultValue="log" keepMounted={false} variant="pills">
           <Tabs.List>

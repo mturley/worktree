@@ -261,6 +261,25 @@ describe("MiniPage", () => {
     expect(post).toHaveBeenCalledWith({ type: "open", url: window.location.origin + "/" })
   })
 
+  it("puts refresh and logs before Open full UI, without settings", () => {
+    wrap()
+    const open = screen.getByRole("button", { name: /Open full UI/ })
+    const row = open.parentElement as HTMLElement
+    expect(within(row).getAllByRole("button").map((b) => b.getAttribute("aria-label") ?? b.textContent))
+      .toEqual(["Refresh watchers", "Watcher logs", "Open full UI ↗"])
+    expect(screen.queryByRole("button", { name: "Settings" })).toBeNull()
+  })
+
+  it("opens the watcher logs full screen and closes them", async () => {
+    vi.spyOn(api, "watcherLog").mockResolvedValue({ entries: [], has_more: false })
+    wrap()
+    await userEvent.click(screen.getByRole("button", { name: "Watcher logs" }))
+    const dialog = await screen.findByRole("dialog", { name: "Watcher logs" })
+    expect(dialog.closest("[data-full-screen]")).not.toBeNull()
+    await userEvent.click(within(dialog).getByRole("button", { name: "Close" }))
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Watcher logs" })).toBeNull())
+  })
+
   it("posts ready on mount", async () => {
     stubBridge()
     wrap()
