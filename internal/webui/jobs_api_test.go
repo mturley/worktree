@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -209,6 +210,128 @@ func TestDeleteTwiceAttaches(t *testing.T) {
 	}
 	if first["attached"] != false || second["attached"] != true {
 		t.Fatalf("attached = %v then %v, want false then true", first["attached"], second["attached"])
+	}
+}
+
+// A create is identified by its repo root and input together, joined by a NUL.
+// Two requests for the same one attach; a different input in the same repo is
+// its own job, which is only true if the whole target survives the round trip
+// through SQLite's TEXT.
+func TestCreateTwiceAttaches(t *testing.T) {
+	t.Parallel()
+	wt := testgit.Worktree(t)
+	repo := filepath.Join(filepath.Dir(wt), "repo")
+	srv := jobsTestDB(t)
+	release := make(chan struct{})
+	// The real create would finish before the second request arrives; this
+	// one holds the job open so the attach is what is being tested.
+	srv.jobs().Register(blockingJobKind(jobKindCreate, release))
+	ts := jobsServer(t, srv)
+	defer func() {
+		close(release)
+		srv.jobs().Wait()
+	}()
+
+	_, first := postJob(t, ts, "/api/worktrees/create",
+		map[string]any{"input": "job-api-attach", "repo_root": repo})
+	_, second := postJob(t, ts, "/api/worktrees/create",
+		map[string]any{"input": "job-api-attach", "repo_root": repo})
+	_, other := postJob(t, ts, "/api/worktrees/create",
+		map[string]any{"input": "job-api-attach-2", "repo_root": repo})
+
+	firstJob, secondJob := startedJob(t, first), startedJob(t, second)
+	if firstJob["id"] != secondJob["id"] {
+		t.Fatalf("ids %v and %v differ, want the same job", firstJob["id"], secondJob["id"])
+	}
+	if first["attached"] != false || second["attached"] != true {
+		t.Fatalf("attached = %v then %v, want false then true", first["attached"], second["attached"])
+	}
+	if other["attached"] != false {
+		t.Fatalf("a different input attached to %v", firstJob["id"])
+	}
+	if id := startedJob(t, other)["id"]; id == firstJob["id"] {
+		t.Fatalf("a different input got the same job %v", id)
+	}
+}
+
+// replayJobKind ends its first run the way out says and succeeds on every run
+// after it, counting them, so a test can see a job actually run again.
+func replayJobKind(name string, out jobs.Outcome, runs *atomic.Int32) jobs.Kind {
+	return jobs.Kind{
+		Name: name,
+		Plan: func(json.RawMessage) []jobs.Step { return nil },
+		Run: func(json.RawMessage, func(jobs.Step)) jobs.Outcome {
+			if runs.Add(1) == 1 {
+				return out
+			}
+			return jobs.Outcome{State: jobs.StateSucceeded}
+		},
+		Answer: func(request, question json.RawMessage, yes bool) (json.RawMessage, bool, error) {
+			return request, false, nil
+		},
+	}
+}
+
+func TestJobAnswerRunsTheJobAgain(t *testing.T) {
+	t.Parallel()
+	srv := jobsTestDB(t)
+	var runs atomic.Int32
+	srv.jobs().Register(replayJobKind("test_answer", jobs.Outcome{
+		State: jobs.StateNeedsAnswer, Question: json.RawMessage(`{"key":"delete_branch"}`),
+	}, &runs))
+	ts := jobsServer(t, srv)
+
+	job, _, err := srv.jobs().Start("test_answer", "asking", "t1", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.jobs().Wait()
+
+	code, body := postJob(t, ts, "/api/jobs/answer", map[string]any{"id": job.ID, "answer": "yes"})
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %+v", code, body)
+	}
+	if body["id"] != job.ID {
+		t.Fatalf("answered job = %+v, want %s", body, job.ID)
+	}
+	srv.jobs().Wait()
+	if n := runs.Load(); n != 2 {
+		t.Fatalf("run called %d times, want the answer to replay it", n)
+	}
+	list := listJobs(t, ts)
+	if len(list) != 1 || list[0]["state"] != string(jobs.StateSucceeded) {
+		t.Fatalf("jobs = %+v, want the one job succeeded", list)
+	}
+}
+
+func TestJobRetryRunsTheJobAgain(t *testing.T) {
+	t.Parallel()
+	srv := jobsTestDB(t)
+	var runs atomic.Int32
+	srv.jobs().Register(replayJobKind("test_retry",
+		jobs.Outcome{State: jobs.StateFailed, Error: "nope"}, &runs))
+	ts := jobsServer(t, srv)
+
+	job, _, err := srv.jobs().Start("test_retry", "failing", "t1", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.jobs().Wait()
+
+	code, body := postJob(t, ts, "/api/jobs/retry", map[string]any{"id": job.ID})
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %+v", code, body)
+	}
+	if body["id"] != job.ID {
+		t.Fatalf("retried job = %+v, want %s", body, job.ID)
+	}
+	srv.jobs().Wait()
+	if n := runs.Load(); n != 2 {
+		t.Fatalf("run called %d times, want the retry to replay it", n)
+	}
+	list := listJobs(t, ts)
+	if len(list) != 1 || list[0]["state"] != string(jobs.StateSucceeded) {
+		t.Fatalf("jobs = %+v, want the one job succeeded", list)
 	}
 }
 
