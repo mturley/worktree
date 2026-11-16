@@ -93,3 +93,17 @@ describe("TaskQuickAdd under WebKit focus rules", () => {
     expect(screen.queryByRole("button", { name: "Add & open" })).toBeNull()
   })
 })
+
+describe("TaskQuickAdd priority", () => {
+  it("shows each priority's glyph in the options and beside the chosen value", async () => {
+    render(<MantineProvider><TaskQuickAdd onAdd={vi.fn().mockResolvedValue(undefined)} /></MantineProvider>)
+    act(() => screen.getByRole("textbox", { name: "New task" }).focus())
+    const select = screen.getByRole("textbox", { name: "New task priority" })
+    fireEvent.click(select)
+    expect(await screen.findByRole("option", { name: /High/ })).toHaveTextContent("!!!")
+    expect(screen.getByRole("option", { name: /Medium/ })).toHaveTextContent("!!")
+    fireEvent.click(screen.getByRole("option", { name: /High/ }))
+    // The chosen value's glyph sits in the input's left section.
+    expect(select.closest(".mantine-Select-root, .mantine-InputWrapper-root")!).toHaveTextContent("!!!")
+  })
+})

@@ -1,6 +1,8 @@
 import { useRef, useState } from "react"
 import { ActionIcon, Button, Group, Select, TextInput } from "@mantine/core"
 import type { Priority } from "../../api/types"
+import { iconOption } from "./iconOption"
+import { PriorityGlyph } from "./TaskPriorityMenu"
 
 /**
  * WebKit (Safari, the cmux browser pane) does not focus a button on click, so
@@ -94,12 +96,14 @@ export function TaskQuickAdd({ onAdd, onOpen }: {
           </ActionIcon>
           <Select
             size="xs"
-            w={95}
+            w={115}
             aria-label="New task priority"
             data={PRIORITY_OPTIONS}
             value={priority}
             allowDeselect={false}
             disabled={busy}
+            leftSection={<PriorityGlyph priority={priority} />}
+            renderOption={({ option: o }) => iconOption(<PriorityGlyph priority={o.value as Priority} />, o.label)}
             // In place, so picking an option never moves focus out of this group.
             comboboxProps={{ withinPortal: false }}
             onChange={(v) => v && setPriority(v as Priority)}
