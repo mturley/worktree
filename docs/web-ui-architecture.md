@@ -703,7 +703,9 @@ for:
 
 `POST /api/worktrees/delete` — body `{path, delete_branch, force_directory,
 force_branch}`. It validates the path and starts a `worktree_delete` job
-(`{job, attached}`); see "Background jobs" for what happens next.
+(`{job, attached}`); see "Background jobs" for what happens next, and
+"Frontend structure" for why the trash control hands that job straight to the
+root-mounted `JobModalHost` instead of showing it itself.
 
 **Deletion is multi-phase.** `internal/worktreedel` owns the sequence and both
 the CLI and the job drive it, so they cannot drift. git may refuse to remove
@@ -735,8 +737,9 @@ goroutine of its own, so closing the tab, reloading, or a machine that sleeps
 mid-run cannot strand a worktree half-made or half-removed with nobody
 watching. (A job is not a task: tasks are the to-do items in "Tasks".)
 `POST /api/worktrees/create` and `/delete` only validate and start one; every
-tab then follows it through `/api/jobs` and the stream's `jobs` / `job`
-events (see "SSE").
+tab then follows it through the stream's `jobs` / `job` events (see "SSE").
+`GET /api/jobs` is a plain read of the same list, for callers that are not a
+tab.
 
 **Model (`internal/jobs/job.go`).** A `Job` has an `id`, a `kind`, a `title`,
 a `target`, a `state`, an ordered `steps` list (never null), a `question` (null
@@ -757,7 +760,9 @@ can be told about: a job's goroutine has no caller to return a save error to.
 Ordering rule: `Start`, `Retry`, `Answer` and dismissal write the DB first and
 publish only if it accepted the change, so a client is never told about a job
 whose row does not exist; a step or outcome that the DB refuses is still
-published (the work did happen) and logged. One mutex guards the saves, the
+published (the work did happen) and logged. An outcome is retried a few times
+first (`outcomeSaveAttempts`, `outcomeSaveBackoff`), because unlike a step it
+has no later save to correct it. One mutex guards the saves, the
 publishes and the snapshots, which is what makes `Subscribe` atomic: it
 returns the visible jobs and a change channel taken under that lock, so no
 change falls between the snapshot and the first change. A subscriber more than
@@ -796,10 +801,10 @@ Contracts a kind must honour:
 `Server.jobs()`; a start route that validates the request and calls
 `startJob(w, kind, title, target, request)`, which is where the title and the
 dedupe target are chosen (`handleCreateWorktree`, `handleDeleteWorktree`), and
-its entry in the route table in `server.go`; the kind in the `Job.kind` union
-in `ui/src/api/types.ts`; a modal that uses `useModalJob`, with a branch for
-the kind in `JobModalHost.tsx` (anything but `worktree_delete` opens
-`NewWorktreeModal`); a `HEADLINES` entry per question key in `JobToasts.tsx`;
+its entry in the route table in `server.go`; a modal that uses `useModalJob`,
+with a branch for the kind in `JobModalHost.tsx` (a kind with no branch there
+opens no modal, and its toast is all there is); a `HEADLINES` entry per
+question key in `JobToasts.tsx`;
 and, if the kind leaves a `result`, the toast's `resultPath` rule, which
 today reads `result.path` of `worktree_create` only. The manager, the
 `/api/jobs*` routes, the stream, `worktree jobs` and `JobStepper` need no
@@ -834,6 +839,16 @@ its in-flight step becomes `failed` with the detail "interrupted: the server
 stopped"; a clean `succeeded` row is deleted, since its expiry timer died with
 the old server. `needs_answer` and finished rows are kept as they are.
 
+**Orphans heal themselves.** A row that says `running`, carries *this*
+process's pid, and has no entry in the manager's `exec` map is a job nothing is
+running: the shape left behind when an outcome's save failed for good, or when
+`Recover` could not finish. `healLocked` rewrites it as `interrupted`, exactly
+as `Recover` does, and publishes it — in `Start` (which then begins a fresh job
+rather than attaching), `Dismiss`, `Retry`, `Visible` and `Subscribe`'s
+snapshot. Without it such a row would read "running" after every reload, no
+`dismiss` or `retry` would be allowed on it, and its target could never be
+created or deleted from the UI again.
+
 **The cmux workspace step.** When the create request has a non-blank
 `workspace_name`, `Plan` appends a `cmux_workspace` step and `runCreateJob`
 runs it after the runner succeeds (`runCmuxWorkspaceStep`). It lives in the job
@@ -847,35 +862,61 @@ creating is what was asked. Otherwise `createCmuxWorkspace` (shared with
 `/api/cmux/create`) builds it from the worktree's resources as they are then.
 
 **Refusing to stop (`stop.go`, wired in `cmd/ui.go`).** `GuardStop` handles
-SIGTERM and SIGINT. With no job executing it exits 0. With one executing it
-logs "refusing to stop" and stays; a second signal within 5s
-(`stopForceWindow`) logs "forced stop" and exits 1, leaving the job to be
+SIGTERM and SIGINT. With no job executing it ends the process; with one
+executing it logs "refusing to stop" and stays, and a second signal within 5s
+(`stopForceWindow`) logs "forced stop" and ends it, leaving the job to be
 recovered as `interrupted`. Jobs have no time limit and cannot be cancelled,
 so that second signal is the deliberate way to stop a refusing server, and it
 needs no pid. Only jobs executing in *this* process count (`Manager.Running`),
 not rows.
 
+Both endings go through the injected `die(sig)`, which **ends the process the
+way the signal would have**: the production one (`dieBySignal` in `cmd/ui.go`,
+kept out of `internal/webui` so its tests can never send a real signal) resets
+the handler and re-sends the signal to itself, falling back to `os.Exit(1)`.
+The shell therefore still sees 143 for a SIGTERM, which is what anything
+supervising the server reads to tell a stop from a crash — and what decides
+whether it is restarted after an install.
+
 **`worktree jobs` (`cmd/jobs.go`)** reads the unfinished rows straight from
-the DB (`OpenRead`, no server or login; a missing or pre-jobs DB means no
-jobs). A job is *live* when its state is `running` and its recorded server pid
-is alive. `--running` keeps only live jobs; `--json` is `{schema_version,
-jobs[]}` with `live` and `current_step`. It exits 0 whether or not there are jobs, including with no database
-or one older than jobs; a database it cannot read is an error.
+the DB, with no server or login. It opens with `OpenRead`, and on
+`ErrSchemaBehind` falls back to `OpenReadAnyVersion` — the same read-only
+handle without the version check (`internal/db`). A schema older than this
+binary's says nothing about the `jobs` table, which may well hold a job in
+flight, and `jobs.Unfinished` copes with the table being absent; reporting "no
+jobs" because a migration is pending is how `make install` would come to kill
+a busy server. A job is *live* when its state is `running` and its recorded
+server pid is alive. `--running` keeps only live jobs; `--json` is
+`{schema_version, jobs[]}` with `live` and `current_step`. It exits 0 whether
+or not there are jobs, and with no database at all; a database it cannot read
+is an error.
 
 **`make install` and the force window.** `stop-running` depends on `build`,
 passes `NONINTERACTIVE` through, and (`scripts/stop-running.sh`) asks the
 freshly built `bin/worktree jobs --running` before it signals anything. Only
 PIDs whose executable (found with `lsof`) is exactly the file being replaced
 are ever signalled. If a job is running it prints the jobs and asks `[A]bort,
-[R]etry, [F]orce?`; under `NONINTERACTIVE=1` (or with no terminal to ask on)
-it aborts instead. If the checker itself cannot run, that counts as busy and
-asks, never as idle: a wrong guess kills a job in flight. Retry looks again;
-Force sends SIGKILL, and the job comes back `interrupted` with a working "Run
-again". After a SIGTERM the script waits, and a server that survives it
-because a job started in the gap returns to the prompt rather than being
-killed. Because the server treats a second signal inside its 5-second window
-as "force", the script waits that window out before ever sending a second
-SIGTERM, so the installer never trips it by accident.
+[R]etry, [F]orce?`; under `NONINTERACTIVE=1` it aborts instead, and with no
+terminal to ask on it says so and aborts. If the checker itself cannot run,
+that counts as busy and asks, never as idle: a wrong guess kills a job in
+flight. Retry looks again; Force sends SIGKILL, and the job comes back
+`interrupted` with a working "Run again".
+
+**`-KILL` is only ever sent because somebody chose Force.** A server that is
+still alive after its SIGTERM goes to the same question, whether the checker
+names a job or not: an idle server exits at once, so a survivor is either
+refusing (a job started in the gap) or hung, and from outside there is no
+telling which. With no jobs to list, the question shows "(the server did not
+stop after SIGTERM)". `NONINTERACTIVE=1` therefore aborts a hung server's
+install rather than killing it. Because the server treats a second signal
+inside its 5-second window as "force", the script waits that window out before
+ever sending a second SIGTERM, so the installer never trips it by accident.
+
+The question is read from a terminal opened once and kept on fd 3, so a second
+question in one run reads the next answer rather than the first again. The
+`STOP_RUNNING_TTY` override that points that terminal at a file belongs to
+`scripts/stop-running_test.sh`; the Makefile clears it (`env -u`) so a stray
+export in a shell cannot answer the question on the user's behalf.
 
 **Dev restarts must kill outright.** `.air.toml` sets `send_interrupt =
 false`: air's default is to send SIGINT and wait, which a busy server refuses,
@@ -1557,9 +1598,15 @@ the snapshot (after the stream's other registrations), then sends
 one `event: jobs` with `{"jobs":[…]}` (every visible job, never null) right
 after the first heartbeat, and one `event: job` per later change, whose data
 is the job itself; a dismissed job arrives once more with `dismissed: true`.
-`useSSE` replaces the whole list from `jobs` (a malformed snapshot is dropped
-whole) and upserts from `job` (`lib/jobsStore.ts`); a finished job also
-invalidates `["worktrees"]` and `["cmux"]`. If the manager drops the stream
+`useSSE` replaces the whole list from `jobs` and upserts from `job`
+(`lib/jobsStore.ts`). Its `isJob` guard checks the strings and every step, and
+accepts **any** `kind` string: a kind this build has no name for still has a
+toast, and rejecting it would make a newer server's jobs vanish from an older
+tab. One unreadable job in a snapshot is dropped on its own rather than with
+the list, which would hide every other job too. A finished job also invalidates
+`["worktrees"]`, `["cmux"]`, `["tasks"]`, `["resources"]` and `["timeline"]`,
+since a delete takes the worktree's resources, its timeline entries and its
+tasks' link to it as well. If the manager drops the stream
 for falling behind, the handler returns and the tab's reconnect fetches a new
 snapshot, so no tab can stay on a state it cannot trust.
 
@@ -2799,19 +2846,47 @@ states. Frontend: `ui/src/components/settings/LogsPanel.tsx`,
   (`useSSE`), with the `useSyncExternalStore` hooks `useJobs` / `useJob`. It
   also keeps two pieces of tab-local state: which jobs a modal in this tab is
   showing (`attachJob`, counted, so a toast stays hidden until the last modal
-  detaches) and which job's modal a toast asked for (`openJobModal`).
+  detaches) and which modal is open (`openJobModal(job)` → `{id, kind,
+  target}`, read with `useOpenJobModal`).
   `JobToasts` (mounted in `App.tsx`) is one toast per visible job, hidden
   while attached: a spinner beside the title while the job runs and one on
   each running step (`JobStepper`), the question on a
   `needs_answer` job (clickable, and with an explicit "Answer" button), "Open
   worktree" on a finished create, "Run again" on a failed or interrupted job,
   and a dismiss; its collapsed state is a per-job `localStorage` convenience.
-  `JobModalHost` (also in `App.tsx`) opens `NewWorktreeModal` or
-  `DeleteWorktreeModal` on the job a toast named. The two modals share
-  `useModalJob` (follow one job from the store, keep the last one seen once
-  the server dismisses it, attach for toast suppression, and the answer /
-  retry / dismiss calls) and render steps with `JobStepper`. Once a job
-  exists the modal is only a view of it; closing it stops nothing.
+  Collapsed, a finished job's one line is led by how it ended (Done / Failed /
+  Interrupted), which is all there is to say when its detail sits on a step.
+  The step whose detail only repeats the interrupted line shows none, a step's
+  detail wraps anywhere rather than past the edge, and both one toast's body
+  and the stack of them scroll instead of growing off the screen.
+- **`JobModalHost` (`App.tsx`) owns every job modal**, rather than the control
+  that started the job. A delete removes the worktree its own page is built
+  from: a modal mounted on that page would be unmounted exactly when it had
+  the delete's report to show. So `DeleteWorktreeButton` is only the
+  confirmation form — `onStarted` hands the started job to `openJobModal` and
+  closes it — and the host shows the rest, invalidating `["tasks"]` and
+  navigating to `/` when the route being viewed is the deleted worktree's own
+  page. The host renders by the kind remembered at open time and closes only
+  on `closeJobModal`, so the server's expiry and another tab's dismissal
+  cannot take it away mid-read; a kind it has no branch for opens nothing.
+  `NewWorktreeModal` is also opened from `HomePage`, whose mount point does
+  not go away, so create needs no hand-off.
+- The two modals share `useModalJob` (follow one job from the store, keep the
+  last one seen once the server dismisses it, attach for toast suppression,
+  and the answer / retry / dismiss calls) and render steps with `JobStepper`.
+  Once a job exists the modal is only a view of it; closing it stops nothing.
+  Two states it reports beyond the job's own: `unknown`, a modal opened on a
+  job id this tab has never seen, which says "This job is no longer running."
+  with a Close button rather than falling back to a confirmation form for a
+  worktree it has no name for; and `gone`, a job that was running when the tab
+  last heard of it and has since left the store. Over plain HTTP a hidden tab
+  gives up its stream (see "Background streams"), so a job can run to its end
+  and expire unseen; an unfinished job cannot leave the store any other way,
+  so its absence means it is over. The modal then keeps the steps it has, with
+  no spinner on any of them (`JobStepper`'s `quiet`), says "This finished while
+  this tab was away." and offers Close. `sawLive` is what distinguishes that
+  from the gap between the start response and the first stream event, where
+  there is legitimately no job in the store yet.
 - **Lib** (`ui/src/lib/`): `resourceSummary.ts` (builds the "2 PRs, 3 Jira
   issues · 2 related resources" summary string from `primary_by_type` +
   `related_count`), `worktreeSort.ts` + `worktreeSortPref.ts` (see "Worktree
