@@ -3,6 +3,7 @@ package webui
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/mturley/worktree/internal/config"
 	"github.com/mturley/worktree/internal/jobs"
@@ -35,12 +36,20 @@ func observedStatus(status string) jobs.StepStatus {
 func (s *Server) createJobKind() jobs.Kind {
 	return jobs.Kind{
 		Name: jobKindCreate,
-		Plan: func(json.RawMessage) []jobs.Step {
+		Plan: func(request json.RawMessage) []jobs.Step {
 			planned := worktreenew.Planned()
-			steps := make([]jobs.Step, 0, len(planned))
+			steps := make([]jobs.Step, 0, len(planned)+1)
 			for _, st := range planned {
 				steps = append(steps, jobs.Step{
 					Key: string(st.Key), Label: st.Label, Status: jobs.StepStatus(st.Status),
+				})
+			}
+			// A request that will not decode runs nowhere; Run reports that.
+			var req createWorktreeRequest
+			if json.Unmarshal(request, &req) == nil && req.wantsWorkspace() {
+				steps = append(steps, jobs.Step{
+					Key: string(worktreenew.StepCmuxWorkspace), Label: cmuxStepLabel,
+					Status: jobs.StepPending,
 				})
 			}
 			return steps
@@ -77,11 +86,54 @@ func (s *Server) runCreateJob(request json.RawMessage, report func(jobs.Step)) j
 		}
 		return jobs.Outcome{State: jobs.StateNeedsAnswer, Question: question}
 	}
+	if req.wantsWorkspace() {
+		s.runCmuxWorkspaceStep(req, res.Path, report)
+	}
 	result, err := json.Marshal(createResult{Path: res.Path, Branch: res.Branch})
 	if err != nil {
 		return jobs.Outcome{State: jobs.StateFailed, Error: err.Error()}
 	}
 	return jobs.Outcome{State: jobs.StateSucceeded, Result: result}
+}
+
+// cmuxStepLabel is the workspace step's label, matching the runner's own.
+const cmuxStepLabel = "cmux workspace"
+
+// wantsWorkspace is whether the request asks for a cmux workspace.
+func (req createWorktreeRequest) wantsWorkspace() bool {
+	return strings.TrimSpace(req.WorkspaceName) != ""
+}
+
+// runCmuxWorkspaceStep is the create's last step. It runs here rather than in
+// worktreenew so the CLI's `worktree add` is untouched, and on the server
+// rather than in the browser so closing the page cannot lose it. Whatever
+// happens, the worktree stands: a failure is a failed step, never a failed
+// job. A replay finds the workspace an earlier run made and leaves it alone.
+func (s *Server) runCmuxWorkspaceStep(req createWorktreeRequest, path string, report func(jobs.Step)) {
+	step := jobs.Step{Key: string(worktreenew.StepCmuxWorkspace), Label: cmuxStepLabel}
+	step.Status = jobs.StepRunning
+	report(step)
+
+	name := strings.TrimSpace(req.WorkspaceName)
+	switch {
+	case !s.cmuxEnabled():
+		step.Status, step.Detail = jobs.StepSkipped, "cmux features are off"
+	default:
+		existing, err := s.findCmuxWorkspace(path)
+		switch {
+		case err == nil && existing != nil:
+			step.Status, step.Detail = jobs.StepSkipped, "already has a workspace"
+		default:
+			// A failed lookup is not a reason to skip: creating is what was
+			// asked, and it reports its own failure.
+			if _, err := s.createCmuxWorkspace(path, name, req.WorkspaceGroupRef, req.WorkspaceColor); err != nil {
+				step.Status, step.Detail = jobs.StepFailed, err.Error()
+			} else {
+				step.Status, step.Detail = jobs.StepDone, name
+			}
+		}
+	}
+	report(step)
 }
 
 // createResult is what a finished create leaves on the job: where the worktree

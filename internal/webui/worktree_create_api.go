@@ -30,6 +30,12 @@ type createWorktreeRequest struct {
 	// forever, and closing the modal would strand a worktree git has already
 	// created — on disk, unregistered, holding no port range.
 	DeclineReset bool `json:"decline_reset"`
+
+	// WorkspaceName, when not blank, makes the job's last step create the
+	// worktree's cmux workspace under that name, in the group and colour given.
+	WorkspaceName     string `json:"workspace_name"`
+	WorkspaceGroupRef string `json:"workspace_group_ref"`
+	WorkspaceColor    string `json:"workspace_color"`
 }
 
 // handleCreateWorktree: POST /api/worktrees/create

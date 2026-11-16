@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mturley/worktree/internal/cmux"
 	wdb "github.com/mturley/worktree/internal/db"
 	"github.com/mturley/worktree/internal/jobs"
 	"github.com/mturley/worktree/internal/registry"
@@ -290,5 +291,181 @@ func TestCreateKindBadRepoRootFails(t *testing.T) {
 	}
 	if !strings.Contains(out.Error, "repo root not found") {
 		t.Fatalf("error = %q, want it to name the missing repo root", out.Error)
+	}
+}
+
+func TestCreatePlanAddsCmuxStepOnlyWithName(t *testing.T) {
+	t.Parallel()
+	plan := (&Server{}).createJobKind().Plan
+	keyOf := func(req createWorktreeRequest) []string {
+		var keys []string
+		for _, st := range plan(json.RawMessage(mustJSON(t, req))) {
+			keys = append(keys, st.Key)
+		}
+		return keys
+	}
+
+	with := keyOf(createWorktreeRequest{Input: "b", RepoRoot: "/r", WorkspaceName: "ws"})
+	if got := with[len(with)-1]; got != string(worktreenew.StepCmuxWorkspace) {
+		t.Fatalf("last planned step = %q, want %q", got, worktreenew.StepCmuxWorkspace)
+	}
+	for _, blank := range []string{"", "   "} {
+		for _, k := range keyOf(createWorktreeRequest{Input: "b", RepoRoot: "/r", WorkspaceName: blank}) {
+			if k == string(worktreenew.StepCmuxWorkspace) {
+				t.Fatalf("workspace_name %q planned a cmux step", blank)
+			}
+		}
+	}
+}
+
+// fakeCmux puts stand-ins for `cmux` and `osascript` first on PATH, so nothing
+// in these tests can reach the real cmux (or raise its window). Each records
+// its arguments, one invocation per line, in the returned calls file; a file
+// named `fail` in the returned dir makes `cmux workspace create` fail. The
+// test is serial: it sets PATH.
+func fakeCmux(t *testing.T) (dir, calls string) {
+	t.Helper()
+	dir = t.TempDir()
+	calls = filepath.Join(dir, "calls")
+	script := `#!/bin/sh
+echo "$(basename "$0") $*" >> "` + calls + `"
+if [ "$(basename "$0")" = cmux ] && [ "$1 $2" = "workspace create" ]; then
+  if [ -e "` + filepath.Join(dir, "fail") + `" ]; then echo "boom" >&2; exit 1; fi
+  echo '{"workspace_ref":"workspace:9"}'
+fi
+exit 0
+`
+	for _, name := range []string{"cmux", "osascript"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return dir, calls
+}
+
+func readCalls(t *testing.T, calls string) string {
+	t.Helper()
+	b, err := os.ReadFile(calls)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+// runCreateWithWorkspace runs the create kind for a fresh branch with a
+// workspace requested and returns the outcome and the reports of its cmux step.
+func runCreateWithWorkspace(t *testing.T, s *Server, branch string) (jobs.Outcome, []jobs.Step) {
+	t.Helper()
+	wt := testgit.Worktree(t)
+	s.cmuxAvailable = func() bool { return true }
+	var cmuxReports []jobs.Step
+	out := s.createJobKind().Run(json.RawMessage(mustJSON(t, createWorktreeRequest{
+		Input: branch, RepoRoot: filepath.Join(filepath.Dir(wt), "repo"),
+		WorkspaceName: "my ws", WorkspaceGroupRef: "group:1", WorkspaceColor: "#112233",
+	})), func(st jobs.Step) {
+		if st.Key == string(worktreenew.StepCmuxWorkspace) {
+			cmuxReports = append(cmuxReports, st)
+		}
+	})
+	return out, cmuxReports
+}
+
+func lastReport(t *testing.T, reports []jobs.Step) jobs.Step {
+	t.Helper()
+	if len(reports) < 2 || reports[0].Status != jobs.StepRunning {
+		t.Fatalf("cmux step reports = %+v, want running then a result", reports)
+	}
+	return reports[len(reports)-1]
+}
+
+func TestCreateKindCmuxDisabledSkips(t *testing.T) {
+	_, calls := fakeCmux(t)
+	s := jobsTestDB(t)
+	s.SetCmuxFeaturesDisabled(true)
+
+	out, reports := runCreateWithWorkspace(t, s, "job-kind-cmux-off")
+	if out.State != jobs.StateSucceeded {
+		t.Fatalf("state = %s (error %q), want succeeded", out.State, out.Error)
+	}
+	if st := lastReport(t, reports); st.Status != jobs.StepSkipped || st.Detail != "cmux features are off" {
+		t.Fatalf("step = %+v, want skipped / cmux features are off", st)
+	}
+	if got := readCalls(t, calls); got != "" {
+		t.Fatalf("cmux was called with features off: %q", got)
+	}
+}
+
+func TestCreateKindCmuxCreatesWorkspace(t *testing.T) {
+	_, calls := fakeCmux(t)
+	s := jobsTestDB(t)
+	s.cmuxList = func() ([]cmux.Workspace, error) { return nil, nil }
+
+	out, reports := runCreateWithWorkspace(t, s, "job-kind-cmux-create")
+	if out.State != jobs.StateSucceeded {
+		t.Fatalf("state = %s (error %q), want succeeded", out.State, out.Error)
+	}
+	if st := lastReport(t, reports); st.Status != jobs.StepDone || st.Detail != "my ws" {
+		t.Fatalf("step = %+v, want done / my ws", st)
+	}
+	var res createResult
+	if err := json.Unmarshal(out.Result, &res); err != nil {
+		t.Fatal(err)
+	}
+	var create string
+	for _, line := range strings.Split(readCalls(t, calls), "\n") {
+		if strings.HasPrefix(line, "cmux workspace create") {
+			create = line
+		}
+	}
+	for _, want := range []string{"--name my ws", "--cwd " + res.Path, "--group group:1"} {
+		if !strings.Contains(create, want) {
+			t.Fatalf("create call %q lacks %q", create, want)
+		}
+	}
+}
+
+func TestCreateKindCmuxExistingWorkspaceSkips(t *testing.T) {
+	_, calls := fakeCmux(t)
+	s := jobsTestDB(t)
+	// The workspace "exists" at wherever the worktree was registered.
+	s.cmuxList = func() ([]cmux.Workspace, error) {
+		entries, err := registry.List(s.DB)
+		if err != nil || len(entries) == 0 {
+			return nil, err
+		}
+		return []cmux.Workspace{{Ref: "workspace:1", CurrentDirectory: entries[0].Path}}, nil
+	}
+
+	out, reports := runCreateWithWorkspace(t, s, "job-kind-cmux-existing")
+	if out.State != jobs.StateSucceeded {
+		t.Fatalf("state = %s (error %q), want succeeded", out.State, out.Error)
+	}
+	if st := lastReport(t, reports); st.Status != jobs.StepSkipped || st.Detail != "already has a workspace" {
+		t.Fatalf("step = %+v, want skipped / already has a workspace", st)
+	}
+	if got := readCalls(t, calls); strings.Contains(got, "workspace create") {
+		t.Fatalf("a second workspace was created: %q", got)
+	}
+}
+
+func TestCreateKindCmuxFailureIsStickySuccess(t *testing.T) {
+	dir, _ := fakeCmux(t)
+	if err := os.WriteFile(filepath.Join(dir, "fail"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := jobsTestDB(t)
+	s.cmuxList = func() ([]cmux.Workspace, error) { return nil, nil }
+
+	out, reports := runCreateWithWorkspace(t, s, "job-kind-cmux-fail")
+	if out.State != jobs.StateSucceeded {
+		t.Fatalf("state = %s (error %q), want succeeded: the worktree stands", out.State, out.Error)
+	}
+	st := lastReport(t, reports)
+	if st.Status != jobs.StepFailed || !strings.Contains(st.Detail, "boom") {
+		t.Fatalf("step = %+v, want failed naming boom", st)
+	}
+	if !(jobs.Job{Steps: []jobs.Step{st}}).HasFailedStep() {
+		t.Fatal("HasFailedStep = false, so the manager would expire the job")
 	}
 }
