@@ -1049,10 +1049,7 @@ is the same RFC3339 second clock); it is accepted as the cost of a plain-ts
 cursor.
 
 A Slack thread's card counts its linking tasks' unread
-(`task_unread_count`), which the thread view itself cannot show, so the
-Slack pane carries it: `SlackThreadPane` passes `useTasksPanel` the
-`unread` option, and the task panel's header shows the dot beside "Tasks · N
-open" at every level. And the thread
+(`task_unread_count`), which the thread view itself cannot show. The thread
 view's Mark read (`ThreadView`'s `handleMarkRead`, `taskUnreadCount` prop)
 also marks those tasks: it fetches `GET /api/task-unread?scope=resource&type=slack&id=<id>`
 and marks each through its `newest_ts`, after the unchanged Slack mark; it
@@ -1667,13 +1664,15 @@ to break.
   is its own value, `worktree.subtasksShowCompleted`
   (`lib/subtasksShowCompletedPref.ts`, default on), shared by every task.
 - **The panel lives in one hook.** There is no Tasks tab and no Pin.
-  `useTasksPanel(scope, { ownResource?, unread?, resetKey? })` returns
+  `useTasksPanel(scope, { selectedResource?, unread? })` returns
   `{ panel, expanded }` for every page. `panel` is the always-shown task
   panel (`data-testid="tasks-panel"`, `data-level`), which the page renders
   in its flow just above its tab bar; `expanded` is whether it is expanded.
-  `ownResource` suppresses the link chip that points back at the resource the
-  panel is already in; `unread` puts the unread dot by the count (the Slack
-  pane, whose other tabs can't show it). Three levels:
+  `selectedResource` is the resource selected on the page (the worktree
+  page's selection): its tasks are marked in the list (`data-selected-resource`
+  on the row, a violet "this PR" tag, a link chip that shows only the other
+  links) and quick add creates new tasks in it; the list itself stays
+  scoped to `scope`. `unread` puts the unread dot by the count. Three levels:
   - **normal** (the default): the summary "Tasks (<context>)", the unread
     dot, the list toolbar, and the list capped at `min(8 rows, 25dvh)` (`maxRows` on
     `TaskList`, `NORMAL_ROWS` = 8 in `TasksSection.tsx`), scrolling inside
@@ -1709,15 +1708,14 @@ to break.
   - **expanded**: "Show all" removes the cap and the button reads "Show
     less". Wide, it also widens the panel's (right-hand) column: the home
     page and the worktree page split 4/8 instead of 6/6 while
-    `useTasksPanel`'s `expanded` is set, as the worktree page does for a
-    selected resource. Never saved: it is state keyed by `location | scope | resetKey`,
-    and a stale key is dropped while rendering, so navigating, changing
-    scope, or a changed `resetKey` is normal again without an effect (and
+    `useTasksPanel`'s `expanded` is set. Never saved: it is state keyed by
+    `location | scope`, and a stale key is dropped while rendering, so
+    navigating or changing scope is normal again without an effect (and
     coming back to the old key stays normal). A tab change keeps it, since
-    tabs live in the query string. The worktree page passes the selected
-    resource as `resetKey`, because selecting one changes the panel but not
-    the path or the worktree's own scope. Collapsing, or a collapse arriving
-    from another browser tab, also clears it.
+    tabs live in the query string, and so does selecting a resource: the
+    worktree page's one panel stays mounted and in place through a
+    selection. Collapsing, or a collapse arriving from another browser tab,
+    also clears it.
   - **Unreads only** moves the panel too: turning it on collapses the
     panel, and turning it off puts it back to normal (`setUnreadOnly` writes
     `collapsed` through `setTaskListPrefs`, only when the value changes).
@@ -1729,8 +1727,8 @@ to break.
   `data-resource-tab-bar` around its `Tabs.List` — the panel sits just above
   it in the normal flow and scrolls away with the content, and the header
   (the tab bar, plus the activity filters that already ride with it) pins
-  once scrolled to. On the resource pane the card and the panel both scroll
-  away, and only the tab bar pins, at `stickyTop` with the same opaque md
+  once scrolled to. On the resource pane the card scrolls away, and only
+  the tab bar pins, at `stickyTop` with the same opaque md
   strip above it the card block had. Because nothing sticky holds the
   panel, no level — not even an uncapped expanded list — can fill the
   screen from a pinned header, so headers pin in every level, and nothing
@@ -1741,8 +1739,10 @@ to break.
   home page `sm` (over its column-padding cover), and the resource pane's
   tab bar carries that gap as its own padding (marginTop 0). The page
   tests assert the panel is not inside the sticky header and that the
-  header stays sticky in every level. The Slack and link panes pin nothing:
-  the panel sits between the card and the tabs in the flow.
+  header stays sticky in every level. The Slack and link panes pin nothing.
+  The resource panes render no task panel of their own: the worktree page's
+  panel heads the content (narrow) or the right column (wide), then "← all
+  resources", the card and the tabs.
 - **A Slack thread that can't load keeps its tasks.** `SlackThreadPane`'s
   early returns (Slack watcher off, Slack not configured) keep their
   notice but render it through `withTasks`: the panel, then the notice, with
@@ -1897,7 +1897,7 @@ to break.
   blue is unread). It appears beside `UnreadBadge` on worktree cards,
   list resource cards and the home page's Resources rows (`AllResourceRow`)
   (`open_task_count`, absent = 0, titled "N open tasks"). The selected
-  resource's detail card has none: its own task panel shows the count. `useSSE` answers `tasks_changed` by
+  resource's detail card has none: the worktree's task panel above it shows the count. `useSSE` answers `tasks_changed` by
   invalidating `["tasks"]`, `["timeline"]` (task events ride in the
   activity feeds), `["worktrees"]` and `["resources"]`, so lists, feeds and
   badges all follow CLI and agent writes within the stream's 5s tick.
