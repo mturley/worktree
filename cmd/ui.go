@@ -213,9 +213,29 @@ func runUI(cmd *cobra.Command, args []string) error {
 	// (internal/webui/stop.go).
 	stopSigs := make(chan os.Signal, 4)
 	signal.Notify(stopSigs, syscall.SIGTERM, os.Interrupt)
-	go srv.GuardStop(stopSigs, os.Exit, time.Now)
+	go srv.GuardStop(stopSigs, dieBySignal, time.Now)
 
 	return srv.Start()
+}
+
+// dieBySignal ends this process the way sig would have had nothing caught it:
+// the handler is removed and the signal re-sent to ourselves, so the shell
+// sees its usual status (128+n, 143 for SIGTERM) rather than a plain exit.
+// Anything supervising the server reads that status to tell a stop from a
+// crash, and a server that stops without one may never be restarted.
+//
+// It lives here, not in internal/webui, so the package's tests can never send
+// a real signal. A signal that cannot be re-sent still has to end the process.
+func dieBySignal(sig os.Signal) {
+	if s, ok := sig.(syscall.Signal); ok {
+		signal.Reset(s)
+		if err := syscall.Kill(os.Getpid(), s); err == nil {
+			// Delivery is asynchronous; give it a moment before deciding
+			// it is not coming.
+			time.Sleep(time.Second)
+		}
+	}
+	os.Exit(1)
 }
 
 // hasBuiltUI reports whether the embedded dist has real content (not just .gitkeep).
