@@ -4,11 +4,11 @@ import { SettingsModal } from "../SettingsModal"
 
 /** Where to open the Settings modal: a top-level tab and, for Connected Services, a service. */
 export interface SettingsTarget {
-  tab: "general" | "connected" | "notifications" | "ui-access" | "devices" | "logs"
+  tab: "general" | "connected" | "notifications" | "ui-access" | "devices"
   service?: CredService
 }
 
-const SETTINGS_TABS: SettingsTarget["tab"][] = ["general", "connected", "notifications", "ui-access", "devices", "logs"]
+const SETTINGS_TABS: SettingsTarget["tab"][] = ["general", "connected", "notifications", "ui-access", "devices"]
 
 const Ctx = createContext<((target?: SettingsTarget) => void) | null>(null)
 

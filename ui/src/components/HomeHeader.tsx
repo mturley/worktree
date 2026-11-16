@@ -1,12 +1,12 @@
 import { Group, Title } from "@mantine/core"
 import { Logo } from "./Logo"
 import { FollowCmuxToggle } from "./FollowCmuxToggle"
-import { SettingsButton } from "./SettingsButton"
+import { HeaderActions } from "./HeaderActions"
 import { useIsWide } from "../hooks/useIsWide"
 
 /**
  * The home page's header: what applies to the whole page — the logo, search,
- * the follow-cmux toggle, Settings. Home page only; the worktree page keeps
+ * the follow-cmux toggle, and refresh / watcher logs / Settings. Home page only; the worktree page keeps
  * its own header. Narrow, the toggle wraps to a second row so the search
  * keeps its width. (Unreads only sits with the activity feed's toggles, and
  * narrow, on the Worktrees tab too.)
@@ -40,7 +40,7 @@ export function HomeHeader({ search }: { search: React.ReactNode }) {
       <Title order={4} style={{ flex: "none" }}><Logo alt="Worktrees" /></Title>
       {search}
       {wide && toggles}
-      <Group ml="auto" style={{ flex: "none" }}><SettingsButton /></Group>
+      <Group ml="auto" style={{ flex: "none" }}><HeaderActions /></Group>
       {!wide && <Group w="100%">{toggles}</Group>}
     </Group>
   )

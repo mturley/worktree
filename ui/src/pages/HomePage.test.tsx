@@ -133,11 +133,12 @@ describe("HomePage pinned headers", () => {
 })
 
 describe("HomePage tab bar controls", () => {
-  it("puts the active tab's controls in the tab bar, before Settings, when wide", async () => {
+  it("puts the active tab's controls in the tab bar, and refresh in the page header, when wide", async () => {
     setViewport("wide")
     wrap()
     const tablist = screen.getByRole("tablist")
-    within(tablist).getByRole("button", { name: "Refresh watchers" })
+    expect(within(tablist).queryByRole("button", { name: "Refresh watchers" })).toBeNull()
+    within(screen.getByTestId("home-header")).getByRole("button", { name: "Refresh watchers" })
     // The feed's switches sit in their own row under the filters.
     expect(within(tablist).queryByRole("switch", { name: "Include archived" })).toBeNull()
     // Settings lives in the page header now, not the tab bar.

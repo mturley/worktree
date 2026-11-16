@@ -325,15 +325,18 @@ describe("the Activity header's watcher freshness", () => {
     expect(await screen.findByText("Updated 7m ago")).toBeInTheDocument()
   })
 
-  it("offers a refresh button beside the heading", async () => {
+  it("leaves refresh to the page header", async () => {
+    watchers.mockResolvedValue({ polling: false, watchers: [{ name: "jira", type: "jira", last_success: minutesAgo(7) }] })
     wrap(<ResourceDetailPane path="/wt/foo" resource={jira} />)
-    expect(await screen.findByRole("button", { name: "Refresh watchers" })).toBeInTheDocument()
+    expect(await screen.findByText("Updated 7m ago")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Refresh watchers" })).toBeNull()
   })
 
   it("says nothing when the watcher has never succeeded", async () => {
     watchers.mockResolvedValue({ polling: false, watchers: [{ name: "jira", type: "jira" }] })
     wrap(<ResourceDetailPane path="/wt/foo" resource={jira} />)
-    await screen.findByRole("button", { name: "Refresh watchers" })
+    await waitFor(() => expect(watchers).toHaveBeenCalled())
+    await act(async () => {})
     expect(screen.queryByText(/^Updated /)).toBeNull()
   })
 

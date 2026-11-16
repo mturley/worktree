@@ -44,6 +44,14 @@ describe("HomeHeader", () => {
     expect(within(h).queryByRole("switch", { name: "Unreads only" })).toBeNull()
   })
 
+  it("ends with refresh, logs and settings, in that order", () => {
+    setViewport("wide")
+    wrap()
+    const actions = within(screen.getByTestId("home-header")).getByTestId("header-actions")
+    expect(within(actions).getAllByRole("button").map((b) => b.getAttribute("aria-label")))
+      .toEqual(["Refresh watchers", "Watcher logs", "Settings"])
+  })
+
   it("puts the toggles on a second, full-width row when narrow", async () => {
     setViewport("narrow")
     wrap()

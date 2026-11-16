@@ -16,7 +16,6 @@ import { ActivityToggles } from "./ActivityToggles"
 import { useHumansOnly } from "../hooks/useHumansOnly"
 import { SourceFilter } from "./SourceFilter"
 import { EventTypeFilter } from "./EventTypeFilter"
-import { RefreshWatchersButton } from "./RefreshWatchersButton"
 import { SearchSummary } from "./search/SearchSummary"
 import { EventDetailsModal } from "./EventDetailsModal"
 import { useEventFromUrl } from "../hooks/useEventFromUrl"
@@ -157,11 +156,10 @@ export function useActivityPanel(opts: {
     setHumansOnly(false)
   }, [setSources, setHumansOnly])
 
-  // The Activity tab's own controls: refresh and mark all read.
+  // The Activity tab's own controls: mark all read. (Refresh is in the page header.)
   const controls = (
     <Group gap="sm" wrap="nowrap" align="center" data-testid="activity-controls">
       <Group gap={6} wrap="nowrap" align="center">
-        <RefreshWatchersButton />
         {/* Only over the whole feed, as on the worktree page. "Include
             archived" only adds to the feed, so it does not hide it. */}
         {!searching && !filtered && (
