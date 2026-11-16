@@ -2,9 +2,9 @@ import { useEffect, useState } from "react"
 import { useUnsavedChanges } from "../lib/unsavedChanges"
 import { Alert, Button, Checkbox, Group, Modal, Stack, Text, TextInput } from "@mantine/core"
 import { api } from "../api/client"
-import type { Job } from "../api/types"
-import { attachJob, isFinished, useJob } from "../lib/jobsStore"
+import { isFinished } from "../lib/jobsStore"
 import { JobStepper } from "./jobs/JobStepper"
+import { useModalJob } from "./jobs/useModalJob"
 
 /**
  * Deleting a worktree, with the same care the CLI takes.
@@ -36,12 +36,8 @@ export function DeleteWorktreeModal({ opened, path, name, branch, jobId: initial
   const [typed, setTyped] = useState("")
   const [deleteBranch, setDeleteBranch] = useState(false)
   const [starting, setStarting] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [jobId, setJobId] = useState<string | undefined>(initialJobId)
-  const [lastSeen, setLastSeen] = useState<Job | undefined>(undefined)
-  const [error, setError] = useState<string | null>(null)
-  const live = useJob(jobId)
-  const job = live ?? (lastSeen?.id === jobId ? lastSeen : undefined)
+  const { jobId, job, busy, error, setError, track, act, dismissFinished } =
+    useModalJob(opened, initialJobId, path)
   // A running delete no longer blocks leaving: it carries on server-side.
   useUnsavedChanges(opened && typed !== "" && !jobId)
 
@@ -53,22 +49,8 @@ export function DeleteWorktreeModal({ opened, path, name, branch, jobId: initial
       setTyped("")
       setDeleteBranch(false)
       setStarting(false)
-      setBusy(false)
-      setJobId(initialJobId)
-      setLastSeen(undefined)
-      setError(null)
     }
   }, [opened, path, initialJobId])
-
-  useEffect(() => {
-    if (live) setLastSeen(live)
-  }, [live])
-
-  // The job's toast stays hidden while this modal shows it.
-  useEffect(() => {
-    if (!opened || jobId === undefined) return
-    return attachJob(jobId)
-  }, [opened, jobId])
 
   const start = async () => {
     if (path === undefined) return
@@ -76,39 +58,11 @@ export function DeleteWorktreeModal({ opened, path, name, branch, jobId: initial
     setError(null)
     try {
       const res = await api.deleteWorktree({ path, delete_branch: deleteBranch })
-      setJobId(res.job.id)
-      setLastSeen(res.job)
+      track(res.job)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setStarting(false)
-    }
-  }
-
-  // Run an action on the job; a failed request shows in the alert.
-  const act = async (fn: (id: string) => Promise<unknown>): Promise<boolean> => {
-    if (jobId === undefined) return false
-    setBusy(true)
-    setError(null)
-    try {
-      await fn(jobId)
-      return true
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-      return false
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  // A finished job is acknowledged by closing it. It may already be gone
-  // (another tab, or the server's own expiry), which is fine.
-  const dismissFinished = async () => {
-    if (jobId === undefined) return
-    try {
-      await api.jobDismiss(jobId)
-    } catch {
-      // already dismissed or expired
     }
   }
 
