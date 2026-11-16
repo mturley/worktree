@@ -104,6 +104,28 @@ describe("JobToasts", () => {
     expect(screen.getByTestId("open")).toHaveTextContent("j1")
   })
 
+  it("offers an Answer button in both views that opens the job's modal", async () => {
+    const user = userEvent.setup()
+    act(() => setJobs([job({ state: "needs_answer", question: { key: "reuse_branch" } })]))
+    wrap()
+    await user.click(screen.getByRole("button", { name: "Answer" }))
+    expect(screen.getByTestId("open")).toHaveTextContent("j1")
+    act(() => closeJobModal())
+    await user.click(screen.getByLabelText("Collapse"))
+    await user.click(screen.getByRole("button", { name: "Answer" }))
+    expect(screen.getByTestId("open")).toHaveTextContent("j1")
+  })
+
+  it("collapsing or expanding a needs_answer toast does not open its modal", async () => {
+    const user = userEvent.setup()
+    act(() => setJobs([job({ state: "needs_answer", question: { key: "reuse_branch" } })]))
+    wrap()
+    await user.click(screen.getByLabelText("Collapse"))
+    expect(screen.getByTestId("open")).toHaveTextContent("none")
+    await user.click(screen.getByLabelText("Expand"))
+    expect(screen.getByTestId("open")).toHaveTextContent("none")
+  })
+
   it("collapsing shows only the current step's label and survives a remount", async () => {
     const user = userEvent.setup()
     act(() => setJobs([job()]))

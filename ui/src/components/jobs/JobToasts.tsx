@@ -81,7 +81,19 @@ function JobToast({ job }: { job: Job }) {
   }
   const resultPath = job.state === "succeeded" && job.kind === "worktree_create"
     ? job.result?.path : undefined
-  const summary = currentStep(job)?.label ?? line?.text
+  // A real button so the question is reachable from the keyboard; the whole
+  // toast is clickable too, as a convenience.
+  const answerButton = clickable && (
+    <Group>
+      <Button
+        size="compact-xs"
+        onClick={(e) => { e.stopPropagation(); openJobModal(job.id) }}
+      >
+        Answer
+      </Button>
+    </Group>
+  )
+  const summary =currentStep(job)?.label ?? line?.text
 
   return (
     <Paper
@@ -122,11 +134,15 @@ function JobToast({ job }: { job: Job }) {
           </Group>
         </Group>
         {collapsed ? (
-          summary !== undefined && <Text size="xs" c="dimmed">{summary}</Text>
+          <>
+            {summary !== undefined && <Text size="xs" c="dimmed">{summary}</Text>}
+            {answerButton}
+          </>
         ) : (
           <>
             <JobStepper steps={job.steps} />
             {line && <Text size="xs" c={line.color}>{line.text}</Text>}
+            {answerButton}
             {resultPath !== undefined && (
               <Group>
                 <Button
