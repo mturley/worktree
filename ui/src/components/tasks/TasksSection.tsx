@@ -7,6 +7,7 @@ import { useTasks, type TaskScope } from "../../hooks/useTasks"
 import { useIsWide } from "../../hooks/useIsWide"
 import { useTaskListPrefs } from "../../hooks/useTaskListPrefs"
 import { openSummary } from "../../lib/taskSections"
+import type { ResourceKey } from "../../lib/resourceKey"
 import { scopeContext } from "../../lib/taskScope"
 import { TaskList } from "./TaskList"
 import { TaskListToolbar } from "./TaskListToolbar"
@@ -30,17 +31,15 @@ export type TasksPanelLevel = "collapsed" | "normal" | "expanded"
  *   panel's column two thirds of the width; a wide list that fits can be
  *   expanded from the summary just for that. Never saved, and only for the path
  *   and scope it was set under: navigating to another path or changing scope
- *   (another resource selected on the same page) puts the panel back to
+ *   puts the panel back to
  *   normal. A tab change does not: tabs live in the query string.
  *
  * `opts.unread` is the unread task events behind the list, for a page whose
  * other tabs cannot show them (a Slack thread's pane); above 0 an unread dot
  * sits by the count, at every level.
  *
- * `opts.resetKey` is anything else that should put an expanded panel back
- * to normal, for a page whose hook outlives its panel: the worktree page
- * passes its selected resource, since selecting one swaps its panel for the
- * resource pane's while the worktree's own path and scope stay the same.
+ * `opts.selectedResource` is the resource selected on the page: its tasks are
+ * marked in the list, and new tasks are created in it.
  *
  * Pages render `panel` in their normal flow, ABOVE (never inside) the
  * sticky block that pins their tab bar: the panel scrolls away with the
@@ -49,7 +48,7 @@ export type TasksPanelLevel = "collapsed" | "normal" | "expanded"
  */
 export function useTasksPanel(
   scope: TaskScope,
-  opts?: { ownResource?: { type: string; id: string }; unread?: number; resetKey?: string },
+  opts?: { selectedResource?: ResourceKey; unread?: number },
 ): { panel: ReactNode; expanded: boolean; tasks: Task[] } {
   const [prefs, setPrefs] = useTaskListPrefs()
   const { collapsed } = prefs
@@ -59,13 +58,13 @@ export function useTasksPanel(
   const unread = (opts?.unread ?? 0) > 0
   const [location] = useLocation()
 
-  // Expanded is the key it was set under: once path, scope or resetKey moves
+  // Expanded is the key it was set under: once path or scope moves
   // on, the key no longer matches and the panel is normal again, without an
   // effect. A stale key is dropped as soon as it is seen (React's "adjust
   // state while rendering"), so coming back to the old key stays normal; so
   // is any key while collapsed, so a collapse from another browser tab
   // un-collapses to normal.
-  const key = `${location}|${JSON.stringify(scope)}|${opts?.resetKey ?? ""}`
+  const key = `${location}|${JSON.stringify(scope)}`
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
   if (expandedKey !== null && (collapsed || expandedKey !== key)) setExpandedKey(null)
   const expanded = !collapsed && expandedKey === key
@@ -141,7 +140,7 @@ export function useTasksPanel(
         {!collapsed && (
           <TaskList
             scope={scope}
-            ownResource={opts?.ownResource}
+            selectedResource={opts?.selectedResource}
             maxRows={NORMAL_ROWS}
             expand={{ expanded, onToggle: () => setExpandedKey(expanded ? null : key), onOverflow: setOverflows }}
           />

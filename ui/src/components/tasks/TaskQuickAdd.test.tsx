@@ -107,3 +107,22 @@ describe("TaskQuickAdd priority", () => {
     expect(select.closest(".mantine-Select-root, .mantine-InputWrapper-root")!).toHaveTextContent("!!!")
   })
 })
+
+describe("TaskQuickAdd target", () => {
+  it("names where the task goes: placeholder, and tooltips on Add and Add & open", async () => {
+    render(<MantineProvider><TaskQuickAdd onAdd={vi.fn().mockResolvedValue(undefined)} onOpen={vi.fn()} target="this PR" /></MantineProvider>)
+    const input = screen.getByRole("textbox", { name: "New task" })
+    expect(input).toHaveAttribute("placeholder", "Add a task to this PR…")
+    act(() => input.focus())
+    fireEvent.change(input, { target: { value: "x" } })
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "Add" }))
+    expect(await screen.findByText("Add to this PR")).toBeInTheDocument()
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "Add & open" }))
+    expect(await screen.findByText("Add to this PR and open it")).toBeInTheDocument()
+  })
+
+  it("without a target keeps the plain placeholder", () => {
+    render(<MantineProvider><TaskQuickAdd onAdd={vi.fn().mockResolvedValue(undefined)} /></MantineProvider>)
+    expect(screen.getByRole("textbox", { name: "New task" })).toHaveAttribute("placeholder", "Add a task…")
+  })
+})

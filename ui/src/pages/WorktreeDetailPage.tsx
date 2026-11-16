@@ -304,7 +304,7 @@ export function WorktreeDetailPage() {
   // The page header's measured height (see the ResizeObserver below).
   const headerRef = useRef<HTMLDivElement>(null)
   const [headerHeight, setHeaderHeight] = useState(0)
-  const tasks = useTasksPanel(taskScope, { resetKey: selected ? serializeResourceKey(selected) : "" })
+  const tasks = useTasksPanel(taskScope)
 
   // The sticky resource list has to start below the header, and the header's
   // height is not a constant: the worktree and cmux workspace names wrap, and

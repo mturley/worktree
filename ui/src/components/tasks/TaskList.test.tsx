@@ -1005,3 +1005,26 @@ describe("dropPlanFor", () => {
     expect(dropPlanFor(sections, "nope", taskDraggableId(1), false)).toEqual({})
   })
 })
+
+describe("TaskList create target", () => {
+  it("with a selected resource, lists the worktree's tasks but creates new ones in the resource", async () => {
+    vi.mocked(api.tasks).mockResolvedValue([])
+    const create = vi.mocked(api.createTask).mockResolvedValue({ id: 9 } as never)
+    wrap(<TaskList scope={{ kind: "worktree", path: "/wt" }} selectedResource={{ type: "pr", id: "o/r#1" }} />)
+    expect(api.tasks).toHaveBeenCalledWith({ kind: "worktree", path: "/wt" }, expect.anything())
+    const input = screen.getByRole("textbox", { name: "New task" })
+    expect(input).toHaveAttribute("placeholder", "Add a task to this PR…")
+    await userEvent.type(input, "Chase review{Enter}")
+    await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({ title: "Chase review", type: "pr", id: "o/r#1" })))
+    expect(create.mock.calls[0][0]).not.toHaveProperty("path")
+  })
+
+  it("without a selection creates in the list's own scope", async () => {
+    vi.mocked(api.tasks).mockResolvedValue([])
+    const create = vi.mocked(api.createTask).mockResolvedValue({ id: 9 } as never)
+    wrap(<TaskList scope={{ kind: "worktree", path: "/wt" }} />)
+    expect(screen.getByRole("textbox", { name: "New task" })).toHaveAttribute("placeholder", "Add a task to this worktree…")
+    await userEvent.type(screen.getByRole("textbox", { name: "New task" }), "Tidy{Enter}")
+    await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({ path: "/wt" })))
+  })
+})

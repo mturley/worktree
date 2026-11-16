@@ -105,7 +105,7 @@ function TimelineBody({
   // The resource's own task panel, between the card and the tab bar; its
   // rows don't chip the resource they are already under.
   const { type, id } = resource
-  const tasks = useTasksPanel({ kind: "resource", type, id }, { ownResource: { type, id } })
+  const tasks = useTasksPanel({ kind: "resource", type, id }, { selectedResource: { type, id } })
   // Link titles are only fetched once the Linked tab has been shown — by a
   // click, or by arriving on it through the URL (back/forward, a refresh).
   const [linkedOpened, setLinkedOpened] = useState(tab === "linked")

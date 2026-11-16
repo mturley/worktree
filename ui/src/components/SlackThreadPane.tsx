@@ -84,7 +84,7 @@ export function SlackThreadPane({ resource, path, onRemoved, onResourceChanged, 
   // card counts its linking tasks' unread events, which no tab here can
   // show, so the panel carries the dot.
   const { type, id } = resource
-  const tasks = useTasksPanel({ kind: "resource", type, id }, { ownResource: { type, id }, unread: resource.task_unread_count })
+  const tasks = useTasksPanel({ kind: "resource", type, id }, { selectedResource: { type, id }, unread: resource.task_unread_count })
   // See ResourceDetailPane: link titles wait until the Linked tab is shown.
   const [linkedOpened, setLinkedOpened] = useState(paneTab === "linked")
   useEffect(() => {

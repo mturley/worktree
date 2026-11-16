@@ -18,6 +18,8 @@ import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalList
 import { CSS } from "@dnd-kit/utilities"
 import type { Task, TaskState } from "../../api/types"
 import { useTaskMutations, useTasks, type TaskScope } from "../../hooks/useTasks"
+import type { ResourceKey } from "../../lib/resourceKey"
+import { scopeContext } from "../../lib/taskScope"
 import { useTaskListPrefs } from "../../hooks/useTaskListPrefs"
 import {
   applyMove, buildSections, canDrag, groupHeaders, quickAddAnchor, TASK_GROUP_LABEL, type TaskGroup, type TaskSection,
@@ -96,13 +98,13 @@ function useOverflow(capped: boolean, shape: string) {
  * grip. The grip renders disabled with a hint when the sort can't be
  * reordered, and not at all in Completed, whose order isn't master order.
  */
-function SortableTaskRow({ task, section, sortDraggable, dropEdge, ownResource, ownWorktree, mutations, onError, onOpen }: {
+function SortableTaskRow({ task, section, sortDraggable, dropEdge, selectedResource, ownWorktree, mutations, onError, onOpen }: {
   task: Task
   section: TaskSection
   sortDraggable: boolean
   /** A cross-section drag will land on this edge of the row: draw the line. */
   dropEdge?: DropIndicator["edge"]
-  ownResource?: { type: string; id: string }
+  selectedResource?: ResourceKey
   ownWorktree?: string
   mutations: Pick<ReturnType<typeof useTaskMutations>, "setState" | "update">
   onError: (msg: string) => void
@@ -181,7 +183,7 @@ function SortableTaskRow({ task, section, sortDraggable, dropEdge, ownResource, 
       {dropEdge && <div className="task-drop-line" data-task-drop-line={dropEdge} aria-hidden />}
       <TaskRow
         task={task}
-        selectedResource={ownResource}
+        selectedResource={selectedResource}
         ownWorktree={ownWorktree}
         dragHandle={grip}
         onState={pickState}
@@ -283,9 +285,13 @@ function SectionBlock({ section, band, dropTarget, children }: {
  * expanded one (`maxRows` ignored) offers "Show less"; both call `onToggle`,
  * and the host owns the level.
  */
-export function TaskList({ scope, ownResource, maxRows, expand }: {
+export function TaskList({ scope, selectedResource, maxRows, expand }: {
   scope: TaskScope
-  ownResource?: { type: string; id: string }
+  /**
+   * The resource selected on the page. Its tasks are marked in the list, and
+   * new tasks are created in it rather than in `scope`.
+   */
+  selectedResource?: ResourceKey
   maxRows?: number
   expand?: {
     expanded: boolean
@@ -300,6 +306,11 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
   const { terms } = useSearchContext()
   const query = useTasks(scope, { completed: prefs.showCompleted, archived: prefs.includeArchived })
   const mutations = useTaskMutations(scope)
+  // New tasks go to the selected resource, if any; every other change keeps
+  // the list's own scope (the task being changed may not be the resource's).
+  const addScope: TaskScope = selectedResource ? { kind: "resource", ...selectedResource } : scope
+  const addMutations = useTaskMutations(addScope)
+  const addTarget = addScope.kind === "all" ? undefined : scopeContext(addScope)
   const offerUndo = useOfferTaskUndo()
   const { open } = useTaskModal()
   const [activeId, setActiveId] = useState<number | null>(null)
@@ -398,7 +409,7 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
 
   const add = (input: { title: string; priority: Task["priority"]; starred: boolean }) => {
     setError(null)
-    return mutations.create(anchor ? { ...input, after: anchor.id } : input).catch((e: unknown) => {
+    return addMutations.create(anchor ? { ...input, after: anchor.id } : input).catch((e: unknown) => {
       setError(errorText(e))
       throw e
     })
@@ -445,7 +456,7 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
                   section={s}
                   sortDraggable={sortDraggable}
                   dropEdge={indicator?.id === t.id ? indicator.edge : undefined}
-                  ownResource={ownResource}
+                  selectedResource={selectedResource}
                   ownWorktree={ownWorktree}
                   mutations={mutations}
                   onError={setError}
@@ -469,7 +480,7 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
                   {dragHint}
                 </span>
               )}
-              <TaskRow task={activeTask} selectedResource={ownResource} ownWorktree={ownWorktree} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} />
+              <TaskRow task={activeTask} selectedResource={selectedResource} ownWorktree={ownWorktree} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} />
             </Box>
           ) : null}
         </DragOverlay>
@@ -500,7 +511,7 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
           {expand.expanded ? "Show less" : `Show all (${shownCount})`}
         </Button>
       )}
-      <TaskQuickAdd onAdd={add} onOpen={(id) => open(id)} />
+      <TaskQuickAdd onAdd={add} onOpen={(id) => open(id)} target={addTarget} />
     </Stack>
   )
 }

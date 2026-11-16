@@ -38,7 +38,7 @@ export function LinkPane({ resource, path, onRemoved, onResourceChanged }: {
   const embed = canEmbed(resource.url, resource.embeddable, window.location.origin)
   const [tab, setTab] = useResourceTab(LINK_TABS)
   const { type, id } = resource
-  const tasks = useTasksPanel({ kind: "resource", type, id }, { ownResource: { type, id } })
+  const tasks = useTasksPanel({ kind: "resource", type, id }, { selectedResource: { type, id } })
 
   return (
     <>

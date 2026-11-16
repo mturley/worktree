@@ -28,13 +28,12 @@ const task = (id: number, extra: Partial<Task> = {}): Task => ({
 const ALL: TaskScope = { kind: "all" }
 
 /** A page's shape: the panel above its tab bar. */
-function Host({ scope = ALL, unread, resetKey, testId = "host" }: {
+function Host({ scope = ALL, unread, testId = "host" }: {
   scope?: TaskScope
   unread?: number
-  resetKey?: string
   testId?: string
 }) {
-  const t = useTasksPanel(scope, { unread, resetKey })
+  const t = useTasksPanel(scope, { unread })
   return (
     <div data-testid={testId} data-expanded={t.expanded}>
       {t.panel}
@@ -180,19 +179,6 @@ describe("useTasksPanel", () => {
     rerender(<Host scope={{ kind: "worktree", path: "/w" }} />)
     expect(panel()).toHaveAttribute("data-level", "expanded")
     rerender(<Host scope={{ kind: "resource", type: "github_pr", id: "o/r#1" }} />)
-    expect(panel()).toHaveAttribute("data-level", "normal")
-  })
-
-  it("a change of resetKey resets expanded, and changing it back stays normal", async () => {
-    mockOverflow()
-    const { rerender } = wrap(<Host resetKey="" />)
-    await within(panel()).findByText("task 1")
-    await expand()
-    rerender(<Host resetKey="" />)
-    expect(panel()).toHaveAttribute("data-level", "expanded")
-    rerender(<Host resetKey="pr:o/r#1" />)
-    expect(panel()).toHaveAttribute("data-level", "normal")
-    rerender(<Host resetKey="" />)
     expect(panel()).toHaveAttribute("data-level", "normal")
   })
 

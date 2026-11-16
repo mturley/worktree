@@ -1509,7 +1509,7 @@ describe("WorktreeDetailPage tasks", () => {
     expect(within(bar).queryByLabelText("Sort tasks")).toBeNull()
   })
 
-  it("wide: the activity header stays pinned in every level; a selection and back resets expanded", async () => {
+  it("wide: the activity header stays pinned in every level", async () => {
     setViewport("wide")
     mockOverflow()
     const user = userEvent.setup()
@@ -1525,13 +1525,6 @@ describe("WorktreeDetailPage tasks", () => {
     expect(activityHeader()).toHaveAttribute("data-tooltip-layer", "pinned")
     expect(activityHeader()).not.toContainElement(screen.getByTestId("tasks-panel"))
 
-    // Selecting a resource changes the panel's scope, not the path.
-    await user.click(screen.getByRole("button", { name: /select resource o\/r#1/i }))
-    await screen.findByRole("tab", { name: /Linked Resources/ })
-    expect(screen.getByTestId("tasks-panel")).toHaveAttribute("data-level", "normal")
-    await user.click(screen.getByRole("button", { name: /^← all resources/ }))
-    await waitFor(() => expect(document.querySelector("[data-activity-header]")).not.toBeNull())
-    expect(screen.getByTestId("tasks-panel")).toHaveAttribute("data-level", "normal")
     expect(activityHeader().style.position).toBe("sticky")
   })
 
