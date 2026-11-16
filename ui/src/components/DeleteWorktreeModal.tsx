@@ -1,73 +1,49 @@
 import { useEffect, useState } from "react"
 import { useUnsavedChanges } from "../lib/unsavedChanges"
-import { Alert, Button, Checkbox, Group, Loader, Modal, Stack, Text, TextInput } from "@mantine/core"
-import { IconCheck, IconX } from "@tabler/icons-react"
+import { Alert, Button, Checkbox, Group, Modal, Stack, Text, TextInput } from "@mantine/core"
 import { api } from "../api/client"
-import type { JobStepStatus } from "../api/types"
-
-// The pre-jobs response shape this modal still renders; the server now
-// answers with a job. Rewritten in the next task.
-type DeleteStep = { key: string; label: string; status: JobStepStatus; detail?: string }
-export interface DeleteWorktreeResponse {
-  ok: boolean
-  needs_force: string
-  steps: DeleteStep[]
-  error?: string
-}
-
-/** One stage of the pipeline: icon, label, and git's words when there are any. */
-function StepRow({ step, running }: { step: DeleteStep; running: boolean }) {
-  const icon = running ? <Loader size={14} />
-    : step.status === "failed" || step.status === "needs_force"
-      ? <IconX size={14} color="var(--mantine-color-red-5)" />
-      : step.status === "pending"
-        ? <Text size="xs" c="dimmed">○</Text>
-        : <IconCheck size={14} color="var(--mantine-color-green-5)" />
-  return (
-    <Stack gap={2}>
-      <Group gap={8} wrap="nowrap">
-        {icon}
-        <Text size="sm" c={step.status === "pending" ? "dimmed" : undefined}>{step.label}</Text>
-        {step.status === "skipped" && step.detail && (
-          <Text size="xs" c="dimmed">({step.detail})</Text>
-        )}
-      </Group>
-      {(step.status === "failed" || step.status === "needs_force") && step.detail && (
-        <Text size="xs" c="red" pl={22} style={{ whiteSpace: "pre-wrap" }}>{step.detail}</Text>
-      )}
-    </Stack>
-  )
-}
+import type { Job } from "../api/types"
+import { attachJob, isFinished, useJob } from "../lib/jobsStore"
+import { JobStepper } from "./jobs/JobStepper"
 
 /**
  * Deleting a worktree, with the same care the CLI takes.
  *
- * The flow is deliberately multi-phase: git may refuse to remove the directory
- * (leftover build output, read-only files) and may refuse to delete an unmerged
- * branch. Each refusal comes back as needs_force naming the step, and the
- * prompt appears BENEATH that stage so the completed stages stay visible while
- * the user decides.
+ * The delete runs as a background job on the server; this modal renders the
+ * job from the jobs store, so closing it stops nothing. Git may refuse to
+ * remove the directory (leftover build output, read-only files) or to delete
+ * an unmerged branch: the job then parks with a question, and the prompt
+ * appears BENEATH the steps so the completed stages stay visible while the
+ * user decides.
  *
- * On success the modal stays open. The summary is the only report of what
+ * On success the modal stays open. The steps are the only report of what
  * happened — which ports were freed, what was skipped — so closing
- * automatically would throw it away.
+ * automatically would throw them away. The server drops a cleanly succeeded
+ * job from the store shortly after it finishes, so the modal keeps the last
+ * job it saw.
  */
-export function DeleteWorktreeModal({ opened, path, name, branch, onClose, onDeleted }: {
+export function DeleteWorktreeModal({ opened, path, name, branch, jobId: initialJobId, onClose, onDeleted }: {
   opened: boolean
-  path: string
-  name: string
+  path?: string
+  name?: string
   branch?: string
+  /** Open on this existing job, skipping the confirmation form. */
+  jobId?: string
   onClose: () => void
   /** Called when the user acknowledges a completed delete. */
   onDeleted: () => void
 }) {
   const [typed, setTyped] = useState("")
   const [deleteBranch, setDeleteBranch] = useState(false)
-  const [running, setRunning] = useState(false)
-  const [result, setResult] = useState<DeleteWorktreeResponse | null>(null)
+  const [starting, setStarting] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [jobId, setJobId] = useState<string | undefined>(initialJobId)
+  const [lastSeen, setLastSeen] = useState<Job | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
-  // A deletion in flight counts too: leaving would hide how it ended.
-  useUnsavedChanges(opened && (typed !== "" || running))
+  const live = useJob(jobId)
+  const job = live ?? (lastSeen?.id === jobId ? lastSeen : undefined)
+  // A running delete no longer blocks leaving: it carries on server-side.
+  useUnsavedChanges(opened && typed !== "" && !jobId)
 
   // Reset to a fresh confirmation form whenever the modal is (re)opened, or
   // when it is retargeted at a different worktree — a destructive dialog
@@ -76,59 +52,102 @@ export function DeleteWorktreeModal({ opened, path, name, branch, onClose, onDel
     if (opened) {
       setTyped("")
       setDeleteBranch(false)
-      setRunning(false)
-      setResult(null)
+      setStarting(false)
+      setBusy(false)
+      setJobId(initialJobId)
+      setLastSeen(undefined)
       setError(null)
     }
-  }, [opened, path])
+  }, [opened, path, initialJobId])
 
-  const run = async (
-    force: { force_directory?: boolean; force_branch?: boolean } = {},
-    deleteBranchOverride?: boolean,
-  ) => {
-    setRunning(true)
+  useEffect(() => {
+    if (live) setLastSeen(live)
+  }, [live])
+
+  // The job's toast stays hidden while this modal shows it.
+  useEffect(() => {
+    if (!opened || jobId === undefined) return
+    return attachJob(jobId)
+  }, [opened, jobId])
+
+  const start = async () => {
+    if (path === undefined) return
+    setStarting(true)
     setError(null)
     try {
-      void force
-      setResult((await api.deleteWorktree({
-        path,
-        delete_branch: deleteBranchOverride ?? deleteBranch,
-      })) as unknown as DeleteWorktreeResponse)
+      const res = await api.deleteWorktree({ path, delete_branch: deleteBranch })
+      setJobId(res.job.id)
+      setLastSeen(res.job)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
-      setRunning(false)
+      setStarting(false)
     }
   }
 
-  const needsForce = result?.needs_force ?? ""
-  const finished = Boolean(result && !needsForce && result.ok)
-
-  // Declining the directory force is safe to just close: nothing has been
-  // deleted yet. Declining the branch force is NOT — remove_directory has
-  // already run, so closing here would strand the port range, registry row,
-  // resources and kubeconfig. Re-run with delete_branch:false instead; the
-  // run is idempotent, so remove_directory reports skipped and the rest of
-  // cleanup completes.
-  const cancelEscalation = () => {
-    if (needsForce === "delete_branch") {
-      void run({}, false)
-      return
+  // Run an action on the job; a failed request shows in the alert.
+  const act = async (fn: (id: string) => Promise<unknown>): Promise<boolean> => {
+    if (jobId === undefined) return false
+    setBusy(true)
+    setError(null)
+    try {
+      await fn(jobId)
+      return true
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      return false
+    } finally {
+      setBusy(false)
     }
+  }
+
+  // A finished job is acknowledged by closing it. It may already be gone
+  // (another tab, or the server's own expiry), which is fine.
+  const dismissFinished = async () => {
+    if (jobId === undefined) return
+    try {
+      await api.jobDismiss(jobId)
+    } catch {
+      // already dismissed or expired
+    }
+  }
+
+  const close = () => {
+    if (job && isFinished(job)) void dismissFinished()
     onClose()
   }
 
+  const ok = async () => {
+    await dismissFinished()
+    if (job?.state === "succeeded") onDeleted()
+    else onClose()
+  }
+
+  // Declining the directory force ends and dismisses the job on the server:
+  // nothing has been deleted yet. Declining the branch force makes it finish
+  // the cleanup with the branch kept, so the modal stays to show that.
+  const decline = async () => {
+    if (!(await act((id) => api.jobAnswer(id, "no")))) return
+    if (job?.question?.key === "remove_directory") onClose()
+  }
+
+  const title = job ? job.title : name ? `Delete worktree ${name}` : "Delete worktree"
+  const question = job?.state === "needs_answer" ? job.question : null
+  const failed = job?.state === "failed" || job?.state === "interrupted"
+  const showError = failed && job.error !== undefined
+    && !job.steps.some((s) => s.detail === job.error)
+
   return (
-    <Modal opened={opened} onClose={onClose} title={`Delete worktree ${name}`} size="lg">
+    <Modal opened={opened} onClose={close} title={title} size="lg">
       <Stack gap="sm">
-        {!result && (
+        {!job && (
           <>
             <Text size="sm">
               This removes the worktree directory and everything worktree tracks for it —
               its port range, tracked resources and kubeconfig.
             </Text>
             <TextInput
-              label={`Type the worktree name (${name}) to confirm`}
+              label={`Type the worktree name (${name ?? ""}) to confirm`}
               value={typed}
               onChange={(e) => setTyped(e.currentTarget.value)}
             />
@@ -140,20 +159,12 @@ export function DeleteWorktreeModal({ opened, path, name, branch, onClose, onDel
           </>
         )}
 
-        {result && (
-          <Stack gap={6}>
-            {result.steps.map((s) => (
-              <StepRow key={s.key} step={s} running={running && s.status === "pending"} />
-            ))}
-          </Stack>
-        )}
+        {job && <JobStepper steps={job.steps} />}
 
         {error && <Alert color="red" variant="light">{error}</Alert>}
-        {result?.error && !needsForce && !result.steps.some((s) => s.detail === result.error) && (
-          <Alert color="red" variant="light">{result.error}</Alert>
-        )}
+        {showError && <Alert color="red" variant="light">{job.error}</Alert>}
 
-        {needsForce === "remove_directory" && (
+        {question?.key === "remove_directory" && (
           <Alert color="yellow" variant="light">
             <Text size="sm">
               This is usually leftover build output or read-only files in the worktree.
@@ -161,40 +172,48 @@ export function DeleteWorktreeModal({ opened, path, name, branch, onClose, onDel
           </Alert>
         )}
 
+        {job?.state === "running" && (
+          <Text size="xs" c="dimmed">This keeps running if you close this window.</Text>
+        )}
+
         <Group justify="flex-end">
-          {!result && (
+          {!job && (
             <>
               <Button variant="default" onClick={onClose}>Cancel</Button>
               <Button
                 color="red"
-                disabled={typed !== name || running}
-                loading={running}
-                onClick={() => void run()}
+                disabled={name === undefined || typed !== name || path === undefined || starting}
+                loading={starting}
+                onClick={() => void start()}
               >
                 Delete
               </Button>
             </>
           )}
-          {needsForce && (
+          {question && (
             <>
-              <Button variant="default" onClick={cancelEscalation} disabled={running}>Cancel</Button>
+              <Button variant="default" onClick={() => void decline()} disabled={busy}>Cancel</Button>
               <Button
                 color="red"
-                loading={running}
-                onClick={() =>
-                  void run(needsForce === "remove_directory"
-                    ? { force_directory: true }
-                    : { force_branch: true })}
+                loading={busy}
+                onClick={() => void act((id) => api.jobAnswer(id, "yes"))}
               >
-                {needsForce === "remove_directory"
+                {question.key === "remove_directory"
                   ? "Force-remove the directory"
                   : "Force-delete the branch"}
               </Button>
             </>
           )}
-          {result && !needsForce && (
-            <Button onClick={finished ? onDeleted : onClose}>OK</Button>
+          {failed && (
+            <>
+              <Button variant="default" loading={busy} onClick={() => void act((id) => api.jobRetry(id))}>
+                Run again
+              </Button>
+              <Button onClick={() => void ok()}>OK</Button>
+            </>
           )}
+          {job?.state === "succeeded" && <Button onClick={() => void ok()}>OK</Button>}
+          {job?.state === "running" && <Button variant="default" onClick={close}>Close</Button>}
         </Group>
       </Stack>
     </Modal>
