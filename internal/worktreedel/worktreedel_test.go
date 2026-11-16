@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/mturley/worktree/internal/config"
@@ -481,5 +482,45 @@ func TestBranchDetachedHeadIsEmpty(t *testing.T) {
 	}
 	if b := Branch(conn, cfg, wtPath); b != "" {
 		t.Fatalf("Branch = %q, want \"\" for a detached HEAD", b)
+	}
+}
+
+func plannedKeys(steps []Step) []StepKey {
+	var keys []StepKey
+	for _, s := range steps {
+		keys = append(keys, s.Key)
+	}
+	return keys
+}
+
+func TestPlannedFollowsDeleteBranch(t *testing.T) {
+	cases := []struct {
+		deleteBranch bool
+		want         []StepKey
+	}{
+		{false, []StepKey{StepRemoveDirectory, StepReleasePorts, StepUnregister, StepRemoveResources, StepRemoveKubeconfig, StepPrune}},
+		{true, []StepKey{StepRemoveDirectory, StepDeleteBranch, StepReleasePorts, StepUnregister, StepRemoveResources, StepRemoveKubeconfig, StepPrune}},
+	}
+	for _, c := range cases {
+		steps := Planned(Options{DeleteBranch: c.deleteBranch})
+		got := plannedKeys(steps)
+		if !reflect.DeepEqual(got, c.want) {
+			t.Errorf("DeleteBranch=%v keys = %v, want %v", c.deleteBranch, got, c.want)
+		}
+		for _, s := range steps {
+			if s.Label == "" || s.Status != StatusPending {
+				t.Errorf("step %+v: want a label and pending status", s)
+			}
+		}
+	}
+}
+
+func TestRunStepsMatchPlanned(t *testing.T) {
+	conn, cfg, _, wtPath, _ := fixture(t)
+	opts := Options{Path: wtPath, DeleteBranch: true}
+	res := Run(conn, cfg, opts, nil)
+	got, want := plannedKeys(res.Steps), plannedKeys(Planned(opts))
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Run steps = %v, Planned = %v", got, want)
 	}
 }

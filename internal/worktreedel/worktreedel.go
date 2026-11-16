@@ -76,6 +76,24 @@ var labels = map[StepKey]string{
 	StepDeleteBranch:     "Delete branch",
 }
 
+// Planned returns every step this delete will show, in order, all pending.
+func Planned(opts Options) []Step {
+	keys := []StepKey{StepRemoveDirectory}
+	if opts.DeleteBranch {
+		// Deleting the branch must happen before Unregister: the branch name
+		// and repo root live in the registry row, and Unregister deletes that
+		// row. A needs-force branch delete has to be retryable, which means
+		// the row (and thus this information) must still exist on the retry.
+		keys = append(keys, StepDeleteBranch)
+	}
+	keys = append(keys, StepReleasePorts, StepUnregister, StepRemoveResources, StepRemoveKubeconfig, StepPrune)
+	steps := make([]Step, 0, len(keys))
+	for _, k := range keys {
+		steps = append(steps, Step{Key: k, Label: labels[k], Status: StatusPending})
+	}
+	return steps
+}
+
 // Run executes the deletion sequence, reporting each step to observe (which may
 // be nil) as it starts and again as it completes.
 //
@@ -99,18 +117,7 @@ func Run(conn *sql.DB, cfg config.Config, opts Options, observe func(Step)) Resu
 		res.Err = fmt.Errorf("worktree path must be absolute, got %q", opts.Path)
 		return res
 	}
-	keys := []StepKey{StepRemoveDirectory}
-	if opts.DeleteBranch {
-		// Deleting the branch must happen before Unregister: the branch name
-		// and repo root live in the registry row, and Unregister deletes that
-		// row. A needs-force branch delete has to be retryable, which means
-		// the row (and thus this information) must still exist on the retry.
-		keys = append(keys, StepDeleteBranch)
-	}
-	keys = append(keys, StepReleasePorts, StepUnregister, StepRemoveResources, StepRemoveKubeconfig, StepPrune)
-	for _, k := range keys {
-		res.Steps = append(res.Steps, Step{Key: k, Label: labels[k], Status: StatusPending})
-	}
+	res.Steps = Planned(opts)
 
 	set := func(key StepKey, status Status, detail string) {
 		for i := range res.Steps {

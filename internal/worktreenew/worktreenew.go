@@ -143,6 +143,15 @@ var order = []StepKey{
 	StepKubeconfig, StepResources, StepDotfiles,
 }
 
+// Planned returns every step of a create, in order, all pending.
+func Planned() []Step {
+	out := make([]Step, 0, len(order))
+	for _, k := range order {
+		out = append(out, Step{Key: k, Label: labels[k], Status: StatusPending})
+	}
+	return out
+}
+
 type runner struct {
 	conn    *sql.DB
 	cfg     config.Config
